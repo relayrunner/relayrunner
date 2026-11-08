@@ -1,5 +1,6 @@
 import { DurableObject } from "cloudflare:workers";
 import { LINT_PORT, type LintResult, type LintTool } from "@relayrunner/lint-runner/protocol";
+import { containerRunnerAllowed } from "../container-runner.ts";
 import type { Env } from "../env.ts";
 import {
   completeCheckRun,
@@ -62,6 +63,9 @@ export class LintRunner extends DurableObject<Env> {
     tools: LintTool[],
     paths: string[],
   ): Promise<CheckResult> {
+    // Each container is billed to us, like the webhook path in startLintChecks.
+    if (!containerRunnerAllowed(this.env.CONTAINER_RUNNER_ORGS, target.repo.split("/")[0]))
+      return { ok: false, reason: "RelayRunner doesn't run lint containers for this org yet." };
     const installationId = await checksAppInstallationId(this.env, target.repo);
     if (!installationId)
       return {
