@@ -129,6 +129,23 @@ export function retryDelaySeconds(attempts: number) {
 /** Do the work for one delivery. Throw to retry. */
 export async function processWebhook(env: Env, message: WebhookMessage): Promise<void> {
   const lagMs = Date.now() - Date.parse(message.receivedAt);
+  // The RelayRunner Checks App (lint check runs) has its own installations and credentials, so its
+  // deliveries never take the main App's paths below. Running lint is a later step; for now its
+  // events are only logged, which shows the webhook is wired up.
+  if (message.app === "checks") {
+    console.log(
+      JSON.stringify({
+        msg: "checks app webhook received",
+        event: message.event,
+        action: message.action,
+        deliveryId: message.deliveryId,
+        installationId: message.installationId,
+        repository: "repository" in message ? message.repository.fullName : null,
+        lagMs,
+      }),
+    );
+    return;
+  }
   switch (message.event) {
     case "workflow_job": {
       // A job that asks for RelayRunner (`runs-on: relayrunner`) is a pick: it routes its run. The

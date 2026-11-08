@@ -47,7 +47,21 @@ export interface InstallationSummary {
   suspendedAt: string | null;
 }
 
+// Which GitHub App the delivery came from. Absent means the main RelayRunner App; "checks" is the
+// separate, opt-in RelayRunner Checks App (lint check runs), which posts to its own webhook path.
+export type WebhookApp = "checks";
+
+// A check suite GitHub asks an App to run, on a push or a "Re-run all checks" click.
+export interface CheckSuite {
+  id: number;
+  headSha: string;
+  headBranch: string | null;
+  // Open pull requests whose head is this commit, by number. Empty for forks and plain pushes.
+  pullRequests: number[];
+}
+
 interface Base {
+  app?: WebhookApp;
   // X-GitHub-Delivery. Unique per delivery; a manual redelivery reuses it.
   deliveryId: string;
   action: string | null;
@@ -80,11 +94,19 @@ export type WebhookMessage =
       event: "pull_request";
       repository: { id: number; fullName: string };
       pullRequest: PullRequest;
+    })
+  | (Base & {
+      event: "check_suite";
+      repository: { id: number; fullName: string };
+      checkSuite: CheckSuite;
     });
 
 // The pull_request actions that give a PR a new title or head commit. `edited` counts only when
 // the title changed (a body edit doesn't need a new check).
 const PULL_REQUEST_ACTIONS = new Set(["opened", "reopened", "synchronize", "edited"]);
+
+// The check_suite actions that ask the App to run its checks. `completed` is only a report.
+const CHECK_SUITE_ACTIONS = new Set(["requested", "rerequested"]);
 
 // Delivery → queue message, or null when RelayRunner doesn't act on this event (or the payload is
 // missing what it needs). Never throws.
@@ -188,6 +210,36 @@ export function toWebhookMessage(
         event,
         repository: { id: Number(repo.id), fullName: repo.full_name },
         pullRequest: { number: pr.number, title: pr.title, headSha: pr.head.sha },
+      };
+    }
+    case "check_suite": {
+      const suite = payload.check_suite;
+      const repo = payload.repository;
+      if (
+        !base.action ||
+        !CHECK_SUITE_ACTIONS.has(base.action) ||
+        !isRecord(suite) ||
+        !isRecord(repo) ||
+        typeof suite.id !== "number" ||
+        typeof suite.head_sha !== "string" ||
+        typeof repo.full_name !== "string"
+      )
+        return null;
+      return {
+        ...base,
+        event,
+        repository: { id: Number(repo.id), fullName: repo.full_name },
+        checkSuite: {
+          id: suite.id,
+          headSha: suite.head_sha,
+          headBranch: stringOrNull(suite.head_branch),
+          pullRequests: Array.isArray(suite.pull_requests)
+            ? suite.pull_requests
+                .filter(isRecord)
+                .map((pr) => pr.number)
+                .filter((number): number is number => typeof number === "number")
+            : [],
+        },
       };
     }
     default:

@@ -45,4 +45,7 @@ export interface Env extends AccessEnv {
   // sign the App JWTs that mint installation tokens.
   GITHUB_APP_ID: string;
   GITHUB_APP_PRIVATE_KEY: SecretsStoreSecret;
+  // The separate, opt-in RelayRunner Checks App (lint check runs; webhooks arrive tagged
+  // app: "checks"). Its private key is added once lint runs need installation tokens.
+  GITHUB_CHECKS_APP_ID: string;
 }

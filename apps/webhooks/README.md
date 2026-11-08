@@ -9,6 +9,15 @@ GitHub ──▶ relayrunner-webhooks ──▶ queue ──▶ relayrunner-api 
                                               DLQ ──▶ log + ack
 ```
 
+Two GitHub Apps post here, each to its own path and signed with its own Secrets Store secret:
+
+| Path                          | App                                     | Secret                        |
+| ----------------------------- | --------------------------------------- | ----------------------------- |
+| `/api/webhooks/github`        | RelayRunner (routing, PR title check)   | `GITHUB_WEBHOOK_SECRET`       |
+| `/api/webhooks/github-checks` | RelayRunner Checks (opt-in lint checks) | `GITHUB_CHECK_WEBHOOK_SECRET` |
+
+Messages from the Checks App carry `app: "checks"`, so the consumer never runs the main App's work on them. For now the consumer only logs them; running lint comes later.
+
 It is separate from the API so that API deploys, and bugs in processing, never change what GitHub sees. While the API is broken, messages wait and retry (30 seconds, doubling, up to about half an hour in total) instead of failing deliveries. Keep this Worker small: it should rarely need a deploy.
 
 | Response | When                                                                                                    |
@@ -16,7 +25,7 @@ It is separate from the API so that API deploys, and bugs in processing, never c
 | `200`    | `ping`                                                                                                  |
 | `202`    | Queued, or an event RelayRunner doesn't act on                                                          |
 | `401`    | Missing or wrong signature                                                                              |
-| `500`    | `GITHUB_WEBHOOK_SECRET` can't be read from the Secrets Store                                            |
+| `500`    | The path's webhook secret can't be read from the Secrets Store                                          |
 | `503`    | The queue rejected the message. GitHub doesn't retry, so redeliver it from the App's Recent Deliveries. |
 
 Queue messages carry only the fields the consumer uses, never the raw payload, because a message is capped at 128 KB. Delivery is at least once and unordered, so processing must be idempotent.
@@ -28,6 +37,7 @@ Run it in the same `wrangler dev` as the API so the local queue connects produce
 ```sh
 # once: seed the local Secrets Store (prompts for the value)
 npx wrangler secrets-store secret create eac3493b9fef4234a832f5f3fdcc8a41 --name GITHUB_WEBHOOK_SECRET --scopes workers -c apps/webhooks/wrangler.jsonc
+npx wrangler secrets-store secret create eac3493b9fef4234a832f5f3fdcc8a41 --name GITHUB_CHECK_WEBHOOK_SECRET --scopes workers -c apps/webhooks/wrangler.jsonc
 npx wrangler dev -c apps/webhooks/wrangler.jsonc -c apps/api/wrangler.jsonc
 ```
 
@@ -40,7 +50,7 @@ wrangler queues create relayrunner-github-webhooks
 wrangler queues create relayrunner-github-webhooks-dlq
 ```
 
-`GITHUB_WEBHOOK_SECRET` already lives in the account's Secrets Store, so there's nothing to set. Then deploy in this order, since each step binds to the one before it:
+`GITHUB_WEBHOOK_SECRET` and `GITHUB_CHECK_WEBHOOK_SECRET` already live in the account's Secrets Store, so there's nothing to set. Then deploy in this order, since each step binds to the one before it:
 
 ```sh
 pnpm run deploy:webhooks
@@ -48,4 +58,4 @@ pnpm run deploy:api    # attaches the queue consumers
 pnpm run deploy:web    # forwards /api/webhooks/* here
 ```
 
-The GitHub App's webhook URL is `https://relayrunner-webhooks.relayrun.workers.dev/api/webhooks/github`, so deliveries reach this Worker directly. `https://webhooks.relayrunner.app/api/webhooks/github` is the same Worker on its custom domain. The dashboard also forwards `/api/webhooks/*` here, so `<dashboard origin>/api/webhooks/github` works too.
+The GitHub App's webhook URL is `https://relayrunner-webhooks.relayrun.workers.dev/api/webhooks/github`, so deliveries reach this Worker directly. `https://webhooks.relayrunner.app/api/webhooks/github` is the same Worker on its custom domain. The dashboard also forwards `/api/webhooks/*` here, so `<dashboard origin>/api/webhooks/github` works too. The Checks App posts to `https://webhooks.relayrunner.app/api/webhooks/github-checks`.
