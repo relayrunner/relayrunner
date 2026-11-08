@@ -592,10 +592,20 @@ function MachineCard({ machine }: { machine: Machine }) {
         )}
       >
         {job ? (
-          <a href={job.url} target="_blank" rel="noreferrer" className="hover:underline">
-            Running {job.repository} · {job.name}
+          <a
+            href={job.url}
+            target="_blank"
+            rel="noreferrer"
+            title={`${job.repository} · ${job.name}`}
+            className="flex min-w-0 items-baseline gap-2 hover:underline"
+          >
+            <span className="min-w-0 truncate">
+              Running {job.repository} · {job.name}
+            </span>
             {job.startedAt && (
-              <span className="text-muted-foreground"> · started {timeAgo(job.startedAt)}</span>
+              <span className="ml-auto shrink-0 text-xs text-muted-foreground">
+                {timeAgo(job.startedAt)}
+              </span>
             )}
           </a>
         ) : (
