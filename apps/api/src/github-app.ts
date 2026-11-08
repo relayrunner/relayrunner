@@ -377,3 +377,91 @@ export async function rateLimits(token: string): Promise<RateLimits> {
     actionsRunnerRegistration: bucket(resources.actions_runner_registration),
   };
 }
+
+/** Thrown when GitHub refuses a call for the token's permissions (403) or can't see it (404). */
+export class GitHubAccessError extends Error {
+  constructor(
+    message: string,
+    readonly status: number,
+  ) {
+    super(message);
+  }
+}
+
+async function getJson<T>(token: string, path: string): Promise<T> {
+  const response = await fetch(`${API}${path}`, { headers: headers(token) });
+  if (!response.ok) {
+    const message = `GET ${path} failed with ${response.status}: ${(await response.text()).slice(0, 300)}`;
+    if (response.status === 403 || response.status === 404)
+      throw new GitHubAccessError(message, response.status);
+    throw new Error(message);
+  }
+  return (await response.json()) as T;
+}
+
+/** The org's GitHub plan name ("free", "team", "enterprise", ...), or null if GitHub omits it. */
+export async function orgPlan(token: string, org: string): Promise<string | null> {
+  const body = await getJson<{ plan?: { name?: string } }>(token, `/orgs/${org}`);
+  return body.plan?.name ?? null;
+}
+
+/** One row of the org's billing usage report: a repo's usage of one SKU on one UTC day. */
+export interface BillingUsageItem {
+  date: string;
+  product: string;
+  sku: string;
+  quantity: number;
+  unitType: string;
+  pricePerUnit?: number;
+  grossAmount: number;
+  discountAmount?: number;
+  netAmount: number;
+  repositoryName?: string;
+}
+
+/**
+ * The org's usage report for one UTC month. Needs Organization Administration: read, which
+ * installation tokens can use (verified on #116).
+ */
+export async function orgBillingUsage(
+  token: string,
+  org: string,
+  month: { year: number; month: number },
+): Promise<BillingUsageItem[]> {
+  const body = await getJson<{ usageItems?: BillingUsageItem[] }>(
+    token,
+    `/organizations/${org}/settings/billing/usage?year=${month.year}&month=${month.month}`,
+  );
+  return body.usageItems ?? [];
+}
+
+/** An org budget, trimmed to what the minutes rule needs. Amounts are whole dollars. */
+export interface BillingBudget {
+  scope: string;
+  type: string;
+  skus: string[];
+  amount: number;
+  preventFurtherUsage: boolean;
+}
+
+export async function orgBudgets(token: string, org: string): Promise<BillingBudget[]> {
+  const body = await getJson<{
+    budgets?: {
+      budget_scope: string;
+      budget_type: string;
+      // The schema says budget_product_sku; GitHub's examples send budget_product_skus.
+      budget_product_sku?: string;
+      budget_product_skus?: string[];
+      budget_amount: number;
+      prevent_further_usage: boolean;
+    }[];
+  }>(token, `/organizations/${org}/settings/billing/budgets`);
+  return (body.budgets ?? []).map((budget) => ({
+    scope: budget.budget_scope,
+    type: budget.budget_type,
+    skus:
+      budget.budget_product_skus ?? (budget.budget_product_sku ? [budget.budget_product_sku] : []),
+    amount: budget.budget_amount,
+    preventFurtherUsage: budget.prevent_further_usage,
+  }));
+}

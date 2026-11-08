@@ -42,7 +42,7 @@ export interface Env extends AccessEnv {
   // The App's URL slug (github.com/apps/<slug>), for the "Connect GitHub org" install link.
   GITHUB_APP_SLUG: string;
   // The App's numeric ID and its private key (PKCS#8 PEM, from the Secrets Store). Together they
-  // sign the App JWTs that mint installation tokens. Nothing reads them yet.
+  // sign the App JWTs that mint installation tokens.
   GITHUB_APP_ID: string;
   GITHUB_APP_PRIVATE_KEY: SecretsStoreSecret;
 }
