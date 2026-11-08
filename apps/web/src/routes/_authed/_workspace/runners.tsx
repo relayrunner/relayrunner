@@ -48,6 +48,12 @@ import { getRunnerOrder } from "@/lib/runner-order";
 import { cn } from "@/lib/utils";
 import { whereJobsGo } from "@/lib/where-jobs-go";
 
+// Found runners per workspace, kept for the tab's life so leaving and coming back doesn't wait on
+// GitHub again. The page still re-checks in the background on each visit.
+type Found = { count: number; orgs: string[] };
+const foundCache = new Map<string, Found>();
+const dismissedFound = new Set<string>();
+
 // How often the page refetches machines, so a machine connecting or going quiet shows up.
 const REFRESH_MS = 15_000;
 
@@ -86,11 +92,13 @@ function RunnersPage() {
   const machines = loaded.machines.filter((machine) => !machine.revokedAt);
   const status = whereJobsGo(loaded.order.steps, machines);
 
-  // Runners in connected orgs that aren't added yet, for the banner. Owners and admins only, since
-  // only they can add them; read once per visit, not on every refresh, since it asks GitHub.
+  // Runners in connected orgs that aren't added yet, for the found card. Owners and admins only,
+  // since only they can add them. It asks GitHub, so it's read once per visit, not on every
+  // refresh, and the last answer is kept for the tab so coming back shows it at once.
+  const workspaceId = current.workspace.id;
   const [githubOpen, setGithubOpen] = useState(false);
-  const [found, setFound] = useState<{ count: number; orgs: string[] } | null>(null);
-  const [dismissed, setDismissed] = useState(false);
+  const [found, setFound] = useState<Found | null>(() => foundCache.get(workspaceId) ?? null);
+  const [dismissed, setDismissed] = useState(() => dismissedFound.has(workspaceId));
   async function findRunners() {
     if (!editable) return;
     try {
@@ -99,15 +107,23 @@ function RunnersPage() {
       const withRunners = orgs.filter(
         (org) => "runners" in org && org.runners.some((r) => !r.machineId && !r.blocked),
       );
-      setFound({ count: addable.length, orgs: withRunners.map((org) => org.org) });
+      const next = { count: addable.length, orgs: withRunners.map((org) => org.org) };
+      foundCache.set(workspaceId, next);
+      setFound(next);
     } catch {
-      setFound(null);
+      // Keep showing the last answer; GitHub may just be slow or down.
     }
   }
   useEffect(() => {
+    setFound(foundCache.get(workspaceId) ?? null);
+    setDismissed(dismissedFound.has(workspaceId));
     void findRunners();
     // Once per visit and workspace.
-  }, [current.workspace.id, editable]);
+  }, [workspaceId, editable]);
+  function dismissFound() {
+    dismissedFound.add(workspaceId);
+    setDismissed(true);
+  }
 
   const dialog = (
     <GithubRunnersDialog
@@ -176,7 +192,7 @@ function RunnersPage() {
                   count={found.count}
                   orgs={found.orgs}
                   onReview={() => setGithubOpen(true)}
-                  onDismiss={() => setDismissed(true)}
+                  onDismiss={dismissFound}
                 />
               </li>
             )}
