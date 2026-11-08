@@ -441,7 +441,7 @@ function MachineCard({ machine }: { machine: Machine }) {
     <article
       aria-label={machine.name}
       className={cn(
-        "grid content-start gap-3 rounded-lg border p-4",
+        "grid min-w-0 grid-cols-[minmax(0,1fr)] content-start gap-3 rounded-lg border p-4",
         status.online && !missing ? "bg-card" : "bg-background",
         paused && "border-run-edge/60",
         missing && "border-destructive/50 bg-destructive/5",
