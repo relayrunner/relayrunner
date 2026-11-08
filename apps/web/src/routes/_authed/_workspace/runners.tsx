@@ -1,16 +1,19 @@
-import { DEFAULT_RUNNER_ORDER } from "@relayrunner/runner-order";
+import { DEFAULT_RUNNER_ORDER, type RunnerKey, type RunnerStep } from "@relayrunner/runner-order";
 import { Link, createFileRoute, useRouter } from "@tanstack/react-router";
 import {
   BanIcon,
+  CheckIcon,
+  CloudIcon,
   CopyIcon,
   EllipsisIcon,
   ExternalLinkIcon,
+  LaptopIcon,
   PauseIcon,
   PlayIcon,
   SearchIcon,
   XIcon,
 } from "lucide-react";
-import { useEffect, useState } from "react";
+import { useEffect, useState, type ReactNode } from "react";
 import {
   AddRunner,
   CONNECT_COMMAND,
@@ -106,16 +109,33 @@ function RunnersPage() {
     // Once per visit and workspace.
   }, [current.workspace.id, editable]);
 
+  const dialog = (
+    <GithubRunnersDialog
+      open={githubOpen}
+      onOpenChange={setGithubOpen}
+      onAdded={async () => {
+        await router.invalidate();
+        await findRunners();
+      }}
+    />
+  );
+
+  // No runners yet: the page is the pitch and the one command.
+  if (machines.length === 0)
+    return (
+      <>
+        {dialog}
+        <ConnectLanding
+          fallback={fallbackAfterMachine(loaded.order.steps)}
+          found={found?.count ?? 0}
+          onAddExisting={editable ? () => setGithubOpen(true) : undefined}
+        />
+      </>
+    );
+
   return (
     <section>
-      <GithubRunnersDialog
-        open={githubOpen}
-        onOpenChange={setGithubOpen}
-        onAdded={async () => {
-          await router.invalidate();
-          await findRunners();
-        }}
-      />
+      {dialog}
       <PageHeader
         title="Runners"
         action={<AddRunner onAddExisting={() => setGithubOpen(true)} />}
@@ -176,25 +196,37 @@ function RunnersPage() {
               online.
             </p>
           </div>
-          {machines.length === 0 ? (
-            <ConnectFirst onAddExisting={editable ? () => setGithubOpen(true) : undefined} />
-          ) : (
-            <ul className="grid gap-3 sm:grid-cols-2 xl:grid-cols-3">
-              {machines.map((machine) => (
-                <li key={machine.id} className="grid">
-                  <MachineCard machine={machine} />
-                </li>
-              ))}
-            </ul>
-          )}
+          <ul className="grid gap-3 sm:grid-cols-2 xl:grid-cols-3">
+            {machines.map((machine) => (
+              <li key={machine.id} className="grid">
+                <MachineCard machine={machine} />
+              </li>
+            ))}
+          </ul>
         </section>
       </div>
     </section>
   );
 }
 
-// No runners yet: the connect command is the whole onboarding.
-function ConnectFirst({ onAddExisting }: { onAddExisting?: () => void }) {
+// Where a job goes when no self-hosted runner can take it: the first step after self-hosted.
+function fallbackAfterMachine(steps: RunnerStep[]): RunnerKey | null {
+  const at = steps.findIndex((step) => step.key === "machine");
+  return steps.slice(at + 1).find((step) => step.key !== "machine")?.key ?? null;
+}
+
+// No runners yet: the whole page says what connecting does, then hands over the one command.
+function ConnectLanding({
+  fallback,
+  found,
+  onAddExisting,
+}: {
+  fallback: RunnerKey | null;
+  /** Runners already on GitHub that could be added. */
+  found: number;
+  /** Missing for members, who can't add runners from GitHub. */
+  onAddExisting?: () => void;
+}) {
   const [copied, setCopied] = useState(false);
   async function copy() {
     try {
@@ -205,30 +237,121 @@ function ConnectFirst({ onAddExisting }: { onAddExisting?: () => void }) {
       // Clipboard can be blocked; the command is still there to select.
     }
   }
+  const elsewhere =
+    fallback === "github"
+      ? { icon: <GithubIcon className="size-5" />, text: "Jobs go back to GitHub-hosted runners" }
+      : fallback === "blacksmith"
+        ? { icon: <CloudIcon aria-hidden className="size-5" />, text: "Jobs go back to Blacksmith" }
+        : {
+            icon: <CloudIcon aria-hidden className="size-5" />,
+            text: "Jobs that need it stop early",
+          };
+
   return (
-    <div className="grid gap-5 rounded-lg border bg-card p-6 sm:p-8">
-      <div className="grid max-w-[60ch] gap-2">
-        <h3 className="text-lg font-semibold">Run CI on your laptop while you work</h3>
-        <p className="text-muted-foreground">
-          Run this in a terminal on the computer you want CI on. Private repo jobs run there while
-          it's open. Close it and they go back to GitHub.
+    <section className="mx-auto grid w-full max-w-3xl gap-8 py-4 sm:gap-10 sm:py-12">
+      <div className="grid justify-items-center gap-3 text-center">
+        <h1 className="text-2xl font-semibold tracking-tight text-balance sm:text-3xl">
+          Run CI on your laptop while you work
+        </h1>
+        <p className="max-w-[54ch] text-pretty text-muted-foreground">
+          Connect when you want private repo jobs on your own computer. Disconnect when you're done
+          and they go back to where they ran before. Nothing has to stay on.
         </p>
       </div>
-      <div className="flex max-w-xl items-center justify-between gap-3 rounded-md border bg-background py-2 pr-2 pl-4 font-mono text-sm">
-        <span className="truncate">{CONNECT_COMMAND}</span>
-        <Button size="sm" className="font-sans" onClick={() => void copy()}>
-          {copied ? "Copied" : "Copy"}
-        </Button>
-      </div>
-      {onAddExisting && (
-        <p className="text-sm text-muted-foreground">
-          Already have a self-hosted runner on GitHub?{" "}
-          <button type="button" className="text-go hover:text-go-hover" onClick={onAddExisting}>
-            Add it instead
-          </button>
+
+      <ol className="grid gap-3 sm:grid-cols-2" aria-label="How connecting works">
+        <StatePanel
+          on
+          title="Connected"
+          lines={[
+            { prompt: true, text: CONNECT_COMMAND },
+            { mark: "◆", text: "Online. Waiting for jobs.", go: true },
+          ]}
+          icon={<LaptopIcon aria-hidden className="size-5" />}
+          text="Private repo jobs run on your laptop"
+        />
+        <StatePanel
+          title="Disconnected"
+          lines={[{ text: "^C" }, { mark: "└", text: "Offline." }]}
+          icon={elsewhere.icon}
+          text={elsewhere.text}
+        />
+      </ol>
+
+      <div className="grid justify-items-center gap-3">
+        <div className="flex w-full max-w-md items-center justify-between gap-3 rounded-md border bg-card py-2 pr-2 pl-4 font-mono text-sm">
+          <span className="truncate">
+            <span aria-hidden className="text-muted-foreground select-none">
+              ${" "}
+            </span>
+            {CONNECT_COMMAND}
+          </span>
+          <Button size="sm" className="font-sans" onClick={() => void copy()}>
+            {copied ? <CheckIcon aria-hidden /> : <CopyIcon aria-hidden />}
+            {copied ? "Copied" : "Copy"}
+          </Button>
+        </div>
+        <p className="text-center text-sm text-muted-foreground">
+          Run it in a terminal on the computer you want CI on. It signs you in the first time.
         </p>
+        {onAddExisting && (
+          <Button variant="ghost" size="sm" className="mt-2" onClick={onAddExisting}>
+            <GithubIcon />
+            {found > 0
+              ? `Add the ${found} self-hosted ${found === 1 ? "runner" : "runners"} already on GitHub`
+              : "Already have a self-hosted runner? Add it"}
+          </Button>
+        )}
+      </div>
+    </section>
+  );
+}
+
+function StatePanel({
+  on = false,
+  title,
+  lines,
+  icon,
+  text,
+}: {
+  on?: boolean;
+  title: string;
+  lines: { prompt?: boolean; mark?: string; text: string; go?: boolean }[];
+  icon: ReactNode;
+  text: string;
+}) {
+  return (
+    <li
+      className={cn(
+        "grid overflow-hidden rounded-lg border",
+        on ? "border-go-edge bg-go-soft" : "bg-card",
       )}
-    </div>
+    >
+      <div className="flex items-center gap-2 px-4 pt-3.5 text-sm font-medium">
+        <span aria-hidden className={cn("size-2 rounded-full", on ? "bg-go" : "bg-idle")} />
+        {title}
+      </div>
+      <pre className="mx-4 mt-3 grid gap-1 rounded-md border bg-background px-3 py-2.5 font-mono text-xs leading-relaxed">
+        {lines.map((line, i) => (
+          <span key={i} className={cn(line.go ? "text-go" : "text-muted-foreground")}>
+            {line.prompt ? <span className="select-none">$ </span> : null}
+            {line.mark ? <span className="select-none">{line.mark} </span> : null}
+            <span className={cn(line.prompt && "text-foreground")}>{line.text}</span>
+          </span>
+        ))}
+      </pre>
+      <div className="flex items-center gap-3 px-4 py-3.5 text-sm">
+        <span
+          className={cn(
+            "flex size-9 shrink-0 items-center justify-center rounded-md border",
+            on ? "border-go-edge text-go" : "text-muted-foreground",
+          )}
+        >
+          {icon}
+        </span>
+        {text}
+      </div>
+    </li>
   );
 }
 
