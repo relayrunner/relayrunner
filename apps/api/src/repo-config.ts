@@ -2,8 +2,12 @@
 // default branch so a pull request can't change the checks it gets. The App can read only these
 // two files (single-file Contents permission). No file means no checks.
 //
+// Both GitHub Apps read this one file: the main App runs `pr-title`, the opt-in Checks App runs
+// `lint`. The schema stays strict and knows every key, so a typo is reported instead of ignored.
+//
 //   checks:
 //     pr-title: true            # or { types: [feat, fix, docs] } to narrow the allowed types
+//     lint: [oxlint, oxfmt]     # or { tools: [oxlint], paths: ["apps/**"] } to scope it
 
 import { parse } from "yaml";
 import { z } from "zod";
@@ -20,12 +24,33 @@ const typeList = z
       .filter(Boolean),
   );
 
+// The lint tools the Checks App can run. Each uses the repo's own config file for that tool
+// (.oxlintrc.json, ruff.toml, ...). All of them run without the repo's dependencies installed.
+export const LINT_TOOLS = [
+  "oxlint",
+  "oxfmt",
+  "ruff",
+  "actionlint",
+  "zizmor",
+  "shellcheck",
+  "typos",
+] as const;
+export type LintTool = (typeof LINT_TOOLS)[number];
+
+const lintTools = z.array(z.enum(LINT_TOOLS)).min(1);
+
 const schema = z
   .object({
     checks: z
       .object({
         "pr-title": z
           .union([z.boolean(), z.object({ types: typeList.optional() }).strict()])
+          .optional(),
+        lint: z
+          .union([
+            lintTools,
+            z.object({ tools: lintTools, paths: z.array(z.string()).optional() }).strict(),
+          ])
           .optional(),
       })
       .strict()
@@ -34,10 +59,21 @@ const schema = z
   .strict()
   .nullable();
 
-// `prTitle` is null when the check is off.
+export interface LintConfig {
+  tools: LintTool[];
+  // Glob patterns of the files to lint. Empty lints the whole repo.
+  paths: string[];
+}
+
+// `prTitle` and `lint` are null when that check is off.
 export type ConfigResult =
   | { kind: "none" }
-  | { kind: "config"; path: string; prTitle: { types: string[] } | null }
+  | {
+      kind: "config";
+      path: string;
+      prTitle: { types: string[] } | null;
+      lint: LintConfig | null;
+    }
   | { kind: "invalid"; path: string; error: string };
 
 /** Parses a relayrunner.yml. An empty file is valid and turns everything off. */
@@ -58,11 +94,21 @@ export function parseRepoConfig(path: string, text: string): ConfigResult {
         .join("; "),
     };
   const prTitle = result.data?.checks?.["pr-title"];
+  const lint = result.data?.checks?.lint;
   return {
     kind: "config",
     path,
     prTitle: !prTitle ? null : { types: prTitle === true ? [] : (prTitle.types ?? []) },
+    lint: !lint
+      ? null
+      : Array.isArray(lint)
+        ? { tools: dedupe(lint), paths: [] }
+        : { tools: dedupe(lint.tools), paths: lint.paths ?? [] },
   };
+}
+
+function dedupe<T>(values: T[]) {
+  return [...new Set(values)];
 }
 
 /** The repo's config from its default branch. */
