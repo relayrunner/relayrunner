@@ -1,6 +1,7 @@
 import { DEFAULT_RUNNER_ORDER, type RunnerKey, type RunnerStep } from "@relayrunner/runner-order";
 import { Link, createFileRoute, useRouter } from "@tanstack/react-router";
 import {
+  ArrowUpRightIcon,
   BanIcon,
   CheckIcon,
   CloudIcon,
@@ -10,7 +11,6 @@ import {
   LaptopIcon,
   PauseIcon,
   PlayIcon,
-  SearchIcon,
   XIcon,
 } from "lucide-react";
 import { useEffect, useState, type ReactNode } from "react";
@@ -136,72 +136,46 @@ function RunnersPage() {
   return (
     <section>
       {dialog}
-      <PageHeader
-        title="Runners"
-        action={<AddRunner onAddExisting={() => setGithubOpen(true)} />}
-      />
-      <div className="grid max-w-5xl gap-6">
-        <div
-          role="status"
-          className={cn(
-            "flex flex-wrap items-center gap-x-3 gap-y-1 rounded-lg border px-4 py-3",
-            status.tone === "go" ? "border-go-edge bg-go-soft" : "bg-card",
-          )}
-        >
+      <PageHeader title="Runners" action={<AddRunner onAddExisting={() => setGithubOpen(true)} />}>
+        <span role="status">
           <span
             aria-hidden
             className={cn(
-              "size-2.5 shrink-0 rounded-full",
+              "mr-2 inline-block size-2 rounded-full align-middle",
               status.tone === "go" ? "bg-go" : "bg-idle",
             )}
           />
-          <p className="min-w-0 flex-[1_1_20rem]">{status.text}</p>
-          <Link to="/router" className="text-sm text-go hover:text-go-hover">
+          {status.text}{" "}
+          <Link
+            to="/router"
+            className="inline-flex items-center gap-0.5 whitespace-nowrap text-go hover:text-go-hover"
+          >
             Router
+            <ArrowUpRightIcon aria-hidden className="size-3.5" />
           </Link>
-        </div>
-
-        {found && found.count > 0 && !dismissed && (
-          <div className="flex flex-wrap items-center gap-3 rounded-lg border border-go-edge bg-go-soft px-4 py-3">
-            <SearchIcon aria-hidden className="size-4 shrink-0 text-go" />
-            <p className="min-w-0 flex-1 text-sm">
-              We found{" "}
-              <strong>
-                {found.count} self-hosted {found.count === 1 ? "runner" : "runners"}
-              </strong>{" "}
-              in <span className="font-mono">{found.orgs.join(", ")}</span> that RelayRunner isn't
-              using yet.
-            </p>
-            <Button size="sm" variant="outline" onClick={() => setGithubOpen(true)}>
-              Review
-            </Button>
-            <Button
-              size="icon-sm"
-              variant="ghost"
-              aria-label="Dismiss"
-              onClick={() => setDismissed(true)}
-            >
-              <XIcon aria-hidden />
-            </Button>
-          </div>
-        )}
-
+        </span>
+      </PageHeader>
+      <div className="grid max-w-5xl gap-6">
         <section aria-labelledby="self-hosted" className="grid gap-3">
-          <div className="grid gap-0.5">
-            <h2 id="self-hosted" className="text-sm font-semibold">
-              Self-hosted
-            </h2>
-            <p className="text-xs text-muted-foreground">
-              Your machines and your org's runners. They take private repo jobs while they're
-              online.
-            </p>
-          </div>
+          <h2 id="self-hosted" className="text-sm font-semibold">
+            Self-hosted
+          </h2>
           <ul className="grid gap-3 sm:grid-cols-2 xl:grid-cols-3">
             {machines.map((machine) => (
               <li key={machine.id} className="grid">
                 <MachineCard machine={machine} />
               </li>
             ))}
+            {found && found.count > 0 && !dismissed && (
+              <li className="grid">
+                <FoundCard
+                  count={found.count}
+                  orgs={found.orgs}
+                  onReview={() => setGithubOpen(true)}
+                  onDismiss={() => setDismissed(true)}
+                />
+              </li>
+            )}
           </ul>
         </section>
       </div>
@@ -352,6 +326,41 @@ function StatePanel({
         {text}
       </div>
     </li>
+  );
+}
+
+// Runners already on GitHub that RelayRunner isn't using: a stub card beside the real ones.
+function FoundCard({
+  count,
+  orgs,
+  onReview,
+  onDismiss,
+}: {
+  count: number;
+  orgs: string[];
+  onReview: () => void;
+  onDismiss: () => void;
+}) {
+  return (
+    <article className="flex flex-col justify-between gap-3 rounded-lg border border-dashed p-4">
+      <div className="flex items-center gap-2.5">
+        <GithubIcon className="text-muted-foreground" />
+        <h3 className="flex-1 font-semibold">
+          {count} {count === 1 ? "runner" : "runners"} on GitHub
+        </h3>
+        <Button size="icon-sm" variant="ghost" aria-label="Dismiss" onClick={onDismiss}>
+          <XIcon aria-hidden />
+        </Button>
+      </div>
+      <p className="text-sm text-muted-foreground">
+        In <span className="font-mono">{orgs.join(", ")}</span>, not used by RelayRunner yet.
+      </p>
+      <div>
+        <Button size="sm" variant="outline" onClick={onReview}>
+          Review and add
+        </Button>
+      </div>
+    </article>
   );
 }
 
