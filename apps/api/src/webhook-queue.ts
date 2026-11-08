@@ -21,6 +21,7 @@ import { createDb, schema } from "./db/index.ts";
 import type { Env } from "./env.ts";
 import { upsertInstallation } from "./installations.ts";
 import { recordJobTiming } from "./job-timings.ts";
+import { lintTarget, startLintChecks } from "./lint-check.ts";
 import { recordWorkflowJob, setJobMachine } from "./jobs.ts";
 import { containerRunnerAllowed, usesContainerRunner } from "./container-runner.ts";
 import { checkPullRequestTitle } from "./pr-title-check.ts";
@@ -130,9 +131,9 @@ export function retryDelaySeconds(attempts: number) {
 export async function processWebhook(env: Env, message: WebhookMessage): Promise<void> {
   const lagMs = Date.now() - Date.parse(message.receivedAt);
   // The RelayRunner Checks App (lint check runs) has its own installations and credentials, so its
-  // deliveries never take the main App's paths below. Running lint is a later step; for now its
-  // events are only logged, which shows the webhook is wired up.
+  // deliveries never take the main App's paths below.
   if (message.app === "checks") {
+    const target = lintTarget(message);
     console.log(
       JSON.stringify({
         msg: "checks app webhook received",
@@ -141,9 +142,12 @@ export async function processWebhook(env: Env, message: WebhookMessage): Promise
         deliveryId: message.deliveryId,
         installationId: message.installationId,
         repository: "repository" in message ? message.repository.fullName : null,
+        lint: target !== null,
         lagMs,
       }),
     );
+    // Throws to retry: check runs that never open leave the pull request without its lint.
+    if (target) await startLintChecks(env, target);
     return;
   }
   switch (message.event) {

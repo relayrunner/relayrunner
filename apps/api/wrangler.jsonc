@@ -82,6 +82,12 @@
       "store_id": "eac3493b9fef4234a832f5f3fdcc8a41",
       "secret_name": "GITHUB_APP_PRIVATE_KEY",
     },
+    // The Checks App's key, the same way.
+    {
+      "binding": "GITHUB_CHECKS_APP_PRIVATE_KEY",
+      "store_id": "eac3493b9fef4234a832f5f3fdcc8a41",
+      "secret_name": "GITHUB_CHECKS_APP_PRIVATE_KEY",
+    },
   ],
   "d1_databases": [
     {
@@ -97,11 +103,13 @@
       { "name": "ROUTER", "class_name": "Router" },
       { "name": "MACHINE_LINK", "class_name": "MachineLink" },
       { "name": "CONTAINER_RUNNER", "class_name": "ContainerRunner" },
+      { "name": "LINT_RUNNER", "class_name": "LintRunner" },
     ],
   },
   "migrations": [
     { "tag": "v1", "new_sqlite_classes": ["PickRunner", "Router", "MachineLink"] },
     { "tag": "v2", "new_sqlite_classes": ["ContainerRunner"] },
+    { "tag": "v3", "new_sqlite_classes": ["LintRunner"] },
   ],
   // GitHub's runner image for container runners (src/durable-objects/container-runner.ts), which
   // picks the instance size when it starts one. `wrangler deploy` builds and pushes the image, so
@@ -112,6 +120,14 @@
       "scheduling_policy": "durable_object",
       "images": { "runner": { "dockerfile": "./container/Dockerfile" } },
       // The runner's own output (registration, the job) in Workers Logs and the Containers page.
+      "observability": { "logs": { "enabled": true } },
+    },
+    // The lint container for the Checks App (src/durable-objects/lint-runner.ts). It starts with
+    // no internet access; the Durable Object streams the repo in.
+    {
+      "class_name": "LintRunner",
+      "scheduling_policy": "durable_object",
+      "images": { "lint": { "dockerfile": "../../packages/lint-runner/Dockerfile" } },
       "observability": { "logs": { "enabled": true } },
     },
   ],

@@ -1,6 +1,7 @@
 import type { AccessEnv } from "@relayrunner/access";
 import type { WebhookMessage } from "@relayrunner/github-webhooks";
 import type { ContainerRunner } from "./durable-objects/container-runner.ts";
+import type { LintRunner } from "./durable-objects/lint-runner.ts";
 import type { MachineLink } from "./durable-objects/machine-link.ts";
 import type { PickRunner } from "./durable-objects/pick-runner.ts";
 import type { Router } from "./durable-objects/router.ts";
@@ -22,6 +23,9 @@ export interface Env extends AccessEnv {
   // comma-separated (unset allows none).
   CONTAINER_RUNNER: DurableObjectNamespace<ContainerRunner>;
   CONTAINER_RUNNER_ORGS?: string;
+  // Lint check runs for the Checks App (src/lint-check.ts), one container each. Gated by
+  // CONTAINER_RUNNER_ORGS too.
+  LINT_RUNNER: DurableObjectNamespace<LintRunner>;
 
   // Cloudflare Email Sending (src/email.ts). Optional so local dev and tests run without it.
   EMAIL?: SendEmail;
@@ -46,6 +50,7 @@ export interface Env extends AccessEnv {
   GITHUB_APP_ID: string;
   GITHUB_APP_PRIVATE_KEY: SecretsStoreSecret;
   // The separate, opt-in RelayRunner Checks App (lint check runs; webhooks arrive tagged
-  // app: "checks"). Its private key is added once lint runs need installation tokens.
+  // app: "checks"): its ID and private key, like the main App's.
   GITHUB_CHECKS_APP_ID: string;
+  GITHUB_CHECKS_APP_PRIVATE_KEY: SecretsStoreSecret;
 }
