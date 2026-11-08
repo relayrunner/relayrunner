@@ -20,14 +20,14 @@ describe("whereJobsGo", () => {
   test("one online machine first, GitHub after", () => {
     expect(whereJobsGo(order("machine", "github"), [machine()])).toEqual({
       tone: "go",
-      text: "atticus-mbp (MacBook Pro) is online. Private repo jobs run here. When none is free, they go to GitHub-hosted runners.",
+      text: "atticus-mbp is online. Private repo jobs run here, with GitHub-hosted as fallback.",
     });
   });
 
   test("the only machine is off", () => {
     const off = machine({ status: { online: false, state: null, connectedAt: null } });
     expect(whereJobsGo(order("machine", "github"), [off]).text).toBe(
-      "atticus-mbp (MacBook Pro) is offline, so jobs go to GitHub-hosted runners.",
+      "atticus-mbp is offline, so jobs go to GitHub-hosted.",
     );
   });
 
@@ -42,26 +42,26 @@ describe("whereJobsGo", () => {
       status: { online: false, state: null, connectedAt: null },
     });
     expect(whereJobsGo(order("github", "machine", "blacksmith"), [machine(), off]).text).toBe(
-      "atticus-mbp (MacBook Pro) is online. Jobs try GitHub-hosted runners first, then these runners, then Blacksmith.",
+      "atticus-mbp is online. Jobs try GitHub-hosted first, then here, then Blacksmith.",
     );
   });
 
   test("counts ready runners when there are several", () => {
     const two = [machine(), machine({ name: "zach-mini" })];
     expect(whereJobsGo(order("machine", "github"), two).text).toBe(
-      "2 of 2 runners are online. Private repo jobs run here. When none is free, they go to GitHub-hosted runners.",
+      "2 of 2 runners online. Private repo jobs run here, with GitHub-hosted as fallback.",
     );
   });
 
   test("no machines yet", () => {
     expect(whereJobsGo(order("machine", "github"), []).text).toBe(
-      "No self-hosted runner yet, so jobs run on GitHub-hosted runners.",
+      "No self-hosted runner yet, so jobs run on GitHub-hosted.",
     );
   });
 
   test("self-hosted left out of the order", () => {
     expect(whereJobsGo(order("github", "blacksmith"), [machine()]).text).toBe(
-      "Self-hosted isn't in the Router, so jobs run on GitHub-hosted runners and then Blacksmith and never here.",
+      "Self-hosted isn't in the Router, so jobs never run here.",
     );
   });
 });

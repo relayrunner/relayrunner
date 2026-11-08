@@ -136,7 +136,11 @@ function RunnersPage() {
   return (
     <section>
       {dialog}
-      <PageHeader title="Runners" action={<AddRunner onAddExisting={() => setGithubOpen(true)} />}>
+      <PageHeader
+        title="Runners"
+        action={<AddRunner onAddExisting={() => setGithubOpen(true)} />}
+        wide
+      >
         <span role="status">
           <span
             aria-hidden
@@ -160,14 +164,14 @@ function RunnersPage() {
           <h2 id="self-hosted" className="text-sm font-semibold">
             Self-hosted
           </h2>
-          <ul className="grid gap-3 sm:grid-cols-2 xl:grid-cols-3">
+          <ul className="grid grid-cols-[repeat(auto-fill,minmax(min(100%,19rem),1fr))] gap-3">
             {machines.map((machine) => (
-              <li key={machine.id} className="grid">
+              <li key={machine.id} className="grid min-w-0">
                 <MachineCard machine={machine} />
               </li>
             ))}
             {found && found.count > 0 && !dismissed && (
-              <li className="grid">
+              <li className="grid min-w-0">
                 <FoundCard
                   count={found.count}
                   orgs={found.orgs}
