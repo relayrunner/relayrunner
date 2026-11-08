@@ -10,48 +10,75 @@
  * - 200 ping
  * - 202 accepted (queued, or an event RelayRunner doesn't act on)
  * - 401 bad or missing signature
- * - 500 GITHUB_WEBHOOK_SECRET can't be read from the Secrets Store
+ * - 500 the path's webhook secret can't be read from the Secrets Store
  * - 503 the queue rejected the message; GitHub doesn't retry, so redeliver from the App settings
  */
 import {
   toWebhookMessage,
   verifyGitHubSignature,
+  type WebhookApp,
   type WebhookMessage,
 } from "@relayrunner/github-webhooks";
 
 export interface Env {
   WEBHOOK_QUEUE: Queue<WebhookMessage>;
-  // Secrets Store binding; read with get().
+  // Secrets Store bindings; read with get(). One per GitHub App.
   GITHUB_WEBHOOK_SECRET: SecretsStoreSecret;
+  GITHUB_CHECK_WEBHOOK_SECRET: SecretsStoreSecret;
 }
 
-// The path GitHub posts to. The dashboard Worker forwards /api/webhooks/* here over a service
-// binding, so the GitHub App's existing webhook URL keeps working; this Worker's own workers.dev
-// URL answers the same path.
-const WEBHOOK_PATH = "/api/webhooks/github";
+// The paths GitHub posts to, one per App, each signed with that App's own secret and taking only
+// the events that App acts on (others get a 202 and are dropped). GitHub sends check_suite to any
+// App that can write checks, so the main App would get them too without its list. Messages from
+// the Checks App are tagged so the consumer never mistakes them for the main App's. The dashboard
+// Worker forwards /api/webhooks/* here over a service binding; this Worker's own workers.dev URL
+// and custom domain answer the same paths.
+interface Route {
+  secret: "GITHUB_WEBHOOK_SECRET" | "GITHUB_CHECK_WEBHOOK_SECRET";
+  events: ReadonlySet<WebhookMessage["event"]>;
+  app?: WebhookApp;
+}
+const ROUTES: Record<string, Route> = {
+  "/api/webhooks/github": {
+    secret: "GITHUB_WEBHOOK_SECRET",
+    events: new Set([
+      "workflow_job",
+      "installation",
+      "installation_repositories",
+      "repository",
+      "pull_request",
+    ]),
+  },
+  "/api/webhooks/github-checks": {
+    secret: "GITHUB_CHECK_WEBHOOK_SECRET",
+    events: new Set(["installation", "installation_repositories", "pull_request", "check_suite"]),
+    app: "checks",
+  },
+};
 
 export async function handleRequest(request: Request, env: Env): Promise<Response> {
-  const { pathname } = new URL(request.url);
-  if (pathname !== WEBHOOK_PATH) return json({ error: "not_found" }, 404);
+  const route = ROUTES[new URL(request.url).pathname];
+  if (!route) return json({ error: "not_found" }, 404);
   if (request.method !== "POST") return json({ error: "method_not_allowed" }, 405);
 
+  const { app } = route;
   const event = request.headers.get("x-github-event") ?? "";
   const deliveryId = request.headers.get("x-github-delivery") ?? "";
 
-  const secret = await readSecret(env.GITHUB_WEBHOOK_SECRET);
+  const secret = await readSecret(env[route.secret]);
   if (!secret) {
-    log("error", "github webhook secret not configured", { event, deliveryId });
+    log("error", "github webhook secret not configured", { app, event, deliveryId });
     return json({ error: "webhook_secret_not_configured" }, 500);
   }
 
   const body = await request.text();
   if (!(await verifyGitHubSignature(secret, body, request.headers.get("x-hub-signature-256")))) {
-    log("warn", "github webhook signature rejected", { event, deliveryId });
+    log("warn", "github webhook signature rejected", { app, event, deliveryId });
     return json({ error: "invalid_signature" }, 401);
   }
 
   if (event === "ping") {
-    log("log", "github webhook received", { event, deliveryId });
+    log("log", "github webhook received", { app, event, deliveryId });
     return json({ ok: true }, 200);
   }
 
@@ -62,8 +89,10 @@ export async function handleRequest(request: Request, env: Env): Promise<Respons
     // A signed body that isn't JSON: nothing to act on.
   }
 
-  const message = toWebhookMessage(event, deliveryId, payload);
+  const parsed = toWebhookMessage(event, deliveryId, payload);
+  const message = parsed && route.events.has(parsed.event) ? { ...parsed, app } : null;
   const summary = {
+    app,
     event,
     deliveryId,
     action: (payload as any)?.action,

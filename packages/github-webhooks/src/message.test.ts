@@ -127,4 +127,36 @@ describe("toWebhookMessage", () => {
       ).not.toBeNull();
     });
   });
+
+  describe("check_suite", () => {
+    const payload = (action: string) => ({
+      action,
+      installation: { id: 7 },
+      repository: { id: 1, full_name: "acme/app" },
+      check_suite: {
+        id: 99,
+        head_sha: "abc",
+        head_branch: "feat/x",
+        pull_requests: [{ number: 3, head: { sha: "abc" } }],
+        app: { id: 5672393 },
+      },
+    });
+
+    test("keeps the suite id, head commit and pull request numbers", () => {
+      expect(toWebhookMessage("check_suite", "d", payload("requested"), "t")).toEqual({
+        deliveryId: "d",
+        action: "requested",
+        installationId: 7,
+        receivedAt: "t",
+        event: "check_suite",
+        repository: { id: 1, fullName: "acme/app" },
+        checkSuite: { id: 99, headSha: "abc", headBranch: "feat/x", pullRequests: [3] },
+      });
+      expect(toWebhookMessage("check_suite", "d", payload("rerequested"))).not.toBeNull();
+    });
+
+    test("drops completed suites", () => {
+      expect(toWebhookMessage("check_suite", "d", payload("completed"))).toBeNull();
+    });
+  });
 });

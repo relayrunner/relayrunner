@@ -147,6 +147,21 @@ describe("webhook queue consumer", () => {
     log.mockRestore();
   });
 
+  test("only logs Checks App deliveries, even ones the main App acts on", async () => {
+    const log = vi.spyOn(console, "log").mockImplementation(() => {});
+    start.mockClear();
+    vi.mocked(recordWorkflowJob).mockClear();
+    await consumer.processWebhook(env, { ...workflowJob(["relayrunner"]), app: "checks" });
+    expect(recordWorkflowJob).not.toHaveBeenCalled();
+    expect(start).not.toHaveBeenCalled();
+    expect(JSON.parse(log.mock.calls[0][0])).toMatchObject({
+      msg: "checks app webhook received",
+      event: "workflow_job",
+      repository: "relayrunner/relayrunner",
+    });
+    log.mockRestore();
+  });
+
   test("starts a container runner for a queued relayrunner-container job from an allowed org", async () => {
     const log = vi.spyOn(console, "log").mockImplementation(() => {});
     const startContainer = vi.fn();
