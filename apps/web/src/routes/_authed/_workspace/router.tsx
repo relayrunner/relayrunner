@@ -45,6 +45,8 @@ function RouterPage() {
       </PageHeader>
       <div className="grid max-w-3xl gap-3">
         <RunnerOrderEditor
+          // The page can first show cached data, then fresh: remount when the saved order changes.
+          key={loaded.order.steps.map((step) => step.key).join(",")}
           workspaceId={current.workspace.id}
           order={loaded.order}
           isDefault={loaded.isDefault}

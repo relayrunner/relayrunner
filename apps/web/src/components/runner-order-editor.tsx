@@ -22,6 +22,7 @@ import {
   type RunnerStep,
 } from "@relayrunner/runner-order";
 import { ArrowDownIcon, ArrowUpIcon, GripVerticalIcon, PlusIcon, XIcon } from "lucide-react";
+import { useRouter } from "@tanstack/react-router";
 import { useState, type ReactNode } from "react";
 import { Button } from "@/components/ui/button";
 import { RunnerOrderError, saveRunnerOrder } from "@/lib/runner-order";
@@ -54,6 +55,7 @@ export function RunnerOrderEditor({
   meta: (key: RunnerKey) => string;
   body: (key: RunnerKey) => ReactNode;
 }) {
+  const router = useRouter();
   const [saved, setSaved] = useState({ steps: order.steps, isDefault });
   const [steps, setSteps] = useState<RunnerStep[]>(order.steps);
   const [status, setStatus] = useState<SaveStatus>({ kind: "idle" });
@@ -82,6 +84,8 @@ export function RunnerOrderEditor({
       const result = await saveRunnerOrder(workspaceId, { steps });
       setSaved({ steps: result.order.steps, isDefault: result.isDefault });
       setStatus({ kind: "saved" });
+      // Cached loader data (this page's, the Runners page's) still holds the old order.
+      void router.invalidate();
     } catch (error) {
       const message =
         error instanceof RunnerOrderError && error.reason
