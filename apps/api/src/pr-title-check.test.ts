@@ -51,16 +51,19 @@ describe("parseRepoConfig", () => {
       kind: "config",
       path: "relayrunner.yml",
       prTitle: { types: [] },
+      lint: null,
     });
     expect(parseRepoConfig("p", "")).toEqual({
       kind: "config",
       path: "p",
       prTitle: null,
+      lint: null,
     });
     expect(parseRepoConfig("p", "checks:\n  pr-title:\n    types: feat, fix\n")).toEqual({
       kind: "config",
       path: "p",
       prTitle: { types: ["feat", "fix"] },
+      lint: null,
     });
   });
 
@@ -69,5 +72,26 @@ describe("parseRepoConfig", () => {
     const unknown = parseRepoConfig("p", "chekcs: {}\n");
     expect(unknown.kind === "invalid" && unknown.error).toContain("chekcs");
     expect(parseRepoConfig("p", "checks:\n  pr-title: yes please\n").kind).toBe("invalid");
+  });
+
+  test("reads lint as a tool list or with paths, alongside pr-title", () => {
+    const both = parseRepoConfig(
+      "p",
+      "checks:\n  pr-title: true\n  lint: [oxlint, oxfmt, oxlint]\n",
+    );
+    expect(both).toMatchObject({
+      prTitle: { types: [] },
+      lint: { tools: ["oxlint", "oxfmt"], paths: [] },
+    });
+    expect(
+      parseRepoConfig("p", 'checks:\n  lint:\n    tools: [ruff]\n    paths: ["py/**"]\n'),
+    ).toMatchObject({ prTitle: null, lint: { tools: ["ruff"], paths: ["py/**"] } });
+  });
+
+  test("rejects unknown lint tools and empty lists", () => {
+    const unknown = parseRepoConfig("p", "checks:\n  lint: [eslint]\n");
+    expect(unknown.kind === "invalid" && unknown.error).toContain("checks.lint");
+    expect(parseRepoConfig("p", "checks:\n  lint: []\n").kind).toBe("invalid");
+    expect(parseRepoConfig("p", "checks:\n  lint:\n    tool: [ruff]\n").kind).toBe("invalid");
   });
 });
