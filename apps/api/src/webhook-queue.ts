@@ -118,6 +118,9 @@ export function usesRelayRunner(labels: string[]) {
   return labels.some((label) => label.toLowerCase() === RELAYRUNNER_LABEL);
 }
 
+const isFinished = (message: Extract<WebhookMessage, { event: "workflow_job" }>) =>
+  message.job.status === "completed";
+
 // 30s, 60s, 120s, ... capped at 15 minutes. `attempts` starts at 1.
 export function retryDelaySeconds(attempts: number) {
   return Math.min(
@@ -283,7 +286,7 @@ async function dispatchRoute(
     const machineId = workspaceId
       ? await env.ROUTER.getByName(workspaceId).machineFor(routeId, job)
       : null;
-    if (machineId) await setJobMachine(db, message.job.id, machineId);
+    if (machineId) await setJobMachine(db, message.job.id, machineId, isFinished(message));
     console.log(JSON.stringify(log));
     return;
   }
@@ -292,7 +295,7 @@ async function dispatchRoute(
     console.warn(JSON.stringify({ ...log, result: "no_route" }));
     return;
   }
-  await setJobMachine(db, message.job.id, route.machineId);
+  await setJobMachine(db, message.job.id, route.machineId, false);
   const result = await env.MACHINE_LINK.getByName(route.machineId).run({ route, workspaceId });
   (result === "offline" ? console.warn : console.log)(
     JSON.stringify({ ...log, result, machineId: route.machineId }),
@@ -344,7 +347,7 @@ async function trackRunnerJob(
     message.action === "queued"
       ? await router.claimRunner(machine.id, job)
       : await router.releaseRunnerJob(machine.id, job);
-  if (route) await setJobMachine(db, message.job.id, machine.id);
+  if (route) await setJobMachine(db, message.job.id, machine.id, isFinished(message));
   console.log(
     JSON.stringify({ ...log, result: route ? "tracked" : "no_route", machineId: machine.id }),
   );

@@ -1,7 +1,7 @@
 import { createFileRoute } from "@tanstack/react-router";
 import { type ReactNode, useState } from "react";
 import { PageHeader } from "@/components/page-header";
-import { Button } from "@/components/ui/button";
+import { RangePicker } from "@/components/range-picker";
 import { Card } from "@/components/ui/card";
 import { authDisabled } from "@/lib/auth-client";
 import {
@@ -40,7 +40,6 @@ function UsagePage() {
   const [days, setDays] = useState<number>(first.report.days);
 
   function chooseRange(next: number) {
-    if (next === days) return;
     setDays(next);
     load(next)
       .then(setData)
@@ -57,19 +56,7 @@ function UsagePage() {
         minute, rounded up, so a job that finishes in seconds still pays for a whole minute.
       </PageHeader>
       <div className="grid max-w-4xl gap-6">
-        <div role="group" aria-label="Range" className="flex gap-1.5">
-          {RANGES.map((value) => (
-            <Button
-              key={value}
-              size="sm"
-              variant={days === value ? "secondary" : "ghost"}
-              aria-pressed={days === value}
-              onClick={() => chooseRange(value)}
-            >
-              {value} days
-            </Button>
-          ))}
-        </div>
+        <RangePicker ranges={RANGES} days={days} onChange={chooseRange} />
 
         {checks.checks > 0 && <FreeChecks savings={checks} />}
 

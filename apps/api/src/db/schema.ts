@@ -2,6 +2,7 @@
 // account, verification), then the organization plugin's, renamed to workspaces (see auth.ts).
 // Gateway tables (installations and their repos, then machines and routes) follow. After changing anything
 // here, run `pnpm db:generate` to write a new migration.
+import { sql } from "drizzle-orm";
 import { index, integer, real, sqliteTable, text, uniqueIndex } from "drizzle-orm/sqlite-core";
 
 const timestamps = {
@@ -337,13 +338,31 @@ export const jobTiming = sqliteTable(
     runnerName: text("runner_name"),
     // With labels, decides the job's GitHub rate when the report is read (runnerClass).
     runnerGroupName: text("runner_group_name"),
+    // The machine a route sent the job to, copied from workflow_job when the job finishes, since
+    // the job's `rr-<route id>` label stops naming a machine once the route goes. Job times
+    // (src/job-times.ts) report it as its own environment.
+    machineId: text("machine_id"),
+    // When GitHub queued the job, for the wait before a runner took it.
+    queuedAt: integer("queued_at", { mode: "timestamp_ms" }),
     startedAt: integer("started_at", { mode: "timestamp_ms" }),
     completedAt: integer("completed_at", { mode: "timestamp_ms" }),
     ...timestamps,
   },
   (table) => [
-    // The report: one workspace's installations over a time range.
+    // The usage report and job times: one workspace's installations over a time range.
     index("job_timing_installation_idx").on(table.installationId, table.completedAt),
+    // Each machine's recent jobs, for its card on the Runners page. Partial: most jobs never ran
+    // on a machine.
+    index("job_timing_machine_idx")
+      .on(table.machineId, table.completedAt)
+      .where(sql`${table.machineId} is not null`),
+    // One job's recent runs, for the job times detail.
+    index("job_timing_job_idx").on(
+      table.repositoryId,
+      table.workflowName,
+      table.name,
+      table.completedAt,
+    ),
     // The retention purge, across all installations.
     index("job_timing_completed_idx").on(table.completedAt),
   ],

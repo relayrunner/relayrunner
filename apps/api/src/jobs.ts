@@ -94,11 +94,21 @@ export async function recordWorkflowJob(
  * webhook never moves a job to another machine. A job that wasn't stored (no pick in its run) is
  * left alone.
  */
-export async function setJobMachine(db: Db, jobId: number, machineId: string) {
-  await db
+export async function setJobMachine(db: Db, jobId: number, machineId: string, finished: boolean) {
+  const job = db
     .update(table)
     .set({ machineId })
     .where(and(eq(table.id, jobId), isNull(table.machineId)));
+  // A finished job's timing row too, in case it was written before this row knew its machine.
+  // Earlier actions have no timing row yet.
+  if (!finished) return void (await job);
+  await db.batch([
+    job,
+    db
+      .update(schema.jobTiming)
+      .set({ machineId })
+      .where(and(eq(schema.jobTiming.id, jobId), isNull(schema.jobTiming.machineId))),
+  ]);
 }
 
 async function runHasPick(db: Db, runId: number) {

@@ -14,6 +14,7 @@ import { healthRoutes } from "./routes/health.ts";
 import { inviteRoutes } from "./routes/invites.ts";
 import { machineRoutes } from "./routes/machines.ts";
 import { meRoutes } from "./routes/me.ts";
+import { jobTimesRoutes } from "./routes/job-times.ts";
 import { usageRoutes } from "./routes/usage.ts";
 import { workspaceRoutes } from "./routes/workspaces.ts";
 
@@ -50,6 +51,7 @@ app.route("/workspaces", workspaceRoutes);
 app.route("/invites", inviteRoutes);
 app.route("/activity", activityRoutes);
 app.route("/usage", usageRoutes);
+app.route("/job-times", jobTimesRoutes);
 app.route("/github", githubRoutes);
 app.route("/machines", machineRoutes);
 // Operator admin over D1 (users, workspaces): Access (above) and an operator session.
