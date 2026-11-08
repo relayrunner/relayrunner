@@ -2,7 +2,7 @@
 // account, verification), then the organization plugin's, renamed to workspaces (see auth.ts).
 // Gateway tables (installations and their repos, then machines and routes) follow. After changing anything
 // here, run `pnpm db:generate` to write a new migration.
-import { index, integer, sqliteTable, text, uniqueIndex } from "drizzle-orm/sqlite-core";
+import { index, integer, real, sqliteTable, text, uniqueIndex } from "drizzle-orm/sqlite-core";
 
 const timestamps = {
   createdAt: integer("created_at", { mode: "timestamp_ms" })
@@ -419,5 +419,83 @@ export const routeDecision = sqliteTable(
   },
   (table) => [
     uniqueIndex("route_decision_run_idx").on(table.repositoryId, table.runId, table.runAttempt),
+  ],
+);
+
+// GitHub Actions usage this billing cycle from each org's billing usage report (#116,
+// src/actions-billing.ts): one row per installation, cycle, repo and SKU, summed over the cycle's
+// days and replaced on every poll. Keyed by installation, never workspace, because each GitHub
+// account has its own included quota.
+export const actionsUsage = sqliteTable(
+  "actions_usage",
+  {
+    id: integer("id").primaryKey({ autoIncrement: true }),
+    installationId: integer("installation_id")
+      .notNull()
+      .references(() => githubInstallation.id, { onDelete: "cascade" }),
+    // Start of the billing cycle (UTC month).
+    cycleStart: integer("cycle_start", { mode: "timestamp_ms" }).notNull(),
+    // The repo's name within the org, as billing reports it ("" when GitHub omits it).
+    repositoryName: text("repository_name").notNull(),
+    // e.g. "Actions Linux", "Actions macOS".
+    sku: text("sku").notNull(),
+    unitType: text("unit_type").notNull(),
+    // Minutes for runner SKUs.
+    quantity: real("quantity").notNull(),
+    // USD before and after GitHub's discounts (included quota, public repos, self-hosted).
+    grossAmount: real("gross_amount").notNull(),
+    netAmount: real("net_amount").notNull(),
+    ...timestamps,
+  },
+  (table) => [
+    uniqueIndex("actions_usage_row_idx").on(
+      table.installationId,
+      table.cycleStart,
+      table.repositoryName,
+      table.sku,
+    ),
+  ],
+);
+
+// What the last billing poll of an installation found: its plan, its Actions budget, and whether
+// usage could be read at all. One row per installation.
+export const actionsBilling = sqliteTable("actions_billing", {
+  installationId: integer("installation_id")
+    .primaryKey({ autoIncrement: false })
+    .references(() => githubInstallation.id, { onDelete: "cascade" }),
+  // GET /orgs/{org} plan.name, e.g. "free", "team", "enterprise".
+  plan: text("plan"),
+  // The org's Actions budget in whole USD, and whether GitHub blocks jobs once it's spent. Null when
+  // the org has no Actions budget.
+  budgetAmount: integer("budget_amount"),
+  budgetPreventFurtherUsage: integer("budget_prevent_further_usage", { mode: "boolean" }),
+  // Why the latest poll couldn't read usage: "missing_permission" or "error". Null when it could.
+  failure: text("failure"),
+  error: text("error"),
+  // The latest poll attempt, and the latest one that read usage.
+  checkedAt: integer("checked_at", { mode: "timestamp_ms" }).notNull(),
+  readAt: integer("read_at", { mode: "timestamp_ms" }),
+  ...timestamps,
+});
+
+// Each successful poll's running total for the cycle, kept for 48 hours, so the minutes rule (#117)
+// can see how fast an account is burning through its quota.
+export const actionsUsageReading = sqliteTable(
+  "actions_usage_reading",
+  {
+    id: integer("id").primaryKey({ autoIncrement: true }),
+    installationId: integer("installation_id")
+      .notNull()
+      .references(() => githubInstallation.id, { onDelete: "cascade" }),
+    readAt: integer("read_at", { mode: "timestamp_ms" }).notNull(),
+    // Start of the billing cycle (UTC month) the totals belong to.
+    cycleStart: integer("cycle_start", { mode: "timestamp_ms" }).notNull(),
+    usedMinutes: real("used_minutes").notNull(),
+    grossAmount: real("gross_amount").notNull(),
+    netAmount: real("net_amount").notNull(),
+  },
+  (table) => [
+    index("actions_usage_reading_installation_idx").on(table.installationId, table.readAt),
+    index("actions_usage_reading_read_idx").on(table.readAt),
   ],
 );
