@@ -130,8 +130,8 @@ export function RunnerOrderEditor({
       ))}
 
       <p className="text-sm text-muted-foreground">
-        Jobs use the first provider here that they configure and that can take them. Jobs nothing
-        fits won't run.
+        A job only uses the steps its workflow names. Public repos skip self-hosted runners. If no
+        step can take a job, it stops early and says why.
       </p>
 
       {(dirty || status.kind !== "idle") && (

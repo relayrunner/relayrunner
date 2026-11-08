@@ -32,7 +32,7 @@ import {
 } from "@/lib/machines";
 import { cn } from "@/lib/utils";
 
-const CONNECT_COMMAND = "npx relayrunner connect";
+export const CONNECT_COMMAND = "npx relayrunner connect";
 
 /**
  * "Add runner" menu on the Runners page: a self-hosted runner already registered on GitHub, a

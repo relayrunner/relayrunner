@@ -5,6 +5,7 @@ import type { Env } from "./env.ts";
 import type { ActivityPage } from "@relayrunner/activity";
 import * as testing from "./testing.ts";
 import { processWebhook } from "./webhook-queue.ts";
+import { runningJobs } from "./jobs.ts";
 import { recordPick } from "./route-decisions.ts";
 import { decideRoute } from "./routing.ts";
 
@@ -544,5 +545,50 @@ describe("Activity", () => {
       const bad = await testing.call(env, `/activity${query}`, cookie);
       expect(bad.status).toBe(400);
     }
+  });
+});
+
+describe("runningJobs", () => {
+  test("gives each machine its newest in-progress job, and nothing for idle ones", async () => {
+    const { installationId, workspaceId, runId } = await connectedWorkspace();
+    const db = createDb(env.DB);
+    await db.insert(schema.machine).values([
+      { id: `busy-${runId}`, workspaceId, name: "busy" },
+      { id: `idle-${runId}`, workspaceId, name: "idle" },
+    ]);
+    const row = (id: number, status: string, created: number, machineId: string) => ({
+      id,
+      installationId,
+      repositoryId: 55,
+      repositoryFullName: "acme/app",
+      runId,
+      runAttempt: 1,
+      kind: "job" as const,
+      workflowName: "CI",
+      name: `job-${id}`,
+      labels: ["rr-0123456789ab"],
+      headSha: "abc",
+      status,
+      machineId,
+      githubCreatedAt: new Date(created),
+      startedAt: new Date(created + 1000),
+    });
+    await db.insert(schema.workflowJob).values([
+      // A row stuck in_progress from a lost `completed` webhook, older than the real one.
+      row(runId + 1, "in_progress", 1_000, `busy-${runId}`),
+      row(runId + 2, "in_progress", 5_000, `busy-${runId}`),
+      row(runId + 3, "completed", 9_000, `idle-${runId}`),
+    ]);
+
+    const jobs = await runningJobs(db, [`busy-${runId}`, `idle-${runId}`]);
+    expect(jobs.get(`busy-${runId}`)).toEqual({
+      repository: "acme/app",
+      workflow: "CI",
+      name: `job-${runId + 2}`,
+      url: `https://github.com/acme/app/actions/runs/${runId}/job/${runId + 2}`,
+      startedAt: new Date(6_000).toISOString(),
+    });
+    expect(jobs.has(`idle-${runId}`)).toBe(false);
+    expect((await runningJobs(db, [])).size).toBe(0);
   });
 });

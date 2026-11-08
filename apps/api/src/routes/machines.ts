@@ -1,5 +1,6 @@
 import { recordEvent } from "../activity.ts";
 import { and, asc, eq, inArray, isNotNull, isNull } from "drizzle-orm";
+import { alias } from "drizzle-orm/sqlite-core";
 import { Hono } from "hono";
 import { APIError } from "better-auth/api";
 import { HelloMessage } from "@relayrunner/machine-protocol";
@@ -8,6 +9,7 @@ import type { AppEnv } from "../app.ts";
 import { MACHINE_CLIENT_ID } from "../auth.ts";
 import { createDb, schema } from "../db/index.ts";
 import { isWorkspaceMember } from "../installations.ts";
+import { runningJobs } from "../jobs.ts";
 import { MACHINE_ID_HEADER, OFFLINE } from "../durable-objects/machine-session.ts";
 import {
   addOrgRunnerLabels,
@@ -267,14 +269,17 @@ export const machineRoutes = new Hono<AppEnv>()
     });
   })
   .get("/", requireUser, requireWorkspace, async (c) => {
+    const creator = alias(schema.user, "creator");
     const rows = await c.var.db
       .select({
         machine: schema.machine,
         pausedBy: schema.user.name,
+        createdBy: creator.name,
         org: schema.githubInstallation.accountLogin,
       })
       .from(schema.machine)
       .leftJoin(schema.user, eq(schema.user.id, schema.machine.pausedBy))
+      .leftJoin(creator, eq(creator.id, schema.machine.createdBy))
       .leftJoin(
         schema.githubInstallation,
         eq(schema.githubInstallation.id, schema.machine.installationId),
@@ -318,9 +323,21 @@ export const machineRoutes = new Hono<AppEnv>()
           : OFFLINE;
       }),
     );
+    // The job each busy machine is running, for its card.
+    const jobs = await runningJobs(
+      c.var.db,
+      rows
+        .filter((_, i) => statuses[i].online && statuses[i].state === "busy")
+        .map((row) => row.machine.id),
+    );
     return c.json({
       machines: rows.map((row, i) => {
-        const presented = presentMachine(row.machine, row.pausedBy);
+        const presented = {
+          ...presentMachine(row.machine, row.pausedBy),
+          // Who connected it. A runner added from GitHub belongs to its org instead.
+          owner: row.machine.source === "github" ? row.org : row.createdBy,
+          job: jobs.get(row.machine.id) ?? null,
+        };
         if (row.machine.source !== "github")
           return {
             ...presented,

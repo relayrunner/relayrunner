@@ -1,8 +1,7 @@
-import { DEFAULT_RUNNER_ORDER, type RunnerKey } from "@relayrunner/runner-order";
-import { createFileRoute, useRouter } from "@tanstack/react-router";
+import { DEFAULT_RUNNER_ORDER } from "@relayrunner/runner-order";
+import { Link, createFileRoute, useRouter } from "@tanstack/react-router";
 import {
   BanIcon,
-  CheckIcon,
   CopyIcon,
   EllipsisIcon,
   ExternalLinkIcon,
@@ -14,16 +13,15 @@ import {
 import { useEffect, useState } from "react";
 import {
   AddRunner,
+  CONNECT_COMMAND,
   GithubIcon,
   GithubRunnersDialog,
   runnerSettingsUrl,
 } from "@/components/add-runner";
 import { DeviceBadge } from "@/components/device-badge";
-import { RunnerOrderEditor } from "@/components/runner-order-editor";
 import { PageHeader } from "@/components/page-header";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import { Card, CardAction, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -45,15 +43,10 @@ import {
 import { canManage } from "@/lib/roles";
 import { getRunnerOrder } from "@/lib/runner-order";
 import { cn } from "@/lib/utils";
+import { whereJobsGo } from "@/lib/where-jobs-go";
 
 // How often the page refetches machines, so a machine connecting or going quiet shows up.
 const REFRESH_MS = 15_000;
-
-const machineBadge = {
-  idle: { variant: "go", label: "Online · Idle" },
-  busy: { variant: "run", label: "Online · Busy" },
-  offline: { variant: "idle", label: "Offline" },
-} as const;
 
 export const Route = createFileRoute("/_authed/_workspace/runners")({
   loader: async ({ context }) => {
@@ -72,7 +65,8 @@ export const Route = createFileRoute("/_authed/_workspace/runners")({
   component: RunnersPage,
 });
 
-// The page is the runner order (RunnerOrderEditor), with each provider's runners in its section.
+// The runners the workspace supplies, grouped as Self-hosted. Where jobs go is the Router's job;
+// the line at the top says what it means right now.
 function RunnersPage() {
   const loaded = Route.useLoaderData();
   const { current } = Route.useRouteContext();
@@ -85,11 +79,9 @@ function RunnersPage() {
     return () => clearInterval(timer);
   }, [router]);
 
-  // Owners and admins change the order (#134); members read it. The API refuses a member's save.
   const editable = canManage(current.role);
-
-  const body = (key: RunnerKey) =>
-    key === "machine" ? <MachineList machines={loaded.machines} /> : null;
+  const machines = loaded.machines.filter((machine) => !machine.revokedAt);
+  const status = whereJobsGo(loaded.order.steps, machines);
 
   // Runners in connected orgs that aren't added yet, for the banner. Owners and admins only, since
   // only they can add them; read once per visit, not on every refresh, since it asks GitHub.
@@ -124,13 +116,31 @@ function RunnersPage() {
           await findRunners();
         }}
       />
-      <PageHeader title="Runners" action={<AddRunner onAddExisting={() => setGithubOpen(true)} />}>
-        Jobs try these providers from top to bottom.{" "}
-        {editable
-          ? "Move a section to change the order."
-          : "Owners and admins can change the order."}
-      </PageHeader>
-      <div className="grid max-w-3xl gap-3">
+      <PageHeader
+        title="Runners"
+        action={<AddRunner onAddExisting={() => setGithubOpen(true)} />}
+      />
+      <div className="grid max-w-5xl gap-6">
+        <div
+          role="status"
+          className={cn(
+            "flex flex-wrap items-center gap-x-3 gap-y-1 rounded-lg border px-4 py-3",
+            status.tone === "go" ? "border-go-edge bg-go-soft" : "bg-card",
+          )}
+        >
+          <span
+            aria-hidden
+            className={cn(
+              "size-2.5 shrink-0 rounded-full",
+              status.tone === "go" ? "bg-go" : "bg-idle",
+            )}
+          />
+          <p className="min-w-0 flex-[1_1_20rem]">{status.text}</p>
+          <Link to="/router" className="text-sm text-go hover:text-go-hover">
+            Router
+          </Link>
+        </div>
+
         {found && found.count > 0 && !dismissed && (
           <div className="flex flex-wrap items-center gap-3 rounded-lg border border-go-edge bg-go-soft px-4 py-3">
             <SearchIcon aria-hidden className="size-4 shrink-0 text-go" />
@@ -155,44 +165,71 @@ function RunnersPage() {
             </Button>
           </div>
         )}
-        <RunnerOrderEditor
-          workspaceId={current.workspace.id}
-          order={loaded.order}
-          isDefault={loaded.isDefault}
-          editable={editable}
-          meta={(key) => meta(key, loaded.machines)}
-          body={body}
-        />
+
+        <section aria-labelledby="self-hosted" className="grid gap-3">
+          <div className="grid gap-0.5">
+            <h2 id="self-hosted" className="text-sm font-semibold">
+              Self-hosted
+            </h2>
+            <p className="text-xs text-muted-foreground">
+              Your machines and your org's runners. They take private repo jobs while they're
+              online.
+            </p>
+          </div>
+          {machines.length === 0 ? (
+            <ConnectFirst onAddExisting={editable ? () => setGithubOpen(true) : undefined} />
+          ) : (
+            <ul className="grid gap-3 sm:grid-cols-2 xl:grid-cols-3">
+              {machines.map((machine) => (
+                <li key={machine.id} className="grid">
+                  <MachineCard machine={machine} />
+                </li>
+              ))}
+            </ul>
+          )}
+        </section>
       </div>
     </section>
   );
 }
 
-function meta(key: RunnerKey, machines: Machine[]) {
-  if (key === "github") return "Runs on the label the job sets in relay.yml's github input.";
-  if (key === "blacksmith")
-    return "Runs on the label the job sets in relay.yml's blacksmith input · needs Blacksmith's GitHub App on the org";
-  const active = machines.filter((machine) => !machine.revokedAt);
-  const count = active.length;
-  const paused = active.filter((machine) => machine.paused).length;
-  return `${count} ${count === 1 ? "machine" : "machines"}${paused ? ` · ${paused} paused` : ""} · spread by least recently picked · never for public repos`;
-}
-
-function MachineList({ machines }: { machines: Machine[] }) {
-  if (machines.length === 0) {
-    return (
-      <Card className="py-4">
-        <CardHeader className="px-4">
-          <CardTitle className="text-sm font-medium">No machines yet</CardTitle>
-          <CardDescription>
-            Run <code className="font-mono">npx relayrunner connect</code> on a laptop or server to
-            add it.
-          </CardDescription>
-        </CardHeader>
-      </Card>
-    );
+// No runners yet: the connect command is the whole onboarding.
+function ConnectFirst({ onAddExisting }: { onAddExisting?: () => void }) {
+  const [copied, setCopied] = useState(false);
+  async function copy() {
+    try {
+      await navigator.clipboard.writeText(CONNECT_COMMAND);
+      setCopied(true);
+      setTimeout(() => setCopied(false), 1500);
+    } catch {
+      // Clipboard can be blocked; the command is still there to select.
+    }
   }
-  return machines.map((machine) => <MachineCard key={machine.id} machine={machine} />);
+  return (
+    <div className="grid gap-5 rounded-lg border bg-card p-6 sm:p-8">
+      <div className="grid max-w-[60ch] gap-2">
+        <h3 className="text-lg font-semibold">Run CI on your laptop while you work</h3>
+        <p className="text-muted-foreground">
+          Run this in a terminal on the computer you want CI on. Private repo jobs run there while
+          it's open. Close it and they go back to GitHub.
+        </p>
+      </div>
+      <div className="flex max-w-xl items-center justify-between gap-3 rounded-md border bg-background py-2 pr-2 pl-4 font-mono text-sm">
+        <span className="truncate">{CONNECT_COMMAND}</span>
+        <Button size="sm" className="font-sans" onClick={() => void copy()}>
+          {copied ? "Copied" : "Copy"}
+        </Button>
+      </div>
+      {onAddExisting && (
+        <p className="text-sm text-muted-foreground">
+          Already have a self-hosted runner on GitHub?{" "}
+          <button type="button" className="text-go hover:text-go-hover" onClick={onAddExisting}>
+            Add it instead
+          </button>
+        </p>
+      )}
+    </div>
+  );
 }
 
 function MachineCard({ machine }: { machine: Machine }) {
@@ -227,7 +264,7 @@ function MachineCard({ machine }: { machine: Machine }) {
     try {
       await navigator.clipboard.writeText((machine.labels ?? []).join(", "));
     } catch {
-      // Clipboard can be blocked; the chips are still readable and copy one at a time.
+      // Clipboard can be blocked; the labels are also on GitHub and in relay.yml.
     }
   }
 
@@ -236,19 +273,27 @@ function MachineCard({ machine }: { machine: Machine }) {
   const paused = machine.paused ?? null;
   const missing = github?.missing ?? false;
   const live = missing
-    ? ({ variant: "outline", label: "Not found on GitHub" } as const)
+    ? { dot: "bg-destructive", label: "Not found on GitHub" }
     : paused
-      ? pausedBadge(status)
-      : machineBadge[status.online ? (status.state ?? "idle") : "offline"];
-  const seen = isGithub
+      ? { dot: "bg-run", label: status.online ? "Paused" : "Offline · Paused" }
+      : status.online
+        ? { dot: "bg-go", label: "Online" }
+        : { dot: "bg-idle", label: "Offline" };
+  const job = status.online && status.state === "busy" ? (machine.job ?? null) : null;
+  // What the machine is doing, or why it isn't.
+  const now = missing
     ? githubLine(github, paused, status)
     : paused
       ? pausedLine(paused, status)
       : status.online
-        ? status.connectedAt && `Connected ${timeAgo(status.connectedAt)}`
-        : machine.lastSeenAt
-          ? `Last seen ${timeAgo(machine.lastSeenAt)}`
-          : "Never connected";
+        ? status.state === "busy"
+          ? "Running a job"
+          : "Waiting for a job"
+        : isGithub
+          ? githubLine(github, paused, status) || "Offline on GitHub"
+          : machine.lastSeenAt
+            ? `Last seen ${timeAgo(machine.lastSeenAt)}`
+            : "Never connected";
   const githubUrl =
     github?.org && github.runnerId
       ? `${runnerSettingsUrl(github.org)}/${github.runnerId}`
@@ -257,36 +302,28 @@ function MachineCard({ machine }: { machine: Machine }) {
         : null;
 
   return (
-    <Card
+    <article
+      aria-label={machine.name}
       className={cn(
-        "py-4",
+        "grid content-start gap-3 rounded-lg border p-4",
+        status.online && !missing ? "bg-card" : "bg-background",
         paused && "border-run-edge/60",
         missing && "border-destructive/50 bg-destructive/5",
       )}
     >
-      <CardHeader className="px-4">
-        <CardTitle className="flex flex-wrap items-center gap-2 self-center">
-          <span className="font-mono text-sm font-medium">{machine.name}</span>
-          {isGithub && (
-            <Badge variant="outline" className="gap-1 font-normal text-muted-foreground">
-              <GithubIcon className="size-3" />
-              GitHub runner
-            </Badge>
-          )}
-          {!isGithub && machine.device && <DeviceBadge device={machine.device} />}
-        </CardTitle>
-        {/* Full width under the name and the actions, so a long paused line fits on a phone. */}
-        <CardDescription className="col-span-2">
-          {seen || "Your machine"}
-          {error && <span className="block text-destructive">{error}</span>}
-        </CardDescription>
-        <CardAction className="row-span-1 flex items-center gap-2">
-          <Badge
-            variant={live.variant}
-            className={cn(missing && "border-destructive/60 text-destructive")}
+      <div className="flex items-center justify-between gap-2">
+        <h3 className="min-w-0 truncate font-mono text-[15px] font-medium">{machine.name}</h3>
+        <div className="flex shrink-0 items-center gap-1">
+          <span
+            className={cn(
+              "mr-1 flex items-center gap-1.5 text-sm",
+              status.online ? "text-foreground" : "text-muted-foreground",
+              missing && "text-destructive",
+            )}
           >
+            <span aria-hidden className={cn("size-2 rounded-full", live.dot)} />
             {live.label}
-          </Badge>
+          </span>
           {confirming ? (
             <>
               <Button
@@ -314,8 +351,7 @@ function MachineCard({ machine }: { machine: Machine }) {
             </>
           ) : (
             <>
-              {/* Pausing is rare and lives in the menu; resuming is the one thing a paused
-                  machine needs, so it gets the button. */}
+              {/* Resuming is the one thing a paused machine needs, so it gets a button. */}
               {paused && (
                 <Button
                   size="sm"
@@ -324,10 +360,7 @@ function MachineCard({ machine }: { machine: Machine }) {
                   onClick={() => void act("resume")}
                 >
                   <PlayIcon aria-hidden />
-                  {/* Icon only on a phone, so the badge and the name keep their room. */}
-                  <span className="sr-only sm:not-sr-only">
-                    {pending === "resume" ? "Resuming…" : "Resume"}
-                  </span>
+                  {pending === "resume" ? "Resuming…" : "Resume"}
                 </Button>
               )}
               <DropdownMenu>
@@ -361,7 +394,12 @@ function MachineCard({ machine }: { machine: Machine }) {
                   {machine.labels && machine.labels.length > 0 && (
                     <DropdownMenuItem onSelect={() => void copyLabels()}>
                       <CopyIcon aria-hidden />
-                      Copy labels
+                      <span className="grid">
+                        <span>Copy labels</span>
+                        <span className="truncate font-mono text-xs text-muted-foreground">
+                          {machine.labels.join(", ")}
+                        </span>
+                      </span>
                     </DropdownMenuItem>
                   )}
                   {githubUrl && (
@@ -395,17 +433,41 @@ function MachineCard({ machine }: { machine: Machine }) {
               </DropdownMenu>
             </>
           )}
-        </CardAction>
-        {/* Full width under the name and the actions, so the chips have room on a phone. */}
-        {machine.labels && machine.labels.length > 0 && (
-          <MachineLabels
-            labels={machine.labels}
-            routingLabel={machine.routingLabel ?? null}
-            dimmed={paused !== null || missing}
-          />
+        </div>
+      </div>
+
+      <div className="-mt-1 flex flex-wrap items-center gap-2 text-sm text-muted-foreground">
+        {isGithub ? (
+          <Badge variant="outline" className="gap-1 font-normal text-muted-foreground">
+            <GithubIcon className="size-3" />
+            GitHub runner
+          </Badge>
+        ) : (
+          machine.device && <DeviceBadge device={machine.device} />
         )}
-      </CardHeader>
-    </Card>
+        {machine.owner && <span className="truncate">{machine.owner}</span>}
+      </div>
+
+      <div
+        className={cn(
+          "rounded-md bg-background px-3 py-2 text-sm",
+          job ? "text-foreground" : "text-muted-foreground",
+          missing && "text-destructive",
+        )}
+      >
+        {job ? (
+          <a href={job.url} target="_blank" rel="noreferrer" className="hover:underline">
+            Running {job.repository} · {job.name}
+            {job.startedAt && (
+              <span className="text-muted-foreground"> · started {timeAgo(job.startedAt)}</span>
+            )}
+          </a>
+        ) : (
+          now
+        )}
+      </div>
+      {error && <p className="text-sm text-destructive">{error}</p>}
+    </article>
   );
 }
 
@@ -422,14 +484,6 @@ function githubLine(
   return [github?.org && `In ${github.org}`, github?.access].filter(Boolean).join(" · ");
 }
 
-// A paused machine's badge: still online or not, and whether it's finishing a job.
-function pausedBadge(status: { online: boolean; state: "idle" | "busy" | null }) {
-  if (!status.online) return { variant: "paused", label: "Offline · Paused" } as const;
-  if (status.state === "busy")
-    return { variant: "paused", label: "Paused · Finishing job" } as const;
-  return { variant: "paused", label: "Online · Paused" } as const;
-}
-
 function pausedLine(
   paused: { at: string; by: string | null },
   status: { online: boolean; state: "idle" | "busy" | null },
@@ -440,63 +494,4 @@ function pausedLine(
       ? "finishing its job, then no new jobs"
       : "jobs skip it until it's resumed";
   return `${who} ${timeAgo(paused.at)} · ${then}`;
-}
-
-// The labels a job's `machine:` input matches. Clicking one copies it.
-function MachineLabels({
-  labels,
-  routingLabel = null,
-  dimmed = false,
-}: {
-  labels: string[];
-  /** RelayRunner's own label on a GitHub runner, shown dashed so it reads as ours. */
-  routingLabel?: string | null;
-  dimmed?: boolean;
-}) {
-  const [copied, setCopied] = useState<string | null>(null);
-
-  async function copy(label: string) {
-    try {
-      await navigator.clipboard.writeText(label);
-      setCopied(label);
-      setTimeout(() => setCopied((current) => (current === label ? null : current)), 1500);
-    } catch {
-      // Clipboard can be blocked (insecure origin, permissions); the label is still readable.
-    }
-  }
-
-  return (
-    <ul
-      className={cn("col-span-2 flex flex-wrap items-center gap-1.5", dimmed && "opacity-60")}
-      aria-label="Labels"
-    >
-      {labels.map((label) => (
-        <li key={label} className="flex">
-          <Badge asChild variant="outline" className="font-mono font-normal">
-            <button
-              type="button"
-              className="cursor-pointer hover:bg-accent hover:text-accent-foreground"
-              title="Copy label"
-              aria-label={copied === label ? `Copied ${label}` : `Copy ${label}`}
-              onClick={() => void copy(label)}
-            >
-              {copied === label && <CheckIcon />}
-              {label}
-            </button>
-          </Badge>
-        </li>
-      ))}
-      {routingLabel && (
-        <li className="flex">
-          <Badge
-            variant="outline"
-            className="border-dashed font-mono font-normal text-muted-foreground"
-            title="Added by RelayRunner to route jobs to this runner"
-          >
-            {routingLabel}
-          </Badge>
-        </li>
-      )}
-    </ul>
-  );
 }

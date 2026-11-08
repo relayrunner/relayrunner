@@ -46,6 +46,19 @@ export type Machine = {
    * predates it.
    */
   device?: MachineDevice | null;
+  /**
+   * Who connected it, or the org a runner added from GitHub belongs to. Missing from an API that
+   * predates it.
+   */
+  owner?: string | null;
+  /** The job it's running, while it reports itself busy. Missing from an API that predates it. */
+  job?: {
+    repository: string;
+    workflow: string | null;
+    name: string;
+    url: string;
+    startedAt: string | null;
+  } | null;
   /** Live, from the machine's connection (or GitHub, for a GitHub runner). */
   status?: {
     online: boolean;

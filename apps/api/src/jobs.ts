@@ -1,6 +1,6 @@
 import type { ActivityJob, ActivityRunner, RouteWalk } from "@relayrunner/activity";
 import type { WebhookMessage } from "@relayrunner/github-webhooks";
-import { and, eq, isNull, type SQL, sql } from "drizzle-orm";
+import { and, desc, eq, inArray, isNull, type SQL, sql } from "drizzle-orm";
 import { recordEvent } from "./activity.ts";
 import { type Db, schema } from "./db/index.ts";
 import { findInstallation } from "./installations.ts";
@@ -99,6 +99,48 @@ export async function setJobMachine(db: Db, jobId: number, machineId: string) {
     .update(table)
     .set({ machineId })
     .where(and(eq(table.id, jobId), isNull(table.machineId)));
+}
+
+/** The job a machine is running, for its card on the Runners page. */
+export type RunningJob = {
+  repository: string;
+  workflow: string | null;
+  name: string;
+  url: string;
+  /** ISO time GitHub says it started, or null when it hasn't said. */
+  startedAt: string | null;
+};
+
+/**
+ * Each machine's in-progress job, by machine id. A machine runs one job at a time, so when an old
+ * row is stuck in_progress (a lost `completed` webhook) the newest one wins. Callers show it only
+ * while the machine reports itself busy, so a stuck row never shows on an idle machine.
+ */
+export async function runningJobs(db: Db, machineIds: string[]) {
+  const jobs = new Map<string, RunningJob>();
+  if (machineIds.length === 0) return jobs;
+  const rows = await db
+    .select()
+    .from(table)
+    .where(
+      and(
+        inArray(table.machineId, machineIds),
+        eq(table.kind, "job"),
+        eq(table.status, "in_progress"),
+      ),
+    )
+    .orderBy(desc(table.githubCreatedAt));
+  for (const row of rows) {
+    if (!row.machineId || jobs.has(row.machineId)) continue;
+    jobs.set(row.machineId, {
+      repository: row.repositoryFullName,
+      workflow: row.workflowName,
+      name: row.name,
+      url: `https://github.com/${row.repositoryFullName}/actions/runs/${row.runId}/job/${row.id}`,
+      startedAt: row.startedAt?.toISOString() ?? null,
+    });
+  }
+  return jobs;
 }
 
 async function runHasPick(db: Db, runId: number) {
