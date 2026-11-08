@@ -1,5 +1,5 @@
 import { DEFAULT_RUNNER_ORDER, type RunnerKey } from "@relayrunner/runner-order";
-import { createFileRoute, useRouter } from "@tanstack/react-router";
+import { createFileRoute, Link, useRouter } from "@tanstack/react-router";
 import {
   BanIcon,
   CheckIcon,
@@ -32,6 +32,7 @@ import {
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import { authDisabled } from "@/lib/auth-client";
+import { getMachineJobTimes, medianText, plural, type Stat } from "@/lib/job-times";
 import {
   addableRunners,
   listGithubRunners,
@@ -192,10 +193,28 @@ function MachineList({ machines }: { machines: Machine[] }) {
       </Card>
     );
   }
-  return machines.map((machine) => <MachineCard key={machine.id} machine={machine} />);
+  return <MachineCards machines={machines} />;
 }
 
-function MachineCard({ machine }: { machine: Machine }) {
+// Each machine's typical job over the last 14 days, loaded after the cards so they never wait on it.
+function MachineCards({ machines }: { machines: Machine[] }) {
+  const [jobTimes, setJobTimes] = useState<Record<string, Stat>>({});
+  useEffect(() => {
+    if (authDisabled) return;
+    let live = true;
+    getMachineJobTimes()
+      .then((result) => live && setJobTimes(result.machines))
+      .catch(() => undefined);
+    return () => {
+      live = false;
+    };
+  }, []);
+  return machines.map((machine) => (
+    <MachineCard key={machine.id} machine={machine} jobTime={jobTimes[machine.id]} />
+  ));
+}
+
+function MachineCard({ machine, jobTime }: { machine: Machine; jobTime?: Stat }) {
   const router = useRouter();
   const [confirming, setConfirming] = useState(false);
   const [pending, setPending] = useState<"revoke" | "pause" | "resume" | null>(null);
@@ -278,6 +297,14 @@ function MachineCard({ machine }: { machine: Machine }) {
         {/* Full width under the name and the actions, so a long paused line fits on a phone. */}
         <CardDescription className="col-span-2">
           {seen || "Your machine"}
+          {jobTime && jobTime.samples > 0 && (
+            <span className="block tabular-nums">
+              Typical job {medianText(jobTime)} ·{" "}
+              <Link to="/job-times" className="underline-offset-4 hover:underline">
+                {plural(jobTime.samples, "run")} in 14 days
+              </Link>
+            </span>
+          )}
           {error && <span className="block text-destructive">{error}</span>}
         </CardDescription>
         <CardAction className="row-span-1 flex items-center gap-2">

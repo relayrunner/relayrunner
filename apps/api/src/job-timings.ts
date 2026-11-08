@@ -1,6 +1,7 @@
 import type { WebhookMessage } from "@relayrunner/github-webhooks";
 import { and, eq, gte, inArray, isNotNull, lt, ne, sql } from "drizzle-orm";
 import { type Db, schema } from "./db/index.ts";
+import { routingLabelFromLabels } from "./github-runners.ts";
 import { findInstallation } from "./installations.ts";
 import { parseDate } from "./jobs.ts";
 import { routeIdFromLabels } from "./routing.ts";
@@ -95,11 +96,25 @@ export async function recordJobTiming(db: Db, message: WorkflowJobMessage): Prom
       conclusion: job.conclusion,
       runnerName: job.runnerName,
       runnerGroupName: job.runnerGroupName ?? null,
+      machineId: routedMachine(job.id, job.labels),
+      queuedAt: parseDate(job.createdAt),
       startedAt: parseDate(job.startedAt),
       completedAt: parseDate(job.completedAt),
     })
     .onConflictDoNothing({ target: table.id });
   return true;
+}
+
+/**
+ * The machine a route sent the job to, when the job ran on a route's or an added runner's label:
+ * read from its workflow_job row by primary key inside the insert, so it costs no extra round
+ * trip. setJobMachine fills it in when that row learns its machine after this one was written.
+ */
+function routedMachine(jobId: number, labels: string[]) {
+  if (!routeIdFromLabels(labels) && !routingLabelFromLabels(labels)) return null;
+  return sql<
+    string | null
+  >`(select ${schema.workflowJob.machineId} from ${schema.workflowJob} where ${schema.workflowJob.id} = ${jobId})`;
 }
 
 // How long job timings are kept. The report's longest range is 90 days.
