@@ -15,6 +15,7 @@
     "@relayrunner/activity": "workspace:*",
     "@relayrunner/email": "workspace:*",
     "@relayrunner/github-webhooks": "workspace:*",
+    "@relayrunner/lint-runner": "workspace:*",
     "@relayrunner/machine-protocol": "workspace:*",
     "@relayrunner/runner-order": "workspace:*",
     "better-auth": "catalog:",

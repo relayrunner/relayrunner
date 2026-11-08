@@ -1,0 +1,8 @@
+{
+  "name": "@relayrunner/lint-runner",
+  "private": true,
+  "type": "module",
+  "exports": {
+    "./protocol": "./src/protocol.ts"
+  }
+}

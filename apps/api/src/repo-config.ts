@@ -11,6 +11,7 @@
 
 import { parse } from "yaml";
 import { z } from "zod";
+import { LINT_TOOLS, type LintTool } from "@relayrunner/lint-runner/protocol";
 import { repoFile } from "./github-app.ts";
 
 // The first one found wins.
@@ -23,19 +24,6 @@ const typeList = z
       .map((type) => type.trim())
       .filter(Boolean),
   );
-
-// The lint tools the Checks App can run. Each uses the repo's own config file for that tool
-// (.oxlintrc.json, ruff.toml, ...). All of them run without the repo's dependencies installed.
-export const LINT_TOOLS = [
-  "oxlint",
-  "oxfmt",
-  "ruff",
-  "actionlint",
-  "zizmor",
-  "shellcheck",
-  "typos",
-] as const;
-export type LintTool = (typeof LINT_TOOLS)[number];
 
 const lintTools = z.array(z.enum(LINT_TOOLS)).min(1);
 

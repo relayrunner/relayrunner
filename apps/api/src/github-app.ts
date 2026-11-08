@@ -212,15 +212,7 @@ export async function addOrgRunnerLabels(
   runnerId: number,
   labels: string[],
 ) {
-  const response = await fetch(`${API}/orgs/${org}/actions/runners/${runnerId}/labels`, {
-    method: "POST",
-    headers: { ...headers(token), "content-type": "application/json" },
-    body: JSON.stringify({ labels }),
-  });
-  if (!response.ok)
-    throw new Error(
-      `POST /orgs/${org}/actions/runners/${runnerId}/labels failed with ${response.status}: ${(await response.text()).slice(0, 300)}`,
-    );
+  await sendJson(token, "POST", `/orgs/${org}/actions/runners/${runnerId}/labels`, { labels });
 }
 
 /** Removes one custom label from an org runner. A runner or label already gone is fine. */
@@ -300,23 +292,86 @@ export async function createCheckRun(
     summary: string;
   },
 ) {
-  const response = await fetch(`${API}/repos/${repo}/check-runs`, {
-    method: "POST",
-    headers: { ...headers(token), "content-type": "application/json" },
-    body: JSON.stringify({
+  const body = await sendJson<{ html_url?: string | null }>(
+    token,
+    "POST",
+    `/repos/${repo}/check-runs`,
+    {
       name: check.name,
       head_sha: check.headSha,
       status: "completed",
       conclusion: check.conclusion,
       output: { title: check.title, summary: check.summary },
-    }),
+    },
+  );
+  return { url: body.html_url ?? null };
+}
+
+// A check run's result. GitHub takes at most 50 annotations per request.
+export interface CheckRunOutput {
+  conclusion: "success" | "failure" | "neutral" | "skipped";
+  title: string;
+  summary: string;
+  annotations?: {
+    path: string;
+    start_line: number;
+    end_line: number;
+    start_column?: number;
+    end_column?: number;
+    annotation_level: "notice" | "warning" | "failure";
+    title?: string;
+    message: string;
+  }[];
+}
+
+/** Open an in-progress check run on a commit, to finish later with completeCheckRun. */
+export async function startCheckRun(token: string, repo: string, name: string, headSha: string) {
+  const body = await sendJson<{ id: number }>(token, "POST", `/repos/${repo}/check-runs`, {
+    name,
+    head_sha: headSha,
+    status: "in_progress",
+  });
+  return body.id;
+}
+
+/** Finish a check run that startCheckRun opened. Returns its page on GitHub. */
+export async function completeCheckRun(
+  token: string,
+  repo: string,
+  checkRunId: number,
+  { conclusion, ...output }: CheckRunOutput,
+) {
+  const body = await sendJson<{ html_url?: string | null }>(
+    token,
+    "PATCH",
+    `/repos/${repo}/check-runs/${checkRunId}`,
+    { status: "completed", conclusion, output },
+  );
+  return { url: body.html_url ?? null };
+}
+
+/**
+ * The repo's files at a commit, as a gzipped tarball with one top-level directory. GitHub
+ * redirects to a short-lived codeload URL, which fetch follows.
+ */
+export async function repoTarball(token: string, repo: string, sha: string) {
+  const response = await fetch(`${API}/repos/${repo}/tarball/${sha}`, { headers: headers(token) });
+  if (!response.ok || !response.body)
+    throw new Error(`GET /repos/${repo}/tarball/${sha} failed with ${response.status}`);
+  return response.body;
+}
+
+async function sendJson<T>(token: string, method: string, path: string, body: unknown) {
+  const response = await fetch(`${API}${path}`, {
+    method,
+    headers: { ...headers(token), "content-type": "application/json" },
+    body: JSON.stringify(body),
   });
   if (!response.ok)
     throw new Error(
-      `POST /repos/${repo}/check-runs failed with ${response.status}: ${(await response.text()).slice(0, 300)}`,
+      `${method} ${path} failed with ${response.status}: ${(await response.text()).slice(0, 300)}`,
     );
-  const body = (await response.json()) as { html_url?: string | null };
-  return { url: body.html_url ?? null };
+  return (await response.json()) as T;
 }
 
 /** A file's text from the repo's default branch, or null when it doesn't exist. */

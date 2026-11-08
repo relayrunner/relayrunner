@@ -74,6 +74,9 @@ importers:
       '@relayrunner/github-webhooks':
         specifier: workspace:*
         version: link:../../packages/github-webhooks
+      '@relayrunner/lint-runner':
+        specifier: workspace:*
+        version: link:../../packages/lint-runner
       '@relayrunner/machine-protocol':
         specifier: workspace:*
         version: link:../../packages/machine-protocol
@@ -274,6 +277,8 @@ importers:
   packages/email: {}
 
   packages/github-webhooks: {}
+
+  packages/lint-runner: {}
 
   packages/machine-protocol:
     dependencies:
