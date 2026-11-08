@@ -102,7 +102,7 @@ function RunnersPage() {
   async function findRunners() {
     if (!editable) return;
     try {
-      const { orgs } = await listGithubRunners();
+      const { orgs } = await listGithubRunners({ groups: false });
       const addable = addableRunners(orgs);
       const withRunners = orgs.filter(
         (org) => "runners" in org && org.runners.some((r) => !r.machineId && !r.blocked),

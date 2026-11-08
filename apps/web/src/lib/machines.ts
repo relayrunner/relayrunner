@@ -94,8 +94,14 @@ export type OrgRunners =
   | { installationId: number; org: string; error: string };
 
 /** The connected orgs' self-hosted runners, for adding them. Owners and admins only. */
-export function listGithubRunners() {
-  return api<{ orgs: OrgRunners[] }>("/machines/github-runners");
+/**
+ * Runners in the workspace's connected orgs. `groups: false` skips GitHub's runner-group lookups:
+ * one call per org instead of several, but a runner in a workflow-only group isn't marked blocked.
+ */
+export function listGithubRunners({ groups = true }: { groups?: boolean } = {}) {
+  return api<{ orgs: OrgRunners[] }>(
+    groups ? "/machines/github-runners" : "/machines/github-runners?groups=false",
+  );
 }
 
 /** Adds org runners: RelayRunner labels each on GitHub and routes jobs to it from then on. */

@@ -368,8 +368,11 @@ export const machineRoutes = new Hono<AppEnv>()
     });
   })
   // Self-hosted runners already registered in the workspace's connected orgs, for adding them
-  // (#159). Owners and admins only: the runners belong to the org.
+  // (#159). Owners and admins only: the runners belong to the org. `?groups=false` reads only the
+  // runner list (one GitHub call per org) for the Runners page's found card; the Add runner dialog
+  // reads groups too, so it can show each runner's access and block workflow-only groups.
   .get("/github-runners", requireUser, requireWorkspace, requireManager, async (c) => {
+    const groups = c.req.query("groups") !== "false";
     const installations = await c.var.db
       .select({ id: schema.githubInstallation.id, org: schema.githubInstallation.accountLogin })
       .from(schema.githubInstallation)
@@ -402,6 +405,7 @@ export const machineRoutes = new Hono<AppEnv>()
             c.env,
             installation.id,
             installation.org,
+            { groups },
           );
           return {
             installationId: installation.id,
