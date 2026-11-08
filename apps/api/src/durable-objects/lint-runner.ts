@@ -1,5 +1,6 @@
 import { DurableObject } from "cloudflare:workers";
 import { LINT_PORT, type LintResult, type LintTool } from "@relayrunner/lint-runner/protocol";
+import { containerRunnerAllowed } from "../container-runner.ts";
 import type { Env } from "../env.ts";
 import {
   completeCheckRun,
@@ -7,10 +8,13 @@ import {
   startCheckRun,
   type CheckRunOutput,
 } from "../github-app.ts";
+import type { CheckResult } from "../native-checks.ts";
 import {
+  checksAppInstallationId,
   checksAppToken,
   lintCheckName,
   lintCheckOutput,
+  lintJobResult,
   lintUnavailableOutput,
   type LintWork,
 } from "../lint-check.ts";
@@ -25,7 +29,7 @@ const BOOT_TIMEOUT_MS = 60_000;
 // Longer than the container gives all its tools together, so the container answers first.
 const LINT_TIMEOUT_MS = 12 * 60_000;
 
-// One per commit to lint (see lintTarget for the name). Reads the repo's `checks.lint`, opens a
+// One per commit to lint (see lintTarget for the name), or per native lint job (`job:<id>`). Reads the repo's `checks.lint`, opens a
 // check run per tool, boots the lint container without internet access, streams the commit's
 // tarball into it, finishes each check run with its tool's result, and stops the container.
 // Everything happens in the alarm, so a redelivered webhook never opens the runs twice.
@@ -42,12 +46,45 @@ export class LintRunner extends DurableObject<Env> {
     if (!work) return;
     // One attempt: a failed run reports itself on the check runs instead of retrying.
     await this.ctx.storage.delete("work");
-    const startedAt = Date.now();
     const token = await checksAppToken(this.env, work.installationId);
     const config = await loadRepoConfig(token, work.repo);
     // An invalid file fails the main App's PR title check with the reason; nothing to add here.
     if (config.kind !== "config" || !config.lint) return log("not configured", work, {});
-    const { tools, paths } = config.lint;
+    await this.run(work, token, config.lint.tools, config.lint.paths);
+  }
+
+  /**
+   * For a native `checks/lint` workflow job (src/native-checks.ts): lints a commit now with the
+   * job's own tools, whatever relayrunner.yml says, and returns the job's verdict. The check runs
+   * are posted as usual.
+   */
+  async lintJob(
+    target: { repo: string; headSha: string },
+    tools: LintTool[],
+    paths: string[],
+  ): Promise<CheckResult> {
+    // Each container is billed to us, like the webhook path in startLintChecks.
+    if (!containerRunnerAllowed(this.env.CONTAINER_RUNNER_ORGS, target.repo.split("/")[0]))
+      return { ok: false, reason: "RelayRunner doesn't run lint containers for this org yet." };
+    const installationId = await checksAppInstallationId(this.env, target.repo);
+    if (!installationId)
+      return {
+        ok: false,
+        reason: `Install the RelayRunner Checks App on ${target.repo} to run lint there.`,
+      };
+    const work = { installationId, ...target };
+    const token = await checksAppToken(this.env, installationId);
+    return lintJobResult(await this.run(work, token, tools, paths));
+  }
+
+  // Opens a check run per tool, lints in the container, finishes the runs, and stops it.
+  private async run(
+    work: LintWork,
+    token: string,
+    tools: LintTool[],
+    paths: string[],
+  ): Promise<LintResult[] | { error: string }> {
+    const startedAt = Date.now();
     const checkRuns = new Map(
       await Promise.all(
         tools.map(
@@ -74,7 +111,7 @@ export class LintRunner extends DurableObject<Env> {
       const reason = errorMessage(error);
       log("error", work, { error: reason, durationMs: Date.now() - startedAt });
       await finish(() => lintUnavailableOutput(reason));
-      return;
+      return { error: reason };
     } finally {
       await this.ctx.container?.destroy().catch(() => undefined);
     }
@@ -92,6 +129,7 @@ export class LintRunner extends DurableObject<Env> {
         durationMs,
       })),
     });
+    return results;
   }
 
   private async lint(

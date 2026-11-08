@@ -1,7 +1,7 @@
 import { describe, expect, test } from "vitest";
 import type { WebhookMessage } from "@relayrunner/github-webhooks";
 import type { LintResult } from "@relayrunner/lint-runner/protocol";
-import { lintCheckOutput, lintTarget } from "./lint-check.ts";
+import { lintCheckOutput, lintJobResult, lintTarget } from "./lint-check.ts";
 
 const base = { deliveryId: "d", installationId: 7, receivedAt: "t", app: "checks" as const };
 const repository = { id: 1, fullName: "acme/app" };
@@ -127,5 +127,46 @@ describe("lintCheckOutput", () => {
     expect(lintCheckOutput(result({ tool: "actionlint", status: "skipped" })).conclusion).toBe(
       "skipped",
     );
+  });
+});
+
+describe("lintJobResult", () => {
+  const result = (
+    tool: LintResult["tool"],
+    status: LintResult["status"],
+    error = 0,
+  ): LintResult => ({
+    tool,
+    status,
+    problems: [],
+    total: { error, warning: 0, notice: 0 },
+    durationMs: 1,
+  });
+
+  test("passes when every tool passed or had nothing to check", () => {
+    expect(lintJobResult([result("oxlint", "passed"), result("ruff", "skipped")])).toEqual({
+      ok: true,
+    });
+  });
+
+  test("names the tools that failed or didn't run", () => {
+    expect(
+      lintJobResult([
+        result("oxlint", "passed"),
+        result("typos", "failed", 2),
+        result("zizmor", "errored"),
+      ]),
+    ).toEqual({
+      ok: false,
+      reason:
+        "Lint failed: typos (2 errors), zizmor (didn't run). The Lint check runs on this commit show each problem.",
+    });
+  });
+
+  test("fails when the container didn't run", () => {
+    expect(lintJobResult({ error: "boom" })).toEqual({
+      ok: false,
+      reason: "Lint didn't run: boom",
+    });
   });
 });
