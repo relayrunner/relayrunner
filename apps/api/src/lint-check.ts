@@ -7,7 +7,14 @@ import type { WebhookMessage } from "@relayrunner/github-webhooks";
 import type { LintResult, LintTool, Problem } from "@relayrunner/lint-runner/protocol";
 import { containerRunnerAllowed } from "./container-runner.ts";
 import type { Env } from "./env.ts";
-import { appInstallationToken, type CheckRunOutput } from "./github-app.ts";
+import {
+  appInstallationToken,
+  appJwt,
+  importAppPrivateKey,
+  repoInstallationId,
+  type CheckRunOutput,
+} from "./github-app.ts";
+import type { CheckResult } from "./native-checks.ts";
 
 // The commit to lint.
 export interface LintWork {
@@ -51,6 +58,35 @@ export function checksAppToken(env: Env, installationId: number) {
     },
     installationId,
   );
+}
+
+/** The Checks App's installation on a repo, or null when it isn't installed there. */
+export async function checksAppInstallationId(env: Env, repo: string) {
+  const key = await importAppPrivateKey(await env.GITHUB_CHECKS_APP_PRIVATE_KEY.get());
+  return repoInstallationId(await appJwt(env.GITHUB_CHECKS_APP_ID, key), repo);
+}
+
+/**
+ * A native lint job's verdict from its tools' results: it fails when any tool failed or didn't
+ * run, and names them. The check runs carry the details.
+ */
+export function lintJobResult(results: LintResult[] | { error: string }): CheckResult {
+  if (!Array.isArray(results)) return { ok: false, reason: `Lint didn't run: ${results.error}` };
+  const failed = results.filter(
+    (result) => result.status === "failed" || result.status === "errored",
+  );
+  if (failed.length === 0) return { ok: true };
+  const list = failed
+    .map((result) =>
+      result.status === "errored"
+        ? `${result.tool} (didn't run)`
+        : `${result.tool} (${plural(result.total.error, "error")})`,
+    )
+    .join(", ");
+  return {
+    ok: false,
+    reason: `Lint failed: ${list}. The Lint check runs on this commit show each problem.`,
+  };
 }
 
 /**

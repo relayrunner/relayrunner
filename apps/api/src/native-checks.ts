@@ -2,13 +2,18 @@
 // is a native check when its steps use a check action from relayrunner/actions, such as
 // `uses: relayrunner/actions/checks/pr-title@v1`. The action also runs as an ordinary action, so
 // the same job still works if it's pointed at any other runner.
+//
+// `checks/lint` runs the Checks App's lint container (src/lint-check.ts) on the job's commit with
+// the tools in its `tools` input, so any workflow, including a workflow_dispatch one, can ask for
+// a lint run on demand.
 
+import { LINT_TOOLS, type LintTool } from "@relayrunner/lint-runner/protocol";
 import { context, dictionary, isRecord, scalar } from "./pipeline-context.ts";
 
 const CHECKS_REPO = "relayrunner/actions";
 const CHECKS_PATH = "checks/";
 
-const CHECKS = ["pr-title"] as const;
+const CHECKS = ["pr-title", "lint"] as const;
 export type CheckName = (typeof CHECKS)[number];
 const isCheckName = (name: string): name is CheckName =>
   (CHECKS as readonly string[]).includes(name);
@@ -25,6 +30,15 @@ export type NativeJob =
   | { kind: "unsupported"; reason: string };
 
 export type CheckResult = { ok: true } | { ok: false; reason: string };
+
+// What a check needs from outside this module: lint runs in a container.
+export interface CheckDeps {
+  lint(
+    target: { repo: string; headSha: string },
+    tools: LintTool[],
+    paths: string[],
+  ): Promise<CheckResult>;
+}
 
 /**
  * Reads the job message's steps. A job with no relayrunner check step is not native (null). A job
@@ -62,18 +76,39 @@ export function nativeJob(steps: unknown): NativeJob | null {
  * The verdict for a claimed job: null when it isn't native (route it as a pick), otherwise the
  * checks it ran and whether they passed. A job we can't run natively fails with the reason.
  */
-export function nativeVerdict(
+export async function nativeVerdict(
   steps: unknown,
   contextData: unknown,
-): { checks: CheckName[]; result: CheckResult } | null {
+  deps: CheckDeps,
+): Promise<{ checks: CheckName[]; result: CheckResult } | null> {
   const job = nativeJob(steps);
   if (!job) return null;
   if (job.kind === "unsupported") return { checks: [], result: { ok: false, reason: job.reason } };
-  return { checks: job.steps.map((step) => step.check), result: runChecks(job.steps, contextData) };
+  return {
+    checks: job.steps.map((step) => step.check),
+    result: await runChecks(job.steps, contextData, deps),
+  };
 }
 
-function runCheck(step: CheckStep, contextData: unknown): CheckResult {
+async function runCheck(
+  step: CheckStep,
+  contextData: unknown,
+  deps: CheckDeps,
+): Promise<CheckResult> {
   switch (step.check) {
+    case "lint": {
+      const target = jobCommit(contextData);
+      if (!target)
+        return { ok: false, reason: "RelayRunner couldn't read this job's repository and commit." };
+      const tools = parseList(step.inputs.tools);
+      const unknown = tools.filter((tool) => !(LINT_TOOLS as readonly string[]).includes(tool));
+      if (tools.length === 0 || unknown.length > 0)
+        return {
+          ok: false,
+          reason: `The lint check's \`tools\` input takes a list of: ${LINT_TOOLS.join(", ")}.${unknown.length ? ` Unknown: ${unknown.join(", ")}.` : ""}`,
+        };
+      return deps.lint(target, [...new Set(tools)] as LintTool[], parseList(step.inputs.paths));
+    }
     case "pr-title": {
       const title = pullRequestTitle(contextData);
       if (title === null)
@@ -88,9 +123,13 @@ function runCheck(step: CheckStep, contextData: unknown): CheckResult {
 }
 
 /** Runs each check in order and stops at the first failure. */
-export function runChecks(steps: CheckStep[], contextData: unknown): CheckResult {
+export async function runChecks(
+  steps: CheckStep[],
+  contextData: unknown,
+  deps: CheckDeps,
+): Promise<CheckResult> {
   for (const step of steps) {
-    const result = runCheck(step, contextData);
+    const result = await runCheck(step, contextData, deps);
     if (!result.ok) return result;
   }
   return { ok: true };
@@ -183,6 +222,19 @@ export function pullRequestTitle(contextData: unknown): string | null {
   const pullRequest = dictionary(event?.get("pull_request"));
   const title = scalar(pullRequest?.get("title"));
   return typeof title === "string" ? title : null;
+}
+
+// The job's repo and the commit to check: a pull request's head, so check runs land on the pull
+// request, otherwise `github.sha`.
+export function jobCommit(contextData: unknown): { repo: string; headSha: string } | null {
+  const github = context(contextData, "github");
+  const repo = scalar(github?.get("repository"));
+  const event = dictionary(github?.get("event"));
+  const head = dictionary(dictionary(event?.get("pull_request"))?.get("head"));
+  const sha = scalar(head?.get("sha")) ?? scalar(github?.get("sha"));
+  return typeof repo === "string" && repo.includes("/") && typeof sha === "string" && sha
+    ? { repo, headSha: sha }
+    : null;
 }
 
 // Comma- or newline-separated, as commitlint-style actions take lists.

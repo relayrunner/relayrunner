@@ -69,7 +69,11 @@ export class PickRunner extends DurableObject<Env> {
       const request = await waitForJob(client);
       const job = request ? await client.claim(request) : null;
       if (job) {
-        const native = nativeVerdict(job.message.steps, job.message.contextData);
+        const native = await nativeVerdict(job.message.steps, job.message.contextData, {
+          // A lint step runs in its own LintRunner, one per job.
+          lint: (target, tools, paths) =>
+            this.env.LINT_RUNNER.getByName(`job:${work.jobId}`).lintJob(target, tools, paths),
+        });
         if (native) {
           // A native check: answer it here instead of routing it. Nothing runs on a VM.
           const { result } = native;

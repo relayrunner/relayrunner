@@ -141,6 +141,15 @@ export async function orgRunnerBusy(token: string, org: string, runnerId: number
   return ((await response.json()) as { busy: boolean }).busy;
 }
 
+/** The App's installation on a repo, or null when the App isn't installed there. */
+export async function repoInstallationId(jwt: string, repo: string): Promise<number | null> {
+  const response = await fetch(`${API}/repos/${repo}/installation`, { headers: headers(jwt) });
+  if (response.status === 404) return null;
+  if (!response.ok)
+    throw new Error(`GET /repos/${repo}/installation failed with ${response.status}`);
+  return ((await response.json()) as { id: number }).id;
+}
+
 /** An installation token from the App's id and private key, as the Durable Objects hold them. */
 export async function appInstallationToken(
   env: { GITHUB_APP_ID: string; GITHUB_APP_PRIVATE_KEY: { get(): Promise<string> } },
