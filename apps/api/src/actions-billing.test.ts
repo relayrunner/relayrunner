@@ -125,12 +125,13 @@ const actionsBudget = {
 };
 
 describe("pollInstallation", () => {
-  test("stores this month's usage, plan and budget, and counts private and unknown repos", async () => {
+  test("stores month totals per repo and SKU, plan and budget, and counts private and unknown repos", async () => {
     const { db, installationId, org } = await connectedOrg();
     const calls = fakeGitHub({
       plan: "free",
       usage: [
         item("2026-11-04", "app", 284),
+        item("2026-11-06", "app", 16), // same repo and SKU on another day: one month row
         item("2026-11-04", "site", 500), // public: free, doesn't count
         item("2026-11-05", "unmirrored", 10), // unknown: counts as private
         item("2026-11-05", "app", 5, "Actions macOS"), // 5 macOS minutes use ~51.7 Linux minutes
@@ -147,6 +148,12 @@ describe("pollInstallation", () => {
       .from(schema.actionsUsage)
       .where(eq(schema.actionsUsage.installationId, installationId));
     expect(rows).toHaveLength(4);
+    expect(
+      rows.find((row) => row.repositoryName === "app" && row.sku === "Actions Linux"),
+    ).toMatchObject({
+      quantity: 300,
+      cycleStart: new Date("2026-11-01T00:00:00Z"),
+    });
 
     const usage = (await accountUsage(db, installationId, NOW)) as AccountUsage;
     expect(usage).toMatchObject({
@@ -154,7 +161,7 @@ describe("pollInstallation", () => {
       reason: null,
       plan: "free",
       quotaMinutes: 2000,
-      usedMinutes: 345.7,
+      usedMinutes: 361.7,
       netAmount: 0,
       budget: { amountUsd: 0, preventFurtherUsage: true },
       cycleStart: "2026-11-01T00:00:00.000Z",
@@ -182,12 +189,12 @@ describe("pollInstallation", () => {
     expect(usage?.burnRatePerHour).toBe(60);
   });
 
-  test("stores a month with more rows than one statement can bind", async () => {
+  test("stores hundreds of repos in one poll", async () => {
     const { db, installationId, org } = await connectedOrg();
-    const usage = Array.from({ length: 40 }, (_, i) => item("2026-11-08", `repo-${i}`, 1));
+    const usage = Array.from({ length: 500 }, (_, i) => item("2026-11-08", `repo-${i}`, 1));
     fakeGitHub({ usage });
     await pollInstallation(db, "tok", { id: installationId, accountLogin: org }, NOW);
-    expect((await accountUsage(db, installationId, NOW))?.usedMinutes).toBe(40);
+    expect((await accountUsage(db, installationId, NOW))?.usedMinutes).toBe(500);
   });
 
   test("a refused usage read is 'missing_permission' and keeps the last good numbers", async () => {

@@ -422,9 +422,10 @@ export const routeDecision = sqliteTable(
   ],
 );
 
-// GitHub Actions usage from each org's billing usage report (#116, src/actions-billing.ts): one row
-// per installation, repo, UTC day and SKU, replaced on every poll of the current month. Keyed by
-// installation, never workspace, because each GitHub account has its own included quota.
+// GitHub Actions usage this billing cycle from each org's billing usage report (#116,
+// src/actions-billing.ts): one row per installation, cycle, repo and SKU, summed over the cycle's
+// days and replaced on every poll. Keyed by installation, never workspace, because each GitHub
+// account has its own included quota.
 export const actionsUsage = sqliteTable(
   "actions_usage",
   {
@@ -432,8 +433,8 @@ export const actionsUsage = sqliteTable(
     installationId: integer("installation_id")
       .notNull()
       .references(() => githubInstallation.id, { onDelete: "cascade" }),
-    // UTC day, YYYY-MM-DD.
-    day: text("day").notNull(),
+    // Start of the billing cycle (UTC month).
+    cycleStart: integer("cycle_start", { mode: "timestamp_ms" }).notNull(),
     // The repo's name within the org, as billing reports it ("" when GitHub omits it).
     repositoryName: text("repository_name").notNull(),
     // e.g. "Actions Linux", "Actions macOS".
@@ -449,7 +450,7 @@ export const actionsUsage = sqliteTable(
   (table) => [
     uniqueIndex("actions_usage_row_idx").on(
       table.installationId,
-      table.day,
+      table.cycleStart,
       table.repositoryName,
       table.sku,
     ),

@@ -1,7 +1,7 @@
 {
   "version": "6",
   "dialect": "sqlite",
-  "id": "3e83a62c-f846-4683-8856-1509608044d5",
+  "id": "27e398d2-4f17-4256-b064-f146c2eaedd4",
   "prevId": "e8001f4f-e397-4086-8878-1b99296930cf",
   "tables": {
     "account": {
@@ -230,9 +230,9 @@
           "notNull": true,
           "autoincrement": false
         },
-        "day": {
-          "name": "day",
-          "type": "text",
+        "cycle_start": {
+          "name": "cycle_start",
+          "type": "integer",
           "primaryKey": false,
           "notNull": true,
           "autoincrement": false
@@ -299,7 +299,7 @@
           "name": "actions_usage_row_idx",
           "columns": [
             "installation_id",
-            "day",
+            "cycle_start",
             "repository_name",
             "sku"
           ],

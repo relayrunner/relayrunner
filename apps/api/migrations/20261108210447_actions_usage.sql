@@ -15,7 +15,7 @@ CREATE TABLE `actions_billing` (
 CREATE TABLE `actions_usage` (
 	`id` integer PRIMARY KEY AUTOINCREMENT NOT NULL,
 	`installation_id` integer NOT NULL,
-	`day` text NOT NULL,
+	`cycle_start` integer NOT NULL,
 	`repository_name` text NOT NULL,
 	`sku` text NOT NULL,
 	`unit_type` text NOT NULL,
@@ -27,7 +27,7 @@ CREATE TABLE `actions_usage` (
 	FOREIGN KEY (`installation_id`) REFERENCES `github_installation`(`id`) ON UPDATE no action ON DELETE cascade
 );
 --> statement-breakpoint
-CREATE UNIQUE INDEX `actions_usage_row_idx` ON `actions_usage` (`installation_id`,`day`,`repository_name`,`sku`);--> statement-breakpoint
+CREATE UNIQUE INDEX `actions_usage_row_idx` ON `actions_usage` (`installation_id`,`cycle_start`,`repository_name`,`sku`);--> statement-breakpoint
 CREATE TABLE `actions_usage_reading` (
 	`id` integer PRIMARY KEY AUTOINCREMENT NOT NULL,
 	`installation_id` integer NOT NULL,

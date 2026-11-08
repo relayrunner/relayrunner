@@ -148,53 +148,69 @@ export async function pollInstallation(
     ...(budgets.status === "fulfilled" ? actionsBudget(budgets.value) : {}),
   };
 
-  await db.batch([
-    db
-      .delete(schema.actionsUsage)
-      .where(
-        and(
-          eq(schema.actionsUsage.installationId, installation.id),
-          gte(schema.actionsUsage.day, dayOf(start)),
-        ),
-      ),
-    // D1 binds at most 100 parameters per statement; each row takes 10.
-    ...chunk(rows, 9).map((part) =>
+  // GitHub sends the whole month on every poll, so the cycle's rows are simply replaced: nothing
+  // to backfill, and a day GitHub revises later is picked up on the next poll. All rows go in one
+  // statement as a JSON parameter, so a poll costs the same few D1 queries whatever the repo count.
+  // Sent straight to D1 rather than through Drizzle's batch, which can't carry a raw statement.
+  const d1 = db.$client;
+  const prepare = (query: { toSQL(): { sql: string; params: unknown[] } }) => {
+    const built = query.toSQL();
+    return d1.prepare(built.sql).bind(...built.params);
+  };
+  await d1.batch([
+    prepare(
       db
-        .insert(schema.actionsUsage)
-        .values(part.map((row) => ({ installationId: installation.id, ...row }))),
+        .delete(schema.actionsUsage)
+        .where(
+          and(
+            eq(schema.actionsUsage.installationId, installation.id),
+            eq(schema.actionsUsage.cycleStart, start),
+          ),
+        ),
     ),
-    db.insert(schema.actionsUsageReading).values({
-      installationId: installation.id,
-      readAt: now,
-      cycleStart: start,
-      ...totals,
-    }),
-    db
-      .insert(schema.actionsBilling)
-      .values({ installationId: installation.id, ...billing })
-      .onConflictDoUpdate({
-        target: schema.actionsBilling.installationId,
-        set: { ...billing, updatedAt: now },
+    d1
+      .prepare(
+        `INSERT INTO actions_usage (installation_id, cycle_start, repository_name, sku, unit_type,
+          quantity, gross_amount, net_amount, created_at, updated_at)
+        SELECT ?1, ?2, value ->> 'repositoryName', value ->> 'sku', value ->> 'unitType',
+          value ->> 'quantity', value ->> 'grossAmount', value ->> 'netAmount', ?3, ?3
+        FROM json_each(?4)`,
+      )
+      .bind(installation.id, start.getTime(), now.getTime(), JSON.stringify(rows)),
+    prepare(
+      db.insert(schema.actionsUsageReading).values({
+        installationId: installation.id,
+        readAt: now,
+        cycleStart: start,
+        ...totals,
       }),
+    ),
+    prepare(
+      db
+        .insert(schema.actionsBilling)
+        .values({ installationId: installation.id, ...billing })
+        .onConflictDoUpdate({
+          target: schema.actionsBilling.installationId,
+          set: { ...billing, updatedAt: now },
+        }),
+    ),
   ]);
 }
 
 type UsageRow = Omit<
   typeof schema.actionsUsage.$inferInsert,
-  "id" | "installationId" | "createdAt" | "updatedAt"
+  "id" | "installationId" | "cycleStart" | "createdAt" | "updatedAt"
 >;
 
-// Actions rows from this cycle, summed per day, repo and SKU in case GitHub splits one.
+// The cycle's Actions rows, summed over its days per repo and SKU.
 function aggregate(items: BillingUsageItem[], start: Date): UsageRow[] {
   const rows = new Map<string, UsageRow>();
   for (const item of items) {
     if (item.product.toLowerCase() !== "actions") continue;
-    const day = item.date.slice(0, 10);
-    if (day < dayOf(start)) continue;
+    if (item.date.slice(0, 10) < dayOf(start)) continue;
     const repositoryName = item.repositoryName ?? "";
-    const key = JSON.stringify([day, repositoryName, item.sku]);
+    const key = JSON.stringify([repositoryName, item.sku]);
     const row = rows.get(key) ?? {
-      day,
       repositoryName,
       sku: item.sku,
       unitType: item.unitType,
@@ -329,7 +345,7 @@ export async function accountUsage(
       .where(
         and(
           eq(schema.actionsUsage.installationId, installationId),
-          gte(schema.actionsUsage.day, dayOf(start)),
+          eq(schema.actionsUsage.cycleStart, start),
         ),
       ),
     repoPrivacy(db, installationId, installation.accountLogin),
@@ -412,9 +428,3 @@ const round = (value: number, digits: number) => {
   const factor = 10 ** digits;
   return Math.round(value * factor) / factor;
 };
-
-function chunk<T>(items: T[], size: number) {
-  const parts: T[][] = [];
-  for (let i = 0; i < items.length; i += size) parts.push(items.slice(i, i + size));
-  return parts;
-}
