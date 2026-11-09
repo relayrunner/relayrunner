@@ -1,6 +1,6 @@
 import { DEFAULT_RUNNER_ORDER, type RunnerKey, type RunnerStep } from "@relayrunner/runner-order";
-import { Link, createFileRoute, useRouter } from "@tanstack/react-router";
-import { ArrowUpRightIcon, CheckIcon, CloudIcon, CopyIcon, LaptopIcon } from "lucide-react";
+import { createFileRoute, useRouter } from "@tanstack/react-router";
+import { CheckIcon, CloudIcon, CopyIcon, LaptopIcon } from "lucide-react";
 import { useEffect, useState, type ReactNode } from "react";
 import {
   AddRunner,
@@ -18,7 +18,6 @@ import { addableRunners, listGithubRunners, listMachines } from "@/lib/machines"
 import { canManage } from "@/lib/roles";
 import { getRunnerOrder } from "@/lib/runner-order";
 import { cn } from "@/lib/utils";
-import { whereJobsGo } from "@/lib/where-jobs-go";
 
 // Found runners per workspace, kept for the tab's life so leaving and coming back doesn't wait on
 // GitHub again. The page still re-checks in the background on each visit.
@@ -62,7 +61,6 @@ function RunnersPage() {
 
   const editable = canManage(current.role);
   const machines = loaded.machines.filter((machine) => !machine.revokedAt);
-  const status = whereJobsGo(loaded.order.steps, machines);
 
   // Runners in connected orgs that aren't added yet, for the found card. Owners and admins only,
   // since only they can add them. It asks GitHub, so it's read once per visit, not on every
@@ -136,54 +134,29 @@ function RunnersPage() {
   return (
     <section>
       {dialog}
-      <PageHeader
-        title="Runners"
-        action={<AddRunner onAddExisting={() => setGithubOpen(true)} />}
-        wide
-      >
-        <span role="status">
-          <span
-            aria-hidden
-            className={cn(
-              "mr-2 inline-block size-2 rounded-full align-middle",
-              status.tone === "go" ? "bg-go" : "bg-idle",
-            )}
-          />
-          {status.text}{" "}
-          <Link
-            to="/router"
-            className="inline-flex items-center gap-0.5 whitespace-nowrap text-go hover:text-go-hover"
-          >
-            Router
-            <ArrowUpRightIcon aria-hidden className="size-3.5" />
-          </Link>
-        </span>
+      <PageHeader title="Runners" action={<AddRunner onAddExisting={() => setGithubOpen(true)} />}>
+        Machines your private repo jobs can run on. The Router decides when they get them.
       </PageHeader>
-      <div className="grid max-w-5xl gap-6">
-        <section aria-labelledby="self-hosted" className="grid gap-3">
-          <h2 id="self-hosted" className="text-sm font-semibold">
-            Self-hosted
-          </h2>
-          <TooltipProvider>
-            <ul className="grid grid-cols-[repeat(auto-fill,minmax(min(100%,19rem),1fr))] gap-3">
-              {machines.map((machine) => (
-                <li key={machine.id} className="grid min-w-0">
-                  <MachineCard machine={machine} jobTime={jobTimes[machine.id]} />
-                </li>
-              ))}
-              {found && found.count > 0 && !dismissed && (
-                <li className="grid min-w-0">
-                  <FoundCard
-                    count={found.count}
-                    orgs={found.orgs}
-                    onReview={() => setGithubOpen(true)}
-                    onDismiss={dismissFound}
-                  />
-                </li>
-              )}
-            </ul>
-          </TooltipProvider>
-        </section>
+      <div className="max-w-5xl">
+        <TooltipProvider>
+          <ul className="grid grid-cols-[repeat(auto-fill,minmax(min(100%,19rem),1fr))] gap-3">
+            {machines.map((machine) => (
+              <li key={machine.id} className="grid min-w-0">
+                <MachineCard machine={machine} jobTime={jobTimes[machine.id]} />
+              </li>
+            ))}
+            {found && found.count > 0 && !dismissed && (
+              <li className="grid min-w-0">
+                <FoundCard
+                  count={found.count}
+                  orgs={found.orgs}
+                  onReview={() => setGithubOpen(true)}
+                  onDismiss={dismissFound}
+                />
+              </li>
+            )}
+          </ul>
+        </TooltipProvider>
       </div>
     </section>
   );
