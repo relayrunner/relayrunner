@@ -10,7 +10,7 @@
 import { and, eq, gte, inArray, isNull, type SQL, sql } from "drizzle-orm";
 import { usesContainerRunner } from "./container-runner.ts";
 import { type Db, schema } from "./db/index.ts";
-import { DAY_MS, RUNNER_RATES, runnerClass } from "./job-timings.ts";
+import { DAY_MS, RUNNER_RATES, rateFor, runnerClass } from "./job-timings.ts";
 import { isBlacksmithLabel } from "./routing.ts";
 import { RELAYRUNNER_LABEL } from "./webhook-queue.ts";
 
@@ -25,11 +25,19 @@ export const ENOUGH_RUNS = 20;
 export const DEFAULT_DAYS = 14;
 export const MAX_DAYS = 30;
 
+/**
+ * Where an environment's minutes come from: the workspace's own machines (RelayRunner machines and
+ * vanilla self-hosted runners), another cloud that bills on its own (Blacksmith, Cloudflare
+ * Containers), or GitHub-hosted runners, whose private-repo minutes draw on the account's quota.
+ */
+export type EnvironmentKind = "machine" | "cloud" | "github";
+
 export interface Environment {
   /** e.g. `github:linux-2-core`, `machine:<id>`, `container`. */
   key: string;
   label: string;
   detail: string;
+  kind: EnvironmentKind;
 }
 
 const MACHINE = "machine:";
@@ -43,12 +51,14 @@ export function environmentFor(
   runnerGroupName: string | null,
   machineId: string | null,
 ): Environment {
-  if (machineId) return { key: `${MACHINE}${machineId}`, label: "Machine", detail: "" };
+  if (machineId)
+    return { key: `${MACHINE}${machineId}`, label: "Machine", detail: "", kind: "machine" };
   if (usesContainerRunner(labels))
     return {
       key: "container",
       label: "Cloudflare Container",
       detail: "standard-1",
+      kind: "cloud",
     };
   const lower = labels.map((label) => label.toLowerCase());
   const blacksmith = lower.find(isBlacksmithLabel);
@@ -57,6 +67,7 @@ export function environmentFor(
       key: `blacksmith:${blacksmith}`,
       label: blacksmith,
       detail: "Blacksmith",
+      kind: "cloud",
     };
   const cls = runnerClass(labels, runnerGroupName);
   if (cls === "self-hosted") {
@@ -65,16 +76,18 @@ export function environmentFor(
       key: `self-hosted:${group}`,
       label: "Self-hosted",
       detail: group,
+      kind: "machine",
     };
   }
   if (cls === "other") {
     const label = lower[0] ?? "unknown";
-    return { key: `github:${label}`, label, detail: "GitHub-hosted" };
+    return { key: `github:${label}`, label, detail: "GitHub-hosted", kind: "github" };
   }
   return {
     key: `github:${cls}`,
     label: RUNNER_RATES[cls].label,
     detail: "GitHub-hosted",
+    kind: "github",
   };
 }
 
@@ -193,9 +206,27 @@ export interface EnvironmentSummary extends Environment {
   versus: { ratio: number; sharedJobs: number } | null;
 }
 
+/**
+ * Where a job's minutes went on one environment, counting every run a runner finished (failures
+ * and cancellations use the runner too, unlike Stat's times).
+ */
+export interface Minutes {
+  runs: number;
+  runMs: number;
+  /**
+   * What GitHub charged against the account's included minutes, in Linux 2-core minutes: each
+   * job rounded up to a whole minute, times its rate over Linux 2-core's. 0 off GitHub-hosted
+   * runners and in public repos.
+   */
+  quotaMinutes: number;
+  /** Run time per day of the window, oldest first: `days` entries, the last ending now. */
+  dailyMs: number[];
+}
+
 export interface JobRow {
   name: string;
   byEnvironment: Record<string, Stat>;
+  minutes: Record<string, Minutes>;
   /** Matrix legs (`test (node 24)`), when this row groups them under their shared name. */
   legs?: JobRow[];
 }
@@ -204,6 +235,8 @@ export interface WorkflowRow {
   repositoryId: number;
   repository: string;
   workflow: string | null;
+  /** Null when the repo isn't mirrored; its GitHub minutes count as quota, like the Usage page. */
+  private: boolean | null;
   /** Whole runs, first job start to last job finish, for runs whose jobs all used one environment. */
   byEnvironment: Record<string, Stat>;
   jobs: JobRow[];
@@ -230,6 +263,8 @@ interface WindowRow {
   successes: number;
   /** `completedAt:runMs:waitMs` per successful run, comma separated; waitMs may be empty. */
   samples: string | null;
+  /** `completedAt:runMs` per run, successful or not, comma separated. Null on whole-run rows. */
+  all_runs: string | null;
 }
 
 // A job a runner ran: started, not skipped, and not a pick. Picks (`runs-on: relayrunner`) only
@@ -266,7 +301,8 @@ export function windowQueries(workspaceId: string, since: Date) {
     select ${table.repositoryId} as repository_id, min(${table.repositoryFullName}) as repository,
       ${table.workflowName} as workflow_name, ${table.name} as name, ${table.labels} as labels,
       ${table.runnerGroupName} as runner_group_name, ${table.machineId} as machine_id,
-      count(*) as runs, sum(${OK}) as successes, ${SAMPLES} as samples
+      count(*) as runs, sum(${OK}) as successes, ${SAMPLES} as samples,
+      group_concat(${table.completedAt} || ':' || max(0, ${table.completedAt} - ${table.startedAt})) as all_runs
     from ${table} where ${where}
     group by ${table.repositoryId}, ${table.workflowName}, ${table.name}, ${table.labels},
       ${table.runnerGroupName}, ${table.machineId}`;
@@ -275,7 +311,8 @@ export function windowQueries(workspaceId: string, since: Date) {
   const runs = sql`
     select repository_id, min(repository) as repository, workflow_name, null as name, labels,
       runner_group_name, machine_id, count(*) as runs, sum(ok) as successes,
-      group_concat(case when ok then completed_at || ':' || (completed_at - started_at) || ':' end) as samples
+      group_concat(case when ok then completed_at || ':' || (completed_at - started_at) || ':' end) as samples,
+      null as all_runs
     from (
       select ${table.repositoryId} as repository_id, min(${table.repositoryFullName}) as repository,
         ${table.workflowName} as workflow_name, min(${table.labels}) as labels,
@@ -309,6 +346,56 @@ function matrixName(name: string) {
 }
 
 type Buckets = Map<string, Bucket>;
+type MinuteBuckets = Map<string, Minutes>;
+
+function emptyMinutes(days: number): Minutes {
+  return { runs: 0, runMs: 0, quotaMinutes: 0, dailyMs: Array.from({ length: days }, () => 0) };
+}
+
+function addMinutes(into: MinuteBuckets, envKey: string, from: Minutes) {
+  const minutes = into.get(envKey) ?? emptyMinutes(from.dailyMs.length);
+  minutes.runs += from.runs;
+  minutes.runMs += from.runMs;
+  minutes.quotaMinutes += from.quotaMinutes;
+  from.dailyMs.forEach((ms, day) => {
+    minutes.dailyMs[day] += ms;
+  });
+  into.set(envKey, minutes);
+}
+
+function minutesRecord(buckets: MinuteBuckets): Record<string, Minutes> {
+  return Object.fromEntries(
+    [...buckets].map(([key, minutes]) => [
+      key,
+      { ...minutes, quotaMinutes: Math.round(minutes.quotaMinutes * 10) / 10 },
+    ]),
+  );
+}
+
+/**
+ * One row's runs as Minutes. `quotaRate` is the row's GitHub rate over Linux 2-core's: 0 off
+ * GitHub-hosted runners or in a public repo.
+ */
+export function minutesOf(
+  allRuns: string | null,
+  since: number,
+  days: number,
+  quotaRate: number,
+): Minutes {
+  const minutes = emptyMinutes(days);
+  if (!allRuns) return minutes;
+  for (const part of allRuns.split(",")) {
+    const [completedAt, runMs] = part.split(":").map(Number);
+    const ms = Math.max(0, runMs || 0);
+    const day = Math.min(days - 1, Math.max(0, Math.floor((completedAt - since) / DAY_MS)));
+    minutes.runs += 1;
+    minutes.runMs += ms;
+    minutes.dailyMs[day] += ms;
+    // GitHub bills each job as at least one minute, rounded up.
+    if (quotaRate) minutes.quotaMinutes += Math.max(1, Math.ceil(ms / 60_000)) * quotaRate;
+  }
+  return minutes;
+}
 
 function add(buckets: Buckets, envKey: string, bucket: Bucket) {
   const into = buckets.get(envKey) ?? emptyBucket();
@@ -356,6 +443,17 @@ export async function jobTimesReport(
     ...runRows.map((row) => ({ ...row, kind: "run" as const })),
   ];
 
+  // Repo visibility decides whether GitHub-hosted minutes draw on the quota: one lookup by id.
+  const repositoryIds = [...new Set(rows.map((row) => row.repository_id))];
+  const visibility = new Map<number, boolean>();
+  if (repositoryIds.length) {
+    const repos = await db
+      .select({ id: schema.githubRepository.id, private: schema.githubRepository.private })
+      .from(schema.githubRepository)
+      .where(inArray(schema.githubRepository.id, repositoryIds));
+    for (const repo of repos) visibility.set(repo.id, repo.private);
+  }
+
   const envs = new Map<string, Environment>();
   const totals: Buckets = new Map();
   // repo + workflow -> { runs by env, job name -> buckets by env }
@@ -367,14 +465,12 @@ export async function jobTimesReport(
       workflow: string | null;
       runs: Buckets;
       jobs: Map<string, Buckets>;
+      minutes: Map<string, MinuteBuckets>;
     }
   >();
   for (const row of rows) {
-    const env = environmentFor(
-      JSON.parse(row.labels) as string[],
-      row.runner_group_name,
-      row.machine_id,
-    );
+    const labels = JSON.parse(row.labels) as string[];
+    const env = environmentFor(labels, row.runner_group_name, row.machine_id);
     if (!envs.has(env.key)) envs.set(env.key, env);
     const bucket = bucketOf(row);
     const id = `${row.repository_id}\u001f${row.workflow_name ?? ""}`;
@@ -386,6 +482,7 @@ export async function jobTimesReport(
         workflow: row.workflow_name,
         runs: new Map(),
         jobs: new Map(),
+        minutes: new Map(),
       };
       workflows.set(id, workflow);
     }
@@ -398,6 +495,15 @@ export async function jobTimesReport(
     const jobBuckets = workflow.jobs.get(name) ?? new Map();
     add(jobBuckets, env.key, bucket);
     workflow.jobs.set(name, jobBuckets);
+    const isPrivate = visibility.get(row.repository_id) ?? null;
+    const quotaRate =
+      env.kind === "github"
+        ? rateFor(runnerClass(labels, row.runner_group_name), isPrivate) /
+          RUNNER_RATES["linux-2-core"].perMinute
+        : 0;
+    const jobMinutes = workflow.minutes.get(name) ?? new Map();
+    addMinutes(jobMinutes, env.key, minutesOf(row.all_runs, since.getTime(), days, quotaRate));
+    workflow.minutes.set(name, jobMinutes);
   }
 
   // Machines are named from their rows; a deleted machine keeps a generic name.
@@ -428,14 +534,27 @@ export async function jobTimesReport(
   const leafStats: Record<string, Stat>[] = [];
   const workflowRows: WorkflowRow[] = [...workflows.values()].map((workflow) => {
     const leaves = new Map<string, JobRow>();
-    const matrices = new Map<string, { buckets: Buckets; legs: JobRow[] }>();
+    const matrices = new Map<
+      string,
+      { buckets: Buckets; minutes: MinuteBuckets; legs: JobRow[] }
+    >();
     for (const [name, buckets] of workflow.jobs) {
-      const row: JobRow = { name, byEnvironment: stats(buckets) };
+      const minutes: MinuteBuckets = workflow.minutes.get(name) ?? new Map();
+      const row: JobRow = {
+        name,
+        byEnvironment: stats(buckets),
+        minutes: minutesRecord(minutes),
+      };
       leafStats.push(row.byEnvironment);
       const base = matrixName(name);
       if (base) {
-        const matrix = matrices.get(base) ?? { buckets: new Map(), legs: [] as JobRow[] };
+        const matrix = matrices.get(base) ?? {
+          buckets: new Map(),
+          minutes: new Map(),
+          legs: [] as JobRow[],
+        };
         for (const [key, bucket] of buckets) add(matrix.buckets, key, bucket);
+        for (const [key, bucket] of minutes) addMinutes(matrix.minutes, key, bucket);
         matrix.legs.push(row);
         matrices.set(base, matrix);
       } else leaves.set(name, row);
@@ -447,6 +566,7 @@ export async function jobTimesReport(
         leaves.set(base, {
           name: base,
           byEnvironment: stats(matrix.buckets),
+          minutes: minutesRecord(matrix.minutes),
           legs: sortByRuns(matrix.legs),
         });
     }
@@ -454,6 +574,7 @@ export async function jobTimesReport(
       repositoryId: workflow.repositoryId,
       repository: workflow.repository,
       workflow: workflow.workflow,
+      private: visibility.get(workflow.repositoryId) ?? null,
       byEnvironment: stats(workflow.runs),
       jobs: sortByRuns([...leaves.values()]),
     };

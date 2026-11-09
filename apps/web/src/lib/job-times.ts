@@ -19,7 +19,20 @@ export type Stat = {
   trend: number | null;
 };
 
-export type Environment = { key: string; label: string; detail: string };
+/** Where an environment's minutes come from: your machines, another cloud, or GitHub-hosted. */
+export type EnvironmentKind = "machine" | "cloud" | "github";
+
+export type Environment = { key: string; label: string; detail: string; kind: EnvironmentKind };
+
+/** Every run's minutes on one environment, failures too. */
+export type Minutes = {
+  runs: number;
+  runMs: number;
+  /** Charged to GitHub's included minutes, in Linux 2-core minutes, each job rounded up. */
+  quotaMinutes: number;
+  /** Run time per day of the window, oldest first; the last day ends now. */
+  dailyMs: number[];
+};
 
 export type EnvironmentSummary = Environment & {
   stat: Stat;
@@ -27,12 +40,19 @@ export type EnvironmentSummary = Environment & {
   versus: { ratio: number; sharedJobs: number } | null;
 };
 
-export type JobRow = { name: string; byEnvironment: Record<string, Stat>; legs?: JobRow[] };
+export type JobRow = {
+  name: string;
+  byEnvironment: Record<string, Stat>;
+  minutes: Record<string, Minutes>;
+  legs?: JobRow[];
+};
 
 export type WorkflowRow = {
   repositoryId: number;
   repository: string;
   workflow: string | null;
+  /** Null when unknown; GitHub-hosted minutes then count as quota. */
+  private: boolean | null;
   byEnvironment: Record<string, Stat>;
   jobs: JobRow[];
 };
@@ -72,6 +92,19 @@ export function getJobRuns(
   });
   if (job.workflow) query.set("workflow", job.workflow);
   return api<{ days: number; runs: JobRun[] }>(`/job-times/runs?${query}`);
+}
+
+/** One GitHub account's Actions minutes this billing cycle (GET /api/usage/actions). */
+export type AccountMinutes = {
+  installationId: number;
+  accountLogin: string;
+  status: "ok" | "not_available";
+  quotaMinutes: number | null;
+  usedMinutes: number;
+};
+
+export function getActionsUsage() {
+  return api<{ accounts: AccountMinutes[] }>("/usage/actions");
 }
 
 export function getMachineJobTimes(days = 14) {
@@ -117,114 +150,117 @@ export function versusLabel(ratio: number) {
 const ENV_COLORS = ["#58a6ff", "#3fb950", "#d2a8ff", "#f0883e", "#e3b341", "#79c0ff", "#ff7b72"];
 
 export function environmentColor(index: number) {
-  return ENV_COLORS[index % ENV_COLORS.length];
+  return ENV_COLORS[index % ENV_COLORS.length] ?? "#8b949e";
 }
 
 /** Example report for `VITE_AUTH_DISABLED=true` dev builds, which have no API. */
 export function sampleJobTimes(days: number): JobTimesReport {
-  const stat = (
-    medianS: number,
-    samples: number,
-    runs = samples,
-    trend: number | null = null,
-  ): Stat => ({
-    runs,
-    successes: Math.round(runs * 0.96),
-    samples: Math.min(samples, 50),
-    confidence: samples === 0 ? "none" : samples < 5 ? "few" : samples < 20 ? "low" : "ok",
-    medianMs: medianS * 1000,
-    p25Ms: medianS * 900,
-    p75Ms: medianS * 1150,
-    p90Ms: medianS * 1300,
-    waitMs: 6000,
-    trend,
-  });
+  // Deterministic noise, so the sample looks the same on every load.
+  let seed = 7 + days;
+  const random = () => {
+    seed = (seed * 16807) % 2147483647;
+    return seed / 2147483647;
+  };
+  const stat = (medianS: number, runs: number): Stat => {
+    const samples = Math.min(runs, 50);
+    return {
+      runs,
+      successes: Math.round(runs * 0.96),
+      samples,
+      confidence: samples === 0 ? "none" : samples < 5 ? "few" : samples < 20 ? "low" : "ok",
+      medianMs: medianS * 1000,
+      p25Ms: medianS * 900,
+      p75Ms: medianS * 1150,
+      p90Ms: medianS * 1300,
+      waitMs: 6000,
+      trend: null,
+    };
+  };
+  // `runs` over 14 days, scaled to the window and spread over weekdays.
+  const minutes = (medianS: number, runs14: number, quota: boolean): Minutes => {
+    const runs = Math.max(1, Math.round((runs14 * days) / 14));
+    const dailyMs = Array.from({ length: days }, () => 0);
+    let quotaMinutes = 0;
+    let runMs = 0;
+    const today = new Date().getUTCDay();
+    for (let i = 0; i < runs; i += 1) {
+      let day = Math.floor(random() * days);
+      const weekday = (today - (days - 1 - day) + 7 * 10) % 7;
+      if ((weekday === 0 || weekday === 6) && random() < 0.7) day = Math.floor(random() * days);
+      const ms = Math.round(medianS * 1000 * Math.exp((random() - 0.5) * 0.5));
+      dailyMs[day] = (dailyMs[day] ?? 0) + ms;
+      runMs += ms;
+      if (quota) quotaMinutes += Math.max(1, Math.ceil(ms / 60_000));
+    }
+    return { runs, runMs, quotaMinutes, dailyMs };
+  };
   const linux = "github:linux-2-core";
   const mac = "machine:sample";
+  const selfHosted = "self-hosted:Default";
+  const blacksmith = "blacksmith:blacksmith-2vcpu-ubuntu-2404";
   const container = "container";
-  const macos = "github:macos";
+  type Spec = Record<string, [medianS: number, runs: number]>;
+  const job = (name: string, spec: Spec, isPrivate: boolean): JobRow => ({
+    name,
+    byEnvironment: Object.fromEntries(
+      Object.entries(spec).map(([key, [medianS, runs]]) => [key, stat(medianS, runs)]),
+    ),
+    minutes: Object.fromEntries(
+      Object.entries(spec).map(([key, [medianS, runs]]) => [
+        key,
+        minutes(medianS, runs, isPrivate && key.startsWith("github:")),
+      ]),
+    ),
+  });
+  const workflow = (
+    repository: string,
+    name: string,
+    isPrivate: boolean,
+    jobs: [string, Spec][],
+  ): WorkflowRow => ({
+    repositoryId: repository.length,
+    repository,
+    workflow: name,
+    private: isPrivate,
+    byEnvironment: {},
+    jobs: jobs.map(([jobName, spec]) => job(jobName, spec, isPrivate)),
+  });
+  const workflows = [
+    workflow("acme/app", "CI", true, [
+      ["test", { [mac]: [250, 52], [linux]: [360, 21], [blacksmith]: [220, 12] }],
+      ["build", { [mac]: [95, 50], [linux]: [140, 18] }],
+      ["lint", { [linux]: [12, 14], [container]: [30, 5] }],
+    ]),
+    workflow("acme/app", "Release", true, [["build-macos", { [selfHosted]: [235, 4] }]]),
+    workflow("acme/website", "CI", false, [
+      ["Lint, type-check, and test", { [blacksmith]: [78, 118], [linux]: [131, 9] }],
+    ]),
+  ];
+  const environments: EnvironmentSummary[] = [
+    {
+      key: mac,
+      label: "Zach's MacBook Pro",
+      detail: "MacBook Pro · Apple M3 Max",
+      kind: "machine",
+    },
+    { key: blacksmith, label: "blacksmith-2vcpu-ubuntu-2404", detail: "Blacksmith", kind: "cloud" },
+    { key: linux, label: "Linux 2-core", detail: "GitHub-hosted", kind: "github" },
+    { key: container, label: "Cloudflare Container", detail: "standard-1", kind: "cloud" },
+    { key: selfHosted, label: "Self-hosted", detail: "Default", kind: "machine" },
+  ].map((env) => ({ ...env, kind: env.kind as EnvironmentKind, stat: stat(60, 10), versus: null }));
+  return { days, sampleCap: 50, baseline: linux, environments, workflows };
+}
+
+/** A sample billing cycle for dev builds. */
+export function sampleActionsUsage(): { accounts: AccountMinutes[] } {
   return {
-    days,
-    sampleCap: 50,
-    baseline: linux,
-    environments: [
+    accounts: [
       {
-        key: linux,
-        label: "Linux 2-core",
-        detail: "GitHub-hosted",
-        stat: stat(108, 50, 412),
-        versus: null,
-      },
-      {
-        key: mac,
-        label: "Zach's MacBook Pro",
-        detail: "MacBook Pro · Apple M3 Max",
-        stat: stat(41, 50, 198),
-        versus: { ratio: 0.37, sharedJobs: 3 },
-      },
-      {
-        key: container,
-        label: "Cloudflare Container",
-        detail: "standard-1",
-        stat: stat(19, 50, 61),
-        versus: { ratio: 1.03, sharedJobs: 2 },
-      },
-      {
-        key: macos,
-        label: "macOS",
-        detail: "GitHub-hosted",
-        stat: stat(400, 9),
-        versus: null,
-      },
-    ],
-    workflows: [
-      {
-        repositoryId: 1,
-        repository: "acme/app",
-        workflow: "CI",
-        byEnvironment: { [linux]: stat(242, 48, 50, 0.09), [mac]: stat(95, 29) },
-        jobs: [
-          {
-            name: "test",
-            byEnvironment: { [linux]: stat(190, 50, 150, 0.18), [mac]: stat(81, 44) },
-            legs: [
-              {
-                name: "test (node 22)",
-                byEnvironment: { [linux]: stat(182, 50), [mac]: stat(78, 15) },
-              },
-              {
-                name: "test (node 24)",
-                byEnvironment: { [linux]: stat(192, 50), [mac]: stat(81, 16) },
-              },
-            ],
-          },
-          {
-            name: "typecheck",
-            byEnvironment: {
-              [linux]: stat(92, 50),
-              [mac]: stat(38, 40),
-              [container]: stat(168, 7),
-            },
-          },
-          {
-            name: "lint",
-            byEnvironment: {
-              [linux]: stat(41, 50, 50, -0.31),
-              [mac]: stat(12, 31),
-              [container]: stat(24, 22),
-            },
-          },
-          { name: "build", byEnvironment: { [linux]: stat(125, 50), [mac]: stat(52, 3) } },
-        ],
-      },
-      {
-        repositoryId: 1,
-        repository: "acme/app",
-        workflow: "Release",
-        byEnvironment: { [mac]: stat(235, 12), [macos]: stat(400, 9) },
-        jobs: [
-          { name: "build-macos", byEnvironment: { [mac]: stat(235, 12), [macos]: stat(400, 9) } },
-        ],
+        installationId: 1,
+        accountLogin: "acme",
+        status: "ok",
+        quotaMinutes: 2000,
+        usedMinutes: 1184,
       },
     ],
   };

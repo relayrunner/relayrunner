@@ -1,16 +1,9 @@
 import { createFileRoute } from "@tanstack/react-router";
-import { ChevronRightIcon } from "lucide-react";
-import { Fragment, memo, useEffect, useMemo, useState } from "react";
+import { ChevronDownIcon, ChevronRightIcon, XIcon } from "lucide-react";
+import { Fragment, useEffect, useMemo, useState } from "react";
 import { PageHeader } from "@/components/page-header";
 import { RangePicker } from "@/components/range-picker";
 import { Button } from "@/components/ui/button";
-import {
-  Dialog,
-  DialogContent,
-  DialogDescription,
-  DialogHeader,
-  DialogTitle,
-} from "@/components/ui/dialog";
 import {
   Select,
   SelectContent,
@@ -20,21 +13,18 @@ import {
 } from "@/components/ui/select";
 import { authDisabled } from "@/lib/auth-client";
 import {
-  clock,
+  type AccountMinutes,
   DAY_MS,
   environmentColor,
   type EnvironmentSummary,
-  getJobRuns,
+  getActionsUsage,
   getJobTimes,
   type JobRow,
-  type JobRun,
   type JobTimesReport,
-  medianText,
-  plural,
-  type Stat,
+  type Minutes,
+  sampleActionsUsage,
   sampleJobTimes,
-  spreadText,
-  versusLabel,
+  type Stat,
   type WorkflowRow,
 } from "@/lib/job-times";
 import { cn } from "@/lib/utils";
@@ -45,22 +35,156 @@ function load(days: number) {
   return authDisabled ? Promise.resolve(sampleJobTimes(days)) : getJobTimes(days);
 }
 
+function loadUsage() {
+  return authDisabled ? Promise.resolve(sampleActionsUsage()) : getActionsUsage();
+}
+
 export const Route = createFileRoute("/_authed/_workspace/job-times")({
   loader: () => load(14),
   component: JobTimesPage,
 });
 
-type Detail = { workflow: WorkflowRow; job: JobRow };
+/** Where a run's minutes went. GitHub-hosted splits by whether the repo draws on the quota. */
+type Where = "machine" | "cloud" | "free" | "quota";
+
+const WHERE: Record<Where, { label: string; color: string; opacity: number }> = {
+  machine: { label: "Your machines", color: "#3fb950", opacity: 1 },
+  cloud: { label: "Other cloud", color: "#58a6ff", opacity: 1 },
+  free: { label: "GitHub, public repos", color: "#e3b341", opacity: 0.35 },
+  quota: { label: "GitHub quota", color: "#e3b341", opacity: 1 },
+};
+const WHERE_ORDER: Where[] = ["machine", "cloud", "free", "quota"];
+
+function whereOf(env: EnvironmentSummary, workflow: WorkflowRow): Where {
+  if (env.kind === "machine") return "machine";
+  if (env.kind === "cloud") return "cloud";
+  // Unknown visibility counts as private, like the Usage page, so a cost is never hidden.
+  return workflow.private === false ? "free" : "quota";
+}
+
+type RunnerLine = {
+  env: EnvironmentSummary;
+  color: string;
+  where: Where;
+  minutes: Minutes;
+  stat?: Stat;
+};
+
+type JobLine = {
+  key: string;
+  workflow: WorkflowRow;
+  job: JobRow;
+  runners: RunnerLine[];
+  runs: number;
+  runMs: number;
+  quotaMinutes: number;
+  dailyMs: number[];
+  byWhere: Record<Where, number>;
+};
+
+function emptyWhere(): Record<Where, number> {
+  return { machine: 0, cloud: 0, free: 0, quota: 0 };
+}
+
+/** One line per job (matrix legs folded into their job), most minutes first. */
+function jobLines(report: JobTimesReport, workflows: WorkflowRow[]): JobLine[] {
+  const envs = new Map(report.environments.map((env, index) => [env.key, { env, index }]));
+  const lines: JobLine[] = [];
+  for (const workflow of workflows) {
+    for (const job of workflow.jobs) {
+      const runners: RunnerLine[] = [];
+      for (const [key, minutes] of Object.entries(job.minutes ?? {})) {
+        const found = envs.get(key);
+        if (!found || !minutes.runs) continue;
+        runners.push({
+          env: found.env,
+          color: environmentColor(found.index),
+          where: whereOf(found.env, workflow),
+          minutes,
+          stat: job.byEnvironment[key],
+        });
+      }
+      if (!runners.length) continue;
+      runners.sort((a, b) => b.minutes.runMs - a.minutes.runMs);
+      const byWhere = emptyWhere();
+      const dailyMs = Array.from({ length: report.days }, () => 0);
+      for (const runner of runners) {
+        byWhere[runner.where] += runner.minutes.runMs;
+        runner.minutes.dailyMs.forEach((ms, day) => {
+          dailyMs[day] = (dailyMs[day] ?? 0) + ms;
+        });
+      }
+      lines.push({
+        key: `${workflow.repositoryId}/${workflow.workflow ?? ""}/${job.name}`,
+        workflow,
+        job,
+        runners,
+        runs: runners.reduce((sum, runner) => sum + runner.minutes.runs, 0),
+        runMs: runners.reduce((sum, runner) => sum + runner.minutes.runMs, 0),
+        quotaMinutes: runners.reduce((sum, runner) => sum + runner.minutes.quotaMinutes, 0),
+        dailyMs,
+        byWhere,
+      });
+    }
+  }
+  return lines.sort((a, b) => b.runMs - a.runMs);
+}
+
+/** "0.4", "7.5", "1,240": minutes, with a decimal only while it matters. */
+function minutesText(ms: number) {
+  const minutes = ms / 60_000;
+  if (minutes === 0) return "0";
+  if (minutes < 10) return minutes.toFixed(1);
+  return Math.round(minutes).toLocaleString();
+}
+
+/** "26s", "1m 18s", "4m": a job's typical length. */
+function durationText(ms: number | null) {
+  if (ms === null) return "—";
+  const total = Math.round(ms / 1000);
+  if (total < 60) return `${total}s`;
+  const m = Math.floor(total / 60);
+  const s = total % 60;
+  return s ? `${m}m ${s}s` : `${m}m`;
+}
+
+function percent(part: number, whole: number) {
+  return whole ? `${Math.round((part / whole) * 100)}%` : "0%";
+}
+
+/** A job's typical run: its runners' medians weighted by the runs behind them. */
+function typicalRun(runners: RunnerLine[]) {
+  let weight = 0;
+  let sum = 0;
+  for (const runner of runners) {
+    if (!runner.stat?.medianMs || !runner.stat.samples) continue;
+    sum += runner.stat.medianMs * runner.stat.samples;
+    weight += runner.stat.samples;
+  }
+  return { ms: weight ? sum / weight : null, few: weight < 5 };
+}
 
 function JobTimesPage() {
   const first = Route.useLoaderData();
   const [report, setReport] = useState<JobTimesReport>(first);
+  // Day buckets end at the time of the read.
+  const [readAt, setReadAt] = useState(() => Date.now());
   const [repository, setRepository] = useState<string>("all");
-  const [detail, setDetail] = useState<Detail | null>(null);
+  const [scope, setScope] = useState<string | null>(null);
+  const [usage, setUsage] = useState<AccountMinutes[] | null>(null);
+
+  useEffect(() => {
+    loadUsage()
+      .then((result) => setUsage(result.accounts))
+      .catch(() => undefined);
+  }, []);
 
   function chooseRange(days: number) {
     load(days)
-      .then(setReport)
+      .then((next) => {
+        setReport(next);
+        setReadAt(Date.now());
+      })
       .catch(() => undefined);
   }
 
@@ -68,26 +192,34 @@ function JobTimesPage() {
     () => [...new Set(report.workflows.map((workflow) => workflow.repository))].sort(),
     [report],
   );
-  // Filtered here, from the rows already loaded, so switching repos reads nothing more.
-  const workflows = useMemo(
+  const lines = useMemo(
     () =>
-      repository === "all"
-        ? report.workflows
-        : report.workflows.filter((workflow) => workflow.repository === repository),
+      jobLines(
+        report,
+        repository === "all"
+          ? report.workflows
+          : report.workflows.filter((workflow) => workflow.repository === repository),
+      ),
     [report, repository],
   );
+  const scoped = lines.find((line) => line.key === scope) ?? null;
 
   return (
     <section>
       <PageHeader title="Job times">
-        How long your jobs usually take on each runner, from their newest {report.sampleCap}{" "}
-        successful runs in the window. Use it to see which runner suits which job.
+        Where your CI minutes went: your own machines, GitHub's quota, or another cloud.
       </PageHeader>
       <div className="grid gap-6">
         <div className="flex flex-wrap items-center gap-3">
           <RangePicker ranges={RANGES} days={report.days} onChange={chooseRange} />
           {repositories.length > 1 && (
-            <Select value={repository} onValueChange={setRepository}>
+            <Select
+              value={repository}
+              onValueChange={(value) => {
+                setRepository(value);
+                setScope(null);
+              }}
+            >
               <SelectTrigger size="sm" aria-label="Repo">
                 <SelectValue />
               </SelectTrigger>
@@ -103,658 +235,645 @@ function JobTimesPage() {
           )}
         </div>
 
-        {report.environments.length === 0 ? (
+        {lines.length === 0 ? (
           <p className="rounded-xl border bg-card px-4 py-6 text-sm text-muted-foreground">
             No finished jobs in the last {report.days} days. Jobs show up here once the GitHub App
             sees them run in a connected repo.
           </p>
         ) : (
           <>
-            <Environments report={report} />
-            <Jobs
-              environments={report.environments}
-              workflows={workflows}
-              showRepository={repository === "all" && repositories.length > 1}
-              onOpen={setDetail}
+            <MinutesCard
+              report={report}
+              readAt={readAt}
+              lines={scoped ? [scoped] : lines}
+              scoped={scoped}
+              usage={usage}
+              onClearScope={() => setScope(null)}
             />
-            <p className="max-w-[62ch] text-sm text-muted-foreground">
-              Run time counts successful runs only, since a failure stops early. Medians, not
-              averages, so one cold cache doesn't skew a job. Wait is the time from queued until a
-              runner picked the job up. A workflow's time is its whole run, first job start to last
-              job finish, for runs where every job used that runner.
+            <Jobs
+              lines={lines}
+              readAt={readAt}
+              days={report.days}
+              scope={scope}
+              onScope={(key) => setScope(scope === key ? null : key)}
+            />
+            <p className="max-w-[80ch] text-sm text-muted-foreground">
+              Minutes are time on the runner, every run counted. Quota min is what GitHub charges
+              against your included minutes, in Linux 2-core minutes: only GitHub-hosted jobs in
+              private repos count, and GitHub rounds every job up to a whole minute. Your machines
+              never touch a quota. Typical run is the median of successful runs.
             </p>
           </>
         )}
       </div>
-      {detail && (
-        <JobDetail
-          detail={detail}
-          days={report.days}
-          environments={report.environments}
-          onClose={() => setDetail(null)}
-        />
-      )}
     </section>
   );
 }
 
-function Swatch({ index }: { index: number }) {
-  return (
-    <span
-      aria-hidden
-      className="inline-block size-2.5 shrink-0 rounded-[3px]"
-      style={{ background: environmentColor(index) }}
-    />
+function dayLabel(readAt: number, days: number, index: number, long = true) {
+  const date = new Date(readAt - (days - 1 - index) * DAY_MS);
+  return date.toLocaleDateString(
+    undefined,
+    long
+      ? { weekday: "short", month: "short", day: "numeric" }
+      : { month: "numeric", day: "numeric" },
   );
 }
 
-function Environments({ report }: { report: JobTimesReport }) {
-  const baseline = report.environments.find((env) => env.key === report.baseline);
-  return (
-    <div className="overflow-x-auto rounded-xl border bg-card">
-      <table className="w-full text-sm tabular-nums">
-        <caption className="px-4 pt-3 pb-2 text-left font-semibold">Runners</caption>
-        <thead>
-          <tr className="border-b text-muted-foreground">
-            <th scope="col" className="px-4 py-2 text-left font-normal">
-              Runner
-            </th>
-            {["Jobs", "Median wait", "Median run", "Success"].map((label) => (
-              <th
-                key={label}
-                scope="col"
-                className="px-4 py-2 text-right font-normal whitespace-nowrap"
-              >
-                {label}
-              </th>
-            ))}
-            <th scope="col" className="px-4 py-2 text-left font-normal whitespace-nowrap">
-              {baseline ? `Vs. ${baseline.label} on shared jobs` : "Vs. baseline"}
-            </th>
-          </tr>
-        </thead>
-        <tbody>
-          {report.environments.map((env, index) => (
-            <tr key={env.key} className="border-b last:border-0">
-              <td className="px-4 py-2.5">
-                <span className="flex items-center gap-2.5">
-                  <Swatch index={index} />
-                  <span>
-                    <span className="block whitespace-nowrap">{env.label}</span>
-                    {env.detail && (
-                      <span className="block text-xs whitespace-nowrap text-muted-foreground">
-                        {env.detail}
-                      </span>
-                    )}
-                  </span>
-                </span>
-              </td>
-              <td className="px-4 py-2.5 text-right">{env.stat.runs.toLocaleString()}</td>
-              <td className="px-4 py-2.5 text-right">{clock(env.stat.waitMs)}</td>
-              <td className="px-4 py-2.5 text-right font-semibold">{clock(env.stat.medianMs)}</td>
-              <td className="px-4 py-2.5 text-right">
-                {env.stat.runs ? `${Math.round((env.stat.successes / env.stat.runs) * 100)}%` : "—"}
-              </td>
-              <td className="px-4 py-2.5 whitespace-nowrap">
-                <Versus env={env} isBaseline={env.key === report.baseline} />
-              </td>
-            </tr>
-          ))}
-        </tbody>
-      </table>
-    </div>
-  );
-}
+type Mode = "where" | "runner";
 
-function Versus({ env, isBaseline }: { env: EnvironmentSummary; isBaseline: boolean }) {
-  if (isBaseline) return <span className="text-muted-foreground">baseline</span>;
-  if (!env.versus) return <span className="text-muted-foreground">no shared jobs</span>;
-  const { ratio, sharedJobs } = env.versus;
-  const label = versusLabel(ratio);
-  return (
-    <>
-      <span
-        className={cn(
-          "font-medium",
-          label === "about even"
-            ? "text-muted-foreground"
-            : ratio < 1
-              ? "text-go"
-              : "text-destructive",
-        )}
-      >
-        {label}
-      </span>
-      <span className={cn("ml-2 text-xs", sharedJobs < 3 ? "text-run" : "text-muted-foreground")}>
-        on {plural(sharedJobs, "job")}
-        {sharedJobs < 3 && ", too few to trust"}
-      </span>
-    </>
-  );
-}
+type Series = { key: string; label: string; color: string; opacity: number; dailyMs: number[] };
 
-// Memoized: opening the job detail re-renders the page, not this table.
-const Jobs = memo(function Jobs({
-  environments,
-  workflows,
-  showRepository,
-  onOpen,
+function MinutesCard({
+  report,
+  readAt,
+  lines,
+  scoped,
+  usage,
+  onClearScope,
 }: {
-  environments: EnvironmentSummary[];
-  workflows: WorkflowRow[];
-  showRepository: boolean;
-  onOpen: (detail: Detail) => void;
+  report: JobTimesReport;
+  readAt: number;
+  lines: JobLine[];
+  scoped: JobLine | null;
+  usage: AccountMinutes[] | null;
+  onClearScope: () => void;
 }) {
-  // Workflows start open and matrix jobs closed, like a spend breakdown.
-  const [closed, setClosed] = useState<Set<string>>(new Set());
-  const [openMatrices, setOpenMatrices] = useState<Set<string>>(new Set());
-  const toggle = (set: Set<string>, key: string) => {
-    const next = new Set(set);
-    if (!next.delete(key)) next.add(key);
-    return next;
-  };
-  const workflowKey = (workflow: WorkflowRow) =>
-    `${workflow.repositoryId}/${workflow.workflow ?? ""}`;
-  const allClosed = workflows.every((workflow) => closed.has(workflowKey(workflow)));
-  const span = environments.length + 2;
+  const [mode, setMode] = useState<Mode>("where");
+  const days = report.days;
 
-  return (
-    <div className="grid gap-2">
-      <div className="flex items-center justify-between gap-3">
-        <h2 className="font-semibold">Jobs</h2>
-        <Button
-          size="sm"
-          variant="ghost"
-          onClick={() => setClosed(allClosed ? new Set() : new Set(workflows.map(workflowKey)))}
-        >
-          {allClosed ? "Expand all" : "Collapse all"}
-        </Button>
-      </div>
-      <div className="overflow-x-auto rounded-xl border bg-card">
-        <table className="w-full text-sm tabular-nums">
-          <thead>
-            <tr className="border-b text-muted-foreground">
-              <th scope="col" className="px-4 py-2 text-left font-normal">
-                Workflow › job
-              </th>
-              {environments.map((env, index) => (
-                <th
-                  key={env.key}
-                  scope="col"
-                  className="px-4 py-2 text-right font-normal whitespace-nowrap"
-                >
-                  <span className="inline-flex items-center gap-1.5">
-                    <Swatch index={index} />
-                    {env.label}
-                  </span>
-                </th>
-              ))}
-              <th scope="col" className="px-4 py-2 text-right font-normal">
-                Trend
-              </th>
-            </tr>
-          </thead>
-          <tbody>
-            {workflows.length === 0 && (
-              <tr>
-                <td colSpan={span} className="px-4 py-6 text-muted-foreground">
-                  No jobs in this repo in the window.
-                </td>
-              </tr>
-            )}
-            {workflows.map((workflow) => {
-              const key = workflowKey(workflow);
-              const open = !closed.has(key);
-              return (
-                <Fragment key={key}>
-                  <tr className="border-b bg-secondary/60">
-                    <th scope="row" className="px-4 py-2.5 text-left font-normal">
-                      <button
-                        type="button"
-                        aria-expanded={open}
-                        onClick={() => setClosed(toggle(closed, key))}
-                        className="flex items-center gap-1.5 rounded-sm text-left outline-none focus-visible:ring-2 focus-visible:ring-ring"
-                      >
-                        <Chevron open={open} />
-                        <span className="font-semibold whitespace-nowrap">
-                          {workflow.workflow ?? "Unnamed workflow"}
-                        </span>
-                        <span className="text-xs whitespace-nowrap text-muted-foreground">
-                          {showRepository && `${workflow.repository} · `}
-                          {plural(workflow.jobs.length, "job")}
-                        </span>
-                      </button>
-                    </th>
-                    <Cells
-                      environments={environments}
-                      byEnvironment={workflow.byEnvironment}
-                      perRun
-                    />
-                  </tr>
-                  {open &&
-                    workflow.jobs.map((job) => {
-                      const matrixKey = `${key}/${job.name}`;
-                      const matrixOpen = openMatrices.has(matrixKey);
-                      return (
-                        <Fragment key={job.name}>
-                          <JobLine
-                            job={job}
-                            depth={1}
-                            environments={environments}
-                            onOpen={() => onOpen({ workflow, job })}
-                            matrix={
-                              job.legs
-                                ? {
-                                    open: matrixOpen,
-                                    toggle: () => setOpenMatrices(toggle(openMatrices, matrixKey)),
-                                  }
-                                : undefined
-                            }
-                          />
-                          {matrixOpen &&
-                            job.legs?.map((leg) => (
-                              <JobLine
-                                key={leg.name}
-                                job={leg}
-                                depth={2}
-                                environments={environments}
-                                onOpen={() => onOpen({ workflow, job: leg })}
-                              />
-                            ))}
-                        </Fragment>
-                      );
-                    })}
-                </Fragment>
-              );
-            })}
-          </tbody>
-        </table>
-      </div>
-      <p className="flex flex-wrap gap-x-5 gap-y-1 text-xs text-muted-foreground">
-        <span>
-          <span className="text-run">7 runs</span> in amber: 5 to 19 runs, read with care
-        </span>
-        <span>~0:52 in grey: under 5 runs, never marked fastest</span>
-        <span>
-          <span className="text-go">▲</span> fastest with 5+ runs
-        </span>
-        <span>Trend: the newer half of the runs against the older half</span>
-      </p>
-    </div>
-  );
-});
+  const byWhere = emptyWhere();
+  let runs = 0;
+  let quotaMinutes = 0;
+  for (const line of lines) {
+    for (const where of WHERE_ORDER) byWhere[where] += line.byWhere[where];
+    runs += line.runs;
+    quotaMinutes += line.quotaMinutes;
+  }
+  const totalMs = WHERE_ORDER.reduce((sum, where) => sum + byWhere[where], 0);
 
-function Chevron({ open }: { open: boolean }) {
-  return (
-    <ChevronRightIcon
-      aria-hidden
-      className={cn("size-4 text-muted-foreground transition-transform", open && "rotate-90")}
-    />
-  );
-}
-
-function JobLine({
-  job,
-  depth,
-  environments,
-  onOpen,
-  matrix,
-}: {
-  job: JobRow;
-  depth: 1 | 2;
-  environments: EnvironmentSummary[];
-  onOpen: () => void;
-  matrix?: { open: boolean; toggle: () => void };
-}) {
-  return (
-    <tr className="border-b last:border-0 hover:bg-secondary/30">
-      <th
-        scope="row"
-        className={cn("py-2.5 pr-4 text-left font-normal", depth === 1 ? "pl-10" : "pl-16")}
-      >
-        <span className="flex items-center gap-1.5">
-          {matrix && (
-            <button
-              type="button"
-              aria-expanded={matrix.open}
-              aria-label={`${matrix.open ? "Hide" : "Show"} ${job.name} legs`}
-              onClick={matrix.toggle}
-              className="-ml-5.5 rounded-sm outline-none focus-visible:ring-2 focus-visible:ring-ring"
-            >
-              <Chevron open={matrix.open} />
-            </button>
-          )}
-          <button
-            type="button"
-            onClick={onOpen}
-            className="rounded-sm text-left font-medium whitespace-nowrap underline-offset-4 outline-none hover:underline focus-visible:ring-2 focus-visible:ring-ring"
-          >
-            {job.name}
-          </button>
-          {job.legs && <span className="text-xs text-muted-foreground">⊞ {job.legs.length}</span>}
-        </span>
-      </th>
-      <Cells environments={environments} byEnvironment={job.byEnvironment} />
-    </tr>
-  );
-}
-
-/** The fastest environment among those with 5+ runs, when at least two qualify. */
-function fastest(byEnvironment: Record<string, Stat>) {
-  const ranked = Object.entries(byEnvironment)
-    .filter(([, stat]) => stat.samples >= 5 && stat.medianMs !== null)
-    .sort(([, a], [, b]) => (a.medianMs ?? 0) - (b.medianMs ?? 0));
-  return ranked.length >= 2 ? (ranked[0]?.[0] ?? null) : null;
-}
-
-function Cells({
-  environments,
-  byEnvironment,
-  perRun = false,
-}: {
-  environments: EnvironmentSummary[];
-  byEnvironment: Record<string, Stat>;
-  perRun?: boolean;
-}) {
-  const best = fastest(byEnvironment);
-  // The trend of the runner this job ran on most.
-  const busiest = Object.values(byEnvironment).sort((a, b) => b.samples - a.samples)[0];
-  return (
-    <>
-      {environments.map((env) => (
-        <td key={env.key} className="px-4 py-2 text-right whitespace-nowrap">
-          <TimeCell stat={byEnvironment[env.key]} best={best === env.key} perRun={perRun} />
-        </td>
-      ))}
-      <td className="px-4 py-2 text-right whitespace-nowrap">
-        <Trend trend={busiest?.trend ?? null} />
-      </td>
-    </>
-  );
-}
-
-function TimeCell({ stat, best, perRun }: { stat?: Stat; best: boolean; perRun: boolean }) {
-  if (!stat || stat.samples === 0)
-    return (
-      <span className="flex flex-col items-end leading-tight">
-        <span className="text-idle">—</span>
-        <span className="text-xs text-muted-foreground">
-          {perRun ? "no whole runs" : "not run"}
-        </span>
-      </span>
-    );
-  const few = stat.confidence === "few";
-  return (
-    <span className="flex flex-col items-end leading-tight" title={spreadText(stat)}>
-      <span
-        className={cn(
-          "text-[15px] font-semibold",
-          best && "text-go",
-          few && "font-medium text-muted-foreground",
-        )}
-      >
-        {best && <span className="mr-1 align-[1px] text-[9px]">▲</span>}
-        {medianText(stat)}
-      </span>
-      <span
-        className={cn(
-          "text-xs",
-          stat.confidence === "low" ? "text-run" : few ? "text-idle" : "text-muted-foreground",
-        )}
-      >
-        {perRun && "per run · "}
-        {plural(stat.samples, "run")}
-      </span>
-    </span>
-  );
-}
-
-function Trend({ trend }: { trend: number | null }) {
-  if (trend === null) return <span className="text-muted-foreground">—</span>;
-  const pct = Math.round(trend * 100);
-  if (Math.abs(pct) < 5) return <span className="text-muted-foreground">±{Math.abs(pct)}%</span>;
-  return (
-    <span className={cn("font-medium", pct > 0 ? "text-destructive" : "text-go")}>
-      {pct > 0 ? "+" : "−"}
-      {Math.abs(pct)}%
-    </span>
-  );
-}
-
-function JobDetail({
-  detail,
-  days,
-  environments,
-  onClose,
-}: {
-  detail: Detail;
-  days: number;
-  environments: EnvironmentSummary[];
-  onClose: () => void;
-}) {
-  const { workflow, job } = detail;
-  const [runs, setRuns] = useState<JobRun[] | null>(null);
-  const [failed, setFailed] = useState(false);
-
-  useEffect(() => {
-    if (authDisabled) {
-      setRuns(sampleRuns(job, days));
-      return;
+  const series: Series[] = [];
+  if (mode === "where") {
+    for (const where of WHERE_ORDER) {
+      const dailyMs = Array.from({ length: days }, () => 0);
+      for (const line of lines)
+        for (const runner of line.runners)
+          if (runner.where === where)
+            runner.minutes.dailyMs.forEach((ms, day) => {
+              dailyMs[day] = (dailyMs[day] ?? 0) + ms;
+            });
+      if (dailyMs.some(Boolean)) series.push({ key: where, ...WHERE[where], dailyMs });
     }
-    let live = true;
-    getJobRuns(days, {
-      repositoryId: workflow.repositoryId,
-      workflow: workflow.workflow,
-      name: job.name,
-      matrix: Boolean(job.legs),
-    })
-      .then((result) => live && setRuns(result.runs))
-      .catch(() => live && setFailed(true));
-    return () => {
-      live = false;
-    };
-  }, [workflow, job, days]);
+  } else {
+    report.environments.forEach((env, index) => {
+      const dailyMs = Array.from({ length: days }, () => 0);
+      for (const line of lines)
+        for (const runner of line.runners)
+          if (runner.env.key === env.key)
+            runner.minutes.dailyMs.forEach((ms, day) => {
+              dailyMs[day] = (dailyMs[day] ?? 0) + ms;
+            });
+      if (dailyMs.some(Boolean))
+        series.push({
+          key: env.key,
+          label: env.label,
+          color: environmentColor(index),
+          opacity: 1,
+          dailyMs,
+        });
+    });
+  }
 
-  const used = environments
-    .flatMap((env, index) => {
-      const stat = job.byEnvironment[env.key];
-      return stat ? [{ env, index, stat }] : [];
-    })
-    .sort((a, b) => (a.stat.medianMs ?? Infinity) - (b.stat.medianMs ?? Infinity));
-  const missing = environments.filter((env) => !job.byEnvironment[env.key]);
+  // The billing cycle across the workspace's GitHub accounts that report a quota.
+  const cycle = (usage ?? []).filter((account) => account.status === "ok" && account.quotaMinutes);
+  const cycleQuota = cycle.reduce((sum, account) => sum + (account.quotaMinutes ?? 0), 0);
+  const cycleUsed = cycle.reduce((sum, account) => sum + account.usedMinutes, 0);
+
+  const tiles = [
+    {
+      where: "machine" as const,
+      value: minutesText(byWhere.machine),
+      unit: "min",
+      note: `${percent(byWhere.machine, totalMs)} of all minutes · no quota, no bill`,
+    },
+    {
+      where: "cloud" as const,
+      value: minutesText(byWhere.cloud),
+      unit: "min",
+      note: `${percent(byWhere.cloud, totalMs)} · billed by the provider`,
+    },
+    {
+      where: "free" as const,
+      value: minutesText(byWhere.free),
+      unit: "min",
+      note: `${percent(byWhere.free, totalMs)} · free, outside the quota`,
+    },
+    {
+      where: "quota" as const,
+      value: Math.round(quotaMinutes).toLocaleString(),
+      unit: "min charged",
+      note: `${minutesText(byWhere.quota)} min of work, rounded up per job`,
+    },
+  ];
 
   return (
-    <Dialog open onOpenChange={(open) => !open && onClose()}>
-      <DialogContent className="sm:max-w-3xl">
-        <DialogHeader>
-          <DialogTitle>
-            {workflow.workflow ?? "Unnamed workflow"} › {job.name}
-          </DialogTitle>
-          <DialogDescription>
-            {workflow.repository} · last {days} days · each dot is one run
-          </DialogDescription>
-        </DialogHeader>
-        <div className="grid min-w-0 gap-5 md:grid-cols-[minmax(0,1fr)_240px]">
-          <div className="min-w-0">
-            {failed ? (
-              <p className="text-sm text-destructive">Couldn't load the runs. Try again.</p>
-            ) : runs === null ? (
-              <p className="text-sm text-muted-foreground">Loading runs…</p>
-            ) : (
-              <RunChart
-                runs={runs}
-                environments={environments}
-                medians={job.byEnvironment}
-                days={days}
-              />
-            )}
-          </div>
-          <div className="grid content-start gap-3 text-sm tabular-nums">
-            {used.map(({ env, index, stat }) => (
-              <div
-                key={env.key}
-                className="grid grid-cols-[auto_1fr_auto] items-baseline gap-x-2 border-b pb-3 last:border-0"
+    <section aria-label="Minutes" className="overflow-hidden rounded-xl border bg-card">
+      <div className="flex flex-wrap items-center justify-between gap-3 border-b px-5 py-4">
+        {scoped ? (
+          <div className="flex min-w-0 items-center gap-2 text-sm">
+            <span className="text-muted-foreground">Showing</span>
+            <span className="flex min-w-0 items-center gap-1.5 rounded-full border bg-secondary py-1 pr-1 pl-3">
+              <span className="whitespace-nowrap text-muted-foreground">
+                {scoped.workflow.workflow ?? "Unnamed workflow"} ›
+              </span>
+              <span className="truncate font-semibold">{scoped.job.name}</span>
+              <button
+                type="button"
+                aria-label="Show all jobs"
+                onClick={onClearScope}
+                className="flex size-6 items-center justify-center rounded-full text-muted-foreground outline-none hover:bg-accent hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring"
               >
-                <Swatch index={index} />
-                <span className="truncate">{env.label}</span>
-                <span className="text-right font-semibold">{medianText(stat)}</span>
-                <span className="col-span-2 col-start-2 text-right text-xs text-muted-foreground">
-                  {spreadText(stat)}
-                  {stat.waitMs !== null && ` · wait ${clock(stat.waitMs)}`} ·{" "}
-                  <span className={cn(stat.confidence === "low" && "text-run")}>
-                    {plural(stat.samples, "run")}
-                  </span>
+                <XIcon aria-hidden className="size-3.5" />
+              </button>
+            </span>
+          </div>
+        ) : (
+          <div className="grid gap-0.5">
+            <p className="text-[17px] font-semibold">
+              <span className="text-go">{minutesText(totalMs)} minutes</span> of CI across{" "}
+              {runs.toLocaleString()} {runs === 1 ? "job" : "jobs"}
+            </p>
+            <p className="text-sm text-muted-foreground">
+              Last {days} days · pick a job below to chart it on its own
+            </p>
+          </div>
+        )}
+        <div
+          role="group"
+          aria-label="Group chart by"
+          className="flex gap-0.5 rounded-lg border bg-background p-0.5"
+        >
+          {(
+            [
+              ["where", "Where it ran"],
+              ["runner", "By runner"],
+            ] as const
+          ).map(([value, label]) => (
+            <Button
+              key={value}
+              size="sm"
+              variant={mode === value ? "secondary" : "ghost"}
+              aria-pressed={mode === value}
+              onClick={() => setMode(value)}
+              className="h-7"
+            >
+              {label}
+            </Button>
+          ))}
+        </div>
+      </div>
+
+      <div className="grid grid-cols-[repeat(auto-fit,minmax(200px,1fr))] gap-px border-b bg-border">
+        {tiles.map((tile) => (
+          <div key={tile.where} className="grid content-start gap-1 bg-card px-5 py-3.5">
+            <span className="flex items-center gap-2 text-xs text-muted-foreground">
+              <span
+                aria-hidden
+                className="size-2 rounded-[2px]"
+                style={{ background: WHERE[tile.where].color, opacity: WHERE[tile.where].opacity }}
+              />
+              {WHERE[tile.where].label}
+            </span>
+            <span className="text-2xl font-semibold tracking-tight tabular-nums">
+              {tile.value}{" "}
+              <span className="text-sm font-normal text-muted-foreground">{tile.unit}</span>
+            </span>
+            <span className="text-xs text-muted-foreground">{tile.note}</span>
+            {tile.where === "quota" && cycleQuota > 0 && (
+              <>
+                <div className="mt-1 h-1.5 overflow-hidden rounded-full bg-border">
+                  <div
+                    className="h-full rounded-full"
+                    style={{
+                      width: `${Math.min(100, (cycleUsed / cycleQuota) * 100)}%`,
+                      background: WHERE.quota.color,
+                    }}
+                  />
+                </div>
+                <span className="text-xs text-muted-foreground tabular-nums">
+                  {Math.round(cycleUsed).toLocaleString()} of {cycleQuota.toLocaleString()} used
+                  this month
                 </span>
-              </div>
-            ))}
-            {missing.length > 0 && (
-              <p className="text-xs text-muted-foreground">
-                Not run on {missing.map((env) => env.label).join(", ")} in this window, so there's
-                nothing to compare there yet.
-              </p>
+              </>
             )}
           </div>
-        </div>
-      </DialogContent>
-    </Dialog>
+        ))}
+      </div>
+
+      <Chart series={series} days={days} readAt={readAt} />
+    </section>
   );
 }
 
-// Run time over the window, one dot per run, a dashed median line per runner. Failures are hollow:
-// they stop early, so they're left out of the medians.
-function RunChart({
-  runs,
-  environments,
-  medians,
-  days,
-}: {
-  runs: JobRun[];
-  environments: EnvironmentSummary[];
-  /** The job's times, so the lines match the medians shown beside the chart. */
-  medians: Record<string, Stat>;
-  days: number;
-}) {
-  if (runs.length === 0)
-    return <p className="text-sm text-muted-foreground">No runs in this window.</p>;
-  const W = 520;
-  const H = 240;
-  const left = 44;
-  const right = 10;
-  const top = 10;
-  const bottom = 24;
-  const now = Date.now();
-  const start = now - days * DAY_MS;
-  const maxMs = Math.max(...runs.map((run) => run.completedAt - run.startedAt), 1000);
-  const step = niceStep(maxMs / 4);
-  const yMax = Math.ceil(maxMs / step) * step;
-  const x = (t: number) => left + ((t - start) / (now - start)) * (W - left - right);
-  const y = (ms: number) => top + (1 - ms / yMax) * (H - top - bottom);
-  const color = (key: string) =>
-    environmentColor(
-      Math.max(
-        0,
-        environments.findIndex((env) => env.key === key),
-      ),
-    );
-  const ticks = Array.from({ length: Math.round(yMax / step) + 1 }, (_, i) => i * step);
+/** A tidy axis step for `max` minutes: about 3 to 4 gridlines. */
+function niceStep(maxMinutes: number) {
+  const steps = [1, 2, 5, 10, 15, 30, 60, 120, 180, 300, 600, 1200, 3000, 6000];
+  return steps.find((step) => (maxMinutes * 1.1) / step <= 4) ?? 6000;
+}
+
+function axisLabel(minutes: number) {
+  return minutes >= 60 && minutes % 60 === 0 ? `${minutes / 60}h` : `${minutes}m`;
+}
+
+const PLOT_HEIGHT = 220;
+
+function Chart({ series, days, readAt }: { series: Series[]; days: number; readAt: number }) {
+  const [hover, setHover] = useState<number | null>(null);
+  const totals = Array.from({ length: days }, (_, day) =>
+    series.reduce((sum, item) => sum + (item.dailyMs[day] ?? 0), 0),
+  );
+  const maxMinutes = Math.max(1, ...totals.map((ms) => ms / 60_000));
+  const step = niceStep(maxMinutes);
+  const top = Math.ceil((maxMinutes * 1.1) / step) * step;
+  const height = (ms: number) => (ms / 60_000 / top) * PLOT_HEIGHT;
+  const grid: number[] = [];
+  for (let value = step; value <= top; value += step) grid.push(value);
+  const shown = hover !== null && (totals[hover] ?? 0) > 0 ? hover : null;
+  const left = shown === null ? 0 : ((shown + 0.5) / days) * 100;
 
   return (
-    <svg
-      viewBox={`0 0 ${W} ${H}`}
-      className="w-full"
-      role="img"
-      aria-label="Run time of each run over the window"
-    >
-      {ticks.map((ms) => (
-        <g key={ms}>
-          <line
-            x1={left}
-            x2={W - right}
-            y1={y(ms)}
-            y2={y(ms)}
-            stroke="var(--border)"
-            strokeWidth={1}
-          />
-          <text
-            x={left - 8}
-            y={y(ms) + 3.5}
-            textAnchor="end"
-            className="fill-muted-foreground text-[10px] tabular-nums"
+    <div className="px-5 pt-4 pb-3.5">
+      <div className="mb-2.5 flex flex-wrap justify-end gap-x-4 gap-y-1 text-xs text-ink-2">
+        {series.map((item) => (
+          <span key={item.key} className="inline-flex items-center gap-1.5">
+            <span
+              aria-hidden
+              className="size-2.5 rounded-[2px]"
+              style={{ background: item.color, opacity: item.opacity }}
+            />
+            {item.label}
+          </span>
+        ))}
+      </div>
+      <div className="relative ml-12" style={{ height: PLOT_HEIGHT }}>
+        {grid.map((value) => {
+          const y = PLOT_HEIGHT - (value / top) * PLOT_HEIGHT;
+          return (
+            <Fragment key={value}>
+              <div
+                aria-hidden
+                className="absolute inset-x-0 border-t border-dashed border-border/60"
+                style={{ top: y }}
+              />
+              <span
+                aria-hidden
+                className="absolute -left-12 w-10 text-right font-mono text-[11px] text-muted-foreground"
+                style={{ top: y - 7 }}
+              >
+                {axisLabel(value)}
+              </span>
+            </Fragment>
+          );
+        })}
+        <div
+          className="absolute inset-0 flex items-end gap-1 border-b"
+          onMouseLeave={() => setHover(null)}
+          role="img"
+          aria-label={`Minutes per day over the last ${days} days`}
+        >
+          {totals.map((_, day) => (
+            <div
+              key={day}
+              className="flex h-full min-w-0 flex-1 flex-col justify-end gap-px transition-opacity"
+              style={{ opacity: shown === null || shown === day ? 1 : 0.45 }}
+              onMouseEnter={() => setHover(day)}
+            >
+              {[...series].reverse().map((item) => {
+                const ms = item.dailyMs[day] ?? 0;
+                return ms > 0 ? (
+                  <div
+                    key={item.key}
+                    className="rounded-[2px]"
+                    style={{
+                      height: Math.max(2, height(ms) - 1),
+                      background: item.color,
+                      opacity: item.opacity,
+                    }}
+                  />
+                ) : null;
+              })}
+            </div>
+          ))}
+        </div>
+        {shown !== null && (
+          <div
+            className="pointer-events-none absolute top-0 z-10 mx-3.5 min-w-56 rounded-lg border bg-popover text-sm shadow-xl"
+            style={{
+              left: `${left}%`,
+              transform: left > 55 ? "translateX(calc(-100% - 28px))" : undefined,
+            }}
           >
-            {clock(ms)}
-          </text>
-        </g>
-      ))}
-      <text x={left} y={H - 6} className="fill-muted-foreground text-[10px]">
-        {days}d ago
-      </text>
-      <text x={W - right} y={H - 6} textAnchor="end" className="fill-muted-foreground text-[10px]">
-        now
-      </text>
-      {runs.map((run) => {
-        const ok = run.conclusion === "success";
-        const c = color(run.environment);
-        return (
-          <circle
-            key={run.id}
-            cx={x(run.completedAt)}
-            cy={y(run.completedAt - run.startedAt)}
-            r={3}
-            fill={ok ? c : "none"}
-            fillOpacity={0.85}
-            stroke={c}
-            strokeWidth={ok ? 0 : 1.2}
-          />
-        );
-      })}
-      {Object.entries(medians).map(([key, stat]) =>
-        stat.medianMs === null ? null : (
-          <line
-            key={key}
-            x1={left}
-            x2={W - right}
-            y1={y(stat.medianMs)}
-            y2={y(stat.medianMs)}
-            stroke={color(key)}
-            strokeWidth={1.5}
-            strokeDasharray="4 3"
-          />
-        ),
+            <div className="flex justify-between gap-3 border-b px-3 py-2 text-ink-2">
+              <span>{dayLabel(readAt, days, shown)}</span>
+              <span className="font-semibold text-foreground tabular-nums">
+                {minutesText(totals[shown] ?? 0)} min
+              </span>
+            </div>
+            <div className="grid gap-1 px-3 py-2">
+              {series
+                .filter((item) => (item.dailyMs[shown] ?? 0) > 0)
+                .map((item) => (
+                  <span key={item.key} className="flex justify-between gap-4">
+                    <span className="inline-flex min-w-0 items-center gap-1.5">
+                      <span
+                        aria-hidden
+                        className="size-2 shrink-0 rounded-[2px]"
+                        style={{ background: item.color, opacity: item.opacity }}
+                      />
+                      <span className="truncate">{item.label}</span>
+                    </span>
+                    <span className="font-semibold tabular-nums">
+                      {minutesText(item.dailyMs[shown] ?? 0)} min
+                    </span>
+                  </span>
+                ))}
+            </div>
+          </div>
+        )}
+      </div>
+      <div className="mt-2 ml-12 flex justify-between font-mono text-[11px] text-muted-foreground">
+        <span>{dayLabel(readAt, days, 0)}</span>
+        <span>{dayLabel(readAt, days, Math.floor((days - 1) / 2))}</span>
+        <span>{dayLabel(readAt, days, days - 1)}</span>
+      </div>
+    </div>
+  );
+}
+
+function Sparkline({ dailyMs, color }: { dailyMs: number[]; color: string }) {
+  const width = 160;
+  const height = 30;
+  const max = Math.max(...dailyMs);
+  if (!max) return <svg aria-hidden width={width} height={height} />;
+  const x = (day: number) => 2 + (day / Math.max(1, dailyMs.length - 1)) * (width - 4);
+  const y = (ms: number) => height - 3 - (ms / max) * (height - 6);
+  const active = dailyMs.filter(Boolean).length;
+  return (
+    <svg aria-hidden width={width} height={height} className="block">
+      {active <= 4 ? (
+        dailyMs.map((ms, day) =>
+          ms ? <circle key={day} cx={x(day)} cy={y(ms)} r={2} fill={color} /> : null,
+        )
+      ) : (
+        <path
+          d={dailyMs.map((ms, day) => `${day ? "L" : "M"}${x(day)},${y(ms)}`).join(" ")}
+          fill="none"
+          stroke={color}
+          strokeWidth={1.5}
+          strokeLinejoin="round"
+          strokeLinecap="round"
+        />
       )}
     </svg>
   );
 }
 
-// 10s, 15s, 30s, 1m, 2m, 5m, 10m, ... so the axis lands on round times.
-function niceStep(ms: number) {
-  const steps = [10, 15, 30, 60, 120, 300, 600, 900, 1800, 3600].map((s) => s * 1000);
-  return steps.find((step) => step >= ms) ?? 3_600_000;
+const COLUMNS =
+  "grid grid-cols-[minmax(280px,2.3fr)_168px_minmax(150px,1.3fr)_repeat(4,minmax(72px,0.8fr))] items-center gap-3.5";
+
+function Jobs({
+  lines,
+  readAt,
+  days,
+  scope,
+  onScope,
+}: {
+  lines: JobLine[];
+  readAt: number;
+  days: number;
+  scope: string | null;
+  onScope: (key: string) => void;
+}) {
+  const [open, setOpen] = useState<Set<string>>(() => new Set(lines.slice(0, 1).map((l) => l.key)));
+  const allOpen = lines.every((line) => open.has(line.key));
+  const toggle = (key: string) => {
+    const next = new Set(open);
+    if (!next.delete(key)) next.add(key);
+    setOpen(next);
+  };
+
+  return (
+    <section aria-label="Jobs" className="grid gap-2">
+      <div className="flex items-center justify-between gap-3">
+        <h2 className="font-semibold">Jobs</h2>
+        <Button
+          size="sm"
+          variant="ghost"
+          onClick={() => setOpen(allOpen ? new Set() : new Set(lines.map((line) => line.key)))}
+        >
+          {allOpen ? "Collapse all" : "Expand all"}
+        </Button>
+      </div>
+      <div className="overflow-x-auto rounded-xl border bg-card">
+        <div className="min-w-[1000px] text-sm tabular-nums">
+          <div className={cn(COLUMNS, "border-b py-3 pr-5 pl-3 text-muted-foreground")}>
+            <span className="pl-10">Workflow › job</span>
+            <span>Minutes per day</span>
+            <span>Where it ran</span>
+            <span className="inline-flex items-center justify-end gap-1 text-foreground">
+              Minutes
+              <ChevronDownIcon aria-hidden className="size-3" />
+            </span>
+            <span className="text-right">Quota min</span>
+            <span className="text-right">Typical run</span>
+            <span className="text-right">Runs</span>
+          </div>
+          {lines.map((line) => {
+            const isOpen = open.has(line.key);
+            const typical = typicalRun(line.runners);
+            const machineShare = line.runMs ? line.byWhere.machine / line.runMs : 0;
+            const offQuota = line.runMs ? 1 - line.byWhere.quota / line.runMs : 0;
+            const splitText =
+              machineShare >= 0.005
+                ? `${Math.round(machineShare * 100)}% on your machines`
+                : line.workflow.private === false
+                  ? "Public repo: no quota"
+                  : `${Math.round(offQuota * 100)}% off quota`;
+            return (
+              <Fragment key={line.key}>
+                <div
+                  className={cn(
+                    COLUMNS,
+                    "border-t py-3 pr-5 pl-3 first:border-t-0 hover:bg-secondary/40",
+                    scope === line.key && "bg-secondary/70 shadow-[inset_2px_0_0_var(--rr-go)]",
+                  )}
+                >
+                  <div className="flex min-w-0 items-center gap-2">
+                    <button
+                      type="button"
+                      aria-expanded={isOpen}
+                      aria-label={`${isOpen ? "Hide" : "Show"} runners for ${line.job.name}`}
+                      onClick={() => toggle(line.key)}
+                      className="flex size-8 shrink-0 items-center justify-center rounded-md text-muted-foreground outline-none hover:bg-accent hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring"
+                    >
+                      <ChevronRightIcon
+                        aria-hidden
+                        className={cn("size-4 transition-transform", isOpen && "rotate-90")}
+                      />
+                    </button>
+                    <button
+                      type="button"
+                      title="Chart this job"
+                      aria-pressed={scope === line.key}
+                      onClick={() => onScope(line.key)}
+                      className="group grid min-w-0 gap-0.5 rounded-sm text-left outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                    >
+                      <span className="truncate text-[15px]">
+                        <span className="text-muted-foreground">
+                          {line.workflow.workflow ?? "Unnamed workflow"} ›{" "}
+                        </span>
+                        <span className="font-semibold underline-offset-4 group-hover:underline">
+                          {line.job.name}
+                        </span>
+                      </span>
+                      <span className="flex items-center gap-1.5 text-xs text-muted-foreground">
+                        <span className="truncate">{line.workflow.repository}</span>
+                        {line.workflow.private !== null && (
+                          <span className="rounded-full border px-1.5 text-[11px]">
+                            {line.workflow.private ? "Private" : "Public"}
+                          </span>
+                        )}
+                      </span>
+                    </button>
+                  </div>
+                  <div className="grid gap-0.5">
+                    <Sparkline dailyMs={line.dailyMs} color="var(--rr-ink-2)" />
+                    <span className="flex w-40 justify-between font-mono text-[10px] text-muted-foreground">
+                      <span>{dayLabel(readAt, days, 0, false)}</span>
+                      <span>{dayLabel(readAt, days, days - 1, false)}</span>
+                    </span>
+                  </div>
+                  <div className="grid gap-1.5">
+                    <div className="flex h-2 gap-0.5 overflow-hidden rounded-full bg-border">
+                      {WHERE_ORDER.filter((where) => line.byWhere[where] > 0).map((where) => (
+                        <div
+                          key={where}
+                          style={{
+                            width: `${(line.byWhere[where] / line.runMs) * 100}%`,
+                            background: WHERE[where].color,
+                            opacity: WHERE[where].opacity,
+                          }}
+                        />
+                      ))}
+                    </div>
+                    <span className="text-xs text-ink-2">{splitText}</span>
+                  </div>
+                  <span className="text-right text-[15px] font-semibold">
+                    {minutesText(line.runMs)}
+                  </span>
+                  <QuotaCell lines={line.runners} />
+                  <span
+                    className={cn(
+                      "text-right text-[15px] text-ink-2",
+                      typical.few && "text-muted-foreground",
+                    )}
+                  >
+                    {typical.few && typical.ms !== null && "~"}
+                    {durationText(typical.ms)}
+                  </span>
+                  <span className="text-right text-[15px] text-ink-2">
+                    {line.runs.toLocaleString()}
+                  </span>
+                </div>
+                {isOpen &&
+                  line.runners.map((runner) => (
+                    <RunnerRow key={runner.env.key} runner={runner} jobMs={line.runMs} />
+                  ))}
+              </Fragment>
+            );
+          })}
+        </div>
+      </div>
+    </section>
+  );
 }
 
-// For local development without an API (auth disabled).
-function sampleRuns(job: JobRow, days: number): JobRun[] {
-  const now = Date.now();
-  let id = 0;
-  let seed = 7;
-  const random = () => {
-    seed = (seed * 9301 + 49297) % 233280;
-    return seed / 233280;
-  };
-  return Object.entries(job.byEnvironment).flatMap(([environment, stat]) =>
-    Array.from({ length: stat.samples }, () => {
-      id += 1;
-      const completedAt = now - random() * days * DAY_MS;
-      const runMs = (stat.medianMs ?? 0) * (0.8 + random() * 0.4);
-      return {
-        id,
-        runId: id,
-        runAttempt: 1,
-        environment,
-        conclusion: random() > 0.95 ? "failure" : "success",
-        queuedAt: null,
-        startedAt: completedAt - runMs,
-        completedAt,
-      };
-    }),
+function QuotaCell({ lines }: { lines: RunnerLine[] }) {
+  const quota = lines.reduce((sum, runner) => sum + runner.minutes.quotaMinutes, 0);
+  return (
+    <span className={cn("text-right text-[15px]", quota ? "text-run" : "text-muted-foreground")}>
+      {Math.round(quota).toLocaleString()}
+    </span>
+  );
+}
+
+function RunnerRow({ runner, jobMs }: { runner: RunnerLine; jobMs: number }) {
+  const where = WHERE[runner.where];
+  const few = !runner.stat || runner.stat.samples < 5;
+  const quota =
+    runner.where === "quota"
+      ? {
+          text: Math.round(runner.minutes.quotaMinutes).toLocaleString(),
+          className: "text-run",
+          title: `${Math.round(runner.minutes.quotaMinutes)} quota minutes for ${minutesText(runner.minutes.runMs)} minutes of work`,
+        }
+      : runner.where === "free"
+        ? {
+            text: "free",
+            className: "text-muted-foreground",
+            title: "Public repos use no GitHub minutes",
+          }
+        : {
+            text: "—",
+            className: "text-muted-foreground",
+            title:
+              runner.where === "machine"
+                ? "Your machine: no quota"
+                : "Billed by the provider, not GitHub",
+          };
+  return (
+    <div className={cn(COLUMNS, "border-t border-border/50 bg-background/60 py-2.5 pr-5 pl-3")}>
+      <div className="flex min-w-0 items-center gap-2.5 pl-12">
+        <span
+          aria-hidden
+          className="size-2.5 shrink-0 rounded-[3px]"
+          style={{ background: runner.color }}
+        />
+        <span className="grid min-w-0 gap-0.5">
+          <span className="truncate">{runner.env.label}</span>
+          {runner.env.detail && (
+            <span className="truncate text-xs text-muted-foreground">{runner.env.detail}</span>
+          )}
+        </span>
+      </div>
+      <Sparkline dailyMs={runner.minutes.dailyMs} color={runner.color} />
+      <div className="grid gap-1.5">
+        <div className="h-2 overflow-hidden rounded-full bg-border">
+          <div
+            className="h-full rounded-full"
+            style={{
+              width: `${jobMs ? (runner.minutes.runMs / jobMs) * 100 : 0}%`,
+              background: where.color,
+              opacity: where.opacity,
+            }}
+          />
+        </div>
+        <span className="text-xs text-ink-2">
+          <span style={{ color: runner.where === "free" ? undefined : where.color }}>
+            {where.label}
+          </span>{" "}
+          · {percent(runner.minutes.runMs, jobMs)} of this job
+        </span>
+      </div>
+      <span className="text-right font-semibold">{minutesText(runner.minutes.runMs)}</span>
+      <span className={cn("text-right", quota.className)} title={quota.title}>
+        {quota.text}
+      </span>
+      <span className={cn("text-right text-ink-2", few && "text-muted-foreground")}>
+        {few && runner.stat?.medianMs != null && "~"}
+        {durationText(runner.stat?.medianMs ?? null)}
+      </span>
+      <span className="text-right text-ink-2">{runner.minutes.runs.toLocaleString()}</span>
+    </div>
   );
 }

@@ -4,6 +4,7 @@ import type { Env } from "./env.ts";
 import {
   confidence,
   environmentFor,
+  minutesOf,
   type JobTimesReport,
   quantile,
   SAMPLE_CAP,
@@ -176,6 +177,32 @@ async function report(cookie: string, query = "") {
   return (await res.json()) as JobTimesReport;
 }
 
+describe("minutesOf", () => {
+  const since = 0;
+  const day = 86_400_000;
+  test("buckets runs by day and rounds each GitHub job up to a minute", () => {
+    const runs = `${day / 2}:30000,${day + 1}:61000,${3 * day - 1}:0`;
+    expect(minutesOf(runs, since, 3, 1)).toEqual({
+      runs: 3,
+      runMs: 91_000,
+      quotaMinutes: 1 + 2 + 1,
+      dailyMs: [30_000, 61_000, 0],
+    });
+  });
+  test("public repos and other runners use no quota", () => {
+    expect(minutesOf(`${day}:90000`, since, 2, 0)).toMatchObject({
+      runMs: 90_000,
+      quotaMinutes: 0,
+    });
+    expect(minutesOf(null, since, 2, 1)).toEqual({
+      runs: 0,
+      runMs: 0,
+      quotaMinutes: 0,
+      dailyMs: [0, 0],
+    });
+  });
+});
+
 describe("job times report", () => {
   test("times each job per environment, folds matrix legs and times whole runs", async () => {
     const { cookie, installationId, workspaceId } = await connectedWorkspace();
@@ -272,6 +299,32 @@ describe("job times report", () => {
     expect(ci.byEnvironment["github:linux-2-core"].medianMs).toBe(200_000);
     expect(ci.byEnvironment[`machine:${machine.id}`]).toMatchObject({ samples: 6 });
     expect(ci.byEnvironment.container).toBeUndefined();
+
+    // Minutes count every run, failures too. The repo isn't mirrored, so it counts as private and
+    // its Linux minutes draw on the quota, each job rounded up to a whole minute.
+    expect(ci.private).toBeNull();
+    const lintMinutes = ci.jobs[0].minutes;
+    expect(lintMinutes["github:linux-2-core"]).toMatchObject({
+      runs: 8,
+      runMs: 7 * 40_000 + 5_000,
+      quotaMinutes: 8,
+    });
+    expect(lintMinutes["github:linux-2-core"].dailyMs).toHaveLength(14);
+    expect(lintMinutes["github:linux-2-core"].dailyMs.reduce((a, b) => a + b)).toBe(285_000);
+    expect(lintMinutes[`machine:${machine.id}`]).toMatchObject({
+      runs: 6,
+      runMs: 60_000,
+      quotaMinutes: 0,
+    });
+    // The matrix row adds up its legs: 180s bills 3 minutes, 200s bills 4.
+    expect(test.minutes["github:linux-2-core"]).toMatchObject({
+      runs: 12,
+      runMs: 6 * 180_000 + 6 * 200_000,
+      quotaMinutes: 6 * 3 + 6 * 4,
+    });
+    expect(mac?.kind).toBe("machine");
+    expect(linux?.kind).toBe("github");
+    expect(result.environments.find((env) => env.key === "container")?.kind).toBe("cloud");
 
     const machines = await testing.call(env, "/job-times/machines", cookie);
     const { machines: byMachine } = (await machines.json()) as { machines: Record<string, Stat> };
