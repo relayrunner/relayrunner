@@ -217,7 +217,19 @@ export class RunnerClient {
       join(this.jit.runner.ServerUrlV2, `message?${query}`),
       { signal },
     );
-    if (message?.messageType !== "RunnerJobRequest") return null;
+    if (!message) return null;
+    if (message.messageType !== "RunnerJobRequest") {
+      // Anything else (e.g. a broker migration) is dropped. Log its type, never its body, so a new
+      // message from GitHub doesn't leave the runner idle with no trace.
+      console.warn(
+        JSON.stringify({
+          msg: "runner poll message dropped",
+          messageType: message.messageType,
+          runner: this.jit.runner.AgentName,
+        }),
+      );
+      return null;
+    }
     if (message.iv) throw new Error("Encrypted job messages are not supported.");
     return JSON.parse(message.body) as JobRequest;
   }

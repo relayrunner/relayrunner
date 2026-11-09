@@ -178,8 +178,11 @@ Orgs on GitHub Free can't create extra runner groups. Default is the only one th
 
 - **Public repo, Default blocks public repos.** GitHub never offers the relay. The PickRunner logs `no-job` after 4 minutes, and the relay job stays queued on GitHub until someone cancels it or GitHub's 24-hour queue limit ends it. The run shows no error message. RelayRunner's own CI in relayrunner/relayrunner and relayrunner/actions hit this on 2026-11-06.
 - **Default limited to selected repos or selected workflows.** This fails the same way for any repo or workflow outside the list.
-- **The `queued` webhook is lost.** No pick runner is registered, and the relay stays queued. Nothing sweeps for relay jobs left without a pick runner yet (compare #71 for machine jobs).
+- **A pick runner takes a different relay job.** GitHub matches on the label, not the job, so a runner made for one relay can be handed another one that's waiting (often an older one). That job is answered correctly, but the runner's own job is left with nobody. When a runner finishes, it asks GitHub whether its own job is still queued and, if so, starts a replacement, up to 4 runners per job (`src/pick-attempts.ts`). Before this, one lost job stole the next job's runner, and so on, until the queue emptied (2026-11-06 to 2026-11-09).
+- **A pick runner is left registered.** If closing its session or deleting it fails, GitHub keeps showing it idle and can hand it a job nobody will ever take. Failures are logged (`relayrunner pick cleanup failed`), the delete is tried twice, and the 15-minute sweep removes `relayrunner-pick-*` runners whose run has ended (`src/pick-sweep.ts`).
+- **The `queued` webhook is lost, or a deploy cuts a runner off mid-wait.** The 15-minute sweep starts another runner for any relay recorded as queued for more than 5 minutes, within the same 4-runner limit. A relay whose `queued` webhook never arrived has no row, so the sweep can't see it.
 - **Another runner in the org has the `relayrunner` label.** It could take relay jobs instead of the gateway. GitHub picks among matching runners, and RelayRunner doesn't prevent it.
+- **GitHub sends a message the client doesn't handle.** The poll ignores anything but a job request and logs its type (`runner poll message dropped`).
 - **The installation lacks "Self-hosted runners: write" on the org.** `generate-jitconfig` fails, and the pick logs `result: error`.
 
 ## Code
@@ -187,5 +190,7 @@ Orgs on GitHub Free can't create extra runner groups. Default is the only one th
 - `apps/api/src/webhook-queue.ts`: `queued` webhooks with the `relayrunner` label start a PickRunner.
 - `apps/api/src/durable-objects/pick-runner.ts`: registration, waiting, claiming, answering, cleanup, the `relayrunner pick finished` log.
 - `apps/api/src/github-app.ts`: `generateOrgJitConfig`, `deleteOrgRunner`, `DEFAULT_RUNNER_GROUP_ID`, `listOrgRunnerGroups`. The group reader doesn't read `allows_public_repositories` yet.
+- `apps/api/src/pick-attempts.ts`: when a runner is replaced and how pick runners are named.
+- `apps/api/src/pick-sweep.ts`: the 15-minute rescue for stuck relays and removal of leftover pick runners.
 - `apps/api/src/runner-protocol.ts`: `RunnerClient` (session, poll, claim, complete) and `decodeJitConfig`.
 - `apps/api/src/native-checks.ts`: jobs answered as checks instead of routed.

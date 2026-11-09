@@ -130,6 +130,17 @@ export async function deleteOrgRunner(token: string, org: string, runnerId: numb
     );
 }
 
+/** A workflow job's status ("queued", "in_progress", "completed", ...), or null when it's gone. */
+export async function workflowJobStatus(token: string, repo: string, jobId: number) {
+  const response = await fetch(`${API}/repos/${repo}/actions/jobs/${jobId}`, {
+    headers: headers(token),
+  });
+  if (response.status === 404) return null;
+  if (!response.ok)
+    throw new Error(`GET /repos/${repo}/actions/jobs/${jobId} failed with ${response.status}`);
+  return ((await response.json()) as { status: string }).status;
+}
+
 /** Whether an org runner is busy with a job, or null once it's removed (404). */
 export async function orgRunnerBusy(token: string, org: string, runnerId: number) {
   const response = await fetch(`${API}/orgs/${org}/actions/runners/${runnerId}`, {

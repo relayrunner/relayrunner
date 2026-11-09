@@ -5,6 +5,7 @@ import { checkDeadLetterGrowth } from "./dead-letter-alert.ts";
 import { createDb } from "./db/index.ts";
 import type { Env } from "./env.ts";
 import { purgeOldJobTimings } from "./job-timings.ts";
+import { sweepPicks } from "./pick-sweep.ts";
 import { handleWebhookBatch } from "./webhook-queue.ts";
 
 export { ContainerRunner } from "./durable-objects/container-runner.ts";
@@ -20,13 +21,14 @@ const USAGE_CRON = "*/15 * * * *";
 export default {
   fetch: app.fetch,
   queue: handleWebhookBatch,
-  // Every 15 minutes: read each org's Actions usage from GitHub billing (#116). Hourly: alert when
+  // Every 15 minutes: read each org's Actions usage from GitHub billing (#116), and rescue stuck relay
+  // jobs and remove leftover pick runners (src/pick-sweep.ts). Hourly: alert when
   // webhook dead letters pile up, and drop job timings past retention. Each runs even if another
   // throws; a failure still fails the invocation.
   async scheduled(controller, env) {
     const tasks =
       controller.cron === USAGE_CRON
-        ? [pollActionsUsage(env, new Date(controller.scheduledTime))]
+        ? [pollActionsUsage(env, new Date(controller.scheduledTime)), sweepPicks(env)]
         : [checkDeadLetterGrowth(env), purgeOldJobTimings(createDb(env.DB))];
     const results = await Promise.allSettled(tasks);
     const failed = results.find((result) => result.status === "rejected");
