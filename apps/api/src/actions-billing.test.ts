@@ -65,7 +65,7 @@ async function connectedOrg(accountType = "Organization") {
       githubStateAt: NOW,
     },
   ]);
-  return { db, cookie, installationId, org };
+  return { db, cookie, installationId, org, workspaceId: workspace.id };
 }
 
 function item(day: string, repositoryName: string, quantity: number, sku = "Actions Linux") {
@@ -187,6 +187,42 @@ describe("pollInstallation", () => {
     const usage = await accountUsage(db, installationId, NOW);
     expect(usage?.usedMinutes).toBe(160);
     expect(usage?.burnRatePerHour).toBe(60);
+  });
+
+  test("billed overage logs one Activity event per cycle", async () => {
+    const { db, installationId, org, workspaceId } = await connectedOrg();
+    const installation = { id: installationId, accountLogin: org, workspaceId };
+    const overage = { ...item("2026-11-08", "app", 100), netAmount: 0.6 };
+    const overageEvents = () =>
+      db
+        .select()
+        .from(schema.activityEvent)
+        .where(eq(schema.activityEvent.workspaceId, workspaceId));
+
+    fakeGitHub({ usage: [item("2026-11-08", "app", 100)] });
+    await pollInstallation(db, "tok", installation, new Date(NOW.getTime() - 1_800_000));
+    expect(await overageEvents()).toEqual([]);
+
+    fakeGitHub({ usage: [overage] });
+    await pollInstallation(db, "tok", installation, new Date(NOW.getTime() - 900_000));
+    await pollInstallation(db, "tok", installation, NOW);
+    const events = await overageEvents();
+    expect(events).toHaveLength(1);
+    expect(events[0]).toMatchObject({
+      type: "minutes.overage",
+      data: {
+        account: org,
+        installationId,
+        cycleStart: "2026-11-01T00:00:00.000Z",
+        netAmount: 0.6,
+      },
+    });
+
+    // A new month can log it again.
+    const december = new Date("2026-12-02T00:00:00Z");
+    fakeGitHub({ usage: [{ ...overage, date: "2026-12-01T05:00:00Z" }] });
+    await pollInstallation(db, "tok", installation, december);
+    expect(await overageEvents()).toHaveLength(2);
   });
 
   test("stores hundreds of repos in one poll", async () => {

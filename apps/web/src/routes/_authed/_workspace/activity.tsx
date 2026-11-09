@@ -20,6 +20,7 @@ import {
   UserPlus,
   UserX,
   Zap,
+  TriangleAlert,
 } from "lucide-react";
 import { type ReactNode, useEffect, useState } from "react";
 import { PageHeader } from "@/components/page-header";
@@ -430,6 +431,9 @@ function Log({
   );
 }
 
+const usd = (amount: number) =>
+  amount.toLocaleString("en-US", { style: "currency", currency: "USD" });
+
 const DISCONNECT_REASONS = {
   closed: "its CLI stopped",
   timeout: "it stopped responding",
@@ -461,6 +465,8 @@ function sentence(item: ActivityItem) {
       return "couldn't route a job";
     case "check.completed":
       return item.data.conclusion === "success" ? "passed" : "failed";
+    case "minutes.overage":
+      return "went past its included GitHub Actions minutes";
     case "member.invited":
     case "member.invite_canceled":
     case "member.joined":
@@ -503,6 +509,7 @@ const EVENT_ICONS = {
   "member.invited": UserPlus,
   "member.invite_canceled": UserX,
   "member.joined": UserCheck,
+  "minutes.overage": TriangleAlert,
 } as const;
 
 const ICON = "size-3.5 shrink-0";
@@ -644,6 +651,20 @@ function WalkLines({ walk, runner }: { walk: RouteWalk; runner: string | null })
 function EventRow({ item, now }: { item: ActivityItem; now: number }) {
   const Icon = EVENT_ICONS[item.type];
   const online = item.type === "machine.connected";
+  if (item.type === "minutes.overage")
+    return (
+      <Row
+        icon={<TriangleAlert aria-hidden className={`${ICON} text-destructive`} />}
+        at={item.occurredAt}
+        now={now}
+      >
+        <span className="font-medium">{item.data.account}</span>{" "}
+        <span className="text-muted-foreground">
+          went past its included GitHub Actions minutes. GitHub has billed{" "}
+          {usd(item.data.netAmount)} in overage this month.
+        </span>
+      </Row>
+    );
   if (item.type.startsWith("member.")) {
     const who =
       item.type === "member.joined"

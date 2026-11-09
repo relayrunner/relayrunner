@@ -1,4 +1,5 @@
 import type { RunnerOrder } from "@relayrunner/runner-order";
+import type { AccountUsage } from "./actions-billing.ts";
 import { describe, expect, test, vi } from "vitest";
 import {
   canClaim,
@@ -569,5 +570,97 @@ describe("pausedMatches", () => {
     ).toEqual([]);
     expect(pausedMatches([{ name: "a", labels: mac, paused: true }], ["Windows"])).toEqual([]);
     expect(pausedMatches([], [])).toEqual([]);
+  });
+});
+
+describe("decideRoute with a minutes limit", () => {
+  const job = {
+    machine: ["self-hosted"],
+    github: ["ubuntu-latest"],
+    blacksmith: [],
+    private: true,
+  };
+  // GitHub while under 80%, then machines, then GitHub always.
+  const order: RunnerOrder = {
+    steps: [{ key: "github", limit: { percent: 80 } }, { key: "machine" }, { key: "github" }],
+  };
+  const usage = (fields: Partial<AccountUsage> = {}): AccountUsage => ({
+    installationId: 1,
+    accountLogin: "acme",
+    accountType: "Organization",
+    status: "ok",
+    reason: null,
+    plan: "free",
+    quotaMinutes: 2000,
+    usedMinutes: 1000,
+    grossAmount: 6,
+    netAmount: 0,
+    burnRatePerHour: 30,
+    budget: null,
+    cycleStart: "2026-11-01T00:00:00.000Z",
+    readAt: "2026-11-09T18:00:00.000Z",
+    ...fields,
+  });
+  const free = async () => "rr-0123456789ab";
+  const none = async () => null;
+
+  test("under the limit, the limited GitHub step takes the job", async () => {
+    const decision = await decideRoute(order, job, free, async () => usage());
+    expect(decision).toMatchObject({ runner: "ubuntu-latest", step: "github", skipped: [] });
+  });
+
+  test("at the limit, the job goes to a machine with the numbers recorded", async () => {
+    const decision = await decideRoute(order, job, free, async () => usage({ usedMinutes: 1640 }));
+    expect(decision).toMatchObject({
+      runner: "rr-0123456789ab",
+      step: "machine",
+      skipped: [
+        {
+          key: "github",
+          reason: "minutes_limit",
+          minutes: { account: "acme", usedMinutes: 1640, quotaMinutes: 2000, percent: 80 },
+        },
+      ],
+    });
+  });
+
+  test("with no machine free, the unlimited GitHub step takes it past the limit", async () => {
+    const decision = await decideRoute(order, job, none, async () => usage({ usedMinutes: 1900 }));
+    expect(decision).toMatchObject({ runner: "ubuntu-latest", step: "github" });
+    expect(decision.skipped.map((s) => s.reason)).toEqual(["minutes_limit", "no_machine"]);
+  });
+
+  test("under the limit but burning fast, it stops early", async () => {
+    // 1,400 of 2,000 used (70%): 600 left, but 400 an hour would use it in 1.5 hours.
+    const decision = await decideRoute(order, job, free, async () =>
+      usage({ usedMinutes: 1400, burnRatePerHour: 400 }),
+    );
+    expect(decision.skipped[0]).toMatchObject({ reason: "minutes_runway" });
+  });
+
+  test("unknown usage never blocks", async () => {
+    for (const read of [
+      async () => null,
+      async () => usage({ status: "not_available", reason: "enterprise", quotaMinutes: null }),
+      async () => usage({ status: "not_available", reason: "error", usedMinutes: 5000 }),
+    ]) {
+      const decision = await decideRoute(order, job, none, read);
+      expect(decision).toMatchObject({ step: "github", skipped: [] });
+    }
+  });
+
+  test("usage is read once per pick, and only when a limited step is reached", async () => {
+    const read = vi.fn(async () => usage({ usedMinutes: 1900 }));
+    const twoLimited: RunnerOrder = {
+      steps: [{ key: "machine" }, { key: "github", limit: { percent: 80 } }],
+    };
+    await decideRoute(twoLimited, job, free, read);
+    expect(read).not.toHaveBeenCalled();
+    const failed = await decideRoute(twoLimited, job, none, read);
+    expect(read).toHaveBeenCalledTimes(1);
+    expect(failed.runner).toBeNull();
+    expect(failed.runner === null && failed.reason).toContain(
+      "acme has used 1,900 of its 2,000 included minutes (95%), past the 80% limit",
+    );
   });
 });

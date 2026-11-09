@@ -1,4 +1,4 @@
-import type { RouteWalk, SkipReason } from "@relayrunner/activity";
+import type { MinutesUsage, RouteWalk, SkipReason } from "@relayrunner/activity";
 import type { RunnerKey } from "@relayrunner/runner-order";
 
 // How the Activity page explains where a job went: a short reason after the runner, and one line
@@ -22,13 +22,25 @@ function pausedText(paused: string[] = []) {
   return paused.length ? `${paused.length} machines are paused` : "machines are paused";
 }
 
+const count = (n: number) => Math.round(n).toLocaleString("en-US");
+const usedPercent = (m: MinutesUsage) => Math.floor((m.usedMinutes / m.quotaMinutes) * 100);
+
 function shortSkip(
   walk: RouteWalk,
   key: RunnerKey,
   reason: SkipReason,
   paused?: string[],
+  minutes?: MinutesUsage,
 ): string | null {
   switch (reason) {
+    case "minutes_limit":
+      return minutes
+        ? `${minutes.account} at ${usedPercent(minutes)}% of GitHub minutes`
+        : "past the GitHub minutes limit";
+    case "minutes_runway":
+      return minutes
+        ? `${minutes.account} near its GitHub minutes limit`
+        : "near the GitHub minutes limit";
     case "machine_paused":
       return pausedText(paused);
     case "no_machine": {
@@ -52,8 +64,17 @@ function longSkip(
   key: RunnerKey,
   reason: SkipReason,
   paused: string[] = [],
+  minutes?: MinutesUsage,
 ): string {
   switch (reason) {
+    case "minutes_limit":
+    case "minutes_runway": {
+      if (!minutes) return "past its minutes limit";
+      const used = `${minutes.account} has used ${count(minutes.usedMinutes)} of ${count(minutes.quotaMinutes)} included minutes (${usedPercent(minutes)}%)`;
+      return reason === "minutes_limit"
+        ? `${used}, past the ${minutes.percent}% limit`
+        : `${used}; at ${count(minutes.burnRatePerHour ?? 0)} min/hour it could run out before billing catches up`;
+    }
     case "machine_paused": {
       const labels = machineLabels(walk);
       const fits = labels ? `with ${labels}` : "that fits";
@@ -88,8 +109,8 @@ export type WalkTone = "fallback" | "info";
 export function walkSummary(walk: RouteWalk): { text: string; tone: WalkTone } | null {
   const parts: string[] = [];
   let tone: WalkTone = "info";
-  for (const { key, reason, paused } of walk.skipped) {
-    const text = shortSkip(walk, key, reason, paused);
+  for (const { key, reason, paused, minutes } of walk.skipped) {
+    const text = shortSkip(walk, key, reason, paused, minutes);
     if (text) parts.push(text);
     if (reason !== "not_configured" && reason !== "public_repo") tone = "fallback";
   }
@@ -110,11 +131,11 @@ export interface WalkLine {
  * `runner` names where the answering step sent the job: its line reads "on <runner>".
  */
 export function walkLines(walk: RouteWalk, runner: string | null): WalkLine[] {
-  const lines: WalkLine[] = walk.skipped.map(({ key, reason, paused }, index) => ({
+  const lines: WalkLine[] = walk.skipped.map(({ key, reason, paused, minutes }, index) => ({
     position: index + 1,
     key,
     state: "skipped",
-    text: longSkip(walk, key, reason, paused),
+    text: longSkip(walk, key, reason, paused, minutes),
   }));
   if (walk.step)
     lines.push({
