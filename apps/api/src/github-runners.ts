@@ -9,11 +9,13 @@
 
 import {
   appInstallationToken,
+  getOrgRunnerGroup,
   listOrgRunners,
   listOrgRunnerGroups,
   listRunnerGroupRepositoryIds,
   listRunnerGroupRunnerIds,
   type OrgRunner,
+  type RunnerGroup,
 } from "./github-app.ts";
 import { routeIdFromLabels } from "./routing.ts";
 
@@ -100,21 +102,58 @@ export interface GroupAccess {
   groupName: string;
   visibility: "all" | "private" | "selected";
   restrictedToWorkflows: boolean;
+  allowsPublicRepositories: boolean;
   // The repos a `selected` group allows; null for `all` and `private`.
   repositoryIds: number[] | null;
 }
 
+function toGroupAccess(group: RunnerGroup, repositoryIds: number[] | null): GroupAccess {
+  return {
+    groupId: group.id,
+    groupName: group.name,
+    visibility: group.visibility,
+    restrictedToWorkflows: group.restrictedToWorkflows,
+    allowsPublicRepositories: group.allowsPublicRepositories,
+    repositoryIds,
+  };
+}
+
 /**
- * Whether a private repo's job can be delivered to a runner in this group. Groups limited to
- * selected workflows are skipped: matching the job's workflow file isn't worth it yet. Null (the
- * group couldn't be read) allows it, so a GitHub hiccup doesn't take every runner out of routing.
+ * Why GitHub won't deliver a repo's jobs to the group's runners, or null when it will:
+ * `public` (the group doesn't allow public repos), `private_only`, or `not_selected` (missing from
+ * a `selected` group's list). Workflow limits aren't checked here.
  */
-export function groupAllows(access: GroupAccess | null | undefined, repositoryId: number) {
+export function groupBlocksRepo(access: GroupAccess, repo: { id: number; private: boolean }) {
+  if (!repo.private && !access.allowsPublicRepositories) return "public" as const;
+  if (!repo.private && access.visibility === "private") return "private_only" as const;
+  if (access.visibility === "selected" && !access.repositoryIds?.includes(repo.id))
+    return "not_selected" as const;
+  return null;
+}
+
+/**
+ * Whether a repo's job can be delivered to a runner in this group. Groups limited to selected
+ * workflows are skipped: matching the job's workflow file isn't worth it yet. Null (the group
+ * couldn't be read) allows it, so a GitHub hiccup doesn't take every runner out of routing.
+ */
+export function groupAllows(
+  access: GroupAccess | null | undefined,
+  repo: { id: number; private: boolean },
+) {
   if (!access) return true;
   if (access.restrictedToWorkflows) return false;
-  if (access.visibility === "selected")
-    return access.repositoryIds?.includes(repositoryId) ?? false;
-  return true;
+  return groupBlocksRepo(access, repo) === null;
+}
+
+/** One runner group's access, such as Default's. The repo list is read only for `selected`. */
+export async function fetchOneGroupAccess(token: string, org: string, groupId: number) {
+  const group = await getOrgRunnerGroup(token, org, groupId);
+  return toGroupAccess(
+    group,
+    group.visibility === "selected"
+      ? await listRunnerGroupRepositoryIds(token, org, groupId)
+      : null,
+  );
 }
 
 /** "Default group · all private repos", for the dashboard. */
@@ -149,14 +188,7 @@ export async function fetchGroupAccess(
           : listRunnerGroupRunnerIds(token, org, group.id),
         group.visibility === "selected" ? listRunnerGroupRepositoryIds(token, org, group.id) : null,
       ]);
-      for (const id of runnerIds)
-        access.set(id, {
-          groupId: group.id,
-          groupName: group.name,
-          visibility: group.visibility,
-          restrictedToWorkflows: group.restrictedToWorkflows,
-          repositoryIds,
-        });
+      for (const id of runnerIds) access.set(id, toGroupAccess(group, repositoryIds));
     }),
   );
   return access;
@@ -202,9 +234,9 @@ export function parseStoredLabels(json: string | null): string[] {
 export function runnerStatus(
   runner: OrgRunner | undefined,
   access: GroupAccess | null | undefined,
-  repositoryId: number,
+  repo: { id: number; private: boolean },
 ): { online: boolean; state: "idle" | "busy" | null; labels?: string[] } {
-  if (!runner || !groupAllows(access, repositoryId)) return { online: false, state: null };
+  if (!runner || !groupAllows(access, repo)) return { online: false, state: null };
   return {
     labels: matchLabels(runner.labels),
     online: runner.status === "online",
