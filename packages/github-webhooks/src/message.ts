@@ -25,6 +25,29 @@ export interface WorkflowJob {
   runnerGroupName?: string | null;
 }
 
+// A workflow run (one attempt), for the Runs page: what started it and how it ended. Every action
+// (requested, in_progress, completed) carries the whole run, so the newest `updatedAt` wins.
+export interface WorkflowRun {
+  id: number;
+  runAttempt: number;
+  workflowName: string | null;
+  // The commit or PR title GitHub shows for the run.
+  displayTitle: string | null;
+  // What triggered it: push, pull_request, schedule, workflow_dispatch, and so on.
+  event: string;
+  // Who started this attempt (the re-runner on a re-run), else who started the run.
+  actorLogin: string | null;
+  headBranch: string | null;
+  headSha: string;
+  // The first open pull request for the head commit, if any.
+  pullRequestNumber: number | null;
+  status: string;
+  conclusion: string | null;
+  htmlUrl: string | null;
+  runStartedAt: string | null;
+  updatedAt: string;
+}
+
 // A pull request whose title or head commit changed, for the App's PR title check run.
 export interface PullRequest {
   number: number;
@@ -75,6 +98,11 @@ export type WebhookMessage =
       event: "workflow_job";
       repository: { id: number; fullName: string };
       job: WorkflowJob;
+    })
+  | (Base & {
+      event: "workflow_run";
+      repository: { id: number; fullName: string };
+      run: WorkflowRun;
     })
   | (Base & {
       event: "installation";
@@ -160,6 +188,43 @@ export function toWebhookMessage(
           createdAt: String(job.created_at ?? ""),
           startedAt: stringOrNull(job.started_at),
           completedAt: stringOrNull(job.completed_at),
+        },
+      };
+    }
+    case "workflow_run": {
+      const run = payload.workflow_run;
+      const repo = payload.repository;
+      if (
+        !isRecord(run) ||
+        !isRecord(repo) ||
+        typeof run.id !== "number" ||
+        typeof repo.full_name !== "string"
+      )
+        return null;
+      const actor = isRecord(run.triggering_actor) ? run.triggering_actor : run.actor;
+      const pullRequests = Array.isArray(run.pull_requests)
+        ? run.pull_requests.filter(isRecord)
+        : [];
+      return {
+        ...base,
+        event,
+        repository: { id: Number(repo.id), fullName: repo.full_name },
+        run: {
+          id: run.id,
+          runAttempt: Number(run.run_attempt ?? 1),
+          workflowName: stringOrNull(run.name),
+          displayTitle: stringOrNull(run.display_title),
+          event: String(run.event ?? ""),
+          actorLogin: isRecord(actor) ? stringOrNull(actor.login) : null,
+          headBranch: stringOrNull(run.head_branch),
+          headSha: String(run.head_sha ?? ""),
+          pullRequestNumber:
+            typeof pullRequests[0]?.number === "number" ? pullRequests[0].number : null,
+          status: String(run.status ?? ""),
+          conclusion: stringOrNull(run.conclusion),
+          htmlUrl: stringOrNull(run.html_url),
+          runStartedAt: stringOrNull(run.run_started_at),
+          updatedAt: String(run.updated_at ?? base.receivedAt),
         },
       };
     }

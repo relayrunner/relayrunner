@@ -43,6 +43,7 @@ const ROUTES: Record<string, Route> = {
     secret: "GITHUB_WEBHOOK_SECRET",
     events: new Set([
       "workflow_job",
+      "workflow_run",
       "installation",
       "installation_repositories",
       "repository",

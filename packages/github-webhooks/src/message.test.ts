@@ -10,6 +10,62 @@ describe("toWebhookMessage", () => {
     ).toBeNull();
   });
 
+  test("keeps the workflow run fields the Runs page shows", () => {
+    const message = toWebhookMessage(
+      "workflow_run",
+      "d",
+      {
+        action: "completed",
+        installation: { id: 7 },
+        repository: { id: 3, full_name: "acme/app" },
+        workflow_run: {
+          id: 42,
+          run_attempt: 2,
+          name: "CI",
+          display_title: "fix: keep picks in Default",
+          event: "pull_request",
+          actor: { login: "author" },
+          triggering_actor: { login: "rerunner" },
+          head_branch: "fix-picks",
+          head_sha: "abc123",
+          pull_requests: [{ number: 12, head: {} }],
+          status: "completed",
+          conclusion: "failure",
+          html_url: "https://github.com/acme/app/actions/runs/42/attempts/2",
+          run_started_at: "2026-11-09T12:00:00Z",
+          updated_at: "2026-11-09T12:04:00Z",
+          jobs_url: "x",
+        },
+      },
+      "2026-11-09T12:04:01Z",
+    );
+    expect(message).toEqual({
+      deliveryId: "d",
+      action: "completed",
+      installationId: 7,
+      receivedAt: "2026-11-09T12:04:01Z",
+      event: "workflow_run",
+      repository: { id: 3, fullName: "acme/app" },
+      run: {
+        id: 42,
+        runAttempt: 2,
+        workflowName: "CI",
+        displayTitle: "fix: keep picks in Default",
+        event: "pull_request",
+        actorLogin: "rerunner",
+        headBranch: "fix-picks",
+        headSha: "abc123",
+        pullRequestNumber: 12,
+        status: "completed",
+        conclusion: "failure",
+        htmlUrl: "https://github.com/acme/app/actions/runs/42/attempts/2",
+        runStartedAt: "2026-11-09T12:00:00Z",
+        updatedAt: "2026-11-09T12:04:00Z",
+      },
+    });
+    expect(toWebhookMessage("workflow_run", "d", { repository: { full_name: "a/b" } })).toBeNull();
+  });
+
   test("keeps only the installation repo fields", () => {
     const message = toWebhookMessage(
       "installation_repositories",

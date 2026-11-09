@@ -78,6 +78,35 @@ export function environmentFor(
   };
 }
 
+/**
+ * Names each `machine:<id>` environment from its machine row. A deleted machine keeps its generic
+ * name.
+ */
+export async function nameMachines(db: Db, workspaceId: string, envs: Map<string, Environment>) {
+  const machineIds = [...envs.keys()].flatMap((key) =>
+    key.startsWith(MACHINE) ? [key.slice(MACHINE.length)] : [],
+  );
+  if (!machineIds.length) return;
+  const machines = await db
+    .select({
+      id: schema.machine.id,
+      name: schema.machine.name,
+      model: schema.machine.deviceModel,
+      chip: schema.machine.chip,
+      os: schema.machine.os,
+    })
+    .from(schema.machine)
+    .where(
+      and(eq(schema.machine.workspaceId, workspaceId), inArray(schema.machine.id, machineIds)),
+    );
+  for (const machine of machines) {
+    const env = envs.get(`${MACHINE}${machine.id}`);
+    if (!env) continue;
+    env.label = machine.name;
+    env.detail = [machine.model, machine.chip].filter(Boolean).join(" · ") || (machine.os ?? "");
+  }
+}
+
 export type Confidence = "none" | "few" | "low" | "ok";
 
 export function confidence(samples: number): Confidence {
@@ -246,7 +275,7 @@ const SAMPLES = sql`group_concat(case when ${OK} then ${table.completedAt} || ':
   || (${table.completedAt} - ${table.startedAt}) || ':'
   || coalesce(${table.startedAt} - ${table.queuedAt}, '') end)`;
 
-function inWorkspace(workspaceId: string): SQL {
+export function inWorkspace(workspaceId: string): SQL {
   return sql`${table.installationId} in (
     select ${schema.githubInstallation.id} from ${schema.githubInstallation}
     where ${schema.githubInstallation.workspaceId} = ${workspaceId})`;
@@ -400,30 +429,7 @@ export async function jobTimesReport(
     workflow.jobs.set(name, jobBuckets);
   }
 
-  // Machines are named from their rows; a deleted machine keeps a generic name.
-  const machineIds = [...envs.keys()].flatMap((key) =>
-    key.startsWith(MACHINE) ? [key.slice(MACHINE.length)] : [],
-  );
-  if (machineIds.length) {
-    const machines = await db
-      .select({
-        id: schema.machine.id,
-        name: schema.machine.name,
-        model: schema.machine.deviceModel,
-        chip: schema.machine.chip,
-        os: schema.machine.os,
-      })
-      .from(schema.machine)
-      .where(
-        and(eq(schema.machine.workspaceId, workspaceId), inArray(schema.machine.id, machineIds)),
-      );
-    for (const machine of machines) {
-      const env = envs.get(`${MACHINE}${machine.id}`);
-      if (!env) continue;
-      env.label = machine.name;
-      env.detail = [machine.model, machine.chip].filter(Boolean).join(" · ") || (machine.os ?? "");
-    }
-  }
+  await nameMachines(db, workspaceId, envs);
 
   const leafStats: Record<string, Stat>[] = [];
   const workflowRows: WorkflowRow[] = [...workflows.values()].map((workflow) => {

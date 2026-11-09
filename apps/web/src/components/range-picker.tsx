@@ -20,7 +20,7 @@ export function RangePicker({
           aria-pressed={days === value}
           onClick={() => value !== days && onChange(value)}
         >
-          {value} days
+          {value === 1 ? "1 day" : `${value} days`}
         </Button>
       ))}
     </div>
