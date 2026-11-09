@@ -3,7 +3,7 @@ import { afterAll, beforeAll, describe, expect, test } from "vitest";
 import { createDb, schema } from "./db/index.ts";
 import type { Env } from "./env.ts";
 import {
-  parseEnvs,
+  splitEnvs,
   purgeOldWorkflowRuns,
   recordWorkflowRun,
   type Run,
@@ -115,8 +115,8 @@ function runMessage(
   };
 }
 
-async function list(cookie: string, query = "") {
-  const res = await testing.call(env, `/runs${query}`, cookie);
+async function list(cookie: string) {
+  const res = await testing.call(env, "/runs", cookie);
   if (res.status !== 200) throw new Error(await res.text());
   return (await res.json()) as RunsReport;
 }
@@ -215,10 +215,10 @@ describe("runs list", () => {
     await insert([timing(other.installationId, 10, { runId: 999 })]);
 
     const week = await list(cookie);
-    expect(week.days).toBe(7);
+    expect(week.days).toBe(14);
     expect(week.runs.map((run) => run.runId)).toEqual([201, 200, 100, 101, 102, 103, 104]);
     const [live, routed] = week.runs;
-    expect(live).toMatchObject({ status: "in_progress", conclusion: null, wallMs: null, jobs: 0 });
+    expect(live).toMatchObject({ status: "in_progress", conclusion: null, wallMs: null });
     expect(routed).toMatchObject<Partial<Run>>({
       title: "fix: picks",
       event: "pull_request",
@@ -226,7 +226,6 @@ describe("runs list", () => {
       pullRequest: 12,
       status: "completed",
       conclusion: "failure",
-      jobs: 2,
       routed: true,
       usualMs: 65_000,
     });
@@ -245,9 +244,8 @@ describe("runs list", () => {
       url: "https://github.com/acme/app/actions/runs/100/attempts/1",
     });
 
-    // The day view keeps only runs active in the last day.
-    expect((await list(cookie, "?days=1")).runs.map((run) => run.runId)).toEqual([201, 200]);
-    expect((await testing.call(env, "/runs?days=99", cookie)).status).toBe(400);
+    // Runs older than the window are left out.
+    expect(week.runs.every((run) => run.updatedAt >= Date.now() - 14 * 24 * HOUR)).toBe(true);
 
     const res = await testing.call(env, `/runs/${installationId * 10}/200/1/jobs`, cookie);
     expect(res.status).toBe(200);
@@ -262,8 +260,11 @@ describe("runs list", () => {
   });
 });
 
-test("parseEnvs reads each environment once", () => {
+test("splitEnvs reads each environment", () => {
   const text = `["ubuntu-latest"]\u001fGitHub Actions\u001f\u001e,["rr-1"]\u001fDefault\u001fm1\u001e`;
-  expect(parseEnvs(text).map((env) => env.key)).toEqual(["github:linux-2-core", "machine:m1"]);
-  expect(parseEnvs(null)).toEqual([]);
+  expect(splitEnvs(text)).toEqual([
+    `["ubuntu-latest"]\u001fGitHub Actions\u001f`,
+    `["rr-1"]\u001fDefault\u001fm1`,
+  ]);
+  expect(splitEnvs(null)).toEqual([]);
 });

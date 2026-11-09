@@ -20,19 +20,19 @@ export type Run = {
   status: RunStatus;
   conclusion: string | null;
   startedAt: number | null;
-  completedAt: number | null;
+  /** When the run last changed. */
+  updatedAt: number;
   wallMs: number | null;
-  jobs: number;
   /** Environment keys, as in RunsReport.environments. */
   environments: string[];
   routed: boolean;
-  /** The workflow's p90 over its successful runs in the last usualDays days. */
+  /** The workflow's p90 over its successful runs in the report's window. */
   usualMs: number | null;
 };
 
 export type RunsReport = {
+  /** The window: runs that changed in the last `days` days. */
   days: number;
-  usualDays: number;
   environments: Environment[];
   runs: Run[];
   truncated: boolean;
@@ -51,21 +51,12 @@ export type RunJob = {
 
 export type RunJobs = { environments: Environment[]; jobs: RunJob[] };
 
-export function getRuns(days: number) {
-  return api<RunsReport>(`/runs?days=${days}`);
+export function getRuns() {
+  return api<RunsReport>("/runs");
 }
 
 export function getRunJobs(run: Pick<Run, "repositoryId" | "runId" | "runAttempt">) {
   return api<RunJobs>(`/runs/${run.repositoryId}/${run.runId}/${run.runAttempt}/jobs`);
-}
-
-/** "52s", "3m 51s", "1h 2m". */
-export function elapsed(ms: number | null) {
-  if (ms === null) return "—";
-  const seconds = Math.max(0, Math.round(ms / 1000));
-  if (seconds < 60) return `${seconds}s`;
-  if (seconds < 3600) return `${Math.floor(seconds / 60)}m ${seconds % 60}s`;
-  return `${Math.floor(seconds / 3600)}h ${Math.floor((seconds % 3600) / 60)}m`;
 }
 
 /** What started a run, the way people say it: "PR #12", "push", "manual". */
@@ -98,9 +89,8 @@ function sampleRun(run: Partial<Run> & Pick<Run, "runId">): Run {
     status: "completed",
     conclusion: "success",
     startedAt: now - 12 * MIN,
-    completedAt: now - 9 * MIN,
+    updatedAt: now - 9 * MIN,
     wallMs: 161_000,
-    jobs: 3,
     environments: ["container", "github:linux-2-core"],
     routed: true,
     usualMs: 170_000,
@@ -108,16 +98,17 @@ function sampleRun(run: Partial<Run> & Pick<Run, "runId">): Run {
   };
 }
 
+const SAMPLE_ENVIRONMENTS: Environment[] = [
+  { key: "github:linux-2-core", label: "Linux 2-core", detail: "GitHub-hosted" },
+  { key: "container", label: "Cloudflare Container", detail: "standard-1" },
+  { key: "machine:sample", label: "Zach's MacBook Pro", detail: "MacBook Pro · Apple M3 Max" },
+];
+
 /** Example runs for `VITE_AUTH_DISABLED=true` dev builds, which have no API. */
-export function sampleRuns(days: number): RunsReport {
+export function sampleRuns(): RunsReport {
   return {
-    days,
-    usualDays: 14,
-    environments: [
-      { key: "github:linux-2-core", label: "Linux 2-core", detail: "GitHub-hosted" },
-      { key: "container", label: "Cloudflare Container", detail: "standard-1" },
-      { key: "machine:sample", label: "Zach's MacBook Pro", detail: "MacBook Pro · Apple M3 Max" },
-    ],
+    days: 14,
+    environments: SAMPLE_ENVIRONMENTS,
     runs: [
       sampleRun({
         runId: 6,
@@ -125,9 +116,8 @@ export function sampleRuns(days: number): RunsReport {
         status: "in_progress",
         conclusion: null,
         startedAt: now - 65_000,
-        completedAt: null,
+        updatedAt: now - 5_000,
         wallMs: null,
-        jobs: 2,
       }),
       sampleRun({
         runId: 5,
@@ -145,7 +135,7 @@ export function sampleRuns(days: number): RunsReport {
         branch: "claude/fix-picks",
         conclusion: "failure",
         startedAt: now - 25 * MIN,
-        completedAt: now - 21 * MIN,
+        updatedAt: now - 21 * MIN,
         wallMs: 231_000,
         usualMs: 120_000,
         environments: ["container", "machine:sample", "github:linux-2-core"],
@@ -156,10 +146,9 @@ export function sampleRuns(days: number): RunsReport {
         title: "chore: release 1.4.0",
         routed: false,
         startedAt: now - 40 * MIN,
-        completedAt: now - 39 * MIN,
+        updatedAt: now - 39 * MIN,
         wallMs: 52_000,
         usualMs: 61_000,
-        jobs: 1,
         environments: ["github:linux-2-core"],
       }),
       sampleRun({
@@ -171,10 +160,9 @@ export function sampleRuns(days: number): RunsReport {
         conclusion: "cancelled",
         routed: false,
         startedAt: now - 9 * 60 * MIN,
-        completedAt: now - 9 * 60 * MIN + 30_000,
+        updatedAt: now - 9 * 60 * MIN + 30_000,
         wallMs: 30_000,
         usualMs: null,
-        jobs: 1,
         environments: ["github:linux-2-core"],
       }),
     ],
@@ -202,9 +190,8 @@ export function sampleRunJobs(run: Pick<Run, "runId" | "startedAt">): RunJobs {
     startedAt: start + waitS * 1000,
     completedAt: start + (waitS + runS) * 1000,
   });
-  const report = sampleRuns(14);
   return {
-    environments: report.environments,
+    environments: SAMPLE_ENVIRONMENTS,
     jobs:
       run.runId === 4
         ? [

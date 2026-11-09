@@ -1,5 +1,6 @@
 import type { WebhookMessage } from "@relayrunner/github-webhooks";
-import { and, eq, gte, inArray, isNotNull, lt, ne, sql } from "drizzle-orm";
+import { and, eq, gte, isNotNull, lt, ne, sql } from "drizzle-orm";
+import type { SQLiteColumn, SQLiteTable } from "drizzle-orm/sqlite-core";
 import { type Db, schema } from "./db/index.ts";
 import { routingLabelFromLabels } from "./github-runners.ts";
 import { findInstallation } from "./installations.ts";
@@ -123,22 +124,30 @@ export const JOB_TIMING_RETENTION_DAYS = 90;
 const PURGE_BATCH = 5_000;
 
 /** Deletes job timings older than the retention window. Returns how many rows went. */
-export async function purgeOldJobTimings(db: Db, now = Date.now()): Promise<number> {
-  const cutoff = new Date(now - JOB_TIMING_RETENTION_DAYS * DAY_MS);
+export function purgeOldJobTimings(db: Db, now = Date.now()): Promise<number> {
+  return purgeBefore(
+    db,
+    table,
+    table.completedAt,
+    new Date(now - JOB_TIMING_RETENTION_DAYS * DAY_MS),
+  );
+}
+
+/**
+ * Deletes a table's rows whose `column` is before `cutoff`, PURGE_BATCH at a time and at most 10
+ * batches a call. Returns how many rows went.
+ */
+export async function purgeBefore(
+  db: Db,
+  target: SQLiteTable,
+  column: SQLiteColumn,
+  cutoff: Date,
+): Promise<number> {
   let deleted = 0;
   for (let i = 0; i < 10; i += 1) {
-    const result = await db
-      .delete(table)
-      .where(
-        inArray(
-          table.id,
-          db
-            .select({ id: table.id })
-            .from(table)
-            .where(lt(table.completedAt, cutoff))
-            .limit(PURGE_BATCH),
-        ),
-      );
+    const result = await db.run(sql`
+      delete from ${target} where rowid in (
+        select rowid from ${target} where ${lt(column, cutoff)} limit ${PURGE_BATCH})`);
     const changes = result.meta.changes ?? 0;
     deleted += changes;
     if (changes < PURGE_BATCH) break;

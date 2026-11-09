@@ -7,10 +7,11 @@ import {
   CircleXIcon,
   ExternalLinkIcon,
   LoaderCircleIcon,
+  type LucideIcon,
   RouteIcon,
   TimerOffIcon,
 } from "lucide-react";
-import { useEffect, useMemo, useState } from "react";
+import { memo, useCallback, useEffect, useMemo, useState } from "react";
 import { PageHeader } from "@/components/page-header";
 import { RangePicker } from "@/components/range-picker";
 import {
@@ -22,73 +23,70 @@ import {
 } from "@/components/ui/select";
 import { timeAgo } from "@/lib/activity";
 import { authDisabled } from "@/lib/auth-client";
-import { type Environment, environmentColor } from "@/lib/job-times";
+import { DAY_MS, environmentColor, plural } from "@/lib/job-times";
 import {
-  elapsed,
   getRunJobs,
   getRuns,
   LONG_WAIT_MS,
   type Run,
+  type RunJob,
   type RunJobs,
-  type RunsReport,
   sampleRunJobs,
   sampleRuns,
   triggerText,
 } from "@/lib/runs";
-import { cn } from "@/lib/utils";
+import { cn, elapsed } from "@/lib/utils";
 
 const RANGES = [1, 7, 14] as const;
 
-function load(days: number) {
-  return authDisabled ? Promise.resolve(sampleRuns(days)) : getRuns(days);
-}
-
-function loadJobs(run: Run) {
-  return authDisabled ? Promise.resolve(sampleRunJobs(run)) : getRunJobs(run);
-}
-
 export const Route = createFileRoute("/_authed/_workspace/runs")({
-  loader: () => load(7),
+  loader: () => (authDisabled ? Promise.resolve(sampleRuns()) : getRuns()),
   component: RunsPage,
 });
 
 type ResultFilter = "all" | "failed" | "running";
 type RoutedFilter = "all" | "routed";
+/** Each environment's name and colour, by key. */
+type Environments = Map<string, { label: string; color: string | undefined }>;
 
 const runKey = (run: Run) => `${run.repositoryId}:${run.runId}:${run.runAttempt}`;
+const isFailure = (conclusion: string | null) =>
+  conclusion === "failure" || conclusion === "timed_out";
+const isLongWait = (wait: number | null): wait is number => wait !== null && wait >= LONG_WAIT_MS;
 
 function RunsPage() {
-  const first = Route.useLoaderData();
-  const [report, setReport] = useState<RunsReport>(first);
+  const report = Route.useLoaderData();
+  const [days, setDays] = useState(7);
   const [repository, setRepository] = useState("all");
   const [result, setResult] = useState<ResultFilter>("all");
   const [routed, setRouted] = useState<RoutedFilter>("all");
   const [open, setOpen] = useState<string | null>(null);
-
-  function chooseRange(days: number) {
-    load(days)
-      .then(setReport)
-      .catch(() => undefined);
-  }
+  const toggle = useCallback((key: string) => setOpen((now) => (now === key ? null : key)), []);
 
   const repositories = useMemo(
     () => [...new Set(report.runs.map((run) => run.repository))].sort(),
     [report],
   );
-  // Filtered here, from the runs already loaded, so changing a filter reads nothing more.
-  const runs = useMemo(
+  // The report holds the whole window, so the range and the filters are applied here.
+  const runs = useMemo(() => {
+    const since = Date.now() - days * DAY_MS;
+    return report.runs.filter(
+      (run) =>
+        run.updatedAt >= since &&
+        (repository === "all" || run.repository === repository) &&
+        (routed === "all" || run.routed) &&
+        (result === "all" ||
+          (result === "running" ? run.status !== "completed" : isFailure(run.conclusion))),
+    );
+  }, [report, days, repository, result, routed]);
+  const environments: Environments = useMemo(
     () =>
-      report.runs.filter(
-        (run) =>
-          (repository === "all" || run.repository === repository) &&
-          (routed === "all" || run.routed) &&
-          (result === "all" ||
-            (result === "running" ? run.status !== "completed" : isFailure(run.conclusion))),
+      new Map(
+        report.environments.map((env, index) => [
+          env.key,
+          { label: env.label, color: environmentColor(index) },
+        ]),
       ),
-    [report, repository, result, routed],
-  );
-  const colors = useMemo(
-    () => new Map(report.environments.map((env, index) => [env.key, environmentColor(index)])),
     [report],
   );
 
@@ -100,7 +98,7 @@ function RunsPage() {
       </PageHeader>
       <div className="grid gap-6">
         <div className="flex flex-wrap items-center gap-3">
-          <RangePicker ranges={RANGES} days={report.days} onChange={chooseRange} />
+          <RangePicker ranges={RANGES} days={days} onChange={setDays} />
           {repositories.length > 1 && (
             <Select value={repository} onValueChange={setRepository}>
               <SelectTrigger size="sm" aria-label="Repo">
@@ -139,8 +137,8 @@ function RunsPage() {
 
         {report.runs.length === 0 ? (
           <p className="rounded-xl border bg-card px-4 py-6 text-sm text-muted-foreground">
-            No runs in the last {report.days === 1 ? "day" : `${report.days} days`}. Runs show up
-            here once the GitHub App sees them in a connected repo.
+            No runs in the last {plural(report.days, "day")}. Runs show up here once the GitHub App
+            sees them in a connected repo.
           </p>
         ) : (
           <>
@@ -155,17 +153,17 @@ function RunsPage() {
                 return (
                   <RunRow
                     key={key}
+                    id={key}
                     run={run}
-                    colors={colors}
-                    environments={report.environments}
+                    environments={environments}
                     showRepository={repositories.length > 1}
                     open={open === key}
-                    onToggle={() => setOpen(open === key ? null : key)}
+                    onToggle={toggle}
                   />
                 );
               })}
             </ul>
-            <Legend report={report} colors={colors} truncated={report.truncated} />
+            <Legend days={report.days} truncated={report.truncated} environments={environments} />
           </>
         )}
       </div>
@@ -173,26 +171,22 @@ function RunsPage() {
   );
 }
 
-function isFailure(conclusion: string | null) {
-  return conclusion === "failure" || conclusion === "timed_out";
-}
-
-function RunRow({
+// Memoized: opening one run re-renders that row, not every row.
+const RunRow = memo(function RunRow({
+  id,
   run,
-  colors,
   environments,
   showRepository,
   open,
   onToggle,
 }: {
+  id: string;
   run: Run;
-  colors: Map<string, string | undefined>;
-  environments: Environment[];
+  environments: Environments;
   showRepository: boolean;
   open: boolean;
-  onToggle: () => void;
+  onToggle: (key: string) => void;
 }) {
-  const names = new Map(environments.map((env) => [env.key, env.label]));
   const meta = [
     run.title ? run.workflow : null,
     showRepository ? run.repository : null,
@@ -200,15 +194,16 @@ function RunRow({
     triggerText(run),
     run.branch,
     run.runAttempt > 1 ? `attempt ${run.runAttempt}` : null,
-    run.startedAt ? timeAgo(new Date(run.startedAt).toISOString()) : null,
+    run.startedAt ? timeAgo(run.startedAt) : null,
   ].filter(Boolean);
+  const label = (key: string) => environments.get(key)?.label ?? key;
 
   return (
     <li>
       <button
         type="button"
         aria-expanded={open}
-        onClick={onToggle}
+        onClick={() => onToggle(id)}
         className="grid w-full grid-cols-[auto_1fr_auto] items-center gap-x-3 px-4 py-3 text-left outline-none hover:bg-secondary/30 focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-inset sm:grid-cols-[auto_1fr_auto_auto] sm:gap-x-5"
       >
         <StatusIcon run={run} />
@@ -227,14 +222,14 @@ function RunRow({
         </span>
         <span
           className="hidden items-center gap-1 sm:flex"
-          aria-label={`Ran on ${run.environments.map((key) => names.get(key) ?? key).join(", ")}`}
+          aria-label={`Ran on ${run.environments.map(label).join(", ")}`}
         >
           {run.environments.map((key) => (
             <span
               key={key}
-              title={names.get(key) ?? key}
+              title={label(key)}
               className="inline-block h-2 w-5 rounded-[3px]"
-              style={{ background: colors.get(key) }}
+              style={{ background: environments.get(key)?.color }}
             />
           ))}
         </span>
@@ -246,49 +241,31 @@ function RunRow({
           />
         </span>
       </button>
-      {open && <RunDetail run={run} colors={colors} />}
+      {open && <RunDetail run={run} environments={environments} />}
     </li>
   );
-}
+});
+
+type Status = { Icon: LucideIcon; label: string; className: string };
+const CANCELLED: Status = {
+  Icon: CircleSlashIcon,
+  label: "Cancelled",
+  className: "text-muted-foreground",
+};
+const STATUS: Record<string, Status> = {
+  in_progress: { Icon: LoaderCircleIcon, label: "In progress", className: "animate-spin text-run" },
+  queued: { Icon: CircleDashedIcon, label: "Queued", className: "text-muted-foreground" },
+  success: { Icon: CircleCheckIcon, label: "Succeeded", className: "text-go" },
+  failure: { Icon: CircleXIcon, label: "Failed", className: "text-destructive" },
+  timed_out: { Icon: TimerOffIcon, label: "Timed out", className: "text-destructive" },
+  cancelled: CANCELLED,
+};
 
 function StatusIcon({ run }: { run: Run }) {
-  const icon = "size-[18px] shrink-0";
-  if (run.status === "in_progress")
-    return (
-      <LoaderCircleIcon
-        role="img"
-        aria-label="In progress"
-        className={cn(icon, "animate-spin text-run")}
-      />
-    );
-  if (run.status === "queued")
-    return (
-      <CircleDashedIcon
-        role="img"
-        aria-label="Queued"
-        className={cn(icon, "text-muted-foreground")}
-      />
-    );
-  switch (run.conclusion) {
-    case "success":
-      return <CircleCheckIcon role="img" aria-label="Succeeded" className={cn(icon, "text-go")} />;
-    case "failure":
-      return (
-        <CircleXIcon role="img" aria-label="Failed" className={cn(icon, "text-destructive")} />
-      );
-    case "timed_out":
-      return (
-        <TimerOffIcon role="img" aria-label="Timed out" className={cn(icon, "text-destructive")} />
-      );
-    default:
-      return (
-        <CircleSlashIcon
-          role="img"
-          aria-label={run.conclusion === "cancelled" ? "Cancelled" : (run.conclusion ?? "Finished")}
-          className={cn(icon, "text-muted-foreground")}
-        />
-      );
-  }
+  const { Icon, label, className } = STATUS[
+    run.status === "completed" ? (run.conclusion ?? "") : run.status
+  ] ?? { ...CANCELLED, label: run.conclusion ?? "Finished" };
+  return <Icon role="img" aria-label={label} className={cn("size-[18px] shrink-0", className)} />;
 }
 
 /**
@@ -304,7 +281,6 @@ function WallTime({ run }: { run: Run }) {
     return () => clearInterval(timer);
   }, [running]);
   const ms = running ? (run.startedAt ? now - run.startedAt : null) : run.wallMs;
-  const slow = run.usualMs !== null && ms !== null && ms > run.usualMs;
   return (
     <span className="grid w-20 justify-items-end gap-1 tabular-nums">
       <span className={cn("text-sm font-semibold", running && "font-normal text-muted-foreground")}>
@@ -318,7 +294,7 @@ function WallTime({ run }: { run: Run }) {
           <span
             className={cn(
               "absolute inset-y-0 left-0 rounded-full",
-              slow ? "bg-run" : "bg-muted-foreground/60",
+              ms > run.usualMs ? "bg-run" : "bg-muted-foreground/60",
             )}
             style={{ width: `${Math.min(ms / (2 * run.usualMs), 1) * 100}%` }}
           />
@@ -329,31 +305,35 @@ function WallTime({ run }: { run: Run }) {
   );
 }
 
-function RunDetail({ run, colors }: { run: Run; colors: Map<string, string | undefined> }) {
+const waitOf = (job: RunJob) =>
+  job.queuedAt !== null && job.startedAt !== null ? job.startedAt - job.queuedAt : null;
+
+function RunDetail({ run, environments }: { run: Run; environments: Environments }) {
   const [detail, setDetail] = useState<RunJobs | null>(null);
   const [failed, setFailed] = useState(false);
+  // Keyed on the run's ids, not the object: the same run in a new report needn't load again.
+  const { repositoryId, runId, runAttempt, startedAt } = run;
   useEffect(() => {
     let live = true;
-    loadJobs(run)
+    (authDisabled
+      ? Promise.resolve(sampleRunJobs({ runId, startedAt }))
+      : getRunJobs({ repositoryId, runId, runAttempt })
+    )
       .then((value) => live && setDetail(value))
       .catch(() => live && setFailed(true));
     return () => {
       live = false;
     };
-  }, [run]);
+  }, [repositoryId, runId, runAttempt, startedAt]);
 
-  const names = new Map(detail?.environments.map((env) => [env.key, env.label]));
-  const waitOf = (job: RunJobs["jobs"][number]) =>
-    job.queuedAt !== null && job.startedAt !== null ? job.startedAt - job.queuedAt : null;
-  const longest = detail?.jobs.reduce<{ name: string; wait: number; env: string | null } | null>(
-    (worst, job) => {
-      const wait = waitOf(job);
-      return wait !== null && wait >= LONG_WAIT_MS && (!worst || wait > worst.wait)
-        ? { name: job.name, wait, env: job.environment }
-        : worst;
-    },
-    null,
-  );
+  // A runner's name from the page's environments first, then the detail's own.
+  const own = new Map(detail?.environments.map((env) => [env.key, env.label]));
+  const label = (key: string) => environments.get(key)?.label ?? own.get(key) ?? key;
+  let longest: { job: RunJob; wait: number } | null = null;
+  for (const job of detail?.jobs ?? []) {
+    const wait = waitOf(job);
+    if (isLongWait(wait) && wait > (longest?.wait ?? 0)) longest = { job, wait };
+  }
 
   return (
     <div className="border-t bg-secondary/40 px-4 py-3 sm:pl-12">
@@ -409,10 +389,11 @@ function RunDetail({ run, colors }: { run: Run; colors: Map<string, string | und
                                 aria-hidden
                                 className="inline-block h-2 w-4 rounded-[3px]"
                                 style={{
-                                  background: colors.get(job.environment) ?? "currentColor",
+                                  background:
+                                    environments.get(job.environment)?.color ?? "currentColor",
                                 }}
                               />
-                              {names.get(job.environment) ?? job.environment}
+                              {label(job.environment)}
                             </span>
                           ) : (
                             <span className="text-muted-foreground">Waiting for a runner</span>
@@ -421,7 +402,7 @@ function RunDetail({ run, colors }: { run: Run; colors: Map<string, string | und
                         <td
                           className={cn(
                             "py-1.5 pr-4 text-right",
-                            wait !== null && wait >= LONG_WAIT_MS && "font-semibold text-run",
+                            isLongWait(wait) && "font-semibold text-run",
                           )}
                         >
                           {elapsed(wait)}
@@ -440,8 +421,8 @@ function RunDetail({ run, colors }: { run: Run; colors: Map<string, string | und
           <div className="flex flex-wrap items-center justify-between gap-2 text-xs text-muted-foreground">
             <span>
               {longest &&
-                `${longest.name} waited ${elapsed(longest.wait)} for ${
-                  longest.env ? (names.get(longest.env) ?? "its runner") : "a runner"
+                `${longest.job.name} waited ${elapsed(longest.wait)} for ${
+                  longest.job.environment ? label(longest.job.environment) : "a runner"
                 }.`}
             </span>
             <a
@@ -460,10 +441,9 @@ function RunDetail({ run, colors }: { run: Run; colors: Map<string, string | und
   );
 }
 
-function JobResult({ job }: { job: RunJobs["jobs"][number] }) {
+function JobResult({ job }: { job: RunJob }) {
   if (job.status !== "completed")
     return <span className="text-run">{job.status.replace("_", " ")}</span>;
-  const text = (job.conclusion ?? "done").replace("_", " ");
   return (
     <span
       className={cn(
@@ -474,29 +454,29 @@ function JobResult({ job }: { job: RunJobs["jobs"][number] }) {
             : "text-muted-foreground",
       )}
     >
-      {text}
+      {(job.conclusion ?? "done").replace("_", " ")}
     </span>
   );
 }
 
 function Legend({
-  report,
-  colors,
+  days,
   truncated,
+  environments,
 }: {
-  report: RunsReport;
-  colors: Map<string, string | undefined>;
+  days: number;
   truncated: boolean;
+  environments: Environments;
 }) {
   return (
     <div className="grid gap-2 text-xs text-muted-foreground">
       <p className="flex flex-wrap gap-x-5 gap-y-1">
-        {report.environments.map((env) => (
-          <span key={env.key} className="inline-flex items-center gap-1.5">
+        {[...environments].map(([key, env]) => (
+          <span key={key} className="inline-flex items-center gap-1.5">
             <span
               aria-hidden
               className="inline-block h-2 w-4 rounded-[3px]"
-              style={{ background: colors.get(env.key) }}
+              style={{ background: env.color }}
             />
             {env.label}
           </span>
@@ -508,9 +488,9 @@ function Legend({
       </p>
       <p className="max-w-[62ch]">
         The bar under each time compares the run with its workflow's usual time, the p90 of its
-        successful runs over the last {report.usualDays} days. The tick is the usual time; a run
-        past it shows in amber.
-        {truncated && " Only the newest runs are shown; pick a shorter range to see the rest."}
+        successful runs over the last {plural(days, "day")}. The tick is the usual time; a run past
+        it shows in amber.
+        {truncated && " Only the newest runs are shown."}
       </p>
     </div>
   );

@@ -8,6 +8,7 @@
 // scan of the table. The detail is a range of job_timing_job_idx. job-times.test.ts checks the
 // rows D1 reads.
 import { and, eq, gte, inArray, isNull, type SQL, sql } from "drizzle-orm";
+import type { SQLiteColumn } from "drizzle-orm/sqlite-core";
 import { usesContainerRunner } from "./container-runner.ts";
 import { type Db, schema } from "./db/index.ts";
 import { DAY_MS, RUNNER_RATES, runnerClass } from "./job-timings.ts";
@@ -261,12 +262,16 @@ interface WindowRow {
   samples: string | null;
 }
 
-// A job a runner ran: started, not skipped, and not a pick. Picks (`runs-on: relayrunner`) only
-// route their run, and would split every routed run across two environments. Cancelled jobs that
-// started count as runs, like on the Usage page; only successes give times.
-const RAN = sql`${table.startedAt} is not null and ${table.runnerName} is not null
-  and coalesce(${table.conclusion}, '') <> 'skipped'
-  and lower(${table.labels}) not like ${`%"${RELAYRUNNER_LABEL}"%`}`;
+/** A pick (`runs-on: relayrunner`): it only routes its run. */
+export const PICK = sql`lower(${table.labels}) like ${`%"${RELAYRUNNER_LABEL}"%`}`;
+
+/** A job a runner ran: started and not skipped. Cancelled jobs that started count. */
+export const RAN_ON_RUNNER = sql`${table.startedAt} is not null and ${table.runnerName} is not null
+  and coalesce(${table.conclusion}, '') <> 'skipped'`;
+
+// A job a runner ran, picks left out: they would split every routed run across two environments,
+// like on the Usage page; only successes give times.
+const RAN = sql`${RAN_ON_RUNNER} and not ${PICK}`;
 
 const OK = sql`coalesce(${table.conclusion} = 'success', 0)`;
 
@@ -275,8 +280,12 @@ const SAMPLES = sql`group_concat(case when ${OK} then ${table.completedAt} || ':
   || (${table.completedAt} - ${table.startedAt}) || ':'
   || coalesce(${table.startedAt} - ${table.queuedAt}, '') end)`;
 
-export function inWorkspace(workspaceId: string): SQL {
-  return sql`${table.installationId} in (
+/** The row's installation (job_timing's unless another column is given) is the workspace's. */
+export function inWorkspace(
+  workspaceId: string,
+  installationId: SQLiteColumn = table.installationId,
+): SQL {
+  return sql`${installationId} in (
     select ${schema.githubInstallation.id} from ${schema.githubInstallation}
     where ${schema.githubInstallation.workspaceId} = ${workspaceId})`;
 }

@@ -7,7 +7,7 @@
 // (job_timing_installation_idx, workflow_run_installation_idx) over the last USUAL_DAYS days, never
 // a scan. One run's jobs are a range of job_timing_run_idx and workflow_job_run_idx.
 import type { WebhookMessage } from "@relayrunner/github-webhooks";
-import { and, eq, inArray, sql } from "drizzle-orm";
+import { and, eq, sql } from "drizzle-orm";
 import { type Db, schema } from "./db/index.ts";
 import { findInstallation } from "./installations.ts";
 import {
@@ -16,23 +16,22 @@ import {
   FEW_RUNS,
   inWorkspace,
   nameMachines,
+  PICK,
   quantile,
+  RAN_ON_RUNNER,
 } from "./job-times.ts";
-import { DAY_MS, JOB_TIMING_RETENTION_DAYS } from "./job-timings.ts";
+import { DAY_MS, JOB_TIMING_RETENTION_DAYS, purgeBefore } from "./job-timings.ts";
 import { parseDate } from "./jobs.ts";
-import { RELAYRUNNER_LABEL } from "./webhook-queue.ts";
 
 type WorkflowRunMessage = Extract<WebhookMessage, { event: "workflow_run" }>;
 
 const table = schema.workflowRun;
 const timing = schema.jobTiming;
 
-export const DEFAULT_DAYS = 7;
-export const MAX_DAYS = 14;
 /** A workflow's usual time is the p90 of its successful runs over this many days. */
-export const USUAL_DAYS = 14;
+const USUAL_DAYS = 14;
 /** Most runs one list returns. */
-export const RUN_LIMIT = 200;
+const RUN_LIMIT = 200;
 
 /**
  * Stores one workflow_run delivery. Deliveries are unordered, so a row only takes one GitHub
@@ -69,26 +68,17 @@ export async function recordWorkflowRun(db: Db, message: WorkflowRunMessage): Pr
   return true;
 }
 
-// Rows deleted per statement, so one purge never runs long. The hourly cron catches up on the rest.
-const PURGE_BATCH = 5_000;
-
 /** Deletes runs last updated before job_timing's retention window. Returns how many rows went. */
-export async function purgeOldWorkflowRuns(db: Db, now = Date.now()): Promise<number> {
-  const cutoff = new Date(now - JOB_TIMING_RETENTION_DAYS * DAY_MS);
-  let deleted = 0;
-  for (let i = 0; i < 10; i += 1) {
-    const result = await db.run(sql`
-      delete from ${table} where rowid in (
-        select rowid from ${table} where ${table.githubUpdatedAt} < ${cutoff.getTime()}
-        limit ${PURGE_BATCH})`);
-    const changes = result.meta.changes ?? 0;
-    deleted += changes;
-    if (changes < PURGE_BATCH) break;
-  }
-  return deleted;
+export function purgeOldWorkflowRuns(db: Db, now = Date.now()): Promise<number> {
+  return purgeBefore(
+    db,
+    table,
+    table.githubUpdatedAt,
+    new Date(now - JOB_TIMING_RETENTION_DAYS * DAY_MS),
+  );
 }
 
-export type RunStatus = "queued" | "in_progress" | "completed";
+type RunStatus = "queued" | "in_progress" | "completed";
 
 export interface Run {
   repositoryId: number;
@@ -108,12 +98,11 @@ export interface Run {
   /** GitHub's run conclusion, or one worked out from the jobs. Null until it completes. */
   conclusion: string | null;
   startedAt: number | null;
-  completedAt: number | null;
-  /** First job queued (or the run started) to last job finished. */
+  /** When the run last changed: its last job finished, or GitHub last updated it. */
+  updatedAt: number;
+  /** First job queued (or the run started) to last job finished. Null until it completes. */
   wallMs: number | null;
-  /** Jobs that finished, picks left out. */
-  jobs: number;
-  /** Where its jobs ran, as environment keys, most used first. */
+  /** Where its jobs ran, as environment keys. */
   environments: string[];
   /** A RelayRunner pick chose its runners. */
   routed: boolean;
@@ -122,8 +111,9 @@ export interface Run {
 }
 
 export interface RunsReport {
+  /** The window: runs that changed in the last `days` days. */
   days: number;
-  usualDays: number;
+  /** Environments the runs used, most used first. */
   environments: Environment[];
   runs: Run[];
   /** More runs fell in the window than RUN_LIMIT. */
@@ -147,10 +137,6 @@ interface JobGroup {
   envs: string | null;
 }
 
-const PICK = sql`lower(${timing.labels}) like ${`%"${RELAYRUNNER_LABEL}"%`}`;
-const RAN_HERE = sql`${timing.startedAt} is not null and ${timing.runnerName} is not null
-  and coalesce(${timing.conclusion}, '') <> 'skipped'`;
-
 /** The finished jobs of each run in the window, grouped by run: a range of the installation index. */
 function jobGroupsQuery(workspaceId: string, since: number) {
   return sql`
@@ -164,7 +150,7 @@ function jobGroupsQuery(workspaceId: string, since: number) {
       max(${PICK}) as routed,
       min(coalesce(${timing.queuedAt}, ${timing.startedAt})) as first_queued,
       max(${timing.completedAt}) as last_completed,
-      group_concat(distinct case when not ${PICK} and ${RAN_HERE} then ${timing.labels}
+      group_concat(distinct case when not ${PICK} and ${RAN_ON_RUNNER} then ${timing.labels}
         || char(31) || coalesce(${timing.runnerGroupName}, '')
         || char(31) || coalesce(${timing.machineId}, '') || char(30) end) as envs
     from ${timing}
@@ -172,23 +158,13 @@ function jobGroupsQuery(workspaceId: string, since: number) {
     group by ${timing.repositoryId}, ${timing.runId}, ${timing.runAttempt}`;
 }
 
-function runsInWorkspace(workspaceId: string) {
-  return sql`${table.installationId} in (
-    select ${schema.githubInstallation.id} from ${schema.githubInstallation}
-    where ${schema.githubInstallation.workspaceId} = ${workspaceId})`;
-}
-
-/** `labels␟group␟machine␞,...` → the environments, each once. */
-export function parseEnvs(text: string | null): Environment[] {
+/** `labels␟group␟machine␞,...` → each environment's raw `labels␟group␟machine`. */
+export function splitEnvs(text: string | null): string[] {
   if (!text) return [];
   return text
     .split("\u001e")
     .map((part) => part.replace(/^,/, ""))
-    .filter(Boolean)
-    .map((part) => {
-      const [labels, group, machine] = part.split("\u001f");
-      return environmentFor(JSON.parse(labels) as string[], group || null, machine || null);
-    });
+    .filter(Boolean);
 }
 
 function conclusionOfJobs(group: JobGroup) {
@@ -206,36 +182,38 @@ function runStatus(status: string | undefined): RunStatus {
 const runKey = (repositoryId: number, runId: number, runAttempt: number) =>
   `${repositoryId}:${runId}:${runAttempt}`;
 
-/** The workspace's runs active in the last `days` days, newest first, at most RUN_LIMIT. */
-export async function listRuns(
-  db: Db,
-  workspaceId: string,
-  days = DEFAULT_DAYS,
-  now = Date.now(),
-): Promise<RunsReport> {
-  // The usual times need the longer window, so both statements read it and the list is cut after.
-  const usualSince = now - USUAL_DAYS * DAY_MS;
-  const since = now - days * DAY_MS;
+type WorkflowRunRow = typeof table.$inferSelect;
+
+/**
+ * The workspace's runs that changed in the last USUAL_DAYS days, newest first, at most RUN_LIMIT.
+ * The usual times need the whole window anyway, so the dashboard narrows the range itself.
+ */
+export async function listRuns(db: Db, workspaceId: string, now = Date.now()): Promise<RunsReport> {
+  const since = now - USUAL_DAYS * DAY_MS;
   const [groups, rows] = await Promise.all([
-    db.all<JobGroup>(jobGroupsQuery(workspaceId, usualSince)),
+    db.all<JobGroup>(jobGroupsQuery(workspaceId, since)),
     db
       .select()
       .from(table)
-      .where(and(runsInWorkspace(workspaceId), sql`${table.githubUpdatedAt} >= ${usualSince}`)),
+      .where(
+        and(
+          inWorkspace(workspaceId, table.installationId),
+          sql`${table.githubUpdatedAt} >= ${since}`,
+        ),
+      ),
   ]);
 
-  const byKey = new Map(rows.map((row) => [runKey(row.repositoryId, row.id, row.runAttempt), row]));
-  const groupsByKey = new Map(
-    groups.map((group) => [runKey(group.repository_id, group.run_id, group.run_attempt), group]),
-  );
-  const envs = new Map<string, Environment>();
-  const envUse = new Map<string, number>();
-  const runs: Run[] = [];
-  // When each run last changed, for the window and the order.
-  const lastActivity = new Map<Run, number>();
-  for (const key of new Set([...groupsByKey.keys(), ...byKey.keys()])) {
-    const group = groupsByKey.get(key);
-    const row = byKey.get(key);
+  // First the cheap parts of every run: enough for the usual times and the order.
+  const sources = new Map<string, { group?: JobGroup; row?: WorkflowRunRow }>();
+  for (const group of groups)
+    sources.set(runKey(group.repository_id, group.run_id, group.run_attempt), { group });
+  for (const row of rows) {
+    const key = runKey(row.repositoryId, row.id, row.runAttempt);
+    sources.set(key, { ...sources.get(key), row });
+  }
+  const summaries = [];
+  const walls = new Map<string, number[]>();
+  for (const { group, row } of sources.values()) {
     // A run seen only as a pick (its jobs still running, no workflow_run yet) has nothing to show.
     if (!row && !Number(group?.jobs)) continue;
     const status = runStatus(row?.status);
@@ -244,15 +222,64 @@ export async function listRuns(
       status === "completed"
         ? (group?.last_completed ?? row?.githubUpdatedAt.getTime() ?? null)
         : null;
-    const runEnvs = parseEnvs(group?.envs ?? null);
-    for (const env of runEnvs) {
-      if (!envs.has(env.key)) envs.set(env.key, env);
-      envUse.set(env.key, (envUse.get(env.key) ?? 0) + 1);
+    const summary = {
+      group,
+      row,
+      status,
+      startedAt,
+      conclusion:
+        status !== "completed"
+          ? null
+          : (row?.conclusion ?? (group ? conclusionOfJobs(group) : null)),
+      wallMs:
+        startedAt !== null && completedAt !== null ? Math.max(0, completedAt - startedAt) : null,
+      updatedAt: Math.max(group?.last_completed ?? 0, row?.githubUpdatedAt.getTime() ?? 0),
+      workflow: `${row?.repositoryId ?? group?.repository_id}\u001f${
+        row?.workflowName ?? group?.workflow_name ?? ""
+      }`,
+    };
+    summaries.push(summary);
+    if (summary.conclusion === "success" && summary.wallMs !== null) {
+      const times = walls.get(summary.workflow) ?? [];
+      times.push(summary.wallMs);
+      walls.set(summary.workflow, times);
     }
+  }
+  // Each workflow's usual time, from its successful runs over the whole window.
+  const usual = new Map<string, number | null>();
+  for (const [workflow, times] of walls)
+    if (times.length >= FEW_RUNS)
+      usual.set(
+        workflow,
+        quantile(
+          times.sort((a, b) => a - b),
+          0.9,
+        ),
+      );
+
+  // Then the whole run, for the newest RUN_LIMIT only.
+  summaries.sort((a, b) => b.updatedAt - a.updatedAt);
+  const envs = new Map<string, Environment>();
+  const envUse = new Map<string, number>();
+  const parsed = new Map<string, Environment>();
+  const runs = summaries.slice(0, RUN_LIMIT).map((summary): Run => {
+    const { group, row } = summary;
+    const keys = new Set<string>();
+    for (const raw of splitEnvs(group?.envs ?? null)) {
+      let env = parsed.get(raw);
+      if (!env) {
+        const [labels, runnerGroup, machine] = raw.split("\u001f");
+        env = environmentFor(JSON.parse(labels) as string[], runnerGroup || null, machine || null);
+        parsed.set(raw, env);
+      }
+      envs.set(env.key, env);
+      keys.add(env.key);
+    }
+    for (const key of keys) envUse.set(key, (envUse.get(key) ?? 0) + 1);
     const repository = row?.repositoryFullName ?? group?.repository ?? "";
     const runId = row?.id ?? group?.run_id ?? 0;
     const runAttempt = row?.runAttempt ?? group?.run_attempt ?? 1;
-    const run: Run = {
+    return {
       repositoryId: row?.repositoryId ?? group?.repository_id ?? 0,
       repository,
       runId,
@@ -266,66 +293,24 @@ export async function listRuns(
       url:
         row?.htmlUrl ??
         `https://github.com/${repository}/actions/runs/${runId}/attempts/${runAttempt}`,
-      status,
-      conclusion:
-        status !== "completed"
-          ? null
-          : (row?.conclusion ?? (group ? conclusionOfJobs(group) : null)),
-      startedAt,
-      completedAt,
-      wallMs:
-        startedAt !== null && completedAt !== null ? Math.max(0, completedAt - startedAt) : null,
-      jobs: Number(group?.jobs ?? 0),
-      environments: [...new Set(runEnvs.map((env) => env.key))],
+      status: summary.status,
+      conclusion: summary.conclusion,
+      startedAt: summary.startedAt,
+      updatedAt: summary.updatedAt,
+      wallMs: summary.wallMs,
+      environments: [...keys],
       routed: Boolean(Number(group?.routed ?? 0)),
-      usualMs: null,
+      usualMs: usual.get(summary.workflow) ?? null,
     };
-    runs.push(run);
-    lastActivity.set(
-      run,
-      Math.max(group?.last_completed ?? 0, row?.githubUpdatedAt.getTime() ?? 0),
-    );
-  }
-
-  // Each workflow's usual time, from its successful runs over the whole USUAL_DAYS.
-  const walls = new Map<string, number[]>();
-  for (const run of runs) {
-    if (run.conclusion !== "success" || run.wallMs === null) continue;
-    const id = `${run.repositoryId}\u001f${run.workflow ?? ""}`;
-    walls.set(id, [...(walls.get(id) ?? []), run.wallMs]);
-  }
-  const usual = new Map(
-    [...walls].flatMap(([id, times]) =>
-      times.length < FEW_RUNS
-        ? []
-        : [
-            [
-              id,
-              quantile(
-                times.sort((a, b) => a - b),
-                0.9,
-              ),
-            ] as const,
-          ],
-    ),
-  );
-
-  const activity = (run: Run) => lastActivity.get(run) ?? 0;
-  const recent = runs
-    .filter((run) => activity(run) >= since)
-    .sort((a, b) => activity(b) - activity(a));
+  });
   await nameMachines(db, workspaceId, envs);
   return {
-    days,
-    usualDays: USUAL_DAYS,
+    days: USUAL_DAYS,
     environments: [...envs.values()].sort(
       (a, b) => (envUse.get(b.key) ?? 0) - (envUse.get(a.key) ?? 0),
     ),
-    runs: recent.slice(0, RUN_LIMIT).map((run) => ({
-      ...run,
-      usualMs: usual.get(`${run.repositoryId}\u001f${run.workflow ?? ""}`) ?? null,
-    })),
-    truncated: recent.length > RUN_LIMIT,
+    runs,
+    truncated: summaries.length > RUN_LIMIT,
   };
 }
 
@@ -373,13 +358,7 @@ export async function runJobs(
           eq(job.kind, "job"),
           eq(job.runAttempt, run.runAttempt),
           eq(job.repositoryId, run.repositoryId),
-          inArray(
-            job.installationId,
-            db
-              .select({ id: schema.githubInstallation.id })
-              .from(schema.githubInstallation)
-              .where(eq(schema.githubInstallation.workspaceId, workspaceId)),
-          ),
+          inWorkspace(workspaceId, job.installationId),
         ),
       ),
   ]);
@@ -387,7 +366,7 @@ export async function runJobs(
   const envs = new Map<string, Environment>();
   const envOf = (labels: string[], group: string | null, machineId: string | null) => {
     const env = environmentFor(labels, group, machineId);
-    if (!envs.has(env.key)) envs.set(env.key, env);
+    envs.set(env.key, env);
     return env.key;
   };
   const jobs = new Map<number, RunJob>();
