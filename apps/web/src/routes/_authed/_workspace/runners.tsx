@@ -210,7 +210,7 @@ function ConnectLanding({
           };
 
   return (
-    <section className="mx-auto grid w-full max-w-3xl gap-10 py-4 sm:py-12">
+    <section className="mx-auto grid w-full max-w-3xl content-center gap-12 py-6 sm:min-h-[calc(100dvh-4rem)] sm:gap-16 sm:py-16">
       <div className="grid justify-items-center gap-3 text-center">
         <h1 className="text-2xl font-semibold tracking-tight text-balance sm:text-3xl">
           Run CI on your laptop while you work
@@ -227,12 +227,13 @@ function ConnectLanding({
 
       <figure
         aria-label="Where a private repo job runs"
-        className="m-0 flex flex-col items-center gap-4 sm:flex-row sm:justify-center sm:gap-0"
+        className="m-0 grid w-fit gap-4 justify-self-center sm:flex sm:items-center sm:gap-0"
       >
-        <span className="flex items-center gap-2 rounded-full border bg-card px-4 py-2.5 text-sm whitespace-nowrap text-ink-2">
+        <span className="flex items-center gap-2 justify-self-start rounded-full border bg-card px-4 py-2.5 text-sm whitespace-nowrap text-ink-2">
           <CirclePlayIcon aria-hidden className="size-[18px]" />
           Private repo job
         </span>
+        {/* Wide screens: the job forks to the right. */}
         <svg
           aria-hidden
           viewBox="0 0 110 190"
@@ -247,17 +248,28 @@ function ConnectLanding({
             strokeDasharray="4 5"
           />
         </svg>
-        <div className="grid gap-4 sm:gap-16">
-          <RouteEnd
-            on
-            icon={<LaptopIcon aria-hidden className="size-5" />}
-            name="Your laptop"
-            when={
-              <>
-                while <code className="font-mono text-ink-2">relayrunner connect</code> is running
-              </>
-            }
+        <div className="relative grid gap-4 pl-11 sm:gap-16 sm:pl-0">
+          {/* Phones: the job drops down from the pill, to the laptop first and then on down. */}
+          <span
+            aria-hidden
+            className="absolute top-[-16px] bottom-[22px] left-[24px] w-5 rounded-bl-lg border-b-2 border-l-2 border-dashed border-idle sm:hidden"
           />
+          <div className="relative">
+            <span
+              aria-hidden
+              className="absolute top-[-16px] bottom-1/2 left-[-20px] w-5 rounded-bl-lg border-b-2 border-l-2 border-go sm:hidden"
+            />
+            <RouteEnd
+              on
+              icon={<LaptopIcon aria-hidden className="size-5" />}
+              name="Your laptop"
+              when={
+                <>
+                  while <code className="font-mono text-ink-2">relayrunner connect</code> is running
+                </>
+              }
+            />
+          </div>
           <RouteEnd icon={elsewhere.icon} name={elsewhere.name} when={elsewhere.when} />
         </div>
       </figure>
