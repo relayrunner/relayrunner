@@ -5,7 +5,7 @@
 // Node runs this file as TypeScript directly (type stripping), so it uses no TS-only syntax.
 
 import { spawn } from "node:child_process";
-import { mkdtemp, readdir, rm, stat } from "node:fs/promises";
+import { mkdtemp, readdir, rm, stat, writeFile } from "node:fs/promises";
 import { createServer, type IncomingMessage } from "node:http";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -29,8 +29,10 @@ const SKIP_DIRS = new Set([".git", "node_modules", "vendor", "dist", "build", ".
 interface Tool {
   // Files or directories to run on, or null when there's nothing for the tool to check.
   targets?(root: string): Promise<string[] | null>;
-  command(targets: string[]): [string, string[]];
+  command(targets: string[], root: string): Promise<[string, string[]]> | [string, string[]];
   parse(output: string, root: string): Problem[];
+  // True when the run found nothing for the tool to check, which some tools report as a failure.
+  nothingToCheck?(output: string): boolean;
 }
 
 // One workflow command per error. The newline is a real one: actionlint rejects `{{"\\n"}}`.
@@ -38,7 +40,12 @@ const ACTIONLINT_FORMAT =
   "{{range $err := .}}::error file={{$err.Filepath}},line={{$err.Line}},col={{$err.Column}},title=actionlint ({{$err.Kind}})::{{$err.Message}}\n{{end}}";
 
 const TOOLS: Record<LintTool, Tool> = {
-  oxlint: { command: () => ["oxlint", ["--format=github"]], parse: parseWorkflowCommands },
+  oxlint: {
+    command: () => ["oxlint", ["--format=github"]],
+    parse: parseWorkflowCommands,
+    // A repo with no JavaScript or TypeScript files exits 1 with this.
+    nothingToCheck: (output) => output.includes("No files found to lint"),
+  },
   oxfmt: { command: () => ["oxfmt", ["--check"]], parse: parseOxfmtCheck },
   ruff: {
     command: () => ["ruff", ["check", "--output-format=github"]],
@@ -47,7 +54,10 @@ const TOOLS: Record<LintTool, Tool> = {
   // Given the files: without a .git directory (a tarball has none) it can't find the workflows.
   actionlint: {
     targets: workflowFiles,
-    command: (files) => ["actionlint", ["-format", ACTIONLINT_FORMAT, ...files]],
+    command: async (files, root) => [
+      "actionlint",
+      ["-config-file", await actionlintConfig(root), "-format", ACTIONLINT_FORMAT, ...files],
+    ],
     parse: parseWorkflowCommands,
   },
   zizmor: {
@@ -78,8 +88,12 @@ export async function lint(
       results.push(result(name, "skipped", [], started));
       continue;
     }
-    const [command, args] = tool.command(targets);
+    const [command, args] = await tool.command(targets, root);
     const run = await exec(command, args, root);
+    if (tool.nothingToCheck?.(run.output)) {
+      results.push(result(name, "skipped", [], started));
+      continue;
+    }
     const found = tool.parse(run.output, root);
     const problems = found.filter((problem) => inScope(problem.path));
     const status =
@@ -119,6 +133,26 @@ function result(
     durationMs: Date.now() - started,
     output,
   };
+}
+
+// actionlint finds .github/actionlint.yaml from the git root, and a tarball has no .git, so the
+// file is passed explicitly. A repo without one gets a config that knows RelayRunner's runner
+// labels, which actionlint otherwise reports as unknown.
+const RELAYRUNNER_LABELS = ["relayrunner", "relayrunner-container"];
+let defaultActionlintConfig: Promise<string> | undefined;
+
+async function actionlintConfig(root: string) {
+  for (const name of ["actionlint.yaml", "actionlint.yml"]) {
+    const path = join(root, ".github", name);
+    if ((await stat(path).catch(() => null))?.isFile()) return path;
+  }
+  defaultActionlintConfig ??= (async () => {
+    const path = join(tmpdir(), "actionlint.yaml");
+    const labels = RELAYRUNNER_LABELS.map((label) => `    - ${label}`).join("\n");
+    await writeFile(path, `self-hosted-runner:\n  labels:\n${labels}\n`);
+    return path;
+  })();
+  return defaultActionlintConfig;
 }
 
 function workflowFiles(root: string) {
