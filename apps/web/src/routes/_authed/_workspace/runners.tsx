@@ -1,6 +1,6 @@
 import { DEFAULT_RUNNER_ORDER, type RunnerKey, type RunnerStep } from "@relayrunner/runner-order";
-import { createFileRoute, useRouter } from "@tanstack/react-router";
-import { CheckIcon, CloudIcon, CopyIcon, LaptopIcon } from "lucide-react";
+import { Link, createFileRoute, useRouter } from "@tanstack/react-router";
+import { CheckIcon, CirclePlayIcon, CloudIcon, CopyIcon, LaptopIcon } from "lucide-react";
 import { useEffect, useState, type ReactNode } from "react";
 import {
   AddRunner,
@@ -192,44 +192,75 @@ function ConnectLanding({
   }
   const elsewhere =
     fallback === "github"
-      ? { icon: <GithubIcon className="size-5" />, text: "Jobs go back to GitHub-hosted runners" }
+      ? {
+          icon: <GithubIcon className="size-5" />,
+          name: "GitHub-hosted",
+          when: "when it's closed, asleep or busy",
+        }
       : fallback === "blacksmith"
-        ? { icon: <CloudIcon aria-hidden className="size-5" />, text: "Jobs go back to Blacksmith" }
+        ? {
+            icon: <CloudIcon aria-hidden className="size-5" />,
+            name: "Blacksmith",
+            when: "when it's closed, asleep or busy",
+          }
         : {
             icon: <CloudIcon aria-hidden className="size-5" />,
-            text: "Jobs that need it stop early",
+            name: "Nowhere",
+            when: "jobs that need it stop early",
           };
 
   return (
-    <section className="mx-auto grid w-full max-w-3xl gap-8 py-4 sm:gap-10 sm:py-12">
+    <section className="mx-auto grid w-full max-w-3xl gap-10 py-4 sm:py-12">
       <div className="grid justify-items-center gap-3 text-center">
         <h1 className="text-2xl font-semibold tracking-tight text-balance sm:text-3xl">
           Run CI on your laptop while you work
         </h1>
-        <p className="max-w-[54ch] text-pretty text-muted-foreground">
-          Connect when you want private repo jobs on your own computer. Disconnect when you're done
-          and they go back to where they ran before. Nothing has to stay on.
+        <p className="max-w-[56ch] text-pretty text-muted-foreground">
+          RelayRunner routes each job to whichever runner is free: your laptop now, GitHub when it's
+          off, or whatever you set in the{" "}
+          <Link to="/router" className="text-go hover:text-go-hover">
+            Router
+          </Link>
+          .
         </p>
       </div>
 
-      <ol className="grid gap-3 sm:grid-cols-2" aria-label="How connecting works">
-        <StatePanel
-          on
-          title="Connected"
-          lines={[
-            { prompt: true, text: CONNECT_COMMAND },
-            { mark: "◆", text: "Online. Waiting for jobs.", go: true },
-          ]}
-          icon={<LaptopIcon aria-hidden className="size-5" />}
-          text="Private repo jobs run on your laptop"
-        />
-        <StatePanel
-          title="Disconnected"
-          lines={[{ text: "^C" }, { mark: "└", text: "Offline." }]}
-          icon={elsewhere.icon}
-          text={elsewhere.text}
-        />
-      </ol>
+      <figure
+        aria-label="Where a private repo job runs"
+        className="m-0 flex flex-col items-center gap-4 sm:flex-row sm:justify-center sm:gap-0"
+      >
+        <span className="flex items-center gap-2 rounded-full border bg-card px-4 py-2.5 text-sm whitespace-nowrap text-ink-2">
+          <CirclePlayIcon aria-hidden className="size-[18px]" />
+          Private repo job
+        </span>
+        <svg
+          aria-hidden
+          viewBox="0 0 110 190"
+          className="hidden h-[190px] w-[110px] shrink-0 sm:block"
+        >
+          <path d="M0 95 C55 95 55 38 110 38" fill="none" className="stroke-go" strokeWidth="2" />
+          <path
+            d="M0 95 C55 95 55 152 110 152"
+            fill="none"
+            className="stroke-idle"
+            strokeWidth="2"
+            strokeDasharray="4 5"
+          />
+        </svg>
+        <div className="grid gap-4 sm:gap-16">
+          <RouteEnd
+            on
+            icon={<LaptopIcon aria-hidden className="size-5" />}
+            name="Your laptop"
+            when={
+              <>
+                while <code className="font-mono text-ink-2">relayrunner connect</code> is running
+              </>
+            }
+          />
+          <RouteEnd icon={elsewhere.icon} name={elsewhere.name} when={elsewhere.when} />
+        </div>
+      </figure>
 
       <div className="grid justify-items-center gap-3">
         <div className="flex w-full max-w-md items-center justify-between gap-3 rounded-md border bg-card py-2 pr-2 pl-4 font-mono text-sm">
@@ -248,7 +279,7 @@ function ConnectLanding({
           Run it in a terminal on the computer you want CI on. It signs you in the first time.
         </p>
         {onAddExisting && (
-          <Button variant="ghost" size="sm" className="mt-2" onClick={onAddExisting}>
+          <Button variant="ghost" size="sm" className="mt-1" onClick={onAddExisting}>
             <GithubIcon />
             {found > 0
               ? `Add the ${found} self-hosted ${found === 1 ? "runner" : "runners"} already on GitHub`
@@ -260,50 +291,32 @@ function ConnectLanding({
   );
 }
 
-function StatePanel({
+// One end of the route diagram: where the job lands, and when.
+function RouteEnd({
   on = false,
-  title,
-  lines,
   icon,
-  text,
+  name,
+  when,
 }: {
   on?: boolean;
-  title: string;
-  lines: { prompt?: boolean; mark?: string; text: string; go?: boolean }[];
   icon: ReactNode;
-  text: string;
+  name: string;
+  when: ReactNode;
 }) {
   return (
-    <li
-      className={cn(
-        "grid overflow-hidden rounded-lg border",
-        on ? "border-go-edge bg-go-soft" : "bg-card",
-      )}
-    >
-      <div className="flex items-center gap-2 px-4 pt-3.5 text-sm font-medium">
-        <span aria-hidden className={cn("size-2 rounded-full", on ? "bg-go" : "bg-idle")} />
-        {title}
-      </div>
-      <pre className="mx-4 mt-3 grid gap-1 rounded-md border bg-background px-3 py-2.5 font-mono text-xs leading-relaxed">
-        {lines.map((line, i) => (
-          <span key={i} className={cn(line.go ? "text-go" : "text-muted-foreground")}>
-            {line.prompt ? <span className="select-none">$ </span> : null}
-            {line.mark ? <span className="select-none">{line.mark} </span> : null}
-            <span className={cn(line.prompt && "text-foreground")}>{line.text}</span>
-          </span>
-        ))}
-      </pre>
-      <div className="flex items-center gap-3 px-4 py-3.5 text-sm">
-        <span
-          className={cn(
-            "flex size-9 shrink-0 items-center justify-center rounded-md border",
-            on ? "border-go-edge text-go" : "text-muted-foreground",
-          )}
-        >
-          {icon}
-        </span>
-        {text}
-      </div>
-    </li>
+    <div className="flex items-center gap-3.5">
+      <span
+        className={cn(
+          "flex size-11 shrink-0 items-center justify-center rounded-[10px] border",
+          on ? "border-go-edge bg-go-soft text-go" : "bg-card text-ink-2",
+        )}
+      >
+        {icon}
+      </span>
+      <span className="grid">
+        <span className="text-[15px] font-semibold">{name}</span>
+        <span className="text-sm text-muted-foreground">{when}</span>
+      </span>
+    </div>
   );
 }
