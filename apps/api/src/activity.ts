@@ -181,7 +181,16 @@ export async function activityOptions(db: Db, workspaceId: string): Promise<Acti
     db
       .select({ id: schema.machine.id, name: schema.machine.name })
       .from(schema.machine)
-      .where(eq(schema.machine.workspaceId, workspaceId))
+      // The same machines the Runners page lists. Each enrollment is its own row, so a laptop
+      // enrolled, revoked and enrolled again leaves a revoked row per round, and an approved code
+      // the CLI never claimed leaves one with no os. Neither belongs in the picker.
+      .where(
+        and(
+          eq(schema.machine.workspaceId, workspaceId),
+          isNotNull(schema.machine.os),
+          isNull(schema.machine.revokedAt),
+        ),
+      )
       .orderBy(schema.machine.name),
   ]);
   return { repositories: repositories.map((row) => row.name), machines };

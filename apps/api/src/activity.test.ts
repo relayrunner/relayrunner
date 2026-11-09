@@ -192,6 +192,18 @@ describe("Activity log", () => {
         githubStateAt: new Date(),
       })),
     );
+    // Only live, claimed machines: not a revoked enrollment or a code the CLI never claimed.
+    await db.update(schema.machine).set({ os: "macos" }).where(eq(schema.machine.id, machineId));
+    await db.insert(schema.machine).values([
+      {
+        id: `${machineId}-revoked`,
+        workspaceId,
+        name: "laptop",
+        os: "macos",
+        revokedAt: new Date(),
+      },
+      { id: `${machineId}-unclaimed`, workspaceId, name: "laptop" },
+    ]);
     const res = await testing.call(env, "/activity/options", cookie);
     expect(await res.json()).toEqual({
       repositories: ["org/app", "org/site"],
