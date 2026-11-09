@@ -343,11 +343,7 @@ function SignInStep() {
     <Card className="w-full">
       <CardHeader>
         <CardTitle>Connect GitHub</CardTitle>
-        <CardDescription>
-          Sign in with GitHub, then install the RelayRunner GitHub App on the account whose jobs
-          should route. New to RelayRunner? This creates your account. GitHub sends you back here to
-          approve this machine.
-        </CardDescription>
+        <CardDescription>Sign in and install the RelayRunner GitHub App.</CardDescription>
       </CardHeader>
       <CardContent className="flex flex-col gap-3">
         <Button
