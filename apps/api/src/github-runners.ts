@@ -170,15 +170,23 @@ export function cannotAdd(runner: OrgRunner, access: GroupAccess | null | undefi
   return null;
 }
 
-/** An org's self-hosted runners with their group access, read fresh from GitHub. */
+/**
+ * An org's self-hosted runners with their group access, read fresh from GitHub. `groups: false`
+ * skips the group lookups (one call per group, plus one per selected-repos group) and reads only the
+ * runner list: enough to know which runners exist, not which ones a workflow-only group blocks.
+ */
 export async function readOrgRunners(
   env: { GITHUB_APP_ID: string; GITHUB_APP_PRIVATE_KEY: { get(): Promise<string> } },
   installationId: number,
   org: string,
+  { groups = true }: { groups?: boolean } = {},
 ) {
   const token = await appInstallationToken(env, installationId);
   const runners = await listOrgRunners(token, org);
-  return { token, runners, access: await fetchGroupAccess(token, org, runners) };
+  const access = groups
+    ? await fetchGroupAccess(token, org, runners)
+    : new Map<number, GroupAccess>();
+  return { token, runners, access };
 }
 
 /** A runner's labels as stored on its machine row (a JSON array), or none. */
