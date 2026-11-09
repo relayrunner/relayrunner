@@ -1,0 +1,179 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Terms of Service · relayrunner</title>
+    <meta
+      name="description"
+      content="The terms for using the hosted RelayRunner service, run by the maintainers of the open source project."
+    />
+    <meta name="theme-color" content="#0b0d10" />
+    <link rel="canonical" href="%VITE_SITE_URL%/terms" />
+    <link rel="icon" href="/favicon.svg" type="image/svg+xml" />
+    <link rel="stylesheet" href="/src/style.css" />
+    <link rel="stylesheet" href="/src/legal.css" />
+  </head>
+  <body>
+    <a class="skip" href="#main">Skip to content</a>
+
+    <header class="site-header">
+      <div class="wrap header-row">
+        <a class="brand" href="/" aria-label="relayrunner home">
+          <svg class="brand-mark" viewBox="0 0 28 28" aria-hidden="true">
+            <path class="mark-top" d="M11 14c4.5 0 5-7.5 10-7.5h3" />
+            <path d="M4 14h7c4.5 0 5 7.5 10 7.5h3" />
+          </svg>
+          relayrunner
+        </a>
+        <nav aria-label="Primary">
+          <ul class="nav-links">
+            <li><a href="/privacy">Privacy</a></li>
+            <li><a class="nav-gh" href="https://github.com/relayrunner/relayrunner">GitHub</a></li>
+          </ul>
+        </nav>
+      </div>
+    </header>
+
+    <main id="main" class="wrap legal">
+      <h1>Terms of Service</h1>
+      <p class="updated">Last updated November 9, 2026</p>
+
+      <p class="intro">
+        RelayRunner is an open source project run by its maintainers, not a company. These terms
+        cover the hosted service they operate: the dashboard at app.relayrunner.app, its API and
+        webhooks, the RelayRunner GitHub Apps, RelayRunner's hosted runners, and the
+        <code>relayrunner</code> CLI when it talks to that service. "RelayRunner", "we" and "us"
+        mean those maintainers. By using the service you agree to these terms and to our
+        <a href="/privacy">Privacy Policy</a>. If you use it for an organization, you confirm you're
+        allowed to accept these terms for it.
+      </p>
+
+      <h2>The code and the service</h2>
+      <p>
+        RelayRunner's source code is on
+        <a href="https://github.com/relayrunner/relayrunner">GitHub</a> under the license in its
+        repository. These terms don't limit what that license lets you do with the code. They only
+        cover the hosted service. You're always free to run RelayRunner yourself instead.
+      </p>
+
+      <h2>Early access</h2>
+      <p>
+        The service is new and still changing. Features may change or go away, it may be unavailable
+        at times, and we may shut it down. Keep a GitHub-hosted fallback in your relay jobs so CI
+        keeps running when RelayRunner can't route a job. The service is free during early access.
+        If we ever charge for it, we'll tell you before you're billed anything.
+      </p>
+
+      <h2>Your account</h2>
+      <p>
+        You need a GitHub account to sign in, and you're responsible for what happens under your
+        account and on machines you connect. Keep machine tokens private. If you think your account
+        or a machine has been compromised, disconnect it and email
+        <a href="mailto:security@relayrunner.app">security@relayrunner.app</a>.
+      </p>
+
+      <h2>Your code, workflows and machines</h2>
+      <ul>
+        <li>
+          You keep all rights to your code, workflows and data. You let us process them only as
+          needed to run the service, as described in the <a href="/privacy">Privacy Policy</a>.
+        </li>
+        <li>
+          A self-hosted runner executes whatever a workflow tells it to, as your user, on your
+          machine. You decide which repositories and jobs can run on your machines, and you're
+          responsible for who can change those workflows. RelayRunner never routes public
+          repositories' jobs to connected machines, but that isn't a substitute for your own care.
+        </li>
+        <li>You're responsible for having the rights to the code and workflows you run.</li>
+      </ul>
+
+      <h2>GitHub and other providers</h2>
+      <p>
+        Your use of GitHub, Blacksmith and other runner providers is governed by their own terms.
+        What they charge, including GitHub Actions minutes used when a job falls back to
+        GitHub-hosted runners, is between you and them. The minutes and savings RelayRunner shows
+        are estimates.
+      </p>
+
+      <h2>Acceptable use</h2>
+      <p>Don't use the service to:</p>
+      <ul>
+        <li>break the law or infringe anyone's rights;</li>
+        <li>
+          mine cryptocurrency, attack or scan other systems, send spam, or host malware on hosted
+          runners or lint checks;
+        </li>
+        <li>access workspaces, machines or data that aren't yours;</li>
+        <li>
+          disrupt or overload the service, or get around its limits. Good-faith security research is
+          welcome: report what you find to
+          <a href="mailto:security@relayrunner.app">security@relayrunner.app</a> and give us
+          reasonable time to fix it before you share it.
+        </li>
+      </ul>
+
+      <h2>Stopping</h2>
+      <p>
+        You can stop at any time: uninstall the GitHub Apps, disconnect your machines, and email
+        <a href="mailto:privacy@relayrunner.app">privacy@relayrunner.app</a> to delete your account.
+        We may suspend or end your access if you break these terms or to protect the service or
+        other people. If we shut the service down, we'll give notice where we reasonably can.
+      </p>
+
+      <h2>No warranty</h2>
+      <p class="caps">
+        The service is provided "as is" and "as available", without warranties of any kind, express
+        or implied, including warranties of merchantability, fitness for a particular purpose and
+        non-infringement. We don't promise that it will be uninterrupted, error-free or secure, or
+        that it will route any particular job.
+      </p>
+
+      <h2>Limitation of liability</h2>
+      <p class="caps">
+        To the fullest extent the law allows, RelayRunner and its maintainers and contributors won't
+        be liable for any indirect, incidental, special, consequential or punitive damages, or for
+        lost profits, data, or CI minutes and other charges from third parties, arising from your
+        use of the service. Our total liability for any claim about the service is limited to the
+        greater of what you paid us for it in the 12 months before the claim, or US$50.
+      </p>
+
+      <h2>Indemnity</h2>
+      <p>
+        If someone makes a claim against us because of your code, your workflows or your breach of
+        these terms, you'll cover the reasonable costs of that claim.
+      </p>
+
+      <h2>Changes</h2>
+      <p>
+        If we change these terms, we'll post the new version here and update the date above. Using
+        the service after that means you accept the new terms.
+      </p>
+
+      <h2>Contact</h2>
+      <p>
+        Questions about these terms or your data:
+        <a href="mailto:privacy@relayrunner.app">privacy@relayrunner.app</a>. Security reports:
+        <a href="mailto:security@relayrunner.app">security@relayrunner.app</a>. Anything else:
+        <a href="https://github.com/relayrunner/relayrunner/issues">GitHub issues</a>.
+      </p>
+    </main>
+
+    <footer class="site-footer">
+      <div class="wrap footer-row">
+        <a class="brand brand-sm" href="/">
+          <svg class="brand-mark" viewBox="0 0 28 28" aria-hidden="true">
+            <path class="mark-top" d="M11 14c4.5 0 5-7.5 10-7.5h3" />
+            <path d="M4 14h7c4.5 0 5 7.5 10 7.5h3" />
+          </svg>
+          relayrunner
+        </a>
+        <ul>
+          <li><a href="https://github.com/relayrunner/relayrunner">GitHub</a></li>
+          <li><a href="/privacy">Privacy</a></li>
+          <li><a href="/terms" aria-current="page">Terms</a></li>
+        </ul>
+      </div>
+    </footer>
+  </body>
+</html>
