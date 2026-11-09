@@ -3,7 +3,15 @@
 // Gateway tables (installations and their repos, then machines and routes) follow. After changing anything
 // here, run `pnpm db:generate` to write a new migration.
 import { sql } from "drizzle-orm";
-import { index, integer, real, sqliteTable, text, uniqueIndex } from "drizzle-orm/sqlite-core";
+import {
+  index,
+  integer,
+  primaryKey,
+  real,
+  sqliteTable,
+  text,
+  uniqueIndex,
+} from "drizzle-orm/sqlite-core";
 
 const timestamps = {
   createdAt: integer("created_at", { mode: "timestamp_ms" })
@@ -365,6 +373,49 @@ export const jobTiming = sqliteTable(
     ),
     // The retention purge, across all installations.
     index("job_timing_completed_idx").on(table.completedAt),
+    // One run's jobs, for its row on the Runs page.
+    index("job_timing_run_idx").on(table.runId, table.runAttempt),
+  ],
+);
+
+// One attempt of a GitHub Actions workflow run in a connected repo, from workflow_run webhooks
+// (src/runs.ts), for the Runs page: what started it and how it ended. Its jobs' times come from
+// job_timing. Purged with job_timing, and goes away with its installation.
+export const workflowRun = sqliteTable(
+  "workflow_run",
+  {
+    // GitHub's run id. Every attempt of a run shares it.
+    id: integer("id").notNull(),
+    runAttempt: integer("run_attempt").notNull(),
+    installationId: integer("installation_id")
+      .notNull()
+      .references(() => githubInstallation.id, { onDelete: "cascade" }),
+    repositoryId: integer("repository_id").notNull(),
+    repositoryFullName: text("repository_full_name").notNull(),
+    workflowName: text("workflow_name"),
+    // The commit or PR title GitHub shows for the run.
+    displayTitle: text("display_title"),
+    // What triggered it: push, pull_request, schedule, workflow_dispatch, ...
+    event: text("event").notNull(),
+    actorLogin: text("actor_login"),
+    headBranch: text("head_branch"),
+    headSha: text("head_sha").notNull(),
+    pullRequestNumber: integer("pull_request_number"),
+    // 'requested', 'queued', 'in_progress' or 'completed'.
+    status: text("status").notNull(),
+    conclusion: text("conclusion"),
+    htmlUrl: text("html_url"),
+    runStartedAt: integer("run_started_at", { mode: "timestamp_ms" }),
+    // The run's updated_at on GitHub. Deliveries are unordered, so a row only takes a newer one.
+    githubUpdatedAt: integer("github_updated_at", { mode: "timestamp_ms" }).notNull(),
+    ...timestamps,
+  },
+  (table) => [
+    primaryKey({ columns: [table.id, table.runAttempt] }),
+    // The Runs page: one workspace's installations over a time range.
+    index("workflow_run_installation_idx").on(table.installationId, table.githubUpdatedAt),
+    // The retention purge, across all installations.
+    index("workflow_run_updated_idx").on(table.githubUpdatedAt),
   ],
 );
 

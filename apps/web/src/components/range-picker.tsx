@@ -1,4 +1,5 @@
 import { Button } from "@/components/ui/button";
+import { plural } from "@/lib/job-times";
 
 /** A row of "N days" buttons for a report's range. */
 export function RangePicker({
@@ -20,7 +21,7 @@ export function RangePicker({
           aria-pressed={days === value}
           onClick={() => value !== days && onChange(value)}
         >
-          {value} days
+          {plural(value, "day")}
         </Button>
       ))}
     </div>

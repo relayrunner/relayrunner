@@ -8,6 +8,7 @@
 // scan of the table. The detail is a range of job_timing_job_idx. job-times.test.ts checks the
 // rows D1 reads.
 import { and, eq, gte, inArray, isNull, type SQL, sql } from "drizzle-orm";
+import type { SQLiteColumn } from "drizzle-orm/sqlite-core";
 import { usesContainerRunner } from "./container-runner.ts";
 import { type Db, schema } from "./db/index.ts";
 import { DAY_MS, RUNNER_RATES, runnerClass } from "./job-timings.ts";
@@ -76,6 +77,35 @@ export function environmentFor(
     label: RUNNER_RATES[cls].label,
     detail: "GitHub-hosted",
   };
+}
+
+/**
+ * Names each `machine:<id>` environment from its machine row. A deleted machine keeps its generic
+ * name.
+ */
+export async function nameMachines(db: Db, workspaceId: string, envs: Map<string, Environment>) {
+  const machineIds = [...envs.keys()].flatMap((key) =>
+    key.startsWith(MACHINE) ? [key.slice(MACHINE.length)] : [],
+  );
+  if (!machineIds.length) return;
+  const machines = await db
+    .select({
+      id: schema.machine.id,
+      name: schema.machine.name,
+      model: schema.machine.deviceModel,
+      chip: schema.machine.chip,
+      os: schema.machine.os,
+    })
+    .from(schema.machine)
+    .where(
+      and(eq(schema.machine.workspaceId, workspaceId), inArray(schema.machine.id, machineIds)),
+    );
+  for (const machine of machines) {
+    const env = envs.get(`${MACHINE}${machine.id}`);
+    if (!env) continue;
+    env.label = machine.name;
+    env.detail = [machine.model, machine.chip].filter(Boolean).join(" · ") || (machine.os ?? "");
+  }
 }
 
 export type Confidence = "none" | "few" | "low" | "ok";
@@ -232,12 +262,16 @@ interface WindowRow {
   samples: string | null;
 }
 
-// A job a runner ran: started, not skipped, and not a pick. Picks (`runs-on: relayrunner`) only
-// route their run, and would split every routed run across two environments. Cancelled jobs that
-// started count as runs, like on the Usage page; only successes give times.
-const RAN = sql`${table.startedAt} is not null and ${table.runnerName} is not null
-  and coalesce(${table.conclusion}, '') <> 'skipped'
-  and lower(${table.labels}) not like ${`%"${RELAYRUNNER_LABEL}"%`}`;
+/** A pick (`runs-on: relayrunner`): it only routes its run. */
+export const PICK = sql`lower(${table.labels}) like ${`%"${RELAYRUNNER_LABEL}"%`}`;
+
+/** A job a runner ran: started and not skipped. Cancelled jobs that started count. */
+export const RAN_ON_RUNNER = sql`${table.startedAt} is not null and ${table.runnerName} is not null
+  and coalesce(${table.conclusion}, '') <> 'skipped'`;
+
+// A job a runner ran, picks left out: they would split every routed run across two environments,
+// like on the Usage page; only successes give times.
+const RAN = sql`${RAN_ON_RUNNER} and not ${PICK}`;
 
 const OK = sql`coalesce(${table.conclusion} = 'success', 0)`;
 
@@ -246,8 +280,12 @@ const SAMPLES = sql`group_concat(case when ${OK} then ${table.completedAt} || ':
   || (${table.completedAt} - ${table.startedAt}) || ':'
   || coalesce(${table.startedAt} - ${table.queuedAt}, '') end)`;
 
-function inWorkspace(workspaceId: string): SQL {
-  return sql`${table.installationId} in (
+/** The row's installation (job_timing's unless another column is given) is the workspace's. */
+export function inWorkspace(
+  workspaceId: string,
+  installationId: SQLiteColumn = table.installationId,
+): SQL {
+  return sql`${installationId} in (
     select ${schema.githubInstallation.id} from ${schema.githubInstallation}
     where ${schema.githubInstallation.workspaceId} = ${workspaceId})`;
 }
@@ -400,30 +438,7 @@ export async function jobTimesReport(
     workflow.jobs.set(name, jobBuckets);
   }
 
-  // Machines are named from their rows; a deleted machine keeps a generic name.
-  const machineIds = [...envs.keys()].flatMap((key) =>
-    key.startsWith(MACHINE) ? [key.slice(MACHINE.length)] : [],
-  );
-  if (machineIds.length) {
-    const machines = await db
-      .select({
-        id: schema.machine.id,
-        name: schema.machine.name,
-        model: schema.machine.deviceModel,
-        chip: schema.machine.chip,
-        os: schema.machine.os,
-      })
-      .from(schema.machine)
-      .where(
-        and(eq(schema.machine.workspaceId, workspaceId), inArray(schema.machine.id, machineIds)),
-      );
-    for (const machine of machines) {
-      const env = envs.get(`${MACHINE}${machine.id}`);
-      if (!env) continue;
-      env.label = machine.name;
-      env.detail = [machine.model, machine.chip].filter(Boolean).join(" · ") || (machine.os ?? "");
-    }
-  }
+  await nameMachines(db, workspaceId, envs);
 
   const leafStats: Record<string, Stat>[] = [];
   const workflowRows: WorkflowRow[] = [...workflows.values()].map((workflow) => {

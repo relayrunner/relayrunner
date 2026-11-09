@@ -17,6 +17,7 @@ import { Route as AuthedDeviceRouteImport } from './routes/_authed/device'
 import { Route as AuthedWorkspaceActivityRouteImport } from './routes/_authed/_workspace/activity'
 import { Route as AuthedWorkspaceJobTimesRouteImport } from './routes/_authed/_workspace/job-times'
 import { Route as AuthedWorkspaceRunnersRouteImport } from './routes/_authed/_workspace/runners'
+import { Route as AuthedWorkspaceRunsRouteImport } from './routes/_authed/_workspace/runs'
 import { Route as AuthedWorkspaceUsageRouteImport } from './routes/_authed/_workspace/usage'
 import { Route as AuthedWorkspaceWorkspaceRouteImport } from './routes/_authed/_workspace/workspace'
 import { Route as AuthedInviteIdRouteImport } from './routes/_authed/invite.$id'
@@ -67,6 +68,11 @@ const AuthedWorkspaceJobTimesRoute = AuthedWorkspaceJobTimesRouteImport.update({
 const AuthedWorkspaceRunnersRoute = AuthedWorkspaceRunnersRouteImport.update({
   id: '/runners',
   path: '/runners',
+  getParentRoute: () => AuthedWorkspaceRoute,
+} as any)
+const AuthedWorkspaceRunsRoute = AuthedWorkspaceRunsRouteImport.update({
+  id: '/runs',
+  path: '/runs',
   getParentRoute: () => AuthedWorkspaceRoute,
 } as any)
 const AuthedWorkspaceUsageRoute = AuthedWorkspaceUsageRouteImport.update({
@@ -152,6 +158,7 @@ export interface FileRoutesByFullPath {
   '/activity': typeof AuthedWorkspaceActivityRoute
   '/job-times': typeof AuthedWorkspaceJobTimesRoute
   '/runners': typeof AuthedWorkspaceRunnersRoute
+  '/runs': typeof AuthedWorkspaceRunsRoute
   '/usage': typeof AuthedWorkspaceUsageRoute
   '/workspace': typeof AuthedWorkspaceWorkspaceRoute
   '/invite/$id': typeof AuthedInviteIdRoute
@@ -173,6 +180,7 @@ export interface FileRoutesByTo {
   '/activity': typeof AuthedWorkspaceActivityRoute
   '/job-times': typeof AuthedWorkspaceJobTimesRoute
   '/runners': typeof AuthedWorkspaceRunnersRoute
+  '/runs': typeof AuthedWorkspaceRunsRoute
   '/usage': typeof AuthedWorkspaceUsageRoute
   '/workspace': typeof AuthedWorkspaceWorkspaceRoute
   '/invite/$id': typeof AuthedInviteIdRoute
@@ -197,6 +205,7 @@ export interface FileRoutesById {
   '/_authed/_workspace/activity': typeof AuthedWorkspaceActivityRoute
   '/_authed/_workspace/job-times': typeof AuthedWorkspaceJobTimesRoute
   '/_authed/_workspace/runners': typeof AuthedWorkspaceRunnersRoute
+  '/_authed/_workspace/runs': typeof AuthedWorkspaceRunsRoute
   '/_authed/_workspace/usage': typeof AuthedWorkspaceUsageRoute
   '/_authed/_workspace/workspace': typeof AuthedWorkspaceWorkspaceRoute
   '/_authed/invite/$id': typeof AuthedInviteIdRoute
@@ -220,6 +229,7 @@ export interface FileRouteTypes {
     | '/activity'
     | '/job-times'
     | '/runners'
+    | '/runs'
     | '/usage'
     | '/workspace'
     | '/invite/$id'
@@ -241,6 +251,7 @@ export interface FileRouteTypes {
     | '/activity'
     | '/job-times'
     | '/runners'
+    | '/runs'
     | '/usage'
     | '/workspace'
     | '/invite/$id'
@@ -264,6 +275,7 @@ export interface FileRouteTypes {
     | '/_authed/_workspace/activity'
     | '/_authed/_workspace/job-times'
     | '/_authed/_workspace/runners'
+    | '/_authed/_workspace/runs'
     | '/_authed/_workspace/usage'
     | '/_authed/_workspace/workspace'
     | '/_authed/invite/$id'
@@ -341,6 +353,13 @@ declare module '@tanstack/react-router' {
       path: '/runners'
       fullPath: '/runners'
       preLoaderRoute: typeof AuthedWorkspaceRunnersRouteImport
+      parentRoute: typeof AuthedWorkspaceRoute
+    }
+    '/_authed/_workspace/runs': {
+      id: '/_authed/_workspace/runs'
+      path: '/runs'
+      fullPath: '/runs'
+      preLoaderRoute: typeof AuthedWorkspaceRunsRouteImport
       parentRoute: typeof AuthedWorkspaceRoute
     }
     '/_authed/_workspace/usage': {
@@ -441,6 +460,7 @@ interface AuthedWorkspaceRouteChildren {
   AuthedWorkspaceActivityRoute: typeof AuthedWorkspaceActivityRoute
   AuthedWorkspaceJobTimesRoute: typeof AuthedWorkspaceJobTimesRoute
   AuthedWorkspaceRunnersRoute: typeof AuthedWorkspaceRunnersRoute
+  AuthedWorkspaceRunsRoute: typeof AuthedWorkspaceRunsRoute
   AuthedWorkspaceUsageRoute: typeof AuthedWorkspaceUsageRoute
   AuthedWorkspaceWorkspaceRoute: typeof AuthedWorkspaceWorkspaceRoute
   AuthedWorkspaceAdminUsersRoute: typeof AuthedWorkspaceAdminUsersRoute
@@ -458,6 +478,7 @@ const AuthedWorkspaceRouteChildren: AuthedWorkspaceRouteChildren = {
   AuthedWorkspaceActivityRoute: AuthedWorkspaceActivityRoute,
   AuthedWorkspaceJobTimesRoute: AuthedWorkspaceJobTimesRoute,
   AuthedWorkspaceRunnersRoute: AuthedWorkspaceRunnersRoute,
+  AuthedWorkspaceRunsRoute: AuthedWorkspaceRunsRoute,
   AuthedWorkspaceUsageRoute: AuthedWorkspaceUsageRoute,
   AuthedWorkspaceWorkspaceRoute: AuthedWorkspaceWorkspaceRoute,
   AuthedWorkspaceAdminUsersRoute: AuthedWorkspaceAdminUsersRoute,

@@ -38,6 +38,7 @@ export const Route = createFileRoute("/_authed/_workspace")({
 const nav = [
   { to: "/runners", label: "Runners" },
   { to: "/activity", label: "Activity" },
+  { to: "/runs", label: "Runs" },
   { to: "/job-times", label: "Job times" },
   { to: "/usage", label: "Usage" },
 ] as const;
