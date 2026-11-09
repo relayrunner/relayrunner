@@ -7,6 +7,7 @@ import {
   generateOrgJitConfig,
   importAppPrivateKey,
   installationToken,
+  workflowJobStatus,
 } from "../github-app.ts";
 import { latestRunnerVersion, RunnerClient, decodeJitConfig } from "../runner-protocol.ts";
 import { RELAYRUNNER_LABEL } from "../webhook-queue.ts";
@@ -15,6 +16,13 @@ import { createDb, schema } from "../db/index.ts";
 import { recordPick, type PickRecord } from "../route-decisions.ts";
 import { jobContext, NO_RUNNER, type RouteDecision } from "../routing.ts";
 import { nativeVerdict } from "../native-checks.ts";
+import {
+  afterAttempt,
+  MAX_ATTEMPTS,
+  pickRunnerName,
+  RUN_STALE_MS,
+  WAIT_FOR_JOB_MS,
+} from "../pick-attempts.ts";
 
 export interface PickWork {
   jobId: number;
@@ -24,27 +32,60 @@ export interface PickWork {
 }
 
 const POLL_TIMEOUT_MS = 60_000;
-const WAIT_FOR_JOB_MS = 4 * 60_000;
-
 // One per queued `pick` job, addressed by job id. Acts as a one-job runner: registers a JIT runner
 // on the `relayrunner` label, claims a job, and reports the route as its `runner` output without
 // running any steps. GitHub hands a runner any pending job with its label, so the job it claims
 // may be another repo's in the same org. The route is for the claimed job's own repo and run.
 // A claimed job whose steps are RelayRunner checks (src/native-checks.ts) is answered here instead:
 // the check runs in this object and the job completes as passed or failed, with no route.
+//
+// Because the runner can take another job, or time out, the job it was made for could be left with
+// no runner at all. So when a runner is done, it asks GitHub whether its own job is still queued and,
+// if so, starts a replacement (afterAttempt). The 15-minute sweep (src/pick-sweep.ts) catches runs a
+// deploy cut off, and removes pick runners left registered on GitHub.
 export class PickRunner extends DurableObject<Env> {
   // Idempotent: a redelivered or retried `queued` webhook for the same job does nothing.
   async start(work: PickWork): Promise<void> {
     if (await this.ctx.storage.get("started")) return;
-    await this.ctx.storage.put({ started: true, work });
+    await this.ctx.storage.put({ started: true, work, attempt: 1 });
     await this.ctx.storage.setAlarm(Date.now());
+  }
+
+  /** Whether a runner for this job is waiting to start or still running. */
+  async active(): Promise<boolean> {
+    if (await this.ctx.storage.get("work")) return true;
+    const runningSince = await this.ctx.storage.get<number>("runningSince");
+    return runningSince !== undefined && Date.now() - runningSince < RUN_STALE_MS;
+  }
+
+  /**
+   * Starts another runner for a relay the sweep found still queued, unless one is already active or
+   * the job has used its attempts. The runner checks the job is still queued before registering.
+   */
+  async rescue(work: PickWork): Promise<boolean> {
+    if (await this.active()) return false;
+    const attempt = ((await this.ctx.storage.get<number>("attempt")) ?? 1) + 1;
+    if (attempt > MAX_ATTEMPTS) return false;
+    await this.ctx.storage.put({ started: true, work, attempt });
+    await this.ctx.storage.delete("runningSince");
+    await this.ctx.storage.setAlarm(Date.now());
+    return true;
   }
 
   async alarm() {
     const work = await this.ctx.storage.get<PickWork>("work");
     if (!work) return;
+    const attempt = (await this.ctx.storage.get<number>("attempt")) ?? 1;
     await this.ctx.storage.delete("work");
+    await this.ctx.storage.put("runningSince", Date.now());
+    try {
+      await this.run(work, attempt);
+    } finally {
+      await this.ctx.storage.delete("runningSince");
+    }
+  }
 
+  private async run(work: PickWork, attempt: number) {
     const org = work.repo.split("/")[0];
     const startedAt = Date.now();
     let outcome: Record<string, unknown> = { result: "no-job" };
@@ -57,8 +98,20 @@ export class PickRunner extends DurableObject<Env> {
         await appJwt(this.env.GITHUB_APP_ID, key),
         work.installationId,
       );
+      // A replacement runner first makes sure its job still needs one.
+      if (attempt > 1 && (await workflowJobStatus(token, work.repo, work.jobId)) !== "queued") {
+        console.log(
+          JSON.stringify({
+            msg: "relayrunner pick not needed",
+            jobId: work.jobId,
+            repo: work.repo,
+            attempt,
+          }),
+        );
+        return;
+      }
       const jit = await generateOrgJitConfig(token, org, {
-        name: `relayrunner-pick-${work.jobId}`,
+        name: pickRunnerName(work.jobId, attempt),
         labels: [RELAYRUNNER_LABEL],
         runnerGroupId: DEFAULT_RUNNER_GROUP_ID,
       });
@@ -120,9 +173,16 @@ export class PickRunner extends DurableObject<Env> {
     } catch (error) {
       outcome = { result: "error", error: error instanceof Error ? error.message : String(error) };
     } finally {
-      await client?.closeSession().catch(() => undefined);
-      if (token && runnerId !== undefined)
-        await deleteOrgRunner(token, org, runnerId).catch(() => undefined);
+      await client?.closeSession().catch((error) => logCleanupError("close session", work, error));
+      // A runner left registered shows as idle on GitHub, and GitHub can hand it a job nobody will
+      // take. Try twice; the sweep removes any that are still left.
+      if (token && runnerId !== undefined) {
+        const id = runnerId;
+        const remove = () => deleteOrgRunner(token!, org, id);
+        await remove()
+          .catch(remove)
+          .catch((error) => logCleanupError("delete runner", work, error));
+      }
     }
     const log = outcome.result === "error" ? console.error : console.log;
     log(
@@ -131,11 +191,60 @@ export class PickRunner extends DurableObject<Env> {
         jobId: work.jobId,
         repo: work.repo,
         installationId: work.installationId,
+        attempt,
         ...outcome,
         durationMs: Date.now() - startedAt,
       }),
     );
+    if (token) await this.rearmIfQueued(work, attempt, token);
   }
+
+  // The runner may have taken another job, or none: if its own job is still queued, nothing else
+  // will come for it, so start a replacement.
+  private async rearmIfQueued(work: PickWork, attempt: number, token: string) {
+    let status: string | null;
+    try {
+      status = await workflowJobStatus(token, work.repo, work.jobId);
+    } catch (error) {
+      logCleanupError("check job status", work, error);
+      return;
+    }
+    const next = afterAttempt(status, attempt);
+    if (next === "done") return;
+    if (next === "give_up") {
+      console.warn(
+        JSON.stringify({
+          msg: "relayrunner pick gave up",
+          jobId: work.jobId,
+          repo: work.repo,
+          attempt,
+        }),
+      );
+      return;
+    }
+    await this.ctx.storage.put({ work, attempt: attempt + 1 });
+    await this.ctx.storage.setAlarm(Date.now());
+    console.log(
+      JSON.stringify({
+        msg: "relayrunner pick re-armed",
+        jobId: work.jobId,
+        repo: work.repo,
+        attempt: attempt + 1,
+      }),
+    );
+  }
+}
+
+function logCleanupError(step: string, work: PickWork, error: unknown) {
+  console.warn(
+    JSON.stringify({
+      msg: "relayrunner pick cleanup failed",
+      step,
+      jobId: work.jobId,
+      repo: work.repo,
+      error: error instanceof Error ? error.message : String(error),
+    }),
+  );
 }
 
 async function waitForJob(client: RunnerClient) {
