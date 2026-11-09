@@ -1,8 +1,17 @@
 # RelayRunner CLI
 
 Connects a machine to the RelayRunner gateway so it can run your workspace's
-GitHub Actions jobs. See [#61](https://github.com/relayrunner/relayrunner/issues/61)
-for the plan.
+GitHub Actions jobs. It's published to npm as
+[`relayrunner`](https://www.npmjs.com/package/relayrunner) and needs Node.js 22
+or newer on macOS or Linux (x64 or ARM64).
+
+```sh
+npm install --global relayrunner   # or use npx relayrunner
+```
+
+Machines only take jobs from private repositories. To opt jobs in, see the
+[root README](../../README.md#how-it-works) or
+[docs/agent-install.md](../../docs/agent-install.md).
 
 ## `relayrunner connect`
 
