@@ -13,19 +13,25 @@ import type { PickWork } from "./pick-runner.ts";
 import {
   appInstallationToken,
   DEFAULT_RUNNER_GROUP_ID,
-  deleteOrgRunner,
-  generateOrgJitConfig,
+  deleteRunner,
+  generateJitConfig,
   listOrgRunnerGroups,
-  orgRunnerBusy,
+  runnerBusy,
+  runnerScope,
+  type RunnerScope,
 } from "../github-app.ts";
+import { createDb } from "../db/index.ts";
+import { installationRunnerScope } from "../installations.ts";
 
 // The same work a pick gets: the job id, its installation, and owner/repo (the org the runner
-// registers in).
+// registers in, or the repo itself for a personal account).
 export type ContainerWork = PickWork;
 
 interface Launched extends ContainerWork {
   runnerId: number;
   startedAt: number;
+  // Where the runner registered. Missing on containers launched before personal accounts: org.
+  scope?: RunnerScope;
 }
 
 // The smallest size GitHub's runner fits in: ½ vCPU, 4 GiB. `lite` (256 MiB) is too small for the
@@ -67,19 +73,27 @@ export class ContainerRunner extends DurableObject<Env> {
 
   private async launch(work: ContainerWork) {
     const container = this.ctx.container;
-    const org = work.repo.split("/")[0];
     const startedAt = Date.now();
     await this.ctx.storage.delete("work");
     if (!container) return log("error", work, { error: "no container is configured" });
     try {
       const token = await this.token(work.installationId);
-      const jit = await generateOrgJitConfig(token, org, {
+      const scope = await installationRunnerScope(
+        createDb(this.env.DB),
+        work.installationId,
+        work.repo,
+      );
+      const jit = await generateJitConfig(token, scope, {
         name: `relayrunner-container-${work.jobId}`,
         labels: [CONTAINER_LABEL],
-        runnerGroupId: containerRunnerGroupId(
-          await listOrgRunnerGroups(token, org),
-          DEFAULT_RUNNER_GROUP_ID,
-        ),
+        // Only an org has runner groups to pick from.
+        runnerGroupId:
+          scope.kind === "org"
+            ? containerRunnerGroupId(
+                await listOrgRunnerGroups(token, scope.org),
+                DEFAULT_RUNNER_GROUP_ID,
+              )
+            : undefined,
       });
       try {
         container.start({
@@ -102,10 +116,10 @@ export class ContainerRunner extends DurableObject<Env> {
           ),
         );
       } catch (error) {
-        await deleteOrgRunner(token, org, jit.runnerId).catch(() => undefined);
+        await deleteRunner(token, scope, jit.runnerId).catch(() => undefined);
         throw error;
       }
-      const state: Launched = { ...work, runnerId: jit.runnerId, startedAt };
+      const state: Launched = { ...work, runnerId: jit.runnerId, startedAt, scope };
       await this.ctx.storage.put("launched", state);
       await this.ctx.storage.setAlarm(Date.now() + WATCH_INTERVAL_MS);
       log("started", work, { runnerId: jit.runnerId, launchMs: Date.now() - startedAt });
@@ -123,7 +137,7 @@ export class ContainerRunner extends DurableObject<Env> {
 
   private async watch(launched: Launched) {
     const container = this.ctx.container;
-    const org = launched.repo.split("/")[0];
+    const scope = launched.scope ?? runnerScope("Organization", launched.repo);
     const now = Date.now();
     const lifetimeMs = now - launched.startedAt;
     const running = container?.running ?? false;
@@ -133,7 +147,7 @@ export class ContainerRunner extends DurableObject<Env> {
       token = await this.token(launched.installationId);
       // An exited container needs no status, only the runner's cleanup.
       if (running) {
-        const busy = await orgRunnerBusy(token, org, launched.runnerId);
+        const busy = await runnerBusy(token, scope, launched.runnerId);
         runner = busy === null ? "gone" : busy ? "busy" : "idle";
       }
     } catch (error) {
@@ -152,7 +166,7 @@ export class ContainerRunner extends DurableObject<Env> {
     }
     if (step !== "done") await container?.destroy(step).catch(() => undefined);
     if (token && runner !== "gone")
-      await deleteOrgRunner(token, org, launched.runnerId).catch(() => undefined);
+      await deleteRunner(token, scope, launched.runnerId).catch(() => undefined);
     // `started` stays, so a late redelivery of the `queued` webhook doesn't launch again.
     await this.ctx.storage.delete("launched");
     log("finished", launched, { result: step, runner, lifetimeMs });

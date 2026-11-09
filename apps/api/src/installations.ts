@@ -2,6 +2,7 @@ import { and, eq, isNull, lte, or } from "drizzle-orm";
 import type { Auth } from "./auth.ts";
 import { type Db, schema } from "./db/index.ts";
 import type { GitHubInstallation } from "./github.ts";
+import { runnerScope } from "./github-app.ts";
 
 // Records what GitHub says about an installation: the account it's on, which repos it sees, and
 // whether it's suspended. Never touches workspace_id, so a webhook arriving before or after the
@@ -100,4 +101,18 @@ export async function isWorkspaceMember(db: Db, workspaceId: string, userId: str
     )
     .limit(1);
   return row ?? null;
+}
+
+/**
+ * Where an installation's one-job runner for `repo` registers (see runnerScope). An installation
+ * RelayRunner hasn't recorded is treated as an org, as every installation was before personal
+ * accounts.
+ */
+export async function installationRunnerScope(db: Db, installationId: number, repo: string) {
+  const [row] = await db
+    .select({ accountType: schema.githubInstallation.accountType })
+    .from(schema.githubInstallation)
+    .where(eq(schema.githubInstallation.id, installationId))
+    .limit(1);
+  return runnerScope(row?.accountType, repo);
 }
