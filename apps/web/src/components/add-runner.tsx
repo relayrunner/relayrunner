@@ -112,8 +112,11 @@ export function GithubRunnersDialog({
   open,
   onOpenChange,
   onAdded,
+  hasAccounts,
 }: {
   open: boolean;
+  /** Whether the workspace has any GitHub account connected, org or personal. */
+  hasAccounts: boolean;
   onOpenChange: (open: boolean) => void;
   onAdded: () => void | Promise<void>;
 }) {
@@ -199,7 +202,9 @@ export function GithubRunnersDialog({
         )}
         {loaded.kind === "ready" && orgs.length === 0 && (
           <p className="text-sm text-muted-foreground">
-            Connect a GitHub org first. Runners on personal accounts aren't supported yet.
+            {hasAccounts
+              ? "Existing runners can only be added from GitHub orgs for now."
+              : "Connect a GitHub account first."}
           </p>
         )}
         {loaded.kind === "ready" && orgs.length > 0 && !found && (

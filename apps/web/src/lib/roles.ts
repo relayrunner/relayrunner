@@ -8,7 +8,7 @@ export const ROLE_LABELS: Record<Role, string> = {
   member: "Member",
 };
 
-/** Owner or admin: manages GitHub orgs, runner order and members. */
+/** Owner or admin: manages GitHub accounts, runner order and members. */
 export function canManage(role: string | null | undefined) {
   return role === "owner" || role === "admin";
 }

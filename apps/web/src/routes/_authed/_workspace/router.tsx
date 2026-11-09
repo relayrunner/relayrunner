@@ -61,7 +61,8 @@ function RouterPage() {
 
 /**
  * Dev-preview data. `?sample=enterprise` shows an org inside a GitHub enterprise, whose minutes
- * can't be checked, and `?sample=default` the order a new workspace starts with.
+ * can't be checked, `?sample=personal` a personal account, whose minutes can't be read either,
+ * and `?sample=default` the order a new workspace starts with.
  */
 function sampleRouter(): {
   order: RunnerOrder;
@@ -82,12 +83,12 @@ function sampleRouter(): {
   };
   if (kind === "default")
     return { order: DEFAULT_RUNNER_ORDER, isDefault: true, machines: [machine], accounts: [] };
-  if (kind === "enterprise")
+  if (kind === "enterprise" || kind === "personal")
     return {
       order: { steps: [{ key: "machine" }, { key: "github" }] },
       isDefault: false,
       machines: [machine],
-      accounts: sampleRouterAccounts("enterprise"),
+      accounts: sampleRouterAccounts(kind),
     };
   return {
     order: {

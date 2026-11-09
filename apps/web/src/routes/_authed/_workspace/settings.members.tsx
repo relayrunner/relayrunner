@@ -68,8 +68,8 @@ function MembersPage() {
   return (
     <section>
       <PageHeader title="Members">
-        Everyone here shares {workspace.name}'s machines. Owners and admins manage GitHub orgs, the
-        runner order and members.
+        Everyone here shares {workspace.name}'s machines. Owners and admins manage GitHub accounts,
+        the runner order and members.
       </PageHeader>
       <div className="grid max-w-3xl gap-4">
         {manager && <InviteCard workspaceId={workspace.id} actorRole={role} />}

@@ -215,7 +215,7 @@ export function RunnerOrderEditor({
                   note={
                     slots.has("blacksmith")
                       ? "Already in the order"
-                      : "Needs Blacksmith's app on your org"
+                      : "Needs Blacksmith's GitHub app"
                   }
                   disabled={slots.has("blacksmith")}
                   onSelect={() => addStep("blacksmith")}
@@ -283,16 +283,23 @@ function AddItem({
  * Whether a GitHub step can use a minutes limit: only when some connected account has a quota
  * we know. When none does, `blocked` is the one line saying why and `fix` where to fix it.
  */
-type LimitAvailability = { allowed: true } | { allowed: false; blocked: string };
+/** `fixable` is false when nothing in Settings can unblock it. */
+type LimitAvailability = { allowed: true } | { allowed: false; blocked: string; fixable?: false };
 
 function limitAvailability(accounts: AccountUsage[]): LimitAvailability {
   if (accounts.some(hasQuota)) return { allowed: true };
-  if (accounts.length === 0) return { allowed: false, blocked: "Connect a GitHub org first." };
+  if (accounts.length === 0) return { allowed: false, blocked: "Connect a GitHub account first." };
   const reasons = new Set(accounts.map((account) => account.reason));
   if (reasons.has("enterprise"))
     return { allowed: false, blocked: "Needs RelayRunner on your enterprise." };
   if (reasons.has("missing_permission"))
     return { allowed: false, blocked: "Needs billing access to your org." };
+  if (reasons.size === 1 && reasons.has("personal_account"))
+    return {
+      allowed: false,
+      blocked: "Minutes limits don't work for personal accounts yet.",
+      fixable: false,
+    };
   if (reasons.has("not_read_yet"))
     return { allowed: false, blocked: "Waiting for the first minutes reading." };
   return { allowed: false, blocked: "Your GitHub plan's minutes aren't known." };
@@ -507,10 +514,15 @@ function GitHubRule({
                 While under a limit
               </span>
               <span className="pl-6 text-xs text-muted-foreground">
-                {limits.blocked}{" "}
-                <Link to="/settings/github" className="text-go hover:text-go-hover">
-                  Set up
-                </Link>
+                {limits.blocked}
+                {limits.fixable !== false && (
+                  <>
+                    {" "}
+                    <Link to="/settings/github" className="text-go hover:text-go-hover">
+                      Set up
+                    </Link>
+                  </>
+                )}
               </span>
             </div>
           )}

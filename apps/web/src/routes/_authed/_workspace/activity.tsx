@@ -397,7 +397,7 @@ function Log({
             <>
               Nothing yet. Add a{" "}
               <span className="font-mono text-foreground">relayrunner/actions</span> relay job to a
-              workflow in a connected org, push, and its jobs show up here.
+              workflow in a connected repo, push, and its jobs show up here.
             </>
           )}
         </p>

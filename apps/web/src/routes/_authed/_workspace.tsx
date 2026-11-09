@@ -112,7 +112,7 @@ function SettingsNav({ workspaceName }: { workspaceName: string }) {
             General
           </Link>
           <Link to="/settings/github" className={navLink} activeProps={navActive}>
-            GitHub orgs
+            GitHub accounts
           </Link>
           <Link to="/settings/members" className={navLink} activeProps={navActive}>
             Members

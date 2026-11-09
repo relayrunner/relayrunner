@@ -52,7 +52,7 @@ export function unavailableText(account: AccountUsage): string | null {
     case "enterprise":
       return "This org shares its enterprise's minutes, which GitHub doesn't report to an org install. A minutes limit can't judge it yet.";
     case "personal_account":
-      return "GitHub only reports minutes for organizations, so a minutes limit can't judge a personal account yet.";
+      return "RelayRunner can't read a personal account's Actions minutes yet, so a minutes limit can't judge it.";
     case "missing_permission":
       return "GitHub refused to share this org's billing. Accept the RelayRunner App's requested permissions (Organization administration: read) in the org's GitHub settings.";
     case "unknown_plan":
@@ -114,6 +114,20 @@ export function sampleActionsUsage(): ActionsUsage {
         usedMinutes: 18200,
         netAmount: 0,
         burnRatePerHour: 210,
+        budget: null,
+      },
+      {
+        ...base,
+        accountType: "User",
+        installationId: 4,
+        accountLogin: "octocat",
+        status: "not_available",
+        reason: "personal_account",
+        plan: null,
+        quotaMinutes: null,
+        usedMinutes: 0,
+        netAmount: 0,
+        burnRatePerHour: 0,
         budget: null,
       },
     ],
