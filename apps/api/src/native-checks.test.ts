@@ -2,6 +2,7 @@ import { describe, expect, test, vi } from "vitest";
 import {
   checkConventionalTitle,
   jobCommit,
+  nativeFreeCheck,
   nativeJob,
   nativeVerdict,
   pullRequestTitle,
@@ -244,5 +245,47 @@ describe("jobCommit", () => {
     ).toEqual({ repo: "o/r", headSha: "head" });
     expect(jobCommit(github(dict({})))).toEqual({ repo: "o/r", headSha: "merge" });
     expect(jobCommit({})).toBeNull();
+  });
+});
+
+describe("nativeFreeCheck", () => {
+  const context = (pullRequest?: number) => ({
+    github: dict({
+      repository: "o/r",
+      sha: "merge",
+      event: dict(
+        pullRequest === undefined
+          ? {}
+          : {
+              pull_request: dict({ number: { t: 4, n: pullRequest }, head: dict({ sha: "head" }) }),
+            },
+      ),
+    }),
+  });
+
+  test("counts a job once, as Lint when any step lints", () => {
+    expect(nativeFreeCheck(["pr-title", "lint"], false, context(7))).toEqual({
+      repository: "o/r",
+      check: {
+        check: "Lint",
+        pullRequest: 7,
+        headSha: "head",
+        conclusion: "failure",
+        url: null,
+      },
+    });
+    expect(nativeFreeCheck(["pr-title"], true, context(7))?.check).toMatchObject({
+      check: "PR title",
+      conclusion: "success",
+    });
+  });
+
+  test("names the commit outside a pull request, and skips jobs that ran no check", () => {
+    expect(nativeFreeCheck(["lint"], true, context())?.check).toMatchObject({
+      pullRequest: null,
+      headSha: "merge",
+    });
+    expect(nativeFreeCheck([], false, context(7))).toBeNull();
+    expect(nativeFreeCheck(["lint"], true, {})).toBeNull();
   });
 });

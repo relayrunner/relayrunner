@@ -8,6 +8,7 @@
 // a lint run on demand.
 
 import { LINT_TOOLS, type LintTool } from "@relayrunner/lint-runner/protocol";
+import type { FreeCheck as FreeCheckData } from "./free-checks.ts";
 import { context, dictionary, isRecord, scalar } from "./pipeline-context.ts";
 
 const CHECKS_REPO = "relayrunner/actions";
@@ -222,6 +223,37 @@ export function pullRequestTitle(contextData: unknown): string | null {
   const pullRequest = dictionary(event?.get("pull_request"));
   const title = scalar(pullRequest?.get("title"));
   return typeof title === "string" ? title : null;
+}
+
+/** The pull request number a job ran for, or null when its event isn't a pull request's. */
+export function jobPullRequest(contextData: unknown): number | null {
+  const event = dictionary(context(contextData, "github")?.get("event"));
+  const number = scalar(dictionary(event?.get("pull_request"))?.get("number"));
+  return typeof number === "number" ? number : null;
+}
+
+/**
+ * A native job's free check for the Usage and Activity savings: it stands in for one Actions job,
+ * however many check steps it has. Named "Lint" when it lints, so it adds up with the Checks App's
+ * lint runs. Null when the job ran no check (unsupported) or names no commit.
+ */
+export function nativeFreeCheck(
+  checks: CheckName[],
+  ok: boolean,
+  contextData: unknown,
+): { repository: string; check: Omit<FreeCheckData, "repository" | "repositoryId"> } | null {
+  const commit = jobCommit(contextData);
+  if (checks.length === 0 || !commit) return null;
+  return {
+    repository: commit.repo,
+    check: {
+      check: checks.includes("lint") ? "Lint" : "PR title",
+      pullRequest: jobPullRequest(contextData),
+      headSha: commit.headSha,
+      conclusion: ok ? "success" : "failure",
+      url: null,
+    },
+  };
 }
 
 // The job's repo and the commit to check: a pull request's head, so check runs land on the pull

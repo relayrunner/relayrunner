@@ -584,7 +584,7 @@ function SavingsBanner({ savings }: { savings: FreeCheckSavings }) {
       </span>
       {savings.savedCost > 0 && <span className="tabular-nums"> ({money(savings.savedCost)})</span>}{" "}
       <span className="text-muted-foreground">
-        in the last {savings.days} days, one per check run.
+        in the last {savings.days} days, one per check or lint run.
       </span>{" "}
       <Link to="/usage" className="text-muted-foreground hover:text-foreground hover:underline">
         See usage
@@ -593,8 +593,9 @@ function SavingsBanner({ savings }: { savings: FreeCheckSavings }) {
   );
 }
 
-// A check the GitHub App posted on a pull request, with no runner: "PR title passed on #12 ·
-// no runner · acme/app". The check opens its run on GitHub, the number opens the pull request.
+// A check that ran with no Actions runner: "PR title passed on #12 · no runner · acme/app". The
+// check opens its run on GitHub, the number opens the pull request. A lint run from a native job
+// has no pull request, so it names its commit: "Lint failed on 4f9c2e1".
 function CheckRow({
   item,
   now,
@@ -605,6 +606,20 @@ function CheckRow({
   const { data } = item;
   const passed = data.conclusion === "success";
   const Icon = passed ? CircleCheck : CircleX;
+  const on =
+    data.pullRequest === null
+      ? {
+          path: `commit/${data.headSha}/checks`,
+          title: "Open the commit's checks on GitHub",
+          label: data.headSha.slice(0, 7),
+          className: "font-mono",
+        }
+      : {
+          path: `pull/${data.pullRequest}`,
+          title: "Open the pull request on GitHub",
+          label: `#${data.pullRequest}`,
+          className: "",
+        };
   return (
     <Row
       icon={
@@ -631,15 +646,15 @@ function CheckRow({
       )}{" "}
       <span className="text-muted-foreground">{sentence(item)} on</span>{" "}
       <a
-        href={`https://github.com/${data.repository}/pull/${data.pullRequest}`}
+        href={`https://github.com/${data.repository}/${on.path}`}
         target="_blank"
         rel="noreferrer"
-        className="font-medium hover:underline"
-        title="Open the pull request on GitHub"
+        className={`font-medium hover:underline ${on.className}`}
+        title={on.title}
       >
-        #{data.pullRequest}
+        {on.label}
       </a>{" "}
-      <span className="text-go" title="Posted by the GitHub App: no Actions minute billed">
+      <span className="text-go" title="Ran with no Actions runner: no Actions minute billed">
         <Zap aria-hidden className="mr-0.5 inline size-3 align-[-0.1em]" />
         no runner, saved a minute
       </span>
@@ -946,6 +961,23 @@ function samplePage(filter: ActivityFilter | undefined): ActivityPage {
       data: { email: "ada@example.com", role: "admin" },
       occurredAt: at(45),
       actor: { id: "u1", name: "Atticus White" },
+      machine: null,
+      job: null,
+    },
+    {
+      id: 51,
+      type: "check.completed",
+      data: {
+        check: "Lint",
+        repository: "relayrunner/relayrunner-ci-tests",
+        repositoryId: 1,
+        pullRequest: null,
+        headSha: "4f9c2e1a7b",
+        conclusion: "failure",
+        url: null,
+      },
+      occurredAt: at(1),
+      actor: null,
       machine: null,
       job: null,
     },

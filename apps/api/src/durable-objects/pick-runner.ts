@@ -15,7 +15,8 @@ import { and, eq, isNull, sql } from "drizzle-orm";
 import { createDb, schema } from "../db/index.ts";
 import { recordPick, type PickRecord } from "../route-decisions.ts";
 import { jobContext, NO_RUNNER, type RouteDecision } from "../routing.ts";
-import { nativeVerdict } from "../native-checks.ts";
+import { nativeFreeCheck, nativeVerdict } from "../native-checks.ts";
+import { recordRepoCheck } from "../free-checks.ts";
 import {
   afterAttempt,
   MAX_ATTEMPTS,
@@ -138,6 +139,20 @@ export class PickRunner extends DurableObject<Env> {
             checks: native.checks,
             reason: result.ok ? undefined : result.reason,
           };
+          // For the Usage and Activity savings: the job never took an Actions runner. The job is
+          // already answered, so a failure here only loses the count.
+          const saving = nativeFreeCheck(native.checks, result.ok, job.message.contextData);
+          if (saving)
+            await recordRepoCheck(createDb(this.env.DB), saving.repository, saving.check).catch(
+              (error) =>
+                console.error(
+                  JSON.stringify({
+                    msg: "relayrunner native check saving not recorded",
+                    jobId: work.jobId,
+                    error: error instanceof Error ? error.message : String(error),
+                  }),
+                ),
+            );
         } else {
           const { record, ...pick } = await pickRunner(
             this.env,

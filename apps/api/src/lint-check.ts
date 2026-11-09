@@ -16,11 +16,12 @@ import {
 } from "./github-app.ts";
 import type { CheckResult } from "./native-checks.ts";
 
-// The commit to lint.
+// The commit to lint, and the pull request whose push asked for it, if any.
 export interface LintWork {
   installationId: number;
   repo: string;
   headSha: string;
+  pullRequest?: number;
 }
 
 // The pull request actions that bring a new head commit. A title edit doesn't change the code.
@@ -36,15 +37,18 @@ export function lintTarget(message: WebhookMessage): { key: string; work: LintWo
   const { installationId } = message;
   if (!installationId) return null;
   let headSha: string;
+  let pullRequest: number | undefined;
   let key: string;
   if (message.event === "pull_request" && NEW_CODE_ACTIONS.has(message.action ?? "")) {
-    headSha = message.pullRequest.headSha;
+    ({ headSha, number: pullRequest } = message.pullRequest);
     key = `${message.repository.fullName}@${headSha}`;
   } else if (message.event === "check_suite" && message.action === "rerequested") {
     headSha = message.checkSuite.headSha;
+    pullRequest = message.checkSuite.pullRequests[0];
     key = `rerun:${message.deliveryId}`;
   } else return null;
-  return { key, work: { installationId, repo: message.repository.fullName, headSha } };
+  const work = { installationId, repo: message.repository.fullName, headSha, pullRequest };
+  return { key, work };
 }
 
 export const lintCheckName = (tool: LintTool) => `Lint / ${tool}`;

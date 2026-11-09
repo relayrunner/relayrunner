@@ -127,7 +127,8 @@ function UsagePage() {
   );
 }
 
-// The check runs the GitHub App posted instead of a workflow job: each would have billed a minute.
+// The checks that ran with no Actions runner: the GitHub App's check runs and the Checks App's lint
+// runs. Each stands in for a workflow job that would have billed a minute.
 function FreeChecks({ savings }: { savings: FreeCheckSavings }) {
   const { runner } = savings;
   return (
@@ -135,14 +136,14 @@ function FreeChecks({ savings }: { savings: FreeCheckSavings }) {
       <h2 className="font-semibold">Saved by free checks</h2>
       <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
         <Stat
-          label="Check runs"
+          label="Checks run"
           value={savings.checks.toLocaleString()}
-          detail="posted by the GitHub App, no runner"
+          detail="PR title and lint, no Actions runner"
         />
         <Stat
           label="Billed minutes saved"
           value={minutes(savings.checks)}
-          detail={`one ${runner.label} minute per check`}
+          detail={`one ${runner.label} minute per run`}
         />
         <Stat
           label="Saved"
@@ -150,10 +151,21 @@ function FreeChecks({ savings }: { savings: FreeCheckSavings }) {
           detail={`at ${money(runner.perMinute)}/min in private repos`}
         />
       </div>
+      {savings.byCheck.length > 1 && (
+        <Table
+          caption="Free checks by check"
+          head={["Check", "Runs", "Saved"]}
+          rows={savings.byCheck.map((kind) => [
+            kind.check,
+            kind.checks.toLocaleString(),
+            money(kind.savedCost),
+          ])}
+        />
+      )}
       {savings.byRepository.length > 1 && (
         <Table
           caption="Free checks by repository"
-          head={["Repository", "Check runs", "Saved"]}
+          head={["Repository", "Runs", "Saved"]}
           rows={savings.byRepository.map((repo) => [
             <RepoName key="repo" repository={repo.repository} isPrivate={repo.private} />,
             repo.checks.toLocaleString(),
@@ -162,9 +174,10 @@ function FreeChecks({ savings }: { savings: FreeCheckSavings }) {
         />
       )}
       <p className="max-w-[62ch] text-sm text-muted-foreground">
-        Each check run stands in for a workflow job that would take a few seconds on ubuntu-latest
-        and still bill a whole minute. Public repos don't pay for standard runners, so their checks
-        save minutes but no money.
+        Each PR title check, and each lint run (all of a commit's linters together, from a pull
+        request or a <code>checks/lint</code> job), stands in for a workflow job on ubuntu-latest
+        that would bill at least a whole minute. Public repos don't pay for standard runners, so
+        their checks save minutes but no money.
       </p>
     </div>
   );

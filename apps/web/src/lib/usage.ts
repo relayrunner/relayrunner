@@ -16,7 +16,7 @@ export type UsageRow = {
   roundingCost: number;
 };
 
-/** What the free checks saved (GET /api/usage/checks): a billed minute per check run. */
+/** What the free checks saved (GET /api/usage/checks): a billed minute per check or lint run. */
 export type FreeCheckSavings = {
   days: number;
   /** The runner and rate each check is priced at. */
@@ -25,6 +25,8 @@ export type FreeCheckSavings = {
   checks: number;
   /** USD, after free public-repo minutes. */
   savedCost: number;
+  /** Each kind of check ("PR title", "Lint"), the most runs first. */
+  byCheck: { check: string; checks: number; savedCost: number }[];
   byRepository: {
     repository: string;
     private: boolean | null;
@@ -60,13 +62,20 @@ export function getCheckSavings(days = 30) {
 /** Example savings for `VITE_AUTH_DISABLED=true` dev builds, which have no API. */
 export function sampleCheckSavings(days: number): FreeCheckSavings {
   const perMinute = 0.006;
-  const app = Math.round(140 * (days / 30));
-  const docs = Math.round(60 * (days / 30));
+  const title = Math.round(110 * (days / 30));
+  const lint = Math.round(90 * (days / 30));
+  // PR title checks in both repos, lint only in acme/app.
+  const docs = Math.round(title * 0.55);
+  const app = title - docs + lint;
   return {
     days,
     runner: { label: "Linux 2-core", perMinute },
-    checks: app + docs,
+    checks: title + lint,
     savedCost: app * perMinute,
+    byCheck: [
+      { check: "PR title", checks: title, savedCost: (title - docs) * perMinute },
+      { check: "Lint", checks: lint, savedCost: lint * perMinute },
+    ],
     byRepository: [
       { repository: "acme/app", private: true, checks: app, savedCost: app * perMinute },
       { repository: "acme/docs", private: false, checks: docs, savedCost: 0 },

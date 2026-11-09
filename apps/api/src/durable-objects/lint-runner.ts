@@ -1,7 +1,9 @@
 import { DurableObject } from "cloudflare:workers";
 import { LINT_PORT, type LintResult, type LintTool } from "@relayrunner/lint-runner/protocol";
 import { containerRunnerAllowed } from "../container-runner.ts";
+import { createDb } from "../db/index.ts";
 import type { Env } from "../env.ts";
+import { recordRepoCheck } from "../free-checks.ts";
 import {
   completeCheckRun,
   repoTarball,
@@ -50,7 +52,20 @@ export class LintRunner extends DurableObject<Env> {
     const config = await loadRepoConfig(token, work.repo);
     // An invalid file fails the main App's PR title check with the reason; nothing to add here.
     if (config.kind !== "config" || !config.lint) return log("not configured", work, {});
-    await this.run(work, token, config.lint.tools, config.lint.paths);
+    const results = await this.run(work, token, config.lint.tools, config.lint.paths);
+    // For the Usage and Activity savings: a lint run that reported stands in for one Actions job.
+    // A native `checks/lint` job is counted by its PickRunner instead, once per job. A failure here
+    // only loses the count.
+    if (Array.isArray(results))
+      await recordRepoCheck(createDb(this.env.DB), work.repo, {
+        check: "Lint",
+        pullRequest: work.pullRequest ?? null,
+        headSha: work.headSha,
+        conclusion: lintJobResult(results).ok ? "success" : "failure",
+        url: null,
+      }).catch((error) =>
+        log("error", work, { error: `saving not recorded: ${errorMessage(error)}` }),
+      );
   }
 
   /**
