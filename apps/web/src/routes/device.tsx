@@ -8,7 +8,7 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { ApiError } from "@/lib/api";
-import { authDisabled, organization } from "@/lib/auth-client";
+import { authDisabled, getSession, organization, signIn } from "@/lib/auth-client";
 import {
   githubInstallHref,
   githubOutcomes,
@@ -40,15 +40,15 @@ import {
 // It doubles as onboarding for someone who has never used RelayRunner, so the CLI's one link
 // walks them through every step and back here each time:
 //
-// 1. Sign in (the _authed guard sends them to /login and back; GitHub sign-in creates the account).
-//    Someone with no workspace gets one made for them, named after their GitHub login (#221).
-// 2. Connect GitHub: with nothing to choose, the page sends them straight to the App's install
-//    screen (/api/github/install?next=<this page>). It shows the GitHub step instead when they
+// 1. Connect GitHub, one click (#221). Signed out, the GitHub step is "Continue with GitHub": it
+//    signs in (creating the account) and comes back here. Someone with no workspace gets one made
+//    for them, named after their GitHub login. With nothing to choose, the page then sends them
+//    straight on to the App's install screen (/api/github/install?next=<this page>). It shows the GitHub step instead when they
 //    have an install to add, when GitHub has already reported back (?github=), or when they come
 //    back without installing (?install=opened), so cancelling doesn't loop. A non-admin's install
 //    only sends a request to the org's owners, so with ?github=requested they may carry on and
 //    jobs start once an owner accepts.
-// 3. Pick the machine's name and approve. The CLI picks up its machine token on its next poll.
+// 2. Pick the machine's name and approve. The CLI picks up its machine token on its next poll.
 //
 // The device code lives 30 minutes (apps/api/src/auth.ts), long enough for all of that.
 type DeviceSearch = {
@@ -62,6 +62,8 @@ type Workspace = { id: string; name: string };
 
 type Loaded =
   | { kind: "enter" }
+  // Signed out: the GitHub step signs them in first.
+  | { kind: "signin" }
   | { kind: "error"; message: string }
   | { kind: "done"; status: DeviceCodeStatus["status"] }
   | {
@@ -84,13 +86,15 @@ const devWorkspace: CurrentWorkspace = {
   installations: [],
 };
 
-export const Route = createFileRoute("/_authed/device")({
+// Outside the _authed guard so a signed-out visitor stays here: the GitHub step signs them in.
+export const Route = createFileRoute("/device")({
   validateSearch: (search: Record<string, unknown>): DeviceSearch => ({
     user_code: typeof search.user_code === "string" ? search.user_code : undefined,
     name: typeof search.name === "string" ? search.name.slice(0, 64) : undefined,
     github: isGitHubOutcome(search.github) ? search.github : undefined,
     install: search.install === "opened" ? "opened" : undefined,
   }),
+  beforeLoad: async () => ({ session: authDisabled ? null : await getSession() }),
   loaderDeps: ({ search }) => ({ userCode: search.user_code }),
   loader: async ({ deps, context }): Promise<Loaded> => {
     if (!deps.userCode) return { kind: "enter" };
@@ -102,6 +106,7 @@ export const Route = createFileRoute("/_authed/device")({
         current: devWorkspace,
         unclaimed: { installations: [] },
       };
+    if (!context.session) return { kind: "signin" };
     let status: DeviceCodeStatus;
     try {
       status = await openDeviceCode(deps.userCode);
@@ -155,6 +160,12 @@ function DevicePage() {
                 : "This request was denied. Run `relayrunner connect` again to start over."
             }
           />
+        )}
+        {loaded.kind === "signin" && (
+          <div className="flex w-full flex-col gap-4">
+            <Steps current="github" withWorkspace={false} />
+            <SignInStep />
+          </div>
         )}
         {loaded.kind === "review" && <Onboarding loaded={loaded} />}
       </div>
@@ -306,6 +317,66 @@ function useReturnPath() {
   if (user_code) search.set("user_code", user_code);
   if (name) search.set("name", name);
   return `/device?${search}`;
+}
+
+/**
+ * The GitHub step for someone signed out. Signing in with GitHub creates the account if it's new,
+ * and coming back here makes the workspace and carries straight on to the App install, so the
+ * whole step is this one click.
+ */
+function SignInStep() {
+  const back = useReturnPath();
+  const [pending, setPending] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  async function continueWithGitHub() {
+    setError(null);
+    setPending(true);
+    const { error } = await signIn.social({ provider: "github", callbackURL: back });
+    if (error) {
+      setError(error.message ?? "Sign-in failed");
+      setPending(false);
+    }
+  }
+
+  return (
+    <Card className="w-full">
+      <CardHeader>
+        <CardTitle>Connect GitHub</CardTitle>
+        <CardDescription>
+          Sign in with GitHub, then install the RelayRunner GitHub App on the account whose jobs
+          should route. New to RelayRunner? This creates your account. GitHub sends you back here to
+          approve this machine.
+        </CardDescription>
+      </CardHeader>
+      <CardContent className="flex flex-col gap-3">
+        <Button
+          size="lg"
+          className="w-full font-bold"
+          disabled={pending}
+          onClick={() => void continueWithGitHub()}
+        >
+          Continue with GitHub
+        </Button>
+        {error && (
+          <p role="alert" className="text-sm text-destructive">
+            {error}
+          </p>
+        )}
+        <p className="text-center text-xs text-muted-foreground">
+          By continuing, you agree to the{" "}
+          <a className="underline underline-offset-2" href="https://relayrunner.app/terms">
+            Terms of Service
+          </a>{" "}
+          and{" "}
+          <a className="underline underline-offset-2" href="https://relayrunner.app/privacy">
+            Privacy Policy
+          </a>
+          .
+        </p>
+      </CardContent>
+    </Card>
+  );
 }
 
 /**
