@@ -91,6 +91,47 @@ const eventMachine = alias(schema.machine, "event_machine");
 const jobMachine = alias(schema.machine, "job_machine");
 
 const job = schema.workflowJob;
+/**
+ * Logs `minutes.overage` once per account per billing cycle, when the billing poll first sees
+ * GitHub bill Actions overage (#117). Later polls in the same cycle find it already logged.
+ */
+export async function recordOverage(
+  db: Db,
+  event: {
+    workspaceId: string;
+    installationId: number;
+    account: string;
+    cycleStart: Date;
+    netAmount: number;
+  },
+) {
+  const cycleStart = event.cycleStart.toISOString();
+  const [logged] = await db
+    .select({ id: table.id })
+    .from(table)
+    .where(
+      and(
+        eq(table.workspaceId, event.workspaceId),
+        eq(table.type, "minutes.overage"),
+        sql`${dataField("$.installationId")} = ${event.installationId}`,
+        eq(dataField("$.cycleStart"), cycleStart),
+      ),
+    )
+    .limit(1);
+  if (logged) return false;
+  await recordEvent(db, {
+    type: "minutes.overage",
+    workspaceId: event.workspaceId,
+    data: {
+      account: event.account,
+      installationId: event.installationId,
+      cycleStart,
+      netAmount: event.netAmount,
+    },
+  });
+  return true;
+}
+
 const dataField = (path: string) => sql<string>`json_extract(${table.data}, ${path})`;
 const isCheck = (conclusion: "success" | "failure") =>
   and(eq(table.type, "check.completed"), eq(dataField("$.conclusion"), conclusion));

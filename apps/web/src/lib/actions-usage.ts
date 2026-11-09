@@ -1,6 +1,9 @@
-import { api } from "./api.ts";
+import { api } from "./api";
 
-/** Why an account's usage can't be judged against a quota. Null when it can. */
+// Each connected GitHub account's Actions minutes this billing cycle, read from GitHub billing
+// (#116, GET /api/usage/actions). Per account, never pooled: each has its own included quota. The
+// shape mirrors AccountUsage in apps/api/src/actions-billing.ts.
+
 export type AccountUsageReason =
   | "personal_account"
   | "enterprise"
@@ -9,76 +12,110 @@ export type AccountUsageReason =
   | "not_read_yet"
   | "error";
 
-/** One connected GitHub account's Actions minutes this month (GET /api/usage/actions, #116). */
-export type AccountUsage = {
+export interface AccountUsage {
   installationId: number;
   accountLogin: string;
   accountType: string;
   status: "ok" | "not_available";
   reason: AccountUsageReason | null;
   plan: string | null;
-  /** Included minutes from the account's plan. Null when GitHub doesn't tell us (Enterprise). */
+  // Included minutes from the plan (Free 2,000, Pro/Team 3,000). Null when unknown.
   quotaMinutes: number | null;
-  /** Private-repo minutes this month, in Linux 2-core minutes. */
+  // Private-repo minutes this cycle, in Linux 2-core minutes (a macOS minute counts ~10).
   usedMinutes: number;
   grossAmount: number;
+  // USD GitHub billed this cycle. Above 0: the account went past its included minutes.
   netAmount: number;
   burnRatePerHour: number | null;
   budget: { amountUsd: number; preventFurtherUsage: boolean } | null;
   cycleStart: string;
   readAt: string | null;
-};
-
-export function getActionsUsage() {
-  return api<{ accounts: AccountUsage[] }>("/usage/actions");
 }
 
-/** An account a minutes limit can judge: its plan's quota is known. */
+export interface ActionsUsage {
+  accounts: AccountUsage[];
+}
+
+export function getActionsUsage() {
+  return api<ActionsUsage>("/usage/actions");
+}
+
+/** Whether a "while under N%" GitHub step can judge this account. */
 export const hasQuota = (account: AccountUsage) =>
   account.status === "ok" && account.quotaMinutes !== null;
 
-/** "Team", "Pro", ... for the plan names GitHub reports. */
-export function planName(plan: string | null) {
-  if (!plan) return null;
-  if (plan === "business_plus") return "Enterprise";
-  return plan.charAt(0).toUpperCase() + plan.slice(1);
+/** Why an account's minutes can't be judged, and what fixes it. Null when they can. */
+export function unavailableText(account: AccountUsage): string | null {
+  switch (account.reason) {
+    case null:
+      return null;
+    case "enterprise":
+      return "This org shares its enterprise's minutes, which GitHub doesn't report to an org install. A minutes limit can't judge it yet.";
+    case "personal_account":
+      return "GitHub only reports minutes for organizations, so a minutes limit can't judge a personal account yet.";
+    case "missing_permission":
+      return "GitHub refused to share this org's billing. Accept the RelayRunner App's requested permissions (Organization administration: read) in the org's GitHub settings.";
+    case "unknown_plan":
+      return `RelayRunner doesn't know the included minutes for the ${account.plan ?? "org's"} plan, so a minutes limit can't judge it.`;
+    case "not_read_yet":
+      return "Not read yet. RelayRunner reads billing every 15 minutes.";
+    case "error":
+      return "Couldn't read billing from GitHub. RelayRunner tries again every 15 minutes.";
+  }
 }
 
-/** Example accounts for `VITE_AUTH_DISABLED=true` dev builds, which have no API. */
-export function sampleActionsUsage(kind: "team" | "enterprise" = "team"): AccountUsage[] {
-  const cycleStart = new Date(
-    Date.UTC(new Date().getUTCFullYear(), new Date().getUTCMonth(), 1),
-  ).toISOString();
+/** Sample accounts for previews without a signed-in API. */
+export function sampleActionsUsage(): ActionsUsage {
+  const now = new Date();
+  const cycleStart = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), 1)).toISOString();
+  const readAt = new Date(now.getTime() - 6 * 60_000).toISOString();
   const base = {
-    installationId: 1,
-    accountLogin: "acme",
     accountType: "Organization",
     grossAmount: 0,
-    netAmount: 0,
-    burnRatePerHour: 14,
-    budget: null,
+    budget: { amountUsd: 0, preventFurtherUsage: true },
     cycleStart,
-    readAt: new Date().toISOString(),
+    readAt,
   };
-  if (kind === "enterprise")
-    return [
+  return {
+    accounts: [
       {
         ...base,
+        installationId: 1,
+        accountLogin: "relayrunner",
+        status: "ok",
+        reason: null,
+        plan: "free",
+        quotaMinutes: 2000,
+        usedMinutes: 1640,
+        netAmount: 0,
+        burnRatePerHour: 38,
+      },
+      {
+        ...base,
+        installationId: 2,
+        accountLogin: "acme-labs",
+        status: "ok",
+        reason: null,
+        plan: "team",
+        quotaMinutes: 3000,
+        usedMinutes: 3112,
+        netAmount: 0.67,
+        burnRatePerHour: 54,
+        budget: null,
+      },
+      {
+        ...base,
+        installationId: 3,
+        accountLogin: "bigco",
         status: "not_available",
         reason: "enterprise",
         plan: "enterprise",
         quotaMinutes: null,
-        usedMinutes: 31_400,
+        usedMinutes: 18200,
+        netAmount: 0,
+        burnRatePerHour: 210,
+        budget: null,
       },
-    ];
-  return [
-    {
-      ...base,
-      status: "ok",
-      reason: null,
-      plan: "team",
-      quotaMinutes: 3000,
-      usedMinutes: 2520,
-    },
-  ];
+    ],
+  };
 }

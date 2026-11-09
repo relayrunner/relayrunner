@@ -1,4 +1,5 @@
 import { readRunnerOrder } from "@relayrunner/runner-order";
+import { accountUsage } from "../actions-billing.ts";
 import { DurableObject } from "cloudflare:workers";
 import { and, eq, isNotNull, isNull, or } from "drizzle-orm";
 import { createDb, schema } from "../db/index.ts";
@@ -59,7 +60,8 @@ export class Router extends DurableObject<Env> {
 
   /**
    * Where the run's next job goes, walking the workspace's runner order: a machine route's
-   * `rr-<id>`, the job's own `github` label, or no runner and the reason.
+   * `rr-<id>`, the job's own `github` label, or no runner and the reason. A GitHub step with a
+   * minutes limit passes the job on once the job's account nears its included quota.
    */
   async route(job: PickedJob): Promise<RouteDecision> {
     const db = createDb(this.env.DB);
@@ -68,7 +70,13 @@ export class Router extends DurableObject<Env> {
       .from(schema.workspace)
       .where(eq(schema.workspace.id, job.workspaceId))
       .limit(1);
-    return decideRoute(readRunnerOrder(workspace?.runnerOrder), job, () => this.pickMachine(job));
+    return decideRoute(
+      readRunnerOrder(workspace?.runnerOrder),
+      job,
+      () => this.pickMachine(job),
+      // The job's own account: each GitHub account has its own quota, never pooled (#117).
+      () => accountUsage(db, job.installationId),
+    );
   }
 
   // A route to a free machine with the job's labels, the paused machines when every one with the

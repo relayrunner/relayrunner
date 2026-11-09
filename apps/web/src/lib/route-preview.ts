@@ -86,14 +86,18 @@ export function previewRoute(
       else {
         const who = many ? `${worst.account.accountLogin} has used` : "Used";
         const { account } = worst;
-        const left = account.quotaMinutes! * (step.limit.percent / 100) - account.usedMinutes;
-        // The Router also stops early when less than two hours of burn are left (#117).
-        const runwayShort = account.burnRatePerHour !== null && left < 2 * account.burnRatePerHour;
-        takes = worst.percent < step.limit.percent && !runwayShort;
-        reason =
-          worst.percent < step.limit.percent && runwayShort
-            ? `${who} ${worst.percent}% of included minutes, under 2 hours from the ${step.limit.percent}% limit`
-            : `${who} ${worst.percent}% of included minutes, ${takes ? "under" : "past"} the ${step.limit.percent}% limit`;
+        const quota = account.quotaMinutes!;
+        // Same check as the Router's minutesCheck (apps/api minutes-rule.ts): past the limit, or
+        // fewer minutes left than two hours of recent burn.
+        const past = account.usedMinutes >= (quota * step.limit.percent) / 100;
+        const runwayShort =
+          !!account.burnRatePerHour && quota - account.usedMinutes < account.burnRatePerHour * 2;
+        takes = !past && !runwayShort;
+        reason = past
+          ? `${who} ${worst.percent}% of included minutes, past the ${step.limit.percent}% limit`
+          : runwayShort
+            ? `${who} ${worst.percent}% of included minutes, under 2 hours of use left`
+            : `${who} ${worst.percent}% of included minutes, under the ${step.limit.percent}% limit`;
       }
     } else if (step.key === "github" && worst && worst.percent >= 100) {
       reason = "Past the included minutes, so GitHub bills overage";

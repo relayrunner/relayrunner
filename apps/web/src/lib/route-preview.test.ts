@@ -1,5 +1,6 @@
 import { describe, expect, test } from "vitest";
-import { sampleActionsUsage, type AccountUsage } from "./actions-usage.ts";
+import type { AccountUsage } from "./actions-usage.ts";
+import { sampleRouterAccounts } from "./router-sample.ts";
 import type { Machine } from "./machines.ts";
 import { previewRoute } from "./route-preview.ts";
 
@@ -23,7 +24,7 @@ const busy = { online: true, state: "busy" as const, connectedAt: 0 };
 const offline = { online: false, state: null, connectedAt: null };
 
 const used = (usedMinutes: number): AccountUsage[] =>
-  sampleActionsUsage("team").map((account) => ({ ...account, usedMinutes }));
+  sampleRouterAccounts("team").map((account) => ({ ...account, usedMinutes }));
 
 describe("previewRoute", () => {
   test("an idle machine takes the job ahead of GitHub", () => {
@@ -76,7 +77,7 @@ describe("previewRoute", () => {
     const preview = previewRoute(
       [{ key: "github", limit: { percent: 80 } }],
       [],
-      sampleActionsUsage("enterprise"),
+      sampleRouterAccounts("enterprise"),
     );
     expect(preview.next?.title).toBe("GitHub-hosted");
   });

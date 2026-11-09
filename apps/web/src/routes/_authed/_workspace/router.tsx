@@ -3,7 +3,8 @@ import { createFileRoute } from "@tanstack/react-router";
 import { PageHeader } from "@/components/page-header";
 import { RunnerOrderEditor } from "@/components/runner-order-editor";
 import { Badge } from "@/components/ui/badge";
-import { getActionsUsage, sampleActionsUsage, type AccountUsage } from "@/lib/actions-usage";
+import { getActionsUsage, type AccountUsage } from "@/lib/actions-usage";
+import { sampleRouterAccounts } from "@/lib/router-sample";
 import { authDisabled } from "@/lib/auth-client";
 import { listMachines, type Machine } from "@/lib/machines";
 import { canManage } from "@/lib/roles";
@@ -86,7 +87,7 @@ function sampleRouter(): {
       order: { steps: [{ key: "machine" }, { key: "github" }] },
       isDefault: false,
       machines: [machine],
-      accounts: sampleActionsUsage("enterprise"),
+      accounts: sampleRouterAccounts("enterprise"),
     };
   return {
     order: {
@@ -94,6 +95,6 @@ function sampleRouter(): {
     },
     isDefault: false,
     machines: [machine],
-    accounts: sampleActionsUsage("team"),
+    accounts: sampleRouterAccounts("team"),
   };
 }
