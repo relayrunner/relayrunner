@@ -40,6 +40,8 @@ export interface Env extends AccessEnv {
   BETTER_AUTH_SECRET: string;
   // Comma-separated origin patterns of dashboard previews allowed to sign in (see auth.ts).
   PREVIEW_ORIGINS?: string;
+  // Parent domain the session cookie is shared on for hosts under it (see auth.ts).
+  SESSION_COOKIE_DOMAIN?: string;
   // The RelayRunner GitHub App's OAuth credentials, used as Better Auth's GitHub provider.
   GITHUB_APP_CLIENT_ID: string;
   GITHUB_APP_CLIENT_SECRET: string;
