@@ -33,6 +33,38 @@ describe("runnerOrderSchema", () => {
     });
   });
 
+  test("GitHub-hosted may come twice, once with a limit and once without", () => {
+    const steps = [
+      { key: "github", limit: { percent: 80 } },
+      { key: "machine" },
+      { key: "github" },
+    ];
+    expect(runnerOrderSchema.parse({ steps })).toEqual({ steps });
+  });
+
+  test("rejects GitHub-hosted twice with the same rule", () => {
+    for (const steps of [
+      [{ key: "github" }, { key: "github" }],
+      [
+        { key: "github", limit: { percent: 80 } },
+        { key: "github", limit: { percent: 90 } },
+      ],
+    ]) {
+      const result = runnerOrderSchema.safeParse({ steps });
+      expect(result.success).toBe(false);
+      expect(result.error?.issues[0]?.path).toEqual(["steps", 1, "key"]);
+    }
+  });
+
+  test("a limit is a whole percent from 1 to 100", () => {
+    for (const percent of [0, 101, 80.5]) {
+      const steps = [{ key: "github", limit: { percent } }];
+      expect(runnerOrderSchema.safeParse({ steps }).success).toBe(false);
+    }
+    const steps = [{ key: "github", limit: { percent: 100 } }];
+    expect(runnerOrderSchema.safeParse({ steps }).success).toBe(true);
+  });
+
   test("rejects unknown keys and labels on steps", () => {
     expect(runnerOrderSchema.safeParse({ steps: [{ key: "buildkite" }] }).success).toBe(false);
     const labelled = runnerOrderSchema.parse({ steps: [{ key: "github", label: "macos" }] });

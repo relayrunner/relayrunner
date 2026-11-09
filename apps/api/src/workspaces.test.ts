@@ -175,7 +175,12 @@ describe("runner order", () => {
     const twice = await put(workspace.id, jar, { steps: [{ key: "github" }, { key: "github" }] });
     expect(twice.status).toBe(400);
     expect(await twice.json()).toMatchObject({
-      issues: [{ path: ["steps", 1, "key"], message: "GitHub-hosted is already in the order." }],
+      issues: [
+        {
+          path: ["steps", 1, "key"],
+          message: "GitHub-hosted is already in the order without a limit.",
+        },
+      ],
     });
 
     const unknown = await put(workspace.id, jar, { steps: [{ key: "buildkite" }] });

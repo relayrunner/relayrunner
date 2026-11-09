@@ -1,6 +1,7 @@
 import { createFileRoute, useRouter } from "@tanstack/react-router";
 import { ExternalLink } from "lucide-react";
 import { useEffect, useState, type ReactNode } from "react";
+import { ActionsMinutes, OverageBanner } from "@/components/actions-minutes";
 import { PageHeader } from "@/components/page-header";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -12,6 +13,12 @@ import {
   CardHeader,
   CardTitle,
 } from "@/components/ui/card";
+import {
+  type AccountUsage,
+  type ActionsUsage,
+  getActionsUsage,
+  sampleActionsUsage,
+} from "@/lib/actions-usage";
 import { ApiError } from "@/lib/api";
 import { authDisabled, signIn } from "@/lib/auth-client";
 import { canManage } from "@/lib/roles";
@@ -44,8 +51,14 @@ function GitHubSettingsPage() {
   const { current } = Route.useRouteContext();
   const { github } = Route.useSearch();
   const unclaimed = Route.useLoaderData();
-  const { workspace, installations } = current;
+  const { workspace } = current;
   const manager = canManage(current.role);
+  const minutes = useActionsUsage();
+  // Previews without an API show the sample accounts as connected orgs.
+  const installations =
+    authDisabled && current.installations.length === 0
+      ? sampleInstallations(minutes)
+      : current.installations;
 
   return (
     <section>
@@ -54,6 +67,7 @@ function GitHubSettingsPage() {
       </PageHeader>
       <div className="grid max-w-3xl gap-4">
         {github && <GitHubNotice outcome={github} />}
+        {minutes && <OverageBanner accounts={minutes.accounts} />}
 
         <Card className="py-4">
           <CardHeader className="px-4">
@@ -81,7 +95,11 @@ function GitHubSettingsPage() {
             ) : (
               <ul className="grid gap-5">
                 {installations.map((installation) => (
-                  <ConnectedOrg key={installation.id} installation={installation} />
+                  <ConnectedOrg
+                    key={installation.id}
+                    installation={installation}
+                    minutes={minutes?.accounts.find((a) => a.installationId === installation.id)}
+                  />
                 ))}
               </ul>
             )}
@@ -117,7 +135,41 @@ function GitHubNotice({ outcome }: { outcome: GitHubOutcome }) {
   );
 }
 
-function ConnectedOrg({ installation }: { installation: Installation }) {
+/** Each account's Actions minutes this month, loaded after the page. Null until read, or on error. */
+function useActionsUsage() {
+  const [usage, setUsage] = useState<ActionsUsage | null>(null);
+  useEffect(() => {
+    if (authDisabled) return setUsage(sampleActionsUsage());
+    let live = true;
+    getActionsUsage().then(
+      (read) => live && setUsage(read),
+      () => undefined,
+    );
+    return () => {
+      live = false;
+    };
+  }, []);
+  return usage;
+}
+
+function sampleInstallations(usage: ActionsUsage | null): Installation[] {
+  return (usage?.accounts ?? []).map((account) => ({
+    id: account.installationId,
+    accountLogin: account.accountLogin,
+    accountType: account.accountType,
+    repositorySelection: "all",
+    suspendedAt: null,
+    settingsUrl: `https://github.com/organizations/${account.accountLogin}/settings/installations`,
+  }));
+}
+
+function ConnectedOrg({
+  installation,
+  minutes,
+}: {
+  installation: Installation;
+  minutes?: AccountUsage;
+}) {
   const { accountLogin, repositorySelection, suspendedAt, settingsUrl } = installation;
   return (
     <li className="grid gap-2 text-sm">
@@ -147,6 +199,7 @@ function ConnectedOrg({ installation }: { installation: Installation }) {
         </div>
       </div>
       {/* A suspended installation can't get a token, so there's nothing to read. */}
+      {minutes && <ActionsMinutes usage={minutes} />}
       {!suspendedAt && <ApiUsage installationId={installation.id} />}
     </li>
   );

@@ -15,6 +15,8 @@ import {
   type RunnerKey,
   type RunnerOrder,
 } from "@relayrunner/runner-order";
+import type { AccountUsage } from "./actions-billing.ts";
+import { minutesCheck, type MinutesSkip } from "./minutes-rule.ts";
 import { context, scalar } from "./pipeline-context.ts";
 
 export const ROUTE_LABEL_PREFIX = "rr-";
@@ -239,6 +241,8 @@ export interface SkippedStep {
   reason: SkipReason;
   // machine_paused: the paused machines' names.
   paused?: string[];
+  // minutes_limit and minutes_runway: the job's GitHub account and its usage at the pick.
+  minutes?: Omit<MinutesSkip, "reason">;
 }
 
 // What the machine step's pick found: a route label, every matching machine paused, or nothing.
@@ -269,17 +273,22 @@ export const isBlacksmithLabel = (label: string) => BLACKSMITH_LABEL.test(label)
  * Walks the order top to bottom. A step whose provider the job didn't configure is skipped, and a
  * provider the job configures but the order leaves out is never tried. `pickMachine` is only
  * called when the machine step is reached and may run; it returns the route label, the paused
- * machines when every one that fits is paused, or null.
+ * machines when every one that fits is paused, or null. `githubUsage` reads the job's GitHub
+ * account's Actions minutes, and is only called when a GitHub step with a minutes limit is reached
+ * (once per pick, however many such steps there are).
  */
 export async function decideRoute(
   order: RunnerOrder,
   job: RouteRequest,
   pickMachine: () => Promise<MachinePick>,
+  githubUsage: () => Promise<AccountUsage | null> = async () => null,
 ): Promise<RouteDecision> {
   const skipped: SkippedStep[] = [];
+  let usage: Promise<AccountUsage | null> | undefined;
   const inOrder = new Set(order.steps.map((step) => step.key));
   const notInOrder = RUNNER_KEYS.filter((key) => !inOrder.has(key) && job[key].length > 0);
-  for (const { key } of order.steps) {
+  for (const step of order.steps) {
+    const { key } = step;
     if (key === "machine") {
       if (job.machine.length === 0) skipped.push({ key, reason: "not_configured" });
       else if (!job.private) skipped.push({ key, reason: "public_repo" });
@@ -293,7 +302,14 @@ export async function decideRoute(
     } else if (key === "github") {
       if (job.github.length === 0) skipped.push({ key, reason: "not_configured" });
       else if (job.github.length > 1) skipped.push({ key, reason: "too_many_labels" });
-      else return { runner: job.github[0], step: key, skipped, notInOrder };
+      else {
+        const over = step.limit
+          ? minutesCheck(await (usage ??= githubUsage()), step.limit.percent)
+          : null;
+        if (!over) return { runner: job.github[0], step: key, skipped, notInOrder };
+        const { reason, ...minutes } = over;
+        skipped.push({ key, reason, minutes });
+      }
     } else if (key === "blacksmith") {
       if (job.blacksmith.length === 0) skipped.push({ key, reason: "not_configured" });
       else if (job.blacksmith.length > 1) skipped.push({ key, reason: "too_many_labels" });
@@ -313,7 +329,7 @@ export function noRunnerReason(
 ): string {
   if (RUNNER_KEYS.every((key) => job[key].length === 0))
     return `${NO_RUNNER}: the relay sets none of \`machine\`, \`github\` or \`blacksmith\`.`;
-  const parts = skipped.map(({ key, reason, paused = [] }) => {
+  const parts = skipped.map(({ key, reason, paused = [], minutes }) => {
     switch (reason) {
       case "not_configured":
         return `\`${key}\` isn't set on this relay`;
@@ -331,6 +347,9 @@ export function noRunnerReason(
         return `\`${key}\` takes one label, not ${job[key].join(", ")}`;
       case "not_blacksmith_label":
         return `\`blacksmith\` takes a Blacksmith label such as blacksmith-2vcpu-ubuntu-2404, not ${job.blacksmith.join(", ")}`;
+      case "minutes_limit":
+      case "minutes_runway":
+        return minutesText(reason, minutes);
     }
   });
   for (const key of notInOrder) parts.push(`${RUNNER_LABELS[key]} isn't in your runner order`);
@@ -338,3 +357,18 @@ export function noRunnerReason(
 }
 
 export const NO_RUNNER = "No runner available";
+
+const count = (n: number) => Math.round(n).toLocaleString("en-US");
+
+/** "relayrunner has used 1,640 of its 2,000 included minutes (82%), past the 80% limit". */
+export function minutesText(
+  reason: "minutes_limit" | "minutes_runway",
+  minutes: SkippedStep["minutes"],
+): string {
+  if (!minutes) return "GitHub-hosted is past its minutes limit";
+  const { account, usedMinutes, quotaMinutes, percent, burnRatePerHour } = minutes;
+  const used = `${account} has used ${count(usedMinutes)} of its ${count(quotaMinutes)} included minutes (${Math.floor((usedMinutes / quotaMinutes) * 100)}%)`;
+  return reason === "minutes_limit"
+    ? `${used}, past the ${percent}% limit`
+    : `${used}, and at ${count(burnRatePerHour ?? 0)} minutes an hour it could run out before GitHub's billing catches up`;
+}

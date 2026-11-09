@@ -75,6 +75,40 @@ describe("walkSummary", () => {
     );
   });
 
+  test("explains a GitHub step past its minutes limit", () => {
+    const minutes = {
+      account: "acme",
+      usedMinutes: 1640,
+      quotaMinutes: 2000,
+      percent: 80,
+      burnRatePerHour: 30,
+    };
+    const limited = walk({
+      step: "machine",
+      skipped: [{ key: "github", reason: "minutes_limit", minutes }],
+    });
+    expect(walkSummary(limited)).toEqual({
+      text: "acme at 82% of GitHub minutes",
+      tone: "fallback",
+    });
+    expect(walkLines(limited, "rr-0123456789ab")[0]?.text).toBe(
+      "acme has used 1,640 of 2,000 included minutes (82%), past the 80% limit",
+    );
+    const runway = walk({
+      step: "machine",
+      skipped: [
+        {
+          key: "github",
+          reason: "minutes_runway",
+          minutes: { ...minutes, usedMinutes: 1400, burnRatePerHour: 400 },
+        },
+      ],
+    });
+    expect(walkLines(runway, "rr-0123456789ab")[0]?.text).toBe(
+      "acme has used 1,400 of 2,000 included minutes (70%); at 400 min/hour it could run out before billing catches up",
+    );
+  });
+
   test("never hides a provider the order leaves out", () => {
     expect(walkSummary(walk({ step: "machine", notInOrder: ["github"] }))).toEqual({
       text: "github is set but not in your order",

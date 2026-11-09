@@ -6,6 +6,7 @@
 // The cron polls every 15 minutes. GitHub's billing lags about 6-90 minutes and arrives in bursts
 // (#115), which #117's burn-rate margin covers.
 import { and, asc, eq, gte, isNotNull, isNull, lt } from "drizzle-orm";
+import { recordOverage } from "./activity.ts";
 import { createDb, type Db, schema } from "./db/index.ts";
 import type { Env } from "./env.ts";
 import {
@@ -85,6 +86,7 @@ export async function pollActionsUsage(env: Env, now = new Date()) {
     .select({
       id: schema.githubInstallation.id,
       accountLogin: schema.githubInstallation.accountLogin,
+      workspaceId: schema.githubInstallation.workspaceId,
     })
     .from(schema.githubInstallation)
     .where(
@@ -114,7 +116,7 @@ export async function pollActionsUsage(env: Env, now = new Date()) {
 export async function pollInstallation(
   db: Db,
   token: string,
-  installation: { id: number; accountLogin: string },
+  installation: { id: number; accountLogin: string; workspaceId?: string | null },
   now = new Date(),
 ) {
   const org = installation.accountLogin;
@@ -195,6 +197,17 @@ export async function pollInstallation(
         }),
     ),
   ]);
+
+  // GitHub billed overage: the account went past its included minutes. The Activity log says so
+  // once per cycle, and the dashboard shows a banner while netAmount stays above 0 (#117).
+  if (totals.netAmount > 0 && installation.workspaceId)
+    await recordOverage(db, {
+      workspaceId: installation.workspaceId,
+      installationId: installation.id,
+      account: org,
+      cycleStart: start,
+      netAmount: totals.netAmount,
+    });
 }
 
 type UsageRow = Omit<

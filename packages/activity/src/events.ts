@@ -26,8 +26,25 @@ export const SKIP_REASONS = [
   "too_many_labels",
   // `blacksmith` named a label that isn't Blacksmith's (blacksmith-...), so it would never start.
   "not_blacksmith_label",
+  // A GitHub step with a minutes limit: the job's account is at or past the limit's % of its
+  // included quota (#117).
+  "minutes_limit",
+  // A GitHub step with a minutes limit: under the limit, but fewer quota minutes are left than
+  // about two hours of the account's recent burn, which billing's lag could use up (#117).
+  "minutes_runway",
 ] as const;
 export type SkipReason = (typeof SKIP_REASONS)[number];
+
+// A GitHub account's Actions minutes when a limited GitHub step looked at it.
+export const MinutesUsage = z.object({
+  account: z.string(),
+  usedMinutes: z.number(),
+  quotaMinutes: z.number(),
+  // The step's limit, as a % of the quota.
+  percent: z.number(),
+  burnRatePerHour: z.number().nullable(),
+});
+export type MinutesUsage = z.infer<typeof MinutesUsage>;
 
 /**
  * How a pick walked the workspace's runner order. `step` is the provider that took the job (null
@@ -43,6 +60,8 @@ export const RouteWalk = z.object({
       reason: z.enum(SKIP_REASONS),
       // machine_paused: the paused machines' names.
       paused: z.array(z.string()).optional(),
+      // minutes_limit and minutes_runway: the job's GitHub account and its usage at the pick.
+      minutes: MinutesUsage.optional(),
     }),
   ),
   notInOrder: z.array(z.enum(RUNNER_KEYS)),
@@ -132,6 +151,18 @@ export const ActivityEvent = z.discriminatedUnion("type", [
       job: z.string().nullable(),
       reason: z.string(),
       walk: RouteWalk.nullable(),
+    }),
+  }),
+  // GitHub billed Actions overage for a connected account this cycle: its usage went past the
+  // included quota (#117). Logged once per account per billing cycle, by the billing poll.
+  // `netAmount` is the USD billed so far when the poll first saw it.
+  z.object({
+    type: z.literal("minutes.overage"),
+    data: z.object({
+      account: z.string(),
+      installationId: z.number(),
+      cycleStart: z.string(),
+      netAmount: z.number(),
     }),
   }),
   // A free check ran with no Actions runner, so it stands in for an Actions job that would have
