@@ -4,6 +4,10 @@ RelayRunner reaches GitHub through one GitHub App, **RelayRunner** ([github.com/
 
 The App can be installed on an **organization** or a **personal account**. Both work. They differ in where runners register and how Actions minutes are read (see [Organizations and personal accounts](#organizations-and-personal-accounts)).
 
+## Visibility
+
+The App must be **public** (App settings → Advanced → Make public). A private GitHub App can only be installed on the account that owns it, here the `relayrunner` org, so every other org and personal account gets nowhere: "Connect another account" in the dashboard fails for them. Found in the personal account live test (#210), where `atticoos` couldn't install the App until it was made public. Public only means anyone can install it; installing still gives RelayRunner nothing until the installation is connected to a workspace.
+
 ## Permissions
 
 These are what the code needs. When you change a permission on the App, every account that installed it has to accept the change on GitHub (Settings → Applications → Installed GitHub Apps → RelayRunner) before the new permission reaches its installation token. User permissions also need each user to sign in to RelayRunner again (see [Account permissions](#account-permissions)).

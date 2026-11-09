@@ -171,7 +171,7 @@ Orgs on GitHub Free can't create extra runner groups. Default is the only one th
 
 ## Personal accounts
 
-A personal account has no org runners and no runner groups, so `generate-jitconfig` at the org fails for it. Instead, each one-job runner registers on the job's own repo (`POST /repos/{owner}/{repo}/actions/runners/generate-jitconfig`), which needs the App's repository permission **Administration: Read & write**. `installationRunnerScope` picks the scope from the installation's account type (`github_installation.account_type`, from the `installation` webhook): `User` gets a repo scope, anything else, including an installation RelayRunner hasn't recorded, gets the org. Machine and container runners use the same scope. See [docs/github-app.md](../github-app.md) for the permissions.
+A personal account has no org runners and no runner groups, so `generate-jitconfig` at the org fails for it. Instead, each one-job runner registers on the job's own repo (`POST /repos/{owner}/{repo}/actions/runners/generate-jitconfig`), which needs the App's repository permission **Administration: Read & write**. `installationRunnerScope` picks the scope from the installation's account type (`github_installation.account_type`, from the `installation` webhook): `User` gets a repo scope, anything else, including an installation RelayRunner hasn't recorded, gets the org. Machine and container runners use the same scope. The App has to be public for a personal account to install it at all. See [docs/github-app.md](../github-app.md) for that and the permissions.
 
 What changes for a personal repo:
 
