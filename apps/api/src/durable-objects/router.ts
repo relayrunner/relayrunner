@@ -284,6 +284,15 @@ export class Router extends DurableObject<Env> {
       await this.ctx.storage.put(ROUTE_KEY + routeId, { ...route, state: "done" });
   }
 
+  /**
+   * Wipes every route kept for the workspace. Operator deletes call this (src/admin-delete.ts):
+   * expired routes are only dropped when the Router is called again, which a deleted workspace's
+   * never is.
+   */
+  async purge(): Promise<void> {
+    await this.ctx.storage.deleteAll();
+  }
+
   // Every route still kept, after dropping the expired ones.
   private async routes(now: number) {
     const stored = await this.ctx.storage.list<Route>({ prefix: ROUTE_KEY });

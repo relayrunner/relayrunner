@@ -3,6 +3,7 @@ import { recordEvent } from "./activity.ts";
 import type { Db } from "./db/index.ts";
 import { schema } from "./db/index.ts";
 import type { Env } from "./env.ts";
+import { appInstallationToken, removeOrgRunnerLabel } from "./github-app.ts";
 import { matchLabels, parseStoredLabels } from "./github-runners.ts";
 import type { Device } from "@relayrunner/machine-protocol";
 import { machineLabels } from "./routing.ts";
@@ -195,4 +196,37 @@ export async function pausedByName(db: Db, machine: typeof schema.machine.$infer
     .where(eq(schema.user.id, machine.pausedBy))
     .limit(1);
   return user?.name ?? null;
+}
+
+// Takes RelayRunner's label off a removed GitHub runner, so jobs can't reach it through the label.
+// Best effort: the machine row is already revoked, so routing never picks it again either way.
+export async function removeRoutingLabel(
+  env: Env,
+  db: Db,
+  machine: typeof schema.machine.$inferSelect,
+) {
+  if (!machine.installationId || !machine.githubRunnerId || !machine.routingLabel) return;
+  try {
+    const [installation] = await db
+      .select({ org: schema.githubInstallation.accountLogin })
+      .from(schema.githubInstallation)
+      .where(eq(schema.githubInstallation.id, machine.installationId))
+      .limit(1);
+    if (!installation) return;
+    const token = await appInstallationToken(env, machine.installationId);
+    await removeOrgRunnerLabel(
+      token,
+      installation.org,
+      machine.githubRunnerId,
+      machine.routingLabel,
+    );
+  } catch (error) {
+    console.warn(
+      JSON.stringify({
+        msg: "routing label not removed",
+        machineId: machine.id,
+        error: error instanceof Error ? error.message : String(error),
+      }),
+    );
+  }
 }

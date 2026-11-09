@@ -1,6 +1,15 @@
 import { createFileRoute } from "@tanstack/react-router";
+import { EllipsisIcon, Trash2Icon } from "lucide-react";
 import { useMemo, useState } from "react";
+import { AdminDeleteDialog } from "@/components/admin-delete-dialog";
 import { PageHeader } from "@/components/page-header";
+import { Button } from "@/components/ui/button";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
 import { Input } from "@/components/ui/input";
 import {
   Select,
@@ -10,11 +19,23 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { timeAgo } from "@/lib/activity";
-import { listUsers, setUserRole, type AdminUser, type UserRole } from "@/lib/admin";
+import {
+  deletedNotice,
+  deleteUser,
+  listUsers,
+  listWorkspaces,
+  setUserRole,
+  type AdminUser,
+  type UserRole,
+} from "@/lib/admin";
 
 // Operator admin, behind Cloudflare Access and an operator session (apps/api/src/routes/admin.ts).
 export const Route = createFileRoute("/_authed/_workspace/admin/users")({
-  loader: () => listUsers(),
+  // Workspaces too, so the delete dialog can say which go with a user.
+  loader: async () => {
+    const [{ users }, { workspaces }] = await Promise.all([listUsers(), listWorkspaces()]);
+    return { users, workspaces };
+  },
   component: UsersPage,
   errorComponent: ({ error }) => (
     <PageHeader title="Users">
@@ -25,7 +46,10 @@ export const Route = createFileRoute("/_authed/_workspace/admin/users")({
 
 function UsersPage() {
   const { user: me } = Route.useRouteContext();
-  const [users, setUsers] = useState(Route.useLoaderData().users);
+  const data = Route.useLoaderData();
+  const [users, setUsers] = useState(data.users);
+  const [workspaces, setWorkspaces] = useState(data.workspaces);
+  const [deleting, setDeleting] = useState<AdminUser | null>(null);
   const [query, setQuery] = useState("");
   const [notice, setNotice] = useState<string | null>(null);
   const now = Date.now();
@@ -48,11 +72,27 @@ function UsersPage() {
     }
   }
 
+  // The workspaces a delete would take with it (only member), and the ones that block it.
+  const theirs = deleting
+    ? workspaces.filter((w) => w.members.some((m) => m.userId === deleting.id))
+    : [];
+  const shared = theirs.filter((w) => w.members.length > 1);
+
+  async function remove(target: AdminUser, uninstallGitHubApp: boolean) {
+    const result = await deleteUser(target.id, uninstallGitHubApp);
+    const gone = new Set(result.workspaces.map((w) => w.id));
+    setUsers((all) => all.filter((u) => u.id !== target.id));
+    setWorkspaces((all) => all.filter((w) => !gone.has(w.id)));
+    setNotice(
+      [`Deleted ${target.name}.`, ...result.workspaces.map((w) => deletedNotice(w))].join(" "),
+    );
+  }
+
   return (
     <section className="grid max-w-5xl gap-6">
       <PageHeader title="Users">
         Everyone who has signed in. Operators see this Admin section. A role change shows up for
-        them within five minutes.
+        them within five minutes. Delete is for repeating sign-up and onboarding tests.
       </PageHeader>
 
       <Input
@@ -77,6 +117,9 @@ function UsersPage() {
               <th className="px-4 py-2 font-medium">Workspaces</th>
               <th className="px-4 py-2 font-medium">Joined</th>
               <th className="px-4 py-2 font-medium">Role</th>
+              <th className="px-4 py-2">
+                <span className="sr-only">Actions</span>
+              </th>
             </tr>
           </thead>
           <tbody>
@@ -109,11 +152,69 @@ function UsersPage() {
                     </SelectContent>
                   </Select>
                 </td>
+                <td className="px-2 py-2 text-right">
+                  {/* The API refuses to delete yourself, so the control doesn't offer it. */}
+                  {u.id !== me?.id && (
+                    <DropdownMenu>
+                      <DropdownMenuTrigger asChild>
+                        <Button
+                          size="icon-sm"
+                          variant="ghost"
+                          aria-label={`More actions for ${u.name}`}
+                        >
+                          <EllipsisIcon aria-hidden />
+                        </Button>
+                      </DropdownMenuTrigger>
+                      <DropdownMenuContent align="end">
+                        <DropdownMenuItem
+                          variant="destructive"
+                          onSelect={() => {
+                            setNotice(null);
+                            setDeleting(u);
+                          }}
+                        >
+                          <Trash2Icon aria-hidden />
+                          Delete…
+                        </DropdownMenuItem>
+                      </DropdownMenuContent>
+                    </DropdownMenu>
+                  )}
+                </td>
               </tr>
             ))}
           </tbody>
         </table>
       </div>
+
+      <AdminDeleteDialog
+        open={deleting !== null}
+        onOpenChange={(open) => !open && setDeleting(null)}
+        title={`Delete ${deleting?.name ?? "user"}?`}
+        confirmText={deleting?.email ?? ""}
+        githubAccounts={shared.length ? [] : theirs.flatMap((w) => w.githubAccounts)}
+        blocked={
+          shared.length > 0 &&
+          `They share ${shared.map((w) => w.name).join(", ")} with other members. Delete ${
+            shared.length === 1 ? "that workspace" : "those workspaces"
+          } first, or remove them from it.`
+        }
+        onConfirm={(uninstall) => remove(deleting!, uninstall)}
+      >
+        <p>
+          Removes the account, its sessions and its GitHub sign-in, so a CLI signed in as them stops
+          working.
+          {theirs.length > 0 && !shared.length && (
+            <>
+              {" "}
+              Also deletes {theirs.map((w) => w.name).join(", ")}, where they're the only member.
+            </>
+          )}
+        </p>
+        <p>
+          GitHub still remembers they authorized the app. Revoke it under GitHub Settings,
+          Applications to see GitHub's consent screen again.
+        </p>
+      </AdminDeleteDialog>
     </section>
   );
 }

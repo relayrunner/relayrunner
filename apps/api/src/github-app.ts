@@ -188,6 +188,20 @@ export async function appInstallationToken(
   return installationToken(await appJwt(env.GITHUB_APP_ID, key), installationId);
 }
 
+/** Uninstall the App from an account, as the App. Already gone (404) counts as done. */
+export async function deleteInstallation(
+  env: { GITHUB_APP_ID: string; GITHUB_APP_PRIVATE_KEY: { get(): Promise<string> } },
+  installationId: number,
+) {
+  const key = await importAppPrivateKey(await env.GITHUB_APP_PRIVATE_KEY.get());
+  const response = await fetch(`${API}/app/installations/${installationId}`, {
+    method: "DELETE",
+    headers: headers(await appJwt(env.GITHUB_APP_ID, key)),
+  });
+  if (!response.ok && response.status !== 404)
+    throw new Error(`DELETE /app/installations/${installationId} failed with ${response.status}`);
+}
+
 // Every page of a list endpoint whose response holds its items under `key`. Capped at 10 pages of
 // 100, far more runners or groups than an org that adds runners by hand has.
 async function listAll<T>(token: string, path: string, key: string): Promise<T[]> {

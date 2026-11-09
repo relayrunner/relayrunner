@@ -11,12 +11,7 @@ import { createDb, schema } from "../db/index.ts";
 import { isWorkspaceMember } from "../installations.ts";
 import { runningJobs } from "../jobs.ts";
 import { MACHINE_ID_HEADER, OFFLINE } from "../durable-objects/machine-session.ts";
-import {
-  addOrgRunnerLabels,
-  appInstallationToken,
-  removeOrgRunnerLabel,
-  type OrgRunner,
-} from "../github-app.ts";
+import { addOrgRunnerLabels, type OrgRunner } from "../github-app.ts";
 import {
   cannotAdd,
   describeAccess,
@@ -33,6 +28,7 @@ import {
   normalizeUserCode,
   pausedByName,
   presentMachine,
+  removeRoutingLabel,
   revokeMachines,
   setMachinePaused,
   sha256Hex,
@@ -540,39 +536,6 @@ export const machineRoutes = new Hono<AppEnv>()
     if (machine.source === "github") await removeRoutingLabel(c.env, db, machine);
     return c.json({ machine: presentMachine(machine) });
   });
-
-// Takes RelayRunner's label off a removed GitHub runner, so jobs can't reach it through the label.
-// Best effort: the machine row is already revoked, so routing never picks it again either way.
-async function removeRoutingLabel(
-  env: Env,
-  db: ReturnType<typeof createDb>,
-  machine: typeof schema.machine.$inferSelect,
-) {
-  if (!machine.installationId || !machine.githubRunnerId || !machine.routingLabel) return;
-  try {
-    const [installation] = await db
-      .select({ org: schema.githubInstallation.accountLogin })
-      .from(schema.githubInstallation)
-      .where(eq(schema.githubInstallation.id, machine.installationId))
-      .limit(1);
-    if (!installation) return;
-    const token = await appInstallationToken(env, machine.installationId);
-    await removeOrgRunnerLabel(
-      token,
-      installation.org,
-      machine.githubRunnerId,
-      machine.routingLabel,
-    );
-  } catch (error) {
-    console.warn(
-      JSON.stringify({
-        msg: "routing label not removed",
-        machineId: machine.id,
-        error: error instanceof Error ? error.message : String(error),
-      }),
-    );
-  }
-}
 
 /** What the add dialog shows of an org runner. */
 function presentOrgRunner(
