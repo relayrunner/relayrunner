@@ -25,15 +25,27 @@ import { type ReactNode, useEffect, useState } from "react";
 import { PageHeader } from "@/components/page-header";
 import { Button } from "@/components/ui/button";
 import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
+import {
   duration,
   getActivity,
+  getActivityOptions,
   timeAgo,
   type ActivityFilter,
   type ActivityItem,
   type ActivityJob,
+  type ActivityOptions,
   type ActivityPage,
+  type ActivityQuery,
+  type ActivityResult,
 } from "@/lib/activity";
 import { authDisabled } from "@/lib/auth-client";
+import { DAY_MS } from "@/lib/job-times";
 import {
   getCheckSavings,
   minutes,
@@ -46,73 +58,301 @@ import { failureText, jobNames, walkLines, walkSummary, type RouteWalk } from "@
 // Fast enough that a push shows up within seconds, without a live connection.
 const POLL_MS = 5_000;
 
-export const Route = createFileRoute("/_authed/_workspace/activity")({
-  loader: (): Promise<ActivityPage> =>
-    authDisabled ? Promise.resolve(samplePage(undefined)) : getActivity(),
-  component: ActivityPage,
-});
-
-const FILTERS: { value: ActivityFilter | undefined; label: string }[] = [
+const TYPES: { value: ActivityFilter | undefined; label: string }[] = [
   { value: undefined, label: "All" },
   { value: "job", label: "Jobs" },
   { value: "check", label: "Checks" },
   { value: "machine", label: "Machines" },
   { value: "member", label: "Members" },
 ];
+const RANGES = [
+  { days: 1, label: "Last 24 hours" },
+  { days: 7, label: "Last 7 days" },
+  { days: 30, label: "Last 30 days" },
+];
+const RESULTS: { value: ActivityResult; label: string }[] = [
+  { value: "passed", label: "Passed" },
+  { value: "failed", label: "Failed" },
+  { value: "cancelled", label: "Cancelled" },
+  { value: "skipped", label: "Skipped" },
+  { value: "running", label: "In progress" },
+];
+// A Select needs a value for "no filter".
+const ANY = "any";
+
+/** The filters, kept in the URL so a filtered view can be shared or bookmarked. */
+type ActivitySearch = {
+  type?: ActivityFilter;
+  days?: number;
+  repo?: string;
+  result?: ActivityResult;
+  machine?: string;
+};
+
+function oneOf<T>(values: readonly T[], value: unknown): T | undefined {
+  return values.find((option) => option === value);
+}
+const text = (value: unknown) =>
+  typeof value === "string" && value.length > 0 ? value.slice(0, 200) : undefined;
+
+// Which filters mean something for each kind of event: a member change has no repo, result or
+// machine; a check runs on no machine; a machine event has no repo or result.
+function appliesTo(type: ActivityFilter | undefined) {
+  const jobOrCheck = type === undefined || type === "job" || type === "check";
+  return {
+    repo: jobOrCheck,
+    result: jobOrCheck,
+    machine: type === undefined || type === "job" || type === "machine",
+  };
+}
+
+function toQuery(search: ActivitySearch): ActivityQuery {
+  return {
+    filter: search.type,
+    since: search.days ? Date.now() - search.days * DAY_MS : undefined,
+    repository: search.repo,
+    result: search.result,
+    machine: search.machine,
+  };
+}
+
+export const Route = createFileRoute("/_authed/_workspace/activity")({
+  // Drops the filters that don't fit the kind of event shown, so nothing hidden narrows the log.
+  validateSearch: (search: Record<string, unknown>): ActivitySearch => {
+    const type = oneOf(
+      TYPES.map((option) => option.value),
+      search.type,
+    );
+    const applies = appliesTo(type);
+    return {
+      type,
+      days: oneOf(
+        RANGES.map((range) => range.days),
+        search.days,
+      ),
+      repo: applies.repo ? text(search.repo) : undefined,
+      result: applies.result
+        ? oneOf(
+            RESULTS.map((result) => result.value),
+            search.result,
+          )
+        : undefined,
+      machine: applies.machine ? text(search.machine) : undefined,
+    };
+  },
+  loaderDeps: ({ search }) => search,
+  loader: ({ deps }): Promise<ActivityPage> =>
+    authDisabled ? Promise.resolve(samplePage(deps)) : getActivity(toQuery(deps)),
+  component: ActivityPage,
+});
 
 function ActivityPage() {
+  const search = Route.useSearch();
+  const navigate = Route.useNavigate();
+  const [savings, setSavings] = useState<FreeCheckSavings | null>(null);
+  const [options, setOptions] = useState<ActivityOptions>({ repositories: [], machines: [] });
+
+  useEffect(() => {
+    if (authDisabled) {
+      setSavings(sampleCheckSavings(30));
+      setOptions(sampleOptions());
+      return;
+    }
+    // The log works without either.
+    getCheckSavings(30)
+      .then(setSavings)
+      .catch(() => undefined);
+    getActivityOptions()
+      .then(setOptions)
+      .catch(() => undefined);
+  }, []);
+
+  const update = (patch: ActivitySearch) =>
+    void navigate({ search: (prev) => ({ ...prev, ...patch }) });
+  const narrowed = Boolean(search.days || search.repo || search.result || search.machine);
+
+  return (
+    <section>
+      <PageHeader title="Activity">
+        Routed jobs, free checks, machine events and member changes, newest first.
+      </PageHeader>
+      <div className="grid max-w-4xl gap-2">
+        <Filters search={search} options={options} narrowed={narrowed} onChange={update} />
+        {savings &&
+          savings.checks > 0 &&
+          !narrowed &&
+          (!search.type || search.type === "check") && <SavingsBanner savings={savings} />}
+        <Log search={search} narrowed={narrowed} onClear={() => update(CLEARED)} />
+      </div>
+    </section>
+  );
+}
+
+const CLEARED: ActivitySearch = {
+  days: undefined,
+  repo: undefined,
+  result: undefined,
+  machine: undefined,
+};
+
+function Filters({
+  search,
+  options,
+  narrowed,
+  onChange,
+}: {
+  search: ActivitySearch;
+  options: ActivityOptions;
+  narrowed: boolean;
+  onChange: (patch: ActivitySearch) => void;
+}) {
+  const applies = appliesTo(search.type);
+  // A repo or machine from a shared link still shows, even if this workspace's lists lack it.
+  const repositories =
+    search.repo && !options.repositories.includes(search.repo)
+      ? [search.repo, ...options.repositories]
+      : options.repositories;
+  const machines =
+    search.machine && !options.machines.some((machine) => machine.id === search.machine)
+      ? [{ id: search.machine, name: "Unknown machine" }, ...options.machines]
+      : options.machines;
+
+  return (
+    <div className="grid gap-2">
+      <div role="group" aria-label="Show" className="flex gap-1.5">
+        {TYPES.map(({ value, label }) => (
+          <Button
+            key={label}
+            size="sm"
+            variant={search.type === value ? "secondary" : "ghost"}
+            aria-pressed={search.type === value}
+            onClick={() => value !== search.type && onChange({ type: value })}
+          >
+            {label}
+          </Button>
+        ))}
+      </div>
+      <div className="flex flex-wrap items-center gap-2">
+        <FilterSelect
+          label="Date"
+          value={search.days?.toString()}
+          any="Any time"
+          options={RANGES.map((range) => ({ value: String(range.days), label: range.label }))}
+          onChange={(value) => onChange({ days: value ? Number(value) : undefined })}
+        />
+        {applies.repo && repositories.length > 0 && (
+          <FilterSelect
+            label="Repo"
+            value={search.repo}
+            any="All repos"
+            options={repositories.map((name) => ({ value: name, label: name }))}
+            onChange={(repo) => onChange({ repo })}
+          />
+        )}
+        {applies.result && (
+          <FilterSelect
+            label="Result"
+            value={search.result}
+            any="Any result"
+            options={RESULTS}
+            onChange={(result) => onChange({ result })}
+          />
+        )}
+        {applies.machine && machines.length > 0 && (
+          <FilterSelect
+            label="Machine"
+            value={search.machine}
+            any="All machines"
+            options={machines.map((machine) => ({ value: machine.id, label: machine.name }))}
+            onChange={(machine) => onChange({ machine })}
+          />
+        )}
+        {narrowed && (
+          <Button size="sm" variant="ghost" onClick={() => onChange(CLEARED)}>
+            Clear
+          </Button>
+        )}
+      </div>
+    </div>
+  );
+}
+
+function FilterSelect<T extends string>({
+  label,
+  value,
+  any,
+  options,
+  onChange,
+}: {
+  label: string;
+  value: T | undefined;
+  any: string;
+  options: { value: T; label: string }[];
+  onChange: (value: T | undefined) => void;
+}) {
+  return (
+    <Select
+      value={value ?? ANY}
+      onValueChange={(next) => onChange(next === ANY ? undefined : (next as T))}
+    >
+      <SelectTrigger size="sm" aria-label={label} className="max-w-72">
+        <SelectValue />
+      </SelectTrigger>
+      <SelectContent>
+        <SelectItem value={ANY}>{any}</SelectItem>
+        {options.map((option) => (
+          <SelectItem key={option.value} value={option.value}>
+            {option.label}
+          </SelectItem>
+        ))}
+      </SelectContent>
+    </Select>
+  );
+}
+
+// The log for the current filters. The loader fetches the newest page whenever they change.
+function Log({
+  search,
+  narrowed,
+  onClear,
+}: {
+  search: ActivitySearch;
+  narrowed: boolean;
+  onClear: () => void;
+}) {
   const first = Route.useLoaderData();
-  const [filter, setFilter] = useState<ActivityFilter | undefined>(undefined);
   const [latest, setLatest] = useState(first);
   const [older, setOlder] = useState<ActivityItem[]>([]);
   // Where the next older page starts, once one has been loaded. Before that it's the newest page's.
   const [olderCursor, setOlderCursor] = useState<number | null>(null);
   const [loadingOlder, setLoadingOlder] = useState(false);
   const [now, setNow] = useState(() => Date.now());
-  const [savings, setSavings] = useState<FreeCheckSavings | null>(null);
 
+  // New filters bring a new first page: start over from it.
   useEffect(() => {
-    if (authDisabled) {
-      setSavings(sampleCheckSavings(30));
-      return;
-    }
-    getCheckSavings(30)
-      .then(setSavings)
-      .catch(() => undefined); // The log works without it.
-  }, []);
+    setLatest(first);
+    setOlder([]);
+    setOlderCursor(null);
+  }, [first]);
 
-  // Refresh the newest page while the tab is visible, and right away when the filter changes.
-  // Older pages don't change much, so they're left as loaded.
+  // Refresh the newest page while the tab is visible. Older pages don't change much, so they're
+  // left as loaded.
+  const { type, days, repo, result, machine } = search;
   useEffect(() => {
     if (authDisabled) return;
     let current = true;
-    const refresh = () =>
-      getActivity({ filter })
-        .then((page) => current && setLatest(page))
-        .catch(() => undefined); // Keep showing the last good page; the next tick retries.
     const timer = setInterval(() => {
       setNow(Date.now());
-      if (document.visibilityState === "visible") void refresh();
+      if (document.visibilityState !== "visible") return;
+      getActivity(toQuery({ type, days, repo, result, machine }))
+        .then((page) => current && setLatest(page))
+        .catch(() => undefined); // Keep showing the last good page; the next tick retries.
     }, POLL_MS);
     return () => {
       current = false;
       clearInterval(timer);
     };
-  }, [filter]);
-
-  function chooseFilter(next: ActivityFilter | undefined) {
-    if (next === filter) return;
-    setFilter(next);
-    setOlder([]);
-    setOlderCursor(null);
-    if (authDisabled) {
-      setLatest(samplePage(next));
-      return;
-    }
-    getActivity({ filter: next })
-      .then(setLatest)
-      .catch(() => undefined);
-  }
+  }, [type, days, repo, result, machine]);
 
   const cursor = older.length ? olderCursor : latest.nextBefore;
 
@@ -120,7 +360,7 @@ function ActivityPage() {
     if (cursor === null) return;
     setLoadingOlder(true);
     try {
-      const page = await getActivity({ before: cursor, filter });
+      const page = await getActivity({ ...toQuery(search), before: cursor });
       setOlder((items) => [...items, ...page.items]);
       setOlderCursor(page.nextBefore);
     } finally {
@@ -132,75 +372,61 @@ function ActivityPage() {
   const items = [...latest.items, ...older.filter((item) => !seen.has(item.id))];
 
   return (
-    <section>
-      <PageHeader title="Activity">
-        Routed jobs, free checks, machine events and member changes, newest first.
-      </PageHeader>
-      <div className="grid max-w-4xl gap-2">
-        <div role="group" aria-label="Show" className="flex gap-1.5">
-          {FILTERS.map(({ value, label }) => (
-            <Button
-              key={label}
-              size="sm"
-              variant={filter === value ? "secondary" : "ghost"}
-              aria-pressed={filter === value}
-              onClick={() => chooseFilter(value)}
-            >
-              {label}
-            </Button>
-          ))}
-        </div>
-        {savings && savings.checks > 0 && (filter === undefined || filter === "check") && (
-          <SavingsBanner savings={savings} />
-        )}
-        {items.length === 0 ? (
-          <p className="rounded-xl border bg-card px-4 py-6 text-sm text-muted-foreground">
-            {filter === "check" ? (
-              <>
-                Nothing yet. Turn on a free check with{" "}
-                <span className="font-mono text-foreground">relayrunner.yml</span> in a connected
-                repo, and its check runs show up here.
-              </>
-            ) : filter === "machine" ? (
-              <>Nothing yet. Machines show up here when they enroll, connect or disconnect.</>
-            ) : filter === "member" ? (
-              <>Nothing yet. Invites and new members show up here.</>
+    <>
+      {items.length === 0 ? (
+        <p className="rounded-xl border bg-card px-4 py-6 text-sm text-muted-foreground">
+          {narrowed ? (
+            <>
+              Nothing matches these filters.{" "}
+              <button type="button" className="text-foreground underline" onClick={onClear}>
+                Clear filters
+              </button>
+            </>
+          ) : search.type === "check" ? (
+            <>
+              Nothing yet. Turn on a free check with{" "}
+              <span className="font-mono text-foreground">relayrunner.yml</span> in a connected
+              repo, and its check runs show up here.
+            </>
+          ) : search.type === "machine" ? (
+            <>Nothing yet. Machines show up here when they enroll, connect or disconnect.</>
+          ) : search.type === "member" ? (
+            <>Nothing yet. Invites and new members show up here.</>
+          ) : (
+            <>
+              Nothing yet. Add a{" "}
+              <span className="font-mono text-foreground">relayrunner/actions</span> relay job to a
+              workflow in a connected org, push, and its jobs show up here.
+            </>
+          )}
+        </p>
+      ) : (
+        <ul className="grid gap-2">
+          {items.map((item) =>
+            item.job ? (
+              <JobRow key={item.id} job={item.job} now={now} />
+            ) : item.type === "job.unroutable" ? (
+              <UnroutableRow key={item.id} item={item} now={now} />
+            ) : item.type === "check.completed" ? (
+              <CheckRow key={item.id} item={item} now={now} />
             ) : (
-              <>
-                Nothing yet. Add a{" "}
-                <span className="font-mono text-foreground">relayrunner/actions</span> relay job to
-                a workflow in a connected org, push, and its jobs show up here.
-              </>
-            )}
-          </p>
-        ) : (
-          <ul className="grid gap-2">
-            {items.map((item) =>
-              item.job ? (
-                <JobRow key={item.id} job={item.job} now={now} />
-              ) : item.type === "job.unroutable" ? (
-                <UnroutableRow key={item.id} item={item} now={now} />
-              ) : item.type === "check.completed" ? (
-                <CheckRow key={item.id} item={item} now={now} />
-              ) : (
-                <EventRow key={item.id} item={item} now={now} />
-              ),
-            )}
-          </ul>
-        )}
-        {cursor !== null && (
-          <Button
-            variant="outline"
-            size="sm"
-            className="justify-self-start"
-            disabled={loadingOlder}
-            onClick={() => void loadOlder()}
-          >
-            {loadingOlder ? "Loading…" : "Show older"}
-          </Button>
-        )}
-      </div>
-    </section>
+              <EventRow key={item.id} item={item} now={now} />
+            ),
+          )}
+        </ul>
+      )}
+      {cursor !== null && (
+        <Button
+          variant="outline"
+          size="sm"
+          className="justify-self-start"
+          disabled={loadingOlder}
+          onClick={() => void loadOlder()}
+        >
+          {loadingOlder ? "Loading…" : "Show older"}
+        </Button>
+      )}
+    </>
   );
 }
 
@@ -717,7 +943,7 @@ function UnroutableRow({
 }
 
 // Example entries for `VITE_AUTH_DISABLED=true` dev builds, which have no API.
-function samplePage(filter: ActivityFilter | undefined): ActivityPage {
+function samplePage(search: ActivitySearch): ActivityPage {
   const at = (minutesAgo: number) => new Date(Date.now() - minutesAgo * 60_000).toISOString();
   const runs = "https://github.com/relayrunner/relayrunner-ci-tests/actions/runs";
   const job = (id: number, minutesAgo: number, rest: Partial<ActivityJob>): ActivityJob => ({
@@ -929,7 +1155,7 @@ function samplePage(filter: ActivityFilter | undefined): ActivityPage {
       }),
     },
     {
-      id: 9,
+      id: 14,
       type: "machine.revoked",
       data: { machineName: "zach-studio" },
       occurredAt: at(14.9),
@@ -938,7 +1164,7 @@ function samplePage(filter: ActivityFilter | undefined): ActivityPage {
       job: null,
     },
     {
-      id: 8,
+      id: 15,
       type: "member.removed",
       data: { memberName: "Zach", left: false },
       occurredAt: at(15),
@@ -947,7 +1173,7 @@ function samplePage(filter: ActivityFilter | undefined): ActivityPage {
       job: null,
     },
     {
-      id: 12,
+      id: 16,
       type: "member.joined",
       data: { name: "Ada Lovelace", email: "ada@example.com", role: "admin" },
       occurredAt: at(20),
@@ -956,7 +1182,7 @@ function samplePage(filter: ActivityFilter | undefined): ActivityPage {
       job: null,
     },
     {
-      id: 11,
+      id: 17,
       type: "member.invited",
       data: { email: "ada@example.com", role: "admin" },
       occurredAt: at(45),
@@ -1011,6 +1237,44 @@ function samplePage(filter: ActivityFilter | undefined): ActivityPage {
   items.sort((a, b) => b.occurredAt.localeCompare(a.occurredAt));
   return {
     nextBefore: null,
-    items: filter ? items.filter((item) => item.type.startsWith(`${filter}.`)) : items,
+    items: items.filter((item) => sampleMatches(item, search)),
+  };
+}
+
+// The API's filters, applied to the sample entries (dev builds only; the real log filters on the
+// server).
+function sampleMatches(item: ActivityItem, search: ActivitySearch) {
+  if (search.type && !item.type.startsWith(`${search.type}.`)) return false;
+  if (search.days && Date.parse(item.occurredAt) < Date.now() - search.days * DAY_MS) return false;
+  if (search.repo) {
+    const repo = item.job?.repository ?? ("repository" in item.data ? item.data.repository : null);
+    if (repo !== search.repo) return false;
+  }
+  if (search.machine) {
+    const runner = item.job?.runner;
+    const machine = item.machine?.id ?? (runner?.type === "machine" ? runner.machineId : null);
+    if (machine !== search.machine) return false;
+  }
+  return !search.result || sampleResult(item) === search.result;
+}
+
+function sampleResult(item: ActivityItem): ActivityResult | null {
+  if (item.type === "job.unroutable") return "failed";
+  const conclusion = item.job
+    ? item.job.conclusion
+    : "conclusion" in item.data
+      ? item.data.conclusion
+      : undefined;
+  if (conclusion === undefined) return null;
+  if (conclusion === null) return "running";
+  if (conclusion === "success") return "passed";
+  if (conclusion === "failure" || conclusion === "timed_out") return "failed";
+  return conclusion as ActivityResult;
+}
+
+function sampleOptions(): ActivityOptions {
+  return {
+    repositories: ["relayrunner/actions", "relayrunner/relayrunner-ci-tests"],
+    machines: [{ id: "m1", name: "Atticuss-MacBook-Pro.local" }],
   };
 }

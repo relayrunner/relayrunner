@@ -160,3 +160,10 @@ export type ActivityEventType = ActivityEvent["type"];
 /** The Activity page's filters: the part of the type before the dot. */
 export const ACTIVITY_FILTERS = ["job", "check", "machine", "member"] as const;
 export type ActivityFilter = (typeof ACTIVITY_FILTERS)[number];
+
+/**
+ * How a job or check ended, for the Activity page's result filter. `failed` takes in timed-out
+ * jobs and runs that couldn't route; `running` is a job that hasn't finished.
+ */
+export const ACTIVITY_RESULTS = ["passed", "failed", "cancelled", "skipped", "running"] as const;
+export type ActivityResult = (typeof ACTIVITY_RESULTS)[number];

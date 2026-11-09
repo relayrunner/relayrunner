@@ -1,4 +1,4 @@
-import type { ActivityEvent, RouteWalk } from "./events.ts";
+import type { ActivityEvent, ActivityFilter, ActivityResult, RouteWalk } from "./events.ts";
 
 // GET /api/activity's response. Types only: the API builds it, the dashboard reads it.
 
@@ -62,4 +62,29 @@ export interface ActivityPage {
   items: ActivityItem[];
   /** Pass as `before` for the next older page; null on the last page. */
   nextBefore: number | null;
+}
+
+/**
+ * GET /api/activity's filters, all optional and combined with AND. A filter on something an event
+ * doesn't have (a member change has no repo) leaves that event out.
+ */
+export interface ActivityQuery {
+  /** One kind of event. */
+  filter?: ActivityFilter;
+  /** Events at or after this time, in ms since the epoch. */
+  since?: number;
+  /** Jobs, checks and unroutable runs in this repo, by full name. */
+  repository?: string;
+  /** Jobs and checks that ended this way. */
+  result?: ActivityResult;
+  /** A machine's own events and the jobs it ran, by machine id. */
+  machine?: string;
+}
+
+/** GET /api/activity/options: what the filters can choose from. */
+export interface ActivityOptions {
+  /** The workspace's connected repos, by full name. */
+  repositories: string[];
+  /** The workspace's machines. */
+  machines: { id: string; name: string }[];
 }
