@@ -1268,7 +1268,8 @@ h3 {
 }
 .footer-row ul {
   display: flex;
-  gap: 28px;
+  flex-wrap: wrap;
+  gap: 12px 28px;
   font-size: 14px;
 }
 .footer-row a {

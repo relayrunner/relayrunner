@@ -1,0 +1,79 @@
+/* Privacy policy and terms pages. Loaded after style.css, which supplies the tokens, header and
+   footer. */
+
+.legal {
+  max-width: calc(68ch + 2 * var(--gutter));
+  padding-block: clamp(48px, 7vw, 96px) clamp(72px, 9vw, 128px);
+}
+.legal h1 {
+  font-size: clamp(36px, 5vw, 56px);
+  line-height: 1.04;
+  font-weight: 700;
+  letter-spacing: -0.035em;
+}
+.legal .updated {
+  margin-top: 14px;
+  color: var(--mute);
+  font-size: 15px;
+}
+.legal .intro {
+  margin-top: 28px;
+  color: var(--ink-2);
+  font-size: 18px;
+}
+.legal .summary {
+  margin-top: 32px;
+  padding: 22px 26px;
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  background: var(--raised);
+}
+.legal .summary h2 {
+  margin: 0 0 10px;
+  font-size: 16px;
+  letter-spacing: 0;
+}
+.legal h2 {
+  margin-top: 56px;
+  max-width: none;
+  font-size: 26px;
+  line-height: 1.2;
+  letter-spacing: -0.02em;
+}
+.legal h3 {
+  margin-top: 32px;
+  font-size: 18px;
+}
+.legal p,
+.legal ul {
+  margin-top: 14px;
+  color: var(--ink-2);
+}
+.legal ul {
+  padding-left: 1.2em;
+  list-style: disc;
+}
+.legal li + li {
+  margin-top: 8px;
+}
+.legal li::marker {
+  color: var(--idle);
+}
+.legal strong {
+  color: var(--ink);
+  font-weight: 600;
+}
+.legal a {
+  color: var(--ink);
+  text-decoration-color: var(--go-edge);
+}
+.legal a:hover {
+  text-decoration-color: var(--go);
+}
+.legal code {
+  color: var(--ink);
+  font-size: 0.88em;
+}
+.legal .caps {
+  font-size: 15px;
+}

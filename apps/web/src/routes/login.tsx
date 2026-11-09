@@ -52,6 +52,17 @@ function LoginPage() {
               Sign in with GitHub
             </Button>
             {error && <p className="text-sm text-destructive">{error}</p>}
+            <p className="text-center text-xs text-muted-foreground">
+              By signing in, you agree to the{" "}
+              <a className="underline underline-offset-2" href="https://relayrunner.app/terms">
+                Terms of Service
+              </a>{" "}
+              and{" "}
+              <a className="underline underline-offset-2" href="https://relayrunner.app/privacy">
+                Privacy Policy
+              </a>
+              .
+            </p>
           </CardContent>
         </Card>
       </div>

@@ -14,6 +14,8 @@ Use [Conventional Commits](https://www.conventionalcommits.org/) for every commi
 - Write the description in the imperative mood and in lowercase, with no trailing period.
 - Mark a breaking change with `!` after the type or scope, such as `feat(api)!: …`.
 
+Never commit screenshots or other PR images to the repository. Upload them with the Uploads MCP or CLI and attach them to the pull request as a comment.
+
 ## Formatting and checks
 
 Format with oxfmt (`pnpm format`) and lint with Oxlint (`pnpm lint`). Run `pnpm check` before you push; CI runs the same command. The pre-commit hook formats and lints staged files, so don't skip it with `--no-verify`.
