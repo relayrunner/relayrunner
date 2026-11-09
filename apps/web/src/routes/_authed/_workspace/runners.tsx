@@ -210,7 +210,7 @@ function ConnectLanding({
           };
 
   return (
-    <section className="mx-auto grid w-full max-w-3xl content-center gap-12 py-6 sm:min-h-[calc(100dvh-4rem)] sm:gap-16 sm:py-16">
+    <section className="mx-auto grid w-full max-w-3xl content-center gap-12 py-6 sm:min-h-[calc(100dvh-4rem)] sm:gap-16">
       <div className="grid justify-items-center gap-3 text-center">
         <h1 className="text-2xl font-semibold tracking-tight text-balance sm:text-3xl">
           Run CI on your laptop while you work
