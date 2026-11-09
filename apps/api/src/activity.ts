@@ -1,12 +1,28 @@
 import {
   ActivityEvent,
-  type ActivityFilter,
   type ActivityItem,
+  type ActivityOptions,
   type ActivityPage,
+  type ActivityQuery,
+  type ActivityResult,
   type DisconnectReason,
   type RouteWalk,
 } from "@relayrunner/activity";
-import { and, asc, desc, eq, inArray, like, lt, sql } from "drizzle-orm";
+import {
+  type SQL,
+  and,
+  asc,
+  desc,
+  eq,
+  gte,
+  inArray,
+  isNotNull,
+  isNull,
+  like,
+  lt,
+  or,
+  sql,
+} from "drizzle-orm";
 import { alias } from "drizzle-orm/sqlite-core";
 import { type Db, schema } from "./db/index.ts";
 import { presentJob } from "./jobs.ts";
@@ -74,16 +90,33 @@ export const ACTIVITY_PAGE_SIZE = 50;
 const eventMachine = alias(schema.machine, "event_machine");
 const jobMachine = alias(schema.machine, "job_machine");
 
+const job = schema.workflowJob;
+const dataField = (path: string) => sql<string>`json_extract(${table.data}, ${path})`;
+const isCheck = (conclusion: "success" | "failure") =>
+  and(eq(table.type, "check.completed"), eq(dataField("$.conclusion"), conclusion));
+
+// Each result as a condition on the event and its job (left-joined, so null for other events).
+const RESULTS: Record<ActivityResult, SQL | undefined> = {
+  passed: or(eq(job.conclusion, "success"), isCheck("success")),
+  failed: or(
+    inArray(job.conclusion, ["failure", "timed_out"]),
+    isCheck("failure"),
+    eq(table.type, "job.unroutable"),
+  ),
+  cancelled: eq(job.conclusion, "cancelled"),
+  skipped: eq(job.conclusion, "skipped"),
+  running: and(isNotNull(job.id), isNull(job.conclusion)),
+};
+
 /**
- * The workspace's Activity log, newest first. `before` is an event id from a previous page.
- * `filter` keeps one kind of event ('job', 'check', 'machine' or 'member').
+ * The workspace's Activity log, newest first. `before` is an event id from a previous page; the
+ * rest narrow it (see ActivityQuery).
  */
 export async function listActivity(
   db: Db,
   workspaceId: string,
-  { before, filter }: { before?: number; filter?: ActivityFilter } = {},
+  { before, filter, since, repository, result, machine }: ActivityQuery & { before?: number } = {},
 ): Promise<ActivityPage> {
-  const job = schema.workflowJob;
   const rows = await db
     .select({
       event: table,
@@ -104,6 +137,17 @@ export async function listActivity(
         eq(table.workspaceId, workspaceId),
         before === undefined ? undefined : lt(table.id, before),
         filter === undefined ? undefined : like(table.type, `${filter}.%`),
+        since === undefined ? undefined : gte(table.occurredAt, new Date(since)),
+        repository === undefined
+          ? undefined
+          : or(
+              eq(job.repositoryFullName, repository),
+              and(isNull(table.jobId), eq(dataField("$.repository"), repository)),
+            ),
+        result === undefined ? undefined : RESULTS[result],
+        machine === undefined
+          ? undefined
+          : or(eq(table.machineId, machine), eq(job.machineId, machine)),
       ),
     )
     .orderBy(desc(table.id))
@@ -121,6 +165,26 @@ export async function listActivity(
     items: await foldJobsNotRun(db, workspaceId, items),
     nextBefore: rows.length > ACTIVITY_PAGE_SIZE ? page[page.length - 1].event.id : null,
   };
+}
+
+/** What the Activity page's repo and machine filters can choose from. */
+export async function activityOptions(db: Db, workspaceId: string): Promise<ActivityOptions> {
+  const repo = schema.githubRepository;
+  const installation = schema.githubInstallation;
+  const [repositories, machines] = await Promise.all([
+    db
+      .select({ name: repo.fullName })
+      .from(repo)
+      .innerJoin(installation, eq(installation.id, repo.installationId))
+      .where(and(eq(installation.workspaceId, workspaceId), isNull(repo.removedAt)))
+      .orderBy(repo.fullName),
+    db
+      .select({ id: schema.machine.id, name: schema.machine.name })
+      .from(schema.machine)
+      .where(eq(schema.machine.workspaceId, workspaceId))
+      .orderBy(schema.machine.name),
+  ]);
+  return { repositories: repositories.map((row) => row.name), machines };
 }
 
 type WorkflowJob = typeof schema.workflowJob.$inferSelect;
@@ -155,7 +219,6 @@ async function foldJobsNotRun(
   const notRun = new Map<string, string[]>();
   const relayRuns = [...new Set(relays.map((item) => item.data.runId))];
   if (relayRuns.length) {
-    const job = schema.workflowJob;
     const jobs = await db
       .select({
         name: job.name,
@@ -194,7 +257,7 @@ async function foldJobsNotRun(
         and(
           eq(table.workspaceId, workspaceId),
           eq(table.type, "job.unroutable"),
-          inArray(sql<number>`json_extract(${table.data}, '$.runId')`, orphanRuns),
+          inArray(dataField("$.runId"), orphanRuns),
         ),
       );
     for (const { data } of events) {

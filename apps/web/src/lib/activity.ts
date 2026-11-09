@@ -1,4 +1,9 @@
-import type { ActivityFilter, ActivityJob, ActivityPage } from "@relayrunner/activity";
+import type {
+  ActivityJob,
+  ActivityOptions,
+  ActivityPage,
+  ActivityQuery,
+} from "@relayrunner/activity";
 import { api } from "@/lib/api";
 import { elapsed } from "@/lib/utils";
 
@@ -6,17 +11,25 @@ export type {
   ActivityFilter,
   ActivityItem,
   ActivityJob,
+  ActivityOptions,
   ActivityPage,
+  ActivityQuery,
+  ActivityResult,
   ActivityRunner,
 } from "@relayrunner/activity";
 
-/** A page of the workspace's Activity log, newest first. */
-export function getActivity({ before, filter }: { before?: number; filter?: ActivityFilter } = {}) {
-  const query = new URLSearchParams();
-  if (before !== undefined) query.set("before", String(before));
-  if (filter) query.set("filter", filter);
-  const qs = query.toString();
+/** A page of the workspace's Activity log, newest first, narrowed on the server by `query`. */
+export function getActivity(query: ActivityQuery & { before?: number } = {}) {
+  const params = new URLSearchParams();
+  for (const [key, value] of Object.entries(query))
+    if (value !== undefined) params.set(key, String(value));
+  const qs = params.toString();
   return api<ActivityPage>(qs ? `/activity?${qs}` : "/activity");
+}
+
+/** The repos and machines the Activity filters can pick from. */
+export function getActivityOptions() {
+  return api<ActivityOptions>("/activity/options");
 }
 
 /** "3m ago", "2h ago", or a date for anything older than a day. */
