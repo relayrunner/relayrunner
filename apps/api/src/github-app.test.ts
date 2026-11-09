@@ -1,6 +1,13 @@
 import { generateKeyPairSync, createPublicKey, verify } from "node:crypto";
-import { describe, expect, test } from "vitest";
-import { appJwt, importAppPrivateKey } from "./github-app.ts";
+import { afterEach, beforeEach, describe, expect, test, vi } from "vitest";
+import {
+  appJwt,
+  deleteRunner,
+  generateJitConfig,
+  importAppPrivateKey,
+  runnerBusy,
+  runnerScope,
+} from "./github-app.ts";
 
 const { privateKey } = generateKeyPairSync("rsa", { modulusLength: 2048 });
 const pkcs1 = privateKey.export({ type: "pkcs1", format: "pem" }).toString();
@@ -32,5 +39,76 @@ describe("GitHub App auth", () => {
       iat: Date.UTC(2026, 10, 4) / 1000 - 60,
       exp: Date.UTC(2026, 10, 4) / 1000 + 480,
     });
+  });
+});
+
+describe("runner scope", () => {
+  test("a personal (User) install registers on the job's repo, an org install in the org", () => {
+    expect(runnerScope("User", "atticoos/side-project")).toEqual({
+      kind: "repo",
+      repo: "atticoos/side-project",
+    });
+    expect(runnerScope("Organization", "relayrunner/relayrunner")).toEqual({
+      kind: "org",
+      org: "relayrunner",
+    });
+    // An installation RelayRunner hasn't recorded keeps the old org behavior.
+    expect(runnerScope(undefined, "relayrunner/relayrunner")).toEqual({
+      kind: "org",
+      org: "relayrunner",
+    });
+  });
+});
+
+describe("JIT runners by scope", () => {
+  const calls: { url: string; method: string; body?: Record<string, unknown> }[] = [];
+  beforeEach(() => {
+    calls.length = 0;
+    vi.stubGlobal("fetch", async (url: string, init: RequestInit = {}) => {
+      calls.push({
+        url,
+        method: init.method ?? "GET",
+        body: init.body ? JSON.parse(String(init.body)) : undefined,
+      });
+      return Response.json({
+        runner: { id: 7, labels: [{ name: "relayrunner" }] },
+        encoded_jit_config: "abc",
+        busy: true,
+      });
+    });
+  });
+  afterEach(() => vi.unstubAllGlobals());
+
+  const repo = { kind: "repo", repo: "atticoos/side-project" } as const;
+  const org = { kind: "org", org: "relayrunner" } as const;
+
+  test("a repo runner uses the repo endpoints and the Default group", async () => {
+    const jit = await generateJitConfig("t", repo, { name: "pick", labels: ["relayrunner"] });
+    expect(jit).toEqual({ runnerId: 7, labels: ["relayrunner"], encodedJitConfig: "abc" });
+    await runnerBusy("t", repo, 7);
+    await deleteRunner("t", repo, 7);
+    expect(calls.map((call) => `${call.method} ${call.url}`)).toEqual([
+      "POST https://api.github.com/repos/atticoos/side-project/actions/runners/generate-jitconfig",
+      "GET https://api.github.com/repos/atticoos/side-project/actions/runners/7",
+      "DELETE https://api.github.com/repos/atticoos/side-project/actions/runners/7",
+    ]);
+    expect(calls[0].body?.runner_group_id).toBe(1);
+  });
+
+  test("a repo runner ignores a runner group, which only orgs have", async () => {
+    await generateJitConfig("t", repo, { name: "c", labels: ["x"], runnerGroupId: 4 });
+    expect(calls[0].body?.runner_group_id).toBe(1);
+  });
+
+  test("an org runner uses the org endpoints and the given group", async () => {
+    await generateJitConfig("t", org, { name: "c", labels: ["x"], runnerGroupId: 4 });
+    await generateJitConfig("t", org, { name: "pick", labels: ["relayrunner"] });
+    await deleteRunner("t", org, 7);
+    expect(calls.map((call) => `${call.method} ${call.url}`)).toEqual([
+      "POST https://api.github.com/orgs/relayrunner/actions/runners/generate-jitconfig",
+      "POST https://api.github.com/orgs/relayrunner/actions/runners/generate-jitconfig",
+      "DELETE https://api.github.com/orgs/relayrunner/actions/runners/7",
+    ]);
+    expect(calls.map((call) => call.body?.runner_group_id)).toEqual([4, 1, undefined]);
   });
 });

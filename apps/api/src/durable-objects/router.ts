@@ -5,6 +5,7 @@ import { and, eq, isNotNull, isNull, or } from "drizzle-orm";
 import { createDb, schema } from "../db/index.ts";
 import type { Env } from "../env.ts";
 import { appInstallationToken, listOrgRunners, type OrgRunner } from "../github-app.ts";
+import { installationRunnerScope } from "../installations.ts";
 import {
   fetchGroupAccess,
   matchLabels,
@@ -171,7 +172,8 @@ export class Router extends DurableObject<Env> {
   }
 
   // The job's org's self-hosted runners, read fresh, with their group access (cached), or null
-  // when GitHub can't be reached: added runners then sit this pick out.
+  // when GitHub can't be reached: added runners then sit this pick out. A personal account has
+  // none.
   private async orgRunners(
     job: PickedJob,
   ): Promise<{ runners: OrgRunner[]; access: Map<number, GroupAccess> } | null> {
@@ -180,6 +182,13 @@ export class Router extends DurableObject<Env> {
       const token = await appInstallationToken(this.env, job.installationId);
       const runners = await listOrgRunners(token, org);
       const cached = this.groupAccess.get(job.installationId);
+      // A personal account has no org runners. Adopting its repo runners is #162.
+      const scope = await installationRunnerScope(
+        createDb(this.env.DB),
+        job.installationId,
+        job.repo,
+      );
+      if (scope.kind === "repo") return { runners: [], access: new Map() };
       const known = cached && runners.every((runner) => cached.access.has(runner.id));
       if (cached && known && Date.now() - cached.at < GROUP_ACCESS_TTL_MS)
         return { runners, access: cached.access };
