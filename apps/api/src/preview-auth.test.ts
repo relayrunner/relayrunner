@@ -2,6 +2,7 @@ import { readdirSync, readFileSync } from "node:fs";
 import { afterAll, afterEach, beforeAll, describe, expect, test, vi } from "vitest";
 import { getPlatformProxy } from "wrangler";
 import { app } from "./app.ts";
+import { sharedCookieDomain } from "./auth.ts";
 import type { Env } from "./env.ts";
 
 // Sign-in from a dashboard preview, end to end through the oAuthProxy plugin, with GitHub's OAuth
@@ -140,7 +141,14 @@ describe("preview sign-in", () => {
       expect(completed.headers.get("location")).toBe("/runners");
       const cookie = cookiesFrom(completed);
       expect(cookie).toContain("session_token");
-      expect(completed.headers.getSetCookie().every((set) => !/domain=/i.test(set))).toBe(true);
+      // Previews share the cookie across relayrun.workers.dev, so one sign-in covers every preview
+      // URL. The custom domain keeps a host-only cookie.
+      const sessionCookie = completed.headers
+        .getSetCookie()
+        .find((set) => set.includes("session_token"))!;
+      expect(/domain=([^;]+)/i.exec(sessionCookie)?.[1]).toBe(
+        preview === customDomain ? undefined : "relayrun.workers.dev",
+      );
 
       const session = await app.request(
         `${preview}/api/auth/get-session`,
@@ -194,5 +202,24 @@ describe("preview sign-in", () => {
     } finally {
       vi.useRealTimers();
     }
+  });
+});
+
+describe("sharedCookieDomain", () => {
+  const env = { SESSION_COOKIE_DOMAIN: "relayrun.workers.dev" };
+  test.each([
+    ["relayrunner-app.relayrun.workers.dev", "relayrun.workers.dev"],
+    ["feature-x-relayrunner-app.relayrun.workers.dev", "relayrun.workers.dev"],
+    ["relayrun.workers.dev", undefined],
+    ["evilrelayrun.workers.dev", undefined],
+    ["relayrun.workers.dev.evil.com", undefined],
+    ["app.relayrunner.app", undefined],
+    ["localhost", undefined],
+  ])("%s -> %s", (host, expected) => {
+    expect(sharedCookieDomain(env, host)).toBe(expected);
+  });
+
+  test("is off without SESSION_COOKIE_DOMAIN", () => {
+    expect(sharedCookieDomain({}, "relayrunner-app.relayrun.workers.dev")).toBeUndefined();
   });
 });

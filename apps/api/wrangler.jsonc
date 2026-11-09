@@ -36,6 +36,9 @@
     // previews (<alias>-relayrunner-app.relayrun.workers.dev; only this account's Workers live
     // under relayrun.workers.dev) and the interim custom domain app.relayrunner.app.
     "PREVIEW_ORIGINS": "https://*-relayrunner-app.relayrun.workers.dev, https://app.relayrunner.app",
+    // Share the session cookie across relayrun.workers.dev, so signing in once on production
+    // workers.dev or any preview signs in every preview URL (per-branch and per-commit).
+    "SESSION_COOKIE_DOMAIN": "relayrun.workers.dev",
     // The GitHub App's slug, as in https://github.com/apps/<slug>.
     "GITHUB_APP_SLUG": "relayrunner",
     // The GitHub App's numeric ID, the `iss` of the App JWTs that mint installation tokens.

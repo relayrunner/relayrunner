@@ -18,14 +18,29 @@ export function previewOrigins(env: Pick<Env, "PREVIEW_ORIGINS">) {
     .filter(Boolean);
 }
 
+// SESSION_COOKIE_DOMAIN (e.g. relayrun.workers.dev) when the request host is under it, so one
+// sign-in covers production workers.dev and every preview URL there. Other hosts, like the custom
+// domain or localhost, keep host-only cookies. workers.dev is a public suffix, so browsers accept
+// relayrun.workers.dev as a cookie domain but never send it to another account's Workers.
+export function sharedCookieDomain(env: Pick<Env, "SESSION_COOKIE_DOMAIN">, host?: string) {
+  const domain = env.SESSION_COOKIE_DOMAIN?.trim();
+  return domain && host?.endsWith(`.${domain}`) ? domain : undefined;
+}
+
 // The client_id `relayrunner connect` sends with its device code requests.
 export const MACHINE_CLIENT_ID = "relayrunner-cli";
 
 // Workers only expose bindings per request, so build the auth instance per request too. It is
 // cheap: no I/O happens until a handler runs. `waitUntil` (the request's ExecutionContext) lets
 // mail go out after the response; without it (tests, scripts) the hook waits for the send.
-export function createAuth(env: Env, waitUntil?: (promise: Promise<unknown>) => void) {
+// `host` is the request's hostname, which decides whether the session cookie is shared.
+export function createAuth(
+  env: Env,
+  waitUntil?: (promise: Promise<unknown>) => void,
+  host?: string,
+) {
   const background = (promise: Promise<unknown>) => (waitUntil ? waitUntil(promise) : promise);
+  const cookieDomain = sharedCookieDomain(env, host);
   return betterAuth({
     // Always the production dashboard origin, so GitHub only ever sees one OAuth callback URL.
     baseURL: env.BETTER_AUTH_URL,
@@ -74,6 +89,9 @@ export function createAuth(env: Env, waitUntil?: (promise: Promise<unknown>) => 
         });
       }),
     },
+    advanced: cookieDomain
+      ? { crossSubDomainCookies: { enabled: true, domain: cookieDomain } }
+      : undefined,
     session: {
       // Keep a signed copy of the session in a cookie so most getSession calls skip D1.
       cookieCache: { enabled: true, maxAge: 5 * 60 },
@@ -82,8 +100,9 @@ export function createAuth(env: Env, waitUntil?: (promise: Promise<unknown>) => 
       workspaces(env, background),
       // Sign-in from a preview: GitHub returns to the production callback, which exchanges the
       // code and redirects to <preview>/api/auth/callback/github/oauth-proxy with the profile
-      // encrypted (BETTER_AUTH_SECRET). The preview then creates the session and sets its own
-      // host-only cookie. On production itself the plugin steps aside.
+      // encrypted (BETTER_AUTH_SECRET). The preview then creates the session and sets the
+      // cookie (shared across relayrun.workers.dev, see sharedCookieDomain). On production itself
+      // the plugin steps aside.
       oAuthProxy({
         productionURL: env.BETTER_AUTH_URL,
         // Seconds the encrypted hand-off stays valid; it only has to survive one redirect.
