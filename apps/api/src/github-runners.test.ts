@@ -174,6 +174,7 @@ describe("adding GitHub runners", () => {
   }[];
   let groups: { id: number; name: string; visibility: string; restricted_to_workflows?: boolean }[];
   let labelCalls: { method: string; url: string; body?: unknown }[];
+  let githubPaths: string[];
 
   beforeEach(() => {
     runners = [
@@ -186,11 +187,13 @@ describe("adding GitHub runners", () => {
     ];
     groups = [{ id: 1, name: "Default", visibility: "all" }];
     labelCalls = [];
+    githubPaths = [];
     const realFetch = globalThis.fetch;
     vi.stubGlobal("fetch", async (input: RequestInfo | URL, init?: RequestInit) => {
       const url = input instanceof Request ? input.url : String(input);
       if (!url.startsWith("https://api.github.com/")) return realFetch(input, init);
       const path = new URL(url).pathname;
+      githubPaths.push(path);
       if (/\/actions\/runners\/\d+\/labels/.test(path)) {
         labelCalls.push({
           method: init?.method ?? "GET",
@@ -269,6 +272,19 @@ describe("adding GitHub runners", () => {
       blocked: null,
       machineId: null,
     });
+  });
+
+  test("groups=false reads only the runner list, for the found card", async () => {
+    const { cookie } = await setup();
+    const response = await testing.call(env, "/machines/github-runners?groups=false", cookie);
+    expect(response.status).toBe(200);
+    const { orgs } = (await response.json()) as {
+      orgs: { runners: { id: number; blocked: string | null }[] }[];
+    };
+    expect(orgs[0].runners.map((r) => [r.id, r.blocked])).toEqual([[11, null]]);
+    expect(githubPaths.filter((path) => path.includes("/actions/"))).toEqual([
+      expect.stringMatching(/\/actions\/runners$/),
+    ]);
   });
 
   test("adds a runner: labels it on GitHub and lists it with its live status", async () => {
