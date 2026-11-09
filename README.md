@@ -78,6 +78,19 @@ Write code in TypeScript and put tests next to the code they cover, as `*.test.t
 
 To run the stack locally, start the API and the dashboard (see [`apps/api`](apps/api#run-it-locally) and [`apps/web`](apps/web#develop)).
 
+### Environment files
+
+Each place that reads local settings has an example to copy. The copies are gitignored.
+
+| Example                                                    | Copy to     | For                                                                         |
+| ---------------------------------------------------------- | ----------- | --------------------------------------------------------------------------- |
+| [`.env.example`](.env.example)                             | `.env`      | Cloudflare API credentials and the Access service token for admin commands. |
+| [`apps/api/.dev.vars.example`](apps/api/.dev.vars.example) | `.dev.vars` | The API's local secrets: Better Auth and the GitHub App's OAuth client.     |
+| [`apps/web/.env.example`](apps/web/.env.example)           | `.env`      | Where the dashboard's dev server proxies `/api`.                            |
+| [`apps/landing/.env.example`](apps/landing/.env.example)   | `.env`      | The landing page's public origin for share tags.                            |
+
+The webhooks Worker has none: its secrets live in the Secrets Store (see [`apps/webhooks`](apps/webhooks#run-it-locally)). The CLI reads `RELAYRUNNER_URL` and `RELAYRUNNER_HOME` from the shell (see [`apps/cli`](apps/cli)).
+
 ## Contributing
 
 Commit messages and pull request titles use [Conventional Commits](https://www.conventionalcommits.org/), such as `feat(api): add runner order rules`. [AGENTS.md](AGENTS.md) has the full conventions, which apply to people and coding agents alike.

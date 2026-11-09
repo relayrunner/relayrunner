@@ -1,6 +1,25 @@
-# Copy to .dev.vars for `pnpm dev`. Use a GitHub App's OAuth client id/secret with the callback
-# URL http://localhost:8787/api/auth/callback/github.
+# Copy to .dev.vars for `pnpm dev`. Values here override the `vars` in wrangler.jsonc locally.
+# Never commit .dev.vars.
+
+# Better Auth. Use a GitHub App's OAuth client id/secret with the callback URL
+# http://localhost:8787/api/auth/callback/github.
 BETTER_AUTH_URL=http://localhost:8787
 BETTER_AUTH_SECRET=generate-with-openssl-rand-base64-32
 GITHUB_APP_CLIENT_ID=
 GITHUB_APP_CLIENT_SECRET=
+
+# Where links in emails point. Defaults to production's dashboard; point it at the local one.
+DASHBOARD_URL=http://localhost:5179
+
+# Optional. Uncomment to try these features locally.
+# Email webhook dead-letter alerts to this address (needs the EMAIL binding, so mostly production).
+# OPERATOR_ALERT_EMAIL=ops@example.com
+# Also post dead-letter alerts to a Slack or Discord incoming webhook.
+# DEAD_LETTER_ALERT_WEBHOOK_URL=
+# Orgs whose `runs-on: relayrunner-container` jobs and lint checks get a container, comma-separated.
+# Containers need Docker locally.
+# CONTAINER_RUNNER_ORGS=your-org
+
+# GITHUB_APP_PRIVATE_KEY and GITHUB_CHECKS_APP_PRIVATE_KEY come from the Secrets Store, not this
+# file. Seed the local store once; see README.md (Deploy) for the PKCS#8 conversion:
+#   npx wrangler secrets-store secret create eac3493b9fef4234a832f5f3fdcc8a41 --name GITHUB_APP_PRIVATE_KEY --scopes workers -c apps/api/wrangler.jsonc
