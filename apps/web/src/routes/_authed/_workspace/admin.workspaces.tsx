@@ -1,10 +1,16 @@
 import { createFileRoute } from "@tanstack/react-router";
-import { Trash2Icon } from "lucide-react";
+import { EllipsisIcon, Trash2Icon } from "lucide-react";
 import { useState } from "react";
 import { AdminDeleteDialog } from "@/components/admin-delete-dialog";
 import { PageHeader } from "@/components/page-header";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
 import { timeAgo } from "@/lib/activity";
 import { deleteWorkspace, deletedNotice, listWorkspaces, type AdminWorkspace } from "@/lib/admin";
 import { ROLE_LABELS, type Role } from "@/lib/roles";
@@ -85,17 +91,29 @@ function WorkspacesPage() {
                   {timeAgo(workspace.createdAt, now)}
                 </td>
                 <td className="px-2 py-2 text-right">
-                  <Button
-                    size="icon-sm"
-                    variant="ghost"
-                    aria-label={`Delete ${workspace.name}`}
-                    onClick={() => {
-                      setNotice(null);
-                      setDeleting(workspace);
-                    }}
-                  >
-                    <Trash2Icon aria-hidden />
-                  </Button>
+                  <DropdownMenu>
+                    <DropdownMenuTrigger asChild>
+                      <Button
+                        size="icon-sm"
+                        variant="ghost"
+                        aria-label={`More actions for ${workspace.name}`}
+                      >
+                        <EllipsisIcon aria-hidden />
+                      </Button>
+                    </DropdownMenuTrigger>
+                    <DropdownMenuContent align="end">
+                      <DropdownMenuItem
+                        variant="destructive"
+                        onSelect={() => {
+                          setNotice(null);
+                          setDeleting(workspace);
+                        }}
+                      >
+                        <Trash2Icon aria-hidden />
+                        Delete…
+                      </DropdownMenuItem>
+                    </DropdownMenuContent>
+                  </DropdownMenu>
                 </td>
               </tr>
             ))}

@@ -1,9 +1,15 @@
 import { createFileRoute } from "@tanstack/react-router";
-import { Trash2Icon } from "lucide-react";
+import { EllipsisIcon, Trash2Icon } from "lucide-react";
 import { useMemo, useState } from "react";
 import { AdminDeleteDialog } from "@/components/admin-delete-dialog";
 import { PageHeader } from "@/components/page-header";
 import { Button } from "@/components/ui/button";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
 import { Input } from "@/components/ui/input";
 import {
   Select,
@@ -149,17 +155,29 @@ function UsersPage() {
                 <td className="px-2 py-2 text-right">
                   {/* The API refuses to delete yourself, so the control doesn't offer it. */}
                   {u.id !== me?.id && (
-                    <Button
-                      size="icon-sm"
-                      variant="ghost"
-                      aria-label={`Delete ${u.name}`}
-                      onClick={() => {
-                        setNotice(null);
-                        setDeleting(u);
-                      }}
-                    >
-                      <Trash2Icon aria-hidden />
-                    </Button>
+                    <DropdownMenu>
+                      <DropdownMenuTrigger asChild>
+                        <Button
+                          size="icon-sm"
+                          variant="ghost"
+                          aria-label={`More actions for ${u.name}`}
+                        >
+                          <EllipsisIcon aria-hidden />
+                        </Button>
+                      </DropdownMenuTrigger>
+                      <DropdownMenuContent align="end">
+                        <DropdownMenuItem
+                          variant="destructive"
+                          onSelect={() => {
+                            setNotice(null);
+                            setDeleting(u);
+                          }}
+                        >
+                          <Trash2Icon aria-hidden />
+                          Delete…
+                        </DropdownMenuItem>
+                      </DropdownMenuContent>
+                    </DropdownMenu>
                   )}
                 </td>
               </tr>
