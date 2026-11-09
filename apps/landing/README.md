@@ -1,6 +1,6 @@
 # Landing page
 
-The public site at [relayrunner.app](https://relayrunner.app): a Vite build served as Worker static assets (Worker `relayrunner-landing`, no Worker script).
+The public site at [relayrunner.app](https://relayrunner.app): a Vite build served as Worker static assets (Worker `relayrunner-landing`, no Worker script). It has the home page (`index.html`) and the privacy policy and terms (`privacy.html`, `terms.html`). [DESIGN.md](DESIGN.md) holds the visual system, which the dashboard's theme borrows from.
 
 ```sh
 pnpm --filter @relayrunner/landing dev       # local dev server

@@ -6,7 +6,7 @@ GitHub webhook ingress, on its own Cloudflare Worker. It verifies each delivery'
 GitHub ──▶ relayrunner-webhooks ──▶ queue ──▶ relayrunner-api queue()
            verify + enqueue                    │ 6 retries, backoff
                                                ▼
-                                              DLQ ──▶ log + ack
+                                              DLQ ──▶ archive to R2 + ack
 ```
 
 Two GitHub Apps post here, each to its own path and signed with its own Secrets Store secret:
@@ -16,7 +16,7 @@ Two GitHub Apps post here, each to its own path and signed with its own Secrets 
 | `/api/webhooks/github`        | RelayRunner (routing, PR title check)   | `GITHUB_WEBHOOK_SECRET`       |
 | `/api/webhooks/github-checks` | RelayRunner Checks (opt-in lint checks) | `GITHUB_CHECK_WEBHOOK_SECRET` |
 
-Messages from the Checks App carry `app: "checks"`, so the consumer never runs the main App's work on them. For now the consumer only logs them; running lint comes later.
+Messages from the Checks App carry `app: "checks"`, so the consumer never runs the main App's work on them; it starts lint check runs for them instead.
 
 It is separate from the API so that API deploys, and bugs in processing, never change what GitHub sees. While the API is broken, messages wait and retry (30 seconds, doubling, up to about half an hour in total) instead of failing deliveries. Keep this Worker small: it should rarely need a deploy.
 
@@ -58,4 +58,4 @@ pnpm run deploy:api    # attaches the queue consumers
 pnpm run deploy:web    # forwards /api/webhooks/* here
 ```
 
-The GitHub App's webhook URL is `https://relayrunner-webhooks.relayrun.workers.dev/api/webhooks/github`, so deliveries reach this Worker directly. `https://webhooks.relayrunner.app/api/webhooks/github` is the same Worker on its custom domain. The dashboard also forwards `/api/webhooks/*` here, so `<dashboard origin>/api/webhooks/github` works too. The Checks App posts to `https://webhooks.relayrunner.app/api/webhooks/github-checks`.
+The GitHub App's webhook URL is `https://webhooks.relayrunner.app/api/webhooks/github`, this Worker's custom domain, so deliveries reach it directly. `https://relayrunner-webhooks.relayrun.workers.dev` is the same Worker. The dashboard also forwards `/api/webhooks/*` here, so `<dashboard origin>/api/webhooks/github` works too. The Checks App posts to `https://webhooks.relayrunner.app/api/webhooks/github-checks`.
