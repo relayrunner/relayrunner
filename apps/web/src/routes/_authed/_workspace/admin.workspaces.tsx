@@ -1,8 +1,12 @@
 import { createFileRoute } from "@tanstack/react-router";
+import { Trash2Icon } from "lucide-react";
+import { useState } from "react";
+import { AdminDeleteDialog } from "@/components/admin-delete-dialog";
 import { PageHeader } from "@/components/page-header";
 import { Badge } from "@/components/ui/badge";
+import { Button } from "@/components/ui/button";
 import { timeAgo } from "@/lib/activity";
-import { listWorkspaces } from "@/lib/admin";
+import { deleteWorkspace, deletedNotice, listWorkspaces, type AdminWorkspace } from "@/lib/admin";
 import { ROLE_LABELS, type Role } from "@/lib/roles";
 
 // Operator admin, behind Cloudflare Access and an operator session (apps/api/src/routes/admin.ts).
@@ -17,15 +21,30 @@ export const Route = createFileRoute("/_authed/_workspace/admin/workspaces")({
 });
 
 function WorkspacesPage() {
-  const { workspaces } = Route.useLoaderData();
+  const [workspaces, setWorkspaces] = useState(Route.useLoaderData().workspaces);
+  const [deleting, setDeleting] = useState<AdminWorkspace | null>(null);
+  const [notice, setNotice] = useState<string | null>(null);
   const now = Date.now();
+
+  async function remove(target: AdminWorkspace, uninstallGitHubApp: boolean) {
+    const { workspace } = await deleteWorkspace(target.id, uninstallGitHubApp);
+    setWorkspaces((all) => all.filter((w) => w.id !== target.id));
+    setNotice(deletedNotice(workspace));
+  }
 
   return (
     <section className="grid max-w-5xl gap-6">
       <PageHeader title="Workspaces">
         Every workspace, newest first, with its members and connected GitHub accounts. Members
-        manage their own roles under each workspace's settings.
+        manage their own roles under each workspace's settings. Delete is for repeating sign-up and
+        onboarding tests.
       </PageHeader>
+
+      {notice && (
+        <p role="status" className="text-sm text-muted-foreground">
+          {notice}
+        </p>
+      )}
 
       <div className="overflow-x-auto rounded-xl border bg-card">
         <table className="w-full text-sm">
@@ -35,6 +54,9 @@ function WorkspacesPage() {
               <th className="px-4 py-2 font-medium">GitHub</th>
               <th className="px-4 py-2 font-medium">Members</th>
               <th className="px-4 py-2 font-medium">Created</th>
+              <th className="px-4 py-2">
+                <span className="sr-only">Actions</span>
+              </th>
             </tr>
           </thead>
           <tbody>
@@ -62,11 +84,38 @@ function WorkspacesPage() {
                 <td className="px-4 py-3 whitespace-nowrap" title={workspace.createdAt}>
                   {timeAgo(workspace.createdAt, now)}
                 </td>
+                <td className="px-2 py-2 text-right">
+                  <Button
+                    size="icon-sm"
+                    variant="ghost"
+                    aria-label={`Delete ${workspace.name}`}
+                    onClick={() => {
+                      setNotice(null);
+                      setDeleting(workspace);
+                    }}
+                  >
+                    <Trash2Icon aria-hidden />
+                  </Button>
+                </td>
               </tr>
             ))}
           </tbody>
         </table>
       </div>
+
+      <AdminDeleteDialog
+        open={deleting !== null}
+        onOpenChange={(open) => !open && setDeleting(null)}
+        title={`Delete ${deleting?.name ?? "workspace"}?`}
+        confirmText={deleting?.slug ?? ""}
+        githubAccounts={deleting?.githubAccounts ?? []}
+        onConfirm={(uninstall) => remove(deleting!, uninstall)}
+      >
+        <p>
+          Removes the workspace with its members, invites, machines, runner order and activity.
+          Machines still connected are disconnected. Members' accounts stay.
+        </p>
+      </AdminDeleteDialog>
     </section>
   );
 }

@@ -37,3 +37,37 @@ export function setUserRole(id: string, role: UserRole) {
 export function listWorkspaces() {
   return api<{ workspaces: AdminWorkspace[] }>("/admin/workspaces");
 }
+
+/** What an operator delete removed (apps/api/src/admin-delete.ts). */
+export type DeletedWorkspace = {
+  id: string;
+  name: string;
+  machines: number;
+  uninstalled: string[];
+  unclaimed: string[];
+};
+
+export function deleteWorkspace(id: string, uninstallGitHubApp: boolean) {
+  return api<{ workspace: DeletedWorkspace }>(`/admin/workspaces/${encodeURIComponent(id)}`, {
+    method: "DELETE",
+    body: JSON.stringify({ uninstallGitHubApp }),
+  });
+}
+
+export function deleteUser(id: string, uninstallGitHubApp: boolean) {
+  return api<{ workspaces: DeletedWorkspace[] }>(`/admin/users/${encodeURIComponent(id)}`, {
+    method: "DELETE",
+    body: JSON.stringify({ uninstallGitHubApp }),
+  });
+}
+
+/** One line for what a delete removed. */
+export function deletedNotice(workspace: DeletedWorkspace) {
+  const parts = [`Deleted ${workspace.name}`];
+  if (workspace.machines)
+    parts.push(`${workspace.machines} machine${workspace.machines === 1 ? "" : "s"}`);
+  if (workspace.uninstalled.length)
+    parts.push(`uninstalled from ${workspace.uninstalled.join(", ")}`);
+  if (workspace.unclaimed.length) parts.push(`${workspace.unclaimed.join(", ")} left unclaimed`);
+  return `${parts.join(", ")}.`;
+}

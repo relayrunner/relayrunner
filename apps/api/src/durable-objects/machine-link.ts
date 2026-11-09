@@ -218,6 +218,16 @@ export class MachineLink extends DurableObject<Env> {
     }
   }
 
+  /**
+   * Closes the socket and wipes this object's storage and alarm. Operator deletes call this
+   * (src/admin-delete.ts) before the machine row goes, since nothing would ever call it again.
+   */
+  async purge(): Promise<void> {
+    for (const ws of this.ctx.getWebSockets()) close(ws, CLOSE.revoked, "revoked");
+    await this.ctx.storage.deleteAlarm();
+    await this.ctx.storage.deleteAll();
+  }
+
   // The machine's progress on a route. Once the job has started (the machine now says busy) or
   // the runner failed, the route stops holding the machine in the Router.
   private async onJob(machineId: string, job: JobMessage) {

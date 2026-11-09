@@ -32,11 +32,21 @@ To add an admin view, put its page under `/admin/` (`apps/web/src/routes/_authed
 
 `/admin/users` lists everyone who has signed in, with a Role control (User or Operator). `/admin/workspaces` lists every workspace with its members, their workspace roles and its connected GitHub accounts. Their routes need an operator session as well as Access, so the agents' service token alone can't read or change them:
 
-| Route                        | What it does                                                                                    |
-| ---------------------------- | ----------------------------------------------------------------------------------------------- |
-| `GET /api/admin/users`       | Every user, newest first, with `role` and how many workspaces they belong to.                   |
-| `PATCH /api/admin/users/:id` | Sets `{ "role": "operator" }` or `{ "role": null }`. Operators can't demote themselves. Logged. |
-| `GET /api/admin/workspaces`  | Every workspace, newest first, with its members and their roles, and its GitHub accounts.       |
+| Route                              | What it does                                                                                                                                                            |
+| ---------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `GET /api/admin/users`             | Every user, newest first, with `role` and how many workspaces they belong to.                                                                                           |
+| `PATCH /api/admin/users/:id`       | Sets `{ "role": "operator" }` or `{ "role": null }`. Operators can't demote themselves. Logged.                                                                         |
+| `GET /api/admin/workspaces`        | Every workspace, newest first, with its members and their roles, and its GitHub accounts.                                                                               |
+| `DELETE /api/admin/workspaces/:id` | Deletes a workspace. Body `{ "uninstallGitHubApp": true }` also uninstalls the App from its GitHub accounts. Logged.                                                    |
+| `DELETE /api/admin/users/:id`      | Deletes a user and the workspaces where they're the only member. Same body. `409` with the list when they share a workspace. Operators can't delete themselves. Logged. |
+
+### Deleting test accounts
+
+The two deletes exist to repeat new-user sign-up and onboarding tests. They aren't a user-facing feature. Both pages have a Delete button that asks you to type the workspace slug or the user's email.
+
+A workspace delete disconnects its machines, wipes the Router and MachineLink Durable Objects that nothing would call again, takes RelayRunner's routing label off adopted GitHub runners, clears other members' active workspace, and deletes the row. Foreign keys remove its members, invites, machines, activity and route decisions. Without the uninstall box, its GitHub installations stay as unclaimed connections with their repos and job history, which a workspace can claim again. With it, the App is uninstalled on GitHub and those rows go too, so the next sign-up sees GitHub's first-install screen.
+
+A user delete also removes their sessions, GitHub sign-in and device codes, so a CLI signed in as them (for example with `RELAYRUNNER_HOME=~/.relayrunner-test`) stops authenticating. GitHub still remembers that the user authorized the App. To see GitHub's consent screen again, revoke it under GitHub Settings, Applications, Authorized GitHub Apps.
 
 ## Webhook dead letters
 
