@@ -31,6 +31,8 @@ interface Tool {
   targets?(root: string): Promise<string[] | null>;
   command(targets: string[], root: string): Promise<[string, string[]]> | [string, string[]];
   parse(output: string, root: string): Problem[];
+  // True when the run found nothing for the tool to check, which some tools report as a failure.
+  nothingToCheck?(output: string): boolean;
 }
 
 // One workflow command per error. The newline is a real one: actionlint rejects `{{"\\n"}}`.
@@ -38,7 +40,12 @@ const ACTIONLINT_FORMAT =
   "{{range $err := .}}::error file={{$err.Filepath}},line={{$err.Line}},col={{$err.Column}},title=actionlint ({{$err.Kind}})::{{$err.Message}}\n{{end}}";
 
 const TOOLS: Record<LintTool, Tool> = {
-  oxlint: { command: () => ["oxlint", ["--format=github"]], parse: parseWorkflowCommands },
+  oxlint: {
+    command: () => ["oxlint", ["--format=github"]],
+    parse: parseWorkflowCommands,
+    // A repo with no JavaScript or TypeScript files exits 1 with this.
+    nothingToCheck: (output) => output.includes("No files found to lint"),
+  },
   oxfmt: { command: () => ["oxfmt", ["--check"]], parse: parseOxfmtCheck },
   ruff: {
     command: () => ["ruff", ["check", "--output-format=github"]],
@@ -83,6 +90,10 @@ export async function lint(
     }
     const [command, args] = await tool.command(targets, root);
     const run = await exec(command, args, root);
+    if (tool.nothingToCheck?.(run.output)) {
+      results.push(result(name, "skipped", [], started));
+      continue;
+    }
     const found = tool.parse(run.output, root);
     const problems = found.filter((problem) => inScope(problem.path));
     const status =
