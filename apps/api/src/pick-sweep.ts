@@ -1,7 +1,13 @@
 import { and, eq, gt, isNull, lt } from "drizzle-orm";
-import { createDb, schema } from "./db/index.ts";
+import { createDb, type Db, schema } from "./db/index.ts";
 import type { Env } from "./env.ts";
-import { appInstallationToken, deleteOrgRunner, listOrgRunners } from "./github-app.ts";
+import {
+  appInstallationToken,
+  deleteRunner,
+  listRunners,
+  runnerScope,
+  type RunnerScope,
+} from "./github-app.ts";
 import { pickJobIdFromRunnerName } from "./pick-attempts.ts";
 
 // A relay queued this long with no taker is rescued; one older than a day GitHub has given up on.
@@ -19,7 +25,7 @@ const MAX_RESCUES = 50;
 export async function sweepPicks(env: Env, now = Date.now()) {
   const results = await Promise.allSettled([
     rescueStuckRelays(env, now),
-    removeLeftoverRunners(env),
+    removeLeftoverRunners(env, now),
   ]);
   const failed = results.find((result) => result.status === "rejected");
   if (failed) throw failed.reason;
@@ -56,31 +62,74 @@ async function rescueStuckRelays(env: Env, now: number) {
   }
 }
 
-async function removeLeftoverRunners(env: Env) {
-  const installations = await createDb(env.DB)
-    .select({ id: schema.githubInstallation.id, org: schema.githubInstallation.accountLogin })
-    .from(schema.githubInstallation)
-    .where(
-      and(
-        eq(schema.githubInstallation.accountType, "Organization"),
-        isNull(schema.githubInstallation.suspendedAt),
+/**
+ * Where pick runners can be left: each org with an active installation, and, for a personal
+ * account, each repo that had a relay in the last day. Personal pick runners register on the
+ * job's own repo, and listing every repo would cost a call per repo.
+ */
+export async function sweepTargets(
+  db: Db,
+  now: number,
+): Promise<{ installationId: number; scope: RunnerScope }[]> {
+  const [orgs, repos] = await Promise.all([
+    db
+      .select({ id: schema.githubInstallation.id, org: schema.githubInstallation.accountLogin })
+      .from(schema.githubInstallation)
+      .where(
+        and(
+          eq(schema.githubInstallation.accountType, "Organization"),
+          isNull(schema.githubInstallation.suspendedAt),
+        ),
       ),
-    );
-  for (const installation of installations) {
+    db
+      .selectDistinct({
+        id: schema.workflowJob.installationId,
+        repo: schema.workflowJob.repositoryFullName,
+      })
+      .from(schema.workflowJob)
+      .innerJoin(
+        schema.githubInstallation,
+        eq(schema.githubInstallation.id, schema.workflowJob.installationId),
+      )
+      .where(
+        and(
+          eq(schema.githubInstallation.accountType, "User"),
+          isNull(schema.githubInstallation.suspendedAt),
+          eq(schema.workflowJob.kind, "pick"),
+          gt(schema.workflowJob.githubCreatedAt, new Date(now - STUCK_WINDOW_MS)),
+        ),
+      ),
+  ]);
+  return [
+    ...orgs.map((row) => ({
+      installationId: row.id,
+      scope: { kind: "org", org: row.org } as const,
+    })),
+    ...repos.map((row) => ({ installationId: row.id, scope: runnerScope("User", row.repo) })),
+  ];
+}
+
+async function removeLeftoverRunners(env: Env, now: number) {
+  // One token per installation, shared by its repos.
+  const tokens = new Map<number, Promise<string>>();
+  for (const { installationId, scope } of await sweepTargets(createDb(env.DB), now)) {
+    const where = scope.kind === "org" ? { org: scope.org } : { repo: scope.repo };
     try {
-      const token = await appInstallationToken(env, installation.id);
-      const runners = await listOrgRunners(token, installation.org);
+      if (!tokens.has(installationId))
+        tokens.set(installationId, appInstallationToken(env, installationId));
+      const token = await tokens.get(installationId)!;
+      const runners = await listRunners(token, scope);
       for (const runner of runners) {
         const jobId = pickJobIdFromRunnerName(runner.name);
         // Its object is active while it waits for or answers a job. Once the object is done, the
         // runner is a leftover even if GitHub calls it busy: a job GitHub gave it would never run.
         if (jobId === null) continue;
         if (await env.PICK_RUNNER.getByName(String(jobId)).active()) continue;
-        await deleteOrgRunner(token, installation.org, runner.id);
+        await deleteRunner(token, scope, runner.id);
         console.log(
           JSON.stringify({
             msg: "relayrunner pick runner removed",
-            org: installation.org,
+            ...where,
             runner: runner.name,
             status: runner.status,
             busy: runner.busy,
@@ -88,11 +137,12 @@ async function removeLeftoverRunners(env: Env) {
         );
       }
     } catch (error) {
-      // One org failing (the App lost access, say) shouldn't stop the others.
+      // One org or repo failing (the App lost access, say) shouldn't stop the others.
       console.warn(
         JSON.stringify({
           msg: "relayrunner pick sweep failed",
-          installationId: installation.id,
+          installationId,
+          ...where,
           error: error instanceof Error ? error.message : String(error),
         }),
       );

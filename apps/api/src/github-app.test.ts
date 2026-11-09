@@ -5,6 +5,7 @@ import {
   deleteRunner,
   generateJitConfig,
   importAppPrivateKey,
+  listRunners,
   runnerBusy,
   runnerScope,
 } from "./github-app.ts";
@@ -93,6 +94,13 @@ describe("JIT runners by scope", () => {
       "DELETE https://api.github.com/repos/atticoos/side-project/actions/runners/7",
     ]);
     expect(calls[0].body?.runner_group_id).toBe(1);
+  });
+
+  test("lists a repo's runners for the sweep", async () => {
+    await listRunners("t", repo);
+    expect(calls[0].url).toBe(
+      "https://api.github.com/repos/atticoos/side-project/actions/runners?per_page=100&page=1",
+    );
   });
 
   test("a repo runner ignores a runner group, which only orgs have", async () => {

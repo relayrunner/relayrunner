@@ -150,10 +150,6 @@ export async function deleteRunner(token: string, scope: RunnerScope, runnerId: 
     throw new Error(`DELETE ${path} failed with ${response.status}`);
 }
 
-export function deleteOrgRunner(token: string, org: string, runnerId: number) {
-  return deleteRunner(token, { kind: "org", org }, runnerId);
-}
-
 /** A workflow job's status ("queued", "in_progress", "completed", ...), or null when it's gone. */
 export async function workflowJobStatus(token: string, repo: string, jobId: number) {
   const response = await fetch(`${API}/repos/${repo}/actions/jobs/${jobId}`, {
@@ -226,7 +222,12 @@ export interface OrgRunner {
   labels: string[];
 }
 
-export async function listOrgRunners(token: string, org: string): Promise<OrgRunner[]> {
+export function listOrgRunners(token: string, org: string): Promise<OrgRunner[]> {
+  return listRunners(token, { kind: "org", org });
+}
+
+/** The self-hosted runners registered in an org, or on a repo. */
+export async function listRunners(token: string, scope: RunnerScope): Promise<OrgRunner[]> {
   const runners = await listAll<{
     id: number;
     name: string;
@@ -235,7 +236,7 @@ export async function listOrgRunners(token: string, org: string): Promise<OrgRun
     busy: boolean;
     ephemeral?: boolean;
     labels?: { name: string }[];
-  }>(token, `/orgs/${org}/actions/runners`, "runners");
+  }>(token, runnersPath(scope), "runners");
   return runners.map((runner) => ({
     id: runner.id,
     name: runner.name,
