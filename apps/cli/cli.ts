@@ -11,6 +11,7 @@ import {
   type Credentials,
 } from "./credentials.ts";
 import { detectDevice } from "./device.ts";
+import { initCommand } from "./init.ts";
 import { ensureRunner, RunnerError, runnerPlatform } from "./install.ts";
 import { runJob } from "./job.ts";
 import { login, LoginError, openBrowser } from "./login.ts";
@@ -369,6 +370,7 @@ const main = defineCommand({
   subCommands: {
     connect: connectCommand,
     whoami: whoamiCommand,
+    init: initCommand,
     pause: pauseCommand(true),
     resume: pauseCommand(false),
   },
