@@ -5,9 +5,9 @@ import { api } from "./api";
 // shape mirrors AccountUsage in apps/api/src/actions-billing.ts.
 
 export type AccountUsageReason =
-  | "personal_account"
   | "enterprise"
   | "missing_permission"
+  | "sign_in_needed"
   | "unknown_plan"
   | "not_read_yet"
   | "error";
@@ -51,12 +51,14 @@ export function unavailableText(account: AccountUsage): string | null {
       return null;
     case "enterprise":
       return "This org shares its enterprise's minutes, which GitHub doesn't report to an org install. A minutes limit can't judge it yet.";
-    case "personal_account":
-      return "GitHub only reports minutes for organizations, so a minutes limit can't judge a personal account yet.";
     case "missing_permission":
-      return "GitHub refused to share this org's billing. Accept the RelayRunner App's requested permissions (Organization administration: read) in the org's GitHub settings.";
+      return account.accountType === "Organization"
+        ? "GitHub refused to share this org's billing. Accept the RelayRunner App's requested permissions (Organization administration: read) in the org's GitHub settings."
+        : `GitHub refused to share ${account.accountLogin}'s billing. ${account.accountLogin} needs to sign out of RelayRunner and sign in again to approve the App's Plan permission.`;
+    case "sign_in_needed":
+      return `GitHub only shows a personal account's minutes to its owner. ${account.accountLogin} needs to be a member of this workspace and sign in to RelayRunner again.`;
     case "unknown_plan":
-      return `RelayRunner doesn't know the included minutes for the ${account.plan ?? "org's"} plan, so a minutes limit can't judge it.`;
+      return `RelayRunner doesn't know the included minutes for the ${account.plan ?? "account's"} plan, so a minutes limit can't judge it.`;
     case "not_read_yet":
       return "Not read yet. RelayRunner reads billing every 15 minutes.";
     case "error":
