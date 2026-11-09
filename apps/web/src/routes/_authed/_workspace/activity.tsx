@@ -993,6 +993,53 @@ function samplePage(search: ActivitySearch): ActivityPage {
   const relay = { machine: ["self-hosted"], github: ["ubuntu-latest"], blacksmith: [] };
   const items: ActivityItem[] = [
     {
+      id: 15,
+      type: "job.routed",
+      data: {},
+      occurredAt: at(0.02),
+      actor: null,
+      machine: null,
+      job: job(7, 0.02, {
+        name: "build",
+        runner: { type: "machine", machineId: mac.id, name: mac.name },
+        runnerName: `${mac.name}-0123456789ab`,
+        status: "in_progress",
+        startedAt: at(0.01),
+        walk: {
+          step: "machine",
+          skipped: [
+            {
+              key: "github",
+              reason: "minutes_limit",
+              minutes: {
+                account: "relayrunner",
+                usedMinutes: 1640,
+                quotaMinutes: 2000,
+                percent: 80,
+                burnRatePerHour: 38,
+              },
+            },
+          ],
+          notInOrder: [],
+          ...relay,
+        },
+      }),
+    },
+    {
+      id: 14,
+      type: "minutes.overage",
+      data: {
+        account: "acme-labs",
+        installationId: 2,
+        cycleStart: new Date(Date.UTC(2026, 10, 1)).toISOString(),
+        netAmount: 0.67,
+      },
+      occurredAt: at(3),
+      actor: null,
+      machine: null,
+      job: null,
+    },
+    {
       id: 13,
       type: "job.routed",
       data: {},
