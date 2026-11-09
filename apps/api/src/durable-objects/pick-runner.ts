@@ -4,9 +4,10 @@ import {
   appJwt,
   createCheckRun,
   DEFAULT_RUNNER_GROUP_ID,
-  deleteOrgRunner,
-  generateOrgJitConfig,
+  deleteRunner,
+  generateJitConfig,
   importAppPrivateKey,
+  type RunnerScope,
   installationToken,
   workflowJobStatus,
 } from "../github-app.ts";
@@ -17,6 +18,7 @@ import { RELAYRUNNER_LABEL } from "../webhook-queue.ts";
 import { and, eq, isNull, sql } from "drizzle-orm";
 import { createDb, type Db, schema } from "../db/index.ts";
 import { recordPick, type PickRecord } from "../route-decisions.ts";
+import { installationRunnerScope } from "../installations.ts";
 import { jobContext, NO_RUNNER, type RouteDecision } from "../routing.ts";
 import { nativeFreeCheck, nativeVerdict } from "../native-checks.ts";
 import { recordRepoCheck } from "../free-checks.ts";
@@ -31,7 +33,8 @@ import {
 export interface PickWork {
   jobId: number;
   installationId: number;
-  // owner/repo. The owner is the org the runner registers in.
+  // owner/repo. An org install's runner registers in the owner org; a personal install's
+  // registers on this repo (see runnerScope).
   repo: string;
 }
 
@@ -39,7 +42,9 @@ const POLL_TIMEOUT_MS = 60_000;
 // One per queued `pick` job, addressed by job id. Acts as a one-job runner: registers a JIT runner
 // on the `relayrunner` label, claims a job, and reports the route as its `runner` output without
 // running any steps. GitHub hands a runner any pending job with its label, so the job it claims
-// may be another repo's in the same org. The route is for the claimed job's own repo and run.
+// may be another repo's in the same org. A personal account has no org runners, so its runner
+// registers on the job's own repo and can only claim that repo's jobs. The route is for the
+// claimed job's own repo and run.
 // A claimed job whose steps are RelayRunner checks (src/native-checks.ts) is answered here instead:
 // the check runs in this object and the job completes as passed or failed, with no route.
 //
@@ -92,10 +97,10 @@ export class PickRunner extends DurableObject<Env> {
   }
 
   private async run(work: PickWork, attempt: number) {
-    const org = work.repo.split("/")[0];
     const startedAt = Date.now();
     let outcome: Record<string, unknown> = { result: "no-job" };
     let token: string | undefined;
+    let scope: RunnerScope | undefined;
     let runnerId: number | undefined;
     let client: RunnerClient | undefined;
     try {
@@ -104,6 +109,7 @@ export class PickRunner extends DurableObject<Env> {
         await appJwt(this.env.GITHUB_APP_ID, key),
         work.installationId,
       );
+      scope = await installationRunnerScope(createDb(this.env.DB), work.installationId, work.repo);
       // A replacement runner first makes sure its job still needs one.
       if (attempt > 1 && (await workflowJobStatus(token, work.repo, work.jobId)) !== "queued") {
         console.log(
@@ -118,9 +124,9 @@ export class PickRunner extends DurableObject<Env> {
       }
       // A runner GitHub will never hand this job to would wait 4 minutes for nothing, or take
       // another repo's job and leave this one queued. The group rarely changes, so only the first
-      // runner checks.
+      // runner checks. A repo runner has no groups, so there's nothing to check.
       const blocked =
-        attempt === 1
+        attempt === 1 && scope.kind === "org"
           ? await blockedByRunnerGroup(this.env, token, work).catch((error) => {
               logCleanupError("check runner group", work, error);
               return null;
@@ -141,10 +147,9 @@ export class PickRunner extends DurableObject<Env> {
         await reportBlocked(this.env, token, work, blocked);
         return;
       }
-      const jit = await generateOrgJitConfig(token, org, {
+      const jit = await generateJitConfig(token, scope, {
         name: pickRunnerName(work.jobId, attempt),
         labels: [RELAYRUNNER_LABEL],
-        runnerGroupId: DEFAULT_RUNNER_GROUP_ID,
       });
       runnerId = jit.runnerId;
 
@@ -221,9 +226,10 @@ export class PickRunner extends DurableObject<Env> {
       await client?.closeSession().catch((error) => logCleanupError("close session", work, error));
       // A runner left registered shows as idle on GitHub, and GitHub can hand it a job nobody will
       // take. Try twice; the sweep removes any that are still left.
-      if (token && runnerId !== undefined) {
+      if (token && scope && runnerId !== undefined) {
         const id = runnerId;
-        const remove = () => deleteOrgRunner(token!, org, id);
+        const at = scope;
+        const remove = () => deleteRunner(token!, at, id);
         await remove()
           .catch(remove)
           .catch((error) => logCleanupError("delete runner", work, error));

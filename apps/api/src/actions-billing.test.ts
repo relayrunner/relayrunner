@@ -30,9 +30,9 @@ afterEach(() => {
 const NOW = new Date("2026-11-08T20:00:00Z");
 let ids = 0;
 
-async function connectedOrg(accountType = "Organization") {
+async function connectedOrg(accountType = "Organization", { ownerIsAccount = true } = {}) {
   ids += 1;
-  const { cookie: signedIn } = await testing.signIn(env);
+  const { cookie: signedIn, user, githubToken } = await testing.signIn(env);
   const { workspace, cookie } = await testing.createWorkspace(
     env,
     signedIn,
@@ -42,10 +42,19 @@ async function connectedOrg(accountType = "Organization") {
   const installationId = 7000 + ids;
   const org = `billing-org-${ids}`;
   const db = createDb(env.DB);
+  // A personal account is owned by the GitHub user who signed in and made the workspace, unless a
+  // test wants an owner who isn't here.
+  const [ownerAccount] = await db
+    .select({ accountId: schema.account.accountId })
+    .from(schema.account)
+    .where(eq(schema.account.userId, user.id));
   await db.insert(schema.githubInstallation).values({
     id: installationId,
     workspaceId: workspace.id,
-    accountId: installationId,
+    accountId:
+      accountType === "Organization" || !ownerIsAccount
+        ? installationId
+        : Number(ownerAccount!.accountId),
     accountLogin: org,
     accountType,
   });
@@ -65,7 +74,7 @@ async function connectedOrg(accountType = "Organization") {
       githubStateAt: NOW,
     },
   ]);
-  return { db, cookie, installationId, org, workspaceId: workspace.id };
+  return { db, cookie, installationId, org, workspaceId: workspace.id, githubToken };
 }
 
 function item(day: string, repositoryName: string, quantity: number, sku = "Actions Linux") {
@@ -95,23 +104,25 @@ interface GitHubFake {
 
 function fakeGitHub(fake: GitHubFake) {
   const calls: string[] = [];
+  const tokens: Record<string, string> = {};
   const realFetch = globalThis.fetch;
   vi.stubGlobal("fetch", async (input: RequestInfo | URL, init?: RequestInit) => {
     const url = input instanceof Request ? input.url : String(input);
     if (!url.startsWith("https://api.github.com/")) return realFetch(input, init);
     const { pathname, search } = new URL(url);
     calls.push(pathname + search);
+    tokens[pathname] = new Headers(init?.headers).get("authorization") ?? "";
     if (pathname.endsWith("/settings/billing/usage")) {
       if (fake.usageStatus) return new Response("Forbidden", { status: fake.usageStatus });
       return Response.json({ usageItems: fake.usage ?? [] });
     }
     if (pathname.endsWith("/settings/billing/budgets"))
       return Response.json({ budgets: fake.budgets ?? [] });
-    if (pathname.startsWith("/orgs/"))
+    if (pathname.startsWith("/orgs/") || pathname === "/user")
       return Response.json({ plan: { name: fake.plan ?? "free" } });
     return new Response("not found", { status: 404 });
   });
-  return calls;
+  return Object.assign(calls, { tokens });
 }
 
 const actionsBudget = {
@@ -272,10 +283,10 @@ describe("pollInstallation", () => {
 });
 
 describe("accountUsage", () => {
-  test("personal accounts aren't available, and unpolled orgs say not read yet", async () => {
+  test("unpolled accounts, personal or org, say not read yet", async () => {
     const personal = await connectedOrg("User");
     expect((await accountUsage(personal.db, personal.installationId, NOW))?.reason).toBe(
-      "personal_account",
+      "not_read_yet",
     );
     const fresh = await connectedOrg();
     expect((await accountUsage(fresh.db, fresh.installationId, NOW))?.reason).toBe("not_read_yet");
@@ -297,6 +308,48 @@ describe("accountUsage", () => {
 });
 
 describe("pollActionsUsage", () => {
+  test("reads a personal account with its owner's sign-in token", async () => {
+    const { db, installationId, org, githubToken } = await connectedOrg("User");
+    const calls = fakeGitHub({
+      plan: "pro",
+      usage: [item("2026-11-04", "app", 120), item("2026-11-04", "site", 500)],
+    });
+    vi.spyOn(console, "error").mockImplementation(() => {});
+    await pollActionsUsage(env, NOW);
+
+    const path = `/users/${org}/settings/billing/usage`;
+    expect(calls).toContain(`${path}?year=2026&month=11`);
+    expect(calls.tokens[path]).toBe(`Bearer ${githubToken}`);
+    expect(calls.tokens["/user"]).toBe(`Bearer ${githubToken}`);
+    expect(calls.some((call) => call.includes(`/${org}/settings/billing/budgets`))).toBe(false);
+    expect(await accountUsage(db, installationId, NOW)).toMatchObject({
+      status: "ok",
+      reason: null,
+      accountType: "User",
+      plan: "pro",
+      quotaMinutes: 3000,
+      usedMinutes: 120,
+      budget: null,
+    });
+  });
+
+  test("a personal account whose owner isn't in the workspace needs a sign-in", async () => {
+    const { db, installationId, org } = await connectedOrg("User", { ownerIsAccount: false });
+    const calls = fakeGitHub({});
+    vi.spyOn(console, "error").mockImplementation(() => {});
+    await pollActionsUsage(env, NOW);
+    expect(calls.some((call) => call.startsWith(`/users/${org}/`))).toBe(false);
+    expect((await accountUsage(db, installationId, NOW))?.reason).toBe("sign_in_needed");
+  });
+
+  test("a personal token without Plan: read is a missing permission", async () => {
+    const { db, installationId } = await connectedOrg("User");
+    fakeGitHub({ usageStatus: 404 });
+    vi.spyOn(console, "error").mockImplementation(() => {});
+    await pollActionsUsage(env, NOW);
+    expect((await accountUsage(db, installationId, NOW))?.reason).toBe("missing_permission");
+  });
+
   test("records a token failure per installation and keeps going", async () => {
     const { db, installationId } = await connectedOrg();
     const broken = {

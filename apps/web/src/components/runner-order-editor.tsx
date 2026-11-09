@@ -283,8 +283,7 @@ function AddItem({
  * Whether a GitHub step can use a minutes limit: only when some connected account has a quota
  * we know. When none does, `blocked` is the one line saying why and `fix` where to fix it.
  */
-/** `fixable` is false when nothing in Settings can unblock it. */
-type LimitAvailability = { allowed: true } | { allowed: false; blocked: string; fixable?: false };
+type LimitAvailability = { allowed: true } | { allowed: false; blocked: string };
 
 function limitAvailability(accounts: AccountUsage[]): LimitAvailability {
   if (accounts.some(hasQuota)) return { allowed: true };
@@ -294,12 +293,8 @@ function limitAvailability(accounts: AccountUsage[]): LimitAvailability {
     return { allowed: false, blocked: "Needs RelayRunner on your enterprise." };
   if (reasons.has("missing_permission"))
     return { allowed: false, blocked: "Needs billing access to your org." };
-  if (reasons.size === 1 && reasons.has("personal_account"))
-    return {
-      allowed: false,
-      blocked: "Minutes limits don't work for personal accounts yet.",
-      fixable: false,
-    };
+  if (reasons.has("sign_in_needed"))
+    return { allowed: false, blocked: "Sign in again to share your account's minutes." };
   if (reasons.has("not_read_yet"))
     return { allowed: false, blocked: "Waiting for the first minutes reading." };
   return { allowed: false, blocked: "Your GitHub plan's minutes aren't known." };
@@ -514,15 +509,10 @@ function GitHubRule({
                 While under a limit
               </span>
               <span className="pl-6 text-xs text-muted-foreground">
-                {limits.blocked}
-                {limits.fixable !== false && (
-                  <>
-                    {" "}
-                    <Link to="/settings/github" className="text-go hover:text-go-hover">
-                      Set up
-                    </Link>
-                  </>
-                )}
+                {limits.blocked}{" "}
+                <Link to="/settings/github" className="text-go hover:text-go-hover">
+                  Set up
+                </Link>
               </span>
             </div>
           )}

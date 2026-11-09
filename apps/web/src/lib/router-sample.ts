@@ -36,7 +36,7 @@ export function sampleRouterAccounts(
         accountLogin: "octocat",
         accountType: "User",
         status: "not_available",
-        reason: "personal_account",
+        reason: "sign_in_needed",
         plan: null,
         quotaMinutes: null,
         usedMinutes: 0,

@@ -61,7 +61,7 @@ function RouterPage() {
 
 /**
  * Dev-preview data. `?sample=enterprise` shows an org inside a GitHub enterprise, whose minutes
- * can't be checked, `?sample=personal` a personal account, whose minutes can't be read either,
+ * can't be checked, `?sample=personal` a personal account whose owner hasn't signed in,
  * and `?sample=default` the order a new workspace starts with.
  */
 function sampleRouter(): {

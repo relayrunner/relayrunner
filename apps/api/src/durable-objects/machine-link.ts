@@ -7,11 +7,11 @@ import type { Env } from "../env.ts";
 import { encodeMessage, PROTOCOL_VERSION, type JobMessage } from "@relayrunner/machine-protocol";
 import {
   appJwt,
-  DEFAULT_RUNNER_GROUP_ID,
-  generateOrgJitConfig,
+  generateJitConfig,
   importAppPrivateKey,
   installationToken,
 } from "../github-app.ts";
+import { installationRunnerScope } from "../installations.ts";
 import { deviceColumns, pausedByName } from "../machines.ts";
 import { machineRunnerName, routeLabel, type Route } from "../routing.ts";
 import {
@@ -139,9 +139,10 @@ export class MachineLink extends DurableObject<Env> {
   }
 
   /**
-   * Hands a claimed route's job to the machine: mints a one-job org runner on the route's label,
-   * named after the machine, and sends it in a `run` message. Safe to call again for the same
-   * route (a redelivered webhook): only the first call mints. "offline" means the machine has no
+   * Hands a claimed route's job to the machine: mints a one-job runner on the route's label (in
+   * the org, or on the repo for a personal account), named after the machine, and sends it in a
+   * `run` message. Safe to call again for the same route (a redelivered webhook): only the first
+   * call mints. "offline" means the machine has no
    * live socket, and the job stays queued (offline recovery is #71).
    */
   async run(work: { route: Route; workspaceId: string }): Promise<RunResult> {
@@ -152,7 +153,6 @@ export class MachineLink extends DurableObject<Env> {
     if (!socket) return "offline";
     await this.ctx.storage.put<SentRoute>(key, { workspaceId });
 
-    const org = route.repo.split("/")[0];
     let jit;
     try {
       const appKey = await importAppPrivateKey(await this.env.GITHUB_APP_PRIVATE_KEY.get());
@@ -160,10 +160,14 @@ export class MachineLink extends DurableObject<Env> {
         await appJwt(this.env.GITHUB_APP_ID, appKey),
         route.installationId,
       );
-      jit = await generateOrgJitConfig(token, org, {
+      const scope = await installationRunnerScope(
+        createDb(this.env.DB),
+        route.installationId,
+        route.repo,
+      );
+      jit = await generateJitConfig(token, scope, {
         name: machineRunnerName(route.machineName, route.id),
         labels: [routeLabel(route.id)],
-        runnerGroupId: DEFAULT_RUNNER_GROUP_ID,
       });
     } catch (error) {
       // Let a retry of the webhook try again.

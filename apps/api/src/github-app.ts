@@ -86,25 +86,46 @@ export async function installationToken(jwt: string, installationId: number): Pr
   return ((await response.json()) as { token: string }).token;
 }
 
-/** Register a one-job runner in an org and return its id and encoded config. */
-export async function generateOrgJitConfig(
+/**
+ * Where a one-job runner registers. An org install registers in the org, where one runner can take
+ * any of the org's repos. A personal (User) install can't have org runners, so it registers on the
+ * job's own repo, which can only take that repo's jobs.
+ */
+export type RunnerScope = { kind: "org"; org: string } | { kind: "repo"; repo: string };
+
+/** The scope for a job in `repo` (owner/name) under an installation of `accountType`. */
+export function runnerScope(accountType: string | null | undefined, repo: string): RunnerScope {
+  return accountType === "User" ? { kind: "repo", repo } : { kind: "org", org: repo.split("/")[0] };
+}
+
+const runnersPath = (scope: RunnerScope) =>
+  scope.kind === "org"
+    ? `/orgs/${scope.org}/actions/runners`
+    : `/repos/${scope.repo}/actions/runners`;
+
+/**
+ * Register a one-job runner and return its id and encoded config. A repo runner has no runner
+ * groups of its own, but GitHub still asks for one: Default (id 1) is the only one it accepts.
+ */
+export async function generateJitConfig(
   token: string,
-  org: string,
-  runner: { name: string; labels: string[]; runnerGroupId: number },
+  scope: RunnerScope,
+  runner: { name: string; labels: string[]; runnerGroupId?: number },
 ) {
-  const response = await fetch(`${API}/orgs/${org}/actions/runners/generate-jitconfig`, {
+  const path = `${runnersPath(scope)}/generate-jitconfig`;
+  const response = await fetch(`${API}${path}`, {
     method: "POST",
     headers: { ...headers(token), "content-type": "application/json" },
     body: JSON.stringify({
       name: runner.name,
       labels: runner.labels,
-      runner_group_id: runner.runnerGroupId,
+      runner_group_id: (scope.kind === "org" && runner.runnerGroupId) || DEFAULT_RUNNER_GROUP_ID,
       work_folder: "_work",
     }),
   });
   if (!response.ok)
     throw new Error(
-      `POST /orgs/${org}/actions/runners/generate-jitconfig failed with ${response.status}: ${(await response.text()).slice(0, 300)}`,
+      `POST ${path} failed with ${response.status}: ${(await response.text()).slice(0, 300)}`,
     );
   const body = (await response.json()) as {
     runner: { id: number; labels?: { name: string }[] };
@@ -119,15 +140,18 @@ export async function generateOrgJitConfig(
 }
 
 /** Remove a runner that never got a job. A JIT runner that ran one removes itself. */
-export async function deleteOrgRunner(token: string, org: string, runnerId: number) {
-  const response = await fetch(`${API}/orgs/${org}/actions/runners/${runnerId}`, {
+export async function deleteRunner(token: string, scope: RunnerScope, runnerId: number) {
+  const path = `${runnersPath(scope)}/${runnerId}`;
+  const response = await fetch(`${API}${path}`, {
     method: "DELETE",
     headers: headers(token),
   });
   if (!response.ok && response.status !== 404)
-    throw new Error(
-      `DELETE /orgs/${org}/actions/runners/${runnerId} failed with ${response.status}`,
-    );
+    throw new Error(`DELETE ${path} failed with ${response.status}`);
+}
+
+export function deleteOrgRunner(token: string, org: string, runnerId: number) {
+  return deleteRunner(token, { kind: "org", org }, runnerId);
 }
 
 /** A workflow job's status ("queued", "in_progress", "completed", ...), or null when it's gone. */
@@ -141,14 +165,12 @@ export async function workflowJobStatus(token: string, repo: string, jobId: numb
   return ((await response.json()) as { status: string }).status;
 }
 
-/** Whether an org runner is busy with a job, or null once it's removed (404). */
-export async function orgRunnerBusy(token: string, org: string, runnerId: number) {
-  const response = await fetch(`${API}/orgs/${org}/actions/runners/${runnerId}`, {
-    headers: headers(token),
-  });
+/** Whether a runner is busy with a job, or null once it's removed (404). */
+export async function runnerBusy(token: string, scope: RunnerScope, runnerId: number) {
+  const path = `${runnersPath(scope)}/${runnerId}`;
+  const response = await fetch(`${API}${path}`, { headers: headers(token) });
   if (response.status === 404) return null;
-  if (!response.ok)
-    throw new Error(`GET /orgs/${org}/actions/runners/${runnerId} failed with ${response.status}`);
+  if (!response.ok) throw new Error(`GET ${path} failed with ${response.status}`);
   return ((await response.json()) as { busy: boolean }).busy;
 }
 
@@ -527,6 +549,32 @@ export async function orgBillingUsage(
   const body = await getJson<{ usageItems?: BillingUsageItem[] }>(
     token,
     `/organizations/${org}/settings/billing/usage?year=${month.year}&month=${month.month}`,
+  );
+  return body.usageItems ?? [];
+}
+
+/**
+ * The signed-in user's own GitHub plan name ("free", "pro"), or null if GitHub omits it. GitHub
+ * only shows `plan` to the user themself, so this takes their user-to-server token (#208).
+ */
+export async function userPlan(token: string): Promise<string | null> {
+  const body = await getJson<{ plan?: { name?: string } }>(token, "/user");
+  return body.plan?.name ?? null;
+}
+
+/**
+ * A personal account's usage report for one UTC month, in the org report's shape. Needs the User
+ * permission Plan: read and the account owner's own user-to-server token: installation tokens
+ * can't call it, and a user can only read their own billing (#208).
+ */
+export async function userBillingUsage(
+  token: string,
+  login: string,
+  month: { year: number; month: number },
+): Promise<BillingUsageItem[]> {
+  const body = await getJson<{ usageItems?: BillingUsageItem[] }>(
+    token,
+    `/users/${login}/settings/billing/usage?year=${month.year}&month=${month.month}`,
   );
   return body.usageItems ?? [];
 }
