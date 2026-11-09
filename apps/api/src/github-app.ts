@@ -259,22 +259,43 @@ export interface RunnerGroup {
   // all: every repo; private: private (and internal) repos; selected: the group's repo list.
   visibility: "all" | "private" | "selected";
   restrictedToWorkflows: boolean;
+  // Whether public repos may use the group at all, whatever its visibility. Off by default.
+  allowsPublicRepositories: boolean;
 }
 
-export async function listOrgRunnerGroups(token: string, org: string): Promise<RunnerGroup[]> {
-  const groups = await listAll<{
-    id: number;
-    name: string;
-    visibility: string;
-    restricted_to_workflows?: boolean;
-  }>(token, `/orgs/${org}/actions/runner-groups`, "runner_groups");
-  return groups.map((group) => ({
+interface RunnerGroupBody {
+  id: number;
+  name: string;
+  visibility: string;
+  restricted_to_workflows?: boolean;
+  allows_public_repositories?: boolean;
+}
+
+function toRunnerGroup(group: RunnerGroupBody): RunnerGroup {
+  return {
     id: group.id,
     name: group.name,
     visibility:
       group.visibility === "all" || group.visibility === "private" ? group.visibility : "selected",
     restrictedToWorkflows: group.restricted_to_workflows === true,
-  }));
+    allowsPublicRepositories: group.allows_public_repositories === true,
+  };
+}
+
+export async function listOrgRunnerGroups(token: string, org: string): Promise<RunnerGroup[]> {
+  const groups = await listAll<RunnerGroupBody>(
+    token,
+    `/orgs/${org}/actions/runner-groups`,
+    "runner_groups",
+  );
+  return groups.map(toRunnerGroup);
+}
+
+/** One of an org's runner groups, such as Default (DEFAULT_RUNNER_GROUP_ID). */
+export async function getOrgRunnerGroup(token: string, org: string, groupId: number) {
+  return toRunnerGroup(
+    await getJson<RunnerGroupBody>(token, `/orgs/${org}/actions/runner-groups/${groupId}`),
+  );
 }
 
 /** The ids of the runners in a runner group. */

@@ -2,6 +2,7 @@ import { DurableObject } from "cloudflare:workers";
 import type { Env } from "../env.ts";
 import {
   appJwt,
+  createCheckRun,
   DEFAULT_RUNNER_GROUP_ID,
   deleteOrgRunner,
   generateOrgJitConfig,
@@ -9,10 +10,12 @@ import {
   installationToken,
   workflowJobStatus,
 } from "../github-app.ts";
+import { fetchOneGroupAccess, groupBlocksRepo } from "../github-runners.ts";
+import { blockedReason, pickAccessCheckRun } from "../pick-access.ts";
 import { latestRunnerVersion, RunnerClient, decodeJitConfig } from "../runner-protocol.ts";
 import { RELAYRUNNER_LABEL } from "../webhook-queue.ts";
 import { and, eq, isNull, sql } from "drizzle-orm";
-import { createDb, schema } from "../db/index.ts";
+import { createDb, type Db, schema } from "../db/index.ts";
 import { recordPick, type PickRecord } from "../route-decisions.ts";
 import { jobContext, NO_RUNNER, type RouteDecision } from "../routing.ts";
 import { nativeVerdict } from "../native-checks.ts";
@@ -41,7 +44,9 @@ const POLL_TIMEOUT_MS = 60_000;
 //
 // Because the runner can take another job, or time out, the job it was made for could be left with
 // no runner at all. So when a runner is done, it asks GitHub whether its own job is still queued and,
-// if so, starts a replacement (afterAttempt). The 15-minute sweep (src/pick-sweep.ts) catches runs a
+// if so, starts a replacement (afterAttempt). A job GitHub will never offer it, because the Default
+// runner group leaves the repo out (src/pick-access.ts), gets no runner at all: the reason goes to
+// Activity and to a failed check run on the commit, and the object stops trying. The 15-minute sweep (src/pick-sweep.ts) catches runs a
 // deploy cut off, and removes pick runners left registered on GitHub.
 export class PickRunner extends DurableObject<Env> {
   // Idempotent: a redelivered or retried `queued` webhook for the same job does nothing.
@@ -108,6 +113,31 @@ export class PickRunner extends DurableObject<Env> {
             attempt,
           }),
         );
+        return;
+      }
+      // A runner GitHub will never hand this job to would wait 4 minutes for nothing, or take
+      // another repo's job and leave this one queued. The group rarely changes, so only the first
+      // runner checks.
+      const blocked =
+        attempt === 1
+          ? await blockedByRunnerGroup(this.env, token, work).catch((error) => {
+              logCleanupError("check runner group", work, error);
+              return null;
+            })
+          : null;
+      if (blocked) {
+        // Nothing will come for the job: use up its attempts so the sweep doesn't rescue it.
+        await this.ctx.storage.put("attempt", MAX_ATTEMPTS);
+        console.warn(
+          JSON.stringify({
+            msg: "relayrunner pick blocked",
+            jobId: work.jobId,
+            repo: work.repo,
+            attempt,
+            reason: blocked,
+          }),
+        );
+        await reportBlocked(this.env, token, work, blocked);
         return;
       }
       const jit = await generateOrgJitConfig(token, org, {
@@ -285,17 +315,7 @@ async function pickRunner(env: Env, installationId: number, contextData: unknown
       repo: context.repo,
     };
   const workspaceId = installation.workspaceId;
-  const [repo] = await db
-    .select({ id: schema.githubRepository.id, private: schema.githubRepository.private })
-    .from(schema.githubRepository)
-    .where(
-      and(
-        eq(schema.githubRepository.installationId, installationId),
-        sql`lower(${schema.githubRepository.fullName}) = ${context.repo.toLowerCase()}`,
-        isNull(schema.githubRepository.removedAt),
-      ),
-    )
-    .limit(1);
+  const repo = await findRepo(db, installationId, context.repo);
   if (!repo) {
     const reason = `${NO_RUNNER}: RelayRunner doesn't have access to ${context.repo}.`;
     return {
@@ -339,4 +359,81 @@ async function pickRunner(env: Env, installationId: number, contextData: unknown
       reason: decision.runner === null ? decision.reason : null,
     } satisfies PickInfo,
   };
+}
+
+// A repo the installation can still see, by owner/name in any case, or undefined.
+async function findRepo(db: Db, installationId: number, fullName: string) {
+  const [repo] = await db
+    .select({ id: schema.githubRepository.id, private: schema.githubRepository.private })
+    .from(schema.githubRepository)
+    .where(
+      and(
+        eq(schema.githubRepository.installationId, installationId),
+        sql`lower(${schema.githubRepository.fullName}) = ${fullName.toLowerCase()}`,
+        isNull(schema.githubRepository.removedAt),
+      ),
+    )
+    .limit(1);
+  return repo;
+}
+
+/**
+ * Why the org's Default runner group won't deliver this job to a pick runner, or null when it will.
+ * A repo RelayRunner hasn't recorded is left to the claimed job's own checks.
+ */
+async function blockedByRunnerGroup(env: Env, token: string, work: PickWork) {
+  const [repo, access] = await Promise.all([
+    findRepo(createDb(env.DB), work.installationId, work.repo),
+    fetchOneGroupAccess(token, work.repo.split("/")[0], DEFAULT_RUNNER_GROUP_ID),
+  ]);
+  const block = repo && groupBlocksRepo(access, repo);
+  return block ? blockedReason(block, access, work.repo) : null;
+}
+
+/**
+ * Puts a blocked relay's reason where people look: the Activity page (as a run that couldn't run)
+ * and a failed check run on the commit. Either can fail without the other; both are only logged.
+ */
+async function reportBlocked(env: Env, token: string, work: PickWork, reason: string) {
+  const db = createDb(env.DB);
+  const [row] = await db
+    .select({
+      runId: schema.workflowJob.runId,
+      runAttempt: schema.workflowJob.runAttempt,
+      workflow: schema.workflowJob.workflowName,
+      name: schema.workflowJob.name,
+      headSha: schema.workflowJob.headSha,
+      workspaceId: schema.githubInstallation.workspaceId,
+    })
+    .from(schema.workflowJob)
+    .innerJoin(
+      schema.githubInstallation,
+      eq(schema.githubInstallation.id, schema.workflowJob.installationId),
+    )
+    .where(eq(schema.workflowJob.id, work.jobId))
+    .limit(1);
+  if (!row) return;
+  const runUrl = `https://github.com/${work.repo}/actions/runs/${row.runId}`;
+  await Promise.all([
+    row.workspaceId &&
+      recordPick(db, {
+        workspaceId: row.workspaceId,
+        repositoryId: null,
+        context: {
+          repo: work.repo,
+          runId: row.runId,
+          runAttempt: row.runAttempt,
+          workflow: row.workflow,
+          machine: [],
+          github: [],
+          blacksmith: [],
+        },
+        jobName: row.name,
+        decision: null,
+        reason: `${NO_RUNNER}: ${reason}`,
+      }).catch((error) => logCleanupError("record blocked pick", work, error)),
+    createCheckRun(token, work.repo, pickAccessCheckRun(row.headSha, runUrl, reason)).catch(
+      (error) => logCleanupError("post blocked check run", work, error),
+    ),
+  ]);
 }

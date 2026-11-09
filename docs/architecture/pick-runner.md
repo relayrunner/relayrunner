@@ -176,8 +176,8 @@ Orgs on GitHub Free can't create extra runner groups. Default is the only one th
 
 ## Failure modes
 
-- **Public repo, Default blocks public repos.** GitHub never offers the relay. The PickRunner logs `no-job` after 4 minutes, and the relay job stays queued on GitHub until someone cancels it or GitHub's 24-hour queue limit ends it. The run shows no error message. RelayRunner's own CI in relayrunner/relayrunner and relayrunner/actions hit this on 2026-11-06.
-- **Default limited to selected repos or selected workflows.** This fails the same way for any repo or workflow outside the list.
+- **Default leaves the repo out (public repos not allowed, private only, or a selected list without it).** GitHub never offers the relay. Before registering, the PickRunner reads the Default group (`src/pick-access.ts`) and, when it leaves the repo out, registers no runner: it logs `relayrunner pick blocked`, adds a `job.unroutable` entry to Activity with the reason and the fix, posts a failed `RelayRunner` check run on the commit, and doesn't retry (the sweep skips it too). The relay job itself still stays queued on GitHub until someone cancels it or GitHub's 24-hour queue limit ends it, because only a runner GitHub hands the job to can fail it. Before this check the PickRunner logged `no-job` after 4 minutes with no explanation anywhere (relayrunner/relayrunner and relayrunner/actions on 2026-11-06, relayrunner-ci-tests on 2026-11-08). If the group can't be read, the pick goes ahead as before.
+- **Default limited to selected workflows.** This isn't checked yet, so a workflow outside the list still fails silently with `no-job`.
 - **A pick runner takes a different relay job.** GitHub matches on the label, not the job, so a runner made for one relay can be handed another one that's waiting (often an older one). That job is answered correctly, but the runner's own job is left with nobody. When a runner finishes, it asks GitHub whether its own job is still queued and, if so, starts a replacement, up to 4 runners per job (`src/pick-attempts.ts`). Before this, one lost job stole the next job's runner, and so on, until the queue emptied (2026-11-06 to 2026-11-09).
 - **A pick runner is left registered.** If closing its session or deleting it fails, GitHub keeps showing it idle and can hand it a job nobody will ever take. Failures are logged (`relayrunner pick cleanup failed`), the delete is tried twice, and the 15-minute sweep removes `relayrunner-pick-*` runners whose run has ended (`src/pick-sweep.ts`).
 - **The `queued` webhook is lost, or a deploy cuts a runner off mid-wait.** The 15-minute sweep starts another runner for any relay recorded as queued for more than 5 minutes, within the same 4-runner limit. A relay whose `queued` webhook never arrived has no row, so the sweep can't see it.
@@ -189,7 +189,9 @@ Orgs on GitHub Free can't create extra runner groups. Default is the only one th
 
 - `apps/api/src/webhook-queue.ts`: `queued` webhooks with the `relayrunner` label start a PickRunner.
 - `apps/api/src/durable-objects/pick-runner.ts`: registration, waiting, claiming, answering, cleanup, the `relayrunner pick finished` log.
-- `apps/api/src/github-app.ts`: `generateOrgJitConfig`, `deleteOrgRunner`, `DEFAULT_RUNNER_GROUP_ID`, `listOrgRunnerGroups`. The group reader doesn't read `allows_public_repositories` yet.
+- `apps/api/src/github-app.ts`: `generateOrgJitConfig`, `deleteOrgRunner`, `DEFAULT_RUNNER_GROUP_ID`, `listOrgRunnerGroups`, `getOrgRunnerGroup`.
+- `apps/api/src/github-runners.ts`: `groupBlocksRepo`, the one rule for whether a runner group takes a repo's jobs, shared by the pick runner and routing to added runners.
+- `apps/api/src/pick-access.ts`: the blocked reason and the check run that explains it.
 - `apps/api/src/pick-attempts.ts`: when a runner is replaced and how pick runners are named.
 - `apps/api/src/pick-sweep.ts`: the 15-minute rescue for stuck relays and removal of leftover pick runners.
 - `apps/api/src/runner-protocol.ts`: `RunnerClient` (session, poll, claim, complete) and `decodeJitConfig`.

@@ -131,7 +131,10 @@ export class Router extends DurableObject<Env> {
           const runner = runners?.runners.find((r) => r.id === machine.githubRunnerId);
           return {
             ...base,
-            ...runnerStatus(runner, runner && runners?.access.get(runner.id), job.repositoryId),
+            ...runnerStatus(runner, runner && runners?.access.get(runner.id), {
+              id: job.repositoryId,
+              private: job.private,
+            }),
           };
         }),
       );

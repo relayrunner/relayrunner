@@ -5,6 +5,7 @@ import type { Env } from "./env.ts";
 import {
   describeAccess,
   groupAllows,
+  groupBlocksRepo,
   isHiddenRunner,
   isOwnRunner,
   matchLabels,
@@ -22,11 +23,13 @@ vi.mock("./github-app.ts", async (importOriginal) => ({
   appInstallationToken: async () => "ghs_test",
 }));
 
+const repo = { id: 7, private: true };
 const access = (overrides: Partial<GroupAccess> = {}): GroupAccess => ({
   groupId: 1,
   groupName: "Default",
   visibility: "all",
   restrictedToWorkflows: false,
+  allowsPublicRepositories: false,
   repositoryIds: null,
   ...overrides,
 });
@@ -71,13 +74,32 @@ describe("github runner helpers", () => {
   });
 
   test("checks the runner group before a repo's job can go there", () => {
-    expect(groupAllows(access(), 7)).toBe(true);
-    expect(groupAllows(access({ visibility: "private" }), 7)).toBe(true);
-    expect(groupAllows(access({ visibility: "selected", repositoryIds: [7] }), 7)).toBe(true);
-    expect(groupAllows(access({ visibility: "selected", repositoryIds: [8] }), 7)).toBe(false);
-    expect(groupAllows(access({ restrictedToWorkflows: true }), 7)).toBe(false);
+    expect(groupAllows(access(), repo)).toBe(true);
+    expect(groupAllows(access({ visibility: "private" }), repo)).toBe(true);
+    expect(groupAllows(access({ visibility: "selected", repositoryIds: [7] }), repo)).toBe(true);
+    expect(groupAllows(access({ visibility: "selected", repositoryIds: [8] }), repo)).toBe(false);
+    expect(groupAllows(access({ restrictedToWorkflows: true }), repo)).toBe(false);
     // Unknown (GitHub didn't answer) doesn't take the runner out.
-    expect(groupAllows(null, 7)).toBe(true);
+    expect(groupAllows(null, repo)).toBe(true);
+  });
+
+  test("says why a group won't take a repo's jobs", () => {
+    const publicRepo = { id: 8, private: false };
+    expect(groupBlocksRepo(access(), repo)).toBeNull();
+    expect(groupBlocksRepo(access({ visibility: "selected", repositoryIds: [3] }), repo)).toBe(
+      "not_selected",
+    );
+    expect(groupBlocksRepo(access(), publicRepo)).toBe("public");
+    expect(groupBlocksRepo(access({ allowsPublicRepositories: true }), publicRepo)).toBeNull();
+    expect(
+      groupBlocksRepo(
+        access({ visibility: "private", allowsPublicRepositories: true }),
+        publicRepo,
+      ),
+    ).toBe("private_only");
+    // Workflow limits are left to groupAllows.
+    expect(groupBlocksRepo(access({ restrictedToWorkflows: true }), repo)).toBeNull();
+    expect(groupAllows(access(), publicRepo)).toBe(false);
   });
 
   test("reads an added runner's routing status from GitHub and its group", () => {
@@ -90,18 +112,20 @@ describe("github runner helpers", () => {
       ephemeral: false,
       labels: ["self-hosted", "macOS", "rr-runner-0a1b2c3d"],
     };
-    expect(runnerStatus(mini, access(), 7)).toEqual({
+    expect(runnerStatus(mini, access(), repo)).toEqual({
       online: true,
       state: "idle",
       labels: ["self-hosted", "macOS"],
     });
-    expect(runnerStatus({ ...mini, busy: true }, access(), 7)).toMatchObject({ state: "busy" });
-    expect(runnerStatus({ ...mini, status: "offline" }, access(), 7)).toMatchObject({
+    expect(runnerStatus({ ...mini, busy: true }, access(), repo)).toMatchObject({ state: "busy" });
+    expect(runnerStatus({ ...mini, status: "offline" }, access(), repo)).toMatchObject({
       online: false,
     });
     // Gone from GitHub, or its group leaves the repo out: never picked.
-    expect(runnerStatus(undefined, access(), 7)).toEqual({ online: false, state: null });
-    expect(runnerStatus(mini, access({ visibility: "selected", repositoryIds: [8] }), 7)).toEqual({
+    expect(runnerStatus(undefined, access(), repo)).toEqual({ online: false, state: null });
+    expect(
+      runnerStatus(mini, access({ visibility: "selected", repositoryIds: [8] }), repo),
+    ).toEqual({
       online: false,
       state: null,
     });
