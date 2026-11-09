@@ -54,6 +54,39 @@ its workspace, who enrolled it (name and email) and whether it's online now.
 - `--json` prints the same as JSON (never the token). `--server <url>` or
   `RELAYRUNNER_URL` only reports a sign-in for that gateway.
 
+## `relayrunner init`
+
+```sh
+npx relayrunner init
+```
+
+Run inside a checkout, it routes the repo's GitHub Actions jobs through
+RelayRunner: each chosen job gets a `relay-<job>` job in front of it (the
+reusable workflow in [relayrunner/actions](https://github.com/relayrunner/actions)),
+and its `runs-on` becomes the relay's answer. The job's old label becomes the
+fallback when no machine is free. It only edits `.github/workflows/`, keeps
+comments and formatting, and never commits.
+
+It sorts every job into one of three groups:
+
+- **Ready**: a plain GitHub-hosted (`ubuntu-*`, `macos-*`) or Blacksmith
+  (`blacksmith-*`) label. A `macos-*` job only routes to macOS machines.
+  Warnings flag what to check first: services or containers (need Docker),
+  Linux package installs on a Mac, Blacksmith-only actions.
+- **Already routed**: the job runs where a relay sends it.
+- **Skipped, with the reason**: a matrix, a `runs-on` expression, list or
+  group, a reusable workflow, a deploy job (`environment`, `id-token: write`,
+  or secrets other than `GITHUB_TOKEN`), Windows, or an unknown label.
+
+A public repo is refused: machines never take public repos' jobs. Visibility is
+checked with an anonymous GitHub API call, so it doesn't matter which account
+`gh` or git is signed in as.
+
+- `--plan` lists the jobs and changes nothing; `--plan --json` prints them as JSON.
+- `--apply <jobs>` routes jobs without prompting. Name them by id (`test`),
+  `file:id` (`ci.yml:test`) when an id is in several workflows, or `all` for
+  every ready job. Add `--json` for a JSON result.
+
 ## `relayrunner pause` and `relayrunner resume`
 
 ```sh

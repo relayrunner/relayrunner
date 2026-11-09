@@ -120,6 +120,9 @@ importers:
       citty:
         specifier: ^0.2.2
         version: 0.2.2
+      yaml:
+        specifier: ^2.9.1
+        version: 2.9.1
       zod:
         specifier: 'catalog:'
         version: 4.6.7
