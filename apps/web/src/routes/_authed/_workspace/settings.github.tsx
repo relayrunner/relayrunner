@@ -54,7 +54,7 @@ function GitHubSettingsPage() {
   const { workspace } = current;
   const manager = canManage(current.role);
   const minutes = useActionsUsage();
-  // Previews without an API show the sample accounts as connected orgs.
+  // Previews without an API show the sample accounts as connected accounts.
   const installations =
     authDisabled && current.installations.length === 0
       ? sampleInstallations(minutes)
@@ -62,8 +62,8 @@ function GitHubSettingsPage() {
 
   return (
     <section>
-      <PageHeader title="GitHub orgs">
-        The GitHub orgs and accounts whose jobs this workspace routes.
+      <PageHeader title="GitHub accounts">
+        The GitHub orgs and personal accounts whose jobs this workspace routes.
       </PageHeader>
       <div className="grid max-w-3xl gap-4">
         {github && <GitHubNotice outcome={github} />}
@@ -74,7 +74,7 @@ function GitHubSettingsPage() {
             <CardTitle className="text-sm">Connected</CardTitle>
             <CardDescription>
               Where the RelayRunner GitHub App is installed for {workspace.name}.
-              {!manager && " Owners and admins connect GitHub orgs."}
+              {!manager && " Owners and admins connect GitHub accounts."}
             </CardDescription>
             {manager && (
               <CardAction>
@@ -83,7 +83,7 @@ function GitHubSettingsPage() {
                     lists only accounts that can take a new install; with none left it opens the
                     existing installation's settings instead. */}
                   <a href="/api/github/install">
-                    {installations.length ? "Connect another org" : "Connect GitHub org"}
+                    {installations.length ? "Connect another account" : "Connect GitHub account"}
                   </a>
                 </Button>
               </CardAction>
@@ -91,7 +91,7 @@ function GitHubSettingsPage() {
           </CardHeader>
           <CardContent className="px-4">
             {installations.length === 0 ? (
-              <p className="text-sm text-muted-foreground">No GitHub orgs connected yet.</p>
+              <p className="text-sm text-muted-foreground">No GitHub accounts connected yet.</p>
             ) : (
               <ul className="grid gap-5">
                 {installations.map((installation) => (
@@ -159,7 +159,10 @@ function sampleInstallations(usage: ActionsUsage | null): Installation[] {
     accountType: account.accountType,
     repositorySelection: "all",
     suspendedAt: null,
-    settingsUrl: `https://github.com/organizations/${account.accountLogin}/settings/installations`,
+    settingsUrl:
+      account.accountType === "User"
+        ? `https://github.com/settings/installations/${account.installationId}`
+        : `https://github.com/organizations/${account.accountLogin}/settings/installations/${account.installationId}`,
   }));
 }
 
@@ -393,9 +396,9 @@ function UnclaimedCard({
 function claimErrorMessage(error: unknown) {
   const code = error instanceof ApiError ? error.code : undefined;
   if (code === "installation_in_another_workspace")
-    return "That GitHub org is already connected to another workspace.";
+    return "That GitHub account is already connected to another workspace.";
   if (code === "not_found") return "Your GitHub account can no longer see that installation.";
-  if (code === "forbidden") return "Only workspace owners and admins can add GitHub orgs.";
+  if (code === "forbidden") return "Only workspace owners and admins can add GitHub accounts.";
   return "Couldn't add that installation. Try again.";
 }
 

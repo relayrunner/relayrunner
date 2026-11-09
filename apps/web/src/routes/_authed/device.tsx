@@ -284,8 +284,8 @@ function CreateWorkspaceStep() {
       <CardHeader>
         <CardTitle>Create a workspace</CardTitle>
         <CardDescription>
-          Your machines and GitHub orgs live in a workspace. Name one to connect this machine to.
-          You'll be its owner.
+          Your machines and GitHub accounts live in a workspace. Name one to connect this machine
+          to. You'll be its owner.
         </CardDescription>
       </CardHeader>
       <CardContent>
@@ -337,8 +337,8 @@ function ConnectGitHubStep({
       <CardHeader>
         <CardTitle>Connect GitHub</CardTitle>
         <CardDescription>
-          Install the RelayRunner GitHub App on the org whose jobs {current.workspace.name} should
-          route. GitHub sends you back here afterwards.
+          Install the RelayRunner GitHub App on the org or personal account whose jobs{" "}
+          {current.workspace.name} should route. GitHub sends you back here afterwards.
         </CardDescription>
       </CardHeader>
       <CardContent className="flex flex-col gap-4">
@@ -455,7 +455,7 @@ function ApproveStep({
               role="status"
               className="rounded-md border border-go-edge bg-go-soft px-3 py-2 text-sm"
             >
-              GitHub org connected.
+              GitHub account connected.
             </p>
           )}
           {awaitingOwner && (

@@ -128,6 +128,7 @@ function RunnersPage() {
     <GithubRunnersDialog
       open={githubOpen}
       onOpenChange={setGithubOpen}
+      hasAccounts={current.installations.length > 0}
       onAdded={async () => {
         await router.invalidate();
         await findRunners();

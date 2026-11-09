@@ -16,7 +16,7 @@ function GeneralSettingsPage() {
   return (
     <section>
       <PageHeader title="General">
-        Your workspace connects GitHub orgs and owns the machines that run their jobs.
+        Your workspace connects GitHub accounts and owns the machines that run their jobs.
       </PageHeader>
       <div className="grid max-w-3xl gap-4">
         <Card className="py-4">

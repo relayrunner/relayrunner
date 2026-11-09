@@ -215,7 +215,7 @@ export function RunnerOrderEditor({
                   note={
                     slots.has("blacksmith")
                       ? "Already in the order"
-                      : "Needs Blacksmith's app on your org"
+                      : "Needs Blacksmith's GitHub app"
                   }
                   disabled={slots.has("blacksmith")}
                   onSelect={() => addStep("blacksmith")}
@@ -287,7 +287,7 @@ type LimitAvailability = { allowed: true } | { allowed: false; blocked: string }
 
 function limitAvailability(accounts: AccountUsage[]): LimitAvailability {
   if (accounts.some(hasQuota)) return { allowed: true };
-  if (accounts.length === 0) return { allowed: false, blocked: "Connect a GitHub org first." };
+  if (accounts.length === 0) return { allowed: false, blocked: "Connect a GitHub account first." };
   const reasons = new Set(accounts.map((account) => account.reason));
   if (reasons.has("enterprise"))
     return { allowed: false, blocked: "Needs RelayRunner on your enterprise." };

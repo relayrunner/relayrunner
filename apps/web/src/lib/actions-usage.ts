@@ -118,6 +118,20 @@ export function sampleActionsUsage(): ActionsUsage {
         burnRatePerHour: 210,
         budget: null,
       },
+      {
+        ...base,
+        accountType: "User",
+        installationId: 4,
+        accountLogin: "octocat",
+        status: "ok",
+        reason: null,
+        plan: "free",
+        quotaMinutes: 2000,
+        usedMinutes: 420,
+        netAmount: 0,
+        burnRatePerHour: 6,
+        budget: null,
+      },
     ],
   };
 }

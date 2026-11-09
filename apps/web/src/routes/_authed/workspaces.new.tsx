@@ -19,7 +19,7 @@ function NewWorkspacePage() {
           <CardHeader>
             <CardTitle>Create a workspace</CardTitle>
             <CardDescription>
-              A workspace holds your GitHub orgs, your machines and how jobs are routed between
+              A workspace holds your GitHub accounts, your machines and how jobs are routed between
               them. You'll be its owner.
             </CardDescription>
           </CardHeader>

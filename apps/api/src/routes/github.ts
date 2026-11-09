@@ -26,7 +26,7 @@ import { canManage, requireManager } from "../roles.ts";
 
 // Connecting GitHub orgs (GitHub App installations) to workspaces.
 //
-// 1. The dashboard's "Connect GitHub org" links to GET /install, which sends the user to the App's
+// 1. The dashboard's "Connect GitHub account" links to GET /install, which sends the user to the App's
 //    install page with a signed `state` naming the active workspace.
 // 2. GitHub sends them back to the App's Setup URL, GET /setup, with `installation_id`. That id
 //    comes from a query string, so it only counts if the user's own GitHub token can see it in
