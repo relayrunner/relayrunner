@@ -13,10 +13,9 @@ before you run it. Ask before changing any file.
 - Supported systems are macOS and Linux, on x64 or ARM64. Windows is not supported yet. Stop
   and say so if the computer runs anything else.
 - Node.js 22 or newer: `node --version`.
-- The checkout's GitHub repo must be **private** and owned by a **GitHub organization**.
-  RelayRunner never routes public repos to a personal computer, and personal accounts aren't
-  supported yet. Check with `gh repo view --json visibility,owner` if the GitHub CLI is
-  available, or ask the user.
+- The checkout's GitHub repo must be **private**. RelayRunner never routes public repos to a
+  personal computer. It can be owned by a GitHub organization or a personal account. Check with
+  `gh repo view --json visibility,owner` if the GitHub CLI is available, or ask the user.
 
 ## 2. Install the CLI
 
@@ -52,8 +51,8 @@ Don't run it yourself unless the user asks: it would go offline when your sessio
 
 The first run opens the browser to the RelayRunner dashboard. There the user signs in with
 GitHub (this creates their account), creates a workspace, installs the RelayRunner GitHub App
-on their organization, and approves the computer. The terminal then says the machine is
-enrolled and online.
+on their organization or personal account, and approves the computer. The terminal then says
+the machine is enrolled and online.
 
 When the user says it's done, check again with `relayrunner whoami --json`. Expect `status`
 `"ok"` and `machine.status.online` true. If the GitHub App install only sent a request to the
@@ -143,8 +142,8 @@ After the user pushes, a run of an opted-in job shows `relay-<job> / RelayRunner
 about a second, then the job itself. In the job's log, the runner name tells where it ran: a name starting
 with this computer's machine name (from `relayrunner whoami`) means it ran here, and a
 GitHub-hosted name means the `github` label. If `relay-<job> / RelayRunner` stays
-queued, the GitHub App is probably not installed on the repo's organization.
-The user can check under Settings → GitHub orgs in the dashboard.
+queued, the GitHub App is probably not installed on the repo's owner.
+The user can check under Settings → GitHub accounts in the dashboard.
 
 To stop using this computer for a while, the user presses Ctrl-C in the `relayrunner connect`
 terminal. Jobs go back to GitHub-hosted runners, with no workflow change.

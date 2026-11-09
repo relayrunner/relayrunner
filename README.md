@@ -8,7 +8,7 @@ It's built for small teams and individuals who don't want to pay for every push,
 
 ## How it works
 
-1. **Install the GitHub App** on an organization and connect it to a RelayRunner workspace from the dashboard.
+1. **Install the GitHub App** on an organization or personal account and connect it to a RelayRunner workspace from the dashboard.
 2. **Connect a machine** with `npx relayrunner connect`. While it runs, the machine takes jobs; Ctrl-C takes it offline.
 3. **Opt a job in** by adding a relay job in front of it and pointing its `runs-on` at the relay's answer:
 
@@ -56,7 +56,7 @@ This is a pnpm workspace. The apps are deployed as Cloudflare Workers, except th
 | [`packages/machine-protocol`](packages/machine-protocol) | Messages between a connected machine and the gateway.                  |
 | [`packages/runner-order`](packages/runner-order)         | The runner order schema, defaults and labels.                          |
 
-Each app and package has its own README. Longer write-ups live in [`docs/`](docs): [Cloudflare Access](docs/cloudflare-access.md) and the [pick runner](docs/architecture/pick-runner.md).
+Each app and package has its own README. Longer write-ups live in [`docs/`](docs): [Cloudflare Access](docs/cloudflare-access.md), the [GitHub App](docs/github-app.md) and the [pick runner](docs/architecture/pick-runner.md).
 
 ## Development
 
