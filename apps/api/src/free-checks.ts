@@ -1,10 +1,11 @@
-// What the free checks saved: each check run the GitHub App posts (src/pr-title-check.ts) is a
-// job that never ran on an Actions runner. Run as a workflow, it would be a few seconds on
-// ubuntu-latest, billed as a whole minute. Each one is logged as a `check.completed` Activity
-// event, and the Usage and Activity pages sum them.
+// What the free checks saved: each check run the GitHub App posts (src/pr-title-check.ts), and each
+// lint run in the Checks App's container (src/durable-objects/lint-runner.ts), is a job that never
+// ran on an Actions runner. Run as a workflow, it would be a short job on ubuntu-latest, billed as
+// at least a whole minute. Each one is logged as a `check.completed` Activity event, and the Usage
+// and Activity pages sum them.
 
 import type { ActivityEvent } from "@relayrunner/activity";
-import { and, eq, gte, sql } from "drizzle-orm";
+import { and, eq, gte, isNull, sql } from "drizzle-orm";
 import { recordEvent } from "./activity.ts";
 import { type Db, schema } from "./db/index.ts";
 import { createCheckRun } from "./github-app.ts";
@@ -52,6 +53,42 @@ export async function recordFreeCheck(db: Db, installationId: number, data: Free
   return true;
 }
 
+/**
+ * Logs a free check in the workspace of the main App's installation on `repository`, for checks
+ * that know the repo only by name: the Checks App's lint runs (its installation has no row) and
+ * native check jobs. Skipped when RelayRunner doesn't know the repo or it isn't in a workspace.
+ */
+export async function recordRepoCheck(
+  db: Db,
+  repository: string,
+  data: Omit<FreeCheck, "repository" | "repositoryId">,
+) {
+  const [repo] = await db
+    .select({
+      id: schema.githubRepository.id,
+      workspaceId: schema.githubInstallation.workspaceId,
+    })
+    .from(schema.githubRepository)
+    .innerJoin(
+      schema.githubInstallation,
+      eq(schema.githubInstallation.id, schema.githubRepository.installationId),
+    )
+    .where(
+      and(
+        sql`lower(${schema.githubRepository.fullName}) = ${repository.toLowerCase()}`,
+        isNull(schema.githubRepository.removedAt),
+      ),
+    )
+    .limit(1);
+  if (!repo?.workspaceId) return false;
+  await recordEvent(db, {
+    workspaceId: repo.workspaceId,
+    type: "check.completed",
+    data: { ...data, repository, repositoryId: repo.id },
+  });
+  return true;
+}
+
 export interface FreeCheckSavings {
   days: number;
   /** The runner and rate each check is priced at. */
@@ -60,6 +97,8 @@ export interface FreeCheckSavings {
   checks: number;
   /** USD, after free public-repo minutes. */
   savedCost: number;
+  /** Each kind of check ("PR title", "Lint"), the most runs first. */
+  byCheck: { check: string; checks: number; savedCost: number }[];
   /** Repos with the most checks first. */
   byRepository: {
     repository: string;
@@ -77,9 +116,13 @@ export async function freeCheckSavings(
 ): Promise<FreeCheckSavings> {
   const since = new Date(Date.now() - days * DAY_MS);
   const repositoryId = sql<number>`json_extract(${table.data}, '$.repositoryId')`;
+  const check = sql<string>`json_extract(${table.data}, '$.check')`;
   const rows = await db
     .select({
-      repository: sql<string>`json_extract(${table.data}, '$.repository')`,
+      check,
+      repositoryId,
+      // Its current name when mirrored, so a renamed repo's checks add up under one name.
+      repository: sql<string>`coalesce(${schema.githubRepository.fullName}, json_extract(${table.data}, '$.repository'))`,
       private: schema.githubRepository.private,
       checks: sql<number>`count(*)`,
     })
@@ -92,25 +135,48 @@ export async function freeCheckSavings(
         gte(table.occurredAt, since),
       ),
     )
-    .groupBy(repositoryId, schema.githubRepository.private);
+    .groupBy(check, repositoryId, schema.githubRepository.private);
 
-  const byRepository = rows
-    .map((row) => {
-      const checks = Number(row.checks);
-      return {
-        repository: row.repository,
-        private: row.private,
-        checks,
-        savedCost: cents(checks * rateFor(FREE_CHECK_RUNNER, row.private)),
-      };
-    })
-    .sort((a, b) => b.checks - a.checks || b.savedCost - a.savedCost);
+  type Sum = { checks: number; savedCost: number };
+  const repos = new Map<number, FreeCheckSavings["byRepository"][number]>();
+  const kinds = new Map<string, FreeCheckSavings["byCheck"][number]>();
+  const sum = <K, T extends Sum>(
+    map: Map<K, T>,
+    key: K,
+    empty: T,
+    checks: number,
+    cost: number,
+  ) => {
+    let row = map.get(key);
+    if (!row) map.set(key, (row = empty));
+    row.checks += checks;
+    row.savedCost += cost;
+  };
+  for (const row of rows) {
+    const checks = Number(row.checks);
+    const cost = checks * rateFor(FREE_CHECK_RUNNER, row.private);
+    const repository = {
+      repository: row.repository,
+      private: row.private,
+      checks: 0,
+      savedCost: 0,
+    };
+    sum(repos, row.repositoryId, repository, checks, cost);
+    sum(kinds, row.check, { check: row.check, checks: 0, savedCost: 0 }, checks, cost);
+  }
+  // Rounded once, then sorted with the most runs first.
+  const ranked = <K, T extends Sum>(map: Map<K, T>) =>
+    [...map.values()]
+      .map((row) => ({ ...row, savedCost: cents(row.savedCost) }))
+      .sort((a, b) => b.checks - a.checks || b.savedCost - a.savedCost);
+  const byRepository = ranked(repos);
   const { label, perMinute } = RUNNER_RATES[FREE_CHECK_RUNNER];
   return {
     days,
     runner: { label, perMinute },
-    checks: byRepository.reduce((sum, repo) => sum + repo.checks, 0),
-    savedCost: cents(byRepository.reduce((sum, repo) => sum + repo.savedCost, 0)),
+    checks: byRepository.reduce((total, repo) => total + repo.checks, 0),
+    savedCost: cents(byRepository.reduce((total, repo) => total + repo.savedCost, 0)),
+    byCheck: ranked(kinds),
     byRepository: byRepository.slice(0, 10),
   };
 }

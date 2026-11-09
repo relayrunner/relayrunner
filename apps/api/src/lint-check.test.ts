@@ -31,12 +31,12 @@ describe("lintTarget", () => {
     const work = { installationId: 7, repo: "acme/app" };
     expect(lintTarget(pullRequest("opened"))).toEqual({
       key: "acme/app@abc",
-      work: { ...work, headSha: "abc" },
+      work: { ...work, headSha: "abc", pullRequest: 3 },
     });
     expect(lintTarget(pullRequest("synchronize"))?.key).toBe("acme/app@abc");
     expect(lintTarget(checkSuite("rerequested"))).toEqual({
       key: "rerun:d",
-      work: { ...work, headSha: "def" },
+      work: { ...work, headSha: "def", pullRequest: 3 },
     });
   });
 
