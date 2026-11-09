@@ -531,6 +531,32 @@ export async function orgBillingUsage(
   return body.usageItems ?? [];
 }
 
+/**
+ * The signed-in user's own GitHub plan name ("free", "pro"), or null if GitHub omits it. GitHub
+ * only shows `plan` to the user themself, so this takes their user-to-server token (#208).
+ */
+export async function userPlan(token: string): Promise<string | null> {
+  const body = await getJson<{ plan?: { name?: string } }>(token, "/user");
+  return body.plan?.name ?? null;
+}
+
+/**
+ * A personal account's usage report for one UTC month, in the org report's shape. Needs the User
+ * permission Plan: read and the account owner's own user-to-server token: installation tokens
+ * can't call it, and a user can only read their own billing (#208).
+ */
+export async function userBillingUsage(
+  token: string,
+  login: string,
+  month: { year: number; month: number },
+): Promise<BillingUsageItem[]> {
+  const body = await getJson<{ usageItems?: BillingUsageItem[] }>(
+    token,
+    `/users/${login}/settings/billing/usage?year=${month.year}&month=${month.month}`,
+  );
+  return body.usageItems ?? [];
+}
+
 /** An org budget, trimmed to what the minutes rule needs. Amounts are whole dollars. */
 export interface BillingBudget {
   scope: string;

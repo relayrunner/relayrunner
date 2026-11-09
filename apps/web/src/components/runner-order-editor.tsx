@@ -293,6 +293,8 @@ function limitAvailability(accounts: AccountUsage[]): LimitAvailability {
     return { allowed: false, blocked: "Needs RelayRunner on your enterprise." };
   if (reasons.has("missing_permission"))
     return { allowed: false, blocked: "Needs billing access to your org." };
+  if (reasons.has("sign_in_needed"))
+    return { allowed: false, blocked: "Sign in again to share your account's minutes." };
   if (reasons.has("not_read_yet"))
     return { allowed: false, blocked: "Waiting for the first minutes reading." };
   return { allowed: false, blocked: "Your GitHub plan's minutes aren't known." };

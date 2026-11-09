@@ -1,27 +1,35 @@
-// GitHub Actions minutes per GitHub account, read from each org's billing usage report (#116), so
+// GitHub Actions minutes per GitHub account, read from each account's billing usage report (#116), so
 // the minutes rule (#117) can stop sending jobs to GitHub-hosted runners before the account's
 // included quota runs out. Everything is per installation (one GitHub account), never pooled
 // across a workspace: each account has its own quota.
+//
+// Orgs are read with the App's installation token. A personal account's report only opens to its
+// owner's own user-to-server token (User permission Plan: read), so those are read with the token
+// from the owner's RelayRunner sign-in (#208).
 //
 // The cron polls every 15 minutes. GitHub's billing lags about 6-90 minutes and arrives in bursts
 // (#115), which #117's burn-rate margin covers.
 import { and, asc, eq, gte, isNotNull, isNull, lt } from "drizzle-orm";
 import { recordOverage } from "./activity.ts";
+import { createAuth } from "./auth.ts";
 import { createDb, type Db, schema } from "./db/index.ts";
 import type { Env } from "./env.ts";
+import { userGitHubToken } from "./installations.ts";
 import {
   appInstallationToken,
   GitHubAccessError,
   orgBillingUsage,
   orgBudgets,
   orgPlan,
+  userBillingUsage,
+  userPlan,
   type BillingBudget,
   type BillingUsageItem,
 } from "./github-app.ts";
 
 /**
  * Included Actions minutes per plan. GitHub counts them in Linux 2-core minutes; other runners use
- * the quota faster, in proportion to their price.
+ * the quota faster, in proportion to their price. Personal accounts use the same names (free, pro).
  */
 export const PLAN_QUOTA_MINUTES: Record<string, number> = { free: 2000, pro: 3000, team: 3000 };
 
@@ -41,9 +49,11 @@ const MIN_BURN_SPAN_MS = 10 * 60_000;
 export const READING_RETENTION_MS = 48 * HOUR_MS;
 
 export type AccountUsageReason =
-  | "personal_account"
   | "enterprise"
   | "missing_permission"
+  // A personal account whose owner has no usable sign-in token in this workspace: they aren't a
+  // member, never signed in, or their token stopped refreshing. Signing in again fixes it.
+  | "sign_in_needed"
   | "unknown_plan"
   | "not_read_yet"
   | "error";
@@ -79,13 +89,15 @@ export function cycleStart(now: Date) {
 
 const dayOf = (date: Date) => date.toISOString().slice(0, 10);
 
-/** Poll every connected, unsuspended org installation. One failing doesn't stop the rest. */
+/** Poll every connected, unsuspended installation. One failing doesn't stop the rest. */
 export async function pollActionsUsage(env: Env, now = new Date()) {
   const db = createDb(env.DB);
   const installations = await db
     .select({
       id: schema.githubInstallation.id,
+      accountId: schema.githubInstallation.accountId,
       accountLogin: schema.githubInstallation.accountLogin,
+      accountType: schema.githubInstallation.accountType,
       workspaceId: schema.githubInstallation.workspaceId,
     })
     .from(schema.githubInstallation)
@@ -93,11 +105,26 @@ export async function pollActionsUsage(env: Env, now = new Date()) {
       and(
         isNotNull(schema.githubInstallation.workspaceId),
         isNull(schema.githubInstallation.suspendedAt),
-        eq(schema.githubInstallation.accountType, "Organization"),
       ),
     );
+  const auth = installations.some(isPersonal) ? createAuth(env) : null;
   for (const installation of installations) {
     try {
+      if (isPersonal(installation)) {
+        const token = await ownerToken(auth!, db, installation);
+        if (!token) {
+          await recordFailure(
+            db,
+            installation.id,
+            "sign_in_needed",
+            "No sign-in token for the account's owner in this workspace",
+            now,
+          );
+          continue;
+        }
+        await pollInstallation(db, token, installation, now);
+        continue;
+      }
       const token = await appInstallationToken(env, installation.id);
       await pollInstallation(db, token, installation, now);
     } catch (error) {
@@ -112,19 +139,64 @@ export async function pollActionsUsage(env: Env, now = new Date()) {
     .where(lt(schema.actionsUsageReading.readAt, new Date(now.getTime() - READING_RETENTION_MS)));
 }
 
-/** Read one org's plan, budget and this month's usage, and store them. */
+const isPersonal = (installation: { accountType: string }) =>
+  installation.accountType !== "Organization";
+
+/**
+ * The personal account owner's GitHub token, from their RelayRunner sign-in. Only the owner's
+ * token can read the account's billing, and only while they're a member of the workspace the
+ * installation belongs to: someone who left keeps their token out of it. Null when there's none.
+ */
+async function ownerToken(
+  auth: ReturnType<typeof createAuth>,
+  db: Db,
+  installation: { accountId: number; workspaceId: string | null },
+) {
+  if (!installation.workspaceId) return null;
+  const [owner] = await db
+    .select({ userId: schema.account.userId })
+    .from(schema.account)
+    .innerJoin(
+      schema.workspaceMember,
+      and(
+        eq(schema.workspaceMember.userId, schema.account.userId),
+        eq(schema.workspaceMember.workspaceId, installation.workspaceId),
+      ),
+    )
+    .where(
+      and(
+        eq(schema.account.providerId, "github"),
+        eq(schema.account.accountId, String(installation.accountId)),
+      ),
+    )
+    .limit(1);
+  return owner ? userGitHubToken(auth, db, owner.userId) : null;
+}
+
+/**
+ * Read one account's plan, budget and this month's usage, and store them. An org takes an
+ * installation token; a personal account takes its owner's user token and has no budget to read
+ * (GitHub has no budgets endpoint for users).
+ */
 export async function pollInstallation(
   db: Db,
   token: string,
-  installation: { id: number; accountLogin: string; workspaceId?: string | null },
+  installation: {
+    id: number;
+    accountLogin: string;
+    accountType?: string;
+    workspaceId?: string | null;
+  },
   now = new Date(),
 ) {
   const org = installation.accountLogin;
+  const personal = isPersonal({ accountType: installation.accountType ?? "Organization" });
   const start = cycleStart(now);
+  const month = { year: start.getUTCFullYear(), month: start.getUTCMonth() + 1 };
   const [plan, budgets, usage] = await Promise.allSettled([
-    orgPlan(token, org),
-    orgBudgets(token, org),
-    orgBillingUsage(token, org, { year: start.getUTCFullYear(), month: start.getUTCMonth() + 1 }),
+    personal ? userPlan(token) : orgPlan(token, org),
+    personal ? Promise.resolve(null) : orgBudgets(token, org),
+    personal ? userBillingUsage(token, org, month) : orgBillingUsage(token, org, month),
   ]);
 
   if (usage.status === "rejected") {
@@ -147,7 +219,7 @@ export async function pollInstallation(
     failure: null,
     error: null,
     ...(plan.status === "fulfilled" ? { plan: plan.value } : {}),
-    ...(budgets.status === "fulfilled" ? actionsBudget(budgets.value) : {}),
+    ...(budgets.status === "fulfilled" && budgets.value ? actionsBudget(budgets.value) : {}),
   };
 
   // GitHub sends the whole month on every poll, so the cycle's rows are simply replaced: nothing
@@ -294,7 +366,7 @@ function actionsBudget(budgets: BillingBudget[]) {
 async function recordFailure(
   db: Db,
   installationId: number,
-  failure: "missing_permission" | "error",
+  failure: "missing_permission" | "sign_in_needed" | "error",
   error: unknown,
   now: Date,
   fields: { plan?: string | null } = {},
@@ -378,18 +450,15 @@ export async function accountUsage(
       .orderBy(asc(schema.actionsUsageReading.readAt)),
   ]);
 
-  const reason: AccountUsageReason | null =
-    installation.accountType !== "Organization"
-      ? "personal_account"
-      : billing?.failure
-        ? (billing.failure as AccountUsageReason)
-        : !readThisCycle
-          ? "not_read_yet"
-          : plan && ENTERPRISE_PLANS.has(plan)
-            ? "enterprise"
-            : !plan || !(plan in PLAN_QUOTA_MINUTES)
-              ? "unknown_plan"
-              : null;
+  const reason: AccountUsageReason | null = billing?.failure
+    ? (billing.failure as AccountUsageReason)
+    : !readThisCycle
+      ? "not_read_yet"
+      : plan && ENTERPRISE_PLANS.has(plan)
+        ? "enterprise"
+        : !plan || !(plan in PLAN_QUOTA_MINUTES)
+          ? "unknown_plan"
+          : null;
 
   return {
     installationId,
