@@ -19,7 +19,7 @@ import { setPaused } from "./pause.ts";
 import { whoami, type WhoamiResponse } from "./whoami.ts";
 
 // The dashboard's origin. It forwards /api/* (including the machine WebSocket) to the API.
-const DEFAULT_SERVER = "https://relayrunner-app.relayrun.workers.dev";
+const DEFAULT_SERVER = "https://app.relayrunner.app";
 
 const connectCommand = defineCommand({
   meta: {

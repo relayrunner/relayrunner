@@ -24,18 +24,18 @@
   },
   "upload_source_maps": true,
   "vars": {
-    // The dashboard origin (apps/web forwards /api/* here over a service binding).
-    // Switch to https://app.relayrunner.dev once the domain moves to this account.
-    // Local dev overrides this in .dev.vars.
-    "BETTER_AUTH_URL": "https://relayrunner-app.relayrun.workers.dev",
+    // The dashboard origin (apps/web forwards /api/* here over a service binding): GitHub's OAuth
+    // callback and the link `relayrunner connect` opens. Switch to https://app.relayrunner.dev once
+    // that domain moves to this account. Local dev overrides this in .dev.vars.
+    "BETTER_AUTH_URL": "https://app.relayrunner.app",
     // Where links in emails point (src/email.ts): the dashboard people use, not the OAuth host.
     "DASHBOARD_URL": "https://app.relayrunner.app",
     // Sender for transactional email; must stay in send_email's allowed_sender_addresses below.
     "EMAIL_FROM": "noreply@send.relayrunner.app",
     // Dashboard origins other than BETTER_AUTH_URL that may sign in through the oAuthProxy plugin:
     // previews (<alias>-relayrunner-app.relayrun.workers.dev; only this account's Workers live
-    // under relayrun.workers.dev) and the interim custom domain app.relayrunner.app.
-    "PREVIEW_ORIGINS": "https://*-relayrunner-app.relayrun.workers.dev, https://app.relayrunner.app",
+    // under relayrun.workers.dev) and the old workers.dev dashboard, which older CLIs still open.
+    "PREVIEW_ORIGINS": "https://*-relayrunner-app.relayrun.workers.dev, https://relayrunner-app.relayrun.workers.dev",
     // Share the session cookie across relayrun.workers.dev, so signing in once on production
     // workers.dev or any preview signs in every preview URL (per-branch and per-commit).
     "SESSION_COOKIE_DOMAIN": "relayrun.workers.dev",

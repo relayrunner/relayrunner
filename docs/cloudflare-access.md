@@ -7,7 +7,7 @@ Cloudflare Access keeps dashboard preview URLs and the operator admin views priv
 | Hostname                                                                | Access          | Why                                                                                               |
 | ----------------------------------------------------------------------- | --------------- | ------------------------------------------------------------------------------------------------- |
 | `<alias>-relayrunner-app.relayrun.workers.dev` (dashboard previews)     | Yes, whole host | Previews run unreviewed code against production data.                                             |
-| `relayrunner-app.relayrun.workers.dev` (dashboard)                      | No              | It is the live dashboard until `app.relayrunner.dev` moves to this account.                       |
+| `relayrunner-app.relayrun.workers.dev` (dashboard)                      | No              | The old dashboard host, which older CLIs still open. `app.relayrunner.app` is the live one.       |
 | `app.relayrunner.app` (dashboard, interim custom domain)                | Only `/admin`   | Same Worker as above. `/admin` and `/api/admin` sit behind the `relayrunner-app admin views` app. |
 | `relayrunner-webhooks.relayrun.workers.dev`, `webhooks.relayrunner.app` | No              | GitHub posts webhooks here and can't log in. The signature check protects it.                     |
 | `relayrunner-api.relayrun.workers.dev`, `api.relayrunner.app`           | No              | The dashboard reaches it over a service binding. `/api/admin/*` checks the Access JWT itself.     |
