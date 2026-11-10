@@ -2,6 +2,7 @@ import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, test, vi 
 import { app } from "./app.ts";
 import { createDb, schema } from "./db/index.ts";
 import type { Env } from "./env.ts";
+import { listOrgRunners } from "./github-app.ts";
 import {
   describeAccess,
   groupAllows,
@@ -156,6 +157,13 @@ describe("adding GitHub runners", () => {
         revoke: async () => {},
       }),
     } as unknown as Env["MACHINE_LINK"];
+    // The Router's cached runner list, read fresh here so each test sees its own runners.
+    env.ROUTER = {
+      getByName: () => ({
+        githubRunners: (_installationId: number, org: string) =>
+          listOrgRunners("ghs_test", org).catch(() => null),
+      }),
+    } as unknown as Env["ROUTER"];
   }, 60_000);
 
   afterAll(async () => {
@@ -334,10 +342,11 @@ describe("adding GitHub runners", () => {
     const row = machines.find((m) => m.id === machine.id)!;
     expect(row.status).toMatchObject({ online: true, state: "busy" });
     expect(row.labels).toEqual(["self-hosted", "macOS", "ARM64", "xcode-16"]);
-    expect(row.github).toMatchObject({
-      access: "Default group · all private repos",
-      missing: false,
-    });
+    expect(row.github).toMatchObject({ missing: false });
+    // The list doesn't read runner groups; the card's menu asks for the access line on demand.
+    expect(row.github).not.toHaveProperty("access");
+    const access = await testing.call(env, `/machines/${machine.id}/access`, cookie);
+    expect(await access.json()).toEqual({ access: "Default group · all private repos" });
 
     // A second add of the same runner is skipped, and the list says it's added.
     const again = await testing.call(env, "/machines/github-runners", cookie, {

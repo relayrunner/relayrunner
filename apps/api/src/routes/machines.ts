@@ -329,20 +329,20 @@ export const machineRoutes = new Hono<AppEnv>()
         ),
       )
       .orderBy(asc(schema.machine.name));
-    // Runners added from GitHub: one read of each org's runners for their live status.
+    // Runners added from GitHub: each org's runner list for their live status, cached for a short
+    // while in the workspace's Router so the page's refreshes don't each ask GitHub. Their group
+    // access is read on demand (GET /:id/access) when a card's menu opens.
     const orgs = new Map<number, string>();
     for (const row of rows)
       if (row.machine.source === "github" && row.machine.installationId && row.org)
         orgs.set(row.machine.installationId, row.org);
+    const router = orgs.size > 0 ? c.env.ROUTER.getByName(c.var.workspace.id) : null;
     const github = new Map(
       await Promise.all(
-        [...orgs].map(
-          async ([installationId, org]) =>
-            [
-              installationId,
-              await readOrgRunners(c.env, installationId, org).catch(() => null),
-            ] as const,
-        ),
+        [...orgs].map(async ([installationId, org]) => {
+          const runners = await router!.githubRunners(installationId, org).catch(() => null);
+          return [installationId, runners ? { runners } : null] as const;
+        }),
       ),
     );
     // Live status from each connected machine's MachineLink. Fine for a handful per workspace.
@@ -393,8 +393,6 @@ export const machineRoutes = new Hono<AppEnv>()
           github: {
             org: row.org,
             runnerId: row.machine.githubRunnerId,
-            // Which repos its group lets use it, e.g. "Default group · all private repos".
-            access: runner ? describeAccess(read?.access.get(runner.id)) : null,
             // GitHub answered, and the runner isn't there: removed or re-registered.
             missing: Boolean(read) && !runner,
             // GitHub couldn't be asked; the status shown is offline.
@@ -547,6 +545,36 @@ export const machineRoutes = new Hono<AppEnv>()
       added.push(presentMachine(machine));
     }
     return c.json({ added, skipped });
+  })
+  // Which repos a runner added from GitHub may take jobs from, e.g. "Default group · all private
+  // repos", for its card's menu. Read on demand: it takes several GitHub calls (the org's runner
+  // groups, then each group's runners and repos), so the Runners page doesn't wait on it.
+  .get("/:id/access", requireUser, requireWorkspace, async (c) => {
+    const [row] = await c.var.db
+      .select({ machine: schema.machine, org: schema.githubInstallation.accountLogin })
+      .from(schema.machine)
+      .leftJoin(
+        schema.githubInstallation,
+        eq(schema.githubInstallation.id, schema.machine.installationId),
+      )
+      .where(
+        and(
+          eq(schema.machine.id, c.req.param("id")),
+          eq(schema.machine.workspaceId, c.var.workspace.id),
+          isNull(schema.machine.revokedAt),
+        ),
+      );
+    if (!row) return c.json({ error: "not_found" }, 404);
+    const { machine, org } = row;
+    if (machine.source !== "github" || !machine.installationId || !org || !machine.githubRunnerId)
+      return c.json({ access: null });
+    try {
+      const { access } = await readOrgRunners(c.env, machine.installationId, org);
+      return c.json({ access: describeAccess(access.get(machine.githubRunnerId)) });
+    } catch {
+      // GitHub couldn't be asked; the menu just leaves the line out.
+      return c.json({ access: null });
+    }
   })
   .delete("/:id", requireUser, requireWorkspace, async (c) => {
     const machineId = c.req.param("id");

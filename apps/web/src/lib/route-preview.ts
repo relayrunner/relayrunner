@@ -8,8 +8,11 @@ import type { Machine } from "./machines.ts";
  * (apps/api routing.ts) decides for real; this only explains the order on the Router page.
  */
 export type StepVerdict = {
-  /** next: this step takes the job. skipped: it would pass the job on. unreached: an earlier step takes it. */
-  state: "next" | "skipped" | "unreached";
+  /**
+   * next: this step takes the job. skipped: it would pass the job on. unreached: an earlier step
+   * takes it. unknown: it depends on the machines' status, which hasn't loaded.
+   */
+  state: "next" | "skipped" | "unreached" | "unknown";
   reason: string;
 };
 
@@ -59,7 +62,7 @@ function machineVerdict(machines: Machine[]): { takes: boolean; reason: string; 
 
 export function previewRoute(
   steps: RunnerStep[],
-  machines: Machine[],
+  machines: Machine[] | null,
   accounts: AccountUsage[],
 ): RoutePreview {
   const worst = mostUsed(accounts);
@@ -68,16 +71,23 @@ export function previewRoute(
   const skipped: string[] = [];
   let next: RoutePreview["next"] = null;
 
+  let unknown = false;
   for (const step of steps) {
     if (next) {
       verdicts.push({ state: "unreached", reason: "" });
+      continue;
+    }
+    // Past a machine step whose status hasn't loaded, whether a step is reached isn't known yet.
+    if (unknown || (step.key === "machine" && !machines)) {
+      unknown = true;
+      verdicts.push({ state: "unknown", reason: "" });
       continue;
     }
     let takes = true;
     let reason = `${RUNNER_LABELS[step.key]} takes every job`;
     let title: string = RUNNER_LABELS[step.key];
     if (step.key === "machine") {
-      const verdict = machineVerdict(machines);
+      const verdict = machineVerdict(machines!);
       takes = verdict.takes;
       reason = verdict.reason;
       if (verdict.name) title = `Self-hosted · ${verdict.name}`;

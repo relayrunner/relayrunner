@@ -32,7 +32,14 @@ import {
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import { deviceName, formatMemory, type DeviceKind } from "@/lib/device";
 import { medianText, plural, type EnvironmentSummary, type Stat } from "@/lib/job-times";
-import { pauseMachine, resumeMachine, revokeMachine, timeAgo, type Machine } from "@/lib/machines";
+import {
+  machineAccess,
+  pauseMachine,
+  resumeMachine,
+  revokeMachine,
+  timeAgo,
+  type Machine,
+} from "@/lib/machines";
 import { cn } from "@/lib/utils";
 
 const KIND_ICONS: Record<DeviceKind, LucideIcon> = {
@@ -174,6 +181,14 @@ export function MachineCard({ machine, jobTime }: { machine: Machine; jobTime?: 
   // A self-hosted runner added from GitHub: no connection of its own, removed rather than revoked.
   const isGithub = machine.source === "github";
   const github = isGithub ? (machine.github ?? null) : null;
+  // The runner's group access, read from GitHub the first time its menu opens (several calls).
+  // undefined: not asked yet.
+  const [access, setAccess] = useState<string | null | undefined>(undefined);
+  function onMenuOpen(open: boolean) {
+    if (!open || !isGithub || access !== undefined) return;
+    setAccess(null);
+    machineAccess(machine.id).then(setAccess, () => setAccess(null));
+  }
 
   async function act(action: "revoke" | "pause" | "resume") {
     setPending(action);
@@ -290,7 +305,7 @@ export function MachineCard({ machine, jobTime }: { machine: Machine; jobTime?: 
           >
             {machine.name}
           </h3>
-          <DropdownMenu>
+          <DropdownMenu onOpenChange={onMenuOpen}>
             <DropdownMenuTrigger asChild>
               <Button
                 size="icon-sm"
@@ -303,7 +318,7 @@ export function MachineCard({ machine, jobTime }: { machine: Machine; jobTime?: 
               </Button>
             </DropdownMenuTrigger>
             <DropdownMenuContent align="end" className="w-60">
-              {(machine.owner || github?.access) && (
+              {(machine.owner || access) && (
                 <>
                   <DropdownMenuLabel className="grid font-normal text-muted-foreground">
                     {machine.owner && (
@@ -311,7 +326,7 @@ export function MachineCard({ machine, jobTime }: { machine: Machine; jobTime?: 
                         {isGithub ? `In ${machine.owner}` : `Connected by ${machine.owner}`}
                       </span>
                     )}
-                    {github?.access && <span className="truncate text-xs">{github.access}</span>}
+                    {access && <span className="truncate text-xs">{access}</span>}
                   </DropdownMenuLabel>
                   <DropdownMenuSeparator />
                 </>
