@@ -11,9 +11,9 @@
 import { Route as rootRouteImport } from './routes/__root'
 import { Route as IndexRouteImport } from './routes/index'
 import { Route as AuthedRouteImport } from './routes/_authed'
+import { Route as DeviceRouteImport } from './routes/device'
 import { Route as LoginRouteImport } from './routes/login'
 import { Route as AuthedWorkspaceRouteImport } from './routes/_authed/_workspace'
-import { Route as AuthedDeviceRouteImport } from './routes/_authed/device'
 import { Route as AuthedWorkspaceActivityRouteImport } from './routes/_authed/_workspace/activity'
 import { Route as AuthedWorkspaceJobTimesRouteImport } from './routes/_authed/_workspace/job-times'
 import { Route as AuthedWorkspaceRouterRouteImport } from './routes/_authed/_workspace/router'
@@ -42,6 +42,11 @@ const AuthedRoute = AuthedRouteImport.update({
   id: '/_authed',
   getParentRoute: () => rootRouteImport,
 } as any)
+const DeviceRoute = DeviceRouteImport.update({
+  id: '/device',
+  path: '/device',
+  getParentRoute: () => rootRouteImport,
+} as any)
 const LoginRoute = LoginRouteImport.update({
   id: '/login',
   path: '/login',
@@ -49,11 +54,6 @@ const LoginRoute = LoginRouteImport.update({
 } as any)
 const AuthedWorkspaceRoute = AuthedWorkspaceRouteImport.update({
   id: '/_workspace',
-  getParentRoute: () => AuthedRoute,
-} as any)
-const AuthedDeviceRoute = AuthedDeviceRouteImport.update({
-  id: '/device',
-  path: '/device',
   getParentRoute: () => AuthedRoute,
 } as any)
 const AuthedWorkspaceActivityRoute = AuthedWorkspaceActivityRouteImport.update({
@@ -159,8 +159,8 @@ const AuthedWorkspaceSettingsMembersRoute =
 
 export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
+  '/device': typeof DeviceRoute
   '/login': typeof LoginRoute
-  '/device': typeof AuthedDeviceRoute
   '/activity': typeof AuthedWorkspaceActivityRoute
   '/job-times': typeof AuthedWorkspaceJobTimesRoute
   '/router': typeof AuthedWorkspaceRouterRoute
@@ -182,8 +182,8 @@ export interface FileRoutesByFullPath {
 }
 export interface FileRoutesByTo {
   '/': typeof IndexRoute
+  '/device': typeof DeviceRoute
   '/login': typeof LoginRoute
-  '/device': typeof AuthedDeviceRoute
   '/activity': typeof AuthedWorkspaceActivityRoute
   '/job-times': typeof AuthedWorkspaceJobTimesRoute
   '/router': typeof AuthedWorkspaceRouterRoute
@@ -207,9 +207,9 @@ export interface FileRoutesById {
   __root__: typeof rootRouteImport
   '/': typeof IndexRoute
   '/_authed': typeof AuthedRouteWithChildren
+  '/device': typeof DeviceRoute
   '/login': typeof LoginRoute
   '/_authed/_workspace': typeof AuthedWorkspaceRouteWithChildren
-  '/_authed/device': typeof AuthedDeviceRoute
   '/_authed/_workspace/activity': typeof AuthedWorkspaceActivityRoute
   '/_authed/_workspace/job-times': typeof AuthedWorkspaceJobTimesRoute
   '/_authed/_workspace/router': typeof AuthedWorkspaceRouterRoute
@@ -233,8 +233,8 @@ export interface FileRouteTypes {
   fileRoutesByFullPath: FileRoutesByFullPath
   fullPaths:
     | '/'
-    | '/login'
     | '/device'
+    | '/login'
     | '/activity'
     | '/job-times'
     | '/router'
@@ -256,8 +256,8 @@ export interface FileRouteTypes {
   fileRoutesByTo: FileRoutesByTo
   to:
     | '/'
-    | '/login'
     | '/device'
+    | '/login'
     | '/activity'
     | '/job-times'
     | '/router'
@@ -280,9 +280,9 @@ export interface FileRouteTypes {
     | '__root__'
     | '/'
     | '/_authed'
+    | '/device'
     | '/login'
     | '/_authed/_workspace'
-    | '/_authed/device'
     | '/_authed/_workspace/activity'
     | '/_authed/_workspace/job-times'
     | '/_authed/_workspace/router'
@@ -306,6 +306,7 @@ export interface FileRouteTypes {
 export interface RootRouteChildren {
   IndexRoute: typeof IndexRoute
   AuthedRoute: typeof AuthedRouteWithChildren
+  DeviceRoute: typeof DeviceRoute
   LoginRoute: typeof LoginRoute
 }
 
@@ -325,6 +326,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AuthedRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/device': {
+      id: '/device'
+      path: '/device'
+      fullPath: '/device'
+      preLoaderRoute: typeof DeviceRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/login': {
       id: '/login'
       path: '/login'
@@ -337,13 +345,6 @@ declare module '@tanstack/react-router' {
       path: ''
       fullPath: '/'
       preLoaderRoute: typeof AuthedWorkspaceRouteImport
-      parentRoute: typeof AuthedRoute
-    }
-    '/_authed/device': {
-      id: '/_authed/device'
-      path: '/device'
-      fullPath: '/device'
-      preLoaderRoute: typeof AuthedDeviceRouteImport
       parentRoute: typeof AuthedRoute
     }
     '/_authed/_workspace/activity': {
@@ -519,14 +520,12 @@ const AuthedWorkspaceRouteWithChildren = AuthedWorkspaceRoute._addFileChildren(
 
 interface AuthedRouteChildren {
   AuthedWorkspaceRoute: typeof AuthedWorkspaceRouteWithChildren
-  AuthedDeviceRoute: typeof AuthedDeviceRoute
   AuthedInviteIdRoute: typeof AuthedInviteIdRoute
   AuthedWorkspacesNewRoute: typeof AuthedWorkspacesNewRoute
 }
 
 const AuthedRouteChildren: AuthedRouteChildren = {
   AuthedWorkspaceRoute: AuthedWorkspaceRouteWithChildren,
-  AuthedDeviceRoute: AuthedDeviceRoute,
   AuthedInviteIdRoute: AuthedInviteIdRoute,
   AuthedWorkspacesNewRoute: AuthedWorkspacesNewRoute,
 }
@@ -537,6 +536,7 @@ const AuthedRouteWithChildren =
 const rootRouteChildren: RootRouteChildren = {
   IndexRoute: IndexRoute,
   AuthedRoute: AuthedRouteWithChildren,
+  DeviceRoute: DeviceRoute,
   LoginRoute: LoginRoute,
 }
 export const routeTree = rootRouteImport
