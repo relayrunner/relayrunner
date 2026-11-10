@@ -1,7 +1,7 @@
 # The lint container (src/server.ts) for the RelayRunner Checks App. The API's LintRunner Durable
 # Object starts it without internet access and streams the repo in, so nothing here downloads at
 # lint time: every tool is installed below. Node runs the server's TypeScript directly.
-FROM node:24-bookworm-slim
+FROM node:26-bookworm-slim
 
 ARG ACTIONLINT_VERSION=1.7.7
 RUN set -eu; \
