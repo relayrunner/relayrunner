@@ -430,7 +430,60 @@ describe("coming back to a dashboard page after the install (next)", () => {
     );
   });
 
-  test("setup with the signup cookie, signed out, signs in with GitHub", async () => {
+  test("setup with the signup cookie signs a new user in with GitHub's code, no second trip", async () => {
+    const realFetch = globalThis.fetch;
+    const exchanged: string[] = [];
+    vi.stubGlobal("fetch", (input: RequestInfo | URL, init?: RequestInit) => {
+      const url = input instanceof Request ? input.url : String(input);
+      if (url === "https://github.com/login/oauth/access_token") {
+        exchanged.push(String(init?.body));
+        return Promise.resolve(Response.json({ access_token: "gho_new", token_type: "bearer" }));
+      }
+      if (url === "https://api.github.com/user")
+        return Promise.resolve(
+          Response.json({ id: 424242, login: "newbie", name: "New Bie", email: null }),
+        );
+      if (url === "https://api.github.com/user/emails")
+        return Promise.resolve(
+          Response.json([{ email: "newbie@example.com", primary: true, verified: true }]),
+        );
+      return realFetch(input, init);
+    });
+    const response = await app.request(
+      `${env.BETTER_AUTH_URL}/api/github/setup?code=abc&installation_id=5&setup_action=install`,
+      { headers: { cookie: `rr_signup_next=${encodeURIComponent(device)}` } },
+      env,
+    );
+    expect(response.headers.get("location")).toBe(`${device}&installed=5`);
+    // The code is exchanged for the callback URL GitHub sent it to.
+    expect(exchanged[0]).toContain(encodeURIComponent(`${env.BETTER_AUTH_URL}/api/github/setup`));
+    const session = response.headers
+      .getSetCookie()
+      .find((c) => c.startsWith("better-auth.session_token="));
+    expect(session).toBeTruthy();
+    const me = await app.request(
+      "/api/auth/get-session",
+      { headers: { cookie: session!.split(";")[0]! } },
+      env,
+    );
+    expect(((await me.json()) as { user: { email: string } }).user.email).toBe(
+      "newbie@example.com",
+    );
+  });
+
+  test("the install sign-in can't be called over HTTP", async () => {
+    const response = await call("/auth/github/install-sign-in", "", { code: "abc" });
+    expect(response.status).toBe(404);
+  });
+
+  test("when GitHub refuses the code, setup falls back to a GitHub sign-in", async () => {
+    const realFetch = globalThis.fetch;
+    vi.stubGlobal("fetch", (input: RequestInfo | URL, init?: RequestInit) => {
+      const url = input instanceof Request ? input.url : String(input);
+      if (url === "https://github.com/login/oauth/access_token")
+        return Promise.resolve(Response.json({ error: "bad_verification_code" }));
+      return realFetch(input, init);
+    });
     const response = await app.request(
       `${env.BETTER_AUTH_URL}/api/github/setup?code=abc&installation_id=5&setup_action=install`,
       { headers: { cookie: `rr_signup_next=${encodeURIComponent(device)}` } },

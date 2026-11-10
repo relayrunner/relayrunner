@@ -43,9 +43,9 @@ import { canManage, requireManager } from "../roles.ts";
 //    /setup falls back to it.
 // 3. A brand-new user from `relayrunner connect` has no account or workspace yet. /device sends
 //    them to GET /signup, which goes straight to the install and leaves the page to come back to
-//    in a cookie. /setup then finds them signed out, signs them in with GitHub (one extra redirect
-//    with no screen, since they've just authorized the App), and lands on that page with
-//    ?installed=<id>. /device makes their workspace and claims that installation into it.
+//    in a cookie. /setup then finds them signed out and signs them in with the code GitHub sent
+//    (install-sign-in.ts), or, without one, by starting a normal GitHub sign-in. Either way it
+//    lands on that page with ?installed=<id>. /device makes their workspace and claims that installation into it.
 // 4. Installs made straight on GitHub arrive with no `state` (or by webhook only) and stay
 //    unclaimed. The dashboard lists the user's unclaimed ones (GET /installations/unclaimed) and
 //    claims one into the active workspace (POST /installations/:id/claim), with the same check.
@@ -133,15 +133,19 @@ export const githubRoutes = new Hono<AppEnv>()
     // Signed out: a new user signing up through the install, or a session that expired on the
     // way. Sign them in with GitHub and come back to the page, which claims the installation (the
     // webhook records it either way).
-    if (!user)
-      return signInWithGitHub(
-        c,
-        landingAfterSignIn({
-          next: state?.next ?? signupNext,
-          requested,
-          installationId: validId ? installationId : null,
-        }),
-      );
+    if (!user) {
+      const after = landingAfterSignIn({
+        next: state?.next ?? signupNext,
+        requested,
+        installationId: validId ? installationId : null,
+      });
+      // GitHub signed them in during the install and sent a code: use it, so there's no second
+      // trip to GitHub. Only for the browser that started the signup (its cookie), so a code in
+      // someone else's link can't sign this browser in to their account.
+      const code = c.req.query("code");
+      if (code && signupNext && (await signInFromInstall(c, code))) return c.redirect(after);
+      return signInWithGitHub(c, after);
+    }
 
     // An org member without admin asked an owner to approve the install. Nothing to link yet; the
     // installation webhook records it once approved.
@@ -270,6 +274,18 @@ export function landingAfterSignIn({
   if (!next) return "/settings/github?github=unclaimed";
   if (requested) return withParam(next, "github", "requested");
   return installationId ? withParam(next, "installed", String(installationId)) : next;
+}
+
+// Creates the session from the code GitHub sent after the install (install-sign-in.ts). False
+// if GitHub won't take the code, and the caller falls back to a normal sign-in.
+async function signInFromInstall(c: Context<AppEnv>, code: string) {
+  const response = await c.var.auth.api
+    .signInFromInstall({ body: { code }, headers: c.req.raw.headers, asResponse: true })
+    .catch(() => null);
+  if (!response?.ok) return false;
+  for (const cookie of response.headers.getSetCookie())
+    c.header("set-cookie", cookie, { append: true });
+  return true;
 }
 
 // Starts Better Auth's GitHub sign-in, as the dashboard's sign-in button would, and lands on
