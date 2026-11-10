@@ -467,17 +467,28 @@ export function MachineCard({ machine, jobTime }: { machine: Machine; jobTime?: 
           </span>
         </div>
         <div className="flex min-w-0 items-center gap-3 text-xs text-muted-foreground">
-          {ownerName && (
+          {isGithub ? (
+            // A runner added from GitHub lives in its org, not with a person. The GitHub mark keeps
+            // the org's name from reading as the app's (an org can be named "relayrunner").
             <span className="flex min-w-0 items-center gap-1.5">
-              <UserAvatar
-                user={{
-                  name: ownerName === "You" ? (machine.owner ?? "You") : ownerName,
-                  image: machine.ownerImage,
-                }}
-                className="size-4 border-0 text-[9px]"
-              />
-              <span className="truncate">{ownerName}</span>
+              <GithubIcon className="size-3.5 shrink-0" />
+              <span className="truncate">
+                {machine.owner ? `Registered in ${machine.owner}` : "Registered on GitHub"}
+              </span>
             </span>
+          ) : (
+            ownerName && (
+              <span className="flex min-w-0 items-center gap-1.5">
+                <UserAvatar
+                  user={{
+                    name: ownerName === "You" ? (machine.owner ?? "You") : ownerName,
+                    image: machine.ownerImage,
+                  }}
+                  className="size-4 border-0 text-[9px]"
+                />
+                <span className="truncate">{ownerName}</span>
+              </span>
+            )
           )}
           {canShare ? (
             <button
