@@ -433,15 +433,18 @@ export const machineRoutes = new Hono<AppEnv>()
           isNull(schema.machine.revokedAt),
         ),
       );
+    // Without groups (the Runners page's found card) the runner list comes from the Router's
+    // short cache, shared with GET /machines. The Add runner dialog reads fresh, with groups.
+    const router = groups ? null : c.env.ROUTER.getByName(c.var.workspace.id);
     const orgs = await Promise.all(
       installations.map(async (installation) => {
         try {
-          const { runners, access } = await readOrgRunners(
-            c.env,
-            installation.id,
-            installation.org,
-            { groups },
-          );
+          const { runners, access } = router
+            ? {
+                runners: await cachedRunners(router, installation.id, installation.org),
+                access: new Map<number, GroupAccess>(),
+              }
+            : await readOrgRunners(c.env, installation.id, installation.org, { groups });
           return {
             installationId: installation.id,
             org: installation.org,
@@ -605,6 +608,17 @@ export const machineRoutes = new Hono<AppEnv>()
     if (machine.source === "github") await removeRoutingLabel(c.env, db, machine);
     return c.json({ machine: presentMachine(machine) });
   });
+
+/** An org's runners from the Router's short cache; throws when GitHub couldn't be asked. */
+async function cachedRunners(
+  router: { githubRunners(installationId: number, org: string): Promise<OrgRunner[] | null> },
+  installationId: number,
+  org: string,
+) {
+  const runners = await router.githubRunners(installationId, org);
+  if (!runners) throw new Error("GitHub runners unavailable");
+  return runners;
+}
 
 /** What the add dialog shows of an org runner. */
 function presentOrgRunner(
