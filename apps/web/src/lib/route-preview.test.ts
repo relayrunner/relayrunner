@@ -85,4 +85,15 @@ describe("previewRoute", () => {
   test("nothing takes the job when every step passes it on", () => {
     expect(previewRoute([{ key: "machine" }], [], []).next).toBeNull();
   });
+
+  test("steps from the machine step on are unknown until the machines load", () => {
+    const steps = [
+      { key: "github", limit: { percent: 80 } },
+      { key: "machine" },
+      { key: "github" },
+    ] as const;
+    const preview = previewRoute([...steps], null, used(2520));
+    expect(preview.steps.map((step) => step.state)).toEqual(["skipped", "unknown", "unknown"]);
+    expect(preview.next).toBeNull();
+  });
 });

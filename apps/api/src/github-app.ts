@@ -75,6 +75,10 @@ export async function appJwt(appId: string, key: CryptoKey, now = Date.now()) {
 }
 
 export async function installationToken(jwt: string, installationId: number): Promise<string> {
+  return (await mintInstallationToken(jwt, installationId)).token;
+}
+
+async function mintInstallationToken(jwt: string, installationId: number) {
   const response = await fetch(`${API}/app/installations/${installationId}/access_tokens`, {
     method: "POST",
     headers: headers(jwt),
@@ -83,7 +87,10 @@ export async function installationToken(jwt: string, installationId: number): Pr
     throw new Error(
       `POST /app/installations/${installationId}/access_tokens failed with ${response.status}: ${(await response.text()).slice(0, 300)}`,
     );
-  return ((await response.json()) as { token: string }).token;
+  const body = (await response.json()) as { token: string; expires_at?: string };
+  // GitHub's tokens last an hour; assume that if it doesn't say.
+  const expiresAt = body.expires_at ? Date.parse(body.expires_at) : Date.now() + 60 * 60_000;
+  return { token: body.token, expiresAt };
 }
 
 /**
@@ -183,9 +190,25 @@ export async function repoInstallationId(jwt: string, repo: string): Promise<num
 export async function appInstallationToken(
   env: { GITHUB_APP_ID: string; GITHUB_APP_PRIVATE_KEY: { get(): Promise<string> } },
   installationId: number,
+  now = Date.now(),
 ) {
+  const cached = installationTokens.get(installationId);
+  if (cached && cached.expiresAt - now > TOKEN_REUSE_MARGIN_MS) return cached.token;
   const key = await importAppPrivateKey(await env.GITHUB_APP_PRIVATE_KEY.get());
-  return installationToken(await appJwt(env.GITHUB_APP_ID, key), installationId);
+  const minted = await mintInstallationToken(await appJwt(env.GITHUB_APP_ID, key), installationId);
+  installationTokens.set(installationId, minted);
+  return minted.token;
+}
+
+// Installation tokens by installation id, kept for the isolate's life so a page load or pick
+// doesn't read the private key, sign a JWT and mint a token each time (each mint is a GitHub
+// round trip, and the App can mint only so many an hour). Reused until 5 minutes before expiry.
+const installationTokens = new Map<number, { token: string; expiresAt: number }>();
+const TOKEN_REUSE_MARGIN_MS = 5 * 60_000;
+
+/** Forget cached installation tokens. For tests. */
+export function clearInstallationTokens() {
+  installationTokens.clear();
 }
 
 /** Uninstall the App from an account, as the App. Already gone (404) counts as done. */

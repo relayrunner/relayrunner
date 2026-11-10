@@ -1,5 +1,6 @@
 import { DEFAULT_RUNNER_ORDER, type RunnerOrder } from "@relayrunner/runner-order";
 import { createFileRoute } from "@tanstack/react-router";
+import { useEffect, useState } from "react";
 import { PageHeader } from "@/components/page-header";
 import { RunnerOrderEditor } from "@/components/runner-order-editor";
 import { Badge } from "@/components/ui/badge";
@@ -14,15 +15,16 @@ export const Route = createFileRoute("/_authed/_workspace/router")({
   loader: async ({ context }) => {
     // The dev preview has no API behind it: show a sample workspace instead.
     if (authDisabled) return sampleRouter();
-    const [order, { machines }, accounts] = await Promise.all([
+    // Runner status isn't awaited here: a runner added from GitHub reads its status from GitHub,
+    // so the page loads first and the Self-hosted step's badge fills in after (RouterPage).
+    const [order, accounts] = await Promise.all([
       getRunnerOrder(context.current.workspace.id),
-      listMachines(),
       // The minutes only explain the GitHub step's limit, so the page still loads without them.
       getActionsUsage()
         .then((usage) => usage.accounts)
         .catch((): AccountUsage[] => []),
     ]);
-    return { ...order, machines, accounts };
+    return { ...order, machines: null as Machine[] | null, accounts };
   },
   component: RouterPage,
 });
@@ -33,6 +35,20 @@ function RouterPage() {
   const { current } = Route.useRouteContext();
   // Owners and admins change the order (#134); members read it. The API refuses a member's save.
   const editable = canManage(current.role);
+  // The machines' live status, for the Self-hosted step's badge. Null until it arrives.
+  const [machines, setMachines] = useState<Machine[] | null>(loaded.machines);
+  useEffect(() => {
+    if (loaded.machines) return;
+    let live = true;
+    listMachines().then(
+      ({ machines }) => live && setMachines(machines),
+      // Without it the badge stays off; the order itself is still right.
+      () => undefined,
+    );
+    return () => {
+      live = false;
+    };
+  }, [loaded.machines]);
 
   return (
     <section>
@@ -51,7 +67,7 @@ function RouterPage() {
           order={loaded.order}
           isDefault={loaded.isDefault}
           editable={editable}
-          machines={loaded.machines}
+          machines={machines}
           accounts={loaded.accounts}
         />
       </div>

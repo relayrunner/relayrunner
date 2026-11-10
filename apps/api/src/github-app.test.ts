@@ -1,7 +1,9 @@
 import { generateKeyPairSync, createPublicKey, verify } from "node:crypto";
 import { afterEach, beforeEach, describe, expect, test, vi } from "vitest";
 import {
+  appInstallationToken,
   appJwt,
+  clearInstallationTokens,
   deleteRunner,
   generateJitConfig,
   importAppPrivateKey,
@@ -40,6 +42,41 @@ describe("GitHub App auth", () => {
       iat: Date.UTC(2026, 10, 4) / 1000 - 60,
       exp: Date.UTC(2026, 10, 4) / 1000 + 480,
     });
+  });
+});
+
+describe("installation tokens", () => {
+  const env = { GITHUB_APP_ID: "5605512", GITHUB_APP_PRIVATE_KEY: { get: async () => pkcs8 } };
+  const now = Date.UTC(2026, 10, 10, 2);
+  let mints: number;
+
+  beforeEach(() => {
+    clearInstallationTokens();
+    mints = 0;
+    vi.stubGlobal("fetch", async () => {
+      mints += 1;
+      return Response.json({
+        token: `ghs_${mints}`,
+        expires_at: new Date(now + 60 * 60_000).toISOString(),
+      });
+    });
+  });
+
+  afterEach(() => {
+    vi.unstubAllGlobals();
+  });
+
+  test("reuses a token until 5 minutes before it expires", async () => {
+    expect(await appInstallationToken(env, 1, now)).toBe("ghs_1");
+    expect(await appInstallationToken(env, 1, now + 54 * 60_000)).toBe("ghs_1");
+    expect(mints).toBe(1);
+    expect(await appInstallationToken(env, 1, now + 56 * 60_000)).toBe("ghs_2");
+  });
+
+  test("keeps each installation's token apart", async () => {
+    expect(await appInstallationToken(env, 1, now)).toBe("ghs_1");
+    expect(await appInstallationToken(env, 2, now)).toBe("ghs_2");
+    expect(await appInstallationToken(env, 1, now)).toBe("ghs_1");
   });
 });
 

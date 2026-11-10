@@ -60,8 +60,8 @@ const EXAMPLE_INPUTS: Record<RunnerKey, string> = {
 };
 
 /**
- * The runner order as a chain: each step hands a job to the next when it can't take it. Above it,
- * where the next job would go right now; beside it, the relay.yml inputs the order needs.
+ * The runner order as a chain: each step hands a job to the next when it can't take it. Each step
+ * says whether the next job would stop there; beside it, the relay.yml inputs the order needs.
  */
 export function RunnerOrderEditor({
   workspaceId,
@@ -76,7 +76,8 @@ export function RunnerOrderEditor({
   isDefault: boolean;
   /** Owners and admins change the order (#134); members read it. The API refuses a member's save. */
   editable: boolean;
-  machines: Machine[];
+  /** The machines' live status, or null while it loads (the Self-hosted step shows no badge). */
+  machines: Machine[] | null;
   /** This month's Actions minutes per connected GitHub account (#116). */
   accounts: AccountUsage[];
 }) {
@@ -134,26 +135,6 @@ export function RunnerOrderEditor({
 
   return (
     <div className="grid gap-5">
-      <section
-        aria-label="Next job"
-        className="grid gap-1 rounded-lg border border-border/60 bg-[var(--rr-dormant)] px-4 py-3.5"
-      >
-        <p className="text-xs text-muted-foreground">Next job goes to</p>
-        {preview.next ? (
-          <>
-            <p className="text-xl font-semibold">{preview.next.title}</p>
-            <p className="text-sm text-[var(--rr-ink-2)]">{preview.next.why}</p>
-          </>
-        ) : (
-          <>
-            <p className="text-xl font-semibold text-destructive">Nothing can take it</p>
-            <p className="text-sm text-[var(--rr-ink-2)]">
-              No step fits, so the job stops early and Activity says why.
-            </p>
-          </>
-        )}
-      </section>
-
       <div className="flex flex-wrap items-start gap-6">
         <div className="grid min-w-0 flex-[1_1_480px] gap-1.5">
           <DndContext sensors={sensors} collisionDetection={closestCenter} onDragEnd={onDragEnd}>

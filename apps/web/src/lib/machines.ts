@@ -29,12 +29,10 @@ export type Machine = {
   source?: "connect" | "github";
   /** The label RelayRunner added to a GitHub runner to route jobs to it. */
   routingLabel?: string | null;
-  /** A GitHub runner's org, its group's access, and whether GitHub still has it. */
+  /** A GitHub runner's org and whether GitHub still has it. Its group access: machineAccess. */
   github?: {
     org: string | null;
     runnerId: number | null;
-    /** "Default group · all private repos", or null when unknown. */
-    access: string | null;
     /** GitHub answered and the runner wasn't there: removed or re-registered. */
     missing: boolean;
     /** GitHub couldn't be asked, so the status reads offline. */
@@ -70,6 +68,17 @@ export type Machine = {
 
 export function listMachines() {
   return api<{ machines: Machine[] }>("/machines");
+}
+
+/**
+ * Which repos a runner added from GitHub may take jobs from, e.g. "Default group · all private
+ * repos", or null when unknown. Read on demand: it takes several GitHub calls.
+ */
+export async function machineAccess(machineId: string) {
+  const { access } = await api<{ access: string | null }>(
+    `/machines/${encodeURIComponent(machineId)}/access`,
+  );
+  return access;
 }
 
 /** A self-hosted runner registered in a connected org (GET /api/machines/github-runners). */

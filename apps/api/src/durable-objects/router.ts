@@ -51,6 +51,8 @@ const ROUTE_KEY = "route:";
 // How long a GitHub org's runner group access is reused before it's read again. Runner status is
 // read fresh on every pick; groups change rarely and take a few calls to read.
 const GROUP_ACCESS_TTL_MS = 5 * 60_000;
+// How long the dashboard reuses an org's runner list (status, busy, labels).
+const RUNNER_LIST_TTL_MS = 30_000;
 
 // One per workspace, addressed by workspace id. Decides where each picked job's run goes and
 // keeps the routes it hands out (src/routing.ts), so the job queued on a route's label can find
@@ -58,6 +60,38 @@ const GROUP_ACCESS_TTL_MS = 5 * 60_000;
 export class Router extends DurableObject<Env> {
   // Runner group access per installation, kept in memory while the object is awake.
   private groupAccess = new Map<number, { at: number; access: Map<number, GroupAccess> }>();
+  // Each org's runner list for the dashboard, by installation id (see githubRunners).
+  private runnerLists = new Map<number, { at: number; runners: Promise<OrgRunner[]> }>();
+
+  /**
+   * An org's self-hosted runners for the dashboard's Runners and Router pages, reused for
+   * RUNNER_LIST_TTL_MS so the pages' refreshes don't each ask GitHub. Picks don't use this: they
+   * read status fresh. Null when GitHub can't be asked.
+   */
+  async githubRunners(installationId: number, org: string): Promise<OrgRunner[] | null> {
+    const now = Date.now();
+    const cached = this.runnerLists.get(installationId);
+    if (cached && now - cached.at < RUNNER_LIST_TTL_MS) return cached.runners.catch(() => null);
+    // Kept as a promise so loads that arrive together share one read.
+    const runners = appInstallationToken(this.env, installationId).then((token) =>
+      listOrgRunners(token, org),
+    );
+    this.runnerLists.set(installationId, { at: now, runners });
+    try {
+      return await runners;
+    } catch (error) {
+      this.runnerLists.delete(installationId);
+      console.warn(
+        JSON.stringify({
+          msg: "github runners unavailable",
+          installationId,
+          org,
+          error: error instanceof Error ? error.message : String(error),
+        }),
+      );
+      return null;
+    }
+  }
 
   /**
    * Where the run's next job goes, walking the workspace's runner order: a machine route's
