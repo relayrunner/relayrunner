@@ -109,6 +109,22 @@ export function admits(
   return job.startedBy?.id === owner && job.triggeredBy?.id === owner;
 }
 
+/**
+ * Whether a machine admitted to a job must first show that its owner can read the job's repo. A
+ * machine shared with `anyone` takes other people's jobs, and being in the workspace doesn't mean
+ * its owner may read every repo the workspace's installations see: without this, a member could
+ * receive a repo's code and secrets by sharing their machine. A job its owner started (run and
+ * attempt) needs no check, and neither does `only_me`, which only ever takes those.
+ */
+export function needsOwnerAccess(
+  machine: { sharing?: MachineSharing; ownerGithubId?: number | null },
+  job: JobStarters,
+): boolean {
+  if ((machine.sharing ?? "anyone") !== "anyone") return false;
+  const owner = machine.ownerGithubId;
+  return owner == null || job.startedBy?.id !== owner || job.triggeredBy?.id !== owner;
+}
+
 /** The GitHub id of whoever started this attempt, whose own machines a pick tries first. */
 export function starterId(job: JobStarters): number | null {
   return job.triggeredBy?.id ?? job.startedBy?.id ?? null;

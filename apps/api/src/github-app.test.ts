@@ -10,6 +10,7 @@ import {
   listRunners,
   runnerBusy,
   runnerScope,
+  userCanReadRepo,
 } from "./github-app.ts";
 
 const { privateKey } = generateKeyPairSync("rsa", { modulusLength: 2048 });
@@ -155,5 +156,46 @@ describe("JIT runners by scope", () => {
       "DELETE https://api.github.com/orgs/relayrunner/actions/runners/7",
     ]);
     expect(calls.map((call) => call.body?.runner_group_id)).toEqual([4, 1, undefined]);
+  });
+});
+
+describe("userCanReadRepo", () => {
+  afterEach(() => vi.unstubAllGlobals());
+
+  const answer = (permission: number | string) =>
+    vi.stubGlobal("fetch", async (url: string) => {
+      if (url.endsWith("/user/2")) return Response.json({ login: "zach dunn" });
+      if (typeof permission === "number") return new Response("", { status: permission });
+      return Response.json({ permission });
+    });
+
+  test("any permission but none can read", async () => {
+    for (const permission of ["admin", "maintain", "write", "triage", "read"]) {
+      answer(permission);
+      expect(await userCanReadRepo("ghs_x", "acme/app", 2)).toBe(true);
+    }
+    answer("none");
+    expect(await userCanReadRepo("ghs_x", "acme/app", 2)).toBe(false);
+  });
+
+  test("asks by the user's current login, encoded", async () => {
+    const urls: string[] = [];
+    vi.stubGlobal("fetch", async (url: string) => {
+      urls.push(url);
+      return Response.json(
+        url.endsWith("/user/2") ? { login: "zach dunn" } : { permission: "read" },
+      );
+    });
+    await userCanReadRepo("ghs_x", "acme/app", 2);
+    expect(urls[1]).toBe(
+      "https://api.github.com/repos/acme/app/collaborators/zach%20dunn/permission",
+    );
+  });
+
+  test("a 404 is no access; other failures throw", async () => {
+    answer(404);
+    expect(await userCanReadRepo("ghs_x", "acme/app", 2)).toBe(false);
+    answer(500);
+    await expect(userCanReadRepo("ghs_x", "acme/app", 2)).rejects.toThrow("500");
   });
 });

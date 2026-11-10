@@ -158,7 +158,11 @@ async function askSharing(workspace: string): Promise<ShareChoice | null> {
     message: "Who can run jobs on this machine?",
     options: [
       { value: "only-me", label: "Only me", hint: "jobs you started" },
-      { value: "anyone", label: `Anyone in ${workspace}`, hint: "teammates' and bots' jobs too" },
+      {
+        value: "anyone",
+        label: `Anyone in ${workspace}`,
+        hint: "teammates' and bots' jobs too, from repos you can open",
+      },
     ],
     initialValue: "only-me",
   });
