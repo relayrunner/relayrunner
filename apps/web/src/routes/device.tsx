@@ -1,4 +1,4 @@
-import { createFileRoute, useNavigate, useRouter } from "@tanstack/react-router";
+import { createFileRoute, Link, useNavigate, useRouter } from "@tanstack/react-router";
 import { CheckIcon } from "lucide-react";
 import { useState, type FormEvent, type ReactNode } from "react";
 import { Brand } from "@/components/brand";
@@ -162,7 +162,9 @@ function DevicePage() {
   return (
     <main className="grid min-h-screen place-items-center p-4">
       <div className="flex w-full max-w-sm flex-col items-center gap-6">
-        <Brand />
+        <Link to="/" aria-label="relayrunner home" className="rounded-md">
+          <Brand />
+        </Link>
         {loaded.kind === "enter" && <EnterCode />}
         {loaded.kind === "error" && (
           <Message title="Can't connect this machine" body={loaded.message} />
@@ -249,7 +251,7 @@ function Onboarding({ loaded }: { loaded: Extract<Loaded, { kind: "review" }> })
     return (
       <Message
         title="Machine connected"
-        body={`${result.name} is enrolled. Head back to your terminal; it finishes on its own.`}
+        body={`${result.name} is enrolled. Head back to your terminal; it finishes on its own. You can close this tab.`}
       />
     );
   if (result?.action === "denied")
