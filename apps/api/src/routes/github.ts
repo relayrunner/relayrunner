@@ -33,7 +33,8 @@ import { canManage, requireManager } from "../roles.ts";
 //    GET /user/installations. Then the installation is linked to the workspace from `state`.
 //    /install takes an optional `?next=<dashboard path>` that rides in the signed state, so /setup
 //    can send the browser back there (the /device page while `relayrunner connect` onboards a new
-//    user) instead of /settings/github.
+//    user) instead of /settings/github. The state also carries the origin /install ran on, and
+//    /setup hands the request back there when GitHub's fixed Setup URL is another host.
 // 3. Installs made straight on GitHub arrive with no `state` (or by webhook only) and stay
 //    unclaimed. The dashboard lists the user's unclaimed ones (GET /installations/unclaimed) and
 //    claims one into the active workspace (POST /installations/:id/claim), with the same check.
@@ -60,7 +61,7 @@ export const githubRoutes = new Hono<AppEnv>()
       c.env.BETTER_AUTH_SECRET,
       c.var.workspace.id,
       c.var.user!.id,
-      { next: dashboardPath(c.req.query("next")) },
+      { next: dashboardPath(c.req.query("next")), origin: new URL(c.req.url).origin },
     );
     return c.redirect(installUrl(c.env.GITHUB_APP_SLUG, state));
   })
@@ -72,6 +73,13 @@ export const githubRoutes = new Hono<AppEnv>()
     const state = stateParam
       ? await verifyInstallState(c.env.BETTER_AUTH_SECRET, stateParam)
       : null;
+    // GitHub's Setup URL is one fixed host, but the install may have started on another (the
+    // workers.dev host `relayrunner connect` links to, a preview, or the custom domain), and the
+    // session cookie only lives there. Hand the request back to that origin first, or this
+    // host sees no session. The origin rides in the signed state, so this isn't an open redirect.
+    const here = new URL(c.req.url);
+    if (state?.origin && state.origin !== here.origin)
+      return c.redirect(`${state.origin}${here.pathname}${here.search}`);
     const landing = state?.next ?? "/settings/github";
     const done = (outcome: SetupOutcome) => {
       const url = new URL(landing, "https://dashboard.invalid");

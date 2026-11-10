@@ -387,6 +387,18 @@ describe("coming back to a dashboard page after the install (next)", () => {
     expect(response.headers.get("location")).toBe(`/login?redirect=${encodeURIComponent(device)}`);
   });
 
+  test("setup on another host hands back to the origin the install started on", async () => {
+    const { cookie } = await owner();
+    const state = await installState(cookie, device);
+    expect((await verifyInstallState(env.BETTER_AUTH_SECRET, state))?.origin).toBe(
+      "http://localhost",
+    );
+    // GitHub's Setup URL is a fixed host where the session cookie doesn't live.
+    const query = `installation_id=1&setup_action=install&state=${encodeURIComponent(state)}`;
+    const response = await app.request(`https://app.example/api/github/setup?${query}`, {}, env);
+    expect(response.headers.get("location")).toBe(`http://localhost/api/github/setup?${query}`);
+  });
+
   test("next only ever points inside the dashboard", async () => {
     const { cookie } = await owner();
     for (const next of [
