@@ -1,6 +1,6 @@
 # Pick runner
 
-**Covers:** `apps/api/src/durable-objects/pick-runner.ts`, `apps/api/src/github-app.ts` (`runnerScope`, `generateJitConfig`, `deleteRunner`, `DEFAULT_RUNNER_GROUP_ID`, runner groups), `apps/api/src/installations.ts` (`installationRunnerScope`), `apps/api/src/runner-protocol.ts`, and the `queued` path in `apps/api/src/webhook-queue.ts`.
+**Covers:** `apps/api/src/durable-objects/pick-runner.ts`, `apps/api/src/repo-runner.ts` (`mintRepoFirst`), `apps/api/src/github-app.ts` (`runnerScope`, `generateJitConfig`, `deleteRunner`, `DEFAULT_RUNNER_GROUP_ID`, runner groups), `apps/api/src/installations.ts` (`installationRunnerScope`), `apps/api/src/runner-protocol.ts`, and the `queued` path in `apps/api/src/webhook-queue.ts`.
 
 ## What it does
 
@@ -12,7 +12,7 @@ The pick runner is the piece that decides, so it has to get the job before anyth
 
 To GitHub, a self-hosted runner is two things:
 
-1. **A registration record** in the org: a name, labels, and the one runner group it belongs to. On a personal account, the record lives on one repo instead (see [Personal accounts](#personal-accounts)).
+1. **A registration record** on the job's repo: a name and labels. When the org refuses repo-level runners, the record lives in the org instead, in the one runner group it belongs to (see [Where it registers](#where-it-registers)).
 2. **Whoever holds that record's credentials and asks GitHub for work.** Normally that's GitHub's runner program on a machine. GitHub doesn't check what's on the other end, only that it speaks the runner protocol.
 
 The pick runner uses exactly that. Nothing is provisioned and no VM starts. The gateway makes one API call that creates the record and returns its credentials. The group is a field of that call (`runner_group_id`), so the runner is born in the group and is never added to it later. A Durable Object then holds the credentials and polls GitHub the way the runner program would.
@@ -21,11 +21,11 @@ The pick runner uses exactly that. Nothing is provisioned and no VM starts. The 
 flowchart LR
   subgraph repo["Your repo"]
     R["relay job<br/>runs-on: relayrunner"]
+    Rec["Runner record on the repo<br/>relayrunner-pick-1234<br/>label relayrunner"]
   end
   subgraph gh["GitHub org"]
     Q["Job queue<br/>relay, needs label relayrunner"]
     subgraph def["Default runner group (private repos only)"]
-      Rec["Runner record<br/>relayrunner-pick-1234<br/>label relayrunner"]
       Mac["Atticus's Mac<br/>label self-hosted"]
     end
   end
@@ -34,9 +34,9 @@ flowchart LR
   end
   R -- "1. queued" --> Q
   Q -- "2. workflow_job webhook" --> P
-  P -- "3. create a runner in the Default group<br/>generate-jitconfig with runner_group_id: 1" --> Rec
+  P -- "3. create a runner on the job's repo<br/>repos/{owner}/{repo}/.../generate-jitconfig" --> Rec
   P -- "4. poll for work as that runner" --> Rec
-  Q -. "5. offered only if the label matches<br/>and the group allows the repo" .-> Rec
+  Q -. "5. offered when the label matches<br/>(groups don't apply on a repo)" .-> Rec
   P -- "6. complete the relay with a runner output" --> R
 ```
 
@@ -45,7 +45,7 @@ Compared with a vanilla self-hosted runner:
 |                      | Vanilla runner (e.g. a Mac)                       | Pick runner                                    |
 | -------------------- | ------------------------------------------------- | ---------------------------------------------- |
 | Registered by        | `./config.sh` with a registration token           | `generate-jitconfig` API call from the gateway |
-| Group chosen         | At config time (Default unless another is picked) | In the API call: `runner_group_id: 1`          |
+| Group chosen         | At config time (Default unless another is picked) | None: it's on the repo (org fallback: Default) |
 | Asks GitHub for jobs | The runner program on the machine                 | A Durable Object in the Worker                 |
 | Lives                | Until removed                                     | One job, or 4 minutes                          |
 | Runs job steps       | Yes                                               | No, it only sets the `runner` output           |
@@ -86,22 +86,22 @@ flowchart LR
 
 The App gets a `workflow_job` webhook with `action: queued` and the job's labels. The Webhooks Worker puts it on a Cloudflare Queue. The consumer in `apps/api/src/webhook-queue.ts` starts a `PickRunner` Durable Object named after the job id. `start()` is idempotent, so a redelivered webhook does nothing.
 
-### 3. The gateway creates a runner in the Default runner group
+### 3. The gateway creates a runner on the job's repo
 
 ```mermaid
 flowchart LR
   P["PickRunner"] -- "1. App JWT for an<br/>installation token" --> API["GitHub REST API"]
-  P -- "2. POST /orgs/{org}/actions/runners/generate-jitconfig<br/>name: relayrunner-pick-1234<br/>labels: relayrunner<br/>runner_group_id: 1" --> API
-  subgraph def["Default runner group (id 1)"]
+  P -- "2. POST /repos/{owner}/{repo}/actions/runners/generate-jitconfig<br/>name: relayrunner-pick-1234<br/>labels: relayrunner" --> API
+  subgraph repo["The job's repo"]
     Rec["Runner relayrunner-pick-1234<br/>label relayrunner"]
   end
   API -- "creates" --> Rec
   API -- "3. returns encoded_jit_config<br/>(this runner's credentials)" --> P
 ```
 
-This is where the runner comes into existence, and it is created **inside** a runner group. The `runner_group_id` in the request decides which group. The gateway always sends `1`, which is Default (`DEFAULT_RUNNER_GROUP_ID` in `apps/api/src/github-app.ts`). Nothing adds the runner to a group afterwards. The response's `encoded_jit_config` holds the runner's identity and an RSA key. Whoever holds it can act as that runner, for one job.
+This is where the runner comes into existence. It's created on the job's repo, outside any runner group, so it can only be offered that repo's jobs. The response's `encoded_jit_config` holds the runner's identity and an RSA key. Whoever holds it can act as that runner, for one job.
 
-For a personal account the call goes to `/repos/{owner}/{repo}/actions/runners/generate-jitconfig` instead, and the runner belongs to that repo, outside any group (see [Personal accounts](#personal-accounts)).
+If GitHub refuses the repo endpoint, the call goes to `/orgs/{org}/actions/runners/generate-jitconfig` with `runner_group_id: 1` instead, and the runner is created **inside** the Default group (`DEFAULT_RUNNER_GROUP_ID` in `apps/api/src/github-app.ts`). See [Where it registers](#where-it-registers).
 
 ### 4. The PickRunner connects as that runner
 
@@ -127,13 +127,13 @@ No VM or runner binary is involved. The Durable Object does what GitHub's runner
 flowchart TD
   J["Queued relay job"] --> L{"Does the runner have<br/>every runs-on label?"}
   L -- "no" --> N["Not offered"]
-  L -- "yes" --> G{"Does the runner's group<br/>allow this repo?"}
-  G -- "no, e.g. a public repo<br/>and Default blocks public" --> N
+  L -- "yes" --> G{"Repo runner, or its<br/>group allows this repo?"}
+  G -- "no, e.g. an org fallback runner,<br/>a public repo, Default blocks public" --> N
   G -- "yes" --> O["Offered to relayrunner-pick-1234"]
   N --> T["After 4 minutes the PickRunner deletes its runner<br/>and logs no-job; the relay stays queued"]
 ```
 
-Both checks must pass. The group check is explained in [Who gets the job](#who-gets-the-job-labels-and-runner-groups). GitHub may offer **any** queued job in the org that passes them, including another repo's relay. So the PickRunner always takes the repo and run from the job it claimed, not from the webhook that woke it.
+Both checks must pass. The group check only applies to an org fallback runner, and is explained in [Who gets the job](#who-gets-the-job-labels-and-runner-groups). GitHub may offer **any** queued job that passes them: another relay in the same repo, or, for an org fallback runner, another repo's relay. So the PickRunner always takes the repo and run from the job it claimed, not from the webhook that woke it.
 
 ### 6. The PickRunner answers the job
 
@@ -160,44 +160,45 @@ GitHub offers a queued job to a self-hosted runner only when **both** of these h
    - **Allow public repositories:** off by default. While it's off, no public repo's job reaches any runner in the group.
    - **Workflow access:** optionally, only selected workflows.
 
-The pick runner always registers in the org's **Default** group (`runner_group_id: 1`). Default allows private repos only until an org admin turns on "Allow public repositories" (Organization settings → Actions → Runner groups → Default). Machine runners (`apps/api/src/durable-objects/machine-link.ts`) register in Default too.
+Both rules only apply to runners registered in the org. A runner registered on a repo isn't in any runner group, so only the label matters, and it only ever gets that repo's jobs. That's why the pick runner registers on the job's repo (next section). When it falls back to the org, it registers in the **Default** group (`runner_group_id: 1`), which allows private repos only until an org admin turns on "Allow public repositories" (Organization settings → Actions → Runner groups → Default).
 
-| Repo                           | Label matches | Default allows the repo | Result                                     |
-| ------------------------------ | ------------- | ----------------------- | ------------------------------------------ |
-| relayrunner-ci-tests (private) | yes           | yes                     | Pick runner claims the relay and routes it |
-| relayrunner, actions (public)  | yes           | no                      | Never offered; `no-job` after 4 minutes    |
+| Where the pick runner registers | Repo                          | Result                                     |
+| ------------------------------- | ----------------------------- | ------------------------------------------ |
+| The job's repo                  | any, public or private        | Pick runner claims the relay and routes it |
+| Org fallback, Default group     | private, allowed by Default   | Pick runner claims the relay and routes it |
+| Org fallback, Default group     | public, Default blocks public | Blocked: failed `RelayRunner` check        |
 
-Orgs on GitHub Free can't create extra runner groups. Default is the only one they have, and its settings apply to every self-hosted runner in the org.
+## Where it registers
 
-## Personal accounts
+Every pick runner first registers on the job's own repo (`POST /repos/{owner}/{repo}/actions/runners/generate-jitconfig`, `mintRepoFirst` in `src/repo-runner.ts`), in orgs and personal accounts alike. That needs the App's repository permission **Administration: Read & write**. Machine runners do the same (`src/machine-runner.ts`). The org's runner groups never come into it, so a public org repo's relay is answered without anyone changing a group, and Default can stay private-only for the long-lived runners an org adds (a fork PR can't target those).
 
-A personal account has no org runners and no runner groups, so `generate-jitconfig` at the org fails for it. Instead, each one-job runner registers on the job's own repo (`POST /repos/{owner}/{repo}/actions/runners/generate-jitconfig`), which needs the App's repository permission **Administration: Read & write**. `installationRunnerScope` picks the scope from the installation's account type (`github_installation.account_type`, from the `installation` webhook): `User` gets a repo scope, anything else, including an installation RelayRunner hasn't recorded, gets the org. Machine and container runners use the same scope. The App has to be public for a personal account to install it at all. See [docs/github-app.md](../github-app.md) for that and the permissions.
+GitHub refuses the repo endpoint (a 4xx) when an org installation hasn't accepted Administration, or when the org's Actions policy only allows org-level runners. Then the pick falls back to the installation's own scope (`installationRunnerScope`: the org for an org installation), logs `relayrunner pick runner registered on the org`, and, on the first runner for the job, checks the Default group first (see failure modes). A personal account has no org to fall back to, so a refusal there is an error. The App has to be public for a personal account to install it at all. See [docs/github-app.md](../github-app.md) for that and the permissions.
 
-What changes for a personal repo:
+What a repo runner changes:
 
 - **Only the label matters.** A repo runner isn't in any runner group, so there's no group check before registering and no blocked-relay check run. GitHub still asks for a `runner_group_id`, and only accepts Default (1).
-- **Public repos get their relay answered.** No group stands in the way, so a public personal repo's relay job is claimed and routed, unlike a public org repo whose Default group leaves public repos out. Machines still never take a public repo's jobs, so the relay needs a `github` or `blacksmith` label to route to.
+- **Public repos get their relay answered.** No group stands in the way. Machines still never take a public repo's jobs, so the relay needs a `github` or `blacksmith` label to route to.
 - **A pick runner only sees its own repo's jobs.** It can still claim a different relay job than the one it was made for, but only one from the same repo.
-- **The sweep goes repo by repo.** Listing every repo would cost a call each, so the 15-minute sweep checks only repos that had a relay job in the last day (`sweepTargets` in `src/pick-sweep.ts`).
-- **No existing runners.** A personal account's own self-hosted runners can't be added to the runner order yet (#162).
+- **The sweep goes repo by repo.** Listing every repo would cost a call each, so the 15-minute sweep checks only repos that had a relay job in the last day, plus each org for runners that fell back (`sweepTargets` in `src/pick-sweep.ts`).
+- **Personal accounts: no existing runners.** A personal account's own self-hosted runners can't be added to the runner order yet (#162).
 
 ## Decisions and why
 
 - **One JIT runner per job, not a long-lived runner.** A JIT config works for a single job, so there is no runner credential to store or rotate. Nothing polls GitHub while CI is idle. Parallel relays get parallel runners, because a runner session takes one job at a time anyway. Runners that crash don't linger as offline entries. The cost is a few seconds and a couple of API calls per job, and a dependence on the `queued` webhook (see failure modes).
 - **A Durable Object instead of a real runner.** Picking needs no machine, only the runner protocol, so a Worker can answer a relay in seconds without paying for a VM.
 - **The pick never runs code from the job.** It only reads the job message and completes it. That is what would make it safe to expose to public repos and fork PRs, which is not true of machine runners or vanilla self-hosted runners.
-- **Default group.** Every org has it, including Free orgs, and the App can register in it with only the "Self-hosted runners" org permission. The cost is that the group's repo access settings decide which repos the pick can serve, and today that excludes public repos.
+- **The job's repo, not a runner group.** Registering in the org would make the customer's runner group settings decide which repos the pick can serve (Default excludes public repos by default), and using our own group would mean the App creating and editing settings in their org. A repo runner needs neither. Default remains the fallback: every org has it, including Free orgs.
 
 ## Failure modes
 
-- **Default leaves the repo out (public repos not allowed, private only, or a selected list without it).** GitHub never offers the relay. Before registering, the PickRunner reads the Default group (`src/pick-access.ts`) and, when it leaves the repo out, registers no runner: it logs `relayrunner pick blocked`, adds a `job.unroutable` entry to Activity with the reason and the fix, posts a failed `RelayRunner` check run on the commit, and doesn't retry (the sweep skips it too). The relay job itself still stays queued on GitHub until someone cancels it or GitHub's 24-hour queue limit ends it, because only a runner GitHub hands the job to can fail it. Before this check the PickRunner logged `no-job` after 4 minutes with no explanation anywhere (relayrunner/relayrunner and relayrunner/actions on 2026-11-06, relayrunner-ci-tests on 2026-11-08). If the group can't be read, the pick goes ahead as before.
-- **Default limited to selected workflows.** This isn't checked yet, so a workflow outside the list still fails silently with `no-job`.
-- **A pick runner takes a different relay job.** GitHub matches on the label, not the job, so a runner made for one relay can be handed another one that's waiting (often an older one). That job is answered correctly, but the runner's own job is left with nobody. When a runner finishes, it asks GitHub whether its own job is still queued and, if so, starts a replacement, up to 4 runners per job (`src/pick-attempts.ts`). Before this, one lost job stole the next job's runner, and so on, until the queue emptied (2026-11-06 to 2026-11-09).
+- **The org refuses repo-level runners, and Default leaves the repo out (public repos not allowed, private only, or a selected list without it).** GitHub would never offer the relay to an org runner. Before falling back, the PickRunner reads the Default group (`src/pick-access.ts`) and, when it leaves the repo out, registers no runner: it logs `relayrunner pick blocked`, adds a `job.unroutable` entry to Activity with the reason and the fix, posts a failed `RelayRunner` check run on the commit, and doesn't retry (the sweep skips it too). The relay job itself still stays queued on GitHub until someone cancels it or GitHub's 24-hour queue limit ends it, because only a runner GitHub hands the job to can fail it. Before this check the PickRunner logged `no-job` after 4 minutes with no explanation anywhere (relayrunner/relayrunner and relayrunner/actions on 2026-11-06, relayrunner-ci-tests on 2026-11-08). If the group can't be read, the pick goes ahead as before.
+- **Org fallback, Default limited to selected workflows.** This isn't checked yet, so a workflow outside the list still fails silently with `no-job`.
+- **A pick runner takes a different relay job.** GitHub matches on the label, not the job, so a runner made for one relay can be handed another one from the same repo (or, for an org fallback runner, any repo) that's waiting (often an older one). That job is answered correctly, but the runner's own job is left with nobody. When a runner finishes, it asks GitHub whether its own job is still queued and, if so, starts a replacement, up to 4 runners per job (`src/pick-attempts.ts`). Before this, one lost job stole the next job's runner, and so on, until the queue emptied (2026-11-06 to 2026-11-09).
 - **A pick runner is left registered.** If closing its session or deleting it fails, GitHub keeps showing it idle and can hand it a job nobody will ever take. Failures are logged (`relayrunner pick cleanup failed`), the delete is tried twice, and the 15-minute sweep removes `relayrunner-pick-*` runners whose run has ended (`src/pick-sweep.ts`).
 - **The `queued` webhook is lost, or a deploy cuts a runner off mid-wait.** The 15-minute sweep starts another runner for any relay recorded as queued for more than 5 minutes, within the same 4-runner limit. A relay whose `queued` webhook never arrived has no row, so the sweep can't see it.
 - **Another runner in the org has the `relayrunner` label.** It could take relay jobs instead of the gateway. GitHub picks among matching runners, and RelayRunner doesn't prevent it.
 - **GitHub sends a message the client doesn't handle.** The poll ignores anything but a job request and logs its type (`runner poll message dropped`).
-- **The installation lacks "Self-hosted runners: write" on the org, or "Administration: write" on a personal repo.** `generate-jitconfig` fails, and the pick logs `result: error`. An account that installed the App before Administration was added has to accept the new permission on GitHub first.
+- **The installation lacks "Self-hosted runners: write" on the org, or "Administration: write" on a personal repo.** `generate-jitconfig` fails, and the pick logs `result: error`. (An org that lacks Administration falls back to the org instead.) An account that installed the App before Administration was added has to accept the new permission on GitHub first.
 
 ## Code
 

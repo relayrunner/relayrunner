@@ -5,7 +5,6 @@ import {
   createCheckRun,
   DEFAULT_RUNNER_GROUP_ID,
   deleteRunner,
-  generateJitConfig,
   importAppPrivateKey,
   type RunnerScope,
   installationToken,
@@ -14,6 +13,7 @@ import {
 } from "../github-app.ts";
 import { fetchOneGroupAccess, groupBlocksRepo } from "../github-runners.ts";
 import { blockedReason, pickAccessCheckRun } from "../pick-access.ts";
+import { mintRepoFirst } from "../repo-runner.ts";
 import { latestRunnerVersion, RunnerClient, decodeJitConfig } from "../runner-protocol.ts";
 import { RELAYRUNNER_LABEL } from "../webhook-queue.ts";
 import { and, eq, isNull, sql } from "drizzle-orm";
@@ -129,17 +129,34 @@ export class PickRunner extends DurableObject<Env> {
         );
         return;
       }
-      // A runner GitHub will never hand this job to would wait 4 minutes for nothing, or take
-      // another repo's job and leave this one queued. The group rarely changes, so only the first
-      // runner checks. A repo runner has no groups, so there's nothing to check.
-      const blocked =
-        attempt === 1 && scope.kind === "org"
-          ? await blockedByRunnerGroup(this.env, token, work).catch((error) => {
+      // The runner registers on the job's own repo, so no org runner group can keep the job from
+      // it, and it can't take another repo's relay job. When GitHub refuses the repo, it falls
+      // back to the org's Default group. A runner GitHub will never hand this job to would wait 4
+      // minutes for nothing, so before that fallback the first runner checks the group allows the
+      // repo, and says why when it doesn't.
+      const minted = await mintRepoFirst(
+        token,
+        work.repo,
+        { name: pickRunnerName(work.jobId, attempt), labels: [RELAYRUNNER_LABEL] },
+        {
+          fallbackScope: async () => scope!,
+          log: {
+            msg: "relayrunner pick runner registered on the org",
+            jobId: work.jobId,
+            installationId: work.installationId,
+            attempt,
+          },
+          beforeFallback: async () => {
+            if (attempt !== 1) return;
+            const blocked = await blockedByRunnerGroup(this.env, token!, work).catch((error) => {
               logCleanupError("check runner group", work, error);
               return null;
-            })
-          : null;
-      if (blocked) {
+            });
+            if (blocked) throw new PickBlocked(blocked);
+          },
+        },
+      ).catch(async (error) => {
+        if (!(error instanceof PickBlocked)) throw error;
         // Nothing will come for the job: use up its attempts so the sweep doesn't rescue it.
         await this.ctx.storage.put("attempt", MAX_ATTEMPTS);
         console.warn(
@@ -148,16 +165,15 @@ export class PickRunner extends DurableObject<Env> {
             jobId: work.jobId,
             repo: work.repo,
             attempt,
-            reason: blocked,
+            reason: error.reason,
           }),
         );
-        await reportBlocked(this.env, token, work, blocked);
-        return;
-      }
-      const jit = await generateJitConfig(token, scope, {
-        name: pickRunnerName(work.jobId, attempt),
-        labels: [RELAYRUNNER_LABEL],
+        await reportBlocked(this.env, token!, work, error.reason);
+        return null;
       });
+      if (!minted) return;
+      const { jit } = minted;
+      scope = minted.scope;
       runnerId = jit.runnerId;
 
       client = new RunnerClient(decodeJitConfig(jit.encodedJitConfig), await latestRunnerVersion());
@@ -422,6 +438,13 @@ async function resolveTriggeredBy(token: string, context: JobContext): Promise<J
     );
   }
   return context;
+}
+
+/** Stops the fallback to the org when its runner group would never deliver the job. */
+class PickBlocked extends Error {
+  constructor(readonly reason: string) {
+    super(reason);
+  }
 }
 
 // A repo the installation can still see, by owner/name in any case, or undefined.

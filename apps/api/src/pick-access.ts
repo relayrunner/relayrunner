@@ -1,5 +1,6 @@
-// Why GitHub will never hand a repo's relay job to the pick runner. The pick runner registers in
-// the org's Default runner group (DEFAULT_RUNNER_GROUP_ID), and GitHub only delivers a job to a
+// Why GitHub will never hand a repo's relay job to the pick runner. When GitHub refuses a pick
+// runner on the job's repo (src/repo-runner.ts), it falls back to the org's Default runner group
+// (DEFAULT_RUNNER_GROUP_ID), and GitHub only delivers a job to a
 // runner whose group lets the job's repo use it (groupBlocksRepo). A job from a repo the group
 // leaves out is never offered: it sits queued until GitHub's 24-hour limit ends it, with no error
 // on the run. So the pick checks the group first and, when it would never get the job, says why.
