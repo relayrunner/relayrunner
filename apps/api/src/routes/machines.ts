@@ -343,6 +343,7 @@ export const machineRoutes = new Hono<AppEnv>()
         machine: schema.machine,
         pausedBy: schema.user.name,
         createdBy: creator.name,
+        createdByImage: creator.image,
         org: schema.githubInstallation.accountLogin,
       })
       .from(schema.machine)
@@ -404,6 +405,15 @@ export const machineRoutes = new Hono<AppEnv>()
           ...presentMachine(row.machine, row.pausedBy),
           // Who connected it. A runner added from GitHub belongs to its org instead.
           owner: row.machine.source === "github" ? row.org : row.createdBy,
+          // The owner's GitHub avatar, or the org's for a runner added from GitHub.
+          ownerImage:
+            row.machine.source === "github"
+              ? row.org
+                ? `https://github.com/${encodeURIComponent(row.org)}.png?size=64`
+                : null
+              : row.createdByImage,
+          // Whether the signed-in user owns it: only the owner changes its sharing (#243).
+          mine: row.machine.createdBy === c.var.user!.id,
           job: jobs.get(row.machine.id) ?? null,
         };
         if (row.machine.source !== "github")

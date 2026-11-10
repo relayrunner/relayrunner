@@ -20,6 +20,8 @@ import {
 } from "lucide-react";
 import { useState, type ReactNode } from "react";
 import { GithubIcon, runnerSettingsUrl } from "@/components/add-runner";
+import { SHARING_ICONS, SharingDialog, sharingLabel } from "@/components/machine-sharing";
+import { UserAvatar } from "@/components/workspace-menu";
 import { Button } from "@/components/ui/button";
 import {
   DropdownMenu,
@@ -196,6 +198,7 @@ function BandLabel({ tone, children }: { tone: keyof typeof BANDS; children: Rea
 export function MachineCard({ machine, jobTime }: { machine: Machine; jobTime?: Stat }) {
   const router = useRouter();
   const [confirming, setConfirming] = useState(false);
+  const [sharingOpen, setSharingOpen] = useState(false);
   const [pending, setPending] = useState<"revoke" | "pause" | "resume" | null>(null);
   const [error, setError] = useState<string | null>(null);
   // A self-hosted runner added from GitHub: no connection of its own, removed rather than revoked.
@@ -288,6 +291,14 @@ export function MachineCard({ machine, jobTime }: { machine: Machine; jobTime?: 
         ? runnerSettingsUrl(github.org)
         : null;
 
+  // Whose machine it is and whose jobs it takes (#243). Only the owner of a connect machine
+  // changes it; a runner added from GitHub belongs to its org and takes any job.
+  const sharing = machine.sharing ?? "anyone";
+  const mine = machine.mine ?? false;
+  const canShare = mine && !isGithub;
+  const SharingIcon = SHARING_ICONS[sharing];
+  const ownerName = mine && !isGithub ? "You" : (machine.owner ?? null);
+
   // The band's right side: what it's doing, or why it isn't.
   const detail = missing
     ? "Removed or re-registered on GitHub"
@@ -375,6 +386,17 @@ export function MachineCard({ machine, jobTime }: { machine: Machine; jobTime?: 
                   </span>
                 </DropdownMenuItem>
               )}
+              {canShare && (
+                <DropdownMenuItem onSelect={() => setSharingOpen(true)}>
+                  <SharingIcon aria-hidden />
+                  <span className="grid">
+                    <span>Sharing…</span>
+                    <span className="text-xs text-muted-foreground">
+                      {sharingLabel(sharing, true)}
+                    </span>
+                  </span>
+                </DropdownMenuItem>
+              )}
               {machine.labels && machine.labels.length > 0 && (
                 <DropdownMenuItem onSelect={() => void copyLabels()}>
                   <CopyIcon aria-hidden />
@@ -444,8 +466,47 @@ export function MachineCard({ machine, jobTime }: { machine: Machine; jobTime?: 
             )}
           </span>
         </div>
+        <div className="flex min-w-0 items-center gap-3 text-xs text-muted-foreground">
+          {ownerName && (
+            <span className="flex min-w-0 items-center gap-1.5">
+              <UserAvatar
+                user={{
+                  name: ownerName === "You" ? (machine.owner ?? "You") : ownerName,
+                  image: machine.ownerImage,
+                }}
+                className="size-4 border-0 text-[9px]"
+              />
+              <span className="truncate">{ownerName}</span>
+            </span>
+          )}
+          {canShare ? (
+            <button
+              type="button"
+              onClick={() => setSharingOpen(true)}
+              aria-label={`Who can run jobs here: ${sharingLabel(sharing, true)}. Change`}
+              className="-mx-1 -my-0.5 flex shrink-0 items-center gap-1 rounded px-1 py-0.5 outline-none hover:bg-accent hover:text-foreground focus-visible:ring-[3px] focus-visible:ring-ring/50"
+            >
+              <SharingIcon aria-hidden className="size-3.5 text-idle" />
+              {sharingLabel(sharing, true)}
+            </button>
+          ) : (
+            <span className="flex shrink-0 items-center gap-1">
+              <SharingIcon aria-hidden className="size-3.5 text-idle" />
+              {sharingLabel(sharing, mine)}
+            </span>
+          )}
+        </div>
         {error && <p className="text-xs text-destructive">{error}</p>}
       </div>
+      {canShare && (
+        <SharingDialog
+          machineId={machine.id}
+          machineName={machine.name}
+          sharing={sharing}
+          open={sharingOpen}
+          onOpenChange={setSharingOpen}
+        />
+      )}
 
       {confirming ? (
         <Band tone="missing">
