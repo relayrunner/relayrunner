@@ -60,8 +60,11 @@ Better Auth uses the App's OAuth client as its GitHub provider (`GITHUB_APP_CLIE
 ## URLs
 
 - Webhook URL: `https://webhooks.relayrunner.app/api/webhooks/github` (the `apps/webhooks` Worker, see its [README](../apps/webhooks/README.md)).
-- Callback URL: `<BETTER_AUTH_URL>/api/auth/callback/github`.
-- Setup URL: the dashboard's `/api/github/setup`, which claims an installation made straight from GitHub (`apps/api/src/routes/github.ts`).
+- Callback URLs, in this order:
+  1. `<BETTER_AUTH_URL>/api/github/setup`. **Request user authorization (OAuth) during installation** is on, so GitHub signs the user in as part of the install and then sends them to the _first_ callback URL (with `code` and `installation_id`, and no `state`). That has to be the setup route, which links the installation, or signs a new user in and hands them back to `/device` (`apps/api/src/routes/github.ts`).
+  2. `<BETTER_AUTH_URL>/api/auth/callback/github`, where every sign-in returns. Better Auth names it explicitly, so its place in the list doesn't matter.
+  3. `http://localhost:8787/api/auth/callback/github` for local development.
+- Setup URL: greyed out while OAuth during installation is on; GitHub uses the first callback URL instead. **Redirect on update** stays on and goes there too.
 
 The private key lives in the Cloudflare Secrets Store as `GITHUB_APP_PRIVATE_KEY`, in PKCS#8 form (see [apps/api/README.md](../apps/api/README.md#deploy)).
 
