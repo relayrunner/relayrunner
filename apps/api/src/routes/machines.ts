@@ -9,7 +9,7 @@ import { z } from "zod";
 import type { AppEnv } from "../app.ts";
 import { MACHINE_CLIENT_ID } from "../auth.ts";
 import { createDb, schema } from "../db/index.ts";
-import { isWorkspaceMember } from "../installations.ts";
+import { isWorkspaceMember, workspaceMemberCount } from "../installations.ts";
 import { runningJobs } from "../jobs.ts";
 import { MACHINE_ID_HEADER, OFFLINE } from "../durable-objects/machine-session.ts";
 import { addOrgRunnerLabels, type OrgRunner } from "../github-app.ts";
@@ -203,11 +203,18 @@ export const machineRoutes = new Hono<AppEnv>()
     // The CLI is done with the user session; only the machine token stays on the machine.
     await db.delete(schema.session).where(eq(schema.session.id, c.var.session!.id));
 
-    const [workspace] = await db
-      .select({ id: schema.workspace.id, name: schema.workspace.name, slug: schema.workspace.slug })
-      .from(schema.workspace)
-      .where(eq(schema.workspace.id, machine.workspaceId))
-      .limit(1);
+    const [[workspace], memberCount] = await Promise.all([
+      db
+        .select({
+          id: schema.workspace.id,
+          name: schema.workspace.name,
+          slug: schema.workspace.slug,
+        })
+        .from(schema.workspace)
+        .where(eq(schema.workspace.id, machine.workspaceId))
+        .limit(1),
+      workspaceMemberCount(db, machine.workspaceId),
+    ]);
 
     // Security notice to whoever approved the machine: its token can run the workspace's jobs.
     const notice = sendEmail(c.env, {
@@ -224,7 +231,13 @@ export const machineRoutes = new Hono<AppEnv>()
     const defer = waitUntil(c);
     if (defer) defer(notice);
     else await notice;
-    return c.json({ machine: presentMachine(machine), workspace, token });
+    // memberCount tells the CLI whether to ask who can run jobs here (#244): alone in a
+    // workspace, there's nobody else's jobs to take.
+    return c.json({
+      machine: presentMachine(machine),
+      workspace: workspace && { ...workspace, memberCount },
+      token,
+    });
   })
   // The machine's WebSocket: `Upgrade: websocket` with `Authorization: Bearer rrm_…`. A missing,
   // unknown or revoked token gets a 401 before the upgrade. After that the machine sends `hello`,
@@ -251,7 +264,7 @@ export const machineRoutes = new Hono<AppEnv>()
     const machine = await verifyMachineToken(db, token);
     if (!machine) return c.json({ error: "unauthorized" }, 401);
 
-    const [[workspace], [enrolledBy], status] = await Promise.all([
+    const [[workspace], [enrolledBy], status, memberCount] = await Promise.all([
       db
         .select({
           id: schema.workspace.id,
@@ -269,11 +282,32 @@ export const machineRoutes = new Hono<AppEnv>()
             .limit(1)
         : Promise.resolve([]),
       c.env.MACHINE_LINK.getByName(machine.id).status(),
+      workspaceMemberCount(db, machine.workspaceId),
     ]);
     return c.json({
       machine: { ...presentMachine(machine, await pausedByName(db, machine)), status },
-      workspace,
+      workspace: workspace && { ...workspace, memberCount },
       enrolledBy: enrolledBy ?? null,
+    });
+  })
+  // Sharing from the machine itself, for `relayrunner share` and `connect --share` (#244):
+  // `Authorization: Bearer rrm_…`, 401 like /me. Only an owner may change sharing, and the token
+  // lives on the owner's computer, so the change is logged as theirs.
+  .put("/me/sharing", async (c) => {
+    const token = c.req.header("authorization")?.match(/^Bearer\s+(\S+)$/i)?.[1];
+    const db = createDb(c.env.DB);
+    const machine = await verifyMachineToken(db, token);
+    if (!machine) return c.json({ error: "unauthorized" }, 401);
+    const body = SharingBody.safeParse(await c.req.json().catch(() => null));
+    if (!body.success) return c.json({ error: "invalid_request" }, 400);
+    if (!machine.createdBy) return c.json({ error: "not_owner" }, 403);
+    const result = await setMachineSharing(db, machine.id, body.data.sharing, machine.createdBy);
+    if (!result) return c.json({ error: "not_found" }, 404);
+    return c.json({
+      machine: {
+        ...presentMachine(result.machine, await pausedByName(db, result.machine)),
+        status: await c.env.MACHINE_LINK.getByName(machine.id).status(),
+      },
     });
   })
   // Pausing from the machine itself, for `relayrunner pause` and `resume`: `Authorization: Bearer

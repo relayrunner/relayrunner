@@ -79,10 +79,13 @@ describe("login", () => {
     });
 
     expect(await result).toEqual({
-      server: SERVER,
-      machine: { id: "m1", name: "laptop" },
-      workspace: { id: "w1", name: "Acme", slug: "acme" },
-      token: "rrm_secret",
+      credentials: {
+        server: SERVER,
+        machine: { id: "m1", name: "laptop" },
+        workspace: { id: "w1", name: "Acme", slug: "acme" },
+        token: "rrm_secret",
+      },
+      memberCount: null,
     });
     expect(shown()).toEqual({
       userCode: "ABCD1234",
@@ -108,6 +111,22 @@ describe("login", () => {
     const claim = gateway.requests[4];
     expect(claim.headers.get("authorization")).toBe("Bearer session-tok");
     expect(claim.body).toEqual({ deviceCode: "dev-123", os: "macos", arch: "arm64" });
+  });
+
+  test("passes on the workspace's member count without saving it", async () => {
+    const { result } = run({
+      "/api/auth/device/code": [code],
+      "/api/auth/device/token": [{ status: 200, body: { access_token: "session-tok" } }],
+      "/api/machines/claim": [
+        {
+          status: 200,
+          body: { ...claimed.body, workspace: { ...claimed.body.workspace, memberCount: 3 } },
+        },
+      ],
+    });
+    const { credentials, memberCount } = await result;
+    expect(memberCount).toBe(3);
+    expect(credentials.workspace).toEqual({ id: "w1", name: "Acme", slug: "acme" });
   });
 
   test("a denied code fails", async () => {
