@@ -1,0 +1,14 @@
+# Base images for the API's container images. The deploy rebuilds an image only when its folder
+# changes (apps/api/scripts/deploy.ts), so these bumps are what keep them current. The runner one
+# matters most: GitHub stops sending jobs to old runner versions.
+version: 2
+updates:
+  - package-ecosystem: docker
+    directories:
+      - /apps/api/container
+      - /packages/lint-runner
+    schedule:
+      interval: weekly
+    commit-message:
+      prefix: build
+      include: scope

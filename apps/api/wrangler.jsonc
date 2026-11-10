@@ -115,8 +115,11 @@
     { "tag": "v3", "new_sqlite_classes": ["LintRunner"] },
   ],
   // GitHub's runner image for container runners (src/durable-objects/container-runner.ts), which
-  // picks the instance size when it starts one. `wrangler deploy` builds and pushes the image, so
-  // a deploy needs Docker (Workers Builds has it).
+  // picks the instance size when it starts one. `pnpm run deploy` (scripts/deploy.ts) tags each
+  // image by a hash of its folder, builds and pushes it only when the registry lacks that tag, and
+  // deploys with the pushed digest, so a deploy needs Docker only when an image changed (Workers
+  // Builds has it). Plain `wrangler deploy` would rebuild both images every time. `wrangler dev`
+  // builds them from these Dockerfiles.
   "containers": [
     {
       "class_name": "ContainerRunner",
