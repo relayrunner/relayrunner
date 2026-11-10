@@ -1,5 +1,5 @@
 import { describe, expect, test } from "vitest";
-import { deviceName, formatMemory, type MachineDevice } from "./device.ts";
+import { describePlace, deviceName, formatMemory, type MachineDevice } from "./device.ts";
 
 const device = (parts: Partial<MachineDevice>): MachineDevice => ({
   kind: "unknown",
@@ -27,5 +27,14 @@ describe("device badge text", () => {
     expect(formatMemory(36864)).toBe("36 GB");
     expect(formatMemory(16086)).toBe("16 GB");
     expect(formatMemory(512)).toBe("512 MB");
+  });
+});
+
+describe("describePlace", () => {
+  test("city and country name, either alone, or nothing", () => {
+    expect(describePlace("PT", "Lisbon")).toBe("Lisbon, Portugal");
+    expect(describePlace("PT", null)).toBe("Portugal");
+    expect(describePlace(null, "Lisbon")).toBe("Lisbon");
+    expect(describePlace(null, null)).toBeNull();
   });
 });
