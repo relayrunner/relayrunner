@@ -49,6 +49,15 @@ export type Machine = {
    * predates it.
    */
   owner?: string | null;
+  /** The owner's GitHub avatar URL, or the org's for a runner added from GitHub. */
+  ownerImage?: string | null;
+  /** Whether the signed-in user owns it, so only they change its sharing. */
+  mine?: boolean;
+  /**
+   * Whose jobs it takes: only its owner's, or any job routed to it. Missing from an API that
+   * predates it, which read as "anyone".
+   */
+  sharing?: MachineSharing;
   /** The job it's running, while it reports itself busy. Missing from an API that predates it. */
   job?: {
     repository: string;
@@ -65,6 +74,16 @@ export type Machine = {
     connectedAt: number | null;
   };
 };
+
+export type MachineSharing = "only_me" | "anyone";
+
+/** Sets whose jobs a machine takes. Only its owner may. */
+export function setMachineSharing(id: string, sharing: MachineSharing) {
+  return api<{ machine: Machine }>(`/machines/${encodeURIComponent(id)}/sharing`, {
+    method: "PUT",
+    body: JSON.stringify({ sharing }),
+  });
+}
 
 export function listMachines() {
   return api<{ machines: Machine[] }>("/machines");

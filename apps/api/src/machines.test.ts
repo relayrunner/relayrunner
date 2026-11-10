@@ -657,6 +657,19 @@ describe("sharing a machine (#242)", () => {
     expect((await share(machine.id, cookie, "anyone")).status).toBe(200);
   });
 
+  test("the list says whose machine it is, for the card's owner row (#243)", async () => {
+    const { machine, workspaceId, cookie } = await enroll("share-owner-row");
+    const member = await testing.joinWorkspace(env, workspaceId, "member");
+    type Listed = { machines: { id: string; owner: string; ownerImage: unknown; mine: boolean }[] };
+    const mine = (await (await call("/machines", cookie)).json()) as Listed;
+    expect(mine.machines).toEqual([
+      expect.objectContaining({ id: machine.id, owner: expect.any(String), mine: true }),
+    ]);
+    expect(mine.machines[0]).toHaveProperty("ownerImage");
+    const theirs = (await (await call("/machines", member.cookie)).json()) as Listed;
+    expect(theirs.machines).toEqual([expect.objectContaining({ id: machine.id, mine: false })]);
+  });
+
   test("another workspace gets not found, and a bad value is rejected", async () => {
     const { machine, cookie } = await enroll("share-mine");
     const other = await owner("share-other");
