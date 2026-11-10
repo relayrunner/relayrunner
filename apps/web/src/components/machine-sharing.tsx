@@ -33,7 +33,8 @@ const OPTIONS: { value: MachineSharing; title: string; detail: string }[] = [
   {
     value: "anyone",
     title: "Any job",
-    detail: "Runs any job routed here, including teammates', bots and scheduled runs.",
+    detail:
+      "Runs any job routed here from repos you can open on GitHub, including teammates', bots and scheduled runs.",
   },
 ];
 

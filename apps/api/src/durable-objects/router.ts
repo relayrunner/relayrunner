@@ -4,7 +4,12 @@ import { DurableObject } from "cloudflare:workers";
 import { and, eq, isNotNull, isNull, or } from "drizzle-orm";
 import { createDb, schema } from "../db/index.ts";
 import type { Env } from "../env.ts";
-import { appInstallationToken, listOrgRunners, type OrgRunner } from "../github-app.ts";
+import {
+  appInstallationToken,
+  listOrgRunners,
+  userCanReadRepo,
+  type OrgRunner,
+} from "../github-app.ts";
 import { installationRunnerScope } from "../installations.ts";
 import {
   fetchGroupAccess,
@@ -21,6 +26,7 @@ import {
   holdsMachine,
   machineLabels,
   lastPicked,
+  needsOwnerAccess,
   newRouteId,
   routeLabel,
   unavailableMachines,
@@ -55,6 +61,8 @@ const ROUTE_KEY = "route:";
 // How long a GitHub org's runner group access is reused before it's read again. Runner status is
 // read fresh on every pick; groups change rarely and take a few calls to read.
 const GROUP_ACCESS_TTL_MS = 5 * 60_000;
+// How long a machine owner's read access to a repo is reused before GitHub is asked again.
+const OWNER_ACCESS_TTL_MS = 10 * 60_000;
 // How long the dashboard reuses an org's runner list (status, busy, labels).
 const RUNNER_LIST_TTL_MS = 30_000;
 
@@ -66,6 +74,8 @@ export class Router extends DurableObject<Env> {
   private groupAccess = new Map<number, { at: number; access: Map<number, GroupAccess> }>();
   // Each org's runner list for the dashboard, by installation id (see githubRunners).
   private runnerLists = new Map<number, { at: number; runners: Promise<OrgRunner[]> }>();
+  // Whether a machine owner can read a repo, by `<installation>:<repo id>:<owner GitHub id>`.
+  private ownerAccess = new Map<string, { at: number; allowed: boolean }>();
 
   /**
    * An org's self-hosted runners for the dashboard's Runners and Router pages, reused for
@@ -95,6 +105,50 @@ export class Router extends DurableObject<Env> {
       );
       return null;
     }
+  }
+
+  /**
+   * Whether a machine's owner can read the job's repo, as the job's installation sees it. Reused
+   * for OWNER_ACCESS_TTL_MS. No owner, or GitHub can't be asked: no, and the machine sits this job
+   * out (nothing is cached, so the next pick asks again).
+   */
+  private async ownerCanRead(
+    machineId: string,
+    ownerGithubId: number | null,
+    job: PickedJob,
+    now: number,
+  ): Promise<boolean> {
+    let allowed = false;
+    if (ownerGithubId !== null) {
+      const key = `${job.installationId}:${job.repositoryId}:${ownerGithubId}`;
+      const cached = this.ownerAccess.get(key);
+      if (cached && now - cached.at < OWNER_ACCESS_TTL_MS) allowed = cached.allowed;
+      else {
+        try {
+          const token = await appInstallationToken(this.env, job.installationId);
+          allowed = await userCanReadRepo(token, job.repo, ownerGithubId);
+          this.ownerAccess.set(key, { at: now, allowed });
+        } catch (error) {
+          console.warn(
+            JSON.stringify({
+              msg: "machine owner access unknown",
+              machineId,
+              repo: job.repo,
+              error: error instanceof Error ? error.message : String(error),
+            }),
+          );
+        }
+      }
+    }
+    if (!allowed)
+      console.log(
+        JSON.stringify({
+          msg: "machine skipped: owner can't read repo",
+          machineId,
+          repo: job.repo,
+        }),
+      );
+    return allowed;
   }
 
   /**
@@ -186,7 +240,7 @@ export class Router extends DurableObject<Env> {
       }));
       // Paused machines can't be picked, so there's no need to ask for their live status.
       // Nor for those whose sharing won't take this job.
-      const live = fits.filter(
+      const admitted = fits.filter(
         (machine) =>
           !held.has(machine.id) &&
           machine.pausedAt === null &&
@@ -195,6 +249,16 @@ export class Router extends DurableObject<Env> {
             job,
           ),
       );
+      // A connected machine shared with anyone only takes the job if its owner can read the repo.
+      // A runner added from GitHub is the org's own, already limited by its runner group.
+      const readable = await Promise.all(
+        admitted.map((machine) => {
+          const entry = pool.find((e) => e.id === machine.id)!;
+          if (machine.source === "github" || !needsOwnerAccess(entry, job)) return true;
+          return this.ownerCanRead(machine.id, entry.ownerGithubId ?? null, job, now);
+        }),
+      );
+      const live = admitted.filter((_, index) => readable[index]);
       const runners = live.some((machine) => machine.source === "github")
         ? await this.orgRunners(job)
         : null;

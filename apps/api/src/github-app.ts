@@ -579,6 +579,24 @@ async function getJson<T>(token: string, path: string): Promise<T> {
   return (await response.json()) as T;
 }
 
+/**
+ * Whether a GitHub user, by account id, can read a repo: any permission but `none`. GitHub answers
+ * 404 for a user it doesn't know or who has no access, which reads as no.
+ */
+export async function userCanReadRepo(token: string, repo: string, userId: number) {
+  try {
+    const { login } = await getJson<{ login: string }>(token, `/user/${userId}`);
+    const { permission } = await getJson<{ permission?: string }>(
+      token,
+      `/repos/${repo}/collaborators/${encodeURIComponent(login)}/permission`,
+    );
+    return Boolean(permission) && permission !== "none";
+  } catch (error) {
+    if (error instanceof GitHubAccessError && error.status === 404) return false;
+    throw error;
+  }
+}
+
 /** The org's GitHub plan name ("free", "team", "enterprise", ...), or null if GitHub omits it. */
 export async function orgPlan(token: string, org: string): Promise<string | null> {
   const body = await getJson<{ plan?: { name?: string } }>(token, `/orgs/${org}`);

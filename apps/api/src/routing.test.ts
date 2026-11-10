@@ -12,6 +12,7 @@ import {
   lastPicked,
   machineLabels,
   machineRunnerName,
+  needsOwnerAccess,
   newRouteId,
   parseLabels,
   pausedMatches,
@@ -756,6 +757,19 @@ describe("machine sharing (#242)", () => {
       expect(admits(shared, starters)).toBe(true);
     // Left out means anyone.
     expect(admits({}, by(null))).toBe(true);
+  });
+
+  test("anyone checks its owner's repo access, except for the owner's own jobs", () => {
+    // Someone else's run or attempt, a bot, a schedule: the owner must be able to read the repo.
+    for (const starters of [by(atticus), by(bot), by(null), by(zach, atticus), by(atticus, zach)])
+      expect(needsOwnerAccess(shared, starters)).toBe(true);
+    // The owner's own run and attempt.
+    expect(needsOwnerAccess(shared, by(zach))).toBe(false);
+    // Left out means anyone; an owner with no GitHub account can't be checked, so always asks.
+    expect(needsOwnerAccess({}, by(zach))).toBe(true);
+    expect(needsOwnerAccess({ sharing: "anyone", ownerGithubId: null }, by(zach))).toBe(true);
+    // only_me only takes the owner's own jobs.
+    expect(needsOwnerAccess(mine, by(zach))).toBe(false);
   });
 
   const free = (id: string, sharing: "only_me" | "anyone", ownerGithubId: number) => ({
