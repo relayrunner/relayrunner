@@ -44,6 +44,8 @@ import {
   type ActivityPage,
   type ActivityQuery,
   type ActivityResult,
+  type ActivityStarter,
+  type ActivityStarters,
 } from "@/lib/activity";
 import { authDisabled } from "@/lib/auth-client";
 import { DAY_MS } from "@/lib/job-times";
@@ -525,9 +527,12 @@ function Row({
   toggle,
   detail,
   why = "why it ran here",
+  aside,
   children,
 }: {
   icon: ReactNode;
+  // Pinned before the time on wider screens, outside the truncated line: who started a job.
+  aside?: ReactNode;
   at: string;
   now: number;
   toggle?: Toggle;
@@ -548,6 +553,7 @@ function Row({
         >
           {children}
         </p>
+        {aside}
         {toggle && (
           <button
             type="button"
@@ -754,6 +760,7 @@ function JobRow({ job, now }: { job: ActivityJob; now: number }) {
       now={now}
       toggle={toggle}
       detail={walk && <WalkLines walk={walk} runner={runnerName} />}
+      aside={<StarterAside starters={job.starters} />}
     >
       <a
         href={job.runUrl}
@@ -814,9 +821,67 @@ function JobRow({ job, now }: { job: ActivityJob; now: number }) {
             <span className="font-mono">{job.branch}</span>
           </>
         )}
+        <span className="sm:hidden">
+          <StartedBy starters={job.starters} />
+        </span>
         {took && <span className="tabular-nums">{` · ${took}`}</span>}
       </span>
     </Row>
+  );
+}
+
+// Who started the run, after the repo and branch: " · started by Atticus", plus ", re-run by
+// Zach" when someone else started this attempt. A member shows by name; a bot or someone outside
+// the workspace by GitHub login. Nothing for runs from before RelayRunner kept this.
+function StartedBy({ starters, bare }: { starters: ActivityStarters; bare?: boolean }) {
+  const { startedBy, rerunBy } = starters;
+  if (!startedBy && !rerunBy) return null;
+  return (
+    <>
+      {!bare && " · "}
+      {startedBy && (
+        <>
+          {!bare && "started by "}
+          <Starter who={startedBy} />
+        </>
+      )}
+      {startedBy && rerunBy && ", "}
+      {rerunBy && (
+        <>
+          re-run by <Starter who={rerunBy} />
+        </>
+      )}
+    </>
+  );
+}
+
+// The same, pinned beside the time on wider screens so a long row never cuts it off.
+function StarterAside({ starters }: { starters: ActivityStarters }) {
+  const { startedBy, rerunBy } = starters;
+  if (!startedBy && !rerunBy) return null;
+  const label = (who: ActivityStarter) => who.member?.name ?? who.login;
+  const title = [
+    startedBy && `Started by ${label(startedBy)}`,
+    rerunBy && `re-run by ${label(rerunBy)}`,
+  ]
+    .filter(Boolean)
+    .join(", ");
+  return (
+    <span
+      className="hidden max-w-64 shrink-0 truncate text-xs text-muted-foreground sm:inline"
+      title={title}
+    >
+      <StartedBy starters={starters} bare />
+    </span>
+  );
+}
+
+function Starter({ who }: { who: ActivityStarter }) {
+  if (who.member) return <span className="text-foreground/75">{who.member.name}</span>;
+  return (
+    <span className="font-mono" title={`GitHub account ${who.login}, not in this workspace`}>
+      {who.login}
+    </span>
   );
 }
 
@@ -937,6 +1002,7 @@ function UnroutableRow({
       toggle={toggle}
       why="why it couldn't run"
       detail={data.walk && <WalkLines walk={data.walk} runner={null} />}
+      aside={item.starters && <StarterAside starters={item.starters} />}
     >
       <a
         href={runUrl}
@@ -958,6 +1024,11 @@ function UnroutableRow({
       <span className="text-xs text-muted-foreground">
         {" · "}
         <span className="font-mono">{data.repository}</span>
+        {item.starters && (
+          <span className="sm:hidden">
+            <StartedBy starters={item.starters} />
+          </span>
+        )}
       </span>
     </Row>
   );
@@ -967,6 +1038,8 @@ function UnroutableRow({
 function samplePage(search: ActivitySearch): ActivityPage {
   const at = (minutesAgo: number) => new Date(Date.now() - minutesAgo * 60_000).toISOString();
   const runs = "https://github.com/relayrunner/relayrunner-ci-tests/actions/runs";
+  const atticus = { login: "atticoos", member: { id: "u1", name: "Atticus White" } };
+  const zach = { login: "zach", member: { id: "u2", name: "Zach Ross" } };
   const job = (id: number, minutesAgo: number, rest: Partial<ActivityJob>): ActivityJob => ({
     id,
     repository: "relayrunner/relayrunner-ci-tests",
@@ -987,6 +1060,7 @@ function samplePage(search: ActivitySearch): ActivityPage {
     completedAt: null,
     url: `${runs}/${id * 10}/job/${id}`,
     runUrl: `${runs}/${id * 10}`,
+    starters: { startedBy: atticus, rerunBy: null },
     ...rest,
   });
   const mac = { id: "m1", name: "Atticuss-MacBook-Pro.local" };
@@ -1048,6 +1122,8 @@ function samplePage(search: ActivitySearch): ActivityPage {
       machine: null,
       job: job(6, 0.05, {
         name: "test (macos)",
+        runAttempt: 2,
+        starters: { startedBy: atticus, rerunBy: zach },
         runnerName: "GitHub Actions 14",
         status: "in_progress",
         startedAt: at(0.04),
@@ -1106,6 +1182,7 @@ function samplePage(search: ActivitySearch): ActivityPage {
       machine: null,
       job: null,
       jobsNotRun: ["test (macos)", "deploy"],
+      starters: { startedBy: zach, rerunBy: null },
     },
     {
       id: 9,
@@ -1115,6 +1192,7 @@ function samplePage(search: ActivitySearch): ActivityPage {
       actor: null,
       machine: null,
       job: job(5, 3, {
+        starters: { startedBy: { login: "dependabot[bot]", member: null }, rerunBy: null },
         runner: { type: "blacksmith", label: "blacksmith-2vcpu-ubuntu-2404" },
         runnerName: "blacksmith-2vcpu-ubuntu-2404-x7k2p",
         status: "completed",

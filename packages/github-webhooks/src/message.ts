@@ -37,6 +37,9 @@ export interface WorkflowRun {
   event: string;
   // Who started this attempt (the re-runner on a re-run), else who started the run.
   actorLogin: string | null;
+  // Who started the run (`actor`) and this attempt (`triggering_actor`), by GitHub account id.
+  startedBy: { id: number | null; login: string } | null;
+  triggeredBy: { id: number | null; login: string } | null;
   headBranch: string | null;
   headSha: string;
   // The first open pull request for the head commit, if any.
@@ -216,6 +219,8 @@ export function toWebhookMessage(
           displayTitle: stringOrNull(run.display_title),
           event: String(run.event ?? ""),
           actorLogin: isRecord(actor) ? stringOrNull(actor.login) : null,
+          startedBy: githubActor(run.actor),
+          triggeredBy: githubActor(run.triggering_actor) ?? githubActor(run.actor),
           headBranch: stringOrNull(run.head_branch),
           headSha: String(run.head_sha ?? ""),
           pullRequestNumber:
@@ -346,4 +351,9 @@ function stringOrNull(value: unknown) {
 
 function isRecord(value: unknown): value is Record<string, any> {
   return typeof value === "object" && value !== null && !Array.isArray(value);
+}
+
+function githubActor(value: unknown): { id: number | null; login: string } | null {
+  if (!isRecord(value) || typeof value.login !== "string" || !value.login) return null;
+  return { id: typeof value.id === "number" ? value.id : null, login: value.login };
 }

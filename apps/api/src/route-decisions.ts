@@ -1,4 +1,4 @@
-import { RouteWalk } from "@relayrunner/activity";
+import { type GithubActor, RouteWalk } from "@relayrunner/activity";
 import { inArray } from "drizzle-orm";
 import { recordEvent } from "./activity.ts";
 import { type Db, schema } from "./db/index.ts";
@@ -43,6 +43,10 @@ export async function recordPick(db: Db, pick: PickRecord) {
         github: context.github,
         blacksmith: context.blacksmith,
         reason: decision.runner === null ? decision.reason : null,
+        startedById: context.startedBy?.id ?? null,
+        startedByLogin: context.startedBy?.login ?? null,
+        triggeredById: context.triggeredBy?.id ?? null,
+        triggeredByLogin: context.triggeredBy?.login ?? null,
       })
       .onConflictDoNothing();
   if (pick.reason !== null)
@@ -57,6 +61,8 @@ export async function recordPick(db: Db, pick: PickRecord) {
         job: pick.jobName,
         reason: pick.reason,
         walk: decision ? walkOf(decision, context) : null,
+        startedBy: context.startedBy,
+        triggeredBy: context.triggeredBy,
       },
     });
 }
@@ -75,14 +81,23 @@ function walkOf(decision: RouteDecision, context: JobContext): RouteWalk {
 
 type JobKey = { repositoryId: number; runId: number; runAttempt: number };
 
+/** What a job's run kept from its pick: the walk, and who started the run and the pick's attempt. */
+export interface JobPick {
+  walk: RouteWalk | null;
+  // The attempt that picked, at or before the job's own.
+  runAttempt: number;
+  startedBy: GithubActor | null;
+  triggeredBy: GithubActor | null;
+}
+
 /**
- * The walk behind each job's run: the newest decision for the job's repo and run at or before the
+ * The pick behind each job's run: the newest decision for the job's repo and run at or before the
  * job's attempt (a re-run of failed jobs reuses the earlier attempt's pick). Keyed by `key(job)`.
  */
-export async function walksForJobs(db: Db, jobs: JobKey[]): Promise<Map<string, RouteWalk>> {
-  const walks = new Map<string, RouteWalk>();
+export async function picksForJobs(db: Db, jobs: JobKey[]): Promise<Map<string, JobPick>> {
+  const picks = new Map<string, JobPick>();
   const runIds = [...new Set(jobs.map((job) => job.runId))];
-  if (runIds.length === 0) return walks;
+  if (runIds.length === 0) return picks;
   const rows = await db.select().from(table).where(inArray(table.runId, runIds));
   for (const job of jobs) {
     let best: (typeof rows)[number] | undefined;
@@ -100,9 +115,18 @@ export async function walksForJobs(db: Db, jobs: JobKey[]): Promise<Map<string, 
       github: best.github,
       blacksmith: best.blacksmith,
     });
-    if (parsed.success) walks.set(jobKey(job), parsed.data);
+    picks.set(jobKey(job), {
+      walk: parsed.success ? parsed.data : null,
+      runAttempt: best.runAttempt,
+      startedBy: actor(best.startedById, best.startedByLogin),
+      triggeredBy: actor(best.triggeredById, best.triggeredByLogin),
+    });
   }
-  return walks;
+  return picks;
+}
+
+export function actor(id: number | null, login: string | null): GithubActor | null {
+  return login ? { id, login } : null;
 }
 
 export const jobKey = (job: JobKey) => `${job.repositoryId}:${job.runId}:${job.runAttempt}`;

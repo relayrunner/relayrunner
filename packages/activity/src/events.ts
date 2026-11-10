@@ -47,6 +47,14 @@ export const MinutesUsage = z.object({
 export type MinutesUsage = z.infer<typeof MinutesUsage>;
 
 /**
+ * A GitHub account that started a run or an attempt: `id` is GitHub's account id, which is what
+ * matches it to a workspace member (members sign in with GitHub); null when GitHub didn't say.
+ * Bots (`dependabot[bot]`) and people outside the workspace keep their login and match no one.
+ */
+export const GithubActor = z.object({ id: z.number().nullable(), login: z.string() });
+export type GithubActor = z.infer<typeof GithubActor>;
+
+/**
  * How a pick walked the workspace's runner order. `step` is the provider that took the job (null
  * when nothing fit), `skipped` the earlier steps in order with why, and `notInOrder` the providers
  * the relay set that the order leaves out. `machine`, `github` and `blacksmith` are the relay's
@@ -151,6 +159,10 @@ export const ActivityEvent = z.discriminatedUnion("type", [
       job: z.string().nullable(),
       reason: z.string(),
       walk: RouteWalk.nullable(),
+      // Who started the run (github.actor) and this attempt (github.triggering_actor). Missing on
+      // entries logged before #241.
+      startedBy: GithubActor.nullable().optional(),
+      triggeredBy: GithubActor.nullable().optional(),
     }),
   }),
   // GitHub billed Actions overage for a connected account this cycle: its usage went past the

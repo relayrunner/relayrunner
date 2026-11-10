@@ -9,6 +9,7 @@ import {
   importAppPrivateKey,
   type RunnerScope,
   installationToken,
+  runAttemptTriggeringActor,
   workflowJobStatus,
 } from "../github-app.ts";
 import { fetchOneGroupAccess, groupBlocksRepo } from "../github-runners.ts";
@@ -19,7 +20,13 @@ import { and, eq, isNull, sql } from "drizzle-orm";
 import { createDb, type Db, schema } from "../db/index.ts";
 import { recordPick, type PickRecord } from "../route-decisions.ts";
 import { installationRunnerScope } from "../installations.ts";
-import { jobContext, NO_RUNNER, type RouteDecision } from "../routing.ts";
+import {
+  type JobContext,
+  jobContext,
+  NO_RUNNER,
+  type RouteDecision,
+  sameLogin,
+} from "../routing.ts";
 import { nativeFreeCheck, nativeVerdict } from "../native-checks.ts";
 import { recordRepoCheck } from "../free-checks.ts";
 import {
@@ -191,6 +198,7 @@ export class PickRunner extends DurableObject<Env> {
         } else {
           const { record, ...pick } = await pickRunner(
             this.env,
+            token,
             work.installationId,
             job.message.contextData,
           );
@@ -316,13 +324,14 @@ type PickInfo = Omit<PickRecord, "jobName">;
 // Where the claimed pick job's run goes. Only a repo of a workspace's installation reaches the
 // workspace's Router, which walks the runner order. Anything we can't place gets no runner and a
 // reason, and the relay fails. `record` is what the Activity page keeps (no workspace, no record).
-async function pickRunner(env: Env, installationId: number, contextData: unknown) {
-  const context = jobContext(contextData);
-  if (!context)
+async function pickRunner(env: Env, token: string, installationId: number, contextData: unknown) {
+  const parsed = jobContext(contextData);
+  if (!parsed)
     return {
       runner: null,
       reason: `${NO_RUNNER}: RelayRunner couldn't read this job's repository and run.`,
     };
+  const context = await resolveTriggeredBy(token, parsed);
   const db = createDb(env.DB);
   const [installation] = await db
     .select({ workspaceId: schema.githubInstallation.workspaceId })
@@ -380,6 +389,37 @@ async function pickRunner(env: Env, installationId: number, contextData: unknown
       reason: decision.runner === null ? decision.reason : null,
     } satisfies PickInfo,
   };
+}
+
+/**
+ * Fills in the id of a re-runner who isn't the run's actor: the `github` context names them only by
+ * login. Costs one GitHub call, only on those re-runs. On a failure the id stays null, so the
+ * attempt matches no member.
+ */
+async function resolveTriggeredBy(token: string, context: JobContext): Promise<JobContext> {
+  const { triggeredBy } = context;
+  if (!triggeredBy || triggeredBy.id !== null) return context;
+  try {
+    const actor = await runAttemptTriggeringActor(
+      token,
+      context.repo,
+      context.runId,
+      context.runAttempt,
+    );
+    if (actor && sameLogin(actor.login, triggeredBy.login))
+      return { ...context, triggeredBy: actor };
+  } catch (error) {
+    console.warn(
+      JSON.stringify({
+        msg: "relayrunner pick triggering actor not found",
+        repo: context.repo,
+        runId: context.runId,
+        runAttempt: context.runAttempt,
+        error: error instanceof Error ? error.message : String(error),
+      }),
+    );
+  }
+  return context;
 }
 
 // A repo the installation can still see, by owner/name in any case, or undefined.
@@ -448,6 +488,8 @@ async function reportBlocked(env: Env, token: string, work: PickWork, reason: st
           machine: [],
           github: [],
           blacksmith: [],
+          startedBy: null,
+          triggeredBy: null,
         },
         jobName: row.name,
         decision: null,

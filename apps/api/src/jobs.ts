@@ -1,4 +1,9 @@
-import type { ActivityJob, ActivityRunner, RouteWalk } from "@relayrunner/activity";
+import type {
+  ActivityJob,
+  ActivityRunner,
+  ActivityStarters,
+  RouteWalk,
+} from "@relayrunner/activity";
 import type { WebhookMessage } from "@relayrunner/github-webhooks";
 import { and, desc, eq, inArray, isNull, type SQL, sql } from "drizzle-orm";
 import { recordEvent } from "./activity.ts";
@@ -185,6 +190,7 @@ export function presentJob(
   isPrivate: boolean | null,
   machineName: string | null,
   walk: RouteWalk | null = null,
+  starters: ActivityStarters = { startedBy: null, rerunBy: null },
 ): ActivityJob {
   return {
     id: job.id,
@@ -209,5 +215,6 @@ export function presentJob(
     completedAt: job.completedAt?.toISOString() ?? null,
     url: `https://github.com/${job.repositoryFullName}/actions/runs/${job.runId}/job/${job.id}`,
     runUrl: `https://github.com/${job.repositoryFullName}/actions/runs/${job.runId}`,
+    starters,
   };
 }
