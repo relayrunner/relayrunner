@@ -1,9 +1,21 @@
 <!doctype html>
-<html lang="en" class="dark">
+<html lang="en">
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <meta name="color-scheme" content="dark" />
+    <meta name="color-scheme" content="light dark" />
+    <script>
+      // Before first paint: "light" or "dark" if the user picked one, else follow the OS.
+      // src/lib/theme.ts keeps this in sync after load.
+      try {
+        var t = localStorage.getItem("rr-theme");
+        var dark =
+          t === "dark" || (t !== "light" && matchMedia("(prefers-color-scheme: dark)").matches);
+        document.documentElement.classList.toggle("dark", dark);
+      } catch (e) {
+        document.documentElement.classList.add("dark");
+      }
+    </script>
     <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
     <title>RelayRunner</title>
   </head>

@@ -3,39 +3,42 @@
 @import "@fontsource-variable/hanken-grotesk";
 @import "@fontsource-variable/jetbrains-mono";
 
-/* Dark only: index.html sets class="dark" so shadcn's dark: variants apply. */
+/* index.html puts class="dark" on <html> unless the user picked light or their OS is light. */
 @custom-variant dark (&:is(.dark *));
 
 /*
  * Theme borrowed from apps/landing/DESIGN.md ("The Live Route"). The landing
- * palette is dark only, so there is no light variant: :root is the theme.
- * shadcn's semantic variables map onto the landing tokens, and the landing
- * names (go, run, raised, ...) are exposed as Tailwind colors too.
+ * is dark only; the light palette below keeps its roles (go = green, run =
+ * amber, del = red) and is tuned for contrast on white. shadcn's semantic
+ * variables map onto these tokens, and the landing names (go, run, raised,
+ * ...) are exposed as Tailwind colors too.
  */
 :root {
-  color-scheme: dark;
+  color-scheme: light;
 
-  /* Landing tokens */
-  --rr-bg: #0b0d10;
-  --rr-bg-deep: #07080a;
-  --rr-dormant: #101317;
-  --rr-raised: #161a20;
-  --rr-raised-2: #1c2129;
-  --rr-line: #272c35;
-  --rr-line-soft: #1d2128;
-  --rr-idle: #4a515c;
-  --rr-ink: #e6edf3;
-  --rr-ink-2: #b4bcc6;
-  --rr-mute: #8b949e;
-  --rr-go: #3fb950;
-  --rr-go-hover: #4fcc61;
-  --rr-go-ink: #03140a;
-  --rr-go-soft: rgba(63, 185, 80, 0.14);
-  --rr-go-edge: rgba(63, 185, 80, 0.55);
-  --rr-run: #d29922;
-  --rr-run-ink: #1b1303;
-  --rr-run-edge: rgba(210, 153, 34, 0.5);
-  --rr-del: #f0817a;
+  /* Light tokens */
+  --rr-bg: #f6f7f9;
+  --rr-bg-deep: #eef0f3;
+  --rr-dormant: #f1f3f5;
+  --rr-raised: #ffffff;
+  --rr-raised-2: #eef1f4;
+  --rr-popover: #ffffff;
+  --rr-line: #d9dee4;
+  --rr-line-soft: #e5e8ec;
+  --rr-idle: #a3abb5;
+  --rr-ink: #1b1f24;
+  --rr-ink-2: #3d454e;
+  --rr-mute: #5e6772;
+  --rr-go: #1a7f37;
+  --rr-go-hover: #1c8c3c;
+  --rr-go-ink: #ffffff;
+  --rr-go-soft: rgba(26, 127, 55, 0.1);
+  --rr-go-edge: rgba(26, 127, 55, 0.4);
+  --rr-run: #9a6700;
+  --rr-run-ink: #ffffff;
+  --rr-run-edge: rgba(154, 103, 0, 0.45);
+  --rr-del: #cf222e;
+  --rr-scrollbar: #c3c9d0;
 
   /* shadcn semantic variables */
   --radius: 0.625rem; /* 10px: landing panels */
@@ -43,7 +46,7 @@
   --foreground: var(--rr-ink);
   --card: var(--rr-raised);
   --card-foreground: var(--rr-ink);
-  --popover: var(--rr-raised-2);
+  --popover: var(--rr-popover);
   --popover-foreground: var(--rr-ink);
   --primary: var(--rr-go);
   --primary-foreground: var(--rr-go-ink);
@@ -70,6 +73,35 @@
   --sidebar-accent-foreground: var(--rr-ink);
   --sidebar-border: var(--rr-line-soft);
   --sidebar-ring: var(--rr-go);
+}
+
+.dark {
+  color-scheme: dark;
+
+  /* Landing tokens */
+  --rr-bg: #0b0d10;
+  --rr-bg-deep: #07080a;
+  --rr-dormant: #101317;
+  --rr-raised: #161a20;
+  --rr-raised-2: #1c2129;
+  --rr-popover: #1c2129;
+  --rr-line: #272c35;
+  --rr-line-soft: #1d2128;
+  --rr-idle: #4a515c;
+  --rr-ink: #e6edf3;
+  --rr-ink-2: #b4bcc6;
+  --rr-mute: #8b949e;
+  --rr-go: #3fb950;
+  --rr-go-hover: #4fcc61;
+  --rr-go-ink: #03140a;
+  --rr-go-soft: rgba(63, 185, 80, 0.14);
+  --rr-go-edge: rgba(63, 185, 80, 0.55);
+  --rr-run: #d29922;
+  --rr-run-ink: #1b1303;
+  --rr-run-edge: rgba(210, 153, 34, 0.5);
+  --rr-del: #f0817a;
+
+  --rr-scrollbar: #2f3540;
 }
 
 @theme inline {
@@ -138,7 +170,7 @@
     @apply border-border outline-ring/50;
   }
   html {
-    scrollbar-color: #2f3540 var(--background);
+    scrollbar-color: var(--rr-scrollbar) var(--background);
   }
   body {
     @apply bg-background text-foreground font-sans antialiased;
