@@ -1,13 +1,7 @@
 import { and, eq, gt, isNull, lt } from "drizzle-orm";
 import { createDb, type Db, schema } from "./db/index.ts";
 import type { Env } from "./env.ts";
-import {
-  appInstallationToken,
-  deleteRunner,
-  listRunners,
-  runnerScope,
-  type RunnerScope,
-} from "./github-app.ts";
+import { appInstallationToken, deleteRunner, listRunners, type RunnerScope } from "./github-app.ts";
 import { pickJobIdFromRunnerName } from "./pick-attempts.ts";
 
 // A relay queued this long with no taker is rescued; one older than a day GitHub has given up on.
@@ -63,9 +57,9 @@ async function rescueStuckRelays(env: Env, now: number) {
 }
 
 /**
- * Where pick runners can be left: each org with an active installation, and, for a personal
- * account, each repo that had a relay in the last day. Personal pick runners register on the
- * job's own repo, and listing every repo would cost a call per repo.
+ * Where pick runners can be left: each repo that had a relay in the last day, since pick runners
+ * register on the job's own repo (listing every repo would cost a call per repo), and each org
+ * with an active installation, for the ones that fell back to the org.
  */
 export async function sweepTargets(
   db: Db,
@@ -93,7 +87,6 @@ export async function sweepTargets(
       )
       .where(
         and(
-          eq(schema.githubInstallation.accountType, "User"),
           isNull(schema.githubInstallation.suspendedAt),
           eq(schema.workflowJob.kind, "pick"),
           gt(schema.workflowJob.githubCreatedAt, new Date(now - STUCK_WINDOW_MS)),
@@ -105,7 +98,10 @@ export async function sweepTargets(
       installationId: row.id,
       scope: { kind: "org", org: row.org } as const,
     })),
-    ...repos.map((row) => ({ installationId: row.id, scope: runnerScope("User", row.repo) })),
+    ...repos.map((row) => ({
+      installationId: row.id,
+      scope: { kind: "repo", repo: row.repo } as const,
+    })),
   ];
 }
 

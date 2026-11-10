@@ -18,7 +18,7 @@ afterAll(async () => {
 const DAY = 24 * 60 * 60_000;
 
 describe("sweepTargets", () => {
-  test("sweeps each org, and only a personal account's repos with a relay in the last day", async () => {
+  test("sweeps each org, and only repos with a relay in the last day", async () => {
     const db = createDb(env.DB);
     const now = Date.now();
     await db.insert(schema.githubInstallation).values([
@@ -57,16 +57,20 @@ describe("sweepTargets", () => {
       job(9302, "atticoos/other", "job", 60_000),
       // A suspended installation isn't swept.
       job(9303, "paused/app", "pick", 60_000),
-      // An org's relay doesn't add a repo: the org itself is swept.
+      // An org's relay adds its repo too: pick runners register there first.
       job(9301, "acme/web", "pick", 60_000),
     ]);
 
     const targets = (await sweepTargets(db, now)).filter((target) =>
       [9301, 9302, 9303].includes(target.installationId),
     );
-    expect(targets).toEqual([
-      { installationId: 9301, scope: { kind: "org", org: "acme" } },
-      { installationId: 9302, scope: { kind: "repo", repo: "atticoos/app" } },
-    ]);
+    expect(targets).toHaveLength(3);
+    expect(targets).toEqual(
+      expect.arrayContaining([
+        { installationId: 9301, scope: { kind: "org", org: "acme" } },
+        { installationId: 9302, scope: { kind: "repo", repo: "atticoos/app" } },
+        { installationId: 9301, scope: { kind: "repo", repo: "acme/web" } },
+      ]),
+    );
   });
 });
