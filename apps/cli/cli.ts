@@ -13,6 +13,7 @@ import {
 import { detectDevice } from "./device.ts";
 import { initCommand, offerSetup } from "./init.ts";
 import { ensureRunner, RunnerError, runnerPlatform } from "./install.ts";
+import { normalizeServer } from "./server.ts";
 import { runJob } from "./job.ts";
 import { login, LoginError, openBrowser } from "./login.ts";
 import { setPaused } from "./pause.ts";
@@ -111,7 +112,19 @@ async function connectMachine(args: { server?: string; name?: string; share?: st
       runnerVersion: runner.version,
       device,
     },
-    runJob: (run, report) => runJob(run, { runner, report }),
+    runJob: (run, report) =>
+      runJob(run, {
+        runner,
+        report,
+        onChecked: (target) => {
+          if (target)
+            clack.log.info(
+              `${new Date().toLocaleTimeString()} Job ${run.routeId} is from ${target}`,
+            );
+        },
+      }),
+    // The gateway rotates the token on every connect, so an old copy of machine.json stops working.
+    saveToken: (token) => writeCredentials({ ...credentials, token }),
     onEvent: (event) => {
       if (event.type === "connected") online = true;
       show(event);
@@ -141,7 +154,12 @@ async function connectMachine(args: { server?: string; name?: string; share?: st
       process.exitCode = 1;
       break;
     case "replaced":
-      clack.log.warn("Another `relayrunner connect` for this machine took over.");
+      clack.log.warn(
+        [
+          "Another `relayrunner connect` signed in as this machine and took over.",
+          `If that wasn't you, someone has this machine's token: revoke it at ${credentials.server}/runners, then run \`relayrunner connect\` to sign in again.`,
+        ].join("\n"),
+      );
       clack.outro("Offline here.");
       process.exitCode = 1;
       break;
@@ -357,6 +375,11 @@ function show(event: ConnectionEvent) {
       else
         clack.log.success(`${at} Resumed${event.by ? ` by ${event.by}` : ""}. Waiting for jobs.`);
       break;
+    case "token-not-saved":
+      clack.log.warn(
+        `${at} Couldn't save the machine's new token (${event.message}). Keeping the old one.`,
+      );
+      break;
     case "run-refused":
       clack.log.warn(`${at} Turned down job ${event.routeId}: already running one.`);
       break;
@@ -468,16 +491,6 @@ function describeSaved(saved: Pick<Credentials, "server" | "machine" | "workspac
 function table(title: string, rows: [string, string][]) {
   const width = Math.max(...rows.map(([label]) => label.length));
   return [title, ...rows.map(([label, value]) => `  ${label.padEnd(width)}  ${value}`)].join("\n");
-}
-
-function normalizeServer(value: string) {
-  try {
-    const url = new URL(value);
-    if (url.protocol !== "https:" && url.protocol !== "http:") throw new Error();
-    return url.origin;
-  } catch {
-    throw new RunnerError("USAGE", `Not a valid RelayRunner URL: ${value}`);
-  }
 }
 
 // `relayrunner pause` and `resume`: the same as the machine's ⋯ menu on the Runners page.

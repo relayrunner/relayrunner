@@ -1,6 +1,7 @@
 import { generateJitConfig, type RunnerScope } from "./github-app.ts";
 import { mintRepoFirst } from "./repo-runner.ts";
-import { machineRunnerName, routeLabel, type Route } from "./routing.ts";
+import { machineRunnerName } from "@relayrunner/machine-protocol";
+import { routeLabel, type Route } from "./routing.ts";
 
 /**
  * Mints the one-job runner a connected machine runs for a route, on the job's own repo

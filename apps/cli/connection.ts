@@ -4,6 +4,8 @@
 // - `hello` first, then `status` on every change and every 30 seconds as the heartbeat.
 // - `run` starts one job through runJob() and reports its `job` progress. Capacity is one: a
 //   second `run` while busy is answered with a failed `job` straight away.
+// - `token` replaces the machine token: saveToken() stores it, the CLI answers `token_saved`, and
+//   it connects with the new one from then on.
 // - Close 4001 (revoked) and 4002 (replaced by another connection) end it, and so does 1008
 //   (the gateway rejected something we sent, so retrying would repeat it). Anything else, such
 //   as a network drop, a deploy or 4000 (missed heartbeats), reconnects with backoff.
@@ -45,6 +47,9 @@ export type ConnectionEvent =
   | { type: "run"; routeId: string }
   | { type: "run-refused"; routeId: string }
   | { type: "job"; update: JobUpdate }
+  // The gateway sent a new machine token and saveToken() couldn't store it. The old one keeps
+  // working, and the gateway tries again on the next connect.
+  | { type: "token-not-saved"; message: string }
   // Someone paused or resumed this machine. `by` is their name, or null for this machine's CLI.
   | { type: "paused"; paused: boolean; by: string | null };
 
@@ -54,6 +59,9 @@ export interface ConnectOptions {
   hello: Omit<HelloMessage, "v" | "type">;
   // Run one job and report its progress. Must not reject.
   runJob: (run: RunMessage, report: (update: JobUpdate) => void) => Promise<unknown>;
+  // Store a new machine token the gateway sent (it rotates it on every connect). Throws if it
+  // couldn't. Without it, the CLI doesn't offer to rotate and keeps the token it has.
+  saveToken?: (token: string) => void;
   onEvent?: (event: ConnectionEvent) => void;
   signal?: AbortSignal;
   heartbeatMs?: number;
@@ -90,6 +98,8 @@ export async function connect(options: ConnectOptions): Promise<ConnectionEnd> {
 
   let state: MachineState = "idle";
   let socket: WebSocket | null = null;
+  // The token to connect with: the saved one, then each one the gateway sends.
+  let token = options.token;
   // Job updates sent while the socket was down. The gateway hears them after the next hello.
   const pending: MachineMessage[] = [];
   // The last `error` the gateway sent; it comes just before a 1008 close.
@@ -100,6 +110,22 @@ export async function connect(options: ConnectOptions): Promise<ConnectionEnd> {
     else if (message.type === "job") pending.push(message);
   };
   const sendStatus = () => send({ v: PROTOCOL_VERSION, type: "status", state });
+
+  // Saved first, then acknowledged: once the gateway hears `token_saved` the old token is dead.
+  const saveToken = (next: string) => {
+    if (!options.saveToken) return;
+    try {
+      options.saveToken(next);
+    } catch (error) {
+      emit({
+        type: "token-not-saved",
+        message: error instanceof Error ? error.message : String(error),
+      });
+      return;
+    }
+    token = next;
+    send({ v: PROTOCOL_VERSION, type: "token_saved" });
+  };
 
   const startJob = (run: RunMessage) => {
     if (state === "busy") {
@@ -132,7 +158,7 @@ export async function connect(options: ConnectOptions): Promise<ConnectionEnd> {
       let opened = false;
       let heartbeat: ReturnType<typeof setInterval> | undefined;
       const ws = new NodeWebSocket(connectUrl(options.server), {
-        headers: { authorization: `Bearer ${options.token}`, "user-agent": userAgent },
+        headers: { authorization: `Bearer ${token}`, "user-agent": userAgent },
       });
       socket = ws;
 
@@ -154,7 +180,10 @@ export async function connect(options: ConnectOptions): Promise<ConnectionEnd> {
       ws.addEventListener("open", () => {
         opened = true;
         emit({ type: "connected" });
-        ws.send(encodeMessage({ v: PROTOCOL_VERSION, type: "hello", ...options.hello }));
+        const rotatesToken = options.saveToken ? true : undefined;
+        ws.send(
+          encodeMessage({ v: PROTOCOL_VERSION, type: "hello", ...options.hello, rotatesToken }),
+        );
         sendStatus();
         for (const message of pending.splice(0)) send(message);
         heartbeat = setInterval(sendStatus, heartbeatMs);
@@ -170,6 +199,7 @@ export async function connect(options: ConnectOptions): Promise<ConnectionEnd> {
         if (message.type === "run") startJob(message);
         else if (message.type === "paused")
           emit({ type: "paused", paused: message.paused, by: message.by });
+        else if (message.type === "token") saveToken(message.token);
         else {
           gatewayError = message.message;
           emit({ type: "gateway-error", code: message.code, message: message.message });
@@ -188,7 +218,7 @@ export async function connect(options: ConnectOptions): Promise<ConnectionEnd> {
   // upgrade and replace this machine's socket.
   const tokenRejected = () =>
     fetch(new URL("/api/machines/connect", options.server), {
-      headers: { authorization: `Bearer ${options.token}`, "user-agent": userAgent },
+      headers: { authorization: `Bearer ${token}`, "user-agent": userAgent },
       signal: AbortSignal.timeout(10_000),
     }).then(
       async (response) => {

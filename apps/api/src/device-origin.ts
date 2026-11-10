@@ -27,6 +27,23 @@ export function requestOrigin(request: Request | undefined): RequestOrigin {
 }
 
 /**
+ * A RequestOrigin passed along as JSON (MachineLink gets one in a header, since request.cf doesn't
+ * reach a Durable Object), cleaned like requestOrigin's. Undefined when missing or unreadable.
+ */
+export function originFromJson(json: string | null): RequestOrigin | undefined {
+  if (!json) return undefined;
+  let value: unknown;
+  try {
+    value = JSON.parse(json);
+  } catch {
+    return undefined;
+  }
+  if (!value || typeof value !== "object") return undefined;
+  const { ip, country, city } = value as Record<string, unknown>;
+  return { ip: text(ip, 64), country: text(country, 2), city: text(city, 80) };
+}
+
+/**
  * What the approval page shows about where the code came from. `differentCountry` is true only
  * when both sides' countries are known and differ; null when either is unknown.
  */

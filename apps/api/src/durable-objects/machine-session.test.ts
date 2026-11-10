@@ -8,6 +8,7 @@ import {
   CLOSE,
   handleFrame,
   HEARTBEAT_TIMEOUT_MS,
+  isTakeover,
   newSession,
   statusOf,
   type SessionState,
@@ -111,5 +112,54 @@ describe("machine session", () => {
       "version_mismatch",
     );
     expect(rejected(fresh, new ArrayBuffer(4)).error.code).toBe("invalid_message");
+  });
+});
+
+describe("token rotation", () => {
+  test("remembers whether the CLI can save a new token", () => {
+    const rotating = frame({
+      type: "hello",
+      machineId: "m1",
+      os: "macos",
+      arch: "arm64",
+      runnerVersion: "2.329.0",
+      rotatesToken: true,
+    });
+    expect(said([rotating]).hello?.rotatesToken).toBe(true);
+    expect(said([hello]).hello?.rotatesToken).toBeUndefined();
+  });
+
+  test("token_saved finishes a rotation, and is only a heartbeat without one", () => {
+    const saved = frame({ type: "token_saved" });
+    const pending = { ...said([hello]), pendingTokenHash: "abc" };
+    expect(handleFrame(pending, saved, 5000)).toEqual({
+      state: { ...pending, lastHeardAt: 5000, pendingTokenHash: undefined },
+      promote: "abc",
+    });
+    const outcome = handleFrame(said([hello]), saved, 5000);
+    expect(outcome).toMatchObject({ state: { lastHeardAt: 5000 }, promote: undefined });
+  });
+
+  test("token_saved before hello is refused", () => {
+    const outcome = handleFrame(newSession("m1", 0), frame({ type: "token_saved" }), 1000);
+    expect(outcome).toMatchObject({ close: { code: CLOSE.policy } });
+  });
+});
+
+describe("takeovers", () => {
+  const boston = { ip: "198.51.100.1", country: "US", city: "Boston" };
+  const lisbon = { ip: "203.0.113.9", country: "PT", city: "Lisbon" };
+  const online = { ...said([hello]), from: boston };
+
+  test("a live connection pushed out from another IP is one", () => {
+    expect(isTakeover(online, lisbon, 30_000)).toBe(true);
+  });
+
+  test("the same IP, a quiet socket, or an unknown IP isn't", () => {
+    expect(isTakeover(online, { ...boston, city: null }, 30_000)).toBe(false);
+    expect(isTakeover(online, lisbon, 60_000)).toBe(false);
+    expect(isTakeover(online, { ...lisbon, ip: null }, 30_000)).toBe(false);
+    expect(isTakeover(online, undefined, 30_000)).toBe(false);
+    expect(isTakeover({ ...newSession("m1", 0), from: boston }, lisbon, 1000)).toBe(false);
   });
 });

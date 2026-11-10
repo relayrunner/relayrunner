@@ -9,10 +9,13 @@ import {
   type HelloMessage,
   type JobMessage,
 } from "@relayrunner/machine-protocol";
+import type { RequestOrigin } from "../device-origin.ts";
 
 // The header GET /api/machines/connect uses to tell MachineLink which machine authenticated.
 // MachineLink isn't reachable from outside the API Worker, so only that route can set it.
 export const MACHINE_ID_HEADER = "x-relayrunner-machine-id";
+// ...and where the connection came from (a RequestOrigin as JSON), which request.cf can't carry.
+export const MACHINE_ORIGIN_HEADER = "x-relayrunner-machine-origin";
 
 // The machine sends `status` at least this often (the CLI's heartbeat is 30 seconds)...
 export const HEARTBEAT_INTERVAL_MS = 30_000;
@@ -36,17 +39,38 @@ export interface SessionState {
   connectedAt: number;
   lastHeardAt: number;
   // Set by the machine's `hello`. Until then the machine isn't online.
-  hello?: Pick<HelloMessage, "os" | "arch" | "runnerVersion" | "device">;
+  hello?: Pick<HelloMessage, "os" | "arch" | "runnerVersion" | "device" | "rotatesToken">;
   state?: "idle" | "busy";
+  // Where the connection came from, when the edge said.
+  from?: RequestOrigin;
+  // SHA-256 of the token sent in a `token` message, until the machine says it saved it.
+  pendingTokenHash?: string;
 }
 
 export type FrameOutcome =
-  // `job` is set when the frame was a job update, for MachineLink to act on.
-  | { state: SessionState; job?: JobMessage }
+  // `job` is set when the frame was a job update, and `promote` (the token's hash) when the machine
+  // saved the token it was sent, for MachineLink to act on.
+  | { state: SessionState; job?: JobMessage; promote?: string }
   | { state: SessionState; reply: string; close: { code: number; reason: string } };
 
-export function newSession(machineId: string, now: number): SessionState {
-  return { machineId, connectedAt: now, lastHeardAt: now };
+export function newSession(machineId: string, now: number, from?: RequestOrigin): SessionState {
+  return { machineId, connectedAt: now, lastHeardAt: now, from };
+}
+
+/**
+ * Whether a new connection replacing `old` should be reported to the machine's owner: the old one
+ * was online and heard from within the last heartbeat or so, and the new one comes from another
+ * IP. A CLI that restarts or reconnects after a network drop has usually lost its old socket, or
+ * connects from the same address.
+ */
+export function isTakeover(old: SessionState, from: RequestOrigin | undefined, now: number) {
+  return Boolean(
+    old.hello &&
+    now - old.lastHeardAt <= HEARTBEAT_INTERVAL_MS + 15_000 &&
+    old.from?.ip &&
+    from?.ip &&
+    old.from.ip !== from.ip,
+  );
 }
 
 export function handleFrame(
@@ -71,13 +95,21 @@ export function handleFrame(
     if (session.hello) return reject(session, "invalid_message", "hello was already sent");
     if (message.machineId !== session.machineId)
       return reject(session, "invalid_message", "machineId doesn't match this machine's token");
-    const { os, arch, runnerVersion, device } = message;
+    const { os, arch, runnerVersion, device, rotatesToken } = message;
     // A machine that just said hello has no job from this gateway yet.
-    return { state: { ...heard, hello: { os, arch, runnerVersion, device }, state: "idle" } };
+    return {
+      state: { ...heard, hello: { os, arch, runnerVersion, device, rotatesToken }, state: "idle" },
+    };
   }
 
   if (!session.hello) return reject(session, "invalid_message", "send hello first");
   if (message.type === "status") return { state: { ...heard, state: message.state } };
+  // A repeat, or one for a rotation already finished, only counts as a heartbeat.
+  if (message.type === "token_saved")
+    return {
+      state: { ...heard, pendingTokenHash: undefined },
+      promote: session.pendingTokenHash,
+    };
   // Job progress for a route. Hearing it still counts as a heartbeat.
   return { state: heard, job: message };
 }

@@ -8,7 +8,9 @@ import {
   renderDeadLetterAlertEmail,
   renderInviteEmail,
   renderMachineConnectedEmail,
+  renderMachineTakenOverEmail,
   renderWelcomeEmail,
+  type ConnectionPlace,
   type RenderedEmail,
 } from "@relayrunner/email";
 import type { Env } from "./env.ts";
@@ -28,6 +30,17 @@ export type EmailArgs =
         arch?: string | null;
         workspaceName: string;
         connectedAt: Date;
+      };
+    }
+  | {
+      to: string;
+      template: "machine-taken-over";
+      context: {
+        machineName: string;
+        workspaceName: string;
+        was: ConnectionPlace;
+        now: ConnectionPlace;
+        at: Date;
       };
     }
   | { to: string; template: "dead-letter-alert"; context: { count: number; threshold: number } }
@@ -55,6 +68,8 @@ function render(env: Env, args: EmailArgs): RenderedEmail {
       return renderWelcomeEmail({ ...args.context, dashboardUrl: dashboard });
     case "machine-connected":
       return renderMachineConnectedEmail({ ...args.context, machinesUrl: `${dashboard}/runners` });
+    case "machine-taken-over":
+      return renderMachineTakenOverEmail({ ...args.context, machinesUrl: `${dashboard}/runners` });
     case "dead-letter-alert":
       return renderDeadLetterAlertEmail({
         ...args.context,

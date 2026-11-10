@@ -12,7 +12,11 @@ import { createDb, schema } from "../db/index.ts";
 import { presentOrigin, requestOrigin } from "../device-origin.ts";
 import { isWorkspaceMember, workspaceMemberCount } from "../installations.ts";
 import { runningJobs } from "../jobs.ts";
-import { MACHINE_ID_HEADER, OFFLINE } from "../durable-objects/machine-session.ts";
+import {
+  MACHINE_ID_HEADER,
+  MACHINE_ORIGIN_HEADER,
+  OFFLINE,
+} from "../durable-objects/machine-session.ts";
 import { addOrgRunnerLabels, type OrgRunner } from "../github-app.ts";
 import {
   cannotAdd,
@@ -268,6 +272,9 @@ export const machineRoutes = new Hono<AppEnv>()
     const headers = new Headers(c.req.raw.headers);
     headers.delete("authorization");
     headers.set(MACHINE_ID_HEADER, machine.id);
+    // Where the connection came from, so MachineLink can tell the owner when a connection from
+    // somewhere else takes over (request.cf doesn't reach a Durable Object).
+    headers.set(MACHINE_ORIGIN_HEADER, JSON.stringify(requestOrigin(c.req.raw)));
     return c.env.MACHINE_LINK.getByName(machine.id).fetch(new Request(c.req.raw, { headers }));
   })
   // Who a machine token belongs to, for `relayrunner whoami`: `Authorization: Bearer rrm_…`. A

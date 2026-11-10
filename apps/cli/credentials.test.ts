@@ -48,3 +48,11 @@ test("a damaged file reads as no credentials", () => {
   writeFileSync(path, JSON.stringify({ token: "rrm_only" }));
   expect(readCredentials(path)).toBeNull();
 });
+
+test("doesn't read credentials saved for a plain-http gateway other than localhost", () => {
+  const path = credentialsPath(tempHome());
+  writeCredentials({ ...credentials, server: "http://relayrunner.example" }, path);
+  expect(readCredentials(path)).toBeNull();
+  writeCredentials({ ...credentials, server: "http://localhost:8787" }, path);
+  expect(readCredentials(path)).toMatchObject({ server: "http://localhost:8787" });
+});

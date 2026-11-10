@@ -4,7 +4,12 @@ import { afterAll, beforeAll, beforeEach, describe, expect, test, vi } from "vit
 import { app } from "./app.ts";
 import { createDb, schema } from "./db/index.ts";
 import type { Env } from "./env.ts";
-import { deviceColumns, verifyMachineToken } from "./machines.ts";
+import {
+  deviceColumns,
+  issuePendingToken,
+  promotePendingToken,
+  verifyMachineToken,
+} from "./machines.ts";
 import * as testing from "./testing.ts";
 
 let proxy: Awaited<ReturnType<typeof testing.startD1>>["proxy"];
@@ -652,11 +657,71 @@ describe("the machine WebSocket", () => {
 
   test("hands the socket to the machine's MachineLink, without the token", async () => {
     const { token, machine } = await enroll("ws-ok");
-    const response = await connect({ upgrade: "websocket", authorization: `Bearer ${token}` });
+    const response = await connect({
+      upgrade: "websocket",
+      authorization: `Bearer ${token}`,
+      "cf-connecting-ip": "203.0.113.9",
+    });
     expect(await response.text()).toBe("upgraded");
     const forwarded = link(machine.id).fetch.mock.calls[0]![0];
     expect(forwarded.headers.get("x-relayrunner-machine-id")).toBe(machine.id);
     expect(forwarded.headers.get("authorization")).toBeNull();
+    // Where it came from, for MachineLink's takeover check.
+    expect(JSON.parse(forwarded.headers.get("x-relayrunner-machine-origin")!)).toEqual({
+      ip: "203.0.113.9",
+      country: null,
+      city: null,
+    });
+  });
+});
+
+describe("rotating the machine token", () => {
+  const db = () => createDb(env.DB);
+  const connect = (token: string) =>
+    app.request(
+      "/api/machines/connect",
+      { headers: { upgrade: "websocket", authorization: `Bearer ${token}` } },
+      env,
+    );
+
+  test("the old token works until the CLI saves the new one, then only the new one", async () => {
+    const { token, machine } = await enroll("rotate-saved");
+    const issued = (await issuePendingToken(db(), machine.id))!;
+    expect(issued.token).toMatch(/^rrm_/);
+    expect(await verifyMachineToken(db(), token)).toMatchObject({ id: machine.id });
+
+    await promotePendingToken(db(), machine.id, issued.hash);
+    expect(await verifyMachineToken(db(), token)).toBeNull();
+    expect(await verifyMachineToken(db(), issued.token)).toMatchObject({ id: machine.id });
+    expect((await connect(token)).status).toBe(401);
+  });
+
+  test("using the new token finishes a rotation whose token_saved was lost", async () => {
+    const { token, machine } = await enroll("rotate-lost-ack");
+    const issued = (await issuePendingToken(db(), machine.id))!;
+    expect((await connect(issued.token)).status).toBe(200);
+    expect((await connect(token)).status).toBe(401);
+  });
+
+  test("a stale token_saved can't undo a newer rotation", async () => {
+    const { machine } = await enroll("rotate-stale");
+    const first = (await issuePendingToken(db(), machine.id))!;
+    const second = (await issuePendingToken(db(), machine.id))!;
+    await promotePendingToken(db(), machine.id, first.hash);
+    expect(await verifyMachineToken(db(), first.token)).toBeNull();
+    expect(await verifyMachineToken(db(), second.token)).toMatchObject({ id: machine.id });
+  });
+
+  test("revoking kills the pending token too", async () => {
+    const { machine, cookie } = await enroll("rotate-revoke");
+    const issued = (await issuePendingToken(db(), machine.id))!;
+    await app.request(
+      `/api/machines/${machine.id}`,
+      { method: "DELETE", headers: { cookie, origin: env.BETTER_AUTH_URL } },
+      env,
+    );
+    expect(await verifyMachineToken(db(), issued.token)).toBeNull();
+    expect(await issuePendingToken(db(), machine.id)).toBeNull();
   });
 });
 

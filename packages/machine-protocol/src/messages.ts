@@ -53,6 +53,9 @@ export const HelloMessage = z.object({
   // Missing from CLIs older than device reporting. A device the gateway can't read is dropped
   // rather than failing the hello, so a detection bug never keeps a machine offline.
   device: Device.optional().catch(undefined),
+  // True when this CLI saves a new machine token from a `token` message. The gateway only rotates
+  // the token of a machine that says so, since an older CLI would keep using the old one.
+  rotatesToken: z.boolean().optional(),
 });
 
 // Sent whenever the machine's state changes and again on an interval as its heartbeat.
@@ -73,10 +76,18 @@ export const JobMessage = z.object({
   message: z.string().optional(),
 });
 
+// The machine saved the token from the gateway's `token` message, so the old one can stop
+// working. Only sent in reply to `token`.
+export const TokenSavedMessage = z.object({
+  v: version,
+  type: z.literal("token_saved"),
+});
+
 export const MachineMessage = z.discriminatedUnion("type", [
   HelloMessage,
   StatusMessage,
   JobMessage,
+  TokenSavedMessage,
 ]);
 
 // gateway → machine
@@ -108,10 +119,22 @@ export const PausedMessage = z.object({
   by: z.string().nullable(),
 });
 
+// A new machine token, sent after the hello of a CLI that set `rotatesToken`. The CLI saves it in
+// place of the one it connected with and answers `token_saved`, after which the old token stops
+// working. Until then both work, so a CLI that couldn't save it still connects next time. A copy
+// of the token file taken earlier (a backup, a synced dotfile) stops working after the next
+// connect.
+export const TokenMessage = z.object({
+  v: version,
+  type: z.literal("token"),
+  token: z.string().min(1),
+});
+
 export const GatewayMessage = z.discriminatedUnion("type", [
   RunMessage,
   ErrorMessage,
   PausedMessage,
+  TokenMessage,
 ]);
 
 export type DeviceKind = z.infer<typeof DeviceKind>;
@@ -119,10 +142,12 @@ export type Device = z.infer<typeof Device>;
 export type HelloMessage = z.infer<typeof HelloMessage>;
 export type StatusMessage = z.infer<typeof StatusMessage>;
 export type JobMessage = z.infer<typeof JobMessage>;
+export type TokenSavedMessage = z.infer<typeof TokenSavedMessage>;
 export type MachineMessage = z.infer<typeof MachineMessage>;
 export type RunMessage = z.infer<typeof RunMessage>;
 export type ErrorMessage = z.infer<typeof ErrorMessage>;
 export type PausedMessage = z.infer<typeof PausedMessage>;
+export type TokenMessage = z.infer<typeof TokenMessage>;
 export type GatewayMessage = z.infer<typeof GatewayMessage>;
 
 export type ParseResult<T> =

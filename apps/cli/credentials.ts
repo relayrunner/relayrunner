@@ -5,10 +5,11 @@ import { chmodSync, mkdirSync, readFileSync, renameSync, rmSync, writeFileSync }
 import { join } from "node:path";
 import { z } from "zod";
 import { relayrunnerHome } from "./paths.ts";
+import { sendsTokenSafely } from "./server.ts";
 
 export const Credentials = z.object({
-  // The gateway's origin, such as https://app.relayrunner.dev.
-  server: z.url(),
+  // The gateway's origin, such as https://app.relayrunner.dev. Plain http only for localhost.
+  server: z.url().refine((server) => sendsTokenSafely(new URL(server))),
   machine: z.object({ id: z.string().min(1), name: z.string() }),
   workspace: z.object({ id: z.string().min(1), name: z.string(), slug: z.string().nullish() }),
   // rrm_…, sent as a bearer token on the WebSocket upgrade.

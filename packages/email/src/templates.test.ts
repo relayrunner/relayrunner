@@ -3,6 +3,7 @@ import {
   renderDeadLetterAlertEmail,
   renderInviteEmail,
   renderMachineConnectedEmail,
+  renderMachineTakenOverEmail,
   renderWelcomeEmail,
 } from "./index.ts";
 
@@ -13,6 +14,22 @@ describe("templates", () => {
     expect(email.text).toContain("Hi Ada,");
     expect(email.text).toContain("Dashboard: https://app.example");
     expect(email.html).toContain('href="https://app.example"');
+  });
+
+  it("machine-taken-over names both places and escapes the machine name", () => {
+    const email = renderMachineTakenOverEmail({
+      machineName: "<b>mbp</b>",
+      workspaceName: "Acme",
+      was: { ip: "198.51.100.1", country: "US", city: "Boston" },
+      now: { ip: "203.0.113.9", country: "PT", city: null },
+      at: new Date("2026-11-10T00:00:00Z"),
+      machinesUrl: "https://app.example/runners",
+    });
+    expect(email.subject).toBe("<b>mbp</b> connected from another address");
+    expect(email.html).not.toContain("<b>mbp</b>");
+    expect(email.text).toContain("online from Boston, US when a new connection from PT took over");
+    expect(email.text).toContain("(198.51.100.1 → 203.0.113.9)");
+    expect(email.text).toContain("https://app.example/runners");
   });
 
   it("machine-connected escapes user-chosen names in HTML", () => {
