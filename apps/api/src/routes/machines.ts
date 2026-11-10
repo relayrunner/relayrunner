@@ -70,12 +70,53 @@ const ClaimBody = z.object({
   arch: HelloMessage.shape.arch,
 });
 
+const DenyBody = z.object({ userCode: z.string().min(1).max(32) });
+
 const AddRunnersBody = z.object({
   installationId: z.number().int().positive(),
   runnerIds: z.array(z.number().int().positive()).min(1).max(50),
 });
 
 export const machineRoutes = new Hono<AppEnv>()
+  // The /device page's look at a code, without claiming it. Better Auth's own GET /device ties an
+  // unclaimed code to whoever views it, so a link opened in a browser signed in as someone else
+  // (the default browser, before a private window) would lock out the account that approves.
+  // Approve and deny below claim the code instead, at the moment someone acts on it.
+  .get("/device", requireUser, async (c) => {
+    const userCode = normalizeUserCode(c.req.query("user_code") ?? "");
+    const db = createDb(c.env.DB);
+    const [code] = await db
+      .select({
+        status: schema.deviceCode.status,
+        expiresAt: schema.deviceCode.expiresAt,
+        clientId: schema.deviceCode.clientId,
+      })
+      .from(schema.deviceCode)
+      .where(eq(schema.deviceCode.userCode, userCode))
+      .limit(1);
+    if (!code || code.clientId !== MACHINE_CLIENT_ID)
+      return c.json({ error: "invalid_request" }, 400);
+    if (code.expiresAt < new Date()) return c.json({ error: "expired_token" }, 400);
+    return c.json({ user_code: userCode, status: code.status });
+  })
+
+  .post("/deny", requireUser, async (c) => {
+    const parsed = DenyBody.safeParse(await c.req.json().catch(() => null));
+    if (!parsed.success) return c.json({ error: "invalid_request" }, 400);
+    const userCode = normalizeUserCode(parsed.data.userCode);
+    try {
+      // Claim it first (a no-op if this user already has), then deny.
+      await c.var.auth.api.deviceVerify({
+        query: { user_code: userCode },
+        headers: c.req.raw.headers,
+      });
+      await c.var.auth.api.deviceDeny({ body: { userCode }, headers: c.req.raw.headers });
+    } catch (error) {
+      return deviceError(error);
+    }
+    return c.json({ success: true });
+  })
+
   .post("/approve", requireUser, async (c) => {
     const parsed = ApproveBody.safeParse(await c.req.json().catch(() => null));
     if (!parsed.success) return c.json({ error: "invalid_request" }, 400);
@@ -89,7 +130,7 @@ export const machineRoutes = new Hono<AppEnv>()
     if (!membership) return c.json({ error: "forbidden" }, 403);
 
     // Opening the code ties it to this user (Better Auth only lets that user approve it). The
-    // dashboard has already done this, but doing it here keeps the endpoint whole on its own.
+    // dashboard only looks at it through GET /device above, so this is where it gets claimed.
     try {
       await c.var.auth.api.deviceVerify({
         query: { user_code: userCode },

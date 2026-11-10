@@ -157,15 +157,12 @@ export function revokeMachine(id: string) {
 /** GET /api/auth/device: a device code's state. Opening it also ties it to the signed-in user. */
 export type DeviceCodeStatus = { user_code: string; status: "pending" | "approved" | "denied" };
 
-export async function openDeviceCode(userCode: string) {
-  const res = await fetch(`/api/auth/device?user_code=${encodeURIComponent(userCode)}`, {
-    credentials: "include",
-  });
-  if (!res.ok) {
-    const body = (await res.json().catch(() => null)) as { error?: string } | null;
-    throw new ApiError(`Device code lookup failed`, res.status, body?.error);
-  }
-  return (await res.json()) as DeviceCodeStatus;
+/**
+ * Looks up a `relayrunner connect` code without claiming it: the code belongs to whoever approves
+ * or denies it, not whoever first opens the link (which may be another browser's account).
+ */
+export function openDeviceCode(userCode: string) {
+  return api<DeviceCodeStatus>(`/machines/device?user_code=${encodeURIComponent(userCode)}`);
 }
 
 export function approveDevice(body: { userCode: string; workspaceId: string; name: string }) {
@@ -176,7 +173,7 @@ export function approveDevice(body: { userCode: string; workspaceId: string; nam
 }
 
 export function denyDevice(userCode: string) {
-  return api<{ success: boolean }>("/auth/device/deny", {
+  return api<{ success: boolean }>("/machines/deny", {
     method: "POST",
     body: JSON.stringify({ userCode }),
   });
@@ -201,7 +198,7 @@ export function describeDeviceError(error: unknown) {
       return "That code has already been used.";
     case "forbidden":
     case "access_denied":
-      return "You can't approve this request. It was opened by another account, or you aren't an owner of that workspace.";
+      return "Another account already approved or denied this request, or you aren't in that workspace. Run `relayrunner connect` again for a new code.";
     default:
       return "Something went wrong. Try again.";
   }
