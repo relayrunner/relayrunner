@@ -1,4 +1,5 @@
-import { useState, type ReactNode } from "react";
+import { CheckIcon, CopyIcon } from "lucide-react";
+import { useEffect, useState, type ReactNode } from "react";
 import { Button } from "@/components/ui/button";
 import {
   Dialog,
@@ -13,7 +14,8 @@ import { Input } from "@/components/ui/input";
 /**
  * Type-the-name confirm for the operator deletes on /admin, which exist to repeat new-user signup
  * and onboarding tests. Offers to uninstall the GitHub App when there are accounts to uninstall
- * from, off by default since it's the one step that changes something on GitHub.
+ * from, on by default so the next sign-up starts clean. The value to type copies on click, and
+ * Enter in the field submits once it matches.
  */
 export function AdminDeleteDialog({
   open,
@@ -37,7 +39,8 @@ export function AdminDeleteDialog({
   onConfirm: (uninstallGitHubApp: boolean) => Promise<void>;
 }) {
   const [typed, setTyped] = useState("");
-  const [uninstall, setUninstall] = useState(false);
+  const [uninstall, setUninstall] = useState(true);
+  const [copied, setCopied] = useState(false);
   const [pending, setPending] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -45,13 +48,32 @@ export function AdminDeleteDialog({
     if (pending) return;
     if (!next) {
       setTyped("");
-      setUninstall(false);
+      setUninstall(true);
+      setCopied(false);
       setError(null);
     }
     onOpenChange(next);
   }
 
+  useEffect(() => {
+    if (!copied) return;
+    const t = setTimeout(() => setCopied(false), 1500);
+    return () => clearTimeout(t);
+  }, [copied]);
+
+  async function copy() {
+    try {
+      await navigator.clipboard.writeText(confirmText);
+      setCopied(true);
+    } catch {
+      // Clipboard can be blocked; the value is still there to type.
+    }
+  }
+
+  const matches = typed.trim() === confirmText;
+
   async function confirm() {
+    if (pending || blocked || !matches) return;
     setPending(true);
     setError(null);
     try {
@@ -76,7 +98,14 @@ export function AdminDeleteDialog({
         {blocked ? (
           <p className="text-sm">{blocked}</p>
         ) : (
-          <div className="grid gap-3">
+          <form
+            id="admin-delete-form"
+            className="grid gap-3"
+            onSubmit={(e) => {
+              e.preventDefault();
+              void confirm();
+            }}
+          >
             {githubAccounts.length > 0 && (
               <label className="flex cursor-pointer gap-3 rounded-lg border px-3 py-3 text-sm">
                 <input
@@ -99,7 +128,22 @@ export function AdminDeleteDialog({
             )}
             <label className="grid gap-1.5 text-sm">
               <span>
-                Type <span className="font-mono font-medium">{confirmText}</span> to confirm
+                Type{" "}
+                <button
+                  type="button"
+                  onClick={() => void copy()}
+                  title="Copy"
+                  className="inline-flex items-center gap-1 rounded bg-muted px-1.5 py-0.5 font-mono font-medium hover:bg-muted/70 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                >
+                  {confirmText}
+                  {copied ? (
+                    <CheckIcon aria-hidden className="size-3.5 text-muted-foreground" />
+                  ) : (
+                    <CopyIcon aria-hidden className="size-3.5 text-muted-foreground" />
+                  )}
+                  <span className="sr-only">{copied ? "Copied" : "Copy"}</span>
+                </button>{" "}
+                to confirm
               </span>
               <Input
                 value={typed}
@@ -108,7 +152,7 @@ export function AdminDeleteDialog({
                 disabled={pending}
               />
             </label>
-          </div>
+          </form>
         )}
         {error && (
           <p role="alert" className="text-sm text-destructive">
@@ -121,9 +165,10 @@ export function AdminDeleteDialog({
           </Button>
           {!blocked && (
             <Button
+              type="submit"
+              form="admin-delete-form"
               variant="destructive"
-              disabled={pending || typed.trim() !== confirmText}
-              onClick={() => void confirm()}
+              disabled={pending || !matches}
             >
               {pending ? "Deleting…" : "Delete"}
             </Button>
