@@ -36,6 +36,25 @@ describe("walkSummary", () => {
     });
   });
 
+  test("names whose jobs the machines that fit only run (#242)", () => {
+    const notShared = (machines: { machine: string; owner: string | null }[]) =>
+      walk({ skipped: [{ key: "machine", reason: "machine_not_shared", notShared: machines }] });
+    const one = notShared([{ machine: "atticus-mbp", owner: "Atticus" }]);
+    expect(walkSummary(one)).toEqual({
+      text: "atticus-mbp only runs Atticus's jobs",
+      tone: "fallback",
+    });
+    expect(walkLines(one, "ubuntu-latest")[0]?.text).toBe("atticus-mbp only runs Atticus's jobs");
+    const two = notShared([
+      { machine: "atticus-mbp", owner: "Atticus" },
+      { machine: "zach-mini", owner: null },
+    ]);
+    expect(walkSummary(two)?.text).toBe("2 machines only run their owners' jobs");
+    expect(walkLines(two, "ubuntu-latest")[0]?.text).toBe(
+      "atticus-mbp and zach-mini only run their owners' jobs",
+    );
+  });
+
   test("names the paused machines", () => {
     const paused = (names: string[]) =>
       walk({

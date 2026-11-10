@@ -6,6 +6,7 @@ import type { Env } from "./env.ts";
 import { appInstallationToken, removeOrgRunnerLabel } from "./github-app.ts";
 import { matchLabels, parseStoredLabels } from "./github-runners.ts";
 import type { Device } from "@relayrunner/machine-protocol";
+import type { MachineSharing } from "@relayrunner/activity";
 import { machineLabels } from "./routing.ts";
 
 // Machine tokens: what `relayrunner connect` holds after enrolling, and sends on the MachineLink
@@ -72,6 +73,10 @@ export function presentMachine(
     createdAt: machine.createdAt,
     // Null unless paused. `by` is null when the machine's own CLI paused it.
     paused: machine.pausedAt ? { at: machine.pausedAt, by: pausedBy } : null,
+    // Whose jobs it takes ('only_me' or 'anyone'); only its owner (createdBy) can change it.
+    sharing: machine.sharing,
+    // True while its owner hasn't yet been told it was switched to 'only_me' when sharing shipped.
+    sharingNotice: machine.sharingNotice,
     // What its CLI reported on its last hello, or null when it never did (an older CLI, or a
     // runner added from GitHub, which doesn't report hardware).
     device: machine.deviceKind
@@ -185,6 +190,41 @@ export async function setMachinePaused(
     actorUserId: actor.userId,
   });
   return { machine, changed: true };
+}
+
+/**
+ * Sets whose jobs a machine takes and logs it in Activity, as its owner. Setting it also clears the
+ * one-time notice that it was switched to `only_me`. Setting what's already the case logs nothing.
+ * Returns the machine as it is now, or null if it's gone or revoked.
+ */
+export async function setMachineSharing(
+  db: Db,
+  machineId: string,
+  sharing: MachineSharing,
+  ownerId: string,
+) {
+  const [current] = await db
+    .select()
+    .from(schema.machine)
+    .where(and(eq(schema.machine.id, machineId), isNull(schema.machine.revokedAt)))
+    .limit(1);
+  if (!current) return null;
+  if (current.sharing === sharing && !current.sharingNotice)
+    return { machine: current, changed: false };
+  const [machine] = await db
+    .update(schema.machine)
+    .set({ sharing, sharingNotice: false })
+    .where(eq(schema.machine.id, machineId))
+    .returning();
+  if (current.sharing !== sharing)
+    await recordEvent(db, {
+      workspaceId: machine.workspaceId,
+      type: "machine.sharing_changed",
+      data: { machineName: machine.name, sharing },
+      machineId: machine.id,
+      actorUserId: ownerId,
+    });
+  return { machine, changed: current.sharing !== sharing };
 }
 
 /** The name of the user who paused a machine, or null (not paused, or paused by its CLI). */

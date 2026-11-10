@@ -2,6 +2,7 @@
 // account, verification), then the organization plugin's, renamed to workspaces (see auth.ts).
 // Gateway tables (installations and their repos, then machines and routes) follow. After changing anything
 // here, run `pnpm db:generate` to write a new migration.
+import type { MachineSharing } from "@relayrunner/activity";
 import { sql } from "drizzle-orm";
 import {
   index,
@@ -243,6 +244,13 @@ export const machine = sqliteTable(
     pausedBy: text("paused_by").references(() => user.id, { onDelete: "set null" }),
     // 'connect' or 'github' (above).
     source: text("source").notNull().default("connect"),
+    // Whose jobs it takes (MACHINE_SHARING, #237): 'only_me' (only jobs its owner, createdBy,
+    // started) or 'anyone'. Only the owner changes it. Connected machines start as 'only_me';
+    // runners added from GitHub are the org's shared runners and start as 'anyone'.
+    sharing: text("sharing").$type<MachineSharing>().notNull().default("only_me"),
+    // Set on connected machines that were switched to 'only_me' when sharing shipped (#242), until
+    // the owner has been told once (#243 card, #244 CLI).
+    sharingNotice: integer("sharing_notice", { mode: "boolean" }).notNull().default(false),
     // 'github' only: the installation whose org the runner is registered in, GitHub's runner id,
     // the label RelayRunner added to it (`rr-runner-<hex>`), and the runner's labels as last read
     // from GitHub (JSON array), for when GitHub can't be reached.

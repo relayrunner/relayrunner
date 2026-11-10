@@ -14,6 +14,7 @@ import {
   type GroupAccess,
 } from "../github-runners.ts";
 import {
+  admits,
   canClaim,
   chooseMachine,
   decideRoute,
@@ -21,17 +22,18 @@ import {
   machineLabels,
   lastPicked,
   newRouteId,
-  pausedMatches,
   routeLabel,
+  unavailableMachines,
   ROUTE_TTL_MS,
   type Candidate,
+  type JobStarters,
   type MachinePick,
   type QueuedJob,
   type Route,
   type RouteDecision,
 } from "../routing.ts";
 
-export interface PickedJob {
+export interface PickedJob extends JobStarters {
   workspaceId: string;
   installationId: number;
   repositoryId: number;
@@ -45,6 +47,8 @@ export interface PickedJob {
   blacksmith: string[];
   // Public repos never go to a machine: anyone could run code on it with a pull request.
   private: boolean;
+  // startedBy and triggeredBy (JobStarters): who started the run and this attempt. A machine
+  // that's `only_me` takes the job only when both are its owner.
 }
 
 const ROUTE_KEY = "route:";
@@ -114,8 +118,8 @@ export class Router extends DurableObject<Env> {
     );
   }
 
-  // A route to a free machine with the job's labels, the paused machines when every one with the
-  // labels is paused, or null.
+  // A route to a free machine with the job's labels whose sharing takes the job, else why none
+  // could (unavailableMachines), or null.
   private pickMachine(job: PickedJob): Promise<MachinePick> {
     // One decision at a time, so two picks can't both see the same machine as free.
     return this.ctx.blockConcurrencyWhile(async () => {
@@ -135,8 +139,20 @@ export class Router extends DurableObject<Env> {
           githubRunnerId: schema.machine.githubRunnerId,
           routingLabel: schema.machine.routingLabel,
           githubLabels: schema.machine.githubLabels,
+          sharing: schema.machine.sharing,
+          ownerName: schema.user.name,
+          ownerGithubId: schema.account.accountId,
         })
         .from(schema.machine)
+        .leftJoin(schema.user, eq(schema.user.id, schema.machine.createdBy))
+        // The owner's GitHub account, which `only_me` matches the job's starters against.
+        .leftJoin(
+          schema.account,
+          and(
+            eq(schema.account.userId, schema.machine.createdBy),
+            eq(schema.account.providerId, "github"),
+          ),
+        )
         .where(
           and(
             eq(schema.machine.workspaceId, job.workspaceId),
@@ -148,10 +164,14 @@ export class Router extends DurableObject<Env> {
           ),
         );
       // An org runner only serves its own org's repos, so a runner added from another
-      // installation never fits this job.
-      const fits = machines.filter(
-        (machine) => machine.source !== "github" || machine.installationId === job.installationId,
-      );
+      // installation never fits this job. An owner with two GitHub accounts linked would list a
+      // machine twice: keep its first row.
+      const seen = new Set<string>();
+      const fits = machines
+        .filter((machine) => !seen.has(machine.id) && Boolean(seen.add(machine.id)))
+        .filter(
+          (machine) => machine.source !== "github" || machine.installationId === job.installationId,
+        );
       const pool = fits.map((machine) => ({
         id: machine.id,
         name: machine.name,
@@ -160,15 +180,27 @@ export class Router extends DurableObject<Env> {
             ? matchLabels(parseStoredLabels(machine.githubLabels))
             : machineLabels(machine),
         paused: machine.pausedAt !== null,
+        sharing: machine.sharing,
+        ownerGithubId: githubId(machine.ownerGithubId),
+        ownerName: machine.ownerName,
       }));
       // Paused machines can't be picked, so there's no need to ask for their live status.
-      const live = fits.filter((machine) => !held.has(machine.id) && machine.pausedAt === null);
+      // Nor for those whose sharing won't take this job.
+      const live = fits.filter(
+        (machine) =>
+          !held.has(machine.id) &&
+          machine.pausedAt === null &&
+          admits(
+            pool.find((entry) => entry.id === machine.id)!,
+            job,
+          ),
+      );
       const runners = live.some((machine) => machine.source === "github")
         ? await this.orgRunners(job)
         : null;
       const candidates: Candidate[] = await Promise.all(
         live.map(async (machine): Promise<Candidate> => {
-          const base = pool.find((entry) => entry.id === machine.id)!;
+          const { ownerName: _, ...base } = pool.find((entry) => entry.id === machine.id)!;
           if (machine.source !== "github")
             return { ...base, ...(await this.env.MACHINE_LINK.getByName(machine.id).status()) };
           const runner = runners?.runners.find((r) => r.id === machine.githubRunnerId);
@@ -181,11 +213,8 @@ export class Router extends DurableObject<Env> {
           };
         }),
       );
-      const machine = chooseMachine(candidates, held, lastPicked(routes), job.machine);
-      if (!machine) {
-        const paused = pausedMatches(pool, job.machine);
-        return paused.length > 0 ? { paused } : null;
-      }
+      const machine = chooseMachine(candidates, held, lastPicked(routes), job.machine, job);
+      if (!machine) return unavailableMachines(pool, job.machine, job);
 
       const routingLabel = fits.find((m) => m.id === machine.id)?.routingLabel ?? undefined;
       const route: Route = {
@@ -335,4 +364,10 @@ export class Router extends DurableObject<Env> {
     if (expired.length) await this.ctx.storage.delete(expired.slice(0, 128));
     return [...stored.values()].filter((r) => now - r.createdAt <= ROUTE_TTL_MS);
   }
+}
+
+// Better Auth keeps a GitHub account's id as text.
+function githubId(accountId: string | null): number | null {
+  const id = Number(accountId);
+  return accountId && Number.isSafeInteger(id) && id > 0 ? id : null;
 }

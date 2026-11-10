@@ -459,6 +459,10 @@ function sentence(item: ActivityItem) {
       return item.data.via === "cli" ? "was paused from its CLI" : "was paused";
     case "machine.resumed":
       return item.data.via === "cli" ? "was resumed from its CLI" : "was resumed";
+    case "machine.sharing_changed":
+      return item.data.sharing === "only_me"
+        ? "was set to run only its owner's jobs"
+        : "was shared with the workspace";
     case "machine.revoked":
       return item.data.source === "github" ? "was removed from RelayRunner" : "was revoked";
     case "job.routed":
@@ -503,6 +507,7 @@ const EVENT_ICONS = {
   "machine.disconnected": Unplug,
   "machine.paused": Pause,
   "machine.resumed": Play,
+  "machine.sharing_changed": Lock,
   "machine.revoked": Ban,
   "member.removed": UserMinus,
   "job.routed": Laptop,
@@ -1066,6 +1071,44 @@ function samplePage(search: ActivitySearch): ActivityPage {
   const mac = { id: "m1", name: "Atticuss-MacBook-Pro.local" };
   const relay = { machine: ["self-hosted"], github: ["ubuntu-latest"], blacksmith: [] };
   const items: ActivityItem[] = [
+    {
+      id: 17,
+      type: "job.routed",
+      data: {},
+      occurredAt: at(0.02),
+      actor: null,
+      machine: null,
+      job: job(7, 0.02, {
+        name: "test (macos)",
+        starters: { startedBy: zach, rerunBy: null },
+        runnerName: "GitHub Actions 15",
+        status: "in_progress",
+        startedAt: at(0.01),
+        walk: {
+          step: "github",
+          skipped: [
+            {
+              key: "machine",
+              reason: "machine_not_shared",
+              notShared: [{ machine: mac.name, owner: "Atticus White" }],
+            },
+          ],
+          notInOrder: [],
+          machine: ["macOS", "ARM64"],
+          github: ["macos-latest"],
+          blacksmith: [],
+        },
+      }),
+    },
+    {
+      id: 16,
+      type: "machine.sharing_changed",
+      data: { machineName: mac.name, sharing: "anyone" },
+      occurredAt: at(0.03),
+      actor: { id: "u1", name: "Atticus White" },
+      machine: mac,
+      job: null,
+    },
     {
       id: 15,
       type: "job.routed",
