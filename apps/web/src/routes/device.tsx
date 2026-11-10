@@ -1,5 +1,5 @@
-import { createFileRoute, useNavigate, useRouter } from "@tanstack/react-router";
-import { CheckIcon } from "lucide-react";
+import { createFileRoute, Link, useNavigate, useRouter } from "@tanstack/react-router";
+import { ArrowRightIcon, CheckIcon } from "lucide-react";
 import { useEffect, useState, type FormEvent, type ReactNode } from "react";
 import { Brand } from "@/components/brand";
 import { CreateWorkspaceForm } from "@/components/create-workspace-form";
@@ -243,6 +243,16 @@ function Onboarding({ loaded }: { loaded: Extract<Loaded, { kind: "review" }> })
       <Message
         title="Machine connected"
         body={`${result.name} is enrolled. Head back to your terminal; it finishes on its own.`}
+        action={
+          // Low emphasis on purpose: most people just close the tab.
+          <Link
+            to="/runners"
+            className="inline-flex items-center gap-1 text-sm text-muted-foreground underline-offset-4 hover:text-foreground hover:underline"
+          >
+            Go to dashboard
+            <ArrowRightIcon aria-hidden className="size-3.5" />
+          </Link>
+        }
       />
     );
   if (result?.action === "denied")
