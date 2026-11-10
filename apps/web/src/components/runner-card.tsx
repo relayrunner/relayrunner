@@ -75,15 +75,20 @@ const CONNECTION = {
   missing: { dot: "bg-destructive", label: "Not on GitHub" },
 } as const;
 
-/** A square chip with an icon, named by a tooltip. */
+/**
+ * A square chip with an icon, named by a tooltip. `session` marks a `relayrunner connect` machine,
+ * which comes and goes with its terminal: a bolt stands in for the dot, filled while connected.
+ */
 function IconChip({
   icon,
   label,
   status,
+  session = false,
 }: {
   icon: ReactNode;
   label: string;
   status?: { dot: string; label: string };
+  session?: boolean;
 }) {
   return (
     <Tooltip>
@@ -102,6 +107,21 @@ function IconChip({
                 className="absolute -right-1.5 -bottom-1.5 flex size-3 items-center justify-center rounded-full bg-raised-2 text-run"
               >
                 <PauseIcon aria-hidden className="size-2.5 fill-current" strokeWidth={0} />
+              </span>
+            ) : session && status ? (
+              <span
+                role="img"
+                aria-label={status.label}
+                className={cn(
+                  "absolute -right-[7px] -bottom-[7px] flex size-3.5 items-center justify-center rounded-full bg-raised-2",
+                  status.label === "Online" ? "text-go" : "text-idle",
+                )}
+              >
+                <ZapIcon
+                  aria-hidden
+                  className={cn("size-2.5", status.label === "Online" && "fill-current")}
+                  strokeWidth={status.label === "Online" ? 1 : 2.25}
+                />
               </span>
             ) : (
               status && (
@@ -276,7 +296,10 @@ export function MachineCard({ machine, jobTime }: { machine: Machine; jobTime?: 
       : busy
         ? null
         : status.online
-          ? null
+          ? // A connect machine's session: how long its terminal has been connected.
+            !isGithub && status.connectedAt
+            ? `Connected ${timeAgo(status.connectedAt)}`
+            : null
           : isGithub
             ? github?.unreachable
               ? "Couldn't reach GitHub"
@@ -284,7 +307,7 @@ export function MachineCard({ machine, jobTime }: { machine: Machine; jobTime?: 
                 ? `In ${github.org}`
                 : "Not reported by GitHub"
             : machine.lastSeenAt
-              ? `Last seen ${timeAgo(machine.lastSeenAt)}`
+              ? `Session ended ${timeAgo(machine.lastSeenAt)}`
               : "Never connected";
 
   return (
@@ -295,7 +318,12 @@ export function MachineCard({ machine, jobTime }: { machine: Machine; jobTime?: 
     >
       <div className="grid min-w-0 gap-2 px-4 pt-3 pb-3.5">
         <div className="flex min-w-0 items-center gap-2.5">
-          <IconChip icon={chip.icon} label={chip.label} status={CONNECTION[connection]} />
+          <IconChip
+            icon={chip.icon}
+            label={chip.label}
+            status={CONNECTION[connection]}
+            session={!isGithub}
+          />
           <h3
             title={machine.name}
             className={cn(
