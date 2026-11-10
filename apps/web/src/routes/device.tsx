@@ -1,6 +1,6 @@
 import { createFileRoute, useNavigate, useRouter } from "@tanstack/react-router";
 import { CheckIcon } from "lucide-react";
-import { useEffect, useState, type FormEvent, type ReactNode } from "react";
+import { useState, type FormEvent, type ReactNode } from "react";
 import { Brand } from "@/components/brand";
 import { CreateWorkspaceForm } from "@/components/create-workspace-form";
 import { Badge } from "@/components/ui/badge";
@@ -42,9 +42,10 @@ import {
 //
 // 1. Connect GitHub, one click (#221). Signed out, the GitHub step is "Continue with GitHub": it
 //    signs in (creating the account) and comes back here. Someone with no workspace gets one made
-//    for them, named after their GitHub login. With nothing to choose, the page then sends them
-//    straight on to the App's install screen (/api/github/install?next=<this page>). It shows the GitHub step instead when they
-//    have an install to add, when GitHub has already reported back (?github=), or when they come
+//    for them, named after their GitHub login. With nothing to choose, the page's data load then
+//    sends them straight on to the App's install screen (/api/github/install?next=<this page>)
+//    before anything renders. It shows the GitHub step instead when they have an install to add,
+//    when GitHub has already reported back (?github=), or when they come
 //    back without installing (?install=opened), so cancelling doesn't loop. A non-admin's install
 //    only sends a request to the org's owners, so with ?github=requested they may carry on and
 //    jobs start once an owner accepts.
@@ -95,8 +96,14 @@ export const Route = createFileRoute("/device")({
     install: search.install === "opened" ? "opened" : undefined,
   }),
   beforeLoad: async () => ({ session: authDisabled ? null : await getSession() }),
-  loaderDeps: ({ search }) => ({ userCode: search.user_code }),
+  loaderDeps: ({ search }) => ({
+    userCode: search.user_code,
+    name: search.name,
+    github: search.github,
+    install: search.install,
+  }),
   loader: async ({ deps, context }): Promise<Loaded> => {
+    if (leavingForGitHub) return leaving();
     if (!deps.userCode) return { kind: "enter" };
     if (authDisabled)
       return {
@@ -136,6 +143,15 @@ export const Route = createFileRoute("/device")({
     const unclaimed = current.installations.length
       ? { installations: [] }
       : await getUnclaimedInstallations();
+    if (
+      shouldOpenInstall({
+        current,
+        unclaimedCount: unclaimed.installations.length,
+        outcome: deps.github,
+        opened: deps.install === "opened",
+      })
+    )
+      return openInstall(returnPath(deps));
     return { ...review, current, unclaimed };
   },
   component: DevicePage,
@@ -219,7 +235,7 @@ const steps: { key: Step; label: string }[] = [
 
 // Picks the first step that still needs doing.
 function Onboarding({ loaded }: { loaded: Extract<Loaded, { kind: "review" }> }) {
-  const { github, install } = Route.useSearch();
+  const { github } = Route.useSearch();
   const [result, setResult] = useState<{ action: "approved" | "denied"; name: string } | null>(
     null,
   );
@@ -228,15 +244,6 @@ function Onboarding({ loaded }: { loaded: Extract<Loaded, { kind: "review" }> })
   // ready the moment an owner accepts.
   const githubDone = !!current && (current.installations.length > 0 || github === "requested");
   const step: Step = !current ? "workspace" : !githubDone ? "github" : "approve";
-  const openInstall =
-    !authDisabled &&
-    step === "github" &&
-    shouldOpenInstall({
-      current,
-      unclaimedCount: loaded.unclaimed.installations.length,
-      outcome: github,
-      opened: install === "opened",
-    });
 
   if (result?.action === "approved")
     return (
@@ -252,8 +259,7 @@ function Onboarding({ loaded }: { loaded: Extract<Loaded, { kind: "review" }> })
     <div className="flex w-full flex-col gap-4">
       <Steps current={step} withWorkspace={step === "workspace"} />
       {step === "workspace" && <CreateWorkspaceStep />}
-      {openInstall && <OpenInstall />}
-      {step === "github" && current && !openInstall && (
+      {step === "github" && current && (
         <ConnectGitHubStep
           workspaces={loaded.workspaces}
           current={current}
@@ -311,12 +317,41 @@ function Steps({ current, withWorkspace }: { current: Step; withWorkspace: boole
 }
 
 /** This page, as a path to come back to, without a stale ?github= outcome. */
-function useReturnPath() {
-  const { user_code, name } = Route.useSearch();
+function returnPath({ userCode, name }: { userCode?: string; name?: string }) {
   const search = new URLSearchParams();
-  if (user_code) search.set("user_code", user_code);
+  if (userCode) search.set("user_code", userCode);
   if (name) search.set("name", name);
   return `/device?${search}`;
+}
+
+function useReturnPath() {
+  const { user_code, name } = Route.useSearch();
+  return returnPath({ userCode: user_code, name });
+}
+
+// Marking the URL makes the router load this page again; while the browser is on its way to
+// GitHub, that load waits too, so it can't render the GitHub step in the meantime.
+let leavingForGitHub = false;
+const leaving = () => new Promise<never>(() => {});
+
+/**
+ * Sends the browser to GitHub's App install screen straight from the page's data load, so nothing
+ * renders first. It marks this page's history entry ?install=opened, so coming back (cancelling on
+ * GitHub, or the back button) shows the GitHub step instead of redirecting again. Never resolves:
+ * the page is on its way out.
+ */
+function openInstall(back: string): Promise<never> {
+  leavingForGitHub = true;
+  const opened = new URL(window.location.href);
+  opened.searchParams.set("install", "opened");
+  window.history.replaceState(window.history.state, "", opened);
+  // The back button can restore this page from the cache, mid-load: reload it so it reads
+  // ?install=opened.
+  window.addEventListener("pageshow", (event) => {
+    if (event.persisted) window.location.reload();
+  });
+  window.location.assign(githubInstallHref(back));
+  return leaving();
 }
 
 /**
@@ -370,45 +405,6 @@ function SignInStep() {
           </a>
           .
         </p>
-      </CardContent>
-    </Card>
-  );
-}
-
-/**
- * Sends the browser to GitHub's App install screen. First it marks this page's history entry
- * ?install=opened, so coming back (cancelling on GitHub, or the back button) shows the GitHub step
- * instead of redirecting again.
- */
-function OpenInstall() {
-  const back = useReturnPath();
-  const href = githubInstallHref(back);
-  useEffect(() => {
-    const opened = new URL(window.location.href);
-    opened.searchParams.set("install", "opened");
-    window.history.replaceState(window.history.state, "", opened);
-    // The back button can restore this page from the cache, still on this card: reload it so it
-    // reads ?install=opened.
-    const onShow = (event: PageTransitionEvent) => {
-      if (event.persisted) window.location.reload();
-    };
-    window.addEventListener("pageshow", onShow);
-    window.location.assign(href);
-    return () => window.removeEventListener("pageshow", onShow);
-  }, [href]);
-  return (
-    <Card className="w-full">
-      <CardHeader>
-        <CardTitle>Opening GitHub…</CardTitle>
-        <CardDescription>
-          Install the RelayRunner GitHub App on the account whose jobs should route. GitHub sends
-          you back here afterwards.
-        </CardDescription>
-      </CardHeader>
-      <CardContent>
-        <Button asChild size="lg" className="w-full font-bold">
-          <a href={href}>Continue to GitHub</a>
-        </Button>
       </CardContent>
     </Card>
   );
@@ -562,7 +558,10 @@ function ApproveStep({
     try {
       if (action === "approve") await approveDevice({ userCode, workspaceId, name: name.trim() });
       else await denyDevice(userCode);
-      onDone({ action: action === "approve" ? "approved" : "denied", name: name.trim() });
+      onDone({
+        action: action === "approve" ? "approved" : "denied",
+        name: name.trim(),
+      });
     } catch (caught) {
       setError(describeDeviceError(caught));
     } finally {
@@ -671,7 +670,10 @@ function WorkspaceSelect({
     setSwitching(true);
     try {
       await organization.setActive({ organizationId: id });
-      await navigate({ search: (prev) => ({ ...prev, github: undefined }), replace: true });
+      await navigate({
+        search: (prev) => ({ ...prev, github: undefined }),
+        replace: true,
+      });
       await router.invalidate();
     } finally {
       setSwitching(false);
