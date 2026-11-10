@@ -24,6 +24,7 @@ import {
   type DeviceCodeStatus,
 } from "@/lib/machines";
 import { shouldOpenInstall } from "@/lib/onboarding";
+import { canManage } from "@/lib/roles";
 import { cn } from "@/lib/utils";
 import {
   claimInstallation,
@@ -40,9 +41,12 @@ import {
 // It doubles as onboarding for someone who has never used RelayRunner, so the CLI's one link
 // walks them through every step and back here each time:
 //
-// 1. Connect GitHub, one click (#221). Signed out, the GitHub step is "Continue with GitHub": it
-//    signs in (creating the account) and comes back here. Someone with no workspace gets one made
-//    for them, named after their GitHub login. With nothing to choose, the page's data load then
+// 1. Connect GitHub, one click (#221). Signed out, the GitHub step is "Continue with GitHub": one
+//    trip to GitHub that installs the App and signs up (/api/github/signup, see
+//    apps/api/src/routes/github.ts), coming back with ?installed=<id>. Someone with no workspace
+//    gets one made for them, named after their GitHub login, and the installation is claimed into
+//    it. "Already have an account? Sign in" only signs in and comes back here.
+//    Signed in with no installation and nothing to choose, the page's data load
 //    sends them straight on to the App's install screen (/api/github/install?next=<this page>)
 //    before anything renders. It shows the GitHub step instead when they have an install to add,
 //    when GitHub has already reported back (?github=), or when they come
@@ -57,9 +61,17 @@ type DeviceSearch = {
   name?: string;
   github?: GitHubOutcome;
   install?: "opened";
+  // Set by /api/github/setup when it signed a new user in on the way back from installing the
+  // App: the installation to claim into their (new) workspace.
+  installed?: number;
 };
 
 type Workspace = { id: string; name: string };
+
+function positiveInt(value: unknown) {
+  const n = typeof value === "string" ? Number(value) : value;
+  return typeof n === "number" && Number.isSafeInteger(n) && n > 0 ? n : undefined;
+}
 
 type Loaded =
   | { kind: "enter" }
@@ -94,6 +106,7 @@ export const Route = createFileRoute("/device")({
     name: typeof search.name === "string" ? search.name.slice(0, 64) : undefined,
     github: isGitHubOutcome(search.github) ? search.github : undefined,
     install: search.install === "opened" ? "opened" : undefined,
+    installed: positiveInt(search.installed),
   }),
   beforeLoad: async () => ({ session: authDisabled ? null : await getSession() }),
   loaderDeps: ({ search }) => ({
@@ -101,6 +114,7 @@ export const Route = createFileRoute("/device")({
     name: search.name,
     github: search.github,
     install: search.install,
+    installed: search.installed,
   }),
   loader: async ({ deps, context }): Promise<Loaded> => {
     if (leavingForGitHub) return leaving();
@@ -138,7 +152,15 @@ export const Route = createFileRoute("/device")({
     const active = await ensureActiveWorkspace(context.session);
     if (!workspaces.some((workspace) => workspace.id === active))
       await organization.setActive({ organizationId: workspaces[0]!.id });
-    const current = await getCurrentWorkspace();
+    let current = await getCurrentWorkspace();
+    // Just signed up through the install: link it. If that fails (say another workspace has it),
+    // the GitHub step shows with the installation to add or the error.
+    if (deps.installed && !current.installations.length && canManage(current.role)) {
+      try {
+        await claimInstallation(deps.installed);
+        current = await getCurrentWorkspace();
+      } catch {}
+    }
     // Only needed for the Connect GitHub step.
     const unclaimed = current.installations.length
       ? { installations: [] }
@@ -148,7 +170,7 @@ export const Route = createFileRoute("/device")({
         current,
         unclaimedCount: unclaimed.installations.length,
         outcome: deps.github,
-        opened: deps.install === "opened",
+        opened: deps.install === "opened" || !!deps.installed,
       })
     )
       return openInstall(returnPath(deps));
@@ -237,7 +259,7 @@ const steps: { key: Step; label: string }[] = [
 
 // Picks the first step that still needs doing.
 function Onboarding({ loaded }: { loaded: Extract<Loaded, { kind: "review" }> }) {
-  const { github } = Route.useSearch();
+  const { github, installed } = Route.useSearch();
   const [result, setResult] = useState<{ action: "approved" | "denied"; name: string } | null>(
     null,
   );
@@ -274,7 +296,12 @@ function Onboarding({ loaded }: { loaded: Extract<Loaded, { kind: "review" }> })
           userCode={loaded.userCode}
           workspaces={loaded.workspaces}
           current={current}
-          outcome={github}
+          outcome={
+            github ??
+            (installed && current.installations.some((i) => i.id === installed)
+              ? "connected"
+              : undefined)
+          }
           onDone={setResult}
         />
       )}
@@ -357,16 +384,17 @@ function openInstall(back: string): Promise<never> {
 }
 
 /**
- * The GitHub step for someone signed out. Signing in with GitHub creates the account if it's new,
- * and coming back here makes the workspace and carries straight on to the App install, so the
- * whole step is this one click.
+ * The GitHub step for someone signed out. "Continue with GitHub" is for someone new: it installs
+ * the App and signs up in one trip, and comes back here to approve. "Sign in" is for an existing
+ * account: a plain sign-in, after which the page picks up wherever they are.
  */
 function SignInStep() {
   const back = useReturnPath();
   const [pending, setPending] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  async function continueWithGitHub() {
+  // For someone who already has an account: sign in only, and the page picks up from there.
+  async function signInOnly() {
     setError(null);
     setPending(true);
     const { error } = await signIn.social({ provider: "github", callbackURL: back });
@@ -380,17 +408,24 @@ function SignInStep() {
     <Card className="w-full">
       <CardHeader>
         <CardTitle>Connect GitHub</CardTitle>
-        <CardDescription>Sign in and install the RelayRunner GitHub App.</CardDescription>
+        <CardDescription>Sign up and install the RelayRunner GitHub App.</CardDescription>
       </CardHeader>
       <CardContent className="flex flex-col gap-3">
-        <Button
-          size="lg"
-          className="w-full font-bold"
-          disabled={pending}
-          onClick={() => void continueWithGitHub()}
-        >
-          Continue with GitHub
+        <Button asChild size="lg" className="w-full font-bold">
+          {/* A full page load: one trip to GitHub installs the App and signs up. */}
+          <a href={`/api/github/signup?next=${encodeURIComponent(back)}`}>Continue with GitHub</a>
         </Button>
+        <p className="text-center text-sm text-muted-foreground">
+          Already have an account?{" "}
+          <button
+            type="button"
+            className="text-foreground underline-offset-4 hover:underline disabled:opacity-50"
+            disabled={pending}
+            onClick={() => void signInOnly()}
+          >
+            Sign in
+          </button>
+        </p>
         {error && (
           <p role="alert" className="text-sm text-destructive">
             {error}

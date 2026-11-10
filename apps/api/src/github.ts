@@ -50,6 +50,11 @@ export class GitHubError extends Error {
   }
 }
 
+// The App's install page with no state: a signup, where there's no workspace or user to name yet.
+export function appInstallUrl(appSlug: string) {
+  return `https://github.com/apps/${encodeURIComponent(appSlug)}/installations/new`;
+}
+
 export function installUrl(appSlug: string, state: string) {
   return `https://github.com/apps/${encodeURIComponent(appSlug)}/installations/new?state=${encodeURIComponent(state)}`;
 }

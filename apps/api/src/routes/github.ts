@@ -1,12 +1,14 @@
 import { and, eq, inArray, isNull } from "drizzle-orm";
 import { Hono } from "hono";
 import type { Context } from "hono";
+import { deleteCookie, getCookie, setCookie } from "hono/cookie";
 import type { AppEnv } from "../app.ts";
 import { createDb, schema } from "../db/index.ts";
 import { appJwt, importAppPrivateKey, installationToken, rateLimits } from "../github-app.ts";
 import {
   dashboardPath,
   GitHubError,
+  appInstallUrl,
   installUrl,
   installationSettingsUrl,
   listUserInstallations,
@@ -35,7 +37,16 @@ import { canManage, requireManager } from "../roles.ts";
 //    can send the browser back there (the /device page while `relayrunner connect` onboards a new
 //    user) instead of /settings/github. The state also carries the origin /install ran on, and
 //    /setup hands the request back there when GitHub's fixed Setup URL is another host.
-// 3. Installs made straight on GitHub arrive with no `state` (or by webhook only) and stay
+//    GitHub may also sign the user in during the install ("Request user authorization (OAuth)
+//    during installation"). Then it sends them to the App's first callback URL instead, which is
+//    /setup too, with `code` and no `state`. So /install also leaves its state in a cookie, and
+//    /setup falls back to it.
+// 3. A brand-new user from `relayrunner connect` has no account or workspace yet. /device sends
+//    them to GET /signup, which goes straight to the install and leaves the page to come back to
+//    in a cookie. /setup then finds them signed out, signs them in with GitHub (one extra redirect
+//    with no screen, since they've just authorized the App), and lands on that page with
+//    ?installed=<id>. /device makes their workspace and claims that installation into it.
+// 4. Installs made straight on GitHub arrive with no `state` (or by webhook only) and stay
 //    unclaimed. The dashboard lists the user's unclaimed ones (GET /installations/unclaimed) and
 //    claims one into the active workspace (POST /installations/:id/claim), with the same check.
 //
@@ -54,6 +65,19 @@ type SetupOutcome =
   | "reauth"
   | "invalid";
 
+// Cookies that carry the install across GitHub when GitHub's redirect drops our `state`. Scoped
+// to these routes, and only good for as long as the install might take.
+const INSTALL_STATE_COOKIE = "rr_install_state";
+const SIGNUP_NEXT_COOKIE = "rr_signup_next";
+const cookieOptions = (c: Context<AppEnv>) => ({
+  path: "/api/github",
+  httpOnly: true,
+  secure: new URL(c.req.url).protocol === "https:",
+  // GitHub's redirect back is a top-level GET, which Lax cookies ride along on.
+  sameSite: "Lax" as const,
+  maxAge: 30 * 60,
+});
+
 export const githubRoutes = new Hono<AppEnv>()
   .get("/install", requireUser, requireWorkspace, requireManager, async (c) => {
     if (!c.env.GITHUB_APP_SLUG) return c.json({ error: "github_app_slug_not_configured" }, 500);
@@ -63,13 +87,29 @@ export const githubRoutes = new Hono<AppEnv>()
       c.var.user!.id,
       { next: dashboardPath(c.req.query("next")), origin: new URL(c.req.url).origin },
     );
+    setCookie(c, INSTALL_STATE_COOKIE, state, cookieOptions(c));
     return c.redirect(installUrl(c.env.GITHUB_APP_SLUG, state));
+  })
+
+  // Sign up and install in one trip, for someone with no account yet (see 3. above).
+  .get("/signup", async (c) => {
+    if (!c.env.GITHUB_APP_SLUG) return c.json({ error: "github_app_slug_not_configured" }, 500);
+    // GitHub comes back to the production host, so the cookie has to be set there.
+    const production = new URL(c.env.BETTER_AUTH_URL).origin;
+    const here = new URL(c.req.url);
+    if (here.origin !== production)
+      return c.redirect(`${production}${here.pathname}${here.search}`);
+    const next = dashboardPath(c.req.query("next"));
+    if (next) setCookie(c, SIGNUP_NEXT_COOKIE, next, cookieOptions(c));
+    else deleteCookie(c, SIGNUP_NEXT_COOKIE, { path: "/api/github" });
+    return c.redirect(appInstallUrl(c.env.GITHUB_APP_SLUG));
   })
 
   .get("/setup", async (c) => {
     // The state is read up front only for where to land afterwards; whether it may link anything
     // is checked against the signed-in user below.
-    const stateParam = c.req.query("state");
+    const stateParam = c.req.query("state") ?? getCookie(c, INSTALL_STATE_COOKIE);
+    const signupNext = dashboardPath(getCookie(c, SIGNUP_NEXT_COOKIE));
     const state = stateParam
       ? await verifyInstallState(c.env.BETTER_AUTH_SECRET, stateParam)
       : null;
@@ -80,26 +120,33 @@ export const githubRoutes = new Hono<AppEnv>()
     const here = new URL(c.req.url);
     if (state?.origin && state.origin !== here.origin)
       return c.redirect(`${state.origin}${here.pathname}${here.search}`);
-    const landing = state?.next ?? "/settings/github";
-    const done = (outcome: SetupOutcome) => {
-      const url = new URL(landing, "https://dashboard.invalid");
-      url.searchParams.set("github", outcome);
-      return c.redirect(`${url.pathname}${url.search}`);
-    };
-    // An org member without admin asked an owner to approve the install. Nothing to link yet; the
-    // installation webhook records it once approved.
-    if (c.req.query("setup_action") === "request") return done("requested");
+    // Used up either way.
+    deleteCookie(c, INSTALL_STATE_COOKIE, { path: "/api/github" });
+    deleteCookie(c, SIGNUP_NEXT_COOKIE, { path: "/api/github" });
+    const landing = state?.next ?? signupNext ?? "/settings/github";
+    const done = (outcome: SetupOutcome) => c.redirect(withParam(landing, "github", outcome));
+    const requested = c.req.query("setup_action") === "request";
+    const installationId = Number(c.req.query("installation_id"));
+    const validId = Number.isSafeInteger(installationId) && installationId > 0;
 
     const user = c.var.user;
-    // Signed out (or the session expired on the way): the installation is recorded by webhook and
-    // shows up to claim after sign-in.
+    // Signed out: a new user signing up through the install, or a session that expired on the
+    // way. Sign them in with GitHub and come back to the page, which claims the installation (the
+    // webhook records it either way).
     if (!user)
-      return c.redirect(
-        `/login?redirect=${encodeURIComponent(state?.next ?? "/settings/github?github=unclaimed")}`,
+      return signInWithGitHub(
+        c,
+        landingAfterSignIn({
+          next: state?.next ?? signupNext,
+          requested,
+          installationId: validId ? installationId : null,
+        }),
       );
 
-    const installationId = Number(c.req.query("installation_id"));
-    if (!Number.isSafeInteger(installationId) || installationId <= 0) return done("invalid");
+    // An org member without admin asked an owner to approve the install. Nothing to link yet; the
+    // installation webhook records it once approved.
+    if (requested) return done("requested");
+    if (!validId) return done("invalid");
 
     const db = createDb(c.env.DB);
     const verified = await verifiedInstallation(c, installationId);
@@ -116,6 +163,8 @@ export const githubRoutes = new Hono<AppEnv>()
       return done(result === "taken" ? "taken" : "connected");
     }
 
+    // Signed up through the install while somehow already signed in: the page claims it.
+    if (signupNext) return c.redirect(withParam(signupNext, "installed", String(installationId)));
     // No state: installed straight from GitHub, or "Redirect on update" after changing the
     // installation's repos or permissions.
     const row = await findInstallation(db, installationId);
@@ -200,6 +249,44 @@ export const githubRoutes = new Hono<AppEnv>()
       return c.json({ error: "github_unavailable" }, 502);
     }
   });
+
+function withParam(path: string, key: string, value: string) {
+  const url = new URL(path, "https://dashboard.invalid");
+  url.searchParams.set(key, value);
+  return `${url.pathname}${url.search}`;
+}
+
+// Where /setup sends someone it had to sign in first. Without a page to go back to, the
+// installation waits to be claimed in settings.
+export function landingAfterSignIn({
+  next,
+  requested,
+  installationId,
+}: {
+  next: string | null | undefined;
+  requested: boolean;
+  installationId: number | null;
+}) {
+  if (!next) return "/settings/github?github=unclaimed";
+  if (requested) return withParam(next, "github", "requested");
+  return installationId ? withParam(next, "installed", String(installationId)) : next;
+}
+
+// Starts Better Auth's GitHub sign-in, as the dashboard's sign-in button would, and lands on
+// `callbackURL` (a dashboard path) once signed in.
+async function signInWithGitHub(c: Context<AppEnv>, callbackURL: string) {
+  const response = await c.var.auth.api.signInSocial({
+    body: { provider: "github", callbackURL, disableRedirect: true },
+    headers: c.req.raw.headers,
+    asResponse: true,
+  });
+  const { url } = (await response.json()) as { url?: string };
+  if (!url) return c.redirect(`/login?redirect=${encodeURIComponent(callbackURL)}`);
+  // Better Auth's state cookie, which its callback checks.
+  for (const cookie of response.headers.getSetCookie())
+    c.header("set-cookie", cookie, { append: true });
+  return c.redirect(url);
+}
 
 // The installation as GitHub shows it to this user, null if their token can't see it, or 'reauth'
 // if we have no usable token.
