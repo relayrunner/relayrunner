@@ -66,7 +66,7 @@ Either way, the `LintRunner` opens a `Lint / <tool>` check run per tool, boots t
 
 Jobs with `runs-on: relayrunner-container` run on a real runner in a Cloudflare Container (`src/container-runner.ts`, `src/durable-objects/container-runner.ts`). On `queued`, a `ContainerRunner` Durable Object keyed by job id mints a one-job JIT runner on that label and starts a `standard-1` container (½ vCPU, 4 GiB) from GitHub's runner image with Node 24, pnpm, oxlint and oxfmt preinstalled (`container/Dockerfile`). Node sits in the tool cache, so `actions/setup-node` with `node-version: 24` needs no download. The runner takes one job and exits, which stops the container. A one-minute alarm stops a container whose runner got no job within 10 minutes or ran past an hour, and deletes its runner.
 
-Only orgs in `CONTAINER_RUNNER_ORGS` get containers, since each one is billed to this account. Runners join the org's runner group named **Default Public** when it exists, and Default otherwise. Container runners are one-job and disposable, so that group can safely allow public repositories. `wrangler deploy` builds the image, so deploying needs Docker.
+Only orgs in `CONTAINER_RUNNER_ORGS` get containers, since each one is billed to this account. Runners join the org's runner group named **Default Public** when it exists, and Default otherwise. Container runners are one-job and disposable, so that group can safely allow public repositories. `pnpm run deploy` builds and pushes the image only when `container/` changed (see [Deploy](#deploy)).
 
 ## Actions usage
 
@@ -108,6 +108,8 @@ wrangler r2 bucket create relayrunner-webhook-dead-letters   # once; a deploy fa
 wrangler r2 bucket lifecycle add relayrunner-webhook-dead-letters expire-30d --expire-days 30
 pnpm run deploy:api                      # from the repo root; deploys only, no migrations
 ```
+
+`pnpm run deploy` (`scripts/deploy.ts`) runs `wrangler deploy` without rebuilding container images that haven't changed. It tags each image (`container/`, `packages/lint-runner/`) by a hash of its folder. When the Cloudflare registry already has that tag, it reuses the image. Otherwise it builds and pushes it with `wrangler containers build --push`, which needs Docker. It then deploys from `wrangler.deploy.jsonc`, a generated copy of `wrangler.jsonc` that points each container at its digest-pinned image. Plain `wrangler deploy` still works but rebuilds both images every time. Pass `--dry-run` to see which images would be built.
 
 `GITHUB_APP_PRIVATE_KEY` comes from the account's Secrets Store, not `wrangler secret put`, and a deploy fails until it exists there. Store it once as PKCS#8 PEM (GitHub downloads PKCS#1, which WebCrypto can't import):
 

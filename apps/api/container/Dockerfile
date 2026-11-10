@@ -1,8 +1,10 @@
 # The runner image for container runners (src/durable-objects/container-runner.ts). It's GitHub's
 # official runner image, which runs as the `runner` user in /home/runner. The container starts with
 # a one-job JIT config in RUNNER_JIT_CONFIG, takes one job and exits, which stops the container.
-# `latest` follows the runner's releases: GitHub stops sending jobs to old runner versions.
-FROM ghcr.io/actions/actions-runner:latest
+# The version is pinned so the image only rebuilds when it changes (scripts/deploy.ts tags images by
+# their contents). Dependabot opens a PR for each runner release, which matters: GitHub stops
+# sending jobs to old runner versions. Merging one rebuilds the image on that deploy.
+FROM ghcr.io/actions/actions-runner:2.338.2
 
 # Node and the lint tools come preinstalled, so a lint job doesn't spend most of its time
 # downloading them. Node goes in the tool cache where `actions/setup-node` looks first, so

@@ -13,7 +13,7 @@ oxlint, oxfmt, ruff, actionlint, zizmor, shellcheck and typos. They're all insta
 - `src/protocol.ts` (exported as `@relayrunner/lint-runner/protocol`): the port, `LINT_TOOLS`, and the `LintResult` and `Problem` types. `relayrunner.yml`'s `checks.lint` accepts exactly the tools listed here.
 - `src/server.ts`: the HTTP server the container runs. Node runs it as TypeScript directly (type stripping), so it uses no TypeScript-only syntax.
 - `src/parse.ts`: turns each tool's output into problems: GitHub workflow commands, gcc-style lines, or oxfmt's list of files.
-- `Dockerfile`: the image. `apps/api/wrangler.jsonc` points at it, so deploying the API builds it (and needs Docker).
+- `Dockerfile`: the image. `apps/api/wrangler.jsonc` points at it, and deploying the API builds and pushes it when anything in this folder changed (and then needs Docker).
 
 ## Adding a tool
 

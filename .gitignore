@@ -10,6 +10,8 @@ coverage/
 .env.*
 !.env.example
 .wrangler/
+# Written by apps/api/scripts/deploy.ts on every deploy.
+apps/api/wrangler.deploy.jsonc
 .dev.vars
 
 # Agent worktrees, each a full copy of the repo.
