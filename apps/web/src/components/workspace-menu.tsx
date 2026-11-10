@@ -3,8 +3,11 @@ import {
   CheckIcon,
   ChevronsUpDownIcon,
   LogOutIcon,
+  MonitorIcon,
+  MoonIcon,
   PlusIcon,
   SettingsIcon,
+  SunIcon,
   UserIcon,
 } from "lucide-react";
 import { useState } from "react";
@@ -18,6 +21,7 @@ import {
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import { authDisabled, organization, signOut, useListOrganizations } from "@/lib/auth-client";
+import { setTheme, useTheme, type Theme } from "@/lib/theme";
 import { cn } from "@/lib/utils";
 
 type MenuUser = { name: string; email: string; image?: string | null } | null;
@@ -98,6 +102,8 @@ export function WorkspaceMenu({
             </Link>
           </DropdownMenuItem>
         </DropdownMenuGroup>
+        <DropdownMenuSeparator />
+        <ThemePicker />
         {user && (
           <>
             <DropdownMenuSeparator />
@@ -109,6 +115,45 @@ export function WorkspaceMenu({
         )}
       </DropdownMenuContent>
     </DropdownMenu>
+  );
+}
+
+const themes: { value: Theme; label: string; icon: typeof SunIcon }[] = [
+  { value: "system", label: "System", icon: MonitorIcon },
+  { value: "light", label: "Light", icon: SunIcon },
+  { value: "dark", label: "Dark", icon: MoonIcon },
+];
+
+/** System, light or dark, saved in this browser. Stays open so the change is visible. */
+function ThemePicker() {
+  const theme = useTheme();
+  return (
+    <div className="flex items-center justify-between gap-2 px-2 py-1 text-sm">
+      <span>Theme</span>
+      <div
+        role="radiogroup"
+        aria-label="Theme"
+        className="flex rounded-md border bg-background p-0.5"
+      >
+        {themes.map(({ value, label, icon: Icon }) => (
+          <button
+            key={value}
+            type="button"
+            role="radio"
+            aria-checked={theme === value}
+            aria-label={label}
+            title={label}
+            onClick={() => setTheme(value)}
+            className={cn(
+              "grid size-7 place-items-center rounded-[5px] text-muted-foreground outline-none transition-colors hover:text-foreground focus-visible:ring-[3px] focus-visible:ring-ring/50",
+              theme === value && "bg-accent text-foreground",
+            )}
+          >
+            <Icon aria-hidden className="size-4" />
+          </button>
+        ))}
+      </div>
+    </div>
   );
 }
 
