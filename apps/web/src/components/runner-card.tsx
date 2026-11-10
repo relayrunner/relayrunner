@@ -8,7 +8,6 @@ import {
   EllipsisIcon,
   ExternalLinkIcon,
   LaptopIcon,
-  MemoryStickIcon,
   MonitorIcon,
   PauseIcon,
   PlayIcon,
@@ -195,6 +194,30 @@ function BandLabel({ tone, children }: { tone: keyof typeof BANDS; children: Rea
   );
 }
 
+// One labeled fact in the card's grid.
+function Field({ label, children }: { label: string; children: ReactNode }) {
+  return (
+    <div className="grid min-w-0 gap-1">
+      <dt className="text-muted-foreground">{label}</dt>
+      <dd className="flex min-w-0 text-ink-2 tabular-nums">{children}</dd>
+    </div>
+  );
+}
+
+function Value({ children }: { children: ReactNode }) {
+  return <span className="truncate">{children}</span>;
+}
+
+// A spec the machine didn't report, such as a runner added from GitHub's CPU and memory.
+function NotReported() {
+  return (
+    <span className="text-idle">
+      <span aria-hidden>—</span>
+      <span className="sr-only">Not reported</span>
+    </span>
+  );
+}
+
 export function MachineCard({ machine, jobTime }: { machine: Machine; jobTime?: Stat }) {
   const router = useRouter();
   const [confirming, setConfirming] = useState(false);
@@ -327,7 +350,7 @@ export function MachineCard({ machine, jobTime }: { machine: Machine; jobTime?: 
       dim={tone === "offline"}
       className={cn(missing && "border-destructive/50")}
     >
-      <div className="grid min-w-0 gap-2 px-4 pt-3 pb-3.5">
+      <div className="grid min-w-0 gap-4 px-4 pt-3.5 pb-4">
         <div className="flex min-w-0 items-center gap-2.5">
           <IconChip
             icon={chip.icon}
@@ -439,74 +462,81 @@ export function MachineCard({ machine, jobTime }: { machine: Machine; jobTime?: 
           </DropdownMenu>
         </div>
 
-        <div className="flex min-w-0 items-center justify-between gap-3 text-xs text-muted-foreground">
-          <span className="min-w-0 truncate">{platform || "Unknown platform"}</span>
-          <span className="flex shrink-0 items-center gap-3 tabular-nums">
-            {jobTime && jobTime.samples > 0 && (
+        {/* Every card fills the same four specs, so each sits in the same place down the grid. */}
+        <dl className="grid min-w-0 grid-cols-2 gap-x-4 gap-y-3 text-xs">
+          <Field label="Platform">{platform ? <Value>{platform}</Value> : <NotReported />}</Field>
+          <Field label="CPU">
+            {device?.cpuCores != null ? <Value>{device.cpuCores} cores</Value> : <NotReported />}
+          </Field>
+          <Field label="Memory">
+            {device?.memoryMb != null ? (
+              <Value>{formatMemory(device.memoryMb)}</Value>
+            ) : (
+              <NotReported />
+            )}
+          </Field>
+          <Field label="Typical job">
+            {jobTime && jobTime.samples > 0 ? (
               <Link
                 to="/job-times"
                 title={`Typical job · ${plural(jobTime.samples, "run")} in 14 days`}
-                className="flex items-center gap-1 hover:text-foreground"
+                className="truncate hover:text-foreground"
               >
-                <TimerIcon aria-hidden className="size-3.5 text-idle" />
                 {medianText(jobTime)}
               </Link>
+            ) : (
+              <NotReported />
             )}
-            {device?.cpuCores != null && (
-              <span className="flex items-center gap-1" title={`${device.cpuCores} CPU cores`}>
-                <CpuIcon aria-hidden className="size-3.5 text-idle" />
-                {device.cpuCores}
-              </span>
-            )}
-            {device?.memoryMb != null && (
-              <span className="flex items-center gap-1" title="Memory">
-                <MemoryStickIcon aria-hidden className="size-3.5 text-idle" />
-                {formatMemory(device.memoryMb)}
-              </span>
-            )}
-          </span>
-        </div>
-        <div className="flex min-w-0 items-center gap-3 text-xs text-muted-foreground">
+          </Field>
+        </dl>
+        {/* Whose it is and whose jobs it takes (#243), apart from the hardware. */}
+        <dl className="grid min-w-0 grid-cols-2 gap-x-4 border-t pt-3.5 text-xs">
           {isGithub ? (
             // A runner added from GitHub lives in its org, not with a person. The GitHub mark keeps
             // the org's name from reading as the app's (an org can be named "relayrunner").
-            <span className="flex min-w-0 items-center gap-1.5">
-              <GithubIcon className="size-3.5 shrink-0" />
-              <span className="truncate">
-                {machine.owner ? `Registered in ${machine.owner}` : "Registered on GitHub"}
-              </span>
-            </span>
-          ) : (
-            ownerName && (
+            <Field label="Registered in">
               <span className="flex min-w-0 items-center gap-1.5">
-                <UserAvatar
-                  user={{
-                    name: ownerName === "You" ? (machine.owner ?? "You") : ownerName,
-                    image: machine.ownerImage,
-                  }}
-                  className="size-4 border-0 text-[9px]"
-                />
-                <span className="truncate">{ownerName}</span>
+                <GithubIcon className="size-3.5 shrink-0 text-muted-foreground" />
+                <span className="truncate">{machine.owner ?? "GitHub"}</span>
               </span>
-            )
-          )}
-          {canShare ? (
-            <button
-              type="button"
-              onClick={() => setSharingOpen(true)}
-              aria-label={`Who can run jobs here: ${sharingLabel(sharing, true)}. Change`}
-              className="-mx-1 -my-0.5 flex shrink-0 items-center gap-1 rounded px-1 py-0.5 outline-none hover:bg-accent hover:text-foreground focus-visible:ring-[3px] focus-visible:ring-ring/50"
-            >
-              <SharingIcon aria-hidden className="size-3.5 text-idle" />
-              {sharingLabel(sharing, true)}
-            </button>
+            </Field>
           ) : (
-            <span className="flex shrink-0 items-center gap-1">
-              <SharingIcon aria-hidden className="size-3.5 text-idle" />
-              {sharingLabel(sharing, mine)}
-            </span>
+            <Field label="Owner">
+              {ownerName ? (
+                <span className="flex min-w-0 items-center gap-1.5">
+                  <UserAvatar
+                    user={{
+                      name: ownerName === "You" ? (machine.owner ?? "You") : ownerName,
+                      image: machine.ownerImage,
+                    }}
+                    className="size-4 border-0 text-[9px]"
+                  />
+                  <span className="truncate">{ownerName}</span>
+                </span>
+              ) : (
+                <NotReported />
+              )}
+            </Field>
           )}
-        </div>
+          <Field label="Runs">
+            {canShare ? (
+              <button
+                type="button"
+                onClick={() => setSharingOpen(true)}
+                aria-label={`Who can run jobs here: ${sharingLabel(sharing, true)}. Change`}
+                className="-mx-1 -my-0.5 flex min-w-0 items-center gap-1 rounded px-1 py-0.5 outline-none hover:bg-accent hover:text-foreground focus-visible:ring-[3px] focus-visible:ring-ring/50"
+              >
+                <SharingIcon aria-hidden className="size-3.5 shrink-0 text-idle" />
+                <span className="truncate">{sharingLabel(sharing, true)}</span>
+              </button>
+            ) : (
+              <span className="flex min-w-0 items-center gap-1">
+                <SharingIcon aria-hidden className="size-3.5 shrink-0 text-idle" />
+                <span className="truncate">{sharingLabel(sharing, mine)}</span>
+              </span>
+            )}
+          </Field>
+        </dl>
         {error && <p className="text-xs text-destructive">{error}</p>}
       </div>
       {canShare && (
