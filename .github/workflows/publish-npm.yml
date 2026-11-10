@@ -8,14 +8,16 @@ permissions:
 
 jobs:
   publish:
-    runs-on: blacksmith-4vcpu-ubuntu-2404
+    # npm only accepts provenance from GitHub-hosted runners, so this job
+    # must not run on Blacksmith or any self-hosted runner.
+    runs-on: ubuntu-latest
     permissions:
       contents: read
       id-token: write
     env:
       HUSKY: "0"
     steps:
-      - uses: useblacksmith/checkout@v1
+      - uses: actions/checkout@v6
         with:
           persist-credentials: false
       - uses: pnpm/action-setup@v6
