@@ -49,12 +49,11 @@ GitHub (this creates their account), create or pick a workspace, install the Rel
 App on their organization or personal account, check that the code matches, and approve this
 computer. `login` then saves the machine's token and exits. It does not put the computer online.
 
-If the workspace has other members, ask the user who can run jobs on this computer before you
-run `login`: only jobs they started (`only-me`, the default) or any job in the workspace
-(`anyone`). Pass their answer as `relayrunner login --share only-me` or `--share anyone`. They
-can change it later with `relayrunner share only-me` or `relayrunner share anyone`, and
-`relayrunner share` shows the current setting. Leave it to the user: don't change it yourself
-unless they ask.
+A new machine only runs jobs the user started. If the workspace has other members, `login`
+says so. Then ask the user whether teammates' jobs may run here too, and if they say yes, run
+`relayrunner share anyone` (`relayrunner share only-me` undoes it, and `relayrunner share`
+shows the current setting). If the user already told you, pass `--share only-me` or
+`--share anyone` to `login`. Leave it to the user: don't change it yourself unless they ask.
 
 Run `relayrunner whoami --json` again and expect `status` `"ok"`. If the GitHub App install only
 sent a request to the org's owners, jobs start reaching this computer once an owner accepts it.
