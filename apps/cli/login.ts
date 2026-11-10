@@ -57,11 +57,24 @@ const OAuthError = z.object({ error: z.string(), error_description: z.string().o
 
 const ClaimResponse = z.object({
   machine: z.object({ id: z.string().min(1), name: z.string() }),
-  workspace: z.object({ id: z.string().min(1), name: z.string(), slug: z.string().nullish() }),
+  workspace: z.object({
+    id: z.string().min(1),
+    name: z.string(),
+    slug: z.string().nullish(),
+    // Missing from a gateway that predates #244.
+    memberCount: z.number().int().nonnegative().optional(),
+  }),
   token: z.string().min(1),
 });
 
-export async function login(options: LoginOptions): Promise<Credentials> {
+export interface LoginResult {
+  credentials: Credentials;
+  // How many people are in the workspace, or null if the gateway didn't say. More than one means
+  // there are teammates whose jobs this machine could run.
+  memberCount: number | null;
+}
+
+export async function login(options: LoginOptions): Promise<LoginResult> {
   const fetcher = options.fetcher ?? fetch;
   const sleep = options.sleep ?? ((ms) => new Promise((resolve) => setTimeout(resolve, ms)));
   const now = options.now ?? Date.now;
@@ -148,11 +161,15 @@ export async function login(options: LoginOptions): Promise<Credentials> {
       `The gateway approved the sign-in but wouldn't enroll this machine (HTTP ${claimResponse.status}).`,
     );
   const claimed = ClaimResponse.parse(await claimResponse.json());
+  const { memberCount, ...workspace } = claimed.workspace;
   return {
-    server: new URL(options.server).origin,
-    machine: { id: claimed.machine.id, name: claimed.machine.name },
-    workspace: claimed.workspace,
-    token: claimed.token,
+    credentials: {
+      server: new URL(options.server).origin,
+      machine: { id: claimed.machine.id, name: claimed.machine.name },
+      workspace,
+      token: claimed.token,
+    },
+    memberCount: memberCount ?? null,
   };
 }
 

@@ -54,6 +54,13 @@ GitHub (this creates their account), creates a workspace, installs the RelayRunn
 on their organization or personal account, and approves the computer. The terminal then says
 the machine is enrolled and online.
 
+If the workspace has other members, `connect` asks who can run jobs on this computer: only
+jobs the user started (`only-me`, the default) or any job in the workspace (`anyone`). To set
+it without the question, add `--share only-me` or `--share anyone`. The user can change it
+later with `relayrunner share only-me` or `relayrunner share anyone`, and
+`relayrunner share` shows the current setting. Leave it to the user: don't change it
+yourself unless they ask.
+
 When the user says it's done, check again with `relayrunner whoami --json`. Expect `status`
 `"ok"` and `machine.status.online` true. If the GitHub App install only sent a request to the
 org's owners, jobs start reaching this computer once an owner accepts it.

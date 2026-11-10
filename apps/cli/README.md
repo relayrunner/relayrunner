@@ -30,9 +30,17 @@ running stops with it.
 
 - `--server <url>` or `RELAYRUNNER_URL` points it at another gateway. Changing it signs in again.
 - `--name <name>` changes the suggested machine name (default: the hostname).
+- `--share only-me|anyone` sets who can run jobs on this machine without asking.
+  It works on a machine that's already signed in too.
 - If the machine is removed in the dashboard, `connect` deletes the saved token.
   A running `connect` exits and asks you to run it again; a new one signs in
   straight away.
+
+A new machine runs only jobs you started (`only-me`). Right after signing in,
+if the workspace has other members, `connect` asks "Who can run jobs on this
+machine?": Only me, or Anyone in the workspace (teammates' and bots' jobs too).
+It doesn't ask in a workspace of one, on later runs, or without a terminal to
+answer. [`relayrunner share`](#relayrunner-share) changes it later.
 
 Run inside a checkout of a private repo where no job uses RelayRunner yet,
 `connect` first asks whether to set it up (default no). Yes runs the same picker
@@ -106,6 +114,20 @@ enrolled. A job it's already running finishes. `resume` lets jobs route here
 again. Anyone in the workspace can do the same from the machine's ⋯ menu on the
 Runners page, and a running `relayrunner connect` prints when that happens.
 Both exit 1 when not signed in or when the token is no longer valid.
+
+## `relayrunner share`
+
+```sh
+npx relayrunner share            # show the current setting
+npx relayrunner share only-me    # run only jobs you started
+npx relayrunner share anyone     # run any job in the workspace
+```
+
+Who can run jobs on this machine. `only-me` takes only jobs you started on
+GitHub; `anyone` takes any job in the workspace, including teammates' and bots'.
+It's the same setting as the sharing icon on the machine's card on the Runners
+page, and only the machine's owner can change it there. `relayrunner whoami`
+shows it too. Exits 1 when not signed in or when the token is no longer valid.
 
 ## Building
 

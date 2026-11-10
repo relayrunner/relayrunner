@@ -16,8 +16,15 @@ export const WhoamiResponse = z.object({
     status: z.object({ online: z.boolean(), state: z.string().nullable() }),
     // Missing from a gateway that predates pausing.
     paused: z.object({ by: z.string().nullable() }).nullish(),
+    // Missing from a gateway that predates sharing (#242).
+    sharing: z.enum(["only_me", "anyone"]).optional(),
   }),
-  workspace: z.object({ id: z.string().min(1), name: z.string(), slug: z.string().nullish() }),
+  workspace: z.object({
+    id: z.string().min(1),
+    name: z.string(),
+    slug: z.string().nullish(),
+    memberCount: z.number().int().nonnegative().optional(),
+  }),
   enrolledBy: z.object({ name: z.string(), email: z.string() }).nullable(),
 });
 export type WhoamiResponse = z.infer<typeof WhoamiResponse>;

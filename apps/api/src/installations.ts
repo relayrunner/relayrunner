@@ -1,4 +1,4 @@
-import { and, eq, isNull, lte, or } from "drizzle-orm";
+import { and, count, eq, isNull, lte, or } from "drizzle-orm";
 import type { Auth } from "./auth.ts";
 import { type Db, schema } from "./db/index.ts";
 import type { GitHubInstallation } from "./github.ts";
@@ -101,6 +101,15 @@ export async function isWorkspaceMember(db: Db, workspaceId: string, userId: str
     )
     .limit(1);
   return row ?? null;
+}
+
+/** How many people are in a workspace, for the CLI to know whether sharing is worth asking about. */
+export async function workspaceMemberCount(db: Db, workspaceId: string) {
+  const [row] = await db
+    .select({ members: count() })
+    .from(schema.workspaceMember)
+    .where(eq(schema.workspaceMember.workspaceId, workspaceId));
+  return row?.members ?? 0;
 }
 
 /**

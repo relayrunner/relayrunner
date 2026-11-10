@@ -16,6 +16,16 @@ import { ensureRunner, RunnerError, runnerPlatform } from "./install.ts";
 import { runJob } from "./job.ts";
 import { login, LoginError, openBrowser } from "./login.ts";
 import { setPaused } from "./pause.ts";
+import {
+  describeSharing,
+  parseShareChoice,
+  SHARE_CHOICES,
+  setSharing,
+  sharingMeaning,
+  toChoice,
+  toSharing,
+  type ShareChoice,
+} from "./share.ts";
 import { whoami, type WhoamiResponse } from "./whoami.ts";
 
 // The dashboard's origin. It forwards /api/* (including the machine WebSocket) to the API.
@@ -36,6 +46,11 @@ const connectCommand = defineCommand({
       type: "string",
       description: "Suggested machine name when signing in (default: this computer's hostname)",
     },
+    share: {
+      type: "string",
+      description:
+        "Who can run jobs on this machine: only-me (jobs you started) or anyone in the workspace. Skips the question.",
+    },
   },
   async run({ args }) {
     clack.intro("RelayRunner");
@@ -49,7 +64,14 @@ const connectCommand = defineCommand({
   },
 });
 
-async function connectMachine(args: { server?: string; name?: string }) {
+async function connectMachine(args: { server?: string; name?: string; share?: string }) {
+  const share = args.share ? parseShareChoice(args.share) : null;
+  if (args.share && !share)
+    throw new RunnerError(
+      "USAGE",
+      `--share takes ${SHARE_CHOICES.join(" or ")}, not ${JSON.stringify(args.share)}.`,
+    );
+
   // An explicit --server or RELAYRUNNER_URL wins; otherwise keep the gateway this machine
   // enrolled with.
   const requested = args.server || process.env.RELAYRUNNER_URL;
@@ -65,15 +87,29 @@ async function connectMachine(args: { server?: string; name?: string }) {
     credentials = null;
   }
   if (!credentials) {
-    credentials = await signIn(server, args.name || hostname(), platform);
+    const signedIn = await signIn(server, args.name || hostname(), platform);
+    credentials = signedIn.credentials;
     writeCredentials(credentials);
     clack.log.success(
       `Enrolled as ${credentials.machine.name} in ${credentials.workspace.name}. Token saved to ${credentialsPath()}.`,
     );
+    // A new machine runs only its owner's jobs. Ask whether teammates' jobs may run here too,
+    // but only when there are teammates. Reconnecting never asks again: `relayrunner share`.
+    let choice = share;
+    if (!choice && (signedIn.memberCount ?? 0) > 1) {
+      if (process.stdin.isTTY && process.stdout.isTTY)
+        choice = await askSharing(credentials.workspace.name);
+      else
+        clack.log.info(
+          "Only jobs you started run here. `relayrunner share anyone` lets teammates' jobs run here too.",
+        );
+    }
+    if (choice) await applySharing(credentials, choice);
   } else {
     clack.log.info(
       `Machine ${credentials.machine.name} in ${credentials.workspace.name} (${credentials.server})`,
     );
+    if (share) await applySharing(credentials, share);
   }
 
   // Run inside a repo that isn't set up yet, offer to route its jobs here (`relayrunner init`).
@@ -145,11 +181,49 @@ async function connectMachine(args: { server?: string; name?: string }) {
   }
 }
 
+async function askSharing(workspace: string): Promise<ShareChoice | null> {
+  const picked = await clack.select<ShareChoice>({
+    message: "Who can run jobs on this machine?",
+    options: [
+      { value: "only-me", label: "Only me", hint: "jobs you started" },
+      { value: "anyone", label: `Anyone in ${workspace}`, hint: "teammates' and bots' jobs too" },
+    ],
+    initialValue: "only-me",
+  });
+  if (clack.isCancel(picked)) {
+    clack.log.info("Keeping only-me. Change it any time with `relayrunner share`.");
+    return null;
+  }
+  return picked;
+}
+
+// Best effort while connecting: a machine that couldn't change its sharing still connects.
+async function applySharing(credentials: Credentials, choice: ShareChoice) {
+  const result = await setSharing({
+    server: credentials.server,
+    token: credentials.token,
+    sharing: toSharing(choice),
+  });
+  switch (result.status) {
+    case "ok":
+      clack.log.info(`Sharing: ${describeSharing(result.sharing, credentials.workspace.name)}`);
+      break;
+    case "revoked":
+      // Connecting finds out too, and signs in again or says so.
+      break;
+    case "failed":
+      clack.log.warn(
+        `Couldn't set sharing: ${result.reason}. Run \`relayrunner share ${choice}\` to try again.`,
+      );
+      break;
+  }
+}
+
 async function signIn(
   server: string,
   name: string,
   platform: { os: "linux" | "macos"; arch: "x64" | "arm64" },
-): Promise<Credentials> {
+) {
   const waiting = clack.spinner();
   try {
     const credentials = await login({
@@ -295,6 +369,9 @@ function describeIdentity(server: string, identity: WhoamiResponse) {
     ["Platform", [machine.os, machine.arch].filter(Boolean).join(" ") || "unknown"],
     ["Enrolled", enrolled],
     ["Status", status],
+    ...(machine.sharing
+      ? [["Sharing", describeSharing(machine.sharing, workspace.name)] as [string, string]]
+      : []),
     ["Gateway", server],
   ]);
 }
@@ -366,6 +443,83 @@ function pauseCommand(paused: boolean) {
   });
 }
 
+// `relayrunner share [only-me|anyone]`: show or change who can run jobs on this machine, the
+// same setting as the sharing icon on the machine's card on the Runners page.
+const shareCommand = defineCommand({
+  meta: {
+    name: "share",
+    description:
+      "Show or change who can run jobs on this machine: only-me (jobs you started) or anyone in the workspace.",
+  },
+  args: {
+    who: {
+      type: "positional",
+      required: false,
+      description: `${SHARE_CHOICES.join(" or ")}; leave out to show the current setting`,
+    },
+  },
+  async run({ args }) {
+    const credentials = readCredentials();
+    if (!credentials) {
+      console.error("Not signed in. Run `relayrunner connect` to sign in.");
+      process.exitCode = 1;
+      return;
+    }
+    const { name } = credentials.machine;
+    const workspace = credentials.workspace.name;
+    const revoked = () => {
+      console.error(
+        `${name} was removed from ${workspace} or its token is no longer valid.\nRun \`relayrunner connect\` to sign in again.`,
+      );
+      process.exitCode = 1;
+    };
+
+    if (args.who) {
+      const choice = parseShareChoice(args.who);
+      if (!choice) {
+        console.error(
+          `Use \`relayrunner share ${SHARE_CHOICES.join("` or `relayrunner share ")}\`.`,
+        );
+        process.exitCode = 1;
+        return;
+      }
+      const result = await setSharing({
+        server: credentials.server,
+        token: credentials.token,
+        sharing: toSharing(choice),
+      });
+      if (result.status === "revoked") return revoked();
+      if (result.status === "failed") {
+        console.error(`Couldn't change sharing for ${name}: ${result.reason}.`);
+        process.exitCode = 1;
+        return;
+      }
+      console.log(`${name} now ${sharingMeaning(result.sharing, workspace)}.`);
+      return;
+    }
+
+    const result = await whoami({ server: credentials.server, token: credentials.token });
+    if (result.status === "revoked") return revoked();
+    if (result.status === "unverified") {
+      console.error(`Couldn't check sharing for ${name}: ${result.reason}.`);
+      process.exitCode = 1;
+      return;
+    }
+    const { sharing } = result.identity.machine;
+    if (!sharing) {
+      console.error(`${credentials.server} doesn't support sharing yet.`);
+      process.exitCode = 1;
+      return;
+    }
+    const other = sharing === "only_me" ? "anyone" : "only-me";
+    const lines = [`${name} ${sharingMeaning(sharing, workspace)} (${toChoice(sharing)}).`];
+    if (result.identity.workspace.memberCount === 1)
+      lines.push(`Nobody else is in ${workspace} yet, so this matters once a teammate joins.`);
+    lines.push(`Change it with \`relayrunner share ${other}\`.`);
+    console.log(lines.join("\n"));
+  },
+});
+
 const main = defineCommand({
   meta: {
     name: "relayrunner",
@@ -377,6 +531,7 @@ const main = defineCommand({
     init: initCommand,
     pause: pauseCommand(true),
     resume: pauseCommand(false),
+    share: shareCommand,
   },
 });
 

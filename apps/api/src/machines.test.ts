@@ -678,6 +678,64 @@ describe("sharing a machine (#242)", () => {
   });
 });
 
+describe("sharing from the machine's own CLI (#244)", () => {
+  const fromCli = (token: string, sharing: unknown) =>
+    app.request(
+      "/api/machines/me/sharing",
+      {
+        method: "PUT",
+        headers: { authorization: `Bearer ${token}`, "content-type": "application/json" },
+        body: JSON.stringify({ sharing }),
+      },
+      env,
+    );
+  const me = async (token: string) =>
+    (await (
+      await app.request("/api/machines/me", { headers: { authorization: `Bearer ${token}` } }, env)
+    ).json()) as { machine: { sharing: string }; workspace: { memberCount: number } };
+
+  test("claim reports the workspace's member count, for the connect prompt", async () => {
+    const { workspace } = await enroll("cli-share-count");
+    expect(workspace).toMatchObject({ memberCount: 1 });
+    const { workspaceId } = await enroll("cli-share-count-2");
+    const member = await testing.joinWorkspace(env, workspaceId, "member");
+    const second = await enrollAs(member.cookie, workspaceId, "teammate-mbp");
+    expect(second.workspace).toMatchObject({ memberCount: 2 });
+  });
+
+  test("the token changes sharing, logged as the machine's owner", async () => {
+    const { token, cookie } = await enroll("cli-share", "studio");
+    expect((await me(token)).machine.sharing).toBe("only_me");
+    const response = await fromCli(token, "anyone");
+    expect(response.status).toBe(200);
+    expect(((await response.json()) as { machine: { sharing: string } }).machine.sharing).toBe(
+      "anyone",
+    );
+    expect((await me(token)).machine.sharing).toBe("anyone");
+
+    const { items } = (await (await call("/activity", cookie)).json()) as ActivityPage;
+    const [change] = items.filter((item) => item.type === "machine.sharing_changed");
+    expect(change).toMatchObject({ data: { machineName: "studio", sharing: "anyone" } });
+    expect(change.actor).not.toBeNull();
+  });
+
+  test("needs a valid machine token and a known value", async () => {
+    const { token, cookie } = await enroll("cli-share-auth");
+    expect((await fromCli("rrm_nope", "anyone")).status).toBe(401);
+    const asUser = await app.request(
+      "/api/machines/me/sharing",
+      {
+        method: "PUT",
+        headers: { cookie, origin: env.BETTER_AUTH_URL, "content-type": "application/json" },
+        body: JSON.stringify({ sharing: "anyone" }),
+      },
+      env,
+    );
+    expect(asUser.status).toBe(401);
+    expect((await fromCli(token, "team")).status).toBe(400);
+  });
+});
+
 describe("pausing a machine", () => {
   const fromCli = (token: string, action: "pause" | "resume") =>
     app.request(
@@ -805,7 +863,12 @@ describe("a machine looking itself up", () => {
       status: { online: true, state: "idle", connectedAt: 5 },
     });
     expect(body.machine).not.toHaveProperty("tokenHash");
-    expect(body.workspace).toEqual({ id: workspaceId, name: "me-ok", slug: "me-ok" });
+    expect(body.workspace).toEqual({
+      id: workspaceId,
+      name: "me-ok",
+      slug: "me-ok",
+      memberCount: 1,
+    });
     expect(body.enrolledBy).toMatchObject({ name: expect.any(String), email: expect.any(String) });
   });
 
