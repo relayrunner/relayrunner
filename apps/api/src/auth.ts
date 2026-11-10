@@ -5,6 +5,7 @@ import { bearer, deviceAuthorization, oAuthProxy, organization } from "better-au
 import { recordEvent } from "./activity.ts";
 import { createDb, schema } from "./db/index.ts";
 import { sendEmail } from "./email.ts";
+import { installSignIn } from "./install-sign-in.ts";
 import { MEMBER_REMOVAL_PATHS, onMemberRemoved, removedMember } from "./members.ts";
 import type { Env } from "./env.ts";
 
@@ -119,6 +120,8 @@ export function createAuth(
       }),
       // Lets that claim call send the device-flow session as `Authorization: Bearer <token>`.
       bearer(),
+      // Signing in with the code GitHub sends after an install (routes/github.ts /setup).
+      installSignIn({ setupURL: new URL("/api/github/setup", env.BETTER_AUTH_URL).toString() }),
     ],
   });
 }
