@@ -21,8 +21,10 @@ import {
   describeDeviceError,
   formatUserCode,
   openDeviceCode,
+  timeAgo,
   type DeviceCodeStatus,
 } from "@/lib/machines";
+import { describePlace } from "@/lib/device";
 import { shouldOpenInstall } from "@/lib/onboarding";
 import { canManage } from "@/lib/roles";
 import { cn } from "@/lib/utils";
@@ -55,7 +57,8 @@ import {
 //    jobs start once an owner accepts.
 // 2. Pick the machine's name and approve. The CLI picks up its machine token on its next poll.
 //
-// The device code lives 30 minutes (apps/api/src/auth.ts), long enough for all of that.
+// The device code lives 15 minutes (apps/api/src/auth.ts): enough for all of that, short enough
+// that an approval link someone else started goes stale quickly.
 type DeviceSearch = {
   user_code?: string;
   name?: string;
@@ -82,6 +85,8 @@ type Loaded =
   | {
       kind: "review";
       userCode: string;
+      // When and where the CLI asked for the code (null in dev).
+      origin: Pick<DeviceCodeStatus, "requested_at" | "requested_from"> | null;
       workspaces: Workspace[];
       // The workspace the machine would join: the session's active one. Null with no workspace.
       current: CurrentWorkspace | null;
@@ -123,6 +128,7 @@ export const Route = createFileRoute("/device")({
       return {
         kind: "review",
         userCode: deps.userCode,
+        origin: null,
         workspaces: [devWorkspace.workspace],
         current: devWorkspace,
         unclaimed: { installations: [] },
@@ -145,7 +151,12 @@ export const Route = createFileRoute("/device")({
       } catch {}
     }
     const workspaces = (data ?? []).map(({ id, name }) => ({ id, name }));
-    const review = { kind: "review" as const, userCode: deps.userCode, workspaces };
+    const review = {
+      kind: "review" as const,
+      userCode: deps.userCode,
+      origin: { requested_at: status.requested_at, requested_from: status.requested_from },
+      workspaces,
+    };
     if (!workspaces.length || !context.session)
       return { ...review, current: null, unclaimed: { installations: [] } };
 
@@ -294,6 +305,7 @@ function Onboarding({ loaded }: { loaded: Extract<Loaded, { kind: "review" }> })
       {step === "approve" && current && (
         <ApproveStep
           userCode={loaded.userCode}
+          origin={loaded.origin}
           workspaces={loaded.workspaces}
           current={current}
           outcome={
@@ -571,12 +583,14 @@ function ConnectGitHubStep({
 
 function ApproveStep({
   userCode,
+  origin,
   workspaces,
   current,
   outcome,
   onDone,
 }: {
   userCode: string;
+  origin: Extract<Loaded, { kind: "review" }>["origin"];
   workspaces: Workspace[];
   current: CurrentWorkspace;
   outcome?: GitHubOutcome;
@@ -643,6 +657,7 @@ function ApproveStep({
           <p className="rounded-md border bg-muted py-3 text-center font-mono text-2xl tracking-widest">
             {formatUserCode(userCode)}
           </p>
+          <RequestOrigin origin={origin} />
           {workspaces.length > 1 && (
             <WorkspaceSelect
               workspaces={workspaces}
@@ -745,5 +760,32 @@ function Message({ title, body, action }: { title: string; body: string; action?
       </CardHeader>
       {action && <CardContent>{action}</CardContent>}
     </Card>
+  );
+}
+
+/**
+ * Where and when `relayrunner connect` asked for this code. Anyone can start a sign-in and send
+ * the link to someone else, so a request from another country gets a warning to stop and check.
+ */
+function RequestOrigin({ origin }: { origin: Extract<Loaded, { kind: "review" }>["origin"] }) {
+  if (!origin?.requested_at && !origin?.requested_from) return null;
+  const from = origin.requested_from;
+  const place = from ? describePlace(from.country, from.city) : null;
+  const parts = [
+    place && `Requested from ${place}`,
+    origin.requested_at &&
+      (place ? timeAgo(origin.requested_at) : `Requested ${timeAgo(origin.requested_at)}`),
+  ].filter(Boolean);
+  return (
+    <>
+      <p className="text-center text-sm text-muted-foreground">{parts.join(" · ")}</p>
+      {from?.differentCountry && (
+        <p role="alert" className="rounded-md border border-destructive/50 px-3 py-2 text-sm">
+          This request came from a different country than you. Only approve it if you just ran{" "}
+          <code>relayrunner connect</code> yourself. Someone else's machine would get your jobs and
+          their secrets.
+        </p>
+      )}
+    </>
   );
 }

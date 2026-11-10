@@ -9,6 +9,7 @@ import { z } from "zod";
 import type { AppEnv } from "../app.ts";
 import { MACHINE_CLIENT_ID } from "../auth.ts";
 import { createDb, schema } from "../db/index.ts";
+import { presentOrigin, requestOrigin } from "../device-origin.ts";
 import { isWorkspaceMember, workspaceMemberCount } from "../installations.ts";
 import { runningJobs } from "../jobs.ts";
 import { MACHINE_ID_HEADER, OFFLINE } from "../durable-objects/machine-session.ts";
@@ -94,6 +95,9 @@ export const machineRoutes = new Hono<AppEnv>()
         status: schema.deviceCode.status,
         expiresAt: schema.deviceCode.expiresAt,
         clientId: schema.deviceCode.clientId,
+        createdAt: schema.deviceCode.createdAt,
+        requestCountry: schema.deviceCode.requestCountry,
+        requestCity: schema.deviceCode.requestCity,
       })
       .from(schema.deviceCode)
       .where(eq(schema.deviceCode.userCode, userCode))
@@ -101,7 +105,17 @@ export const machineRoutes = new Hono<AppEnv>()
     if (!code || code.clientId !== MACHINE_CLIENT_ID)
       return c.json({ error: "invalid_request" }, 400);
     if (code.expiresAt < new Date()) return c.json({ error: "expired_token" }, 400);
-    return c.json({ user_code: userCode, status: code.status });
+    return c.json({
+      user_code: userCode,
+      status: code.status,
+      // When and where `relayrunner connect` asked for this code, so the approver can tell
+      // whether it was them.
+      requested_at: code.createdAt,
+      requested_from: presentOrigin(
+        { country: code.requestCountry, city: code.requestCity },
+        requestOrigin(c.req.raw),
+      ),
+    });
   })
 
   .post("/deny", requireUser, async (c) => {

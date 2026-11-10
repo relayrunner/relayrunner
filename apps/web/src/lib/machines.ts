@@ -183,7 +183,19 @@ export function revokeMachine(id: string) {
 }
 
 /** GET /api/auth/device: a device code's state. Opening it also ties it to the signed-in user. */
-export type DeviceCodeStatus = { user_code: string; status: "pending" | "approved" | "denied" };
+export type DeviceCodeStatus = {
+  user_code: string;
+  status: "pending" | "approved" | "denied";
+  // When `relayrunner connect` asked for the code, and roughly where from (an ISO country code and
+  // a city, either missing when Cloudflare couldn't tell). `differentCountry` is true when that's
+  // a different country from the browser looking at it, null when either side is unknown.
+  requested_at?: string;
+  requested_from?: {
+    country: string | null;
+    city: string | null;
+    differentCountry: boolean | null;
+  } | null;
+};
 
 /**
  * Looks up a `relayrunner connect` code without claiming it: the code belongs to whoever approves

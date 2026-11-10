@@ -40,17 +40,25 @@ afterAll(async () => {
 const call = (path: string, cookie: string, body?: unknown) =>
   testing.call(env, path, cookie, body);
 
+// A request as Cloudflare's edge delivers it: `cf-connecting-ip` and `request.cf`.
+function fromEdge(request: Request, edge?: { ip?: string; country?: string; city?: string }) {
+  if (!edge) return request;
+  if (edge.ip) request.headers.set("cf-connecting-ip", edge.ip);
+  Object.defineProperty(request, "cf", { value: { country: edge.country, city: edge.city } });
+  return request;
+}
+
 // What `relayrunner connect` does first.
-async function requestCode(clientId = "relayrunner-cli") {
-  const response = await app.request(
-    "/api/auth/device/code",
-    {
-      method: "POST",
-      headers: { "content-type": "application/json" },
-      body: JSON.stringify({ client_id: clientId }),
-    },
-    env,
-  );
+async function requestCode(
+  clientId = "relayrunner-cli",
+  edge?: { ip?: string; country?: string; city?: string },
+) {
+  const request = new Request("http://localhost/api/auth/device/code", {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({ client_id: clientId }),
+  });
+  const response = await app.request(fromEdge(request, edge), undefined, env);
   return {
     status: response.status,
     body: (await response.json()) as {
@@ -201,7 +209,11 @@ describe("machine enrollment", () => {
     const { body: code } = await requestCode();
     const looked = await call(`/machines/device?user_code=${code.user_code}`, viewer.cookie);
     expect(looked.status).toBe(200);
-    expect(await looked.json()).toEqual({ user_code: code.user_code, status: "pending" });
+    expect(await looked.json()).toMatchObject({
+      user_code: code.user_code,
+      status: "pending",
+      requested_from: null,
+    });
     const response = await call("/machines/approve", approver.cookie, {
       userCode: code.user_code,
       workspaceId: approver.workspace.id,
@@ -211,6 +223,48 @@ describe("machine enrollment", () => {
     expect((await call(`/machines/device?user_code=${code.user_code}`, viewer.cookie)).status).toBe(
       200,
     );
+  });
+
+  test("the approval page sees where the code was requested from", async () => {
+    const viewer = await owner("enroll-origin");
+    const { body: code } = await requestCode("relayrunner-cli", {
+      ip: "203.0.113.7",
+      country: "PT",
+      city: "Lisbon",
+    });
+    const [row] = await createDb(env.DB)
+      .select()
+      .from(schema.deviceCode)
+      .where(eq(schema.deviceCode.deviceCode, code.device_code));
+    expect(row).toMatchObject({
+      requestIp: "203.0.113.7",
+      requestCountry: "PT",
+      requestCity: "Lisbon",
+    });
+
+    const look = (country?: string) =>
+      app.request(
+        fromEdge(
+          new Request(`http://localhost/api/machines/device?user_code=${code.user_code}`, {
+            headers: { cookie: viewer.cookie },
+          }),
+          country ? { country } : undefined,
+        ),
+        undefined,
+        env,
+      );
+    const elsewhere = (await (await look("US")).json()) as Record<string, unknown>;
+    expect(elsewhere.requested_from).toEqual({
+      country: "PT",
+      city: "Lisbon",
+      differentCountry: true,
+    });
+    expect(typeof elsewhere.requested_at).toBe("string");
+    const near = (await (await look("PT")).json()) as Record<string, unknown>;
+    expect(near.requested_from).toMatchObject({ differentCountry: false });
+    // The approver's own country unknown: no warning either way.
+    const unknown = (await (await look()).json()) as Record<string, unknown>;
+    expect(unknown.requested_from).toMatchObject({ differentCountry: null });
   });
 
   test("looking up a code that doesn't exist is an invalid request", async () => {

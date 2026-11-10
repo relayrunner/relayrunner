@@ -204,6 +204,11 @@ export const deviceCode = sqliteTable("device_code", {
   pollingInterval: integer("polling_interval"),
   clientId: text("client_id"),
   scope: text("scope"),
+  // Where the CLI asked for the code from (src/device-origin.ts), so the approval page can show it
+  // and warn when it's far from whoever approves. Null when the request didn't say.
+  requestIp: text("request_ip"),
+  requestCountry: text("request_country"),
+  requestCity: text("request_city"),
   ...timestamps,
 });
 

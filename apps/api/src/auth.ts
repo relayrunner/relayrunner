@@ -3,7 +3,9 @@ import { drizzleAdapter } from "better-auth/adapters/drizzle";
 import { createAuthMiddleware, getSessionFromCtx } from "better-auth/api";
 import { bearer, deviceAuthorization, oAuthProxy, organization } from "better-auth/plugins";
 import { recordEvent } from "./activity.ts";
+import { eq } from "drizzle-orm";
 import { createDb, schema } from "./db/index.ts";
+import { requestOrigin } from "./device-origin.ts";
 import { sendEmail } from "./email.ts";
 import { installSignIn } from "./install-sign-in.ts";
 import { MEMBER_REMOVAL_PATHS, onMemberRemoved, removedMember } from "./members.ts";
@@ -76,6 +78,22 @@ export function createAuth(
       // (#138). This runs after Better Auth has deleted the membership, inline rather than on a
       // queue: one D1 update clears every token, then each open socket closes.
       after: createAuthMiddleware(async (ctx) => {
+        if (ctx.path === "/device/code") {
+          // Remember where the CLI asked from, for the approval page (src/device-origin.ts).
+          const deviceCode = (ctx.context.returned as { device_code?: unknown } | null)
+            ?.device_code;
+          if (typeof deviceCode !== "string") return;
+          const origin = requestOrigin(ctx.request);
+          await createDb(env.DB)
+            .update(schema.deviceCode)
+            .set({
+              requestIp: origin.ip,
+              requestCountry: origin.country,
+              requestCity: origin.city,
+            })
+            .where(eq(schema.deviceCode.deviceCode, deviceCode));
+          return;
+        }
         if (!(MEMBER_REMOVAL_PATHS as readonly string[]).includes(ctx.path)) return;
         const member = removedMember(ctx.context.returned);
         if (!member) return;
@@ -115,7 +133,8 @@ export function createAuth(
       deviceAuthorization({
         verificationUri: new URL("/device", env.BETTER_AUTH_URL).toString(),
         validateClient: (clientId) => clientId === MACHINE_CLIENT_ID,
-        expiresIn: "30m",
+        // Short: an approval link someone else started is only good for a few minutes.
+        expiresIn: "15m",
         interval: "5s",
       }),
       // Lets that claim call send the device-flow session as `Authorization: Bearer <token>`.

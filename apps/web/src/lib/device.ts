@@ -34,3 +34,14 @@ export function deviceName(device: MachineDevice) {
 export function formatMemory(mb: number) {
   return mb >= 1024 ? `${Math.round(mb / 1024)} GB` : `${mb} MB`;
 }
+
+/** "Lisbon, Portugal", "Portugal", or the city alone. */
+export function describePlace(country: string | null, city: string | null) {
+  let countryName = country;
+  if (country) {
+    try {
+      countryName = new Intl.DisplayNames(["en"], { type: "region" }).of(country) ?? country;
+    } catch {}
+  }
+  return [city, countryName].filter(Boolean).join(", ") || null;
+}
