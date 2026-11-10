@@ -53,6 +53,22 @@ Jobs run in `actions/runner`, which is downloaded into
 `~/.relayrunner/runner/<version>` on first connect and checked against its
 SHA-256. Set `RELAYRUNNER_HOME` to keep everything somewhere else.
 
+## `relayrunner login`
+
+```sh
+npx relayrunner login
+```
+
+Signs this machine in without putting it online: the same browser sign-in as the
+first `connect`, then it saves the token and exits. It's for a coding agent
+setting up RelayRunner (see [docs/agent-install.md](../../docs/agent-install.md)),
+which can't keep `connect` running after its session ends. Run `connect`
+afterwards to take jobs.
+
+If the machine is already signed in to that gateway, it says so and exits. A
+token that's no longer valid is replaced. `--server`, `--name` and `--share` work as they do
+for `connect`.
+
 ## `relayrunner whoami`
 
 ```sh
