@@ -248,9 +248,6 @@ export const machine = sqliteTable(
     // started) or 'anyone'. Only the owner changes it. Connected machines start as 'only_me';
     // runners added from GitHub are the org's shared runners and start as 'anyone'.
     sharing: text("sharing").$type<MachineSharing>().notNull().default("only_me"),
-    // Set on connected machines that were switched to 'only_me' when sharing shipped (#242), until
-    // the owner has been told once (#243 card, #244 CLI).
-    sharingNotice: integer("sharing_notice", { mode: "boolean" }).notNull().default(false),
     // 'github' only: the installation whose org the runner is registered in, GitHub's runner id,
     // the label RelayRunner added to it (`rr-runner-<hex>`), and the runner's labels as last read
     // from GitHub (JSON array), for when GitHub can't be reached.

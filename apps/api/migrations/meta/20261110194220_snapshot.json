@@ -1,7 +1,7 @@
 {
   "version": "6",
   "dialect": "sqlite",
-  "id": "5b7c0da3-24a7-4d5a-9e8b-37b7d48a488e",
+  "id": "fa7f3d85-a469-4194-ad92-50fca3dc6c7e",
   "prevId": "391fac4e-fc36-4843-bfb1-3a458520ebe5",
   "tables": {
     "account": {
@@ -1168,14 +1168,6 @@
           "notNull": true,
           "autoincrement": false,
           "default": "'only_me'"
-        },
-        "sharing_notice": {
-          "name": "sharing_notice",
-          "type": "integer",
-          "primaryKey": false,
-          "notNull": true,
-          "autoincrement": false,
-          "default": false
         },
         "installation_id": {
           "name": "installation_id",

@@ -75,8 +75,6 @@ export function presentMachine(
     paused: machine.pausedAt ? { at: machine.pausedAt, by: pausedBy } : null,
     // Whose jobs it takes ('only_me' or 'anyone'); only its owner (createdBy) can change it.
     sharing: machine.sharing,
-    // True while its owner hasn't yet been told it was switched to 'only_me' when sharing shipped.
-    sharingNotice: machine.sharingNotice,
     // What its CLI reported on its last hello, or null when it never did (an older CLI, or a
     // runner added from GitHub, which doesn't report hardware).
     device: machine.deviceKind
@@ -193,8 +191,8 @@ export async function setMachinePaused(
 }
 
 /**
- * Sets whose jobs a machine takes and logs it in Activity, as its owner. Setting it also clears the
- * one-time notice that it was switched to `only_me`. Setting what's already the case logs nothing.
+ * Sets whose jobs a machine takes and logs it in Activity, as its owner. Setting what's already the
+ * case changes nothing and logs nothing.
  * Returns the machine as it is now, or null if it's gone or revoked.
  */
 export async function setMachineSharing(
@@ -209,22 +207,20 @@ export async function setMachineSharing(
     .where(and(eq(schema.machine.id, machineId), isNull(schema.machine.revokedAt)))
     .limit(1);
   if (!current) return null;
-  if (current.sharing === sharing && !current.sharingNotice)
-    return { machine: current, changed: false };
+  if (current.sharing === sharing) return { machine: current, changed: false };
   const [machine] = await db
     .update(schema.machine)
-    .set({ sharing, sharingNotice: false })
+    .set({ sharing })
     .where(eq(schema.machine.id, machineId))
     .returning();
-  if (current.sharing !== sharing)
-    await recordEvent(db, {
-      workspaceId: machine.workspaceId,
-      type: "machine.sharing_changed",
-      data: { machineName: machine.name, sharing },
-      machineId: machine.id,
-      actorUserId: ownerId,
-    });
-  return { machine, changed: current.sharing !== sharing };
+  await recordEvent(db, {
+    workspaceId: machine.workspaceId,
+    type: "machine.sharing_changed",
+    data: { machineName: machine.name, sharing },
+    machineId: machine.id,
+    actorUserId: ownerId,
+  });
+  return { machine, changed: true };
 }
 
 /** The name of the user who paused a machine, or null (not paused, or paused by its CLI). */

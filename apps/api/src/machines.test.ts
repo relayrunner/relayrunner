@@ -617,16 +617,14 @@ describe("sharing a machine (#242)", () => {
       },
       env,
     );
-  type SharedMachine = { machine: { sharing: string; sharingNotice: boolean } };
+  type SharedMachine = { machine: { sharing: string } };
 
-  test("a new machine runs only its owner's jobs, with no notice to show", async () => {
+  test("a new machine runs only its owner's jobs", async () => {
     const { cookie, machine } = await enroll("share-default");
     const { machines } = (await (await call("/machines", cookie)).json()) as {
-      machines: { id: string; sharing: string; sharingNotice: boolean }[];
+      machines: { id: string; sharing: string }[];
     };
-    expect(machines).toEqual([
-      expect.objectContaining({ id: machine.id, sharing: "only_me", sharingNotice: false }),
-    ]);
+    expect(machines).toEqual([expect.objectContaining({ id: machine.id, sharing: "only_me" })]);
   });
 
   test("the owner shares it with anyone and back, each change logged once", async () => {
@@ -645,18 +643,6 @@ describe("sharing a machine (#242)", () => {
       { data: { machineName: "studio", sharing: "anyone" }, actor: {} },
     ]);
     expect(changes[0].actor).not.toBeNull();
-  });
-
-  test("setting it clears the one-time notice", async () => {
-    const { cookie, machine } = await enroll("share-notice");
-    await env.DB.prepare("UPDATE machine SET sharing_notice = 1 WHERE id = ?")
-      .bind(machine.id)
-      .run();
-    const response = await share(machine.id, cookie, "only_me");
-    expect(((await response.json()) as SharedMachine).machine).toMatchObject({
-      sharing: "only_me",
-      sharingNotice: false,
-    });
   });
 
   test("only the owner can change it, not an admin or a member", async () => {
