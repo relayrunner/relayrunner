@@ -195,7 +195,32 @@ describe("machine enrollment", () => {
     expect(response.status).toBe(403);
   });
 
-  test("a code another user opened can't be approved", async () => {
+  test("looking at a code doesn't claim it, so another account can still approve it", async () => {
+    const viewer = await owner("enroll-viewer");
+    const approver = await owner("enroll-approver");
+    const { body: code } = await requestCode();
+    const looked = await call(`/machines/device?user_code=${code.user_code}`, viewer.cookie);
+    expect(looked.status).toBe(200);
+    expect(await looked.json()).toEqual({ user_code: code.user_code, status: "pending" });
+    const response = await call("/machines/approve", approver.cookie, {
+      userCode: code.user_code,
+      workspaceId: approver.workspace.id,
+      name: "approved",
+    });
+    expect(response.status).toBe(200);
+    expect((await call(`/machines/device?user_code=${code.user_code}`, viewer.cookie)).status).toBe(
+      200,
+    );
+  });
+
+  test("looking up a code that doesn't exist is an invalid request", async () => {
+    const { cookie } = await owner("enroll-missing");
+    const response = await call("/machines/device?user_code=NOPENOPE", cookie);
+    expect(response.status).toBe(400);
+    expect(await response.json()).toEqual({ error: "invalid_request" });
+  });
+
+  test("a code another user claimed can't be approved", async () => {
     const first = await owner("enroll-first");
     const second = await owner("enroll-second");
     const { body: code } = await requestCode();
@@ -252,10 +277,8 @@ describe("machine enrollment", () => {
   test("a denied code ends the CLI's polling", async () => {
     const { cookie } = await owner("enroll-deny");
     const { body: code } = await requestCode();
-    await call(`/auth/device?user_code=${code.user_code}`, cookie);
-    expect((await call("/auth/device/deny", cookie, { userCode: code.user_code })).status).toBe(
-      200,
-    );
+    // Denying claims the code itself; the page never opened it.
+    expect((await call("/machines/deny", cookie, { userCode: code.user_code })).status).toBe(200);
     const { body } = await pollToken(code.device_code);
     expect(body.error).toBe("access_denied");
   });
