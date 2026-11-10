@@ -371,6 +371,8 @@ async function pickRunner(env: Env, token: string, installationId: number, conte
     github: context.github,
     blacksmith: context.blacksmith,
     private: repo.private,
+    startedBy: context.startedBy,
+    triggeredBy: context.triggeredBy,
   });
   return {
     ...decision,

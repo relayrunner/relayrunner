@@ -15,7 +15,7 @@ import {
   type RunnerKey,
   type RunnerOrder,
 } from "@relayrunner/runner-order";
-import type { GithubActor } from "@relayrunner/activity";
+import type { GithubActor, MachineSharing, NotSharedMachine } from "@relayrunner/activity";
 import type { AccountUsage } from "./actions-billing.ts";
 import { minutesCheck, type MinutesSkip } from "./minutes-rule.ts";
 import { context, scalar } from "./pipeline-context.ts";
@@ -82,6 +82,36 @@ export interface Candidate {
   labels: string[];
   // Paused machines stay connected but never take a new job.
   paused?: boolean;
+  // Whose jobs it takes, and its owner's GitHub account id (null when the owner is gone or never
+  // signed in with GitHub). Left out means `anyone`, as before sharing existed.
+  sharing?: MachineSharing;
+  ownerGithubId?: number | null;
+}
+
+// Who started a job: the run (`github.actor`) and this attempt (`github.triggering_actor`).
+export interface JobStarters {
+  startedBy: GithubActor | null;
+  triggeredBy: GithubActor | null;
+}
+
+/**
+ * Whether a machine's sharing lets it take a job. `anyone` takes every job. `only_me` takes a job
+ * only when both the run and this attempt were started by its owner, matched by GitHub account id:
+ * a bot, a schedule, a non-member, a re-run by someone else or a missing id never matches.
+ */
+export function admits(
+  machine: { sharing?: MachineSharing; ownerGithubId?: number | null },
+  job: JobStarters,
+): boolean {
+  if ((machine.sharing ?? "anyone") === "anyone") return true;
+  const owner = machine.ownerGithubId;
+  if (owner == null) return false;
+  return job.startedBy?.id === owner && job.triggeredBy?.id === owner;
+}
+
+/** The GitHub id of whoever started this attempt, whose own machines a pick tries first. */
+export function starterId(job: JobStarters): number | null {
+  return job.triggeredBy?.id ?? job.startedBy?.id ?? null;
 }
 
 // GitHub's default self-hosted runner labels, so a job's `runs-on` list can be copied into the
@@ -126,25 +156,32 @@ export function lastPicked(routes: Route[]): Map<string, number> {
 }
 
 /**
- * Of the machines with every wanted label, the online, idle, unpaused one no route holds that was
- * least recently picked, or null. Machines never picked come first; ties keep the candidates' order.
- * No wanted labels means none is required; a job that names no machine labels doesn't get here.
+ * Of the machines with every wanted label whose sharing takes the job, the online, idle, unpaused
+ * one no route holds, or null. The job starter's own machines come first; then the least recently
+ * picked (never picked first), ties keeping the candidates' order. No wanted labels means none is
+ * required; a job that names no machine labels doesn't get here. No starters means nobody's job:
+ * only `anyone` machines take it.
  */
 export function chooseMachine(
   candidates: Candidate[],
   held: Set<string>,
   picked: Map<string, number> = new Map(),
   wanted: string[] = [],
+  starters: JobStarters = { startedBy: null, triggeredBy: null },
 ): Candidate | null {
+  const starter = starterId(starters);
   let best: Candidate | null = null;
+  let bestOwn = false;
   let bestAt = Infinity;
   for (const machine of candidates) {
     if (!machine.online || machine.state !== "idle" || machine.paused || held.has(machine.id))
       continue;
-    if (!hasLabels(machine.labels, wanted)) continue;
+    if (!hasLabels(machine.labels, wanted) || !admits(machine, starters)) continue;
+    const own = starter !== null && machine.ownerGithubId === starter;
     const at = picked.get(machine.id) ?? -Infinity;
-    if (at < bestAt) {
+    if ((own && !bestOwn) || (own === bestOwn && at < bestAt)) {
       best = machine;
+      bestOwn = own;
       bestAt = at;
     }
   }
@@ -162,6 +199,40 @@ export function pausedMatches(
   const matching = machines.filter((machine) => hasLabels(machine.labels, wanted));
   if (matching.length === 0 || !matching.every((machine) => machine.paused)) return [];
   return matching.map((machine) => machine.name);
+}
+
+export interface PoolMachine {
+  name: string;
+  labels: string[];
+  paused?: boolean;
+  sharing?: MachineSharing;
+  ownerGithubId?: number | null;
+  // The owner's display name, for Activity.
+  ownerName?: string | null;
+}
+
+/**
+ * Why no machine took a job that some machine's labels fit, when there's one thing to say: no
+ * machine with the labels takes this job's starter (`notShared`), or every one that does is paused
+ * (`paused`). Null otherwise: they're busy or offline, or none has the labels.
+ */
+export function unavailableMachines(
+  machines: PoolMachine[],
+  wanted: string[],
+  starters: JobStarters,
+): { paused: string[] } | { notShared: NotSharedMachine[] } | null {
+  const matching = machines.filter((machine) => hasLabels(machine.labels, wanted));
+  if (matching.length === 0) return null;
+  const admitted = matching.filter((machine) => admits(machine, starters));
+  if (admitted.length === 0)
+    return {
+      notShared: matching.map((machine) => ({
+        machine: machine.name,
+        owner: machine.ownerName ?? null,
+      })),
+    };
+  const paused = pausedMatches(admitted, wanted);
+  return paused.length > 0 ? { paused } : null;
 }
 
 export interface QueuedJob {
@@ -271,12 +342,15 @@ export interface SkippedStep {
   reason: SkipReason;
   // machine_paused: the paused machines' names.
   paused?: string[];
+  // machine_not_shared: the machines that fit but only run their owner's jobs.
+  notShared?: NotSharedMachine[];
   // minutes_limit and minutes_runway: the job's GitHub account and its usage at the pick.
   minutes?: Omit<MinutesSkip, "reason">;
 }
 
-// What the machine step's pick found: a route label, every matching machine paused, or nothing.
-export type MachinePick = string | { paused: string[] } | null;
+// What the machine step's pick found: a route label, every matching machine paused, no matching
+// machine taking this job's starter, or nothing.
+export type MachinePick = string | { paused: string[] } | { notShared: NotSharedMachine[] } | null;
 
 // `notInOrder` lists providers the job configured that the order leaves out, either way, so an
 // ignored input is never silent.
@@ -325,7 +399,9 @@ export async function decideRoute(
       else {
         const pick = await pickMachine();
         if (typeof pick === "string") return { runner: pick, step: key, skipped, notInOrder };
-        if (pick && pick.paused.length > 0)
+        if (pick && "notShared" in pick && pick.notShared.length > 0)
+          skipped.push({ key, reason: "machine_not_shared", notShared: pick.notShared });
+        else if (pick && "paused" in pick && pick.paused.length > 0)
           skipped.push({ key, reason: "machine_paused", paused: pick.paused });
         else skipped.push({ key, reason: "no_machine" });
       }
@@ -359,7 +435,7 @@ export function noRunnerReason(
 ): string {
   if (RUNNER_KEYS.every((key) => job[key].length === 0))
     return `${NO_RUNNER}: the relay sets none of \`machine\`, \`github\` or \`blacksmith\`.`;
-  const parts = skipped.map(({ key, reason, paused = [], minutes }) => {
+  const parts = skipped.map(({ key, reason, paused = [], notShared = [], minutes }) => {
     switch (reason) {
       case "not_configured":
         return `\`${key}\` isn't set on this relay`;
@@ -373,6 +449,8 @@ export function noRunnerReason(
         return paused.length === 1
           ? `the only machine that fits, ${paused[0]}, is paused`
           : `every machine that fits is paused (${paused.join(", ")})`;
+      case "machine_not_shared":
+        return notSharedText(notShared);
       case "too_many_labels":
         return `\`${key}\` takes one label, not ${job[key].join(", ")}`;
       case "not_blacksmith_label":
@@ -387,6 +465,20 @@ export function noRunnerReason(
 }
 
 export const NO_RUNNER = "No runner available";
+
+/** "atticus-mbp only runs Atticus's jobs", or for several, "a and b only run their owners' jobs". */
+export function notSharedText(machines: NotSharedMachine[]): string {
+  if (machines.length === 1) {
+    const [{ machine, owner }] = machines;
+    return `${machine} only runs ${owner ? `${owner}'s` : "its owner's"} jobs`;
+  }
+  const names = machines.map((m) => m.machine);
+  const list =
+    names.length === 2
+      ? names.join(" and ")
+      : `${names.slice(0, -1).join(", ")} and ${names[names.length - 1]}`;
+  return `${list} only run their owners' jobs`;
+}
 
 const count = (n: number) => Math.round(n).toLocaleString("en-US");
 

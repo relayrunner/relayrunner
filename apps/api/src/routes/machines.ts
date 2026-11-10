@@ -4,6 +4,7 @@ import { alias } from "drizzle-orm/sqlite-core";
 import { Hono } from "hono";
 import { APIError } from "better-auth/api";
 import { HelloMessage } from "@relayrunner/machine-protocol";
+import { MACHINE_SHARING } from "@relayrunner/activity";
 import { z } from "zod";
 import type { AppEnv } from "../app.ts";
 import { MACHINE_CLIENT_ID } from "../auth.ts";
@@ -31,6 +32,7 @@ import {
   removeRoutingLabel,
   revokeMachines,
   setMachinePaused,
+  setMachineSharing,
   sha256Hex,
   verifyMachineToken,
   type PauseVia,
@@ -71,6 +73,8 @@ const ClaimBody = z.object({
 });
 
 const DenyBody = z.object({ userCode: z.string().min(1).max(32) });
+
+const SharingBody = z.object({ sharing: z.enum(MACHINE_SHARING) });
 
 const AddRunnersBody = z.object({
   installationId: z.number().int().positive(),
@@ -305,6 +309,33 @@ export const machineRoutes = new Hono<AppEnv>()
       via: "dashboard",
     });
   })
+  // Whose jobs the machine takes (#242). Only its owner, the person who enrolled or added it, may
+  // change it: it's their computer. Admins can still pause or revoke it.
+  .put("/:id/sharing", requireUser, requireWorkspace, async (c) => {
+    const body = SharingBody.safeParse(await c.req.json().catch(() => null));
+    if (!body.success) return c.json({ error: "invalid_request" }, 400);
+    const [machine] = await c.var.db
+      .select({ id: schema.machine.id, createdBy: schema.machine.createdBy })
+      .from(schema.machine)
+      .where(
+        and(
+          eq(schema.machine.id, c.req.param("id")),
+          eq(schema.machine.workspaceId, c.var.workspace.id),
+          isNull(schema.machine.revokedAt),
+        ),
+      )
+      .limit(1);
+    if (!machine) return c.json({ error: "not_found" }, 404);
+    if (machine.createdBy !== c.var.user!.id) return c.json({ error: "not_owner" }, 403);
+    const result = await setMachineSharing(c.var.db, machine.id, body.data.sharing, c.var.user!.id);
+    if (!result) return c.json({ error: "not_found" }, 404);
+    return c.json({
+      machine: {
+        ...presentMachine(result.machine, await pausedByName(c.var.db, result.machine)),
+        status: await c.env.MACHINE_LINK.getByName(machine.id).status(),
+      },
+    });
+  })
   .get("/", requireUser, requireWorkspace, async (c) => {
     const creator = alias(schema.user, "creator");
     const rows = await c.var.db
@@ -536,6 +567,8 @@ export const machineRoutes = new Hono<AppEnv>()
           routingLabel,
           githubLabels: JSON.stringify([...runner.labels, routingLabel]),
           createdBy: user!.id,
+          // The org's runner, usually shared team hardware: it takes anyone's jobs (#242).
+          sharing: "anyone",
         })
         .returning();
       await recordEvent(db, {

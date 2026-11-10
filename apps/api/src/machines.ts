@@ -6,6 +6,7 @@ import type { Env } from "./env.ts";
 import { appInstallationToken, removeOrgRunnerLabel } from "./github-app.ts";
 import { matchLabels, parseStoredLabels } from "./github-runners.ts";
 import type { Device } from "@relayrunner/machine-protocol";
+import type { MachineSharing } from "@relayrunner/activity";
 import { machineLabels } from "./routing.ts";
 
 // Machine tokens: what `relayrunner connect` holds after enrolling, and sends on the MachineLink
@@ -72,6 +73,8 @@ export function presentMachine(
     createdAt: machine.createdAt,
     // Null unless paused. `by` is null when the machine's own CLI paused it.
     paused: machine.pausedAt ? { at: machine.pausedAt, by: pausedBy } : null,
+    // Whose jobs it takes ('only_me' or 'anyone'); only its owner (createdBy) can change it.
+    sharing: machine.sharing,
     // What its CLI reported on its last hello, or null when it never did (an older CLI, or a
     // runner added from GitHub, which doesn't report hardware).
     device: machine.deviceKind
@@ -183,6 +186,39 @@ export async function setMachinePaused(
     data: { machineName: machine.name, via: actor.via },
     machineId: machine.id,
     actorUserId: actor.userId,
+  });
+  return { machine, changed: true };
+}
+
+/**
+ * Sets whose jobs a machine takes and logs it in Activity, as its owner. Setting what's already the
+ * case changes nothing and logs nothing.
+ * Returns the machine as it is now, or null if it's gone or revoked.
+ */
+export async function setMachineSharing(
+  db: Db,
+  machineId: string,
+  sharing: MachineSharing,
+  ownerId: string,
+) {
+  const [current] = await db
+    .select()
+    .from(schema.machine)
+    .where(and(eq(schema.machine.id, machineId), isNull(schema.machine.revokedAt)))
+    .limit(1);
+  if (!current) return null;
+  if (current.sharing === sharing) return { machine: current, changed: false };
+  const [machine] = await db
+    .update(schema.machine)
+    .set({ sharing })
+    .where(eq(schema.machine.id, machineId))
+    .returning();
+  await recordEvent(db, {
+    workspaceId: machine.workspaceId,
+    type: "machine.sharing_changed",
+    data: { machineName: machine.name, sharing },
+    machineId: machine.id,
+    actorUserId: ownerId,
   });
   return { machine, changed: true };
 }

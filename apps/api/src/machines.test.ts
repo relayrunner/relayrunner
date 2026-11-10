@@ -606,6 +606,65 @@ describe("the machine WebSocket", () => {
   });
 });
 
+describe("sharing a machine (#242)", () => {
+  const share = (id: string, cookie: string, sharing: unknown) =>
+    app.request(
+      `/api/machines/${id}/sharing`,
+      {
+        method: "PUT",
+        headers: { cookie, "content-type": "application/json", origin: env.BETTER_AUTH_URL },
+        body: JSON.stringify({ sharing }),
+      },
+      env,
+    );
+  type SharedMachine = { machine: { sharing: string } };
+
+  test("a new machine runs only its owner's jobs", async () => {
+    const { cookie, machine } = await enroll("share-default");
+    const { machines } = (await (await call("/machines", cookie)).json()) as {
+      machines: { id: string; sharing: string }[];
+    };
+    expect(machines).toEqual([expect.objectContaining({ id: machine.id, sharing: "only_me" })]);
+  });
+
+  test("the owner shares it with anyone and back, each change logged once", async () => {
+    const { cookie, machine } = await enroll("share-owner", "studio");
+    const shared = await share(machine.id, cookie, "anyone");
+    expect(shared.status).toBe(200);
+    expect(((await shared.json()) as SharedMachine).machine.sharing).toBe("anyone");
+    // Setting what's already the case logs nothing.
+    expect((await share(machine.id, cookie, "anyone")).status).toBe(200);
+    expect((await share(machine.id, cookie, "only_me")).status).toBe(200);
+
+    const { items } = (await (await call("/activity", cookie)).json()) as ActivityPage;
+    const changes = items.filter((item) => item.type === "machine.sharing_changed");
+    expect(changes).toMatchObject([
+      { data: { machineName: "studio", sharing: "only_me" }, actor: {} },
+      { data: { machineName: "studio", sharing: "anyone" }, actor: {} },
+    ]);
+    expect(changes[0].actor).not.toBeNull();
+  });
+
+  test("only the owner can change it, not an admin or a member", async () => {
+    const { machine, workspaceId, cookie } = await enroll("share-others");
+    const admin = await testing.joinWorkspace(env, workspaceId, "admin");
+    const member = await testing.joinWorkspace(env, workspaceId, "member");
+    for (const other of [admin, member]) {
+      const response = await share(machine.id, other.cookie, "anyone");
+      expect(response.status).toBe(403);
+      expect(await response.json()).toEqual({ error: "not_owner" });
+    }
+    expect((await share(machine.id, cookie, "anyone")).status).toBe(200);
+  });
+
+  test("another workspace gets not found, and a bad value is rejected", async () => {
+    const { machine, cookie } = await enroll("share-mine");
+    const other = await owner("share-other");
+    expect((await share(machine.id, other.cookie, "anyone")).status).toBe(404);
+    expect((await share(machine.id, cookie, "people")).status).toBe(400);
+  });
+});
+
 describe("pausing a machine", () => {
   const fromCli = (token: string, action: "pause" | "resume") =>
     app.request(

@@ -1,4 +1,4 @@
-import type { MinutesUsage, RouteWalk, SkipReason } from "@relayrunner/activity";
+import type { MinutesUsage, NotSharedMachine, RouteWalk, SkipReason } from "@relayrunner/activity";
 import type { RunnerKey } from "@relayrunner/runner-order";
 
 // How the Activity page explains where a job went: a short reason after the runner, and one line
@@ -22,6 +22,20 @@ function pausedText(paused: string[] = []) {
   return paused.length ? `${paused.length} machines are paused` : "machines are paused";
 }
 
+// "atticus-mbp only runs Atticus's jobs"; for several, the short form counts them.
+function notSharedText(notShared: NotSharedMachine[] = [], short = false) {
+  const [only] = notShared;
+  if (notShared.length === 1 && only) {
+    const { machine, owner } = only;
+    return `${machine} only runs ${owner ? `${owner}'s` : "its owner's"} jobs`;
+  }
+  if (notShared.length === 0) return "no machine takes this job";
+  if (short || notShared.length > 3)
+    return `${notShared.length} machines only run their owners' jobs`;
+  const names = notShared.map((m) => m.machine);
+  return `${names.slice(0, -1).join(", ")} and ${names[names.length - 1]} only run their owners' jobs`;
+}
+
 const count = (n: number) => Math.round(n).toLocaleString("en-US");
 const usedPercent = (m: MinutesUsage) => Math.floor((m.usedMinutes / m.quotaMinutes) * 100);
 
@@ -31,6 +45,7 @@ function shortSkip(
   reason: SkipReason,
   paused?: string[],
   minutes?: MinutesUsage,
+  notShared?: NotSharedMachine[],
 ): string | null {
   switch (reason) {
     case "minutes_limit":
@@ -43,6 +58,8 @@ function shortSkip(
         : "near the GitHub minutes limit";
     case "machine_paused":
       return pausedText(paused);
+    case "machine_not_shared":
+      return notSharedText(notShared, true);
     case "no_machine": {
       const labels = machineLabels(walk);
       return labels ? `no idle machine with ${labels}` : "no idle machine";
@@ -65,6 +82,7 @@ function longSkip(
   reason: SkipReason,
   paused: string[] = [],
   minutes?: MinutesUsage,
+  notShared?: NotSharedMachine[],
 ): string {
   switch (reason) {
     case "minutes_limit":
@@ -82,6 +100,8 @@ function longSkip(
         ? `the only machine ${fits}, ${paused[0]}, is paused`
         : `every machine ${fits} is paused (${paused.join(", ")})`;
     }
+    case "machine_not_shared":
+      return notSharedText(notShared);
     case "no_machine": {
       const labels = machineLabels(walk);
       return labels
@@ -109,8 +129,8 @@ export type WalkTone = "fallback" | "info";
 export function walkSummary(walk: RouteWalk): { text: string; tone: WalkTone } | null {
   const parts: string[] = [];
   let tone: WalkTone = "info";
-  for (const { key, reason, paused, minutes } of walk.skipped) {
-    const text = shortSkip(walk, key, reason, paused, minutes);
+  for (const { key, reason, paused, minutes, notShared } of walk.skipped) {
+    const text = shortSkip(walk, key, reason, paused, minutes, notShared);
     if (text) parts.push(text);
     if (reason !== "not_configured" && reason !== "public_repo") tone = "fallback";
   }
@@ -131,12 +151,14 @@ export interface WalkLine {
  * `runner` names where the answering step sent the job: its line reads "on <runner>".
  */
 export function walkLines(walk: RouteWalk, runner: string | null): WalkLine[] {
-  const lines: WalkLine[] = walk.skipped.map(({ key, reason, paused, minutes }, index) => ({
-    position: index + 1,
-    key,
-    state: "skipped",
-    text: longSkip(walk, key, reason, paused, minutes),
-  }));
+  const lines: WalkLine[] = walk.skipped.map(
+    ({ key, reason, paused, minutes, notShared }, index) => ({
+      position: index + 1,
+      key,
+      state: "skipped",
+      text: longSkip(walk, key, reason, paused, minutes, notShared),
+    }),
+  );
   if (walk.step)
     lines.push({
       position: lines.length + 1,
