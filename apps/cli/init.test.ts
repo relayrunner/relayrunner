@@ -3,7 +3,15 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { describe, expect, test } from "vitest";
 import { unifiedDiff } from "./diff.ts";
-import { changesFor, InitError, planInit, selectJobs, writeChanges } from "./init.ts";
+import { isDeclined, rememberDeclined } from "./declined.ts";
+import {
+  changesFor,
+  InitError,
+  planInit,
+  selectJobs,
+  shouldOfferSetup,
+  writeChanges,
+} from "./init.ts";
 import { parseGitHubRemote, repoVisibility } from "./repo.ts";
 
 function checkout(files: Record<string, string>) {
@@ -100,5 +108,58 @@ describe("unifiedDiff", () => {
       ),
     );
     expect(unifiedDiff("same\n", "same\n", "f.yml")).toBe("");
+  });
+});
+
+describe("shouldOfferSetup", () => {
+  const routed = `on: push
+jobs:
+  relay-test:
+    uses: relayrunner/actions/.github/workflows/relay.yml@v1.0.0-beta.4
+    with:
+      machine: self-hosted
+      github: ubuntu-latest
+  test:
+    needs: relay-test
+    runs-on: \${{ needs.relay-test.outputs.runner }}
+  lint:
+    runs-on: ubuntu-latest
+`;
+  test("offers when nothing is routed and a job could be", async () => {
+    expect(shouldOfferSetup(await planInit(checkout({ "ci.yml": ci }), { hostOs: "linux" }))).toBe(
+      true,
+    );
+  });
+
+  test("doesn't offer once any job is routed, even if others could be", async () => {
+    const plan = await planInit(checkout({ "ci.yml": routed }), { hostOs: "linux" });
+    expect(shouldOfferSetup(plan)).toBe(false);
+  });
+
+  test("doesn't offer when no job can be routed, or the repo is public", async () => {
+    const plan = await planInit(checkout({ "deploy.yml": deploy }), { hostOs: "linux" });
+    expect(shouldOfferSetup(plan)).toBe(false);
+    const open = await planInit(checkout({ "ci.yml": ci }), { hostOs: "linux" });
+    expect(shouldOfferSetup({ ...open, visibility: "public" })).toBe(false);
+  });
+});
+
+describe("declined repos", () => {
+  test("remembers a no per repo", () => {
+    const path = join(mkdtempSync(join(tmpdir(), "rr-home-")), "declined-repos.json");
+    expect(isDeclined("acme/web", path)).toBe(false);
+    rememberDeclined("acme/web", path);
+    rememberDeclined("acme/web", path);
+    expect(isDeclined("acme/web", path)).toBe(true);
+    expect(isDeclined("acme/api", path)).toBe(false);
+    expect(JSON.parse(readFileSync(path, "utf8"))).toEqual(["acme/web"]);
+  });
+
+  test("a damaged file counts as empty", () => {
+    const path = join(mkdtempSync(join(tmpdir(), "rr-home-")), "declined-repos.json");
+    writeFileSync(path, "{not json");
+    expect(isDeclined("acme/web", path)).toBe(false);
+    rememberDeclined("acme/web", path);
+    expect(isDeclined("acme/web", path)).toBe(true);
   });
 });

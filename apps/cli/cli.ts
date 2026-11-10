@@ -11,7 +11,7 @@ import {
   type Credentials,
 } from "./credentials.ts";
 import { detectDevice } from "./device.ts";
-import { initCommand } from "./init.ts";
+import { initCommand, offerSetup } from "./init.ts";
 import { ensureRunner, RunnerError, runnerPlatform } from "./install.ts";
 import { runJob } from "./job.ts";
 import { login, LoginError, openBrowser } from "./login.ts";
@@ -75,6 +75,10 @@ async function connectMachine(args: { server?: string; name?: string }) {
       `Machine ${credentials.machine.name} in ${credentials.workspace.name} (${credentials.server})`,
     );
   }
+
+  // Run inside a repo that isn't set up yet, offer to route its jobs here (`relayrunner init`).
+  // Only when someone is at the terminal to answer.
+  if (process.stdin.isTTY && process.stdout.isTTY) await offerSetup();
 
   const runner = await ensureRunner({ log: (line) => clack.log.info(line) });
   // What kind of device this is and its specs, for the dashboard's badge. Best effort.

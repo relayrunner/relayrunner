@@ -34,6 +34,13 @@ running stops with it.
   A running `connect` exits and asks you to run it again; a new one signs in
   straight away.
 
+Run inside a checkout of a private repo where no job uses RelayRunner yet,
+`connect` first asks whether to set it up (default no). Yes runs the same picker
+as [`relayrunner init`](#relayrunner-init). No is remembered for that repo in
+`~/.relayrunner/declined-repos.json`, so it doesn't ask again; `init` still
+works there. It never asks outside a repo, in a public repo, in a repo that's
+already set up, or without a terminal to answer.
+
 Jobs run in `actions/runner`, which is downloaded into
 `~/.relayrunner/runner/<version>` on first connect and checked against its
 SHA-256. Set `RELAYRUNNER_HOME` to keep everything somewhere else.

@@ -9,10 +9,11 @@
 // `--plan --json` and `--apply` are what an agent setting up RelayRunner drives.
 
 import { writeFileSync } from "node:fs";
-import { join } from "node:path";
+import { basename, join } from "node:path";
 import { styleText } from "node:util";
 import * as clack from "@clack/prompts";
 import { defineCommand } from "citty";
+import { isDeclined, rememberDeclined } from "./declined.ts";
 import { unifiedDiff } from "./diff.ts";
 import {
   findRepoRoot,
@@ -197,13 +198,17 @@ async function interactive(plan: InitPlan) {
     );
   for (const error of plan.errors) clack.log.warn(`Couldn't read ${error.file}: ${error.message}`);
   if (!plan.files.length) return clack.outro("No workflows in .github/workflows.");
+  await chooseAndWrite(plan, (message) => clack.outro(message));
+}
 
+/** Lists the jobs, lets the user pick, shows the diff and writes it. `finish` gets the last line. */
+async function chooseAndWrite(plan: InitPlan, finish: (message: string) => void) {
   const routed = plan.jobs.filter((job) => job.verdict === "routed");
   const skipped = plan.jobs.filter((job) => job.verdict === "skipped");
   const ready = plan.jobs.filter((job) => job.verdict === "ready");
   if (routed.length) clack.note(routed.map(jobLine).join("\n"), "Already routed");
   if (skipped.length) clack.note(skipped.map(jobLine).join("\n"), "Skipped");
-  if (!ready.length) return clack.outro("No other jobs to route.");
+  if (!ready.length) return finish("No other jobs to route.");
 
   const picked = await clack.multiselect({
     message: "Route these jobs through RelayRunner?",
@@ -215,7 +220,7 @@ async function interactive(plan: InitPlan) {
     initialValues: ready,
     required: false,
   });
-  if (clack.isCancel(picked) || !picked.length) return clack.outro("Nothing changed.");
+  if (clack.isCancel(picked) || !picked.length) return finish("Nothing changed.");
 
   const changes = changesFor(plan, picked);
   for (const change of changes)
@@ -223,7 +228,7 @@ async function interactive(plan: InitPlan) {
   const ok = await clack.confirm({
     message: `Write ${changes.length === 1 ? "this change" : `these ${changes.length} changes`}?`,
   });
-  if (clack.isCancel(ok) || !ok) return clack.outro("Nothing changed.");
+  if (clack.isCancel(ok) || !ok) return finish("Nothing changed.");
 
   writeChanges(plan.root, changes);
   const warned = picked.filter((job) => job.warnings.length);
@@ -232,9 +237,54 @@ async function interactive(plan: InitPlan) {
       warned.map((job) => `${job.job}: ${job.warnings.join("; ")}`).join("\n"),
       "Check before it runs on your machine",
     );
-  clack.outro(
+  finish(
     `Updated ${changes.map((change) => change.file).join(", ")}. Commit and push to start routing.`,
   );
+}
+
+/**
+ * Whether `connect` should offer to set up this checkout: it's not public, nothing in it is routed
+ * yet, and at least one job could be.
+ */
+export function shouldOfferSetup(plan: InitPlan) {
+  return (
+    plan.visibility !== "public" &&
+    !isSetUp(plan.jobs) &&
+    plan.jobs.some((job) => job.verdict === "ready")
+  );
+}
+
+/**
+ * Run by `connect` before it goes online. Inside a repo that could use RelayRunner but doesn't
+ * yet, asks once whether to set it up (default no) and runs the same picker as `init`. A "no" is
+ * remembered for that repo, so later runs don't ask again; `relayrunner init` still works. Never
+ * throws: setup is a convenience, and `connect` goes online either way.
+ */
+export async function offerSetup(cwd = process.cwd()) {
+  try {
+    const plan = await planInit(cwd).catch((error: unknown) => {
+      if (error instanceof InitError) return null;
+      throw error;
+    });
+    if (!plan || !shouldOfferSetup(plan)) return;
+    const key = plan.repo ?? plan.root;
+    if (isDeclined(key)) return;
+    const answer = await clack.confirm({
+      message: `Set up ${plan.repo ?? basename(plan.root)} to run its CI on this machine?`,
+      initialValue: false,
+    });
+    if (clack.isCancel(answer)) return;
+    if (!answer) {
+      rememberDeclined(key);
+      clack.log.info("Not now. Run `relayrunner init` in this repo any time to set it up.");
+      return;
+    }
+    await chooseAndWrite(plan, (message) => clack.log.success(message));
+  } catch (error) {
+    clack.log.warn(
+      `Couldn't check this repo's workflows: ${error instanceof Error ? error.message : String(error)}`,
+    );
+  }
 }
 
 function describeRepo(plan: InitPlan) {
