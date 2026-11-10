@@ -2,8 +2,12 @@
 
 You are a coding agent setting up RelayRunner for the user. RelayRunner runs a private repo's
 GitHub Actions jobs on the user's own computer when it is online and free. Otherwise the jobs
-run on GitHub-hosted runners as usual. Setup has two parts: connect this computer, then opt
-jobs in with a small workflow change.
+run on their usual runners. Setup has three parts: sign this computer in, route the repo's jobs
+through RelayRunner, then put the computer online.
+
+The `relayrunner` CLI does the work. It decides which jobs can be routed and writes the workflow
+changes, so don't write the relay YAML from memory. You run the CLI, explain what it found, and
+only hand-edit a job when the CLI skipped it and the user asks you to.
 
 Work in the user's current checkout unless they name another. Explain each step in a sentence
 before you run it. Ask before changing any file.
@@ -13,144 +17,199 @@ before you run it. Ask before changing any file.
 - Supported systems are macOS and Linux, on x64 or ARM64. Windows is not supported yet. Stop
   and say so if the computer runs anything else.
 - Node.js 22 or newer: `node --version`.
-- The checkout's GitHub repo must be **private**. RelayRunner never routes public repos to a
-  personal computer. It can be owned by a GitHub organization or a personal account. Check with
-  `gh repo view --json visibility,owner` if the GitHub CLI is available, or ask the user.
 
-## 2. Install the CLI
+Install the CLI and check it has the commands this guide uses:
 
 ```sh
 npm install --global relayrunner@latest
 relayrunner --help
 ```
 
-If the user prefers not to install globally, use `npx relayrunner@latest` in place of
-`relayrunner` in every command below.
+The help should list `login`, `connect`, `whoami` and `init`. If the user prefers not to install
+globally, use `npx relayrunner@latest` in place of `relayrunner` in every command below.
 
-## 3. Connect this computer
-
-Check whether it is already connected:
+## 2. Sign this computer in
 
 ```sh
 relayrunner whoami --json
 ```
 
-- If `status` is `"ok"`, the computer is enrolled. Tell the user which machine and workspace
-  it is, and whether `machine.status.online` is true. Then go to step 4.
-- Otherwise it needs to sign in.
-
-`relayrunner connect` signs in on the first run, then stays running in the foreground. While
-it runs, the computer is online and takes jobs. When it stops, jobs go back to GitHub. Ask the
-user to run it **in their own terminal and leave it open**:
+- `status` `"ok"`: the computer is already enrolled. Tell the user which machine and workspace
+  it is (`machine.name`, `workspace.name`). Go to step 3.
+- `status` `"signed_out"` or `"revoked"`: run `relayrunner login`.
+- `status` `"unverified"`: the gateway couldn't be reached. Say so and try again before going on.
 
 ```sh
-relayrunner connect
+relayrunner login
 ```
 
-Don't run it yourself unless the user asks: it would go offline when your session ends.
+`login` prints a URL and a code, opens the browser, and waits until the user approves (up to 30
+minutes). Tell the user the URL and the code before you wait. In the browser they sign in with
+GitHub (this creates their account), create or pick a workspace, install the RelayRunner GitHub
+App on their organization or personal account, check that the code matches, and approve this
+computer. `login` then saves the machine's token and exits. It does not put the computer online.
 
-The first run opens the browser to the RelayRunner dashboard. There the user signs in with
-GitHub (this creates their account), creates a workspace, installs the RelayRunner GitHub App
-on their organization or personal account, and approves the computer. The terminal then says
-the machine is enrolled and online.
+If the workspace has other members, ask the user who can run jobs on this computer before you
+run `login`: only jobs they started (`only-me`, the default) or any job in the workspace
+(`anyone`). Pass their answer as `relayrunner login --share only-me` or `--share anyone`. They
+can change it later with `relayrunner share only-me` or `relayrunner share anyone`, and
+`relayrunner share` shows the current setting. Leave it to the user: don't change it yourself
+unless they ask.
 
-If the workspace has other members, `connect` asks who can run jobs on this computer: only
-jobs the user started (`only-me`, the default) or any job in the workspace (`anyone`). To set
-it without the question, add `--share only-me` or `--share anyone`. The user can change it
-later with `relayrunner share only-me` or `relayrunner share anyone`, and
-`relayrunner share` shows the current setting. Leave it to the user: don't change it
-yourself unless they ask.
+Run `relayrunner whoami --json` again and expect `status` `"ok"`. If the GitHub App install only
+sent a request to the org's owners, jobs start reaching this computer once an owner accepts it.
 
-When the user says it's done, check again with `relayrunner whoami --json`. Expect `status`
-`"ok"` and `machine.status.online` true. If the GitHub App install only sent a request to the
-org's owners, jobs start reaching this computer once an owner accepts it.
+## 3. See which jobs can be routed
 
-## 4. Choose the jobs
+```sh
+relayrunner init --plan --json
+```
 
-List the workflows in `.github/workflows/` and the jobs in each. Suggest jobs that can run on
-this computer, and let the user pick. A job is a good fit when:
+This changes nothing. The result looks like:
 
-- it runs on a GitHub-hosted label today, such as `ubuntu-latest`, or on a Blacksmith label,
-  such as `blacksmith-2vcpu-ubuntu-2404`. When the computer is offline or busy, an opted-in job
-  runs on that label, which you pass to the relay's `github` or `blacksmith` input (see step 5).
-- it has **no** `strategy.matrix`. Each routed job needs its own relay, so a matrix can't share
-  one.
-- it has no `container:` or `services:`, unless this computer is Linux with Docker running.
-- its steps work on this computer's OS. On macOS, check for Linux-only commands such as
-  `apt-get`, and for actions that only support Linux.
-- it doesn't deploy or use production secrets. It is the user's computer, so that is their
-  call, but point it out.
+```json
+{
+  "repo": "acme/api",
+  "visibility": "private",
+  "relay": "v1.0.0-beta.4",
+  "setUp": false,
+  "jobs": [
+    {
+      "file": ".github/workflows/ci.yml",
+      "job": "test",
+      "verdict": "ready",
+      "provider": "github",
+      "label": "ubuntu-latest",
+      "machine": "self-hosted",
+      "warnings": []
+    },
+    { "file": ".github/workflows/ci.yml", "job": "lint", "verdict": "routed", "warnings": [] },
+    {
+      "file": ".github/workflows/deploy.yml",
+      "job": "deploy",
+      "verdict": "skipped",
+      "reason": "looks like a deploy job (environment)",
+      "warnings": []
+    }
+  ],
+  "errors": []
+}
+```
 
-## 5. Show the patch, then apply it
+- If it has `"refused": "public_repo"`, stop. RelayRunner never sends a public repo's jobs to a
+  personal computer, so there is nothing to set up here. Tell the user.
+- If `visibility` is `"unknown"`, the CLI couldn't check. Ask the user, or check with
+  `gh repo view --json visibility` if the GitHub CLI is available. Only private repos route.
+- If it prints `{ "error": ... }`, tell the user what it says. The usual one is that the folder
+  isn't a git checkout.
 
-For each chosen job, add a relay job just before it. The relay is RelayRunner's reusable
-workflow, [`relayrunner/actions`](https://github.com/relayrunner/actions). It asks RelayRunner
-where this run of the job should go. Then point the job's `runs-on` at the relay's answer.
-Name the relay `relay-<job id>` so each routed job has its own.
+Go over the jobs with the user, grouped by `verdict`, in plain words:
 
-Before:
+- **ready**: can be routed. Say where it runs when this computer is offline or busy: `label` on
+  `provider` (GitHub-hosted or Blacksmith). A `macos-*` job only goes to macOS machines
+  (`machine` is `macOS`). Read out each `warnings` entry. They are things to check, such as a job
+  that installs Linux packages while this computer is a Mac, or one that needs Docker.
+- **routed**: already goes through RelayRunner. Nothing to do.
+- **skipped**: left alone, with the `reason`. Step 5 covers what can still be done by hand.
+
+Also mention anything in `errors`: a workflow file the CLI couldn't parse.
+
+Let the user pick which ready jobs to route. Suggesting all of them is fine, minus any whose
+warnings the user doesn't want to deal with.
+
+## 4. Route the chosen jobs
+
+```sh
+relayrunner init --apply test,lint --json
+```
+
+Name jobs by their id (`test`), or as `file:id` (`ci.yml:test`) when the same id is in more than
+one workflow. `all` routes every ready job. The CLI edits the files in `.github/workflows/`,
+keeps comments and formatting, and never commits. It refuses a job that isn't ready and says
+why.
+
+## 5. Skipped jobs (only if the user wants)
+
+Offer a hand edit only when the user wants a skipped job routed and the reason allows it:
+
+- **looks like a deploy job**: the job has an `environment`, `id-token: write`, or uses secrets.
+  Running it on the user's computer gives that computer those secrets, so it's their call. Only
+  route it if they say so.
+- **uses a matrix**, **runs-on is an expression**, **runs-on is a list of labels or a runner
+  group**, **calls a reusable workflow**, **part of a reusable workflow**: these can't be routed,
+  even by hand. One relay can't serve several matrix legs, and a reusable workflow decides its own
+  runner. Say so and move on.
+- **Windows**, **already runs on a self-hosted runner**, **isn't a GitHub-hosted or Blacksmith
+  label**: leave these alone.
+
+For a job the user does want routed, copy what `init` writes. Add a relay job just above it,
+named `relay-<job id>`, and point the job at the relay's answer:
 
 ```yaml
 jobs:
-  test:
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-      - run: npm test
-```
-
-After:
-
-```yaml
-jobs:
-  relay-test:
-    uses: relayrunner/actions/.github/workflows/relay.yml@v1.0.0-beta.2
+  relay-deploy:
+    uses: relayrunner/actions/.github/workflows/relay.yml@<relay>
     with:
       machine: self-hosted
       github: ubuntu-latest
 
-  test:
-    needs: relay-test
-    runs-on: ${{ needs.relay-test.outputs.runner }}
-    steps:
-      - uses: actions/checkout@v4
-      - run: npm test
+  deploy:
+    needs: relay-deploy
+    runs-on: ${{ needs.relay-deploy.outputs.runner }}
+    environment: production
+    steps: ...
 ```
 
-Use the `uses:` line exactly as shown. GitHub needs the full path to a reusable workflow, and
-the tag pins the version. The relay's inputs say which runners can take the job:
+- Replace `<relay>` with the `relay` value from `init --plan --json`, such as `v1.0.0-beta.4`.
+  Keep the rest of the `uses:` line exactly as shown.
+- Put the job's old `runs-on` label in `github`, or in `blacksmith` if it starts with
+  `blacksmith-`. Use `machine: macOS` instead of `self-hosted` if the old label starts with
+  `macos-`.
+- If the job already has `needs:`, add the relay to the list (`needs: [build, relay-deploy]`).
+  Keep everything else in the job as it is.
 
-- `machine` lists labels a machine must have, comma-separated, and a machine needs all of them.
-  `self-hosted` means any of the user's machines. To keep a job on matching machines only, name
-  the OS or architecture, such as `machine: macOS, ARM64`. Without `machine`, the job never runs
-  on the user's machines.
-- `github` is the GitHub-hosted label to use when no machine fits. Put the job's old
-  `runs-on` label here, such as `ubuntu-24.04` or `macos-latest`.
-- `blacksmith` is the Blacksmith label to use, such as `blacksmith-2vcpu-ubuntu-2404`. If the
-  job's old `runs-on` starts with `blacksmith-`, put it here instead of in `github`. Blacksmith
-  must also be in the workspace's runner order on the dashboard's Runners page; the user decides
-  where it goes. Blacksmith needs relay `v1.0.0-beta.4` or later.
+## 6. Show the diff
 
-If no runner fits, the relay fails with the reason, and the job doesn't start.
+```sh
+git diff
+```
 
-Keep everything else in the job as it is. Watch out for these cases:
+Show it to the user and say what each change does. The user commits and pushes. Don't commit or
+push for them unless they ask. The change takes effect on the next run, and the checks keep
+their names in GitHub.
 
-- **The job already has `needs:`.** Add the relay to the list (`needs: [build, relay-test]`).
-- **The job already has `if:`.** Keep it as it is.
-- **Other jobs depend on this one.** Leave them alone. They still depend on `test`.
+## 7. Put this computer online
 
-Show the user the full diff and wait for their approval before you write it. Then tell them
-to commit and push it. It takes effect on the next run, and the checks keep their names in
-GitHub.
+`relayrunner connect` is the on/off switch. While it runs, the computer is online and takes jobs.
+When it stops, jobs go back to their usual runners, with no workflow change. Ask the user how
+they want to run it:
 
-## 6. Confirm it works
+- **In their own terminal (recommended).** They run `relayrunner connect` and leave it open. It
+  keeps running after this session ends. Ctrl-C takes the computer offline.
+- **Started by you, for now.** Run `relayrunner connect` in the background. It's handy for
+  checking the first run, but it stops when your session ends, and the computer goes offline.
+  Tell the user that, and that they can run it themselves later.
 
-After the user pushes, a run of an opted-in job shows `relay-<job> / RelayRunner` finishing in
-about a second, then the job itself. In the job's log, the runner name tells where it ran: a name starting
-with this computer's machine name (from `relayrunner whoami`) means it ran here, and a
-GitHub-hosted name means the `github` label. If `relay-<job> / RelayRunner` stays
-queued, the GitHub App is probably not installed on the repo's owner.
-The user can check under Settings → GitHub accounts in the dashboard.
+If `connect` asks whether to set up the repo, it means nothing is routed yet. Answer no, since
+you did that in step 4 (or nothing was picked).
 
-To stop using this computer for a while, the user presses Ctrl-C in the `relayrunner connect`
-terminal. Jobs go back to GitHub-hosted runners, with no workflow change.
+## 8. Confirm it works
+
+After the user pushes and `connect` is running, a run of a routed job shows `relay-<job> /
+RelayRunner` finishing in about a second, then the job itself. In the job's log, the runner name
+tells where it ran: a name starting with this computer's machine name (from `relayrunner whoami`)
+means it ran here, and a GitHub-hosted name means the fallback label. If
+`relay-<job> / RelayRunner` stays queued, the GitHub App is probably not installed on the repo's
+owner, or doesn't cover this repo. The user can check under Settings → GitHub accounts in the
+dashboard.
+
+To take this computer out of the rotation for a while, the user stops `relayrunner connect`, or
+runs `relayrunner pause` to stay connected but take no new jobs (`relayrunner resume` undoes it).
+
+## If the CLI can't be used
+
+Only if `relayrunner init` isn't available (an old CLI that can't be upgraded), write the same
+change by hand for each ready job, as in step 5, using relay version `v1.0.0-beta.4`. Use the
+same rules: no matrix, a plain GitHub-hosted (`ubuntu-*`, `macos-*`) or Blacksmith
+(`blacksmith-*`) `runs-on`, and no deploy jobs unless the user says so. Blacksmith also needs to
+be in the workspace's runner order on the dashboard's Runners page.
