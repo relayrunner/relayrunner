@@ -131,8 +131,11 @@ export async function generateJitConfig(
     }),
   });
   if (!response.ok)
-    throw new Error(
-      `POST ${path} failed with ${response.status}: ${(await response.text()).slice(0, 300)}`,
+    throw Object.assign(
+      new Error(
+        `POST ${path} failed with ${response.status}: ${(await response.text()).slice(0, 300)}`,
+      ),
+      { status: response.status },
     );
   const body = (await response.json()) as {
     runner: { id: number; labels?: { name: string }[] };
