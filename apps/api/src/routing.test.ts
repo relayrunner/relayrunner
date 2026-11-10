@@ -246,6 +246,8 @@ describe("jobContext", () => {
       machine: [],
       github: [],
       blacksmith: [],
+      startedBy: null,
+      triggeredBy: null,
     });
     expect(
       jobContext(
@@ -262,6 +264,40 @@ describe("jobContext", () => {
       machine: [],
       github: [],
       blacksmith: [],
+      startedBy: null,
+      triggeredBy: null,
+    });
+  });
+
+  test("reads who started the run and this attempt", () => {
+    const run = (extra: [string, unknown][]) =>
+      jobContext(github([["repository", "a/b"], ["run_id", "5"], ...extra]));
+    // A first attempt: the triggering actor is the actor, so it shares the id.
+    expect(
+      run([
+        ["actor", "atticoos"],
+        ["actor_id", "656630"],
+        ["triggering_actor", "Atticoos"],
+      ]),
+    ).toMatchObject({
+      startedBy: { id: 656630, login: "atticoos" },
+      triggeredBy: { id: 656630, login: "Atticoos" },
+    });
+    // A re-run by someone else: the context has only their login.
+    expect(
+      run([
+        ["actor", "atticoos"],
+        ["actor_id", "656630"],
+        ["triggering_actor", "dependabot[bot]"],
+      ]),
+    ).toMatchObject({
+      startedBy: { id: 656630, login: "atticoos" },
+      triggeredBy: { id: null, login: "dependabot[bot]" },
+    });
+    // No triggering_actor reads as the actor; no actor_id keeps the login.
+    expect(run([["actor", "zach"]])).toMatchObject({
+      startedBy: { id: null, login: "zach" },
+      triggeredBy: { id: null, login: "zach" },
     });
   });
 
@@ -294,6 +330,8 @@ describe("jobContext", () => {
       machine: ["self-hosted"],
       github: ["ubuntu-latest"],
       blacksmith: [],
+      startedBy: null,
+      triggeredBy: null,
     });
   });
 

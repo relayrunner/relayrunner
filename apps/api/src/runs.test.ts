@@ -102,6 +102,8 @@ function runMessage(
       displayTitle: "feat: add the runs page",
       event: "pull_request",
       actorLogin: "zach",
+      startedBy: { id: 2, login: "zach" },
+      triggeredBy: { id: 2, login: "zach" },
       headBranch: "runs-page",
       headSha: "abc",
       pullRequestNumber: 12,

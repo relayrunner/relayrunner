@@ -45,15 +45,21 @@ export async function signIn(env: Env) {
     { method: "admin" },
   );
   const githubToken = `gho_user${users}`;
+  const githubId = 1000 + users;
   await ctx.internalAdapter.createAccount({
     userId: user.id,
     providerId: "github",
-    accountId: String(1000 + users),
+    accountId: String(githubId),
     accessToken: githubToken,
   });
   const session = await ctx.internalAdapter.createSession(user.id);
   const signed = `${session.token}.${await makeSignature(session.token, env.BETTER_AUTH_SECRET)}`;
-  return { user, githubToken, cookie: `better-auth.session_token=${encodeURIComponent(signed)}` };
+  return {
+    user,
+    githubId,
+    githubToken,
+    cookie: `better-auth.session_token=${encodeURIComponent(signed)}`,
+  };
 }
 
 export function call(env: Env, path: string, cookie: string, body?: unknown) {

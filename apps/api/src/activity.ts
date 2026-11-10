@@ -5,6 +5,7 @@ import {
   type ActivityPage,
   type ActivityQuery,
   type ActivityResult,
+  type ActivityStarters,
   type DisconnectReason,
   type RouteWalk,
 } from "@relayrunner/activity";
@@ -26,7 +27,14 @@ import {
 import { alias } from "drizzle-orm/sqlite-core";
 import { type Db, schema } from "./db/index.ts";
 import { presentJob } from "./jobs.ts";
-import { jobKey, walksForJobs } from "./route-decisions.ts";
+import { jobKey, picksForJobs } from "./route-decisions.ts";
+import {
+  githubIds,
+  membersByGithubId,
+  presentStarters,
+  runStartersForJobs,
+  type RunStarters,
+} from "./job-starters.ts";
 
 const table = schema.activityEvent;
 
@@ -194,12 +202,34 @@ export async function listActivity(
     .orderBy(desc(table.id))
     .limit(ACTIVITY_PAGE_SIZE + 1);
   const page = rows.slice(0, ACTIVITY_PAGE_SIZE);
-  const walks = await walksForJobs(
+  const jobs = page.flatMap((row) => (row.job ? [row.job] : []));
+  const picks = await picksForJobs(db, jobs);
+  const starters = await runStartersForJobs(db, jobs, picks, jobKey);
+  // A relay that couldn't route keeps its starters on its own entry.
+  const unroutableStarters = new Map<number, RunStarters>();
+  for (const row of page) {
+    if (row.event.type !== "job.unroutable") continue;
+    const data = row.event.data as {
+      startedBy?: RunStarters["startedBy"];
+      triggeredBy?: RunStarters["triggeredBy"];
+    };
+    unroutableStarters.set(row.event.id, {
+      startedBy: data.startedBy ?? null,
+      triggeredBy: data.triggeredBy ?? null,
+    });
+  }
+  const members = await membersByGithubId(
     db,
-    page.flatMap((row) => (row.job ? [row.job] : [])),
+    workspaceId,
+    githubIds([...starters.values(), ...unroutableStarters.values()]),
   );
   const items = page.flatMap((row) => {
-    const item = presentEvent(row, row.job ? (walks.get(jobKey(row.job)) ?? null) : null);
+    const key = row.job ? jobKey(row.job) : null;
+    const item = presentEvent(
+      row,
+      key ? (picks.get(key)?.walk ?? null) : null,
+      presentStarters(key ? starters.get(key) : unroutableStarters.get(row.event.id), members),
+    );
     return item ? [item] : [];
   });
   return {
@@ -356,7 +386,11 @@ type Row = {
 
 // Null for a row whose type or data no longer parses (a type that was since removed), so one bad
 // row never breaks the page.
-function presentEvent(row: Row, walk: RouteWalk | null): ActivityItem | null {
+function presentEvent(
+  row: Row,
+  walk: RouteWalk | null,
+  starters: ActivityStarters,
+): ActivityItem | null {
   const parsed = ActivityEvent.safeParse({ type: row.event.type, data: row.event.data });
   if (!parsed.success) return null;
   const event = parsed.data;
@@ -373,6 +407,7 @@ function presentEvent(row: Row, walk: RouteWalk | null): ActivityItem | null {
       snapshot === null
         ? null
         : { id: row.event.machineId, name: row.eventMachineName ?? snapshot },
-    job: row.job ? presentJob(row.job, row.private, row.jobMachineName, walk) : null,
+    job: row.job ? presentJob(row.job, row.private, row.jobMachineName, walk, starters) : null,
+    ...(event.type === "job.unroutable" ? { starters } : {}),
   };
 }

@@ -13,6 +13,24 @@ export type ActivityRunner =
   | { type: "github"; label: string }
   | { type: "blacksmith"; label: string };
 
+/**
+ * Who started a run or attempt, as the log shows them: the workspace member with that GitHub
+ * account, or null for a bot or someone outside the workspace, who shows as `login`.
+ */
+export interface ActivityStarter {
+  login: string;
+  member: { id: string; name: string } | null;
+}
+
+/**
+ * Who started the job's run, and who re-ran it when that's someone else (null otherwise). Both
+ * null for runs RelayRunner saw before it kept this.
+ */
+export interface ActivityStarters {
+  startedBy: ActivityStarter | null;
+  rerunBy: ActivityStarter | null;
+}
+
 /** A routed job's current state. */
 export interface ActivityJob {
   id: number;
@@ -39,6 +57,8 @@ export interface ActivityJob {
   url: string;
   /** The job's run on GitHub. */
   runUrl: string;
+  /** Who started the run, and who re-ran it. */
+  starters: ActivityStarters;
 }
 
 /** One entry in the log. `job` is set for job events, `machine` for machine events. */
@@ -56,6 +76,8 @@ export type ActivityItem = ActivityEvent & {
    * out of the log, since this entry already says they couldn't run.
    */
   jobsNotRun?: string[];
+  /** For a `job.unroutable` relay: who started the run, and who re-ran it. */
+  starters?: ActivityStarters;
 };
 
 export interface ActivityPage {

@@ -16,6 +16,8 @@ export type {
   ActivityQuery,
   ActivityResult,
   ActivityRunner,
+  ActivityStarter,
+  ActivityStarters,
 } from "@relayrunner/activity";
 
 /** A page of the workspace's Activity log, newest first, narrowed on the server by `query`. */

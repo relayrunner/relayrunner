@@ -168,6 +168,27 @@ export async function workflowJobStatus(token: string, repo: string, jobId: numb
   return ((await response.json()) as { status: string }).status;
 }
 
+/**
+ * Who started one attempt of a run (its `triggering_actor`), or null when GitHub doesn't say. For
+ * a pick whose context names a re-runner other than the run's actor: the context has no id.
+ */
+export async function runAttemptTriggeringActor(
+  token: string,
+  repo: string,
+  runId: number,
+  runAttempt: number,
+): Promise<{ id: number; login: string } | null> {
+  const path = `/repos/${repo}/actions/runs/${runId}/attempts/${runAttempt}`;
+  const response = await fetch(`${API}${path}`, { headers: headers(token) });
+  if (!response.ok) throw new Error(`GET ${path} failed with ${response.status}`);
+  const actor = (
+    (await response.json()) as { triggering_actor?: { id?: unknown; login?: unknown } }
+  ).triggering_actor;
+  return typeof actor?.id === "number" && typeof actor.login === "string"
+    ? { id: actor.id, login: actor.login }
+    : null;
+}
+
 /** Whether a runner is busy with a job, or null once it's removed (404). */
 export async function runnerBusy(token: string, scope: RunnerScope, runnerId: number) {
   const path = `${runnersPath(scope)}/${runnerId}`;

@@ -15,6 +15,7 @@ import {
   type RunnerKey,
   type RunnerOrder,
 } from "@relayrunner/runner-order";
+import type { GithubActor } from "@relayrunner/activity";
 import type { AccountUsage } from "./actions-billing.ts";
 import { minutesCheck, type MinutesSkip } from "./minutes-rule.ts";
 import { context, scalar } from "./pipeline-context.ts";
@@ -202,6 +203,12 @@ export interface JobContext {
   github: string[];
   // The Blacksmith runner label(s) from the relay's `blacksmith` input. Empty when left out.
   blacksmith: string[];
+  // Who started the run (`github.actor`, `github.actor_id`), or null when missing.
+  startedBy: GithubActor | null;
+  // Who started this attempt (`github.triggering_actor`), which differs from `startedBy` on a
+  // re-run by someone else. The context has only the login: the id is the actor's when the logins
+  // match, else null until the pick looks it up (resolveTriggeredBy).
+  triggeredBy: GithubActor | null;
 }
 
 // Reads the job message's `contextData` (src/pipeline-context.ts). Returns null when
@@ -217,6 +224,15 @@ export function jobContext(contextData: unknown): JobContext | null {
   const inputs = context(contextData, "inputs");
   const runAttempt = Number(scalar(github.get("run_attempt")));
   const workflow = scalar(github.get("workflow"));
+  const startedBy = actorOf(scalar(github.get("actor")), scalar(github.get("actor_id")));
+  const triggeringLogin = scalar(github.get("triggering_actor"));
+  const triggeredBy =
+    typeof triggeringLogin === "string" && triggeringLogin
+      ? {
+          login: triggeringLogin,
+          id: startedBy && sameLogin(startedBy.login, triggeringLogin) ? startedBy.id : null,
+        }
+      : startedBy;
   return {
     repo,
     runId,
@@ -225,8 +241,22 @@ export function jobContext(contextData: unknown): JobContext | null {
     machine: parseLabels(scalar(inputs?.get("machine"))),
     github: parseLabels(scalar(inputs?.get("github"))),
     blacksmith: parseLabels(scalar(inputs?.get("blacksmith"))),
+    startedBy,
+    triggeredBy,
   };
 }
+
+function actorOf(login: unknown, id: unknown): GithubActor | null {
+  if (typeof login !== "string" || !login) return null;
+  const n = Number(id);
+  return {
+    login,
+    id: id !== undefined && id !== "" && Number.isSafeInteger(n) && n > 0 ? n : null,
+  };
+}
+
+// GitHub logins are case-insensitive.
+export const sameLogin = (a: string, b: string) => a.toLowerCase() === b.toLowerCase();
 
 // Why a step of the order didn't answer: not_configured (the relay left the provider's input
 // empty), public_repo (machines never run a public repo's jobs), no_machine (no online, idle

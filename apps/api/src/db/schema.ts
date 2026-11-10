@@ -398,6 +398,12 @@ export const workflowRun = sqliteTable(
     // What triggered it: push, pull_request, schedule, workflow_dispatch, ...
     event: text("event").notNull(),
     actorLogin: text("actor_login"),
+    // Who started the run (github.actor) and this attempt (github.triggering_actor), by GitHub
+    // account id and login (#241). The id matches a member's GitHub sign-in. Null before #241.
+    startedById: integer("started_by_id"),
+    startedByLogin: text("started_by_login"),
+    triggeredById: integer("triggered_by_id"),
+    triggeredByLogin: text("triggered_by_login"),
     headBranch: text("head_branch"),
     headSha: text("head_sha").notNull(),
     pullRequestNumber: integer("pull_request_number"),
@@ -483,6 +489,12 @@ export const routeDecision = sqliteTable(
     blacksmith: text("blacksmith", { mode: "json" }).$type<string[]>().notNull().default([]),
     // The message the relay failed with, when nothing fit.
     reason: text("reason"),
+    // Who started the run (github.actor) and this attempt (github.triggering_actor), by GitHub
+    // account id and login (#241). The id matches a member's GitHub sign-in. Null before #241.
+    startedById: integer("started_by_id"),
+    startedByLogin: text("started_by_login"),
+    triggeredById: integer("triggered_by_id"),
+    triggeredByLogin: text("triggered_by_login"),
     createdAt: integer("created_at", { mode: "timestamp_ms" })
       .notNull()
       .$defaultFn(() => new Date()),
