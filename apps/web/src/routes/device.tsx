@@ -1,5 +1,5 @@
 import { createFileRoute, Link, useNavigate, useRouter } from "@tanstack/react-router";
-import { ArrowRightIcon, CheckIcon } from "lucide-react";
+import { CheckIcon } from "lucide-react";
 import { useEffect, useState, type FormEvent, type ReactNode } from "react";
 import { Brand } from "@/components/brand";
 import { CreateWorkspaceForm } from "@/components/create-workspace-form";
@@ -146,7 +146,9 @@ function DevicePage() {
   return (
     <main className="grid min-h-screen place-items-center p-4">
       <div className="flex w-full max-w-sm flex-col items-center gap-6">
-        <Brand />
+        <Link to="/" aria-label="relayrunner home" className="rounded-md">
+          <Brand />
+        </Link>
         {loaded.kind === "enter" && <EnterCode />}
         {loaded.kind === "error" && (
           <Message title="Can't connect this machine" body={loaded.message} />
@@ -242,17 +244,7 @@ function Onboarding({ loaded }: { loaded: Extract<Loaded, { kind: "review" }> })
     return (
       <Message
         title="Machine connected"
-        body={`${result.name} is enrolled. Head back to your terminal; it finishes on its own.`}
-        action={
-          // Low emphasis on purpose: most people just close the tab.
-          <Link
-            to="/runners"
-            className="inline-flex items-center gap-1 text-sm text-muted-foreground underline-offset-4 hover:text-foreground hover:underline"
-          >
-            Go to dashboard
-            <ArrowRightIcon aria-hidden className="size-3.5" />
-          </Link>
-        }
+        body={`${result.name} is enrolled. Head back to your terminal; it finishes on its own. You can close this tab.`}
       />
     );
   if (result?.action === "denied")
