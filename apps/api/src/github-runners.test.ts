@@ -160,8 +160,10 @@ describe("adding GitHub runners", () => {
     // The Router's cached runner list, read fresh here so each test sees its own runners.
     env.ROUTER = {
       getByName: () => ({
-        githubRunners: (_installationId: number, org: string) =>
-          listOrgRunners("ghs_test", org).catch(() => null),
+        githubRunners: (_installationId: number, org: string) => {
+          routerReads += 1;
+          return listOrgRunners("ghs_test", org).catch(() => null);
+        },
       }),
     } as unknown as Env["ROUTER"];
   }, 60_000);
@@ -183,6 +185,8 @@ describe("adding GitHub runners", () => {
   let groups: { id: number; name: string; visibility: string; restricted_to_workflows?: boolean }[];
   let labelCalls: { method: string; url: string; body?: unknown }[];
   let githubPaths: string[];
+  // Runner lists read through the Router's cache (the fake reads GitHub every time).
+  let routerReads = 0;
 
   beforeEach(() => {
     runners = [
@@ -284,6 +288,7 @@ describe("adding GitHub runners", () => {
 
   test("groups=false reads only the runner list, for the found card", async () => {
     const { cookie } = await setup();
+    const before = routerReads;
     const response = await testing.call(env, "/machines/github-runners?groups=false", cookie);
     expect(response.status).toBe(200);
     const { orgs } = (await response.json()) as {
@@ -293,6 +298,8 @@ describe("adding GitHub runners", () => {
     expect(githubPaths.filter((path) => path.includes("/actions/"))).toEqual([
       expect.stringMatching(/\/actions\/runners$/),
     ]);
+    // Through the Router's short cache, shared with GET /machines.
+    expect(routerReads).toBe(before + 1);
   });
 
   test("adds a runner: labels it on GitHub and lists it with its live status", async () => {
