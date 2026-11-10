@@ -4,6 +4,7 @@ import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, test, vi 
 import { app } from "./app.ts";
 import type { Env } from "./env.ts";
 import { dashboardPath, type GitHubInstallation, verifyInstallState } from "./github.ts";
+import { landingAfterSignIn } from "./routes/github.ts";
 import * as testing from "./testing.ts";
 import { processWebhook } from "./webhook-queue.ts";
 
@@ -310,9 +311,8 @@ describe("connecting a GitHub org", () => {
     expect(invalid.headers.get("location")).toBe("/settings/github?github=invalid");
 
     const signedOut = await app.request("/api/github/setup?installation_id=1", {}, env);
-    expect(signedOut.headers.get("location")).toBe(
-      `/login?redirect=${encodeURIComponent("/settings/github?github=unclaimed")}`,
-    );
+    // Signs in with GitHub, then lands on settings to claim it (landingAfterSignIn).
+    expect(new URL(signedOut.headers.get("location")!).pathname).toBe("/login/oauth/authorize");
   });
 });
 
@@ -376,7 +376,7 @@ describe("coming back to a dashboard page after the install (next)", () => {
     expect(response.headers.get("location")).toBe(`${device}&github=requested`);
   });
 
-  test("signed out on the way back, sign-in returns to next", async () => {
+  test("signed out on the way back, it signs in with GitHub", async () => {
     const { cookie } = await owner();
     const state = await installState(cookie, device);
     const response = await app.request(
@@ -384,7 +384,83 @@ describe("coming back to a dashboard page after the install (next)", () => {
       {},
       env,
     );
-    expect(response.headers.get("location")).toBe(`/login?redirect=${encodeURIComponent(device)}`);
+    expect(response.status).toBe(302);
+    const location = new URL(response.headers.get("location")!);
+    expect(`${location.origin}${location.pathname}`).toBe(
+      "https://github.com/login/oauth/authorize",
+    );
+    expect(location.searchParams.get("state")).toBeTruthy();
+    expect(response.headers.getSetCookie().join("\n")).toContain("better-auth.state");
+  });
+
+  test("after that sign-in it lands on next, naming the installation to claim", () => {
+    expect(landingAfterSignIn({ next: device, requested: false, installationId: 9 })).toBe(
+      `${device}&installed=9`,
+    );
+    expect(landingAfterSignIn({ next: device, requested: true, installationId: null })).toBe(
+      `${device}&github=requested`,
+    );
+    expect(landingAfterSignIn({ next: null, requested: false, installationId: 9 })).toBe(
+      "/settings/github?github=unclaimed",
+    );
+  });
+
+  test("/signup goes straight to the install page and remembers next in a cookie", async () => {
+    const response = await app.request(
+      `${env.BETTER_AUTH_URL}/api/github/signup?next=${encodeURIComponent(device)}`,
+      {},
+      env,
+    );
+    expect(response.headers.get("location")).toBe(
+      "https://github.com/apps/relayrunner-test/installations/new",
+    );
+    const cookie = response.headers.getSetCookie().find((c) => c.startsWith("rr_signup_next="));
+    expect(cookie).toContain(encodeURIComponent(device));
+    expect(cookie).toContain("HttpOnly");
+  });
+
+  test("/signup on another host moves to the production host first", async () => {
+    const response = await app.request(
+      `https://preview.example/api/github/signup?next=${encodeURIComponent(device)}`,
+      {},
+      env,
+    );
+    expect(response.headers.get("location")).toBe(
+      `${new URL(env.BETTER_AUTH_URL).origin}/api/github/signup?next=${encodeURIComponent(device)}`,
+    );
+  });
+
+  test("setup with the signup cookie, signed out, signs in with GitHub", async () => {
+    const response = await app.request(
+      `${env.BETTER_AUTH_URL}/api/github/setup?code=abc&installation_id=5&setup_action=install`,
+      { headers: { cookie: `rr_signup_next=${encodeURIComponent(device)}` } },
+      env,
+    );
+    expect(new URL(response.headers.get("location")!).pathname).toBe("/login/oauth/authorize");
+  });
+
+  test("setup with the signup cookie, signed in, hands the installation to next", async () => {
+    const { githubToken, cookie } = await owner();
+    const github = installation();
+    visibleTo.set(githubToken, [github]);
+    const response = await call(
+      `/github/setup?code=abc&installation_id=${github.id}&setup_action=install`,
+      `${cookie}; rr_signup_next=${encodeURIComponent(device)}`,
+    );
+    expect(response.headers.get("location")).toBe(`${device}&installed=${github.id}`);
+  });
+
+  test("when GitHub drops the state, /install's cookie still links the installation", async () => {
+    const { githubToken, workspace, cookie } = await owner();
+    const github = installation();
+    visibleTo.set(githubToken, [github]);
+    const state = await installState(cookie, device);
+    const response = await call(
+      `/github/setup?code=abc&installation_id=${github.id}&setup_action=install`,
+      `${cookie}; rr_install_state=${encodeURIComponent(state)}`,
+    );
+    expect(response.headers.get("location")).toBe(`${device}&github=connected`);
+    expect(await row(github.id)).toMatchObject({ workspace_id: workspace.id });
   });
 
   test("setup on another host hands back to the origin the install started on", async () => {
