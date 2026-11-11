@@ -142,8 +142,8 @@ export class LintRunner extends DurableObject<Env> {
   ): Promise<LintResult[] | { error: string }> {
     const startedAt = Date.now();
     const token = tokens.checks;
-    const codeToken = tokens.job ?? token;
-    if (!codeToken) return { error: "no token to read the commit with" };
+    // The job's own token first. A job without `contents: read` falls back to the Checks App.
+    const codeTokens = [tokens.job, token].filter((value) => value !== undefined);
     const checkRuns = new Map(
       token
         ? await Promise.all(
@@ -167,7 +167,7 @@ export class LintRunner extends DurableObject<Env> {
       );
     let results: LintResult[];
     try {
-      results = await this.lint(work, codeToken, tools, paths);
+      results = await this.lint(work, codeTokens, tools, paths);
     } catch (error) {
       // GitHub refuses, or answers 404 for a private repo, when the job's token can't read code.
       const hint =
@@ -193,9 +193,10 @@ export class LintRunner extends DurableObject<Env> {
     return results;
   }
 
+  // `tokens` are tried in order to read the commit: the next one only when GitHub refuses one.
   private async lint(
     work: LintTarget,
-    token: string,
+    tokens: string[],
     tools: LintTool[],
     paths: string[],
   ): Promise<LintResult[]> {
@@ -206,7 +207,15 @@ export class LintRunner extends DurableObject<Env> {
     const port = container.getTcpPort(LINT_PORT);
     // GitHub's redirect and first bytes overlap with the container's boot.
     const [tarball] = await Promise.all([
-      repoTarball(token, work.repo, work.headSha),
+      tokens.slice(1).reduce(
+        (tarball, token) =>
+          tarball.catch((error) => {
+            if (!(error instanceof GitHubAccessError)) throw error;
+            log("commit read refused, trying the next token", work, { status: error.status });
+            return repoTarball(token, work.repo, work.headSha);
+          }),
+        repoTarball(tokens[0], work.repo, work.headSha),
+      ),
       waitForHealth(port),
     ]);
     const query = new URLSearchParams({ tools: tools.join(",") });
