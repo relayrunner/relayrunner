@@ -19,7 +19,12 @@ import {
   type RunnerKey,
   type RunnerOrder,
 } from "@relayrunner/runner-order";
-import type { GithubActor, MachineSharing, NotSharedMachine } from "@relayrunner/activity";
+import type {
+  FullMachine,
+  GithubActor,
+  MachineSharing,
+  NotSharedMachine,
+} from "@relayrunner/activity";
 import type { AccountUsage } from "./actions-billing.ts";
 import { minutesCheck, type MinutesSkip } from "./minutes-rule.ts";
 import { context, scalar } from "./pipeline-context.ts";
@@ -78,9 +83,9 @@ export function holdsMachine(route: Route, now: number) {
 }
 
 // A connected machine is in every workspace its owner belongs to, and each workspace has its own
-// Router, so the route that holds a machine is also kept on the machine itself (its MachineLink).
-// Whichever route takes the hold first gets the machine; another workspace's pick tries its next
-// candidate.
+// Router, so the routes that hold a machine are also kept on the machine itself (its MachineLink),
+// one hold per route. While a route's hold stands, it takes one of the machine's slots; another
+// workspace's pick that finds every slot taken tries its next candidate.
 export interface MachineHold {
   routeId: string;
   // The workspace whose Router made the route.
@@ -90,15 +95,19 @@ export interface MachineHold {
 }
 
 /**
- * The hold a route takes on a machine, or null when another route still holds it. Taking it again
- * for the same route renews it.
+ * The hold a route takes on a machine, or null when the machine has no free slot: its other
+ * unexpired holds plus the jobs it reports running already fill its slots. Taking it again for a
+ * route that still holds the machine renews it.
  */
 export function takeHold(
-  current: MachineHold | undefined,
+  holds: MachineHold[],
   want: { routeId: string; workspaceId: string },
+  capacity: { slots: number; running: number },
   now: number,
 ): MachineHold | null {
-  if (current && current.routeId !== want.routeId && now < current.until) return null;
+  const live = holds.filter((hold) => now < hold.until);
+  const renews = live.some((hold) => hold.routeId === want.routeId);
+  if (!renews && live.length + capacity.running >= capacity.slots) return null;
   return { ...want, until: now + ROUTE_HOLD_MS };
 }
 
@@ -124,6 +133,10 @@ export interface Candidate {
   name: string;
   online: boolean;
   state: "idle" | "busy" | null;
+  // How many jobs it runs at once, and how many it reports running. Left out (a runner added from
+  // GitHub) means one slot, in use while busy.
+  slots?: number;
+  running?: number;
   // The machine's runner labels (machineLabels).
   labels: string[];
   // Paused machines stay connected but never take a new job.
@@ -217,16 +230,41 @@ export function lastPicked(routes: Route[]): Map<string, number> {
   return picked;
 }
 
+// How many of a machine's routes a Router holds, by machine id. Routes held for a machine count
+// against its slots until the job starts and the machine counts it as running instead.
+export type HeldSlots = ReadonlyMap<string, number>;
+
+/** Routes still holding their machine (holdsMachine), counted per machine. */
+export function heldSlots(routes: Route[], now: number): Map<string, number> {
+  const held = new Map<string, number>();
+  for (const route of routes)
+    if (holdsMachine(route, now)) held.set(route.machineId, (held.get(route.machineId) ?? 0) + 1);
+  return held;
+}
+
+/** Slots in use: jobs running plus routes held, out of its slots. Offline counts as none free. */
+function slotsInUse(machine: Candidate, held: number) {
+  const slots = machine.slots ?? 1;
+  const running = machine.running ?? (machine.state === "busy" ? 1 : 0);
+  return { slots, used: machine.online ? running + held : slots };
+}
+
+/** Whether an online machine has a slot no running job or held route takes. */
+export function hasFreeSlot(machine: Candidate, held: HeldSlots) {
+  const { slots, used } = slotsInUse(machine, held.get(machine.id) ?? 0);
+  return machine.online && used < slots;
+}
+
 /**
- * Of the machines with every wanted label whose sharing takes the job, the online, idle, unpaused
- * one no route holds, or null. The job starter's own machines come first; then the least recently
- * picked (never picked first), ties keeping the candidates' order. No wanted labels means none is
- * required; a job that names no machine labels doesn't get here. No starters means nobody's job:
- * only `anyone` machines take it.
+ * Of the machines with every wanted label whose sharing takes the job, the online, unpaused one
+ * with a free slot (hasFreeSlot), or null. The job starter's own machines come first; then the
+ * least recently picked (never picked first), ties keeping the candidates' order. No wanted labels
+ * means none is required; a job that names no machine labels doesn't get here. No starters means
+ * nobody's job: only `anyone` machines take it.
  */
 export function chooseMachine(
   candidates: Candidate[],
-  held: Set<string>,
+  held: HeldSlots,
   picked: Map<string, number> = new Map(),
   wanted: string[] = [],
   starters: JobStarters = { startedBy: null, triggeredBy: null },
@@ -236,8 +274,7 @@ export function chooseMachine(
   let bestOwn = false;
   let bestAt = Infinity;
   for (const machine of candidates) {
-    if (!machine.online || machine.state !== "idle" || machine.paused || held.has(machine.id))
-      continue;
+    if (machine.paused || !hasFreeSlot(machine, held)) continue;
     if (!hasLabels(machine.labels, wanted) || !admits(machine, starters)) continue;
     const own = starter !== null && machine.ownerGithubId === starter;
     const at = picked.get(machine.id) ?? -Infinity;
@@ -248,6 +285,31 @@ export function chooseMachine(
     }
   }
   return best;
+}
+
+/**
+ * When chooseMachine found nothing but some online, unpaused machine fits the job (labels and
+ * sharing), and every such machine is full: each one's slots in use, counting held routes (at most
+ * its slots). Null otherwise, so offline-only or no fitting machine reads as no_machine.
+ */
+export function fullMachines(
+  candidates: Candidate[],
+  held: HeldSlots,
+  wanted: string[] = [],
+  starters: JobStarters = { startedBy: null, triggeredBy: null },
+): FullMachine[] | null {
+  const fitting = candidates.filter(
+    (machine) =>
+      machine.online &&
+      !machine.paused &&
+      hasLabels(machine.labels, wanted) &&
+      admits(machine, starters),
+  );
+  if (fitting.length === 0 || fitting.some((machine) => hasFreeSlot(machine, held))) return null;
+  return fitting.map((machine) => {
+    const { slots, used } = slotsInUse(machine, held.get(machine.id) ?? 0);
+    return { machine: machine.name, running: Math.min(used, slots), slots };
+  });
 }
 
 /**
@@ -388,13 +450,20 @@ export interface SkippedStep {
   paused?: string[];
   // machine_not_shared: the machines that fit but only run their owner's jobs.
   notShared?: NotSharedMachine[];
+  // machine_full: the machines that fit, each with its slots in use.
+  full?: FullMachine[];
   // minutes_limit and minutes_runway: the job's GitHub account and its usage at the pick.
   minutes?: Omit<MinutesSkip, "reason">;
 }
 
 // What the machine step's pick found: a route label, every matching machine paused, no matching
-// machine taking this job's starter, or nothing.
-export type MachinePick = string | { paused: string[] } | { notShared: NotSharedMachine[] } | null;
+// machine taking this job's starter, every online one that fits full, or nothing.
+export type MachinePick =
+  | string
+  | { paused: string[] }
+  | { notShared: NotSharedMachine[] }
+  | { full: FullMachine[] }
+  | null;
 
 // `notInOrder` lists providers the job configured that the order leaves out, either way, so an
 // ignored input is never silent.
@@ -438,6 +507,8 @@ export async function decideRoute(
           skipped.push({ key, reason: "machine_not_shared", notShared: pick.notShared });
         else if (pick && "paused" in pick && pick.paused.length > 0)
           skipped.push({ key, reason: "machine_paused", paused: pick.paused });
+        else if (pick && "full" in pick && pick.full.length > 0)
+          skipped.push({ key, reason: "machine_full", full: pick.full });
         else skipped.push({ key, reason: "no_machine" });
       }
     } else if (key === "github") {
@@ -473,7 +544,7 @@ export function noRunnerReason(
 ): string {
   if (RUNNER_KEYS.every((key) => job[key].length === 0))
     return `${NO_RUNNER}: the relay sets no provider, such as \`machine\` or \`github\`.`;
-  const parts = skipped.map(({ key, reason, paused = [], notShared = [], minutes }) => {
+  const parts = skipped.map(({ key, reason, paused = [], notShared = [], full = [], minutes }) => {
     switch (reason) {
       case "not_configured":
         return `\`${key}\` isn't set on this relay`;
@@ -489,6 +560,8 @@ export function noRunnerReason(
           : `every machine that fits is paused (${paused.join(", ")})`;
       case "machine_not_shared":
         return notSharedText(notShared);
+      case "machine_full":
+        return fullText(full);
       case "too_many_labels":
         return `\`${key}\` takes one label, not ${job[key].join(", ")}`;
       case "not_provider_label":
@@ -516,6 +589,16 @@ export function notSharedText(machines: NotSharedMachine[]): string {
       ? names.join(" and ")
       : `${names.slice(0, -1).join(", ")} and ${names[names.length - 1]}`;
   return `${list} only run their owners' jobs`;
+}
+
+/** "atticus-mbp is full (2 of 2 running)", or for several, "every machine that fits is full (…)". */
+export function fullText(machines: FullMachine[]): string {
+  if (machines.length === 1) {
+    const [{ machine, running, slots }] = machines;
+    return `${machine} is full (${running} of ${slots} running)`;
+  }
+  const each = machines.map((m) => `${m.machine} ${m.running} of ${m.slots}`).join(", ");
+  return `every machine that fits is full (${each} running)`;
 }
 
 const count = (n: number) => Math.round(n).toLocaleString("en-US");

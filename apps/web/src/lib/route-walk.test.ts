@@ -75,6 +75,24 @@ describe("walkSummary", () => {
     );
   });
 
+  test("names the full machines and their slots", () => {
+    const full = (machines: { machine: string; running: number; slots: number }[]) =>
+      walk({ skipped: [{ key: "machine", reason: "machine_full", full: machines }] });
+    const one = full([{ machine: "atticus-mbp", running: 2, slots: 2 }]);
+    expect(walkSummary(one)).toEqual({
+      text: "atticus-mbp is full (2 of 2 running)",
+      tone: "fallback",
+    });
+    const two = full([
+      { machine: "a", running: 2, slots: 2 },
+      { machine: "b", running: 1, slots: 1 },
+    ]);
+    expect(walkSummary(two)?.text).toBe("2 machines are full");
+    expect(walkLines(two, "ubuntu-latest")[0]?.text).toBe(
+      "every machine that fits is full (a 2 of 2, b 1 of 1 running)",
+    );
+  });
+
   test("explains a hosted provider step that couldn't take the job", () => {
     const depot = walk({
       skipped: [{ key: "depot", reason: "not_provider_label" }],

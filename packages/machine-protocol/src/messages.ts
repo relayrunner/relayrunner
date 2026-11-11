@@ -56,13 +56,19 @@ export const HelloMessage = z.object({
   // True when this CLI saves a new machine token from a `token` message. The gateway only rotates
   // the token of a machine that says so, since an older CLI would keep using the old one.
   rotatesToken: z.boolean().optional(),
+  // How many jobs the machine runs at once (`connect --concurrency`). Missing from CLIs older than
+  // concurrency, which run one.
+  slots: z.number().int().positive().max(1_000).optional(),
 });
 
 // Sent whenever the machine's state changes and again on an interval as its heartbeat.
 export const StatusMessage = z.object({
   v: version,
   type: z.literal("status"),
+  // busy while any slot runs a job, so a gateway that reads only `state` still works.
   state: z.enum(["idle", "busy"]),
+  // How many jobs are running now. Missing from CLIs older than concurrency: busy then means one.
+  running: z.number().int().nonnegative().max(1_000).optional(),
 });
 
 // Progress of the runner process the machine started for a `run` message. "finished" means the

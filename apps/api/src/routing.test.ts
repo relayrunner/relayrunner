@@ -23,6 +23,9 @@ import {
   takeHold,
   type MachineHold,
   notSharedText,
+  fullMachines,
+  fullText,
+  heldSlots,
   unavailableMachines,
   type Route,
 } from "./routing.ts";
@@ -62,8 +65,8 @@ describe("chooseMachine", () => {
 
   test("never picks a paused machine", () => {
     const paused = { ...machine("paused", true, "idle"), paused: true };
-    expect(chooseMachine([paused], new Set())).toBeNull();
-    expect(chooseMachine([paused, machine("free", true, "idle")], new Set())?.id).toBe("free");
+    expect(chooseMachine([paused], new Map())).toBeNull();
+    expect(chooseMachine([paused, machine("free", true, "idle")], new Map())?.id).toBe("free");
   });
 
   test("picks an online, idle machine no route holds", () => {
@@ -74,15 +77,15 @@ describe("chooseMachine", () => {
         machine("held", true, "idle"),
         machine("free", true, "idle"),
       ],
-      new Set(["held"]),
+      new Map([["held", 1]]),
     );
     expect(picked?.id).toBe("free");
   });
 
   test("returns null when no machine is free", () => {
-    expect(chooseMachine([machine("busy", true, "busy")], new Set())).toBeNull();
-    expect(chooseMachine([machine("held", true, "idle")], new Set(["held"]))).toBeNull();
-    expect(chooseMachine([], new Set())).toBeNull();
+    expect(chooseMachine([machine("busy", true, "busy")], new Map())).toBeNull();
+    expect(chooseMachine([machine("held", true, "idle")], new Map([["held", 1]]))).toBeNull();
+    expect(chooseMachine([], new Map())).toBeNull();
   });
 
   test("prefers a machine never picked, then the least recently picked", () => {
@@ -95,8 +98,8 @@ describe("chooseMachine", () => {
       ["a", 3_000],
       ["b", 1_000],
     ]);
-    expect(chooseMachine(candidates, new Set(), picked)?.id).toBe("c");
-    expect(chooseMachine(candidates.slice(0, 2), new Set(), picked)?.id).toBe("b");
+    expect(chooseMachine(candidates, new Map(), picked)?.id).toBe("c");
+    expect(chooseMachine(candidates.slice(0, 2), new Map(), picked)?.id).toBe("b");
   });
 
   test("skips held, busy and offline machines even when picked longest ago", () => {
@@ -112,17 +115,17 @@ describe("chooseMachine", () => {
       machine("offline", false, null),
       machine("free", true, "idle"),
     ];
-    expect(chooseMachine(candidates, new Set(["held"]), picked)?.id).toBe("free");
+    expect(chooseMachine(candidates, new Map([["held", 1]]), picked)?.id).toBe("free");
   });
 
   test("ties keep the candidates' order", () => {
     const candidates = [machine("a", true, "idle"), machine("b", true, "idle")];
-    expect(chooseMachine(candidates, new Set())?.id).toBe("a");
+    expect(chooseMachine(candidates, new Map())?.id).toBe("a");
     const picked = new Map([
       ["a", 2_000],
       ["b", 2_000],
     ]);
-    expect(chooseMachine(candidates, new Set(), picked)?.id).toBe("a");
+    expect(chooseMachine(candidates, new Map(), picked)?.id).toBe("a");
   });
 
   test("only machines with every wanted label, before the least recently picked", () => {
@@ -133,13 +136,103 @@ describe("chooseMachine", () => {
     ];
     // The Linux box was never picked, so it would win without labels.
     const picked = new Map([["mac", 5_000]]);
-    expect(chooseMachine(candidates, new Set(), picked)?.id).toBe("linux");
-    expect(chooseMachine(candidates, new Set(), picked, ["self-hosted"])?.id).toBe("linux");
-    expect(chooseMachine(candidates, new Set(), picked, ["macOS", "ARM64"])?.id).toBe("mac");
-    expect(chooseMachine(candidates, new Set(), picked, ["linux", "x64"])?.id).toBe("linux");
+    expect(chooseMachine(candidates, new Map(), picked)?.id).toBe("linux");
+    expect(chooseMachine(candidates, new Map(), picked, ["self-hosted"])?.id).toBe("linux");
+    expect(chooseMachine(candidates, new Map(), picked, ["macOS", "ARM64"])?.id).toBe("mac");
+    expect(chooseMachine(candidates, new Map(), picked, ["linux", "x64"])?.id).toBe("linux");
     // A free machine without every label is never picked.
-    expect(chooseMachine(candidates, new Set(), picked, ["macOS", "X64"])).toBeNull();
-    expect(chooseMachine(candidates, new Set(["mac"]), picked, ["macOS"])).toBeNull();
+    expect(chooseMachine(candidates, new Map(), picked, ["macOS", "X64"])).toBeNull();
+    expect(chooseMachine(candidates, new Map([["mac", 1]]), picked, ["macOS"])).toBeNull();
+  });
+});
+
+describe("machine slots (#179)", () => {
+  const machine = (id: string, slots: number, running: number, online = true) => ({
+    id,
+    name: id,
+    online,
+    state: (running > 0 ? "busy" : "idle") as "idle" | "busy",
+    slots,
+    running,
+    labels: ["self-hosted"],
+  });
+
+  test("a busy machine with a free slot is still picked", () => {
+    expect(chooseMachine([machine("m", 2, 1)], new Map())?.id).toBe("m");
+  });
+
+  test("this Router's held routes count against the slots", () => {
+    expect(chooseMachine([machine("m", 2, 1)], new Map([["m", 1]]))).toBeNull();
+    expect(chooseMachine([machine("m", 3, 1)], new Map([["m", 1]]))?.id).toBe("m");
+    expect(chooseMachine([machine("m", 2, 0)], new Map([["m", 2]]))).toBeNull();
+  });
+
+  test("partly full machines keep least-recently-picked order", () => {
+    const candidates = [machine("a", 2, 1), machine("b", 2, 2), machine("c", 4, 3)];
+    const picked = new Map([
+      ["a", 5_000],
+      ["c", 1_000],
+    ]);
+    expect(chooseMachine(candidates, new Map(), picked)?.id).toBe("c");
+    expect(chooseMachine(candidates, new Map([["c", 1]]), picked)?.id).toBe("a");
+  });
+
+  test("heldSlots counts each machine's live routes", () => {
+    const at = 1_000;
+    const routes: Route[] = [
+      { ...route, id: "a", createdAt: at },
+      { ...route, id: "b", createdAt: at },
+      { ...route, id: "c", createdAt: at, state: "done" },
+      { ...route, id: "d", machineId: "m2", createdAt: at },
+    ];
+    expect(heldSlots(routes, at + 1)).toEqual(
+      new Map([
+        ["m1", 2],
+        ["m2", 1],
+      ]),
+    );
+    expect(heldSlots(routes, at + ROUTE_HOLD_MS).size).toBe(0);
+  });
+
+  test("fullMachines names every online machine that fits when all are full", () => {
+    const candidates = [machine("mbp", 2, 2), machine("mini", 1, 0), machine("off", 2, 0, false)];
+    expect(fullMachines(candidates, new Map([["mini", 1]]))).toEqual([
+      { machine: "mbp", running: 2, slots: 2 },
+      { machine: "mini", running: 1, slots: 1 },
+    ]);
+    // One with a free slot means it isn't full (chooseMachine would have picked it).
+    expect(fullMachines(candidates, new Map())).toBeNull();
+    // Only offline machines fit: that's no_machine, not full.
+    expect(fullMachines([machine("off", 2, 0, false)], new Map())).toBeNull();
+    // A machine another workspace filled (its MachineLink refused) reads as all slots in use.
+    expect(fullMachines([machine("m", 2, 0)], new Map([["m", Infinity]]))).toEqual([
+      { machine: "m", running: 2, slots: 2 },
+    ]);
+  });
+
+  test("fullMachines leaves out paused, unshared and unlabelled machines", () => {
+    const candidates = [
+      machine("mbp", 1, 1),
+      { ...machine("paused", 1, 0), paused: true },
+      { ...machine("mine", 1, 0), sharing: "only_me" as const, ownerGithubId: 9 },
+      { ...machine("linux", 1, 0), labels: ["self-hosted", "Linux"] },
+    ];
+    expect(fullMachines(candidates, new Map(), ["self-hosted"])).toEqual(null);
+    expect(fullMachines(candidates.slice(0, 3), new Map())).toEqual([
+      { machine: "mbp", running: 1, slots: 1 },
+    ]);
+  });
+
+  test("the reason text", () => {
+    expect(fullText([{ machine: "atticus-mbp", running: 2, slots: 2 }])).toBe(
+      "atticus-mbp is full (2 of 2 running)",
+    );
+    expect(
+      fullText([
+        { machine: "a", running: 2, slots: 2 },
+        { machine: "b", running: 1, slots: 1 },
+      ]),
+    ).toBe("every machine that fits is full (a 2 of 2, b 1 of 1 running)");
   });
 });
 
@@ -509,6 +602,22 @@ describe("decideRoute", () => {
     expect(one.runner === null && one.reason).toBe(
       "No runner available: the only machine that fits, atticus-mbp, is paused; `github` isn't set on this relay.",
     );
+    const full = await decideRoute(machineFirst, { ...both, github: [] }, async () => ({
+      full: [{ machine: "atticus-mbp", running: 2, slots: 2 }],
+    }));
+    expect(full).toMatchObject({
+      skipped: [
+        {
+          key: "machine",
+          reason: "machine_full",
+          full: [{ machine: "atticus-mbp", running: 2, slots: 2 }],
+        },
+        { key: "github", reason: "not_configured" },
+      ],
+    });
+    expect(full.runner === null && full.reason).toBe(
+      "No runner available: atticus-mbp is full (2 of 2 running); `github` isn't set on this relay.",
+    );
     const two = await decideRoute(machineFirst, { ...both, github: [] }, async () => ({
       paused: ["a", "b"],
     }));
@@ -810,9 +919,9 @@ describe("machine sharing (#242)", () => {
 
   test("chooseMachine skips machines that won't take the job's starter", () => {
     const candidates = [free("atticus-mbp", "only_me", 1), free("mini", "anyone", 3)];
-    expect(chooseMachine(candidates, new Set(), new Map(), [], by(zach))?.id).toBe("mini");
-    expect(chooseMachine(candidates.slice(0, 1), new Set(), new Map(), [], by(zach))).toBeNull();
-    expect(chooseMachine(candidates.slice(0, 1), new Set(), new Map(), [], by(bot))).toBeNull();
+    expect(chooseMachine(candidates, new Map(), new Map(), [], by(zach))?.id).toBe("mini");
+    expect(chooseMachine(candidates.slice(0, 1), new Map(), new Map(), [], by(zach))).toBeNull();
+    expect(chooseMachine(candidates.slice(0, 1), new Map(), new Map(), [], by(bot))).toBeNull();
   });
 
   test("chooseMachine tries the starter's own machine first, then the least recently picked", () => {
@@ -823,22 +932,22 @@ describe("machine sharing (#242)", () => {
     ];
     // Atticus's own machine wins although it was picked most recently.
     const picked = new Map([["atticus-mbp", 5_000]]);
-    expect(chooseMachine(candidates, new Set(), picked, [], by(atticus))?.id).toBe("atticus-mbp");
+    expect(chooseMachine(candidates, new Map(), picked, [], by(atticus))?.id).toBe("atticus-mbp");
     // Zach's own `anyone` machine wins for Zach.
-    expect(chooseMachine(candidates, new Set(), picked, [], by(zach))?.id).toBe("zach-mbp");
+    expect(chooseMachine(candidates, new Map(), picked, [], by(zach))?.id).toBe("zach-mbp");
     // Whoever started this attempt counts as the starter.
-    expect(chooseMachine(candidates, new Set(), picked, [], by(atticus, zach))?.id).toBe(
+    expect(chooseMachine(candidates, new Map(), picked, [], by(atticus, zach))?.id).toBe(
       "zach-mbp",
     );
     // Nobody's own: least recently picked, as before.
-    expect(chooseMachine(candidates, new Set(), new Map([["mini", 1]]), [], by(bot))?.id).toBe(
+    expect(chooseMachine(candidates, new Map(), new Map([["mini", 1]]), [], by(bot))?.id).toBe(
       "zach-mbp",
     );
     // A busy own machine gives way to the rest.
     const busy = candidates.map((c) =>
       c.id === "atticus-mbp" ? { ...c, state: "busy" as const } : c,
     );
-    expect(chooseMachine(busy, new Set(), picked, [], by(atticus))?.id).toBe("mini");
+    expect(chooseMachine(busy, new Map(), picked, [], by(atticus))?.id).toBe("mini");
   });
 
   const pool = [
@@ -893,59 +1002,98 @@ describe("machine sharing (#242)", () => {
 
 describe("takeHold", () => {
   const want = { routeId: "r2", workspaceId: "w2" };
+  const one = { slots: 1, running: 0 };
 
   test("takes a free machine until ROUTE_HOLD_MS from now", () => {
-    expect(takeHold(undefined, want, 1_000)).toEqual({ ...want, until: 1_000 + ROUTE_HOLD_MS });
+    expect(takeHold([], want, one, 1_000)).toEqual({ ...want, until: 1_000 + ROUTE_HOLD_MS });
   });
 
-  test("refuses while another route holds the machine", () => {
+  test("refuses while another route holds a one-slot machine", () => {
     const current: MachineHold = { routeId: "r1", workspaceId: "w1", until: 5_000 };
-    expect(takeHold(current, want, 4_999)).toBeNull();
+    expect(takeHold([current], want, one, 4_999)).toBeNull();
   });
 
   test("takes it once the other route's hold lapses", () => {
     const current: MachineHold = { routeId: "r1", workspaceId: "w1", until: 5_000 };
-    expect(takeHold(current, want, 5_000)).toEqual({ ...want, until: 5_000 + ROUTE_HOLD_MS });
+    expect(takeHold([current], want, one, 5_000)).toEqual({
+      ...want,
+      until: 5_000 + ROUTE_HOLD_MS,
+    });
   });
 
-  test("renews the same route's hold", () => {
+  test("renews the same route's hold, even when the machine is otherwise full", () => {
     const current: MachineHold = { ...want, until: 5_000 };
-    expect(takeHold(current, want, 4_000)).toEqual({ ...want, until: 4_000 + ROUTE_HOLD_MS });
+    expect(takeHold([current], want, { slots: 1, running: 1 }, 4_000)).toEqual({
+      ...want,
+      until: 4_000 + ROUTE_HOLD_MS,
+    });
+  });
+
+  test("an old CLI that says busy has no free slot", () => {
+    expect(takeHold([], want, { slots: 1, running: 1 }, 1_000)).toBeNull();
+  });
+
+  test("holds and running jobs add up against the slots", () => {
+    const hold = (routeId: string, until = 9_000): MachineHold => ({
+      routeId,
+      workspaceId: "w1",
+      until,
+    });
+    // 3 slots: 1 hold + 1 running leaves one.
+    expect(takeHold([hold("a")], want, { slots: 3, running: 1 }, 1_000)).not.toBeNull();
+    // 2 slots: 1 hold + 1 running fills it (the "lower of both" rule would have let this through).
+    expect(takeHold([hold("a")], want, { slots: 2, running: 1 }, 1_000)).toBeNull();
+    // 2 slots, 2 holds, nothing running yet: full.
+    expect(takeHold([hold("a"), hold("b")], want, { slots: 2, running: 0 }, 1_000)).toBeNull();
+  });
+
+  test("one lapsed hold among several frees just its slot", () => {
+    const holds: MachineHold[] = [
+      { routeId: "a", workspaceId: "w1", until: 2_000 },
+      { routeId: "b", workspaceId: "w1", until: 9_000 },
+    ];
+    const capacity = { slots: 2, running: 0 };
+    expect(takeHold(holds, want, capacity, 1_999)).toBeNull();
+    expect(takeHold(holds, want, capacity, 2_000)).not.toBeNull();
+    // With one running too, the live hold and the job fill both slots.
+    expect(takeHold(holds, want, { slots: 2, running: 1 }, 2_000)).toBeNull();
   });
 });
 
 describe("one machine in two workspaces", () => {
   // A machine's MachineLink: one call at a time, as a Durable Object's input gate runs them, with
-  // the storage read and write awaited like the real ones.
-  function machineLink() {
-    let stored: MachineHold | undefined;
+  // the storage reads and write awaited like the real ones.
+  function machineLink(capacity = { slots: 1, running: 0 }) {
+    const stored = new Map<string, MachineHold>();
     let queue = Promise.resolve();
     const reserve = vi.fn((want: { routeId: string; workspaceId: string }) => {
       const result = queue.then(async () => {
-        const current = await Promise.resolve(stored);
-        const hold = takeHold(current, want, Date.now());
+        const current = await Promise.resolve([...stored.values()]);
+        const hold = takeHold(current, want, capacity, Date.now());
         if (!hold) return false;
-        stored = await Promise.resolve(hold);
+        stored.set(want.routeId, await Promise.resolve(hold));
         return true;
       });
       queue = result.then(() => undefined);
       return result;
     });
-    return { reserve, held: () => stored };
+    return { reserve, held: () => [...stored.values()] };
   }
 
-  const candidate = (id: string) => ({
+  const candidate = (id: string, slots = 1) => ({
     id,
     name: id,
     online: true,
-    state: "idle" as const,
+    state: "idle" as "idle" | "busy",
+    slots,
+    running: 0,
     labels: ["self-hosted"],
     sharing: "anyone" as const,
     ownerGithubId: 1,
   });
 
   // What a workspace's Router does under its own lock: choose among its candidates, then take the
-  // chosen machine's hold.
+  // chosen machine's hold. A machine whose MachineLink refused counts as full.
   function pick(
     workspaceId: string,
     routeId: string,
@@ -953,7 +1101,8 @@ describe("one machine in two workspaces", () => {
     links: Map<string, ReturnType<typeof machineLink>>,
   ) {
     return chooseAndHold(
-      (taken) => chooseMachine(candidates, taken),
+      (taken) =>
+        chooseMachine(candidates, new Map([...taken].map((id) => [id, Infinity] as const))),
       (machine) => links.get(machine.id)!.reserve({ routeId, workspaceId }),
     );
   }
@@ -966,7 +1115,9 @@ describe("one machine in two workspaces", () => {
       pick("w2", "r2", [candidate("m1")], links),
     ]);
     expect([a?.id, b?.id].filter(Boolean)).toEqual(["m1"]);
-    expect(shared.held()).toMatchObject({ routeId: a ? "r1" : "r2", workspaceId: a ? "w1" : "w2" });
+    expect(shared.held()).toMatchObject([
+      { routeId: a ? "r1" : "r2", workspaceId: a ? "w1" : "w2" },
+    ]);
   });
 
   test("the pick that loses the race takes its next machine", async () => {
@@ -979,5 +1130,26 @@ describe("one machine in two workspaces", () => {
     expect(first?.id).toBe("m1");
     expect(second?.id).toBe("m2");
     expect(links.get("m1")!.reserve).toHaveBeenCalledTimes(2);
+  });
+
+  test("three workspaces racing for a two-slot machine: two get it", async () => {
+    const shared = machineLink({ slots: 2, running: 0 });
+    const links = new Map([["m1", shared]]);
+    const picks = await Promise.all(
+      ["w1", "w2", "w3"].map((w, i) => pick(w, `r${i}`, [candidate("m1", 2)], links)),
+    );
+    expect(picks.filter(Boolean)).toHaveLength(2);
+    expect(shared.held()).toHaveLength(2);
+  });
+
+  test("the last slot goes to one workspace when a job is already running", async () => {
+    const shared = machineLink({ slots: 2, running: 1 });
+    const links = new Map([["m1", shared]]);
+    const busy = { ...candidate("m1", 2), state: "busy" as const, running: 1 };
+    const [a, b] = await Promise.all([
+      pick("w1", "r1", [busy], links),
+      pick("w2", "r2", [busy], links),
+    ]);
+    expect([a, b].filter(Boolean)).toHaveLength(1);
   });
 });
