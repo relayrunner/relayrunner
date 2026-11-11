@@ -6,7 +6,6 @@ import {
   CircleMinus,
   CircleX,
   Clock,
-  Cloud,
   Laptop,
   LoaderCircle,
   Lock,
@@ -24,6 +23,7 @@ import {
 } from "lucide-react";
 import { type ReactNode, useEffect, useRef, useState } from "react";
 import { PageHeader } from "@/components/page-header";
+import { ProviderMark } from "@/components/providers";
 import { Button } from "@/components/ui/button";
 import {
   Select,
@@ -749,7 +749,6 @@ function JobRow({ job, now }: { job: ActivityJob; now: number }) {
   const [open, setOpen] = useState(false);
   const took = duration(job, now);
   const { runner, walk } = job;
-  const RunnerIcon = runner.type === "machine" ? Laptop : Cloud;
   // GitHub never sent the job anywhere: a job it needed failed, so its runs-on was never worked
   // out. Usually folded into its relay's "couldn't run" entry; this row is for runs without one.
   const unrouted = runner.type === "github" && !runner.label;
@@ -797,9 +796,9 @@ function JobRow({ job, now }: { job: ActivityJob; now: number }) {
             className="font-medium"
             title={job.runnerName ? `Ran on ${job.runnerName}` : "Not picked up yet"}
           >
-            <RunnerIcon
-              aria-hidden
-              className="mr-1 inline size-3 align-[-0.1em] text-muted-foreground"
+            <ProviderMark
+              provider={runner.type}
+              className="mr-1 inline-flex size-4 rounded-[4px] align-[-0.2em]"
             />
             <span className={runner.type !== "machine" ? "font-mono text-xs" : undefined}>
               {runnerName}
