@@ -1,11 +1,11 @@
 // Runs: each workflow run in the workspace's repos, newest first, for the dashboard's Runs page. A
 // run's title, trigger and status come from workflow_run webhooks (stored here); its jobs, wall time
 // and runners come from job_timing (src/job-timings.ts), so runs from before the App sent
-// workflow_run still show, with less detail.
+// workflow_run still show, with less detail. A run's detail also lists the jobs still going.
 //
 // Database cost: the list is two statements, run together, each a range of an installation index
 // (job_timing_installation_idx, workflow_run_installation_idx) over the last USUAL_DAYS days, never
-// a scan. One run's jobs are a range of job_timing_run_idx and workflow_job_run_idx.
+// a scan. One run's jobs are a range of job_timing_run_idx.
 import type { WebhookMessage } from "@relayrunner/github-webhooks";
 import { and, eq, sql } from "drizzle-orm";
 import { type Db, schema } from "./db/index.ts";
@@ -321,9 +321,12 @@ export async function listRuns(db: Db, workspaceId: string, now = Date.now()): P
 export interface RunJob {
   id: number;
   name: string;
-  /** Environment key; null while no runner has it. */
+  /**
+   * Environment key: where it ran, or for a queued job the runner it's waiting for. Null for a job
+   * that finished without a runner taking it.
+   */
   environment: string | null;
-  status: string;
+  status: RunStatus;
   conclusion: string | null;
   queuedAt: number | null;
   startedAt: number | null;
@@ -331,77 +334,51 @@ export interface RunJob {
 }
 
 /**
- * One run attempt's jobs, picks left out: finished ones from job_timing, and for routed runs the
- * ones still going from workflow_job. Oldest queued first.
+ * One run attempt's jobs from job_timing, picks left out: finished ones and ones still queued or
+ * running. Oldest queued first. Jobs that wait on others (`needs:`) only show once GitHub queues
+ * them, since GitHub doesn't create them before.
  */
 export async function runJobs(
   db: Db,
   workspaceId: string,
   run: { repositoryId: number; runId: number; runAttempt: number },
 ): Promise<{ environments: Environment[]; jobs: RunJob[] }> {
-  const job = schema.workflowJob;
-  const [finished, live] = await Promise.all([
-    db
-      .select()
-      .from(timing)
-      .where(
-        and(
-          eq(timing.runId, run.runId),
-          eq(timing.runAttempt, run.runAttempt),
-          eq(timing.repositoryId, run.repositoryId),
-          inWorkspace(workspaceId),
-          sql`not ${PICK}`,
-        ),
+  const rows = await db
+    .select()
+    .from(timing)
+    .where(
+      and(
+        eq(timing.runId, run.runId),
+        eq(timing.runAttempt, run.runAttempt),
+        eq(timing.repositoryId, run.repositoryId),
+        inWorkspace(workspaceId),
+        sql`not ${PICK}`,
       ),
-    db
-      .select()
-      .from(job)
-      .where(
-        and(
-          eq(job.runId, run.runId),
-          eq(job.kind, "job"),
-          eq(job.runAttempt, run.runAttempt),
-          eq(job.repositoryId, run.repositoryId),
-          inWorkspace(workspaceId, job.installationId),
-        ),
-      ),
-  ]);
+    );
 
   const envs = new Map<string, Environment>();
-  const envOf = (labels: string[], group: string | null, machineId: string | null) => {
-    const env = environmentFor(labels, group, machineId);
+  const envOf = (row: (typeof rows)[number]) => {
+    const env = environmentFor(row.labels, row.runnerGroupName, row.machineId);
     envs.set(env.key, env);
     return env.key;
   };
-  const jobs = new Map<number, RunJob>();
-  for (const row of finished)
-    jobs.set(row.id, {
+  const jobs = rows.map((row): RunJob => {
+    const status = row.completedAt ? "completed" : row.startedAt ? "in_progress" : "queued";
+    return {
       id: row.id,
       name: row.name,
-      environment: row.startedAt ? envOf(row.labels, row.runnerGroupName, row.machineId) : null,
-      status: "completed",
+      environment: status === "completed" && !row.startedAt ? null : envOf(row),
+      status,
       conclusion: row.conclusion,
       queuedAt: row.queuedAt?.getTime() ?? null,
       startedAt: row.startedAt?.getTime() ?? null,
       completedAt: row.completedAt?.getTime() ?? null,
-    });
-  for (const row of live) {
-    if (jobs.has(row.id)) continue;
-    jobs.set(row.id, {
-      id: row.id,
-      name: row.name,
-      environment: row.runnerName ? envOf(row.labels, null, row.machineId) : null,
-      status: row.status,
-      conclusion: row.conclusion,
-      queuedAt: row.githubCreatedAt.getTime(),
-      startedAt: row.startedAt?.getTime() ?? null,
-      completedAt: row.completedAt?.getTime() ?? null,
-    });
-  }
+    };
+  });
   await nameMachines(db, workspaceId, envs);
   return {
     environments: [...envs.values()],
-    jobs: [...jobs.values()].sort(
+    jobs: jobs.sort(
       (a, b) => (a.queuedAt ?? Infinity) - (b.queuedAt ?? Infinity) || a.name.localeCompare(b.name),
     ),
   };

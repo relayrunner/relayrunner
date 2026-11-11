@@ -120,9 +120,6 @@ export function usesRelayRunner(labels: string[]) {
   return labels.some((label) => label.toLowerCase() === RELAYRUNNER_LABEL);
 }
 
-const isFinished = (message: Extract<WebhookMessage, { event: "workflow_job" }>) =>
-  message.job.status === "completed";
-
 // 30s, 60s, 120s, ... capped at 15 minutes. `attempts` starts at 1.
 export function retryDelaySeconds(attempts: number) {
   return Math.min(
@@ -161,12 +158,10 @@ export async function processWebhook(env: Env, message: WebhookMessage): Promise
       // every other job the App sees is some other runner's, so recordWorkflowJob drops it.
       const isPick = usesRelayRunner(message.job.labels);
       const db = createDb(env.DB);
-      // A finished job's timing, ours or not, goes to the usage report too. The two writes touch
-      // separate tables, so they run together.
-      await Promise.all([
-        recordWorkflowJob(db, message, isPick),
-        message.job.status === "completed" ? recordJobTiming(db, message) : null,
-      ]);
+      // Every job's timing, ours or not, goes to job_timing too: the Runs page shows it while it
+      // runs, and the usage report once it finishes. The two writes touch separate tables, so they
+      // run together.
+      await Promise.all([recordWorkflowJob(db, message, isPick), recordJobTiming(db, message)]);
       // A job on a route's `rr-<id>` label: the run's pick chose a machine for it.
       const routeId = routeIdFromLabels(message.job.labels);
       if (routeId) return dispatchRoute(env, message, routeId, lagMs);
@@ -295,7 +290,7 @@ async function dispatchRoute(
     const machineId = workspaceId
       ? await env.ROUTER.getByName(workspaceId).machineFor(routeId, job)
       : null;
-    if (machineId) await setJobMachine(db, message.job.id, machineId, isFinished(message));
+    if (machineId) await setJobMachine(db, message.job.id, machineId);
     console.log(JSON.stringify(log));
     return;
   }
@@ -304,7 +299,7 @@ async function dispatchRoute(
     console.warn(JSON.stringify({ ...log, result: "no_route" }));
     return;
   }
-  await setJobMachine(db, message.job.id, route.machineId, false);
+  await setJobMachine(db, message.job.id, route.machineId);
   const result = await env.MACHINE_LINK.getByName(route.machineId).run({ route, workspaceId });
   (result === "offline" ? console.warn : console.log)(
     JSON.stringify({ ...log, result, machineId: route.machineId }),
@@ -356,7 +351,7 @@ async function trackRunnerJob(
     message.action === "queued"
       ? await router.claimRunner(machine.id, job)
       : await router.releaseRunnerJob(machine.id, job);
-  if (route) await setJobMachine(db, message.job.id, machine.id, isFinished(message));
+  if (route) await setJobMachine(db, message.job.id, machine.id);
   console.log(
     JSON.stringify({ ...log, result: route ? "tracked" : "no_route", machineId: machine.id }),
   );

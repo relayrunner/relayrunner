@@ -256,6 +256,39 @@ describe("runs list", () => {
       ["test", "failure"],
       ["lint", "success"],
     ]);
+    // The live run's jobs show while they're still going: one running, one waiting for the Mac.
+    const now = Date.now();
+    await insert([
+      timing(installationId, 0, {
+        runId: 201,
+        name: "build",
+        conclusion: null,
+        queuedAt: new Date(now - 70_000),
+        startedAt: new Date(now - 60_000),
+        completedAt: null,
+      }),
+      timing(installationId, 0, {
+        runId: 201,
+        name: "e2e",
+        labels: ["rr-0123456789ab"],
+        machineId: machine.id,
+        conclusion: null,
+        runnerName: null,
+        runnerGroupName: null,
+        queuedAt: new Date(now - 30_000),
+        startedAt: null,
+        completedAt: null,
+      }),
+    ]);
+    // Still going, so the run list doesn't count them.
+    expect((await list(cookie)).runs[0]).toMatchObject({ runId: 201, environments: [] });
+    const liveRes = await testing.call(env, `/runs/${installationId * 10}/201/1/jobs`, cookie);
+    const liveJobs = (await liveRes.json()) as { environments: { key: string }[]; jobs: RunJob[] };
+    expect(liveJobs.jobs).toMatchObject([
+      { name: "build", status: "in_progress", environment: "github:linux-2-core" },
+      { name: "e2e", status: "queued", environment: `machine:${machine.id}`, startedAt: null },
+    ]);
+
     // The other workspace's run isn't reachable by id.
     const theirs = await testing.call(env, `/runs/${other.installationId * 10}/999/1/jobs`, cookie);
     expect(((await theirs.json()) as { jobs: RunJob[] }).jobs).toEqual([]);

@@ -123,10 +123,11 @@ describe("webhook queue consumer", () => {
     vi.mocked(recordJobTiming).mockClear();
     await consumer.processWebhook(env, workflowJob(["ubuntu-latest"]));
     expect(recordWorkflowJob).toHaveBeenCalledWith(expect.anything(), expect.anything(), false);
-    expect(recordJobTiming).not.toHaveBeenCalled();
-    // Once finished, its timing is kept for the usage report even though RelayRunner didn't route it.
-    await consumer.processWebhook(env, workflowJob(["ubuntu-latest"], "completed"));
+    // Its timing is kept from the start, for the Runs page while it runs and the usage report once
+    // it finishes, even though RelayRunner didn't route it.
     expect(recordJobTiming).toHaveBeenCalledOnce();
+    await consumer.processWebhook(env, workflowJob(["ubuntu-latest"], "completed"));
+    expect(recordJobTiming).toHaveBeenCalledTimes(2);
     expect(log).not.toHaveBeenCalled();
     expect(start).not.toHaveBeenCalled();
     log.mockRestore();
@@ -246,7 +247,7 @@ describe("webhook queue consumer", () => {
       await consumer.processWebhook(env, workflowJob(["RR-RUNNER-0a1b2c3d"]));
       expect(claimRunner).toHaveBeenCalledWith("gh1", { jobId: 42, repositoryId: 1, runId: 9 });
       expect(run).not.toHaveBeenCalled();
-      expect(setJobMachine).toHaveBeenCalledWith(expect.anything(), 42, "gh1", false);
+      expect(setJobMachine).toHaveBeenCalledWith(expect.anything(), 42, "gh1");
       // Once it starts, the route ends: the runner's own busy status takes over.
       releaseRunnerJob.mockResolvedValueOnce("gh1");
       await consumer.processWebhook(env, workflowJob(["rr-runner-0a1b2c3d"], "in_progress"));
@@ -278,7 +279,7 @@ describe("webhook queue consumer", () => {
       expect(claim).toHaveBeenCalledWith("0123456789ab", { jobId: 42, repositoryId: 1, runId: 9 });
       expect(env.MACHINE_LINK.getByName).toHaveBeenCalledWith("m1");
       expect(run).toHaveBeenCalledWith({ route, workspaceId: "w1" });
-      expect(setJobMachine).toHaveBeenCalledWith(expect.anything(), 42, "m1", false);
+      expect(setJobMachine).toHaveBeenCalledWith(expect.anything(), 42, "m1");
       expect(JSON.parse(log.mock.calls.at(-1)![0])).toMatchObject({ result: "sent" });
       log.mockRestore();
     });

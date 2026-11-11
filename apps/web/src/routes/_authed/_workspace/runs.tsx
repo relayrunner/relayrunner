@@ -24,6 +24,7 @@ import {
 import { timeAgo } from "@/lib/activity";
 import { authDisabled } from "@/lib/auth-client";
 import { DAY_MS, environmentColor, plural } from "@/lib/job-times";
+import { useLiveRefresh } from "@/lib/live-refresh";
 import {
   getRunJobs,
   getRuns,
@@ -38,6 +39,10 @@ import {
 import { cn, elapsed } from "@/lib/utils";
 
 const RANGES = [1, 7, 14] as const;
+// While a run is going, how often the list and an open run's jobs are refetched. Paused while the
+// tab is hidden or idle (lib/live-refresh.ts).
+const LIST_REFRESH_MS = 15_000;
+const JOBS_REFRESH_MS = 5_000;
 
 export const Route = createFileRoute("/_authed/_workspace/runs")({
   loader: () => (authDisabled ? Promise.resolve(sampleRuns()) : getRuns()),
@@ -54,8 +59,22 @@ const isFailure = (conclusion: string | null) =>
   conclusion === "failure" || conclusion === "timed_out";
 const isLongWait = (wait: number | null): wait is number => wait !== null && wait >= LONG_WAIT_MS;
 
+/** The time now, ticking every second while `enabled`. */
+function useNow(enabled: boolean) {
+  const [now, setNow] = useState(Date.now());
+  useEffect(() => {
+    if (!enabled) return;
+    const timer = setInterval(() => setNow(Date.now()), 1000);
+    return () => clearInterval(timer);
+  }, [enabled]);
+  return now;
+}
+
 function RunsPage() {
-  const report = Route.useLoaderData();
+  const loaded = Route.useLoaderData();
+  // Refetched while a run on screen is going, so new jobs, runs and results show without a reload.
+  const [report, setReport] = useState(loaded);
+  useEffect(() => setReport(loaded), [loaded]);
   const [days, setDays] = useState(7);
   const [repository, setRepository] = useState("all");
   const [result, setResult] = useState<ResultFilter>("all");
@@ -79,6 +98,16 @@ function RunsPage() {
           (result === "running" ? run.status !== "completed" : isFailure(run.conclusion))),
     );
   }, [report, days, repository, result, routed]);
+  useLiveRefresh(
+    () =>
+      getRuns()
+        .then(setReport)
+        .catch(() => undefined), // Keep showing the last answer; the next tick retries.
+    {
+      intervalMs: LIST_REFRESH_MS,
+      enabled: !authDisabled && runs.some((run) => run.status !== "completed"),
+    },
+  );
   const environments: Environments = useMemo(
     () =>
       new Map(
@@ -252,9 +281,12 @@ const CANCELLED: Status = {
   label: "Cancelled",
   className: "text-muted-foreground",
 };
-const STATUS: Record<string, Status> = {
+const LIVE = {
   in_progress: { Icon: LoaderCircleIcon, label: "In progress", className: "animate-spin text-run" },
   queued: { Icon: CircleDashedIcon, label: "Queued", className: "text-muted-foreground" },
+} satisfies Record<string, Status>;
+const STATUS: Record<string, Status> = {
+  ...LIVE,
   success: { Icon: CircleCheckIcon, label: "Succeeded", className: "text-go" },
   failure: { Icon: CircleXIcon, label: "Failed", className: "text-destructive" },
   timed_out: { Icon: TimerOffIcon, label: "Timed out", className: "text-destructive" },
@@ -273,13 +305,8 @@ function StatusIcon({ run }: { run: Run }) {
  * and the bar fills to twice it, so a run slower than usual runs past the tick in amber.
  */
 function WallTime({ run }: { run: Run }) {
-  const [now, setNow] = useState(Date.now());
   const running = run.status !== "completed";
-  useEffect(() => {
-    if (!running) return;
-    const timer = setInterval(() => setNow(Date.now()), 1000);
-    return () => clearInterval(timer);
-  }, [running]);
+  const now = useNow(running);
   const ms = running ? (run.startedAt ? now - run.startedAt : null) : run.wallMs;
   return (
     <span className="grid w-20 justify-items-end gap-1 tabular-nums">
@@ -305,35 +332,67 @@ function WallTime({ run }: { run: Run }) {
   );
 }
 
-const waitOf = (job: RunJob) =>
-  job.queuedAt !== null && job.startedAt !== null ? job.startedAt - job.queuedAt : null;
+// A job still queued has waited until now, and one still running has run until now.
+function waitOf(job: RunJob, now: number) {
+  if (job.queuedAt === null) return null;
+  const end = job.startedAt ?? (job.status === "queued" ? now : null);
+  return end === null ? null : end - job.queuedAt;
+}
+const ranOf = (job: RunJob, now: number) =>
+  job.startedAt === null ? null : (job.completedAt ?? now) - job.startedAt;
 
 function RunDetail({ run, environments }: { run: Run; environments: Environments }) {
   const [detail, setDetail] = useState<RunJobs | null>(null);
   const [failed, setFailed] = useState(false);
-  // Keyed on the run's ids, not the object: the same run in a new report needn't load again.
-  const { repositoryId, runId, runAttempt, startedAt } = run;
+  // Keyed on the run's ids, not the object: the same run in a new report needn't load again. Its
+  // status is in the key too, so the jobs load once more when the run finishes.
+  const { repositoryId, runId, runAttempt, startedAt, status } = run;
+  const running = status !== "completed";
+  const load = useCallback(
+    () =>
+      authDisabled
+        ? Promise.resolve(sampleRunJobs({ runId, startedAt }))
+        : getRunJobs({ repositoryId, runId, runAttempt }),
+    [repositoryId, runId, runAttempt, startedAt],
+  );
   useEffect(() => {
     let live = true;
-    (authDisabled
-      ? Promise.resolve(sampleRunJobs({ runId, startedAt }))
-      : getRunJobs({ repositoryId, runId, runAttempt })
-    )
+    load()
       .then((value) => live && setDetail(value))
       .catch(() => live && setFailed(true));
     return () => {
       live = false;
     };
-  }, [repositoryId, runId, runAttempt, startedAt]);
+  }, [load, status]);
+  useLiveRefresh(
+    () =>
+      load()
+        .then(setDetail)
+        .catch(() => undefined), // Keep showing the last answer; the next tick retries.
+    { intervalMs: JOBS_REFRESH_MS, enabled: running && !authDisabled },
+  );
+  // Times of jobs still going run to now. Once the run has finished they stop where it did, so a
+  // job GitHub never said finished (a lost webhook) doesn't keep counting.
+  const ticking = useNow(
+    running && Boolean(detail?.jobs.some((job) => job.status !== "completed")),
+  );
+  const now = running ? ticking : run.updatedAt;
 
   // A runner's name from the page's environments first, then the detail's own.
   const own = new Map(detail?.environments.map((env) => [env.key, env.label]));
   const label = (key: string) => environments.get(key)?.label ?? own.get(key) ?? key;
   let longest: { job: RunJob; wait: number } | null = null;
   for (const job of detail?.jobs ?? []) {
-    const wait = waitOf(job);
+    const wait = waitOf(job, now);
     if (isLongWait(wait) && wait > (longest?.wait ?? 0)) longest = { job, wait };
   }
+  let note: string | null = null;
+  if (longest) {
+    const { job, wait } = longest;
+    const verb = job.status === "queued" ? "has waited" : "waited";
+    const runner = job.environment ? label(job.environment) : "a runner";
+    note = `${job.name} ${verb} ${elapsed(wait)} for ${runner}.`;
+  } else if (running) note = "Jobs that need others show up once GitHub queues them.";
 
   return (
     <div className="border-t bg-secondary/40 px-4 py-3 sm:pl-12">
@@ -344,7 +403,9 @@ function RunDetail({ run, environments }: { run: Run; environments: Environments
       ) : (
         <div className="grid gap-3">
           {detail.jobs.length === 0 ? (
-            <p className="text-sm text-muted-foreground">No jobs have finished in this run yet.</p>
+            <p className="text-sm text-muted-foreground">
+              {running ? "No jobs have been queued in this run yet." : "No jobs seen for this run."}
+            </p>
           ) : (
             <div className="overflow-x-auto">
               <table className="w-full text-sm tabular-nums">
@@ -369,11 +430,8 @@ function RunDetail({ run, environments }: { run: Run; environments: Environments
                 </thead>
                 <tbody>
                   {detail.jobs.map((job) => {
-                    const wait = waitOf(job);
-                    const ran =
-                      job.startedAt !== null && job.completedAt !== null
-                        ? job.completedAt - job.startedAt
-                        : null;
+                    const wait = waitOf(job, now);
+                    const queued = job.status === "queued";
                     return (
                       <tr key={job.id}>
                         <th
@@ -384,19 +442,29 @@ function RunDetail({ run, environments }: { run: Run; environments: Environments
                         </th>
                         <td className="py-1.5 pr-4 whitespace-nowrap">
                           {job.environment ? (
-                            <span className="inline-flex items-center gap-2">
+                            <span
+                              className={cn(
+                                "inline-flex items-center gap-2",
+                                queued && "text-muted-foreground",
+                              )}
+                            >
                               <span
                                 aria-hidden
-                                className="inline-block h-2 w-4 rounded-[3px]"
+                                className={cn(
+                                  "inline-block h-2 w-4 rounded-[3px]",
+                                  queued && "opacity-50",
+                                )}
                                 style={{
                                   background:
                                     environments.get(job.environment)?.color ?? "currentColor",
                                 }}
                               />
-                              {label(job.environment)}
+                              {queued
+                                ? `Waiting for ${label(job.environment)}`
+                                : label(job.environment)}
                             </span>
                           ) : (
-                            <span className="text-muted-foreground">Waiting for a runner</span>
+                            <span className="text-muted-foreground">No runner took it</span>
                           )}
                         </td>
                         <td
@@ -407,9 +475,9 @@ function RunDetail({ run, environments }: { run: Run; environments: Environments
                         >
                           {elapsed(wait)}
                         </td>
-                        <td className="py-1.5 pr-4 text-right">{elapsed(ran)}</td>
-                        <td className="py-1.5 text-right capitalize">
-                          <JobResult job={job} />
+                        <td className="py-1.5 pr-4 text-right">{elapsed(ranOf(job, now))}</td>
+                        <td className="py-1.5 text-right">
+                          <JobResult job={job} running={running} />
                         </td>
                       </tr>
                     );
@@ -419,12 +487,7 @@ function RunDetail({ run, environments }: { run: Run; environments: Environments
             </div>
           )}
           <div className="flex flex-wrap items-center justify-between gap-2 text-xs text-muted-foreground">
-            <span>
-              {longest &&
-                `${longest.job.name} waited ${elapsed(longest.wait)} for ${
-                  longest.job.environment ? label(longest.job.environment) : "a runner"
-                }.`}
-            </span>
+            <span>{note}</span>
             <a
               href={run.url}
               target="_blank"
@@ -441,12 +504,22 @@ function RunDetail({ run, environments }: { run: Run; environments: Environments
   );
 }
 
-function JobResult({ job }: { job: RunJob }) {
-  if (job.status !== "completed")
-    return <span className="text-run">{job.status.replace("_", " ")}</span>;
+function JobResult({ job, running }: { job: RunJob; running: boolean }) {
+  if (job.status !== "completed" && !running)
+    return <span className="text-muted-foreground">Unknown</span>;
+  if (job.status !== "completed") {
+    const { Icon, label, className } = LIVE[job.status];
+    return (
+      <span className="inline-flex items-center justify-end gap-1.5 text-muted-foreground">
+        <Icon aria-hidden className={cn("size-3.5", className)} />
+        {label}
+      </span>
+    );
+  }
   return (
     <span
       className={cn(
+        "capitalize",
         job.conclusion === "success"
           ? "text-go"
           : isFailure(job.conclusion)
