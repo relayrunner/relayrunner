@@ -46,7 +46,8 @@ approved the machine also gets an email, since someone else may have its token.
 - `--server <url>` or `RELAYRUNNER_URL` points it at another gateway. Changing it signs in again.
   It must be https, except for `localhost` while developing, since the token goes
   out on every connect.
-- `--name <name>` changes the suggested machine name (default: the hostname).
+- `--name <name>` changes the suggested machine name (default: the hostname if
+  one is set, otherwise the Mac's Computer Name from System Settings).
 - `--share only-me|anyone` sets who can run jobs on this machine without asking.
   It works on a machine that's already signed in too.
 - If the machine is removed in the dashboard, `connect` deletes the saved token.
@@ -66,7 +67,7 @@ as [`relayrunner init`](#relayrunner-init). No is remembered for that repo in
 works there. It never asks outside a repo, in a public repo, in a repo that's
 already set up, or without a terminal to answer.
 
-Jobs run in `actions/runner`, which is downloaded into
+Jobs run in `actions/runner`, GitHub's official self-hosted runner, which is downloaded into
 `~/.relayrunner/runner/<version>` on first connect and checked against its
 SHA-256. Set `RELAYRUNNER_HOME` to keep everything somewhere else.
 

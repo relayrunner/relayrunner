@@ -167,7 +167,7 @@ export async function ensureRunner(
   const dir = join(root, download.version);
   if (existsSync(join(dir, "run.sh"))) return { version: download.version, dir };
 
-  log(`Downloading actions/runner ${download.version}…`);
+  log(`Downloading GitHub's official runner (actions/runner ${download.version})…`);
   await install(root, download);
   log(`Installed actions/runner ${download.version} in ${dir}`);
   return { version: download.version, dir };

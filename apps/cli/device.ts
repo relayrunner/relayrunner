@@ -24,7 +24,7 @@ export interface Sources {
   totalMemory: number;
 }
 
-const run: Run = (command, args) =>
+export const run: Run = (command, args) =>
   new Promise((resolve) => {
     execFile(command, args, { timeout: 3000, encoding: "utf8" }, (error, stdout) => {
       resolve(error ? null : stdout.trim() || null);
