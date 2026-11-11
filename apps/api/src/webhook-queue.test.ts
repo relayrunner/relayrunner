@@ -1,15 +1,17 @@
 import { afterAll, beforeAll, describe, expect, test, vi } from "vitest";
 import { WEBHOOK_DLQ, WEBHOOK_QUEUE, type WebhookMessage } from "@relayrunner/github-webhooks";
 import type { Env } from "./env.ts";
+import { recordJobTiming } from "./job-timings.ts";
 import { recordWorkflowJob, setJobMachine } from "./jobs.ts";
 import { startD1 } from "./testing.ts";
 import * as consumer from "./webhook-queue.ts";
 
-// Storage is covered against a real D1 in jobs.test.ts.
+// Storage is covered against a real D1 in jobs.test.ts and job-timings.test.ts.
 vi.mock("./jobs.ts", () => ({
   recordWorkflowJob: vi.fn(async () => true),
   setJobMachine: vi.fn(async () => {}),
 }));
+vi.mock("./job-timings.ts", () => ({ recordJobTiming: vi.fn(async () => true) }));
 
 const start = vi.fn();
 const getByName = vi.fn(() => ({ start }));
@@ -52,7 +54,7 @@ function workflowJob(labels: string[], action = "queued"): WebhookMessage {
       runAttempt: 1,
       name: "pick",
       workflowName: "RelayRunner dev",
-      status: "queued",
+      status: action,
       conclusion: null,
       labels,
       headBranch: "main",
@@ -118,8 +120,14 @@ describe("webhook queue consumer", () => {
     const log = vi.spyOn(console, "log").mockImplementation(() => {});
     start.mockClear();
     vi.mocked(recordWorkflowJob).mockClear();
+    vi.mocked(recordJobTiming).mockClear();
     await consumer.processWebhook(env, workflowJob(["ubuntu-latest"]));
     expect(recordWorkflowJob).toHaveBeenCalledWith(expect.anything(), expect.anything(), false);
+    // Its timing is kept from the start, for the Runs page while it runs and the usage report once
+    // it finishes, even though RelayRunner didn't route it.
+    expect(recordJobTiming).toHaveBeenCalledOnce();
+    await consumer.processWebhook(env, workflowJob(["ubuntu-latest"], "completed"));
+    expect(recordJobTiming).toHaveBeenCalledTimes(2);
     expect(log).not.toHaveBeenCalled();
     expect(start).not.toHaveBeenCalled();
     log.mockRestore();
@@ -140,16 +148,69 @@ describe("webhook queue consumer", () => {
     log.mockRestore();
   });
 
+  test("only logs Checks App deliveries, even ones the main App acts on", async () => {
+    const log = vi.spyOn(console, "log").mockImplementation(() => {});
+    start.mockClear();
+    vi.mocked(recordWorkflowJob).mockClear();
+    await consumer.processWebhook(env, { ...workflowJob(["relayrunner"]), app: "checks" });
+    expect(recordWorkflowJob).not.toHaveBeenCalled();
+    expect(start).not.toHaveBeenCalled();
+    expect(JSON.parse(log.mock.calls[0][0])).toMatchObject({
+      msg: "checks app webhook received",
+      event: "workflow_job",
+      repository: "relayrunner/relayrunner",
+    });
+    log.mockRestore();
+  });
+
+  test("starts a container runner for a queued relayrunner-container job from an allowed org", async () => {
+    const log = vi.spyOn(console, "log").mockImplementation(() => {});
+    const startContainer = vi.fn();
+    const containers = vi.fn(() => ({ start: startContainer }));
+    const withContainers = (orgs?: string) =>
+      ({
+        ...env,
+        CONTAINER_RUNNER: { getByName: containers },
+        CONTAINER_RUNNER_ORGS: orgs,
+      }) as unknown as Env;
+    await consumer.processWebhook(
+      withContainers("RelayRunner"),
+      workflowJob(["Relayrunner-Container"]),
+    );
+    expect(containers).toHaveBeenLastCalledWith("42");
+    expect(startContainer).toHaveBeenCalledWith({
+      jobId: 42,
+      installationId: 7,
+      repo: "relayrunner/relayrunner",
+    });
+    // Later actions, orgs outside the allowlist and an unset allowlist start nothing.
+    await consumer.processWebhook(
+      withContainers("relayrunner"),
+      workflowJob(["relayrunner-container"], "in_progress"),
+    );
+    await consumer.processWebhook(
+      withContainers("other-org"),
+      workflowJob(["relayrunner-container"]),
+    );
+    await consumer.processWebhook(withContainers(), workflowJob(["relayrunner-container"]));
+    expect(startContainer).toHaveBeenCalledOnce();
+    log.mockRestore();
+  });
+
   describe("route jobs", () => {
     let stop: () => Promise<void>;
     let db: D1Database;
     const claim = vi.fn();
     const machineFor = vi.fn(async () => null);
     const run = vi.fn(async () => "sent");
+    const claimRunner = vi.fn();
+    const releaseRunnerJob = vi.fn();
     const routeEnv = () =>
       ({
         DB: db,
-        ROUTER: { getByName: vi.fn(() => ({ claim, machineFor })) },
+        ROUTER: {
+          getByName: vi.fn(() => ({ claim, machineFor, claimRunner, releaseRunnerJob })),
+        },
         MACHINE_LINK: { getByName: vi.fn(() => ({ run })) },
       }) as unknown as Env;
 
@@ -168,8 +229,45 @@ describe("webhook queue consumer", () => {
         )
         .bind(now, now)
         .run();
+      await db
+        .prepare(
+          "insert into machine (id, workspace_id, name, os, source, installation_id, github_runner_id, routing_label, created_at, updated_at) values ('gh1', 'w1', 'atticus-mac-mini', 'macos', 'github', 7, 11, 'rr-runner-0a1b2c3d', ?, ?)",
+        )
+        .bind(now, now)
+        .run();
     });
     afterAll(() => stop());
+
+    test("a job on an added runner's label claims the route without minting a runner", async () => {
+      const log = vi.spyOn(console, "log").mockImplementation(() => {});
+      vi.mocked(setJobMachine).mockClear();
+      claimRunner.mockResolvedValueOnce({ id: "0123456789ab", machineId: "gh1" });
+      run.mockClear();
+      const env = routeEnv();
+      await consumer.processWebhook(env, workflowJob(["RR-RUNNER-0a1b2c3d"]));
+      expect(claimRunner).toHaveBeenCalledWith("gh1", { jobId: 42, repositoryId: 1, runId: 9 });
+      expect(run).not.toHaveBeenCalled();
+      expect(setJobMachine).toHaveBeenCalledWith(expect.anything(), 42, "gh1");
+      // Once it starts, the route ends: the runner's own busy status takes over.
+      releaseRunnerJob.mockResolvedValueOnce("gh1");
+      await consumer.processWebhook(env, workflowJob(["rr-runner-0a1b2c3d"], "in_progress"));
+      expect(releaseRunnerJob).toHaveBeenCalledWith("gh1", {
+        jobId: 42,
+        repositoryId: 1,
+        runId: 9,
+      });
+      expect(JSON.parse(log.mock.calls.at(-1)![0])).toMatchObject({ result: "tracked" });
+      log.mockRestore();
+    });
+
+    test("an unknown runner label is left alone", async () => {
+      const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
+      claimRunner.mockClear();
+      await consumer.processWebhook(routeEnv(), workflowJob(["rr-runner-ffffffff"]));
+      expect(claimRunner).not.toHaveBeenCalled();
+      expect(JSON.parse(warn.mock.calls[0][0])).toMatchObject({ result: "no_machine" });
+      warn.mockRestore();
+    });
 
     test("a queued rr-<id> job claims its route and goes to the route's machine", async () => {
       const log = vi.spyOn(console, "log").mockImplementation(() => {});

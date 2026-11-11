@@ -1,9 +1,15 @@
 import type { ActivityPage } from "@relayrunner/activity";
+import { eq } from "drizzle-orm";
 import { afterAll, beforeAll, beforeEach, describe, expect, test, vi } from "vitest";
 import { app } from "./app.ts";
-import { createDb } from "./db/index.ts";
+import { createDb, schema } from "./db/index.ts";
 import type { Env } from "./env.ts";
-import { verifyMachineToken } from "./machines.ts";
+import {
+  deviceColumns,
+  issuePendingToken,
+  promotePendingToken,
+  verifyMachineToken,
+} from "./machines.ts";
 import * as testing from "./testing.ts";
 
 let proxy: Awaited<ReturnType<typeof testing.startD1>>["proxy"];
@@ -39,17 +45,25 @@ afterAll(async () => {
 const call = (path: string, cookie: string, body?: unknown) =>
   testing.call(env, path, cookie, body);
 
+// A request as Cloudflare's edge delivers it: `cf-connecting-ip` and `request.cf`.
+function fromEdge(request: Request, edge?: { ip?: string; country?: string; city?: string }) {
+  if (!edge) return request;
+  if (edge.ip) request.headers.set("cf-connecting-ip", edge.ip);
+  Object.defineProperty(request, "cf", { value: { country: edge.country, city: edge.city } });
+  return request;
+}
+
 // What `relayrunner connect` does first.
-async function requestCode(clientId = "relayrunner-cli") {
-  const response = await app.request(
-    "/api/auth/device/code",
-    {
-      method: "POST",
-      headers: { "content-type": "application/json" },
-      body: JSON.stringify({ client_id: clientId }),
-    },
-    env,
-  );
+async function requestCode(
+  clientId = "relayrunner-cli",
+  edge?: { ip?: string; country?: string; city?: string },
+) {
+  const request = new Request("http://localhost/api/auth/device/code", {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({ client_id: clientId }),
+  });
+  const response = await app.request(fromEdge(request, edge), undefined, env);
   return {
     status: response.status,
     body: (await response.json()) as {
@@ -194,7 +208,78 @@ describe("machine enrollment", () => {
     expect(response.status).toBe(403);
   });
 
-  test("a code another user opened can't be approved", async () => {
+  test("looking at a code doesn't claim it, so another account can still approve it", async () => {
+    const viewer = await owner("enroll-viewer");
+    const approver = await owner("enroll-approver");
+    const { body: code } = await requestCode();
+    const looked = await call(`/machines/device?user_code=${code.user_code}`, viewer.cookie);
+    expect(looked.status).toBe(200);
+    expect(await looked.json()).toMatchObject({
+      user_code: code.user_code,
+      status: "pending",
+      requested_from: null,
+    });
+    const response = await call("/machines/approve", approver.cookie, {
+      userCode: code.user_code,
+      workspaceId: approver.workspace.id,
+      name: "approved",
+    });
+    expect(response.status).toBe(200);
+    expect((await call(`/machines/device?user_code=${code.user_code}`, viewer.cookie)).status).toBe(
+      200,
+    );
+  });
+
+  test("the approval page sees where the code was requested from", async () => {
+    const viewer = await owner("enroll-origin");
+    const { body: code } = await requestCode("relayrunner-cli", {
+      ip: "203.0.113.7",
+      country: "PT",
+      city: "Lisbon",
+    });
+    const [row] = await createDb(env.DB)
+      .select()
+      .from(schema.deviceCode)
+      .where(eq(schema.deviceCode.deviceCode, code.device_code));
+    expect(row).toMatchObject({
+      requestIp: "203.0.113.7",
+      requestCountry: "PT",
+      requestCity: "Lisbon",
+    });
+
+    const look = (country?: string) =>
+      app.request(
+        fromEdge(
+          new Request(`http://localhost/api/machines/device?user_code=${code.user_code}`, {
+            headers: { cookie: viewer.cookie },
+          }),
+          country ? { country } : undefined,
+        ),
+        undefined,
+        env,
+      );
+    const elsewhere = (await (await look("US")).json()) as Record<string, unknown>;
+    expect(elsewhere.requested_from).toEqual({
+      country: "PT",
+      city: "Lisbon",
+      differentCountry: true,
+    });
+    expect(typeof elsewhere.requested_at).toBe("string");
+    const near = (await (await look("PT")).json()) as Record<string, unknown>;
+    expect(near.requested_from).toMatchObject({ differentCountry: false });
+    // The approver's own country unknown: no warning either way.
+    const unknown = (await (await look()).json()) as Record<string, unknown>;
+    expect(unknown.requested_from).toMatchObject({ differentCountry: null });
+  });
+
+  test("looking up a code that doesn't exist is an invalid request", async () => {
+    const { cookie } = await owner("enroll-missing");
+    const response = await call("/machines/device?user_code=NOPENOPE", cookie);
+    expect(response.status).toBe(400);
+    expect(await response.json()).toEqual({ error: "invalid_request" });
+  });
+
+  test("a code another user claimed can't be approved", async () => {
     const first = await owner("enroll-first");
     const second = await owner("enroll-second");
     const { body: code } = await requestCode();
@@ -251,10 +336,8 @@ describe("machine enrollment", () => {
   test("a denied code ends the CLI's polling", async () => {
     const { cookie } = await owner("enroll-deny");
     const { body: code } = await requestCode();
-    await call(`/auth/device?user_code=${code.user_code}`, cookie);
-    expect((await call("/auth/device/deny", cookie, { userCode: code.user_code })).status).toBe(
-      200,
-    );
+    // Denying claims the code itself; the page never opened it.
+    expect((await call("/machines/deny", cookie, { userCode: code.user_code })).status).toBe(200);
     const { body } = await pollToken(code.device_code);
     expect(body.error).toBe("access_denied");
   });
@@ -289,6 +372,43 @@ describe("machines in the dashboard", () => {
       }),
     ]);
     expect(machines[0]).not.toHaveProperty("tokenHash");
+    // Its CLI hasn't reported a device yet.
+    expect(machines[0].device).toBeNull();
+  });
+
+  test("shows the device its CLI reported on hello", async () => {
+    const { cookie, machine } = await enroll("device-ok", "atticus-mbp");
+    const reportedAt = new Date("2026-11-06T17:00:00.000Z");
+    await createDb(env.DB)
+      .update(schema.machine)
+      .set(
+        deviceColumns(
+          {
+            kind: "laptop",
+            model: "MacBook Pro",
+            modelId: "Mac15,9",
+            chip: "Apple M3 Pro",
+            cpuCores: 12,
+            memoryMb: 36864,
+            osVersion: "macOS 15.1",
+          },
+          reportedAt,
+        ),
+      )
+      .where(eq(schema.machine.id, machine.id));
+    const { machines } = (await (await call("/machines", cookie)).json()) as {
+      machines: { device: unknown }[];
+    };
+    expect(machines[0].device).toEqual({
+      kind: "laptop",
+      model: "MacBook Pro",
+      modelId: "Mac15,9",
+      chip: "Apple M3 Pro",
+      cpuCores: 12,
+      memoryMb: 36864,
+      osVersion: "macOS 15.1",
+      reportedAt: reportedAt.toISOString(),
+    });
   });
 
   test("revoking a machine kills its token and hides it", async () => {
@@ -537,11 +657,209 @@ describe("the machine WebSocket", () => {
 
   test("hands the socket to the machine's MachineLink, without the token", async () => {
     const { token, machine } = await enroll("ws-ok");
-    const response = await connect({ upgrade: "websocket", authorization: `Bearer ${token}` });
+    const response = await connect({
+      upgrade: "websocket",
+      authorization: `Bearer ${token}`,
+      "cf-connecting-ip": "203.0.113.9",
+    });
     expect(await response.text()).toBe("upgraded");
     const forwarded = link(machine.id).fetch.mock.calls[0]![0];
     expect(forwarded.headers.get("x-relayrunner-machine-id")).toBe(machine.id);
     expect(forwarded.headers.get("authorization")).toBeNull();
+    // Where it came from, for MachineLink's takeover check.
+    expect(JSON.parse(forwarded.headers.get("x-relayrunner-machine-origin")!)).toEqual({
+      ip: "203.0.113.9",
+      country: null,
+      city: null,
+    });
+  });
+});
+
+describe("rotating the machine token", () => {
+  const db = () => createDb(env.DB);
+  const connect = (token: string) =>
+    app.request(
+      "/api/machines/connect",
+      { headers: { upgrade: "websocket", authorization: `Bearer ${token}` } },
+      env,
+    );
+
+  test("the old token works until the CLI saves the new one, then only the new one", async () => {
+    const { token, machine } = await enroll("rotate-saved");
+    const issued = (await issuePendingToken(db(), machine.id))!;
+    expect(issued.token).toMatch(/^rrm_/);
+    expect(await verifyMachineToken(db(), token)).toMatchObject({ id: machine.id });
+
+    await promotePendingToken(db(), machine.id, issued.hash);
+    expect(await verifyMachineToken(db(), token)).toBeNull();
+    expect(await verifyMachineToken(db(), issued.token)).toMatchObject({ id: machine.id });
+    expect((await connect(token)).status).toBe(401);
+  });
+
+  test("using the new token finishes a rotation whose token_saved was lost", async () => {
+    const { token, machine } = await enroll("rotate-lost-ack");
+    const issued = (await issuePendingToken(db(), machine.id))!;
+    expect((await connect(issued.token)).status).toBe(200);
+    expect((await connect(token)).status).toBe(401);
+  });
+
+  test("a pending token replaced by a newer rotation no longer works", async () => {
+    const { machine } = await enroll("rotate-replaced");
+    const first = (await issuePendingToken(db(), machine.id))!;
+    await issuePendingToken(db(), machine.id);
+    expect(await verifyMachineToken(db(), first.token)).toBeNull();
+    expect(await promotePendingToken(db(), machine.id, first.hash)).toBe(false);
+  });
+
+  test("a stale token_saved can't undo a newer rotation", async () => {
+    const { machine } = await enroll("rotate-stale");
+    const first = (await issuePendingToken(db(), machine.id))!;
+    const second = (await issuePendingToken(db(), machine.id))!;
+    await promotePendingToken(db(), machine.id, first.hash);
+    expect(await verifyMachineToken(db(), first.token)).toBeNull();
+    expect(await verifyMachineToken(db(), second.token)).toMatchObject({ id: machine.id });
+  });
+
+  test("revoking kills the pending token too", async () => {
+    const { machine, cookie } = await enroll("rotate-revoke");
+    const issued = (await issuePendingToken(db(), machine.id))!;
+    await app.request(
+      `/api/machines/${machine.id}`,
+      { method: "DELETE", headers: { cookie, origin: env.BETTER_AUTH_URL } },
+      env,
+    );
+    expect(await verifyMachineToken(db(), issued.token)).toBeNull();
+    expect(await issuePendingToken(db(), machine.id)).toBeNull();
+  });
+});
+
+describe("sharing a machine (#242)", () => {
+  const share = (id: string, cookie: string, sharing: unknown) =>
+    app.request(
+      `/api/machines/${id}/sharing`,
+      {
+        method: "PUT",
+        headers: { cookie, "content-type": "application/json", origin: env.BETTER_AUTH_URL },
+        body: JSON.stringify({ sharing }),
+      },
+      env,
+    );
+  type SharedMachine = { machine: { sharing: string } };
+
+  test("a new machine runs only its owner's jobs", async () => {
+    const { cookie, machine } = await enroll("share-default");
+    const { machines } = (await (await call("/machines", cookie)).json()) as {
+      machines: { id: string; sharing: string }[];
+    };
+    expect(machines).toEqual([expect.objectContaining({ id: machine.id, sharing: "only_me" })]);
+  });
+
+  test("the owner shares it with anyone and back, each change logged once", async () => {
+    const { cookie, machine } = await enroll("share-owner", "studio");
+    const shared = await share(machine.id, cookie, "anyone");
+    expect(shared.status).toBe(200);
+    expect(((await shared.json()) as SharedMachine).machine.sharing).toBe("anyone");
+    // Setting what's already the case logs nothing.
+    expect((await share(machine.id, cookie, "anyone")).status).toBe(200);
+    expect((await share(machine.id, cookie, "only_me")).status).toBe(200);
+
+    const { items } = (await (await call("/activity", cookie)).json()) as ActivityPage;
+    const changes = items.filter((item) => item.type === "machine.sharing_changed");
+    expect(changes).toMatchObject([
+      { data: { machineName: "studio", sharing: "only_me" }, actor: {} },
+      { data: { machineName: "studio", sharing: "anyone" }, actor: {} },
+    ]);
+    expect(changes[0].actor).not.toBeNull();
+  });
+
+  test("only the owner can change it, not an admin or a member", async () => {
+    const { machine, workspaceId, cookie } = await enroll("share-others");
+    const admin = await testing.joinWorkspace(env, workspaceId, "admin");
+    const member = await testing.joinWorkspace(env, workspaceId, "member");
+    for (const other of [admin, member]) {
+      const response = await share(machine.id, other.cookie, "anyone");
+      expect(response.status).toBe(403);
+      expect(await response.json()).toEqual({ error: "not_owner" });
+    }
+    expect((await share(machine.id, cookie, "anyone")).status).toBe(200);
+  });
+
+  test("the list says whose machine it is, for the card's owner row (#243)", async () => {
+    const { machine, workspaceId, cookie } = await enroll("share-owner-row");
+    const member = await testing.joinWorkspace(env, workspaceId, "member");
+    type Listed = { machines: { id: string; owner: string; ownerImage: unknown; mine: boolean }[] };
+    const mine = (await (await call("/machines", cookie)).json()) as Listed;
+    expect(mine.machines).toEqual([
+      expect.objectContaining({ id: machine.id, owner: expect.any(String), mine: true }),
+    ]);
+    expect(mine.machines[0]).toHaveProperty("ownerImage");
+    const theirs = (await (await call("/machines", member.cookie)).json()) as Listed;
+    expect(theirs.machines).toEqual([expect.objectContaining({ id: machine.id, mine: false })]);
+  });
+
+  test("another workspace gets not found, and a bad value is rejected", async () => {
+    const { machine, cookie } = await enroll("share-mine");
+    const other = await owner("share-other");
+    expect((await share(machine.id, other.cookie, "anyone")).status).toBe(404);
+    expect((await share(machine.id, cookie, "people")).status).toBe(400);
+  });
+});
+
+describe("sharing from the machine's own CLI (#244)", () => {
+  const fromCli = (token: string, sharing: unknown) =>
+    app.request(
+      "/api/machines/me/sharing",
+      {
+        method: "PUT",
+        headers: { authorization: `Bearer ${token}`, "content-type": "application/json" },
+        body: JSON.stringify({ sharing }),
+      },
+      env,
+    );
+  const me = async (token: string) =>
+    (await (
+      await app.request("/api/machines/me", { headers: { authorization: `Bearer ${token}` } }, env)
+    ).json()) as { machine: { sharing: string }; workspace: { memberCount: number } };
+
+  test("claim reports the workspace's member count, for the connect prompt", async () => {
+    const { workspace } = await enroll("cli-share-count");
+    expect(workspace).toMatchObject({ memberCount: 1 });
+    const { workspaceId } = await enroll("cli-share-count-2");
+    const member = await testing.joinWorkspace(env, workspaceId, "member");
+    const second = await enrollAs(member.cookie, workspaceId, "teammate-mbp");
+    expect(second.workspace).toMatchObject({ memberCount: 2 });
+  });
+
+  test("the token changes sharing, logged as the machine's owner", async () => {
+    const { token, cookie } = await enroll("cli-share", "studio");
+    expect((await me(token)).machine.sharing).toBe("only_me");
+    const response = await fromCli(token, "anyone");
+    expect(response.status).toBe(200);
+    expect(((await response.json()) as { machine: { sharing: string } }).machine.sharing).toBe(
+      "anyone",
+    );
+    expect((await me(token)).machine.sharing).toBe("anyone");
+
+    const { items } = (await (await call("/activity", cookie)).json()) as ActivityPage;
+    const [change] = items.filter((item) => item.type === "machine.sharing_changed");
+    expect(change).toMatchObject({ data: { machineName: "studio", sharing: "anyone" } });
+    expect(change.actor).not.toBeNull();
+  });
+
+  test("needs a valid machine token and a known value", async () => {
+    const { token, cookie } = await enroll("cli-share-auth");
+    expect((await fromCli("rrm_nope", "anyone")).status).toBe(401);
+    const asUser = await app.request(
+      "/api/machines/me/sharing",
+      {
+        method: "PUT",
+        headers: { cookie, origin: env.BETTER_AUTH_URL, "content-type": "application/json" },
+        body: JSON.stringify({ sharing: "anyone" }),
+      },
+      env,
+    );
+    expect(asUser.status).toBe(401);
+    expect((await fromCli(token, "team")).status).toBe(400);
   });
 });
 
@@ -672,7 +990,12 @@ describe("a machine looking itself up", () => {
       status: { online: true, state: "idle", connectedAt: 5 },
     });
     expect(body.machine).not.toHaveProperty("tokenHash");
-    expect(body.workspace).toEqual({ id: workspaceId, name: "me-ok", slug: "me-ok" });
+    expect(body.workspace).toEqual({
+      id: workspaceId,
+      name: "me-ok",
+      slug: "me-ok",
+      memberCount: 1,
+    });
     expect(body.enrolledBy).toMatchObject({ name: expect.any(String), email: expect.any(String) });
   });
 

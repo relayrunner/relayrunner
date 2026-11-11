@@ -1,4 +1,4 @@
-import { createFileRoute, useNavigate, useRouter } from "@tanstack/react-router";
+import { createFileRoute, Link, useNavigate, useRouter } from "@tanstack/react-router";
 import { CheckIcon } from "lucide-react";
 import { useState, type FormEvent, type ReactNode } from "react";
 import { Brand } from "@/components/brand";
@@ -8,7 +8,7 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { ApiError } from "@/lib/api";
-import { authDisabled, organization } from "@/lib/auth-client";
+import { authDisabled, getSession, organization, signIn } from "@/lib/auth-client";
 import {
   githubInstallHref,
   githubOutcomes,
@@ -21,11 +21,16 @@ import {
   describeDeviceError,
   formatUserCode,
   openDeviceCode,
+  timeAgo,
   type DeviceCodeStatus,
 } from "@/lib/machines";
+import { describePlace } from "@/lib/device";
+import { shouldOpenInstall } from "@/lib/onboarding";
+import { canManage } from "@/lib/roles";
 import { cn } from "@/lib/utils";
 import {
   claimInstallation,
+  createFirstWorkspace,
   ensureActiveWorkspace,
   getCurrentWorkspace,
   getUnclaimedInstallations,
@@ -38,25 +43,50 @@ import {
 // It doubles as onboarding for someone who has never used RelayRunner, so the CLI's one link
 // walks them through every step and back here each time:
 //
-// 1. Sign in (the _authed guard sends them to /login and back; GitHub sign-in creates the account).
-// 2. Create a workspace, right here.
-// 3. Connect GitHub: install the App (/api/github/install?next=<this page>), or add an install
-//    they already made. A non-admin's install only sends a request to the org's owners, so with
-//    ?github=requested they may carry on and jobs start once an owner accepts.
-// 4. Pick the machine's name and approve. The CLI picks up its machine token on its next poll.
+// 1. Connect GitHub, one click (#221). Signed out, the GitHub step is "Continue with GitHub": one
+//    trip to GitHub that installs the App and signs up (/api/github/signup, see
+//    apps/api/src/routes/github.ts), coming back with ?installed=<id>. Someone with no workspace
+//    gets one made for them, named after their GitHub login, and the installation is claimed into
+//    it. "Already have an account? Sign in" only signs in and comes back here.
+//    Signed in with no installation and nothing to choose, the page's data load
+//    sends them straight on to the App's install screen (/api/github/install?next=<this page>)
+//    before anything renders. It shows the GitHub step instead when they have an install to add,
+//    when GitHub has already reported back (?github=), or when they come
+//    back without installing (?install=opened), so cancelling doesn't loop. A non-admin's install
+//    only sends a request to the org's owners, so with ?github=requested they may carry on and
+//    jobs start once an owner accepts.
+// 2. Pick the machine's name and approve. The CLI picks up its machine token on its next poll.
 //
-// The device code lives 30 minutes (apps/api/src/auth.ts), long enough for all of that.
-type DeviceSearch = { user_code?: string; name?: string; github?: GitHubOutcome };
+// The device code lives 15 minutes (apps/api/src/auth.ts): enough for all of that, short enough
+// that an approval link someone else started goes stale quickly.
+type DeviceSearch = {
+  user_code?: string;
+  name?: string;
+  github?: GitHubOutcome;
+  install?: "opened";
+  // Set by /api/github/setup when it signed a new user in on the way back from installing the
+  // App: the installation to claim into their (new) workspace.
+  installed?: number;
+};
 
 type Workspace = { id: string; name: string };
 
+function positiveInt(value: unknown) {
+  const n = typeof value === "string" ? Number(value) : value;
+  return typeof n === "number" && Number.isSafeInteger(n) && n > 0 ? n : undefined;
+}
+
 type Loaded =
   | { kind: "enter" }
+  // Signed out: the GitHub step signs them in first.
+  | { kind: "signin" }
   | { kind: "error"; message: string }
   | { kind: "done"; status: DeviceCodeStatus["status"] }
   | {
       kind: "review";
       userCode: string;
+      // When and where the CLI asked for the code (null in dev).
+      origin: Pick<DeviceCodeStatus, "requested_at" | "requested_from"> | null;
       workspaces: Workspace[];
       // The workspace the machine would join: the session's active one. Null with no workspace.
       current: CurrentWorkspace | null;
@@ -74,23 +104,36 @@ const devWorkspace: CurrentWorkspace = {
   installations: [],
 };
 
-export const Route = createFileRoute("/_authed/device")({
+// Outside the _authed guard so a signed-out visitor stays here: the GitHub step signs them in.
+export const Route = createFileRoute("/device")({
   validateSearch: (search: Record<string, unknown>): DeviceSearch => ({
     user_code: typeof search.user_code === "string" ? search.user_code : undefined,
     name: typeof search.name === "string" ? search.name.slice(0, 64) : undefined,
     github: isGitHubOutcome(search.github) ? search.github : undefined,
+    install: search.install === "opened" ? "opened" : undefined,
+    installed: positiveInt(search.installed),
   }),
-  loaderDeps: ({ search }) => ({ userCode: search.user_code }),
+  beforeLoad: async () => ({ session: authDisabled ? null : await getSession() }),
+  loaderDeps: ({ search }) => ({
+    userCode: search.user_code,
+    name: search.name,
+    github: search.github,
+    install: search.install,
+    installed: search.installed,
+  }),
   loader: async ({ deps, context }): Promise<Loaded> => {
+    if (leavingForGitHub) return leaving();
     if (!deps.userCode) return { kind: "enter" };
     if (authDisabled)
       return {
         kind: "review",
         userCode: deps.userCode,
+        origin: null,
         workspaces: [devWorkspace.workspace],
         current: devWorkspace,
         unclaimed: { installations: [] },
       };
+    if (!context.session) return { kind: "signin" };
     let status: DeviceCodeStatus;
     try {
       status = await openDeviceCode(deps.userCode);
@@ -98,20 +141,50 @@ export const Route = createFileRoute("/_authed/device")({
       return { kind: "error", message: describeDeviceError(error) };
     }
     if (status.status !== "pending") return { kind: "done", status: status.status };
-    const { data } = await organization.list();
+    let { data } = await organization.list();
+    if (!data?.length && context.session) {
+      // A new account: make its first workspace rather than asking. If that fails, the page
+      // falls back to the Create a workspace form.
+      try {
+        await createFirstWorkspace(context.session);
+        ({ data } = await organization.list());
+      } catch {}
+    }
     const workspaces = (data ?? []).map(({ id, name }) => ({ id, name }));
-    const review = { kind: "review" as const, userCode: deps.userCode, workspaces };
+    const review = {
+      kind: "review" as const,
+      userCode: deps.userCode,
+      origin: { requested_at: status.requested_at, requested_from: status.requested_from },
+      workspaces,
+    };
     if (!workspaces.length || !context.session)
       return { ...review, current: null, unclaimed: { installations: [] } };
 
     const active = await ensureActiveWorkspace(context.session);
     if (!workspaces.some((workspace) => workspace.id === active))
       await organization.setActive({ organizationId: workspaces[0]!.id });
-    const current = await getCurrentWorkspace();
+    let current = await getCurrentWorkspace();
+    // Just signed up through the install: link it. If that fails (say another workspace has it),
+    // the GitHub step shows with the installation to add or the error.
+    if (deps.installed && !current.installations.length && canManage(current.role)) {
+      try {
+        await claimInstallation(deps.installed);
+        current = await getCurrentWorkspace();
+      } catch {}
+    }
     // Only needed for the Connect GitHub step.
     const unclaimed = current.installations.length
       ? { installations: [] }
       : await getUnclaimedInstallations();
+    if (
+      shouldOpenInstall({
+        current,
+        unclaimedCount: unclaimed.installations.length,
+        outcome: deps.github,
+        opened: deps.install === "opened" || !!deps.installed,
+      })
+    )
+      return openInstall(returnPath(deps));
     return { ...review, current, unclaimed };
   },
   component: DevicePage,
@@ -122,7 +195,9 @@ function DevicePage() {
   return (
     <main className="grid min-h-screen place-items-center p-4">
       <div className="flex w-full max-w-sm flex-col items-center gap-6">
-        <Brand />
+        <Link to="/" aria-label="relayrunner home" className="rounded-md">
+          <Brand />
+        </Link>
         {loaded.kind === "enter" && <EnterCode />}
         {loaded.kind === "error" && (
           <Message title="Can't connect this machine" body={loaded.message} />
@@ -136,6 +211,12 @@ function DevicePage() {
                 : "This request was denied. Run `relayrunner connect` again to start over."
             }
           />
+        )}
+        {loaded.kind === "signin" && (
+          <div className="flex w-full flex-col gap-4">
+            <Steps current="github" withWorkspace={false} />
+            <SignInStep />
+          </div>
         )}
         {loaded.kind === "review" && <Onboarding loaded={loaded} />}
       </div>
@@ -180,6 +261,7 @@ function EnterCode() {
 
 type Step = "workspace" | "github" | "approve";
 
+// The workspace step only shows if making one automatically failed.
 const steps: { key: Step; label: string }[] = [
   { key: "workspace", label: "Workspace" },
   { key: "github", label: "GitHub" },
@@ -188,7 +270,7 @@ const steps: { key: Step; label: string }[] = [
 
 // Picks the first step that still needs doing.
 function Onboarding({ loaded }: { loaded: Extract<Loaded, { kind: "review" }> }) {
-  const { github } = Route.useSearch();
+  const { github, installed } = Route.useSearch();
   const [result, setResult] = useState<{ action: "approved" | "denied"; name: string } | null>(
     null,
   );
@@ -202,7 +284,7 @@ function Onboarding({ loaded }: { loaded: Extract<Loaded, { kind: "review" }> })
     return (
       <Message
         title="Machine connected"
-        body={`${result.name} is enrolled. Head back to your terminal; it finishes on its own.`}
+        body={`${result.name} is enrolled. Head back to your terminal; it finishes on its own. You can close this tab.`}
       />
     );
   if (result?.action === "denied")
@@ -210,7 +292,7 @@ function Onboarding({ loaded }: { loaded: Extract<Loaded, { kind: "review" }> })
 
   return (
     <div className="flex w-full flex-col gap-4">
-      <Steps current={step} />
+      <Steps current={step} withWorkspace={step === "workspace"} />
       {step === "workspace" && <CreateWorkspaceStep />}
       {step === "github" && current && (
         <ConnectGitHubStep
@@ -223,9 +305,15 @@ function Onboarding({ loaded }: { loaded: Extract<Loaded, { kind: "review" }> })
       {step === "approve" && current && (
         <ApproveStep
           userCode={loaded.userCode}
+          origin={loaded.origin}
           workspaces={loaded.workspaces}
           current={current}
-          outcome={github}
+          outcome={
+            github ??
+            (installed && current.installations.some((i) => i.id === installed)
+              ? "connected"
+              : undefined)
+          }
           onDone={setResult}
         />
       )}
@@ -233,11 +321,12 @@ function Onboarding({ loaded }: { loaded: Extract<Loaded, { kind: "review" }> })
   );
 }
 
-function Steps({ current }: { current: Step }) {
-  const at = steps.findIndex((step) => step.key === current);
+function Steps({ current, withWorkspace }: { current: Step; withWorkspace: boolean }) {
+  const shown = withWorkspace ? steps : steps.filter((step) => step.key !== "workspace");
+  const at = shown.findIndex((step) => step.key === current);
   return (
     <ol className="flex items-center justify-center gap-2 text-xs" aria-label="Setup steps">
-      {steps.map((step, index) => {
+      {shown.map((step, index) => {
         const done = index < at;
         const active = index === at;
         return (
@@ -269,12 +358,105 @@ function Steps({ current }: { current: Step }) {
 }
 
 /** This page, as a path to come back to, without a stale ?github= outcome. */
-function useReturnPath() {
-  const { user_code, name } = Route.useSearch();
+function returnPath({ userCode, name }: { userCode?: string; name?: string }) {
   const search = new URLSearchParams();
-  if (user_code) search.set("user_code", user_code);
+  if (userCode) search.set("user_code", userCode);
   if (name) search.set("name", name);
   return `/device?${search}`;
+}
+
+function useReturnPath() {
+  const { user_code, name } = Route.useSearch();
+  return returnPath({ userCode: user_code, name });
+}
+
+// Marking the URL makes the router load this page again; while the browser is on its way to
+// GitHub, that load waits too, so it can't render the GitHub step in the meantime.
+let leavingForGitHub = false;
+const leaving = () => new Promise<never>(() => {});
+
+/**
+ * Sends the browser to GitHub's App install screen straight from the page's data load, so nothing
+ * renders first. It marks this page's history entry ?install=opened, so coming back (cancelling on
+ * GitHub, or the back button) shows the GitHub step instead of redirecting again. Never resolves:
+ * the page is on its way out.
+ */
+function openInstall(back: string): Promise<never> {
+  leavingForGitHub = true;
+  const opened = new URL(window.location.href);
+  opened.searchParams.set("install", "opened");
+  window.history.replaceState(window.history.state, "", opened);
+  // The back button can restore this page from the cache, mid-load: reload it so it reads
+  // ?install=opened.
+  window.addEventListener("pageshow", (event) => {
+    if (event.persisted) window.location.reload();
+  });
+  window.location.assign(githubInstallHref(back));
+  return leaving();
+}
+
+/**
+ * The GitHub step for someone signed out. "Continue with GitHub" is for someone new: it installs
+ * the App and signs up in one trip, and comes back here to approve. "Sign in" is for an existing
+ * account: a plain sign-in, after which the page picks up wherever they are.
+ */
+function SignInStep() {
+  const back = useReturnPath();
+  const [pending, setPending] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  // For someone who already has an account: sign in only, and the page picks up from there.
+  async function signInOnly() {
+    setError(null);
+    setPending(true);
+    const { error } = await signIn.social({ provider: "github", callbackURL: back });
+    if (error) {
+      setError(error.message ?? "Sign-in failed");
+      setPending(false);
+    }
+  }
+
+  return (
+    <Card className="w-full">
+      <CardHeader>
+        <CardTitle>Connect GitHub</CardTitle>
+        <CardDescription>Sign up and install the RelayRunner GitHub App.</CardDescription>
+      </CardHeader>
+      <CardContent className="flex flex-col gap-3">
+        <Button asChild size="lg" className="w-full font-bold">
+          {/* A full page load: one trip to GitHub installs the App and signs up. */}
+          <a href={`/api/github/signup?next=${encodeURIComponent(back)}`}>Continue with GitHub</a>
+        </Button>
+        <p className="text-center text-sm text-muted-foreground">
+          Already have an account?{" "}
+          <button
+            type="button"
+            className="text-foreground underline-offset-4 hover:underline disabled:opacity-50"
+            disabled={pending}
+            onClick={() => void signInOnly()}
+          >
+            Sign in
+          </button>
+        </p>
+        {error && (
+          <p role="alert" className="text-sm text-destructive">
+            {error}
+          </p>
+        )}
+        <p className="text-center text-xs text-muted-foreground">
+          By continuing, you agree to the{" "}
+          <a className="underline underline-offset-2" href="https://relayrunner.app/terms">
+            Terms of Service
+          </a>{" "}
+          and{" "}
+          <a className="underline underline-offset-2" href="https://relayrunner.app/privacy">
+            Privacy Policy
+          </a>
+          .
+        </p>
+      </CardContent>
+    </Card>
+  );
 }
 
 function CreateWorkspaceStep() {
@@ -284,8 +466,8 @@ function CreateWorkspaceStep() {
       <CardHeader>
         <CardTitle>Create a workspace</CardTitle>
         <CardDescription>
-          Your machines and GitHub orgs live in a workspace. Name one to connect this machine to.
-          You'll be its owner.
+          Your machines and GitHub accounts live in a workspace. Name one to connect this machine
+          to. You'll be its owner.
         </CardDescription>
       </CardHeader>
       <CardContent>
@@ -337,8 +519,8 @@ function ConnectGitHubStep({
       <CardHeader>
         <CardTitle>Connect GitHub</CardTitle>
         <CardDescription>
-          Install the RelayRunner GitHub App on the org whose jobs {current.workspace.name} should
-          route. GitHub sends you back here afterwards.
+          Install the RelayRunner GitHub App on the org or personal account whose jobs{" "}
+          {current.workspace.name} should route. GitHub sends you back here afterwards.
         </CardDescription>
       </CardHeader>
       <CardContent className="flex flex-col gap-4">
@@ -401,12 +583,14 @@ function ConnectGitHubStep({
 
 function ApproveStep({
   userCode,
+  origin,
   workspaces,
   current,
   outcome,
   onDone,
 }: {
   userCode: string;
+  origin: Extract<Loaded, { kind: "review" }>["origin"];
   workspaces: Workspace[];
   current: CurrentWorkspace;
   outcome?: GitHubOutcome;
@@ -425,7 +609,10 @@ function ApproveStep({
     try {
       if (action === "approve") await approveDevice({ userCode, workspaceId, name: name.trim() });
       else await denyDevice(userCode);
-      onDone({ action: action === "approve" ? "approved" : "denied", name: name.trim() });
+      onDone({
+        action: action === "approve" ? "approved" : "denied",
+        name: name.trim(),
+      });
     } catch (caught) {
       setError(describeDeviceError(caught));
     } finally {
@@ -455,7 +642,7 @@ function ApproveStep({
               role="status"
               className="rounded-md border border-go-edge bg-go-soft px-3 py-2 text-sm"
             >
-              GitHub org connected.
+              GitHub account connected.
             </p>
           )}
           {awaitingOwner && (
@@ -470,6 +657,7 @@ function ApproveStep({
           <p className="rounded-md border bg-muted py-3 text-center font-mono text-2xl tracking-widest">
             {formatUserCode(userCode)}
           </p>
+          <RequestOrigin origin={origin} />
           {workspaces.length > 1 && (
             <WorkspaceSelect
               workspaces={workspaces}
@@ -534,7 +722,10 @@ function WorkspaceSelect({
     setSwitching(true);
     try {
       await organization.setActive({ organizationId: id });
-      await navigate({ search: (prev) => ({ ...prev, github: undefined }), replace: true });
+      await navigate({
+        search: (prev) => ({ ...prev, github: undefined }),
+        replace: true,
+      });
       await router.invalidate();
     } finally {
       setSwitching(false);
@@ -569,5 +760,32 @@ function Message({ title, body, action }: { title: string; body: string; action?
       </CardHeader>
       {action && <CardContent>{action}</CardContent>}
     </Card>
+  );
+}
+
+/**
+ * Where and when `relayrunner connect` asked for this code. Anyone can start a sign-in and send
+ * the link to someone else, so a request from another country gets a warning to stop and check.
+ */
+function RequestOrigin({ origin }: { origin: Extract<Loaded, { kind: "review" }>["origin"] }) {
+  if (!origin?.requested_at && !origin?.requested_from) return null;
+  const from = origin.requested_from;
+  const place = from ? describePlace(from.country, from.city) : null;
+  const parts = [
+    place && `Requested from ${place}`,
+    origin.requested_at &&
+      (place ? timeAgo(origin.requested_at) : `Requested ${timeAgo(origin.requested_at)}`),
+  ].filter(Boolean);
+  return (
+    <>
+      <p className="text-center text-sm text-muted-foreground">{parts.join(" · ")}</p>
+      {from?.differentCountry && (
+        <p role="alert" className="rounded-md border border-destructive/50 px-3 py-2 text-sm">
+          This request came from a different country than you. Only approve it if you just ran{" "}
+          <code>relayrunner connect</code> yourself. Someone else's machine would get your jobs and
+          their secrets.
+        </p>
+      )}
+    </>
   );
 }

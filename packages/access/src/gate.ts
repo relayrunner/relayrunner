@@ -1,6 +1,6 @@
-// Development-only views: paths that only people and agents let through by Cloudflare Access may
+// Operator admin views: paths that only people and agents let through by Cloudflare Access may
 // reach. Everywhere else (production workers.dev today, which has no Access app) they answer 404,
-// so a dev view can never leak by forgetting to configure Access.
+// so an admin view can never leak by forgetting to configure Access.
 import {
   accessConfig,
   verifyAccessRequest,
@@ -9,17 +9,15 @@ import {
   type VerifyOptions,
 } from "./jwt.ts";
 
-const DEV_ONLY_PREFIXES = ["/dev", "/api/dev"];
+const ADMIN_PREFIXES = ["/admin", "/api/admin"];
 
-export function isDevOnlyPath(pathname: string) {
-  return DEV_ONLY_PREFIXES.some(
-    (prefix) => pathname === prefix || pathname.startsWith(`${prefix}/`),
-  );
+export function isAdminPath(pathname: string) {
+  return ADMIN_PREFIXES.some((prefix) => pathname === prefix || pathname.startsWith(`${prefix}/`));
 }
 
 // Returns a Response to send instead (404 when Access isn't configured, 403 when the token is
 // missing or invalid), or the caller's identity when the request may continue.
-export async function gateDevOnly(
+export async function gateAdmin(
   request: Request,
   env: AccessEnv,
   options?: VerifyOptions,

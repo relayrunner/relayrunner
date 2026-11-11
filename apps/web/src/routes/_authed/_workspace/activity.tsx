@@ -1,4 +1,4 @@
-import { createFileRoute } from "@tanstack/react-router";
+import { Link, createFileRoute } from "@tanstack/react-router";
 import {
   Ban,
   ChevronRight,
@@ -6,7 +6,6 @@ import {
   CircleMinus,
   CircleX,
   Clock,
-  Cloud,
   Laptop,
   LoaderCircle,
   Lock,
@@ -19,41 +18,313 @@ import {
   UserMinus,
   UserPlus,
   UserX,
+  Zap,
+  TriangleAlert,
 } from "lucide-react";
-import { type ReactNode, useEffect, useState } from "react";
+import { type ReactNode, useEffect, useRef, useState } from "react";
 import { PageHeader } from "@/components/page-header";
+import { ProviderLink } from "@/components/provider-link";
 import { Button } from "@/components/ui/button";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
 import {
   duration,
   getActivity,
+  getActivityOptions,
   timeAgo,
   type ActivityFilter,
   type ActivityItem,
   type ActivityJob,
+  type ActivityOptions,
   type ActivityPage,
+  type ActivityQuery,
+  type ActivityResult,
+  type ActivityStarter,
+  type ActivityStarters,
 } from "@/lib/activity";
 import { authDisabled } from "@/lib/auth-client";
-import { failureText, walkLines, walkSummary, type RouteWalk } from "@/lib/route-walk";
+import { DAY_MS } from "@/lib/job-times";
+import { useLiveRefresh } from "@/lib/live-refresh";
+import {
+  getCheckSavings,
+  minutes,
+  money,
+  sampleCheckSavings,
+  type FreeCheckSavings,
+} from "@/lib/usage";
+import { failureText, jobNames, walkLines, walkSummary, type RouteWalk } from "@/lib/route-walk";
 
 // Fast enough that a push shows up within seconds, without a live connection.
 const POLL_MS = 5_000;
 
-export const Route = createFileRoute("/_authed/_workspace/activity")({
-  loader: (): Promise<ActivityPage> =>
-    authDisabled ? Promise.resolve(samplePage(undefined)) : getActivity(),
-  component: ActivityPage,
-});
-
-const FILTERS: { value: ActivityFilter | undefined; label: string }[] = [
+const TYPES: { value: ActivityFilter | undefined; label: string }[] = [
   { value: undefined, label: "All" },
   { value: "job", label: "Jobs" },
+  { value: "check", label: "Checks" },
   { value: "machine", label: "Machines" },
   { value: "member", label: "Members" },
 ];
+const RANGES = [
+  { days: 1, label: "Last 24 hours" },
+  { days: 7, label: "Last 7 days" },
+  { days: 30, label: "Last 30 days" },
+];
+const RESULTS: { value: ActivityResult; label: string }[] = [
+  { value: "passed", label: "Passed" },
+  { value: "failed", label: "Failed" },
+  { value: "cancelled", label: "Cancelled" },
+  { value: "skipped", label: "Skipped" },
+  { value: "running", label: "In progress" },
+];
+// A Select needs a value for "no filter".
+const ANY = "any";
+
+/** The filters, kept in the URL so a filtered view can be shared or bookmarked. */
+type ActivitySearch = {
+  type?: ActivityFilter;
+  days?: number;
+  repo?: string;
+  result?: ActivityResult;
+  machine?: string;
+};
+
+function oneOf<T>(values: readonly T[], value: unknown): T | undefined {
+  return values.find((option) => option === value);
+}
+const text = (value: unknown) =>
+  typeof value === "string" && value.length > 0 ? value.slice(0, 200) : undefined;
+
+// Which filters mean something for each kind of event: a member change has no repo, result or
+// machine; a check runs on no machine; a machine event has no repo or result.
+function appliesTo(type: ActivityFilter | undefined) {
+  const jobOrCheck = type === undefined || type === "job" || type === "check";
+  return {
+    repo: jobOrCheck,
+    result: jobOrCheck,
+    machine: type === undefined || type === "job" || type === "machine",
+  };
+}
+
+function toQuery(search: ActivitySearch): ActivityQuery {
+  return {
+    filter: search.type,
+    since: search.days ? Date.now() - search.days * DAY_MS : undefined,
+    repository: search.repo,
+    result: search.result,
+    machine: search.machine,
+  };
+}
+
+export const Route = createFileRoute("/_authed/_workspace/activity")({
+  // Drops the filters that don't fit the kind of event shown, so nothing hidden narrows the log.
+  validateSearch: (search: Record<string, unknown>): ActivitySearch => {
+    const type = oneOf(
+      TYPES.map((option) => option.value),
+      search.type,
+    );
+    const applies = appliesTo(type);
+    return {
+      type,
+      days: oneOf(
+        RANGES.map((range) => range.days),
+        search.days,
+      ),
+      repo: applies.repo ? text(search.repo) : undefined,
+      result: applies.result
+        ? oneOf(
+            RESULTS.map((result) => result.value),
+            search.result,
+          )
+        : undefined,
+      machine: applies.machine ? text(search.machine) : undefined,
+    };
+  },
+  loaderDeps: ({ search }) => search,
+  loader: ({ deps }): Promise<ActivityPage> =>
+    authDisabled ? Promise.resolve(samplePage(deps)) : getActivity(toQuery(deps)),
+  component: ActivityPage,
+});
 
 function ActivityPage() {
+  const search = Route.useSearch();
+  const navigate = Route.useNavigate();
+  const [savings, setSavings] = useState<FreeCheckSavings | null>(null);
+  const [options, setOptions] = useState<ActivityOptions>({ repositories: [], machines: [] });
+
+  useEffect(() => {
+    if (authDisabled) {
+      setSavings(sampleCheckSavings(30));
+      setOptions(sampleOptions());
+      return;
+    }
+    // The log works without either.
+    getCheckSavings(30)
+      .then(setSavings)
+      .catch(() => undefined);
+    getActivityOptions()
+      .then(setOptions)
+      .catch(() => undefined);
+  }, []);
+
+  const update = (patch: ActivitySearch) =>
+    void navigate({ search: (prev) => ({ ...prev, ...patch }) });
+  const narrowed = Boolean(search.days || search.repo || search.result || search.machine);
+
+  return (
+    <section>
+      <PageHeader title="Activity">
+        Routed jobs, free checks, machine events and member changes, newest first.
+      </PageHeader>
+      <div className="grid max-w-4xl gap-2">
+        <Filters search={search} options={options} narrowed={narrowed} onChange={update} />
+        {savings &&
+          savings.checks > 0 &&
+          !narrowed &&
+          (!search.type || search.type === "check") && <SavingsBanner savings={savings} />}
+        <Log search={search} narrowed={narrowed} onClear={() => update(CLEARED)} />
+      </div>
+    </section>
+  );
+}
+
+const CLEARED: ActivitySearch = {
+  days: undefined,
+  repo: undefined,
+  result: undefined,
+  machine: undefined,
+};
+
+function Filters({
+  search,
+  options,
+  narrowed,
+  onChange,
+}: {
+  search: ActivitySearch;
+  options: ActivityOptions;
+  narrowed: boolean;
+  onChange: (patch: ActivitySearch) => void;
+}) {
+  const applies = appliesTo(search.type);
+  // A repo or machine from a shared link still shows, even if this workspace's lists lack it.
+  const repositories =
+    search.repo && !options.repositories.includes(search.repo)
+      ? [search.repo, ...options.repositories]
+      : options.repositories;
+  const machines =
+    search.machine && !options.machines.some((machine) => machine.id === search.machine)
+      ? [{ id: search.machine, name: "Unknown machine" }, ...options.machines]
+      : options.machines;
+
+  return (
+    <div className="grid gap-2">
+      <div role="group" aria-label="Show" className="flex gap-1.5">
+        {TYPES.map(({ value, label }) => (
+          <Button
+            key={label}
+            size="sm"
+            variant={search.type === value ? "secondary" : "ghost"}
+            aria-pressed={search.type === value}
+            onClick={() => value !== search.type && onChange({ type: value })}
+          >
+            {label}
+          </Button>
+        ))}
+      </div>
+      <div className="flex flex-wrap items-center gap-2">
+        <FilterSelect
+          label="Date"
+          value={search.days?.toString()}
+          any="Any time"
+          options={RANGES.map((range) => ({ value: String(range.days), label: range.label }))}
+          onChange={(value) => onChange({ days: value ? Number(value) : undefined })}
+        />
+        {applies.repo && repositories.length > 0 && (
+          <FilterSelect
+            label="Repo"
+            value={search.repo}
+            any="All repos"
+            options={repositories.map((name) => ({ value: name, label: name }))}
+            onChange={(repo) => onChange({ repo })}
+          />
+        )}
+        {applies.result && (
+          <FilterSelect
+            label="Result"
+            value={search.result}
+            any="Any result"
+            options={RESULTS}
+            onChange={(result) => onChange({ result })}
+          />
+        )}
+        {applies.machine && machines.length > 0 && (
+          <FilterSelect
+            label="Machine"
+            value={search.machine}
+            any="All machines"
+            options={machines.map((machine) => ({ value: machine.id, label: machine.name }))}
+            onChange={(machine) => onChange({ machine })}
+          />
+        )}
+        {narrowed && (
+          <Button size="sm" variant="ghost" onClick={() => onChange(CLEARED)}>
+            Clear
+          </Button>
+        )}
+      </div>
+    </div>
+  );
+}
+
+function FilterSelect<T extends string>({
+  label,
+  value,
+  any,
+  options,
+  onChange,
+}: {
+  label: string;
+  value: T | undefined;
+  any: string;
+  options: { value: T; label: string }[];
+  onChange: (value: T | undefined) => void;
+}) {
+  return (
+    <Select
+      value={value ?? ANY}
+      onValueChange={(next) => onChange(next === ANY ? undefined : (next as T))}
+    >
+      <SelectTrigger size="sm" aria-label={label} className="max-w-72">
+        <SelectValue />
+      </SelectTrigger>
+      <SelectContent>
+        <SelectItem value={ANY}>{any}</SelectItem>
+        {options.map((option) => (
+          <SelectItem key={option.value} value={option.value}>
+            {option.label}
+          </SelectItem>
+        ))}
+      </SelectContent>
+    </Select>
+  );
+}
+
+// The log for the current filters. The loader fetches the newest page whenever they change.
+function Log({
+  search,
+  narrowed,
+  onClear,
+}: {
+  search: ActivitySearch;
+  narrowed: boolean;
+  onClear: () => void;
+}) {
   const first = Route.useLoaderData();
-  const [filter, setFilter] = useState<ActivityFilter | undefined>(undefined);
   const [latest, setLatest] = useState(first);
   const [older, setOlder] = useState<ActivityItem[]>([]);
   // Where the next older page starts, once one has been loaded. Before that it's the newest page's.
@@ -61,38 +332,29 @@ function ActivityPage() {
   const [loadingOlder, setLoadingOlder] = useState(false);
   const [now, setNow] = useState(() => Date.now());
 
-  // Refresh the newest page while the tab is visible, and right away when the filter changes.
-  // Older pages don't change much, so they're left as loaded.
+  // New filters bring a new first page: start over from it.
   useEffect(() => {
-    if (authDisabled) return;
-    let current = true;
-    const refresh = () =>
-      getActivity({ filter })
-        .then((page) => current && setLatest(page))
-        .catch(() => undefined); // Keep showing the last good page; the next tick retries.
-    const timer = setInterval(() => {
-      setNow(Date.now());
-      if (document.visibilityState === "visible") void refresh();
-    }, POLL_MS);
-    return () => {
-      current = false;
-      clearInterval(timer);
-    };
-  }, [filter]);
-
-  function chooseFilter(next: ActivityFilter | undefined) {
-    if (next === filter) return;
-    setFilter(next);
+    setLatest(first);
     setOlder([]);
     setOlderCursor(null);
-    if (authDisabled) {
-      setLatest(samplePage(next));
-      return;
-    }
-    getActivity({ filter: next })
-      .then(setLatest)
-      .catch(() => undefined);
-  }
+  }, [first]);
+
+  // Refresh the newest page while someone is looking (paused while the tab is hidden or idle, see
+  // lib/live-refresh.ts). Older pages don't change much, so they're left as loaded.
+  const { type, days, repo, result, machine } = search;
+  const filters = JSON.stringify({ type, days, repo, result, machine });
+  const currentFilters = useRef(filters);
+  currentFilters.current = filters;
+  useLiveRefresh(
+    () => {
+      setNow(Date.now());
+      getActivity(toQuery({ type, days, repo, result, machine }))
+        // A page for filters that changed meanwhile is dropped.
+        .then((page) => currentFilters.current === filters && setLatest(page))
+        .catch(() => undefined); // Keep showing the last good page; the next tick retries.
+    },
+    { intervalMs: POLL_MS, enabled: !authDisabled },
+  );
 
   const cursor = older.length ? olderCursor : latest.nextBefore;
 
@@ -100,7 +362,7 @@ function ActivityPage() {
     if (cursor === null) return;
     setLoadingOlder(true);
     try {
-      const page = await getActivity({ before: cursor, filter });
+      const page = await getActivity({ ...toQuery(search), before: cursor });
       setOlder((items) => [...items, ...page.items]);
       setOlderCursor(page.nextBefore);
     } finally {
@@ -112,66 +374,66 @@ function ActivityPage() {
   const items = [...latest.items, ...older.filter((item) => !seen.has(item.id))];
 
   return (
-    <section>
-      <PageHeader title="Activity">
-        Routed jobs, machine events and member changes, newest first.
-      </PageHeader>
-      <div className="grid max-w-4xl gap-2">
-        <div role="group" aria-label="Show" className="flex gap-1.5">
-          {FILTERS.map(({ value, label }) => (
-            <Button
-              key={label}
-              size="sm"
-              variant={filter === value ? "secondary" : "ghost"}
-              aria-pressed={filter === value}
-              onClick={() => chooseFilter(value)}
-            >
-              {label}
-            </Button>
-          ))}
-        </div>
-        {items.length === 0 ? (
-          <p className="rounded-xl border bg-card px-4 py-6 text-sm text-muted-foreground">
-            {filter === "machine" ? (
-              <>Nothing yet. Machines show up here when they enroll, connect or disconnect.</>
-            ) : filter === "member" ? (
-              <>Nothing yet. Invites and new members show up here.</>
+    <>
+      {items.length === 0 ? (
+        <p className="rounded-xl border bg-card px-4 py-6 text-sm text-muted-foreground">
+          {narrowed ? (
+            <>
+              Nothing matches these filters.{" "}
+              <button type="button" className="text-foreground underline" onClick={onClear}>
+                Clear filters
+              </button>
+            </>
+          ) : search.type === "check" ? (
+            <>
+              Nothing yet. Turn on a free check with{" "}
+              <span className="font-mono text-foreground">relayrunner.yml</span> in a connected
+              repo, and its check runs show up here.
+            </>
+          ) : search.type === "machine" ? (
+            <>Nothing yet. Machines show up here when they enroll, connect or disconnect.</>
+          ) : search.type === "member" ? (
+            <>Nothing yet. Invites and new members show up here.</>
+          ) : (
+            <>
+              Nothing yet. Add a{" "}
+              <span className="font-mono text-foreground">relayrunner/actions</span> relay job to a
+              workflow in a connected repo, push, and its jobs show up here.
+            </>
+          )}
+        </p>
+      ) : (
+        <ul className="grid gap-2">
+          {items.map((item) =>
+            item.job ? (
+              <JobRow key={item.id} job={item.job} now={now} />
+            ) : item.type === "job.unroutable" ? (
+              <UnroutableRow key={item.id} item={item} now={now} />
+            ) : item.type === "check.completed" ? (
+              <CheckRow key={item.id} item={item} now={now} />
             ) : (
-              <>
-                Nothing yet. Add a{" "}
-                <span className="font-mono text-foreground">relayrunner/actions</span> relay job to
-                a workflow in a connected org, push, and its jobs show up here.
-              </>
-            )}
-          </p>
-        ) : (
-          <ul className="grid gap-2">
-            {items.map((item) =>
-              item.job ? (
-                <JobRow key={item.id} job={item.job} now={now} />
-              ) : item.type === "job.unroutable" ? (
-                <UnroutableRow key={item.id} item={item} now={now} />
-              ) : (
-                <EventRow key={item.id} item={item} now={now} />
-              ),
-            )}
-          </ul>
-        )}
-        {cursor !== null && (
-          <Button
-            variant="outline"
-            size="sm"
-            className="justify-self-start"
-            disabled={loadingOlder}
-            onClick={() => void loadOlder()}
-          >
-            {loadingOlder ? "Loading…" : "Show older"}
-          </Button>
-        )}
-      </div>
-    </section>
+              <EventRow key={item.id} item={item} now={now} />
+            ),
+          )}
+        </ul>
+      )}
+      {cursor !== null && (
+        <Button
+          variant="outline"
+          size="sm"
+          className="justify-self-start"
+          disabled={loadingOlder}
+          onClick={() => void loadOlder()}
+        >
+          {loadingOlder ? "Loading…" : "Show older"}
+        </Button>
+      )}
+    </>
   );
 }
+
+const usd = (amount: number) =>
+  amount.toLocaleString("en-US", { style: "currency", currency: "USD" });
 
 const DISCONNECT_REASONS = {
   closed: "its CLI stopped",
@@ -185,7 +447,8 @@ function sentence(item: ActivityItem) {
   switch (item.type) {
     case "machine.enrolled": {
       const platform = [item.data.os, item.data.arch].filter(Boolean).join(" ");
-      return `enrolled${platform ? ` (${platform})` : ""}`;
+      const verb = item.data.source === "github" ? "was added from GitHub" : "enrolled";
+      return `${verb}${platform ? ` (${platform})` : ""}`;
     }
     case "machine.connected":
       return "connected";
@@ -195,12 +458,20 @@ function sentence(item: ActivityItem) {
       return item.data.via === "cli" ? "was paused from its CLI" : "was paused";
     case "machine.resumed":
       return item.data.via === "cli" ? "was resumed from its CLI" : "was resumed";
+    case "machine.sharing_changed":
+      return item.data.sharing === "only_me"
+        ? "was set to run only its owner's jobs"
+        : "was shared with the workspace";
     case "machine.revoked":
-      return "was revoked";
+      return item.data.source === "github" ? "was removed from RelayRunner" : "was revoked";
     case "job.routed":
       return "routed a job";
     case "job.unroutable":
       return "couldn't route a job";
+    case "check.completed":
+      return item.data.conclusion === "success" ? "passed" : "failed";
+    case "minutes.overage":
+      return "went past its included GitHub Actions minutes";
     case "member.invited":
     case "member.invite_canceled":
     case "member.joined":
@@ -235,13 +506,16 @@ const EVENT_ICONS = {
   "machine.disconnected": Unplug,
   "machine.paused": Pause,
   "machine.resumed": Play,
+  "machine.sharing_changed": Lock,
   "machine.revoked": Ban,
   "member.removed": UserMinus,
   "job.routed": Laptop,
   "job.unroutable": Ban,
+  "check.completed": CircleCheck,
   "member.invited": UserPlus,
   "member.invite_canceled": UserX,
   "member.joined": UserCheck,
+  "minutes.overage": TriangleAlert,
 } as const;
 
 const ICON = "size-3.5 shrink-0";
@@ -256,12 +530,18 @@ function Row({
   now,
   toggle,
   detail,
+  why = "why it ran here",
+  aside,
   children,
 }: {
   icon: ReactNode;
+  // Pinned before the time on wider screens, outside the truncated line: who started a job.
+  aside?: ReactNode;
   at: string;
   now: number;
   toggle?: Toggle;
+  // What the chevron shows, for its label: "Show why it ran here".
+  why?: string;
   detail?: ReactNode;
   children: ReactNode;
 }) {
@@ -277,12 +557,13 @@ function Row({
         >
           {children}
         </p>
+        {aside}
         {toggle && (
           <button
             type="button"
             onClick={toggle.onToggle}
             aria-expanded={toggle.open}
-            aria-label={toggle.open ? "Hide why it ran here" : "Show why it ran here"}
+            aria-label={toggle.open ? `Hide ${why}` : `Show ${why}`}
             title={toggle.open ? "Hide why" : "Show why"}
             className="-my-1 shrink-0 cursor-pointer rounded-sm p-1 text-muted-foreground hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
           >
@@ -380,6 +661,20 @@ function WalkLines({ walk, runner }: { walk: RouteWalk; runner: string | null })
 function EventRow({ item, now }: { item: ActivityItem; now: number }) {
   const Icon = EVENT_ICONS[item.type];
   const online = item.type === "machine.connected";
+  if (item.type === "minutes.overage")
+    return (
+      <Row
+        icon={<TriangleAlert aria-hidden className={`${ICON} text-destructive`} />}
+        at={item.occurredAt}
+        now={now}
+      >
+        <span className="font-medium">{item.data.account}</span>{" "}
+        <span className="text-muted-foreground">
+          went past its included GitHub Actions minutes. GitHub has billed{" "}
+          {usd(item.data.netAmount)} in overage this month.
+        </span>
+      </Row>
+    );
   if (item.type.startsWith("member.")) {
     const who =
       item.type === "member.joined"
@@ -454,9 +749,11 @@ function JobRow({ job, now }: { job: ActivityJob; now: number }) {
   const [open, setOpen] = useState(false);
   const took = duration(job, now);
   const { runner, walk } = job;
-  const RunnerIcon = runner.type === "machine" ? Laptop : Cloud;
+  // GitHub never sent the job anywhere: a job it needed failed, so its runs-on was never worked
+  // out. Usually folded into its relay's "couldn't run" entry; this row is for runs without one.
+  const unrouted = runner.type === "github" && !runner.label;
   const runnerName =
-    runner.type === "machine" ? (runner.name ?? "a local machine") : runner.label || "unknown";
+    runner.type === "machine" ? (runner.name ?? "a self-hosted machine") : runner.label;
   const summary = walk ? walkSummary(walk) : null;
   const toggle = summary ? { open, onToggle: () => setOpen(!open) } : undefined;
   return (
@@ -466,6 +763,7 @@ function JobRow({ job, now }: { job: ActivityJob; now: number }) {
       now={now}
       toggle={toggle}
       detail={walk && <WalkLines walk={walk} runner={runnerName} />}
+      aside={<StarterAside starters={job.starters} />}
     >
       <a
         href={job.runUrl}
@@ -486,19 +784,29 @@ function JobRow({ job, now }: { job: ActivityJob; now: number }) {
       >
         {job.name}
       </a>{" "}
-      <span className="text-muted-foreground">{jobVerb(job)}</span>{" "}
-      <span
-        className="font-medium"
-        title={job.runnerName ? `Ran on ${job.runnerName}` : "Not picked up yet"}
-      >
-        <RunnerIcon
-          aria-hidden
-          className="mr-1 inline size-3 align-[-0.1em] text-muted-foreground"
-        />
-        <span className={runner.type === "github" ? "font-mono text-xs" : undefined}>
-          {runnerName}
-        </span>
-      </span>
+      {unrouted ? (
+        <>
+          <span className="text-muted-foreground">{jobVerb(job).replace(/ (on|for)$/, "")}</span>{" "}
+          <Reason text="not routed" tone="info" />
+        </>
+      ) : (
+        <>
+          <span className="text-muted-foreground">{jobVerb(job)}</span>{" "}
+          <span
+            className="font-medium"
+            title={job.runnerName ? `Ran on ${job.runnerName}` : "Not picked up yet"}
+          >
+            <ProviderLink
+              provider={runner.type}
+              markClassName="mr-1 inline-flex size-4 rounded-[4px] align-[-0.2em]"
+            >
+              <span className={runner.type !== "machine" ? "font-mono text-xs" : undefined}>
+                {runnerName}
+              </span>
+            </ProviderLink>
+          </span>
+        </>
+      )}
       {summary && (
         <>
           {" "}
@@ -517,15 +825,167 @@ function JobRow({ job, now }: { job: ActivityJob; now: number }) {
             <span className="font-mono">{job.branch}</span>
           </>
         )}
+        <span className="sm:hidden">
+          <StartedBy starters={job.starters} />
+        </span>
         {took && <span className="tabular-nums">{` · ${took}`}</span>}
       </span>
     </Row>
   );
 }
 
-// A relay that failed fast because nothing in the runner order could take its run: "RelayRunner
-// dev / relay couldn't route no machine with macOS is online and idle · repo". The job that
-// needed it never started, so this is the only trace of the run here.
+// Who started the run, after the repo and branch: " · started by Atticus", plus ", re-run by
+// Zach" when someone else started this attempt. A member shows by name; a bot or someone outside
+// the workspace by GitHub login. Nothing for runs from before RelayRunner kept this.
+function StartedBy({ starters, bare }: { starters: ActivityStarters; bare?: boolean }) {
+  const { startedBy, rerunBy } = starters;
+  if (!startedBy && !rerunBy) return null;
+  return (
+    <>
+      {!bare && " · "}
+      {startedBy && (
+        <>
+          {!bare && "started by "}
+          <Starter who={startedBy} />
+        </>
+      )}
+      {startedBy && rerunBy && ", "}
+      {rerunBy && (
+        <>
+          re-run by <Starter who={rerunBy} />
+        </>
+      )}
+    </>
+  );
+}
+
+// The same, pinned beside the time on wider screens so a long row never cuts it off.
+function StarterAside({ starters }: { starters: ActivityStarters }) {
+  const { startedBy, rerunBy } = starters;
+  if (!startedBy && !rerunBy) return null;
+  const label = (who: ActivityStarter) => who.member?.name ?? who.login;
+  const title = [
+    startedBy && `Started by ${label(startedBy)}`,
+    rerunBy && `re-run by ${label(rerunBy)}`,
+  ]
+    .filter(Boolean)
+    .join(", ");
+  return (
+    <span
+      className="hidden max-w-64 shrink-0 truncate text-xs text-muted-foreground sm:inline"
+      title={title}
+    >
+      <StartedBy starters={starters} bare />
+    </span>
+  );
+}
+
+function Starter({ who }: { who: ActivityStarter }) {
+  if (who.member) return <span className="text-foreground/75">{who.member.name}</span>;
+  return (
+    <span className="font-mono" title={`GitHub account ${who.login}, not in this workspace`}>
+      {who.login}
+    </span>
+  );
+}
+
+// The last 30 days of free checks, above the log: "Free checks saved 200 billed minutes ($0.84)".
+function SavingsBanner({ savings }: { savings: FreeCheckSavings }) {
+  return (
+    <p className="rounded-xl border bg-card px-4 py-2.5 text-sm">
+      <Zap aria-hidden className="mr-1.5 inline size-3.5 align-[-0.15em] text-go" />
+      Free checks saved{" "}
+      <span className="font-medium tabular-nums">
+        {minutes(savings.checks)} billed {savings.checks === 1 ? "minute" : "minutes"}
+      </span>
+      {savings.savedCost > 0 && <span className="tabular-nums"> ({money(savings.savedCost)})</span>}{" "}
+      <span className="text-muted-foreground">
+        in the last {savings.days} days, one per check or lint run.
+      </span>{" "}
+      <Link to="/usage" className="text-muted-foreground hover:text-foreground hover:underline">
+        See usage
+      </Link>
+    </p>
+  );
+}
+
+// A check that ran with no Actions runner: "PR title passed on #12 · no runner · acme/app". The
+// check opens its run on GitHub, the number opens the pull request. A lint run from a native job
+// has no pull request, so it names its commit: "Lint failed on 4f9c2e1".
+function CheckRow({
+  item,
+  now,
+}: {
+  item: Extract<ActivityItem, { type: "check.completed" }>;
+  now: number;
+}) {
+  const { data } = item;
+  const passed = data.conclusion === "success";
+  const Icon = passed ? CircleCheck : CircleX;
+  const on =
+    data.pullRequest === null
+      ? {
+          path: `commit/${data.headSha}/checks`,
+          title: "Open the commit's checks on GitHub",
+          label: data.headSha.slice(0, 7),
+          className: "font-mono",
+        }
+      : {
+          path: `pull/${data.pullRequest}`,
+          title: "Open the pull request on GitHub",
+          label: `#${data.pullRequest}`,
+          className: "",
+        };
+  return (
+    <Row
+      icon={
+        <Icon
+          aria-label={passed ? "Passed" : "Failed"}
+          className={`${ICON} ${passed ? "text-go" : "text-destructive"}`}
+        />
+      }
+      at={item.occurredAt}
+      now={now}
+    >
+      {data.url ? (
+        <a
+          href={data.url}
+          target="_blank"
+          rel="noreferrer"
+          className="font-medium hover:underline"
+          title="Open the check on GitHub"
+        >
+          {data.check}
+        </a>
+      ) : (
+        <span className="font-medium">{data.check}</span>
+      )}{" "}
+      <span className="text-muted-foreground">{sentence(item)} on</span>{" "}
+      <a
+        href={`https://github.com/${data.repository}/${on.path}`}
+        target="_blank"
+        rel="noreferrer"
+        className={`font-medium hover:underline ${on.className}`}
+        title={on.title}
+      >
+        {on.label}
+      </a>{" "}
+      <span className="text-go" title="Ran with no Actions runner: no Actions minute billed">
+        <Zap aria-hidden className="mr-0.5 inline size-3 align-[-0.1em]" />
+        no runner, saved a minute
+      </span>
+      <span className="text-xs text-muted-foreground">
+        {" · "}
+        <span className="font-mono">{data.repository}</span>
+      </span>
+    </Row>
+  );
+}
+
+// A run whose relay failed fast because nothing in the runner order could take it, told as the jobs
+// that couldn't run: "RelayRunner dev / build and test couldn't run no idle machine with macOS ·
+// repo". The relay itself isn't named: it's how routing works, not a job anyone thinks about. Until
+// GitHub reports the jobs skipped, it's the run: "RelayRunner dev couldn't run".
 function UnroutableRow({
   item,
   now,
@@ -537,13 +997,16 @@ function UnroutableRow({
   const { data } = item;
   const runUrl = `https://github.com/${data.repository}/actions/runs/${data.runId}`;
   const toggle = data.walk ? { open, onToggle: () => setOpen(!open) } : undefined;
+  const names = jobNames(item.jobsNotRun ?? []);
   return (
     <Row
-      icon={<Ban aria-label="Couldn't route" className={`${ICON} text-destructive`} />}
+      icon={<Ban aria-label="Couldn't run" className={`${ICON} text-destructive`} />}
       at={item.occurredAt}
       now={now}
       toggle={toggle}
+      why="why it couldn't run"
       detail={data.walk && <WalkLines walk={data.walk} runner={null} />}
+      aside={item.starters && <StarterAside starters={item.starters} />}
     >
       <a
         href={runUrl}
@@ -554,22 +1017,33 @@ function UnroutableRow({
       >
         {data.workflow ?? "Workflow"}
       </a>
-      <span className="text-muted-foreground"> / </span>
-      <span className="font-medium">{data.job ?? "relay"}</span>{" "}
-      <span className="text-destructive">couldn't route</span>{" "}
+      {names && (
+        <>
+          <span className="text-muted-foreground"> / </span>
+          <span className="font-medium">{names}</span>
+        </>
+      )}{" "}
+      <span className="text-destructive">couldn't run</span>{" "}
       <Reason text={failureText(data.reason)} tone="failure" toggle={toggle} />
       <span className="text-xs text-muted-foreground">
         {" · "}
         <span className="font-mono">{data.repository}</span>
+        {item.starters && (
+          <span className="sm:hidden">
+            <StartedBy starters={item.starters} />
+          </span>
+        )}
       </span>
     </Row>
   );
 }
 
 // Example entries for `VITE_AUTH_DISABLED=true` dev builds, which have no API.
-function samplePage(filter: ActivityFilter | undefined): ActivityPage {
+function samplePage(search: ActivitySearch): ActivityPage {
   const at = (minutesAgo: number) => new Date(Date.now() - minutesAgo * 60_000).toISOString();
   const runs = "https://github.com/relayrunner/relayrunner-ci-tests/actions/runs";
+  const atticus = { login: "atticoos", member: { id: "u1", name: "Atticus White" } };
+  const zach = { login: "zach", member: { id: "u2", name: "Zach Ross" } };
   const job = (id: number, minutesAgo: number, rest: Partial<ActivityJob>): ActivityJob => ({
     id,
     repository: "relayrunner/relayrunner-ci-tests",
@@ -590,11 +1064,97 @@ function samplePage(filter: ActivityFilter | undefined): ActivityPage {
     completedAt: null,
     url: `${runs}/${id * 10}/job/${id}`,
     runUrl: `${runs}/${id * 10}`,
+    starters: { startedBy: atticus, rerunBy: null },
     ...rest,
   });
   const mac = { id: "m1", name: "Atticuss-MacBook-Pro.local" };
-  const relay = { machine: ["self-hosted"], github: ["ubuntu-latest"] };
+  const relay = { machine: ["self-hosted"], github: ["ubuntu-latest"], blacksmith: [] };
   const items: ActivityItem[] = [
+    {
+      id: 17,
+      type: "job.routed",
+      data: {},
+      occurredAt: at(0.02),
+      actor: null,
+      machine: null,
+      job: job(7, 0.02, {
+        name: "test (macos)",
+        starters: { startedBy: zach, rerunBy: null },
+        runnerName: "GitHub Actions 15",
+        status: "in_progress",
+        startedAt: at(0.01),
+        walk: {
+          step: "github",
+          skipped: [
+            {
+              key: "machine",
+              reason: "machine_not_shared",
+              notShared: [{ machine: mac.name, owner: "Atticus White" }],
+            },
+          ],
+          notInOrder: [],
+          machine: ["macOS", "ARM64"],
+          github: ["macos-latest"],
+          blacksmith: [],
+        },
+      }),
+    },
+    {
+      id: 16,
+      type: "machine.sharing_changed",
+      data: { machineName: mac.name, sharing: "anyone" },
+      occurredAt: at(0.03),
+      actor: { id: "u1", name: "Atticus White" },
+      machine: mac,
+      job: null,
+    },
+    {
+      id: 15,
+      type: "job.routed",
+      data: {},
+      occurredAt: at(0.02),
+      actor: null,
+      machine: null,
+      job: job(7, 0.02, {
+        name: "build",
+        runner: { type: "machine", machineId: mac.id, name: mac.name },
+        runnerName: `${mac.name}-0123456789ab`,
+        status: "in_progress",
+        startedAt: at(0.01),
+        walk: {
+          step: "machine",
+          skipped: [
+            {
+              key: "github",
+              reason: "minutes_limit",
+              minutes: {
+                account: "relayrunner",
+                usedMinutes: 1640,
+                quotaMinutes: 2000,
+                percent: 80,
+                burnRatePerHour: 38,
+              },
+            },
+          ],
+          notInOrder: [],
+          ...relay,
+        },
+      }),
+    },
+    {
+      id: 14,
+      type: "minutes.overage",
+      data: {
+        account: "acme-labs",
+        installationId: 2,
+        cycleStart: new Date(Date.UTC(2026, 10, 1)).toISOString(),
+        netAmount: 0.67,
+      },
+      occurredAt: at(3),
+      actor: null,
+      machine: null,
+      job: null,
+    },
     {
       id: 13,
       type: "job.routed",
@@ -604,6 +1164,8 @@ function samplePage(filter: ActivityFilter | undefined): ActivityPage {
       machine: null,
       job: job(6, 0.05, {
         name: "test (macos)",
+        runAttempt: 2,
+        starters: { startedBy: atticus, rerunBy: zach },
         runnerName: "GitHub Actions 14",
         status: "in_progress",
         startedAt: at(0.04),
@@ -613,6 +1175,7 @@ function samplePage(filter: ActivityFilter | undefined): ActivityPage {
           notInOrder: [],
           machine: ["macOS", "ARM64"],
           github: ["macos-latest"],
+          blacksmith: [],
         },
       }),
     },
@@ -643,23 +1206,25 @@ function samplePage(filter: ActivityFilter | undefined): ActivityPage {
         runAttempt: 1,
         workflow: "RelayRunner dev",
         job: "relay",
-        reason:
-          "No runner available: no local machine with macOS, ARM64 is online and idle; `github` isn't set on this relay.",
+        reason: `No runner available: the only machine that fits, ${mac.name}, is paused.`,
         walk: {
           step: null,
           skipped: [
-            { key: "machine", reason: "no_machine" },
+            { key: "machine", reason: "machine_paused", paused: [mac.name] },
             { key: "github", reason: "not_configured" },
           ],
           notInOrder: [],
           machine: ["macOS", "ARM64"],
           github: [],
+          blacksmith: [],
         },
       },
       occurredAt: at(0.1),
       actor: null,
       machine: null,
       job: null,
+      jobsNotRun: ["test (macos)", "deploy"],
+      starters: { startedBy: zach, rerunBy: null },
     },
     {
       id: 9,
@@ -669,17 +1234,20 @@ function samplePage(filter: ActivityFilter | undefined): ActivityPage {
       actor: null,
       machine: null,
       job: job(5, 3, {
-        runnerName: "GitHub Actions 12",
+        starters: { startedBy: { login: "dependabot[bot]", member: null }, rerunBy: null },
+        runner: { type: "blacksmith", label: "blacksmith-2vcpu-ubuntu-2404" },
+        runnerName: "blacksmith-2vcpu-ubuntu-2404-x7k2p",
         status: "completed",
         conclusion: "success",
         startedAt: at(2.9),
         completedAt: at(0.7),
         walk: {
-          step: "github",
+          step: "blacksmith",
           skipped: [{ key: "machine", reason: "no_machine" }],
           notInOrder: [],
           machine: ["macOS", "ARM64"],
           github: ["ubuntu-latest"],
+          blacksmith: ["blacksmith-2vcpu-ubuntu-2404"],
         },
       }),
     },
@@ -759,7 +1327,23 @@ function samplePage(filter: ActivityFilter | undefined): ActivityPage {
       }),
     },
     {
-      id: 9,
+      id: 3,
+      type: "job.routed",
+      data: {},
+      occurredAt: at(180),
+      actor: null,
+      machine: null,
+      // A run from before relays failed fast: GitHub skipped the job and never sent it anywhere.
+      job: job(1, 180, {
+        name: "deploy",
+        runner: { type: "github", label: "" },
+        status: "completed",
+        conclusion: "skipped",
+        completedAt: at(180),
+      }),
+    },
+    {
+      id: 14,
       type: "machine.revoked",
       data: { machineName: "zach-studio" },
       occurredAt: at(14.9),
@@ -768,7 +1352,7 @@ function samplePage(filter: ActivityFilter | undefined): ActivityPage {
       job: null,
     },
     {
-      id: 8,
+      id: 15,
       type: "member.removed",
       data: { memberName: "Zach", left: false },
       occurredAt: at(15),
@@ -777,7 +1361,7 @@ function samplePage(filter: ActivityFilter | undefined): ActivityPage {
       job: null,
     },
     {
-      id: 12,
+      id: 16,
       type: "member.joined",
       data: { name: "Ada Lovelace", email: "ada@example.com", role: "admin" },
       occurredAt: at(20),
@@ -786,11 +1370,45 @@ function samplePage(filter: ActivityFilter | undefined): ActivityPage {
       job: null,
     },
     {
-      id: 11,
+      id: 17,
       type: "member.invited",
       data: { email: "ada@example.com", role: "admin" },
       occurredAt: at(45),
       actor: { id: "u1", name: "Atticus White" },
+      machine: null,
+      job: null,
+    },
+    {
+      id: 51,
+      type: "check.completed",
+      data: {
+        check: "Lint",
+        repository: "relayrunner/relayrunner-ci-tests",
+        repositoryId: 1,
+        pullRequest: null,
+        headSha: "4f9c2e1a7b",
+        conclusion: "failure",
+        url: null,
+      },
+      occurredAt: at(1),
+      actor: null,
+      machine: null,
+      job: null,
+    },
+    {
+      id: 50,
+      type: "check.completed",
+      data: {
+        check: "PR title",
+        repository: "relayrunner/relayrunner-ci-tests",
+        repositoryId: 1,
+        pullRequest: 42,
+        headSha: "abc123",
+        conclusion: "success",
+        url: "https://github.com/relayrunner/relayrunner-ci-tests/runs/1",
+      },
+      occurredAt: at(2),
+      actor: null,
       machine: null,
       job: null,
     },
@@ -807,6 +1425,44 @@ function samplePage(filter: ActivityFilter | undefined): ActivityPage {
   items.sort((a, b) => b.occurredAt.localeCompare(a.occurredAt));
   return {
     nextBefore: null,
-    items: filter ? items.filter((item) => item.type.startsWith(`${filter}.`)) : items,
+    items: items.filter((item) => sampleMatches(item, search)),
+  };
+}
+
+// The API's filters, applied to the sample entries (dev builds only; the real log filters on the
+// server).
+function sampleMatches(item: ActivityItem, search: ActivitySearch) {
+  if (search.type && !item.type.startsWith(`${search.type}.`)) return false;
+  if (search.days && Date.parse(item.occurredAt) < Date.now() - search.days * DAY_MS) return false;
+  if (search.repo) {
+    const repo = item.job?.repository ?? ("repository" in item.data ? item.data.repository : null);
+    if (repo !== search.repo) return false;
+  }
+  if (search.machine) {
+    const runner = item.job?.runner;
+    const machine = item.machine?.id ?? (runner?.type === "machine" ? runner.machineId : null);
+    if (machine !== search.machine) return false;
+  }
+  return !search.result || sampleResult(item) === search.result;
+}
+
+function sampleResult(item: ActivityItem): ActivityResult | null {
+  if (item.type === "job.unroutable") return "failed";
+  const conclusion = item.job
+    ? item.job.conclusion
+    : "conclusion" in item.data
+      ? item.data.conclusion
+      : undefined;
+  if (conclusion === undefined) return null;
+  if (conclusion === null) return "running";
+  if (conclusion === "success") return "passed";
+  if (conclusion === "failure" || conclusion === "timed_out") return "failed";
+  return conclusion as ActivityResult;
+}
+
+function sampleOptions(): ActivityOptions {
+  return {
+    repositories: ["relayrunner/actions", "relayrunner/relayrunner-ci-tests"],
+    machines: [{ id: "m1", name: "Atticuss-MacBook-Pro.local" }],
   };
 }

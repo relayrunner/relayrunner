@@ -1,39 +1,83 @@
-name: Publish to npm
+# Releases the relayrunner CLI to npm with changesets.
+#
+# - Pending .changeset/*.md files: open or update the "chore: version packages" PR.
+# - None left (that PR was just merged): publish the version in
+#   apps/cli/package.json if npm doesn't have it yet, then tag v<version> and
+#   create a GitHub release.
+#
+# npm trusted publishing is set up for this file name (publish-npm.yml), so
+# keep the name. There's no NPM_TOKEN secret.
+
+name: Release
 
 on:
+  push:
+    branches: [main]
   workflow_dispatch:
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: false
 
 permissions:
   contents: read
 
 jobs:
-  publish:
+  release:
+    name: Version or publish
+    # npm only accepts provenance from GitHub-hosted runners, so this job
+    # must not run on Blacksmith or any self-hosted runner.
     runs-on: ubuntu-latest
+    timeout-minutes: 20
     permissions:
-      contents: read
-      id-token: write
+      contents: write # push the version branch, tag the release
+      pull-requests: write # open the version PR
+      id-token: write # npm trusted publishing
     env:
       HUSKY: "0"
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
         with:
-          persist-credentials: false
-      - uses: pnpm/action-setup@v6
-      - uses: actions/setup-node@v6
+          # Full history so changesets can find the last release.
+          fetch-depth: 0
+      - uses: pnpm/action-setup@0ebf47130e4866e96fce0953f49152a61190b271 # v6.0.9
+      - uses: actions/setup-node@48b55a011bda9f5d6aeb4c2d9c7362e8dae4041e # v6.4.0
         with:
           node-version-file: .nvmrc
           registry-url: https://registry.npmjs.org
           package-manager-cache: false
-      - name: Verify release tag
+      - run: pnpm install --frozen-lockfile
+
+      # Versioning only. Publishing is its own step below, because passing
+      # `publish:` here makes the action write a token-based .npmrc, which
+      # doesn't work with trusted publishing.
+      - name: Open or update the version PR
+        id: changesets
+        uses: changesets/action@6a0a831ff30acef54f2c6aa1cbbc1096b066edaf # v1.7.0
+        with:
+          version: pnpm run changeset:version
+          commit: "chore: version packages"
+          title: "chore: version packages"
+          createGithubReleases: false
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Check whether this version is on npm
+        id: version
+        if: steps.changesets.outputs.hasChangesets == 'false'
         shell: bash
         run: |
           version="$(node -p 'require("./apps/cli/package.json").version')"
-          if [[ ! "$version" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ || "$GITHUB_REF" != "refs/tags/v$version" ]]; then
-            echo "::error::Select the stable release tag matching apps/cli/package.json (v$version)."
-            exit 1
+          echo "version=$version" >> "$GITHUB_OUTPUT"
+          if npm view "relayrunner@$version" version >/dev/null 2>&1; then
+            echo "relayrunner@$version is already on npm."
+            echo "publish=false" >> "$GITHUB_OUTPUT"
+          else
+            echo "publish=true" >> "$GITHUB_OUTPUT"
           fi
-      - run: pnpm install --frozen-lockfile
+
       - name: Pack, verify, and publish
+        if: steps.version.outputs.publish == 'true'
         shell: bash
         run: |
           package_dir="$(mktemp -d)"
@@ -41,3 +85,22 @@ jobs:
           tarballs=("$package_dir"/relayrunner-*.tgz)
           bash scripts/smoke-npm-package.sh "${tarballs[0]}"
           npm publish "${tarballs[0]}" --access public
+
+      - name: Tag and create the GitHub release
+        if: steps.version.outputs.publish == 'true'
+        shell: bash
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          VERSION: ${{ steps.version.outputs.version }}
+        run: |
+          notes="$(awk -v v="## $VERSION" '
+            $0 == v { found=1; next }
+            found && /^## / { exit }
+            found { print }
+          ' apps/cli/CHANGELOG.md 2>/dev/null || true)"
+          if gh release view "v$VERSION" >/dev/null 2>&1; then
+            echo "Release v$VERSION already exists."
+          else
+            gh release create "v$VERSION" --target "$GITHUB_SHA" --title "v$VERSION" \
+              --notes "${notes:-relayrunner $VERSION}"
+          fi

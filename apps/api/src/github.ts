@@ -50,6 +50,11 @@ export class GitHubError extends Error {
   }
 }
 
+// The App's install page with no state: a signup, where there's no workspace or user to name yet.
+export function appInstallUrl(appSlug: string) {
+  return `https://github.com/apps/${encodeURIComponent(appSlug)}/installations/new`;
+}
+
 export function installUrl(appSlug: string, state: string) {
   return `https://github.com/apps/${encodeURIComponent(appSlug)}/installations/new?state=${encodeURIComponent(state)}`;
 }
@@ -75,6 +80,8 @@ export interface InstallState {
   userId: string;
   expiresAt: number;
   next?: string;
+  /** The dashboard origin the install started on, where the user's session cookie lives. */
+  origin?: string;
 }
 
 // A dashboard path to send the browser back to: same-origin and path-absolute only, so `next`
@@ -91,16 +98,34 @@ export function dashboardPath(value: unknown): string | null {
   }
 }
 
+// An http(s) origin and nothing else (no path or credentials), or null.
+function httpOrigin(value: unknown): string | null {
+  if (typeof value !== "string") return null;
+  try {
+    const url = new URL(value);
+    return (url.protocol === "https:" || url.protocol === "http:") && url.origin === value
+      ? value
+      : null;
+  } catch {
+    return null;
+  }
+}
+
 const STATE_TTL_MS = 60 * 60 * 1000;
 
 export async function signInstallState(
   secret: string,
   workspaceId: string,
   userId: string,
-  { next, now = Date.now() }: { next?: string | null; now?: number } = {},
+  {
+    next,
+    origin,
+    now = Date.now(),
+  }: { next?: string | null; origin?: string | null; now?: number } = {},
 ) {
   const fields: Record<string, unknown> = { w: workspaceId, u: userId, e: now + STATE_TTL_MS };
   if (next) fields.n = next;
+  if (origin) fields.o = origin;
   const payload = base64url(new TextEncoder().encode(JSON.stringify(fields)));
   return `${payload}.${base64url(await hmac(secret, payload))}`;
 }
@@ -115,11 +140,18 @@ export async function verifyInstallState(
   const expected = base64url(await hmac(secret, payload));
   if (!timingSafeEqual(expected, signature)) return null;
   try {
-    const { w, u, e, n } = JSON.parse(new TextDecoder().decode(fromBase64url(payload)));
+    const { w, u, e, n, o } = JSON.parse(new TextDecoder().decode(fromBase64url(payload)));
     if (typeof w !== "string" || typeof u !== "string" || typeof e !== "number" || e < now)
       return null;
     const next = dashboardPath(n);
-    return { workspaceId: w, userId: u, expiresAt: e, ...(next ? { next } : {}) };
+    const origin = httpOrigin(o);
+    return {
+      workspaceId: w,
+      userId: u,
+      expiresAt: e,
+      ...(next ? { next } : {}),
+      ...(origin ? { origin } : {}),
+    };
   } catch {
     return null;
   }

@@ -1,0 +1,265 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Privacy Policy · relayrunner</title>
+    <meta
+      name="description"
+      content="What the hosted RelayRunner service collects, why, who it's shared with and how to have it deleted."
+    />
+    <meta name="theme-color" content="#0b0d10" />
+    <link rel="canonical" href="%VITE_SITE_URL%/privacy" />
+    <link rel="icon" href="/favicon.svg" type="image/svg+xml" />
+    <link rel="stylesheet" href="/src/style.css" />
+    <link rel="stylesheet" href="/src/legal.css" />
+  </head>
+  <body>
+    <a class="skip" href="#main">Skip to content</a>
+
+    <header class="site-header">
+      <div class="wrap header-row">
+        <a class="brand" href="/" aria-label="relayrunner home">
+          <svg class="brand-mark" viewBox="0 0 28 28" aria-hidden="true">
+            <path class="mark-top" d="M11 14c4.5 0 5-7.5 10-7.5h3" />
+            <path d="M4 14h7c4.5 0 5 7.5 10 7.5h3" />
+          </svg>
+          relayrunner
+        </a>
+        <nav aria-label="Primary">
+          <ul class="nav-links">
+            <li><a href="/terms">Terms</a></li>
+            <li><a class="nav-gh" href="https://github.com/relayrunner/relayrunner">GitHub</a></li>
+          </ul>
+        </nav>
+      </div>
+    </header>
+
+    <main id="main" class="wrap legal">
+      <h1>Privacy Policy</h1>
+      <p class="updated">Last updated November 9, 2026</p>
+
+      <p class="intro">
+        RelayRunner is an open source project. This policy covers the hosted service its maintainers
+        run: the dashboard at app.relayrunner.app, its API and webhooks, the RelayRunner GitHub
+        Apps, RelayRunner's hosted runners, the <code>relayrunner</code> CLI when it talks to that
+        service, and this website. "RelayRunner", "we" and "us" mean the maintainers who operate it.
+        If you run RelayRunner yourself from the
+        <a href="https://github.com/relayrunner/relayrunner">source code</a>, you operate your copy
+        and this policy doesn't apply to it.
+      </p>
+
+      <section class="summary" aria-labelledby="summary-h">
+        <h2 id="summary-h">The short version</h2>
+        <ul>
+          <li>
+            We collect what we need to route your CI jobs: your GitHub profile, the organizations
+            and repositories you connect, details about workflow runs and jobs, and the machines you
+            connect.
+          </li>
+          <li>
+            We don't sell your data, show ads, use third-party analytics, or train AI models on it.
+          </li>
+          <li>We don't keep your source code or your job logs.</li>
+          <li>
+            Email <a href="mailto:privacy@relayrunner.app">privacy@relayrunner.app</a> to get a copy
+            of your data or have it deleted.
+          </li>
+        </ul>
+      </section>
+
+      <h2>What we collect</h2>
+
+      <h3>Your account</h3>
+      <p>
+        You sign in with GitHub. GitHub gives us your user ID, username, name, email address and
+        avatar, and an access token that we store to keep you signed in. For each sign-in session we
+        record the IP address and browser user agent, so we can spot sessions you don't recognize.
+      </p>
+
+      <h3>Workspaces and members</h3>
+      <p>
+        We store the workspaces you create or join, their members and roles, and the email address
+        of anyone you invite.
+      </p>
+
+      <h3>GitHub organizations and repositories</h3>
+      <p>
+        When you install the RelayRunner GitHub App, GitHub tells us about the installation and the
+        repositories it can see: names, IDs and whether each is public or private. If you add an
+        organization's existing self-hosted runners, we store their names and labels. Where the App
+        has permission, we read the organization's GitHub Actions usage report (minutes and amounts
+        per repository) and budget settings to show on the Usage page.
+      </p>
+
+      <h3>Workflow runs and jobs</h3>
+      <p>
+        GitHub sends us events about workflow runs and jobs in connected repositories. From them we
+        store the repository, workflow and job names, the run's title (usually a commit message or
+        pull request title), branch, commit SHA, pull request number, the GitHub username that
+        triggered the run, runner labels, status, result and timings, along with where we routed
+        each job and why. We use the timings to report minutes used and saved. We don't receive your
+        job logs or your repository secrets.
+      </p>
+
+      <h3>Connected machines</h3>
+      <p>
+        When you run <code>relayrunner connect</code>, we store the machine's name, operating system
+        and version, CPU architecture, model, chip, core count and memory, when it was last online,
+        and a hash of its access token. Jobs that run on your machine use GitHub's own runner, which
+        talks to GitHub directly. Their code, secrets and logs don't pass through us.
+      </p>
+
+      <h3>Repository contents, for lint checks only</h3>
+      <p>
+        If you install the separate, optional RelayRunner Checks App and turn on lint, we download
+        each pull request commit's source archive from GitHub, lint it in a container with no
+        internet access, post the results to GitHub as check runs (file paths, line numbers and
+        messages), and then stop the container. We don't keep a copy of your code. We also read your
+        <code>relayrunner.yml</code> to see which checks you've turned on.
+      </p>
+
+      <h3>Hosted runners</h3>
+      <p>
+        If a job is routed to a RelayRunner-hosted runner, it runs in a single-use container on
+        Cloudflare. As on any runner, the job's code and secrets are inside that container while the
+        job runs. The container is discarded afterwards.
+      </p>
+
+      <h3>Logs</h3>
+      <p>
+        Our servers keep request logs, including IP addresses, for debugging and abuse prevention.
+        GitHub webhook deliveries we fail to process are kept for up to 30 days so we can replay
+        them.
+      </p>
+
+      <h3>This website and cookies</h3>
+      <p>
+        relayrunner.app sets no cookies and runs no analytics. The dashboard uses one cookie to keep
+        you signed in. That's the only cookie we set.
+      </p>
+
+      <h2>How we use it</h2>
+      <ul>
+        <li>
+          To run the service: signing you in, routing jobs, showing activity and usage, and posting
+          check results.
+        </li>
+        <li>
+          To send service email: a welcome message, a security notice when a new machine connects,
+          and workspace invitations. We don't send marketing email.
+        </li>
+        <li>To keep the service secure, fix problems and prevent abuse.</li>
+        <li>To meet legal obligations.</li>
+      </ul>
+
+      <h2>Who we share it with</h2>
+      <p>We don't sell personal information. We share it only as follows.</p>
+      <ul>
+        <li>
+          <strong>Cloudflare</strong> hosts the service, its database, storage, containers and logs,
+          and sends our email.
+        </li>
+        <li>
+          <strong>GitHub.</strong> RelayRunner is built on GitHub. We call GitHub's API for your
+          installations, for example to register runners and post check runs.
+        </li>
+        <li>
+          <strong>Other runner providers.</strong> When a job uses a label for another provider,
+          such as Blacksmith, that provider's own GitHub App runs it under your agreement with them.
+          We don't send them your data.
+        </li>
+        <li>
+          <strong>Your workspace.</strong> Members of a workspace can see its machines, runners,
+          activity and usage.
+        </li>
+        <li>
+          <strong>Maintainers.</strong> The maintainers who operate the service can see accounts and
+          workspaces when they need to, to support you or keep the service running.
+        </li>
+        <li>
+          <strong>When required.</strong> If the law requires it, or to protect the service or its
+          users.
+        </li>
+        <li>
+          <strong>A new operator.</strong> If the hosted service moves to a new operator, such as an
+          organization formed to run it, your data moves with it and this policy keeps applying.
+        </li>
+      </ul>
+
+      <h2>How long we keep it</h2>
+      <p>
+        We keep your data while your account or workspace uses the service. Failed webhook
+        deliveries are deleted after 30 days, and request logs after a few days. When you ask us to
+        delete your account, we delete your data except where we must keep it to meet a legal
+        obligation.
+      </p>
+
+      <h2>Your choices and rights</h2>
+      <ul>
+        <li>
+          Email <a href="mailto:privacy@relayrunner.app">privacy@relayrunner.app</a> to see,
+          correct, export or delete your data. We honor these requests for everyone, wherever you
+          live.
+        </li>
+        <li>
+          Uninstall the RelayRunner GitHub Apps or revoke RelayRunner's access in your GitHub
+          settings at any time.
+        </li>
+        <li>
+          Disconnect machines from the dashboard or by stopping <code>relayrunner connect</code>.
+        </li>
+      </ul>
+      <p>
+        If you're in the EEA, UK or Switzerland: we process your data to provide the service you
+        signed up for, for our legitimate interests in keeping it secure and working, and to meet
+        legal obligations. You can object to processing, and you can complain to your local data
+        protection authority.
+      </p>
+
+      <h2>Security</h2>
+      <p>
+        Traffic is encrypted in transit, machine tokens are stored only as hashes, and GitHub
+        webhooks are verified by signature. No system is perfectly secure. Please report
+        vulnerabilities to <a href="mailto:security@relayrunner.app">security@relayrunner.app</a>.
+      </p>
+
+      <h2>Where your data is processed</h2>
+      <p>
+        Cloudflare runs the service on its global network, so your data may be processed in the
+        United States and other countries.
+      </p>
+
+      <h2>Children</h2>
+      <p>RelayRunner needs a GitHub account and isn't meant for children under 16.</p>
+
+      <h2>Changes</h2>
+      <p>If we change this policy, we'll post the new version here and update the date above.</p>
+
+      <h2>Contact</h2>
+      <p>
+        Privacy questions and requests:
+        <a href="mailto:privacy@relayrunner.app">privacy@relayrunner.app</a>. Security reports:
+        <a href="mailto:security@relayrunner.app">security@relayrunner.app</a>. Anything else:
+        <a href="https://github.com/relayrunner/relayrunner/issues">GitHub issues</a>.
+      </p>
+    </main>
+
+    <footer class="site-footer">
+      <div class="wrap footer-row">
+        <a class="brand brand-sm" href="/">
+          <svg class="brand-mark" viewBox="0 0 28 28" aria-hidden="true">
+            <path class="mark-top" d="M11 14c4.5 0 5-7.5 10-7.5h3" />
+            <path d="M4 14h7c4.5 0 5 7.5 10 7.5h3" />
+          </svg>
+          relayrunner
+        </a>
+        <ul>
+          <li><a href="https://github.com/relayrunner/relayrunner">GitHub</a></li>
+          <li><a href="/privacy" aria-current="page">Privacy</a></li>
+          <li><a href="/terms">Terms</a></li>
+        </ul>
+      </div>
+    </footer>
+  </body>
+</html>

@@ -1,13 +1,11 @@
 /**
- * Development-only webhook dead-letter routes, behind Cloudflare Access (docs/cloudflare-access.md).
- * This Worker's own workers.dev URL is public, so every route checks the Access JWT itself with
- * `gateDevOnly` and never trusts the dashboard Worker to have done it.
+ * Operator admin routes for webhook dead letters, behind Cloudflare Access: app.ts runs
+ * requireAccess on all of /api/admin (docs/cloudflare-access.md).
  *
  * Previews forward /api/* to this production Worker, so replaying from a preview acts on
  * production. Replay goes back through the main queue and consumer, never around them.
  */
-import { gateDevOnly, type AccessIdentity } from "@relayrunner/access";
-import { Hono, type MiddlewareHandler } from "hono";
+import { Hono } from "hono";
 import type { AppEnv } from "../app.ts";
 import {
   discardDeadLetter,
@@ -16,22 +14,10 @@ import {
   type DeadLetter,
   type DeadLetterFilter,
 } from "../dead-letters.ts";
+import { who } from "../middleware/admin.ts";
 
 // The most a bulk replay sends at once. Fix the cause first, then replay a slice.
 export const MAX_BULK_REPLAY = 100;
-
-type DevEnv = AppEnv & { Variables: { accessIdentity: AccessIdentity } };
-
-const requireAccess: MiddlewareHandler<DevEnv> = async (c, next) => {
-  const gate = await gateDevOnly(c.req.raw, c.env);
-  if ("response" in gate) return gate.response;
-  c.set("accessIdentity", gate.identity);
-  await next();
-};
-
-function who(identity: AccessIdentity) {
-  return identity.kind === "user" ? identity.email : identity.clientId;
-}
 
 function filterFrom(input: { event?: unknown; repository?: unknown }): DeadLetterFilter {
   return {
@@ -41,8 +27,7 @@ function filterFrom(input: { event?: unknown; repository?: unknown }): DeadLette
   };
 }
 
-export const devWebhookRoutes = new Hono<DevEnv>()
-  .use("*", requireAccess)
+export const adminWebhookRoutes = new Hono<AppEnv>()
   .get("/dead-letters", async (c) => {
     const page = await listDeadLetters(c.env.DEAD_LETTERS, {
       cursor: c.req.query("cursor"),

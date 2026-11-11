@@ -16,7 +16,8 @@ interface Gateway {
   server: string;
   connections: Connection[];
   next: () => Promise<Connection>;
-  tokens: { valid: boolean };
+  // `valid` false rejects every token. `rotated` are tokens the gateway sent that also work.
+  tokens: { valid: boolean; rotated: string[] };
   close: () => Promise<void>;
 }
 interface Connection {
@@ -32,9 +33,10 @@ afterEach(async () => {
 });
 
 async function startGateway(): Promise<Gateway> {
-  const tokens = { valid: true };
+  const tokens = { valid: true, rotated: [] as string[] };
   const authorized = (request: IncomingMessage) =>
-    tokens.valid && request.headers.authorization === `Bearer ${TOKEN}`;
+    tokens.valid &&
+    [TOKEN, ...tokens.rotated].some((token) => request.headers.authorization === `Bearer ${token}`);
   const http: Server = createServer((request, response) => {
     response.statusCode = authorized(request) ? 426 : 401;
     response.end();
@@ -134,6 +136,49 @@ describe("connect", () => {
       { v: 1, type: "status", state: "idle" },
       { v: 1, type: "status", state: "idle" },
     ]);
+
+    stop.abort();
+    expect(await end).toEqual({ reason: "stopped" });
+  });
+
+  test("saves a token the gateway sends, says so, and connects with it next time", async () => {
+    const gateway = await startGateway();
+    const saved: string[] = [];
+    const { stop, end } = start(gateway, { saveToken: (token) => saved.push(token) });
+    const first = await gateway.next();
+    expect(await first.waitFor((m) => m.type === "hello")).toMatchObject({ rotatesToken: true });
+
+    gateway.tokens.rotated.push("rrm_next");
+    first.socket.send(JSON.stringify({ v: 1, type: "token", token: "rrm_next" }));
+    await first.waitFor((m) => m.type === "token_saved");
+    expect(saved).toEqual(["rrm_next"]);
+
+    first.socket.close(4000, "heartbeat timeout");
+    const second = await gateway.next();
+    expect(second.request.headers.authorization).toBe("Bearer rrm_next");
+
+    stop.abort();
+    expect(await end).toEqual({ reason: "stopped" });
+  });
+
+  test("keeps the old token, and doesn't say saved, when it can't save the new one", async () => {
+    const gateway = await startGateway();
+    const { stop, events, end } = start(gateway, {
+      saveToken: () => {
+        throw new Error("disk full");
+      },
+    });
+    const first = await gateway.next();
+    await first.waitFor((m) => m.type === "status");
+    first.socket.send(JSON.stringify({ v: 1, type: "token", token: "rrm_next" }));
+    await vi.waitFor(() =>
+      expect(events).toContainEqual({ type: "token-not-saved", message: "disk full" }),
+    );
+
+    first.socket.close(4000, "heartbeat timeout");
+    const second = await gateway.next();
+    expect(second.request.headers.authorization).toBe(`Bearer ${TOKEN}`);
+    expect(first.messages.map((m) => m.type)).not.toContain("token_saved");
 
     stop.abort();
     expect(await end).toEqual({ reason: "stopped" });

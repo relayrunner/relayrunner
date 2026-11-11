@@ -1,10 +1,10 @@
 {
   "name": "relayrunner",
-  "version": "0.1.1",
-  "description": "Switch selected GitHub Actions jobs between GitHub-hosted runners and your machine.",
+  "version": "0.4.0",
+  "description": "Run GitHub Actions jobs on your machine through the RelayRunner gateway.",
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/atticoos/RelayRunner.git",
+    "url": "git+https://github.com/relayrunner/relayrunner.git",
     "directory": "apps/cli"
   },
   "type": "module",
@@ -24,6 +24,7 @@
   "dependencies": {
     "@clack/prompts": "^1.8.1",
     "citty": "^0.2.2",
+    "yaml": "^2.9.1",
     "zod": "catalog:"
   },
   "devDependencies": {

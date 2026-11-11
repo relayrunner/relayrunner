@@ -20,6 +20,23 @@ describe("parseMachineMessage", () => {
       arch: "arm64",
       runnerVersion: "2.329.0",
     },
+    {
+      v,
+      type: "hello",
+      machineId: "mch_1",
+      os: "macos",
+      arch: "arm64",
+      runnerVersion: "2.329.0",
+      device: {
+        kind: "laptop",
+        model: "MacBook Pro",
+        modelId: "Mac15,9",
+        chip: "Apple M3 Pro",
+        cpuCores: 12,
+        memoryMb: 36864,
+        osVersion: "macOS 15.1",
+      },
+    },
     { v, type: "status", state: "idle" },
     { v, type: "status", state: "busy" },
     { v, type: "job", routeId: "7f3k", state: "started" },
@@ -32,6 +49,21 @@ describe("parseMachineMessage", () => {
 
   it("rejects a frame that isn't JSON", () => {
     expect(parseMachineMessage("{nope")).toMatchObject({ ok: false, reason: "invalid_json" });
+  });
+
+  it("drops a device it can't read instead of failing the hello", () => {
+    const hello = {
+      v,
+      type: "hello",
+      machineId: "mch_1",
+      os: "linux",
+      arch: "x64",
+      runnerVersion: "2.329.0",
+    };
+    const parsed = parseMachineMessage(
+      JSON.stringify({ ...hello, device: { kind: "toaster", cpuCores: -1 } }),
+    );
+    expect(parsed).toEqual({ ok: true, message: { ...hello, device: undefined } });
   });
 
   it("rejects another protocol version before checking the shape", () => {

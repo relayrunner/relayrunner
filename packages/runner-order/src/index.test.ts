@@ -2,8 +2,11 @@ import { describe, expect, test } from "vitest";
 import { DEFAULT_RUNNER_ORDER, readRunnerOrder, runnerOrderSchema } from "./index.ts";
 
 describe("runnerOrderSchema", () => {
-  test("accepts either order of the two providers, or one alone", () => {
+  test("accepts the providers in any order, or one alone", () => {
     for (const steps of [
+      [{ key: "blacksmith" }, { key: "machine" }, { key: "github" }],
+      [{ key: "machine" }, { key: "blacksmith" }],
+      [{ key: "blacksmith" }],
       [{ key: "machine" }, { key: "github" }],
       [{ key: "github" }, { key: "machine" }],
       [{ key: "github" }],
@@ -26,12 +29,44 @@ describe("runnerOrderSchema", () => {
     expect(result.success).toBe(false);
     expect(result.error?.issues[0]).toMatchObject({
       path: ["steps", 2, "key"],
-      message: "Local machines is already in the order.",
+      message: "Self-hosted is already in the order.",
     });
   });
 
+  test("GitHub-hosted may come twice, once with a limit and once without", () => {
+    const steps = [
+      { key: "github", limit: { percent: 80 } },
+      { key: "machine" },
+      { key: "github" },
+    ];
+    expect(runnerOrderSchema.parse({ steps })).toEqual({ steps });
+  });
+
+  test("rejects GitHub-hosted twice with the same rule", () => {
+    for (const steps of [
+      [{ key: "github" }, { key: "github" }],
+      [
+        { key: "github", limit: { percent: 80 } },
+        { key: "github", limit: { percent: 90 } },
+      ],
+    ]) {
+      const result = runnerOrderSchema.safeParse({ steps });
+      expect(result.success).toBe(false);
+      expect(result.error?.issues[0]?.path).toEqual(["steps", 1, "key"]);
+    }
+  });
+
+  test("a limit is a whole percent from 1 to 100", () => {
+    for (const percent of [0, 101, 80.5]) {
+      const steps = [{ key: "github", limit: { percent } }];
+      expect(runnerOrderSchema.safeParse({ steps }).success).toBe(false);
+    }
+    const steps = [{ key: "github", limit: { percent: 100 } }];
+    expect(runnerOrderSchema.safeParse({ steps }).success).toBe(true);
+  });
+
   test("rejects unknown keys and labels on steps", () => {
-    expect(runnerOrderSchema.safeParse({ steps: [{ key: "blacksmith" }] }).success).toBe(false);
+    expect(runnerOrderSchema.safeParse({ steps: [{ key: "buildkite" }] }).success).toBe(false);
     const labelled = runnerOrderSchema.parse({ steps: [{ key: "github", label: "macos" }] });
     expect(labelled).toEqual({ steps: [{ key: "github" }] });
   });

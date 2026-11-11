@@ -5,10 +5,13 @@
  * only logs, so a sign-in, a machine claim or the hourly cron never fails because of mail.
  */
 import {
+  renderAgentFeedbackEmail,
   renderDeadLetterAlertEmail,
   renderInviteEmail,
   renderMachineConnectedEmail,
+  renderMachineTakenOverEmail,
   renderWelcomeEmail,
+  type ConnectionPlace,
   type RenderedEmail,
 } from "@relayrunner/email";
 import type { Env } from "./env.ts";
@@ -17,7 +20,7 @@ import type { Env } from "./env.ts";
 // binding's allowed_sender_addresses in wrangler.jsonc.
 export const DEFAULT_FROM = "noreply@send.relayrunner.app";
 
-export type EmailArgs =
+export type EmailArgs = (
   | { to: string; template: "welcome"; context: { name?: string } }
   | {
       to: string;
@@ -28,6 +31,17 @@ export type EmailArgs =
         arch?: string | null;
         workspaceName: string;
         connectedAt: Date;
+      };
+    }
+  | {
+      to: string;
+      template: "machine-taken-over";
+      context: {
+        machineName: string;
+        workspaceName: string;
+        was: ConnectionPlace;
+        now: ConnectionPlace;
+        at: Date;
       };
     }
   | { to: string; template: "dead-letter-alert"; context: { count: number; threshold: number } }
@@ -41,7 +55,13 @@ export type EmailArgs =
         role: string;
         expiresAt: Date;
       };
-    };
+    }
+  | {
+      to: string;
+      template: "agent-feedback";
+      context: Parameters<typeof renderAgentFeedbackEmail>[0];
+    }
+) & { replyTo?: string };
 
 /** Where links in emails point: the dashboard people actually use, not the OAuth callback host. */
 export function dashboardUrl(env: Pick<Env, "DASHBOARD_URL" | "BETTER_AUTH_URL">) {
@@ -55,11 +75,15 @@ function render(env: Env, args: EmailArgs): RenderedEmail {
       return renderWelcomeEmail({ ...args.context, dashboardUrl: dashboard });
     case "machine-connected":
       return renderMachineConnectedEmail({ ...args.context, machinesUrl: `${dashboard}/runners` });
+    case "machine-taken-over":
+      return renderMachineTakenOverEmail({ ...args.context, machinesUrl: `${dashboard}/runners` });
     case "dead-letter-alert":
       return renderDeadLetterAlertEmail({
         ...args.context,
-        inspectorUrl: `${dashboard}/dev/webhooks`,
+        inspectorUrl: `${dashboard}/admin/webhooks`,
       });
+    case "agent-feedback":
+      return renderAgentFeedbackEmail(args.context);
     case "invite": {
       const { invitationId, ...context } = args.context;
       return renderInviteEmail({
@@ -91,6 +115,7 @@ export async function sendEmail(env: Env, args: EmailArgs): Promise<void> {
     await env.EMAIL.send({
       to: args.to,
       from: { name: "RelayRunner", email: env.EMAIL_FROM || DEFAULT_FROM },
+      ...(args.replyTo && { replyTo: args.replyTo }),
       subject,
       text,
       html,

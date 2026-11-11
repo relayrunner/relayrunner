@@ -1,16 +1,40 @@
 import {
   ActivityEvent,
-  type ActivityFilter,
   type ActivityItem,
+  type ActivityOptions,
   type ActivityPage,
+  type ActivityQuery,
+  type ActivityResult,
+  type ActivityStarters,
   type DisconnectReason,
   type RouteWalk,
 } from "@relayrunner/activity";
-import { and, desc, eq, like, lt } from "drizzle-orm";
+import {
+  type SQL,
+  and,
+  asc,
+  desc,
+  eq,
+  gte,
+  inArray,
+  isNotNull,
+  isNull,
+  like,
+  lt,
+  or,
+  sql,
+} from "drizzle-orm";
 import { alias } from "drizzle-orm/sqlite-core";
 import { type Db, schema } from "./db/index.ts";
 import { presentJob } from "./jobs.ts";
-import { jobKey, walksForJobs } from "./route-decisions.ts";
+import { jobKey, picksForJobs } from "./route-decisions.ts";
+import {
+  githubIds,
+  membersByGithubId,
+  presentStarters,
+  runStartersForJobs,
+  type RunStarters,
+} from "./job-starters.ts";
 
 const table = schema.activityEvent;
 
@@ -74,16 +98,74 @@ export const ACTIVITY_PAGE_SIZE = 50;
 const eventMachine = alias(schema.machine, "event_machine");
 const jobMachine = alias(schema.machine, "job_machine");
 
+const job = schema.workflowJob;
 /**
- * The workspace's Activity log, newest first. `before` is an event id from a previous page.
- * `filter` keeps one kind of event ('job', 'machine' or 'member').
+ * Logs `minutes.overage` once per account per billing cycle, when the billing poll first sees
+ * GitHub bill Actions overage (#117). Later polls in the same cycle find it already logged.
+ */
+export async function recordOverage(
+  db: Db,
+  event: {
+    workspaceId: string;
+    installationId: number;
+    account: string;
+    cycleStart: Date;
+    netAmount: number;
+  },
+) {
+  const cycleStart = event.cycleStart.toISOString();
+  const [logged] = await db
+    .select({ id: table.id })
+    .from(table)
+    .where(
+      and(
+        eq(table.workspaceId, event.workspaceId),
+        eq(table.type, "minutes.overage"),
+        sql`${dataField("$.installationId")} = ${event.installationId}`,
+        eq(dataField("$.cycleStart"), cycleStart),
+      ),
+    )
+    .limit(1);
+  if (logged) return false;
+  await recordEvent(db, {
+    type: "minutes.overage",
+    workspaceId: event.workspaceId,
+    data: {
+      account: event.account,
+      installationId: event.installationId,
+      cycleStart,
+      netAmount: event.netAmount,
+    },
+  });
+  return true;
+}
+
+const dataField = (path: string) => sql<string>`json_extract(${table.data}, ${path})`;
+const isCheck = (conclusion: "success" | "failure") =>
+  and(eq(table.type, "check.completed"), eq(dataField("$.conclusion"), conclusion));
+
+// Each result as a condition on the event and its job (left-joined, so null for other events).
+const RESULTS: Record<ActivityResult, SQL | undefined> = {
+  passed: or(eq(job.conclusion, "success"), isCheck("success")),
+  failed: or(
+    inArray(job.conclusion, ["failure", "timed_out"]),
+    isCheck("failure"),
+    eq(table.type, "job.unroutable"),
+  ),
+  cancelled: eq(job.conclusion, "cancelled"),
+  skipped: eq(job.conclusion, "skipped"),
+  running: and(isNotNull(job.id), isNull(job.conclusion)),
+};
+
+/**
+ * The workspace's Activity log, newest first. `before` is an event id from a previous page; the
+ * rest narrow it (see ActivityQuery).
  */
 export async function listActivity(
   db: Db,
   workspaceId: string,
-  { before, filter }: { before?: number; filter?: ActivityFilter } = {},
+  { before, filter, since, repository, result, machine }: ActivityQuery & { before?: number } = {},
 ): Promise<ActivityPage> {
-  const job = schema.workflowJob;
   const rows = await db
     .select({
       event: table,
@@ -104,21 +186,192 @@ export async function listActivity(
         eq(table.workspaceId, workspaceId),
         before === undefined ? undefined : lt(table.id, before),
         filter === undefined ? undefined : like(table.type, `${filter}.%`),
+        since === undefined ? undefined : gte(table.occurredAt, new Date(since)),
+        repository === undefined
+          ? undefined
+          : or(
+              eq(job.repositoryFullName, repository),
+              and(isNull(table.jobId), eq(dataField("$.repository"), repository)),
+            ),
+        result === undefined ? undefined : RESULTS[result],
+        machine === undefined
+          ? undefined
+          : or(eq(table.machineId, machine), eq(job.machineId, machine)),
       ),
     )
     .orderBy(desc(table.id))
     .limit(ACTIVITY_PAGE_SIZE + 1);
   const page = rows.slice(0, ACTIVITY_PAGE_SIZE);
-  const walks = await walksForJobs(
+  const jobs = page.flatMap((row) => (row.job ? [row.job] : []));
+  const picks = await picksForJobs(db, jobs);
+  const starters = await runStartersForJobs(db, jobs, picks, jobKey);
+  // A relay that couldn't route keeps its starters on its own entry.
+  const unroutableStarters = new Map<number, RunStarters>();
+  for (const row of page) {
+    if (row.event.type !== "job.unroutable") continue;
+    const data = row.event.data as {
+      startedBy?: RunStarters["startedBy"];
+      triggeredBy?: RunStarters["triggeredBy"];
+    };
+    unroutableStarters.set(row.event.id, {
+      startedBy: data.startedBy ?? null,
+      triggeredBy: data.triggeredBy ?? null,
+    });
+  }
+  const members = await membersByGithubId(
     db,
-    page.flatMap((row) => (row.job ? [row.job] : [])),
+    workspaceId,
+    githubIds([...starters.values(), ...unroutableStarters.values()]),
   );
+  const items = page.flatMap((row) => {
+    const key = row.job ? jobKey(row.job) : null;
+    const item = presentEvent(
+      row,
+      key ? (picks.get(key)?.walk ?? null) : null,
+      presentStarters(key ? starters.get(key) : unroutableStarters.get(row.event.id), members),
+    );
+    return item ? [item] : [];
+  });
   return {
-    items: page.flatMap((row) => {
-      const item = presentEvent(row, row.job ? (walks.get(jobKey(row.job)) ?? null) : null);
-      return item ? [item] : [];
-    }),
+    items: await foldJobsNotRun(db, workspaceId, items),
     nextBefore: rows.length > ACTIVITY_PAGE_SIZE ? page[page.length - 1].event.id : null,
+  };
+}
+
+/** What the Activity page's repo and machine filters can choose from. */
+export async function activityOptions(db: Db, workspaceId: string): Promise<ActivityOptions> {
+  const repo = schema.githubRepository;
+  const installation = schema.githubInstallation;
+  const [repositories, machines] = await Promise.all([
+    db
+      .select({ name: repo.fullName })
+      .from(repo)
+      .innerJoin(installation, eq(installation.id, repo.installationId))
+      .where(and(eq(installation.workspaceId, workspaceId), isNull(repo.removedAt)))
+      .orderBy(repo.fullName),
+    db
+      .select({ id: schema.machine.id, name: schema.machine.name })
+      .from(schema.machine)
+      // The same machines the Runners page lists. Each enrollment is its own row, so a laptop
+      // enrolled, revoked and enrolled again leaves a revoked row per round, and an approved code
+      // the CLI never claimed leaves one with no os. Neither belongs in the picker.
+      .where(
+        and(
+          eq(schema.machine.workspaceId, workspaceId),
+          isNotNull(schema.machine.os),
+          isNull(schema.machine.revokedAt),
+        ),
+      )
+      .orderBy(schema.machine.name),
+  ]);
+  return { repositories: repositories.map((row) => row.name), machines };
+}
+
+type WorkflowJob = typeof schema.workflowJob.$inferSelect;
+
+const runKey = (repository: string, runId: number, runAttempt: number) =>
+  `${repository}:${runId}:${runAttempt}`;
+
+// A job GitHub never sent anywhere: no labels (its `runs-on` was never worked out, because a job it
+// needs failed) and no machine. A relay that couldn't route leaves its dependents like this.
+function neverRouted(job: Pick<WorkflowJob, "labels" | "machineId" | "conclusion">) {
+  return job.conclusion === "skipped" && job.labels.length === 0 && !job.machineId;
+}
+
+/**
+ * Shows a run that couldn't route as one entry: each `job.unroutable` gets the names of the jobs
+ * that needed its relay (`jobsNotRun`), and those jobs' own rows are dropped, wherever the relay's
+ * entry sits in the log. A never-routed job whose run has no such entry (logged before relays
+ * failed fast) keeps its row.
+ */
+async function foldJobsNotRun(
+  db: Db,
+  workspaceId: string,
+  items: ActivityItem[],
+): Promise<ActivityItem[]> {
+  const relays = items.flatMap((item) => (item.type === "job.unroutable" ? [item] : []));
+  const orphans = items.flatMap((item) =>
+    item.job && neverRouted(rawJob(item.job)) ? [item.job] : [],
+  );
+  if (relays.length === 0 && orphans.length === 0) return items;
+
+  // The never-routed jobs of every unroutable run on this page.
+  const notRun = new Map<string, string[]>();
+  const relayRuns = [...new Set(relays.map((item) => item.data.runId))];
+  if (relayRuns.length) {
+    const jobs = await db
+      .select({
+        name: job.name,
+        repository: job.repositoryFullName,
+        runId: job.runId,
+        runAttempt: job.runAttempt,
+        labels: job.labels,
+        machineId: job.machineId,
+        conclusion: job.conclusion,
+      })
+      .from(job)
+      .innerJoin(schema.githubInstallation, eq(schema.githubInstallation.id, job.installationId))
+      .where(
+        and(
+          eq(schema.githubInstallation.workspaceId, workspaceId),
+          inArray(job.runId, relayRuns),
+          eq(job.kind, "job"),
+        ),
+      )
+      .orderBy(asc(job.githubCreatedAt), asc(job.id));
+    for (const row of jobs) {
+      if (!neverRouted(row)) continue;
+      const key = runKey(row.repository, row.runId, row.runAttempt);
+      notRun.set(key, [...(notRun.get(key) ?? []), row.name]);
+    }
+  }
+
+  // The runs, on this page or not, whose relay logged that it couldn't route.
+  const unroutable = new Set<string>();
+  const orphanRuns = [...new Set(orphans.map((job) => job.runId))];
+  if (orphanRuns.length) {
+    const events = await db
+      .select({ data: table.data })
+      .from(table)
+      .where(
+        and(
+          eq(table.workspaceId, workspaceId),
+          eq(table.type, "job.unroutable"),
+          inArray(dataField("$.runId"), orphanRuns),
+        ),
+      );
+    for (const { data } of events) {
+      const { repository, runId, runAttempt } = data as {
+        repository: string;
+        runId: number;
+        runAttempt: number;
+      };
+      unroutable.add(runKey(repository, runId, runAttempt));
+    }
+  }
+
+  return items.flatMap<ActivityItem>((item) => {
+    if (item.type === "job.unroutable") {
+      const { repository, runId, runAttempt } = item.data;
+      return [{ ...item, jobsNotRun: notRun.get(runKey(repository, runId, runAttempt)) ?? [] }];
+    }
+    const job = item.job;
+    if (
+      job &&
+      neverRouted(rawJob(job)) &&
+      unroutable.has(runKey(job.repository, job.runId, job.runAttempt))
+    )
+      return [];
+    return [item];
+  });
+}
+
+// The fields neverRouted reads, from a job as the log presents it.
+function rawJob(job: NonNullable<ActivityItem["job"]>) {
+  return {
+    conclusion: job.conclusion,
+    labels: job.runner.type !== "machine" && job.runner.label ? [job.runner.label] : [],
+    machineId: job.runner.type === "machine" ? "machine" : null,
   };
 }
 
@@ -133,7 +386,11 @@ type Row = {
 
 // Null for a row whose type or data no longer parses (a type that was since removed), so one bad
 // row never breaks the page.
-function presentEvent(row: Row, walk: RouteWalk | null): ActivityItem | null {
+function presentEvent(
+  row: Row,
+  walk: RouteWalk | null,
+  starters: ActivityStarters,
+): ActivityItem | null {
   const parsed = ActivityEvent.safeParse({ type: row.event.type, data: row.event.data });
   if (!parsed.success) return null;
   const event = parsed.data;
@@ -150,6 +407,7 @@ function presentEvent(row: Row, walk: RouteWalk | null): ActivityItem | null {
       snapshot === null
         ? null
         : { id: row.event.machineId, name: row.eventMachineName ?? snapshot },
-    job: row.job ? presentJob(row.job, row.private, row.jobMachineName, walk) : null,
+    job: row.job ? presentJob(row.job, row.private, row.jobMachineName, walk, starters) : null,
+    ...(event.type === "job.unroutable" ? { starters } : {}),
   };
 }

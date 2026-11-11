@@ -1,10 +1,24 @@
-# @relayrunner/web
+# RelayRunner dashboard
 
-The gateway dashboard: a React SPA on TanStack Router, built with Vite and
-served as static assets from a Cloudflare Worker (`relayrunner-app`). The
-Worker script (`worker/index.ts`) only forwards `/api/*` to the API Worker over
-a service binding, so the dashboard and API share one origin everywhere. The
-marketing site lives in `apps/landing`.
+The gateway dashboard at `app.relayrunner.app`: a React SPA on TanStack Router,
+built with Vite and served as static assets from a Cloudflare Worker
+(`relayrunner-app`). The Worker script (`worker/index.ts`) only forwards
+`/api/*` to the API Worker over a service binding, so the dashboard and API
+share one origin everywhere. The marketing site lives in `apps/landing`.
+
+## Pages
+
+| Page      | What it shows                                                            |
+| --------- | ------------------------------------------------------------------------ |
+| Activity  | Each job, where it ran and why, plus machine and member events.          |
+| Runs      | Workflow runs and their jobs.                                            |
+| Job times | How long jobs take, by run and by machine.                               |
+| Usage     | Actions minutes from GitHub billing and what free checks saved.          |
+| Runners   | Connected machines and added org runners, pausing, and the runner order. |
+| Settings  | Workspace, account, members and invites, and connected GitHub orgs.      |
+| Admin     | Operator-only users, workspaces and webhook dead letters, behind Access. |
+
+`/device` is where `relayrunner connect` sends you to approve a machine.
 
 ## Develop
 
@@ -14,7 +28,8 @@ pnpm --dir apps/web dev       # http://localhost:5179
 ```
 
 `/api` is proxied to the API Worker (`apps/api`, default `http://localhost:8787`).
-Set `VITE_AUTH_DISABLED=true` to skip the sign-in guard before the API exists.
+Set `VITE_AUTH_DISABLED=true` to skip the sign-in guard and render pages
+without the API running (dev builds only).
 
 ## Layout
 

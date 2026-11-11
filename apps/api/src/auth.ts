@@ -1,10 +1,14 @@
 import { betterAuth } from "better-auth";
 import { drizzleAdapter } from "better-auth/adapters/drizzle";
 import { createAuthMiddleware, getSessionFromCtx } from "better-auth/api";
-import { bearer, deviceAuthorization, oAuthProxy, organization } from "better-auth/plugins";
+import { bearer, deviceAuthorization, jwt, oAuthProxy, organization } from "better-auth/plugins";
+import { agentOAuth } from "./agent-auth.ts";
 import { recordEvent } from "./activity.ts";
+import { eq } from "drizzle-orm";
 import { createDb, schema } from "./db/index.ts";
+import { requestOrigin } from "./device-origin.ts";
 import { sendEmail } from "./email.ts";
+import { installSignIn } from "./install-sign-in.ts";
 import { MEMBER_REMOVAL_PATHS, onMemberRemoved, removedMember } from "./members.ts";
 import type { Env } from "./env.ts";
 
@@ -18,22 +22,42 @@ export function previewOrigins(env: Pick<Env, "PREVIEW_ORIGINS">) {
     .filter(Boolean);
 }
 
+// SESSION_COOKIE_DOMAIN (e.g. relayrun.workers.dev) when the request host is under it, so one
+// sign-in covers production workers.dev and every preview URL there. Other hosts, like the custom
+// domain or localhost, keep host-only cookies. workers.dev is a public suffix, so browsers accept
+// relayrun.workers.dev as a cookie domain but never send it to another account's Workers.
+export function sharedCookieDomain(env: Pick<Env, "SESSION_COOKIE_DOMAIN">, host?: string) {
+  const domain = env.SESSION_COOKIE_DOMAIN?.trim();
+  return domain && host?.endsWith(`.${domain}`) ? domain : undefined;
+}
+
 // The client_id `relayrunner connect` sends with its device code requests.
 export const MACHINE_CLIENT_ID = "relayrunner-cli";
 
 // Workers only expose bindings per request, so build the auth instance per request too. It is
 // cheap: no I/O happens until a handler runs. `waitUntil` (the request's ExecutionContext) lets
 // mail go out after the response; without it (tests, scripts) the hook waits for the send.
-export function createAuth(env: Env, waitUntil?: (promise: Promise<unknown>) => void) {
+// `host` is the request's hostname, which decides whether the session cookie is shared.
+export function createAuth(
+  env: Env,
+  waitUntil?: (promise: Promise<unknown>) => void,
+  host?: string,
+) {
   const background = (promise: Promise<unknown>) => (waitUntil ? waitUntil(promise) : promise);
+  const cookieDomain = sharedCookieDomain(env, host);
   return betterAuth({
     // Always the production dashboard origin, so GitHub only ever sees one OAuth callback URL.
     baseURL: env.BETTER_AUTH_URL,
     basePath: "/api/auth",
+    // The jwt plugin's /token turns a session into a JWT; agents get theirs through OAuth instead.
+    disabledPaths: ["/token"],
     secret: env.BETTER_AUTH_SECRET,
     // Lets preview origins call /api/auth/* (origin check) and be redirect targets.
     trustedOrigins: previewOrigins(env),
     database: drizzleAdapter(createDb(env.DB), { provider: "sqlite", schema }),
+    // Global role (schema.ts): "operator" sees the dashboard's Admin section. On session.user, so
+    // it rides the session cookie cache. Granted by SQL only, never by the user.
+    user: { additionalFields: { role: { type: "string", required: false, input: false } } },
     socialProviders: {
       github: {
         clientId: env.GITHUB_APP_CLIENT_ID,
@@ -57,6 +81,22 @@ export function createAuth(env: Env, waitUntil?: (promise: Promise<unknown>) => 
       // (#138). This runs after Better Auth has deleted the membership, inline rather than on a
       // queue: one D1 update clears every token, then each open socket closes.
       after: createAuthMiddleware(async (ctx) => {
+        if (ctx.path === "/device/code") {
+          // Remember where the CLI asked from, for the approval page (src/device-origin.ts).
+          const deviceCode = (ctx.context.returned as { device_code?: unknown } | null)
+            ?.device_code;
+          if (typeof deviceCode !== "string") return;
+          const origin = requestOrigin(ctx.request);
+          await createDb(env.DB)
+            .update(schema.deviceCode)
+            .set({
+              requestIp: origin.ip,
+              requestCountry: origin.country,
+              requestCity: origin.city,
+            })
+            .where(eq(schema.deviceCode.deviceCode, deviceCode));
+          return;
+        }
         if (!(MEMBER_REMOVAL_PATHS as readonly string[]).includes(ctx.path)) return;
         const member = removedMember(ctx.context.returned);
         if (!member) return;
@@ -71,6 +111,9 @@ export function createAuth(env: Env, waitUntil?: (promise: Promise<unknown>) => 
         });
       }),
     },
+    advanced: cookieDomain
+      ? { crossSubDomainCookies: { enabled: true, domain: cookieDomain } }
+      : undefined,
     session: {
       // Keep a signed copy of the session in a cookie so most getSession calls skip D1.
       cookieCache: { enabled: true, maxAge: 5 * 60 },
@@ -79,8 +122,9 @@ export function createAuth(env: Env, waitUntil?: (promise: Promise<unknown>) => 
       workspaces(env, background),
       // Sign-in from a preview: GitHub returns to the production callback, which exchanges the
       // code and redirects to <preview>/api/auth/callback/github/oauth-proxy with the profile
-      // encrypted (BETTER_AUTH_SECRET). The preview then creates the session and sets its own
-      // host-only cookie. On production itself the plugin steps aside.
+      // encrypted (BETTER_AUTH_SECRET). The preview then creates the session and sets the
+      // cookie (shared across relayrun.workers.dev, see sharedCookieDomain). On production itself
+      // the plugin steps aside.
       oAuthProxy({
         productionURL: env.BETTER_AUTH_URL,
         // Seconds the encrypted hand-off stays valid; it only has to survive one redirect.
@@ -92,11 +136,19 @@ export function createAuth(env: Env, waitUntil?: (promise: Promise<unknown>) => 
       deviceAuthorization({
         verificationUri: new URL("/device", env.BETTER_AUTH_URL).toString(),
         validateClient: (clientId) => clientId === MACHINE_CLIENT_ID,
-        expiresIn: "30m",
+        // Short: an approval link someone else started is only good for a few minutes.
+        expiresIn: "15m",
         interval: "5s",
       }),
       // Lets that claim call send the device-flow session as `Authorization: Bearer <token>`.
       bearer(),
+      // Agent sign-in for the MCP server (src/agent-auth.ts). jwt signs the access tokens and
+      // serves their keys at /api/auth/jwks; its own session-JWT header and /token are off, so the
+      // only JWTs it hands out are agent access tokens.
+      jwt({ disableSettingJwtHeader: true }),
+      agentOAuth(env),
+      // Signing in with the code GitHub sends after an install (routes/github.ts /setup).
+      installSignIn({ setupURL: new URL("/api/github/setup", env.BETTER_AUTH_URL).toString() }),
     ],
   });
 }

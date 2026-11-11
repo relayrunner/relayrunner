@@ -1,5 +1,6 @@
 import { ApiError, api } from "@/lib/api";
-import { organization, type Session } from "@/lib/auth-client";
+import { authClient, organization, type Session } from "@/lib/auth-client";
+import { firstWorkspaceName } from "@/lib/onboarding";
 
 /** A GitHub App installation: the org or personal account it's on and what it can see. */
 export type Installation = {
@@ -43,6 +44,20 @@ export async function getUnclaimedInstallations(): Promise<UnclaimedInstallation
   } catch (error) {
     return { installations: [], problem: needsGitHubSignIn(error) ? "reauth" : "unavailable" };
   }
+}
+
+/** One GitHub API rate limit bucket. `reset` is when the hourly window starts over. */
+export type RateLimitBucket = { limit: number; used: number; remaining: number; reset: string };
+
+/** GET /api/github/installations/:id/rate-limit: the installation's quota, read live from GitHub. */
+export type RateLimits = {
+  core: RateLimitBucket | null;
+  graphql: RateLimitBucket | null;
+  actionsRunnerRegistration: RateLimitBucket | null;
+};
+
+export function getRateLimits(installationId: number) {
+  return api<RateLimits>(`/github/installations/${installationId}/rate-limit`);
 }
 
 /** Links an unclaimed installation to the active workspace. */
@@ -92,6 +107,31 @@ export async function createWorkspace(name: string) {
     }
   }
   throw new Error("Could not find a free URL for that name. Try another name.");
+}
+
+/**
+ * Creates the first workspace for someone who has none, named after their GitHub login, and makes
+ * it active (#221). They can rename it later in Settings.
+ */
+export async function createFirstWorkspace(session: Session) {
+  return createWorkspace(firstWorkspaceName(await githubLogin(), session.user.name));
+}
+
+/**
+ * The signed-in user's GitHub login. Better Auth keeps only the profile's display name, so this
+ * asks GitHub through the account the user signed in with. Null if that fails.
+ */
+async function githubLogin(): Promise<string | null> {
+  try {
+    const { data: accounts } = await authClient.listAccounts();
+    const github = accounts?.find((account) => account.providerId === "github");
+    if (!github) return null;
+    const { data } = await authClient.accountInfo({ query: { accountId: github.id } });
+    const login = (data?.data as { login?: unknown } | undefined)?.login;
+    return typeof login === "string" ? login : null;
+  } catch {
+    return null;
+  }
 }
 
 function randomSuffix() {

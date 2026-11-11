@@ -3,8 +3,8 @@
 // 1. A `runs-on: relayrunner` pick job is claimed by a PickRunner, which asks the workspace's
 //    Router where the job's run should go. The Router walks the workspace's runner order
 //    (decideRoute). A machine step records a route and answers its one-time label
-//    `rr-<route id>`; a github step answers the job's own `github` label. When nothing fits, the
-//    pick fails the relay job with the reason.
+//    `rr-<route id>`; a github or blacksmith step answers the job's own label for that provider.
+//    When nothing fits, the pick fails the relay job with the reason.
 // 2. The workflow's next job runs on that label, so GitHub queues it as `runs-on: rr-<route id>`.
 // 3. The `queued` webhook for that job claims the route (same repo, same run) and the machine's
 //    MachineLink mints an org JIT runner on the label and sends the machine a `run` message.
@@ -15,6 +15,10 @@ import {
   type RunnerKey,
   type RunnerOrder,
 } from "@relayrunner/runner-order";
+import type { GithubActor, MachineSharing, NotSharedMachine } from "@relayrunner/activity";
+import type { AccountUsage } from "./actions-billing.ts";
+import { minutesCheck, type MinutesSkip } from "./minutes-rule.ts";
+import { context, scalar } from "./pipeline-context.ts";
 
 export const ROUTE_LABEL_PREFIX = "rr-";
 // 12 lowercase hex characters.
@@ -43,6 +47,9 @@ export interface Route {
   state: "reserved" | "dispatched" | "done";
   // The job that claimed the route. Only that job can claim it again (a redelivery).
   jobId?: number;
+  // Set when the route chose a runner added from GitHub: the label the pick answered, which the
+  // runner carries for good. Unset for connected machines, whose route answers `rr-<route id>`.
+  routingLabel?: string;
 }
 
 export function newRouteId() {
@@ -75,6 +82,52 @@ export interface Candidate {
   labels: string[];
   // Paused machines stay connected but never take a new job.
   paused?: boolean;
+  // Whose jobs it takes, and its owner's GitHub account id (null when the owner is gone or never
+  // signed in with GitHub). Left out means `anyone`, as before sharing existed.
+  sharing?: MachineSharing;
+  ownerGithubId?: number | null;
+}
+
+// Who started a job: the run (`github.actor`) and this attempt (`github.triggering_actor`).
+export interface JobStarters {
+  startedBy: GithubActor | null;
+  triggeredBy: GithubActor | null;
+}
+
+/**
+ * Whether a machine's sharing lets it take a job. `anyone` takes every job. `only_me` takes a job
+ * only when both the run and this attempt were started by its owner, matched by GitHub account id:
+ * a bot, a schedule, a non-member, a re-run by someone else or a missing id never matches.
+ */
+export function admits(
+  machine: { sharing?: MachineSharing; ownerGithubId?: number | null },
+  job: JobStarters,
+): boolean {
+  if ((machine.sharing ?? "anyone") === "anyone") return true;
+  const owner = machine.ownerGithubId;
+  if (owner == null) return false;
+  return job.startedBy?.id === owner && job.triggeredBy?.id === owner;
+}
+
+/**
+ * Whether a machine admitted to a job must first show that its owner can read the job's repo. A
+ * machine shared with `anyone` takes other people's jobs, and being in the workspace doesn't mean
+ * its owner may read every repo the workspace's installations see: without this, a member could
+ * receive a repo's code and secrets by sharing their machine. A job its owner started (run and
+ * attempt) needs no check, and neither does `only_me`, which only ever takes those.
+ */
+export function needsOwnerAccess(
+  machine: { sharing?: MachineSharing; ownerGithubId?: number | null },
+  job: JobStarters,
+): boolean {
+  if ((machine.sharing ?? "anyone") !== "anyone") return false;
+  const owner = machine.ownerGithubId;
+  return owner == null || job.startedBy?.id !== owner || job.triggeredBy?.id !== owner;
+}
+
+/** The GitHub id of whoever started this attempt, whose own machines a pick tries first. */
+export function starterId(job: JobStarters): number | null {
+  return job.triggeredBy?.id ?? job.startedBy?.id ?? null;
 }
 
 // GitHub's default self-hosted runner labels, so a job's `runs-on` list can be copied into the
@@ -119,25 +172,32 @@ export function lastPicked(routes: Route[]): Map<string, number> {
 }
 
 /**
- * Of the machines with every wanted label, the online, idle, unpaused one no route holds that was
- * least recently picked, or null. Machines never picked come first; ties keep the candidates' order.
- * No wanted labels means none is required; a job that names no machine labels doesn't get here.
+ * Of the machines with every wanted label whose sharing takes the job, the online, idle, unpaused
+ * one no route holds, or null. The job starter's own machines come first; then the least recently
+ * picked (never picked first), ties keeping the candidates' order. No wanted labels means none is
+ * required; a job that names no machine labels doesn't get here. No starters means nobody's job:
+ * only `anyone` machines take it.
  */
 export function chooseMachine(
   candidates: Candidate[],
   held: Set<string>,
   picked: Map<string, number> = new Map(),
   wanted: string[] = [],
+  starters: JobStarters = { startedBy: null, triggeredBy: null },
 ): Candidate | null {
+  const starter = starterId(starters);
   let best: Candidate | null = null;
+  let bestOwn = false;
   let bestAt = Infinity;
   for (const machine of candidates) {
     if (!machine.online || machine.state !== "idle" || machine.paused || held.has(machine.id))
       continue;
-    if (!hasLabels(machine.labels, wanted)) continue;
+    if (!hasLabels(machine.labels, wanted) || !admits(machine, starters)) continue;
+    const own = starter !== null && machine.ownerGithubId === starter;
     const at = picked.get(machine.id) ?? -Infinity;
-    if (at < bestAt) {
+    if ((own && !bestOwn) || (own === bestOwn && at < bestAt)) {
       best = machine;
+      bestOwn = own;
       bestAt = at;
     }
   }
@@ -157,6 +217,40 @@ export function pausedMatches(
   return matching.map((machine) => machine.name);
 }
 
+export interface PoolMachine {
+  name: string;
+  labels: string[];
+  paused?: boolean;
+  sharing?: MachineSharing;
+  ownerGithubId?: number | null;
+  // The owner's display name, for Activity.
+  ownerName?: string | null;
+}
+
+/**
+ * Why no machine took a job that some machine's labels fit, when there's one thing to say: no
+ * machine with the labels takes this job's starter (`notShared`), or every one that does is paused
+ * (`paused`). Null otherwise: they're busy or offline, or none has the labels.
+ */
+export function unavailableMachines(
+  machines: PoolMachine[],
+  wanted: string[],
+  starters: JobStarters,
+): { paused: string[] } | { notShared: NotSharedMachine[] } | null {
+  const matching = machines.filter((machine) => hasLabels(machine.labels, wanted));
+  if (matching.length === 0) return null;
+  const admitted = matching.filter((machine) => admits(machine, starters));
+  if (admitted.length === 0)
+    return {
+      notShared: matching.map((machine) => ({
+        machine: machine.name,
+        owner: machine.ownerName ?? null,
+      })),
+    };
+  const paused = pausedMatches(admitted, wanted);
+  return paused.length > 0 ? { paused } : null;
+}
+
 export interface QueuedJob {
   jobId: number;
   repositoryId: number;
@@ -167,17 +261,6 @@ export interface QueuedJob {
 export function canClaim(route: Route, job: QueuedJob) {
   if (route.repositoryId !== job.repositoryId || route.runId !== job.runId) return false;
   return route.jobId === undefined || route.jobId === job.jobId;
-}
-
-// GitHub runner names allow letters, digits, `.`, `-` and `_`. The machine's name comes first so
-// the job's "Runner name" says which machine ran it; the route id keeps it unique in the org.
-export function machineRunnerName(machineName: string, routeId: string) {
-  const base =
-    machineName
-      .replace(/[^A-Za-z0-9._-]+/g, "-")
-      .replace(/^-+|-+$/g, "")
-      .slice(0, 40) || "machine";
-  return `${base}-${routeId}`;
 }
 
 // What the Router needs from a claimed job: its repo and run from the `github` context, and the
@@ -194,22 +277,38 @@ export interface JobContext {
   machine: string[];
   // The GitHub-hosted runner label(s) from the relay's `github` input. Empty when left out.
   github: string[];
+  // The Blacksmith runner label(s) from the relay's `blacksmith` input. Empty when left out.
+  blacksmith: string[];
+  // Who started the run (`github.actor`, `github.actor_id`), or null when missing.
+  startedBy: GithubActor | null;
+  // Who started this attempt (`github.triggering_actor`), which differs from `startedBy` on a
+  // re-run by someone else. The context has only the login: the id is the actor's when the logins
+  // match, else null until the pick looks it up (resolveTriggeredBy).
+  triggeredBy: GithubActor | null;
 }
 
-// The job message carries its expression contexts in `contextData`, as the runner's
-// PipelineContextData JSON: a dictionary is {t: 2, d: [{k, v}]}, a string is a bare JSON string,
-// and a number is {t: 4, n}. Returns null when `github.repository` or `github.run_id` is missing.
+// Reads the job message's `contextData` (src/pipeline-context.ts). Returns null when
+// `github.repository` or `github.run_id` is missing.
 // Missing `inputs` (a relay older than per-provider inputs) reads as no labels.
 export function jobContext(contextData: unknown): JobContext | null {
-  const github = dictionary(isRecord(contextData) ? contextData.github : undefined);
+  const github = context(contextData, "github");
   if (!github) return null;
   const repo = scalar(github.get("repository"));
   const runId = Number(scalar(github.get("run_id")));
   if (typeof repo !== "string" || !repo.includes("/") || !Number.isSafeInteger(runId) || runId <= 0)
     return null;
-  const inputs = dictionary(isRecord(contextData) ? contextData.inputs : undefined);
+  const inputs = context(contextData, "inputs");
   const runAttempt = Number(scalar(github.get("run_attempt")));
   const workflow = scalar(github.get("workflow"));
+  const startedBy = actorOf(scalar(github.get("actor")), scalar(github.get("actor_id")));
+  const triggeringLogin = scalar(github.get("triggering_actor"));
+  const triggeredBy =
+    typeof triggeringLogin === "string" && triggeringLogin
+      ? {
+          login: triggeringLogin,
+          id: startedBy && sameLogin(startedBy.login, triggeringLogin) ? startedBy.id : null,
+        }
+      : startedBy;
   return {
     repo,
     runId,
@@ -217,34 +316,29 @@ export function jobContext(contextData: unknown): JobContext | null {
     workflow: typeof workflow === "string" && workflow ? workflow : null,
     machine: parseLabels(scalar(inputs?.get("machine"))),
     github: parseLabels(scalar(inputs?.get("github"))),
+    blacksmith: parseLabels(scalar(inputs?.get("blacksmith"))),
+    startedBy,
+    triggeredBy,
   };
 }
 
-function dictionary(value: unknown): Map<string, unknown> | null {
-  if (!isRecord(value) || !Array.isArray(value.d)) return null;
-  const entries = new Map<string, unknown>();
-  for (const entry of value.d)
-    if (isRecord(entry) && typeof entry.k === "string") entries.set(entry.k, entry.v);
-  return entries;
+function actorOf(login: unknown, id: unknown): GithubActor | null {
+  if (typeof login !== "string" || !login) return null;
+  const n = Number(id);
+  return {
+    login,
+    id: id !== undefined && id !== "" && Number.isSafeInteger(n) && n > 0 ? n : null,
+  };
 }
 
-function scalar(value: unknown): string | number | undefined {
-  if (typeof value === "string" || typeof value === "number") return value;
-  if (isRecord(value)) {
-    if (typeof value.s === "string") return value.s;
-    if (typeof value.n === "number") return value.n;
-  }
-  return undefined;
-}
-
-function isRecord(value: unknown): value is Record<string, unknown> {
-  return typeof value === "object" && value !== null;
-}
+// GitHub logins are case-insensitive.
+export const sameLogin = (a: string, b: string) => a.toLowerCase() === b.toLowerCase();
 
 // Why a step of the order didn't answer: not_configured (the relay left the provider's input
 // empty), public_repo (machines never run a public repo's jobs), no_machine (no online, idle
-// machine has every wanted label), too_many_labels (`github` names more than one label; a runs-on
-// from an output holds one). Shared with the Activity page, which explains each.
+// machine has every wanted label), too_many_labels (`github` or `blacksmith` names more than one
+// label; a runs-on from an output holds one), not_blacksmith_label (`blacksmith` names a label
+// Blacksmith doesn't serve, so the job would sit queued). Shared with the Activity page, which explains each.
 export type { SkipReason } from "@relayrunner/activity";
 import type { SkipReason } from "@relayrunner/activity";
 
@@ -253,10 +347,15 @@ export interface SkippedStep {
   reason: SkipReason;
   // machine_paused: the paused machines' names.
   paused?: string[];
+  // machine_not_shared: the machines that fit but only run their owner's jobs.
+  notShared?: NotSharedMachine[];
+  // minutes_limit and minutes_runway: the job's GitHub account and its usage at the pick.
+  minutes?: Omit<MinutesSkip, "reason">;
 }
 
-// What the machine step's pick found: a route label, every matching machine paused, or nothing.
-export type MachinePick = string | { paused: string[] } | null;
+// What the machine step's pick found: a route label, every matching machine paused, no matching
+// machine taking this job's starter, or nothing.
+export type MachinePick = string | { paused: string[] } | { notShared: NotSharedMachine[] } | null;
 
 // `notInOrder` lists providers the job configured that the order leaves out, either way, so an
 // ignored input is never silent.
@@ -269,38 +368,65 @@ export type RouteDecision =
 export interface RouteRequest {
   machine: string[];
   github: string[];
+  blacksmith: string[];
   private: boolean;
 }
+
+// Blacksmith's runner labels all start with this, e.g. `blacksmith-2vcpu-ubuntu-2404`. Blacksmith
+// has no API to ask whether it can take a job, so a Blacksmith step always accepts one with such a
+// label; anything else would queue forever.
+const BLACKSMITH_LABEL = /^blacksmith-/i;
+export const isBlacksmithLabel = (label: string) => BLACKSMITH_LABEL.test(label);
 
 /**
  * Walks the order top to bottom. A step whose provider the job didn't configure is skipped, and a
  * provider the job configures but the order leaves out is never tried. `pickMachine` is only
  * called when the machine step is reached and may run; it returns the route label, the paused
- * machines when every one that fits is paused, or null.
+ * machines when every one that fits is paused, or null. `githubUsage` reads the job's GitHub
+ * account's Actions minutes, and is only called when a GitHub step with a minutes limit is reached
+ * (once per pick, however many such steps there are).
  */
 export async function decideRoute(
   order: RunnerOrder,
   job: RouteRequest,
   pickMachine: () => Promise<MachinePick>,
+  githubUsage: () => Promise<AccountUsage | null> = async () => null,
 ): Promise<RouteDecision> {
   const skipped: SkippedStep[] = [];
+  let usage: Promise<AccountUsage | null> | undefined;
   const inOrder = new Set(order.steps.map((step) => step.key));
   const notInOrder = RUNNER_KEYS.filter((key) => !inOrder.has(key) && job[key].length > 0);
-  for (const { key } of order.steps) {
+  for (const step of order.steps) {
+    const { key } = step;
     if (key === "machine") {
       if (job.machine.length === 0) skipped.push({ key, reason: "not_configured" });
       else if (!job.private) skipped.push({ key, reason: "public_repo" });
       else {
         const pick = await pickMachine();
         if (typeof pick === "string") return { runner: pick, step: key, skipped, notInOrder };
-        if (pick && pick.paused.length > 0)
+        if (pick && "notShared" in pick && pick.notShared.length > 0)
+          skipped.push({ key, reason: "machine_not_shared", notShared: pick.notShared });
+        else if (pick && "paused" in pick && pick.paused.length > 0)
           skipped.push({ key, reason: "machine_paused", paused: pick.paused });
         else skipped.push({ key, reason: "no_machine" });
       }
     } else if (key === "github") {
       if (job.github.length === 0) skipped.push({ key, reason: "not_configured" });
       else if (job.github.length > 1) skipped.push({ key, reason: "too_many_labels" });
-      else return { runner: job.github[0], step: key, skipped, notInOrder };
+      else {
+        const over = step.limit
+          ? minutesCheck(await (usage ??= githubUsage()), step.limit.percent)
+          : null;
+        if (!over) return { runner: job.github[0], step: key, skipped, notInOrder };
+        const { reason, ...minutes } = over;
+        skipped.push({ key, reason, minutes });
+      }
+    } else if (key === "blacksmith") {
+      if (job.blacksmith.length === 0) skipped.push({ key, reason: "not_configured" });
+      else if (job.blacksmith.length > 1) skipped.push({ key, reason: "too_many_labels" });
+      else if (!isBlacksmithLabel(job.blacksmith[0]))
+        skipped.push({ key, reason: "not_blacksmith_label" });
+      else return { runner: job.blacksmith[0], step: key, skipped, notInOrder };
     }
   }
   return { runner: null, reason: noRunnerReason(job, skipped, notInOrder), skipped, notInOrder };
@@ -312,24 +438,31 @@ export function noRunnerReason(
   skipped: SkippedStep[],
   notInOrder: RunnerKey[],
 ): string {
-  if (job.machine.length === 0 && job.github.length === 0)
-    return `${NO_RUNNER}: the relay sets neither \`machine\` nor \`github\`.`;
-  const parts = skipped.map(({ key, reason, paused = [] }) => {
+  if (RUNNER_KEYS.every((key) => job[key].length === 0))
+    return `${NO_RUNNER}: the relay sets none of \`machine\`, \`github\` or \`blacksmith\`.`;
+  const parts = skipped.map(({ key, reason, paused = [], notShared = [], minutes }) => {
     switch (reason) {
       case "not_configured":
         return `\`${key}\` isn't set on this relay`;
       case "public_repo":
-        return "public repos never run on local machines";
+        return "public repos never run on self-hosted machines";
       case "no_machine":
         return job.machine.length === 1 && job.machine[0].toLowerCase() === "self-hosted"
-          ? "no local machine is online and idle"
-          : `no local machine with ${job.machine.join(", ")} is online and idle`;
+          ? "no self-hosted machine is online and idle"
+          : `no self-hosted machine with ${job.machine.join(", ")} is online and idle`;
       case "machine_paused":
         return paused.length === 1
           ? `the only machine that fits, ${paused[0]}, is paused`
           : `every machine that fits is paused (${paused.join(", ")})`;
+      case "machine_not_shared":
+        return notSharedText(notShared);
       case "too_many_labels":
-        return `\`github\` takes one label, not ${job.github.join(", ")}`;
+        return `\`${key}\` takes one label, not ${job[key].join(", ")}`;
+      case "not_blacksmith_label":
+        return `\`blacksmith\` takes a Blacksmith label such as blacksmith-2vcpu-ubuntu-2404, not ${job.blacksmith.join(", ")}`;
+      case "minutes_limit":
+      case "minutes_runway":
+        return minutesText(reason, minutes);
     }
   });
   for (const key of notInOrder) parts.push(`${RUNNER_LABELS[key]} isn't in your runner order`);
@@ -337,3 +470,32 @@ export function noRunnerReason(
 }
 
 export const NO_RUNNER = "No runner available";
+
+/** "atticus-mbp only runs Atticus's jobs", or for several, "a and b only run their owners' jobs". */
+export function notSharedText(machines: NotSharedMachine[]): string {
+  if (machines.length === 1) {
+    const [{ machine, owner }] = machines;
+    return `${machine} only runs ${owner ? `${owner}'s` : "its owner's"} jobs`;
+  }
+  const names = machines.map((m) => m.machine);
+  const list =
+    names.length === 2
+      ? names.join(" and ")
+      : `${names.slice(0, -1).join(", ")} and ${names[names.length - 1]}`;
+  return `${list} only run their owners' jobs`;
+}
+
+const count = (n: number) => Math.round(n).toLocaleString("en-US");
+
+/** "relayrunner has used 1,640 of its 2,000 included minutes (82%), past the 80% limit". */
+export function minutesText(
+  reason: "minutes_limit" | "minutes_runway",
+  minutes: SkippedStep["minutes"],
+): string {
+  if (!minutes) return "GitHub-hosted is past its minutes limit";
+  const { account, usedMinutes, quotaMinutes, percent, burnRatePerHour } = minutes;
+  const used = `${account} has used ${count(usedMinutes)} of its ${count(quotaMinutes)} included minutes (${Math.floor((usedMinutes / quotaMinutes) * 100)}%)`;
+  return reason === "minutes_limit"
+    ? `${used}, past the ${percent}% limit`
+    : `${used}, and at ${count(burnRatePerHour ?? 0)} minutes an hour it could run out before GitHub's billing catches up`;
+}

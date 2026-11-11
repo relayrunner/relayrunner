@@ -11,9 +11,9 @@
     "binding": "ASSETS",
     // Unknown paths fall back to index.html so client-side routes deep-link.
     "not_found_handling": "single-page-application",
-    // /api/* must reach the Worker, not the SPA fallback. So must the Access-gated dev views,
-    // or assets would serve their HTML without the check.
-    "run_worker_first": ["/api/*", "/dev", "/dev/*"],
+    // /api/* must reach the Worker, not the SPA fallback. So must the Access-gated admin views,
+    // or assets would serve their HTML without the check. Old /dev links: public/_redirects.
+    "run_worker_first": ["/api/*", "/admin", "/admin/*", "/.well-known/*"],
   },
   // Same-origin API: the dashboard forwards /api/* to apps/api over this binding,
   // so auth cookies stay first-party on workers.dev and on the custom domain.
@@ -27,11 +27,11 @@
   // Cloudflare Access in front of them: docs/cloudflare-access.md.
   "preview_urls": true,
   "vars": {
-    // Zero Trust team domain and Access app AUD whose JWTs the dev-only views accept
+    // Zero Trust team domain and Access app AUD whose JWTs the admin views accept
     // (packages/access). Per-version preview URLs (<version>-relayrunner-app...) use these top-level
-    // vars, not `previews`, so the AUD has to be here too. The second AUD is "relayrunner-app dev
-    // views" (app.relayrunner.app/dev and /api/dev). Production workers.dev has no Access app, so a
-    // request there carries no JWT and /dev/* answers 403.
+    // vars, not `previews`, so the AUD has to be here too. The second AUD is "relayrunner-app admin
+    // views" (app.relayrunner.app/admin and /api/admin). Production workers.dev has no Access app,
+    // so a request there carries no JWT and /admin/* answers 403.
     "ACCESS_TEAM_DOMAIN": "relayrunner.cloudflareaccess.com",
     "ACCESS_AUD": "bc8e87c4c78375b0b1e61b4a2a73354543030492e218d02a28c56bc0f95702f7, 45a666d9534b30a03ef5e04e9ce04da805afa430d00b6bffddeb245aef130460",
   },
@@ -63,8 +63,7 @@
     },
   },
   // Custom domains. relayrunner.app is the interim domain while relayrunner.dev waits out its
-  // transfer lock; add app.relayrunner.dev here once that zone lives in this account. Sign-in on
-  // a custom domain goes through the production callback like a preview (PREVIEW_ORIGINS in
-  // apps/api/wrangler.jsonc) until BETTER_AUTH_URL moves to it.
+  // transfer lock; add app.relayrunner.dev here once that zone lives in this account. It is
+  // BETTER_AUTH_URL (apps/api/wrangler.jsonc), so GitHub's sign-in callback lands here.
   "routes": [{ "pattern": "app.relayrunner.app", "custom_domain": true }],
 }

@@ -1,0 +1,1 @@
+CREATE INDEX `activity_event_type_idx` ON `activity_event` (`workspace_id`,`type`,`occurred_at`);

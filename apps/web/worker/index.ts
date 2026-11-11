@@ -6,14 +6,14 @@
  * GitHub webhooks (/api/webhooks/*) go to the webhook ingress Worker
  * (apps/webhooks) instead, which queues them for the API.
  *
- * Development-only views (/dev/* and /api/dev/*) need a Cloudflare Access JWT
- * (see packages/access). They answer 404 wherever Access isn't configured,
- * which today means everywhere except preview URLs.
+ * Operator admin views (/admin/* and /api/admin/*) need a Cloudflare Access JWT
+ * (see packages/access). They answer 404 wherever Access isn't configured. The
+ * old /dev/* paths redirect to /admin/* (public/_redirects).
  *
- * `run_worker_first` in wrangler.jsonc sends /api/* and /dev/* here before the
+ * `run_worker_first` in wrangler.jsonc sends /api/*, /admin/* and /.well-known/* here before the
  * assets layer; every other path is answered by assets (with the SPA fallback).
  */
-import { gateDevOnly, isDevOnlyPath, type AccessEnv } from "@relayrunner/access";
+import { gateAdmin, isAdminPath, type AccessEnv } from "@relayrunner/access";
 
 interface Env extends AccessEnv {
   API: Fetcher;
@@ -27,13 +27,18 @@ export default {
     if (pathname.startsWith("/api/webhooks/")) {
       return env.WEBHOOKS.fetch(request);
     }
-    if (isDevOnlyPath(pathname)) {
-      const gate = await gateDevOnly(request, env);
+    if (isAdminPath(pathname)) {
+      const gate = await gateAdmin(request, env);
       if ("response" in gate) return gate.response;
-      // Who Access let in: lets an agent check its service token before it drives a dev view.
-      if (pathname === "/dev/access") return Response.json({ identity: gate.identity });
+      // Who Access let in: lets an agent check its service token before it drives an admin view.
+      if (pathname === "/admin/access") return Response.json({ identity: gate.identity });
     }
-    if (pathname === "/api" || pathname.startsWith("/api/")) {
+    // OAuth discovery for agent sign-in (apps/api/src/well-known.ts).
+    if (
+      pathname === "/api" ||
+      pathname.startsWith("/api/") ||
+      pathname.startsWith("/.well-known/")
+    ) {
       return env.API.fetch(request);
     }
     return env.ASSETS.fetch(request);

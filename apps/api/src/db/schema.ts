@@ -2,7 +2,17 @@
 // account, verification), then the organization plugin's, renamed to workspaces (see auth.ts).
 // Gateway tables (installations and their repos, then machines and routes) follow. After changing anything
 // here, run `pnpm db:generate` to write a new migration.
-import { index, integer, sqliteTable, text, uniqueIndex } from "drizzle-orm/sqlite-core";
+import type { MachineSharing } from "@relayrunner/activity";
+import { sql } from "drizzle-orm";
+import {
+  index,
+  integer,
+  primaryKey,
+  real,
+  sqliteTable,
+  text,
+  uniqueIndex,
+} from "drizzle-orm/sqlite-core";
 
 const timestamps = {
   createdAt: integer("created_at", { mode: "timestamp_ms" })
@@ -20,6 +30,9 @@ export const user = sqliteTable("user", {
   email: text("email").notNull().unique(),
   emailVerified: integer("email_verified", { mode: "boolean" }).notNull().default(false),
   image: text("image"),
+  // Global role, separate from per-workspace member roles. "operator" sees the dashboard's Admin
+  // section. Null for everyone else. Granted by SQL for now (docs/cloudflare-access.md).
+  role: text("role"),
   ...timestamps,
 });
 
@@ -191,11 +204,23 @@ export const deviceCode = sqliteTable("device_code", {
   pollingInterval: integer("polling_interval"),
   clientId: text("client_id"),
   scope: text("scope"),
+  // Where the CLI asked for the code from (src/device-origin.ts), so the approval page can show it
+  // and warn when it's far from whoever approves. Null when the request didn't say.
+  requestIp: text("request_ip"),
+  requestCountry: text("request_country"),
+  requestCity: text("request_city"),
   ...timestamps,
 });
 
-// A machine enrolled with `relayrunner connect`. It belongs to one workspace and authenticates
-// with its own token, not a user session. Enrollment runs in two steps (src/machines.ts):
+// A machine RelayRunner can route jobs to. It belongs to one workspace. Two sources:
+// - 'connect': enrolled with `relayrunner connect`; it authenticates with its own token, not a
+//   user session, and runs one-job JIT runners the gateway mints.
+// - 'github': a self-hosted runner its owner already registered in a connected org (#159).
+//   RelayRunner never talks to the machine: it reads the runner's status from GitHub and steers
+//   jobs to it with routing_label, a label it added to the runner on GitHub. token_hash and
+//   enrollment_hash stay null.
+//
+// For 'connect' machines: Enrollment runs in two steps (src/machines.ts):
 // approving the device code in the dashboard creates the row with enrollment_hash set, and the
 // CLI's claim fills in os/arch and token_hash and clears enrollment_hash. Revoking keeps the row
 // so past routes can still name the machine. Pausing (paused_at) keeps it out of routing only.
@@ -212,6 +237,9 @@ export const machine = sqliteTable(
     arch: text("arch"),
     // SHA-256 (hex) of the machine token. The token itself is only ever shown to the CLI.
     tokenHash: text("token_hash").unique(),
+    // SHA-256 (hex) of the token the gateway sent to replace it on the machine's last connect,
+    // until the CLI says it saved it (src/durable-objects/machine-link.ts). Both work meanwhile.
+    pendingTokenHash: text("pending_token_hash").unique(),
     // SHA-256 (hex) of the device code that approved this machine, while the claim is pending.
     enrollmentHash: text("enrollment_hash").unique(),
     // The user who approved the enrollment.
@@ -222,9 +250,40 @@ export const machine = sqliteTable(
     // pausedBy is the user who paused it, or null when the machine paused itself from its CLI.
     pausedAt: integer("paused_at", { mode: "timestamp_ms" }),
     pausedBy: text("paused_by").references(() => user.id, { onDelete: "set null" }),
+    // 'connect' or 'github' (above).
+    source: text("source").notNull().default("connect"),
+    // Whose jobs it takes (MACHINE_SHARING, #237): 'only_me' (only jobs its owner, createdBy,
+    // started) or 'anyone'. Only the owner changes it. Connected machines start as 'only_me';
+    // runners added from GitHub are the org's shared runners and start as 'anyone'.
+    sharing: text("sharing").$type<MachineSharing>().notNull().default("only_me"),
+    // 'github' only: the installation whose org the runner is registered in, GitHub's runner id,
+    // the label RelayRunner added to it (`rr-runner-<hex>`), and the runner's labels as last read
+    // from GitHub (JSON array), for when GitHub can't be reached.
+    installationId: integer("installation_id").references(() => githubInstallation.id, {
+      onDelete: "set null",
+    }),
+    githubRunnerId: integer("github_runner_id"),
+    routingLabel: text("routing_label").unique(),
+    githubLabels: text("github_labels"),
+    // 'connect' only: the device the CLI reported on its last hello (#165). Each part is its own
+    // typed column, never a display string, so routing could match on specs later. Null when the
+    // CLI didn't report it (older CLIs) or couldn't read it.
+    // laptop, desktop, server, vm or unknown.
+    deviceKind: text("device_kind"),
+    // A display name ("MacBook Pro") and the raw identifier it came from ("Mac15,9").
+    deviceModel: text("device_model"),
+    deviceModelId: text("device_model_id"),
+    chip: text("chip"),
+    cpuCores: integer("cpu_cores"),
+    memoryMb: integer("memory_mb"),
+    osVersion: text("os_version"),
+    deviceReportedAt: integer("device_reported_at", { mode: "timestamp_ms" }),
     ...timestamps,
   },
-  (table) => [index("machine_workspace_idx").on(table.workspaceId)],
+  (table) => [
+    index("machine_workspace_idx").on(table.workspaceId),
+    index("machine_github_runner_idx").on(table.installationId, table.githubRunnerId),
+  ],
 );
 
 // A GitHub Actions job in a run that RelayRunner routed, for the dashboard's Activity page. A run
@@ -275,6 +334,154 @@ export const workflowJob = sqliteTable(
   ],
 );
 
+// Every job in a connected repo, whatever runner took it (src/job-timings.ts). While a job is
+// queued or running (completed_at null) the Runs page shows it live; once it finishes the usage
+// report counts it: how many jobs finished in under a minute and what GitHub's round-up to whole
+// minutes cost. Unlike workflow_job, this keeps jobs RelayRunner never saw a pick for. Written by
+// each of the job's webhooks, rolled up into job_timing_daily by the hourly cron once its day is
+// past the raw retention window (dropped 7 days after it was first seen if it never finished), and
+// gone with the installation.
+export const jobTiming = sqliteTable(
+  "job_timing",
+  {
+    // GitHub's job id.
+    id: integer("id").primaryKey({ autoIncrement: false }),
+    installationId: integer("installation_id")
+      .notNull()
+      .references(() => githubInstallation.id, { onDelete: "cascade" }),
+    repositoryId: integer("repository_id").notNull(),
+    repositoryFullName: text("repository_full_name").notNull(),
+    runId: integer("run_id").notNull(),
+    runAttempt: integer("run_attempt").notNull(),
+    workflowName: text("workflow_name"),
+    name: text("name").notNull(),
+    // The job's runs-on labels, as a JSON array.
+    labels: text("labels", { mode: "json" }).$type<string[]>().notNull(),
+    conclusion: text("conclusion"),
+    runnerName: text("runner_name"),
+    // With labels, decides the job's GitHub rate when the report is read (runnerClass).
+    runnerGroupName: text("runner_group_name"),
+    // The machine a route sent the job to, set with workflow_job's by setJobMachine (src/jobs.ts),
+    // since the job's `rr-<route id>` label stops naming a machine once the route goes. Job times
+    // (src/job-times.ts) report it as its own environment.
+    machineId: text("machine_id"),
+    // When GitHub queued the job, for the wait before a runner took it.
+    queuedAt: integer("queued_at", { mode: "timestamp_ms" }),
+    startedAt: integer("started_at", { mode: "timestamp_ms" }),
+    completedAt: integer("completed_at", { mode: "timestamp_ms" }),
+    ...timestamps,
+  },
+  (table) => [
+    // The usage report and job times: one workspace's installations over a time range.
+    index("job_timing_installation_idx").on(table.installationId, table.completedAt),
+    // Each machine's recent jobs, for its card on the Runners page. Partial: most jobs never ran
+    // on a machine.
+    index("job_timing_machine_idx")
+      .on(table.machineId, table.completedAt)
+      .where(sql`${table.machineId} is not null`),
+    // One job's recent runs, for the job times detail.
+    index("job_timing_job_idx").on(
+      table.repositoryId,
+      table.workflowName,
+      table.name,
+      table.completedAt,
+    ),
+    // The retention purge, across all installations.
+    index("job_timing_completed_idx").on(table.completedAt),
+    // The purge of jobs GitHub never said finished. Partial: almost every row has finished.
+    index("job_timing_unfinished_idx")
+      .on(table.createdAt)
+      .where(sql`${table.completedAt} is null`),
+    // One run's jobs, for its row on the Runs page.
+    index("job_timing_run_idx").on(table.runId, table.runAttempt),
+  ],
+);
+
+// Finished jobs past job_timing's raw retention, summed per UTC day and per the columns the usage
+// report groups by (src/job-timings.ts), so its 90-day range costs a row per day and runner kind
+// rather than a row per job. The hourly cron moves each day out of job_timing in one transaction,
+// so a job is counted in one table or the other, never both. Purged once past the report's range.
+export const jobTimingDaily = sqliteTable(
+  "job_timing_daily",
+  {
+    installationId: integer("installation_id")
+      .notNull()
+      .references(() => githubInstallation.id, { onDelete: "cascade" }),
+    // The UTC midnight starting the day the jobs finished on.
+    day: integer("day", { mode: "timestamp_ms" }).notNull(),
+    repositoryId: integer("repository_id").notNull(),
+    repositoryFullName: text("repository_full_name").notNull(),
+    labels: text("labels", { mode: "json" }).$type<string[]>().notNull(),
+    // Empty for none, so the key's columns are never null.
+    runnerGroupName: text("runner_group_name").notNull().default(""),
+    jobs: integer("jobs").notNull(),
+    shortJobs: integer("short_jobs").notNull(),
+    runMs: integer("run_ms").notNull(),
+    billedMinutes: integer("billed_minutes").notNull(),
+    shortBilledMinutes: integer("short_billed_minutes").notNull(),
+  },
+  (table) => [
+    primaryKey({
+      columns: [
+        table.installationId,
+        table.day,
+        table.repositoryId,
+        table.labels,
+        table.runnerGroupName,
+      ],
+    }),
+    // The retention purge, across all installations.
+    index("job_timing_daily_day_idx").on(table.day),
+  ],
+);
+
+// One attempt of a GitHub Actions workflow run in a connected repo, from workflow_run webhooks
+// (src/runs.ts), for the Runs page: what started it and how it ended. Its jobs' times come from
+// job_timing. Purged with job_timing, and goes away with its installation.
+export const workflowRun = sqliteTable(
+  "workflow_run",
+  {
+    // GitHub's run id. Every attempt of a run shares it.
+    id: integer("id").notNull(),
+    runAttempt: integer("run_attempt").notNull(),
+    installationId: integer("installation_id")
+      .notNull()
+      .references(() => githubInstallation.id, { onDelete: "cascade" }),
+    repositoryId: integer("repository_id").notNull(),
+    repositoryFullName: text("repository_full_name").notNull(),
+    workflowName: text("workflow_name"),
+    // The commit or PR title GitHub shows for the run.
+    displayTitle: text("display_title"),
+    // What triggered it: push, pull_request, schedule, workflow_dispatch, ...
+    event: text("event").notNull(),
+    actorLogin: text("actor_login"),
+    // Who started the run (github.actor) and this attempt (github.triggering_actor), by GitHub
+    // account id and login (#241). The id matches a member's GitHub sign-in. Null before #241.
+    startedById: integer("started_by_id"),
+    startedByLogin: text("started_by_login"),
+    triggeredById: integer("triggered_by_id"),
+    triggeredByLogin: text("triggered_by_login"),
+    headBranch: text("head_branch"),
+    headSha: text("head_sha").notNull(),
+    pullRequestNumber: integer("pull_request_number"),
+    // 'requested', 'queued', 'in_progress' or 'completed'.
+    status: text("status").notNull(),
+    conclusion: text("conclusion"),
+    htmlUrl: text("html_url"),
+    runStartedAt: integer("run_started_at", { mode: "timestamp_ms" }),
+    // The run's updated_at on GitHub. Deliveries are unordered, so a row only takes a newer one.
+    githubUpdatedAt: integer("github_updated_at", { mode: "timestamp_ms" }).notNull(),
+    ...timestamps,
+  },
+  (table) => [
+    primaryKey({ columns: [table.id, table.runAttempt] }),
+    // The Runs page: one workspace's installations over a time range.
+    index("workflow_run_installation_idx").on(table.installationId, table.githubUpdatedAt),
+    // The retention purge, across all installations.
+    index("workflow_run_updated_idx").on(table.githubUpdatedAt),
+  ],
+);
+
 // The workspace's audit log for the Activity page: one append-only row per event, typed by
 // @relayrunner/activity (src/activity.ts writes and reads it). `data` holds the type's own fields
 // as JSON. The id increases with time, so it orders the log and pages it. Rows go with their
@@ -303,6 +510,8 @@ export const activityEvent = sqliteTable(
     // One event per type per job, so a redelivered webhook never logs a job twice. Machine events
     // have no job id, and NULLs never collide.
     uniqueIndex("activity_event_job_idx").on(table.jobId, table.type),
+    // One type over a time range, such as the free checks the Usage page sums.
+    index("activity_event_type_idx").on(table.workspaceId, table.type, table.occurredAt),
   ],
 );
 
@@ -320,9 +529,10 @@ export const routeDecision = sqliteTable(
     repositoryId: integer("repository_id").notNull(),
     runId: integer("run_id").notNull(),
     runAttempt: integer("run_attempt").notNull(),
-    // The provider that took the run ('machine' or 'github'), or null when nothing fit.
+    // The provider that took the run ('machine', 'github' or 'blacksmith'), or null when nothing fit.
     step: text("step"),
-    // What the pick answered: a route's `rr-<id>` or a GitHub label. Null when nothing fit.
+    // What the pick answered: a route's `rr-<id>`, a GitHub or a Blacksmith label. Null when
+    // nothing fit.
     runner: text("runner"),
     // The earlier steps, in order, as [{key, reason}].
     skipped: text("skipped", { mode: "json" })
@@ -330,11 +540,18 @@ export const routeDecision = sqliteTable(
       .notNull(),
     // Providers the relay set that the order leaves out.
     notInOrder: text("not_in_order", { mode: "json" }).$type<string[]>().notNull(),
-    // The relay's `machine` and `github` inputs.
+    // The relay's `machine`, `github` and `blacksmith` inputs.
     machine: text("machine", { mode: "json" }).$type<string[]>().notNull(),
     github: text("github", { mode: "json" }).$type<string[]>().notNull(),
+    blacksmith: text("blacksmith", { mode: "json" }).$type<string[]>().notNull().default([]),
     // The message the relay failed with, when nothing fit.
     reason: text("reason"),
+    // Who started the run (github.actor) and this attempt (github.triggering_actor), by GitHub
+    // account id and login (#241). The id matches a member's GitHub sign-in. Null before #241.
+    startedById: integer("started_by_id"),
+    startedByLogin: text("started_by_login"),
+    triggeredById: integer("triggered_by_id"),
+    triggeredByLogin: text("triggered_by_login"),
     createdAt: integer("created_at", { mode: "timestamp_ms" })
       .notNull()
       .$defaultFn(() => new Date()),
@@ -342,4 +559,350 @@ export const routeDecision = sqliteTable(
   (table) => [
     uniqueIndex("route_decision_run_idx").on(table.repositoryId, table.runId, table.runAttempt),
   ],
+);
+
+// GitHub Actions usage this billing cycle from each org's billing usage report (#116,
+// src/actions-billing.ts): one row per installation, cycle, repo and SKU, summed over the cycle's
+// days and replaced on every poll. Keyed by installation, never workspace, because each GitHub
+// account has its own included quota.
+export const actionsUsage = sqliteTable(
+  "actions_usage",
+  {
+    id: integer("id").primaryKey({ autoIncrement: true }),
+    installationId: integer("installation_id")
+      .notNull()
+      .references(() => githubInstallation.id, { onDelete: "cascade" }),
+    // Start of the billing cycle (UTC month).
+    cycleStart: integer("cycle_start", { mode: "timestamp_ms" }).notNull(),
+    // The repo's name within the org, as billing reports it ("" when GitHub omits it).
+    repositoryName: text("repository_name").notNull(),
+    // e.g. "Actions Linux", "Actions macOS".
+    sku: text("sku").notNull(),
+    unitType: text("unit_type").notNull(),
+    // Minutes for runner SKUs.
+    quantity: real("quantity").notNull(),
+    // USD before and after GitHub's discounts (included quota, public repos, self-hosted).
+    grossAmount: real("gross_amount").notNull(),
+    netAmount: real("net_amount").notNull(),
+    ...timestamps,
+  },
+  (table) => [
+    uniqueIndex("actions_usage_row_idx").on(
+      table.installationId,
+      table.cycleStart,
+      table.repositoryName,
+      table.sku,
+    ),
+  ],
+);
+
+// What the last billing poll of an installation found: its plan, its Actions budget, and whether
+// usage could be read at all. One row per installation.
+export const actionsBilling = sqliteTable("actions_billing", {
+  installationId: integer("installation_id")
+    .primaryKey({ autoIncrement: false })
+    .references(() => githubInstallation.id, { onDelete: "cascade" }),
+  // GET /orgs/{org} plan.name, e.g. "free", "team", "enterprise".
+  plan: text("plan"),
+  // The org's Actions budget in whole USD, and whether GitHub blocks jobs once it's spent. Null when
+  // the org has no Actions budget.
+  budgetAmount: integer("budget_amount"),
+  budgetPreventFurtherUsage: integer("budget_prevent_further_usage", { mode: "boolean" }),
+  // Why the latest poll couldn't read usage: "missing_permission" or "error". Null when it could.
+  failure: text("failure"),
+  error: text("error"),
+  // The latest poll attempt, and the latest one that read usage.
+  checkedAt: integer("checked_at", { mode: "timestamp_ms" }).notNull(),
+  readAt: integer("read_at", { mode: "timestamp_ms" }),
+  ...timestamps,
+});
+
+// Each successful poll's running total for the cycle, kept for 48 hours, so the minutes rule (#117)
+// can see how fast an account is burning through its quota.
+export const actionsUsageReading = sqliteTable(
+  "actions_usage_reading",
+  {
+    id: integer("id").primaryKey({ autoIncrement: true }),
+    installationId: integer("installation_id")
+      .notNull()
+      .references(() => githubInstallation.id, { onDelete: "cascade" }),
+    readAt: integer("read_at", { mode: "timestamp_ms" }).notNull(),
+    // Start of the billing cycle (UTC month) the totals belong to.
+    cycleStart: integer("cycle_start", { mode: "timestamp_ms" }).notNull(),
+    usedMinutes: real("used_minutes").notNull(),
+    grossAmount: real("gross_amount").notNull(),
+    netAmount: real("net_amount").notNull(),
+  },
+  (table) => [
+    index("actions_usage_reading_installation_idx").on(table.installationId, table.readAt),
+    index("actions_usage_reading_read_idx").on(table.readAt),
+  ],
+);
+
+// Agent sign-in (MCP server, apps/agents): the jwt and mcp plugins (auth.ts). Generated from
+// Better Auth's own schema, so column names follow its fields. jwks holds the keys that sign agent
+// access tokens; oauth_consent.reference_id is the agent_grant a consent was given for (below).
+export const jwks = sqliteTable("jwks", {
+  id: text("id").primaryKey(),
+  publicKey: text("public_key").notNull(),
+  privateKey: text("private_key").notNull(),
+  createdAt: integer("created_at", { mode: "timestamp_ms" }).notNull(),
+  expiresAt: integer("expires_at", { mode: "timestamp_ms" }),
+  alg: text("alg"),
+  crv: text("crv"),
+});
+
+export const oauthClient = sqliteTable(
+  "oauth_client",
+  {
+    id: text("id").primaryKey(),
+    clientId: text("client_id").notNull().unique(),
+    clientSecret: text("client_secret"),
+    clientDiscoveryId: text("client_discovery_id"),
+    disabled: integer("disabled", { mode: "boolean" }).default(false),
+    skipConsent: integer("skip_consent", { mode: "boolean" }),
+    enableEndSession: integer("enable_end_session", { mode: "boolean" }),
+    subjectType: text("subject_type"),
+    scopes: text("scopes", { mode: "json" }),
+    clientCredentialsScopes: text("client_credentials_scopes", {
+      mode: "json",
+    }).default([]),
+    userId: text("user_id").references(() => user.id, { onDelete: "cascade" }),
+    createdAt: integer("created_at", { mode: "timestamp_ms" }),
+    updatedAt: integer("updated_at", { mode: "timestamp_ms" }),
+    name: text("name"),
+    uri: text("uri"),
+    icon: text("icon"),
+    contacts: text("contacts", { mode: "json" }),
+    tos: text("tos"),
+    policy: text("policy"),
+    softwareId: text("software_id"),
+    softwareVersion: text("software_version"),
+    softwareStatement: text("software_statement"),
+    redirectUris: text("redirect_uris", { mode: "json" }).notNull(),
+    postLogoutRedirectUris: text("post_logout_redirect_uris", { mode: "json" }),
+    backchannelLogoutUri: text("backchannel_logout_uri"),
+    backchannelLogoutSessionRequired: integer("backchannel_logout_session_required", {
+      mode: "boolean",
+    }),
+    tokenEndpointAuthMethod: text("token_endpoint_auth_method"),
+    applicationType: text("application_type"),
+    jwks: text("jwks"),
+    jwksUri: text("jwks_uri"),
+    grantTypes: text("grant_types", { mode: "json" }),
+    responseTypes: text("response_types", { mode: "json" }),
+    requirePKCE: integer("require_pkce", { mode: "boolean" }),
+    dpopBoundAccessTokens: integer("dpop_bound_access_tokens", {
+      mode: "boolean",
+    }).default(false),
+    referenceId: text("reference_id"),
+    metadata: text("metadata", { mode: "json" }),
+  },
+  (table) => [index("oauth_client_user_id_idx").on(table.userId)],
+);
+
+export const oauthResource = sqliteTable("oauth_resource", {
+  id: text("id").primaryKey(),
+  identifier: text("identifier").notNull().unique(),
+  name: text("name").notNull(),
+  accessTokenTtl: integer("access_token_ttl"),
+  refreshTokenTtl: integer("refresh_token_ttl"),
+  signingAlgorithm: text("signing_algorithm"),
+  signingKeyId: text("signing_key_id"),
+  allowedScopes: text("allowed_scopes", { mode: "json" }),
+  customClaims: text("custom_claims", { mode: "json" }),
+  dpopBoundAccessTokensRequired: integer("dpop_bound_access_tokens_required", {
+    mode: "boolean",
+  }).default(false),
+  disabled: integer("disabled", { mode: "boolean" }).default(false),
+  createdAt: integer("created_at", { mode: "timestamp_ms" }),
+  updatedAt: integer("updated_at", { mode: "timestamp_ms" }),
+  policyVersion: integer("policy_version").default(1),
+  metadata: text("metadata", { mode: "json" }),
+});
+
+export const oauthClientResource = sqliteTable(
+  "oauth_client_resource",
+  {
+    id: text("id").primaryKey(),
+    clientId: text("client_id")
+      .notNull()
+      .references(() => oauthClient.clientId, { onDelete: "cascade" }),
+    resourceId: text("resource_id")
+      .notNull()
+      .references(() => oauthResource.identifier, { onDelete: "cascade" }),
+    metadata: text("metadata", { mode: "json" }),
+    createdAt: integer("created_at", { mode: "timestamp_ms" }),
+  },
+  (table) => [
+    uniqueIndex("oauth_client_resource_client_id_resource_id_uidx").on(
+      table.clientId,
+      table.resourceId,
+    ),
+    index("oauth_client_resource_client_id_idx").on(table.clientId),
+    index("oauth_client_resource_resource_id_idx").on(table.resourceId),
+  ],
+);
+
+export const oauthRefreshToken = sqliteTable(
+  "oauth_refresh_token",
+  {
+    id: text("id").primaryKey(),
+    token: text("token").notNull().unique(),
+    clientId: text("client_id")
+      .notNull()
+      .references(() => oauthClient.clientId, { onDelete: "cascade" }),
+    sessionId: text("session_id").references(() => session.id, {
+      onDelete: "set null",
+    }),
+    userId: text("user_id")
+      .notNull()
+      .references(() => user.id, { onDelete: "cascade" }),
+    referenceId: text("reference_id"),
+    authorizationCodeId: text("authorization_code_id"),
+    resources: text("resources", { mode: "json" }),
+    requestedUserInfoClaims: text("requested_user_info_claims", {
+      mode: "json",
+    }),
+    expiresAt: integer("expires_at", { mode: "timestamp_ms" }),
+    createdAt: integer("created_at", { mode: "timestamp_ms" }),
+    revoked: integer("revoked", { mode: "timestamp_ms" }),
+    rotatedAt: integer("rotated_at", { mode: "timestamp_ms" }),
+    rotationReplayResponse: text("rotation_replay_response"),
+    rotationReplayExpiresAt: integer("rotation_replay_expires_at", {
+      mode: "timestamp_ms",
+    }),
+    authTime: integer("auth_time", { mode: "timestamp_ms" }),
+    confirmation: text("confirmation", { mode: "json" }),
+    scopes: text("scopes", { mode: "json" }).notNull(),
+  },
+  (table) => [
+    index("oauth_refresh_token_client_id_idx").on(table.clientId),
+    index("oauth_refresh_token_session_id_idx").on(table.sessionId),
+    index("oauth_refresh_token_user_id_idx").on(table.userId),
+    index("oauth_refresh_token_authorization_code_id_idx").on(table.authorizationCodeId),
+  ],
+);
+
+export const oauthAccessToken = sqliteTable(
+  "oauth_access_token",
+  {
+    id: text("id").primaryKey(),
+    token: text("token").unique(),
+    clientId: text("client_id")
+      .notNull()
+      .references(() => oauthClient.clientId, { onDelete: "cascade" }),
+    sessionId: text("session_id").references(() => session.id, {
+      onDelete: "set null",
+    }),
+    userId: text("user_id").references(() => user.id, { onDelete: "cascade" }),
+    referenceId: text("reference_id"),
+    authorizationCodeId: text("authorization_code_id"),
+    resources: text("resources", { mode: "json" }),
+    requestedUserInfoClaims: text("requested_user_info_claims", {
+      mode: "json",
+    }),
+    refreshId: text("refresh_id").references(() => oauthRefreshToken.id, {
+      onDelete: "cascade",
+    }),
+    expiresAt: integer("expires_at", { mode: "timestamp_ms" }),
+    createdAt: integer("created_at", { mode: "timestamp_ms" }),
+    revoked: integer("revoked", { mode: "timestamp_ms" }),
+    confirmation: text("confirmation", { mode: "json" }),
+    scopes: text("scopes", { mode: "json" }).notNull(),
+  },
+  (table) => [
+    index("oauth_access_token_client_id_idx").on(table.clientId),
+    index("oauth_access_token_session_id_idx").on(table.sessionId),
+    index("oauth_access_token_user_id_idx").on(table.userId),
+    index("oauth_access_token_authorization_code_id_idx").on(table.authorizationCodeId),
+    index("oauth_access_token_refresh_id_idx").on(table.refreshId),
+  ],
+);
+
+export const oauthConsent = sqliteTable(
+  "oauth_consent",
+  {
+    id: text("id").primaryKey(),
+    clientId: text("client_id")
+      .notNull()
+      .references(() => oauthClient.clientId, { onDelete: "cascade" }),
+    userId: text("user_id").references(() => user.id, { onDelete: "cascade" }),
+    referenceId: text("reference_id"),
+    resources: text("resources", { mode: "json" }),
+    requestedUserInfoClaims: text("requested_user_info_claims", {
+      mode: "json",
+    }),
+    scopes: text("scopes", { mode: "json" }).notNull(),
+    createdAt: integer("created_at", { mode: "timestamp_ms" }),
+    updatedAt: integer("updated_at", { mode: "timestamp_ms" }),
+  },
+  (table) => [
+    index("oauth_consent_client_id_idx").on(table.clientId),
+    index("oauth_consent_user_id_idx").on(table.userId),
+  ],
+);
+
+export const oauthClientAssertion = sqliteTable("oauth_client_assertion", {
+  id: text("id").primaryKey(),
+  expiresAt: integer("expires_at", { mode: "timestamp_ms" }).notNull(),
+});
+
+// Which workspaces an agent connection may read (agent-auth.ts). The workspace picker writes a
+// grant before consent; the consent's reference_id (and its tokens') is the grant's id. A grant
+// tied to the session that made it lets consent find it. Disconnecting an agent from one workspace
+// deletes that workspace's row; the agent keeps the others.
+export const agentGrant = sqliteTable(
+  "agent_grant",
+  {
+    id: text("id").primaryKey(),
+    userId: text("user_id")
+      .notNull()
+      .references(() => user.id, { onDelete: "cascade" }),
+    sessionId: text("session_id"),
+    createdAt: integer("created_at", { mode: "timestamp_ms" })
+      .notNull()
+      .$defaultFn(() => new Date()),
+  },
+  (table) => [index("agent_grant_session_id_idx").on(table.sessionId)],
+);
+
+export const agentGrantWorkspace = sqliteTable(
+  "agent_grant_workspace",
+  {
+    grantId: text("grant_id")
+      .notNull()
+      .references(() => agentGrant.id, { onDelete: "cascade" }),
+    workspaceId: text("workspace_id")
+      .notNull()
+      .references(() => workspace.id, { onDelete: "cascade" }),
+  },
+  (table) => [
+    primaryKey({ columns: [table.grantId, table.workspaceId] }),
+    index("agent_grant_workspace_workspace_id_idx").on(table.workspaceId),
+  ],
+);
+
+// Feedback agents send through the MCP server's send_feedback tool (routes/feedback.ts), already
+// sanitized and with secrets redacted. Also emailed to FEEDBACK_EMAIL. grant_id and client_id are
+// plain text so the feedback outlives a disconnected agent; it goes with its user.
+export const agentFeedback = sqliteTable(
+  "agent_feedback",
+  {
+    id: text("id").primaryKey(),
+    userId: text("user_id")
+      .notNull()
+      .references(() => user.id, { onDelete: "cascade" }),
+    workspaceId: text("workspace_id").references(() => workspace.id, { onDelete: "set null" }),
+    grantId: text("grant_id"),
+    clientId: text("client_id"),
+    category: text("category").notNull(),
+    summary: text("summary").notNull(),
+    details: text("details"),
+    tool: text("tool"),
+    createdAt: integer("created_at", { mode: "timestamp_ms" })
+      .notNull()
+      .$defaultFn(() => new Date()),
+  },
+  (table) => [index("agent_feedback_user_id_created_at_idx").on(table.userId, table.createdAt)],
 );

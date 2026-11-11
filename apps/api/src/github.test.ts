@@ -1,8 +1,10 @@
+import { generateKeyPairSync } from "node:crypto";
 import { toWebhookMessage } from "@relayrunner/github-webhooks";
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, test, vi } from "vitest";
 import { app } from "./app.ts";
 import type { Env } from "./env.ts";
 import { dashboardPath, type GitHubInstallation, verifyInstallState } from "./github.ts";
+import { landingAfterSignIn } from "./routes/github.ts";
 import * as testing from "./testing.ts";
 import { processWebhook } from "./webhook-queue.ts";
 
@@ -309,9 +311,8 @@ describe("connecting a GitHub org", () => {
     expect(invalid.headers.get("location")).toBe("/settings/github?github=invalid");
 
     const signedOut = await app.request("/api/github/setup?installation_id=1", {}, env);
-    expect(signedOut.headers.get("location")).toBe(
-      `/login?redirect=${encodeURIComponent("/settings/github?github=unclaimed")}`,
-    );
+    // Signs in with GitHub, then lands on settings to claim it (landingAfterSignIn).
+    expect(new URL(signedOut.headers.get("location")!).pathname).toBe("/login/oauth/authorize");
   });
 });
 
@@ -375,7 +376,7 @@ describe("coming back to a dashboard page after the install (next)", () => {
     expect(response.headers.get("location")).toBe(`${device}&github=requested`);
   });
 
-  test("signed out on the way back, sign-in returns to next", async () => {
+  test("signed out on the way back, it signs in with GitHub", async () => {
     const { cookie } = await owner();
     const state = await installState(cookie, device);
     const response = await app.request(
@@ -383,7 +384,148 @@ describe("coming back to a dashboard page after the install (next)", () => {
       {},
       env,
     );
-    expect(response.headers.get("location")).toBe(`/login?redirect=${encodeURIComponent(device)}`);
+    expect(response.status).toBe(302);
+    const location = new URL(response.headers.get("location")!);
+    expect(`${location.origin}${location.pathname}`).toBe(
+      "https://github.com/login/oauth/authorize",
+    );
+    expect(location.searchParams.get("state")).toBeTruthy();
+    expect(response.headers.getSetCookie().join("\n")).toContain("better-auth.state");
+  });
+
+  test("after that sign-in it lands on next, naming the installation to claim", () => {
+    expect(landingAfterSignIn({ next: device, requested: false, installationId: 9 })).toBe(
+      `${device}&installed=9`,
+    );
+    expect(landingAfterSignIn({ next: device, requested: true, installationId: null })).toBe(
+      `${device}&github=requested`,
+    );
+    expect(landingAfterSignIn({ next: null, requested: false, installationId: 9 })).toBe(
+      "/settings/github?github=unclaimed",
+    );
+  });
+
+  test("/signup goes straight to the install page and remembers next in a cookie", async () => {
+    const response = await app.request(
+      `${env.BETTER_AUTH_URL}/api/github/signup?next=${encodeURIComponent(device)}`,
+      {},
+      env,
+    );
+    expect(response.headers.get("location")).toBe(
+      "https://github.com/apps/relayrunner-test/installations/new",
+    );
+    const cookie = response.headers.getSetCookie().find((c) => c.startsWith("rr_signup_next="));
+    expect(cookie).toContain(encodeURIComponent(device));
+    expect(cookie).toContain("HttpOnly");
+  });
+
+  test("/signup on another host moves to the production host first", async () => {
+    const response = await app.request(
+      `https://preview.example/api/github/signup?next=${encodeURIComponent(device)}`,
+      {},
+      env,
+    );
+    expect(response.headers.get("location")).toBe(
+      `${new URL(env.BETTER_AUTH_URL).origin}/api/github/signup?next=${encodeURIComponent(device)}`,
+    );
+  });
+
+  test("setup with the signup cookie signs a new user in with GitHub's code, no second trip", async () => {
+    const realFetch = globalThis.fetch;
+    const exchanged: string[] = [];
+    vi.stubGlobal("fetch", (input: RequestInfo | URL, init?: RequestInit) => {
+      const url = input instanceof Request ? input.url : String(input);
+      if (url === "https://github.com/login/oauth/access_token") {
+        exchanged.push(String(init?.body));
+        return Promise.resolve(Response.json({ access_token: "gho_new", token_type: "bearer" }));
+      }
+      if (url === "https://api.github.com/user")
+        return Promise.resolve(
+          Response.json({ id: 424242, login: "newbie", name: "New Bie", email: null }),
+        );
+      if (url === "https://api.github.com/user/emails")
+        return Promise.resolve(
+          Response.json([{ email: "newbie@example.com", primary: true, verified: true }]),
+        );
+      return realFetch(input, init);
+    });
+    const response = await app.request(
+      `${env.BETTER_AUTH_URL}/api/github/setup?code=abc&installation_id=5&setup_action=install`,
+      { headers: { cookie: `rr_signup_next=${encodeURIComponent(device)}` } },
+      env,
+    );
+    expect(response.headers.get("location")).toBe(`${device}&installed=5`);
+    // The code is exchanged for the callback URL GitHub sent it to.
+    expect(exchanged[0]).toContain(encodeURIComponent(`${env.BETTER_AUTH_URL}/api/github/setup`));
+    const session = response.headers
+      .getSetCookie()
+      .find((c) => c.startsWith("better-auth.session_token="));
+    expect(session).toBeTruthy();
+    const me = await app.request(
+      "/api/auth/get-session",
+      { headers: { cookie: session!.split(";")[0]! } },
+      env,
+    );
+    expect(((await me.json()) as { user: { email: string } }).user.email).toBe(
+      "newbie@example.com",
+    );
+  });
+
+  test("the install sign-in can't be called over HTTP", async () => {
+    const response = await call("/auth/github/install-sign-in", "", { code: "abc" });
+    expect(response.status).toBe(404);
+  });
+
+  test("when GitHub refuses the code, setup falls back to a GitHub sign-in", async () => {
+    const realFetch = globalThis.fetch;
+    vi.stubGlobal("fetch", (input: RequestInfo | URL, init?: RequestInit) => {
+      const url = input instanceof Request ? input.url : String(input);
+      if (url === "https://github.com/login/oauth/access_token")
+        return Promise.resolve(Response.json({ error: "bad_verification_code" }));
+      return realFetch(input, init);
+    });
+    const response = await app.request(
+      `${env.BETTER_AUTH_URL}/api/github/setup?code=abc&installation_id=5&setup_action=install`,
+      { headers: { cookie: `rr_signup_next=${encodeURIComponent(device)}` } },
+      env,
+    );
+    expect(new URL(response.headers.get("location")!).pathname).toBe("/login/oauth/authorize");
+  });
+
+  test("setup with the signup cookie, signed in, hands the installation to next", async () => {
+    const { githubToken, cookie } = await owner();
+    const github = installation();
+    visibleTo.set(githubToken, [github]);
+    const response = await call(
+      `/github/setup?code=abc&installation_id=${github.id}&setup_action=install`,
+      `${cookie}; rr_signup_next=${encodeURIComponent(device)}`,
+    );
+    expect(response.headers.get("location")).toBe(`${device}&installed=${github.id}`);
+  });
+
+  test("when GitHub drops the state, /install's cookie still links the installation", async () => {
+    const { githubToken, workspace, cookie } = await owner();
+    const github = installation();
+    visibleTo.set(githubToken, [github]);
+    const state = await installState(cookie, device);
+    const response = await call(
+      `/github/setup?code=abc&installation_id=${github.id}&setup_action=install`,
+      `${cookie}; rr_install_state=${encodeURIComponent(state)}`,
+    );
+    expect(response.headers.get("location")).toBe(`${device}&github=connected`);
+    expect(await row(github.id)).toMatchObject({ workspace_id: workspace.id });
+  });
+
+  test("setup on another host hands back to the origin the install started on", async () => {
+    const { cookie } = await owner();
+    const state = await installState(cookie, device);
+    expect((await verifyInstallState(env.BETTER_AUTH_SECRET, state))?.origin).toBe(
+      "http://localhost",
+    );
+    // GitHub's Setup URL is a fixed host where the session cookie doesn't live.
+    const query = `installation_id=1&setup_action=install&state=${encodeURIComponent(state)}`;
+    const response = await app.request(`https://app.example/api/github/setup?${query}`, {}, env);
+    expect(response.headers.get("location")).toBe(`http://localhost/api/github/setup?${query}`);
   });
 
   test("next only ever points inside the dashboard", async () => {
@@ -797,5 +939,118 @@ describe("repository webhooks (queue consumer)", () => {
     );
     await webhook("installation", { action: "deleted", installation: github }, later(2));
     expect(await repos(github.id)).toEqual([]);
+  });
+});
+
+describe("installation rate limits (#166)", () => {
+  const pem = generateKeyPairSync("rsa", { modulusLength: 2048 })
+    .privateKey.export({ type: "pkcs8", format: "pem" })
+    .toString();
+  const appEnv = () =>
+    ({
+      ...env,
+      GITHUB_APP_ID: "5605512",
+      GITHUB_APP_PRIVATE_KEY: { get: async () => pem },
+    }) as Env;
+  const get = (path: string, cookie: string) =>
+    app.request(`/api${path}`, { headers: { cookie } }, appEnv());
+
+  // GitHub as the App sees it: a token per installation, then GET /rate_limit with it.
+  let tokenRequests: number[] = [];
+  let rateLimitStatus = 200;
+  beforeEach(() => {
+    tokenRequests = [];
+    rateLimitStatus = 200;
+    const realFetch = globalThis.fetch;
+    vi.stubGlobal("fetch", (input: RequestInfo | URL, init?: RequestInit) => {
+      const url = input instanceof Request ? input.url : String(input);
+      const minted = url.match(
+        /^https:\/\/api\.github\.com\/app\/installations\/(\d+)\/access_tokens$/,
+      );
+      if (minted) {
+        tokenRequests.push(Number(minted[1]));
+        return Promise.resolve(Response.json({ token: `ghs_${minted[1]}` }, { status: 201 }));
+      }
+      if (url === "https://api.github.com/rate_limit") {
+        const auth = new Headers(init?.headers).get("authorization");
+        if (rateLimitStatus !== 200 || !auth?.startsWith("Bearer ghs_"))
+          return Promise.resolve(new Response("{}", { status: rateLimitStatus }));
+        return Promise.resolve(
+          Response.json({
+            resources: {
+              core: { limit: 5000, used: 120, remaining: 4880, reset: 1_794_000_000 },
+              graphql: { limit: 5000, used: 0, remaining: 5000, reset: 1_794_000_100 },
+              search: { limit: 30, used: 0, remaining: 30, reset: 1_794_000_000 },
+            },
+          }),
+        );
+      }
+      return realFetch(input, init);
+    });
+  });
+
+  async function connected(workspaceId: string | null) {
+    const github = installation();
+    const now = Date.now();
+    await env.DB.prepare(
+      "insert into github_installation (id, workspace_id, account_id, account_login, account_type, created_at, updated_at) values (?, ?, ?, ?, ?, ?, ?)",
+    )
+      .bind(
+        github.id,
+        workspaceId,
+        github.account!.id,
+        github.account!.login,
+        "Organization",
+        now,
+        now,
+      )
+      .run();
+    return github.id;
+  }
+
+  test("a member reads the installation's buckets live from GitHub", async () => {
+    const { workspace } = await owner();
+    const id = await connected(workspace.id);
+    const member = await testing.joinWorkspace(env, workspace.id, "member");
+
+    const response = await get(`/github/installations/${id}/rate-limit`, member.cookie);
+    expect(response.status).toBe(200);
+    expect(await response.json()).toEqual({
+      core: {
+        limit: 5000,
+        used: 120,
+        remaining: 4880,
+        reset: new Date(1_794_000_000 * 1000).toISOString(),
+      },
+      graphql: {
+        limit: 5000,
+        used: 0,
+        remaining: 5000,
+        reset: new Date(1_794_000_100 * 1000).toISOString(),
+      },
+      actionsRunnerRegistration: null,
+    });
+    expect(tokenRequests).toEqual([id]);
+  });
+
+  test("another workspace's or an unclaimed installation is not found", async () => {
+    const { workspace } = await owner();
+    const other = await owner();
+    const theirs = await connected(workspace.id);
+    const unclaimed = await connected(null);
+    for (const id of [theirs, unclaimed, 0]) {
+      const response = await get(`/github/installations/${id}/rate-limit`, other.cookie);
+      expect(response.status).toBe(404);
+    }
+    expect(tokenRequests).toEqual([]);
+  });
+
+  test("a GitHub failure reads as unavailable", async () => {
+    const { workspace, cookie } = await owner();
+    const id = await connected(workspace.id);
+    rateLimitStatus = 503;
+    const response = await get(`/github/installations/${id}/rate-limit`, cookie);
+    expect(response.status).toBe(502);
+    expect(await response.json()).toEqual({ error: "github_unavailable" });
   });
 });

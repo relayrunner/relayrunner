@@ -218,6 +218,20 @@ describe("claim and complete", () => {
       annotations: [{ level: "FAILURE", message: "No runner available." }],
     });
   });
+
+  test("still fails the job when GitHub turns the annotation down", async () => {
+    const { client, calls } = await openedClient((call) => {
+      if (call.url.endsWith("/acquirejob")) return Response.json(job);
+      if (call.url.endsWith("/completejob") && call.body.includes("annotations"))
+        return new Response("bad annotation", { status: 400 });
+      return new Response(null, { status: 204 });
+    });
+    await client.complete(await client.claim(request), "failed", { error: "No runner available." });
+    const completions = calls.filter((call) => call.url.endsWith("/completejob"));
+    expect(completions).toHaveLength(2);
+    expect(JSON.parse(completions[1].body)).toMatchObject({ conclusion: "failed" });
+    expect(JSON.parse(completions[1].body)).not.toHaveProperty("annotations");
+  });
 });
 
 test("closeSession deletes the session once", async () => {

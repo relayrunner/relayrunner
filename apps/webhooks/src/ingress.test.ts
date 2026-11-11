@@ -3,6 +3,7 @@ import type { WebhookMessage } from "@relayrunner/github-webhooks";
 import { handleRequest, type Env } from "./ingress.ts";
 
 const secret = "test-secret";
+const checksSecret = "checks-secret";
 
 class FakeQueue {
   sent: WebhookMessage[] = [];
@@ -24,10 +25,10 @@ const missingSecret = {
   },
 } as SecretsStoreSecret;
 
-async function sign(body: string) {
+async function sign(body: string, signingSecret = secret) {
   const key = await crypto.subtle.importKey(
     "raw",
-    new TextEncoder().encode(secret),
+    new TextEncoder().encode(signingSecret),
     { name: "HMAC", hash: "SHA-256" },
     false,
     ["sign"],
@@ -38,18 +39,16 @@ async function sign(body: string) {
   return `sha256=${[...digest].map((byte) => byte.toString(16).padStart(2, "0")).join("")}`;
 }
 
-function setup(envOverrides: Partial<Env> = {}) {
+function setup(envOverrides: Partial<Env> = {}, path = "/api/webhooks/github") {
   const queue = new FakeQueue();
   const env = {
     GITHUB_WEBHOOK_SECRET: storeSecret(secret),
+    GITHUB_CHECK_WEBHOOK_SECRET: storeSecret(checksSecret),
     WEBHOOK_QUEUE: queue,
     ...envOverrides,
   } as unknown as Env;
   const post = (body: string, headers: Record<string, string>) =>
-    handleRequest(
-      new Request("https://hooks.test/api/webhooks/github", { method: "POST", body, headers }),
-      env,
-    );
+    handleRequest(new Request(`https://hooks.test${path}`, { method: "POST", body, headers }), env);
   return { queue, post };
 }
 
@@ -158,5 +157,68 @@ describe("webhook ingress", () => {
       (await handleRequest(new Request("https://hooks.test/other", { method: "POST" }), env))
         .status,
     ).toBe(404);
+  });
+
+  describe("Checks App and check suites", () => {
+    const checksPath = "/api/webhooks/github-checks";
+    const checkSuite = JSON.stringify({
+      action: "requested",
+      installation: { id: 8 },
+      repository: { id: 1, full_name: "acme/app" },
+      check_suite: { id: 99, head_sha: "abc", head_branch: "main", pull_requests: [] },
+    });
+
+    test("verifies with its own secret, not the main App's", async () => {
+      const { post, queue } = setup({}, checksPath);
+      const headers = { "x-github-event": "check_suite" };
+      expect(
+        (await post(checkSuite, { ...headers, "x-hub-signature-256": await sign(checkSuite) }))
+          .status,
+      ).toBe(401);
+      expect(queue.sent).toHaveLength(0);
+    });
+
+    test("tags its messages with the app", async () => {
+      const { post, queue } = setup({}, checksPath);
+      const response = await post(checkSuite, {
+        "x-github-event": "check_suite",
+        "x-github-delivery": "d-2",
+        "x-hub-signature-256": await sign(checkSuite, checksSecret),
+      });
+      expect(response.status).toBe(202);
+      expect(queue.sent).toEqual([
+        expect.objectContaining({
+          app: "checks",
+          event: "check_suite",
+          deliveryId: "d-2",
+          installationId: 8,
+          checkSuite: expect.objectContaining({ id: 99, headSha: "abc" }),
+        }),
+      ]);
+    });
+
+    test("drops check suites sent to the main App", async () => {
+      const { post, queue } = setup();
+      const response = await post(checkSuite, {
+        "x-github-event": "check_suite",
+        "x-hub-signature-256": await sign(checkSuite),
+      });
+      expect(response.status).toBe(202);
+      expect(queue.sent).toHaveLength(0);
+    });
+
+    test("fails loudly when its secret is not configured", async () => {
+      const { post } = setup({ GITHUB_CHECK_WEBHOOK_SECRET: missingSecret }, checksPath);
+      expect((await post("{}", { "x-github-event": "ping" })).status).toBe(500);
+    });
+  });
+
+  test("leaves main App messages untagged", async () => {
+    const { post, queue } = setup();
+    await post(workflowJob, {
+      "x-github-event": "workflow_job",
+      "x-hub-signature-256": await sign(workflowJob),
+    });
+    expect(queue.sent[0].app).toBeUndefined();
   });
 });

@@ -1,6 +1,6 @@
 // What GET /api/github/setup reports back in ?github=, in plain language.
 export const githubOutcomes = {
-  connected: { tone: "go", message: "GitHub org connected." },
+  connected: { tone: "go", message: "GitHub account connected." },
   updated: { tone: "go", message: "Your changes on GitHub are saved." },
   unclaimed: {
     tone: "run",
@@ -15,7 +15,7 @@ export const githubOutcomes = {
   taken: {
     tone: "run",
     message:
-      "That GitHub org is already connected to another workspace. An org can only belong to one workspace.",
+      "That GitHub account is already connected to another workspace. An account can only belong to one workspace.",
   },
   not_found: {
     tone: "run",
@@ -30,7 +30,7 @@ export const githubOutcomes = {
   reauth: {
     tone: "run",
     message:
-      "Your GitHub sign-in has expired, so nothing was connected. Sign in again, then add the org under Unclaimed installations.",
+      "Your GitHub sign-in has expired, so nothing was connected. Sign in again, then add the account under Unclaimed installations.",
   },
   invalid: {
     tone: "run",

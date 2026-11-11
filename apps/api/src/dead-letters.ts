@@ -1,6 +1,6 @@
 /**
  * The webhook dead-letter archive: one R2 object per GitHub delivery that reached the DLQ, so
- * someone can see what failed and replay it (`/api/dev/webhooks/*`, the `/dev/webhooks` page).
+ * someone can see what failed and replay it (`/api/admin/webhooks/*`, the `/admin/webhooks` page).
  *
  * It lives in R2 (`relayrunner-webhook-dead-letters`), not the API's D1, on purpose: D1 failing is
  * the likeliest reason processing failed, and a dead letter written to D1 would fail with it.

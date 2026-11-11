@@ -53,6 +53,8 @@ export async function onMemberRemoved(
     and(
       eq(schema.machine.workspaceId, removal.workspaceId),
       eq(schema.machine.createdBy, removal.userId),
+      // A runner added from GitHub belongs to the org, not to whoever added it.
+      eq(schema.machine.source, "connect"),
     )!,
     removal.actorUserId,
   );

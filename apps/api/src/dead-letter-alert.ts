@@ -25,7 +25,7 @@ export async function checkDeadLetterGrowth(
   const count = await countDeadLettersSince(env.DEAD_LETTERS, WINDOW_MS, now);
   const threshold = alertThreshold(env);
   if (count < threshold) return { count, alerted: false };
-  const text = `RelayRunner: ${count} GitHub webhook deliveries were dead-lettered in the past hour (alert at ${threshold}). Inspect and replay them at /dev/webhooks on a dashboard preview.`;
+  const text = `RelayRunner: ${count} GitHub webhook deliveries were dead-lettered in the past hour (alert at ${threshold}). Inspect and replay them at /admin/webhooks in the dashboard.`;
   console.error(
     JSON.stringify({ msg: "webhook dead letters rising", count, threshold, windowMinutes: 60 }),
   );

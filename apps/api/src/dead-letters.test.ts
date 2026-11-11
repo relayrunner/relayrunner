@@ -5,50 +5,8 @@ import { checkDeadLetterGrowth } from "./dead-letter-alert.ts";
 import { archiveDeadLetter, listDeadLetters, recordLastError } from "./dead-letters.ts";
 import type { Env } from "./env.ts";
 import { startD1 } from "./testing.ts";
+import { accessEnv, accessJwt } from "./testing-access.ts";
 import { handleWebhookBatch, MAX_RETRIES } from "./webhook-queue.ts";
-
-const TEAM = "relayrunner.cloudflareaccess.com";
-const AUD = "aud-preview";
-
-// An Access key pair, and a fetch stub that serves its public half as the team's certs.
-const { privateKey, publicKey } = (await crypto.subtle.generateKey(
-  {
-    name: "RSASSA-PKCS1-v1_5",
-    modulusLength: 2048,
-    publicExponent: new Uint8Array([1, 0, 1]),
-    hash: "SHA-256",
-  },
-  true,
-  ["sign", "verify"],
-)) as CryptoKeyPair;
-const jwk = { ...(await crypto.subtle.exportKey("jwk", publicKey)), kid: "k1" };
-
-function b64url(value: string | Uint8Array) {
-  const bytes = typeof value === "string" ? new TextEncoder().encode(value) : value;
-  return btoa(String.fromCharCode(...bytes))
-    .replace(/\+/g, "-")
-    .replace(/\//g, "_")
-    .replace(/=+$/, "");
-}
-
-async function accessJwt() {
-  const now = Math.floor(Date.now() / 1000);
-  const claims = { iss: `https://${TEAM}`, aud: [AUD], exp: now + 300, common_name: "agent" };
-  const body = `${b64url(JSON.stringify({ alg: "RS256", kid: "k1" }))}.${b64url(JSON.stringify(claims))}`;
-  const sig = await crypto.subtle.sign(
-    "RSASSA-PKCS1-v1_5",
-    privateKey,
-    new TextEncoder().encode(body),
-  );
-  return `${body}.${b64url(new Uint8Array(sig))}`;
-}
-
-const realFetch = globalThis.fetch;
-vi.stubGlobal("fetch", async (input: RequestInfo | URL, init?: RequestInit) => {
-  const url = input instanceof Request ? input.url : String(input);
-  if (url === `https://${TEAM}/cdn-cgi/access/certs`) return Response.json({ keys: [jwk] });
-  return realFetch(input, init);
-});
 
 function message(deliveryId: string, overrides: Partial<WebhookMessage> = {}): WebhookMessage {
   return {
@@ -81,8 +39,7 @@ beforeAll(async () => {
   bucket = env.DEAD_LETTERS;
   base = {
     ...env,
-    ACCESS_TEAM_DOMAIN: TEAM,
-    ACCESS_AUD: AUD,
+    ...accessEnv,
     WEBHOOK_QUEUE: { send } as unknown as Queue<WebhookMessage>,
   };
 });
@@ -171,11 +128,11 @@ describe("listDeadLetters", () => {
   });
 });
 
-describe("/api/dev/webhooks", () => {
+describe("/api/admin/webhooks", () => {
   async function call(path: string, init: RequestInit = {}, env: Env = base, token = true) {
     const headers = new Headers(init.headers);
     if (token) headers.set("Cf-Access-Jwt-Assertion", await accessJwt());
-    return app.request(`/api/dev/webhooks${path}`, { ...init, headers }, env);
+    return app.request(`/api/admin/webhooks${path}`, { ...init, headers }, env);
   }
 
   const routes: [string, string][] = [

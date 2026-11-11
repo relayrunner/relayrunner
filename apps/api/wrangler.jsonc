@@ -11,7 +11,7 @@
   // and each would be another public, unprotected hostname.
   "preview_urls": false,
   // Custom domain on the interim relayrunner.app zone. The dashboard still reaches this Worker over
-  // its service binding; this host is for direct API calls. /api/dev/* stays behind gateDevOnly.
+  // its service binding; this host is for direct API calls. /api/admin/* stays behind gateAdmin.
   "routes": [{ "pattern": "api.relayrunner.app", "custom_domain": true }],
   // Workers Logs, traces and Issues (errors grouped per Worker). Wrangler deploys overwrite
   // dashboard settings, so these must stay on here. Source maps make Issues' stacks point at
@@ -24,26 +24,36 @@
   },
   "upload_source_maps": true,
   "vars": {
-    // The dashboard origin (apps/web forwards /api/* here over a service binding).
-    // Switch to https://app.relayrunner.dev once the domain moves to this account.
-    // Local dev overrides this in .dev.vars.
-    "BETTER_AUTH_URL": "https://relayrunner-app.relayrun.workers.dev",
+    // The dashboard origin (apps/web forwards /api/* here over a service binding): GitHub's OAuth
+    // callback and the link `relayrunner connect` opens. Switch to https://app.relayrunner.dev once
+    // that domain moves to this account. Local dev overrides this in .dev.vars.
+    "BETTER_AUTH_URL": "https://app.relayrunner.app",
     // Where links in emails point (src/email.ts): the dashboard people use, not the OAuth host.
     "DASHBOARD_URL": "https://app.relayrunner.app",
+    // The MCP server (apps/agents). Agent access tokens are issued for this URL only (src/agent-auth.ts).
+    "AGENTS_MCP_URL": "https://agents.relayrunner.app/mcp",
     // Sender for transactional email; must stay in send_email's allowed_sender_addresses below.
     "EMAIL_FROM": "noreply@send.relayrunner.app",
+    // Agent feedback from the MCP server's send_feedback tool (src/feedback.ts) is emailed here.
+    // An Email Routing rule on relayrunner.app forwards it to the team.
+    "FEEDBACK_EMAIL": "feedback@relayrunner.app",
     // Dashboard origins other than BETTER_AUTH_URL that may sign in through the oAuthProxy plugin:
     // previews (<alias>-relayrunner-app.relayrun.workers.dev; only this account's Workers live
-    // under relayrun.workers.dev) and the interim custom domain app.relayrunner.app.
-    "PREVIEW_ORIGINS": "https://*-relayrunner-app.relayrun.workers.dev, https://app.relayrunner.app",
+    // under relayrun.workers.dev) and the old workers.dev dashboard, which older CLIs still open.
+    "PREVIEW_ORIGINS": "https://*-relayrunner-app.relayrun.workers.dev, https://relayrunner-app.relayrun.workers.dev",
+    // Share the session cookie across relayrun.workers.dev, so signing in once on production
+    // workers.dev or any preview signs in every preview URL (per-branch and per-commit).
+    "SESSION_COOKIE_DOMAIN": "relayrun.workers.dev",
     // The GitHub App's slug, as in https://github.com/apps/<slug>.
     "GITHUB_APP_SLUG": "relayrunner",
     // The GitHub App's numeric ID, the `iss` of the App JWTs that mint installation tokens.
     "GITHUB_APP_ID": "5605512",
-    // Zero Trust team domain and the Access app AUD whose JWTs /api/dev/* accepts
+    // The RelayRunner Checks App's numeric ID: the separate, opt-in App that runs lint check runs.
+    "GITHUB_CHECKS_APP_ID": "5672393",
+    // Zero Trust team domain and the Access app AUD whose JWTs /api/admin/* accepts
     // (packages/access). Dashboard previews forward /api/* here with the Access JWT, so this is
-    // the AUDs of "relayrunner-app previews" and "relayrunner-app dev views"
-    // (app.relayrunner.app/dev and /api/dev), the same as in apps/web/wrangler.jsonc. Requests to
+    // the AUDs of "relayrunner-app previews" and "relayrunner-app admin views"
+    // (app.relayrunner.app/admin and /api/admin), the same as in apps/web/wrangler.jsonc. Requests to
     // this Worker's own URLs, or from the dashboard's workers.dev host, carry no JWT and get 403.
     "ACCESS_TEAM_DOMAIN": "relayrunner.cloudflareaccess.com",
     "ACCESS_AUD": "bc8e87c4c78375b0b1e61b4a2a73354543030492e218d02a28c56bc0f95702f7, 45a666d9534b30a03ef5e04e9ce04da805afa430d00b6bffddeb245aef130460",
@@ -51,6 +61,9 @@
     // (src/dead-letter-alert.ts). Set DEAD_LETTER_ALERT_WEBHOOK_URL with `wrangler secret put` to
     // also post the alert to a Slack or Discord incoming webhook.
     "DEAD_LETTER_ALERT_THRESHOLD": "10",
+    // Orgs whose `runs-on: relayrunner-container` jobs get a container runner, comma-separated
+    // (src/container-runner.ts). Each container is billed to this account, so it's an allowlist.
+    "CONTAINER_RUNNER_ORGS": "relayrunner",
   },
   // Transactional email through Cloudflare Email Sending (src/email.ts). send.relayrunner.app is
   // onboarded for sending on this account. Set OPERATOR_ALERT_EMAIL with `wrangler secret put` to
@@ -62,8 +75,9 @@
   //   wrangler r2 bucket create relayrunner-webhook-dead-letters
   //   wrangler r2 bucket lifecycle add relayrunner-webhook-dead-letters expire-30d --expire-days 30
   "r2_buckets": [{ "binding": "DEAD_LETTERS", "bucket_name": "relayrunner-webhook-dead-letters" }],
-  // Hourly dead-letter growth check (src/dead-letter-alert.ts).
-  "triggers": { "crons": ["0 * * * *"] },
+  // Hourly dead-letter growth check (src/dead-letter-alert.ts), and the 15-minute Actions usage
+  // poll (src/actions-billing.ts) plus the relay sweep (src/pick-sweep.ts). src/index.ts tells them apart by the cron string.
+  "triggers": { "crons": ["0 * * * *", "*/15 * * * *"] },
   // From the account's Secrets Store (default_secrets_store), not `wrangler secret put`.
   // GITHUB_APP_PRIVATE_KEY is the App's private key converted to PKCS#8 PEM, which is what
   // WebCrypto imports (GitHub downloads PKCS#1):
@@ -75,6 +89,12 @@
       "binding": "GITHUB_APP_PRIVATE_KEY",
       "store_id": "eac3493b9fef4234a832f5f3fdcc8a41",
       "secret_name": "GITHUB_APP_PRIVATE_KEY",
+    },
+    // The Checks App's key, the same way.
+    {
+      "binding": "GITHUB_CHECKS_APP_PRIVATE_KEY",
+      "store_id": "eac3493b9fef4234a832f5f3fdcc8a41",
+      "secret_name": "GITHUB_CHECKS_APP_PRIVATE_KEY",
     },
   ],
   "d1_databases": [
@@ -90,17 +110,51 @@
       { "name": "PICK_RUNNER", "class_name": "PickRunner" },
       { "name": "ROUTER", "class_name": "Router" },
       { "name": "MACHINE_LINK", "class_name": "MachineLink" },
+      { "name": "CONTAINER_RUNNER", "class_name": "ContainerRunner" },
+      { "name": "LINT_RUNNER", "class_name": "LintRunner" },
     ],
   },
-  "migrations": [{ "tag": "v1", "new_sqlite_classes": ["PickRunner", "Router", "MachineLink"] }],
+  "migrations": [
+    { "tag": "v1", "new_sqlite_classes": ["PickRunner", "Router", "MachineLink"] },
+    { "tag": "v2", "new_sqlite_classes": ["ContainerRunner"] },
+    { "tag": "v3", "new_sqlite_classes": ["LintRunner"] },
+  ],
+  // GitHub's runner image for container runners (src/durable-objects/container-runner.ts), which
+  // picks the instance size when it starts one. `pnpm run deploy` (scripts/deploy.ts) tags each
+  // image by a hash of its folder, builds and pushes it only when the registry lacks that tag, and
+  // deploys with the pushed digest, so a deploy needs Docker only when an image changed (Workers
+  // Builds has it). Plain `wrangler deploy` would rebuild both images every time. `wrangler dev`
+  // builds them from these Dockerfiles.
+  "containers": [
+    {
+      "class_name": "ContainerRunner",
+      "scheduling_policy": "durable_object",
+      "images": { "runner": { "dockerfile": "./container/Dockerfile" } },
+      // The runner's own output (registration, the job) in Workers Logs and the Containers page.
+      "observability": { "logs": { "enabled": true } },
+    },
+    // The lint container for the Checks App (src/durable-objects/lint-runner.ts). It starts with
+    // no internet access; the Durable Object streams the repo in.
+    {
+      "class_name": "LintRunner",
+      "scheduling_policy": "durable_object",
+      "images": { "lint": { "dockerfile": "../../packages/lint-runner/Dockerfile" } },
+      "observability": { "logs": { "enabled": true } },
+    },
+  ],
   // GitHub webhooks: apps/webhooks verifies each delivery and enqueues it; this Worker's `queue()`
   // export (src/webhook-queue.ts) processes it. Messages that fail max_retries times (with backoff,
   // about half an hour) move to the DLQ, whose consumer archives them to R2 and only then acks.
-  // The producer is for replays from /api/dev/webhooks. Create both queues once:
+  // The producer is for replays from /api/admin/webhooks. Create both queues once:
   //   wrangler queues create relayrunner-github-webhooks
   //   wrangler queues create relayrunner-github-webhooks-dlq
   "queues": {
-    "producers": [{ "binding": "WEBHOOK_QUEUE", "queue": "relayrunner-github-webhooks" }],
+    "producers": [
+      { "binding": "WEBHOOK_QUEUE", "queue": "relayrunner-github-webhooks" },
+      // The 15-minute cron's per-installation work (src/installation-tasks.ts). Create once:
+      //   wrangler queues create relayrunner-installation-tasks
+      { "binding": "INSTALLATION_TASKS", "queue": "relayrunner-installation-tasks" },
+    ],
     "consumers": [
       {
         "queue": "relayrunner-github-webhooks",
@@ -108,6 +162,13 @@
         "max_batch_timeout": 5,
         "max_retries": 6,
         "dead_letter_queue": "relayrunner-github-webhooks-dlq",
+      },
+      // Each task records its own failure and the next cron run repeats it, so one retry and no DLQ.
+      {
+        "queue": "relayrunner-installation-tasks",
+        "max_batch_size": 10,
+        "max_batch_timeout": 5,
+        "max_retries": 1,
       },
       {
         "queue": "relayrunner-github-webhooks-dlq",

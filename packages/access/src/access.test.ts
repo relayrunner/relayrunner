@@ -1,5 +1,5 @@
 import { beforeEach, describe, expect, test } from "vitest";
-import { gateDevOnly, isDevOnlyPath } from "./gate.ts";
+import { gateAdmin, isAdminPath } from "./gate.ts";
 import { accessConfig, clearAccessCertsCache, verifyAccessJwt } from "./jwt.ts";
 
 const TEAM = "relayrunner.cloudflareaccess.com";
@@ -148,32 +148,33 @@ describe("verifyAccessJwt", () => {
   });
 });
 
-describe("gateDevOnly", () => {
-  test("matches /dev and /api/dev, and nothing that merely starts with them", () => {
-    expect(isDevOnlyPath("/dev")).toBe(true);
-    expect(isDevOnlyPath("/dev/access")).toBe(true);
-    expect(isDevOnlyPath("/api/dev/seed")).toBe(true);
-    expect(isDevOnlyPath("/devices")).toBe(false);
-    expect(isDevOnlyPath("/api/developer")).toBe(false);
-    expect(isDevOnlyPath("/")).toBe(false);
+describe("gateAdmin", () => {
+  test("matches /admin and /api/admin, and nothing that merely starts with them", () => {
+    expect(isAdminPath("/admin")).toBe(true);
+    expect(isAdminPath("/admin/access")).toBe(true);
+    expect(isAdminPath("/api/admin/webhooks")).toBe(true);
+    expect(isAdminPath("/administrators")).toBe(false);
+    expect(isAdminPath("/api/administer")).toBe(false);
+    expect(isAdminPath("/dev")).toBe(false);
+    expect(isAdminPath("/")).toBe(false);
   });
 
   test("answers 404 when Access isn't configured", async () => {
-    const result = await gateDevOnly(new Request("https://x/dev"), {}, options);
+    const result = await gateAdmin(new Request("https://x/admin"), {}, options);
     expect("response" in result && result.response.status).toBe(404);
   });
 
   test("answers 403 without a valid token", async () => {
-    const result = await gateDevOnly(new Request("https://x/dev"), env, options);
+    const result = await gateAdmin(new Request("https://x/admin"), env, options);
     expect("response" in result && result.response.status).toBe(403);
   });
 
   test("lets a valid token through with its identity", async () => {
     const token = await sign({ ...base, common_name: "abc.access" });
-    const request = new Request("https://x/dev", {
+    const request = new Request("https://x/admin", {
       headers: { "Cf-Access-Jwt-Assertion": token },
     });
-    expect(await gateDevOnly(request, env, options)).toEqual({
+    expect(await gateAdmin(request, env, options)).toEqual({
       identity: { kind: "service", clientId: "abc.access" },
     });
   });

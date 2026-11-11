@@ -8,4 +8,4 @@ export {
   type AccessIdentity,
   type AccessResult,
 } from "./jwt.ts";
-export { isDevOnlyPath, gateDevOnly } from "./gate.ts";
+export { isAdminPath, gateAdmin } from "./gate.ts";

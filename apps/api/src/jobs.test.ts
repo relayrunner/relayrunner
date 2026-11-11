@@ -2,9 +2,10 @@ import type { WebhookMessage, WorkflowJob } from "@relayrunner/github-webhooks";
 import { afterAll, beforeAll, describe, expect, test, vi } from "vitest";
 import { createDb, schema } from "./db/index.ts";
 import type { Env } from "./env.ts";
-import type { ActivityPage } from "@relayrunner/activity";
+import type { ActivityPage, GithubActor } from "@relayrunner/activity";
 import * as testing from "./testing.ts";
 import { processWebhook } from "./webhook-queue.ts";
+import { runningJobs } from "./jobs.ts";
 import { recordPick } from "./route-decisions.ts";
 import { decideRoute } from "./routing.ts";
 
@@ -36,7 +37,7 @@ let ids = 0;
 // A signed-in owner of a fresh workspace with one connected installation.
 async function connectedWorkspace() {
   ids += 1;
-  const { cookie: signedIn } = await testing.signIn(env);
+  const { cookie: signedIn, user, githubId } = await testing.signIn(env);
   const { workspace, cookie } = await testing.createWorkspace(
     env,
     signedIn,
@@ -53,7 +54,14 @@ async function connectedWorkspace() {
       accountLogin: `org-${ids}`,
       accountType: "Organization",
     });
-  return { cookie, installationId, workspaceId: workspace.id, runId: 7000 + ids * 10 };
+  return {
+    cookie,
+    installationId,
+    workspaceId: workspace.id,
+    runId: 7000 + ids * 10,
+    user,
+    githubId,
+  };
 }
 
 function jobEvent(
@@ -95,14 +103,22 @@ async function activity(cookie: string, query = "") {
 }
 
 // What a pick in `runId` knew when it answered.
-function pickContext(runId: number, runAttempt = 1) {
+function pickContext(
+  runId: number,
+  runAttempt = 1,
+  startedBy: GithubActor | null = null,
+  triggeredBy: GithubActor | null = startedBy,
+) {
   return {
+    startedBy,
+    triggeredBy,
     repo: "relayrunner/relayrunner-ci-tests",
     runId,
     runAttempt,
     workflow: "RelayRunner dev",
     machine: ["macOS"],
     github: ["ubuntu-latest"],
+    blacksmith: [],
   };
 }
 
@@ -158,6 +174,7 @@ describe("Activity: why a job ran where", () => {
       notInOrder: [],
       machine: ["macOS"],
       github: ["ubuntu-latest"],
+      blacksmith: [],
     };
     const { jobs } = await activity(cookie);
     expect(jobs.map((job) => [job.name, job.walk])).toEqual([
@@ -223,7 +240,7 @@ describe("Activity: why a job ran where", () => {
           workflow: "RelayRunner dev",
           job: "relay",
           reason:
-            "No runner available: no local machine with macOS is online and idle; GitHub-hosted isn't in your runner order.",
+            "No runner available: no self-hosted machine with macOS is online and idle; GitHub-hosted isn't in your runner order.",
           walk: {
             step: null,
             skipped: [{ key: "machine", reason: "no_machine" }],
@@ -232,6 +249,91 @@ describe("Activity: why a job ran where", () => {
         },
       },
     ]);
+  });
+});
+
+describe("Activity: jobs that couldn't run", () => {
+  // A relay in `runId` that failed fast, then GitHub skipping the jobs that needed it.
+  async function failedRun(installationId: number, workspaceId: string, runId: number) {
+    const context = pickContext(runId);
+    const decision = await decideRoute(
+      { steps: [{ key: "machine" }] },
+      { ...context, private: true },
+      async () => null,
+    );
+    if (decision.runner !== null) throw new Error("expected no runner");
+    await processWebhook(
+      env,
+      jobEvent(installationId, { id: runId + 1, runId, name: "relay", labels: ["relayrunner"] }),
+    );
+    await recordPick(createDb(env.DB), {
+      workspaceId,
+      repositoryId: 55,
+      context,
+      jobName: "relay",
+      decision,
+      reason: decision.reason,
+    });
+  }
+
+  function skipped(installationId: number, runId: number, id: number, name: string) {
+    return processWebhook(
+      env,
+      jobEvent(
+        installationId,
+        {
+          id,
+          runId,
+          name,
+          labels: [],
+          conclusion: "skipped",
+          createdAt: `2026-11-04T18:0${id % 10}:00Z`,
+        },
+        "completed",
+      ),
+    );
+  }
+
+  test("folds the skipped jobs into the relay's entry", async () => {
+    const { cookie, installationId, workspaceId, runId } = await connectedWorkspace();
+    await failedRun(installationId, workspaceId, runId);
+    expect((await activity(cookie)).items).toMatchObject([
+      { type: "job.unroutable", jobsNotRun: [] },
+    ]);
+
+    await skipped(installationId, runId, runId + 2, "build");
+    await skipped(installationId, runId, runId + 3, "test");
+    const { items } = await activity(cookie);
+    expect(items).toHaveLength(1);
+    expect(items[0]).toMatchObject({ type: "job.unroutable", jobsNotRun: ["build", "test"] });
+  });
+
+  test("keeps a never-routed job's row when its run has no unroutable entry", async () => {
+    const { cookie, installationId, runId } = await connectedWorkspace();
+    await processWebhook(
+      env,
+      jobEvent(installationId, { id: runId + 1, runId, name: "relay", labels: ["relayrunner"] }),
+    );
+    await skipped(installationId, runId, runId + 2, "deploy");
+    const { jobs, items } = await activity(cookie);
+    expect(items).toHaveLength(1);
+    expect(jobs).toMatchObject([{ name: "deploy", conclusion: "skipped", runner: { label: "" } }]);
+  });
+
+  test("leaves another attempt's jobs alone", async () => {
+    const { cookie, installationId, workspaceId, runId } = await connectedWorkspace();
+    await failedRun(installationId, workspaceId, runId);
+    await processWebhook(
+      env,
+      jobEvent(
+        installationId,
+        { id: runId + 2, runId, runAttempt: 2, name: "build", labels: [], conclusion: "skipped" },
+        "completed",
+      ),
+    );
+    const { items } = await activity(cookie);
+    expect(items.map((item) => item.type)).toEqual(["job.routed", "job.unroutable"]);
+    expect(items[1]).toMatchObject({ jobsNotRun: [] });
   });
 });
 
@@ -280,6 +382,27 @@ describe("Activity", () => {
     ]);
     // One event for the job, however many webhooks it got.
     expect((await activity(cookie)).items).toHaveLength(1);
+  });
+
+  test("shows a job on a Blacksmith label as Blacksmith", async () => {
+    const { cookie, installationId, runId } = await connectedWorkspace();
+    await processWebhook(
+      env,
+      jobEvent(installationId, { id: runId + 1, runId, name: "pick", labels: ["relayrunner"] }),
+    );
+    await processWebhook(
+      env,
+      jobEvent(installationId, {
+        id: runId + 2,
+        runId,
+        name: "test",
+        labels: ["blacksmith-2vcpu-ubuntu-2404"],
+      }),
+    );
+    const { jobs } = await activity(cookie);
+    expect(jobs).toMatchObject([
+      { name: "test", runner: { type: "blacksmith", label: "blacksmith-2vcpu-ubuntu-2404" } },
+    ]);
   });
 
   test("names the machine a route sent the job to, never the rr- label", async () => {
@@ -436,5 +559,218 @@ describe("Activity", () => {
       const bad = await testing.call(env, `/activity${query}`, cookie);
       expect(bad.status).toBe(400);
     }
+  });
+});
+
+describe("runningJobs", () => {
+  test("gives each machine its newest in-progress job, and nothing for idle ones", async () => {
+    const { installationId, workspaceId, runId } = await connectedWorkspace();
+    const db = createDb(env.DB);
+    await db.insert(schema.machine).values([
+      { id: `busy-${runId}`, workspaceId, name: "busy" },
+      { id: `idle-${runId}`, workspaceId, name: "idle" },
+    ]);
+    const row = (id: number, status: string, created: number, machineId: string) => ({
+      id,
+      installationId,
+      repositoryId: 55,
+      repositoryFullName: "acme/app",
+      runId,
+      runAttempt: 1,
+      kind: "job" as const,
+      workflowName: "CI",
+      name: `job-${id}`,
+      labels: ["rr-0123456789ab"],
+      headSha: "abc",
+      status,
+      machineId,
+      githubCreatedAt: new Date(created),
+      startedAt: new Date(created + 1000),
+    });
+    await db.insert(schema.workflowJob).values([
+      // A row stuck in_progress from a lost `completed` webhook, older than the real one.
+      row(runId + 1, "in_progress", 1_000, `busy-${runId}`),
+      row(runId + 2, "in_progress", 5_000, `busy-${runId}`),
+      row(runId + 3, "completed", 9_000, `idle-${runId}`),
+    ]);
+
+    const jobs = await runningJobs(db, [`busy-${runId}`, `idle-${runId}`]);
+    expect(jobs.get(`busy-${runId}`)).toEqual({
+      repository: "acme/app",
+      workflow: "CI",
+      name: `job-${runId + 2}`,
+      url: `https://github.com/acme/app/actions/runs/${runId}/job/${runId + 2}`,
+      startedAt: new Date(6_000).toISOString(),
+    });
+    expect(jobs.has(`idle-${runId}`)).toBe(false);
+    expect((await runningJobs(db, [])).size).toBe(0);
+  });
+});
+
+describe("Activity: who started a job", () => {
+  const bot = { id: 49699333, login: "dependabot[bot]" };
+
+  function runEvent(
+    installationId: number,
+    runId: number,
+    runAttempt: number,
+    actor: GithubActor,
+    triggeringActor: GithubActor,
+  ): WebhookMessage {
+    return {
+      event: "workflow_run",
+      deliveryId: `d-run-${runId}-${runAttempt}`,
+      action: "in_progress",
+      installationId,
+      receivedAt: new Date().toISOString(),
+      repository: { id: 55, fullName: "relayrunner/relayrunner-ci-tests" },
+      run: {
+        id: runId,
+        runAttempt,
+        workflowName: "RelayRunner dev",
+        displayTitle: "test",
+        event: "push",
+        actorLogin: triggeringActor.login,
+        startedBy: actor,
+        triggeredBy: triggeringActor,
+        headBranch: "main",
+        headSha: "abc123",
+        pullRequestNumber: null,
+        status: "in_progress",
+        conclusion: null,
+        htmlUrl: null,
+        runStartedAt: "2026-11-04T18:00:00Z",
+        updatedAt: "2026-11-04T18:00:00Z",
+      },
+    };
+  }
+
+  async function routedRun(
+    installationId: number,
+    workspaceId: string,
+    runId: number,
+    startedBy: GithubActor | null,
+  ) {
+    const context = pickContext(runId, 1, startedBy);
+    const decision = await decideRoute(
+      { steps: [{ key: "github" }] },
+      { ...context, private: true },
+      async () => null,
+    );
+    await recordPick(createDb(env.DB), {
+      workspaceId,
+      repositoryId: 55,
+      context,
+      jobName: "relay",
+      decision,
+      reason: null,
+    });
+    await processWebhook(
+      env,
+      jobEvent(installationId, { id: runId + 4, runId, name: "pick", labels: ["relayrunner"] }),
+    );
+    await processWebhook(
+      env,
+      jobEvent(installationId, { id: runId + 1, runId, name: "test", labels: ["ubuntu-latest"] }),
+    );
+  }
+
+  test("names the member who started the run, by their GitHub account", async () => {
+    const { cookie, installationId, workspaceId, runId, user, githubId } =
+      await connectedWorkspace();
+    await routedRun(installationId, workspaceId, runId, { id: githubId, login: "owner" });
+    const { jobs } = await activity(cookie);
+    expect(jobs.map((job) => job.starters)).toEqual([
+      { startedBy: { login: "owner", member: { id: user.id, name: user.name } }, rerunBy: null },
+    ]);
+  });
+
+  test("a bot or someone outside the workspace keeps their login and matches no one", async () => {
+    const { cookie, installationId, workspaceId, runId } = await connectedWorkspace();
+    await routedRun(installationId, workspaceId, runId, bot);
+    // Another workspace's member is no one here.
+    const other = await testing.signIn(env);
+    await routedRun(installationId, workspaceId, runId + 5, {
+      id: other.githubId,
+      login: "outsider",
+    });
+    const { jobs } = await activity(cookie);
+    expect(jobs.map((job) => job.starters.startedBy)).toEqual([
+      { login: "outsider", member: null },
+      { login: "dependabot[bot]", member: null },
+    ]);
+  });
+
+  test("a re-run of failed jobs says who re-ran it, from the run's webhook", async () => {
+    const { cookie, installationId, workspaceId, runId, user, githubId } =
+      await connectedWorkspace();
+    const owner = { id: githubId, login: "owner" };
+    await routedRun(installationId, workspaceId, runId, owner);
+    // Attempt 2 reuses attempt 1's pick, so only the webhook knows who started it.
+    await processWebhook(env, runEvent(installationId, runId, 2, owner, bot));
+    await processWebhook(
+      env,
+      jobEvent(installationId, {
+        id: runId + 2,
+        runId,
+        runAttempt: 2,
+        name: "test",
+        labels: ["ubuntu-latest"],
+      }),
+    );
+    // A re-run by the run's own starter names no re-runner.
+    await processWebhook(env, runEvent(installationId, runId, 3, owner, owner));
+    await processWebhook(
+      env,
+      jobEvent(installationId, {
+        id: runId + 3,
+        runId,
+        runAttempt: 3,
+        name: "test",
+        labels: ["ubuntu-latest"],
+      }),
+    );
+    const { jobs } = await activity(cookie);
+    const ownerStarter = { login: "owner", member: { id: user.id, name: user.name } };
+    expect(jobs.map((job) => [job.runAttempt, job.starters])).toEqual([
+      [3, { startedBy: ownerStarter, rerunBy: null }],
+      [2, { startedBy: ownerStarter, rerunBy: { login: "dependabot[bot]", member: null } }],
+      [1, { startedBy: ownerStarter, rerunBy: null }],
+    ]);
+  });
+
+  test("jobs from before RelayRunner kept starters show none", async () => {
+    const { cookie, installationId, workspaceId, runId } = await connectedWorkspace();
+    await routedRun(installationId, workspaceId, runId, null);
+    const { jobs } = await activity(cookie);
+    expect(jobs.map((job) => job.starters)).toEqual([{ startedBy: null, rerunBy: null }]);
+  });
+
+  test("a run that couldn't route says who started it and who re-ran it", async () => {
+    const { cookie, workspaceId, runId, user, githubId } = await connectedWorkspace();
+    const context = pickContext(runId, 2, { id: githubId, login: "owner" }, bot);
+    const decision = await decideRoute(
+      { steps: [{ key: "machine" }] },
+      { ...context, private: true },
+      async () => null,
+    );
+    await recordPick(createDb(env.DB), {
+      workspaceId,
+      repositoryId: 55,
+      context,
+      jobName: "relay",
+      decision,
+      reason: decision.runner === null ? decision.reason : null,
+    });
+    const { items } = await activity(cookie);
+    expect(items).toMatchObject([
+      {
+        type: "job.unroutable",
+        starters: {
+          startedBy: { login: "owner", member: { id: user.id, name: user.name } },
+          rerunBy: { login: "dependabot[bot]", member: null },
+        },
+      },
+    ]);
   });
 });

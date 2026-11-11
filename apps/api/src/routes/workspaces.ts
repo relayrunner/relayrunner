@@ -2,6 +2,7 @@ import { readRunnerOrder, runnerOrderSchema } from "@relayrunner/runner-order";
 import { and, asc, count, eq, isNotNull, isNull } from "drizzle-orm";
 import { Hono } from "hono";
 import { createMiddleware } from "hono/factory";
+import { agentWorkspaceId } from "../agent-auth.ts";
 import type { AppEnv } from "../app.ts";
 import { createDb, schema } from "../db/index.ts";
 import { isWorkspaceMember } from "../installations.ts";
@@ -11,9 +12,14 @@ import { requireManager } from "../roles.ts";
 import { present } from "./github.ts";
 
 // Any member of the workspace in the path. Someone outside it gets a 404, so ids don't leak.
+// An agent token (agent-auth.ts) only reaches the workspaces it was granted.
 const requireMember = createMiddleware<AppEnv>(async (c, next) => {
+  const workspaceId = c.req.param("id") ?? "";
+  if (c.var.agent && agentWorkspaceId(c.var.agent, workspaceId) === null) {
+    return c.json({ error: "not_found" }, 404);
+  }
   const db = createDb(c.env.DB);
-  const membership = await isWorkspaceMember(db, c.req.param("id") ?? "", c.var.user!.id);
+  const membership = await isWorkspaceMember(db, workspaceId, c.var.user!.id);
   if (!membership) return c.json({ error: "not_found" }, 404);
   c.set("db", db);
   c.set("role", membership.role);

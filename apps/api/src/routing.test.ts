@@ -1,6 +1,9 @@
+import { machineRunnerName } from "@relayrunner/machine-protocol";
 import type { RunnerOrder } from "@relayrunner/runner-order";
+import type { AccountUsage } from "./actions-billing.ts";
 import { describe, expect, test, vi } from "vitest";
 import {
+  admits,
   canClaim,
   chooseMachine,
   decideRoute,
@@ -9,13 +12,15 @@ import {
   hasLabels,
   lastPicked,
   machineLabels,
-  machineRunnerName,
+  needsOwnerAccess,
   newRouteId,
   parseLabels,
   pausedMatches,
   ROUTE_HOLD_MS,
   routeIdFromLabels,
   routeLabel,
+  notSharedText,
+  unavailableMachines,
   type Route,
 } from "./routing.ts";
 
@@ -244,6 +249,9 @@ describe("jobContext", () => {
       workflow: "RelayRunner dev",
       machine: [],
       github: [],
+      blacksmith: [],
+      startedBy: null,
+      triggeredBy: null,
     });
     expect(
       jobContext(
@@ -252,7 +260,49 @@ describe("jobContext", () => {
           ["run_id", { t: 4, n: 5 }],
         ]),
       ),
-    ).toEqual({ repo: "a/b", runId: 5, runAttempt: 1, workflow: null, machine: [], github: [] });
+    ).toEqual({
+      repo: "a/b",
+      runId: 5,
+      runAttempt: 1,
+      workflow: null,
+      machine: [],
+      github: [],
+      blacksmith: [],
+      startedBy: null,
+      triggeredBy: null,
+    });
+  });
+
+  test("reads who started the run and this attempt", () => {
+    const run = (extra: [string, unknown][]) =>
+      jobContext(github([["repository", "a/b"], ["run_id", "5"], ...extra]));
+    // A first attempt: the triggering actor is the actor, so it shares the id.
+    expect(
+      run([
+        ["actor", "atticoos"],
+        ["actor_id", "656630"],
+        ["triggering_actor", "Atticoos"],
+      ]),
+    ).toMatchObject({
+      startedBy: { id: 656630, login: "atticoos" },
+      triggeredBy: { id: 656630, login: "Atticoos" },
+    });
+    // A re-run by someone else: the context has only their login.
+    expect(
+      run([
+        ["actor", "atticoos"],
+        ["actor_id", "656630"],
+        ["triggering_actor", "dependabot[bot]"],
+      ]),
+    ).toMatchObject({
+      startedBy: { id: 656630, login: "atticoos" },
+      triggeredBy: { id: null, login: "dependabot[bot]" },
+    });
+    // No triggering_actor reads as the actor; no actor_id keeps the login.
+    expect(run([["actor", "zach"]])).toMatchObject({
+      startedBy: { id: null, login: "zach" },
+      triggeredBy: { id: null, login: "zach" },
+    });
   });
 
   // From a claimed relay job (relay v1.0.0-beta.2, relayrunner-ci-tests run 42078905012): the
@@ -283,6 +333,18 @@ describe("jobContext", () => {
       workflow: null,
       machine: ["self-hosted"],
       github: ["ubuntu-latest"],
+      blacksmith: [],
+      startedBy: null,
+      triggeredBy: null,
+    });
+  });
+
+  test("reads the relay's blacksmith input", () => {
+    const inputs = { t: 2, d: [{ k: "blacksmith", v: " blacksmith-2vcpu-ubuntu-2404 " }] };
+    expect(jobContext({ ...claimed, inputs })).toMatchObject({
+      machine: [],
+      github: [],
+      blacksmith: ["blacksmith-2vcpu-ubuntu-2404"],
     });
   });
 
@@ -309,7 +371,12 @@ describe("jobContext", () => {
 describe("decideRoute", () => {
   const machineFirst: RunnerOrder = { steps: [{ key: "machine" }, { key: "github" }] };
   const githubFirst: RunnerOrder = { steps: [{ key: "github" }, { key: "machine" }] };
-  const both = { machine: ["self-hosted"], github: ["ubuntu-latest"], private: true };
+  const both = {
+    machine: ["self-hosted"],
+    github: ["ubuntu-latest"],
+    blacksmith: [],
+    private: true,
+  };
   const free = async () => "rr-0123456789ab";
   const none = async () => null;
 
@@ -359,7 +426,7 @@ describe("decideRoute", () => {
     expect(pick).not.toHaveBeenCalled();
     expect(decision).toMatchObject({ runner: null, notInOrder: ["machine"] });
     expect(decision.runner === null && decision.reason).toBe(
-      "No runner available: `github` isn't set on this relay; Local machines isn't in your runner order.",
+      "No runner available: `github` isn't set on this relay; Self-hosted isn't in your runner order.",
     );
   });
 
@@ -384,7 +451,7 @@ describe("decideRoute", () => {
       notInOrder: ["github"],
     });
     expect(decision.runner === null && decision.reason).toBe(
-      "No runner available: no local machine with macOS, ARM64 is online and idle; GitHub-hosted isn't in your runner order.",
+      "No runner available: no self-hosted machine with macOS, ARM64 is online and idle; GitHub-hosted isn't in your runner order.",
     );
   });
 
@@ -399,20 +466,40 @@ describe("decideRoute", () => {
     expect(pick).not.toHaveBeenCalled();
     const decision = await decideRoute(machineFirst, { ...both, github: [], private: false }, pick);
     expect(decision.runner === null && decision.reason).toBe(
-      "No runner available: public repos never run on local machines; `github` isn't set on this relay.",
+      "No runner available: public repos never run on self-hosted machines; `github` isn't set on this relay.",
     );
   });
 
   test("github takes one label", async () => {
     const decision = await decideRoute(
       { steps: [{ key: "github" }] },
-      { machine: [], github: ["ubuntu-latest", "macos-latest"], private: true },
+      { machine: [], github: ["ubuntu-latest", "macos-latest"], blacksmith: [], private: true },
       none,
     );
     expect(decision).toMatchObject({
       runner: null,
       skipped: [{ key: "github", reason: "too_many_labels" }],
     });
+  });
+
+  test("no machine that fits takes the job's starter: says whose they are, and falls to github", async () => {
+    const notShared = async () => ({ notShared: [{ machine: "atticus-mbp", owner: "Atticus" }] });
+    expect(await decideRoute(machineFirst, both, notShared)).toEqual({
+      runner: "ubuntu-latest",
+      step: "github",
+      skipped: [
+        {
+          key: "machine",
+          reason: "machine_not_shared",
+          notShared: [{ machine: "atticus-mbp", owner: "Atticus" }],
+        },
+      ],
+      notInOrder: [],
+    });
+    const failed = await decideRoute(machineFirst, { ...both, github: [] }, notShared);
+    expect(failed.runner === null && failed.reason).toBe(
+      "No runner available: atticus-mbp only runs Atticus's jobs; `github` isn't set on this relay.",
+    );
   });
 
   test("every machine that fits is paused: says so, and falls to github", async () => {
@@ -438,12 +525,83 @@ describe("decideRoute", () => {
   test("a relay with neither input fails", async () => {
     const decision = await decideRoute(
       machineFirst,
-      { machine: [], github: [], private: true },
+      { machine: [], github: [], blacksmith: [], private: true },
       free,
     );
     expect(decision.runner === null && decision.reason).toBe(
-      "No runner available: the relay sets neither `machine` nor `github`.",
+      "No runner available: the relay sets none of `machine`, `github` or `blacksmith`.",
     );
+  });
+
+  describe("blacksmith", () => {
+    const label = "blacksmith-2vcpu-ubuntu-2404";
+    const all = { ...both, blacksmith: [label] };
+    const order = (...keys: ("machine" | "github" | "blacksmith")[]): RunnerOrder => ({
+      steps: keys.map((key) => ({ key })),
+    });
+
+    test("answers the job's Blacksmith label, public repo or not", async () => {
+      for (const isPrivate of [true, false]) {
+        expect(
+          await decideRoute(order("blacksmith", "github"), { ...all, private: isPrivate }, free),
+        ).toEqual({ runner: label, step: "blacksmith", skipped: [], notInOrder: ["machine"] });
+      }
+    });
+
+    test("takes the job when no machine is free, before github", async () => {
+      expect(await decideRoute(order("machine", "blacksmith", "github"), all, none)).toEqual({
+        runner: label,
+        step: "blacksmith",
+        skipped: [{ key: "machine", reason: "no_machine" }],
+        notInOrder: [],
+      });
+    });
+
+    test("is skipped when the relay doesn't set it, and reported when the order leaves it out", async () => {
+      expect(await decideRoute(order("blacksmith", "github"), both, free)).toEqual({
+        runner: "ubuntu-latest",
+        step: "github",
+        skipped: [{ key: "blacksmith", reason: "not_configured" }],
+        notInOrder: ["machine"],
+      });
+      expect(await decideRoute(order("github"), all, free)).toMatchObject({
+        notInOrder: ["machine", "blacksmith"],
+      });
+    });
+
+    test("takes one label, and only a Blacksmith one", async () => {
+      const two = await decideRoute(
+        order("blacksmith"),
+        { ...both, github: [], machine: [], blacksmith: [label, "blacksmith-4vcpu-ubuntu-2404"] },
+        free,
+      );
+      expect(two).toMatchObject({ skipped: [{ key: "blacksmith", reason: "too_many_labels" }] });
+      expect(two.runner === null && two.reason).toBe(
+        "No runner available: `blacksmith` takes one label, not blacksmith-2vcpu-ubuntu-2404, blacksmith-4vcpu-ubuntu-2404.",
+      );
+
+      const wrong = await decideRoute(
+        order("blacksmith", "github"),
+        { ...both, blacksmith: ["ubuntu-latest"] },
+        free,
+      );
+      expect(wrong).toEqual({
+        runner: "ubuntu-latest",
+        step: "github",
+        skipped: [{ key: "blacksmith", reason: "not_blacksmith_label" }],
+        notInOrder: ["machine"],
+      });
+    });
+
+    test("matches the label prefix ignoring case", async () => {
+      expect(
+        await decideRoute(
+          order("blacksmith"),
+          { ...all, blacksmith: ["Blacksmith-4vcpu-ubuntu-2404"] },
+          free,
+        ),
+      ).toMatchObject({ runner: "Blacksmith-4vcpu-ubuntu-2404", step: "blacksmith" });
+    });
   });
 });
 
@@ -474,5 +632,235 @@ describe("pausedMatches", () => {
     ).toEqual([]);
     expect(pausedMatches([{ name: "a", labels: mac, paused: true }], ["Windows"])).toEqual([]);
     expect(pausedMatches([], [])).toEqual([]);
+  });
+});
+
+describe("decideRoute with a minutes limit", () => {
+  const job = {
+    machine: ["self-hosted"],
+    github: ["ubuntu-latest"],
+    blacksmith: [],
+    private: true,
+  };
+  // GitHub while under 80%, then machines, then GitHub always.
+  const order: RunnerOrder = {
+    steps: [{ key: "github", limit: { percent: 80 } }, { key: "machine" }, { key: "github" }],
+  };
+  const usage = (fields: Partial<AccountUsage> = {}): AccountUsage => ({
+    installationId: 1,
+    accountLogin: "acme",
+    accountType: "Organization",
+    status: "ok",
+    reason: null,
+    plan: "free",
+    quotaMinutes: 2000,
+    usedMinutes: 1000,
+    grossAmount: 6,
+    netAmount: 0,
+    burnRatePerHour: 30,
+    budget: null,
+    cycleStart: "2026-11-01T00:00:00.000Z",
+    readAt: "2026-11-09T18:00:00.000Z",
+    ...fields,
+  });
+  const free = async () => "rr-0123456789ab";
+  const none = async () => null;
+
+  test("under the limit, the limited GitHub step takes the job", async () => {
+    const decision = await decideRoute(order, job, free, async () => usage());
+    expect(decision).toMatchObject({ runner: "ubuntu-latest", step: "github", skipped: [] });
+  });
+
+  test("at the limit, the job goes to a machine with the numbers recorded", async () => {
+    const decision = await decideRoute(order, job, free, async () => usage({ usedMinutes: 1640 }));
+    expect(decision).toMatchObject({
+      runner: "rr-0123456789ab",
+      step: "machine",
+      skipped: [
+        {
+          key: "github",
+          reason: "minutes_limit",
+          minutes: { account: "acme", usedMinutes: 1640, quotaMinutes: 2000, percent: 80 },
+        },
+      ],
+    });
+  });
+
+  test("with no machine free, the unlimited GitHub step takes it past the limit", async () => {
+    const decision = await decideRoute(order, job, none, async () => usage({ usedMinutes: 1900 }));
+    expect(decision).toMatchObject({ runner: "ubuntu-latest", step: "github" });
+    expect(decision.skipped.map((s) => s.reason)).toEqual(["minutes_limit", "no_machine"]);
+  });
+
+  test("under the limit but burning fast, it stops early", async () => {
+    // 1,400 of 2,000 used (70%): 600 left, but 400 an hour would use it in 1.5 hours.
+    const decision = await decideRoute(order, job, free, async () =>
+      usage({ usedMinutes: 1400, burnRatePerHour: 400 }),
+    );
+    expect(decision.skipped[0]).toMatchObject({ reason: "minutes_runway" });
+  });
+
+  test("unknown usage never blocks", async () => {
+    for (const read of [
+      async () => null,
+      async () => usage({ status: "not_available", reason: "enterprise", quotaMinutes: null }),
+      async () => usage({ status: "not_available", reason: "error", usedMinutes: 5000 }),
+    ]) {
+      const decision = await decideRoute(order, job, none, read);
+      expect(decision).toMatchObject({ step: "github", skipped: [] });
+    }
+  });
+
+  test("usage is read once per pick, and only when a limited step is reached", async () => {
+    const read = vi.fn(async () => usage({ usedMinutes: 1900 }));
+    const twoLimited: RunnerOrder = {
+      steps: [{ key: "machine" }, { key: "github", limit: { percent: 80 } }],
+    };
+    await decideRoute(twoLimited, job, free, read);
+    expect(read).not.toHaveBeenCalled();
+    const failed = await decideRoute(twoLimited, job, none, read);
+    expect(read).toHaveBeenCalledTimes(1);
+    expect(failed.runner).toBeNull();
+    expect(failed.runner === null && failed.reason).toContain(
+      "acme has used 1,900 of its 2,000 included minutes (95%), past the 80% limit",
+    );
+  });
+});
+
+describe("machine sharing (#242)", () => {
+  const atticus = { id: 1, login: "atticoos" };
+  const zach = { id: 2, login: "zach" };
+  const bot = { id: 49699333, login: "dependabot[bot]" };
+  const by = (startedBy: typeof atticus | null, triggeredBy = startedBy) => ({
+    startedBy,
+    triggeredBy,
+  });
+  const mine = { sharing: "only_me" as const, ownerGithubId: 1 };
+  const shared = { sharing: "anyone" as const, ownerGithubId: 2 };
+
+  test("only_me takes a job only when its owner started both the run and the attempt", () => {
+    expect(admits(mine, by(atticus))).toBe(true);
+    expect(admits(mine, by(zach))).toBe(false);
+    expect(admits(mine, by(bot))).toBe(false);
+    // A re-run by someone else, or of someone else's run, isn't the owner's.
+    expect(admits(mine, by(atticus, zach))).toBe(false);
+    expect(admits(mine, by(zach, atticus))).toBe(false);
+    // An id GitHub didn't give, or a run with no actor, matches nobody.
+    expect(admits(mine, by({ id: null, login: "atticoos" } as never))).toBe(false);
+    expect(admits(mine, by(null))).toBe(false);
+    // An owner with no GitHub account matches nobody either.
+    expect(admits({ sharing: "only_me", ownerGithubId: null }, by(atticus))).toBe(false);
+  });
+
+  test("anyone takes every job, bots and schedules included, as before sharing", () => {
+    for (const starters of [by(atticus), by(zach), by(bot), by(null)])
+      expect(admits(shared, starters)).toBe(true);
+    // Left out means anyone.
+    expect(admits({}, by(null))).toBe(true);
+  });
+
+  test("anyone checks its owner's repo access, except for the owner's own jobs", () => {
+    // Someone else's run or attempt, a bot, a schedule: the owner must be able to read the repo.
+    for (const starters of [by(atticus), by(bot), by(null), by(zach, atticus), by(atticus, zach)])
+      expect(needsOwnerAccess(shared, starters)).toBe(true);
+    // The owner's own run and attempt.
+    expect(needsOwnerAccess(shared, by(zach))).toBe(false);
+    // Left out means anyone; an owner with no GitHub account can't be checked, so always asks.
+    expect(needsOwnerAccess({}, by(zach))).toBe(true);
+    expect(needsOwnerAccess({ sharing: "anyone", ownerGithubId: null }, by(zach))).toBe(true);
+    // only_me only takes the owner's own jobs.
+    expect(needsOwnerAccess(mine, by(zach))).toBe(false);
+  });
+
+  const free = (id: string, sharing: "only_me" | "anyone", ownerGithubId: number) => ({
+    id,
+    name: id,
+    online: true,
+    state: "idle" as const,
+    labels: ["self-hosted", "macOS", "ARM64"],
+    sharing,
+    ownerGithubId,
+  });
+
+  test("chooseMachine skips machines that won't take the job's starter", () => {
+    const candidates = [free("atticus-mbp", "only_me", 1), free("mini", "anyone", 3)];
+    expect(chooseMachine(candidates, new Set(), new Map(), [], by(zach))?.id).toBe("mini");
+    expect(chooseMachine(candidates.slice(0, 1), new Set(), new Map(), [], by(zach))).toBeNull();
+    expect(chooseMachine(candidates.slice(0, 1), new Set(), new Map(), [], by(bot))).toBeNull();
+  });
+
+  test("chooseMachine tries the starter's own machine first, then the least recently picked", () => {
+    const candidates = [
+      free("mini", "anyone", 3),
+      free("zach-mbp", "anyone", 2),
+      free("atticus-mbp", "only_me", 1),
+    ];
+    // Atticus's own machine wins although it was picked most recently.
+    const picked = new Map([["atticus-mbp", 5_000]]);
+    expect(chooseMachine(candidates, new Set(), picked, [], by(atticus))?.id).toBe("atticus-mbp");
+    // Zach's own `anyone` machine wins for Zach.
+    expect(chooseMachine(candidates, new Set(), picked, [], by(zach))?.id).toBe("zach-mbp");
+    // Whoever started this attempt counts as the starter.
+    expect(chooseMachine(candidates, new Set(), picked, [], by(atticus, zach))?.id).toBe(
+      "zach-mbp",
+    );
+    // Nobody's own: least recently picked, as before.
+    expect(chooseMachine(candidates, new Set(), new Map([["mini", 1]]), [], by(bot))?.id).toBe(
+      "zach-mbp",
+    );
+    // A busy own machine gives way to the rest.
+    const busy = candidates.map((c) =>
+      c.id === "atticus-mbp" ? { ...c, state: "busy" as const } : c,
+    );
+    expect(chooseMachine(busy, new Set(), picked, [], by(atticus))?.id).toBe("mini");
+  });
+
+  const pool = [
+    { name: "atticus-mbp", labels: ["self-hosted", "macOS"], ...mine, ownerName: "Atticus" },
+    {
+      name: "zach-mbp",
+      labels: ["self-hosted", "macOS"],
+      sharing: "only_me" as const,
+      ownerGithubId: 2,
+      ownerName: "Zach",
+    },
+    {
+      name: "linux-box",
+      labels: ["self-hosted", "Linux"],
+      ...shared,
+      ownerName: "Zach",
+      paused: true,
+    },
+  ];
+
+  test("unavailableMachines names the machines that won't take the starter", () => {
+    expect(unavailableMachines(pool, ["macOS"], by(bot))).toEqual({
+      notShared: [
+        { machine: "atticus-mbp", owner: "Atticus" },
+        { machine: "zach-mbp", owner: "Zach" },
+      ],
+    });
+    // One takes the job but is busy: that's just no machine.
+    expect(unavailableMachines(pool, ["macOS"], by(atticus))).toBeNull();
+    // Every machine that takes it is paused.
+    expect(unavailableMachines(pool, ["Linux"], by(bot))).toEqual({ paused: ["linux-box"] });
+    // No machine has the labels.
+    expect(unavailableMachines(pool, ["Windows"], by(atticus))).toBeNull();
+  });
+
+  test("notSharedText names the owner", () => {
+    expect(notSharedText([{ machine: "atticus-mbp", owner: "Atticus" }])).toBe(
+      "atticus-mbp only runs Atticus's jobs",
+    );
+    expect(notSharedText([{ machine: "old-mini", owner: null }])).toBe(
+      "old-mini only runs its owner's jobs",
+    );
+    expect(
+      notSharedText([
+        { machine: "a", owner: "A" },
+        { machine: "b", owner: "B" },
+        { machine: "c", owner: "C" },
+      ]),
+    ).toBe("a, b and c only run their owners' jobs");
   });
 });

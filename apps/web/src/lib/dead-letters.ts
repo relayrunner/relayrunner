@@ -1,6 +1,6 @@
 import { api } from "@/lib/api";
 
-/** A webhook delivery that reached the DLQ, as GET /api/dev/webhooks/dead-letters lists it. */
+/** A webhook delivery that reached the DLQ, as GET /api/admin/webhooks/dead-letters lists it. */
 export type DeadLetter = {
   id: string;
   deliveryId: string;
@@ -17,7 +17,7 @@ export type DeadLetterPage = { deadLetters: DeadLetter[]; nextCursor: string | n
 
 export type DeadLetterFilter = { event?: string; repository?: string };
 
-const BASE = "/dev/webhooks/dead-letters";
+const BASE = "/admin/webhooks/dead-letters";
 
 export function listDeadLetters(cursor?: string) {
   return api<DeadLetterPage>(cursor ? `${BASE}?cursor=${encodeURIComponent(cursor)}` : BASE);

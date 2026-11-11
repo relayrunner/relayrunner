@@ -1,5 +1,4 @@
 #!/usr/bin/env node
-import { hostname } from "node:os";
 import * as clack from "@clack/prompts";
 import { defineCommand, runMain } from "citty";
 import { connect, type ConnectionEvent } from "./connection.ts";
@@ -7,17 +6,34 @@ import {
   credentialsPath,
   deleteCredentials,
   readCredentials,
+  saveRotatedToken,
+  withCurrentToken,
   writeCredentials,
   type Credentials,
 } from "./credentials.ts";
+import { detectDevice } from "./device.ts";
+import { initCommand, offerSetup } from "./init.ts";
+import { defaultMachineName } from "./machine-name.ts";
 import { ensureRunner, RunnerError, runnerPlatform } from "./install.ts";
+import { normalizeServer } from "./server.ts";
 import { runJob } from "./job.ts";
+import { startLive } from "./live.ts";
 import { login, LoginError, openBrowser } from "./login.ts";
-import { setPaused } from "./pause.ts";
+import { pauseMachine } from "./pause.ts";
+import {
+  describeSharing,
+  parseShareChoice,
+  SHARE_CHOICES,
+  setSharing,
+  sharingMeaning,
+  toChoice,
+  toSharing,
+  type ShareChoice,
+} from "./share.ts";
 import { whoami, type WhoamiResponse } from "./whoami.ts";
 
 // The dashboard's origin. It forwards /api/* (including the machine WebSocket) to the API.
-const DEFAULT_SERVER = "https://relayrunner-app.relayrun.workers.dev";
+const DEFAULT_SERVER = "https://app.relayrunner.app";
 
 const connectCommand = defineCommand({
   meta: {
@@ -32,7 +48,12 @@ const connectCommand = defineCommand({
     },
     name: {
       type: "string",
-      description: "Suggested machine name when signing in (default: this computer's hostname)",
+      description: "Suggested machine name when signing in (default: this computer's name)",
+    },
+    share: {
+      type: "string",
+      description:
+        "Who can run jobs on this machine: only-me (jobs you started) or anyone in the workspace. Skips the question.",
     },
   },
   async run({ args }) {
@@ -47,15 +68,11 @@ const connectCommand = defineCommand({
   },
 });
 
-async function connectMachine(args: { server?: string; name?: string }) {
-  // An explicit --server or RELAYRUNNER_URL wins; otherwise keep the gateway this machine
-  // enrolled with.
-  const requested = args.server || process.env.RELAYRUNNER_URL;
-  const target = runnerPlatform();
-  const platform = { os: target.os === "osx" ? "macos" : "linux", arch: target.arch } as const;
-
+async function connectMachine(args: { server?: string; name?: string; share?: string }) {
+  const share = shareArg(args.share);
+  const platform = machinePlatform();
   let credentials = readCredentials();
-  const server = normalizeServer(requested || credentials?.server || DEFAULT_SERVER);
+  const server = serverFor(args.server, credentials);
   if (credentials && credentials.server !== server) {
     clack.log.warn(
       `This machine is enrolled with ${credentials.server}, not ${server}. Signing in again.`,
@@ -63,41 +80,86 @@ async function connectMachine(args: { server?: string; name?: string }) {
     credentials = null;
   }
   if (!credentials) {
-    credentials = await signIn(server, args.name || hostname(), platform);
-    writeCredentials(credentials);
-    clack.log.success(
-      `Enrolled as ${credentials.machine.name} in ${credentials.workspace.name}. Token saved to ${credentialsPath()}.`,
-    );
+    credentials = await enroll(server, args.name, platform, share);
   } else {
     clack.log.info(
       `Machine ${credentials.machine.name} in ${credentials.workspace.name} (${credentials.server})`,
     );
+    if (share) await applySharing(credentials, share);
   }
 
+  // Run inside a repo that isn't set up yet, offer to route its jobs here (`relayrunner init`).
+  // Only when someone is at the terminal to answer.
+  if (process.stdin.isTTY && process.stdout.isTTY) await offerSetup();
+
   const runner = await ensureRunner({ log: (line) => clack.log.info(line) });
+  // What kind of device this is and its specs, for the dashboard's badge. Best effort.
+  const device = await detectDevice();
+
+  const stop = new AbortController();
+  // The tab's title follows the machine's state, and `p` pauses or resumes it, while someone's at
+  // the terminal. On success the gateway sends `paused`, which logs it and updates the title.
+  const enrolled = credentials;
+  let toggling = false;
+  const live = startLive({
+    machine: enrolled.machine.name,
+    onTogglePause: async ({ paused }) => {
+      if (toggling || stop.signal.aborted) return;
+      toggling = true;
+      const result = await pauseMachine(enrolled, !paused);
+      toggling = false;
+      if (result.status === "failed")
+        clack.log.error(`Couldn't ${paused ? "resume" : "pause"}: ${result.reason}.`);
+    },
+  });
 
   // First Ctrl-C goes offline and lets a running job's runner exit and clean up (the terminal
   // sends it SIGINT too). A second one exits on the spot.
-  const stop = new AbortController();
   const onInterrupt = () => {
-    if (stop.signal.aborted) process.exit(130);
+    if (stop.signal.aborted) {
+      live.end();
+      process.exit(130);
+    }
     stop.abort();
   };
   process.on("SIGINT", onInterrupt);
 
   let online = false;
-  const end = await connect({
-    server: credentials.server,
-    token: credentials.token,
-    hello: { machineId: credentials.machine.id, ...platform, runnerVersion: runner.version },
-    runJob: (run, report) => runJob(run, { runner, report }),
-    onEvent: (event) => {
-      if (event.type === "connected") online = true;
-      show(event);
-    },
-    signal: stop.signal,
-  });
-  process.off("SIGINT", onInterrupt);
+  let end;
+  try {
+    end = await connect({
+      server: credentials.server,
+      token: credentials.token,
+      hello: {
+        machineId: credentials.machine.id,
+        ...platform,
+        runnerVersion: runner.version,
+        device,
+      },
+      runJob: (run, report) =>
+        runJob(run, {
+          runner,
+          report,
+          onChecked: (target) => {
+            if (target)
+              clack.log.info(
+                `${new Date().toLocaleTimeString()} Job ${run.routeId} is from ${target}`,
+              );
+          },
+        }),
+      // The gateway rotates the token on every connect, so an old copy of machine.json stops working.
+      saveToken: (token) => saveRotatedToken(credentials, token),
+      onEvent: (event) => {
+        if (event.type === "connected") online = true;
+        show(event);
+        live.onEvent(event);
+      },
+      signal: stop.signal,
+    });
+  } finally {
+    live.end();
+    process.off("SIGINT", onInterrupt);
+  }
 
   switch (end.reason) {
     case "stopped":
@@ -109,18 +171,23 @@ async function connectMachine(args: { server?: string; name?: string }) {
       // A machine revoked while online may be unattended, so that one stops and says so.
       if (!online) {
         clack.log.warn(
-          "This machine was removed from the workspace or its token is no longer valid. Signing in again.",
+          "This machine was removed from the workspace or its token is no longer valid. If you didn't remove it, another copy of its token may have signed in elsewhere: check the Runners page. Signing in again.",
         );
         return connectMachine({ ...args, server: credentials.server });
       }
       clack.log.error(
-        "This machine was removed from the workspace or its token is no longer valid.",
+        "This machine was removed from the workspace or its token is no longer valid. If you didn't remove it, another copy of its token may have signed in elsewhere: check the Runners page and revoke it if so.",
       );
       clack.outro("Run `relayrunner connect` again to sign in.");
       process.exitCode = 1;
       break;
     case "replaced":
-      clack.log.warn("Another `relayrunner connect` for this machine took over.");
+      clack.log.warn(
+        [
+          "Another `relayrunner connect` signed in as this machine and took over.",
+          `If that wasn't you, someone has this machine's token: revoke it at ${credentials.server}/runners, then run \`relayrunner connect\` to sign in again.`,
+        ].join("\n"),
+      );
       clack.outro("Offline here.");
       process.exitCode = 1;
       break;
@@ -132,11 +199,157 @@ async function connectMachine(args: { server?: string; name?: string }) {
   }
 }
 
+async function askSharing(workspace: string): Promise<ShareChoice | null> {
+  const picked = await clack.select<ShareChoice>({
+    message: "Who can run jobs on this machine?",
+    options: [
+      { value: "only-me", label: "Only me", hint: "jobs you started" },
+      {
+        value: "anyone",
+        label: `Anyone in ${workspace}`,
+        hint: "teammates' and bots' jobs too, from repos you can open",
+      },
+    ],
+    initialValue: "only-me",
+  });
+  if (clack.isCancel(picked)) {
+    clack.log.info("Keeping only-me. Change it any time with `relayrunner share`.");
+    return null;
+  }
+  return picked;
+}
+
+// Best effort while connecting: a machine that couldn't change its sharing still connects.
+async function applySharing(credentials: Credentials, choice: ShareChoice) {
+  const result = await withCurrentToken(credentials, (token) =>
+    setSharing({ server: credentials.server, token, sharing: toSharing(choice) }),
+  );
+  switch (result.status) {
+    case "ok":
+      clack.log.info(`Sharing: ${describeSharing(result.sharing, credentials.workspace.name)}`);
+      break;
+    case "revoked":
+      // Connecting finds out too, and signs in again or says so.
+      break;
+    case "failed":
+      clack.log.warn(
+        `Couldn't set sharing: ${result.reason}. Run \`relayrunner share ${choice}\` to try again.`,
+      );
+      break;
+  }
+}
+
+// `relayrunner login`: the sign-in half of `connect`. It enrolls the machine and exits without
+// going online, so an agent can run it start to finish. `connect` then puts the machine online.
+const loginCommand = defineCommand({
+  meta: {
+    name: "login",
+    description:
+      "Sign this machine in to your workspace without putting it online. Run `relayrunner connect` afterwards to take jobs.",
+  },
+  args: {
+    server: {
+      type: "string",
+      description: `RelayRunner URL (default: $RELAYRUNNER_URL or ${DEFAULT_SERVER})`,
+    },
+    name: {
+      type: "string",
+      description: "Suggested machine name (default: this computer's name)",
+    },
+    share: {
+      type: "string",
+      description:
+        "Who can run jobs on this machine: only-me (jobs you started) or anyone in the workspace. Skips the question.",
+    },
+  },
+  async run({ args }) {
+    clack.intro("RelayRunner");
+    try {
+      const share = shareArg(args.share);
+      const saved = readCredentials();
+      const server = serverFor(args.server, saved);
+      if (saved && saved.server === server) {
+        const result = await withCurrentToken(saved, (token) => whoami({ server, token }));
+        if (result.status !== "revoked") {
+          if (share) await applySharing(saved, share);
+          clack.outro(
+            `Already signed in as ${saved.machine.name} in ${saved.workspace.name}. Run \`relayrunner connect\` to go online.`,
+          );
+          return;
+        }
+        clack.log.warn(
+          `${saved.machine.name} is no longer enrolled in ${saved.workspace.name}. Signing in again.`,
+        );
+      } else if (saved) {
+        clack.log.warn(
+          `This machine is enrolled with ${saved.server}, not ${server}. Signing in again.`,
+        );
+      }
+      await enroll(server, args.name, machinePlatform(), share);
+      clack.outro("Run `relayrunner connect` to put this machine online.");
+    } catch (error) {
+      if (!(error instanceof LoginError || error instanceof RunnerError)) throw error;
+      clack.log.error(error.message);
+      process.exitCode = 1;
+    }
+  },
+});
+
+function shareArg(value: string | undefined) {
+  const share = value ? parseShareChoice(value) : null;
+  if (value && !share)
+    throw new RunnerError(
+      "USAGE",
+      `--share takes ${SHARE_CHOICES.join(" or ")}, not ${JSON.stringify(value)}.`,
+    );
+  return share;
+}
+
+/** An explicit --server or RELAYRUNNER_URL wins; otherwise the gateway this machine enrolled with. */
+function serverFor(requested: string | undefined, saved: Credentials | null) {
+  return normalizeServer(
+    requested || process.env.RELAYRUNNER_URL || saved?.server || DEFAULT_SERVER,
+  );
+}
+
+function machinePlatform() {
+  const target = runnerPlatform();
+  return { os: target.os === "osx" ? "macos" : "linux", arch: target.arch } as const;
+}
+
+/** Signs in through the browser, saves the machine token, and settles who can run jobs here. */
+async function enroll(
+  server: string,
+  name: string | undefined,
+  platform: ReturnType<typeof machinePlatform>,
+  share: ShareChoice | null,
+) {
+  const signedIn = await signIn(server, name || (await defaultMachineName()), platform);
+  const credentials = signedIn.credentials;
+  writeCredentials(credentials);
+  clack.log.success(
+    `Enrolled as ${credentials.machine.name} in ${credentials.workspace.name}. Token saved to ${credentialsPath()}.`,
+  );
+  // A new machine runs only its owner's jobs. Ask whether teammates' jobs may run here too,
+  // but only when there are teammates. Reconnecting never asks again: `relayrunner share`.
+  let choice = share;
+  if (!choice && (signedIn.memberCount ?? 0) > 1) {
+    if (process.stdin.isTTY && process.stdout.isTTY)
+      choice = await askSharing(credentials.workspace.name);
+    else
+      clack.log.info(
+        "Only jobs you started run here. `relayrunner share anyone` lets teammates' jobs run here too.",
+      );
+  }
+  if (choice) await applySharing(credentials, choice);
+  return credentials;
+}
+
 async function signIn(
   server: string,
   name: string,
   platform: { os: "linux" | "macos"; arch: "x64" | "arm64" },
-): Promise<Credentials> {
+) {
   const waiting = clack.spinner();
   try {
     const credentials = await login({
@@ -183,10 +396,15 @@ function show(event: ConnectionEvent) {
     case "paused":
       if (event.paused)
         clack.log.warn(
-          `${at} Paused${event.by ? ` by ${event.by}` : ""}. Staying online, but new jobs skip this machine until it's resumed.`,
+          `${at} Paused${event.by ? ` by ${event.by}` : ""}. Staying online, but new jobs skip this machine until it's resumed.${process.stdin.isTTY ? " Press p to resume." : ""}`,
         );
       else
         clack.log.success(`${at} Resumed${event.by ? ` by ${event.by}` : ""}. Waiting for jobs.`);
+      break;
+    case "token-not-saved":
+      clack.log.warn(
+        `${at} Couldn't save the machine's new token (${event.message}). Keeping the old one.`,
+      );
       break;
     case "run-refused":
       clack.log.warn(`${at} Turned down job ${event.routeId}: already running one.`);
@@ -226,7 +444,7 @@ const whoamiCommand = defineCommand({
       print(
         credentials
           ? `Not signed in to ${server}. This machine is enrolled with ${credentials.server}.`
-          : "Not signed in. Run `relayrunner connect` to sign in.",
+          : "Not signed in. Run `relayrunner login` or `relayrunner connect` to sign in.",
         { status: "signed_out", server: server ?? null },
       );
       process.exitCode = 1;
@@ -238,7 +456,9 @@ const whoamiCommand = defineCommand({
       machine: credentials.machine,
       workspace: credentials.workspace,
     };
-    const result = await whoami({ server: credentials.server, token: credentials.token });
+    const result = await withCurrentToken(credentials, (token) =>
+      whoami({ server: credentials.server, token }),
+    );
     switch (result.status) {
       case "ok":
         print(describeIdentity(credentials.server, result.identity), {
@@ -282,6 +502,9 @@ function describeIdentity(server: string, identity: WhoamiResponse) {
     ["Platform", [machine.os, machine.arch].filter(Boolean).join(" ") || "unknown"],
     ["Enrolled", enrolled],
     ["Status", status],
+    ...(machine.sharing
+      ? [["Sharing", describeSharing(machine.sharing, workspace.name)] as [string, string]]
+      : []),
     ["Gateway", server],
   ]);
 }
@@ -298,16 +521,6 @@ function table(title: string, rows: [string, string][]) {
   return [title, ...rows.map(([label, value]) => `  ${label.padEnd(width)}  ${value}`)].join("\n");
 }
 
-function normalizeServer(value: string) {
-  try {
-    const url = new URL(value);
-    if (url.protocol !== "https:" && url.protocol !== "http:") throw new Error();
-    return url.origin;
-  } catch {
-    throw new RunnerError("USAGE", `Not a valid RelayRunner URL: ${value}`);
-  }
-}
-
 // `relayrunner pause` and `resume`: the same as the machine's ⋯ menu on the Runners page.
 function pauseCommand(paused: boolean) {
   return defineCommand({
@@ -320,15 +533,13 @@ function pauseCommand(paused: boolean) {
     async run() {
       const credentials = readCredentials();
       if (!credentials) {
-        console.error("Not signed in. Run `relayrunner connect` to sign in.");
+        console.error(
+          "Not signed in. Run `relayrunner login` or `relayrunner connect` to sign in.",
+        );
         process.exitCode = 1;
         return;
       }
-      const result = await setPaused({
-        server: credentials.server,
-        token: credentials.token,
-        paused,
-      });
+      const result = await pauseMachine(credentials, paused);
       const name = credentials.machine.name;
       switch (result.status) {
         case "ok":
@@ -353,6 +564,83 @@ function pauseCommand(paused: boolean) {
   });
 }
 
+// `relayrunner share [only-me|anyone]`: show or change who can run jobs on this machine, the
+// same setting as the sharing icon on the machine's card on the Runners page.
+const shareCommand = defineCommand({
+  meta: {
+    name: "share",
+    description:
+      "Show or change who can run jobs on this machine: only-me (jobs you started) or anyone in the workspace.",
+  },
+  args: {
+    who: {
+      type: "positional",
+      required: false,
+      description: `${SHARE_CHOICES.join(" or ")}; leave out to show the current setting`,
+    },
+  },
+  async run({ args }) {
+    const credentials = readCredentials();
+    if (!credentials) {
+      console.error("Not signed in. Run `relayrunner login` or `relayrunner connect` to sign in.");
+      process.exitCode = 1;
+      return;
+    }
+    const { name } = credentials.machine;
+    const workspace = credentials.workspace.name;
+    const revoked = () => {
+      console.error(
+        `${name} was removed from ${workspace} or its token is no longer valid.\nRun \`relayrunner connect\` to sign in again.`,
+      );
+      process.exitCode = 1;
+    };
+
+    if (args.who) {
+      const choice = parseShareChoice(args.who);
+      if (!choice) {
+        console.error(
+          `Use \`relayrunner share ${SHARE_CHOICES.join("` or `relayrunner share ")}\`.`,
+        );
+        process.exitCode = 1;
+        return;
+      }
+      const result = await withCurrentToken(credentials, (token) =>
+        setSharing({ server: credentials.server, token, sharing: toSharing(choice) }),
+      );
+      if (result.status === "revoked") return revoked();
+      if (result.status === "failed") {
+        console.error(`Couldn't change sharing for ${name}: ${result.reason}.`);
+        process.exitCode = 1;
+        return;
+      }
+      console.log(`${name} now ${sharingMeaning(result.sharing, workspace)}.`);
+      return;
+    }
+
+    const result = await withCurrentToken(credentials, (token) =>
+      whoami({ server: credentials.server, token }),
+    );
+    if (result.status === "revoked") return revoked();
+    if (result.status === "unverified") {
+      console.error(`Couldn't check sharing for ${name}: ${result.reason}.`);
+      process.exitCode = 1;
+      return;
+    }
+    const { sharing } = result.identity.machine;
+    if (!sharing) {
+      console.error(`${credentials.server} doesn't support sharing yet.`);
+      process.exitCode = 1;
+      return;
+    }
+    const other = sharing === "only_me" ? "anyone" : "only-me";
+    const lines = [`${name} ${sharingMeaning(sharing, workspace)} (${toChoice(sharing)}).`];
+    if (result.identity.workspace.memberCount === 1)
+      lines.push(`Nobody else is in ${workspace} yet, so this matters once a teammate joins.`);
+    lines.push(`Change it with \`relayrunner share ${other}\`.`);
+    console.log(lines.join("\n"));
+  },
+});
+
 const main = defineCommand({
   meta: {
     name: "relayrunner",
@@ -360,9 +648,12 @@ const main = defineCommand({
   },
   subCommands: {
     connect: connectCommand,
+    login: loginCommand,
     whoami: whoamiCommand,
+    init: initCommand,
     pause: pauseCommand(true),
     resume: pauseCommand(false),
+    share: shareCommand,
   },
 });
 

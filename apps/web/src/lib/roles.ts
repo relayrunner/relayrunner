@@ -8,7 +8,7 @@ export const ROLE_LABELS: Record<Role, string> = {
   member: "Member",
 };
 
-/** Owner or admin: manages GitHub orgs, runner order and members. */
+/** Owner or admin: manages GitHub accounts, runner order and members. */
 export function canManage(role: string | null | undefined) {
   return role === "owner" || role === "admin";
 }
@@ -28,4 +28,9 @@ export function canEditMember(
 /** The roles `actor` may give someone, by invite or role change. Only owners make owners. */
 export function assignableRoles(actorRole: string): Role[] {
   return actorRole === "owner" ? ["member", "admin", "owner"] : ["member", "admin"];
+}
+
+/** A RelayRunner operator (user.role, not a workspace role): sees the sidebar's Admin section. */
+export function isOperator(user: { role?: string | null } | null | undefined) {
+  return user?.role === "operator";
 }

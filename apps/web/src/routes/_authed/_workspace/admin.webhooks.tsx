@@ -1,7 +1,6 @@
 import { createFileRoute } from "@tanstack/react-router";
 import { RotateCcw, Trash2 } from "lucide-react";
 import { useMemo, useState } from "react";
-import { Brand } from "@/components/brand";
 import { PageHeader } from "@/components/page-header";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -16,18 +15,16 @@ import {
   type DeadLetterPage,
 } from "@/lib/dead-letters";
 
-// Development-only, behind Cloudflare Access (the dashboard Worker and the API both check the
+// Operator admin, behind Cloudflare Access (the dashboard Worker and the API both check the
 // Access JWT, and answer 403 or 404 everywhere else). Previews share the production API, so
 // Replay here acts on production.
-export const Route = createFileRoute("/dev/webhooks")({
+export const Route = createFileRoute("/_authed/_workspace/admin/webhooks")({
   loader: (): Promise<DeadLetterPage> => listDeadLetters(),
   component: DeadLettersPage,
   errorComponent: ({ error }) => (
-    <main className="mx-auto max-w-5xl p-6">
-      <PageHeader title="Webhook dead letters">
-        Couldn't load dead letters: {error instanceof Error ? error.message : String(error)}
-      </PageHeader>
-    </main>
+    <PageHeader title="Webhook dead letters">
+      Couldn't load dead letters: {error instanceof Error ? error.message : String(error)}
+    </PageHeader>
   ),
 });
 
@@ -99,8 +96,7 @@ function DeadLettersPage() {
   }
 
   return (
-    <main className="mx-auto grid max-w-5xl gap-6 p-6">
-      <Brand />
+    <section className="grid max-w-5xl gap-6">
       <PageHeader title="Webhook dead letters">
         GitHub deliveries that failed every retry, newest first. Fix the cause, then replay them:
         Replay sends the original message, with its delivery ID, back through the queue and
@@ -202,7 +198,7 @@ function DeadLettersPage() {
           {loading ? "Loading…" : "Show older"}
         </Button>
       )}
-    </main>
+    </section>
   );
 }
 

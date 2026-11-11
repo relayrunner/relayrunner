@@ -3,6 +3,7 @@
   "private": true,
   "packageManager": "pnpm@11.28.9",
   "devDependencies": {
+    "@changesets/cli": "^2.31.1",
     "@types/node": "catalog:",
     "husky": "^9.1.7",
     "lint-staged": "^17.6.0",
@@ -14,7 +15,7 @@
   "scripts": {
     "relayrunner": "node apps/cli/cli.ts",
     "setup:worktree": "pnpm install --frozen-lockfile",
-    "typecheck": "tsc --noEmit && pnpm --filter @relayrunner/api typecheck && pnpm --filter @relayrunner/webhooks typecheck && pnpm --filter @relayrunner/web typecheck",
+    "typecheck": "tsc --noEmit && pnpm --filter @relayrunner/api typecheck && pnpm --filter @relayrunner/webhooks typecheck && pnpm --filter @relayrunner/agents typecheck && pnpm --filter @relayrunner/web typecheck",
     "lint": "oxlint --deny-warnings apps packages tests",
     "format": "oxfmt",
     "format:check": "oxfmt --check",
@@ -23,9 +24,13 @@
     "check": "pnpm lint && pnpm format:check && pnpm typecheck && pnpm test",
     "test:watch": "vitest watch",
     "deploy:webhooks": "pnpm --filter @relayrunner/webhooks run deploy",
+    "deploy:agents": "pnpm --filter @relayrunner/agents run deploy",
     "deploy:api": "pnpm --filter @relayrunner/api run deploy",
     "deploy:web": "pnpm --filter @relayrunner/web run deploy",
-    "deploy:landing": "pnpm --filter @relayrunner/landing run deploy"
+    "deploy:landing": "pnpm --filter @relayrunner/landing run deploy",
+    "changeset": "changeset",
+    "changeset:lint": "node scripts/changeset-lint.mjs",
+    "changeset:version": "changeset version && oxfmt apps/cli/package.json apps/cli/CHANGELOG.md"
   },
   "type": "module",
   "skills": [

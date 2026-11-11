@@ -1,0 +1,36 @@
+{
+  "$schema": "./node_modules/wrangler/config-schema.json",
+  // The MCP server agents connect to: https://agents.relayrunner.app/mcp. Stateless; read-only apart from
+  // send_feedback.
+  // Each tool call is one or two GETs to relayrunner-api over the binding below, with the agent's
+  // own access token; the API checks it and the workspace (apps/api/src/agent-auth.ts).
+  "name": "relayrunner-agents",
+  "main": "src/index.ts",
+  "compatibility_date": "2026-11-03",
+  "compatibility_flags": ["nodejs_compat"],
+  // The RelayRunner Cloudflare account (separate from Atticus's personal account).
+  "account_id": "b233b6d6fd9eae9e093651bfb043c119",
+  // Only the custom domain: the OAuth tokens name https://agents.relayrunner.app/mcp as their
+  // audience, so no other hostname would work anyway.
+  "workers_dev": false,
+  "preview_urls": false,
+  "routes": [{ "pattern": "agents.relayrunner.app", "custom_domain": true }],
+  "observability": {
+    "enabled": true,
+    "logs": { "enabled": true, "invocation_logs": true },
+    "traces": { "enabled": true },
+    "issues": { "enabled": true },
+  },
+  "upload_source_maps": true,
+  "services": [{ "binding": "API", "service": "relayrunner-api" }],
+  "vars": {
+    // Must match AGENTS_MCP_URL in apps/api/wrangler.jsonc.
+    "MCP_URL": "https://agents.relayrunner.app/mcp",
+    // The OAuth issuer agents sign in with: the dashboard's Better Auth.
+    "AUTH_ISSUER": "https://app.relayrunner.app/api/auth",
+  },
+  // Per user and workspace: generous for an agent, low enough that one can't hammer D1.
+  "ratelimits": [
+    { "name": "LIMITER", "namespace_id": "4101", "simple": { "limit": 120, "period": 60 } },
+  ],
+}

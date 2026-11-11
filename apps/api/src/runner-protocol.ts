@@ -33,6 +33,8 @@ interface JobMessage {
   jobDisplayName: string;
   billingOwnerId?: string;
   plan: { planId: string };
+  // The job's steps, as the runner's ActionStep JSON.
+  steps?: unknown[];
   // The job's expression contexts (github, needs, ...), as PipelineContextData JSON.
   contextData?: Record<string, unknown>;
   resources: {
@@ -215,7 +217,19 @@ export class RunnerClient {
       join(this.jit.runner.ServerUrlV2, `message?${query}`),
       { signal },
     );
-    if (message?.messageType !== "RunnerJobRequest") return null;
+    if (!message) return null;
+    if (message.messageType !== "RunnerJobRequest") {
+      // Anything else (e.g. a broker migration) is dropped. Log its type, never its body, so a new
+      // message from GitHub doesn't leave the runner idle with no trace.
+      console.warn(
+        JSON.stringify({
+          msg: "runner poll message dropped",
+          messageType: message.messageType,
+          runner: this.jit.runner.AgentName,
+        }),
+      );
+      return null;
+    }
     if (message.iv) throw new Error("Encrypted job messages are not supported.");
     return JSON.parse(message.body) as JobRequest;
   }
@@ -250,26 +264,28 @@ export class RunnerClient {
 
   /**
    * Finishes the job. `error` becomes a failure annotation on the run, as a step's `::error::`
-   * would, so the reason shows on the run's summary page.
+   * would, so the reason shows on the run's summary page. If GitHub turns the annotation down,
+   * the job still completes without it rather than being left running.
    */
   async complete(
     job: ClaimedJob,
     conclusion: Conclusion,
     { outputs = {}, error }: { outputs?: Record<string, string>; error?: string } = {},
   ) {
-    await this.request("POST", join(job.serviceUrl, "completejob"), {
-      token: job.token,
-      body: {
-        planId: job.message.plan.planId,
-        jobId: job.message.jobId,
-        conclusion,
-        outputs: Object.fromEntries(
-          Object.entries(outputs).map(([name, value]) => [name, { value, isSecret: false }]),
-        ),
-        ...(error ? { annotations: [failureAnnotation(error)] } : {}),
-        billingOwnerId: job.message.billingOwnerId,
-      },
-    });
+    const url = join(job.serviceUrl, "completejob");
+    const body = {
+      planId: job.message.plan.planId,
+      jobId: job.message.jobId,
+      conclusion,
+      outputs: Object.fromEntries(
+        Object.entries(outputs).map(([name, value]) => [name, { value, isSecret: false }]),
+      ),
+      billingOwnerId: job.message.billingOwnerId,
+    };
+    const send = (annotations?: unknown[]) =>
+      this.request("POST", url, { token: job.token, body: { ...body, annotations } });
+    if (error) await send([failureAnnotation(error)]).catch(() => send());
+    else await send();
   }
 
   // A session left open makes the next attempt with this runner fail with a 409.

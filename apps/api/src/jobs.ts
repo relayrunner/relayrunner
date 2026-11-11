@@ -1,10 +1,15 @@
-import type { ActivityJob, ActivityRunner, RouteWalk } from "@relayrunner/activity";
+import type {
+  ActivityJob,
+  ActivityRunner,
+  ActivityStarters,
+  RouteWalk,
+} from "@relayrunner/activity";
 import type { WebhookMessage } from "@relayrunner/github-webhooks";
-import { and, eq, isNull, type SQL, sql } from "drizzle-orm";
+import { and, desc, eq, inArray, isNull, type SQL, sql } from "drizzle-orm";
 import { recordEvent } from "./activity.ts";
 import { type Db, schema } from "./db/index.ts";
 import { findInstallation } from "./installations.ts";
-import { routeIdFromLabels } from "./routing.ts";
+import { isBlacksmithLabel, routeIdFromLabels } from "./routing.ts";
 
 type WorkflowJobMessage = Extract<WebhookMessage, { event: "workflow_job" }>;
 
@@ -95,10 +100,59 @@ export async function recordWorkflowJob(
  * left alone.
  */
 export async function setJobMachine(db: Db, jobId: number, machineId: string) {
-  await db
-    .update(table)
-    .set({ machineId })
-    .where(and(eq(table.id, jobId), isNull(table.machineId)));
+  // The job's timing row too: this is the only place it learns its machine.
+  await db.batch([
+    db
+      .update(table)
+      .set({ machineId })
+      .where(and(eq(table.id, jobId), isNull(table.machineId))),
+    db
+      .update(schema.jobTiming)
+      .set({ machineId })
+      .where(and(eq(schema.jobTiming.id, jobId), isNull(schema.jobTiming.machineId))),
+  ]);
+}
+
+/** The job a machine is running, for its card on the Runners page. */
+export type RunningJob = {
+  repository: string;
+  workflow: string | null;
+  name: string;
+  url: string;
+  /** ISO time GitHub says it started, or null when it hasn't said. */
+  startedAt: string | null;
+};
+
+/**
+ * Each machine's in-progress job, by machine id. A machine runs one job at a time, so when an old
+ * row is stuck in_progress (a lost `completed` webhook) the newest one wins. Callers show it only
+ * while the machine reports itself busy, so a stuck row never shows on an idle machine.
+ */
+export async function runningJobs(db: Db, machineIds: string[]) {
+  const jobs = new Map<string, RunningJob>();
+  if (machineIds.length === 0) return jobs;
+  const rows = await db
+    .select()
+    .from(table)
+    .where(
+      and(
+        inArray(table.machineId, machineIds),
+        eq(table.kind, "job"),
+        eq(table.status, "in_progress"),
+      ),
+    )
+    .orderBy(desc(table.githubCreatedAt));
+  for (const row of rows) {
+    if (!row.machineId || jobs.has(row.machineId)) continue;
+    jobs.set(row.machineId, {
+      repository: row.repositoryFullName,
+      workflow: row.workflowName,
+      name: row.name,
+      url: `https://github.com/${row.repositoryFullName}/actions/runs/${row.runId}/job/${row.id}`,
+      startedAt: row.startedAt?.toISOString() ?? null,
+    });
+  }
+  return jobs;
 }
 
 async function runHasPick(db: Db, runId: number) {
@@ -110,7 +164,7 @@ async function runHasPick(db: Db, runId: number) {
   return Boolean(pick);
 }
 
-function parseDate(value: string | null | undefined) {
+export function parseDate(value: string | null | undefined) {
   if (!value) return null;
   const date = new Date(value);
   return Number.isNaN(date.getTime()) ? null : date;
@@ -121,7 +175,10 @@ function parseDate(value: string | null | undefined) {
 function presentRunner(job: typeof table.$inferSelect, machineName: string | null): ActivityRunner {
   if (job.machineId || routeIdFromLabels(job.labels))
     return { type: "machine", machineId: job.machineId, name: machineName };
-  return { type: "github", label: job.labels.join(", ") };
+  const label = job.labels.join(", ");
+  if (job.labels.length > 0 && job.labels.every(isBlacksmithLabel))
+    return { type: "blacksmith", label };
+  return { type: "github", label };
 }
 
 /** A routed job's current state, for its Activity entry. */
@@ -130,6 +187,7 @@ export function presentJob(
   isPrivate: boolean | null,
   machineName: string | null,
   walk: RouteWalk | null = null,
+  starters: ActivityStarters = { startedBy: null, rerunBy: null },
 ): ActivityJob {
   return {
     id: job.id,
@@ -154,5 +212,6 @@ export function presentJob(
     completedAt: job.completedAt?.toISOString() ?? null,
     url: `https://github.com/${job.repositoryFullName}/actions/runs/${job.runId}/job/${job.id}`,
     runUrl: `https://github.com/${job.repositoryFullName}/actions/runs/${job.runId}`,
+    starters,
   };
 }

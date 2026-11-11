@@ -3,8 +3,11 @@ import {
   CheckIcon,
   ChevronsUpDownIcon,
   LogOutIcon,
+  MonitorIcon,
+  MoonIcon,
   PlusIcon,
   SettingsIcon,
+  SunIcon,
   UserIcon,
 } from "lucide-react";
 import { useState } from "react";
@@ -18,6 +21,7 @@ import {
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import { authDisabled, organization, signOut, useListOrganizations } from "@/lib/auth-client";
+import { setTheme, useTheme, type Theme } from "@/lib/theme";
 import { cn } from "@/lib/utils";
 
 type MenuUser = { name: string; email: string; image?: string | null } | null;
@@ -30,9 +34,12 @@ type MenuUser = { name: string; email: string; image?: string | null } | null;
 export function WorkspaceMenu({
   workspace,
   user,
+  compact = false,
 }: {
   workspace: { id: string; name: string };
   user: MenuUser;
+  /** Just the workspace's mark, for the collapsed sidebar. Phones still get the full trigger. */
+  compact?: boolean;
 }) {
   const router = useRouter();
   const [switching, setSwitching] = useState(false);
@@ -58,17 +65,24 @@ export function WorkspaceMenu({
   return (
     <DropdownMenu>
       <DropdownMenuTrigger
-        className="flex w-full min-w-0 items-center gap-2.5 rounded-lg border border-transparent px-2 py-1.5 text-left outline-none transition-colors hover:bg-sidebar-accent focus-visible:ring-[3px] focus-visible:ring-ring/50 data-[state=open]:border-border data-[state=open]:bg-sidebar-accent sm:w-auto sm:max-w-full"
+        className={cn(
+          "flex w-full min-w-0 items-center gap-2.5 rounded-lg border border-transparent px-2 py-1.5 text-left outline-none transition-colors hover:bg-sidebar-accent focus-visible:ring-[3px] focus-visible:ring-ring/50 data-[state=open]:border-border data-[state=open]:bg-sidebar-accent sm:w-auto sm:max-w-full",
+          compact && "sm:justify-center sm:px-1",
+        )}
+        aria-label={compact ? `${workspace.name} menu` : undefined}
         disabled={switching}
       >
         <WorkspaceMark name={workspace.name} className="size-8 text-sm" />
-        <span className="grid min-w-0 flex-1 leading-tight">
+        <span className={cn("grid min-w-0 flex-1 leading-tight", compact && "sm:hidden")}>
           <span className="truncate text-[15px] font-semibold">{workspace.name}</span>
           <span className="truncate text-xs text-muted-foreground">
             {user?.name ?? "Dev (auth disabled)"}
           </span>
         </span>
-        <ChevronsUpDownIcon aria-hidden className="size-4 shrink-0 text-muted-foreground" />
+        <ChevronsUpDownIcon
+          aria-hidden
+          className={cn("size-4 shrink-0 text-muted-foreground", compact && "sm:hidden")}
+        />
       </DropdownMenuTrigger>
       <DropdownMenuContent align="start" className="w-64">
         {user && (
@@ -98,6 +112,8 @@ export function WorkspaceMenu({
             </Link>
           </DropdownMenuItem>
         </DropdownMenuGroup>
+        <DropdownMenuSeparator />
+        <ThemePicker />
         {user && (
           <>
             <DropdownMenuSeparator />
@@ -109,6 +125,45 @@ export function WorkspaceMenu({
         )}
       </DropdownMenuContent>
     </DropdownMenu>
+  );
+}
+
+const themes: { value: Theme; label: string; icon: typeof SunIcon }[] = [
+  { value: "system", label: "System", icon: MonitorIcon },
+  { value: "light", label: "Light", icon: SunIcon },
+  { value: "dark", label: "Dark", icon: MoonIcon },
+];
+
+/** System, light or dark, saved in this browser. Stays open so the change is visible. */
+function ThemePicker() {
+  const theme = useTheme();
+  return (
+    <div className="flex items-center justify-between gap-2 px-2 py-1 text-sm">
+      <span>Theme</span>
+      <div
+        role="radiogroup"
+        aria-label="Theme"
+        className="flex rounded-md border bg-background p-0.5"
+      >
+        {themes.map(({ value, label, icon: Icon }) => (
+          <button
+            key={value}
+            type="button"
+            role="radio"
+            aria-checked={theme === value}
+            aria-label={label}
+            title={label}
+            onClick={() => setTheme(value)}
+            className={cn(
+              "grid size-7 place-items-center rounded-[5px] text-muted-foreground outline-none transition-colors hover:text-foreground focus-visible:ring-[3px] focus-visible:ring-ring/50",
+              theme === value && "bg-accent text-foreground",
+            )}
+          >
+            <Icon aria-hidden className="size-4" />
+          </button>
+        ))}
+      </div>
+    </div>
   );
 }
 

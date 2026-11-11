@@ -1,19 +1,53 @@
+import { pollActionsUsage } from "./actions-billing.ts";
 import { app } from "./app.ts";
 import type { WebhookMessage } from "@relayrunner/github-webhooks";
 import { checkDeadLetterGrowth } from "./dead-letter-alert.ts";
+import { createDb } from "./db/index.ts";
 import type { Env } from "./env.ts";
+import { purgeOldJobTimings } from "./job-timings.ts";
+import { purgeOldWorkflowRuns } from "./runs.ts";
+import { sweepPicks } from "./pick-sweep.ts";
+import {
+  handleInstallationTaskBatch,
+  INSTALLATION_TASK_QUEUE,
+  type InstallationTask,
+} from "./installation-tasks.ts";
 import { handleWebhookBatch } from "./webhook-queue.ts";
+import { wellKnown } from "./well-known.ts";
 
+export { ContainerRunner } from "./durable-objects/container-runner.ts";
+export { LintRunner } from "./durable-objects/lint-runner.ts";
 export { MachineLink } from "./durable-objects/machine-link.ts";
 export { PickRunner } from "./durable-objects/pick-runner.ts";
 export { Router } from "./durable-objects/router.ts";
 
-// GitHub webhooks arrive on a queue from the ingress Worker (apps/webhooks), not over HTTP.
+// Matches the second entry of triggers.crons in wrangler.jsonc.
+const USAGE_CRON = "*/15 * * * *";
+
 export default {
-  fetch: app.fetch,
-  queue: handleWebhookBatch,
-  // Hourly: alert when webhook dead letters pile up.
-  async scheduled(_controller, env) {
-    await checkDeadLetterGrowth(env);
+  fetch: (request, env, ctx) => wellKnown(request, env) ?? app.fetch(request, env, ctx),
+  // GitHub webhooks arrive on a queue from the ingress Worker (apps/webhooks), not over HTTP. The
+  // cron's per-installation work arrives on its own queue.
+  async queue(batch, env) {
+    if (batch.queue === INSTALLATION_TASK_QUEUE)
+      return handleInstallationTaskBatch(batch as MessageBatch<InstallationTask>, env);
+    return handleWebhookBatch(batch as MessageBatch<WebhookMessage>, env);
   },
-} satisfies ExportedHandler<Env, WebhookMessage>;
+  // Every 15 minutes: queue a read of each org's Actions usage from GitHub billing (#116), rescue
+  // stuck relay jobs, and queue a sweep for leftover pick runners (src/pick-sweep.ts). Hourly: alert when
+  // webhook dead letters pile up, and drop job timings and workflow runs past retention. Each runs even if another
+  // throws; a failure still fails the invocation.
+  async scheduled(controller, env) {
+    const tasks =
+      controller.cron === USAGE_CRON
+        ? [pollActionsUsage(env, new Date(controller.scheduledTime)), sweepPicks(env)]
+        : [
+            checkDeadLetterGrowth(env),
+            purgeOldJobTimings(createDb(env.DB)),
+            purgeOldWorkflowRuns(createDb(env.DB)),
+          ];
+    const results = await Promise.allSettled(tasks);
+    const failed = results.find((result) => result.status === "rejected");
+    if (failed) throw failed.reason;
+  },
+} satisfies ExportedHandler<Env, WebhookMessage | InstallationTask>;

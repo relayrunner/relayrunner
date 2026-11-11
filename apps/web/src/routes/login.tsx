@@ -19,6 +19,12 @@ export const Route = createFileRoute("/login")({
   component: LoginPage,
 });
 
+// Agent sign-in (apps/api/src/agent-auth.ts) sends the browser here with the MCP client's signed
+// authorization request in the query. Signing in carries it on (auth-client.ts).
+function connectingAgent() {
+  return new URLSearchParams(window.location.search).has("sig");
+}
+
 function LoginPage() {
   const { redirect: next } = Route.useSearch();
   const [error, setError] = useState<string | null>(null);
@@ -40,10 +46,10 @@ function LoginPage() {
           <CardHeader>
             <CardTitle>Sign in</CardTitle>
             <CardDescription>
-              {next?.startsWith("/device")
-                ? "Sign in to connect this machine. New to RelayRunner? Signing in with GitHub creates your account."
-                : next?.startsWith("/invite/")
-                  ? "Sign in to join a workspace. New to RelayRunner? Signing in with GitHub creates your account."
+              {next?.startsWith("/invite/")
+                ? "Sign in to join a workspace. New to RelayRunner? Signing in with GitHub creates your account."
+                : connectingAgent()
+                  ? "Sign in to connect an agent to RelayRunner."
                   : "Route your GitHub Actions to the right runner."}
             </CardDescription>
           </CardHeader>
@@ -52,6 +58,17 @@ function LoginPage() {
               Sign in with GitHub
             </Button>
             {error && <p className="text-sm text-destructive">{error}</p>}
+            <p className="text-center text-xs text-muted-foreground">
+              By signing in, you agree to the{" "}
+              <a className="underline underline-offset-2" href="https://relayrunner.app/terms">
+                Terms of Service
+              </a>{" "}
+              and{" "}
+              <a className="underline underline-offset-2" href="https://relayrunner.app/privacy">
+                Privacy Policy
+              </a>
+              .
+            </p>
           </CardContent>
         </Card>
       </div>

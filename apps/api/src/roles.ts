@@ -30,3 +30,11 @@ export const requireManager = createMiddleware<AppEnv>(async (c, next) => {
   if (!canManage(c.var.role)) return c.json({ error: "forbidden" }, 403);
   await next();
 });
+
+// Global user roles (user.role), separate from workspace roles. Null is a regular user. Operators
+// see the dashboard's Admin section and may use the D1 admin routes (routes/admin.ts).
+export const USER_ROLES = ["operator"] as const;
+
+export function isOperator(user: { role?: string | null } | null | undefined) {
+  return user?.role === "operator";
+}

@@ -8,20 +8,26 @@
  *
  * After max_retries a message moves to `relayrunner-github-webhooks-dlq`. The DLQ consumer archives
  * it to R2 (src/dead-letters.ts) and acks it only once the write succeeds; a failed write leaves it
- * unacked, so the DLQ retries it rather than losing it. `/dev/webhooks` lists and replays them.
+ * unacked, so the DLQ retries it rather than losing it. `/admin/webhooks` lists and replays them.
  *
  * Delivery is at least once and unordered. A redelivery or a queue retry can repeat a message, and
  * `workflow_job` `queued` can arrive after `in_progress`, so processing must be idempotent and
  * keyed on the job's state, not on arrival order.
  */
 import { WEBHOOK_DLQ, type WebhookMessage } from "@relayrunner/github-webhooks";
-import { eq } from "drizzle-orm";
+import { and, eq, isNull } from "drizzle-orm";
 import { archiveDeadLetter, recordLastError } from "./dead-letters.ts";
 import { createDb, schema } from "./db/index.ts";
 import type { Env } from "./env.ts";
 import { upsertInstallation } from "./installations.ts";
+import { recordJobTiming } from "./job-timings.ts";
+import { lintTarget, startLintChecks } from "./lint-check.ts";
 import { recordWorkflowJob, setJobMachine } from "./jobs.ts";
+import { containerRunnerAllowed, usesContainerRunner } from "./container-runner.ts";
+import { checkPullRequestTitle } from "./pr-title-check.ts";
 import { recordRepositoryEvent, removeRepositories, upsertRepositories } from "./repositories.ts";
+import { recordWorkflowRun } from "./runs.ts";
+import { routingLabelFromLabels } from "./github-runners.ts";
 import { routeIdFromLabels } from "./routing.ts";
 
 // The `runs-on` label that routes a job through RelayRunner.
@@ -105,7 +111,7 @@ async function deadLetter(env: Env, msg: Message<WebhookMessage>) {
   }
 }
 
-function errorMessage(error: unknown) {
+export function errorMessage(error: unknown) {
   return error instanceof Error ? error.message : String(error);
 }
 
@@ -125,16 +131,45 @@ export function retryDelaySeconds(attempts: number) {
 /** Do the work for one delivery. Throw to retry. */
 export async function processWebhook(env: Env, message: WebhookMessage): Promise<void> {
   const lagMs = Date.now() - Date.parse(message.receivedAt);
+  // The RelayRunner Checks App (lint check runs) has its own installations and credentials, so its
+  // deliveries never take the main App's paths below.
+  if (message.app === "checks") {
+    const target = lintTarget(message);
+    console.log(
+      JSON.stringify({
+        msg: "checks app webhook received",
+        event: message.event,
+        action: message.action,
+        deliveryId: message.deliveryId,
+        installationId: message.installationId,
+        repository: "repository" in message ? message.repository.fullName : null,
+        lint: target !== null,
+        lagMs,
+      }),
+    );
+    // Throws to retry: check runs that never open leave the pull request without its lint.
+    if (target) await startLintChecks(env, target);
+    return;
+  }
   switch (message.event) {
     case "workflow_job": {
       // A job that asks for RelayRunner (`runs-on: relayrunner`) is a pick: it routes its run. The
       // run's other jobs are stored for the Activity page (they ran where the pick sent them), and
       // every other job the App sees is some other runner's, so recordWorkflowJob drops it.
       const isPick = usesRelayRunner(message.job.labels);
-      await recordWorkflowJob(createDb(env.DB), message, isPick);
+      const db = createDb(env.DB);
+      // Every job's timing, ours or not, goes to job_timing too: the Runs page shows it while it
+      // runs, and the usage report once it finishes. The two writes touch separate tables, so they
+      // run together.
+      await Promise.all([recordWorkflowJob(db, message, isPick), recordJobTiming(db, message)]);
       // A job on a route's `rr-<id>` label: the run's pick chose a machine for it.
       const routeId = routeIdFromLabels(message.job.labels);
       if (routeId) return dispatchRoute(env, message, routeId, lagMs);
+      // A job on an added runner's label: the pick may have chosen that runner for it.
+      const routingLabel = routingLabelFromLabels(message.job.labels);
+      if (routingLabel) return trackRunnerJob(env, message, routingLabel, lagMs);
+      // A job that runs in a container: boot one for it on `queued`.
+      if (usesContainerRunner(message.job.labels)) return startContainerRunner(env, message);
       if (!isPick) return;
       // On `queued`, wake a PickRunner for the job, which answers it with the Router's route. Other
       // actions are only logged.
@@ -164,6 +199,10 @@ export async function processWebhook(env: Env, message: WebhookMessage): Promise
       }
       return;
     }
+    case "workflow_run":
+      // The run's title, trigger and status, for the Runs page.
+      await recordWorkflowRun(createDb(env.DB), message);
+      return;
     case "installation":
     case "installation_repositories":
       await recordInstallation(env, message);
@@ -199,6 +238,10 @@ export async function processWebhook(env: Env, message: WebhookMessage): Promise
           lagMs,
         }),
       );
+      return;
+    case "pull_request":
+      // Throws to retry: a check run that never posts leaves the PR without its check.
+      await checkPullRequestTitle(env, message);
       return;
   }
 }
@@ -263,6 +306,57 @@ async function dispatchRoute(
   );
 }
 
+// Follows a job on a runner added from GitHub. GitHub delivers it to the runner itself, so there is
+// nothing to hand off: `queued` claims the route the pick made (same repo and run), and a later
+// action ends it once the job started, since the runner's own busy status covers it from then on.
+// Either way, the job's Activity row learns which machine ran it. A job that asked for the label
+// by hand, with no route, runs all the same; it just isn't ours to track.
+async function trackRunnerJob(
+  env: Env,
+  message: Extract<WebhookMessage, { event: "workflow_job" }>,
+  routingLabel: string,
+  lagMs: number,
+) {
+  const log = {
+    msg: "relayrunner runner job",
+    action: message.action,
+    deliveryId: message.deliveryId,
+    installationId: message.installationId,
+    repository: message.repository.fullName,
+    jobId: message.job.id,
+    runId: message.job.runId,
+    job: message.job.name,
+    routingLabel,
+    runnerName: message.job.runnerName,
+    conclusion: message.job.conclusion,
+    lagMs,
+  };
+  const db = createDb(env.DB);
+  const [machine] = await db
+    .select({ id: schema.machine.id, workspaceId: schema.machine.workspaceId })
+    .from(schema.machine)
+    .where(and(eq(schema.machine.routingLabel, routingLabel), isNull(schema.machine.revokedAt)))
+    .limit(1);
+  if (!machine) {
+    console.warn(JSON.stringify({ ...log, result: "no_machine" }));
+    return;
+  }
+  const job = {
+    jobId: message.job.id,
+    repositoryId: message.repository.id,
+    runId: message.job.runId,
+  };
+  const router = env.ROUTER.getByName(machine.workspaceId);
+  const route =
+    message.action === "queued"
+      ? await router.claimRunner(machine.id, job)
+      : await router.releaseRunnerJob(machine.id, job);
+  if (route) await setJobMachine(db, message.job.id, machine.id);
+  console.log(
+    JSON.stringify({ ...log, result: route ? "tracked" : "no_route", machineId: machine.id }),
+  );
+}
+
 // Keeps github_installation, and the repos it can see, in step with GitHub so the dashboard shows
 // each org's real status.
 // Every action carries the installation's current state, so a repeat is harmless, and
@@ -305,4 +399,33 @@ async function recordInstallation(
   }
   await upsertRepositories(db, installation.id, message.added, observedAt);
   await removeRepositories(db, installation.id, message.removed, observedAt);
+}
+
+// Starts a ContainerRunner for a queued `runs-on: relayrunner-container` job from an allowed org.
+// Other actions are only logged.
+async function startContainerRunner(
+  env: Env,
+  message: Extract<WebhookMessage, { event: "workflow_job" }>,
+) {
+  const org = message.repository.fullName.split("/")[0];
+  const allowed = containerRunnerAllowed(env.CONTAINER_RUNNER_ORGS, org);
+  console.log(
+    JSON.stringify({
+      msg: "relayrunner container job received",
+      action: message.action,
+      deliveryId: message.deliveryId,
+      installationId: message.installationId,
+      repository: message.repository.fullName,
+      jobId: message.job.id,
+      runId: message.job.runId,
+      job: message.job.name,
+      allowed,
+    }),
+  );
+  if (message.action !== "queued" || !message.installationId || !allowed) return;
+  await env.CONTAINER_RUNNER.getByName(String(message.job.id)).start({
+    jobId: message.job.id,
+    installationId: message.installationId,
+    repo: message.repository.fullName,
+  });
 }

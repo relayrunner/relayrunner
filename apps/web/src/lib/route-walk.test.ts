@@ -1,5 +1,5 @@
 import { describe, expect, test } from "vitest";
-import { failureText, walkLines, walkSummary, type RouteWalk } from "./route-walk.ts";
+import { failureText, jobNames, walkLines, walkSummary, type RouteWalk } from "./route-walk.ts";
 
 const walk = (rest: Partial<RouteWalk>): RouteWalk => ({
   step: "github",
@@ -7,6 +7,7 @@ const walk = (rest: Partial<RouteWalk>): RouteWalk => ({
   notInOrder: [],
   machine: ["self-hosted"],
   github: ["ubuntu-latest"],
+  blacksmith: [],
   ...rest,
 });
 
@@ -35,6 +36,25 @@ describe("walkSummary", () => {
     });
   });
 
+  test("names whose jobs the machines that fit only run (#242)", () => {
+    const notShared = (machines: { machine: string; owner: string | null }[]) =>
+      walk({ skipped: [{ key: "machine", reason: "machine_not_shared", notShared: machines }] });
+    const one = notShared([{ machine: "atticus-mbp", owner: "Atticus" }]);
+    expect(walkSummary(one)).toEqual({
+      text: "atticus-mbp only runs Atticus's jobs",
+      tone: "fallback",
+    });
+    expect(walkLines(one, "ubuntu-latest")[0]?.text).toBe("atticus-mbp only runs Atticus's jobs");
+    const two = notShared([
+      { machine: "atticus-mbp", owner: "Atticus" },
+      { machine: "zach-mini", owner: null },
+    ]);
+    expect(walkSummary(two)?.text).toBe("2 machines only run their owners' jobs");
+    expect(walkLines(two, "ubuntu-latest")[0]?.text).toBe(
+      "atticus-mbp and zach-mini only run their owners' jobs",
+    );
+  });
+
   test("names the paused machines", () => {
     const paused = (names: string[]) =>
       walk({
@@ -52,6 +72,59 @@ describe("walkSummary", () => {
     );
     expect(walkLines(paused(["a", "b"]), "ubuntu-latest")[0]?.text).toBe(
       "every machine with macOS, ARM64 is paused (a, b)",
+    );
+  });
+
+  test("explains a Blacksmith step that couldn't take the job", () => {
+    const bad = walk({
+      skipped: [{ key: "blacksmith", reason: "not_blacksmith_label" }],
+      blacksmith: ["ubuntu-latest"],
+    });
+    expect(walkSummary(bad)).toEqual({ text: "not a Blacksmith label", tone: "fallback" });
+    expect(walkLines(bad, "ubuntu-latest")[0]?.text).toBe(
+      "blacksmith takes a Blacksmith label such as blacksmith-2vcpu-ubuntu-2404, not ubuntu-latest",
+    );
+    const two = walk({
+      skipped: [{ key: "blacksmith", reason: "too_many_labels" }],
+      blacksmith: ["blacksmith-2vcpu-ubuntu-2404", "blacksmith-4vcpu-ubuntu-2404"],
+    });
+    expect(walkSummary(two)?.text).toBe("blacksmith takes one label");
+    expect(walkLines(two, "ubuntu-latest")[0]?.text).toBe(
+      "blacksmith takes one label, not blacksmith-2vcpu-ubuntu-2404, blacksmith-4vcpu-ubuntu-2404",
+    );
+  });
+
+  test("explains a GitHub step past its minutes limit", () => {
+    const minutes = {
+      account: "acme",
+      usedMinutes: 1640,
+      quotaMinutes: 2000,
+      percent: 80,
+      burnRatePerHour: 30,
+    };
+    const limited = walk({
+      step: "machine",
+      skipped: [{ key: "github", reason: "minutes_limit", minutes }],
+    });
+    expect(walkSummary(limited)).toEqual({
+      text: "acme at 82% of GitHub minutes",
+      tone: "fallback",
+    });
+    expect(walkLines(limited, "rr-0123456789ab")[0]?.text).toBe(
+      "acme has used 1,640 of 2,000 included minutes (82%), past the 80% limit",
+    );
+    const runway = walk({
+      step: "machine",
+      skipped: [
+        {
+          key: "github",
+          reason: "minutes_runway",
+          minutes: { ...minutes, usedMinutes: 1400, burnRatePerHour: 400 },
+        },
+      ],
+    });
+    expect(walkLines(runway, "rr-0123456789ab")[0]?.text).toBe(
+      "acme has used 1,400 of 2,000 included minutes (70%); at 400 min/hour it could run out before billing catches up",
     );
   });
 
@@ -102,7 +175,17 @@ test("walkLines walks the order, then the providers outside it", () => {
 test("failureText drops the prefix GitHub shows", () => {
   expect(
     failureText(
-      "No runner available: public repos never run on local machines; `github` isn't set on this relay.",
+      "No runner available: public repos never run on self-hosted machines; `github` isn't set on this relay.",
     ),
-  ).toBe("public repos never run on local machines; github isn't set on this relay");
+  ).toBe("public repos never run on self-hosted machines; github isn't set on this relay");
+});
+
+describe("jobNames", () => {
+  test("reads as a phrase", () => {
+    expect(jobNames([])).toBeNull();
+    expect(jobNames(["build"])).toBe("build");
+    expect(jobNames(["build", "test"])).toBe("build and test");
+    expect(jobNames(["build", "test", "deploy"])).toBe("build, test and deploy");
+    expect(jobNames(["a", "b", "c", "d", "e"])).toBe("a, b and 3 more");
+  });
 });
