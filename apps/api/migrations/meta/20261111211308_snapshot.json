@@ -1,7 +1,7 @@
 {
   "version": "6",
   "dialect": "sqlite",
-  "id": "cdb28f6c-bc32-4ce9-bd37-4f11a8a2d0a2",
+  "id": "aca9c565-95a1-4c27-8853-5a8235837da9",
   "prevId": "38870b71-829e-4f72-ac81-df17fcea50f0",
   "tables": {
     "account": {
@@ -1510,7 +1510,14 @@
           "name": "workspace_id",
           "type": "text",
           "primaryKey": false,
-          "notNull": true,
+          "notNull": false,
+          "autoincrement": false
+        },
+        "user_id": {
+          "name": "user_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false,
           "autoincrement": false
         },
         "name": {
@@ -1550,13 +1557,6 @@
         },
         "enrollment_hash": {
           "name": "enrollment_hash",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": false,
-          "autoincrement": false
-        },
-        "created_by": {
-          "name": "created_by",
           "type": "text",
           "primaryKey": false,
           "notNull": false,
@@ -1741,6 +1741,13 @@
           ],
           "isUnique": false
         },
+        "machine_user_idx": {
+          "name": "machine_user_idx",
+          "columns": [
+            "user_id"
+          ],
+          "isUnique": false
+        },
         "machine_github_runner_idx": {
           "name": "machine_github_runner_idx",
           "columns": [
@@ -1764,17 +1771,17 @@
           "onDelete": "cascade",
           "onUpdate": "no action"
         },
-        "machine_created_by_user_id_fk": {
-          "name": "machine_created_by_user_id_fk",
+        "machine_user_id_user_id_fk": {
+          "name": "machine_user_id_user_id_fk",
           "tableFrom": "machine",
           "tableTo": "user",
           "columnsFrom": [
-            "created_by"
+            "user_id"
           ],
           "columnsTo": [
             "id"
           ],
-          "onDelete": "set null",
+          "onDelete": "cascade",
           "onUpdate": "no action"
         },
         "machine_paused_by_user_id_fk": {
@@ -3314,65 +3321,6 @@
       "uniqueConstraints": {},
       "checkConstraints": {}
     },
-    "spend_installation": {
-      "name": "spend_installation",
-      "columns": {
-        "account_id": {
-          "name": "account_id",
-          "type": "integer",
-          "primaryKey": true,
-          "notNull": true,
-          "autoincrement": false
-        },
-        "account_login": {
-          "name": "account_login",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true,
-          "autoincrement": false
-        },
-        "installation_id": {
-          "name": "installation_id",
-          "type": "integer",
-          "primaryKey": false,
-          "notNull": true,
-          "autoincrement": false
-        },
-        "suspended_at": {
-          "name": "suspended_at",
-          "type": "integer",
-          "primaryKey": false,
-          "notNull": false,
-          "autoincrement": false
-        },
-        "github_state_at": {
-          "name": "github_state_at",
-          "type": "integer",
-          "primaryKey": false,
-          "notNull": true,
-          "autoincrement": false
-        },
-        "created_at": {
-          "name": "created_at",
-          "type": "integer",
-          "primaryKey": false,
-          "notNull": true,
-          "autoincrement": false
-        },
-        "updated_at": {
-          "name": "updated_at",
-          "type": "integer",
-          "primaryKey": false,
-          "notNull": true,
-          "autoincrement": false
-        }
-      },
-      "indexes": {},
-      "foreignKeys": {},
-      "compositePrimaryKeys": {},
-      "uniqueConstraints": {},
-      "checkConstraints": {}
-    },
     "user": {
       "name": "user",
       "columns": {
@@ -4216,7 +4164,9 @@
   "_meta": {
     "schemas": {},
     "tables": {},
-    "columns": {}
+    "columns": {
+      "\"machine\".\"created_by\"": "\"machine\".\"user_id\""
+    }
   },
   "internal": {
     "indexes": {}

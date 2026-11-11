@@ -16,7 +16,7 @@ import {
   pausedByName,
   promotePendingToken,
 } from "../machines.ts";
-import { type Route } from "../routing.ts";
+import { takeHold, type MachineHold, type Route } from "../routing.ts";
 import {
   CLOSE,
   handleFrame,
@@ -43,6 +43,8 @@ interface SentRoute {
 }
 
 const SENT_KEY = "sent:";
+// The route holding the machine for its job (MachineHold), whichever workspace made it.
+const HOLD_KEY = "hold";
 
 // One per enrolled machine, addressed by machine id. Holds the machine's `relayrunner connect`
 // WebSocket, so a live socket that has said hello means the machine is online. Uses the
@@ -180,6 +182,20 @@ export class MachineLink extends DurableObject<Env> {
   }
 
   /**
+   * Holds the machine for a route a Router is making, unless another route still holds it: false
+   * then, and the Router tries its next machine. The read and write run with no other call in
+   * between (a Durable Object's input gate stays closed across storage calls), so when two
+   * workspaces pick this machine at once only one gets it. The hold ends when the machine reports
+   * the route's job started or failed, or after ROUTE_HOLD_MS.
+   */
+  async reserve(want: { routeId: string; workspaceId: string }): Promise<boolean> {
+    const hold = takeHold(await this.ctx.storage.get<MachineHold>(HOLD_KEY), want, Date.now());
+    if (!hold) return false;
+    await this.ctx.storage.put(HOLD_KEY, hold);
+    return true;
+  }
+
+  /**
    * Hands a claimed route's job to the machine: mints a one-job runner on the route's label, on
    * the job's own repo (src/machine-runner.ts), named after the machine, and sends it in a `run`
    * message. Safe to call again for the same route (a redelivered webhook): only the first
@@ -260,7 +276,7 @@ export class MachineLink extends DurableObject<Env> {
   }
 
   // The machine's progress on a route. Once the job has started (the machine now says busy) or
-  // the runner failed, the route stops holding the machine in the Router.
+  // the runner failed, the route stops holding the machine, here and in the Router that made it.
   private async onJob(machineId: string, job: JobMessage) {
     const key = SENT_KEY + job.routeId;
     const sent = await this.ctx.storage.get<SentRoute>(key);
@@ -274,6 +290,8 @@ export class MachineLink extends DurableObject<Env> {
         known: Boolean(sent),
       }),
     );
+    const hold = await this.ctx.storage.get<MachineHold>(HOLD_KEY);
+    if (hold?.routeId === job.routeId) await this.ctx.storage.delete(HOLD_KEY);
     if (!sent) return;
     await this.env.ROUTER.getByName(sent.workspaceId).release(job.routeId);
     if (job.state !== "started") await this.ctx.storage.delete(key);
@@ -316,14 +334,9 @@ export class MachineLink extends DurableObject<Env> {
     );
     const db = createDb(this.env.DB);
     const [row] = await db
-      .select({
-        machineName: schema.machine.name,
-        workspaceName: schema.workspace.name,
-        email: schema.user.email,
-      })
+      .select({ machineName: schema.machine.name, email: schema.user.email })
       .from(schema.machine)
-      .innerJoin(schema.workspace, eq(schema.workspace.id, schema.machine.workspaceId))
-      .innerJoin(schema.user, eq(schema.user.id, schema.machine.createdBy))
+      .innerJoin(schema.user, eq(schema.user.id, schema.machine.userId))
       .where(eq(schema.machine.id, machineId))
       .limit(1);
     if (!row) return;
@@ -332,7 +345,6 @@ export class MachineLink extends DurableObject<Env> {
       template: "machine-taken-over",
       context: {
         machineName: row.machineName,
-        workspaceName: row.workspaceName,
         was,
         now,
         at: new Date(at),

@@ -1,7 +1,8 @@
 // Adds the files that belong at the asset root after `astro build`:
 // - _redirects: /docs goes to the first page, Overview, since there is no docs home page. Pages
 //   that moved keep their old URLs working, with or without a trailing slash. Other trailing
-//   slashes are dropped by the asset server (html_handling in wrangler.jsonc).
+//   slashes are dropped by the asset server (html_handling in wrangler.jsonc). /sitemap.xml, where
+//   crawlers look first, goes to the sitemap index.
 // - _headers: long-lived caching for Astro's hashed files in /_astro/ (CSS, JS, fonts). Without
 //   it every page load revalidates the fonts, and text paints in the fallback font first.
 import { writeFileSync } from "node:fs";
@@ -17,6 +18,7 @@ writeFileSync(
     "/docs/ci/free-checks/ /docs/concepts/free-checks 301",
     "/docs/guides/stay-under-quota /docs/guides/spend-controls 301",
     "/docs/guides/stay-under-quota/ /docs/guides/spend-controls 301",
+    "/sitemap.xml /sitemap-index.xml 301",
     "",
   ].join("\n"),
 );

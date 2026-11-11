@@ -27,6 +27,7 @@ import {
 import { alias } from "drizzle-orm/sqlite-core";
 import { type Db, schema } from "./db/index.ts";
 import { presentJob } from "./jobs.ts";
+import { inWorkspace, recordMachineEvents } from "./machines.ts";
 import { jobKey, picksForJobs } from "./route-decisions.ts";
 import {
   githubIds,
@@ -68,8 +69,8 @@ export async function recordEvent(db: Db, event: NewActivityEvent) {
 }
 
 /**
- * Logs a machine event in the machine's workspace, with the machine's current name. Does nothing
- * if the machine row is gone.
+ * Logs a machine event in every workspace the machine is in, with the machine's current name.
+ * Does nothing if the machine row is gone.
  */
 export async function recordMachineEvent(
   db: Db,
@@ -79,18 +80,21 @@ export async function recordMachineEvent(
     | { type: "machine.disconnected"; data: { reason: DisconnectReason } },
 ) {
   const [machine] = await db
-    .select({ workspaceId: schema.machine.workspaceId, name: schema.machine.name })
+    .select({
+      workspaceId: schema.machine.workspaceId,
+      userId: schema.machine.userId,
+      name: schema.machine.name,
+    })
     .from(schema.machine)
     .where(eq(schema.machine.id, machineId))
     .limit(1);
   if (!machine) return;
   // recordEvent checks the assembled data against the type's schema.
-  await recordEvent(db, {
-    workspaceId: machine.workspaceId,
+  await recordMachineEvents(db, machine, {
     machineId,
     type: event.type,
     data: { machineName: machine.name, ...event.data },
-  } as NewActivityEvent);
+  } as Parameters<typeof recordMachineEvents>[2]);
 }
 
 export const ACTIVITY_PAGE_SIZE = 50;
@@ -257,7 +261,7 @@ export async function activityOptions(db: Db, workspaceId: string): Promise<Acti
       // the CLI never claimed leaves one with no os. Neither belongs in the picker.
       .where(
         and(
-          eq(schema.machine.workspaceId, workspaceId),
+          inWorkspace(db, workspaceId),
           isNotNull(schema.machine.os),
           isNull(schema.machine.revokedAt),
         ),

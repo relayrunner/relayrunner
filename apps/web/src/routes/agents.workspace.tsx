@@ -1,10 +1,12 @@
-import { createFileRoute, Link } from "@tanstack/react-router";
+import { createFileRoute } from "@tanstack/react-router";
 import { useState } from "react";
 import { AgentSignInPage, SignedOut } from "@/components/agent-sign-in";
 import { Button } from "@/components/ui/button";
+import { WorkspaceMark } from "@/components/workspace-menu";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { grantAgentWorkspaces } from "@/lib/agents";
 import { authClient, getSession, organization } from "@/lib/auth-client";
+import { githubInstallHref } from "@/lib/github";
 
 // Agent sign-in, step 1 (apps/api/src/agent-auth.ts): after sign-in, Better Auth sends the browser
 // here with the MCP client's signed authorization request in the query. The person picks which
@@ -17,7 +19,7 @@ export const Route = createFileRoute("/agents/workspace")({
     const { data } = await organization.list();
     return {
       signedIn: true as const,
-      workspaces: (data ?? []).map(({ id, name }) => ({ id, name })),
+      workspaces: (data ?? []).map(({ id, name, logo }) => ({ id, name, logo: logo ?? null })),
     };
   },
   component: AgentWorkspacePage,
@@ -32,7 +34,11 @@ function AgentWorkspacePage() {
   );
 }
 
-function PickWorkspaces({ workspaces }: { workspaces: { id: string; name: string }[] }) {
+function PickWorkspaces({
+  workspaces,
+}: {
+  workspaces: { id: string; name: string; logo: string | null }[];
+}) {
   const [picked, setPicked] = useState(() => new Set(workspaces.map((workspace) => workspace.id)));
   const [pending, setPending] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -65,13 +71,14 @@ function PickWorkspaces({ workspaces }: { workspaces: { id: string; name: string
         <CardHeader>
           <CardTitle>No workspace yet</CardTitle>
           <CardDescription>
-            An agent reads your workspaces. Create one in the dashboard, then connect the agent
-            again.
+            An agent reads your workspaces, and installing the RelayRunner GitHub App on an account
+            or org makes one. Install it, then connect the agent again.
           </CardDescription>
         </CardHeader>
         <CardContent>
           <Button asChild size="lg" className="w-full font-bold">
-            <Link to="/workspaces/new">Create a workspace</Link>
+            {/* A full page load: this leaves for GitHub's install page. */}
+            <a href={githubInstallHref()}>Install on GitHub</a>
           </Button>
         </CardContent>
       </Card>
@@ -108,7 +115,12 @@ function PickWorkspaces({ workspaces }: { workspaces: { id: string; name: string
                   checked={picked.has(workspace.id)}
                   onChange={() => toggle(workspace.id)}
                 />
-                {workspace.name}
+                <WorkspaceMark
+                  name={workspace.name}
+                  logo={workspace.logo}
+                  className="size-5 text-[11px]"
+                />
+                <span className="truncate">{workspace.name}</span>
               </label>
             ))}
           </fieldset>

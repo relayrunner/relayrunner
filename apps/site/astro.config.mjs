@@ -1,6 +1,10 @@
 // @ts-check
+import sitemap from "@astrojs/sitemap";
 import starlight from "@astrojs/starlight";
 import { defineConfig } from "astro/config";
+import { lastModified } from "./scripts/lastmod.mjs";
+
+const lastmod = lastModified();
 
 export default defineConfig({
   // One site: the landing pages (src/pages/*.astro) at /, the docs at /docs/. The canonical and
@@ -21,6 +25,12 @@ export default defineConfig({
   // Fetch a page when its link is hovered or focused, so moving between docs pages is near instant.
   prefetch: { prefetchAll: true },
   integrations: [
+    // Starlight would add a bare sitemap on its own; this one adds each page's last change date.
+    // It lists every built page (redirects and the 404 page excluded), so new pages need no edits.
+    // robots.txt (src/pages/robots.txt.ts) points crawlers at it.
+    sitemap({
+      serialize: (item) => ({ ...item, lastmod: lastmod(item.url) }),
+    }),
     starlight({
       title: "RelayRunner Docs",
       // The header logo is the site favicon, not a separate copy.

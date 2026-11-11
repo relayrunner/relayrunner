@@ -10,6 +10,7 @@ import {
   promotePendingToken,
   verifyMachineToken,
 } from "./machines.ts";
+import { forgetInstallation } from "./admin-delete.ts";
 import * as testing from "./testing.ts";
 
 let proxy: Awaited<ReturnType<typeof testing.startD1>>["proxy"];
@@ -133,7 +134,8 @@ async function enrollAs(cookie: string, workspaceId: string, name: string) {
   expect(claimed.status).toBe(200);
   const body = (await claimed.json()) as {
     machine: { id: string; name: string; os: string };
-    workspace: { id: string };
+    workspace: { id: string; memberCount: number } | null;
+    workspaces: { id: string; name: string; slug: string; memberCount: number }[];
     token: string;
   };
   return { ...body, cookie, workspaceId, accessToken: token.access_token, code };
@@ -160,14 +162,23 @@ describe("machine enrollment", () => {
     expect(error.error).toBe("authorization_pending");
   });
 
-  test("approve, poll and claim yields a machine token for the chosen workspace", async () => {
-    const { machine, workspace, token, workspaceId, accessToken } = await enroll("enroll-ok");
+  test("approve, poll and claim yields a machine token for a machine its user owns", async () => {
+    const { machine, workspace, workspaces, token, workspaceId, accessToken } =
+      await enroll("enroll-ok");
     expect(token).toMatch(/^rrm_[\w-]{43}$/);
-    expect(workspace.id).toBe(workspaceId);
+    expect(workspace?.id).toBe(workspaceId);
+    expect(workspaces).toEqual([
+      { id: workspaceId, name: "enroll-ok", slug: "enroll-ok", memberCount: 1 },
+    ]);
     expect(machine).toMatchObject({ name: "atticus-mbp", os: "macos" });
 
     const db = createDb(env.DB);
-    expect(await verifyMachineToken(db, token)).toMatchObject({ id: machine.id, workspaceId });
+    // It's the user's, not the workspace's (#318).
+    expect(await verifyMachineToken(db, token)).toMatchObject({
+      id: machine.id,
+      workspaceId: null,
+      userId: expect.any(String),
+    });
     expect(await verifyMachineToken(db, "rrm_nope")).toBeNull();
     expect(await verifyMachineToken(db, accessToken)).toBeNull();
 
@@ -196,8 +207,8 @@ describe("machine enrollment", () => {
     expect(again.status).toBe(401);
   });
 
-  test("a user can't approve into a workspace they aren't in", async () => {
-    const { workspace } = await owner("enroll-theirs");
+  test("a workspace id sent with the approval doesn't put the machine in that workspace", async () => {
+    const { workspace, cookie: theirs } = await owner("enroll-theirs");
     const { cookie } = await testing.signIn(env);
     const { body: code } = await requestCode();
     const response = await call("/machines/approve", cookie, {
@@ -205,7 +216,19 @@ describe("machine enrollment", () => {
       workspaceId: workspace.id,
       name: "intruder",
     });
-    expect(response.status).toBe(403);
+    expect(response.status).toBe(200);
+    const { body: token } = await pollToken(code.device_code);
+    const claimed = await claim(token.access_token, {
+      deviceCode: code.device_code,
+      os: "linux",
+      arch: "x64",
+    });
+    // Its owner is in no workspace yet, so it's in none.
+    expect(await claimed.json()).toMatchObject({ workspace: null, workspaces: [] });
+    const { machines } = (await (await call("/machines", theirs)).json()) as {
+      machines: unknown[];
+    };
+    expect(machines).toEqual([]);
   });
 
   test("looking at a code doesn't claim it, so another account can still approve it", async () => {
@@ -514,21 +537,123 @@ describe("machines and roles (#134)", () => {
     expect(link(machine.id).revoke).not.toHaveBeenCalled();
   });
 
-  test("an admin can revoke a member's machine", async () => {
+  test("an owner or admin can't revoke a member's machine either: it's theirs (#318)", async () => {
     const { workspace, cookie } = await owner("roles-admin");
     const admin = await testing.joinWorkspace(env, workspace.id, "admin");
     const member = await testing.joinWorkspace(env, workspace.id, "member");
-    const { machine } = await enrollAs(member.cookie, workspace.id, "member-mini");
+    const { machine, token } = await enrollAs(member.cookie, workspace.id, "member-mini");
     expect(await list(cookie)).toEqual([
-      expect.objectContaining({ id: machine.id, canRevoke: true }),
+      expect.objectContaining({ id: machine.id, canRevoke: false }),
     ]);
-    expect((await revoke(machine.id, admin.cookie)).status).toBe(200);
+    expect((await revoke(machine.id, cookie)).status).toBe(403);
+    expect((await revoke(machine.id, admin.cookie)).status).toBe(403);
+    expect(await verifyMachineToken(createDb(env.DB), token)).not.toBeNull();
   });
 
   test("a member revoking a machine that isn't there gets not found", async () => {
     const { workspace } = await owner("roles-missing");
     const member = await testing.joinWorkspace(env, workspace.id, "member");
     expect((await revoke("nope", member.cookie)).status).toBe(404);
+  });
+});
+
+describe("machines belong to their user (#318)", () => {
+  // A user who owns one workspace and is a member of another with a teammate in it.
+  async function inTwo(slug: string) {
+    const team = await owner(`${slug}-team`);
+    const user = await testing.joinWorkspace(env, team.workspace.id, "member");
+    const own = await testing.createWorkspace(env, user.cookie, `${slug}-own`, `${slug}-own`);
+    const enrolled = await enrollAs(own.cookie, own.workspace.id, `${slug}-mbp`);
+    return { team, user, own, enrolled };
+  }
+  const activate = async (cookie: string, workspaceId: string) =>
+    testing.withSetCookies(
+      cookie,
+      await call("/auth/organization/set-active", cookie, { organizationId: workspaceId }),
+    );
+
+  test("one machine shows up in every workspace its owner is in", async () => {
+    const { team, own, enrolled } = await inTwo("both");
+    const ids = async (cookie: string) =>
+      (
+        (await (await call("/machines", cookie)).json()) as { machines: { id: string }[] }
+      ).machines.map((machine) => machine.id);
+    expect(await ids(own.cookie)).toEqual([enrolled.machine.id]);
+    // The team's owner sees their member's machine, without anyone adding it there.
+    expect(await ids(team.cookie)).toEqual([enrolled.machine.id]);
+  });
+
+  test("the claim lists every workspace, and `workspace` is the one with teammates", async () => {
+    const { team, own, enrolled } = await inTwo("claim-list");
+    expect(enrolled.workspaces.map((workspace) => workspace.id).sort()).toEqual(
+      [team.workspace.id, own.workspace.id].sort(),
+    );
+    // CLI 0.5.0 reads only `workspace`: the busiest one keeps its sharing prompt asking.
+    expect(enrolled.workspace).toMatchObject({ id: team.workspace.id, memberCount: 2 });
+  });
+
+  test("whoami lists the workspaces too", async () => {
+    const { team, enrolled } = await inTwo("whoami-list");
+    const body = (await (
+      await app.request(
+        "/api/machines/me",
+        { headers: { authorization: `Bearer ${enrolled.token}` } },
+        env,
+      )
+    ).json()) as { workspace: { id: string }; workspaces: unknown[] };
+    expect(body.workspace.id).toBe(team.workspace.id);
+    expect(body.workspaces).toHaveLength(2);
+  });
+
+  test("its events are logged in every workspace it's in", async () => {
+    const { team, own, enrolled } = await inTwo("events");
+    const ownCookie = own.cookie;
+    expect((await call(`/machines/${enrolled.machine.id}/pause`, ownCookie, {})).status).toBe(200);
+    for (const cookie of [ownCookie, team.cookie]) {
+      const { items } = (await (await call("/activity", cookie)).json()) as ActivityPage;
+      expect(items.slice(0, 2)).toMatchObject([
+        { type: "machine.paused", machine: { id: enrolled.machine.id } },
+        { type: "machine.enrolled", machine: { id: enrolled.machine.id } },
+      ]);
+    }
+    // The owner can pause it from either workspace it shows up in.
+    const teamCookie = await activate(own.cookie, team.workspace.id);
+    expect((await call(`/machines/${enrolled.machine.id}/resume`, teamCookie, {})).status).toBe(
+      200,
+    );
+  });
+
+  test("/machines/mine lists your own machines, without a workspace", async () => {
+    const { team, own, enrolled } = await inTwo("mine");
+    const mine = async (cookie: string) =>
+      (
+        (await (await call("/machines/mine", cookie)).json()) as { machines: { id: string }[] }
+      ).machines.map((machine) => machine.id);
+    expect(await mine(own.cookie)).toEqual([enrolled.machine.id]);
+    // The teammate sees it in the team's Runners list, but it isn't theirs.
+    expect(await mine(team.cookie)).toEqual([]);
+    // Signed in with no workspace at all.
+    const { cookie } = await testing.signIn(env);
+    expect((await call("/machines/mine", cookie)).status).toBe(200);
+    expect(await mine(cookie)).toEqual([]);
+  });
+
+  test("uninstalling one workspace's App leaves the machine, still in the other", async () => {
+    const { team, own, enrolled } = await inTwo("uninstall");
+    // The Router is a Durable Object too; forgetting a workspace only purges it.
+    const purge = vi.fn(async () => {});
+    await forgetInstallation(
+      { ...env, ROUTER: { getByName: () => ({ purge }) } as unknown as Env["ROUTER"] },
+      createDb(env.DB),
+      own.workspace.installationId,
+    );
+    expect(purge).toHaveBeenCalledOnce();
+    expect(await verifyMachineToken(createDb(env.DB), enrolled.token)).not.toBeNull();
+    expect(link(enrolled.machine.id).revoke).not.toHaveBeenCalled();
+    const { machines } = (await (await call("/machines", team.cookie)).json()) as {
+      machines: { id: string }[];
+    };
+    expect(machines.map((machine) => machine.id)).toEqual([enrolled.machine.id]);
   });
 });
 
@@ -844,11 +969,13 @@ describe("pausing a machine", () => {
     expect(asUser.status).toBe(401);
   });
 
-  test("any member can pause and resume someone else's machine", async () => {
+  test("only its owner pauses it, not a member or admin of a workspace it's in (#318)", async () => {
     const { machine, workspaceId } = await enroll("pause-member");
-    const member = await testing.joinWorkspace(env, workspaceId, "member");
-    expect((await call(`/machines/${machine.id}/pause`, member.cookie, {})).status).toBe(200);
-    expect((await call(`/machines/${machine.id}/resume`, member.cookie, {})).status).toBe(200);
+    for (const role of ["member", "admin"] as const) {
+      const other = await testing.joinWorkspace(env, workspaceId, role);
+      expect((await call(`/machines/${machine.id}/pause`, other.cookie, {})).status).toBe(403);
+    }
+    expect(link(machine.id).notifyPaused).not.toHaveBeenCalled();
   });
 
   test("another workspace can't pause the machine", async () => {

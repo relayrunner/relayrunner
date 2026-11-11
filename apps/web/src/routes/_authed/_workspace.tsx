@@ -20,8 +20,9 @@ import {
 import { type ReactNode, useState } from "react";
 import { DOCS_URL, SiteFooter } from "@/components/site-footer";
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
-import { WorkspaceMenu } from "@/components/workspace-menu";
+import { WorkspaceMark, WorkspaceMenu } from "@/components/workspace-menu";
 import { authDisabled } from "@/lib/auth-client";
+import { isGitHubOutcome } from "@/lib/github";
 import { isOperator } from "@/lib/roles";
 import { readFlag, saveFlag } from "@/lib/stored-flag";
 import { cn } from "@/lib/utils";
@@ -32,25 +33,28 @@ const devWorkspace: CurrentWorkspace = {
     id: "dev",
     name: "Dev workspace",
     slug: "dev",
+    logo: "https://github.com/relayrunner.png?size=96",
     createdAt: new Date(0).toISOString(),
   },
   role: "owner",
   installations: [],
 };
 
-// Pathless layout for pages that act on a workspace. Sends users without one
-// to create it, and puts the active workspace in route context.
+// Pathless layout for pages that act on a workspace. Sends users without one to /welcome (installing
+// the GitHub App is what makes a workspace), and puts the active workspace in route context.
 export const Route = createFileRoute("/_authed/_workspace")({
-  beforeLoad: async ({ context }) => {
+  beforeLoad: async ({ context, location }) => {
     if (authDisabled || !context.session) return { current: devWorkspace };
     if (!(await ensureActiveWorkspace(context.session))) {
-      throw redirect({ to: "/workspaces/new" });
+      // Keep GitHub's word on the way, such as an install request waiting on an org owner.
+      const { github } = location.search as { github?: unknown };
+      throw redirect({ to: "/welcome", search: isGitHubOutcome(github) ? { github } : {} });
     }
     try {
       return { current: await getCurrentWorkspace() };
     } catch {
       // The active workspace is gone or no longer ours.
-      throw redirect({ to: "/workspaces/new" });
+      throw redirect({ to: "/welcome" });
     }
   },
   component: WorkspaceLayout,
@@ -108,7 +112,7 @@ function WorkspaceLayout() {
         className="group/sidebar flex flex-col gap-3 border-b border-sidebar-border bg-sidebar px-3 py-4 sm:sticky sm:top-0 sm:h-screen sm:gap-6 sm:overflow-y-auto sm:border-r sm:border-b-0 sm:py-5 sm:data-[collapsed]:px-2"
       >
         {inSettings ? (
-          <SettingsNav workspaceName={current.workspace.name} />
+          <SettingsNav workspace={current.workspace} />
         ) : (
           <TooltipProvider>
             <WorkspaceMenu workspace={current.workspace} user={user} compact={collapsed} />
@@ -144,7 +148,7 @@ function WorkspaceLayout() {
 }
 
 /** Takes the sidebar's place under /settings: workspace pages, then the user's own. */
-function SettingsNav({ workspaceName }: { workspaceName: string }) {
+function SettingsNav({ workspace }: { workspace: { name: string; logo: string | null } }) {
   return (
     <div className="grid gap-3 px-1 sm:gap-5">
       <Link
@@ -155,12 +159,23 @@ function SettingsNav({ workspaceName }: { workspaceName: string }) {
         Back to dashboard
       </Link>
       <nav className="flex flex-row flex-wrap gap-x-4 gap-y-3 sm:flex-col">
-        <NavGroup label={workspaceName}>
+        <NavGroup
+          label={
+            <span className="flex min-w-0 items-center gap-1.5">
+              <WorkspaceMark
+                name={workspace.name}
+                logo={workspace.logo}
+                className="size-4 text-[9px]"
+              />
+              <span className="truncate">{workspace.name}</span>
+            </span>
+          }
+        >
           <Link to="/settings/general" className={navLink} activeProps={navActive}>
             General
           </Link>
           <Link to="/settings/github" className={navLink} activeProps={navActive}>
-            GitHub accounts
+            GitHub
           </Link>
           <Link to="/settings/members" className={navLink} activeProps={navActive}>
             Members
@@ -253,7 +268,7 @@ function SidebarToggle({ collapsed, onToggle }: { collapsed: boolean; onToggle: 
   );
 }
 
-function NavGroup({ label, children }: { label: string; children: ReactNode }) {
+function NavGroup({ label, children }: { label: ReactNode; children: ReactNode }) {
   return (
     <div className="grid min-w-0 content-start gap-0.5">
       <span className="truncate px-2.5 pb-1 text-xs text-muted-foreground sm:group-data-[collapsed]/sidebar:sr-only">

@@ -13,6 +13,7 @@ import {
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import { timeAgo } from "@/lib/activity";
+import { WorkspaceMark } from "@/components/workspace-menu";
 import { deleteWorkspace, deletedNotice, listWorkspaces, type AdminWorkspace } from "@/lib/admin";
 import { ROLE_LABELS, type Role } from "@/lib/roles";
 
@@ -97,10 +98,17 @@ const columns = column.columns([
     sortFn: "text",
     meta: TOP,
     cell: ({ row }) => (
-      <>
-        <div className="font-medium">{row.original.name}</div>
-        <div className="font-mono text-xs text-muted-foreground">{row.original.slug}</div>
-      </>
+      <div className="flex items-start gap-2.5">
+        <WorkspaceMark
+          name={row.original.name}
+          logo={row.original.logo}
+          className="mt-0.5 size-6 text-xs"
+        />
+        <div className="min-w-0">
+          <div className="font-medium">{row.original.name}</div>
+          <div className="font-mono text-xs text-muted-foreground">{row.original.slug}</div>
+        </div>
+      </div>
     ),
   }),
   column.accessor((w) => w.githubAccounts.join(", "), {

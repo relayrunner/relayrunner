@@ -18,6 +18,8 @@ export type AdminWorkspace = {
   id: string;
   name: string;
   slug: string;
+  /** The GitHub account's avatar (#316). */
+  logo: string | null;
   createdAt: string;
   members: { userId: string; name: string; email: string; role: string }[];
   githubAccounts: string[];

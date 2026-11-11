@@ -223,13 +223,16 @@ export const deviceCode = sqliteTable("device_code", {
   ...timestamps,
 });
 
-// A machine RelayRunner can route jobs to. It belongs to one workspace. Two sources:
+// A machine RelayRunner can route jobs to. Two sources:
 // - 'connect': enrolled with `relayrunner connect`; it authenticates with its own token, not a
-//   user session, and runs one-job JIT runners the gateway mints.
+//   user session, and runs one-job JIT runners the gateway mints. It belongs to its user (user_id),
+//   not to a workspace (#318): it shows up in, and takes jobs for, every workspace its user is a
+//   member of. workspace_id is null.
 // - 'github': a self-hosted runner its owner already registered in a connected org (#159).
 //   RelayRunner never talks to the machine: it reads the runner's status from GitHub and steers
 //   jobs to it with routing_label, a label it added to the runner on GitHub. token_hash and
-//   enrollment_hash stay null.
+//   enrollment_hash stay null. It is the org's, so it belongs to its installation's one workspace
+//   (workspace_id) and goes with it; user_id is null.
 //
 // For 'connect' machines: Enrollment runs in two steps (src/machines.ts):
 // approving the device code in the dashboard creates the row with enrollment_hash set, and the
@@ -239,9 +242,11 @@ export const machine = sqliteTable(
   "machine",
   {
     id: text("id").primaryKey(),
-    workspaceId: text("workspace_id")
-      .notNull()
-      .references(() => workspace.id, { onDelete: "cascade" }),
+    // 'github' only: the workspace of the installation the runner is registered in.
+    workspaceId: text("workspace_id").references(() => workspace.id, { onDelete: "cascade" }),
+    // 'connect' only (always set there): the user who enrolled it and owns it. Only they pause,
+    // rename, share or revoke it. Deleting the user deletes their machines.
+    userId: text("user_id").references(() => user.id, { onDelete: "cascade" }),
     name: text("name").notNull(),
     // The protocol's values (linux, macos, windows; x64, arm64, arm). Null until claimed.
     os: text("os"),
@@ -253,8 +258,6 @@ export const machine = sqliteTable(
     pendingTokenHash: text("pending_token_hash").unique(),
     // SHA-256 (hex) of the device code that approved this machine, while the claim is pending.
     enrollmentHash: text("enrollment_hash").unique(),
-    // The user who approved the enrollment.
-    createdBy: text("created_by").references(() => user.id, { onDelete: "set null" }),
     lastSeenAt: integer("last_seen_at", { mode: "timestamp_ms" }),
     revokedAt: integer("revoked_at", { mode: "timestamp_ms" }),
     // Set while the machine is paused: it stays connected and enrolled, but routing skips it.
@@ -263,8 +266,9 @@ export const machine = sqliteTable(
     pausedBy: text("paused_by").references(() => user.id, { onDelete: "set null" }),
     // 'connect' or 'github' (above).
     source: text("source").notNull().default("connect"),
-    // Whose jobs it takes (MACHINE_SHARING, #237): 'only_me' (only jobs its owner, createdBy,
-    // started) or 'anyone'. Only the owner changes it. Connected machines start as 'only_me';
+    // Whose jobs it takes (MACHINE_SHARING, #237): 'only_me' (only jobs its owner, userId,
+    // started) or 'anyone'. One setting for every workspace the machine is in. Only the owner
+    // changes it. Connected machines start as 'only_me';
     // runners added from GitHub are the org's shared runners and start as 'anyone'.
     sharing: text("sharing").$type<MachineSharing>().notNull().default("only_me"),
     // 'github' only: the installation whose org the runner is registered in, GitHub's runner id,
@@ -293,6 +297,7 @@ export const machine = sqliteTable(
   },
   (table) => [
     index("machine_workspace_idx").on(table.workspaceId),
+    index("machine_user_idx").on(table.userId),
     index("machine_github_runner_idx").on(table.installationId, table.githubRunnerId),
   ],
 );

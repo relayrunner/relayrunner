@@ -73,6 +73,7 @@ async function onboardedUser() {
   const db = createDb(env.DB);
   const installationId = 7000 + seq;
   const machineId = `delete-machine-${seq}`;
+  const runnerId = `delete-runner-${seq}`;
   const jobId = 990_000 + seq;
   await db.insert(schema.githubInstallation).values({
     id: installationId,
@@ -88,12 +89,20 @@ async function onboardedUser() {
     private: true,
     githubStateAt: new Date(),
   });
-  await db.insert(schema.machine).values({
-    id: machineId,
-    workspaceId: workspace.id,
-    name: "laptop",
-    createdBy: signedIn.user.id,
-  });
+  // Their laptop, which is theirs (#318), and a runner adopted from the install, which is the
+  // workspace's.
+  await db.insert(schema.machine).values([
+    { id: machineId, name: "laptop", userId: signedIn.user.id },
+    {
+      id: runnerId,
+      workspaceId: workspace.id,
+      name: "mini",
+      source: "github",
+      sharing: "anyone",
+      installationId,
+      githubRunnerId: seq,
+    },
+  ]);
   await db.insert(schema.workflowJob).values({
     id: jobId,
     installationId,
@@ -111,7 +120,7 @@ async function onboardedUser() {
     githubCreatedAt: new Date(),
   });
   await recordEvent(db, { workspaceId: workspace.id, jobId, type: "job.routed", data: {} });
-  return { ...signedIn, workspace, installationId, machineId };
+  return { ...signedIn, workspace, installationId, machineId, runnerId };
 }
 
 // Rows anywhere in D1 that still point at what was deleted.
@@ -150,6 +159,7 @@ async function leftovers(ids: { userId?: string; workspaceId: string; installati
     counts.user = await one("select count(*) n from user where id = ?", ids.userId);
     counts.sessions = await one("select count(*) n from session where user_id = ?", ids.userId);
     counts.accounts = await one("select count(*) n from account where user_id = ?", ids.userId);
+    counts.ownMachines = await one("select count(*) n from machine where user_id = ?", ids.userId);
   }
   return counts;
 }
@@ -175,13 +185,19 @@ describe("operator deletes", () => {
       },
     });
     expect(uninstalled).toContain(tester.installationId);
-    expect(purgedMachines).toContain(tester.machineId);
+    expect(purgedMachines).toContain(tester.runnerId);
     expect(purgedRouters).toContain(tester.workspace.id);
     const counts = await leftovers({
       workspaceId: tester.workspace.id,
       installationId: tester.installationId,
     });
     expect(counts).toEqual(none(counts));
+    // The member's own laptop isn't the workspace's to delete (#318).
+    expect(purgedMachines).not.toContain(tester.machineId);
+    const laptop = await env.DB.prepare("select user_id from machine where id = ?")
+      .bind(tester.machineId)
+      .first<{ user_id: string }>();
+    expect(laptop?.user_id).toBe(tester.user.id);
   });
 
   test("without uninstalling, the install is forgotten until GitHub mentions it again", async () => {
@@ -206,6 +222,8 @@ describe("operator deletes", () => {
     const tester = await onboardedUser();
     const res = await del(`/users/${tester.user.id}`, op.cookie, { uninstallGitHubApp: true });
     expect(res.status).toBe(200);
+    // Their laptop goes with them, socket closed first.
+    expect(purgedMachines).toContain(tester.machineId);
     const counts = await leftovers({
       userId: tester.user.id,
       workspaceId: tester.workspace.id,

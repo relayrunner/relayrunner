@@ -250,8 +250,15 @@
     {
       "idx": 35,
       "version": "6",
-      "when": 1794433428002,
-      "tag": "20261111214348_spend_installation",
+      "when": 1794431588947,
+      "tag": "20261111211308_machine_belongs_to_user",
+      "breakpoints": true
+    },
+    {
+      "idx": 36,
+      "version": "6",
+      "when": 1794433843005,
+      "tag": "20261111215043_spend_installation",
       "breakpoints": true
     }
   ]
