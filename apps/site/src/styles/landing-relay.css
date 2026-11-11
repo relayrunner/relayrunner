@@ -1,0 +1,130 @@
+#course,
+.relay-athlete {
+  position: fixed;
+  pointer-events: none;
+  z-index: 8;
+  top: 0;
+  left: 0;
+}
+.relay-podium:not(:empty) {
+  position: relative;
+  display: table;
+  margin: -4px auto 12px;
+  padding: 5px 20px;
+  border-top: 3px solid #ffe6ac;
+  border-radius: 3px 3px 7px 7px;
+  background: #e4ba62;
+  color: #192017;
+  font: 700 13px/1.4 monospace;
+}
+.relay-podium ol {
+  display: flex;
+  justify-content: center;
+  gap: 12px;
+  padding: 6px 0 0;
+  margin: 4px 0 0;
+  border-top: 1px solid #b48b3e;
+  list-style: none;
+}
+.relay-podium li {
+  display: grid;
+  gap: 2px;
+  font-variant-numeric: tabular-nums;
+}
+.relay-podium strong {
+  font-size: 10px;
+  color: #19502c;
+}
+.relay-start {
+  position: absolute;
+  width: clamp(130px, 18vw, 230px);
+  height: 11px;
+  left: 50%;
+  transform: translateX(-50%) skewX(-22deg);
+  pointer-events: none;
+  background:
+    linear-gradient(90deg, transparent, #55715c80 40%, #55715c80 60%, transparent) top/100% 1px
+      no-repeat,
+    linear-gradient(90deg, transparent, #55715c80 40%, #55715c80 60%, transparent) bottom/100% 1px
+      no-repeat;
+}
+.relay-start:after {
+  content: "";
+  display: block;
+  margin: auto;
+  width: 8px;
+  height: 100%;
+  background: repeating-conic-gradient(#83988266 0 25%, transparent 0 50%) 0 0/6px 6px;
+}
+.relay-split {
+  position: absolute;
+  left: 50%;
+  transform: translateX(-50%);
+  z-index: 2;
+  pointer-events: none;
+  white-space: nowrap;
+  background: #12271c;
+  color: #dff7d8;
+  border: 1px solid #416a49;
+  border-radius: 20px;
+  padding: 5px 13px;
+  font: 600 12px/1.4 monospace;
+  font-variant-numeric: tabular-nums;
+}
+.relay-split {
+  opacity: 0;
+  visibility: hidden;
+  transition:
+    opacity 150ms var(--ease-out),
+    visibility 0s 150ms;
+}
+.relay-split.visible {
+  opacity: 1;
+  visibility: visible;
+  transition-delay: 0s;
+}
+.relay-podium i {
+  position: absolute;
+  pointer-events: none;
+  left: 50%;
+  top: 0;
+  width: 4px;
+  height: 8px;
+}
+#course {
+  width: 100%;
+  height: 100%;
+  fill: none;
+  stroke: #81b57e;
+  stroke-width: 1;
+}
+.relay-athlete {
+  opacity: 0;
+  width: 64px;
+  height: 64px;
+  transform-origin: center;
+  filter: drop-shadow(0 3px 2px #0007);
+}
+#relay-finish {
+  height: 152px;
+}
+@media (max-width: 640px) {
+  main#main,
+  .site-footer {
+    --gutter: max(28px, 5vw);
+  }
+  #relay-finish {
+    height: 94px;
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  #relay-finish,
+  .relay-start {
+    display: none;
+  }
+  .relay-podium i,
+  #course,
+  .relay-athlete {
+    display: none;
+  }
+}
