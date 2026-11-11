@@ -1,0 +1,1 @@
+ALTER TABLE `route_decision` DROP COLUMN `blacksmith`;

@@ -225,6 +225,13 @@
       "when": 1794413946050,
       "tag": "20261111161906_route_decision_hosted",
       "breakpoints": true
+    },
+    {
+      "idx": 32,
+      "version": "6",
+      "when": 1794414647763,
+      "tag": "20261111163047_route_decision_drop_blacksmith",
+      "breakpoints": true
     }
   ]
 }
