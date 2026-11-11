@@ -338,8 +338,9 @@ export const workflowJob = sqliteTable(
 // queued or running (completed_at null) the Runs page shows it live; once it finishes the usage
 // report counts it: how many jobs finished in under a minute and what GitHub's round-up to whole
 // minutes cost. Unlike workflow_job, this keeps jobs RelayRunner never saw a pick for. Written by
-// each of the job's webhooks, purged 90 days after it finished (7 days after it was first seen if
-// it never did) by the hourly cron, and gone with the installation.
+// each of the job's webhooks, rolled up into job_timing_daily by the hourly cron once its day is
+// past the raw retention window (dropped 7 days after it was first seen if it never finished), and
+// gone with the installation.
 export const jobTiming = sqliteTable(
   "job_timing",
   {
@@ -393,6 +394,44 @@ export const jobTiming = sqliteTable(
       .where(sql`${table.completedAt} is null`),
     // One run's jobs, for its row on the Runs page.
     index("job_timing_run_idx").on(table.runId, table.runAttempt),
+  ],
+);
+
+// Finished jobs past job_timing's raw retention, summed per UTC day and per the columns the usage
+// report groups by (src/job-timings.ts), so its 90-day range costs a row per day and runner kind
+// rather than a row per job. The hourly cron moves each day out of job_timing in one transaction,
+// so a job is counted in one table or the other, never both. Purged once past the report's range.
+export const jobTimingDaily = sqliteTable(
+  "job_timing_daily",
+  {
+    installationId: integer("installation_id")
+      .notNull()
+      .references(() => githubInstallation.id, { onDelete: "cascade" }),
+    // The UTC midnight starting the day the jobs finished on.
+    day: integer("day", { mode: "timestamp_ms" }).notNull(),
+    repositoryId: integer("repository_id").notNull(),
+    repositoryFullName: text("repository_full_name").notNull(),
+    labels: text("labels", { mode: "json" }).$type<string[]>().notNull(),
+    // Empty for none, so the key's columns are never null.
+    runnerGroupName: text("runner_group_name").notNull().default(""),
+    jobs: integer("jobs").notNull(),
+    shortJobs: integer("short_jobs").notNull(),
+    runMs: integer("run_ms").notNull(),
+    billedMinutes: integer("billed_minutes").notNull(),
+    shortBilledMinutes: integer("short_billed_minutes").notNull(),
+  },
+  (table) => [
+    primaryKey({
+      columns: [
+        table.installationId,
+        table.day,
+        table.repositoryId,
+        table.labels,
+        table.runnerGroupName,
+      ],
+    }),
+    // The retention purge, across all installations.
+    index("job_timing_daily_day_idx").on(table.day),
   ],
 );
 

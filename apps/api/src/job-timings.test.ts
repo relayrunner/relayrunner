@@ -6,6 +6,7 @@ import type { Env } from "./env.ts";
 import {
   JOB_TIMING_RETENTION_DAYS,
   purgeOldJobTimings,
+  RAW_RETENTION_DAYS,
   runnerClass,
   type UsageReport,
 } from "./job-timings.ts";
@@ -126,8 +127,8 @@ function finished(
   };
 }
 
-async function usage(cookie: string) {
-  const res = await testing.call(env, "/usage", cookie);
+async function usage(cookie: string, days = 30) {
+  const res = await testing.call(env, `/usage?days=${days}`, cookie);
   expect(res.status).toBe(200);
   return (await res.json()) as UsageReport;
 }
@@ -242,6 +243,75 @@ describe("usage report", () => {
       .where(eq(schema.jobTiming.installationId, installationId));
     expect(rows).toHaveLength(1);
     expect((await usage(cookie)).totals.jobs).toBe(1);
+  });
+
+  test("rolls jobs past raw retention up into daily totals the 90-day report still counts", async () => {
+    const { cookie, installationId } = await connectedWorkspace();
+    const db = createDb(env.DB);
+    // Noon UTC, 40 days ago, so every job lands on the same day.
+    const day = Math.floor((Date.now() - 40 * 86_400_000) / 86_400_000) * 86_400_000;
+    const at = (message: WebhookMessage, minutes: number) => {
+      if (message.event !== "workflow_job") throw new Error("expected a job");
+      const completed = day + 12 * 3_600_000 + minutes * 60_000;
+      const seconds =
+        (Date.parse(message.job.completedAt!) - Date.parse(message.job.startedAt!)) / 1000;
+      message.job.startedAt = new Date(completed - seconds * 1000).toISOString();
+      message.job.completedAt = new Date(completed).toISOString();
+      return message;
+    };
+    await processWebhook(env, finished(installationId, 10));
+    await processWebhook(env, at(finished(installationId, 12), 0));
+    await processWebhook(env, at(finished(installationId, 90), 1));
+    await processWebhook(env, at(finished(installationId, 20, { labels: ["macos-latest"] }), 2));
+    await processWebhook(env, at(finished(installationId, 0, { conclusion: "skipped" }), 3));
+    const before = await usage(cookie, 90);
+
+    await purgeOldJobTimings(db);
+    const raw = await db
+      .select({ id: schema.jobTiming.id })
+      .from(schema.jobTiming)
+      .where(eq(schema.jobTiming.installationId, installationId));
+    expect(raw).toHaveLength(1);
+    const rolled = await db
+      .select()
+      .from(schema.jobTimingDaily)
+      .where(eq(schema.jobTimingDaily.installationId, installationId));
+    expect(rolled).toHaveLength(2);
+    expect(rolled.find((row) => row.labels[0] === "ubuntu-latest")).toMatchObject({
+      day: new Date(day),
+      runnerGroupName: "GitHub Actions",
+      jobs: 2,
+      shortJobs: 1,
+      runMs: 102_000,
+      billedMinutes: 3,
+      shortBilledMinutes: 1,
+    });
+    // The report reads the same either way; the last 30 days only see the recent job.
+    expect(await usage(cookie, 90)).toEqual(before);
+    expect((await usage(cookie, 90)).totals).toMatchObject({ jobs: 4, shortJobs: 3 });
+    expect((await usage(cookie)).totals.jobs).toBe(1);
+
+    // A job on that day that finished late adds to its rows rather than replacing them.
+    await processWebhook(env, at(finished(installationId, 30), 4));
+    await purgeOldJobTimings(db);
+    expect((await usage(cookie, 90)).totals).toMatchObject({ jobs: 5, shortJobs: 4 });
+  });
+
+  test("keeps jobs within raw retention as their own rows", async () => {
+    const { installationId } = await connectedWorkspace();
+    const db = createDb(env.DB);
+    const recent = finished(installationId, 10);
+    if (recent.event !== "workflow_job") throw new Error("expected a job");
+    const at = Date.now() - (RAW_RETENTION_DAYS - 1) * 86_400_000;
+    recent.job.startedAt = new Date(at - 10_000).toISOString();
+    recent.job.completedAt = new Date(at).toISOString();
+    await processWebhook(env, recent);
+    await purgeOldJobTimings(db);
+    const raw = await db
+      .select({ id: schema.jobTiming.id })
+      .from(schema.jobTiming)
+      .where(eq(schema.jobTiming.installationId, installationId));
+    expect(raw).toHaveLength(1);
   });
 
   test("purges jobs that never finished after a week", async () => {
