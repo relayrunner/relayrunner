@@ -4,11 +4,12 @@ import { ArrowLeftIcon, ArrowUpRightIcon } from "lucide-react";
 import { useState } from "react";
 import { PROVIDERS, runnerName, TILE } from "@/components/providers";
 import { RangePicker } from "@/components/range-picker";
-import { Card } from "@/components/ui/card";
+import { StatTile } from "@/components/stat-tile";
+import { Button } from "@/components/ui/button";
 import { authDisabled } from "@/lib/auth-client";
 import { clock, medianText, plural } from "@/lib/job-times";
 import { getProviderReport, type ProviderReport, sampleProviderReport } from "@/lib/providers";
-import { cn } from "@/lib/utils";
+import { cn, elapsed } from "@/lib/utils";
 
 const RANGES = [1, 7, 14] as const;
 
@@ -97,7 +98,7 @@ function ProviderView({ first }: { first: ProviderReport }) {
             <code className="font-mono text-[13px]">runs-on</code> at one, and it shows up here a
             minute after it finishes.
           </p>
-          <pre className="overflow-x-auto rounded-lg bg-[#1b1f24] px-4 py-3.5 font-mono text-[13px] leading-relaxed text-[#e6edf3]">
+          <pre className="overflow-x-auto rounded-lg border border-border/60 bg-[var(--rr-bg-deep)] px-4 py-3.5 font-mono text-[13px] leading-relaxed text-[var(--rr-ink-2)]">
             {`jobs:\n  test:\n    runs-on: ${info.example}`}
           </pre>
         </div>
@@ -108,23 +109,13 @@ function ProviderView({ first }: { first: ProviderReport }) {
 
 function ExternalLink({ href, children }: { href: string; children: string }) {
   return (
-    <a
-      href={href}
-      target="_blank"
-      rel="noreferrer"
-      className="inline-flex h-9 items-center gap-1.5 rounded-lg border bg-card px-3 text-sm font-medium outline-none hover:bg-secondary/40 focus-visible:ring-[3px] focus-visible:ring-ring/50"
-    >
-      {children}
-      <ArrowUpRightIcon aria-hidden className="size-3.5" />
-    </a>
+    <Button asChild variant="outline">
+      <a href={href} target="_blank" rel="noreferrer">
+        {children}
+        <ArrowUpRightIcon aria-hidden className="size-3.5" />
+      </a>
+    </Button>
   );
-}
-
-/** "3.4h", "52m", "40s": how long the jobs ran, together. */
-function runTime(seconds: number) {
-  if (seconds >= 3600) return `${(seconds / 3600).toFixed(1)}h`;
-  if (seconds >= 60) return `${Math.round(seconds / 60)}m`;
-  return `${seconds}s`;
 }
 
 const percent = (part: number, whole: number) =>
@@ -134,22 +125,16 @@ function Totals({ report }: { report: ProviderReport }) {
   const { jobs, failures, runSeconds, stat } = report;
   return (
     <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-5">
-      <Tile label="Jobs" value={jobs.toLocaleString()} />
-      <Tile label="Run time" value={runTime(runSeconds)} detail="All jobs, start to finish" />
-      <Tile label="Typical job" value={medianText(stat)} detail="Median of successful jobs" />
-      <Tile label="Queue wait" value={clock(stat.waitMs)} detail="Median, queued to started" />
-      <Tile label="Failed" value={percent(failures, jobs)} detail={`${plural(failures, "job")}`} />
+      <StatTile label="Jobs" value={jobs.toLocaleString()} />
+      <StatTile
+        label="Run time"
+        value={elapsed(runSeconds * 1000)}
+        detail="All jobs, start to finish"
+      />
+      <StatTile label="Typical job" value={medianText(stat)} detail="Median of successful jobs" />
+      <StatTile label="Queue wait" value={clock(stat.waitMs)} detail="Median, queued to started" />
+      <StatTile label="Failed" value={percent(failures, jobs)} detail={plural(failures, "job")} />
     </div>
-  );
-}
-
-function Tile({ label, value, detail }: { label: string; value: string; detail?: string }) {
-  return (
-    <Card className="gap-0 px-4 py-3">
-      <div className="text-sm text-muted-foreground">{label}</div>
-      <div className="mt-1 text-2xl font-bold tabular-nums">{value}</div>
-      {detail && <div className="mt-0.5 text-sm text-muted-foreground">{detail}</div>}
-    </Card>
   );
 }
 
@@ -199,7 +184,7 @@ function Runners({ report }: { report: ProviderReport }) {
               </td>
               <Num>{runner.jobs.toLocaleString()}</Num>
               <Num>{medianText(runner.stat)}</Num>
-              <Num>{runTime(runner.runSeconds)}</Num>
+              <Num>{elapsed(runner.runSeconds * 1000)}</Num>
               <Num>{percent(runner.failures, runner.jobs)}</Num>
             </tr>
           ))}

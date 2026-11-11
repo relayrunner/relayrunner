@@ -1,6 +1,6 @@
 // One provider's page: what this workspace's jobs did on it over the last few days, in total and
-// per runner type. Read from job_timing like Job times (src/job-times.ts), with the same rules for
-// which environment and provider a job belongs to, so the numbers match that page and Runners.
+// per runner type. Read from job_timing like Job times (src/job-times.ts), with the same rows,
+// environments and sample buckets, so the numbers match that page and Runners.
 //
 // Database cost: one statement, a range of job_timing_installation_idx (the workspace's
 // installations, completed in the window), grouped by the columns environmentFor reads. The
@@ -10,16 +10,18 @@ import { sql } from "drizzle-orm";
 import { type Db, schema } from "./db/index.ts";
 import { DAY_MS } from "./job-timings.ts";
 import {
+  type Bucket,
+  bucketOf,
   DEFAULT_DAYS,
+  emptyBucket,
   type Environment,
   environmentFor,
-  inWorkspace,
-  parseSamples,
-  RAN,
+  mergeInto,
+  OK,
   SAMPLES,
   type Stat,
   statOf,
-  OK,
+  windowWhere,
 } from "./job-times.ts";
 
 const table = schema.jobTiming;
@@ -49,7 +51,6 @@ export interface ProviderReport extends ProviderCounts {
 interface Row {
   labels: string;
   runner_group_name: string | null;
-  machine_id: string | null;
   runs: number;
   successes: number;
   failures: number;
@@ -59,6 +60,9 @@ interface Row {
 
 const FAILED = sql`coalesce(${table.conclusion} in ('failure', 'timed_out'), 0)`;
 
+const sum = (runners: ProviderRunner[], pick: (runner: ProviderRunner) => number) =>
+  runners.reduce((total, runner) => total + pick(runner), 0);
+
 /** The workspace's jobs on one provider over the last `days` days. */
 export async function providerReport(
   db: Db,
@@ -67,63 +71,46 @@ export async function providerReport(
   days = DEFAULT_DAYS,
   now = Date.now(),
 ): Promise<ProviderReport> {
-  const since = now - days * DAY_MS;
+  // Machines are never a provider, so their jobs are left out in SQL.
   const rows = await db.all<Row>(sql`
     select ${table.labels} as labels, ${table.runnerGroupName} as runner_group_name,
-      ${table.machineId} as machine_id, count(*) as runs, sum(${OK}) as successes,
-      sum(${FAILED}) as failures, sum(max(0, ${table.completedAt} - ${table.startedAt})) as run_ms,
-      ${SAMPLES} as samples
+      count(*) as runs, sum(${OK}) as successes, sum(${FAILED}) as failures,
+      sum(max(0, ${table.completedAt} - ${table.startedAt})) as run_ms, ${SAMPLES} as samples
     from ${table}
-    where ${inWorkspace(workspaceId)} and ${table.completedAt} >= ${since} and ${RAN}
-    group by ${table.labels}, ${table.runnerGroupName}, ${table.machineId}`);
+    where ${windowWhere(workspaceId, new Date(now - days * DAY_MS))} and ${table.machineId} is null
+    group by ${table.labels}, ${table.runnerGroupName}`);
 
   // Several label sets can land on one runner type (`ubuntu-latest` and `ubuntu-24.04`).
-  const runners = new Map<
+  const groups = new Map<
     string,
-    { env: Environment; counts: ProviderCounts; successes: number; samples: string[] }
+    { env: Environment; failures: number; runMs: number; bucket: Bucket }
   >();
   for (const row of rows) {
-    const env = environmentFor(
-      JSON.parse(row.labels) as string[],
-      row.runner_group_name,
-      row.machine_id,
-    );
+    const env = environmentFor(JSON.parse(row.labels) as string[], row.runner_group_name, null);
     if (providerOfEnvironment(env.key) !== provider) continue;
-    const runner = runners.get(env.key) ?? {
-      env,
-      counts: { jobs: 0, failures: 0, runSeconds: 0 },
-      successes: 0,
-      samples: [],
-    };
-    runner.counts.jobs += Number(row.runs);
-    runner.counts.failures += Number(row.failures);
-    runner.counts.runSeconds += Number(row.run_ms) / 1000;
-    runner.successes += Number(row.successes);
-    if (row.samples) runner.samples.push(row.samples);
-    runners.set(env.key, runner);
+    const group = groups.get(env.key) ?? { env, failures: 0, runMs: 0, bucket: emptyBucket() };
+    group.failures += Number(row.failures);
+    group.runMs += Number(row.run_ms);
+    mergeInto(group.bucket, bucketOf(row));
+    groups.set(env.key, group);
   }
 
-  const totals: ProviderCounts = { jobs: 0, failures: 0, runSeconds: 0 };
-  let successes = 0;
-  const samples: string[] = [];
-  const list: ProviderRunner[] = [];
-  for (const { env, counts, successes: ok, samples: own } of runners.values()) {
-    totals.jobs += counts.jobs;
-    totals.failures += counts.failures;
-    totals.runSeconds += counts.runSeconds;
-    successes += ok;
-    samples.push(...own);
-    const stat = statOf({ runs: counts.jobs, successes: ok, samples: parseSamples(own.join(",")) });
-    list.push({ ...env, ...counts, runSeconds: Math.round(counts.runSeconds), stat });
+  const total = emptyBucket();
+  const runners: ProviderRunner[] = [];
+  for (const { env, failures, runMs, bucket } of groups.values()) {
+    mergeInto(total, bucket);
+    const runSeconds = Math.round(runMs / 1000);
+    runners.push({ ...env, jobs: bucket.runs, failures, runSeconds, stat: statOf(bucket) });
   }
-  list.sort((a, b) => b.jobs - a.jobs || a.label.localeCompare(b.label));
+  runners.sort((a, b) => b.jobs - a.jobs || a.label.localeCompare(b.label));
 
   return {
     provider,
     days,
-    ...totals,
-    runSeconds: Math.round(totals.runSeconds),
-    stat: statOf({ runs: totals.jobs, successes, samples: parseSamples(samples.join(",")) }),
-    runners: list,
+    jobs: total.runs,
+    failures: sum(runners, (r) => r.failures),
+    runSeconds: sum(runners, (r) => r.runSeconds),
+    stat: statOf(total),
+    runners,
   };
 }

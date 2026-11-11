@@ -1,9 +1,9 @@
 // Hosted runner services a job asks for by its `runs-on` labels, and the labels GitHub publishes
 // for its own hosted runners. The Job times report and the Runners page group cloud jobs by these.
-import { PROVIDERS, type ProviderId } from "@relayrunner/providers";
+import type { ProviderId } from "@relayrunner/providers";
 import { isBlacksmithLabel } from "./routing.ts";
 
-export type CloudProvider = { id: ProviderId; name: string; label: string };
+export type CloudProvider = { id: ProviderId; label: string };
 
 // Each service's labels start with its own prefix, e.g. `depot-ubuntu-24.04-8`.
 const PREFIXED: { id: ProviderId; matches: (label: string) => boolean }[] = [
@@ -27,10 +27,10 @@ const PREFIXED: { id: ProviderId; matches: (label: string) => boolean }[] = [
 export function cloudProviderFor(labels: string[]): CloudProvider | null {
   for (const provider of PREFIXED) {
     const label = labels.find(provider.matches);
-    if (label) return { id: provider.id, name: PROVIDERS[provider.id].name, label };
+    if (label) return { id: provider.id, label };
   }
   const runsOn = runsOnRunner(labels);
-  return runsOn ? { id: "runs-on", name: PROVIDERS["runs-on"].name, label: runsOn } : null;
+  return runsOn ? { id: "runs-on", label: runsOn } : null;
 }
 
 /**
