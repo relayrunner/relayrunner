@@ -23,7 +23,10 @@ describe("templates", () => {
       sentAt: new Date("2026-11-11T00:00:00Z"),
     });
     expect(email.subject).toBe("[feedback] bug: <img src=x onerror=alert(1)>");
-    expect(email.html).not.toContain("<img");
+    expect(email.html.match(/<img\b[^>]*>/g)).toEqual([
+      expect.stringContaining('src="https://relayrunner.app/favicon.png"'),
+    ]);
+    expect(email.html).toContain("&lt;img src=x onerror=alert(1)&gt;");
     expect(email.html).not.toContain("<script>");
     expect(email.text).toContain("From: Ada <ada@example.com>");
     expect(email.text).toContain("Redacted: 2 secret-like value(s)");
