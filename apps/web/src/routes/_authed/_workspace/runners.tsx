@@ -1,6 +1,14 @@
 import { DEFAULT_RUNNER_ORDER, type RunnerKey, type RunnerStep } from "@relayrunner/runner-order";
 import { createFileRoute, useRouter } from "@tanstack/react-router";
-import { CheckIcon, CirclePlayIcon, CloudIcon, CopyIcon, LaptopIcon } from "lucide-react";
+import {
+  CheckIcon,
+  CirclePlayIcon,
+  CloudIcon,
+  CopyIcon,
+  EyeIcon,
+  EyeOffIcon,
+  LaptopIcon,
+} from "lucide-react";
 import { useEffect, useState, type ReactNode } from "react";
 import {
   AddRunner,
@@ -34,6 +42,24 @@ const dismissedFound = new Set<string>();
 // How often the page refetches machines while someone is looking, so a machine connecting, going
 // quiet or picking up a job shows up. Paused while the tab is hidden or idle (lib/live-refresh.ts).
 const REFRESH_MS = 15_000;
+
+// Whether offline self-hosted runners are hidden, kept per browser.
+const HIDE_OFFLINE_KEY = "relayrunner:runners:hide-offline";
+function readHideOffline() {
+  try {
+    return localStorage.getItem(HIDE_OFFLINE_KEY) === "1";
+  } catch {
+    return false;
+  }
+}
+function saveHideOffline(hide: boolean) {
+  try {
+    if (hide) localStorage.setItem(HIDE_OFFLINE_KEY, "1");
+    else localStorage.removeItem(HIDE_OFFLINE_KEY);
+  } catch {
+    // Storage can be blocked; the choice just won't outlast the tab.
+  }
+}
 
 export const Route = createFileRoute("/_authed/_workspace/runners")({
   loader: async ({ context }) => {
@@ -72,6 +98,11 @@ function RunnersPage() {
 
   const editable = canManage(current.role);
   const machines = allMachines.filter((machine) => !machine.revokedAt);
+  // Offline runners can be hidden. Paused ones are still online, so they stay.
+  const [hideOffline, setHideOffline] = useState(readHideOffline);
+  const online = machines.filter((machine) => machine.status?.online);
+  const offline = machines.length - online.length;
+  const shown = hideOffline ? online : machines;
 
   // Runners in connected orgs that aren't added yet, for the found card. Owners and admins only,
   // since only they can add them. It asks GitHub, so it's read once per visit, not on every
@@ -164,8 +195,32 @@ function RunnersPage() {
               />
             </RunnerGroup>
           ) : (
-            <RunnerGroup title="Self-hosted">
-              {machines.map((machine) => (
+            <RunnerGroup
+              title="Self-hosted"
+              action={
+                offline > 0 && (
+                  <Button
+                    variant="ghost"
+                    size="xs"
+                    onClick={() => {
+                      saveHideOffline(!hideOffline);
+                      setHideOffline(!hideOffline);
+                    }}
+                  >
+                    {hideOffline ? <EyeIcon aria-hidden /> : <EyeOffIcon aria-hidden />}
+                    {hideOffline ? `Show ${offline} offline` : "Hide offline"}
+                  </Button>
+                )
+              }
+            >
+              {shown.length === 0 && (
+                <li className="col-span-full text-sm text-muted-foreground">
+                  {offline === 1
+                    ? "Your only self-hosted runner is offline."
+                    : `All ${offline} self-hosted runners are offline.`}
+                </li>
+              )}
+              {shown.map((machine) => (
                 <li key={machine.id} className="grid min-w-0">
                   <MachineCard machine={machine} jobTime={jobTimes[machine.id]} />
                 </li>
@@ -205,11 +260,14 @@ function isCloud(env: EnvironmentSummary) {
 function RunnerGroup({
   title,
   note,
+  action,
   bare = false,
   children,
 }: {
   title: string;
   note?: string;
+  /** A control at the end of the heading. */
+  action?: ReactNode;
   /** Children laid out as they are, not as a grid of cards. */
   bare?: boolean;
   children: ReactNode;
@@ -217,10 +275,13 @@ function RunnerGroup({
   const id = `group-${title.toLowerCase()}`;
   return (
     <section aria-labelledby={id} className="grid gap-3">
-      <h2 id={id} className="flex items-baseline gap-2 text-sm font-semibold">
-        {title}
-        {note && <span className="text-xs font-normal text-muted-foreground">{note}</span>}
-      </h2>
+      <div className="flex min-h-6 items-center justify-between gap-2">
+        <h2 id={id} className="flex items-baseline gap-2 text-sm font-semibold">
+          {title}
+          {note && <span className="text-xs font-normal text-muted-foreground">{note}</span>}
+        </h2>
+        {action}
+      </div>
       {bare ? (
         children
       ) : (

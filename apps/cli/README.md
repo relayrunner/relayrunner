@@ -29,7 +29,10 @@ folder can't sign in as the machine.
 While it runs, the machine is online: it keeps a WebSocket open to the gateway,
 runs the jobs it's sent (one at a time) and prints what happens, including the
 repo each job is from. It reconnects on its own if the connection drops. Ctrl-C
-takes it offline; a job that's running stops with it.
+takes it offline; a job that's running stops with it. Press `p` to pause or
+resume it without going offline (see `relayrunner pause`). The terminal tab's
+title shows the machine and what it's doing, such as
+`RelayRunner · M3P0 · Waiting for jobs`.
 
 Before it starts a job, `connect` checks the job's runner config: it must hold
 only the files GitHub's do, every server in it must be GitHub's, over https, and
@@ -147,6 +150,7 @@ Pausing stops new jobs routing to this machine while it stays connected and
 enrolled. A job it's already running finishes. `resume` lets jobs route here
 again. Anyone in the workspace can do the same from the machine's ⋯ menu on the
 Runners page, and a running `relayrunner connect` prints when that happens.
+In the terminal running `relayrunner connect`, `p` does the same.
 Both exit 1 when not signed in or when the token is no longer valid.
 
 ## `relayrunner share`

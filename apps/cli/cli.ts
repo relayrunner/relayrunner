@@ -17,8 +17,9 @@ import { defaultMachineName } from "./machine-name.ts";
 import { ensureRunner, RunnerError, runnerPlatform } from "./install.ts";
 import { normalizeServer } from "./server.ts";
 import { runJob } from "./job.ts";
+import { startLive } from "./live.ts";
 import { login, LoginError, openBrowser } from "./login.ts";
-import { setPaused } from "./pause.ts";
+import { pauseMachine } from "./pause.ts";
 import {
   describeSharing,
   parseShareChoice,
@@ -95,45 +96,70 @@ async function connectMachine(args: { server?: string; name?: string; share?: st
   // What kind of device this is and its specs, for the dashboard's badge. Best effort.
   const device = await detectDevice();
 
+  const stop = new AbortController();
+  // The tab's title follows the machine's state, and `p` pauses or resumes it, while someone's at
+  // the terminal. On success the gateway sends `paused`, which logs it and updates the title.
+  const enrolled = credentials;
+  let toggling = false;
+  const live = startLive({
+    machine: enrolled.machine.name,
+    onTogglePause: async ({ paused }) => {
+      if (toggling || stop.signal.aborted) return;
+      toggling = true;
+      const result = await pauseMachine(enrolled, !paused);
+      toggling = false;
+      if (result.status === "failed")
+        clack.log.error(`Couldn't ${paused ? "resume" : "pause"}: ${result.reason}.`);
+    },
+  });
+
   // First Ctrl-C goes offline and lets a running job's runner exit and clean up (the terminal
   // sends it SIGINT too). A second one exits on the spot.
-  const stop = new AbortController();
   const onInterrupt = () => {
-    if (stop.signal.aborted) process.exit(130);
+    if (stop.signal.aborted) {
+      live.end();
+      process.exit(130);
+    }
     stop.abort();
   };
   process.on("SIGINT", onInterrupt);
 
   let online = false;
-  const end = await connect({
-    server: credentials.server,
-    token: credentials.token,
-    hello: {
-      machineId: credentials.machine.id,
-      ...platform,
-      runnerVersion: runner.version,
-      device,
-    },
-    runJob: (run, report) =>
-      runJob(run, {
-        runner,
-        report,
-        onChecked: (target) => {
-          if (target)
-            clack.log.info(
-              `${new Date().toLocaleTimeString()} Job ${run.routeId} is from ${target}`,
-            );
-        },
-      }),
-    // The gateway rotates the token on every connect, so an old copy of machine.json stops working.
-    saveToken: (token) => saveRotatedToken(credentials, token),
-    onEvent: (event) => {
-      if (event.type === "connected") online = true;
-      show(event);
-    },
-    signal: stop.signal,
-  });
-  process.off("SIGINT", onInterrupt);
+  let end;
+  try {
+    end = await connect({
+      server: credentials.server,
+      token: credentials.token,
+      hello: {
+        machineId: credentials.machine.id,
+        ...platform,
+        runnerVersion: runner.version,
+        device,
+      },
+      runJob: (run, report) =>
+        runJob(run, {
+          runner,
+          report,
+          onChecked: (target) => {
+            if (target)
+              clack.log.info(
+                `${new Date().toLocaleTimeString()} Job ${run.routeId} is from ${target}`,
+              );
+          },
+        }),
+      // The gateway rotates the token on every connect, so an old copy of machine.json stops working.
+      saveToken: (token) => saveRotatedToken(credentials, token),
+      onEvent: (event) => {
+        if (event.type === "connected") online = true;
+        show(event);
+        live.onEvent(event);
+      },
+      signal: stop.signal,
+    });
+  } finally {
+    live.end();
+    process.off("SIGINT", onInterrupt);
+  }
 
   switch (end.reason) {
     case "stopped":
@@ -370,7 +396,7 @@ function show(event: ConnectionEvent) {
     case "paused":
       if (event.paused)
         clack.log.warn(
-          `${at} Paused${event.by ? ` by ${event.by}` : ""}. Staying online, but new jobs skip this machine until it's resumed.`,
+          `${at} Paused${event.by ? ` by ${event.by}` : ""}. Staying online, but new jobs skip this machine until it's resumed.${process.stdin.isTTY ? " Press p to resume." : ""}`,
         );
       else
         clack.log.success(`${at} Resumed${event.by ? ` by ${event.by}` : ""}. Waiting for jobs.`);
@@ -513,9 +539,7 @@ function pauseCommand(paused: boolean) {
         process.exitCode = 1;
         return;
       }
-      const result = await withCurrentToken(credentials, (token) =>
-        setPaused({ server: credentials.server, token, paused }),
-      );
+      const result = await pauseMachine(credentials, paused);
       const name = credentials.machine.name;
       switch (result.status) {
         case "ok":
