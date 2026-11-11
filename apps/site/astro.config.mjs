@@ -12,7 +12,10 @@ export default defineConfig({
   // There is no base: Starlight serves docs from src/content/docs/docs/, so they land at /docs/.
   trailingSlash: "always",
   // /docs/ has no page of its own: send it to the first one, so header and app links can say /docs/.
-  redirects: { "/docs": "/docs/get-started/overview/" },
+  redirects: {
+    "/docs": "/docs/get-started/overview/",
+    "/docs/runners/blacksmith": "/docs/runners/hosted/",
+  },
   // Fetch a page when its link is hovered or focused, so moving between docs pages is near instant.
   prefetch: { prefetchAll: true },
   integrations: [
@@ -58,7 +61,7 @@ export default defineConfig({
             "docs/runners/providers",
             "docs/runners/self-hosted",
             "docs/runners/github",
-            "docs/runners/blacksmith",
+            "docs/runners/hosted",
           ],
         },
         {

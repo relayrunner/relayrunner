@@ -17,11 +17,13 @@ import {
 import { CSS } from "@dnd-kit/utilities";
 import {
   DEFAULT_LIMIT_PERCENT,
+  RUNNER_KEYS,
   RUNNER_LABELS,
   stepSlot,
   type RunnerKey,
   type RunnerStep,
 } from "@relayrunner/runner-order";
+import { HOSTED_PROVIDER_IDS, PROVIDERS } from "@relayrunner/providers";
 import { Link, useRouter } from "@tanstack/react-router";
 import {
   CheckIcon,
@@ -54,11 +56,11 @@ type SaveStatus =
   | { kind: "error"; message: string };
 
 /** The labels relay.yml's example uses for each provider. */
-const EXAMPLE_INPUTS: Record<RunnerKey, string> = {
+const EXAMPLE_INPUTS = {
   machine: "self-hosted",
   github: "ubuntu-latest",
-  blacksmith: "blacksmith-2vcpu-ubuntu-2404",
-};
+  ...Object.fromEntries(HOSTED_PROVIDER_IDS.map((id) => [id, PROVIDERS[id].example])),
+} as Record<RunnerKey, string>;
 
 /**
  * The runner order as a chain: each step hands a job to the next when it can't take it. Each step
@@ -192,16 +194,20 @@ export function RunnerOrderEditor({
                   disabled={!githubSlotFree}
                   onSelect={() => addStep("github")}
                 />
-                <AddItem
-                  label={RUNNER_LABELS.blacksmith}
-                  note={
-                    slots.has("blacksmith")
-                      ? "Already in the order"
-                      : "Needs Blacksmith's GitHub app"
-                  }
-                  disabled={slots.has("blacksmith")}
-                  onSelect={() => addStep("blacksmith")}
-                />
+                <DropdownMenuSeparator />
+                {HOSTED_PROVIDER_IDS.map((id) => (
+                  <AddItem
+                    key={id}
+                    label={RUNNER_LABELS[id]}
+                    note={
+                      slots.has(id)
+                        ? "Already in the order"
+                        : `Needs ${RUNNER_LABELS[id]}'s GitHub app`
+                    }
+                    disabled={slots.has(id)}
+                    onSelect={() => addStep(id)}
+                  />
+                ))}
               </DropdownMenuContent>
             </DropdownMenu>
           )}
@@ -588,9 +594,7 @@ function breakAtSlashes(line: string) {
 
 /** The relay.yml inputs this order needs, as a snippet. */
 function WorkflowPanel({ steps }: { steps: RunnerStep[] }) {
-  const keys = (["machine", "github", "blacksmith"] as const).filter((key) =>
-    steps.some((step) => step.key === key),
-  );
+  const keys = RUNNER_KEYS.filter((key) => steps.some((step) => step.key === key));
   const snippet = [
     "jobs:",
     "  relay:",

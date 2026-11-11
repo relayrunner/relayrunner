@@ -101,6 +101,45 @@ export const isProviderId = (value: string): value is ProviderId =>
   (PROVIDER_IDS as readonly string[]).includes(value);
 
 /**
+ * The hosted runner services a relay can send a job to. Each runs a job under the customer's own
+ * account through its own GitHub App, which picks up any job queued with one of its labels, so
+ * routing to one only means answering one of its labels. Each is a step in the runner order and an
+ * input on the relay, both named by its id.
+ */
+export const HOSTED_PROVIDER_IDS = [
+  "blacksmith",
+  "depot",
+  "namespace",
+  "warpbuild",
+  "ubicloud",
+  "runs-on",
+] as const satisfies readonly ProviderId[];
+
+export type HostedProviderId = (typeof HOSTED_PROVIDER_IDS)[number];
+
+export const isHostedProviderId = (value: string): value is HostedProviderId =>
+  (HOSTED_PROVIDER_IDS as readonly string[]).includes(value);
+
+// Each service's labels start with its own prefix, e.g. `depot-ubuntu-24.04-8`. RunsOn's carry the
+// run id, `runs-on=<run id>/runner=2cpu-linux-x64`.
+const LABEL_MATCHERS: Record<HostedProviderId, (label: string) => boolean> = {
+  blacksmith: (label) => label.startsWith("blacksmith-"),
+  depot: (label) => label.startsWith("depot-"),
+  namespace: (label) => label.startsWith("namespace-profile-") || label.startsWith("nscloud-"),
+  warpbuild: (label) => label.startsWith("warp-"),
+  ubicloud: (label) => label === "ubicloud" || label.startsWith("ubicloud-"),
+  "runs-on": (label) => label.startsWith("runs-on=") || label.startsWith("runs-on/"),
+};
+
+/** Whether `label` asks for one of `provider`'s runners. */
+export const isProviderLabel = (provider: HostedProviderId, label: string) =>
+  LABEL_MATCHERS[provider](label.toLowerCase());
+
+/** The hosted provider whose runners a label asks for, or null. */
+export const hostedProviderOf = (label: string): HostedProviderId | null =>
+  HOSTED_PROVIDER_IDS.find((id) => isProviderLabel(id, label)) ?? null;
+
+/**
  * Where a job ran, by its Job times environment key: `depot:<label>` and the like for providers,
  * plain `container` for the Cloudflare Container, and `machine` for `machine:<id>` and
  * `self-hosted:<group>`, the runners people host themselves.

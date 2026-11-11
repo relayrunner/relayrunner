@@ -1,4 +1,5 @@
 import type { WebhookMessage, WorkflowJob } from "@relayrunner/github-webhooks";
+import { HOSTED_PROVIDER_IDS, type HostedProviderId } from "@relayrunner/providers";
 import { afterAll, beforeAll, describe, expect, test, vi } from "vitest";
 import { createDb, schema } from "./db/index.ts";
 import type { Env } from "./env.ts";
@@ -8,6 +9,11 @@ import { processWebhook } from "./webhook-queue.ts";
 import { runningJobs } from "./jobs.ts";
 import { recordPick } from "./route-decisions.ts";
 import { decideRoute } from "./routing.ts";
+
+// Every hosted provider's relay input, left out.
+const noHosted = Object.fromEntries(
+  HOSTED_PROVIDER_IDS.map((id) => [id, [] as string[]]),
+) as Record<HostedProviderId, string[]>;
 
 let proxy: Awaited<ReturnType<typeof testing.startD1>>["proxy"];
 let env: Env;
@@ -118,7 +124,7 @@ function pickContext(
     workflow: "RelayRunner dev",
     machine: ["macOS"],
     github: ["ubuntu-latest"],
-    blacksmith: [],
+    ...noHosted,
   };
 }
 
@@ -174,7 +180,7 @@ describe("Activity: why a job ran where", () => {
       notInOrder: [],
       machine: ["macOS"],
       github: ["ubuntu-latest"],
-      blacksmith: [],
+      ...noHosted,
     };
     const { jobs } = await activity(cookie);
     expect(jobs.map((job) => [job.name, job.walk])).toEqual([
@@ -401,7 +407,10 @@ describe("Activity", () => {
     );
     const { jobs } = await activity(cookie);
     expect(jobs).toMatchObject([
-      { name: "test", runner: { type: "blacksmith", label: "blacksmith-2vcpu-ubuntu-2404" } },
+      {
+        name: "test",
+        runner: { type: "hosted", provider: "blacksmith", label: "blacksmith-2vcpu-ubuntu-2404" },
+      },
     ]);
   });
 

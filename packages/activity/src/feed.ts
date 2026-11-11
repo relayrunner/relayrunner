@@ -1,3 +1,4 @@
+import type { HostedProviderId } from "@relayrunner/providers";
 import type { ActivityEvent, ActivityFilter, ActivityResult, RouteWalk } from "./events.ts";
 
 // GET /api/activity's response. Types only: the API builds it, the dashboard reads it.
@@ -5,13 +6,13 @@ import type { ActivityEvent, ActivityFilter, ActivityResult, RouteWalk } from ".
 /**
  * Where RelayRunner sent a job. A job on a route's `rr-<id>` label went to a machine: `name` is the
  * machine's current name, or null before the route is claimed or once the machine is deleted. A job
- * on a `blacksmith-...` label ran on Blacksmith. Any other job ran on the GitHub label the pick
- * answered, such as `ubuntu-latest`.
+ * on a hosted provider's label, such as `depot-ubuntu-24.04`, ran on that provider. Any other job
+ * ran on the GitHub label the pick answered, such as `ubuntu-latest`.
  */
 export type ActivityRunner =
   | { type: "machine"; machineId: string | null; name: string | null }
   | { type: "github"; label: string }
-  | { type: "blacksmith"; label: string };
+  | { type: "hosted"; provider: HostedProviderId; label: string };
 
 /**
  * Who started a run or attempt, as the log shows them: the workspace member with that GitHub

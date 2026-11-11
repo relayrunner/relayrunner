@@ -1,5 +1,6 @@
 import type { MinutesUsage, NotSharedMachine, RouteWalk, SkipReason } from "@relayrunner/activity";
-import type { RunnerKey } from "@relayrunner/runner-order";
+import { type HostedProviderId, PROVIDERS } from "@relayrunner/providers";
+import { RUNNER_LABELS, type RunnerKey } from "@relayrunner/runner-order";
 
 // How the Activity page explains where a job went: a short reason after the runner, and one line
 // per step when the reason is opened. Worded here from the stored walk, so the copy can change
@@ -68,8 +69,9 @@ function shortSkip(
       return "public repo";
     case "too_many_labels":
       return `${key} takes one label`;
+    case "not_provider_label":
     case "not_blacksmith_label":
-      return "not a Blacksmith label";
+      return `not a ${RUNNER_LABELS[key]} label`;
     case "not_configured":
       // Leaving a provider out of the relay is a choice, not news.
       return null;
@@ -112,8 +114,9 @@ function longSkip(
       return "public repos never run on self-hosted machines";
     case "too_many_labels":
       return `${key} takes one label, not ${walk[key].join(", ")}`;
+    case "not_provider_label":
     case "not_blacksmith_label":
-      return `blacksmith takes a Blacksmith label such as blacksmith-2vcpu-ubuntu-2404, not ${walk.blacksmith.join(", ")}`;
+      return `${key} takes a ${RUNNER_LABELS[key]} label such as ${PROVIDERS[key as HostedProviderId].example}, not ${walk[key].join(", ")}`;
     case "not_configured":
       return `the relay doesn't set ${key}`;
   }

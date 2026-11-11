@@ -1,4 +1,6 @@
 import { type GithubActor, RouteWalk } from "@relayrunner/activity";
+import { HOSTED_PROVIDER_IDS } from "@relayrunner/providers";
+import { relayInputs } from "@relayrunner/runner-order";
 import { inArray } from "drizzle-orm";
 import { recordEvent } from "./activity.ts";
 import { type Db, schema } from "./db/index.ts";
@@ -41,7 +43,7 @@ export async function recordPick(db: Db, pick: PickRecord) {
         notInOrder: decision.notInOrder,
         machine: context.machine,
         github: context.github,
-        blacksmith: context.blacksmith,
+        hosted: hostedInputs(context),
         reason: decision.runner === null ? decision.reason : null,
         startedById: context.startedBy?.id ?? null,
         startedByLogin: context.startedBy?.login ?? null,
@@ -73,10 +75,15 @@ function walkOf(decision: RouteDecision, context: JobContext): RouteWalk {
     step: decision.runner === null ? null : decision.step,
     skipped: decision.skipped,
     notInOrder: decision.notInOrder,
-    machine: context.machine,
-    github: context.github,
-    blacksmith: context.blacksmith,
+    ...relayInputs(context),
   };
+}
+
+// The hosted providers' inputs the relay set, for the route_decision `hosted` column.
+function hostedInputs(context: JobContext) {
+  return Object.fromEntries(
+    HOSTED_PROVIDER_IDS.filter((id) => context[id].length > 0).map((id) => [id, context[id]]),
+  );
 }
 
 type JobKey = { repositoryId: number; runId: number; runAttempt: number };
@@ -113,7 +120,7 @@ export async function picksForJobs(db: Db, jobs: JobKey[]): Promise<Map<string, 
       notInOrder: best.notInOrder,
       machine: best.machine,
       github: best.github,
-      blacksmith: best.blacksmith,
+      ...best.hosted,
     });
     picks.set(jobKey(job), {
       walk: parsed.success ? parsed.data : null,

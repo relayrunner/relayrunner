@@ -3,15 +3,17 @@
 // 1. A `runs-on: relayrunner` pick job is claimed by a PickRunner, which asks the workspace's
 //    Router where the job's run should go. The Router walks the workspace's runner order
 //    (decideRoute). A machine step records a route and answers its one-time label
-//    `rr-<route id>`; a github or blacksmith step answers the job's own label for that provider.
+//    `rr-<route id>`; a github or hosted provider step answers the job's own label for it.
 //    When nothing fits, the pick fails the relay job with the reason.
 // 2. The workflow's next job runs on that label, so GitHub queues it as `runs-on: rr-<route id>`.
 // 3. The `queued` webhook for that job claims the route (same repo, same run) and the machine's
 //    MachineLink mints an org JIT runner on the label and sends the machine a `run` message.
 
+import { type HostedProviderId, isProviderLabel, PROVIDERS } from "@relayrunner/providers";
 import {
   RUNNER_KEYS,
   RUNNER_LABELS,
+  type RelayInputs,
   type RunnerKey,
   type RunnerOrder,
 } from "@relayrunner/runner-order";
@@ -264,21 +266,15 @@ export function canClaim(route: Route, job: QueuedJob) {
 }
 
 // What the Router needs from a claimed job: its repo and run from the `github` context, and the
-// relay's per-provider inputs from `inputs`.
-export interface JobContext {
+// relay's per-provider inputs from `inputs` (RelayInputs: each provider's labels, empty when the
+// relay leaves its input out).
+export interface JobContext extends RelayInputs {
   repo: string;
   runId: number;
   // 1 for a run's first attempt. A full re-run picks again under a new attempt.
   runAttempt: number;
   // The workflow's name, or null when missing.
   workflow: string | null;
-  // Labels a machine must all have. Empty when the relay's `machine` input is left out or empty:
-  // the job doesn't use machines.
-  machine: string[];
-  // The GitHub-hosted runner label(s) from the relay's `github` input. Empty when left out.
-  github: string[];
-  // The Blacksmith runner label(s) from the relay's `blacksmith` input. Empty when left out.
-  blacksmith: string[];
   // Who started the run (`github.actor`, `github.actor_id`), or null when missing.
   startedBy: GithubActor | null;
   // Who started this attempt (`github.triggering_actor`), which differs from `startedBy` on a
@@ -314,9 +310,9 @@ export function jobContext(contextData: unknown): JobContext | null {
     runId,
     runAttempt: Number.isSafeInteger(runAttempt) && runAttempt > 0 ? runAttempt : 1,
     workflow: typeof workflow === "string" && workflow ? workflow : null,
-    machine: parseLabels(scalar(inputs?.get("machine"))),
-    github: parseLabels(scalar(inputs?.get("github"))),
-    blacksmith: parseLabels(scalar(inputs?.get("blacksmith"))),
+    ...(Object.fromEntries(
+      RUNNER_KEYS.map((key) => [key, parseLabels(scalar(inputs?.get(key)))]),
+    ) as RelayInputs),
     startedBy,
     triggeredBy,
   };
@@ -336,9 +332,10 @@ export const sameLogin = (a: string, b: string) => a.toLowerCase() === b.toLower
 
 // Why a step of the order didn't answer: not_configured (the relay left the provider's input
 // empty), public_repo (machines never run a public repo's jobs), no_machine (no online, idle
-// machine has every wanted label), too_many_labels (`github` or `blacksmith` names more than one
-// label; a runs-on from an output holds one), not_blacksmith_label (`blacksmith` names a label
-// Blacksmith doesn't serve, so the job would sit queued). Shared with the Activity page, which explains each.
+// machine has every wanted label), too_many_labels (`github` or a hosted provider's input names
+// more than one label; a runs-on from an output holds one), not_provider_label (a hosted provider's
+// input names a label that provider doesn't serve, so the job would sit queued). Shared with the
+// Activity page, which explains each.
 export type { SkipReason } from "@relayrunner/activity";
 import type { SkipReason } from "@relayrunner/activity";
 
@@ -365,18 +362,9 @@ export type RouteDecision =
   // Nothing fits: fail the relay with `reason`.
   | { runner: null; reason: string; skipped: SkippedStep[]; notInOrder: RunnerKey[] };
 
-export interface RouteRequest {
-  machine: string[];
-  github: string[];
-  blacksmith: string[];
+export interface RouteRequest extends RelayInputs {
   private: boolean;
 }
-
-// Blacksmith's runner labels all start with this, e.g. `blacksmith-2vcpu-ubuntu-2404`. Blacksmith
-// has no API to ask whether it can take a job, so a Blacksmith step always accepts one with such a
-// label; anything else would queue forever.
-const BLACKSMITH_LABEL = /^blacksmith-/i;
-export const isBlacksmithLabel = (label: string) => BLACKSMITH_LABEL.test(label);
 
 /**
  * Walks the order top to bottom. A step whose provider the job didn't configure is skipped, and a
@@ -421,12 +409,15 @@ export async function decideRoute(
         const { reason, ...minutes } = over;
         skipped.push({ key, reason, minutes });
       }
-    } else if (key === "blacksmith") {
-      if (job.blacksmith.length === 0) skipped.push({ key, reason: "not_configured" });
-      else if (job.blacksmith.length > 1) skipped.push({ key, reason: "too_many_labels" });
-      else if (!isBlacksmithLabel(job.blacksmith[0]))
-        skipped.push({ key, reason: "not_blacksmith_label" });
-      else return { runner: job.blacksmith[0], step: key, skipped, notInOrder };
+    } else {
+      // A hosted provider has no API to ask whether it can take a job, so its step takes any job
+      // that names one of its labels; another label would queue forever.
+      const labels = job[key];
+      if (labels.length === 0) skipped.push({ key, reason: "not_configured" });
+      else if (labels.length > 1) skipped.push({ key, reason: "too_many_labels" });
+      else if (!isProviderLabel(key, labels[0]))
+        skipped.push({ key, reason: "not_provider_label" });
+      else return { runner: labels[0], step: key, skipped, notInOrder };
     }
   }
   return { runner: null, reason: noRunnerReason(job, skipped, notInOrder), skipped, notInOrder };
@@ -439,7 +430,7 @@ export function noRunnerReason(
   notInOrder: RunnerKey[],
 ): string {
   if (RUNNER_KEYS.every((key) => job[key].length === 0))
-    return `${NO_RUNNER}: the relay sets none of \`machine\`, \`github\` or \`blacksmith\`.`;
+    return `${NO_RUNNER}: the relay sets no provider, such as \`machine\` or \`github\`.`;
   const parts = skipped.map(({ key, reason, paused = [], notShared = [], minutes }) => {
     switch (reason) {
       case "not_configured":
@@ -458,8 +449,11 @@ export function noRunnerReason(
         return notSharedText(notShared);
       case "too_many_labels":
         return `\`${key}\` takes one label, not ${job[key].join(", ")}`;
-      case "not_blacksmith_label":
-        return `\`blacksmith\` takes a Blacksmith label such as blacksmith-2vcpu-ubuntu-2404, not ${job.blacksmith.join(", ")}`;
+      case "not_provider_label":
+      case "not_blacksmith_label": {
+        const { name, example } = PROVIDERS[key as HostedProviderId];
+        return `\`${key}\` takes a ${name} label such as ${example}, not ${job[key].join(", ")}`;
+      }
       case "minutes_limit":
       case "minutes_runway":
         return minutesText(reason, minutes);

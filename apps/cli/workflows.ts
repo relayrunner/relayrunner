@@ -14,6 +14,7 @@
 //     needs: relay-test
 //     runs-on: ${{ needs.relay-test.outputs.runner }}
 
+import { type HostedProviderId, hostedProviderOf } from "@relayrunner/providers";
 import {
   isMap,
   isScalar,
@@ -42,7 +43,7 @@ export interface WorkflowJob {
   /** Things to check before running the job on a machine. The job can still be routed. */
   warnings: string[];
   /** For a ready job: where its old `runs-on` label goes in the relay. */
-  provider?: "github" | "blacksmith";
+  provider?: "github" | HostedProviderId;
   label?: string;
   /** For a ready job: the relay's `machine` input. */
   machine?: string;
@@ -125,16 +126,20 @@ function judge(
 
   const label = runsOn.trim();
   const lower = label.toLowerCase();
-  let provider: "github" | "blacksmith";
+  let provider: "github" | HostedProviderId;
   let machine = "self-hosted";
-  if (lower.startsWith("blacksmith-")) provider = "blacksmith";
-  else if (/^(ubuntu|macos)-/.test(lower)) {
+  const hosted = hostedProviderOf(lower);
+  if (/(^|-)windows-/.test(lower)) return skip("Windows jobs can't run on machines yet");
+  if (hosted) {
+    provider = hosted;
+    // Such as depot-macos-latest: only a Mac can stand in for it.
+    if (lower.includes("macos")) machine = "macOS";
+  } else if (/^(ubuntu|macos)-/.test(lower)) {
     provider = "github";
     if (lower.startsWith("macos-")) machine = "macOS";
-  } else if (lower.startsWith("windows-")) return skip("Windows jobs can't run on machines yet");
-  else if (lower === "relayrunner") return skip("already runs on RelayRunner");
+  } else if (lower === "relayrunner") return skip("already runs on RelayRunner");
   else if (lower === "self-hosted") return skip("already runs on a self-hosted runner");
-  else return skip(`${label} isn't a GitHub-hosted or Blacksmith label`);
+  else return skip(`${label} isn't a GitHub-hosted or hosted provider label`);
 
   const warnings = jobWarnings(job, options);
   return { ...base, verdict: "ready", provider, label, machine, warnings };

@@ -3,6 +3,7 @@
 // Gateway tables (installations and their repos, then machines and routes) follow. After changing anything
 // here, run `pnpm db:generate` to write a new migration.
 import type { MachineSharing } from "@relayrunner/activity";
+import type { HostedProviderId } from "@relayrunner/providers";
 import { sql } from "drizzle-orm";
 import {
   index,
@@ -529,10 +530,11 @@ export const routeDecision = sqliteTable(
     repositoryId: integer("repository_id").notNull(),
     runId: integer("run_id").notNull(),
     runAttempt: integer("run_attempt").notNull(),
-    // The provider that took the run ('machine', 'github' or 'blacksmith'), or null when nothing fit.
+    // The provider that took the run (a runner order key: 'machine', 'github', 'depot' and so on), or
+    // null when nothing fit.
     step: text("step"),
-    // What the pick answered: a route's `rr-<id>`, a GitHub or a Blacksmith label. Null when
-    // nothing fit.
+    // What the pick answered: a route's `rr-<id>`, or a GitHub or hosted provider's label. Null
+    // when nothing fit.
     runner: text("runner"),
     // The earlier steps, in order, as [{key, reason}].
     skipped: text("skipped", { mode: "json" })
@@ -540,10 +542,13 @@ export const routeDecision = sqliteTable(
       .notNull(),
     // Providers the relay set that the order leaves out.
     notInOrder: text("not_in_order", { mode: "json" }).$type<string[]>().notNull(),
-    // The relay's `machine`, `github` and `blacksmith` inputs.
+    // The relay's `machine` and `github` inputs, and each hosted provider's input it set, by id.
     machine: text("machine", { mode: "json" }).$type<string[]>().notNull(),
     github: text("github", { mode: "json" }).$type<string[]>().notNull(),
-    blacksmith: text("blacksmith", { mode: "json" }).$type<string[]>().notNull().default([]),
+    hosted: text("hosted", { mode: "json" })
+      .$type<Partial<Record<HostedProviderId, string[]>>>()
+      .notNull()
+      .default({}),
     // The message the relay failed with, when nothing fit.
     reason: text("reason"),
     // Who started the run (github.actor) and this attempt (github.triggering_actor), by GitHub

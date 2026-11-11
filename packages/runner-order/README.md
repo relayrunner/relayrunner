@@ -6,7 +6,8 @@ Used by [`apps/api`](../../apps/api), [`apps/web`](../../apps/web) (the Runners 
 
 ## What's in it
 
-- **`RUNNER_KEYS`**: the providers a step can name: `machine` (self-hosted, both connected machines and existing runners), `github` and `blacksmith`. They match the relay workflow's inputs.
+- **`RUNNER_KEYS`**: the providers a step can name: `machine` (self-hosted, both connected machines and existing runners), `github`, and each hosted provider in `@relayrunner/providers` (`blacksmith`, `depot`, `namespace`, `warpbuild`, `ubicloud`, `runs-on`). They match the relay workflow's inputs.
+- **`relayInputs`**: a relay's labels per provider, empty for the ones it leaves out.
 - **`runnerOrderSchema`**: the Zod schema for an order. It needs at least one step and no provider twice.
 - **`DEFAULT_RUNNER_ORDER`**: what a workspace that never saved an order gets: a free machine, then GitHub-hosted.
 - **`readRunnerOrder`**: reads the stored column. A missing or unreadable value reads as the default, so routing never stalls on a bad row.

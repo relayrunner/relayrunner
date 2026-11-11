@@ -123,7 +123,7 @@ export function registerTools(server: McpServer, request: WorkspaceApi, workspac
     {
       title: "Runner order",
       description:
-        "The workspace's runner order: the providers RelayRunner tries for a job, top to bottom ('machine' for connected machines, 'github' for GitHub-hosted runners, optionally with a monthly minutes limit, and 'blacksmith'). A job goes to the first provider it allows that can take it. isDefault is true when nobody has changed it.",
+        "The workspace's runner order: the providers RelayRunner tries for a job, top to bottom ('machine' for connected machines, 'github' for GitHub-hosted runners, optionally with a monthly minutes limit, and hosted providers by id: 'blacksmith', 'depot', 'namespace', 'warpbuild', 'ubicloud', 'runs-on'). A job goes to the first provider it allows that can take it. isDefault is true when nobody has changed it.",
       inputSchema: { workspace: workspaceArg },
       annotations: READ_ONLY,
     },

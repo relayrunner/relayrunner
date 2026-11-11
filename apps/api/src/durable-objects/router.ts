@@ -1,4 +1,4 @@
-import { readRunnerOrder } from "@relayrunner/runner-order";
+import { type RelayInputs, readRunnerOrder } from "@relayrunner/runner-order";
 import { accountUsage } from "../actions-billing.ts";
 import { DurableObject } from "cloudflare:workers";
 import { and, eq, isNotNull, isNull, or } from "drizzle-orm";
@@ -40,18 +40,14 @@ import {
   type RouteDecision,
 } from "../routing.ts";
 
-export interface PickedJob extends JobStarters {
+// The relay's inputs (RelayInputs): labels a machine must all have (`machine`), the GitHub-hosted
+// label (`github`), and each hosted provider's label. Empty: don't use that provider.
+export interface PickedJob extends JobStarters, RelayInputs {
   workspaceId: string;
   installationId: number;
   repositoryId: number;
   repo: string;
   runId: number;
-  // Labels a machine must all have (the relay's `machine` input). Empty: don't use machines.
-  machine: string[];
-  // The GitHub-hosted label(s) (the relay's `github` input). Empty: don't use GitHub-hosted.
-  github: string[];
-  // The Blacksmith label (the relay's `blacksmith` input). Empty: don't use Blacksmith.
-  blacksmith: string[];
   // Public repos never go to a machine: anyone could run code on it with a pull request.
   private: boolean;
   // startedBy and triggeredBy (JobStarters): who started the run and this attempt. A machine

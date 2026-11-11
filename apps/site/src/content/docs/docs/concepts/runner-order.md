@@ -7,11 +7,11 @@ The runner order is your workspace's list of providers, top to bottom. For each 
 
 ## Steps
 
-| Step              | Takes the job when                                                                                                                                        |
-| ----------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| **Self-hosted**   | A connected machine or added runner is online, idle, has the relay's `machine` labels and is shared with whoever started the job. Never for public repos. |
-| **GitHub-hosted** | The relay names a `github` label. With a minutes limit, only while the account is under it.                                                               |
-| **Blacksmith**    | The relay names a `blacksmith-*` label. Always takes the job.                                                                                             |
+| Step                  | Takes the job when                                                                                                                                        |
+| --------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| **Self-hosted**       | A connected machine or added runner is online, idle, has the relay's `machine` labels and is shared with whoever started the job. Never for public repos. |
+| **GitHub-hosted**     | The relay names a `github` label. With a minutes limit, only while the account is under it.                                                               |
+| **A hosted provider** | The relay names one of its labels, such as `depot-*` in the `depot` input. Always takes the job.                                                          |
 
 A step that can't take the job is skipped with a reason, and the next one is tried.
 
@@ -28,10 +28,10 @@ A step that can't take the job is skipped with a reason, and the next one is tri
 2. Self-hosted
 3. GitHub-hosted
 
-**Machines, then a faster provider.** Burst to Blacksmith when your machines are busy, and keep GitHub as the last resort for jobs that don't name Blacksmith.
+**Machines, then a faster provider.** Burst to a [hosted provider](/docs/runners/hosted/) such as Depot when your machines are busy, and keep GitHub as the last resort for jobs that don't name one.
 
 1. Self-hosted
-2. Blacksmith
+2. Depot
 3. GitHub-hosted
 
 GitHub can appear twice: once with a minutes limit and once without.

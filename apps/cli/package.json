@@ -29,6 +29,7 @@
   },
   "devDependencies": {
     "@relayrunner/machine-protocol": "workspace:*",
+    "@relayrunner/providers": "workspace:*",
     "@types/ws": "^8.18.2",
     "tsdown": "^0.23.5",
     "ws": "^8.22.1"

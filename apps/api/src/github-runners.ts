@@ -17,6 +17,7 @@ import {
   type OrgRunner,
   type RunnerGroup,
 } from "./github-app.ts";
+import { hostedProviderOf } from "@relayrunner/providers";
 import { routeIdFromLabels } from "./routing.ts";
 
 export const ROUTING_LABEL_PREFIX = "rr-runner-";
@@ -50,19 +51,19 @@ export function isOwnRunner(runner: { labels: string[] }) {
 
 /**
  * Whether a runner takes one job and goes away, so it can't be added: an ephemeral runner, such as
- * one a provider like Blacksmith scales up for a job. GitHub reports Blacksmith's scale-set runners
- * with no labels and not as ephemeral, so they're caught by their `blacksmith-` name (or label).
+ * one a hosted provider scales up for a job. GitHub reports some providers' scale-set runners with
+ * no labels and not as ephemeral, so they're also caught by a provider's name (or label), such as
+ * `blacksmith-...`.
  */
 export function isEphemeralRunner(runner: {
   name?: string;
   ephemeral?: boolean;
   labels: string[];
 }) {
-  const blacksmith = (value: string) => value.toLowerCase().startsWith("blacksmith-");
   return (
     runner.ephemeral === true ||
-    (runner.name !== undefined && blacksmith(runner.name)) ||
-    runner.labels.some(blacksmith)
+    (runner.name !== undefined && hostedProviderOf(runner.name) !== null) ||
+    runner.labels.some((label) => hostedProviderOf(label) !== null)
   );
 }
 
