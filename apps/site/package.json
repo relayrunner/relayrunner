@@ -15,6 +15,7 @@
     "wrangler": "catalog:"
   },
   "dependencies": {
+    "@astrojs/sitemap": "^3.7.4",
     "@astrojs/starlight": "^0.42.10",
     "@fontsource-variable/hanken-grotesk": "catalog:",
     "@fontsource-variable/jetbrains-mono": "catalog:",
