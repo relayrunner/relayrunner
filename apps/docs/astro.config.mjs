@@ -54,6 +54,7 @@ export default defineConfig({
       components: {
         Sidebar: "./src/components/Sidebar.astro",
         PageTitle: "./src/components/PageTitle.astro",
+        Head: "./src/components/Head.astro",
       },
       editLink: {
         baseUrl: "https://github.com/relayrunner/relayrunner/edit/main/apps/docs/",
