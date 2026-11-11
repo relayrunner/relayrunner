@@ -938,3 +938,27 @@ export const providerPrice = sqliteTable(
     uniqueIndex("provider_price_rate_from_idx").on(table.provider, table.rate, table.from),
   ],
 );
+
+/** The daily price check's last run per provider's price page (apps/api/src/price-check.ts). */
+export const priceCheck = sqliteTable("price_check", {
+  provider: text("provider").primaryKey(),
+  checkedAt: integer("checked_at", { mode: "timestamp_ms" }).notNull(),
+  /** Why the last check couldn't read the page; null when it could. */
+  error: text("error"),
+});
+
+/**
+ * A price the daily check found that differs from the one jobs are priced at. It prices nothing:
+ * an operator approves it into provider_price or dismisses it, and a dismissed one stays so the
+ * check doesn't raise the same price again.
+ */
+export const priceFinding = sqliteTable("price_finding", {
+  id: text("id").primaryKey(),
+  provider: text("provider").notNull(),
+  rate: text("rate").notNull(),
+  usd: real("usd").notNull(),
+  from: text("effective_from").notNull(),
+  source: text("source").notNull(),
+  foundAt: integer("found_at", { mode: "timestamp_ms" }).notNull(),
+  dismissedAt: integer("dismissed_at", { mode: "timestamp_ms" }),
+});

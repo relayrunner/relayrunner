@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import {
   renderAgentFeedbackEmail,
   renderDeadLetterAlertEmail,
+  renderPriceCheckEmail,
   renderInviteEmail,
   renderMachineConnectedEmail,
   renderMachineTakenOverEmail,
@@ -79,6 +80,18 @@ describe("templates", () => {
     });
     expect(email.subject).toBe("[webhooks] 12 deliveries dead-lettered in the past hour");
     expect(email.text).toContain("https://app.example/admin/webhooks");
+  });
+
+  it("price check lists changes and unreadable pages", () => {
+    const email = renderPriceCheckEmail({
+      changes: [{ name: "Depot linux", price: "$0.0035/min", from: "2026-11-20" }],
+      failures: [{ name: "Blacksmith", error: "answered 404" }],
+      pricesUrl: "https://app.example/admin/prices",
+    });
+    expect(email.subject).toBe("[prices] 1 price changed");
+    expect(email.text).toContain("Depot linux: $0.0035/min from 2026-11-20");
+    expect(email.text).toContain("Blacksmith: couldn't read the price page (answered 404)");
+    expect(email.text).toContain("https://app.example/admin/prices");
   });
 
   it("invite links the accept page and escapes names", () => {

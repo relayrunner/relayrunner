@@ -1,4 +1,4 @@
-import { isProviderId, PROVIDERS } from "@relayrunner/providers";
+import { providerName } from "@relayrunner/providers";
 import { createFileRoute } from "@tanstack/react-router";
 import { Trash2Icon } from "lucide-react";
 import { type FormEvent, useState } from "react";
@@ -12,8 +12,19 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import { addPrice, listPrices, removePrice, type AdminRate } from "@/lib/admin";
+import {
+  addPrice,
+  approvePrice,
+  dismissPrice,
+  listPrices,
+  type PendingPrice,
+  type PriceCheckStatus,
+  removePrice,
+  runPriceCheck,
+  type AdminRate,
+} from "@/lib/admin";
 import { ApiError } from "@/lib/api";
+import { timeAgo } from "@/lib/activity";
 import { rateText } from "@/lib/providers";
 
 // Operator admin, behind Cloudflare Access and an operator session
@@ -28,9 +39,8 @@ export const Route = createFileRoute("/_authed/_workspace/admin/prices")({
   ),
 });
 
-const providerName = (id: string) => (isProviderId(id) ? PROVIDERS[id].name : id);
 const rateKey = (rate: Pick<AdminRate, "provider" | "rate">) => `${rate.provider}:${rate.rate}`;
-const perText = (rate: AdminRate) => (rate.per === "vcpu" ? " per vCPU" : "");
+const perText = (rate: Pick<AdminRate, "per">) => (rate.per === "vcpu" ? " per vCPU" : "");
 
 const ERRORS: Record<string, string> = {
   price_exists: "That rate already has a price from that day. Remove it first to correct it.",
@@ -39,11 +49,12 @@ const ERRORS: Record<string, string> = {
 
 function PricesPage() {
   const loaded = Route.useLoaderData();
-  const [rates, setRates] = useState(loaded.rates);
+  const [data, setData] = useState(loaded);
+  const { rates, pending, checks } = data;
   const [notice, setNotice] = useState<string | null>(null);
 
   async function reload(message: string) {
-    setRates((await listPrices()).rates);
+    setData(await listPrices());
     setNotice(message);
   }
 
@@ -59,6 +70,8 @@ function PricesPage() {
         List prices for each provider's runners, by the day they took effect. Jobs are priced at the
         rate on the day they ran, and a price added here applies right away.
       </PageHeader>
+
+      <PriceCheck pending={pending} checks={checks} onChange={reload} />
 
       <AddPrice
         rates={rates}
@@ -133,6 +146,116 @@ function PricesPage() {
           </tbody>
         </table>
       </div>
+    </section>
+  );
+}
+
+// What the daily price check found: changes waiting for approval, and when it last read each
+// provider's page.
+function PriceCheck({
+  pending,
+  checks,
+  onChange,
+}: {
+  pending: PendingPrice[];
+  checks: PriceCheckStatus[];
+  onChange: (message: string) => Promise<void>;
+}) {
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const failed = checks.filter((check) => check.error);
+  const last = checks
+    .map((check) => check.checkedAt)
+    .sort()
+    .at(-1);
+
+  async function act(run: () => Promise<unknown>, message: string) {
+    setBusy(true);
+    setError(null);
+    try {
+      await run();
+      await onChange(message);
+    } catch (caught) {
+      const code = caught instanceof ApiError ? caught.code : undefined;
+      setError(
+        (code && ERRORS[code]) ?? (caught instanceof Error ? caught.message : String(caught)),
+      );
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  const name = (price: PendingPrice) => `${providerName(price.provider)} ${price.rate}`;
+
+  return (
+    <section className="grid gap-3 rounded-xl border bg-card p-4">
+      <div className="flex flex-wrap items-center justify-between gap-2">
+        <h2 className="font-medium">Price check</h2>
+        <Button
+          size="sm"
+          variant="outline"
+          disabled={busy}
+          onClick={() => act(runPriceCheck, "Checked every provider's price page.")}
+        >
+          Check now
+        </Button>
+      </div>
+      <p className="text-sm text-muted-foreground">
+        Each provider's price page is read once a day. A changed price waits here until you approve
+        it.{last && ` Last checked ${timeAgo(last)}.`}
+      </p>
+      {failed.map((check) => (
+        <p key={check.provider} className="text-sm text-destructive">
+          Couldn't read {providerName(check.provider)}'s price page: {check.error}
+        </p>
+      ))}
+      {error && <p className="text-sm text-destructive">{error}</p>}
+      {error && <p className="text-sm text-destructive">{error}</p>}
+      {pending.length > 0 && (
+        <ul className="grid gap-2">
+          {pending.map((price) => (
+            <li key={price.id} className="flex flex-wrap items-center gap-x-3 gap-y-1 text-sm">
+              <span className="font-medium">{name(price)}</span>
+              <span className="tabular-nums">
+                {rateText(price.usd)}
+                {perText(price)} from {price.from}
+              </span>
+              <span className="text-muted-foreground tabular-nums">
+                now {rateText(price.current)}
+              </span>
+              {price.source && (
+                <a
+                  href={price.source}
+                  className="text-muted-foreground underline-offset-2 hover:underline"
+                >
+                  source
+                </a>
+              )}
+              <span className="flex gap-1">
+                <Button
+                  size="sm"
+                  disabled={busy}
+                  onClick={() =>
+                    act(() => approvePrice(price.id), `Approved the ${name(price)} price.`)
+                  }
+                >
+                  Approve
+                </Button>
+                <Button
+                  size="sm"
+                  variant="ghost"
+                  disabled={busy}
+                  onClick={() =>
+                    act(() => dismissPrice(price.id), `Dismissed the ${name(price)} price.`)
+                  }
+                >
+                  Dismiss
+                </Button>
+              </span>
+            </li>
+          ))}
+        </ul>
+      )}
     </section>
   );
 }

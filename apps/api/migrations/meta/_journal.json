@@ -215,8 +215,15 @@
     {
       "idx": 30,
       "version": "6",
-      "when": 1794412442741,
-      "tag": "20261111155402_route_decision_hosted",
+      "when": 1794413015368,
+      "tag": "20261111160335_price_check",
+      "breakpoints": true
+    },
+    {
+      "idx": 31,
+      "version": "6",
+      "when": 1794413946050,
+      "tag": "20261111161906_route_decision_hosted",
       "breakpoints": true
     }
   ]

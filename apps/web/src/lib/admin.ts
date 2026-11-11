@@ -89,8 +89,40 @@ export type AdminRate = {
   rows: AdminPriceRow[];
 };
 
+/** A price the daily check found, waiting for an operator. */
+export type PendingPrice = {
+  id: string;
+  provider: string;
+  rate: string;
+  per: "vcpu" | "runner";
+  usd: number;
+  from: string;
+  source: string | null;
+  /** What jobs are priced at on that day now. */
+  current: number | null;
+};
+
+/** The price check's last run on one provider's page. */
+export type PriceCheckStatus = { provider: string; checkedAt: string; error: string | null };
+
 export function listPrices() {
-  return api<{ rates: AdminRate[] }>("/admin/prices");
+  return api<{ rates: AdminRate[]; pending: PendingPrice[]; checks: PriceCheckStatus[] }>(
+    "/admin/prices",
+  );
+}
+
+export function approvePrice(id: string) {
+  return api<{ price: AdminPriceRow }>(`/admin/prices/${encodeURIComponent(id)}/approve`, {
+    method: "POST",
+  });
+}
+
+export function dismissPrice(id: string) {
+  return api<{ ok: true }>(`/admin/prices/${encodeURIComponent(id)}/dismiss`, { method: "POST" });
+}
+
+export function runPriceCheck() {
+  return api<{ ok: true }>("/admin/prices/check", { method: "POST" });
 }
 
 export type NewPrice = {

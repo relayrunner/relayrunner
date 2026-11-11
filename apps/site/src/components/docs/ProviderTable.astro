@@ -5,7 +5,7 @@
  *
  *   <ProviderTable />
  */
-import { examplePrice, KNOWN_PROVIDERS, PRICE_NOTE, PROVIDERS } from "../../lib/providers";
+import { examplePrice, KNOWN_PROVIDERS, PRICES_AS_OF, PROVIDERS } from "../../lib/providers";
 import ProviderLogo from "./ProviderLogo.astro";
 ---
 
@@ -33,14 +33,13 @@ import ProviderLogo from "./ProviderLogo.astro";
             <td>
               <code>{labels}</code>
             </td>
-            <td>{examplePrice(id)}</td>
+            <td title={PRICES_AS_OF}>{examplePrice(id)}</td>
           </tr>
         );
       })
     }
   </tbody>
 </table>
-<p class="rr-note">{PRICE_NOTE}</p>
 
 <style>
   .rr-name {
@@ -56,9 +55,5 @@ import ProviderLogo from "./ProviderLogo.astro";
   }
   td {
     vertical-align: top;
-  }
-  .rr-note {
-    color: var(--sl-color-gray-3);
-    font-size: 13px;
   }
 </style>
