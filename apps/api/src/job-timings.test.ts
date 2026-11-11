@@ -171,20 +171,58 @@ describe("usage report", () => {
     });
   });
 
-  test("keeps only completed jobs, once each", async () => {
+  test("follows a job through its webhooks, counting it once it finishes", async () => {
     const { cookie, installationId } = await connectedWorkspace();
     const done = finished(installationId, 10);
     if (done.event !== "workflow_job") throw new Error("expected a job");
-    // Still running: not stored.
-    await processWebhook(env, {
+    const timingOf = async () => {
+      const [row] = await createDb(env.DB)
+        .select()
+        .from(schema.jobTiming)
+        .where(eq(schema.jobTiming.id, done.job.id));
+      return row;
+    };
+    const queued = {
       ...done,
-      deliveryId: "early",
+      deliveryId: "queued",
+      action: "queued",
+      job: {
+        ...done.job,
+        status: "queued",
+        conclusion: null,
+        runnerName: null,
+        runnerGroupName: null,
+        startedAt: null,
+        completedAt: null,
+      },
+    } satisfies WebhookMessage;
+    const running = {
+      ...done,
+      deliveryId: "running",
       action: "in_progress",
       job: { ...done.job, status: "in_progress", conclusion: null, completedAt: null },
+    } satisfies WebhookMessage;
+
+    // Queued, then running: stored, but no report counts it yet.
+    await processWebhook(env, queued);
+    expect(await timingOf()).toMatchObject({
+      startedAt: null,
+      runnerName: null,
+      completedAt: null,
+    });
+    await processWebhook(env, running);
+    expect(await timingOf()).toMatchObject({
+      runnerName: "GitHub Actions 1",
+      runnerGroupName: "GitHub Actions",
+      completedAt: null,
     });
     expect((await usage(cookie)).totals.jobs).toBe(0);
+
     await processWebhook(env, done);
     await processWebhook(env, { ...done, deliveryId: "redelivered" });
+    // A late delivery never rewinds a finished job.
+    await processWebhook(env, { ...running, deliveryId: "late" });
+    expect((await timingOf())?.completedAt?.toISOString()).toBe(done.job.completedAt);
     expect((await usage(cookie)).totals).toMatchObject({ jobs: 1, shortJobs: 1 });
   });
 
@@ -204,6 +242,32 @@ describe("usage report", () => {
       .where(eq(schema.jobTiming.installationId, installationId));
     expect(rows).toHaveLength(1);
     expect((await usage(cookie)).totals.jobs).toBe(1);
+  });
+
+  test("purges jobs that never finished after a week", async () => {
+    const { installationId } = await connectedWorkspace();
+    const db = createDb(env.DB);
+    const stuck = finished(installationId, 10);
+    const fresh = finished(installationId, 10);
+    for (const message of [stuck, fresh]) {
+      if (message.event !== "workflow_job") throw new Error("expected a job");
+      await processWebhook(env, {
+        ...message,
+        action: "in_progress",
+        job: { ...message.job, status: "in_progress", conclusion: null, completedAt: null },
+      });
+    }
+    if (stuck.event !== "workflow_job") throw new Error("expected a job");
+    await db
+      .update(schema.jobTiming)
+      .set({ createdAt: new Date(Date.now() - 8 * 86_400_000) })
+      .where(eq(schema.jobTiming.id, stuck.job.id));
+    expect(await purgeOldJobTimings(db)).toBeGreaterThanOrEqual(1);
+    const rows = await db
+      .select({ id: schema.jobTiming.id })
+      .from(schema.jobTiming)
+      .where(eq(schema.jobTiming.installationId, installationId));
+    expect(rows).toHaveLength(1);
   });
 
   test("another workspace's jobs stay out", async () => {

@@ -13,6 +13,7 @@ import {
   windowQueries,
 } from "./job-times.ts";
 import { recordJobTiming } from "./job-timings.ts";
+import { setJobMachine } from "./jobs.ts";
 import * as testing from "./testing.ts";
 
 describe("environmentFor", () => {
@@ -389,6 +390,8 @@ describe("job times report", () => {
         completedAt: new Date(now).toISOString(),
       },
     });
+    // The route's webhook handling notes the machine on both rows.
+    await setJobMachine(db, jobId, `rec-${installationId}`);
     const row = await db.query.jobTiming.findFirst({ where: (t, { eq }) => eq(t.id, jobId) });
     expect(row).toMatchObject({ machineId: `rec-${installationId}` });
     expect(row?.queuedAt?.getTime()).toBe(now - 20_000);

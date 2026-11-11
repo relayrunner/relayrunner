@@ -1,0 +1,1 @@
+CREATE INDEX `job_timing_unfinished_idx` ON `job_timing` (`created_at`) WHERE "job_timing"."completed_at" is null;

@@ -334,11 +334,12 @@ export const workflowJob = sqliteTable(
   ],
 );
 
-// How long every job in a connected repo ran, whatever runner took it, for the usage report
-// (src/job-timings.ts): how many jobs finished in under a minute and what GitHub's round-up to whole
+// Every job in a connected repo, whatever runner took it (src/job-timings.ts). While a job is
+// queued or running (completed_at null) the Runs page shows it live; once it finishes the usage
+// report counts it: how many jobs finished in under a minute and what GitHub's round-up to whole
 // minutes cost. Unlike workflow_job, this keeps jobs RelayRunner never saw a pick for. Written by
-// each job's `completed` webhook, purged after 90 days by the hourly cron, and gone with the
-// installation.
+// each of the job's webhooks, purged 90 days after it finished (7 days after it was first seen if
+// it never did) by the hourly cron, and gone with the installation.
 export const jobTiming = sqliteTable(
   "job_timing",
   {
@@ -359,8 +360,8 @@ export const jobTiming = sqliteTable(
     runnerName: text("runner_name"),
     // With labels, decides the job's GitHub rate when the report is read (runnerClass).
     runnerGroupName: text("runner_group_name"),
-    // The machine a route sent the job to, copied from workflow_job when the job finishes, since
-    // the job's `rr-<route id>` label stops naming a machine once the route goes. Job times
+    // The machine a route sent the job to, set with workflow_job's by setJobMachine (src/jobs.ts),
+    // since the job's `rr-<route id>` label stops naming a machine once the route goes. Job times
     // (src/job-times.ts) report it as its own environment.
     machineId: text("machine_id"),
     // When GitHub queued the job, for the wait before a runner took it.
@@ -386,6 +387,10 @@ export const jobTiming = sqliteTable(
     ),
     // The retention purge, across all installations.
     index("job_timing_completed_idx").on(table.completedAt),
+    // The purge of jobs GitHub never said finished. Partial: almost every row has finished.
+    index("job_timing_unfinished_idx")
+      .on(table.createdAt)
+      .where(sql`${table.completedAt} is null`),
     // One run's jobs, for its row on the Runs page.
     index("job_timing_run_idx").on(table.runId, table.runAttempt),
   ],

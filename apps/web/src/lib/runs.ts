@@ -41,8 +41,9 @@ export type RunsReport = {
 export type RunJob = {
   id: number;
   name: string;
+  /** Where it ran, or for a queued job the runner it's waiting for. */
   environment: string | null;
-  status: string;
+  status: RunStatus;
   conclusion: string | null;
   queuedAt: number | null;
   startedAt: number | null;
@@ -190,6 +191,26 @@ export function sampleRunJobs(run: Pick<Run, "runId" | "startedAt">): RunJobs {
     startedAt: start + waitS * 1000,
     completedAt: start + (waitS + runS) * 1000,
   });
+  if (run.runId === 6)
+    return {
+      environments: SAMPLE_ENVIRONMENTS,
+      jobs: [
+        job(61, "Lint", "container", 2, 21),
+        {
+          ...job(62, "Test", "github:linux-2-core", 6, 0),
+          status: "in_progress",
+          conclusion: null,
+          completedAt: null,
+        },
+        {
+          ...job(63, "Typecheck", "machine:sample", 0, 0),
+          status: "queued",
+          conclusion: null,
+          startedAt: null,
+          completedAt: null,
+        },
+      ],
+    };
   return {
     environments: SAMPLE_ENVIRONMENTS,
     jobs:

@@ -1,8 +1,7 @@
 import type { WebhookMessage } from "@relayrunner/github-webhooks";
-import { and, eq, gte, isNotNull, lt, ne, sql } from "drizzle-orm";
+import { and, eq, gte, isNotNull, isNull, lt, ne, type SQL, sql } from "drizzle-orm";
 import type { SQLiteColumn, SQLiteTable } from "drizzle-orm/sqlite-core";
 import { type Db, schema } from "./db/index.ts";
-import { routingLabelFromLabels } from "./github-runners.ts";
 import { findInstallation } from "./installations.ts";
 import { parseDate } from "./jobs.ts";
 import { routeIdFromLabels } from "./routing.ts";
@@ -74,14 +73,17 @@ export function runnerClass(labels: string[], runnerGroupName?: string | null): 
 }
 
 /**
- * Stores a finished job's timing, for every job in a connected repo, whoever's runner it asked
- * for. Only `completed` is kept: it carries both the start and finish, so earlier actions would only
- * add writes. A redelivery is a no-op. Skipped when the installation has no row yet.
+ * Stores a job's timing, for every job in a connected repo, whoever's runner it asked for. Each
+ * delivery carries the job's whole state, so `queued` writes the row, `in_progress` adds its runner
+ * and start, and `completed` its finish and conclusion. A finished row never changes again, so an
+ * unordered or redelivered webhook never rewinds it. Rows still going (no completedAt) are what the
+ * Runs page shows while a run is live; every report reads finished rows only. Skipped when the
+ * installation has no row yet.
  */
 export async function recordJobTiming(db: Db, message: WorkflowJobMessage): Promise<boolean> {
   const { installationId, job, repository } = message;
-  if (job.status !== "completed") return false;
   if (!installationId || !(await findInstallation(db, installationId))) return false;
+  const finished = job.status === "completed";
   await db
     .insert(table)
     .values({
@@ -94,60 +96,71 @@ export async function recordJobTiming(db: Db, message: WorkflowJobMessage): Prom
       workflowName: job.workflowName,
       name: job.name,
       labels: job.labels,
-      conclusion: job.conclusion,
+      conclusion: finished ? job.conclusion : null,
       runnerName: job.runnerName,
       runnerGroupName: job.runnerGroupName ?? null,
-      machineId: routedMachine(job.id, job.labels),
       queuedAt: parseDate(job.createdAt),
       startedAt: parseDate(job.startedAt),
-      completedAt: parseDate(job.completedAt),
+      completedAt: finished ? parseDate(job.completedAt) : null,
     })
-    .onConflictDoNothing({ target: table.id });
+    .onConflictDoUpdate({
+      target: table.id,
+      set: {
+        conclusion: sql`excluded.conclusion`,
+        runnerName: sql`coalesce(excluded.runner_name, ${table.runnerName})`,
+        runnerGroupName: sql`coalesce(excluded.runner_group_name, ${table.runnerGroupName})`,
+        queuedAt: sql`coalesce(${table.queuedAt}, excluded.queued_at)`,
+        startedAt: sql`coalesce(excluded.started_at, ${table.startedAt})`,
+        completedAt: sql`excluded.completed_at`,
+        updatedAt: sql`excluded.updated_at`,
+      },
+      setWhere: sql`${table.completedAt} is null`,
+    });
   return true;
-}
-
-/**
- * The machine a route sent the job to, when the job ran on a route's or an added runner's label:
- * read from its workflow_job row by primary key inside the insert, so it costs no extra round
- * trip. setJobMachine fills it in when that row learns its machine after this one was written.
- */
-function routedMachine(jobId: number, labels: string[]) {
-  if (!routeIdFromLabels(labels) && !routingLabelFromLabels(labels)) return null;
-  return sql<
-    string | null
-  >`(select ${schema.workflowJob.machineId} from ${schema.workflowJob} where ${schema.workflowJob.id} = ${jobId})`;
 }
 
 // How long job timings are kept. The report's longest range is 90 days.
 export const JOB_TIMING_RETENTION_DAYS = 90;
+// A job GitHub never said finished (a lost `completed` webhook) is dropped this long after it was
+// first seen: past a day in the queue and five days running, GitHub has given up on it too.
+const UNFINISHED_RETENTION_DAYS = 7;
 // Rows deleted per statement, so one purge never runs long. The hourly cron catches up on the rest.
 const PURGE_BATCH = 5_000;
 
-/** Deletes job timings older than the retention window. Returns how many rows went. */
-export function purgeOldJobTimings(db: Db, now = Date.now()): Promise<number> {
-  return purgeBefore(
-    db,
-    table,
-    table.completedAt,
-    new Date(now - JOB_TIMING_RETENTION_DAYS * DAY_MS),
-  );
+/**
+ * Deletes job timings older than the retention window, and unfinished ones GitHub has given up on.
+ * Returns how many rows went.
+ */
+export async function purgeOldJobTimings(db: Db, now = Date.now()): Promise<number> {
+  const [finished, unfinished] = await Promise.all([
+    purgeBefore(db, table, table.completedAt, new Date(now - JOB_TIMING_RETENTION_DAYS * DAY_MS)),
+    purgeBefore(
+      db,
+      table,
+      table.createdAt,
+      new Date(now - UNFINISHED_RETENTION_DAYS * DAY_MS),
+      isNull(table.completedAt),
+    ),
+  ]);
+  return finished + unfinished;
 }
 
 /**
- * Deletes a table's rows whose `column` is before `cutoff`, PURGE_BATCH at a time and at most 10
- * batches a call. Returns how many rows went.
+ * Deletes a table's rows whose `column` is before `cutoff` (and that match `where`), PURGE_BATCH
+ * at a time and at most 10 batches a call. Returns how many rows went.
  */
 export async function purgeBefore(
   db: Db,
   target: SQLiteTable,
   column: SQLiteColumn,
   cutoff: Date,
+  where?: SQL,
 ): Promise<number> {
   let deleted = 0;
   for (let i = 0; i < 10; i += 1) {
     const result = await db.run(sql`
       delete from ${target} where rowid in (
-        select rowid from ${target} where ${lt(column, cutoff)} limit ${PURGE_BATCH})`);
+        select rowid from ${target} where ${and(lt(column, cutoff), where)} limit ${PURGE_BATCH})`);
     const changes = result.meta.changes ?? 0;
     deleted += changes;
     if (changes < PURGE_BATCH) break;
