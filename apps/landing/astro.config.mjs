@@ -21,8 +21,9 @@ export default defineConfig({
         { icon: "github", label: "GitHub", href: "https://github.com/relayrunner/relayrunner" },
       ],
       customCss: [
-        "@fontsource-variable/hanken-grotesk",
-        "@fontsource-variable/jetbrains-mono",
+        // Landing tokens (and its fonts) and the shared header, then the Starlight theme.
+        "./src/styles/tokens.css",
+        "./src/styles/header.css",
         "./src/styles/theme.css",
       ],
       // Sidebar order is set here: add a page's slug to its section when you add the file.
@@ -56,6 +57,9 @@ export default defineConfig({
         Sidebar: "./src/components/Sidebar.astro",
         PageTitle: "./src/components/PageTitle.astro",
         Head: "./src/components/Head.astro",
+        Header: "./src/components/Header.astro",
+        ThemeSelect: "./src/components/ThemeSelect.astro",
+        ThemeProvider: "./src/components/ThemeProvider.astro",
         Pagination: "./src/components/Pagination.astro",
       },
     }),

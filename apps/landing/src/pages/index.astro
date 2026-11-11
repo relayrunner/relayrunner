@@ -1,5 +1,6 @@
 ---
-// Moved verbatim from index.html. Astro bundles the imported CSS into the page's <head>.
+// Moved from index.html; the header is now the shared SiteHeader. Astro bundles the imported CSS into the page's <head>.
+import SiteHeader from "../components/SiteHeader.astro";
 import "../style.css";
 
 const site = Astro.site!.origin;
@@ -52,26 +53,7 @@ const site = Astro.site!.origin;
   <body>
     <a class="skip" href="#main">Skip to content</a>
 
-    <header class="site-header" data-header>
-      <div class="wrap header-row">
-        <a class="brand" href="#top" aria-label="relayrunner home">
-          <img class="brand-tile" src="/mascot-tile.webp" alt="" width="28" height="28" />
-          relayrunner
-        </a>
-        <nav aria-label="Primary">
-          <ul class="nav-links">
-            <li class="nav-page"><a href="#providers">Providers</a></li>
-            <li class="nav-page"><a href="#how">How it works</a></li>
-            <li class="nav-page"><a href="#checks">Free checks</a></li>
-            <li class="nav-page"><a href="#safety">Security</a></li>
-          </ul>
-        </nav>
-        <div class="header-actions">
-          <a class="btn-ghost btn-sm" href="https://github.com/relayrunner/relayrunner">GitHub</a>
-          <a class="btn-go btn-sm" href="#start">Get started</a>
-        </div>
-      </div>
-    </header>
+    <SiteHeader home />
 
     <main id="main">
       <!-- Hero -->

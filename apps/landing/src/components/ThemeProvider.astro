@@ -1,0 +1,19 @@
+---
+/*
+ * Starlight's theme is the OS's, always: there is no picker, so a theme stored by an earlier picker
+ * is ignored, and the page follows the OS if it changes. Inline so the theme is set before paint.
+ * The empty updatePickers keeps Starlight's scripts that call it working.
+ */
+---
+
+<script is:inline>
+  window.StarlightThemeProvider = (() => {
+    const light = window.matchMedia("(prefers-color-scheme: light)");
+    const apply = () => {
+      document.documentElement.dataset.theme = light.matches ? "light" : "dark";
+    };
+    apply();
+    light.addEventListener("change", apply);
+    return { updatePickers() {} };
+  })();
+</script>

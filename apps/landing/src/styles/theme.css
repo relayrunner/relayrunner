@@ -205,3 +205,47 @@ starlight-toc a[aria-current="true"] {
 .starlight-aside__content > :first-child {
   margin-top: 0;
 }
+
+/* The landing page's header (SiteHeader.astro) fills Starlight's fixed header bar. The bar keeps
+   its right padding on small screens, where Starlight's menu button sits. The header spans the full
+   width here so the logo lines up with the sidebar. */
+:root {
+  --sl-nav-height: 64px;
+}
+header.header {
+  padding-block: 0;
+  padding-inline-start: 0;
+  border-bottom: 1px solid var(--line-soft);
+  background: var(--bg);
+}
+header.header .site-header {
+  background: transparent;
+  backdrop-filter: none;
+}
+header.header .wrap {
+  max-width: none;
+  padding-inline: var(--sl-nav-pad-x);
+}
+@media (max-width: 49.99rem) {
+  header.header .wrap {
+    padding-inline-end: 0;
+  }
+  /* Next to the menu button there's only room for Get started; GitHub is in the menu's footer. */
+  header.header .btn-ghost {
+    display: none;
+  }
+}
+@media (min-width: 50rem) {
+  header.header {
+    padding-inline-end: 0;
+  }
+}
+
+/* On wide screens Starlight pushes the page column right, against the "On this page" column, which
+   leaves a wide gap after the sidebar. Keep the page next to the sidebar instead; the extra width
+   goes to the right. */
+@media (min-width: 72rem) {
+  :root[data-has-sidebar][data-has-toc] .main-pane {
+    --sl-content-margin-inline: 0 auto;
+  }
+}

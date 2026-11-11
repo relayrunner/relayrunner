@@ -1,0 +1,59 @@
+/* Landing colors, fonts and spacing. Shared by the landing pages (src/style.css) and the docs. */
+@import "@fontsource-variable/hanken-grotesk";
+@import "@fontsource-variable/jetbrains-mono";
+
+/* Light is the default; dark follows the OS unless a page sets data-theme. */
+:root {
+  color-scheme: light;
+  --bg: #ffffff;
+  --bg-soft: #f5f8f3;
+  --bg-deep: #fbfcfa;
+  --raised: #ffffff;
+  --line: #e3e8e0;
+  --line-soft: #edf0ea;
+  --ink: #0e1a11;
+  --ink-2: #39463c;
+  --mute: #677269;
+  --idle: #c3cac2;
+  --meter-track: #e8ece5;
+  --go: #2fb344;
+  --go-hover: #27a03b;
+  --go-text: #178a2e;
+  --go-ink: #03140a;
+  --go-soft: rgba(47, 179, 68, 0.12);
+  --go-edge: rgba(47, 179, 68, 0.6);
+  --run: #c98a12;
+  --run-text: #9a6608;
+  --mascot-green: linear-gradient(140deg, #52c93c 0%, #2db83a 45%, #129a3c 100%);
+  --shadow-card: 0 24px 48px -32px rgba(14, 26, 17, 0.28);
+  --shadow-on: 0 20px 50px -28px rgba(47, 179, 68, 0.55);
+  --sans: "Hanken Grotesk Variable", "Hanken Grotesk", system-ui, sans-serif;
+  --mono: "JetBrains Mono Variable", "JetBrains Mono", ui-monospace, monospace;
+  --gutter: clamp(16px, 5vw, 72px);
+  --ease-out: cubic-bezier(0.16, 1, 0.3, 1);
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    color-scheme: dark;
+    --bg: #0b0d10;
+    --bg-soft: #0f1215;
+    --bg-deep: #101317;
+    --raised: #161a20;
+    --line: #272c35;
+    --line-soft: #1d2128;
+    --ink: #e6edf3;
+    --ink-2: #b4bcc6;
+    --mute: #8b949e;
+    --idle: #4a515c;
+    --meter-track: #23272f;
+    --go: #3fb950;
+    --go-hover: #4fcc61;
+    --go-text: #3fb950;
+    --go-soft: rgba(63, 185, 80, 0.14);
+    --go-edge: rgba(63, 185, 80, 0.55);
+    --run: #d29922;
+    --run-text: #d29922;
+    --shadow-card: 0 24px 48px -28px rgba(0, 0, 0, 0.8);
+    --shadow-on: 0 20px 50px -28px rgba(63, 185, 80, 0.45);
+  }
+}

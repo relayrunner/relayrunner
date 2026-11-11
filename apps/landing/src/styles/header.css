@@ -1,0 +1,139 @@
+/*
+ * The site header (src/components/SiteHeader.astro) and the buttons and .wrap it uses. Shared by
+ * the landing pages (via src/style.css) and the docs (via astro.config.mjs customCss), so the
+ * header's own resets below repeat the landing's global ones for the docs' sake.
+ */
+.site-header {
+  color: var(--ink);
+  font-family: var(--sans);
+  line-height: 1.6;
+}
+.site-header ul {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+.site-header a {
+  color: inherit;
+}
+.site-header img {
+  display: block;
+}
+
+.wrap {
+  width: 100%;
+  max-width: calc(1200px + 2 * var(--gutter));
+  margin-inline: auto;
+  padding-inline: var(--gutter);
+}
+
+/* ---------- Buttons ---------- */
+
+.btn-go,
+.btn-ghost {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 10px;
+  font-weight: 700;
+  text-decoration: none;
+  white-space: nowrap;
+  transition:
+    background 0.15s,
+    border-color 0.15s;
+}
+.btn-go {
+  background: var(--go);
+  color: var(--go-ink);
+}
+.btn-go:hover {
+  background: var(--go-hover);
+}
+.btn-ghost {
+  border: 1px solid var(--line);
+  color: var(--ink);
+}
+.btn-ghost:hover {
+  border-color: var(--idle);
+}
+.btn-sm {
+  padding: 8px 13px;
+  border-radius: 8px;
+  font-size: 14px;
+  font-weight: 600;
+}
+.btn-lg {
+  padding: 14px 20px;
+  font-size: 16px;
+}
+
+/* ---------- Header ---------- */
+
+.site-header {
+  position: sticky;
+  top: 0;
+  z-index: 10;
+  background: color-mix(in srgb, var(--bg) 88%, transparent);
+  backdrop-filter: blur(12px);
+  border-bottom: 1px solid transparent;
+  transition: border-color 0.2s;
+}
+.site-header.scrolled {
+  border-bottom-color: var(--line-soft);
+}
+.header-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 24px;
+  height: 64px;
+}
+.brand {
+  display: inline-flex;
+  align-items: center;
+  gap: 10px;
+  font-size: 19px;
+  font-weight: 700;
+  letter-spacing: -0.01em;
+  text-decoration: none;
+}
+.brand-tile {
+  width: 28px;
+  height: 28px;
+  border-radius: 8px;
+}
+.brand-sm {
+  font-size: 16px;
+}
+.brand-sm .brand-tile {
+  width: 24px;
+  height: 24px;
+  border-radius: 7px;
+}
+.nav-links {
+  display: flex;
+  gap: 28px;
+  font-size: 15px;
+}
+.nav-links a {
+  color: var(--ink-2);
+  text-decoration: none;
+}
+.nav-links a:hover {
+  color: var(--ink);
+}
+.header-actions {
+  display: flex;
+  gap: 10px;
+}
+
+@media (max-width: 860px) {
+  .nav-page {
+    display: none;
+  }
+}
+@media (max-width: 640px) {
+  .site-header nav {
+    display: none;
+  }
+}
