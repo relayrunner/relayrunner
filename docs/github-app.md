@@ -28,6 +28,7 @@ These are what the code needs. When you change a permission on the App, every ac
 | Permission          | Access       | Why                                                                                                                                                                                                                                             |
 | ------------------- | ------------ | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | Self-hosted runners | Read & write | Registers one-job runners in the org (container runners, and pick and machine runners when the repo is refused), deletes them, reads runner groups to explain blocked relays, and lists and labels existing runners an org adds to RelayRunner. |
+| Administration      | Read         | Reads the org's plan, Actions billing usage and Actions budget for the minutes rule (`apps/api/src/actions-billing.ts`).                                                                                                                        |
 
 ### Account permissions
 
@@ -45,19 +46,19 @@ Two grants go beyond what the code uses today, on purpose. Adding a permission l
 - **Actions: write**, for re-running a job a runner dropped, cancelling a relay job nothing can answer, and `workflow_dispatch` from the dashboard.
 - **Contents: write on `relayrunner.yml` only**, for saving repo config from the dashboard. It commits to an existing branch. Proposing config as a pull request would also need Pull requests write.
 
-Organization Administration was dropped once billing moved to the [Spend App](#relayrunner-spend).
+Organization Administration is Read only. It was Read & write, and write was never used.
 
 ## RelayRunner Spend
 
-A second, opt-in App, **RelayRunner Spend** ([github.com/apps/relayrunner-spend](https://github.com/apps/relayrunner-spend), App ID in `GITHUB_SPEND_APP_ID`, key in the Secrets Store as `GITHUB_SPEND_APP_PRIVATE_KEY`), reads org billing for the minutes rule. Keeping billing in its own App means the main App doesn't need Organization Administration.
+A second, opt-in App, **RelayRunner Spend** ([github.com/apps/relayrunner-spend](https://github.com/apps/relayrunner-spend), App ID in `GITHUB_SPEND_APP_ID`, key in the Secrets Store as `GITHUB_SPEND_APP_PRIVATE_KEY`), can also read org billing for the minutes rule. The main App reads billing too, so Spend is kept ready for orgs that want it: it spreads billing calls onto a separate rate limit, and lets the main App drop Organization Administration later if that becomes worth an extra install.
 
 - Permissions: Organization Administration: Read, and Metadata. Nothing else.
 - Webhook URL `https://webhooks.relayrunner.app/api/webhooks/github-spend`, secret `GITHUB_SPEND_WEBHOOK_SECRET` in the Secrets Store. It subscribes to no events: GitHub still sends it `installation` events, which keep `spend_installation` (one row per GitHub account) current. The hourly cron reconciles that table with `GET /app/installations`, which also covers installs from before the webhook was on (`apps/api/src/spend-app.ts`).
 - The 15-minute billing poll reads an org with the Spend App's installation token when the org has a row, and falls back to the main App's token when it doesn't.
-- The dashboard shows an install link on each org that hasn't installed it.
+- The dashboard links to it only when an org's billing read was refused.
 - Personal accounts don't use it: their billing only opens to the owner's own sign-in token (Plan).
 
-The main App no longer has Organization Administration, so an org without the Spend App falls back to the main App's token, gets refused, and the dashboard asks for the install.
+An org that hasn't accepted the main App's Organization Administration (Read) gets refused, and the dashboard offers the Spend install as a fix.
 
 ## Events
 
@@ -93,7 +94,7 @@ The private key lives in the Cloudflare Secrets Store as `GITHUB_APP_PRIVATE_KEY
 | Runner group checks            | Only on the org fallback: the pick checks Default allows the repo, and says why when it doesn't                                                                  | None                                                                                                                                                |
 | Public repos                   | Relay jobs are answered (on the org fallback, only if Default allows public repos). Never on machines.                                                           | Relay jobs are answered. Never on machines.                                                                                                         |
 | Existing self-hosted runners   | Can be added to RelayRunner                                                                                                                                      | Not yet (#162)                                                                                                                                      |
-| Actions minutes                | Read with the Spend App's installation token (Organization Administration)                                                                                       | Read with the owner's sign-in token (Plan). The owner must be a member of the workspace and have signed in since Plan was added. No budget is read. |
+| Actions minutes                | Read with the installation token (Organization Administration), the Spend App's when installed                                                                   | Read with the owner's sign-in token (Plan). The owner must be a member of the workspace and have signed in since Plan was added. No budget is read. |
 | Leftover pick runner sweep     | Each repo that had a relay job in the last day, and each org                                                                                                     | Each repo that had a relay job in the last day                                                                                                      |
 
 RelayRunner learns which kind an installation is from its `installation` webhook (`github_installation.account_type`). An installation it hasn't recorded is treated as an org.

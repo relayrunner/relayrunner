@@ -21,6 +21,7 @@ RelayRunner reaches GitHub through one GitHub App, [RelayRunner](https://github.
 | Permission          | Access       | Why                                                                                                                                                                             |
 | ------------------- | ------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | Self-hosted runners | Read & write | Registers one-job runners in the org when a repo runner isn't allowed, and lists and labels [existing runners](/docs/runners/self-hosted#runners-your-org-already-has) you add. |
+| Administration      | Read         | Reads your plan, Actions usage and budget for the [minutes limit](/docs/concepts/runner-order#the-minutes-limit). It can't change any setting.                                  |
 
 ## Account permissions
 
@@ -43,7 +44,7 @@ Lint uses a second, optional App, **RelayRunner Checks**, with Contents read, Ch
 
 ## RelayRunner Spend
 
-The [minutes limit](/docs/concepts/runner-order#the-minutes-limit) reads an org's plan, Actions usage and budget through a second App, [RelayRunner Spend](https://github.com/apps/relayrunner-spend). Its only permission is Organization administration (read). Install it on orgs where you use the minutes limit.
+An optional App, [RelayRunner Spend](https://github.com/apps/relayrunner-spend), reads billing on its own. Its only permission is Organization administration (read). You don't need it unless the dashboard asks for it.
 
 ## When permissions change
 
