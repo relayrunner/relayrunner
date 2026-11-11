@@ -53,6 +53,19 @@ describe("analyzeWorkflows", () => {
     });
   });
 
+  test("another hosted provider's label goes to its own input", () => {
+    expect(one(job("    runs-on: depot-ubuntu-24.04\n"))).toMatchObject({
+      verdict: "ready",
+      provider: "depot",
+      label: "depot-ubuntu-24.04",
+      machine: "self-hosted",
+    });
+    expect(one(job("    runs-on: depot-macos-latest\n"))).toMatchObject({
+      provider: "depot",
+      machine: "macOS",
+    });
+  });
+
   test.each([
     [
       "a matrix",
@@ -88,7 +101,7 @@ describe("analyzeWorkflows", () => {
     [
       "an unknown label",
       "    runs-on: my-big-runner\n",
-      "isn't a GitHub-hosted or Blacksmith label",
+      "isn't a GitHub-hosted or hosted provider label",
     ],
     ["no runs-on", "    steps: []\n", "no runs-on"],
   ])("skips %s", (_, body, reason) => {

@@ -25,7 +25,7 @@ The relay takes one input per provider:
 
 - **`machine`**: labels a self-hosted machine must have, all of them. `self-hosted` accepts any machine.
 - **`github`**: a GitHub-hosted label, such as `ubuntu-latest`.
-- **`blacksmith`**: a Blacksmith label, such as `blacksmith-4vcpu-ubuntu-2404`.
+- **A hosted provider's input**, such as `depot` or `blacksmith`: one of that provider's labels, such as `depot-ubuntu-24.04`. See [Hosted providers](/docs/runners/hosted/).
 
 Leave out a provider and the job never runs there. See [relay.yml inputs](/docs/reference/relay-inputs/) for the details.
 

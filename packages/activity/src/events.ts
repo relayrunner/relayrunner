@@ -1,4 +1,4 @@
-import { RUNNER_KEYS } from "@relayrunner/runner-order";
+import { byRunnerKey, RUNNER_KEYS } from "@relayrunner/runner-order";
 import { z } from "zod";
 
 // The workspace's audit log: one append-only row per thing that happened, newest first on the
@@ -31,10 +31,11 @@ export const SKIP_REASONS = [
   // Machines with the wanted labels exist, but none takes this job's starter: each is `only_me`
   // and someone else (or a bot, or a schedule) started the run (listed in `notShared`).
   "machine_not_shared",
-  // `github` or `blacksmith` named more than one label.
+  // `github` or a hosted provider's input named more than one label.
   "too_many_labels",
-  // `blacksmith` named a label that isn't Blacksmith's (blacksmith-...), so it would never start.
-  "not_blacksmith_label",
+  // A hosted provider's input named a label that isn't that provider's (such as `depot` naming
+  // `ubuntu-latest`), so its runner would never start.
+  "not_provider_label",
   // A GitHub step with a minutes limit: the job's account is at or past the limit's % of its
   // included quota (#117).
   "minutes_limit",
@@ -67,18 +68,24 @@ export type GithubActor = z.infer<typeof GithubActor>;
 export const NotSharedMachine = z.object({ machine: z.string(), owner: z.string().nullable() });
 export type NotSharedMachine = z.infer<typeof NotSharedMachine>;
 
+const relayInputsShape = () => byRunnerKey(() => z.array(z.string()).default([]));
+
 /**
  * How a pick walked the workspace's runner order. `step` is the provider that took the job (null
  * when nothing fit), `skipped` the earlier steps in order with why, and `notInOrder` the providers
- * the relay set that the order leaves out. `machine`, `github` and `blacksmith` are the relay's
- * inputs; walks kept before Blacksmith existed read with no `blacksmith` labels.
+ * the relay set that the order leaves out. The rest are the relay's inputs, one per provider; a
+ * walk kept before a provider existed reads with no labels for it.
  */
 export const RouteWalk = z.object({
   step: z.enum(RUNNER_KEYS).nullable(),
   skipped: z.array(
     z.object({
       key: z.enum(RUNNER_KEYS),
-      reason: z.enum(SKIP_REASONS),
+      // Walks kept before other hosted providers say not_blacksmith_label.
+      reason: z.preprocess(
+        (reason) => (reason === "not_blacksmith_label" ? "not_provider_label" : reason),
+        z.enum(SKIP_REASONS),
+      ),
       // machine_paused: the paused machines' names.
       paused: z.array(z.string()).optional(),
       // machine_not_shared: the machines that fit but only run their owner's jobs, with the
@@ -89,9 +96,7 @@ export const RouteWalk = z.object({
     }),
   ),
   notInOrder: z.array(z.enum(RUNNER_KEYS)),
-  machine: z.array(z.string()),
-  github: z.array(z.string()),
-  blacksmith: z.array(z.string()).default([]),
+  ...relayInputsShape(),
 });
 export type RouteWalk = z.infer<typeof RouteWalk>;
 

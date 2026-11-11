@@ -167,6 +167,9 @@ importers:
       '@relayrunner/machine-protocol':
         specifier: workspace:*
         version: link:../../packages/machine-protocol
+      '@relayrunner/providers':
+        specifier: workspace:*
+        version: link:../../packages/providers
       '@types/ws':
         specifier: ^8.18.2
         version: 8.18.2
@@ -325,6 +328,9 @@ importers:
 
   packages/activity:
     dependencies:
+      '@relayrunner/providers':
+        specifier: workspace:*
+        version: link:../providers
       '@relayrunner/runner-order':
         specifier: workspace:*
         version: link:../runner-order
@@ -348,6 +354,9 @@ importers:
 
   packages/runner-order:
     dependencies:
+      '@relayrunner/providers':
+        specifier: workspace:*
+        version: link:../providers
       zod:
         specifier: 'catalog:'
         version: 4.6.7

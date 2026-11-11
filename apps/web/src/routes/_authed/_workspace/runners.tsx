@@ -1,4 +1,9 @@
-import { DEFAULT_RUNNER_ORDER, type RunnerKey, type RunnerStep } from "@relayrunner/runner-order";
+import {
+  DEFAULT_RUNNER_ORDER,
+  RUNNER_LABELS,
+  type RunnerKey,
+  type RunnerStep,
+} from "@relayrunner/runner-order";
 import { createFileRoute, useRouter } from "@tanstack/react-router";
 import {
   CheckIcon,
@@ -127,7 +132,7 @@ function RunnersPage() {
       live = false;
     };
   }, []);
-  // Cloud runners jobs used over the same 14 days: GitHub-hosted classes, Blacksmith, containers.
+  // Cloud runners jobs used over the same 14 days: GitHub-hosted classes, hosted providers, containers.
   const [cloud, setCloud] = useState<EnvironmentSummary[]>([]);
   useEffect(() => {
     if (authDisabled) return;
@@ -320,10 +325,10 @@ function ConnectLanding({
           name: "GitHub-hosted",
           when: "when it's closed, asleep or busy",
         }
-      : fallback === "blacksmith"
+      : fallback
         ? {
             icon: <CloudIcon aria-hidden className="size-5" />,
-            name: "Blacksmith",
+            name: RUNNER_LABELS[fallback],
             when: "when it's closed, asleep or busy",
           }
         : {

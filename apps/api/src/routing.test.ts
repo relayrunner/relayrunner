@@ -1,5 +1,5 @@
 import { machineRunnerName } from "@relayrunner/machine-protocol";
-import type { RunnerOrder } from "@relayrunner/runner-order";
+import { relayInputs, type RunnerKey, type RunnerOrder } from "@relayrunner/runner-order";
 import type { AccountUsage } from "./actions-billing.ts";
 import { describe, expect, test, vi } from "vitest";
 import {
@@ -247,9 +247,7 @@ describe("jobContext", () => {
       runId: 41902043823,
       runAttempt: 2,
       workflow: "RelayRunner dev",
-      machine: [],
-      github: [],
-      blacksmith: [],
+      ...relayInputs({ machine: [], github: [] }),
       startedBy: null,
       triggeredBy: null,
     });
@@ -265,9 +263,7 @@ describe("jobContext", () => {
       runId: 5,
       runAttempt: 1,
       workflow: null,
-      machine: [],
-      github: [],
-      blacksmith: [],
+      ...relayInputs({ machine: [], github: [] }),
       startedBy: null,
       triggeredBy: null,
     });
@@ -331,9 +327,7 @@ describe("jobContext", () => {
       runId: 42078905012,
       runAttempt: 1,
       workflow: null,
-      machine: ["self-hosted"],
-      github: ["ubuntu-latest"],
-      blacksmith: [],
+      ...relayInputs({ machine: ["self-hosted"], github: ["ubuntu-latest"] }),
       startedBy: null,
       triggeredBy: null,
     });
@@ -372,9 +366,7 @@ describe("decideRoute", () => {
   const machineFirst: RunnerOrder = { steps: [{ key: "machine" }, { key: "github" }] };
   const githubFirst: RunnerOrder = { steps: [{ key: "github" }, { key: "machine" }] };
   const both = {
-    machine: ["self-hosted"],
-    github: ["ubuntu-latest"],
-    blacksmith: [],
+    ...relayInputs({ machine: ["self-hosted"], github: ["ubuntu-latest"] }),
     private: true,
   };
   const free = async () => "rr-0123456789ab";
@@ -473,7 +465,7 @@ describe("decideRoute", () => {
   test("github takes one label", async () => {
     const decision = await decideRoute(
       { steps: [{ key: "github" }] },
-      { machine: [], github: ["ubuntu-latest", "macos-latest"], blacksmith: [], private: true },
+      { ...relayInputs({ github: ["ubuntu-latest", "macos-latest"] }), private: true },
       none,
     );
     expect(decision).toMatchObject({
@@ -523,20 +515,16 @@ describe("decideRoute", () => {
   });
 
   test("a relay with neither input fails", async () => {
-    const decision = await decideRoute(
-      machineFirst,
-      { machine: [], github: [], blacksmith: [], private: true },
-      free,
-    );
+    const decision = await decideRoute(machineFirst, { ...relayInputs({}), private: true }, free);
     expect(decision.runner === null && decision.reason).toBe(
-      "No runner available: the relay sets none of `machine`, `github` or `blacksmith`.",
+      "No runner available: the relay sets no provider, such as `machine` or `github`.",
     );
   });
 
   describe("blacksmith", () => {
     const label = "blacksmith-2vcpu-ubuntu-2404";
     const all = { ...both, blacksmith: [label] };
-    const order = (...keys: ("machine" | "github" | "blacksmith")[]): RunnerOrder => ({
+    const order = (...keys: RunnerKey[]): RunnerOrder => ({
       steps: keys.map((key) => ({ key })),
     });
 
@@ -588,7 +576,7 @@ describe("decideRoute", () => {
       expect(wrong).toEqual({
         runner: "ubuntu-latest",
         step: "github",
-        skipped: [{ key: "blacksmith", reason: "not_blacksmith_label" }],
+        skipped: [{ key: "blacksmith", reason: "not_provider_label" }],
         notInOrder: ["machine"],
       });
     });
@@ -601,6 +589,42 @@ describe("decideRoute", () => {
           free,
         ),
       ).toMatchObject({ runner: "Blacksmith-4vcpu-ubuntu-2404", step: "blacksmith" });
+    });
+  });
+
+  describe("other hosted providers", () => {
+    const order = (...keys: RunnerKey[]): RunnerOrder => ({
+      steps: keys.map((key) => ({ key })),
+    });
+
+    test("each answers its own label, in order", async () => {
+      const job = {
+        ...both,
+        machine: [],
+        depot: ["depot-ubuntu-24.04"],
+        "runs-on": ["runs-on=123/runner=2cpu-linux-x64"],
+      };
+      expect(await decideRoute(order("namespace", "depot", "runs-on"), job, free)).toEqual({
+        runner: "depot-ubuntu-24.04",
+        step: "depot",
+        skipped: [{ key: "namespace", reason: "not_configured" }],
+        notInOrder: ["github"],
+      });
+      expect(await decideRoute(order("runs-on", "depot"), job, free)).toMatchObject({
+        runner: "runs-on=123/runner=2cpu-linux-x64",
+        step: "runs-on",
+      });
+    });
+
+    test("a label that isn't the provider's is skipped with an example", async () => {
+      const decision = await decideRoute(
+        order("ubicloud"),
+        { ...both, machine: [], github: [], ubicloud: ["ubuntu-latest"] },
+        free,
+      );
+      expect(decision.runner === null && decision.reason).toBe(
+        "No runner available: `ubicloud` takes a Ubicloud label such as ubicloud-standard-2, not ubuntu-latest.",
+      );
     });
   });
 });
@@ -637,9 +661,7 @@ describe("pausedMatches", () => {
 
 describe("decideRoute with a minutes limit", () => {
   const job = {
-    machine: ["self-hosted"],
-    github: ["ubuntu-latest"],
-    blacksmith: [],
+    ...relayInputs({ machine: ["self-hosted"], github: ["ubuntu-latest"] }),
     private: true,
   };
   // GitHub while under 80%, then machines, then GitHub always.

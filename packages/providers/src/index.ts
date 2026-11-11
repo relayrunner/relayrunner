@@ -101,6 +101,49 @@ export const isProviderId = (value: string): value is ProviderId =>
   (PROVIDER_IDS as readonly string[]).includes(value);
 
 /**
+ * The hosted runner services a relay can send a job to. Each runs a job under the customer's own
+ * account through its own GitHub App, which picks up any job queued with one of its labels, so
+ * routing to one only means answering one of its labels. Each is a step in the runner order and an
+ * input on the relay, both named by its id.
+ */
+export const HOSTED_PROVIDER_IDS = [
+  "blacksmith",
+  "depot",
+  "namespace",
+  "warpbuild",
+  "ubicloud",
+  "runs-on",
+] as const satisfies readonly ProviderId[];
+
+export type HostedProviderId = (typeof HOSTED_PROVIDER_IDS)[number];
+
+// How each service's labels start, e.g. `depot-ubuntu-24.04-8`. A prefix ending in `-` also
+// matches the bare name (`ubicloud`). RunsOn's carry the run id, `runs-on=<run id>/runner=...`.
+const LABEL_PREFIXES: Record<HostedProviderId, string[]> = {
+  blacksmith: ["blacksmith-"],
+  depot: ["depot-"],
+  namespace: ["namespace-profile-", "nscloud-"],
+  warpbuild: ["warp-"],
+  ubicloud: ["ubicloud-"],
+  "runs-on": ["runs-on=", "runs-on/"],
+};
+
+const matches = (provider: HostedProviderId, lower: string) =>
+  LABEL_PREFIXES[provider].some(
+    (prefix) => lower.startsWith(prefix) || (prefix.endsWith("-") && lower === prefix.slice(0, -1)),
+  );
+
+/** Whether `label` asks for one of `provider`'s runners. */
+export const isProviderLabel = (provider: HostedProviderId, label: string) =>
+  matches(provider, label.toLowerCase());
+
+/** The hosted provider whose runners a label asks for, or null. */
+export function hostedProviderOf(label: string): HostedProviderId | null {
+  const lower = label.toLowerCase();
+  return HOSTED_PROVIDER_IDS.find((id) => matches(id, lower)) ?? null;
+}
+
+/**
  * Where a job ran, by its Job times environment key: `depot:<label>` and the like for providers,
  * plain `container` for the Cloudflare Container, and `machine` for `machine:<id>` and
  * `self-hosted:<group>`, the runners people host themselves.

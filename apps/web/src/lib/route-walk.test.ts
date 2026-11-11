@@ -1,3 +1,5 @@
+import { RouteWalk as RouteWalkSchema } from "@relayrunner/activity";
+import { relayInputs } from "@relayrunner/runner-order";
 import { describe, expect, test } from "vitest";
 import { failureText, jobNames, walkLines, walkSummary, type RouteWalk } from "./route-walk.ts";
 
@@ -5,9 +7,7 @@ const walk = (rest: Partial<RouteWalk>): RouteWalk => ({
   step: "github",
   skipped: [],
   notInOrder: [],
-  machine: ["self-hosted"],
-  github: ["ubuntu-latest"],
-  blacksmith: [],
+  ...relayInputs({ machine: ["self-hosted"], github: ["ubuntu-latest"] }),
   ...rest,
 });
 
@@ -75,14 +75,23 @@ describe("walkSummary", () => {
     );
   });
 
-  test("explains a Blacksmith step that couldn't take the job", () => {
-    const bad = walk({
+  test("explains a hosted provider step that couldn't take the job", () => {
+    const depot = walk({
+      skipped: [{ key: "depot", reason: "not_provider_label" }],
+      depot: ["ubuntu-latest"],
+    });
+    expect(walkSummary(depot)).toEqual({ text: "not a Depot label", tone: "fallback" });
+    expect(walkLines(depot, "ubuntu-latest")[0]?.text).toBe(
+      "depot takes a Depot label such as depot-ubuntu-24.04, not ubuntu-latest",
+    );
+    // Walks kept before other providers name the Blacksmith-only reason.
+    const bad = RouteWalkSchema.parse({
+      ...walk({ blacksmith: ["ubuntu-latest"] }),
       skipped: [{ key: "blacksmith", reason: "not_blacksmith_label" }],
-      blacksmith: ["ubuntu-latest"],
     });
     expect(walkSummary(bad)).toEqual({ text: "not a Blacksmith label", tone: "fallback" });
     expect(walkLines(bad, "ubuntu-latest")[0]?.text).toBe(
-      "blacksmith takes a Blacksmith label such as blacksmith-2vcpu-ubuntu-2404, not ubuntu-latest",
+      "blacksmith takes a Blacksmith label such as blacksmith-4vcpu-ubuntu-2404, not ubuntu-latest",
     );
     const two = walk({
       skipped: [{ key: "blacksmith", reason: "too_many_labels" }],

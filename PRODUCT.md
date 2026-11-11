@@ -1,6 +1,6 @@
 # RelayRunner product definition
 
-RelayRunner is a hosted gateway for GitHub Actions. It sends each job to the first runner in a workspace's runner order that can take it: one of the team's own machines when one is online and free, an existing self-hosted runner, Blacksmith, or GitHub's hosted runners. Developers keep their usual push workflow and see the same checks and logs in GitHub Actions.
+RelayRunner is a hosted gateway for GitHub Actions. It sends each job to the first runner in a workspace's runner order that can take it: one of the team's own machines when one is online and free, an existing self-hosted runner, a hosted provider such as Blacksmith or Depot, or GitHub's hosted runners. Developers keep their usual push workflow and see the same checks and logs in GitHub Actions.
 
 ## The problem
 
@@ -17,7 +17,7 @@ Coding agents push often, and every push burns GitHub Actions minutes. Private p
 
 - **Self-hosted: connected machines.** `relayrunner connect` signs a machine in to a workspace and keeps it online while it runs. Each job gets a fresh one-job (JIT) runner, so the machine needs no permanent runner setup. A machine must have every label in the relay's `machine` input (`self-hosted` matches any machine).
 - **Self-hosted: existing runners.** Owners and admins can add self-hosted runners an organization already has on GitHub, with no change on the runner's machine. They share the Self-hosted step of the runner order with connected machines.
-- **Blacksmith.** RelayRunner hands the job the Blacksmith label from the relay's `blacksmith` input. Blacksmith's own GitHub App runs it.
+- **Hosted providers.** Blacksmith, Depot, Namespace, WarpBuild, Ubicloud and RunsOn. RelayRunner hands the job the label from the provider's own relay input, such as `depot`. The provider's own GitHub App runs it.
 - **GitHub-hosted.** The label from the relay's `github` input, usually the job's old `runs-on`.
 
 ## User experience
@@ -30,7 +30,7 @@ Coding agents push often, and every push burns GitHub Actions minutes. Private p
 
 ## Product principles
 
-- **Hosted runners stay the fallback.** A job that names a `github` or `blacksmith` label still runs when no machine is free. Machines add capacity; they never become a single point of failure.
+- **Hosted runners stay the fallback.** A job that names a `github` or hosted provider label still runs when no machine is free. Machines add capacity; they never become a single point of failure.
 - **One workflow change.** Opting a job in is a relay job and a `runs-on` change. Everything after that, such as the runner order, pausing and adding machines, happens in the dashboard or CLI with no commits.
 - **Public repositories never run on machines.** Anyone could run code on a machine through a pull request, so RelayRunner skips machines for public repositories' jobs.
 - **Fail fast and say why.** When nothing fits, the relay fails with the reason instead of leaving a job queued.

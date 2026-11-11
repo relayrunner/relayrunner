@@ -53,4 +53,4 @@ The code is on [GitHub](https://github.com/relayrunner/relayrunner). The hosted 
 
 ## What providers does it support?
 
-It routes to your own machines, existing self-hosted runners, Blacksmith and GitHub-hosted runners, and recognizes many more for reporting. See [Providers](/docs/runners/providers/).
+It routes to your own machines, existing self-hosted runners, GitHub-hosted runners, and hosted providers such as Blacksmith, Depot and Namespace. See [Providers](/docs/runners/providers/).

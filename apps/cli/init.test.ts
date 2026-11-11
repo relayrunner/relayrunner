@@ -115,7 +115,7 @@ describe("shouldOfferSetup", () => {
   const routed = `on: push
 jobs:
   relay-test:
-    uses: relayrunner/actions/.github/workflows/relay.yml@v1.0.0-beta.4
+    uses: relayrunner/actions/.github/workflows/relay.yml@v1.0.0-beta.5
     with:
       machine: self-hosted
       github: ubuntu-latest

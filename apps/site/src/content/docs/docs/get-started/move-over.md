@@ -15,7 +15,7 @@ npx relayrunner init
 
 It sorts every job into three groups and lets you pick from the first:
 
-- **Ready.** The job uses a plain GitHub-hosted label (`ubuntu-*`, `macos-*`) or a Blacksmith label (`blacksmith-*`). Warnings flag what to check first, such as a job that needs Docker or installs Linux packages while your machine is a Mac.
+- **Ready.** The job uses a plain GitHub-hosted label (`ubuntu-*`, `macos-*`) or a hosted provider's label, such as `blacksmith-*` or `depot-*`. Warnings flag what to check first, such as a job that needs Docker or installs Linux packages while your machine is a Mac.
 - **Already routed.** The job already runs where a relay sends it.
 - **Skipped, with the reason.** See below.
 
@@ -48,7 +48,7 @@ jobs:
     steps: ...
 ```
 
-The old label moves to the relay's `github` input (or `blacksmith` for a Blacksmith label), so the job still runs there when no machine is free. A `macos-*` job gets `machine: macOS`, so it only goes to Macs. `init` keeps your comments and formatting, and never commits.
+The old label moves to the relay's `github` input (or the provider's own input, such as `depot`, for a hosted provider's label), so the job still runs there when no machine is free. A `macos-*` job gets `machine: macOS`, so it only goes to Macs. `init` keeps your comments and formatting, and never commits.
 
 Push the change. The check keeps its name in GitHub, so required checks and branch protection keep working.
 

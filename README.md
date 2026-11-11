@@ -1,6 +1,6 @@
 # RelayRunner
 
-RelayRunner routes GitHub Actions jobs across the runners you already have. Each job goes to the first runner in your workspace's runner order that can take it right now: one of your own machines when it's online and free, an existing self-hosted runner, Blacksmith, or GitHub's hosted runners. Developers keep their usual push workflow and see the same checks and logs in GitHub.
+RelayRunner routes GitHub Actions jobs across the runners you already have. Each job goes to the first runner in your workspace's runner order that can take it right now: one of your own machines when it's online and free, an existing self-hosted runner, a hosted provider such as Blacksmith or Depot, or GitHub's hosted runners. Developers keep their usual push workflow and see the same checks and logs in GitHub.
 
 It's built for small teams and individuals who don't want to pay for every push, and for any team whose CI usage spikes. Your laptops and other machines take jobs while they're online, and hosted runners take the rest, with no switch to flip.
 

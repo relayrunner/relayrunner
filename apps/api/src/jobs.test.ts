@@ -1,4 +1,5 @@
 import type { WebhookMessage, WorkflowJob } from "@relayrunner/github-webhooks";
+import { relayInputs } from "@relayrunner/runner-order";
 import { afterAll, beforeAll, describe, expect, test, vi } from "vitest";
 import { createDb, schema } from "./db/index.ts";
 import type { Env } from "./env.ts";
@@ -116,9 +117,7 @@ function pickContext(
     runId,
     runAttempt,
     workflow: "RelayRunner dev",
-    machine: ["macOS"],
-    github: ["ubuntu-latest"],
-    blacksmith: [],
+    ...relayInputs({ machine: ["macOS"], github: ["ubuntu-latest"] }),
   };
 }
 
@@ -172,9 +171,7 @@ describe("Activity: why a job ran where", () => {
       step: "github",
       skipped: [{ key: "machine", reason: "no_machine" }],
       notInOrder: [],
-      machine: ["macOS"],
-      github: ["ubuntu-latest"],
-      blacksmith: [],
+      ...relayInputs({ machine: ["macOS"], github: ["ubuntu-latest"] }),
     };
     const { jobs } = await activity(cookie);
     expect(jobs.map((job) => [job.name, job.walk])).toEqual([
@@ -401,7 +398,10 @@ describe("Activity", () => {
     );
     const { jobs } = await activity(cookie);
     expect(jobs).toMatchObject([
-      { name: "test", runner: { type: "blacksmith", label: "blacksmith-2vcpu-ubuntu-2404" } },
+      {
+        name: "test",
+        runner: { type: "hosted", provider: "blacksmith", label: "blacksmith-2vcpu-ubuntu-2404" },
+      },
     ]);
   });
 

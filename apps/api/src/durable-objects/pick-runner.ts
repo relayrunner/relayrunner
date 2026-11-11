@@ -1,4 +1,5 @@
 import { DurableObject } from "cloudflare:workers";
+import { relayInputs } from "@relayrunner/runner-order";
 import type { Env } from "../env.ts";
 import {
   appInstallationToken,
@@ -377,9 +378,7 @@ async function pickRunner(env: Env, token: string, installationId: number, conte
     repositoryId: repo.id,
     repo: context.repo,
     runId: context.runId,
-    machine: context.machine,
-    github: context.github,
-    blacksmith: context.blacksmith,
+    ...relayInputs(context),
     private: repo.private,
     startedBy: context.startedBy,
     triggeredBy: context.triggeredBy,
@@ -390,9 +389,7 @@ async function pickRunner(env: Env, token: string, installationId: number, conte
     runId: context.runId,
     runAttempt: context.runAttempt,
     private: repo.private,
-    machine: context.machine,
-    github: context.github,
-    blacksmith: context.blacksmith,
+    ...relayInputs(context),
     record: {
       workspaceId,
       repositoryId: repo.id,
@@ -504,9 +501,7 @@ async function reportBlocked(env: Env, token: string, work: PickWork, reason: st
           runId: row.runId,
           runAttempt: row.runAttempt,
           workflow: row.workflow,
-          machine: [],
-          github: [],
-          blacksmith: [],
+          ...relayInputs({}),
           startedBy: null,
           triggeredBy: null,
         },

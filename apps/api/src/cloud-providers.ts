@@ -1,45 +1,30 @@
 // Hosted runner services a job asks for by its `runs-on` labels, and the labels GitHub publishes
 // for its own hosted runners. The Job times report and the Runners page group cloud jobs by these.
-import type { ProviderId } from "@relayrunner/providers";
-import { isBlacksmithLabel } from "./routing.ts";
+import {
+  HOSTED_PROVIDER_IDS,
+  type HostedProviderId,
+  isProviderLabel,
+} from "@relayrunner/providers";
 
-export type CloudProvider = { id: ProviderId; label: string };
-
-// Each service's labels start with its own prefix, e.g. `depot-ubuntu-24.04-8`.
-const PREFIXED: { id: ProviderId; matches: (label: string) => boolean }[] = [
-  { id: "blacksmith", matches: isBlacksmithLabel },
-  { id: "depot", matches: (label) => label.startsWith("depot-") },
-  {
-    id: "namespace",
-    matches: (label) => label.startsWith("namespace-profile-") || label.startsWith("nscloud-"),
-  },
-  { id: "warpbuild", matches: (label) => label.startsWith("warp-") },
-  {
-    id: "ubicloud",
-    matches: (label) => label === "ubicloud" || label.startsWith("ubicloud-"),
-  },
-];
+export type CloudProvider = { id: HostedProviderId; label: string };
 
 /**
  * The hosted runner service a job's labels ask for, with the label that names its runner type.
  * Labels are lowercase.
  */
 export function cloudProviderFor(labels: string[]): CloudProvider | null {
-  for (const provider of PREFIXED) {
-    const label = labels.find(provider.matches);
-    if (label) return { id: provider.id, label };
+  for (const id of HOSTED_PROVIDER_IDS) {
+    const label = labels.find((l) => isProviderLabel(id, l));
+    if (label) return { id, label: id === "runs-on" ? runsOnRunner(labels) : label };
   }
-  const runsOn = runsOnRunner(labels);
-  return runsOn ? { id: "runs-on", label: runsOn } : null;
+  return null;
 }
 
 /**
  * RunsOn asks for `runs-on=<run id>/runner=2cpu-linux-x64`, as one label or several. The run id
  * changes every run, so the runner type is the `runner=` or `fleet=` part, else "custom".
  */
-function runsOnRunner(labels: string[]): string | null {
-  if (!labels.some((label) => label.startsWith("runs-on=") || label.startsWith("runs-on/")))
-    return null;
+function runsOnRunner(labels: string[]): string {
   const parts = labels.flatMap((label) => label.split(/[/,]/));
   for (const key of ["runner=", "fleet="]) {
     const part = parts.find((p) => p.startsWith(key));

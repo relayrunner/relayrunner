@@ -1,4 +1,5 @@
 import { Link, createFileRoute } from "@tanstack/react-router";
+import { relayInputs } from "@relayrunner/runner-order";
 import {
   Ban,
   ChevronRight,
@@ -797,7 +798,7 @@ function JobRow({ job, now }: { job: ActivityJob; now: number }) {
             title={job.runnerName ? `Ran on ${job.runnerName}` : "Not picked up yet"}
           >
             <ProviderLink
-              provider={runner.type}
+              provider={runner.type === "hosted" ? runner.provider : runner.type}
               markClassName="mr-1 inline-flex size-4 rounded-[4px] align-[-0.2em]"
             >
               <span className={runner.type !== "machine" ? "font-mono text-xs" : undefined}>
@@ -1068,7 +1069,7 @@ function samplePage(search: ActivitySearch): ActivityPage {
     ...rest,
   });
   const mac = { id: "m1", name: "Atticuss-MacBook-Pro.local" };
-  const relay = { machine: ["self-hosted"], github: ["ubuntu-latest"], blacksmith: [] };
+  const relay = relayInputs({ machine: ["self-hosted"], github: ["ubuntu-latest"] });
   const items: ActivityItem[] = [
     {
       id: 17,
@@ -1093,9 +1094,7 @@ function samplePage(search: ActivitySearch): ActivityPage {
             },
           ],
           notInOrder: [],
-          machine: ["macOS", "ARM64"],
-          github: ["macos-latest"],
-          blacksmith: [],
+          ...relayInputs({ machine: ["macOS", "ARM64"], github: ["macos-latest"] }),
         },
       }),
     },
@@ -1173,9 +1172,7 @@ function samplePage(search: ActivitySearch): ActivityPage {
           step: "github",
           skipped: [{ key: "machine", reason: "machine_paused", paused: [mac.name] }],
           notInOrder: [],
-          machine: ["macOS", "ARM64"],
-          github: ["macos-latest"],
-          blacksmith: [],
+          ...relayInputs({ machine: ["macOS", "ARM64"], github: ["macos-latest"] }),
         },
       }),
     },
@@ -1214,9 +1211,7 @@ function samplePage(search: ActivitySearch): ActivityPage {
             { key: "github", reason: "not_configured" },
           ],
           notInOrder: [],
-          machine: ["macOS", "ARM64"],
-          github: [],
-          blacksmith: [],
+          ...relayInputs({ machine: ["macOS", "ARM64"], github: [] }),
         },
       },
       occurredAt: at(0.1),
@@ -1235,7 +1230,7 @@ function samplePage(search: ActivitySearch): ActivityPage {
       machine: null,
       job: job(5, 3, {
         starters: { startedBy: { login: "dependabot[bot]", member: null }, rerunBy: null },
-        runner: { type: "blacksmith", label: "blacksmith-2vcpu-ubuntu-2404" },
+        runner: { type: "hosted", provider: "blacksmith", label: "blacksmith-2vcpu-ubuntu-2404" },
         runnerName: "blacksmith-2vcpu-ubuntu-2404-x7k2p",
         status: "completed",
         conclusion: "success",
@@ -1245,9 +1240,11 @@ function samplePage(search: ActivitySearch): ActivityPage {
           step: "blacksmith",
           skipped: [{ key: "machine", reason: "no_machine" }],
           notInOrder: [],
-          machine: ["macOS", "ARM64"],
-          github: ["ubuntu-latest"],
-          blacksmith: ["blacksmith-2vcpu-ubuntu-2404"],
+          ...relayInputs({
+            machine: ["macOS", "ARM64"],
+            github: ["ubuntu-latest"],
+            blacksmith: ["blacksmith-2vcpu-ubuntu-2404"],
+          }),
         },
       }),
     },
