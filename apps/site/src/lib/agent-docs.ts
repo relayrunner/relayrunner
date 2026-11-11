@@ -2,14 +2,14 @@ import { getCollection, type CollectionEntry } from "astro:content";
 import { isProviderId, providerMarkdown, providerTableMarkdown } from "./providers";
 
 /*
- * Plain-text versions of every docs page, for agents and crawlers. Each page at /docs/<slug>/ also
+ * Plain-text versions of every docs page, for agents and crawlers. Each page at /docs/<slug> also
  * has /docs/<slug>.md (the page as Markdown) and /docs/<slug>.txt (the same Markdown with a header
  * that tells an agent where it is and what other pages exist). /docs/llms.txt lists every page.
  */
 
 type DocsEntry = CollectionEntry<"docs">;
 
-export const pagePath = (entry: DocsEntry) => `/${entry.id}/`;
+export const pagePath = (entry: DocsEntry) => `/${entry.id}`;
 export const markdownPath = (entry: DocsEntry) => `/${entry.id}.md`;
 export const textPath = (entry: DocsEntry) => `/${entry.id}.txt`;
 

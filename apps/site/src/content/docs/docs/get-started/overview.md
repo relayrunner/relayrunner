@@ -17,9 +17,9 @@ Your workflows stay the same. Checks keep their names, logs stay in GitHub, and 
 ## How it fits together
 
 - **Workspace.** Your team in RelayRunner. It connects one or more GitHub organizations or personal accounts through the RelayRunner GitHub App.
-- **Runners.** Where jobs can run: machines you connect with the CLI, self-hosted runners you already have, hosted providers and GitHub-hosted runners. See [Providers](/docs/runners/providers/).
-- **Relay job.** A small job you add in front of each job you want routed. It names the runners that job may use. RelayRunner answers it in about a second, with no runner and no billed minutes. See [Routing](/docs/concepts/routing/).
-- **Runner order.** The order the workspace tries runners in, set on the dashboard's Router page. See [Runner order](/docs/concepts/runner-order/).
+- **Runners.** Where jobs can run: machines you connect with the CLI, self-hosted runners you already have, hosted providers and GitHub-hosted runners. See [Providers](/docs/runners/providers).
+- **Relay job.** A small job you add in front of each job you want routed. It names the runners that job may use. RelayRunner answers it in about a second, with no runner and no billed minutes. See [Routing](/docs/concepts/routing).
+- **Runner order.** The order the workspace tries runners in, set on the dashboard's Router page. See [Runner order](/docs/concepts/runner-order).
 
 ```yaml
 jobs:
@@ -41,5 +41,5 @@ Each job on a machine gets a fresh one-job runner, so nothing is left behind bet
 
 ## Next
 
-- [Quickstart](/docs/get-started/quickstart/): a green job on your own machine in a few minutes.
-- [Principles](/docs/concepts/principles/): the rules RelayRunner routes by.
+- [Quickstart](/docs/get-started/quickstart): a green job on your own machine in a few minutes.
+- [Principles](/docs/concepts/principles): the rules RelayRunner routes by.

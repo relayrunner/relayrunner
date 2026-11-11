@@ -25,15 +25,15 @@ The relay takes one input per provider:
 
 - **`machine`**: labels a self-hosted machine must have, all of them. `self-hosted` accepts any machine.
 - **`github`**: a GitHub-hosted label, such as `ubuntu-latest`.
-- **A hosted provider's input**, such as `depot` or `blacksmith`: one of that provider's labels, such as `depot-ubuntu-24.04`. See [Hosted providers](/docs/runners/hosted/).
+- **A hosted provider's input**, such as `depot` or `blacksmith`: one of that provider's labels, such as `depot-ubuntu-24.04`. See [Hosted providers](/docs/runners/hosted).
 
-Leave out a provider and the job never runs there. See [relay.yml inputs](/docs/reference/relay-inputs/) for the details.
+Leave out a provider and the job never runs there. See [relay.yml inputs](/docs/reference/relay-inputs) for the details.
 
 ## What happens on a push
 
 1. The relay job is queued on GitHub with `runs-on: relayrunner`.
 2. GitHub tells RelayRunner, which answers the relay itself. It runs no steps and bills no minutes. This takes about a second.
-3. RelayRunner walks your workspace's [runner order](/docs/concepts/runner-order/) from the top. It skips any provider the job didn't name, and picks the first one that can take the job now.
+3. RelayRunner walks your workspace's [runner order](/docs/concepts/runner-order) from the top. It skips any provider the job didn't name, and picks the first one that can take the job now.
 4. The relay finishes with a `runner` output: a one-time label for a machine, or the job's own label for a hosted provider.
 5. Your job runs on that label. A machine gets a fresh one-job runner for it.
 
@@ -61,12 +61,12 @@ The job that needs the relay doesn't start. Re-run it once a machine is back, or
 
 Routing happens before a job starts. If you stop `relayrunner connect` or the machine sleeps while a job is running, that job fails, the same as on any self-hosted runner. Re-run it and it routes again.
 
-To take a machine out of rotation without cutting off a running job, [pause it](/docs/runners/self-hosted/#pause) first.
+To take a machine out of rotation without cutting off a running job, [pause it](/docs/runners/self-hosted#pause) first.
 
 ## When RelayRunner can't answer
 
-If the GitHub App isn't installed on the repo's owner, or RelayRunner can't be reached, the relay job stays queued until GitHub gives up on it. It doesn't fall back on its own, because only RelayRunner can answer a relay. See [Troubleshooting](/docs/reference/troubleshooting/).
+If the GitHub App isn't installed on the repo's owner, or RelayRunner can't be reached, the relay job stays queued until GitHub gives up on it. It doesn't fall back on its own, because only RelayRunner can answer a relay. See [Troubleshooting](/docs/reference/troubleshooting).
 
 ## See why a job ran where it did
 
-The dashboard's **Activity** page shows each routed job, the runner it got, and every step that was skipped with the reason. See [Activity and runs](/docs/dashboard/activity/).
+The dashboard's **Activity** page shows each routed job, the runner it got, and every step that was skipped with the reason. See [Activity and runs](/docs/dashboard/activity).

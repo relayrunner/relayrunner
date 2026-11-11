@@ -31,11 +31,11 @@ When every machine is busy, the next job goes to the next step straight away, in
 
 ## 3. Cap the hosted spend
 
-Put a minutes limit on GitHub so overflow stops billing at a point you choose. See [Spend controls](/docs/guides/spend-controls/). With no unlimited step after it, a job that finds every machine busy fails fast with the reason, and the agent can retry.
+Put a minutes limit on GitHub so overflow stops billing at a point you choose. See [Spend controls](/docs/guides/spend-controls). With no unlimited step after it, a job that finds every machine busy fails fast with the reason, and the agent can retry.
 
 ## 4. Take the cheap jobs off runners
 
-PR title checks and lint don't need a machine at all. Make them [free checks](/docs/concepts/free-checks/) so they never wait for a runner or bill a minute.
+PR title checks and lint don't need a machine at all. Make them [free checks](/docs/concepts/free-checks) so they never wait for a runner or bill a minute.
 
 ## Watch it
 

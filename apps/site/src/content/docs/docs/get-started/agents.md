@@ -21,7 +21,7 @@ Every CLI command the agent uses has a `--json` flag, and every step is safe to 
 
 ## Let the agent see your CI
 
-Agents can also read your workspace through the RelayRunner MCP server: runners, recent runs, where each job ran, and usage. It's read-only. See [MCP server](/docs/reference/mcp/).
+Agents can also read your workspace through the RelayRunner MCP server: runners, recent runs, where each job ran, and usage. It's read-only. See [MCP server](/docs/reference/mcp).
 
 ## These docs, for agents
 

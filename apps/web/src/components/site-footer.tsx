@@ -2,7 +2,7 @@ import { Link } from "@tanstack/react-router";
 import { Brand } from "@/components/brand";
 import { cn } from "@/lib/utils";
 
-export const DOCS_URL = "https://relayrunner.app/docs/";
+export const DOCS_URL = "https://relayrunner.app/docs";
 
 // The same links as the landing site's footer. The agents link comes first.
 const LINKS = [

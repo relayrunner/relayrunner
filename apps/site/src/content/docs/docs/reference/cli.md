@@ -3,7 +3,7 @@ title: CLI
 description: Every relayrunner command and flag.
 ---
 
-The `relayrunner` CLI runs on macOS and Linux with Node.js 22 or newer. Run it with `npx relayrunner <command>`, or install it with `npm install --global relayrunner`. See [Install](/docs/get-started/install/).
+The `relayrunner` CLI runs on macOS and Linux with Node.js 22 or newer. Run it with `npx relayrunner <command>`, or install it with `npm install --global relayrunner`. See [Install](/docs/get-started/install).
 
 ## `connect`
 
@@ -42,7 +42,7 @@ Shows the machine, its workspace, who enrolled it, its sharing setting and wheth
 relayrunner init [--plan] [--apply <jobs>] [--json]
 ```
 
-Routes a repo's jobs through RelayRunner. Run it inside a checkout. See [Move your workflows over](/docs/get-started/move-over/).
+Routes a repo's jobs through RelayRunner. Run it inside a checkout. See [Move your workflows over](/docs/get-started/move-over).
 
 | Flag             | What it does                                                                           |
 | ---------------- | -------------------------------------------------------------------------------------- |

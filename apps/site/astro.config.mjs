@@ -9,12 +9,14 @@ export default defineConfig({
   // Keep the landing HTML's whitespace as written. Astro's default compression drops the line break
   // between text and an inline link wrapped onto its own line ("Or<a>copy one line</a>into").
   compressHTML: false,
-  // There is no base: Starlight serves docs from src/content/docs/docs/, so they land at /docs/.
-  trailingSlash: "always",
-  // /docs/ has no page of its own: send it to the first one, so header and app links can say /docs/.
+  // There is no base: Starlight serves docs from src/content/docs/docs/, so they land at /docs.
+  // URLs have no trailing slash. Pages still build to <path>/index.html; the asset server serves
+  // them at <path> and redirects <path>/ there (html_handling in wrangler.jsonc).
+  trailingSlash: "never",
+  // /docs has no page of its own: send it to the first one, so header and app links can say /docs.
   redirects: {
-    "/docs": "/docs/get-started/overview/",
-    "/docs/runners/blacksmith": "/docs/runners/hosted/",
+    "/docs": "/docs/get-started/overview",
+    "/docs/runners/blacksmith": "/docs/runners/hosted",
   },
   // Fetch a page when its link is hovered or focused, so moving between docs pages is near instant.
   prefetch: { prefetchAll: true },
