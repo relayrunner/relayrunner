@@ -5,15 +5,12 @@ export type ConnectedAgent = {
   id: string;
   clientName: string | null;
   clientUri: string | null;
-  scopes: string[];
   connectedAt: string;
 };
 
-/** The MCP server agents connect to (apps/agents). */
-export const MCP_URL = "https://agents.relayrunner.app/mcp";
-
 export function listAgents() {
-  return api<{ agents: ConnectedAgent[] }>("/agents");
+  // mcpUrl: the MCP server agents connect to (apps/agents).
+  return api<{ mcpUrl: string; agents: ConnectedAgent[] }>("/agents");
 }
 
 export function disconnectAgent(id: string) {

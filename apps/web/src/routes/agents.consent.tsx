@@ -3,7 +3,6 @@ import { useState } from "react";
 import { AgentSignInPage, SignedOut } from "@/components/agent-sign-in";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
-import { api } from "@/lib/api";
 import { authClient, getSession } from "@/lib/auth-client";
 import { getCurrentWorkspace } from "@/lib/workspace";
 
@@ -15,15 +14,13 @@ export const Route = createFileRoute("/agents/consent")({
     if (!(await getSession())) return { signedIn: false as const };
     const clientId = new URLSearchParams(window.location.search).get("client_id") ?? "";
     const [client, current] = await Promise.all([
-      api<{ client_name?: string; client_uri?: string }>(
-        `/auth/oauth2/public-client?client_id=${encodeURIComponent(clientId)}`,
-      ).catch(() => null),
+      authClient.oauth2.publicClient({ query: { client_id: clientId } }),
       getCurrentWorkspace(),
     ]);
     return {
       signedIn: true as const,
-      clientName: client?.client_name || "An MCP client",
-      clientUri: client?.client_uri ?? null,
+      clientName: client.data?.client_name || "An MCP client",
+      clientUri: client.data?.client_uri ?? null,
       workspaceName: current.workspace.name,
     };
   },

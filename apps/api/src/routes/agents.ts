@@ -15,7 +15,6 @@ export const agentRoutes = new Hono<AppEnv>()
         id: schema.oauthConsent.id,
         clientName: schema.oauthClient.name,
         clientUri: schema.oauthClient.uri,
-        scopes: schema.oauthConsent.scopes,
         connectedAt: schema.oauthConsent.createdAt,
       })
       .from(schema.oauthConsent)
@@ -27,7 +26,7 @@ export const agentRoutes = new Hono<AppEnv>()
         ),
       )
       .orderBy(desc(schema.oauthConsent.createdAt));
-    return c.json({ agents: rows });
+    return c.json({ mcpUrl: c.env.AGENTS_MCP_URL, agents: rows });
   })
   .delete("/:id", requireUser, requireWorkspace, async (c) => {
     const mine = and(
@@ -35,7 +34,11 @@ export const agentRoutes = new Hono<AppEnv>()
       eq(schema.oauthConsent.userId, c.var.user!.id),
       eq(schema.oauthConsent.referenceId, c.var.workspace.id),
     );
-    const [consent] = await c.var.db.select().from(schema.oauthConsent).where(mine).limit(1);
+    const [consent] = await c.var.db
+      .select({ clientId: schema.oauthConsent.clientId })
+      .from(schema.oauthConsent)
+      .where(mine)
+      .limit(1);
     if (!consent) return c.json({ error: "not_found" }, 404);
     await c.var.db.batch([
       c.var.db
@@ -43,7 +46,7 @@ export const agentRoutes = new Hono<AppEnv>()
         .set({ revoked: new Date() })
         .where(
           and(
-            eq(schema.oauthRefreshToken.userId, consent.userId!),
+            eq(schema.oauthRefreshToken.userId, c.var.user!.id),
             eq(schema.oauthRefreshToken.clientId, consent.clientId),
             eq(schema.oauthRefreshToken.referenceId, c.var.workspace.id),
             isNull(schema.oauthRefreshToken.revoked),

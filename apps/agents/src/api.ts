@@ -20,7 +20,7 @@ export type Api = <T>(
  * is a placeholder: the binding ignores it.
  */
 export function apiClient(env: Env, token: string): Api {
-  return async <T>(path: string, query: Record<string, string | number | undefined> = {}) => {
+  return async (path, query = {}) => {
     const url = new URL(`/api${path}`, "https://relayrunner-api");
     for (const [key, value] of Object.entries(query)) {
       if (value !== undefined) url.searchParams.set(key, String(value));
@@ -30,12 +30,12 @@ export function apiClient(env: Env, token: string): Api {
       const body = (await response.json().catch(() => null)) as { error?: string } | null;
       throw new ApiError(response.status, body?.error);
     }
-    return (await response.json()) as T;
+    return response.json();
   };
 }
 
-/** GET /api/me for an agent token. */
+/** GET /api/me for an agent token, the parts this Worker uses. */
 export interface Me {
-  user: { id: string; name: string };
-  agent: { workspaceId: string; scopes: string[]; clientId: string };
+  user: { id: string };
+  agent: { workspaceId: string };
 }

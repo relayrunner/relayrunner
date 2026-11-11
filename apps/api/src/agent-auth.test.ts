@@ -161,7 +161,7 @@ describe("agent sign-in", () => {
     expect(me.status).toBe(200);
     expect(await me.json()).toMatchObject({
       user: { id: user.id },
-      agent: { workspaceId: workspace.id, scopes: expect.arrayContaining(["workspace:read"]) },
+      agent: { workspaceId: workspace.id },
     });
 
     for (const path of [
@@ -195,7 +195,7 @@ describe("agent sign-in", () => {
       "agents-other",
     );
     expect(otherJar).toBeTruthy();
-    expect((await asAgent(`/workspaces/${other.id}/runner-order`, access_token)).status).toBe(403);
+    expect((await asAgent(`/workspaces/${other.id}/runner-order`, access_token)).status).toBe(404);
     expect((await asAgent("/github/installations/unclaimed", access_token)).status).toBe(403);
     expect((await asAgent("/auth/get-session", access_token)).status).toBe(403);
 

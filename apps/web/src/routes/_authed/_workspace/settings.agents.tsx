@@ -10,7 +10,8 @@ import {
   CardHeader,
   CardTitle,
 } from "@/components/ui/card";
-import { disconnectAgent, listAgents, MCP_URL, type ConnectedAgent } from "@/lib/agents";
+import { CopyCommand } from "@/components/add-runner";
+import { disconnectAgent, listAgents, type ConnectedAgent } from "@/lib/agents";
 
 export const Route = createFileRoute("/_authed/_workspace/settings/agents")({
   loader: () => listAgents(),
@@ -18,7 +19,7 @@ export const Route = createFileRoute("/_authed/_workspace/settings/agents")({
 });
 
 function AgentSettingsPage() {
-  const { agents } = Route.useLoaderData();
+  const { mcpUrl, agents } = Route.useLoaderData();
   return (
     <section>
       <PageHeader title="Agents">
@@ -35,9 +36,7 @@ function AgentSettingsPage() {
             </CardDescription>
           </CardHeader>
           <CardContent className="px-4">
-            <p className="rounded-md border bg-muted px-3 py-2 font-mono text-sm break-all">
-              {MCP_URL}
-            </p>
+            <CopyCommand command={mcpUrl} prompt={false} />
           </CardContent>
         </Card>
         {agents.length === 0 ? (

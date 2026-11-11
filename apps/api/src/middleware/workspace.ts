@@ -6,8 +6,9 @@ import { createDb, schema } from "../db/index.ts";
 // Resolves the session's active workspace and the signed-in user's membership in it. Gateway
 // routes that act on a workspace (installations, machines, repos) go behind this. Run it after
 // requireUser.
+// An agent token (agent-auth.ts) reads the workspace it was granted instead of an active one.
 export const requireWorkspace = createMiddleware<AppEnv>(async (c, next) => {
-  const workspaceId = c.var.session?.activeOrganizationId;
+  const workspaceId = c.var.agent?.workspaceId ?? c.var.session?.activeOrganizationId;
   if (!workspaceId) return c.json({ error: "no_active_workspace" }, 409);
 
   const db = createDb(c.env.DB);

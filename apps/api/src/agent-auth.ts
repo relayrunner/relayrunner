@@ -17,9 +17,9 @@ import type { Env } from "./env.ts";
 import { isWorkspaceMember } from "./installations.ts";
 import { eq } from "drizzle-orm";
 
-export const AGENT_READ_SCOPE = "workspace:read";
+const AGENT_READ_SCOPE = "workspace:read";
 // The workspace a token is for: the consent's reference id, copied into the access token.
-export const WORKSPACE_CLAIM = "workspace_id";
+const WORKSPACE_CLAIM = "workspace_id";
 
 // Dashboard pages in the sign-in flow (apps/web/src/routes/agents.*.tsx, login.tsx).
 export const AGENT_WORKSPACE_PAGE = "/agents/workspace";
@@ -70,13 +70,14 @@ export function agentOAuth(env: Env) {
   });
 }
 
-/** Who an agent request acts for, from its verified access token. */
+/** Who an agent request acts for, from its verified access token: the one workspace it may read. */
 export interface AgentPrincipal {
   workspaceId: string;
-  scopes: string[];
-  // The OAuth client that holds the token.
-  clientId: string;
 }
+
+// Keeps verified signing keys per isolate (5 minutes, refetched on an unknown key id) instead of
+// reading the jwks table on every agent request.
+const JWKS_CACHE_KEY = {};
 
 // An OAuth access token, as opposed to a Better Auth session token (bearer plugin), which is opaque.
 export function agentBearer(headers: Headers) {
@@ -90,15 +91,16 @@ export function agentBearer(headers: Headers) {
 }
 
 /**
- * Verifies an agent access token and loads the user and a session scoped to the token's workspace.
- * Null when the token is bad, expired, for another audience, lacks the read scope or names no
- * workspace. requireWorkspace still checks membership on every request.
+ * Verifies an agent access token and loads its user and workspace. Null when the token is bad,
+ * expired, for another audience, lacks the read scope or names no workspace. requireWorkspace
+ * takes the workspace from here and still checks membership on every request.
  */
 export async function agentSession(env: Env, auth: Auth, token: string) {
   let claims;
   try {
     claims = await verifyJwsAccessToken(token, {
       jwksFetch: () => auth.api.getJwks(),
+      jwksCacheKey: JWKS_CACHE_KEY,
       verifyOptions: {
         issuer: agentIssuer(env),
         audience: env.AGENTS_MCP_URL,
@@ -119,18 +121,7 @@ export async function agentSession(env: Env, auth: Auth, token: string) {
     .where(eq(schema.user.id, claims.sub!))
     .limit(1);
   if (!user) return null;
-  const agent: AgentPrincipal = { workspaceId, scopes, clientId: String(claims.azp) };
-  // No session row backs an agent request. Routes only read the user and the active workspace.
-  const session = {
-    id: `agent:${claims.jti ?? claims.sub}`,
-    userId: user.id,
-    token: "",
-    expiresAt: new Date(claims.exp! * 1000),
-    createdAt: new Date(claims.iat! * 1000),
-    updatedAt: new Date(claims.iat! * 1000),
-    activeOrganizationId: workspaceId,
-  } as Session["session"];
-  return { user: user as Session["user"], session, agent };
+  return { user: user as Session["user"], agent: { workspaceId } satisfies AgentPrincipal };
 }
 
 // The issuer Better Auth stamps on access tokens: its auth base URL.
@@ -139,12 +130,12 @@ export function agentIssuer(env: Env) {
 }
 
 // What an agent token may call: read-only views of its own workspace, all D1 reads. Nothing that
-// asks GitHub per request, takes the Router's lock, or changes anything. A route with a workspace
-// id in its path must name the token's workspace.
+// asks GitHub per request, takes the Router's lock, or changes anything. Routes with a workspace id
+// in the path only accept the token's workspace (requireMember in routes/workspaces.ts).
 const AGENT_ROUTES: RegExp[] = [
   /^\/api\/me$/,
   /^\/api\/workspaces\/current$/,
-  /^\/api\/workspaces\/(?<workspace>[^/]+)\/runner-order$/,
+  /^\/api\/workspaces\/[^/]+\/runner-order$/,
   /^\/api\/machines$/,
   /^\/api\/runs$/,
   /^\/api\/runs\/\d+\/\d+\/\d+\/jobs$/,
@@ -154,12 +145,8 @@ const AGENT_ROUTES: RegExp[] = [
   /^\/api\/job-times$/,
 ];
 
-export function agentMayCall(agent: AgentPrincipal, method: string, pathname: string) {
-  if (method !== "GET" && method !== "HEAD") return false;
-  return AGENT_ROUTES.some((route) => {
-    const match = route.exec(pathname);
-    if (!match) return false;
-    const workspace = match.groups?.workspace;
-    return workspace === undefined || workspace === agent.workspaceId;
-  });
+export function agentMayCall(method: string, pathname: string) {
+  return (
+    (method === "GET" || method === "HEAD") && AGENT_ROUTES.some((route) => route.test(pathname))
+  );
 }
