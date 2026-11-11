@@ -4,7 +4,7 @@ import type { Context } from "hono";
 import { deleteCookie, getCookie, setCookie } from "hono/cookie";
 import type { AppEnv } from "../app.ts";
 import { createDb, schema } from "../db/index.ts";
-import { appJwt, importAppPrivateKey, installationToken, rateLimits } from "../github-app.ts";
+import { appInstallationToken, rateLimits } from "../github-app.ts";
 import {
   dashboardPath,
   GitHubError,
@@ -237,8 +237,7 @@ export const githubRoutes = new Hono<AppEnv>()
     if (!row) return c.json({ error: "not_found" }, 404);
 
     try {
-      const key = await importAppPrivateKey(await c.env.GITHUB_APP_PRIVATE_KEY.get());
-      const token = await installationToken(await appJwt(c.env.GITHUB_APP_ID, key), installationId);
+      const token = await appInstallationToken(c.env, installationId);
       return c.json(await rateLimits(token));
     } catch (error) {
       // A suspended installation can't get a token, and GitHub can be down. Either way the page

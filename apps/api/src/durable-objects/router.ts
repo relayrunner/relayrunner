@@ -11,6 +11,7 @@ import {
   type OrgRunner,
 } from "../github-app.ts";
 import { installationRunnerScope } from "../installations.ts";
+import { errorMessage } from "../webhook-queue.ts";
 import {
   fetchGroupAccess,
   matchLabels,
@@ -58,53 +59,54 @@ export interface PickedJob extends JobStarters {
 }
 
 const ROUTE_KEY = "route:";
-// How long a GitHub org's runner group access is reused before it's read again. Runner status is
-// read fresh on every pick; groups change rarely and take a few calls to read.
+// How long a GitHub org's runner group access is reused before it's read again. Groups change
+// rarely and take a few calls to read.
 const GROUP_ACCESS_TTL_MS = 5 * 60_000;
 // How long a machine owner's read access to a repo is reused before GitHub is asked again.
 const OWNER_ACCESS_TTL_MS = 10 * 60_000;
 // How long the dashboard reuses an org's runner list (status, busy, labels).
 const RUNNER_LIST_TTL_MS = 30_000;
+// How old a runner list a pick accepts, so a push that starts many runs at once asks GitHub once
+// rather than once per run. Short, since a runner's busy status decides whether it gets the job.
+const PICK_RUNNER_LIST_TTL_MS = 5_000;
 
 // One per workspace, addressed by workspace id. Decides where each picked job's run goes and
 // keeps the routes it hands out (src/routing.ts), so the job queued on a route's label can find
 // its machine.
 export class Router extends DurableObject<Env> {
-  // Runner group access per installation, kept in memory while the object is awake.
-  private groupAccess = new Map<number, { at: number; access: Map<number, GroupAccess> }>();
-  // Each org's runner list for the dashboard, by installation id (see githubRunners).
-  private runnerLists = new Map<number, { at: number; runners: Promise<OrgRunner[]> }>();
-  // Whether a machine owner can read a repo, by `<installation>:<repo id>:<owner GitHub id>`.
-  private ownerAccess = new Map<string, { at: number; allowed: boolean }>();
+  // What GitHub said, kept in memory while the object is awake: runner group access and each
+  // org's runner list by installation id, and whether a machine owner can read a repo by
+  // `<installation>:<repo id>:<owner GitHub id>`.
+  private groupAccess = new Recent<number, Map<number, GroupAccess>>();
+  private runnerLists = new Recent<number, OrgRunner[]>();
+  private ownerAccess = new Recent<string, boolean>();
 
   /**
    * An org's self-hosted runners for the dashboard's Runners and Router pages, reused for
-   * RUNNER_LIST_TTL_MS so the pages' refreshes don't each ask GitHub. Picks don't use this: they
-   * read status fresh. Null when GitHub can't be asked.
+   * RUNNER_LIST_TTL_MS so the pages' refreshes don't each ask GitHub. Null when GitHub can't be
+   * asked.
    */
   async githubRunners(installationId: number, org: string): Promise<OrgRunner[] | null> {
-    const now = Date.now();
-    const cached = this.runnerLists.get(installationId);
-    if (cached && now - cached.at < RUNNER_LIST_TTL_MS) return cached.runners.catch(() => null);
-    // Kept as a promise so loads that arrive together share one read.
-    const runners = appInstallationToken(this.env, installationId).then((token) =>
-      listOrgRunners(token, org),
-    );
-    this.runnerLists.set(installationId, { at: now, runners });
     try {
-      return await runners;
+      return await this.runnerList(RUNNER_LIST_TTL_MS, installationId, org);
     } catch (error) {
-      this.runnerLists.delete(installationId);
       console.warn(
         JSON.stringify({
           msg: "github runners unavailable",
           installationId,
           org,
-          error: error instanceof Error ? error.message : String(error),
+          error: errorMessage(error),
         }),
       );
       return null;
     }
+  }
+
+  // An org's runner list, no older than `maxAge`. The dashboard and picks share one copy.
+  private runnerList(maxAge: number, installationId: number, org: string): Promise<OrgRunner[]> {
+    return this.runnerLists.get(installationId, maxAge, async () =>
+      listOrgRunners(await appInstallationToken(this.env, installationId), org),
+    );
   }
 
   /**
@@ -116,28 +118,27 @@ export class Router extends DurableObject<Env> {
     machineId: string,
     ownerGithubId: number | null,
     job: PickedJob,
-    now: number,
   ): Promise<boolean> {
     let allowed = false;
     if (ownerGithubId !== null) {
       const key = `${job.installationId}:${job.repositoryId}:${ownerGithubId}`;
-      const cached = this.ownerAccess.get(key);
-      if (cached && now - cached.at < OWNER_ACCESS_TTL_MS) allowed = cached.allowed;
-      else {
-        try {
-          const token = await appInstallationToken(this.env, job.installationId);
-          allowed = await userCanReadRepo(token, job.repo, ownerGithubId);
-          this.ownerAccess.set(key, { at: now, allowed });
-        } catch (error) {
-          console.warn(
-            JSON.stringify({
-              msg: "machine owner access unknown",
-              machineId,
-              repo: job.repo,
-              error: error instanceof Error ? error.message : String(error),
-            }),
-          );
-        }
+      try {
+        allowed = await this.ownerAccess.get(key, OWNER_ACCESS_TTL_MS, async () =>
+          userCanReadRepo(
+            await appInstallationToken(this.env, job.installationId),
+            job.repo,
+            ownerGithubId,
+          ),
+        );
+      } catch (error) {
+        console.warn(
+          JSON.stringify({
+            msg: "machine owner access unknown",
+            machineId,
+            repo: job.repo,
+            error: errorMessage(error),
+          }),
+        );
       }
     }
     if (!allowed)
@@ -174,113 +175,133 @@ export class Router extends DurableObject<Env> {
 
   // A route to a free machine with the job's labels whose sharing takes the job, else why none
   // could (unavailableMachines), or null.
-  private pickMachine(job: PickedJob): Promise<MachinePick> {
-    // One decision at a time, so two picks can't both see the same machine as free.
+  //
+  // The slow reads (D1, GitHub, each machine's live status) happen first, with nothing locked, so
+  // one workspace's picks run side by side and a slow GitHub call holds up only its own pick. Only
+  // the choice and the route that reserves the machine run one at a time (reserve), against the
+  // routes as they stand then, so two picks can't both take the same machine.
+  private async pickMachine(job: PickedJob): Promise<MachinePick> {
+    const now = Date.now();
+    // Machines already held aren't worth asking about. reserve checks again under the lock.
+    const held = heldMachines(await this.routes(now), now);
+
+    const machines = await createDb(this.env.DB)
+      .select({
+        id: schema.machine.id,
+        name: schema.machine.name,
+        os: schema.machine.os,
+        arch: schema.machine.arch,
+        pausedAt: schema.machine.pausedAt,
+        source: schema.machine.source,
+        installationId: schema.machine.installationId,
+        githubRunnerId: schema.machine.githubRunnerId,
+        routingLabel: schema.machine.routingLabel,
+        githubLabels: schema.machine.githubLabels,
+        sharing: schema.machine.sharing,
+        ownerName: schema.user.name,
+        ownerGithubId: schema.account.accountId,
+      })
+      .from(schema.machine)
+      .leftJoin(schema.user, eq(schema.user.id, schema.machine.createdBy))
+      // The owner's GitHub account, which `only_me` matches the job's starters against.
+      .leftJoin(
+        schema.account,
+        and(
+          eq(schema.account.userId, schema.machine.createdBy),
+          eq(schema.account.providerId, "github"),
+        ),
+      )
+      .where(
+        and(
+          eq(schema.machine.workspaceId, job.workspaceId),
+          isNull(schema.machine.revokedAt),
+          or(
+            isNotNull(schema.machine.tokenHash),
+            and(eq(schema.machine.source, "github"), isNotNull(schema.machine.routingLabel)),
+          ),
+        ),
+      );
+    // An org runner only serves its own org's repos, so a runner added from another
+    // installation never fits this job. An owner with two GitHub accounts linked would list a
+    // machine twice: keep its first row.
+    const seen = new Set<string>();
+    const fits = machines
+      .filter((machine) => !seen.has(machine.id) && Boolean(seen.add(machine.id)))
+      .filter(
+        (machine) => machine.source !== "github" || machine.installationId === job.installationId,
+      );
+    const pool = fits.map((machine) => ({
+      id: machine.id,
+      name: machine.name,
+      labels:
+        machine.source === "github"
+          ? matchLabels(parseStoredLabels(machine.githubLabels))
+          : machineLabels(machine),
+      paused: machine.pausedAt !== null,
+      sharing: machine.sharing,
+      ownerGithubId: githubId(machine.ownerGithubId),
+      ownerName: machine.ownerName,
+    }));
+    // Paused machines can't be picked, so there's no need to ask for their live status.
+    // Nor for those whose sharing won't take this job.
+    const admitted = fits.filter(
+      (machine) =>
+        !held.has(machine.id) &&
+        machine.pausedAt === null &&
+        admits(
+          pool.find((entry) => entry.id === machine.id)!,
+          job,
+        ),
+    );
+    // A connected machine shared with anyone only takes the job if its owner can read the repo.
+    // A runner added from GitHub is the org's own, already limited by its runner group.
+    const readable = await Promise.all(
+      admitted.map((machine) => {
+        const entry = pool.find((e) => e.id === machine.id)!;
+        if (machine.source === "github" || !needsOwnerAccess(entry, job)) return true;
+        return this.ownerCanRead(machine.id, entry.ownerGithubId ?? null, job);
+      }),
+    );
+    const live = admitted.filter((_, index) => readable[index]);
+    const runners = live.some((machine) => machine.source === "github")
+      ? await this.orgRunners(job)
+      : null;
+    const candidates: Candidate[] = await Promise.all(
+      live.map(async (machine): Promise<Candidate> => {
+        const { ownerName: _, ...base } = pool.find((entry) => entry.id === machine.id)!;
+        if (machine.source !== "github")
+          return { ...base, ...(await this.env.MACHINE_LINK.getByName(machine.id).status()) };
+        const runner = runners?.runners.find((r) => r.id === machine.githubRunnerId);
+        return {
+          ...base,
+          ...runnerStatus(runner, runner && runners?.access.get(runner.id), {
+            id: job.repositoryId,
+            private: job.private,
+          }),
+        };
+      }),
+    );
+    const routingLabels = new Map(fits.map((m) => [m.id, m.routingLabel ?? undefined]));
+    return (
+      (await this.reserve(job, candidates, routingLabels)) ??
+      unavailableMachines(pool, job.machine, job)
+    );
+  }
+
+  // Chooses among the candidates and stores the route that holds the chosen machine, one pick at a
+  // time and with no I/O but storage, so the lock is held for milliseconds. Null when none is free.
+  private reserve(
+    job: PickedJob,
+    candidates: Candidate[],
+    routingLabels: Map<string, string | undefined>,
+  ): Promise<MachinePick | null> {
     return this.ctx.blockConcurrencyWhile(async () => {
       const now = Date.now();
       const routes = await this.routes(now);
-      const held = new Set(routes.filter((r) => holdsMachine(r, now)).map((r) => r.machineId));
-
-      const machines = await createDb(this.env.DB)
-        .select({
-          id: schema.machine.id,
-          name: schema.machine.name,
-          os: schema.machine.os,
-          arch: schema.machine.arch,
-          pausedAt: schema.machine.pausedAt,
-          source: schema.machine.source,
-          installationId: schema.machine.installationId,
-          githubRunnerId: schema.machine.githubRunnerId,
-          routingLabel: schema.machine.routingLabel,
-          githubLabels: schema.machine.githubLabels,
-          sharing: schema.machine.sharing,
-          ownerName: schema.user.name,
-          ownerGithubId: schema.account.accountId,
-        })
-        .from(schema.machine)
-        .leftJoin(schema.user, eq(schema.user.id, schema.machine.createdBy))
-        // The owner's GitHub account, which `only_me` matches the job's starters against.
-        .leftJoin(
-          schema.account,
-          and(
-            eq(schema.account.userId, schema.machine.createdBy),
-            eq(schema.account.providerId, "github"),
-          ),
-        )
-        .where(
-          and(
-            eq(schema.machine.workspaceId, job.workspaceId),
-            isNull(schema.machine.revokedAt),
-            or(
-              isNotNull(schema.machine.tokenHash),
-              and(eq(schema.machine.source, "github"), isNotNull(schema.machine.routingLabel)),
-            ),
-          ),
-        );
-      // An org runner only serves its own org's repos, so a runner added from another
-      // installation never fits this job. An owner with two GitHub accounts linked would list a
-      // machine twice: keep its first row.
-      const seen = new Set<string>();
-      const fits = machines
-        .filter((machine) => !seen.has(machine.id) && Boolean(seen.add(machine.id)))
-        .filter(
-          (machine) => machine.source !== "github" || machine.installationId === job.installationId,
-        );
-      const pool = fits.map((machine) => ({
-        id: machine.id,
-        name: machine.name,
-        labels:
-          machine.source === "github"
-            ? matchLabels(parseStoredLabels(machine.githubLabels))
-            : machineLabels(machine),
-        paused: machine.pausedAt !== null,
-        sharing: machine.sharing,
-        ownerGithubId: githubId(machine.ownerGithubId),
-        ownerName: machine.ownerName,
-      }));
-      // Paused machines can't be picked, so there's no need to ask for their live status.
-      // Nor for those whose sharing won't take this job.
-      const admitted = fits.filter(
-        (machine) =>
-          !held.has(machine.id) &&
-          machine.pausedAt === null &&
-          admits(
-            pool.find((entry) => entry.id === machine.id)!,
-            job,
-          ),
-      );
-      // A connected machine shared with anyone only takes the job if its owner can read the repo.
-      // A runner added from GitHub is the org's own, already limited by its runner group.
-      const readable = await Promise.all(
-        admitted.map((machine) => {
-          const entry = pool.find((e) => e.id === machine.id)!;
-          if (machine.source === "github" || !needsOwnerAccess(entry, job)) return true;
-          return this.ownerCanRead(machine.id, entry.ownerGithubId ?? null, job, now);
-        }),
-      );
-      const live = admitted.filter((_, index) => readable[index]);
-      const runners = live.some((machine) => machine.source === "github")
-        ? await this.orgRunners(job)
-        : null;
-      const candidates: Candidate[] = await Promise.all(
-        live.map(async (machine): Promise<Candidate> => {
-          const { ownerName: _, ...base } = pool.find((entry) => entry.id === machine.id)!;
-          if (machine.source !== "github")
-            return { ...base, ...(await this.env.MACHINE_LINK.getByName(machine.id).status()) };
-          const runner = runners?.runners.find((r) => r.id === machine.githubRunnerId);
-          return {
-            ...base,
-            ...runnerStatus(runner, runner && runners?.access.get(runner.id), {
-              id: job.repositoryId,
-              private: job.private,
-            }),
-          };
-        }),
-      );
+      const held = heldMachines(routes, now);
       const machine = chooseMachine(candidates, held, lastPicked(routes), job.machine, job);
-      if (!machine) return unavailableMachines(pool, job.machine, job);
-
-      const routingLabel = fits.find((m) => m.id === machine.id)?.routingLabel ?? undefined;
+      if (!machine) return null;
+      const routingLabel = routingLabels.get(machine.id);
       const route: Route = {
         id: newRouteId(),
         machineId: machine.id,
@@ -298,17 +319,14 @@ export class Router extends DurableObject<Env> {
     });
   }
 
-  // The job's org's self-hosted runners, read fresh, with their group access (cached), or null
-  // when GitHub can't be reached: added runners then sit this pick out. A personal account has
-  // none.
+  // The job's org's self-hosted runners, read within the last few seconds, with their group access
+  // (cached), or null when GitHub can't be reached: added runners then sit this pick out. A
+  // personal account has none.
   private async orgRunners(
     job: PickedJob,
   ): Promise<{ runners: OrgRunner[]; access: Map<number, GroupAccess> } | null> {
     const org = job.repo.split("/")[0];
     try {
-      const token = await appInstallationToken(this.env, job.installationId);
-      const runners = await listOrgRunners(token, org);
-      const cached = this.groupAccess.get(job.installationId);
       // A personal account has no org runners. Adopting its repo runners is #162.
       const scope = await installationRunnerScope(
         createDb(this.env.DB),
@@ -316,11 +334,15 @@ export class Router extends DurableObject<Env> {
         job.repo,
       );
       if (scope.kind === "repo") return { runners: [], access: new Map() };
-      const known = cached && runners.every((runner) => cached.access.has(runner.id));
-      if (cached && known && Date.now() - cached.at < GROUP_ACCESS_TTL_MS)
-        return { runners, access: cached.access };
-      const access = await fetchGroupAccess(token, org, runners);
-      this.groupAccess.set(job.installationId, { at: Date.now(), access });
+      const runners = await this.runnerList(PICK_RUNNER_LIST_TTL_MS, job.installationId, org);
+      const readAccess = async () =>
+        fetchGroupAccess(await appInstallationToken(this.env, job.installationId), org, runners);
+      let access = await this.groupAccess.get(job.installationId, GROUP_ACCESS_TTL_MS, readAccess);
+      // A runner added since: read the groups again.
+      if (!runners.every((runner) => access.has(runner.id))) {
+        this.groupAccess.forget(job.installationId);
+        access = await this.groupAccess.get(job.installationId, GROUP_ACCESS_TTL_MS, readAccess);
+      }
       return { runners, access };
     } catch (error) {
       console.warn(
@@ -328,7 +350,7 @@ export class Router extends DurableObject<Env> {
           msg: "github runners unavailable",
           installationId: job.installationId,
           org,
-          error: error instanceof Error ? error.message : String(error),
+          error: errorMessage(error),
         }),
       );
       return null;
@@ -428,6 +450,34 @@ export class Router extends DurableObject<Env> {
     if (expired.length) await this.ctx.storage.delete(expired.slice(0, 128));
     return [...stored.values()].filter((r) => now - r.createdAt <= ROUTE_TTL_MS);
   }
+}
+
+// Values read from GitHub, reused while younger than the age a caller accepts. Each is kept as a
+// promise so callers that arrive together share one read, and a failed read is forgotten so the
+// next caller asks again.
+class Recent<K, V> {
+  private entries = new Map<K, { at: number; value: Promise<V> }>();
+
+  get(key: K, maxAge: number, read: () => Promise<V>): Promise<V> {
+    const now = Date.now();
+    const cached = this.entries.get(key);
+    if (cached && now - cached.at < maxAge) return cached.value;
+    const value = read();
+    this.entries.set(key, { at: now, value });
+    value.catch(() => {
+      if (this.entries.get(key)?.value === value) this.entries.delete(key);
+    });
+    return value;
+  }
+
+  forget(key: K) {
+    this.entries.delete(key);
+  }
+}
+
+// The machines a live route still holds.
+function heldMachines(routes: Route[], now: number) {
+  return new Set(routes.filter((r) => holdsMachine(r, now)).map((r) => r.machineId));
 }
 
 // Better Auth keeps a GitHub account's id as text.

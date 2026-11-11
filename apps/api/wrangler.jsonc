@@ -144,7 +144,12 @@
   //   wrangler queues create relayrunner-github-webhooks
   //   wrangler queues create relayrunner-github-webhooks-dlq
   "queues": {
-    "producers": [{ "binding": "WEBHOOK_QUEUE", "queue": "relayrunner-github-webhooks" }],
+    "producers": [
+      { "binding": "WEBHOOK_QUEUE", "queue": "relayrunner-github-webhooks" },
+      // The 15-minute cron's per-installation work (src/installation-tasks.ts). Create once:
+      //   wrangler queues create relayrunner-installation-tasks
+      { "binding": "INSTALLATION_TASKS", "queue": "relayrunner-installation-tasks" },
+    ],
     "consumers": [
       {
         "queue": "relayrunner-github-webhooks",
@@ -152,6 +157,13 @@
         "max_batch_timeout": 5,
         "max_retries": 6,
         "dead_letter_queue": "relayrunner-github-webhooks-dlq",
+      },
+      // Each task records its own failure and the next cron run repeats it, so one retry and no DLQ.
+      {
+        "queue": "relayrunner-installation-tasks",
+        "max_batch_size": 10,
+        "max_batch_timeout": 5,
+        "max_retries": 1,
       },
       {
         "queue": "relayrunner-github-webhooks-dlq",

@@ -74,10 +74,6 @@ export async function appJwt(appId: string, key: CryptoKey, now = Date.now()) {
   return `${unsigned}.${base64Url(new Uint8Array(signature))}`;
 }
 
-export async function installationToken(jwt: string, installationId: number): Promise<string> {
-  return (await mintInstallationToken(jwt, installationId)).token;
-}
-
 async function mintInstallationToken(jwt: string, installationId: number) {
   const response = await fetch(`${API}/app/installations/${installationId}/access_tokens`, {
     method: "POST",
@@ -218,21 +214,33 @@ export async function appInstallationToken(
 ) {
   const cached = installationTokens.get(installationId);
   if (cached && cached.expiresAt - now > TOKEN_REUSE_MARGIN_MS) return cached.token;
-  const key = await importAppPrivateKey(await env.GITHUB_APP_PRIVATE_KEY.get());
-  const minted = await mintInstallationToken(await appJwt(env.GITHUB_APP_ID, key), installationId);
-  installationTokens.set(installationId, minted);
-  return minted.token;
+  // Callers that miss together share one mint.
+  let minting = mintingTokens.get(installationId);
+  if (!minting) {
+    minting = (async () => {
+      const key = await importAppPrivateKey(await env.GITHUB_APP_PRIVATE_KEY.get());
+      return mintInstallationToken(await appJwt(env.GITHUB_APP_ID, key), installationId);
+    })();
+    mintingTokens.set(installationId, minting);
+    minting
+      .then((minted) => installationTokens.set(installationId, minted))
+      .catch(() => {})
+      .finally(() => mintingTokens.delete(installationId));
+  }
+  return (await minting).token;
 }
 
 // Installation tokens by installation id, kept for the isolate's life so a page load or pick
 // doesn't read the private key, sign a JWT and mint a token each time (each mint is a GitHub
 // round trip, and the App can mint only so many an hour). Reused until 5 minutes before expiry.
 const installationTokens = new Map<number, { token: string; expiresAt: number }>();
+const mintingTokens = new Map<number, Promise<{ token: string; expiresAt: number }>>();
 const TOKEN_REUSE_MARGIN_MS = 5 * 60_000;
 
 /** Forget cached installation tokens. For tests. */
 export function clearInstallationTokens() {
   installationTokens.clear();
+  mintingTokens.clear();
 }
 
 /** Uninstall the App from an account, as the App. Already gone (404) counts as done. */
