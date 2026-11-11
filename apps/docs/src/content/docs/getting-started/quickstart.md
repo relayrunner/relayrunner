@@ -2,7 +2,7 @@
 title: Quickstart
 description: Connect a repository and run your first job on your machine.
 sidebar:
-  order: 2
+  order: 1
 ---
 
 :::note[Placeholder]

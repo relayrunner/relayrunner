@@ -27,7 +27,13 @@ export default defineConfig({
       // Each folder under src/content/docs/ is a sidebar group; pages sort by `sidebar.order`
       // in their frontmatter, then by title.
       sidebar: [
-        { label: "Getting started", items: [{ autogenerate: { directory: "getting-started" } }] },
+        {
+          label: "Getting started",
+          items: [
+            { slug: "index", label: "Introduction" },
+            { autogenerate: { directory: "getting-started" } },
+          ],
+        },
         { label: "Guides", items: [{ autogenerate: { directory: "guides" } }] },
         { label: "Reference", items: [{ autogenerate: { directory: "reference" } }] },
       ],
