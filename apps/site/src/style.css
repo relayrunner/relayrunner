@@ -365,11 +365,6 @@ button {
   margin-top: 18px;
   color: var(--ink-2);
 }
-.aside {
-  margin-top: 14px;
-  color: var(--mute);
-  font-size: 15px;
-}
 .split-head {
   display: grid;
   grid-template-columns: 7fr 5fr;
@@ -752,10 +747,6 @@ button {
 }
 .copy-btn:hover {
   background: #0b3d1a;
-}
-.close .close-note {
-  margin-top: 16px;
-  font-size: 14px;
 }
 .close-mascot {
   width: 230px;
