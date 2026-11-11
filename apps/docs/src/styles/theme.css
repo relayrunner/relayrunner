@@ -1,0 +1,93 @@
+/*
+ * RelayRunner theme for Starlight. Colors are the dashboard's tokens (apps/web/src/styles.css),
+ * which come from the landing page's DESIGN.md: green "go" accent, cool grays. Starlight's dark
+ * theme is the :root default and light is [data-theme="light"]. Its gray scale runs from
+ * --sl-color-white (text) to --sl-color-black (page background) in both themes.
+ */
+:root {
+  --sl-font: "Hanken Grotesk Variable", "Hanken Grotesk", system-ui, sans-serif;
+  --sl-font-mono: "JetBrains Mono Variable", "JetBrains Mono", ui-monospace, monospace;
+
+  /* Dark (dashboard .dark) */
+  --sl-color-accent-low: #10301a;
+  --sl-color-accent: #3fb950;
+  --sl-color-accent-high: #a8ebb3;
+  --sl-color-white: #e6edf3;
+  --sl-color-gray-1: #d0d7de;
+  --sl-color-gray-2: #b4bcc6;
+  --sl-color-gray-3: #8b949e;
+  --sl-color-gray-4: #4a515c;
+  --sl-color-gray-5: #272c35;
+  --sl-color-gray-6: #161a20;
+  --sl-color-gray-7: #101317;
+  --sl-color-black: #0b0d10;
+
+  /* Notes (:::note) are neutral, like the dashboard's info panels. */
+  --sl-color-blue-low: #161a20;
+  --sl-color-blue: #8b949e;
+  --sl-color-blue-high: #e6edf3;
+}
+
+:root[data-theme="light"] {
+  /* Light (dashboard :root) */
+  --sl-color-accent-low: #dcf1e1;
+  --sl-color-accent: #1a7f37;
+  --sl-color-accent-high: #0f4d22;
+  --sl-color-white: #1b1f24;
+  --sl-color-gray-1: #2a3037;
+  --sl-color-gray-2: #3d454e;
+  --sl-color-gray-3: #5e6772;
+  --sl-color-gray-4: #a3abb5;
+  --sl-color-gray-5: #d9dee4;
+  --sl-color-gray-6: #eef1f4;
+  --sl-color-gray-7: #f6f7f9;
+  --sl-color-black: #ffffff;
+
+  --sl-color-blue-low: #eef1f4;
+  --sl-color-blue: #5e6772;
+  --sl-color-blue-high: #1b1f24;
+}
+
+/* Landing radii (6 / 8 / 10px) on the parts Starlight draws as boxes. */
+.expressive-code .frame,
+.starlight-aside,
+.card,
+.sl-link-card {
+  border-radius: 10px;
+}
+.expressive-code .frame pre {
+  border-radius: 10px;
+}
+
+.site-title img {
+  border-radius: 6px;
+}
+
+.site-title {
+  color: var(--sl-color-white);
+}
+
+/* Current page: the dashboard's soft green selection, not a solid accent block. */
+.sidebar-content a[aria-current="page"],
+.sidebar-content a[aria-current="page"]:hover,
+.sidebar-content a[aria-current="page"]:focus {
+  background-color: var(--sl-color-accent-low);
+  color: var(--sl-color-accent-high);
+  font-weight: 600;
+}
+
+/* Starlight rotates card icons through four hues; keep them all on the accent. */
+.card-grid > .card.card {
+  --sl-card-border: var(--sl-color-accent);
+  --sl-card-bg: var(--sl-color-accent-low);
+}
+
+/* Primary buttons are the dashboard's solid "go" green. */
+.sl-link-button.primary {
+  background: var(--sl-color-accent);
+  border-color: var(--sl-color-accent);
+  color: #03140a;
+}
+:root[data-theme="light"] .sl-link-button.primary {
+  color: #ffffff;
+}

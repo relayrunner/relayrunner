@@ -1,0 +1,20 @@
+{
+  "name": "@relayrunner/docs",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "astro dev",
+    "build": "astro build && node scripts/postbuild.mjs",
+    "preview": "wrangler dev",
+    "deploy": "pnpm build && wrangler deploy"
+  },
+  "dependencies": {
+    "@astrojs/starlight": "^0.42.10",
+    "@fontsource-variable/hanken-grotesk": "catalog:",
+    "@fontsource-variable/jetbrains-mono": "catalog:",
+    "astro": "^7.4.10"
+  },
+  "devDependencies": {
+    "wrangler": "catalog:"
+  }
+}

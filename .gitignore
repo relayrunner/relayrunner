@@ -10,6 +10,8 @@ coverage/
 .env.*
 !.env.example
 .wrangler/
+# Astro generated types (apps/docs).
+.astro/
 # Written by apps/api/scripts/deploy.ts on every deploy.
 apps/api/wrangler.deploy.jsonc
 .dev.vars
