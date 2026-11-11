@@ -1,7 +1,8 @@
 import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
-import { ACTIVITY_FILTERS, ACTIVITY_RESULTS } from "@relayrunner/activity";
+import { ACTIVITY_FILTERS, ACTIVITY_RESULTS, type ActivityPage } from "@relayrunner/activity";
 import { z } from "zod";
 import { ApiError, type Api, type Me } from "./api.ts";
+import { compactActivityPage, compactJobTimes } from "./compact.ts";
 
 // Read-only tools over relayrunner-api's dashboard endpoints, all D1 reads. Each answers JSON.
 // None asks GitHub or takes the Router's lock (apps/api/src/agent-auth.ts keeps it that way).
@@ -13,8 +14,9 @@ const READ_ONLY = { readOnlyHint: true, destructiveHint: false, openWorldHint: f
 
 type Result = { content: { type: "text"; text: string }[]; isError?: boolean };
 
+// Unindented: every byte counts against the client's tool-result cap.
 function json(value: unknown): Result {
-  return { content: [{ type: "text", text: JSON.stringify(value, null, 2) }] };
+  return { content: [{ type: "text", text: JSON.stringify(value) }] };
 }
 
 // API errors come back as tool errors the model can read and act on, not protocol errors.
@@ -130,7 +132,7 @@ export function registerTools(server: McpServer, api: Api, me: Me) {
     {
       title: "Activity",
       description:
-        "The workspace's activity log, newest first: jobs (with where RelayRunner routed each one and which providers it skipped and why), free checks, machines connecting, pausing or going offline, and member changes. Page with before = the previous page's nextBefore.",
+        "The workspace's activity log, newest first: jobs (where RelayRunner routed each one, which providers it skipped and why), free checks, machines connecting, pausing or going offline, and member changes. Items are compact (type, time, repo, job, runner, conclusion, route step and skipped reasons); pass detail for urls, sha, who started each run and the route's label inputs. Page with before = the previous answer's nextBefore.",
       inputSchema: {
         filter: z.enum(ACTIVITY_FILTERS).optional().describe("Only one kind of event."),
         repository: z.string().optional().describe("Only this repository (owner/name)."),
@@ -138,11 +140,19 @@ export function registerTools(server: McpServer, api: Api, me: Me) {
         machine: z.string().optional().describe("Only this machine, by id."),
         since: z.string().datetime().optional().describe("Only events after this ISO time."),
         before: z.number().int().positive().optional(),
+        limit: z.number().int().min(1).max(50).default(15).describe("Entries to return (1-50)."),
+        detail: z.boolean().default(false).describe("Return full entries instead of compact ones."),
       },
       annotations: READ_ONLY,
     },
-    ({ since, ...query }) =>
-      answer(() => api("/activity", { ...query, since: since ? Date.parse(since) : undefined })),
+    ({ since, limit, detail, ...query }) =>
+      answer(async () => {
+        const page = await api<ActivityPage>("/activity", {
+          ...query,
+          since: since ? Date.parse(since) : undefined,
+        });
+        return compactActivityPage(page, limit, detail);
+      }),
   );
 
   server.registerTool(
@@ -170,10 +180,18 @@ export function registerTools(server: McpServer, api: Api, me: Me) {
     {
       title: "Job times",
       description:
-        "How long each workflow and job usually takes on each runner environment, for comparing machines against GitHub-hosted runners.",
-      inputSchema: { days: days(30, 14) },
+        "How long each workflow and job usually takes on each runner environment, for comparing machines against GitHub-hosted runners. Times with no successful runs behind them are left out. Narrow with repository and workflow to keep the answer small.",
+      inputSchema: {
+        days: days(30, 14),
+        repository: z
+          .string()
+          .optional()
+          .describe("Only workflows in repositories whose owner/name contains this."),
+        workflow: z.string().optional().describe("Only workflows whose name contains this."),
+      },
       annotations: READ_ONLY,
     },
-    ({ days }) => answer(() => api("/job-times", { days })),
+    ({ days, ...filter }) =>
+      answer(async () => compactJobTimes(await api("/job-times", { days }), filter)),
   );
 }
