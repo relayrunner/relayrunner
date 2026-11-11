@@ -4,7 +4,7 @@ description: Inputs accepted by the relayrunner/actions reusable workflow.
 ---
 
 :::note[Placeholder]
-This page is a placeholder while the user documentation is written.
+This page is a placeholder until the user documentation is written.
 :::
 
 ```yaml

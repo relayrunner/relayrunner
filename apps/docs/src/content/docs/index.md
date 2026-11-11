@@ -6,7 +6,7 @@ sidebar:
 ---
 
 :::note[Placeholder]
-This page is a placeholder while the user documentation is written.
+This page is a placeholder until the user documentation is written.
 :::
 
 RelayRunner routes each GitHub Actions job to the best runner available: your own machine when it's online, another provider you've connected, or GitHub's hosted runners as a fallback.
