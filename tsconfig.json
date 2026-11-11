@@ -19,5 +19,13 @@
     "tests/**/*.ts",
     "tests/**/*.mts"
   ],
-  "exclude": ["**/node_modules", "**/dist", "**/coverage", "apps/api", "apps/web", "apps/webhooks"]
+  "exclude": [
+    "**/node_modules",
+    "**/dist",
+    "**/coverage",
+    "apps/agents",
+    "apps/api",
+    "apps/web",
+    "apps/webhooks"
+  ]
 }

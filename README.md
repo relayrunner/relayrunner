@@ -43,6 +43,7 @@ This is a pnpm workspace. The apps are deployed as Cloudflare Workers, except th
 | [`apps/api`](apps/api)           | The gateway: auth, workspaces, routing, the webhook queue consumer and the Durable Objects. |
 | [`apps/web`](apps/web)           | The dashboard, a React SPA that reaches the API over a service binding.                     |
 | [`apps/webhooks`](apps/webhooks) | Verifies GitHub webhook deliveries and queues them for the API.                             |
+| [`apps/agents`](apps/agents)     | The MCP server agents connect to, read-only, at agents.relayrunner.app/mcp.                 |
 | [`apps/cli`](apps/cli)           | The `relayrunner` CLI that connects a machine to a workspace.                               |
 | [`apps/landing`](apps/landing)   | The public site at [relayrunner.app](https://relayrunner.app).                              |
 

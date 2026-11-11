@@ -30,6 +30,8 @@
     "BETTER_AUTH_URL": "https://app.relayrunner.app",
     // Where links in emails point (src/email.ts): the dashboard people use, not the OAuth host.
     "DASHBOARD_URL": "https://app.relayrunner.app",
+    // The MCP server (apps/agents). Agent access tokens are issued for this URL only (src/agent-auth.ts).
+    "AGENTS_MCP_URL": "https://agents.relayrunner.app/mcp",
     // Sender for transactional email; must stay in send_email's allowed_sender_addresses below.
     "EMAIL_FROM": "noreply@send.relayrunner.app",
     // Dashboard origins other than BETTER_AUTH_URL that may sign in through the oAuthProxy plugin:

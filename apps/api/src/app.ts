@@ -1,11 +1,13 @@
 import { Hono } from "hono";
 import type { AccessIdentity } from "@relayrunner/access";
+import type { AgentPrincipal } from "./agent-auth.ts";
 import type { Auth, Session } from "./auth.ts";
 import type { Db, schema } from "./db/index.ts";
 import type { Env } from "./env.ts";
 import { requireAccess } from "./middleware/admin.ts";
 import { attachSession } from "./middleware/session.ts";
 import { activityRoutes } from "./routes/activity.ts";
+import { agentRoutes } from "./routes/agents.ts";
 import { adminWebhookRoutes } from "./routes/admin-webhooks.ts";
 import { adminRoutes } from "./routes/admin.ts";
 import { authRoutes } from "./routes/auth.ts";
@@ -31,6 +33,8 @@ export interface AppEnv {
     role: string;
     // Set by requireAccess on /api/admin/*.
     accessIdentity: AccessIdentity;
+    // Set by attachSession when the request carries an agent access token (agent-auth.ts).
+    agent?: AgentPrincipal;
   };
 }
 
@@ -56,6 +60,7 @@ app.route("/job-times", jobTimesRoutes);
 app.route("/runs", runRoutes);
 app.route("/github", githubRoutes);
 app.route("/machines", machineRoutes);
+app.route("/agents", agentRoutes);
 // Operator admin over D1 (users, workspaces): Access (above) and an operator session.
 app.route("/admin", adminRoutes);
 

@@ -8,6 +8,7 @@ import { purgeOldJobTimings } from "./job-timings.ts";
 import { purgeOldWorkflowRuns } from "./runs.ts";
 import { sweepPicks } from "./pick-sweep.ts";
 import { handleWebhookBatch } from "./webhook-queue.ts";
+import { wellKnown } from "./well-known.ts";
 
 export { ContainerRunner } from "./durable-objects/container-runner.ts";
 export { LintRunner } from "./durable-objects/lint-runner.ts";
@@ -20,7 +21,7 @@ const USAGE_CRON = "*/15 * * * *";
 
 // GitHub webhooks arrive on a queue from the ingress Worker (apps/webhooks), not over HTTP.
 export default {
-  fetch: app.fetch,
+  fetch: (request, env, ctx) => wellKnown(request, env) ?? app.fetch(request, env, ctx),
   queue: handleWebhookBatch,
   // Every 15 minutes: read each org's Actions usage from GitHub billing (#116), and rescue stuck relay
   // jobs and remove leftover pick runners (src/pick-sweep.ts). Hourly: alert when

@@ -10,7 +10,7 @@
  * (see packages/access). They answer 404 wherever Access isn't configured. The
  * old /dev/* paths redirect to /admin/* (public/_redirects).
  *
- * `run_worker_first` in wrangler.jsonc sends /api/* and /admin/* here before the
+ * `run_worker_first` in wrangler.jsonc sends /api/*, /admin/* and /.well-known/* here before the
  * assets layer; every other path is answered by assets (with the SPA fallback).
  */
 import { gateAdmin, isAdminPath, type AccessEnv } from "@relayrunner/access";
@@ -33,7 +33,12 @@ export default {
       // Who Access let in: lets an agent check its service token before it drives an admin view.
       if (pathname === "/admin/access") return Response.json({ identity: gate.identity });
     }
-    if (pathname === "/api" || pathname.startsWith("/api/")) {
+    // OAuth discovery for agent sign-in (apps/api/src/well-known.ts).
+    if (
+      pathname === "/api" ||
+      pathname.startsWith("/api/") ||
+      pathname.startsWith("/.well-known/")
+    ) {
       return env.API.fetch(request);
     }
     return env.ASSETS.fetch(request);

@@ -122,6 +122,9 @@ function SettingsNav({ workspaceName }: { workspaceName: string }) {
           <Link to="/settings/account" className={navLink} activeProps={navActive}>
             Profile
           </Link>
+          <Link to="/settings/agents" className={navLink} activeProps={navActive}>
+            Agents
+          </Link>
         </NavGroup>
       </nav>
     </div>
