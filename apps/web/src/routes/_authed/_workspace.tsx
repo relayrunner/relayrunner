@@ -18,6 +18,7 @@ import {
   WebhookIcon,
 } from "lucide-react";
 import { type ReactNode, useState } from "react";
+import { SectionBoundary } from "@/components/error-boundary";
 import { DOCS_URL, SiteFooter } from "@/components/site-footer";
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
 import { WorkspaceMark, WorkspaceMenu } from "@/components/workspace-menu";
@@ -115,7 +116,9 @@ function WorkspaceLayout() {
           <SettingsNav workspace={current.workspace} />
         ) : (
           <TooltipProvider>
-            <WorkspaceMenu workspace={current.workspace} user={user} compact={collapsed} />
+            <SectionBoundary>
+              <WorkspaceMenu workspace={current.workspace} user={user} compact={collapsed} />
+            </SectionBoundary>
             <nav className="flex flex-row flex-wrap gap-0.5 px-1 sm:flex-col sm:group-data-[collapsed]/sidebar:px-0">
               {nav.map((item) => (
                 <NavLink key={item.to} item={item} collapsed={collapsed} />

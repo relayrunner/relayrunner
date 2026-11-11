@@ -21,11 +21,6 @@ import { ROLE_LABELS, type Role } from "@/lib/roles";
 export const Route = createFileRoute("/_authed/_workspace/admin/workspaces")({
   loader: () => listWorkspaces(),
   component: WorkspacesPage,
-  errorComponent: ({ error }) => (
-    <PageHeader title="Workspaces">
-      Couldn't load workspaces: {error instanceof Error ? error.message : String(error)}
-    </PageHeader>
-  ),
 });
 
 function WorkspacesPage() {

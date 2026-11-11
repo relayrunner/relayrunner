@@ -1,6 +1,7 @@
 import { PROVIDER_IDS, PROVIDERS as PROVIDER_INFO } from "@relayrunner/providers";
 import { createFileRoute, Link } from "@tanstack/react-router";
 import { useState } from "react";
+import { SectionBoundary } from "@/components/error-boundary";
 import { PageHeader } from "@/components/page-header";
 import { ProviderMark } from "@/components/providers";
 import { RangePicker } from "@/components/range-picker";
@@ -56,7 +57,9 @@ function ProvidersPage() {
               .
             </p>
           ) : (
-            <InUse overview={overview} />
+            <SectionBoundary>
+              <InUse overview={overview} />
+            </SectionBoundary>
           )}
         </div>
 

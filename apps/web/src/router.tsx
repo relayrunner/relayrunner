@@ -1,4 +1,5 @@
 import { createRouter } from "@tanstack/react-router";
+import { RouteError } from "./components/error-boundary";
 import { routeTree } from "./routeTree.gen";
 
 // A `getRouter` factory is the shape TanStack Start expects in src/router.tsx,
@@ -8,6 +9,8 @@ export function getRouter() {
     routeTree,
     defaultPreload: "intent",
     scrollRestoration: true,
+    // Every route gets its own error boundary, so one page failing leaves the rest of the app up.
+    defaultErrorComponent: RouteError,
   });
 }
 
