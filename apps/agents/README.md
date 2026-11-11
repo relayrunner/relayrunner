@@ -14,18 +14,19 @@ agent ──▶ relayrunner-agents ──▶ relayrunner-api (service binding)
 The server speaks MCP's OAuth flow, so clients sign in on their own when you add the URL:
 
 1. The first request gets a `401` pointing at `/.well-known/oauth-protected-resource/mcp`, which names the dashboard's auth server (`https://app.relayrunner.app/api/auth`).
-2. The client registers itself (dynamic client registration) and opens the dashboard. The person signs in with GitHub if needed, picks one workspace (`/agents/workspace`) and approves the client (`/agents/consent`).
-3. The client gets a 15-minute access token for this server's URL, naming that workspace, with the `workspace:read` scope, plus a refresh token.
+2. The client registers itself (dynamic client registration) and opens the dashboard. The person signs in with GitHub if needed, picks the workspaces it may read (`/agents/workspace`, all of them checked to start) and approves the client (`/agents/consent`).
+3. The client gets a 15-minute access token for this server's URL, naming that grant of workspaces, with the `workspace:read` scope, plus a refresh token.
 
-Each tool call forwards that token to the API, which verifies it and only lets it read the workspace it names, through a fixed list of GET routes (`apps/api/src/agent-auth.ts`). Membership is checked on every call and every refresh, so removing someone from the workspace cuts their agents off. People see and disconnect their agents under Settings → Agents.
+Each tool call forwards that token to the API, with the workspace it's about in `x-relayrunner-workspace`. The API verifies the token and only lets it read that one workspace, if the grant covers it, through a fixed list of GET routes (`apps/api/src/agent-auth.ts`). Every tool takes an optional `workspace` (an id or name from `list_workspaces`), needed only when the connection reads more than one; no answer mixes workspaces. The grant and membership are checked on every call and every refresh, so removing someone from a workspace, or disconnecting the agent from it under Settings → Agents, cuts it off from that workspace at once. Workspaces joined later need a new connection.
 
-This Worker holds no secrets and no state. It doesn't call GitHub or the Router: runners added from GitHub show `github.unreachable` instead of a live status. Each user and workspace gets 120 requests a minute.
+This Worker holds no secrets and no state. It doesn't call GitHub or the Router: runners added from GitHub show `github.unreachable` instead of a live status. Each connection gets 120 requests a minute.
 
 ## Tools
 
 | Tool               | What it reads                                                      |
 | ------------------ | ------------------------------------------------------------------ |
-| `get_workspace`    | The workspace, your role and its connected GitHub accounts         |
+| `list_workspaces`  | The workspaces this connection reads, by id and name               |
+| `get_workspace`    | One workspace, your role and its connected GitHub accounts         |
 | `list_runners`     | Runners, their status, labels, pause state and current job         |
 | `get_runner_order` | The providers jobs are tried on, in order                          |
 | `list_runs`        | Recent workflow runs, filterable by repository, status, conclusion |

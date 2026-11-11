@@ -3,7 +3,7 @@ import { ChevronRightIcon } from "lucide-react";
 import { Fragment, memo, useEffect, useMemo, useState } from "react";
 import { PageHeader } from "@/components/page-header";
 import { ProviderLink } from "@/components/provider-link";
-import { providerOf } from "@/components/providers";
+import { ProviderMark, providerOf } from "@/components/providers";
 import { RangePicker } from "@/components/range-picker";
 import { Button } from "@/components/ui/button";
 import {
@@ -260,7 +260,6 @@ const Jobs = memo(function Jobs({
   const workflowKey = (workflow: WorkflowRow) =>
     `${workflow.repositoryId}/${workflow.workflow ?? ""}`;
   const allClosed = workflows.every((workflow) => closed.has(workflowKey(workflow)));
-  const span = environments.length + 2;
 
   return (
     <div className="grid gap-2">
@@ -281,21 +280,9 @@ const Jobs = memo(function Jobs({
               <th scope="col" className="px-4 py-2 text-left font-normal">
                 Workflow › job
               </th>
-              {environments.map((env) => (
-                <th
-                  key={env.key}
-                  scope="col"
-                  className="px-4 py-2 text-right font-normal whitespace-nowrap"
-                >
-                  <ProviderLink
-                    provider={providerOf(env)}
-                    className="inline-flex items-center gap-1.5"
-                    markClassName="size-4 rounded-[4px]"
-                  >
-                    {env.label}
-                  </ProviderLink>
-                </th>
-              ))}
+              <th scope="col" className="w-0 px-4 py-2 text-left font-normal whitespace-nowrap">
+                Median by runner
+              </th>
               <th scope="col" className="px-4 py-2 text-right font-normal">
                 Trend
               </th>
@@ -304,7 +291,7 @@ const Jobs = memo(function Jobs({
           <tbody>
             {workflows.length === 0 && (
               <tr>
-                <td colSpan={span} className="px-4 py-6 text-muted-foreground">
+                <td colSpan={3} className="px-4 py-6 text-muted-foreground">
                   No jobs in this repo in the window.
                 </td>
               </tr>
@@ -315,7 +302,7 @@ const Jobs = memo(function Jobs({
               return (
                 <Fragment key={key}>
                   <tr className="border-b bg-secondary/60">
-                    <th scope="row" className="px-4 py-2.5 text-left font-normal">
+                    <th scope="row" className="px-4 py-2.5 text-left align-top font-normal">
                       <button
                         type="button"
                         aria-expanded={open}
@@ -417,7 +404,10 @@ function JobLine({
     <tr className="border-b last:border-0 hover:bg-secondary/30">
       <th
         scope="row"
-        className={cn("py-2.5 pr-4 text-left font-normal", depth === 1 ? "pl-10" : "pl-16")}
+        className={cn(
+          "py-2.5 pr-4 text-left align-top font-normal",
+          depth === 1 ? "pl-10" : "pl-16",
+        )}
       >
         <span className="flex items-center gap-1.5">
           {matrix && (
@@ -454,6 +444,11 @@ function fastest(byEnvironment: Record<string, Stat>) {
   return ranked.length >= 2 ? (ranked[0]?.[0] ?? null) : null;
 }
 
+/** Runner lines shown per row; the rest fold into "+N more", and the job detail lists them all. */
+const SHOWN_RUNNERS = 3;
+
+// One stacked line per runner the job actually ran on, fastest first, instead of one column per
+// runner: most jobs only run on one or two runners, so a column each was mostly "not run".
 function Cells({
   environments,
   byEnvironment,
@@ -464,55 +459,100 @@ function Cells({
   perRun?: boolean;
 }) {
   const best = fastest(byEnvironment);
+  const ran = environments
+    .flatMap((env) => {
+      const stat = byEnvironment[env.key];
+      return stat && stat.samples > 0 ? [{ env, stat }] : [];
+    })
+    // Under 5 runs is too few to rank, so those go last.
+    .sort(
+      (a, b) =>
+        Number(a.stat.confidence === "few") - Number(b.stat.confidence === "few") ||
+        (a.stat.medianMs ?? Infinity) - (b.stat.medianMs ?? Infinity),
+    );
+  const shown = ran.length > SHOWN_RUNNERS + 1 ? ran.slice(0, SHOWN_RUNNERS) : ran;
+  const hidden = ran.slice(shown.length);
   // The trend of the runner this job ran on most.
-  const busiest = Object.values(byEnvironment).sort((a, b) => b.samples - a.samples)[0];
+  const busiest = ran.map(({ stat }) => stat).sort((a, b) => b.samples - a.samples)[0];
   return (
     <>
-      {environments.map((env) => (
-        <td key={env.key} className="px-4 py-2 text-right whitespace-nowrap">
-          <TimeCell stat={byEnvironment[env.key]} best={best === env.key} perRun={perRun} />
-        </td>
-      ))}
-      <td className="px-4 py-2 text-right whitespace-nowrap">
+      <td className="px-4 py-2 align-top">
+        {ran.length === 0 ? (
+          <span className="text-muted-foreground">{perRun ? "no whole runs" : "not run"}</span>
+        ) : (
+          <ul className="grid gap-1">
+            {shown.map(({ env, stat }) => (
+              <TimeLine
+                key={env.key}
+                env={env}
+                stat={stat}
+                best={best === env.key}
+                perRun={perRun}
+              />
+            ))}
+            {hidden.length > 0 && (
+              <li
+                className="pl-6 text-xs text-muted-foreground"
+                title={hidden
+                  .map(({ env, stat }) => `${env.label}: ${medianText(stat)}`)
+                  .join("\n")}
+              >
+                +{hidden.length} more
+              </li>
+            )}
+          </ul>
+        )}
+      </td>
+      <td className="px-4 py-2 text-right align-top whitespace-nowrap">
         <Trend trend={busiest?.trend ?? null} />
       </td>
     </>
   );
 }
 
-function TimeCell({ stat, best, perRun }: { stat?: Stat; best: boolean; perRun: boolean }) {
-  if (!stat || stat.samples === 0)
-    return (
-      <span className="flex flex-col items-end leading-tight">
-        <span className="text-idle">—</span>
-        <span className="text-xs text-muted-foreground">
-          {perRun ? "no whole runs" : "not run"}
-        </span>
-      </span>
-    );
+function TimeLine({
+  env,
+  stat,
+  best,
+  perRun,
+}: {
+  env: EnvironmentSummary;
+  stat: Stat;
+  best: boolean;
+  perRun: boolean;
+}) {
   const few = stat.confidence === "few";
   return (
-    <span className="flex flex-col items-end leading-tight" title={spreadText(stat)}>
+    <li
+      className="grid grid-cols-[1rem_13rem_3.5rem_6.5rem] items-center gap-x-2"
+      title={spreadText(stat)}
+    >
+      <ProviderMark provider={providerOf(env)} className="size-4 rounded-[4px]" />
+      <span className={cn("truncate", few && "text-muted-foreground")}>{env.label}</span>
       <span
         className={cn(
-          "text-[15px] font-semibold",
+          "text-right font-semibold whitespace-nowrap",
           best && "text-go",
           few && "font-medium text-muted-foreground",
         )}
       >
-        {best && <span className="mr-1 align-[1px] text-[9px]">▲</span>}
+        {best && (
+          <span className="mr-1 align-[1px] text-[9px]" aria-label="fastest">
+            ▲
+          </span>
+        )}
         {medianText(stat)}
       </span>
       <span
         className={cn(
-          "text-xs",
+          "text-xs whitespace-nowrap",
           stat.confidence === "low" ? "text-run" : few ? "text-idle" : "text-muted-foreground",
         )}
       >
-        {perRun && "per run · "}
         {plural(stat.samples, "run")}
+        {perRun && " · per run"}
       </span>
-    </span>
+    </li>
   );
 }
 

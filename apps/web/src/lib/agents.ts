@@ -16,3 +16,16 @@ export function listAgents() {
 export function disconnectAgent(id: string) {
   return api<{ ok: true }>(`/agents/${encodeURIComponent(id)}`, { method: "DELETE" });
 }
+
+/** Agent sign-in: the workspaces the person picked for the agent, before consent. */
+export function grantAgentWorkspaces(workspaceIds: string[]) {
+  return api<{ id: string }>("/agents/grants", {
+    method: "POST",
+    body: JSON.stringify({ workspaceIds }),
+  });
+}
+
+/** Agent sign-in: the workspaces just picked, for the consent page to name. */
+export function pendingAgentWorkspaces() {
+  return api<{ workspaces: { id: string; name: string }[] }>("/agents/grants/pending");
+}

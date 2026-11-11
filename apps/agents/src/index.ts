@@ -1,6 +1,7 @@
 /**
  * RelayRunner's MCP server, at https://agents.relayrunner.app/mcp. Agents sign in with OAuth
- * against the dashboard (apps/api/src/agent-auth.ts) and get a token for one workspace, read-only.
+ * against the dashboard (apps/api/src/agent-auth.ts) and get a token for the workspaces they pick,
+ * read-only.
  * This Worker holds no state and no secrets: it answers each MCP request with a fresh server whose
  * tools call relayrunner-api with the agent's own token, and the API decides what that token sees.
  */
@@ -35,12 +36,12 @@ export default {
       throw error;
     }
     const { success } = await env.LIMITER.limit({
-      key: `${me.user.id}:${me.agent.workspaceId}`,
+      key: `${me.user.id}:${me.agent.grantId}`,
     });
     if (!success) return jsonRpcError(429, "Rate limited. Try again in a minute.");
 
     const server = new McpServer({ name: "relayrunner", version: "0.1.0" });
-    registerTools(server, api, me);
+    registerTools(server, api, me.agent.workspaces);
     const transport = new WebStandardStreamableHTTPServerTransport({
       sessionIdGenerator: undefined,
       enableJsonResponse: true,
