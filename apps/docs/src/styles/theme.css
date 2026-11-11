@@ -50,7 +50,6 @@
 
 /* Landing radii (6 / 8 / 10px) on the parts Starlight draws as boxes. */
 .expressive-code .frame,
-.starlight-aside,
 .card,
 .sl-link-card {
   border-radius: 10px;
@@ -183,4 +182,31 @@ starlight-toc a[aria-current="true"] {
 .content-panel + .content-panel {
   border-top: 0;
   padding-top: 0.5rem;
+}
+
+/* Asides (:::note and friends) read as compact banners: title and text on one line, 14px. */
+.starlight-aside {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  column-gap: 0.5rem;
+  padding: 0.5rem 0.75rem;
+  border-inline-start-width: 2px;
+  border-radius: 8px;
+  font-size: 0.875rem;
+  line-height: 1.5;
+}
+.starlight-aside__title {
+  font-size: 0.875rem;
+  align-self: center;
+}
+.starlight-aside__icon {
+  font-size: 1em;
+}
+.starlight-aside__title + .starlight-aside__content {
+  margin-top: 0;
+  flex: 1 1 16rem;
+}
+.starlight-aside__content > :first-child {
+  margin-top: 0;
 }
