@@ -203,7 +203,7 @@ const MORE_PROVIDERS = KNOWN_PROVIDERS.filter(
           <li class="provider-card">
             <img src="/providers/self-hosted.svg" alt="" width="48" height="48" />
             <h3>Self-hosted runners</h3>
-            <p>Runners your org already has, in the runner groups you choose.</p>
+            <p>Runners your org already has, used as they are.</p>
           </li>
           <li class="provider-card">
             <img src="/providers/blacksmith.svg" alt="" width="48" height="48" />
@@ -239,9 +239,6 @@ const MORE_PROVIDERS = KNOWN_PROVIDERS.filter(
             Try a new provider, move a busy week onto your machines, or send everything back to
             GitHub, all from the dashboard. No pull request, no commit. The next job follows the new
             order.
-          </p>
-          <p class="aside">
-            If nothing fits, the job fails right away with the reason instead of sitting in a queue.
           </p>
         </div>
         <div class="panel" aria-hidden="true">
@@ -302,9 +299,9 @@ const MORE_PROVIDERS = KNOWN_PROVIDERS.filter(
           <p class="kicker">Bring your own</p>
           <h2>Your machines take jobs <span class="hl">while they're on.</span></h2>
           <p class="body">
-            Run <code>relayrunner connect</code> and each job gets a fresh one-job runner. Close the
-            laptop and the next job goes elsewhere. Share a machine with your team or keep it to
-            yourself, and add runners your org already has.
+            Run <code>relayrunner connect</code> and your laptop, Mac mini or home server takes jobs.
+            Close the laptop and the next job goes elsewhere. Share a machine with your team or keep
+            it to yourself.
           </p>
         </div>
         <div class="panel machines" aria-hidden="true">
@@ -426,8 +423,8 @@ const MORE_PROVIDERS = KNOWN_PROVIDERS.filter(
           <div class="close-copy">
             <h2 id="start-h">Put every runner to work.</h2>
             <p>
-              Run this in the repo you want to route. It puts a relay in front of the jobs you pick,
-              keeps their old runner as the fallback, and never commits.
+              Run this in the repo you want to route. It sets up the jobs you pick, keeps their old
+              runner as the fallback, and never commits.
             </p>
             <div class="instruction">
               <code><span class="mute" aria-hidden="true">$ </span>npx relayrunner init</code>
@@ -435,9 +432,6 @@ const MORE_PROVIDERS = KNOWN_PROVIDERS.filter(
                 <span data-copy-label>Copy</span>
               </button>
             </div>
-            <p class="close-note">
-              Works with orgs and personal accounts. macOS or Linux for your own machines.
-            </p>
           </div>
           <img
             class="close-mascot"
@@ -460,6 +454,7 @@ const MORE_PROVIDERS = KNOWN_PROVIDERS.filter(
         <ul>
           <li><a href="/docs/">Docs</a></li>
           <li><a href="https://github.com/relayrunner/relayrunner">GitHub</a></li>
+          <li><a href="https://github.com/apps/relayrunner">GitHub App</a></li>
           <li><a href="https://www.npmjs.com/package/relayrunner">npm</a></li>
           <li><a href="/docs/get-started/agents/">Agent setup</a></li>
           <li><a href="/privacy">Privacy</a></li>

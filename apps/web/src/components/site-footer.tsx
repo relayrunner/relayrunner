@@ -8,6 +8,7 @@ export const DOCS_URL = "https://relayrunner.app/docs/";
 const LINKS = [
   { label: "Docs", href: DOCS_URL },
   { label: "GitHub", href: "https://github.com/relayrunner/relayrunner" },
+  { label: "GitHub App", href: "https://github.com/apps/relayrunner" },
   { label: "npm", href: "https://www.npmjs.com/package/relayrunner" },
   { label: "Privacy", href: "https://relayrunner.app/privacy" },
   { label: "Terms", href: "https://relayrunner.app/terms" },
