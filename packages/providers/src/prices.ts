@@ -46,6 +46,10 @@ export interface PriceRow {
   rate: string;
   usd: number;
   from: string;
+  /** Set on rows operators recorded (the API's provider_price); base rows have none. */
+  id?: string;
+  source?: string | null;
+  createdBy?: string;
 }
 
 const vcpu = (perRunner: number, vcpus: number) => perRunner / vcpus;
@@ -91,8 +95,10 @@ export const dayMs = (day: string) => Date.parse(`${day}T00:00:00Z`);
 
 /** Price rows, ready to look up. Build one with priceBook. */
 export interface PriceBook {
-  /** USD for a minute of a rate at `at` (epoch ms), or undefined when it has no rows. */
-  usd(provider: PricedProvider, rate: string, at: number): number | undefined;
+  /** USD for a minute of a rate at `at` (epoch ms), or null when it has no rows. */
+  usd(provider: string, rate: string, at: number): number | null;
+  /** A rate's rows in effect, oldest first. */
+  history(provider: string, rate: string): PriceRow[];
   /**
    * Every moment a price changed, oldest first, as epoch ms. Between two of these every price is
    * fixed, so a report can sum minutes per stretch and price each stretch once.
@@ -101,32 +107,36 @@ export interface PriceBook {
 }
 
 /**
- * Looks up price rows. Rows for the same rate and day replace earlier ones in the list, so rows
- * added on top of BASE_PRICES win.
+ * Looks up price rows, leaving out any for a rate RATES doesn't list. Rows for the same rate and
+ * day replace earlier ones in the list, so rows added on top of BASE_PRICES win.
  */
 export function priceBook(rows: PriceRow[]): PriceBook {
-  const byRate = new Map<string, Map<number, number>>();
+  const byRate = new Map<string, Map<string, PriceRow>>();
   for (const row of rows) {
+    if (!isRate(row.provider, row.rate)) continue;
     const key = `${row.provider}:${row.rate}`;
-    const days = byRate.get(key) ?? new Map<number, number>();
-    days.set(dayMs(row.from), row.usd);
+    const days = byRate.get(key) ?? new Map<string, PriceRow>();
+    days.set(row.from, row);
     byRate.set(key, days);
   }
-  // Each rate's rows, oldest first.
   const histories = new Map(
-    [...byRate].map(([key, days]) => [key, [...days].sort(([a], [b]) => a - b)] as const),
+    [...byRate].map(([key, days]) => [
+      key,
+      [...days.values()].sort((a, b) => a.from.localeCompare(b.from)),
+    ]),
   );
   const changes = new Set<number>();
   for (const history of histories.values())
-    for (const [from] of history.slice(1)) changes.add(from);
+    for (const row of history.slice(1)) changes.add(dayMs(row.from));
+  const history = (provider: string, rate: string) => histories.get(`${provider}:${rate}`) ?? [];
   return {
     usd(provider, rate, at) {
-      const history = histories.get(`${provider}:${rate}`);
-      if (!history) return undefined;
-      let usd = history[0]![1];
-      for (const [from, value] of history) if (from <= at) usd = value;
+      let usd: number | null = null;
+      for (const [i, row] of history(provider, rate).entries())
+        if (i === 0 || dayMs(row.from) <= at) usd = row.usd;
       return usd;
     },
+    history,
     changes: [...changes].sort((a, b) => a - b),
   };
 }
@@ -140,7 +150,7 @@ export const rateText = (perMinute: number | null) =>
 
 /** What a minute on one of GitHub's standard runners cost in a private repo at `at`. */
 export const githubRate = (book: PriceBook, runner: GitHubRunner, at = Date.now()) =>
-  book.usd("github", runner, at) ?? null;
+  book.usd("github", runner, at);
 
 // A sized service's rate for a label: macOS, Windows, Arm, or Linux on x64.
 const platformOf = (label: string) => {
@@ -197,6 +207,6 @@ export function listRate(
 ): number | null {
   const sized = rateOf(provider, label);
   if (!sized) return null;
-  const usd = book.usd(provider as PricedProvider, sized.rate, at);
-  return usd === undefined ? null : usd * sized.vcpus;
+  const usd = book.usd(provider, sized.rate, at);
+  return usd === null ? null : usd * sized.vcpus;
 }

@@ -1,4 +1,4 @@
-import { isProviderId, PROVIDERS, rateText } from "@relayrunner/providers";
+import { isProviderId, PROVIDERS } from "@relayrunner/providers";
 import { createFileRoute } from "@tanstack/react-router";
 import { Trash2Icon } from "lucide-react";
 import { type FormEvent, useState } from "react";
@@ -14,6 +14,7 @@ import {
 } from "@/components/ui/select";
 import { addPrice, listPrices, removePrice, type AdminRate } from "@/lib/admin";
 import { ApiError } from "@/lib/api";
+import { rateText } from "@/lib/providers";
 
 // Operator admin, behind Cloudflare Access and an operator session
 // (apps/api/src/routes/admin-prices.ts).

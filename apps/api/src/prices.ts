@@ -3,42 +3,42 @@
 import {
   BASE_BOOK,
   BASE_PRICES,
-  isRate,
   type PriceBook,
   priceBook,
   type PricedProvider,
 } from "@relayrunner/providers";
-import { asc } from "drizzle-orm";
 import { type Db, schema } from "./db/index.ts";
 
 // How long an isolate reuses the book it read. Operators' own changes clear it at once (see
 // forgetPriceBook); another isolate picks them up within this.
 const CACHE_MS = 60_000;
 
-let cached: { book: PriceBook; until: number } | undefined;
+let cached: { book: Promise<PriceBook>; until: number } | undefined;
 
-/** The price rows operators recorded, oldest first. */
-export function recordedPrices(db: Db) {
-  return db.select().from(schema.providerPrice).orderBy(asc(schema.providerPrice.from));
+/** The base prices with the rows operators recorded on top, read from D1 now. */
+export async function readPriceBook(db: Db): Promise<PriceBook> {
+  const recorded = await db.select().from(schema.providerPrice);
+  // priceBook drops rows for rates it doesn't know.
+  return priceBook([
+    ...BASE_PRICES,
+    ...recorded.map((row) => ({ ...row, provider: row.provider as PricedProvider })),
+  ]);
 }
 
 /**
- * The base prices with the recorded rows on top. If D1 can't be read, the base list alone, so a
+ * readPriceBook, reused for CACHE_MS per isolate. If D1 can't be read, the base list alone, so a
  * report still has prices.
  */
 export async function loadPriceBook(db: Db, now = Date.now()): Promise<PriceBook> {
-  if (cached && now < cached.until) return cached.book;
-  try {
-    const rows = await recordedPrices(db);
-    const recorded = rows
-      .filter((row) => isRate(row.provider, row.rate))
-      .map((row) => ({ ...row, provider: row.provider as PricedProvider }));
-    cached = { book: priceBook([...BASE_PRICES, ...recorded]), until: now + CACHE_MS };
-    return cached.book;
-  } catch (error) {
-    console.error(JSON.stringify({ msg: "price rows unreadable", error: String(error) }));
-    return BASE_BOOK;
+  if (!cached || now >= cached.until) {
+    const book = readPriceBook(db).catch((error: unknown) => {
+      console.error(JSON.stringify({ msg: "price rows unreadable", error: String(error) }));
+      cached = undefined;
+      return BASE_BOOK;
+    });
+    cached = { book, until: now + CACHE_MS };
   }
+  return cached.book;
 }
 
 /** Drops this isolate's cached book, after a price row is added or removed. */

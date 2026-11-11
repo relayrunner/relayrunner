@@ -1,17 +1,16 @@
 /**
  * Operator admin for runner prices: each provider rate's price history, base list and recorded
  * rows together, and adding or removing recorded rows (provider_price). Needs Cloudflare Access
- * (app.ts) and an operator session. A change applies to reports at once, with no deploy.
+ * (app.ts) and an operator session (admin.ts). A change applies to reports at once, with no deploy.
  */
-import { BASE_PRICES, dayMs, isRate, type PricedProvider, RATES } from "@relayrunner/providers";
+import { dayMs, isRate, type PricedProvider, RATES } from "@relayrunner/providers";
 import { eq } from "drizzle-orm";
-import { Hono } from "hono";
+import { type Context, Hono } from "hono";
 import { z } from "zod";
 import type { AppEnv } from "../app.ts";
 import { createDb, schema } from "../db/index.ts";
-import { requireOperator, who } from "../middleware/admin.ts";
-import { requireUser } from "../middleware/session.ts";
-import { forgetPriceBook, loadPriceBook, recordedPrices } from "../prices.ts";
+import { who } from "../middleware/admin.ts";
+import { forgetPriceBook, readPriceBook } from "../prices.ts";
 
 const PriceBody = z.object({
   provider: z.string(),
@@ -45,34 +44,46 @@ export interface AdminRate {
   rows: AdminPriceRow[];
 }
 
+// A price row change, for the audit log.
+function logPrice(
+  c: Context<AppEnv>,
+  msg: string,
+  row: { provider: string; rate: string; usd: number; from: string },
+) {
+  const { provider, rate, usd, from } = row;
+  console.log(
+    JSON.stringify({
+      msg,
+      by: c.var.user!.email,
+      access: who(c.var.accessIdentity),
+      provider,
+      rate,
+      usd,
+      from,
+    }),
+  );
+}
+
+// Mounted under adminRoutes, which requires an operator session.
 export const adminPriceRoutes = new Hono<AppEnv>()
-  .use("*", requireUser, requireOperator)
   .get("/", async (c) => {
-    const db = createDb(c.env.DB);
-    const [book, recorded] = await Promise.all([loadPriceBook(db), recordedPrices(db)]);
+    // Read fresh, so the page shows what was just added.
+    const book = await readPriceBook(createDb(c.env.DB));
+    const now = Date.now();
     const rates: AdminRate[] = Object.entries(RATES).flatMap(([provider, rates]) =>
-      Object.entries(rates).map(([rate, per]) => {
-        const matches = (row: { provider: string; rate: string }) =>
-          row.provider === provider && row.rate === rate;
-        const rows: AdminPriceRow[] = [
-          ...BASE_PRICES.filter(matches).map((row) => ({
-            id: null,
-            usd: row.usd,
-            from: row.from,
-            source: null,
-            createdBy: null,
-          })),
-          ...recorded.filter(matches).map(({ id, usd, from, source, createdBy }) => ({
-            id,
-            usd,
-            from,
-            source,
-            createdBy,
-          })),
-        ].sort((a, b) => a.from.localeCompare(b.from));
-        const p = provider as PricedProvider;
-        return { provider: p, rate, per, current: book.usd(p, rate, Date.now()) ?? null, rows };
-      }),
+      Object.entries(rates).map(([rate, per]) => ({
+        provider: provider as PricedProvider,
+        rate,
+        per,
+        current: book.usd(provider, rate, now),
+        rows: book.history(provider, rate).map(({ id, usd, from, source, createdBy }) => ({
+          id: id ?? null,
+          usd,
+          from,
+          source: source ?? null,
+          createdBy: createdBy ?? null,
+        })),
+      })),
     );
     return c.json({ rates });
   })
@@ -81,8 +92,7 @@ export const adminPriceRoutes = new Hono<AppEnv>()
     if (!parsed.success) return c.json({ error: "invalid_price" }, 400);
     const { provider, rate, usd, from, source } = parsed.data;
     if (!isRate(provider, rate)) return c.json({ error: "unknown_rate" }, 400);
-    const db = createDb(c.env.DB);
-    const [row] = await db
+    const [row] = await createDb(c.env.DB)
       .insert(schema.providerPrice)
       .values({
         id: crypto.randomUUID(),
@@ -97,17 +107,7 @@ export const adminPriceRoutes = new Hono<AppEnv>()
       .returning();
     if (!row) return c.json({ error: "price_exists" }, 409);
     forgetPriceBook();
-    console.log(
-      JSON.stringify({
-        msg: "provider price recorded",
-        by: c.var.user!.email,
-        access: who(c.var.accessIdentity),
-        provider,
-        rate,
-        usd,
-        from,
-      }),
-    );
+    logPrice(c, "provider price recorded", row);
     return c.json({ price: row }, 201);
   })
   .delete("/:id", async (c) => {
@@ -117,16 +117,6 @@ export const adminPriceRoutes = new Hono<AppEnv>()
       .returning();
     if (!row) return c.json({ error: "not_found" }, 404);
     forgetPriceBook();
-    console.log(
-      JSON.stringify({
-        msg: "provider price removed",
-        by: c.var.user!.email,
-        access: who(c.var.accessIdentity),
-        provider: row.provider,
-        rate: row.rate,
-        usd: row.usd,
-        from: row.from,
-      }),
-    );
+    logPrice(c, "provider price removed", row);
     return c.json({ ok: true });
   });
