@@ -1,6 +1,7 @@
 import { DurableObject } from "cloudflare:workers";
 import {
   CONTAINER_LABEL,
+  containerLabels,
   containerRunnerGroupId,
   MAX_LIFETIME_MS,
   WATCH_INTERVAL_MS,
@@ -101,6 +102,7 @@ export class ContainerRunner extends DurableObject<Env> {
           instance: INSTANCE,
           enableInternet: true,
           env: { RUNNER_JIT_CONFIG: jit.encodedJitConfig },
+          labels: containerLabels(work),
         });
         await container.setInactivityTimeout(MAX_LIFETIME_MS);
         // Logs how the container ends while the object is awake (up to 15 minutes); the alarm

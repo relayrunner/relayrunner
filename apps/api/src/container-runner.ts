@@ -28,6 +28,14 @@ export function containerRunnerGroupId(groups: { id: number; name: string }[], f
   return groups.find((group) => group.name.toLowerCase() === wanted)?.id ?? fallback;
 }
 
+// Labels on each runner container, so Cloudflare's container usage analytics can be grouped by
+// GitHub job (and installation) to get the cost of each job. Names are at most 16 bytes, values
+// at most 64.
+export const containerLabels = (work: { jobId: number; installationId: number }) => ({
+  job_id: String(work.jobId),
+  installation_id: String(work.installationId),
+});
+
 export const usesContainerRunner = (labels: string[]) => hasLabels(labels, [CONTAINER_LABEL]);
 
 /**
