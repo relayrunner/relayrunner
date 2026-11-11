@@ -50,9 +50,7 @@ export function getProvidersOverview(days: number) {
 export const costText = ({ cost, jobs, unpricedJobs }: ProviderCounts) =>
   jobs > 0 && unpricedJobs === jobs ? "—" : money(cost);
 
-/** "$0.008/min", or "—" without a known price. */
-export const rateText = (perMinute: number | null) =>
-  perMinute === null ? "—" : `$${Number(perMinute.toFixed(5))}/min`;
+export { rateText } from "@relayrunner/providers";
 
 const cents = (usd: number) => Math.round(usd * 1000) / 1000;
 

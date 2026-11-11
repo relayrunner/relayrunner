@@ -11,6 +11,8 @@ export default defineConfig({
   compressHTML: false,
   // There is no base: Starlight serves docs from src/content/docs/docs/, so they land at /docs/.
   trailingSlash: "always",
+  // Fetch a page when its link is hovered or focused, so moving between docs pages is near instant.
+  prefetch: { prefetchAll: true },
   integrations: [
     starlight({
       title: "RelayRunner Docs",
@@ -25,6 +27,7 @@ export default defineConfig({
         "./src/styles/tokens.css",
         "./src/styles/header.css",
         "./src/styles/theme.css",
+        "./src/styles/transitions.css",
       ],
       // Sidebar order is set here: add a page's slug to its section when you add the file.
       sidebar: [
@@ -40,7 +43,12 @@ export default defineConfig({
         { label: "CI", items: ["docs/ci/routing", "docs/ci/free-checks"] },
         {
           label: "Runners",
-          items: ["docs/runners/self-hosted", "docs/runners/github", "docs/runners/blacksmith"],
+          items: [
+            "docs/runners/providers",
+            "docs/runners/self-hosted",
+            "docs/runners/github",
+            "docs/runners/blacksmith",
+          ],
         },
         {
           label: "Guides",

@@ -1,9 +1,15 @@
 ---
 // Moved from index.html; the header is now the shared SiteHeader. Astro bundles the imported CSS into the page's <head>.
 import SiteHeader from "../components/SiteHeader.astro";
+import ProviderLogo from "../components/docs/ProviderLogo.astro";
+import { KNOWN_PROVIDERS, PROVIDERS } from "../lib/providers";
 import "../style.css";
 
 const site = Astro.site!.origin;
+// Logo row: the providers without a card above (Cloudflare is RelayRunner's own runner).
+const MORE_PROVIDERS = KNOWN_PROVIDERS.filter(
+  (id) => !["blacksmith", "github", "cloudflare"].includes(id),
+);
 ---
 
 <!doctype html>
@@ -213,11 +219,14 @@ const site = Astro.site!.origin;
           </li>
         </ul>
         <ul class="logo-row" aria-label="More providers">
-          <li><img src="/providers/depot.svg" alt="" width="26" height="26" />Depot</li>
-          <li><img src="/providers/namespace.svg" alt="" width="26" height="26" />Namespace</li>
-          <li><img src="/providers/warpbuild.svg" alt="" width="26" height="26" />WarpBuild</li>
-          <li><img src="/providers/ubicloud.svg" alt="" width="26" height="26" />Ubicloud</li>
-          <li><img src="/providers/runs-on.svg" alt="" width="26" height="26" />RunsOn</li>
+          {
+            MORE_PROVIDERS.map((id) => (
+              <li>
+                <ProviderLogo id={id} size={26} />
+                {PROVIDERS[id].name}
+              </li>
+            ))
+          }
         </ul>
       </section>
 

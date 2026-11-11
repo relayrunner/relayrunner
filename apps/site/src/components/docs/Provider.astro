@@ -1,0 +1,100 @@
+---
+/*
+ * One provider's facts for the top of its docs page: what it is, the labels RelayRunner recognizes,
+ * an example runs-on value, its list price and its links. Everything comes from
+ * @relayrunner/providers, so the page stays in step with the dashboard.
+ *
+ *   <Provider id="depot" />
+ */
+import { PROVIDERS, providerFacts, type ProviderId } from "../../lib/providers";
+import ProviderLogo from "./ProviderLogo.astro";
+
+interface Props {
+  id: ProviderId;
+}
+
+const { id } = Astro.props;
+const { name, summary } = PROVIDERS[id];
+---
+
+<div class="rr-provider not-content">
+  <div class="rr-provider-head">
+    <ProviderLogo id={id} size={40} />
+    <div>
+      <strong>{name}</strong>
+      <p>{summary}</p>
+    </div>
+  </div>
+  <dl>
+    {
+      providerFacts(id).map((fact) => (
+        <>
+          <dt>{fact.term}</dt>
+          {"code" in fact ? (
+            <dd>
+              <code>{fact.code}</code>
+            </dd>
+          ) : "text" in fact ? (
+            <dd>{fact.text}</dd>
+          ) : (
+            <dd class="rr-links">
+              {fact.links.map((link) => (
+                <a href={link.href}>{link.label}</a>
+              ))}
+            </dd>
+          )}
+        </>
+      ))
+    }
+  </dl>
+</div>
+
+<style>
+  .rr-provider {
+    margin-block: 1.5rem;
+    padding: 16px 18px;
+    border: 1px solid var(--sl-color-gray-5);
+    border-radius: 10px;
+    background: var(--sl-color-gray-7);
+  }
+  .rr-provider-head {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+  }
+  .rr-provider-head strong {
+    color: var(--sl-color-white);
+    font-size: 16px;
+  }
+  .rr-provider-head p {
+    margin: 0;
+    color: var(--sl-color-gray-3);
+    font-size: 14px;
+  }
+  dl {
+    display: grid;
+    grid-template-columns: max-content 1fr;
+    gap: 6px 16px;
+    margin: 14px 0 0;
+    font-size: 14px;
+  }
+  dt {
+    color: var(--sl-color-gray-3);
+  }
+  dd {
+    margin: 0;
+    color: var(--sl-color-gray-2);
+    overflow-wrap: anywhere;
+  }
+  code {
+    font-family: var(--sl-font-mono);
+    font-size: 13px;
+  }
+  .rr-links {
+    display: flex;
+    gap: 14px;
+  }
+  a {
+    color: var(--sl-color-accent-high);
+  }
+</style>
