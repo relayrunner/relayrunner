@@ -184,8 +184,8 @@ export function lintCheckOutput(result: LintResult, context: LintContext): Check
   const all = sum(result.total);
   const listed =
     all > result.problems.length ? ` Listing the first ${result.problems.length} of ${all}.` : "";
-  const link = (problem: Problem) =>
-    `https://github.com/${context.repo}/blob/${context.headSha}/${problem.path}#L${problem.line}`;
+  const link = (problem: Problem, view = "blob") =>
+    `https://github.com/${context.repo}/${view}/${context.headSha}/${problem.path}#L${problem.line}`;
   const { changed } = context;
   const fresh: Problem[] = [];
   const old: Problem[] = [];
@@ -205,7 +205,8 @@ export function lintCheckOutput(result: LintResult, context: LintContext): Check
   if (!old.length) sections.push(findingsList(fresh, link));
   else {
     if (fresh.length) sections.push(`### On changed lines\n\n${findingsList(fresh, link)}`);
-    sections.push(`### Likely pre-existing\n\n${findingsList(old, link)}`);
+    // A blame link per line, for when and where each one came in.
+    sections.push(`### Likely pre-existing\n\n${findingsList(old, link, true)}`);
   }
   // Problems on changed lines first, as GitHub takes only the first 50.
   const annotations = [
@@ -220,14 +221,18 @@ export function lintCheckOutput(result: LintResult, context: LintContext): Check
 
 // Problems grouped by file, each linking to its line, until the list would run past
 // MAX_LIST_CHARS.
-function findingsList(problems: Problem[], link: (problem: Problem) => string) {
+function findingsList(
+  problems: Problem[],
+  link: (problem: Problem, view?: string) => string,
+  blame = false,
+) {
   const byPath = Map.groupBy(problems, (problem) => problem.path);
   const lines: string[] = [];
   let length = 0;
   for (const [path, group] of byPath) {
     for (const [index, problem] of group.entries()) {
       const rule = problem.title ? ` \`${problem.title.replaceAll("`", "")}\`` : "";
-      const line = `${index === 0 ? `\n**${escape(path)}**\n\n` : ""}- [Line ${problem.line}](${link(problem)}) ${problem.level}${rule}: ${escape(problem.message)}`;
+      const line = `${index === 0 ? `\n**${escape(path)}**\n\n` : ""}- [Line ${problem.line}](${link(problem)}) ${problem.level}${rule}: ${escape(problem.message)}${blame ? ` ([blame](${link(problem, "blame")}))` : ""}`;
       if (length + line.length > MAX_LIST_CHARS) {
         // Each line so far is one problem.
         lines.push(`\n…and ${problems.length - lines.length} more.`);

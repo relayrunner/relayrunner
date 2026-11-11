@@ -174,6 +174,10 @@ describe("lintCheckOutput", () => {
     );
     expect(output.summary).toMatch(/### On changed lines\n\n\*\*a\.yml\*\*\n\n- \[Line 13\]/);
     expect(output.summary).toMatch(/### Likely pre-existing\n\n\*\*a\.yml\*\*\n\n- \[Line 20\]/);
+    expect(output.summary).toContain(
+      "- [Line 20](https://github.com/acme/app/blob/abc/a.yml#L20) error `unpinned-uses`: u ([blame](https://github.com/acme/app/blame/abc/a.yml#L20))",
+    );
+    expect(output.summary).not.toContain("blame/abc/a.yml#L13");
     expect(output.annotations?.map((annotation) => annotation.title)).toEqual([
       "unpinned-uses",
       "Likely pre-existing: unpinned-uses",
