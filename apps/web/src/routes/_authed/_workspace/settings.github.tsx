@@ -5,14 +5,7 @@ import { ActionsMinutes, OverageBanner } from "@/components/actions-minutes";
 import { PageHeader } from "@/components/page-header";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import {
-  Card,
-  CardAction,
-  CardContent,
-  CardDescription,
-  CardHeader,
-  CardTitle,
-} from "@/components/ui/card";
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import {
   type AccountUsage,
   type ActionsUsage,
@@ -20,7 +13,6 @@ import {
   sampleActionsUsage,
 } from "@/lib/actions-usage";
 import { authDisabled, signIn } from "@/lib/auth-client";
-import { canManage } from "@/lib/roles";
 import { cn } from "@/lib/utils";
 import { githubOutcomes as outcomes, isGitHubOutcome, type GitHubOutcome } from "@/lib/github";
 import {
@@ -41,7 +33,6 @@ function GitHubSettingsPage() {
   const { current } = Route.useRouteContext();
   const { github } = Route.useSearch();
   const { workspace } = current;
-  const manager = canManage(current.role);
   const minutes = useActionsUsage();
   // Previews without an API show the sample accounts as connected accounts.
   const installations =
@@ -49,48 +40,41 @@ function GitHubSettingsPage() {
       ? sampleInstallations(minutes)
       : current.installations;
 
+  // A workspace is one installation (#316), so there's exactly one to show.
+  const installation = installations[0];
+
   return (
     <section>
-      <PageHeader title="GitHub accounts">
-        The GitHub orgs and personal accounts whose jobs this workspace routes.
+      <PageHeader title="GitHub">
+        {workspace.name} is the RelayRunner GitHub App installed on this account. Its repos' jobs
+        are what this workspace routes.
       </PageHeader>
       <div className="grid max-w-3xl gap-4">
         {github && <GitHubNotice outcome={github} />}
-        {minutes && <OverageBanner accounts={minutes.accounts} />}
+        {minutes && installation && (
+          <OverageBanner
+            accounts={minutes.accounts.filter((a) => a.installationId === installation.id)}
+          />
+        )}
 
         <Card className="py-4">
           <CardHeader className="px-4">
-            <CardTitle className="text-sm">Connected</CardTitle>
+            <CardTitle className="text-sm">Installation</CardTitle>
             <CardDescription>
-              Where the RelayRunner GitHub App is installed for {workspace.name}.
-              {!manager && " Owners and admins connect GitHub accounts."}
+              Choose which repos RelayRunner sees, or uninstall it, on GitHub. Uninstalling deletes
+              this workspace.
             </CardDescription>
-            {manager && (
-              <CardAction>
-                <Button asChild size="sm" variant={installations.length ? "outline" : "default"}>
-                  {/* A full page load: this leaves the dashboard for GitHub's install page. GitHub
-                    lists only accounts that can take a new install; with none left it opens the
-                    existing installation's settings instead. */}
-                  <a href="/api/github/install">
-                    {installations.length ? "Connect another account" : "Connect GitHub account"}
-                  </a>
-                </Button>
-              </CardAction>
-            )}
           </CardHeader>
           <CardContent className="px-4">
-            {installations.length === 0 ? (
-              <p className="text-sm text-muted-foreground">No GitHub accounts connected yet.</p>
-            ) : (
+            {installation ? (
               <ul className="grid gap-5">
-                {installations.map((installation) => (
-                  <ConnectedOrg
-                    key={installation.id}
-                    installation={installation}
-                    minutes={minutes?.accounts.find((a) => a.installationId === installation.id)}
-                  />
-                ))}
+                <ConnectedOrg
+                  installation={installation}
+                  minutes={minutes?.accounts.find((a) => a.installationId === installation.id)}
+                />
               </ul>
+            ) : (
+              <p className="text-sm text-muted-foreground">Couldn't find the installation.</p>
             )}
           </CardContent>
         </Card>
@@ -173,9 +157,9 @@ function ConnectedOrg({
               href={settingsUrl}
               target="_blank"
               rel="noreferrer"
-              aria-label={`${suspendedAt ? "Fix" : "Configure"} ${accountLogin} on GitHub`}
+              aria-label={`${suspendedAt ? "Fix" : "Manage"} ${accountLogin} on GitHub`}
             >
-              {suspendedAt ? "Fix" : "Configure"}
+              {suspendedAt ? "Fix on GitHub" : "Manage on GitHub"}
               <ExternalLink aria-hidden />
             </a>
           </Button>

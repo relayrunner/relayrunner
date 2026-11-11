@@ -16,13 +16,18 @@ function GeneralSettingsPage() {
   return (
     <section>
       <PageHeader title="General">
-        Your workspace connects GitHub accounts and owns the machines that run their jobs.
+        Your workspace is one GitHub account with the RelayRunner App installed. Its name and logo
+        come from GitHub.
       </PageHeader>
       <div className="grid max-w-3xl gap-4">
         <Card className="py-4">
           <CardHeader className="px-4">
             <CardTitle className="flex items-center gap-2.5 text-sm">
-              <WorkspaceMark name={workspace.name} className="size-6 text-xs" />
+              <WorkspaceMark
+                name={workspace.name}
+                logo={workspace.logo}
+                className="size-6 text-xs"
+              />
               {workspace.name}
             </CardTitle>
           </CardHeader>
