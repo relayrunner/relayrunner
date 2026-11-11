@@ -9,7 +9,7 @@ pnpm run deploy:site                         # build and deploy (from the repo r
 pnpm run deploy:site:preview                 # build and upload a preview of the current branch
 ```
 
-`site` in `astro.config.mjs` is the absolute origin used by the canonical link and the Open Graph and Twitter share image tags; set `SITE_URL` to override it. Docs search (Pagefind) only works in `build` output.
+`site` in `astro.config.mjs` is the absolute origin used by the canonical link and the Open Graph and Twitter share image tags; set `SITE_URL` to override it. Docs search (Pagefind) only works in `build` output; mark an element `data-pagefind-ignore` to keep it out of the index.
 
 ## Deploys
 
