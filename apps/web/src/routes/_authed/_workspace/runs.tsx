@@ -515,11 +515,8 @@ function RunDetail({ run, environments }: { run: Run; environments: Environments
                               <ProviderLink
                                 provider={providerOf({ key: job.environment })}
                                 className="inline-flex items-center gap-2"
+                                markClassName={cn(queued && "opacity-50")}
                               >
-                                <ProviderMark
-                                  provider={providerOf({ key: job.environment })}
-                                  className={cn(queued && "opacity-50")}
-                                />
                                 {queued
                                   ? `Waiting for ${label(job.environment)}`
                                   : label(job.environment)}

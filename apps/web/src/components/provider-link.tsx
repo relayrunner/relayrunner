@@ -6,20 +6,28 @@ import { HoverCard, HoverCardContent, HoverCardTrigger } from "@/components/ui/h
 import { cn } from "@/lib/utils";
 
 /**
- * Where a provider is named inline (a mark in a table, a runner in a feed), this makes it a link
- * to the provider's page, with a card on hover saying what it is. Self-hosted machines have no
- * provider page, so theirs stay plain text.
+ * A provider's mark and whatever names it inline (a runner in a table, a feed or a run), as a link
+ * to the provider's page with a card on hover saying what it is. Self-hosted machines have no
+ * provider page, so theirs stay plain.
  */
 export function ProviderLink({
   provider,
   className,
+  markClassName,
   children,
 }: {
   provider: Provider;
   className?: string;
+  markClassName?: string;
   children: ReactNode;
 }) {
-  if (provider === "machine") return <span className={className}>{children}</span>;
+  const content = (
+    <>
+      <ProviderMark provider={provider} className={markClassName} />
+      {children}
+    </>
+  );
+  if (provider === "machine") return <span className={className}>{content}</span>;
   const { name, summary, labels } = PROVIDER_INFO[provider];
   return (
     <HoverCard>
@@ -29,7 +37,7 @@ export function ProviderLink({
           params={{ provider }}
           className={cn("hover:underline hover:underline-offset-2", className)}
         >
-          {children}
+          {content}
         </Link>
       </HoverCardTrigger>
       <HoverCardContent>

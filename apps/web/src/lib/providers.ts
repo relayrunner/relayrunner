@@ -1,11 +1,11 @@
 import { listRate, PRICES_CHECKED, type ProviderId } from "@relayrunner/providers";
 import { api } from "@/lib/api";
 import { type Environment, type Stat, sampleStat } from "@/lib/job-times";
+import { money } from "@/lib/usage";
 
 export type ProviderCounts = {
   jobs: number;
   failures: number;
-  runSeconds: number;
   /** Minutes after rounding each job up. */
   billedMinutes: number;
   /** Estimated USD at list price, for the jobs on runner types with a known price. */
@@ -46,20 +46,15 @@ export function getProvidersOverview(days: number) {
   return api<ProvidersOverview>(`/providers?days=${days}`);
 }
 
-/** "$75.30", or "—" when nothing had a price; sub-cent amounts keep a third digit. */
-export function costText({ cost, jobs, unpricedJobs }: ProviderCounts) {
-  if (jobs > 0 && unpricedJobs === jobs) return "—";
-  return cost.toLocaleString("en-US", {
-    style: "currency",
-    currency: "USD",
-    minimumFractionDigits: 2,
-    maximumFractionDigits: cost > 0 && cost < 1 ? 3 : 2,
-  });
-}
+/** The estimated cost, or "—" when none of the jobs had a price. */
+export const costText = ({ cost, jobs, unpricedJobs }: ProviderCounts) =>
+  jobs > 0 && unpricedJobs === jobs ? "—" : money(cost);
 
 /** "$0.008/min", or "—" without a known price. */
 export const rateText = (perMinute: number | null) =>
   perMinute === null ? "—" : `$${Number(perMinute.toFixed(5))}/min`;
+
+const cents = (usd: number) => Math.round(usd * 1000) / 1000;
 
 const sum = <T>(list: T[], pick: (item: T) => number) => list.reduce((n, x) => n + pick(x), 0);
 
@@ -79,10 +74,9 @@ function sampleRunner(
     detail,
     jobs,
     failures: Math.round(jobs * 0.03),
-    runSeconds: jobs * medianS,
     billedMinutes,
     perMinute,
-    cost: perMinute === null ? 0 : Math.round(billedMinutes * perMinute * 1000) / 1000,
+    cost: perMinute === null ? 0 : cents(billedMinutes * perMinute),
     unpricedJobs: perMinute === null ? jobs : 0,
     stat: sampleStat(medianS, jobs),
   };
@@ -102,9 +96,8 @@ function sampleTotals(list: ProviderRunner[]): ProviderCounts & { stat: Stat } {
   return {
     jobs,
     failures: sum(list, (r) => r.failures),
-    runSeconds: sum(list, (r) => r.runSeconds),
     billedMinutes: sum(list, (r) => r.billedMinutes),
-    cost: Math.round(sum(list, (r) => r.cost) * 1000) / 1000,
+    cost: cents(sum(list, (r) => r.cost)),
     unpricedJobs: sum(list, (r) => r.unpricedJobs),
     stat: sampleStat(list[0] ? (list[0].stat.medianMs ?? 0) / 1000 : 0, jobs),
   };

@@ -358,10 +358,15 @@ export async function usageReport(db: Db, workspaceId: string, days = 30): Promi
   };
 }
 
+/** A finished job's run time, start to finish, in SQL. */
+export const DURATION_MS = sql`max(0, ${table.completedAt} - ${table.startedAt})`;
+/** The minutes GitHub bills a job: its run time rounded up, at least one. */
+export const BILLED_MINUTES = sql`max(1, (${DURATION_MS} + 59999) / 60000)`;
+
 // The usage report's sums from job_timing, for jobs that finished since `since`.
 function recentUsage(db: Db, workspaceId: string, since: Date) {
-  const durationMs = sql`max(0, ${table.completedAt} - ${table.startedAt})`;
-  const billed = sql`max(1, (${durationMs} + 59999) / 60000)`;
+  const durationMs = DURATION_MS;
+  const billed = BILLED_MINUTES;
   const isShort = sql`(${durationMs} < ${SHORT_JOB_SECONDS * 1000})`;
   return db
     .select({

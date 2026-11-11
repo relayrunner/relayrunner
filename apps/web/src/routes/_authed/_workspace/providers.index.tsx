@@ -27,8 +27,8 @@ export const Route = createFileRoute("/_authed/_workspace/providers/")({
 function ProvidersPage() {
   const [overview, setOverview] = useState<ProvidersOverview>(Route.useLoaderData());
   const used = new Set(overview.providers.map((p) => p.provider));
-  // "Other" is where unrecognised labels land, not something to set up.
-  const unused = PROVIDER_IDS.filter((id) => id !== "other" && !used.has(id));
+  // Only providers a job can ask for by name: "Other" has no runs-on example to set up.
+  const unused = PROVIDER_IDS.filter((id) => PROVIDER_INFO[id].example && !used.has(id));
 
   function chooseRange(days: number) {
     load(days)

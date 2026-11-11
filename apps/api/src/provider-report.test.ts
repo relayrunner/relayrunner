@@ -96,7 +96,6 @@ describe("provider report", () => {
     const { status, body } = await report(cookie, "/providers/blacksmith?days=7");
     expect(status).toBe(200);
     expect(body).toMatchObject({ provider: "blacksmith", days: 7, jobs: 4, failures: 1 });
-    expect(body.runSeconds).toBe(300);
     expect(body.stat).toMatchObject({ runs: 4, successes: 3, medianMs: 60_000, waitMs: 5000 });
     // Each job rounds up to whole minutes: 1 + 2 + 2 on 4 vCPU, 1 on 8 vCPU.
     expect(body).toMatchObject({ billedMinutes: 6, cost: 0.056, unpricedJobs: 0 });

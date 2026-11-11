@@ -3,7 +3,7 @@ import { ChevronRightIcon } from "lucide-react";
 import { Fragment, memo, useEffect, useMemo, useState } from "react";
 import { PageHeader } from "@/components/page-header";
 import { ProviderLink } from "@/components/provider-link";
-import { ProviderMark, providerOf } from "@/components/providers";
+import { providerOf } from "@/components/providers";
 import { RangePicker } from "@/components/range-picker";
 import { Button } from "@/components/ui/button";
 import {
@@ -183,7 +183,6 @@ function Environments({ report }: { report: JobTimesReport }) {
                   provider={providerOf(env)}
                   className="flex w-fit items-center gap-2.5"
                 >
-                  <ProviderMark provider={providerOf(env)} />
                   <span>
                     <span className="block whitespace-nowrap">{env.label}</span>
                     {env.detail && (
@@ -291,8 +290,8 @@ const Jobs = memo(function Jobs({
                   <ProviderLink
                     provider={providerOf(env)}
                     className="inline-flex items-center gap-1.5"
+                    markClassName="size-4 rounded-[4px]"
                   >
-                    <ProviderMark provider={providerOf(env)} className="size-4 rounded-[4px]" />
                     {env.label}
                   </ProviderLink>
                 </th>
@@ -607,8 +606,8 @@ function JobDetail({
                 <ProviderLink
                   provider={providerOf(env)}
                   className="flex min-w-0 items-center gap-1.5 self-center"
+                  markClassName="size-4 rounded-[4px]"
                 >
-                  <ProviderMark provider={providerOf(env)} className="size-4 rounded-[4px]" />
                   <span className="truncate">{env.label}</span>
                 </ProviderLink>
                 <span className="text-right font-semibold">{medianText(stat)}</span>

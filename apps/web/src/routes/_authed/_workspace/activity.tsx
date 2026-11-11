@@ -24,7 +24,6 @@ import {
 import { type ReactNode, useEffect, useRef, useState } from "react";
 import { PageHeader } from "@/components/page-header";
 import { ProviderLink } from "@/components/provider-link";
-import { ProviderMark } from "@/components/providers";
 import { Button } from "@/components/ui/button";
 import {
   Select,
@@ -797,11 +796,10 @@ function JobRow({ job, now }: { job: ActivityJob; now: number }) {
             className="font-medium"
             title={job.runnerName ? `Ran on ${job.runnerName}` : "Not picked up yet"}
           >
-            <ProviderLink provider={runner.type}>
-              <ProviderMark
-                provider={runner.type}
-                className="mr-1 inline-flex size-4 rounded-[4px] align-[-0.2em]"
-              />
+            <ProviderLink
+              provider={runner.type}
+              markClassName="mr-1 inline-flex size-4 rounded-[4px] align-[-0.2em]"
+            >
               <span className={runner.type !== "machine" ? "font-mono text-xs" : undefined}>
                 {runnerName}
               </span>
