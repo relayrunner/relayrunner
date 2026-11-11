@@ -67,15 +67,6 @@
   color: var(--sl-color-white);
 }
 
-/* Current page: the dashboard's soft green selection, not a solid accent block. */
-.sidebar-content a[aria-current="page"],
-.sidebar-content a[aria-current="page"]:hover,
-.sidebar-content a[aria-current="page"]:focus {
-  background-color: var(--sl-color-accent-low);
-  color: var(--sl-color-accent-high);
-  font-weight: 600;
-}
-
 /* Starlight rotates card icons through four hues; keep them all on the accent. */
 .card-grid > .card.card {
   --sl-card-border: var(--sl-color-accent);

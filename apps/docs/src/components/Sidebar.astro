@@ -1,0 +1,92 @@
+---
+/*
+ * Flat sidebar: section labels are small secondary text, page titles are the primary text, and
+ * nothing collapses. Replaces Starlight's default <details>-based sidebar. Groups are only one
+ * level deep (see `sidebar` in astro.config.mjs); a nested group would render as a flat list.
+ */
+import MobileMenuFooter from "@astrojs/starlight/components/MobileMenuFooter.astro";
+
+type Entry = (typeof Astro.locals.starlightRoute.sidebar)[number];
+
+const flatten = (entries: Entry[]): Extract<Entry, { type: "link" }>[] =>
+  entries.flatMap((e) => (e.type === "link" ? [e] : flatten(e.entries)));
+
+const { sidebar } = Astro.locals.starlightRoute;
+---
+
+<nav class="rr-sidebar" aria-label="Docs">
+  {
+    sidebar.map((entry) =>
+      entry.type === "link" ? (
+        <a href={entry.href} aria-current={entry.isCurrent ? "page" : undefined}>
+          {entry.label}
+        </a>
+      ) : (
+        <section>
+          <h2>{entry.label}</h2>
+          <ul>
+            {flatten(entry.entries).map((link) => (
+              <li>
+                <a href={link.href} aria-current={link.isCurrent ? "page" : undefined}>
+                  {link.label}
+                </a>
+              </li>
+            ))}
+          </ul>
+        </section>
+      ),
+    )
+  }
+</nav>
+
+<div class="md:sl-hidden"><MobileMenuFooter /></div>
+
+<style>
+  .rr-sidebar {
+    display: flex;
+    flex-direction: column;
+  }
+  section + section {
+    margin-top: 14px;
+  }
+  h2 {
+    margin: 0 0 4px;
+    padding-inline-start: 8px;
+    font-family: var(--sl-font-mono);
+    font-size: 11px;
+    font-weight: 500;
+    line-height: 1.6;
+    letter-spacing: 0.07em;
+    text-transform: uppercase;
+    color: var(--sl-color-gray-3);
+  }
+  ul {
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+    margin: 0;
+    padding: 0;
+    list-style: none;
+  }
+  a {
+    display: block;
+    padding: 5px 8px;
+    border-radius: 5px;
+    font-size: 14px;
+    line-height: 1.45;
+    color: var(--sl-color-white);
+    text-decoration: none;
+  }
+  a:hover {
+    background: var(--sl-color-gray-5);
+  }
+  a[aria-current="page"] {
+    background: var(--sl-color-accent-low);
+    color: var(--sl-color-accent-high);
+    font-weight: 600;
+  }
+  a:focus-visible {
+    outline: 2px solid var(--sl-color-accent);
+    outline-offset: 1px;
+  }
+</style>

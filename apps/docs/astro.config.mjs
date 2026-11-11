@@ -50,6 +50,8 @@ export default defineConfig({
           ],
         },
       ],
+      // Flat, non-collapsing sidebar (src/components/Sidebar.astro).
+      components: { Sidebar: "./src/components/Sidebar.astro" },
       editLink: {
         baseUrl: "https://github.com/relayrunner/relayrunner/edit/main/apps/docs/",
       },
