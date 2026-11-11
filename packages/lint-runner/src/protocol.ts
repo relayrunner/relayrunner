@@ -46,5 +46,5 @@ export interface LintResult {
   output?: string;
 }
 
-// GitHub takes at most 50 annotations per check run update, and `total` counts the rest.
-export const MAX_PROBLEMS = 50;
+// How many problems the container reports per tool; `total` counts the rest.
+export const MAX_PROBLEMS = 1000;
