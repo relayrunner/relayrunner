@@ -28,6 +28,7 @@
     "deploy:api": "pnpm --filter @relayrunner/api run deploy",
     "deploy:web": "pnpm --filter @relayrunner/web run deploy",
     "deploy:landing": "pnpm --filter @relayrunner/landing run deploy",
+    "deploy:landing:preview": "pnpm --filter @relayrunner/landing run deploy:preview",
     "changeset": "changeset",
     "changeset:lint": "node scripts/changeset-lint.mjs",
     "changeset:version": "changeset version && oxfmt apps/cli/package.json apps/cli/CHANGELOG.md"
