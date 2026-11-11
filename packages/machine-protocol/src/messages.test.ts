@@ -47,6 +47,7 @@ describe("parseMachineMessage", () => {
       os: "linux",
       arch: "x64",
       runnerVersion: "2.329.0",
+      cliVersion: "0.7.0",
       slots: 4,
     },
     { v, type: "job", routeId: "7f3k", state: "started" },

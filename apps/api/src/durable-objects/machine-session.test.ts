@@ -49,6 +49,21 @@ function rejected(session: SessionState, f: string | ArrayBuffer) {
 }
 
 describe("machine session", () => {
+  test("keeps the CLI version a hello reports, for MachineLink to log", () => {
+    const session = said([
+      frame({
+        type: "hello",
+        machineId: "m1",
+        os: "macos",
+        arch: "arm64",
+        runnerVersion: "2.329.0",
+        cliVersion: "0.7.0",
+      }),
+    ]);
+    expect(session.hello?.cliVersion).toBe("0.7.0");
+    expect(said([hello]).hello?.cliVersion).toBeUndefined();
+  });
+
   test("keeps the device a hello reports, for MachineLink to store", () => {
     const device = { kind: "laptop", model: "MacBook Pro", cpuCores: 12 } as const;
     const withDevice = frame({

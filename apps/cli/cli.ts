@@ -18,6 +18,8 @@ import { ensureRunner, RunnerError, runnerPlatform } from "./install.ts";
 import { normalizeServer } from "./server.ts";
 import { runJob } from "./job.ts";
 import { startLive } from "./live.ts";
+import { CHECK_INTERVAL_MS, checkForUpdate, updateNotice } from "./update-check.ts";
+import { cliVersion } from "./version.ts";
 import { login, LoginError, openBrowser } from "./login.ts";
 import { pauseMachine } from "./pause.ts";
 import {
@@ -98,6 +100,19 @@ async function connectMachine(args: { server?: string; name?: string; share?: st
   // Only when someone is at the terminal to answer.
   if (process.stdin.isTTY && process.stdout.isTTY) await offerSetup();
 
+  // Someone at the terminal hears about a newer CLI now, and again each day `connect` stays up.
+  // The check runs in the background and never holds up connecting.
+  let updateTimer: ReturnType<typeof setInterval> | undefined;
+  if (process.stdout.isTTY && !process.env.CI) {
+    const notifyUpdate = () =>
+      void checkForUpdate().then((latest) => {
+        if (latest) clack.log.warn(updateNotice(latest));
+      });
+    notifyUpdate();
+    updateTimer = setInterval(notifyUpdate, CHECK_INTERVAL_MS);
+    updateTimer.unref();
+  }
+
   const runner = await ensureRunner({ log: (line) => clack.log.info(line) });
   // What kind of device this is and its specs, for the dashboard's badge. Best effort.
   const device = await detectDevice();
@@ -140,6 +155,7 @@ async function connectMachine(args: { server?: string; name?: string; share?: st
         machineId: credentials.machine.id,
         ...platform,
         runnerVersion: runner.version,
+        cliVersion,
         device,
       },
       runJob: (run, report) =>
@@ -163,6 +179,7 @@ async function connectMachine(args: { server?: string; name?: string; share?: st
       signal: stop.signal,
     });
   } finally {
+    clearInterval(updateTimer);
     live.end();
     process.off("SIGINT", onInterrupt);
   }
@@ -670,6 +687,7 @@ const shareCommand = defineCommand({
 const main = defineCommand({
   meta: {
     name: "relayrunner",
+    version: cliVersion,
     description: "Run GitHub Actions jobs on your machine through the RelayRunner gateway.",
   },
   subCommands: {

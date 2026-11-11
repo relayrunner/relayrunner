@@ -39,7 +39,10 @@ export interface SessionState {
   connectedAt: number;
   lastHeardAt: number;
   // Set by the machine's `hello`. Until then the machine isn't online.
-  hello?: Pick<HelloMessage, "os" | "arch" | "runnerVersion" | "device" | "rotatesToken" | "slots">;
+  hello?: Pick<
+    HelloMessage,
+    "os" | "arch" | "runnerVersion" | "cliVersion" | "device" | "rotatesToken" | "slots"
+  >;
   state?: "idle" | "busy";
   // Jobs running, from the last `status`. Unset from a CLI older than concurrency (runningOf).
   running?: number;
@@ -93,12 +96,12 @@ export function handleFrame(
     if (session.hello) return reject(session, "invalid_message", "hello was already sent");
     if (message.machineId !== session.machineId)
       return reject(session, "invalid_message", "machineId doesn't match this machine's token");
-    const { os, arch, runnerVersion, device, rotatesToken, slots } = message;
+    const { os, arch, runnerVersion, cliVersion, device, rotatesToken, slots } = message;
     // A machine that just said hello has no job from this gateway yet.
     return {
       state: {
         ...heard,
-        hello: { os, arch, runnerVersion, device, rotatesToken, slots },
+        hello: { os, arch, runnerVersion, cliVersion, device, rotatesToken, slots },
         state: "idle",
         running: 0,
       },

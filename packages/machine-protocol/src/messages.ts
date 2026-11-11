@@ -50,6 +50,8 @@ export const HelloMessage = z.object({
   arch: z.enum(["x64", "arm64", "arm"]),
   // The actions/runner version installed on the machine, such as "2.329.0".
   runnerVersion: z.string().min(1),
+  // The relayrunner CLI's own version, such as "0.7.0". Missing from CLIs older than 0.7.0.
+  cliVersion: z.string().trim().min(1).max(40).optional(),
   // Missing from CLIs older than device reporting. A device the gateway can't read is dropped
   // rather than failing the hello, so a detection bug never keeps a machine offline.
   device: Device.optional().catch(undefined),
