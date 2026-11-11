@@ -12,6 +12,8 @@ import {
   PRICES_CHECKED,
   type ProviderId,
   providerOfEnvironment,
+  type RatePrices,
+  ratePrices,
 } from "@relayrunner/providers";
 import { sql } from "drizzle-orm";
 import { type Db, schema } from "./db/index.ts";
@@ -78,6 +80,8 @@ export interface ProviderReport extends ProviderCounts {
   runners: ProviderRunner[];
   /** The workflows with the most jobs here, busiest first, at most WORKFLOW_LIMIT. */
   workflows: ProviderWorkflow[];
+  /** The provider's list prices, each with its history. Empty when it has none. */
+  prices: RatePrices[];
 }
 
 export interface ProviderSummary extends ProviderCounts {
@@ -275,9 +279,10 @@ export async function providerReport(
   days = DEFAULT_DAYS,
   now = Date.now(),
 ): Promise<ProviderReport> {
-  const [all, workflows] = await Promise.all([
+  const [all, workflows, book] = await Promise.all([
     runnerGroups(db, workspaceId, days, now),
     busiestWorkflows(db, workspaceId, provider, days, now),
+    loadPriceBook(db, now),
   ]);
   const groups = all.filter((group) => group.provider === provider);
   const runners: ProviderRunner[] = groups
@@ -294,6 +299,7 @@ export async function providerReport(
     ...totalOf(groups),
     runners,
     workflows,
+    prices: ratePrices(book, provider),
   };
 }
 

@@ -1,4 +1,10 @@
-import { isProviderId, PROVIDERS as PROVIDER_INFO, type ProviderId } from "@relayrunner/providers";
+import {
+  dayMs,
+  isProviderId,
+  PROVIDERS as PROVIDER_INFO,
+  type ProviderId,
+  type RatePrices,
+} from "@relayrunner/providers";
 import { createFileRoute, Link, notFound } from "@tanstack/react-router";
 import { ArrowLeftIcon, ArrowUpRightIcon } from "lucide-react";
 import { useState } from "react";
@@ -12,6 +18,7 @@ import {
   costText,
   getProviderReport,
   type ProviderReport,
+  rateName,
   rateText,
   sampleProviderReport,
 } from "@/lib/providers";
@@ -100,6 +107,8 @@ function ProviderView({ first }: { first: ProviderReport }) {
           </>
         )}
       </div>
+
+      <Prices prices={report.prices} />
 
       {info.example && (
         <div className="grid max-w-3xl gap-3">
@@ -236,6 +245,92 @@ function Workflows({ report }: { report: ProviderReport }) {
           </li>
         ))}
       </ul>
+    </div>
+  );
+}
+
+const dayText = (day: string) =>
+  new Date(dayMs(day)).toLocaleDateString("en-US", {
+    month: "short",
+    day: "numeric",
+    year: "numeric",
+    timeZone: "UTC",
+  });
+
+// When a price applied: "until May 1, 2026", "May 1, 2026 to Sep 1, 2026", or "from Dec 1, 2026"
+// for one that hasn't started yet. The oldest price also covers anything earlier.
+function spanText(history: RatePrices["history"], i: number, now: number) {
+  const { from } = history[i]!;
+  const until = history[i + 1]?.from;
+  if (dayMs(from) > now) return `from ${dayText(from)}`;
+  if (i === 0) return `until ${dayText(until!)}`;
+  return `${dayText(from)} to ${dayText(until!)}`;
+}
+
+/**
+ * The provider's list prices, and for a rate whose price has changed, its other prices and when
+ * they applied. Jobs are priced at the rate on the day they ran.
+ */
+function Prices({ prices }: { prices: RatePrices[] }) {
+  if (prices.length === 0) return null;
+  const now = Date.now();
+  const rows = prices.map(({ rate, per, history }) => {
+    const current = history.findLastIndex((row, i) => i === 0 || dayMs(row.from) <= now);
+    const unit = per === "vcpu" ? " per vCPU" : "";
+    return {
+      rate,
+      today: `${rateText(history[current]?.usd ?? null)}${unit}`,
+      // Every price but today's, newest first.
+      changes: history
+        .flatMap((row, i) =>
+          i === current
+            ? []
+            : [{ key: row.from, text: `${rateText(row.usd)} ${spanText(history, i, now)}` }],
+        )
+        .toReversed(),
+    };
+  });
+  const changed = rows.some((row) => row.changes.length > 0);
+  return (
+    <div className="grid max-w-3xl gap-3">
+      <h2 className="font-semibold">List prices</h2>
+      <div className="overflow-x-auto rounded-xl border bg-card">
+        <table className="w-full text-sm">
+          <thead>
+            <tr className="border-b text-muted-foreground">
+              <th scope="col" className="px-4 py-2 text-left font-normal">
+                Runner
+              </th>
+              <th scope="col" className="px-4 py-2 text-left font-normal">
+                Today
+              </th>
+              {changed && (
+                <th scope="col" className="px-4 py-2 text-left font-normal">
+                  History
+                </th>
+              )}
+            </tr>
+          </thead>
+          <tbody>
+            {rows.map((row) => (
+              <tr key={row.rate} className="border-b align-top last:border-0">
+                <td className="px-4 py-2.5">{rateName(row.rate)}</td>
+                <td className="px-4 py-2.5 whitespace-nowrap tabular-nums">{row.today}</td>
+                {changed && (
+                  <td className="px-4 py-2.5 text-muted-foreground tabular-nums">
+                    {row.changes.map((change) => (
+                      <div key={change.key}>{change.text}</div>
+                    ))}
+                  </td>
+                )}
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+      <p className="text-xs text-muted-foreground">
+        From the provider's pricing page. A job is priced at the rate on the day it ran.
+      </p>
     </div>
   );
 }
