@@ -8,7 +8,7 @@ Each docs page gets its own share image at `/og/docs/<slug>.png`, drawn at build
 
 ## For agents
 
-Every docs page has a Markdown version at `/docs/<slug>.md` and a plain-text one at `/docs/<slug>.txt`, linked from the page's `<head>` as `rel="alternate" type="text/markdown"`. `/llms.txt` (also at `/docs/llms.txt`) lists every page, and `/llms-full.txt` has all of them in one file. Asking for a docs page with `Accept: text/markdown` returns its Markdown: that's the one thing the small Worker script in `worker/index.ts` does, and it only runs for `/docs/*`.
+Every docs page has a Markdown version at `/docs/<slug>.md` and a plain-text one at `/docs/<slug>.txt`, linked from the page's `<head>` as `rel="alternate" type="text/markdown"`. `/llms.txt` (also at `/docs/llms.txt`) lists every page, and `/llms-full.txt` has all of them in one file. For search engines, `/sitemap-index.xml` (also at `/sitemap.xml`, and named in `/robots.txt`) lists every page with the date of its last commit, generated at build time, so new pages show up on their own. Asking for a docs page with `Accept: text/markdown` returns its Markdown: that's the one thing the small Worker script in `worker/index.ts` does, and it only runs for `/docs/*`.
 
 ```sh
 pnpm --filter @relayrunner/site dev          # local dev server
