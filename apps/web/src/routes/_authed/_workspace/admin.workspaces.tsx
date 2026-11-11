@@ -76,8 +76,8 @@ function WorkspacesPage() {
         onConfirm={(uninstall) => remove(deleting!, uninstall)}
       >
         <p>
-          Removes the workspace with its members, invites, machines, runner order and activity.
-          Machines still connected are disconnected. Members' accounts stay.
+          Removes the workspace with its members, machines, runner order and activity. Machines
+          still connected are disconnected. Members' accounts stay.
         </p>
       </AdminDeleteDialog>
     </section>

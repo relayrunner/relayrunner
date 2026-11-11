@@ -15,12 +15,8 @@ import {
   signInstallState,
   verifyInstallState,
 } from "../github.ts";
-import {
-  ensureWorkspace,
-  joinInstallationWorkspace,
-  upsertInstallation,
-  userGitHubToken,
-} from "../installations.ts";
+import { ensureWorkspace, upsertInstallation, userGitHubToken } from "../installations.ts";
+import { syncMemberships } from "../memberships.ts";
 import { requireUser } from "../middleware/session.ts";
 import { requireWorkspace } from "../middleware/workspace.ts";
 
@@ -37,15 +33,16 @@ import { requireWorkspace } from "../middleware/workspace.ts";
 // 2. GitHub sends them back to the App's Setup URL, GET /setup, with `installation_id`. That id
 //    comes from a query string, so it only counts if the user's own GitHub token can see it in
 //    GET /user/installations. Then /setup records the installation, makes its workspace (unless
-//    the installation webhook got there first), adds the user to it, and makes it active.
+//    the installation webhook got there first), syncs the user's memberships from that same list
+//    (src/memberships.ts), and makes the workspace active.
 // 3. A brand-new user from `relayrunner connect` has no account yet. /device sends them to
 //    GET /signup, which goes straight to the install and leaves the page to come back to in a
 //    cookie. /setup then finds them signed out and signs them in with the code GitHub sent
 //    (install-sign-in.ts), or, without one, by starting a normal GitHub sign-in, and comes back
 //    to /setup to finish step 2 as them.
-// 4. Installs made straight on GitHub arrive by webhook, which makes the workspace with no members
-//    yet; the installer gets in by visiting the Setup URL (GitHub sends them there after the
-//    install, and after "Redirect on update").
+// 4. Installs made straight on GitHub arrive by webhook, which makes the workspace and records
+//    the installer as its owner. Everyone who can see the install joins on their next sign-in or
+//    workspace list (src/memberships.ts).
 
 // Where /setup sends the browser, with ?github=<outcome> for the dashboard to explain.
 type SetupOutcome = "connected" | "updated" | "requested" | "not_found" | "reauth" | "invalid";
@@ -110,6 +107,8 @@ export const githubRoutes = new Hono<AppEnv>()
     const landing = next ?? "/settings/github";
     const done = (outcome: SetupOutcome) => c.redirect(withParam(landing, "github", outcome));
     const requested = c.req.query("setup_action") === "request";
+    // A fresh install, rather than coming back after changing one ("update").
+    const installed = c.req.query("setup_action") === "install";
     const installationId = Number(c.req.query("installation_id"));
     const validId = Number.isSafeInteger(installationId) && installationId > 0;
 
@@ -120,6 +119,7 @@ export const githubRoutes = new Hono<AppEnv>()
       const after = landingAfterSignIn({
         next,
         requested,
+        installed,
         installationId: validId ? installationId : null,
       });
       // GitHub signed them in during the install and sent a code: use it, so there's no second
@@ -136,15 +136,18 @@ export const githubRoutes = new Hono<AppEnv>()
     if (!validId) return done("invalid");
 
     const db = createDb(c.env.DB);
-    const verified = await verifiedInstallation(c, installationId);
-    if (verified === "reauth") return done("reauth");
+    const visible = await visibleInstallations(c);
+    if (visible === "reauth") return done("reauth");
+    const verified = visible.find((installation) => installation.id === installationId);
     if (!verified) return done("not_found");
     await upsertInstallation(db, verified);
     const workspaceId = await ensureWorkspace(db, installationId);
     if (!workspaceId) return done("not_found");
-    const joined = await joinInstallationWorkspace(db, workspaceId, user.id);
+    // The list is fresh from GitHub anyway: sync every membership it implies (#317). Signing in
+    // on the way here may have synced already, so a fresh install says connected either way.
+    const { joined } = await syncMemberships(db, user.id, visible);
     await setActiveWorkspace(c, workspaceId);
-    return done(joined ? "connected" : "updated");
+    return done(installed || joined.includes(workspaceId) ? "connected" : "updated");
   })
 
   // How much of the installation's GitHub API quota the App has used this hour (#166). Read live
@@ -193,15 +196,18 @@ function withParam(path: string, key: string, value: string) {
 export function landingAfterSignIn({
   next,
   requested,
+  installed = false,
   installationId,
 }: {
   next: string | null | undefined;
   requested: boolean;
+  installed?: boolean;
   installationId: number | null;
 }) {
   if (requested) return withParam(next ?? "/settings/github", "github", "requested");
   if (!installationId) return next ?? "/settings/github?github=invalid";
   const setup = new URLSearchParams({ installation_id: String(installationId) });
+  if (installed) setup.set("setup_action", "install");
   if (next) setup.set("next", next);
   return `/api/github/setup?${setup}`;
 }
@@ -249,14 +255,11 @@ async function signInWithGitHub(c: Context<AppEnv>, callbackURL: string) {
   return c.redirect(url);
 }
 
-// The installation as GitHub shows it to this user, null if their token can't see it, or 'reauth'
-// if we have no usable token.
-async function verifiedInstallation(c: Context<AppEnv>, installationId: number) {
+// The installations GitHub shows this user, or 'reauth' if we have no usable token.
+async function visibleInstallations(c: Context<AppEnv>) {
   const token = await userGitHubToken(c.var.auth, createDb(c.env.DB), c.var.user!.id);
   if (!token) return "reauth" as const;
-  const visible = await listOrReauth(token);
-  if (visible === "reauth") return visible;
-  return visible.find((installation) => installation.id === installationId) ?? null;
+  return listOrReauth(token);
 }
 
 async function listOrReauth(token: string) {

@@ -46,11 +46,9 @@ function LoginPage() {
           <CardHeader>
             <CardTitle>Sign in</CardTitle>
             <CardDescription>
-              {next?.startsWith("/invite/")
-                ? "Sign in to join a workspace. New to RelayRunner? Signing in with GitHub creates your account."
-                : connectingAgent()
-                  ? "Sign in to connect an agent to RelayRunner."
-                  : "Route your GitHub Actions to the right runner."}
+              {connectingAgent()
+                ? "Sign in to connect an agent to RelayRunner."
+                : "Route your GitHub Actions to the right runner."}
             </CardDescription>
           </CardHeader>
           <CardContent className="flex flex-col gap-3">

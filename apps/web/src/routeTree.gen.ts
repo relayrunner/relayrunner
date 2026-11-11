@@ -23,7 +23,6 @@ import { Route as AuthedWorkspaceRunnersRouteImport } from './routes/_authed/_wo
 import { Route as AuthedWorkspaceRunsRouteImport } from './routes/_authed/_workspace/runs'
 import { Route as AuthedWorkspaceUsageRouteImport } from './routes/_authed/_workspace/usage'
 import { Route as AuthedWorkspaceWorkspaceRouteImport } from './routes/_authed/_workspace/workspace'
-import { Route as AuthedInviteIdRouteImport } from './routes/_authed/invite.$id'
 import { Route as AuthedWorkspacesNewRouteImport } from './routes/_authed/workspaces.new'
 import { Route as AuthedWorkspaceAdminIndexRouteImport } from './routes/_authed/_workspace/admin.index'
 import { Route as AuthedWorkspaceAdminPricesRouteImport } from './routes/_authed/_workspace/admin.prices'
@@ -108,11 +107,6 @@ const AuthedWorkspaceWorkspaceRoute =
     path: '/workspace',
     getParentRoute: () => AuthedWorkspaceRoute,
   } as any)
-const AuthedInviteIdRoute = AuthedInviteIdRouteImport.update({
-  id: '/invite/$id',
-  path: '/invite/$id',
-  getParentRoute: () => AuthedRoute,
-} as any)
 const AuthedWorkspacesNewRoute = AuthedWorkspacesNewRouteImport.update({
   id: '/workspaces/new',
   path: '/workspaces/new',
@@ -210,7 +204,6 @@ export interface FileRoutesByFullPath {
   '/runs': typeof AuthedWorkspaceRunsRoute
   '/usage': typeof AuthedWorkspaceUsageRoute
   '/workspace': typeof AuthedWorkspaceWorkspaceRoute
-  '/invite/$id': typeof AuthedInviteIdRoute
   '/workspaces/new': typeof AuthedWorkspacesNewRoute
   '/admin/prices': typeof AuthedWorkspaceAdminPricesRoute
   '/admin/users': typeof AuthedWorkspaceAdminUsersRoute
@@ -239,7 +232,6 @@ export interface FileRoutesByTo {
   '/runs': typeof AuthedWorkspaceRunsRoute
   '/usage': typeof AuthedWorkspaceUsageRoute
   '/workspace': typeof AuthedWorkspaceWorkspaceRoute
-  '/invite/$id': typeof AuthedInviteIdRoute
   '/workspaces/new': typeof AuthedWorkspacesNewRoute
   '/admin/prices': typeof AuthedWorkspaceAdminPricesRoute
   '/admin/users': typeof AuthedWorkspaceAdminUsersRoute
@@ -271,7 +263,6 @@ export interface FileRoutesById {
   '/_authed/_workspace/runs': typeof AuthedWorkspaceRunsRoute
   '/_authed/_workspace/usage': typeof AuthedWorkspaceUsageRoute
   '/_authed/_workspace/workspace': typeof AuthedWorkspaceWorkspaceRoute
-  '/_authed/invite/$id': typeof AuthedInviteIdRoute
   '/_authed/workspaces/new': typeof AuthedWorkspacesNewRoute
   '/_authed/_workspace/admin/prices': typeof AuthedWorkspaceAdminPricesRoute
   '/_authed/_workspace/admin/users': typeof AuthedWorkspaceAdminUsersRoute
@@ -302,7 +293,6 @@ export interface FileRouteTypes {
     | '/runs'
     | '/usage'
     | '/workspace'
-    | '/invite/$id'
     | '/workspaces/new'
     | '/admin/prices'
     | '/admin/users'
@@ -331,7 +321,6 @@ export interface FileRouteTypes {
     | '/runs'
     | '/usage'
     | '/workspace'
-    | '/invite/$id'
     | '/workspaces/new'
     | '/admin/prices'
     | '/admin/users'
@@ -362,7 +351,6 @@ export interface FileRouteTypes {
     | '/_authed/_workspace/runs'
     | '/_authed/_workspace/usage'
     | '/_authed/_workspace/workspace'
-    | '/_authed/invite/$id'
     | '/_authed/workspaces/new'
     | '/_authed/_workspace/admin/prices'
     | '/_authed/_workspace/admin/users'
@@ -487,13 +475,6 @@ declare module '@tanstack/react-router' {
       fullPath: '/workspace'
       preLoaderRoute: typeof AuthedWorkspaceWorkspaceRouteImport
       parentRoute: typeof AuthedWorkspaceRoute
-    }
-    '/_authed/invite/$id': {
-      id: '/_authed/invite/$id'
-      path: '/invite/$id'
-      fullPath: '/invite/$id'
-      preLoaderRoute: typeof AuthedInviteIdRouteImport
-      parentRoute: typeof AuthedRoute
     }
     '/_authed/workspaces/new': {
       id: '/_authed/workspaces/new'
@@ -648,13 +629,11 @@ const AuthedWorkspaceRouteWithChildren = AuthedWorkspaceRoute._addFileChildren(
 
 interface AuthedRouteChildren {
   AuthedWorkspaceRoute: typeof AuthedWorkspaceRouteWithChildren
-  AuthedInviteIdRoute: typeof AuthedInviteIdRoute
   AuthedWorkspacesNewRoute: typeof AuthedWorkspacesNewRoute
 }
 
 const AuthedRouteChildren: AuthedRouteChildren = {
   AuthedWorkspaceRoute: AuthedWorkspaceRouteWithChildren,
-  AuthedInviteIdRoute: AuthedInviteIdRoute,
   AuthedWorkspacesNewRoute: AuthedWorkspacesNewRoute,
 }
 
