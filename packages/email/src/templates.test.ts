@@ -3,7 +3,6 @@ import {
   renderAgentFeedbackEmail,
   renderDeadLetterAlertEmail,
   renderPriceCheckEmail,
-  renderInviteEmail,
   renderMachineConnectedEmail,
   renderMachineTakenOverEmail,
   renderWelcomeEmail,
@@ -103,20 +102,5 @@ describe("templates", () => {
     expect(email.text).toContain("Depot linux: $0.0035/min from 2026-11-20");
     expect(email.text).toContain("Blacksmith: couldn't read the price page (answered 404)");
     expect(email.text).toContain("https://app.example/admin/prices");
-  });
-
-  it("invite links the accept page and escapes names", () => {
-    const email = renderInviteEmail({
-      inviterName: "Ada <ada>",
-      workspaceName: "Acme & Co",
-      role: "admin",
-      acceptUrl: "https://app.example/invite/inv_1",
-      expiresAt: new Date("2026-11-07T00:00:00Z"),
-    });
-    expect(email.subject).toBe("Ada <ada> invited you to Acme & Co on RelayRunner");
-    expect(email.html).toContain("Ada &lt;ada&gt;");
-    expect(email.html).toContain('href="https://app.example/invite/inv_1"');
-    expect(email.text).toContain("as an admin");
-    expect(email.text).toContain("Accept: https://app.example/invite/inv_1");
   });
 });

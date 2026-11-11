@@ -3,13 +3,12 @@ import { drizzleAdapter } from "better-auth/adapters/drizzle";
 import { createAuthMiddleware, getSessionFromCtx } from "better-auth/api";
 import { bearer, deviceAuthorization, jwt, oAuthProxy, organization } from "better-auth/plugins";
 import { agentOAuth } from "./agent-auth.ts";
-import { recordEvent } from "./activity.ts";
 import { eq } from "drizzle-orm";
 import { createDb, schema } from "./db/index.ts";
 import { requestOrigin } from "./device-origin.ts";
 import { sendEmail } from "./email.ts";
 import { installSignIn } from "./install-sign-in.ts";
-import { MEMBER_REMOVAL_PATHS, onMemberRemoved, removedMember } from "./members.ts";
+import { syncMembershipsFromGitHub } from "./memberships.ts";
 import type { Env } from "./env.ts";
 
 // Preview dashboards (Workers Builds `wrangler preview`) reach this Worker through their own API
@@ -34,6 +33,24 @@ export function sharedCookieDomain(env: Pick<Env, "SESSION_COOKIE_DOMAIN">, host
 // The client_id `relayrunner connect` sends with its device code requests.
 export const MACHINE_CLIENT_ID = "relayrunner-cli";
 
+// Organization endpoints that don't fit workspaces whose members come from GitHub (#317): email
+// invites, removing or leaving (GitHub would add the person back on their next sync), and
+// renaming or deleting a workspace (it's the installation; uninstall the App instead).
+export const DISABLED_WORKSPACE_PATHS = [
+  "/organization/invite-member",
+  "/organization/cancel-invitation",
+  "/organization/accept-invitation",
+  "/organization/reject-invitation",
+  "/organization/get-invitation",
+  "/organization/list-invitations",
+  "/organization/list-user-invitations",
+  "/organization/remove-member",
+  "/organization/leave",
+  "/organization/update",
+  "/organization/delete",
+  "/organization/get-full-organization",
+] as const;
+
 // Workers only expose bindings per request, so build the auth instance per request too. It is
 // cheap: no I/O happens until a handler runs. `waitUntil` (the request's ExecutionContext) lets
 // mail go out after the response; without it (tests, scripts) the hook waits for the send.
@@ -45,12 +62,12 @@ export function createAuth(
 ) {
   const background = (promise: Promise<unknown>) => (waitUntil ? waitUntil(promise) : promise);
   const cookieDomain = sharedCookieDomain(env, host);
-  return betterAuth({
+  const auth = betterAuth({
     // Always the production dashboard origin, so GitHub only ever sees one OAuth callback URL.
     baseURL: env.BETTER_AUTH_URL,
     basePath: "/api/auth",
     // The jwt plugin's /token turns a session into a JWT; agents get theirs through OAuth instead.
-    disabledPaths: ["/token"],
+    disabledPaths: ["/token", ...DISABLED_WORKSPACE_PATHS],
     secret: env.BETTER_AUTH_SECRET,
     // Lets preview origins call /api/auth/* (origin check) and be redirect targets.
     trustedOrigins: previewOrigins(env),
@@ -77,10 +94,26 @@ export function createAuth(
       },
     },
     hooks: {
-      // A member removed from (or leaving) a workspace loses the machines they enrolled there
-      // (#138). This runs after Better Auth has deleted the membership, inline rather than on a
-      // queue: one D1 update clears every token, then each open socket closes.
+      // The dashboard's workspace list re-reads memberships from GitHub when they're a few
+      // minutes old (src/memberships.ts), so a new install or lost access shows up without
+      // signing in again.
+      before: createAuthMiddleware(async (ctx) => {
+        if (ctx.path !== "/organization/list") return;
+        const session = await getSessionFromCtx(ctx).catch(() => null);
+        if (!session) return;
+        await syncMembershipsFromGitHub(auth, createDb(env.DB), session.user.id).catch((error) =>
+          console.error("membership sync on workspace list failed", error),
+        );
+      }),
       after: createAuthMiddleware(async (ctx) => {
+        // Every sign-in (GitHub's callback, the install hand-off, the CLI's device code) reads the
+        // user's workspaces fresh from GitHub (src/memberships.ts).
+        const signedIn = ctx.context.newSession;
+        if (signedIn) {
+          await syncMembershipsFromGitHub(auth, createDb(env.DB), signedIn.user.id, {
+            force: true,
+          }).catch((error) => console.error("membership sync on sign-in failed", error));
+        }
         if (ctx.path === "/device/code") {
           // Remember where the CLI asked from, for the approval page (src/device-origin.ts).
           const deviceCode = (ctx.context.returned as { device_code?: unknown } | null)
@@ -95,20 +128,7 @@ export function createAuth(
               requestCity: origin.city,
             })
             .where(eq(schema.deviceCode.deviceCode, deviceCode));
-          return;
         }
-        if (!(MEMBER_REMOVAL_PATHS as readonly string[]).includes(ctx.path)) return;
-        const member = removedMember(ctx.context.returned);
-        if (!member) return;
-        // The endpoint's session isn't on the hook's context; read it from the request again.
-        // Revoke even if that somehow fails: losing the actor beats leaving machines live.
-        const session = await getSessionFromCtx(ctx).catch(() => null);
-        await onMemberRemoved(env, createDb(env.DB), {
-          workspaceId: member.organizationId,
-          userId: member.userId,
-          actorUserId: session?.user.id ?? null,
-          left: ctx.path === "/organization/leave",
-        });
       }),
     },
     advanced: cookieDomain
@@ -119,7 +139,7 @@ export function createAuth(
       cookieCache: { enabled: true, maxAge: 5 * 60 },
     },
     plugins: [
-      workspaces(env, background),
+      workspaces(),
       // Sign-in from a preview: GitHub returns to the production callback, which exchanges the
       // code and redirects to <preview>/api/auth/callback/github/oauth-proxy with the profile
       // encrypted (BETTER_AUTH_SECRET). The preview then creates the session and sets the
@@ -151,17 +171,17 @@ export function createAuth(
       installSignIn({ setupURL: new URL("/api/github/setup", env.BETTER_AUTH_URL).toString() }),
     ],
   });
+  return auth;
 }
 
 export type Auth = ReturnType<typeof createAuth>;
 export type Session = Auth["$Infer"]["Session"];
 
 // Workspaces are Better Auth organizations, stored under gateway names (workspace,
-// workspace_member, workspace_invitation, session.active_workspace_id). The plugin is kept for
-// those tables, membership and the active workspace; the dashboard uses the stock organization
+// workspace_member, session.active_workspace_id). The plugin is kept for those tables, roles and
+// the active workspace; members come from GitHub (src/memberships.ts), not invites; the dashboard uses the stock organization
 // client at /api/auth/organization/* to list and switch them.
-export function workspaces(env: Env, background: (promise: Promise<unknown>) => unknown) {
-  const db = () => createDb(env.DB);
+export function workspaces() {
   return organization({
     // A workspace is a GitHub App installation (#316), made by the Setup URL or the installation
     // webhook (src/installations.ts ensureWorkspace), never by a user.
@@ -169,55 +189,6 @@ export function workspaces(env: Env, background: (promise: Promise<unknown>) => 
     creatorRole: "owner",
     // Teams (#133): owner, admin and member roles; see roles.ts.
     membershipLimit: 100,
-    // Invites (#135). Better Auth's defaults decide who can do what: owners and admins invite
-    // and cancel, only an owner can invite an owner, and accepting needs the signed-in account's
-    // email to match. Invites expire after 48 hours.
-    invitationExpiresIn: 48 * 60 * 60,
-    // Inviting the same email again cancels the pending invite and sends a new link, so an old
-    // link (say, a forwarded email) stops working.
-    cancelPendingInvitationsOnReInvite: true,
-    // The link opens the dashboard's accept page, /invite/<id> (#137).
-    sendInvitationEmail: async ({ id, email, role, organization, inviter, invitation }) => {
-      await background(
-        sendEmail(env, {
-          to: email,
-          template: "invite",
-          context: {
-            invitationId: id,
-            inviterName: inviter.user.name || inviter.user.email,
-            workspaceName: organization.name,
-            role,
-            expiresAt: invitation.expiresAt,
-          },
-        }),
-      );
-    },
-    organizationHooks: {
-      afterCreateInvitation: async ({ invitation, inviter }) => {
-        await recordEvent(db(), {
-          workspaceId: invitation.organizationId,
-          actorUserId: inviter.id,
-          type: "member.invited",
-          data: { email: invitation.email, role: invitation.role },
-        });
-      },
-      afterCancelInvitation: async ({ invitation, cancelledBy }) => {
-        await recordEvent(db(), {
-          workspaceId: invitation.organizationId,
-          actorUserId: cancelledBy.id,
-          type: "member.invite_canceled",
-          data: { email: invitation.email, role: invitation.role },
-        });
-      },
-      afterAcceptInvitation: async ({ member, user }) => {
-        await recordEvent(db(), {
-          workspaceId: member.organizationId,
-          actorUserId: user.id,
-          type: "member.joined",
-          data: { name: user.name, email: user.email, role: member.role },
-        });
-      },
-    },
     schema: {
       organization: {
         modelName: "workspace",
@@ -227,6 +198,7 @@ export function workspaces(env: Env, background: (promise: Promise<unknown>) => 
         },
       },
       member: { modelName: "workspaceMember", fields: { organizationId: "workspaceId" } },
+      // Unused (invites are off), but the plugin requires the table.
       invitation: { modelName: "workspaceInvitation", fields: { organizationId: "workspaceId" } },
       session: { fields: { activeOrganizationId: "activeWorkspaceId" } },
     },

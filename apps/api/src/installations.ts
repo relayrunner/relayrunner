@@ -84,30 +84,6 @@ export async function workspaceIdForInstallation(db: Db, installationId: number)
   return row?.id ?? null;
 }
 
-/**
- * Adds a user whose GitHub sign-in can see the installation to its workspace: the first one in
- * becomes the owner, later ones members. Already a member: unchanged. Returns whether they were
- * added. Until membership is read from GitHub (#317), this is how the installer gets in.
- */
-export async function joinInstallationWorkspace(db: Db, workspaceId: string, userId: string) {
-  if (await isWorkspaceMember(db, workspaceId, userId)) return false;
-  const [owner] = await db
-    .select({ id: schema.workspaceMember.id })
-    .from(schema.workspaceMember)
-    .where(
-      and(
-        eq(schema.workspaceMember.workspaceId, workspaceId),
-        eq(schema.workspaceMember.role, "owner"),
-      ),
-    )
-    .limit(1);
-  await db
-    .insert(schema.workspaceMember)
-    .values({ id: crypto.randomUUID(), workspaceId, userId, role: owner ? "member" : "owner" })
-    .onConflictDoNothing();
-  return true;
-}
-
 export async function findInstallation(db: Db, installationId: number) {
   const [row] = await db
     .select()

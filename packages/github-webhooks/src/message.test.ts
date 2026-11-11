@@ -122,6 +122,20 @@ describe("toWebhookMessage", () => {
     });
   });
 
+  test("keeps who installed the App, for its workspace's owner", () => {
+    const installation = { id: 7, account: { id: 10, login: "acme", type: "Organization" } };
+    expect(
+      toWebhookMessage("installation", "d", {
+        action: "created",
+        installation,
+        sender: { id: 42, login: "octo" },
+      }),
+    ).toMatchObject({ senderId: 42 });
+    expect(
+      toWebhookMessage("installation", "d", { action: "created", installation }),
+    ).toMatchObject({ senderId: null });
+  });
+
   test("keeps only the repo fields of a repository event, and skips one without a repo", () => {
     const repository = {
       id: 3,

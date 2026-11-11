@@ -557,55 +557,6 @@ describe("machines and roles (#134)", () => {
   });
 });
 
-describe("removing a member (#318)", () => {
-  const removeMember = (cookie: string, workspaceId: string, memberIdOrEmail: string) =>
-    call("/auth/organization/remove-member", cookie, {
-      organizationId: workspaceId,
-      memberIdOrEmail,
-    });
-  const live = async (token: string) =>
-    (await verifyMachineToken(createDb(env.DB), token)) !== null;
-  const listed = async (cookie: string) =>
-    (
-      (await (await call("/machines", cookie)).json()) as { machines: { id: string }[] }
-    ).machines.map((machine) => machine.id);
-
-  test("keeps their machines enrolled; the workspace just stops listing them", async () => {
-    const { workspace, cookie } = await owner("remove-member");
-    const ownerMachine = await enrollAs(cookie, workspace.id, "owner-mbp");
-    const member = await testing.joinWorkspace(env, workspace.id, "member");
-    const laptop = await enrollAs(member.cookie, workspace.id, "zach-mbp");
-    expect((await listed(cookie)).sort()).toEqual(
-      [ownerMachine.machine.id, laptop.machine.id].sort(),
-    );
-
-    expect((await removeMember(cookie, workspace.id, member.user.email)).status).toBe(200);
-
-    expect(await live(laptop.token)).toBe(true);
-    expect(link(laptop.machine.id).revoke).not.toHaveBeenCalled();
-    expect(await listed(cookie)).toEqual([ownerMachine.machine.id]);
-    const { items } = (await (await call("/activity", cookie)).json()) as ActivityPage;
-    expect(items[0]).toMatchObject({
-      type: "member.removed",
-      data: { memberName: member.user.name, left: false },
-    });
-    expect(items.filter((item) => item.type === "machine.revoked")).toEqual([]);
-  });
-
-  test("leaving keeps their machines too", async () => {
-    const { workspace, cookie } = await owner("leave-member");
-    const member = await testing.joinWorkspace(env, workspace.id, "member");
-    const laptop = await enrollAs(member.cookie, workspace.id, "leaver-mbp");
-
-    const left = await call("/auth/organization/leave", member.cookie, {
-      organizationId: workspace.id,
-    });
-    expect(left.status).toBe(200);
-    expect(await live(laptop.token)).toBe(true);
-    expect(await listed(cookie)).toEqual([]);
-  });
-});
-
 describe("machines belong to their user (#318)", () => {
   // A user who owns one workspace and is a member of another with a teammate in it.
   async function inTwo(slug: string) {

@@ -225,7 +225,7 @@ describe("roles (#134)", () => {
     expect((await put(workspace.id, admin.cookie, order)).status).toBe(200);
   });
 
-  test("the last owner can't leave, be removed, or be demoted", async () => {
+  test("the last owner can't be demoted", async () => {
     const { cookie } = await signIn();
     const { workspace, cookie: owner } = await createWorkspace(cookie, "Roles", "roles-owner");
     const admin = await testing.joinWorkspace(env, workspace.id, "admin");
@@ -237,10 +237,6 @@ describe("roles (#134)", () => {
         .all<{ id: string }>()
     ).results;
 
-    const leave = await post("/auth/organization/leave", owner, { organizationId: workspace.id });
-    expect(leave.status).toBe(400);
-    expect(await code(leave)).toBe("YOU_CANNOT_LEAVE_THE_ORGANIZATION_AS_THE_ONLY_OWNER");
-
     const demote = await post("/auth/organization/update-member-role", owner, {
       organizationId: workspace.id,
       memberId: ownerRow.id,
@@ -248,12 +244,6 @@ describe("roles (#134)", () => {
     });
     expect(demote.status).toBe(400);
     expect(await code(demote)).toBe("YOU_CANNOT_LEAVE_THE_ORGANIZATION_WITHOUT_AN_OWNER");
-
-    const removed = await post("/auth/organization/remove-member", admin.cookie, {
-      organizationId: workspace.id,
-      memberIdOrEmail: ownerRow.id,
-    });
-    expect(removed.ok).toBe(false);
 
     const demotedByAdmin = await post("/auth/organization/update-member-role", admin.cookie, {
       organizationId: workspace.id,
@@ -270,7 +260,7 @@ describe("roles (#134)", () => {
     expect(owners).toEqual({ n: 1 });
   });
 
-  test("a member can't change roles or remove anyone", async () => {
+  test("a member can't change roles", async () => {
     const { cookie } = await signIn();
     const { workspace } = await createWorkspace(cookie, "Roles", "roles-member");
     const admin = await testing.joinWorkspace(env, workspace.id, "admin");
@@ -287,12 +277,33 @@ describe("roles (#134)", () => {
       role: "member",
     });
     expect(await code(promote)).toBe("YOU_ARE_NOT_ALLOWED_TO_UPDATE_THIS_MEMBER");
-    const remove = await post("/auth/organization/remove-member", member.cookie, {
-      organizationId: workspace.id,
-      memberIdOrEmail: adminRow.id,
-    });
-    // Better Auth answers this one with a 401.
-    expect(await code(remove)).toBe("YOU_ARE_NOT_ALLOWED_TO_DELETE_THIS_MEMBER");
+  });
+
+  test("membership comes from GitHub, so invites, removing, leaving, renaming and deleting are off (#317)", async () => {
+    const { cookie } = await signIn();
+    const { workspace, cookie: owner } = await createWorkspace(cookie, "Roles", "roles-off");
+    const admin = await testing.joinWorkspace(env, workspace.id, "admin");
+    const organizationId = workspace.id;
+    const attempts: [string, unknown][] = [
+      [
+        "/auth/organization/invite-member",
+        { organizationId, email: "a@example.com", role: "member" },
+      ],
+      ["/auth/organization/remove-member", { organizationId, memberIdOrEmail: admin.user.id }],
+      ["/auth/organization/leave", { organizationId }],
+      ["/auth/organization/update", { organizationId, data: { name: "Renamed" } }],
+      ["/auth/organization/delete", { organizationId }],
+    ];
+    for (const [path, body] of attempts) expect((await post(path, owner, body)).status).toBe(404);
+    expect((await testing.call(env, "/auth/organization/list-invitations", owner)).status).toBe(
+      404,
+    );
+    const members = await env.DB.prepare(
+      "select count(*) as n from workspace_member where workspace_id = ?",
+    )
+      .bind(workspace.id)
+      .first();
+    expect(members).toEqual({ n: 2 });
   });
 });
 

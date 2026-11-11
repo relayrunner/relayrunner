@@ -25,7 +25,7 @@ Coding agents push often, and every push burns GitHub Actions minutes. Private p
 - **Set up once.** Install the GitHub App, run `relayrunner connect` on a machine, and add a relay job to each job that should be routed. `relayrunner init` does the workflow part, and an agent can drive the whole setup by following [docs/agent-install.md](docs/agent-install.md): it signs the machine in with `relayrunner login`, runs `init` for the jobs the user picks and shows the diff.
 - **See where jobs ran.** The dashboard's Activity page lists each job, where it ran and why. The Usage page shows Actions minutes and what free checks saved.
 - **Manage runners.** The Runners page shows machines, their labels and whether they're online, and sets the runner order. Pausing a machine (from the dashboard or `relayrunner pause`) stops new jobs reaching it while it stays connected.
-- **Work as a team.** Owners invite members by email and set roles on the Members page. A member's machines are removed when they leave the workspace. Settings → GitHub lists the connected organizations.
+- **Work as a team.** Membership comes from GitHub: anyone whose GitHub sign-in can see a workspace's installation is a member, and whoever installed the App is its owner. Owners set roles on the Members page. Settings → GitHub shows the workspace's installation.
 - **Stop any time.** Pressing Ctrl-C in `relayrunner connect` takes the machine offline, and its jobs go to the next provider in the runner order with no workflow change.
 
 ## Product principles

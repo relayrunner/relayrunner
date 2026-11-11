@@ -111,6 +111,8 @@ export type WebhookMessage =
       event: "installation";
       installation: InstallationSummary | null;
       repositories: InstallationRepo[];
+      // The GitHub user who acted: on `created`, whoever installed the App (its workspace's owner).
+      senderId?: number | null;
     })
   | (Base & {
       event: "installation_repositories";
@@ -239,6 +241,10 @@ export function toWebhookMessage(
         event,
         installation: installationSummary(payload.installation),
         repositories: repos(payload.repositories),
+        senderId:
+          isRecord(payload.sender) && typeof payload.sender.id === "number"
+            ? payload.sender.id
+            : null,
       };
     case "installation_repositories":
       return {

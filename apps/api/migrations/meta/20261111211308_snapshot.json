@@ -1,8 +1,8 @@
 {
   "version": "6",
   "dialect": "sqlite",
-  "id": "a30dd9c4-b1f1-42e4-93bf-263d34a93f36",
-  "prevId": "7f89cb3e-e416-4e3e-8994-30f56c3dd38a",
+  "id": "aca9c565-95a1-4c27-8853-5a8235837da9",
+  "prevId": "38870b71-829e-4f72-ac81-df17fcea50f0",
   "tables": {
     "account": {
       "name": "account",
@@ -994,6 +994,13 @@
         },
         "github_state_at": {
           "name": "github_state_at",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
+        "installer_github_id": {
+          "name": "installer_github_id",
           "type": "integer",
           "primaryKey": false,
           "notNull": false,
@@ -3356,6 +3363,13 @@
         "role": {
           "name": "role",
           "type": "text",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
+        "installations_synced_at": {
+          "name": "installations_synced_at",
+          "type": "integer",
           "primaryKey": false,
           "notNull": false,
           "autoincrement": false

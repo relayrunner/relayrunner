@@ -35,6 +35,9 @@ export const user = sqliteTable("user", {
   // Global role, separate from per-workspace member roles. "operator" sees the dashboard's Admin
   // section. Null for everyone else. Granted by SQL for now (docs/cloudflare-access.md).
   role: text("role"),
+  // When their workspace memberships were last read from GitHub (src/memberships.ts), so the
+  // dashboard's workspace list only asks GitHub every few minutes.
+  installationsSyncedAt: integer("installations_synced_at", { mode: "timestamp_ms" }),
   ...timestamps,
 });
 
@@ -99,7 +102,7 @@ export const workspace = sqliteTable("workspace", {
     .$defaultFn(() => new Date()),
 });
 
-// Membership is shaped for teams even though the MVP allows one member, the owner.
+// Who can see a workspace, synced from the installations their GitHub sign-in can see (#317).
 export const workspaceMember = sqliteTable(
   "workspace_member",
   {
@@ -121,6 +124,8 @@ export const workspaceMember = sqliteTable(
   ],
 );
 
+// Better Auth's organization plugin insists on an invitation table, so it stays, but nothing
+// writes it: membership comes from GitHub (#317) and the invite endpoints are off (auth.ts).
 export const workspaceInvitation = sqliteTable(
   "workspace_invitation",
   {
@@ -162,6 +167,9 @@ export const githubInstallation = sqliteTable("github_installation", {
   // /user/installations read). The queue is unordered and retries, so an older observation
   // never overwrites a newer one.
   githubStateAt: integer("github_state_at", { mode: "timestamp_ms" }),
+  // The GitHub user id of whoever installed the App (the `installation.created` webhook's sender).
+  // They're the workspace's owner (src/memberships.ts). Null for installs from before #317.
+  installerGithubId: integer("installer_github_id"),
   ...timestamps,
 });
 

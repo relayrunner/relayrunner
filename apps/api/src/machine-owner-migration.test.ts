@@ -3,7 +3,7 @@ import type { Env } from "./env.ts";
 import * as testing from "./testing.ts";
 
 // The #318 migration, which rebuilds the machine table so connected machines belong to their user.
-const MIGRATION = "20261111202334_machine_belongs_to_user.sql";
+const MIGRATION = "20261111211308_machine_belongs_to_user.sql";
 
 let proxy: Awaited<ReturnType<typeof testing.startD1>>["proxy"];
 let env: Env;

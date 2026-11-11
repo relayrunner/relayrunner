@@ -31,6 +31,7 @@ import { recordWorkflowJob, setJobMachine } from "./jobs.ts";
 import { containerRunnerAllowed, usesContainerRunner } from "./container-runner.ts";
 import { checkPullRequestTitle } from "./pr-title-check.ts";
 import { recordRepositoryEvent, removeRepositories, upsertRepositories } from "./repositories.ts";
+import { recordInstaller } from "./memberships.ts";
 import { recordWorkflowRun } from "./runs.ts";
 import { routingLabelFromLabels } from "./github-runners.ts";
 import { routeIdFromLabels } from "./routing.ts";
@@ -390,6 +391,9 @@ async function recordInstallation(
     observedAt,
   );
   await ensureWorkspace(db, installation.id);
+  // Whoever installed the App owns its workspace (#317).
+  if (message.event === "installation" && message.action === "created" && message.senderId)
+    await recordInstaller(db, installation.id, message.senderId);
   // `created` lists every repo the installation can see; other actions carry none.
   if (message.event === "installation") {
     await upsertRepositories(db, installation.id, message.repositories, observedAt);
