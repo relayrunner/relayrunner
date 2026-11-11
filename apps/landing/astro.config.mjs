@@ -14,7 +14,8 @@ export default defineConfig({
   integrations: [
     starlight({
       title: "RelayRunner Docs",
-      logo: { src: "./src/assets/logo.png", alt: "RelayRunner" },
+      // The header logo is the site favicon, not a separate copy.
+      logo: { src: "./public/favicon.png", alt: "RelayRunner" },
       favicon: "/favicon.png",
       social: [
         { icon: "github", label: "GitHub", href: "https://github.com/relayrunner/relayrunner" },
