@@ -22,7 +22,7 @@ import {
   Zap,
   TriangleAlert,
 } from "lucide-react";
-import { type ReactNode, useEffect, useState } from "react";
+import { type ReactNode, useEffect, useRef, useState } from "react";
 import { PageHeader } from "@/components/page-header";
 import { Button } from "@/components/ui/button";
 import {
@@ -49,6 +49,7 @@ import {
 } from "@/lib/activity";
 import { authDisabled } from "@/lib/auth-client";
 import { DAY_MS } from "@/lib/job-times";
+import { useLiveRefresh } from "@/lib/live-refresh";
 import {
   getCheckSavings,
   minutes,
@@ -338,24 +339,22 @@ function Log({
     setOlderCursor(null);
   }, [first]);
 
-  // Refresh the newest page while the tab is visible. Older pages don't change much, so they're
-  // left as loaded.
+  // Refresh the newest page while someone is looking (paused while the tab is hidden or idle, see
+  // lib/live-refresh.ts). Older pages don't change much, so they're left as loaded.
   const { type, days, repo, result, machine } = search;
-  useEffect(() => {
-    if (authDisabled) return;
-    let current = true;
-    const timer = setInterval(() => {
+  const filters = JSON.stringify({ type, days, repo, result, machine });
+  const currentFilters = useRef(filters);
+  currentFilters.current = filters;
+  useLiveRefresh(
+    () => {
       setNow(Date.now());
-      if (document.visibilityState !== "visible") return;
       getActivity(toQuery({ type, days, repo, result, machine }))
-        .then((page) => current && setLatest(page))
+        // A page for filters that changed meanwhile is dropped.
+        .then((page) => currentFilters.current === filters && setLatest(page))
         .catch(() => undefined); // Keep showing the last good page; the next tick retries.
-    }, POLL_MS);
-    return () => {
-      current = false;
-      clearInterval(timer);
-    };
-  }, [type, days, repo, result, machine]);
+    },
+    { intervalMs: POLL_MS, enabled: !authDisabled },
+  );
 
   const cursor = older.length ? olderCursor : latest.nextBefore;
 
