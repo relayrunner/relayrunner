@@ -20,7 +20,7 @@ import {
   quantile,
   RAN_ON_RUNNER,
 } from "./job-times.ts";
-import { DAY_MS, JOB_TIMING_RETENTION_DAYS, purgeBefore } from "./job-timings.ts";
+import { DAY_MS, purgeBefore, RAW_RETENTION_DAYS } from "./job-timings.ts";
 import { parseDate } from "./jobs.ts";
 
 type WorkflowRunMessage = Extract<WebhookMessage, { event: "workflow_run" }>;
@@ -72,14 +72,12 @@ export async function recordWorkflowRun(db: Db, message: WorkflowRunMessage): Pr
   return true;
 }
 
-/** Deletes runs last updated before job_timing's retention window. Returns how many rows went. */
+/**
+ * Deletes runs last updated before job_timing keeps its jobs' own rows (RAW_RETENTION_DAYS), the
+ * furthest back the Runs page could show their jobs. Returns how many rows went.
+ */
 export function purgeOldWorkflowRuns(db: Db, now = Date.now()): Promise<number> {
-  return purgeBefore(
-    db,
-    table,
-    table.githubUpdatedAt,
-    new Date(now - JOB_TIMING_RETENTION_DAYS * DAY_MS),
-  );
+  return purgeBefore(db, table, table.githubUpdatedAt, new Date(now - RAW_RETENTION_DAYS * DAY_MS));
 }
 
 type RunStatus = "queued" | "in_progress" | "completed";

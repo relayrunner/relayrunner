@@ -176,6 +176,13 @@
       "when": 1794361116433,
       "tag": "20261111013836_job_timing_unfinished",
       "breakpoints": true
+    },
+    {
+      "idx": 25,
+      "version": "6",
+      "when": 1794365841393,
+      "tag": "20261111025721_job_timing_daily",
+      "breakpoints": true
     }
   ]
 }
