@@ -683,6 +683,7 @@ describe("decideRoute with a minutes limit", () => {
     budget: null,
     cycleStart: "2026-11-01T00:00:00.000Z",
     readAt: "2026-11-09T18:00:00.000Z",
+    spendApp: true,
     ...fields,
   });
   const free = async () => "rr-0123456789ab";

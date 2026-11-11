@@ -1,4 +1,5 @@
 import { pollActionsUsage } from "./actions-billing.ts";
+import { syncSpendInstallations } from "./spend-app.ts";
 import { app } from "./app.ts";
 import type { WebhookMessage } from "@relayrunner/github-webhooks";
 import { checkDeadLetterGrowth } from "./dead-letter-alert.ts";
@@ -37,7 +38,8 @@ export default {
   },
   // Every 15 minutes: queue a read of each org's Actions usage from GitHub billing (#116), rescue
   // stuck relay jobs, and queue a sweep for leftover pick runners (src/pick-sweep.ts). Hourly: alert when
-  // webhook dead letters pile up, and drop job timings and workflow runs past retention. Daily: check
+  // webhook dead letters pile up, drop job timings and workflow runs past retention, and reconcile
+  // which orgs installed the Spend App (src/spend-app.ts). Daily: check
   // providers' price pages (src/price-check.ts). Each runs even if another throws; a failure still
   // fails the invocation.
   async scheduled(controller, env) {
@@ -51,6 +53,7 @@ export default {
               checkDeadLetterGrowth(env),
               purgeOldJobTimings(createDb(env.DB)),
               purgeOldWorkflowRuns(createDb(env.DB)),
+              syncSpendInstallations(env, at),
             ];
     const results = await Promise.allSettled(tasks);
     const failed = results.find((result) => result.status === "rejected");

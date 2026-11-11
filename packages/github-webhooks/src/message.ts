@@ -74,8 +74,9 @@ export interface InstallationSummary {
 }
 
 // Which GitHub App the delivery came from. Absent means the main RelayRunner App; "checks" is the
-// separate, opt-in RelayRunner Checks App (lint check runs), which posts to its own webhook path.
-export type WebhookApp = "checks";
+// separate, opt-in RelayRunner Checks App (lint check runs) and "spend" the opt-in RelayRunner
+// Spend App (org billing). Each posts to its own webhook path.
+export type WebhookApp = "checks" | "spend";
 
 // A check suite GitHub asks an App to run, on a push or a "Re-run all checks" click.
 export interface CheckSuite {

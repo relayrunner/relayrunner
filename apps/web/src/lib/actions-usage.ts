@@ -30,6 +30,8 @@ export interface AccountUsage {
   budget: { amountUsd: number; preventFurtherUsage: boolean } | null;
   cycleStart: string;
   readAt: string | null;
+  // Whether the org installed RelayRunner Spend. Null for a personal account.
+  spendApp: boolean | null;
 }
 
 export interface ActionsUsage {
@@ -47,9 +49,8 @@ export const hasQuota = (account: AccountUsage) =>
 /** Installs the RelayRunner Spend App, which reads an org's billing. */
 export const SPEND_APP_INSTALL_URL = "https://github.com/apps/relayrunner-spend/installations/new";
 
-/** Whether the fix for this account is installing the Spend App. */
-export const needsSpendApp = (account: AccountUsage) =>
-  account.reason === "missing_permission" && account.accountType === "Organization";
+/** Whether this org hasn't installed the Spend App yet. */
+export const needsSpendApp = (account: AccountUsage) => account.spendApp === false;
 
 /** Why an account's minutes can't be judged, and what fixes it. Null when they can. */
 export function unavailableText(account: AccountUsage): string | null {
@@ -84,6 +85,7 @@ export function sampleActionsUsage(): ActionsUsage {
     budget: { amountUsd: 0, preventFurtherUsage: true },
     cycleStart,
     readAt,
+    spendApp: true,
   };
   return {
     accounts: [
@@ -128,6 +130,7 @@ export function sampleActionsUsage(): ActionsUsage {
       {
         ...base,
         accountType: "User",
+        spendApp: null,
         installationId: 4,
         accountLogin: "octocat",
         status: "ok",

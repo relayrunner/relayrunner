@@ -87,21 +87,19 @@ export function ActionsMinutes({ usage }: { usage: AccountUsage }) {
           />
         </div>
       )}
-      {unavailable && (
+      {(unavailable || needsSpendApp(usage)) && (
         <p className="text-xs text-muted-foreground">
           {unavailable}
+          {unavailable && needsSpendApp(usage) && " "}
           {needsSpendApp(usage) && (
-            <>
-              {" "}
-              <a
-                href={SPEND_APP_INSTALL_URL}
-                target="_blank"
-                rel="noreferrer"
-                className="underline underline-offset-2 hover:text-foreground"
-              >
-                Install RelayRunner Spend
-              </a>
-            </>
+            <a
+              href={SPEND_APP_INSTALL_URL}
+              target="_blank"
+              rel="noreferrer"
+              className="underline underline-offset-2 hover:text-foreground"
+            >
+              Install RelayRunner Spend
+            </a>
           )}
         </p>
       )}

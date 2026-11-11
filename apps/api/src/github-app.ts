@@ -206,12 +206,22 @@ export async function repoInstallationId(jwt: string, repo: string): Promise<num
   return ((await response.json()) as { id: number }).id;
 }
 
-/** The App's installation on an org, or null when it isn't installed there. */
-export async function orgInstallationId(jwt: string, org: string): Promise<number | null> {
-  const response = await fetch(`${API}/orgs/${org}/installation`, { headers: headers(jwt) });
-  if (response.status === 404) return null;
-  if (!response.ok) throw new Error(`GET /orgs/${org}/installation failed with ${response.status}`);
-  return ((await response.json()) as { id: number }).id;
+/** Every installation of the App, from its JWT. */
+export async function listAppInstallations(jwt: string) {
+  const installations: {
+    id: number;
+    account: { id: number; login: string } | null;
+    suspended_at: string | null;
+  }[] = [];
+  for (let page = 1; ; page++) {
+    const response = await fetch(`${API}/app/installations?per_page=100&page=${page}`, {
+      headers: headers(jwt),
+    });
+    if (!response.ok) throw new Error(`GET /app/installations failed with ${response.status}`);
+    const batch = (await response.json()) as typeof installations;
+    installations.push(...batch);
+    if (batch.length < 100) return installations;
+  }
 }
 
 /** An installation token from the App's id and private key, as the Durable Objects hold them. */

@@ -25,6 +25,7 @@ export interface Env {
   // Secrets Store bindings; read with get(). One per GitHub App.
   GITHUB_WEBHOOK_SECRET: SecretsStoreSecret;
   GITHUB_CHECK_WEBHOOK_SECRET: SecretsStoreSecret;
+  GITHUB_SPEND_WEBHOOK_SECRET: SecretsStoreSecret;
 }
 
 // The paths GitHub posts to, one per App, each signed with that App's own secret and taking only
@@ -34,7 +35,7 @@ export interface Env {
 // Worker forwards /api/webhooks/* here over a service binding; this Worker's own workers.dev URL
 // and custom domain answer the same paths.
 interface Route {
-  secret: "GITHUB_WEBHOOK_SECRET" | "GITHUB_CHECK_WEBHOOK_SECRET";
+  secret: "GITHUB_WEBHOOK_SECRET" | "GITHUB_CHECK_WEBHOOK_SECRET" | "GITHUB_SPEND_WEBHOOK_SECRET";
   events: ReadonlySet<WebhookMessage["event"]>;
   app?: WebhookApp;
 }
@@ -54,6 +55,13 @@ const ROUTES: Record<string, Route> = {
     secret: "GITHUB_CHECK_WEBHOOK_SECRET",
     events: new Set(["installation", "installation_repositories", "pull_request", "check_suite"]),
     app: "checks",
+  },
+  // The Spend App subscribes to no events; GitHub still sends it installation events, which say
+  // which orgs installed it.
+  "/api/webhooks/github-spend": {
+    secret: "GITHUB_SPEND_WEBHOOK_SECRET",
+    events: new Set(["installation"]),
+    app: "spend",
   },
 };
 

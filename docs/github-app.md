@@ -48,8 +48,9 @@ The live App was set up with a few grants beyond these: Organization Administrat
 A second, opt-in App, **RelayRunner Spend** ([github.com/apps/relayrunner-spend](https://github.com/apps/relayrunner-spend), App ID in `GITHUB_SPEND_APP_ID`, key in the Secrets Store as `GITHUB_SPEND_APP_PRIVATE_KEY`), reads org billing for the minutes rule. Keeping billing in its own App means the main App doesn't need Organization Administration.
 
 - Permissions: Organization Administration: Read, and Metadata. Nothing else.
-- No webhook. The 15-minute billing poll finds the org's installation with the App's JWT (`GET /orgs/{org}/installation`) and mints a token from it, falling back to the main App's token when the org hasn't installed it.
-- When the org's billing read is refused, the dashboard links to the install page.
+- Webhook URL `https://webhooks.relayrunner.app/api/webhooks/github-spend`, secret `GITHUB_SPEND_WEBHOOK_SECRET` in the Secrets Store. It subscribes to no events: GitHub still sends it `installation` events, which keep `spend_installation` (one row per GitHub account) current. The hourly cron reconciles that table with `GET /app/installations`, which also covers installs from before the webhook was on (`apps/api/src/spend-app.ts`).
+- The 15-minute billing poll reads an org with the Spend App's installation token when the org has a row, and falls back to the main App's token when it doesn't.
+- The dashboard shows an install link on each org that hasn't installed it.
 - Personal accounts don't use it: their billing only opens to the owner's own sign-in token (Plan).
 
 Once orgs have installed it, the main App drops Organization Administration, in the same change as narrowing the grants under [More than the code needs](#more-than-the-code-needs), so installations re-accept once.

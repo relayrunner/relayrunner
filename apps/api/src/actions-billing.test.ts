@@ -12,6 +12,7 @@ import {
 import { createDb, schema } from "./db/index.ts";
 import type { Env } from "./env.ts";
 import { type InstallationTask, runInstallationTask } from "./installation-tasks.ts";
+import { recordSpendInstallation } from "./spend-app.ts";
 import * as testing from "./testing.ts";
 
 let proxy: Awaited<ReturnType<typeof testing.startD1>>["proxy"];
@@ -97,13 +98,29 @@ function item(day: string, repositoryName: string, quantity: number, sku = "Acti
   };
 }
 
+function spendEvent(action: string, accountId: number, login: string, id: number) {
+  return {
+    app: "spend" as const,
+    event: "installation" as const,
+    action,
+    deliveryId: `d-${action}`,
+    installationId: id,
+    receivedAt: new Date().toISOString(),
+    installation: {
+      id,
+      account: { id: accountId, login, type: "Organization" },
+      repositorySelection: "all" as const,
+      suspendedAt: null,
+    },
+    repositories: [],
+  };
+}
+
 interface GitHubFake {
   plan?: string;
   usage?: unknown[];
   usageStatus?: number;
   budgets?: unknown[];
-  // The Spend App's installation id per org; absent means not installed.
-  spendInstallations?: Record<string, number>;
 }
 
 function fakeGitHub(fake: GitHubFake) {
@@ -119,11 +136,6 @@ function fakeGitHub(fake: GitHubFake) {
     if (pathname.endsWith("/settings/billing/usage")) {
       if (fake.usageStatus) return new Response("Forbidden", { status: fake.usageStatus });
       return Response.json({ usageItems: fake.usage ?? [] });
-    }
-    const installation = pathname.match(/^\/orgs\/([^/]+)\/installation$/);
-    if (installation) {
-      const id = fake.spendInstallations?.[installation[1]];
-      return id ? Response.json({ id }) : new Response("not found", { status: 404 });
     }
     const minted = pathname.match(/^\/app\/installations\/(\d+)\/access_tokens$/);
     if (minted) return Response.json({ token: `spend-${minted[1]}` }, { status: 201 });
@@ -376,10 +388,12 @@ describe("pollActionsUsage", () => {
 
   test("reads an org with the Spend App's token when the org installed it", async () => {
     const { db, installationId, org } = await connectedOrg();
-    const calls = fakeGitHub({
-      usage: [item("2026-11-04", "app", 30)],
-      spendInstallations: { [org]: 77 },
-    });
+    const [installation] = await db
+      .select({ accountId: schema.githubInstallation.accountId })
+      .from(schema.githubInstallation)
+      .where(eq(schema.githubInstallation.id, installationId));
+    await recordSpendInstallation(db, spendEvent("created", installation!.accountId, org, 77));
+    const calls = fakeGitHub({ usage: [item("2026-11-04", "app", 30)] });
     const pem = generateKeyPairSync("rsa", { modulusLength: 2048 })
       .privateKey.export({ type: "pkcs8", format: "pem" })
       .toString();
@@ -387,12 +401,15 @@ describe("pollActionsUsage", () => {
       { ...env, GITHUB_SPEND_APP_PRIVATE_KEY: { get: async () => pem } },
       NOW,
     );
-    expect(calls).toContain(`/orgs/${org}/installation`);
     expect(calls.tokens[`/organizations/${org}/settings/billing/usage`]).toBe("Bearer spend-77");
     expect(await accountUsage(db, installationId, NOW)).toMatchObject({
       status: "ok",
       usedMinutes: 30,
+      spendApp: true,
     });
+
+    await recordSpendInstallation(db, spendEvent("deleted", installation!.accountId, org, 77));
+    expect((await accountUsage(db, installationId, NOW))?.spendApp).toBe(false);
   });
 
   test("records a token failure per installation and keeps going", async () => {
