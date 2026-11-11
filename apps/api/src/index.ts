@@ -5,6 +5,7 @@ import { checkDeadLetterGrowth } from "./dead-letter-alert.ts";
 import { createDb } from "./db/index.ts";
 import type { Env } from "./env.ts";
 import { purgeOldJobTimings } from "./job-timings.ts";
+import { checkPrices } from "./price-check.ts";
 import { purgeOldWorkflowRuns } from "./runs.ts";
 import { sweepPicks } from "./pick-sweep.ts";
 import {
@@ -21,8 +22,9 @@ export { MachineLink } from "./durable-objects/machine-link.ts";
 export { PickRunner } from "./durable-objects/pick-runner.ts";
 export { Router } from "./durable-objects/router.ts";
 
-// Matches the second entry of triggers.crons in wrangler.jsonc.
+// Match the second and third entries of triggers.crons in wrangler.jsonc.
 const USAGE_CRON = "*/15 * * * *";
+const PRICE_CRON = "30 6 * * *";
 
 export default {
   fetch: (request, env, ctx) => wellKnown(request, env) ?? app.fetch(request, env, ctx),
@@ -35,17 +37,21 @@ export default {
   },
   // Every 15 minutes: queue a read of each org's Actions usage from GitHub billing (#116), rescue
   // stuck relay jobs, and queue a sweep for leftover pick runners (src/pick-sweep.ts). Hourly: alert when
-  // webhook dead letters pile up, and drop job timings and workflow runs past retention. Each runs even if another
-  // throws; a failure still fails the invocation.
+  // webhook dead letters pile up, and drop job timings and workflow runs past retention. Daily: check
+  // providers' price pages (src/price-check.ts). Each runs even if another throws; a failure still
+  // fails the invocation.
   async scheduled(controller, env) {
+    const at = new Date(controller.scheduledTime);
     const tasks =
       controller.cron === USAGE_CRON
-        ? [pollActionsUsage(env, new Date(controller.scheduledTime)), sweepPicks(env)]
-        : [
-            checkDeadLetterGrowth(env),
-            purgeOldJobTimings(createDb(env.DB)),
-            purgeOldWorkflowRuns(createDb(env.DB)),
-          ];
+        ? [pollActionsUsage(env, at), sweepPicks(env)]
+        : controller.cron === PRICE_CRON
+          ? [checkPrices(env, at)]
+          : [
+              checkDeadLetterGrowth(env),
+              purgeOldJobTimings(createDb(env.DB)),
+              purgeOldWorkflowRuns(createDb(env.DB)),
+            ];
     const results = await Promise.allSettled(tasks);
     const failed = results.find((result) => result.status === "rejected");
     if (failed) throw failed.reason;

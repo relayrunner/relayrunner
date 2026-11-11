@@ -35,7 +35,7 @@ const { name, summary } = PROVIDERS[id];
               <code>{fact.code}</code>
             </dd>
           ) : "text" in fact ? (
-            <dd>{fact.text}</dd>
+            <dd title={fact.title}>{fact.text}</dd>
           ) : (
             <dd class="rr-links">
               {fact.links.map((link) => (
