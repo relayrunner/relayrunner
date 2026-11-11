@@ -14,6 +14,8 @@ import { Route as AuthedRouteImport } from './routes/_authed'
 import { Route as DeviceRouteImport } from './routes/device'
 import { Route as LoginRouteImport } from './routes/login'
 import { Route as AuthedWorkspaceRouteImport } from './routes/_authed/_workspace'
+import { Route as AgentsConsentRouteImport } from './routes/agents.consent'
+import { Route as AgentsWorkspaceRouteImport } from './routes/agents.workspace'
 import { Route as AuthedWorkspaceActivityRouteImport } from './routes/_authed/_workspace/activity'
 import { Route as AuthedWorkspaceJobTimesRouteImport } from './routes/_authed/_workspace/job-times'
 import { Route as AuthedWorkspaceRouterRouteImport } from './routes/_authed/_workspace/router'
@@ -27,8 +29,10 @@ import { Route as AuthedWorkspaceAdminIndexRouteImport } from './routes/_authed/
 import { Route as AuthedWorkspaceAdminUsersRouteImport } from './routes/_authed/_workspace/admin.users'
 import { Route as AuthedWorkspaceAdminWebhooksRouteImport } from './routes/_authed/_workspace/admin.webhooks'
 import { Route as AuthedWorkspaceAdminWorkspacesRouteImport } from './routes/_authed/_workspace/admin.workspaces'
+import { Route as AuthedWorkspaceProvidersProviderRouteImport } from './routes/_authed/_workspace/providers.$provider'
 import { Route as AuthedWorkspaceSettingsIndexRouteImport } from './routes/_authed/_workspace/settings.index'
 import { Route as AuthedWorkspaceSettingsAccountRouteImport } from './routes/_authed/_workspace/settings.account'
+import { Route as AuthedWorkspaceSettingsAgentsRouteImport } from './routes/_authed/_workspace/settings.agents'
 import { Route as AuthedWorkspaceSettingsGeneralRouteImport } from './routes/_authed/_workspace/settings.general'
 import { Route as AuthedWorkspaceSettingsGithubRouteImport } from './routes/_authed/_workspace/settings.github'
 import { Route as AuthedWorkspaceSettingsMembersRouteImport } from './routes/_authed/_workspace/settings.members'
@@ -55,6 +59,16 @@ const LoginRoute = LoginRouteImport.update({
 const AuthedWorkspaceRoute = AuthedWorkspaceRouteImport.update({
   id: '/_workspace',
   getParentRoute: () => AuthedRoute,
+} as any)
+const AgentsConsentRoute = AgentsConsentRouteImport.update({
+  id: '/agents/consent',
+  path: '/agents/consent',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const AgentsWorkspaceRoute = AgentsWorkspaceRouteImport.update({
+  id: '/agents/workspace',
+  path: '/agents/workspace',
+  getParentRoute: () => rootRouteImport,
 } as any)
 const AuthedWorkspaceActivityRoute = AuthedWorkspaceActivityRouteImport.update({
   id: '/activity',
@@ -126,6 +140,12 @@ const AuthedWorkspaceAdminWorkspacesRoute =
     path: '/admin/workspaces',
     getParentRoute: () => AuthedWorkspaceRoute,
   } as any)
+const AuthedWorkspaceProvidersProviderRoute =
+  AuthedWorkspaceProvidersProviderRouteImport.update({
+    id: '/providers/$provider',
+    path: '/providers/$provider',
+    getParentRoute: () => AuthedWorkspaceRoute,
+  } as any)
 const AuthedWorkspaceSettingsIndexRoute =
   AuthedWorkspaceSettingsIndexRouteImport.update({
     id: '/settings/',
@@ -136,6 +156,12 @@ const AuthedWorkspaceSettingsAccountRoute =
   AuthedWorkspaceSettingsAccountRouteImport.update({
     id: '/settings/account',
     path: '/settings/account',
+    getParentRoute: () => AuthedWorkspaceRoute,
+  } as any)
+const AuthedWorkspaceSettingsAgentsRoute =
+  AuthedWorkspaceSettingsAgentsRouteImport.update({
+    id: '/settings/agents',
+    path: '/settings/agents',
     getParentRoute: () => AuthedWorkspaceRoute,
   } as any)
 const AuthedWorkspaceSettingsGeneralRoute =
@@ -161,6 +187,8 @@ export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
   '/device': typeof DeviceRoute
   '/login': typeof LoginRoute
+  '/agents/consent': typeof AgentsConsentRoute
+  '/agents/workspace': typeof AgentsWorkspaceRoute
   '/activity': typeof AuthedWorkspaceActivityRoute
   '/job-times': typeof AuthedWorkspaceJobTimesRoute
   '/router': typeof AuthedWorkspaceRouterRoute
@@ -173,7 +201,9 @@ export interface FileRoutesByFullPath {
   '/admin/users': typeof AuthedWorkspaceAdminUsersRoute
   '/admin/webhooks': typeof AuthedWorkspaceAdminWebhooksRoute
   '/admin/workspaces': typeof AuthedWorkspaceAdminWorkspacesRoute
+  '/providers/$provider': typeof AuthedWorkspaceProvidersProviderRoute
   '/settings/account': typeof AuthedWorkspaceSettingsAccountRoute
+  '/settings/agents': typeof AuthedWorkspaceSettingsAgentsRoute
   '/settings/general': typeof AuthedWorkspaceSettingsGeneralRoute
   '/settings/github': typeof AuthedWorkspaceSettingsGithubRoute
   '/settings/members': typeof AuthedWorkspaceSettingsMembersRoute
@@ -184,6 +214,8 @@ export interface FileRoutesByTo {
   '/': typeof IndexRoute
   '/device': typeof DeviceRoute
   '/login': typeof LoginRoute
+  '/agents/consent': typeof AgentsConsentRoute
+  '/agents/workspace': typeof AgentsWorkspaceRoute
   '/activity': typeof AuthedWorkspaceActivityRoute
   '/job-times': typeof AuthedWorkspaceJobTimesRoute
   '/router': typeof AuthedWorkspaceRouterRoute
@@ -196,7 +228,9 @@ export interface FileRoutesByTo {
   '/admin/users': typeof AuthedWorkspaceAdminUsersRoute
   '/admin/webhooks': typeof AuthedWorkspaceAdminWebhooksRoute
   '/admin/workspaces': typeof AuthedWorkspaceAdminWorkspacesRoute
+  '/providers/$provider': typeof AuthedWorkspaceProvidersProviderRoute
   '/settings/account': typeof AuthedWorkspaceSettingsAccountRoute
+  '/settings/agents': typeof AuthedWorkspaceSettingsAgentsRoute
   '/settings/general': typeof AuthedWorkspaceSettingsGeneralRoute
   '/settings/github': typeof AuthedWorkspaceSettingsGithubRoute
   '/settings/members': typeof AuthedWorkspaceSettingsMembersRoute
@@ -210,6 +244,8 @@ export interface FileRoutesById {
   '/device': typeof DeviceRoute
   '/login': typeof LoginRoute
   '/_authed/_workspace': typeof AuthedWorkspaceRouteWithChildren
+  '/agents/consent': typeof AgentsConsentRoute
+  '/agents/workspace': typeof AgentsWorkspaceRoute
   '/_authed/_workspace/activity': typeof AuthedWorkspaceActivityRoute
   '/_authed/_workspace/job-times': typeof AuthedWorkspaceJobTimesRoute
   '/_authed/_workspace/router': typeof AuthedWorkspaceRouterRoute
@@ -222,7 +258,9 @@ export interface FileRoutesById {
   '/_authed/_workspace/admin/users': typeof AuthedWorkspaceAdminUsersRoute
   '/_authed/_workspace/admin/webhooks': typeof AuthedWorkspaceAdminWebhooksRoute
   '/_authed/_workspace/admin/workspaces': typeof AuthedWorkspaceAdminWorkspacesRoute
+  '/_authed/_workspace/providers/$provider': typeof AuthedWorkspaceProvidersProviderRoute
   '/_authed/_workspace/settings/account': typeof AuthedWorkspaceSettingsAccountRoute
+  '/_authed/_workspace/settings/agents': typeof AuthedWorkspaceSettingsAgentsRoute
   '/_authed/_workspace/settings/general': typeof AuthedWorkspaceSettingsGeneralRoute
   '/_authed/_workspace/settings/github': typeof AuthedWorkspaceSettingsGithubRoute
   '/_authed/_workspace/settings/members': typeof AuthedWorkspaceSettingsMembersRoute
@@ -235,6 +273,8 @@ export interface FileRouteTypes {
     | '/'
     | '/device'
     | '/login'
+    | '/agents/consent'
+    | '/agents/workspace'
     | '/activity'
     | '/job-times'
     | '/router'
@@ -247,7 +287,9 @@ export interface FileRouteTypes {
     | '/admin/users'
     | '/admin/webhooks'
     | '/admin/workspaces'
+    | '/providers/$provider'
     | '/settings/account'
+    | '/settings/agents'
     | '/settings/general'
     | '/settings/github'
     | '/settings/members'
@@ -258,6 +300,8 @@ export interface FileRouteTypes {
     | '/'
     | '/device'
     | '/login'
+    | '/agents/consent'
+    | '/agents/workspace'
     | '/activity'
     | '/job-times'
     | '/router'
@@ -270,7 +314,9 @@ export interface FileRouteTypes {
     | '/admin/users'
     | '/admin/webhooks'
     | '/admin/workspaces'
+    | '/providers/$provider'
     | '/settings/account'
+    | '/settings/agents'
     | '/settings/general'
     | '/settings/github'
     | '/settings/members'
@@ -283,6 +329,8 @@ export interface FileRouteTypes {
     | '/device'
     | '/login'
     | '/_authed/_workspace'
+    | '/agents/consent'
+    | '/agents/workspace'
     | '/_authed/_workspace/activity'
     | '/_authed/_workspace/job-times'
     | '/_authed/_workspace/router'
@@ -295,7 +343,9 @@ export interface FileRouteTypes {
     | '/_authed/_workspace/admin/users'
     | '/_authed/_workspace/admin/webhooks'
     | '/_authed/_workspace/admin/workspaces'
+    | '/_authed/_workspace/providers/$provider'
     | '/_authed/_workspace/settings/account'
+    | '/_authed/_workspace/settings/agents'
     | '/_authed/_workspace/settings/general'
     | '/_authed/_workspace/settings/github'
     | '/_authed/_workspace/settings/members'
@@ -308,6 +358,8 @@ export interface RootRouteChildren {
   AuthedRoute: typeof AuthedRouteWithChildren
   DeviceRoute: typeof DeviceRoute
   LoginRoute: typeof LoginRoute
+  AgentsConsentRoute: typeof AgentsConsentRoute
+  AgentsWorkspaceRoute: typeof AgentsWorkspaceRoute
 }
 
 declare module '@tanstack/react-router' {
@@ -346,6 +398,20 @@ declare module '@tanstack/react-router' {
       fullPath: '/'
       preLoaderRoute: typeof AuthedWorkspaceRouteImport
       parentRoute: typeof AuthedRoute
+    }
+    '/agents/consent': {
+      id: '/agents/consent'
+      path: '/agents/consent'
+      fullPath: '/agents/consent'
+      preLoaderRoute: typeof AgentsConsentRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/agents/workspace': {
+      id: '/agents/workspace'
+      path: '/agents/workspace'
+      fullPath: '/agents/workspace'
+      preLoaderRoute: typeof AgentsWorkspaceRouteImport
+      parentRoute: typeof rootRouteImport
     }
     '/_authed/_workspace/activity': {
       id: '/_authed/_workspace/activity'
@@ -438,6 +504,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AuthedWorkspaceAdminWorkspacesRouteImport
       parentRoute: typeof AuthedWorkspaceRoute
     }
+    '/_authed/_workspace/providers/$provider': {
+      id: '/_authed/_workspace/providers/$provider'
+      path: '/providers/$provider'
+      fullPath: '/providers/$provider'
+      preLoaderRoute: typeof AuthedWorkspaceProvidersProviderRouteImport
+      parentRoute: typeof AuthedWorkspaceRoute
+    }
     '/_authed/_workspace/settings/': {
       id: '/_authed/_workspace/settings/'
       path: '/settings'
@@ -450,6 +523,13 @@ declare module '@tanstack/react-router' {
       path: '/settings/account'
       fullPath: '/settings/account'
       preLoaderRoute: typeof AuthedWorkspaceSettingsAccountRouteImport
+      parentRoute: typeof AuthedWorkspaceRoute
+    }
+    '/_authed/_workspace/settings/agents': {
+      id: '/_authed/_workspace/settings/agents'
+      path: '/settings/agents'
+      fullPath: '/settings/agents'
+      preLoaderRoute: typeof AuthedWorkspaceSettingsAgentsRouteImport
       parentRoute: typeof AuthedWorkspaceRoute
     }
     '/_authed/_workspace/settings/general': {
@@ -487,7 +567,9 @@ interface AuthedWorkspaceRouteChildren {
   AuthedWorkspaceAdminUsersRoute: typeof AuthedWorkspaceAdminUsersRoute
   AuthedWorkspaceAdminWebhooksRoute: typeof AuthedWorkspaceAdminWebhooksRoute
   AuthedWorkspaceAdminWorkspacesRoute: typeof AuthedWorkspaceAdminWorkspacesRoute
+  AuthedWorkspaceProvidersProviderRoute: typeof AuthedWorkspaceProvidersProviderRoute
   AuthedWorkspaceSettingsAccountRoute: typeof AuthedWorkspaceSettingsAccountRoute
+  AuthedWorkspaceSettingsAgentsRoute: typeof AuthedWorkspaceSettingsAgentsRoute
   AuthedWorkspaceSettingsGeneralRoute: typeof AuthedWorkspaceSettingsGeneralRoute
   AuthedWorkspaceSettingsGithubRoute: typeof AuthedWorkspaceSettingsGithubRoute
   AuthedWorkspaceSettingsMembersRoute: typeof AuthedWorkspaceSettingsMembersRoute
@@ -506,7 +588,9 @@ const AuthedWorkspaceRouteChildren: AuthedWorkspaceRouteChildren = {
   AuthedWorkspaceAdminUsersRoute: AuthedWorkspaceAdminUsersRoute,
   AuthedWorkspaceAdminWebhooksRoute: AuthedWorkspaceAdminWebhooksRoute,
   AuthedWorkspaceAdminWorkspacesRoute: AuthedWorkspaceAdminWorkspacesRoute,
+  AuthedWorkspaceProvidersProviderRoute: AuthedWorkspaceProvidersProviderRoute,
   AuthedWorkspaceSettingsAccountRoute: AuthedWorkspaceSettingsAccountRoute,
+  AuthedWorkspaceSettingsAgentsRoute: AuthedWorkspaceSettingsAgentsRoute,
   AuthedWorkspaceSettingsGeneralRoute: AuthedWorkspaceSettingsGeneralRoute,
   AuthedWorkspaceSettingsGithubRoute: AuthedWorkspaceSettingsGithubRoute,
   AuthedWorkspaceSettingsMembersRoute: AuthedWorkspaceSettingsMembersRoute,
@@ -538,6 +622,8 @@ const rootRouteChildren: RootRouteChildren = {
   AuthedRoute: AuthedRouteWithChildren,
   DeviceRoute: DeviceRoute,
   LoginRoute: LoginRoute,
+  AgentsConsentRoute: AgentsConsentRoute,
+  AgentsWorkspaceRoute: AgentsWorkspaceRoute,
 }
 export const routeTree = rootRouteImport
   ._addFileChildren(rootRouteChildren)

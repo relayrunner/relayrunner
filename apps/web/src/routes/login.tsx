@@ -19,6 +19,12 @@ export const Route = createFileRoute("/login")({
   component: LoginPage,
 });
 
+// Agent sign-in (apps/api/src/agent-auth.ts) sends the browser here with the MCP client's signed
+// authorization request in the query. Signing in carries it on (auth-client.ts).
+function connectingAgent() {
+  return new URLSearchParams(window.location.search).has("sig");
+}
+
 function LoginPage() {
   const { redirect: next } = Route.useSearch();
   const [error, setError] = useState<string | null>(null);
@@ -42,7 +48,9 @@ function LoginPage() {
             <CardDescription>
               {next?.startsWith("/invite/")
                 ? "Sign in to join a workspace. New to RelayRunner? Signing in with GitHub creates your account."
-                : "Route your GitHub Actions to the right runner."}
+                : connectingAgent()
+                  ? "Sign in to connect an agent to RelayRunner."
+                  : "Route your GitHub Actions to the right runner."}
             </CardDescription>
           </CardHeader>
           <CardContent className="flex flex-col gap-3">

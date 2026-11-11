@@ -11,9 +11,14 @@ import { requireManager } from "../roles.ts";
 import { present } from "./github.ts";
 
 // Any member of the workspace in the path. Someone outside it gets a 404, so ids don't leak.
+// An agent token (agent-auth.ts) only reaches the workspace it was granted.
 const requireMember = createMiddleware<AppEnv>(async (c, next) => {
+  const workspaceId = c.req.param("id") ?? "";
+  if (c.var.agent && c.var.agent.workspaceId !== workspaceId) {
+    return c.json({ error: "not_found" }, 404);
+  }
   const db = createDb(c.env.DB);
-  const membership = await isWorkspaceMember(db, c.req.param("id") ?? "", c.var.user!.id);
+  const membership = await isWorkspaceMember(db, workspaceId, c.var.user!.id);
   if (!membership) return c.json({ error: "not_found" }, 404);
   c.set("db", db);
   c.set("role", membership.role);

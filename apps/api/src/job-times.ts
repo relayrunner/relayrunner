@@ -7,6 +7,7 @@
 // job_timing_installation_idx (the workspace's installations, completed in the window), never a
 // scan of the table. The detail is a range of job_timing_job_idx. job-times.test.ts checks the
 // rows D1 reads.
+import { PROVIDERS } from "@relayrunner/providers";
 import { and, eq, gte, inArray, isNull, type SQL, sql } from "drizzle-orm";
 import type { SQLiteColumn } from "drizzle-orm/sqlite-core";
 import { usesContainerRunner } from "./container-runner.ts";
@@ -58,7 +59,7 @@ export function environmentFor(
     return {
       key: `${provider.id}:${provider.label}`,
       label: provider.label,
-      detail: provider.name,
+      detail: PROVIDERS[provider.id].name,
     };
   const group = runnerGroupName ?? "Default";
   // Asked for by name: a `self-hosted` label, a pick, or a route to a machine.
@@ -155,13 +156,13 @@ export interface Stat {
   trend: number | null;
 }
 
-interface Bucket {
+export interface Bucket {
   runs: number;
   successes: number;
   samples: Sample[];
 }
 
-function emptyBucket(): Bucket {
+export function emptyBucket(): Bucket {
   return { runs: 0, successes: 0, samples: [] };
 }
 
@@ -170,13 +171,13 @@ function newestOf(samples: Sample[]) {
   return samples.sort((a, b) => b.completedAt - a.completedAt).slice(0, SAMPLE_CAP);
 }
 
-function mergeInto(into: Bucket, from: Bucket) {
+export function mergeInto(into: Bucket, from: Bucket) {
   into.runs += from.runs;
   into.successes += from.successes;
   into.samples = newestOf(into.samples.concat(from.samples));
 }
 
-function bucketOf(row: { runs: number; successes: number; samples: string | null }): Bucket {
+export function bucketOf(row: { runs: number; successes: number; samples: string | null }): Bucket {
   return {
     runs: Number(row.runs),
     successes: Number(row.successes),
@@ -276,10 +277,10 @@ export const RAN_ON_RUNNER = sql`${table.startedAt} is not null and ${table.runn
 // like on the Usage page; only successes give times.
 const RAN = sql`${RAN_ON_RUNNER} and not ${PICK}`;
 
-const OK = sql`coalesce(${table.conclusion} = 'success', 0)`;
+export const OK = sql`coalesce(${table.conclusion} = 'success', 0)`;
 
 // `completedAt:runMs:waitMs` per successful run, comma separated, as parseSamples reads it.
-const SAMPLES = sql`group_concat(case when ${OK} then ${table.completedAt} || ':'
+export const SAMPLES = sql`group_concat(case when ${OK} then ${table.completedAt} || ':'
   || (${table.completedAt} - ${table.startedAt}) || ':'
   || coalesce(${table.startedAt} - ${table.queuedAt}, '') end)`;
 
@@ -301,8 +302,12 @@ export function inWorkspace(
  * than both together, since D1 also counts the temp table and the window sorts, so the
  * SAMPLE_CAP cut happens in TypeScript instead.
  */
+/** The jobs a report counts: the workspace's, finished since `since`, run by a runner, not picks. */
+export const windowWhere = (workspaceId: string, since: Date) =>
+  sql`${inWorkspace(workspaceId)} and ${table.completedAt} >= ${since.getTime()} and ${RAN}`;
+
 export function windowQueries(workspaceId: string, since: Date) {
-  const where = sql`${inWorkspace(workspaceId)} and ${table.completedAt} >= ${since.getTime()} and ${RAN}`;
+  const where = windowWhere(workspaceId, since);
   const jobs = sql`
     select ${table.repositoryId} as repository_id, min(${table.repositoryFullName}) as repository,
       ${table.workflowName} as workflow_name, ${table.name} as name, ${table.labels} as labels,

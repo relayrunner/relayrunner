@@ -708,7 +708,19 @@ export function CloudProviderCard({
         ) : (
           <span className={cn(TILE, tile)}>{icon}</span>
         )}
-        <h3 className="min-w-0 flex-1 truncate text-sm font-medium">{name}</h3>
+        <h3 className="min-w-0 flex-1 truncate text-sm font-medium">
+          {provider === "machine" ? (
+            name
+          ) : (
+            <Link
+              to="/providers/$provider"
+              params={{ provider }}
+              className="rounded-sm outline-none hover:underline hover:underline-offset-2 focus-visible:ring-[3px] focus-visible:ring-ring/50"
+            >
+              {name}
+            </Link>
+          )}
+        </h3>
         <span className="text-xs text-muted-foreground tabular-nums">{plural(total, "job")}</span>
       </div>
       {/* One grid for every row, so share bars and numbers line up down the card. */}

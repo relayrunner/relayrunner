@@ -1,3 +1,4 @@
+import { oauthProviderClient } from "@better-auth/oauth-provider/client";
 import { inferAdditionalFields, organizationClient } from "better-auth/client/plugins";
 import { createAuthClient } from "better-auth/react";
 
@@ -10,6 +11,10 @@ export const authClient = createAuthClient({
     organizationClient(),
     // user.role (apps/api/src/auth.ts): "operator" sees the Admin section.
     inferAdditionalFields({ user: { role: { type: "string", required: false, input: false } } }),
+    // Agent sign-in (apps/api/src/agent-auth.ts): on the pages Better Auth sends an MCP client's
+    // sign-in through (/login, /agents/*), it adds the page's signed authorization request to
+    // each call, so signing in or approving carries on to the next step.
+    oauthProviderClient(),
   ],
 });
 

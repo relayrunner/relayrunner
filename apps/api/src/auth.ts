@@ -1,7 +1,8 @@
 import { betterAuth } from "better-auth";
 import { drizzleAdapter } from "better-auth/adapters/drizzle";
 import { createAuthMiddleware, getSessionFromCtx } from "better-auth/api";
-import { bearer, deviceAuthorization, oAuthProxy, organization } from "better-auth/plugins";
+import { bearer, deviceAuthorization, jwt, oAuthProxy, organization } from "better-auth/plugins";
+import { agentOAuth } from "./agent-auth.ts";
 import { recordEvent } from "./activity.ts";
 import { eq } from "drizzle-orm";
 import { createDb, schema } from "./db/index.ts";
@@ -48,6 +49,8 @@ export function createAuth(
     // Always the production dashboard origin, so GitHub only ever sees one OAuth callback URL.
     baseURL: env.BETTER_AUTH_URL,
     basePath: "/api/auth",
+    // The jwt plugin's /token turns a session into a JWT; agents get theirs through OAuth instead.
+    disabledPaths: ["/token"],
     secret: env.BETTER_AUTH_SECRET,
     // Lets preview origins call /api/auth/* (origin check) and be redirect targets.
     trustedOrigins: previewOrigins(env),
@@ -139,6 +142,11 @@ export function createAuth(
       }),
       // Lets that claim call send the device-flow session as `Authorization: Bearer <token>`.
       bearer(),
+      // Agent sign-in for the MCP server (src/agent-auth.ts). jwt signs the access tokens and
+      // serves their keys at /api/auth/jwks; its own session-JWT header and /token are off, so the
+      // only JWTs it hands out are agent access tokens.
+      jwt({ disableSettingJwtHeader: true }),
+      agentOAuth(env),
       // Signing in with the code GitHub sends after an install (routes/github.ts /setup).
       installSignIn({ setupURL: new URL("/api/github/setup", env.BETTER_AUTH_URL).toString() }),
     ],

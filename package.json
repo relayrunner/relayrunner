@@ -15,7 +15,7 @@
   "scripts": {
     "relayrunner": "node apps/cli/cli.ts",
     "setup:worktree": "pnpm install --frozen-lockfile",
-    "typecheck": "tsc --noEmit && pnpm --filter @relayrunner/api typecheck && pnpm --filter @relayrunner/webhooks typecheck && pnpm --filter @relayrunner/web typecheck",
+    "typecheck": "tsc --noEmit && pnpm --filter @relayrunner/api typecheck && pnpm --filter @relayrunner/webhooks typecheck && pnpm --filter @relayrunner/agents typecheck && pnpm --filter @relayrunner/web typecheck",
     "lint": "oxlint --deny-warnings apps packages tests",
     "format": "oxfmt",
     "format:check": "oxfmt --check",
@@ -24,6 +24,7 @@
     "check": "pnpm lint && pnpm format:check && pnpm typecheck && pnpm test",
     "test:watch": "vitest watch",
     "deploy:webhooks": "pnpm --filter @relayrunner/webhooks run deploy",
+    "deploy:agents": "pnpm --filter @relayrunner/agents run deploy",
     "deploy:api": "pnpm --filter @relayrunner/api run deploy",
     "deploy:web": "pnpm --filter @relayrunner/web run deploy",
     "deploy:landing": "pnpm --filter @relayrunner/landing run deploy",
