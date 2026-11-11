@@ -249,11 +249,15 @@ export async function deleteInstallation(
     throw new Error(`DELETE /app/installations/${installationId} failed with ${response.status}`);
 }
 
-// Every page of a list endpoint whose response holds its items under `key`. Capped at 10 pages of
-// 100, far more runners or groups than an org that adds runners by hand has.
-async function listAll<T>(token: string, path: string, key: string): Promise<T[]> {
+// listAll's cap: 10 pages of 100.
+const MAX_LISTED = 1000;
+
+// Every page of a list endpoint whose response holds its items under `key`, or is the list itself
+// without one. Capped at MAX_LISTED, far more runners or groups than an org that adds runners by
+// hand has.
+async function listAll<T>(token: string, path: string, key?: string): Promise<T[]> {
   const items: T[] = [];
-  for (let page = 1; page <= 10; page++) {
+  for (let page = 1; page <= MAX_LISTED / 100; page++) {
     const separator = path.includes("?") ? "&" : "?";
     const response = await fetch(`${API}${path}${separator}per_page=100&page=${page}`, {
       headers: headers(token),
@@ -263,7 +267,7 @@ async function listAll<T>(token: string, path: string, key: string): Promise<T[]
         `GET ${path} failed with ${response.status}: ${(await response.text()).slice(0, 300)}`,
       );
     const body = (await response.json()) as Record<string, unknown>;
-    const batch = (body[key] ?? []) as T[];
+    const batch = ((key ? body[key] : body) ?? []) as T[];
     items.push(...batch);
     if (batch.length < 100) break;
   }
@@ -473,6 +477,24 @@ export async function completeCheckRun(
     { status: "completed", conclusion, output },
   );
   return { url: body.html_url ?? null };
+}
+
+// A file a pull request touches, as GET /repos/{repo}/pulls/{n}/files lists it. GitHub leaves
+// `patch` out for a binary file or a diff too large to show.
+export interface PullRequestFile {
+  filename: string;
+  status: string;
+  changes: number;
+  patch?: string;
+}
+
+/**
+ * The files a pull request touches, or null when it touches more than listAll reads (GitHub lists
+ * at most 3,000 anyway), so the caller can treat it as touching everything.
+ */
+export async function pullRequestFiles(token: string, repo: string, pullRequest: number) {
+  const files = await listAll<PullRequestFile>(token, `/repos/${repo}/pulls/${pullRequest}/files`);
+  return files.length >= MAX_LISTED ? null : files;
 }
 
 /**

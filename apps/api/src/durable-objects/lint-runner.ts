@@ -6,18 +6,21 @@ import type { Env } from "../env.ts";
 import { recordRepoCheck } from "../free-checks.ts";
 import {
   completeCheckRun,
+  pullRequestFiles,
   repoTarball,
   startCheckRun,
   type CheckRunOutput,
 } from "../github-app.ts";
 import type { CheckResult } from "../native-checks.ts";
 import {
+  changedLines,
   checksAppInstallationId,
   checksAppToken,
   lintCheckName,
   lintCheckOutput,
   lintJobResult,
   lintUnavailableOutput,
+  type ChangedLines,
   type LintWork,
 } from "../lint-check.ts";
 import { loadRepoConfig } from "../repo-config.ts";
@@ -49,10 +52,12 @@ export class LintRunner extends DurableObject<Env> {
     // One attempt: a failed run reports itself on the check runs instead of retrying.
     await this.ctx.storage.delete("work");
     const token = await checksAppToken(this.env, work.installationId);
+    // Read alongside the config and the lint, since only the finished check runs need it.
+    const changed = this.changed(work, token);
     const config = await loadRepoConfig(token, work.repo);
     // An invalid file fails the main App's PR title check with the reason; nothing to add here.
     if (config.kind !== "config" || !config.lint) return log("not configured", work, {});
-    const results = await this.run(work, token, config.lint.tools, config.lint.paths);
+    const results = await this.run(work, token, config.lint.tools, config.lint.paths, changed);
     // For the Usage and Activity savings: a lint run that reported stands in for one Actions job.
     // A native `checks/lint` job is counted by its PickRunner instead, once per job. A failure here
     // only loses the count.
@@ -89,7 +94,20 @@ export class LintRunner extends DurableObject<Env> {
       };
     const work = { installationId, ...target };
     const token = await checksAppToken(this.env, installationId);
-    return lintJobResult(await this.run(work, token, tools, paths));
+    return lintJobResult(await this.run(work, token, tools, paths, Promise.resolve(null)));
+  }
+
+  // The lines a pull request changes, to mark the other problems as likely pre-existing. Without
+  // them every problem reads as plain, which loses only the hint.
+  private async changed(work: LintWork, token: string): Promise<ChangedLines | null> {
+    if (!work.pullRequest) return null;
+    try {
+      const files = await pullRequestFiles(token, work.repo, work.pullRequest);
+      return files && changedLines(files);
+    } catch (error) {
+      log("error", work, { error: `changed lines not read: ${errorMessage(error)}` });
+      return null;
+    }
   }
 
   // Opens a check run per tool, lints in the container, finishes the runs, and stops it.
@@ -98,6 +116,7 @@ export class LintRunner extends DurableObject<Env> {
     token: string,
     tools: LintTool[],
     paths: string[],
+    changed: Promise<ChangedLines | null>,
   ): Promise<LintResult[] | { error: string }> {
     const startedAt = Date.now();
     const checkRuns = new Map(
@@ -131,9 +150,12 @@ export class LintRunner extends DurableObject<Env> {
       await this.ctx.container?.destroy().catch(() => undefined);
     }
     const byTool = new Map(results.map((result) => [result.tool, result]));
+    const context = { repo: work.repo, headSha: work.headSha, changed: await changed };
     await finish((tool) => {
       const result = byTool.get(tool);
-      return result ? lintCheckOutput(result) : lintUnavailableOutput("the container skipped it");
+      return result
+        ? lintCheckOutput(result, context)
+        : lintUnavailableOutput("the container skipped it");
     });
     log("finished", work, {
       durationMs: Date.now() - startedAt,

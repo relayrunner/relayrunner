@@ -13,6 +13,7 @@ import {
   importAppPrivateKey,
   repoInstallationId,
   type CheckRunOutput,
+  type PullRequestFile,
 } from "./github-app.ts";
 import type { CheckResult } from "./native-checks.ts";
 
@@ -103,46 +104,159 @@ export async function startLintChecks(env: Env, target: { key: string; work: Lin
   await env.LINT_RUNNER.getByName(target.key).start(target.work);
 }
 
-/** The finished check run for one tool's result. */
-export function lintCheckOutput(result: LintResult): CheckRunOutput {
-  const { error, warning, notice } = result.total;
-  const counts = [plural(error, "error"), plural(warning, "warning"), plural(notice, "notice")]
+/**
+ * The lines a pull request adds or changes, per file path: their numbers in the new file, or "all"
+ * when GitHub shows no patch for a changed file (binary, or too big to show).
+ */
+export type ChangedLines = Map<string, Set<number> | "all">;
+
+export function changedLines(files: PullRequestFile[]): ChangedLines {
+  const changed: ChangedLines = new Map();
+  for (const file of files) {
+    if (file.status === "removed") continue;
+    if (file.patch === undefined) {
+      if (file.changes > 0) changed.set(file.filename, "all");
+      continue;
+    }
+    const lines = new Set<number>();
+    let line = 0;
+    for (const text of file.patch.split("\n")) {
+      const hunk = /^@@ -\d+(?:,\d+)? \+(\d+)/.exec(text);
+      if (hunk) line = Number(hunk[1]);
+      else if (text.startsWith("+")) lines.add(line++);
+      else if (text.startsWith(" ")) line++;
+      // "-" lines are gone from the new file, and "\ No newline at end of file" isn't a line.
+    }
+    changed.set(file.filename, lines);
+  }
+  return changed;
+}
+
+/**
+ * Whether a problem was likely there before the pull request: it isn't on a line the pull request
+ * added or changed. A hint, not a verdict: an edit can cause a problem on a line it didn't touch.
+ * Linting the base commit too would tell for sure, at twice the cost.
+ */
+export function likelyPreExisting(problem: Problem, changed: ChangedLines) {
+  const lines = changed.get(problem.path);
+  if (!lines) return true;
+  if (lines === "all") return false;
+  for (let line = problem.line; line <= (problem.endLine ?? problem.line); line++)
+    if (lines.has(line)) return false;
+  return true;
+}
+
+// Where a result came from: the commit, for links to each problem's line, and on a pull request
+// the lines it changed, to tell new problems from likely pre-existing ones.
+export interface LintContext {
+  repo: string;
+  headSha: string;
+  changed: ChangedLines | null;
+}
+
+// GitHub takes at most 50 annotations per check run update.
+const MAX_ANNOTATIONS = 50;
+// GitHub caps a check run summary at 65,535 characters; the findings lists stop well short.
+const MAX_LIST_CHARS = 60_000;
+
+/**
+ * The finished check run for one tool's result: it fails on any error, and lists every problem
+ * with a link to its line. On a pull request the problems off its changed lines are listed apart
+ * as likely pre-existing, so a failure the PR didn't cause says so.
+ */
+export function lintCheckOutput(result: LintResult, context: LintContext): CheckRunOutput {
+  if (result.status === "skipped")
+    return {
+      conclusion: "skipped",
+      title: "Nothing to check",
+      summary: `No files for ${result.tool} here.`,
+    };
+  if (result.status === "errored")
+    return {
+      conclusion: "failure",
+      title: `${result.tool} didn't run`,
+      summary: `${result.tool} exited with an error before reporting any problems. Its output:\n\n\`\`\`\n${result.output ?? ""}\n\`\`\``,
+    };
+  const conclusion = result.status === "failed" ? "failure" : "success";
+  const counts = countsText(result.total);
+  if (!counts)
+    return { conclusion, title: "No problems", summary: `${result.tool} found no problems.` };
+  const all = sum(result.total);
+  const listed =
+    all > result.problems.length ? ` Listing the first ${result.problems.length} of ${all}.` : "";
+  const link = (problem: Problem) =>
+    `https://github.com/${context.repo}/blob/${context.headSha}/${problem.path}#L${problem.line}`;
+  const { changed } = context;
+  const fresh: Problem[] = [];
+  const old: Problem[] = [];
+  for (const problem of result.problems)
+    (changed && likelyPreExisting(problem, changed) ? old : fresh).push(problem);
+  const oldText = countsText(tally(old));
+  let lead = `${result.tool} found ${counts}.`;
+  let title = counts;
+  if (!fresh.length && all === old.length) {
+    lead = `${result.tool} found ${counts}, all on lines this pull request doesn't change, so they were likely already there.`;
+    title = `${counts}, likely pre-existing`;
+  } else if (old.length) {
+    lead += ` ${oldText} ${old.length === 1 ? "is" : "are"} on lines this pull request doesn't change, so likely already there.`;
+    title = `${counts} (${oldText} likely pre-existing)`;
+  }
+  const sections = [lead + listed];
+  if (!old.length) sections.push(findingsList(fresh, link));
+  else {
+    if (fresh.length) sections.push(`### On changed lines\n\n${findingsList(fresh, link)}`);
+    sections.push(`### Likely pre-existing\n\n${findingsList(old, link)}`);
+  }
+  // Problems on changed lines first, as GitHub takes only the first 50.
+  const annotations = [
+    ...fresh.slice(0, MAX_ANNOTATIONS).map(annotation),
+    ...old.slice(0, Math.max(0, MAX_ANNOTATIONS - fresh.length)).map((problem) => ({
+      ...annotation(problem),
+      title: `Likely pre-existing${problem.title ? `: ${problem.title}` : ""}`,
+    })),
+  ];
+  return { conclusion, title, summary: sections.join("\n\n"), annotations };
+}
+
+// Problems grouped by file, each linking to its line, until the list would run past
+// MAX_LIST_CHARS.
+function findingsList(problems: Problem[], link: (problem: Problem) => string) {
+  const byPath = Map.groupBy(problems, (problem) => problem.path);
+  const lines: string[] = [];
+  let length = 0;
+  for (const [path, group] of byPath) {
+    for (const [index, problem] of group.entries()) {
+      const rule = problem.title ? ` \`${problem.title.replaceAll("`", "")}\`` : "";
+      const line = `${index === 0 ? `\n**${escape(path)}**\n\n` : ""}- [Line ${problem.line}](${link(problem)}) ${problem.level}${rule}: ${escape(problem.message)}`;
+      if (length + line.length > MAX_LIST_CHARS) {
+        // Each line so far is one problem.
+        lines.push(`\n…and ${problems.length - lines.length} more.`);
+        return lines.join("\n").trim();
+      }
+      lines.push(line);
+      length += line.length + 1;
+    }
+  }
+  return lines.join("\n").trim();
+}
+
+// One line of plain text: no line breaks, and no HTML for GitHub to render.
+function escape(text: string) {
+  return text.replaceAll(/\s+/g, " ").replaceAll("&", "&amp;").replaceAll("<", "&lt;").trim();
+}
+
+function tally(problems: Problem[]): LintResult["total"] {
+  const total = { error: 0, warning: 0, notice: 0 };
+  for (const problem of problems) total[problem.level]++;
+  return total;
+}
+
+const sum = ({ error, warning, notice }: LintResult["total"]) => error + warning + notice;
+
+function countsText({ error, warning, notice }: LintResult["total"]) {
+  return [plural(error, "error"), plural(warning, "warning"), plural(notice, "notice")]
     .filter(Boolean)
     .join(", ");
-  const annotations = result.problems.map(annotation);
-  const all = error + warning + notice;
-  const more =
-    all > annotations.length ? `\n\nShowing the first ${annotations.length} of ${all}.` : "";
-  switch (result.status) {
-    case "skipped":
-      return {
-        conclusion: "skipped",
-        title: "Nothing to check",
-        summary: `No files for ${result.tool} here.`,
-      };
-    case "errored":
-      return {
-        conclusion: "failure",
-        title: `${result.tool} didn't run`,
-        summary: `${result.tool} exited with an error before reporting any problems. Its output:\n\n\`\`\`\n${result.output ?? ""}\n\`\`\``,
-      };
-    case "failed":
-      return {
-        conclusion: "failure",
-        title: counts,
-        summary: `${result.tool} found ${counts}.${more}`,
-        annotations,
-      };
-    case "passed":
-      return {
-        conclusion: "success",
-        title: all ? counts : "No problems",
-        summary: all
-          ? `${result.tool} found ${counts}, and no errors.${more}`
-          : `${result.tool} found no problems.`,
-        ...(all ? { annotations } : {}),
-      };
-  }
 }
 
 /** The output for a check run whose tool never ran because the container failed. */
