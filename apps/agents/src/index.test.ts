@@ -5,7 +5,13 @@ import type { Env } from "./env.ts";
 const MCP_URL = "https://agents.relayrunner.app/mcp";
 
 // relayrunner-api as the agent sees it: /api/me plus canned answers, recording each path asked.
-function fakeEnv(answers: Record<string, unknown> = {}, { limited = false } = {}) {
+// An answer can depend on the workspace the request names (x-relayrunner-workspace).
+type Answer = unknown | ((workspace: string | null) => unknown);
+
+function fakeEnv(
+  answers: Record<string, Answer> = {},
+  { limited = false, workspaceIds = ["w1"], names = {} as Record<string, string> } = {},
+) {
   const asked: string[] = [];
   const env = {
     MCP_URL,
@@ -14,17 +20,23 @@ function fakeEnv(answers: Record<string, unknown> = {}, { limited = false } = {}
     API: {
       fetch: async (input: RequestInfo | URL, init?: RequestInit) => {
         const url = new URL(String(input));
-        asked.push(url.pathname + url.search);
-        if (new Headers(init?.headers).get("authorization") !== "Bearer good") {
+        const headers = new Headers(init?.headers);
+        const workspace = headers.get("x-relayrunner-workspace");
+        asked.push(url.pathname + url.search + (workspace ? ` @${workspace}` : ""));
+        if (headers.get("authorization") !== "Bearer good") {
           return Response.json({ error: "invalid_token" }, { status: 401 });
         }
         if (url.pathname === "/api/me") {
           return Response.json({
             user: { id: "u1", name: "Ada" },
-            agent: { workspaceId: "w1", scopes: ["workspace:read"], clientId: "c1" },
+            agent: {
+              grantId: "g1",
+              workspaces: workspaceIds.map((id) => ({ id, name: names[id] ?? id })),
+            },
           });
         }
-        const answer = answers[url.pathname];
+        const found = answers[url.pathname];
+        const answer = typeof found === "function" ? found(workspace) : found;
         return answer === undefined
           ? Response.json({ error: "not_found" }, { status: 404 })
           : Response.json(answer);
@@ -96,7 +108,13 @@ describe("mcp server", () => {
     };
     const names = listed.result.tools.map((tool) => tool.name);
     expect(names).toEqual(
-      expect.arrayContaining(["get_workspace", "list_runners", "get_runner_order", "list_runs"]),
+      expect.arrayContaining([
+        "list_workspaces",
+        "get_workspace",
+        "list_runners",
+        "get_runner_order",
+        "list_runs",
+      ]),
     );
     expect(listed.result.tools.every((tool) => tool.annotations.readOnlyHint)).toBe(true);
 
@@ -237,6 +255,45 @@ describe("mcp server", () => {
     expect(report.workflows).toHaveLength(1);
     expect(report.workflows[0].byEnvironment).toEqual({ "github:linux-2-core": stat(5) });
     expect(report.workflows[0].jobs.map((job: { name: string }) => job.name)).toEqual(["test"]);
+  });
+
+  test("a connection with several workspaces asks which, by id or name", async () => {
+    const { env, asked } = fakeEnv(
+      {
+        "/api/machines": (workspace: string | null) => ({
+          machines: [{ id: `m-${workspace}`, ownerImage: "x" }],
+        }),
+      },
+      { workspaceIds: ["w1", "w2"], names: { w1: "Alpha", w2: "Beta" } },
+    );
+    const call = async (name: string, args: object) =>
+      (
+        (await (
+          await rpc(env, { method: "tools/call", params: { name, arguments: args } })
+        ).json()) as { result: { content: { text: string }[]; isError?: boolean } }
+      ).result;
+
+    const listed = await call("list_workspaces", {});
+    expect(JSON.parse(listed.content[0].text)).toEqual({
+      workspaces: [
+        { id: "w1", name: "Alpha" },
+        { id: "w2", name: "Beta" },
+      ],
+    });
+
+    const unsaid = await call("list_runners", {});
+    expect(unsaid.isError).toBe(true);
+    expect(unsaid.content[0].text).toContain("list_workspaces");
+
+    const byName = await call("list_runners", { workspace: "beta" });
+    expect(JSON.parse(byName.content[0].text)).toEqual({ runners: [{ id: "m-w2" }] });
+    const byId = await call("list_runners", { workspace: "w1" });
+    expect(JSON.parse(byId.content[0].text)).toEqual({ runners: [{ id: "m-w1" }] });
+    expect(asked).toEqual(expect.arrayContaining(["/api/machines @w2", "/api/machines @w1"]));
+
+    const unknown = await call("list_runners", { workspace: "Gamma" });
+    expect(unknown.isError).toBe(true);
+    expect(unknown.content[0].text).toContain("Gamma");
   });
 
   test("an API refusal is a tool error, not a crash", async () => {

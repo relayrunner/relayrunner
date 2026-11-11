@@ -25,7 +25,7 @@ function AgentSettingsPage() {
     <section>
       <PageHeader title="Agents">
         Connect an AI agent to RelayRunner's MCP server to ask about your runners, runs and usage.
-        Agents can read one workspace and can't change anything.
+        Agents read the workspaces you pick when you connect them and can't change anything.
       </PageHeader>
       <div className="grid max-w-3xl gap-4">
         <ConnectGuide mcpUrl={mcpUrl} />
@@ -42,7 +42,7 @@ function AgentSettingsPage() {
 }
 
 // How to add the server in the agents people use most. Every client signs in the same way: it opens
-// this dashboard to sign in, pick a workspace and approve.
+// this dashboard to sign in, pick workspaces and approve.
 const CLIENTS: { name: string; steps: (url: string) => ReactNode }[] = [
   {
     name: "Claude Code",
@@ -116,8 +116,8 @@ function ConnectGuide({ mcpUrl }: { mcpUrl: string }) {
       <CardHeader className="px-4">
         <CardTitle className="text-sm">Connect an agent</CardTitle>
         <CardDescription>
-          Pick your agent and follow the step. It opens this dashboard so you can sign in, choose a
-          workspace and approve it.
+          Pick your agent and follow the step. It opens this dashboard so you can sign in, choose
+          workspaces and approve it.
         </CardDescription>
       </CardHeader>
       <CardContent className="grid gap-3 px-4">
