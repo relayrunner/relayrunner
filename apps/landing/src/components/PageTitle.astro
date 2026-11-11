@@ -5,10 +5,9 @@
  */
 const { entry } = Astro.locals.starlightRoute;
 const { title, description } = entry.data;
-const base = import.meta.env.BASE_URL.replace(/\/$/, "");
 const showLinks = entry.id !== "404";
-const md = `${base}/${entry.id}.md`;
-const txt = `${base}/${entry.id}.txt`;
+const md = `/${entry.id}.md`;
+const txt = `/${entry.id}.txt`;
 ---
 
 <h1 id="_top">{title}</h1>

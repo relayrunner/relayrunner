@@ -1,3 +1,11 @@
+---
+// Moved verbatim from privacy.html. Astro bundles the imported CSS into the page's <head>.
+import "../style.css";
+import "../legal.css";
+
+const site = Astro.site!.origin;
+---
+
 <!doctype html>
 <html lang="en">
   <head>
@@ -10,11 +18,9 @@
     />
     <meta name="theme-color" content="#ffffff" media="(prefers-color-scheme: light)" />
     <meta name="theme-color" content="#0b0d10" media="(prefers-color-scheme: dark)" />
-    <link rel="canonical" href="%VITE_SITE_URL%/privacy" />
+    <link rel="canonical" href={`${site}/privacy`} />
     <link rel="icon" href="/favicon.png" type="image/png" />
     <link rel="apple-touch-icon" href="/apple-touch-icon.png" />
-    <link rel="stylesheet" href="/src/style.css" />
-    <link rel="stylesheet" href="/src/legal.css" />
   </head>
   <body>
     <a class="skip" href="#main">Skip to content</a>

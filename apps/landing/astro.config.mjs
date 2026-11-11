@@ -3,13 +3,13 @@ import starlight from "@astrojs/starlight";
 import { defineConfig } from "astro/config";
 
 export default defineConfig({
-  // Production origin. Move to relayrunner.app (and later relayrunner.dev) when the docs join the
-  // landing site.
-  site: "https://relayrunner-docs.relayrun.workers.dev",
-  // Pages are served under /docs and built into dist/docs/, so URLs already match their future
-  // home at relayrunner.app/docs. scripts/postbuild.mjs redirects / to /docs/.
-  base: "/docs",
-  outDir: "./dist/docs",
+  // One site: the landing pages (src/pages/*.astro) at /, the docs at /docs/. The canonical and
+  // share-image tags need an absolute origin; SITE_URL overrides it for preview builds.
+  site: process.env.SITE_URL ?? "https://relayrunner.app",
+  // Keep the landing HTML's whitespace as written. Astro's default compression drops the line break
+  // between text and an inline link wrapped onto its own line ("Or<a>copy one line</a>into").
+  compressHTML: false,
+  // There is no base: Starlight serves docs from src/content/docs/docs/, so they land at /docs/.
   trailingSlash: "always",
   integrations: [
     starlight({
@@ -29,24 +29,24 @@ export default defineConfig({
         {
           label: "Get started",
           items: [
-            "get-started/overview",
-            "get-started/quickstart",
-            "get-started/install",
-            "get-started/agents",
+            "docs/get-started/overview",
+            "docs/get-started/quickstart",
+            "docs/get-started/install",
+            "docs/get-started/agents",
           ],
         },
-        { label: "CI", items: ["ci/routing", "ci/free-checks"] },
+        { label: "CI", items: ["docs/ci/routing", "docs/ci/free-checks"] },
         {
           label: "Runners",
-          items: ["runners/self-hosted", "runners/github", "runners/blacksmith"],
+          items: ["docs/runners/self-hosted", "docs/runners/github", "docs/runners/blacksmith"],
         },
         {
           label: "Reference",
           items: [
-            "reference/cli",
-            "reference/relay-inputs",
-            "reference/security",
-            "reference/troubleshooting",
+            "docs/reference/cli",
+            "docs/reference/relay-inputs",
+            "docs/reference/security",
+            "docs/reference/troubleshooting",
           ],
         },
       ],

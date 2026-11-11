@@ -177,7 +177,7 @@ importers:
         specifier: ^8.22.1
         version: 8.22.1
 
-  apps/docs:
+  apps/landing:
     dependencies:
       '@astrojs/starlight':
         specifier: ^0.42.10
@@ -192,22 +192,6 @@ importers:
         specifier: ^7.4.10
         version: 7.4.10(@types/node@22.20.5)(esbuild@0.28.2)(jiti@2.7.0)(tsx@4.23.15)(yaml@2.9.1)
     devDependencies:
-      wrangler:
-        specifier: 'catalog:'
-        version: 4.157.0(@cloudflare/workers-types@5.20261104.1)(@types/node@22.20.5)
-
-  apps/landing:
-    dependencies:
-      '@fontsource-variable/hanken-grotesk':
-        specifier: 'catalog:'
-        version: 5.3.0
-      '@fontsource-variable/jetbrains-mono':
-        specifier: 'catalog:'
-        version: 5.3.0
-    devDependencies:
-      vite:
-        specifier: 'catalog:'
-        version: 8.3.5(@types/node@22.20.5)(esbuild@0.28.2)(jiti@2.7.0)(tsx@4.23.15)(yaml@2.9.1)
       wrangler:
         specifier: 'catalog:'
         version: 4.157.0(@cloudflare/workers-types@5.20261104.1)(@types/node@22.20.5)

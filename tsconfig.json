@@ -24,7 +24,7 @@
     "**/dist",
     "**/coverage",
     "apps/agents",
-    "apps/docs",
+    "apps/landing",
     "apps/api",
     "apps/web",
     "apps/webhooks"

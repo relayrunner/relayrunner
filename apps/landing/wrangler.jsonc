@@ -1,6 +1,6 @@
 {
   "$schema": "./node_modules/wrangler/config-schema.json",
-  // Landing page: static assets only. There is no `main`, so no Worker script runs and requests
+  // Landing page and docs (/docs/): one Astro build, static assets only. There is no `main`, so no Worker script runs and requests
   // never bill as Worker invocations.
   "name": "relayrunner-landing",
   "compatibility_date": "2026-11-03",
@@ -8,6 +8,9 @@
   "account_id": "b233b6d6fd9eae9e093651bfb043c119",
   "assets": {
     "directory": "./dist",
+    "html_handling": "auto-trailing-slash",
+    // Serves dist/404.html (Starlight's not-found page) for unknown paths, landing or docs.
+    "not_found_handling": "404-page",
   },
   "workers_dev": false,
   // PR preview builds (`wrangler preview` in Workers Builds) get public preview URLs.

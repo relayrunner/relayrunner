@@ -8,14 +8,12 @@ import { getCollection, type CollectionEntry } from "astro:content";
 
 type DocsEntry = CollectionEntry<"docs">;
 
-const BASE = import.meta.env.BASE_URL.replace(/\/$/, "");
-
-export const pagePath = (entry: DocsEntry) => `${BASE}/${entry.id}/`;
-export const markdownPath = (entry: DocsEntry) => `${BASE}/${entry.id}.md`;
-export const textPath = (entry: DocsEntry) => `${BASE}/${entry.id}.txt`;
+export const pagePath = (entry: DocsEntry) => `/${entry.id}/`;
+export const markdownPath = (entry: DocsEntry) => `/${entry.id}.md`;
+export const textPath = (entry: DocsEntry) => `/${entry.id}.txt`;
 
 export async function docsEntries() {
-  return (await getCollection("docs")).filter((entry) => entry.id !== "404");
+  return (await getCollection("docs")).filter((entry) => entry.id.startsWith("docs/"));
 }
 
 /** Starlight asides (`:::note[Title]` ... `:::`) become Markdown blockquotes. */
@@ -56,7 +54,7 @@ export function toText(entry: DocsEntry, all: DocsEntry[], site: URL) {
     `RelayRunner docs: ${entry.data.title}`,
     `Page: ${abs(pagePath(entry))}`,
     `Markdown: ${abs(markdownPath(entry))}`,
-    `All pages: ${abs(`${BASE}/llms.txt`)}`,
+    `All pages: ${abs("/docs/llms.txt")}`,
     "",
     "Other pages (Markdown):",
     index,
