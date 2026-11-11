@@ -23,6 +23,7 @@ import {
 import {
   admits,
   canClaim,
+  chooseAndHold,
   chooseMachine,
   decideRoute,
   holdsMachine,
@@ -212,9 +213,8 @@ export class Router extends DurableObject<Env> {
       .where(
         and(
           // Its members' connected machines, wherever they enrolled them, and its own adopted
-          // runners (#318). A machine can now be in several workspaces, each with its own Router:
-          // reserve below only stops two picks in this workspace from taking the same one. A
-          // machine-wide reservation comes with #319.
+          // runners (#318). A connected machine can be in several workspaces, each with its own
+          // Router, so reserve below also takes the machine's own hold (MachineLink.reserve).
           inWorkspace(db, job.workspaceId),
           isNull(schema.machine.revokedAt),
           or(
@@ -291,7 +291,8 @@ export class Router extends DurableObject<Env> {
   }
 
   // Chooses among the candidates and stores the route that holds the chosen machine, one pick at a
-  // time and with no I/O but storage, so the lock is held for milliseconds. Null when none is free.
+  // time. The only I/O is storage and the chosen machine's MachineLink hold, so the lock is held
+  // for milliseconds. Null when none is free.
   private reserve(
     job: PickedJob,
     candidates: Candidate[],
@@ -301,11 +302,26 @@ export class Router extends DurableObject<Env> {
       const now = Date.now();
       const routes = await this.routes(now);
       const held = heldMachines(routes, now);
-      const machine = chooseMachine(candidates, held, lastPicked(routes), job.machine, job);
+      const picked = lastPicked(routes);
+      const routeId = newRouteId();
+      // A connected machine may also be in other workspaces, so its own MachineLink holds it for
+      // this route too: if another workspace's route got there first, try the next machine. A
+      // runner added from GitHub belongs to one installation, so to this workspace alone, and the
+      // lock here is enough.
+      const machine = await chooseAndHold(
+        (taken) =>
+          chooseMachine(candidates, new Set([...held, ...taken]), picked, job.machine, job),
+        async (candidate) =>
+          routingLabels.get(candidate.id) !== undefined ||
+          this.env.MACHINE_LINK.getByName(candidate.id).reserve({
+            routeId,
+            workspaceId: job.workspaceId,
+          }),
+      );
       if (!machine) return null;
       const routingLabel = routingLabels.get(machine.id);
       const route: Route = {
-        id: newRouteId(),
+        id: routeId,
         machineId: machine.id,
         machineName: machine.name,
         installationId: job.installationId,
