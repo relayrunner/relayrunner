@@ -10,7 +10,7 @@ Use [Conventional Commits](https://www.conventionalcommits.org/) for every commi
 
 - Write each on a single line in the form `type(scope): description`, such as `feat(api): log workflow jobs that ask for the relayrunner label` or `chore: scaffold pnpm workspace`.
 - Use one of these types: `feat`, `fix`, `docs`, `style`, `refactor`, `perf`, `test`, `build`, `ci`, `chore`, or `revert`.
-- The scope is optional. When you use one, name the app or package, such as `api`, `web`, `webhooks`, `cli`, or `landing`.
+- The scope is optional. When you use one, name the app or package, such as `api`, `web`, `webhooks`, `cli`, or `site`.
 - Write the description in the imperative mood and in lowercase, with no trailing period.
 - Mark a breaking change with `!` after the type or scope, such as `feat(api)!: …`.
 

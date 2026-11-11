@@ -7,7 +7,7 @@
 @custom-variant dark (&:is(.dark *));
 
 /*
- * Theme borrowed from apps/landing/DESIGN.md ("The Live Route"). The landing
+ * Theme borrowed from apps/site/DESIGN.md ("The Live Route"). The landing
  * is dark only; the light palette below keeps its roles (go = green, run =
  * amber, del = red) and is tuned for contrast on white. shadcn's semantic
  * variables map onto these tokens, and the landing names (go, run, raised,

@@ -18,7 +18,7 @@
     "**/*.gen.ts",
     "pnpm-lock.yaml",
     "apps/api/migrations/meta",
-    "apps/landing/.impeccable",
+    "apps/site/.impeccable",
     ".agents",
     ".claude/skills/security-audit"
   ]

@@ -12,7 +12,7 @@ import path from "node:path";
 const VENDORED_SKILL_DIRS = [".agents/", ".claude/skills/security-audit/"];
 const OXFMT_IGNORED_DIRS = [
   "apps/api/migrations/meta/",
-  "apps/landing/.impeccable/",
+  "apps/site/.impeccable/",
   ...VENDORED_SKILL_DIRS,
 ];
 

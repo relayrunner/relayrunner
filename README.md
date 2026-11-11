@@ -45,7 +45,7 @@ This is a pnpm workspace. The apps are deployed as Cloudflare Workers, except th
 | [`apps/webhooks`](apps/webhooks) | Verifies GitHub webhook deliveries and queues them for the API.                             |
 | [`apps/agents`](apps/agents)     | The MCP server agents connect to, read-only, at agents.relayrunner.app/mcp.                 |
 | [`apps/cli`](apps/cli)           | The `relayrunner` CLI that connects a machine to a workspace.                               |
-| [`apps/landing`](apps/landing)   | The public site at [relayrunner.app](https://relayrunner.app).                              |
+| [`apps/site`](apps/site)         | The public site at [relayrunner.app](https://relayrunner.app): landing page and docs.       |
 
 | Package                                                  | What it is                                                             |
 | -------------------------------------------------------- | ---------------------------------------------------------------------- |
@@ -88,7 +88,6 @@ Each place that reads local settings has an example to copy. The copies are giti
 | [`.env.example`](.env.example)                             | `.env`      | Cloudflare API credentials and the Access service token for admin commands. |
 | [`apps/api/.dev.vars.example`](apps/api/.dev.vars.example) | `.dev.vars` | The API's local secrets: Better Auth and the GitHub App's OAuth client.     |
 | [`apps/web/.env.example`](apps/web/.env.example)           | `.env`      | Where the dashboard's dev server proxies `/api`.                            |
-| [`apps/landing/.env.example`](apps/landing/.env.example)   | `.env`      | The landing page's public origin for share tags.                            |
 
 The webhooks Worker has none: its secrets live in the Secrets Store (see [`apps/webhooks`](apps/webhooks#run-it-locally)). The CLI reads `RELAYRUNNER_URL` and `RELAYRUNNER_HOME` from the shell (see [`apps/cli`](apps/cli)).
 

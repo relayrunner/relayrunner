@@ -16,7 +16,7 @@ const badgeVariants = cva(
           "border-border text-foreground [a&]:hover:bg-accent [a&]:hover:text-accent-foreground",
         ghost: "[a&]:hover:bg-accent [a&]:hover:text-accent-foreground",
         link: "text-primary underline-offset-4 [a&]:hover:underline",
-        // relayrunner signals (apps/landing/DESIGN.md): green = your machine /
+        // relayrunner signals (apps/site/DESIGN.md): green = your machine /
         // passed / live route, amber = minutes being spent / running.
         go: "border-go-edge bg-go-soft text-foreground",
         run: "border-run-edge bg-run/15 text-foreground",
