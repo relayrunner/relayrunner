@@ -13,6 +13,7 @@ import {
   type InstallationTask,
 } from "./installation-tasks.ts";
 import { handleWebhookBatch } from "./webhook-queue.ts";
+import { wellKnown } from "./well-known.ts";
 
 export { ContainerRunner } from "./durable-objects/container-runner.ts";
 export { LintRunner } from "./durable-objects/lint-runner.ts";
@@ -24,7 +25,7 @@ export { Router } from "./durable-objects/router.ts";
 const USAGE_CRON = "*/15 * * * *";
 
 export default {
-  fetch: app.fetch,
+  fetch: (request, env, ctx) => wellKnown(request, env) ?? app.fetch(request, env, ctx),
   // GitHub webhooks arrive on a queue from the ingress Worker (apps/webhooks), not over HTTP. The
   // cron's per-installation work arrives on its own queue.
   async queue(batch, env) {

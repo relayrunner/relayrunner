@@ -380,7 +380,8 @@ function Step({ n, title, children }: { n: number; title: string; children: Reac
   );
 }
 
-function CopyCommand({ command }: { command: string }) {
+/** A value to paste somewhere, with a copy button. `prompt` marks it as a shell command. */
+export function CopyCommand({ command, prompt = true }: { command: string; prompt?: boolean }) {
   const [copied, setCopied] = useState(false);
   async function copy() {
     try {
@@ -394,7 +395,7 @@ function CopyCommand({ command }: { command: string }) {
   return (
     <div className="flex items-center justify-between gap-2 rounded-md border bg-muted/50 py-1 pr-1 pl-3">
       <code className="overflow-x-auto font-mono text-sm whitespace-nowrap">
-        <span className="text-muted-foreground select-none">$ </span>
+        {prompt && <span className="text-muted-foreground select-none">$ </span>}
         {command}
       </code>
       <Button

@@ -40,6 +40,8 @@ export interface Env extends AccessEnv {
   DASHBOARD_URL?: string;
 
   BETTER_AUTH_URL: string;
+  // The MCP server's URL (apps/agents): the audience agent access tokens are issued for.
+  AGENTS_MCP_URL: string;
   BETTER_AUTH_SECRET: string;
   // Comma-separated origin patterns of dashboard previews allowed to sign in (see auth.ts).
   PREVIEW_ORIGINS?: string;

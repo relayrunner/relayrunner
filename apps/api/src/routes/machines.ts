@@ -419,9 +419,11 @@ export const machineRoutes = new Hono<AppEnv>()
     // Runners added from GitHub: each org's runner list for their live status, cached for a short
     // while in the workspace's Router so the page's refreshes don't each ask GitHub. Their group
     // access is read on demand (GET /:id/access) when a card's menu opens.
+    // Agents (agent-auth.ts) skip this: their reads stay off the Router, which picks jobs, so those
+    // runners come back with github.unreachable.
     const orgs = new Map<number, string>();
     for (const row of rows)
-      if (row.machine.source === "github" && row.machine.installationId && row.org)
+      if (!c.var.agent && row.machine.source === "github" && row.machine.installationId && row.org)
         orgs.set(row.machine.installationId, row.org);
     const router = orgs.size > 0 ? c.env.ROUTER.getByName(c.var.workspace.id) : null;
     const github = new Map(

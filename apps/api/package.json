@@ -11,6 +11,8 @@
     "db:migrate:remote": "wrangler d1 execute relayrunner --remote --file scripts/rename-legacy-migrations.sql && wrangler d1 migrations apply relayrunner --remote"
   },
   "dependencies": {
+    "@better-auth/mcp": "^1.7.16",
+    "@better-auth/oauth-provider": "^1.7.16",
     "@relayrunner/access": "workspace:*",
     "@relayrunner/activity": "workspace:*",
     "@relayrunner/email": "workspace:*",
@@ -21,6 +23,7 @@
     "better-auth": "catalog:",
     "drizzle-orm": "^0.45.4",
     "hono": "^4.13.16",
+    "jose": "^6.2.15",
     "yaml": "^2.9.1",
     "zod": "catalog:"
   },
