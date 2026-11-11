@@ -10,14 +10,11 @@ import {
   LaptopIcon,
 } from "lucide-react";
 import { useEffect, useState, type ReactNode } from "react";
-import {
-  AddRunner,
-  CONNECT_COMMAND,
-  GithubIcon,
-  GithubRunnersDialog,
-} from "@/components/add-runner";
+import { AddRunner, CONNECT_COMMAND, GithubRunnersDialog } from "@/components/add-runner";
 import { PageHeader } from "@/components/page-header";
-import { CloudProviderCard, FoundCard, MachineCard, providerOf } from "@/components/runner-card";
+import { GithubIcon } from "@/components/provider-logos";
+import { providerOf } from "@/components/providers";
+import { CloudProviderCard, FoundCard, MachineCard } from "@/components/runner-card";
 import { Button } from "@/components/ui/button";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import { authDisabled } from "@/lib/auth-client";
@@ -31,6 +28,7 @@ import { useLiveRefresh } from "@/lib/live-refresh";
 import { addableRunners, listGithubRunners, listMachines } from "@/lib/machines";
 import { canManage } from "@/lib/roles";
 import { getRunnerOrder } from "@/lib/runner-order";
+import { readFlag, saveFlag } from "@/lib/stored-flag";
 import { cn } from "@/lib/utils";
 
 // Found runners per workspace, kept for the tab's life so leaving and coming back doesn't wait on
@@ -45,21 +43,6 @@ const REFRESH_MS = 15_000;
 
 // Whether offline self-hosted runners are hidden, kept per browser.
 const HIDE_OFFLINE_KEY = "relayrunner:runners:hide-offline";
-function readHideOffline() {
-  try {
-    return localStorage.getItem(HIDE_OFFLINE_KEY) === "1";
-  } catch {
-    return false;
-  }
-}
-function saveHideOffline(hide: boolean) {
-  try {
-    if (hide) localStorage.setItem(HIDE_OFFLINE_KEY, "1");
-    else localStorage.removeItem(HIDE_OFFLINE_KEY);
-  } catch {
-    // Storage can be blocked; the choice just won't outlast the tab.
-  }
-}
 
 export const Route = createFileRoute("/_authed/_workspace/runners")({
   loader: async ({ context }) => {
@@ -99,7 +82,7 @@ function RunnersPage() {
   const editable = canManage(current.role);
   const machines = allMachines.filter((machine) => !machine.revokedAt);
   // Offline runners can be hidden. Paused ones are still online, so they stay.
-  const [hideOffline, setHideOffline] = useState(readHideOffline);
+  const [hideOffline, setHideOffline] = useState(() => readFlag(HIDE_OFFLINE_KEY));
   const online = machines.filter((machine) => machine.status?.online);
   const offline = machines.length - online.length;
   const shown = hideOffline ? online : machines;
@@ -203,7 +186,7 @@ function RunnersPage() {
                     variant="ghost"
                     size="xs"
                     onClick={() => {
-                      saveHideOffline(!hideOffline);
+                      saveFlag(HIDE_OFFLINE_KEY, !hideOffline);
                       setHideOffline(!hideOffline);
                     }}
                   >
@@ -253,9 +236,7 @@ function RunnersPage() {
 }
 
 // Cloud runners from the Job times report: everything but machines and other self-hosted runners.
-function isCloud(env: EnvironmentSummary) {
-  return !env.key.startsWith("machine:") && !env.key.startsWith("self-hosted:");
-}
+const isCloud = (env: EnvironmentSummary) => providerOf(env) !== "machine";
 
 // Cloud runners grouped by provider, busiest provider and runner type first, with labels we
 // couldn't place last.
