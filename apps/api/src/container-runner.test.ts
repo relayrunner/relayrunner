@@ -1,5 +1,6 @@
 import { describe, expect, test } from "vitest";
 import {
+  containerLabels,
   containerRunnerAllowed,
   containerRunnerGroupId,
   IDLE_LIMIT_MS,
@@ -12,6 +13,15 @@ describe("usesContainerRunner", () => {
   test("matches the label in any case", () => {
     expect(usesContainerRunner(["RelayRunner-Container"])).toBe(true);
     expect(usesContainerRunner(["relayrunner", "ubuntu-latest"])).toBe(false);
+  });
+});
+
+describe("containerLabels", () => {
+  test("labels the container with its GitHub job and installation", () => {
+    expect(containerLabels({ jobId: 123, installationId: 45 })).toEqual({
+      job_id: "123",
+      installation_id: "45",
+    });
   });
 });
 
