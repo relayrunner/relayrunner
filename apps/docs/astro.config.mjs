@@ -35,7 +35,6 @@ export default defineConfig({
             "get-started/agents",
           ],
         },
-        { label: "Guides", items: ["guides/laptop-ci", "guides/stay-under-quota"] },
         { label: "CI", items: ["ci/routing", "ci/free-checks"] },
         {
           label: "Runners",
