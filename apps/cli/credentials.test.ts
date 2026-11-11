@@ -25,7 +25,6 @@ function tempHome() {
 const credentials: Credentials = {
   server: "https://app.relayrunner.dev",
   machine: { id: "m1", name: "laptop" },
-  workspace: { id: "w1", name: "Acme", slug: "acme" },
   token: "rrm_secret",
 };
 
@@ -40,6 +39,13 @@ test("writes the token readable only by the user and reads it back", () => {
 
   deleteCredentials(path);
   expect(readCredentials(path)).toBeNull();
+});
+
+test("still reads a file from CLI 0.5.0, which saved one workspace", () => {
+  const path = credentialsPath(tempHome());
+  const old = { ...credentials, workspace: { id: "w1", name: "Acme", slug: "acme" } };
+  writeCredentials(old, path);
+  expect(readCredentials(path)).toMatchObject(credentials);
 });
 
 test("a damaged file reads as no credentials", () => {

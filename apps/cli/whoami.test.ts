@@ -43,6 +43,22 @@ describe("whoami", () => {
     });
   });
 
+  test("reads every workspace the machine is in, or none yet", async () => {
+    const workspaces = [
+      { id: "w1", name: "Acme", slug: "acme", memberCount: 3 },
+      { id: "w2", name: "atticoos", slug: "atticoos", memberCount: 1 },
+    ];
+    const listed = gateway(() => Response.json({ ...identity, workspaces }));
+    expect(
+      await whoami({ server: SERVER, token: "rrm_secret", fetcher: listed.fetcher }),
+    ).toMatchObject({ status: "ok", identity: { workspaces } });
+
+    const none = gateway(() => Response.json({ ...identity, workspace: null, workspaces: [] }));
+    expect(
+      await whoami({ server: SERVER, token: "rrm_secret", fetcher: none.fetcher }),
+    ).toMatchObject({ status: "ok", identity: { workspace: null, workspaces: [] } });
+  });
+
   test("a 401 means the machine was revoked", async () => {
     const { fetcher } = gateway(() => Response.json({ error: "unauthorized" }, { status: 401 }));
     expect(await whoami({ server: SERVER, token: "rrm_old", fetcher })).toEqual({

@@ -22,15 +22,16 @@ export const toChoice = (sharing: MachineSharing): ShareChoice =>
   sharing === "only_me" ? "only-me" : "anyone";
 
 // What a setting means, as in "<machine> runs only jobs you started".
-export function sharingMeaning(sharing: MachineSharing, workspace?: string) {
+// `scope` is where "anyone" reaches: one workspace's name, or "your workspaces" (the default).
+export function sharingMeaning(sharing: MachineSharing, scope = "your workspaces") {
   return sharing === "only_me"
     ? "runs only jobs you started"
-    : `runs any job in ${workspace ?? "the workspace"}, including teammates' and bots'`;
+    : `runs any job in ${scope}, including teammates' and bots'`;
 }
 
 // The setting and what it means, for `whoami` and `connect`: "only-me: runs only jobs you started".
-export function describeSharing(sharing: MachineSharing, workspace?: string) {
-  return `${toChoice(sharing)}: ${sharingMeaning(sharing, workspace)}`;
+export function describeSharing(sharing: MachineSharing, scope?: string) {
+  return `${toChoice(sharing)}: ${sharingMeaning(sharing, scope)}`;
 }
 
 const SharingResponse = z.object({ machine: z.object({ sharing: MachineSharing }) });

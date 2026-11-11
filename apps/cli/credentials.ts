@@ -11,7 +11,11 @@ export const Credentials = z.object({
   // The gateway's origin, such as https://app.relayrunner.dev. Plain http only for localhost.
   server: z.url().refine((server) => sendsTokenSafely(new URL(server))),
   machine: z.object({ id: z.string().min(1), name: z.string() }),
-  workspace: z.object({ id: z.string().min(1), name: z.string(), slug: z.string().nullish() }),
+  // The one workspace saved by CLI 0.5.0 and earlier. A machine is in all its owner's workspaces
+  // now (#321), so this is no longer written or read; it's only allowed so old files still load.
+  workspace: z
+    .object({ id: z.string().min(1), name: z.string(), slug: z.string().nullish() })
+    .optional(),
   // rrm_…, sent as a bearer token on the WebSocket upgrade.
   token: z.string().min(1),
 });

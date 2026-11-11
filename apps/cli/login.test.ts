@@ -82,10 +82,9 @@ describe("login", () => {
       credentials: {
         server: SERVER,
         machine: { id: "m1", name: "laptop" },
-        workspace: { id: "w1", name: "Acme", slug: "acme" },
         token: "rrm_secret",
       },
-      memberCount: null,
+      workspaces: [{ id: "w1", name: "Acme", slug: "acme" }],
     });
     expect(shown()).toEqual({
       userCode: "ABCD1234",
@@ -113,20 +112,32 @@ describe("login", () => {
     expect(claim.body).toEqual({ deviceCode: "dev-123", os: "macos", arch: "arm64" });
   });
 
-  test("passes on the workspace's member count without saving it", async () => {
+  test("passes on every workspace the machine is in, without saving them", async () => {
+    const acme = { id: "w1", name: "Acme", slug: "acme", memberCount: 3 };
+    const mine = { id: "w2", name: "atticoos", slug: "atticoos", memberCount: 1 };
     const { result } = run({
       "/api/auth/device/code": [code],
       "/api/auth/device/token": [{ status: 200, body: { access_token: "session-tok" } }],
       "/api/machines/claim": [
-        {
-          status: 200,
-          body: { ...claimed.body, workspace: { ...claimed.body.workspace, memberCount: 3 } },
-        },
+        { status: 200, body: { ...claimed.body, workspace: acme, workspaces: [acme, mine] } },
       ],
     });
-    const { credentials, memberCount } = await result;
-    expect(memberCount).toBe(3);
-    expect(credentials.workspace).toEqual({ id: "w1", name: "Acme", slug: "acme" });
+    const { credentials, workspaces } = await result;
+    expect(workspaces).toEqual([acme, mine]);
+    expect(credentials).not.toHaveProperty("workspace");
+  });
+
+  test("a machine whose owner has no workspace yet still signs in", async () => {
+    const { result } = run({
+      "/api/auth/device/code": [code],
+      "/api/auth/device/token": [{ status: 200, body: { access_token: "session-tok" } }],
+      "/api/machines/claim": [
+        { status: 200, body: { ...claimed.body, workspace: null, workspaces: [] } },
+      ],
+    });
+    const { credentials, workspaces } = await result;
+    expect(workspaces).toEqual([]);
+    expect(credentials.token).toBe("rrm_secret");
   });
 
   test("a denied code fails", async () => {

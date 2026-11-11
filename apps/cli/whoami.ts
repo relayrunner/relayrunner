@@ -4,6 +4,7 @@
 
 import { z } from "zod";
 import { userAgent } from "./paths.ts";
+import { WorkspaceFields } from "./workspaces.ts";
 
 export const WhoamiResponse = z.object({
   machine: z.object({
@@ -19,12 +20,7 @@ export const WhoamiResponse = z.object({
     // Missing from a gateway that predates sharing (#242).
     sharing: z.enum(["only_me", "anyone"]).optional(),
   }),
-  workspace: z.object({
-    id: z.string().min(1),
-    name: z.string(),
-    slug: z.string().nullish(),
-    memberCount: z.number().int().nonnegative().optional(),
-  }),
+  ...WorkspaceFields,
   enrolledBy: z.object({ name: z.string(), email: z.string() }).nullable(),
 });
 export type WhoamiResponse = z.infer<typeof WhoamiResponse>;
