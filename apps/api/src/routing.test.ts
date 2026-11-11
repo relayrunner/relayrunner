@@ -5,6 +5,7 @@ import { describe, expect, test, vi } from "vitest";
 import {
   admits,
   canClaim,
+  chooseAndHold,
   chooseMachine,
   decideRoute,
   holdsMachine,
@@ -19,6 +20,8 @@ import {
   ROUTE_HOLD_MS,
   routeIdFromLabels,
   routeLabel,
+  takeHold,
+  type MachineHold,
   notSharedText,
   unavailableMachines,
   type Route,
@@ -884,5 +887,96 @@ describe("machine sharing (#242)", () => {
         { machine: "c", owner: "C" },
       ]),
     ).toBe("a, b and c only run their owners' jobs");
+  });
+});
+
+describe("takeHold", () => {
+  const want = { routeId: "r2", workspaceId: "w2" };
+
+  test("takes a free machine until ROUTE_HOLD_MS from now", () => {
+    expect(takeHold(undefined, want, 1_000)).toEqual({ ...want, until: 1_000 + ROUTE_HOLD_MS });
+  });
+
+  test("refuses while another route holds the machine", () => {
+    const current: MachineHold = { routeId: "r1", workspaceId: "w1", until: 5_000 };
+    expect(takeHold(current, want, 4_999)).toBeNull();
+  });
+
+  test("takes it once the other route's hold lapses", () => {
+    const current: MachineHold = { routeId: "r1", workspaceId: "w1", until: 5_000 };
+    expect(takeHold(current, want, 5_000)).toEqual({ ...want, until: 5_000 + ROUTE_HOLD_MS });
+  });
+
+  test("renews the same route's hold", () => {
+    const current: MachineHold = { ...want, until: 5_000 };
+    expect(takeHold(current, want, 4_000)).toEqual({ ...want, until: 4_000 + ROUTE_HOLD_MS });
+  });
+});
+
+describe("one machine in two workspaces", () => {
+  // A machine's MachineLink: one call at a time, as a Durable Object's input gate runs them, with
+  // the storage read and write awaited like the real ones.
+  function machineLink() {
+    let stored: MachineHold | undefined;
+    let queue = Promise.resolve();
+    const reserve = vi.fn((want: { routeId: string; workspaceId: string }) => {
+      const result = queue.then(async () => {
+        const current = await Promise.resolve(stored);
+        const hold = takeHold(current, want, Date.now());
+        if (!hold) return false;
+        stored = await Promise.resolve(hold);
+        return true;
+      });
+      queue = result.then(() => undefined);
+      return result;
+    });
+    return { reserve, held: () => stored };
+  }
+
+  const candidate = (id: string) => ({
+    id,
+    name: id,
+    online: true,
+    state: "idle" as const,
+    labels: ["self-hosted"],
+    sharing: "anyone" as const,
+    ownerGithubId: 1,
+  });
+
+  // What a workspace's Router does under its own lock: choose among its candidates, then take the
+  // chosen machine's hold.
+  function pick(
+    workspaceId: string,
+    routeId: string,
+    candidates: ReturnType<typeof candidate>[],
+    links: Map<string, ReturnType<typeof machineLink>>,
+  ) {
+    return chooseAndHold(
+      (taken) => chooseMachine(candidates, taken),
+      (machine) => links.get(machine.id)!.reserve({ routeId, workspaceId }),
+    );
+  }
+
+  test("two simultaneous picks: only one gets the machine", async () => {
+    const shared = machineLink();
+    const links = new Map([["m1", shared]]);
+    const [a, b] = await Promise.all([
+      pick("w1", "r1", [candidate("m1")], links),
+      pick("w2", "r2", [candidate("m1")], links),
+    ]);
+    expect([a?.id, b?.id].filter(Boolean)).toEqual(["m1"]);
+    expect(shared.held()).toMatchObject({ routeId: a ? "r1" : "r2", workspaceId: a ? "w1" : "w2" });
+  });
+
+  test("the pick that loses the race takes its next machine", async () => {
+    const links = new Map([
+      ["m1", machineLink()],
+      ["m2", machineLink()],
+    ]);
+    const first = await pick("w1", "r1", [candidate("m1")], links);
+    const second = await pick("w2", "r2", [candidate("m1"), candidate("m2")], links);
+    expect(first?.id).toBe("m1");
+    expect(second?.id).toBe("m2");
+    expect(links.get("m1")!.reserve).toHaveBeenCalledTimes(2);
   });
 });

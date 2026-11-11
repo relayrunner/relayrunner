@@ -77,6 +77,48 @@ export function holdsMachine(route: Route, now: number) {
   return route.state !== "done" && now - route.createdAt < ROUTE_HOLD_MS;
 }
 
+// A connected machine is in every workspace its owner belongs to, and each workspace has its own
+// Router, so the route that holds a machine is also kept on the machine itself (its MachineLink).
+// Whichever route takes the hold first gets the machine; another workspace's pick tries its next
+// candidate.
+export interface MachineHold {
+  routeId: string;
+  // The workspace whose Router made the route.
+  workspaceId: string;
+  // When the hold lapses if the machine never reports the job: ROUTE_HOLD_MS after the pick.
+  until: number;
+}
+
+/**
+ * The hold a route takes on a machine, or null when another route still holds it. Taking it again
+ * for the same route renews it.
+ */
+export function takeHold(
+  current: MachineHold | undefined,
+  want: { routeId: string; workspaceId: string },
+  now: number,
+): MachineHold | null {
+  if (current && current.routeId !== want.routeId && now < current.until) return null;
+  return { ...want, until: now + ROUTE_HOLD_MS };
+}
+
+/**
+ * Chooses a machine and takes its hold, trying the next choice while another workspace's route
+ * holds the one chosen. Null when no candidate is left.
+ */
+export async function chooseAndHold<M extends { id: string }>(
+  choose: (taken: Set<string>) => M | null,
+  hold: (machine: M) => Promise<boolean>,
+): Promise<M | null> {
+  const taken = new Set<string>();
+  for (;;) {
+    const machine = choose(taken);
+    if (!machine) return null;
+    if (await hold(machine)) return machine;
+    taken.add(machine.id);
+  }
+}
+
 export interface Candidate {
   id: string;
   name: string;
