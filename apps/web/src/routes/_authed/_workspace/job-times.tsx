@@ -1,12 +1,18 @@
 import { createFileRoute } from "@tanstack/react-router";
 import { ChevronRightIcon } from "lucide-react";
-import { Fragment, memo, useEffect, useMemo, useState } from "react";
+import { memo, useEffect, useMemo, useState } from "react";
 import { PageHeader } from "@/components/page-header";
 import { ProviderLink } from "@/components/provider-link";
 import { ProviderMark, providerOf } from "@/components/providers";
 import { RangePicker } from "@/components/range-picker";
 import { Button } from "@/components/ui/button";
-import { createCellContext, DataTable, dataTableColumns } from "@/components/ui/data-table";
+import {
+  createCellContext,
+  DataTable,
+  type DataTableRow,
+  dataTableColumns,
+  type ExpandedState,
+} from "@/components/ui/data-table";
 import {
   Dialog,
   DialogContent,
@@ -271,6 +277,175 @@ function Versus({ env, isBaseline }: { env: EnvironmentSummary; isBaseline: bool
   );
 }
 
+/** A row of the Jobs table: a workflow, one of its jobs, or one leg of a matrix job. */
+type JobsRow = {
+  id: string;
+  workflow: WorkflowRow;
+  /** Absent on the workflow's own row. */
+  job?: JobRow;
+  subRows?: JobsRow[];
+};
+
+function jobRows(workflows: WorkflowRow[]): JobsRow[] {
+  return workflows.map((workflow) => {
+    const id = `${workflow.repositoryId}/${workflow.workflow ?? ""}`;
+    return {
+      id,
+      workflow,
+      subRows: workflow.jobs.map((job) => ({
+        id: `${id}/${job.name}`,
+        workflow,
+        job,
+        subRows: job.legs?.map((leg) => ({
+          id: `${id}/${job.name}/${leg.name}`,
+          workflow,
+          job: leg,
+        })),
+      })),
+    };
+  });
+}
+
+const byEnvironmentOf = (row: JobsRow) => (row.job ?? row.workflow).byEnvironment;
+
+/** The runners a job ran on, fastest first, and which is fastest. */
+function ranOn(environments: EnvironmentSummary[], byEnvironment: Record<string, Stat>) {
+  const ran = environments
+    .flatMap((env) => {
+      const stat = byEnvironment[env.key];
+      return stat && stat.samples > 0 ? [{ env, stat }] : [];
+    })
+    // Under 5 runs is too few to rank, so those go last.
+    .sort(
+      (a, b) =>
+        Number(a.stat.confidence === "few") - Number(b.stat.confidence === "few") ||
+        (a.stat.medianMs ?? Infinity) - (b.stat.medianMs ?? Infinity),
+    );
+  return { ran, best: fastest(byEnvironment) };
+}
+
+/** The trend of the runner this job ran on most. */
+function busiestTrend(byEnvironment: Record<string, Stat>) {
+  const ran = Object.values(byEnvironment).filter((stat) => stat.samples > 0);
+  return ran.sort((a, b) => b.samples - a.samples)[0]?.trend ?? null;
+}
+
+const [JobsContext, useJobsContext] = createCellContext<{
+  environments: EnvironmentSummary[];
+  showRepository: boolean;
+  onOpen: (detail: Detail) => void;
+}>("Jobs");
+
+const jobColumn = dataTableColumns<JobsRow>();
+const jobColumns = jobColumn.columns([
+  jobColumn.accessor((row) => row.job?.name ?? row.workflow.workflow ?? "", {
+    id: "name",
+    header: "Workflow › job",
+    sortFn: "text",
+    meta: { className: "align-top" },
+    cell: ({ row }) => <NameCell row={row} />,
+  }),
+  jobColumn.accessor(
+    (row) => {
+      const medians = Object.values(byEnvironmentOf(row)).flatMap((stat) =>
+        stat.samples > 0 && stat.medianMs !== null ? [stat.medianMs] : [],
+      );
+      return medians.length ? Math.min(...medians) : undefined;
+    },
+    {
+      id: "median",
+      header: "Median by runner",
+      sortFn: "basic",
+      meta: { className: "w-0 py-2 align-top" },
+      cell: ({ row }) => <MedianCell row={row.original} isWorkflow={row.depth === 0} />,
+    },
+  ),
+  jobColumn.accessor((row) => busiestTrend(byEnvironmentOf(row)) ?? undefined, {
+    id: "trend",
+    header: "Trend",
+    sortFn: "basic",
+    sortDescFirst: true,
+    meta: { align: "end", className: "py-2 align-top whitespace-nowrap" },
+    cell: ({ getValue }) => <Trend trend={getValue() ?? null} />,
+  }),
+]);
+
+function NameCell({ row }: { row: DataTableRow<JobsRow> }) {
+  const { showRepository, onOpen } = useJobsContext();
+  const { workflow, job } = row.original;
+  const open = row.getIsExpanded();
+  const toggle = row.getToggleExpandedHandler();
+  if (!job)
+    return (
+      <button
+        type="button"
+        aria-expanded={open}
+        onClick={toggle}
+        className="flex items-center gap-1.5 rounded-sm text-left outline-none focus-visible:ring-2 focus-visible:ring-ring"
+      >
+        <Chevron open={open} />
+        <span className="font-semibold whitespace-nowrap">
+          {workflow.workflow ?? "Unnamed workflow"}
+        </span>
+        <span className="text-xs whitespace-nowrap text-muted-foreground">
+          {showRepository && `${workflow.repository} · `}
+          {plural(workflow.jobs.length, "job")}
+        </span>
+      </button>
+    );
+  return (
+    <span className={cn("flex items-center gap-1.5", row.depth === 1 ? "pl-6" : "pl-12")}>
+      {row.getCanExpand() && (
+        <button
+          type="button"
+          aria-expanded={open}
+          aria-label={`${open ? "Hide" : "Show"} ${job.name} legs`}
+          onClick={toggle}
+          className="-ml-5.5 rounded-sm outline-none focus-visible:ring-2 focus-visible:ring-ring"
+        >
+          <Chevron open={open} />
+        </button>
+      )}
+      <button
+        type="button"
+        onClick={() => onOpen({ workflow, job })}
+        className="rounded-sm text-left font-medium whitespace-nowrap underline-offset-4 outline-none hover:underline focus-visible:ring-2 focus-visible:ring-ring"
+      >
+        {job.name}
+      </button>
+      {job.legs && <span className="text-xs text-muted-foreground">⊞ {job.legs.length}</span>}
+    </span>
+  );
+}
+
+// One stacked line per runner the job actually ran on, fastest first, instead of one column per
+// runner: most jobs only run on one or two runners, so a column each was mostly "not run".
+function MedianCell({ row, isWorkflow }: { row: JobsRow; isWorkflow: boolean }) {
+  const { environments } = useJobsContext();
+  const { ran, best } = ranOn(environments, byEnvironmentOf(row));
+  if (ran.length === 0)
+    return (
+      <span className="text-muted-foreground">{isWorkflow ? "no whole runs" : "not run"}</span>
+    );
+  const shown = ran.length > SHOWN_RUNNERS + 1 ? ran.slice(0, SHOWN_RUNNERS) : ran;
+  const hidden = ran.slice(shown.length);
+  return (
+    <ul className="grid gap-1">
+      {shown.map(({ env, stat }) => (
+        <TimeLine key={env.key} env={env} stat={stat} best={best === env.key} perRun={isWorkflow} />
+      ))}
+      {hidden.length > 0 && (
+        <li
+          className="pl-6 text-xs text-muted-foreground"
+          title={hidden.map(({ env, stat }) => `${env.label}: ${medianText(stat)}`).join("\n")}
+        >
+          +{hidden.length} more
+        </li>
+      )}
+    </ul>
+  );
+}
+
 // Memoized: opening the job detail re-renders the page, not this table.
 const Jobs = memo(function Jobs({
   environments,
@@ -283,121 +458,40 @@ const Jobs = memo(function Jobs({
   showRepository: boolean;
   onOpen: (detail: Detail) => void;
 }) {
+  const rows = useMemo(() => jobRows(workflows), [workflows]);
+  const allOpen = useMemo(() => Object.fromEntries(rows.map((row) => [row.id, true])), [rows]);
   // Workflows start open and matrix jobs closed, like a spend breakdown.
-  const [closed, setClosed] = useState<Set<string>>(new Set());
-  const [openMatrices, setOpenMatrices] = useState<Set<string>>(new Set());
-  const toggle = (set: Set<string>, key: string) => {
-    const next = new Set(set);
-    if (!next.delete(key)) next.add(key);
-    return next;
-  };
-  const workflowKey = (workflow: WorkflowRow) =>
-    `${workflow.repositoryId}/${workflow.workflow ?? ""}`;
-  const allClosed = workflows.every((workflow) => closed.has(workflowKey(workflow)));
+  const [expanded, setExpanded] = useState<ExpandedState>(allOpen);
+  // A new range or repo brings new workflows, which start open too.
+  useEffect(() => setExpanded(allOpen), [allOpen]);
+  const anyOpen = rows.some(
+    (row) => expanded === true || (expanded as Record<string, boolean>)[row.id],
+  );
+  const context = useMemo(
+    () => ({ environments, showRepository, onOpen }),
+    [environments, showRepository, onOpen],
+  );
 
   return (
     <div className="grid gap-2">
       <div className="flex items-center justify-between gap-3">
         <h2 className="font-semibold">Jobs</h2>
-        <Button
-          size="sm"
-          variant="ghost"
-          onClick={() => setClosed(allClosed ? new Set() : new Set(workflows.map(workflowKey)))}
-        >
-          {allClosed ? "Expand all" : "Collapse all"}
+        <Button size="sm" variant="ghost" onClick={() => setExpanded(anyOpen ? {} : allOpen)}>
+          {anyOpen ? "Collapse all" : "Expand all"}
         </Button>
       </div>
-      <div className="overflow-x-auto rounded-xl border bg-card">
-        <table className="w-full text-sm tabular-nums">
-          <thead>
-            <tr className="border-b text-muted-foreground">
-              <th scope="col" className="px-4 py-2 text-left font-normal">
-                Workflow › job
-              </th>
-              <th scope="col" className="w-0 px-4 py-2 text-left font-normal whitespace-nowrap">
-                Median by runner
-              </th>
-              <th scope="col" className="px-4 py-2 text-right font-normal">
-                Trend
-              </th>
-            </tr>
-          </thead>
-          <tbody>
-            {workflows.length === 0 && (
-              <tr>
-                <td colSpan={3} className="px-4 py-6 text-muted-foreground">
-                  No jobs in this repo in the window.
-                </td>
-              </tr>
-            )}
-            {workflows.map((workflow) => {
-              const key = workflowKey(workflow);
-              const open = !closed.has(key);
-              return (
-                <Fragment key={key}>
-                  <tr className="border-b bg-secondary/60">
-                    <th scope="row" className="px-4 py-2.5 text-left align-top font-normal">
-                      <button
-                        type="button"
-                        aria-expanded={open}
-                        onClick={() => setClosed(toggle(closed, key))}
-                        className="flex items-center gap-1.5 rounded-sm text-left outline-none focus-visible:ring-2 focus-visible:ring-ring"
-                      >
-                        <Chevron open={open} />
-                        <span className="font-semibold whitespace-nowrap">
-                          {workflow.workflow ?? "Unnamed workflow"}
-                        </span>
-                        <span className="text-xs whitespace-nowrap text-muted-foreground">
-                          {showRepository && `${workflow.repository} · `}
-                          {plural(workflow.jobs.length, "job")}
-                        </span>
-                      </button>
-                    </th>
-                    <Cells
-                      environments={environments}
-                      byEnvironment={workflow.byEnvironment}
-                      perRun
-                    />
-                  </tr>
-                  {open &&
-                    workflow.jobs.map((job) => {
-                      const matrixKey = `${key}/${job.name}`;
-                      const matrixOpen = openMatrices.has(matrixKey);
-                      return (
-                        <Fragment key={job.name}>
-                          <JobLine
-                            job={job}
-                            depth={1}
-                            environments={environments}
-                            onOpen={() => onOpen({ workflow, job })}
-                            matrix={
-                              job.legs
-                                ? {
-                                    open: matrixOpen,
-                                    toggle: () => setOpenMatrices(toggle(openMatrices, matrixKey)),
-                                  }
-                                : undefined
-                            }
-                          />
-                          {matrixOpen &&
-                            job.legs?.map((leg) => (
-                              <JobLine
-                                key={leg.name}
-                                job={leg}
-                                depth={2}
-                                environments={environments}
-                                onOpen={() => onOpen({ workflow, job: leg })}
-                              />
-                            ))}
-                        </Fragment>
-                      );
-                    })}
-                </Fragment>
-              );
-            })}
-          </tbody>
-        </table>
-      </div>
+      <JobsContext value={context}>
+        <DataTable
+          columns={jobColumns}
+          data={rows}
+          getRowId={(row) => row.id}
+          getSubRows={(row) => row.subRows}
+          expanded={expanded}
+          onExpandedChange={setExpanded}
+          rowClassName={(row) => (row.depth === 0 ? "bg-secondary/60" : "hover:bg-secondary/30")}
+          empty="No jobs in this repo in the window."
+        />
+      </JobsContext>
       <p className="flex flex-wrap gap-x-5 gap-y-1 text-xs text-muted-foreground">
         <span>
           <span className="text-run">7 runs</span> in amber: 5 to 19 runs, read with care
@@ -421,55 +515,6 @@ function Chevron({ open }: { open: boolean }) {
   );
 }
 
-function JobLine({
-  job,
-  depth,
-  environments,
-  onOpen,
-  matrix,
-}: {
-  job: JobRow;
-  depth: 1 | 2;
-  environments: EnvironmentSummary[];
-  onOpen: () => void;
-  matrix?: { open: boolean; toggle: () => void };
-}) {
-  return (
-    <tr className="border-b last:border-0 hover:bg-secondary/30">
-      <th
-        scope="row"
-        className={cn(
-          "py-2.5 pr-4 text-left align-top font-normal",
-          depth === 1 ? "pl-10" : "pl-16",
-        )}
-      >
-        <span className="flex items-center gap-1.5">
-          {matrix && (
-            <button
-              type="button"
-              aria-expanded={matrix.open}
-              aria-label={`${matrix.open ? "Hide" : "Show"} ${job.name} legs`}
-              onClick={matrix.toggle}
-              className="-ml-5.5 rounded-sm outline-none focus-visible:ring-2 focus-visible:ring-ring"
-            >
-              <Chevron open={matrix.open} />
-            </button>
-          )}
-          <button
-            type="button"
-            onClick={onOpen}
-            className="rounded-sm text-left font-medium whitespace-nowrap underline-offset-4 outline-none hover:underline focus-visible:ring-2 focus-visible:ring-ring"
-          >
-            {job.name}
-          </button>
-          {job.legs && <span className="text-xs text-muted-foreground">⊞ {job.legs.length}</span>}
-        </span>
-      </th>
-      <Cells environments={environments} byEnvironment={job.byEnvironment} />
-    </tr>
-  );
-}
-
 /** The fastest environment among those with 5+ runs, when at least two qualify. */
 function fastest(byEnvironment: Record<string, Stat>) {
   const ranked = Object.entries(byEnvironment)
@@ -480,69 +525,6 @@ function fastest(byEnvironment: Record<string, Stat>) {
 
 /** Runner lines shown per row; the rest fold into "+N more", and the job detail lists them all. */
 const SHOWN_RUNNERS = 3;
-
-// One stacked line per runner the job actually ran on, fastest first, instead of one column per
-// runner: most jobs only run on one or two runners, so a column each was mostly "not run".
-function Cells({
-  environments,
-  byEnvironment,
-  perRun = false,
-}: {
-  environments: EnvironmentSummary[];
-  byEnvironment: Record<string, Stat>;
-  perRun?: boolean;
-}) {
-  const best = fastest(byEnvironment);
-  const ran = environments
-    .flatMap((env) => {
-      const stat = byEnvironment[env.key];
-      return stat && stat.samples > 0 ? [{ env, stat }] : [];
-    })
-    // Under 5 runs is too few to rank, so those go last.
-    .sort(
-      (a, b) =>
-        Number(a.stat.confidence === "few") - Number(b.stat.confidence === "few") ||
-        (a.stat.medianMs ?? Infinity) - (b.stat.medianMs ?? Infinity),
-    );
-  const shown = ran.length > SHOWN_RUNNERS + 1 ? ran.slice(0, SHOWN_RUNNERS) : ran;
-  const hidden = ran.slice(shown.length);
-  // The trend of the runner this job ran on most.
-  const busiest = ran.map(({ stat }) => stat).sort((a, b) => b.samples - a.samples)[0];
-  return (
-    <>
-      <td className="px-4 py-2 align-top">
-        {ran.length === 0 ? (
-          <span className="text-muted-foreground">{perRun ? "no whole runs" : "not run"}</span>
-        ) : (
-          <ul className="grid gap-1">
-            {shown.map(({ env, stat }) => (
-              <TimeLine
-                key={env.key}
-                env={env}
-                stat={stat}
-                best={best === env.key}
-                perRun={perRun}
-              />
-            ))}
-            {hidden.length > 0 && (
-              <li
-                className="pl-6 text-xs text-muted-foreground"
-                title={hidden
-                  .map(({ env, stat }) => `${env.label}: ${medianText(stat)}`)
-                  .join("\n")}
-              >
-                +{hidden.length} more
-              </li>
-            )}
-          </ul>
-        )}
-      </td>
-      <td className="px-4 py-2 text-right align-top whitespace-nowrap">
-        <Trend trend={busiest?.trend ?? null} />
-      </td>
-    </>
-  );
-}
 
 function TimeLine({
   env,
