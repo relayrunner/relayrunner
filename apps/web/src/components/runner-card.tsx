@@ -41,7 +41,9 @@ import {
   revokeMachine,
   timeAgo,
   type Machine,
+  type MachineJob,
 } from "@/lib/machines";
+import { capacity } from "@/lib/capacity";
 import { cn } from "@/lib/utils";
 
 const KIND_ICONS: Record<DeviceKind, LucideIcon> = {
@@ -209,6 +211,39 @@ function Value({ children }: { children: ReactNode }) {
   return <span className="truncate">{children}</span>;
 }
 
+// The other jobs a busy machine is running, behind a +N chip next to the newest.
+function MoreJobs({ jobs }: { jobs: MachineJob[] }) {
+  return (
+    <Tooltip>
+      <TooltipTrigger asChild>
+        <button
+          type="button"
+          className="shrink-0 rounded-full border border-current/25 px-1.5 text-[11px] leading-4 font-medium tabular-nums text-ink-2 hover:bg-current/10"
+          aria-label={`${plural(jobs.length, "more job")} running`}
+        >
+          +{jobs.length}
+        </button>
+      </TooltipTrigger>
+      <TooltipContent align="end" className="grid max-w-80 gap-1.5 py-2">
+        {jobs.map((job) => (
+          <a
+            key={job.url}
+            href={job.url}
+            target="_blank"
+            rel="noreferrer"
+            className="flex min-w-0 items-baseline gap-2 hover:underline"
+          >
+            <span className="min-w-0 truncate">
+              {job.repository} · {job.name}
+            </span>
+            {job.startedAt && <span className="shrink-0 opacity-70">{timeAgo(job.startedAt)}</span>}
+          </a>
+        ))}
+      </TooltipContent>
+    </Tooltip>
+  );
+}
+
 // A spec the machine didn't report, such as a runner added from GitHub's CPU and memory.
 function NotReported() {
   return (
@@ -268,8 +303,11 @@ export function MachineCard({ machine, jobTime }: { machine: Machine; jobTime?: 
   const status = machine.status ?? { online: false, state: null, connectedAt: null };
   const paused = machine.paused ?? null;
   const missing = github?.missing ?? false;
-  const job = status.online && status.state === "busy" ? (machine.job ?? null) : null;
   const busy = status.online && status.state === "busy";
+  // Every job it's running, newest first (#179). An older API sends only the newest.
+  const jobs = busy ? (machine.jobs ?? (machine.job ? [machine.job] : [])) : [];
+  const job = jobs[0] ?? null;
+  const { slots, running } = capacity(status);
   const tone: keyof typeof BANDS = missing
     ? "missing"
     : paused
@@ -283,7 +321,8 @@ export function MachineCard({ machine, jobTime }: { machine: Machine; jobTime?: 
     missing: "Not on GitHub",
     paused: "Paused",
     offline: "Offline",
-    running: "Running",
+    // A machine with several runners counts them; a 1-runner machine reads as before.
+    running: slots > 1 ? `${Math.min(running, slots)} of ${slots} running` : "Running",
     idle: "Waiting for jobs",
   }[tone];
   const connection = missing
@@ -307,6 +346,17 @@ export function MachineCard({ machine, jobTime }: { machine: Machine; jobTime?: 
   ]
     .filter(Boolean)
     .join(" · ");
+
+  const hardware = [
+    device?.cpuCores != null ? `${device.cpuCores} cores` : null,
+    device?.memoryMb != null ? formatMemory(device.memoryMb) : null,
+  ]
+    .filter(Boolean)
+    .join(" · ");
+  // How many jobs it runs at once, set by `connect --concurrency`. A runner added from GitHub runs
+  // one. The gateway forgets the count once a machine disconnects (#346), so offline reads as not
+  // reported.
+  const runners = isGithub ? 1 : status.online ? slots : null;
 
   const githubUrl =
     github?.org && github.runnerId
@@ -467,15 +517,9 @@ export function MachineCard({ machine, jobTime }: { machine: Machine; jobTime?: 
         {/* Every card fills the same four specs, so each sits in the same place down the grid. */}
         <dl className="grid min-w-0 grid-cols-2 gap-x-4 gap-y-3 text-xs">
           <Field label="Platform">{platform ? <Value>{platform}</Value> : <NotReported />}</Field>
-          <Field label="CPU">
-            {device?.cpuCores != null ? <Value>{device.cpuCores} cores</Value> : <NotReported />}
-          </Field>
-          <Field label="Memory">
-            {device?.memoryMb != null ? (
-              <Value>{formatMemory(device.memoryMb)}</Value>
-            ) : (
-              <NotReported />
-            )}
+          <Field label="Hardware">{hardware ? <Value>{hardware}</Value> : <NotReported />}</Field>
+          <Field label="Runners">
+            {runners != null ? <Value>{runners}</Value> : <NotReported />}
           </Field>
           <Field label="Typical job">
             {jobTime && jobTime.samples > 0 ? (
@@ -597,20 +641,23 @@ export function MachineCard({ machine, jobTime }: { machine: Machine; jobTime?: 
             <BandLabel tone={tone}>{label}</BandLabel>
           )}
           {job ? (
-            <a
-              href={job.url}
-              target="_blank"
-              rel="noreferrer"
-              title={`${job.repository} · ${job.name}`}
-              className="flex min-w-0 items-baseline gap-2 text-ink-2 hover:underline"
-            >
-              <span className="min-w-0 truncate">
-                {job.repository} · {job.name}
-              </span>
-              {job.startedAt && (
-                <span className="shrink-0 text-muted-foreground">{timeAgo(job.startedAt)}</span>
-              )}
-            </a>
+            <span className="flex min-w-0 items-center gap-2">
+              <a
+                href={job.url}
+                target="_blank"
+                rel="noreferrer"
+                title={`${job.repository} · ${job.name}`}
+                className="flex min-w-0 items-baseline gap-2 text-ink-2 hover:underline"
+              >
+                <span className="min-w-0 truncate">
+                  {job.repository} · {job.name}
+                </span>
+                {job.startedAt && (
+                  <span className="shrink-0 text-muted-foreground">{timeAgo(job.startedAt)}</span>
+                )}
+              </a>
+              {jobs.length > 1 && <MoreJobs jobs={jobs.slice(1)} />}
+            </span>
           ) : busy ? (
             <span className="min-w-0 truncate text-ink-2">Running a job</span>
           ) : (
