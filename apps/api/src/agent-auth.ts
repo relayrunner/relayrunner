@@ -199,15 +199,14 @@ const AGENT_ROUTES: RegExp[] = [
   /^\/api\/job-times$/,
 ];
 
-// The one write: agent feedback, which only adds a row for its own user (routes/feedback.ts).
-const AGENT_WRITE_ROUTES: RegExp[] = [/^\/api\/feedback$/];
+// Routes an agent may call by method. The one write is agent feedback, which only adds a row for
+// its own user (routes/feedback.ts).
+const AGENT_ROUTES_BY_METHOD: Record<string, RegExp[]> = {
+  GET: AGENT_ROUTES,
+  HEAD: AGENT_ROUTES,
+  POST: [/^\/api\/feedback$/],
+};
 
 export function agentMayCall(method: string, pathname: string) {
-  const routes =
-    method === "GET" || method === "HEAD"
-      ? AGENT_ROUTES
-      : method === "POST"
-        ? AGENT_WRITE_ROUTES
-        : [];
-  return routes.some((route) => route.test(pathname));
+  return (AGENT_ROUTES_BY_METHOD[method] ?? []).some((route) => route.test(pathname));
 }

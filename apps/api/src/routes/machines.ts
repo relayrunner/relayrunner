@@ -44,7 +44,7 @@ import {
 } from "../machines.ts";
 import type { Env } from "../env.ts";
 import { sendEmail } from "../email.ts";
-import { requireUser, waitUntil } from "../middleware/session.ts";
+import { inBackground, requireUser } from "../middleware/session.ts";
 import { requireWorkspace } from "../middleware/workspace.ts";
 import { canManage, canRevokeMachine, requireManager } from "../roles.ts";
 
@@ -246,9 +246,7 @@ export const machineRoutes = new Hono<AppEnv>()
         connectedAt: new Date(),
       },
     });
-    const defer = waitUntil(c);
-    if (defer) defer(notice);
-    else await notice;
+    await inBackground(c, notice);
     // memberCount tells the CLI whether to ask who can run jobs here (#244): alone in a
     // workspace, there's nobody else's jobs to take.
     return c.json({

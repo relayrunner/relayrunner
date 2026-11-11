@@ -1,5 +1,11 @@
 import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
-import { ACTIVITY_FILTERS, ACTIVITY_RESULTS, type ActivityPage } from "@relayrunner/activity";
+import {
+  ACTIVITY_FILTERS,
+  ACTIVITY_RESULTS,
+  FEEDBACK_CATEGORIES,
+  FEEDBACK_LIMITS,
+  type ActivityPage,
+} from "@relayrunner/activity";
 import { z } from "zod";
 import { ApiError, type Api, type Workspace, type WorkspaceApi } from "./api.ts";
 import { compactActivityPage, compactJobTimes } from "./compact.ts";
@@ -40,9 +46,6 @@ const workspaceArg = z
     "Which workspace, by id or name (see list_workspaces). Needed only when this connection reads more than one.",
   );
 
-// apps/api/src/feedback.ts: FEEDBACK_CATEGORIES. The API checks these and the lengths again.
-const FEEDBACK_CATEGORIES = ["bug", "confusing", "feature_request", "other"] as const;
-
 const days = (max: number, fallback: number) =>
   z.number().int().min(1).max(max).default(fallback).describe(`Days to look back (1-${max}).`);
 
@@ -68,7 +71,7 @@ export function registerTools(server: McpServer, request: WorkspaceApi, workspac
   const scoped =
     (workspace: string | undefined): Api =>
     (path, query) =>
-      request(path, query, workspaceId(workspace));
+      request(path, { query, workspaceId: workspaceId(workspace) });
 
   server.registerTool(
     "list_workspaces",
@@ -275,14 +278,18 @@ export function registerTools(server: McpServer, request: WorkspaceApi, workspac
         summary: z
           .string()
           .min(1)
-          .max(200)
+          .max(FEEDBACK_LIMITS.summary)
           .describe("One line: what went wrong or what's missing."),
         details: z
           .string()
-          .max(4000)
+          .max(FEEDBACK_LIMITS.details)
           .optional()
           .describe("What you called, with which arguments, what you expected and what you got."),
-        tool: z.string().max(64).optional().describe("The tool this is about, if any."),
+        tool: z
+          .string()
+          .max(FEEDBACK_LIMITS.tool)
+          .optional()
+          .describe("The tool this is about, if any."),
         workspace: workspaceArg,
       },
       annotations: {
@@ -294,14 +301,13 @@ export function registerTools(server: McpServer, request: WorkspaceApi, workspac
     },
     ({ workspace, ...feedback }) =>
       answer(async () => {
-        // Optional here: feedback isn't always about one workspace.
-        const id = workspace || workspaces.length === 1 ? workspaceId(workspace) : undefined;
+        // Optional here: feedback isn't always about one workspace. The API falls back to the
+        // connection's only one.
+        const id = workspace ? workspaceId(workspace) : undefined;
         // Never repeat the text back: only that it arrived.
         const { id: feedbackId, redacted } = await request<{ id: string; redacted: number }>(
           "/feedback",
-          {},
-          id,
-          feedback,
+          { workspaceId: id, body: feedback },
         );
         return {
           received: true,

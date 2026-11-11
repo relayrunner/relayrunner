@@ -16,19 +16,17 @@ export function renderAgentFeedbackEmail(ctx: {
   clientName: string | null;
   sentAt: Date;
 }): RenderedEmail {
-  const from = `${ctx.user.name} <${ctx.user.email}>`;
-  const meta: [string, string][] = [
+  const rows: [string, string | null][] = [
     ["Category", ctx.category],
-    ["From", from],
+    ["From", `${ctx.user.name} <${ctx.user.email}>`],
     ["Agent", ctx.clientName ?? "unknown client"],
     ["Workspace", ctx.workspaceName ?? "none named"],
-    ...(ctx.tool ? [["Tool", ctx.tool] as [string, string]] : []),
+    ["Tool", ctx.tool],
     ["Sent", ctx.sentAt.toUTCString()],
     ["Id", ctx.id],
-    ...(ctx.redacted
-      ? [["Redacted", `${ctx.redacted} secret-like value(s)`] as [string, string]]
-      : []),
+    ["Redacted", ctx.redacted ? `${ctx.redacted} secret-like value(s)` : null],
   ];
+  const meta = rows.filter((row): row is [string, string] => row[1] !== null);
   const details = ctx.details ?? "(no details)";
   return renderEmailCard({
     subject: `[feedback] ${ctx.category}: ${ctx.summary}`,

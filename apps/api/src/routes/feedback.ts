@@ -6,13 +6,9 @@ import { AGENT_WORKSPACE_HEADER, agentWorkspaceId } from "../agent-auth.ts";
 import type { AppEnv } from "../app.ts";
 import { createDb, schema } from "../db/index.ts";
 import { sendEmail } from "../email.ts";
-import {
-  FEEDBACK_CATEGORIES,
-  FEEDBACK_LIMITS,
-  FEEDBACK_RATE,
-  sanitizeFeedback,
-} from "../feedback.ts";
-import { requireUser, waitUntil } from "../middleware/session.ts";
+import { FEEDBACK_CATEGORIES, FEEDBACK_LIMITS } from "@relayrunner/activity";
+import { FEEDBACK_RATE, sanitizeFeedback } from "../feedback.ts";
+import { inBackground, requireUser } from "../middleware/session.ts";
 
 // Raw input may run a little over the stored limits (whitespace, invisible characters) before
 // cleaning trims it; anything far over is refused rather than silently cut.
@@ -62,8 +58,9 @@ export const feedbackRoutes = new Hono<AppEnv>().post(
           gt(schema.agentFeedback.createdAt, new Date(now - 24 * HOUR_MS)),
         ),
       );
-    if (recent.hour >= FEEDBACK_RATE.hour || recent.day >= FEEDBACK_RATE.day) {
-      c.header("retry-after", recent.hour >= FEEDBACK_RATE.hour ? "3600" : "86400");
+    const hourly = recent.hour >= FEEDBACK_RATE.hour;
+    if (hourly || recent.day >= FEEDBACK_RATE.day) {
+      c.header("retry-after", hourly ? "3600" : "86400");
       return c.json({ error: "rate_limited" }, 429);
     }
 
@@ -82,12 +79,14 @@ export const feedbackRoutes = new Hono<AppEnv>().post(
 
     const to = c.env.FEEDBACK_EMAIL;
     if (to) {
-      const send = (async () => {
+      // sendEmail never throws; only the client lookup can, and then the email goes without a name.
+      const emailFeedback = async () => {
         const [client] = await db
           .select({ name: schema.oauthClient.name })
           .from(schema.oauthClient)
           .where(eq(schema.oauthClient.clientId, agent.clientId))
-          .limit(1);
+          .limit(1)
+          .catch(() => []);
         await sendEmail(c.env, {
           to,
           replyTo: user!.email,
@@ -101,12 +100,8 @@ export const feedbackRoutes = new Hono<AppEnv>().post(
             sentAt,
           },
         });
-      })().catch((error) =>
-        console.error(JSON.stringify({ msg: "feedback email failed", id, error: String(error) })),
-      );
-      const defer = waitUntil(c);
-      if (defer) defer(send);
-      else await send;
+      };
+      await inBackground(c, emailFeedback());
     }
 
     return c.json({ id, redacted }, 201);

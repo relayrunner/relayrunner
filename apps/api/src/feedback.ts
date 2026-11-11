@@ -2,8 +2,8 @@
 // The text comes from a model that may have pasted logs, configs or tool output into it, so it is
 // cleaned and has anything that looks like a credential replaced before it's stored or emailed.
 
-export const FEEDBACK_CATEGORIES = ["bug", "confusing", "feature_request", "other"] as const;
-export const FEEDBACK_LIMITS = { summary: 200, details: 4000, tool: 64 } as const;
+import { FEEDBACK_LIMITS, type FEEDBACK_CATEGORIES } from "@relayrunner/activity";
+
 // Per user, across all their agents: enough to report what went wrong, not enough to flood the inbox.
 export const FEEDBACK_RATE = { hour: 10, day: 30 } as const;
 
@@ -30,7 +30,7 @@ const SECRET_PATTERNS: { pattern: RegExp; keep?: number }[] = [
   { pattern: /(\b(?:Bearer|Basic|token)\s+)[\w.~+/=-]{8,}/gi, keep: 1 },
   {
     pattern:
-      /(\b[\w-]*(?:password|passwd|secret|token|api[_-]?key|access[_-]?key|private[_-]?key|client[_-]?secret|cookie|session)[\w-]*["']?\s*[:=]\s*["']?)[^\s"',;]{4,}/gi,
+      /((?:password|passwd|secret|token|api[_-]?key|access[_-]?key|private[_-]?key|client[_-]?secret|cookie|session)[\w-]*["']?\s*[:=]\s*["']?)[^\s"',;]{4,}/gi,
     keep: 1,
   },
 ];
@@ -74,11 +74,9 @@ export interface FeedbackInput {
 /** Feedback ready to store: cleaned, size-limited, secrets redacted. */
 export function sanitizeFeedback(input: FeedbackInput) {
   const summary = redactSecrets(cleanText(input.summary, FEEDBACK_LIMITS.summary, true));
-  const details = input.details
-    ? redactSecrets(cleanText(input.details, FEEDBACK_LIMITS.details))
-    : { text: "", count: 0 };
+  const details = redactSecrets(cleanText(input.details ?? "", FEEDBACK_LIMITS.details));
   // Tool names are identifiers; anything else in one is dropped.
-  const tool = input.tool?.replace(/[^\w.-]/g, "").slice(0, FEEDBACK_LIMITS.tool);
+  const tool = input.tool?.replace(/[^\w.-]/g, "");
   return {
     category: input.category,
     // Redaction can lengthen a short match ("token abcd1234" → "token [redacted]"); re-trim.

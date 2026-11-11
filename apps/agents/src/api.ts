@@ -18,9 +18,11 @@ export type Api = <T>(
 /** Api for one workspace: which of the token's workspaces the request reads. A body POSTs it as JSON. */
 export type WorkspaceApi = <T>(
   path: string,
-  query?: Record<string, string | number | undefined>,
-  workspaceId?: string,
-  body?: unknown,
+  options?: {
+    query?: Record<string, string | number | undefined>;
+    workspaceId?: string;
+    body?: unknown;
+  },
 ) => Promise<T>;
 
 // apps/api/src/agent-auth.ts: AGENT_WORKSPACE_HEADER.
@@ -32,7 +34,7 @@ const WORKSPACE_HEADER = "x-relayrunner-workspace";
  * binding ignores it.
  */
 export function apiClient(env: Env, token: string): WorkspaceApi {
-  return async (path, query = {}, workspaceId, body) => {
+  return async (path, { query = {}, workspaceId, body } = {}) => {
     const url = new URL(`/api${path}`, "https://relayrunner-api");
     for (const [key, value] of Object.entries(query)) {
       if (value !== undefined) url.searchParams.set(key, String(value));

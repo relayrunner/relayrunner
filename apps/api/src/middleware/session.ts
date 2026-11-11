@@ -39,6 +39,13 @@ export function waitUntil(c: Context<AppEnv>) {
   }
 }
 
+// Runs `promise` after the response where there's a waitUntil, else waits for it (tests).
+export async function inBackground(c: Context<AppEnv>, promise: Promise<unknown>) {
+  const defer = waitUntil(c);
+  if (defer) defer(promise);
+  else await promise;
+}
+
 export const requireUser = createMiddleware<AppEnv>(async (c, next) => {
   if (!c.var.user) return c.json({ error: "unauthorized" }, 401);
   await next();
