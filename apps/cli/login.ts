@@ -1,7 +1,7 @@
 // Enrolls this computer as a machine with the browser device-code flow (#65):
 //
 // 1. POST /api/auth/device/code → a user code and the dashboard's /device link.
-// 2. The user opens the link (we add &name=<hostname> as the suggested machine name), picks a
+// 2. The user opens the link (we add &name=<this computer's name> as the suggested machine name), picks a
 //    workspace and approves.
 // 3. We poll /api/auth/device/token until that happens and get a short-lived user session.
 // 4. POST /api/machines/claim trades that session and the device code for the machine token.

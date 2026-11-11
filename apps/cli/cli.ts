@@ -1,5 +1,4 @@
 #!/usr/bin/env node
-import { hostname } from "node:os";
 import * as clack from "@clack/prompts";
 import { defineCommand, runMain } from "citty";
 import { connect, type ConnectionEvent } from "./connection.ts";
@@ -14,6 +13,7 @@ import {
 } from "./credentials.ts";
 import { detectDevice } from "./device.ts";
 import { initCommand, offerSetup } from "./init.ts";
+import { defaultMachineName } from "./machine-name.ts";
 import { ensureRunner, RunnerError, runnerPlatform } from "./install.ts";
 import { normalizeServer } from "./server.ts";
 import { runJob } from "./job.ts";
@@ -47,7 +47,7 @@ const connectCommand = defineCommand({
     },
     name: {
       type: "string",
-      description: "Suggested machine name when signing in (default: this computer's hostname)",
+      description: "Suggested machine name when signing in (default: this computer's name)",
     },
     share: {
       type: "string",
@@ -228,7 +228,7 @@ const loginCommand = defineCommand({
     },
     name: {
       type: "string",
-      description: "Suggested machine name (default: this computer's hostname)",
+      description: "Suggested machine name (default: this computer's name)",
     },
     share: {
       type: "string",
@@ -298,7 +298,7 @@ async function enroll(
   platform: ReturnType<typeof machinePlatform>,
   share: ShareChoice | null,
 ) {
-  const signedIn = await signIn(server, name || hostname(), platform);
+  const signedIn = await signIn(server, name || (await defaultMachineName()), platform);
   const credentials = signedIn.credentials;
   writeCredentials(credentials);
   clack.log.success(
