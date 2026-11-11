@@ -1,0 +1,238 @@
+import {
+  columnFilteringFeature,
+  createColumnHelper,
+  createFilteredRowModel,
+  createSortedRowModel,
+  FlexRender,
+  filterFn_includesString,
+  globalFilteringFeature,
+  metaHelper,
+  type Row,
+  type RowData,
+  rowSortingFeature,
+  sortFn_basic,
+  sortFn_text,
+  type SortingState,
+  tableFeatures,
+  useTable,
+} from "@tanstack/react-table";
+import { useWindowVirtualizer } from "@tanstack/react-virtual";
+import { ArrowDownIcon, ArrowUpDownIcon, ArrowUpIcon } from "lucide-react";
+import { memo, type ReactNode, useCallback, useLayoutEffect, useRef, useState } from "react";
+import {
+  Table,
+  TableBody,
+  TableCaption,
+  TableCell,
+  TableHead,
+  TableHeader,
+  TableRow,
+} from "@/components/ui/table";
+import { cn } from "@/lib/utils";
+
+type ColumnMeta = {
+  /** Right-align numbers so their digits line up. */
+  align?: "end";
+  className?: string;
+};
+
+const features = tableFeatures({
+  rowSortingFeature,
+  columnFilteringFeature,
+  globalFilteringFeature,
+  sortedRowModel: createSortedRowModel(),
+  filteredRowModel: createFilteredRowModel(),
+  sortFns: { basic: sortFn_basic, text: sortFn_text },
+  filterFns: { includesString: filterFn_includesString },
+  columnMeta: metaHelper<ColumnMeta>(),
+});
+
+/** Column helper bound to DataTable's features. Define columns at module scope. */
+export function dataTableColumns<TData extends RowData>() {
+  return createColumnHelper<typeof features, TData>();
+}
+
+type Columns<TData extends RowData> = ReturnType<
+  ReturnType<typeof dataTableColumns<TData>>["columns"]
+>;
+
+const metaClass = (meta: ColumnMeta | undefined) =>
+  cn(meta?.align === "end" && "text-right", meta?.className);
+
+const ARIA_SORT = { asc: "ascending", desc: "descending" } as const;
+
+// Below this many rows every row renders. Above it, only the rows near the viewport do.
+const VIRTUALIZE_ABOVE = 100;
+
+export function DataTable<TData extends RowData>({
+  columns,
+  data,
+  getRowId,
+  search = "",
+  initialSorting = [],
+  caption,
+  empty = "Nothing to show.",
+  rowHeight = 45,
+}: {
+  columns: Columns<TData>;
+  data: TData[];
+  getRowId: (row: TData) => string;
+  /** Keeps rows where any searchable column contains this text. */
+  search?: string;
+  initialSorting?: SortingState;
+  caption?: ReactNode;
+  empty?: ReactNode;
+  /** A typical row's height in pixels, used to place rows before they're measured. */
+  rowHeight?: number;
+}) {
+  const [sorting, setSorting] = useState(initialSorting);
+  const table = useTable({
+    features,
+    columns,
+    data,
+    getRowId,
+    state: { sorting, globalFilter: search },
+    onSortingChange: setSorting,
+    globalFilterFn: "includesString",
+  });
+  const rows = table.getRowModel().rows;
+  const headers = table.getHeaderGroups()[0]?.headers ?? [];
+
+  return (
+    <Table className="tabular-nums">
+      {caption && <TableCaption>{caption}</TableCaption>}
+      <TableHeader>
+        <TableRow>
+          {headers.map((header) => {
+            const sorted = header.column.getIsSorted();
+            return (
+              <TableHead
+                key={header.id}
+                aria-sort={sorted ? ARIA_SORT[sorted] : undefined}
+                className={metaClass(header.column.columnDef.meta)}
+              >
+                {header.column.getCanSort() ? (
+                  <button
+                    type="button"
+                    onClick={header.column.getToggleSortingHandler()}
+                    className="group inline-flex items-center gap-1 rounded-sm outline-none hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring"
+                  >
+                    <FlexRender header={header} />
+                    <SortIcon sorted={sorted} />
+                  </button>
+                ) : (
+                  <FlexRender header={header} />
+                )}
+              </TableHead>
+            );
+          })}
+        </TableRow>
+      </TableHeader>
+      {rows.length === 0 ? (
+        <TableBody>
+          <TableRow>
+            <TableCell colSpan={headers.length} className="py-6 text-muted-foreground">
+              {empty}
+            </TableCell>
+          </TableRow>
+        </TableBody>
+      ) : rows.length > VIRTUALIZE_ABOVE ? (
+        <VirtualRows rows={rows} columns={headers.length} rowHeight={rowHeight} />
+      ) : (
+        <TableBody>
+          {rows.map((row) => (
+            <DataRow key={row.id} row={row} />
+          ))}
+        </TableBody>
+      )}
+    </Table>
+  );
+}
+
+type DataRowProps<TData extends RowData> = {
+  row: Row<typeof features, TData>;
+  index?: number;
+  measure?: (element: HTMLTableRowElement | null) => void;
+};
+
+// Memoized: rows re-render on scroll only when they enter the window, not every frame.
+const DataRow = memo(function DataRow<TData extends RowData>({
+  row,
+  index,
+  measure,
+}: DataRowProps<TData>) {
+  return (
+    <TableRow data-index={index} ref={measure}>
+      {row.getAllCells().map((cell) => (
+        <TableCell key={cell.id} className={metaClass(cell.column.columnDef.meta)}>
+          <FlexRender cell={cell} />
+        </TableCell>
+      ))}
+    </TableRow>
+  );
+}) as <TData extends RowData>(props: DataRowProps<TData>) => ReactNode;
+
+// Window-scrolled rows with spacer rows above and below, so the markup stays a real <table>
+// and columns keep their natural widths.
+function VirtualRows<TData extends RowData>({
+  rows,
+  columns,
+  rowHeight,
+}: {
+  rows: Row<typeof features, TData>[];
+  columns: number;
+  rowHeight: number;
+}) {
+  const bodyRef = useRef<HTMLTableSectionElement>(null);
+  const [offset, setOffset] = useState(0);
+  useLayoutEffect(() => {
+    const top = bodyRef.current?.getBoundingClientRect().top;
+    if (top !== undefined) setOffset(top + window.scrollY);
+  }, []);
+
+  const virtualizer = useWindowVirtualizer({
+    count: rows.length,
+    estimateSize: useCallback(() => rowHeight, [rowHeight]),
+    overscan: 10,
+    scrollMargin: offset,
+    // Stable between renders: the virtualizer re-measures every row when this changes.
+    getItemKey: useCallback((index: number) => rows[index]!.id, [rows]),
+  });
+  const items = virtualizer.getVirtualItems();
+  const before = items.length ? items[0]!.start - offset : 0;
+  const after = items.length ? virtualizer.getTotalSize() - (items.at(-1)!.end - offset) : 0;
+
+  return (
+    <TableBody ref={bodyRef}>
+      {before > 0 && <Spacer height={before} columns={columns} />}
+      {items.map((item) => (
+        <DataRow
+          key={item.key}
+          row={rows[item.index]!}
+          index={item.index}
+          measure={virtualizer.measureElement}
+        />
+      ))}
+      {after > 0 && <Spacer height={after} columns={columns} />}
+    </TableBody>
+  );
+}
+
+function Spacer({ height, columns }: { height: number; columns: number }) {
+  return (
+    <tr aria-hidden className="border-0">
+      <td colSpan={columns} style={{ height, padding: 0 }} />
+    </tr>
+  );
+}
+
+function SortIcon({ sorted }: { sorted: false | "asc" | "desc" }) {
+  if (sorted === "asc") return <ArrowUpIcon aria-hidden className="size-3.5" />;
+  if (sorted === "desc") return <ArrowDownIcon aria-hidden className="size-3.5" />;
+  return (
+    <ArrowUpDownIcon
+      aria-hidden
+      className="size-3.5 opacity-0 transition-opacity group-hover:opacity-60 group-focus-visible:opacity-60"
+    />
+  );
+}
