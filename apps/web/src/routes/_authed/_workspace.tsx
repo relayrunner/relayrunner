@@ -64,9 +64,9 @@ type NavItem = { to: string; label: string; icon: LucideIcon };
 
 const nav = [
   { to: "/runners", label: "Runners", icon: ServerIcon },
-  { to: "/providers", label: "Providers", icon: CloudIcon },
   { to: "/router", label: "Router", icon: RouteIcon },
   { to: "/activity", label: "Activity", icon: ActivityIcon },
+  { to: "/providers", label: "Providers", icon: CloudIcon },
   { to: "/runs", label: "Runs", icon: ListChecksIcon },
   { to: "/job-times", label: "Job times", icon: TimerIcon },
   { to: "/usage", label: "Usage", icon: ChartColumnIcon },

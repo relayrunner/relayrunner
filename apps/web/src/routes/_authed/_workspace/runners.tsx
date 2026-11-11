@@ -7,6 +7,8 @@ import {
 import { createFileRoute, useRouter } from "@tanstack/react-router";
 import {
   CheckIcon,
+  ChevronsDownUpIcon,
+  ChevronsUpDownIcon,
   CirclePlayIcon,
   CloudIcon,
   CopyIcon,
@@ -48,6 +50,8 @@ const REFRESH_MS = 15_000;
 
 // Whether offline self-hosted runners are hidden, kept per browser.
 const HIDE_OFFLINE_KEY = "relayrunner:runners:hide-offline";
+// Whether self-hosted cards show their hardware and typical job, kept per browser.
+const SHOW_SPECS_KEY = "relayrunner:runners:show-specs";
 
 export const Route = createFileRoute("/_authed/_workspace/runners")({
   loader: async ({ context }) => {
@@ -91,6 +95,7 @@ function RunnersPage() {
   const online = machines.filter((machine) => machine.status?.online);
   const offline = machines.length - online.length;
   const shown = hideOffline ? online : machines;
+  const [showSpecs, setShowSpecs] = useState(() => readFlag(SHOW_SPECS_KEY));
 
   // Runners in connected orgs that aren't added yet, for the found card. Owners and admins only,
   // since only they can add them. It asks GitHub, so it's read once per visit, not on every
@@ -186,19 +191,37 @@ function RunnersPage() {
             <RunnerGroup
               title="Self-hosted"
               action={
-                offline > 0 && (
+                <div className="flex items-center gap-1">
+                  {offline > 0 && (
+                    <Button
+                      variant="ghost"
+                      size="xs"
+                      onClick={() => {
+                        saveFlag(HIDE_OFFLINE_KEY, !hideOffline);
+                        setHideOffline(!hideOffline);
+                      }}
+                    >
+                      {hideOffline ? <EyeIcon aria-hidden /> : <EyeOffIcon aria-hidden />}
+                      {hideOffline ? `Show ${offline} offline` : "Hide offline"}
+                    </Button>
+                  )}
                   <Button
                     variant="ghost"
                     size="xs"
+                    aria-pressed={showSpecs}
                     onClick={() => {
-                      saveFlag(HIDE_OFFLINE_KEY, !hideOffline);
-                      setHideOffline(!hideOffline);
+                      saveFlag(SHOW_SPECS_KEY, !showSpecs);
+                      setShowSpecs(!showSpecs);
                     }}
                   >
-                    {hideOffline ? <EyeIcon aria-hidden /> : <EyeOffIcon aria-hidden />}
-                    {hideOffline ? `Show ${offline} offline` : "Hide offline"}
+                    {showSpecs ? (
+                      <ChevronsDownUpIcon aria-hidden />
+                    ) : (
+                      <ChevronsUpDownIcon aria-hidden />
+                    )}
+                    {showSpecs ? "Hide specs" : "Show specs"}
                   </Button>
-                )
+                </div>
               }
             >
               {shown.length === 0 && (
@@ -210,7 +233,7 @@ function RunnersPage() {
               )}
               {shown.map((machine) => (
                 <li key={machine.id} className="grid min-w-0">
-                  <MachineCard machine={machine} jobTime={jobTimes[machine.id]} />
+                  <MachineCard machine={machine} jobTime={jobTimes[machine.id]} specs={showSpecs} />
                 </li>
               ))}
               {found && found.count > 0 && !dismissed && (
