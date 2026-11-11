@@ -82,3 +82,37 @@
 :root[data-theme="light"] .sl-link-button.primary {
   color: #ffffff;
 }
+
+/*
+ * Type scale. Starlight's default runs large (42px page titles, 35px h2s on desktop); this keeps
+ * it close to the dashboard: 15px body, 30px page title, 22 / 18 / 16px section headings, and the
+ * same sizes on every screen width.
+ */
+:root,
+:root[data-theme="light"] {
+  --sl-text-body: 0.9375rem;
+  --sl-line-height: 1.6;
+  --sl-text-h1: 1.875rem;
+  --sl-text-h2: 1.375rem;
+  --sl-text-h3: 1.125rem;
+  --sl-text-h4: 1rem;
+  --sl-text-h5: 0.9375rem;
+}
+@media (min-width: 50em) {
+  :root,
+  :root[data-theme="light"] {
+    --sl-text-h1: 1.875rem;
+    --sl-text-h2: 1.375rem;
+    --sl-text-h3: 1.125rem;
+    --sl-text-h4: 1rem;
+  }
+}
+
+.site-title {
+  font-size: 1.0625rem;
+}
+
+/* Previous / next links at the bottom of a page. */
+.pagination-links .link-title {
+  font-size: 1rem;
+}
