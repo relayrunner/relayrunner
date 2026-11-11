@@ -52,6 +52,8 @@ function ProviderView({ first }: { first: ProviderReport }) {
   const [report, setReport] = useState(first);
   const { provider } = report;
   const info = PROVIDER_INFO[provider];
+  // Nothing ran here in the widest range: lead with how to start instead of empty numbers.
+  const [notSetUp] = useState(first.jobs === 0 && !!info.example);
   const { icon, tile } = PROVIDERS[provider];
 
   function chooseRange(days: number) {
@@ -86,33 +88,37 @@ function ProviderView({ first }: { first: ProviderReport }) {
         </div>
       </header>
 
-      <div className="grid gap-3">
-        <div className="flex flex-wrap items-center justify-between gap-3">
-          <h2 className="font-semibold">Your usage</h2>
-          <RangePicker ranges={RANGES} days={report.days} onChange={chooseRange} />
-        </div>
-        {report.jobs === 0 ? (
-          <p className="rounded-xl border border-dashed bg-card px-4 py-6 text-sm text-muted-foreground">
-            No jobs in this workspace ran on {info.name} in the last {plural(report.days, "day")}.
-            Once one does, its numbers show up here.
-          </p>
-        ) : (
-          <>
-            <Totals report={report} />
-            <Runners report={report} />
-            <Workflows report={report} />
-            <p className="text-xs text-muted-foreground">
-              {costNote(report)} RelayRunner reads job timings from GitHub and never sees your bill,
-              so costs are estimates at list prices (checked {report.pricesChecked}), before any
-              plan allowance or discount.
+      {notSetUp ? (
+        <SetUp provider={provider} />
+      ) : (
+        <div className="grid gap-3">
+          <div className="flex flex-wrap items-center justify-between gap-3">
+            <h2 className="font-semibold">Your usage</h2>
+            <RangePicker ranges={RANGES} days={report.days} onChange={chooseRange} />
+          </div>
+          {report.jobs === 0 ? (
+            <p className="rounded-xl border border-dashed bg-card px-4 py-6 text-sm text-muted-foreground">
+              No jobs in this workspace ran on {info.name} in the last {plural(report.days, "day")}.
+              Once one does, its numbers show up here.
             </p>
-          </>
-        )}
-      </div>
+          ) : (
+            <>
+              <Totals report={report} />
+              <Runners report={report} />
+              <Workflows report={report} />
+              <p className="text-xs text-muted-foreground">
+                {costNote(report)} RelayRunner reads job timings from GitHub and never sees your
+                bill, so costs are estimates at list prices (checked {report.pricesChecked}), before
+                any plan allowance or discount.
+              </p>
+            </>
+          )}
+        </div>
+      )}
 
       <Prices prices={report.prices} />
 
-      {info.example && (
+      {!notSetUp && info.example && (
         <div className="grid max-w-3xl gap-3">
           <h2 className="font-semibold">Use it</h2>
           <p className="text-sm text-muted-foreground">
@@ -121,14 +127,47 @@ function ProviderView({ first }: { first: ProviderReport }) {
             <code className="font-mono text-[13px]">runs-on</code> at one, and it shows up here a
             minute after it finishes.
           </p>
-          <pre className="overflow-x-auto rounded-lg border border-border/60 bg-[var(--rr-bg-deep)] px-4 py-3.5 font-mono text-[13px] leading-relaxed text-[var(--rr-ink-2)]">
-            {`jobs:\n  test:\n    runs-on: ${info.example}`}
-          </pre>
+          <RunsOn example={info.example} />
         </div>
       )}
 
       <PriceChanges prices={report.prices} />
     </section>
+  );
+}
+
+function RunsOn({ example }: { example: string }) {
+  return (
+    <pre className="overflow-x-auto rounded-lg border border-border/60 bg-[var(--rr-bg-deep)] px-4 py-3.5 font-mono text-[13px] leading-relaxed text-[var(--rr-ink-2)]">
+      {`jobs:\n  test:\n    runs-on: ${example}`}
+    </pre>
+  );
+}
+
+/** For a provider no job has used yet: the steps to send it a first job. */
+function SetUp({ provider }: { provider: ProviderId }) {
+  const { name, labels, example, setup } = PROVIDER_INFO[provider];
+  if (!example) return null;
+  return (
+    <div className="grid max-w-3xl gap-3">
+      <h2 className="font-semibold">Set up</h2>
+      <p className="text-sm text-muted-foreground">
+        No jobs in this workspace have run on {name} yet. To send it one:
+      </p>
+      <ol className="grid list-decimal gap-3 pl-5 text-sm marker:text-muted-foreground">
+        {setup && <li>{setup}</li>}
+        <li>
+          <div className="grid gap-2.5">
+            <span>
+              Point a job's <code className="font-mono text-[13px]">runs-on</code> at one of its
+              labels (<code className="font-mono text-[13px]">{labels}</code>).
+            </span>
+            <RunsOn example={example} />
+          </div>
+        </li>
+        <li>Its jobs show up here, with their cost, a minute after they finish.</li>
+      </ol>
+    </div>
   );
 }
 
