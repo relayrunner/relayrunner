@@ -17,8 +17,6 @@ import {
   Unplug,
   UserCheck,
   UserMinus,
-  UserPlus,
-  UserX,
   Zap,
   TriangleAlert,
 } from "lucide-react";
@@ -473,21 +471,15 @@ function sentence(item: ActivityItem) {
       return item.data.conclusion === "success" ? "passed" : "failed";
     case "minutes.overage":
       return "went past its included GitHub Actions minutes";
-    case "member.invited":
-    case "member.invite_canceled":
     case "member.joined":
     case "member.removed":
       return memberSentence(item);
   }
 }
 
-// Member events lead with who did it: "Atticus invited ada@example.com as an admin".
+// Member events lead with who: "Ada joined as an admin", "Zach left the workspace".
 function memberSentence(item: ActivityItem) {
   switch (item.type) {
-    case "member.invited":
-      return `invited ${item.data.email} as ${article(item.data.role)}`;
-    case "member.invite_canceled":
-      return `cancelled the invite for ${item.data.email}`;
     case "member.joined":
       return `joined as ${article(item.data.role)}`;
     case "member.removed":
@@ -513,8 +505,6 @@ const EVENT_ICONS = {
   "job.routed": Laptop,
   "job.unroutable": Ban,
   "check.completed": CircleCheck,
-  "member.invited": UserPlus,
-  "member.invite_canceled": UserX,
   "member.joined": UserCheck,
   "minutes.overage": TriangleAlert,
 } as const;
@@ -1363,15 +1353,6 @@ function samplePage(search: ActivitySearch): ActivityPage {
       data: { name: "Ada Lovelace", email: "ada@example.com", role: "admin" },
       occurredAt: at(20),
       actor: { id: "u2", name: "Ada Lovelace" },
-      machine: null,
-      job: null,
-    },
-    {
-      id: 17,
-      type: "member.invited",
-      data: { email: "ada@example.com", role: "admin" },
-      occurredAt: at(45),
-      actor: { id: "u1", name: "Atticus White" },
       machine: null,
       job: null,
     },

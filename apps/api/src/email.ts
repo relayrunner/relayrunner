@@ -7,7 +7,6 @@
 import {
   renderAgentFeedbackEmail,
   renderDeadLetterAlertEmail,
-  renderInviteEmail,
   renderMachineConnectedEmail,
   renderMachineTakenOverEmail,
   renderPriceCheckEmail,
@@ -57,17 +56,6 @@ export type EmailArgs = (
     }
   | {
       to: string;
-      template: "invite";
-      context: {
-        invitationId: string;
-        inviterName: string;
-        workspaceName: string;
-        role: string;
-        expiresAt: Date;
-      };
-    }
-  | {
-      to: string;
       template: "agent-feedback";
       context: Parameters<typeof renderAgentFeedbackEmail>[0];
     }
@@ -107,13 +95,6 @@ function render(env: Env, args: EmailArgs): RenderedEmail {
       });
     case "agent-feedback":
       return renderAgentFeedbackEmail(args.context);
-    case "invite": {
-      const { invitationId, ...context } = args.context;
-      return renderInviteEmail({
-        ...context,
-        acceptUrl: `${dashboard}/invite/${encodeURIComponent(invitationId)}`,
-      });
-    }
   }
 }
 

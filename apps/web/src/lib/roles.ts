@@ -25,7 +25,7 @@ export function canEditMember(
   return target.role !== "owner" || actor.role === "owner";
 }
 
-/** The roles `actor` may give someone, by invite or role change. Only owners make owners. */
+/** The roles `actor` may give someone, by role change. Only owners make owners. */
 export function assignableRoles(actorRole: string): Role[] {
   return actorRole === "owner" ? ["member", "admin", "owner"] : ["member", "admin"];
 }

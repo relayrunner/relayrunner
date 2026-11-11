@@ -146,24 +146,14 @@ export const ActivityEvent = z.discriminatedUnion("type", [
     type: z.literal("machine.revoked"),
     data: z.object({ ...machineData, source: z.enum(["connect", "github"]).optional() }),
   }),
-  // Someone left the workspace (`left`), or an owner or admin removed them. Actor: whoever did it.
-  // Each machine they enrolled there is revoked right after, logging its own machine.revoked.
+  // Someone left the workspace (`left`): their GitHub sign-in can no longer see its installation
+  // (#317). Actor: them. Older rows may also be an owner or admin removing them (`left: false`).
   z.object({
     type: z.literal("member.removed"),
     data: z.object({ memberName: z.string(), left: z.boolean() }),
   }),
-  // An owner or admin invited someone by email (#135). Re-inviting the same email logs it again.
-  // Actor: the inviter.
-  z.object({
-    type: z.literal("member.invited"),
-    data: z.object({ email: z.string(), role: z.string() }),
-  }),
-  // An owner or admin cancelled a pending invite. Actor: that user.
-  z.object({
-    type: z.literal("member.invite_canceled"),
-    data: z.object({ email: z.string(), role: z.string() }),
-  }),
-  // Someone accepted an invite and joined. Actor: the new member.
+  // Someone joined: their GitHub sign-in can now see the workspace's installation (#317). Actor:
+  // the new member.
   z.object({
     type: z.literal("member.joined"),
     data: z.object({ name: z.string(), email: z.string(), role: z.string() }),

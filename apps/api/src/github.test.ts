@@ -97,10 +97,15 @@ async function installState(cookie: string, next?: string) {
 
 // GitHub's redirect back to the Setup URL. Returns where it sends the browser, and the cookie jar
 // after it (it makes the installation's workspace active).
-async function setupWith(cookie: string, installationId: number, state?: string) {
+async function setupWith(
+  cookie: string,
+  installationId: number,
+  state?: string,
+  action: "install" | "update" = "install",
+) {
   const query = new URLSearchParams({
     installation_id: String(installationId),
-    setup_action: "install",
+    setup_action: action,
   });
   if (state) query.set("state", state);
   const response = await call(`/github/setup?${query}`, cookie);
@@ -111,9 +116,22 @@ async function setupWith(cookie: string, installationId: number, state?: string)
   };
 }
 
-async function setup(cookie: string, installationId: number, state?: string) {
-  return (await setupWith(cookie, installationId, state)).location;
+async function setup(
+  cookie: string,
+  installationId: number,
+  state?: string,
+  action?: "install" | "update",
+) {
+  return (await setupWith(cookie, installationId, state, action)).location;
 }
+
+// GitHub's `installation.created`, sent as `installerId` (a GitHub user id) installed it.
+const installed = (github: GitHubInstallation, installerId?: number) =>
+  webhook("installation", {
+    action: "created",
+    installation: github,
+    ...(installerId === undefined ? {} : { sender: { id: installerId, login: "installer" } }),
+  });
 
 async function current(cookie: string) {
   const response = await call("/workspaces/current", cookie);
@@ -178,9 +196,10 @@ describe("installing the GitHub App makes a workspace (#316)", () => {
   });
 
   test("setup makes the installation's workspace, owned by the installer, and opens it", async () => {
-    const { user, githubToken, cookie } = await testing.signIn(env);
+    const { user, githubId, githubToken, cookie } = await testing.signIn(env);
     const github = installation({ repository_selection: "selected" });
     visibleTo.set(githubToken, [github]);
+    await installed(github, githubId);
 
     const back = await setupWith(cookie, github.id, await installState(cookie));
     expect(back.location).toBe("/settings/github?github=connected");
@@ -240,6 +259,7 @@ describe("installing the GitHub App makes a workspace (#316)", () => {
     const github = installation();
     visibleTo.set(first.githubToken, [github]);
     visibleTo.set(second.githubToken, [github]);
+    await installed(github, first.githubId);
     await setup(first.cookie, github.id);
 
     expect(await setup(second.cookie, github.id)).toBe("/settings/github?github=connected");
@@ -255,14 +275,15 @@ describe("installing the GitHub App makes a workspace (#316)", () => {
     const github = installation();
     visibleTo.set(githubToken, [github]);
 
-    await webhook("installation", { action: "created", installation: github });
+    await installed(github);
     const made = (await row(github.id))!.workspace_id;
     expect(made).toBeTruthy();
     expect(await members(made!)).toEqual([]);
 
     await setup(cookie, github.id);
     expect((await row(github.id))!.workspace_id).toBe(made);
-    expect(await members(made!)).toEqual([{ user_id: user.id, role: "owner" }]);
+    // No sender on that webhook, so nobody is known to have installed it.
+    expect(await members(made!)).toEqual([{ user_id: user.id, role: "member" }]);
 
     await webhook("installation", { action: "new_permissions_accepted", installation: github });
     expect((await row(github.id))!.workspace_id).toBe(made);
@@ -286,7 +307,9 @@ describe("installing the GitHub App makes a workspace (#316)", () => {
 
     visibleTo.set(githubToken, [{ ...github, repository_selection: "selected" }]);
 
-    expect(await setup(cookie, github.id)).toBe("/settings/github?github=updated");
+    expect(await setup(cookie, github.id, undefined, "update")).toBe(
+      "/settings/github?github=updated",
+    );
     expect(await row(github.id)).toMatchObject({ repository_selection: "selected" });
   });
 
@@ -321,7 +344,7 @@ describe("installing the GitHub App makes a workspace (#316)", () => {
     // GitHub, not the state, decides who joins: first's state doesn't add first.
     await setup(second.cookie, github.id, await installState(first.cookie, "/runners"));
     expect(await members((await row(github.id))!.workspace_id!)).toEqual([
-      { user_id: second.user.id, role: "owner" },
+      { user_id: second.user.id, role: "member" },
     ]);
   });
 
@@ -494,6 +517,9 @@ describe("coming back to a dashboard page after the install (next)", () => {
         return Promise.resolve(Response.json({ total_count: 1, installations: [github] }));
       return realFetch(input, init);
     });
+    // GitHub's webhook for the install usually beats the new user's sign-in: it names them as
+    // the installer before they have an account.
+    await installed(github, 424242);
     const response = await app.request(
       `${env.BETTER_AUTH_URL}/api/github/setup?code=abc&installation_id=${github.id}&setup_action=install`,
       { headers: { cookie: `rr_signup_next=${encodeURIComponent(device)}` } },
@@ -501,7 +527,7 @@ describe("coming back to a dashboard page after the install (next)", () => {
     );
     const back = response.headers.get("location")!;
     expect(back).toBe(
-      `/api/github/setup?installation_id=${github.id}&next=${encodeURIComponent(device)}`,
+      `/api/github/setup?installation_id=${github.id}&setup_action=install&next=${encodeURIComponent(device)}`,
     );
     // The code is exchanged for the callback URL GitHub sent it to.
     expect(exchanged[0]).toContain(encodeURIComponent(`${env.BETTER_AUTH_URL}/api/github/setup`));

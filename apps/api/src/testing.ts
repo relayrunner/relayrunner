@@ -57,6 +57,11 @@ export async function signIn(env: Env) {
     accountId: String(githubId),
     accessToken: githubToken,
   });
+  // As if their memberships were just read from GitHub, so listing workspaces doesn't ask GitHub
+  // (memberships.test.ts covers the sync).
+  await env.DB.prepare("update user set installations_synced_at = ? where id = ?")
+    .bind(Date.now(), user.id)
+    .run();
   const session = await ctx.internalAdapter.createSession(user.id);
   const signed = `${session.token}.${await makeSignature(session.token, env.BETTER_AUTH_SECRET)}`;
   return {
@@ -140,7 +145,7 @@ export function withSetCookies(cookie: string, response: Response) {
 }
 
 // A new user added to an existing workspace with the given role, with that workspace active.
-// A shortcut past the invite flow (invites.test.ts covers that).
+// A shortcut past syncing their membership from GitHub (memberships.test.ts covers that).
 export async function joinWorkspace(env: Env, workspaceId: string, role: "admin" | "member") {
   const { user, githubToken, cookie } = await signIn(env);
   await createAuth(env).api.addMember({
