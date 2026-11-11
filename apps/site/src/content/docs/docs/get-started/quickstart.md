@@ -13,7 +13,7 @@ In a terminal on the computer you want CI on, run:
 npx relayrunner connect
 ```
 
-The first run shows a code and opens the dashboard. Sign in with GitHub, create a workspace, install the [RelayRunner GitHub App](https://github.com/apps/relayrunner) on your organization or personal account, check the code matches and approve the machine.
+The first run shows a code and opens the dashboard. Continue with GitHub to sign up and install the [RelayRunner GitHub App](https://github.com/apps/relayrunner) on your organization or personal account in one trip. The install is your workspace. Then check the code matches and approve the machine.
 
 Leave `connect` running. While it runs, the machine is online and takes jobs. Ctrl-C takes it offline.
 

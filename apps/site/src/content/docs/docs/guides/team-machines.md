@@ -7,9 +7,9 @@ sidebar:
 
 Most teams have computers sitting idle: a Mac mini in the office, a workstation that's off-hours half the day, last year's laptop. RelayRunner pools them, so anyone's jobs can run on whichever one is free.
 
-## 1. Invite the team
+## 1. Bring the team in
 
-On the dashboard, open **Settings → Members** and invite people by email. Members can connect machines, pause them and see activity. Owners and admins also manage GitHub accounts, the runner order and members.
+The workspace is your org's GitHub App install, and its members come from GitHub. Anyone who can see the install on GitHub joins when they sign in to RelayRunner, so there's nobody to invite. Members can connect machines, pause them and see activity. Owners and admins also manage the runner order and roles under **Settings → Members**.
 
 ## 2. Connect the shared machines
 
@@ -37,4 +37,4 @@ A teammate can connect their own laptop too, on **only me**. Their pushes use it
 
 ## When someone leaves
 
-Remove them under **Settings → Members**. Their machines are removed from the workspace with them.
+Remove them from the org on GitHub. They leave the workspace, and their machines stop taking its jobs.

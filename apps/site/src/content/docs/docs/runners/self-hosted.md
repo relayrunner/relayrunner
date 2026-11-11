@@ -3,7 +3,7 @@ title: Your machines
 description: Running jobs on computers you own, connected with the CLI.
 ---
 
-Any Mac or Linux computer can take jobs: your laptop, a Mac mini under the desk, an old gaming PC, a home server. Connect it with the CLI and it joins your workspace's self-hosted step.
+Any Mac or Linux computer can take jobs: your laptop, a Mac mini under the desk, an old gaming PC, a home server. Connect it with the CLI and it joins the self-hosted step of every workspace you're in.
 
 ## Connect a machine
 
@@ -55,7 +55,7 @@ A machine runs one job at a time. When it's busy, the next job goes to another m
 
 ## Remove a machine
 
-Remove it from the Runners page. You can remove your own machines; owners and admins can remove any. A member's machines are removed when they leave the workspace.
+Remove it from the Runners page. You can remove your own machines; owners and admins can remove any. When someone leaves a workspace, their machines stay theirs and stop taking its jobs.
 
 ## Runners your org already has
 
