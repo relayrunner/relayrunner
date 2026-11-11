@@ -76,11 +76,11 @@ async function onboardedUser() {
   const jobId = 990_000 + seq;
   await db.insert(schema.githubInstallation).values({
     id: installationId,
-    workspaceId: workspace.id,
     accountId: installationId,
     accountLogin: `tester-${seq}`,
     accountType: "User",
   });
+  await testing.useInstallation(env, workspace.id, installationId);
   await db.insert(schema.githubRepository).values({
     id: installationId,
     installationId,
@@ -171,7 +171,7 @@ describe("operator deletes", () => {
         name: `Test ${seq}`,
         machines: 1,
         uninstalled: [`tester-${seq}`],
-        unclaimed: [],
+        forgotten: [],
       },
     });
     expect(uninstalled).toContain(tester.installationId);
@@ -184,16 +184,20 @@ describe("operator deletes", () => {
     expect(counts).toEqual(none(counts));
   });
 
-  test("without uninstalling, the install stays as an unclaimed connection", async () => {
+  test("without uninstalling, the install is forgotten until GitHub mentions it again", async () => {
     const op = await operator();
     const tester = await onboardedUser();
     const res = await del(`/workspaces/${tester.workspace.id}`, op.cookie);
     expect(res.status).toBe(200);
+    expect(await res.json()).toMatchObject({
+      workspace: { uninstalled: [], forgotten: [`tester-${seq}`] },
+    });
     expect(uninstalled).not.toContain(tester.installationId);
-    const row = await env.DB.prepare("select workspace_id from github_installation where id = ?")
-      .bind(tester.installationId)
-      .first<{ workspace_id: string | null }>();
-    expect(row).toEqual({ workspace_id: null });
+    const counts = await leftovers({
+      workspaceId: tester.workspace.id,
+      installationId: tester.installationId,
+    });
+    expect(counts).toEqual(none(counts));
     expect((await del(`/workspaces/${tester.workspace.id}`, op.cookie)).status).toBe(404);
   });
 

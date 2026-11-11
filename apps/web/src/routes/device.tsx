@@ -2,12 +2,9 @@ import { createFileRoute, Link, useNavigate, useRouter } from "@tanstack/react-r
 import { CheckIcon } from "lucide-react";
 import { useState, type FormEvent, type ReactNode } from "react";
 import { Brand } from "@/components/brand";
-import { CreateWorkspaceForm } from "@/components/create-workspace-form";
-import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
-import { ApiError } from "@/lib/api";
 import { authDisabled, getSession, organization, signIn } from "@/lib/auth-client";
 import {
   githubInstallHref,
@@ -26,18 +23,8 @@ import {
 } from "@/lib/machines";
 import { describePlace } from "@/lib/device";
 import { shouldOpenInstall } from "@/lib/onboarding";
-import { canManage } from "@/lib/roles";
 import { cn } from "@/lib/utils";
-import {
-  claimInstallation,
-  createFirstWorkspace,
-  ensureActiveWorkspace,
-  getCurrentWorkspace,
-  getUnclaimedInstallations,
-  type CurrentWorkspace,
-  type Installation,
-  type UnclaimedInstallations,
-} from "@/lib/workspace";
+import { ensureActiveWorkspace, getCurrentWorkspace, type CurrentWorkspace } from "@/lib/workspace";
 
 // Where `relayrunner connect` sends the browser: /device?user_code=ABCDEFGH&name=<hostname>.
 // It doubles as onboarding for someone who has never used RelayRunner, so the CLI's one link
@@ -45,13 +32,12 @@ import {
 //
 // 1. Connect GitHub, one click (#221). Signed out, the GitHub step is "Continue with GitHub": one
 //    trip to GitHub that installs the App and signs up (/api/github/signup, see
-//    apps/api/src/routes/github.ts), coming back with ?installed=<id>. Someone with no workspace
-//    gets one made for them, named after their GitHub login, and the installation is claimed into
-//    it. "Already have an account? Sign in" only signs in and comes back here.
-//    Signed in with no installation and nothing to choose, the page's data load
-//    sends them straight on to the App's install screen (/api/github/install?next=<this page>)
-//    before anything renders. It shows the GitHub step instead when they have an install to add,
-//    when GitHub has already reported back (?github=), or when they come
+//    apps/api/src/routes/github.ts), coming back with ?github=connected. The install is the
+//    workspace (#316): the API makes it and adds them as its owner. "Already have an account?
+//    Sign in" only signs in and comes back here.
+//    Signed in with no workspace yet, the page's data load sends them straight on to the App's
+//    install screen (/api/github/install?next=<this page>) before anything renders. It shows the
+//    GitHub step instead when GitHub has already reported back (?github=), or when they come
 //    back without installing (?install=opened), so cancelling doesn't loop. A non-admin's install
 //    only sends a request to the org's owners, so with ?github=requested they may carry on and
 //    jobs start once an owner accepts.
@@ -64,17 +50,9 @@ type DeviceSearch = {
   name?: string;
   github?: GitHubOutcome;
   install?: "opened";
-  // Set by /api/github/setup when it signed a new user in on the way back from installing the
-  // App: the installation to claim into their (new) workspace.
-  installed?: number;
 };
 
 type Workspace = { id: string; name: string };
-
-function positiveInt(value: unknown) {
-  const n = typeof value === "string" ? Number(value) : value;
-  return typeof n === "number" && Number.isSafeInteger(n) && n > 0 ? n : undefined;
-}
 
 type Loaded =
   | { kind: "enter" }
@@ -90,7 +68,6 @@ type Loaded =
       workspaces: Workspace[];
       // The workspace the machine would join: the session's active one. Null with no workspace.
       current: CurrentWorkspace | null;
-      unclaimed: UnclaimedInstallations;
     };
 
 const devWorkspace: CurrentWorkspace = {
@@ -111,7 +88,6 @@ export const Route = createFileRoute("/device")({
     name: typeof search.name === "string" ? search.name.slice(0, 64) : undefined,
     github: isGitHubOutcome(search.github) ? search.github : undefined,
     install: search.install === "opened" ? "opened" : undefined,
-    installed: positiveInt(search.installed),
   }),
   beforeLoad: async () => ({ session: authDisabled ? null : await getSession() }),
   loaderDeps: ({ search }) => ({
@@ -119,7 +95,6 @@ export const Route = createFileRoute("/device")({
     name: search.name,
     github: search.github,
     install: search.install,
-    installed: search.installed,
   }),
   loader: async ({ deps, context }): Promise<Loaded> => {
     if (leavingForGitHub) return leaving();
@@ -131,7 +106,6 @@ export const Route = createFileRoute("/device")({
         origin: null,
         workspaces: [devWorkspace.workspace],
         current: devWorkspace,
-        unclaimed: { installations: [] },
       };
     if (!context.session) return { kind: "signin" };
     let status: DeviceCodeStatus;
@@ -141,15 +115,7 @@ export const Route = createFileRoute("/device")({
       return { kind: "error", message: describeDeviceError(error) };
     }
     if (status.status !== "pending") return { kind: "done", status: status.status };
-    let { data } = await organization.list();
-    if (!data?.length && context.session) {
-      // A new account: make its first workspace rather than asking. If that fails, the page
-      // falls back to the Create a workspace form.
-      try {
-        await createFirstWorkspace(context.session);
-        ({ data } = await organization.list());
-      } catch {}
-    }
+    const { data } = await organization.list();
     const workspaces = (data ?? []).map(({ id, name }) => ({ id, name }));
     const review = {
       kind: "review" as const,
@@ -157,35 +123,21 @@ export const Route = createFileRoute("/device")({
       origin: { requested_at: status.requested_at, requested_from: status.requested_from },
       workspaces,
     };
-    if (!workspaces.length || !context.session)
-      return { ...review, current: null, unclaimed: { installations: [] } };
+    const opened = deps.install === "opened";
+    if (!workspaces.length || !context.session) {
+      // No workspace yet: installing the App makes one, so go straight to GitHub.
+      if (shouldOpenInstall({ current: null, outcome: deps.github, opened }))
+        return openInstall(returnPath(deps));
+      return { ...review, current: null };
+    }
 
     const active = await ensureActiveWorkspace(context.session);
     if (!workspaces.some((workspace) => workspace.id === active))
       await organization.setActive({ organizationId: workspaces[0]!.id });
-    let current = await getCurrentWorkspace();
-    // Just signed up through the install: link it. If that fails (say another workspace has it),
-    // the GitHub step shows with the installation to add or the error.
-    if (deps.installed && !current.installations.length && canManage(current.role)) {
-      try {
-        await claimInstallation(deps.installed);
-        current = await getCurrentWorkspace();
-      } catch {}
-    }
-    // Only needed for the Connect GitHub step.
-    const unclaimed = current.installations.length
-      ? { installations: [] }
-      : await getUnclaimedInstallations();
-    if (
-      shouldOpenInstall({
-        current,
-        unclaimedCount: unclaimed.installations.length,
-        outcome: deps.github,
-        opened: deps.install === "opened" || !!deps.installed,
-      })
-    )
+    const current = await getCurrentWorkspace();
+    if (shouldOpenInstall({ current, outcome: deps.github, opened }))
       return openInstall(returnPath(deps));
-    return { ...review, current, unclaimed };
+    return { ...review, current };
   },
   component: DevicePage,
 });
@@ -214,7 +166,7 @@ function DevicePage() {
         )}
         {loaded.kind === "signin" && (
           <div className="flex w-full flex-col gap-4">
-            <Steps current="github" withWorkspace={false} />
+            <Steps current="github" />
             <SignInStep />
           </div>
         )}
@@ -259,18 +211,16 @@ function EnterCode() {
   );
 }
 
-type Step = "workspace" | "github" | "approve";
+type Step = "github" | "approve";
 
-// The workspace step only shows if making one automatically failed.
 const steps: { key: Step; label: string }[] = [
-  { key: "workspace", label: "Workspace" },
   { key: "github", label: "GitHub" },
   { key: "approve", label: "Approve" },
 ];
 
 // Picks the first step that still needs doing.
 function Onboarding({ loaded }: { loaded: Extract<Loaded, { kind: "review" }> }) {
-  const { github, installed } = Route.useSearch();
+  const { github } = Route.useSearch();
   const [result, setResult] = useState<{ action: "approved" | "denied"; name: string } | null>(
     null,
   );
@@ -278,7 +228,7 @@ function Onboarding({ loaded }: { loaded: Extract<Loaded, { kind: "review" }> })
   // A request to an org's owners counts: nothing more the user can do here, and the machine is
   // ready the moment an owner accepts.
   const githubDone = !!current && (current.installations.length > 0 || github === "requested");
-  const step: Step = !current ? "workspace" : !githubDone ? "github" : "approve";
+  const step: Step = githubDone ? "approve" : "github";
 
   if (result?.action === "approved")
     return (
@@ -292,15 +242,9 @@ function Onboarding({ loaded }: { loaded: Extract<Loaded, { kind: "review" }> })
 
   return (
     <div className="flex w-full flex-col gap-4">
-      <Steps current={step} withWorkspace={step === "workspace"} />
-      {step === "workspace" && <CreateWorkspaceStep />}
-      {step === "github" && current && (
-        <ConnectGitHubStep
-          workspaces={loaded.workspaces}
-          current={current}
-          unclaimed={loaded.unclaimed}
-          outcome={github}
-        />
+      <Steps current={step} />
+      {step === "github" && (
+        <ConnectGitHubStep workspaces={loaded.workspaces} current={current} outcome={github} />
       )}
       {step === "approve" && current && (
         <ApproveStep
@@ -308,12 +252,7 @@ function Onboarding({ loaded }: { loaded: Extract<Loaded, { kind: "review" }> })
           origin={loaded.origin}
           workspaces={loaded.workspaces}
           current={current}
-          outcome={
-            github ??
-            (installed && current.installations.some((i) => i.id === installed)
-              ? "connected"
-              : undefined)
-          }
+          outcome={github}
           onDone={setResult}
         />
       )}
@@ -321,8 +260,8 @@ function Onboarding({ loaded }: { loaded: Extract<Loaded, { kind: "review" }> })
   );
 }
 
-function Steps({ current, withWorkspace }: { current: Step; withWorkspace: boolean }) {
-  const shown = withWorkspace ? steps : steps.filter((step) => step.key !== "workspace");
+function Steps({ current }: { current: Step }) {
+  const shown = steps;
   const at = shown.findIndex((step) => step.key === current);
   return (
     <ol className="flex items-center justify-center gap-2 text-xs" aria-label="Setup steps">
@@ -459,77 +398,29 @@ function SignInStep() {
   );
 }
 
-function CreateWorkspaceStep() {
-  const router = useRouter();
-  return (
-    <Card className="w-full">
-      <CardHeader>
-        <CardTitle>Create a workspace</CardTitle>
-        <CardDescription>
-          Your machines and GitHub accounts live in a workspace. Name one to connect this machine
-          to. You'll be its owner.
-        </CardDescription>
-      </CardHeader>
-      <CardContent>
-        {/* Creating it makes it active; reloading the page's data moves on to the GitHub step. */}
-        <CreateWorkspaceForm onCreated={() => router.invalidate()} />
-      </CardContent>
-    </Card>
-  );
-}
-
+// No installation yet. Installing the App on an account makes that account's workspace (#316).
 function ConnectGitHubStep({
   workspaces,
   current,
-  unclaimed,
   outcome,
 }: {
   workspaces: Workspace[];
-  current: CurrentWorkspace;
-  unclaimed: UnclaimedInstallations;
+  current: CurrentWorkspace | null;
   outcome?: GitHubOutcome;
 }) {
-  const router = useRouter();
   const back = useReturnPath();
-  const [claiming, setClaiming] = useState<number | null>(null);
-  const [error, setError] = useState<string | null>(null);
-
-  async function claim(installation: Installation) {
-    setClaiming(installation.id);
-    setError(null);
-    try {
-      await claimInstallation(installation.id);
-      await router.invalidate();
-    } catch (caught) {
-      const code = caught instanceof ApiError ? caught.code : undefined;
-      setError(
-        code === "installation_in_another_workspace"
-          ? `${installation.accountLogin} is already connected to another workspace.`
-          : code === "github_reauth"
-            ? "Your GitHub sign-in has expired. Sign out and back in, then try again."
-            : "Couldn't add that installation. Try again.",
-      );
-    } finally {
-      setClaiming(null);
-    }
-  }
-
   return (
     <Card className="w-full">
       <CardHeader>
         <CardTitle>Connect GitHub</CardTitle>
         <CardDescription>
-          Install the RelayRunner GitHub App on the org or personal account whose jobs{" "}
-          {current.workspace.name} should route. GitHub sends you back here afterwards.
+          Install the RelayRunner GitHub App on the org or personal account whose jobs this machine
+          should run. GitHub sends you back here afterwards.
         </CardDescription>
       </CardHeader>
       <CardContent className="flex flex-col gap-4">
-        {workspaces.length > 1 && (
-          <WorkspaceSelect
-            workspaces={workspaces}
-            value={current.workspace.id}
-            disabled={claiming !== null}
-          />
+        {current && workspaces.length > 1 && (
+          <WorkspaceSelect workspaces={workspaces} value={current.workspace.id} disabled={false} />
         )}
         {outcome && outcome !== "connected" && outcome !== "updated" && (
           <p
@@ -543,39 +434,6 @@ function ConnectGitHubStep({
           {/* A full page load: this leaves the dashboard for GitHub's install page. */}
           <a href={githubInstallHref(back)}>Install on GitHub</a>
         </Button>
-        {unclaimed.installations.length > 0 && (
-          <div className="grid gap-2 text-sm">
-            <p className="text-muted-foreground">Already installed it? Add it instead:</p>
-            <ul className="grid gap-2">
-              {unclaimed.installations.map((installation) => (
-                <li
-                  key={installation.id}
-                  className="flex items-center justify-between gap-3 rounded-md border px-3 py-2"
-                >
-                  <span className="flex min-w-0 items-center gap-2">
-                    <span className="truncate font-mono">{installation.accountLogin}</span>
-                    <Badge variant="idle">
-                      {installation.accountType === "User" ? "Personal" : "Org"}
-                    </Badge>
-                  </span>
-                  <Button
-                    variant="outline"
-                    size="xs"
-                    disabled={claiming !== null}
-                    onClick={() => void claim(installation)}
-                  >
-                    {claiming === installation.id ? "Adding…" : "Add"}
-                  </Button>
-                </li>
-              ))}
-            </ul>
-          </div>
-        )}
-        {error && (
-          <p role="alert" className="text-sm text-destructive">
-            {error}
-          </p>
-        )}
       </CardContent>
     </Card>
   );

@@ -43,20 +43,21 @@ describe("workspaces", () => {
     expect(await response.json()).toEqual({ error: "no_active_workspace" });
   });
 
-  test("a user creates a workspace, owns it, and it becomes active", async () => {
+  test("a workspace's owner reads it as active, with its one installation", async () => {
     const { user, cookie } = await signIn();
     const { workspace, cookie: jar } = await createWorkspace(cookie, "Acme", "acme");
-    expect(workspace.slug).toBe("acme");
-    expect(workspace.members).toEqual([
-      expect.objectContaining({ userId: user.id, role: "owner" }),
-    ]);
 
     const current = await call("/workspaces/current", jar);
     expect(current.status).toBe(200);
     expect(await current.json()).toEqual({
-      workspace: expect.objectContaining({ id: workspace.id, name: "Acme", slug: "acme" }),
+      workspace: expect.objectContaining({
+        id: workspace.id,
+        name: "Acme",
+        slug: "acme",
+        installationId: workspace.installationId,
+      }),
       role: "owner",
-      installations: [],
+      installations: [expect.objectContaining({ id: workspace.installationId })],
     });
 
     const row = await env.DB.prepare(
@@ -67,27 +68,15 @@ describe("workspaces", () => {
     expect(row).toEqual({ workspace_id: workspace.id, user_id: user.id, role: "owner" });
   });
 
-  test("a workspace lists only its own GitHub installations", async () => {
+  test("a workspace lists only its own GitHub installation", async () => {
     const { cookie } = await signIn();
-    const {
-      workspace: { id },
-      cookie: jar,
-    } = await createWorkspace(cookie, "Globex", "globex");
-    const now = Date.now();
-    const insert = env.DB.prepare(
-      "insert into github_installation (id, workspace_id, account_id, account_login, account_type, created_at, updated_at) values (?, ?, ?, ?, ?, ?, ?)",
-    );
-    await env.DB.batch([
-      insert.bind(1, id, 10, "globex", "Organization", now, now),
-      insert.bind(2, id, 11, "globex-labs", "Organization", now, now),
-      insert.bind(3, null, 12, "unclaimed", "User", now, now),
-    ]);
+    const { workspace, cookie: jar } = await createWorkspace(cookie, "Globex", "globex");
+    await createWorkspace((await signIn()).cookie, "Other", "globex-other");
 
     const current = await call("/workspaces/current", jar);
-    const body = (await current.json()) as { installations: { accountLogin: string }[] };
-    expect(body.installations.map((installation) => installation.accountLogin)).toEqual([
-      "globex",
-      "globex-labs",
+    const body = (await current.json()) as { installations: { id: number }[] };
+    expect(body.installations.map((installation) => installation.id)).toEqual([
+      workspace.installationId,
     ]);
   });
 
@@ -112,13 +101,13 @@ describe("workspaces", () => {
     expect(await current.json()).toMatchObject({ role: "member" });
   });
 
-  test("a workspace slug is unique", async () => {
+  test("users can't create a workspace (#316)", async () => {
     const { cookie } = await signIn();
     const response = await call("/auth/organization/create", cookie, {
       name: "Acme again",
-      slug: "acme",
+      slug: "acme-again",
     });
-    expect(response.status).toBe(400);
+    expect(response.status).toBe(403);
   });
 });
 

@@ -290,8 +290,8 @@ export function inWorkspace(
   installationId: SQLiteColumn = table.installationId,
 ): SQL {
   return sql`${installationId} in (
-    select ${schema.githubInstallation.id} from ${schema.githubInstallation}
-    where ${schema.githubInstallation.workspaceId} = ${workspaceId})`;
+    select ${schema.workspace.installationId} from ${schema.workspace}
+    where ${schema.workspace.id} = ${workspaceId})`;
 }
 
 /**

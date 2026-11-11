@@ -5,9 +5,8 @@ import type { GitHubInstallation } from "./github.ts";
 import { runnerScope } from "./github-app.ts";
 
 // Records what GitHub says about an installation: the account it's on, which repos it sees, and
-// whether it's suspended. Never touches workspace_id, so a webhook arriving before or after the
-// Setup URL callback can't undo a link. `observedAt` orders updates: a retried `suspend` that
-// lands after a newer `unsuspend` is dropped.
+// whether it's suspended. `observedAt` orders updates: a retried `suspend` that lands after a newer
+// `unsuspend` is dropped. Callers follow with ensureWorkspace.
 export async function upsertInstallation(
   db: Db,
   installation: GitHubInstallation,
@@ -35,29 +34,78 @@ export async function upsertInstallation(
     });
 }
 
-export type LinkResult = "linked" | "taken";
+/** The avatar GitHub serves for an account, by its numeric id (stable across renames). */
+export function accountAvatarUrl(accountId: number) {
+  return `https://avatars.githubusercontent.com/u/${accountId}?v=4`;
+}
 
-// Links an unclaimed installation to a workspace in one statement, so two workspaces racing for
-// the same installation can't both win. Linking one that is already in this workspace is a no-op.
-export async function linkInstallation(
-  db: Db,
-  installationId: number,
-  workspaceId: string,
-): Promise<LinkResult> {
-  const rows = await db
-    .update(schema.githubInstallation)
-    .set({ workspaceId, updatedAt: new Date() })
+/**
+ * The installation's workspace (#316), made the first time we hear of the installation (the Setup
+ * URL or the `installation.created` webhook, whichever lands first) and renamed after the account
+ * on every later call. One upsert on installation_id, so the two racing can't make two. Returns
+ * the workspace id, or null if the installation hasn't been recorded (upsertInstallation first).
+ */
+export async function ensureWorkspace(db: Db, installationId: number) {
+  const installation = await findInstallation(db, installationId);
+  if (!installation) return null;
+  const fields = {
+    name: installation.accountLogin,
+    slug: installation.accountLogin.toLowerCase(),
+    logo: accountAvatarUrl(installation.accountId),
+  };
+  const upsert = (slug: string) =>
+    db
+      .insert(schema.workspace)
+      .values({ id: crypto.randomUUID(), installationId, ...fields, slug })
+      .onConflictDoUpdate({
+        target: schema.workspace.installationId,
+        set: { ...fields, slug },
+      })
+      .returning({ id: schema.workspace.id });
+  try {
+    const [row] = await upsert(fields.slug);
+    return row!.id;
+  } catch (error) {
+    // Another workspace still holds the login as its slug: an account renamed to a login another
+    // install had, before that one's rename reached us. Installation ids never collide.
+    if (!String(error).includes("workspace.slug")) throw error;
+    const [row] = await upsert(`${fields.slug}-${installationId}`);
+    return row!.id;
+  }
+}
+
+/** The workspace of an installation, or null when there's none (an install we never recorded). */
+export async function workspaceIdForInstallation(db: Db, installationId: number) {
+  const [row] = await db
+    .select({ id: schema.workspace.id })
+    .from(schema.workspace)
+    .where(eq(schema.workspace.installationId, installationId))
+    .limit(1);
+  return row?.id ?? null;
+}
+
+/**
+ * Adds a user whose GitHub sign-in can see the installation to its workspace: the first one in
+ * becomes the owner, later ones members. Already a member: unchanged. Returns whether they were
+ * added. Until membership is read from GitHub (#317), this is how the installer gets in.
+ */
+export async function joinInstallationWorkspace(db: Db, workspaceId: string, userId: string) {
+  if (await isWorkspaceMember(db, workspaceId, userId)) return false;
+  const [owner] = await db
+    .select({ id: schema.workspaceMember.id })
+    .from(schema.workspaceMember)
     .where(
       and(
-        eq(schema.githubInstallation.id, installationId),
-        or(
-          isNull(schema.githubInstallation.workspaceId),
-          eq(schema.githubInstallation.workspaceId, workspaceId),
-        ),
+        eq(schema.workspaceMember.workspaceId, workspaceId),
+        eq(schema.workspaceMember.role, "owner"),
       ),
     )
-    .returning({ id: schema.githubInstallation.id });
-  return rows.length ? "linked" : "taken";
+    .limit(1);
+  await db
+    .insert(schema.workspaceMember)
+    .values({ id: crypto.randomUUID(), workspaceId, userId, role: owner ? "member" : "owner" })
+    .onConflictDoNothing();
+  return true;
 }
 
 export async function findInstallation(db: Db, installationId: number) {

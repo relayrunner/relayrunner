@@ -51,7 +51,6 @@ async function connectedOrg(accountType = "Organization", { ownerIsAccount = tru
     .where(eq(schema.account.userId, user.id));
   await db.insert(schema.githubInstallation).values({
     id: installationId,
-    workspaceId: workspace.id,
     accountId:
       accountType === "Organization" || !ownerIsAccount
         ? installationId
@@ -59,6 +58,7 @@ async function connectedOrg(accountType = "Organization", { ownerIsAccount = tru
     accountLogin: org,
     accountType,
   });
+  await testing.useInstallation(env, workspace.id, installationId);
   await db.insert(schema.githubRepository).values([
     {
       id: installationId * 10,

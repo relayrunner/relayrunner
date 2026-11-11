@@ -61,11 +61,11 @@ describe("provider report", () => {
     const db = createDb(env.DB);
     await db.insert(schema.githubInstallation).values({
       id: installationId,
-      workspaceId: workspace.id,
       accountId: installationId,
       accountLogin: "providers-org",
       accountType: "Organization",
     });
+    await testing.useInstallation(env, workspace.id, installationId);
     // A public repo: GitHub's standard runners are free there.
     await db.insert(schema.githubRepository).values({
       id: 99,
@@ -126,11 +126,11 @@ describe("provider report", () => {
     const db = createDb(env.DB);
     await db.insert(schema.githubInstallation).values({
       id: installationId,
-      workspaceId: workspace.id,
       accountId: installationId,
       accountLogin: "repriced-org",
       accountType: "Organization",
     });
+    await testing.useInstallation(env, workspace.id, installationId);
     // Ubicloud's standard 2 vCPU minute went from $0.001 to $0.00125 on 2026-09-01.
     const at = (day: string, minutes: number) => {
       const completed = Date.parse(`${day}T12:00:00Z`);

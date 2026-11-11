@@ -232,6 +232,13 @@
       "when": 1794414647763,
       "tag": "20261111163047_route_decision_drop_blacksmith",
       "breakpoints": true
+    },
+    {
+      "idx": 33,
+      "version": "6",
+      "when": 1794425903409,
+      "tag": "20261111193823_workspace_per_installation",
+      "breakpoints": true
     }
   ]
 }

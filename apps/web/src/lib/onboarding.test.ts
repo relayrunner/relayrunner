@@ -1,8 +1,8 @@
 import { describe, expect, test } from "vitest";
-import { firstWorkspaceName, shouldOpenInstall } from "./onboarding.ts";
+import { shouldOpenInstall } from "./onboarding.ts";
 
 const owner = { role: "owner", installations: [] };
-const base = { current: owner, unclaimedCount: 0, outcome: undefined, opened: false };
+const base = { current: owner, outcome: undefined, opened: false };
 
 describe("sending a new user straight to the GitHub App install", () => {
   test("happens when installing is the only thing left", () => {
@@ -18,13 +18,9 @@ describe("sending a new user straight to the GitHub App install", () => {
     );
   });
 
-  test("keeps the Add choice for an unclaimed install", () => {
-    expect(shouldOpenInstall({ ...base, unclaimedCount: 1 })).toBe(false);
-  });
-
   test("stops once GitHub has reported back, such as a request to the org's owners", () => {
     expect(shouldOpenInstall({ ...base, outcome: "requested" })).toBe(false);
-    expect(shouldOpenInstall({ ...base, outcome: "taken" })).toBe(false);
+    expect(shouldOpenInstall({ ...base, outcome: "not_found" })).toBe(false);
   });
 
   test("redirects only once, so cancelling on GitHub doesn't loop", () => {
@@ -37,15 +33,8 @@ describe("sending a new user straight to the GitHub App install", () => {
     );
   });
 
-  test("waits for a workspace", () => {
-    expect(shouldOpenInstall({ ...base, current: null })).toBe(false);
-  });
-});
-
-describe("a first workspace's name", () => {
-  test("is the GitHub login, else the profile name", () => {
-    expect(firstWorkspaceName("octocat", "The Octocat")).toBe("octocat");
-    expect(firstWorkspaceName(null, "The Octocat")).toBe("The Octocat");
-    expect(firstWorkspaceName(undefined, " ")).toBe("My workspace");
+  test("happens with no workspace yet, since installing makes one (#316)", () => {
+    expect(shouldOpenInstall({ ...base, current: null })).toBe(true);
+    expect(shouldOpenInstall({ ...base, current: null, opened: true })).toBe(false);
   });
 });

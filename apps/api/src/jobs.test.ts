@@ -50,11 +50,11 @@ async function connectedWorkspace() {
     .insert(schema.githubInstallation)
     .values({
       id: installationId,
-      workspaceId: workspace.id,
       accountId: installationId,
       accountLogin: `org-${ids}`,
       accountType: "Organization",
     });
+  await testing.useInstallation(env, workspace.id, installationId);
   return {
     cookie,
     installationId,

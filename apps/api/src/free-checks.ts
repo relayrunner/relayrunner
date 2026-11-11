@@ -9,7 +9,7 @@ import { and, eq, gte, isNull, sql } from "drizzle-orm";
 import { recordEvent } from "./activity.ts";
 import { type Db, schema } from "./db/index.ts";
 import { createCheckRun } from "./github-app.ts";
-import { findInstallation } from "./installations.ts";
+import { workspaceIdForInstallation } from "./installations.ts";
 import { loadPriceBook } from "./prices.ts";
 import { cents, classRate, DAY_MS, pricePeriods, RUNNER_LABELS, rateFor } from "./job-timings.ts";
 
@@ -48,9 +48,9 @@ export async function postFreeCheck(
  * row or no workspace.
  */
 export async function recordFreeCheck(db: Db, installationId: number, data: FreeCheck) {
-  const installation = await findInstallation(db, installationId);
-  if (!installation?.workspaceId) return false;
-  await recordEvent(db, { workspaceId: installation.workspaceId, type: "check.completed", data });
+  const workspaceId = await workspaceIdForInstallation(db, installationId);
+  if (!workspaceId) return false;
+  await recordEvent(db, { workspaceId, type: "check.completed", data });
   return true;
 }
 
@@ -67,12 +67,12 @@ export async function recordRepoCheck(
   const [repo] = await db
     .select({
       id: schema.githubRepository.id,
-      workspaceId: schema.githubInstallation.workspaceId,
+      workspaceId: schema.workspace.id,
     })
     .from(schema.githubRepository)
     .innerJoin(
-      schema.githubInstallation,
-      eq(schema.githubInstallation.id, schema.githubRepository.installationId),
+      schema.workspace,
+      eq(schema.workspace.installationId, schema.githubRepository.installationId),
     )
     .where(
       and(

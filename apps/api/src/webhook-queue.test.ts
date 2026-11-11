@@ -220,14 +220,16 @@ describe("webhook queue consumer", () => {
       db = env.DB;
       const now = Date.now();
       await db
-        .prepare("insert into workspace (id, name, slug, created_at) values ('w1', 'W', 'w', ?)")
-        .bind(now)
+        .prepare(
+          "insert into github_installation (id, account_id, account_login, account_type, created_at, updated_at) values (7, 10, 'relayrunner', 'Organization', ?, ?)",
+        )
+        .bind(now, now)
         .run();
       await db
         .prepare(
-          "insert into github_installation (id, workspace_id, account_id, account_login, account_type, created_at, updated_at) values (7, 'w1', 10, 'relayrunner', 'Organization', ?, ?)",
+          "insert into workspace (id, installation_id, name, slug, created_at) values ('w1', 7, 'W', 'w', ?)",
         )
-        .bind(now, now)
+        .bind(now)
         .run();
       await db
         .prepare(

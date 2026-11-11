@@ -44,7 +44,8 @@ export type DeletedWorkspace = {
   name: string;
   machines: number;
   uninstalled: string[];
-  unclaimed: string[];
+  /** Still installed on GitHub; its next installation webhook makes the workspace again. */
+  forgotten: string[];
 };
 
 export function deleteWorkspace(id: string, uninstallGitHubApp: boolean) {
@@ -68,7 +69,8 @@ export function deletedNotice(workspace: DeletedWorkspace) {
     parts.push(`${workspace.machines} machine${workspace.machines === 1 ? "" : "s"}`);
   if (workspace.uninstalled.length)
     parts.push(`uninstalled from ${workspace.uninstalled.join(", ")}`);
-  if (workspace.unclaimed.length) parts.push(`${workspace.unclaimed.join(", ")} left unclaimed`);
+  if (workspace.forgotten.length)
+    parts.push(`${workspace.forgotten.join(", ")} forgotten but still installed`);
   return `${parts.join(", ")}.`;
 }
 

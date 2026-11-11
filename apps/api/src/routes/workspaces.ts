@@ -34,7 +34,7 @@ export const workspaceRoutes = new Hono<AppEnv>()
     const installations = await db
       .select()
       .from(schema.githubInstallation)
-      .where(eq(schema.githubInstallation.workspaceId, workspace.id))
+      .where(eq(schema.githubInstallation.id, workspace.installationId))
       .orderBy(asc(schema.githubInstallation.accountLogin));
     const { runnerOrder: _, ...rest } = workspace;
     return c.json({ workspace: rest, role, installations: installations.map(present) });

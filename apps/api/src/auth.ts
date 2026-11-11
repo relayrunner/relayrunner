@@ -157,13 +157,15 @@ export type Auth = ReturnType<typeof createAuth>;
 export type Session = Auth["$Infer"]["Session"];
 
 // Workspaces are Better Auth organizations, stored under gateway names (workspace,
-// workspace_member, workspace_invitation, session.active_workspace_id). The dashboard uses the
-// stock organization client at /api/auth/organization/*.
+// workspace_member, workspace_invitation, session.active_workspace_id). The plugin is kept for
+// those tables, membership and the active workspace; the dashboard uses the stock organization
+// client at /api/auth/organization/* to list and switch them.
 export function workspaces(env: Env, background: (promise: Promise<unknown>) => unknown) {
   const db = () => createDb(env.DB);
   return organization({
-    // Any signed-in user can create a workspace and becomes its owner.
-    allowUserToCreateOrganization: true,
+    // A workspace is a GitHub App installation (#316), made by the Setup URL or the installation
+    // webhook (src/installations.ts ensureWorkspace), never by a user.
+    allowUserToCreateOrganization: false,
     creatorRole: "owner",
     // Teams (#133): owner, admin and member roles; see roles.ts.
     membershipLimit: 100,
@@ -217,7 +219,13 @@ export function workspaces(env: Env, background: (promise: Promise<unknown>) => 
       },
     },
     schema: {
-      organization: { modelName: "workspace" },
+      organization: {
+        modelName: "workspace",
+        // Set by ensureWorkspace, never through Better Auth (creation is off).
+        additionalFields: {
+          installationId: { type: "number", required: true, input: false },
+        },
+      },
       member: { modelName: "workspaceMember", fields: { organizationId: "workspaceId" } },
       invitation: { modelName: "workspaceInvitation", fields: { organizationId: "workspaceId" } },
       session: { fields: { activeOrganizationId: "activeWorkspaceId" } },
