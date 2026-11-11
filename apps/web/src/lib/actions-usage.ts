@@ -49,8 +49,9 @@ export const hasQuota = (account: AccountUsage) =>
 /** Installs the RelayRunner Spend App, which reads an org's billing. */
 export const SPEND_APP_INSTALL_URL = "https://github.com/apps/relayrunner-spend/installations/new";
 
-/** Whether this org hasn't installed the Spend App yet. */
-export const needsSpendApp = (account: AccountUsage) => account.spendApp === false;
+/** Whether GitHub refused this org's billing and the Spend App would fix it. */
+export const needsSpendApp = (account: AccountUsage) =>
+  account.spendApp === false && account.reason === "missing_permission";
 
 /** Why an account's minutes can't be judged, and what fixes it. Null when they can. */
 export function unavailableText(account: AccountUsage): string | null {
