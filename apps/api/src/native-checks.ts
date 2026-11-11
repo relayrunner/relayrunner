@@ -3,13 +3,15 @@
 // `uses: relayrunner/actions/checks/pr-title@v1`. The action also runs as an ordinary action, so
 // the same job still works if it's pointed at any other runner.
 //
-// `checks/lint` runs the Checks App's lint container (src/lint-check.ts) on the job's commit with
-// the tools in its `tools` input, so any workflow, including a workflow_dispatch one, can ask for
-// a lint run on demand.
+// `checks/lint` runs the lint container (src/lint-check.ts) on the job's commit with the tools in
+// its `tools` input, so any workflow, including a workflow_dispatch one, can ask for a lint run on
+// demand. The commit is read with the job's own GITHUB_TOKEN, so the repo needs no App that can
+// read its code.
 
 import { LINT_TOOLS, type LintTool } from "@relayrunner/lint-runner/protocol";
 import type { FreeCheck as FreeCheckData } from "./free-checks.ts";
 import { context, dictionary, isRecord, scalar } from "./pipeline-context.ts";
+import type { JobAnnotation } from "./runner-protocol.ts";
 
 const CHECKS_REPO = "relayrunner/actions";
 const CHECKS_PATH = "checks/";
@@ -30,7 +32,10 @@ export type NativeJob =
   | { kind: "checks"; steps: CheckStep[] }
   | { kind: "unsupported"; reason: string };
 
-export type CheckResult = { ok: true } | { ok: false; reason: string };
+// `annotations` go on the job when it completes, for a check that reports there.
+export type CheckResult = ({ ok: true } | { ok: false; reason: string }) & {
+  annotations?: JobAnnotation[];
+};
 
 // What a check needs from outside this module: lint runs in a container.
 export interface CheckDeps {
@@ -123,17 +128,21 @@ async function runCheck(
   }
 }
 
-/** Runs each check in order and stops at the first failure. */
+/** Runs each check in order and stops at the first failure, keeping every step's annotations. */
 export async function runChecks(
   steps: CheckStep[],
   contextData: unknown,
   deps: CheckDeps,
 ): Promise<CheckResult> {
+  const annotations: JobAnnotation[] = [];
+  const withAnnotations = (result: CheckResult): CheckResult =>
+    annotations.length ? { ...result, annotations } : result;
   for (const step of steps) {
-    const result = await runCheck(step, contextData, deps);
-    if (!result.ok) return result;
+    const { annotations: found = [], ...result } = await runCheck(step, contextData, deps);
+    annotations.push(...found);
+    if (!result.ok) return withAnnotations(result);
   }
-  return { ok: true };
+  return withAnnotations({ ok: true });
 }
 
 // The types AGENTS.md allows, which are the Conventional Commits defaults from commitlint.

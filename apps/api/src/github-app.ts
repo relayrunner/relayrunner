@@ -511,8 +511,12 @@ export async function pullRequestFiles(token: string, repo: string, pullRequest:
  */
 export async function repoTarball(token: string, repo: string, sha: string) {
   const response = await fetch(`${API}/repos/${repo}/tarball/${sha}`, { headers: headers(token) });
-  if (!response.ok || !response.body)
-    throw new Error(`GET /repos/${repo}/tarball/${sha} failed with ${response.status}`);
+  if (!response.ok || !response.body) {
+    const message = `GET /repos/${repo}/tarball/${sha} failed with ${response.status}`;
+    throw response.status === 403 || response.status === 404
+      ? new GitHubAccessError(message, response.status)
+      : new Error(message);
+  }
   return response.body;
 }
 

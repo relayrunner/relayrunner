@@ -16,6 +16,7 @@ import {
   type PullRequestFile,
 } from "./github-app.ts";
 import type { CheckResult } from "./native-checks.ts";
+import type { JobAnnotation } from "./runner-protocol.ts";
 
 // The commit to lint, and the pull request whose push asked for it, if any.
 export interface LintWork {
@@ -73,14 +74,19 @@ export async function checksAppInstallationId(env: Env, repo: string) {
 
 /**
  * A native lint job's verdict from its tools' results: it fails when any tool failed or didn't
- * run, and names them. The check runs carry the details.
+ * run, and names them. The details are on the Lint check runs (`details: "checks"`), or on the
+ * job itself as annotations when no check runs were posted (`details: "job"`).
  */
-export function lintJobResult(results: LintResult[] | { error: string }): CheckResult {
+export function lintJobResult(
+  results: LintResult[] | { error: string },
+  details: "checks" | "job" = "checks",
+): CheckResult {
   if (!Array.isArray(results)) return { ok: false, reason: `Lint didn't run: ${results.error}` };
+  const annotations = details === "job" ? lintJobAnnotations(results) : undefined;
   const failed = results.filter(
     (result) => result.status === "failed" || result.status === "errored",
   );
-  if (failed.length === 0) return { ok: true };
+  if (failed.length === 0) return { ok: true, annotations };
   const list = failed
     .map((result) =>
       result.status === "errored"
@@ -90,8 +96,53 @@ export function lintJobResult(results: LintResult[] | { error: string }): CheckR
     .join(", ");
   return {
     ok: false,
-    reason: `Lint failed: ${list}. The Lint check runs on this commit show each problem.`,
+    reason: `Lint failed: ${list}. ${details === "job" ? "This job's annotations show" : "The Lint check runs on this commit show"} each problem.`,
+    annotations,
   };
+}
+
+// How many problems a job carries as annotations. GitHub documents no limit here; its own runner
+// sends at most 10 of each level per step.
+const MAX_JOB_ANNOTATIONS = 50;
+const JOB_LEVEL = { error: "FAILURE", warning: "WARNING", notice: "NOTICE" } as const;
+
+/**
+ * The problems as annotations on the job, each on its file and line, errors first across tools.
+ * A tool that didn't run says why.
+ */
+export function lintJobAnnotations(results: LintResult[]): JobAnnotation[] {
+  const errored = results
+    .filter((result) => result.status === "errored")
+    .map((result): JobAnnotation => ({
+      level: "FAILURE",
+      title: `${result.tool} didn't run`,
+      message: result.output?.trim() || `${result.tool} exited with an error.`,
+    }));
+  const rank = { error: 0, warning: 1, notice: 2 };
+  const problems = results
+    .flatMap((result) => result.problems.map((problem) => ({ tool: result.tool, problem })))
+    .toSorted((a, b) => rank[a.problem.level] - rank[b.problem.level])
+    .slice(0, Math.max(0, MAX_JOB_ANNOTATIONS - errored.length))
+    .map(({ tool, problem }): JobAnnotation => {
+      const columns = oneLineColumns(problem);
+      return {
+        level: JOB_LEVEL[problem.level],
+        title: problem.title ?? tool,
+        message: problem.message,
+        path: problem.path,
+        startLine: problem.line,
+        endLine: problem.endLine ?? problem.line,
+        ...(columns ? { startColumn: columns.start, endColumn: columns.end } : {}),
+      };
+    });
+  return [...errored, ...problems];
+}
+
+// GitHub accepts columns only on a one-line annotation.
+function oneLineColumns(problem: Problem) {
+  return (problem.endLine ?? problem.line) === problem.line && problem.column
+    ? { start: problem.column, end: problem.endColumn ?? problem.column }
+    : null;
 }
 
 /**
@@ -274,15 +325,12 @@ export function lintUnavailableOutput(reason: string): CheckRunOutput {
 }
 
 function annotation(problem: Problem): NonNullable<CheckRunOutput["annotations"]>[number] {
-  const endLine = problem.endLine ?? problem.line;
+  const columns = oneLineColumns(problem);
   return {
     path: problem.path,
     start_line: problem.line,
-    end_line: endLine,
-    // GitHub accepts columns only on a one-line annotation.
-    ...(endLine === problem.line && problem.column
-      ? { start_column: problem.column, end_column: problem.endColumn ?? problem.column }
-      : {}),
+    end_line: problem.endLine ?? problem.line,
+    ...(columns ? { start_column: columns.start, end_column: columns.end } : {}),
     annotation_level: problem.level === "error" ? "failure" : problem.level,
     ...(problem.title ? { title: problem.title } : {}),
     message: problem.message,
