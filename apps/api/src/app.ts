@@ -65,7 +65,8 @@ app.route("/github", githubRoutes);
 app.route("/machines", machineRoutes);
 app.route("/agents", agentRoutes);
 app.route("/feedback", feedbackRoutes);
-// Operator admin over D1 (users, workspaces): Access (above) and an operator session.
+// Operator admin over D1 (users, workspaces, runner prices): Access (above) and an operator
+// session.
 app.route("/admin", adminRoutes);
 
 app.notFound((c) => c.json({ error: "not_found" }, 404));

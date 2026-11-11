@@ -8,12 +8,14 @@
 // The provider is worked out from each group's labels afterwards, since it's derived and not stored.
 import {
   listRate,
+  type PriceBook,
   PRICES_CHECKED,
   type ProviderId,
   providerOfEnvironment,
 } from "@relayrunner/providers";
 import { sql } from "drizzle-orm";
 import { type Db, schema } from "./db/index.ts";
+import { loadPriceBook } from "./prices.ts";
 import {
   BILLED_MINUTES,
   cents,
@@ -136,22 +138,24 @@ const where = (workspaceId: string, days: number, now: number) =>
  * runner.
  */
 function perMinuteOf(
+  book: PriceBook,
   provider: ProviderId,
   env: Environment,
   labels: string[],
   runnerGroupName: string | null,
   at: number,
 ) {
-  if (provider !== "github") return listRate(provider, env.label, at);
+  if (provider !== "github") return listRate(book, provider, env.label, at);
   const cls = runnerClass(labels, runnerGroupName);
-  return cls === "other" || cls === "self-hosted" ? null : classRate(cls, at);
+  return cls === "other" || cls === "self-hosted" ? null : classRate(book, cls, at);
 }
 
 // Every provider runner type the workspace's jobs used, by environment key. Several label sets
 // can land on one (`ubuntu-latest` and `ubuntu-24.04`), and a price change in the window splits a
 // label set in two, each priced at its own rate.
 async function runnerGroups(db: Db, workspaceId: string, days: number, now: number) {
-  const prices = pricePeriods(table.completedAt, now - days * DAY_MS, now);
+  const book = await loadPriceBook(db, now);
+  const prices = pricePeriods(book, table.completedAt, now - days * DAY_MS, now);
   const rows = await db.all<Row>(sql`
     select ${prices.period} as period, ${table.labels} as labels, ${table.runnerGroupName} as runner_group_name,
       count(*) as runs, sum(${OK}) as successes, sum(${FAILED}) as failures,
@@ -168,7 +172,8 @@ async function runnerGroups(db: Db, workspaceId: string, days: number, now: numb
     const env = environmentFor(labels, row.runner_group_name, null);
     const provider = providerOfEnvironment(env.key);
     if (provider === "machine") continue;
-    const rateAt = (at: number) => perMinuteOf(provider, env, labels, row.runner_group_name, at);
+    const rateAt = (at: number) =>
+      perMinuteOf(book, provider, env, labels, row.runner_group_name, at);
     const perMinute = rateAt(prices.at(Number(row.period)));
     const billedMinutes = Number(row.billed_minutes);
     // GitHub's standard runners are free in public repos; the services charge either way.

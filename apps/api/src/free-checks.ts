@@ -10,6 +10,7 @@ import { recordEvent } from "./activity.ts";
 import { type Db, schema } from "./db/index.ts";
 import { createCheckRun } from "./github-app.ts";
 import { findInstallation } from "./installations.ts";
+import { loadPriceBook } from "./prices.ts";
 import { cents, classRate, DAY_MS, pricePeriods, RUNNER_LABELS, rateFor } from "./job-timings.ts";
 
 const table = schema.activityEvent;
@@ -116,7 +117,8 @@ export async function freeCheckSavings(
 ): Promise<FreeCheckSavings> {
   const now = Date.now();
   const since = new Date(now - days * DAY_MS);
-  const prices = pricePeriods(table.occurredAt, since.getTime(), now);
+  const book = await loadPriceBook(db, now);
+  const prices = pricePeriods(book, table.occurredAt, since.getTime(), now);
   const repositoryId = sql<number>`json_extract(${table.data}, '$.repositoryId')`;
   const check = sql<string>`json_extract(${table.data}, '$.check')`;
   const rows = await db
@@ -157,7 +159,8 @@ export async function freeCheckSavings(
   };
   for (const row of rows) {
     const checks = Number(row.checks);
-    const cost = checks * rateFor(FREE_CHECK_RUNNER, row.private, prices.at(Number(row.period)));
+    const cost =
+      checks * rateFor(book, FREE_CHECK_RUNNER, row.private, prices.at(Number(row.period)));
     const repository = {
       repository: row.repository,
       private: row.private,
@@ -177,7 +180,7 @@ export async function freeCheckSavings(
     days,
     runner: {
       label: RUNNER_LABELS[FREE_CHECK_RUNNER],
-      perMinute: classRate(FREE_CHECK_RUNNER, now),
+      perMinute: classRate(book, FREE_CHECK_RUNNER, now),
     },
     checks: byRepository.reduce((total, repo) => total + repo.checks, 0),
     savedCost: cents(byRepository.reduce((total, repo) => total + repo.savedCost, 0)),

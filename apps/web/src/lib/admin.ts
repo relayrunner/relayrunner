@@ -71,3 +71,43 @@ export function deletedNotice(workspace: DeletedWorkspace) {
   if (workspace.unclaimed.length) parts.push(`${workspace.unclaimed.join(", ")} left unclaimed`);
   return `${parts.join(", ")}.`;
 }
+
+/** A runner price row (apps/api/src/routes/admin-prices.ts). Base-list rows have no id. */
+export type AdminPriceRow = {
+  id: string | null;
+  usd: number;
+  from: string;
+  source: string | null;
+  createdBy: string | null;
+};
+
+export type AdminRate = {
+  provider: string;
+  rate: string;
+  per: "vcpu" | "runner";
+  current: number | null;
+  rows: AdminPriceRow[];
+};
+
+export function listPrices() {
+  return api<{ rates: AdminRate[] }>("/admin/prices");
+}
+
+export type NewPrice = {
+  provider: string;
+  rate: string;
+  usd: number;
+  from: string;
+  source?: string;
+};
+
+export function addPrice(price: NewPrice) {
+  return api<{ price: AdminPriceRow }>("/admin/prices", {
+    method: "POST",
+    body: JSON.stringify(price),
+  });
+}
+
+export function removePrice(id: string) {
+  return api<{ ok: true }>(`/admin/prices/${encodeURIComponent(id)}`, { method: "DELETE" });
+}

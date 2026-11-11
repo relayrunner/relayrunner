@@ -1,6 +1,7 @@
 // Provider facts for the site, from @relayrunner/providers (the same list the API and dashboard
 // use), plus the logo tiles in public/providers/.
 import {
+  BASE_BOOK,
   listRate,
   PRICES_CHECKED,
   PROVIDER_IDS,
@@ -23,7 +24,7 @@ export const logoOf = (id: ProviderId) => (id === "other" ? undefined : `/provid
 /** List price for a minute on the provider's example runner, e.g. "$0.008/min", or "—". */
 export function examplePrice(id: ProviderId): string {
   const example = PROVIDERS[id].example;
-  return rateText(example ? listRate(id, example.toLowerCase()) : null);
+  return rateText(example ? listRate(BASE_BOOK, id, example.toLowerCase()) : null);
 }
 
 export type ProviderFact =
