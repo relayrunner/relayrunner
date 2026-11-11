@@ -130,7 +130,12 @@ export const ActivityEvent = z.discriminatedUnion("type", [
   // The machine's CLI connected and said hello: it can take jobs.
   z.object({
     type: z.literal("machine.connected"),
-    data: z.object({ ...machineData, runnerVersion: z.string().nullable() }),
+    data: z.object({
+      ...machineData,
+      runnerVersion: z.string().nullable(),
+      // Missing from events logged before the CLI reported its version.
+      cliVersion: z.string().nullable().optional(),
+    }),
   }),
   // The machine went offline: its CLI closed the connection (`closed`), it went quiet past the
   // heartbeat timeout (`timeout`, e.g. sleep or lost network), it was revoked (`revoked`), or it

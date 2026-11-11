@@ -101,7 +101,10 @@ export class MachineLink extends DurableObject<Env> {
       const db = createDb(this.env.DB);
       await recordMachineEvent(db, session.machineId, {
         type: "machine.connected",
-        data: { runnerVersion: outcome.state.hello.runnerVersion ?? null },
+        data: {
+          runnerVersion: outcome.state.hello.runnerVersion ?? null,
+          cliVersion: outcome.state.hello.cliVersion ?? null,
+        },
       });
       const device = outcome.state.hello.device;
       if (device)
