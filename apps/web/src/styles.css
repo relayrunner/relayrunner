@@ -163,6 +163,11 @@
   --color-run: var(--rr-run);
   --color-run-ink: var(--rr-run-ink);
   --color-run-edge: var(--rr-run-edge);
+
+  /* Cloud provider brand colours, the same in both themes */
+  --color-blacksmith: #f0fb29;
+  --color-blacksmith-ink: #202020;
+  --color-cloudflare: #f38020;
 }
 
 @layer base {

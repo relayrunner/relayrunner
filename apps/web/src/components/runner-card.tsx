@@ -2,7 +2,6 @@ import { Link, useRouter } from "@tanstack/react-router";
 import {
   BanIcon,
   BoxIcon,
-  ContainerIcon,
   CopyIcon,
   CpuIcon,
   EllipsisIcon,
@@ -19,6 +18,7 @@ import {
 } from "lucide-react";
 import { useState, type ReactNode } from "react";
 import { GithubIcon, runnerSettingsUrl } from "@/components/add-runner";
+import { BlacksmithIcon, CloudflareIcon } from "@/components/provider-logos";
 import { SHARING_ICONS, SharingDialog, sharingLabel } from "@/components/machine-sharing";
 import { UserAvatar } from "@/components/workspace-menu";
 import { Button } from "@/components/ui/button";
@@ -676,50 +676,127 @@ export function FoundCard({
 
 // A cloud runner jobs used lately (GitHub-hosted class, Blacksmith label, Cloudflare Container).
 // Always there when asked for, so its band shows how much it's used instead of a live state.
-export function CloudCard({ environment }: { environment: EnvironmentSummary }) {
-  const { key, label, detail, stat } = environment;
-  const provider = key.startsWith("github:")
-    ? { icon: <GithubIcon className="size-3.5" />, name: "GitHub-hosted" }
-    : key.startsWith("blacksmith:")
-      ? { icon: <ZapIcon aria-hidden className="size-3.5" />, name: "Blacksmith" }
-      : { icon: <ContainerIcon aria-hidden className="size-3.5" />, name: "Cloudflare" };
-  // A Blacksmith label already says Blacksmith on the line below.
-  const name = key.startsWith("blacksmith:") ? label.replace(/^blacksmith-/, "") : label;
-  // GitHub's classes and the container type are names, not hostnames, so they aren't monospace.
-  const mono = key.startsWith("blacksmith:");
-  const spec =
-    detail && detail !== provider.name && !key.startsWith("blacksmith:")
-      ? `${provider.name} · ${detail}`
-      : provider.name;
+type Provider = "blacksmith" | "github" | "cloudflare";
+
+// Brand tile, header tint and share-bar colour for each cloud provider.
+const PROVIDERS: Record<
+  Provider,
+  { name: string; icon: ReactNode; tile: string; tint: string; bar: string }
+> = {
+  blacksmith: {
+    name: "Blacksmith",
+    icon: <BlacksmithIcon className="w-4" />,
+    tile: "bg-blacksmith text-blacksmith-ink",
+    tint: "bg-blacksmith/8",
+    bar: "bg-blacksmith-ink dark:bg-blacksmith",
+  },
+  github: {
+    name: "GitHub-hosted",
+    icon: <GithubIcon className="size-4" />,
+    tile: "bg-foreground text-background",
+    tint: "bg-foreground/4",
+    bar: "bg-ink-2",
+  },
+  cloudflare: {
+    name: "Cloudflare",
+    icon: <CloudflareIcon className="size-[18px]" />,
+    tile: "bg-raised-2 text-cloudflare",
+    tint: "bg-cloudflare/8",
+    bar: "bg-cloudflare",
+  },
+};
+
+export function providerOf({ key }: EnvironmentSummary): Provider {
+  if (key.startsWith("github:")) return "github";
+  if (key.startsWith("blacksmith:")) return "blacksmith";
+  return "cloudflare";
+}
+
+/** One card per cloud provider, with a row for each runner type its jobs used. */
+export function CloudProviderCard({
+  provider,
+  environments,
+}: {
+  provider: Provider;
+  environments: EnvironmentSummary[];
+}) {
+  const { name, icon, tile, tint, bar } = PROVIDERS[provider];
+  const total = environments.reduce((sum, env) => sum + env.stat.runs, 0);
+  // A share bar only says something when there's more than one runner type to compare.
+  const showShare = environments.length > 1;
   return (
-    <Card label={label}>
-      <div className="grid min-w-0 gap-2 px-4 pt-3 pb-3.5">
-        <div className="flex min-w-0 items-center gap-2.5">
-          <IconChip icon={provider.icon} label={provider.name} />
-          <h3
-            title={label}
-            className={cn("min-w-0 flex-1 truncate text-sm font-medium", mono && "font-mono")}
-          >
-            {name}
-          </h3>
-        </div>
-        <div className="flex min-w-0 items-center justify-between gap-3 text-xs text-muted-foreground">
-          <span className="min-w-0 truncate">{spec}</span>
-          <span className="flex shrink-0 items-center gap-3 tabular-nums">
-            <span>{plural(stat.runs, "job")}</span>
-            {stat.samples > 0 && (
-              <Link
-                to="/job-times"
-                title={`Typical job · ${plural(stat.samples, "run")}`}
-                className="flex items-center gap-1 hover:text-foreground"
-              >
-                <TimerIcon aria-hidden className="size-3.5 text-idle" />
-                {medianText(stat)}
-              </Link>
-            )}
-          </span>
-        </div>
+    <Card label={name}>
+      <div className={cn("flex items-center gap-2.5 border-b border-line-soft px-4 py-3", tint)}>
+        <span className={cn("flex size-7 shrink-0 items-center justify-center rounded-md", tile)}>
+          {icon}
+        </span>
+        <h3 className="min-w-0 flex-1 truncate text-sm font-medium">{name}</h3>
+        <span className="text-xs text-muted-foreground tabular-nums">{plural(total, "job")}</span>
       </div>
+      {/* One grid for every row, so share bars and numbers line up down the card. */}
+      <ul className="grid grid-cols-[minmax(0,1fr)_auto_auto] divide-y divide-line-soft py-1">
+        {environments.map((env) => (
+          <CloudRow
+            key={env.key}
+            environment={env}
+            provider={provider}
+            share={showShare && total > 0 ? env.stat.runs / total : null}
+            bar={bar}
+          />
+        ))}
+      </ul>
     </Card>
+  );
+}
+
+function CloudRow({
+  environment,
+  provider,
+  share,
+  bar,
+}: {
+  environment: EnvironmentSummary;
+  provider: Provider;
+  share: number | null;
+  bar: string;
+}) {
+  const { label, detail, stat } = environment;
+  // The card already names the provider, so drop it from the runner's own name.
+  const name =
+    provider === "blacksmith"
+      ? label.replace(/^blacksmith-/, "")
+      : label.replace(/^Cloudflare /, "");
+  const spec = provider === "cloudflare" && detail ? detail : null;
+  return (
+    <li className="col-span-3 grid grid-cols-subgrid items-center gap-x-3 px-4 py-2.5 text-xs text-muted-foreground tabular-nums">
+      <div className="grid min-w-0 gap-1.5">
+        <span title={label} className="truncate text-sm text-foreground">
+          {/* Blacksmith labels are runs-on labels; GitHub classes and container types are names. */}
+          <span className={cn(provider === "blacksmith" && "font-mono")}>{name}</span>
+          {spec && <span className="text-xs text-muted-foreground"> · {spec}</span>}
+        </span>
+        {share !== null && (
+          <span aria-hidden className="h-[3px] overflow-hidden rounded-full bg-raised-2">
+            <span
+              className={cn("block h-full rounded-full", bar)}
+              style={{ width: `${Math.max(share * 100, 2)}%` }}
+            />
+          </span>
+        )}
+      </div>
+      <span className="text-right">{plural(stat.runs, "job")}</span>
+      {stat.samples > 0 ? (
+        <Link
+          to="/job-times"
+          title={`Typical job · ${plural(stat.samples, "run")}`}
+          className="flex items-center justify-end gap-1 hover:text-foreground"
+        >
+          <TimerIcon aria-hidden className="size-3.5 text-idle" />
+          {medianText(stat)}
+        </Link>
+      ) : (
+        <span />
+      )}
+    </li>
   );
 }

@@ -9,7 +9,7 @@ import {
   GithubRunnersDialog,
 } from "@/components/add-runner";
 import { PageHeader } from "@/components/page-header";
-import { CloudCard, FoundCard, MachineCard } from "@/components/runner-card";
+import { CloudProviderCard, FoundCard, MachineCard, providerOf } from "@/components/runner-card";
 import { Button } from "@/components/ui/button";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import { authDisabled } from "@/lib/auth-client";
@@ -184,9 +184,9 @@ function RunnersPage() {
           )}
           {cloud.length > 0 && (
             <RunnerGroup title="Cloud-hosted" note="Used in the last 14 days">
-              {cloud.map((env) => (
-                <li key={env.key} className="grid min-w-0">
-                  <CloudCard environment={env} />
+              {byProvider(cloud).map(([provider, environments]) => (
+                <li key={provider} className="grid min-w-0 self-start">
+                  <CloudProviderCard provider={provider} environments={environments} />
                 </li>
               ))}
             </RunnerGroup>
@@ -200,6 +200,16 @@ function RunnersPage() {
 // Cloud runners from the Job times report: everything but machines and other self-hosted runners.
 function isCloud(env: EnvironmentSummary) {
   return !env.key.startsWith("machine:") && !env.key.startsWith("self-hosted:");
+}
+
+// Cloud runners grouped by provider, busiest provider and runner type first.
+function byProvider(environments: EnvironmentSummary[]) {
+  const groups = new Map<ReturnType<typeof providerOf>, EnvironmentSummary[]>();
+  for (const env of environments.toSorted((a, b) => b.stat.runs - a.stat.runs)) {
+    const provider = providerOf(env);
+    groups.set(provider, [...(groups.get(provider) ?? []), env]);
+  }
+  return [...groups];
 }
 
 function RunnerGroup({
