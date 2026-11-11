@@ -1,0 +1,14 @@
+---
+/* A provider's logo tile, decorative (its name is always next to it). */
+import { logoOf, type ProviderId } from "../../lib/providers";
+
+interface Props {
+  id: ProviderId;
+  size?: number;
+}
+
+const { id, size = 24 } = Astro.props;
+const src = logoOf(id);
+---
+
+{src && <img src={src} alt="" width={size} height={size} />}

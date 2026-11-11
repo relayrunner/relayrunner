@@ -1,0 +1,14 @@
+/*
+ * Docs page changes are full page loads. A cross-document view transition keeps the old page on
+ * screen until the new one is ready, so the header and sidebar don't flash. There's no animation:
+ * the new page just replaces the old one. Browsers without support load pages as before.
+ */
+@view-transition {
+  navigation: auto;
+}
+
+::view-transition-group(*),
+::view-transition-old(*),
+::view-transition-new(*) {
+  animation: none;
+}

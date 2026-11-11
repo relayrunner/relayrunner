@@ -1,4 +1,5 @@
 import { getCollection, type CollectionEntry } from "astro:content";
+import { isProviderId, providerMarkdown, providerTableMarkdown } from "./providers";
 
 /*
  * Plain-text versions of every docs page, for agents and crawlers. Each page at /docs/<slug>/ also
@@ -35,9 +36,18 @@ function stripMdx(body: string) {
   return body.replace(/^import .+ from .+;?\s*$/gm, "").trim();
 }
 
+/** The docs' MDX components, written out as the Markdown they show. */
+function componentsToMarkdown(body: string) {
+  return body
+    .replace(/^<ProviderTable\s*\/>[ \t]*$/gm, providerTableMarkdown)
+    .replace(/^<Provider id="([\w-]+)"\s*\/>[ \t]*$/gm, (tag, id: string) =>
+      isProviderId(id) ? providerMarkdown(id) : tag,
+    );
+}
+
 export function toMarkdown(entry: DocsEntry) {
   const { title, description } = entry.data;
-  const body = asidesToBlockquotes(stripMdx(entry.body ?? ""));
+  const body = asidesToBlockquotes(componentsToMarkdown(stripMdx(entry.body ?? "")));
   return (
     [`# ${title}`, description ? `> ${description}` : "", body].filter(Boolean).join("\n\n") + "\n"
   );
@@ -76,7 +86,9 @@ export function llmsIndex(all: DocsEntry[], site: URL) {
     "",
     "> RelayRunner routes GitHub Actions jobs to your own machines when they're online and falls back to GitHub when they're not.",
     "",
-    "Each page is also available as Markdown (.md) and as plain text for agents (.txt).",
+    "Each page is also available as Markdown (.md) and as plain text for agents (.txt). Asking for a page with `Accept: text/markdown` returns its Markdown.",
+    "",
+    `All pages in one file: ${abs("/llms-full.txt")}`,
     "",
     "## Pages",
     "",
@@ -84,3 +96,6 @@ export function llmsIndex(all: DocsEntry[], site: URL) {
     "",
   ].join("\n");
 }
+
+/** Every page's Markdown in one file, for agents that want the whole docs at once. */
+export const llmsFull = (all: DocsEntry[]) => all.map(toMarkdown).join("\n---\n\n");

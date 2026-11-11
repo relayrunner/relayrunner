@@ -18,6 +18,9 @@
     "@astrojs/starlight": "^0.42.10",
     "@fontsource-variable/hanken-grotesk": "catalog:",
     "@fontsource-variable/jetbrains-mono": "catalog:",
-    "astro": "^7.4.10"
+    "@relayrunner/providers": "workspace:*",
+    "astro": "^7.4.10",
+    "astro-og-canvas": "^0.13.3",
+    "canvaskit-wasm": "^0.42.0"
   }
 }

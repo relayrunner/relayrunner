@@ -1,0 +1,64 @@
+---
+/*
+ * Every provider RelayRunner recognizes, with its labels and the list price of its example runner.
+ * From @relayrunner/providers, so a provider added there shows up here.
+ *
+ *   <ProviderTable />
+ */
+import { examplePrice, KNOWN_PROVIDERS, PRICE_NOTE, PROVIDERS } from "../../lib/providers";
+import ProviderLogo from "./ProviderLogo.astro";
+---
+
+<table>
+  <thead>
+    <tr>
+      <th>Provider</th>
+      <th>Labels</th>
+      <th>List price</th>
+    </tr>
+  </thead>
+  <tbody>
+    {
+      KNOWN_PROVIDERS.map((id) => {
+        const { name, summary, labels, docsUrl } = PROVIDERS[id];
+        return (
+          <tr>
+            <td>
+              <span class="rr-name">
+                <ProviderLogo id={id} size={20} />
+                {docsUrl ? <a href={docsUrl}>{name}</a> : name}
+              </span>
+              <span class="rr-summary">{summary}</span>
+            </td>
+            <td>
+              <code>{labels}</code>
+            </td>
+            <td>{examplePrice(id)}</td>
+          </tr>
+        );
+      })
+    }
+  </tbody>
+</table>
+<p class="rr-note">{PRICE_NOTE}</p>
+
+<style>
+  .rr-name {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    font-weight: 600;
+  }
+  .rr-summary {
+    display: block;
+    color: var(--sl-color-gray-3);
+    font-size: 13px;
+  }
+  td {
+    vertical-align: top;
+  }
+  .rr-note {
+    color: var(--sl-color-gray-3);
+    font-size: 13px;
+  }
+</style>

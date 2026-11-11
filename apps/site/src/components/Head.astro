@@ -1,14 +1,33 @@
 ---
 /*
- * Starlight's <head>, plus preloads for the two fonts used above the fold. Without them the browser
- * only finds the fonts after the CSS loads, so every page paints in the fallback font first and
- * then swaps (the text visibly flickers). Vite gives these the same hashed URLs the CSS uses.
+ * Starlight's <head>, plus:
+ * - preloads for the two fonts used above the fold. Without them the browser only finds the fonts
+ *   after the CSS loads, so every page paints in the fallback font first and then swaps (the text
+ *   visibly flickers). Vite gives these the same hashed URLs the CSS uses.
+ * - a share image for each docs page, with its title and description (src/pages/og/), or the
+ *   site's share image for anything else (the 404 page). Starlight doesn't set one.
+ * - a link to the page's Markdown version, for agents that look for one.
  */
 import Default from "@astrojs/starlight/components/Head.astro";
 import sans from "@fontsource-variable/hanken-grotesk/files/hanken-grotesk-latin-wght-normal.woff2?url";
 import mono from "@fontsource-variable/jetbrains-mono/files/jetbrains-mono-latin-wght-normal.woff2?url";
+import { markdownPath } from "../lib/agent-docs";
+
+const { entry } = Astro.locals.starlightRoute;
+const isDoc = entry.id.startsWith("docs/");
+const image = new URL(isDoc ? `/og/${entry.id}.png` : "/og-image.png", Astro.site).href;
+const imageAlt = isDoc ? entry.data.title : "relayrunner: one router for every CI runner";
+const markdown = isDoc ? markdownPath(entry) : undefined;
 ---
 
 <link rel="preload" href={sans} as="font" type="font/woff2" crossorigin />
 <link rel="preload" href={mono} as="font" type="font/woff2" crossorigin />
 <Default />
+<meta property="og:image" content={image} />
+<meta property="og:image:type" content="image/png" />
+<meta property="og:image:width" content="1200" />
+<meta property="og:image:height" content="630" />
+<meta property="og:image:alt" content={imageAlt} />
+<meta name="twitter:image" content={image} />
+<meta name="twitter:image:alt" content={imageAlt} />
+{markdown && <link rel="alternate" type="text/markdown" href={markdown} />}

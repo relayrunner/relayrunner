@@ -25,6 +25,10 @@ const WARPBUILD: SizedRates = { linux: 0.002, arm: 0.0015, windows: 0.004, macos
 const UBICLOUD_STANDARD = 0.000625;
 const UBICLOUD_PREMIUM = 0.001;
 
+/** "$0.008/min", or "—" without a known price. */
+export const rateText = (perMinute: number | null) =>
+  perMinute === null ? "—" : `$${Number(perMinute.toFixed(5))}/min`;
+
 function sized(rates: SizedRates, label: string, vcpus: number): number {
   if (label.includes("macos")) return rates.macos * vcpus;
   if (label.includes("windows")) return rates.windows * vcpus;
