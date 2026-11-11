@@ -2,6 +2,7 @@ import { Link, Outlet, createFileRoute, redirect, useMatchRoute } from "@tanstac
 import {
   ActivityIcon,
   ArrowLeftIcon,
+  BookOpenIcon,
   Building2Icon,
   ChartColumnIcon,
   CloudIcon,
@@ -16,7 +17,7 @@ import {
   WebhookIcon,
 } from "lucide-react";
 import { type ReactNode, useState } from "react";
-import { SiteFooter } from "@/components/site-footer";
+import { DOCS_URL, SiteFooter } from "@/components/site-footer";
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
 import { WorkspaceMenu } from "@/components/workspace-menu";
 import { authDisabled } from "@/lib/auth-client";
@@ -123,6 +124,7 @@ function WorkspaceLayout() {
                 </NavGroup>
               </nav>
             )}
+            <DocsLink collapsed={collapsed} />
             <SidebarToggle collapsed={collapsed} onToggle={toggle} />
           </TooltipProvider>
         )}
@@ -175,26 +177,49 @@ function SettingsNav({ workspaceName }: { workspaceName: string }) {
   );
 }
 
+const navItem =
+  "flex items-center gap-2.5 sm:group-data-[collapsed]/sidebar:justify-center sm:group-data-[collapsed]/sidebar:px-0";
+
 /** A page in the sidebar: icon and name, or just the icon with the name on hover when collapsed. */
 function NavLink({ item, collapsed }: { item: NavItem; collapsed: boolean }) {
   const { to, label, icon: Icon } = item;
-  const link = (
-    <Link
-      to={to}
-      className={cn(
-        navLink,
-        "flex items-center gap-2.5 sm:group-data-[collapsed]/sidebar:justify-center sm:group-data-[collapsed]/sidebar:px-0",
-      )}
-      activeProps={navActive}
-    >
-      <Icon aria-hidden className="hidden size-4 shrink-0 sm:block" />
-      <span className="sm:group-data-[collapsed]/sidebar:sr-only">{label}</span>
-    </Link>
+  return (
+    <CollapsedTooltip label={label} collapsed={collapsed}>
+      <Link to={to} className={cn(navLink, navItem)} activeProps={navActive}>
+        <Icon aria-hidden className="hidden size-4 shrink-0 sm:block" />
+        <span className="sm:group-data-[collapsed]/sidebar:sr-only">{label}</span>
+      </Link>
+    </CollapsedTooltip>
   );
-  if (!collapsed) return link;
+}
+
+/** The docs, at the foot of the sidebar above the collapse toggle. Phones get it in the footer. */
+function DocsLink({ collapsed }: { collapsed: boolean }) {
+  return (
+    <div className="mt-auto hidden px-1 sm:block sm:group-data-[collapsed]/sidebar:px-0">
+      <CollapsedTooltip label="Docs" collapsed={collapsed}>
+        <a href={DOCS_URL} className={cn(navLink, navItem)}>
+          <BookOpenIcon aria-hidden className="size-4 shrink-0" />
+          <span className="sm:group-data-[collapsed]/sidebar:sr-only">Docs</span>
+        </a>
+      </CollapsedTooltip>
+    </div>
+  );
+}
+
+function CollapsedTooltip({
+  label,
+  collapsed,
+  children,
+}: {
+  label: string;
+  collapsed: boolean;
+  children: ReactNode;
+}) {
+  if (!collapsed) return children;
   return (
     <Tooltip>
-      <TooltipTrigger asChild>{link}</TooltipTrigger>
+      <TooltipTrigger asChild>{children}</TooltipTrigger>
       <TooltipContent side="right" className="max-sm:hidden">
         {label}
       </TooltipContent>
@@ -214,7 +239,7 @@ function SidebarToggle({ collapsed, onToggle }: { collapsed: boolean; onToggle: 
           aria-label={label}
           aria-expanded={!collapsed}
           className={cn(
-            "mt-auto hidden size-8 items-center justify-center self-start rounded-md text-sidebar-foreground outline-none transition-colors hover:bg-sidebar-accent hover:text-sidebar-accent-foreground focus-visible:ring-[3px] focus-visible:ring-ring/50 sm:flex",
+            "hidden size-8 items-center justify-center self-start rounded-md text-sidebar-foreground outline-none transition-colors hover:bg-sidebar-accent hover:text-sidebar-accent-foreground focus-visible:ring-[3px] focus-visible:ring-ring/50 sm:flex",
             collapsed ? "self-center" : "ml-1",
           )}
         >

@@ -1,8 +1,8 @@
 ---
 /*
  * The site header: the landing page's header, shared with the docs. On the home page the links are
- * in-page anchors; elsewhere (the docs) they point back at the home page's sections. The docs
- * aren't linked from it yet.
+ * in-page anchors; elsewhere (the docs) they point back at the home page's sections. Docs stays
+ * visible down to the narrowest layout that shows the nav.
  */
 interface Props {
   /** Set on the home page, where the links scroll to sections instead of navigating. */
@@ -11,6 +11,7 @@ interface Props {
 
 const { home = false } = Astro.props;
 const to = (hash: string) => (home ? hash : `/${hash}`);
+const inDocs = Astro.url.pathname.startsWith("/docs");
 ---
 
 <header class="site-header" data-header>
@@ -21,6 +22,7 @@ const to = (hash: string) => (home ? hash : `/${hash}`);
     </a>
     <nav aria-label="Primary">
       <ul class="nav-links">
+        <li><a href="/docs/" aria-current={inDocs ? "page" : undefined}>Docs</a></li>
         <li class="nav-page"><a href={to("#providers")}>Providers</a></li>
         <li class="nav-page"><a href={to("#how")}>How it works</a></li>
         <li class="nav-page"><a href={to("#checks")}>Free checks</a></li>
