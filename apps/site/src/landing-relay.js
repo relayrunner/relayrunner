@@ -56,7 +56,11 @@
     splitTimer = setTimeout(() => split.classList.remove("visible"), 2200);
   }
   function celebrate(elapsed) {
-    podium.textContent = "🏆  Total · " + formatTime(elapsed);
+    const label = document.createElement("span");
+    label.textContent = "🏆 Total time";
+    const total = document.createElement("b");
+    total.textContent = formatTime(elapsed);
+    podium.replaceChildren(label, total);
     const list = document.createElement("ol");
     const fastest = Math.min(...splits.map((ms) => Math.floor(ms / 100)));
     splits.forEach((ms, index) => {
