@@ -1,6 +1,6 @@
 # RelayRunner agents
 
-The MCP server at `https://agents.relayrunner.app/mcp`. An AI agent connects to it to ask about a workspace's runners, runs and usage. It's read-only for now: no tool changes anything.
+The MCP server at `https://agents.relayrunner.app/mcp`. An AI agent connects to it to ask about a workspace's runners, runs and usage. It's read-only, apart from `send_feedback`, which lets an agent report a problem to the RelayRunner team.
 
 ```
 agent ──▶ relayrunner-agents ──▶ relayrunner-api (service binding)
@@ -23,17 +23,22 @@ This Worker holds no secrets and no state. It doesn't call GitHub or the Router:
 
 ## Tools
 
-| Tool               | What it reads                                                      |
-| ------------------ | ------------------------------------------------------------------ |
-| `list_workspaces`  | The workspaces this connection reads, by id and name               |
-| `get_workspace`    | One workspace, your role and its connected GitHub accounts         |
-| `list_runners`     | Runners, their status, labels, pause state and current job         |
-| `get_runner_order` | The providers jobs are tried on, in order                          |
-| `list_runs`        | Recent workflow runs, filterable by repository, status, conclusion |
-| `get_run_jobs`     | One run's jobs and where each ran                                  |
-| `list_activity`    | The activity log, including where each job was routed and why      |
-| `get_usage`        | Short jobs and round-up cost, free check savings, Actions minutes  |
-| `get_job_times`    | Typical job durations per runner environment                       |
+| Tool               | What it reads                                                       |
+| ------------------ | ------------------------------------------------------------------- |
+| `list_workspaces`  | The workspaces this connection reads, by id and name                |
+| `get_workspace`    | One workspace, your role and its connected GitHub accounts          |
+| `list_runners`     | Runners, their status, labels, pause state and current job          |
+| `get_runner_order` | The providers jobs are tried on, in order                           |
+| `list_runs`        | Recent workflow runs, filterable by repository, status, conclusion  |
+| `get_run_jobs`     | One run's jobs and where each ran                                   |
+| `list_activity`    | The activity log, including where each job was routed and why       |
+| `get_usage`        | Short jobs and round-up cost, free check savings, Actions minutes   |
+| `get_job_times`    | Typical job durations per runner environment                        |
+| `send_feedback`    | Writes: reports a bug, confusing result or missing tool to the team |
+
+## Feedback
+
+`send_feedback` takes a category (`bug`, `confusing`, `feature_request`, `other`), a one-line summary (200 characters), optional details (4,000) and the tool it's about. It POSTs to `/api/feedback`, the only write an agent token may make (`apps/api/src/routes/feedback.ts`). The API strips control, zero-width and bidi characters, trims to those limits, redacts anything that looks like a credential (GitHub, RelayRunner machine and cloud tokens, JWTs, private keys, `key=value` secrets, passwords in URLs), stores it in the `agent_feedback` table and emails it to `FEEDBACK_EMAIL` (feedback@relayrunner.app), with the person's address as Reply-To. Each person can send 10 an hour and 30 a day across all their agents. The answer is only an id and how many values were redacted; it never repeats the text.
 
 ## Run it locally
 

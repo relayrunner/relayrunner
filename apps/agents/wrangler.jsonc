@@ -1,6 +1,7 @@
 {
   "$schema": "./node_modules/wrangler/config-schema.json",
-  // The MCP server agents connect to: https://agents.relayrunner.app/mcp. Stateless and read-only.
+  // The MCP server agents connect to: https://agents.relayrunner.app/mcp. Stateless; read-only apart from
+  // send_feedback.
   // Each tool call is one or two GETs to relayrunner-api over the binding below, with the agent's
   // own access token; the API checks it and the workspace (apps/api/src/agent-auth.ts).
   "name": "relayrunner-agents",

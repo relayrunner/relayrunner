@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import {
+  renderAgentFeedbackEmail,
   renderDeadLetterAlertEmail,
   renderInviteEmail,
   renderMachineConnectedEmail,
@@ -8,6 +9,27 @@ import {
 } from "./index.ts";
 
 describe("templates", () => {
+  it("agent-feedback names who sent it and escapes every agent-written field", () => {
+    const email = renderAgentFeedbackEmail({
+      id: "f1",
+      category: "bug",
+      summary: "<img src=x onerror=alert(1)>",
+      details: "line one\n<script>bad()</script>",
+      tool: "list_runs",
+      redacted: 2,
+      user: { name: "Ada", email: "ada@example.com" },
+      workspaceName: "Acme & Co",
+      clientName: "Claude",
+      sentAt: new Date("2026-11-11T00:00:00Z"),
+    });
+    expect(email.subject).toBe("[feedback] bug: <img src=x onerror=alert(1)>");
+    expect(email.html).not.toContain("<img");
+    expect(email.html).not.toContain("<script>");
+    expect(email.text).toContain("From: Ada <ada@example.com>");
+    expect(email.text).toContain("Redacted: 2 secret-like value(s)");
+    expect(email.text).toContain("line one\n<script>bad()</script>");
+  });
+
   it("welcome links the dashboard in both bodies", () => {
     const email = renderWelcomeEmail({ name: "Ada", dashboardUrl: "https://app.example/" });
     expect(email.subject).toBe("Welcome to RelayRunner");

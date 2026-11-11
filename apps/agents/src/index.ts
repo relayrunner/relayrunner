@@ -1,7 +1,7 @@
 /**
  * RelayRunner's MCP server, at https://agents.relayrunner.app/mcp. Agents sign in with OAuth
  * against the dashboard (apps/api/src/agent-auth.ts) and get a token for the workspaces they pick,
- * read-only.
+ * read-only apart from send_feedback (tools.ts).
  * This Worker holds no state and no secrets: it answers each MCP request with a fresh server whose
  * tools call relayrunner-api with the agent's own token, and the API decides what that token sees.
  */

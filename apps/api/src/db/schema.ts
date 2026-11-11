@@ -882,3 +882,27 @@ export const agentGrantWorkspace = sqliteTable(
     index("agent_grant_workspace_workspace_id_idx").on(table.workspaceId),
   ],
 );
+
+// Feedback agents send through the MCP server's send_feedback tool (routes/feedback.ts), already
+// sanitized and with secrets redacted. Also emailed to FEEDBACK_EMAIL. grant_id and client_id are
+// plain text so the feedback outlives a disconnected agent; it goes with its user.
+export const agentFeedback = sqliteTable(
+  "agent_feedback",
+  {
+    id: text("id").primaryKey(),
+    userId: text("user_id")
+      .notNull()
+      .references(() => user.id, { onDelete: "cascade" }),
+    workspaceId: text("workspace_id").references(() => workspace.id, { onDelete: "set null" }),
+    grantId: text("grant_id"),
+    clientId: text("client_id"),
+    category: text("category").notNull(),
+    summary: text("summary").notNull(),
+    details: text("details"),
+    tool: text("tool"),
+    createdAt: integer("created_at", { mode: "timestamp_ms" })
+      .notNull()
+      .$defaultFn(() => new Date()),
+  },
+  (table) => [index("agent_feedback_user_id_created_at_idx").on(table.userId, table.createdAt)],
+);

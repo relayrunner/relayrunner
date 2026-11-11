@@ -4,8 +4,9 @@ import { z } from "zod";
 import { ApiError, type Api, type Workspace, type WorkspaceApi } from "./api.ts";
 import { compactActivityPage, compactJobTimes } from "./compact.ts";
 
-// Read-only tools over relayrunner-api's dashboard endpoints, all D1 reads. Each answers JSON.
-// None asks GitHub or takes the Router's lock (apps/api/src/agent-auth.ts keeps it that way).
+// Read-only tools over relayrunner-api's dashboard endpoints, all D1 reads, plus send_feedback,
+// which only records a report for the RelayRunner team. Each answers JSON. None asks GitHub or
+// takes the Router's lock (apps/api/src/agent-auth.ts keeps it that way).
 
 // Avatars and dashboard-only permissions aren't useful to an agent.
 const DASHBOARD_ONLY = new Set(["ownerImage", "canRevoke", "mine"]);
@@ -38,6 +39,9 @@ const workspaceArg = z
   .describe(
     "Which workspace, by id or name (see list_workspaces). Needed only when this connection reads more than one.",
   );
+
+// apps/api/src/feedback.ts: FEEDBACK_CATEGORIES. The API checks these and the lengths again.
+const FEEDBACK_CATEGORIES = ["bug", "confusing", "feature_request", "other"] as const;
 
 const days = (max: number, fallback: number) =>
   z.number().int().min(1).max(max).default(fallback).describe(`Days to look back (1-${max}).`);
@@ -254,5 +258,58 @@ export function registerTools(server: McpServer, request: WorkspaceApi, workspac
     },
     ({ workspace, days, ...filter }) =>
       answer(async () => compactJobTimes(await scoped(workspace)("/job-times", { days }), filter)),
+  );
+
+  server.registerTool(
+    "send_feedback",
+    {
+      title: "Send feedback",
+      description:
+        "Tell the RelayRunner team about a problem: a tool that errors or answers something that looks wrong, a result that's confusing, or something the person needs that no tool does. Say what you called, what you expected and what happened. Leave out secrets, tokens and personal data (anything that looks like a credential is redacted anyway). It's stored and emailed to the team, who may reply to the person; up to 10 an hour.",
+      inputSchema: {
+        category: z
+          .enum(FEEDBACK_CATEGORIES)
+          .describe(
+            "bug, confusing (a result or description was unclear), feature_request or other.",
+          ),
+        summary: z
+          .string()
+          .min(1)
+          .max(200)
+          .describe("One line: what went wrong or what's missing."),
+        details: z
+          .string()
+          .max(4000)
+          .optional()
+          .describe("What you called, with which arguments, what you expected and what you got."),
+        tool: z.string().max(64).optional().describe("The tool this is about, if any."),
+        workspace: workspaceArg,
+      },
+      annotations: {
+        readOnlyHint: false,
+        destructiveHint: false,
+        idempotentHint: false,
+        openWorldHint: false,
+      },
+    },
+    ({ workspace, ...feedback }) =>
+      answer(async () => {
+        // Optional here: feedback isn't always about one workspace.
+        const id = workspace || workspaces.length === 1 ? workspaceId(workspace) : undefined;
+        // Never repeat the text back: only that it arrived.
+        const { id: feedbackId, redacted } = await request<{ id: string; redacted: number }>(
+          "/feedback",
+          {},
+          id,
+          feedback,
+        );
+        return {
+          received: true,
+          id: feedbackId,
+          ...(redacted > 0 && {
+            note: `${redacted} secret-like value(s) were redacted before saving.`,
+          }),
+        };
+      }),
   );
 }
