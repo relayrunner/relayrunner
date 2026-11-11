@@ -99,6 +99,13 @@
 
   const reduce = matchMedia("(prefers-reduced-motion: reduce)"),
     clamp = (n) => Math.max(0, Math.min(1, n));
+  let returnProgress = null;
+  let scrollSpeed = 0;
+  let previousScroll = scrollY;
+  const limbs = overhead.querySelectorAll("g rect");
+  const walk = { cadence: 1.3, reach: 2 };
+  const jog = { cadence: 2.6, reach: 4 };
+  const sprint = { cadence: 4, reach: 7 };
   let last = scrollY,
     side = 1,
     lane = 1,
@@ -123,7 +130,8 @@
       transfer.style.display = "none";
       return;
     }
-    const dt = Math.min(50, now - time),
+    const elapsed = Math.max(1, now - time);
+    const dt = Math.min(50, elapsed),
       k = 1 - Math.exp(-dt / 95);
     time = now;
     const y = Math.max(0, scrollY),
@@ -131,6 +139,9 @@
       h = innerHeight,
       box = hero.getBoundingClientRect(),
       home = box.top + box.height / 2;
+    const scrollDelta = Math.abs(y - previousScroll);
+    previousScroll = y;
+    scrollSpeed += ((scrollDelta * 1000) / elapsed - scrollSpeed) * (1 - Math.exp(-elapsed / 85));
     if (Math.abs(y - last) > 1) {
       side = y > last ? 1 : -1;
       last = y;
@@ -138,6 +149,14 @@
     const max = Math.max(1, document.documentElement.scrollHeight - h),
       launch = Math.min(240, box.height),
       target = clamp(y / launch);
+    // Once the baton enters the home stretch, a downward nudge cannot rewind it.
+    if (lane === -1 && target < 1) returnProgress = Math.min(returnProgress ?? 1, target);
+    if (returnProgress !== null && box.bottom < 0 && target === 1 && side === 1) {
+      returnProgress = null;
+      lane = 1;
+      exitOffset = h + box.height;
+      entrySign = -1;
+    }
     const remaining = max - y,
       contentLeft = document.querySelector(".stage").getBoundingClientRect().left,
       edge = Math.min(45, contentLeft / 2),
@@ -198,7 +217,7 @@
     const pathTarget = exchange >= 0 ? max : (footerTarget ?? y);
     lapY += (pathTarget - lapY) * k;
     // Bind the hero morph to the scroll position, including jumps across the launch zone.
-    progress = target;
+    progress = returnProgress ?? target;
     if (target < 1) {
       exitOffset = 0;
       prevX = prevY = undefined;
@@ -217,6 +236,7 @@
           started = null;
         }
       }
+      returnProgress = null;
       progress = 0;
       lane = side = 1;
     }
@@ -247,7 +267,11 @@
     if (distance > 0.08) {
       let heading = (Math.atan2(dx, -dy) * 180) / Math.PI;
       angle += (((heading - angle + 540) % 360) - 180) * Math.min(1, dt / 75);
-      stride += distance * 0.13;
+    }
+    const gait = scrollSpeed < 70 ? walk : scrollSpeed > 1050 ? sprint : jog;
+    const holding = returnProgress !== null && target > returnProgress;
+    if (!holding && (distance > 0.08 || scrollDelta > 0)) {
+      stride += (dt / 1000) * gait.cadence * Math.PI * 2;
     }
     prevX = x;
     prevY = py;
@@ -298,10 +322,10 @@
     portrait.style.opacity = 1 - s;
     overhead.style.opacity = s;
     overhead.style.transform = "rotate(" + angle + "deg)";
-    for (const [i, limb] of [...overhead.querySelectorAll("g rect")].entries())
+    for (const [i, limb] of limbs.entries())
       limb.setAttribute(
         "transform",
-        "translate(0 " + Math.sin(stride) * (i === 0 || i === 3 ? 4 : -4) + ")",
+        "translate(0 " + Math.sin(stride) * gait.reach * (i === 0 || i === 3 ? 1 : -1) + ")",
       );
     hero.style.opacity = p ? "0" : "";
     actor.style.opacity = p ? "1" : "0";
@@ -337,14 +361,7 @@
           " V 0",
       );
     });
-    if (
-      Math.abs(progress - target) > 0.0001 ||
-      exchange >= 0 ||
-      switching ||
-      exitOffset > 0 ||
-      Math.abs(pathTarget - lapY) > 0.01
-    )
-      wake();
+    if (exchange >= 0 || switching || exitOffset > 0 || Math.abs(pathTarget - lapY) > 0.01) wake();
   }
   addEventListener("scroll", wake, { passive: true });
   addEventListener("resize", wake);
