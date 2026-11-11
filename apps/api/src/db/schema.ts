@@ -545,6 +545,9 @@ export const routeDecision = sqliteTable(
     // The relay's `machine` and `github` inputs, and each hosted provider's input it set, by id.
     machine: text("machine", { mode: "json" }).$type<string[]>().notNull(),
     github: text("github", { mode: "json" }).$type<string[]>().notNull(),
+    // Unused: the `blacksmith` input before `hosted` (copied into it). Kept so code still running
+    // during a deploy can write it; drop it in a later migration.
+    blacksmith: text("blacksmith", { mode: "json" }).$type<string[]>().notNull().default([]),
     hosted: text("hosted", { mode: "json" })
       .$type<Partial<Record<HostedProviderId, string[]>>>()
       .notNull()
