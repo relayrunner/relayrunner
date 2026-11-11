@@ -91,7 +91,7 @@ export function renderEmailCard(input: EmailCardInput): RenderedEmail {
 <tr><td align="center" style="padding:40px 16px;">
   <table role="presentation" width="520" cellpadding="0" cellspacing="0" style="max-width:520px;width:100%;">
     <tr><td style="padding:0 2px 16px;font-family:${MONO};font-size:14px;font-weight:600;letter-spacing:.01em;color:${INK};">
-      <span style="color:${GO};">&#9679;</span>&nbsp;relayrunner
+      <img src="https://relayrunner.app/favicon.png" width="24" height="24" alt="" style="vertical-align:middle;border:0;">&nbsp;relayrunner
     </td></tr>
     <tr><td style="background-color:${PANEL};border:1px solid ${LINE};border-radius:10px;padding:32px;">
       <table role="presentation" width="100%" cellpadding="0" cellspacing="0">
