@@ -16,222 +16,138 @@
           format("woff2");
         font-weight: 100 800;
       }
-      :root {
-        --bg: #0b0d10;
-        --deep: #07080a;
-        --raised: #161a20;
-        --idle-panel: #101317;
-        --line: #272c35;
-        --ink: #e6edf3;
-        --ink-2: #b4bcc6;
-        --mute: #8b949e;
-        --go: #3fb950;
-        --go-ink: #03140a;
-        --run: #d29922;
-      }
       * {
         box-sizing: border-box;
-        margin: 0;
-        padding: 0;
       }
-      html,
       body {
+        margin: 0;
         width: 1200px;
         height: 630px;
         overflow: hidden;
-        background: var(--bg);
-        color: var(--ink);
-        font-family: "Hanken Grotesk", sans-serif;
-        -webkit-font-smoothing: antialiased;
+        background: #ffffff;
+        color: #0e1a11;
+        font-family: "Hanken Grotesk", system-ui, sans-serif;
       }
-      .stage {
-        position: relative;
-        width: 1200px;
-        height: 630px;
-      }
-      .lines {
-        position: absolute;
-        inset: 0;
-        fill: none;
-        stroke-linecap: round;
+      .card {
+        display: grid;
+        grid-template-columns: 1fr 470px;
+        gap: 48px;
+        align-items: center;
+        height: 100%;
+        padding: 0 72px;
       }
       .brand {
-        position: absolute;
-        left: 64px;
-        top: 58px;
         display: flex;
         align-items: center;
-        gap: 14px;
-        font-size: 38px;
+        gap: 12px;
+        font-size: 26px;
         font-weight: 700;
-        letter-spacing: -0.015em;
       }
-      .brand svg {
-        width: 42px;
-        height: 42px;
-        fill: none;
-        stroke: var(--go);
-        stroke-width: 2.4;
-        stroke-linecap: round;
-      }
-      .brand .mark-top {
-        stroke: var(--run);
+      .brand img {
+        width: 40px;
+        height: 40px;
+        border-radius: 11px;
       }
       h1 {
-        position: absolute;
-        left: 64px;
-        top: 184px;
-        font-size: 64px;
-        line-height: 1.03;
-        font-weight: 700;
-        letter-spacing: -0.035em;
+        margin: 36px 0 0;
+        font-size: 74px;
+        line-height: 1;
+        letter-spacing: -0.045em;
       }
       h1 span {
         display: block;
+        color: #178a2e;
       }
-      h1 .hl {
-        color: var(--go);
+      p {
+        margin: 24px 0 0;
+        max-width: 560px;
+        color: #39463c;
+        font-size: 24px;
+        line-height: 1.45;
       }
-      .sub {
+      .panel {
+        position: relative;
+        padding: 28px;
+        border-radius: 28px;
+        background: linear-gradient(140deg, #52c93c 0%, #2db83a 45%, #129a3c 100%);
+      }
+      .mascot {
         position: absolute;
-        left: 64px;
-        top: 428px;
-        width: 490px;
-        font-size: 27px;
-        line-height: 1.32;
-        color: var(--ink-2);
+        right: -18px;
+        top: -96px;
+        width: 128px;
       }
       .push {
-        position: absolute;
-        left: 738px;
-        top: 58px;
-        width: 280px;
-        padding: 15px 20px;
-        background: var(--deep);
-        border: 1px solid var(--line);
+        padding: 12px 16px;
         border-radius: 12px;
+        background: #ffffff;
         font:
-          500 25px/1 "JetBrains Mono",
+          500 17px "JetBrains Mono",
           monospace;
-        text-align: center;
       }
-      .push i {
+      .push span {
+        color: #677269;
+      }
+      .lanes {
+        display: flex;
+        flex-direction: column;
+        gap: 10px;
+        margin-top: 14px;
+      }
+      .lane {
+        display: flex;
+        align-items: center;
+        gap: 14px;
+        padding: 12px 16px;
+        border-radius: 12px;
+        background: rgba(255, 255, 255, 0.85);
+        font-size: 19px;
+        font-weight: 700;
+      }
+      .lane img {
+        width: 34px;
+        height: 34px;
+      }
+      .lane em {
+        margin-left: auto;
+        color: #677269;
+        font-size: 15px;
         font-style: normal;
-        color: var(--mute);
-      }
-      .toggle {
-        position: absolute;
-        left: 698px;
-        top: 196px;
-        width: 360px;
-        display: grid;
-        grid-template-columns: 1fr 1fr;
-        padding: 5px;
-        background: var(--deep);
-        border: 1px solid var(--line);
-        border-radius: 999px;
-        font-size: 21px;
         font-weight: 600;
-        text-align: center;
       }
-      .toggle span {
-        padding: 12px 0;
-        border-radius: 999px;
-        color: var(--mute);
+      .lane.on {
+        background: #ffffff;
       }
-      .toggle .on {
-        background: var(--go);
-        color: var(--go-ink);
-      }
-      .card {
-        position: absolute;
-        top: 368px;
-        width: 258px;
-        height: 196px;
-        padding: 22px 22px;
-        border: 1px solid var(--line);
-        border-radius: 14px;
-      }
-      .card h2 {
-        font-size: 26px;
-        line-height: 1.15;
-        font-weight: 700;
-        letter-spacing: -0.01em;
-      }
-      .card .fig {
-        position: absolute;
-        left: 22px;
-        bottom: 20px;
-        font-size: 21px;
-        font-weight: 500;
-        line-height: 1.1;
-        color: var(--ink-2);
-      }
-      .card b {
-        display: block;
-        margin-bottom: 4px;
-        font-size: 52px;
-        line-height: 1;
-        font-weight: 700;
-        letter-spacing: -0.02em;
-      }
-      .hosted {
-        left: 612px;
-        background: var(--idle-panel);
-      }
-      .hosted h2 {
-        color: var(--ink-2);
-      }
-      .hosted b {
-        color: var(--run);
-      }
-      .local {
-        left: 886px;
-        background: var(--raised);
-        border-color: rgba(63, 185, 80, 0.6);
-        box-shadow: 0 26px 70px -24px rgba(63, 185, 80, 0.55);
-      }
-      .local b {
-        color: var(--go);
+      .lane.on em {
+        color: #178a2e;
       }
     </style>
   </head>
   <body>
-    <div class="stage">
-      <svg class="lines" viewBox="0 0 1200 630" width="1200" height="630">
-        <path d="M878 122 V198" stroke="#3fb950" stroke-width="4" />
-        <path
-          d="M878 262 C878 322 741 306 741 368"
-          stroke="#3a3f49"
-          stroke-width="4"
-          stroke-dasharray="7 10"
-        />
-        <path d="M878 262 C878 322 1015 306 1015 368" stroke="#3fb950" stroke-width="4" />
-        <circle cx="878" cy="160" r="15" fill="#3fb950" fill-opacity=".18" />
-        <circle cx="878" cy="160" r="7" fill="#3fb950" />
-        <circle cx="973" cy="319" r="15" fill="#3fb950" fill-opacity=".18" />
-        <circle cx="973" cy="319" r="7" fill="#3fb950" />
-      </svg>
-      <div class="brand">
-        <svg viewBox="0 0 28 28" aria-hidden="true">
-          <path class="mark-top" d="M11 14c4.5 0 5-7.5 10-7.5h3" />
-          <path d="M4 14h7c4.5 0 5 7.5 10 7.5h3" /></svg
-        >relayrunner
+    <div class="card">
+      <div>
+        <div class="brand"><img src="../public/mascot-tile.webp" alt="" />relayrunner</div>
+        <h1>One router for <span>every CI runner.</span></h1>
+        <p>
+          Send each GitHub Actions job to the best runner available right now. No workflow changes.
+        </p>
       </div>
-      <h1>
-        <span>Same checks.</span><span class="hl">Your machine.</span
-        ><span>No minutes burned.</span>
-      </h1>
-      <p class="sub">Run GitHub Actions on your own computer when agents eat your quota.</p>
-      <div class="push"><i>$</i> git push</div>
-      <div class="toggle"><span>GitHub</span><span class="on">Your machine</span></div>
-      <div class="card hosted">
-        <h2>GitHub-hosted</h2>
-        <div class="fig"><b>1,190</b>of 2,000 min</div>
-      </div>
-      <div class="card local">
-        <h2>Your machine</h2>
-        <div class="fig"><b>0</b>min billed</div>
+      <div class="panel">
+        <img class="mascot" src="../public/mascot.webp" alt="" />
+        <div class="push"><span>$</span> git push <span>→ ci / test</span></div>
+        <div class="lanes">
+          <div class="lane on">
+            <img src="../public/providers/machines.svg" alt="" />Your machines<em
+              >Takes the next job</em
+            >
+          </div>
+          <div class="lane">
+            <img src="../public/providers/github.svg" alt="" />GitHub-hosted<em>Next</em>
+          </div>
+          <div class="lane">
+            <img src="../public/providers/blacksmith.svg" alt="" />Blacksmith<em>Fallback</em>
+          </div>
+        </div>
       </div>
     </div>
   </body>
