@@ -765,7 +765,7 @@ const PROVIDERS: Record<Provider, ProviderStyle> = {
     mono: true,
   },
   github: {
-    name: "GitHub-hosted",
+    name: "GitHub",
     icon: <GithubIcon className="size-4" />,
     tile: "bg-foreground text-background",
     tint: "bg-foreground/4",
