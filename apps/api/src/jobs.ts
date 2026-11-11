@@ -126,33 +126,38 @@ export type RunningJob = {
 };
 
 /**
- * Each machine's in-progress job, by machine id. A machine runs one job at a time, so when an old
- * row is stuck in_progress (a lost `completed` webhook) the newest one wins. Callers show it only
- * while the machine reports itself busy, so a stuck row never shows on an idle machine.
+ * Each busy machine's in-progress jobs, newest first, by machine id: at most as many as it reports
+ * `running`, so when an old row is stuck in_progress (a lost `completed` webhook) the newest ones
+ * win. Callers pass only machines that report themselves busy, so a stuck row never shows on an
+ * idle machine.
  */
-export async function runningJobs(db: Db, machineIds: string[]) {
-  const jobs = new Map<string, RunningJob>();
-  if (machineIds.length === 0) return jobs;
+export async function runningJobs(db: Db, machines: { id: string; running: number }[]) {
+  const jobs = new Map<string, RunningJob[]>();
+  const limit = new Map(machines.map((machine) => [machine.id, machine.running]));
+  if (machines.length === 0) return jobs;
   const rows = await db
     .select()
     .from(table)
     .where(
       and(
-        inArray(table.machineId, machineIds),
+        inArray(table.machineId, [...limit.keys()]),
         eq(table.kind, "job"),
         eq(table.status, "in_progress"),
       ),
     )
     .orderBy(desc(table.githubCreatedAt));
   for (const row of rows) {
-    if (!row.machineId || jobs.has(row.machineId)) continue;
-    jobs.set(row.machineId, {
+    if (!row.machineId) continue;
+    const list = jobs.get(row.machineId) ?? [];
+    if (list.length >= (limit.get(row.machineId) ?? 0)) continue;
+    list.push({
       repository: row.repositoryFullName,
       workflow: row.workflowName,
       name: row.name,
       url: `https://github.com/${row.repositoryFullName}/actions/runs/${row.runId}/job/${row.id}`,
       startedAt: row.startedAt?.toISOString() ?? null,
     });
+    jobs.set(row.machineId, list);
   }
   return jobs;
 }

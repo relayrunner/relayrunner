@@ -39,6 +39,16 @@ describe("parseMachineMessage", () => {
     },
     { v, type: "status", state: "idle" },
     { v, type: "status", state: "busy" },
+    { v, type: "status", state: "busy", running: 2 },
+    {
+      v,
+      type: "hello",
+      machineId: "mch_1",
+      os: "linux",
+      arch: "x64",
+      runnerVersion: "2.329.0",
+      slots: 4,
+    },
     { v, type: "job", routeId: "7f3k", state: "started" },
     { v, type: "job", routeId: "7f3k", state: "failed", message: "run.sh exited with 1" },
   ];
@@ -87,6 +97,22 @@ describe("parseMachineMessage", () => {
       ok: false,
       reason: "invalid_message",
     });
+  });
+
+  it("rejects a slot count below one", () => {
+    expect(
+      parseMachineMessage(
+        JSON.stringify({
+          v,
+          type: "hello",
+          machineId: "mch_1",
+          os: "linux",
+          arch: "x64",
+          runnerVersion: "2.329.0",
+          slots: 0,
+        }),
+      ),
+    ).toMatchObject({ ok: false, reason: "invalid_message" });
   });
 
   it("rejects a bad field", () => {

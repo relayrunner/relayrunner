@@ -26,7 +26,8 @@ import {
   chooseAndHold,
   chooseMachine,
   decideRoute,
-  holdsMachine,
+  fullMachines,
+  heldSlots,
   machineLabels,
   lastPicked,
   needsOwnerAccess,
@@ -35,6 +36,7 @@ import {
   unavailableMachines,
   ROUTE_TTL_MS,
   type Candidate,
+  type HeldSlots,
   type JobStarters,
   type MachinePick,
   type QueuedJob,
@@ -179,10 +181,6 @@ export class Router extends DurableObject<Env> {
   // the choice and the route that reserves the machine run one at a time (reserve), against the
   // routes as they stand then, so two picks can't both take the same machine.
   private async pickMachine(job: PickedJob): Promise<MachinePick> {
-    const now = Date.now();
-    // Machines already held aren't worth asking about. reserve checks again under the lock.
-    const held = heldMachines(await this.routes(now), now);
-
     const db = createDb(this.env.DB);
     const machines = await db
       .select({
@@ -245,10 +243,10 @@ export class Router extends DurableObject<Env> {
       ownerName: machine.ownerName,
     }));
     // Paused machines can't be picked, so there's no need to ask for their live status.
-    // Nor for those whose sharing won't take this job.
+    // Nor for those whose sharing won't take this job. A machine this Router already holds may
+    // still have a free slot, so held ones are asked too (reserve counts them under the lock).
     const admitted = fits.filter(
       (machine) =>
-        !held.has(machine.id) &&
         machine.pausedAt === null &&
         admits(
           pool.find((entry) => entry.id === machine.id)!,
@@ -292,7 +290,7 @@ export class Router extends DurableObject<Env> {
 
   // Chooses among the candidates and stores the route that holds the chosen machine, one pick at a
   // time. The only I/O is storage and the chosen machine's MachineLink hold, so the lock is held
-  // for milliseconds. Null when none is free.
+  // for milliseconds. When none has a free slot, the full ones that fit (fullMachines), else null.
   private reserve(
     job: PickedJob,
     candidates: Candidate[],
@@ -301,16 +299,23 @@ export class Router extends DurableObject<Env> {
     return this.ctx.blockConcurrencyWhile(async () => {
       const now = Date.now();
       const routes = await this.routes(now);
-      const held = heldMachines(routes, now);
+      const held = heldSlots(routes, now);
       const picked = lastPicked(routes);
       const routeId = newRouteId();
-      // A connected machine may also be in other workspaces, so its own MachineLink holds it for
-      // this route too: if another workspace's route got there first, try the next machine. A
-      // runner added from GitHub belongs to one installation, so to this workspace alone, and the
-      // lock here is enough.
+      // This Router's held routes count against each machine's slots, and a machine whose
+      // MachineLink refused the hold counts as full.
+      const withTaken = (taken: Set<string>): HeldSlots =>
+        new Map([...held, ...[...taken].map((id) => [id, Infinity] as const)]);
+      let refused = new Set<string>();
+      // A connected machine may also be in other workspaces, so its own MachineLink holds a slot
+      // for this route too, counting every workspace's holds: if the others took the last slot,
+      // try the next machine. A runner added from GitHub belongs to one installation, so to this
+      // workspace alone, and the lock here is enough.
       const machine = await chooseAndHold(
-        (taken) =>
-          chooseMachine(candidates, new Set([...held, ...taken]), picked, job.machine, job),
+        (taken) => {
+          refused = taken;
+          return chooseMachine(candidates, withTaken(taken), picked, job.machine, job);
+        },
         async (candidate) =>
           routingLabels.get(candidate.id) !== undefined ||
           this.env.MACHINE_LINK.getByName(candidate.id).reserve({
@@ -318,7 +323,10 @@ export class Router extends DurableObject<Env> {
             workspaceId: job.workspaceId,
           }),
       );
-      if (!machine) return null;
+      if (!machine) {
+        const full = fullMachines(candidates, withTaken(refused), job.machine, job);
+        return full ? { full } : null;
+      }
       const routingLabel = routingLabels.get(machine.id);
       const route: Route = {
         id: routeId,
@@ -494,10 +502,6 @@ class Recent<K, V> {
 }
 
 // The machines a live route still holds.
-function heldMachines(routes: Route[], now: number) {
-  return new Set(routes.filter((r) => holdsMachine(r, now)).map((r) => r.machineId));
-}
-
 // Better Auth keeps a GitHub account's id as text.
 function githubId(accountId: string | null): number | null {
   const id = Number(accountId);
