@@ -9,8 +9,10 @@
 // 3. The `queued` webhook for that job claims the route (same repo, same run) and the machine's
 //    MachineLink mints an org JIT runner on the label and sends the machine a `run` message.
 
-import { type HostedProviderId, isProviderLabel, PROVIDERS } from "@relayrunner/providers";
+import { isProviderLabel } from "@relayrunner/providers";
 import {
+  byRunnerKey,
+  notProviderLabelText,
   RUNNER_KEYS,
   RUNNER_LABELS,
   type RelayInputs,
@@ -310,9 +312,7 @@ export function jobContext(contextData: unknown): JobContext | null {
     runId,
     runAttempt: Number.isSafeInteger(runAttempt) && runAttempt > 0 ? runAttempt : 1,
     workflow: typeof workflow === "string" && workflow ? workflow : null,
-    ...(Object.fromEntries(
-      RUNNER_KEYS.map((key) => [key, parseLabels(scalar(inputs?.get(key)))]),
-    ) as RelayInputs),
+    ...byRunnerKey((key) => parseLabels(scalar(inputs?.get(key)))),
     startedBy,
     triggeredBy,
   };
@@ -450,10 +450,7 @@ export function noRunnerReason(
       case "too_many_labels":
         return `\`${key}\` takes one label, not ${job[key].join(", ")}`;
       case "not_provider_label":
-      case "not_blacksmith_label": {
-        const { name, example } = PROVIDERS[key as HostedProviderId];
-        return `\`${key}\` takes a ${name} label such as ${example}, not ${job[key].join(", ")}`;
-      }
+        return `\`${key}\` ${notProviderLabelText(key, job[key])}`;
       case "minutes_limit":
       case "minutes_runway":
         return minutesText(reason, minutes);

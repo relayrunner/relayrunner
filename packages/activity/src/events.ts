@@ -1,4 +1,4 @@
-import { RUNNER_KEYS, type RunnerKey } from "@relayrunner/runner-order";
+import { byRunnerKey, RUNNER_KEYS } from "@relayrunner/runner-order";
 import { z } from "zod";
 
 // The workspace's audit log: one append-only row per thing that happened, newest first on the
@@ -36,8 +36,6 @@ export const SKIP_REASONS = [
   // A hosted provider's input named a label that isn't that provider's (such as `depot` naming
   // `ubuntu-latest`), so its runner would never start.
   "not_provider_label",
-  // Walks kept before other hosted providers: not_provider_label for `blacksmith`.
-  "not_blacksmith_label",
   // A GitHub step with a minutes limit: the job's account is at or past the limit's % of its
   // included quota (#117).
   "minutes_limit",
@@ -70,13 +68,7 @@ export type GithubActor = z.infer<typeof GithubActor>;
 export const NotSharedMachine = z.object({ machine: z.string(), owner: z.string().nullable() });
 export type NotSharedMachine = z.infer<typeof NotSharedMachine>;
 
-function relayInputsShape() {
-  const labels = z.array(z.string()).default([]);
-  return Object.fromEntries(RUNNER_KEYS.map((key) => [key, labels])) as Record<
-    RunnerKey,
-    typeof labels
-  >;
-}
+const relayInputsShape = () => byRunnerKey(() => z.array(z.string()).default([]));
 
 /**
  * How a pick walked the workspace's runner order. `step` is the provider that took the job (null
@@ -89,7 +81,11 @@ export const RouteWalk = z.object({
   skipped: z.array(
     z.object({
       key: z.enum(RUNNER_KEYS),
-      reason: z.enum(SKIP_REASONS),
+      // Walks kept before other hosted providers say not_blacksmith_label.
+      reason: z.preprocess(
+        (reason) => (reason === "not_blacksmith_label" ? "not_provider_label" : reason),
+        z.enum(SKIP_REASONS),
+      ),
       // machine_paused: the paused machines' names.
       paused: z.array(z.string()).optional(),
       // machine_not_shared: the machines that fit but only run their owner's jobs, with the

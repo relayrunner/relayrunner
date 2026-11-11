@@ -1,6 +1,5 @@
 import { machineRunnerName } from "@relayrunner/machine-protocol";
-import type { RunnerKey, RunnerOrder } from "@relayrunner/runner-order";
-import { HOSTED_PROVIDER_IDS, type HostedProviderId } from "@relayrunner/providers";
+import { relayInputs, type RunnerKey, type RunnerOrder } from "@relayrunner/runner-order";
 import type { AccountUsage } from "./actions-billing.ts";
 import { describe, expect, test, vi } from "vitest";
 import {
@@ -24,11 +23,6 @@ import {
   unavailableMachines,
   type Route,
 } from "./routing.ts";
-
-// Every hosted provider's relay input, left out.
-const noHosted = Object.fromEntries(
-  HOSTED_PROVIDER_IDS.map((id) => [id, [] as string[]]),
-) as Record<HostedProviderId, string[]>;
 
 const route: Route = {
   id: "0123456789ab",
@@ -253,9 +247,7 @@ describe("jobContext", () => {
       runId: 41902043823,
       runAttempt: 2,
       workflow: "RelayRunner dev",
-      machine: [],
-      github: [],
-      ...noHosted,
+      ...relayInputs({ machine: [], github: [] }),
       startedBy: null,
       triggeredBy: null,
     });
@@ -271,9 +263,7 @@ describe("jobContext", () => {
       runId: 5,
       runAttempt: 1,
       workflow: null,
-      machine: [],
-      github: [],
-      ...noHosted,
+      ...relayInputs({ machine: [], github: [] }),
       startedBy: null,
       triggeredBy: null,
     });
@@ -337,9 +327,7 @@ describe("jobContext", () => {
       runId: 42078905012,
       runAttempt: 1,
       workflow: null,
-      machine: ["self-hosted"],
-      github: ["ubuntu-latest"],
-      ...noHosted,
+      ...relayInputs({ machine: ["self-hosted"], github: ["ubuntu-latest"] }),
       startedBy: null,
       triggeredBy: null,
     });
@@ -378,9 +366,7 @@ describe("decideRoute", () => {
   const machineFirst: RunnerOrder = { steps: [{ key: "machine" }, { key: "github" }] };
   const githubFirst: RunnerOrder = { steps: [{ key: "github" }, { key: "machine" }] };
   const both = {
-    machine: ["self-hosted"],
-    github: ["ubuntu-latest"],
-    ...noHosted,
+    ...relayInputs({ machine: ["self-hosted"], github: ["ubuntu-latest"] }),
     private: true,
   };
   const free = async () => "rr-0123456789ab";
@@ -479,7 +465,7 @@ describe("decideRoute", () => {
   test("github takes one label", async () => {
     const decision = await decideRoute(
       { steps: [{ key: "github" }] },
-      { machine: [], github: ["ubuntu-latest", "macos-latest"], ...noHosted, private: true },
+      { ...relayInputs({ github: ["ubuntu-latest", "macos-latest"] }), private: true },
       none,
     );
     expect(decision).toMatchObject({
@@ -529,11 +515,7 @@ describe("decideRoute", () => {
   });
 
   test("a relay with neither input fails", async () => {
-    const decision = await decideRoute(
-      machineFirst,
-      { machine: [], github: [], ...noHosted, private: true },
-      free,
-    );
+    const decision = await decideRoute(machineFirst, { ...relayInputs({}), private: true }, free);
     expect(decision.runner === null && decision.reason).toBe(
       "No runner available: the relay sets no provider, such as `machine` or `github`.",
     );
@@ -679,9 +661,7 @@ describe("pausedMatches", () => {
 
 describe("decideRoute with a minutes limit", () => {
   const job = {
-    machine: ["self-hosted"],
-    github: ["ubuntu-latest"],
-    ...noHosted,
+    ...relayInputs({ machine: ["self-hosted"], github: ["ubuntu-latest"] }),
     private: true,
   };
   // GitHub while under 80%, then machines, then GitHub always.

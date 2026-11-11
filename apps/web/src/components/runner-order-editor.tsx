@@ -17,13 +17,14 @@ import {
 import { CSS } from "@dnd-kit/utilities";
 import {
   DEFAULT_LIMIT_PERCENT,
+  RUNNER_EXAMPLES,
   RUNNER_KEYS,
   RUNNER_LABELS,
   stepSlot,
   type RunnerKey,
   type RunnerStep,
 } from "@relayrunner/runner-order";
-import { HOSTED_PROVIDER_IDS, PROVIDERS } from "@relayrunner/providers";
+import { HOSTED_PROVIDER_IDS } from "@relayrunner/providers";
 import { Link, useRouter } from "@tanstack/react-router";
 import {
   CheckIcon,
@@ -54,13 +55,6 @@ type SaveStatus =
   | { kind: "saving" }
   | { kind: "saved" }
   | { kind: "error"; message: string };
-
-/** The labels relay.yml's example uses for each provider. */
-const EXAMPLE_INPUTS = {
-  machine: "self-hosted",
-  github: "ubuntu-latest",
-  ...Object.fromEntries(HOSTED_PROVIDER_IDS.map((id) => [id, PROVIDERS[id].example])),
-} as Record<RunnerKey, string>;
 
 /**
  * The runner order as a chain: each step hands a job to the next when it can't take it. Each step
@@ -600,7 +594,7 @@ function WorkflowPanel({ steps }: { steps: RunnerStep[] }) {
     "  relay:",
     "    uses: relayrunner/actions/.github/workflows/relay.yml@v1.0.0-beta.4",
     "    with:",
-    ...keys.map((key) => `      ${key}: ${EXAMPLE_INPUTS[key]}`),
+    ...keys.map((key) => `      ${key}: ${RUNNER_EXAMPLES[key]}`),
     "  test:",
     "    needs: relay",
     "    runs-on: ${{ needs.relay.outputs.runner }}",

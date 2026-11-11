@@ -1,4 +1,4 @@
-import { HOSTED_PROVIDER_IDS, type HostedProviderId, PROVIDERS } from "@relayrunner/providers";
+import { HOSTED_PROVIDER_IDS, PROVIDERS } from "@relayrunner/providers";
 import { z } from "zod";
 
 // A workspace's runner order: an ordered allowlist of providers. The Router walks it top to
@@ -11,13 +11,17 @@ import { z } from "zod";
 export const RUNNER_KEYS = ["machine", "github", ...HOSTED_PROVIDER_IDS] as const;
 export type RunnerKey = (typeof RUNNER_KEYS)[number];
 
+/** A record with an entry for every provider. */
+export function byRunnerKey<T>(value: (key: RunnerKey) => T): Record<RunnerKey, T> {
+  return Object.fromEntries(RUNNER_KEYS.map((key) => [key, value(key)])) as Record<RunnerKey, T>;
+}
+
 /** A relay's inputs: the labels it names for each provider, empty for one it leaves out. */
 export type RelayInputs = Record<RunnerKey, string[]>;
 
 /** Just the relay inputs out of anything that carries them, every provider present. */
-export function relayInputs(from: Partial<RelayInputs>): RelayInputs {
-  return Object.fromEntries(RUNNER_KEYS.map((key) => [key, from[key] ?? []])) as RelayInputs;
-}
+export const relayInputs = (from: Partial<RelayInputs>): RelayInputs =>
+  byRunnerKey((key) => from[key] ?? []);
 
 /** The share of an account's included Actions minutes a limited GitHub step uses by default. */
 export const DEFAULT_LIMIT_PERCENT = 80;
@@ -80,14 +84,21 @@ export function stepSlot(step: RunnerStep) {
 }
 
 /** How the dashboard names each provider. */
-export const RUNNER_LABELS: Record<RunnerKey, string> = {
-  machine: "Self-hosted",
-  github: "GitHub-hosted",
-  ...(Object.fromEntries(HOSTED_PROVIDER_IDS.map((id) => [id, PROVIDERS[id].name])) as Record<
-    HostedProviderId,
-    string
-  >),
-};
+export const RUNNER_LABELS = byRunnerKey((key) =>
+  key === "machine" ? "Self-hosted" : key === "github" ? "GitHub-hosted" : PROVIDERS[key].name,
+);
+
+/** A label each provider's relay input takes, such as `depot-ubuntu-24.04`. */
+export const RUNNER_EXAMPLES = byRunnerKey((key) =>
+  key === "machine" ? "self-hosted" : PROVIDERS[key].example!,
+);
+
+/**
+ * Why a hosted provider's step skipped a job whose input names a label it doesn't serve, after the
+ * input's name: "takes a Depot label such as depot-ubuntu-24.04, not ubuntu-latest".
+ */
+export const notProviderLabelText = (key: RunnerKey, labels: string[]) =>
+  `takes a ${RUNNER_LABELS[key]} label such as ${RUNNER_EXAMPLES[key]}, not ${labels.join(", ")}`;
 
 /**
  * The stored column's value as an order. A missing or unreadable value reads as the default,

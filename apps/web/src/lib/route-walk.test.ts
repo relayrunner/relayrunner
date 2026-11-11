@@ -1,3 +1,4 @@
+import { RouteWalk as RouteWalkSchema } from "@relayrunner/activity";
 import { relayInputs } from "@relayrunner/runner-order";
 import { describe, expect, test } from "vitest";
 import { failureText, jobNames, walkLines, walkSummary, type RouteWalk } from "./route-walk.ts";
@@ -84,9 +85,9 @@ describe("walkSummary", () => {
       "depot takes a Depot label such as depot-ubuntu-24.04, not ubuntu-latest",
     );
     // Walks kept before other providers name the Blacksmith-only reason.
-    const bad = walk({
+    const bad = RouteWalkSchema.parse({
+      ...walk({ blacksmith: ["ubuntu-latest"] }),
       skipped: [{ key: "blacksmith", reason: "not_blacksmith_label" }],
-      blacksmith: ["ubuntu-latest"],
     });
     expect(walkSummary(bad)).toEqual({ text: "not a Blacksmith label", tone: "fallback" });
     expect(walkLines(bad, "ubuntu-latest")[0]?.text).toBe(

@@ -1,8 +1,12 @@
 // Hosted runner services a job asks for by its `runs-on` labels, and the labels GitHub publishes
 // for its own hosted runners. The Job times report and the Runners page group cloud jobs by these.
-import { HOSTED_PROVIDER_IDS, isProviderLabel, type ProviderId } from "@relayrunner/providers";
+import {
+  HOSTED_PROVIDER_IDS,
+  type HostedProviderId,
+  isProviderLabel,
+} from "@relayrunner/providers";
 
-export type CloudProvider = { id: ProviderId; label: string };
+export type CloudProvider = { id: HostedProviderId; label: string };
 
 /**
  * The hosted runner service a job's labels ask for, with the label that names its runner type.
@@ -10,20 +14,17 @@ export type CloudProvider = { id: ProviderId; label: string };
  */
 export function cloudProviderFor(labels: string[]): CloudProvider | null {
   for (const id of HOSTED_PROVIDER_IDS) {
-    if (id === "runs-on") continue;
     const label = labels.find((l) => isProviderLabel(id, l));
-    if (label) return { id, label };
+    if (label) return { id, label: id === "runs-on" ? runsOnRunner(labels) : label };
   }
-  const runsOn = runsOnRunner(labels);
-  return runsOn ? { id: "runs-on", label: runsOn } : null;
+  return null;
 }
 
 /**
  * RunsOn asks for `runs-on=<run id>/runner=2cpu-linux-x64`, as one label or several. The run id
  * changes every run, so the runner type is the `runner=` or `fleet=` part, else "custom".
  */
-function runsOnRunner(labels: string[]): string | null {
-  if (!labels.some((label) => isProviderLabel("runs-on", label))) return null;
+function runsOnRunner(labels: string[]): string {
   const parts = labels.flatMap((label) => label.split(/[/,]/));
   for (const key of ["runner=", "fleet="]) {
     const part = parts.find((p) => p.startsWith(key));

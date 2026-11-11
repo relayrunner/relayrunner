@@ -5,11 +5,11 @@ import type {
   RouteWalk,
 } from "@relayrunner/activity";
 import type { WebhookMessage } from "@relayrunner/github-webhooks";
-import { hostedProviderOf, isProviderLabel } from "@relayrunner/providers";
 import { and, desc, eq, inArray, isNull, type SQL, sql } from "drizzle-orm";
 import { recordEvent } from "./activity.ts";
 import { type Db, schema } from "./db/index.ts";
 import { findInstallation } from "./installations.ts";
+import { cloudProviderFor } from "./cloud-providers.ts";
 import { routeIdFromLabels } from "./routing.ts";
 
 type WorkflowJobMessage = Extract<WebhookMessage, { event: "workflow_job" }>;
@@ -177,9 +177,8 @@ function presentRunner(job: typeof table.$inferSelect, machineName: string | nul
   if (job.machineId || routeIdFromLabels(job.labels))
     return { type: "machine", machineId: job.machineId, name: machineName };
   const label = job.labels.join(", ");
-  const provider = job.labels.length > 0 ? hostedProviderOf(job.labels[0]) : null;
-  if (provider && job.labels.every((l) => isProviderLabel(provider, l)))
-    return { type: "hosted", provider, label };
+  const hosted = cloudProviderFor(job.labels);
+  if (hosted) return { type: "hosted", provider: hosted.id, label };
   return { type: "github", label };
 }
 

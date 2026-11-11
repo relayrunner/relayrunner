@@ -117,27 +117,31 @@ export const HOSTED_PROVIDER_IDS = [
 
 export type HostedProviderId = (typeof HOSTED_PROVIDER_IDS)[number];
 
-export const isHostedProviderId = (value: string): value is HostedProviderId =>
-  (HOSTED_PROVIDER_IDS as readonly string[]).includes(value);
-
-// Each service's labels start with its own prefix, e.g. `depot-ubuntu-24.04-8`. RunsOn's carry the
-// run id, `runs-on=<run id>/runner=2cpu-linux-x64`.
-const LABEL_MATCHERS: Record<HostedProviderId, (label: string) => boolean> = {
-  blacksmith: (label) => label.startsWith("blacksmith-"),
-  depot: (label) => label.startsWith("depot-"),
-  namespace: (label) => label.startsWith("namespace-profile-") || label.startsWith("nscloud-"),
-  warpbuild: (label) => label.startsWith("warp-"),
-  ubicloud: (label) => label === "ubicloud" || label.startsWith("ubicloud-"),
-  "runs-on": (label) => label.startsWith("runs-on=") || label.startsWith("runs-on/"),
+// How each service's labels start, e.g. `depot-ubuntu-24.04-8`. A prefix ending in `-` also
+// matches the bare name (`ubicloud`). RunsOn's carry the run id, `runs-on=<run id>/runner=...`.
+const LABEL_PREFIXES: Record<HostedProviderId, string[]> = {
+  blacksmith: ["blacksmith-"],
+  depot: ["depot-"],
+  namespace: ["namespace-profile-", "nscloud-"],
+  warpbuild: ["warp-"],
+  ubicloud: ["ubicloud-"],
+  "runs-on": ["runs-on=", "runs-on/"],
 };
+
+const matches = (provider: HostedProviderId, lower: string) =>
+  LABEL_PREFIXES[provider].some(
+    (prefix) => lower.startsWith(prefix) || (prefix.endsWith("-") && lower === prefix.slice(0, -1)),
+  );
 
 /** Whether `label` asks for one of `provider`'s runners. */
 export const isProviderLabel = (provider: HostedProviderId, label: string) =>
-  LABEL_MATCHERS[provider](label.toLowerCase());
+  matches(provider, label.toLowerCase());
 
 /** The hosted provider whose runners a label asks for, or null. */
-export const hostedProviderOf = (label: string): HostedProviderId | null =>
-  HOSTED_PROVIDER_IDS.find((id) => isProviderLabel(id, label)) ?? null;
+export function hostedProviderOf(label: string): HostedProviderId | null {
+  const lower = label.toLowerCase();
+  return HOSTED_PROVIDER_IDS.find((id) => matches(id, lower)) ?? null;
+}
 
 /**
  * Where a job ran, by its Job times environment key: `depot:<label>` and the like for providers,
