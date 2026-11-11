@@ -5,7 +5,7 @@ import { recordMachineEvent } from "../activity.ts";
 import { createDb, schema } from "../db/index.ts";
 import type { Env } from "../env.ts";
 import { encodeMessage, PROTOCOL_VERSION, type JobMessage } from "@relayrunner/machine-protocol";
-import { appJwt, importAppPrivateKey, installationToken } from "../github-app.ts";
+import { appInstallationToken } from "../github-app.ts";
 import { installationRunnerScope } from "../installations.ts";
 import { mintMachineRunner } from "../machine-runner.ts";
 import { originFromJson, type RequestOrigin } from "../device-origin.ts";
@@ -196,11 +196,7 @@ export class MachineLink extends DurableObject<Env> {
 
     let jit;
     try {
-      const appKey = await importAppPrivateKey(await this.env.GITHUB_APP_PRIVATE_KEY.get());
-      const token = await installationToken(
-        await appJwt(this.env.GITHUB_APP_ID, appKey),
-        route.installationId,
-      );
+      const token = await appInstallationToken(this.env, route.installationId);
       jit = await mintMachineRunner(token, route, () =>
         installationRunnerScope(createDb(this.env.DB), route.installationId, route.repo),
       );

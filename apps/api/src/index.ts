@@ -7,6 +7,11 @@ import type { Env } from "./env.ts";
 import { purgeOldJobTimings } from "./job-timings.ts";
 import { purgeOldWorkflowRuns } from "./runs.ts";
 import { sweepPicks } from "./pick-sweep.ts";
+import {
+  handleInstallationTaskBatch,
+  INSTALLATION_TASK_QUEUE,
+  type InstallationTask,
+} from "./installation-tasks.ts";
 import { handleWebhookBatch } from "./webhook-queue.ts";
 import { wellKnown } from "./well-known.ts";
 
@@ -19,12 +24,17 @@ export { Router } from "./durable-objects/router.ts";
 // Matches the second entry of triggers.crons in wrangler.jsonc.
 const USAGE_CRON = "*/15 * * * *";
 
-// GitHub webhooks arrive on a queue from the ingress Worker (apps/webhooks), not over HTTP.
 export default {
   fetch: (request, env, ctx) => wellKnown(request, env) ?? app.fetch(request, env, ctx),
-  queue: handleWebhookBatch,
-  // Every 15 minutes: read each org's Actions usage from GitHub billing (#116), and rescue stuck relay
-  // jobs and remove leftover pick runners (src/pick-sweep.ts). Hourly: alert when
+  // GitHub webhooks arrive on a queue from the ingress Worker (apps/webhooks), not over HTTP. The
+  // cron's per-installation work arrives on its own queue.
+  async queue(batch, env) {
+    if (batch.queue === INSTALLATION_TASK_QUEUE)
+      return handleInstallationTaskBatch(batch as MessageBatch<InstallationTask>, env);
+    return handleWebhookBatch(batch as MessageBatch<WebhookMessage>, env);
+  },
+  // Every 15 minutes: queue a read of each org's Actions usage from GitHub billing (#116), rescue
+  // stuck relay jobs, and queue a sweep for leftover pick runners (src/pick-sweep.ts). Hourly: alert when
   // webhook dead letters pile up, and drop job timings and workflow runs past retention. Each runs even if another
   // throws; a failure still fails the invocation.
   async scheduled(controller, env) {
@@ -40,4 +50,4 @@ export default {
     const failed = results.find((result) => result.status === "rejected");
     if (failed) throw failed.reason;
   },
-} satisfies ExportedHandler<Env, WebhookMessage>;
+} satisfies ExportedHandler<Env, WebhookMessage | InstallationTask>;

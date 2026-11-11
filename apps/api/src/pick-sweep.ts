@@ -2,7 +2,9 @@ import { and, eq, gt, isNull, lt } from "drizzle-orm";
 import { createDb, type Db, schema } from "./db/index.ts";
 import type { Env } from "./env.ts";
 import { appInstallationToken, deleteRunner, listRunners, type RunnerScope } from "./github-app.ts";
+import { enqueueInstallationTasks } from "./installation-tasks.ts";
 import { pickJobIdFromRunnerName } from "./pick-attempts.ts";
+import { errorMessage } from "./webhook-queue.ts";
 
 // A relay queued this long with no taker is rescued; one older than a day GitHub has given up on.
 export const STUCK_AFTER_MS = 5 * 60_000;
@@ -105,15 +107,32 @@ export async function sweepTargets(
   ];
 }
 
+// Queues one sweep per installation (src/installation-tasks.ts), covering its org and repos, so
+// installations are swept side by side however many there are.
 async function removeLeftoverRunners(env: Env, now: number) {
-  // One token per installation, shared by its repos.
-  const tokens = new Map<number, Promise<string>>();
-  for (const { installationId, scope } of await sweepTargets(createDb(env.DB), now)) {
+  const scopes = new Map<number, RunnerScope[]>();
+  for (const { installationId, scope } of await sweepTargets(createDb(env.DB), now))
+    scopes.set(installationId, [...(scopes.get(installationId) ?? []), scope]);
+  await enqueueInstallationTasks(
+    env,
+    [...scopes].map(([installationId, list]) => ({
+      kind: "pick-sweep",
+      installationId,
+      scopes: list,
+    })),
+  );
+}
+
+/** Removes the pick runners left registered in an installation's org or repos once their object is done. */
+export async function removeLeftoverRunnersIn(
+  env: Env,
+  installationId: number,
+  scopes: RunnerScope[],
+): Promise<void> {
+  for (const scope of scopes) {
     const where = scope.kind === "org" ? { org: scope.org } : { repo: scope.repo };
     try {
-      if (!tokens.has(installationId))
-        tokens.set(installationId, appInstallationToken(env, installationId));
-      const token = await tokens.get(installationId)!;
+      const token = await appInstallationToken(env, installationId);
       const runners = await listRunners(token, scope);
       for (const runner of runners) {
         const jobId = pickJobIdFromRunnerName(runner.name);
@@ -139,7 +158,7 @@ async function removeLeftoverRunners(env: Env, now: number) {
           msg: "relayrunner pick sweep failed",
           installationId,
           ...where,
-          error: error instanceof Error ? error.message : String(error),
+          error: errorMessage(error),
         }),
       );
     }
