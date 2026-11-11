@@ -34,9 +34,12 @@ type MenuUser = { name: string; email: string; image?: string | null } | null;
 export function WorkspaceMenu({
   workspace,
   user,
+  compact = false,
 }: {
   workspace: { id: string; name: string };
   user: MenuUser;
+  /** Just the workspace's mark, for the collapsed sidebar. Phones still get the full trigger. */
+  compact?: boolean;
 }) {
   const router = useRouter();
   const [switching, setSwitching] = useState(false);
@@ -62,17 +65,24 @@ export function WorkspaceMenu({
   return (
     <DropdownMenu>
       <DropdownMenuTrigger
-        className="flex w-full min-w-0 items-center gap-2.5 rounded-lg border border-transparent px-2 py-1.5 text-left outline-none transition-colors hover:bg-sidebar-accent focus-visible:ring-[3px] focus-visible:ring-ring/50 data-[state=open]:border-border data-[state=open]:bg-sidebar-accent sm:w-auto sm:max-w-full"
+        className={cn(
+          "flex w-full min-w-0 items-center gap-2.5 rounded-lg border border-transparent px-2 py-1.5 text-left outline-none transition-colors hover:bg-sidebar-accent focus-visible:ring-[3px] focus-visible:ring-ring/50 data-[state=open]:border-border data-[state=open]:bg-sidebar-accent sm:w-auto sm:max-w-full",
+          compact && "sm:justify-center sm:px-1",
+        )}
+        aria-label={compact ? `${workspace.name} menu` : undefined}
         disabled={switching}
       >
         <WorkspaceMark name={workspace.name} className="size-8 text-sm" />
-        <span className="grid min-w-0 flex-1 leading-tight">
+        <span className={cn("grid min-w-0 flex-1 leading-tight", compact && "sm:hidden")}>
           <span className="truncate text-[15px] font-semibold">{workspace.name}</span>
           <span className="truncate text-xs text-muted-foreground">
             {user?.name ?? "Dev (auth disabled)"}
           </span>
         </span>
-        <ChevronsUpDownIcon aria-hidden className="size-4 shrink-0 text-muted-foreground" />
+        <ChevronsUpDownIcon
+          aria-hidden
+          className={cn("size-4 shrink-0 text-muted-foreground", compact && "sm:hidden")}
+        />
       </DropdownMenuTrigger>
       <DropdownMenuContent align="start" className="w-64">
         {user && (

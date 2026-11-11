@@ -11,9 +11,17 @@ import {
   RouteIcon,
   TimerOffIcon,
 } from "lucide-react";
-import { memo, useCallback, useEffect, useMemo, useState } from "react";
+import { memo, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { PageHeader } from "@/components/page-header";
+import {
+  PROVIDERS,
+  type Provider,
+  ProviderMark,
+  providerOf,
+  runnerName,
+} from "@/components/providers";
 import { RangePicker } from "@/components/range-picker";
+import { Collapse } from "@/components/ui/collapse";
 import {
   Select,
   SelectContent,
@@ -23,7 +31,7 @@ import {
 } from "@/components/ui/select";
 import { timeAgo } from "@/lib/activity";
 import { authDisabled } from "@/lib/auth-client";
-import { DAY_MS, environmentColor, plural } from "@/lib/job-times";
+import { DAY_MS, plural } from "@/lib/job-times";
 import { useLiveRefresh } from "@/lib/live-refresh";
 import {
   getRunJobs,
@@ -43,6 +51,7 @@ const RANGES = [1, 7, 14] as const;
 // tab is hidden or idle (lib/live-refresh.ts).
 const LIST_REFRESH_MS = 15_000;
 const JOBS_REFRESH_MS = 5_000;
+const HOVER_INTENT_MS = 120;
 
 export const Route = createFileRoute("/_authed/_workspace/runs")({
   loader: () => (authDisabled ? Promise.resolve(sampleRuns()) : getRuns()),
@@ -51,10 +60,12 @@ export const Route = createFileRoute("/_authed/_workspace/runs")({
 
 type ResultFilter = "all" | "failed" | "running";
 type RoutedFilter = "all" | "routed";
-/** Each environment's name and colour, by key. */
-type Environments = Map<string, { label: string; color: string | undefined }>;
+/** Each environment's name, by key. */
+type Environments = Map<string, string>;
 
-const runKey = (run: Run) => `${run.repositoryId}:${run.runId}:${run.runAttempt}`;
+type RunIds = Pick<Run, "repositoryId" | "runId" | "runAttempt" | "startedAt" | "status">;
+const runKey = (run: Pick<Run, "repositoryId" | "runId" | "runAttempt">) =>
+  `${run.repositoryId}:${run.runId}:${run.runAttempt}`;
 const isFailure = (conclusion: string | null) =>
   conclusion === "failure" || conclusion === "timed_out";
 const isLongWait = (wait: number | null): wait is number => wait !== null && wait >= LONG_WAIT_MS;
@@ -109,13 +120,7 @@ function RunsPage() {
     },
   );
   const environments: Environments = useMemo(
-    () =>
-      new Map(
-        report.environments.map((env, index) => [
-          env.key,
-          { label: env.label, color: environmentColor(index) },
-        ]),
-      ),
+    () => new Map(report.environments.map((env) => [env.key, env.label])),
     [report],
   );
 
@@ -192,7 +197,7 @@ function RunsPage() {
                 );
               })}
             </ul>
-            <Legend days={report.days} truncated={report.truncated} environments={environments} />
+            <Legend days={report.days} truncated={report.truncated} />
           </>
         )}
       </div>
@@ -225,7 +230,11 @@ const RunRow = memo(function RunRow({
     run.runAttempt > 1 ? `attempt ${run.runAttempt}` : null,
     run.startedAt ? timeAgo(run.startedAt) : null,
   ].filter(Boolean);
-  const label = (key: string) => environments.get(key)?.label ?? key;
+  // Opening a run usually follows a hover or focus by a moment, so its jobs start loading then and
+  // the detail opens at its full height instead of growing out of a loading line. A hover only
+  // counts once it rests, so sweeping the pointer down the list doesn't fetch every run.
+  const hover = useRef<ReturnType<typeof setTimeout>>(undefined);
+  const prefetch = () => void fetchRunJobs(run).catch(() => undefined);
 
   return (
     <li>
@@ -233,6 +242,9 @@ const RunRow = memo(function RunRow({
         type="button"
         aria-expanded={open}
         onClick={() => onToggle(id)}
+        onPointerEnter={() => (hover.current = setTimeout(prefetch, HOVER_INTENT_MS))}
+        onPointerLeave={() => clearTimeout(hover.current)}
+        onFocus={prefetch}
         className="grid w-full grid-cols-[auto_1fr_auto] items-center gap-x-3 px-4 py-3 text-left outline-none hover:bg-secondary/30 focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-inset sm:grid-cols-[auto_1fr_auto_auto] sm:gap-x-5"
       >
         <StatusIcon run={run} />
@@ -249,31 +261,85 @@ const RunRow = memo(function RunRow({
           </span>
           <span className="block truncate text-xs text-muted-foreground">{meta.join(" · ")}</span>
         </span>
-        <span
-          className="hidden items-center gap-1 sm:flex"
-          aria-label={`Ran on ${run.environments.map(label).join(", ")}`}
-        >
-          {run.environments.map((key) => (
-            <span
-              key={key}
-              title={label(key)}
-              className="inline-block h-2 w-5 rounded-[3px]"
-              style={{ background: environments.get(key)?.color }}
-            />
-          ))}
-        </span>
+        <RanOn keys={run.environments} environments={environments} />
         <span className="flex items-center gap-2">
           <WallTime run={run} />
           <ChevronRightIcon
             aria-hidden
-            className={cn("size-4 text-muted-foreground transition-transform", open && "rotate-90")}
+            className={cn(
+              "size-4 text-muted-foreground transition-transform duration-200 ease-out",
+              open && "rotate-90",
+            )}
           />
         </span>
       </button>
-      {open && <RunDetail run={run} environments={environments} />}
+      <Collapse open={open}>
+        <RunDetail run={run} environments={environments} />
+      </Collapse>
     </li>
   );
 });
+
+/** Where a run's jobs ran, one mark per provider, each naming its runners on hover. */
+function RanOn({ keys, environments }: { keys: string[]; environments: Environments }) {
+  const byProvider = new Map<Provider, string[]>();
+  for (const key of keys) {
+    const provider = providerOf({ key });
+    const names = byProvider.get(provider) ?? [];
+    names.push(runnerName(provider, environments.get(key) ?? key));
+    byProvider.set(provider, names);
+  }
+  const marks = [...byProvider].map(([provider, names]) => {
+    const { name } = PROVIDERS[provider];
+    return { provider, title: names.join(", ") === name ? name : `${name}: ${names.join(", ")}` };
+  });
+  return (
+    <span
+      className="hidden items-center gap-1 sm:flex"
+      aria-label={`Ran on ${marks.map((mark) => mark.title).join("; ")}`}
+    >
+      {marks.map(({ provider, title }) => (
+        <span key={provider} title={title}>
+          <ProviderMark provider={provider} />
+        </span>
+      ))}
+    </span>
+  );
+}
+
+// The last jobs fetched for the most recent runs, so a run opens with its jobs already there when
+// it was hovered first or opened before.
+type JobsEntry = { status: Run["status"]; at: number; request: Promise<RunJobs>; jobs?: RunJobs };
+const jobsCache = new Map<string, JobsEntry>();
+const JOBS_CACHE_SIZE = 50;
+
+/**
+ * A run's jobs, from the cache unless the run's status has changed since or, for a run still
+ * going, the cached answer is older than a refresh. `fresh` always asks again.
+ */
+function fetchRunJobs(run: RunIds, fresh = false) {
+  const key = runKey(run);
+  const cached = jobsCache.get(key);
+  const current =
+    cached?.status === run.status &&
+    (run.status === "completed" || Date.now() - cached.at < JOBS_REFRESH_MS);
+  if (cached && current && !fresh) return cached.request;
+  const request = authDisabled ? Promise.resolve(sampleRunJobs(run)) : getRunJobs(run);
+  const entry: JobsEntry = { status: run.status, at: Date.now(), request };
+  request.then(
+    (jobs) => (entry.jobs = jobs),
+    () => jobsCache.get(key) === entry && jobsCache.delete(key),
+  );
+  jobsCache.delete(key); // Re-added last, so the oldest run is first to go.
+  jobsCache.set(key, entry);
+  if (jobsCache.size > JOBS_CACHE_SIZE) jobsCache.delete(jobsCache.keys().next().value!);
+  return request;
+}
+
+function cachedJobs(run: RunIds) {
+  const cached = jobsCache.get(runKey(run));
+  return (cached?.status === run.status && cached.jobs) || null;
+}
 
 type Status = { Icon: LucideIcon; label: string; className: string };
 const CANCELLED: Status = {
@@ -342,31 +408,28 @@ const ranOf = (job: RunJob, now: number) =>
   job.startedAt === null ? null : (job.completedAt ?? now) - job.startedAt;
 
 function RunDetail({ run, environments }: { run: Run; environments: Environments }) {
-  const [detail, setDetail] = useState<RunJobs | null>(null);
+  const [detail, setDetail] = useState<RunJobs | null>(() => cachedJobs(run));
   const [failed, setFailed] = useState(false);
-  // Keyed on the run's ids, not the object: the same run in a new report needn't load again. Its
-  // status is in the key too, so the jobs load once more when the run finishes.
+  // Keyed on the run's ids and status, not the object: the same run in a new report needn't load
+  // again, but it does once it finishes.
   const { repositoryId, runId, runAttempt, startedAt, status } = run;
   const running = status !== "completed";
-  const load = useCallback(
-    () =>
-      authDisabled
-        ? Promise.resolve(sampleRunJobs({ runId, startedAt }))
-        : getRunJobs({ repositoryId, runId, runAttempt }),
-    [repositoryId, runId, runAttempt, startedAt],
+  const ids = useMemo(
+    () => ({ repositoryId, runId, runAttempt, startedAt, status }),
+    [repositoryId, runId, runAttempt, startedAt, status],
   );
   useEffect(() => {
     let live = true;
-    load()
+    fetchRunJobs(ids)
       .then((value) => live && setDetail(value))
       .catch(() => live && setFailed(true));
     return () => {
       live = false;
     };
-  }, [load, status]);
+  }, [ids]);
   useLiveRefresh(
     () =>
-      load()
+      fetchRunJobs(ids, true)
         .then(setDetail)
         .catch(() => undefined), // Keep showing the last answer; the next tick retries.
     { intervalMs: JOBS_REFRESH_MS, enabled: running && !authDisabled },
@@ -380,7 +443,7 @@ function RunDetail({ run, environments }: { run: Run; environments: Environments
 
   // A runner's name from the page's environments first, then the detail's own.
   const own = new Map(detail?.environments.map((env) => [env.key, env.label]));
-  const label = (key: string) => environments.get(key)?.label ?? own.get(key) ?? key;
+  const label = (key: string) => environments.get(key) ?? own.get(key) ?? key;
   let longest: { job: RunJob; wait: number } | null = null;
   for (const job of detail?.jobs ?? []) {
     const wait = waitOf(job, now);
@@ -399,7 +462,7 @@ function RunDetail({ run, environments }: { run: Run; environments: Environments
       {failed ? (
         <p className="text-sm text-muted-foreground">Couldn't load this run's jobs.</p>
       ) : !detail ? (
-        <p className="text-sm text-muted-foreground">Loading jobs…</p>
+        <JobsPlaceholder rows={Math.max(run.environments.length, 1)} />
       ) : (
         <div className="grid gap-3">
           {detail.jobs.length === 0 ? (
@@ -448,16 +511,9 @@ function RunDetail({ run, environments }: { run: Run; environments: Environments
                                 queued && "text-muted-foreground",
                               )}
                             >
-                              <span
-                                aria-hidden
-                                className={cn(
-                                  "inline-block h-2 w-4 rounded-[3px]",
-                                  queued && "opacity-50",
-                                )}
-                                style={{
-                                  background:
-                                    environments.get(job.environment)?.color ?? "currentColor",
-                                }}
+                              <ProviderMark
+                                provider={providerOf({ key: job.environment })}
+                                className={cn(queued && "opacity-50")}
                               />
                               {queued
                                 ? `Waiting for ${label(job.environment)}`
@@ -532,32 +588,35 @@ function JobResult({ job, running }: { job: RunJob; running: boolean }) {
   );
 }
 
-function Legend({
-  days,
-  truncated,
-  environments,
-}: {
-  days: number;
-  truncated: boolean;
-  environments: Environments;
-}) {
+/**
+ * Holds the space of the jobs table while a run's jobs load (rarely seen, since hovering a run
+ * starts the load), so the detail opens near its final height instead of from a single line.
+ */
+function JobsPlaceholder({ rows }: { rows: number }) {
+  return (
+    <div aria-busy aria-label="Loading jobs" className="grid gap-3">
+      <div className="grid">
+        <div className="flex h-7 items-center">
+          <span className="h-2.5 w-12 rounded-sm bg-secondary" />
+        </div>
+        {Array.from({ length: rows }, (_, index) => (
+          <div key={index} className="flex h-8 items-center gap-4">
+            <span className="h-3 w-40 max-w-[40%] rounded-sm bg-secondary" />
+            <span className="h-3 w-32 max-w-[30%] rounded-sm bg-secondary" />
+          </div>
+        ))}
+      </div>
+      <div className="h-4" />
+    </div>
+  );
+}
+
+function Legend({ days, truncated }: { days: number; truncated: boolean }) {
   return (
     <div className="grid gap-2 text-xs text-muted-foreground">
-      <p className="flex flex-wrap gap-x-5 gap-y-1">
-        {[...environments].map(([key, env]) => (
-          <span key={key} className="inline-flex items-center gap-1.5">
-            <span
-              aria-hidden
-              className="inline-block h-2 w-4 rounded-[3px]"
-              style={{ background: env.color }}
-            />
-            {env.label}
-          </span>
-        ))}
-        <span className="inline-flex items-center gap-1.5">
-          <RouteIcon aria-hidden className="size-3.5" />
-          Routed by RelayRunner
-        </span>
+      <p className="inline-flex items-center gap-1.5">
+        <RouteIcon aria-hidden className="size-3.5" />
+        Routed by RelayRunner
       </p>
       <p className="max-w-[62ch]">
         The bar under each time compares the run with its workflow's usual time, the p90 of its
