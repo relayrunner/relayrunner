@@ -316,14 +316,9 @@ export class MachineLink extends DurableObject<Env> {
     );
     const db = createDb(this.env.DB);
     const [row] = await db
-      .select({
-        machineName: schema.machine.name,
-        workspaceName: schema.workspace.name,
-        email: schema.user.email,
-      })
+      .select({ machineName: schema.machine.name, email: schema.user.email })
       .from(schema.machine)
-      .innerJoin(schema.workspace, eq(schema.workspace.id, schema.machine.workspaceId))
-      .innerJoin(schema.user, eq(schema.user.id, schema.machine.createdBy))
+      .innerJoin(schema.user, eq(schema.user.id, schema.machine.userId))
       .where(eq(schema.machine.id, machineId))
       .limit(1);
     if (!row) return;
@@ -332,7 +327,6 @@ export class MachineLink extends DurableObject<Env> {
       template: "machine-taken-over",
       context: {
         machineName: row.machineName,
-        workspaceName: row.workspaceName,
         was,
         now,
         at: new Date(at),

@@ -11,6 +11,7 @@ import {
   type OrgRunner,
 } from "../github-app.ts";
 import { installationRunnerScope } from "../installations.ts";
+import { inWorkspace } from "../machines.ts";
 import { errorMessage } from "../webhook-queue.ts";
 import {
   fetchGroupAccess,
@@ -181,7 +182,8 @@ export class Router extends DurableObject<Env> {
     // Machines already held aren't worth asking about. reserve checks again under the lock.
     const held = heldMachines(await this.routes(now), now);
 
-    const machines = await createDb(this.env.DB)
+    const db = createDb(this.env.DB);
+    const machines = await db
       .select({
         id: schema.machine.id,
         name: schema.machine.name,
@@ -198,18 +200,22 @@ export class Router extends DurableObject<Env> {
         ownerGithubId: schema.account.accountId,
       })
       .from(schema.machine)
-      .leftJoin(schema.user, eq(schema.user.id, schema.machine.createdBy))
+      .leftJoin(schema.user, eq(schema.user.id, schema.machine.userId))
       // The owner's GitHub account, which `only_me` matches the job's starters against.
       .leftJoin(
         schema.account,
         and(
-          eq(schema.account.userId, schema.machine.createdBy),
+          eq(schema.account.userId, schema.machine.userId),
           eq(schema.account.providerId, "github"),
         ),
       )
       .where(
         and(
-          eq(schema.machine.workspaceId, job.workspaceId),
+          // Its members' connected machines, wherever they enrolled them, and its own adopted
+          // runners (#318). A machine can now be in several workspaces, each with its own Router:
+          // reserve below only stops two picks in this workspace from taking the same one. A
+          // machine-wide reservation comes with #319.
+          inWorkspace(db, job.workspaceId),
           isNull(schema.machine.revokedAt),
           or(
             isNotNull(schema.machine.tokenHash),

@@ -10,7 +10,6 @@ import type { AppEnv } from "../app.ts";
 import { MACHINE_CLIENT_ID } from "../auth.ts";
 import { createDb, schema } from "../db/index.ts";
 import { presentOrigin, requestOrigin } from "../device-origin.ts";
-import { isWorkspaceMember, workspaceMemberCount } from "../installations.ts";
 import { runningJobs } from "../jobs.ts";
 import {
   MACHINE_ID_HEADER,
@@ -31,9 +30,12 @@ import {
 } from "../github-runners.ts";
 import {
   generateMachineToken,
+  inWorkspace,
   normalizeUserCode,
   pausedByName,
   presentMachine,
+  presentMachineWorkspaces,
+  recordMachineEvents,
   removeRoutingLabel,
   revokeMachines,
   setMachinePaused,
@@ -46,16 +48,17 @@ import type { Env } from "../env.ts";
 import { sendEmail } from "../email.ts";
 import { inBackground, requireUser } from "../middleware/session.ts";
 import { requireWorkspace } from "../middleware/workspace.ts";
-import { canManage, canRevokeMachine, requireManager } from "../roles.ts";
+import { canControlMachine, requireManager } from "../roles.ts";
 
 // Enrolling a machine (`relayrunner connect`) with Better Auth's device authorization plugin:
 //
 // 1. The CLI asks for a code: POST /api/auth/device/code with client_id "relayrunner-cli". It
 //    opens the returned verification_uri_complete (the dashboard's /device page), adding
 //    &name=<hostname> as the default machine name, and polls /api/auth/device/token.
-// 2. On /device the signed-in user picks a workspace and a name, and approves: POST /approve
-//    below. That creates the machine (unclaimed, keyed by a hash of the device code) and approves
-//    the code. Deny goes straight to /api/auth/device/deny.
+// 2. On /device the signed-in user picks a name and approves: POST /approve below. That creates
+//    the machine (unclaimed, keyed by a hash of the device code), owned by them and in none of
+//    their workspaces in particular: it shows up in all of them (#318). Deny goes straight to
+//    /api/auth/device/deny.
 // 3. The CLI's next poll returns a user session token. It calls POST /claim below with that
 //    session as a bearer token plus the device code, gets the machine token back once, and the
 //    session is revoked. From then on the machine authenticates as itself.
@@ -67,7 +70,9 @@ import { canManage, canRevokeMachine, requireManager } from "../roles.ts";
 
 const ApproveBody = z.object({
   userCode: z.string().min(1).max(64),
-  workspaceId: z.string().min(1),
+  // Ignored: a machine belongs to its user, not a workspace (#318). Still accepted from
+  // dashboards that send it.
+  workspaceId: z.string().min(1).optional(),
   name: z.string().trim().min(1).max(64),
 });
 
@@ -142,14 +147,10 @@ export const machineRoutes = new Hono<AppEnv>()
   .post("/approve", requireUser, async (c) => {
     const parsed = ApproveBody.safeParse(await c.req.json().catch(() => null));
     if (!parsed.success) return c.json({ error: "invalid_request" }, 400);
-    const { workspaceId, name } = parsed.data;
+    const { name } = parsed.data;
     const userCode = normalizeUserCode(parsed.data.userCode);
     const user = c.var.user!;
     const db = createDb(c.env.DB);
-
-    const membership = await isWorkspaceMember(db, workspaceId, user.id);
-    // Any member can enroll a machine into the shared pool (#134).
-    if (!membership) return c.json({ error: "forbidden" }, 403);
 
     // Opening the code ties it to this user (Better Auth only lets that user approve it). The
     // dashboard only looks at it through GET /device above, so this is where it gets claimed.
@@ -175,10 +176,9 @@ export const machineRoutes = new Hono<AppEnv>()
     const machineId = crypto.randomUUID();
     await db.insert(schema.machine).values({
       id: machineId,
-      workspaceId,
       name,
       enrollmentHash: await sha256Hex(code.deviceCode),
-      createdBy: user.id,
+      userId: user.id,
     });
 
     try {
@@ -204,14 +204,13 @@ export const machineRoutes = new Hono<AppEnv>()
       .where(
         and(
           eq(schema.machine.enrollmentHash, await sha256Hex(deviceCode)),
-          eq(schema.machine.createdBy, c.var.user!.id),
+          eq(schema.machine.userId, c.var.user!.id),
           isNull(schema.machine.revokedAt),
         ),
       )
       .returning();
     if (!machine) return c.json({ error: "not_found" }, 404);
-    await recordEvent(db, {
-      workspaceId: machine.workspaceId,
+    await recordMachineEvents(db, machine, {
       type: "machine.enrolled",
       data: { machineName: machine.name, os: machine.os, arch: machine.arch },
       machineId: machine.id,
@@ -221,20 +220,9 @@ export const machineRoutes = new Hono<AppEnv>()
     // The CLI is done with the user session; only the machine token stays on the machine.
     await db.delete(schema.session).where(eq(schema.session.id, c.var.session!.id));
 
-    const [[workspace], memberCount] = await Promise.all([
-      db
-        .select({
-          id: schema.workspace.id,
-          name: schema.workspace.name,
-          slug: schema.workspace.slug,
-        })
-        .from(schema.workspace)
-        .where(eq(schema.workspace.id, machine.workspaceId))
-        .limit(1),
-      workspaceMemberCount(db, machine.workspaceId),
-    ]);
+    const { workspace, workspaces } = await presentMachineWorkspaces(db, machine.userId);
 
-    // Security notice to whoever approved the machine: its token can run the workspace's jobs.
+    // Security notice to whoever approved the machine: its token can run their workspaces' jobs.
     const notice = sendEmail(c.env, {
       to: c.var.user!.email,
       template: "machine-connected",
@@ -242,16 +230,18 @@ export const machineRoutes = new Hono<AppEnv>()
         machineName: machine.name,
         os: machine.os,
         arch: machine.arch,
-        workspaceName: workspace?.name ?? "your workspace",
+        workspaceNames: workspaces.map((w) => w.name),
         connectedAt: new Date(),
       },
     });
     await inBackground(c, notice);
-    // memberCount tells the CLI whether to ask who can run jobs here (#244): alone in a
-    // workspace, there's nobody else's jobs to take.
+    // memberCount tells the CLI whether to ask who can run jobs here (#244): alone in every
+    // workspace, there's nobody else's jobs to take. `workspace` is for CLI 0.5.0, which reads
+    // only that one; `workspaces` is every workspace the machine is now in.
     return c.json({
       machine: presentMachine(machine),
-      workspace: workspace && { ...workspace, memberCount },
+      workspace,
+      workspaces,
       token,
     });
   })
@@ -283,29 +273,22 @@ export const machineRoutes = new Hono<AppEnv>()
     const machine = await verifyMachineToken(db, token);
     if (!machine) return c.json({ error: "unauthorized" }, 401);
 
-    const [[workspace], [enrolledBy], status, memberCount] = await Promise.all([
-      db
-        .select({
-          id: schema.workspace.id,
-          name: schema.workspace.name,
-          slug: schema.workspace.slug,
-        })
-        .from(schema.workspace)
-        .where(eq(schema.workspace.id, machine.workspaceId))
-        .limit(1),
-      machine.createdBy
+    const [{ workspace, workspaces }, [enrolledBy], status] = await Promise.all([
+      presentMachineWorkspaces(db, machine.userId),
+      machine.userId
         ? db
             .select({ id: schema.user.id, name: schema.user.name, email: schema.user.email })
             .from(schema.user)
-            .where(eq(schema.user.id, machine.createdBy))
+            .where(eq(schema.user.id, machine.userId))
             .limit(1)
         : Promise.resolve([]),
       c.env.MACHINE_LINK.getByName(machine.id).status(),
-      workspaceMemberCount(db, machine.workspaceId),
     ]);
     return c.json({
       machine: { ...presentMachine(machine, await pausedByName(db, machine)), status },
-      workspace: workspace && { ...workspace, memberCount },
+      // As in the claim: one workspace for CLI 0.5.0, and the full list.
+      workspace,
+      workspaces,
       enrolledBy: enrolledBy ?? null,
     });
   })
@@ -319,8 +302,8 @@ export const machineRoutes = new Hono<AppEnv>()
     if (!machine) return c.json({ error: "unauthorized" }, 401);
     const body = SharingBody.safeParse(await c.req.json().catch(() => null));
     if (!body.success) return c.json({ error: "invalid_request" }, 400);
-    if (!machine.createdBy) return c.json({ error: "not_owner" }, 403);
-    const result = await setMachineSharing(db, machine.id, body.data.sharing, machine.createdBy);
+    if (!machine.userId) return c.json({ error: "not_owner" }, 403);
+    const result = await setMachineSharing(db, machine.id, body.data.sharing, machine.userId);
     if (!result) return c.json({ error: "not_found" }, 404);
     return c.json({
       machine: {
@@ -341,45 +324,52 @@ export const machineRoutes = new Hono<AppEnv>()
       via: "cli",
     });
   })
-  // Any member of the workspace may pause or resume any of its machines: the pool is shared, and
-  // pausing is easy to undo. Activity records who did it.
+  // Only a connected machine's owner pauses or resumes it, from any workspace it shows up in; a
+  // runner added from GitHub, by the workspace's owners and admins (#318). Pausing is global:
+  // every workspace stops routing to it.
   .post("/:id/:action{pause|resume}", requireUser, requireWorkspace, async (c) => {
     const [machine] = await c.var.db
-      .select({ id: schema.machine.id })
+      .select({
+        id: schema.machine.id,
+        source: schema.machine.source,
+        userId: schema.machine.userId,
+      })
       .from(schema.machine)
       .where(
         and(
           eq(schema.machine.id, c.req.param("id")),
-          eq(schema.machine.workspaceId, c.var.workspace.id),
+          inWorkspace(c.var.db, c.var.workspace.id),
           isNotNull(schema.machine.os),
           isNull(schema.machine.revokedAt),
         ),
       )
       .limit(1);
     if (!machine) return c.json({ error: "not_found" }, 404);
+    if (!canControlMachine(c.var.role, c.var.user!.id, machine))
+      return c.json({ error: "forbidden" }, 403);
     return pauseResponse(c.env, c.var.db, machine.id, c.req.param("action") === "pause", {
       userId: c.var.user!.id,
       via: "dashboard",
     });
   })
-  // Whose jobs the machine takes (#242). Only its owner, the person who enrolled or added it, may
-  // change it: it's their computer. Admins can still pause or revoke it.
+  // Whose jobs the machine takes (#242), in every workspace it's in. Only its owner, the person who
+  // enrolled it, may change it: it's their computer.
   .put("/:id/sharing", requireUser, requireWorkspace, async (c) => {
     const body = SharingBody.safeParse(await c.req.json().catch(() => null));
     if (!body.success) return c.json({ error: "invalid_request" }, 400);
     const [machine] = await c.var.db
-      .select({ id: schema.machine.id, createdBy: schema.machine.createdBy })
+      .select({ id: schema.machine.id, userId: schema.machine.userId })
       .from(schema.machine)
       .where(
         and(
           eq(schema.machine.id, c.req.param("id")),
-          eq(schema.machine.workspaceId, c.var.workspace.id),
+          inWorkspace(c.var.db, c.var.workspace.id),
           isNull(schema.machine.revokedAt),
         ),
       )
       .limit(1);
     if (!machine) return c.json({ error: "not_found" }, 404);
-    if (machine.createdBy !== c.var.user!.id) return c.json({ error: "not_owner" }, 403);
+    if (machine.userId !== c.var.user!.id) return c.json({ error: "not_owner" }, 403);
     const result = await setMachineSharing(c.var.db, machine.id, body.data.sharing, c.var.user!.id);
     if (!result) return c.json({ error: "not_found" }, 404);
     return c.json({
@@ -390,25 +380,26 @@ export const machineRoutes = new Hono<AppEnv>()
     });
   })
   .get("/", requireUser, requireWorkspace, async (c) => {
-    const creator = alias(schema.user, "creator");
+    const creator = alias(schema.user, "owner");
     const rows = await c.var.db
       .select({
         machine: schema.machine,
         pausedBy: schema.user.name,
-        createdBy: creator.name,
-        createdByImage: creator.image,
+        ownerName: creator.name,
+        ownerImage: creator.image,
         org: schema.githubInstallation.accountLogin,
       })
       .from(schema.machine)
       .leftJoin(schema.user, eq(schema.user.id, schema.machine.pausedBy))
-      .leftJoin(creator, eq(creator.id, schema.machine.createdBy))
+      .leftJoin(creator, eq(creator.id, schema.machine.userId))
       .leftJoin(
         schema.githubInstallation,
         eq(schema.githubInstallation.id, schema.machine.installationId),
       )
       .where(
         and(
-          eq(schema.machine.workspaceId, c.var.workspace.id),
+          // Its members' connected machines and its own adopted runners (#318).
+          inWorkspace(c.var.db, c.var.workspace.id),
           isNotNull(schema.machine.os),
           isNull(schema.machine.revokedAt),
         ),
@@ -459,24 +450,25 @@ export const machineRoutes = new Hono<AppEnv>()
         const presented = {
           ...presentMachine(row.machine, row.pausedBy),
           // Who connected it. A runner added from GitHub belongs to its org instead.
-          owner: row.machine.source === "github" ? row.org : row.createdBy,
+          owner: row.machine.source === "github" ? row.org : row.ownerName,
           // The owner's GitHub avatar, or the org's for a runner added from GitHub.
           ownerImage:
             row.machine.source === "github"
               ? row.org
                 ? `https://github.com/${encodeURIComponent(row.org)}.png?size=64`
                 : null
-              : row.createdByImage,
+              : row.ownerImage,
           // Whether the signed-in user owns it: only the owner changes its sharing (#243).
-          mine: row.machine.createdBy === c.var.user!.id,
+          mine: row.machine.userId === c.var.user!.id,
           job: jobs.get(row.machine.id) ?? null,
         };
         if (row.machine.source !== "github")
           return {
             ...presented,
             status: statuses[i],
-            // Whether the signed-in user may revoke it (#134), so the dashboard can hide it.
-            canRevoke: canRevokeMachine(c.var.role, c.var.user!.id, row.machine),
+            // Whether the signed-in user may pause or revoke it: only its owner (#318), so the
+            // dashboard can hide it.
+            canRevoke: canControlMachine(c.var.role, c.var.user!.id, row.machine),
           };
         const read = row.machine.installationId ? github.get(row.machine.installationId) : null;
         const runner = read?.runners.find((r) => r.id === row.machine.githubRunnerId);
@@ -485,7 +477,7 @@ export const machineRoutes = new Hono<AppEnv>()
           labels: runner ? matchLabels(runner.labels) : presented.labels,
           status: statuses[i],
           // Runners belong to the org: only owners and admins remove them.
-          canRevoke: canManage(c.var.role),
+          canRevoke: canControlMachine(c.var.role, c.var.user!.id, row.machine),
           github: {
             org: row.org,
             runnerId: row.machine.githubRunnerId,
@@ -631,7 +623,6 @@ export const machineRoutes = new Hono<AppEnv>()
           githubRunnerId: runner.id,
           routingLabel,
           githubLabels: JSON.stringify([...runner.labels, routingLabel]),
-          createdBy: user!.id,
           // The org's runner, usually shared team hardware: it takes anyone's jobs (#242).
           sharing: "anyone",
         })
@@ -661,7 +652,7 @@ export const machineRoutes = new Hono<AppEnv>()
       .where(
         and(
           eq(schema.machine.id, c.req.param("id")),
-          eq(schema.machine.workspaceId, c.var.workspace.id),
+          inWorkspace(c.var.db, c.var.workspace.id),
           isNull(schema.machine.revokedAt),
         ),
       );
@@ -680,29 +671,27 @@ export const machineRoutes = new Hono<AppEnv>()
   .delete("/:id", requireUser, requireWorkspace, async (c) => {
     const machineId = c.req.param("id");
     const { role, user, workspace, db } = c.var;
-    const live = and(
-      eq(schema.machine.id, machineId),
-      eq(schema.machine.workspaceId, workspace.id),
-      isNull(schema.machine.revokedAt),
-    );
-    // Owners and admins can revoke any machine; members only the ones they enrolled. The check
-    // rides in the update so the common case is one query.
-    // A runner added from GitHub belongs to the org, so only owners and admins remove it.
-    const mine = and(
-      live,
-      eq(schema.machine.createdBy, user!.id),
-      eq(schema.machine.source, "connect"),
-    );
-    const [machine] = await revokeMachines(c.env, db, (canManage(role) ? live : mine)!, user!.id);
-    if (!machine) {
-      // Nothing changed: tell a member a machine they can see apart from one that isn't there.
-      const [exists] = await db
-        .select({ id: schema.machine.id })
-        .from(schema.machine)
-        .where(live)
-        .limit(1);
-      return exists ? c.json({ error: "forbidden" }, 403) : c.json({ error: "not_found" }, 404);
-    }
+    const [target] = await db
+      .select({
+        id: schema.machine.id,
+        source: schema.machine.source,
+        userId: schema.machine.userId,
+      })
+      .from(schema.machine)
+      .where(
+        and(
+          eq(schema.machine.id, machineId),
+          inWorkspace(db, workspace.id),
+          isNull(schema.machine.revokedAt),
+        ),
+      )
+      .limit(1);
+    if (!target) return c.json({ error: "not_found" }, 404);
+    // A connected machine only by its owner; a runner added from GitHub, which belongs to the
+    // org, by owners and admins (#318).
+    if (!canControlMachine(role, user!.id, target)) return c.json({ error: "forbidden" }, 403);
+    const [machine] = await revokeMachines(c.env, db, eq(schema.machine.id, target.id), user!.id);
+    if (!machine) return c.json({ error: "not_found" }, 404);
     if (machine.source === "github") await removeRoutingLabel(c.env, db, machine);
     return c.json({ machine: presentMachine(machine) });
   });

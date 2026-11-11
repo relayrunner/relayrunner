@@ -3,7 +3,8 @@ import type { AppEnv } from "./app.ts";
 
 // Workspace roles (#134). These are Better Auth's stock organization roles:
 // - owner and admin manage GitHub installations, runner order and members.
-// - member can enroll machines and revoke the ones they enrolled; everything else is read-only.
+// - member is read-only here. Connected machines belong to their user, not the workspace (#318),
+//   so only that user controls one, whatever their role.
 // Better Auth keeps at least one owner: it refuses to remove, demote, or let the last owner leave.
 export const ROLES = ["owner", "admin", "member"] as const;
 export type Role = (typeof ROLES)[number];
@@ -15,13 +16,16 @@ export function canManage(role: string | null | undefined) {
   return role != null && MANAGER_ROLES.has(role);
 }
 
-// Owners and admins can revoke any machine in the workspace; members only the ones they enrolled.
-export function canRevokeMachine(
-  role: string,
+// Who may pause, rename, share or revoke a machine (#318): a connected machine only by its owner,
+// in any workspace it shows up in; a runner adopted from GitHub, which is the org's, by the
+// workspace's owners and admins.
+export function canControlMachine(
+  role: string | null | undefined,
   userId: string,
-  machine: { createdBy: string | null },
+  machine: { source: string; userId: string | null },
 ) {
-  return canManage(role) || (machine.createdBy !== null && machine.createdBy === userId);
+  if (machine.source === "github") return canManage(role);
+  return machine.userId !== null && machine.userId === userId;
 }
 
 // Owner or admin of the request's workspace. Reads the role set by requireWorkspace (or a

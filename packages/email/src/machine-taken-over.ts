@@ -17,7 +17,6 @@ const place = (from: ConnectionPlace) =>
  */
 export function renderMachineTakenOverEmail(ctx: {
   machineName: string;
-  workspaceName: string;
   was: ConnectionPlace;
   now: ConnectionPlace;
   at: Date;
@@ -33,14 +32,14 @@ export function renderMachineTakenOverEmail(ctx: {
     eyebrow: "Security",
     title: "A machine connected from somewhere else",
     bodyHtml: [
-      `${strong(ctx.machineName)} in ${strong(ctx.workspaceName)} was online from ${escapeHtml(was)} when a new connection from ${escapeHtml(now)} took over on ${escapeHtml(when)}${escapeHtml(ips)}.`,
+      `${strong(ctx.machineName)} was online from ${escapeHtml(was)} when a new connection from ${escapeHtml(now)} took over on ${escapeHtml(when)}${escapeHtml(ips)}.`,
       "<br><br>",
       `If you moved networks or started ${code("relayrunner connect")} somewhere else, you can ignore this. Otherwise someone has a copy of the machine's token and is getting its jobs.`,
     ].join(""),
     text: [
       "A machine connected from somewhere else",
       "",
-      `${ctx.machineName} in ${ctx.workspaceName} was online from ${was} when a new connection from ${now} took over on ${when}${ips}.`,
+      `${ctx.machineName} was online from ${was} when a new connection from ${now} took over on ${when}${ips}.`,
       "If you moved networks or started `relayrunner connect` somewhere else, you can ignore this. Otherwise someone has a copy of the machine's token and is getting its jobs.",
       "",
       `Not you? Revoke it, then sign in again on the machine: ${ctx.machinesUrl}`,
