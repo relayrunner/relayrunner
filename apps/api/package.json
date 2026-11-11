@@ -19,6 +19,7 @@
     "@relayrunner/github-webhooks": "workspace:*",
     "@relayrunner/lint-runner": "workspace:*",
     "@relayrunner/machine-protocol": "workspace:*",
+    "@relayrunner/providers": "workspace:*",
     "@relayrunner/runner-order": "workspace:*",
     "better-auth": "catalog:",
     "drizzle-orm": "^0.45.4",

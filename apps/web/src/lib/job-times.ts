@@ -120,14 +120,14 @@ export function environmentColor(index: number) {
   return ENV_COLORS[index % ENV_COLORS.length];
 }
 
-/** Example report for `VITE_AUTH_DISABLED=true` dev builds, which have no API. */
-export function sampleJobTimes(days: number): JobTimesReport {
-  const stat = (
-    medianS: number,
-    samples: number,
-    runs = samples,
-    trend: number | null = null,
-  ): Stat => ({
+/** A made-up Stat for the sample reports: `samples` successful runs around `medianS` seconds. */
+export function sampleStat(
+  medianS: number,
+  samples: number,
+  runs = samples,
+  trend: number | null = null,
+): Stat {
+  return {
     runs,
     successes: Math.round(runs * 0.96),
     samples: Math.min(samples, 50),
@@ -136,9 +136,14 @@ export function sampleJobTimes(days: number): JobTimesReport {
     p25Ms: medianS * 900,
     p75Ms: medianS * 1150,
     p90Ms: medianS * 1300,
-    waitMs: 6000,
+    waitMs: samples ? 6000 : null,
     trend,
-  });
+  };
+}
+
+/** Example report for `VITE_AUTH_DISABLED=true` dev builds, which have no API. */
+export function sampleJobTimes(days: number): JobTimesReport {
+  const stat = sampleStat;
   const linux = "github:linux-2-core";
   const mac = "machine:sample";
   const container = "container";

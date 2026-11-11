@@ -2,7 +2,7 @@ import { createFileRoute } from "@tanstack/react-router";
 import { type ReactNode, useState } from "react";
 import { PageHeader } from "@/components/page-header";
 import { RangePicker } from "@/components/range-picker";
-import { Card } from "@/components/ui/card";
+import { StatTile } from "@/components/stat-tile";
 import { authDisabled } from "@/lib/auth-client";
 import {
   type FreeCheckSavings,
@@ -68,17 +68,17 @@ function UsagePage() {
         ) : (
           <>
             <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
-              <Stat
+              <StatTile
                 label={`Jobs under ${report.shortJobSeconds}s`}
                 value={totals.shortJobs.toLocaleString()}
                 detail={`${shortShare}% of ${totals.jobs.toLocaleString()} jobs`}
               />
-              <Stat
+              <StatTile
                 label="Spent on short jobs"
                 value={money(totals.shortCost)}
                 detail={`${minutes(totals.shortBilledMinutes)} billed minutes`}
               />
-              <Stat
+              <StatTile
                 label="Lost to rounding up"
                 value={money(totals.roundingCost)}
                 detail={`of ${money(totals.cost)} estimated for all jobs`}
@@ -135,17 +135,17 @@ function FreeChecks({ savings }: { savings: FreeCheckSavings }) {
     <div className="grid gap-3">
       <h2 className="font-semibold">Saved by free checks</h2>
       <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
-        <Stat
+        <StatTile
           label="Checks run"
           value={savings.checks.toLocaleString()}
           detail="PR title and lint, no Actions runner"
         />
-        <Stat
+        <StatTile
           label="Billed minutes saved"
           value={minutes(savings.checks)}
           detail={`one ${runner.label} minute per run`}
         />
-        <Stat
+        <StatTile
           label="Saved"
           value={money(savings.savedCost)}
           detail={`at ${money(runner.perMinute)}/min in private repos`}
@@ -191,16 +191,6 @@ function RepoName({ repository, isPrivate }: { repository: string; isPrivate: bo
         <span className="ml-1.5 font-sans text-muted-foreground">public, free</span>
       )}
     </span>
-  );
-}
-
-function Stat({ label, value, detail }: { label: string; value: string; detail: string }) {
-  return (
-    <Card className="gap-0 px-4 py-3">
-      <div className="text-sm text-muted-foreground">{label}</div>
-      <div className="mt-1 text-2xl font-bold tabular-nums">{value}</div>
-      <div className="mt-0.5 text-sm text-muted-foreground">{detail}</div>
-    </Card>
   );
 }
 
