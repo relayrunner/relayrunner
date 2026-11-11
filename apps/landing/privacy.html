@@ -8,9 +8,11 @@
       name="description"
       content="What the hosted RelayRunner service collects, why, who it's shared with and how to have it deleted."
     />
-    <meta name="theme-color" content="#0b0d10" />
+    <meta name="theme-color" content="#ffffff" media="(prefers-color-scheme: light)" />
+    <meta name="theme-color" content="#0b0d10" media="(prefers-color-scheme: dark)" />
     <link rel="canonical" href="%VITE_SITE_URL%/privacy" />
-    <link rel="icon" href="/favicon.svg" type="image/svg+xml" />
+    <link rel="icon" href="/favicon.png" type="image/png" />
+    <link rel="apple-touch-icon" href="/apple-touch-icon.png" />
     <link rel="stylesheet" href="/src/style.css" />
     <link rel="stylesheet" href="/src/legal.css" />
   </head>
@@ -20,16 +22,17 @@
     <header class="site-header">
       <div class="wrap header-row">
         <a class="brand" href="/" aria-label="relayrunner home">
-          <svg class="brand-mark" viewBox="0 0 28 28" aria-hidden="true">
-            <path class="mark-top" d="M11 14c4.5 0 5-7.5 10-7.5h3" />
-            <path d="M4 14h7c4.5 0 5 7.5 10 7.5h3" />
-          </svg>
+          <img class="brand-tile" src="/mascot-tile.webp" alt="" width="28" height="28" />
           relayrunner
         </a>
         <nav aria-label="Primary">
           <ul class="nav-links">
             <li><a href="/terms">Terms</a></li>
-            <li><a class="nav-gh" href="https://github.com/relayrunner/relayrunner">GitHub</a></li>
+            <li>
+              <a class="btn-ghost btn-sm" href="https://github.com/relayrunner/relayrunner"
+                >GitHub</a
+              >
+            </li>
           </ul>
         </nav>
       </div>
@@ -248,10 +251,7 @@
     <footer class="site-footer">
       <div class="wrap footer-row">
         <a class="brand brand-sm" href="/">
-          <svg class="brand-mark" viewBox="0 0 28 28" aria-hidden="true">
-            <path class="mark-top" d="M11 14c4.5 0 5-7.5 10-7.5h3" />
-            <path d="M4 14h7c4.5 0 5 7.5 10 7.5h3" />
-          </svg>
+          <img class="brand-tile" src="/mascot-tile.webp" alt="" width="28" height="28" />
           relayrunner
         </a>
         <ul>

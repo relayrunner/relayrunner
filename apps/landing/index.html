@@ -3,20 +3,21 @@
   <head>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
-    <title>relayrunner: run your GitHub Actions on your own machine</title>
+    <title>relayrunner: one router for every CI runner</title>
     <meta
       name="description"
-      content="Coding agents burn through GitHub Actions minutes. relayrunner routes a private repo's CI jobs to your computer on demand, then switches them back to GitHub-hosted runners."
+      content="relayrunner sends each GitHub Actions job to the best runner available right now: your own machines, self-hosted runners, Blacksmith or GitHub-hosted. Change the order any time. Your workflows don't change."
     />
-    <meta name="theme-color" content="#0b0d10" />
+    <meta name="theme-color" content="#ffffff" media="(prefers-color-scheme: light)" />
+    <meta name="theme-color" content="#0b0d10" media="(prefers-color-scheme: dark)" />
     <link rel="canonical" href="%VITE_SITE_URL%/" />
     <meta property="og:type" content="website" />
     <meta property="og:site_name" content="relayrunner" />
     <meta property="og:url" content="%VITE_SITE_URL%/" />
-    <meta property="og:title" content="relayrunner: run your GitHub Actions on your own machine" />
+    <meta property="og:title" content="relayrunner: one router for every CI runner" />
     <meta
       property="og:description"
-      content="Coding agents burn through GitHub Actions minutes. relayrunner routes a private repo's CI jobs to your computer on demand, then switches them back to GitHub-hosted runners."
+      content="Send each GitHub Actions job to the best runner available right now: your machines, self-hosted runners, Blacksmith or GitHub-hosted. No workflow changes."
     />
     <meta property="og:image" content="%VITE_SITE_URL%/og-image.png" />
     <meta property="og:image:type" content="image/png" />
@@ -24,20 +25,22 @@
     <meta property="og:image:height" content="630" />
     <meta
       property="og:image:alt"
-      content="relayrunner: same checks, your machine, no minutes burned. A git push forks between GitHub-hosted runners and your machine, with your machine active at 0 minutes billed."
+      content="relayrunner: one router for every CI runner. A runner order sends the next job to your machines, then GitHub-hosted, then Blacksmith."
     />
     <meta name="twitter:card" content="summary_large_image" />
-    <meta name="twitter:title" content="relayrunner: run your GitHub Actions on your own machine" />
+    <meta name="twitter:title" content="relayrunner: one router for every CI runner" />
     <meta
       name="twitter:description"
-      content="Coding agents burn through GitHub Actions minutes. relayrunner routes a private repo's CI jobs to your computer on demand, then switches them back to GitHub-hosted runners."
+      content="Send each GitHub Actions job to the best runner available right now: your machines, self-hosted runners, Blacksmith or GitHub-hosted. No workflow changes."
     />
     <meta name="twitter:image" content="%VITE_SITE_URL%/og-image.png" />
     <meta
       name="twitter:image:alt"
-      content="relayrunner: same checks, your machine, no minutes burned. A git push forks between GitHub-hosted runners and your machine, with your machine active at 0 minutes billed."
+      content="relayrunner: one router for every CI runner. A runner order sends the next job to your machines, then GitHub-hosted, then Blacksmith."
     />
-    <link rel="icon" href="/favicon.svg" type="image/svg+xml" />
+    <link rel="icon" href="/favicon.png" type="image/png" />
+    <link rel="apple-touch-icon" href="/apple-touch-icon.png" />
+    <link rel="preload" as="image" href="/mascot.webp" type="image/webp" />
     <link rel="stylesheet" href="/src/style.css" />
   </head>
   <body>
@@ -46,409 +49,423 @@
     <header class="site-header" data-header>
       <div class="wrap header-row">
         <a class="brand" href="#top" aria-label="relayrunner home">
-          <svg class="brand-mark" viewBox="0 0 28 28" aria-hidden="true">
-            <path class="mark-top" d="M11 14c4.5 0 5-7.5 10-7.5h3" />
-            <path d="M4 14h7c4.5 0 5 7.5 10 7.5h3" />
-          </svg>
+          <img class="brand-tile" src="/mascot-tile.webp" alt="" width="28" height="28" />
           relayrunner
         </a>
         <nav aria-label="Primary">
           <ul class="nav-links">
-            <li><a href="#how">How it works</a></li>
-            <li><a href="#cli">Agent or CLI</a></li>
-            <li><a href="#safety">Is it safe?</a></li>
-            <li class="route-status">
-              <a href="#top"
-                ><i></i><span class="route-word">CI route: </span
-                ><b data-route-label>GitHub-hosted</b></a
-              >
-            </li>
-            <li><a class="nav-gh" href="https://github.com/relayrunner/relayrunner">GitHub</a></li>
+            <li class="nav-page"><a href="#providers">Providers</a></li>
+            <li class="nav-page"><a href="#how">How it works</a></li>
+            <li class="nav-page"><a href="#checks">Free checks</a></li>
+            <li class="nav-page"><a href="#safety">Security</a></li>
           </ul>
         </nav>
+        <div class="header-actions">
+          <a class="btn-ghost btn-sm" href="https://github.com/relayrunner/relayrunner">GitHub</a>
+          <a class="btn-go btn-sm" href="#start">Get started</a>
+        </div>
       </div>
     </header>
 
     <main id="main">
-      <svg class="spine" data-spine aria-hidden="true">
-        <path class="spine-base" data-spine-base />
-        <path class="spine-live" data-spine-live />
-        <path class="spine-flow" data-spine-flow />
-        <path class="spine-branch" data-spine-branch="hosted" />
-        <path class="spine-branch" data-spine-branch="local" />
-      </svg>
-
       <!-- Hero -->
       <section class="hero wrap" id="top">
-        <div class="hero-copy">
-          <h1>
-            <span>Same checks.</span> <span class="hl">Your machine.</span>
-            <span>No minutes burned.</span>
-          </h1>
-          <p class="lede">
-            When coding agents eat your private repo's GitHub Actions quota, route CI to your own
-            computer. GitHub still shows the same checks and logs. Switch back whenever you like.
-          </p>
-
-          <div class="instruction" data-instruction>
-            <div class="instruction-head">
-              <span>Paste into Claude Code, Codex or Cursor</span>
-            </div>
-            <code class="instruction-text" data-copy-text
-              >Set up relayrunner in this checkout using https://<wbr />raw.githubusercontent.com/<wbr />relayrunner/<wbr />relayrunner/<wbr />main/<wbr />docs/<wbr />agent-install.md</code
-            >
-            <button class="copy-btn" type="button" data-copy>
-              <svg class="i-copy" viewBox="0 0 24 24" aria-hidden="true">
-                <rect x="9" y="9" width="12" height="12" rx="2.5" />
-                <path d="M5 15V6a2 2 0 0 1 2-2h9" />
-              </svg>
-              <svg class="i-check" viewBox="0 0 24 24" aria-hidden="true">
-                <path d="m5 12.5 4.5 4.5L19 7.5" />
-              </svg>
-              <span data-copy-label>Copy instruction for your agent</span>
-            </button>
-          </div>
-          <p class="alt">
-            Prefer the CLI?
-            <button
-              class="copy-inline"
-              type="button"
-              data-copy-inline="npx relayrunner connect"
-              aria-label="Copy npx relayrunner connect"
-            >
-              <code>npx relayrunner connect</code
-              ><svg viewBox="0 0 24 24" aria-hidden="true">
-                <rect x="9" y="9" width="12" height="12" rx="2.5" />
-                <path d="M5 15V6a2 2 0 0 1 2-2h9" />
-              </svg>
-            </button>
-          </p>
-          <p class="caveat">
-            For private repos you control. Jobs run as you, on your machine.
-            <a href="#safety">Is it safe?</a>
-          </p>
-        </div>
-
-        <figure
-          class="viz"
-          data-viz
-          aria-label="Simulated run: a git push is routed to either GitHub-hosted runners or your machine"
-        >
-          <svg class="viz-lines" data-lines aria-hidden="true">
-            <path class="ln ln-trunk" data-trunk />
-            <path class="ln" data-branch="hosted" />
-            <path class="ln" data-branch="local" />
-            <g data-pulses></g>
-          </svg>
-
-          <div class="term" aria-hidden="true">
-            <div class="term-bar">~/sideproject</div>
-            <div class="term-body">
-              <div><span class="prompt">$</span> git push</div>
-              <div class="term-out" data-push-line>→ PR #212 · ci.yml</div>
-            </div>
-          </div>
-
-          <div class="junction">
-            <div class="route-toggle" role="radiogroup" aria-label="Route CI jobs to">
-              <button type="button" role="radio" aria-checked="true" data-route="hosted">
-                GitHub-hosted
-              </button>
-              <button type="button" role="radio" aria-checked="false" data-route="local">
-                Your machine
-              </button>
-              <span class="route-thumb" aria-hidden="true"></span>
-            </div>
-            <div class="junction-cmd" aria-live="polite">
-              <span class="prompt">$</span> <span data-cmd>relayrunner status</span>
-            </div>
-          </div>
-
-          <div class="panels">
-            <section class="panel" data-panel="hosted" aria-label="GitHub-hosted runner">
-              <header class="panel-head">
-                <span class="panel-title">GitHub-hosted</span>
-                <span class="panel-tag">ubuntu-latest</span>
-              </header>
-              <ul class="checks" data-checks="hosted"></ul>
-              <footer class="panel-foot">
-                <div class="meter"><i data-meter></i></div>
-                <span class="figure"><b data-minutes>1,184</b> of 2,000 min used</span>
-              </footer>
-            </section>
-            <section class="panel" data-panel="local" aria-label="Your machine">
-              <header class="panel-head">
-                <span class="panel-title">Your machine</span>
-                <span class="panel-tag">self-hosted</span>
-              </header>
-              <ul class="checks" data-checks="local"></ul>
-              <footer class="panel-foot">
-                <span class="online"><i></i>runner online</span>
-                <span class="figure figure-go"><b>0</b> min billed</span>
-              </footer>
-            </section>
-          </div>
-          <figcaption class="viz-cap">Simulated run. Flip the route to try it.</figcaption>
-        </figure>
-      </section>
-
-      <!-- Quota -->
-      <section class="quota wrap" aria-labelledby="quota-h">
-        <div class="quota-copy">
-          <h2 id="quota-h">Agents ship faster than your quota refills.</h2>
-          <p>
-            GitHub Free gives private repositories 2,000 Actions minutes a month. A hundred agent
-            PRs can use more than half of that, and a busy agent ships a hundred PRs in a day.
-          </p>
-        </div>
-        <figure class="quota-fig" data-quota>
-          <div class="quota-scale" aria-hidden="true">
-            <span>0</span><span>1,000</span><span>2,000 min</span>
-          </div>
-          <div
-            class="quota-bar"
-            role="img"
-            aria-label="A bar of 2,000 monthly minutes. 100 pull requests fill more than half of it."
-          >
-            <div class="quota-ticks" data-ticks></div>
-            <div class="quota-mark"><span>100 PRs</span></div>
-            <span class="quota-rest">the rest of your month</span>
-          </div>
-          <figcaption>Each tick is one PR's CI run. Illustrative.</figcaption>
-        </figure>
-      </section>
-
-      <!-- How it works -->
-      <section class="how wrap" id="how" aria-labelledby="how-h">
-        <h2 id="how-h">One setup. Then it's a switch.</h2>
-        <ol class="steps">
-          <li class="step">
-            <div class="step-copy">
-              <h3>Your agent sets it up</h3>
-              <p>
-                It finds the jobs that can run on your machine, lets you pick, and shows the patch
-                before applying anything. relayrunner downloads GitHub's official runner, registers
-                it to the repo, and waits until GitHub reports it online.
-              </p>
-              <p class="note">The only workflow change: one line per opted-in job.</p>
-            </div>
-            <div class="code-card run">
-              <div class="code-head">Agent setup, start to finish</div>
-              <ol class="run-log">
-                <li><span class="tick"></span>Checked Node.js, Git and your GitHub CLI session</li>
-                <li><span class="tick"></span>Installed <code>relayrunner</code> and its skill</li>
-                <li>
-                  <span class="tick"></span>Ran <code>relayrunner discover</code> and found 4 jobs
-                </li>
-                <li class="ask">
-                  <span class="tick tick-q"></span>Which jobs should run on your machine?
-                  <span class="picks"
-                    ><span class="pick on">test</span><span class="pick on">lint</span
-                    ><span class="pick on">typecheck</span><span class="pick">deploy</span></span
-                  >
-                </li>
-                <li class="ask">
-                  <span class="tick tick-q"></span>Approve this patch?
-                  <pre class="diff"><code><span class="ctx">  jobs:</span>
-<span class="ctx">    test:</span>
-<span class="del">-     runs-on: ubuntu-latest</span>
-<span class="add">+     runs-on: ${{ vars.RELAYRUNNER_LABEL || 'ubuntu-latest' }}</span>
-<span class="ctx">      steps:</span></code></pre>
-                </li>
-                <li>
-                  <span class="tick"></span>Downloaded GitHub's official runner and registered it to
-                  the repo
-                </li>
-                <li class="done">
-                  <span class="tick"></span>Self-hosted runner online. Commit and push the patch to
-                  finish.
-                </li>
-              </ol>
-            </div>
-          </li>
-          <li class="step" data-step="local">
-            <div class="step-copy">
-              <h3>Flip CI to your machine</h3>
-              <p>
-                Every opted-in job across branches and pull requests now runs locally. relayrunner
-                checks that your runner is online before it moves anything.
-              </p>
-              <p class="note">
-                No workflow edits, no commits. It sets a repository Actions variable.
-              </p>
-            </div>
-            <div class="code-card term-card">
-              <div class="code-head code-head-run">
-                <span>Terminal</span
-                ><button type="button" class="run-btn" data-set-route="local">
-                  Run in the demo
-                </button>
-              </div>
-              <pre><code><span class="prompt">$</span> relayrunner switch local
-<span class="out">you/sideproject: local (repository-wide)</span>
-<span class="out">Runner relayrunner-3f9c…: <span class="ok">online</span></span></code></pre>
-            </div>
-          </li>
-          <li class="step" data-step="hosted">
-            <div class="step-copy">
-              <h3>Flip it back when you're done</h3>
-              <p>
-                Future jobs go back to GitHub-hosted runners. Anything already running on your
-                machine finishes, and jobs still queued for it are listed so you can recover them.
-              </p>
-              <p class="note">Same check names in GitHub either way.</p>
-            </div>
-            <div class="code-card term-card">
-              <div class="code-head code-head-run">
-                <span>Terminal</span
-                ><button type="button" class="run-btn" data-set-route="hosted">
-                  Run in the demo
-                </button>
-              </div>
-              <pre><code><span class="prompt">$</span> relayrunner switch hosted
-<span class="out">you/sideproject: GitHub-hosted</span>
-<span class="out">Jobs still queued for the local runner: 0</span></code></pre>
-            </div>
-          </li>
-        </ol>
-      </section>
-
-      <!-- Agent or CLI -->
-      <section class="modes wrap" id="cli" aria-labelledby="modes-h">
-        <h2 id="modes-h">Ask your agent, or type it yourself.</h2>
-        <p class="section-lede">
-          The bundled skill turns plain requests into CLI calls for Claude Code, Codex and Cursor.
-          Every command also takes <code>--json</code> for agents and scripts.
+        <img class="mascot" src="/mascot.webp" alt="" width="240" height="317" />
+        <p class="eyebrow">Open source · Smart routing for GitHub Actions</p>
+        <h1>One router for <span class="hl">every CI&nbsp;runner.</span></h1>
+        <p class="lede">
+          relayrunner sends each GitHub Actions job to the best runner available right now: your own
+          machines, self-hosted runners, a cloud provider like Blacksmith, or GitHub-hosted. Change
+          the order any time. Your workflows don't change.
         </p>
-        <div class="modes-grid">
-          <div class="chat" aria-label="Example agent conversation">
-            <div class="msg me">CI is eating my minutes again. Run it on my laptop for now.</div>
-            <div class="msg agent">
-              <span class="tool"
-                ><span class="prompt">$</span> relayrunner switch local --json</span
-              >
-              Done. Your runner is online and opted-in jobs in <b>you/sideproject</b> now run on
-              this machine.
+        <div class="hero-actions">
+          <a class="btn-go btn-lg" href="https://app.relayrunner.app">Get started with GitHub</a>
+          <button class="cmd" type="button" data-copy-inline="npx relayrunner init">
+            <span aria-hidden="true">$</span> <code>npx relayrunner init</code>
+            <span class="visually-hidden">Copy command</span>
+          </button>
+        </div>
+        <p class="hero-note">
+          Or
+          <button
+            class="link-btn"
+            type="button"
+            data-copy-inline="Set up relayrunner in this checkout using https://raw.githubusercontent.com/relayrunner/relayrunner/main/docs/agent-install.md"
+            data-copied-label="copied the instruction"
+          >
+            <code>copy one line</code>
+          </button>
+          into Claude Code, Codex or Cursor and let your agent set it up.
+        </p>
+      </section>
+
+      <!-- Routing demo -->
+      <section class="wrap" aria-label="Routing demo">
+        <div class="stage">
+          <div class="stage-side">
+            <div class="term">
+              <div class="term-bar">~/acme-api</div>
+              <div class="term-body">
+                <div><span class="mute">$</span> git push</div>
+                <div class="mute">→ ci / test · PR #<span data-pr>482</span></div>
+              </div>
             </div>
-            <div class="msg me">Shipping for the night. Put CI back on GitHub.</div>
-            <div class="msg agent">
-              <span class="tool"
-                ><span class="prompt">$</span> relayrunner switch hosted --json</span
+            <div class="next-card" aria-live="polite">
+              <b class="label">Next job goes to</b>
+              <span class="next-name"
+                ><img
+                  data-next-logo
+                  src="/providers/machines.svg"
+                  alt=""
+                  width="28"
+                  height="28"
+                /><span data-next-name>Zach's MacBook Pro</span></span
               >
-              Switched back to GitHub-hosted runners. No jobs were left queued for your machine.
+              <span class="next-why" data-next-why
+                >First free runner in your order. GitHub minutes untouched.</span
+              >
             </div>
           </div>
-          <dl class="cmds">
-            <div>
-              <dt>relayrunner discover</dt>
-              <dd>List jobs that can move to your machine.</dd>
+          <div class="order">
+            <div class="order-head">
+              <b class="label">Runner order</b>
+              <span>Move a runner up. The next job follows.</span>
             </div>
-            <div>
-              <dt>
-                relayrunner preview <span class="nb">--job</span> .github/workflows/ci.yml:test
-              </dt>
-              <dd>Show the exact workflow patch and an approval fingerprint.</dd>
+            <ol class="lanes" data-lanes>
+              <li
+                class="lane"
+                data-lane="machine"
+                data-next="Zach's MacBook Pro"
+                data-why="First free runner in your order. GitHub minutes untouched."
+              >
+                <img src="/providers/machines.svg" alt="" width="32" height="32" />
+                <span class="lane-name"
+                  ><b>Self-hosted</b><code>3 machines · 1 org runner</code></span
+                >
+                <code class="lane-rule">when free</code>
+                <span class="lane-state"></span>
+                <button class="lane-up" type="button" aria-label="Move Self-hosted up">
+                  <svg viewBox="0 0 24 24" aria-hidden="true"><path d="m6 15 6-6 6 6" /></svg>
+                </button>
+              </li>
+              <li
+                class="lane"
+                data-lane="github"
+                data-next="GitHub-hosted"
+                data-why="Included minutes, until you reach your cap."
+              >
+                <img src="/providers/github.svg" alt="" width="32" height="32" />
+                <span class="lane-name"><b>GitHub-hosted</b><code>ubuntu-latest</code></span>
+                <code class="lane-rule">under 80% of minutes</code>
+                <span class="lane-state"></span>
+                <button class="lane-up" type="button" aria-label="Move GitHub-hosted up">
+                  <svg viewBox="0 0 24 24" aria-hidden="true"><path d="m6 15 6-6 6 6" /></svg>
+                </button>
+              </li>
+              <li
+                class="lane"
+                data-lane="blacksmith"
+                data-next="Blacksmith"
+                data-why="Your Blacksmith account, first in line."
+              >
+                <img src="/providers/blacksmith.svg" alt="" width="32" height="32" />
+                <span class="lane-name"
+                  ><b>Blacksmith</b><code>blacksmith-2vcpu-ubuntu-2404</code></span
+                >
+                <code class="lane-rule">always</code>
+                <span class="lane-state"></span>
+                <button class="lane-up" type="button" aria-label="Move Blacksmith up">
+                  <svg viewBox="0 0 24 24" aria-hidden="true"><path d="m6 15 6-6 6 6" /></svg>
+                </button>
+              </li>
+            </ol>
+          </div>
+        </div>
+      </section>
+
+      <!-- Providers -->
+      <section class="section wrap" id="providers" aria-labelledby="providers-h">
+        <div class="split-head">
+          <div>
+            <p class="kicker">Providers</p>
+            <h2 id="providers-h">
+              Every runner you have, <span class="hl">behind one router.</span>
+            </h2>
+          </div>
+          <p class="body">
+            Each provider is a step in your runner order. Add one, move it up or take it out from
+            the dashboard, and the next job follows.
+          </p>
+        </div>
+        <ul class="provider-grid">
+          <li class="provider-card">
+            <img src="/providers/machines.svg" alt="" width="48" height="48" />
+            <h3>Your machines</h3>
+            <p>
+              Macs and Linux boxes take one job at a time while they're on. Close the lid and jobs
+              go elsewhere.
+            </p>
+          </li>
+          <li class="provider-card">
+            <img src="/providers/self-hosted.svg" alt="" width="48" height="48" />
+            <h3>Self-hosted runners</h3>
+            <p>Runners your org already has, in the runner groups you choose.</p>
+          </li>
+          <li class="provider-card">
+            <img src="/providers/blacksmith.svg" alt="" width="48" height="48" />
+            <h3>Blacksmith</h3>
+            <p>Bring your Blacksmith account and put it anywhere in your order.</p>
+          </li>
+          <li class="provider-card">
+            <img src="/providers/github.svg" alt="" width="48" height="48" />
+            <h3>GitHub-hosted</h3>
+            <p>
+              The minutes your plan includes, with a cap so a busy week never turns into overage.
+            </p>
+          </li>
+        </ul>
+        <ul class="logo-row" aria-label="More providers">
+          <li><img src="/providers/depot.svg" alt="" width="26" height="26" />Depot</li>
+          <li><img src="/providers/namespace.svg" alt="" width="26" height="26" />Namespace</li>
+          <li><img src="/providers/warpbuild.svg" alt="" width="26" height="26" />WarpBuild</li>
+          <li><img src="/providers/ubicloud.svg" alt="" width="26" height="26" />Ubicloud</li>
+          <li><img src="/providers/runs-on.svg" alt="" width="26" height="26" />RunsOn</li>
+        </ul>
+      </section>
+
+      <!-- Switch -->
+      <section class="section wrap feature" id="how">
+        <div class="feature-copy">
+          <p class="kicker">Switch</p>
+          <h2>Change where jobs run <span class="hl">in seconds.</span></h2>
+          <p class="body">
+            Try a new provider, move a busy week onto your machines, or send everything back to
+            GitHub, all from the dashboard. No pull request, no commit. The next job follows the new
+            order.
+          </p>
+          <p class="aside">
+            If nothing fits, the job fails right away with the reason instead of sitting in a queue.
+          </p>
+        </div>
+        <div class="panel" aria-hidden="true">
+          <div class="mini-lanes">
+            <div class="mini-lane">
+              <code>1</code><img src="/providers/machines.svg" alt="" width="28" height="28" /><b
+                >Self-hosted</b
+              ><span>3 machines · 1 runner</span>
             </div>
-            <div>
-              <dt>
-                relayrunner setup <span class="nb">--job</span> .github/workflows/ci.yml:test
-                <span class="nb">--approve</span> <span class="nb">&lt;fingerprint&gt;</span>
-              </dt>
-              <dd>Register the runner and apply the reviewed patch.</dd>
+            <div class="mini-lane moving">
+              <code>2</code><img src="/providers/blacksmith.svg" alt="" width="28" height="28" /><b
+                >Blacksmith</b
+              ><span class="go">moved up</span>
             </div>
-            <div>
-              <dt>relayrunner switch local</dt>
-              <dd>Route opted-in jobs to this machine.</dd>
+            <div class="mini-lane">
+              <code>3</code><img src="/providers/github.svg" alt="" width="28" height="28" /><b
+                >GitHub-hosted</b
+              ><span>fallback</span>
             </div>
-            <div>
-              <dt>relayrunner status</dt>
-              <dd>Current route and runner availability.</dd>
+          </div>
+          <p class="panel-note">Saved. <b>Next job:</b> Blacksmith, if no machine is free.</p>
+        </div>
+      </section>
+
+      <!-- Minutes -->
+      <section class="section wrap feature feature-flip">
+        <div class="panel" aria-hidden="true">
+          <div class="meter-card">
+            <div class="meter-head">
+              <b><img src="/providers/github.svg" alt="" width="28" height="28" />GitHub-hosted</b>
+              <code>capped at 80%</code>
             </div>
-            <div>
-              <dt>relayrunner switch hosted</dt>
-              <dd>Send future jobs back to GitHub.</dd>
+            <div class="meter">
+              <div class="meter-fill" data-meter></div>
+              <div class="meter-cap"></div>
             </div>
-          </dl>
+            <div class="meter-foot">
+              <span><b class="run">2,220</b> of 3,000 included minutes</span>
+            </div>
+          </div>
+          <p class="panel-note">
+            Past the limit, jobs fall through to <b>Self-hosted</b>, then <b>Blacksmith</b>.
+          </p>
+        </div>
+        <div class="feature-copy">
+          <p class="kicker">Minutes</p>
+          <h2>Spend included minutes, <span class="hl">not overage.</span></h2>
+          <p class="body">
+            Cap GitHub-hosted at a share of the minutes your plan includes. Once you reach it, jobs
+            go to the next runner instead of your bill.
+          </p>
+        </div>
+      </section>
+
+      <!-- Bring your own -->
+      <section class="section wrap feature">
+        <div class="feature-copy">
+          <p class="kicker">Bring your own</p>
+          <h2>Your machines take jobs <span class="hl">while they're on.</span></h2>
+          <p class="body">
+            Run <code>relayrunner connect</code> and each job gets a fresh one-job runner. Close the
+            laptop and the next job goes elsewhere. Share a machine with your team or keep it to
+            yourself, and add runners your org already has.
+          </p>
+        </div>
+        <div class="panel machines" aria-hidden="true">
+          <div class="machine">
+            <b
+              ><img src="/providers/machines.svg" alt="" width="24" height="24" />Zach's MacBook
+              Pro</b
+            >
+            <code>macOS · ARM64 · 12 cores · 36 GB</code>
+            <div class="machine-foot">
+              <span>Zach · shared with team</span><span><i class="dot go-dot"></i>online</span>
+            </div>
+          </div>
+          <div class="machine">
+            <b><img src="/providers/machines.svg" alt="" width="24" height="24" />build-mini</b>
+            <code>macOS · ARM64 · 10 cores · 32 GB</code>
+            <div class="machine-foot">
+              <span>Atticus · private</span><span><i class="dot run-dot"></i>paused</span>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <!-- See -->
+      <section class="section wrap feature feature-flip">
+        <div class="panel" aria-hidden="true">
+          <div class="times">
+            <div class="times-row times-head">
+              <span>Job</span>
+              <span
+                ><img src="/providers/machines.svg" alt="" width="20" height="20" />Machine</span
+              >
+              <span
+                ><img
+                  src="/providers/blacksmith.svg"
+                  alt=""
+                  width="20"
+                  height="20"
+                />Blacksmith</span
+              >
+              <span><img src="/providers/github.svg" alt="" width="20" height="20" />GitHub</span>
+            </div>
+            <div class="times-row">
+              <b>ci / test</b><code>1m 52s</code><code>2m 10s</code><code>3m 41s</code>
+            </div>
+            <div class="times-row">
+              <b>ci / typecheck</b><code>0m 48s</code><code>1m 05s</code><code>1m 24s</code>
+            </div>
+            <div class="times-row">
+              <b>ci / build</b><code>2m 30s</code><code>2m 02s</code><code>4m 12s</code>
+            </div>
+          </div>
+        </div>
+        <div class="feature-copy">
+          <p class="kicker">See</p>
+          <h2>Compare providers <span class="hl">on your own jobs.</span></h2>
+          <p class="body">
+            Every job shows where it ran and why. Job times compare runners side by side, and each
+            provider has a page with your usage.
+          </p>
+        </div>
+      </section>
+
+      <!-- Free checks -->
+      <section class="section wrap feature" id="checks">
+        <div class="feature-copy">
+          <p class="kicker">Free checks</p>
+          <h2>Some checks <span class="hl">need no runner.</span></h2>
+          <p class="body">
+            PR title and lint checks (oxlint, ruff, actionlint and more) run inside relayrunner and
+            post results to your pull request. No runner, no billed minute.
+          </p>
+        </div>
+        <div class="panel" aria-hidden="true">
+          <ul class="checks">
+            <li>
+              <i class="dot go-dot"></i><b>PR title</b><span>feat(api): add provider pages</span
+              ><code>0 min billed</code>
+            </li>
+            <li>
+              <i class="dot go-dot"></i><b>oxlint</b><span>0 new findings</span
+              ><code>0 min billed</code>
+            </li>
+            <li>
+              <i class="dot run-dot"></i><b>actionlint</b><span>1 finding</span
+              ><code>0 min billed</code>
+            </li>
+          </ul>
         </div>
       </section>
 
       <!-- Safety -->
-      <section class="safety wrap" id="safety" aria-labelledby="safety-h">
-        <h2 id="safety-h">A relief valve, not infrastructure.</h2>
-        <p class="section-lede">
-          A self-hosted runner executes whatever the workflow tells it to, as your user, on your
-          computer. That's fine for your own private side project. It's a real risk anywhere else.
-        </p>
-        <div class="fit">
-          <div class="fit-col fit-yes">
-            <h3>Built for</h3>
-            <ul>
-              <li>Private repositories on github.com that you control</li>
-              <li>One developer, one machine</li>
-              <li>Busy stretches where agents push all day</li>
-              <li>Jobs your machine can actually run</li>
-            </ul>
-          </div>
-          <div class="fit-col fit-no">
-            <h3>Not for</h3>
-            <ul>
-              <li>Public repositories or forks</li>
-              <li>Repos where anyone you don't trust can edit workflows</li>
-              <li>Team or production CI</li>
-              <li>Jobs that need a clean machine every run</li>
-            </ul>
-          </div>
-        </div>
+      <section class="section wrap" id="safety" aria-labelledby="safety-h">
+        <p class="kicker">Safe by default</p>
+        <h2 id="safety-h">Fallbacks first. <span class="hl">No surprises.</span></h2>
+        <ul class="safety-grid">
+          <li>
+            <h3>Hosted stays the fallback</h3>
+            <p>Machines add capacity. A closed laptop never blocks a job.</p>
+          </li>
+          <li>
+            <h3>Public repos skip your machines</h3>
+            <p>Pull requests from strangers never run on your computer.</p>
+          </li>
+          <li>
+            <h3>Shared machines respect access</h3>
+            <p>A shared machine only takes jobs from repos its owner can read.</p>
+          </li>
+          <li>
+            <h3>Fail fast, say why</h3>
+            <p>When nothing fits, the job fails with the reason instead of queuing.</p>
+          </li>
+        </ul>
       </section>
 
       <!-- Close -->
-      <section class="close wrap" aria-labelledby="close-h">
-        <div class="close-fork" data-close-fork>
-          <div class="dest" data-dest="hosted">
-            <b>GitHub-hosted</b><span>metered minutes</span>
+      <section class="section wrap" id="start" aria-labelledby="start-h">
+        <div class="close">
+          <div class="close-copy">
+            <h2 id="start-h">Put every runner to work.</h2>
+            <p>
+              Run this in the repo you want to route. It puts a relay in front of the jobs you pick,
+              keeps their old runner as the fallback, and never commits.
+            </p>
+            <div class="instruction">
+              <code><span class="mute" aria-hidden="true">$ </span>npx relayrunner init</code>
+              <button class="copy-btn" type="button" data-copy="npx relayrunner init">
+                <span data-copy-label>Copy</span>
+              </button>
+            </div>
+            <p class="close-note">
+              Works with orgs and personal accounts. macOS or Linux for your own machines.
+            </p>
           </div>
-          <div class="dest" data-dest="local"><b>Your machine</b><span>0 min billed</span></div>
+          <img
+            class="close-mascot"
+            src="/mascot.webp"
+            alt=""
+            width="240"
+            height="317"
+            loading="lazy"
+          />
         </div>
-        <h2 id="close-h">Get your minutes back.</h2>
-        <p class="section-lede">Paste this into your agent from the checkout you want to set up.</p>
-        <div class="instruction instruction-wide" data-instruction>
-          <code class="instruction-text" data-copy-text
-            >Set up relayrunner in this checkout using https://<wbr />raw.githubusercontent.com/<wbr />relayrunner/<wbr />relayrunner/<wbr />main/<wbr />docs/<wbr />agent-install.md</code
-          >
-          <button class="copy-btn" type="button" data-copy>
-            <svg class="i-copy" viewBox="0 0 24 24" aria-hidden="true">
-              <rect x="9" y="9" width="12" height="12" rx="2.5" />
-              <path d="M5 15V6a2 2 0 0 1 2-2h9" />
-            </svg>
-            <svg class="i-check" viewBox="0 0 24 24" aria-hidden="true">
-              <path d="m5 12.5 4.5 4.5L19 7.5" />
-            </svg>
-            <span data-copy-label>Copy instruction</span>
-          </button>
-        </div>
-        <p class="reqs">Needs Node.js 22+. Runs on macOS or Linux, x64 or ARM64.</p>
-        <p class="caveat">
-          For private repos you control. Jobs run as you, on your machine.
-          <a href="#safety">Is it safe?</a>
-        </p>
       </section>
     </main>
 
     <footer class="site-footer">
       <div class="wrap footer-row">
-        <span class="brand brand-sm">
-          <svg class="brand-mark" viewBox="0 0 28 28" aria-hidden="true">
-            <path class="mark-top" d="M11 14c4.5 0 5-7.5 10-7.5h3" />
-            <path d="M4 14h7c4.5 0 5 7.5 10 7.5h3" />
-          </svg>
+        <a class="brand brand-sm" href="#top">
+          <img class="brand-tile" src="/mascot-tile.webp" alt="" width="24" height="24" />
           relayrunner
-        </span>
+        </a>
         <ul>
           <li><a href="https://github.com/relayrunner/relayrunner">GitHub</a></li>
           <li><a href="https://www.npmjs.com/package/relayrunner">npm</a></li>
           <li>
             <a href="https://github.com/relayrunner/relayrunner/blob/main/docs/agent-install.md"
-              >Agent install guide</a
+              >Agent setup</a
             >
           </li>
           <li><a href="/privacy">Privacy</a></li>
@@ -457,7 +474,7 @@
       </div>
     </footer>
 
-    <div class="sr-only" aria-live="polite" data-announce></div>
+    <p class="visually-hidden" aria-live="polite" data-announce></p>
     <script type="module" src="/src/main.ts"></script>
   </body>
 </html>
