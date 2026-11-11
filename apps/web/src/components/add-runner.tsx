@@ -382,30 +382,46 @@ function Step({ n, title, children }: { n: number; title: string; children: Reac
 
 /** A value to paste somewhere, with a copy button. `prompt` marks it as a shell command. */
 export function CopyCommand({ command, prompt = true }: { command: string; prompt?: boolean }) {
-  const [copied, setCopied] = useState(false);
-  async function copy() {
-    try {
-      await navigator.clipboard.writeText(command);
-      setCopied(true);
-      setTimeout(() => setCopied(false), 1500);
-    } catch {
-      // Clipboard can be blocked (insecure origin, permissions); the command is still selectable.
-    }
-  }
   return (
     <div className="flex items-center justify-between gap-2 rounded-md border bg-muted/50 py-1 pr-1 pl-3">
       <code className="overflow-x-auto font-mono text-sm whitespace-nowrap">
         {prompt && <span className="text-muted-foreground select-none">$ </span>}
         {command}
       </code>
-      <Button
-        size="icon-sm"
-        variant="ghost"
-        aria-label={copied ? "Copied" : "Copy command"}
-        onClick={() => void copy()}
-      >
-        {copied ? <CheckIcon /> : <CopyIcon />}
-      </Button>
+      <CopyButton text={command} label="Copy command" />
     </div>
+  );
+}
+
+/** An icon button that copies `text` and shows a check for a moment. */
+export function CopyButton({
+  text,
+  label,
+  className,
+}: {
+  text: string;
+  label: string;
+  className?: string;
+}) {
+  const [copied, setCopied] = useState(false);
+  async function copy() {
+    try {
+      await navigator.clipboard.writeText(text);
+      setCopied(true);
+      setTimeout(() => setCopied(false), 1500);
+    } catch {
+      // Clipboard can be blocked (insecure origin, permissions); the text is still selectable.
+    }
+  }
+  return (
+    <Button
+      size="icon-sm"
+      variant="ghost"
+      aria-label={copied ? "Copied" : label}
+      className={className}
+      onClick={() => void copy()}
+    >
+      {copied ? <CheckIcon /> : <CopyIcon />}
+    </Button>
   );
 }
