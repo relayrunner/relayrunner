@@ -1,5 +1,6 @@
 ---
 // Moved from index.html; the header is now the shared SiteHeader. Astro bundles the imported CSS into the page's <head>.
+import LandingRelay from "../components/LandingRelay.astro";
 import SiteHeader from "../components/SiteHeader.astro";
 import ProviderLogo from "../components/docs/ProviderLogo.astro";
 import { KNOWN_PROVIDERS, PROVIDERS } from "../lib/providers";
@@ -463,6 +464,7 @@ const MORE_PROVIDERS = KNOWN_PROVIDERS.filter(
       </div>
     </footer>
 
+    <LandingRelay />
     <p class="visually-hidden" aria-live="polite" data-announce></p>
     <script>
       import "../main.ts";
