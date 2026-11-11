@@ -32,7 +32,7 @@ export function renderMachineConnectedEmail(ctx: {
       `${strong(machine)} was connected with your approval on ${escapeHtml(when)}.`,
       "<br><br>",
       names
-        ? `It can now run CI jobs in ${ctx.workspaceNames.map(strong).join(", ")} whenever they are routed to it, and in any workspace you join later.`
+        ? `It can now run CI jobs in ${joinNames(ctx.workspaceNames.map(strong))} whenever they are routed to it, and in any workspace you join later.`
         : escapeHtml(reach),
     ].join(""),
     text: [

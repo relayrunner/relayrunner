@@ -66,7 +66,7 @@ describe("templates", () => {
     expect(email.subject).toBe("New machine connected to Acme & Co and atticoos");
     expect(email.html).not.toContain("<script>alert(1)</script>");
     expect(email.html).toContain("&lt;script&gt;");
-    expect(email.html).toContain("Acme &amp; Co");
+    expect(email.html).toContain("Acme &amp; Co</strong> and <strong");
     expect(email.text).toContain("(macos arm64)");
     expect(email.text).toContain("It can now run CI jobs in Acme & Co and atticoos");
     expect(email.text).toContain("Not you? Revoke it: https://app.example/runners");
