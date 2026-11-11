@@ -50,6 +50,8 @@
     "GITHUB_APP_ID": "5605512",
     // The RelayRunner Checks App's numeric ID: the separate, opt-in App that runs lint check runs.
     "GITHUB_CHECKS_APP_ID": "5672393",
+    // The RelayRunner Spend App's numeric ID: the separate, opt-in App that reads org billing.
+    "GITHUB_SPEND_APP_ID": "5718856",
     // Zero Trust team domain and the Access app AUD whose JWTs /api/admin/* accepts
     // (packages/access). Dashboard previews forward /api/* here with the Access JWT, so this is
     // the AUDs of "relayrunner-app previews" and "relayrunner-app admin views"
@@ -95,6 +97,12 @@
       "binding": "GITHUB_CHECKS_APP_PRIVATE_KEY",
       "store_id": "eac3493b9fef4234a832f5f3fdcc8a41",
       "secret_name": "GITHUB_CHECKS_APP_PRIVATE_KEY",
+    },
+    // The Spend App's key, the same way.
+    {
+      "binding": "GITHUB_SPEND_APP_PRIVATE_KEY",
+      "store_id": "eac3493b9fef4234a832f5f3fdcc8a41",
+      "secret_name": "GITHUB_SPEND_APP_PRIVATE_KEY",
     },
   ],
   "d1_databases": [

@@ -32,6 +32,7 @@ import { containerRunnerAllowed, usesContainerRunner } from "./container-runner.
 import { checkPullRequestTitle } from "./pr-title-check.ts";
 import { recordRepositoryEvent, removeRepositories, upsertRepositories } from "./repositories.ts";
 import { recordInstaller } from "./memberships.ts";
+import { recordSpendInstallation } from "./spend-app.ts";
 import { recordWorkflowRun } from "./runs.ts";
 import { routingLabelFromLabels } from "./github-runners.ts";
 import { routeIdFromLabels } from "./routing.ts";
@@ -139,6 +140,22 @@ export async function processWebhook(env: Env, message: WebhookMessage): Promise
   const lagMs = Date.now() - Date.parse(message.receivedAt);
   // The RelayRunner Checks App (lint check runs) has its own installations and credentials, so its
   // deliveries never take the main App's paths below.
+  // The RelayRunner Spend App (org billing) only sends installation events, which say which
+  // accounts installed it.
+  if (message.app === "spend") {
+    if (message.event === "installation") await recordSpendInstallation(createDb(env.DB), message);
+    console.log(
+      JSON.stringify({
+        msg: "spend app webhook processed",
+        event: message.event,
+        action: message.action,
+        deliveryId: message.deliveryId,
+        installationId: message.installationId,
+        lagMs,
+      }),
+    );
+    return;
+  }
   if (message.app === "checks") {
     const target = lintTarget(message);
     console.log(

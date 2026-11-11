@@ -4,6 +4,7 @@ import { handleRequest, type Env } from "./ingress.ts";
 
 const secret = "test-secret";
 const checksSecret = "checks-secret";
+const spendSecret = "spend-secret";
 
 class FakeQueue {
   sent: WebhookMessage[] = [];
@@ -44,6 +45,7 @@ function setup(envOverrides: Partial<Env> = {}, path = "/api/webhooks/github") {
   const env = {
     GITHUB_WEBHOOK_SECRET: storeSecret(secret),
     GITHUB_CHECK_WEBHOOK_SECRET: storeSecret(checksSecret),
+    GITHUB_SPEND_WEBHOOK_SECRET: storeSecret(spendSecret),
     WEBHOOK_QUEUE: queue,
     ...envOverrides,
   } as unknown as Env;
@@ -220,5 +222,37 @@ describe("webhook ingress", () => {
       "x-hub-signature-256": await sign(workflowJob),
     });
     expect(queue.sent[0].app).toBeUndefined();
+  });
+});
+
+describe("Spend App", () => {
+  const spendPath = "/api/webhooks/github-spend";
+  const installed = JSON.stringify({
+    action: "created",
+    installation: { id: 12, account: { id: 5, login: "acme", type: "Organization" } },
+    repositories: [],
+  });
+
+  test("queues its installation events, tagged with the app", async () => {
+    const { post, queue } = setup({}, spendPath);
+    const response = await post(installed, {
+      "x-github-event": "installation",
+      "x-github-delivery": "d-3",
+      "x-hub-signature-256": await sign(installed, spendSecret),
+    });
+    expect(response.status).toBe(202);
+    expect(queue.sent).toEqual([
+      expect.objectContaining({ app: "spend", event: "installation", installationId: 12 }),
+    ]);
+  });
+
+  test("drops any other event", async () => {
+    const { post, queue } = setup({}, spendPath);
+    const response = await post(workflowJob, {
+      "x-github-event": "workflow_job",
+      "x-hub-signature-256": await sign(workflowJob, spendSecret),
+    });
+    expect(response.status).toBe(202);
+    expect(queue.sent).toHaveLength(0);
   });
 });

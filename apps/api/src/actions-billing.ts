@@ -3,9 +3,11 @@
 // included quota runs out. Everything is per installation (one GitHub account), never pooled
 // across a workspace: each account has its own quota.
 //
-// Orgs are read with the App's installation token. A personal account's report only opens to its
-// owner's own user-to-server token (User permission Plan: read), so those are read with the token
-// from the owner's RelayRunner sign-in (#208).
+// Orgs are read with the RelayRunner Spend App's installation token when the org has installed it
+// (src/spend-app.ts), else the main App's (which still holds Organization Administration: read
+// until it's narrowed).
+// A personal account's report only opens to its owner's own user-to-server token (User permission
+// Plan: read), so those are read with the token from the owner's RelayRunner sign-in (#208).
 //
 // The cron polls every 15 minutes. GitHub's billing lags about 6-90 minutes and arrives in bursts
 // (#115), which #117's burn-rate margin covers.
@@ -16,6 +18,7 @@ import { createDb, type Db, schema } from "./db/index.ts";
 import type { Env } from "./env.ts";
 import { enqueueInstallationTasks } from "./installation-tasks.ts";
 import { userGitHubToken } from "./installations.ts";
+import { spendAppToken, spendInstallationId } from "./spend-app.ts";
 import {
   appInstallationToken,
   GitHubAccessError,
@@ -81,6 +84,9 @@ export interface AccountUsage {
   budget: { amountUsd: number; preventFurtherUsage: boolean } | null;
   cycleStart: string;
   readAt: string | null;
+  // Whether the org installed the RelayRunner Spend App, which reads its billing. Null for a
+  // personal account, whose billing is read with its owner's sign-in instead.
+  spendApp: boolean | null;
 }
 
 /** The start of the billing cycle `now` is in: the UTC calendar month. */
@@ -148,7 +154,10 @@ export async function pollAccount(env: Env, account: UsageAccount, now: Date) {
       await pollInstallation(db, token, account, now);
       return;
     }
-    const token = await appInstallationToken(env, account.id);
+    const spend = await spendInstallationId(db, account.accountId);
+    const token = spend
+      ? await spendAppToken(env, spend)
+      : await appInstallationToken(env, account.id);
     await pollInstallation(db, token, account, now);
   } catch (error) {
     // Couldn't get a token (GitHub down, App removed before the webhook landed). Recorded so the
@@ -427,11 +436,17 @@ export async function accountUsage(
       accountLogin: schema.githubInstallation.accountLogin,
       accountType: schema.githubInstallation.accountType,
       billing: schema.actionsBilling,
+      spendInstallationId: schema.spendInstallation.installationId,
+      spendSuspendedAt: schema.spendInstallation.suspendedAt,
     })
     .from(schema.githubInstallation)
     .leftJoin(
       schema.actionsBilling,
       eq(schema.actionsBilling.installationId, schema.githubInstallation.id),
+    )
+    .leftJoin(
+      schema.spendInstallation,
+      eq(schema.spendInstallation.accountId, schema.githubInstallation.accountId),
     )
     .where(eq(schema.githubInstallation.id, installationId))
     .limit(1);
@@ -498,6 +513,9 @@ export async function accountUsage(
         : null,
     cycleStart: start.toISOString(),
     readAt: billing?.readAt?.toISOString() ?? null,
+    spendApp: isPersonal(installation)
+      ? null
+      : installation.spendInstallationId !== null && !installation.spendSuspendedAt,
   };
 }
 

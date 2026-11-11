@@ -42,6 +42,10 @@ If your org's runner group settings block RelayRunner's runners, it posts a fail
 
 Lint uses a second, optional App, **RelayRunner Checks**, with Contents read, Checks write and Pull requests read. It lints each commit in a sandbox with no internet access, then discards it. Install it only if you want lint.
 
+## RelayRunner Spend
+
+The [minutes limit](/docs/concepts/runner-order#the-minutes-limit) reads an org's plan, Actions usage and budget through a second, optional App, [RelayRunner Spend](https://github.com/apps/relayrunner-spend). Its only permission is Organization administration (read). Install it on orgs where you use the minutes limit.
+
 ## When permissions change
 
 When the App asks for a new permission, GitHub asks each account to accept it under **Settings → GitHub Apps**. Features that need it start working once it's accepted.

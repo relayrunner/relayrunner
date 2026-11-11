@@ -274,7 +274,7 @@ function limitAvailability(accounts: AccountUsage[]): LimitAvailability {
   if (reasons.has("enterprise"))
     return { allowed: false, blocked: "Needs RelayRunner on your enterprise." };
   if (reasons.has("missing_permission"))
-    return { allowed: false, blocked: "Needs billing access to your org." };
+    return { allowed: false, blocked: "Install RelayRunner Spend to share your org's billing." };
   if (reasons.has("sign_in_needed"))
     return { allowed: false, blocked: "Sign in again to share your account's minutes." };
   if (reasons.has("not_read_yet"))

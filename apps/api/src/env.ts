@@ -62,4 +62,8 @@ export interface Env extends AccessEnv {
   // app: "checks"): its ID and private key, like the main App's.
   GITHUB_CHECKS_APP_ID: string;
   GITHUB_CHECKS_APP_PRIVATE_KEY: SecretsStoreSecret;
+  // The separate, opt-in RelayRunner Spend App, which reads org billing (Organization
+  // Administration: read) so the main App doesn't have to. No webhooks.
+  GITHUB_SPEND_APP_ID: string;
+  GITHUB_SPEND_APP_PRIVATE_KEY: SecretsStoreSecret;
 }

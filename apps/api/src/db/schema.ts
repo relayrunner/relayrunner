@@ -616,6 +616,19 @@ export const actionsUsage = sqliteTable(
   ],
 );
 
+// Which GitHub accounts installed the opt-in RelayRunner Spend App, which reads org billing
+// (src/spend-app.ts). Keyed by GitHub account, since it's installed apart from the main App and
+// can come before it. Written by the Spend App's installation webhooks and reconciled hourly.
+export const spendInstallation = sqliteTable("spend_installation", {
+  accountId: integer("account_id").primaryKey({ autoIncrement: false }),
+  accountLogin: text("account_login").notNull(),
+  installationId: integer("installation_id").notNull(),
+  suspendedAt: integer("suspended_at", { mode: "timestamp_ms" }),
+  // When GitHub's view in this row was observed, so an older delivery never overwrites a newer one.
+  githubStateAt: integer("github_state_at", { mode: "timestamp_ms" }).notNull(),
+  ...timestamps,
+});
+
 // What the last billing poll of an installation found: its plan, its Actions budget, and whether
 // usage could be read at all. One row per installation.
 export const actionsBilling = sqliteTable("actions_billing", {

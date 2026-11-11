@@ -206,6 +206,24 @@ export async function repoInstallationId(jwt: string, repo: string): Promise<num
   return ((await response.json()) as { id: number }).id;
 }
 
+/** Every installation of the App, from its JWT. */
+export async function listAppInstallations(jwt: string) {
+  const installations: {
+    id: number;
+    account: { id: number; login: string } | null;
+    suspended_at: string | null;
+  }[] = [];
+  for (let page = 1; ; page++) {
+    const response = await fetch(`${API}/app/installations?per_page=100&page=${page}`, {
+      headers: headers(jwt),
+    });
+    if (!response.ok) throw new Error(`GET /app/installations failed with ${response.status}`);
+    const batch = (await response.json()) as typeof installations;
+    installations.push(...batch);
+    if (batch.length < 100) return installations;
+  }
+}
+
 /** An installation token from the App's id and private key, as the Durable Objects hold them. */
 export async function appInstallationToken(
   env: { GITHUB_APP_ID: string; GITHUB_APP_PRIVATE_KEY: { get(): Promise<string> } },

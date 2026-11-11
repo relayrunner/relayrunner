@@ -36,7 +36,7 @@
   // From the account's Secrets Store (default_secrets_store), not `wrangler secret put`.
   // Locally, `wrangler dev` reads a local store: seed it once with
   //   wrangler secrets-store secret create eac3493b9fef4234a832f5f3fdcc8a41 --name GITHUB_WEBHOOK_SECRET --scopes workers
-  // (and the same for GITHUB_CHECK_WEBHOOK_SECRET).
+  // (and the same for GITHUB_CHECK_WEBHOOK_SECRET and GITHUB_SPEND_WEBHOOK_SECRET).
   "secrets_store_secrets": [
     // The main RelayRunner App, at /api/webhooks/github.
     {
@@ -49,6 +49,12 @@
       "binding": "GITHUB_CHECK_WEBHOOK_SECRET",
       "store_id": "eac3493b9fef4234a832f5f3fdcc8a41",
       "secret_name": "GITHUB_CHECK_WEBHOOK_SECRET",
+    },
+    // The RelayRunner Spend App (org billing), at /api/webhooks/github-spend.
+    {
+      "binding": "GITHUB_SPEND_WEBHOOK_SECRET",
+      "store_id": "eac3493b9fef4234a832f5f3fdcc8a41",
+      "secret_name": "GITHUB_SPEND_WEBHOOK_SECRET",
     },
   ],
 }

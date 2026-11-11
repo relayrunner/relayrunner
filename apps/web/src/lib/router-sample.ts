@@ -17,6 +17,7 @@ export function sampleRouterAccounts(
     budget: null,
     cycleStart,
     readAt: new Date().toISOString(),
+    spendApp: true,
   };
   if (kind === "enterprise")
     return [
@@ -35,6 +36,7 @@ export function sampleRouterAccounts(
         ...base,
         accountLogin: "octocat",
         accountType: "User",
+        spendApp: null,
         status: "not_available",
         reason: "sign_in_needed",
         plan: null,
