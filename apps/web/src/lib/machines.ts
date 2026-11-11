@@ -85,6 +85,11 @@ export function setMachineSharing(id: string, sharing: MachineSharing) {
   });
 }
 
+/** The signed-in user's own connected machines, with no workspace needed (GET /api/machines/mine). */
+export function listMyMachines() {
+  return api<{ machines: Machine[] }>("/machines/mine");
+}
+
 export function listMachines() {
   return api<{ machines: Machine[] }>("/machines");
 }

@@ -379,6 +379,31 @@ export const machineRoutes = new Hono<AppEnv>()
       },
     });
   })
+  // The signed-in user's own connected machines, with no workspace needed: the dashboard's "no
+  // workspace yet" page lists them while an install is pending (#320). Agent tokens are granted
+  // workspaces, not a user's machines, so they don't reach this.
+  .get("/mine", requireUser, async (c) => {
+    if (c.var.agent) return c.json({ error: "not_found" }, 404);
+    const db = createDb(c.env.DB);
+    const rows = await db
+      .select()
+      .from(schema.machine)
+      .where(
+        and(
+          eq(schema.machine.userId, c.var.user!.id),
+          eq(schema.machine.source, "connect"),
+          isNotNull(schema.machine.os),
+          isNull(schema.machine.revokedAt),
+        ),
+      )
+      .orderBy(asc(schema.machine.name));
+    const statuses = await Promise.all(
+      rows.map((machine) => c.env.MACHINE_LINK.getByName(machine.id).status()),
+    );
+    return c.json({
+      machines: rows.map((machine, i) => ({ ...presentMachine(machine), status: statuses[i] })),
+    });
+  })
   .get("/", requireUser, requireWorkspace, async (c) => {
     const creator = alias(schema.user, "owner");
     const rows = await c.var.db

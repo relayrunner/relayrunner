@@ -21,6 +21,7 @@ import {
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import { authDisabled, organization, signOut, useListOrganizations } from "@/lib/auth-client";
+import { githubInstallHref } from "@/lib/github";
 import { setTheme, useTheme, type Theme } from "@/lib/theme";
 import { cn } from "@/lib/utils";
 
@@ -36,7 +37,7 @@ export function WorkspaceMenu({
   user,
   compact = false,
 }: {
-  workspace: { id: string; name: string };
+  workspace: { id: string; name: string; logo?: string | null };
   user: MenuUser;
   /** Just the workspace's mark, for the collapsed sidebar. Phones still get the full trigger. */
   compact?: boolean;
@@ -72,7 +73,7 @@ export function WorkspaceMenu({
         aria-label={compact ? `${workspace.name} menu` : undefined}
         disabled={switching}
       >
-        <WorkspaceMark name={workspace.name} className="size-8 text-sm" />
+        <WorkspaceMark name={workspace.name} logo={workspace.logo} className="size-8 text-sm" />
         <span className={cn("grid min-w-0 flex-1 leading-tight", compact && "sm:hidden")}>
           <span className="truncate text-[15px] font-semibold">{workspace.name}</span>
           <span className="truncate text-xs text-muted-foreground">
@@ -128,6 +129,12 @@ export function WorkspaceMenu({
   );
 }
 
+// The `VITE_AUTH_DISABLED=true` dev preview's switcher: its one workspace and an org with no avatar.
+const devWorkspaces = [
+  { id: "dev", name: "Dev workspace", logo: "https://github.com/relayrunner.png?size=96" },
+  { id: "dev-org", name: "acme-labs", logo: null },
+];
+
 const themes: { value: Theme; label: string; icon: typeof SunIcon }[] = [
   { value: "system", label: "System", icon: MonitorIcon },
   { value: "light", label: "Light", icon: SunIcon },
@@ -168,12 +175,13 @@ function ThemePicker() {
 }
 
 /**
- * The user's workspaces, plus "New workspace". With one workspace there is
- * nothing to switch to, so only "New workspace" shows.
+ * The user's workspaces, one per GitHub account the App is installed on, plus "Add an
+ * organization", which installs the App somewhere new. With one workspace there is nothing to
+ * switch to, so only "Add an organization" shows.
  */
 function WorkspaceList({ current, onSelect }: { current: string; onSelect: (id: string) => void }) {
   const { data } = useListOrganizations();
-  const workspaces = authDisabled ? [] : (data ?? []);
+  const workspaces = authDisabled ? devWorkspaces : (data ?? []);
   return (
     <>
       <DropdownMenuGroup>
@@ -184,7 +192,11 @@ function WorkspaceList({ current, onSelect }: { current: string; onSelect: (id: 
             </DropdownMenuLabel>
             {workspaces.map((workspace) => (
               <DropdownMenuItem key={workspace.id} onSelect={() => onSelect(workspace.id)}>
-                <WorkspaceMark name={workspace.name} className="size-5 text-[11px]" />
+                <WorkspaceMark
+                  name={workspace.name}
+                  logo={workspace.logo}
+                  className="size-5 text-[11px]"
+                />
                 <span className="truncate">{workspace.name}</span>
                 {workspace.id === current && (
                   <CheckIcon aria-label="Current workspace" className="ml-auto text-go" />
@@ -194,10 +206,12 @@ function WorkspaceList({ current, onSelect }: { current: string; onSelect: (id: 
           </>
         )}
         <DropdownMenuItem asChild>
-          <Link to="/workspaces/new">
+          {/* A full page load: this leaves the dashboard for GitHub's install page, and the new
+              install comes back as its own workspace. */}
+          <a href={githubInstallHref()}>
             <PlusIcon />
-            New workspace
-          </Link>
+            Add an organization
+          </a>
         </DropdownMenuItem>
       </DropdownMenuGroup>
       <DropdownMenuSeparator />
@@ -205,8 +219,34 @@ function WorkspaceList({ current, onSelect }: { current: string; onSelect: (id: 
   );
 }
 
-/** A square with the workspace's first letter, in Signal Green. */
-export function WorkspaceMark({ name, className }: { name: string; className?: string }) {
+/**
+ * The workspace's logo: its GitHub account's avatar (#316), or a square with the first letter, in
+ * Signal Green, when there's no avatar or it fails to load.
+ */
+export function WorkspaceMark({
+  name,
+  logo,
+  className,
+}: {
+  name: string;
+  logo?: string | null;
+  className?: string;
+}) {
+  // The address that failed, so switching to another workspace tries its logo afresh.
+  const [failed, setFailed] = useState<string | null>(null);
+  if (logo && failed !== logo) {
+    return (
+      <img
+        src={logo}
+        alt=""
+        onError={() => setFailed(logo)}
+        className={cn(
+          "shrink-0 rounded-md border border-border bg-secondary object-cover",
+          className,
+        )}
+      />
+    );
+  }
   return (
     <span
       aria-hidden

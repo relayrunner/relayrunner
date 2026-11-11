@@ -139,6 +139,7 @@ export const adminRoutes = new Hono<AppEnv>()
         id: workspace.id,
         name: workspace.name,
         slug: workspace.slug,
+        logo: workspace.logo,
         createdAt: workspace.createdAt,
         members: membersOf.get(workspace.id) ?? [],
         githubAccounts: (accountsOf.get(workspace.id) ?? []).map((i) => i.accountLogin),

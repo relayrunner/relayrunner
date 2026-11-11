@@ -75,6 +75,7 @@ const devWorkspace: CurrentWorkspace = {
     id: "dev",
     name: "Dev workspace",
     slug: "dev",
+    logo: "https://github.com/relayrunner.png?size=96",
     createdAt: new Date(0).toISOString(),
   },
   role: "owner",

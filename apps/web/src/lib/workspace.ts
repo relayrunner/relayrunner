@@ -14,7 +14,14 @@ export type Installation = {
 
 /** GET /api/workspaces/current: the active workspace as the gateway sees it. */
 export type CurrentWorkspace = {
-  workspace: { id: string; name: string; slug: string; createdAt: string };
+  workspace: {
+    id: string;
+    name: string;
+    slug: string;
+    /** The GitHub account's avatar (#316). */
+    logo: string | null;
+    createdAt: string;
+  };
   role: string;
   installations: Installation[];
 };
@@ -48,39 +55,4 @@ export async function ensureActiveWorkspace(session: Session): Promise<string | 
   if (!first) return null;
   await organization.setActive({ organizationId: first.id });
   return first.id;
-}
-
-/** "Acme Labs!" -> "acme-labs" */
-export function slugify(name: string) {
-  return name
-    .toLowerCase()
-    .normalize("NFKD")
-    .replace(/[^a-z0-9]+/g, "-")
-    .replace(/^-+|-+$/g, "")
-    .slice(0, 40);
-}
-
-/**
- * Creates a workspace owned by the signed-in user and makes it active. The
- * slug comes from the name, with a short suffix if it is taken.
- */
-export async function createWorkspace(name: string) {
-  const base = slugify(name) || "workspace";
-  for (const slug of [base, `${base}-${randomSuffix()}`, `${base}-${randomSuffix()}`]) {
-    const { data, error } = await organization.create({ name, slug });
-    if (data) {
-      // create updates the session row but not Better Auth's cached session
-      // cookie; setActive refreshes the cookie too.
-      await organization.setActive({ organizationId: data.id });
-      return data;
-    }
-    if (error?.code !== "ORGANIZATION_ALREADY_EXISTS") {
-      throw new Error(error?.message ?? "Could not create the workspace");
-    }
-  }
-  throw new Error("Could not find a free URL for that name. Try another name.");
-}
-
-function randomSuffix() {
-  return Math.random().toString(36).slice(2, 6);
 }

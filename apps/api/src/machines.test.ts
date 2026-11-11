@@ -623,6 +623,21 @@ describe("machines belong to their user (#318)", () => {
     );
   });
 
+  test("/machines/mine lists your own machines, without a workspace", async () => {
+    const { team, own, enrolled } = await inTwo("mine");
+    const mine = async (cookie: string) =>
+      (
+        (await (await call("/machines/mine", cookie)).json()) as { machines: { id: string }[] }
+      ).machines.map((machine) => machine.id);
+    expect(await mine(own.cookie)).toEqual([enrolled.machine.id]);
+    // The teammate sees it in the team's Runners list, but it isn't theirs.
+    expect(await mine(team.cookie)).toEqual([]);
+    // Signed in with no workspace at all.
+    const { cookie } = await testing.signIn(env);
+    expect((await call("/machines/mine", cookie)).status).toBe(200);
+    expect(await mine(cookie)).toEqual([]);
+  });
+
   test("uninstalling one workspace's App leaves the machine, still in the other", async () => {
     const { team, own, enrolled } = await inTwo("uninstall");
     // The Router is a Durable Object too; forgetting a workspace only purges it.
