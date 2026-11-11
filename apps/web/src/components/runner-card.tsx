@@ -706,6 +706,8 @@ type ProviderStyle = {
   prefix?: RegExp;
   /** Labels are runs-on labels, so monospace; GitHub classes and the container type are names. */
   mono?: boolean;
+  /** The provider's site, opened from its tile. */
+  url?: string;
   /** Show the environment's detail beside each runner (machine size, runner group). */
   detail?: boolean;
 };
@@ -713,6 +715,7 @@ type ProviderStyle = {
 const PROVIDERS: Record<Provider, ProviderStyle> = {
   blacksmith: {
     name: "Blacksmith",
+    url: "https://www.blacksmith.sh",
     icon: <BlacksmithIcon className="w-4" />,
     tile: "bg-blacksmith text-blacksmith-ink",
     tint: "bg-blacksmith/8",
@@ -722,6 +725,7 @@ const PROVIDERS: Record<Provider, ProviderStyle> = {
   },
   depot: {
     name: "Depot",
+    url: "https://depot.dev",
     icon: <DepotIcon className="size-3.5" />,
     tile: "bg-foreground text-background",
     tint: "bg-foreground/4",
@@ -731,6 +735,7 @@ const PROVIDERS: Record<Provider, ProviderStyle> = {
   },
   namespace: {
     name: "Namespace",
+    url: "https://namespace.so",
     icon: <NamespaceIcon className="size-5" />,
     tile: "bg-namespace text-white",
     tint: "bg-namespace/10",
@@ -740,6 +745,7 @@ const PROVIDERS: Record<Provider, ProviderStyle> = {
   },
   warpbuild: {
     name: "WarpBuild",
+    url: "https://www.warpbuild.com",
     icon: <WarpBuildIcon className="w-4" />,
     tile: "bg-raised-2 text-warpbuild",
     tint: "bg-warpbuild/8",
@@ -749,6 +755,7 @@ const PROVIDERS: Record<Provider, ProviderStyle> = {
   },
   ubicloud: {
     name: "Ubicloud",
+    url: "https://www.ubicloud.com",
     icon: <CloudIcon aria-hidden className="size-4" strokeWidth={2.25} />,
     tile: "bg-ubicloud text-white",
     tint: "bg-ubicloud/8",
@@ -758,6 +765,7 @@ const PROVIDERS: Record<Provider, ProviderStyle> = {
   },
   "runs-on": {
     name: "RunsOn",
+    url: "https://runs-on.com",
     icon: <span className="font-serif text-base leading-none font-bold">r</span>,
     tile: "bg-[#101010] text-runson",
     tint: "bg-runson/8",
@@ -766,6 +774,7 @@ const PROVIDERS: Record<Provider, ProviderStyle> = {
   },
   github: {
     name: "GitHub",
+    url: "https://docs.github.com/en/actions/reference/runners/github-hosted-runners",
     icon: <GithubIcon className="size-4" />,
     tile: "bg-foreground text-background",
     tint: "bg-foreground/4",
@@ -773,6 +782,7 @@ const PROVIDERS: Record<Provider, ProviderStyle> = {
   },
   cloudflare: {
     name: "Cloudflare",
+    url: "https://developers.cloudflare.com/containers/",
     icon: <CloudflareIcon className="size-[18px]" />,
     tile: "bg-raised-2 text-cloudflare",
     tint: "bg-cloudflare/8",
@@ -791,6 +801,8 @@ const PROVIDERS: Record<Provider, ProviderStyle> = {
   },
 };
 
+const TILE = "flex size-7 shrink-0 items-center justify-center rounded-md";
+
 export function providerOf({ key }: EnvironmentSummary): Provider {
   if (key === "container") return "cloudflare";
   const id = key.slice(0, key.indexOf(":"));
@@ -805,16 +817,31 @@ export function CloudProviderCard({
   provider: Provider;
   environments: EnvironmentSummary[];
 }) {
-  const { name, icon, tile, tint, bar } = PROVIDERS[provider];
+  const { name, icon, tile, tint, bar, url } = PROVIDERS[provider];
   const total = environments.reduce((sum, env) => sum + env.stat.runs, 0);
   // A share bar only says something when there's more than one runner type to compare.
   const showShare = environments.length > 1;
   return (
     <Card label={name}>
       <div className={cn("flex items-center gap-2.5 border-b border-line-soft px-4 py-3", tint)}>
-        <span className={cn("flex size-7 shrink-0 items-center justify-center rounded-md", tile)}>
-          {icon}
-        </span>
+        {url ? (
+          <a
+            href={url}
+            target="_blank"
+            rel="noreferrer"
+            aria-label={`Open ${name}`}
+            title={`Open ${name}`}
+            className={cn(
+              TILE,
+              tile,
+              "outline-none hover:opacity-85 focus-visible:ring-[3px] focus-visible:ring-ring/50",
+            )}
+          >
+            {icon}
+          </a>
+        ) : (
+          <span className={cn(TILE, tile)}>{icon}</span>
+        )}
         <h3 className="min-w-0 flex-1 truncate text-sm font-medium">{name}</h3>
         <span className="text-xs text-muted-foreground tabular-nums">{plural(total, "job")}</span>
       </div>
