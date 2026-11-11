@@ -19,6 +19,9 @@ export interface Env extends AccessEnv {
   DEAD_LETTER_ALERT_THRESHOLD?: string;
   // Optional: also POST the alert here (a Slack or Discord incoming webhook), via `wrangler secret put`.
   DEAD_LETTER_ALERT_WEBHOOK_URL?: string;
+  // Optional: a Slack incoming webhook for operator pings (src/operator-pings.ts): signups, installs,
+  // first machines, first machine runs and unroutable runs. Set with `wrangler secret put`.
+  OPERATOR_SLACK_WEBHOOK_URL?: string;
   PICK_RUNNER: DurableObjectNamespace<PickRunner>;
   ROUTER: DurableObjectNamespace<Router>;
   MACHINE_LINK: DurableObjectNamespace<MachineLink>;
