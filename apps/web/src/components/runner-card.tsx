@@ -706,7 +706,7 @@ type ProviderStyle = {
   prefix?: RegExp;
   /** Labels are runs-on labels, so monospace; GitHub classes and the container type are names. */
   mono?: boolean;
-  /** The provider's site, opened from its tile. */
+  /** The provider's dashboard (or docs, where there is none), opened from its tile. */
   url?: string;
   /** Show the environment's detail beside each runner (machine size, runner group). */
   detail?: boolean;
@@ -715,7 +715,7 @@ type ProviderStyle = {
 const PROVIDERS: Record<Provider, ProviderStyle> = {
   blacksmith: {
     name: "Blacksmith",
-    url: "https://www.blacksmith.sh",
+    url: "https://app.blacksmith.sh",
     icon: <BlacksmithIcon className="w-4" />,
     tile: "bg-blacksmith text-blacksmith-ink",
     tint: "bg-blacksmith/8",
@@ -725,7 +725,7 @@ const PROVIDERS: Record<Provider, ProviderStyle> = {
   },
   depot: {
     name: "Depot",
-    url: "https://depot.dev",
+    url: "https://depot.dev/orgs",
     icon: <DepotIcon className="size-3.5" />,
     tile: "bg-foreground text-background",
     tint: "bg-foreground/4",
@@ -735,7 +735,7 @@ const PROVIDERS: Record<Provider, ProviderStyle> = {
   },
   namespace: {
     name: "Namespace",
-    url: "https://namespace.so",
+    url: "https://cloud.namespace.so",
     icon: <NamespaceIcon className="size-5" />,
     tile: "bg-namespace text-white",
     tint: "bg-namespace/10",
@@ -745,7 +745,7 @@ const PROVIDERS: Record<Provider, ProviderStyle> = {
   },
   warpbuild: {
     name: "WarpBuild",
-    url: "https://www.warpbuild.com",
+    url: "https://app.warpbuild.com",
     icon: <WarpBuildIcon className="w-4" />,
     tile: "bg-raised-2 text-warpbuild",
     tint: "bg-warpbuild/8",
@@ -755,7 +755,7 @@ const PROVIDERS: Record<Provider, ProviderStyle> = {
   },
   ubicloud: {
     name: "Ubicloud",
-    url: "https://www.ubicloud.com",
+    url: "https://console.ubicloud.com",
     icon: <CloudIcon aria-hidden className="size-4" strokeWidth={2.25} />,
     tile: "bg-ubicloud text-white",
     tint: "bg-ubicloud/8",
@@ -765,7 +765,7 @@ const PROVIDERS: Record<Provider, ProviderStyle> = {
   },
   "runs-on": {
     name: "RunsOn",
-    url: "https://runs-on.com",
+    url: "https://runs-on.com/docs/",
     icon: <span className="font-serif text-base leading-none font-bold">r</span>,
     tile: "bg-[#101010] text-runson",
     tint: "bg-runson/8",
@@ -782,7 +782,7 @@ const PROVIDERS: Record<Provider, ProviderStyle> = {
   },
   cloudflare: {
     name: "Cloudflare",
-    url: "https://developers.cloudflare.com/containers/",
+    url: "https://dash.cloudflare.com",
     icon: <CloudflareIcon className="size-[18px]" />,
     tile: "bg-raised-2 text-cloudflare",
     tint: "bg-cloudflare/8",
