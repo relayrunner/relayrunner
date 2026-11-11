@@ -11,7 +11,7 @@ A workspace connects GitHub organizations and personal accounts through the Rela
 
 If the App was installed by someone who isn't an org owner, GitHub sends the owners a request. Jobs start routing once an owner accepts it.
 
-Organizations and personal accounts both work. A few things only work for organizations, such as [adding existing runners](/docs/runners/self-hosted/#runners-your-org-already-has).
+Organizations and personal accounts both work. A few things only work for organizations, such as [adding existing runners](/docs/runners/self-hosted#runners-your-org-already-has).
 
 ## Roles
 

@@ -25,7 +25,7 @@ In another terminal, inside a checkout of your repository, run:
 npx relayrunner init
 ```
 
-`init` lists the repo's jobs and lets you pick which to route. For each one it adds a relay job in front and points the job's `runs-on` at the relay's answer. The job's old label, such as `ubuntu-latest`, becomes the fallback. It only edits `.github/workflows/` and never commits. See [Move your workflows over](/docs/get-started/move-over/) for what it changes and what it skips.
+`init` lists the repo's jobs and lets you pick which to route. For each one it adds a relay job in front and points the job's `runs-on` at the relay's answer. The job's old label, such as `ubuntu-latest`, becomes the fallback. It only edits `.github/workflows/` and never commits. See [Move your workflows over](/docs/get-started/move-over) for what it changes and what it skips.
 
 :::tip
 If you run `connect` inside the repository, it offers to do this step for you.
@@ -39,6 +39,6 @@ Open **Activity** in the [dashboard](https://app.relayrunner.app) to see where t
 
 ## Next
 
-- [Runner order](/docs/concepts/runner-order/): choose what's tried first.
-- [Run CI on your laptop while you work](/docs/guides/laptop-ci/): the full laptop setup.
-- [Set up with an agent](/docs/get-started/agents/): let a coding agent do all of this.
+- [Runner order](/docs/concepts/runner-order): choose what's tried first.
+- [Run CI on your laptop while you work](/docs/guides/laptop-ci): the full laptop setup.
+- [Set up with an agent](/docs/get-started/agents): let a coding agent do all of this.

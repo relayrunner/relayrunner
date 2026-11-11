@@ -61,6 +61,13 @@ export const Route = createFileRoute("/_authed/_workspace/runs")({
 
 type ResultFilter = "all" | "failed" | "running";
 type RoutedFilter = "all" | "routed";
+type RunSort = "newest" | "longest" | "slowest";
+// Runs still going, and ones without a usual time to compare with, go last.
+const SORTS: Record<RunSort, ((run: Run) => number) | null> = {
+  newest: null, // The report's own order.
+  longest: (run) => run.wallMs ?? -1,
+  slowest: (run) => (run.wallMs !== null && run.usualMs ? run.wallMs / run.usualMs : -1),
+};
 /** Each environment's name, by key. */
 type Environments = Map<string, string>;
 
@@ -91,6 +98,7 @@ function RunsPage() {
   const [repository, setRepository] = useState("all");
   const [result, setResult] = useState<ResultFilter>("all");
   const [routed, setRouted] = useState<RoutedFilter>("all");
+  const [sort, setSort] = useState<RunSort>("newest");
   const [open, setOpen] = useState<string | null>(null);
   const toggle = useCallback((key: string) => setOpen((now) => (now === key ? null : key)), []);
 
@@ -101,7 +109,7 @@ function RunsPage() {
   // The report holds the whole window, so the range and the filters are applied here.
   const runs = useMemo(() => {
     const since = Date.now() - days * DAY_MS;
-    return report.runs.filter(
+    const shown = report.runs.filter(
       (run) =>
         run.updatedAt >= since &&
         (repository === "all" || run.repository === repository) &&
@@ -109,7 +117,9 @@ function RunsPage() {
         (result === "all" ||
           (result === "running" ? run.status !== "completed" : isFailure(run.conclusion))),
     );
-  }, [report, days, repository, result, routed]);
+    const by = SORTS[sort];
+    return by ? shown.sort((a, b) => by(b) - by(a)) : shown;
+  }, [report, days, repository, result, routed, sort]);
   useLiveRefresh(
     () =>
       getRuns()
@@ -128,8 +138,8 @@ function RunsPage() {
   return (
     <section>
       <PageHeader title="Runs">
-        Every workflow run in your connected repos, newest first. Open a run to see where each job
-        ran and how long it waited for a runner.
+        Every workflow run in your connected repos. Open a run to see where each job ran and how
+        long it waited for a runner.
       </PageHeader>
       <div className="grid gap-6">
         <div className="flex flex-wrap items-center gap-3">
@@ -166,6 +176,16 @@ function RunsPage() {
             <SelectContent>
               <SelectItem value="all">All runs</SelectItem>
               <SelectItem value="routed">Routed by RelayRunner</SelectItem>
+            </SelectContent>
+          </Select>
+          <Select value={sort} onValueChange={(value) => setSort(value as RunSort)}>
+            <SelectTrigger size="sm" aria-label="Sort runs">
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="newest">Newest first</SelectItem>
+              <SelectItem value="longest">Longest first</SelectItem>
+              <SelectItem value="slowest">Slowest vs. usual</SelectItem>
             </SelectContent>
           </Select>
         </div>
