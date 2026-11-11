@@ -2,6 +2,7 @@ import { createFileRoute } from "@tanstack/react-router";
 import { ChevronRightIcon } from "lucide-react";
 import { Fragment, memo, useEffect, useMemo, useState } from "react";
 import { PageHeader } from "@/components/page-header";
+import { ProviderMark, providerOf } from "@/components/providers";
 import { RangePicker } from "@/components/range-picker";
 import { Button } from "@/components/ui/button";
 import {
@@ -174,11 +175,11 @@ function Environments({ report }: { report: JobTimesReport }) {
           </tr>
         </thead>
         <tbody>
-          {report.environments.map((env, index) => (
+          {report.environments.map((env) => (
             <tr key={env.key} className="border-b last:border-0">
               <td className="px-4 py-2.5">
                 <span className="flex items-center gap-2.5">
-                  <Swatch index={index} />
+                  <ProviderMark provider={providerOf(env)} />
                   <span>
                     <span className="block whitespace-nowrap">{env.label}</span>
                     {env.detail && (
@@ -277,14 +278,14 @@ const Jobs = memo(function Jobs({
               <th scope="col" className="px-4 py-2 text-left font-normal">
                 Workflow › job
               </th>
-              {environments.map((env, index) => (
+              {environments.map((env) => (
                 <th
                   key={env.key}
                   scope="col"
                   className="px-4 py-2 text-right font-normal whitespace-nowrap"
                 >
                   <span className="inline-flex items-center gap-1.5">
-                    <Swatch index={index} />
+                    <ProviderMark provider={providerOf(env)} className="size-4 rounded-[4px]" />
                     {env.label}
                   </span>
                 </th>
@@ -596,7 +597,10 @@ function JobDetail({
                 className="grid grid-cols-[auto_1fr_auto] items-baseline gap-x-2 border-b pb-3 last:border-0"
               >
                 <Swatch index={index} />
-                <span className="truncate">{env.label}</span>
+                <span className="flex min-w-0 items-center gap-1.5 self-center">
+                  <ProviderMark provider={providerOf(env)} className="size-4 rounded-[4px]" />
+                  <span className="truncate">{env.label}</span>
+                </span>
                 <span className="text-right font-semibold">{medianText(stat)}</span>
                 <span className="col-span-2 col-start-2 text-right text-xs text-muted-foreground">
                   {spreadText(stat)}
