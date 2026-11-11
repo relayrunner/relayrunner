@@ -37,7 +37,7 @@ That's what you want: the laptop when it's free, GitHub otherwise.
 ## What happens day to day
 
 - **While you work**, jobs you push run on the laptop. The `connect` terminal shows each one.
-- **When the laptop is busy** with a job, the next one goes to GitHub, so a long test run never blocks a quick lint.
+- **When the laptop is busy** with as many jobs as it runs at once, the next one goes to GitHub, so a long test run never blocks a quick lint.
 - **When the lid closes** or you stop `connect`, jobs go to GitHub. Nothing to change.
 - **A job running at that moment** stops with the laptop. Re-run it and it goes to GitHub.
 

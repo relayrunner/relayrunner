@@ -12,22 +12,45 @@ describe("the terminal title", () => {
   });
 
   test("follows a job from start to finish", () => {
-    const run: ConnectionEvent = { type: "run", routeId: "7f3k" };
-    const started: ConnectionEvent = { type: "job", update: { routeId: "7f3k", state: "started" } };
+    const run: ConnectionEvent = { type: "run", routeId: "7f3k", slot: 1 };
+    const started: ConnectionEvent = {
+      type: "job",
+      update: { routeId: "7f3k", state: "started" },
+      slot: 1,
+    };
     expect(title({ type: "connected" }, run, started)).toBe("RelayRunner · M3P0 · Running a job");
     for (const state of ["finished", "failed"] as const)
       expect(
         title({ type: "connected" }, run, started, {
           type: "job",
           update: { routeId: "7f3k", state },
+          slot: 1,
         }),
       ).toBe("RelayRunner · M3P0 · Waiting for jobs");
+  });
+
+  test("counts jobs running at once", () => {
+    const run = (routeId: string, slot: number): ConnectionEvent => ({
+      type: "run",
+      routeId,
+      slot,
+    });
+    const done = (routeId: string, slot: number): ConnectionEvent => ({
+      type: "job",
+      update: { routeId, state: "finished" },
+      slot,
+    });
+    const connected: ConnectionEvent = { type: "connected" };
+    expect(title(connected, run("a", 1), run("b", 2))).toBe("RelayRunner · M3P0 · Running 2 jobs");
+    expect(title(connected, run("a", 1), run("b", 2), done("a", 1))).toBe(
+      "RelayRunner · M3P0 · Running a job",
+    );
   });
 
   test("says when it's paused, including while a job finishes", () => {
     const paused: ConnectionEvent = { type: "paused", paused: true, by: null };
     expect(title({ type: "connected" }, paused)).toBe("RelayRunner · M3P0 · Paused");
-    expect(title({ type: "connected" }, { type: "run", routeId: "a" }, paused)).toBe(
+    expect(title({ type: "connected" }, { type: "run", routeId: "a", slot: 1 }, paused)).toBe(
       "RelayRunner · M3P0 · Running a job, then paused",
     );
     expect(

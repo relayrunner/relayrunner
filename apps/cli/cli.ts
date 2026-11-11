@@ -16,10 +16,11 @@ import { initCommand, offerSetup } from "./init.ts";
 import { defaultMachineName } from "./machine-name.ts";
 import { ensureRunner, RunnerError, runnerPlatform } from "./install.ts";
 import { normalizeServer } from "./server.ts";
-import { runJob } from "./job.ts";
+import { prefixLines, runJob } from "./job.ts";
 import { startLive } from "./live.ts";
 import { login, LoginError, openBrowser } from "./login.ts";
 import { pauseMachine } from "./pause.ts";
+import { ensureSlots, parseConcurrency } from "./slots.ts";
 import {
   describeSharing,
   parseShareChoice,
@@ -63,11 +64,24 @@ const connectCommand = defineCommand({
       description:
         "Who can run jobs on this machine: only-me (jobs you started) or anyone in your workspaces. Skips the question.",
     },
+    concurrency: {
+      type: "string",
+      description:
+        "How many jobs to run at once (default: 2 with 8 or more CPU cores, otherwise 1)",
+    },
   },
   async run({ args }) {
     clack.intro("RelayRunner");
+    let concurrency: number;
     try {
-      await connectMachine(args);
+      concurrency = parseConcurrency(args.concurrency);
+    } catch (error) {
+      clack.log.error((error as Error).message);
+      process.exitCode = 1;
+      return;
+    }
+    try {
+      await connectMachine({ ...args, concurrency });
     } catch (error) {
       if (!(error instanceof LoginError || error instanceof RunnerError)) throw error;
       clack.log.error(error.message);
@@ -76,7 +90,12 @@ const connectCommand = defineCommand({
   },
 });
 
-async function connectMachine(args: { server?: string; name?: string; share?: string }) {
+async function connectMachine(args: {
+  server?: string;
+  name?: string;
+  share?: string;
+  concurrency: number;
+}) {
   const share = shareArg(args.share);
   const platform = machinePlatform();
   let credentials = readCredentials();
@@ -99,6 +118,14 @@ async function connectMachine(args: { server?: string; name?: string; share?: st
   if (process.stdin.isTTY && process.stdout.isTTY) await offerSetup();
 
   const runner = await ensureRunner({ log: (line) => clack.log.info(line) });
+  // Each slot runs its jobs in its own copy of the runner.
+  const slots = args.concurrency;
+  const slotDirs = ensureSlots(runner, slots, (line) => clack.log.info(line));
+  clack.log.info(
+    slots === 1
+      ? "Running 1 job at a time. Change with --concurrency."
+      : `Running up to ${slots} jobs at once. Change with --concurrency.`,
+  );
   // What kind of device this is and its specs, for the dashboard's badge. Best effort.
   const device = await detectDevice();
 
@@ -142,22 +169,36 @@ async function connectMachine(args: { server?: string; name?: string; share?: st
         runnerVersion: runner.version,
         device,
       },
-      runJob: (run, report) =>
-        runJob(run, {
-          runner,
-          report,
-          onChecked: (target) => {
-            if (target)
-              clack.log.info(
-                `${new Date().toLocaleTimeString()} Job ${run.routeId} is from ${target}`,
-              );
-          },
-        }),
+      slots,
+      runJob: async (run, slot, report) => {
+        // With more than one slot, each line of a job's output says which slot it came from.
+        const prefixed =
+          slots > 1
+            ? prefixLines(`[slot ${slot}] `, (chunk, stream) =>
+                (stream === "stdout" ? process.stdout : process.stderr).write(chunk),
+              )
+            : undefined;
+        try {
+          return await runJob(run, {
+            dir: slotDirs[slot - 1],
+            report,
+            output: prefixed?.output,
+            onChecked: (target) => {
+              if (target)
+                clack.log.info(
+                  `${new Date().toLocaleTimeString()} Job ${run.routeId}${slots > 1 ? ` (slot ${slot})` : ""} is from ${target}`,
+                );
+            },
+          });
+        } finally {
+          prefixed?.flush();
+        }
+      },
       // The gateway rotates the token on every connect, so an old copy of machine.json stops working.
       saveToken: (token) => saveRotatedToken(credentials, token),
       onEvent: (event) => {
         if (event.type === "connected") online = true;
-        show(event);
+        show(event, slots > 1);
         live.onEvent(event);
       },
       signal: stop.signal,
@@ -389,7 +430,8 @@ async function signIn(
   }
 }
 
-function show(event: ConnectionEvent) {
+// `slotted`: name the slot a job runs in, when there's more than one.
+function show(event: ConnectionEvent, slotted: boolean) {
   const at = new Date().toLocaleTimeString();
   switch (event.type) {
     case "connecting":
@@ -407,7 +449,9 @@ function show(event: ConnectionEvent) {
       clack.log.error(`${at} Gateway: ${event.message}`);
       break;
     case "run":
-      clack.log.step(`${at} Starting job ${event.routeId}`);
+      clack.log.step(
+        `${at} Starting job ${event.routeId}${slotted ? ` in slot ${event.slot}` : ""}`,
+      );
       break;
     case "paused":
       if (event.paused)
@@ -423,11 +467,14 @@ function show(event: ConnectionEvent) {
       );
       break;
     case "run-refused":
-      clack.log.warn(`${at} Turned down job ${event.routeId}: already running one.`);
+      clack.log.warn(
+        `${at} Turned down job ${event.routeId}: already running ${event.running === 1 ? "one" : `${event.running}`}.`,
+      );
       break;
     case "job": {
       const { routeId, state, message } = event.update;
-      const line = `${at} Job ${routeId} ${state}${message ? `: ${message}` : ""}`;
+      const slot = slotted ? ` (slot ${event.slot})` : "";
+      const line = `${at} Job ${routeId}${slot} ${state}${message ? `: ${message}` : ""}`;
       if (state === "failed") clack.log.error(line);
       else if (state === "finished") clack.log.success(line);
       else clack.log.info(line);

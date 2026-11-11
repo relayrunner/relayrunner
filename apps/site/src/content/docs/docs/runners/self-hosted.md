@@ -49,9 +49,9 @@ relayrunner resume
 
 Press `p` in the `connect` terminal, or use the machine's ⋯ menu on the Runners page. Anyone in the workspace can pause a machine.
 
-## One job at a time
+## Jobs at once
 
-A machine runs one job at a time. When it's busy, the next job goes to another machine or falls through to the next step in your runner order. To run more jobs at once, connect more machines.
+A machine runs up to 2 jobs at once when it has 8 or more CPU cores, otherwise 1. Change it with `relayrunner connect --concurrency <n>`. Each job gets its own copy of the runner, so jobs never share a workspace. When every slot is busy, the next job goes to another machine or falls through to the next step in your runner order.
 
 ## Remove a machine
 

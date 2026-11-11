@@ -2,8 +2,9 @@
 //
 // - GET /api/machines/connect as a WebSocket, with the machine token as a bearer token.
 // - `hello` first, then `status` on every change and every 30 seconds as the heartbeat.
-// - `run` starts one job through runJob() and reports its `job` progress. Capacity is one: a
-//   second `run` while busy is answered with a failed `job` straight away.
+// - `run` starts a job in a free slot through runJob() and reports its `job` progress. The
+//   machine has `slots` of them (sent in `hello`); a `run` while every slot is busy is answered
+//   with a failed `job` straight away.
 // - `token` replaces the machine token: saveToken() stores it, the CLI answers `token_saved`, and
 //   it connects with the new one from then on.
 // - Close 4001 (revoked) and 4002 (replaced by another connection) end it, and so does 1008
@@ -25,8 +26,6 @@ export const CLOSE_REVOKED = 4001;
 export const CLOSE_REPLACED = 4002;
 const CLOSE_POLICY = 1008;
 
-export type MachineState = "idle" | "busy";
-
 // Why connect() returned.
 export type ConnectionEnd =
   // Ctrl-C, or whoever owns the signal.
@@ -44,9 +43,10 @@ export type ConnectionEvent =
   | { type: "connected" }
   | { type: "disconnected"; code: number; reason: string; retryInMs: number }
   | { type: "gateway-error"; code: string; message: string }
-  | { type: "run"; routeId: string }
-  | { type: "run-refused"; routeId: string }
-  | { type: "job"; update: JobUpdate }
+  // Slots are numbered from 1.
+  | { type: "run"; routeId: string; slot: number }
+  | { type: "run-refused"; routeId: string; running: number }
+  | { type: "job"; update: JobUpdate; slot: number }
   // The gateway sent a new machine token and saveToken() couldn't store it. The old one keeps
   // working, and the gateway tries again on the next connect.
   | { type: "token-not-saved"; message: string }
@@ -56,9 +56,11 @@ export type ConnectionEvent =
 export interface ConnectOptions {
   server: string;
   token: string;
-  hello: Omit<HelloMessage, "v" | "type">;
-  // Run one job and report its progress. Must not reject.
-  runJob: (run: RunMessage, report: (update: JobUpdate) => void) => Promise<unknown>;
+  hello: Omit<HelloMessage, "v" | "type" | "slots">;
+  // How many jobs it runs at once. Defaults to 1.
+  slots?: number;
+  // Run one job in the given slot (from 1) and report its progress. Must not reject.
+  runJob: (run: RunMessage, slot: number, report: (update: JobUpdate) => void) => Promise<unknown>;
   // Store a new machine token the gateway sent (it rotates it on every connect). Throws if it
   // couldn't. Without it, the CLI doesn't offer to rotate and keeps the token it has.
   saveToken?: (token: string) => void;
@@ -96,7 +98,9 @@ export async function connect(options: ConnectOptions): Promise<ConnectionEnd> {
   const emit = options.onEvent ?? (() => {});
   const signal = options.signal;
 
-  let state: MachineState = "idle";
+  const slots = options.slots ?? 1;
+  // The slots running a job now.
+  const busy = new Set<number>();
   let socket: WebSocket | null = null;
   // The token to connect with: the saved one, then each one the gateway sends.
   let token = options.token;
@@ -109,7 +113,13 @@ export async function connect(options: ConnectOptions): Promise<ConnectionEnd> {
     if (socket?.readyState === WebSocket.OPEN) socket.send(encodeMessage(message));
     else if (message.type === "job") pending.push(message);
   };
-  const sendStatus = () => send({ v: PROTOCOL_VERSION, type: "status", state });
+  const sendStatus = () =>
+    send({
+      v: PROTOCOL_VERSION,
+      type: "status",
+      state: busy.size > 0 ? "busy" : "idle",
+      running: busy.size,
+    });
 
   // Saved first, then acknowledged: once the gateway hears `token_saved` the old token is dead.
   const saveToken = (next: string) => {
@@ -128,26 +138,33 @@ export async function connect(options: ConnectOptions): Promise<ConnectionEnd> {
   };
 
   const startJob = (run: RunMessage) => {
-    if (state === "busy") {
-      emit({ type: "run-refused", routeId: run.routeId });
+    let slot = 1;
+    while (busy.has(slot)) slot++;
+    if (slot > slots) {
+      emit({ type: "run-refused", routeId: run.routeId, running: busy.size });
       const update: JobUpdate = {
         routeId: run.routeId,
         state: "failed",
-        message: "The machine is already running a job.",
+        message:
+          busy.size === 1
+            ? "The machine is already running a job."
+            : `The machine is already running ${busy.size} jobs.`,
       };
       send({ v: PROTOCOL_VERSION, type: "job", ...update });
       return;
     }
-    emit({ type: "run", routeId: run.routeId });
-    state = "busy";
+    emit({ type: "run", routeId: run.routeId, slot });
+    // Counted before the job starts, so the gateway's running count is up before it drops the
+    // route's hold.
+    busy.add(slot);
     sendStatus();
     void options
-      .runJob(run, (update) => {
-        emit({ type: "job", update });
+      .runJob(run, slot, (update) => {
+        emit({ type: "job", update, slot });
         send({ v: PROTOCOL_VERSION, type: "job", ...update });
       })
       .finally(() => {
-        state = "idle";
+        busy.delete(slot);
         sendStatus();
       });
   };
@@ -182,7 +199,13 @@ export async function connect(options: ConnectOptions): Promise<ConnectionEnd> {
         emit({ type: "connected" });
         const rotatesToken = options.saveToken ? true : undefined;
         ws.send(
-          encodeMessage({ v: PROTOCOL_VERSION, type: "hello", ...options.hello, rotatesToken }),
+          encodeMessage({
+            v: PROTOCOL_VERSION,
+            type: "hello",
+            ...options.hello,
+            slots,
+            rotatesToken,
+          }),
         );
         sendStatus();
         for (const message of pending.splice(0)) send(message);
