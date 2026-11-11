@@ -165,6 +165,7 @@ export async function purgeOldJobTimings(db: Db, now = Date.now()): Promise<numb
  */
 export async function rollUpJobTimings(db: Db, now = Date.now()): Promise<number> {
   const cutoff = new Date(utcDay(now - RAW_RETENTION_DAYS * DAY_MS));
+  const d1 = db.$client;
   let moved = 0;
   for (let i = 0; i < ROLLUP_DAYS_PER_RUN; i += 1) {
     // job_timing_completed_idx.
@@ -177,7 +178,6 @@ export async function rollUpJobTimings(db: Db, now = Date.now()): Promise<number
     if (!oldest?.completedAt) break;
     const start = utcDay(oldest.completedAt.getTime());
     const end = start + DAY_MS;
-    const d1 = db.$client;
     const [, deleted] = await d1.batch([
       d1.prepare(ROLLUP_SQL).bind(start, end),
       d1
@@ -221,7 +221,7 @@ const ROLLUP_SQL = `
 
 // The UTC midnight starting the day `ms` falls on.
 function utcDay(ms: number) {
-  return ms - (((ms % DAY_MS) + DAY_MS) % DAY_MS);
+  return Math.floor(ms / DAY_MS) * DAY_MS;
 }
 
 /**
