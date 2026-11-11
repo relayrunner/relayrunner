@@ -1,5 +1,12 @@
 # relayrunner
 
+## 0.7.0
+
+### Minor Changes
+
+- c5a840b: `relayrunner connect` tells you when npm has a newer `relayrunner`, with the command that updates it (`npx relayrunner@latest connect`, or `npm install --global relayrunner@latest` for a global install). It asks npm at most once a day, in the background, so it never slows down connecting, and a `connect` left running checks again each day. It only checks when someone is at the terminal and not in CI. `connect` also tells the gateway which CLI version the machine runs, and `relayrunner --version` prints it.
+- ba39692: `relayrunner connect` runs several jobs at once: 2 on a computer with 8 or more CPU cores, otherwise 1. `--concurrency <n>` changes it. Each slot runs its jobs in its own copy of the runner (`~/.relayrunner/runner/<version>/slot-<n>/`), and with more than one slot each line of a job's output starts with its slot.
+
 ## 0.6.0
 
 ### Minor Changes
