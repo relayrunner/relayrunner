@@ -174,113 +174,133 @@ export class Router extends DurableObject<Env> {
 
   // A route to a free machine with the job's labels whose sharing takes the job, else why none
   // could (unavailableMachines), or null.
-  private pickMachine(job: PickedJob): Promise<MachinePick> {
-    // One decision at a time, so two picks can't both see the same machine as free.
+  //
+  // The slow reads (D1, GitHub, each machine's live status) happen first, with nothing locked, so
+  // one workspace's picks run side by side and a slow GitHub call holds up only its own pick. Only
+  // the choice and the route that reserves the machine run one at a time (reserve), against the
+  // routes as they stand then, so two picks can't both take the same machine.
+  private async pickMachine(job: PickedJob): Promise<MachinePick> {
+    const now = Date.now();
+    // Machines already held aren't worth asking about. reserve checks again under the lock.
+    const held = heldMachines(await this.routes(now), now);
+
+    const machines = await createDb(this.env.DB)
+      .select({
+        id: schema.machine.id,
+        name: schema.machine.name,
+        os: schema.machine.os,
+        arch: schema.machine.arch,
+        pausedAt: schema.machine.pausedAt,
+        source: schema.machine.source,
+        installationId: schema.machine.installationId,
+        githubRunnerId: schema.machine.githubRunnerId,
+        routingLabel: schema.machine.routingLabel,
+        githubLabels: schema.machine.githubLabels,
+        sharing: schema.machine.sharing,
+        ownerName: schema.user.name,
+        ownerGithubId: schema.account.accountId,
+      })
+      .from(schema.machine)
+      .leftJoin(schema.user, eq(schema.user.id, schema.machine.createdBy))
+      // The owner's GitHub account, which `only_me` matches the job's starters against.
+      .leftJoin(
+        schema.account,
+        and(
+          eq(schema.account.userId, schema.machine.createdBy),
+          eq(schema.account.providerId, "github"),
+        ),
+      )
+      .where(
+        and(
+          eq(schema.machine.workspaceId, job.workspaceId),
+          isNull(schema.machine.revokedAt),
+          or(
+            isNotNull(schema.machine.tokenHash),
+            and(eq(schema.machine.source, "github"), isNotNull(schema.machine.routingLabel)),
+          ),
+        ),
+      );
+    // An org runner only serves its own org's repos, so a runner added from another
+    // installation never fits this job. An owner with two GitHub accounts linked would list a
+    // machine twice: keep its first row.
+    const seen = new Set<string>();
+    const fits = machines
+      .filter((machine) => !seen.has(machine.id) && Boolean(seen.add(machine.id)))
+      .filter(
+        (machine) => machine.source !== "github" || machine.installationId === job.installationId,
+      );
+    const pool = fits.map((machine) => ({
+      id: machine.id,
+      name: machine.name,
+      labels:
+        machine.source === "github"
+          ? matchLabels(parseStoredLabels(machine.githubLabels))
+          : machineLabels(machine),
+      paused: machine.pausedAt !== null,
+      sharing: machine.sharing,
+      ownerGithubId: githubId(machine.ownerGithubId),
+      ownerName: machine.ownerName,
+    }));
+    // Paused machines can't be picked, so there's no need to ask for their live status.
+    // Nor for those whose sharing won't take this job.
+    const admitted = fits.filter(
+      (machine) =>
+        !held.has(machine.id) &&
+        machine.pausedAt === null &&
+        admits(
+          pool.find((entry) => entry.id === machine.id)!,
+          job,
+        ),
+    );
+    // A connected machine shared with anyone only takes the job if its owner can read the repo.
+    // A runner added from GitHub is the org's own, already limited by its runner group.
+    const readable = await Promise.all(
+      admitted.map((machine) => {
+        const entry = pool.find((e) => e.id === machine.id)!;
+        if (machine.source === "github" || !needsOwnerAccess(entry, job)) return true;
+        return this.ownerCanRead(machine.id, entry.ownerGithubId ?? null, job, now);
+      }),
+    );
+    const live = admitted.filter((_, index) => readable[index]);
+    const runners = live.some((machine) => machine.source === "github")
+      ? await this.orgRunners(job)
+      : null;
+    const candidates: Candidate[] = await Promise.all(
+      live.map(async (machine): Promise<Candidate> => {
+        const { ownerName: _, ...base } = pool.find((entry) => entry.id === machine.id)!;
+        if (machine.source !== "github")
+          return { ...base, ...(await this.env.MACHINE_LINK.getByName(machine.id).status()) };
+        const runner = runners?.runners.find((r) => r.id === machine.githubRunnerId);
+        return {
+          ...base,
+          ...runnerStatus(runner, runner && runners?.access.get(runner.id), {
+            id: job.repositoryId,
+            private: job.private,
+          }),
+        };
+      }),
+    );
+    const routingLabels = new Map(fits.map((m) => [m.id, m.routingLabel ?? undefined]));
+    return (
+      (await this.reserve(job, candidates, routingLabels)) ??
+      unavailableMachines(pool, job.machine, job)
+    );
+  }
+
+  // Chooses among the candidates and stores the route that holds the chosen machine, one pick at a
+  // time and with no I/O but storage, so the lock is held for milliseconds. Null when none is free.
+  private reserve(
+    job: PickedJob,
+    candidates: Candidate[],
+    routingLabels: Map<string, string | undefined>,
+  ): Promise<MachinePick | null> {
     return this.ctx.blockConcurrencyWhile(async () => {
       const now = Date.now();
       const routes = await this.routes(now);
-      const held = new Set(routes.filter((r) => holdsMachine(r, now)).map((r) => r.machineId));
-
-      const machines = await createDb(this.env.DB)
-        .select({
-          id: schema.machine.id,
-          name: schema.machine.name,
-          os: schema.machine.os,
-          arch: schema.machine.arch,
-          pausedAt: schema.machine.pausedAt,
-          source: schema.machine.source,
-          installationId: schema.machine.installationId,
-          githubRunnerId: schema.machine.githubRunnerId,
-          routingLabel: schema.machine.routingLabel,
-          githubLabels: schema.machine.githubLabels,
-          sharing: schema.machine.sharing,
-          ownerName: schema.user.name,
-          ownerGithubId: schema.account.accountId,
-        })
-        .from(schema.machine)
-        .leftJoin(schema.user, eq(schema.user.id, schema.machine.createdBy))
-        // The owner's GitHub account, which `only_me` matches the job's starters against.
-        .leftJoin(
-          schema.account,
-          and(
-            eq(schema.account.userId, schema.machine.createdBy),
-            eq(schema.account.providerId, "github"),
-          ),
-        )
-        .where(
-          and(
-            eq(schema.machine.workspaceId, job.workspaceId),
-            isNull(schema.machine.revokedAt),
-            or(
-              isNotNull(schema.machine.tokenHash),
-              and(eq(schema.machine.source, "github"), isNotNull(schema.machine.routingLabel)),
-            ),
-          ),
-        );
-      // An org runner only serves its own org's repos, so a runner added from another
-      // installation never fits this job. An owner with two GitHub accounts linked would list a
-      // machine twice: keep its first row.
-      const seen = new Set<string>();
-      const fits = machines
-        .filter((machine) => !seen.has(machine.id) && Boolean(seen.add(machine.id)))
-        .filter(
-          (machine) => machine.source !== "github" || machine.installationId === job.installationId,
-        );
-      const pool = fits.map((machine) => ({
-        id: machine.id,
-        name: machine.name,
-        labels:
-          machine.source === "github"
-            ? matchLabels(parseStoredLabels(machine.githubLabels))
-            : machineLabels(machine),
-        paused: machine.pausedAt !== null,
-        sharing: machine.sharing,
-        ownerGithubId: githubId(machine.ownerGithubId),
-        ownerName: machine.ownerName,
-      }));
-      // Paused machines can't be picked, so there's no need to ask for their live status.
-      // Nor for those whose sharing won't take this job.
-      const admitted = fits.filter(
-        (machine) =>
-          !held.has(machine.id) &&
-          machine.pausedAt === null &&
-          admits(
-            pool.find((entry) => entry.id === machine.id)!,
-            job,
-          ),
-      );
-      // A connected machine shared with anyone only takes the job if its owner can read the repo.
-      // A runner added from GitHub is the org's own, already limited by its runner group.
-      const readable = await Promise.all(
-        admitted.map((machine) => {
-          const entry = pool.find((e) => e.id === machine.id)!;
-          if (machine.source === "github" || !needsOwnerAccess(entry, job)) return true;
-          return this.ownerCanRead(machine.id, entry.ownerGithubId ?? null, job, now);
-        }),
-      );
-      const live = admitted.filter((_, index) => readable[index]);
-      const runners = live.some((machine) => machine.source === "github")
-        ? await this.orgRunners(job)
-        : null;
-      const candidates: Candidate[] = await Promise.all(
-        live.map(async (machine): Promise<Candidate> => {
-          const { ownerName: _, ...base } = pool.find((entry) => entry.id === machine.id)!;
-          if (machine.source !== "github")
-            return { ...base, ...(await this.env.MACHINE_LINK.getByName(machine.id).status()) };
-          const runner = runners?.runners.find((r) => r.id === machine.githubRunnerId);
-          return {
-            ...base,
-            ...runnerStatus(runner, runner && runners?.access.get(runner.id), {
-              id: job.repositoryId,
-              private: job.private,
-            }),
-          };
-        }),
-      );
+      const held = heldMachines(routes, now);
       const machine = chooseMachine(candidates, held, lastPicked(routes), job.machine, job);
-      if (!machine) return unavailableMachines(pool, job.machine, job);
-
-      const routingLabel = fits.find((m) => m.id === machine.id)?.routingLabel ?? undefined;
+      if (!machine) return null;
+      const routingLabel = routingLabels.get(machine.id);
       const route: Route = {
         id: newRouteId(),
         machineId: machine.id,
@@ -428,6 +448,11 @@ export class Router extends DurableObject<Env> {
     if (expired.length) await this.ctx.storage.delete(expired.slice(0, 128));
     return [...stored.values()].filter((r) => now - r.createdAt <= ROUTE_TTL_MS);
   }
+}
+
+// The machines a live route still holds.
+function heldMachines(routes: Route[], now: number) {
+  return new Set(routes.filter((r) => holdsMachine(r, now)).map((r) => r.machineId));
 }
 
 // Better Auth keeps a GitHub account's id as text.
