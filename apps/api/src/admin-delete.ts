@@ -35,7 +35,8 @@ export type DeletedWorkspace = {
 
 /**
  * Deletes workspaces. A workspace is its installation (#316), so this forgets the installation:
- * its row goes, and with it the workspace, repos, jobs, timings, runs and usage.
+ * its row goes, and with it the workspace, repos, jobs, timings, runs, usage and adopted GitHub
+ * runners. Members' connected machines are theirs (#318) and stay.
  */
 export async function deleteWorkspaces(
   env: Env,
@@ -95,7 +96,8 @@ export async function deleteWorkspaces(
 /**
  * The App was uninstalled (the `installation.deleted` webhook): delete the installation's
  * workspace and everything under it, then the installation. GitHub has already removed the
- * runners, so there's no label to take off.
+ * runners, so there's no label to take off. Members' connected machines stay (#318): they just
+ * stop showing up in, and taking jobs for, this workspace.
  */
 export async function forgetInstallation(env: Env, db: Db, installationId: number) {
   const [workspace] = await db
@@ -188,7 +190,14 @@ export async function deleteUser(
   }
 
   const workspaces = await deleteWorkspaces(env, db, workspaceIds, options);
-  // Sessions, sign-in accounts, device codes, memberships and invites they sent cascade.
+  // Their connected machines are theirs, not a workspace's (#318): close their sockets, then the
+  // rows go with the user.
+  const machines = await db
+    .select({ id: schema.machine.id })
+    .from(schema.machine)
+    .where(eq(schema.machine.userId, userId));
+  await Promise.all(machines.map((machine) => env.MACHINE_LINK.getByName(machine.id).purge()));
+  // Sessions, sign-in accounts, device codes, memberships, machines and invites they sent cascade.
   await db.delete(schema.user).where(eq(schema.user.id, userId));
   return { ok: true, workspaces };
 }

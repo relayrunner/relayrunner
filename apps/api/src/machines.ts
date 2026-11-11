@@ -1,5 +1,5 @@
-import { type SQL, and, eq, isNotNull, isNull, or } from "drizzle-orm";
-import { recordEvent } from "./activity.ts";
+import { type SQL, and, count, eq, inArray, isNotNull, isNull, or } from "drizzle-orm";
+import { type NewActivityEvent, recordEvent } from "./activity.ts";
 import type { Db } from "./db/index.ts";
 import { schema } from "./db/index.ts";
 import type { Env } from "./env.ts";
@@ -102,14 +102,107 @@ export function normalizeUserCode(userCode: string) {
   return userCode.replace(/[^a-zA-Z0-9]/g, "").toUpperCase();
 }
 
+type Machine = typeof schema.machine.$inferSelect;
+
+/**
+ * Which machines a workspace has (#318): the connected machines of its members, wherever they
+ * enrolled them, plus the GitHub runners adopted from its own installation.
+ */
+export function inWorkspace(db: Db, workspaceId: string): SQL {
+  return or(
+    eq(schema.machine.workspaceId, workspaceId),
+    and(
+      eq(schema.machine.source, "connect"),
+      inArray(
+        schema.machine.userId,
+        db
+          .select({ userId: schema.workspaceMember.userId })
+          .from(schema.workspaceMember)
+          .where(eq(schema.workspaceMember.workspaceId, workspaceId)),
+      ),
+    ),
+  )!;
+}
+
+/** The workspaces a user is a member of, oldest membership first. */
+export async function userWorkspaces(db: Db, userId: string) {
+  return db
+    .select({
+      id: schema.workspace.id,
+      name: schema.workspace.name,
+      slug: schema.workspace.slug,
+    })
+    .from(schema.workspaceMember)
+    .innerJoin(schema.workspace, eq(schema.workspace.id, schema.workspaceMember.workspaceId))
+    .where(eq(schema.workspaceMember.userId, userId))
+    .orderBy(schema.workspaceMember.createdAt, schema.workspace.id);
+}
+
+/**
+ * What the CLI is told about where its machine is (#318): every workspace its owner is in, each
+ * with its member count, and the single `workspace` CLI 0.5.0 reads. That one is the workspace
+ * with the most members, so 0.5.0's "ask about sharing when someone else is there" (#244) still
+ * asks when any of them has teammates. Null when the owner is in no workspace yet.
+ */
+export async function presentMachineWorkspaces(db: Db, userId: string | null) {
+  if (!userId) return { workspace: null, workspaces: [] };
+  const mine = await userWorkspaces(db, userId);
+  const counts = mine.length
+    ? await db
+        .select({ workspaceId: schema.workspaceMember.workspaceId, members: count() })
+        .from(schema.workspaceMember)
+        .where(
+          inArray(
+            schema.workspaceMember.workspaceId,
+            mine.map((workspace) => workspace.id),
+          ),
+        )
+        .groupBy(schema.workspaceMember.workspaceId)
+    : [];
+  const workspaces = mine.map((workspace) => ({
+    ...workspace,
+    memberCount: counts.find((row) => row.workspaceId === workspace.id)?.members ?? 0,
+  }));
+  const workspace = workspaces.reduce<(typeof workspaces)[number] | null>(
+    (best, next) => (!best || next.memberCount > best.memberCount ? next : best),
+    null,
+  );
+  return { workspace, workspaces };
+}
+
+/**
+ * The workspaces a machine is in right now: an adopted runner's one workspace, or every workspace
+ * a connected machine's owner is a member of.
+ */
+export async function machineWorkspaceIds(
+  db: Db,
+  machine: Pick<Machine, "workspaceId" | "userId">,
+): Promise<string[]> {
+  if (machine.workspaceId) return [machine.workspaceId];
+  if (!machine.userId) return [];
+  return (await userWorkspaces(db, machine.userId)).map((workspace) => workspace.id);
+}
+
+/**
+ * Logs a machine event in every workspace the machine is in at the time, so each one's Activity
+ * shows it.
+ */
+export async function recordMachineEvents(
+  db: Db,
+  machine: Pick<Machine, "workspaceId" | "userId">,
+  event: DistributiveOmit<NewActivityEvent, "workspaceId">,
+) {
+  for (const workspaceId of await machineWorkspaceIds(db, machine))
+    await recordEvent(db, { ...event, workspaceId } as NewActivityEvent);
+}
+
+type DistributiveOmit<T, K extends PropertyKey> = T extends unknown ? Omit<T, K> : never;
+
 /**
  * What the dashboard and the CLI see of a machine. Never includes the token hash. `pausedBy` is
  * the name of the user who paused it, when the caller looked it up.
  */
-export function presentMachine(
-  machine: typeof schema.machine.$inferSelect,
-  pausedBy: string | null = null,
-) {
+export function presentMachine(machine: Machine, pausedBy: string | null = null) {
   return {
     id: machine.id,
     name: machine.name,
@@ -130,7 +223,7 @@ export function presentMachine(
     createdAt: machine.createdAt,
     // Null unless paused. `by` is null when the machine's own CLI paused it.
     paused: machine.pausedAt ? { at: machine.pausedAt, by: pausedBy } : null,
-    // Whose jobs it takes ('only_me' or 'anyone'); only its owner (createdBy) can change it.
+    // Whose jobs it takes ('only_me' or 'anyone'); only its owner (userId) can change it.
     sharing: machine.sharing,
     // What its CLI reported on its last hello, or null when it never did (an older CLI, or a
     // runner added from GitHub, which doesn't report hardware).
@@ -185,8 +278,7 @@ export async function revokeMachines(env: Env, db: Db, where: SQL, actorUserId: 
     .where(and(where, isNull(schema.machine.revokedAt)))
     .returning();
   for (const machine of machines) {
-    await recordEvent(db, {
-      workspaceId: machine.workspaceId,
+    await recordMachineEvents(db, machine, {
       type: "machine.revoked",
       data: {
         machineName: machine.name,
@@ -237,8 +329,7 @@ export async function setMachinePaused(
       .limit(1);
     return current ? { machine: current, changed: false } : null;
   }
-  await recordEvent(db, {
-    workspaceId: machine.workspaceId,
+  await recordMachineEvents(db, machine, {
     type: paused ? "machine.paused" : "machine.resumed",
     data: { machineName: machine.name, via: actor.via },
     machineId: machine.id,
@@ -270,8 +361,7 @@ export async function setMachineSharing(
     .set({ sharing })
     .where(eq(schema.machine.id, machineId))
     .returning();
-  await recordEvent(db, {
-    workspaceId: machine.workspaceId,
+  await recordMachineEvents(db, machine, {
     type: "machine.sharing_changed",
     data: { machineName: machine.name, sharing },
     machineId: machine.id,
@@ -281,7 +371,7 @@ export async function setMachineSharing(
 }
 
 /** The name of the user who paused a machine, or null (not paused, or paused by its CLI). */
-export async function pausedByName(db: Db, machine: typeof schema.machine.$inferSelect) {
+export async function pausedByName(db: Db, machine: Machine) {
   if (!machine.pausedAt || !machine.pausedBy) return null;
   const [user] = await db
     .select({ name: schema.user.name })
@@ -293,11 +383,7 @@ export async function pausedByName(db: Db, machine: typeof schema.machine.$infer
 
 // Takes RelayRunner's label off a removed GitHub runner, so jobs can't reach it through the label.
 // Best effort: the machine row is already revoked, so routing never picks it again either way.
-export async function removeRoutingLabel(
-  env: Env,
-  db: Db,
-  machine: typeof schema.machine.$inferSelect,
-) {
+export async function removeRoutingLabel(env: Env, db: Db, machine: Machine) {
   if (!machine.installationId || !machine.githubRunnerId || !machine.routingLabel) return;
   try {
     const [installation] = await db

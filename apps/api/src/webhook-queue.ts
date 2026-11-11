@@ -337,7 +337,8 @@ async function trackRunnerJob(
     .from(schema.machine)
     .where(and(eq(schema.machine.routingLabel, routingLabel), isNull(schema.machine.revokedAt)))
     .limit(1);
-  if (!machine) {
+  // Only adopted GitHub runners carry a routing label, and each belongs to one workspace.
+  if (!machine?.workspaceId) {
     console.warn(JSON.stringify({ ...log, result: "no_machine" }));
     return;
   }

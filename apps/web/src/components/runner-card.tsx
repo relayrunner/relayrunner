@@ -394,7 +394,8 @@ export function MachineCard({ machine, jobTime }: { machine: Machine; jobTime?: 
                   <DropdownMenuSeparator />
                 </>
               )}
-              {paused ? (
+              {/* Only a machine's owner pauses it (#318); the API says who can. */}
+              {machine.canRevoke === false ? null : paused ? (
                 <DropdownMenuItem onSelect={() => void act("resume")}>
                   <PlayIcon aria-hidden />
                   Unpause
@@ -440,7 +441,7 @@ export function MachineCard({ machine, jobTime }: { machine: Machine; jobTime?: 
                   </a>
                 </DropdownMenuItem>
               )}
-              {/* Members revoke only the machines they enrolled; the API says which. */}
+              {/* Only a machine's owner revokes it (#318); the API says which. */}
               {machine.canRevoke !== false && (
                 <>
                   <DropdownMenuSeparator />

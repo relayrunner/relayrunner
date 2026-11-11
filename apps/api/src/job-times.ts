@@ -14,6 +14,7 @@ import { usesContainerRunner } from "./container-runner.ts";
 import { type Db, schema } from "./db/index.ts";
 import { DAY_MS, GITHUB_HOSTED_GROUP, RUNNER_LABELS, runnerClass } from "./job-timings.ts";
 import { cloudProviderFor, isGitHubHostedLabel } from "./cloud-providers.ts";
+import { inWorkspace as machineInWorkspace } from "./machines.ts";
 import { routeIdFromLabels } from "./routing.ts";
 import { RELAYRUNNER_LABEL } from "./webhook-queue.ts";
 
@@ -101,9 +102,7 @@ export async function nameMachines(db: Db, workspaceId: string, envs: Map<string
       os: schema.machine.os,
     })
     .from(schema.machine)
-    .where(
-      and(eq(schema.machine.workspaceId, workspaceId), inArray(schema.machine.id, machineIds)),
-    );
+    .where(and(machineInWorkspace(db, workspaceId), inArray(schema.machine.id, machineIds)));
   for (const machine of machines) {
     const env = envs.get(`${MACHINE}${machine.id}`);
     if (!env) continue;
@@ -607,6 +606,7 @@ export async function machineJobTimes(
   now = Date.now(),
 ): Promise<{ days: number; machines: Record<string, Stat> }> {
   const since = new Date(now - days * DAY_MS);
+  // A member's machine also runs other workspaces' jobs (#318): count only this one's.
   const rows = await db.all<{
     machine_id: string;
     runs: number;
@@ -617,8 +617,10 @@ export async function machineJobTimes(
       ${SAMPLES} as samples
     from ${table}
     where ${table.machineId} in (
-        select ${schema.machine.id} from ${schema.machine}
-        where ${schema.machine.workspaceId} = ${workspaceId})
+        select ${schema.machine.id} from ${schema.machine} where ${machineInWorkspace(db, workspaceId)})
+      and ${table.installationId} = (
+        select ${schema.workspace.installationId} from ${schema.workspace}
+        where ${schema.workspace.id} = ${workspaceId})
       and ${table.completedAt} >= ${since.getTime()}
       and ${RAN}
     group by ${table.machineId}`);

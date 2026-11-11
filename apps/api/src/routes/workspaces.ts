@@ -6,6 +6,7 @@ import { agentWorkspaceId } from "../agent-auth.ts";
 import type { AppEnv } from "../app.ts";
 import { createDb, schema } from "../db/index.ts";
 import { isWorkspaceMember } from "../installations.ts";
+import { inWorkspace } from "../machines.ts";
 import { requireUser } from "../middleware/session.ts";
 import { requireWorkspace } from "../middleware/workspace.ts";
 import { requireManager } from "../roles.ts";
@@ -39,21 +40,21 @@ export const workspaceRoutes = new Hono<AppEnv>()
     const { runnerOrder: _, ...rest } = workspace;
     return c.json({ workspace: rest, role, installations: installations.map(present) });
   })
-  // How many live machines each member enrolled, keyed by user id, for the Members page (#136).
+  // How many live machines each member owns, keyed by user id, for the Members page (#136).
   // Same filter as GET /api/machines: claimed and not revoked.
   .get("/current/machine-counts", requireUser, requireWorkspace, async (c) => {
     const rows = await c.var.db
-      .select({ userId: schema.machine.createdBy, machines: count() })
+      .select({ userId: schema.machine.userId, machines: count() })
       .from(schema.machine)
       .where(
         and(
-          eq(schema.machine.workspaceId, c.var.workspace.id),
+          inWorkspace(c.var.db, c.var.workspace.id),
           isNotNull(schema.machine.os),
           isNull(schema.machine.revokedAt),
-          isNotNull(schema.machine.createdBy),
+          isNotNull(schema.machine.userId),
         ),
       )
-      .groupBy(schema.machine.createdBy);
+      .groupBy(schema.machine.userId);
     const counts: Record<string, number> = {};
     for (const row of rows) if (row.userId) counts[row.userId] = row.machines;
     return c.json({ counts });

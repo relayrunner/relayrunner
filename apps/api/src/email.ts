@@ -31,7 +31,7 @@ export type EmailArgs = (
         machineName: string;
         os?: string | null;
         arch?: string | null;
-        workspaceName: string;
+        workspaceNames: string[];
         connectedAt: Date;
       };
     }
@@ -40,7 +40,6 @@ export type EmailArgs = (
       template: "machine-taken-over";
       context: {
         machineName: string;
-        workspaceName: string;
         was: ConnectionPlace;
         now: ConnectionPlace;
         at: Date;

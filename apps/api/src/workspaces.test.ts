@@ -301,23 +301,25 @@ describe("machine counts (#136)", () => {
     const { user, cookie } = await signIn();
     const { workspace, cookie: jar } = await createWorkspace(cookie, "Counts", "counts");
     const member = await testing.joinWorkspace(env, workspace.id, "member");
-    const other = await createWorkspace((await signIn()).cookie, "Other", "counts-other");
+    const outsider = await signIn();
+    await createWorkspace(outsider.cookie, "Other", "counts-other");
 
-    const insert = (id: string, workspaceId: string, createdBy: string, extra = "") =>
+    // Machines belong to users, not workspaces (#318).
+    const insert = (id: string, userId: string, extra = "") =>
       env.DB.prepare(
-        `insert into machine (id, workspace_id, name, os, arch, created_by, revoked_at, created_at, updated_at)
-         values (?, ?, ?, ${extra.includes("pending") ? "null" : "'macos'"}, 'arm64', ?, ${
+        `insert into machine (id, user_id, name, os, arch, revoked_at, created_at, updated_at)
+         values (?, ?, ?, ${extra.includes("pending") ? "null" : "'macos'"}, 'arm64', ${
            extra.includes("revoked") ? "1" : "null"
          }, 1, 1)`,
       )
-        .bind(id, workspaceId, id, createdBy)
+        .bind(id, userId, id)
         .run();
-    await insert("count-a", workspace.id, user.id);
-    await insert("count-b", workspace.id, user.id);
-    await insert("count-c", workspace.id, member.user.id);
-    await insert("count-revoked", workspace.id, member.user.id, "revoked");
-    await insert("count-pending", workspace.id, member.user.id, "pending");
-    await insert("count-other", other.workspace.id, user.id);
+    await insert("count-a", user.id);
+    await insert("count-b", user.id);
+    await insert("count-c", member.user.id);
+    await insert("count-revoked", member.user.id, "revoked");
+    await insert("count-pending", member.user.id, "pending");
+    await insert("count-other", outsider.user.id);
 
     for (const viewer of [jar, member.cookie]) {
       const response = await call("/workspaces/current/machine-counts", viewer);

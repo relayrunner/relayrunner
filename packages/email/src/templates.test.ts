@@ -42,7 +42,6 @@ describe("templates", () => {
   it("machine-taken-over names both places and escapes the machine name", () => {
     const email = renderMachineTakenOverEmail({
       machineName: "<b>mbp</b>",
-      workspaceName: "Acme",
       was: { ip: "198.51.100.1", country: "US", city: "Boston" },
       now: { ip: "203.0.113.9", country: "PT", city: null },
       at: new Date("2026-11-10T00:00:00Z"),
@@ -55,21 +54,33 @@ describe("templates", () => {
     expect(email.text).toContain("https://app.example/runners");
   });
 
-  it("machine-connected escapes user-chosen names in HTML", () => {
+  it("machine-connected lists every workspace and escapes user-chosen names in HTML", () => {
     const email = renderMachineConnectedEmail({
       machineName: "<script>alert(1)</script>",
       os: "macos",
       arch: "arm64",
-      workspaceName: "Acme & Co",
+      workspaceNames: ["Acme & Co", "atticoos"],
       connectedAt: new Date("2026-11-05T00:00:00Z"),
       machinesUrl: "https://app.example/runners",
     });
-    expect(email.subject).toBe("New machine connected to Acme & Co");
+    expect(email.subject).toBe("New machine connected to Acme & Co and atticoos");
     expect(email.html).not.toContain("<script>alert(1)</script>");
     expect(email.html).toContain("&lt;script&gt;");
     expect(email.html).toContain("Acme &amp; Co");
     expect(email.text).toContain("(macos arm64)");
+    expect(email.text).toContain("It can now run CI jobs in Acme & Co and atticoos");
     expect(email.text).toContain("Not you? Revoke it: https://app.example/runners");
+  });
+
+  it("machine-connected still reads right with no workspace yet", () => {
+    const email = renderMachineConnectedEmail({
+      machineName: "mbp",
+      workspaceNames: [],
+      connectedAt: new Date("2026-11-05T00:00:00Z"),
+      machinesUrl: "https://app.example/runners",
+    });
+    expect(email.subject).toBe("New machine connected to RelayRunner");
+    expect(email.text).toContain("once you install RelayRunner on a GitHub account");
   });
 
   it("dead-letter alert counts deliveries", () => {
