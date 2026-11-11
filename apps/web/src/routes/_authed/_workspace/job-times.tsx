@@ -2,6 +2,7 @@ import { createFileRoute } from "@tanstack/react-router";
 import { ChevronRightIcon } from "lucide-react";
 import { Fragment, memo, useEffect, useMemo, useState } from "react";
 import { PageHeader } from "@/components/page-header";
+import { ProviderLink } from "@/components/provider-link";
 import { ProviderMark, providerOf } from "@/components/providers";
 import { RangePicker } from "@/components/range-picker";
 import { Button } from "@/components/ui/button";
@@ -178,8 +179,10 @@ function Environments({ report }: { report: JobTimesReport }) {
           {report.environments.map((env) => (
             <tr key={env.key} className="border-b last:border-0">
               <td className="px-4 py-2.5">
-                <span className="flex items-center gap-2.5">
-                  <ProviderMark provider={providerOf(env)} />
+                <ProviderLink
+                  provider={providerOf(env)}
+                  className="flex w-fit items-center gap-2.5"
+                >
                   <span>
                     <span className="block whitespace-nowrap">{env.label}</span>
                     {env.detail && (
@@ -188,7 +191,7 @@ function Environments({ report }: { report: JobTimesReport }) {
                       </span>
                     )}
                   </span>
-                </span>
+                </ProviderLink>
               </td>
               <td className="px-4 py-2.5 text-right">{env.stat.runs.toLocaleString()}</td>
               <td className="px-4 py-2.5 text-right">{clock(env.stat.waitMs)}</td>
@@ -640,10 +643,13 @@ function JobDetail({
                 className="grid grid-cols-[auto_1fr_auto] items-baseline gap-x-2 border-b pb-3 last:border-0"
               >
                 <Swatch index={index} />
-                <span className="flex min-w-0 items-center gap-1.5 self-center">
-                  <ProviderMark provider={providerOf(env)} className="size-4 rounded-[4px]" />
+                <ProviderLink
+                  provider={providerOf(env)}
+                  className="flex min-w-0 items-center gap-1.5 self-center"
+                  markClassName="size-4 rounded-[4px]"
+                >
                   <span className="truncate">{env.label}</span>
-                </span>
+                </ProviderLink>
                 <span className="text-right font-semibold">{medianText(stat)}</span>
                 <span className="col-span-2 col-start-2 text-right text-xs text-muted-foreground">
                   {spreadText(stat)}

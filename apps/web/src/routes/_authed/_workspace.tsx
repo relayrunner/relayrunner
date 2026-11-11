@@ -4,6 +4,7 @@ import {
   ArrowLeftIcon,
   Building2Icon,
   ChartColumnIcon,
+  CloudIcon,
   ListChecksIcon,
   type LucideIcon,
   PanelLeftCloseIcon,
@@ -57,6 +58,7 @@ type NavItem = { to: string; label: string; icon: LucideIcon };
 
 const nav = [
   { to: "/runners", label: "Runners", icon: ServerIcon },
+  { to: "/providers", label: "Providers", icon: CloudIcon },
   { to: "/router", label: "Router", icon: RouteIcon },
   { to: "/activity", label: "Activity", icon: ActivityIcon },
   { to: "/runs", label: "Runs", icon: ListChecksIcon },

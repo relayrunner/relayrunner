@@ -8,8 +8,14 @@ import { StatTile } from "@/components/stat-tile";
 import { Button } from "@/components/ui/button";
 import { authDisabled } from "@/lib/auth-client";
 import { clock, medianText, plural } from "@/lib/job-times";
-import { getProviderReport, type ProviderReport, sampleProviderReport } from "@/lib/providers";
-import { cn, elapsed } from "@/lib/utils";
+import {
+  costText,
+  getProviderReport,
+  type ProviderReport,
+  rateText,
+  sampleProviderReport,
+} from "@/lib/providers";
+import { cn } from "@/lib/utils";
 
 const RANGES = [1, 7, 14] as const;
 
@@ -48,11 +54,11 @@ function ProviderView({ first }: { first: ProviderReport }) {
   return (
     <section className="grid max-w-5xl gap-8">
       <Link
-        to="/runners"
+        to="/providers"
         className="flex w-fit items-center gap-1.5 text-sm text-muted-foreground hover:text-foreground"
       >
         <ArrowLeftIcon aria-hidden className="size-4" />
-        Runners
+        Providers
       </Link>
 
       <header className="flex flex-wrap items-start justify-between gap-4">
@@ -85,6 +91,12 @@ function ProviderView({ first }: { first: ProviderReport }) {
           <>
             <Totals report={report} />
             <Runners report={report} />
+            <Workflows report={report} />
+            <p className="text-xs text-muted-foreground">
+              {costNote(report)} RelayRunner reads job timings from GitHub and never sees your bill,
+              so costs are estimates at list prices (checked {report.pricesChecked}), before any
+              plan allowance or discount.
+            </p>
           </>
         )}
       </div>
@@ -121,16 +133,24 @@ function ExternalLink({ href, children }: { href: string; children: string }) {
 const percent = (part: number, whole: number) =>
   whole ? `${((part / whole) * 100).toFixed(1)}%` : "—";
 
+function costNote({ provider, unpricedJobs }: ProviderReport) {
+  if (provider === "github") return "GitHub's standard runners are free in public repos.";
+  if (unpricedJobs > 0)
+    return `${plural(unpricedJobs, "job")} ran on runner types without a known price and are left out of the cost.`;
+  return "";
+}
+
 function Totals({ report }: { report: ProviderReport }) {
-  const { jobs, failures, runSeconds, stat } = report;
+  const { jobs, failures, billedMinutes, stat } = report;
   return (
-    <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-5">
+    <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-6">
       <StatTile label="Jobs" value={jobs.toLocaleString()} />
       <StatTile
-        label="Run time"
-        value={elapsed(runSeconds * 1000)}
-        detail="All jobs, start to finish"
+        label="Billed minutes"
+        value={billedMinutes.toLocaleString()}
+        detail="Rounded up per job"
       />
+      <StatTile label="Estimated cost" value={costText(report)} detail="At list prices" />
       <StatTile label="Typical job" value={medianText(stat)} detail="Median of successful jobs" />
       <StatTile label="Queue wait" value={clock(stat.waitMs)} detail="Median, queued to started" />
       <StatTile label="Failed" value={percent(failures, jobs)} detail={plural(failures, "job")} />
@@ -152,7 +172,7 @@ function Runners({ report }: { report: ProviderReport }) {
             <th scope="col" className="px-4 py-2 text-left font-normal">
               Runner
             </th>
-            {["Jobs", "Typical", "Run time", "Failed"].map((head) => (
+            {["Jobs", "Typical", "Rate", "Est. cost", "Failed"].map((head) => (
               <th key={head} scope="col" className="px-4 py-2 text-right font-normal">
                 {head}
               </th>
@@ -184,12 +204,38 @@ function Runners({ report }: { report: ProviderReport }) {
               </td>
               <Num>{runner.jobs.toLocaleString()}</Num>
               <Num>{medianText(runner.stat)}</Num>
-              <Num>{elapsed(runner.runSeconds * 1000)}</Num>
+              <Num>{rateText(runner.perMinute)}</Num>
+              <Num>{costText(runner)}</Num>
               <Num>{percent(runner.failures, runner.jobs)}</Num>
             </tr>
           ))}
         </tbody>
       </table>
+    </div>
+  );
+}
+
+/** The workflows that sent the most jobs here. */
+function Workflows({ report }: { report: ProviderReport }) {
+  if (report.workflows.length === 0) return null;
+  return (
+    <div className="rounded-xl border bg-card">
+      <h3 className="px-4 pt-3 pb-2 font-semibold">Busiest workflows</h3>
+      <ul>
+        {report.workflows.map((w) => (
+          <li
+            key={`${w.repository}/${w.workflow}`}
+            className="flex items-baseline justify-between gap-4 border-t px-4 py-2.5 text-sm"
+          >
+            <span className="min-w-0 truncate">
+              {w.workflow} <span className="text-xs text-muted-foreground">{w.repository}</span>
+            </span>
+            <span className="whitespace-nowrap text-muted-foreground tabular-nums">
+              {plural(w.jobs, "job")}
+            </span>
+          </li>
+        ))}
+      </ul>
     </div>
   );
 }
