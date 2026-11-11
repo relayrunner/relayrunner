@@ -19,6 +19,8 @@
     "@fontsource-variable/hanken-grotesk": "catalog:",
     "@fontsource-variable/jetbrains-mono": "catalog:",
     "@relayrunner/providers": "workspace:*",
-    "astro": "^7.4.10"
+    "astro": "^7.4.10",
+    "astro-og-canvas": "^0.13.3",
+    "canvaskit-wasm": "^0.42.0"
   }
 }

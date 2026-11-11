@@ -2,6 +2,10 @@
 
 The public site at [relayrunner.app](https://relayrunner.app): one [Astro](https://astro.build) build served as Worker static assets (Worker `relayrunner-site`). The home page, privacy policy and terms are `src/pages/index.astro`, `privacy.astro` and `terms.astro`, plain HTML with `src/style.css`, `src/legal.css` and `src/main.ts`. The docs are [Starlight](https://starlight.astro.build) pages at `/docs/`, written in `src/content/docs/docs/`. Pages can be `.md` or `.mdx`; MDX pages can import components, such as `<Provider id="depot" />` and `<ProviderTable />` from `@/components/docs/`, which read names, labels and list prices from `@relayrunner/providers`. When you add a component, also teach `componentsToMarkdown` in `src/lib/agent-docs.ts` to write it out for the pages' `.md` and `.txt` versions. [DESIGN.md](DESIGN.md) holds the visual system, which the dashboard's theme borrows from.
 
+## Share images
+
+Each docs page gets its own share image at `/og/docs/<slug>.png`, drawn at build time from its title and description by [astro-og-canvas](https://github.com/delucis/astro-og-canvas) (`src/pages/og/[...route].ts`). The landing page uses `public/og-image.png`, made from `og/og-image.html` with `pnpm og`.
+
 ## For agents
 
 Every docs page has a Markdown version at `/docs/<slug>.md` and a plain-text one at `/docs/<slug>.txt`, linked from the page's `<head>` as `rel="alternate" type="text/markdown"`. `/llms.txt` (also at `/docs/llms.txt`) lists every page, and `/llms-full.txt` has all of them in one file. Asking for a docs page with `Accept: text/markdown` returns its Markdown: that's the one thing the small Worker script in `worker/index.ts` does, and it only runs for `/docs/*`.

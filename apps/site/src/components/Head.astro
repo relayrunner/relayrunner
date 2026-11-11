@@ -4,7 +4,8 @@
  * - preloads for the two fonts used above the fold. Without them the browser only finds the fonts
  *   after the CSS loads, so every page paints in the fallback font first and then swaps (the text
  *   visibly flickers). Vite gives these the same hashed URLs the CSS uses.
- * - the site's share image, which Starlight doesn't set, so links to docs pages get a preview card.
+ * - a share image for each docs page, with its title and description (src/pages/og/), or the
+ *   site's share image for anything else (the 404 page). Starlight doesn't set one.
  * - a link to the page's Markdown version, for agents that look for one.
  */
 import Default from "@astrojs/starlight/components/Head.astro";
@@ -13,9 +14,10 @@ import mono from "@fontsource-variable/jetbrains-mono/files/jetbrains-mono-latin
 import { markdownPath } from "../lib/agent-docs";
 
 const { entry } = Astro.locals.starlightRoute;
-const image = new URL("/og-image.png", Astro.site).href;
-const imageAlt = "relayrunner: one router for every CI runner";
-const markdown = entry.id.startsWith("docs/") ? markdownPath(entry) : undefined;
+const isDoc = entry.id.startsWith("docs/");
+const image = new URL(isDoc ? `/og/${entry.id}.png` : "/og-image.png", Astro.site).href;
+const imageAlt = isDoc ? entry.data.title : "relayrunner: one router for every CI runner";
+const markdown = isDoc ? markdownPath(entry) : undefined;
 ---
 
 <link rel="preload" href={sans} as="font" type="font/woff2" crossorigin />
