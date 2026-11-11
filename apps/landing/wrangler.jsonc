@@ -15,6 +15,9 @@
   "workers_dev": false,
   // PR preview builds (`wrangler preview` in Workers Builds) get public preview URLs.
   "preview_urls": true,
+  // `wrangler preview` (branch preview builds) refuses to run without a previews block; it can be
+  // empty because assets and compatibility settings stay at the top level.
+  "previews": {},
   "observability": {
     "enabled": true,
     "logs": { "enabled": true, "invocation_logs": true },
