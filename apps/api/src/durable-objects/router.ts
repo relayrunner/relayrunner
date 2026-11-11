@@ -59,12 +59,15 @@ export interface PickedJob extends JobStarters {
 
 const ROUTE_KEY = "route:";
 // How long a GitHub org's runner group access is reused before it's read again. Runner status is
-// read fresh on every pick; groups change rarely and take a few calls to read.
+// read for each pick (shared for a few seconds, see PICK_RUNNER_LIST_TTL_MS); groups change rarely and take a few calls to read.
 const GROUP_ACCESS_TTL_MS = 5 * 60_000;
 // How long a machine owner's read access to a repo is reused before GitHub is asked again.
 const OWNER_ACCESS_TTL_MS = 10 * 60_000;
 // How long the dashboard reuses an org's runner list (status, busy, labels).
 const RUNNER_LIST_TTL_MS = 30_000;
+// How long picks share one read of it, so a push that starts many runs at once asks GitHub once
+// rather than once per run. Short, since a runner's busy status decides whether it gets the job.
+const PICK_RUNNER_LIST_TTL_MS = 5_000;
 
 // One per workspace, addressed by workspace id. Decides where each picked job's run goes and
 // keeps the routes it hands out (src/routing.ts), so the job queued on a route's label can find
@@ -72,29 +75,22 @@ const RUNNER_LIST_TTL_MS = 30_000;
 export class Router extends DurableObject<Env> {
   // Runner group access per installation, kept in memory while the object is awake.
   private groupAccess = new Map<number, { at: number; access: Map<number, GroupAccess> }>();
-  // Each org's runner list for the dashboard, by installation id (see githubRunners).
-  private runnerLists = new Map<number, { at: number; runners: Promise<OrgRunner[]> }>();
+  // Each org's runner list, by installation id: for the dashboard (see githubRunners), and for
+  // picks (see orgRunners).
+  private runnerLists: RunnerListCache = new Map();
+  private pickRunnerLists: RunnerListCache = new Map();
   // Whether a machine owner can read a repo, by `<installation>:<repo id>:<owner GitHub id>`.
   private ownerAccess = new Map<string, { at: number; allowed: boolean }>();
 
   /**
    * An org's self-hosted runners for the dashboard's Runners and Router pages, reused for
-   * RUNNER_LIST_TTL_MS so the pages' refreshes don't each ask GitHub. Picks don't use this: they
-   * read status fresh. Null when GitHub can't be asked.
+   * RUNNER_LIST_TTL_MS so the pages' refreshes don't each ask GitHub. Picks keep their own,
+   * fresher copy (orgRunners). Null when GitHub can't be asked.
    */
   async githubRunners(installationId: number, org: string): Promise<OrgRunner[] | null> {
-    const now = Date.now();
-    const cached = this.runnerLists.get(installationId);
-    if (cached && now - cached.at < RUNNER_LIST_TTL_MS) return cached.runners.catch(() => null);
-    // Kept as a promise so loads that arrive together share one read.
-    const runners = appInstallationToken(this.env, installationId).then((token) =>
-      listOrgRunners(token, org),
-    );
-    this.runnerLists.set(installationId, { at: now, runners });
     try {
-      return await runners;
+      return await this.runnerList(this.runnerLists, RUNNER_LIST_TTL_MS, installationId, org);
     } catch (error) {
-      this.runnerLists.delete(installationId);
       console.warn(
         JSON.stringify({
           msg: "github runners unavailable",
@@ -105,6 +101,27 @@ export class Router extends DurableObject<Env> {
       );
       return null;
     }
+  }
+
+  // An org's runner list, reused for `ttl`. Kept as a promise so reads that arrive together share
+  // one call to GitHub. A failed read is forgotten, so the next caller asks again.
+  private runnerList(
+    cache: RunnerListCache,
+    ttl: number,
+    installationId: number,
+    org: string,
+  ): Promise<OrgRunner[]> {
+    const now = Date.now();
+    const cached = cache.get(installationId);
+    if (cached && now - cached.at < ttl) return cached.runners;
+    const runners = appInstallationToken(this.env, installationId).then((token) =>
+      listOrgRunners(token, org),
+    );
+    cache.set(installationId, { at: now, runners });
+    runners.catch(() => {
+      if (cache.get(installationId)?.runners === runners) cache.delete(installationId);
+    });
+    return runners;
   }
 
   /**
@@ -318,7 +335,8 @@ export class Router extends DurableObject<Env> {
     });
   }
 
-  // The job's org's self-hosted runners, read fresh, with their group access (cached), or null
+  // The job's org's self-hosted runners, read within the last few seconds, with their group access
+  // (cached), or null
   // when GitHub can't be reached: added runners then sit this pick out. A personal account has
   // none.
   private async orgRunners(
@@ -326,8 +344,12 @@ export class Router extends DurableObject<Env> {
   ): Promise<{ runners: OrgRunner[]; access: Map<number, GroupAccess> } | null> {
     const org = job.repo.split("/")[0];
     try {
-      const token = await appInstallationToken(this.env, job.installationId);
-      const runners = await listOrgRunners(token, org);
+      const runners = await this.runnerList(
+        this.pickRunnerLists,
+        PICK_RUNNER_LIST_TTL_MS,
+        job.installationId,
+        org,
+      );
       const cached = this.groupAccess.get(job.installationId);
       // A personal account has no org runners. Adopting its repo runners is #162.
       const scope = await installationRunnerScope(
@@ -339,6 +361,7 @@ export class Router extends DurableObject<Env> {
       const known = cached && runners.every((runner) => cached.access.has(runner.id));
       if (cached && known && Date.now() - cached.at < GROUP_ACCESS_TTL_MS)
         return { runners, access: cached.access };
+      const token = await appInstallationToken(this.env, job.installationId);
       const access = await fetchGroupAccess(token, org, runners);
       this.groupAccess.set(job.installationId, { at: Date.now(), access });
       return { runners, access };
@@ -449,6 +472,8 @@ export class Router extends DurableObject<Env> {
     return [...stored.values()].filter((r) => now - r.createdAt <= ROUTE_TTL_MS);
   }
 }
+
+type RunnerListCache = Map<number, { at: number; runners: Promise<OrgRunner[]> }>;
 
 // The machines a live route still holds.
 function heldMachines(routes: Route[], now: number) {

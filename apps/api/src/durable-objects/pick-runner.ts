@@ -1,13 +1,11 @@
 import { DurableObject } from "cloudflare:workers";
 import type { Env } from "../env.ts";
 import {
-  appJwt,
+  appInstallationToken,
   createCheckRun,
   DEFAULT_RUNNER_GROUP_ID,
   deleteRunner,
-  importAppPrivateKey,
   type RunnerScope,
-  installationToken,
   runAttemptTriggeringActor,
   workflowJobStatus,
 } from "../github-app.ts";
@@ -111,11 +109,7 @@ export class PickRunner extends DurableObject<Env> {
     let runnerId: number | undefined;
     let client: RunnerClient | undefined;
     try {
-      const key = await importAppPrivateKey(await this.env.GITHUB_APP_PRIVATE_KEY.get());
-      token = await installationToken(
-        await appJwt(this.env.GITHUB_APP_ID, key),
-        work.installationId,
-      );
+      token = await appInstallationToken(this.env, work.installationId);
       scope = await installationRunnerScope(createDb(this.env.DB), work.installationId, work.repo);
       // A replacement runner first makes sure its job still needs one.
       if (attempt > 1 && (await workflowJobStatus(token, work.repo, work.jobId)) !== "queued") {

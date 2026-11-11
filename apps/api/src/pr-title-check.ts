@@ -7,7 +7,7 @@ import type { WebhookMessage } from "@relayrunner/github-webhooks";
 import { createDb } from "./db/index.ts";
 import type { Env } from "./env.ts";
 import { postFreeCheck } from "./free-checks.ts";
-import { appJwt, importAppPrivateKey, installationToken } from "./github-app.ts";
+import { appInstallationToken } from "./github-app.ts";
 import { checkConventionalTitle } from "./native-checks.ts";
 import { loadRepoConfig, type ConfigResult } from "./repo-config.ts";
 
@@ -46,11 +46,7 @@ export function prTitleCheckRun(config: ConfigResult, title: string, headSha: st
 export async function checkPullRequestTitle(env: Env, message: PullRequestMessage) {
   if (!message.installationId) return;
   const repo = message.repository.fullName;
-  const key = await importAppPrivateKey(await env.GITHUB_APP_PRIVATE_KEY.get());
-  const token = await installationToken(
-    await appJwt(env.GITHUB_APP_ID, key),
-    message.installationId,
-  );
+  const token = await appInstallationToken(env, message.installationId);
   const config = await loadRepoConfig(token, repo);
   const check = prTitleCheckRun(config, message.pullRequest.title, message.pullRequest.headSha);
   if (check)
