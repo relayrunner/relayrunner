@@ -7,11 +7,11 @@ import type { ConnectionEvent } from "./connection.ts";
 export interface LiveState {
   link: "connecting" | "online" | "reconnecting";
   paused: boolean;
-  // The route id of the job it's running.
-  job: string | null;
+  // The route ids of the jobs it's running.
+  jobs: string[];
 }
 
-export const INITIAL_STATE: LiveState = { link: "connecting", paused: false, job: null };
+export const INITIAL_STATE: LiveState = { link: "connecting", paused: false, jobs: [] };
 
 /** The state after a connection event. */
 export function nextState(state: LiveState, event: ConnectionEvent): LiveState {
@@ -24,11 +24,11 @@ export function nextState(state: LiveState, event: ConnectionEvent): LiveState {
       // A job's runner keeps going while the socket reconnects.
       return { ...state, link: "reconnecting" };
     case "run":
-      return { ...state, job: event.routeId };
+      return { ...state, jobs: [...state.jobs, event.routeId] };
     case "job":
-      return event.update.state === "started" || event.update.routeId !== state.job
+      return event.update.state === "started" || !state.jobs.includes(event.update.routeId)
         ? state
-        : { ...state, job: null };
+        : { ...state, jobs: state.jobs.filter((id) => id !== event.update.routeId) };
     case "paused":
       return { ...state, paused: event.paused };
     default:
@@ -44,10 +44,11 @@ export function titleFor(state: LiveState, machine: string) {
   return `RelayRunner · ${machine} · ${statusText(state)}`;
 }
 
-function statusText({ link, paused, job }: LiveState) {
+function statusText({ link, paused, jobs }: LiveState) {
+  const running = jobs.length === 1 ? "Running a job" : `Running ${jobs.length} jobs`;
   if (link === "connecting") return "Connecting…";
-  if (link === "reconnecting") return job ? "Running a job, reconnecting…" : "Reconnecting…";
-  if (job) return paused ? "Running a job, then paused" : "Running a job";
+  if (link === "reconnecting") return jobs.length ? `${running}, reconnecting…` : "Reconnecting…";
+  if (jobs.length) return paused ? `${running}, then paused` : running;
   return paused ? "Paused" : "Waiting for jobs";
 }
 

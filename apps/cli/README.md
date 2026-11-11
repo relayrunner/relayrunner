@@ -32,7 +32,7 @@ stops working, so a copy of `machine.json` from a backup or a synced dotfiles
 folder can't sign in as the machine.
 
 While it runs, the machine is online: it keeps a WebSocket open to the gateway,
-runs the jobs it's sent (one at a time) and prints what happens, including the
+runs the jobs it's sent and prints what happens, including the
 repo each job is from. It reconnects on its own if the connection drops. Ctrl-C
 takes it offline; a job that's running stops with it. Press `p` to pause or
 resume it without going offline (see `relayrunner pause`). The terminal tab's
@@ -58,6 +58,12 @@ approved the machine also gets an email, since someone else may have its token.
   one is set, otherwise the Mac's Computer Name from System Settings).
 - `--share only-me|anyone` sets who can run jobs on this machine without asking.
   It works on a machine that's already signed in too.
+- `--concurrency <n>` sets how many jobs it runs at once. The default is 2 on a
+  computer with 8 or more CPU cores, otherwise 1, and `connect` prints it. Each
+  slot runs its jobs in its own copy of the runner,
+  `~/.relayrunner/runner/<version>/slot-<n>/`, made when `connect` starts (a
+  copy-on-write clone where the disk supports it). With more than one slot,
+  each line of a job's output starts with its slot, such as `[slot 2]`.
 - If the machine is removed in the dashboard, `connect` deletes the saved token.
   A running `connect` exits and asks you to run it again; a new one signs in
   straight away.
