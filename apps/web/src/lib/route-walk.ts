@@ -37,7 +37,7 @@ function notSharedText(notShared: NotSharedMachine[] = [], short = false) {
 }
 
 // "atticus-mbp is full (2 of 2 running)"; for several, the short form counts them.
-function fullText(full: FullMachine[] = [], short = false) {
+export function fullText(full: FullMachine[] = [], short = false) {
   const [only] = full;
   if (full.length === 1 && only)
     return `${only.machine} is full (${only.running} of ${only.slots} running)`;

@@ -40,7 +40,7 @@ describe("previewRoute", () => {
   test("a busy or offline machine passes the job to GitHub, saying why", () => {
     expect(
       previewRoute([{ key: "machine" }, { key: "github" }], [machine("mbp", busy)], []).next,
-    ).toEqual({ title: "GitHub-hosted", why: "mbp is busy with a job" });
+    ).toEqual({ title: "GitHub-hosted", why: "mbp is full (1 of 1 running)" });
     expect(
       previewRoute([{ key: "machine" }, { key: "github" }], [machine("mbp", offline)], []).next
         ?.why,
@@ -71,6 +71,29 @@ describe("previewRoute", () => {
     const allBusy = previewRoute(steps, [machine("mini", busy)], used(2520));
     expect(allBusy.next?.title).toBe("GitHub-hosted");
     expect(allBusy.steps.map((step) => step.state)).toEqual(["skipped", "skipped", "next"]);
+  });
+
+  test("a machine with a free slot takes the job while busy", () => {
+    const steps = [{ key: "machine" as const }, { key: "github" as const }];
+    const half = { ...busy, slots: 2, running: 1 };
+    expect(previewRoute(steps, [machine("mbp", half)], []).next).toEqual({
+      title: "Self-hosted · mbp",
+      why: "mbp has a free runner (1 of 2 running)",
+    });
+    expect(
+      previewRoute(steps, [machine("mbp", { ...idle, slots: 2, running: 0 })], []).next?.why,
+    ).toBe("mbp is idle");
+  });
+
+  test("full machines pass the job on with the gateway's wording", () => {
+    const steps = [{ key: "machine" as const }, { key: "github" as const }];
+    const full = { ...busy, slots: 2, running: 2 };
+    expect(previewRoute(steps, [machine("mbp", full)], []).next?.why).toBe(
+      "mbp is full (2 of 2 running)",
+    );
+    expect(previewRoute(steps, [machine("mbp", full), machine("mini", busy)], []).next?.why).toBe(
+      "every machine that fits is full (mbp 2 of 2, mini 1 of 1 running)",
+    );
   });
 
   test("a limit with no quota to check never blocks", () => {

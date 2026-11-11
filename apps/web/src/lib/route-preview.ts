@@ -1,6 +1,8 @@
 import { RUNNER_LABELS, type RunnerStep } from "@relayrunner/runner-order";
 import { hasQuota, type AccountUsage } from "./actions-usage.ts";
+import { capacity } from "./capacity.ts";
 import type { Machine } from "./machines.ts";
+import { fullText } from "./route-walk.ts";
 
 /**
  * Where a private-repo job that names every provider would go right now, worked out in the
@@ -36,8 +38,16 @@ function machineVerdict(machines: Machine[]): { takes: boolean; reason: string; 
   const active = machines.filter((machine) => !machine.revokedAt);
   const online = active.filter((machine) => machine.status?.online);
   const ready = online.filter((machine) => !machine.paused);
-  const idle = ready.find((machine) => machine.status?.state !== "busy");
-  if (idle) return { takes: true, reason: `${idle.name} is idle`, name: idle.name };
+  // Like the Router's chooseMachine: any online, unpaused machine with a free slot takes it.
+  const open = ready.find((machine) => capacity(machine.status).free);
+  if (open) {
+    const { slots, running } = capacity(open.status);
+    const reason =
+      running === 0
+        ? `${open.name} is idle`
+        : `${open.name} has a free runner (${running} of ${slots} running)`;
+    return { takes: true, reason, name: open.name };
+  }
   if (active.length === 0) return { takes: false, reason: "No self-hosted runner is connected" };
   if (online.length === 0)
     return {
@@ -51,13 +61,12 @@ function machineVerdict(machines: Machine[]): { takes: boolean; reason: string; 
       reason:
         online.length === 1 ? `${online[0]!.name} is paused` : "Every online runner is paused",
     };
-  return {
-    takes: false,
-    reason:
-      ready.length === 1
-        ? `${ready[0]!.name} is busy with a job`
-        : `All ${ready.length} online runners are busy`,
-  };
+  // Every ready machine is full: the gateway's machine_full wording.
+  const full = ready.map((machine) => {
+    const { slots, running } = capacity(machine.status);
+    return { machine: machine.name, running: Math.min(running, slots), slots };
+  });
+  return { takes: false, reason: fullText(full, full.length > 3) };
 }
 
 export function previewRoute(
