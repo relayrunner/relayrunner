@@ -5,6 +5,7 @@ import type { LintRunner } from "./durable-objects/lint-runner.ts";
 import type { MachineLink } from "./durable-objects/machine-link.ts";
 import type { PickRunner } from "./durable-objects/pick-runner.ts";
 import type { Router } from "./durable-objects/router.ts";
+import type { InstallationTask } from "./installation-tasks.ts";
 
 // Bindings from wrangler.jsonc, plus secrets set with `wrangler secret put` (or .dev.vars locally).
 export interface Env extends AccessEnv {
@@ -12,6 +13,8 @@ export interface Env extends AccessEnv {
   // Webhook dead letters (src/dead-letters.ts), and the queue a replay sends them back to.
   DEAD_LETTERS: R2Bucket;
   WEBHOOK_QUEUE: Queue<WebhookMessage>;
+  // Per-installation work the 15-minute cron hands out (src/installation-tasks.ts).
+  INSTALLATION_TASKS: Queue<InstallationTask>;
   // Alert when more than this many messages are dead-lettered in an hour (src/dead-letter-alert.ts).
   DEAD_LETTER_ALERT_THRESHOLD?: string;
   // Optional: also POST the alert here (a Slack or Discord incoming webhook), via `wrangler secret put`.

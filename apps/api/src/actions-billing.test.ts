@@ -5,11 +5,12 @@ import {
   accountUsage,
   burnRate,
   cycleStart,
-  pollActionsUsage,
+  pollActionsUsage as queueActionsUsage,
   pollInstallation,
 } from "./actions-billing.ts";
 import { createDb, schema } from "./db/index.ts";
 import type { Env } from "./env.ts";
+import { type InstallationTask, runInstallationTask } from "./installation-tasks.ts";
 import * as testing from "./testing.ts";
 
 let proxy: Awaited<ReturnType<typeof testing.startD1>>["proxy"];
@@ -306,6 +307,19 @@ describe("accountUsage", () => {
     expect(usage).toMatchObject({ reason: "not_read_yet", usedMinutes: 0 });
   });
 });
+
+// The cron queues one read per account; this runs what it queued, as the consumer would.
+async function pollActionsUsage(target: Env, now: Date) {
+  const queued: InstallationTask[] = [];
+  const queue = {
+    sendBatch: async (messages: { body: InstallationTask }[]) => {
+      queued.push(...messages.map((message) => message.body));
+    },
+  } as unknown as Queue<InstallationTask>;
+  await queueActionsUsage({ ...target, INSTALLATION_TASKS: queue }, now);
+  expect(queued.every((task) => task.kind === "actions-usage")).toBe(true);
+  for (const task of queued) await runInstallationTask(target, task);
+}
 
 describe("pollActionsUsage", () => {
   test("reads a personal account with its owner's sign-in token", async () => {

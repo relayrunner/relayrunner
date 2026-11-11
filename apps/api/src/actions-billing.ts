@@ -14,6 +14,7 @@ import { recordOverage } from "./activity.ts";
 import { createAuth } from "./auth.ts";
 import { createDb, type Db, schema } from "./db/index.ts";
 import type { Env } from "./env.ts";
+import { enqueueInstallationTasks } from "./installation-tasks.ts";
 import { userGitHubToken } from "./installations.ts";
 import {
   appInstallationToken,
@@ -89,10 +90,23 @@ export function cycleStart(now: Date) {
 
 const dayOf = (date: Date) => date.toISOString().slice(0, 10);
 
-/** Poll every connected, unsuspended installation. One failing doesn't stop the rest. */
+/** One account the 15-minute poll reads, as its queue message carries it. */
+export interface UsageAccount {
+  id: number;
+  accountId: number;
+  accountLogin: string;
+  accountType: string;
+  workspaceId: string | null;
+}
+
+/**
+ * The 15-minute poll: queues one read per connected, unsuspended installation
+ * (src/installation-tasks.ts), so each account is read in its own consumer invocation however many
+ * there are, and drops readings past retention.
+ */
 export async function pollActionsUsage(env: Env, now = new Date()) {
   const db = createDb(env.DB);
-  const installations = await db
+  const accounts: UsageAccount[] = await db
     .select({
       id: schema.githubInstallation.id,
       accountId: schema.githubInstallation.accountId,
@@ -107,36 +121,45 @@ export async function pollActionsUsage(env: Env, now = new Date()) {
         isNull(schema.githubInstallation.suspendedAt),
       ),
     );
-  const auth = installations.some(isPersonal) ? createAuth(env) : null;
-  for (const installation of installations) {
-    try {
-      if (isPersonal(installation)) {
-        const token = await ownerToken(auth!, db, installation);
-        if (!token) {
-          await recordFailure(
-            db,
-            installation.id,
-            "sign_in_needed",
-            "No sign-in token for the account's owner in this workspace",
-            now,
-          );
-          continue;
-        }
-        await pollInstallation(db, token, installation, now);
-        continue;
-      }
-      const token = await appInstallationToken(env, installation.id);
-      await pollInstallation(db, token, installation, now);
-    } catch (error) {
-      // Couldn't get a token (GitHub down, App removed before the webhook landed). Recorded so the
-      // dashboard says why, and the next poll tries again.
-      await recordFailure(db, installation.id, "error", error, now);
-      logFailure(installation.id, error);
-    }
-  }
+  await enqueueInstallationTasks(
+    env,
+    accounts.map((account) => ({ kind: "actions-usage", account, at: now.toISOString() })),
+  );
   await db
     .delete(schema.actionsUsageReading)
     .where(lt(schema.actionsUsageReading.readAt, new Date(now.getTime() - READING_RETENTION_MS)));
+}
+
+/**
+ * Read one account's usage (an org with the App's token, a personal account with its owner's). A
+ * failure is recorded for the dashboard rather than thrown: the next poll tries again.
+ */
+export async function pollAccount(env: Env, account: UsageAccount, now = new Date()) {
+  const db = createDb(env.DB);
+  try {
+    if (isPersonal(account)) {
+      const token = await ownerToken(createAuth(env), db, account);
+      if (!token) {
+        await recordFailure(
+          db,
+          account.id,
+          "sign_in_needed",
+          "No sign-in token for the account's owner in this workspace",
+          now,
+        );
+        return;
+      }
+      await pollInstallation(db, token, account, now);
+      return;
+    }
+    const token = await appInstallationToken(env, account.id);
+    await pollInstallation(db, token, account, now);
+  } catch (error) {
+    // Couldn't get a token (GitHub down, App removed before the webhook landed). Recorded so the
+    // dashboard says why, and the next poll tries again.
+    await recordFailure(db, account.id, "error", error, now);
+    logFailure(account.id, error);
+  }
 }
 
 const isPersonal = (installation: { accountType: string }) =>
