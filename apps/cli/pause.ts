@@ -3,6 +3,7 @@
 // way; a running `relayrunner connect` hears about it and says so.
 
 import { z } from "zod";
+import { withCurrentToken, type Credentials } from "./credentials.ts";
 import { userAgent } from "./paths.ts";
 
 const PauseResponse = z.object({
@@ -52,4 +53,11 @@ export async function setPaused(options: {
     paused: parsed.data.machine.paused !== null,
     busy: parsed.data.machine.status?.state === "busy",
   };
+}
+
+/** setPaused with the machine's saved token, retrying with a newer one if it was rotated. */
+export function pauseMachine(credentials: Credentials, paused: boolean) {
+  return withCurrentToken(credentials, (token) =>
+    setPaused({ server: credentials.server, token, paused }),
+  );
 }
