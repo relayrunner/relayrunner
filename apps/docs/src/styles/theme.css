@@ -117,11 +117,6 @@
   font-size: 1.0625rem;
 }
 
-/* Previous / next links at the bottom of a page. */
-.pagination-links .link-title {
-  font-size: 1rem;
-}
-
 /*
  * "On this page" rail: narrower, no divider, a thin line down the list with the current heading
  * marked in the accent color.
@@ -209,4 +204,9 @@ starlight-toc a[aria-current="true"] {
 }
 .starlight-aside__content > :first-child {
   margin-top: 0;
+}
+
+/* "Edit page" and "Last updated" are page metadata: small and muted. */
+footer .meta {
+  font-size: 0.8125rem;
 }

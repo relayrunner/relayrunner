@@ -1,0 +1,69 @@
+---
+/*
+ * Previous / next links as a quiet row under a rule (after the uploads.sh docs): a small
+ * uppercase "← Back" / "Next →" label over the page title. Replaces Starlight's boxed cards.
+ */
+const { prev, next } = Astro.locals.starlightRoute.pagination;
+---
+
+{
+  (prev || next) && (
+    <nav class="pager print:hidden" aria-label="Pagination">
+      {prev ? (
+        <a href={prev.href} rel="prev">
+          <span class="label">← Back</span>
+          <span class="title">{prev.label}</span>
+        </a>
+      ) : (
+        <span />
+      )}
+      {next && (
+        <a href={next.href} rel="next" class="next">
+          <span class="label">Next →</span>
+          <span class="title">{next.label}</span>
+        </a>
+      )}
+    </nav>
+  )
+}
+
+<style>
+  .pager {
+    display: flex;
+    justify-content: space-between;
+    gap: 1rem;
+    margin-top: 1.5rem;
+    padding-top: 1.25rem;
+    border-top: 1px solid var(--sl-color-gray-5);
+  }
+  a {
+    display: flex;
+    flex-direction: column;
+    gap: 0.125rem;
+    text-decoration: none;
+  }
+  .next {
+    align-items: flex-end;
+    text-align: end;
+  }
+  .label {
+    font-size: 0.75rem;
+    font-weight: 500;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+    color: var(--sl-color-gray-3);
+  }
+  .title {
+    font-size: 0.875rem;
+    color: var(--sl-color-white);
+  }
+  a:hover .label,
+  a:hover .title {
+    color: var(--sl-color-text-accent);
+  }
+  a:focus-visible {
+    outline: 2px solid var(--sl-color-accent);
+    outline-offset: 3px;
+    border-radius: 3px;
+  }
+</style>

@@ -55,6 +55,7 @@ export default defineConfig({
         Sidebar: "./src/components/Sidebar.astro",
         PageTitle: "./src/components/PageTitle.astro",
         Head: "./src/components/Head.astro",
+        Pagination: "./src/components/Pagination.astro",
       },
       editLink: {
         baseUrl: "https://github.com/relayrunner/relayrunner/edit/main/apps/docs/",
