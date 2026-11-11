@@ -3,8 +3,6 @@ title: Blacksmith
 description: Routing jobs to Blacksmith runners.
 ---
 
-Routing jobs to Blacksmith runners.
-
 :::note[Stub]
 This page hasn't been written yet.
 :::

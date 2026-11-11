@@ -84,28 +84,34 @@
 }
 
 /*
- * Type scale. Starlight's default runs large (42px page titles, 35px h2s on desktop); this keeps
- * it close to the dashboard: 15px body, 30px page title, 22 / 18 / 16px section headings, and the
- * same sizes on every screen width.
+ * Type scale and layout, sized after the uploads.sh docs: 16px body, 36px page title, 22px section
+ * headings, 16px semibold subheadings, 13px navigation. Same sizes on every screen width.
  */
 :root,
 :root[data-theme="light"] {
-  --sl-text-body: 0.9375rem;
-  --sl-line-height: 1.6;
-  --sl-text-h1: 1.875rem;
+  --sl-text-body: 1rem;
+  --sl-line-height: 1.65;
+  --sl-text-h1: 2.25rem;
   --sl-text-h2: 1.375rem;
-  --sl-text-h3: 1.125rem;
+  --sl-text-h3: 1rem;
   --sl-text-h4: 1rem;
   --sl-text-h5: 0.9375rem;
+  --sl-sidebar-width: 15rem;
 }
 @media (min-width: 50em) {
   :root,
   :root[data-theme="light"] {
-    --sl-text-h1: 1.875rem;
+    --sl-text-h1: 2.25rem;
     --sl-text-h2: 1.375rem;
-    --sl-text-h3: 1.125rem;
+    --sl-text-h3: 1rem;
     --sl-text-h4: 1rem;
   }
+}
+.sl-markdown-content h2 {
+  letter-spacing: -0.02em;
+}
+.sl-markdown-content h3 {
+  font-weight: 600;
 }
 
 .site-title {
@@ -115,4 +121,66 @@
 /* Previous / next links at the bottom of a page. */
 .pagination-links .link-title {
   font-size: 1rem;
+}
+
+/*
+ * "On this page" rail: narrower, no divider, a thin line down the list with the current heading
+ * marked in the accent color.
+ */
+@media (min-width: 72rem) {
+  .right-sidebar-container {
+    width: 14rem;
+  }
+  [data-has-sidebar][data-has-toc] .main-pane {
+    width: calc(100% - 14rem);
+  }
+  .right-sidebar {
+    border-inline-start: 0;
+  }
+  .right-sidebar-panel .sl-container {
+    width: auto;
+    max-width: none;
+  }
+}
+.right-sidebar-panel {
+  padding-top: 2rem;
+}
+.right-sidebar-panel h2 {
+  margin-bottom: 0.625rem;
+  font-size: 0.75rem;
+  font-weight: 500;
+  color: var(--sl-color-gray-3);
+}
+starlight-toc nav > ul {
+  border-inline-start: 1px solid var(--sl-color-gray-5);
+}
+starlight-toc a {
+  margin-inline-start: -1px;
+  border-inline-start: 1px solid transparent;
+  border-radius: 0;
+  padding-block: 3px;
+  padding-inline: 14px 0;
+  font-size: 0.8125rem;
+  line-height: 1.45;
+  color: var(--sl-color-gray-3);
+}
+starlight-toc ul ul a {
+  padding-inline-start: 26px;
+}
+starlight-toc a:hover {
+  color: var(--sl-color-white);
+}
+starlight-toc a[aria-current="true"] {
+  border-inline-start-color: var(--sl-color-accent);
+  color: var(--sl-color-text-accent);
+}
+
+/* One continuous page like the uploads.sh docs: sidebar on the page background, and no rule
+   between the title and the content. */
+:root {
+  --sl-color-bg-sidebar: var(--sl-color-black);
+}
+.content-panel + .content-panel {
+  border-top: 0;
+  padding-top: 0.5rem;
 }

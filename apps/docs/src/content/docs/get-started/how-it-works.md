@@ -3,8 +3,6 @@ title: How it works
 description: The mental model to read before anything else.
 ---
 
-The mental model to read before anything else.
-
 :::note[Stub]
 This page hasn't been written yet.
 :::

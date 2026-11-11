@@ -3,8 +3,6 @@ title: Quickstart
 description: Shortest path from sign-up to a green job on your laptop.
 ---
 
-Shortest path from sign-up to a green job on your laptop.
-
 :::note[Stub]
 This page hasn't been written yet.
 :::

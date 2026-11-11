@@ -3,8 +3,6 @@ title: GitHub
 description: Using GitHub's own runners as a provider.
 ---
 
-Using GitHub's own runners as a provider.
-
 :::note[Stub]
 This page hasn't been written yet.
 :::

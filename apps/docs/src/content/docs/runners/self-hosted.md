@@ -3,8 +3,6 @@ title: Self-hosted
 description: Running jobs on machines you own. There are two ways in.
 ---
 
-Running jobs on machines you own. There are two ways in.
-
 :::note[Stub]
 This page hasn't been written yet.
 :::

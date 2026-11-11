@@ -3,8 +3,6 @@ title: Routing
 description: How a job reaches RelayRunner and how it decides where the job runs.
 ---
 
-How a job reaches RelayRunner and how it decides where the job runs.
-
 :::note[Stub]
 This page hasn't been written yet.
 :::

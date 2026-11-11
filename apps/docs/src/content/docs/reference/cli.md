@@ -3,8 +3,6 @@ title: CLI
 description: Every command and flag.
 ---
 
-Every command and flag.
-
 :::note[Stub]
 This page hasn't been written yet.
 :::

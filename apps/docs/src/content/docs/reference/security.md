@@ -3,8 +3,6 @@ title: Security
 description: What RelayRunner can and can't do with your code and machines.
 ---
 
-What RelayRunner can and can't do with your code and machines.
-
 :::note[Stub]
 This page hasn't been written yet.
 :::
