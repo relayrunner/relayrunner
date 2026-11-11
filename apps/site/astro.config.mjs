@@ -39,10 +39,19 @@ export default defineConfig({
             "docs/get-started/overview",
             "docs/get-started/quickstart",
             "docs/get-started/install",
+            "docs/get-started/move-over",
             "docs/get-started/agents",
           ],
         },
-        { label: "CI", items: ["docs/ci/routing", "docs/ci/free-checks"] },
+        {
+          label: "Concepts",
+          items: [
+            "docs/concepts/principles",
+            "docs/concepts/routing",
+            "docs/concepts/runner-order",
+            "docs/concepts/free-checks",
+          ],
+        },
         {
           label: "Runners",
           items: [
@@ -54,16 +63,45 @@ export default defineConfig({
         },
         {
           label: "Guides",
-          items: ["docs/guides/laptop-ci", "docs/guides/stay-under-quota"],
+          items: [
+            "docs/guides/laptop-ci",
+            "docs/guides/spend-controls",
+            "docs/guides/mac-builds",
+            "docs/guides/agent-surge",
+            "docs/guides/team-machines",
+          ],
+        },
+        {
+          label: "Dashboard",
+          items: [
+            "docs/dashboard/activity",
+            "docs/dashboard/usage",
+            "docs/dashboard/workspaces",
+            "docs/dashboard/remove",
+          ],
         },
         {
           label: "Reference",
           items: [
             "docs/reference/cli",
             "docs/reference/relay-inputs",
+            "docs/reference/repo-config",
+            "docs/reference/labels",
+            "docs/reference/github-app",
+            "docs/reference/mcp",
             "docs/reference/security",
+            "docs/reference/privacy",
             "docs/reference/troubleshooting",
+            "docs/reference/faq",
+            {
+              label: "Changelog",
+              link: "https://github.com/relayrunner/relayrunner/blob/main/apps/cli/CHANGELOG.md",
+            },
           ],
+        },
+        {
+          label: "Contribute",
+          items: ["docs/contribute/add-provider", "docs/contribute/feedback"],
         },
       ],
       // Flat, non-collapsing sidebar, and the page title with its description under it.

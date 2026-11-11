@@ -9,7 +9,7 @@ interface Env {
 const wantsMarkdown = (request: Request) =>
   /\btext\/markdown\b/.test(request.headers.get("Accept") ?? "");
 
-/** /docs/ci/routing/ → /docs/ci/routing.md, or null for files like /docs/llms.txt. */
+/** /docs/concepts/routing/ → /docs/concepts/routing.md, or null for files like /docs/llms.txt. */
 function markdownUrl(url: URL): URL | null {
   const path = url.pathname.replace(/\/$/, "");
   if (/\.[a-z0-9]+$/i.test(path)) return null;

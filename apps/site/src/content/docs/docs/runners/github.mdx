@@ -1,17 +1,32 @@
 ---
-title: GitHub
-description: Using GitHub's own runners as a provider.
+title: GitHub-hosted
+description: Using GitHub's own runners as a provider, and keeping an eye on minutes.
 ---
 
 import Provider from "@/components/docs/Provider.astro";
 
 <Provider id="github" />
 
-:::note[Stub]
-This page hasn't been written yet.
-:::
+GitHub-hosted runners are the usual fallback: always available, and billed against your plan.
 
-## Will cover
+## Use it
 
-- When jobs go to GitHub.
-- How minutes and quota are counted.
+Name a GitHub-hosted label in the relay's `github` input, usually the job's old `runs-on`:
+
+```yaml
+relay-test:
+  uses: relayrunner/actions/.github/workflows/relay.yml@v1
+  with:
+    machine: self-hosted
+    github: ubuntu-latest
+```
+
+Keep **GitHub-hosted** in your [runner order](/docs/concepts/runner-order/), usually last. A step with no limit always takes a job that names a `github` label, so it's a safe last resort.
+
+## Minutes
+
+GitHub bills private repos by the minute, rounded up per job, and each plan includes some minutes a month. Standard runners in public repos are free. macOS minutes cost about ten times Linux minutes.
+
+A GitHub-hosted step can carry a **minutes limit**, such as "while under 80%". It then only takes jobs while the job's GitHub account has used less than that share of its included minutes. Put another step after it to catch the rest. See [Spend controls](/docs/guides/spend-controls/).
+
+The **Usage** page shows each account's minutes next to what your jobs would have cost. See [the minutes limit](/docs/concepts/runner-order/#the-minutes-limit) for how it's read.

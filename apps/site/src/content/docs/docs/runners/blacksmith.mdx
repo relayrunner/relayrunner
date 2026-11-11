@@ -7,11 +7,32 @@ import Provider from "@/components/docs/Provider.astro";
 
 <Provider id="blacksmith" />
 
-:::note[Stub]
-This page hasn't been written yet.
-:::
+Blacksmith runs GitHub Actions jobs on its own hosted machines. RelayRunner can send jobs there when your own machines are busy, or ahead of GitHub-hosted runners.
 
-## Will cover
+## Set it up
 
-- Setting up Blacksmith.
-- Where it sits in the runner order.
+1. Install Blacksmith's GitHub App on the organization and set up your Blacksmith account. RelayRunner only hands the job a Blacksmith label; Blacksmith's App runs it and bills you.
+2. Add **Blacksmith** to your workspace's [runner order](/docs/concepts/runner-order/) on the Router page.
+3. Name a Blacksmith label in the relay's `blacksmith` input:
+
+```yaml
+relay-test:
+  uses: relayrunner/actions/.github/workflows/relay.yml@v1
+  with:
+    machine: self-hosted
+    blacksmith: blacksmith-4vcpu-ubuntu-2404
+    github: ubuntu-latest
+```
+
+`relayrunner init` keeps a job's existing `blacksmith-*` label as its fallback, so a job already on Blacksmith stays there whenever no machine is free.
+
+## Where it sits in the order
+
+RelayRunner can't see Blacksmith's capacity, so the Blacksmith step always takes a job that names a Blacksmith label. Steps below it only run for jobs that don't name one. A common order is your machines, then Blacksmith, then GitHub-hosted.
+
+Unlike machines, Blacksmith also runs public repos' jobs.
+
+## Good to know
+
+- The label must start with `blacksmith-`. Anything else is skipped, since the job would sit queued.
+- Blacksmith-only actions in a job won't work on your machines or GitHub. `init` warns about these.
