@@ -3,7 +3,7 @@ title: Spend controls
 description: Use your included GitHub minutes first, then switch to your own machines before you pay overage.
 ---
 
-A busy month, or a few agents pushing all day, can use up a plan's included minutes in days. After that, GitHub either bills overage or stops starting jobs. This guide keeps CI running without either.
+A busy month, or a few agents pushing all day, can use up a plan's included minutes well before the month ends. After that, GitHub either bills overage or stops starting jobs. This guide keeps CI running without either.
 
 ## 1. Order the runners
 

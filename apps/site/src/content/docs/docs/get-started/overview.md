@@ -1,6 +1,6 @@
 ---
 title: Overview
-description: RelayRunner routes each GitHub Actions job to the best runner you have right now, from your own machines to hosted runners.
+description: RelayRunner routes each GitHub Actions job to the first runner in your list that can take it, from your own machines to hosted runners.
 ---
 
 RelayRunner is a router for GitHub Actions. You tell it which runners a job may use, and it sends each job to the first one in your list that can take it right now: your laptop when it's online and free, a self-hosted runner your org already has, Blacksmith, or GitHub's hosted runners.
@@ -9,7 +9,7 @@ Your workflows stay the same. Checks keep their names, logs stay in GitHub, and 
 
 ## Why use it
 
-- **Your minutes ran out.** Coding agents push all day, and the free 2,000 minutes go in a week. Send jobs to a machine you already own first, and keep GitHub as the fallback.
+- **Your minutes ran out.** Coding agents push all day, and a plan's included minutes are gone before the month is. Send jobs to a machine you already own first, and keep GitHub as the fallback.
 - **Your bill spiked.** Use your included minutes, then switch to your own machines before you pay overage.
 - **macOS builds cost 10x.** Run them on the Mac on your desk, and fall back to hosted Macs when it's asleep.
 - **One spare machine isn't enough.** A home server or old laptop is free but becomes a queue. RelayRunner only sends it a job when it's idle and hands the rest to hosted runners.
