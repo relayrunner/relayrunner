@@ -176,16 +176,17 @@ export class PickRunner extends DurableObject<Env> {
       const request = await waitForJob(client);
       const job = request ? await client.claim(request) : null;
       if (job) {
+        let lintLog: Record<string, unknown> | undefined;
         const native = await nativeVerdict(job.message.steps, job.message.contextData, {
           // A lint step runs in its own LintRunner, one per job.
           // It reads the commit with the job's own token, which is passed along and never stored.
-          lint: (target, tools, paths) =>
-            this.env.LINT_RUNNER.getByName(`job:${work.jobId}`).lintJob(
-              target,
-              tools,
-              paths,
-              job.githubToken,
-            ),
+          lint: async (target, tools, paths) => {
+            const { result, log } = await this.env.LINT_RUNNER.getByName(
+              `job:${work.jobId}`,
+            ).lintJob(target, tools, paths, job.githubToken);
+            lintLog = log;
+            return result;
+          },
         });
         if (native) {
           // A native check: answer it here instead of routing it. Nothing runs on a VM.
@@ -198,6 +199,7 @@ export class PickRunner extends DurableObject<Env> {
             result: result.ok ? "check_passed" : "check_failed",
             checks: native.checks,
             reason: result.ok ? undefined : result.reason,
+            lint: lintLog,
           };
           // For the Usage and Activity savings: the job never took an Actions runner. The job is
           // already answered, so a failure here only loses the count.

@@ -87,35 +87,50 @@ export class LintRunner extends DurableObject<Env> {
    * The commit is read with `jobToken`, the job's own GITHUB_TOKEN, so the repo needs no App that
    * can read its code. The token is used for that one download and never stored. Where the Checks
    * App is installed the check runs are posted as usual; elsewhere the problems come back as
-   * annotations for the job.
+   * annotations for the job. `log` is what happened, for the caller's own log line.
    */
   async lintJob(
     target: { repo: string; headSha: string },
     tools: LintTool[],
     paths: string[],
     jobToken?: string,
-  ): Promise<CheckResult> {
+  ): Promise<{ result: CheckResult; log?: Record<string, unknown> }> {
     // Each container is billed to us, like the webhook path in startLintChecks.
     if (!containerRunnerAllowed(this.env.CONTAINER_RUNNER_ORGS, target.repo.split("/")[0]))
-      return { ok: false, reason: "RelayRunner doesn't run lint containers for this org yet." };
+      return {
+        result: { ok: false, reason: "RelayRunner doesn't run lint containers for this org yet." },
+      };
+    const startedAt = Date.now();
     const installationId = await checksAppInstallationId(this.env, target.repo).catch((error) => {
       if (!jobToken) throw error;
       return null;
     });
     if (!installationId && !jobToken)
       return {
-        ok: false,
-        reason: `Install the RelayRunner Checks App on ${target.repo} to run lint there.`,
+        result: {
+          ok: false,
+          reason: `Install the RelayRunner Checks App on ${target.repo} to run lint there.`,
+        },
       };
     const checks = installationId ? await checksAppToken(this.env, installationId) : undefined;
+    const timing: LintTiming = {};
     const results = await this.run(
       { installationId: installationId ?? undefined, ...target },
       { checks, job: jobToken },
       tools,
       paths,
       Promise.resolve(null),
+      timing,
     );
-    return lintJobResult(results, checks ? "checks" : "job");
+    // The caller logs this with the job: this object's own log lines don't reliably show for a
+    // run that another object called.
+    const log = {
+      checksApp: Boolean(checks),
+      ...timing,
+      durationMs: Date.now() - startedAt,
+      ...(Array.isArray(results) ? resultsLog(results) : {}),
+    };
+    return { result: lintJobResult(results, checks ? "checks" : "job"), log };
   }
 
   // The lines a pull request changes, to mark the other problems as likely pre-existing. Without
@@ -139,11 +154,14 @@ export class LintRunner extends DurableObject<Env> {
     tools: LintTool[],
     paths: string[],
     changed: Promise<ChangedLines | null>,
+    timing: LintTiming = {},
   ): Promise<LintResult[] | { error: string }> {
     const startedAt = Date.now();
     const token = tokens.checks;
     // The job's own token first. A job without `contents: read` falls back to the Checks App.
-    const codeTokens = [tokens.job, token].filter((value) => value !== undefined);
+    const codeTokens: CodeToken[] = [];
+    if (tokens.job) codeTokens.push({ from: "job", token: tokens.job });
+    if (token) codeTokens.push({ from: "checks", token });
     const checkRuns = new Map(
       token
         ? await Promise.all(
@@ -167,7 +185,7 @@ export class LintRunner extends DurableObject<Env> {
       );
     let results: LintResult[];
     try {
-      results = await this.lint(work, codeTokens, tools, paths);
+      results = await this.lint(work, codeTokens, tools, paths, timing);
     } catch (error) {
       // GitHub refuses, or answers 404 for a private repo, when the job's token can't read code.
       const hint =
@@ -175,11 +193,12 @@ export class LintRunner extends DurableObject<Env> {
           ? ". Give the job `permissions: contents: read`."
           : "";
       const reason = errorMessage(error) + hint;
-      log("error", work, { error: reason, durationMs: Date.now() - startedAt });
+      log("error", work, { error: reason, durationMs: Date.now() - startedAt, ...timing });
       await finish(() => lintUnavailableOutput(reason));
       return { error: reason };
     } finally {
-      await this.ctx.container?.destroy().catch(() => undefined);
+      // A run that failed before the container started has nothing to stop.
+      if (this.ctx.container?.running) await this.ctx.container.destroy().catch(() => undefined);
     }
     const byTool = new Map(results.map((result) => [result.tool, result]));
     const context = { repo: work.repo, headSha: work.headSha, changed: await changed };
@@ -189,35 +208,33 @@ export class LintRunner extends DurableObject<Env> {
         ? lintCheckOutput(result, context)
         : lintUnavailableOutput("the container skipped it");
     });
-    log("finished", work, { durationMs: Date.now() - startedAt, ...resultsLog(results) });
+    log("finished", work, {
+      durationMs: Date.now() - startedAt,
+      ...timing,
+      ...resultsLog(results),
+    });
     return results;
   }
 
-  // `tokens` are tried in order to read the commit: the next one only when GitHub refuses one.
+  // Reads the commit first, so a token GitHub refuses fails the run at once, before any container
+  // starts. The tarball's body then waits while the container boots.
   private async lint(
     work: LintTarget,
-    tokens: string[],
+    tokens: CodeToken[],
     tools: LintTool[],
     paths: string[],
+    timing: LintTiming,
   ): Promise<LintResult[]> {
     const container = this.ctx.container;
     if (!container) throw new Error("no container is configured");
+    const startedAt = Date.now();
+    const tarball = await readCommit(work, tokens, timing);
+    timing.readMs = Date.now() - startedAt;
     if (!container.running)
       container.start({ image: container.images.lint, instance: INSTANCE, enableInternet: false });
     const port = container.getTcpPort(LINT_PORT);
-    // GitHub's redirect and first bytes overlap with the container's boot.
-    const [tarball] = await Promise.all([
-      tokens.slice(1).reduce(
-        (tarball, token) =>
-          tarball.catch((error) => {
-            if (!(error instanceof GitHubAccessError)) throw error;
-            log("commit read refused, trying the next token", work, { status: error.status });
-            return repoTarball(token, work.repo, work.headSha);
-          }),
-        repoTarball(tokens[0], work.repo, work.headSha),
-      ),
-      waitForHealth(port),
-    ]);
+    await waitForHealth(port);
+    timing.bootMs = Date.now() - startedAt - timing.readMs;
     const query = new URLSearchParams({ tools: tools.join(",") });
     for (const path of paths) query.append("path", path);
     const response = await port.fetch(`http://lint/lint?${query}`, {
@@ -232,6 +249,28 @@ export class LintRunner extends DurableObject<Env> {
   }
 }
 
+// What a run reports about itself: which token read the commit, and how long the read and the
+// container's boot took.
+export interface LintTiming {
+  codeRead?: "job" | "checks";
+  readMs?: number;
+  bootMs?: number;
+}
+
+// Tries each token in order, the next one only when GitHub refuses one.
+async function readCommit(work: LintTarget, tokens: CodeToken[], timing: LintTiming) {
+  for (const [index, { from, token }] of tokens.entries()) {
+    try {
+      const tarball = await repoTarball(token, work.repo, work.headSha);
+      timing.codeRead = from;
+      return tarball;
+    } catch (error) {
+      if (!(error instanceof GitHubAccessError) || index === tokens.length - 1) throw error;
+    }
+  }
+  throw new Error("no token to read the commit with");
+}
+
 async function waitForHealth(port: Fetcher) {
   const deadline = Date.now() + BOOT_TIMEOUT_MS;
   for (;;) {
@@ -244,6 +283,8 @@ async function waitForHealth(port: Fetcher) {
     await new Promise((resolve) => setTimeout(resolve, 500));
   }
 }
+
+type CodeToken = { from: NonNullable<LintTiming["codeRead"]>; token: string };
 
 // A commit to lint. A native job without the Checks App has no installation.
 type LintTarget = Pick<LintWork, "repo" | "headSha"> & { installationId?: number };
