@@ -166,3 +166,4 @@ shows it too. Exits 1 when not signed in or when the token is no longer valid.
 
 `pnpm --filter relayrunner build` bundles the CLI into `dist/cli.js` with
 tsdown, including the workspace's `@relayrunner/machine-protocol` package.
+Releases go out through changesets; see [.changeset/README.md](../../.changeset/README.md).

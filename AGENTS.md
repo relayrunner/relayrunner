@@ -20,6 +20,10 @@ Never commit screenshots or other PR images to the repository. Upload them with 
 
 Format with oxfmt (`pnpm format`) and lint with Oxlint (`pnpm lint`). Run `pnpm check` before you push; CI runs the same command. The pre-commit hook formats and lints staged files, so don't skip it with `--no-verify`.
 
+## Releasing the CLI
+
+The `relayrunner` npm package (`apps/cli`) is released with [changesets](https://github.com/changesets/changesets). A PR that changes what the CLI does for people who install it adds a `.changeset/*.md` file (`pnpm changeset`) naming `"relayrunner"`, the only package a changeset may name. Merging it makes the Release workflow open a `chore: version packages` PR, and merging that one publishes to npm. Don't bump `apps/cli/package.json` by hand. See [.changeset/README.md](.changeset/README.md).
+
 ## Agent skills
 
 The `security-audit` skill from [cloudflare/security-audit-skill](https://github.com/cloudflare/security-audit-skill) is a project default, listed under `skills` in `package.json` and pinned in `skills-lock.json`. Load it for a security audit, a vulnerability review, or a pen test. The canonical copy lives in `.agents/skills`, which Codex, Cursor, and Grok read directly; Claude Code reads it through the `.claude/skills/security-audit` symlink. Don't edit the vendored files by hand, since oxfmt and Oxlint skip them to keep them byte-identical to the lock. Update with `npx skills update`.
