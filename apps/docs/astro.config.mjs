@@ -29,7 +29,7 @@ export default defineConfig({
         {
           label: "Get started",
           items: [
-            "get-started/how-it-works",
+            "get-started/overview",
             "get-started/quickstart",
             "get-started/install",
             "get-started/agents",

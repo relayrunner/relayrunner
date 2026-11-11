@@ -1,6 +1,6 @@
 ---
-title: How it works
-description: The mental model to read before anything else.
+title: Overview
+description: RelayRunner runs your GitHub Actions jobs on your own machines when they're online, and falls back to GitHub's runners when they're not.
 ---
 
 :::note[Stub]
