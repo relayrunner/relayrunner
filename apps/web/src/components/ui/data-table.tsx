@@ -2,13 +2,17 @@ import {
   columnFilteringFeature,
   createColumnHelper,
   createFilteredRowModel,
+  createExpandedRowModel,
   createSortedRowModel,
+  type ExpandedState,
   FlexRender,
   filterFn_includesString,
   globalFilteringFeature,
   metaHelper,
+  type OnChangeFn,
   type Row,
   type RowData,
+  rowExpandingFeature,
   rowSortingFeature,
   sortFn_basic,
   sortFn_text,
@@ -50,6 +54,8 @@ const features = tableFeatures({
   rowSortingFeature,
   columnFilteringFeature,
   globalFilteringFeature,
+  rowExpandingFeature,
+  expandedRowModel: createExpandedRowModel(),
   sortedRowModel: createSortedRowModel(),
   filteredRowModel: createFilteredRowModel(),
   sortFns: { basic: sortFn_basic, text: sortFn_text },
@@ -61,6 +67,9 @@ const features = tableFeatures({
 export function dataTableColumns<TData extends RowData>() {
   return createColumnHelper<typeof features, TData>();
 }
+
+export type { ExpandedState };
+export type DataTableRow<TData extends RowData> = Row<typeof features, TData>;
 
 type Columns<TData extends RowData> = ReturnType<
   ReturnType<typeof dataTableColumns<TData>>["columns"]
@@ -100,6 +109,10 @@ export function DataTable<TData extends RowData>({
   caption,
   empty = "Nothing to show.",
   rowHeight = 45,
+  getSubRows,
+  expanded,
+  onExpandedChange,
+  rowClassName,
 }: {
   columns: Columns<TData>;
   data: TData[];
@@ -111,6 +124,11 @@ export function DataTable<TData extends RowData>({
   empty?: ReactNode;
   /** A typical row's height in pixels, used to place rows before they're measured. */
   rowHeight?: number;
+  /** Nested rows. They sort within their parent and show while it's expanded. */
+  getSubRows?: (row: TData) => TData[] | undefined;
+  expanded?: ExpandedState;
+  onExpandedChange?: OnChangeFn<ExpandedState>;
+  rowClassName?: (row: Row<typeof features, TData>) => string | undefined;
 }) {
   const [sorting, setSorting] = useState(initialSorting);
   const table = useTable({
@@ -118,8 +136,10 @@ export function DataTable<TData extends RowData>({
     columns,
     data,
     getRowId,
-    state: { sorting, globalFilter: search },
+    getSubRows,
+    state: { sorting, globalFilter: search, ...(expanded && { expanded }) },
     onSortingChange: setSorting,
+    onExpandedChange,
     globalFilterFn: "includesString",
     // Missing values (no runs yet, no price) sort after real ones either way.
     defaultColumn: { sortUndefined: "last" },
@@ -170,11 +190,21 @@ export function DataTable<TData extends RowData>({
           </TableRow>
         </TableBody>
       ) : rows.length > VIRTUALIZE_ABOVE ? (
-        <VirtualRows rows={rows} columns={headers.length} rowHeight={rowHeight} />
+        <VirtualRows
+          rows={rows}
+          columns={headers.length}
+          rowHeight={rowHeight}
+          rowClassName={rowClassName}
+        />
       ) : (
         <TableBody>
           {rows.map((row) => (
-            <DataRow key={row.id} row={row} />
+            <DataRow
+              key={row.id}
+              row={row}
+              expanded={row.getIsExpanded()}
+              className={rowClassName?.(row)}
+            />
           ))}
         </TableBody>
       )}
@@ -184,6 +214,9 @@ export function DataTable<TData extends RowData>({
 
 type DataRowProps<TData extends RowData> = {
   row: Row<typeof features, TData>;
+  /** Passed so a memoized row re-renders when it opens or closes. */
+  expanded: boolean;
+  className?: string;
   index?: number;
   measure?: (element: HTMLTableRowElement | null) => void;
 };
@@ -191,11 +224,12 @@ type DataRowProps<TData extends RowData> = {
 // Memoized: rows re-render on scroll only when they enter the window, not every frame.
 const DataRow = memo(function DataRow<TData extends RowData>({
   row,
+  className,
   index,
   measure,
 }: DataRowProps<TData>) {
   return (
-    <TableRow data-index={index} ref={measure}>
+    <TableRow data-index={index} ref={measure} className={className}>
       {row.getAllCells().map((cell) => (
         <TableCell
           key={cell.id}
@@ -217,10 +251,12 @@ function VirtualRows<TData extends RowData>({
   rows,
   columns,
   rowHeight,
+  rowClassName,
 }: {
   rows: Row<typeof features, TData>[];
   columns: number;
   rowHeight: number;
+  rowClassName?: (row: Row<typeof features, TData>) => string | undefined;
 }) {
   const bodyRef = useRef<HTMLTableSectionElement>(null);
   const [offset, setOffset] = useState(0);
@@ -244,14 +280,19 @@ function VirtualRows<TData extends RowData>({
   return (
     <TableBody ref={bodyRef}>
       {before > 0 && <Spacer height={before} columns={columns} />}
-      {items.map((item) => (
-        <DataRow
-          key={item.key}
-          row={rows[item.index]!}
-          index={item.index}
-          measure={virtualizer.measureElement}
-        />
-      ))}
+      {items.map((item) => {
+        const row = rows[item.index]!;
+        return (
+          <DataRow
+            key={item.key}
+            row={row}
+            expanded={row.getIsExpanded()}
+            className={rowClassName?.(row)}
+            index={item.index}
+            measure={virtualizer.measureElement}
+          />
+        );
+      })}
       {after > 0 && <Spacer height={after} columns={columns} />}
     </TableBody>
   );
