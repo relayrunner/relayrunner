@@ -34,6 +34,9 @@
     "AGENTS_MCP_URL": "https://agents.relayrunner.app/mcp",
     // Sender for transactional email; must stay in send_email's allowed_sender_addresses below.
     "EMAIL_FROM": "noreply@send.relayrunner.app",
+    // Agent feedback from the MCP server's send_feedback tool (src/feedback.ts) is emailed here.
+    // An Email Routing rule on relayrunner.app forwards it to the team.
+    "FEEDBACK_EMAIL": "feedback@relayrunner.app",
     // Dashboard origins other than BETTER_AUTH_URL that may sign in through the oAuthProxy plugin:
     // previews (<alias>-relayrunner-app.relayrun.workers.dev; only this account's Workers live
     // under relayrun.workers.dev) and the old workers.dev dashboard, which older CLIs still open.

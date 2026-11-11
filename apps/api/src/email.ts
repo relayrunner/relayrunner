@@ -5,6 +5,7 @@
  * only logs, so a sign-in, a machine claim or the hourly cron never fails because of mail.
  */
 import {
+  renderAgentFeedbackEmail,
   renderDeadLetterAlertEmail,
   renderInviteEmail,
   renderMachineConnectedEmail,
@@ -19,7 +20,7 @@ import type { Env } from "./env.ts";
 // binding's allowed_sender_addresses in wrangler.jsonc.
 export const DEFAULT_FROM = "noreply@send.relayrunner.app";
 
-export type EmailArgs =
+export type EmailArgs = (
   | { to: string; template: "welcome"; context: { name?: string } }
   | {
       to: string;
@@ -54,7 +55,13 @@ export type EmailArgs =
         role: string;
         expiresAt: Date;
       };
-    };
+    }
+  | {
+      to: string;
+      template: "agent-feedback";
+      context: Parameters<typeof renderAgentFeedbackEmail>[0];
+    }
+) & { replyTo?: string };
 
 /** Where links in emails point: the dashboard people actually use, not the OAuth callback host. */
 export function dashboardUrl(env: Pick<Env, "DASHBOARD_URL" | "BETTER_AUTH_URL">) {
@@ -75,6 +82,8 @@ function render(env: Env, args: EmailArgs): RenderedEmail {
         ...args.context,
         inspectorUrl: `${dashboard}/admin/webhooks`,
       });
+    case "agent-feedback":
+      return renderAgentFeedbackEmail(args.context);
     case "invite": {
       const { invitationId, ...context } = args.context;
       return renderInviteEmail({
@@ -106,6 +115,7 @@ export async function sendEmail(env: Env, args: EmailArgs): Promise<void> {
     await env.EMAIL.send({
       to: args.to,
       from: { name: "RelayRunner", email: env.EMAIL_FROM || DEFAULT_FROM },
+      ...(args.replyTo && { replyTo: args.replyTo }),
       subject,
       text,
       html,

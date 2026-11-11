@@ -1,4 +1,4 @@
-import { afterAll, beforeAll, describe, expect, test } from "vitest";
+import { afterAll, beforeAll, describe, expect, test, vi } from "vitest";
 import { AGENT_CONSENT_PAGE, AGENT_WORKSPACE_PAGE, agentIssuer } from "./agent-auth.ts";
 import { app } from "./app.ts";
 import type { Env } from "./env.ts";
@@ -402,5 +402,135 @@ describe("agent sign-in", () => {
     expect(metadata.issuer).toBe(agentIssuer(env));
     expect(metadata.registration_endpoint).toBe(`${agentIssuer(env)}/oauth2/register`);
     expect(wellKnown(new Request(`${env.BETTER_AUTH_URL}/api/health`), env)).toBeNull();
+  });
+});
+
+describe("agent feedback", () => {
+  function sendFeedback(
+    token: string,
+    body: unknown,
+    init: { env?: Env; workspace?: string } = {},
+  ) {
+    return app.request(
+      "/api/feedback",
+      {
+        method: "POST",
+        headers: {
+          authorization: `Bearer ${token}`,
+          "content-type": "application/json",
+          ...(init.workspace && { "x-relayrunner-workspace": init.workspace }),
+        },
+        body: typeof body === "string" ? body : JSON.stringify(body),
+      },
+      init.env ?? env,
+    );
+  }
+
+  test("stores sanitized feedback, emails it, and never echoes it back", async () => {
+    const { user, cookie } = await testing.signIn(env);
+    const { workspace, cookie: jar } = await testing.createWorkspace(
+      env,
+      cookie,
+      "Feedback",
+      "agents-feedback",
+    );
+    const { access_token, client_id } = await signInAgent(jar);
+    const send = vi.fn(async () => ({ messageId: "m1" }));
+    const withEmail = { ...env, EMAIL: { send } as unknown as SendEmail };
+
+    const response = await sendFeedback(
+      access_token,
+      {
+        category: "bug",
+        summary: "list_runs\u202e drops\nqueued runs",
+        details: "Called with token=ghp_abcdefghijklmnopqrstuvwxyz0123456789\u0000 and got []",
+        tool: "list_runs<script>",
+      },
+      { env: withEmail, workspace: workspace.id },
+    );
+    expect(response.status, await response.clone().text()).toBe(201);
+    const body = (await response.json()) as { id: string; redacted: number };
+    expect(body).toEqual({ id: expect.any(String), redacted: 1 });
+    expect(JSON.stringify(body)).not.toContain("ghp_");
+
+    const row = await env.DB.prepare("SELECT * FROM agent_feedback WHERE id = ?")
+      .bind(body.id)
+      .first<Record<string, unknown>>();
+    expect(row).toMatchObject({
+      user_id: user.id,
+      workspace_id: workspace.id,
+      client_id,
+      category: "bug",
+      summary: "list_runs drops queued runs",
+      details: "Called with token=[redacted] and got []",
+      tool: "list_runsscript",
+    });
+
+    expect(send).toHaveBeenCalledOnce();
+    const message = (send.mock.calls[0] as unknown[])[0] as {
+      to: string;
+      replyTo: string;
+      subject: string;
+      text: string;
+      html: string;
+    };
+    expect(message.to).toBe("feedback@relayrunner.app");
+    expect(message.replyTo).toBe(user.email);
+    expect(message.subject).toBe("[feedback] bug: list_runs drops queued runs");
+    expect(message.text).toContain("Agent: Test agent");
+    expect(message.text).toContain("Workspace: Feedback");
+    expect(message.text).not.toContain("ghp_");
+    expect(message.html).not.toContain("<script>");
+  });
+
+  test("refuses bad input, other workspaces, sessions, and floods", async () => {
+    const { cookie } = await testing.signIn(env);
+    const { cookie: jar } = await testing.createWorkspace(env, cookie, "Flood", "agents-flood");
+    const { access_token } = await signInAgent(jar);
+    const noEmail = { ...env, FEEDBACK_EMAIL: undefined };
+
+    expect((await sendFeedback(access_token, { category: "nope", summary: "x" })).status).toBe(400);
+    expect(
+      (await sendFeedback(access_token, { category: "bug", summary: " \u200b " })).status,
+    ).toBe(400);
+    expect(
+      (await sendFeedback(access_token, { category: "bug", summary: "x".repeat(400) })).status,
+    ).toBe(400);
+    expect(
+      (
+        await sendFeedback(
+          access_token,
+          JSON.stringify({ category: "bug", summary: "x", details: "y".repeat(20_000) }),
+        )
+      ).status,
+    ).toBe(413);
+    expect(
+      (await sendFeedback(access_token, { category: "bug", summary: "x" }, { workspace: "other" }))
+        .status,
+    ).toBe(404);
+    // A dashboard session can't use it: it's for agents.
+    expect(
+      (await testing.call(env, "/feedback", jar, { category: "bug", summary: "x" })).status,
+    ).toBe(403);
+
+    for (let i = 0; i < 10; i++) {
+      const ok = await sendFeedback(
+        access_token,
+        { category: "other", summary: `note ${i}` },
+        {
+          env: noEmail,
+        },
+      );
+      expect(ok.status).toBe(201);
+    }
+    const limited = await sendFeedback(
+      access_token,
+      { category: "other", summary: "one more" },
+      {
+        env: noEmail,
+      },
+    );
+    expect(limited.status).toBe(429);
+    expect(limited.headers.get("retry-after")).toBe("3600");
   });
 });

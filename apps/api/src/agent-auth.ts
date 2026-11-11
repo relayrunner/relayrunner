@@ -7,7 +7,9 @@
 // (middleware/session.ts) turns it into a request for that user, limited to AGENT_ROUTES and to the
 // grant's workspaces the user still belongs to.
 //
-// Phase 1 is read-only: the only scope is workspace:read, and every agent route is a GET.
+// Phase 1 is read-only: the only scope is workspace:read, and every agent route but one is a GET.
+// The exception is POST /api/feedback (routes/feedback.ts): it changes no workspace state, only
+// records what the agent reports, rate-limited per user.
 
 import { mcp } from "@better-auth/mcp";
 import { APIError } from "better-auth/api";
@@ -109,6 +111,8 @@ async function grantedWorkspaces(db: Db, grantId: string, userId: string) {
 /** Who an agent request acts for, from its verified access token: its grant and the workspaces it may read. */
 export interface AgentPrincipal {
   grantId: string;
+  // The OAuth client (the agent app) the token was issued to.
+  clientId: string;
   workspaces: { id: string; name: string }[];
 }
 
@@ -170,7 +174,7 @@ export async function agentSession(env: Env, auth: Auth, token: string) {
   if (workspaces.length === 0 || !user) return null;
   return {
     user: user as Session["user"],
-    agent: { grantId, workspaces } satisfies AgentPrincipal,
+    agent: { grantId, clientId: String(claims.azp), workspaces } satisfies AgentPrincipal,
   };
 }
 
@@ -195,8 +199,14 @@ const AGENT_ROUTES: RegExp[] = [
   /^\/api\/job-times$/,
 ];
 
+// Routes an agent may call by method. The one write is agent feedback, which only adds a row for
+// its own user (routes/feedback.ts).
+const AGENT_ROUTES_BY_METHOD: Record<string, RegExp[]> = {
+  GET: AGENT_ROUTES,
+  HEAD: AGENT_ROUTES,
+  POST: [/^\/api\/feedback$/],
+};
+
 export function agentMayCall(method: string, pathname: string) {
-  return (
-    (method === "GET" || method === "HEAD") && AGENT_ROUTES.some((route) => route.test(pathname))
-  );
+  return (AGENT_ROUTES_BY_METHOD[method] ?? []).some((route) => route.test(pathname));
 }

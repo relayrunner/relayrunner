@@ -13,6 +13,7 @@ function fakeEnv(
   { limited = false, workspaceIds = ["w1"], names = {} as Record<string, string> } = {},
 ) {
   const asked: string[] = [];
+  const posted: unknown[] = [];
   const env = {
     MCP_URL,
     AUTH_ISSUER: "https://app.relayrunner.app/api/auth",
@@ -22,7 +23,9 @@ function fakeEnv(
         const url = new URL(String(input));
         const headers = new Headers(init?.headers);
         const workspace = headers.get("x-relayrunner-workspace");
-        asked.push(url.pathname + url.search + (workspace ? ` @${workspace}` : ""));
+        const method = init?.method === "POST" ? "POST " : "";
+        asked.push(method + url.pathname + url.search + (workspace ? ` @${workspace}` : ""));
+        if (init?.body) posted.push(JSON.parse(String(init.body)));
         if (headers.get("authorization") !== "Bearer good") {
           return Response.json({ error: "invalid_token" }, { status: 401 });
         }
@@ -43,7 +46,7 @@ function fakeEnv(
       },
     },
   } as unknown as Env;
-  return { env, asked };
+  return { env, asked, posted };
 }
 
 function rpc(env: Env, body: unknown, token = "good") {
@@ -116,7 +119,10 @@ describe("mcp server", () => {
         "list_runs",
       ]),
     );
-    expect(listed.result.tools.every((tool) => tool.annotations.readOnlyHint)).toBe(true);
+    // Every tool reads, except send_feedback, which only records a report.
+    expect(
+      listed.result.tools.filter((tool) => !tool.annotations.readOnlyHint).map((tool) => tool.name),
+    ).toEqual(["send_feedback"]);
 
     const called = (await (
       await rpc(env, { method: "tools/call", params: { name: "get_runner_order", arguments: {} } })
@@ -294,6 +300,42 @@ describe("mcp server", () => {
     const unknown = await call("list_runners", { workspace: "Gamma" });
     expect(unknown.isError).toBe(true);
     expect(unknown.content[0].text).toContain("Gamma");
+  });
+
+  test("send_feedback posts the report and doesn't repeat it back", async () => {
+    const { env, asked, posted } = fakeEnv(
+      { "/api/feedback": { id: "f1", redacted: 1 } },
+      { workspaceIds: ["w1", "w2"] },
+    );
+    const report = {
+      category: "bug",
+      summary: "list_runs misses queued runs",
+      details: "token=ghp_secret",
+      tool: "list_runs",
+    };
+    const call = async (args: object) =>
+      (await (
+        await rpc(env, { method: "tools/call", params: { name: "send_feedback", arguments: args } })
+      ).json()) as { result: { content: { text: string }[]; isError?: boolean } };
+
+    // Several workspaces and none named: sent without one, not refused.
+    const unscoped = await call(report);
+    expect(unscoped.result.isError).toBeFalsy();
+    expect(JSON.parse(unscoped.result.content[0].text)).toEqual({
+      received: true,
+      id: "f1",
+      note: "1 secret-like value(s) were redacted before saving.",
+    });
+    expect(unscoped.result.content[0].text).not.toContain("ghp_");
+    await call({ ...report, workspace: "w2" });
+    expect(asked.filter((path) => path.startsWith("POST"))).toEqual([
+      "POST /api/feedback",
+      "POST /api/feedback @w2",
+    ]);
+    expect(posted[0]).toEqual(report);
+
+    const invalid = await call({ category: "rant", summary: "x" });
+    expect(invalid.result.isError).toBe(true);
   });
 
   test("an API refusal is a tool error, not a crash", async () => {
