@@ -27,7 +27,7 @@ import {
 } from "yaml";
 
 /** The relay version `init` writes. Bump it with each relayrunner/actions release. */
-export const RELAY_REF = "v1.0.0-beta.4";
+export const RELAY_REF = "v1.0.0-beta.5";
 export const RELAY_WORKFLOW = "relayrunner/actions/.github/workflows/relay.yml";
 
 export type Verdict = "ready" | "routed" | "skipped";

@@ -592,7 +592,7 @@ function WorkflowPanel({ steps }: { steps: RunnerStep[] }) {
   const snippet = [
     "jobs:",
     "  relay:",
-    "    uses: relayrunner/actions/.github/workflows/relay.yml@v1.0.0-beta.4",
+    "    uses: relayrunner/actions/.github/workflows/relay.yml@v1.0.0-beta.5",
     "    with:",
     ...keys.map((key) => `      ${key}: ${RUNNER_EXAMPLES[key]}`),
     "  test:",
