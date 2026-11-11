@@ -4,6 +4,8 @@ import {
   listRate,
   PRICES_CHECKED,
   type ProviderId,
+  type RatePrices,
+  ratePrices,
 } from "@relayrunner/providers";
 import { api } from "@/lib/api";
 import { type Environment, type Stat, sampleStat } from "@/lib/job-times";
@@ -33,6 +35,8 @@ export type ProviderReport = ProviderCounts & {
   stat: Stat;
   runners: ProviderRunner[];
   workflows: ProviderWorkflow[];
+  /** The provider's list prices, each with its history. Empty when it has none. */
+  prices: RatePrices[];
 };
 
 export type ProviderSummary = ProviderCounts & { provider: ProviderId; stat: Stat };
@@ -56,7 +60,7 @@ export function getProvidersOverview(days: number) {
 export const costText = ({ cost, jobs, unpricedJobs }: ProviderCounts) =>
   jobs > 0 && unpricedJobs === jobs ? "—" : money(cost);
 
-export { rateText } from "@relayrunner/providers";
+export { rateName, rateText } from "@relayrunner/providers";
 
 const cents = (usd: number) => Math.round(usd * 1000) / 1000;
 
@@ -119,7 +123,15 @@ export function sampleProviderReport(provider: ProviderId, days: number): Provid
     { repository: "acme/api", workflow: "Test", jobs: Math.round(total.jobs * 0.31) },
     { repository: "acme/cli", workflow: "Release", jobs: Math.round(total.jobs * 0.13) },
   ].filter((w) => w.jobs > 0);
-  return { provider, days, pricesChecked: PRICES_CHECKED, ...total, runners, workflows };
+  return {
+    provider,
+    days,
+    pricesChecked: PRICES_CHECKED,
+    ...total,
+    runners,
+    workflows,
+    prices: ratePrices(BASE_BOOK, provider),
+  };
 }
 
 export function sampleProvidersOverview(days: number): ProvidersOverview {

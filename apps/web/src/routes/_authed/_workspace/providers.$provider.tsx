@@ -1,4 +1,10 @@
-import { isProviderId, PROVIDERS as PROVIDER_INFO, type ProviderId } from "@relayrunner/providers";
+import {
+  dayMs,
+  isProviderId,
+  PROVIDERS as PROVIDER_INFO,
+  type ProviderId,
+  type RatePrices,
+} from "@relayrunner/providers";
 import { createFileRoute, Link, notFound } from "@tanstack/react-router";
 import { ArrowLeftIcon, ArrowUpRightIcon } from "lucide-react";
 import { useState } from "react";
@@ -12,6 +18,7 @@ import {
   costText,
   getProviderReport,
   type ProviderReport,
+  rateName,
   rateText,
   sampleProviderReport,
 } from "@/lib/providers";
@@ -101,6 +108,8 @@ function ProviderView({ first }: { first: ProviderReport }) {
         )}
       </div>
 
+      <Prices prices={report.prices} />
+
       {info.example && (
         <div className="grid max-w-3xl gap-3">
           <h2 className="font-semibold">Use it</h2>
@@ -115,6 +124,8 @@ function ProviderView({ first }: { first: ProviderReport }) {
           </pre>
         </div>
       )}
+
+      <PriceChanges prices={report.prices} />
     </section>
   );
 }
@@ -236,6 +247,79 @@ function Workflows({ report }: { report: ProviderReport }) {
           </li>
         ))}
       </ul>
+    </div>
+  );
+}
+
+const dayText = (day: string) =>
+  new Date(dayMs(day)).toLocaleDateString("en-US", {
+    month: "short",
+    day: "numeric",
+    year: "numeric",
+    timeZone: "UTC",
+  });
+
+/** The provider's list prices today, one row per runner type. */
+function Prices({ prices }: { prices: RatePrices[] }) {
+  if (prices.length === 0) return null;
+  const now = Date.now();
+  return (
+    <div className="grid max-w-3xl gap-3">
+      <h2 className="font-semibold">List prices</h2>
+      <div className="overflow-x-auto rounded-xl border bg-card">
+        <table className="w-full text-sm">
+          <tbody>
+            {prices.map(({ rate, per, history }) => {
+              const today = history.findLast((row, i) => i === 0 || dayMs(row.from) <= now);
+              return (
+                <tr key={rate} className="border-b last:border-0">
+                  <td className="px-4 py-2.5">{rateName(rate)}</td>
+                  <td className="px-4 py-2.5 text-right whitespace-nowrap tabular-nums">
+                    {rateText(today?.usd ?? null)}
+                    {per === "vcpu" && " per vCPU"}
+                  </td>
+                </tr>
+              );
+            })}
+          </tbody>
+        </table>
+      </div>
+    </div>
+  );
+}
+
+/**
+ * Every time one of the provider's prices changed, newest first, as a footnote. Jobs are priced
+ * at the rate on the day they ran.
+ */
+function PriceChanges({ prices }: { prices: RatePrices[] }) {
+  if (prices.length === 0) return null;
+  const changes = prices
+    .flatMap(({ rate, history }) =>
+      history.slice(1).map((row, i) => ({
+        key: `${rate}:${row.from}`,
+        from: row.from,
+        text: `${rateName(rate)}: ${rateText(history[i]!.usd)} to ${rateText(row.usd)}`,
+      })),
+    )
+    .sort((a, b) => b.from.localeCompare(a.from));
+  return (
+    <div className="grid max-w-3xl gap-2 text-sm text-muted-foreground">
+      <h2 className="font-semibold text-foreground">Price changes</h2>
+      {changes.length === 0 ? (
+        <p>There haven't been any price changes since tracking started.</p>
+      ) : (
+        <>
+          <ul className="grid gap-1 tabular-nums">
+            {changes.map((change) => (
+              <li key={change.key}>
+                {dayText(change.from)}. {change.text}
+              </li>
+            ))}
+          </ul>
+          <p className="text-xs">A job is priced at the rate on the day it ran.</p>
+        </>
+      )}
     </div>
   );
 }

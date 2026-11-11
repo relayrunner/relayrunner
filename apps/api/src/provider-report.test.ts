@@ -149,5 +149,15 @@ describe("provider report", () => {
     // One runner type, shown at today's price.
     expect(body.runners).toHaveLength(1);
     expect(body.runners[0]?.perMinute).toBeCloseTo(0.00125, 6);
+    // Its list prices, with each one's history.
+    expect(body.prices.find((p) => p.rate === "standard")).toEqual({
+      rate: "standard",
+      per: "vcpu",
+      history: [
+        { usd: 0.0004, from: "2023-01-01" },
+        { usd: 0.0005, from: "2026-05-01" },
+        { usd: 0.000625, from: "2026-09-01" },
+      ],
+    });
   });
 });

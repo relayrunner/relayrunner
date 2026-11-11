@@ -141,6 +141,40 @@ export function priceBook(rows: PriceRow[]): PriceBook {
   };
 }
 
+const RATE_NAMES: Record<string, string> = {
+  linux: "Linux x64",
+  arm: "Linux Arm",
+  windows: "Windows",
+  macos: "macOS",
+  standard: "Standard",
+  premium: "Premium",
+  "linux-1-core": "Linux 1-core",
+  "linux-2-core": "Linux 2-core",
+  "linux-arm-2-core": "Linux Arm 2-core",
+  "windows-2-core": "Windows 2-core",
+  "windows-arm-2-core": "Windows Arm 2-core",
+};
+
+/** A rate as people say it, such as "Linux Arm". */
+export const rateName = (rate: string) => RATE_NAMES[rate] ?? rate;
+
+/** One of a provider's rates with every price it has had, oldest first. */
+export interface RatePrices {
+  rate: string;
+  per: "vcpu" | "runner";
+  history: { usd: number; from: string }[];
+}
+
+/** A provider's rates and their price history, or none for a provider without list prices. */
+export function ratePrices(book: PriceBook, provider: string): RatePrices[] {
+  if (!Object.hasOwn(RATES, provider)) return [];
+  return Object.entries(RATES[provider as PricedProvider]).map(([rate, per]) => ({
+    rate,
+    per,
+    history: book.history(provider, rate).map(({ usd, from }) => ({ usd, from })),
+  }));
+}
+
 /** The base list on its own, for places without the API's rows, such as the docs site. */
 export const BASE_BOOK = priceBook(BASE_PRICES);
 

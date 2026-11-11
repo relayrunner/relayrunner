@@ -170,7 +170,10 @@ export {
   type PricedProvider,
   type PriceRow,
   PRICES_CHECKED,
+  type RatePrices,
   RATES,
+  rateName,
+  ratePrices,
   rateText,
 } from "./prices.ts";
 export { type FoundPrice, PRICE_SOURCES, type PriceSource } from "./price-sources.ts";
