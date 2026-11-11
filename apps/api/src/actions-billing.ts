@@ -9,7 +9,7 @@
 //
 // The cron polls every 15 minutes. GitHub's billing lags about 6-90 minutes and arrives in bursts
 // (#115), which #117's burn-rate margin covers.
-import { and, asc, eq, gte, isNotNull, isNull, lt } from "drizzle-orm";
+import { and, asc, eq, gte, isNull, lt } from "drizzle-orm";
 import { recordOverage } from "./activity.ts";
 import { createAuth } from "./auth.ts";
 import { createDb, type Db, schema } from "./db/index.ts";
@@ -112,15 +112,11 @@ export async function pollActionsUsage(env: Env, now = new Date()) {
       accountId: schema.githubInstallation.accountId,
       accountLogin: schema.githubInstallation.accountLogin,
       accountType: schema.githubInstallation.accountType,
-      workspaceId: schema.githubInstallation.workspaceId,
+      workspaceId: schema.workspace.id,
     })
     .from(schema.githubInstallation)
-    .where(
-      and(
-        isNotNull(schema.githubInstallation.workspaceId),
-        isNull(schema.githubInstallation.suspendedAt),
-      ),
-    );
+    .innerJoin(schema.workspace, eq(schema.workspace.installationId, schema.githubInstallation.id))
+    .where(isNull(schema.githubInstallation.suspendedAt));
   await enqueueInstallationTasks(
     env,
     accounts.map((account) => ({ kind: "actions-usage", account, at: now.toISOString() })),
@@ -510,7 +506,8 @@ export async function workspaceActionsUsage(db: Db, workspaceId: string, now = n
   const installations = await db
     .select({ id: schema.githubInstallation.id })
     .from(schema.githubInstallation)
-    .where(eq(schema.githubInstallation.workspaceId, workspaceId))
+    .innerJoin(schema.workspace, eq(schema.workspace.installationId, schema.githubInstallation.id))
+    .where(eq(schema.workspace.id, workspaceId))
     .orderBy(asc(schema.githubInstallation.accountLogin));
   const accounts = await Promise.all(
     installations.map((installation) => accountUsage(db, installation.id, now)),

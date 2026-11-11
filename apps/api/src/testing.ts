@@ -8,7 +8,8 @@ import type { Env } from "./env.ts";
 
 // Test helpers for running the app against a real (in-memory, Miniflare) D1 with the committed
 // migrations. Call startD1() in beforeAll and dispose the proxy in afterAll.
-export async function startD1() {
+// `before` stops short of the migration with that file name, for testing a migration on data.
+export async function startD1({ before }: { before?: string } = {}) {
   const proxy = await getPlatformProxy<Env>({
     configPath: new URL("../wrangler.jsonc", import.meta.url).pathname,
     persist: false,
@@ -21,17 +22,21 @@ export async function startD1() {
     GITHUB_APP_CLIENT_SECRET: "secret",
     GITHUB_APP_SLUG: "relayrunner-test",
   };
-  const dir = new URL("../migrations/", import.meta.url);
-  for (const file of readdirSync(dir)
-    .filter((name) => name.endsWith(".sql"))
-    .sort()) {
-    for (const statement of readFileSync(new URL(file, dir), "utf8").split(
-      "--> statement-breakpoint",
-    )) {
-      if (statement.trim()) await env.DB.prepare(statement).run();
-    }
-  }
+  for (const file of readdirSync(migrations)
+    .filter((name) => name.endsWith(".sql") && (!before || name < before))
+    .sort())
+    await applyMigration(env, file);
   return { proxy, env };
+}
+
+const migrations = new URL("../migrations/", import.meta.url);
+
+export async function applyMigration(env: Env, file: string) {
+  for (const statement of readFileSync(new URL(file, migrations), "utf8").split(
+    "--> statement-breakpoint",
+  )) {
+    if (statement.trim()) await env.DB.prepare(statement).run();
+  }
 }
 
 let users = 0;
@@ -74,23 +79,53 @@ export function call(env: Env, path: string, cookie: string, body?: unknown) {
   return app.request(`/api${path}`, init, env);
 }
 
-// What the dashboard does: create, then set it active so the cached session cookie picks it up
-// (organization/create updates the session row but not the cookie cache).
+let installations = 0;
+
+// A workspace owned by the signed-in user, made active. Users can't create workspaces (#316):
+// each is a GitHub App installation, so this records a stand-in installation (id
+// `workspace.installationId`) and its workspace, the way the Setup URL would. A test that needs a
+// particular installation swaps it in with useInstallation.
 export async function createWorkspace(env: Env, cookie: string, name: string, slug: string) {
-  const created = await call(env, "/auth/organization/create", cookie, { name, slug });
-  expect(created.status).toBe(200);
-  const workspace = (await created.json()) as {
-    id: string;
-    slug: string;
-    members: { userId: string; role: string }[];
-  };
-  let jar = withSetCookies(cookie, created);
-  const active = await call(env, "/auth/organization/set-active", jar, {
-    organizationId: workspace.id,
-  });
+  const auth = createAuth(env);
+  const session = await auth.api.getSession({ headers: new Headers({ cookie }) });
+  expect(session).not.toBeNull();
+  const userId = session!.user.id;
+  installations += 1;
+  const installationId = 900_000_000 + installations;
+  const id = crypto.randomUUID();
+  const now = Date.now();
+  await env.DB.batch([
+    env.DB.prepare(
+      "insert into github_installation (id, account_id, account_login, account_type, created_at, updated_at) values (?, ?, ?, 'Organization', ?, ?)",
+    ).bind(installationId, installationId, slug, now, now),
+    env.DB.prepare(
+      "insert into workspace (id, installation_id, name, slug, created_at) values (?, ?, ?, ?, ?)",
+    ).bind(id, installationId, name, slug, now),
+    env.DB.prepare(
+      "insert into workspace_member (id, workspace_id, user_id, role, created_at) values (?, ?, ?, 'owner', ?)",
+    ).bind(crypto.randomUUID(), id, userId, now),
+  ]);
+  const active = await call(env, "/auth/organization/set-active", cookie, { organizationId: id });
   expect(active.status).toBe(200);
-  jar = withSetCookies(jar, active);
-  return { workspace, cookie: jar };
+  return {
+    workspace: { id, name, slug, installationId, members: [{ userId, role: "owner" }] },
+    cookie: withSetCookies(cookie, active),
+  };
+}
+
+// Makes an installation the test already recorded the workspace's own, dropping the stand-in
+// createWorkspace made.
+export async function useInstallation(env: Env, workspaceId: string, installationId: number) {
+  const row = await env.DB.prepare("select installation_id from workspace where id = ?")
+    .bind(workspaceId)
+    .first<{ installation_id: number }>();
+  await env.DB.prepare("update workspace set installation_id = ? where id = ?")
+    .bind(installationId, workspaceId)
+    .run();
+  if (row && row.installation_id !== installationId)
+    await env.DB.prepare("delete from github_installation where id = ?")
+      .bind(row.installation_id)
+      .run();
 }
 
 // Keeps the cookies a response sets, like a browser would.

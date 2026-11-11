@@ -352,14 +352,25 @@ async function pickRunner(env: Env, token: string, installationId: number, conte
   const context = await resolveTriggeredBy(token, parsed);
   const db = createDb(env.DB);
   const [installation] = await db
-    .select({ workspaceId: schema.githubInstallation.workspaceId })
+    .select({
+      workspaceId: schema.workspace.id,
+      suspendedAt: schema.githubInstallation.suspendedAt,
+    })
     .from(schema.githubInstallation)
+    .innerJoin(schema.workspace, eq(schema.workspace.installationId, schema.githubInstallation.id))
     .where(eq(schema.githubInstallation.id, installationId))
     .limit(1);
-  if (!installation?.workspaceId)
+  if (!installation)
     return {
       runner: null,
-      reason: `${NO_RUNNER}: this GitHub App installation isn't connected to a RelayRunner workspace.`,
+      reason: `${NO_RUNNER}: RelayRunner hasn't set up a workspace for this GitHub App installation yet.`,
+      repo: context.repo,
+    };
+  // A suspended installation keeps its workspace but takes no jobs.
+  if (installation.suspendedAt)
+    return {
+      runner: null,
+      reason: `${NO_RUNNER}: this GitHub App installation is suspended.`,
       repo: context.repo,
     };
   const workspaceId = installation.workspaceId;
@@ -487,12 +498,12 @@ async function reportBlocked(env: Env, token: string, work: PickWork, reason: st
       workflow: schema.workflowJob.workflowName,
       name: schema.workflowJob.name,
       headSha: schema.workflowJob.headSha,
-      workspaceId: schema.githubInstallation.workspaceId,
+      workspaceId: schema.workspace.id,
     })
     .from(schema.workflowJob)
     .innerJoin(
-      schema.githubInstallation,
-      eq(schema.githubInstallation.id, schema.workflowJob.installationId),
+      schema.workspace,
+      eq(schema.workspace.installationId, schema.workflowJob.installationId),
     )
     .where(eq(schema.workflowJob.id, work.jobId))
     .limit(1);

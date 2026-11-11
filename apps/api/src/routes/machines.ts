@@ -509,7 +509,7 @@ export const machineRoutes = new Hono<AppEnv>()
       .from(schema.githubInstallation)
       .where(
         and(
-          eq(schema.githubInstallation.workspaceId, c.var.workspace.id),
+          eq(schema.githubInstallation.id, c.var.workspace.installationId),
           eq(schema.githubInstallation.accountType, "Organization"),
           isNull(schema.githubInstallation.suspendedAt),
         ),
@@ -580,7 +580,7 @@ export const machineRoutes = new Hono<AppEnv>()
       .where(
         and(
           eq(schema.githubInstallation.id, installationId),
-          eq(schema.githubInstallation.workspaceId, workspace.id),
+          eq(schema.githubInstallation.id, workspace.installationId),
           eq(schema.githubInstallation.accountType, "Organization"),
         ),
       )

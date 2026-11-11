@@ -121,7 +121,8 @@ export function AdminDeleteDialog({
                   </span>
                   <span className="text-muted-foreground">
                     For a clean re-test: the next sign-up sees GitHub's first-install screen. Left
-                    off, the install stays as an unclaimed connection.
+                    off, RelayRunner forgets the install, and GitHub's next event for it makes the
+                    workspace again.
                   </span>
                 </span>
               </label>

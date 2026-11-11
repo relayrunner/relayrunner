@@ -2,35 +2,20 @@
 export const githubOutcomes = {
   connected: { tone: "go", message: "GitHub account connected." },
   updated: { tone: "go", message: "Your changes on GitHub are saved." },
-  unclaimed: {
-    tone: "run",
-    message:
-      "The GitHub App is installed but isn't in a workspace yet. Add it under Unclaimed installations.",
-  },
   requested: {
     tone: "run",
     message:
-      "Install request sent to the org's owners. Once one approves it, add the org under Unclaimed installations.",
-  },
-  taken: {
-    tone: "run",
-    message:
-      "That GitHub account is already connected to another workspace. An account can only belong to one workspace.",
+      "Install request sent to the org's owners. Once one approves it, the org gets its own workspace.",
   },
   not_found: {
     tone: "run",
     message:
-      "Your GitHub account can't see that installation, so nothing was connected. Ask an org owner to connect it.",
-  },
-  expired: {
-    tone: "run",
-    message:
-      "That connect link expired, so nothing was connected. If the GitHub App is installed, add it under Unclaimed installations.",
+      "Your GitHub account can't see that installation, so nothing was connected. Ask an org owner to give you access on GitHub.",
   },
   reauth: {
     tone: "run",
     message:
-      "Your GitHub sign-in has expired, so nothing was connected. Sign in again, then add the account under Unclaimed installations.",
+      "Your GitHub sign-in has expired, so nothing was connected. Sign in again, then install again.",
   },
   invalid: {
     tone: "run",

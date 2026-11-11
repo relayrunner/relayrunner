@@ -19,7 +19,12 @@ import { and, eq, isNull } from "drizzle-orm";
 import { archiveDeadLetter, recordLastError } from "./dead-letters.ts";
 import { createDb, schema } from "./db/index.ts";
 import type { Env } from "./env.ts";
-import { upsertInstallation } from "./installations.ts";
+import { forgetInstallation } from "./admin-delete.ts";
+import {
+  ensureWorkspace,
+  upsertInstallation,
+  workspaceIdForInstallation,
+} from "./installations.ts";
 import { recordJobTiming } from "./job-timings.ts";
 import { lintTarget, startLintChecks } from "./lint-check.ts";
 import { recordWorkflowJob, setJobMachine } from "./jobs.ts";
@@ -275,12 +280,7 @@ async function dispatchRoute(
     return;
   }
   const db = createDb(env.DB);
-  const [installation] = await db
-    .select({ workspaceId: schema.githubInstallation.workspaceId })
-    .from(schema.githubInstallation)
-    .where(eq(schema.githubInstallation.id, message.installationId))
-    .limit(1);
-  const workspaceId = installation?.workspaceId;
+  const workspaceId = await workspaceIdForInstallation(db, message.installationId);
   const job = {
     jobId: message.job.id,
     repositoryId: message.repository.id,
@@ -357,14 +357,13 @@ async function trackRunnerJob(
   );
 }
 
-// Keeps github_installation, and the repos it can see, in step with GitHub so the dashboard shows
-// each org's real status.
-// Every action carries the installation's current state, so a repeat is harmless, and
-// upsertInstallation drops anything older than what the row holds (the queue is unordered and
-// retries). `deleted` removes the row: the workspace drops the org and the owner reconnects it. A
-// stale event landing after that can recreate it unclaimed, which is harmless: it is listed or
-// claimable only while GitHub still shows the install to the user. Its repos go with the row
-// (ON DELETE CASCADE). Never sets workspace_id: linking takes a signed-in user (routes/github.ts).
+// Keeps github_installation, its workspace, and the repos it can see in step with GitHub so the
+// dashboard shows each org's real status. Every action carries the installation's current state,
+// so a repeat is harmless, and upsertInstallation drops anything older than what the row holds
+// (the queue is unordered and retries). Any action other than `deleted` makes the installation's
+// workspace if the Setup URL hasn't yet (#316). `deleted` deletes the workspace and everything
+// under it, then the row; its repos go with it (ON DELETE CASCADE). A stale event landing after
+// that recreates both, empty, which the next `deleted` or an operator delete clears.
 async function recordInstallation(
   env: Env,
   message: Extract<WebhookMessage, { event: "installation" | "installation_repositories" }>,
@@ -373,10 +372,7 @@ async function recordInstallation(
   // Uses installationId, not the summary, so a message from an ingress that predates the summary
   // still removes the org.
   if (message.event === "installation" && message.action === "deleted") {
-    if (message.installationId)
-      await db
-        .delete(schema.githubInstallation)
-        .where(eq(schema.githubInstallation.id, message.installationId));
+    if (message.installationId) await forgetInstallation(env, db, message.installationId);
     return;
   }
   const installation = message.installation;
@@ -392,6 +388,7 @@ async function recordInstallation(
     },
     observedAt,
   );
+  await ensureWorkspace(db, installation.id);
   // `created` lists every repo the installation can see; other actions carry none.
   if (message.event === "installation") {
     await upsertRepositories(db, installation.id, message.repositories, observedAt);

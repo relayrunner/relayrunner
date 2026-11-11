@@ -241,13 +241,13 @@ export async function listActivity(
 /** What the Activity page's repo and machine filters can choose from. */
 export async function activityOptions(db: Db, workspaceId: string): Promise<ActivityOptions> {
   const repo = schema.githubRepository;
-  const installation = schema.githubInstallation;
+  const workspace = schema.workspace;
   const [repositories, machines] = await Promise.all([
     db
       .select({ name: repo.fullName })
       .from(repo)
-      .innerJoin(installation, eq(installation.id, repo.installationId))
-      .where(and(eq(installation.workspaceId, workspaceId), isNull(repo.removedAt)))
+      .innerJoin(workspace, eq(workspace.installationId, repo.installationId))
+      .where(and(eq(workspace.id, workspaceId), isNull(repo.removedAt)))
       .orderBy(repo.fullName),
     db
       .select({ id: schema.machine.id, name: schema.machine.name })
@@ -310,10 +310,10 @@ async function foldJobsNotRun(
         conclusion: job.conclusion,
       })
       .from(job)
-      .innerJoin(schema.githubInstallation, eq(schema.githubInstallation.id, job.installationId))
+      .innerJoin(schema.workspace, eq(schema.workspace.installationId, job.installationId))
       .where(
         and(
-          eq(schema.githubInstallation.workspaceId, workspaceId),
+          eq(schema.workspace.id, workspaceId),
           inArray(job.runId, relayRuns),
           eq(job.kind, "job"),
         ),

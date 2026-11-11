@@ -4,7 +4,7 @@
  * (docs/cloudflare-access.md); after that, operators grant each other here. The deletes are for
  * repeating new-user signup and onboarding tests (src/admin-delete.ts).
  */
-import { count, desc, eq, isNotNull } from "drizzle-orm";
+import { count, desc, eq } from "drizzle-orm";
 import { Hono } from "hono";
 import { z } from "zod";
 import { deleteUser, deleteWorkspaces } from "../admin-delete.ts";
@@ -123,11 +123,14 @@ export const adminRoutes = new Hono<AppEnv>()
         .innerJoin(schema.user, eq(schema.user.id, schema.workspaceMember.userId)),
       db
         .select({
-          workspaceId: schema.githubInstallation.workspaceId,
+          workspaceId: schema.workspace.id,
           accountLogin: schema.githubInstallation.accountLogin,
         })
         .from(schema.githubInstallation)
-        .where(isNotNull(schema.githubInstallation.workspaceId)),
+        .innerJoin(
+          schema.workspace,
+          eq(schema.workspace.installationId, schema.githubInstallation.id),
+        ),
     ]);
     const membersOf = Map.groupBy(members, (member) => member.workspaceId);
     const accountsOf = Map.groupBy(installations, (installation) => installation.workspaceId);

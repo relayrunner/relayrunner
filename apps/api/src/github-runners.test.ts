@@ -254,11 +254,11 @@ describe("adding GitHub runners", () => {
       .insert(schema.githubInstallation)
       .values({
         id: installations,
-        workspaceId: created.workspace.id,
         accountId: installations,
         accountLogin: `org-${installations}`,
         accountType: "Organization",
       });
+    await testing.useInstallation(env, created.workspace.id, installations);
     return {
       cookie: created.cookie,
       workspaceId: created.workspace.id,

@@ -168,11 +168,11 @@ async function connectedWorkspace() {
     .insert(schema.githubInstallation)
     .values({
       id: installationId,
-      workspaceId: workspace.id,
       accountId: installationId,
       accountLogin: `times-org-${workspaces}`,
       accountType: "Organization",
     });
+  await testing.useInstallation(env, workspace.id, installationId);
   return { cookie, installationId, workspaceId: workspace.id, repositoryId: installationId * 10 };
 }
 

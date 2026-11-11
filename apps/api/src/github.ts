@@ -70,13 +70,11 @@ export function installationSettingsUrl(installation: {
     : `https://github.com/settings/installations/${installation.id}`;
 }
 
-// The install link's `state`: which workspace to link the installation to, who started it, when
-// it stops being valid, and optionally where in the dashboard to land afterwards (the /device page
-// during `relayrunner connect` onboarding). HMAC-signed with BETTER_AUTH_SECRET so it can't be
-// forged. It only picks the workspace: the installation itself is still checked against the user's
-// token.
+// The install link's `state`: who started it, when it stops being valid, and optionally where in
+// the dashboard to land afterwards (the /device page during `relayrunner connect` onboarding) and
+// which origin it started on. HMAC-signed with BETTER_AUTH_SECRET so it can't be forged. It only
+// steers the browser: the installation itself is checked against the user's token.
 export interface InstallState {
-  workspaceId: string;
   userId: string;
   expiresAt: number;
   next?: string;
@@ -115,7 +113,6 @@ const STATE_TTL_MS = 60 * 60 * 1000;
 
 export async function signInstallState(
   secret: string,
-  workspaceId: string,
   userId: string,
   {
     next,
@@ -123,7 +120,7 @@ export async function signInstallState(
     now = Date.now(),
   }: { next?: string | null; origin?: string | null; now?: number } = {},
 ) {
-  const fields: Record<string, unknown> = { w: workspaceId, u: userId, e: now + STATE_TTL_MS };
+  const fields: Record<string, unknown> = { u: userId, e: now + STATE_TTL_MS };
   if (next) fields.n = next;
   if (origin) fields.o = origin;
   const payload = base64url(new TextEncoder().encode(JSON.stringify(fields)));
@@ -140,13 +137,11 @@ export async function verifyInstallState(
   const expected = base64url(await hmac(secret, payload));
   if (!timingSafeEqual(expected, signature)) return null;
   try {
-    const { w, u, e, n, o } = JSON.parse(new TextDecoder().decode(fromBase64url(payload)));
-    if (typeof w !== "string" || typeof u !== "string" || typeof e !== "number" || e < now)
-      return null;
+    const { u, e, n, o } = JSON.parse(new TextDecoder().decode(fromBase64url(payload)));
+    if (typeof u !== "string" || typeof e !== "number" || e < now) return null;
     const next = dashboardPath(n);
     const origin = httpOrigin(o);
     return {
-      workspaceId: w,
       userId: u,
       expiresAt: e,
       ...(next ? { next } : {}),

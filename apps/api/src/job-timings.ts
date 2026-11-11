@@ -416,11 +416,11 @@ async function recentUsage(db: Db, book: PriceBook, workspaceId: string, since: 
       shortBilledMinutes: sql<number>`sum(case when ${isShort} then ${billed} else 0 end)`,
     })
     .from(table)
-    .innerJoin(schema.githubInstallation, eq(schema.githubInstallation.id, table.installationId))
+    .innerJoin(schema.workspace, eq(schema.workspace.installationId, table.installationId))
     .leftJoin(schema.githubRepository, eq(schema.githubRepository.id, table.repositoryId))
     .where(
       and(
-        eq(schema.githubInstallation.workspaceId, workspaceId),
+        eq(schema.workspace.id, workspaceId),
         gte(table.completedAt, since),
         isNotNull(table.startedAt),
         isNotNull(table.runnerName),
@@ -454,9 +454,9 @@ async function dailyUsage(db: Db, book: PriceBook, workspaceId: string, since: D
       shortBilledMinutes: sql<number>`sum(${daily.shortBilledMinutes})`,
     })
     .from(daily)
-    .innerJoin(schema.githubInstallation, eq(schema.githubInstallation.id, daily.installationId))
+    .innerJoin(schema.workspace, eq(schema.workspace.installationId, daily.installationId))
     .leftJoin(schema.githubRepository, eq(schema.githubRepository.id, daily.repositoryId))
-    .where(and(eq(schema.githubInstallation.workspaceId, workspaceId), gte(daily.day, since)))
+    .where(and(eq(schema.workspace.id, workspaceId), gte(daily.day, since)))
     .groupBy(
       ...prices.groupBy,
       daily.labels,

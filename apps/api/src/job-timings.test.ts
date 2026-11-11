@@ -62,11 +62,11 @@ async function connectedWorkspace() {
   const db = createDb(env.DB);
   await db.insert(schema.githubInstallation).values({
     id: installationId,
-    workspaceId: workspace.id,
     accountId: installationId,
     accountLogin: `usage-org-${ids}`,
     accountType: "Organization",
   });
+  await testing.useInstallation(env, workspace.id, installationId);
   await db.insert(schema.githubRepository).values([
     {
       id: installationId * 10,

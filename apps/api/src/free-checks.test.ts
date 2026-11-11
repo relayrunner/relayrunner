@@ -37,11 +37,11 @@ async function connectedWorkspace() {
   const db = createDb(env.DB);
   await db.insert(schema.githubInstallation).values({
     id: installationId,
-    workspaceId: workspace.id,
     accountId: installationId,
     accountLogin: `checks-org-${ids}`,
     accountType: "Organization",
   });
+  await testing.useInstallation(env, workspace.id, installationId);
   const repo = (offset: number, name: string, isPrivate: boolean) => ({
     id: installationId * 10 + offset,
     installationId,

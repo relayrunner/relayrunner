@@ -6,6 +6,7 @@ import type { MachineSharing } from "@relayrunner/activity";
 import type { HostedProviderId } from "@relayrunner/providers";
 import { sql } from "drizzle-orm";
 import {
+  type AnySQLiteColumn,
   index,
   integer,
   primaryKey,
@@ -78,8 +79,15 @@ export const verification = sqliteTable("verification", {
 
 // A workspace is Better Auth's organization. It is created by a user (who becomes its owner), not
 // mirrored from GitHub: it connects many GitHub App installations and owns the machine fleet.
+// A workspace is one GitHub App installation (#315): installing the App on an account or org makes
+// its workspace, and uninstalling deletes it with everything under it. Name, slug and logo follow
+// the account's login and avatar (src/installations.ts ensureWorkspace). Users can't create one.
 export const workspace = sqliteTable("workspace", {
   id: text("id").primaryKey(),
+  installationId: integer("installation_id")
+    .notNull()
+    .unique()
+    .references((): AnySQLiteColumn => githubInstallation.id, { onDelete: "cascade" }),
   name: text("name").notNull(),
   slug: text("slug").notNull().unique(),
   logo: text("logo"),
@@ -138,30 +146,24 @@ export const workspaceInvitation = sqliteTable(
 );
 
 // A GitHub App installation (an org or a personal account). The installation id is the primary
-// key and each row has one workspace_id, so an installation belongs to at most one workspace while
-// a workspace can connect many. workspace_id is null while an installation is unclaimed (installed
-// without going through a workspace's install link, or before the installer signed in). Rows are
-// written by the Setup URL callback and by installation webhooks (src/installations.ts).
-export const githubInstallation = sqliteTable(
-  "github_installation",
-  {
-    id: integer("id").primaryKey({ autoIncrement: false }),
-    workspaceId: text("workspace_id").references(() => workspace.id, { onDelete: "set null" }),
-    accountId: integer("account_id").notNull(),
-    accountLogin: text("account_login").notNull(),
-    // 'Organization' or 'User', as GitHub reports it.
-    accountType: text("account_type").notNull(),
-    // 'all' or 'selected': whether the App sees every repo in the account or a chosen list.
-    repositorySelection: text("repository_selection").notNull().default("all"),
-    suspendedAt: integer("suspended_at", { mode: "timestamp_ms" }),
-    // When GitHub's view in this row was observed (a webhook's receivedAt, or a GET
-    // /user/installations read). The queue is unordered and retries, so an older observation
-    // never overwrites a newer one.
-    githubStateAt: integer("github_state_at", { mode: "timestamp_ms" }),
-    ...timestamps,
-  },
-  (table) => [index("github_installation_workspace_idx").on(table.workspaceId)],
-);
+// key, and its workspace points back here (workspace.installation_id), one each. Rows are written
+// by the Setup URL callback and by installation webhooks (src/installations.ts); deleting one
+// deletes its workspace.
+export const githubInstallation = sqliteTable("github_installation", {
+  id: integer("id").primaryKey({ autoIncrement: false }),
+  accountId: integer("account_id").notNull(),
+  accountLogin: text("account_login").notNull(),
+  // 'Organization' or 'User', as GitHub reports it.
+  accountType: text("account_type").notNull(),
+  // 'all' or 'selected': whether the App sees every repo in the account or a chosen list.
+  repositorySelection: text("repository_selection").notNull().default("all"),
+  suspendedAt: integer("suspended_at", { mode: "timestamp_ms" }),
+  // When GitHub's view in this row was observed (a webhook's receivedAt, or a GET
+  // /user/installations read). The queue is unordered and retries, so an older observation
+  // never overwrites a newer one.
+  githubStateAt: integer("github_state_at", { mode: "timestamp_ms" }),
+  ...timestamps,
+});
 
 // A repository an installation can see, mirrored from GitHub so activity can name its repo and
 // tell public from private. RelayRunner doesn't manage repos and there is no opt-in: a job that

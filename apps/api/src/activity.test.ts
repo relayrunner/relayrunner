@@ -123,11 +123,11 @@ describe("Activity log", () => {
     const installationId = 5000 + ids;
     await db.insert(schema.githubInstallation).values({
       id: installationId,
-      workspaceId,
       accountId: installationId,
       accountLogin: `filters-${ids}`,
       accountType: "Organization",
     });
+    await testing.useInstallation(env, workspaceId, installationId);
     const job = async (id: number, repo: string, conclusion: string | null, onMachine = false) => {
       await db.insert(schema.workflowJob).values({
         id,

@@ -2,10 +2,11 @@
  * Operator deletes of workspaces and users, for repeating new-user signup and onboarding tests
  * (routes/admin.ts). Not a user-facing feature: nothing outside /api/admin calls these.
  *
- * D1's foreign keys do most of the work (members, invites, machines, activity, route decisions,
- * sessions, sign-in accounts, device codes). This adds what they can't reach: Durable Object
- * storage, other users' active-workspace pointers, RelayRunner's label on adopted GitHub runners,
- * and, when asked, the GitHub App installation itself.
+ * D1's foreign keys do most of the work (a workspace goes with its installation, and members,
+ * invites, machines, activity, route decisions, sessions, sign-in accounts and device codes with
+ * theirs). This adds what they can't reach: Durable Object storage, other users' active-workspace
+ * pointers, RelayRunner's label on adopted GitHub runners, and, when asked, the GitHub App
+ * installation itself.
  */
 import { eq, inArray } from "drizzle-orm";
 import type { Db } from "./db/index.ts";
@@ -15,7 +16,7 @@ import { deleteInstallation } from "./github-app.ts";
 import { removeRoutingLabel } from "./machines.ts";
 
 export type DeleteOptions = {
-  /** Also uninstall the App from the workspaces' GitHub accounts and drop their install rows. */
+  /** Also uninstall the App from the workspaces' GitHub accounts. */
   uninstallGitHubApp: boolean;
 };
 
@@ -25,10 +26,17 @@ export type DeletedWorkspace = {
   machines: number;
   /** Accounts the App was uninstalled from. */
   uninstalled: string[];
-  /** Accounts left connected but unclaimed (uninstallGitHubApp was off). */
-  unclaimed: string[];
+  /**
+   * Accounts forgotten but still installed (uninstallGitHubApp was off). GitHub's next
+   * installation webhook, or the installer's next visit to the Setup URL, makes them again.
+   */
+  forgotten: string[];
 };
 
+/**
+ * Deletes workspaces. A workspace is its installation (#316), so this forgets the installation:
+ * its row goes, and with it the workspace, repos, jobs, timings, runs and usage.
+ */
 export async function deleteWorkspaces(
   env: Env,
   db: Db,
@@ -40,61 +48,97 @@ export async function deleteWorkspaces(
     db.select().from(schema.workspace).where(inArray(schema.workspace.id, workspaceIds)),
     db.select().from(schema.machine).where(inArray(schema.machine.workspaceId, workspaceIds)),
     db
-      .select()
+      .select({
+        id: schema.githubInstallation.id,
+        accountLogin: schema.githubInstallation.accountLogin,
+        workspaceId: schema.workspace.id,
+      })
       .from(schema.githubInstallation)
-      .where(inArray(schema.githubInstallation.workspaceId, workspaceIds)),
+      .innerJoin(
+        schema.workspace,
+        eq(schema.workspace.installationId, schema.githubInstallation.id),
+      )
+      .where(inArray(schema.workspace.id, workspaceIds)),
   ]);
   if (!workspaces.length) return [];
-  const ids = workspaces.map((workspace) => workspace.id);
 
-  // While the install rows still exist: take our label off adopted runners, close machine sockets
-  // and wipe the Durable Objects nothing will call again.
+  // While the install is still there: take our label off adopted runners.
   for (const machine of machines) {
     if (machine.source === "github" && !machine.revokedAt)
       await removeRoutingLabel(env, db, machine);
   }
+  if (options.uninstallGitHubApp) {
+    // The uninstall webhook that follows finds nothing left to delete.
+    for (const installation of installations) await deleteInstallation(env, installation.id);
+  }
+  await forgetWorkspaces(
+    env,
+    db,
+    workspaces.map((workspace) => workspace.id),
+    machines,
+  );
+
+  return workspaces.map((workspace) => {
+    const accounts = installations
+      .filter((installation) => installation.workspaceId === workspace.id)
+      .map((installation) => installation.accountLogin);
+    return {
+      id: workspace.id,
+      name: workspace.name,
+      machines: machines.filter((machine) => machine.workspaceId === workspace.id).length,
+      uninstalled: options.uninstallGitHubApp ? accounts : [],
+      forgotten: options.uninstallGitHubApp ? [] : accounts,
+    };
+  });
+}
+
+/**
+ * The App was uninstalled (the `installation.deleted` webhook): delete the installation's
+ * workspace and everything under it, then the installation. GitHub has already removed the
+ * runners, so there's no label to take off.
+ */
+export async function forgetInstallation(env: Env, db: Db, installationId: number) {
+  const [workspace] = await db
+    .select({ id: schema.workspace.id })
+    .from(schema.workspace)
+    .where(eq(schema.workspace.installationId, installationId))
+    .limit(1);
+  if (workspace) {
+    const machines = await db
+      .select({ id: schema.machine.id })
+      .from(schema.machine)
+      .where(eq(schema.machine.workspaceId, workspace.id));
+    await forgetWorkspaces(env, db, [workspace.id], machines);
+  }
+  await db
+    .delete(schema.githubInstallation)
+    .where(eq(schema.githubInstallation.id, installationId));
+}
+
+// Closes machine sockets and wipes the Durable Objects nothing will call again, clears sessions'
+// active-workspace pointers (no foreign key there), then deletes the workspaces' installations.
+// D1's foreign keys take the workspaces and everything under them.
+async function forgetWorkspaces(
+  env: Env,
+  db: Db,
+  workspaceIds: string[],
+  machines: { id: string }[],
+) {
   await Promise.all([
     ...machines.map((machine) => env.MACHINE_LINK.getByName(machine.id).purge()),
-    ...ids.map((id) => env.ROUTER.getByName(id).purge()),
+    ...workspaceIds.map((id) => env.ROUTER.getByName(id).purge()),
   ]);
-
-  const uninstalled: typeof installations = [];
-  if (options.uninstallGitHubApp) {
-    for (const installation of installations) {
-      await deleteInstallation(env, installation.id);
-      uninstalled.push(installation);
-    }
-    // Repos, jobs, timings, runs and usage go with the rows. The uninstall webhook that follows
-    // finds nothing left to delete.
-    if (uninstalled.length)
-      await db.delete(schema.githubInstallation).where(
-        inArray(
-          schema.githubInstallation.id,
-          uninstalled.map((installation) => installation.id),
-        ),
-      );
-  }
-
-  // No foreign key on session.active_workspace_id.
   await db
     .update(schema.session)
     .set({ activeWorkspaceId: null })
-    .where(inArray(schema.session.activeWorkspaceId, ids));
-  await db.delete(schema.workspace).where(inArray(schema.workspace.id, ids));
-
-  return workspaces.map((workspace) => ({
-    id: workspace.id,
-    name: workspace.name,
-    machines: machines.filter((machine) => machine.workspaceId === workspace.id).length,
-    uninstalled: uninstalled
-      .filter((installation) => installation.workspaceId === workspace.id)
-      .map((installation) => installation.accountLogin),
-    unclaimed: options.uninstallGitHubApp
-      ? []
-      : installations
-          .filter((installation) => installation.workspaceId === workspace.id)
-          .map((installation) => installation.accountLogin),
-  }));
+    .where(inArray(schema.session.activeWorkspaceId, workspaceIds));
+  const installations = db
+    .select({ id: schema.workspace.installationId })
+    .from(schema.workspace)
+    .where(inArray(schema.workspace.id, workspaceIds));
+  await db
+    .delete(schema.githubInstallation)
+    .where(inArray(schema.githubInstallation.id, installations));
 }
 
 export type DeleteUserResult =
