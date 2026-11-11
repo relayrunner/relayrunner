@@ -52,3 +52,40 @@ export function writeCredentials(credentials: Credentials, path = credentialsPat
 export function deleteCredentials(path = credentialsPath()) {
   rmSync(path, { force: true });
 }
+
+/** Whether two sign-ins are the same machine on the same gateway (the token may differ). */
+export function sameMachine(a: Credentials, b: Credentials) {
+  return a.machine.id === b.machine.id && a.server === b.server;
+}
+
+/**
+ * Calls the gateway with the saved token, and once more with the file's token when it was
+ * rejected and has changed since `credentials` was read: a running `connect` rotates the token, so
+ * one read just before a rotation goes stale.
+ */
+export async function withCurrentToken<R extends { status: string }>(
+  credentials: Credentials,
+  call: (token: string) => Promise<R>,
+  path = credentialsPath(),
+): Promise<R> {
+  const first = await call(credentials.token);
+  if (first.status !== "revoked") return first;
+  const now = readCredentials(path);
+  if (!now || now.token === credentials.token || !sameMachine(now, credentials)) return first;
+  return call(now.token);
+}
+
+/**
+ * Saves a token the gateway rotated, for the sign-in `credentials` holds. Throws, saving nothing,
+ * when the file now holds another sign-in (`relayrunner login` ran meanwhile) or is gone.
+ */
+export function saveRotatedToken(
+  credentials: Credentials,
+  token: string,
+  path = credentialsPath(),
+) {
+  const now = readCredentials(path);
+  if (!now) throw new Error("machine.json was removed");
+  if (!sameMachine(now, credentials)) throw new Error("machine.json now holds another sign-in");
+  writeCredentials({ ...now, token }, path);
+}

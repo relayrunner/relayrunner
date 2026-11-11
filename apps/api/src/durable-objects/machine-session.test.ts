@@ -151,13 +151,14 @@ describe("takeovers", () => {
   const lisbon = { ip: "203.0.113.9", country: "PT", city: "Lisbon" };
   const online = { ...said([hello]), from: boston };
 
-  test("a live connection pushed out from another IP is one", () => {
+  test("a live connection pushed out from another IP is one, for as long as it counts as online", () => {
     expect(isTakeover(online, lisbon, 30_000)).toBe(true);
+    expect(isTakeover(online, lisbon, 1000 + HEARTBEAT_TIMEOUT_MS)).toBe(true);
   });
 
   test("the same IP, a quiet socket, or an unknown IP isn't", () => {
     expect(isTakeover(online, { ...boston, city: null }, 30_000)).toBe(false);
-    expect(isTakeover(online, lisbon, 60_000)).toBe(false);
+    expect(isTakeover(online, lisbon, 1001 + HEARTBEAT_TIMEOUT_MS)).toBe(false);
     expect(isTakeover(online, { ...lisbon, ip: null }, 30_000)).toBe(false);
     expect(isTakeover(online, undefined, 30_000)).toBe(false);
     expect(isTakeover({ ...newSession("m1", 0), from: boston }, lisbon, 1000)).toBe(false);

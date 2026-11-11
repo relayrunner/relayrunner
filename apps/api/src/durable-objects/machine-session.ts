@@ -59,17 +59,13 @@ export function newSession(machineId: string, now: number, from?: RequestOrigin)
 
 /**
  * Whether a new connection replacing `old` should be reported to the machine's owner: the old one
- * was online and heard from within the last heartbeat or so, and the new one comes from another
- * IP. A CLI that restarts or reconnects after a network drop has usually lost its old socket, or
- * connects from the same address.
+ * was online (said hello, not stale: the same window statusOf uses) and the new one comes from
+ * another IP. A CLI that restarts or reconnects after a network drop has usually lost its old
+ * socket, or connects from the same address.
  */
 export function isTakeover(old: SessionState, from: RequestOrigin | undefined, now: number) {
   return Boolean(
-    old.hello &&
-    now - old.lastHeardAt <= HEARTBEAT_INTERVAL_MS + 15_000 &&
-    old.from?.ip &&
-    from?.ip &&
-    old.from.ip !== from.ip,
+    old.hello && !isStale(old, now) && old.from?.ip && from?.ip && old.from.ip !== from.ip,
   );
 }
 

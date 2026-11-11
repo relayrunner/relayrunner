@@ -16,6 +16,7 @@ describe("normalizeServer", () => {
   it("refuses plain http anywhere else, since the token goes out on every connect", () => {
     expect(() => normalizeServer("http://relayrunner.example")).toThrow(/isn't https/);
     expect(() => normalizeServer("http://127.0.0.1.evil.example")).toThrow(/isn't https/);
+    expect(() => normalizeServer("http://gateway.localhost")).toThrow(/isn't https/);
   });
 
   it("refuses what isn't a web URL", () => {

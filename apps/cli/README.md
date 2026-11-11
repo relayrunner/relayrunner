@@ -31,10 +31,13 @@ runs the jobs it's sent (one at a time) and prints what happens, including the
 repo each job is from. It reconnects on its own if the connection drops. Ctrl-C
 takes it offline; a job that's running stops with it.
 
-Before it starts a job, `connect` checks the job's runner config: every server
-in it must be GitHub's, over https, and the runner must be the one minted for
-that job. Anything else is refused and reported as a failed job, so a gateway
-that was tampered with can't point the runner at a server of its own.
+Before it starts a job, `connect` checks the job's runner config: it must hold
+only the files GitHub's do, every server in it must be GitHub's, over https, and
+the runner must be named for that job. Anything else is refused and reported as
+a failed job, so a gateway that was tampered with can't point the runner at a
+server of its own or write files outside the runner. It can't tell a job the
+gateway routed here from a runner it minted on a GitHub repo of its own, so the
+terminal shows which repo each job is from.
 
 If another `connect` signs in as this machine while it's online, this one stops
 and says so. When that happens from a different network, the person who

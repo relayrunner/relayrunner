@@ -7,6 +7,8 @@ import {
   credentialsPath,
   deleteCredentials,
   readCredentials,
+  saveRotatedToken,
+  withCurrentToken,
   writeCredentials,
   type Credentials,
 } from "./credentials.ts";
@@ -124,7 +126,7 @@ async function connectMachine(args: { server?: string; name?: string; share?: st
         },
       }),
     // The gateway rotates the token on every connect, so an old copy of machine.json stops working.
-    saveToken: (token) => writeCredentials({ ...credentials, token }),
+    saveToken: (token) => saveRotatedToken(credentials, token),
     onEvent: (event) => {
       if (event.type === "connected") online = true;
       show(event);
@@ -143,12 +145,12 @@ async function connectMachine(args: { server?: string; name?: string; share?: st
       // A machine revoked while online may be unattended, so that one stops and says so.
       if (!online) {
         clack.log.warn(
-          "This machine was removed from the workspace or its token is no longer valid. Signing in again.",
+          "This machine was removed from the workspace or its token is no longer valid. If you didn't remove it, another copy of its token may have signed in elsewhere: check the Runners page. Signing in again.",
         );
         return connectMachine({ ...args, server: credentials.server });
       }
       clack.log.error(
-        "This machine was removed from the workspace or its token is no longer valid.",
+        "This machine was removed from the workspace or its token is no longer valid. If you didn't remove it, another copy of its token may have signed in elsewhere: check the Runners page and revoke it if so.",
       );
       clack.outro("Run `relayrunner connect` again to sign in.");
       process.exitCode = 1;
@@ -193,11 +195,9 @@ async function askSharing(workspace: string): Promise<ShareChoice | null> {
 
 // Best effort while connecting: a machine that couldn't change its sharing still connects.
 async function applySharing(credentials: Credentials, choice: ShareChoice) {
-  const result = await setSharing({
-    server: credentials.server,
-    token: credentials.token,
-    sharing: toSharing(choice),
-  });
+  const result = await withCurrentToken(credentials, (token) =>
+    setSharing({ server: credentials.server, token, sharing: toSharing(choice) }),
+  );
   switch (result.status) {
     case "ok":
       clack.log.info(`Sharing: ${describeSharing(result.sharing, credentials.workspace.name)}`);
@@ -243,7 +243,7 @@ const loginCommand = defineCommand({
       const saved = readCredentials();
       const server = serverFor(args.server, saved);
       if (saved && saved.server === server) {
-        const result = await whoami({ server, token: saved.token });
+        const result = await withCurrentToken(saved, (token) => whoami({ server, token }));
         if (result.status !== "revoked") {
           if (share) await applySharing(saved, share);
           clack.outro(
@@ -430,7 +430,9 @@ const whoamiCommand = defineCommand({
       machine: credentials.machine,
       workspace: credentials.workspace,
     };
-    const result = await whoami({ server: credentials.server, token: credentials.token });
+    const result = await withCurrentToken(credentials, (token) =>
+      whoami({ server: credentials.server, token }),
+    );
     switch (result.status) {
       case "ok":
         print(describeIdentity(credentials.server, result.identity), {
@@ -511,11 +513,9 @@ function pauseCommand(paused: boolean) {
         process.exitCode = 1;
         return;
       }
-      const result = await setPaused({
-        server: credentials.server,
-        token: credentials.token,
-        paused,
-      });
+      const result = await withCurrentToken(credentials, (token) =>
+        setPaused({ server: credentials.server, token, paused }),
+      );
       const name = credentials.machine.name;
       switch (result.status) {
         case "ok":
@@ -580,11 +580,9 @@ const shareCommand = defineCommand({
         process.exitCode = 1;
         return;
       }
-      const result = await setSharing({
-        server: credentials.server,
-        token: credentials.token,
-        sharing: toSharing(choice),
-      });
+      const result = await withCurrentToken(credentials, (token) =>
+        setSharing({ server: credentials.server, token, sharing: toSharing(choice) }),
+      );
       if (result.status === "revoked") return revoked();
       if (result.status === "failed") {
         console.error(`Couldn't change sharing for ${name}: ${result.reason}.`);
@@ -595,7 +593,9 @@ const shareCommand = defineCommand({
       return;
     }
 
-    const result = await whoami({ server: credentials.server, token: credentials.token });
+    const result = await withCurrentToken(credentials, (token) =>
+      whoami({ server: credentials.server, token }),
+    );
     if (result.status === "revoked") return revoked();
     if (result.status === "unverified") {
       console.error(`Couldn't check sharing for ${name}: ${result.reason}.`);

@@ -45,8 +45,15 @@ export async function verifyMachineToken(db: Db, token: string | null | undefine
     .limit(1);
   if (!machine) return null;
   if (machine.pendingTokenHash !== hash) return machine;
-  await promotePendingToken(db, machine.id, hash);
-  return { ...machine, tokenHash: hash, pendingTokenHash: null };
+  // A newer rotation may have replaced this pending token since the read: then it's no good.
+  if (await promotePendingToken(db, machine.id, hash))
+    return { ...machine, tokenHash: hash, pendingTokenHash: null };
+  const [now] = await db
+    .select()
+    .from(schema.machine)
+    .where(and(eq(schema.machine.id, machine.id), isNull(schema.machine.revokedAt)))
+    .limit(1);
+  return now?.tokenHash === hash ? now : null;
 }
 
 /**
@@ -73,10 +80,10 @@ export async function issuePendingToken(db: Db, machineId: string) {
 /**
  * Finishes a rotation: the pending token becomes the machine's token and the old one stops
  * working. Does nothing unless `pendingHash` is still the pending one, so a stale call can't undo
- * a newer rotation.
+ * a newer rotation. Returns whether it promoted.
  */
 export async function promotePendingToken(db: Db, machineId: string, pendingHash: string) {
-  await db
+  const promoted = await db
     .update(schema.machine)
     .set({ tokenHash: pendingHash, pendingTokenHash: null })
     .where(
@@ -85,7 +92,9 @@ export async function promotePendingToken(db: Db, machineId: string, pendingHash
         eq(schema.machine.pendingTokenHash, pendingHash),
         isNull(schema.machine.revokedAt),
       ),
-    );
+    )
+    .returning({ id: schema.machine.id });
+  return promoted.length > 0;
 }
 
 // Better Auth stores user codes without the dash the dashboard shows ("ABCD-EFGH" -> "ABCDEFGH").

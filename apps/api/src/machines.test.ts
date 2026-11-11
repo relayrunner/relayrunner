@@ -703,6 +703,14 @@ describe("rotating the machine token", () => {
     expect((await connect(token)).status).toBe(401);
   });
 
+  test("a pending token replaced by a newer rotation no longer works", async () => {
+    const { machine } = await enroll("rotate-replaced");
+    const first = (await issuePendingToken(db(), machine.id))!;
+    await issuePendingToken(db(), machine.id);
+    expect(await verifyMachineToken(db(), first.token)).toBeNull();
+    expect(await promotePendingToken(db(), machine.id, first.hash)).toBe(false);
+  });
+
   test("a stale token_saved can't undo a newer rotation", async () => {
     const { machine } = await enroll("rotate-stale");
     const first = (await issuePendingToken(db(), machine.id))!;

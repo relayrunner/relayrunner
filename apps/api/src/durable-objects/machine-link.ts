@@ -115,10 +115,14 @@ export class MachineLink extends DurableObject<Env> {
       if (machine?.pausedAt) ws.send(pausedFrame(true, await pausedByName(db, machine)));
       // Rotate the token on every connect, so a copy of the token file taken earlier stops
       // working once the CLI saves the new one (TokenMessage in @relayrunner/machine-protocol).
-      if (outcome.state.hello.rotatesToken) {
+      // Only for a socket that's still open: a newer connection that replaced it during the
+      // awaits above rotates for itself, and overwriting its pending token would strand it.
+      if (outcome.state.hello.rotatesToken && ws.readyState === WebSocket.OPEN) {
         const issued = await issuePendingToken(db, session.machineId);
-        if (issued) {
-          ws.serializeAttachment({ ...outcome.state, pendingTokenHash: issued.hash });
+        const current = attachment(ws);
+        if (issued && current && ws.readyState === WebSocket.OPEN) {
+          // Frames handled during the awaits (the status after hello) are in the attachment now.
+          ws.serializeAttachment({ ...current, pendingTokenHash: issued.hash });
           ws.send(encodeMessage({ v: PROTOCOL_VERSION, type: "token", token: issued.token }));
         }
       }

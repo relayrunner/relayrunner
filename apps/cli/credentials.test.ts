@@ -6,6 +6,8 @@ import {
   credentialsPath,
   deleteCredentials,
   readCredentials,
+  saveRotatedToken,
+  withCurrentToken,
   writeCredentials,
   type Credentials,
 } from "./credentials.ts";
@@ -55,4 +57,33 @@ test("doesn't read credentials saved for a plain-http gateway other than localho
   expect(readCredentials(path)).toBeNull();
   writeCredentials({ ...credentials, server: "http://localhost:8787" }, path);
   expect(readCredentials(path)).toMatchObject({ server: "http://localhost:8787" });
+});
+
+test("saves a rotated token only for the same sign-in", () => {
+  const path = credentialsPath(tempHome());
+  expect(() => saveRotatedToken(credentials, "rrm_next", path)).toThrow(/removed/);
+
+  writeCredentials(credentials, path);
+  saveRotatedToken(credentials, "rrm_next", path);
+  expect(readCredentials(path)).toEqual({ ...credentials, token: "rrm_next" });
+
+  // `relayrunner login` enrolled another machine meanwhile: leave it alone.
+  const other = { ...credentials, machine: { id: "m2", name: "desktop" }, token: "rrm_other" };
+  writeCredentials(other, path);
+  expect(() => saveRotatedToken(credentials, "rrm_late", path)).toThrow(/another sign-in/);
+  expect(readCredentials(path)).toEqual(other);
+});
+
+test("retries once with the file's token when a rotation made the one it read stale", async () => {
+  const path = credentialsPath(tempHome());
+  writeCredentials({ ...credentials, token: "rrm_rotated" }, path);
+  const call = async (token: string) => ({ status: token === "rrm_rotated" ? "ok" : "revoked" });
+  expect(await withCurrentToken(credentials, call, path)).toEqual({ status: "ok" });
+
+  // Nothing changed on disk: the rejection stands, with no second call.
+  writeCredentials(credentials, path);
+  let calls = 0;
+  const counted = async () => ({ status: (calls++, "revoked") });
+  expect(await withCurrentToken(credentials, counted, path)).toEqual({ status: "revoked" });
+  expect(calls).toBe(1);
 });
