@@ -45,7 +45,7 @@ To keep the laptop free for a while, without going offline, press `p` in the `co
 
 ## Keep it to your own jobs
 
-A new machine only runs jobs you started, so a teammate's push or a bot never lands on your laptop. Leave it that way for a personal machine. See [Your machines](/docs/runners/self-hosted/#who-can-run-jobs-on-it).
+A new machine only runs jobs you started, so a teammate's push or a bot never lands on your laptop. Leave it that way for a personal machine. See [Your machines](/docs/runners/self-hosted#who-can-run-jobs-on-it).
 
 ## Linux jobs on a Mac
 

@@ -7,7 +7,7 @@ The **Usage** page covers every job in your connected repos, whichever runner to
 
 ## Actions minutes
 
-For each connected GitHub account: minutes used this month against the plan's included minutes, and how fast they're going. It's the same number a [minutes limit](/docs/concepts/runner-order/#the-minutes-limit) uses, and the page says when an account's minutes can't be read.
+For each connected GitHub account: minutes used this month against the plan's included minutes, and how fast they're going. It's the same number a [minutes limit](/docs/concepts/runner-order#the-minutes-limit) uses, and the page says when an account's minutes can't be read.
 
 ## Short jobs
 
@@ -17,8 +17,8 @@ Estimates use GitHub's list prices for private repos. Standard runners in public
 
 ## Saved by free checks
 
-Each [free check](/docs/concepts/free-checks/) counts as a job on `ubuntu-latest` that would have billed at least a minute.
+Each [free check](/docs/concepts/free-checks) counts as a job on `ubuntu-latest` that would have billed at least a minute.
 
 ## Providers
 
-The **Providers** page shows how much of your CI ran on each provider, with cost estimates at list prices, and which providers you haven't used yet. See [Providers](/docs/runners/providers/).
+The **Providers** page shows how much of your CI ran on each provider, with cost estimates at list prices, and which providers you haven't used yet. See [Providers](/docs/runners/providers).

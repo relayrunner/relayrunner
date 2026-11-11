@@ -45,7 +45,7 @@ Only if you share it with **anyone**. A new machine only runs jobs you started.
 
 ## Does RelayRunner see my code or secrets?
 
-No. Jobs on your machines use GitHub's own runner, which talks to GitHub directly. See [Data and privacy](/docs/reference/privacy/).
+No. Jobs on your machines use GitHub's own runner, which talks to GitHub directly. See [Data and privacy](/docs/reference/privacy).
 
 ## Can I run RelayRunner myself?
 
@@ -53,4 +53,4 @@ The code is on [GitHub](https://github.com/relayrunner/relayrunner). The hosted 
 
 ## What providers does it support?
 
-It routes to your own machines, existing self-hosted runners, GitHub-hosted runners, and hosted providers such as Blacksmith, Depot and Namespace. See [Providers](/docs/runners/providers/).
+It routes to your own machines, existing self-hosted runners, GitHub-hosted runners, and hosted providers such as Blacksmith, Depot and Namespace. See [Providers](/docs/runners/providers).

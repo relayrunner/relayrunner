@@ -36,7 +36,7 @@ relayrunner share anyone    # or only-me
 
 You can also change it from the sharing icon on the machine's card on the **Runners** page. Only the machine's owner can change it.
 
-"Anyone" only covers jobs from repos the machine's owner can open on GitHub, so sharing a machine never gives it code you couldn't already see. See [Share your team's machines](/docs/guides/team-machines/).
+"Anyone" only covers jobs from repos the machine's owner can open on GitHub, so sharing a machine never gives it code you couldn't already see. See [Share your team's machines](/docs/guides/team-machines).
 
 ## Pause
 
@@ -65,4 +65,4 @@ Added runners share the self-hosted step with your connected machines, and are p
 
 ## Public repos
 
-Machines never run a public repo's jobs. See [Principles](/docs/concepts/principles/).
+Machines never run a public repo's jobs. See [Principles](/docs/concepts/principles).

@@ -21,4 +21,4 @@ A relay that failed shows the same message the job failed with on GitHub. Filter
 
 ## From an agent
 
-The same data is available to agents through the [MCP server](/docs/reference/mcp/), such as "where did the last run of `test` go, and why?".
+The same data is available to agents through the [MCP server](/docs/reference/mcp), such as "where did the last run of `test` go, and why?".

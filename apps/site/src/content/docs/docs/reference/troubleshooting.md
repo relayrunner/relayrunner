@@ -23,7 +23,7 @@ The message says why each provider couldn't take the job. The usual causes:
 
 - **"no self-hosted machine is online and idle"**: start `relayrunner connect`, or add a `github` fallback to the relay.
 - **"is paused"**: resume the machine.
-- **"only runs … jobs"**: the machine is shared with **only me**, and someone else started the job. See [sharing](/docs/runners/self-hosted/#who-can-run-jobs-on-it).
+- **"only runs … jobs"**: the machine is shared with **only me**, and someone else started the job. See [sharing](/docs/runners/self-hosted#who-can-run-jobs-on-it).
 - **"public repos never run on self-hosted machines"**: give the relay a `github` label.
 - **"isn't in your runner order"**: add the provider on the Router page.
 - **A minutes limit**: the account is over its limit. Add a step after it.
@@ -50,4 +50,4 @@ Someone removed it from the Runners page. Run `relayrunner connect` again to sig
 
 ## Still stuck
 
-Ask in [GitHub issues](https://github.com/relayrunner/relayrunner/issues), or send feedback. See [Feedback](/docs/contribute/feedback/).
+Ask in [GitHub issues](https://github.com/relayrunner/relayrunner/issues), or send feedback. See [Feedback](/docs/contribute/feedback).

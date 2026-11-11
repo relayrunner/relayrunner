@@ -41,4 +41,4 @@ To stop taking new jobs without going offline, run `relayrunner pause`, or press
 
 `npx relayrunner` always fetches the latest version. For a global install, run `npm install --global relayrunner@latest`.
 
-See the [CLI reference](/docs/reference/cli/) for every command and flag.
+See the [CLI reference](/docs/reference/cli) for every command and flag.

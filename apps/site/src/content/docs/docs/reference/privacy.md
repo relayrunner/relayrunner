@@ -30,4 +30,4 @@ The service runs on Cloudflare. Data is kept while you use the service.
 
 ## Delete your data
 
-Email [privacy@relayrunner.app](mailto:privacy@relayrunner.app) to get a copy of your data or have it deleted. See [Remove RelayRunner](/docs/dashboard/remove/) for switching off each part.
+Email [privacy@relayrunner.app](mailto:privacy@relayrunner.app) to get a copy of your data or have it deleted. See [Remove RelayRunner](/docs/dashboard/remove) for switching off each part.

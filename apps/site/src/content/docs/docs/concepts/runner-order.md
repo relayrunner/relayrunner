@@ -22,13 +22,13 @@ A step that can't take the job is skipped with a reason, and the next one is tri
 1. Self-hosted
 2. GitHub-hosted
 
-**Included minutes first.** Spend the minutes your plan includes, then move to your machines before overage, then fall back to GitHub anyway so nothing stalls. See [Spend controls](/docs/guides/spend-controls/).
+**Included minutes first.** Spend the minutes your plan includes, then move to your machines before overage, then fall back to GitHub anyway so nothing stalls. See [Spend controls](/docs/guides/spend-controls).
 
 1. GitHub-hosted, while under 80%
 2. Self-hosted
 3. GitHub-hosted
 
-**Machines, then a faster provider.** Burst to a [hosted provider](/docs/runners/hosted/) such as Depot when your machines are busy, and keep GitHub as the last resort for jobs that don't name one.
+**Machines, then a faster provider.** Burst to a [hosted provider](/docs/runners/hosted) such as Depot when your machines are busy, and keep GitHub as the last resort for jobs that don't name one.
 
 1. Self-hosted
 2. Depot

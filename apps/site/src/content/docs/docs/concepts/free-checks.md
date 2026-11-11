@@ -27,10 +27,10 @@ Each check is also an ordinary action, so the same job works on `ubuntu-latest` 
 
 ## The checks
 
-| Check             | What it does                                                                                                                                                                                                        |
-| ----------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `checks/pr-title` | Fails unless the pull request title is a [Conventional Commit](https://www.conventionalcommits.org/), such as `feat(api): add a check`. `types` narrows the allowed types.                                          |
-| `checks/lint`     | Runs linters on the commit and posts a `Lint / <tool>` check run per tool, with problems as annotations. `tools` picks the [linters](/docs/reference/repo-config/#checkslint) and `paths` limits which files count. |
+| Check             | What it does                                                                                                                                                                                                       |
+| ----------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| `checks/pr-title` | Fails unless the pull request title is a [Conventional Commit](https://www.conventionalcommits.org/), such as `feat(api): add a check`. `types` narrows the allowed types.                                         |
+| `checks/lint`     | Runs linters on the commit and posts a `Lint / <tool>` check run per tool, with problems as annotations. `tools` picks the [linters](/docs/reference/repo-config#checkslint) and `paths` limits which files count. |
 
 :::note[Lint is in preview]
 Lint runs in RelayRunner's own sandbox with no internet access, and needs the separate RelayRunner Checks GitHub App on the repo. It's only on for organizations we've enabled so far. The job fails with the reason otherwise.
@@ -46,8 +46,8 @@ checks:
   lint: [oxlint, typos]
 ```
 
-This works for public repos too. See [Repo config](/docs/reference/repo-config/).
+This works for public repos too. See [Repo config](/docs/reference/repo-config).
 
 ## See what they saved
 
-The Usage page counts each free check as a job that would have billed at least a minute on `ubuntu-latest`. See [Usage and savings](/docs/dashboard/usage/).
+The Usage page counts each free check as a job that would have billed at least a minute on `ubuntu-latest`. See [Usage and savings](/docs/dashboard/usage).

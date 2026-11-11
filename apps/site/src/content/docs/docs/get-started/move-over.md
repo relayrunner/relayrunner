@@ -61,7 +61,7 @@ Push the change. The check keeps its name in GitHub, so required checks and bran
 
 ## Public repos
 
-`init` refuses public repositories, since their jobs [never run on your machines](/docs/concepts/principles/#public-repositories-never-run-on-your-machines).
+`init` refuses public repositories, since their jobs [never run on your machines](/docs/concepts/principles#public-repositories-never-run-on-your-machines).
 
 ## Undo
 
