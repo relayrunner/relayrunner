@@ -19,6 +19,7 @@ import {
   type EnvironmentSummary,
   type Stat,
 } from "@/lib/job-times";
+import { useLiveRefresh } from "@/lib/live-refresh";
 import { addableRunners, listGithubRunners, listMachines } from "@/lib/machines";
 import { canManage } from "@/lib/roles";
 import { getRunnerOrder } from "@/lib/runner-order";
@@ -30,7 +31,8 @@ type Found = { count: number; orgs: string[] };
 const foundCache = new Map<string, Found>();
 const dismissedFound = new Set<string>();
 
-// How often the page refetches machines, so a machine connecting or going quiet shows up.
+// How often the page refetches machines while someone is looking, so a machine connecting, going
+// quiet or picking up a job shows up. Paused while the tab is hidden or idle (lib/live-refresh.ts).
 const REFRESH_MS = 15_000;
 
 export const Route = createFileRoute("/_authed/_workspace/runners")({
@@ -56,16 +58,20 @@ function RunnersPage() {
   const loaded = Route.useLoaderData();
   const { current } = Route.useRouteContext();
   const router = useRouter();
-  useEffect(() => {
-    if (authDisabled) return;
-    const timer = setInterval(() => {
-      if (document.visibilityState === "visible") void router.invalidate();
-    }, REFRESH_MS);
-    return () => clearInterval(timer);
-  }, [router]);
+  // Only the machines list is refetched: invalidating the route would also re-run the session,
+  // workspace and runner order loads on every tick.
+  const [allMachines, setAllMachines] = useState(loaded.machines);
+  useEffect(() => setAllMachines(loaded.machines), [loaded.machines]);
+  useLiveRefresh(
+    () =>
+      listMachines()
+        .then((result) => setAllMachines(result.machines))
+        .catch(() => undefined), // Keep showing the last answer; the next tick retries.
+    { intervalMs: REFRESH_MS, enabled: !authDisabled },
+  );
 
   const editable = canManage(current.role);
-  const machines = loaded.machines.filter((machine) => !machine.revokedAt);
+  const machines = allMachines.filter((machine) => !machine.revokedAt);
 
   // Runners in connected orgs that aren't added yet, for the found card. Owners and admins only,
   // since only they can add them. It asks GitHub, so it's read once per visit, not on every
