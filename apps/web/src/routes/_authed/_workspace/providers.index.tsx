@@ -4,12 +4,14 @@ import { useState } from "react";
 import { PageHeader } from "@/components/page-header";
 import { ProviderMark } from "@/components/providers";
 import { RangePicker } from "@/components/range-picker";
+import { DataTable, dataTableColumns, NUM } from "@/components/ui/data-table";
 import { authDisabled } from "@/lib/auth-client";
 import { medianText, plural } from "@/lib/job-times";
 import {
   costText,
   getProvidersOverview,
   type ProvidersOverview,
+  type ProviderSummary,
   sampleProvidersOverview,
 } from "@/lib/providers";
 
@@ -98,55 +100,60 @@ function ProvidersPage() {
   );
 }
 
+const column = dataTableColumns<ProviderSummary>();
+const columns = column.columns([
+  column.accessor((row) => PROVIDER_INFO[row.provider].name, {
+    id: "provider",
+    header: "Provider",
+    sortFn: "text",
+    cell: ({ row }) => (
+      <Link
+        to="/providers/$provider"
+        params={{ provider: row.original.provider }}
+        className="flex w-fit items-center gap-2.5 font-medium hover:underline"
+      >
+        <ProviderMark provider={row.original.provider} className="size-6 rounded-md" />
+        {PROVIDER_INFO[row.original.provider].name}
+      </Link>
+    ),
+  }),
+  column.accessor("jobs", {
+    header: "Jobs",
+    sortFn: "basic",
+    sortDescFirst: true,
+    meta: NUM,
+    cell: ({ getValue }) => getValue().toLocaleString(),
+  }),
+  column.accessor("billedMinutes", {
+    header: "Billed minutes",
+    sortFn: "basic",
+    sortDescFirst: true,
+    meta: NUM,
+    cell: ({ getValue }) => getValue().toLocaleString(),
+  }),
+  column.accessor((row) => row.stat.medianMs ?? undefined, {
+    id: "typical",
+    header: "Typical job",
+    sortFn: "basic",
+    meta: NUM,
+    cell: ({ row }) => medianText(row.original.stat),
+  }),
+  column.accessor("cost", {
+    header: "Est. cost",
+    sortFn: "basic",
+    sortDescFirst: true,
+    meta: NUM,
+    cell: ({ row }) => costText(row.original),
+  }),
+]);
+
 function InUse({ overview }: { overview: ProvidersOverview }) {
   return (
-    <div className="overflow-x-auto rounded-xl border bg-card">
-      <table className="w-full text-sm">
-        <thead>
-          <tr className="border-b text-muted-foreground">
-            <th scope="col" className="px-4 py-2 text-left font-normal">
-              Provider
-            </th>
-            {["Jobs", "Billed minutes", "Typical job", "Est. cost"].map((head) => (
-              <th
-                key={head}
-                scope="col"
-                className="px-4 py-2 text-right font-normal whitespace-nowrap"
-              >
-                {head}
-              </th>
-            ))}
-          </tr>
-        </thead>
-        <tbody>
-          {overview.providers.map((row) => (
-            <tr key={row.provider} className="border-b last:border-0">
-              <td className="px-4 py-2.5">
-                <Link
-                  to="/providers/$provider"
-                  params={{ provider: row.provider }}
-                  className="flex w-fit items-center gap-2.5 font-medium hover:underline"
-                >
-                  <ProviderMark provider={row.provider} className="size-6 rounded-md" />
-                  {PROVIDER_INFO[row.provider].name}
-                </Link>
-              </td>
-              <Num>{row.jobs.toLocaleString()}</Num>
-              <Num>{row.billedMinutes.toLocaleString()}</Num>
-              <Num>{medianText(row.stat)}</Num>
-              <Num>{costText(row)}</Num>
-            </tr>
-          ))}
-        </tbody>
-      </table>
-    </div>
-  );
-}
-
-function Num({ children }: { children: string }) {
-  return (
-    <td className="px-4 py-2.5 text-right whitespace-nowrap text-muted-foreground tabular-nums">
-      {children}
-    </td>
+    <DataTable
+      columns={columns}
+      data={overview.providers}
+      getRowId={(row) => row.provider}
+      initialSorting={[{ id: "jobs", desc: true }]}
+    />
   );
 }

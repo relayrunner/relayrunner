@@ -12,12 +12,14 @@ import { PROVIDERS, runnerName, TILE } from "@/components/providers";
 import { RangePicker } from "@/components/range-picker";
 import { StatTile } from "@/components/stat-tile";
 import { Button } from "@/components/ui/button";
+import { createCellContext, DataTable, dataTableColumns, NUM } from "@/components/ui/data-table";
 import { authDisabled } from "@/lib/auth-client";
 import { clock, medianText, plural } from "@/lib/job-times";
 import {
   costText,
   getProviderReport,
   type ProviderReport,
+  type ProviderRunner,
   rateName,
   rateText,
   sampleProviderReport,
@@ -169,60 +171,90 @@ function Totals({ report }: { report: ProviderReport }) {
   );
 }
 
+const [RunnerReport, useRunnerReport] = createCellContext<ProviderReport>("Runner types");
+
+const runnerColumn = dataTableColumns<ProviderRunner>();
+const runnerColumns = runnerColumn.columns([
+  runnerColumn.accessor((runner) => runner.label, {
+    id: "runner",
+    header: "Runner",
+    sortFn: "text",
+    cell: ({ row }) => <RunnerCell runner={row.original} />,
+  }),
+  runnerColumn.accessor("jobs", {
+    header: "Jobs",
+    sortFn: "basic",
+    sortDescFirst: true,
+    meta: NUM,
+    cell: ({ getValue }) => getValue().toLocaleString(),
+  }),
+  runnerColumn.accessor((runner) => runner.stat.medianMs ?? undefined, {
+    id: "typical",
+    header: "Typical",
+    sortFn: "basic",
+    meta: NUM,
+    cell: ({ row }) => medianText(row.original.stat),
+  }),
+  runnerColumn.accessor((runner) => runner.perMinute ?? undefined, {
+    id: "rate",
+    header: "Rate",
+    sortFn: "basic",
+    meta: NUM,
+    cell: ({ row }) => rateText(row.original.perMinute),
+  }),
+  runnerColumn.accessor("cost", {
+    header: "Est. cost",
+    sortFn: "basic",
+    sortDescFirst: true,
+    meta: NUM,
+    cell: ({ row }) => costText(row.original),
+  }),
+  runnerColumn.accessor((runner) => (runner.jobs ? runner.failures / runner.jobs : undefined), {
+    id: "failed",
+    header: "Failed",
+    sortFn: "basic",
+    sortDescFirst: true,
+    meta: NUM,
+    cell: ({ row }) => percent(row.original.failures, row.original.jobs),
+  }),
+]);
+
+function RunnerCell({ runner }: { runner: ProviderRunner }) {
+  const { provider, runners, jobs } = useRunnerReport();
+  const { mono, bar, detail: showDetail } = PROVIDERS[provider];
+  return (
+    <div className="grid min-w-48 gap-1.5">
+      <span title={runner.label} className="truncate">
+        <span className={cn(mono && "font-mono text-[13px]")}>
+          {runnerName(provider, runner.label)}
+        </span>
+        {showDetail && runner.detail && (
+          <span className="text-xs text-muted-foreground"> · {runner.detail}</span>
+        )}
+      </span>
+      {runners.length > 1 && (
+        <span aria-hidden className="h-[3px] overflow-hidden rounded-full bg-raised-2">
+          <span
+            className={cn("block h-full rounded-full", bar)}
+            style={{ width: `${Math.max((runner.jobs / jobs) * 100, 2)}%` }}
+          />
+        </span>
+      )}
+    </div>
+  );
+}
+
 /** Each runner type the jobs asked for, busiest first, with its share of the jobs. */
 function Runners({ report }: { report: ProviderReport }) {
-  const { provider, runners, jobs } = report;
-  const { mono, bar, detail: showDetail } = PROVIDERS[provider];
-  const showShare = runners.length > 1;
   return (
-    <div className="overflow-x-auto rounded-xl border bg-card">
-      <table className="w-full text-sm">
-        <caption className="px-4 pt-3 pb-2 text-left font-semibold">Runner types</caption>
-        <thead>
-          <tr className="border-b text-muted-foreground">
-            <th scope="col" className="px-4 py-2 text-left font-normal">
-              Runner
-            </th>
-            {["Jobs", "Typical", "Rate", "Est. cost", "Failed"].map((head) => (
-              <th key={head} scope="col" className="px-4 py-2 text-right font-normal">
-                {head}
-              </th>
-            ))}
-          </tr>
-        </thead>
-        <tbody>
-          {runners.map((runner) => (
-            <tr key={runner.key} className="border-b last:border-0">
-              <td className="px-4 py-2.5">
-                <div className="grid min-w-48 gap-1.5">
-                  <span title={runner.label} className="truncate">
-                    <span className={cn(mono && "font-mono text-[13px]")}>
-                      {runnerName(provider, runner.label)}
-                    </span>
-                    {showDetail && runner.detail && (
-                      <span className="text-xs text-muted-foreground"> · {runner.detail}</span>
-                    )}
-                  </span>
-                  {showShare && (
-                    <span aria-hidden className="h-[3px] overflow-hidden rounded-full bg-raised-2">
-                      <span
-                        className={cn("block h-full rounded-full", bar)}
-                        style={{ width: `${Math.max((runner.jobs / jobs) * 100, 2)}%` }}
-                      />
-                    </span>
-                  )}
-                </div>
-              </td>
-              <Num>{runner.jobs.toLocaleString()}</Num>
-              <Num>{medianText(runner.stat)}</Num>
-              <Num>{rateText(runner.perMinute)}</Num>
-              <Num>{costText(runner)}</Num>
-              <Num>{percent(runner.failures, runner.jobs)}</Num>
-            </tr>
-          ))}
-        </tbody>
-      </table>
-    </div>
+    <RunnerReport value={report}>
+      <DataTable
+        caption="Runner types"
+        columns={runnerColumns}
+        data={report.runners}
+        getRowId={(runner) => runner.key}
+      />
+    </RunnerReport>
   );
 }
 
@@ -321,13 +353,5 @@ function PriceChanges({ prices }: { prices: RatePrices[] }) {
         </>
       )}
     </div>
-  );
-}
-
-function Num({ children }: { children: string }) {
-  return (
-    <td className="px-4 py-2.5 text-right whitespace-nowrap text-muted-foreground tabular-nums">
-      {children}
-    </td>
   );
 }

@@ -4,6 +4,7 @@ import { useMemo, useState } from "react";
 import { PageHeader } from "@/components/page-header";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
+import { createCellContext, DataTable, dataTableColumns } from "@/components/ui/data-table";
 import { Input } from "@/components/ui/input";
 import { timeAgo } from "@/lib/activity";
 import {
@@ -37,7 +38,6 @@ function DeadLettersPage() {
   const [notice, setNotice] = useState<string | null>(null);
   const [event, setEvent] = useState("");
   const [repository, setRepository] = useState("");
-  const now = Date.now();
 
   const filter = { event: event.trim() || undefined, repository: repository.trim() || undefined };
   const shown = useMemo(
@@ -63,6 +63,15 @@ function DeadLettersPage() {
     } finally {
       setBusy(null);
     }
+  }
+
+  function replay(letter: DeadLetter) {
+    void act(letter.id, () => replayDeadLetter(letter.id), `Replayed ${letter.deliveryId}.`);
+  }
+
+  function discard(letter: DeadLetter) {
+    if (!confirm(`Discard ${letter.deliveryId}? It can't be replayed after this.`)) return;
+    void act(letter.id, () => discardDeadLetter(letter.id), `Discarded ${letter.deliveryId}.`);
   }
 
   async function replayFiltered() {
@@ -145,46 +154,14 @@ function DeadLettersPage() {
             : "No dead letters match that filter."}
         </p>
       ) : (
-        <div className="overflow-x-auto rounded-xl border bg-card">
-          <table className="w-full text-sm">
-            <thead className="text-left text-muted-foreground">
-              <tr className="border-b">
-                <th className="px-4 py-2 font-medium">Dead-lettered</th>
-                <th className="px-4 py-2 font-medium">Event</th>
-                <th className="px-4 py-2 font-medium">Repository</th>
-                <th className="px-4 py-2 font-medium">Attempts</th>
-                <th className="px-4 py-2 font-medium">Last error</th>
-                <th className="px-4 py-2" />
-              </tr>
-            </thead>
-            <tbody>
-              {shown.map((letter) => (
-                <Row
-                  key={letter.id}
-                  letter={letter}
-                  now={now}
-                  busy={busy !== null}
-                  onReplay={() =>
-                    void act(
-                      letter.id,
-                      () => replayDeadLetter(letter.id),
-                      `Replayed ${letter.deliveryId}.`,
-                    )
-                  }
-                  onDiscard={() => {
-                    if (!confirm(`Discard ${letter.deliveryId}? It can't be replayed after this.`))
-                      return;
-                    void act(
-                      letter.id,
-                      () => discardDeadLetter(letter.id),
-                      `Discarded ${letter.deliveryId}.`,
-                    );
-                  }}
-                />
-              ))}
-            </tbody>
-          </table>
-        </div>
+        <LetterActions value={{ busy: busy !== null, replay, discard }}>
+          <DataTable
+            columns={columns}
+            data={shown}
+            getRowId={(letter) => letter.id}
+            initialSorting={[{ id: "deadLetteredAt", desc: true }]}
+          />
+        </LetterActions>
       )}
 
       {cursor && (
@@ -202,53 +179,81 @@ function DeadLettersPage() {
   );
 }
 
-function Row({
-  letter,
-  now,
-  busy,
-  onReplay,
-  onDiscard,
-}: {
-  letter: DeadLetter;
-  now: number;
+const [LetterActions, useLetterActions] = createCellContext<{
   busy: boolean;
-  onReplay: () => void;
-  onDiscard: () => void;
-}) {
-  return (
-    <tr className="border-b align-top last:border-0">
-      <td className="px-4 py-3 whitespace-nowrap" title={letter.deadLetteredAt}>
-        {timeAgo(letter.deadLetteredAt, now)}
-      </td>
-      <td className="px-4 py-3">
+  replay: (letter: DeadLetter) => void;
+  discard: (letter: DeadLetter) => void;
+}>("Dead letters");
+
+const TOP = { className: "py-3 align-top" };
+
+const column = dataTableColumns<DeadLetter>();
+const columns = column.columns([
+  column.accessor("deadLetteredAt", {
+    header: "Dead-lettered",
+    sortFn: "text",
+    sortDescFirst: true,
+    meta: { className: "py-3 align-top whitespace-nowrap" },
+    cell: ({ getValue }) => <span title={getValue()}>{timeAgo(getValue(), Date.now())}</span>,
+  }),
+  column.accessor("event", {
+    header: "Event",
+    sortFn: "text",
+    meta: TOP,
+    cell: ({ row: { original: letter } }) => (
+      <>
         <div className="flex flex-wrap items-center gap-1.5">
           <span className="font-mono">{letter.event}</span>
           {letter.action && <Badge variant="idle">{letter.action}</Badge>}
         </div>
         <div className="mt-1 font-mono text-xs text-muted-foreground">{letter.deliveryId}</div>
-      </td>
-      <td className="px-4 py-3">{letter.repository ?? "—"}</td>
-      <td className="px-4 py-3">{letter.attempts}</td>
-      <td className="max-w-xs px-4 py-3 text-xs break-words text-muted-foreground">
-        {letter.lastError ?? "—"}
-      </td>
-      <td className="px-4 py-3">
-        <div className="flex justify-end gap-1">
-          <Button size="sm" variant="outline" disabled={busy} onClick={onReplay}>
-            <RotateCcw />
-            Replay
-          </Button>
-          <Button
-            size="icon-sm"
-            variant="ghost"
-            aria-label="Discard"
-            disabled={busy}
-            onClick={onDiscard}
-          >
-            <Trash2 />
-          </Button>
-        </div>
-      </td>
-    </tr>
+      </>
+    ),
+  }),
+  column.accessor((letter) => letter.repository ?? undefined, {
+    id: "repository",
+    header: "Repository",
+    sortFn: "text",
+    meta: TOP,
+    cell: ({ getValue }) => getValue() ?? "—",
+  }),
+  column.accessor("attempts", {
+    header: "Attempts",
+    sortFn: "basic",
+    sortDescFirst: true,
+    meta: { align: "end", className: "py-3 align-top" },
+  }),
+  column.accessor((letter) => letter.lastError ?? "—", {
+    id: "lastError",
+    header: "Last error",
+    enableSorting: false,
+    meta: { className: "max-w-xs py-3 align-top text-xs break-words text-muted-foreground" },
+  }),
+  column.display({
+    id: "actions",
+    header: () => <span className="sr-only">Actions</span>,
+    meta: TOP,
+    cell: ({ row }) => <Actions letter={row.original} />,
+  }),
+]);
+
+function Actions({ letter }: { letter: DeadLetter }) {
+  const { busy, replay, discard } = useLetterActions();
+  return (
+    <div className="flex justify-end gap-1">
+      <Button size="sm" variant="outline" disabled={busy} onClick={() => replay(letter)}>
+        <RotateCcw />
+        Replay
+      </Button>
+      <Button
+        size="icon-sm"
+        variant="ghost"
+        aria-label="Discard"
+        disabled={busy}
+        onClick={() => discard(letter)}
+      >
+        <Trash2 />
+      </Button>
+    </div>
   );
 }

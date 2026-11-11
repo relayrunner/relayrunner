@@ -6,6 +6,7 @@ import { ProviderLink } from "@/components/provider-link";
 import { ProviderMark, providerOf } from "@/components/providers";
 import { RangePicker } from "@/components/range-picker";
 import { Button } from "@/components/ui/button";
+import { createCellContext, DataTable, dataTableColumns } from "@/components/ui/data-table";
 import {
   Dialog,
   DialogContent,
@@ -150,63 +151,96 @@ function Swatch({ index }: { index: number }) {
   );
 }
 
+const [Baseline, useBaseline] = createCellContext<{
+  key: string | null;
+  label: string | undefined;
+}>("Runners");
+
+const END = { align: "end" } as const;
+
+const environmentColumn = dataTableColumns<EnvironmentSummary>();
+const environmentColumns = environmentColumn.columns([
+  environmentColumn.accessor("label", {
+    header: "Runner",
+    sortFn: "text",
+    cell: ({ row: { original: env } }) => (
+      <ProviderLink provider={providerOf(env)} className="flex w-fit items-center gap-2.5">
+        <span>
+          <span className="block whitespace-nowrap">{env.label}</span>
+          {env.detail && (
+            <span className="block text-xs whitespace-nowrap text-muted-foreground">
+              {env.detail}
+            </span>
+          )}
+        </span>
+      </ProviderLink>
+    ),
+  }),
+  environmentColumn.accessor((env) => env.stat.runs, {
+    id: "jobs",
+    header: "Jobs",
+    sortFn: "basic",
+    sortDescFirst: true,
+    meta: END,
+    cell: ({ getValue }) => getValue().toLocaleString(),
+  }),
+  environmentColumn.accessor((env) => env.stat.waitMs ?? undefined, {
+    id: "wait",
+    header: "Median wait",
+    sortFn: "basic",
+    meta: END,
+    cell: ({ row }) => clock(row.original.stat.waitMs),
+  }),
+  environmentColumn.accessor((env) => env.stat.medianMs ?? undefined, {
+    id: "run",
+    header: "Median run",
+    sortFn: "basic",
+    meta: { align: "end", className: "font-semibold" },
+    cell: ({ row }) => clock(row.original.stat.medianMs),
+  }),
+  environmentColumn.accessor(
+    (env) => (env.stat.runs ? env.stat.successes / env.stat.runs : undefined),
+    {
+      id: "success",
+      header: "Success",
+      sortFn: "basic",
+      sortDescFirst: true,
+      meta: END,
+      cell: ({ getValue }) => {
+        const share = getValue();
+        return share === undefined ? "—" : `${Math.round(share * 100)}%`;
+      },
+    },
+  ),
+  environmentColumn.accessor((env) => env.versus?.ratio, {
+    id: "versus",
+    header: () => <VersusHead />,
+    sortFn: "basic",
+    meta: { className: "whitespace-nowrap" },
+    cell: ({ row }) => <VersusCell env={row.original} />,
+  }),
+]);
+
+function VersusHead() {
+  const { label } = useBaseline();
+  return label ? `Vs. ${label} on shared jobs` : "Vs. baseline";
+}
+
+function VersusCell({ env }: { env: EnvironmentSummary }) {
+  return <Versus env={env} isBaseline={env.key === useBaseline().key} />;
+}
+
 function Environments({ report }: { report: JobTimesReport }) {
   const baseline = report.environments.find((env) => env.key === report.baseline);
   return (
-    <div className="overflow-x-auto rounded-xl border bg-card">
-      <table className="w-full text-sm tabular-nums">
-        <caption className="px-4 pt-3 pb-2 text-left font-semibold">Runners</caption>
-        <thead>
-          <tr className="border-b text-muted-foreground">
-            <th scope="col" className="px-4 py-2 text-left font-normal">
-              Runner
-            </th>
-            {["Jobs", "Median wait", "Median run", "Success"].map((label) => (
-              <th
-                key={label}
-                scope="col"
-                className="px-4 py-2 text-right font-normal whitespace-nowrap"
-              >
-                {label}
-              </th>
-            ))}
-            <th scope="col" className="px-4 py-2 text-left font-normal whitespace-nowrap">
-              {baseline ? `Vs. ${baseline.label} on shared jobs` : "Vs. baseline"}
-            </th>
-          </tr>
-        </thead>
-        <tbody>
-          {report.environments.map((env) => (
-            <tr key={env.key} className="border-b last:border-0">
-              <td className="px-4 py-2.5">
-                <ProviderLink
-                  provider={providerOf(env)}
-                  className="flex w-fit items-center gap-2.5"
-                >
-                  <span>
-                    <span className="block whitespace-nowrap">{env.label}</span>
-                    {env.detail && (
-                      <span className="block text-xs whitespace-nowrap text-muted-foreground">
-                        {env.detail}
-                      </span>
-                    )}
-                  </span>
-                </ProviderLink>
-              </td>
-              <td className="px-4 py-2.5 text-right">{env.stat.runs.toLocaleString()}</td>
-              <td className="px-4 py-2.5 text-right">{clock(env.stat.waitMs)}</td>
-              <td className="px-4 py-2.5 text-right font-semibold">{clock(env.stat.medianMs)}</td>
-              <td className="px-4 py-2.5 text-right">
-                {env.stat.runs ? `${Math.round((env.stat.successes / env.stat.runs) * 100)}%` : "—"}
-              </td>
-              <td className="px-4 py-2.5 whitespace-nowrap">
-                <Versus env={env} isBaseline={env.key === report.baseline} />
-              </td>
-            </tr>
-          ))}
-        </tbody>
-      </table>
-    </div>
+    <Baseline value={{ key: report.baseline, label: baseline?.label }}>
+      <DataTable
+        caption="Runners"
+        columns={environmentColumns}
+        data={report.environments}
+        getRowId={(env) => env.key}
+      />
+    </Baseline>
   );
 }
 
