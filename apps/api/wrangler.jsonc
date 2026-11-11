@@ -77,7 +77,7 @@
   "r2_buckets": [{ "binding": "DEAD_LETTERS", "bucket_name": "relayrunner-webhook-dead-letters" }],
   // Hourly dead-letter growth check (src/dead-letter-alert.ts), and the 15-minute Actions usage
   // poll (src/actions-billing.ts) plus the relay sweep (src/pick-sweep.ts). src/index.ts tells them apart by the cron string.
-  "triggers": { "crons": ["0 * * * *", "*/15 * * * *"] },
+  "triggers": { "crons": ["0 * * * *", "*/15 * * * *", "30 6 * * *"] },
   // From the account's Secrets Store (default_secrets_store), not `wrangler secret put`.
   // GITHUB_APP_PRIVATE_KEY is the App's private key converted to PKCS#8 PEM, which is what
   // WebCrypto imports (GitHub downloads PKCS#1):

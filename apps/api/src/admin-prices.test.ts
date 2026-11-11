@@ -3,7 +3,7 @@ import { app } from "./app.ts";
 import { createDb } from "./db/index.ts";
 import type { Env } from "./env.ts";
 import { loadPriceBook } from "./prices.ts";
-import type { AdminRate } from "./routes/admin-prices.ts";
+import type { AdminRate, PendingPrice } from "./routes/admin-prices.ts";
 import * as testing from "./testing.ts";
 import { accessEnv, accessJwt } from "./testing-access.ts";
 
@@ -87,5 +87,40 @@ describe("/api/admin/prices", () => {
     expect((await call(`/${row.id}`, op.cookie, { method: "DELETE" })).status).toBe(200);
     expect((await call(`/${row.id}`, op.cookie, { method: "DELETE" })).status).toBe(404);
     expect((await rateOf(op.cookie, "depot", "linux")).current).toBe(0.003);
+  });
+
+  test("a found price waits for approval, or can be dismissed", async () => {
+    const op = await operator();
+    const today = new Date().toISOString().slice(0, 10);
+    const pending = (id: string, rate: string, usd: number) =>
+      env.DB.prepare(
+        "insert into price_finding (id, provider, rate, usd, effective_from, source, found_at) values (?, 'warpbuild', ?, ?, ?, 'https://www.warpbuild.com/pricing', 0)",
+      )
+        .bind(id, rate, usd, today)
+        .run();
+    await pending("p1", "linux", 0.0025);
+    await pending("p2", "arm", 0.002);
+    const list = async () =>
+      ((await (await call("", op.cookie)).json()) as { pending: PendingPrice[] }).pending;
+    expect(await list()).toEqual([
+      expect.objectContaining({ id: "p2", rate: "arm", usd: 0.002, current: 0.0015, per: "vcpu" }),
+      expect.objectContaining({ id: "p1", rate: "linux", usd: 0.0025, current: 0.002 }),
+    ]);
+    // Not in use until approved.
+    expect((await rateOf(op.cookie, "warpbuild", "linux")).current).toBe(0.002);
+
+    expect((await call("/p1/approve", op.cookie, { method: "POST" })).status).toBe(200);
+    expect((await call("/p1/approve", op.cookie, { method: "POST" })).status).toBe(404);
+    const linux = await rateOf(op.cookie, "warpbuild", "linux");
+    expect(linux.current).toBe(0.0025);
+    expect(linux.rows.at(-1)).toMatchObject({ from: today, createdBy: op.user.email });
+
+    // Approving a price for a day that already has one is refused, and the finding stays.
+    await pending("p3", "linux", 0.003);
+    expect((await call("/p3/approve", op.cookie, { method: "POST" })).status).toBe(409);
+    expect((await call("/p3/dismiss", op.cookie, { method: "POST" })).status).toBe(200);
+    expect((await call("/p2/dismiss", op.cookie, { method: "POST" })).status).toBe(200);
+    expect(await list()).toEqual([]);
+    expect((await rateOf(op.cookie, "warpbuild", "arm")).current).toBe(0.0015);
   });
 });

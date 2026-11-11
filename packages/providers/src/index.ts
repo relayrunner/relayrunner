@@ -105,6 +105,9 @@ export const isProviderId = (value: string): value is ProviderId =>
  * plain `container` for the Cloudflare Container, and `machine` for `machine:<id>` and
  * `self-hosted:<group>`, the runners people host themselves.
  */
+/** A provider's name, or the id itself when it isn't one RelayRunner knows. */
+export const providerName = (id: string) => (isProviderId(id) ? PROVIDERS[id].name : id);
+
 export function providerOfEnvironment(key: string): ProviderId | "machine" {
   if (key === "container") return "cloudflare";
   if (key.startsWith("machine:") || key.startsWith("self-hosted:")) return "machine";
@@ -127,3 +130,4 @@ export {
   RATES,
   rateText,
 } from "./prices.ts";
+export { type FoundPrice, PRICE_SOURCES, type PriceSource } from "./price-sources.ts";

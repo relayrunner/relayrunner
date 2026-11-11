@@ -10,10 +10,12 @@ import {
   renderInviteEmail,
   renderMachineConnectedEmail,
   renderMachineTakenOverEmail,
+  renderPriceCheckEmail,
   renderWelcomeEmail,
   type ConnectionPlace,
   type RenderedEmail,
 } from "@relayrunner/email";
+import { providerName, rateText } from "@relayrunner/providers";
 import type { Env } from "./env.ts";
 
 // send.relayrunner.app is the domain onboarded for Email Sending. Keep EMAIL_FROM inside the
@@ -45,6 +47,14 @@ export type EmailArgs = (
       };
     }
   | { to: string; template: "dead-letter-alert"; context: { count: number; threshold: number } }
+  | {
+      to: string;
+      template: "price-check";
+      context: {
+        changes: { provider: string; rate: string; usd: number; from: string }[];
+        failures: { provider: string; error: string }[];
+      };
+    }
   | {
       to: string;
       template: "invite";
@@ -81,6 +91,19 @@ function render(env: Env, args: EmailArgs): RenderedEmail {
       return renderDeadLetterAlertEmail({
         ...args.context,
         inspectorUrl: `${dashboard}/admin/webhooks`,
+      });
+    case "price-check":
+      return renderPriceCheckEmail({
+        changes: args.context.changes.map(({ provider, rate, usd, from }) => ({
+          name: `${providerName(provider)} ${rate}`,
+          price: rateText(usd),
+          from,
+        })),
+        failures: args.context.failures.map(({ provider, error }) => ({
+          name: providerName(provider),
+          error,
+        })),
+        pricesUrl: `${dashboard}/admin/prices`,
       });
     case "agent-feedback":
       return renderAgentFeedbackEmail(args.context);
