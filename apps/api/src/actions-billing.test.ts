@@ -1,3 +1,4 @@
+import { generateKeyPairSync } from "node:crypto";
 import { eq } from "drizzle-orm";
 import { afterAll, afterEach, beforeAll, describe, expect, test, vi } from "vitest";
 import {
@@ -101,6 +102,8 @@ interface GitHubFake {
   usage?: unknown[];
   usageStatus?: number;
   budgets?: unknown[];
+  // The Spend App's installation id per org; absent means not installed.
+  spendInstallations?: Record<string, number>;
 }
 
 function fakeGitHub(fake: GitHubFake) {
@@ -117,6 +120,13 @@ function fakeGitHub(fake: GitHubFake) {
       if (fake.usageStatus) return new Response("Forbidden", { status: fake.usageStatus });
       return Response.json({ usageItems: fake.usage ?? [] });
     }
+    const installation = pathname.match(/^\/orgs\/([^/]+)\/installation$/);
+    if (installation) {
+      const id = fake.spendInstallations?.[installation[1]];
+      return id ? Response.json({ id }) : new Response("not found", { status: 404 });
+    }
+    const minted = pathname.match(/^\/app\/installations\/(\d+)\/access_tokens$/);
+    if (minted) return Response.json({ token: `spend-${minted[1]}` }, { status: 201 });
     if (pathname.endsWith("/settings/billing/budgets"))
       return Response.json({ budgets: fake.budgets ?? [] });
     if (pathname.startsWith("/orgs/") || pathname === "/user")
@@ -362,6 +372,27 @@ describe("pollActionsUsage", () => {
     vi.spyOn(console, "error").mockImplementation(() => {});
     await runActionsUsagePoll(env, NOW);
     expect((await accountUsage(db, installationId, NOW))?.reason).toBe("missing_permission");
+  });
+
+  test("reads an org with the Spend App's token when the org installed it", async () => {
+    const { db, installationId, org } = await connectedOrg();
+    const calls = fakeGitHub({
+      usage: [item("2026-11-04", "app", 30)],
+      spendInstallations: { [org]: 77 },
+    });
+    const pem = generateKeyPairSync("rsa", { modulusLength: 2048 })
+      .privateKey.export({ type: "pkcs8", format: "pem" })
+      .toString();
+    await runActionsUsagePoll(
+      { ...env, GITHUB_SPEND_APP_PRIVATE_KEY: { get: async () => pem } },
+      NOW,
+    );
+    expect(calls).toContain(`/orgs/${org}/installation`);
+    expect(calls.tokens[`/organizations/${org}/settings/billing/usage`]).toBe("Bearer spend-77");
+    expect(await accountUsage(db, installationId, NOW)).toMatchObject({
+      status: "ok",
+      usedMinutes: 30,
+    });
   });
 
   test("records a token failure per installation and keeps going", async () => {

@@ -1,5 +1,10 @@
 import { TriangleAlert } from "lucide-react";
-import { type AccountUsage, unavailableText } from "@/lib/actions-usage";
+import {
+  type AccountUsage,
+  needsSpendApp,
+  SPEND_APP_INSTALL_URL,
+  unavailableText,
+} from "@/lib/actions-usage";
 import { cn } from "@/lib/utils";
 
 // One GitHub account's Actions minutes this month (#116, #117), and the alarm when GitHub has
@@ -82,7 +87,24 @@ export function ActionsMinutes({ usage }: { usage: AccountUsage }) {
           />
         </div>
       )}
-      {unavailable && <p className="text-xs text-muted-foreground">{unavailable}</p>}
+      {unavailable && (
+        <p className="text-xs text-muted-foreground">
+          {unavailable}
+          {needsSpendApp(usage) && (
+            <>
+              {" "}
+              <a
+                href={SPEND_APP_INSTALL_URL}
+                target="_blank"
+                rel="noreferrer"
+                className="underline underline-offset-2 hover:text-foreground"
+              >
+                Install RelayRunner Spend
+              </a>
+            </>
+          )}
+        </p>
+      )}
     </div>
   );
 }

@@ -44,6 +44,13 @@ export function getActionsUsage() {
 export const hasQuota = (account: AccountUsage) =>
   account.status === "ok" && account.quotaMinutes !== null;
 
+/** Installs the RelayRunner Spend App, which reads an org's billing. */
+export const SPEND_APP_INSTALL_URL = "https://github.com/apps/relayrunner-spend/installations/new";
+
+/** Whether the fix for this account is installing the Spend App. */
+export const needsSpendApp = (account: AccountUsage) =>
+  account.reason === "missing_permission" && account.accountType === "Organization";
+
 /** Why an account's minutes can't be judged, and what fixes it. Null when they can. */
 export function unavailableText(account: AccountUsage): string | null {
   switch (account.reason) {
@@ -53,7 +60,7 @@ export function unavailableText(account: AccountUsage): string | null {
       return "This org shares its enterprise's minutes, which GitHub doesn't report to an org install. A minutes limit can't judge it yet.";
     case "missing_permission":
       return account.accountType === "Organization"
-        ? "GitHub refused to share this org's billing. Accept the RelayRunner App's requested permissions (Organization administration: read) in the org's GitHub settings."
+        ? "GitHub refused to share this org's billing. Install the RelayRunner Spend App on the org to share it."
         : `GitHub refused to share ${account.accountLogin}'s billing. ${account.accountLogin} needs to sign out of RelayRunner and sign in again to approve the App's Plan permission.`;
     case "sign_in_needed":
       return `GitHub only shows a personal account's minutes to its owner. ${account.accountLogin} needs to be a member of this workspace and sign in to RelayRunner again.`;

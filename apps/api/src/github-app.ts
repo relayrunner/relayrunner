@@ -206,6 +206,14 @@ export async function repoInstallationId(jwt: string, repo: string): Promise<num
   return ((await response.json()) as { id: number }).id;
 }
 
+/** The App's installation on an org, or null when it isn't installed there. */
+export async function orgInstallationId(jwt: string, org: string): Promise<number | null> {
+  const response = await fetch(`${API}/orgs/${org}/installation`, { headers: headers(jwt) });
+  if (response.status === 404) return null;
+  if (!response.ok) throw new Error(`GET /orgs/${org}/installation failed with ${response.status}`);
+  return ((await response.json()) as { id: number }).id;
+}
+
 /** An installation token from the App's id and private key, as the Durable Objects hold them. */
 export async function appInstallationToken(
   env: { GITHUB_APP_ID: string; GITHUB_APP_PRIVATE_KEY: { get(): Promise<string> } },

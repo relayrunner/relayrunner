@@ -1,6 +1,6 @@
 # GitHub App
 
-RelayRunner reaches GitHub through one GitHub App, **RelayRunner** ([github.com/apps/relayrunner](https://github.com/apps/relayrunner), App ID in `GITHUB_APP_ID`). It does three jobs: it signs users in, it receives webhooks, and its installation tokens register runners and read billing. Lint uses a second, opt-in App, **RelayRunner Checks**, described in [apps/api/README.md](../apps/api/README.md#lint).
+RelayRunner reaches GitHub mainly through one GitHub App, **RelayRunner** ([github.com/apps/relayrunner](https://github.com/apps/relayrunner), App ID in `GITHUB_APP_ID`). It does three jobs: it signs users in, it receives webhooks, and its installation tokens register runners and read billing. Lint uses a second, opt-in App, **RelayRunner Checks**, described in [apps/api/README.md](../apps/api/README.md#lint).
 
 The App can be installed on an **organization** or a **personal account**. Both work. They differ in where runners register and how Actions minutes are read (see [Organizations and personal accounts](#organizations-and-personal-accounts)).
 
@@ -28,7 +28,7 @@ These are what the code needs. When you change a permission on the App, every ac
 | Permission          | Access       | Why                                                                                                                                                                                                                                             |
 | ------------------- | ------------ | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | Self-hosted runners | Read & write | Registers one-job runners in the org (container runners, and pick and machine runners when the repo is refused), deletes them, reads runner groups to explain blocked relays, and lists and labels existing runners an org adds to RelayRunner. |
-| Administration      | Read         | Reads the org's plan, Actions billing usage and Actions budget for the minutes rule (`apps/api/src/actions-billing.ts`).                                                                                                                        |
+| Administration      | Read         | Reads the org's plan, Actions billing usage and Actions budget for the minutes rule (`apps/api/src/actions-billing.ts`), when the org hasn't installed the [Spend App](#relayrunner-spend). To be removed once orgs have moved to it.           |
 
 ### Account permissions
 
@@ -42,6 +42,17 @@ Account permissions apply to the user's sign-in token, not to an installation. G
 ### More than the code needs
 
 The live App was set up with a few grants beyond these: Organization Administration is Read & write, Actions is Read & write, and the single-file Contents permission is Read & write. Read is enough for each. Narrowing them makes every installation re-accept the App, so it's left for a time when that's convenient.
+
+## RelayRunner Spend
+
+A second, opt-in App, **RelayRunner Spend** ([github.com/apps/relayrunner-spend](https://github.com/apps/relayrunner-spend), App ID in `GITHUB_SPEND_APP_ID`, key in the Secrets Store as `GITHUB_SPEND_APP_PRIVATE_KEY`), reads org billing for the minutes rule. Keeping billing in its own App means the main App doesn't need Organization Administration.
+
+- Permissions: Organization Administration: Read, and Metadata. Nothing else.
+- No webhook. The 15-minute billing poll finds the org's installation with the App's JWT (`GET /orgs/{org}/installation`) and mints a token from it, falling back to the main App's token when the org hasn't installed it.
+- When the org's billing read is refused, the dashboard links to the install page.
+- Personal accounts don't use it: their billing only opens to the owner's own sign-in token (Plan).
+
+Once orgs have installed it, the main App drops Organization Administration, in the same change as narrowing the grants under [More than the code needs](#more-than-the-code-needs), so installations re-accept once.
 
 ## Events
 
