@@ -4,7 +4,7 @@ The gateway dashboard at `app.relayrunner.app`: a React SPA on TanStack Router,
 built with Vite and served as static assets from a Cloudflare Worker
 (`relayrunner-app`). The Worker script (`worker/index.ts`) only forwards
 `/api/*` to the API Worker over a service binding, so the dashboard and API
-share one origin everywhere. The marketing site lives in `apps/landing`.
+share one origin everywhere. The marketing site lives in `apps/site`.
 
 ## Pages
 
@@ -50,7 +50,7 @@ without the API running (dev builds only).
 
 Tailwind v4 (via `@tailwindcss/vite`) with shadcn/ui. The theme lives in
 `src/styles.css`: it copies the landing page's tokens from
-`apps/landing/DESIGN.md` (near-black slabs, 1px hairlines, Signal Green and
+`apps/site/DESIGN.md` (near-black slabs, 1px hairlines, Signal Green and
 Meter Amber, Hanken Grotesk + JetBrains Mono) and maps them onto shadcn's
 semantic variables. It is dark only. The landing names are also Tailwind
 colors (`bg-raised`, `text-go`, `border-run-edge`, ...) for route and status UI.

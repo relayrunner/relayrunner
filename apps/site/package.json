@@ -1,5 +1,5 @@
 {
-  "name": "@relayrunner/landing",
+  "name": "@relayrunner/site",
   "private": true,
   "type": "module",
   "scripts": {

@@ -2,7 +2,7 @@
   "$schema": "./node_modules/wrangler/config-schema.json",
   // Landing page and docs (/docs/): one Astro build, static assets only. There is no `main`, so no Worker script runs and requests
   // never bill as Worker invocations.
-  "name": "relayrunner-landing",
+  "name": "relayrunner-site",
   "compatibility_date": "2026-11-03",
   // The RelayRunner Cloudflare account (separate from Atticus's personal account).
   "account_id": "b233b6d6fd9eae9e093651bfb043c119",
