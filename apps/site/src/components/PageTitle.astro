@@ -2,6 +2,7 @@
 /*
  * Page title, the frontmatter `description` as a muted summary, and a row of links to the page's
  * agent-readable versions (src/lib/agent-docs.ts): copy as Markdown, view the .md, view the .txt.
+ * The row is left out of the search index so its labels don't show up in result snippets.
  */
 const { entry } = Astro.locals.starlightRoute;
 const { title, description } = entry.data;
@@ -14,7 +15,7 @@ const txt = `/${entry.id}.txt`;
 {description && <p class="summary">{description}</p>}
 {
   showLinks && (
-    <div class="page-actions">
+    <div class="page-actions" data-pagefind-ignore>
       <button type="button" class="action" data-copy-md={md}>
         <svg class="icon icon-copy" viewBox="0 0 24 24" aria-hidden="true">
           <rect width="14" height="14" x="8" y="8" rx="2" ry="2" />
