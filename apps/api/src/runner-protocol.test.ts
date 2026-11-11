@@ -1,6 +1,6 @@
 import { afterEach, beforeAll, describe, expect, test, vi } from "vitest";
 import { decodeJitConfig, latestRunnerVersion, RunnerClient } from "./runner-protocol.ts";
-import type { JitConfig, JobRequest } from "./runner-protocol.ts";
+import type { ClaimedJob, JitConfig, JobRequest } from "./runner-protocol.ts";
 
 const broker = "https://broker.test/runner";
 const tokenUrl = "https://auth.test/token";
@@ -182,6 +182,14 @@ describe("claim and complete", () => {
     expect(JSON.parse(calls.at(-1)!.body)).toMatchObject({ jobMessageId: "request-1" });
   });
 
+  test("reads the job's GITHUB_TOKEN from its variables", async () => {
+    const withToken = { ...job, variables: { "system.github.token": { value: "ghs_job" } } };
+    const { client } = await openedClient((call) =>
+      call.url.endsWith("/acquirejob") ? Response.json(withToken) : new Response(null),
+    );
+    expect((await client.claim(request)).githubToken).toBe("ghs_job");
+  });
+
   test("skips acknowledgement when GitHub does not ask for it", async () => {
     const { client, calls } = await openedClient(() => Response.json(job));
     await client.claim({ ...request, should_acknowledge: false });
@@ -231,6 +239,37 @@ describe("claim and complete", () => {
     expect(completions).toHaveLength(2);
     expect(JSON.parse(completions[1].body)).toMatchObject({ conclusion: "failed" });
     expect(JSON.parse(completions[1].body)).not.toHaveProperty("annotations");
+  });
+});
+
+describe("complete with annotations", () => {
+  const job = {
+    message: { jobId: "job-1", jobDisplayName: "lint", plan: { planId: "plan-1" } },
+    token: "job-token",
+    serviceUrl: `${service}/job`,
+  } as ClaimedJob;
+  const problem = { level: "WARNING", message: "unused", path: "a.ts", startLine: 3 } as const;
+
+  test("sends them after the error", async () => {
+    const { client, calls } = await openedClient(() => new Response(null, { status: 204 }));
+    await client.complete(job, "failed", { error: "Lint failed.", annotations: [problem] });
+    expect(JSON.parse(calls.at(-1)!.body).annotations).toEqual([
+      { level: "FAILURE", message: "Lint failed.", isInfrastructureIssue: false },
+      problem,
+    ]);
+  });
+
+  test("falls back to only the error, then to none", async () => {
+    const { client, calls } = await openedClient((call) =>
+      call.url.endsWith("/completejob") && call.body.includes("annotations")
+        ? new Response("bad annotation", { status: 400 })
+        : new Response(null, { status: 204 }),
+    );
+    await client.complete(job, "failed", { error: "Lint failed.", annotations: [problem] });
+    const sent = calls
+      .filter((call) => call.url.endsWith("/completejob"))
+      .map((call) => JSON.parse(call.body).annotations?.length ?? 0);
+    expect(sent).toEqual([2, 1, 0]);
   });
 });
 

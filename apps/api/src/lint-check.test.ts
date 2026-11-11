@@ -265,4 +265,45 @@ describe("lintJobResult", () => {
       reason: "Lint didn't run: boom",
     });
   });
+
+  test("reports on the job when no check runs were posted", () => {
+    const failed: LintResult = {
+      ...result("oxlint", "failed", 1),
+      problems: [
+        { path: "a.ts", line: 2, level: "warning", message: "unused" },
+        { path: "b.ts", line: 5, column: 3, level: "error", title: "no-debugger", message: "no" },
+      ],
+    };
+    const errored: LintResult = { ...result("zizmor", "errored"), output: "bad config\n" };
+    expect(lintJobResult([failed, errored], "job")).toEqual({
+      ok: false,
+      reason:
+        "Lint failed: oxlint (1 error), zizmor (didn't run). This job's annotations show each problem.",
+      annotations: [
+        { level: "FAILURE", title: "zizmor didn't run", message: "bad config" },
+        {
+          level: "FAILURE",
+          title: "no-debugger",
+          message: "no",
+          path: "b.ts",
+          startLine: 5,
+          endLine: 5,
+          startColumn: 3,
+          endColumn: 3,
+        },
+        {
+          level: "WARNING",
+          title: "oxlint",
+          message: "unused",
+          path: "a.ts",
+          startLine: 2,
+          endLine: 2,
+        },
+      ],
+    });
+    expect(lintJobResult([result("oxlint", "passed")], "job")).toEqual({
+      ok: true,
+      annotations: [],
+    });
+  });
 });

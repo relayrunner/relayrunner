@@ -16,7 +16,7 @@ RelayRunner needs to know about your jobs to route them, but not what's in them.
 
 ## What it never gets
 
-- **Your code.** The App can only read `relayrunner.yml`. The one exception is lint, through the separate Checks App: it lints a commit in a sandbox with no internet access and discards it.
+- **Your code.** The App can only read `relayrunner.yml`. The one exception is lint: it reads a commit with the lint job's own token, or through the separate Checks App if you install it, lints it in a sandbox with no internet access and discards it.
 - **Job logs and secrets.** Jobs on your machines use GitHub's runner, which talks to GitHub directly.
 - **Provider accounts.** RelayRunner hands a job a label. The provider, such as GitHub or Depot, runs it under your agreement with them.
 

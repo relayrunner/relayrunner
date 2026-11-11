@@ -6,6 +6,7 @@ import type { Env } from "../env.ts";
 import { recordRepoCheck } from "../free-checks.ts";
 import {
   completeCheckRun,
+  GitHubAccessError,
   pullRequestFiles,
   repoTarball,
   startCheckRun,
@@ -57,7 +58,13 @@ export class LintRunner extends DurableObject<Env> {
     const config = await loadRepoConfig(token, work.repo);
     // An invalid file fails the main App's PR title check with the reason; nothing to add here.
     if (config.kind !== "config" || !config.lint) return log("not configured", work, {});
-    const results = await this.run(work, token, config.lint.tools, config.lint.paths, changed);
+    const results = await this.run(
+      work,
+      { checks: token },
+      config.lint.tools,
+      config.lint.paths,
+      changed,
+    );
     // For the Usage and Activity savings: a lint run that reported stands in for one Actions job.
     // A native `checks/lint` job is counted by its PickRunner instead, once per job. A failure here
     // only loses the count.
@@ -75,26 +82,40 @@ export class LintRunner extends DurableObject<Env> {
 
   /**
    * For a native `checks/lint` workflow job (src/native-checks.ts): lints a commit now with the
-   * job's own tools, whatever relayrunner.yml says, and returns the job's verdict. The check runs
-   * are posted as usual.
+   * job's own tools, whatever relayrunner.yml says, and returns the job's verdict.
+   *
+   * The commit is read with `jobToken`, the job's own GITHUB_TOKEN, so the repo needs no App that
+   * can read its code. The token is used for that one download and never stored. Where the Checks
+   * App is installed the check runs are posted as usual; elsewhere the problems come back as
+   * annotations for the job.
    */
   async lintJob(
     target: { repo: string; headSha: string },
     tools: LintTool[],
     paths: string[],
+    jobToken?: string,
   ): Promise<CheckResult> {
     // Each container is billed to us, like the webhook path in startLintChecks.
     if (!containerRunnerAllowed(this.env.CONTAINER_RUNNER_ORGS, target.repo.split("/")[0]))
       return { ok: false, reason: "RelayRunner doesn't run lint containers for this org yet." };
-    const installationId = await checksAppInstallationId(this.env, target.repo);
-    if (!installationId)
+    const installationId = await checksAppInstallationId(this.env, target.repo).catch((error) => {
+      if (!jobToken) throw error;
+      return null;
+    });
+    if (!installationId && !jobToken)
       return {
         ok: false,
         reason: `Install the RelayRunner Checks App on ${target.repo} to run lint there.`,
       };
-    const work = { installationId, ...target };
-    const token = await checksAppToken(this.env, installationId);
-    return lintJobResult(await this.run(work, token, tools, paths, Promise.resolve(null)));
+    const checks = installationId ? await checksAppToken(this.env, installationId) : undefined;
+    const results = await this.run(
+      { installationId: installationId ?? undefined, ...target },
+      { checks, job: jobToken },
+      tools,
+      paths,
+      Promise.resolve(null),
+    );
+    return lintJobResult(results, checks ? "checks" : "job");
   }
 
   // The lines a pull request changes, to mark the other problems as likely pre-existing. Without
@@ -110,39 +131,50 @@ export class LintRunner extends DurableObject<Env> {
     }
   }
 
-  // Opens a check run per tool, lints in the container, finishes the runs, and stops it.
+  // Lints in the container and stops it. With the Checks App's token it opens a check run per
+  // tool and finishes them. The commit is read with a job's own token when there is one.
   private async run(
-    work: LintWork,
-    token: string,
+    work: LintTarget,
+    tokens: { checks?: string; job?: string },
     tools: LintTool[],
     paths: string[],
     changed: Promise<ChangedLines | null>,
   ): Promise<LintResult[] | { error: string }> {
     const startedAt = Date.now();
+    const token = tokens.checks;
+    // The job's own token first. A job without `contents: read` falls back to the Checks App.
+    const codeTokens = [tokens.job, token].filter((value) => value !== undefined);
     const checkRuns = new Map(
-      await Promise.all(
-        tools.map(
-          async (tool) =>
-            [
-              tool,
-              await startCheckRun(token, work.repo, lintCheckName(tool), work.headSha),
-            ] as const,
-        ),
-      ),
+      token
+        ? await Promise.all(
+            tools.map(
+              async (tool) =>
+                [
+                  tool,
+                  await startCheckRun(token, work.repo, lintCheckName(tool), work.headSha),
+                ] as const,
+            ),
+          )
+        : [],
     );
     const finish = (output: (tool: LintTool) => CheckRunOutput) =>
       Promise.all(
         [...checkRuns].map(([tool, id]) =>
-          completeCheckRun(token, work.repo, id, output(tool)).catch((error) =>
+          completeCheckRun(token!, work.repo, id, output(tool)).catch((error) =>
             log("error", work, { tool, error: `check run not finished: ${errorMessage(error)}` }),
           ),
         ),
       );
     let results: LintResult[];
     try {
-      results = await this.lint(work, token, tools, paths);
+      results = await this.lint(work, codeTokens, tools, paths);
     } catch (error) {
-      const reason = errorMessage(error);
+      // GitHub refuses, or answers 404 for a private repo, when the job's token can't read code.
+      const hint =
+        tokens.job && error instanceof GitHubAccessError
+          ? ". Give the job `permissions: contents: read`."
+          : "";
+      const reason = errorMessage(error) + hint;
       log("error", work, { error: reason, durationMs: Date.now() - startedAt });
       await finish(() => lintUnavailableOutput(reason));
       return { error: reason };
@@ -157,21 +189,14 @@ export class LintRunner extends DurableObject<Env> {
         ? lintCheckOutput(result, context)
         : lintUnavailableOutput("the container skipped it");
     });
-    log("finished", work, {
-      durationMs: Date.now() - startedAt,
-      results: results.map(({ tool, status, total, durationMs }) => ({
-        tool,
-        status,
-        total,
-        durationMs,
-      })),
-    });
+    log("finished", work, { durationMs: Date.now() - startedAt, ...resultsLog(results) });
     return results;
   }
 
+  // `tokens` are tried in order to read the commit: the next one only when GitHub refuses one.
   private async lint(
-    work: LintWork,
-    token: string,
+    work: LintTarget,
+    tokens: string[],
     tools: LintTool[],
     paths: string[],
   ): Promise<LintResult[]> {
@@ -182,7 +207,15 @@ export class LintRunner extends DurableObject<Env> {
     const port = container.getTcpPort(LINT_PORT);
     // GitHub's redirect and first bytes overlap with the container's boot.
     const [tarball] = await Promise.all([
-      repoTarball(token, work.repo, work.headSha),
+      tokens.slice(1).reduce(
+        (tarball, token) =>
+          tarball.catch((error) => {
+            if (!(error instanceof GitHubAccessError)) throw error;
+            log("commit read refused, trying the next token", work, { status: error.status });
+            return repoTarball(token, work.repo, work.headSha);
+          }),
+        repoTarball(tokens[0], work.repo, work.headSha),
+      ),
       waitForHealth(port),
     ]);
     const query = new URLSearchParams({ tools: tools.join(",") });
@@ -212,7 +245,19 @@ async function waitForHealth(port: Fetcher) {
   }
 }
 
-function log(event: string, work: LintWork, fields: Record<string, unknown>) {
+// A commit to lint. A native job without the Checks App has no installation.
+type LintTarget = Pick<LintWork, "repo" | "headSha"> & { installationId?: number };
+
+const resultsLog = (results: LintResult[]) => ({
+  results: results.map(({ tool, status, total, durationMs }) => ({
+    tool,
+    status,
+    total,
+    durationMs,
+  })),
+});
+
+function log(event: string, work: LintTarget, fields: Record<string, unknown>) {
   (event === "error" ? console.error : console.log)(
     JSON.stringify({
       msg: `lint runner ${event}`,

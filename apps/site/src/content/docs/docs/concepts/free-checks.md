@@ -27,18 +27,18 @@ Each check is also an ordinary action, so the same job works on `ubuntu-latest` 
 
 ## The checks
 
-| Check             | What it does                                                                                                                                                                                                       |
-| ----------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| `checks/pr-title` | Fails unless the pull request title is a [Conventional Commit](https://www.conventionalcommits.org/), such as `feat(api): add a check`. `types` narrows the allowed types.                                         |
-| `checks/lint`     | Runs linters on the commit and posts a `Lint / <tool>` check run per tool, with problems as annotations. `tools` picks the [linters](/docs/reference/repo-config#checkslint) and `paths` limits which files count. |
+| Check             | What it does                                                                                                                                                                        |
+| ----------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `checks/pr-title` | Fails unless the pull request title is a [Conventional Commit](https://www.conventionalcommits.org/), such as `feat(api): add a check`. `types` narrows the allowed types.          |
+| `checks/lint`     | Runs linters on the commit and reports each problem on its file and line. `tools` picks the [linters](/docs/reference/repo-config#checkslint) and `paths` limits which files count. |
 
 :::note[Lint is in preview]
-Lint runs in RelayRunner's own sandbox with no internet access, and needs the separate RelayRunner Checks GitHub App on the repo. It's only on for organizations we've enabled so far. The job fails with the reason otherwise.
+Lint runs in RelayRunner's own sandbox with no internet access. The job reads your code with its own `GITHUB_TOKEN`, which GitHub revokes when the job ends, so it needs no extra App. It's only on for organizations we've enabled so far. The job fails with the reason otherwise.
 :::
 
 ## From repo config
 
-The PR title check and lint can also run on every pull request with no workflow at all. Add `relayrunner.yml` to the repo's root or `.github/` folder:
+The PR title check and lint can also run on every pull request with no workflow at all. Lint from repo config needs the separate RelayRunner Checks GitHub App, which can read the repo's code. Add `relayrunner.yml` to the repo's root or `.github/` folder:
 
 ```yaml
 checks:

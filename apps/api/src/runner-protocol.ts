@@ -37,6 +37,8 @@ interface JobMessage {
   steps?: unknown[];
   // The job's expression contexts (github, needs, ...), as PipelineContextData JSON.
   contextData?: Record<string, unknown>;
+  // The job's variables. `system.github.token` is the job's own GITHUB_TOKEN.
+  variables?: Record<string, { value?: string } | undefined>;
   resources: {
     endpoints: {
       name: string;
@@ -50,6 +52,23 @@ export interface ClaimedJob {
   message: JobMessage;
   token: string;
   serviceUrl: string;
+  // The job's GITHUB_TOKEN: scoped to the job's repo and the workflow's `permissions`, and revoked
+  // by GitHub when the job completes. Only ever held in memory.
+  githubToken?: string;
+}
+
+// The runner's Annotation contract (level is the AnnotationLevel enum by name). One with a path
+// and line shows on that line of a pull request's diff.
+export interface JobAnnotation {
+  level: "FAILURE" | "WARNING" | "NOTICE";
+  message: string;
+  title?: string;
+  path?: string;
+  startLine?: number;
+  endLine?: number;
+  startColumn?: number;
+  endColumn?: number;
+  isInfrastructureIssue?: boolean;
 }
 
 export type Conclusion = "succeeded" | "failed";
@@ -259,18 +278,24 @@ export class RunnerClient {
       message,
       token: connection.authorization.parameters.AccessToken,
       serviceUrl: connection.url,
+      githubToken: message.variables?.["system.github.token"]?.value || undefined,
     };
   }
 
   /**
    * Finishes the job. `error` becomes a failure annotation on the run, as a step's `::error::`
-   * would, so the reason shows on the run's summary page. If GitHub turns the annotation down,
-   * the job still completes without it rather than being left running.
+   * would, so the reason shows on the run's summary page. `annotations` follow it, such as a lint
+   * problem per file and line. If GitHub turns the annotations down, the job still completes with
+   * only the error, or with none, rather than being left running.
    */
   async complete(
     job: ClaimedJob,
     conclusion: Conclusion,
-    { outputs = {}, error }: { outputs?: Record<string, string>; error?: string } = {},
+    {
+      outputs = {},
+      error,
+      annotations = [],
+    }: { outputs?: Record<string, string>; error?: string; annotations?: JobAnnotation[] } = {},
   ) {
     const url = join(job.serviceUrl, "completejob");
     const body = {
@@ -282,10 +307,17 @@ export class RunnerClient {
       ),
       billingOwnerId: job.message.billingOwnerId,
     };
-    const send = (annotations?: unknown[]) =>
-      this.request("POST", url, { token: job.token, body: { ...body, annotations } });
-    if (error) await send([failureAnnotation(error)]).catch(() => send());
-    else await send();
+    const send = (annotations: JobAnnotation[]) =>
+      this.request("POST", url, {
+        token: job.token,
+        body: { ...body, annotations: annotations.length ? annotations : undefined },
+      });
+    // Each attempt sends less: everything, then only the error, then nothing.
+    const reason = error ? [failureAnnotation(error)] : [];
+    let done = send([...reason, ...annotations]);
+    if (annotations.length) done = done.catch(() => send(reason));
+    if (reason.length) done = done.catch(() => send([]));
+    await done;
   }
 
   // A session left open makes the next attempt with this runner fail with a 409.
@@ -310,7 +342,6 @@ export async function latestRunnerVersion() {
   return version;
 }
 
-// The runner's Annotation contract (level is the AnnotationLevel enum by name).
-export function failureAnnotation(message: string) {
+export function failureAnnotation(message: string): JobAnnotation {
   return { level: "FAILURE", message, isInfrastructureIssue: false };
 }
