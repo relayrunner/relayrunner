@@ -6,6 +6,7 @@ import { checkDeadLetterGrowth } from "./dead-letter-alert.ts";
 import { createDb } from "./db/index.ts";
 import type { Env } from "./env.ts";
 import { purgeOldJobTimings } from "./job-timings.ts";
+import { sendOperatorPings } from "./operator-pings.ts";
 import { checkPrices } from "./price-check.ts";
 import { purgeOldWorkflowRuns } from "./runs.ts";
 import { sweepPicks } from "./pick-sweep.ts";
@@ -37,7 +38,8 @@ export default {
     return handleWebhookBatch(batch as MessageBatch<WebhookMessage>, env);
   },
   // Every 15 minutes: queue a read of each org's Actions usage from GitHub billing (#116), rescue
-  // stuck relay jobs, and queue a sweep for leftover pick runners (src/pick-sweep.ts). Hourly: alert when
+  // stuck relay jobs, queue a sweep for leftover pick runners (src/pick-sweep.ts), and post the
+  // window's operator pings to Slack (src/operator-pings.ts). Hourly: alert when
   // webhook dead letters pile up, drop job timings and workflow runs past retention, and reconcile
   // which orgs installed the Spend App (src/spend-app.ts). Daily: check
   // providers' price pages (src/price-check.ts). Each runs even if another throws; a failure still
@@ -46,7 +48,7 @@ export default {
     const at = new Date(controller.scheduledTime);
     const tasks =
       controller.cron === USAGE_CRON
-        ? [pollActionsUsage(env, at), sweepPicks(env)]
+        ? [pollActionsUsage(env, at), sweepPicks(env), sendOperatorPings(env, at)]
         : controller.cron === PRICE_CRON
           ? [checkPrices(env, at)]
           : [
