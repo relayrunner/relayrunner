@@ -8,9 +8,10 @@
  * Our own workspaces (internalWorkspaceIds) and operators' own signups are left out, so our own
  * testing stays quiet.
  */
-import { and, desc, eq, gte, inArray, lt, sql } from "drizzle-orm";
+import { and, desc, eq, gte, inArray, lt } from "drizzle-orm";
 import { type Db, createDb, schema } from "./db/index.ts";
 import type { Env } from "./env.ts";
+import { internalWorkspaceIds } from "./internal-workspaces.ts";
 
 export const PING_WINDOW_MS = 15 * 60 * 1000;
 const MACHINE_ARRIVALS = ["machine.enrolled", "machine.connected"];
@@ -28,35 +29,6 @@ export async function postToWebhook(url: string, text: string, fetcher: typeof f
     body: JSON.stringify({ text, content: text }),
   });
   if (!response.ok) throw new Error(`webhook answered ${response.status}`);
-}
-
-/**
- * Our own workspaces: every member is an operator, or, before any member has synced (right after
- * an install), an operator's GitHub account installed it. A real user's org that invites an
- * operator in still counts as theirs.
- */
-async function internalWorkspaceIds(db: Db): Promise<Set<string>> {
-  const rows = await db
-    .select({
-      id: schema.workspace.id,
-      members: sql<number>`(select count(*) from ${schema.workspaceMember} where ${schema.workspaceMember.workspaceId} = ${schema.workspace.id})`,
-      others: sql<number>`(select count(*) from ${schema.workspaceMember} join ${schema.user} on ${schema.user.id} = ${schema.workspaceMember.userId} where ${schema.workspaceMember.workspaceId} = ${schema.workspace.id} and coalesce(${schema.user.role}, '') <> 'operator')`,
-      installedByOperator: sql<number>`exists (select 1 from ${schema.account} join ${schema.user} on ${schema.user.id} = ${schema.account.userId} where ${schema.account.providerId} = 'github' and ${schema.account.accountId} = cast(${schema.githubInstallation.installerGithubId} as text) and ${schema.user.role} = 'operator')`,
-    })
-    .from(schema.workspace)
-    .innerJoin(
-      schema.githubInstallation,
-      eq(schema.githubInstallation.id, schema.workspace.installationId),
-    );
-  return new Set(
-    rows
-      .filter((row) =>
-        Number(row.members) > 0
-          ? Number(row.others) === 0
-          : Boolean(Number(row.installedByOperator)),
-      )
-      .map((row) => row.id),
-  );
 }
 
 /** The pings for what happened in [since, until), oldest first. */
