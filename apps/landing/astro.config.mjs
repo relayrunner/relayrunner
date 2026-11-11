@@ -37,14 +37,14 @@ export default defineConfig({
             "docs/get-started/agents",
           ],
         },
-        {
-          label: "Guides",
-          items: ["docs/guides/laptop-ci", "docs/guides/stay-under-quota"],
-        },
         { label: "CI", items: ["docs/ci/routing", "docs/ci/free-checks"] },
         {
           label: "Runners",
           items: ["docs/runners/self-hosted", "docs/runners/github", "docs/runners/blacksmith"],
+        },
+        {
+          label: "Guides",
+          items: ["docs/guides/laptop-ci", "docs/guides/stay-under-quota"],
         },
         {
           label: "Reference",
