@@ -1,0 +1,251 @@
+/*
+ * RelayRunner theme for Starlight. Colors are the dashboard's tokens (apps/web/src/styles.css),
+ * which come from the landing page's DESIGN.md: green "go" accent, cool grays. Starlight's dark
+ * theme is the :root default and light is [data-theme="light"]. Its gray scale runs from
+ * --sl-color-white (text) to --sl-color-black (page background) in both themes.
+ */
+:root {
+  --sl-font: "Hanken Grotesk Variable", "Hanken Grotesk", system-ui, sans-serif;
+  --sl-font-mono: "JetBrains Mono Variable", "JetBrains Mono", ui-monospace, monospace;
+
+  /* Dark (dashboard .dark) */
+  --sl-color-accent-low: #10301a;
+  --sl-color-accent: #3fb950;
+  --sl-color-accent-high: #a8ebb3;
+  --sl-color-white: #e6edf3;
+  --sl-color-gray-1: #d0d7de;
+  --sl-color-gray-2: #b4bcc6;
+  --sl-color-gray-3: #8b949e;
+  --sl-color-gray-4: #4a515c;
+  --sl-color-gray-5: #272c35;
+  --sl-color-gray-6: #161a20;
+  --sl-color-gray-7: #101317;
+  --sl-color-black: #0b0d10;
+
+  /* Notes (:::note) are neutral, like the dashboard's info panels. */
+  --sl-color-blue-low: #161a20;
+  --sl-color-blue: #8b949e;
+  --sl-color-blue-high: #e6edf3;
+}
+
+:root[data-theme="light"] {
+  /* Light (dashboard :root) */
+  --sl-color-accent-low: #dcf1e1;
+  --sl-color-accent: #1a7f37;
+  --sl-color-accent-high: #0f4d22;
+  --sl-color-white: #1b1f24;
+  --sl-color-gray-1: #2a3037;
+  --sl-color-gray-2: #3d454e;
+  --sl-color-gray-3: #5e6772;
+  --sl-color-gray-4: #a3abb5;
+  --sl-color-gray-5: #d9dee4;
+  --sl-color-gray-6: #eef1f4;
+  --sl-color-gray-7: #f6f7f9;
+  --sl-color-black: #ffffff;
+
+  --sl-color-blue-low: #eef1f4;
+  --sl-color-blue: #5e6772;
+  --sl-color-blue-high: #1b1f24;
+}
+
+/* Landing radii (6 / 8 / 10px) on the parts Starlight draws as boxes. */
+.expressive-code .frame,
+.card,
+.sl-link-card {
+  border-radius: 10px;
+}
+.expressive-code .frame pre {
+  border-radius: 10px;
+}
+
+.site-title img {
+  border-radius: 6px;
+}
+
+.site-title {
+  color: var(--sl-color-white);
+}
+
+/* Starlight rotates card icons through four hues; keep them all on the accent. */
+.card-grid > .card.card {
+  --sl-card-border: var(--sl-color-accent);
+  --sl-card-bg: var(--sl-color-accent-low);
+}
+
+/* Primary buttons are the dashboard's solid "go" green. */
+.sl-link-button.primary {
+  background: var(--sl-color-accent);
+  border-color: var(--sl-color-accent);
+  color: #03140a;
+}
+:root[data-theme="light"] .sl-link-button.primary {
+  color: #ffffff;
+}
+
+/*
+ * Type scale and layout, sized after the uploads.sh docs: 16px body, 36px page title, 22px section
+ * headings, 16px semibold subheadings, 13px navigation. Same sizes on every screen width.
+ */
+:root,
+:root[data-theme="light"] {
+  --sl-text-body: 1rem;
+  --sl-line-height: 1.65;
+  --sl-text-h1: 2.25rem;
+  --sl-text-h2: 1.375rem;
+  --sl-text-h3: 1rem;
+  --sl-text-h4: 1rem;
+  --sl-text-h5: 0.9375rem;
+  --sl-sidebar-width: 15rem;
+}
+@media (min-width: 50em) {
+  :root,
+  :root[data-theme="light"] {
+    --sl-text-h1: 2.25rem;
+    --sl-text-h2: 1.375rem;
+    --sl-text-h3: 1rem;
+    --sl-text-h4: 1rem;
+  }
+}
+.sl-markdown-content h2 {
+  letter-spacing: -0.02em;
+}
+.sl-markdown-content h3 {
+  font-weight: 600;
+}
+
+.site-title {
+  font-size: 1.0625rem;
+}
+
+/*
+ * "On this page" rail: narrower, no divider, a thin line down the list with the current heading
+ * marked in the accent color.
+ */
+@media (min-width: 72rem) {
+  .right-sidebar-container {
+    width: 14rem;
+  }
+  [data-has-sidebar][data-has-toc] .main-pane {
+    width: calc(100% - 14rem);
+  }
+  .right-sidebar {
+    border-inline-start: 0;
+  }
+  .right-sidebar-panel .sl-container {
+    width: auto;
+    max-width: none;
+  }
+}
+.right-sidebar-panel {
+  padding-top: 2rem;
+}
+.right-sidebar-panel h2 {
+  margin-bottom: 0.625rem;
+  font-size: 0.75rem;
+  font-weight: 500;
+  color: var(--sl-color-gray-3);
+}
+starlight-toc nav > ul {
+  border-inline-start: 1px solid var(--sl-color-gray-5);
+}
+starlight-toc a {
+  margin-inline-start: -1px;
+  border-inline-start: 1px solid transparent;
+  border-radius: 0;
+  padding-block: 3px;
+  padding-inline: 14px 0;
+  font-size: 0.8125rem;
+  line-height: 1.45;
+  color: var(--sl-color-gray-3);
+}
+starlight-toc ul ul a {
+  padding-inline-start: 26px;
+}
+starlight-toc a:hover {
+  color: var(--sl-color-white);
+}
+starlight-toc a[aria-current="true"] {
+  border-inline-start-color: var(--sl-color-accent);
+  color: var(--sl-color-text-accent);
+}
+
+/* One continuous page like the uploads.sh docs: sidebar on the page background, and no rule
+   between the title and the content. */
+:root {
+  --sl-color-bg-sidebar: var(--sl-color-black);
+}
+.content-panel + .content-panel {
+  border-top: 0;
+  padding-top: 0.5rem;
+}
+
+/* Asides (:::note and friends) read as compact banners: title and text on one line, 14px. */
+.starlight-aside {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  column-gap: 0.5rem;
+  padding: 0.5rem 0.75rem;
+  border-inline-start-width: 2px;
+  border-radius: 8px;
+  font-size: 0.875rem;
+  line-height: 1.5;
+}
+.starlight-aside__title {
+  font-size: 0.875rem;
+  align-self: center;
+}
+.starlight-aside__icon {
+  font-size: 1em;
+}
+.starlight-aside__title + .starlight-aside__content {
+  margin-top: 0;
+  flex: 1 1 16rem;
+}
+.starlight-aside__content > :first-child {
+  margin-top: 0;
+}
+
+/* The landing page's header (SiteHeader.astro) fills Starlight's fixed header bar. The bar keeps
+   its right padding on small screens, where Starlight's menu button sits. The header spans the full
+   width here so the logo lines up with the sidebar. */
+:root {
+  --sl-nav-height: 64px;
+}
+header.header {
+  padding-block: 0;
+  padding-inline-start: 0;
+  border-bottom: 1px solid var(--line-soft);
+  background: var(--bg);
+}
+header.header .site-header {
+  background: transparent;
+  backdrop-filter: none;
+}
+header.header .wrap {
+  max-width: none;
+  padding-inline: var(--sl-nav-pad-x);
+}
+@media (max-width: 49.99rem) {
+  header.header .wrap {
+    padding-inline-end: 0;
+  }
+  /* Next to the menu button there's only room for Get started; GitHub is in the menu's footer. */
+  header.header .btn-ghost {
+    display: none;
+  }
+}
+@media (min-width: 50rem) {
+  header.header {
+    padding-inline-end: 0;
+  }
+}
+
+/* On wide screens Starlight pushes the page column right, against the "On this page" column, which
+   leaves a wide gap after the sidebar. Keep the page next to the sidebar instead; the extra width
+   goes to the right. */
+@media (min-width: 72rem) {
+  :root[data-has-sidebar][data-has-toc] .main-pane {
+    --sl-content-margin-inline: 0 auto;
+  }
+}

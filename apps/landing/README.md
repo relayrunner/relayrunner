@@ -1,19 +1,20 @@
 # Landing page
 
-The public site at [relayrunner.app](https://relayrunner.app): a Vite build served as Worker static assets (Worker `relayrunner-landing`, no Worker script). It has the home page (`index.html`) and the privacy policy and terms (`privacy.html`, `terms.html`). [DESIGN.md](DESIGN.md) holds the visual system, which the dashboard's theme borrows from.
+The public site at [relayrunner.app](https://relayrunner.app): one [Astro](https://astro.build) build served as Worker static assets (Worker `relayrunner-landing`, no Worker script). The home page, privacy policy and terms are `src/pages/index.astro`, `privacy.astro` and `terms.astro`, plain HTML with `src/style.css`, `src/legal.css` and `src/main.ts`. The docs are [Starlight](https://starlight.astro.build) pages at `/docs/`, written in `src/content/docs/docs/`. [DESIGN.md](DESIGN.md) holds the visual system, which the dashboard's theme borrows from.
 
 ```sh
-pnpm --filter @relayrunner/landing dev       # local dev server
-pnpm --filter @relayrunner/landing build:site # production build into dist/
-pnpm run deploy:landing                       # build and deploy (from the repo root)
+pnpm --filter @relayrunner/landing dev          # local dev server
+pnpm --filter @relayrunner/landing build:site   # production build into dist/
+pnpm run deploy:landing                         # build and deploy (from the repo root)
+pnpm run deploy:landing:preview                 # build and upload a preview of the current branch
 ```
 
-`build:site` sets `VITE_SITE_URL`, the absolute origin used by the canonical link and the Open Graph and Twitter share image tags. For local builds, copy `.env.example` to `.env`.
+`site` in `astro.config.mjs` is the absolute origin used by the canonical link and the Open Graph and Twitter share image tags; set `SITE_URL` to override it. Docs search (Pagefind) only works in `build` output.
 
 ## Deploys
 
-Workers Builds deploys it on merge to `main`, like the other Workers, with root directory `/` and deploy command `pnpm run deploy:landing`. PR builds upload a preview version.
+Workers Builds deploys it on merge to `main`, like the other Workers, with root directory `/` and deploy command `pnpm run deploy:landing`. Branch and PR builds run `pnpm run deploy:landing:preview`, which uploads a preview version.
 
 ## Moving to relayrunner.dev
 
-Once the relayrunner.dev zone is in the RelayRunner Cloudflare account, add `relayrunner.dev` to `routes` in `wrangler.jsonc`, change `VITE_SITE_URL` in `build:site` to `https://relayrunner.dev`, and decide whether relayrunner.app keeps serving the page or redirects.
+Once the relayrunner.dev zone is in the RelayRunner Cloudflare account, add `relayrunner.dev` to `routes` in `wrangler.jsonc`, change `SITE_URL` in `build:site` to `https://relayrunner.dev`, and decide whether relayrunner.app keeps serving the page or redirects.

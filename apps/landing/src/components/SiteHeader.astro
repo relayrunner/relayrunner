@@ -1,0 +1,35 @@
+---
+/*
+ * The site header: the landing page's header, shared with the docs. On the home page the links are
+ * in-page anchors; elsewhere (the docs) they point back at the home page's sections. The docs
+ * aren't linked from it yet.
+ */
+interface Props {
+  /** Set on the home page, where the links scroll to sections instead of navigating. */
+  home?: boolean;
+}
+
+const { home = false } = Astro.props;
+const to = (hash: string) => (home ? hash : `/${hash}`);
+---
+
+<header class="site-header" data-header>
+  <div class="wrap header-row">
+    <a class="brand" href={home ? "#top" : "/"} aria-label="relayrunner home">
+      <img class="brand-tile" src="/mascot-tile.webp" alt="" width="28" height="28" />
+      relayrunner
+    </a>
+    <nav aria-label="Primary">
+      <ul class="nav-links">
+        <li class="nav-page"><a href={to("#providers")}>Providers</a></li>
+        <li class="nav-page"><a href={to("#how")}>How it works</a></li>
+        <li class="nav-page"><a href={to("#checks")}>Free checks</a></li>
+        <li class="nav-page"><a href={to("#safety")}>Security</a></li>
+      </ul>
+    </nav>
+    <div class="header-actions">
+      <a class="btn-ghost btn-sm" href="https://github.com/relayrunner/relayrunner">GitHub</a>
+      <a class="btn-go btn-sm" href={to("#start")}>Get started</a>
+    </div>
+  </div>
+</header>

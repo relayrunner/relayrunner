@@ -1,61 +1,6 @@
-@import "@fontsource-variable/hanken-grotesk";
-@import "@fontsource-variable/jetbrains-mono";
-
-/* Light is the default; dark follows the OS unless a page sets data-theme. */
-:root {
-  color-scheme: light;
-  --bg: #ffffff;
-  --bg-soft: #f5f8f3;
-  --bg-deep: #fbfcfa;
-  --raised: #ffffff;
-  --line: #e3e8e0;
-  --line-soft: #edf0ea;
-  --ink: #0e1a11;
-  --ink-2: #39463c;
-  --mute: #677269;
-  --idle: #c3cac2;
-  --meter-track: #e8ece5;
-  --go: #2fb344;
-  --go-hover: #27a03b;
-  --go-text: #178a2e;
-  --go-ink: #03140a;
-  --go-soft: rgba(47, 179, 68, 0.12);
-  --go-edge: rgba(47, 179, 68, 0.6);
-  --run: #c98a12;
-  --run-text: #9a6608;
-  --mascot-green: linear-gradient(140deg, #52c93c 0%, #2db83a 45%, #129a3c 100%);
-  --shadow-card: 0 24px 48px -32px rgba(14, 26, 17, 0.28);
-  --shadow-on: 0 20px 50px -28px rgba(47, 179, 68, 0.55);
-  --sans: "Hanken Grotesk Variable", "Hanken Grotesk", system-ui, sans-serif;
-  --mono: "JetBrains Mono Variable", "JetBrains Mono", ui-monospace, monospace;
-  --gutter: clamp(16px, 5vw, 72px);
-  --ease-out: cubic-bezier(0.16, 1, 0.3, 1);
-}
-@media (prefers-color-scheme: dark) {
-  :root:not([data-theme="light"]) {
-    color-scheme: dark;
-    --bg: #0b0d10;
-    --bg-soft: #0f1215;
-    --bg-deep: #101317;
-    --raised: #161a20;
-    --line: #272c35;
-    --line-soft: #1d2128;
-    --ink: #e6edf3;
-    --ink-2: #b4bcc6;
-    --mute: #8b949e;
-    --idle: #4a515c;
-    --meter-track: #23272f;
-    --go: #3fb950;
-    --go-hover: #4fcc61;
-    --go-text: #3fb950;
-    --go-soft: rgba(63, 185, 80, 0.14);
-    --go-edge: rgba(63, 185, 80, 0.55);
-    --run: #d29922;
-    --run-text: #d29922;
-    --shadow-card: 0 24px 48px -28px rgba(0, 0, 0, 0.8);
-    --shadow-on: 0 20px 50px -28px rgba(63, 185, 80, 0.45);
-  }
-}
+/* Tokens and the shared header live in src/styles/ so the docs can use them too. */
+@import "./styles/tokens.css";
+@import "./styles/header.css";
 
 *,
 *::before,
@@ -131,117 +76,11 @@ button {
 .skip:focus {
   top: 12px;
 }
-.wrap {
-  width: 100%;
-  max-width: calc(1200px + 2 * var(--gutter));
-  margin-inline: auto;
-  padding-inline: var(--gutter);
-}
 .mute {
   color: var(--mute);
 }
 .hl {
   color: var(--go-text);
-}
-
-/* ---------- Buttons ---------- */
-
-.btn-go,
-.btn-ghost {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  border-radius: 10px;
-  font-weight: 700;
-  text-decoration: none;
-  white-space: nowrap;
-  transition:
-    background 0.15s,
-    border-color 0.15s;
-}
-.btn-go {
-  background: var(--go);
-  color: var(--go-ink);
-}
-.btn-go:hover {
-  background: var(--go-hover);
-}
-.btn-ghost {
-  border: 1px solid var(--line);
-  color: var(--ink);
-}
-.btn-ghost:hover {
-  border-color: var(--idle);
-}
-.btn-sm {
-  padding: 8px 13px;
-  border-radius: 8px;
-  font-size: 14px;
-  font-weight: 600;
-}
-.btn-lg {
-  padding: 14px 20px;
-  font-size: 16px;
-}
-
-/* ---------- Header ---------- */
-
-.site-header {
-  position: sticky;
-  top: 0;
-  z-index: 10;
-  background: color-mix(in srgb, var(--bg) 88%, transparent);
-  backdrop-filter: blur(12px);
-  border-bottom: 1px solid transparent;
-  transition: border-color 0.2s;
-}
-.site-header.scrolled {
-  border-bottom-color: var(--line-soft);
-}
-.header-row {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 24px;
-  height: 64px;
-}
-.brand {
-  display: inline-flex;
-  align-items: center;
-  gap: 10px;
-  font-size: 19px;
-  font-weight: 700;
-  letter-spacing: -0.01em;
-  text-decoration: none;
-}
-.brand-tile {
-  width: 28px;
-  height: 28px;
-  border-radius: 8px;
-}
-.brand-sm {
-  font-size: 16px;
-}
-.brand-sm .brand-tile {
-  width: 24px;
-  height: 24px;
-  border-radius: 7px;
-}
-.nav-links {
-  display: flex;
-  gap: 28px;
-  font-size: 15px;
-}
-.nav-links a {
-  color: var(--ink-2);
-  text-decoration: none;
-}
-.nav-links a:hover {
-  color: var(--ink);
-}
-.header-actions {
-  display: flex;
-  gap: 10px;
 }
 
 /* ---------- Hero ---------- */
@@ -978,9 +817,6 @@ button {
   }
 }
 @media (max-width: 860px) {
-  .nav-page {
-    display: none;
-  }
   .split-head,
   .feature,
   .feature-flip {
@@ -998,9 +834,6 @@ button {
   }
 }
 @media (max-width: 640px) {
-  .site-header nav {
-    display: none;
-  }
   .hero-actions,
   .hero-actions > * {
     width: 100%;

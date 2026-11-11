@@ -3,19 +3,21 @@
   "private": true,
   "type": "module",
   "scripts": {
-    "dev": "vite",
-    "build": "vite build",
-    "preview": "vite preview",
+    "dev": "astro dev",
+    "build": "astro build && node scripts/postbuild.mjs",
+    "preview": "wrangler dev",
     "og": "\"/Applications/Google Chrome.app/Contents/MacOS/Google Chrome\" --headless=new --disable-gpu --hide-scrollbars --allow-file-access-from-files --window-size=1200,630 --virtual-time-budget=3000 --screenshot=\"$PWD/public/og-image.png\" \"file://$PWD/og/og-image.html\"",
-    "build:site": "VITE_SITE_URL=https://relayrunner.app vite build",
-    "deploy": "pnpm build:site && wrangler deploy"
+    "build:site": "SITE_URL=https://relayrunner.app pnpm build",
+    "deploy": "pnpm build:site && wrangler deploy",
+    "deploy:preview": "pnpm build && wrangler preview"
   },
   "devDependencies": {
-    "vite": "catalog:",
     "wrangler": "catalog:"
   },
   "dependencies": {
+    "@astrojs/starlight": "^0.42.10",
     "@fontsource-variable/hanken-grotesk": "catalog:",
-    "@fontsource-variable/jetbrains-mono": "catalog:"
+    "@fontsource-variable/jetbrains-mono": "catalog:",
+    "astro": "^7.4.10"
   }
 }

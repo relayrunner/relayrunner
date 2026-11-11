@@ -1,0 +1,14 @@
+---
+/*
+ * Starlight's <head>, plus preloads for the two fonts used above the fold. Without them the browser
+ * only finds the fonts after the CSS loads, so every page paints in the fallback font first and
+ * then swaps (the text visibly flickers). Vite gives these the same hashed URLs the CSS uses.
+ */
+import Default from "@astrojs/starlight/components/Head.astro";
+import sans from "@fontsource-variable/hanken-grotesk/files/hanken-grotesk-latin-wght-normal.woff2?url";
+import mono from "@fontsource-variable/jetbrains-mono/files/jetbrains-mono-latin-wght-normal.woff2?url";
+---
+
+<link rel="preload" href={sans} as="font" type="font/woff2" crossorigin />
+<link rel="preload" href={mono} as="font" type="font/woff2" crossorigin />
+<Default />
