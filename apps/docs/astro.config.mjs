@@ -57,10 +57,6 @@ export default defineConfig({
         Head: "./src/components/Head.astro",
         Pagination: "./src/components/Pagination.astro",
       },
-      editLink: {
-        baseUrl: "https://github.com/relayrunner/relayrunner/edit/main/apps/docs/",
-      },
-      lastUpdated: true,
     }),
   ],
 });

@@ -205,8 +205,3 @@ starlight-toc a[aria-current="true"] {
 .starlight-aside__content > :first-child {
   margin-top: 0;
 }
-
-/* "Edit page" and "Last updated" are page metadata: small and muted. */
-footer .meta {
-  font-size: 0.8125rem;
-}
