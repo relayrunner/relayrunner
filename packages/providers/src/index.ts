@@ -111,4 +111,11 @@ export function providerOfEnvironment(key: string): ProviderId | "machine" {
   const id = key.slice(0, key.indexOf(":"));
   return isProviderId(id) ? id : "other";
 }
-export { listRate, PRICES_CHECKED, rateText } from "./prices.ts";
+export {
+  type GitHubRunner,
+  githubRate,
+  listRate,
+  PRICE_CHANGES,
+  PRICES_CHECKED,
+  rateText,
+} from "./prices.ts";

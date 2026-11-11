@@ -10,7 +10,7 @@ import { recordEvent } from "./activity.ts";
 import { type Db, schema } from "./db/index.ts";
 import { createCheckRun } from "./github-app.ts";
 import { findInstallation } from "./installations.ts";
-import { cents, DAY_MS, rateFor, RUNNER_RATES } from "./job-timings.ts";
+import { cents, classRate, DAY_MS, pricePeriods, RUNNER_LABELS, rateFor } from "./job-timings.ts";
 
 const table = schema.activityEvent;
 
@@ -114,11 +114,14 @@ export async function freeCheckSavings(
   workspaceId: string,
   days = 30,
 ): Promise<FreeCheckSavings> {
-  const since = new Date(Date.now() - days * DAY_MS);
+  const now = Date.now();
+  const since = new Date(now - days * DAY_MS);
+  const prices = pricePeriods(table.occurredAt, since.getTime(), now);
   const repositoryId = sql<number>`json_extract(${table.data}, '$.repositoryId')`;
   const check = sql<string>`json_extract(${table.data}, '$.check')`;
   const rows = await db
     .select({
+      period: prices.period,
       check,
       repositoryId,
       // Its current name when mirrored, so a renamed repo's checks add up under one name.
@@ -135,7 +138,7 @@ export async function freeCheckSavings(
         gte(table.occurredAt, since),
       ),
     )
-    .groupBy(check, repositoryId, schema.githubRepository.private);
+    .groupBy(...prices.groupBy, check, repositoryId, schema.githubRepository.private);
 
   type Sum = { checks: number; savedCost: number };
   const repos = new Map<number, FreeCheckSavings["byRepository"][number]>();
@@ -154,7 +157,7 @@ export async function freeCheckSavings(
   };
   for (const row of rows) {
     const checks = Number(row.checks);
-    const cost = checks * rateFor(FREE_CHECK_RUNNER, row.private);
+    const cost = checks * rateFor(FREE_CHECK_RUNNER, row.private, prices.at(Number(row.period)));
     const repository = {
       repository: row.repository,
       private: row.private,
@@ -170,10 +173,12 @@ export async function freeCheckSavings(
       .map((row) => ({ ...row, savedCost: cents(row.savedCost) }))
       .sort((a, b) => b.checks - a.checks || b.savedCost - a.savedCost);
   const byRepository = ranked(repos);
-  const { label, perMinute } = RUNNER_RATES[FREE_CHECK_RUNNER];
   return {
     days,
-    runner: { label, perMinute },
+    runner: {
+      label: RUNNER_LABELS[FREE_CHECK_RUNNER],
+      perMinute: classRate(FREE_CHECK_RUNNER, now),
+    },
     checks: byRepository.reduce((total, repo) => total + repo.checks, 0),
     savedCost: cents(byRepository.reduce((total, repo) => total + repo.savedCost, 0)),
     byCheck: ranked(kinds),

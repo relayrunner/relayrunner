@@ -12,7 +12,7 @@ import { and, eq, gte, inArray, isNull, type SQL, sql } from "drizzle-orm";
 import type { SQLiteColumn } from "drizzle-orm/sqlite-core";
 import { usesContainerRunner } from "./container-runner.ts";
 import { type Db, schema } from "./db/index.ts";
-import { DAY_MS, GITHUB_HOSTED_GROUP, RUNNER_RATES, runnerClass } from "./job-timings.ts";
+import { DAY_MS, GITHUB_HOSTED_GROUP, RUNNER_LABELS, runnerClass } from "./job-timings.ts";
 import { cloudProviderFor, isGitHubHostedLabel } from "./cloud-providers.ts";
 import { routeIdFromLabels } from "./routing.ts";
 import { RELAYRUNNER_LABEL } from "./webhook-queue.ts";
@@ -72,7 +72,7 @@ export function environmentFor(
   if (lower.some(isGitHubHostedLabel) || runnerGroupName === GITHUB_HOSTED_GROUP) {
     const cls = runnerClass(labels, runnerGroupName);
     if (cls !== "other" && cls !== "self-hosted")
-      return { key: `github:${cls}`, label: RUNNER_RATES[cls].label, detail: "GitHub-hosted" };
+      return { key: `github:${cls}`, label: RUNNER_LABELS[cls], detail: "GitHub-hosted" };
     // A larger runner or an image without a standard price: named by its label.
     const label = lower[0] ?? "unknown";
     return { key: `github:${label}`, label, detail: "GitHub-hosted" };

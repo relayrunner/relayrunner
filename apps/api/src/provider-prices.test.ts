@@ -1,4 +1,4 @@
-import { listRate } from "@relayrunner/providers";
+import { githubRate, listRate, PRICE_CHANGES } from "@relayrunner/providers";
 import { describe, expect, test } from "vitest";
 
 describe("list prices", () => {
@@ -25,5 +25,25 @@ describe("list prices", () => {
     expect(listRate("runs-on", "2cpu-linux-x64")).toBeNull();
     expect(listRate("ubicloud", "ubicloud-gpu")).toBeNull();
     expect(listRate("github", "ubuntu-latest")).toBeNull();
+  });
+
+  test("a job is priced at what a minute cost on the day it ran", () => {
+    // Ubicloud's standard 2 vCPU went from $0.001 to $0.00125 on 2026-09-01.
+    expect(listRate("ubicloud", "ubicloud", Date.parse("2026-08-31T23:59:59Z"))).toBeCloseTo(
+      0.001,
+      6,
+    );
+    expect(listRate("ubicloud", "ubicloud", Date.parse("2026-09-01T00:00:00Z"))).toBeCloseTo(
+      0.00125,
+      6,
+    );
+    // Before the oldest known price, that price still holds.
+    expect(listRate("ubicloud", "ubicloud", Date.parse("2020-01-01"))).toBeCloseTo(0.0008, 6);
+    expect(githubRate("linux-arm-2-core", Date.parse("2020-01-01"))).toBe(0.005);
+  });
+
+  test("price changes are listed once each, oldest first", () => {
+    expect(PRICE_CHANGES).toContain(Date.parse("2026-09-01T00:00:00Z"));
+    expect(PRICE_CHANGES).toEqual([...new Set(PRICE_CHANGES)].sort((a, b) => a - b));
   });
 });

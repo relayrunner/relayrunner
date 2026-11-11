@@ -14,7 +14,14 @@ import {
 } from "@relayrunner/providers";
 import { sql } from "drizzle-orm";
 import { type Db, schema } from "./db/index.ts";
-import { BILLED_MINUTES, cents, DAY_MS, RUNNER_RATES, runnerClass } from "./job-timings.ts";
+import {
+  BILLED_MINUTES,
+  cents,
+  classRate,
+  DAY_MS,
+  pricePeriods,
+  runnerClass,
+} from "./job-timings.ts";
 import {
   type Bucket,
   bucketOf,
@@ -86,6 +93,7 @@ export interface ProvidersOverview {
 const WORKFLOW_LIMIT = 5;
 
 interface Row {
+  period: number;
   labels: string;
   runner_group_name: string | null;
   runs: number;
@@ -123,32 +131,36 @@ const where = (workspaceId: string, days: number, now: number) =>
   sql`${windowWhere(workspaceId, new Date(now - days * DAY_MS))} and ${table.machineId} is null`;
 
 /**
- * What a minute costs on a runner type, in a private repo: GitHub's standard runners by the Usage
- * report's rates, the services by their list prices. Null when unknown, such as a larger runner.
+ * What a minute cost on a runner type at `at`, in a private repo: GitHub's standard runners by the
+ * Usage report's rates, the services by their list prices. Null when unknown, such as a larger
+ * runner.
  */
 function perMinuteOf(
   provider: ProviderId,
   env: Environment,
   labels: string[],
   runnerGroupName: string | null,
+  at: number,
 ) {
-  if (provider !== "github") return listRate(provider, env.label);
+  if (provider !== "github") return listRate(provider, env.label, at);
   const cls = runnerClass(labels, runnerGroupName);
-  return cls === "other" || cls === "self-hosted" ? null : RUNNER_RATES[cls].perMinute;
+  return cls === "other" || cls === "self-hosted" ? null : classRate(cls, at);
 }
 
 // Every provider runner type the workspace's jobs used, by environment key. Several label sets
-// can land on one (`ubuntu-latest` and `ubuntu-24.04`).
+// can land on one (`ubuntu-latest` and `ubuntu-24.04`), and a price change in the window splits a
+// label set in two, each priced at its own rate.
 async function runnerGroups(db: Db, workspaceId: string, days: number, now: number) {
+  const prices = pricePeriods(table.completedAt, now - days * DAY_MS, now);
   const rows = await db.all<Row>(sql`
-    select ${table.labels} as labels, ${table.runnerGroupName} as runner_group_name,
+    select ${prices.period} as period, ${table.labels} as labels, ${table.runnerGroupName} as runner_group_name,
       count(*) as runs, sum(${OK}) as successes, sum(${FAILED}) as failures,
       sum(${BILLED_MINUTES}) as billed_minutes, sum(${PUBLIC}) as public_runs,
       sum(case when ${PUBLIC} then ${BILLED_MINUTES} else 0 end) as public_billed_minutes,
       ${SAMPLES} as samples
     from ${table} left join ${repo} on ${repo.id} = ${table.repositoryId}
     where ${where(workspaceId, days, now)}
-    group by ${table.labels}, ${table.runnerGroupName}`);
+    group by ${sql.join([...prices.groupBy, table.labels, table.runnerGroupName], sql`, `)}`);
 
   const groups = new Map<string, Group>();
   for (const row of rows) {
@@ -156,15 +168,17 @@ async function runnerGroups(db: Db, workspaceId: string, days: number, now: numb
     const env = environmentFor(labels, row.runner_group_name, null);
     const provider = providerOfEnvironment(env.key);
     if (provider === "machine") continue;
-    const perMinute = perMinuteOf(provider, env, labels, row.runner_group_name);
+    const rateAt = (at: number) => perMinuteOf(provider, env, labels, row.runner_group_name, at);
+    const perMinute = rateAt(prices.at(Number(row.period)));
     const billedMinutes = Number(row.billed_minutes);
     // GitHub's standard runners are free in public repos; the services charge either way.
     const charged =
       provider === "github" ? billedMinutes - Number(row.public_billed_minutes) : billedMinutes;
+    // Shown at today's price.
     const group = groups.get(env.key) ?? {
       provider,
       env,
-      perMinute,
+      perMinute: rateAt(now),
       ...zero(),
       bucket: emptyBucket(),
     };

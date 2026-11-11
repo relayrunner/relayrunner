@@ -1,4 +1,4 @@
-import { listRate, PRICES_CHECKED, type ProviderId } from "@relayrunner/providers";
+import { githubRate, listRate, PRICES_CHECKED, type ProviderId } from "@relayrunner/providers";
 import { api } from "@/lib/api";
 import { type Environment, type Stat, sampleStat } from "@/lib/job-times";
 import { money } from "@/lib/usage";
@@ -65,7 +65,7 @@ function sampleRunner(
   medianS: number,
 ): ProviderRunner {
   const billedMinutes = jobs * Math.ceil(medianS / 60);
-  const perMinute = provider === "github" ? 0.006 : listRate(provider, label);
+  const perMinute = provider === "github" ? githubRate("linux-2-core") : listRate(provider, label);
   return {
     key: `${provider}:${label}`,
     label,

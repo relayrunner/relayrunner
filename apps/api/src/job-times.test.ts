@@ -39,7 +39,7 @@ describe("environmentFor", () => {
     [["rr-0123456789ab"], "Default", "m1", "machine:m1", "Machine"],
     [["rr-0123456789ab"], "Default", null, "self-hosted:Default", "Self-hosted"],
     [["self-hosted", "linux"], null, null, "self-hosted:Default", "Self-hosted"],
-    [["windows-11-arm"], null, null, "github:windows-11-arm", "windows-11-arm"],
+    [["windows-11-arm"], null, null, "github:windows-arm-2-core", "Windows 2-core Arm"],
     [["macos-15-intel"], null, null, "github:macos", "macOS"],
     [["ubuntu-26.04"], null, null, "github:linux-2-core", "Linux 2-core"],
     [
