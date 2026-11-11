@@ -15,6 +15,7 @@ import {
   WebhookIcon,
 } from "lucide-react";
 import { type ReactNode, useState } from "react";
+import { SiteFooter } from "@/components/site-footer";
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
 import { WorkspaceMenu } from "@/components/workspace-menu";
 import { authDisabled } from "@/lib/auth-client";
@@ -124,8 +125,13 @@ function WorkspaceLayout() {
           </TooltipProvider>
         )}
       </aside>
-      <main className="p-4 sm:p-8">
-        <Outlet />
+      {/* The footer stays pinned to the bottom of the window, so it doesn't move as pages load or
+          rows expand. */}
+      <main className="flex min-w-0 flex-col">
+        <div className="flex-1 p-4 sm:p-8">
+          <Outlet />
+        </div>
+        <SiteFooter className="sticky bottom-0 z-10" />
       </main>
     </div>
   );
