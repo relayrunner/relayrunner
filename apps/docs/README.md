@@ -27,4 +27,15 @@ Search (Pagefind) is built at build time, so it only works in `build` output, no
 
 ## Deploys
 
-Workers Builds deploys the `relayrunner-docs` Worker on merge to `main`, set up like the landing page: root directory `/` and deploy command `pnpm run deploy:docs`. Other branches run `pnpm run deploy:docs:preview` (`wrangler preview`), which uploads a preview with a public URL at `<branch>-relayrunner-docs.relayrun.workers.dev/docs/`.
+Workers Builds on the `relayrunner-docs` Worker:
+
+| Setting                      | Value                                               |
+| ---------------------------- | --------------------------------------------------- |
+| Root directory               | `/`                                                 |
+| Build command                | (empty; the deploy commands build)                  |
+| Deploy command               | `pnpm run deploy:docs`                              |
+| Preview command              | `pnpm run deploy:docs:preview` (`wrangler preview`) |
+| Non-production branch builds | on                                                  |
+| Build watch paths            | include `apps/docs/*`                               |
+
+Branch previews are public at `<branch>-relayrunner-docs.relayrun.workers.dev/docs/`. Node comes from the repo's `.nvmrc`; Astro needs 22.23.4 or newer.
