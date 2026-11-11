@@ -284,32 +284,38 @@ type JobsRow = {
   /** Absent on the workflow's own row. */
   job?: JobRow;
   subRows?: JobsRow[];
-};
+} & Timings;
 
-function jobRows(workflows: WorkflowRow[]): JobsRow[] {
+type Timings = ReturnType<typeof timings>;
+
+function jobRows(workflows: WorkflowRow[], environments: EnvironmentSummary[]): JobsRow[] {
   return workflows.map((workflow) => {
     const id = `${workflow.repositoryId}/${workflow.workflow ?? ""}`;
     return {
       id,
       workflow,
+      ...timings(environments, workflow.byEnvironment),
       subRows: workflow.jobs.map((job) => ({
         id: `${id}/${job.name}`,
         workflow,
         job,
+        ...timings(environments, job.byEnvironment),
         subRows: job.legs?.map((leg) => ({
           id: `${id}/${job.name}/${leg.name}`,
           workflow,
           job: leg,
+          ...timings(environments, leg.byEnvironment),
         })),
       })),
     };
   });
 }
 
-const byEnvironmentOf = (row: JobsRow) => (row.job ?? row.workflow).byEnvironment;
-
-/** The runners a job ran on, fastest first, and which is fastest. */
-function ranOn(environments: EnvironmentSummary[], byEnvironment: Record<string, Stat>) {
+/**
+ * The runners a job ran on (fastest first), the fastest of them, its quickest median, and the
+ * trend of the runner it ran on most.
+ */
+function timings(environments: EnvironmentSummary[], byEnvironment: Record<string, Stat>) {
   const ran = environments
     .flatMap((env) => {
       const stat = byEnvironment[env.key];
@@ -321,17 +327,20 @@ function ranOn(environments: EnvironmentSummary[], byEnvironment: Record<string,
         Number(a.stat.confidence === "few") - Number(b.stat.confidence === "few") ||
         (a.stat.medianMs ?? Infinity) - (b.stat.medianMs ?? Infinity),
     );
-  return { ran, best: fastest(byEnvironment) };
-}
-
-/** The trend of the runner this job ran on most. */
-function busiestTrend(byEnvironment: Record<string, Stat>) {
-  const ran = Object.values(byEnvironment).filter((stat) => stat.samples > 0);
-  return ran.sort((a, b) => b.samples - a.samples)[0]?.trend ?? null;
+  const medians = ran.flatMap(({ stat }) => (stat.medianMs === null ? [] : [stat.medianMs]));
+  const busiest = ran.reduce<Stat | undefined>(
+    (most, { stat }) => (most && most.samples >= stat.samples ? most : stat),
+    undefined,
+  );
+  return {
+    ran,
+    best: fastest(byEnvironment),
+    median: medians.length ? Math.min(...medians) : undefined,
+    trend: busiest?.trend ?? undefined,
+  };
 }
 
 const [JobsContext, useJobsContext] = createCellContext<{
-  environments: EnvironmentSummary[];
   showRepository: boolean;
   onOpen: (detail: Detail) => void;
 }>("Jobs");
@@ -345,23 +354,13 @@ const jobColumns = jobColumn.columns([
     meta: { className: "align-top" },
     cell: ({ row }) => <NameCell row={row} />,
   }),
-  jobColumn.accessor(
-    (row) => {
-      const medians = Object.values(byEnvironmentOf(row)).flatMap((stat) =>
-        stat.samples > 0 && stat.medianMs !== null ? [stat.medianMs] : [],
-      );
-      return medians.length ? Math.min(...medians) : undefined;
-    },
-    {
-      id: "median",
-      header: "Median by runner",
-      sortFn: "basic",
-      meta: { className: "w-0 py-2 align-top" },
-      cell: ({ row }) => <MedianCell row={row.original} isWorkflow={row.depth === 0} />,
-    },
-  ),
-  jobColumn.accessor((row) => busiestTrend(byEnvironmentOf(row)) ?? undefined, {
-    id: "trend",
+  jobColumn.accessor("median", {
+    header: "Median by runner",
+    sortFn: "basic",
+    meta: { className: "w-0 py-2 align-top" },
+    cell: ({ row }) => <MedianCell row={row.original} />,
+  }),
+  jobColumn.accessor("trend", {
     header: "Trend",
     sortFn: "basic",
     sortDescFirst: true,
@@ -420,9 +419,8 @@ function NameCell({ row }: { row: DataTableRow<JobsRow> }) {
 
 // One stacked line per runner the job actually ran on, fastest first, instead of one column per
 // runner: most jobs only run on one or two runners, so a column each was mostly "not run".
-function MedianCell({ row, isWorkflow }: { row: JobsRow; isWorkflow: boolean }) {
-  const { environments } = useJobsContext();
-  const { ran, best } = ranOn(environments, byEnvironmentOf(row));
+function MedianCell({ row: { job, ran, best } }: { row: JobsRow }) {
+  const isWorkflow = !job;
   if (ran.length === 0)
     return (
       <span className="text-muted-foreground">{isWorkflow ? "no whole runs" : "not run"}</span>
@@ -458,19 +456,18 @@ const Jobs = memo(function Jobs({
   showRepository: boolean;
   onOpen: (detail: Detail) => void;
 }) {
-  const rows = useMemo(() => jobRows(workflows), [workflows]);
+  const rows = useMemo(() => jobRows(workflows, environments), [workflows, environments]);
   const allOpen = useMemo(() => Object.fromEntries(rows.map((row) => [row.id, true])), [rows]);
   // Workflows start open and matrix jobs closed, like a spend breakdown.
   const [expanded, setExpanded] = useState<ExpandedState>(allOpen);
   // A new range or repo brings new workflows, which start open too.
-  useEffect(() => setExpanded(allOpen), [allOpen]);
-  const anyOpen = rows.some(
-    (row) => expanded === true || (expanded as Record<string, boolean>)[row.id],
-  );
-  const context = useMemo(
-    () => ({ environments, showRepository, onOpen }),
-    [environments, showRepository, onOpen],
-  );
+  const [openedFor, setOpenedFor] = useState(allOpen);
+  if (openedFor !== allOpen) {
+    setOpenedFor(allOpen);
+    setExpanded(allOpen);
+  }
+  const anyOpen = expanded === true || Object.values(expanded).some(Boolean);
+  const context = useMemo(() => ({ showRepository, onOpen }), [showRepository, onOpen]);
 
   return (
     <div className="grid gap-2">
@@ -488,7 +485,7 @@ const Jobs = memo(function Jobs({
           getSubRows={(row) => row.subRows}
           expanded={expanded}
           onExpandedChange={setExpanded}
-          rowClassName={(row) => (row.depth === 0 ? "bg-secondary/60" : "hover:bg-secondary/30")}
+          rowClassName={(row) => (row.original.job ? "hover:bg-secondary/30" : "bg-secondary/60")}
           empty="No jobs in this repo in the window."
         />
       </JobsContext>
