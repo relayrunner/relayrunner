@@ -396,7 +396,7 @@ function show(event: ConnectionEvent) {
     case "paused":
       if (event.paused)
         clack.log.warn(
-          `${at} Paused${event.by ? ` by ${event.by}` : ""}. Staying online, but new jobs skip this machine until it's resumed.`,
+          `${at} Paused${event.by ? ` by ${event.by}` : ""}. Staying online, but new jobs skip this machine until it's resumed.${process.stdin.isTTY ? " Press p to resume." : ""}`,
         );
       else
         clack.log.success(`${at} Resumed${event.by ? ` by ${event.by}` : ""}. Waiting for jobs.`);
