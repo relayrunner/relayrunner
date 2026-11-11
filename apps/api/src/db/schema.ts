@@ -641,7 +641,7 @@ export const actionsUsageReading = sqliteTable(
 
 // Agent sign-in (MCP server, apps/agents): the jwt and mcp plugins (auth.ts). Generated from
 // Better Auth's own schema, so column names follow its fields. jwks holds the keys that sign agent
-// access tokens; oauth_consent.reference_id is the workspace a consent was given for.
+// access tokens; oauth_consent.reference_id is the agent_grant a consent was given for (below).
 export const jwks = sqliteTable("jwks", {
   id: text("id").primaryKey(),
   publicKey: text("public_key").notNull(),
@@ -847,3 +847,38 @@ export const oauthClientAssertion = sqliteTable("oauth_client_assertion", {
   id: text("id").primaryKey(),
   expiresAt: integer("expires_at", { mode: "timestamp_ms" }).notNull(),
 });
+
+// Which workspaces an agent connection may read (agent-auth.ts). The workspace picker writes a
+// grant before consent; the consent's reference_id (and its tokens') is the grant's id. A grant
+// tied to the session that made it lets consent find it. Disconnecting an agent from one workspace
+// deletes that workspace's row; the agent keeps the others.
+export const agentGrant = sqliteTable(
+  "agent_grant",
+  {
+    id: text("id").primaryKey(),
+    userId: text("user_id")
+      .notNull()
+      .references(() => user.id, { onDelete: "cascade" }),
+    sessionId: text("session_id"),
+    createdAt: integer("created_at", { mode: "timestamp_ms" })
+      .notNull()
+      .$defaultFn(() => new Date()),
+  },
+  (table) => [index("agent_grant_session_id_idx").on(table.sessionId)],
+);
+
+export const agentGrantWorkspace = sqliteTable(
+  "agent_grant_workspace",
+  {
+    grantId: text("grant_id")
+      .notNull()
+      .references(() => agentGrant.id, { onDelete: "cascade" }),
+    workspaceId: text("workspace_id")
+      .notNull()
+      .references(() => workspace.id, { onDelete: "cascade" }),
+  },
+  (table) => [
+    primaryKey({ columns: [table.grantId, table.workspaceId] }),
+    index("agent_grant_workspace_workspace_id_idx").on(table.workspaceId),
+  ],
+);

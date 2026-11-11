@@ -1,9 +1,11 @@
 // Agent sign-in for the MCP server (apps/agents). An MCP client signs in with OAuth against this
-// Worker's Better Auth (the mcp plugin): the person signs in to the dashboard, picks one workspace
-// (/agents/workspace) and approves the client (/agents/consent). The client gets a short-lived
-// access token: a JWT for AGENTS_MCP_URL that names that one workspace and carries the scopes the
-// person approved. The agents Worker forwards it here, and attachSession (middleware/session.ts)
-// turns it into a request for that user in that workspace, limited to AGENT_ROUTES.
+// Worker's Better Auth (the mcp plugin): the person signs in to the dashboard, picks the workspaces
+// the agent may read (/agents/workspace, which writes an agent_grant) and approves the client
+// (/agents/consent). The client gets a short-lived access token: a JWT for AGENTS_MCP_URL that names
+// the grant and carries the scopes the person approved. The agents Worker forwards it here, with
+// the workspace it's asking about in AGENT_WORKSPACE_HEADER, and attachSession
+// (middleware/session.ts) turns it into a request for that user, limited to AGENT_ROUTES and to the
+// grant's workspaces the user still belongs to.
 //
 // Phase 1 is read-only: the only scope is workspace:read, and every agent route is a GET.
 
@@ -12,14 +14,17 @@ import { APIError } from "better-auth/api";
 import { verifyJwsAccessToken } from "better-auth/oauth2";
 import { decodeProtectedHeader } from "jose";
 import type { Auth, Session } from "./auth.ts";
-import { createDb, schema } from "./db/index.ts";
+import { createDb, schema, type Db } from "./db/index.ts";
 import type { Env } from "./env.ts";
-import { isWorkspaceMember } from "./installations.ts";
-import { eq } from "drizzle-orm";
+import { and, desc, eq, gt } from "drizzle-orm";
 
 const AGENT_READ_SCOPE = "workspace:read";
-// The workspace a token is for: the consent's reference id, copied into the access token.
-const WORKSPACE_CLAIM = "workspace_id";
+// The grant a token is for: the consent's reference id, copied into the access token.
+const GRANT_CLAIM = "grant_id";
+// Which of its workspaces an agent request reads. Optional when the grant has only one.
+export const AGENT_WORKSPACE_HEADER = "x-relayrunner-workspace";
+// How long after the picker consent may still pick up its grant.
+const PENDING_GRANT_MS = 30 * 60 * 1000;
 
 // Dashboard pages in the sign-in flow (apps/web/src/routes/agents.*.tsx, login.tsx).
 export const AGENT_WORKSPACE_PAGE = "/agents/workspace";
@@ -28,16 +33,10 @@ export const AGENT_CONSENT_PAGE = "/agents/consent";
 /**
  * The OAuth provider for agents. Clients register themselves (dynamic client registration, which
  * MCP clients use), and every authorization runs through the workspace picker before consent, so
- * consent and tokens are always tied to one workspace the person belongs to.
+ * consent and tokens are always tied to a grant of workspaces the person belongs to.
  */
 export function agentOAuth(env: Env) {
   const db = () => createDb(env.DB);
-  // The session's active workspace, if the user is still a member of it.
-  const memberWorkspace = async (session: Record<string, unknown>, userId: string) => {
-    const workspaceId = session.activeOrganizationId;
-    if (typeof workspaceId !== "string") return null;
-    return (await isWorkspaceMember(db(), workspaceId, userId)) ? workspaceId : null;
-  };
   return mcp({
     resource: env.AGENTS_MCP_URL,
     loginPage: "/login",
@@ -49,30 +48,77 @@ export function agentOAuth(env: Env) {
     accessTokenExpiresIn: 15 * 60,
     postLogin: {
       page: AGENT_WORKSPACE_PAGE,
-      // Always ask which workspace on the way in; on the way back, only continue once the session
-      // points at a workspace the user is in.
+      // Always ask which workspaces on the way in; on the way back, only continue once the picker
+      // has written a grant for this session.
       shouldRedirect: async ({ session, user, isContinuation }) =>
-        !isContinuation || !(await memberWorkspace(session, user.id)),
+        !isContinuation || !(await pendingGrant(db(), session.id, user.id)),
       consentReferenceId: async ({ session, user }) => {
-        const workspaceId = await memberWorkspace(session, user.id);
-        if (!workspaceId) throw new APIError("BAD_REQUEST", { error: "no_active_workspace" });
-        return workspaceId;
+        const grantId = await pendingGrant(db(), session.id, user.id);
+        if (!grantId) throw new APIError("BAD_REQUEST", { error: "no_agent_grant" });
+        return grantId;
       },
     },
-    // Runs on every issue and refresh: someone removed from the workspace stops getting tokens.
+    // Runs on every issue and refresh: someone removed from every granted workspace (or
+    // disconnected from all of them) stops getting tokens.
     customAccessTokenClaims: async ({ user, referenceId }) => {
       if (!user || !referenceId) return {};
-      if (!(await isWorkspaceMember(db(), referenceId, user.id))) {
+      if ((await grantedWorkspaces(db(), referenceId, user.id)).length === 0) {
         throw new APIError("FORBIDDEN", { error: "not_a_member" });
       }
-      return { [WORKSPACE_CLAIM]: referenceId };
+      return { [GRANT_CLAIM]: referenceId };
     },
   });
 }
 
-/** Who an agent request acts for, from its verified access token: the one workspace it may read. */
+/** The grant the workspace picker last wrote for this session, while consent may still use it. */
+export async function pendingGrant(db: Db, sessionId: unknown, userId: string) {
+  if (typeof sessionId !== "string") return null;
+  const [grant] = await db
+    .select({ id: schema.agentGrant.id })
+    .from(schema.agentGrant)
+    .where(
+      and(
+        eq(schema.agentGrant.sessionId, sessionId),
+        eq(schema.agentGrant.userId, userId),
+        gt(schema.agentGrant.createdAt, new Date(Date.now() - PENDING_GRANT_MS)),
+      ),
+    )
+    .orderBy(desc(schema.agentGrant.createdAt))
+    .limit(1);
+  return grant?.id ?? null;
+}
+
+/** The workspaces a grant still covers that its user still belongs to. */
+async function grantedWorkspaces(db: Db, grantId: string, userId: string) {
+  return db
+    .select({ id: schema.workspace.id, name: schema.workspace.name })
+    .from(schema.agentGrantWorkspace)
+    .innerJoin(schema.workspace, eq(schema.workspace.id, schema.agentGrantWorkspace.workspaceId))
+    .innerJoin(schema.agentGrant, eq(schema.agentGrant.id, schema.agentGrantWorkspace.grantId))
+    .innerJoin(
+      schema.workspaceMember,
+      and(
+        eq(schema.workspaceMember.workspaceId, schema.agentGrantWorkspace.workspaceId),
+        eq(schema.workspaceMember.userId, userId),
+      ),
+    )
+    .where(and(eq(schema.agentGrant.id, grantId), eq(schema.agentGrant.userId, userId)))
+    .orderBy(schema.workspace.name);
+}
+
+/** Who an agent request acts for, from its verified access token: its grant and the workspaces it may read. */
 export interface AgentPrincipal {
-  workspaceId: string;
+  grantId: string;
+  workspaces: { id: string; name: string }[];
+}
+
+/**
+ * The workspace an agent request reads: the one AGENT_WORKSPACE_HEADER names if the grant covers
+ * it, else the grant's only one. Null when it names another or has several and names none.
+ */
+export function agentWorkspaceId(agent: AgentPrincipal, requested: string | undefined) {
+  const id = requested ?? (agent.workspaces.length === 1 ? agent.workspaces[0].id : undefined);
+  return agent.workspaces.some((workspace) => workspace.id === id) ? id! : null;
 }
 
 // Keeps verified signing keys per isolate (5 minutes, refetched on an unknown key id) instead of
@@ -91,9 +137,9 @@ export function agentBearer(headers: Headers) {
 }
 
 /**
- * Verifies an agent access token and loads its user and workspace. Null when the token is bad,
- * expired, for another audience, lacks the read scope or names no workspace. requireWorkspace
- * takes the workspace from here and still checks membership on every request.
+ * Verifies an agent access token and loads its user and workspaces. Null when the token is bad,
+ * expired, for another audience, lacks the read scope, or leaves no workspace the user still
+ * belongs to. requireWorkspace picks the request's workspace from these (agentWorkspaceId).
  */
 export async function agentSession(env: Env, auth: Auth, token: string) {
   let claims;
@@ -112,16 +158,20 @@ export async function agentSession(env: Env, auth: Auth, token: string) {
     return null;
   }
   const scopes = typeof claims.scope === "string" ? claims.scope.split(" ") : [];
-  const workspaceId = claims[WORKSPACE_CLAIM];
-  if (!scopes.includes(AGENT_READ_SCOPE) || typeof workspaceId !== "string") return null;
-
-  const [user] = await createDb(env.DB)
-    .select()
-    .from(schema.user)
-    .where(eq(schema.user.id, claims.sub!))
-    .limit(1);
-  if (!user) return null;
-  return { user: user as Session["user"], agent: { workspaceId } satisfies AgentPrincipal };
+  if (!scopes.includes(AGENT_READ_SCOPE)) return null;
+  const db = createDb(env.DB);
+  const grantId = claims[GRANT_CLAIM];
+  if (typeof grantId !== "string") return null;
+  // Read live, so disconnecting a workspace in Settings takes effect on the next request.
+  const [workspaces, [user]] = await Promise.all([
+    grantedWorkspaces(db, grantId, claims.sub!),
+    db.select().from(schema.user).where(eq(schema.user.id, claims.sub!)).limit(1),
+  ]);
+  if (workspaces.length === 0 || !user) return null;
+  return {
+    user: user as Session["user"],
+    agent: { grantId, workspaces } satisfies AgentPrincipal,
+  };
 }
 
 // The issuer Better Auth stamps on access tokens: its auth base URL.
@@ -131,7 +181,7 @@ export function agentIssuer(env: Env) {
 
 // What an agent token may call: read-only views of its own workspace, all D1 reads. Nothing that
 // asks GitHub per request, takes the Router's lock, or changes anything. Routes with a workspace id
-// in the path only accept the token's workspace (requireMember in routes/workspaces.ts).
+// in the path only accept the token's workspaces (requireMember in routes/workspaces.ts).
 const AGENT_ROUTES: RegExp[] = [
   /^\/api\/me$/,
   /^\/api\/workspaces\/current$/,

@@ -40,12 +40,25 @@ function post(path: string, body: unknown, cookie?: string) {
   );
 }
 
-function asAgent(path: string, token: string, init: RequestInit = {}) {
+function asAgent(path: string, token: string, init: RequestInit = {}, workspace?: string) {
   return app.request(
     `/api${path}`,
-    { ...init, headers: { authorization: `Bearer ${token}`, ...init.headers } },
+    {
+      ...init,
+      headers: {
+        authorization: `Bearer ${token}`,
+        ...(workspace && { "x-relayrunner-workspace": workspace }),
+        ...init.headers,
+      },
+    },
     env,
   );
+}
+
+// The session's active workspace, which the picker checks by default.
+async function activeWorkspace(cookie: string) {
+  const current = await testing.call(env, "/workspaces/current", cookie);
+  return ((await current.json()) as { workspace: { id: string } }).workspace.id;
 }
 
 // The signed query Better Auth hands each sign-in page, from the page URL it redirects to.
@@ -53,9 +66,16 @@ function oauthQuery(url: string) {
   return new URL(url, env.BETTER_AUTH_URL).search.slice(1);
 }
 
-// What an MCP client and the dashboard do together: register, authorize, pick the workspace on
-// /agents/workspace, approve on /agents/consent, then trade the code for tokens.
-async function signInAgent(cookie: string, scope = "workspace:read offline_access") {
+// What an MCP client and the dashboard do together: register, authorize, pick the workspaces on
+// /agents/workspace (the active one unless given), approve on /agents/consent, then trade the code
+// for tokens.
+async function signInAgent(
+  cookie: string,
+  {
+    workspaceIds,
+    scope = "workspace:read offline_access",
+  }: { workspaceIds?: string[]; scope?: string } = {},
+) {
   const registered = await post("/auth/oauth2/register", {
     client_name: "Test agent",
     redirect_uris: [REDIRECT_URI],
@@ -88,6 +108,20 @@ async function signInAgent(cookie: string, scope = "workspace:read offline_acces
   expect(authorized.status, await authorized.clone().text()).toBe(302);
   const workspacePage = authorized.headers.get("location")!;
   expect(new URL(workspacePage, env.BETTER_AUTH_URL).pathname).toBe(AGENT_WORKSPACE_PAGE);
+
+  // Continuing before picking sends the browser back to the picker.
+  const early = await post(
+    "/auth/oauth2/continue",
+    { postLogin: true, oauth_query: oauthQuery(workspacePage) },
+    cookie,
+  );
+  expect(new URL(((await early.json()) as { url: string }).url, env.BETTER_AUTH_URL).pathname).toBe(
+    AGENT_WORKSPACE_PAGE,
+  );
+  const granted = await testing.call(env, "/agents/grants", cookie, {
+    workspaceIds: workspaceIds ?? [await activeWorkspace(cookie)],
+  });
+  expect(granted.status, await granted.clone().text()).toBe(201);
 
   const continued = await post(
     "/auth/oauth2/continue",
@@ -161,7 +195,7 @@ describe("agent sign-in", () => {
     expect(me.status).toBe(200);
     expect(await me.json()).toMatchObject({
       user: { id: user.id },
-      agent: { workspaceId: workspace.id },
+      agent: { workspaces: [{ id: workspace.id, name: "Agents" }] },
     });
 
     for (const path of [
@@ -206,6 +240,103 @@ describe("agent sign-in", () => {
     expect(after.workspace.id).toBe(workspace.id);
   });
 
+  test("one token reads each workspace it was granted, one at a time", async () => {
+    const { cookie } = await testing.signIn(env);
+    const { workspace: first, cookie: jar } = await testing.createWorkspace(
+      env,
+      cookie,
+      "First",
+      "agents-multi-1",
+    );
+    const { workspace: second, cookie: jar2 } = await testing.createWorkspace(
+      env,
+      jar,
+      "Second",
+      "agents-multi-2",
+    );
+    const { workspace: third, cookie: jar3 } = await testing.createWorkspace(
+      env,
+      jar2,
+      "Third",
+      "agents-multi-3",
+    );
+    const { access_token, refresh_token, client_id } = await signInAgent(jar3, {
+      workspaceIds: [first.id, second.id],
+    });
+
+    // What the consent page named.
+    const pending = (await (await testing.call(env, "/agents/grants/pending", jar3)).json()) as {
+      workspaces: { name: string }[];
+    };
+    expect(pending.workspaces.map((workspace) => workspace.name)).toEqual(["First", "Second"]);
+
+    const me = (await (await asAgent("/me", access_token)).json()) as {
+      agent: { workspaces: { id: string; name: string }[] };
+    };
+    expect(me.agent.workspaces).toEqual([
+      { id: first.id, name: "First" },
+      { id: second.id, name: "Second" },
+    ]);
+
+    // With two workspaces, a request has to say which.
+    const unsaid = await asAgent("/workspaces/current", access_token);
+    expect(unsaid.status).toBe(409);
+    expect(await unsaid.json()).toEqual({ error: "workspace_required" });
+    for (const workspace of [first, second]) {
+      const current = await asAgent("/workspaces/current", access_token, {}, workspace.id);
+      expect(current.status).toBe(200);
+      expect(((await current.json()) as { workspace: { id: string } }).workspace.id).toBe(
+        workspace.id,
+      );
+      const order = await asAgent(`/workspaces/${workspace.id}/runner-order`, access_token);
+      expect(order.status).toBe(200);
+    }
+    // The workspace it wasn't granted stays out of reach, by header or by path.
+    expect((await asAgent("/workspaces/current", access_token, {}, third.id)).status).toBe(409);
+    expect((await asAgent(`/workspaces/${third.id}/runner-order`, access_token)).status).toBe(404);
+
+    // Disconnecting it from one workspace drops that one at once and keeps the other.
+    const listed = (await (await testing.call(env, "/agents", jar3)).json()) as {
+      agents: { id: string }[];
+    };
+    expect(listed.agents).toEqual([]);
+    const switched = await testing.call(env, "/auth/organization/set-active", jar3, {
+      organizationId: first.id,
+    });
+    const inFirstJar = testing.withSetCookies(jar3, switched);
+    const inFirst = (await (await testing.call(env, "/agents", inFirstJar)).json()) as {
+      agents: { id: string }[];
+    };
+    expect(inFirst.agents).toHaveLength(1);
+    const removed = await app.request(
+      `/api/agents/${inFirst.agents[0].id}`,
+      { method: "DELETE", headers: { cookie: inFirstJar, origin: env.BETTER_AUTH_URL } },
+      env,
+    );
+    expect(removed.status).toBe(200);
+    expect((await asAgent("/workspaces/current", access_token, {}, first.id)).status).toBe(409);
+    const only = await asAgent("/workspaces/current", access_token);
+    expect(((await only.json()) as { workspace: { id: string } }).workspace.id).toBe(second.id);
+    // The client can still refresh for the workspace it kept.
+    expect((await refresh(client_id, refresh_token)).status).toBe(200);
+  });
+
+  test("the picker only grants workspaces the person belongs to", async () => {
+    const { cookie } = await testing.signIn(env);
+    const { cookie: jar } = await testing.createWorkspace(env, cookie, "Mine", "agents-mine");
+    const outsider = await testing.signIn(env);
+    const { workspace: theirs } = await testing.createWorkspace(
+      env,
+      outsider.cookie,
+      "Theirs",
+      "agents-theirs",
+    );
+    const granted = await testing.call(env, "/agents/grants", jar, {
+      workspaceIds: [await activeWorkspace(jar), theirs.id],
+    });
+    expect(granted.status).toBe(404);
+  });
+
   test("a tampered or foreign token is rejected", async () => {
     const { cookie } = await testing.signIn(env);
     const { cookie: jar } = await testing.createWorkspace(env, cookie, "Tamper", "agents-tamper");
@@ -214,9 +345,7 @@ describe("agent sign-in", () => {
     const claims = JSON.parse(Buffer.from(payload, "base64url").toString());
     const forged = [
       header,
-      Buffer.from(JSON.stringify({ ...claims, workspace_id: "someone-else" })).toString(
-        "base64url",
-      ),
+      Buffer.from(JSON.stringify({ ...claims, grant_id: "someone-else" })).toString("base64url"),
       signature,
     ].join(".");
     expect((await asAgent("/me", forged)).status).toBe(401);
@@ -232,7 +361,8 @@ describe("agent sign-in", () => {
     await env.DB.prepare("delete from workspace_member where user_id = ?")
       .bind(member.user.id)
       .run();
-    expect((await asAgent("/workspaces/current", access_token)).status).toBe(409);
+    // A token left with no workspace it can read is no longer a valid token.
+    expect((await asAgent("/workspaces/current", access_token)).status).toBe(401);
     expect((await refresh(client_id, refresh_token)).status).not.toBe(200);
   });
 

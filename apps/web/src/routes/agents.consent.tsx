@@ -3,25 +3,24 @@ import { useState } from "react";
 import { AgentSignInPage, SignedOut } from "@/components/agent-sign-in";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
+import { pendingAgentWorkspaces } from "@/lib/agents";
 import { authClient, getSession } from "@/lib/auth-client";
-import { getCurrentWorkspace } from "@/lib/workspace";
 
 // Agent sign-in, step 2 (apps/api/src/agent-auth.ts): Better Auth sends the browser here, with the
-// signed authorization request in the query, when the MCP client hasn't been approved for this
-// workspace yet. Allowing returns the browser to the client with a code; denying returns an error.
+// signed authorization request in the query, once the person has picked the workspaces (step 1). Allowing returns the browser to the client with a code; denying returns an error.
 export const Route = createFileRoute("/agents/consent")({
   loader: async () => {
     if (!(await getSession())) return { signedIn: false as const };
     const clientId = new URLSearchParams(window.location.search).get("client_id") ?? "";
-    const [client, current] = await Promise.all([
+    const [client, picked] = await Promise.all([
       authClient.oauth2.publicClient({ query: { client_id: clientId } }),
-      getCurrentWorkspace(),
+      pendingAgentWorkspaces(),
     ]);
     return {
       signedIn: true as const,
       clientName: client.data?.client_name || "An MCP client",
       clientUri: client.data?.client_uri ?? null,
-      workspaceName: current.workspace.name,
+      workspaceNames: picked.workspaces.map((workspace) => workspace.name),
     };
   },
   component: AgentConsentPage,
@@ -37,11 +36,11 @@ function AgentConsentPage() {
 function Consent({
   clientName,
   clientUri,
-  workspaceName,
+  workspaceNames,
 }: {
   clientName: string;
   clientUri: string | null;
-  workspaceName: string;
+  workspaceNames: string[];
 }) {
   const [pending, setPending] = useState<"allow" | "deny" | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -69,7 +68,11 @@ function Consent({
           ) : (
             "This agent"
           )}{" "}
-          wants to read <span className="font-medium text-foreground">{workspaceName}</span>.
+          wants to read{" "}
+          <span className="font-medium text-foreground">
+            {new Intl.ListFormat("en", { type: "conjunction" }).format(workspaceNames)}
+          </span>
+          .
         </CardDescription>
       </CardHeader>
       <CardContent className="flex flex-col gap-4">
@@ -81,7 +84,8 @@ function Consent({
             <li>Activity, usage and Actions minutes</li>
           </ul>
           <p className="text-muted-foreground">
-            It can't change anything. You can disconnect it any time in Settings, under Agents.
+            It can't change anything. You can disconnect it from each workspace any time in
+            Settings, under Agents.
           </p>
         </div>
         <div className="flex flex-col gap-2">
