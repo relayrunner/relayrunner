@@ -86,7 +86,9 @@ export function llmsIndex(all: DocsEntry[], site: URL) {
     "",
     "> RelayRunner routes GitHub Actions jobs to your own machines when they're online and falls back to GitHub when they're not.",
     "",
-    "Each page is also available as Markdown (.md) and as plain text for agents (.txt).",
+    "Each page is also available as Markdown (.md) and as plain text for agents (.txt). Asking for a page with `Accept: text/markdown` returns its Markdown.",
+    "",
+    `All pages in one file: ${abs("/llms-full.txt")}`,
     "",
     "## Pages",
     "",
@@ -94,3 +96,6 @@ export function llmsIndex(all: DocsEntry[], site: URL) {
     "",
   ].join("\n");
 }
+
+/** Every page's Markdown in one file, for agents that want the whole docs at once. */
+export const llmsFull = (all: DocsEntry[]) => all.map(toMarkdown).join("\n---\n\n");
