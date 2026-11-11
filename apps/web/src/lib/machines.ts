@@ -210,7 +210,7 @@ export function openDeviceCode(userCode: string) {
   return api<DeviceCodeStatus>(`/machines/device?user_code=${encodeURIComponent(userCode)}`);
 }
 
-export function approveDevice(body: { userCode: string; workspaceId: string; name: string }) {
+export function approveDevice(body: { userCode: string; name: string }) {
   return api<{ machineId: string }>("/machines/approve", {
     method: "POST",
     body: JSON.stringify(body),

@@ -8,7 +8,7 @@ It's built for small teams and individuals who don't want to pay for every push,
 
 ## How it works
 
-1. **Install the GitHub App** on an organization or personal account and connect it to a RelayRunner workspace from the dashboard.
+1. **Install the GitHub App** on an organization or personal account. Each install is its own RelayRunner workspace, and everyone who can see the install on GitHub is a member.
 2. **Connect a machine** with `npx relayrunner connect`. While it runs, the machine takes jobs; Ctrl-C takes it offline.
 3. **Opt a job in** by adding a relay job in front of it and pointing its `runs-on` at the relay's answer:
 

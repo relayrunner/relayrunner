@@ -34,7 +34,7 @@ Signs this machine in and exits, without putting it online. For agents and scrip
 relayrunner whoami [--json]
 ```
 
-Shows the machine, its workspace, who enrolled it, its sharing setting and whether it's online.
+Shows the machine, the workspaces it's in, who enrolled it, its sharing setting and whether it's online.
 
 ## `init`
 

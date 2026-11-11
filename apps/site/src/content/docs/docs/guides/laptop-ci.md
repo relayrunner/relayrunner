@@ -13,7 +13,7 @@ Your laptop is idle most of the time you're coding, and it's usually faster than
 npx relayrunner connect
 ```
 
-Sign in, create a workspace and install the GitHub App when it asks. Leave `connect` running in a terminal tab.
+Sign up and install the GitHub App when it asks. Leave `connect` running in a terminal tab.
 
 ## 2. Route your jobs
 

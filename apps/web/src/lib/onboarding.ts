@@ -1,29 +1,34 @@
-// The /device onboarding's choice of whether to send the browser straight to GitHub's App install
-// screen (#221), kept apart from the page so it can be tested.
+// The /device onboarding's decisions (#221, #322), kept apart from the page so they can be tested.
+// A workspace is one GitHub App installation (#316) and a machine belongs to its user, not to a
+// workspace (#318), so the only question is whether the user has any workspace yet.
 
-import { canManage } from "./roles.ts";
-
-export type InstallRedirectInput = {
-  /** The active workspace's role and installations; null with no workspace yet. */
-  current: { role: string; installations: unknown[] } | null;
+export type OnboardingInput = {
+  /** The user is in at least one workspace, so the App is installed somewhere they can see. */
+  hasWorkspace: boolean;
   /** ?github=<outcome>: GitHub already sent the user back here once. */
   outcome: string | undefined;
-  /** ?install=opened: this page already sent the user to GitHub once. */
-  opened: boolean;
 };
 
 /**
- * True when the only thing left before approving is installing the App, so the GitHub step would
- * be a click with nothing to decide: the user has no workspace yet (installing makes one, #316),
- * or their workspace has no installation. Otherwise the GitHub step shows, for one of these
- * reasons:
- * - GitHub already reported back (?github=), such as a request to an org's owners or an error;
- * - this page already redirected once, so coming back without an install (the user cancelled or
- *   went back) lands on the step instead of in a loop;
- * - the user can't install for this workspace (a member, not an owner or admin).
+ * True when the user has no workspace yet, so installing the App (which makes one) is the only
+ * thing left before approving, and the GitHub step would be a click with nothing to decide. The
+ * GitHub step shows instead when GitHub already reported back (?github=), such as an error, or
+ * when this page already redirected once (?install=opened), so coming back without an install
+ * (cancelling, or the back button) doesn't loop.
  */
-export function shouldOpenInstall({ current, outcome, opened }: InstallRedirectInput) {
-  if (current && current.installations.length > 0) return false;
-  if (current && !canManage(current.role)) return false;
-  return !outcome && !opened;
+export function shouldOpenInstall({
+  hasWorkspace,
+  outcome,
+  opened,
+}: OnboardingInput & { opened: boolean }) {
+  return !hasWorkspace && !outcome && !opened;
+}
+
+/**
+ * The step to show. Approving needs no workspace, since the machine is the user's: someone whose
+ * install only sent a request to an org's owners (?github=requested) approves now, and jobs reach
+ * the machine once an owner accepts.
+ */
+export function onboardingStep({ hasWorkspace, outcome }: OnboardingInput): "github" | "approve" {
+  return hasWorkspace || outcome === "requested" ? "approve" : "github";
 }
