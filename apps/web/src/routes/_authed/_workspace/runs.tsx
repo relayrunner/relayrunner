@@ -13,6 +13,7 @@ import {
 } from "lucide-react";
 import { memo, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { PageHeader } from "@/components/page-header";
+import { ProviderLink } from "@/components/provider-link";
 import {
   PROVIDERS,
   type Provider,
@@ -511,13 +512,18 @@ function RunDetail({ run, environments }: { run: Run; environments: Environments
                                 queued && "text-muted-foreground",
                               )}
                             >
-                              <ProviderMark
+                              <ProviderLink
                                 provider={providerOf({ key: job.environment })}
-                                className={cn(queued && "opacity-50")}
-                              />
-                              {queued
-                                ? `Waiting for ${label(job.environment)}`
-                                : label(job.environment)}
+                                className="inline-flex items-center gap-2"
+                              >
+                                <ProviderMark
+                                  provider={providerOf({ key: job.environment })}
+                                  className={cn(queued && "opacity-50")}
+                                />
+                                {queued
+                                  ? `Waiting for ${label(job.environment)}`
+                                  : label(job.environment)}
+                              </ProviderLink>
                             </span>
                           ) : (
                             <span className="text-muted-foreground">No runner took it</span>

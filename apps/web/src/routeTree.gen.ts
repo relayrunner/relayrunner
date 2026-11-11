@@ -29,6 +29,7 @@ import { Route as AuthedWorkspaceAdminIndexRouteImport } from './routes/_authed/
 import { Route as AuthedWorkspaceAdminUsersRouteImport } from './routes/_authed/_workspace/admin.users'
 import { Route as AuthedWorkspaceAdminWebhooksRouteImport } from './routes/_authed/_workspace/admin.webhooks'
 import { Route as AuthedWorkspaceAdminWorkspacesRouteImport } from './routes/_authed/_workspace/admin.workspaces'
+import { Route as AuthedWorkspaceProvidersIndexRouteImport } from './routes/_authed/_workspace/providers.index'
 import { Route as AuthedWorkspaceProvidersProviderRouteImport } from './routes/_authed/_workspace/providers.$provider'
 import { Route as AuthedWorkspaceSettingsIndexRouteImport } from './routes/_authed/_workspace/settings.index'
 import { Route as AuthedWorkspaceSettingsAccountRouteImport } from './routes/_authed/_workspace/settings.account'
@@ -140,6 +141,12 @@ const AuthedWorkspaceAdminWorkspacesRoute =
     path: '/admin/workspaces',
     getParentRoute: () => AuthedWorkspaceRoute,
   } as any)
+const AuthedWorkspaceProvidersIndexRoute =
+  AuthedWorkspaceProvidersIndexRouteImport.update({
+    id: '/providers/',
+    path: '/providers/',
+    getParentRoute: () => AuthedWorkspaceRoute,
+  } as any)
 const AuthedWorkspaceProvidersProviderRoute =
   AuthedWorkspaceProvidersProviderRouteImport.update({
     id: '/providers/$provider',
@@ -208,6 +215,7 @@ export interface FileRoutesByFullPath {
   '/settings/github': typeof AuthedWorkspaceSettingsGithubRoute
   '/settings/members': typeof AuthedWorkspaceSettingsMembersRoute
   '/admin/': typeof AuthedWorkspaceAdminIndexRoute
+  '/providers/': typeof AuthedWorkspaceProvidersIndexRoute
   '/settings/': typeof AuthedWorkspaceSettingsIndexRoute
 }
 export interface FileRoutesByTo {
@@ -235,6 +243,7 @@ export interface FileRoutesByTo {
   '/settings/github': typeof AuthedWorkspaceSettingsGithubRoute
   '/settings/members': typeof AuthedWorkspaceSettingsMembersRoute
   '/admin': typeof AuthedWorkspaceAdminIndexRoute
+  '/providers': typeof AuthedWorkspaceProvidersIndexRoute
   '/settings': typeof AuthedWorkspaceSettingsIndexRoute
 }
 export interface FileRoutesById {
@@ -265,6 +274,7 @@ export interface FileRoutesById {
   '/_authed/_workspace/settings/github': typeof AuthedWorkspaceSettingsGithubRoute
   '/_authed/_workspace/settings/members': typeof AuthedWorkspaceSettingsMembersRoute
   '/_authed/_workspace/admin/': typeof AuthedWorkspaceAdminIndexRoute
+  '/_authed/_workspace/providers/': typeof AuthedWorkspaceProvidersIndexRoute
   '/_authed/_workspace/settings/': typeof AuthedWorkspaceSettingsIndexRoute
 }
 export interface FileRouteTypes {
@@ -294,6 +304,7 @@ export interface FileRouteTypes {
     | '/settings/github'
     | '/settings/members'
     | '/admin/'
+    | '/providers/'
     | '/settings/'
   fileRoutesByTo: FileRoutesByTo
   to:
@@ -321,6 +332,7 @@ export interface FileRouteTypes {
     | '/settings/github'
     | '/settings/members'
     | '/admin'
+    | '/providers'
     | '/settings'
   id:
     | '__root__'
@@ -350,6 +362,7 @@ export interface FileRouteTypes {
     | '/_authed/_workspace/settings/github'
     | '/_authed/_workspace/settings/members'
     | '/_authed/_workspace/admin/'
+    | '/_authed/_workspace/providers/'
     | '/_authed/_workspace/settings/'
   fileRoutesById: FileRoutesById
 }
@@ -504,6 +517,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AuthedWorkspaceAdminWorkspacesRouteImport
       parentRoute: typeof AuthedWorkspaceRoute
     }
+    '/_authed/_workspace/providers/': {
+      id: '/_authed/_workspace/providers/'
+      path: '/providers'
+      fullPath: '/providers/'
+      preLoaderRoute: typeof AuthedWorkspaceProvidersIndexRouteImport
+      parentRoute: typeof AuthedWorkspaceRoute
+    }
     '/_authed/_workspace/providers/$provider': {
       id: '/_authed/_workspace/providers/$provider'
       path: '/providers/$provider'
@@ -574,6 +594,7 @@ interface AuthedWorkspaceRouteChildren {
   AuthedWorkspaceSettingsGithubRoute: typeof AuthedWorkspaceSettingsGithubRoute
   AuthedWorkspaceSettingsMembersRoute: typeof AuthedWorkspaceSettingsMembersRoute
   AuthedWorkspaceAdminIndexRoute: typeof AuthedWorkspaceAdminIndexRoute
+  AuthedWorkspaceProvidersIndexRoute: typeof AuthedWorkspaceProvidersIndexRoute
   AuthedWorkspaceSettingsIndexRoute: typeof AuthedWorkspaceSettingsIndexRoute
 }
 
@@ -595,6 +616,7 @@ const AuthedWorkspaceRouteChildren: AuthedWorkspaceRouteChildren = {
   AuthedWorkspaceSettingsGithubRoute: AuthedWorkspaceSettingsGithubRoute,
   AuthedWorkspaceSettingsMembersRoute: AuthedWorkspaceSettingsMembersRoute,
   AuthedWorkspaceAdminIndexRoute: AuthedWorkspaceAdminIndexRoute,
+  AuthedWorkspaceProvidersIndexRoute: AuthedWorkspaceProvidersIndexRoute,
   AuthedWorkspaceSettingsIndexRoute: AuthedWorkspaceSettingsIndexRoute,
 }
 
