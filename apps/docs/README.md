@@ -6,6 +6,7 @@ User documentation, built with [Astro](https://astro.build) and [Starlight](http
 pnpm --filter @relayrunner/docs dev     # local dev server at http://localhost:4321/docs/
 pnpm --filter @relayrunner/docs build   # static build into dist/
 pnpm run deploy:docs                    # build and deploy (from the repo root)
+pnpm run deploy:docs:preview            # build and upload a preview of the current branch
 ```
 
 ## Writing a page
@@ -26,4 +27,4 @@ Search (Pagefind) is built at build time, so it only works in `build` output, no
 
 ## Deploys
 
-Workers Builds deploys the `relayrunner-docs` Worker on merge to `main`, set up like the landing page: root directory `/` and deploy command `pnpm run deploy:docs`. Other branches upload a preview version with a public URL at `<branch>-relayrunner-docs.relayrun.workers.dev/docs/`.
+Workers Builds deploys the `relayrunner-docs` Worker on merge to `main`, set up like the landing page: root directory `/` and deploy command `pnpm run deploy:docs`. Other branches run `pnpm run deploy:docs:preview` (`wrangler preview`), which uploads a preview with a public URL at `<branch>-relayrunner-docs.relayrun.workers.dev/docs/`.

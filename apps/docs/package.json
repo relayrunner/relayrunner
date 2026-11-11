@@ -6,7 +6,8 @@
     "dev": "astro dev",
     "build": "astro build && node scripts/postbuild.mjs",
     "preview": "wrangler dev",
-    "deploy": "pnpm build && wrangler deploy"
+    "deploy": "pnpm build && wrangler deploy",
+    "deploy:preview": "pnpm build && wrangler preview"
   },
   "dependencies": {
     "@astrojs/starlight": "^0.42.10",
