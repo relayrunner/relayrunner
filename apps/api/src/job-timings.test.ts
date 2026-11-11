@@ -17,7 +17,8 @@ describe("runnerClass", () => {
   test.each([
     [["ubuntu-latest"], null, "linux-2-core"],
     [["ubuntu-24.04"], "GitHub Actions", "linux-2-core"],
-    [["ubuntu-24.04-arm"], null, "linux-2-core"],
+    [["ubuntu-24.04-arm"], null, "linux-arm-2-core"],
+    [["windows-11-arm"], null, "windows-arm-2-core"],
     [["ubuntu-slim"], null, "linux-1-core"],
     [["windows-latest"], null, "windows-2-core"],
     [["macos-15"], null, "macos"],

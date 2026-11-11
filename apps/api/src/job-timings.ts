@@ -1,6 +1,7 @@
 import type { WebhookMessage } from "@relayrunner/github-webhooks";
 import { and, asc, eq, gte, isNotNull, isNull, lt, ne, type SQL, sql } from "drizzle-orm";
 import type { SQLiteColumn, SQLiteTable } from "drizzle-orm/sqlite-core";
+import { type GitHubRunner, githubRate, PRICE_CHANGES } from "@relayrunner/providers";
 import { type Db, schema } from "./db/index.ts";
 import { findInstallation } from "./installations.ts";
 import { parseDate } from "./jobs.ts";
@@ -17,36 +18,57 @@ export const DAY_MS = 86_400_000;
 export const SHORT_JOB_SECONDS = 60;
 
 /**
- * Which per-minute rate a job pays. GitHub-hosted classes follow the standard runner price list;
+ * Which per-minute rate a job pays. GitHub-hosted classes follow GitHub's standard runner prices;
  * `self-hosted` covers a self-hosted runner (including RelayRunner's own picks and machines), which
  * GitHub doesn't charge for. `other` is a label we can't price, such as a larger runner, and is
  * counted at the Linux 2-core rate, so the estimate is a floor.
  */
-export type RunnerClass =
-  | "linux-1-core"
-  | "linux-2-core"
-  | "windows-2-core"
-  | "macos"
-  | "self-hosted"
-  | "other";
+export type RunnerClass = GitHubRunner | "self-hosted" | "other";
 
-// USD per minute for a private repo, as of Nov 2026. Standard GitHub-hosted runners are free in
-// public repos.
-export const RUNNER_RATES: Record<RunnerClass, { label: string; perMinute: number }> = {
-  "linux-1-core": { label: "Linux 1-core", perMinute: 0.002 },
-  "linux-2-core": { label: "Linux 2-core", perMinute: 0.006 },
-  "windows-2-core": { label: "Windows 2-core", perMinute: 0.01 },
-  macos: { label: "macOS", perMinute: 0.062 },
-  "self-hosted": { label: "Self-hosted", perMinute: 0 },
-  other: { label: "Other (priced as Linux 2-core)", perMinute: 0.006 },
+export const RUNNER_LABELS: Record<RunnerClass, string> = {
+  "linux-1-core": "Linux 1-core",
+  "linux-2-core": "Linux 2-core",
+  "linux-arm-2-core": "Linux 2-core Arm",
+  "windows-2-core": "Windows 2-core",
+  "windows-arm-2-core": "Windows 2-core Arm",
+  macos: "macOS",
+  "self-hosted": "Self-hosted",
+  other: "Other (priced as Linux 2-core)",
 };
 
+/** What a minute cost on a runner class in a private repo at `at` (epoch ms, now by default). */
+export function classRate(cls: RunnerClass, at = Date.now()) {
+  if (cls === "self-hosted") return 0;
+  return githubRate(cls === "other" ? "linux-2-core" : cls, at);
+}
+
 /**
- * What a minute costs on a runner class in a repo: standard runners are free in public repos, and
+ * What a minute cost on a runner class in a repo: standard runners are free in public repos, and
  * unknown visibility counts as private, so a missing mirror row never hides a cost.
  */
-export function rateFor(cls: RunnerClass, isPrivate: boolean | null | undefined) {
-  return isPrivate === false ? 0 : RUNNER_RATES[cls].perMinute;
+export function rateFor(cls: RunnerClass, isPrivate: boolean | null | undefined, at = Date.now()) {
+  return isPrivate === false ? 0 : classRate(cls, at);
+}
+
+/**
+ * Splits a report's window where prices changed, so each stretch is priced at what a minute cost
+ * then. `period` is SQL for which stretch a row's time (`column`, epoch ms) falls in, to select;
+ * `groupBy` is what to add to the query's grouping (nothing when no price changed in the window,
+ * so the split adds no rows); `at` turns a period back into a moment inside its stretch.
+ */
+export function pricePeriods(column: SQLiteColumn, since: number, now: number) {
+  const changes = PRICE_CHANGES.filter((change) => change > since && change <= now);
+  const period = changes.length
+    ? sql<number>`(${sql.join(
+        changes.map((change) => sql`(${column} >= ${change})`),
+        sql` + `,
+      )})`
+    : sql<number>`0`;
+  return {
+    period,
+    groupBy: changes.length ? [period] : [],
+    at: (period: number) => (period > 0 ? changes[period - 1]! : since),
+  };
 }
 
 export const GITHUB_HOSTED_GROUP = "GitHub Actions";
@@ -66,10 +88,12 @@ export function runnerClass(labels: string[], runnerGroupName?: string | null): 
   if (!hosted)
     return runnerGroupName && runnerGroupName !== GITHUB_HOSTED_GROUP ? "self-hosted" : "other";
   if (hosted.startsWith("macos")) return "macos";
+  if (hosted === "windows-11-arm") return "windows-arm-2-core";
   if (hosted.startsWith("windows"))
     return /^windows-(latest|\d{4})$/.test(hosted) ? "windows-2-core" : "other";
   if (hosted === "ubuntu-slim") return "linux-1-core";
-  if (/^ubuntu-(latest|\d{2}\.\d{2})(-arm)?$/.test(hosted)) return "linux-2-core";
+  const ubuntu = /^ubuntu-(latest|\d{2}\.\d{2})(-arm)?$/.exec(hosted);
+  if (ubuntu) return ubuntu[2] ? "linux-arm-2-core" : "linux-2-core";
   return "other";
 }
 
@@ -295,10 +319,11 @@ export interface UsageReport {
  * first, partial day is left out of those.
  */
 export async function usageReport(db: Db, workspaceId: string, days = 30): Promise<UsageReport> {
-  const since = new Date(Date.now() - days * DAY_MS);
+  const now = Date.now();
+  const since = new Date(now - days * DAY_MS);
   const [recent, older] = await Promise.all([
-    recentUsage(db, workspaceId, since),
-    dailyUsage(db, workspaceId, since),
+    recentUsage(db, workspaceId, since, now),
+    dailyUsage(db, workspaceId, since, now),
   ]);
   const rows = [...recent, ...older];
 
@@ -307,7 +332,7 @@ export async function usageReport(db: Db, workspaceId: string, days = 30): Promi
   const byRepository = new Map<string, UsageReport["byRepository"][number]>();
   for (const row of rows) {
     const cls = runnerClass(row.labels, row.runnerGroupName);
-    const perMinute = rateFor(cls, row.private);
+    const perMinute = rateFor(cls, row.private, row.pricedAt);
     const runSeconds = Number(row.runMs) / 1000;
     const billedMinutes = Number(row.billedMinutes);
     const shortBilledMinutes = Number(row.shortBilledMinutes);
@@ -324,8 +349,8 @@ export async function usageReport(db: Db, workspaceId: string, days = 30): Promi
     add(totals, sums);
     const runner = byRunner.get(cls) ?? {
       runnerClass: cls,
-      label: RUNNER_RATES[cls].label,
-      perMinute: RUNNER_RATES[cls].perMinute,
+      label: RUNNER_LABELS[cls],
+      perMinute: classRate(cls, now),
       ...zero(),
     };
     add(runner, sums);
@@ -363,13 +388,16 @@ export const DURATION_MS = sql`max(0, ${table.completedAt} - ${table.startedAt})
 /** The minutes GitHub bills a job: its run time rounded up, at least one. */
 export const BILLED_MINUTES = sql`max(1, (${DURATION_MS} + 59999) / 60000)`;
 
-// The usage report's sums from job_timing, for jobs that finished since `since`.
-function recentUsage(db: Db, workspaceId: string, since: Date) {
+// The usage report's sums from job_timing, for jobs that finished since `since`, with the moment
+// their prices are read at.
+async function recentUsage(db: Db, workspaceId: string, since: Date, now: number) {
+  const prices = pricePeriods(table.completedAt, since.getTime(), now);
   const durationMs = DURATION_MS;
   const billed = BILLED_MINUTES;
   const isShort = sql`(${durationMs} < ${SHORT_JOB_SECONDS * 1000})`;
-  return db
+  const rows = await db
     .select({
+      period: prices.period,
       labels: table.labels,
       runnerGroupName: table.runnerGroupName,
       repository: table.repositoryFullName,
@@ -393,17 +421,21 @@ function recentUsage(db: Db, workspaceId: string, since: Date) {
       ),
     )
     .groupBy(
+      ...prices.groupBy,
       table.labels,
       table.runnerGroupName,
       table.repositoryFullName,
       schema.githubRepository.private,
     );
+  return rows.map(({ period, ...row }) => ({ ...row, pricedAt: prices.at(Number(period)) }));
 }
 
 // The same sums from job_timing_daily, for whole days that start at or after `since`.
-async function dailyUsage(db: Db, workspaceId: string, since: Date) {
+async function dailyUsage(db: Db, workspaceId: string, since: Date, now: number) {
+  const prices = pricePeriods(daily.day, since.getTime(), now);
   const rows = await db
     .select({
+      period: prices.period,
       labels: daily.labels,
       runnerGroupName: daily.runnerGroupName,
       repository: daily.repositoryFullName,
@@ -419,12 +451,17 @@ async function dailyUsage(db: Db, workspaceId: string, since: Date) {
     .leftJoin(schema.githubRepository, eq(schema.githubRepository.id, daily.repositoryId))
     .where(and(eq(schema.githubInstallation.workspaceId, workspaceId), gte(daily.day, since)))
     .groupBy(
+      ...prices.groupBy,
       daily.labels,
       daily.runnerGroupName,
       daily.repositoryFullName,
       schema.githubRepository.private,
     );
-  return rows.map((row) => ({ ...row, runnerGroupName: row.runnerGroupName || null }));
+  return rows.map(({ period, ...row }) => ({
+    ...row,
+    runnerGroupName: row.runnerGroupName || null,
+    pricedAt: prices.at(Number(period)),
+  }));
 }
 
 function zero(): Counters {

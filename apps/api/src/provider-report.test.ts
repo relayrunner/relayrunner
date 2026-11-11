@@ -1,7 +1,7 @@
 import { afterAll, beforeAll, describe, expect, test } from "vitest";
 import { createDb, schema } from "./db/index.ts";
 import type { Env } from "./env.ts";
-import type { ProviderReport, ProvidersOverview } from "./provider-report.ts";
+import { type ProviderReport, type ProvidersOverview, providerReport } from "./provider-report.ts";
 import * as testing from "./testing.ts";
 
 let proxy: Awaited<ReturnType<typeof testing.startD1>>["proxy"];
@@ -117,5 +117,37 @@ describe("provider report", () => {
     ]);
 
     expect((await report(cookie, "/providers/nope")).status).toBe(404);
+  });
+
+  test("prices each job at the rate on the day it ran", async () => {
+    const { cookie } = await testing.signIn(env);
+    const { workspace } = await testing.createWorkspace(env, cookie, "Repriced", "repriced");
+    const installationId = 8300;
+    const db = createDb(env.DB);
+    await db.insert(schema.githubInstallation).values({
+      id: installationId,
+      workspaceId: workspace.id,
+      accountId: installationId,
+      accountLogin: "repriced-org",
+      accountType: "Organization",
+    });
+    // Ubicloud's standard 2 vCPU minute went from $0.001 to $0.00125 on 2026-09-01.
+    const at = (day: string, minutes: number) => {
+      const completed = Date.parse(`${day}T12:00:00Z`);
+      return timing(installationId, minutes * 60, {
+        labels: ["ubicloud-standard-2"],
+        queuedAt: new Date(completed - minutes * 60_000),
+        startedAt: new Date(completed - minutes * 60_000),
+        completedAt: new Date(completed),
+      });
+    };
+    await db.insert(schema.jobTiming).values([at("2026-08-25", 100), at("2026-09-05", 100)]);
+
+    const body = await providerReport(db, workspace.id, "ubicloud", 30, Date.parse("2026-09-10"));
+    expect(body).toMatchObject({ jobs: 2, billedMinutes: 200 });
+    expect(body.cost).toBeCloseTo(100 * 0.001 + 100 * 0.00125, 3);
+    // One runner type, shown at today's price.
+    expect(body.runners).toHaveLength(1);
+    expect(body.runners[0]?.perMinute).toBeCloseTo(0.00125, 6);
   });
 });
