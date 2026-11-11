@@ -24,18 +24,31 @@ export default defineConfig({
         "@fontsource-variable/jetbrains-mono",
         "./src/styles/theme.css",
       ],
-      // Each folder under src/content/docs/ is a sidebar group; pages sort by `sidebar.order`
-      // in their frontmatter, then by title.
+      // Sidebar order is set here: add a page's slug to its section when you add the file.
       sidebar: [
         {
-          label: "Getting started",
+          label: "Get started",
           items: [
-            { slug: "index", label: "Introduction" },
-            { autogenerate: { directory: "getting-started" } },
+            "get-started/how-it-works",
+            "get-started/quickstart",
+            "get-started/install",
+            "get-started/agents",
           ],
         },
-        { label: "Guides", items: [{ autogenerate: { directory: "guides" } }] },
-        { label: "Reference", items: [{ autogenerate: { directory: "reference" } }] },
+        { label: "CI", items: ["ci/routing", "ci/free-checks"] },
+        {
+          label: "Runners",
+          items: ["runners/self-hosted", "runners/github", "runners/blacksmith"],
+        },
+        {
+          label: "Reference",
+          items: [
+            "reference/cli",
+            "reference/relay-inputs",
+            "reference/security",
+            "reference/troubleshooting",
+          ],
+        },
       ],
       editLink: {
         baseUrl: "https://github.com/relayrunner/relayrunner/edit/main/apps/docs/",

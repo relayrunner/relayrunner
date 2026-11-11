@@ -11,7 +11,7 @@ pnpm run deploy:docs:preview            # build and upload a preview of the curr
 
 ## Writing a page
 
-Every page is a Markdown (`.md`) or MDX (`.mdx`) file in `src/content/docs/`. The file path is the URL: `src/content/docs/guides/router.md` is `/docs/guides/router/`. Each folder is a sidebar group (see `sidebar` in `astro.config.mjs`), so adding a page means adding a file. Frontmatter needs a `title`; `description` feeds search results and link previews, and `sidebar.order` sorts pages within a group.
+Every page is a Markdown (`.md`) or MDX (`.mdx`) file in `src/content/docs/`. The file path is the URL: `src/content/docs/ci/routing.md` is `/docs/ci/routing/`. Folders match the sidebar sections; add the new page's slug to its section in `sidebar` in `astro.config.mjs` to place it. `/docs/` redirects to How it works. Frontmatter needs a `title`; `description` feeds search results and link previews.
 
 Starlight's [Markdown features](https://starlight.astro.build/guides/authoring-content/) work out of the box: asides (`:::note`, `:::tip`, `:::caution`), code blocks with titles and line highlights, and tables. MDX pages can also use its [components](https://starlight.astro.build/components/using-components/) (tabs, cards, steps, file trees).
 

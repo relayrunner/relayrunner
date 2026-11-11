@@ -3,4 +3,7 @@
 // redirect from / to /docs/, so the bare workers.dev and preview URLs land on the docs.
 import { writeFileSync } from "node:fs";
 
-writeFileSync(new URL("../dist/_redirects", import.meta.url), "/ /docs/ 302\n");
+writeFileSync(
+  new URL("../dist/_redirects", import.meta.url),
+  "/ /docs/ 302\n/docs/ /docs/get-started/how-it-works/ 302\n",
+);

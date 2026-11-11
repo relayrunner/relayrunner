@@ -1,13 +1,14 @@
 ---
 title: CLI
-description: Commands in the relayrunner CLI.
+description: Every command and flag.
 ---
 
-:::note[Placeholder]
-This page is a placeholder until the user documentation is written.
+Every command and flag.
+
+:::note[Stub]
+This page hasn't been written yet.
 :::
 
-| Command             | What it does                   |
-| ------------------- | ------------------------------ |
-| `relayrunner login` | Sign in from this machine.     |
-| `relayrunner init`  | Set up the current repository. |
+## Will cover
+
+- One entry per command, with flags and an example.
