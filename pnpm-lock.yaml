@@ -83,6 +83,9 @@ importers:
       '@relayrunner/machine-protocol':
         specifier: workspace:*
         version: link:../../packages/machine-protocol
+      '@relayrunner/providers':
+        specifier: workspace:*
+        version: link:../../packages/providers
       '@relayrunner/runner-order':
         specifier: workspace:*
         version: link:../../packages/runner-order
@@ -182,6 +185,9 @@ importers:
       '@relayrunner/activity':
         specifier: workspace:*
         version: link:../../packages/activity
+      '@relayrunner/providers':
+        specifier: workspace:*
+        version: link:../../packages/providers
       '@relayrunner/runner-order':
         specifier: workspace:*
         version: link:../../packages/runner-order
@@ -291,6 +297,8 @@ importers:
       zod:
         specifier: 'catalog:'
         version: 4.6.7
+
+  packages/providers: {}
 
   packages/runner-order:
     dependencies:

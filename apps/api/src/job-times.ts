@@ -274,12 +274,12 @@ export const RAN_ON_RUNNER = sql`${table.startedAt} is not null and ${table.runn
 
 // A job a runner ran, picks left out: they would split every routed run across two environments,
 // like on the Usage page; only successes give times.
-const RAN = sql`${RAN_ON_RUNNER} and not ${PICK}`;
+export const RAN = sql`${RAN_ON_RUNNER} and not ${PICK}`;
 
-const OK = sql`coalesce(${table.conclusion} = 'success', 0)`;
+export const OK = sql`coalesce(${table.conclusion} = 'success', 0)`;
 
 // `completedAt:runMs:waitMs` per successful run, comma separated, as parseSamples reads it.
-const SAMPLES = sql`group_concat(case when ${OK} then ${table.completedAt} || ':'
+export const SAMPLES = sql`group_concat(case when ${OK} then ${table.completedAt} || ':'
   || (${table.completedAt} - ${table.startedAt}) || ':'
   || coalesce(${table.startedAt} - ${table.queuedAt}, '') end)`;
 

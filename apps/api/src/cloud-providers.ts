@@ -1,22 +1,21 @@
 // Hosted runner services a job asks for by its `runs-on` labels, and the labels GitHub publishes
 // for its own hosted runners. The Job times report and the Runners page group cloud jobs by these.
+import { PROVIDERS, type ProviderId } from "@relayrunner/providers";
 import { isBlacksmithLabel } from "./routing.ts";
 
-export type CloudProvider = { id: string; name: string; label: string };
+export type CloudProvider = { id: ProviderId; name: string; label: string };
 
 // Each service's labels start with its own prefix, e.g. `depot-ubuntu-24.04-8`.
-const PREFIXED: { id: string; name: string; matches: (label: string) => boolean }[] = [
-  { id: "blacksmith", name: "Blacksmith", matches: isBlacksmithLabel },
-  { id: "depot", name: "Depot", matches: (label) => label.startsWith("depot-") },
+const PREFIXED: { id: ProviderId; matches: (label: string) => boolean }[] = [
+  { id: "blacksmith", matches: isBlacksmithLabel },
+  { id: "depot", matches: (label) => label.startsWith("depot-") },
   {
     id: "namespace",
-    name: "Namespace",
     matches: (label) => label.startsWith("namespace-profile-") || label.startsWith("nscloud-"),
   },
-  { id: "warpbuild", name: "WarpBuild", matches: (label) => label.startsWith("warp-") },
+  { id: "warpbuild", matches: (label) => label.startsWith("warp-") },
   {
     id: "ubicloud",
-    name: "Ubicloud",
     matches: (label) => label === "ubicloud" || label.startsWith("ubicloud-"),
   },
 ];
@@ -28,10 +27,10 @@ const PREFIXED: { id: string; name: string; matches: (label: string) => boolean 
 export function cloudProviderFor(labels: string[]): CloudProvider | null {
   for (const provider of PREFIXED) {
     const label = labels.find(provider.matches);
-    if (label) return { id: provider.id, name: provider.name, label };
+    if (label) return { id: provider.id, name: PROVIDERS[provider.id].name, label };
   }
   const runsOn = runsOnRunner(labels);
-  return runsOn ? { id: "runs-on", name: "RunsOn", label: runsOn } : null;
+  return runsOn ? { id: "runs-on", name: PROVIDERS["runs-on"].name, label: runsOn } : null;
 }
 
 /**

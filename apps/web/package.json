@@ -17,6 +17,7 @@
     "@fontsource-variable/jetbrains-mono": "catalog:",
     "@relayrunner/access": "workspace:*",
     "@relayrunner/activity": "workspace:*",
+    "@relayrunner/providers": "workspace:*",
     "@relayrunner/runner-order": "workspace:*",
     "@tanstack/react-router": "^1.170.46",
     "better-auth": "catalog:",
