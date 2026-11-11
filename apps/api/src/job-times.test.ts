@@ -39,6 +39,48 @@ describe("environmentFor", () => {
     [["rr-0123456789ab"], "Default", "m1", "machine:m1", "Machine"],
     [["rr-0123456789ab"], "Default", null, "self-hosted:Default", "Self-hosted"],
     [["self-hosted", "linux"], null, null, "self-hosted:Default", "Self-hosted"],
+    [["windows-11-arm"], null, null, "github:windows-11-arm", "windows-11-arm"],
+    [["macos-15-intel"], null, null, "github:macos", "macOS"],
+    [["ubuntu-26.04"], null, null, "github:linux-2-core", "Linux 2-core"],
+    [
+      ["depot-ubuntu-24.04-8"],
+      "Default",
+      null,
+      "depot:depot-ubuntu-24.04-8",
+      "depot-ubuntu-24.04-8",
+    ],
+    [
+      ["namespace-profile-integration-tests"],
+      "Default",
+      null,
+      "namespace:namespace-profile-integration-tests",
+      "namespace-profile-integration-tests",
+    ],
+    [
+      ["warp-ubuntu-latest-x64-2x"],
+      "Default",
+      null,
+      "warpbuild:warp-ubuntu-latest-x64-2x",
+      "warp-ubuntu-latest-x64-2x",
+    ],
+    [
+      ["ubicloud-standard-4-arm"],
+      null,
+      null,
+      "ubicloud:ubicloud-standard-4-arm",
+      "ubicloud-standard-4-arm",
+    ],
+    [
+      ["runs-on=123456/runner=2cpu-linux-x64/spot=false"],
+      "Default",
+      null,
+      "runs-on:2cpu-linux-x64",
+      "2cpu-linux-x64",
+    ],
+    [["runs-on=123456", "family=m8"], "Default", null, "runs-on:custom", "custom"],
+    // Labels nothing recognises are Other, wherever the runner sat.
+    [["gpu-a10"], "Default", null, "other:gpu-a10", "gpu-a10"],
+    [["mystery"], null, null, "other:mystery", "mystery"],
   ] as const)("%j in %s on machine %s is %s", (labels, group, machine, key, label) => {
     expect(environmentFor([...labels], group, machine)).toMatchObject({ key, label });
   });

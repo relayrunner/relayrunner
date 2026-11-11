@@ -48,7 +48,7 @@ export function rateFor(cls: RunnerClass, isPrivate: boolean | null | undefined)
   return isPrivate === false ? 0 : RUNNER_RATES[cls].perMinute;
 }
 
-const GITHUB_HOSTED_GROUP = "GitHub Actions";
+export const GITHUB_HOSTED_GROUP = "GitHub Actions";
 
 /**
  * Classifies a job by its runs-on labels and, once a runner took it, the runner's group. Applied when

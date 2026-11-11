@@ -257,14 +257,15 @@ function isCloud(env: EnvironmentSummary) {
   return !env.key.startsWith("machine:") && !env.key.startsWith("self-hosted:");
 }
 
-// Cloud runners grouped by provider, busiest provider and runner type first.
+// Cloud runners grouped by provider, busiest provider and runner type first, with labels we
+// couldn't place last.
 function byProvider(environments: EnvironmentSummary[]) {
   const groups = new Map<ReturnType<typeof providerOf>, EnvironmentSummary[]>();
   for (const env of environments.toSorted((a, b) => b.stat.runs - a.stat.runs)) {
     const provider = providerOf(env);
     groups.set(provider, [...(groups.get(provider) ?? []), env]);
   }
-  return [...groups];
+  return [...groups].sort(([a], [b]) => Number(a === "other") - Number(b === "other"));
 }
 
 function RunnerGroup({

@@ -168,6 +168,10 @@
   --color-blacksmith: #f0fb29;
   --color-blacksmith-ink: #202020;
   --color-cloudflare: #f38020;
+  --color-namespace: #1c32ff;
+  --color-warpbuild: #06aa63;
+  --color-ubicloud: #ff5c12;
+  --color-runson: #f0c868;
 }
 
 @layer base {

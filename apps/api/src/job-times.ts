@@ -11,8 +11,9 @@ import { and, eq, gte, inArray, isNull, type SQL, sql } from "drizzle-orm";
 import type { SQLiteColumn } from "drizzle-orm/sqlite-core";
 import { usesContainerRunner } from "./container-runner.ts";
 import { type Db, schema } from "./db/index.ts";
-import { DAY_MS, RUNNER_RATES, runnerClass } from "./job-timings.ts";
-import { isBlacksmithLabel } from "./routing.ts";
+import { DAY_MS, GITHUB_HOSTED_GROUP, RUNNER_RATES, runnerClass } from "./job-timings.ts";
+import { cloudProviderFor, isGitHubHostedLabel } from "./cloud-providers.ts";
+import { routeIdFromLabels } from "./routing.ts";
 import { RELAYRUNNER_LABEL } from "./webhook-queue.ts";
 
 const table = schema.jobTiming;
@@ -52,31 +53,33 @@ export function environmentFor(
       detail: "standard-1",
     };
   const lower = labels.map((label) => label.toLowerCase());
-  const blacksmith = lower.find(isBlacksmithLabel);
-  if (blacksmith)
+  const provider = cloudProviderFor(lower);
+  if (provider)
     return {
-      key: `blacksmith:${blacksmith}`,
-      label: blacksmith,
-      detail: "Blacksmith",
+      key: `${provider.id}:${provider.label}`,
+      label: provider.label,
+      detail: provider.name,
     };
-  const cls = runnerClass(labels, runnerGroupName);
-  if (cls === "self-hosted") {
-    const group = runnerGroupName ?? "Default";
-    return {
-      key: `self-hosted:${group}`,
-      label: "Self-hosted",
-      detail: group,
-    };
-  }
-  if (cls === "other") {
+  const group = runnerGroupName ?? "Default";
+  // Asked for by name: a `self-hosted` label, a pick, or a route to a machine.
+  if (
+    lower.includes("self-hosted") ||
+    lower.includes(RELAYRUNNER_LABEL) ||
+    routeIdFromLabels(labels)
+  )
+    return { key: `self-hosted:${group}`, label: "Self-hosted", detail: group };
+  if (lower.some(isGitHubHostedLabel) || runnerGroupName === GITHUB_HOSTED_GROUP) {
+    const cls = runnerClass(labels, runnerGroupName);
+    if (cls !== "other" && cls !== "self-hosted")
+      return { key: `github:${cls}`, label: RUNNER_RATES[cls].label, detail: "GitHub-hosted" };
+    // A larger runner or an image without a standard price: named by its label.
     const label = lower[0] ?? "unknown";
     return { key: `github:${label}`, label, detail: "GitHub-hosted" };
   }
-  return {
-    key: `github:${cls}`,
-    label: RUNNER_RATES[cls].label,
-    detail: "GitHub-hosted",
-  };
+  // A label nothing above recognises: another service, or a self-hosted runner asked for only by
+  // its custom labels.
+  const label = lower[0] ?? "unknown";
+  return { key: `other:${label}`, label, detail: runnerGroupName ?? "Unrecognized label" };
 }
 
 /**
