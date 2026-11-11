@@ -6,6 +6,7 @@ import { readlinkSync, rmSync, symlinkSync } from "node:fs";
 import { join } from "node:path";
 import type { JobMessage, RunMessage } from "@relayrunner/machine-protocol";
 import type { InstalledRunner } from "./install.ts";
+import { checkJitConfig } from "./jit-config.ts";
 
 // A `job` message without its envelope. Whoever sends it on the socket adds `v` and `type`.
 export type JobUpdate = Omit<JobMessage, "v" | "type">;
@@ -15,6 +16,9 @@ export interface RunJobOptions {
   report: (update: JobUpdate) => void;
   // The runner's stdout and stderr as they arrive. Defaults to this process's own.
   output?: (chunk: Buffer, stream: "stdout" | "stderr") => void;
+  // The repo (or org) the job's runner is registered on, once its config checked out
+  // (jit-config.ts). Null when the config doesn't say.
+  onChecked?: (target: string | null) => void;
 }
 
 // Only what the runner needs from our environment, so the CLI's own secrets (the machine token,
@@ -40,6 +44,16 @@ export async function runJob(run: RunMessage, options: RunJobOptions): Promise<J
     report(update);
     return update;
   };
+
+  // Nothing runs on a config that points the runner anywhere but GitHub.
+  const checked = checkJitConfig(run.jitConfig, run.routeId);
+  if (!checked.ok)
+    return finish({
+      routeId: run.routeId,
+      state: "failed",
+      message: `Refused the job's runner config: ${checked.reason}.`,
+    });
+  options.onChecked?.(checked.target);
 
   const lock = join(runner.dir, "job.lock");
   if (!takeLock(lock))

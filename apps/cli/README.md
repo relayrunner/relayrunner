@@ -21,14 +21,31 @@ npx relayrunner connect
 
 The first run signs you in: it shows a code and opens the dashboard, where you
 pick the workspace and name for this machine and approve. The machine token is
-saved to `~/.relayrunner/machine.json` (mode 0600); later runs reuse it.
+saved to `~/.relayrunner/machine.json` (mode 0600); later runs reuse it. The
+gateway sends a new token every time `connect` comes online and the old one
+stops working, so a copy of `machine.json` from a backup or a synced dotfiles
+folder can't sign in as the machine.
 
 While it runs, the machine is online: it keeps a WebSocket open to the gateway,
-runs the jobs it's sent (one at a time) and prints what happens. It reconnects
-on its own if the connection drops. Ctrl-C takes it offline; a job that's
-running stops with it.
+runs the jobs it's sent (one at a time) and prints what happens, including the
+repo each job is from. It reconnects on its own if the connection drops. Ctrl-C
+takes it offline; a job that's running stops with it.
+
+Before it starts a job, `connect` checks the job's runner config: it must hold
+only the files GitHub's do, every server in it must be GitHub's, over https, and
+the runner must be named for that job. Anything else is refused and reported as
+a failed job, so a gateway that was tampered with can't point the runner at a
+server of its own or write files outside the runner. It can't tell a job the
+gateway routed here from a runner it minted on a GitHub repo of its own, so the
+terminal shows which repo each job is from.
+
+If another `connect` signs in as this machine while it's online, this one stops
+and says so. When that happens from a different network, the person who
+approved the machine also gets an email, since someone else may have its token.
 
 - `--server <url>` or `RELAYRUNNER_URL` points it at another gateway. Changing it signs in again.
+  It must be https, except for `localhost` while developing, since the token goes
+  out on every connect.
 - `--name <name>` changes the suggested machine name (default: the hostname).
 - `--share only-me|anyone` sets who can run jobs on this machine without asking.
   It works on a machine that's already signed in too.

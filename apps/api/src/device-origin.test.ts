@@ -1,5 +1,5 @@
 import { describe, expect, test } from "vitest";
-import { presentOrigin, requestOrigin } from "./device-origin.ts";
+import { originFromJson, presentOrigin, requestOrigin } from "./device-origin.ts";
 
 const edge = (headers: Record<string, string>, cf?: Record<string, unknown>) => {
   const request = new Request("http://localhost/", { headers });
@@ -40,5 +40,23 @@ describe("presentOrigin", () => {
 
   test("nothing known is nothing to show", () => {
     expect(presentOrigin({ country: null, city: null }, { country: "US" })).toBeNull();
+  });
+});
+
+describe("originFromJson", () => {
+  test("reads an origin passed along as JSON, cleaned like requestOrigin's", () => {
+    const origin = { ip: "203.0.113.9", country: "PT", city: "Lisbon" };
+    expect(originFromJson(JSON.stringify(origin))).toEqual(origin);
+    expect(originFromJson(JSON.stringify({ ip: 4, city: ` ${"x".repeat(100)} ` }))).toEqual({
+      ip: null,
+      country: null,
+      city: "x".repeat(80),
+    });
+  });
+
+  test("is undefined for a missing or unreadable header", () => {
+    expect(originFromJson("{nope")).toBeUndefined();
+    expect(originFromJson("null")).toBeUndefined();
+    expect(originFromJson(null)).toBeUndefined();
   });
 });

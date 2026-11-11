@@ -3,6 +3,9 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { runJob, type JobUpdate } from "./job.ts";
+import { fakeJitConfig } from "./jit-config.fixture.ts";
+
+const jitConfig = fakeJitConfig("7f3k");
 
 // A stand-in for actions/runner's run.sh: echoes its arguments, leaves job state behind like a
 // real JIT run, and exits with $EXIT.
@@ -25,7 +28,7 @@ describe("runJob", () => {
     const updates: JobUpdate[] = [];
     const out: Record<string, string> = { stdout: "", stderr: "" };
     const result = await runJob(
-      { v: 1, type: "run", routeId: "7f3k", jitConfig: "abc" },
+      { v: 1, type: "run", routeId: "7f3k", jitConfig },
       {
         runner: { version: "2.329.0", dir },
         report: (update) => updates.push(update),
@@ -37,7 +40,7 @@ describe("runJob", () => {
 
   it("runs run.sh with the JIT config and reports started then finished", async () => {
     const { result, updates, out } = await run(0);
-    expect(out).toEqual({ stdout: "args: --jitconfig abc\n", stderr: "oops\n" });
+    expect(out).toEqual({ stdout: `args: --jitconfig ${jitConfig}\n`, stderr: "oops\n" });
     expect(updates).toEqual([
       { routeId: "7f3k", state: "started" },
       { routeId: "7f3k", state: "finished" },
@@ -65,10 +68,38 @@ describe("runJob", () => {
   it("reports failed when run.sh is missing", async () => {
     const updates: JobUpdate[] = [];
     await runJob(
-      { v: 1, type: "run", routeId: "7f3k", jitConfig: "abc" },
+      { v: 1, type: "run", routeId: "7f3k", jitConfig },
       { runner: { version: "2.329.0", dir }, report: (u) => updates.push(u), output: () => {} },
     );
     expect(updates).toMatchObject([{ state: "failed", message: /Could not start the runner/ }]);
+  });
+
+  it("refuses a runner config that doesn't point at GitHub, without starting run.sh", async () => {
+    writeFileSync(join(dir, "run.sh"), fakeRunSh(0), { mode: 0o755 });
+    const updates: JobUpdate[] = [];
+    const output: string[] = [];
+    await runJob(
+      {
+        v: 1,
+        type: "run",
+        routeId: "7f3k",
+        jitConfig: fakeJitConfig("7f3k", { runner: { ServerUrlV2: "https://evil.example/" } }),
+      },
+      {
+        runner: { version: "2.329.0", dir },
+        report: (u) => updates.push(u),
+        output: (chunk) => output.push(chunk.toString()),
+      },
+    );
+    expect(updates).toEqual([
+      {
+        routeId: "7f3k",
+        state: "failed",
+        message:
+          "Refused the job's runner config: it points the runner at https://evil.example, not GitHub.",
+      },
+    ]);
+    expect(output).toEqual([]);
   });
 
   it("refuses to run while another live process holds the runner", async () => {

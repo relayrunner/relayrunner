@@ -8,14 +8,23 @@ import { encodeMessage, PROTOCOL_VERSION, type JobMessage } from "@relayrunner/m
 import { appJwt, importAppPrivateKey, installationToken } from "../github-app.ts";
 import { installationRunnerScope } from "../installations.ts";
 import { mintMachineRunner } from "../machine-runner.ts";
-import { deviceColumns, pausedByName } from "../machines.ts";
+import { originFromJson, type RequestOrigin } from "../device-origin.ts";
+import { sendEmail } from "../email.ts";
+import {
+  deviceColumns,
+  issuePendingToken,
+  pausedByName,
+  promotePendingToken,
+} from "../machines.ts";
 import { type Route } from "../routing.ts";
 import {
   CLOSE,
   handleFrame,
   HEARTBEAT_TIMEOUT_MS,
   isStale,
+  isTakeover,
   MACHINE_ID_HEADER,
+  MACHINE_ORIGIN_HEADER,
   newSession,
   OFFLINE,
   statusOf,
@@ -47,15 +56,36 @@ export class MachineLink extends DurableObject<Env> {
     if (!machineId) return new Response("Missing machine id.", { status: 400 });
 
     // One socket per machine: a newer connection wins, so a restarted CLI never waits for the
-    // old socket to time out.
-    for (const old of this.ctx.getWebSockets()) close(old, CLOSE.replaced, "replaced");
+    // old socket to time out. When it pushes out a live connection from another address, someone
+    // else may have the token, so the owner hears about it.
+    const now = Date.now();
+    const from = originFromJson(request.headers.get(MACHINE_ORIGIN_HEADER));
+    let takenFrom: RequestOrigin | undefined;
+    for (const old of this.ctx.getWebSockets()) {
+      const session = attachment(old);
+      if (session && isTakeover(session, from, now)) takenFrom = session.from;
+      close(old, CLOSE.replaced, "replaced");
+    }
 
     const { 0: client, 1: server } = new WebSocketPair();
     this.ctx.acceptWebSocket(server);
-    const now = Date.now();
-    server.serializeAttachment(newSession(machineId, now));
+    server.serializeAttachment(newSession(machineId, now, from));
     await this.ctx.storage.setAlarm(now + HEARTBEAT_TIMEOUT_MS);
     await this.touch(machineId);
+    // Not awaited: the email shouldn't hold up the new connection, and the socket keeps this
+    // object alive while it sends.
+    if (takenFrom && from)
+      this.ctx.waitUntil(
+        this.reportTakeover(machineId, takenFrom, from, now).catch((error: unknown) =>
+          console.error(
+            JSON.stringify({
+              msg: "machine takeover not reported",
+              machineId,
+              error: String(error),
+            }),
+          ),
+        ),
+      );
     return new Response(null, { status: 101, webSocket: client });
   }
 
@@ -83,7 +113,22 @@ export class MachineLink extends DurableObject<Env> {
         .where(eq(schema.machine.id, session.machineId))
         .limit(1);
       if (machine?.pausedAt) ws.send(pausedFrame(true, await pausedByName(db, machine)));
+      // Rotate the token on every connect, so a copy of the token file taken earlier stops
+      // working once the CLI saves the new one (TokenMessage in @relayrunner/machine-protocol).
+      // Only for a socket that's still open: a newer connection that replaced it during the
+      // awaits above rotates for itself, and overwriting its pending token would strand it.
+      if (outcome.state.hello.rotatesToken && ws.readyState === WebSocket.OPEN) {
+        const issued = await issuePendingToken(db, session.machineId);
+        const current = attachment(ws);
+        if (issued && current && ws.readyState === WebSocket.OPEN) {
+          // Frames handled during the awaits (the status after hello) are in the attachment now.
+          ws.serializeAttachment({ ...current, pendingTokenHash: issued.hash });
+          ws.send(encodeMessage({ v: PROTOCOL_VERSION, type: "token", token: issued.token }));
+        }
+      }
     }
+    if ("promote" in outcome && outcome.promote)
+      await promotePendingToken(createDb(this.env.DB), session.machineId, outcome.promote);
     if ("job" in outcome && outcome.job) await this.onJob(session.machineId, outcome.job);
     if ("reply" in outcome) {
       ws.send(outcome.reply);
@@ -255,6 +300,47 @@ export class MachineLink extends DurableObject<Env> {
     await recordMachineEvent(createDb(this.env.DB), session.machineId, {
       type: "machine.disconnected",
       data: { reason },
+    });
+  }
+
+  // Logs a takeover and emails the machine's owner, who can revoke it if it wasn't them.
+  private async reportTakeover(
+    machineId: string,
+    was: RequestOrigin,
+    now: RequestOrigin,
+    at: number,
+  ) {
+    console.warn(
+      JSON.stringify({
+        msg: "machine connection taken over from another address",
+        machineId,
+        was,
+        now,
+      }),
+    );
+    const db = createDb(this.env.DB);
+    const [row] = await db
+      .select({
+        machineName: schema.machine.name,
+        workspaceName: schema.workspace.name,
+        email: schema.user.email,
+      })
+      .from(schema.machine)
+      .innerJoin(schema.workspace, eq(schema.workspace.id, schema.machine.workspaceId))
+      .innerJoin(schema.user, eq(schema.user.id, schema.machine.createdBy))
+      .where(eq(schema.machine.id, machineId))
+      .limit(1);
+    if (!row) return;
+    await sendEmail(this.env, {
+      to: row.email,
+      template: "machine-taken-over",
+      context: {
+        machineName: row.machineName,
+        workspaceName: row.workspaceName,
+        was,
+        now,
+        at: new Date(at),
+      },
     });
   }
 

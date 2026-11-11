@@ -7,12 +7,15 @@ import {
   credentialsPath,
   deleteCredentials,
   readCredentials,
+  saveRotatedToken,
+  withCurrentToken,
   writeCredentials,
   type Credentials,
 } from "./credentials.ts";
 import { detectDevice } from "./device.ts";
 import { initCommand, offerSetup } from "./init.ts";
 import { ensureRunner, RunnerError, runnerPlatform } from "./install.ts";
+import { normalizeServer } from "./server.ts";
 import { runJob } from "./job.ts";
 import { login, LoginError, openBrowser } from "./login.ts";
 import { setPaused } from "./pause.ts";
@@ -111,7 +114,19 @@ async function connectMachine(args: { server?: string; name?: string; share?: st
       runnerVersion: runner.version,
       device,
     },
-    runJob: (run, report) => runJob(run, { runner, report }),
+    runJob: (run, report) =>
+      runJob(run, {
+        runner,
+        report,
+        onChecked: (target) => {
+          if (target)
+            clack.log.info(
+              `${new Date().toLocaleTimeString()} Job ${run.routeId} is from ${target}`,
+            );
+        },
+      }),
+    // The gateway rotates the token on every connect, so an old copy of machine.json stops working.
+    saveToken: (token) => saveRotatedToken(credentials, token),
     onEvent: (event) => {
       if (event.type === "connected") online = true;
       show(event);
@@ -130,18 +145,23 @@ async function connectMachine(args: { server?: string; name?: string; share?: st
       // A machine revoked while online may be unattended, so that one stops and says so.
       if (!online) {
         clack.log.warn(
-          "This machine was removed from the workspace or its token is no longer valid. Signing in again.",
+          "This machine was removed from the workspace or its token is no longer valid. If you didn't remove it, another copy of its token may have signed in elsewhere: check the Runners page. Signing in again.",
         );
         return connectMachine({ ...args, server: credentials.server });
       }
       clack.log.error(
-        "This machine was removed from the workspace or its token is no longer valid.",
+        "This machine was removed from the workspace or its token is no longer valid. If you didn't remove it, another copy of its token may have signed in elsewhere: check the Runners page and revoke it if so.",
       );
       clack.outro("Run `relayrunner connect` again to sign in.");
       process.exitCode = 1;
       break;
     case "replaced":
-      clack.log.warn("Another `relayrunner connect` for this machine took over.");
+      clack.log.warn(
+        [
+          "Another `relayrunner connect` signed in as this machine and took over.",
+          `If that wasn't you, someone has this machine's token: revoke it at ${credentials.server}/runners, then run \`relayrunner connect\` to sign in again.`,
+        ].join("\n"),
+      );
       clack.outro("Offline here.");
       process.exitCode = 1;
       break;
@@ -175,11 +195,9 @@ async function askSharing(workspace: string): Promise<ShareChoice | null> {
 
 // Best effort while connecting: a machine that couldn't change its sharing still connects.
 async function applySharing(credentials: Credentials, choice: ShareChoice) {
-  const result = await setSharing({
-    server: credentials.server,
-    token: credentials.token,
-    sharing: toSharing(choice),
-  });
+  const result = await withCurrentToken(credentials, (token) =>
+    setSharing({ server: credentials.server, token, sharing: toSharing(choice) }),
+  );
   switch (result.status) {
     case "ok":
       clack.log.info(`Sharing: ${describeSharing(result.sharing, credentials.workspace.name)}`);
@@ -225,7 +243,7 @@ const loginCommand = defineCommand({
       const saved = readCredentials();
       const server = serverFor(args.server, saved);
       if (saved && saved.server === server) {
-        const result = await whoami({ server, token: saved.token });
+        const result = await withCurrentToken(saved, (token) => whoami({ server, token }));
         if (result.status !== "revoked") {
           if (share) await applySharing(saved, share);
           clack.outro(
@@ -357,6 +375,11 @@ function show(event: ConnectionEvent) {
       else
         clack.log.success(`${at} Resumed${event.by ? ` by ${event.by}` : ""}. Waiting for jobs.`);
       break;
+    case "token-not-saved":
+      clack.log.warn(
+        `${at} Couldn't save the machine's new token (${event.message}). Keeping the old one.`,
+      );
+      break;
     case "run-refused":
       clack.log.warn(`${at} Turned down job ${event.routeId}: already running one.`);
       break;
@@ -407,7 +430,9 @@ const whoamiCommand = defineCommand({
       machine: credentials.machine,
       workspace: credentials.workspace,
     };
-    const result = await whoami({ server: credentials.server, token: credentials.token });
+    const result = await withCurrentToken(credentials, (token) =>
+      whoami({ server: credentials.server, token }),
+    );
     switch (result.status) {
       case "ok":
         print(describeIdentity(credentials.server, result.identity), {
@@ -470,16 +495,6 @@ function table(title: string, rows: [string, string][]) {
   return [title, ...rows.map(([label, value]) => `  ${label.padEnd(width)}  ${value}`)].join("\n");
 }
 
-function normalizeServer(value: string) {
-  try {
-    const url = new URL(value);
-    if (url.protocol !== "https:" && url.protocol !== "http:") throw new Error();
-    return url.origin;
-  } catch {
-    throw new RunnerError("USAGE", `Not a valid RelayRunner URL: ${value}`);
-  }
-}
-
 // `relayrunner pause` and `resume`: the same as the machine's ⋯ menu on the Runners page.
 function pauseCommand(paused: boolean) {
   return defineCommand({
@@ -498,11 +513,9 @@ function pauseCommand(paused: boolean) {
         process.exitCode = 1;
         return;
       }
-      const result = await setPaused({
-        server: credentials.server,
-        token: credentials.token,
-        paused,
-      });
+      const result = await withCurrentToken(credentials, (token) =>
+        setPaused({ server: credentials.server, token, paused }),
+      );
       const name = credentials.machine.name;
       switch (result.status) {
         case "ok":
@@ -567,11 +580,9 @@ const shareCommand = defineCommand({
         process.exitCode = 1;
         return;
       }
-      const result = await setSharing({
-        server: credentials.server,
-        token: credentials.token,
-        sharing: toSharing(choice),
-      });
+      const result = await withCurrentToken(credentials, (token) =>
+        setSharing({ server: credentials.server, token, sharing: toSharing(choice) }),
+      );
       if (result.status === "revoked") return revoked();
       if (result.status === "failed") {
         console.error(`Couldn't change sharing for ${name}: ${result.reason}.`);
@@ -582,7 +593,9 @@ const shareCommand = defineCommand({
       return;
     }
 
-    const result = await whoami({ server: credentials.server, token: credentials.token });
+    const result = await withCurrentToken(credentials, (token) =>
+      whoami({ server: credentials.server, token }),
+    );
     if (result.status === "revoked") return revoked();
     if (result.status === "unverified") {
       console.error(`Couldn't check sharing for ${name}: ${result.reason}.`);

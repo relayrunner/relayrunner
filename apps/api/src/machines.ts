@@ -1,4 +1,4 @@
-import { type SQL, and, eq, isNotNull, isNull } from "drizzle-orm";
+import { type SQL, and, eq, isNotNull, isNull, or } from "drizzle-orm";
 import { recordEvent } from "./activity.ts";
 import type { Db } from "./db/index.ts";
 import { schema } from "./db/index.ts";
@@ -26,18 +26,75 @@ export async function sha256Hex(value: string) {
 
 /**
  * The enrolled, unrevoked machine a token belongs to, or null. MachineLink (#66) calls this on the
- * WebSocket upgrade.
+ * WebSocket upgrade. A token the gateway sent to replace the current one (pendingTokenHash) works
+ * too: the CLI only uses it once it has saved it, so using it finishes the rotation, and the old
+ * token stops working. That covers a `token_saved` that never arrived.
  */
 export async function verifyMachineToken(db: Db, token: string | null | undefined) {
   if (!token?.startsWith(MACHINE_TOKEN_PREFIX)) return null;
+  const hash = await sha256Hex(token);
   const [machine] = await db
     .select()
     .from(schema.machine)
     .where(
-      and(eq(schema.machine.tokenHash, await sha256Hex(token)), isNull(schema.machine.revokedAt)),
+      and(
+        or(eq(schema.machine.tokenHash, hash), eq(schema.machine.pendingTokenHash, hash)),
+        isNull(schema.machine.revokedAt),
+      ),
     )
     .limit(1);
-  return machine ?? null;
+  if (!machine) return null;
+  if (machine.pendingTokenHash !== hash) return machine;
+  // A newer rotation may have replaced this pending token since the read: then it's no good.
+  if (await promotePendingToken(db, machine.id, hash))
+    return { ...machine, tokenHash: hash, pendingTokenHash: null };
+  const [now] = await db
+    .select()
+    .from(schema.machine)
+    .where(and(eq(schema.machine.id, machine.id), isNull(schema.machine.revokedAt)))
+    .limit(1);
+  return now?.tokenHash === hash ? now : null;
+}
+
+/**
+ * Starts rotating a machine's token: a new token whose hash is stored as pending, next to the
+ * current one. Null when the machine was revoked meanwhile. The caller sends the token to the CLI.
+ */
+export async function issuePendingToken(db: Db, machineId: string) {
+  const token = generateMachineToken();
+  const hash = await sha256Hex(token);
+  const [updated] = await db
+    .update(schema.machine)
+    .set({ pendingTokenHash: hash })
+    .where(
+      and(
+        eq(schema.machine.id, machineId),
+        isNull(schema.machine.revokedAt),
+        isNotNull(schema.machine.tokenHash),
+      ),
+    )
+    .returning({ id: schema.machine.id });
+  return updated ? { token, hash } : null;
+}
+
+/**
+ * Finishes a rotation: the pending token becomes the machine's token and the old one stops
+ * working. Does nothing unless `pendingHash` is still the pending one, so a stale call can't undo
+ * a newer rotation. Returns whether it promoted.
+ */
+export async function promotePendingToken(db: Db, machineId: string, pendingHash: string) {
+  const promoted = await db
+    .update(schema.machine)
+    .set({ tokenHash: pendingHash, pendingTokenHash: null })
+    .where(
+      and(
+        eq(schema.machine.id, machineId),
+        eq(schema.machine.pendingTokenHash, pendingHash),
+        isNull(schema.machine.revokedAt),
+      ),
+    )
+    .returning({ id: schema.machine.id });
+  return promoted.length > 0;
 }
 
 // Better Auth stores user codes without the dash the dashboard shows ("ABCD-EFGH" -> "ABCDEFGH").
@@ -124,7 +181,7 @@ function base64Url(bytes: Uint8Array) {
 export async function revokeMachines(env: Env, db: Db, where: SQL, actorUserId: string | null) {
   const machines = await db
     .update(schema.machine)
-    .set({ revokedAt: new Date(), tokenHash: null, enrollmentHash: null })
+    .set({ revokedAt: new Date(), tokenHash: null, pendingTokenHash: null, enrollmentHash: null })
     .where(and(where, isNull(schema.machine.revokedAt)))
     .returning();
   for (const machine of machines) {

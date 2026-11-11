@@ -237,6 +237,9 @@ export const machine = sqliteTable(
     arch: text("arch"),
     // SHA-256 (hex) of the machine token. The token itself is only ever shown to the CLI.
     tokenHash: text("token_hash").unique(),
+    // SHA-256 (hex) of the token the gateway sent to replace it on the machine's last connect,
+    // until the CLI says it saved it (src/durable-objects/machine-link.ts). Both work meanwhile.
+    pendingTokenHash: text("pending_token_hash").unique(),
     // SHA-256 (hex) of the device code that approved this machine, while the claim is pending.
     enrollmentHash: text("enrollment_hash").unique(),
     // The user who approved the enrollment.

@@ -1,3 +1,4 @@
+import { machineRunnerName } from "@relayrunner/machine-protocol";
 import type { RunnerOrder } from "@relayrunner/runner-order";
 import type { AccountUsage } from "./actions-billing.ts";
 import { describe, expect, test, vi } from "vitest";
@@ -11,7 +12,6 @@ import {
   hasLabels,
   lastPicked,
   machineLabels,
-  machineRunnerName,
   needsOwnerAccess,
   newRouteId,
   parseLabels,
