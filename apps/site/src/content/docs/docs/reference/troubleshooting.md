@@ -12,7 +12,7 @@ Start with the **Activity** page in the dashboard. Most routing questions are an
 - **The GitHub App isn't installed** on the repo's owner, or doesn't include this repo. Check **Settings → GitHub accounts**. If the install was a request to an org owner, it needs approving on GitHub first.
 - **The installation isn't connected** to a workspace. Connect it from **Settings → GitHub accounts**.
 - **Your org limits actions.** Allow `relayrunner/actions/*` in the org's Actions settings.
-- **A runner group blocks it.** If your org only allows org-level runners, the org's Default runner group must allow the repo, and allow public repositories for a public repo. RelayRunner posts a failed `RelayRunner` check on the commit when this is the cause.
+- **A runner group blocks it.** RelayRunner posts a failed `RelayRunner` check on the commit that says what to change.
 - **Another runner has the `relayrunner` label.** Remove it, or it may take relays instead of RelayRunner.
 
 A relay nobody answers stays queued until GitHub cancels it after 24 hours. Cancel the run and push again once it's fixed.
@@ -38,7 +38,7 @@ Open the job on the Activity page and choose **Show why**. Each skipped step has
 
 ## Only the first job ran
 
-Two jobs, or a matrix, share one relay's output. A machine label can only be claimed once. Give each job its own relay.
+Two jobs, or a matrix, share one relay's output. Give each job its own relay.
 
 ## The job failed on my machine but passes on GitHub
 

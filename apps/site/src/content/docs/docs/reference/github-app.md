@@ -25,10 +25,10 @@ RelayRunner reaches GitHub through one GitHub App, [RelayRunner](https://github.
 
 ## Account permissions
 
-| Permission      | Access | Why                                                                                                                      |
-| --------------- | ------ | ------------------------------------------------------------------------------------------------------------------------ |
-| Email addresses | Read   | Your email at sign-in.                                                                                                   |
-| Plan            | Read   | A personal account's Actions usage, for the minutes limit. GitHub only shares this with the account owner's own sign-in. |
+| Permission      | Access | Why                                                        |
+| --------------- | ------ | ---------------------------------------------------------- |
+| Email addresses | Read   | Your email at sign-in.                                     |
+| Plan            | Read   | A personal account's Actions usage, for the minutes limit. |
 
 ## What it never gets
 
@@ -36,11 +36,11 @@ The App can't read your code, beyond `relayrunner.yml`. It doesn't receive job l
 
 ## Runner groups
 
-RelayRunner registers its runners on the job's own repo, so your org's runner groups don't apply. If your org only allows org-level runners, or hasn't accepted the Administration permission, it registers them in the org's **Default** group instead. Then Default has to allow the repo, and allow public repositories for public repos' relays. If it doesn't, RelayRunner posts a failed `RelayRunner` check on the commit that says what to change.
+If your org's runner group settings block RelayRunner's runners, it posts a failed `RelayRunner` check on the commit that says what to change.
 
 ## RelayRunner Checks
 
-Lint uses a second, optional App, **RelayRunner Checks**, with Contents read, Checks write and Pull requests read. It downloads each commit's source to lint it in a sandbox with no internet access, then discards it. Install it only if you want lint.
+Lint uses a second, optional App, **RelayRunner Checks**, with Contents read, Checks write and Pull requests read. It lints each commit in a sandbox with no internet access, then discards it. Install it only if you want lint.
 
 ## When permissions change
 

@@ -48,17 +48,16 @@ jobs:
     steps: ...
 ```
 
-The old label moves to the relay's `github` input (or `blacksmith` for a Blacksmith label), so the job still runs there when no machine is free. A `macos-*` job gets `machine: macOS`, so it only goes to Macs. `init` pins the relay to an exact release tag rather than `@v1`, keeps your comments and formatting, and never commits.
+The old label moves to the relay's `github` input (or `blacksmith` for a Blacksmith label), so the job still runs there when no machine is free. A `macos-*` job gets `machine: macOS`, so it only goes to Macs. `init` keeps your comments and formatting, and never commits.
 
 Push the change. The check keeps its name in GitHub, so required checks and branch protection keep working.
 
 ## Jobs it skips
 
-- **Deploy jobs.** A job with an `environment`, `id-token: write`, or secrets other than `GITHUB_TOKEN`. Running it on a machine gives that machine those secrets, so it's your call. You can route one by hand with the same change.
+- **Deploy jobs.** Jobs that use secrets or a deploy environment. Running one on a machine gives that machine those secrets, so it's your call. You can route one by hand with the same change.
 - **Matrix jobs.** One relay answers one job, so it can't serve every leg of a matrix.
-- **A `runs-on` that's an expression, a list or a runner group.**
 - **Reusable workflows.** They choose their own runner.
-- **Windows jobs**, and jobs already on a self-hosted runner or an unknown label.
+- **Windows jobs**, and jobs already on a self-hosted runner.
 
 ## Public repos
 

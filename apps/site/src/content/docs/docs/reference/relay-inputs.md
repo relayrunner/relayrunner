@@ -26,7 +26,7 @@ Give one input per provider the job may use. A provider you leave out is never u
 | ------------ | ------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
 | `machine`    | none    | Comma-separated labels a self-hosted machine must have, all of them. `self-hosted` accepts any machine. Narrow it with `macOS`, `Linux`, `ARM64` or `X64`, such as `macOS, ARM64`. Ignored for public repos. |
 | `github`     | none    | One GitHub-hosted label, such as `ubuntu-latest` or `macos-latest`.                                                                                                                                          |
-| `blacksmith` | none    | One Blacksmith label, starting with `blacksmith-`, such as `blacksmith-4vcpu-ubuntu-2404`.                                                                                                                   |
+| `blacksmith` | none    | One Blacksmith label, such as `blacksmith-4vcpu-ubuntu-2404`.                                                                                                                                                |
 
 ## Output
 
@@ -41,10 +41,10 @@ Give one input per provider the job may use. A provider you leave out is never u
 
 ## Versions
 
-`@v1` gets fixes and new features without breaking changes. `relayrunner init` pins a release tag instead. See [releases](https://github.com/relayrunner/actions/releases).
+`@v1` gets fixes and new features without breaking changes. See [releases](https://github.com/relayrunner/actions/releases).
 
 ## Good to know
 
-- **One relay per job.** A machine label can only be claimed once, so jobs that share one relay's output stay queued after the first. Give each job its own relay.
+- **One relay per job.** Jobs that share one relay's output won't all run. Give each job its own relay.
 - **It shows as `relay-<job> / RelayRunner`** in the workflow run, and finishes in about a second.
 - **No minutes.** RelayRunner answers the relay itself on `runs-on: relayrunner`. Don't give any runner of your own the `relayrunner` label, or it may take relays instead.

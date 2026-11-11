@@ -5,7 +5,7 @@ sidebar:
   label: Install
 ---
 
-The `relayrunner` CLI connects a machine to your workspace and routes a repo's jobs. It runs on macOS and Linux, on x64 or ARM64, with Node.js 22 or newer. Windows isn't supported yet.
+The `relayrunner` CLI connects a machine to your workspace and routes a repo's jobs. It runs on macOS and Linux with Node.js 22 or newer. Windows isn't supported yet.
 
 ## Install
 
@@ -30,8 +30,6 @@ There are two ways to sign a machine in. Both open the dashboard, where you sign
 - **`relayrunner login`** signs in and exits, without putting the machine online. Coding agents use this, since they can't keep `connect` running after their session ends.
 
 Check who the machine is signed in as with `relayrunner whoami`.
-
-The machine's token is saved to `~/.relayrunner/machine.json`.
 
 ## Keep it running
 

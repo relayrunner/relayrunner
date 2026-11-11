@@ -10,13 +10,13 @@ RelayRunner needs to know about your jobs to route them, but not what's in them.
 - **Your account**: your GitHub user id, username, name, email and avatar.
 - **Workspaces**: their members, roles and invitations.
 - **Repositories**: names, ids and whether each is public or private, for the GitHub accounts you connect.
-- **Runs and jobs**: repo, workflow and job names, the run's title, branch, commit, who triggered it, labels, status and timings, and where each job was routed and why.
-- **Machines**: name, OS, architecture, model, chip, cores and memory, when it was last online, and a hash of its token.
+- **Runs and jobs**: repo, workflow and job names, who triggered them, status, timings, and where each job was routed and why.
+- **Machines**: name, OS and hardware, and when each was last online.
 - **Actions usage**: minutes and amounts per repo from GitHub billing, where the App has permission.
 
 ## What it never gets
 
-- **Your code.** The App can only read `relayrunner.yml`. The one exception is lint, through the separate Checks App: it downloads a commit, lints it in a container with no internet access, and discards it.
+- **Your code.** The App can only read `relayrunner.yml`. The one exception is lint, through the separate Checks App: it lints a commit in a sandbox with no internet access and discards it.
 - **Job logs and secrets.** Jobs on your machines use GitHub's runner, which talks to GitHub directly.
 - **Provider accounts.** RelayRunner hands a job a label. Blacksmith or GitHub runs it under your agreement with them.
 

@@ -15,9 +15,7 @@ The job isn't sandboxed. Like any self-hosted runner, it can read and write what
 
 ## One job per runner
 
-Each job gets a fresh runner registered for that job alone, on the job's own repo, and removed when it ends. There's no long-lived runner registration to steal, and nothing from one job's runner is reused for the next.
-
-Before starting a job, the CLI checks that its runner config only points at GitHub's servers over https and is named for that job. Anything else is refused. The terminal shows which repo each job comes from.
+Each job gets a fresh runner registered for that job alone, and removed when it ends. There's no long-lived runner registration to steal. The terminal shows which repo each job comes from.
 
 ## Public repositories
 
@@ -25,12 +23,12 @@ Machines never take a public repo's jobs. Anyone can open a pull request to a pu
 
 ## Who can send jobs to a machine
 
-- **Only me** (the default): only jobs you started, both the run and the attempt.
+- **Only me** (the default): only jobs you started.
 - **Anyone**: any job in the workspace, from a repo the machine's owner can open on GitHub. Sharing never gives a machine code its owner couldn't already see.
 
 ## Machine tokens
 
-A machine's token is stored only as a hash. A new token is issued each time `connect` comes online, and the old one stops working, so a copied `machine.json` can't sign in for long. If another copy signs in while the machine is online, the person who approved the machine gets an email.
+Each machine signs in with its own token, which changes every time `connect` comes online. If someone else signs in with it, the person who approved the machine gets an email.
 
 Removing a machine in the dashboard revokes its token straight away.
 

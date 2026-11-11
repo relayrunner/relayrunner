@@ -21,7 +21,7 @@ jobs:
       - uses: relayrunner/actions/checks/pr-title@v1
 ```
 
-RelayRunner runs the job itself only when every step is a RelayRunner check with plain inputs. Otherwise it fails the job and says why, so move other steps to a job of their own.
+Keep free checks in a job of their own. A job that mixes in other steps fails with the reason.
 
 Each check is also an ordinary action, so the same job works on `ubuntu-latest` or your own runner if you point it there.
 

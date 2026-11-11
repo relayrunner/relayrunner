@@ -3,9 +3,9 @@ title: Repo config
 description: The relayrunner.yml file, which turns on checks for a repo.
 ---
 
-`relayrunner.yml` turns on [free checks](/docs/concepts/free-checks/) for every pull request in a repo, with no workflow. Put it at `.github/relayrunner.yml` or the repo root. If both exist, the one in `.github/` wins.
+`relayrunner.yml` turns on [free checks](/docs/concepts/free-checks/) for every pull request in a repo, with no workflow. Put it at `.github/relayrunner.yml` or the repo root.
 
-RelayRunner reads it from the default branch, so a pull request can't change the checks it gets. The GitHub App can read only these two files.
+RelayRunner reads it from the default branch, so a pull request can't change the checks it gets.
 
 ```yaml
 checks:
@@ -23,7 +23,7 @@ checks:
     types: [feat, fix, docs, chore]
 ```
 
-The default types are `feat`, `fix`, `docs`, `style`, `refactor`, `perf`, `test`, `build`, `ci`, `chore` and `revert`.
+By default, all the usual Conventional Commit types are allowed.
 
 ## `checks.lint`
 

@@ -17,7 +17,7 @@ Estimates use GitHub's list prices for private repos. Standard runners in public
 
 ## Saved by free checks
 
-Each [free check](/docs/concepts/free-checks/) counts as a job on `ubuntu-latest` that would have billed at least a minute. Public repos don't pay for standard runners, so their checks save minutes but no money.
+Each [free check](/docs/concepts/free-checks/) counts as a job on `ubuntu-latest` that would have billed at least a minute.
 
 ## Providers
 

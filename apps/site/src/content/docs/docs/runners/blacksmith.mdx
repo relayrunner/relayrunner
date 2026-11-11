@@ -28,11 +28,10 @@ relay-test:
 
 ## Where it sits in the order
 
-RelayRunner can't see Blacksmith's capacity, so the Blacksmith step always takes a job that names a Blacksmith label. Steps below it only run for jobs that don't name one. A common order is your machines, then Blacksmith, then GitHub-hosted.
+The Blacksmith step always takes a job that names a Blacksmith label. Steps below it only run for jobs that don't name one. A common order is your machines, then Blacksmith, then GitHub-hosted.
 
 Unlike machines, Blacksmith also runs public repos' jobs.
 
 ## Good to know
 
-- The label must start with `blacksmith-`. Anything else is skipped, since the job would sit queued.
 - Blacksmith-only actions in a job won't work on your machines or GitHub. `init` warns about these.

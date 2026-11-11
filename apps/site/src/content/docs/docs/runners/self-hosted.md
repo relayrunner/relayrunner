@@ -11,9 +11,9 @@ Any Mac or Linux computer can take jobs: your laptop, a Mac mini under the desk,
 npx relayrunner connect
 ```
 
-The first run signs the machine in. After that, the machine is online while `connect` runs. It keeps a connection open to RelayRunner, runs the jobs it's sent one at a time, and prints each one with the repo it came from. Ctrl-C takes it offline.
+The first run signs the machine in. After that, the machine is online while `connect` runs, and the terminal shows each job as it runs. Ctrl-C takes it offline.
 
-Each job runs in `actions/runner`, GitHub's official runner, registered for that one job and removed afterwards. The machine needs no runner setup of its own, and nothing is left registered when it's offline.
+Jobs run in GitHub's official runner, set up fresh for each job. The machine needs no runner setup of its own.
 
 ## Labels
 
@@ -55,13 +55,13 @@ A machine runs one job at a time. When it's busy, the next job goes to another m
 
 ## Remove a machine
 
-Remove it from the Runners page. You can remove your own machines; owners and admins can remove any. A running `connect` exits, and the saved token is deleted. A member's machines are removed when they leave the workspace.
+Remove it from the Runners page. You can remove your own machines; owners and admins can remove any. A member's machines are removed when they leave the workspace.
 
 ## Runners your org already has
 
 If your organization already runs self-hosted runners, RelayRunner can route jobs to them as they are, with no change on the runner's machine. On the **Runners** page, choose **Add runners from GitHub** and pick the ones to add. Owners and admins can add them, and only for organizations.
 
-Added runners share the self-hosted step with your connected machines, and are picked the same way: online, idle, and with every label in the relay's `machine` input. RelayRunner checks each runner's group, so a job is never sent to a runner GitHub won't give it to. Removing one from RelayRunner leaves it registered on GitHub.
+Added runners share the self-hosted step with your connected machines, and are picked the same way: online, idle, and with every label in the relay's `machine` input. Removing one from RelayRunner leaves it registered on GitHub.
 
 ## Public repos
 

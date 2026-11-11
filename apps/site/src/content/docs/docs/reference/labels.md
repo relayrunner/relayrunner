@@ -14,17 +14,9 @@ description: Every runs-on label RelayRunner uses or answers, and what it means.
 | `ubuntu-latest`, `macos-latest`, … | The relay's `github` input                                               | A GitHub-hosted runner.                              |
 | `blacksmith-*`                     | The relay's `blacksmith` input                                           | A Blacksmith runner.                                 |
 
-Labels ignore case, as on GitHub.
-
 ## Labels RelayRunner answers
 
-These appear in a job's `runs-on` after the relay answers. You don't write them.
-
-| Label                              | Meaning                                                                                                                                       |
-| ---------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------- |
-| `rr-<12 hex>`                      | A one-time label for a connected machine. Only the job it was answered for can use it.                                                        |
-| `rr-runner-<8 hex>`                | An [existing runner](/docs/runners/self-hosted/#runners-your-org-already-has) you added. RelayRunner puts this label on the runner on GitHub. |
-| The `github` or `blacksmith` input | The provider's own label, passed through.                                                                                                     |
+After the relay answers, the job's `runs-on` is either a one-time `rr-…` label for one of your machines, or the provider label from the relay, such as `ubuntu-latest`. You never write these yourself.
 
 ## Labels RelayRunner recognizes
 
