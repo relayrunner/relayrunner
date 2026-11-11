@@ -1,8 +1,8 @@
 // Enrolls this computer as a machine with the browser device-code flow (#65):
 //
 // 1. POST /api/auth/device/code → a user code and the dashboard's /device link.
-// 2. The user opens the link (we add &name=<this computer's name> as the suggested machine name), picks a
-//    workspace and approves.
+// 2. The user opens the link (we add &name=<this computer's name> as the suggested machine name), and
+//    approves. The machine belongs to them and is in all their workspaces.
 // 3. We poll /api/auth/device/token until that happens and get a short-lived user session.
 // 4. POST /api/machines/claim trades that session and the device code for the machine token.
 //    The gateway deletes the session, so only the machine token stays on this computer.
@@ -11,6 +11,7 @@ import { spawn } from "node:child_process";
 import { z } from "zod";
 import type { Credentials } from "./credentials.ts";
 import { userAgent } from "./paths.ts";
+import { readWorkspaces, type Workspace, WorkspaceFields } from "./workspaces.ts";
 
 export const CLIENT_ID = "relayrunner-cli";
 const DEVICE_GRANT = "urn:ietf:params:oauth:grant-type:device_code";
@@ -57,21 +58,15 @@ const OAuthError = z.object({ error: z.string(), error_description: z.string().o
 
 const ClaimResponse = z.object({
   machine: z.object({ id: z.string().min(1), name: z.string() }),
-  workspace: z.object({
-    id: z.string().min(1),
-    name: z.string(),
-    slug: z.string().nullish(),
-    // Missing from a gateway that predates #244.
-    memberCount: z.number().int().nonnegative().optional(),
-  }),
+  ...WorkspaceFields,
   token: z.string().min(1),
 });
 
 export interface LoginResult {
   credentials: Credentials;
-  // How many people are in the workspace, or null if the gateway didn't say. More than one means
-  // there are teammates whose jobs this machine could run.
-  memberCount: number | null;
+  // Every workspace the machine is now in, each with its member count when the gateway says.
+  // Empty when its owner isn't in a workspace yet.
+  workspaces: Workspace[];
 }
 
 export async function login(options: LoginOptions): Promise<LoginResult> {
@@ -161,15 +156,13 @@ export async function login(options: LoginOptions): Promise<LoginResult> {
       `The gateway approved the sign-in but wouldn't enroll this machine (HTTP ${claimResponse.status}).`,
     );
   const claimed = ClaimResponse.parse(await claimResponse.json());
-  const { memberCount, ...workspace } = claimed.workspace;
   return {
     credentials: {
       server: new URL(options.server).origin,
       machine: { id: claimed.machine.id, name: claimed.machine.name },
-      workspace,
       token: claimed.token,
     },
-    memberCount: memberCount ?? null,
+    workspaces: readWorkspaces(claimed),
   };
 }
 
