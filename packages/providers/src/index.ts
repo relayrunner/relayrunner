@@ -112,10 +112,18 @@ export function providerOfEnvironment(key: string): ProviderId | "machine" {
   return isProviderId(id) ? id : "other";
 }
 export {
+  BASE_BOOK,
+  BASE_PRICES,
+  dayMs,
   type GitHubRunner,
   githubRate,
+  isRate,
   listRate,
-  PRICE_CHANGES,
+  type PriceBook,
+  priceBook,
+  type PricedProvider,
+  type PriceRow,
   PRICES_CHECKED,
+  RATES,
   rateText,
 } from "./prices.ts";

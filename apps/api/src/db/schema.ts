@@ -906,3 +906,27 @@ export const agentFeedback = sqliteTable(
   },
   (table) => [index("agent_feedback_user_id_created_at_idx").on(table.userId, table.createdAt)],
 );
+
+// Runner prices operators record, on top of the base list in @relayrunner/providers
+// (BASE_PRICES): USD for a minute of one provider rate from a UTC day (YYYY-MM-DD), until the same
+// rate's next row. Global, not per workspace. A wrong row is deleted and added again; a real
+// change is a new row from its own day, so past jobs keep the price they ran at.
+export const providerPrice = sqliteTable(
+  "provider_price",
+  {
+    id: text("id").primaryKey(),
+    provider: text("provider").notNull(),
+    rate: text("rate").notNull(),
+    usd: real("usd").notNull(),
+    from: text("effective_from").notNull(),
+    /** Where the price came from: a pricing page URL or a note. */
+    source: text("source"),
+    createdBy: text("created_by").notNull(),
+    createdAt: integer("created_at", { mode: "timestamp_ms" })
+      .notNull()
+      .$defaultFn(() => new Date()),
+  },
+  (table) => [
+    uniqueIndex("provider_price_rate_from_idx").on(table.provider, table.rate, table.from),
+  ],
+);

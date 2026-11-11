@@ -26,6 +26,7 @@ import { Route as AuthedWorkspaceWorkspaceRouteImport } from './routes/_authed/_
 import { Route as AuthedInviteIdRouteImport } from './routes/_authed/invite.$id'
 import { Route as AuthedWorkspacesNewRouteImport } from './routes/_authed/workspaces.new'
 import { Route as AuthedWorkspaceAdminIndexRouteImport } from './routes/_authed/_workspace/admin.index'
+import { Route as AuthedWorkspaceAdminPricesRouteImport } from './routes/_authed/_workspace/admin.prices'
 import { Route as AuthedWorkspaceAdminUsersRouteImport } from './routes/_authed/_workspace/admin.users'
 import { Route as AuthedWorkspaceAdminWebhooksRouteImport } from './routes/_authed/_workspace/admin.webhooks'
 import { Route as AuthedWorkspaceAdminWorkspacesRouteImport } from './routes/_authed/_workspace/admin.workspaces'
@@ -123,6 +124,12 @@ const AuthedWorkspaceAdminIndexRoute =
     path: '/admin/',
     getParentRoute: () => AuthedWorkspaceRoute,
   } as any)
+const AuthedWorkspaceAdminPricesRoute =
+  AuthedWorkspaceAdminPricesRouteImport.update({
+    id: '/admin/prices',
+    path: '/admin/prices',
+    getParentRoute: () => AuthedWorkspaceRoute,
+  } as any)
 const AuthedWorkspaceAdminUsersRoute =
   AuthedWorkspaceAdminUsersRouteImport.update({
     id: '/admin/users',
@@ -205,6 +212,7 @@ export interface FileRoutesByFullPath {
   '/workspace': typeof AuthedWorkspaceWorkspaceRoute
   '/invite/$id': typeof AuthedInviteIdRoute
   '/workspaces/new': typeof AuthedWorkspacesNewRoute
+  '/admin/prices': typeof AuthedWorkspaceAdminPricesRoute
   '/admin/users': typeof AuthedWorkspaceAdminUsersRoute
   '/admin/webhooks': typeof AuthedWorkspaceAdminWebhooksRoute
   '/admin/workspaces': typeof AuthedWorkspaceAdminWorkspacesRoute
@@ -233,6 +241,7 @@ export interface FileRoutesByTo {
   '/workspace': typeof AuthedWorkspaceWorkspaceRoute
   '/invite/$id': typeof AuthedInviteIdRoute
   '/workspaces/new': typeof AuthedWorkspacesNewRoute
+  '/admin/prices': typeof AuthedWorkspaceAdminPricesRoute
   '/admin/users': typeof AuthedWorkspaceAdminUsersRoute
   '/admin/webhooks': typeof AuthedWorkspaceAdminWebhooksRoute
   '/admin/workspaces': typeof AuthedWorkspaceAdminWorkspacesRoute
@@ -264,6 +273,7 @@ export interface FileRoutesById {
   '/_authed/_workspace/workspace': typeof AuthedWorkspaceWorkspaceRoute
   '/_authed/invite/$id': typeof AuthedInviteIdRoute
   '/_authed/workspaces/new': typeof AuthedWorkspacesNewRoute
+  '/_authed/_workspace/admin/prices': typeof AuthedWorkspaceAdminPricesRoute
   '/_authed/_workspace/admin/users': typeof AuthedWorkspaceAdminUsersRoute
   '/_authed/_workspace/admin/webhooks': typeof AuthedWorkspaceAdminWebhooksRoute
   '/_authed/_workspace/admin/workspaces': typeof AuthedWorkspaceAdminWorkspacesRoute
@@ -294,6 +304,7 @@ export interface FileRouteTypes {
     | '/workspace'
     | '/invite/$id'
     | '/workspaces/new'
+    | '/admin/prices'
     | '/admin/users'
     | '/admin/webhooks'
     | '/admin/workspaces'
@@ -322,6 +333,7 @@ export interface FileRouteTypes {
     | '/workspace'
     | '/invite/$id'
     | '/workspaces/new'
+    | '/admin/prices'
     | '/admin/users'
     | '/admin/webhooks'
     | '/admin/workspaces'
@@ -352,6 +364,7 @@ export interface FileRouteTypes {
     | '/_authed/_workspace/workspace'
     | '/_authed/invite/$id'
     | '/_authed/workspaces/new'
+    | '/_authed/_workspace/admin/prices'
     | '/_authed/_workspace/admin/users'
     | '/_authed/_workspace/admin/webhooks'
     | '/_authed/_workspace/admin/workspaces'
@@ -496,6 +509,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AuthedWorkspaceAdminIndexRouteImport
       parentRoute: typeof AuthedWorkspaceRoute
     }
+    '/_authed/_workspace/admin/prices': {
+      id: '/_authed/_workspace/admin/prices'
+      path: '/admin/prices'
+      fullPath: '/admin/prices'
+      preLoaderRoute: typeof AuthedWorkspaceAdminPricesRouteImport
+      parentRoute: typeof AuthedWorkspaceRoute
+    }
     '/_authed/_workspace/admin/users': {
       id: '/_authed/_workspace/admin/users'
       path: '/admin/users'
@@ -584,6 +604,7 @@ interface AuthedWorkspaceRouteChildren {
   AuthedWorkspaceRunsRoute: typeof AuthedWorkspaceRunsRoute
   AuthedWorkspaceUsageRoute: typeof AuthedWorkspaceUsageRoute
   AuthedWorkspaceWorkspaceRoute: typeof AuthedWorkspaceWorkspaceRoute
+  AuthedWorkspaceAdminPricesRoute: typeof AuthedWorkspaceAdminPricesRoute
   AuthedWorkspaceAdminUsersRoute: typeof AuthedWorkspaceAdminUsersRoute
   AuthedWorkspaceAdminWebhooksRoute: typeof AuthedWorkspaceAdminWebhooksRoute
   AuthedWorkspaceAdminWorkspacesRoute: typeof AuthedWorkspaceAdminWorkspacesRoute
@@ -606,6 +627,7 @@ const AuthedWorkspaceRouteChildren: AuthedWorkspaceRouteChildren = {
   AuthedWorkspaceRunsRoute: AuthedWorkspaceRunsRoute,
   AuthedWorkspaceUsageRoute: AuthedWorkspaceUsageRoute,
   AuthedWorkspaceWorkspaceRoute: AuthedWorkspaceWorkspaceRoute,
+  AuthedWorkspaceAdminPricesRoute: AuthedWorkspaceAdminPricesRoute,
   AuthedWorkspaceAdminUsersRoute: AuthedWorkspaceAdminUsersRoute,
   AuthedWorkspaceAdminWebhooksRoute: AuthedWorkspaceAdminWebhooksRoute,
   AuthedWorkspaceAdminWorkspacesRoute: AuthedWorkspaceAdminWorkspacesRoute,

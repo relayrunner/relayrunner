@@ -12,6 +12,7 @@ import {
   PanelLeftOpenIcon,
   RouteIcon,
   ServerIcon,
+  TagIcon,
   TimerIcon,
   UsersIcon,
   WebhookIcon,
@@ -72,6 +73,7 @@ const adminNav = [
   { to: "/admin/users", label: "Users", icon: UsersIcon },
   { to: "/admin/workspaces", label: "Workspaces", icon: Building2Icon },
   { to: "/admin/webhooks", label: "Webhooks", icon: WebhookIcon },
+  { to: "/admin/prices", label: "Prices", icon: TagIcon },
 ] as const satisfies NavItem[];
 
 const navLink =

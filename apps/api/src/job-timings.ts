@@ -1,10 +1,11 @@
 import type { WebhookMessage } from "@relayrunner/github-webhooks";
 import { and, asc, eq, gte, isNotNull, isNull, lt, ne, type SQL, sql } from "drizzle-orm";
 import type { SQLiteColumn, SQLiteTable } from "drizzle-orm/sqlite-core";
-import { type GitHubRunner, githubRate, PRICE_CHANGES } from "@relayrunner/providers";
+import { type GitHubRunner, githubRate, type PriceBook } from "@relayrunner/providers";
 import { type Db, schema } from "./db/index.ts";
 import { findInstallation } from "./installations.ts";
 import { parseDate } from "./jobs.ts";
+import { loadPriceBook } from "./prices.ts";
 import { routeIdFromLabels } from "./routing.ts";
 
 type WorkflowJobMessage = Extract<WebhookMessage, { event: "workflow_job" }>;
@@ -37,17 +38,22 @@ export const RUNNER_LABELS: Record<RunnerClass, string> = {
 };
 
 /** What a minute cost on a runner class in a private repo at `at` (epoch ms, now by default). */
-export function classRate(cls: RunnerClass, at = Date.now()) {
+export function classRate(book: PriceBook, cls: RunnerClass, at = Date.now()) {
   if (cls === "self-hosted") return 0;
-  return githubRate(cls === "other" ? "linux-2-core" : cls, at);
+  return githubRate(book, cls === "other" ? "linux-2-core" : cls, at) ?? 0;
 }
 
 /**
  * What a minute cost on a runner class in a repo: standard runners are free in public repos, and
  * unknown visibility counts as private, so a missing mirror row never hides a cost.
  */
-export function rateFor(cls: RunnerClass, isPrivate: boolean | null | undefined, at = Date.now()) {
-  return isPrivate === false ? 0 : classRate(cls, at);
+export function rateFor(
+  book: PriceBook,
+  cls: RunnerClass,
+  isPrivate: boolean | null | undefined,
+  at = Date.now(),
+) {
+  return isPrivate === false ? 0 : classRate(book, cls, at);
 }
 
 /**
@@ -56,8 +62,8 @@ export function rateFor(cls: RunnerClass, isPrivate: boolean | null | undefined,
  * `groupBy` is what to add to the query's grouping (nothing when no price changed in the window,
  * so the split adds no rows); `at` turns a period back into a moment inside its stretch.
  */
-export function pricePeriods(column: SQLiteColumn, since: number, now: number) {
-  const changes = PRICE_CHANGES.filter((change) => change > since && change <= now);
+export function pricePeriods(book: PriceBook, column: SQLiteColumn, since: number, now: number) {
+  const changes = book.changes.filter((change) => change > since && change <= now);
   const period = changes.length
     ? sql<number>`(${sql.join(
         changes.map((change) => sql`(${column} >= ${change})`),
@@ -321,9 +327,10 @@ export interface UsageReport {
 export async function usageReport(db: Db, workspaceId: string, days = 30): Promise<UsageReport> {
   const now = Date.now();
   const since = new Date(now - days * DAY_MS);
+  const book = await loadPriceBook(db, now);
   const [recent, older] = await Promise.all([
-    recentUsage(db, workspaceId, since, now),
-    dailyUsage(db, workspaceId, since, now),
+    recentUsage(db, book, workspaceId, since, now),
+    dailyUsage(db, book, workspaceId, since, now),
   ]);
   const rows = [...recent, ...older];
 
@@ -332,7 +339,7 @@ export async function usageReport(db: Db, workspaceId: string, days = 30): Promi
   const byRepository = new Map<string, UsageReport["byRepository"][number]>();
   for (const row of rows) {
     const cls = runnerClass(row.labels, row.runnerGroupName);
-    const perMinute = rateFor(cls, row.private, row.pricedAt);
+    const perMinute = rateFor(book, cls, row.private, row.pricedAt);
     const runSeconds = Number(row.runMs) / 1000;
     const billedMinutes = Number(row.billedMinutes);
     const shortBilledMinutes = Number(row.shortBilledMinutes);
@@ -350,7 +357,7 @@ export async function usageReport(db: Db, workspaceId: string, days = 30): Promi
     const runner = byRunner.get(cls) ?? {
       runnerClass: cls,
       label: RUNNER_LABELS[cls],
-      perMinute: classRate(cls, now),
+      perMinute: classRate(book, cls, now),
       ...zero(),
     };
     add(runner, sums);
@@ -390,8 +397,8 @@ export const BILLED_MINUTES = sql`max(1, (${DURATION_MS} + 59999) / 60000)`;
 
 // The usage report's sums from job_timing, for jobs that finished since `since`, with the moment
 // their prices are read at.
-async function recentUsage(db: Db, workspaceId: string, since: Date, now: number) {
-  const prices = pricePeriods(table.completedAt, since.getTime(), now);
+async function recentUsage(db: Db, book: PriceBook, workspaceId: string, since: Date, now: number) {
+  const prices = pricePeriods(book, table.completedAt, since.getTime(), now);
   const durationMs = DURATION_MS;
   const billed = BILLED_MINUTES;
   const isShort = sql`(${durationMs} < ${SHORT_JOB_SECONDS * 1000})`;
@@ -431,8 +438,8 @@ async function recentUsage(db: Db, workspaceId: string, since: Date, now: number
 }
 
 // The same sums from job_timing_daily, for whole days that start at or after `since`.
-async function dailyUsage(db: Db, workspaceId: string, since: Date, now: number) {
-  const prices = pricePeriods(daily.day, since.getTime(), now);
+async function dailyUsage(db: Db, book: PriceBook, workspaceId: string, since: Date, now: number) {
+  const prices = pricePeriods(book, daily.day, since.getTime(), now);
   const rows = await db
     .select({
       period: prices.period,

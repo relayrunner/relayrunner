@@ -8,6 +8,7 @@ import { requireAccess } from "./middleware/admin.ts";
 import { attachSession } from "./middleware/session.ts";
 import { activityRoutes } from "./routes/activity.ts";
 import { agentRoutes } from "./routes/agents.ts";
+import { adminPriceRoutes } from "./routes/admin-prices.ts";
 import { adminWebhookRoutes } from "./routes/admin-webhooks.ts";
 import { adminRoutes } from "./routes/admin.ts";
 import { authRoutes } from "./routes/auth.ts";
@@ -65,7 +66,9 @@ app.route("/github", githubRoutes);
 app.route("/machines", machineRoutes);
 app.route("/agents", agentRoutes);
 app.route("/feedback", feedbackRoutes);
-// Operator admin over D1 (users, workspaces): Access (above) and an operator session.
+// Operator admin over D1 (users, workspaces, runner prices): Access (above) and an operator
+// session.
+app.route("/admin/prices", adminPriceRoutes);
 app.route("/admin", adminRoutes);
 
 app.notFound((c) => c.json({ error: "not_found" }, 404));

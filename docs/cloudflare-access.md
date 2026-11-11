@@ -48,6 +48,16 @@ A workspace delete disconnects its machines, wipes the Router and MachineLink Du
 
 A user delete also removes their sessions, GitHub sign-in and device codes, so a CLI signed in as them (for example with `RELAYRUNNER_HOME=~/.relayrunner-test`) stops authenticating. GitHub still remembers that the user authorized the App. To see GitHub's consent screen again, revoke it under GitHub Settings, Applications, Authorized GitHub Apps.
 
+## Runner prices
+
+`/admin/prices` lists each provider rate's prices by the day they took effect: the base list in code (`packages/providers/src/prices.ts`) and the rows operators add here (D1 `provider_price`). Jobs are priced at the rate on the day they ran, so a price change is a new row from its own day, never an edit. A new row applies to reports within a minute. To correct a mistake, remove the row and add it again. Operator session and Access, as above:
+
+| Route                          | What it does                                                                                                       |
+| ------------------------------ | ------------------------------------------------------------------------------------------------------------------ |
+| `GET /api/admin/prices`        | Every rate, with today's price and its rows, oldest first.                                                         |
+| `POST /api/admin/prices`       | Adds `{ "provider", "rate", "usd", "from", "source" }`. `usd` is per vCPU or per runner, as the rate says. Logged. |
+| `DELETE /api/admin/prices/:id` | Removes a row operators added. Logged.                                                                             |
+
 ## Webhook dead letters
 
 `/admin/webhooks` is the first admin view. It lists GitHub webhook deliveries that failed every retry and reached `relayrunner-github-webhooks-dlq`, with Replay and Discard buttons and a bulk replay by event or repository. The API's DLQ consumer archives each one to the R2 bucket `relayrunner-webhook-dead-letters` as `YYYY/MM/DD/<delivery-id>.json`, and acks only after that write succeeds. A lifecycle rule deletes objects after 30 days. The archive is in R2, not D1, because D1 failing is the likeliest reason a delivery dead-letters.
