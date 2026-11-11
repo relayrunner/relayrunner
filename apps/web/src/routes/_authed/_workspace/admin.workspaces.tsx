@@ -5,6 +5,7 @@ import { AdminDeleteDialog } from "@/components/admin-delete-dialog";
 import { PageHeader } from "@/components/page-header";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
+import { createCellContext, DataTable, dataTableColumns } from "@/components/ui/data-table";
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -30,7 +31,11 @@ function WorkspacesPage() {
   const [workspaces, setWorkspaces] = useState(Route.useLoaderData().workspaces);
   const [deleting, setDeleting] = useState<AdminWorkspace | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
-  const now = Date.now();
+
+  function startDelete(target: AdminWorkspace) {
+    setNotice(null);
+    setDeleting(target);
+  }
 
   async function remove(target: AdminWorkspace, uninstallGitHubApp: boolean) {
     const { workspace } = await deleteWorkspace(target.id, uninstallGitHubApp);
@@ -52,74 +57,15 @@ function WorkspacesPage() {
         </p>
       )}
 
-      <div className="overflow-x-auto rounded-xl border bg-card">
-        <table className="w-full text-sm">
-          <thead className="text-left text-muted-foreground">
-            <tr className="border-b">
-              <th className="px-4 py-2 font-medium">Workspace</th>
-              <th className="px-4 py-2 font-medium">GitHub</th>
-              <th className="px-4 py-2 font-medium">Members</th>
-              <th className="px-4 py-2 font-medium">Created</th>
-              <th className="px-4 py-2">
-                <span className="sr-only">Actions</span>
-              </th>
-            </tr>
-          </thead>
-          <tbody>
-            {workspaces.map((workspace) => (
-              <tr key={workspace.id} className="border-b align-top last:border-0">
-                <td className="px-4 py-3">
-                  <div className="font-medium">{workspace.name}</div>
-                  <div className="font-mono text-xs text-muted-foreground">{workspace.slug}</div>
-                </td>
-                <td className="px-4 py-3">
-                  {workspace.githubAccounts.length ? workspace.githubAccounts.join(", ") : "—"}
-                </td>
-                <td className="px-4 py-3">
-                  <ul className="grid gap-1">
-                    {workspace.members.map((member) => (
-                      <li key={member.userId} className="flex flex-wrap items-center gap-1.5">
-                        <span title={member.email}>{member.name}</span>
-                        <Badge variant="idle">
-                          {ROLE_LABELS[member.role as Role] ?? member.role}
-                        </Badge>
-                      </li>
-                    ))}
-                  </ul>
-                </td>
-                <td className="px-4 py-3 whitespace-nowrap" title={workspace.createdAt}>
-                  {timeAgo(workspace.createdAt, now)}
-                </td>
-                <td className="px-2 py-2 text-right">
-                  <DropdownMenu>
-                    <DropdownMenuTrigger asChild>
-                      <Button
-                        size="icon-sm"
-                        variant="ghost"
-                        aria-label={`More actions for ${workspace.name}`}
-                      >
-                        <EllipsisIcon aria-hidden />
-                      </Button>
-                    </DropdownMenuTrigger>
-                    <DropdownMenuContent align="end">
-                      <DropdownMenuItem
-                        variant="destructive"
-                        onSelect={() => {
-                          setNotice(null);
-                          setDeleting(workspace);
-                        }}
-                      >
-                        <Trash2Icon aria-hidden />
-                        Delete…
-                      </DropdownMenuItem>
-                    </DropdownMenuContent>
-                  </DropdownMenu>
-                </td>
-              </tr>
-            ))}
-          </tbody>
-        </table>
-      </div>
+      <WorkspaceActions value={{ startDelete }}>
+        <DataTable
+          columns={columns}
+          data={workspaces}
+          getRowId={(w) => w.id}
+          initialSorting={[{ id: "createdAt", desc: true }]}
+          empty="No workspaces yet."
+        />
+      </WorkspaceActions>
 
       <AdminDeleteDialog
         open={deleting !== null}
@@ -135,5 +81,82 @@ function WorkspacesPage() {
         </p>
       </AdminDeleteDialog>
     </section>
+  );
+}
+
+const [WorkspaceActions, useWorkspaceActions] = createCellContext<{
+  startDelete: (target: AdminWorkspace) => void;
+}>("Workspaces");
+
+const TOP = { className: "py-3 align-top" };
+
+const column = dataTableColumns<AdminWorkspace>();
+const columns = column.columns([
+  column.accessor("name", {
+    header: "Workspace",
+    sortFn: "text",
+    meta: TOP,
+    cell: ({ row }) => (
+      <>
+        <div className="font-medium">{row.original.name}</div>
+        <div className="font-mono text-xs text-muted-foreground">{row.original.slug}</div>
+      </>
+    ),
+  }),
+  column.accessor((w) => w.githubAccounts.join(", "), {
+    id: "github",
+    header: "GitHub",
+    sortFn: "text",
+    meta: TOP,
+    cell: ({ getValue }) => getValue() || "—",
+  }),
+  column.accessor((w) => w.members.length, {
+    id: "members",
+    header: "Members",
+    sortFn: "basic",
+    sortDescFirst: true,
+    meta: TOP,
+    cell: ({ row }) => (
+      <ul className="grid gap-1">
+        {row.original.members.map((member) => (
+          <li key={member.userId} className="flex flex-wrap items-center gap-1.5">
+            <span title={member.email}>{member.name}</span>
+            <Badge variant="idle">{ROLE_LABELS[member.role as Role] ?? member.role}</Badge>
+          </li>
+        ))}
+      </ul>
+    ),
+  }),
+  column.accessor("createdAt", {
+    header: "Created",
+    sortFn: "text",
+    sortDescFirst: true,
+    meta: { className: "py-3 align-top whitespace-nowrap" },
+    cell: ({ getValue }) => <span title={getValue()}>{timeAgo(getValue(), Date.now())}</span>,
+  }),
+  column.display({
+    id: "actions",
+    header: () => <span className="sr-only">Actions</span>,
+    meta: { className: "px-2 py-2 text-right align-top" },
+    cell: ({ row }) => <MoreActions workspace={row.original} />,
+  }),
+]);
+
+function MoreActions({ workspace }: { workspace: AdminWorkspace }) {
+  const { startDelete } = useWorkspaceActions();
+  return (
+    <DropdownMenu>
+      <DropdownMenuTrigger asChild>
+        <Button size="icon-sm" variant="ghost" aria-label={`More actions for ${workspace.name}`}>
+          <EllipsisIcon aria-hidden />
+        </Button>
+      </DropdownMenuTrigger>
+      <DropdownMenuContent align="end">
+        <DropdownMenuItem variant="destructive" onSelect={() => startDelete(workspace)}>
+          <Trash2Icon aria-hidden />
+          Delete…
+        </DropdownMenuItem>
+      </DropdownMenuContent>
+    </DropdownMenu>
   );
 }

@@ -18,7 +18,16 @@ import {
 } from "@tanstack/react-table";
 import { useWindowVirtualizer } from "@tanstack/react-virtual";
 import { ArrowDownIcon, ArrowUpDownIcon, ArrowUpIcon } from "lucide-react";
-import { memo, type ReactNode, useCallback, useLayoutEffect, useRef, useState } from "react";
+import {
+  createContext,
+  memo,
+  type ReactNode,
+  use,
+  useCallback,
+  useLayoutEffect,
+  useRef,
+  useState,
+} from "react";
 import {
   Table,
   TableBody,
@@ -33,6 +42,7 @@ import { cn } from "@/lib/utils";
 type ColumnMeta = {
   /** Right-align numbers so their digits line up. */
   align?: "end";
+  /** Classes for this column's body cells. */
   className?: string;
 };
 
@@ -56,8 +66,25 @@ type Columns<TData extends RowData> = ReturnType<
   ReturnType<typeof dataTableColumns<TData>>["columns"]
 >;
 
-const metaClass = (meta: ColumnMeta | undefined) =>
-  cn(meta?.align === "end" && "text-right", meta?.className);
+/**
+ * Hands page state and callbacks to cells, so columns can stay at module scope (a new columns
+ * array each render would rebuild the table). Wrap the DataTable in the returned Provider.
+ */
+export function createCellContext<T>(name: string) {
+  const Context = createContext<T | null>(null);
+  function useCellContext() {
+    const value = use(Context);
+    if (value === null) throw new Error(`${name} cells render inside its Provider`);
+    return value;
+  }
+  return [Context.Provider, useCellContext] as const;
+}
+
+/** Meta for a numeric column: right-aligned and muted, like the dashboard's other figures. */
+export const NUM: ColumnMeta = {
+  align: "end",
+  className: "whitespace-nowrap text-muted-foreground",
+};
 
 const ARIA_SORT = { asc: "ascending", desc: "descending" } as const;
 
@@ -94,6 +121,8 @@ export function DataTable<TData extends RowData>({
     state: { sorting, globalFilter: search },
     onSortingChange: setSorting,
     globalFilterFn: "includesString",
+    // Missing values (no runs yet, no price) sort after real ones either way.
+    defaultColumn: { sortUndefined: "last" },
   });
   const rows = table.getRowModel().rows;
   const headers = table.getHeaderGroups()[0]?.headers ?? [];
@@ -109,13 +138,17 @@ export function DataTable<TData extends RowData>({
               <TableHead
                 key={header.id}
                 aria-sort={sorted ? ARIA_SORT[sorted] : undefined}
-                className={metaClass(header.column.columnDef.meta)}
+                className={cn(header.column.columnDef.meta?.align === "end" && "text-right")}
               >
                 {header.column.getCanSort() ? (
                   <button
                     type="button"
                     onClick={header.column.getToggleSortingHandler()}
-                    className="group inline-flex items-center gap-1 rounded-sm outline-none hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring"
+                    className={cn(
+                      "group inline-flex items-center gap-1 rounded-sm outline-none hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring",
+                      // The arrow sits on the inner side, so labels line up with their column.
+                      header.column.columnDef.meta?.align === "end" && "flex-row-reverse",
+                    )}
                   >
                     <FlexRender header={header} />
                     <SortIcon sorted={sorted} />
@@ -164,7 +197,13 @@ const DataRow = memo(function DataRow<TData extends RowData>({
   return (
     <TableRow data-index={index} ref={measure}>
       {row.getAllCells().map((cell) => (
-        <TableCell key={cell.id} className={metaClass(cell.column.columnDef.meta)}>
+        <TableCell
+          key={cell.id}
+          className={cn(
+            cell.column.columnDef.meta?.align === "end" && "text-right",
+            cell.column.columnDef.meta?.className,
+          )}
+        >
           <FlexRender cell={cell} />
         </TableCell>
       ))}

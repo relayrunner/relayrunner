@@ -4,6 +4,7 @@ import { Trash2Icon } from "lucide-react";
 import { type FormEvent, useState } from "react";
 import { PageHeader } from "@/components/page-header";
 import { Button } from "@/components/ui/button";
+import { createCellContext, DataTable, dataTableColumns } from "@/components/ui/data-table";
 import { Input } from "@/components/ui/input";
 import {
   Select,
@@ -86,67 +87,81 @@ function PricesPage() {
         </p>
       )}
 
-      <div className="overflow-x-auto rounded-xl border bg-card">
-        <table className="w-full text-sm">
-          <thead className="text-left text-muted-foreground">
-            <tr className="border-b">
-              <th className="px-4 py-2 font-medium">Provider</th>
-              <th className="px-4 py-2 font-medium">Rate</th>
-              <th className="px-4 py-2 font-medium">Today</th>
-              <th className="px-4 py-2 font-medium">History</th>
-            </tr>
-          </thead>
-          <tbody>
-            {rates.map((rate) => (
-              <tr key={rateKey(rate)} className="border-b align-top last:border-0">
-                <td className="px-4 py-3 font-medium">{providerName(rate.provider)}</td>
-                <td className="px-4 py-3 font-mono text-xs">{rate.rate}</td>
-                <td className="px-4 py-3 whitespace-nowrap tabular-nums">
-                  {rateText(rate.current)}
-                  {perText(rate)}
-                </td>
-                <td className="px-4 py-3">
-                  <ul className="grid gap-1">
-                    {rate.rows.map((row) => (
-                      <li
-                        key={row.id ?? `base:${row.from}`}
-                        className="flex flex-wrap items-center gap-x-2"
-                      >
-                        <span className="tabular-nums">
-                          {row.from}: {rateText(row.usd)}
-                        </span>
-                        <span className="text-muted-foreground">
-                          {row.id ? `added by ${row.createdBy}` : "in code"}
-                        </span>
-                        {row.source && (
-                          <a
-                            href={row.source.startsWith("http") ? row.source : undefined}
-                            className="truncate text-muted-foreground underline-offset-2 hover:underline"
-                            title={row.source}
-                          >
-                            source
-                          </a>
-                        )}
-                        {row.id && (
-                          <Button
-                            size="icon-sm"
-                            variant="ghost"
-                            aria-label={`Remove the price from ${row.from}`}
-                            onClick={() => remove(rate, row.id!, row.from)}
-                          >
-                            <Trash2Icon aria-hidden />
-                          </Button>
-                        )}
-                      </li>
-                    ))}
-                  </ul>
-                </td>
-              </tr>
-            ))}
-          </tbody>
-        </table>
-      </div>
+      <PriceActions value={{ remove }}>
+        <DataTable columns={columns} data={rates} getRowId={rateKey} />
+      </PriceActions>
     </section>
+  );
+}
+
+const [PriceActions, usePriceActions] = createCellContext<{
+  remove: (rate: AdminRate, id: string, from: string) => Promise<void>;
+}>("Prices");
+
+const TOP = { className: "py-3 align-top" };
+
+const column = dataTableColumns<AdminRate>();
+const columns = column.columns([
+  column.accessor((rate) => providerName(rate.provider), {
+    id: "provider",
+    header: "Provider",
+    sortFn: "text",
+    meta: { className: "py-3 align-top font-medium" },
+  }),
+  column.accessor("rate", {
+    header: "Rate",
+    sortFn: "text",
+    meta: { className: "py-3 align-top font-mono text-xs" },
+  }),
+  column.accessor((rate) => rate.current ?? undefined, {
+    id: "today",
+    header: "Today",
+    sortFn: "basic",
+    meta: { className: "py-3 align-top whitespace-nowrap" },
+    cell: ({ row }) => `${rateText(row.original.current)}${perText(row.original)}`,
+  }),
+  column.display({
+    id: "history",
+    header: "History",
+    meta: TOP,
+    cell: ({ row }) => <History rate={row.original} />,
+  }),
+]);
+
+function History({ rate }: { rate: AdminRate }) {
+  const { remove } = usePriceActions();
+  return (
+    <ul className="grid gap-1">
+      {rate.rows.map((row) => (
+        <li key={row.id ?? `base:${row.from}`} className="flex flex-wrap items-center gap-x-2">
+          <span>
+            {row.from}: {rateText(row.usd)}
+          </span>
+          <span className="text-muted-foreground">
+            {row.id ? `added by ${row.createdBy}` : "in code"}
+          </span>
+          {row.source && (
+            <a
+              href={row.source.startsWith("http") ? row.source : undefined}
+              className="truncate text-muted-foreground underline-offset-2 hover:underline"
+              title={row.source}
+            >
+              source
+            </a>
+          )}
+          {row.id && (
+            <Button
+              size="icon-sm"
+              variant="ghost"
+              aria-label={`Remove the price from ${row.from}`}
+              onClick={() => remove(rate, row.id!, row.from)}
+            >
+              <Trash2Icon aria-hidden />
+            </Button>
+          )}
+        </li>
+      ))}
+    </ul>
   );
 }
 

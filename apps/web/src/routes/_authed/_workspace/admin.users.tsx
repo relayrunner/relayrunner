@@ -1,10 +1,10 @@
 import { createFileRoute } from "@tanstack/react-router";
 import { EllipsisIcon, Trash2Icon } from "lucide-react";
-import { createContext, use, useState } from "react";
+import { useState } from "react";
 import { AdminDeleteDialog } from "@/components/admin-delete-dialog";
 import { PageHeader } from "@/components/page-header";
 import { Button } from "@/components/ui/button";
-import { DataTable, dataTableColumns } from "@/components/ui/data-table";
+import { createCellContext, DataTable, dataTableColumns } from "@/components/ui/data-table";
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -108,7 +108,7 @@ function UsersPage() {
         </p>
       )}
 
-      <UserActions.Provider value={{ meId: me?.id, changeRole, startDelete }}>
+      <UserActions value={{ meId: me?.id, changeRole, startDelete }}>
         <DataTable
           columns={columns}
           data={users}
@@ -118,7 +118,7 @@ function UsersPage() {
           empty={search ? "No one matches that search." : "No users yet."}
           rowHeight={61}
         />
-      </UserActions.Provider>
+      </UserActions>
 
       <AdminDeleteDialog
         open={deleting !== null}
@@ -154,17 +154,11 @@ function UsersPage() {
 }
 
 // The row cells' callbacks, so the columns can live at module scope and stay stable.
-const UserActions = createContext<{
+const [UserActions, useUserActions] = createCellContext<{
   meId: string | undefined;
   changeRole: (target: AdminUser, role: UserRole) => Promise<void>;
   startDelete: (target: AdminUser) => void;
-} | null>(null);
-
-function useUserActions() {
-  const actions = use(UserActions);
-  if (!actions) throw new Error("User cells render inside UserActions.Provider");
-  return actions;
-}
+}>("Users");
 
 const column = dataTableColumns<AdminUser>();
 const columns = column.columns([
