@@ -4,6 +4,7 @@ import type { Env } from "./env.ts";
 import { appInstallationToken, deleteRunner, listRunners, type RunnerScope } from "./github-app.ts";
 import { enqueueInstallationTasks } from "./installation-tasks.ts";
 import { pickJobIdFromRunnerName } from "./pick-attempts.ts";
+import { errorMessage } from "./webhook-queue.ts";
 
 // A relay queued this long with no taker is rescued; one older than a day GitHub has given up on.
 export const STUCK_AFTER_MS = 5 * 60_000;
@@ -106,52 +107,60 @@ export async function sweepTargets(
   ];
 }
 
-// Queues one sweep per org or repo (src/installation-tasks.ts), so each runs in its own consumer
-// invocation however many there are.
+// Queues one sweep per installation (src/installation-tasks.ts), covering its org and repos, so
+// installations are swept side by side however many there are.
 async function removeLeftoverRunners(env: Env, now: number) {
-  const targets = await sweepTargets(createDb(env.DB), now);
+  const scopes = new Map<number, RunnerScope[]>();
+  for (const { installationId, scope } of await sweepTargets(createDb(env.DB), now))
+    scopes.set(installationId, [...(scopes.get(installationId) ?? []), scope]);
   await enqueueInstallationTasks(
     env,
-    targets.map((target) => ({ kind: "pick-sweep", ...target })),
+    [...scopes].map(([installationId, list]) => ({
+      kind: "pick-sweep",
+      installationId,
+      scopes: list,
+    })),
   );
 }
 
-/** Removes the pick runners left registered in one org or repo once their object is done. */
+/** Removes the pick runners left registered in an installation's org or repos once their object is done. */
 export async function removeLeftoverRunnersIn(
   env: Env,
   installationId: number,
-  scope: RunnerScope,
+  scopes: RunnerScope[],
 ): Promise<void> {
-  const where = scope.kind === "org" ? { org: scope.org } : { repo: scope.repo };
-  try {
-    const token = await appInstallationToken(env, installationId);
-    const runners = await listRunners(token, scope);
-    for (const runner of runners) {
-      const jobId = pickJobIdFromRunnerName(runner.name);
-      // Its object is active while it waits for or answers a job. Once the object is done, the
-      // runner is a leftover even if GitHub calls it busy: a job GitHub gave it would never run.
-      if (jobId === null) continue;
-      if (await env.PICK_RUNNER.getByName(String(jobId)).active()) continue;
-      await deleteRunner(token, scope, runner.id);
-      console.log(
+  for (const scope of scopes) {
+    const where = scope.kind === "org" ? { org: scope.org } : { repo: scope.repo };
+    try {
+      const token = await appInstallationToken(env, installationId);
+      const runners = await listRunners(token, scope);
+      for (const runner of runners) {
+        const jobId = pickJobIdFromRunnerName(runner.name);
+        // Its object is active while it waits for or answers a job. Once the object is done, the
+        // runner is a leftover even if GitHub calls it busy: a job GitHub gave it would never run.
+        if (jobId === null) continue;
+        if (await env.PICK_RUNNER.getByName(String(jobId)).active()) continue;
+        await deleteRunner(token, scope, runner.id);
+        console.log(
+          JSON.stringify({
+            msg: "relayrunner pick runner removed",
+            ...where,
+            runner: runner.name,
+            status: runner.status,
+            busy: runner.busy,
+          }),
+        );
+      }
+    } catch (error) {
+      // One org or repo failing (the App lost access, say) shouldn't stop the others.
+      console.warn(
         JSON.stringify({
-          msg: "relayrunner pick runner removed",
+          msg: "relayrunner pick sweep failed",
+          installationId,
           ...where,
-          runner: runner.name,
-          status: runner.status,
-          busy: runner.busy,
+          error: errorMessage(error),
         }),
       );
     }
-  } catch (error) {
-    // The App lost access, say. The next sweep tries again.
-    console.warn(
-      JSON.stringify({
-        msg: "relayrunner pick sweep failed",
-        installationId,
-        ...where,
-        error: error instanceof Error ? error.message : String(error),
-      }),
-    );
   }
 }

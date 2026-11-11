@@ -134,7 +134,7 @@ export async function pollActionsUsage(env: Env, now = new Date()) {
  * Read one account's usage (an org with the App's token, a personal account with its owner's). A
  * failure is recorded for the dashboard rather than thrown: the next poll tries again.
  */
-export async function pollAccount(env: Env, account: UsageAccount, now = new Date()) {
+export async function pollAccount(env: Env, account: UsageAccount, now: Date) {
   const db = createDb(env.DB);
   try {
     if (isPersonal(account)) {

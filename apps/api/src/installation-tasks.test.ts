@@ -10,7 +10,7 @@ import {
 const sweep = (installationId: number): InstallationTask => ({
   kind: "pick-sweep",
   installationId,
-  scope: { kind: "org", org: `org-${installationId}` },
+  scopes: [{ kind: "org", org: `org-${installationId}` }],
 });
 
 describe("enqueueInstallationTasks", () => {

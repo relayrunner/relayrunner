@@ -12,12 +12,14 @@ import { pollAccount, type UsageAccount } from "./actions-billing.ts";
 import type { Env } from "./env.ts";
 import type { RunnerScope } from "./github-app.ts";
 import { removeLeftoverRunnersIn } from "./pick-sweep.ts";
+import { errorMessage } from "./webhook-queue.ts";
 
 export const INSTALLATION_TASK_QUEUE = "relayrunner-installation-tasks";
 
 export type InstallationTask =
   | { kind: "actions-usage"; account: UsageAccount; at: string }
-  | { kind: "pick-sweep"; installationId: number; scope: RunnerScope };
+  // Every org or repo of one installation, so they share its token.
+  | { kind: "pick-sweep"; installationId: number; scopes: RunnerScope[] };
 
 // sendBatch takes at most 100 messages.
 const SEND_BATCH = 100;
@@ -34,29 +36,34 @@ export function runInstallationTask(env: Env, task: InstallationTask): Promise<v
     case "actions-usage":
       return pollAccount(env, task.account, new Date(task.at));
     case "pick-sweep":
-      return removeLeftoverRunnersIn(env, task.installationId, task.scope);
+      return removeLeftoverRunnersIn(env, task.installationId, task.scopes);
   }
 }
 
-/** Handle one batch from the installation task queue. Each message is acked or retried on its own. */
+/**
+ * Handle one batch from the installation task queue. Its messages are separate accounts, so they
+ * run together, and each is acked or retried on its own.
+ */
 export async function handleInstallationTaskBatch(
   batch: MessageBatch<InstallationTask>,
   env: Env,
 ): Promise<void> {
-  for (const msg of batch.messages) {
-    try {
-      await runInstallationTask(env, msg.body);
-      msg.ack();
-    } catch (error) {
-      console.warn(
-        JSON.stringify({
-          msg: "installation task failed; retrying",
-          kind: msg.body.kind,
-          attempts: msg.attempts,
-          error: error instanceof Error ? error.message : String(error),
-        }),
-      );
-      msg.retry({ delaySeconds: 60 });
-    }
-  }
+  await Promise.all(
+    batch.messages.map(async (msg) => {
+      try {
+        await runInstallationTask(env, msg.body);
+        msg.ack();
+      } catch (error) {
+        console.warn(
+          JSON.stringify({
+            msg: "installation task failed; retrying",
+            kind: msg.body.kind,
+            attempts: msg.attempts,
+            error: errorMessage(error),
+          }),
+        );
+        msg.retry({ delaySeconds: 60 });
+      }
+    }),
+  );
 }

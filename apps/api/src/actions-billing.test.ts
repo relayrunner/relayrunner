@@ -5,7 +5,7 @@ import {
   accountUsage,
   burnRate,
   cycleStart,
-  pollActionsUsage as queueActionsUsage,
+  pollActionsUsage,
   pollInstallation,
 } from "./actions-billing.ts";
 import { createDb, schema } from "./db/index.ts";
@@ -309,14 +309,14 @@ describe("accountUsage", () => {
 });
 
 // The cron queues one read per account; this runs what it queued, as the consumer would.
-async function pollActionsUsage(target: Env, now: Date) {
+async function runActionsUsagePoll(target: Env, now: Date) {
   const queued: InstallationTask[] = [];
   const queue = {
     sendBatch: async (messages: { body: InstallationTask }[]) => {
       queued.push(...messages.map((message) => message.body));
     },
   } as unknown as Queue<InstallationTask>;
-  await queueActionsUsage({ ...target, INSTALLATION_TASKS: queue }, now);
+  await pollActionsUsage({ ...target, INSTALLATION_TASKS: queue }, now);
   expect(queued.every((task) => task.kind === "actions-usage")).toBe(true);
   for (const task of queued) await runInstallationTask(target, task);
 }
@@ -329,7 +329,7 @@ describe("pollActionsUsage", () => {
       usage: [item("2026-11-04", "app", 120), item("2026-11-04", "site", 500)],
     });
     vi.spyOn(console, "error").mockImplementation(() => {});
-    await pollActionsUsage(env, NOW);
+    await runActionsUsagePoll(env, NOW);
 
     const path = `/users/${org}/settings/billing/usage`;
     expect(calls).toContain(`${path}?year=2026&month=11`);
@@ -351,7 +351,7 @@ describe("pollActionsUsage", () => {
     const { db, installationId, org } = await connectedOrg("User", { ownerIsAccount: false });
     const calls = fakeGitHub({});
     vi.spyOn(console, "error").mockImplementation(() => {});
-    await pollActionsUsage(env, NOW);
+    await runActionsUsagePoll(env, NOW);
     expect(calls.some((call) => call.startsWith(`/users/${org}/`))).toBe(false);
     expect((await accountUsage(db, installationId, NOW))?.reason).toBe("sign_in_needed");
   });
@@ -360,7 +360,7 @@ describe("pollActionsUsage", () => {
     const { db, installationId } = await connectedOrg("User");
     fakeGitHub({ usageStatus: 404 });
     vi.spyOn(console, "error").mockImplementation(() => {});
-    await pollActionsUsage(env, NOW);
+    await runActionsUsagePoll(env, NOW);
     expect((await accountUsage(db, installationId, NOW))?.reason).toBe("missing_permission");
   });
 
@@ -372,7 +372,7 @@ describe("pollActionsUsage", () => {
       GITHUB_APP_PRIVATE_KEY: { get: async () => Promise.reject(new Error("no key")) },
     } as Env;
     vi.spyOn(console, "error").mockImplementation(() => {});
-    await pollActionsUsage(broken, NOW);
+    await runActionsUsagePoll(broken, NOW);
     const [billing] = await db
       .select()
       .from(schema.actionsBilling)
