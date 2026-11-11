@@ -2,8 +2,11 @@ import { Link } from "@tanstack/react-router";
 import { Brand } from "@/components/brand";
 import { cn } from "@/lib/utils";
 
-// The same links as the landing site's footer, minus its guides. The agents link comes first.
+export const DOCS_URL = "https://relayrunner.app/docs/";
+
+// The same links as the landing site's footer. The agents link comes first.
 const LINKS = [
+  { label: "Docs", href: DOCS_URL },
   { label: "GitHub", href: "https://github.com/relayrunner/relayrunner" },
   { label: "npm", href: "https://www.npmjs.com/package/relayrunner" },
   { label: "Privacy", href: "https://relayrunner.app/privacy" },

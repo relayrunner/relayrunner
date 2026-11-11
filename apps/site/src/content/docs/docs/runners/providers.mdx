@@ -1,10 +1,28 @@
 ---
 title: Providers
-description: The runner services RelayRunner recognizes by their runs-on labels.
+description: Where RelayRunner can send jobs, and the runner services it recognizes.
 ---
 
 import ProviderTable from "@/components/docs/ProviderTable.astro";
 
-RelayRunner tells where a job ran from its `runs-on` labels. These are the providers it knows. Jobs with any other labels show up as Other.
+A provider is somewhere a job can run. RelayRunner does two things with providers: it **routes** jobs to some of them, and it **recognizes** many more, so the dashboard can show where every job ran and what it cost.
+
+## Where jobs can be routed
+
+A relay can send a job to any of these. Each has a step in your [runner order](/docs/concepts/runner-order/).
+
+- [Self-hosted](/docs/runners/self-hosted/): machines you connect with the CLI, and [runners your org already has](/docs/runners/self-hosted/#runners-your-org-already-has).
+- [GitHub-hosted](/docs/runners/github/): GitHub's own runners, billed against your plan's minutes.
+- [Blacksmith](/docs/runners/blacksmith/): hosted runners, through Blacksmith's own GitHub App.
+
+## Your accounts, your bills
+
+RelayRunner never runs a hosted provider's machines for you or resells its minutes. It hands the job a label, and the provider runs it under your own account and bills you directly. You keep your plans, credits and discounts, and you can drop RelayRunner without changing who you pay.
+
+## What RelayRunner recognizes
+
+RelayRunner tells where a job ran from its `runs-on` labels, including jobs it didn't route. These are the providers it knows. Jobs with any other labels show up as Other. The dashboard's **Providers** page shows how much of your CI ran on each, with cost estimates at list prices.
 
 <ProviderTable />
+
+Want RelayRunner to recognize another provider? See [Add a provider](/docs/contribute/add-provider/).

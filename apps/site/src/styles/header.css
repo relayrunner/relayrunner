@@ -119,7 +119,8 @@
   color: var(--ink-2);
   text-decoration: none;
 }
-.nav-links a:hover {
+.nav-links a:hover,
+.nav-links a[aria-current="page"] {
   color: var(--ink);
 }
 .header-actions {
