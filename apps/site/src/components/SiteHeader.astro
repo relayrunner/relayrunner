@@ -3,6 +3,10 @@
  * The site header: the landing page's header, shared with the docs. On the home page the links are
  * in-page anchors; elsewhere (the docs) they point back at the home page's sections. Docs stays
  * visible down to the narrowest layout that shows the nav.
+ *
+ * Signed-in visitors get Open dashboard in place of Sign in and Get started. The dashboard sets the
+ * rr_signed_in cookie on this domain (apps/web/src/lib/auth-client.ts); the inline script reads it
+ * before the buttons paint, so they don't flicker.
  */
 interface Props {
   /** Set on the home page, where the links scroll to sections instead of navigating. */
@@ -12,6 +16,7 @@ interface Props {
 const { home = false } = Astro.props;
 const to = (hash: string) => (home ? hash : `/${hash}`);
 const inDocs = Astro.url.pathname.startsWith("/docs");
+const DASHBOARD = "https://app.relayrunner.app";
 ---
 
 <header class="site-header" data-header>
@@ -30,8 +35,17 @@ const inDocs = Astro.url.pathname.startsWith("/docs");
       </ul>
     </nav>
     <div class="header-actions">
-      <a class="btn-ghost btn-sm" href="https://github.com/relayrunner/relayrunner">GitHub</a>
-      <a class="btn-go btn-sm" href={to("#start")}>Get started</a>
+      <script is:inline>
+        if (/(?:^|; )rr_signed_in=1/.test(document.cookie)) {
+          document.currentScript.parentElement.dataset.signedIn = "";
+        }
+      </script>
+      <a class="btn-ghost btn-sm header-github" href="https://github.com/relayrunner/relayrunner"
+        >GitHub</a
+      >
+      <a class="btn-text btn-sm signed-out" href={`${DASHBOARD}/login`}>Sign in</a>
+      <a class="btn-go btn-sm signed-out" href={to("#start")}>Get started</a>
+      <a class="btn-go btn-sm signed-in" href={DASHBOARD}>Open dashboard</a>
     </div>
   </div>
 </header>
