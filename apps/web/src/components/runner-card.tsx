@@ -530,11 +530,12 @@ export function CliVersion({ cli, prefix = "" }: { cli?: Machine["cli"]; prefix?
   );
 }
 
-/** The machine's typical job over 14 days, linked to Job times. */
+/** The machine's typical job over 14 days, linked to Performance. */
 export function TypicalJob({ jobTime }: { jobTime?: Stat }) {
   return jobTime && jobTime.samples > 0 ? (
     <Link
-      to="/job-times"
+      to="/performance"
+      search={{ view: "runners" }}
       title={`Typical job · ${plural(jobTime.samples, "run")} in 14 days`}
       className="truncate hover:text-foreground"
     >
@@ -1032,7 +1033,8 @@ function CloudRow({
       <span className="text-right">{plural(stat.runs, "job")}</span>
       {stat.samples > 0 ? (
         <Link
-          to="/job-times"
+          to="/performance"
+          search={{ view: "runners" }}
           title={`Typical job · ${plural(stat.samples, "run")}`}
           className="flex items-center justify-end gap-1 hover:text-foreground"
         >

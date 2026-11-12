@@ -32,6 +32,7 @@ import {
   useRef,
   useState,
 } from "react";
+import { InfoTip } from "@/components/ui/info-tip";
 import {
   Table,
   TableBody,
@@ -48,6 +49,10 @@ type ColumnMeta = {
   align?: "end";
   /** Classes for this column's body cells. */
   className?: string;
+  /** How the column is worked out, behind an ⓘ beside its header. */
+  info?: ReactNode;
+  /** The ⓘ's name for a header that isn't plain text. */
+  label?: string;
 };
 
 const features = tableFeatures({
@@ -154,28 +159,37 @@ export function DataTable<TData extends RowData>({
         <TableRow>
           {headers.map((header) => {
             const sorted = header.column.getIsSorted();
+            const { align, info, label } = header.column.columnDef.meta ?? {};
+            const title = header.column.columnDef.header;
             return (
               <TableHead
                 key={header.id}
                 aria-sort={sorted ? ARIA_SORT[sorted] : undefined}
-                className={cn(header.column.columnDef.meta?.align === "end" && "text-right")}
+                className={cn(align === "end" && "text-right")}
               >
-                {header.column.getCanSort() ? (
-                  <button
-                    type="button"
-                    onClick={header.column.getToggleSortingHandler()}
-                    className={cn(
-                      "group inline-flex items-center gap-1 rounded-sm outline-none hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring",
-                      // The arrow sits on the inner side, so labels line up with their column.
-                      header.column.columnDef.meta?.align === "end" && "flex-row-reverse",
-                    )}
-                  >
+                <span className="inline-flex items-center gap-1.5">
+                  {header.column.getCanSort() ? (
+                    <button
+                      type="button"
+                      onClick={header.column.getToggleSortingHandler()}
+                      className={cn(
+                        "group inline-flex items-center gap-1 rounded-sm outline-none hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring",
+                        // The arrow sits on the inner side, so labels line up with their column.
+                        align === "end" && "flex-row-reverse",
+                      )}
+                    >
+                      <FlexRender header={header} />
+                      <SortIcon sorted={sorted} />
+                    </button>
+                  ) : (
                     <FlexRender header={header} />
-                    <SortIcon sorted={sorted} />
-                  </button>
-                ) : (
-                  <FlexRender header={header} />
-                )}
+                  )}
+                  {info && (
+                    <InfoTip label={label ?? (typeof title === "string" ? title : "this column")}>
+                      {info}
+                    </InfoTip>
+                  )}
+                </span>
               </TableHead>
             );
           })}
@@ -312,7 +326,7 @@ function SortIcon({ sorted }: { sorted: false | "asc" | "desc" }) {
   return (
     <ArrowUpDownIcon
       aria-hidden
-      className="size-3.5 opacity-0 transition-opacity group-hover:opacity-60 group-focus-visible:opacity-60"
+      className="size-3.5 opacity-25 transition-opacity group-hover:opacity-60 group-focus-visible:opacity-60"
     />
   );
 }

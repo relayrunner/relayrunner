@@ -6,7 +6,8 @@ import {
   Building2Icon,
   ChartColumnIcon,
   CloudIcon,
-  ListChecksIcon,
+  GaugeIcon,
+  HistoryIcon,
   type LucideIcon,
   MessageSquareIcon,
   PanelLeftCloseIcon,
@@ -14,7 +15,6 @@ import {
   RouteIcon,
   ServerIcon,
   TagIcon,
-  TimerIcon,
   UsersIcon,
   WebhookIcon,
 } from "lucide-react";
@@ -77,10 +77,13 @@ type NavItem = { to: string; label: string; icon: LucideIcon };
 const nav = [
   { to: "/runners", label: "Runners", icon: ServerIcon },
   { to: "/router", label: "Router", icon: RouteIcon },
-  { to: "/activity", label: "Activity", icon: ActivityIcon },
   { to: "/providers", label: "Providers", icon: CloudIcon },
-  { to: "/runs", label: "Runs", icon: ListChecksIcon },
-  { to: "/job-times", label: "Job times", icon: TimerIcon },
+  { to: "/history", label: "History", icon: HistoryIcon },
+  { to: "/activity", label: "Activity", icon: ActivityIcon },
+] as const satisfies NavItem[];
+
+const analyticsNav = [
+  { to: "/performance", label: "Performance", icon: GaugeIcon },
   { to: "/usage", label: "Usage", icon: ChartColumnIcon },
 ] as const satisfies NavItem[];
 
@@ -135,6 +138,13 @@ function WorkspaceLayout() {
               {nav.map((item) => (
                 <NavLink key={item.to} item={item} collapsed={collapsed} />
               ))}
+            </nav>
+            <nav aria-label="Analytics" className="px-1 sm:group-data-[collapsed]/sidebar:px-0">
+              <NavGroup label="Analytics">
+                {analyticsNav.map((item) => (
+                  <NavLink key={item.to} item={item} collapsed={collapsed} />
+                ))}
+              </NavGroup>
             </nav>
             {(authDisabled || isOperator(user)) && (
               <nav aria-label="Admin" className="px-1 sm:group-data-[collapsed]/sidebar:px-0">

@@ -33,12 +33,18 @@ export type WorkflowRow = {
   repositoryId: number;
   repository: string;
   workflow: string | null;
+  /** Whole-run times: run start to last job done, like the History page. */
+  wall: Stat | null;
   jobs: JobRow[];
 };
 
 export type JobTimesReport = {
   days: number;
   sampleCap: number;
+  /** Runs a job needs on both runners to count toward `versus`. */
+  fewRuns: number;
+  /** Shared jobs a runner needs before it gets a `versus`. */
+  minSharedJobs: number;
   baseline: string | null;
   environments: EnvironmentSummary[];
   workflows: WorkflowRow[];
@@ -150,6 +156,8 @@ export function sampleJobTimes(days: number): JobTimesReport {
   return {
     days,
     sampleCap: 50,
+    fewRuns: 5,
+    minSharedJobs: 3,
     baseline: linux,
     environments: [
       {
@@ -171,7 +179,7 @@ export function sampleJobTimes(days: number): JobTimesReport {
         label: "Cloudflare Container",
         detail: "standard-1",
         stat: stat(19, 50, 61),
-        versus: { ratio: 1.03, sharedJobs: 2 },
+        versus: { ratio: 1.03, sharedJobs: 3 },
       },
       {
         key: macos,
@@ -186,6 +194,7 @@ export function sampleJobTimes(days: number): JobTimesReport {
         repositoryId: 1,
         repository: "acme/app",
         workflow: "CI",
+        wall: stat(214, 50, 162, 0.12),
         jobs: [
           {
             name: "test",
@@ -224,6 +233,7 @@ export function sampleJobTimes(days: number): JobTimesReport {
         repositoryId: 1,
         repository: "acme/app",
         workflow: "Release",
+        wall: stat(262, 9, 10),
         jobs: [
           { name: "build-macos", byEnvironment: { [mac]: stat(235, 12), [macos]: stat(400, 9) } },
         ],

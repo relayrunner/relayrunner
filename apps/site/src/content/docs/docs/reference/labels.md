@@ -20,4 +20,4 @@ After the relay answers, the job's `runs-on` is either a one-time `rr-…` label
 
 ## Recognized labels
 
-The Providers, Usage and Job times pages recognize the labels of many runner services, routed or not, to show where jobs ran. See [Providers](/docs/runners/providers#recognized-providers).
+The Providers, Performance and Usage pages recognize the labels of many runner services, routed or not, to show where jobs ran. See [Providers](/docs/runners/providers#recognized-providers).

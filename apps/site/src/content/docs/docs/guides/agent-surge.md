@@ -39,4 +39,4 @@ PR title checks and lint don't need a machine at all. Make them [optimized check
 
 ## Watch it
 
-The **Job times** page shows how long each job takes on each runner and how long it waited for one. If waits grow, connect another machine or move a step up.
+The **Performance** page shows how long each job takes on each runner and how long it waited for one. If waits grow, connect another machine or move a step up.

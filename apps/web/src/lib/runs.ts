@@ -1,5 +1,5 @@
 import { api } from "@/lib/api";
-import type { Environment } from "@/lib/job-times";
+import type { Environment, JobRun } from "@/lib/job-times";
 
 export type RunStatus = "queued" | "in_progress" | "completed";
 
@@ -52,8 +52,32 @@ export type RunJob = {
 
 export type RunJobs = { environments: Environment[]; jobs: RunJob[] };
 
+/** A job a runner finished (GET /api/runs/jobs). */
+export type HistoryJob = JobRun & {
+  repositoryId: number;
+  repository: string;
+  workflow: string | null;
+  name: string;
+};
+
+export type JobsReport = {
+  days: number;
+  environments: Environment[];
+  /** Newest first. */
+  jobs: HistoryJob[];
+  truncated: boolean;
+};
+
+/** A job's page on GitHub. */
+export const jobUrl = (job: Pick<HistoryJob, "repository" | "runId" | "id">) =>
+  `https://github.com/${job.repository}/actions/runs/${job.runId}/job/${job.id}`;
+
 export function getRuns() {
   return api<RunsReport>("/runs");
+}
+
+export function getJobs(days: number) {
+  return api<JobsReport>(`/runs/jobs?days=${days}`);
 }
 
 export function getRunJobs(run: Pick<Run, "repositoryId" | "runId" | "runAttempt">) {
@@ -68,6 +92,10 @@ export function triggerText(run: Pick<Run, "event" | "pullRequest">) {
   if (run.event === "workflow_dispatch") return "manual";
   return run.event.replaceAll("_", " ");
 }
+
+/** A failed result: the job or run broke or ran out of time, rather than being cancelled. */
+export const isFailure = (conclusion: string | null) =>
+  conclusion === "failure" || conclusion === "timed_out";
 
 /** A wait this long is worth pointing out. */
 export const LONG_WAIT_MS = 60_000;
@@ -222,4 +250,35 @@ export function sampleRunJobs(run: Pick<Run, "runId" | "startedAt">): RunJobs {
           ]
         : [job(51, "Lint", "container", 20, 23), job(52, "Test", "github:linux-2-core", 7, 131)],
   };
+}
+
+/** Example job list for `VITE_AUTH_DISABLED=true` dev builds. */
+export function sampleJobs(days: number): JobsReport {
+  const names = ["Lint", "Typecheck", "Test", "Build"];
+  const environments = [
+    "container",
+    "machine:sample",
+    "github:linux-2-core",
+    "github:linux-2-core",
+  ];
+  const jobs = Array.from({ length: 36 }, (_, index): HistoryJob => {
+    const completedAt = now - index * 37 * MIN;
+    const runMs = (20 + ((index * 53) % 170)) * 1000;
+    const startedAt = completedAt - runMs;
+    return {
+      id: 1000 - index,
+      runId: 500 - Math.floor(index / 4),
+      runAttempt: 1,
+      repositoryId: 1,
+      repository: index % 9 === 4 ? "acme/ci-tests" : "acme/app",
+      workflow: index % 7 === 3 ? "Release" : "CI",
+      name: names[index % 4]!,
+      environment: environments[index % 4]!,
+      conclusion: index % 11 === 5 ? "failure" : index % 13 === 7 ? "cancelled" : "success",
+      queuedAt: startedAt - ((index * 17) % 90) * 1000,
+      startedAt,
+      completedAt,
+    };
+  });
+  return { days, environments: SAMPLE_ENVIRONMENTS, jobs, truncated: false };
 }

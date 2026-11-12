@@ -29,11 +29,11 @@ It's built for small teams and individuals who don't want to pay for every push,
   <img alt="The Activity page: routed jobs, optimized checks and machine events, newest first." src=".github/readme/activity-light.png">
 </picture>
 
-**Job times.** Compare how long your jobs take on each runner.
+**Performance.** Compare how long your workflows and jobs take on each runner.
 
 <picture>
   <source media="(prefers-color-scheme: dark)" srcset=".github/readme/job-times-dark.png">
-  <img alt="The Job times page: median wait and run time per runner, with a MacBook Pro 2.7 times faster than Linux 2-core." src=".github/readme/job-times-light.png">
+  <img alt="The Performance page: median wait and run time per runner, with a MacBook Pro 2.7 times faster than Linux 2-core." src=".github/readme/job-times-light.png">
 </picture>
 
 **Usage.** Track billed minutes and what optimized checks saved.
