@@ -184,9 +184,12 @@ export function isolatedLauncher(isolation: Isolation): Launcher {
       }),
     // `--rm` deletes the VM when the runner exits with 0. Anything else may have left it behind,
     // such as a `container run` that was stopped before its VM was.
+    // The first delete can fail while the VM's processes are still being killed, so it gets a
+    // second try.
     async cleanup(run, clean) {
-      if (!clean)
-        await exitCode(isolation.command, ["delete", "--force", containerName(run.routeId)]);
+      if (clean) return;
+      const args = ["delete", "--force", containerName(run.routeId)];
+      if ((await exitCode(isolation.command, args)) !== 0) await exitCode(isolation.command, args);
     },
   };
 }

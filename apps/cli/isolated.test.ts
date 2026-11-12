@@ -110,14 +110,14 @@ describe("isolatedLauncher", () => {
   afterEach(() => rmSync(dir, { recursive: true, force: true }));
 
   // A stand-in for `container`: logs each call, and for `run` prints whether the JIT config
-  // arrived in the environment and exits with $1.
-  function fakeContainer(exit: number): Isolation {
+  // arrived in the environment and exits with `exit`. Other calls exit with `others`.
+  function fakeContainer(exit: number, others = 0): Isolation {
     const command = join(dir, "container");
     writeFileSync(
       command,
       `#!/bin/sh
 echo "$*" >> "${join(dir, "calls")}"
-[ "$1" = run ] || exit 0
+[ "$1" = run ] || exit ${others}
 [ "$RUNNER_JIT_CONFIG" = "${jitConfig}" ] && echo "config ok"
 echo "oops" >&2
 exit ${exit}
@@ -165,7 +165,13 @@ exit ${exit}
       message: "The runner exited with 3",
     });
     const calls = readFileSync(join(dir, "calls"), "utf8").trim().split("\n");
-    expect(calls.at(-1)).toBe("delete --force relayrunner-7f3k");
+    expect(calls.slice(1)).toEqual(["delete --force relayrunner-7f3k"]);
+  });
+
+  it("tries the delete a second time when the first fails", async () => {
+    await run(fakeContainer(3, 1));
+    const calls = readFileSync(join(dir, "calls"), "utf8").trim().split("\n");
+    expect(calls.slice(1)).toEqual(Array(2).fill("delete --force relayrunner-7f3k"));
   });
 
   it("refuses a config that isn't for GitHub without starting a container", async () => {
