@@ -69,6 +69,8 @@ While it runs isolated, the Mac is a Linux machine: its labels are `Linux` and `
 
 If a job needs something on your network, such as a package registry or a test database, add `--local-network`. The job still can't read your files.
 
+The block on your Mac and local network runs inside the VM, where a job that uses Docker could remove it. For a block no job can remove, run `relayrunner firewall on` once. It asks for your password, stays on after a restart, and `relayrunner firewall off` removes it. While it's on, `--local-network` has no effect.
+
 Each VM gets a share of the Mac's CPU and memory, so the Mac stays usable while jobs run. `connect` removes the images it downloaded for older runner versions, so they don't fill your disk.
 
 When something goes wrong, `~/.relayrunner/isolated.log` has the details. It records the VM commands and their results, never a job's output or credentials, so it's safe to share.
