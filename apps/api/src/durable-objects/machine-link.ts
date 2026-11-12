@@ -10,12 +10,7 @@ import { installationRunnerScope } from "../installations.ts";
 import { mintMachineRunner } from "../machine-runner.ts";
 import { originFromJson, type RequestOrigin } from "../device-origin.ts";
 import { sendEmail } from "../email.ts";
-import {
-  deviceColumns,
-  issuePendingToken,
-  pausedByName,
-  promotePendingToken,
-} from "../machines.ts";
+import { helloColumns, issuePendingToken, pausedByName, promotePendingToken } from "../machines.ts";
 import { takeHold, type MachineHold, type Route } from "../routing.ts";
 import {
   CLOSE,
@@ -106,12 +101,10 @@ export class MachineLink extends DurableObject<Env> {
           cliVersion: outcome.state.hello.cliVersion ?? null,
         },
       });
-      const device = outcome.state.hello.device;
-      if (device)
-        await db
-          .update(schema.machine)
-          .set(deviceColumns(device, new Date()))
-          .where(eq(schema.machine.id, session.machineId));
+      await db
+        .update(schema.machine)
+        .set(helloColumns(outcome.state.hello, new Date()))
+        .where(eq(schema.machine.id, session.machineId));
       const [machine] = await db
         .select()
         .from(schema.machine)

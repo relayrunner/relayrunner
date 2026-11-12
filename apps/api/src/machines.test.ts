@@ -6,6 +6,7 @@ import { createDb, schema } from "./db/index.ts";
 import type { Env } from "./env.ts";
 import {
   deviceColumns,
+  helloColumns,
   issuePendingToken,
   promotePendingToken,
   verifyMachineToken,
@@ -437,6 +438,22 @@ describe("machines in the dashboard", () => {
       memoryMb: 36864,
       osVersion: "macOS 15.1",
       reportedAt: reportedAt.toISOString(),
+    });
+  });
+
+  test("a hello updates where the machine's jobs run, so an isolated Mac routes as Linux", async () => {
+    const { machine } = await enroll("hello-os");
+    const db = createDb(env.DB);
+    await db
+      .update(schema.machine)
+      .set(helloColumns({ os: "linux", arch: "arm64" }, new Date()))
+      .where(eq(schema.machine.id, machine.id));
+    const [row] = await db.select().from(schema.machine).where(eq(schema.machine.id, machine.id));
+    expect(row).toMatchObject({ os: "linux", arch: "arm64" });
+    // Without a device in the hello, the device columns stay as they were.
+    expect(helloColumns({ os: "macos", arch: "arm64" }, new Date())).toEqual({
+      os: "macos",
+      arch: "arm64",
     });
   });
 

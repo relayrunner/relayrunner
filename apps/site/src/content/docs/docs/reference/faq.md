@@ -23,6 +23,10 @@ Jobs go to the next step in your runner order, usually GitHub-hosted, with nothi
 
 Yes, `relayrunner connect` is the on/off switch. While it runs, the machine takes jobs.
 
+## Can a job read the files on my computer?
+
+By default, yes. A job runs as you, like on any self-hosted runner, so route jobs only from repos you trust. On a Mac with Apple silicon, `relayrunner connect --isolated` runs each job in its own Linux VM that sees none of your files. See [Security](/docs/reference/security).
+
 ## Does it work with public repositories?
 
 Public repos can use relays to choose between hosted providers, and optimized checks. Their jobs never run on your machines.

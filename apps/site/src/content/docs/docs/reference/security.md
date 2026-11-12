@@ -10,8 +10,18 @@ A routed job runs in `actions/runner`, GitHub's official runner, as the user who
 The job isn't sandboxed. Like any self-hosted runner, it can read and write what that user can, including files in your home folder. So:
 
 - Route jobs only from repos you trust to run on that machine.
-- For a shared or always-on machine, run `connect` as a separate user, or in a VM.
+- For a shared or always-on machine, run `connect` as a separate user, or use isolated jobs.
 - Keep deploy jobs, which carry production secrets, off machines unless you mean to. `init` skips them for this reason.
+
+## Isolated jobs
+
+On a Mac with Apple silicon, `relayrunner connect --isolated` runs each job in its own Linux VM instead. It's experimental. In the VM, a job:
+
+- Sees none of your files, and not the machine's token.
+- Starts clean. Nothing an earlier job left behind is there, and the VM is deleted when the job ends.
+- Reaches the internet, but not your Mac or your local network. `sudo` in the job can't change that. `--local-network` turns this off.
+
+See [Isolated jobs on a Mac](/docs/runners/self-hosted#isolated-jobs-on-a-mac).
 
 ## One job per runner
 
