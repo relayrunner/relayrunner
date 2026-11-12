@@ -32,7 +32,7 @@ The first time the agent uses it, your browser opens. Sign in with GitHub, pick 
 | `list_runs`        | Recent workflow runs, by repo, status or result                         |
 | `get_run_jobs`     | One run's jobs and where each ran                                       |
 | `list_activity`    | The activity log, including where each job was routed and why           |
-| `get_usage`        | Short jobs and round-up cost, free check savings, Actions minutes       |
+| `get_usage`        | Short jobs and round-up cost, optimized check savings, Actions minutes  |
 | `get_job_times`    | Typical job durations per runner                                        |
 | `send_feedback`    | Reports a bug, confusing result or missing tool to the RelayRunner team |
 

@@ -3,7 +3,7 @@ title: Repo config
 description: The relayrunner.yml file, which turns on checks for a repo.
 ---
 
-`relayrunner.yml` turns on [free checks](/docs/concepts/free-checks) for every pull request in a repo, with no workflow. Put it at `.github/relayrunner.yml` or the repo root.
+`relayrunner.yml` turns on [optimized checks](/docs/concepts/optimized-checks) for every pull request in a repo, with no workflow. Put it at `.github/relayrunner.yml` or the repo root.
 
 RelayRunner reads it from the default branch, so a pull request can't change the checks it gets.
 

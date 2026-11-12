@@ -35,5 +35,5 @@ The limit only helps if there's a next step. Connect at least one machine, share
 
 ## Cut minutes you don't need
 
-- **Short jobs** bill a whole minute each. A free check bills nothing. Move PR title checks and lint to [free checks](/docs/concepts/free-checks).
+- **Short jobs** bill a whole minute each. An optimized check bills nothing. Move PR title checks and lint to [optimized checks](/docs/concepts/optimized-checks).
 - **macOS minutes** cost about ten times Linux. Run macOS jobs on a Mac first. See [macOS and iOS builds on your Mac](/docs/guides/mac-builds).

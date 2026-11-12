@@ -13,7 +13,7 @@ share one origin everywhere. The marketing site lives in `apps/site`.
 | Activity  | Each job, where it ran and why, plus machine and member events.          |
 | Runs      | Workflow runs and their jobs.                                            |
 | Job times | How long jobs take, by run and by machine.                               |
-| Usage     | Actions minutes from GitHub billing and what free checks saved.          |
+| Usage     | Actions minutes from GitHub billing and what optimized checks saved.     |
 | Runners   | Connected machines and added org runners, pausing, and the runner order. |
 | Settings  | Workspace, account, members and invites, and connected GitHub orgs.      |
 | Admin     | Operator-only users, workspaces and webhook dead letters, behind Access. |

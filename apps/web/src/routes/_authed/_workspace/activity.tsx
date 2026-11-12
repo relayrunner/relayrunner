@@ -178,7 +178,7 @@ function ActivityPage() {
   return (
     <section>
       <PageHeader title="Activity">
-        Routed jobs, free checks, machine events and member changes, newest first.
+        Routed jobs, optimized checks, machine events and member changes, newest first.
       </PageHeader>
       <div className="grid max-w-4xl gap-2">
         <Filters search={search} options={options} narrowed={narrowed} onChange={update} />
@@ -392,7 +392,7 @@ function Log({
             </>
           ) : search.type === "check" ? (
             <>
-              Nothing yet. Turn on a free check with{" "}
+              Nothing yet. Turn on an optimized check with{" "}
               <span className="font-mono text-foreground">relayrunner.yml</span> in a connected
               repo, and its check runs show up here.
             </>
@@ -892,7 +892,7 @@ function SavingsBanner({ savings }: { savings: FreeCheckSavings }) {
   return (
     <p className="rounded-xl border bg-card px-4 py-2.5 text-sm">
       <Zap aria-hidden className="mr-1.5 inline size-3.5 align-[-0.15em] text-go" />
-      Free checks saved{" "}
+      Optimized checks saved{" "}
       <span className="font-medium tabular-nums">
         {minutes(savings.checks)} billed {savings.checks === 1 ? "minute" : "minutes"}
       </span>

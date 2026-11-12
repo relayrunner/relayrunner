@@ -21,7 +21,7 @@ const MORE_PROVIDERS = KNOWN_PROVIDERS.filter(
     <title>relayrunner: one router for every CI runner</title>
     <meta
       name="description"
-      content="relayrunner sends each GitHub Actions job to the best runner available right now: your own machines, self-hosted runners, Blacksmith or GitHub-hosted. Change the order any time. Your workflows don't change."
+      content="Send each GitHub Actions job to the first free runner in your order: your own machines, self-hosted runners, Blacksmith or GitHub-hosted. Change the order any time without editing your workflows."
     />
     <meta name="theme-color" content="#ffffff" media="(prefers-color-scheme: light)" />
     <meta name="theme-color" content="#0b0d10" media="(prefers-color-scheme: dark)" />
@@ -32,7 +32,7 @@ const MORE_PROVIDERS = KNOWN_PROVIDERS.filter(
     <meta property="og:title" content="relayrunner: one router for every CI runner" />
     <meta
       property="og:description"
-      content="Send each GitHub Actions job to the best runner available right now: your machines, self-hosted runners, Blacksmith or GitHub-hosted. No workflow changes."
+      content="Send each GitHub Actions job to the first free runner in your order: your machines, self-hosted runners, Blacksmith or GitHub-hosted. No workflow changes."
     />
     <meta property="og:image" content={`${site}/og-image.png`} />
     <meta property="og:image:type" content="image/png" />
@@ -46,7 +46,7 @@ const MORE_PROVIDERS = KNOWN_PROVIDERS.filter(
     <meta name="twitter:title" content="relayrunner: one router for every CI runner" />
     <meta
       name="twitter:description"
-      content="Send each GitHub Actions job to the best runner available right now: your machines, self-hosted runners, Blacksmith or GitHub-hosted. No workflow changes."
+      content="Send each GitHub Actions job to the first free runner in your order: your machines, self-hosted runners, Blacksmith or GitHub-hosted. No workflow changes."
     />
     <meta name="twitter:image" content={`${site}/og-image.png`} />
     <meta
@@ -69,9 +69,10 @@ const MORE_PROVIDERS = KNOWN_PROVIDERS.filter(
         <p class="eyebrow">Open source · Smart routing for GitHub Actions</p>
         <h1>One router for <span class="hl">every CI&nbsp;runner.</span></h1>
         <p class="lede">
-          Turn any Mac or Linux box into a runner with one command. relayrunner then sends each
-          GitHub Actions job to the best runner available right now: your machines, self-hosted
-          runners, a cloud provider like Blacksmith, or GitHub-hosted. Your workflows don't change.
+          Turn any Mac or Linux computer into a runner with one command. Each GitHub Actions job
+          goes to the first free runner in your order: your machines, self-hosted runners, a
+          provider like Blacksmith, or GitHub-hosted. You change the order in the dashboard, not in
+          your workflows.
         </p>
         <div class="hero-actions">
           <a class="btn-go btn-lg" href="https://app.relayrunner.app">Get started with GitHub</a>
@@ -81,8 +82,7 @@ const MORE_PROVIDERS = KNOWN_PROVIDERS.filter(
           </button>
         </div>
         <p class="hero-note">
-          That command turns this computer into a runner. Or
-          <button
+          Or <button
             class="link-btn"
             type="button"
             data-copy-inline="Set up relayrunner in this checkout using https://raw.githubusercontent.com/relayrunner/relayrunner/main/docs/agent-install.md"
@@ -90,7 +90,7 @@ const MORE_PROVIDERS = KNOWN_PROVIDERS.filter(
           >
             <code>copy one line</code>
           </button>
-          into Claude Code, Codex or Cursor and let your agent set it up.
+          into Claude Code, Codex or Cursor and your agent does the setup.
         </p>
       </section>
 
@@ -119,21 +119,21 @@ const MORE_PROVIDERS = KNOWN_PROVIDERS.filter(
                 /><span data-next-name>Zach's MacBook Pro</span></span
               >
               <span class="next-why" data-next-why
-                >First free runner in your order. GitHub minutes untouched.</span
+                >The first free runner in your order. Uses no GitHub minutes.</span
               >
             </div>
           </div>
           <div class="order">
             <div class="order-head">
               <b class="label">Runner order</b>
-              <span>Move a runner up. The next job follows.</span>
+              <span>Move a runner up to change where the next job goes.</span>
             </div>
             <ol class="lanes" data-lanes>
               <li
                 class="lane"
                 data-lane="machine"
                 data-next="Zach's MacBook Pro"
-                data-why="First free runner in your order. GitHub minutes untouched."
+                data-why="The first free runner in your order. Uses no GitHub minutes."
               >
                 <img src="/providers/machines.svg" alt="" width="32" height="32" />
                 <span class="lane-name"
@@ -149,7 +149,7 @@ const MORE_PROVIDERS = KNOWN_PROVIDERS.filter(
                 class="lane"
                 data-lane="github"
                 data-next="GitHub-hosted"
-                data-why="Included minutes, until you reach your cap."
+                data-why="Uses your included minutes until you reach your cap."
               >
                 <img src="/providers/github.svg" alt="" width="32" height="32" />
                 <span class="lane-name"><b>GitHub-hosted</b><code>ubuntu-latest</code></span>
@@ -163,7 +163,7 @@ const MORE_PROVIDERS = KNOWN_PROVIDERS.filter(
                 class="lane"
                 data-lane="blacksmith"
                 data-next="Blacksmith"
-                data-why="Your Blacksmith account, first in line."
+                data-why="Runs on your Blacksmith account."
               >
                 <img src="/providers/blacksmith.svg" alt="" width="32" height="32" />
                 <span class="lane-name"
@@ -183,12 +183,12 @@ const MORE_PROVIDERS = KNOWN_PROVIDERS.filter(
       <!-- Your machine -->
       <section class="section wrap feature" id="connect">
         <div class="feature-copy">
-          <p class="kicker">Your machine</p>
-          <h2>Any computer is a runner. <span class="hl">One command.</span></h2>
+          <p class="kicker">Your machines</p>
+          <h2>Turn any computer into a runner <span class="hl">with one command.</span></h2>
           <p class="body">
             Run <code>npx relayrunner connect</code> on a laptop, Mac mini or home server and it starts
-            taking jobs. Close the lid and the next job goes elsewhere. Share it with your team or keep
-            it to yourself.
+            taking jobs. Close the lid and jobs go to the next runner in your order. Share it with your
+            team or keep it private.
           </p>
         </div>
         <div class="panel connect-panel" aria-hidden="true">
@@ -229,12 +229,12 @@ const MORE_PROVIDERS = KNOWN_PROVIDERS.filter(
           <div>
             <p class="kicker">Providers</p>
             <h2 id="providers-h">
-              Every runner you have, <span class="hl">behind one router.</span>
+              Route jobs to the runners <span class="hl">you already have.</span>
             </h2>
           </div>
           <p class="body">
-            Each provider is a step in your runner order. Add one, move it up or take it out from
-            the dashboard, and the next job follows.
+            Each provider is a step in your runner order. Add, reorder or remove them in the
+            dashboard.
           </p>
         </div>
         <ul class="provider-grid">
@@ -242,26 +242,25 @@ const MORE_PROVIDERS = KNOWN_PROVIDERS.filter(
             <img src="/providers/machines.svg" alt="" width="48" height="48" />
             <h3>Your machines</h3>
             <p>
-              One command turns a Mac or Linux box into a runner. Close the lid and jobs go
-              elsewhere.
+              Mac and Linux computers you connect with one command.
             </p>
             <code class="provider-cmd">npx relayrunner connect</code>
           </li>
           <li class="provider-card">
             <img src="/providers/self-hosted.svg" alt="" width="48" height="48" />
             <h3>Self-hosted runners</h3>
-            <p>Runners your org already has, used as they are.</p>
+            <p>The runners already registered in your GitHub org. Nothing to change.</p>
           </li>
           <li class="provider-card">
             <img src="/providers/blacksmith.svg" alt="" width="48" height="48" />
             <h3>Blacksmith</h3>
-            <p>Bring your Blacksmith account and put it anywhere in your order.</p>
+            <p>Connect your Blacksmith account and place it anywhere in your order.</p>
           </li>
           <li class="provider-card">
             <img src="/providers/github.svg" alt="" width="48" height="48" />
             <h3>GitHub-hosted</h3>
             <p>
-              The minutes your plan includes, with a cap so a busy week never turns into overage.
+              The minutes included in your plan, with a cap so you don't pay overage.
             </p>
           </li>
         </ul>
@@ -283,9 +282,9 @@ const MORE_PROVIDERS = KNOWN_PROVIDERS.filter(
           <p class="kicker">Switch</p>
           <h2>Change where jobs run <span class="hl">in seconds.</span></h2>
           <p class="body">
-            Try a new provider, move a busy week onto your machines, or send everything back to
-            GitHub, all from the dashboard. No pull request, no commit. The next job follows the new
-            order.
+            Try a new provider, move work onto your machines, or send everything back to GitHub.
+            You change the order in the dashboard, without a commit or pull request, and it applies
+            to the next job.
           </p>
         </div>
         <div class="panel" aria-hidden="true">
@@ -332,10 +331,10 @@ const MORE_PROVIDERS = KNOWN_PROVIDERS.filter(
         </div>
         <div class="feature-copy">
           <p class="kicker">Minutes</p>
-          <h2>Spend included minutes, <span class="hl">not overage.</span></h2>
+          <h2>Stay inside your <span class="hl">included minutes.</span></h2>
           <p class="body">
-            Cap GitHub-hosted at a share of the minutes your plan includes. Once you reach it, jobs
-            go to the next runner instead of your bill.
+            Set a cap on GitHub-hosted as a share of the minutes your plan includes. Once you reach
+            it, jobs go to the next runner in your order.
           </p>
         </div>
       </section>
@@ -343,11 +342,11 @@ const MORE_PROVIDERS = KNOWN_PROVIDERS.filter(
       <!-- See -->
       <section class="section wrap feature">
         <div class="feature-copy">
-          <p class="kicker">See</p>
+          <p class="kicker">Compare</p>
           <h2>Compare providers <span class="hl">on your own jobs.</span></h2>
           <p class="body">
-            Every job shows where it ran and why. Job times compare runners side by side, and each
-            provider has a page with your usage.
+            Every job shows where it ran and why. See how long the same job takes on each runner,
+            and how much you use each provider.
           </p>
         </div>
         <div class="panel" aria-hidden="true">
@@ -380,7 +379,7 @@ const MORE_PROVIDERS = KNOWN_PROVIDERS.filter(
         </div>
       </section>
 
-      <!-- Free checks -->
+      <!-- Optimized checks -->
       <section class="section wrap feature feature-flip" id="checks">
         <div class="panel" aria-hidden="true">
           <ul class="checks">
@@ -399,35 +398,36 @@ const MORE_PROVIDERS = KNOWN_PROVIDERS.filter(
           </ul>
         </div>
         <div class="feature-copy">
-          <p class="kicker">Free checks</p>
-          <h2>Some checks <span class="hl">need no runner.</span></h2>
+          <p class="kicker">Optimized checks <span class="kicker-note">Preview</span></p>
+          <h2>Run simple checks <span class="hl">without using minutes.</span></h2>
           <p class="body">
-            PR title and lint checks (oxlint, ruff, actionlint and more) run inside relayrunner and
-            post results to your pull request. No runner, no billed minute.
+            PR title and lint checks (oxlint, ruff, actionlint and more) finish in seconds, but on a
+            hosted runner each one is billed as a full minute. Run them as optimized checks
+            instead: they need no runner, post results to your pull request and use no minutes.
           </p>
         </div>
       </section>
 
       <!-- Safety -->
       <section class="section wrap" id="safety" aria-labelledby="safety-h">
-        <p class="kicker">Safe by default</p>
-        <h2 id="safety-h">Fallbacks first. <span class="hl">No surprises.</span></h2>
+        <p class="kicker">Security</p>
+        <h2 id="safety-h">Safe defaults for CI on <span class="hl">your own machines.</span></h2>
         <ul class="safety-grid">
           <li>
-            <h3>Hosted stays the fallback</h3>
-            <p>Machines add capacity. A closed laptop never blocks a job.</p>
+            <h3>Hosted runners stay as the fallback</h3>
+            <p>If your machine is offline, the job runs on the next runner in your order.</p>
           </li>
           <li>
-            <h3>Public repos skip your machines</h3>
-            <p>Pull requests from strangers never run on your computer.</p>
+            <h3>Public repos don't use your machines</h3>
+            <p>Code from a stranger's pull request never runs on your computer.</p>
           </li>
           <li>
-            <h3>Shared machines respect access</h3>
+            <h3>Shared machines follow repo access</h3>
             <p>A shared machine only takes jobs from repos its owner can read.</p>
           </li>
           <li>
-            <h3>Fail fast, say why</h3>
-            <p>When nothing fits, the job fails with the reason instead of queuing.</p>
+            <h3>Jobs fail with a reason</h3>
+            <p>If no runner can take a job, it fails and tells you why instead of waiting in the queue.</p>
           </li>
         </ul>
       </section>
@@ -436,8 +436,8 @@ const MORE_PROVIDERS = KNOWN_PROVIDERS.filter(
       <section class="section wrap" id="start" aria-labelledby="start-h">
         <div class="close">
           <div class="close-copy">
-            <h2 id="start-h">Put every runner to work.</h2>
-            <p>Connect a computer, then route a repo's jobs to it. Your old runners stay as the fallback.</p>
+            <h2 id="start-h">Get started in two commands.</h2>
+            <p>Connect a computer, then choose which jobs to route. Your current runners stay as the fallback.</p>
             <ol class="steps">
               <li>
                 <span class="step-label">1. Turn this computer into a runner</span>

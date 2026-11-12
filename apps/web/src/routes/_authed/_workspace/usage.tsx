@@ -138,7 +138,7 @@ function FreeChecks({ savings }: { savings: FreeCheckSavings }) {
   const { runner } = savings;
   return (
     <div className="grid gap-3">
-      <h2 className="font-semibold">Saved by free checks</h2>
+      <h2 className="font-semibold">Saved by optimized checks</h2>
       <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
         <StatTile
           label="Checks run"
@@ -158,7 +158,7 @@ function FreeChecks({ savings }: { savings: FreeCheckSavings }) {
       </div>
       {savings.byCheck.length > 1 && (
         <Table
-          caption="Free checks by check"
+          caption="Optimized checks by check"
           head={["Check", "Runs", "Saved"]}
           rows={savings.byCheck.map((kind) => [
             kind.check,
@@ -169,7 +169,7 @@ function FreeChecks({ savings }: { savings: FreeCheckSavings }) {
       )}
       {savings.byRepository.length > 1 && (
         <Table
-          caption="Free checks by repository"
+          caption="Optimized checks by repository"
           head={["Repository", "Runs", "Saved"]}
           rows={savings.byRepository.map((repo) => [
             <RepoName key="repo" repository={repo.repository} isPrivate={repo.private} />,

@@ -7,7 +7,7 @@ The dashboard has three views of your CI. All of them cover every repo the works
 
 ## Activity
 
-**Activity** lists routed jobs, free checks, machine events and member changes, newest first. For each routed job it shows the runner it got, and **Show why** lists every step of the runner order that passed on it, with the reason, such as no free machine or a minutes limit reached.
+**Activity** lists routed jobs, optimized checks, machine events and member changes, newest first. For each routed job it shows the runner it got, and **Show why** lists every step of the runner order that passed on it, with the reason, such as no free machine or a minutes limit reached.
 
 A relay that failed shows the same message the job failed with on GitHub. Filter by time, repo, result or machine.
 

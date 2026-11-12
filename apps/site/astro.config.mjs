@@ -64,7 +64,7 @@ export default defineConfig({
             "docs/concepts/principles",
             "docs/concepts/routing",
             "docs/concepts/runner-order",
-            "docs/concepts/free-checks",
+            "docs/concepts/optimized-checks",
           ],
         },
         {

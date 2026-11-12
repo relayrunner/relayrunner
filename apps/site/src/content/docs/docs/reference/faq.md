@@ -13,7 +13,7 @@ No. Your machines are yours, and hosted providers bill you directly under your o
 
 ## Do relay jobs use minutes?
 
-No. RelayRunner answers relay jobs itself, without a runner, in about a second. Free checks don't use minutes either.
+No. RelayRunner answers relay jobs itself, without a runner, in about a second. Optimized checks don't use minutes either.
 
 ## What happens when my laptop is closed?
 
@@ -25,7 +25,7 @@ Yes, `relayrunner connect` is the on/off switch. While it runs, the machine take
 
 ## Does it work with public repositories?
 
-Public repos can use relays to choose between hosted providers, and free checks. Their jobs never run on your machines.
+Public repos can use relays to choose between hosted providers, and optimized checks. Their jobs never run on your machines.
 
 ## Does it work on Windows?
 
