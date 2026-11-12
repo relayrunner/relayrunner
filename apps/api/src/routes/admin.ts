@@ -15,6 +15,7 @@ import { internalWorkspaceIds } from "../internal-workspaces.ts";
 import { requireOperator, who } from "../middleware/admin.ts";
 import { requireUser } from "../middleware/session.ts";
 import { adminPriceRoutes } from "./admin-prices.ts";
+import { adminProviderRoutes } from "./admin-providers.ts";
 import { USER_ROLES } from "../roles.ts";
 
 const RoleBody = z.object({ role: z.enum(USER_ROLES).nullable() });
@@ -29,6 +30,7 @@ async function deleteOptions(request: Request) {
 export const adminRoutes = new Hono<AppEnv>()
   .use("*", requireUser, requireOperator)
   .route("/prices", adminPriceRoutes)
+  .route("/providers", adminProviderRoutes)
   .get("/users", async (c) => {
     const db = createDb(c.env.DB);
     const users = await db

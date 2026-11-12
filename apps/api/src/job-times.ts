@@ -7,7 +7,7 @@
 // job_timing_installation_idx (the workspace's installations, completed in the window), never a
 // scan of the table. The detail is a range of job_timing_job_idx. job-times.test.ts checks the
 // rows D1 reads.
-import { PROVIDERS } from "@relayrunner/providers";
+import { addedProviderOf } from "@relayrunner/providers/catalog";
 import { and, eq, gte, inArray, isNull, type SQL, sql } from "drizzle-orm";
 import type { SQLiteColumn } from "drizzle-orm/sqlite-core";
 import { usesContainerRunner } from "./container-runner.ts";
@@ -15,6 +15,7 @@ import { type Db, schema } from "./db/index.ts";
 import { DAY_MS, GITHUB_HOSTED_GROUP, RUNNER_LABELS, runnerClass } from "./job-timings.ts";
 import { cloudProviderFor, isGitHubHostedLabel } from "./cloud-providers.ts";
 import { inWorkspace as machineInWorkspace } from "./machines.ts";
+import { addedProviders, catalogName } from "./provider-catalog.ts";
 import { routeIdFromLabels } from "./routing.ts";
 import { RELAYRUNNER_LABEL } from "./webhook-queue.ts";
 
@@ -60,8 +61,12 @@ export function environmentFor(
     return {
       key: `${provider.id}:${provider.label}`,
       label: provider.label,
-      detail: PROVIDERS[provider.id].name,
+      detail: catalogName(provider.id),
     };
+  // A provider an operator added in the admin, by its label prefixes (routes load them with
+  // withCatalog).
+  const added = addedProviderOf(addedProviders(), lower);
+  if (added) return { key: `${added.id}:${added.label}`, label: added.label, detail: added.name };
   const group = runnerGroupName ?? "Default";
   // Asked for by name: a `self-hosted` label, a pick, or a route to a machine.
   if (

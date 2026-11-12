@@ -1,20 +1,15 @@
-import {
-  dayMs,
-  isProviderId,
-  PROVIDERS as PROVIDER_INFO,
-  type ProviderId,
-  type RatePrices,
-} from "@relayrunner/providers";
+import { dayMs, type RatePrices } from "@relayrunner/providers";
 import { createFileRoute, Link, notFound } from "@tanstack/react-router";
 import { ArrowLeftIcon, ArrowUpRightIcon } from "lucide-react";
 import { useState } from "react";
-import { PROVIDERS, runnerName, TILE } from "@/components/providers";
+import { providerStyle, runnerName, TILE } from "@/components/providers";
 import { RangePicker } from "@/components/range-picker";
 import { StatTile } from "@/components/stat-tile";
 import { Button } from "@/components/ui/button";
 import { createCellContext, DataTable, dataTableColumns, NUM } from "@/components/ui/data-table";
 import { authDisabled } from "@/lib/auth-client";
 import { clock, medianText, plural } from "@/lib/job-times";
+import { isKnownProvider, providerInfo } from "@/lib/provider-catalog";
 import {
   costText,
   getProviderReport,
@@ -28,7 +23,7 @@ import { cn } from "@/lib/utils";
 
 const RANGES = [1, 7, 14] as const;
 
-function load(provider: ProviderId, days: number) {
+function load(provider: string, days: number) {
   return authDisabled
     ? Promise.resolve(sampleProviderReport(provider, days))
     : getProviderReport(provider, days);
@@ -36,7 +31,7 @@ function load(provider: ProviderId, days: number) {
 
 export const Route = createFileRoute("/_authed/_workspace/providers/$provider")({
   loader: ({ params }) => {
-    if (!isProviderId(params.provider)) throw notFound();
+    if (!isKnownProvider(params.provider)) throw notFound();
     return load(params.provider, 14);
   },
   component: ProviderPage,
@@ -51,10 +46,10 @@ function ProviderPage() {
 function ProviderView({ first }: { first: ProviderReport }) {
   const [report, setReport] = useState(first);
   const { provider } = report;
-  const info = PROVIDER_INFO[provider];
+  const info = providerInfo(provider);
   // Nothing ran here in the widest range: lead with how to start instead of empty numbers.
   const [notSetUp] = useState(first.jobs === 0 && !!info.example);
-  const { icon, tile } = PROVIDERS[provider];
+  const { icon, tile } = providerStyle(provider);
 
   function chooseRange(days: number) {
     load(provider, days)
@@ -145,8 +140,8 @@ function RunsOn({ example }: { example: string }) {
 }
 
 /** For a provider no job has used yet: the steps to send it a first job. */
-function SetUp({ provider }: { provider: ProviderId }) {
-  const { name, labels, example, setup } = PROVIDER_INFO[provider];
+function SetUp({ provider }: { provider: string }) {
+  const { name, labels, example, setup } = providerInfo(provider);
   if (!example) return null;
   return (
     <div className="grid max-w-3xl gap-3">
@@ -260,7 +255,7 @@ const runnerColumns = runnerColumn.columns([
 
 function RunnerCell({ runner }: { runner: ProviderRunner }) {
   const { provider, runners, jobs } = useRunnerReport();
-  const { mono, bar, detail: showDetail } = PROVIDERS[provider];
+  const { mono, bar, detail: showDetail } = providerStyle(provider);
   return (
     <div className="grid min-w-48 gap-1.5">
       <span title={runner.label} className="truncate">

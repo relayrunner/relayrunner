@@ -19,7 +19,7 @@ import {
 import { useState, type ReactNode } from "react";
 import { runnerSettingsUrl } from "@/components/add-runner";
 import { GithubIcon } from "@/components/provider-logos";
-import { PROVIDERS, type Provider, runnerName, TILE } from "@/components/providers";
+import { type Provider, providerStyle, runnerName, TILE } from "@/components/providers";
 import { SHARING_ICONS, SharingDialog, sharingLabel } from "@/components/machine-sharing";
 import { UserAvatar } from "@/components/workspace-menu";
 import { Button } from "@/components/ui/button";
@@ -749,7 +749,7 @@ export function CloudProviderCard({
   provider: Provider;
   environments: EnvironmentSummary[];
 }) {
-  const { name, icon, tile, tint, bar, url } = PROVIDERS[provider];
+  const { name, icon, tile, tint, bar, url } = providerStyle(provider);
   const total = environments.reduce((sum, env) => sum + env.stat.runs, 0);
   // A share bar only says something when there's more than one runner type to compare.
   const showShare = environments.length > 1;
@@ -817,7 +817,7 @@ function CloudRow({
   bar: string;
 }) {
   const { label, detail, stat } = environment;
-  const { mono, detail: showDetail } = PROVIDERS[provider];
+  const { mono, detail: showDetail } = providerStyle(provider);
   const name = runnerName(provider, label);
   const spec = showDetail && detail ? detail : null;
   return (

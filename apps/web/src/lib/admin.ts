@@ -1,3 +1,4 @@
+import type { CatalogProvider } from "@relayrunner/providers/catalog";
 import { api } from "@/lib/api";
 import type { Setup } from "@/lib/admin-setup";
 
@@ -157,4 +158,40 @@ export function addPrice(price: NewPrice) {
 
 export function removePrice(id: string) {
   return api<{ ok: true }>(`/admin/prices/${encodeURIComponent(id)}`, { method: "DELETE" });
+}
+
+/** What an operator saves for a provider (apps/api/src/routes/admin-providers.ts). */
+export type ProviderFields = {
+  name: string;
+  summary: string;
+  labels: string;
+  /** Matching label prefixes; only used for providers operators add. */
+  prefixes: string[];
+  example: string;
+  setup: string;
+  dashboardUrl: string;
+  docsUrl: string;
+};
+
+export function listProviders() {
+  return api<{ providers: CatalogProvider[] }>("/admin/providers");
+}
+
+export function addProvider(provider: ProviderFields & { id: string }) {
+  return api<{ ok: true }>("/admin/providers", {
+    method: "POST",
+    body: JSON.stringify(provider),
+  });
+}
+
+export function saveProvider(id: string, provider: ProviderFields) {
+  return api<{ ok: true }>(`/admin/providers/${encodeURIComponent(id)}`, {
+    method: "PUT",
+    body: JSON.stringify(provider),
+  });
+}
+
+/** Puts a provider in code back as it was, or removes one an operator added. */
+export function removeProvider(id: string) {
+  return api<{ ok: true }>(`/admin/providers/${encodeURIComponent(id)}`, { method: "DELETE" });
 }

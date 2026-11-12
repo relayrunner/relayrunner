@@ -29,7 +29,7 @@ export type ProviderWorkflow = { repository: string; workflow: string; jobs: num
 
 /** A provider's page (GET /api/providers/:provider): the workspace's jobs on it. */
 export type ProviderReport = ProviderCounts & {
-  provider: ProviderId;
+  provider: string;
   days: number;
   pricesChecked: string;
   stat: Stat;
@@ -39,7 +39,7 @@ export type ProviderReport = ProviderCounts & {
   prices: RatePrices[];
 };
 
-export type ProviderSummary = ProviderCounts & { provider: ProviderId; stat: Stat };
+export type ProviderSummary = ProviderCounts & { provider: string; stat: Stat };
 
 /** The Providers page (GET /api/providers): every provider the workspace's jobs ran on. */
 export type ProvidersOverview = {
@@ -48,7 +48,7 @@ export type ProvidersOverview = {
   providers: ProviderSummary[];
 };
 
-export function getProviderReport(provider: ProviderId, days: number) {
+export function getProviderReport(provider: string, days: number) {
   return api<ProviderReport>(`/providers/${provider}?days=${days}`);
 }
 
@@ -115,8 +115,8 @@ function sampleTotals(list: ProviderRunner[]): ProviderCounts & { stat: Stat } {
 }
 
 /** Made-up numbers for the dev server with auth off. Only a few providers have jobs. */
-export function sampleProviderReport(provider: ProviderId, days: number): ProviderReport {
-  const runners = SAMPLE_RUNNERS[provider] ?? [];
+export function sampleProviderReport(provider: string, days: number): ProviderReport {
+  const runners = SAMPLE_RUNNERS[provider as ProviderId] ?? [];
   const total = sampleTotals(runners);
   const workflows = [
     { repository: "acme/web", workflow: "CI", jobs: Math.round(total.jobs * 0.48) },

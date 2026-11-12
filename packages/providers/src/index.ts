@@ -130,7 +130,7 @@ export type HostedProviderId = (typeof HOSTED_PROVIDER_IDS)[number];
 
 // How each service's labels start, e.g. `depot-ubuntu-24.04-8`. A prefix ending in `-` also
 // matches the bare name (`ubicloud`). RunsOn's carry the run id, `runs-on=<run id>/runner=...`.
-const LABEL_PREFIXES: Record<HostedProviderId, string[]> = {
+export const LABEL_PREFIXES: Record<HostedProviderId, string[]> = {
   blacksmith: ["blacksmith-"],
   depot: ["depot-"],
   namespace: ["namespace-profile-", "nscloud-"],
@@ -139,10 +139,14 @@ const LABEL_PREFIXES: Record<HostedProviderId, string[]> = {
   "runs-on": ["runs-on=", "runs-on/"],
 };
 
-const matches = (provider: HostedProviderId, lower: string) =>
-  LABEL_PREFIXES[provider].some(
+/** Whether a lowercase label starts with one of `prefixes`, or is the bare name one ends in `-`. */
+export const matchesPrefix = (prefixes: readonly string[], lower: string) =>
+  prefixes.some(
     (prefix) => lower.startsWith(prefix) || (prefix.endsWith("-") && lower === prefix.slice(0, -1)),
   );
+
+const matches = (provider: HostedProviderId, lower: string) =>
+  matchesPrefix(LABEL_PREFIXES[provider], lower);
 
 /** Whether `label` asks for one of `provider`'s runners. */
 export const isProviderLabel = (provider: HostedProviderId, label: string) =>
@@ -154,19 +158,23 @@ export function hostedProviderOf(label: string): HostedProviderId | null {
   return HOSTED_PROVIDER_IDS.find((id) => matches(id, lower)) ?? null;
 }
 
-/**
- * Where a job ran, by its Job times environment key: `depot:<label>` and the like for providers,
- * plain `container` for the Cloudflare Container, and `machine` for `machine:<id>` and
- * `self-hosted:<group>`, the runners people host themselves.
- */
 /** A provider's name, or the id itself when it isn't one RelayRunner knows. */
 export const providerName = (id: string) => (isProviderId(id) ? PROVIDERS[id].name : id);
 
-export function providerOfEnvironment(key: string): ProviderId | "machine" {
+/**
+ * Where a job ran, by its Job times environment key: `depot:<label>` and the like for providers,
+ * plain `container` for the Cloudflare Container, and `machine` for `machine:<id>` and
+ * `self-hosted:<group>`, the runners people host themselves. `known` says which ids are
+ * providers; pass a catalog's to count the ones operators added.
+ */
+export function providerOfEnvironment(
+  key: string,
+  known: (id: string) => boolean = isProviderId,
+): string {
   if (key === "container") return "cloudflare";
   if (key.startsWith("machine:") || key.startsWith("self-hosted:")) return "machine";
   const id = key.slice(0, key.indexOf(":"));
-  return isProviderId(id) ? id : "other";
+  return known(id) ? id : "other";
 }
 export {
   BASE_BOOK,
