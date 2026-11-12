@@ -104,8 +104,7 @@ export const githubRoutes = new Hono<AppEnv>()
     deleteCookie(c, SIGNUP_NEXT_COOKIE, { path: "/api/github" });
     // `next` in the query is how /setup comes back to itself after signing someone in (below).
     const next = state?.next ?? signupNext ?? dashboardPath(c.req.query("next"));
-    const landing = next ?? "/settings/github";
-    const done = (outcome: SetupOutcome) => c.redirect(withParam(landing, "github", outcome));
+    const done = (outcome: SetupOutcome) => c.redirect(setupLanding(next, outcome));
     const requested = c.req.query("setup_action") === "request";
     // A fresh install, rather than coming back after changing one ("update").
     const installed = c.req.query("setup_action") === "install";
@@ -189,6 +188,16 @@ function withParam(path: string, key: string, value: string) {
   const url = new URL(path, "https://dashboard.invalid");
   url.searchParams.set(key, value);
   return `${url.pathname}${url.search}`;
+}
+
+// Where /setup lands once it's done. An install that started somewhere with a page to come back
+// to (`next`, like /device) goes back there. Otherwise a new connection opens Runners, where the
+// workspace's first steps are (connect a machine), and anything else (a change made on GitHub,
+// a request to an org's owners, or a problem) opens Settings > GitHub, which explains it.
+export function setupLanding(next: string | null | undefined, outcome: SetupOutcome) {
+  if (next) return withParam(next, "github", outcome);
+  if (outcome === "connected") return "/runners";
+  return withParam("/settings/github", "github", outcome);
 }
 
 // Where /setup sends someone it had to sign in first: back to /setup, now signed in, to add them

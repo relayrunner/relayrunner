@@ -196,7 +196,7 @@ describe("installing the GitHub App makes a workspace (#316)", () => {
     await installed(github, githubId);
 
     const back = await setupWith(cookie, github.id, await installState(cookie));
-    expect(back.location).toBe("/settings/github?github=connected");
+    expect(back.location).toBe("/runners");
 
     const { workspace_id } = (await row(github.id))!;
     expect(workspace_id).toBeTruthy();
@@ -256,7 +256,7 @@ describe("installing the GitHub App makes a workspace (#316)", () => {
     await installed(github, first.githubId);
     await setup(first.cookie, github.id);
 
-    expect(await setup(second.cookie, github.id)).toBe("/settings/github?github=connected");
+    expect(await setup(second.cookie, github.id)).toBe("/runners");
     const { workspace_id } = (await row(github.id))!;
     expect(await members(workspace_id!)).toEqual([
       { user_id: first.user.id, role: "owner" },
@@ -329,14 +329,12 @@ describe("installing the GitHub App makes a workspace (#316)", () => {
     const second = await testing.signIn(env);
     const github = installation();
     visibleTo.set(second.githubToken, [github]);
-    const state = await installState(second.cookie, "/runners");
+    const state = await installState(second.cookie, "/activity");
     const tampered = `${state.slice(0, -1)}${state.endsWith("A") ? "B" : "A"}`;
 
-    expect(await setup(second.cookie, github.id, tampered)).toBe(
-      "/settings/github?github=connected",
-    );
+    expect(await setup(second.cookie, github.id, tampered)).toBe("/runners");
     // GitHub, not the state, decides who joins: first's state doesn't add first.
-    await setup(second.cookie, github.id, await installState(first.cookie, "/runners"));
+    await setup(second.cookie, github.id, await installState(first.cookie, "/activity"));
     expect(await members((await row(github.id))!.workspace_id!)).toEqual([
       { user_id: second.user.id, role: "member" },
     ]);
