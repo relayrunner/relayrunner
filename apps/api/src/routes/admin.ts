@@ -7,9 +7,11 @@
 import { count, desc, eq } from "drizzle-orm";
 import { Hono } from "hono";
 import { z } from "zod";
+import { machineMilestones, workspaceJobs } from "../admin-adoption.ts";
 import { deleteUser, deleteWorkspaces } from "../admin-delete.ts";
 import type { AppEnv } from "../app.ts";
 import { createDb, schema } from "../db/index.ts";
+import { internalWorkspaceIds } from "../internal-workspaces.ts";
 import { requireOperator, who } from "../middleware/admin.ts";
 import { requireUser } from "../middleware/session.ts";
 import { adminPriceRoutes } from "./admin-prices.ts";
@@ -109,7 +111,7 @@ export const adminRoutes = new Hono<AppEnv>()
   })
   .get("/workspaces", async (c) => {
     const db = createDb(c.env.DB);
-    const [workspaces, members, installations] = await Promise.all([
+    const [workspaces, members, installations, milestones, jobs, internal] = await Promise.all([
       db.select().from(schema.workspace).orderBy(desc(schema.workspace.createdAt)),
       db
         .select({
@@ -118,6 +120,7 @@ export const adminRoutes = new Hono<AppEnv>()
           name: schema.user.name,
           email: schema.user.email,
           role: schema.workspaceMember.role,
+          signedUpAt: schema.user.createdAt,
         })
         .from(schema.workspaceMember)
         .innerJoin(schema.user, eq(schema.user.id, schema.workspaceMember.userId)),
@@ -125,24 +128,48 @@ export const adminRoutes = new Hono<AppEnv>()
         .select({
           workspaceId: schema.workspace.id,
           accountLogin: schema.githubInstallation.accountLogin,
+          installedAt: schema.githubInstallation.createdAt,
         })
         .from(schema.githubInstallation)
         .innerJoin(
           schema.workspace,
           eq(schema.workspace.installationId, schema.githubInstallation.id),
         ),
+      machineMilestones(db),
+      workspaceJobs(db),
+      internalWorkspaceIds(db),
     ]);
     const membersOf = Map.groupBy(members, (member) => member.workspaceId);
     const accountsOf = Map.groupBy(installations, (installation) => installation.workspaceId);
+    const earliest = (dates: Date[]) =>
+      dates.length ? new Date(Math.min(...dates.map((d) => d.getTime()))).toISOString() : null;
     return c.json({
-      workspaces: workspaces.map((workspace) => ({
-        id: workspace.id,
-        name: workspace.name,
-        slug: workspace.slug,
-        logo: workspace.logo,
-        createdAt: workspace.createdAt,
-        members: membersOf.get(workspace.id) ?? [],
-        githubAccounts: (accountsOf.get(workspace.id) ?? []).map((i) => i.accountLogin),
-      })),
+      workspaces: workspaces.map((workspace) => {
+        const workspaceMembers = membersOf.get(workspace.id) ?? [];
+        const accounts = accountsOf.get(workspace.id) ?? [];
+        return {
+          id: workspace.id,
+          name: workspace.name,
+          slug: workspace.slug,
+          logo: workspace.logo,
+          createdAt: workspace.createdAt,
+          members: workspaceMembers.map(({ workspaceId, userId, name, email, role }) => ({
+            workspaceId,
+            userId,
+            name,
+            email,
+            role,
+          })),
+          githubAccounts: accounts.map((i) => i.accountLogin),
+          internal: internal.has(workspace.id),
+          setup: {
+            signedUpAt: earliest(workspaceMembers.map((m) => m.signedUpAt)),
+            installedAt: earliest(accounts.map((i) => i.installedAt)),
+            machineAt: milestones.machineAt.get(workspace.id) ?? null,
+            firstMachineJobAt: milestones.firstMachineJobAt.get(workspace.id) ?? null,
+          },
+          ...(jobs.get(workspace.id) ?? { jobs7d: 0, machineJobs7d: 0, lastJobAt: null }),
+        };
+      }),
     });
   });
