@@ -1,9 +1,10 @@
 // Runs the job a `run` message hands the machine: start a slot's copy of actions/runner (slots.ts)
 // with the message's JIT config, stream its output, report progress, and clean up after it.
 
-import { spawn } from "node:child_process";
+import { spawn, type ChildProcessByStdio } from "node:child_process";
 import { readlinkSync, rmSync, symlinkSync } from "node:fs";
 import { join } from "node:path";
+import type { Readable } from "node:stream";
 import type { JobMessage, RunMessage } from "@relayrunner/machine-protocol";
 import { checkJitConfig } from "./jit-config.ts";
 
@@ -24,7 +25,7 @@ export interface RunJobOptions {
 
 // Only what the runner needs from our environment, so the CLI's own secrets (the machine token,
 // anything in the user's shell) don't reach workflow steps.
-const runnerEnv = () =>
+export const runnerEnv = () =>
   Object.fromEntries(
     ["HOME", "USER", "LOGNAME", "PATH", "LANG", "LC_ALL", "TMPDIR", "SHELL"].flatMap((key) =>
       process.env[key] === undefined ? [] : [[key, process.env[key]]],
@@ -71,30 +72,7 @@ export async function runJob(run: RunMessage, options: RunJobOptions): Promise<J
       env: runnerEnv(),
       stdio: ["ignore", "pipe", "pipe"],
     });
-    child.stdout.on("data", (chunk: Buffer) => output(chunk, "stdout"));
-    child.stderr.on("data", (chunk: Buffer) => output(chunk, "stderr"));
-
-    const started = await new Promise<Error | null>((resolve) => {
-      child.once("spawn", () => resolve(null));
-      child.once("error", resolve);
-    });
-    if (started)
-      return finish({
-        routeId: run.routeId,
-        state: "failed",
-        message: `Could not start the runner: ${started.message}`,
-      });
-    report({ routeId: run.routeId, state: "started" });
-
-    const [code, signal] = await new Promise<[number | null, NodeJS.Signals | null]>((resolve) =>
-      child.once("close", (code, signal) => resolve([code, signal])),
-    );
-    if (code === 0) return finish({ routeId: run.routeId, state: "finished" });
-    return finish({
-      routeId: run.routeId,
-      state: "failed",
-      message: signal ? `run.sh was stopped by ${signal}` : `run.sh exited with ${code}`,
-    });
+    return finish(await supervise(child, { routeId: run.routeId, name: "run.sh", report, output }));
   } catch (error) {
     return finish({
       routeId: run.routeId,
@@ -105,6 +83,41 @@ export async function runJob(run: RunMessage, options: RunJobOptions): Promise<J
     clean(dir);
     rmSync(lock, { force: true });
   }
+}
+
+// Follows a runner process from spawn to exit: streams its output, reports "started", and
+// resolves with the "finished" or "failed" update for the caller to report. Never rejects.
+export async function supervise(
+  child: ChildProcessByStdio<null, Readable, Readable>,
+  options: {
+    routeId: string;
+    // What the process is called in a failure message, such as "run.sh".
+    name: string;
+    report: (update: JobUpdate) => void;
+    output: (chunk: Buffer, stream: "stdout" | "stderr") => void;
+  },
+): Promise<JobUpdate> {
+  const { routeId, name, report, output } = options;
+  child.stdout.on("data", (chunk: Buffer) => output(chunk, "stdout"));
+  child.stderr.on("data", (chunk: Buffer) => output(chunk, "stderr"));
+
+  const started = await new Promise<Error | null>((resolve) => {
+    child.once("spawn", () => resolve(null));
+    child.once("error", resolve);
+  });
+  if (started)
+    return { routeId, state: "failed", message: `Could not start the runner: ${started.message}` };
+  report({ routeId, state: "started" });
+
+  const [code, signal] = await new Promise<[number | null, NodeJS.Signals | null]>((resolve) =>
+    child.once("close", (code, signal) => resolve([code, signal])),
+  );
+  if (code === 0) return { routeId, state: "finished" };
+  return {
+    routeId,
+    state: "failed",
+    message: signal ? `${name} was stopped by ${signal}` : `${name} exited with ${code}`,
+  };
 }
 
 function clean(dir: string) {

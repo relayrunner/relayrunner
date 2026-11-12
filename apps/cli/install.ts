@@ -126,6 +126,11 @@ async function latestDownload(target: RunnerPlatform): Promise<RunnerDownload> {
   return pickDownload(await response.json(), target);
 }
 
+// The latest actions/runner version, which is also the tag of GitHub's runner image for it.
+export async function latestRunnerVersion(target: RunnerPlatform): Promise<string> {
+  return (await latestDownload(target)).version;
+}
+
 // Installed versions, newest first.
 export function installedRunners(root = runnersDir()): InstalledRunner[] {
   if (!existsSync(root)) return [];

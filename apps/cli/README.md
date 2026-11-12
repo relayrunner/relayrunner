@@ -64,6 +64,12 @@ approved the machine also gets an email, since someone else may have its token.
   `~/.relayrunner/runner/<version>/slot-<n>/`, made when `connect` starts (a
   copy-on-write clone where the disk supports it). With more than one slot,
   each line of a job's output starts with its slot, such as `[slot 2]`.
+- `--isolated` (experimental) runs each job in its own Linux VM, so a job can't
+  read your files or the machine token. It needs a Mac with Apple silicon,
+  macOS 26 and Apple's [container](https://github.com/apple/container/releases)
+  tool, started with `container system start`. Each VM starts from GitHub's
+  runner image with nothing mounted and is deleted when the job ends. Jobs run
+  on Linux arm64. `--image <image>` uses another runner image.
 - If the machine is removed in the dashboard, `connect` deletes the saved token.
   A running `connect` exits and asks you to run it again; a new one signs in
   straight away.

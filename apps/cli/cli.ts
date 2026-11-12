@@ -16,6 +16,7 @@ import { initCommand, offerSetup } from "./init.ts";
 import { defaultMachineName } from "./machine-name.ts";
 import { ensureRunner, RunnerError, runnerPlatform } from "./install.ts";
 import { normalizeServer } from "./server.ts";
+import { prepareIsolation, runIsolatedJob } from "./isolated.ts";
 import { prefixLines, runJob } from "./job.ts";
 import { startLive } from "./live.ts";
 import { CHECK_INTERVAL_MS, checkForUpdate, updateNotice } from "./update-check.ts";
@@ -71,6 +72,15 @@ const connectCommand = defineCommand({
       description:
         "How many jobs to run at once (default: 2 with 8 or more CPU cores, otherwise 1)",
     },
+    isolated: {
+      type: "boolean",
+      description:
+        "Run each job in its own Linux VM, away from your files. Needs a Mac with Apple silicon and Apple's container tool.",
+    },
+    image: {
+      type: "string",
+      description: "With --isolated, the runner image to use (default: GitHub's runner image)",
+    },
   },
   async run({ args }) {
     clack.intro("RelayRunner");
@@ -97,8 +107,11 @@ async function connectMachine(args: {
   name?: string;
   share?: string;
   concurrency: number;
+  isolated?: boolean;
+  image?: string;
 }) {
   const share = shareArg(args.share);
+  if (args.image && !args.isolated) throw new RunnerError("USAGE", "--image goes with --isolated.");
   const platform = machinePlatform();
   let credentials = readCredentials();
   const server = serverFor(args.server, credentials);
@@ -132,10 +145,19 @@ async function connectMachine(args: {
     updateTimer.unref();
   }
 
-  const runner = await ensureRunner({ log: (line) => clack.log.info(line) });
-  // Each slot runs its jobs in its own copy of the runner.
   const slots = args.concurrency;
-  const slotDirs = ensureSlots(runner, slots, (line) => clack.log.info(line));
+  const log = (line: string) => clack.log.info(line);
+  // Isolated, each job gets a fresh VM from the runner image. Otherwise each slot runs its jobs
+  // in its own copy of the runner on this machine.
+  const isolation = args.isolated
+    ? await prepareIsolation({ slots, image: args.image, log })
+    : null;
+  const runner = isolation ? null : await ensureRunner({ log });
+  const slotDirs = runner ? ensureSlots(runner, slots, log) : [];
+  if (isolation)
+    clack.log.info(
+      `Each job runs in its own Linux VM with ${isolation.cpus} CPUs and ${isolation.memoryGb} GB of memory.`,
+    );
   clack.log.info(
     slots === 1
       ? "Running 1 job at a time. Change with --concurrency."
@@ -181,7 +203,9 @@ async function connectMachine(args: {
       hello: {
         machineId: credentials.machine.id,
         ...platform,
-        runnerVersion: runner.version,
+        // Isolated jobs run on Linux, whatever this machine is.
+        ...(isolation ? { os: "linux" as const } : {}),
+        runnerVersion: isolation ? isolation.runnerVersion : runner!.version,
         cliVersion,
         device,
       },
@@ -195,17 +219,19 @@ async function connectMachine(args: {
               )
             : undefined;
         try {
-          return await runJob(run, {
-            dir: slotDirs[slot - 1],
+          const options = {
             report,
             output: prefixed?.output,
-            onChecked: (target) => {
+            onChecked: (target: string | null) => {
               if (target)
                 clack.log.info(
                   `${new Date().toLocaleTimeString()} Job ${run.routeId}${slots > 1 ? ` (slot ${slot})` : ""} is from ${target}`,
                 );
             },
-          });
+          };
+          return isolation
+            ? await runIsolatedJob(run, { ...options, isolation })
+            : await runJob(run, { ...options, dir: slotDirs[slot - 1] });
         } finally {
           prefixed?.flush();
         }
