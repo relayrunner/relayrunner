@@ -22,6 +22,11 @@ export function createTestD1(): D1Database {
       readonly params: SQLInputValue[] = [],
     ) {}
     bind(...values: unknown[]) {
+      // SQLite takes thousands of bound values; D1 takes 100 and fails the query.
+      if (values.length > 100)
+        throw new Error(
+          `D1_ERROR: too many SQL variables at offset ${values.length}: SQLITE_ERROR`,
+        );
       return new Statement(this.sql, values.map(toSql));
     }
     #rows() {
