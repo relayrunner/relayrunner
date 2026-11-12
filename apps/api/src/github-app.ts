@@ -285,19 +285,48 @@ async function listAll<T>(token: string, path: string, key?: string): Promise<T[
   const items: T[] = [];
   for (let page = 1; page <= MAX_LISTED / 100; page++) {
     const separator = path.includes("?") ? "&" : "?";
-    const response = await fetch(`${API}${path}${separator}per_page=100&page=${page}`, {
-      headers: headers(token),
-    });
-    if (!response.ok)
-      throw new Error(
-        `GET ${path} failed with ${response.status}: ${(await response.text()).slice(0, 300)}`,
-      );
-    const body = (await response.json()) as Record<string, unknown>;
+    const body = (await getPage(token, `${path}${separator}per_page=100&page=${page}`)) as Record<
+      string,
+      unknown
+    >;
     const batch = ((key ? body[key] : body) ?? []) as T[];
     items.push(...batch);
     if (batch.length < 100) break;
   }
   return items;
+}
+
+// The last body and ETag of each listed page, by path, kept for the isolate's life. Asking again
+// with the ETag gets a 304 when nothing changed, which GitHub doesn't count against the
+// installation's rate limit, so polling runner lists stays nearly free. Oldest dropped past
+// MAX_CACHED_PAGES.
+const listedPages = new Map<string, { etag: string; body: unknown }>();
+const MAX_CACHED_PAGES = 500;
+
+/** Forget cached list pages. For tests. */
+export function clearListedPages() {
+  listedPages.clear();
+}
+
+// One page of a list, reusing the cached body when GitHub says it hasn't changed.
+async function getPage(token: string, path: string): Promise<unknown> {
+  const cached = listedPages.get(path);
+  const response = await fetch(`${API}${path}`, {
+    headers: cached ? { ...headers(token), "if-none-match": cached.etag } : headers(token),
+  });
+  if (response.status === 304 && cached) return cached.body;
+  if (!response.ok)
+    throw new Error(
+      `GET ${path} failed with ${response.status}: ${(await response.text()).slice(0, 300)}`,
+    );
+  const body: unknown = await response.json();
+  const etag = response.headers.get("etag");
+  listedPages.delete(path);
+  if (etag) {
+    listedPages.set(path, { etag, body });
+    if (listedPages.size > MAX_CACHED_PAGES) listedPages.delete(listedPages.keys().next().value!);
+  }
+  return body;
 }
 
 /** A self-hosted runner registered in an org, as GET /orgs/{org}/actions/runners lists it. */

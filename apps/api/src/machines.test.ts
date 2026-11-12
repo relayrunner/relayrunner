@@ -5,8 +5,9 @@ import { app } from "./app.ts";
 import { createDb, schema } from "./db/index.ts";
 import type { Env } from "./env.ts";
 import {
-  deviceChanged,
   deviceColumns,
+  helloChanged,
+  helloColumns,
   issuePendingToken,
   promotePendingToken,
   verifyMachineToken,
@@ -148,19 +149,19 @@ async function enrollAs(
   return { ...body, cookie, workspaceId, accessToken: token.access_token, code };
 }
 
-describe("deviceChanged", () => {
-  const device = { kind: "laptop", model: "MacBook Pro", chip: "Apple M3", cpuCores: 12 } as const;
-  const row = { id: "m1", name: "mac", ...deviceColumns(device, new Date(1_000)) };
+describe("helloChanged", () => {
+  const device = { kind: "laptop" as const, model: "MacBook Pro", chip: "Apple M3", cpuCores: 12 };
+  const hello = { os: "macos", arch: "arm64", device };
+  const row = { id: "m1", name: "mac", ...helloColumns(hello, new Date(1_000)) };
 
   test("ignores when it was reported, so a reconnect writes nothing", () => {
-    expect(deviceChanged(row, deviceColumns(device, new Date(2_000)))).toBe(false);
+    expect(helloChanged(row, helloColumns(hello, new Date(2_000)))).toBe(false);
   });
 
   test("notices any reported field that changed", () => {
-    expect(deviceChanged(row, deviceColumns({ ...device, cpuCores: 16 }, new Date()))).toBe(true);
-    expect(deviceChanged(row, deviceColumns({ ...device, osVersion: "27.2" }, new Date()))).toBe(
-      true,
-    );
+    const changed = (next: typeof hello) => helloChanged(row, helloColumns(next, new Date()));
+    expect(changed({ ...hello, device: { ...device, cpuCores: 16 } })).toBe(true);
+    expect(changed({ ...hello, os: "linux" })).toBe(true);
   });
 });
 
@@ -454,6 +455,22 @@ describe("machines in the dashboard", () => {
       memoryMb: 36864,
       osVersion: "macOS 15.1",
       reportedAt: reportedAt.toISOString(),
+    });
+  });
+
+  test("a hello updates where the machine's jobs run, so an isolated Mac routes as Linux", async () => {
+    const { machine } = await enroll("hello-os");
+    const db = createDb(env.DB);
+    await db
+      .update(schema.machine)
+      .set(helloColumns({ os: "linux", arch: "arm64" }, new Date()))
+      .where(eq(schema.machine.id, machine.id));
+    const [row] = await db.select().from(schema.machine).where(eq(schema.machine.id, machine.id));
+    expect(row).toMatchObject({ os: "linux", arch: "arm64" });
+    // Without a device in the hello, the device columns stay as they were.
+    expect(helloColumns({ os: "macos", arch: "arm64" }, new Date())).toEqual({
+      os: "macos",
+      arch: "arm64",
     });
   });
 

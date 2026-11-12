@@ -114,7 +114,7 @@ export function pickDownload(release: unknown, target: RunnerPlatform): RunnerDo
   return { version, url: asset.browser_download_url, sha256 };
 }
 
-async function latestDownload(target: RunnerPlatform): Promise<RunnerDownload> {
+async function latestRelease(): Promise<unknown> {
   const response = await fetch(LATEST_RELEASE, {
     headers: { accept: "application/vnd.github+json", "user-agent": userAgent },
   });
@@ -123,7 +123,22 @@ async function latestDownload(target: RunnerPlatform): Promise<RunnerDownload> {
       "RUNNER_DOWNLOAD",
       `Could not look up the latest actions/runner release (HTTP ${response.status}).`,
     );
-  return pickDownload(await response.json(), target);
+  return response.json();
+}
+
+// The latest actions/runner version, which is also the tag of GitHub's runner image for it. If
+// GitHub can't be reached, the newest version installed here.
+export async function latestRunnerVersion(log: (line: string) => void = () => {}) {
+  try {
+    return Release.parse(await latestRelease()).tag_name.slice(1);
+  } catch (error) {
+    const [newest] = installedRunners();
+    if (!newest) throw error;
+    log(
+      `Couldn't check for a newer runner (${(error as Error).message}). Using ${newest.version}.`,
+    );
+    return newest.version;
+  }
 }
 
 // Installed versions, newest first.
@@ -152,7 +167,7 @@ export async function ensureRunner(
 
   let download: RunnerDownload;
   try {
-    download = await latestDownload(target);
+    download = pickDownload(await latestRelease(), target);
   } catch (error) {
     const [newest] = installedRunners(root);
     if (newest) {
@@ -220,6 +235,7 @@ export async function install(root: string, download: RunnerDownload, fetcher = 
   }
 }
 
+// The command's exit code, or null when it couldn't start (not installed).
 function exitCode(command: string, args: string[]) {
   return new Promise<number | null>((resolve) => {
     const child = spawn(command, args, { stdio: "ignore" });

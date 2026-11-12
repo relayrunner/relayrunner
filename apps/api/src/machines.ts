@@ -451,10 +451,25 @@ export function deviceColumns(device: Device, now: Date) {
   };
 }
 
-/** Whether a machine row holds a different device than `columns` (deviceColumns) describe. */
-export function deviceChanged(
+/**
+ * The machine columns a hello sets. The OS and architecture are where the machine's jobs run,
+ * which can change between connections: a Mac running `connect --isolated` takes Linux jobs.
+ */
+export function helloColumns(hello: { os: string; arch: string; device?: Device }, now: Date) {
+  return {
+    os: hello.os,
+    arch: hello.arch,
+    ...(hello.device ? deviceColumns(hello.device, now) : {}),
+  };
+}
+
+/**
+ * Whether a machine row holds anything other than what `columns` (helloColumns) set, apart from
+ * when the device was reported.
+ */
+export function helloChanged(
   row: Record<string, unknown>,
-  columns: ReturnType<typeof deviceColumns>,
+  columns: ReturnType<typeof helloColumns>,
 ) {
   return Object.entries(columns).some(
     ([key, value]) => key !== "deviceReportedAt" && row[key] !== value,

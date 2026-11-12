@@ -11,8 +11,8 @@ import { mintMachineRunner } from "../machine-runner.ts";
 import { originFromJson, type RequestOrigin } from "../device-origin.ts";
 import { sendEmail } from "../email.ts";
 import {
-  deviceChanged,
-  deviceColumns,
+  helloChanged,
+  helloColumns,
   issuePendingToken,
   pausedByName,
   promotePendingToken,
@@ -113,10 +113,9 @@ export class MachineLink extends DurableObject<Env> {
         .where(eq(schema.machine.id, session.machineId))
         .limit(1);
       // Written only when it changed: a deploy reconnects every machine at once, and most report
-      // the same device as last time.
-      const device = outcome.state.hello.device;
-      const columns = device ? deviceColumns(device, new Date()) : null;
-      if (machine && columns && deviceChanged(machine, columns))
+      // the same OS and device as last time.
+      const columns = helloColumns(outcome.state.hello, new Date());
+      if (machine && helloChanged(machine, columns))
         await db
           .update(schema.machine)
           .set(columns)

@@ -6,7 +6,7 @@ import type { Env } from "./env.ts";
 import type { ActivityPage, GithubActor } from "@relayrunner/activity";
 import * as testing from "./testing.ts";
 import { processWebhook } from "./webhook-queue.ts";
-import { runningJobs } from "./jobs.ts";
+import { runningJobs, startedJobStatus } from "./jobs.ts";
 import { recordPick } from "./route-decisions.ts";
 import { decideRoute } from "./routing.ts";
 
@@ -623,6 +623,39 @@ describe("runningJobs", () => {
     expect(elsewhere.has(`busy-${runId}`)).toBe(false);
     const here = await runningJobs(db, [{ id: `busy-${runId}`, running: 2, installationId }]);
     expect(here.get(`busy-${runId}`)).toHaveLength(2);
+  });
+});
+
+describe("startedJobStatus", () => {
+  test("answers only once the job's webhooks say it started", async () => {
+    const { installationId, runId } = await connectedWorkspace();
+    const db = createDb(env.DB);
+    const row = (id: number, status: string) => ({
+      id,
+      installationId,
+      repositoryId: 55,
+      repositoryFullName: "acme/app",
+      runId,
+      runAttempt: 1,
+      kind: "pick" as const,
+      name: "pick",
+      labels: ["relayrunner"],
+      headSha: "abc",
+      status,
+      githubCreatedAt: new Date(),
+    });
+    await db
+      .insert(schema.workflowJob)
+      .values([
+        row(runId + 1, "queued"),
+        row(runId + 2, "in_progress"),
+        row(runId + 3, "completed"),
+      ]);
+    expect(await startedJobStatus(db, runId + 1)).toBeNull();
+    expect(await startedJobStatus(db, runId + 2)).toBe("in_progress");
+    expect(await startedJobStatus(db, runId + 3)).toBe("completed");
+    // Not stored at all: GitHub has to say.
+    expect(await startedJobStatus(db, runId + 4)).toBeNull();
   });
 });
 

@@ -16,7 +16,14 @@ import { initCommand, offerSetup } from "./init.ts";
 import { defaultMachineName } from "./machine-name.ts";
 import { ensureRunner, RunnerError, runnerPlatform } from "./install.ts";
 import { normalizeServer } from "./server.ts";
-import { prefixLines, runJob } from "./job.ts";
+import {
+  debugLog,
+  isolatedLauncher,
+  isolationAvailable,
+  prepareIsolation,
+  unsupportedReason,
+} from "./isolated.ts";
+import { hostLauncher, prefixLines, runJob, type Launcher } from "./job.ts";
 import { startLive } from "./live.ts";
 import { CHECK_INTERVAL_MS, checkForUpdate, updateNotice } from "./update-check.ts";
 import { cliVersion } from "./version.ts";
@@ -71,6 +78,20 @@ const connectCommand = defineCommand({
       description:
         "How many jobs to run at once (default: 2 with 8 or more CPU cores, otherwise 1)",
     },
+    isolated: {
+      type: "boolean",
+      description:
+        "Run each job in its own Linux VM, away from your files. Needs a Mac with Apple silicon and Apple's container tool.",
+    },
+    image: {
+      type: "string",
+      description: "With --isolated, the runner image to build on (default: GitHub's runner image)",
+    },
+    "local-network": {
+      type: "boolean",
+      description:
+        "With --isolated, let jobs reach this Mac and your local network. They can't by default.",
+    },
   },
   async run({ args }) {
     clack.intro("RelayRunner");
@@ -97,9 +118,19 @@ async function connectMachine(args: {
   name?: string;
   share?: string;
   concurrency: number;
+  isolated?: boolean;
+  image?: string;
+  "local-network"?: boolean;
 }) {
   const share = shareArg(args.share);
-  const platform = machinePlatform();
+  if (args.image && !args.isolated) throw new RunnerError("USAGE", "--image goes with --isolated.");
+  if (args["local-network"] && !args.isolated)
+    throw new RunnerError("USAGE", "--local-network goes with --isolated.");
+  const host = machinePlatform();
+  const unsupported = args.isolated ? unsupportedReason() : null;
+  if (unsupported) throw new RunnerError("ISOLATED_UNSUPPORTED", unsupported);
+  // Isolated jobs run on Linux, whatever this machine is.
+  const platform = args.isolated ? ({ os: "linux", arch: host.arch } as const) : host;
   let credentials = readCredentials();
   const server = serverFor(args.server, credentials);
   if (credentials && credentials.server !== server) {
@@ -132,10 +163,29 @@ async function connectMachine(args: {
     updateTimer.unref();
   }
 
-  const runner = await ensureRunner({ log: (line) => clack.log.info(line) });
-  // Each slot runs its jobs in its own copy of the runner.
   const slots = args.concurrency;
-  const slotDirs = ensureSlots(runner, slots, (line) => clack.log.info(line));
+  const log = (line: string) => clack.log.info(line);
+  // Isolated, each job gets a fresh VM from the runner image. Otherwise each slot runs its jobs
+  // in its own copy of the runner on this machine.
+  let runnerVersion: string;
+  let launchers: Launcher[];
+  if (args.isolated) {
+    const isolation = await prepareIsolation({
+      slots,
+      image: args.image,
+      localNetwork: args["local-network"],
+      log,
+      debug: debugLog(),
+    });
+    runnerVersion = isolation.runnerVersion;
+    launchers = Array<Launcher>(slots).fill(isolatedLauncher(isolation));
+  } else {
+    const [runner, canIsolate] = await Promise.all([ensureRunner({ log }), isolationAvailable()]);
+    runnerVersion = runner.version;
+    launchers = ensureSlots(runner, slots, log).map(hostLauncher);
+    if (canIsolate)
+      log("This Mac can run each job in its own Linux VM, away from your files. Add --isolated.");
+  }
   clack.log.info(
     slots === 1
       ? "Running 1 job at a time. Change with --concurrency."
@@ -181,7 +231,7 @@ async function connectMachine(args: {
       hello: {
         machineId: credentials.machine.id,
         ...platform,
-        runnerVersion: runner.version,
+        runnerVersion,
         cliVersion,
         device,
       },
@@ -196,7 +246,7 @@ async function connectMachine(args: {
             : undefined;
         try {
           return await runJob(run, {
-            dir: slotDirs[slot - 1],
+            launcher: launchers[slot - 1],
             report,
             output: prefixed?.output,
             onChecked: (target) => {
