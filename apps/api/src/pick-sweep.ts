@@ -1,4 +1,4 @@
-import { and, eq, gt, isNull, lt } from "drizzle-orm";
+import { and, desc, eq, gt, isNull, lt } from "drizzle-orm";
 import { createDb, type Db, schema } from "./db/index.ts";
 import type { Env } from "./env.ts";
 import { appInstallationToken, deleteRunner, listRunners, type RunnerScope } from "./github-app.ts";
@@ -9,7 +9,11 @@ import { errorMessage } from "./webhook-queue.ts";
 // A relay queued this long with no taker is rescued; one older than a day GitHub has given up on.
 export const STUCK_AFTER_MS = 5 * 60_000;
 const STUCK_WINDOW_MS = 24 * 60 * 60_000;
-const MAX_RESCUES = 50;
+// After a deploy cuts off every pick in flight, a busy installation can have hundreds. Relays that
+// used up their attempts stay queued too, so the cap has room for them as well.
+const MAX_RESCUES = 500;
+// Rescues asked for at once.
+const RESCUE_BATCH = 50;
 
 /**
  * Every 15 minutes, a backstop for relay jobs (src/durable-objects/pick-runner.ts):
@@ -44,18 +48,23 @@ async function rescueStuckRelays(env: Env, now: number) {
         gt(schema.workflowJob.githubCreatedAt, new Date(now - STUCK_WINDOW_MS)),
       ),
     )
+    // Newest first: the likeliest to still be waiting on a runner.
+    .orderBy(desc(schema.workflowJob.githubCreatedAt))
     .limit(MAX_RESCUES);
-  for (const job of stuck) {
-    const rescued = await env.PICK_RUNNER.getByName(String(job.id)).rescue({
-      jobId: job.id,
-      installationId: job.installationId,
-      repo: job.repo,
-    });
-    if (rescued)
-      console.log(
-        JSON.stringify({ msg: "relayrunner pick rescued", jobId: job.id, repo: job.repo }),
-      );
-  }
+  for (let i = 0; i < stuck.length; i += RESCUE_BATCH)
+    await Promise.all(
+      stuck.slice(i, i + RESCUE_BATCH).map(async (job) => {
+        const rescued = await env.PICK_RUNNER.getByName(String(job.id)).rescue({
+          jobId: job.id,
+          installationId: job.installationId,
+          repo: job.repo,
+        });
+        if (rescued)
+          console.log(
+            JSON.stringify({ msg: "relayrunner pick rescued", jobId: job.id, repo: job.repo }),
+          );
+      }),
+    );
 }
 
 /**

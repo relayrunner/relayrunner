@@ -451,6 +451,16 @@ export function deviceColumns(device: Device, now: Date) {
   };
 }
 
+/** Whether a machine row holds a different device than `columns` (deviceColumns) describe. */
+export function deviceChanged(
+  row: Record<string, unknown>,
+  columns: ReturnType<typeof deviceColumns>,
+) {
+  return Object.entries(columns).some(
+    ([key, value]) => key !== "deviceReportedAt" && row[key] !== value,
+  );
+}
+
 function base64Url(bytes: Uint8Array) {
   return btoa(String.fromCharCode(...bytes))
     .replace(/\+/g, "-")

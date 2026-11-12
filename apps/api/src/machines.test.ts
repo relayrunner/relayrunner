@@ -5,6 +5,7 @@ import { app } from "./app.ts";
 import { createDb, schema } from "./db/index.ts";
 import type { Env } from "./env.ts";
 import {
+  deviceChanged,
   deviceColumns,
   issuePendingToken,
   promotePendingToken,
@@ -146,6 +147,22 @@ async function enrollAs(
   };
   return { ...body, cookie, workspaceId, accessToken: token.access_token, code };
 }
+
+describe("deviceChanged", () => {
+  const device = { kind: "laptop", model: "MacBook Pro", chip: "Apple M3", cpuCores: 12 } as const;
+  const row = { id: "m1", name: "mac", ...deviceColumns(device, new Date(1_000)) };
+
+  test("ignores when it was reported, so a reconnect writes nothing", () => {
+    expect(deviceChanged(row, deviceColumns(device, new Date(2_000)))).toBe(false);
+  });
+
+  test("notices any reported field that changed", () => {
+    expect(deviceChanged(row, deviceColumns({ ...device, cpuCores: 16 }, new Date()))).toBe(true);
+    expect(deviceChanged(row, deviceColumns({ ...device, osVersion: "27.2" }, new Date()))).toBe(
+      true,
+    );
+  });
+});
 
 describe("machine enrollment", () => {
   test("device codes are only issued to the relayrunner CLI", async () => {

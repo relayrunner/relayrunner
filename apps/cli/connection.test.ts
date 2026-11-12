@@ -117,6 +117,7 @@ function start(gateway: Gateway, overrides: Partial<Parameters<typeof connect>[0
     signal: stop.signal,
     minBackoffMs: 10,
     maxBackoffMs: 20,
+    reconnectSpreadMs: 10,
     ...overrides,
   });
   return { stop, events, end };
@@ -157,6 +158,25 @@ describe("connect", () => {
     const second = await gateway.next();
     expect(second.request.headers.authorization).toBe("Bearer rrm_next");
 
+    stop.abort();
+    expect(await end).toEqual({ reason: "stopped" });
+  });
+
+  test("spreads the first retry after a dropped connection, then backs off", async () => {
+    const gateway = await startGateway();
+    // Backoff alone would wait at least 750ms; the spread caps the first retry at 50ms.
+    const { stop, events, end } = start(gateway, {
+      minBackoffMs: 1_000,
+      maxBackoffMs: 2_000,
+      reconnectSpreadMs: 50,
+    });
+    const first = await gateway.next();
+    await first.waitFor((m) => m.type === "status");
+    first.socket.close(1012, "service restart");
+    await gateway.next();
+    const [dropped] = events.filter((e) => e.type === "disconnected");
+    expect(dropped).toMatchObject({ code: 1012 });
+    expect(dropped.type === "disconnected" && dropped.retryInMs).toBeLessThanOrEqual(50);
     stop.abort();
     expect(await end).toEqual({ reason: "stopped" });
   });
@@ -345,7 +365,10 @@ describe("connect", () => {
   test("job updates sent while disconnected arrive after the next hello", async () => {
     const gateway = await startGateway();
     let report!: (update: JobUpdate) => void;
+    // The retry comes 50ms after the drop, well after the update below.
+    const random = vi.spyOn(Math, "random").mockReturnValue(0.5);
     const { stop, end } = start(gateway, {
+      reconnectSpreadMs: 100,
       runJob: (_run, _slot, r) => {
         report = r;
         return new Promise(() => {});
@@ -362,6 +385,7 @@ describe("connect", () => {
     await second.waitFor((m) => m.type === "job");
     expect(second.messages.map((m) => m.type)).toEqual(["hello", "status", "job"]);
     expect(second.messages[1]).toEqual({ v: 1, type: "status", state: "busy", running: 1 });
+    random.mockRestore();
     stop.abort();
     await end;
   });
