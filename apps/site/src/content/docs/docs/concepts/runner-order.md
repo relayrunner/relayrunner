@@ -40,7 +40,7 @@ GitHub can appear twice: once with a minutes limit and once without.
 
 A GitHub-hosted step can have a limit, such as "while under 80%". It then takes a job only while the job's GitHub account has used less than that share of its plan's included minutes this month. Each account is checked on its own.
 
-If an account's minutes can't be read, the limit never blocks its jobs. The Router page shows when that's the case.
+If GitHub won't share an account's minutes, the limit never blocks its jobs. The Router page shows when that's the case.
 
 ## Changes take effect at once
 

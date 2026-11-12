@@ -19,7 +19,7 @@ Drop step 3 if you'd rather a job fail than ever bill overage. A job that finds 
 
 ## 2. Pick the limit
 
-The limit is a share of the plan's included minutes for the month. 80% leaves room for jobs that aren't routed.
+The limit is a share of the plan's included minutes for the month. 80% leaves room for jobs you haven't routed.
 
 Each GitHub account is checked on its own. One org going over its limit doesn't move another org's jobs.
 

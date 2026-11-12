@@ -5,7 +5,7 @@ description: The relayrunner.yml file, which turns on checks for a repo.
 
 `relayrunner.yml` turns on [optimized checks](/docs/concepts/optimized-checks) for every pull request in a repo, with no workflow. Put it at `.github/relayrunner.yml` or the repo root.
 
-It's read from the default branch, so a pull request can't change the checks it gets.
+Checks read it from the default branch, so a pull request can't change the checks it gets.
 
 ```yaml
 checks:

@@ -9,11 +9,11 @@ Yes. It's open source, and the core routing will stay that way. We plan to add a
 
 ## Do I pay RelayRunner for runner minutes?
 
-No. Your machines are yours, and hosted providers bill you directly under your own accounts. A routed job only gets a label, and minutes aren't resold.
+No. Your machines are yours, and hosted providers bill you directly under your own accounts. A routed job only gets a label.
 
 ## Do relay jobs use minutes?
 
-No. Relay jobs are answered without a runner, in about a second. Optimized checks don't use minutes either.
+No. A relay job finishes in about a second, without a runner. Optimized checks don't use minutes either.
 
 ## What happens when my laptop is closed?
 

@@ -19,7 +19,7 @@ A job lists the runners it may use, and your runner order decides between them. 
 
 ## Public repositories never run on your machines
 
-Anyone can run code on a machine through a pull request to a public repo, so a public repo's job is never sent to one. Public repos can still route between hosted providers.
+Anyone can run code on a machine through a pull request to a public repo, so a public repo's jobs never run on one. Public repos can still route between hosted providers.
 
 ## Jobs fail with a reason
 

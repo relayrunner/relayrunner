@@ -1,6 +1,6 @@
 ---
 title: Routing
-description: How a job opts in to routing, and how its runner is chosen.
+description: How a job opts in to routing, and how the relay picks its runner.
 ---
 
 A job opts in to routing with a relay job. The relay names the runners the job may use, and gets one of them back.
@@ -33,7 +33,7 @@ Leave out a provider and the job never runs there. See [relay.yml inputs](/docs/
 
 1. The relay job is queued on GitHub with `runs-on: relayrunner`.
 2. GitHub tells RelayRunner, which answers the relay itself. It runs no steps and bills no minutes. This takes about a second.
-3. Your workspace's [runner order](/docs/concepts/runner-order) is tried from the top. Any provider the job didn't name is skipped, and the first one that can take the job now gets it.
+3. The relay goes down your workspace's [runner order](/docs/concepts/runner-order) from the top. It skips any provider the job didn't name, and picks the first one that can take the job now.
 4. The relay finishes with a `runner` output: a one-time label for a machine, or the job's own label for a hosted provider.
 5. Your job runs on that label. A machine gets a fresh one-job runner for it.
 

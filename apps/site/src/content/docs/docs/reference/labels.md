@@ -7,7 +7,7 @@ description: Every runs-on label RelayRunner uses or answers, and what it means.
 
 | Label                              | Where                                                                          | Meaning                                                               |
 | ---------------------------------- | ------------------------------------------------------------------------------ | --------------------------------------------------------------------- |
-| `relayrunner`                      | A relay job's `runs-on` (set by the relay workflow), or an optimized check job | The job is answered without a runner.                                 |
+| `relayrunner`                      | A relay job's `runs-on` (set by the relay workflow), or an optimized check job | The job finishes without a runner.                                    |
 | `self-hosted`                      | The relay's `machine` input                                                    | Any connected machine or added runner.                                |
 | `macOS`, `Linux`                   | The relay's `machine` input                                                    | A machine with that OS.                                               |
 | `ARM64`, `X64`                     | The relay's `machine` input                                                    | A machine with that architecture.                                     |

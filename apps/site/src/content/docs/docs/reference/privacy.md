@@ -5,7 +5,7 @@ description: What RelayRunner sees and stores about your jobs, repos and machine
 
 RelayRunner needs to know about your jobs to route them, but not what's in them. Here's what it sees. The [Privacy Policy](/privacy) has the full detail.
 
-## What's stored
+## What we store
 
 - **Your account**: your GitHub user id, username, name, email and avatar.
 - **Workspaces**: their members, roles and invitations.
