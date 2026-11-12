@@ -130,10 +130,22 @@ export type RunningJob = {
  * `running`, so when an old row is stuck in_progress (a lost `completed` webhook) the newest ones
  * win. Callers pass only machines that report themselves busy, so a stuck row never shows on an
  * idle machine.
+ *
+ * A connected machine can be in several workspaces, each another GitHub account's. A machine
+ * given `installationId` shows only that installation's jobs, so one workspace never learns the
+ * repos and job names another workspace runs on a shared member's machine.
  */
-export async function runningJobs(db: Db, machines: { id: string; running: number }[]) {
+export async function runningJobs(
+  db: Db,
+  machines: { id: string; running: number; installationId?: number | null }[],
+) {
   const jobs = new Map<string, RunningJob[]>();
   const limit = new Map(machines.map((machine) => [machine.id, machine.running]));
+  const only = new Map(
+    machines.flatMap((machine) =>
+      machine.installationId === undefined ? [] : [[machine.id, machine.installationId] as const],
+    ),
+  );
   if (machines.length === 0) return jobs;
   const rows = await db
     .select()
@@ -148,6 +160,7 @@ export async function runningJobs(db: Db, machines: { id: string; running: numbe
     .orderBy(desc(table.githubCreatedAt));
   for (const row of rows) {
     if (!row.machineId) continue;
+    if (only.has(row.machineId) && row.installationId !== only.get(row.machineId)) continue;
     const list = jobs.get(row.machineId) ?? [];
     if (list.length >= (limit.get(row.machineId) ?? 0)) continue;
     list.push({

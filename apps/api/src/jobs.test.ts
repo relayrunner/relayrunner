@@ -616,6 +616,13 @@ describe("runningJobs", () => {
       `job-${runId + 1}`,
     ]);
     expect((await runningJobs(db, [])).size).toBe(0);
+    // Asked for another installation's jobs only: none of these show.
+    const elsewhere = await runningJobs(db, [
+      { id: `busy-${runId}`, running: 2, installationId: installationId + 1 },
+    ]);
+    expect(elsewhere.has(`busy-${runId}`)).toBe(false);
+    const here = await runningJobs(db, [{ id: `busy-${runId}`, running: 2, installationId }]);
+    expect(here.get(`busy-${runId}`)).toHaveLength(2);
   });
 });
 
