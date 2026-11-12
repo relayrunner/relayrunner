@@ -1,9 +1,9 @@
 // `connect --isolated`: each job runs in its own Linux VM instead of on this machine, using
 // Apple's `container` tool (https://github.com/apple/container). The VM starts from GitHub's
 // runner image with nothing of the Mac mounted, takes one job and is deleted, so a job can't read
-// the user's files, the machine token, or anything an earlier job left behind. Unless
-// `--local-network` is given, a firewall inside the VM keeps the job off the local network: it
-// reaches the internet, not the Mac or the LAN.
+// the user's files, the machine token, or anything an earlier job left behind. Docker works inside
+// the VM. Unless `--local-network` is given, a firewall inside the VM keeps the job off the local
+// network: it reaches the internet, not the Mac or the LAN.
 
 import { spawn } from "node:child_process";
 import { createHash } from "node:crypto";
@@ -19,8 +19,7 @@ import { cliVersion } from "./version.ts";
 export interface Isolation {
   // The `container` binary. Tests point it at a stand-in.
   command: string;
-  // The image each job's VM starts from: the runner image plus the firewall (jobImage), or the
-  // runner image itself with `localNetwork`.
+  // The image each job's VM starts from: the runner image plus the start script (jobImage).
   image: string;
   // No firewall: jobs can reach this Mac and the local network.
   localNetwork: boolean;
@@ -36,8 +35,6 @@ export interface Isolation {
 // GitHub's runner image, tagged by actions/runner version. It runs as `runner` in /home/runner.
 const RUNNER_IMAGE = "ghcr.io/actions/actions-runner";
 const RELEASES = "https://github.com/apple/container/releases";
-// Starts the runner the way GitHub's image does by itself.
-const RUN_RUNNER = 'exec /home/runner/run.sh --jitconfig "$RUNNER_JIT_CONFIG"';
 
 // Why `--isolated` can't work on this machine, or null when it can. Apple's container tool needs
 // Apple silicon and macOS 26, which is Darwin 25.
@@ -90,41 +87,68 @@ export function debugLog(path = join(relayrunnerHome(), "isolated.log")): DebugL
 
 export const NO_LOG: DebugLog = { path: "", write: () => {} };
 
-// What the VM runs, as root with NET_ADMIN, before the runner. It loads a firewall that lets the
-// job reach the internet and DNS but not private addresses (the Mac, the LAN, link-local) or any
-// IPv6 address, then starts the runner as `runner` with NET_ADMIN and NET_RAW gone for good. Without
-// NET_ADMIN not even `sudo` in a job step can take the firewall down, and without NET_RAW it can't
-// send raw packets underneath it.
+// What the VM runs, as root with every capability, before the runner. Unless
+// RELAYRUNNER_LOCAL_NETWORK is 1 it loads a firewall that lets the job reach the internet and DNS
+// but not private addresses (the Mac, the LAN, link-local) or any IPv6 address. The same rules
+// cover what Docker containers send out, and leave Docker's own networks alone. It then starts
+// Docker, when the image has it, and the runner as `runner`. With the firewall the runner loses
+// NET_ADMIN and NET_RAW for good, so `sudo` in a job step can't take the firewall down or send raw
+// packets underneath it. Docker still runs as root: a job that starts a privileged container can
+// remove the firewall, so it stops accidents, not a job that sets out to get past it.
 export const START_SCRIPT = `#!/bin/sh
 set -eu
-dns=$(awk '$1 == "nameserver" && $2 ~ /^[0-9.]+$/ { printf "%s%s", sep, $2; sep = ", " }' /etc/resolv.conf)
-allow_dns=""
-[ -z "$dns" ] || allow_dns="ip daddr { $dns } meta l4proto { tcp, udp } th dport 53 accept"
-nft -f - <<EOF
+drop=""
+if [ "\${RELAYRUNNER_LOCAL_NETWORK:-}" != 1 ]; then
+  drop="--bounding-set -net_admin,-net_raw"
+  dns=$(awk '$1 == "nameserver" && $2 ~ /^[0-9.]+$/ { printf "%s%s", sep, $2; sep = ", " }' /etc/resolv.conf)
+  allow_dns=""
+  [ -z "$dns" ] || allow_dns="ip daddr { $dns } meta l4proto { tcp, udp } th dport 53 accept"
+  nft -f - <<EOF
 table inet relayrunner {
-  chain out {
-    type filter hook output priority 0; policy accept;
-    oifname "lo" accept
+  chain private {
+    oifname { "lo", "docker0" } accept
+    oifname "br-*" accept
     $allow_dns
     ip daddr { 10.0.0.0/8, 100.64.0.0/10, 169.254.0.0/16, 172.16.0.0/12, 192.168.0.0/16 } drop
     meta nfproto ipv6 drop
   }
+  chain out {
+    type filter hook output priority 0; policy accept;
+    jump private
+  }
+  chain forward {
+    type filter hook forward priority 0; policy accept;
+    jump private
+  }
 }
 EOF
+fi
+# Docker sets kernel network settings under /proc/sys, which starts read-only. A job without
+# Docker loses nothing if it can't start, so failures here only reach the Docker log.
+if command -v dockerd >/dev/null 2>&1; then
+  mount -o remount,rw /proc/sys 2>/dev/null || true
+  dockerd >/var/log/dockerd.log 2>&1 &
+  tries=0
+  until docker info >/dev/null 2>&1 || [ "$tries" -ge 50 ]; do
+    tries=$((tries + 1))
+    sleep 0.2
+  done
+fi
 cd /home/runner
-# With arguments, runs them in place of the runner, to check the firewall by hand.
+# With arguments, runs them in place of the runner, to check the VM by hand.
 [ $# -gt 0 ] || set -- ./run.sh --jitconfig "$RUNNER_JIT_CONFIG"
-exec setpriv --reuid runner --regid runner --init-groups --bounding-set -net_admin,-net_raw \\
+exec setpriv --reuid runner --regid runner --init-groups $drop \\
   env HOME=/home/runner USER=runner LOGNAME=runner "$@"
 `;
 
 const START_PATH = "/usr/local/bin/relayrunner-start";
 
-// The job image: a runner image with nftables and the start script added.
+// The job image: a runner image with the start script, nftables for its firewall and iptables
+// for Docker's networks.
 export function dockerfile(base: string) {
   return `FROM ${base}
 USER root
-RUN apt-get update && apt-get install -y --no-install-recommends nftables && apt-get clean
+RUN apt-get update && apt-get install -y --no-install-recommends iptables nftables && apt-get clean
 COPY --chmod=755 start.sh ${START_PATH}
 `;
 }
@@ -150,8 +174,7 @@ export function vmSize(slots: number, cores = availableParallelism(), memoryByte
 // doesn't wait for it. Throws a RunnerError that says what to do otherwise.
 export async function prepareIsolation(options: {
   slots: number;
-  // Another runner image to start from. It needs a `runner` user in /home/runner, and apt
-  // unless `localNetwork` is set.
+  // Another runner image to start from. It needs a `runner` user in /home/runner, and apt.
   image?: string;
   localNetwork?: boolean;
   command?: string;
@@ -196,36 +219,30 @@ export async function prepareIsolation(options: {
       throw fail("ISOLATED_IMAGE", `Could not download ${base}.`);
     if (!options.image) mine.push(base);
   }
-  const built = jobImage(base);
-  if (!localNetwork) {
-    mine.push(built);
-    if (!(await hasImage(built))) {
-      const image = built;
-      log(`Building the job image from ${base}. This happens once per runner version…`);
-      const context = mkdtempSync(join(tmpdir(), "relayrunner-image-"));
-      try {
-        writeFileSync(join(context, "Dockerfile"), dockerfile(base));
-        writeFileSync(join(context, "start.sh"), START_SCRIPT);
-        if ((await tool(["build", "--progress", "plain", "--tag", image, context])) !== 0)
-          throw fail("ISOLATED_IMAGE", `Could not build the job image from ${base}.`);
-      } finally {
-        rmSync(context, { recursive: true, force: true });
-        // The build leaves Apple's builder VM behind. It comes back by itself when needed.
-        await tool(["builder", "stop"]);
-        await tool(["builder", "delete"]);
-      }
+  const image = jobImage(base);
+  mine.push(image);
+  if (!(await hasImage(image))) {
+    log(`Building the job image from ${base}. This happens once per runner version…`);
+    const context = mkdtempSync(join(tmpdir(), "relayrunner-image-"));
+    try {
+      writeFileSync(join(context, "Dockerfile"), dockerfile(base));
+      writeFileSync(join(context, "start.sh"), START_SCRIPT);
+      if ((await tool(["build", "--progress", "plain", "--tag", image, context])) !== 0)
+        throw fail("ISOLATED_IMAGE", `Could not build the job image from ${base}.`);
+    } finally {
+      rmSync(context, { recursive: true, force: true });
+      // The build leaves Apple's builder VM behind. It comes back by itself when needed.
+      await tool(["builder", "stop"]);
+      await tool(["builder", "delete"]);
     }
   }
-  // The job image stays through a run with `localNetwork`, so the next run without it doesn't
-  // build again.
-  await pruneImages(options.managed ?? managedImagesFile(), [base, built], mine, tool, log);
+  await pruneImages(options.managed ?? managedImagesFile(), [base, image], mine, tool, log);
   const size = vmSize(options.slots);
   log(
     `Each job runs in its own Linux VM with ${size.cpus} CPUs and ${size.memoryGb} GB of memory.`,
   );
   if (localNetwork) log("Jobs can reach this Mac and your local network.");
   if (debug.path) log(`If something goes wrong, ${debug.path} has the details.`);
-  const image = localNetwork ? base : built;
   return { command, image, localNetwork, debug, runnerVersion, ...size };
 }
 
@@ -283,11 +300,15 @@ export function runArgs(routeId: string, isolation: Isolation) {
     // GitHub's image prints the runner's diagnostic log to stdout, thousands of lines a job.
     "-e",
     "ACTIONS_RUNNER_PRINT_LOG_TO_STDOUT=false",
-    ...(isolation.localNetwork
-      ? [isolation.image, "/bin/sh", "-c", RUN_RUNNER]
-      : // Root and NET_ADMIN are for the start script's firewall. It gives both up before the
-        // runner starts.
-        ["--user", "0", "--cap-add", "NET_ADMIN", isolation.image, START_PATH]),
+    ...(isolation.localNetwork ? ["-e", "RELAYRUNNER_LOCAL_NETWORK=1"] : []),
+    // Root and every capability are for the start script's firewall and for Docker. The runner
+    // itself starts as `runner`.
+    "--user",
+    "0",
+    "--cap-add",
+    "ALL",
+    isolation.image,
+    START_PATH,
   ];
 }
 

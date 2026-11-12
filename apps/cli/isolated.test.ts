@@ -77,18 +77,17 @@ describe("runArgs", () => {
       expect(args).not.toContain(flag);
   });
 
-  it("adds only the capability the firewall needs", () => {
+  it("starts the start script as root, which sets up the firewall and Docker", () => {
     const args = runArgs("7f3k", isolation);
-    expect(args.filter((arg) => arg === "--cap-add")).toHaveLength(1);
-    expect(args[args.indexOf("--cap-add") + 1]).toBe("NET_ADMIN");
+    expect(args[args.indexOf("--user") + 1]).toBe("0");
+    expect(args[args.indexOf("--cap-add") + 1]).toBe("ALL");
+    expect(args.join(" ")).not.toContain("RELAYRUNNER_LOCAL_NETWORK");
   });
 
-  it("starts GitHub's image as it is, with no extra rights, when the local network is allowed", () => {
+  it("tells the start script to skip the firewall when the local network is allowed", () => {
     const args = runArgs("7f3k", { ...isolation, localNetwork: true });
-    expect(args).not.toContain("--cap-add");
-    expect(args).not.toContain("--user");
-    expect(args.slice(-4, -1)).toEqual([isolation.image, "/bin/sh", "-c"]);
-    expect(args.at(-1)).toContain("run.sh --jitconfig");
+    expect(args[args.indexOf("RELAYRUNNER_LOCAL_NETWORK=1") - 1]).toBe("-e");
+    expect(args.slice(-2)).toEqual([isolation.image, "/usr/local/bin/relayrunner-start"]);
   });
 
   it("keeps the JIT config out of the arguments", () => {
@@ -107,6 +106,13 @@ describe("the job image", () => {
     expect(START_SCRIPT.indexOf("nft -f")).toBeLessThan(START_SCRIPT.indexOf("run.sh"));
     expect(START_SCRIPT).toContain("--bounding-set -net_admin,-net_raw");
     expect(START_SCRIPT).toContain("--reuid runner");
+  });
+
+  it("filters what Docker containers send out, and starts Docker before the runner", () => {
+    expect(START_SCRIPT).toContain("hook forward");
+    expect(START_SCRIPT).toContain('oifname { "lo", "docker0" } accept');
+    expect(START_SCRIPT.indexOf("dockerd")).toBeLessThan(START_SCRIPT.indexOf("run.sh"));
+    expect(dockerfile("runner:1")).toContain("iptables nftables");
   });
 
   it("is tagged by its contents, so a new base image builds a new one", () => {
@@ -199,24 +205,12 @@ esac
     expect(again).not.toContain("build");
   });
 
-  it("uses GitHub's image as it is when the local network is allowed", async () => {
-    const fake = fakeContainer([]);
-    const isolation = await prepareIsolation({
-      slots: 1,
-      command: fake.command,
-      managed: fake.managed,
-      localNetwork: true,
-    });
-    expect(isolation).toMatchObject({ image: BASE, localNetwork: true });
-    expect(fake.calls().join("\n")).not.toContain("build");
-  });
-
-  it("keeps the job image when a run allows the local network", async () => {
+  it("uses the same job image when the local network is allowed", async () => {
     const fake = fakeContainer([]);
     const options = { slots: 1, command: fake.command, managed: fake.managed };
     const { image } = await prepareIsolation(options);
-    await prepareIsolation({ ...options, localNetwork: true });
-    expect(fake.images()).toContain(image);
+    const isolation = await prepareIsolation({ ...options, localNetwork: true });
+    expect(isolation).toMatchObject({ image, localNetwork: true });
     expect(JSON.parse(readFileSync(fake.managed, "utf8"))).toEqual([BASE, image]);
   });
 
@@ -243,9 +237,10 @@ esac
       command: fake.command,
       managed: fake.managed,
       image: "example.com/my-runner:1",
-      localNetwork: true,
     });
-    expect(JSON.parse(readFileSync(fake.managed, "utf8"))).toEqual([]);
+    expect(JSON.parse(readFileSync(fake.managed, "utf8"))).toEqual([
+      jobImage("example.com/my-runner:1"),
+    ]);
   });
 
   it("records each command and its output in the debug log, and points to it on failure", async () => {
