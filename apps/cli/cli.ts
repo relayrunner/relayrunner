@@ -233,7 +233,12 @@ async function connectMachine(args: {
     runnerVersion = isolation.runnerVersion;
     const launcher = isolatedLauncher(isolation);
     if (args.macos) vmLauncher = launcher;
-    else launchers = Array.from({ length: slots }, () => (isolatedOnly = launcher));
+    else {
+      launchers = Array.from({ length: slots }, () => (isolatedOnly = launcher));
+      log(
+        "Jobs run in a Linux VM on this Mac. To take macOS jobs too, run `relayrunner connect --macos`.",
+      );
+    }
   }
   if (onHost) {
     const runner = await onHost;
