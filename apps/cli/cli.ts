@@ -171,21 +171,23 @@ async function connectMachine(args: {
   let runnerVersion: string;
   let launchers: Launcher[];
   if (args.isolated) {
+    // The firewall on the Mac covers every VM, so with it on a job can't be let onto the network.
+    const firewall = firewallInstalled();
+    if (firewall)
+      log(
+        args["local-network"]
+          ? "The firewall on this Mac is on, so --local-network has no effect. Turn it off with `relayrunner firewall off`."
+          : "The firewall on this Mac is on.",
+      );
     const isolation = await prepareIsolation({
       slots,
       image: args.image,
-      localNetwork: args["local-network"],
+      localNetwork: args["local-network"] && !firewall,
       log,
       debug: debugLog(),
     });
     runnerVersion = isolation.runnerVersion;
     launchers = Array<Launcher>(slots).fill(isolatedLauncher(isolation));
-    if (firewallInstalled())
-      log(
-        args["local-network"]
-          ? "The firewall on this Mac is on, so jobs still can't reach your local network. Turn it off with `relayrunner firewall off`."
-          : "The firewall on this Mac is on.",
-      );
   } else {
     const [runner, canIsolate] = await Promise.all([ensureRunner({ log }), isolationAvailable()]);
     runnerVersion = runner.version;
