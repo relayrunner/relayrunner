@@ -1,29 +1,32 @@
-// One share image per docs page, rendered at build time from the page's title and description
+// One share image per docs page, drawn at build time from its section, title and description
 // (/og/docs/<slug>.png). Head.astro points og:image and twitter:image at it.
-import { OGImageRoute } from "astro-og-canvas";
-import { docsEntries } from "../../lib/agent-docs";
+import type { APIRoute, GetStaticPaths } from "astro";
+import { docsEntries, pagePath } from "../../lib/agent-docs";
+import { docsCard, renderPng } from "../../lib/share-images.mjs";
 
-const fonts = "./node_modules/@fontsource-variable";
+// The first path segment after docs/ is the sidebar section: get-started is "Get started".
+const sectionName = (id: string) => {
+  const slug = id.split("/")[1] ?? "";
+  const words = slug.replaceAll("-", " ");
+  return words.charAt(0).toUpperCase() + words.slice(1);
+};
 
-export const { getStaticPaths, GET } = await OGImageRoute({
-  param: "route",
-  pages: Object.fromEntries((await docsEntries()).map((entry) => [entry.id, entry.data])),
-  getImageOptions: (_path, page) => ({
-    title: page.title,
-    description: page.description,
-    logo: { path: "./public/assets/runner-head.png", size: [96] },
-    bgGradient: [[255, 255, 255]],
-    border: { color: [23, 138, 46], width: 16, side: "block-start" },
-    padding: 72,
-    font: {
-      title: { color: [14, 26, 17], size: 72, weight: "Bold", families: ["Hanken Grotesk"] },
-      description: {
-        color: [103, 114, 105],
-        size: 36,
-        lineHeight: 1.3,
-        families: ["Hanken Grotesk"],
-      },
-    },
-    fonts: [`${fonts}/hanken-grotesk/files/hanken-grotesk-latin-wght-normal.woff2`],
-  }),
-});
+export const getStaticPaths = (async () =>
+  (await docsEntries()).map((entry) => ({
+    params: { route: `${entry.id}.png` },
+    props: { entry },
+  }))) satisfies GetStaticPaths;
+
+export const GET: APIRoute = async ({ props, site }) => {
+  const { entry } = props as Awaited<ReturnType<typeof getStaticPaths>>[number]["props"];
+  const host = (site ?? new URL("https://relayrunner.app")).host;
+  const png = await renderPng(
+    docsCard({
+      section: sectionName(entry.id),
+      title: entry.data.title,
+      description: entry.data.description,
+      url: `${host}${pagePath(entry)}`,
+    }),
+  );
+  return new Response(png, { headers: { "Content-Type": "image/png" } });
+};
