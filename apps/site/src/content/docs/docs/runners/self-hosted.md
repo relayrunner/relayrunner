@@ -53,6 +53,16 @@ Press `p` in the `connect` terminal, or use the machine's ⋯ menu on the Runner
 
 A machine runs up to 2 jobs at once when it has 8 or more CPU cores, otherwise 1. Change it with `relayrunner connect --concurrency <n>`. Each job gets its own copy of the runner, so jobs never share a workspace. When every slot is busy, the next job goes to another machine or falls through to the next step in your runner order.
 
+## Isolated jobs on a Mac
+
+By default a job runs on your computer as you, so it can read your files. On a Mac with Apple silicon, `relayrunner connect --isolated` runs each job in its own Linux VM instead. The VM sees none of your files, can reach the internet but not your Mac or your local network, and is deleted when the job ends.
+
+This is experimental. You need macOS 26 and Apple's [container](https://github.com/apple/container/releases) tool, started with `container system start`. Jobs run on Linux arm64, so macOS jobs such as Xcode builds still need a regular connection. Docker isn't available in isolated jobs yet.
+
+If a job needs something on your network, such as a package registry or a test database, add `--local-network`. The job still can't read your files.
+
+When something goes wrong, `~/.relayrunner/isolated.log` has the details. It records the VM commands and their results, never a job's output or credentials, so it's safe to share.
+
 ## Remove a machine
 
 Remove it from the Runners page. You can remove your own machines; owners and admins can remove any. When someone leaves a workspace, their machines stay theirs and stop taking its jobs.

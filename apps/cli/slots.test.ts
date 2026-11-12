@@ -13,7 +13,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { fakeJitConfig } from "./jit-config.fixture.ts";
-import { runJob, type JobUpdate } from "./job.ts";
+import { hostLauncher, runJob, type JobUpdate } from "./job.ts";
 import { defaultConcurrency, ensureSlots, parseConcurrency, slotDir } from "./slots.ts";
 
 describe("concurrency", () => {
@@ -113,7 +113,11 @@ describe("ensureSlots", () => {
       let out = "";
       await runJob(
         { v: 1, type: "run", routeId: "7f3k", jitConfig: fakeJitConfig("7f3k") },
-        { dir, report: (u) => updates.push(u), output: (chunk) => (out += chunk.toString()) },
+        {
+          launcher: hostLauncher(dir),
+          report: (u) => updates.push(u),
+          output: (chunk) => (out += chunk.toString()),
+        },
       );
       return { updates, out };
     };

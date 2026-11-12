@@ -2,7 +2,7 @@ import { existsSync, mkdirSync, mkdtempSync, rmSync, symlinkSync, writeFileSync 
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
-import { prefixLines, runJob, type JobUpdate } from "./job.ts";
+import { hostLauncher, prefixLines, runJob, type JobUpdate } from "./job.ts";
 import { fakeJitConfig } from "./jit-config.fixture.ts";
 
 const jitConfig = fakeJitConfig("7f3k");
@@ -30,7 +30,7 @@ describe("runJob", () => {
     const result = await runJob(
       { v: 1, type: "run", routeId: "7f3k", jitConfig },
       {
-        dir,
+        launcher: hostLauncher(dir),
         report: (update) => updates.push(update),
         output: (chunk, stream) => (out[stream] += chunk.toString()),
       },
@@ -53,7 +53,7 @@ describe("runJob", () => {
     expect(updates.at(-1)).toEqual({
       routeId: "7f3k",
       state: "failed",
-      message: "run.sh exited with 3",
+      message: "The runner exited with 3",
     });
   });
 
@@ -69,7 +69,7 @@ describe("runJob", () => {
     const updates: JobUpdate[] = [];
     await runJob(
       { v: 1, type: "run", routeId: "7f3k", jitConfig },
-      { dir, report: (u) => updates.push(u), output: () => {} },
+      { launcher: hostLauncher(dir), report: (u) => updates.push(u), output: () => {} },
     );
     expect(updates).toMatchObject([{ state: "failed", message: /Could not start the runner/ }]);
   });
@@ -86,7 +86,7 @@ describe("runJob", () => {
         jitConfig: fakeJitConfig("7f3k", { runner: { ServerUrlV2: "https://evil.example/" } }),
       },
       {
-        dir,
+        launcher: hostLauncher(dir),
         report: (u) => updates.push(u),
         output: (chunk) => output.push(chunk.toString()),
       },
