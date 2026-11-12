@@ -5,23 +5,25 @@ description: What RelayRunner can and can't do with your code and machines.
 
 ## What runs on your machine
 
-A routed job runs in `actions/runner`, GitHub's official runner, as the user who started `relayrunner connect`. The runner talks to GitHub directly for the job's code, secrets and logs. None of it passes through RelayRunner.
-
-The job isn't sandboxed. Like any self-hosted runner, it can read and write what that user can, including files in your home folder. So:
-
-- Route jobs only from repos you trust to run on that machine.
-- For a shared or always-on machine, run `connect` as a separate user, or use isolated jobs.
-- Keep deploy jobs, which carry production secrets, off machines unless you mean to. `init` skips them for this reason.
+A routed job runs in `actions/runner`, GitHub's official runner. The runner talks to GitHub directly for the job's code, secrets and logs. None of it passes through RelayRunner.
 
 ## Isolated jobs
 
-On a Mac with Apple silicon, `relayrunner connect --isolated` runs each job in its own Linux VM instead. It's experimental. In the VM, a job:
+On a Mac with Apple silicon, each job runs in its own Linux VM. In the VM, a job:
 
 - Sees none of your files, and not the machine's token.
 - Starts clean. Nothing an earlier job left behind is there, and the VM is deleted when the job ends.
 - Reaches the internet, but not your Mac or your local network. `--local-network` turns this off. A job that sets out to remove this block can, through Docker. Run `relayrunner firewall on` once to add a firewall on the Mac that no job can remove.
 
-See [Isolated jobs on a Mac](/docs/runners/self-hosted#isolated-jobs-on-a-mac).
+This needs Apple's container tool. Until it's installed, jobs run on the Mac itself, and `connect` says so when it starts. See [Isolated jobs on a Mac](/docs/runners/self-hosted#isolated-jobs-on-a-mac).
+
+## Jobs on the machine itself
+
+On Linux and Intel Macs, with `--no-isolated`, and for macOS jobs with `--macos`, a job runs on the machine as the user who started `relayrunner connect`. It isn't sandboxed. Like any self-hosted runner, it can read and write what that user can, including files in your home folder. So:
+
+- Route jobs only from repos you trust to run on that machine.
+- For a shared or always-on machine, run `connect` as a separate user.
+- Keep deploy jobs, which carry production secrets, off machines unless you mean to. `init` skips them for this reason.
 
 ## One job per runner
 

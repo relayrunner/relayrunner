@@ -8,7 +8,11 @@ import {
   debugLog,
   dockerfile,
   isolatedLauncher,
-  isolationAvailable,
+  checkFits,
+  isolationState,
+  parseVmSize,
+  setupHint,
+  slotsFor,
   jobImage,
   NO_LOG,
   prepareIsolation,
@@ -39,13 +43,13 @@ describe("unsupportedReason", () => {
 
 describe("vmSize", () => {
   it("splits the cores and half the memory between slots", () => {
-    expect(vmSize(1, 10, 32 * GB)).toEqual({ cpus: 10, memoryGb: 16 });
-    expect(vmSize(2, 10, 32 * GB)).toEqual({ cpus: 5, memoryGb: 8 });
+    expect(vmSize(1, {}, 10, 32 * GB)).toEqual({ cpus: 10, memoryGb: 16 });
+    expect(vmSize(2, {}, 10, 32 * GB)).toEqual({ cpus: 5, memoryGb: 8 });
   });
 
   it("never goes below 2 CPUs and 2 GB, or above 16 GB", () => {
-    expect(vmSize(4, 4, 8 * GB)).toEqual({ cpus: 2, memoryGb: 2 });
-    expect(vmSize(1, 16, 128 * GB)).toEqual({ cpus: 16, memoryGb: 16 });
+    expect(vmSize(4, {}, 4, 8 * GB)).toEqual({ cpus: 2, memoryGb: 2 });
+    expect(vmSize(1, {}, 16, 128 * GB)).toEqual({ cpus: 16, memoryGb: 16 });
   });
 });
 
@@ -143,18 +147,64 @@ describe("the job image", () => {
   });
 });
 
-describe("isolationAvailable", () => {
-  it("is true only on a supported Mac with the container tool installed", async () => {
-    const dir = mkdtempSync(join(tmpdir(), "rr-available-"));
+describe("isolationState", () => {
+  const tool = (dir: string, exit: number) => {
+    const command = join(dir, `container-${exit}`);
+    writeFileSync(command, `#!/bin/sh\nexit ${exit}\n`, { mode: 0o755 });
+    return command;
+  };
+
+  it("says whether this machine is ready to run jobs in VMs, and if not what's missing", async () => {
+    const dir = mkdtempSync(join(tmpdir(), "rr-state-"));
     try {
-      const command = join(dir, "container");
-      writeFileSync(command, "#!/bin/sh\nexit 0\n", { mode: 0o755 });
-      expect(await isolationAvailable(command, null)).toBe(true);
-      expect(await isolationAvailable(command, "needs a Mac")).toBe(false);
-      expect(await isolationAvailable(join(dir, "missing"), null)).toBe(false);
+      expect(await isolationState(tool(dir, 0), null)).toBe("ready");
+      expect(await isolationState(tool(dir, 1), null)).toBe("stopped");
+      expect(await isolationState(join(dir, "missing"), null)).toBe("missing");
+      expect(await isolationState(tool(dir, 0), "needs a Mac")).toBe("unsupported");
     } finally {
       rmSync(dir, { recursive: true, force: true });
     }
+  });
+
+  it("tells a Mac that isn't set up how to get its jobs into VMs", () => {
+    expect(setupHint("missing")).toContain("github.com/apple/container/releases");
+    expect(setupHint("stopped")).toContain("container system start");
+    expect(setupHint("stopped")).not.toContain("install");
+    expect(setupHint("unsupported")).toBeNull();
+    expect(setupHint("ready")).toBeNull();
+  });
+});
+
+describe("the size of each job's VM", () => {
+  it("is what --cpus and --memory ask for, and the even split for what they leave out", () => {
+    expect(vmSize(2, { cpus: 4, memoryGb: 16 }, 10, 32 * GB)).toEqual({ cpus: 4, memoryGb: 16 });
+    expect(vmSize(2, { cpus: 4 }, 10, 32 * GB)).toEqual({ cpus: 4, memoryGb: 8 });
+    expect(vmSize(2, { memoryGb: 4 }, 10, 32 * GB)).toEqual({ cpus: 5, memoryGb: 4 });
+  });
+
+  it("reads whole numbers this machine has", () => {
+    expect(parseVmSize("4", "16", 10, 32 * GB)).toEqual({ cpus: 4, memoryGb: 16 });
+    expect(parseVmSize(undefined, undefined, 10, 32 * GB)).toEqual({});
+    expect(() => parseVmSize("2.5", undefined, 10, 32 * GB)).toThrow("--cpus takes a whole number");
+    expect(() => parseVmSize("0", undefined, 10, 32 * GB)).toThrow("--cpus takes a whole number");
+    expect(() => parseVmSize("12", undefined, 10, 32 * GB)).toThrow("10 CPU cores");
+    expect(() => parseVmSize(undefined, "64", 10, 32 * GB)).toThrow("32 GB of memory");
+  });
+
+  it("runs as many jobs as fit in the cores and half the memory", () => {
+    expect(slotsFor({}, 10, 32 * GB)).toBeUndefined();
+    expect(slotsFor({ cpus: 4 }, 14, 36 * GB)).toBe(3);
+    expect(slotsFor({ cpus: 2, memoryGb: 8 }, 14, 36 * GB)).toBe(2);
+    expect(slotsFor({ memoryGb: 4 }, 10, 32 * GB)).toBe(4);
+    expect(slotsFor({ cpus: 8, memoryGb: 24 }, 10, 32 * GB)).toBe(1);
+  });
+
+  it("refuses more memory than the machine has across its jobs", () => {
+    expect(() => checkFits({ memoryGb: 16 }, 3, 32 * GB)).toThrow(
+      "Lower --concurrency or --memory",
+    );
+    expect(() => checkFits({ memoryGb: 16 }, 2, 32 * GB)).not.toThrow();
+    expect(() => checkFits({ cpus: 4 }, 8, 32 * GB)).not.toThrow();
   });
 });
 

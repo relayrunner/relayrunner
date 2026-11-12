@@ -31,6 +31,7 @@ import {
   type OrgRunner,
   type OrgRunners,
 } from "@/lib/machines";
+import { DOCS_URL } from "@/components/site-footer";
 import { cn } from "@/lib/utils";
 
 export const CONNECT_COMMAND = "npx relayrunner connect";
@@ -362,6 +363,18 @@ function LocalMachineDialog({
           <Step n={1} title="Run the CLI on the machine">
             <p className="text-muted-foreground">Needs Node.js 22 or later.</p>
             <CopyCommand command={CONNECT_COMMAND} />
+            <p className="text-muted-foreground">
+              On a Mac with Apple silicon, each job runs in its own Linux VM, away from your files.
+              Elsewhere, jobs run on the machine itself.{" "}
+              <a
+                className="underline underline-offset-2 hover:text-foreground"
+                href={`${DOCS_URL}/runners/self-hosted#isolated-jobs-on-a-mac`}
+                target="_blank"
+                rel="noreferrer"
+              >
+                How isolated jobs work
+              </a>
+            </p>
           </Step>
           <Step n={2} title="Approve it in your browser">
             <p className="text-muted-foreground">

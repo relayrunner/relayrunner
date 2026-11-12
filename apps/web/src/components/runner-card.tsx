@@ -34,7 +34,7 @@ import {
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
-import { deviceName, formatMemory, type DeviceKind } from "@/lib/device";
+import { describeJobPlace, deviceName, formatMemory, type DeviceKind } from "@/lib/device";
 import { medianText, plural, type EnvironmentSummary, type Stat } from "@/lib/job-times";
 import {
   machineAccess,
@@ -315,6 +315,9 @@ export function machineView(machine: Machine) {
     .filter(Boolean)
     .join(" · ");
 
+  // A runner added from GitHub runs jobs wherever its own setup does.
+  const jobPlace = isGithub ? "On the runner itself" : describeJobPlace(machine);
+
   const hardware = [
     device?.cpuCores != null ? `${device.cpuCores} cores` : null,
     device?.memoryMb != null ? formatMemory(device.memoryMb) : null,
@@ -369,6 +372,7 @@ export function machineView(machine: Machine) {
     chip,
     platform,
     hardware,
+    jobPlace,
     runners,
     sharing,
     mine,
@@ -743,7 +747,19 @@ export function MachineCard({
   onRemovedFromWorkspace?: () => void;
 }) {
   const actions = useMachineActions(machine, onRemovedFromWorkspace);
-  const { tone, label, detail, jobs, busy, isGithub, missing, platform, hardware, runners } = view;
+  const {
+    tone,
+    label,
+    detail,
+    jobs,
+    busy,
+    isGithub,
+    missing,
+    platform,
+    hardware,
+    jobPlace,
+    runners,
+  } = view;
   const { pending, error } = actions;
   const owner = <MachineOwner machine={machine} view={view} />;
   const runs = <MachineRuns view={view} onChange={() => actions.setSharingOpen(true)} />;
@@ -792,6 +808,9 @@ export function MachineCard({
               </Field>
               <Field label="Typical job">
                 <TypicalJob jobTime={jobTime} />
+              </Field>
+              <Field label="Jobs run">
+                {jobPlace ? <Value>{jobPlace}</Value> : <NotReported />}
               </Field>
             </dl>
             {/* Whose it is and whose jobs it takes (#243), apart from the hardware. */}

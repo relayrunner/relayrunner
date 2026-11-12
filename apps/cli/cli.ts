@@ -19,9 +19,14 @@ import { normalizeServer } from "./server.ts";
 import {
   debugLog,
   isolatedLauncher,
-  isolationAvailable,
+  checkFits,
+  isolationState,
+  parseVmSize,
   prepareIsolation,
+  setupHint,
+  slotsFor,
   unsupportedReason,
+  type VmSize,
 } from "./isolated.ts";
 import { hostLauncher, prefixLines, runJob, type Launcher } from "./job.ts";
 import { startLive } from "./live.ts";
@@ -77,40 +82,54 @@ const connectCommand = defineCommand({
     concurrency: {
       type: "string",
       description:
-        "How many jobs to run at once (default: 2 with 8 or more CPU cores, otherwise 1)",
+        "How many jobs to run at once (default: 2 with 8 or more CPU cores, otherwise 1; with --cpus or --memory, as many as fit)",
     },
     isolated: {
       type: "boolean",
       description:
-        "Run each job in its own Linux VM, away from your files. Needs a Mac with Apple silicon and Apple's container tool.",
-    },
-    image: {
-      type: "string",
-      description: "With --isolated, the runner image to build on (default: GitHub's runner image)",
-    },
-    "local-network": {
-      type: "boolean",
-      description:
-        "With --isolated, let jobs reach this Mac and your local network. They can't by default.",
+        "Run each job in its own Linux VM, away from your files. The default on a Mac with Apple silicon and Apple's container tool.",
+      negativeDescription: "Run jobs on this machine itself, where they can read your files.",
     },
     macos: {
       type: "boolean",
       description:
-        "With --isolated, also take macOS jobs, which run on this Mac itself. Linux jobs still run in a VM.",
+        "Also take macOS jobs, which run on this Mac itself. Linux jobs still run in a VM.",
+    },
+    cpus: {
+      type: "string",
+      description: "CPUs for each job's VM (default: an even share of this Mac's cores)",
+    },
+    memory: {
+      type: "string",
+      description: "Memory for each job's VM, in GB (default: an even share of half this Mac's)",
+    },
+    image: {
+      type: "string",
+      description: "Your own runner image for the VMs (default: GitHub's, with everyday tools)",
+    },
+    "local-network": {
+      type: "boolean",
+      description: "Let jobs in VMs reach this Mac and your local network. They can't by default.",
     },
   },
   async run({ args }) {
     clack.intro("RelayRunner");
     let concurrency: number;
+    let size: VmSize;
     try {
-      concurrency = parseConcurrency(args.concurrency);
+      size = parseVmSize(args.cpus, args.memory);
+      // A size without a count runs as many jobs as fit.
+      concurrency = args.concurrency
+        ? parseConcurrency(args.concurrency)
+        : (slotsFor(size) ?? parseConcurrency(undefined));
+      checkFits(size, concurrency);
     } catch (error) {
       clack.log.error((error as Error).message);
       process.exitCode = 1;
       return;
     }
     try {
-      await connectMachine({ ...args, concurrency });
+      await connectMachine({ ...args, concurrency, size });
     } catch (error) {
       if (!(error instanceof LoginError || error instanceof RunnerError)) throw error;
       clack.log.error(error.message);
@@ -124,23 +143,31 @@ async function connectMachine(args: {
   name?: string;
   share?: string;
   concurrency: number;
+  size: VmSize;
   isolated?: boolean;
   image?: string;
   "local-network"?: boolean;
   macos?: boolean;
 }) {
   const share = shareArg(args.share);
-  if (args.image && !args.isolated) throw new RunnerError("USAGE", "--image goes with --isolated.");
-  if (args["local-network"] && !args.isolated)
-    throw new RunnerError("USAGE", "--local-network goes with --isolated.");
-  if (args.macos && !args.isolated) throw new RunnerError("USAGE", "--macos goes with --isolated.");
+  // Flags that only mean something for VMs: with one, VMs have to work, as with --isolated.
+  const vmFlag =
+    (["macos", "image", "local-network"] as const).find((flag) => args[flag]) ??
+    (args.size.cpus !== undefined ? "cpus" : args.size.memoryGb !== undefined ? "memory" : null);
+  if (args.isolated === false && vmFlag)
+    throw new RunnerError("USAGE", `--${vmFlag} doesn't go with --no-isolated.`);
   const host = machinePlatform();
-  const unsupported = args.isolated ? unsupportedReason() : null;
+  // Jobs run in VMs when this machine is ready to, unless --no-isolated. Asked for outright, a
+  // machine that can't says why here, and one that isn't set up says so in prepareIsolation.
+  const asked = args.isolated === true || Boolean(vmFlag);
+  const unsupported = asked ? unsupportedReason() : null;
   if (unsupported) throw new RunnerError("ISOLATED_UNSUPPORTED", unsupported);
+  const state = asked || args.isolated === false ? null : await isolationState();
+  const isolated = asked || state === "ready";
   // Isolated jobs run on Linux, whatever this machine is. With --macos the Mac offers both: itself
   // and the VM, and the gateway says where each job goes.
   const vm = { os: "linux", arch: host.arch } as const;
-  const platform = !args.isolated ? host : args.macos ? { ...host, isolated: vm } : vm;
+  const platform = !isolated ? host : args.macos ? { ...host, isolated: vm } : vm;
   let credentials = readCredentials();
   const server = serverFor(args.server, credentials);
   if (credentials && credentials.server !== server) {
@@ -178,15 +205,15 @@ async function connectMachine(args: {
   // Where each slot's jobs run: its own copy of the runner on this machine, or a VM. With --macos
   // a machine has both, and the gateway's `run` message says which. The hello carries the runner
   // version of the machine itself when it takes jobs there.
-  const onHost = !args.isolated || args.macos ? ensureRunner({ log }) : undefined;
+  const onHost = !isolated || args.macos ? ensureRunner({ log }) : undefined;
   // Its failure waits until the VM side is ready.
   onHost?.catch(() => {});
   let runnerVersion = "";
   let launchers: Launcher[] = [];
   let vmLauncher: Launcher | undefined;
-  // Plain --isolated: every job runs in a VM, whatever its `run` message says.
+  // Without --macos every job runs in a VM, whatever its `run` message says.
   let isolatedOnly: Launcher | undefined;
-  if (args.isolated) {
+  if (isolated) {
     // The firewall on the Mac covers every VM, so with it on a job can't be let onto the network.
     const firewall = firewallInstalled();
     if (firewall)
@@ -197,6 +224,7 @@ async function connectMachine(args: {
       );
     const isolation = await prepareIsolation({
       slots,
+      size: args.size,
       image: args.image,
       localNetwork: args["local-network"] && !firewall,
       log,
@@ -208,14 +236,11 @@ async function connectMachine(args: {
     else launchers = Array.from({ length: slots }, () => (isolatedOnly = launcher));
   }
   if (onHost) {
-    const [runner, canIsolate] = await Promise.all([
-      onHost,
-      !args.isolated && isolationAvailable(),
-    ]);
+    const runner = await onHost;
     runnerVersion = runner.version;
     launchers = ensureSlots(runner, slots, log).map(hostLauncher);
-    if (canIsolate)
-      log("This Mac can run each job in its own Linux VM, away from your files. Add --isolated.");
+    const hint = !isolated && state ? setupHint(state) : null;
+    if (hint) clack.log.warn(hint);
     if (args.macos) log("Linux jobs run in a VM. macOS jobs run on this Mac itself.");
   }
   clack.log.info(

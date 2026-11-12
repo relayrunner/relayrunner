@@ -138,7 +138,8 @@ export const firewallCommand = defineCommand({
       process.exitCode = 1;
     };
     const unsupported = unsupportedReason();
-    if (unsupported) return fail(unsupported.replace("--isolated needs", "The firewall needs"));
+    if (unsupported)
+      return fail(unsupported.replace("Running jobs in VMs needs", "The firewall needs"));
     if (!args.state) return status();
     if (args.state === "off") {
       if (!sudo(offScript())) return fail("Couldn't turn the firewall off.");

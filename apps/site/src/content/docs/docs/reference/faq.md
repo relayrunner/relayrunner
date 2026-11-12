@@ -25,7 +25,7 @@ Yes, `relayrunner connect` is the on/off switch. While it runs, the machine take
 
 ## Can a job read the files on my computer?
 
-By default, yes. A job runs as you, like on any self-hosted runner, so route jobs only from repos you trust. On a Mac with Apple silicon, `relayrunner connect --isolated` runs each job in its own Linux VM that sees none of your files. See [Security](/docs/reference/security).
+On a Mac with Apple silicon, no. Each job runs in its own Linux VM that sees none of your files. On Linux and Intel Macs a job runs as you, like on any self-hosted runner, so route jobs only from repos you trust. See [Security](/docs/reference/security).
 
 ## Does it work with public repositories?
 
