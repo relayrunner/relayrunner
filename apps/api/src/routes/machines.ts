@@ -250,9 +250,11 @@ export const machineRoutes = new Hono<AppEnv>()
 
     const { workspace, workspaces } = await presentMachineWorkspaces(db, machine);
 
-    // Security notice to whoever approved the machine: its token can run their workspaces' jobs.
+    // Notice to whoever approved the machine: its token can run their workspaces' jobs. They can
+    // turn it off in Account settings.
     const notice = sendEmail(c.env, {
       to: c.var.user!.email,
+      userId: c.var.user!.id,
       template: "machine-connected",
       context: {
         machineName: machine.name,

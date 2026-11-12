@@ -1082,3 +1082,20 @@ export const provider = sqliteTable("provider", {
     .$defaultFn(() => new Date())
     .$onUpdate(() => new Date()),
 });
+
+// Emails a person turned off, one row per type (src/notifications.ts lists the types). No row
+// means the email is on. Emails that keep an account safe, like a machine taken over, always send.
+export const notificationSetting = sqliteTable(
+  "notification_setting",
+  {
+    userId: text("user_id")
+      .notNull()
+      .references(() => user.id, { onDelete: "cascade" }),
+    type: text("type").notNull(),
+    enabled: integer("enabled", { mode: "boolean" }).notNull(),
+    updatedAt: integer("updated_at", { mode: "timestamp_ms" })
+      .notNull()
+      .$defaultFn(() => new Date()),
+  },
+  (table) => [primaryKey({ columns: [table.userId, table.type] })],
+);

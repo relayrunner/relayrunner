@@ -1,5 +1,18 @@
 # relayrunner
 
+## 0.8.0
+
+### Minor Changes
+
+- f264630: Docker works in isolated jobs. `relayrunner connect --isolated` now starts Docker inside each job's VM, so jobs with `services:`, `container:` or `docker build` run. `--local-network` uses the same job image as the default, so it builds that image once too.
+- 01a82da: `relayrunner connect --isolated` (experimental) runs each job in its own Linux VM on a Mac with Apple silicon, using Apple's `container` tool. The VM starts from GitHub's runner image with none of your files mounted, can reach the internet but not your Mac or local network, and is deleted when the job ends. `--local-network` lets jobs reach your network, and `--image` starts from another runner image. `connect` removes the images it got for older runner versions, and keeps a log of what it did in `~/.relayrunner/isolated.log`.
+- 3086648: `relayrunner workspaces` shows which of your workspaces this machine runs jobs in and which it doesn't, with its sharing. `relayrunner workspaces add <name>` and `remove <name>` change that, by workspace name, slug or id, or from a list when you leave the name out. Adding a workspace while the machine runs anyone's jobs warns that anyone who can push to that workspace's private repos can run jobs on it. After you approve a new machine, `connect` prints the workspaces it runs jobs in and how to change them, and `connect` and `whoami` tell a machine that isn't in any of your workspaces apart from an account with no workspace yet.
+
+### Patch Changes
+
+- 0f8a28a: `relayrunner connect` suggests `--isolated` on Macs that can use it.
+- 79a2d06: After its connection drops, `relayrunner connect` waits a few random seconds before reconnecting, so machines don't all reconnect at the same moment after a RelayRunner update.
+
 ## 0.7.0
 
 ### Minor Changes

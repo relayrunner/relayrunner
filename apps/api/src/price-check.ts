@@ -2,7 +2,7 @@
  * The daily price check (a cron in wrangler.jsonc). Reads each provider's price page
  * (PRICE_SOURCES in @relayrunner/providers) and saves each price that differs from the one jobs
  * are priced at as a price_finding, for an operator to approve into provider_price or dismiss in
- * Admin → Prices. Nothing changes a report until then. Emails OPERATOR_ALERT_EMAIL when it finds
+ * Admin → Prices. Nothing changes a report until then. Emails OPERATOR_ALERT_EMAIL and operators who opted in when it finds
  * a change or a page stops reading.
  */
 import {
@@ -14,7 +14,7 @@ import {
   type PriceSource,
 } from "@relayrunner/providers";
 import { createDb, schema } from "./db/index.ts";
-import { sendEmail } from "./email.ts";
+import { emailOperators } from "./email.ts";
 import type { Env } from "./env.ts";
 import { readPriceBook } from "./prices.ts";
 import { errorMessage } from "./webhook-queue.ts";
@@ -134,9 +134,8 @@ export async function checkPrices(
       failed: results.filter((r) => r.error).map(({ provider, error }) => ({ provider, error })),
     }),
   );
-  if (env.OPERATOR_ALERT_EMAIL && (found.length || failures.length)) {
-    await sendEmail(env, {
-      to: env.OPERATOR_ALERT_EMAIL,
+  if (found.length || failures.length) {
+    await emailOperators(env, {
       template: "price-check",
       context: { changes: found, failures },
     });
