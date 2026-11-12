@@ -119,8 +119,9 @@ const connectCommand = defineCommand({
     try {
       size = parseVmSize(args.cpus, args.memory);
       // A size without a count runs as many jobs as fit.
-      concurrency =
-        (args.concurrency ? undefined : slotsFor(size)) ?? parseConcurrency(args.concurrency);
+      concurrency = args.concurrency
+        ? parseConcurrency(args.concurrency)
+        : (slotsFor(size) ?? parseConcurrency(undefined));
       checkFits(size, concurrency);
     } catch (error) {
       clack.log.error((error as Error).message);
@@ -158,10 +159,10 @@ async function connectMachine(args: {
   const host = machinePlatform();
   // Jobs run in VMs when this machine is ready to, unless --no-isolated. Asked for outright, a
   // machine that can't says why here, and one that isn't set up says so in prepareIsolation.
-  const state = args.isolated === false ? null : await isolationState();
   const asked = args.isolated === true || Boolean(vmFlag);
   const unsupported = asked ? unsupportedReason() : null;
   if (unsupported) throw new RunnerError("ISOLATED_UNSUPPORTED", unsupported);
+  const state = asked || args.isolated === false ? null : await isolationState();
   const isolated = asked || state === "ready";
   // Isolated jobs run on Linux, whatever this machine is. With --macos the Mac offers both: itself
   // and the VM, and the gateway says where each job goes.

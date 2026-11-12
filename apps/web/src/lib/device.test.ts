@@ -67,7 +67,11 @@ describe("where a machine's jobs run", () => {
     expect(
       describeJobPlace({ os: "linux", device: device({ osVersion: "Ubuntu 24.04.1 LTS" }) }),
     ).toBe("On the machine itself");
-    expect(describeJobPlace({ os: "linux", device: null })).toBe("On the machine itself");
+  });
+
+  test("says nothing when the machine hasn't said what it runs on", () => {
+    expect(describeJobPlace({ os: "linux", device: null })).toBeNull();
+    expect(describeJobPlace({ os: "linux", device: device({}) })).toBeNull();
     expect(describeJobPlace({ os: null })).toBeNull();
   });
 });

@@ -65,11 +65,12 @@ export async function isolationState(
 
 // What `connect` says when jobs run on the Mac itself because the VMs aren't set up.
 export function setupHint(state: IsolationState) {
-  if (state === "missing")
-    return `Jobs run on this Mac itself, where they can read your files. To run each job in its own Linux VM, install Apple's container tool from ${RELEASES} and run \`container system start\`.`;
-  if (state === "stopped")
-    return "Jobs run on this Mac itself, where they can read your files. To run each job in its own Linux VM, run `container system start`.";
-  return null;
+  if (state !== "missing" && state !== "stopped") return null;
+  const step =
+    state === "missing"
+      ? `install Apple's container tool from ${RELEASES} and run \`container system start\``
+      : "run `container system start`";
+  return `Jobs run on this Mac itself, where they can read your files. To run each job in its own Linux VM, ${step}.`;
 }
 
 export interface DebugLog {
@@ -255,8 +256,7 @@ export function slotsFor(size: VmSize, cores = availableParallelism(), memoryByt
   const gb = memoryBytes / 1024 ** 3;
   const byCpu = size.cpus ? Math.floor(cores / size.cpus) : Infinity;
   const byMemory = size.memoryGb ? Math.floor(gb / 2 / size.memoryGb) : Infinity;
-  const fit = Math.min(byCpu, byMemory);
-  return Math.max(1, Number.isFinite(fit) ? fit : 1);
+  return Math.max(1, Math.min(byCpu, byMemory));
 }
 
 // Whether that many jobs of that size fit in this machine's memory. Throws when they don't.
