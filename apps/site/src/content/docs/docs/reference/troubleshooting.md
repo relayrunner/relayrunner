@@ -50,7 +50,7 @@ The machine is missing something the hosted image has: a tool, a Linux package, 
 - **"needs macOS 26 or later"** or **"needs a Mac with Apple silicon"**: isolated jobs don't work on this computer. Run `relayrunner connect` without `--isolated`.
 - **A job can't reach a server on your network**: isolated jobs are kept off your Mac and local network. Add `--local-network`. If you turned on the firewall on the Mac, also run `relayrunner firewall off`.
 - **Docker fails in a job**: update the CLI. Older versions don't start Docker in isolated jobs.
-- **A macOS job fails**: isolated jobs run on Linux. Use a regular connection for macOS jobs.
+- **A macOS job fails**: isolated jobs run on Linux. Add `--macos` to run macOS jobs on the Mac itself.
 - **`ping` fails in a job**: that's expected in isolated jobs. Use `curl` to test a connection.
 
 For anything else, `~/.relayrunner/isolated.log` records what happened. It holds no job output or credentials, so you can attach it to an issue.

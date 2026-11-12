@@ -564,9 +564,9 @@ export function MachineMenu({
     machineAccess(machine.id).then(setAccess, () => setAccess(null));
   }
 
-  async function copyLabels() {
+  async function copyLabels(labels: string[] = machine.labels ?? []) {
     try {
-      await navigator.clipboard.writeText((machine.labels ?? []).join(", "));
+      await navigator.clipboard.writeText(labels.join(", "));
     } catch {
       // Clipboard can be blocked; the labels are also on GitHub and in relay.yml.
     }
@@ -637,6 +637,17 @@ export function MachineMenu({
               <span>Copy labels</span>
               <span className="truncate font-mono text-xs text-muted-foreground">
                 {machine.labels.join(", ")}
+              </span>
+            </span>
+          </DropdownMenuItem>
+        )}
+        {machine.isolatedLabels && (
+          <DropdownMenuItem onSelect={() => void copyLabels(machine.isolatedLabels)}>
+            <CopyIcon aria-hidden />
+            <span className="grid min-w-0">
+              <span>Copy labels for its Linux VM</span>
+              <span className="truncate font-mono text-xs text-muted-foreground">
+                {machine.isolatedLabels.join(", ")}
               </span>
             </span>
           </DropdownMenuItem>

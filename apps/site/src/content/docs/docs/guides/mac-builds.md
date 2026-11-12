@@ -15,7 +15,7 @@ On the Mac:
 npx relayrunner connect
 ```
 
-Leave it running. A Mac mini that stays on makes a good dedicated runner; set it to not sleep in System Settings. Don't add `--isolated` here: isolated jobs run on Linux, and these builds need macOS.
+Leave it running. A Mac mini that stays on makes a good dedicated runner; set it to not sleep in System Settings. Don't add `--isolated` by itself here: isolated jobs run on Linux, and these builds need macOS. `--isolated --macos` takes both.
 
 ## 2. Route the macOS jobs
 

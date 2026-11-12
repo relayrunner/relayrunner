@@ -59,6 +59,8 @@ export interface Route {
   // Set when the route chose a runner added from GitHub: the label the pick answered, which the
   // runner carries for good. Unset for connected machines, whose route answers `rr-<route id>`.
   routingLabel?: string;
+  // The job runs in the machine's VM, not on the machine itself (runsIsolated).
+  isolated?: boolean;
 }
 
 export function newRouteId() {
@@ -139,6 +141,8 @@ export interface Candidate {
   running?: number;
   // The machine's runner labels (machineLabels).
   labels: string[];
+  // Its VM's labels, when it also runs jobs in one (isolatedLabels).
+  isolatedLabels?: string[];
   // Paused machines stay connected but never take a new job.
   paused?: boolean;
   // Whose jobs it takes, and its owner's GitHub account id (null when the owner is gone or never
@@ -204,6 +208,15 @@ export function machineLabels(machine: { os: string | null; arch: string | null 
   return labels;
 }
 
+/** The labels of a machine's VM, its second place for jobs, or undefined when it has none. */
+export function isolatedLabels(machine: {
+  isolatedOs: string | null;
+  isolatedArch: string | null;
+}) {
+  if (!machine.isolatedOs) return undefined;
+  return machineLabels({ os: machine.isolatedOs, arch: machine.isolatedArch });
+}
+
 /** A relay input's labels: comma-separated, trimmed, empties dropped. */
 export function parseLabels(input: unknown): string[] {
   if (typeof input !== "string") return [];
@@ -217,6 +230,28 @@ export function parseLabels(input: unknown): string[] {
 export function hasLabels(machine: string[], wanted: string[]) {
   const have = new Set(machine.map((label) => label.toLowerCase()));
   return wanted.every((label) => have.has(label.toLowerCase()));
+}
+
+type Places = { labels: string[]; isolatedLabels?: string[] };
+
+/** Whether a job's wanted labels fit one of a machine's places: the machine itself or its VM. */
+export function fits(machine: Places, wanted: string[]) {
+  return (
+    hasLabels(machine.labels, wanted) ||
+    (machine.isolatedLabels !== undefined && hasLabels(machine.isolatedLabels, wanted))
+  );
+}
+
+/**
+ * Whether a job a machine fits runs in its VM. When only one place has the wanted labels, that
+ * one. When both do (the job asked only for `self-hosted` or the arch), the job's GitHub fallback
+ * says what it was written for: `ubuntu-*` means Linux, so the VM; anything else, the machine.
+ */
+export function runsIsolated(machine: Places, wanted: string[], fallback: string[]) {
+  if (machine.isolatedLabels === undefined || !hasLabels(machine.isolatedLabels, wanted))
+    return false;
+  if (!hasLabels(machine.labels, wanted)) return true;
+  return fallback.some((label) => /^ubuntu/i.test(label));
 }
 
 /** When each machine was last picked: the newest route per machine. */
@@ -275,7 +310,7 @@ export function chooseMachine(
   let bestAt = Infinity;
   for (const machine of candidates) {
     if (machine.paused || !hasFreeSlot(machine, held)) continue;
-    if (!hasLabels(machine.labels, wanted) || !admits(machine, starters)) continue;
+    if (!fits(machine, wanted) || !admits(machine, starters)) continue;
     const own = starter !== null && machine.ownerGithubId === starter;
     const at = picked.get(machine.id) ?? -Infinity;
     if ((own && !bestOwn) || (own === bestOwn && at < bestAt)) {
@@ -300,10 +335,7 @@ export function fullMachines(
 ): FullMachine[] | null {
   const fitting = candidates.filter(
     (machine) =>
-      machine.online &&
-      !machine.paused &&
-      hasLabels(machine.labels, wanted) &&
-      admits(machine, starters),
+      machine.online && !machine.paused && fits(machine, wanted) && admits(machine, starters),
   );
   if (fitting.length === 0 || fitting.some((machine) => hasFreeSlot(machine, held))) return null;
   return fitting.map((machine) => {
@@ -317,10 +349,10 @@ export function fullMachines(
  * paused and busy or offline machines isn't "paused": unpausing wouldn't be enough on its own.
  */
 export function pausedMatches(
-  machines: { name: string; labels: string[]; paused?: boolean }[],
+  machines: (Places & { name: string; paused?: boolean })[],
   wanted: string[] = [],
 ): string[] {
-  const matching = machines.filter((machine) => hasLabels(machine.labels, wanted));
+  const matching = machines.filter((machine) => fits(machine, wanted));
   if (matching.length === 0 || !matching.every((machine) => machine.paused)) return [];
   return matching.map((machine) => machine.name);
 }
@@ -328,6 +360,7 @@ export function pausedMatches(
 export interface PoolMachine {
   name: string;
   labels: string[];
+  isolatedLabels?: string[];
   paused?: boolean;
   sharing?: MachineSharing;
   ownerGithubId?: number | null;
@@ -345,7 +378,7 @@ export function unavailableMachines(
   wanted: string[],
   starters: JobStarters,
 ): { paused: string[] } | { notShared: NotSharedMachine[] } | null {
-  const matching = machines.filter((machine) => hasLabels(machine.labels, wanted));
+  const matching = machines.filter((machine) => fits(machine, wanted));
   if (matching.length === 0) return null;
   const admitted = matching.filter((machine) => admits(machine, starters));
   if (admitted.length === 0)

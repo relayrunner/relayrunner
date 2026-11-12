@@ -244,6 +244,7 @@ export class MachineLink extends DurableObject<Env> {
         type: "run",
         routeId: route.id,
         jitConfig: jit.encodedJitConfig,
+        ...(route.isolated ? { isolated: true } : {}),
       }),
     );
     await this.ctx.storage.put<SentRoute>(key, { workspaceId, sentAt: Date.now() });

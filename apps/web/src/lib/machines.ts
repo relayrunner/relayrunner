@@ -15,6 +15,8 @@ export type Machine = {
    * `["self-hosted", "macOS", "ARM64"]`. Missing from an API that predates them.
    */
   labels?: string[];
+  // The labels of its VM, when it also runs jobs in one (`connect --isolated --macos`).
+  isolatedLabels?: string[];
   lastSeenAt: string | null;
   revokedAt: string | null;
   createdAt: string;

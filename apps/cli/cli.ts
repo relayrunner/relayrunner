@@ -93,6 +93,11 @@ const connectCommand = defineCommand({
       description:
         "With --isolated, let jobs reach this Mac and your local network. They can't by default.",
     },
+    macos: {
+      type: "boolean",
+      description:
+        "With --isolated, also take macOS jobs, which run on this Mac itself. Linux jobs still run in a VM.",
+    },
   },
   async run({ args }) {
     clack.intro("RelayRunner");
@@ -122,16 +127,20 @@ async function connectMachine(args: {
   isolated?: boolean;
   image?: string;
   "local-network"?: boolean;
+  macos?: boolean;
 }) {
   const share = shareArg(args.share);
   if (args.image && !args.isolated) throw new RunnerError("USAGE", "--image goes with --isolated.");
   if (args["local-network"] && !args.isolated)
     throw new RunnerError("USAGE", "--local-network goes with --isolated.");
+  if (args.macos && !args.isolated) throw new RunnerError("USAGE", "--macos goes with --isolated.");
   const host = machinePlatform();
   const unsupported = args.isolated ? unsupportedReason() : null;
   if (unsupported) throw new RunnerError("ISOLATED_UNSUPPORTED", unsupported);
-  // Isolated jobs run on Linux, whatever this machine is.
-  const platform = args.isolated ? ({ os: "linux", arch: host.arch } as const) : host;
+  // Isolated jobs run on Linux, whatever this machine is. With --macos the Mac offers both: itself
+  // and the VM, and the gateway says where each job goes.
+  const vm = { os: "linux", arch: host.arch } as const;
+  const platform = !args.isolated ? host : args.macos ? { ...host, isolated: vm } : vm;
   let credentials = readCredentials();
   const server = serverFor(args.server, credentials);
   if (credentials && credentials.server !== server) {
@@ -168,8 +177,12 @@ async function connectMachine(args: {
   const log = (line: string) => clack.log.info(line);
   // Isolated, each job gets a fresh VM from the runner image. Otherwise each slot runs its jobs
   // in its own copy of the runner on this machine.
-  let runnerVersion: string;
-  let launchers: Launcher[];
+  // Where a slot's job runs: on this machine (`onHost`), in a VM (`inVm`), or either, as the
+  // gateway's `run` message says. The hello carries the runner version of the machine itself when
+  // it takes jobs there.
+  let runnerVersion = "";
+  let onHost: Launcher[] | undefined;
+  let inVm: Launcher | undefined;
   if (args.isolated) {
     // The firewall on the Mac covers every VM, so with it on a job can't be let onto the network.
     const firewall = firewallInstalled();
@@ -187,13 +200,18 @@ async function connectMachine(args: {
       debug: debugLog(),
     });
     runnerVersion = isolation.runnerVersion;
-    launchers = Array<Launcher>(slots).fill(isolatedLauncher(isolation));
-  } else {
-    const [runner, canIsolate] = await Promise.all([ensureRunner({ log }), isolationAvailable()]);
+    inVm = isolatedLauncher(isolation);
+  }
+  if (!args.isolated || args.macos) {
+    const [runner, canIsolate] = await Promise.all([
+      ensureRunner({ log }),
+      args.isolated ? false : isolationAvailable(),
+    ]);
     runnerVersion = runner.version;
-    launchers = ensureSlots(runner, slots, log).map(hostLauncher);
+    onHost = ensureSlots(runner, slots, log).map(hostLauncher);
     if (canIsolate)
       log("This Mac can run each job in its own Linux VM, away from your files. Add --isolated.");
+    if (args.macos) log("Linux jobs run in a VM. macOS jobs run on this Mac itself.");
   }
   clack.log.info(
     slots === 1
@@ -255,7 +273,7 @@ async function connectMachine(args: {
             : undefined;
         try {
           return await runJob(run, {
-            launcher: launchers[slot - 1],
+            launcher: (run.isolated ? inVm : onHost?.[slot - 1]) ?? inVm!,
             report,
             output: prefixed?.output,
             onChecked: (target) => {

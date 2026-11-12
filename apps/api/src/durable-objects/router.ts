@@ -28,7 +28,9 @@ import {
   decideRoute,
   fullMachines,
   heldSlots,
+  isolatedLabels,
   machineLabels,
+  runsIsolated,
   lastPicked,
   needsOwnerAccess,
   newRouteId,
@@ -188,6 +190,8 @@ export class Router extends DurableObject<Env> {
         name: schema.machine.name,
         os: schema.machine.os,
         arch: schema.machine.arch,
+        isolatedOs: schema.machine.isolatedOs,
+        isolatedArch: schema.machine.isolatedArch,
         pausedAt: schema.machine.pausedAt,
         source: schema.machine.source,
         installationId: schema.machine.installationId,
@@ -237,6 +241,7 @@ export class Router extends DurableObject<Env> {
         machine.source === "github"
           ? matchLabels(parseStoredLabels(machine.githubLabels))
           : machineLabels(machine),
+      isolatedLabels: machine.source === "github" ? undefined : isolatedLabels(machine),
       paused: machine.pausedAt !== null,
       sharing: machine.sharing,
       ownerGithubId: githubId(machine.ownerGithubId),
@@ -339,6 +344,7 @@ export class Router extends DurableObject<Env> {
         createdAt: now,
         state: "reserved",
         ...(routingLabel ? { routingLabel } : {}),
+        ...(runsIsolated(machine, job.machine, job.github) ? { isolated: true } : {}),
       };
       await this.ctx.storage.put(ROUTE_KEY + route.id, route);
       return routingLabel ?? routeLabel(route.id);

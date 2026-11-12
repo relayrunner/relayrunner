@@ -23,6 +23,7 @@ Run inside a repo with no routed jobs, it offers to route them, the same as `ini
 | `--isolated`              | Experimental. Run each job in its own Linux VM. Apple silicon Macs only. |
 | `--image <image>`         | With `--isolated`, the runner image to build on.                         |
 | `--local-network`         | With `--isolated`, let jobs reach your Mac and your local network.       |
+| `--macos`                 | With `--isolated`, also take macOS jobs, which run on the Mac itself.    |
 
 ## `login`
 
