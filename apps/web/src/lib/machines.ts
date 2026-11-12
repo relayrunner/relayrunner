@@ -234,6 +234,8 @@ export type DeviceCodeStatus = {
   // a city, either missing when Cloudflare couldn't tell). `differentCountry` is true when that's
   // a different country from the browser looking at it, null when either side is unknown.
   requested_at?: string;
+  // Where the machine could take jobs. `joined`: one the user only joined through GitHub (#364).
+  workspaces?: { id: string; name: string; slug: string; joined: boolean }[];
   requested_from?: {
     country: string | null;
     city: string | null;
@@ -249,7 +251,8 @@ export function openDeviceCode(userCode: string) {
   return api<DeviceCodeStatus>(`/machines/device?user_code=${encodeURIComponent(userCode)}`);
 }
 
-export function approveDevice(body: { userCode: string; name: string }) {
+/** `workspaceIds`: where the machine takes jobs; left out, the API picks the ones they installed. */
+export function approveDevice(body: { userCode: string; name: string; workspaceIds?: string[] }) {
   return api<{ machineId: string }>("/machines/approve", {
     method: "POST",
     body: JSON.stringify(body),
