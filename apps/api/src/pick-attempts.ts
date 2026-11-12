@@ -5,6 +5,9 @@
 export const WAIT_FOR_JOB_MS = 4 * 60_000;
 // The first runner plus 3 replacements: a relay still queued after ~16 minutes is given up on.
 export const MAX_ATTEMPTS = 4;
+// How long a replacement runner waits before checking its job still needs one, so the job's own
+// webhook can say it started and GitHub needn't be asked.
+export const RECHECK_AFTER_MS = 10_000;
 // A run that started longer ago than this was cut off (a deploy evicts the object mid-wait).
 export const RUN_STALE_MS = WAIT_FOR_JOB_MS + 2 * 60_000;
 const PICK_RUNNER_PREFIX = "relayrunner-pick-";

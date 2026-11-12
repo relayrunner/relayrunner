@@ -24,6 +24,7 @@ import { and, eq, isNull, sql } from "drizzle-orm";
 import { createDb, type Db, schema } from "../db/index.ts";
 import { recordPick, type PickRecord } from "../route-decisions.ts";
 import { installationRunnerScope } from "../installations.ts";
+import { startedJobStatus } from "../jobs.ts";
 import {
   type JobContext,
   jobContext,
@@ -37,6 +38,7 @@ import { recordRepoCheck } from "../free-checks.ts";
 import {
   afterAttempt,
   MAX_ATTEMPTS,
+  RECHECK_AFTER_MS,
   pickRunnerName,
   RUN_STALE_MS,
   WAIT_FOR_JOB_MS,
@@ -119,7 +121,7 @@ export class PickRunner extends DurableObject<Env> {
       token = await appInstallationToken(this.env, work.installationId);
       scope = await installationRunnerScope(createDb(this.env.DB), work.installationId, work.repo);
       // A replacement runner first makes sure its job still needs one.
-      if (attempt > 1 && (await workflowJobStatus(token, work.repo, work.jobId)) !== "queued") {
+      if (attempt > 1 && (await this.jobStatus(token, work)) !== "queued") {
         console.log(
           JSON.stringify({
             msg: "relayrunner pick not needed",
@@ -308,17 +310,33 @@ export class PickRunner extends DurableObject<Env> {
     if (token) await this.rearmIfQueued(work, attempt, token);
   }
 
+  // The job's status: from its webhooks once they say it started, else from GitHub.
+  private async jobStatus(token: string, work: PickWork) {
+    return (
+      (await startedJobStatus(createDb(this.env.DB), work.jobId)) ??
+      workflowJobStatus(token, work.repo, work.jobId)
+    );
+  }
+
   // The runner may have taken another job, or none: if its own job is still queued, nothing else
-  // will come for it, so start a replacement.
+  // will come for it, so start a replacement. Usually the job's own webhook has already said it
+  // started. When it hasn't, the replacement starts after RECHECK_AFTER_MS and checks again first,
+  // by which time the webhook has usually arrived, so GitHub is rarely asked.
   private async rearmIfQueued(work: PickWork, attempt: number, token: string) {
     let status: string | null;
     try {
-      status = await workflowJobStatus(token, work.repo, work.jobId);
+      // After the last attempt nothing checks again, so GitHub decides whether to give up.
+      status =
+        attempt >= MAX_ATTEMPTS
+          ? await this.jobStatus(token, work)
+          : await startedJobStatus(createDb(this.env.DB), work.jobId);
     } catch (error) {
       logCleanupError("check job status", work, error);
       return;
     }
-    const next = afterAttempt(status, attempt);
+    // Null before the last attempt: no webhook has said it started yet.
+    const next =
+      status === null && attempt < MAX_ATTEMPTS ? "rearm" : afterAttempt(status, attempt);
     if (next === "done") return;
     if (next === "give_up") {
       console.warn(
@@ -332,7 +350,7 @@ export class PickRunner extends DurableObject<Env> {
       return;
     }
     await this.ctx.storage.put({ work, attempt: attempt + 1 });
-    await this.ctx.storage.setAlarm(Date.now());
+    await this.ctx.storage.setAlarm(Date.now() + RECHECK_AFTER_MS);
     console.log(
       JSON.stringify({
         msg: "relayrunner pick re-armed",

@@ -4,6 +4,7 @@ import {
   appInstallationToken,
   appJwt,
   clearInstallationTokens,
+  clearListedPages,
   deleteRunner,
   generateJitConfig,
   importAppPrivateKey,
@@ -156,6 +157,31 @@ describe("JIT runners by scope", () => {
       "DELETE https://api.github.com/orgs/relayrunner/actions/runners/7",
     ]);
     expect(calls.map((call) => call.body?.runner_group_id)).toEqual([4, 1, undefined]);
+  });
+});
+
+describe("listed pages", () => {
+  afterEach(() => {
+    vi.unstubAllGlobals();
+    clearListedPages();
+  });
+
+  test("asks again with the ETag and reuses the page GitHub says is unchanged", async () => {
+    const sent: (string | null)[] = [];
+    vi.stubGlobal("fetch", async (_url: string, init: RequestInit = {}) => {
+      const etag = new Headers(init.headers).get("if-none-match");
+      sent.push(etag);
+      if (etag === '"v1"') return new Response(null, { status: 304 });
+      return Response.json(
+        { runners: [{ id: 3, name: "mac", os: "macOS", status: "online", busy: false }] },
+        { headers: { etag: '"v1"' } },
+      );
+    });
+    const first = await listRunners("t", { kind: "org", org: "acme" });
+    const second = await listRunners("t", { kind: "org", org: "acme" });
+    expect(sent).toEqual([null, '"v1"']);
+    expect(second).toEqual(first);
+    expect(second.map((runner) => runner.id)).toEqual([3]);
   });
 });
 

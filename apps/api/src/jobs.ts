@@ -97,6 +97,20 @@ export async function recordWorkflowJob(
 }
 
 /**
+ * A job's status once its webhooks say it has started ('in_progress' or 'completed'), or null when
+ * they haven't yet or the job isn't stored. Null means "ask GitHub": a webhook may still be on its
+ * way.
+ */
+export async function startedJobStatus(db: Db, jobId: number): Promise<string | null> {
+  const [row] = await db
+    .select({ status: table.status })
+    .from(table)
+    .where(eq(table.id, jobId))
+    .limit(1);
+  return row && (row.status === "in_progress" || row.status === "completed") ? row.status : null;
+}
+
+/**
  * Notes which machine a route sent a job to. Only fills an empty machine_id, so a redelivered
  * webhook never moves a job to another machine. A job that wasn't stored (no pick in its run) is
  * left alone.
