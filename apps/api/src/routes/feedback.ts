@@ -5,7 +5,7 @@ import { z } from "zod";
 import { AGENT_WORKSPACE_HEADER, agentWorkspaceId } from "../agent-auth.ts";
 import type { AppEnv } from "../app.ts";
 import { createDb, schema } from "../db/index.ts";
-import { sendEmail } from "../email.ts";
+import { emailOperators } from "../email.ts";
 import { FEEDBACK_CATEGORIES, FEEDBACK_LIMITS } from "@relayrunner/activity";
 import { FEEDBACK_RATE, sanitizeFeedback, sanitizeMessage } from "../feedback.ts";
 import { inBackground, requireUser } from "../middleware/session.ts";
@@ -42,7 +42,7 @@ type Entry = {
 
 // Feedback from a person in the dashboard (the feedback popover) or from an agent (the MCP server's
 // send_feedback tool). Either way it's stored for the signed-in user, with the workspace it's
-// about, and emailed to FEEDBACK_EMAIL with a reply-to of the person. An agent's records which
+// about, and emailed to the operators with a reply-to of the person. An agent's records which
 // agent sent it, and its workspace is the one the request names; a person's records the page and
 // their active workspace. The answer never repeats what was sent, so a secret the redaction missed
 // isn't echoed back.
@@ -117,37 +117,33 @@ export const feedbackRoutes = new Hono<AppEnv>().post(
       ...fields,
     });
 
-    const to = c.env.FEEDBACK_EMAIL;
-    if (to) {
-      // sendEmail never throws; only the client lookup can, and then the email goes without a name.
-      const emailFeedback = async () => {
-        const { clientId } = entry;
-        const [client] = clientId
-          ? await db
-              .select({ name: schema.oauthClient.name })
-              .from(schema.oauthClient)
-              .where(eq(schema.oauthClient.clientId, clientId))
-              .limit(1)
-              .catch(() => [])
-          : [];
-        await sendEmail(c.env, {
-          to,
-          replyTo: user!.email,
-          template: "feedback",
-          context: {
-            id,
-            ...entry,
-            // A person's message has no category of its own, and wasn't sent by an agent.
-            category: entry.source === "agent" ? entry.category : null,
-            agent: clientId ? { name: client?.name ?? null } : null,
-            user: { name: user!.name, email: user!.email },
-            workspaceName: about?.name ?? null,
-            sentAt,
-          },
-        });
-      };
-      await inBackground(c, emailFeedback());
-    }
+    // emailOperators never throws; only the client lookup can, and then the email goes without a name.
+    const emailFeedback = async () => {
+      const { clientId } = entry;
+      const [client] = clientId
+        ? await db
+            .select({ name: schema.oauthClient.name })
+            .from(schema.oauthClient)
+            .where(eq(schema.oauthClient.clientId, clientId))
+            .limit(1)
+            .catch(() => [])
+        : [];
+      await emailOperators(c.env, {
+        replyTo: user!.email,
+        template: "feedback",
+        context: {
+          id,
+          ...entry,
+          // A person's message has no category of its own, and wasn't sent by an agent.
+          category: entry.source === "agent" ? entry.category : null,
+          agent: clientId ? { name: client?.name ?? null } : null,
+          user: { name: user!.name, email: user!.email },
+          workspaceName: about?.name ?? null,
+          sentAt,
+        },
+      });
+    };
+    await inBackground(c, emailFeedback());
 
     return c.json({ id, redacted }, 201);
   },

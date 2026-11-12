@@ -180,6 +180,16 @@ function refresh(client_id: string, refresh_token: string) {
   );
 }
 
+// Feedback is emailed to every operator who wants it (src/notifications.ts).
+let feedbackOperator: Promise<string> | undefined;
+function operatorEmail() {
+  feedbackOperator ??= testing.signIn(env).then(async ({ user }) => {
+    await env.DB.prepare("update user set role = 'operator' where id = ?").bind(user.id).run();
+    return user.email;
+  });
+  return feedbackOperator;
+}
+
 describe("agent sign-in", () => {
   test("an agent token reads its own workspace and nothing else", async () => {
     const { user, cookie } = await testing.signIn(env);
@@ -437,6 +447,7 @@ describe("agent feedback", () => {
     const { access_token, client_id } = await signInAgent(jar);
     const send = vi.fn(async () => ({ messageId: "m1" }));
     const withEmail = { ...env, EMAIL: { send } as unknown as SendEmail };
+    const operator = await operatorEmail();
 
     const response = await sendFeedback(
       access_token,
@@ -475,7 +486,7 @@ describe("agent feedback", () => {
       text: string;
       html: string;
     };
-    expect(message.to).toBe("feedback@relayrunner.app");
+    expect(message.to).toBe(operator);
     expect(message.replyTo).toBe(user.email);
     expect(message.subject).toBe("[feedback] bug: list_runs drops queued runs");
     expect(message.text).toContain("Agent: Test agent");
@@ -488,7 +499,6 @@ describe("agent feedback", () => {
     const { cookie } = await testing.signIn(env);
     const { cookie: jar } = await testing.createWorkspace(env, cookie, "Flood", "agents-flood");
     const { access_token } = await signInAgent(jar);
-    const noEmail = { ...env, FEEDBACK_EMAIL: undefined };
 
     expect((await sendFeedback(access_token, { category: "nope", summary: "x" })).status).toBe(400);
     expect(
@@ -519,7 +529,7 @@ describe("agent feedback", () => {
         access_token,
         { category: "other", summary: `note ${i}` },
         {
-          env: noEmail,
+          env,
         },
       );
       expect(ok.status).toBe(201);
@@ -528,7 +538,7 @@ describe("agent feedback", () => {
       access_token,
       { category: "other", summary: "one more" },
       {
-        env: noEmail,
+        env,
       },
     );
     expect(limited.status).toBe(429);
@@ -545,6 +555,7 @@ describe("agent feedback", () => {
     );
     const send = vi.fn(async () => ({ messageId: "m2" }));
     const withEmail = { ...env, EMAIL: { send } as unknown as SendEmail };
+    const operator = await operatorEmail();
 
     const response = await testing.call(withEmail, "/feedback", jar, {
       message: "Love the router page.\nCould it show cost too? password=hunter22",
@@ -574,7 +585,7 @@ describe("agent feedback", () => {
       subject: string;
       text: string;
     };
-    expect(message.to).toBe("feedback@relayrunner.app");
+    expect(message.to).toBe(operator);
     expect(message.replyTo).toBe(user.email);
     expect(message.subject).toBe("[feedback] Love the router page.");
     expect(message.text).toContain(`From: ${user.name} <${user.email}>`);

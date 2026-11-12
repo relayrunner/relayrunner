@@ -84,6 +84,7 @@ describe("templates", () => {
       workspaceNames: ["Acme & Co", "atticoos"],
       connectedAt: new Date("2026-11-05T00:00:00Z"),
       machinesUrl: "https://app.example/runners",
+      settingsUrl: "https://app.example/settings/notifications",
     });
     expect(email.subject).toBe("New machine connected to Acme & Co and atticoos");
     expect(email.html).not.toContain("<script>alert(1)</script>");
@@ -92,6 +93,9 @@ describe("templates", () => {
     expect(email.text).toContain("(macos arm64)");
     expect(email.text).toContain("It can now run CI jobs in Acme & Co and atticoos");
     expect(email.text).toContain("Not you? Revoke it: https://app.example/runners");
+    expect(email.text).toContain(
+      "Turn off these emails: https://app.example/settings/notifications",
+    );
   });
 
   it("machine-connected still reads right with no workspace yet", () => {
@@ -100,6 +104,7 @@ describe("templates", () => {
       workspaceNames: [],
       connectedAt: new Date("2026-11-05T00:00:00Z"),
       machinesUrl: "https://app.example/runners",
+      settingsUrl: "https://app.example/settings/notifications",
     });
     expect(email.subject).toBe("New machine connected to RelayRunner");
     expect(email.text).toContain("once you install RelayRunner on a GitHub account");

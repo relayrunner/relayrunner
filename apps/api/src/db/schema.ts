@@ -947,7 +947,7 @@ export const agentGrantWorkspace = sqliteTable(
 
 // Feedback from people (the dashboard's feedback popover) and agents (the MCP server's
 // send_feedback tool), both through routes/feedback.ts, already sanitized and with secrets redacted.
-// Also emailed to FEEDBACK_EMAIL. grant_id and client_id are set for agents only, as plain text so
+// Also emailed to the operators. grant_id and client_id are set for agents only, as plain text so
 // the feedback outlives a disconnected agent; page is the dashboard path it was sent from. It goes
 // with its user.
 export const feedback = sqliteTable(
@@ -1048,3 +1048,20 @@ export const provider = sqliteTable("provider", {
     .$defaultFn(() => new Date())
     .$onUpdate(() => new Date()),
 });
+
+// Emails a person turned off, one row per type (src/notifications.ts lists the types). No row
+// means the email is on. Emails that keep an account safe, like a machine taken over, always send.
+export const notificationSetting = sqliteTable(
+  "notification_setting",
+  {
+    userId: text("user_id")
+      .notNull()
+      .references(() => user.id, { onDelete: "cascade" }),
+    type: text("type").notNull(),
+    enabled: integer("enabled", { mode: "boolean" }).notNull(),
+    updatedAt: integer("updated_at", { mode: "timestamp_ms" })
+      .notNull()
+      .$defaultFn(() => new Date()),
+  },
+  (table) => [primaryKey({ columns: [table.userId, table.type] })],
+);

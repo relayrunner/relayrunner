@@ -16,6 +16,7 @@ import {
 } from "@relayrunner/email";
 import { providerName, rateText } from "@relayrunner/providers";
 import type { Env } from "./env.ts";
+import { operatorRecipients } from "./notifications.ts";
 
 // send.relayrunner.app is the domain onboarded for Email Sending. Keep EMAIL_FROM inside the
 // binding's allowed_sender_addresses in wrangler.jsonc.
@@ -71,7 +72,11 @@ function render(env: Env, args: EmailArgs): RenderedEmail {
     case "welcome":
       return renderWelcomeEmail({ ...args.context, dashboardUrl: dashboard });
     case "machine-connected":
-      return renderMachineConnectedEmail({ ...args.context, machinesUrl: `${dashboard}/runners` });
+      return renderMachineConnectedEmail({
+        ...args.context,
+        machinesUrl: `${dashboard}/runners`,
+        settingsUrl: `${dashboard}/settings/notifications`,
+      });
     case "machine-taken-over":
       return renderMachineTakenOverEmail({ ...args.context, machinesUrl: `${dashboard}/runners` });
     case "dead-letter-alert":
@@ -134,3 +139,26 @@ export async function sendEmail(env: Env, args: EmailArgs): Promise<void> {
 function message(error: unknown) {
   return error instanceof Error ? error.message : String(error);
 }
+
+type OperatorTemplate = "feedback" | "dead-letter-alert" | "price-check";
+type OperatorEmail = Extract<EmailArgs, { template: OperatorTemplate }>;
+
+/** Sends an operator alert to each operator who hasn't turned that alert off. Never throws. */
+export async function emailOperators(env: Env, args: DistributiveOmit<OperatorEmail, "to">) {
+  let recipients: string[];
+  try {
+    recipients = await operatorRecipients(env.DB, args.template);
+  } catch (error) {
+    console.error(
+      JSON.stringify({
+        msg: "email not sent: no operators",
+        template: args.template,
+        error: message(error),
+      }),
+    );
+    return;
+  }
+  await Promise.all(recipients.map((to) => sendEmail(env, { ...args, to } as EmailArgs)));
+}
+
+type DistributiveOmit<T, K extends PropertyKey> = T extends unknown ? Omit<T, K> : never;

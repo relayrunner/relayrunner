@@ -37,10 +37,6 @@ export interface Env extends AccessEnv {
   EMAIL?: SendEmail;
   // Sender address on send.relayrunner.app; must be in the binding's allowed_sender_addresses.
   EMAIL_FROM?: string;
-  // Optional: where operator alerts (webhook dead letters) are emailed. Unset skips them.
-  OPERATOR_ALERT_EMAIL?: string;
-  // Optional: where feedback (routes/feedback.ts) is emailed. Unset only stores it in D1.
-  FEEDBACK_EMAIL?: string;
   // The dashboard origin links in emails point at. Falls back to BETTER_AUTH_URL.
   DASHBOARD_URL?: string;
 

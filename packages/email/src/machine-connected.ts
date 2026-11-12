@@ -13,6 +13,8 @@ export function renderMachineConnectedEmail(ctx: {
   workspaceNames: string[];
   connectedAt: Date;
   machinesUrl: string;
+  /** Where the person turns this email off. */
+  settingsUrl: string;
 }): RenderedEmail {
   const platform = [ctx.os, ctx.arch].filter(Boolean).join(" ");
   const machine = platform ? `${ctx.machineName} (${platform})` : ctx.machineName;
@@ -42,9 +44,11 @@ export function renderMachineConnectedEmail(ctx: {
       reach,
       "",
       `Not you? Revoke it: ${ctx.machinesUrl}`,
+      "",
+      `Turn off these emails: ${ctx.settingsUrl}`,
     ].join("\n"),
     cta: { url: ctx.machinesUrl, label: "Review machines →" },
-    footNoteHtml: "If you didn't run <code>relayrunner connect</code>, revoke this machine now.",
+    footNoteHtml: `If you didn't run <code>relayrunner connect</code>, revoke this machine now.<br><a href="${escapeHtml(ctx.settingsUrl)}" style="color:inherit;">Turn off these emails</a>`,
   });
 }
 

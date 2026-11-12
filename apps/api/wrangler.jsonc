@@ -34,9 +34,6 @@
     "AGENTS_MCP_URL": "https://agents.relayrunner.app/mcp",
     // Sender for transactional email; must stay in send_email's allowed_sender_addresses below.
     "EMAIL_FROM": "noreply@send.relayrunner.app",
-    // Agent feedback from the MCP server's send_feedback tool (src/feedback.ts) is emailed here.
-    // An Email Routing rule on relayrunner.app forwards it to the team.
-    "FEEDBACK_EMAIL": "feedback@relayrunner.app",
     // Dashboard origins other than BETTER_AUTH_URL that may sign in through the oAuthProxy plugin:
     // previews (<alias>-relayrunner-app.relayrun.workers.dev; only this account's Workers live
     // under relayrun.workers.dev) and the old workers.dev dashboard, which older CLIs still open.
@@ -68,8 +65,8 @@
     "CONTAINER_RUNNER_ORGS": "relayrunner",
   },
   // Transactional email through Cloudflare Email Sending (src/email.ts). send.relayrunner.app is
-  // onboarded for sending on this account. Set OPERATOR_ALERT_EMAIL with `wrangler secret put` to
-  // also email the dead-letter alert. `wrangler dev` simulates sends locally; add "remote": true
+  // onboarded for sending on this account. Operator alerts go to each operator who wants them
+  // (src/notifications.ts). `wrangler dev` simulates sends locally; add "remote": true
   // here to deliver for real while testing (remove before deploy).
   "send_email": [{ "name": "EMAIL", "allowed_sender_addresses": ["noreply@send.relayrunner.app"] }],
   // Webhook dead letters (src/dead-letters.ts), kept out of D1 on purpose: D1 failing is the

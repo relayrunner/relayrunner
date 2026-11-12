@@ -133,9 +133,12 @@ describe("checkPrices", () => {
   beforeAll(async () => {
     const started = await testing.startD1();
     proxy = started.proxy;
+    const { user } = await testing.signIn(started.env);
+    await started.env.DB.prepare("update user set role = 'operator' where id = ?")
+      .bind(user.id)
+      .run();
     env = {
       ...started.env,
-      OPERATOR_ALERT_EMAIL: "ops@example.com",
       EMAIL: { send } as unknown as SendEmail,
     };
   }, 60_000);
