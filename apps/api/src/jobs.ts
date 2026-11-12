@@ -1,3 +1,4 @@
+import { hostedProviderOf } from "@relayrunner/providers";
 import type {
   ActivityJob,
   ActivityRunner,
@@ -9,7 +10,6 @@ import { and, desc, eq, inArray, isNull, type SQL, sql } from "drizzle-orm";
 import { recordEvent } from "./activity.ts";
 import { type Db, schema } from "./db/index.ts";
 import { findInstallation, workspaceIdForInstallation } from "./installations.ts";
-import { cloudProviderFor } from "./cloud-providers.ts";
 import { routeIdFromLabels } from "./routing.ts";
 
 type WorkflowJobMessage = Extract<WebhookMessage, { event: "workflow_job" }>;
@@ -183,8 +183,8 @@ function presentRunner(job: typeof table.$inferSelect, machineName: string | nul
   if (job.machineId || routeIdFromLabels(job.labels))
     return { type: "machine", machineId: job.machineId, name: machineName };
   const label = job.labels.join(", ");
-  const hosted = cloudProviderFor(job.labels);
-  if (hosted) return { type: "hosted", provider: hosted.id, label };
+  const hosted = job.labels.map(hostedProviderOf).find((id) => id !== null);
+  if (hosted) return { type: "hosted", provider: hosted, label };
   return { type: "github", label };
 }
 

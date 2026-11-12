@@ -1,5 +1,5 @@
 import { describe, expect, test } from "vitest";
-import { addedProviderOf, BASE_CATALOG, prefixProblem, providerCatalog } from "./catalog.ts";
+import { catalogProviderOf, BASE_CATALOG, prefixProblem, providerCatalog } from "./catalog.ts";
 
 const row = {
   id: "acme",
@@ -19,12 +19,13 @@ describe("provider catalog", () => {
   test("added providers come before Other, and match their prefixes", () => {
     const catalog = providerCatalog([row]);
     expect(catalog.map((p) => p.id).slice(-2)).toEqual(["acme", "other"]);
-    expect(addedProviderOf(catalog, ["self-hosted", "acme"])).toEqual({
+    expect(catalogProviderOf(catalog, ["self-hosted", "acme"])).toEqual({
       id: "acme",
       name: "Acme",
       label: "acme",
     });
-    expect(addedProviderOf(catalog, ["depot-ubuntu-24.04"])).toBeNull();
+    expect(catalogProviderOf(catalog, ["depot-ubuntu-24.04"])).toMatchObject({ id: "depot" });
+    expect(catalogProviderOf(catalog, ["ubuntu-latest"])).toBeNull();
   });
 
   test("a row for a provider in code keeps its code prefixes", () => {

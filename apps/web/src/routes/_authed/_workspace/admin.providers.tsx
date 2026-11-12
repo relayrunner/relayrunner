@@ -1,7 +1,7 @@
 import type { CatalogProvider } from "@relayrunner/providers/catalog";
 import { createFileRoute, Link } from "@tanstack/react-router";
 import { PencilIcon, PlusIcon, RotateCcwIcon, Trash2Icon } from "lucide-react";
-import { type FormEvent, type ReactNode, useState } from "react";
+import { type FormEvent, useState } from "react";
 import { PageHeader } from "@/components/page-header";
 import { ProviderMark } from "@/components/providers";
 import { Button } from "@/components/ui/button";
@@ -14,6 +14,7 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
+import { Field } from "@/components/ui/field";
 import { Input } from "@/components/ui/input";
 import { timeAgo } from "@/lib/activity";
 import {
@@ -23,7 +24,7 @@ import {
   removeProvider,
   saveProvider,
 } from "@/lib/admin";
-import { ApiError } from "@/lib/api";
+import { errorText } from "@/lib/api";
 import { setProviderCatalog } from "@/lib/provider-catalog";
 
 // Operator admin, behind Cloudflare Access and an operator session
@@ -44,11 +45,6 @@ const ERRORS: Record<string, string> = {
   provider_exists: "There's already a provider with that id.",
   invalid_prefixes: "Add at least one label prefix, three or more characters each.",
   prefix_taken: "Another provider, or GitHub's own runners, already use labels like that.",
-};
-
-const errorText = (caught: unknown) => {
-  const code = caught instanceof ApiError ? caught.code : undefined;
-  return (code && ERRORS[code]) ?? (caught instanceof Error ? caught.message : String(caught));
 };
 
 // Who's editing what: a provider, or a new one.
@@ -287,7 +283,7 @@ function ProviderForm({
       else await saveProvider(editing.id, body);
       await onSaved(isNew ? `Added ${fields.name}.` : `Saved ${fields.name}.`);
     } catch (caught) {
-      setError(errorText(caught));
+      setError(errorText(caught, ERRORS));
     } finally {
       setSaving(false);
     }
@@ -379,15 +375,5 @@ function ProviderForm({
         </Button>
       </DialogFooter>
     </form>
-  );
-}
-
-function Field({ label, hint, children }: { label: string; hint?: string; children: ReactNode }) {
-  return (
-    <label className="grid gap-1 text-sm">
-      {label}
-      {children}
-      {hint && <span className="text-xs text-muted-foreground">{hint}</span>}
-    </label>
   );
 }

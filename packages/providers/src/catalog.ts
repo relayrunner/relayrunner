@@ -88,13 +88,15 @@ export function providerCatalog(rows: ProviderRow[]): CatalogProvider[] {
   return [...base.slice(0, -1), ...added, ...base.slice(-1)];
 }
 
-/** The added provider whose prefixes match one of the (lowercase) labels, with that label. */
-export function addedProviderOf(
+/**
+ * The first provider in the list whose prefixes match one of the (lowercase) labels, with that
+ * label. Providers in code come first, so an added one never takes their labels.
+ */
+export function catalogProviderOf(
   catalog: readonly CatalogProvider[],
   labels: readonly string[],
 ): { id: string; name: string; label: string } | null {
   for (const provider of catalog) {
-    if (provider.builtIn) continue;
     const label = labels.find((l) => matchesPrefix(provider.prefixes, l));
     if (label) return { id: provider.id, name: provider.name, label };
   }

@@ -7,13 +7,10 @@ import {
   priceBook,
   type PricedProvider,
 } from "@relayrunner/providers";
+import { cachedRead } from "./d1-cache.ts";
 import { type Db, schema } from "./db/index.ts";
 
-// How long an isolate reuses the book it read. Operators' own changes clear it at once (see
-// forgetPriceBook); another isolate picks them up within this.
-const CACHE_MS = 60_000;
-
-let cached: { book: Promise<PriceBook>; until: number } | undefined;
+const priceBookCache = cachedRead("price rows", readPriceBook, () => BASE_BOOK);
 
 /** The base prices with the rows operators recorded on top, read from D1 now. */
 export async function readPriceBook(db: Db): Promise<PriceBook> {
@@ -25,23 +22,8 @@ export async function readPriceBook(db: Db): Promise<PriceBook> {
   ]);
 }
 
-/**
- * readPriceBook, reused for CACHE_MS per isolate. If D1 can't be read, the base list alone, so a
- * report still has prices.
- */
-export async function loadPriceBook(db: Db, now = Date.now()): Promise<PriceBook> {
-  if (!cached || now >= cached.until) {
-    const book = readPriceBook(db).catch((error: unknown) => {
-      console.error(JSON.stringify({ msg: "price rows unreadable", error: String(error) }));
-      cached = undefined;
-      return BASE_BOOK;
-    });
-    cached = { book, until: now + CACHE_MS };
-  }
-  return cached.book;
-}
+/** readPriceBook, cached per isolate; the base list alone if D1 can't be read (d1-cache.ts). */
+export const loadPriceBook = priceBookCache.load;
 
 /** Drops this isolate's cached book, after a price row is added or removed. */
-export function forgetPriceBook() {
-  cached = undefined;
-}
+export const forgetPriceBook = priceBookCache.forget;
