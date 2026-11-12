@@ -451,6 +451,18 @@ export function deviceColumns(device: Device, now: Date) {
   };
 }
 
+/**
+ * The machine columns a hello sets. The OS and architecture are where the machine's jobs run,
+ * which can change between connections: a Mac running `connect --isolated` takes Linux jobs.
+ */
+export function helloColumns(hello: { os: string; arch: string; device?: Device }, now: Date) {
+  return {
+    os: hello.os,
+    arch: hello.arch,
+    ...(hello.device ? deviceColumns(hello.device, now) : {}),
+  };
+}
+
 function base64Url(bytes: Uint8Array) {
   return btoa(String.fromCharCode(...bytes))
     .replace(/\+/g, "-")
