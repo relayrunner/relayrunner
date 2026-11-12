@@ -181,6 +181,15 @@ esac
     expect(fake.calls().join("\n")).not.toContain("build");
   });
 
+  it("keeps the job image when a run allows the local network", async () => {
+    const fake = fakeContainer([]);
+    const options = { slots: 1, command: fake.command, managed: fake.managed };
+    const { image } = await prepareIsolation(options);
+    await prepareIsolation({ ...options, localNetwork: true });
+    expect(fake.images()).toContain(image);
+    expect(JSON.parse(readFileSync(fake.managed, "utf8"))).toEqual([BASE, image]);
+  });
+
   it("removes images earlier runs left behind, and no others", async () => {
     const old = ["ghcr.io/actions/actions-runner:2.337.0", "relayrunner-runner:000000000000"];
     const fake = fakeContainer([...old, "alpine:latest"]);

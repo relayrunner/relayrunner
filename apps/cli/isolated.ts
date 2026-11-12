@@ -208,7 +208,10 @@ export async function prepareIsolation(options: {
       }
     }
   }
-  await pruneImages(options.managed ?? managedImagesFile(), [base, image], mine, tool, log);
+  // The job image stays through a run with `localNetwork`, so the next run without it doesn't
+  // build again.
+  const inUse = [base, jobImage(base)];
+  await pruneImages(options.managed ?? managedImagesFile(), inUse, mine, tool, log);
   return { command, image, localNetwork, debug, runnerVersion, ...vmSize(options.slots) };
 }
 
@@ -315,6 +318,8 @@ function call(command: string, args: string[], debug: DebugLog) {
     child.stdout.on("data", (chunk: Buffer) => (output += chunk.toString()));
     child.stderr.on("data", (chunk: Buffer) => (output += chunk.toString()));
     const done = (code: number | null, extra = "") => {
+      // `image inspect` prints hundreds of lines about the image. Its exit code is the answer.
+      if (args[1] === "inspect") output = "";
       debug.write(`$ ${command} ${args.join(" ")}\n${output}${extra}exit ${code}`);
       resolve(code);
     };
