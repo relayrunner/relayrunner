@@ -6,6 +6,7 @@ import { RunnerError } from "./install.ts";
 import {
   containerName,
   debugLog,
+  dnsMessage,
   dockerfile,
   isolatedLauncher,
   checkFits,
@@ -234,18 +235,23 @@ describe("prepareIsolation", () => {
   });
 
   // A stand-in for `container` that keeps its images as files in <dir>/images and logs each call.
-  function fakeContainer(present: string[]) {
+  // `run` exits with `run`, and a build that `buildError` is given prints it and fails.
+  function fakeContainer(present: string[], { run = 0, buildError = "" } = {}) {
     const images = join(dir, "images");
     const command = join(dir, "container");
     writeFileSync(images, present.map((image) => `${image}\n`).join(""));
+    const build = buildError
+      ? `echo "${buildError}"; exit 1`
+      : `echo "$5" >> "${images}"; echo "built $5"`;
     writeFileSync(
       command,
       `#!/bin/sh
 echo "$*" >> "${join(dir, "calls")}"
 case "$1 $2" in
+  "run --rm") exit ${run} ;;
   "image inspect") grep -qxF "$3" "${images}" ;;
   "image pull") echo "$3" >> "${images}" ;;
-  "build --progress") echo "$5" >> "${images}"; echo "built $5" ;;
+  "build --progress") ${build} ;;
   "image delete") grep -vxF "$3" "${images}" > "${images}.new"; mv "${images}.new" "${images}" ;;
 esac
 `,
@@ -327,6 +333,62 @@ esac
       (caught: unknown) => caught,
     );
     expect((error as RunnerError).message).toContain(debug.path);
+  });
+
+  it("says when VMs can't look up hostnames, before building anything", async () => {
+    const fake = fakeContainer([], { run: 3 });
+    const debug = debugLog(join(dir, "isolated.log"));
+    const error = await prepareIsolation({
+      slots: 1,
+      command: fake.command,
+      managed: fake.managed,
+      debug,
+    }).catch((caught: unknown) => caught);
+    expect(error).toBeInstanceOf(RunnerError);
+    expect((error as RunnerError).code).toBe("ISOLATED_DNS");
+    expect((error as RunnerError).message).toBe(
+      `${dnsMessage(BASE)} Details are in ${debug.path}.`,
+    );
+    expect(fake.calls().join("\n")).not.toContain("build");
+  });
+
+  it("goes on when the DNS check fails for another reason", async () => {
+    const fake = fakeContainer([], { run: 127 });
+    const isolation = await prepareIsolation({
+      slots: 1,
+      command: fake.command,
+      managed: fake.managed,
+    });
+    expect(isolation.image).toBe(jobImage(BASE));
+  });
+
+  it("says when a build fails because it can't look up hostnames", async () => {
+    const fake = fakeContainer([], {
+      buildError: "Temporary failure resolving 'ports.ubuntu.com'",
+    });
+    const error = await prepareIsolation({
+      slots: 1,
+      command: fake.command,
+      managed: fake.managed,
+    }).catch((caught: unknown) => caught);
+    expect((error as RunnerError).code).toBe("ISOLATED_DNS");
+    expect(fake.calls()).toContain("builder delete");
+  });
+
+  it("keeps the build error for other build failures", async () => {
+    const fake = fakeContainer([], { buildError: "no space left on device" });
+    const error = await prepareIsolation({
+      slots: 1,
+      command: fake.command,
+      managed: fake.managed,
+    }).catch((caught: unknown) => caught);
+    expect((error as RunnerError).code).toBe("ISOLATED_IMAGE");
+  });
+
+  it("names the image to check DNS with and the way to run without VMs", () => {
+    const message = dnsMessage(BASE);
+    expect(message).toContain(`container run --rm ${BASE} getent ahostsv4 github.com`);
+    expect(message).toContain("relayrunner connect --no-isolated");
   });
 
   it("says how to install the container tool when it's missing", async () => {
