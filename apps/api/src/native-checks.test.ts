@@ -4,6 +4,7 @@ import {
   jobCommit,
   nativeFreeCheck,
   nativeJob,
+  jobSteps,
   nativeVerdict,
   pullRequestTitle,
   runChecks,
@@ -148,6 +149,20 @@ describe("runChecks", () => {
       reason:
         "The pr-title check reads the pull request's title, so run it on pull_request events.",
     });
+  });
+});
+
+describe("jobSteps", () => {
+  test("names a step as GitHub's runner would", () => {
+    expect(
+      jobSteps([
+        { ...checkStep("checks/lint"), id: "a", name: "__relayrunner_actions" },
+        { ...runStep, id: "b" },
+      ]),
+    ).toEqual([
+      { id: "a", name: "Run relayrunner/actions/checks/lint@v1" },
+      { id: "b", name: "Run pnpm lint" },
+    ]);
   });
 });
 
