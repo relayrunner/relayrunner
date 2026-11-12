@@ -425,6 +425,24 @@ const workflowColumns = workflowColumn.columns([
         "—"
       ),
   }),
+  workflowColumn.accessor((row) => row.wall?.waitMs ?? undefined, {
+    id: "waiting",
+    header: "Waiting",
+    sortFn: "basic",
+    sortDescFirst: true,
+    meta: {
+      ...END,
+      info: (
+        <p>
+          The part of the median spent with no job running, mostly waiting for a runner. The rest is
+          jobs running.
+        </p>
+      ),
+    },
+    cell: ({ row: { original } }) => (
+      <span className="text-muted-foreground">{clock(original.wall?.waitMs ?? null)}</span>
+    ),
+  }),
   workflowColumn.accessor((row) => row.wall?.p90Ms ?? undefined, {
     id: "p90",
     header: "p90",
