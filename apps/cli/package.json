@@ -1,6 +1,6 @@
 {
   "name": "relayrunner",
-  "version": "0.8.0",
+  "version": "0.9.0",
   "description": "Run GitHub Actions jobs on your machine through the RelayRunner gateway.",
   "license": "Apache-2.0",
   "repository": {
