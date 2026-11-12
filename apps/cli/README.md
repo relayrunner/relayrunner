@@ -69,11 +69,12 @@ approved the machine also gets an email, since someone else may have its token.
   macOS 26 and Apple's [container](https://github.com/apple/container/releases)
   tool, started with `container system start`. Each VM starts from GitHub's
   runner image with nothing mounted and is deleted when the job ends. Jobs run
-  on Linux arm64, and Docker isn't available in them yet.
+  on Linux arm64, and Docker works in them. `connect` builds the job image
+  once per runner version.
   - A firewall in the VM lets the job reach the internet but not your Mac or
-    your local network. `connect` builds the job image for it once per runner
-    version. `--local-network` turns the firewall off, for jobs that need
-    something on your network, and skips that build.
+    your local network. It guards against accidents: a job that sets out to
+    remove it can, through Docker. `--local-network` turns the firewall off,
+    for jobs that need something on your network.
   - `--image <image>` starts from another runner image.
   - `connect` removes the images it downloaded or built for older runner
     versions. It never removes images you got yourself.

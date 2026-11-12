@@ -19,10 +19,12 @@ const requireMember = createMiddleware<AppEnv>(async (c, next) => {
   if (c.var.agent && agentWorkspaceId(c.var.agent, workspaceId) === null) {
     return c.json({ error: "not_found" }, 404);
   }
-  const db = createDb(c.env.DB);
-  const membership = await isWorkspaceMember(db, workspaceId, c.var.user!.id);
+  const userId = c.var.user!.id;
+  // A miss asks the primary, in case the replica hasn't caught up with a new workspace.
+  const membership =
+    (await isWorkspaceMember(c.var.db, workspaceId, userId)) ??
+    (await isWorkspaceMember(createDb(c.env.DB), workspaceId, userId));
   if (!membership) return c.json({ error: "not_found" }, 404);
-  c.set("db", db);
   c.set("role", membership.role);
   await next();
 });
