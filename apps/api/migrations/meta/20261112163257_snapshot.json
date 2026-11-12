@@ -1,8 +1,8 @@
 {
   "version": "6",
   "dialect": "sqlite",
-  "id": "abd58250-880e-4e0d-9232-c8e2907dc636",
-  "prevId": "22609b4e-d0b3-4cbd-a530-c4f6d92e996d",
+  "id": "91389fc2-53d3-4287-9094-aabcce5ff758",
+  "prevId": "fe8363ab-b09b-4ae1-8ea4-92f1e11ec7ab",
   "tables": {
     "account": {
       "name": "account",
@@ -1709,6 +1709,13 @@
         "device_reported_at": {
           "name": "device_reported_at",
           "type": "integer",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
+        "cli_version": {
+          "name": "cli_version",
+          "type": "text",
           "primaryKey": false,
           "notNull": false,
           "autoincrement": false

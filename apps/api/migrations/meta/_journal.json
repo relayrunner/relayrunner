@@ -299,8 +299,15 @@
     {
       "idx": 42,
       "version": "6",
-      "when": 1794500503085,
-      "tag": "20261112162143_notification_setting",
+      "when": 1794500040767,
+      "tag": "20261112161400_machine_cli_version",
+      "breakpoints": true
+    },
+    {
+      "idx": 43,
+      "version": "6",
+      "when": 1794501177015,
+      "tag": "20261112163257_notification_setting",
       "breakpoints": true
     }
   ]

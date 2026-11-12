@@ -2,6 +2,7 @@ import { Link, useRouter } from "@tanstack/react-router";
 import {
   BanIcon,
   BoxIcon,
+  CircleArrowUpIcon,
   CopyIcon,
   CpuIcon,
   EllipsisIcon,
@@ -503,6 +504,28 @@ export function MachineJobLink({ jobs }: { jobs: MachineJob[] }) {
   );
 }
 
+/** The machine's CLI version, with an arrow when a newer release is out. */
+export function CliVersion({ cli, prefix = "" }: { cli?: Machine["cli"]; prefix?: string }) {
+  if (!cli) return <NotReported />;
+  return (
+    <span
+      className="flex min-w-0 items-center gap-1.5"
+      title={cli.update ? `relayrunner ${cli.update} is out` : undefined}
+    >
+      <span className="truncate">
+        {prefix}
+        {cli.version}
+      </span>
+      {cli.update && (
+        <>
+          <CircleArrowUpIcon aria-hidden className="size-3.5 shrink-0 text-run" />
+          <span className="sr-only">, update to {cli.update}</span>
+        </>
+      )}
+    </span>
+  );
+}
+
 /** The machine's typical job over 14 days, linked to Job times. */
 export function TypicalJob({ jobTime }: { jobTime?: Stat }) {
   return jobTime && jobTime.samples > 0 ? (
@@ -742,7 +765,7 @@ export function MachineCard({
 
         {specs ? (
           <>
-            {/* Every card fills the same four specs, so each sits in the same place down the grid. */}
+            {/* Every card fills the same specs, so each sits in the same place down the grid. */}
             <dl className="grid min-w-0 grid-cols-2 gap-x-4 gap-y-3 text-xs">
               <Field label="Platform">
                 {platform ? <Value>{platform}</Value> : <NotReported />}
@@ -752,6 +775,9 @@ export function MachineCard({
               </Field>
               <Field label="Runners">
                 {runners != null ? <Value>{runners}</Value> : <NotReported />}
+              </Field>
+              <Field label="CLI">
+                <CliVersion cli={machine.cli} />
               </Field>
               <Field label="Typical job">
                 <TypicalJob jobTime={jobTime} />

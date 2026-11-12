@@ -3,7 +3,7 @@ title: MCP server
 description: Let AI agents read your workspace's runners, runs and usage.
 ---
 
-The MCP server lets an agent answer questions like "why did my last push run on GitHub?" or "which jobs cost the most this month?" without you opening the dashboard. It's read-only, apart from sending feedback.
+The MCP server lets your agent answer questions about your CI without you opening the dashboard. It's read-only, apart from sending feedback.
 
 ```text
 https://agents.relayrunner.app/mcp
@@ -11,15 +11,48 @@ https://agents.relayrunner.app/mcp
 
 ## Connect an agent
 
-Add the URL as a remote MCP server in your client. For Claude Code:
+### Claude Code
+
+Add the server, then run `/mcp` in Claude Code to sign in.
 
 ```sh
 claude mcp add --transport http relayrunner https://agents.relayrunner.app/mcp
 ```
 
-In Cursor, add it under **Settings → MCP**. Other clients that support remote MCP servers with OAuth work the same way.
+### Claude
 
-The first time the agent uses it, your browser opens. Sign in with GitHub, pick which workspaces the agent may read, and approve it. See and disconnect agents under **Settings → Agents** in the dashboard. Disconnecting, or leaving a workspace, cuts the agent off at once.
+In Claude, open **Settings → Connectors** and choose **Add custom connector**. Name it RelayRunner, paste the URL above, then choose **Connect**.
+
+### Cursor
+
+Add this to `~/.cursor/mcp.json`, then choose **Connect** next to RelayRunner in Cursor's MCP settings.
+
+```json
+{ "mcpServers": { "relayrunner": { "url": "https://agents.relayrunner.app/mcp" } } }
+```
+
+### VS Code
+
+Add the server, then start it from the **MCP Servers** list to sign in.
+
+```sh
+code --add-mcp '{"name":"relayrunner","type":"http","url":"https://agents.relayrunner.app/mcp"}'
+```
+
+### Other agents
+
+Add the URL as a remote MCP server (streamable HTTP). The agent signs in with OAuth, so there's no key to paste.
+
+### Signing in
+
+The first time the agent uses it, your browser opens. Sign in with GitHub, pick which workspaces the agent may read, and approve it. The same steps are in the dashboard under **Settings → Agents**, where you can also see and disconnect agents. Disconnecting, or leaving a workspace, cuts the agent off at once.
+
+## Things to ask
+
+- "Are my runners online, and what are they running right now?"
+- "Why did my last push run on GitHub instead of my Mac?"
+- "Which jobs cost the most this month?"
+- "How long does the test job usually take on each runner?"
 
 ## Tools
 

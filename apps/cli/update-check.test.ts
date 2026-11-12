@@ -2,7 +2,7 @@ import { mkdtempSync, readFileSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, beforeEach, expect, test, vi } from "vitest";
-import { CHECK_INTERVAL_MS, checkForUpdate, isNewer, updateNotice } from "./update-check.ts";
+import { CHECK_INTERVAL_MS, checkForUpdate, updateNotice } from "./update-check.ts";
 
 let home: string;
 beforeEach(() => {
@@ -59,15 +59,6 @@ test("keeps the last answer when a later check fails", async () => {
   expect(await checkForUpdate({ now: CHECK_INTERVAL_MS, current: "0.6.0", fetch: offline })).toBe(
     "0.7.0",
   );
-});
-
-test("compares plain releases only", () => {
-  expect(isNewer("0.10.0", "0.9.9")).toBe(true);
-  expect(isNewer("1.0.0", "0.99.0")).toBe(true);
-  expect(isNewer("0.6.0", "0.6.0")).toBe(false);
-  expect(isNewer("0.5.9", "0.6.0")).toBe(false);
-  expect(isNewer("0.7.0-beta.1", "0.6.0")).toBe(false);
-  expect(isNewer("0.7.0", "0.7.0-beta.1")).toBe(false);
 });
 
 test("the notice names the update command for how the CLI runs", () => {

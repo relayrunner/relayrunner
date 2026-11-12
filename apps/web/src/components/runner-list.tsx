@@ -2,6 +2,7 @@ import { useMemo, useState } from "react";
 import { SharingDialog } from "@/components/machine-sharing";
 import {
   BandLabel,
+  CliVersion,
   MachineChip,
   MachineJobLink,
   MachineMenu,
@@ -58,11 +59,19 @@ const columns = column.columns([
     cell: ({ row }) => (
       <span className="flex min-w-0 items-center gap-2.5">
         <MachineChip view={row.original.view} />
-        <span
-          title={row.original.machine.name}
-          className="max-w-40 truncate font-mono text-[13px] font-medium"
-        >
-          {row.original.machine.name}
+        <span className="grid min-w-0 gap-0.5">
+          <span
+            title={row.original.machine.name}
+            className="max-w-40 truncate font-mono text-[13px] font-medium"
+          >
+            {row.original.machine.name}
+          </span>
+          {/* The CLI version under the name, so the row stays narrow enough for the dashboard. */}
+          {row.original.machine.cli && (
+            <span className="flex text-xs text-muted-foreground tabular-nums">
+              <CliVersion cli={row.original.machine.cli} prefix="CLI " />
+            </span>
+          )}
         </span>
       </span>
     ),

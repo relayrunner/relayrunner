@@ -1,3 +1,4 @@
+import cliPackage from "../../cli/package.json" with { type: "json" };
 import type { ActivityPage } from "@relayrunner/activity";
 import { eq } from "drizzle-orm";
 import { afterAll, beforeAll, beforeEach, describe, expect, test, vi } from "vitest";
@@ -467,11 +468,30 @@ describe("machines in the dashboard", () => {
       .where(eq(schema.machine.id, machine.id));
     const [row] = await db.select().from(schema.machine).where(eq(schema.machine.id, machine.id));
     expect(row).toMatchObject({ os: "linux", arch: "arm64" });
-    // Without a device in the hello, the device columns stay as they were.
+    // Without a device in the hello, the device columns stay as they were. A CLI too old to send
+    // its version clears the one an earlier, newer CLI left.
     expect(helloColumns({ os: "macos", arch: "arm64" }, new Date())).toEqual({
       os: "macos",
       arch: "arm64",
+      cliVersion: null,
     });
+  });
+
+  test("shows the CLI version from the last hello, with the release to update to", async () => {
+    const { cookie, machine } = await enroll("cli-version", "zach-mbp");
+    const db = createDb(env.DB);
+    const cliOf = async (cliVersion: string) => {
+      await db
+        .update(schema.machine)
+        .set(helloColumns({ os: "macos", arch: "arm64", cliVersion }, new Date()))
+        .where(eq(schema.machine.id, machine.id));
+      const { machines } = (await (await call("/machines", cookie)).json()) as {
+        machines: { cli: unknown }[];
+      };
+      return machines[0].cli;
+    };
+    expect(await cliOf("0.1.0")).toEqual({ version: "0.1.0", update: cliPackage.version });
+    expect(await cliOf(cliPackage.version)).toEqual({ version: cliPackage.version, update: null });
   });
 
   test("revoking a machine kills its token and hides it", async () => {
