@@ -6,9 +6,18 @@ permissions:
   contents: read
 
 jobs:
+  # Asks RelayRunner where to run `check`. The repo is public, so it never gets a machine: the
+  # workspace's runner order picks Blacksmith or GitHub-hosted.
+  relay:
+    uses: relayrunner/actions/.github/workflows/relay.yml@v1.0.0-beta.5
+    with:
+      blacksmith: blacksmith-2vcpu-ubuntu-2404
+      github: ubuntu-latest
+
   check:
     name: Lint, type-check, and test
-    runs-on: blacksmith-2vcpu-ubuntu-2404
+    needs: relay
+    runs-on: ${{ needs.relay.outputs.runner }}
     env:
       HUSKY: "0"
     steps:
