@@ -201,8 +201,20 @@ export function jobSteps(steps: unknown): { id?: string; name: string }[] {
   if (!Array.isArray(steps)) return [];
   return steps.map((step) => ({
     id: isRecord(step) && typeof step.id === "string" ? step.id : undefined,
-    name: stepLabel(step),
+    name: stepName(step),
   }));
+}
+
+// The name GitHub's runner gives a step: its `name:` from the workflow, or `Run owner/repo@ref`
+// for an action. The step's own `name` field is an internal id, so it is never shown.
+function stepName(step: unknown) {
+  if (!isRecord(step)) return "Run step";
+  const displayName = literal(step.displayName);
+  if (displayName) return displayName;
+  const { name, path, ref } = isRecord(step.reference) ? step.reference : {};
+  if (typeof name !== "string") return "Run step";
+  const action = typeof path === "string" && path ? `${name}/${path}` : name;
+  return `Run ${action}${typeof ref === "string" && ref ? `@${ref}` : ""}`;
 }
 
 function stepLabel(step: unknown) {
