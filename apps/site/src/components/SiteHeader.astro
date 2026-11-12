@@ -11,6 +11,7 @@
  * Narrow screens get a menu button that opens every link (a popover, so it needs no script to
  * open, close on Escape or close on a click outside).
  */
+import BrandSymbol from "./BrandSymbol.astro";
 import ThemeToggle from "./ThemeToggle.astro";
 
 interface Props {
@@ -37,7 +38,7 @@ const pages = [
 <header class="site-header" data-header>
   <div class="wrap header-row">
     <a class="brand" href={home ? "#top" : "/"} aria-label="relayrunner home">
-      <span class="brand-symbol" aria-hidden="true"></span>
+      <BrandSymbol />
       relayrunner
     </a>
     <nav aria-label="Primary">

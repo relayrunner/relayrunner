@@ -7,6 +7,9 @@
  * - a share image for each docs page, with its title and description (src/pages/og/), or the
  *   site's share image for anything else (the 404 page). Starlight doesn't set one.
  * - a link to the page's Markdown version, for agents that look for one.
+ * - a render-blocking `expect` link: the browser keeps the old page on screen until the new one is
+ *   parsed down to its Back / Next links (Pagination.astro), instead of drawing the header and
+ *   sidebar first and the rest a frame later. Pages without them wait for the whole page.
  */
 import Default from "@astrojs/starlight/components/Head.astro";
 import sans from "@fontsource-variable/hanken-grotesk/files/hanken-grotesk-latin-wght-normal.woff2?url";
@@ -23,6 +26,7 @@ const markdown = isDoc ? markdownPath(entry) : undefined;
 <link rel="preload" href={sans} as="font" type="font/woff2" crossorigin />
 <link rel="preload" href={mono} as="font" type="font/woff2" crossorigin />
 <Default />
+<link rel="expect" href="#pagination" blocking="render" />
 <meta property="og:image" content={image} />
 <meta property="og:image:type" content="image/png" />
 <meta property="og:image:width" content="1200" />

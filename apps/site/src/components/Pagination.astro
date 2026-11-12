@@ -2,13 +2,14 @@
 /*
  * Previous / next links as a quiet row under a rule (after the uploads.sh docs): a small
  * uppercase "← Back" / "Next →" label over the page title. Replaces Starlight's boxed cards.
+ * Its id is what Head.astro holds the first paint for, so keep it on the last element of a page.
  */
 const { prev, next } = Astro.locals.starlightRoute.pagination;
 ---
 
 {
   (prev || next) && (
-    <nav class="pager print:hidden" aria-label="Pagination">
+    <nav id="pagination" class="pager print:hidden" aria-label="Pagination">
       {prev ? (
         <a href={prev.href} rel="prev">
           <span class="label">← Back</span>
