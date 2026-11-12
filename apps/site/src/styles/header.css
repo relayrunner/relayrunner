@@ -135,6 +135,7 @@
 }
 .header-actions {
   display: flex;
+  align-items: center;
   gap: 10px;
 }
 .header-actions[data-signed-in] .signed-out,
@@ -142,19 +143,107 @@
   display: none;
 }
 
+/* ---------- Theme toggle and menu ---------- */
+
+.theme-toggle,
+.menu-toggle {
+  align-items: center;
+  justify-content: center;
+  width: 36px;
+  height: 36px;
+  padding: 0;
+  border: 0;
+  border-radius: 8px;
+  background: none;
+  color: var(--ink-2);
+  cursor: pointer;
+}
+.theme-toggle {
+  display: inline-flex;
+}
+.theme-toggle:hover,
+.menu-toggle:hover {
+  color: var(--ink);
+}
+.theme-toggle svg,
+.menu-toggle svg {
+  width: 20px;
+  height: 20px;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 1.8;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+/* Show what a click switches to. Without the theme script the toggle can't work, so hide it. */
+:root[data-theme="dark"] .theme-icon-moon,
+:root:not([data-theme="dark"]) .theme-icon-sun,
+:root:not([data-theme]) .theme-toggle {
+  display: none;
+}
+
+.menu-toggle {
+  display: none;
+}
+.header-actions:not(:has(.site-menu:popover-open)) .menu-close,
+.header-actions:has(.site-menu:popover-open) .menu-open {
+  display: none;
+}
+
+/* A sheet under the header. */
+.site-menu {
+  inset: 64px 0 auto;
+  width: auto;
+  max-width: none;
+  margin: 0;
+  padding: 8px var(--gutter) 16px;
+  border: 0;
+  border-bottom: 1px solid var(--line);
+  background: var(--bg);
+  color: var(--ink);
+  box-shadow: var(--shadow-card);
+}
+.site-menu::backdrop {
+  background: rgba(0, 0, 0, 0.25);
+}
+.site-menu a {
+  display: block;
+  padding-block: 11px;
+  font-size: 17px;
+  font-weight: 500;
+  text-decoration: none;
+}
+.site-menu li + li {
+  border-top: 1px solid var(--line-soft);
+}
+.site-menu-theme {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-top: 8px;
+  padding-top: 8px;
+  border-top: 1px solid var(--line);
+  color: var(--ink-2);
+  font-size: 15px;
+}
+.site-menu-theme .theme-toggle {
+  margin-inline-end: -8px;
+}
+
 @media (max-width: 860px) {
   .nav-page {
     display: none;
   }
-}
-@media (max-width: 640px) {
-  .site-header nav {
-    display: none;
+  .menu-toggle {
+    display: inline-flex;
   }
 }
-/* Too narrow for all three: GitHub is in the footer. */
-@media (max-width: 520px) {
-  .header-actions:not([data-signed-in]) .header-github {
+/* Phones: the menu has the links, GitHub, Sign in and the theme toggle. */
+@media (max-width: 640px) {
+  .site-header nav:not(.site-menu),
+  .header-actions > .header-github,
+  .header-actions > .btn-text,
+  .header-actions > .theme-toggle {
     display: none;
   }
 }

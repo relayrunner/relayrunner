@@ -795,12 +795,10 @@ button {
 }
 
 /* Dark brand tiles need an edge to stand off the dark page. */
-@media (prefers-color-scheme: dark) {
-  :root:not([data-theme="light"])
-    :is(img[src$="/github.svg"], img[src$="/depot.svg"], img[src$="/runs-on.svg"]) {
-    border-radius: 24%;
-    box-shadow: 0 0 0 1px rgba(255, 255, 255, 0.18);
-  }
+:root[data-theme="dark"]
+  :is(img[src$="/github.svg"], img[src$="/depot.svg"], img[src$="/runs-on.svg"]) {
+  border-radius: 24%;
+  box-shadow: 0 0 0 1px rgba(255, 255, 255, 0.18);
 }
 
 /* ---------- Footer ---------- */

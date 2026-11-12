@@ -1,5 +1,6 @@
 ---
 // Moved verbatim from terms.html. Astro bundles the imported CSS into the page's <head>.
+import ThemeProvider from "../components/ThemeProvider.astro";
 import "../style.css";
 import "../legal.css";
 
@@ -11,6 +12,7 @@ const site = Astro.site!.origin;
   <head>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <ThemeProvider />
     <title>Terms of Service · relayrunner</title>
     <meta
       name="description"

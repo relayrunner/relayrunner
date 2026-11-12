@@ -7,16 +7,31 @@
  * Signed-in visitors get Open dashboard in place of Sign in and Get started. The dashboard sets the
  * rr_signed_in cookie on this domain (apps/web/src/lib/auth-client.ts); the inline script reads it
  * before the buttons paint, so they don't flicker.
+ *
+ * Narrow screens get a menu button that opens every link (a popover, so it needs no script to
+ * open, close on Escape or close on a click outside).
  */
+import ThemeToggle from "./ThemeToggle.astro";
+
 interface Props {
   /** Set on the home page, where the links scroll to sections instead of navigating. */
   home?: boolean;
+  /** The narrow-screen menu. The docs turn it off: Starlight has its own. */
+  menu?: boolean;
 }
 
-const { home = false } = Astro.props;
+const { home = false, menu = true } = Astro.props;
 const to = (hash: string) => (home ? hash : `/${hash}`);
 const inDocs = Astro.url.pathname.startsWith("/docs");
 const DASHBOARD = "https://app.relayrunner.app";
+const LOGIN = `${DASHBOARD}/login`;
+const GITHUB = "https://github.com/relayrunner/relayrunner";
+const pages = [
+  ["#providers", "Providers"],
+  ["#how", "How it works"],
+  ["#checks", "Optimized checks"],
+  ["#safety", "Security"],
+];
 ---
 
 <header class="site-header" data-header>
@@ -28,10 +43,13 @@ const DASHBOARD = "https://app.relayrunner.app";
     <nav aria-label="Primary">
       <ul class="nav-links">
         <li><a href="/docs" aria-current={inDocs ? "page" : undefined}>Docs</a></li>
-        <li class="nav-page"><a href={to("#providers")}>Providers</a></li>
-        <li class="nav-page"><a href={to("#how")}>How it works</a></li>
-        <li class="nav-page"><a href={to("#checks")}>Optimized checks</a></li>
-        <li class="nav-page"><a href={to("#safety")}>Security</a></li>
+        {
+          pages.map(([hash, label]) => (
+            <li class="nav-page">
+              <a href={to(hash)}>{label}</a>
+            </li>
+          ))
+        }
       </ul>
     </nav>
     <div class="header-actions">
@@ -40,12 +58,55 @@ const DASHBOARD = "https://app.relayrunner.app";
           document.currentScript.parentElement.dataset.signedIn = "";
         }
       </script>
-      <a class="btn-ghost btn-sm header-github" href="https://github.com/relayrunner/relayrunner"
+      <ThemeToggle />
+      <a class="btn-ghost btn-sm header-github" href={GITHUB}
         >GitHub</a
       >
-      <a class="btn-text btn-sm signed-out" href={`${DASHBOARD}/login`}>Sign in</a>
+      <a class="btn-text btn-sm signed-out" href={LOGIN}>Sign in</a>
       <a class="btn-go btn-sm signed-out" href={to("#start")}>Get started</a>
       <a class="btn-go btn-sm signed-in" href={DASHBOARD}>Open dashboard</a>
+      {
+        menu && (
+          <>
+            <button
+              class="menu-toggle"
+              type="button"
+              popovertarget="site-menu"
+              aria-label="Menu"
+            >
+              <svg viewBox="0 0 24 24" aria-hidden="true">
+                <path class="menu-open" d="M4 7h16M4 12h16M4 17h16" />
+                <path class="menu-close" d="M6 6l12 12M18 6L6 18" />
+              </svg>
+            </button>
+            <nav id="site-menu" class="site-menu" popover aria-label="Menu" data-site-menu>
+              <ul>
+                <li>
+                  <a href="/docs">Docs</a>
+                </li>
+                {pages.map(([hash, label]) => (
+                  <li>
+                    <a href={to(hash)}>{label}</a>
+                  </li>
+                ))}
+                <li>
+                  <a href={GITHUB}>GitHub</a>
+                </li>
+                <li class="signed-out">
+                  <a href={LOGIN}>Sign in</a>
+                </li>
+                <li class="signed-in">
+                  <a href={DASHBOARD}>Open dashboard</a>
+                </li>
+              </ul>
+              <div class="site-menu-theme">
+                Theme
+                <ThemeToggle />
+              </div>
+            </nav>
+          </>
+        )
+      }
     </div>
   </div>
 </header>
