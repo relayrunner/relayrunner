@@ -10,7 +10,13 @@ import { installationRunnerScope } from "../installations.ts";
 import { mintMachineRunner } from "../machine-runner.ts";
 import { originFromJson, type RequestOrigin } from "../device-origin.ts";
 import { sendEmail } from "../email.ts";
-import { helloColumns, issuePendingToken, pausedByName, promotePendingToken } from "../machines.ts";
+import {
+  helloChanged,
+  helloColumns,
+  issuePendingToken,
+  pausedByName,
+  promotePendingToken,
+} from "../machines.ts";
 import { takeHold, type MachineHold, type Route } from "../routing.ts";
 import {
   CLOSE,
@@ -101,15 +107,19 @@ export class MachineLink extends DurableObject<Env> {
           cliVersion: outcome.state.hello.cliVersion ?? null,
         },
       });
-      await db
-        .update(schema.machine)
-        .set(helloColumns(outcome.state.hello, new Date()))
-        .where(eq(schema.machine.id, session.machineId));
       const [machine] = await db
         .select()
         .from(schema.machine)
         .where(eq(schema.machine.id, session.machineId))
         .limit(1);
+      // Written only when it changed: a deploy reconnects every machine at once, and most report
+      // the same OS and device as last time.
+      const columns = helloColumns(outcome.state.hello, new Date());
+      if (machine && helloChanged(machine, columns))
+        await db
+          .update(schema.machine)
+          .set(columns)
+          .where(eq(schema.machine.id, session.machineId));
       if (machine?.pausedAt) ws.send(pausedFrame(true, await pausedByName(db, machine)));
       // Rotate the token on every connect, so a copy of the token file taken earlier stops
       // working once the CLI saves the new one (TokenMessage in @relayrunner/machine-protocol).

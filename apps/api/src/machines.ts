@@ -463,6 +463,19 @@ export function helloColumns(hello: { os: string; arch: string; device?: Device 
   };
 }
 
+/**
+ * Whether a machine row holds anything other than what `columns` (helloColumns) set, apart from
+ * when the device was reported.
+ */
+export function helloChanged(
+  row: Record<string, unknown>,
+  columns: ReturnType<typeof helloColumns>,
+) {
+  return Object.entries(columns).some(
+    ([key, value]) => key !== "deviceReportedAt" && row[key] !== value,
+  );
+}
+
 function base64Url(bytes: Uint8Array) {
   return btoa(String.fromCharCode(...bytes))
     .replace(/\+/g, "-")

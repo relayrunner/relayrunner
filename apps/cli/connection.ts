@@ -70,6 +70,8 @@ export interface ConnectOptions {
   // Reconnect delay before jitter: min(maxBackoffMs, minBackoffMs * 2^attempt).
   minBackoffMs?: number;
   maxBackoffMs?: number;
+  // After a connection that was up drops, the first retry waits a random time up to this.
+  reconnectSpreadMs?: number;
 }
 
 // Node's WebSocket is undici's, which takes headers on its init object (the browser one can't
@@ -87,7 +89,7 @@ export function connectUrl(server: string) {
 
 export function backoff(attempt: number, min: number, max: number, random = Math.random) {
   const base = Math.min(max, min * 2 ** Math.max(0, attempt - 1));
-  // ±25% so a gateway deploy doesn't get every machine back in the same instant.
+  // ±25% so machines that keep failing don't retry in step.
   return Math.round(base * (0.75 + random() * 0.5));
 }
 
@@ -95,6 +97,7 @@ export async function connect(options: ConnectOptions): Promise<ConnectionEnd> {
   const heartbeatMs = options.heartbeatMs ?? 30_000;
   const minBackoffMs = options.minBackoffMs ?? 1_000;
   const maxBackoffMs = options.maxBackoffMs ?? 30_000;
+  const reconnectSpreadMs = options.reconnectSpreadMs ?? 10_000;
   const emit = options.onEvent ?? (() => {});
   const signal = options.signal;
 
@@ -265,7 +268,11 @@ export async function connect(options: ConnectOptions): Promise<ConnectionEnd> {
       return { reason: "rejected", message: gatewayError || reason || "protocol error" };
     if (!opened && (await tokenRejected())) return { reason: "revoked" };
 
-    const retryInMs = backoff(attempt, minBackoffMs, maxBackoffMs);
+    // A gateway deploy drops every machine at once. Spreading their first retry over a few
+    // seconds keeps them from all reconnecting in the same instant.
+    const retryInMs = opened
+      ? Math.round(Math.random() * reconnectSpreadMs)
+      : backoff(attempt, minBackoffMs, maxBackoffMs);
     emit({ type: "disconnected", code, reason, retryInMs });
     await delay(retryInMs, signal);
   }
