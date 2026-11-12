@@ -5,7 +5,7 @@ import { Brand } from "@/components/brand";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
-import { authDisabled, getSession, organization, signIn } from "@/lib/auth-client";
+import { authDisabled, getSession, signIn } from "@/lib/auth-client";
 import {
   githubInstallHref,
   githubOutcomes,
@@ -40,8 +40,9 @@ import { cn } from "@/lib/utils";
 //    back without installing (?install=opened), so cancelling doesn't loop. A non-admin's install
 //    only sends a request to the org's owners, so with ?github=requested they may carry on and
 //    jobs start once an owner accepts. Anyone already in a workspace skips this step.
-// 2. Pick the machine's name and approve. The machine is the user's (#318): it isn't tied to a
-//    workspace, and takes their jobs in every workspace they're in, so there's nothing to pick.
+// 2. Pick the machine's name and the workspaces it takes jobs in, and approve. The machine is the
+//    user's (#318); workspaces they installed start ticked, ones they only joined through GitHub
+//    start unticked (#364), so an org that adds them never gets their machine unless they pick it.
 //    The CLI picks up its machine token on its next poll.
 //
 // The device code lives 15 minutes (apps/api/src/auth.ts): enough for all of that, short enough
@@ -53,7 +54,8 @@ type DeviceSearch = {
   install?: "opened";
 };
 
-type Workspace = { id: string; name: string };
+// `joined`: a workspace the user only joined through GitHub, so it starts unticked.
+type Workspace = { id: string; name: string; joined: boolean };
 
 type Loaded =
   | { kind: "enter" }
@@ -66,7 +68,7 @@ type Loaded =
       userCode: string;
       // When and where the CLI asked for the code (null in dev).
       origin: Pick<DeviceCodeStatus, "requested_at" | "requested_from"> | null;
-      // Every workspace the user is in; the machine takes their jobs in all of them.
+      // Every workspace the user is in, to pick where the machine takes jobs.
       workspaces: Workspace[];
     };
 
@@ -93,7 +95,11 @@ export const Route = createFileRoute("/device")({
         kind: "review",
         userCode: deps.userCode,
         origin: null,
-        workspaces: [{ id: "dev", name: "Dev workspace" }],
+        workspaces: [
+          { id: "dev", name: "relayrunner", joined: false },
+          { id: "personal", name: "atticoos", joined: false },
+          { id: "acme", name: "acme-labs", joined: true },
+        ],
       };
     if (!context.session) return { kind: "signin" };
     let status: DeviceCodeStatus;
@@ -103,8 +109,11 @@ export const Route = createFileRoute("/device")({
       return { kind: "error", message: describeDeviceError(error) };
     }
     if (status.status !== "pending") return { kind: "done", status: status.status };
-    const { data } = await organization.list();
-    const workspaces = (data ?? []).map(({ id, name }) => ({ id, name }));
+    const workspaces = (status.workspaces ?? []).map(({ id, name, joined }) => ({
+      id,
+      name,
+      joined,
+    }));
     // No workspace yet: installing the App makes one, so go straight to GitHub.
     if (
       shouldOpenInstall({
@@ -422,12 +431,31 @@ function ApproveStep({
   const [error, setError] = useState<string | null>(null);
   // Only reachable with no workspace after a request to an org's owners (onboardingStep).
   const awaitingOwner = workspaces.length === 0;
+  const [picked, setPicked] = useState(
+    () => new Set(workspaces.filter((workspace) => !workspace.joined).map((w) => w.id)),
+  );
+  // The API needs at least one workspace whenever the user has any.
+  const nonePicked = !awaitingOwner && picked.size === 0;
+  function toggle(id: string) {
+    setPicked((current) => {
+      const next = new Set(current);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
+  }
 
   async function act(action: "approve" | "deny") {
     setError(null);
     setPending(action);
     try {
-      if (action === "approve") await approveDevice({ userCode, name: name.trim() });
+      if (action === "approve")
+        await approveDevice({
+          userCode,
+          name: name.trim(),
+          // Left out with no workspace yet: the API puts it in the first one they install.
+          workspaceIds: awaitingOwner ? undefined : [...picked],
+        });
       else await denyDevice(userCode);
       onDone({
         action: action === "approve" ? "approved" : "denied",
@@ -446,7 +474,7 @@ function ApproveStep({
         <CardTitle>Connect a machine</CardTitle>
         <CardDescription>
           Check that this code matches your terminal. Approving lets the machine run your jobs,
-          private repos included, in every workspace you're in.
+          private repos included, in the workspaces you pick.
         </CardDescription>
       </CardHeader>
       <CardContent>
@@ -478,7 +506,9 @@ function ApproveStep({
             {formatUserCode(userCode)}
           </p>
           <RequestOrigin origin={origin} />
-          {workspaces.length > 0 && <WorkspaceList workspaces={workspaces} />}
+          {workspaces.length > 0 && (
+            <WorkspacePicker workspaces={workspaces} picked={picked} onToggle={toggle} />
+          )}
           <label className="grid gap-1.5 text-sm font-medium">
             Machine name
             <Input
@@ -495,10 +525,15 @@ function ApproveStep({
               type="submit"
               size="lg"
               className="w-full font-bold"
-              disabled={pending !== null || !name.trim()}
+              disabled={pending !== null || !name.trim() || nonePicked}
             >
               {pending === "approve" ? "Approving…" : "Approve"}
             </Button>
+            {nonePicked && (
+              <p className="text-center text-sm text-muted-foreground">
+                Pick at least one workspace.
+              </p>
+            )}
             <Button
               type="button"
               variant="ghost"
@@ -516,15 +551,39 @@ function ApproveStep({
   );
 }
 
-// Where the machine will take jobs. Read-only: a machine is in all of its owner's workspaces.
-function WorkspaceList({ workspaces }: { workspaces: Workspace[] }) {
+// Which workspaces the machine takes jobs in. Ones the user installed start ticked; ones they
+// only joined through GitHub start unticked, so an org that invites them never gets their machine
+// without them choosing it.
+function WorkspacePicker({
+  workspaces,
+  picked,
+  onToggle,
+}: {
+  workspaces: Workspace[];
+  picked: Set<string>;
+  onToggle: (id: string) => void;
+}) {
   return (
-    <p className="text-center text-sm text-muted-foreground">
-      Runs your jobs in{" "}
-      <span className="font-medium text-foreground">
-        {workspaces.map((workspace) => workspace.name).join(", ")}
-      </span>
-    </p>
+    <fieldset className="grid gap-1.5">
+      <legend className="mb-1.5 text-sm font-medium">Run jobs in</legend>
+      <div className="divide-y rounded-md border">
+        {workspaces.map((workspace) => (
+          <label
+            key={workspace.id}
+            className="flex cursor-pointer items-center gap-2.5 px-3 py-2 text-sm hover:bg-accent/40"
+          >
+            <input
+              type="checkbox"
+              className="size-4 accent-[var(--color-go)]"
+              checked={picked.has(workspace.id)}
+              onChange={() => onToggle(workspace.id)}
+            />
+            <span className="min-w-0 flex-1 truncate font-mono">{workspace.name}</span>
+            {workspace.joined && <span className="text-xs text-muted-foreground">Joined</span>}
+          </label>
+        ))}
+      </div>
+    </fieldset>
   );
 }
 
