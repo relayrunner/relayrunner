@@ -69,19 +69,19 @@ const MORE_PROVIDERS = KNOWN_PROVIDERS.filter(
         <p class="eyebrow">Open source · Smart routing for GitHub Actions</p>
         <h1>One router for <span class="hl">every CI&nbsp;runner.</span></h1>
         <p class="lede">
-          relayrunner sends each GitHub Actions job to the best runner available right now: your own
-          machines, self-hosted runners, a cloud provider like Blacksmith, or GitHub-hosted. Change
-          the order any time. Your workflows don't change.
+          Turn any Mac or Linux box into a runner with one command. relayrunner then sends each
+          GitHub Actions job to the best runner available right now: your machines, self-hosted
+          runners, a cloud provider like Blacksmith, or GitHub-hosted. Your workflows don't change.
         </p>
         <div class="hero-actions">
           <a class="btn-go btn-lg" href="https://app.relayrunner.app">Get started with GitHub</a>
-          <button class="cmd" type="button" data-copy-inline="npx relayrunner init">
-            <span aria-hidden="true">$</span> <code>npx relayrunner init</code>
+          <button class="cmd" type="button" data-copy-inline="npx relayrunner connect">
+            <span aria-hidden="true">$</span> <code>npx relayrunner connect</code>
             <span class="visually-hidden">Copy command</span>
           </button>
         </div>
         <p class="hero-note">
-          Or
+          That command turns this computer into a runner. Or
           <button
             class="link-btn"
             type="button"
@@ -101,6 +101,8 @@ const MORE_PROVIDERS = KNOWN_PROVIDERS.filter(
             <div class="term">
               <div class="term-bar">~/acme-api</div>
               <div class="term-body">
+                <div><span class="mute">$</span> npx relayrunner connect</div>
+                <div class="go-text">✓ Online. Waiting for jobs.</div>
                 <div><span class="mute">$</span> git push</div>
                 <div class="mute">→ ci / test · PR #<span data-pr>482</span></div>
               </div>
@@ -178,6 +180,49 @@ const MORE_PROVIDERS = KNOWN_PROVIDERS.filter(
         </div>
       </section>
 
+      <!-- Your machine -->
+      <section class="section wrap feature" id="connect">
+        <div class="feature-copy">
+          <p class="kicker">Your machine</p>
+          <h2>Any computer is a runner. <span class="hl">One command.</span></h2>
+          <p class="body">
+            Run <code>npx relayrunner connect</code> on a laptop, Mac mini or home server and it starts
+            taking jobs. Close the lid and the next job goes elsewhere. Share it with your team or keep
+            it to yourself.
+          </p>
+        </div>
+        <div class="panel connect-panel" aria-hidden="true">
+          <div class="term">
+            <div class="term-bar">~/acme-api</div>
+            <div class="term-body">
+              <div><span class="mute">$</span> npx relayrunner connect</div>
+              <div class="go-text">✓ Zach's MacBook Pro is online</div>
+              <div class="mute">→ ci / test · running here</div>
+              <div class="mute">→ ci / typecheck · done in 48s</div>
+            </div>
+          </div>
+          <div class="machines">
+            <div class="machine">
+              <b
+                ><img src="/providers/machines.svg" alt="" width="24" height="24" />Zach's MacBook
+                Pro</b
+              >
+              <code>macOS · ARM64 · 12 cores · 36 GB</code>
+              <div class="machine-foot">
+                <span>Zach · shared with team</span><span><i class="dot go-dot"></i>online</span>
+              </div>
+            </div>
+            <div class="machine">
+              <b><img src="/providers/machines.svg" alt="" width="24" height="24" />build-mini</b>
+              <code>macOS · ARM64 · 10 cores · 32 GB</code>
+              <div class="machine-foot">
+                <span>Atticus · private</span><span><i class="dot run-dot"></i>paused</span>
+              </div>
+            </div>
+          </div>
+        </div>
+      </section>
+
       <!-- Providers -->
       <section class="section wrap" id="providers" aria-labelledby="providers-h">
         <div class="split-head">
@@ -197,9 +242,10 @@ const MORE_PROVIDERS = KNOWN_PROVIDERS.filter(
             <img src="/providers/machines.svg" alt="" width="48" height="48" />
             <h3>Your machines</h3>
             <p>
-              Macs and Linux boxes take one job at a time while they're on. Close the lid and jobs
-              go elsewhere.
+              One command turns a Mac or Linux box into a runner. Close the lid and jobs go
+              elsewhere.
             </p>
+            <code class="provider-cmd">npx relayrunner connect</code>
           </li>
           <li class="provider-card">
             <img src="/providers/self-hosted.svg" alt="" width="48" height="48" />
@@ -294,40 +340,16 @@ const MORE_PROVIDERS = KNOWN_PROVIDERS.filter(
         </div>
       </section>
 
-      <!-- Bring your own -->
+      <!-- See -->
       <section class="section wrap feature">
         <div class="feature-copy">
-          <p class="kicker">Bring your own</p>
-          <h2>Your machines take jobs <span class="hl">while they're on.</span></h2>
+          <p class="kicker">See</p>
+          <h2>Compare providers <span class="hl">on your own jobs.</span></h2>
           <p class="body">
-            Run <code>relayrunner connect</code> and your laptop, Mac mini or home server takes jobs.
-            Close the laptop and the next job goes elsewhere. Share a machine with your team or keep
-            it to yourself.
+            Every job shows where it ran and why. Job times compare runners side by side, and each
+            provider has a page with your usage.
           </p>
         </div>
-        <div class="panel machines" aria-hidden="true">
-          <div class="machine">
-            <b
-              ><img src="/providers/machines.svg" alt="" width="24" height="24" />Zach's MacBook
-              Pro</b
-            >
-            <code>macOS · ARM64 · 12 cores · 36 GB</code>
-            <div class="machine-foot">
-              <span>Zach · shared with team</span><span><i class="dot go-dot"></i>online</span>
-            </div>
-          </div>
-          <div class="machine">
-            <b><img src="/providers/machines.svg" alt="" width="24" height="24" />build-mini</b>
-            <code>macOS · ARM64 · 10 cores · 32 GB</code>
-            <div class="machine-foot">
-              <span>Atticus · private</span><span><i class="dot run-dot"></i>paused</span>
-            </div>
-          </div>
-        </div>
-      </section>
-
-      <!-- See -->
-      <section class="section wrap feature feature-flip">
         <div class="panel" aria-hidden="true">
           <div class="times">
             <div class="times-row times-head">
@@ -356,26 +378,10 @@ const MORE_PROVIDERS = KNOWN_PROVIDERS.filter(
             </div>
           </div>
         </div>
-        <div class="feature-copy">
-          <p class="kicker">See</p>
-          <h2>Compare providers <span class="hl">on your own jobs.</span></h2>
-          <p class="body">
-            Every job shows where it ran and why. Job times compare runners side by side, and each
-            provider has a page with your usage.
-          </p>
-        </div>
       </section>
 
       <!-- Free checks -->
-      <section class="section wrap feature" id="checks">
-        <div class="feature-copy">
-          <p class="kicker">Free checks</p>
-          <h2>Some checks <span class="hl">need no runner.</span></h2>
-          <p class="body">
-            PR title and lint checks (oxlint, ruff, actionlint and more) run inside relayrunner and
-            post results to your pull request. No runner, no billed minute.
-          </p>
-        </div>
+      <section class="section wrap feature feature-flip" id="checks">
         <div class="panel" aria-hidden="true">
           <ul class="checks">
             <li>
@@ -391,6 +397,14 @@ const MORE_PROVIDERS = KNOWN_PROVIDERS.filter(
               ><code>0 min billed</code>
             </li>
           </ul>
+        </div>
+        <div class="feature-copy">
+          <p class="kicker">Free checks</p>
+          <h2>Some checks <span class="hl">need no runner.</span></h2>
+          <p class="body">
+            PR title and lint checks (oxlint, ruff, actionlint and more) run inside relayrunner and
+            post results to your pull request. No runner, no billed minute.
+          </p>
         </div>
       </section>
 
@@ -423,16 +437,27 @@ const MORE_PROVIDERS = KNOWN_PROVIDERS.filter(
         <div class="close">
           <div class="close-copy">
             <h2 id="start-h">Put every runner to work.</h2>
-            <p>
-              Run this in the repo you want to route. It sets up the jobs you pick, keeps their old
-              runner as the fallback, and never commits.
-            </p>
-            <div class="instruction">
-              <code><span class="mute" aria-hidden="true">$ </span>npx relayrunner init</code>
-              <button class="copy-btn" type="button" data-copy="npx relayrunner init">
-                <span data-copy-label>Copy</span>
-              </button>
-            </div>
+            <p>Connect a computer, then route a repo's jobs to it. Your old runners stay as the fallback.</p>
+            <ol class="steps">
+              <li>
+                <span class="step-label">1. Turn this computer into a runner</span>
+                <div class="instruction">
+                  <code><span class="mute" aria-hidden="true">$ </span>npx relayrunner connect</code>
+                  <button class="copy-btn" type="button" data-copy="npx relayrunner connect">
+                    <span data-copy-label>Copy</span>
+                  </button>
+                </div>
+              </li>
+              <li>
+                <span class="step-label">2. In your repo, pick the jobs to route</span>
+                <div class="instruction">
+                  <code><span class="mute" aria-hidden="true">$ </span>npx relayrunner init</code>
+                  <button class="copy-btn" type="button" data-copy="npx relayrunner init">
+                    <span data-copy-label>Copy</span>
+                  </button>
+                </div>
+              </li>
+            </ol>
           </div>
           <img
             class="close-mascot"
