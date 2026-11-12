@@ -4,7 +4,7 @@ import {
   type RunnerKey,
   type RunnerStep,
 } from "@relayrunner/runner-order";
-import { createFileRoute, useRouter } from "@tanstack/react-router";
+import { createFileRoute, Link, useRouter } from "@tanstack/react-router";
 import {
   CheckIcon,
   ChevronsDownUpIcon,
@@ -276,7 +276,11 @@ function RunnersPage() {
           )
         }
       >
-        Self-hosted and cloud runners for your jobs.
+        Self-hosted and cloud runners for your jobs.{" "}
+        <Link to="/settings/agents" className="text-foreground underline underline-offset-2">
+          Connect your agent
+        </Link>{" "}
+        to check on them without opening the dashboard.
       </PageHeader>
       <TooltipProvider>
         <div className="grid max-w-5xl gap-8">

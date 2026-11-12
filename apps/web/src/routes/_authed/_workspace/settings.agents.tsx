@@ -11,6 +11,7 @@ import {
   CardTitle,
 } from "@/components/ui/card";
 import { CopyCommand } from "@/components/add-runner";
+import { DOCS_URL } from "@/components/site-footer";
 import { disconnectAgent, listAgents, type ConnectedAgent } from "@/lib/agents";
 import { cn } from "@/lib/utils";
 
@@ -25,7 +26,14 @@ function AgentSettingsPage() {
     <section>
       <PageHeader title="Agents">
         Connect an AI agent to RelayRunner's MCP server to ask about your runners, runs and usage.
-        Agents read the workspaces you pick when you connect them and can't change anything.
+        Agents read the workspaces you pick when you connect them and can't change anything.{" "}
+        <a
+          href={`${DOCS_URL}/reference/mcp`}
+          className="text-foreground underline underline-offset-2"
+        >
+          See what they can read
+        </a>
+        .
       </PageHeader>
       <div className="grid max-w-3xl gap-4">
         <ConnectGuide mcpUrl={mcpUrl} />

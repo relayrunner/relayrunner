@@ -309,6 +309,9 @@ export const machine = sqliteTable(
     memoryMb: integer("memory_mb"),
     osVersion: text("os_version"),
     deviceReportedAt: integer("device_reported_at", { mode: "timestamp_ms" }),
+    // 'connect' only: the relayrunner CLI version from its last hello, such as "0.7.0". Null for
+    // CLIs older than 0.7.0, which don't send it.
+    cliVersion: text("cli_version"),
     ...timestamps,
   },
   (table) => [
