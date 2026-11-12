@@ -111,7 +111,6 @@
   width: 28px;
   height: 28px;
   flex-shrink: 0;
-  background: url("/assets/runner-head.svg") center / contain no-repeat;
 }
 .brand-sm {
   font-size: 16px;

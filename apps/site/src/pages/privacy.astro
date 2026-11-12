@@ -1,5 +1,6 @@
 ---
 // Moved verbatim from privacy.html. Astro bundles the imported CSS into the page's <head>.
+import BrandSymbol from "../components/BrandSymbol.astro";
 import ThemeProvider from "../components/ThemeProvider.astro";
 import "../style.css";
 import "../legal.css";
@@ -30,7 +31,7 @@ const site = Astro.site!.origin;
     <header class="site-header">
       <div class="wrap header-row">
         <a class="brand" href="/" aria-label="relayrunner home">
-          <span class="brand-symbol" aria-hidden="true"></span>
+          <BrandSymbol />
           relayrunner
         </a>
         <nav aria-label="Primary">
@@ -260,7 +261,7 @@ const site = Astro.site!.origin;
     <footer class="site-footer">
       <div class="wrap footer-row">
         <a class="brand brand-sm" href="/">
-          <span class="brand-symbol" aria-hidden="true"></span>
+          <BrandSymbol />
           relayrunner
         </a>
         <ul>

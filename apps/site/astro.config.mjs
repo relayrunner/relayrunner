@@ -119,6 +119,10 @@ export default defineConfig({
           items: ["docs/contribute/add-provider", "docs/contribute/feedback"],
         },
       ],
+      // Put the code block styles inline in each page. By default they're a separate stylesheet
+      // linked from the first code block, in the body, so a page change paints the header first
+      // and the rest only once that file arrives: on pages with code, the docs blinked.
+      expressiveCode: { emitExternalStylesheet: false },
       // Flat, non-collapsing sidebar, and the page title with its description under it.
       components: {
         Sidebar: "./src/components/Sidebar.astro",

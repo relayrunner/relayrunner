@@ -1,5 +1,6 @@
 ---
 // Moved from index.html; the header is now the shared SiteHeader. Astro bundles the imported CSS into the page's <head>.
+import BrandSymbol from "../components/BrandSymbol.astro";
 import LandingRelay from "../components/LandingRelay.astro";
 import SiteHeader from "../components/SiteHeader.astro";
 import ThemeProvider from "../components/ThemeProvider.astro";
@@ -476,7 +477,7 @@ const MORE_PROVIDERS = KNOWN_PROVIDERS.filter(
     <footer class="site-footer">
       <div class="wrap footer-row">
         <a class="brand brand-sm" href="#top">
-          <span class="brand-symbol" aria-hidden="true"></span>
+          <BrandSymbol />
           relayrunner
         </a>
         <ul>
