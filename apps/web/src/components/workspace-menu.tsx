@@ -20,7 +20,8 @@ import {
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
-import { authDisabled, organization, signOut, useListOrganizations } from "@/lib/auth-client";
+import { authDisabled, organization, useListOrganizations } from "@/lib/auth-client";
+import { signOut } from "@/lib/session";
 import { githubInstallHref } from "@/lib/github";
 import { setTheme, useTheme, type Theme } from "@/lib/theme";
 import { cn } from "@/lib/utils";

@@ -9,6 +9,13 @@ export class ApiError extends Error {
   }
 }
 
+let errorListener: ((error: ApiError, path: string) => void) | undefined;
+
+/** Hears every non-2xx answer, such as a 401 that means the session ended (lib/session.ts). */
+export function onApiError(listener: (error: ApiError, path: string) => void) {
+  errorListener = listener;
+}
+
 /**
  * Thin fetch wrapper for the gateway API (apps/api), served from /api on the
  * dashboard's origin. Sends cookies so Better Auth sessions apply.
@@ -21,7 +28,13 @@ export async function api<T>(path: string, init?: RequestInit): Promise<T> {
   });
   if (!res.ok) {
     const body = (await res.json().catch(() => null)) as { error?: string } | null;
-    throw new ApiError(`API ${res.status} ${res.statusText} for ${path}`, res.status, body?.error);
+    const error = new ApiError(
+      `API ${res.status} ${res.statusText} for ${path}`,
+      res.status,
+      body?.error,
+    );
+    errorListener?.(error, path);
+    throw error;
   }
   return (await res.json()) as T;
 }

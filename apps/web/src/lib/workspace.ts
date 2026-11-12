@@ -1,5 +1,4 @@
 import { api } from "@/lib/api";
-import { organization, type Session } from "@/lib/auth-client";
 
 /** A GitHub App installation: the org or personal account it's on and what it can see. */
 export type Installation = {
@@ -42,17 +41,4 @@ export type RateLimits = {
 
 export function getRateLimits(installationId: number) {
   return api<RateLimits>(`/github/installations/${installationId}/rate-limit`);
-}
-
-/**
- * Makes sure the session has an active workspace, picking the user's first one
- * if none is set. Returns null when the user has no workspace yet.
- */
-export async function ensureActiveWorkspace(session: Session): Promise<string | null> {
-  if (session.session.activeOrganizationId) return session.session.activeOrganizationId;
-  const { data: workspaces } = await organization.list();
-  const first = workspaces?.[0];
-  if (!first) return null;
-  await organization.setActive({ organizationId: first.id });
-  return first.id;
 }
