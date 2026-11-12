@@ -1,7 +1,7 @@
 {
   "version": "6",
   "dialect": "sqlite",
-  "id": "06d3d58a-fb43-46b4-9aef-f8b874042aea",
+  "id": "2bf58fe9-d283-4370-8096-94bf6802c330",
   "prevId": "3755d479-916e-4bea-a2ac-1f698c317671",
   "tables": {
     "account": {
@@ -1583,20 +1583,6 @@
         },
         "arch": {
           "name": "arch",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": false,
-          "autoincrement": false
-        },
-        "isolated_os": {
-          "name": "isolated_os",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": false,
-          "autoincrement": false
-        },
-        "isolated_arch": {
-          "name": "isolated_arch",
           "type": "text",
           "primaryKey": false,
           "notNull": false,
@@ -3746,6 +3732,27 @@
         },
         "installations_synced_at": {
           "name": "installations_synced_at",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
+        "terms_version": {
+          "name": "terms_version",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
+        "privacy_version": {
+          "name": "privacy_version",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
+        "legal_agreed_at": {
+          "name": "legal_agreed_at",
           "type": "integer",
           "primaryKey": false,
           "notNull": false,

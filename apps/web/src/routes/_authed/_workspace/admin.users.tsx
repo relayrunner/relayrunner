@@ -184,6 +184,17 @@ const columns = column.columns([
     meta: { className: "whitespace-nowrap" },
     cell: ({ getValue }) => <span title={getValue()}>{timeAgo(getValue(), Date.now())}</span>,
   }),
+  column.accessor("legalAgreedAt", {
+    header: "Agreed to terms",
+    sortFn: "text",
+    sortDescFirst: true,
+    enableGlobalFilter: false,
+    meta: { className: "whitespace-nowrap" },
+    cell: ({ getValue }) => {
+      const at = getValue();
+      return at ? <span title={at}>{timeAgo(at, Date.now())}</span> : "Not yet";
+    },
+  }),
   column.accessor((u) => u.role ?? "user", {
     id: "role",
     header: "Role",

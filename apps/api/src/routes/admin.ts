@@ -41,6 +41,7 @@ export const adminRoutes = new Hono<AppEnv>()
         image: schema.user.image,
         role: schema.user.role,
         createdAt: schema.user.createdAt,
+        legalAgreedAt: schema.user.legalAgreedAt,
         workspaces: count(schema.workspaceMember.id),
       })
       .from(schema.user)

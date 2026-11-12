@@ -5,9 +5,11 @@ import { getPlatformProxy } from "wrangler";
 import { app } from "./app.ts";
 import { createAuth } from "./auth.ts";
 import type { Env } from "./env.ts";
+import { createTestD1 } from "./testing-d1.ts";
 
-// Test helpers for running the app against a real (in-memory, Miniflare) D1 with the committed
-// migrations. Call startD1() in beforeAll and dispose the proxy in afterAll.
+// Test helpers for running the app against an in-memory D1 (testing-d1.ts) with the committed
+// migrations; the other bindings come from Miniflare. Call startD1() in beforeAll and dispose the
+// proxy in afterAll.
 // `before` stops short of the migration with that file name, for testing a migration on data.
 export async function startD1({ before }: { before?: string } = {}) {
   const proxy = await getPlatformProxy<Env>({
@@ -16,6 +18,7 @@ export async function startD1({ before }: { before?: string } = {}) {
   });
   const env: Env = {
     ...proxy.env,
+    DB: createTestD1(),
     BETTER_AUTH_URL: "http://localhost:8787",
     BETTER_AUTH_SECRET: "test-secret-test-secret-test-secret",
     GITHUB_APP_CLIENT_ID: "id",

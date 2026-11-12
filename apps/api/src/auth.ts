@@ -74,7 +74,15 @@ export function createAuth(
     database: drizzleAdapter(createDb(env.DB), { provider: "sqlite", schema }),
     // Global role (schema.ts): "operator" sees the dashboard's Admin section. On session.user, so
     // it rides the session cookie cache. Granted by SQL only, never by the user.
-    user: { additionalFields: { role: { type: "string", required: false, input: false } } },
+    // termsVersion and privacyVersion (routes/me.ts) ride it too, so the dashboard knows without
+    // asking whether someone still has to agree to the Terms of Service and Privacy Policy.
+    user: {
+      additionalFields: {
+        role: { type: "string", required: false, input: false },
+        termsVersion: { type: "string", required: false, input: false },
+        privacyVersion: { type: "string", required: false, input: false },
+      },
+    },
     socialProviders: {
       github: {
         clientId: env.GITHUB_APP_CLIENT_ID,

@@ -38,6 +38,11 @@ export const user = sqliteTable("user", {
   // When their workspace memberships were last read from GitHub (src/memberships.ts), so the
   // dashboard's workspace list only asks GitHub every few minutes.
   installationsSyncedAt: integer("installations_synced_at", { mode: "timestamp_ms" }),
+  // The Terms of Service and Privacy Policy versions they last agreed to, and when
+  // (@relayrunner/activity LEGAL_VERSIONS, routes/me.ts). Null until they first agree.
+  termsVersion: text("terms_version"),
+  privacyVersion: text("privacy_version"),
+  legalAgreedAt: integer("legal_agreed_at", { mode: "timestamp_ms" }),
   ...timestamps,
 });
 
