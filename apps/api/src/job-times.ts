@@ -25,6 +25,8 @@ export const SAMPLE_CAP = 50;
 export const FEW_RUNS = 5;
 /** Under this many runs a time is low confidence. */
 export const ENOUGH_RUNS = 20;
+/** Shared jobs a runner needs before it's compared with the baseline: one job is an anecdote. */
+export const MIN_SHARED_JOBS = 3;
 export const DEFAULT_DAYS = 14;
 export const MAX_DAYS = 30;
 
@@ -62,14 +64,15 @@ export function environmentFor(
       label: provider.label,
       detail: provider.name,
     };
-  const group = runnerGroupName ?? "Default";
-  // Asked for by name: a `self-hosted` label, a pick, or a route to a machine.
+  const group = runnerGroupName || "Default";
+  // Asked for by name: a `self-hosted` label, a pick, or a route to a machine. GitHub matches group
+  // names without case, so `default` and `Default` are one row.
   if (
     lower.includes("self-hosted") ||
     lower.includes(RELAYRUNNER_LABEL) ||
     routeIdFromLabels(labels)
   )
-    return { key: `self-hosted:${group}`, label: "Self-hosted", detail: group };
+    return { key: `self-hosted:${group.toLowerCase()}`, label: "Self-hosted", detail: group };
   if (lower.some(isGitHubHostedLabel) || runnerGroupName === GITHUB_HOSTED_GROUP) {
     const cls = runnerClass(labels, runnerGroupName);
     if (cls !== "other" && cls !== "self-hosted")
@@ -219,9 +222,9 @@ export function statOf(bucket: Bucket): Stat {
 export interface EnvironmentSummary extends Environment {
   stat: Stat;
   /**
-   * Against the baseline on the jobs both ran FEW_RUNS+ times: the geometric mean of this
-   * environment's median over the baseline's (0.5 is twice as fast). Null for the baseline itself
-   * or with no shared jobs.
+   * Against the baseline on the jobs both ran FEW_RUNS+ times: the median of this environment's
+   * median over the baseline's (0.5 is twice as fast). Null for the baseline itself or with under
+   * MIN_SHARED_JOBS shared jobs.
    */
   versus: { ratio: number; sharedJobs: number } | null;
 }
@@ -243,6 +246,10 @@ export interface WorkflowRow {
 export interface JobTimesReport {
   days: number;
   sampleCap: number;
+  /** Runs a job needs on both runners to count toward `versus`. */
+  fewRuns: number;
+  /** Shared jobs a runner needs before it gets a `versus`. */
+  minSharedJobs: number;
   baseline: string | null;
   environments: EnvironmentSummary[];
   workflows: WorkflowRow[];
@@ -343,8 +350,9 @@ function stats(buckets: Buckets): Record<string, Stat> {
 }
 
 /**
- * Against the baseline on shared jobs: the geometric mean of median ratios over every leaf job
- * that ran FEW_RUNS+ times on both, so 2× faster on one job and 2× slower on another even out.
+ * Against the baseline on shared jobs: the median of the median ratios over every leaf job that ran
+ * FEW_RUNS+ times on both, so one job with a cold cache or a different workload can't swing it.
+ * Null under MIN_SHARED_JOBS shared jobs.
  */
 export function versusBaseline(jobs: Record<string, Stat>[], envKey: string, baseline: string) {
   const logs: number[] = [];
@@ -355,9 +363,13 @@ export function versusBaseline(jobs: Record<string, Stat>[], envKey: string, bas
     if (mine.samples < FEW_RUNS || base.samples < FEW_RUNS) continue;
     logs.push(Math.log(mine.medianMs / base.medianMs));
   }
-  if (!logs.length) return null;
-  const mean = logs.reduce((sum, value) => sum + value, 0) / logs.length;
-  return { ratio: Math.round(Math.exp(mean) * 100) / 100, sharedJobs: logs.length };
+  if (logs.length < MIN_SHARED_JOBS) return null;
+  // In log space, so with an even count 2× faster and 2× slower meet at even. Not quantile(),
+  // which rounds to whole milliseconds.
+  logs.sort(ascending);
+  const middle = logs.length / 2;
+  const log = logs.length % 2 ? logs[Math.floor(middle)] : (logs[middle - 1] + logs[middle]) / 2;
+  return { ratio: Math.round(Math.exp(log) * 100) / 100, sharedJobs: logs.length };
 }
 
 /** The workspace's job times over the last `days` days. */
@@ -460,6 +472,8 @@ export async function jobTimesReport(
   return {
     days,
     sampleCap: SAMPLE_CAP,
+    fewRuns: FEW_RUNS,
+    minSharedJobs: MIN_SHARED_JOBS,
     baseline,
     environments,
     workflows: sortBy(workflowRows, (row) => row.jobs.reduce((sum, job) => sum + runsOf(job), 0)),

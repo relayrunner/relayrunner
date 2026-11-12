@@ -37,8 +37,9 @@ describe("environmentFor", () => {
       "blacksmith-2vcpu-ubuntu-2404",
     ],
     [["rr-0123456789ab"], "Default", "m1", "machine:m1", "Machine"],
-    [["rr-0123456789ab"], "Default", null, "self-hosted:Default", "Self-hosted"],
-    [["self-hosted", "linux"], null, null, "self-hosted:Default", "Self-hosted"],
+    [["rr-0123456789ab"], "Default", null, "self-hosted:default", "Self-hosted"],
+    [["self-hosted", "linux"], null, null, "self-hosted:default", "Self-hosted"],
+    [["self-hosted", "linux"], "", null, "self-hosted:default", "Self-hosted"],
     [["windows-11-arm"], null, null, "github:windows-arm-2-core", "Windows 2-core Arm"],
     [["macos-15-intel"], null, null, "github:macos", "macOS"],
     [["ubuntu-26.04"], null, null, "github:linux-2-core", "Linux 2-core"],
@@ -119,23 +120,37 @@ describe("stats", () => {
     expect(stat.trend).toBe(1);
   });
 
+  const median = (medianMs: number, samples = 20) => ({
+    ...statOf({ runs: 0, successes: 0, samples: [] }),
+    medianMs,
+    samples,
+  });
+
   test("compares environments only on jobs both ran enough", () => {
-    const stat = (medianMs: number, samples = 20) => ({
-      ...statOf({ runs: 0, successes: 0, samples: [] }),
-      medianMs,
-      samples,
-    });
     const jobs: Record<string, Stat>[] = [
       // Twice as fast on one, twice as slow on another: even.
-      { base: stat(100), mac: stat(50) },
-      { base: stat(100), mac: stat(200) },
+      { base: median(100), mac: median(50) },
+      { base: median(100), mac: median(200) },
       // Too few runs on the Mac: left out.
-      { base: stat(100), mac: stat(10, 3) },
+      { base: median(100), mac: median(10, 3) },
       // Never ran on the Mac.
-      { base: stat(100) },
+      { base: median(100) },
     ];
-    expect(versusBaseline(jobs, "mac", "base")).toEqual({ ratio: 1, sharedJobs: 2 });
-    expect(versusBaseline([{ base: stat(100) }], "mac", "base")).toBeNull();
+    // Two shared jobs aren't enough to compare.
+    expect(versusBaseline(jobs, "mac", "base")).toBeNull();
+    jobs.push({ base: median(100), mac: median(100) });
+    expect(versusBaseline(jobs, "mac", "base")).toEqual({ ratio: 1, sharedJobs: 3 });
+    expect(versusBaseline([{ base: median(100) }], "mac", "base")).toBeNull();
+  });
+
+  test("an outlier job doesn't swing the comparison", () => {
+    const jobs: Record<string, Stat>[] = [
+      { base: median(100), mac: median(50) },
+      { base: median(100), mac: median(50) },
+      // A job that happens to be 20× slower on the Mac.
+      { base: median(100), mac: median(2000) },
+    ];
+    expect(versusBaseline(jobs, "mac", "base")).toEqual({ ratio: 0.5, sharedJobs: 3 });
   });
 });
 
@@ -286,8 +301,8 @@ describe("job times report", () => {
       waitMs: 5_000,
       confidence: "low",
     });
-    // Lint is the only shared job: 10s against 40s.
-    expect(mac?.versus).toEqual({ ratio: 0.25, sharedJobs: 1 });
+    // Lint is the only shared job, too few to compare.
+    expect(mac?.versus).toBeNull();
 
     expect(result.workflows).toHaveLength(1);
     const [ci] = result.workflows;

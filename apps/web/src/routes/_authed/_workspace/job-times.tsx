@@ -131,11 +131,6 @@ function JobTimesPage() {
                 onOpen={setDetail}
               />
             </SectionBoundary>
-            <p className="max-w-[62ch] text-sm text-muted-foreground">
-              Run time counts successful runs only, since a failure stops early. Medians, not
-              averages, so one cold cache doesn't skew a job. Wait is the time from queued until a
-              runner picked the job up.
-            </p>
           </>
         )}
       </div>
@@ -166,6 +161,8 @@ function Swatch({ index }: { index: number }) {
 const [Baseline, useBaseline] = createCellContext<{
   key: string | null;
   label: string | undefined;
+  fewRuns: number;
+  minSharedJobs: number;
 }>("Runners");
 
 const END = { align: "end" } as const;
@@ -200,14 +197,32 @@ const environmentColumns = environmentColumn.columns([
     id: "wait",
     header: "Median wait",
     sortFn: "basic",
-    meta: END,
+    meta: {
+      ...END,
+      info: <p>How long jobs waited from queued until this runner picked them up.</p>,
+    },
     cell: ({ row }) => clock(row.original.stat.waitMs),
   }),
   environmentColumn.accessor((env) => env.stat.medianMs ?? undefined, {
     id: "run",
     header: "Median run",
     sortFn: "basic",
-    meta: { align: "end", className: "font-semibold" },
+    meta: {
+      align: "end",
+      className: "font-semibold",
+      info: (
+        <>
+          <p>
+            The median run time of every job this runner ran, from successful runs only, since a
+            failure stops early.
+          </p>
+          <p>
+            Runners that ran different jobs can't be compared here. The comparison column lines up
+            the same jobs instead.
+          </p>
+        </>
+      ),
+    },
     cell: ({ row }) => clock(row.original.stat.medianMs),
   }),
   environmentColumn.accessor(
@@ -228,14 +243,29 @@ const environmentColumns = environmentColumn.columns([
     id: "versus",
     header: () => <VersusHead />,
     sortFn: "basic",
-    meta: { className: "whitespace-nowrap" },
+    meta: { className: "whitespace-nowrap", info: <VersusInfo />, label: "Vs. baseline" },
     cell: ({ row }) => <VersusCell env={row.original} />,
   }),
 ]);
 
 function VersusHead() {
   const { label } = useBaseline();
-  return label ? `Vs. ${label} on shared jobs` : "Vs. baseline";
+  return label ? `Vs. ${label}` : "Vs. baseline";
+}
+
+function VersusInfo() {
+  const { label = "the baseline", fewRuns, minSharedJobs } = useBaseline();
+  return (
+    <>
+      <p>
+        How fast this runner is on the same jobs as {label}, so different workloads don't skew it.
+      </p>
+      <p>
+        A job counts once it has {fewRuns} successful runs on both. The number is the typical job's
+        speedup, so one odd job can't swing it, and it shows once {minSharedJobs} jobs count.
+      </p>
+    </>
+  );
 }
 
 function VersusCell({ env }: { env: EnvironmentSummary }) {
@@ -245,7 +275,14 @@ function VersusCell({ env }: { env: EnvironmentSummary }) {
 function Environments({ report }: { report: JobTimesReport }) {
   const baseline = report.environments.find((env) => env.key === report.baseline);
   return (
-    <Baseline value={{ key: report.baseline, label: baseline?.label }}>
+    <Baseline
+      value={{
+        key: report.baseline,
+        label: baseline?.label,
+        fewRuns: report.fewRuns,
+        minSharedJobs: report.minSharedJobs,
+      }}
+    >
       <DataTable
         caption="Runners"
         columns={environmentColumns}
@@ -258,7 +295,8 @@ function Environments({ report }: { report: JobTimesReport }) {
 
 function Versus({ env, isBaseline }: { env: EnvironmentSummary; isBaseline: boolean }) {
   if (isBaseline) return <span className="text-muted-foreground">baseline</span>;
-  if (!env.versus) return <span className="text-muted-foreground">no shared jobs</span>;
+  // Too little overlap to say: blank, and the ⓘ explains why.
+  if (!env.versus) return null;
   const { ratio, sharedJobs } = env.versus;
   const label = versusLabel(ratio);
   return (
@@ -275,10 +313,7 @@ function Versus({ env, isBaseline }: { env: EnvironmentSummary; isBaseline: bool
       >
         {label}
       </span>
-      <span className={cn("ml-2 text-xs", sharedJobs < 3 ? "text-run" : "text-muted-foreground")}>
-        on {plural(sharedJobs, "job")}
-        {sharedJobs < 3 && ", too few to trust"}
-      </span>
+      <span className="ml-2 text-xs text-muted-foreground">on {plural(sharedJobs, "job")}</span>
     </>
   );
 }
@@ -365,14 +400,42 @@ const jobColumns = jobColumn.columns([
   jobColumn.accessor("median", {
     header: "Median by runner",
     sortFn: "basic",
-    meta: { className: "py-2 align-top" },
+    meta: {
+      className: "py-2 align-top",
+      info: (
+        <>
+          <p>
+            The median of each runner's newest 50 successful runs, fastest first. Medians, not
+            averages, so one cold cache doesn't skew a job. Hover a time for its spread.
+          </p>
+          <ul className="grid gap-1">
+            <li>
+              <span className="text-go">▲</span> The fastest runner with 5+ runs
+            </li>
+            <li>
+              <span className="text-run">7 runs</span> in amber: 5 to 19 runs, read with care
+            </li>
+            <li>~0:52 in grey: under 5 runs, never marked fastest</li>
+          </ul>
+        </>
+      ),
+    },
     cell: ({ row }) => <MedianCell row={row.original} />,
   }),
   jobColumn.accessor("trend", {
     header: "Trend",
     sortFn: "basic",
     sortDescFirst: true,
-    meta: { align: "end", className: "w-0 py-2 align-top whitespace-nowrap" },
+    meta: {
+      align: "end",
+      className: "w-0 py-2 align-top whitespace-nowrap",
+      info: (
+        <p>
+          The newer half of the runs against the older half, on the runner the job ran on most. Red
+          means the job got slower.
+        </p>
+      ),
+    },
     cell: ({ row, getValue }) => row.original.job && <Trend trend={getValue() ?? null} />,
   }),
 ]);
@@ -496,16 +559,6 @@ const Jobs = memo(function Jobs({
           empty="No jobs in this repo in the window."
         />
       </JobsContext>
-      <p className="flex flex-wrap gap-x-5 gap-y-1 text-xs text-muted-foreground">
-        <span>
-          <span className="text-run">7 runs</span> in amber: 5 to 19 runs, read with care
-        </span>
-        <span>~0:52 in grey: under 5 runs, never marked fastest</span>
-        <span>
-          <span className="text-go">▲</span> fastest with 5+ runs
-        </span>
-        <span>Trend: the newer half of the runs against the older half</span>
-      </p>
     </div>
   );
 });
