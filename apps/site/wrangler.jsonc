@@ -1,7 +1,7 @@
 {
   "$schema": "./node_modules/wrangler/config-schema.json",
   // Landing page and docs (/docs): one Astro build served as static assets. The Worker script only
-  // runs for /docs/* (run_worker_first), to send Markdown to agents that ask for it with
+  // runs for /docs/* and / (run_worker_first): it sends Markdown to agents that ask for it with
   // `Accept: text/markdown`; every other request is served from assets without invoking it.
   "name": "relayrunner-site",
   "main": "./worker/index.ts",
@@ -11,7 +11,7 @@
   "assets": {
     "directory": "./dist",
     "binding": "ASSETS",
-    "run_worker_first": ["/docs/*"],
+    "run_worker_first": ["/", "/docs/*"],
     "html_handling": "drop-trailing-slash",
     // Serves dist/404.html (Starlight's not-found page) for unknown paths, landing or docs.
     "not_found_handling": "404-page",

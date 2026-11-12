@@ -4,11 +4,11 @@ The public site at [relayrunner.app](https://relayrunner.app): one [Astro](https
 
 ## Share images
 
-Each docs page gets its own share image at `/og/docs/<slug>.png`, drawn at build time from its title and description by [astro-og-canvas](https://github.com/delucis/astro-og-canvas) (`src/pages/og/[...route].ts`). The landing page uses `public/og-image.png`, made from `og/og-image.html` with `pnpm og`.
+Each docs page gets its own share image at `/og/docs/<slug>.png`, drawn at build time from its title and description by [astro-og-canvas](https://github.com/delucis/astro-og-canvas) (`src/pages/og/[...route].ts`). The landing page uses `public/og-image.png`, made from `og/og-image.html` with `pnpm og`. Campaign links can swap it: `/?utm_content=minutes` shows `public/og/minutes.png`. The Worker script rewrites the landing page's `og:image` and `twitter:image` tags when `utm_content` names an entry in `SHARE_IMAGES` (`worker/index.ts`), since link previewers don't run JavaScript. To add one, put a 1200×630 PNG in `public/og/` and add a line to that map.
 
 ## For agents
 
-Every docs page has a Markdown version at `/docs/<slug>.md` and a plain-text one at `/docs/<slug>.txt`, linked from the page's `<head>` as `rel="alternate" type="text/markdown"`. `/llms.txt` (also at `/docs/llms.txt`) lists every page, and `/llms-full.txt` has all of them in one file. For search engines, `/sitemap-index.xml` (also at `/sitemap.xml`, and named in `/robots.txt`) lists every page with the date of its last commit, generated at build time, so new pages show up on their own. Asking for a docs page with `Accept: text/markdown` returns its Markdown: that's the one thing the small Worker script in `worker/index.ts` does, and it only runs for `/docs/*`.
+Every docs page has a Markdown version at `/docs/<slug>.md` and a plain-text one at `/docs/<slug>.txt`, linked from the page's `<head>` as `rel="alternate" type="text/markdown"`. `/llms.txt` (also at `/docs/llms.txt`) lists every page, and `/llms-full.txt` has all of them in one file. For search engines, `/sitemap-index.xml` (also at `/sitemap.xml`, and named in `/robots.txt`) lists every page with the date of its last commit, generated at build time, so new pages show up on their own. Asking for a docs page with `Accept: text/markdown` returns its Markdown: that's what the small Worker script in `worker/index.ts` does for `/docs/*` (it also runs for `/`, for the share images above).
 
 ```sh
 pnpm --filter @relayrunner/site dev          # local dev server
