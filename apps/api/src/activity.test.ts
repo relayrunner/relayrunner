@@ -4,6 +4,7 @@ import { afterAll, beforeAll, describe, expect, test } from "vitest";
 import { recordEvent, recordMachineEvent } from "./activity.ts";
 import { createDb, schema } from "./db/index.ts";
 import type { Env } from "./env.ts";
+import { BOOKMARK_COOKIE } from "./middleware/d1-session.ts";
 import * as testing from "./testing.ts";
 
 let proxy: Awaited<ReturnType<typeof testing.startD1>>["proxy"];
@@ -215,5 +216,18 @@ describe("Activity log", () => {
     const { cookie } = await workspaceWithMachine();
     const res = await testing.call(env, "/activity?result=great", cookie);
     expect(res.status).toBe(400);
+  });
+});
+
+describe("D1 session bookmark", () => {
+  test("hands back a bookmark that the next request reads from", async () => {
+    const { cookie } = await workspaceWithMachine();
+    const first = await testing.call(env, "/activity", cookie);
+    expect(first.status).toBe(200);
+    const bookmark = first.headers.getSetCookie().find((line) => line.startsWith(BOOKMARK_COOKIE));
+    expect(bookmark).toMatch(/HttpOnly/);
+
+    const second = await testing.call(env, "/activity", testing.withSetCookies(cookie, first));
+    expect(second.status).toBe(200);
   });
 });

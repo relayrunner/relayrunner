@@ -41,44 +41,60 @@ export const user = sqliteTable("user", {
   ...timestamps,
 });
 
-export const session = sqliteTable("session", {
-  id: text("id").primaryKey(),
-  userId: text("user_id")
-    .notNull()
-    .references(() => user.id, { onDelete: "cascade" }),
-  token: text("token").notNull().unique(),
-  expiresAt: integer("expires_at", { mode: "timestamp_ms" }).notNull(),
-  ipAddress: text("ip_address"),
-  userAgent: text("user_agent"),
-  // The workspace the dashboard is looking at. Set by the organization plugin.
-  activeWorkspaceId: text("active_workspace_id"),
-  ...timestamps,
-});
+export const session = sqliteTable(
+  "session",
+  {
+    id: text("id").primaryKey(),
+    userId: text("user_id")
+      .notNull()
+      .references(() => user.id, { onDelete: "cascade" }),
+    token: text("token").notNull().unique(),
+    expiresAt: integer("expires_at", { mode: "timestamp_ms" }).notNull(),
+    ipAddress: text("ip_address"),
+    userAgent: text("user_agent"),
+    // The workspace the dashboard is looking at. Set by the organization plugin.
+    activeWorkspaceId: text("active_workspace_id"),
+    ...timestamps,
+  },
+  (table) => [index("session_user_id_idx").on(table.userId)],
+);
 
-export const account = sqliteTable("account", {
-  id: text("id").primaryKey(),
-  userId: text("user_id")
-    .notNull()
-    .references(() => user.id, { onDelete: "cascade" }),
-  accountId: text("account_id").notNull(),
-  providerId: text("provider_id").notNull(),
-  accessToken: text("access_token"),
-  refreshToken: text("refresh_token"),
-  idToken: text("id_token"),
-  accessTokenExpiresAt: integer("access_token_expires_at", { mode: "timestamp_ms" }),
-  refreshTokenExpiresAt: integer("refresh_token_expires_at", { mode: "timestamp_ms" }),
-  scope: text("scope"),
-  password: text("password"),
-  ...timestamps,
-});
+export const account = sqliteTable(
+  "account",
+  {
+    id: text("id").primaryKey(),
+    userId: text("user_id")
+      .notNull()
+      .references(() => user.id, { onDelete: "cascade" }),
+    accountId: text("account_id").notNull(),
+    providerId: text("provider_id").notNull(),
+    accessToken: text("access_token"),
+    refreshToken: text("refresh_token"),
+    idToken: text("id_token"),
+    accessTokenExpiresAt: integer("access_token_expires_at", { mode: "timestamp_ms" }),
+    refreshTokenExpiresAt: integer("refresh_token_expires_at", { mode: "timestamp_ms" }),
+    scope: text("scope"),
+    password: text("password"),
+    ...timestamps,
+  },
+  (table) => [
+    index("account_user_id_idx").on(table.userId),
+    // Sign-in finds the account by its GitHub id.
+    index("account_provider_account_idx").on(table.providerId, table.accountId),
+  ],
+);
 
-export const verification = sqliteTable("verification", {
-  id: text("id").primaryKey(),
-  identifier: text("identifier").notNull(),
-  value: text("value").notNull(),
-  expiresAt: integer("expires_at", { mode: "timestamp_ms" }).notNull(),
-  ...timestamps,
-});
+export const verification = sqliteTable(
+  "verification",
+  {
+    id: text("id").primaryKey(),
+    identifier: text("identifier").notNull(),
+    value: text("value").notNull(),
+    expiresAt: integer("expires_at", { mode: "timestamp_ms" }).notNull(),
+    ...timestamps,
+  },
+  (table) => [index("verification_identifier_idx").on(table.identifier)],
+);
 
 // A workspace is Better Auth's organization. It is created by a user (who becomes its owner), not
 // mirrored from GitHub: it connects many GitHub App installations and owns the machine fleet.
@@ -373,6 +389,12 @@ export const workflowJob = sqliteTable(
   (table) => [
     index("workflow_job_installation_idx").on(table.installationId, table.id),
     index("workflow_job_run_idx").on(table.runId, table.kind),
+    // The pick sweep's recent picks (src/pick-sweep.ts).
+    index("workflow_job_kind_created_idx").on(table.kind, table.githubCreatedAt),
+    // The jobs each machine is running, and clearing machine_id when a machine is deleted.
+    index("workflow_job_machine_idx")
+      .on(table.machineId, table.status)
+      .where(sql`${table.machineId} is not null`),
   ],
 );
 
@@ -556,6 +578,10 @@ export const activityEvent = sqliteTable(
     index("activity_event_type_idx").on(table.workspaceId, table.type, table.occurredAt),
     // One type over a time range across every workspace, for operator pings (src/operator-pings.ts).
     index("activity_event_type_time_idx").on(table.type, table.occurredAt),
+    // Clearing machine_id when a machine is deleted.
+    index("activity_event_machine_idx")
+      .on(table.machineId)
+      .where(sql`${table.machineId} is not null`),
   ],
 );
 

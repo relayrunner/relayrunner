@@ -302,6 +302,13 @@
       "when": 1794500040767,
       "tag": "20261112161400_machine_cli_version",
       "breakpoints": true
+    },
+    {
+      "idx": 43,
+      "version": "6",
+      "when": 1794501272558,
+      "tag": "20261112163432_query_indexes",
+      "breakpoints": true
     }
   ]
 }

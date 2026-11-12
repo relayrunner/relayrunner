@@ -17,12 +17,14 @@ export const requireWorkspace = createMiddleware<AppEnv>(async (c, next) => {
     return c.json({ error: agent ? "workspace_required" : "no_active_workspace" }, 409);
   }
 
-  const db = createDb(c.env.DB);
-  const row = await membership(db, workspaceId, c.var.user!.id);
+  const userId = c.var.user!.id;
+  // A workspace an install made a moment ago may not be on a replica yet, so a miss asks the primary.
+  const row =
+    (await membership(c.var.db, workspaceId, userId)) ??
+    (await membership(createDb(c.env.DB), workspaceId, userId));
   // A stale active id (workspace deleted, or membership removed) reads as no workspace.
   if (!row) return c.json({ error: "no_active_workspace" }, 409);
 
-  c.set("db", db);
   c.set("workspace", row.workspace);
   c.set("role", row.role);
   await next();
