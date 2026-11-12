@@ -246,7 +246,14 @@ async function connectMachine(args: {
     launchers = ensureSlots(runner, slots, log).map(hostLauncher);
     const hint = !isolated && state ? setupHint(state) : null;
     if (hint) clack.log.warn(hint);
-    if (args.macos) log("Linux jobs run in a VM. macOS jobs run on this Mac itself.");
+    if (args.macos)
+      clack.log.warn(
+        "Linux jobs run in a VM. macOS jobs run on this Mac itself, where they can read your files. Only take macOS jobs from repos you trust.",
+      );
+    else if (args.isolated === false)
+      clack.log.warn(
+        "Jobs run on this machine itself, where they can read your files. Only take jobs from repos you trust.",
+      );
   }
   clack.log.info(
     slots === 1
