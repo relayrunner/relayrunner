@@ -63,7 +63,7 @@ This is experimental. You need macOS 26 and Apple's [container](https://github.c
 npx relayrunner connect --isolated
 ```
 
-The first run takes about a minute to prepare the image jobs start from. After that a VM starts in about a second.
+The first run takes about a minute to prepare the image jobs start from. After that a VM starts in a few seconds.
 
 While it runs isolated, the Mac is a Linux machine: its labels are `Linux` and `ARM64`, and it takes jobs written for `ubuntu-latest`. macOS jobs such as Xcode builds still need a regular connection. Docker works in the VM, so jobs with `services:` or `container:` run too.
 
