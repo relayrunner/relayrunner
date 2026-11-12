@@ -25,6 +25,8 @@ export interface ProviderInfo {
   labels: string;
   /** A runs-on value that asks for one of its runners. */
   example?: string;
+  /** What to do before a job can run there, shown until it has been used. */
+  setup?: string;
   /** Its own dashboard, where its runners and billing live. */
   dashboardUrl?: string;
   docsUrl?: string;
@@ -36,6 +38,7 @@ export const PROVIDERS: Record<ProviderId, ProviderInfo> = {
     summary: "Hosted runners for GitHub Actions.",
     labels: "blacksmith-*",
     example: "blacksmith-4vcpu-ubuntu-2404",
+    setup: "Sign up for Blacksmith and install its GitHub App on your organization.",
     dashboardUrl: "https://app.blacksmith.sh",
     docsUrl: "https://docs.blacksmith.sh",
   },
@@ -44,6 +47,7 @@ export const PROVIDERS: Record<ProviderId, ProviderInfo> = {
     summary: "Hosted runners for GitHub Actions.",
     labels: "depot-*",
     example: "depot-ubuntu-24.04",
+    setup: "Sign up for Depot and install its GitHub App on your organization.",
     dashboardUrl: "https://depot.dev/orgs",
     docsUrl: "https://depot.dev/docs/github-actions/overview",
   },
@@ -52,6 +56,7 @@ export const PROVIDERS: Record<ProviderId, ProviderInfo> = {
     summary: "Hosted runners for GitHub Actions, sized by runner profile.",
     labels: "namespace-profile-*, nscloud-*",
     example: "namespace-profile-default",
+    setup: "Sign up for Namespace and connect it to your GitHub organization.",
     dashboardUrl: "https://cloud.namespace.so",
     docsUrl: "https://namespace.so/docs",
   },
@@ -60,6 +65,7 @@ export const PROVIDERS: Record<ProviderId, ProviderInfo> = {
     summary: "Hosted runners for GitHub Actions.",
     labels: "warp-*",
     example: "warp-ubuntu-latest-x64-2x",
+    setup: "Sign up for WarpBuild and install its GitHub App on your organization.",
     dashboardUrl: "https://app.warpbuild.com",
     docsUrl: "https://docs.warpbuild.com",
   },
@@ -68,6 +74,7 @@ export const PROVIDERS: Record<ProviderId, ProviderInfo> = {
     summary: "Hosted runners for GitHub Actions.",
     labels: "ubicloud, ubicloud-*",
     example: "ubicloud-standard-2",
+    setup: "Sign up for Ubicloud and install its GitHub App on your organization.",
     dashboardUrl: "https://console.ubicloud.com",
   },
   "runs-on": {
@@ -75,6 +82,7 @@ export const PROVIDERS: Record<ProviderId, ProviderInfo> = {
     summary: "Runners started in your own AWS account.",
     labels: "runs-on=<run id>/runner=<type>",
     example: "runs-on=${{ github.run_id }}/runner=2cpu-linux-x64",
+    setup: "Deploy RunsOn into your AWS account and install the GitHub App it creates.",
     docsUrl: "https://runs-on.com/docs/",
   },
   github: {
@@ -82,6 +90,7 @@ export const PROVIDERS: Record<ProviderId, ProviderInfo> = {
     summary: "GitHub's own hosted runners, billed per minute in private repos.",
     labels: "ubuntu-*, windows-*, macos-*, or a larger runner's own name",
     example: "ubuntu-latest",
+    setup: "Nothing to set up. GitHub's runners work in every repository.",
     docsUrl: "https://docs.github.com/en/actions/reference/runners/github-hosted-runners",
   },
   cloudflare: {
@@ -89,6 +98,8 @@ export const PROVIDERS: Record<ProviderId, ProviderInfo> = {
     summary: "RelayRunner's own runner, a Cloudflare Container started for each job.",
     labels: "relayrunner-container",
     example: "relayrunner-container",
+    setup:
+      "Container runners are in early access. Email feedback@relayrunner.app to turn them on for your organization.",
   },
   other: {
     name: "Other",
