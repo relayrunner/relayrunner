@@ -2,7 +2,7 @@
 // fetch and WebCrypto so it runs in a Durable Object. Ported from the PR #21 spike (apps/gateway),
 // which tested it against github.com in November 2026; see that README for what it found.
 
-const userAgent = "relayrunner-gateway/0.1";
+export const userAgent = "relayrunner-gateway/0.1";
 
 interface RsaParameters {
   d: string;
@@ -55,6 +55,8 @@ export interface ClaimedJob {
   // The job's GITHUB_TOKEN: scoped to the job's repo and the workflow's `permissions`, and revoked
   // by GitHub when the job completes. Only ever held in memory.
   githubToken?: string;
+  // Where the job's steps and logs go (`system.github.results_endpoint`).
+  resultsUrl?: string;
 }
 
 // The runner's Annotation contract (level is the AnnotationLevel enum by name). One with a path
@@ -279,6 +281,7 @@ export class RunnerClient {
       token: connection.authorization.parameters.AccessToken,
       serviceUrl: connection.url,
       githubToken: message.variables?.["system.github.token"]?.value || undefined,
+      resultsUrl: message.variables?.["system.github.results_endpoint"]?.value || undefined,
     };
   }
 

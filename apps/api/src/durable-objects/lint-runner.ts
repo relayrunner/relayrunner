@@ -19,6 +19,7 @@ import {
   checksAppToken,
   lintCheckName,
   lintCheckOutput,
+  lintJobLog,
   lintJobResult,
   lintUnavailableOutput,
   type ChangedLines,
@@ -87,14 +88,15 @@ export class LintRunner extends DurableObject<Env> {
    * The commit is read with `jobToken`, the job's own GITHUB_TOKEN, so the repo needs no App that
    * can read its code. The token is used for that one download and never stored. Where the Checks
    * App is installed the check runs are posted as usual; elsewhere the problems come back as
-   * annotations for the job. `log` is what happened, for the caller's own log line.
+   * annotations for the job. `log` is what happened, for the caller's own log line, and `lines`
+   * is the step's log.
    */
   async lintJob(
     target: { repo: string; headSha: string },
     tools: LintTool[],
     paths: string[],
     jobToken?: string,
-  ): Promise<{ result: CheckResult; log?: Record<string, unknown> }> {
+  ): Promise<{ result: CheckResult; log?: Record<string, unknown>; lines?: string[] }> {
     // Each container is billed to us, like the webhook path in startLintChecks.
     if (!containerRunnerAllowed(this.env.CONTAINER_RUNNER_ORGS, target.repo.split("/")[0]))
       return {
@@ -130,7 +132,12 @@ export class LintRunner extends DurableObject<Env> {
       durationMs: Date.now() - startedAt,
       ...(Array.isArray(results) ? resultsLog(results) : {}),
     };
-    return { result: lintJobResult(results, checks ? "checks" : "job"), log };
+    return {
+      result: lintJobResult(results, checks ? "checks" : "job"),
+      log,
+      // What the tools printed, for the job's step log.
+      lines: Array.isArray(results) ? lintJobLog(results) : undefined,
+    };
   }
 
   // The lines a pull request changes, to mark the other problems as likely pre-existing. Without

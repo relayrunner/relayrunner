@@ -101,6 +101,27 @@ export function lintJobResult(
   };
 }
 
+/**
+ * A lint run as log lines, the way a linter prints them: a line per tool, then each problem as
+ * `path:line:column level message`.
+ */
+export function lintJobLog(results: LintResult[]): string[] {
+  return results.flatMap((result) => {
+    const { error, warning } = result.total;
+    const counts = `${error} ${error === 1 ? "error" : "errors"}, ${warning} ${warning === 1 ? "warning" : "warnings"}`;
+    const head = `${result.tool}: ${result.status} (${counts}, ${result.durationMs} ms)`;
+    if (result.status === "errored")
+      return [`##[error]${head}`, ...(result.output?.trim().split("\n") ?? [])];
+    return [
+      head,
+      ...result.problems.map((problem) => {
+        const column = problem.column ? `:${problem.column}` : "";
+        return `  ${problem.path}:${problem.line}${column} ${problem.level} ${problem.message}`;
+      }),
+    ];
+  });
+}
+
 // How many problems a job carries as annotations. GitHub documents no limit here; its own runner
 // sends at most 10 of each level per step.
 const MAX_JOB_ANNOTATIONS = 50;

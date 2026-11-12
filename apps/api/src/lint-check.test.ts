@@ -5,6 +5,7 @@ import {
   changedLines,
   likelyPreExisting,
   lintCheckOutput,
+  lintJobLog,
   lintJobResult,
   lintTarget,
   type LintContext,
@@ -305,5 +306,36 @@ describe("lintJobResult", () => {
       ok: true,
       annotations: [],
     });
+  });
+});
+
+describe("lintJobLog", () => {
+  test("prints a line per tool and per problem", () => {
+    expect(
+      lintJobLog([
+        {
+          tool: "oxlint",
+          status: "failed",
+          problems: [
+            { path: "src/a.ts", line: 3, column: 7, level: "error", message: "No debugger" },
+          ],
+          total: { error: 1, warning: 0, notice: 0 },
+          durationMs: 12,
+        },
+        {
+          tool: "typos",
+          status: "errored",
+          problems: [],
+          total: { error: 0, warning: 0, notice: 0 },
+          durationMs: 4,
+          output: "bad config\n",
+        },
+      ]),
+    ).toEqual([
+      "oxlint: failed (1 error, 0 warnings, 12 ms)",
+      "  src/a.ts:3:7 error No debugger",
+      "##[error]typos: errored (0 errors, 0 warnings, 4 ms)",
+      "bad config",
+    ]);
   });
 });

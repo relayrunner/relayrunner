@@ -13,7 +13,12 @@ import {
 import { fetchOneGroupAccess, groupBlocksRepo } from "../github-runners.ts";
 import { blockedReason, pickAccessCheckRun } from "../pick-access.ts";
 import { mintRepoFirst } from "../repo-runner.ts";
-import { latestRunnerVersion, RunnerClient, decodeJitConfig } from "../runner-protocol.ts";
+import {
+  type ClaimedJob,
+  latestRunnerVersion,
+  RunnerClient,
+  decodeJitConfig,
+} from "../runner-protocol.ts";
 import { RELAYRUNNER_LABEL } from "../webhook-queue.ts";
 import { and, eq, isNull, sql } from "drizzle-orm";
 import { createDb, type Db, schema } from "../db/index.ts";
@@ -26,7 +31,8 @@ import {
   type RouteDecision,
   sameLogin,
 } from "../routing.ts";
-import { nativeFreeCheck, nativeVerdict } from "../native-checks.ts";
+import { jobStepLogs, type StepLog, uploadJobLogs } from "../job-logs.ts";
+import { jobSteps, nativeFreeCheck, nativeVerdict } from "../native-checks.ts";
 import { recordRepoCheck } from "../free-checks.ts";
 import {
   afterAttempt,
@@ -176,21 +182,44 @@ export class PickRunner extends DurableObject<Env> {
       const request = await waitForJob(client);
       const job = request ? await client.claim(request) : null;
       if (job) {
+        const startedAt = new Date();
         let lintLog: Record<string, unknown> | undefined;
+        // What each step logged, for the job's step logs.
+        let stepLines: string[] = [];
+        const reports: { ok: boolean; lines: string[] }[] = [];
         const native = await nativeVerdict(job.message.steps, job.message.contextData, {
           // A lint step runs in its own LintRunner, one per job.
           // It reads the commit with the job's own token, which is passed along and never stored.
           lint: async (target, tools, paths) => {
-            const { result, log } = await this.env.LINT_RUNNER.getByName(
+            const { result, log, lines } = await this.env.LINT_RUNNER.getByName(
               `job:${work.jobId}`,
             ).lintJob(target, tools, paths, job.githubToken);
             lintLog = log;
+            stepLines = lines ?? [];
             return result;
+          },
+          report: (step, result) => {
+            reports[step] = {
+              ok: result.ok,
+              lines: [...stepLines, result.ok ? "Passed." : `##[error]${result.reason}`],
+            };
+            stepLines = [];
           },
         });
         if (native) {
           // A native check: answer it here instead of routing it. Nothing runs on a VM.
           const { result } = native;
+          // The steps and their logs go up before the job completes, while its token still works.
+          // A job without them is still answered, so a failure here is only logged.
+          const logs = await sendJobLogs(
+            job,
+            jobStepLogs(
+              jobSteps(job.message.steps),
+              reports,
+              result.ok ? undefined : result.reason,
+            ),
+            startedAt,
+          );
           await client.complete(job, result.ok ? "succeeded" : "failed", {
             error: result.ok ? undefined : result.reason,
             annotations: result.annotations,
@@ -200,6 +229,7 @@ export class PickRunner extends DurableObject<Env> {
             checks: native.checks,
             reason: result.ok ? undefined : result.reason,
             lint: lintLog,
+            logs,
           };
           // For the Usage and Activity savings: the job never took an Actions runner. The job is
           // already answered, so a failure here only loses the count.
@@ -533,4 +563,29 @@ async function reportBlocked(env: Env, token: string, work: PickWork, reason: st
       (error) => logCleanupError("post blocked check run", work, error),
     ),
   ]);
+}
+
+// How long a job waits on its logs before it completes without them.
+const JOB_LOGS_TIMEOUT_MS = 5_000;
+
+// Sends a native job's steps and logs. Returns "sent", or why not, for the job's log line.
+async function sendJobLogs(job: ClaimedJob, steps: StepLog[], startedAt: Date) {
+  if (!job.resultsUrl) return "no results endpoint";
+  if (steps.length === 0) return "no steps";
+  try {
+    await uploadJobLogs(
+      {
+        resultsUrl: job.resultsUrl,
+        token: job.token,
+        planId: job.message.plan.planId,
+        jobId: job.message.jobId,
+      },
+      steps,
+      { startedAt, completedAt: new Date() },
+      AbortSignal.timeout(JOB_LOGS_TIMEOUT_MS),
+    );
+    return "sent";
+  } catch (error) {
+    return error instanceof Error ? error.message : String(error);
+  }
 }
