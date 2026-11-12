@@ -323,8 +323,9 @@
     if (footerTarget !== null && arc > 0) {
       angle = lane === 1 ? 180 + (theta * 180) / Math.PI : (-theta * 180) / Math.PI;
     }
-    portrait.style.opacity = 1 - s;
-    overhead.style.opacity = s;
+    const atLane = p === 1;
+    portrait.style.opacity = atLane ? "0" : "1";
+    overhead.style.opacity = atLane ? "1" : "0";
     overhead.style.transform = "rotate(" + angle + "deg)";
     for (const [i, limb] of limbs.entries())
       limb.setAttribute(
