@@ -44,6 +44,8 @@ export interface CheckDeps {
     tools: LintTool[],
     paths: string[],
   ): Promise<CheckResult>;
+  // Told each step's result as it finishes, by the step's place in the job.
+  report?(step: number, result: CheckResult): void;
 }
 
 /**
@@ -137,8 +139,9 @@ export async function runChecks(
   const annotations: JobAnnotation[] = [];
   const withAnnotations = (result: CheckResult): CheckResult =>
     annotations.length ? { ...result, annotations } : result;
-  for (const step of steps) {
+  for (const [index, step] of steps.entries()) {
     const { annotations: found = [], ...result } = await runCheck(step, contextData, deps);
+    deps.report?.(index, result);
     annotations.push(...found);
     if (!result.ok) return withAnnotations(result);
   }
@@ -191,6 +194,15 @@ function checkReference(step: unknown): string | null {
   if (!trimmed.startsWith(CHECKS_PATH)) return null;
   const check = trimmed.slice(CHECKS_PATH.length);
   return check && !check.includes("/") ? check : null;
+}
+
+/** Each step's id and name in the job message, for the job's step list. */
+export function jobSteps(steps: unknown): { id?: string; name: string }[] {
+  if (!Array.isArray(steps)) return [];
+  return steps.map((step) => ({
+    id: isRecord(step) && typeof step.id === "string" ? step.id : undefined,
+    name: stepLabel(step),
+  }));
 }
 
 function stepLabel(step: unknown) {
