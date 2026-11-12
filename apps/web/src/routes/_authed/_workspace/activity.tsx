@@ -468,6 +468,10 @@ function sentence(item: ActivityItem) {
       return item.data.sharing === "only_me"
         ? "was set to run only its owner's jobs"
         : "was shared with the workspace";
+    case "machine.workspace_added":
+      return "was added to this workspace";
+    case "machine.workspace_removed":
+      return "was taken out of this workspace";
     case "machine.revoked":
       return item.data.source === "github" ? "was removed from RelayRunner" : "was revoked";
     case "job.routed":
@@ -507,6 +511,8 @@ const EVENT_ICONS = {
   "machine.paused": Pause,
   "machine.resumed": Play,
   "machine.sharing_changed": Lock,
+  "machine.workspace_added": Plus,
+  "machine.workspace_removed": CircleMinus,
   "machine.revoked": Ban,
   "member.removed": UserMinus,
   "job.routed": Laptop,

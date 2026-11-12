@@ -105,14 +105,24 @@ export function normalizeUserCode(userCode: string) {
 type Machine = typeof schema.machine.$inferSelect;
 
 /**
- * Which machines a workspace has (#318): the connected machines of its members, wherever they
- * enrolled them, plus the GitHub runners adopted from its own installation.
+ * Which machines a workspace has: the connected machines their owners put in it (machine_workspace,
+ * #363) while the owner is still a member, plus the GitHub runners adopted from its own
+ * installation. Routing, Runners and Activity all read machines through this.
  */
 export function inWorkspace(db: Db, workspaceId: string): SQL {
   return or(
     eq(schema.machine.workspaceId, workspaceId),
     and(
       eq(schema.machine.source, "connect"),
+      inArray(
+        schema.machine.id,
+        db
+          .select({ machineId: schema.machineWorkspace.machineId })
+          .from(schema.machineWorkspace)
+          .where(eq(schema.machineWorkspace.workspaceId, workspaceId)),
+      ),
+      // A backstop: membership sync deletes the rows of a workspace the owner leaves, and a row
+      // left behind still never routes.
       inArray(
         schema.machine.userId,
         db
@@ -124,42 +134,67 @@ export function inWorkspace(db: Db, workspaceId: string): SQL {
   )!;
 }
 
-/** The workspaces a user is a member of, oldest membership first. */
+/**
+ * The workspaces a user is a member of, oldest membership first. `joined` is true for one they only
+ * joined through GitHub, false for one they installed or their personal account's (the owner rule
+ * in memberships.ts), so /device can start the owned ones ticked (#364).
+ */
 export async function userWorkspaces(db: Db, userId: string) {
-  return db
+  const rows = await db
     .select({
       id: schema.workspace.id,
       name: schema.workspace.name,
       slug: schema.workspace.slug,
+      role: schema.workspaceMember.role,
     })
     .from(schema.workspaceMember)
     .innerJoin(schema.workspace, eq(schema.workspace.id, schema.workspaceMember.workspaceId))
     .where(eq(schema.workspaceMember.userId, userId))
     .orderBy(schema.workspaceMember.createdAt, schema.workspace.id);
+  return rows.map(({ role, ...workspace }) => ({ ...workspace, joined: role !== "owner" }));
 }
 
 /**
- * What the CLI is told about where its machine is (#318): every workspace its owner is in, each
- * with its member count, and the single `workspace` CLI 0.5.0 reads. That one is the workspace
- * with the most members, so 0.5.0's "ask about sharing when someone else is there" (#244) still
- * asks when any of them has teammates. Null when the owner is in no workspace yet.
+ * The connected machine's workspaces (machine_workspace) that its owner is still a member of, oldest
+ * membership first.
  */
-export async function presentMachineWorkspaces(db: Db, userId: string | null) {
-  if (!userId) return { workspace: null, workspaces: [] };
-  const mine = await userWorkspaces(db, userId);
-  const counts = mine.length
+async function connectedMachineWorkspaces(
+  db: Db,
+  machine: Pick<Machine, "id" | "userId">,
+): Promise<Awaited<ReturnType<typeof userWorkspaces>>> {
+  if (!machine.userId) return [];
+  const [mine, rows] = await Promise.all([
+    userWorkspaces(db, machine.userId),
+    db
+      .select({ workspaceId: schema.machineWorkspace.workspaceId })
+      .from(schema.machineWorkspace)
+      .where(eq(schema.machineWorkspace.machineId, machine.id)),
+  ]);
+  const listed = new Set(rows.map((row) => row.workspaceId));
+  return mine.filter((workspace) => listed.has(workspace.id));
+}
+
+/**
+ * What the CLI is told about where its machine is: the workspaces it takes jobs in, each with its
+ * member count, and the single `workspace` CLI 0.5.0 reads. That one is the workspace with the
+ * most members, so 0.5.0's "ask about sharing when someone else is there" (#244) still asks when
+ * any of them has teammates. Null when the machine is in no workspace.
+ */
+export async function presentMachineWorkspaces(db: Db, machine: Pick<Machine, "id" | "userId">) {
+  const listed = await connectedMachineWorkspaces(db, machine);
+  const counts = listed.length
     ? await db
         .select({ workspaceId: schema.workspaceMember.workspaceId, members: count() })
         .from(schema.workspaceMember)
         .where(
           inArray(
             schema.workspaceMember.workspaceId,
-            mine.map((workspace) => workspace.id),
+            listed.map((workspace) => workspace.id),
           ),
         )
         .groupBy(schema.workspaceMember.workspaceId)
     : [];
-  const workspaces = mine.map((workspace) => ({
+  const workspaces = listed.map(({ joined: _joined, ...workspace }) => ({
     ...workspace,
     memberCount: counts.find((row) => row.workspaceId === workspace.id)?.members ?? 0,
   }));
@@ -171,16 +206,173 @@ export async function presentMachineWorkspaces(db: Db, userId: string | null) {
 }
 
 /**
- * The workspaces a machine is in right now: an adopted runner's one workspace, or every workspace
- * a connected machine's owner is a member of.
+ * The workspaces a machine is in right now: an adopted runner's one workspace, or the ones a
+ * connected machine's owner put it in.
  */
 export async function machineWorkspaceIds(
   db: Db,
-  machine: Pick<Machine, "workspaceId" | "userId">,
+  machine: Pick<Machine, "id" | "workspaceId" | "userId">,
 ): Promise<string[]> {
   if (machine.workspaceId) return [machine.workspaceId];
-  if (!machine.userId) return [];
-  return (await userWorkspaces(db, machine.userId)).map((workspace) => workspace.id);
+  return (await connectedMachineWorkspaces(db, machine)).map((workspace) => workspace.id);
+}
+
+/**
+ * Puts the owner's machines in a workspace (#363). Only machines `userId` owns, and only a
+ * workspace they're a member of; the caller checks membership. Logs machine.workspace_added in
+ * that workspace for each machine that wasn't there yet, and returns those machines' ids.
+ */
+export async function addMachinesToWorkspace(
+  db: Db,
+  {
+    userId,
+    workspaceId,
+    machineIds,
+  }: { userId: string; workspaceId: string; machineIds: string[] },
+) {
+  if (machineIds.length === 0) return [];
+  const owned = await db
+    .select({ id: schema.machine.id, name: schema.machine.name })
+    .from(schema.machine)
+    .where(
+      and(
+        inArray(schema.machine.id, machineIds),
+        eq(schema.machine.userId, userId),
+        eq(schema.machine.source, "connect"),
+        isNull(schema.machine.revokedAt),
+      ),
+    );
+  if (owned.length === 0) return [];
+  const inserted = await db
+    .insert(schema.machineWorkspace)
+    .values(owned.map((machine) => ({ machineId: machine.id, workspaceId })))
+    .onConflictDoNothing()
+    .returning({ machineId: schema.machineWorkspace.machineId });
+  for (const { machineId } of inserted) {
+    const machine = owned.find((m) => m.id === machineId)!;
+    await recordEvent(db, {
+      workspaceId,
+      type: "machine.workspace_added",
+      data: { machineName: machine.name },
+      machineId,
+      actorUserId: userId,
+    });
+  }
+  return inserted.map((row) => row.machineId);
+}
+
+/**
+ * Puts the user's machines that are in no workspace at all into `workspaceId`, a workspace they
+ * now own. That's a machine approved before they had a workspace (an org install waiting on its
+ * owners, #322), which would otherwise take no jobs until they added it by hand.
+ */
+export async function addHomelessMachines(db: Db, userId: string, workspaceId: string) {
+  const homeless = await db
+    .select({ id: schema.machine.id })
+    .from(schema.machine)
+    .leftJoin(schema.machineWorkspace, eq(schema.machineWorkspace.machineId, schema.machine.id))
+    .where(
+      and(
+        eq(schema.machine.userId, userId),
+        eq(schema.machine.source, "connect"),
+        isNull(schema.machine.revokedAt),
+        isNull(schema.machineWorkspace.machineId),
+      ),
+    );
+  return addMachinesToWorkspace(db, {
+    userId,
+    workspaceId,
+    machineIds: homeless.map((machine) => machine.id),
+  });
+}
+
+/** Takes all of the user's machines out of a workspace they're no longer a member of. */
+export async function removeUserMachinesFromWorkspace(db: Db, userId: string, workspaceId: string) {
+  await db
+    .delete(schema.machineWorkspace)
+    .where(
+      and(
+        eq(schema.machineWorkspace.workspaceId, workspaceId),
+        inArray(
+          schema.machineWorkspace.machineId,
+          db
+            .select({ id: schema.machine.id })
+            .from(schema.machine)
+            .where(eq(schema.machine.userId, userId)),
+        ),
+      ),
+    );
+}
+
+/**
+ * Takes one of the owner's machines out of a workspace. Logs machine.workspace_removed there when
+ * it was in it. Returns whether it was.
+ */
+export async function removeMachineFromWorkspace(
+  db: Db,
+  machine: Pick<Machine, "id" | "name">,
+  workspaceId: string,
+  actorUserId: string,
+) {
+  const deleted = await db
+    .delete(schema.machineWorkspace)
+    .where(
+      and(
+        eq(schema.machineWorkspace.machineId, machine.id),
+        eq(schema.machineWorkspace.workspaceId, workspaceId),
+      ),
+    )
+    .returning({ machineId: schema.machineWorkspace.machineId });
+  if (deleted.length === 0) return false;
+  await recordEvent(db, {
+    workspaceId,
+    type: "machine.workspace_removed",
+    data: { machineName: machine.name },
+    machineId: machine.id,
+    actorUserId,
+  });
+  return true;
+}
+
+/**
+ * The owner's connected machines that aren't in `workspaceId`, for the Runners page's "Your other
+ * machines" (#365), each with the names of the workspaces it is in.
+ */
+export async function otherMachines(db: Db, userId: string, workspaceId: string) {
+  const [machines, mine, rows] = await Promise.all([
+    db
+      .select()
+      .from(schema.machine)
+      .where(
+        and(
+          eq(schema.machine.userId, userId),
+          eq(schema.machine.source, "connect"),
+          isNotNull(schema.machine.os),
+          isNull(schema.machine.revokedAt),
+        ),
+      )
+      .orderBy(schema.machine.name),
+    userWorkspaces(db, userId),
+    db
+      .select({
+        machineId: schema.machineWorkspace.machineId,
+        workspaceId: schema.machineWorkspace.workspaceId,
+      })
+      .from(schema.machineWorkspace)
+      .innerJoin(schema.machine, eq(schema.machine.id, schema.machineWorkspace.machineId))
+      .where(eq(schema.machine.userId, userId)),
+  ]);
+  return machines.flatMap((machine) => {
+    const ids = rows.filter((row) => row.machineId === machine.id).map((row) => row.workspaceId);
+    if (ids.includes(workspaceId)) return [];
+    return [
+      {
+        machine,
+        // In membership order, and only the ones the owner is still in.
+        workspaces: mine.filter((w) => ids.includes(w.id)).map((w) => w.name),
+      },
+    ];
+  });
 }
 
 /**
@@ -189,7 +381,7 @@ export async function machineWorkspaceIds(
  */
 export async function recordMachineEvents(
   db: Db,
-  machine: Pick<Machine, "workspaceId" | "userId">,
+  machine: Pick<Machine, "id" | "workspaceId" | "userId">,
   event: DistributiveOmit<NewActivityEvent, "workspaceId">,
 ) {
   for (const workspaceId of await machineWorkspaceIds(db, machine))

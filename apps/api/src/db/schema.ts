@@ -226,8 +226,8 @@ export const deviceCode = sqliteTable("device_code", {
 // A machine RelayRunner can route jobs to. Two sources:
 // - 'connect': enrolled with `relayrunner connect`; it authenticates with its own token, not a
 //   user session, and runs one-job JIT runners the gateway mints. It belongs to its user (user_id),
-//   not to a workspace (#318): it shows up in, and takes jobs for, every workspace its user is a
-//   member of. workspace_id is null.
+//   not to a workspace (#318): it takes jobs in the workspaces its owner picked (machine_workspace,
+//   #363). workspace_id is null.
 // - 'github': a self-hosted runner its owner already registered in a connected org (#159).
 //   RelayRunner never talks to the machine: it reads the runner's status from GitHub and steers
 //   jobs to it with routing_label, a label it added to the runner on GitHub. token_hash and
@@ -299,6 +299,29 @@ export const machine = sqliteTable(
     index("machine_workspace_idx").on(table.workspaceId),
     index("machine_user_idx").on(table.userId),
     index("machine_github_runner_idx").on(table.installationId, table.githubRunnerId),
+  ],
+);
+
+// Which workspaces a connected machine takes jobs in (#363). Its owner picks them on /device, from
+// the Runners page and with `relayrunner workspaces`. A row only counts while the owner is still a
+// member there (src/machines.ts inWorkspace), and membership sync deletes the rows for a workspace
+// the owner leaves. Adopted GitHub runners don't use this: they have machine.workspace_id.
+export const machineWorkspace = sqliteTable(
+  "machine_workspace",
+  {
+    machineId: text("machine_id")
+      .notNull()
+      .references(() => machine.id, { onDelete: "cascade" }),
+    workspaceId: text("workspace_id")
+      .notNull()
+      .references(() => workspace.id, { onDelete: "cascade" }),
+    createdAt: integer("created_at", { mode: "timestamp_ms" })
+      .notNull()
+      .$defaultFn(() => new Date()),
+  },
+  (table) => [
+    primaryKey({ columns: [table.machineId, table.workspaceId] }),
+    index("machine_workspace_workspace_idx").on(table.workspaceId),
   ],
 );
 

@@ -228,3 +228,60 @@ describe("membership from GitHub (#317)", () => {
     expect(reads).toBe(1);
   });
 });
+
+describe("machine workspaces follow membership (#363)", () => {
+  const insertMachine = (id: string, userId: string) =>
+    env.DB.prepare(
+      "insert into machine (id, user_id, name, os, arch, token_hash, created_at, updated_at) values (?, ?, ?, 'macos', 'arm64', ?, 1, 1)",
+    )
+      .bind(id, userId, id, `hash-${id}`)
+      .run();
+  const listed = async (machineId: string) =>
+    (
+      await env.DB.prepare(
+        "select workspace_id from machine_workspace where machine_id = ? order by workspace_id",
+      )
+        .bind(machineId)
+        .all<{ workspace_id: string }>()
+    ).results.map((row) => row.workspace_id);
+
+  test("leaving a workspace takes your machines out of it", async () => {
+    const { user, githubToken } = await testing.signIn(env);
+    const kept = installation();
+    const lost = installation();
+    await installed(kept);
+    await installed(lost);
+    visibleTo.set(githubToken, [kept, lost]);
+    await sync(user.id);
+    const [keptId, lostId] = [await workspaceOf(kept.id), await workspaceOf(lost.id)];
+    await insertMachine(`leave-${user.id}`, user.id);
+    await env.DB.prepare(
+      "insert into machine_workspace (machine_id, workspace_id, created_at) values (?1, ?2, 1), (?1, ?3, 1)",
+    )
+      .bind(`leave-${user.id}`, keptId, lostId)
+      .run();
+
+    visibleTo.set(githubToken, [kept]);
+    await sync(user.id);
+    expect(await listed(`leave-${user.id}`)).toEqual([keptId]);
+  });
+
+  test("a machine in no workspace joins the first one you install, not one you join", async () => {
+    const { user, githubId, githubToken } = await testing.signIn(env);
+    await insertMachine(`homeless-${user.id}`, user.id);
+
+    const joined = installation();
+    await installed(joined, 99);
+    visibleTo.set(githubToken, [joined]);
+    await sync(user.id);
+    expect(await listed(`homeless-${user.id}`)).toEqual([]);
+
+    const mine = installation();
+    await installed(mine, githubId);
+    visibleTo.set(githubToken, [joined, mine]);
+    await sync(user.id);
+    const mineId = await workspaceOf(mine.id);
+    expect(await listed(`homeless-${user.id}`)).toEqual([mineId]);
+    expect((await events(mineId)).map((event) => event.type)).toContain("machine.workspace_added");
+  });
+});
