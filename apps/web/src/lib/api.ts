@@ -25,3 +25,9 @@ export async function api<T>(path: string, init?: RequestInit): Promise<T> {
   }
   return (await res.json()) as T;
 }
+
+/** What went wrong, in words: `messages` for the API's error codes, else the error's own message. */
+export function errorText(caught: unknown, messages: Record<string, string> = {}) {
+  const code = caught instanceof ApiError ? caught.code : undefined;
+  return (code && messages[code]) ?? (caught instanceof Error ? caught.message : String(caught));
+}

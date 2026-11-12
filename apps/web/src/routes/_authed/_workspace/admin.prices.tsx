@@ -5,6 +5,7 @@ import { type FormEvent, useState } from "react";
 import { PageHeader } from "@/components/page-header";
 import { Button } from "@/components/ui/button";
 import { createCellContext, DataTable, dataTableColumns } from "@/components/ui/data-table";
+import { Field } from "@/components/ui/field";
 import { Input } from "@/components/ui/input";
 import {
   Select,
@@ -24,7 +25,7 @@ import {
   runPriceCheck,
   type AdminRate,
 } from "@/lib/admin";
-import { ApiError } from "@/lib/api";
+import { errorText } from "@/lib/api";
 import { timeAgo } from "@/lib/activity";
 import { rateText } from "@/lib/providers";
 
@@ -186,10 +187,7 @@ function PriceCheck({
       await run();
       await onChange(message);
     } catch (caught) {
-      const code = caught instanceof ApiError ? caught.code : undefined;
-      setError(
-        (code && ERRORS[code]) ?? (caught instanceof Error ? caught.message : String(caught)),
-      );
+      setError(errorText(caught, ERRORS));
     } finally {
       setBusy(false);
     }
@@ -219,7 +217,6 @@ function PriceCheck({
           Couldn't read {providerName(check.provider)}'s price page: {check.error}
         </p>
       ))}
-      {error && <p className="text-sm text-destructive">{error}</p>}
       {error && <p className="text-sm text-destructive">{error}</p>}
       {pending.length > 0 && (
         <ul className="grid gap-2">
@@ -311,10 +308,7 @@ function AddPrice({
       setSource("");
       await onAdded(rate, from);
     } catch (caught) {
-      const code = caught instanceof ApiError ? caught.code : undefined;
-      setError(
-        (code && ERRORS[code]) ?? (caught instanceof Error ? caught.message : String(caught)),
-      );
+      setError(errorText(caught, ERRORS));
     } finally {
       setSaving(false);
     }
@@ -324,8 +318,7 @@ function AddPrice({
     <form onSubmit={submit} className="grid gap-3 rounded-xl border bg-card p-4">
       <h2 className="font-medium">Add a price</h2>
       <div className="grid gap-3 sm:grid-cols-[minmax(0,14rem)_8rem_6rem_10rem]">
-        <label className="grid gap-1 text-sm">
-          Rate
+        <Field label="Rate">
           <Select value={key} onValueChange={setKey}>
             <SelectTrigger>
               <SelectValue placeholder="Choose a rate" />
@@ -338,38 +331,34 @@ function AddPrice({
               ))}
             </SelectContent>
           </Select>
-        </label>
-        <label className="grid gap-1 text-sm">
-          USD a minute
+        </Field>
+        <Field label="USD a minute">
           <Input
             inputMode="decimal"
             placeholder="0.004"
             value={price}
             onChange={(e) => setPrice(e.target.value)}
           />
-        </label>
-        <label className="grid gap-1 text-sm">
-          vCPUs
+        </Field>
+        <Field label="vCPUs">
           <Input
             inputMode="numeric"
             value={rate?.per === "runner" ? "" : vcpus}
             disabled={rate?.per === "runner"}
             onChange={(e) => setVcpus(e.target.value)}
           />
-        </label>
-        <label className="grid gap-1 text-sm">
-          From
+        </Field>
+        <Field label="From">
           <Input type="date" value={from} onChange={(e) => setFrom(e.target.value)} />
-        </label>
+        </Field>
       </div>
-      <label className="grid gap-1 text-sm">
-        Source
+      <Field label="Source">
         <Input
           placeholder="Pricing page URL or a note"
           value={source}
           onChange={(e) => setSource(e.target.value)}
         />
-      </label>
+      </Field>
       {error && <p className="text-sm text-destructive">{error}</p>}
       <div>
         <Button type="submit" disabled={!rate || !price || saving}>

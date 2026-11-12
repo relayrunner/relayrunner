@@ -1,7 +1,6 @@
 // The provider list reports and the dashboard use: the code list in @relayrunner/providers with
 // the rows operators save in the admin (the provider table) on top, so a change shows up with no
-// deploy. Read like the price book (prices.ts): cached per isolate, the code list alone if D1 can't
-// be read.
+// deploy. Cached per isolate like the price book (d1-cache.ts).
 import {
   BASE_CATALOG,
   type CatalogProvider,
@@ -10,21 +9,16 @@ import {
 } from "@relayrunner/providers/catalog";
 import { createMiddleware } from "hono/factory";
 import type { AppEnv } from "./app.ts";
+import { cachedRead } from "./d1-cache.ts";
 import { createDb, type Db, schema } from "./db/index.ts";
 
-// How long an isolate reuses the list it read. Operators' own changes clear it at once (see
-// forgetCatalog); another isolate picks them up within this.
-const CACHE_MS = 60_000;
-
-let cached: { catalog: Promise<CatalogProvider[]>; until: number } | undefined;
-// The last list read, by id and the added ones alone, for code that works out a job's environment
-// synchronously (job-times.ts).
-let byId = new Map(BASE_CATALOG.map((p) => [p.id, p]));
-let added: CatalogProvider[] = [];
+// The last list read, for code that works out a job's environment synchronously (job-times.ts).
+let latest = BASE_CATALOG;
+let ids = new Set(latest.map((p) => p.id));
 
 function remember(catalog: CatalogProvider[]) {
-  byId = new Map(catalog.map((p) => [p.id, p]));
-  added = catalog.filter((p) => !p.builtIn);
+  latest = catalog;
+  ids = new Set(catalog.map((p) => p.id));
   return catalog;
 }
 
@@ -39,18 +33,10 @@ export async function readCatalog(db: Db): Promise<CatalogProvider[]> {
   return remember(providerCatalog(rows.map(toRow)));
 }
 
-/** readCatalog, reused for CACHE_MS per isolate. If D1 can't be read, the code list alone. */
-export async function loadCatalog(db: Db, now = Date.now()): Promise<CatalogProvider[]> {
-  if (!cached || now >= cached.until) {
-    const catalog = readCatalog(db).catch((error: unknown) => {
-      console.error(JSON.stringify({ msg: "provider rows unreadable", error: String(error) }));
-      cached = undefined;
-      return remember(BASE_CATALOG);
-    });
-    cached = { catalog, until: now + CACHE_MS };
-  }
-  return cached.catalog;
-}
+const catalogCache = cachedRead("provider rows", readCatalog, () => remember(BASE_CATALOG));
+
+/** readCatalog, cached per isolate; the code list alone if D1 can't be read (d1-cache.ts). */
+export const loadCatalog = catalogCache.load;
 
 /**
  * Loads the list before a route that works out jobs' providers (environmentFor reads it
@@ -61,16 +47,11 @@ export const withCatalog = createMiddleware<AppEnv>(async (c, next) => {
   await next();
 });
 
-/** The providers operators added, from the list last loaded in this isolate. */
-export const addedProviders = () => added;
+/** The list last loaded in this isolate. */
+export const currentProviders = () => latest;
 
 /** Drops this isolate's cached list, after an operator saves or removes a provider. */
-export function forgetCatalog() {
-  cached = undefined;
-}
+export const forgetCatalog = catalogCache.forget;
 
 /** Whether `id` is a provider in the current list, including ones operators added. */
-export const isCatalogProvider = (id: string) => byId.has(id);
-
-/** A provider's name in the current list, or the id when it isn't one. */
-export const catalogName = (id: string) => byId.get(id)?.name ?? id;
+export const isCatalogProvider = (id: string) => ids.has(id);

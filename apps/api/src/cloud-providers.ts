@@ -1,23 +1,23 @@
 // Hosted runner services a job asks for by its `runs-on` labels, and the labels GitHub publishes
 // for its own hosted runners. The Job times report and the Runners page group cloud jobs by these.
 import {
-  HOSTED_PROVIDER_IDS,
-  type HostedProviderId,
-  isProviderLabel,
-} from "@relayrunner/providers";
+  BASE_CATALOG,
+  type CatalogProvider,
+  catalogProviderOf,
+} from "@relayrunner/providers/catalog";
 
-export type CloudProvider = { id: HostedProviderId; label: string };
+export type CloudProvider = { id: string; name: string; label: string };
 
 /**
- * The hosted runner service a job's labels ask for, with the label that names its runner type.
- * Labels are lowercase.
+ * The hosted runner service a job's labels ask for, in code or added by an operator, with the
+ * label that names its runner type. Labels are lowercase.
  */
-export function cloudProviderFor(labels: string[]): CloudProvider | null {
-  for (const id of HOSTED_PROVIDER_IDS) {
-    const label = labels.find((l) => isProviderLabel(id, l));
-    if (label) return { id, label: id === "runs-on" ? runsOnRunner(labels) : label };
-  }
-  return null;
+export function cloudProviderFor(
+  labels: string[],
+  providers: readonly CatalogProvider[] = BASE_CATALOG,
+): CloudProvider | null {
+  const found = catalogProviderOf(providers, labels);
+  return found?.id === "runs-on" ? { ...found, label: runsOnRunner(labels) } : found;
 }
 
 /**
