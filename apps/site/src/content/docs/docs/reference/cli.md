@@ -68,4 +68,14 @@ relayrunner share only-me       # only jobs you started
 relayrunner share anyone        # any job in the workspace
 ```
 
+## `workspaces`
+
+```sh
+relayrunner workspaces                # which workspaces this machine runs jobs in
+relayrunner workspaces add acme       # run jobs from Acme here too
+relayrunner workspaces remove acme    # stop running Acme's jobs here
+```
+
+You pick the machine's workspaces when you approve it; this changes them later. `add` and `remove` take a workspace's name, slug or id, or show a list to pick from when you leave it out. Adding a workspace while sharing is `anyone` warns that anyone who can push to its private repos can run jobs on the machine.
+
 See the [changelog](https://github.com/relayrunner/relayrunner/blob/main/apps/cli/CHANGELOG.md) for what's new.

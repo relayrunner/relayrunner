@@ -36,12 +36,12 @@ import {
 import { whoami, type WhoamiResponse } from "./whoami.ts";
 import {
   hasTeammates,
-  noWorkspaceYet,
   readWorkspaces,
   sharingScope,
   workspaceNames,
   type Workspace,
 } from "./workspaces.ts";
+import { emptyWorkspacesNotice, workspacesCommand } from "./workspaces-command.ts";
 
 // The dashboard's origin. It forwards /api/* (including the machine WebSocket) to the API.
 const DEFAULT_SERVER = "https://app.relayrunner.app";
@@ -315,7 +315,7 @@ const loginCommand = defineCommand({
   meta: {
     name: "login",
     description:
-      "Sign this machine in without putting it online. It's in all your workspaces. Run `relayrunner connect` afterwards to take jobs.",
+      "Sign this machine in without putting it online. You pick its workspaces when you approve it. Run `relayrunner connect` afterwards to take jobs.",
   },
   args: {
     server: {
@@ -397,13 +397,18 @@ async function enroll(
   const signedIn = await signIn(server, name || (await defaultMachineName()), platform);
   const { credentials, workspaces } = signedIn;
   writeCredentials(credentials);
-  const where = workspaces.length ? ` in ${workspaceNames(workspaces)}` : "";
   clack.log.success(
-    `Enrolled as ${credentials.machine.name}${where}. Token saved to ${credentialsPath()}.`,
+    `Enrolled as ${credentials.machine.name}. Token saved to ${credentialsPath()}.`,
   );
+  // /device picked the workspaces it runs jobs in (#364); this is where they're changed later.
+  if (workspaces.length)
+    clack.log.info(
+      `Runs jobs in ${workspaceNames(workspaces)}.\nChange with: relayrunner workspaces`,
+    );
   // Signed in before RelayRunner is installed anywhere they belong: the machine is theirs and can
-  // go online, and shows up in a workspace as soon as there is one.
-  if (!workspaces.length) clack.log.warn(noWorkspaceYet(credentials.machine.name, server));
+  // go online, and shows up in a workspace as soon as there is one. Or every workspace was left
+  // unticked on /device.
+  else clack.log.warn(await emptyWorkspacesNotice(credentials));
   // A new machine runs only its owner's jobs. Ask whether teammates' jobs may run here too,
   // but only when one of its workspaces has teammates. Reconnecting never asks again:
   // `relayrunner share`.
@@ -537,11 +542,20 @@ const whoamiCommand = defineCommand({
     );
     switch (result.status) {
       case "ok":
-        print(describeIdentity(credentials.server, result.identity), {
-          status: "ok",
-          server: credentials.server,
-          ...result.identity,
-        });
+        print(
+          describeIdentity(
+            credentials.server,
+            result.identity,
+            !args.json && !readWorkspaces(result.identity).length
+              ? await emptyWorkspacesNotice(credentials)
+              : undefined,
+          ),
+          {
+            status: "ok",
+            server: credentials.server,
+            ...result.identity,
+          },
+        );
         break;
       case "revoked":
         print(
@@ -560,7 +574,7 @@ const whoamiCommand = defineCommand({
   },
 });
 
-function describeIdentity(server: string, identity: WhoamiResponse) {
+function describeIdentity(server: string, identity: WhoamiResponse, emptyNotice?: string) {
   const { machine, enrolledBy } = identity;
   const workspaces = readWorkspaces(identity);
   const status =
@@ -574,13 +588,8 @@ function describeIdentity(server: string, identity: WhoamiResponse) {
   ]
     .filter(Boolean)
     .join(" ");
-  return table(`${machine.name} (${machine.id})`, [
-    [
-      "Workspaces",
-      workspaces.length
-        ? workspaceNames(workspaces)
-        : "none yet: install RelayRunner on GitHub to get one",
-    ],
+  const details = table(`${machine.name} (${machine.id})`, [
+    ["Workspaces", workspaces.length ? workspaceNames(workspaces) : "none"],
     ["Platform", [machine.os, machine.arch].filter(Boolean).join(" ") || "unknown"],
     ["Enrolled", enrolled],
     ["Status", status],
@@ -594,6 +603,7 @@ function describeIdentity(server: string, identity: WhoamiResponse) {
       : []),
     ["Gateway", server],
   ]);
+  return emptyNotice ? `${details}\n\n${emptyNotice}` : details;
 }
 
 function describeSaved(saved: Pick<Credentials, "server" | "machine">) {
@@ -745,6 +755,7 @@ const main = defineCommand({
     pause: pauseCommand(true),
     resume: pauseCommand(false),
     share: shareCommand,
+    workspaces: workspacesCommand,
   },
 });
 
