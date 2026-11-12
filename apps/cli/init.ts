@@ -15,6 +15,7 @@ import * as clack from "@clack/prompts";
 import { defineCommand } from "citty";
 import { isDeclined, rememberDeclined } from "./declined.ts";
 import { unifiedDiff } from "./diff.ts";
+import { isolationState } from "./isolated.ts";
 import {
   findRepoRoot,
   originRepo,
@@ -52,7 +53,10 @@ export async function planInit(
   const repo = await originRepo(root);
   const visibility = repo ? await repoVisibility(repo, options.fetcher) : "unknown";
   const files = readWorkflowFiles(root);
-  const { jobs, errors } = analyzeWorkflows(files, { hostOs: options.hostOs ?? hostOs() });
+  const { jobs, errors } = analyzeWorkflows(
+    files,
+    options.hostOs ? options : { hostOs: hostOs(), vm: (await isolationState()) === "ready" },
+  );
   return { root, repo, visibility, files, jobs, errors };
 }
 

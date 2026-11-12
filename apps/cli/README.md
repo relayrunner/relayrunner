@@ -166,8 +166,9 @@ It sorts every job into one of three groups:
 
 - **Ready**: a plain GitHub-hosted (`ubuntu-*`, `macos-*`) or Blacksmith
   (`blacksmith-*`) label. A `macos-*` job only routes to macOS machines.
-  Warnings flag what to check first: services or containers (need Docker),
-  Linux package installs on a Mac, Blacksmith-only actions.
+  Warnings flag what to check first: Blacksmith-only actions and, on a machine
+  that doesn't run jobs in a VM, services or containers (need Docker) and
+  Linux package installs on a Mac.
 - **Already routed**: the job runs where a relay sends it.
 - **Skipped, with the reason**: a matrix, a `runs-on` expression, list or
   group, a reusable workflow, a deploy job (`environment`, `id-token: write`,
