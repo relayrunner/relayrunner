@@ -351,6 +351,11 @@ button {
   letter-spacing: 0.08em;
   text-transform: uppercase;
 }
+.kicker-note {
+  margin-left: 8px;
+  color: var(--mute);
+  font-weight: 500;
+}
 .section h2 {
   margin-top: 18px;
   text-wrap: balance;
