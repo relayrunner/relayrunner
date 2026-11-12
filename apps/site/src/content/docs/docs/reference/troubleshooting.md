@@ -48,7 +48,7 @@ The machine is missing something the hosted image has: a tool, a Linux package, 
 - **"needs Apple's container tool"**: install it from [its releases page](https://github.com/apple/container/releases), then run `container system start`.
 - **"isn't running"**: run `container system start`.
 - **"needs macOS 26 or later"** or **"needs a Mac with Apple silicon"**: isolated jobs don't work on this computer. Run `relayrunner connect` without `--isolated`.
-- **A job can't reach a server on your network**: isolated jobs are kept off your Mac and local network. Add `--local-network`.
+- **A job can't reach a server on your network**: isolated jobs are kept off your Mac and local network. Add `--local-network`. If you turned on the firewall on the Mac, also run `relayrunner firewall off`.
 - **Docker fails in a job**: update the CLI. Older versions don't start Docker in isolated jobs.
 - **A macOS job fails**: isolated jobs run on Linux. Use a regular connection for macOS jobs.
 - **`ping` fails in a job**: that's expected in isolated jobs. Use `curl` to test a connection.

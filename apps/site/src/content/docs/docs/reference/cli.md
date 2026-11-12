@@ -82,3 +82,13 @@ relayrunner workspaces remove acme    # stop running Acme's jobs here
 You pick the machine's workspaces when you approve it; this changes them later. `add` and `remove` take a workspace's name, slug or id, or show a list to pick from when you leave it out. Adding a workspace while sharing is `anyone` warns that anyone who can push to its private repos can run jobs on the machine.
 
 See the [changelog](https://github.com/relayrunner/relayrunner/blob/main/apps/cli/CHANGELOG.md) for what's new.
+
+## `firewall`
+
+```sh
+relayrunner firewall        # show whether it's on
+relayrunner firewall on     # asks for your password
+relayrunner firewall off
+```
+
+Turns on a firewall on your Mac for [isolated jobs](/docs/runners/self-hosted#isolated-jobs-on-a-mac). Job VMs can reach the internet, not your Mac or your local network, and no job can remove it. It stays on after a restart.

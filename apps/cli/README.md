@@ -75,6 +75,9 @@ approved the machine also gets an email, since someone else may have its token.
     your local network. It guards against accidents: a job that sets out to
     remove it can, through Docker. `--local-network` turns the firewall off,
     for jobs that need something on your network.
+  - `relayrunner firewall on` adds a firewall on the Mac itself, which no job
+    can remove. It asks for your password and stays on after a restart.
+    `relayrunner firewall off` removes it.
   - `--image <image>` starts from another runner image.
   - `connect` removes the images it downloaded or built for older runner
     versions. It never removes images you got yourself.

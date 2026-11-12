@@ -40,6 +40,7 @@ import {
   toSharing,
   type ShareChoice,
 } from "./share.ts";
+import { firewallCommand, firewallInstalled } from "./firewall.ts";
 import { whoami, type WhoamiResponse } from "./whoami.ts";
 import {
   hasTeammates,
@@ -170,10 +171,18 @@ async function connectMachine(args: {
   let runnerVersion: string;
   let launchers: Launcher[];
   if (args.isolated) {
+    // The firewall on the Mac covers every VM, so with it on a job can't be let onto the network.
+    const firewall = firewallInstalled();
+    if (firewall)
+      log(
+        args["local-network"]
+          ? "The firewall on this Mac is on, so --local-network has no effect. Turn it off with `relayrunner firewall off`."
+          : "The firewall on this Mac is on.",
+      );
     const isolation = await prepareIsolation({
       slots,
       image: args.image,
-      localNetwork: args["local-network"],
+      localNetwork: args["local-network"] && !firewall,
       log,
       debug: debugLog(),
     });
@@ -806,6 +815,7 @@ const main = defineCommand({
     resume: pauseCommand(false),
     share: shareCommand,
     workspaces: workspacesCommand,
+    firewall: firewallCommand,
   },
 });
 
