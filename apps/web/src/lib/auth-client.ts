@@ -9,8 +9,15 @@ export const authClient = createAuthClient({
   // Workspaces are Better Auth organizations (see apps/api/src/auth.ts).
   plugins: [
     organizationClient(),
-    // user.role (apps/api/src/auth.ts): "operator" sees the Admin section.
-    inferAdditionalFields({ user: { role: { type: "string", required: false, input: false } } }),
+    // user.role (apps/api/src/auth.ts): "operator" sees the Admin section. termsVersion and
+    // privacyVersion: what they last agreed to (lib/legal.ts).
+    inferAdditionalFields({
+      user: {
+        role: { type: "string", required: false, input: false },
+        termsVersion: { type: "string", required: false, input: false },
+        privacyVersion: { type: "string", required: false, input: false },
+      },
+    }),
     // Agent sign-in (apps/api/src/agent-auth.ts): on the pages Better Auth sends an MCP client's
     // sign-in through (/login, /agents/*), it adds the page's signed authorization request to
     // each call, so signing in or approving carries on to the next step.

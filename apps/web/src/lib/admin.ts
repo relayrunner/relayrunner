@@ -12,6 +12,8 @@ export type AdminUser = {
   image: string | null;
   role: UserRole;
   createdAt: string;
+  /** When they last agreed to the Terms of Service and Privacy Policy. */
+  legalAgreedAt: string | null;
   /** How many workspaces they belong to. */
   workspaces: number;
 };
