@@ -1,5 +1,5 @@
 import { CircleHelpIcon, CloudIcon, LaptopIcon } from "lucide-react";
-import { type ProviderId, providerOfEnvironment } from "@relayrunner/providers";
+import { type ProviderId, providerOfEnvironment, sizeText } from "@relayrunner/providers";
 import type { ReactNode } from "react";
 import {
   BlacksmithIcon,
@@ -167,4 +167,13 @@ export function ProviderMark({ provider, className }: { provider: Provider; clas
 export function runnerName(provider: Provider, label: string) {
   const { prefix } = providerStyle(provider);
   return prefix ? label.replace(prefix, "") : label;
+}
+
+/** What to show after a runner's name: its detail where the provider shows one, and its size. */
+export function runnerSpec(
+  provider: Provider,
+  { detail, size }: Pick<Environment, "detail" | "size">,
+) {
+  const { detail: showDetail } = providerStyle(provider);
+  return [showDetail && detail, sizeText(size)].filter(Boolean).join(" · ") || null;
 }

@@ -6,6 +6,7 @@ import {
   type ProviderId,
   type RatePrices,
   ratePrices,
+  runnerSize,
 } from "@relayrunner/providers";
 import { api } from "@/lib/api";
 import { type Environment, type Stat, sampleStat } from "@/lib/job-times";
@@ -79,10 +80,12 @@ function sampleRunner(
     provider === "github"
       ? githubRate(BASE_BOOK, "linux-2-core")
       : listRate(BASE_BOOK, provider, label);
+  const size = runnerSize(provider, provider === "github" ? "linux-2-core" : label);
   return {
     key: `${provider}:${label}`,
     label,
     detail,
+    ...(size && { size }),
     jobs,
     failures: Math.round(jobs * 0.03),
     billedMinutes,

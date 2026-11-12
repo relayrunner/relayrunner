@@ -26,6 +26,7 @@ import { describePlace } from "@/lib/device";
 import { agreedSession } from "@/lib/legal";
 import { onboardingStep, shouldOpenInstall } from "@/lib/onboarding";
 import { cn } from "@/lib/utils";
+import { usePageTitle } from "@/lib/page-title";
 
 // Where `relayrunner connect` sends the browser: /device?user_code=ABCDEFGH&name=<hostname>.
 // It doubles as onboarding for someone who has never used RelayRunner, so the CLI's one link
@@ -138,6 +139,7 @@ export const Route = createFileRoute("/device")({
 });
 
 function DevicePage() {
+  usePageTitle("Connect a machine");
   const loaded = Route.useLoaderData();
   return (
     <main className="grid min-h-screen place-items-center p-4">

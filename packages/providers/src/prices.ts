@@ -222,15 +222,15 @@ function rateOf(provider: ProviderId, label: string): { rate: string; vcpus: num
         rate: platformOf(label),
         vcpus: label.includes("macos") ? 8 : vcpusIn(label, /-(\d{1,2})$/, 2),
       };
-    // warp-ubuntu-latest-x64-4x, warp-ubuntu-2404-arm64-2x, warp-macos-15-arm64-6x
+    // warp-ubuntu-latest-x64-4x, warp-ubuntu-2404-arm64-2x-spot, warp-macos-15-arm64-6x
     case "warpbuild":
-      return { rate: platformOf(label), vcpus: vcpusIn(label, /-(\d+)x$/, 2) };
-    // ubicloud, ubicloud-standard-4, ubicloud-standard-2-arm, ubicloud-premium-8
+      return { rate: platformOf(label), vcpus: vcpusIn(label, /-(\d+)x(?=-|$)/, 2) };
+    // ubicloud, ubicloud-standard-4, ubicloud-standard-2-arm, ubicloud-premium-8-ubuntu-2404
     case "ubicloud":
       if (label.includes("gpu")) return null;
       return {
         rate: label.includes("premium") ? "premium" : "standard",
-        vcpus: vcpusIn(label, /-(\d+)(-arm)?$/, 2),
+        vcpus: vcpusIn(label, /-(?:standard|premium)-(\d+)/, 2),
       };
     default:
       return null;
@@ -253,4 +253,73 @@ export function listRate(
   if (!sized) return null;
   const usd = book.usd(provider, sized.rate, at);
   return usd === null ? null : usd * sized.vcpus;
+}
+
+/** How big a runner is: its vCPUs, and its memory when the label or the service says. */
+export interface RunnerSize {
+  vcpus: number;
+  memoryGb?: number;
+}
+
+// GitHub's standard runners in a private repo, by the rate that names them. macOS isn't here: its
+// sizes differ by image (Intel, Apple silicon, large, xlarge).
+const GITHUB_SIZES: Partial<Record<string, RunnerSize>> = {
+  "linux-1-core": { vcpus: 1, memoryGb: 5 },
+  "linux-2-core": { vcpus: 2, memoryGb: 8 },
+  "linux-arm-2-core": { vcpus: 2, memoryGb: 8 },
+  "windows-2-core": { vcpus: 2, memoryGb: 8 },
+  "windows-arm-2-core": { vcpus: 2, memoryGb: 8 },
+};
+
+// Cloudflare Containers instance types RelayRunner runs jobs on.
+const CLOUDFLARE_SIZES: Partial<Record<string, RunnerSize>> = {
+  "standard-1": { vcpus: 0.5, memoryGb: 4 },
+  "standard-2": { vcpus: 1, memoryGb: 6 },
+  "standard-3": { vcpus: 2, memoryGb: 8 },
+  "standard-4": { vcpus: 4, memoryGb: 12 },
+};
+
+// A size written into a label its owner named, such as `ubuntu-24.04-16core` or `linux-8-cores`.
+const NAMED_SIZE = /(?:^|[-_.])(\d{1,3})-?(?:v?cpus?|cores?)(?=$|[-_.])/;
+
+const count = (match: RegExpExecArray | null) => (match ? Number(match[1]) || null : null);
+
+/**
+ * A runner's size by its provider and the label that names it (lowercase, as the Job times
+ * environment carries it), or null when RelayRunner can't tell, such as a Namespace profile.
+ */
+export function runnerSize(provider: string, label: string): RunnerSize | null {
+  switch (provider) {
+    case "github":
+      return GITHUB_SIZES[label] ?? named(label);
+    case "cloudflare":
+      return CLOUDFLARE_SIZES[label] ?? null;
+    // nscloud-ubuntu-22.04-amd64-4x16: 4 vCPU, 16 GB. Profiles don't say.
+    case "namespace": {
+      const match = /-(\d+)x(\d+)$/.exec(label);
+      return match ? { vcpus: Number(match[1]), memoryGb: Number(match[2]) } : null;
+    }
+    // The runner= part of its labels, such as 2cpu-linux-x64.
+    case "runs-on": {
+      const vcpus = count(/^(\d+)cpu-/.exec(label));
+      return vcpus ? { vcpus } : null;
+    }
+    default: {
+      // The sized services, else a size in the label (other runners, providers added in the admin).
+      const sized = rateOf(provider as ProviderId, label);
+      return sized ? { vcpus: sized.vcpus } : named(label);
+    }
+  }
+}
+
+function named(label: string): RunnerSize | null {
+  const vcpus = count(NAMED_SIZE.exec(label));
+  return vcpus ? { vcpus } : null;
+}
+
+/** "4 vCPU · 16 GB", or null for an unknown size. */
+export function sizeText(size: RunnerSize | null | undefined): string | null {
+  if (!size) return null;
+  const vcpus = `${size.vcpus} vCPU`;
+  return size.memoryGb ? `${vcpus} · ${size.memoryGb} GB` : vcpus;
 }

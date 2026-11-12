@@ -6,6 +6,7 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/com
 import { pendingAgentWorkspaces } from "@/lib/agents";
 import { authClient } from "@/lib/auth-client";
 import { agreedSession } from "@/lib/legal";
+import { usePageTitle } from "@/lib/page-title";
 
 // Agent sign-in, step 2 (apps/api/src/agent-auth.ts): Better Auth sends the browser here, with the
 // signed authorization request in the query, once the person has picked the workspaces (step 1). Allowing returns the browser to the client with a code; denying returns an error.
@@ -28,6 +29,7 @@ export const Route = createFileRoute("/agents/consent")({
 });
 
 function AgentConsentPage() {
+  usePageTitle("Connect an agent");
   const loaded = Route.useLoaderData();
   return <BrandedPage>{loaded.signedIn ? <Consent {...loaded} /> : <SignedOut />}</BrandedPage>;
 }

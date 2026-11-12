@@ -8,6 +8,7 @@ import { errorText } from "@/lib/api";
 import { authDisabled, getSession } from "@/lib/auth-client";
 import { signOut } from "@/lib/session";
 import { agreeToLegal, LEGAL_LINKS } from "@/lib/legal";
+import { usePageTitle } from "@/lib/page-title";
 
 type AgreeSearch = { redirect?: string };
 
@@ -36,6 +37,7 @@ const ERRORS = {
 };
 
 function AgreePage() {
+  usePageTitle("Terms");
   const { next, documents, updated } = Route.useRouteContext();
   const router = useRouter();
   const [pending, setPending] = useState(false);

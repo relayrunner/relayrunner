@@ -1,3 +1,4 @@
+import type { RunnerSize } from "@relayrunner/providers";
 import { api } from "@/lib/api";
 
 /** How sure a time is: none (not run), few (under 5 runs), low (5 to 19), ok (20+). */
@@ -19,7 +20,13 @@ export type Stat = {
   trend: number | null;
 };
 
-export type Environment = { key: string; label: string; detail: string };
+export type Environment = {
+  key: string;
+  label: string;
+  detail: string;
+  /** Its vCPUs and memory, when the label or the service says. */
+  size?: RunnerSize;
+};
 
 export type EnvironmentSummary = Environment & {
   stat: Stat;
@@ -164,6 +171,7 @@ export function sampleJobTimes(days: number): JobTimesReport {
         key: linux,
         label: "Linux 2-core",
         detail: "GitHub-hosted",
+        size: { vcpus: 2, memoryGb: 8 },
         stat: stat(108, 50, 412),
         versus: null,
       },
@@ -178,6 +186,7 @@ export function sampleJobTimes(days: number): JobTimesReport {
         key: container,
         label: "Cloudflare Container",
         detail: "standard-1",
+        size: { vcpus: 0.5, memoryGb: 4 },
         stat: stat(19, 50, 61),
         versus: { ratio: 1.03, sharedJobs: 3 },
       },

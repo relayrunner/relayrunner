@@ -8,7 +8,8 @@
 // a range of job_timing_job_idx. job-times.test.ts checks the rows D1 reads.
 import { and, eq, gte, inArray, isNull, type SQL, sql } from "drizzle-orm";
 import type { SQLiteColumn } from "drizzle-orm/sqlite-core";
-import { usesContainerRunner } from "./container-runner.ts";
+import { type RunnerSize, runnerSize } from "@relayrunner/providers";
+import { INSTANCE, usesContainerRunner } from "./container-runner.ts";
 import { type Db, schema } from "./db/index.ts";
 import { DAY_MS, GITHUB_HOSTED_GROUP, RUNNER_LABELS, runnerClass } from "./job-timings.ts";
 import { cloudProviderFor, isGitHubHostedLabel } from "./cloud-providers.ts";
@@ -35,6 +36,14 @@ export interface Environment {
   key: string;
   label: string;
   detail: string;
+  /** Its vCPUs and memory, when the label or the service says. */
+  size?: RunnerSize;
+}
+
+// Adds the size runnerSize finds for a provider's label, when it finds one.
+function sized(env: Environment, provider: string, label = env.label): Environment {
+  const size = runnerSize(provider, label);
+  return size ? { ...env, size } : env;
 }
 
 const MACHINE = "machine:";
@@ -50,20 +59,19 @@ export function environmentFor(
 ): Environment {
   if (machineId) return { key: `${MACHINE}${machineId}`, label: "Machine", detail: "" };
   if (usesContainerRunner(labels))
-    return {
-      key: "container",
-      label: "Cloudflare Container",
-      detail: "standard-1",
-    };
+    return sized(
+      { key: "container", label: "Cloudflare Container", detail: INSTANCE },
+      "cloudflare",
+      INSTANCE,
+    );
   const lower = labels.map((label) => label.toLowerCase());
   // Including the ones operators added in the admin (routes load them with withCatalog).
   const provider = cloudProviderFor(lower, currentProviders());
   if (provider)
-    return {
-      key: `${provider.id}:${provider.label}`,
-      label: provider.label,
-      detail: provider.name,
-    };
+    return sized(
+      { key: `${provider.id}:${provider.label}`, label: provider.label, detail: provider.name },
+      provider.id,
+    );
   const group = runnerGroupName || "Default";
   // Asked for by name: a `self-hosted` label, a pick, or a route to a machine. GitHub matches group
   // names without case, so `default` and `Default` are one row.
@@ -76,15 +84,22 @@ export function environmentFor(
   if (lower.some(isGitHubHostedLabel) || runnerGroupName === GITHUB_HOSTED_GROUP) {
     const cls = runnerClass(labels, runnerGroupName);
     if (cls !== "other" && cls !== "self-hosted")
-      return { key: `github:${cls}`, label: RUNNER_LABELS[cls], detail: "GitHub-hosted" };
+      return sized(
+        { key: `github:${cls}`, label: RUNNER_LABELS[cls], detail: "GitHub-hosted" },
+        "github",
+        cls,
+      );
     // A larger runner or an image without a standard price: named by its label.
     const label = lower[0] ?? "unknown";
-    return { key: `github:${label}`, label, detail: "GitHub-hosted" };
+    return sized({ key: `github:${label}`, label, detail: "GitHub-hosted" }, "github");
   }
   // A label nothing above recognises: another service, or a self-hosted runner asked for only by
   // its custom labels.
   const label = lower[0] ?? "unknown";
-  return { key: `other:${label}`, label, detail: runnerGroupName ?? "Unrecognized label" };
+  return sized(
+    { key: `other:${label}`, label, detail: runnerGroupName ?? "Unrecognized label" },
+    "other",
+  );
 }
 
 /**

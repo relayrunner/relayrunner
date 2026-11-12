@@ -3,6 +3,7 @@ import {
   CONTAINER_LABEL,
   containerLabels,
   containerRunnerGroupId,
+  INSTANCE,
   MAX_LIFETIME_MS,
   WATCH_INTERVAL_MS,
   watchStep,
@@ -35,9 +36,6 @@ interface Launched extends ContainerWork {
   scope?: RunnerScope;
 }
 
-// The smallest size GitHub's runner fits in: ½ vCPU, 4 GiB. `lite` (256 MiB) is too small for the
-// runner and a job's tools.
-const INSTANCE = "standard-1";
 // Installation tokens last an hour. One is reused across checks for a bit less than that.
 const TOKEN_REUSE_MS = 50 * 60_000;
 

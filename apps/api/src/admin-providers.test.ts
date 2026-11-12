@@ -102,6 +102,7 @@ describe("/api/admin/providers", () => {
       key: "acme:acme-4cpu",
       label: "acme-4cpu",
       detail: "Acme",
+      size: { vcpus: 4 },
     });
 
     expect((await call("/acme", op.cookie, { method: "DELETE" })).status).toBe(200);

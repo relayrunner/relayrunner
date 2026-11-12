@@ -9,6 +9,10 @@ import { hasLabels, parseLabels } from "./routing.ts";
 // The `runs-on` label a job uses to run in a container.
 export const CONTAINER_LABEL = "relayrunner-container";
 
+// The smallest size GitHub's runner fits in: ½ vCPU, 4 GiB. `lite` (256 MiB) is too small for the
+// runner and a job's tools.
+export const INSTANCE = "standard-1";
+
 // How long a container may wait for its job before it's stopped. GitHub offers a queued job within
 // seconds once a runner with its label is online.
 export const IDLE_LIMIT_MS = 10 * 60_000;

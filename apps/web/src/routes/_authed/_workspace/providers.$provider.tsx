@@ -2,7 +2,7 @@ import { dayMs, type RatePrices } from "@relayrunner/providers";
 import { createFileRoute, Link, notFound } from "@tanstack/react-router";
 import { ArrowLeftIcon, ArrowUpRightIcon } from "lucide-react";
 import { useState } from "react";
-import { providerStyle, runnerName, TILE } from "@/components/providers";
+import { providerStyle, runnerName, runnerSpec, TILE } from "@/components/providers";
 import { RangePicker } from "@/components/range-picker";
 import { StatTile } from "@/components/stat-tile";
 import { Button } from "@/components/ui/button";
@@ -20,6 +20,7 @@ import {
   sampleProviderReport,
 } from "@/lib/providers";
 import { cn } from "@/lib/utils";
+import { usePageTitle } from "@/lib/page-title";
 
 const RANGES = [1, 7, 14] as const;
 
@@ -47,6 +48,7 @@ function ProviderView({ first }: { first: ProviderReport }) {
   const [report, setReport] = useState(first);
   const { provider } = report;
   const info = providerInfo(provider);
+  usePageTitle(info.name);
   // Nothing ran here in the widest range: lead with how to start instead of empty numbers.
   const [notSetUp] = useState(first.jobs === 0 && !!info.example);
   const { icon, tile } = providerStyle(provider);
@@ -255,16 +257,15 @@ const runnerColumns = runnerColumn.columns([
 
 function RunnerCell({ runner }: { runner: ProviderRunner }) {
   const { provider, runners, jobs } = useRunnerReport();
-  const { mono, bar, detail: showDetail } = providerStyle(provider);
+  const { mono, bar } = providerStyle(provider);
+  const spec = runnerSpec(provider, runner);
   return (
     <div className="grid min-w-48 gap-1.5">
       <span title={runner.label} className="truncate">
         <span className={cn(mono && "font-mono text-[13px]")}>
           {runnerName(provider, runner.label)}
         </span>
-        {showDetail && runner.detail && (
-          <span className="text-xs text-muted-foreground"> · {runner.detail}</span>
-        )}
+        {spec && <span className="text-xs text-muted-foreground"> · {spec}</span>}
       </span>
       {runners.length > 1 && (
         <span aria-hidden className="h-[3px] overflow-hidden rounded-full bg-raised-2">

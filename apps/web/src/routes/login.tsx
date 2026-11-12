@@ -5,6 +5,7 @@ import { LegalNotice } from "@/components/legal-notice";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { authDisabled, getSession, signIn } from "@/lib/auth-client";
+import { usePageTitle } from "@/lib/page-title";
 
 type LoginSearch = { redirect?: string };
 
@@ -27,6 +28,7 @@ function connectingAgent() {
 }
 
 function LoginPage() {
+  usePageTitle("Sign in");
   const { redirect: next } = Route.useSearch();
   const [error, setError] = useState<string | null>(null);
 
