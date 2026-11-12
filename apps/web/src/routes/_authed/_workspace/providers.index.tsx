@@ -1,4 +1,3 @@
-import { PROVIDER_IDS, PROVIDERS as PROVIDER_INFO } from "@relayrunner/providers";
 import { createFileRoute, Link } from "@tanstack/react-router";
 import { useState } from "react";
 import { SectionBoundary } from "@/components/error-boundary";
@@ -8,6 +7,7 @@ import { RangePicker } from "@/components/range-picker";
 import { DataTable, dataTableColumns, NUM } from "@/components/ui/data-table";
 import { authDisabled } from "@/lib/auth-client";
 import { medianText, plural } from "@/lib/job-times";
+import { providerCatalog, providerInfo } from "@/lib/provider-catalog";
 import {
   costText,
   getProvidersOverview,
@@ -31,7 +31,7 @@ function ProvidersPage() {
   const [overview, setOverview] = useState<ProvidersOverview>(Route.useLoaderData());
   const used = new Set(overview.providers.map((p) => p.provider));
   // Only providers a job can ask for by name: "Other" has no runs-on example to set up.
-  const unused = PROVIDER_IDS.filter((id) => PROVIDER_INFO[id].example && !used.has(id));
+  const unused = providerCatalog().filter((p) => p.example && !used.has(p.id));
 
   function chooseRange(days: number) {
     load(days)
@@ -67,7 +67,7 @@ function ProvidersPage() {
           <div className="grid gap-3">
             <h2 className="font-semibold">Not used yet</h2>
             <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
-              {unused.map((provider) => (
+              {unused.map(({ id: provider, name, summary }) => (
                 <Link
                   key={provider}
                   to="/providers/$provider"
@@ -76,11 +76,9 @@ function ProvidersPage() {
                 >
                   <span className="flex items-center gap-2.5 font-medium group-hover:underline">
                     <ProviderMark provider={provider} className="size-7 rounded-md" />
-                    {PROVIDER_INFO[provider].name}
+                    {name}
                   </span>
-                  <p className="flex-1 text-sm text-muted-foreground">
-                    {PROVIDER_INFO[provider].summary}
-                  </p>
+                  <p className="flex-1 text-sm text-muted-foreground">{summary}</p>
                   <span className="text-sm font-medium">How to set up</span>
                 </Link>
               ))}
@@ -104,7 +102,7 @@ function ProvidersPage() {
 
 const column = dataTableColumns<ProviderSummary>();
 const columns = column.columns([
-  column.accessor((row) => PROVIDER_INFO[row.provider].name, {
+  column.accessor((row) => providerInfo(row.provider).name, {
     id: "provider",
     header: "Provider",
     sortFn: "text",
@@ -115,7 +113,7 @@ const columns = column.columns([
         className="flex w-fit items-center gap-2.5 font-medium hover:underline"
       >
         <ProviderMark provider={row.original.provider} className="size-6 rounded-md" />
-        {PROVIDER_INFO[row.original.provider].name}
+        {providerInfo(row.original.provider).name}
       </Link>
     ),
   }),

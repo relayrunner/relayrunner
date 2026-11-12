@@ -24,6 +24,7 @@ import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/comp
 import { WorkspaceMark, WorkspaceMenu } from "@/components/workspace-menu";
 import { authDisabled } from "@/lib/auth-client";
 import { isGitHubOutcome } from "@/lib/github";
+import { loadProviderCatalog } from "@/lib/provider-catalog";
 import { isOperator } from "@/lib/roles";
 import { readFlag, saveFlag } from "@/lib/stored-flag";
 import { cn } from "@/lib/utils";
@@ -52,7 +53,9 @@ export const Route = createFileRoute("/_authed/_workspace")({
       throw redirect({ to: "/welcome", search: isGitHubOutcome(github) ? { github } : {} });
     }
     try {
-      return { current: await getCurrentWorkspace() };
+      // Pages name providers synchronously from the catalog, so it's loaded before any renders.
+      const [current] = await Promise.all([getCurrentWorkspace(), loadProviderCatalog()]);
+      return { current };
     } catch {
       // The active workspace is gone or no longer ours.
       throw redirect({ to: "/welcome" });
@@ -78,6 +81,7 @@ const adminNav = [
   { to: "/admin/users", label: "Users", icon: UsersIcon },
   { to: "/admin/workspaces", label: "Workspaces", icon: Building2Icon },
   { to: "/admin/webhooks", label: "Webhooks", icon: WebhookIcon },
+  { to: "/admin/providers", label: "Providers", icon: CloudIcon },
   { to: "/admin/prices", label: "Prices", icon: TagIcon },
 ] as const satisfies NavItem[];
 

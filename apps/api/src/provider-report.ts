@@ -7,10 +7,10 @@
 // workspace's installations, completed in the window), grouped by the columns environmentFor reads.
 // The provider is worked out from each group's labels afterwards, since it's derived and not stored.
 import {
+  isProviderId,
   listRate,
   type PriceBook,
   PRICES_CHECKED,
-  type ProviderId,
   providerOfEnvironment,
   type RatePrices,
   ratePrices,
@@ -18,6 +18,7 @@ import {
 import { sql } from "drizzle-orm";
 import { type Db, schema } from "./db/index.ts";
 import { loadPriceBook } from "./prices.ts";
+import { isCatalogProvider } from "./provider-catalog.ts";
 import {
   BILLED_MINUTES,
   cents,
@@ -70,7 +71,7 @@ export interface ProviderWorkflow {
 }
 
 export interface ProviderReport extends ProviderCounts {
-  provider: ProviderId;
+  provider: string;
   days: number;
   /** When the list prices were last checked. */
   pricesChecked: string;
@@ -85,7 +86,7 @@ export interface ProviderReport extends ProviderCounts {
 }
 
 export interface ProviderSummary extends ProviderCounts {
-  provider: ProviderId;
+  provider: string;
   stat: Stat;
 }
 
@@ -123,7 +124,7 @@ interface Sums {
 const zero = (): Sums => ({ failures: 0, billedMinutes: 0, cost: 0, unpricedJobs: 0 });
 
 interface Group extends Sums {
-  provider: ProviderId;
+  provider: string;
   env: Environment;
   perMinute: number | null;
   bucket: Bucket;
@@ -143,12 +144,14 @@ const where = (workspaceId: string, days: number, now: number) =>
  */
 function perMinuteOf(
   book: PriceBook,
-  provider: ProviderId,
+  provider: string,
   env: Environment,
   labels: string[],
   runnerGroupName: string | null,
   at: number,
 ) {
+  // Providers operators added have no list prices.
+  if (!isProviderId(provider)) return null;
   if (provider !== "github") return listRate(book, provider, env.label, at);
   const cls = runnerClass(labels, runnerGroupName);
   return cls === "other" || cls === "self-hosted" ? null : classRate(book, cls, at);
@@ -174,7 +177,7 @@ async function runnerGroups(db: Db, workspaceId: string, days: number, now: numb
   for (const row of rows) {
     const labels = JSON.parse(row.labels) as string[];
     const env = environmentFor(labels, row.runner_group_name, null);
-    const provider = providerOfEnvironment(env.key);
+    const provider = providerOfEnvironment(env.key, isCatalogProvider);
     if (provider === "machine") continue;
     const rateAt = (at: number) =>
       perMinuteOf(book, provider, env, labels, row.runner_group_name, at);
@@ -227,7 +230,7 @@ function countsOf(bucket: Bucket, c: Sums): ProviderCounts & { stat: Stat } {
 async function busiestWorkflows(
   db: Db,
   workspaceId: string,
-  provider: ProviderId,
+  provider: string,
   days: number,
   now: number,
 ): Promise<ProviderWorkflow[]> {
@@ -253,7 +256,7 @@ async function busiestWorkflows(
     let mine = ours.get(pair);
     if (mine === undefined) {
       const env = environmentFor(JSON.parse(row.labels) as string[], row.runner_group_name, null);
-      mine = providerOfEnvironment(env.key) === provider;
+      mine = providerOfEnvironment(env.key, isCatalogProvider) === provider;
       ours.set(pair, mine);
     }
     if (!mine) continue;
@@ -275,7 +278,7 @@ async function busiestWorkflows(
 export async function providerReport(
   db: Db,
   workspaceId: string,
-  provider: ProviderId,
+  provider: string,
   days = DEFAULT_DAYS,
   now = Date.now(),
 ): Promise<ProviderReport> {

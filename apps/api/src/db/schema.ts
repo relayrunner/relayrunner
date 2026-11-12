@@ -993,3 +993,27 @@ export const priceFinding = sqliteTable("price_finding", {
   foundAt: integer("found_at", { mode: "timestamp_ms" }).notNull(),
   dismissedAt: integer("dismissed_at", { mode: "timestamp_ms" }),
 });
+
+/**
+ * Providers as operators saved them in the admin (apps/api/src/routes/admin-providers.ts), on top of
+ * the code list in @relayrunner/providers (see its catalog.ts). A row for a provider in code
+ * replaces its text and links; a row with a new id adds a provider, matched by its label prefixes.
+ * Deleting a row puts a provider in code back as it was, or removes an added one.
+ */
+export const provider = sqliteTable("provider", {
+  id: text("id").primaryKey(),
+  name: text("name").notNull(),
+  summary: text("summary").notNull(),
+  labels: text("labels").notNull(),
+  /** JSON array of lowercase label prefixes; ignored for providers in code. */
+  prefixes: text("prefixes", { mode: "json" }).$type<string[]>().notNull(),
+  example: text("example"),
+  setup: text("setup"),
+  dashboardUrl: text("dashboard_url"),
+  docsUrl: text("docs_url"),
+  updatedBy: text("updated_by").notNull(),
+  updatedAt: integer("updated_at", { mode: "timestamp_ms" })
+    .notNull()
+    .$defaultFn(() => new Date())
+    .$onUpdate(() => new Date()),
+});

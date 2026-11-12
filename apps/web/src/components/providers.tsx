@@ -1,9 +1,5 @@
 import { CircleHelpIcon, CloudIcon, LaptopIcon } from "lucide-react";
-import {
-  PROVIDERS as PROVIDER_INFO,
-  type ProviderId,
-  providerOfEnvironment,
-} from "@relayrunner/providers";
+import { type ProviderId, providerOfEnvironment } from "@relayrunner/providers";
 import type { ReactNode } from "react";
 import {
   BlacksmithIcon,
@@ -14,11 +10,13 @@ import {
   WarpBuildIcon,
 } from "@/components/provider-logos";
 import type { Environment } from "@/lib/job-times";
+import { isKnownProvider, providerInfo } from "@/lib/provider-catalog";
 import { cn } from "@/lib/utils";
 
-// Where a job ran: a provider from the shared registry, or "machine" for runners people host
-// themselves. The registry holds names and links; this file adds each one's mark and colours.
-export type Provider = ProviderId | "machine";
+// Where a job ran: a provider's id (one in code or one operators added), or "machine" for runners
+// people host themselves. The catalog holds names and links; this file adds each one's mark and
+// colours.
+export type Provider = string;
 
 type ProviderLook = {
   icon: ReactNode;
@@ -40,7 +38,7 @@ export type ProviderStyle = ProviderLook & {
   url?: string;
 };
 
-const LOOKS: Record<Provider, ProviderLook> = {
+const LOOKS: Record<ProviderId | "machine", ProviderLook> = {
   blacksmith: {
     icon: <BlacksmithIcon className="w-4" />,
     tile: "bg-blacksmith text-blacksmith-ink",
@@ -118,25 +116,34 @@ const LOOKS: Record<Provider, ProviderLook> = {
   },
 };
 
-export const PROVIDERS = Object.fromEntries(
-  Object.entries(LOOKS).map(([id, look]) => {
-    if (id === "machine") return [id, { ...look, name: "Self-hosted" }];
-    const { name, dashboardUrl, docsUrl } = PROVIDER_INFO[id as ProviderId];
-    return [id, { ...look, name, url: dashboardUrl ?? docsUrl }];
-  }),
-) as Record<Provider, ProviderStyle>;
+// A provider an operator added has no mark of its own yet: its initial on a plain tile.
+const addedLook = (name: string): ProviderLook => ({
+  icon: <span className="text-[13px] leading-none font-semibold">{name.charAt(0)}</span>,
+  tile: "bg-raised-2 text-foreground",
+  tint: "",
+  bar: "bg-ink-2",
+  mono: true,
+});
+
+/** A provider's mark, colours, name and link. */
+export function providerStyle(provider: Provider): ProviderStyle {
+  if (provider === "machine") return { ...LOOKS.machine, name: "Self-hosted" };
+  const { id, name, dashboardUrl, docsUrl } = providerInfo(provider);
+  const look = Object.hasOwn(LOOKS, id) ? LOOKS[id as ProviderId] : addedLook(name);
+  return { ...look, name, url: dashboardUrl ?? docsUrl };
+}
 
 export const TILE = "flex size-7 shrink-0 items-center justify-center rounded-md";
 
 export const providerOf = ({ key }: Pick<Environment, "key">): Provider =>
-  providerOfEnvironment(key);
+  providerOfEnvironment(key, isKnownProvider);
 
 /**
  * A provider's mark on its brand tile, shrunk to sit inline in a row or a table cell. The tile
  * colours are the ones the Runners page cards use, so a provider looks the same everywhere.
  */
 export function ProviderMark({ provider, className }: { provider: Provider; className?: string }) {
-  const { icon, tile } = PROVIDERS[provider];
+  const { icon, tile } = providerStyle(provider);
   return (
     <span
       aria-hidden
@@ -154,6 +161,6 @@ export function ProviderMark({ provider, className }: { provider: Provider; clas
 
 /** A runner's label without its provider's prefix, since the provider is shown beside it. */
 export function runnerName(provider: Provider, label: string) {
-  const { prefix } = PROVIDERS[provider];
+  const { prefix } = providerStyle(provider);
   return prefix ? label.replace(prefix, "") : label;
 }

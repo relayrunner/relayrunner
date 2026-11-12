@@ -16,7 +16,7 @@ import { SectionBoundary } from "@/components/error-boundary";
 import { PageHeader } from "@/components/page-header";
 import { ProviderLink } from "@/components/provider-link";
 import {
-  PROVIDERS,
+  providerStyle,
   type Provider,
   ProviderMark,
   providerOf,
@@ -314,7 +314,7 @@ function RanOn({ keys, environments }: { keys: string[]; environments: Environme
     byProvider.set(provider, names);
   }
   const marks = [...byProvider].map(([provider, names]) => {
-    const { name } = PROVIDERS[provider];
+    const { name } = providerStyle(provider);
     return { provider, title: names.join(", ") === name ? name : `${name}: ${names.join(", ")}` };
   });
   return (

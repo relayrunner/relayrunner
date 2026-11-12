@@ -1,8 +1,8 @@
-import { PROVIDERS as PROVIDER_INFO } from "@relayrunner/providers";
 import { Link } from "@tanstack/react-router";
 import type { ReactNode } from "react";
 import { type Provider, ProviderMark } from "@/components/providers";
 import { HoverCard, HoverCardContent, HoverCardTrigger } from "@/components/ui/hover-card";
+import { providerInfo } from "@/lib/provider-catalog";
 import { cn } from "@/lib/utils";
 
 /**
@@ -28,7 +28,7 @@ export function ProviderLink({
     </>
   );
   if (provider === "machine") return <span className={className}>{content}</span>;
-  const { name, summary, labels } = PROVIDER_INFO[provider];
+  const { name, summary, labels } = providerInfo(provider);
   return (
     <HoverCard>
       <HoverCardTrigger asChild>
