@@ -74,6 +74,10 @@ this machine?": Only me, or Anyone in your workspaces (teammates' and bots' jobs
 too). It doesn't ask when you're alone in all of them, on later runs, or without
 a terminal to answer. [`relayrunner share`](#relayrunner-share) changes it later.
 
+When you approve the machine in the browser, you pick which of your workspaces it
+runs jobs in. `connect` then prints them with `Change with: relayrunner workspaces`
+([`relayrunner workspaces`](#relayrunner-workspaces)).
+
 Run inside a checkout of a private repo where no job uses RelayRunner yet,
 `connect` first asks whether to set it up (default no). Yes runs the same picker
 as [`relayrunner init`](#relayrunner-init). No is remembered for that repo in
@@ -178,6 +182,27 @@ bots'. It's one setting for all of them.
 It's the same setting as the sharing icon on the machine's card on the Runners
 page, and only the machine's owner can change it there. `relayrunner whoami`
 shows it too. Exits 1 when not signed in or when the token is no longer valid.
+
+## `relayrunner workspaces`
+
+```sh
+npx relayrunner workspaces                # list the ones it's in and the ones it isn't
+npx relayrunner workspaces add acme       # run jobs from Acme here too
+npx relayrunner workspaces remove acme    # stop running Acme's jobs here
+```
+
+Which of your workspaces this machine runs jobs in, the same choice as the
+"Run jobs in" checkboxes when you approve it. `list` (the default) shows the
+workspaces it's in, the ones it isn't, and its sharing; `--json` prints the same
+as JSON. `add` and `remove` take a workspace's name or slug in any case, or its
+id when two have the same name. Leave the name out in a terminal to pick from a
+list.
+
+Adding a workspace while the machine is set to `anyone` warns that anyone who can
+push to that workspace's private repos can run jobs on it. Removing the last one
+leaves the machine connected but taking no jobs until you add one back. Exits 1
+when not signed in, when the token is no longer valid, or when no workspace has
+that name.
 
 ## Building
 
