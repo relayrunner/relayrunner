@@ -63,6 +63,12 @@ function setupHeader() {
   const update = () => header.classList.toggle("scrolled", window.scrollY > 8);
   update();
   window.addEventListener("scroll", update, { passive: true });
+
+  // The mobile menu's links mostly scroll within the page, which leaves a popover open.
+  const menu = header.querySelector<HTMLElement>("[data-site-menu]");
+  menu?.addEventListener("click", (event) => {
+    if ((event.target as Element).closest("a")) menu.hidePopover();
+  });
 }
 
 /* ---------- Runner order demo ---------- */

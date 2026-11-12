@@ -231,9 +231,10 @@ header.header .wrap {
     padding-inline-end: 0;
   }
   /* Next to the menu button there's only room for one button (Get started or Open dashboard);
-     GitHub is in the menu's footer. */
+     GitHub and the theme toggle are in the menu's footer. */
   header.header .btn-ghost,
-  header.header .btn-text {
+  header.header .btn-text,
+  header.header .theme-toggle {
     display: none;
   }
 }
