@@ -26,7 +26,7 @@ export function SiteFooter({ className }: { className?: string }) {
         className,
       )}
     >
-      <Brand className="gap-2 text-sm text-ink-2 max-sm:hidden [&_svg]:size-[18px]" />
+      <Brand className="gap-2 text-sm text-ink-2 max-sm:hidden [&_img]:size-5" />
       <ul className="flex flex-wrap gap-x-6 gap-y-2">
         {/* The sidebar has it on wider screens. */}
         <li className="sm:hidden">

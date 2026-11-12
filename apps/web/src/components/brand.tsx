@@ -1,6 +1,6 @@
 import { cn } from "@/lib/utils";
 
-/** The relayrunner fork mark and wordmark, as drawn on the landing page. */
+/** The relayrunner runner-head mark and wordmark, as on the main site's header. */
 export function Brand({ className }: { className?: string }) {
   return (
     <span
@@ -9,14 +9,7 @@ export function Brand({ className }: { className?: string }) {
         className,
       )}
     >
-      <svg
-        viewBox="0 0 28 28"
-        aria-hidden="true"
-        className="size-[26px] fill-none stroke-go stroke-[2.4] [stroke-linecap:round]"
-      >
-        <path className="stroke-run" d="M11 14c4.5 0 5-7.5 10-7.5h3" />
-        <path d="M4 14h7c4.5 0 5 7.5 10 7.5h3" />
-      </svg>
+      <img src="/runner-head.svg" alt="" className="size-[26px] shrink-0" />
       relayrunner
     </span>
   );
