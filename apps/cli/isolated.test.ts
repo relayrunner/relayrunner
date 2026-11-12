@@ -121,6 +121,20 @@ describe("the job image", () => {
     expect(START_SCRIPT).not.toContain("resolv.conf <<");
   });
 
+  it("adds the everyday tools to GitHub's runner image, and leaves an image of your own as is", () => {
+    expect(dockerfile("runner:1")).toContain("build-essential");
+    expect(dockerfile("runner:1")).toContain("cli.github.com/packages");
+    expect(dockerfile("runner:1")).toContain("docker-compose-v2");
+    expect(dockerfile("runner:1")).toContain("--no-install-recommends");
+    expect(dockerfile("runner:1")).toContain("/home/runner/externals/node[0-9]*");
+    expect(dockerfile("runner:1")).toContain("prefix=/usr/local");
+    expect(dockerfile("runner:1")).toContain("chown runner /usr/local/bin");
+    expect(dockerfile("runner:1", false)).not.toContain("build-essential");
+    expect(dockerfile("runner:1", false)).toContain("iptables nftables");
+    expect(dockerfile("runner:1", false)).toContain("COPY --chmod=755 start.sh");
+    expect(jobImage("runner:1", false)).not.toBe(jobImage("runner:1"));
+  });
+
   it("is tagged by its contents, so a new base image builds a new one", () => {
     expect(jobImage("runner:1")).toMatch(/^relayrunner-runner:[a-f\d]{12}$/);
     expect(jobImage("runner:1")).toBe(jobImage("runner:1"));
@@ -245,7 +259,7 @@ esac
       image: "example.com/my-runner:1",
     });
     expect(JSON.parse(readFileSync(fake.managed, "utf8"))).toEqual([
-      jobImage("example.com/my-runner:1"),
+      jobImage("example.com/my-runner:1", false),
     ]);
   });
 

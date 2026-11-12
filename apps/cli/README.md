@@ -80,7 +80,7 @@ approved the machine also gets an email, since someone else may have its token.
     `relayrunner firewall off` removes it.
   - `--macos` also takes macOS jobs, which run on the Mac itself. Linux jobs
     still run in a VM.
-  - `--image <image>` starts from another runner image.
+  - `--image <image>` starts from your own runner image, with the tools it has.
   - `connect` removes the images it downloaded or built for older runner
     versions. It never removes images you got yourself.
   - `~/.relayrunner/isolated.log` records each `container` command and its

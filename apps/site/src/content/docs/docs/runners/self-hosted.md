@@ -63,7 +63,9 @@ This is experimental. You need macOS 26 and Apple's [container](https://github.c
 npx relayrunner connect --isolated
 ```
 
-The first run takes about a minute to prepare the image jobs start from. After that a VM starts in a few seconds.
+The first run takes a couple of minutes to prepare the image jobs start from. After that a VM starts in a few seconds.
+
+The VM has the everyday tools a job written for `ubuntu-latest` expects: Git and Git LFS, Docker with Compose and Buildx, Node with npm, Python with pip, compilers and `make`, `curl`, `wget`, `jq`, `zip` and the `gh` CLI. For a specific version of Node or Python, or another language such as Go, Java, Ruby or Rust, use its `setup-*` action as you would on GitHub. The VM is ARM, so a job that needs x64 binaries should stay on `ubuntu-latest`.
 
 While it runs isolated, the Mac is a Linux machine: its labels are `Linux` and `ARM64`, and it takes jobs written for `ubuntu-latest`. To keep taking macOS jobs such as Xcode builds too, add `--macos`: Linux jobs run in the VM and macOS jobs run on the Mac itself. A job that names neither goes by its GitHub fallback, so one written for `ubuntu-latest` runs in the VM. Docker works in the VM, so jobs with `services:` or `container:` run too.
 
