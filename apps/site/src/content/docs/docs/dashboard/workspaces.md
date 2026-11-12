@@ -38,7 +38,7 @@ Each install is its own workspace, so installing the App on another org adds one
 
 ## Emails
 
-RelayRunner sends a few service emails from `noreply@send.relayrunner.app`, and never marketing email.
+A few service emails come from `noreply@send.relayrunner.app`. There's no marketing email.
 
 | Email                       | Sent to                    | When                                                                                                              |
 | --------------------------- | -------------------------- | ----------------------------------------------------------------------------------------------------------------- |

@@ -5,7 +5,7 @@ description: What RelayRunner sees and stores about your jobs, repos and machine
 
 RelayRunner needs to know about your jobs to route them, but not what's in them. Here's what it sees. The [Privacy Policy](/privacy) has the full detail.
 
-## What RelayRunner stores
+## What's stored
 
 - **Your account**: your GitHub user id, username, name, email and avatar.
 - **Workspaces**: their members, roles and invitations.
@@ -18,7 +18,7 @@ RelayRunner needs to know about your jobs to route them, but not what's in them.
 
 - **Your code.** The App can only read `relayrunner.yml`. The one exception is lint: it reads a commit with the lint job's own token, or through the separate Checks App if you install it, lints it in a sandbox with no internet access and discards it.
 - **Job logs and secrets.** Jobs on your machines use GitHub's runner, which talks to GitHub directly.
-- **Provider accounts.** RelayRunner hands a job a label. The provider, such as GitHub or Depot, runs it under your agreement with them.
+- **Provider accounts.** A routed job only gets a label. The provider, such as GitHub or Depot, runs it under your agreement with them.
 
 ## Who sees it
 

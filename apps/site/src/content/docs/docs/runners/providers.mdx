@@ -1,11 +1,11 @@
 ---
 title: Providers
-description: Where RelayRunner can send jobs, and the runner services it recognizes.
+description: Where jobs can be routed, and the runner services the dashboard recognizes.
 ---
 
 import ProviderTable from "@/components/docs/ProviderTable.astro";
 
-A provider is somewhere a job can run. RelayRunner does two things with providers: it **routes** jobs to some of them, and it **recognizes** many more, so the dashboard can show where every job ran and what it cost.
+A provider is somewhere a job can run. Jobs can be **routed** to some providers. Many more are **recognized**, so the dashboard can show where every job ran and what it cost.
 
 ## Where jobs can be routed
 
@@ -17,12 +17,12 @@ A relay can send a job to any of these. Each has a step in your [runner order](/
 
 ## Your accounts, your bills
 
-RelayRunner never runs a hosted provider's machines for you or resells its minutes. It hands the job a label, and the provider runs it under your own account and bills you directly. You keep your plans, credits and discounts, and you can drop RelayRunner without changing who you pay.
+Hosted providers aren't resold. A routed job gets a label, and the provider runs it under your own account and bills you directly. You keep your plans, credits and discounts, and you can drop RelayRunner without changing who you pay.
 
-## What RelayRunner recognizes
+## Recognized providers
 
-RelayRunner tells where a job ran from its `runs-on` labels, including jobs it didn't route. These are the providers it knows. Jobs with any other labels show up as Other. The dashboard's **Providers** page shows how much of your CI ran on each, with cost estimates at list prices.
+Where a job ran is read from its `runs-on` labels, including jobs that weren't routed. These are the recognized providers. Jobs with any other labels show up as Other. The dashboard's **Providers** page shows how much of your CI ran on each, with cost estimates at list prices.
 
 <ProviderTable />
 
-Want RelayRunner to recognize another provider? See [Add a provider](/docs/contribute/add-provider).
+To add another, see [Add a provider](/docs/contribute/add-provider).

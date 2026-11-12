@@ -44,8 +44,8 @@ Keep **Self-hosted** above **GitHub-hosted** on the Router page. The Mac takes t
 - **Xcode.** The job uses whatever Xcode is installed on the Mac. Select a version in the job, such as with `xcode-select`, rather than relying on the default.
 - **Signing.** Keychains and certificates on the Mac are visible to the job. Route signing and release jobs only to a Mac you trust, or keep them on GitHub.
 - **Simulators** and caches persist on the Mac between jobs, which makes later runs faster. Clean them up now and then.
-- **Several Macs.** Connect each one. RelayRunner sends each job to an idle one.
+- **Several Macs.** Connect each one. Each job goes to an idle one.
 
-## Want a Mac you don't own?
+## A Mac you don't own
 
 A leased or cloud Mac works the same way: run `relayrunner connect` on it.

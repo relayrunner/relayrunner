@@ -3,7 +3,7 @@ title: Runner order
 description: The list a workspace tries runners in, and how to change it.
 ---
 
-The runner order is your workspace's list of providers, top to bottom. For each job, RelayRunner tries the steps in order and uses the first one the job's relay names that can take the job now. Set it on the dashboard's **Router** page. Owners and admins can change it.
+The runner order is your workspace's list of providers, top to bottom. Each job tries the steps in order and uses the first one its relay names that can take it now. Set it on the dashboard's **Router** page. Owners and admins can change it.
 
 ## Steps
 
@@ -40,7 +40,7 @@ GitHub can appear twice: once with a minutes limit and once without.
 
 A GitHub-hosted step can have a limit, such as "while under 80%". It then takes a job only while the job's GitHub account has used less than that share of its plan's included minutes this month. Each account is checked on its own.
 
-If RelayRunner can't read an account's minutes, the limit never blocks its jobs. The Router page shows when that's the case.
+If an account's minutes can't be read, the limit never blocks its jobs. The Router page shows when that's the case.
 
 ## Changes take effect at once
 

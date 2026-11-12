@@ -3,7 +3,7 @@ title: Add a provider
 description: Teach RelayRunner to recognize another runner service, with a pull request.
 ---
 
-RelayRunner recognizes runner services by their `runs-on` labels, so the dashboard can show where every job ran and what it cost. The list lives in code and changes by pull request. If a service you use shows up as **Other**, you can add it.
+Runner services are recognized by their `runs-on` labels, so the dashboard can show where every job ran and what it cost. The list lives in code and changes by pull request. If a service you use shows up as **Other**, you can add it.
 
 ## What to change
 

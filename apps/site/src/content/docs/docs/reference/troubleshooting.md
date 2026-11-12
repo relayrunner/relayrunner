@@ -11,7 +11,7 @@ Start with the **Activity** page in the dashboard. Most routing questions are an
 
 - **The GitHub App isn't installed** on the repo's owner, or doesn't include this repo. Check **Settings → GitHub** in the repo owner's workspace. If the install was a request to an org owner, it needs approving on GitHub first.
 - **Your org limits actions.** Allow `relayrunner/actions/*` in the org's Actions settings.
-- **A runner group blocks it.** RelayRunner posts a failed `RelayRunner` check on the commit that says what to change.
+- **A runner group blocks it.** A failed `RelayRunner` check on the commit says what to change.
 - **Another runner has the `relayrunner` label.** Remove it, or it may take relays instead of RelayRunner.
 
 A relay nobody answers stays queued until GitHub cancels it after 24 hours. Cancel the run and push again once it's fixed.

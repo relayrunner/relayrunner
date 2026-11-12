@@ -1,9 +1,9 @@
 ---
 title: Routing
-description: How a job reaches RelayRunner and how it decides where the job runs.
+description: How a job opts in to routing, and how its runner is chosen.
 ---
 
-A job opts in to routing with a relay job. The relay names the runners the job may use, and RelayRunner answers it with one of them.
+A job opts in to routing with a relay job. The relay names the runners the job may use, and gets one of them back.
 
 ## The relay job
 
@@ -33,7 +33,7 @@ Leave out a provider and the job never runs there. See [relay.yml inputs](/docs/
 
 1. The relay job is queued on GitHub with `runs-on: relayrunner`.
 2. GitHub tells RelayRunner, which answers the relay itself. It runs no steps and bills no minutes. This takes about a second.
-3. RelayRunner walks your workspace's [runner order](/docs/concepts/runner-order) from the top. It skips any provider the job didn't name, and picks the first one that can take the job now.
+3. Your workspace's [runner order](/docs/concepts/runner-order) is tried from the top. Any provider the job didn't name is skipped, and the first one that can take the job now gets it.
 4. The relay finishes with a `runner` output: a one-time label for a machine, or the job's own label for a hosted provider.
 5. Your job runs on that label. A machine gets a fresh one-job runner for it.
 
@@ -41,7 +41,7 @@ If nothing fits, the relay fails with the reason and the job doesn't start. See 
 
 ## Which machine
 
-When the self-hosted step is reached, RelayRunner looks for a machine that is online, idle, not paused, has every `machine` label, and is shared with whoever started the job. Your own machines come first for your jobs. A machine takes jobs while it has a free slot (see [Jobs at once](/docs/runners/self-hosted#jobs-at-once)).
+The self-hosted step takes a machine that is online, idle, not paused, has every `machine` label, and is shared with whoever started the job. Your own machines come first for your jobs. A machine takes jobs while it has a free slot (see [Jobs at once](/docs/runners/self-hosted#jobs-at-once)).
 
 ## Rules that always apply
 

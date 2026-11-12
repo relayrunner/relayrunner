@@ -28,7 +28,7 @@ Stop `relayrunner connect` on each machine and remove it from the **Runners** pa
 
 ## 3. Remove added runners
 
-Remove any [existing runners](/docs/runners/self-hosted#runners-your-org-already-has) you added. RelayRunner takes its label off them. The runners stay registered in your org.
+Remove any [existing runners](/docs/runners/self-hosted#runners-your-org-already-has) you added. This takes the RelayRunner label off them. The runners stay registered in your org.
 
 ## 4. Uninstall the GitHub Apps
 

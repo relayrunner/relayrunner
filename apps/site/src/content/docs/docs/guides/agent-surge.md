@@ -7,7 +7,7 @@ sidebar:
 
 Coding agents open pull requests around the clock, and each push runs CI. A month's included minutes can go in a few days, a single self-hosted machine turns into a queue, and paying for fast hosted runners for every push adds up quickly.
 
-RelayRunner lets you use every machine you have first, and send only the overflow to a hosted provider.
+This guide uses every machine you have first, and sends only the overflow to a hosted provider.
 
 ## 1. Connect what you have
 
