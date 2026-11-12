@@ -1034,6 +1034,8 @@ export const provider = sqliteTable("provider", {
   setup: text("setup"),
   dashboardUrl: text("dashboard_url"),
   docsUrl: text("docs_url"),
+  /** An https image for an added provider's mark; providers in code have their own. */
+  logoUrl: text("logo_url"),
   updatedBy: text("updated_by").notNull(),
   updatedAt: integer("updated_at", { mode: "timestamp_ms" })
     .notNull()

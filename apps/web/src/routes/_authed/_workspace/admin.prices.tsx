@@ -1,4 +1,3 @@
-import { providerName } from "@relayrunner/providers";
 import { createFileRoute } from "@tanstack/react-router";
 import { Trash2Icon } from "lucide-react";
 import { type FormEvent, useState } from "react";
@@ -27,6 +26,7 @@ import {
 } from "@/lib/admin";
 import { errorText } from "@/lib/api";
 import { timeAgo } from "@/lib/activity";
+import { providerInfo } from "@/lib/provider-catalog";
 import { rateText } from "@/lib/providers";
 
 // Operator admin, behind Cloudflare Access and an operator session
@@ -35,6 +35,8 @@ export const Route = createFileRoute("/_authed/_workspace/admin/prices")({
   loader: () => listPrices(),
   component: PricesPage,
 });
+
+const providerName = (id: string) => providerInfo(id).name;
 
 const rateKey = (rate: Pick<AdminRate, "provider" | "rate">) => `${rate.provider}:${rate.rate}`;
 const perText = (rate: Pick<AdminRate, "per">) => (rate.per === "vcpu" ? " per vCPU" : "");

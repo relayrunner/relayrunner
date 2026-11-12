@@ -33,8 +33,17 @@ export type PricedProvider = keyof typeof RATES;
 /** GitHub's standard hosted runners, the ones it publishes a per-minute price for. */
 export type GitHubRunner = keyof (typeof RATES)["github"];
 
+/** The one rate a provider operators added has: a minute of any of its runners. */
+export const ADDED_RATE = "runner";
+
+/**
+ * Whether a provider has this rate: one RATES lists, or the per-runner rate of a provider RATES
+ * doesn't price (the admin only records that one for providers operators added).
+ */
 export const isRate = (provider: string, rate: string) =>
-  Object.hasOwn(RATES, provider) && Object.hasOwn(RATES[provider as PricedProvider], rate);
+  Object.hasOwn(RATES, provider)
+    ? Object.hasOwn(RATES[provider as PricedProvider], rate)
+    : rate === ADDED_RATE;
 
 /**
  * USD for a minute of one rate (per vCPU or per runner, as RATES says), from `from` (a UTC day,
@@ -42,7 +51,8 @@ export const isRate = (provider: string, rate: string) =>
  * since it's the oldest price we know.
  */
 export interface PriceRow {
-  provider: PricedProvider;
+  /** A provider in RATES, or one operators added (base rows are all in RATES). */
+  provider: string;
   rate: string;
   usd: number;
   from: string;

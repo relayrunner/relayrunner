@@ -5,7 +5,14 @@
  * Prices the daily check finds (price-check.ts, price_finding) wait here until an operator approves
  * one into provider_price or dismisses it.
  */
-import { dayMs, isRate, type PricedProvider, RATES } from "@relayrunner/providers";
+import {
+  ADDED_RATE,
+  dayMs,
+  isProviderId,
+  isRate,
+  type PricedProvider,
+  RATES,
+} from "@relayrunner/providers";
 import { and, asc, eq, isNull } from "drizzle-orm";
 import { type Context, Hono } from "hono";
 import { z } from "zod";
@@ -14,6 +21,7 @@ import { createDb, schema } from "../db/index.ts";
 import { who } from "../middleware/admin.ts";
 import { checkPrices } from "../price-check.ts";
 import { forgetPriceBook, readPriceBook } from "../prices.ts";
+import { readCatalog } from "../provider-catalog.ts";
 
 const PriceBody = z.object({
   provider: z.string(),
@@ -37,7 +45,7 @@ export interface AdminPriceRow {
 }
 
 export interface AdminRate {
-  provider: PricedProvider;
+  provider: string;
   rate: string;
   /** What a minute is per: one vCPU, or the whole runner. */
   per: "vcpu" | "runner";
@@ -87,6 +95,17 @@ function logPrice(
   );
 }
 
+// Every rate a price can be recorded for: the ones in RATES, then one per provider operators added.
+async function allRates(c: Context<AppEnv>) {
+  const added = (await readCatalog(createDb(c.env.DB)))
+    .filter((p) => !isProviderId(p.id))
+    .map((p) => ({ provider: p.id, rate: ADDED_RATE, per: "runner" as const }));
+  const inCode = Object.entries(RATES).flatMap(([provider, rates]) =>
+    Object.entries(rates).map(([rate, per]) => ({ provider, rate, per })),
+  );
+  return [...inCode, ...added];
+}
+
 // Records a price row; null when the rate already has one from that day.
 async function recordPrice(
   c: Context<AppEnv>,
@@ -108,7 +127,7 @@ export const adminPriceRoutes = new Hono<AppEnv>()
   .get("/", async (c) => {
     // Read fresh, so the page shows what was just added.
     const db = createDb(c.env.DB);
-    const [book, pendingRows, checks] = await Promise.all([
+    const [book, pendingRows, checks, priced] = await Promise.all([
       readPriceBook(db),
       db
         .select()
@@ -120,25 +139,25 @@ export const adminPriceRoutes = new Hono<AppEnv>()
           asc(schema.priceFinding.from),
         ),
       db.select().from(schema.priceCheck).orderBy(asc(schema.priceCheck.provider)),
+      allRates(c),
     ]);
     const now = Date.now();
-    const rates: AdminRate[] = Object.entries(RATES).flatMap(([provider, rates]) =>
-      Object.entries(rates).map(([rate, per]) => ({
-        provider: provider as PricedProvider,
-        rate,
-        per,
-        current: book.usd(provider, rate, now),
-        rows: book.history(provider, rate).map(({ id, usd, from, source, createdBy }) => ({
-          id: id ?? null,
-          usd,
-          from,
-          source: source ?? null,
-          createdBy: createdBy ?? null,
-        })),
+    const rates: AdminRate[] = priced.map(({ provider, rate, per }) => ({
+      provider,
+      rate,
+      per,
+      current: book.usd(provider, rate, now),
+      rows: book.history(provider, rate).map(({ id, usd, from, source, createdBy }) => ({
+        id: id ?? null,
+        usd,
+        from,
+        source: source ?? null,
+        createdBy: createdBy ?? null,
       })),
-    );
+    }));
     const pending: PendingPrice[] = pendingRows
-      .filter((row) => isRate(row.provider, row.rate))
+      // The daily check only reads prices for providers in code.
+      .filter((row) => isProviderId(row.provider) && isRate(row.provider, row.rate))
       .map(({ id, provider, rate, usd, from, source }) => ({
         id,
         provider: provider as PricedProvider,
@@ -194,7 +213,8 @@ export const adminPriceRoutes = new Hono<AppEnv>()
     const parsed = PriceBody.safeParse(await c.req.json().catch(() => null));
     if (!parsed.success) return c.json({ error: "invalid_price" }, 400);
     const { provider, rate, usd, from, source } = parsed.data;
-    if (!isRate(provider, rate)) return c.json({ error: "unknown_rate" }, 400);
+    const known = (await allRates(c)).some((r) => r.provider === provider && r.rate === rate);
+    if (!known) return c.json({ error: "unknown_rate" }, 400);
     const row = await recordPrice(c, { provider, rate, usd, from, source: source || null });
     if (!row) return c.json({ error: "price_exists" }, 409);
     return c.json({ price: row }, 201);
