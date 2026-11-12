@@ -8,7 +8,7 @@ RelayRunner needs to know about your jobs to route them, but not what's in them.
 ## What we store
 
 - **Your account**: your GitHub user id, username, name, email and avatar.
-- **Workspaces**: their members, roles and invitations.
+- **Workspaces**: their members and roles.
 - **Repositories**: names, ids and whether each is public or private, for the GitHub accounts you connect.
 - **Runs and jobs**: repo, workflow and job names, who triggered them, status, timings, and where each job was routed and why.
 - **Machines**: name, OS and hardware, and when each was last online.
