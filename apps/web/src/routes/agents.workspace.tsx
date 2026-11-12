@@ -8,6 +8,7 @@ import { grantAgentWorkspaces } from "@/lib/agents";
 import { authClient, organization } from "@/lib/auth-client";
 import { agreedSession } from "@/lib/legal";
 import { githubInstallHref } from "@/lib/github";
+import { usePageTitle } from "@/lib/page-title";
 
 // Agent sign-in, step 1 (apps/api/src/agent-auth.ts): after sign-in, Better Auth sends the browser
 // here with the MCP client's signed authorization request in the query. The person picks which
@@ -26,6 +27,7 @@ export const Route = createFileRoute("/agents/workspace")({
 });
 
 function AgentWorkspacePage() {
+  usePageTitle("Choose workspaces");
   const loaded = Route.useLoaderData();
   return (
     <BrandedPage>

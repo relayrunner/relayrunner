@@ -15,6 +15,7 @@ import {
 } from "@/lib/github";
 import { listMyMachines, type Machine } from "@/lib/machines";
 import { cn } from "@/lib/utils";
+import { usePageTitle } from "@/lib/page-title";
 
 // Signed in, but no workspace yet (#320). Installing the GitHub App on an account or org is what
 // makes a workspace (#316), so this page points there. An install on an org by someone who isn't
@@ -37,6 +38,7 @@ export const Route = createFileRoute("/_authed/welcome")({
 });
 
 function WelcomePage() {
+  usePageTitle("Welcome");
   const { github } = Route.useSearch();
   const machines = Route.useLoaderData();
   const router = useRouter();

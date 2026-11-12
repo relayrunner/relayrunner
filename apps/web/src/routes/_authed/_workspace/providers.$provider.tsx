@@ -20,6 +20,7 @@ import {
   sampleProviderReport,
 } from "@/lib/providers";
 import { cn } from "@/lib/utils";
+import { usePageTitle } from "@/lib/page-title";
 
 const RANGES = [1, 7, 14] as const;
 
@@ -47,6 +48,7 @@ function ProviderView({ first }: { first: ProviderReport }) {
   const [report, setReport] = useState(first);
   const { provider } = report;
   const info = providerInfo(provider);
+  usePageTitle(info.name);
   // Nothing ran here in the widest range: lead with how to start instead of empty numbers.
   const [notSetUp] = useState(first.jobs === 0 && !!info.example);
   const { icon, tile } = providerStyle(provider);
