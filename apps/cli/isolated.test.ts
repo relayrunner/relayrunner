@@ -115,9 +115,10 @@ describe("the job image", () => {
     expect(dockerfile("runner:1")).toContain("iptables nftables");
   });
 
-  it("shortens the wait for the VM's first DNS answer", () => {
-    expect(START_SCRIPT).toContain("options timeout:1");
-    expect(START_SCRIPT.indexOf("getent hosts")).toBeLessThan(START_SCRIPT.indexOf("dockerd"));
+  it("waits for the VM's DNS to answer before the runner starts", () => {
+    expect(START_SCRIPT).toContain('RES_OPTIONS="timeout:1 attempts:1" getent hosts');
+    expect(START_SCRIPT.indexOf("getent hosts")).toBeLessThan(START_SCRIPT.indexOf("run.sh"));
+    expect(START_SCRIPT).not.toContain("resolv.conf <<");
   });
 
   it("is tagged by its contents, so a new base image builds a new one", () => {

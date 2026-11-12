@@ -97,10 +97,6 @@ export const NO_LOG: DebugLog = { path: "", write: () => {} };
 // remove the firewall, so it stops accidents, not a job that sets out to get past it.
 export const START_SCRIPT = `#!/bin/sh
 set -eu
-# The first DNS lookup in a new VM goes unanswered, and the resolver waits 5 seconds before it
-# asks again. So it asks again after 1 second, and one lookup goes out now, ahead of the job's.
-grep -q '^options' /etc/resolv.conf || echo 'options timeout:1' >> /etc/resolv.conf || true
-(getent hosts github.com >/dev/null 2>&1 &)
 drop=""
 if [ "\${RELAYRUNNER_LOCAL_NETWORK:-}" != 1 ]; then
   drop="--bounding-set -net_admin,-net_raw"
@@ -138,6 +134,12 @@ if command -v dockerd >/dev/null 2>&1; then
     sleep 0.2
   done
 fi
+# A new VM's DNS answers nothing for its first 2 seconds or so, and a lookup sent then waits 5
+# seconds to ask again. So the runner starts once a lookup gets through, or after 5 tries.
+tries=0
+until RES_OPTIONS="timeout:1 attempts:1" getent hosts github.com >/dev/null 2>&1 || [ "$tries" -ge 5 ]; do
+  tries=$((tries + 1))
+done
 cd /home/runner
 # With arguments, runs them in place of the runner, to check the VM by hand.
 [ $# -gt 0 ] || set -- ./run.sh --jitconfig "$RUNNER_JIT_CONFIG"
