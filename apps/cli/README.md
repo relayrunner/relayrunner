@@ -68,11 +68,18 @@ approved the machine also gets an email, since someone else may have its token.
   read your files or the machine token. It needs a Mac with Apple silicon,
   macOS 26 and Apple's [container](https://github.com/apple/container/releases)
   tool, started with `container system start`. Each VM starts from GitHub's
-  runner image with nothing mounted and is deleted when the job ends. A
-  firewall in the VM lets the job reach the internet but not your Mac or your
-  local network. `connect` builds the job image once per runner version. Jobs
-  run on Linux arm64, and Docker isn't available in them yet.
-  `--image <image>` builds on another runner image.
+  runner image with nothing mounted and is deleted when the job ends. Jobs run
+  on Linux arm64, and Docker isn't available in them yet.
+  - A firewall in the VM lets the job reach the internet but not your Mac or
+    your local network. `connect` builds the job image for it once per runner
+    version. `--local-network` turns the firewall off, for jobs that need
+    something on your network, and skips that build.
+  - `--image <image>` starts from another runner image.
+  - `connect` removes the images it downloaded or built for older runner
+    versions. It never removes images you got yourself.
+  - `~/.relayrunner/isolated.log` records each `container` command and its
+    result, never a job's output or credentials. Send it along when you report
+    a problem.
 - If the machine is removed in the dashboard, `connect` deletes the saved token.
   A running `connect` exits and asks you to run it again; a new one signs in
   straight away.

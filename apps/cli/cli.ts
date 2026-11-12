@@ -16,7 +16,7 @@ import { initCommand, offerSetup } from "./init.ts";
 import { defaultMachineName } from "./machine-name.ts";
 import { ensureRunner, RunnerError, runnerPlatform } from "./install.ts";
 import { normalizeServer } from "./server.ts";
-import { isolatedLauncher, prepareIsolation } from "./isolated.ts";
+import { debugLog, isolatedLauncher, prepareIsolation, unsupportedReason } from "./isolated.ts";
 import { hostLauncher, prefixLines, runJob, type Launcher } from "./job.ts";
 import { startLive } from "./live.ts";
 import { CHECK_INTERVAL_MS, checkForUpdate, updateNotice } from "./update-check.ts";
@@ -81,6 +81,11 @@ const connectCommand = defineCommand({
       type: "string",
       description: "With --isolated, the runner image to build on (default: GitHub's runner image)",
     },
+    "local-network": {
+      type: "boolean",
+      description:
+        "With --isolated, let jobs reach this Mac and your local network. They can't by default.",
+    },
   },
   async run({ args }) {
     clack.intro("RelayRunner");
@@ -109,12 +114,15 @@ async function connectMachine(args: {
   concurrency: number;
   isolated?: boolean;
   image?: string;
+  "local-network"?: boolean;
 }) {
   const share = shareArg(args.share);
   if (args.image && !args.isolated) throw new RunnerError("USAGE", "--image goes with --isolated.");
+  if (args["local-network"] && !args.isolated)
+    throw new RunnerError("USAGE", "--local-network goes with --isolated.");
   const host = machinePlatform();
-  if (args.isolated && (host.os !== "macos" || host.arch !== "arm64"))
-    throw new RunnerError("ISOLATED_UNSUPPORTED", "--isolated needs a Mac with Apple silicon.");
+  const unsupported = args.isolated ? unsupportedReason() : null;
+  if (unsupported) throw new RunnerError("ISOLATED_UNSUPPORTED", unsupported);
   // Isolated jobs run on Linux, whatever this machine is.
   const platform = args.isolated ? ({ os: "linux", arch: host.arch } as const) : host;
   let credentials = readCredentials();
@@ -156,12 +164,21 @@ async function connectMachine(args: {
   let runnerVersion: string;
   let launchers: Launcher[];
   if (args.isolated) {
-    const isolation = await prepareIsolation({ slots, image: args.image, log });
+    const debug = debugLog();
+    const isolation = await prepareIsolation({
+      slots,
+      image: args.image,
+      localNetwork: args["local-network"],
+      log,
+      debug,
+    });
     runnerVersion = isolation.runnerVersion;
     launchers = Array.from({ length: slots }, () => isolatedLauncher(isolation));
     log(
       `Each job runs in its own Linux VM with ${isolation.cpus} CPUs and ${isolation.memoryGb} GB of memory.`,
     );
+    if (isolation.localNetwork) log("Jobs can reach this Mac and your local network.");
+    log(`If something goes wrong, ${debug.path} has the details.`);
   } else {
     const runner = await ensureRunner({ log });
     runnerVersion = runner.version;
