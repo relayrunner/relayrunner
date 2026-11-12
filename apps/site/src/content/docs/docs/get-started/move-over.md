@@ -15,7 +15,7 @@ npx relayrunner init
 
 It sorts every job into three groups and lets you pick from the first:
 
-- **Ready.** The job uses a plain GitHub-hosted label (`ubuntu-*`, `macos-*`) or a hosted provider's label, such as `blacksmith-*` or `depot-*`. Warnings flag what to check first, such as a job that needs Docker or installs Linux packages while your machine is a Mac.
+- **Ready.** The job uses a plain GitHub-hosted label (`ubuntu-*`, `macos-*`) or a hosted provider's label, such as `blacksmith-*` or `depot-*`. Warnings flag what to check first, such as a job that needs Docker or installs Linux packages when your machine runs jobs on itself and not in a VM.
 - **Already routed.** The job already runs where a relay sends it.
 - **Skipped, with the reason.** See below.
 

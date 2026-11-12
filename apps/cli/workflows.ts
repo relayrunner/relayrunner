@@ -57,6 +57,8 @@ export interface WorkflowFile {
 export interface AnalyzeOptions {
   /** The OS of the machine running `init`, for warnings about Linux-only steps. */
   hostOs?: "macos" | "linux";
+  /** The machine runs Linux jobs in a VM, which has Docker and Linux packages. */
+  vm?: boolean;
 }
 
 const DEPLOY_SECRET = /\bsecrets\.(?!GITHUB_TOKEN\b)[A-Za-z_][A-Za-z0-9_]*/;
@@ -181,8 +183,10 @@ function deploySignal(job: Record<string, unknown>, workflow: Record<string, unk
 
 function jobWarnings(job: Record<string, unknown>, options: AnalyzeOptions) {
   const warnings: string[] = [];
-  if (job.services !== undefined) warnings.push("uses services, which need Docker on the machine");
-  if (job.container !== undefined)
+  const docker = !options.vm;
+  if (docker && job.services !== undefined)
+    warnings.push("uses services, which need Docker on the machine");
+  if (docker && job.container !== undefined)
     warnings.push("runs in a container, which needs Docker on the machine");
   const steps = Array.isArray(job.steps) ? (job.steps as Record<string, unknown>[]) : [];
   const providerActions = new Set<string>();
@@ -193,11 +197,11 @@ function jobWarnings(job: Record<string, unknown>, options: AnalyzeOptions) {
     if (typeof step.uses === "string") {
       const action = step.uses.split("@")[0]!;
       if (action.startsWith("useblacksmith/")) providerActions.add(action);
-      if (action.startsWith("docker://"))
+      if (docker && action.startsWith("docker://"))
         warnings.push("runs a Docker action, which needs Docker on the machine");
     }
   }
-  if (packages && options.hostOs !== "linux")
+  if (packages && !options.vm && options.hostOs !== "linux")
     warnings.push(
       options.hostOs === "macos"
         ? "installs Linux packages (apt-get, yum or apk), which macOS doesn't have"

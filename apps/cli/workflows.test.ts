@@ -3,8 +3,8 @@ import { analyzeWorkflows, isSetUp, RELAY_REF, routeJobs, type WorkflowJob } fro
 
 const file = ".github/workflows/ci.yml";
 
-function judge(source: string, hostOs: "macos" | "linux" = "macos") {
-  const { jobs, errors } = analyzeWorkflows([{ file, source }], { hostOs });
+function judge(source: string, hostOs: "macos" | "linux" = "macos", vm = false) {
+  const { jobs, errors } = analyzeWorkflows([{ file, source }], { hostOs, vm });
   expect(errors).toEqual([]);
   return jobs;
 }
@@ -143,6 +143,8 @@ describe("analyzeWorkflows", () => {
       "installs Linux packages (apt-get, yum or apk), which macOS doesn't have",
     ]);
     expect(one(source, "linux").warnings).toHaveLength(2);
+    // A Mac that runs Linux jobs in a VM has Docker and Linux packages.
+    expect(judge(source, "macos", true)[0]!.warnings).toEqual([]);
   });
 
   test("a job behind a relay is routed, and the relay itself isn't listed", () => {
