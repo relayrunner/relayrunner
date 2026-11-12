@@ -126,10 +126,6 @@ async function latestRelease(): Promise<unknown> {
   return response.json();
 }
 
-async function latestDownload(target: RunnerPlatform): Promise<RunnerDownload> {
-  return pickDownload(await latestRelease(), target);
-}
-
 // The latest actions/runner version, which is also the tag of GitHub's runner image for it. If
 // GitHub can't be reached, the newest version installed here.
 export async function latestRunnerVersion(log: (line: string) => void = () => {}) {
@@ -171,7 +167,7 @@ export async function ensureRunner(
 
   let download: RunnerDownload;
   try {
-    download = await latestDownload(target);
+    download = pickDownload(await latestRelease(), target);
   } catch (error) {
     const [newest] = installedRunners(root);
     if (newest) {
@@ -240,9 +236,9 @@ export async function install(root: string, download: RunnerDownload, fetcher = 
 }
 
 // The command's exit code, or null when it couldn't start (not installed).
-export function exitCode(command: string, args: string[], stdio: "ignore" | "inherit" = "ignore") {
+function exitCode(command: string, args: string[]) {
   return new Promise<number | null>((resolve) => {
-    const child = spawn(command, args, { stdio });
+    const child = spawn(command, args, { stdio: "ignore" });
     child.once("error", () => resolve(null));
     child.once("exit", (code) => resolve(code));
   });

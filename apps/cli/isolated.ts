@@ -7,18 +7,12 @@
 
 import { spawn } from "node:child_process";
 import { createHash } from "node:crypto";
-import {
-  appendFileSync,
-  mkdirSync,
-  mkdtempSync,
-  readFileSync,
-  rmSync,
-  writeFileSync,
-} from "node:fs";
+import { appendFileSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { arch, availableParallelism, homedir, platform, release, tmpdir, totalmem } from "node:os";
 import { dirname, join } from "node:path";
 import { latestRunnerVersion, RunnerError } from "./install.ts";
 import { runnerEnv, type Launcher } from "./job.ts";
+import { readList, writeList } from "./list-file.ts";
 import { relayrunnerHome } from "./paths.ts";
 import { cliVersion } from "./version.ts";
 
@@ -65,10 +59,11 @@ export interface DebugLog {
 // A file that records what `--isolated` did, to share when something goes wrong. It starts over
 // with each `connect`. It never holds a job's output or its JIT config.
 export function debugLog(path = join(relayrunnerHome(), "isolated.log")): DebugLog {
+  const home = homedir();
   const write = (text: string, flag: "a" | "w" = "a") => {
     try {
       // The home folder becomes `~`, so a shared log doesn't carry the user's name.
-      const stamped = `${new Date().toISOString()} ${text.trimEnd().replaceAll(homedir(), "~")}\n`;
+      const stamped = `${new Date().toISOString()} ${text.trimEnd().replaceAll(home, "~")}\n`;
       if (flag === "w") {
         rmSync(path, { force: true });
         writeFileSync(path, stamped, { mode: 0o600 });
@@ -87,7 +82,7 @@ export function debugLog(path = join(relayrunnerHome(), "isolated.log")): DebugL
   return { path, write };
 }
 
-const NO_LOG: DebugLog = { path: "", write: () => {} };
+export const NO_LOG: DebugLog = { path: "", write: () => {} };
 
 // What the VM runs, as root with NET_ADMIN, before the runner. It loads a firewall that lets the
 // job reach the internet and DNS but not private addresses (the Mac, the LAN, link-local) or any
@@ -164,11 +159,15 @@ export async function prepareIsolation(options: {
   const debug = options.debug ?? NO_LOG;
   const localNetwork = options.localNetwork ?? false;
   const tool = (args: string[]) => call(command, args, debug);
+  const hasImage = async (image: string) =>
+    (await call(command, ["image", "inspect", image], debug, true)) === 0;
   const fail = (code: string, message: string) =>
     new RunnerError(code, debug.path ? `${message} Details are in ${debug.path}.` : message);
 
-  await tool(["--version"]);
-  const status = await tool(["system", "status"]);
+  // The lookup's failure waits until the container tool has been checked.
+  const latest = latestRunnerVersion(log);
+  latest.catch(() => {});
+  const [status] = await Promise.all([tool(["system", "status"]), tool(["--version"])]);
   if (status === null)
     throw new RunnerError(
       "ISOLATED_SETUP",
@@ -180,22 +179,22 @@ export async function prepareIsolation(options: {
       "Apple's container tool isn't running. Run `container system start`, then try again.",
     );
 
-  const runnerVersion = await latestRunnerVersion(log);
+  const runnerVersion = await latest;
   const base = options.image ?? `${RUNNER_IMAGE}:${runnerVersion}`;
   // Images this run needs, and of those the ones it may delete later: what it builds, and
   // GitHub's runner image when it's the one to download it. Never an image given with --image.
   const mine: string[] = [];
-  if ((await tool(["image", "inspect", base])) !== 0) {
+  if (!(await hasImage(base))) {
     log(`Downloading ${base}. This happens once per runner version…`);
     if ((await tool(["image", "pull", base])) !== 0)
       throw fail("ISOLATED_IMAGE", `Could not download ${base}.`);
     if (!options.image) mine.push(base);
   }
-  let image = base;
+  const built = jobImage(base);
   if (!localNetwork) {
-    image = jobImage(base);
-    mine.push(image);
-    if ((await tool(["image", "inspect", image])) !== 0) {
+    mine.push(built);
+    if (!(await hasImage(built))) {
+      const image = built;
       log(`Building the job image from ${base}. This happens once per runner version…`);
       const context = mkdtempSync(join(tmpdir(), "relayrunner-image-"));
       try {
@@ -213,9 +212,15 @@ export async function prepareIsolation(options: {
   }
   // The job image stays through a run with `localNetwork`, so the next run without it doesn't
   // build again.
-  const inUse = [base, jobImage(base)];
-  await pruneImages(options.managed ?? managedImagesFile(), inUse, mine, tool, log);
-  return { command, image, localNetwork, debug, runnerVersion, ...vmSize(options.slots) };
+  await pruneImages(options.managed ?? managedImagesFile(), [base, built], mine, tool, log);
+  const size = vmSize(options.slots);
+  log(
+    `Each job runs in its own Linux VM with ${size.cpus} CPUs and ${size.memoryGb} GB of memory.`,
+  );
+  if (localNetwork) log("Jobs can reach this Mac and your local network.");
+  if (debug.path) log(`If something goes wrong, ${debug.path} has the details.`);
+  const image = localNetwork ? base : built;
+  return { command, image, localNetwork, debug, runnerVersion, ...size };
 }
 
 export function managedImagesFile() {
@@ -232,21 +237,16 @@ async function pruneImages(
   tool: (args: string[]) => Promise<number | null>,
   log: (line: string) => void,
 ) {
-  let recorded: string[] = [];
-  try {
-    const parsed: unknown = JSON.parse(readFileSync(file, "utf8"));
-    if (Array.isArray(parsed)) recorded = parsed.filter((item) => typeof item === "string");
-  } catch {
-    // No record yet.
-  }
-  const keep = new Set(recorded.filter((image) => inUse.includes(image)).concat(mine));
+  const recorded = readList(file);
   for (const image of recorded) {
     if (inUse.includes(image)) continue;
     if ((await tool(["image", "delete", image])) === 0) log(`Removed the old image ${image}.`);
   }
   try {
-    mkdirSync(dirname(file), { recursive: true });
-    writeFileSync(file, `${JSON.stringify([...keep], null, 2)}\n`);
+    writeList(
+      file,
+      inUse.filter((image) => recorded.includes(image) || mine.includes(image)),
+    );
   } catch {
     // Best effort: without the record, old images stay until deleted by hand.
   }
@@ -291,8 +291,9 @@ export function isolatedLauncher(isolation: Isolation): Launcher {
   return {
     start(run) {
       const name = containerName(run.routeId);
-      debug.write(`$ ${command} ${runArgs(run.routeId, isolation).join(" ")}`);
-      const child = spawn(command, runArgs(run.routeId, isolation), {
+      const args = runArgs(run.routeId, isolation);
+      debug.write(`$ ${command} ${args.join(" ")}`);
+      const child = spawn(command, args, {
         env: { ...runnerEnv(), RUNNER_JIT_CONFIG: run.jitConfig },
         stdio: ["ignore", "pipe", "pipe"],
       });
@@ -312,17 +313,18 @@ export function isolatedLauncher(isolation: Isolation): Launcher {
   };
 }
 
-// Runs a `container` command to the end and records it, with what it printed, in the debug log.
-// Resolves with its exit code, or null when it couldn't start.
-function call(command: string, args: string[], debug: DebugLog) {
+// Runs a `container` command to the end and records it in the debug log, with what it printed
+// unless `quiet`. Resolves with its exit code, or null when it couldn't start.
+function call(command: string, args: string[], debug: DebugLog, quiet = false) {
   return new Promise<number | null>((resolve) => {
     const child = spawn(command, args, { stdio: ["ignore", "pipe", "pipe"] });
     let output = "";
-    child.stdout.on("data", (chunk: Buffer) => (output += chunk.toString()));
-    child.stderr.on("data", (chunk: Buffer) => (output += chunk.toString()));
+    const keep = (chunk: Buffer) => {
+      if (!quiet) output += chunk.toString();
+    };
+    child.stdout.on("data", keep);
+    child.stderr.on("data", keep);
     const done = (code: number | null, extra = "") => {
-      // `image inspect` prints hundreds of lines about the image. Its exit code is the answer.
-      if (args[1] === "inspect") output = "";
       debug.write(`$ ${command} ${args.join(" ")}\n${output}${extra}exit ${code}`);
       resolve(code);
     };

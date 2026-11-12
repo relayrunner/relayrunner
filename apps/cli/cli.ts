@@ -164,21 +164,15 @@ async function connectMachine(args: {
   let runnerVersion: string;
   let launchers: Launcher[];
   if (args.isolated) {
-    const debug = debugLog();
     const isolation = await prepareIsolation({
       slots,
       image: args.image,
       localNetwork: args["local-network"],
       log,
-      debug,
+      debug: debugLog(),
     });
     runnerVersion = isolation.runnerVersion;
-    launchers = Array.from({ length: slots }, () => isolatedLauncher(isolation));
-    log(
-      `Each job runs in its own Linux VM with ${isolation.cpus} CPUs and ${isolation.memoryGb} GB of memory.`,
-    );
-    if (isolation.localNetwork) log("Jobs can reach this Mac and your local network.");
-    log(`If something goes wrong, ${debug.path} has the details.`);
+    launchers = Array<Launcher>(slots).fill(isolatedLauncher(isolation));
   } else {
     const runner = await ensureRunner({ log });
     runnerVersion = runner.version;

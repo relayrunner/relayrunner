@@ -9,6 +9,7 @@ import {
   dockerfile,
   isolatedLauncher,
   jobImage,
+  NO_LOG,
   prepareIsolation,
   runArgs,
   START_SCRIPT,
@@ -21,7 +22,6 @@ import { runJob, type JobUpdate } from "./job.ts";
 
 const jitConfig = fakeJitConfig("7f3k");
 const GB = 1024 ** 3;
-const NO_LOG = { path: "", write: () => {} };
 
 describe("unsupportedReason", () => {
   it("accepts Apple silicon Macs on macOS 26 or later", () => {
