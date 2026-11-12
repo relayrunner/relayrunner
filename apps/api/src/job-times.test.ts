@@ -10,7 +10,7 @@ import {
   type Stat,
   statOf,
   versusBaseline,
-  windowQueries,
+  windowQuery,
 } from "./job-times.ts";
 import { recordJobTiming } from "./job-timings.ts";
 import { setJobMachine } from "./jobs.ts";
@@ -220,7 +220,7 @@ async function report(cookie: string, query = "") {
 }
 
 describe("job times report", () => {
-  test("times each job per environment, folds matrix legs and times whole runs", async () => {
+  test("times each job per environment and folds matrix legs", async () => {
     const { cookie, installationId, workspaceId } = await connectedWorkspace();
     const db = createDb(env.DB);
     const [machine] = await db
@@ -240,7 +240,7 @@ describe("job times report", () => {
       rows.push(timing(installationId, 40, { runId, hoursAgo: i + 1 }));
       rows.push(timing(installationId, 180, { runId, name: "test (node 22)", hoursAgo: i + 1 }));
       rows.push(timing(installationId, 200, { runId, name: "test (node 24)", hoursAgo: i + 1 }));
-      // The pick job of that run: left out, so the run stays on one environment.
+      // The pick job of that run: left out.
       rows.push(
         timing(installationId, 3, {
           runId,
@@ -265,7 +265,7 @@ describe("job times report", () => {
     rows.push(timing(installationId, 0, { conclusion: "skipped" }));
     // Out of the 14-day window.
     rows.push(timing(installationId, 999, { hoursAgo: 15 * 24 }));
-    // A run split between Linux and a container: no whole-run time.
+    // A run split between Linux and a container.
     rows.push(timing(installationId, 40, { runId: 300 }));
     rows.push(
       timing(installationId, 20, { runId: 300, name: "oxlint", labels: ["relayrunner-container"] }),
@@ -305,16 +305,6 @@ describe("job times report", () => {
     });
     const lint = ci.jobs[0].byEnvironment;
     expect(lint["github:linux-2-core"]).toMatchObject({ runs: 8, successes: 7, medianMs: 40_000 });
-    // Whole runs: 6 Linux runs of 200s (the longest leg) plus the failed one, 6 Mac runs, and none
-    // for the split run.
-    expect(ci.byEnvironment["github:linux-2-core"]).toMatchObject({
-      runs: 7,
-      successes: 6,
-      samples: 6,
-    });
-    expect(ci.byEnvironment["github:linux-2-core"].medianMs).toBe(200_000);
-    expect(ci.byEnvironment[`machine:${machine.id}`]).toMatchObject({ samples: 6 });
-    expect(ci.byEnvironment.container).toBeUndefined();
 
     const machines = await testing.call(env, "/job-times/machines", cookie);
     const { machines: byMachine } = (await machines.json()) as { machines: Record<string, Stat> };
@@ -338,12 +328,11 @@ describe("job times report", () => {
     const db = createDb(env.DB);
     const since = new Date(Date.now() - 14 * 24 * HOUR);
     const read = async () => {
-      const { jobs, runs } = windowQueries(mine.workspaceId, since);
-      return [(await db.run(jobs)).meta.rows_read, (await db.run(runs)).meta.rows_read];
+      return (await db.run(windowQuery(mine.workspaceId, since))).meta.rows_read;
     };
     const before = await read();
-    // 2 to 3 per row in the window (the index range plus the GROUP BY sorters), each.
-    for (const rowsRead of before) expect(rowsRead).toBeLessThan(4 * 30);
+    // 2 to 3 per row in the window (the index range plus the GROUP BY sorter).
+    expect(before).toBeLessThan(4 * 30);
     // More rows outside the window don't change what's read.
     await insert(
       rows

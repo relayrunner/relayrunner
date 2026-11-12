@@ -134,8 +134,7 @@ function JobTimesPage() {
             <p className="max-w-[62ch] text-sm text-muted-foreground">
               Run time counts successful runs only, since a failure stops early. Medians, not
               averages, so one cold cache doesn't skew a job. Wait is the time from queued until a
-              runner picked the job up. A workflow's time is its whole run, first job start to last
-              job finish, for runs where every job used that runner.
+              runner picked the job up.
             </p>
           </>
         )}
@@ -301,7 +300,8 @@ function jobRows(workflows: WorkflowRow[], environments: EnvironmentSummary[]): 
     return {
       id,
       workflow,
-      ...timings(environments, workflow.byEnvironment),
+      // A plain header: times only mean something per job.
+      ...timings(environments, {}),
       subRows: workflow.jobs.map((job) => ({
         id: `${id}/${job.name}`,
         workflow,
@@ -358,21 +358,22 @@ const jobColumns = jobColumn.columns([
     id: "name",
     header: "Workflow › job",
     sortFn: "text",
-    meta: { className: "align-top" },
+    // Capped so a long job name wraps instead of pushing the runner times across the page.
+    meta: { className: "w-80 min-w-56 align-top" },
     cell: ({ row }) => <NameCell row={row} />,
   }),
   jobColumn.accessor("median", {
     header: "Median by runner",
     sortFn: "basic",
-    meta: { className: "w-0 py-2 align-top" },
+    meta: { className: "py-2 align-top" },
     cell: ({ row }) => <MedianCell row={row.original} />,
   }),
   jobColumn.accessor("trend", {
     header: "Trend",
     sortFn: "basic",
     sortDescFirst: true,
-    meta: { align: "end", className: "py-2 align-top whitespace-nowrap" },
-    cell: ({ getValue }) => <Trend trend={getValue() ?? null} />,
+    meta: { align: "end", className: "w-0 py-2 align-top whitespace-nowrap" },
+    cell: ({ row, getValue }) => row.original.job && <Trend trend={getValue() ?? null} />,
   }),
 ]);
 
@@ -387,27 +388,27 @@ function NameCell({ row }: { row: DataTableRow<JobsRow> }) {
         type="button"
         aria-expanded={open}
         onClick={toggle}
-        className="flex items-center gap-1.5 rounded-sm text-left outline-none focus-visible:ring-2 focus-visible:ring-ring"
+        className="flex items-start gap-1.5 rounded-sm text-left outline-none focus-visible:ring-2 focus-visible:ring-ring"
       >
-        <Chevron open={open} />
-        <span className="font-semibold whitespace-nowrap">
-          {workflow.workflow ?? "Unnamed workflow"}
-        </span>
-        <span className="text-xs whitespace-nowrap text-muted-foreground">
-          {showRepository && `${workflow.repository} · `}
-          {plural(workflow.jobs.length, "job")}
+        <Chevron open={open} className="mt-0.5 shrink-0" />
+        <span className="min-w-0 break-words">
+          <span className="font-semibold">{workflow.workflow ?? "Unnamed workflow"}</span>{" "}
+          <span className="text-xs text-muted-foreground">
+            {showRepository && `${workflow.repository} · `}
+            {plural(workflow.jobs.length, "job")}
+          </span>
         </span>
       </button>
     );
   return (
-    <span className={cn("flex items-center gap-1.5", row.depth === 1 ? "pl-6" : "pl-12")}>
+    <span className={cn("flex items-start gap-1.5", row.depth === 1 ? "pl-6" : "pl-12")}>
       {row.getCanExpand() && (
         <button
           type="button"
           aria-expanded={open}
           aria-label={`${open ? "Hide" : "Show"} ${job.name} legs`}
           onClick={toggle}
-          className="-ml-5.5 rounded-sm outline-none focus-visible:ring-2 focus-visible:ring-ring"
+          className="mt-0.5 -ml-5.5 shrink-0 rounded-sm outline-none focus-visible:ring-2 focus-visible:ring-ring"
         >
           <Chevron open={open} />
         </button>
@@ -415,11 +416,13 @@ function NameCell({ row }: { row: DataTableRow<JobsRow> }) {
       <button
         type="button"
         onClick={() => onOpen({ workflow, job })}
-        className="rounded-sm text-left font-medium whitespace-nowrap underline-offset-4 outline-none hover:underline focus-visible:ring-2 focus-visible:ring-ring"
+        className="min-w-0 rounded-sm text-left font-medium break-words underline-offset-4 outline-none hover:underline focus-visible:ring-2 focus-visible:ring-ring"
       >
         {job.name}
       </button>
-      {job.legs && <span className="text-xs text-muted-foreground">⊞ {job.legs.length}</span>}
+      {job.legs && (
+        <span className="mt-0.5 shrink-0 text-xs text-muted-foreground">⊞ {job.legs.length}</span>
+      )}
     </span>
   );
 }
@@ -427,17 +430,14 @@ function NameCell({ row }: { row: DataTableRow<JobsRow> }) {
 // One stacked line per runner the job actually ran on, fastest first, instead of one column per
 // runner: most jobs only run on one or two runners, so a column each was mostly "not run".
 function MedianCell({ row: { job, ran, best } }: { row: JobsRow }) {
-  const isWorkflow = !job;
-  if (ran.length === 0)
-    return (
-      <span className="text-muted-foreground">{isWorkflow ? "no whole runs" : "not run"}</span>
-    );
+  if (!job) return null;
+  if (ran.length === 0) return <span className="text-muted-foreground">not run</span>;
   const shown = ran.length > SHOWN_RUNNERS + 1 ? ran.slice(0, SHOWN_RUNNERS) : ran;
   const hidden = ran.slice(shown.length);
   return (
     <ul className="grid gap-1">
       {shown.map(({ env, stat }) => (
-        <TimeLine key={env.key} env={env} stat={stat} best={best === env.key} perRun={isWorkflow} />
+        <TimeLine key={env.key} env={env} stat={stat} best={best === env.key} />
       ))}
       {hidden.length > 0 && (
         <li
@@ -510,11 +510,15 @@ const Jobs = memo(function Jobs({
   );
 });
 
-function Chevron({ open }: { open: boolean }) {
+function Chevron({ open, className }: { open: boolean; className?: string }) {
   return (
     <ChevronRightIcon
       aria-hidden
-      className={cn("size-4 text-muted-foreground transition-transform", open && "rotate-90")}
+      className={cn(
+        "size-4 text-muted-foreground transition-transform",
+        open && "rotate-90",
+        className,
+      )}
     />
   );
 }
@@ -530,17 +534,7 @@ function fastest(byEnvironment: Record<string, Stat>) {
 /** Runner lines shown per row; the rest fold into "+N more", and the job detail lists them all. */
 const SHOWN_RUNNERS = 3;
 
-function TimeLine({
-  env,
-  stat,
-  best,
-  perRun,
-}: {
-  env: EnvironmentSummary;
-  stat: Stat;
-  best: boolean;
-  perRun: boolean;
-}) {
+function TimeLine({ env, stat, best }: { env: EnvironmentSummary; stat: Stat; best: boolean }) {
   const few = stat.confidence === "few";
   return (
     <li
@@ -570,7 +564,6 @@ function TimeLine({
         )}
       >
         {plural(stat.samples, "run")}
-        {perRun && " · per run"}
       </span>
     </li>
   );

@@ -247,7 +247,7 @@ export function registerTools(server: McpServer, request: WorkspaceApi, workspac
     {
       title: "Job times",
       description:
-        "How long each workflow and job usually takes on each runner environment, for comparing machines against GitHub-hosted runners. Times with no successful runs behind them are left out. Narrow with repository and workflow to keep the answer small.",
+        "How long each job usually takes on each runner environment, for comparing machines against GitHub-hosted runners. Times with no successful runs behind them are left out. Narrow with repository and workflow to keep the answer small.",
       inputSchema: {
         workspace: workspaceArg,
         days: days(30, 14),

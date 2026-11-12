@@ -229,7 +229,6 @@ describe("mcp server", () => {
             repositoryId: 1,
             repository: "acme/app",
             workflow: "CI",
-            byEnvironment: { "github:linux-2-core": stat(5), container: stat(0) },
             jobs: [
               {
                 name: "test",
@@ -242,7 +241,6 @@ describe("mcp server", () => {
             repositoryId: 2,
             repository: "acme/site",
             workflow: "Deploy",
-            byEnvironment: { "machine:m1": stat(3) },
             jobs: [{ name: "build", byEnvironment: { "machine:m1": stat(3) } }],
           },
         ],
@@ -259,7 +257,7 @@ describe("mcp server", () => {
       "github:linux-2-core",
     ]);
     expect(report.workflows).toHaveLength(1);
-    expect(report.workflows[0].byEnvironment).toEqual({ "github:linux-2-core": stat(5) });
+    expect(report.workflows[0].jobs[0].byEnvironment).toEqual({ "github:linux-2-core": stat(5) });
     expect(report.workflows[0].jobs.map((job: { name: string }) => job.name)).toEqual(["test"]);
   });
 
