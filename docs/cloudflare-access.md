@@ -78,7 +78,7 @@ Agents can call the API directly through a preview host with the service token:
 
 Previews share the production API, so replaying from a preview acts on production. Fix the cause first, then replay what failed. An hourly cron logs `webhook dead letters rising` when `DEAD_LETTER_ALERT_THRESHOLD` (10) or more land in an hour, and posts to `DEAD_LETTER_ALERT_WEBHOOK_URL` if that secret is set.
 
-Every 15 minutes the API also posts operator pings to `OPERATOR_SLACK_WEBHOOK_URL` (a Slack incoming webhook, set with `wrangler secret put`): new signups, App installs, a workspace's first machine, its first run routed to a machine, and runs that couldn't be routed (one ping per workspace per window). Workspaces an operator is a member of or installed, and operators' own signups, are left out (`apps/api/src/operator-pings.ts`).
+Every 15 minutes the API also posts operator pings to `OPERATOR_SLACK_WEBHOOK_URL` (a Slack incoming webhook, set with `wrangler secret put`): new signups, App installs, a workspace's first machine, its first run routed to a machine, and runs that couldn't be routed (one ping per workspace per window). Workspaces an operator is a member of or installed, and operators' own signups, are left out (`apps/api/src/operator-pings.ts`). Test accounts that aren't operators (like `ajwhitetest`) are left out by GitHub user id in `OPERATOR_PINGS_IGNORE_GITHUB_IDS` (wrangler.jsonc vars).
 
 ## Account setup
 

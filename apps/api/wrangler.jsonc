@@ -66,6 +66,9 @@
     // Orgs whose `runs-on: relayrunner-container` jobs get a container runner, comma-separated
     // (src/container-runner.ts). Each container is billed to this account, so it's an allowlist.
     "CONTAINER_RUNNER_ORGS": "relayrunner",
+    // Test accounts left out of the Slack operator pings (src/operator-pings.ts), by GitHub user id,
+    // comma-separated. Operators are always left out. 8841125 = ajwhitetest (onboarding tests).
+    "OPERATOR_PINGS_IGNORE_GITHUB_IDS": "8841125",
   },
   // Transactional email through Cloudflare Email Sending (src/email.ts). send.relayrunner.app is
   // onboarded for sending on this account. Set OPERATOR_ALERT_EMAIL with `wrangler secret put` to
