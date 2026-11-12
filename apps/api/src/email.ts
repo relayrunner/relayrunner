@@ -5,7 +5,7 @@
  * only logs, so a sign-in, a machine claim or the hourly cron never fails because of mail.
  */
 import {
-  renderAgentFeedbackEmail,
+  renderFeedbackEmail,
   renderDeadLetterAlertEmail,
   renderMachineConnectedEmail,
   renderMachineTakenOverEmail,
@@ -55,8 +55,8 @@ export type EmailArgs = (
     }
   | {
       to: string;
-      template: "agent-feedback";
-      context: Parameters<typeof renderAgentFeedbackEmail>[0];
+      template: "feedback";
+      context: Parameters<typeof renderFeedbackEmail>[0];
     }
 ) & { replyTo?: string };
 
@@ -92,8 +92,8 @@ function render(env: Env, args: EmailArgs): RenderedEmail {
         })),
         pricesUrl: `${dashboard}/admin/prices`,
       });
-    case "agent-feedback":
-      return renderAgentFeedbackEmail(args.context);
+    case "feedback":
+      return renderFeedbackEmail(args.context);
   }
 }
 

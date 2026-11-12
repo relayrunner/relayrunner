@@ -38,7 +38,7 @@ This Worker holds no secrets and no state. It doesn't call GitHub or the Router:
 
 ## Feedback
 
-`send_feedback` takes a category (`bug`, `confusing`, `feature_request`, `other`), a one-line summary (200 characters), optional details (4,000) and the tool it's about. It POSTs to `/api/feedback`, the only write an agent token may make (`apps/api/src/routes/feedback.ts`). The API strips control, zero-width and bidi characters, trims to those limits, redacts anything that looks like a credential (GitHub, RelayRunner machine and cloud tokens, JWTs, private keys, `key=value` secrets, passwords in URLs), stores it in the `agent_feedback` table and emails it to `FEEDBACK_EMAIL` (feedback@relayrunner.app), with the person's address as Reply-To. Each person can send 10 an hour and 30 a day across all their agents. The answer is only an id and how many values were redacted; it never repeats the text.
+`send_feedback` takes a category (`bug`, `confusing`, `feature_request`, `other`), a one-line summary (200 characters), optional details (4,000) and the tool it's about. It POSTs to `/api/feedback`, the only write an agent token may make (`apps/api/src/routes/feedback.ts`). The API strips control, zero-width and bidi characters, trims to those limits, redacts anything that looks like a credential (GitHub, RelayRunner machine and cloud tokens, JWTs, private keys, `key=value` secrets, passwords in URLs), stores it in the `feedback` table (with the dashboard's feedback) and emails it to `FEEDBACK_EMAIL` (feedback@relayrunner.app), with the person's address as Reply-To. Each person can send 10 an hour and 30 a day across all their agents. The answer is only an id and how many values were redacted; it never repeats the text.
 
 ## Run it locally
 

@@ -16,6 +16,7 @@ import {
 } from "@/components/ui/dialog";
 import { Field } from "@/components/ui/field";
 import { Input } from "@/components/ui/input";
+import { Textarea } from "@/components/ui/textarea";
 import { timeAgo } from "@/lib/activity";
 import {
   addProvider,
@@ -348,12 +349,7 @@ function ProviderForm({
         />
       </Field>
       <Field label="Setup step" hint="What to do before a job can run there.">
-        <textarea
-          rows={2}
-          value={fields.setup}
-          onChange={(e) => set("setup")(e.target.value)}
-          className="w-full rounded-md border border-input bg-transparent px-3 py-2 text-base shadow-xs outline-none focus-visible:border-ring focus-visible:ring-[3px] focus-visible:ring-ring/50 md:text-sm"
-        />
+        <Textarea rows={2} value={fields.setup} onChange={(e) => set("setup")(e.target.value)} />
       </Field>
       <div className="grid gap-3 sm:grid-cols-2">
         <Field label="Dashboard link">

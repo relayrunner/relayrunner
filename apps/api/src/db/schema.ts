@@ -945,11 +945,13 @@ export const agentGrantWorkspace = sqliteTable(
   ],
 );
 
-// Feedback agents send through the MCP server's send_feedback tool (routes/feedback.ts), already
-// sanitized and with secrets redacted. Also emailed to FEEDBACK_EMAIL. grant_id and client_id are
-// plain text so the feedback outlives a disconnected agent; it goes with its user.
-export const agentFeedback = sqliteTable(
-  "agent_feedback",
+// Feedback from people (the dashboard's feedback popover) and agents (the MCP server's
+// send_feedback tool), both through routes/feedback.ts, already sanitized and with secrets redacted.
+// Also emailed to FEEDBACK_EMAIL. grant_id and client_id are set for agents only, as plain text so
+// the feedback outlives a disconnected agent; page is the dashboard path it was sent from. It goes
+// with its user.
+export const feedback = sqliteTable(
+  "feedback",
   {
     id: text("id").primaryKey(),
     userId: text("user_id")
@@ -965,8 +967,12 @@ export const agentFeedback = sqliteTable(
     createdAt: integer("created_at", { mode: "timestamp_ms" })
       .notNull()
       .$defaultFn(() => new Date()),
+    source: text("source", { enum: ["agent", "dashboard"] })
+      .notNull()
+      .default("agent"),
+    page: text("page"),
   },
-  (table) => [index("agent_feedback_user_id_created_at_idx").on(table.userId, table.createdAt)],
+  (table) => [index("feedback_user_id_created_at_idx").on(table.userId, table.createdAt)],
 );
 
 // Runner prices operators record, on top of the base list in @relayrunner/providers

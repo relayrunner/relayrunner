@@ -8,6 +8,7 @@ import {
   CloudIcon,
   ListChecksIcon,
   type LucideIcon,
+  MessageSquareIcon,
   PanelLeftCloseIcon,
   PanelLeftOpenIcon,
   RouteIcon,
@@ -19,6 +20,7 @@ import {
 } from "lucide-react";
 import { type ReactNode, useState } from "react";
 import { SectionBoundary } from "@/components/error-boundary";
+import { FeedbackPopover } from "@/components/feedback-popover";
 import { DOCS_URL, SiteFooter } from "@/components/site-footer";
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
 import { WorkspaceMark, WorkspaceMenu } from "@/components/workspace-menu";
@@ -137,7 +139,7 @@ function WorkspaceLayout() {
                 </NavGroup>
               </nav>
             )}
-            <DocsLink collapsed={collapsed} />
+            <SidebarFoot collapsed={collapsed} />
             <SidebarToggle collapsed={collapsed} onToggle={toggle} />
           </TooltipProvider>
         )}
@@ -217,10 +219,19 @@ function NavLink({ item, collapsed }: { item: NavItem; collapsed: boolean }) {
   );
 }
 
-/** The docs, at the foot of the sidebar above the collapse toggle. Phones get it in the footer. */
-function DocsLink({ collapsed }: { collapsed: boolean }) {
+/** Feedback and the docs, at the foot of the sidebar above the collapse toggle. Phones get them in
+ * the footer. */
+function SidebarFoot({ collapsed }: { collapsed: boolean }) {
   return (
-    <div className="mt-auto hidden px-1 sm:block sm:group-data-[collapsed]/sidebar:px-0">
+    <div className="mt-auto hidden gap-0.5 px-1 sm:grid sm:group-data-[collapsed]/sidebar:px-0">
+      <CollapsedTooltip label="Feedback" collapsed={collapsed}>
+        <FeedbackPopover side="right" align="end">
+          <button type="button" className={cn(navLink, navItem, "w-full")}>
+            <MessageSquareIcon aria-hidden className="size-4 shrink-0" />
+            <span className="sm:group-data-[collapsed]/sidebar:sr-only">Feedback</span>
+          </button>
+        </FeedbackPopover>
+      </CollapsedTooltip>
       <CollapsedTooltip label="Docs" collapsed={collapsed}>
         <a href={DOCS_URL} className={cn(navLink, navItem)}>
           <BookOpenIcon aria-hidden className="size-4 shrink-0" />

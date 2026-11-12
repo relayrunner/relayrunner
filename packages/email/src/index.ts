@@ -7,7 +7,7 @@ export {
   type EmailCardInput,
   type RenderedEmail,
 } from "./card.ts";
-export { renderAgentFeedbackEmail } from "./agent-feedback.ts";
+export { renderFeedbackEmail } from "./feedback.ts";
 export { renderDeadLetterAlertEmail } from "./dead-letter-alert.ts";
 export { renderMachineConnectedEmail } from "./machine-connected.ts";
 export { renderMachineTakenOverEmail, type ConnectionPlace } from "./machine-taken-over.ts";

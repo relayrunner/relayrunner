@@ -453,13 +453,14 @@ describe("agent feedback", () => {
     expect(body).toEqual({ id: expect.any(String), redacted: 1 });
     expect(JSON.stringify(body)).not.toContain("ghp_");
 
-    const row = await env.DB.prepare("SELECT * FROM agent_feedback WHERE id = ?")
+    const row = await env.DB.prepare("SELECT * FROM feedback WHERE id = ?")
       .bind(body.id)
       .first<Record<string, unknown>>();
     expect(row).toMatchObject({
       user_id: user.id,
       workspace_id: workspace.id,
       client_id,
+      source: "agent",
       category: "bug",
       summary: "list_runs drops queued runs",
       details: "Called with token=[redacted] and got []",
@@ -508,10 +509,10 @@ describe("agent feedback", () => {
       (await sendFeedback(access_token, { category: "bug", summary: "x" }, { workspace: "other" }))
         .status,
     ).toBe(404);
-    // A dashboard session can't use it: it's for agents.
+    // A dashboard session sends a message, not an agent's report.
     expect(
       (await testing.call(env, "/feedback", jar, { category: "bug", summary: "x" })).status,
-    ).toBe(403);
+    ).toBe(400);
 
     for (let i = 0; i < 10; i++) {
       const ok = await sendFeedback(
@@ -532,5 +533,69 @@ describe("agent feedback", () => {
     );
     expect(limited.status).toBe(429);
     expect(limited.headers.get("retry-after")).toBe("3600");
+  });
+
+  test("takes a person's message from the dashboard, with their page and workspace", async () => {
+    const { user, cookie } = await testing.signIn(env);
+    const { workspace, cookie: jar } = await testing.createWorkspace(
+      env,
+      cookie,
+      "Dashboard feedback",
+      "dashboard-feedback",
+    );
+    const send = vi.fn(async () => ({ messageId: "m2" }));
+    const withEmail = { ...env, EMAIL: { send } as unknown as SendEmail };
+
+    const response = await testing.call(withEmail, "/feedback", jar, {
+      message: "Love the router page.\nCould it show cost too? password=hunter22",
+      page: "/router?tab=rules",
+    });
+    expect(response.status, await response.clone().text()).toBe(201);
+    const body = (await response.json()) as { id: string; redacted: number };
+    expect(body).toEqual({ id: expect.any(String), redacted: 1 });
+
+    const row = await env.DB.prepare("SELECT * FROM feedback WHERE id = ?")
+      .bind(body.id)
+      .first<Record<string, unknown>>();
+    expect(row).toMatchObject({
+      user_id: user.id,
+      workspace_id: workspace.id,
+      source: "dashboard",
+      client_id: null,
+      summary: "Love the router page.",
+      details: "Love the router page.\nCould it show cost too? password=[redacted]",
+      page: "/router",
+    });
+
+    expect(send).toHaveBeenCalledOnce();
+    const message = (send.mock.calls[0] as unknown[])[0] as {
+      to: string;
+      replyTo: string;
+      subject: string;
+      text: string;
+    };
+    expect(message.to).toBe("feedback@relayrunner.app");
+    expect(message.replyTo).toBe(user.email);
+    expect(message.subject).toBe("[feedback] Love the router page.");
+    expect(message.text).toContain(`From: ${user.name} <${user.email}>`);
+    expect(message.text).toContain("Workspace: Dashboard feedback");
+    expect(message.text).toContain("Page: /router");
+    expect(message.text).not.toContain("hunter22");
+
+    expect((await testing.call(env, "/feedback", jar, { message: " \u200b " })).status).toBe(400);
+    expect((await testing.call(env, "/feedback", jar, {})).status).toBe(400);
+  });
+
+  test("needs a signed-in person", async () => {
+    const response = await app.request(
+      "/api/feedback",
+      {
+        method: "POST",
+        headers: { "content-type": "application/json", origin: env.BETTER_AUTH_URL },
+        body: JSON.stringify({ message: "hi" }),
+      },
+      env,
+    );
+    expect(response.status).toBe(401);
   });
 });

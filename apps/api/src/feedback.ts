@@ -1,10 +1,11 @@
-// Feedback agents send through the MCP server (apps/agents send_feedback, routes/feedback.ts).
-// The text comes from a model that may have pasted logs, configs or tool output into it, so it is
-// cleaned and has anything that looks like a credential replaced before it's stored or emailed.
+// Feedback agents send through the MCP server (apps/agents send_feedback) and people send from the
+// dashboard, both through routes/feedback.ts. Either may have pasted logs, configs or tool output
+// into it, so it is cleaned and has anything that looks like a credential replaced before it's
+// stored or emailed.
 
 import { FEEDBACK_LIMITS, type FEEDBACK_CATEGORIES } from "@relayrunner/activity";
 
-// Per user, across all their agents: enough to report what went wrong, not enough to flood the inbox.
+// Per user, across all their agents and the dashboard: enough to report what went wrong, not enough to flood the inbox.
 export const FEEDBACK_RATE = { hour: 10, day: 30 } as const;
 
 const REDACTED = "[redacted]";
@@ -84,5 +85,23 @@ export function sanitizeFeedback(input: FeedbackInput) {
     details: cleanText(details.text, FEEDBACK_LIMITS.details) || null,
     tool: tool || null,
     redacted: summary.count + details.count,
+  };
+}
+
+/**
+ * A person's message from the dashboard, ready to store: its first line as the summary (what the
+ * email's subject shows), and the whole message as details.
+ */
+export function sanitizeMessage(message: string, page?: string) {
+  const redacted = redactSecrets(cleanText(message, FEEDBACK_LIMITS.details));
+  const details = cleanText(redacted.text, FEEDBACK_LIMITS.details);
+  const summary = cleanText(details.split("\n", 1)[0], FEEDBACK_LIMITS.summary, true);
+  // Only a dashboard path: anything else (a full URL, a query string) is dropped.
+  const path = page && cleanText(page, FEEDBACK_LIMITS.page, true).split(/[?#]/, 1)[0];
+  return {
+    summary,
+    details,
+    page: path?.startsWith("/") && !path.startsWith("//") ? path : null,
+    redacted: redacted.count,
   };
 }

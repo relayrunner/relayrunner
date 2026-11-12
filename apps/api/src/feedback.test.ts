@@ -1,5 +1,5 @@
 import { describe, expect, test } from "vitest";
-import { cleanText, redactSecrets, sanitizeFeedback } from "./feedback.ts";
+import { cleanText, redactSecrets, sanitizeFeedback, sanitizeMessage } from "./feedback.ts";
 
 describe("redactSecrets", () => {
   test.each([
@@ -60,5 +60,20 @@ test("sanitizeFeedback cleans every field and counts redactions", () => {
     details: null,
     tool: "get_usagerm-rf",
     redacted: 1,
+  });
+});
+
+test("sanitizeMessage takes the first line as the summary and keeps only a page's path", () => {
+  expect(sanitizeMessage("  Great tool  ", "https://evil.example/x")).toEqual({
+    summary: "Great tool",
+    details: "Great tool",
+    page: null,
+    redacted: 0,
+  });
+  expect(sanitizeMessage("Runs page is slow\n\nIt takes 10s", "/runs#top")).toEqual({
+    summary: "Runs page is slow",
+    details: "Runs page is slow\n\nIt takes 10s",
+    page: "/runs",
+    redacted: 0,
   });
 });
