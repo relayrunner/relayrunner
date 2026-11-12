@@ -85,6 +85,20 @@ describe("environmentFor", () => {
   ] as const)("%j in %s on machine %s is %s", (labels, group, machine, key, label) => {
     expect(environmentFor([...labels], group, machine)).toMatchObject({ key, label });
   });
+
+  test.each([
+    [["ubuntu-latest"], "GitHub Actions", { vcpus: 2, memoryGb: 8 }],
+    [["ubuntu-latest-8-cores"], "GitHub Actions", { vcpus: 8 }],
+    [["relayrunner-container"], "Default Public", { vcpus: 0.5, memoryGb: 4 }],
+    [["blacksmith-4vcpu-ubuntu-2404"], null, { vcpus: 4 }],
+    [["runs-on=123456/runner=2cpu-linux-x64/spot=false"], "Default", { vcpus: 2 }],
+    [["macos-15"], null, undefined],
+    [["namespace-profile-integration-tests"], "Default", undefined],
+    [["self-hosted", "linux"], null, undefined],
+    [["mystery"], null, undefined],
+  ] as const)("%j in %s is %j", (labels, group, size) => {
+    expect(environmentFor([...labels], group, null).size).toEqual(size);
+  });
 });
 
 describe("stats", () => {

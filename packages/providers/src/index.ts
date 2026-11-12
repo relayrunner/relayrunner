@@ -195,5 +195,8 @@ export {
   rateName,
   ratePrices,
   rateText,
+  type RunnerSize,
+  runnerSize,
+  sizeText,
 } from "./prices.ts";
 export { type FoundPrice, PRICE_SOURCES, type PriceSource } from "./price-sources.ts";

@@ -5,6 +5,7 @@ import { SectionBoundary } from "@/components/error-boundary";
 import { PageHeader } from "@/components/page-header";
 import { PageTabs, type Tab, viewOf } from "@/components/page-tabs";
 import { ProviderLink } from "@/components/provider-link";
+import { sizeText } from "@relayrunner/providers";
 import { ProviderMark, providerOf } from "@/components/providers";
 import { RangePicker } from "@/components/range-picker";
 import { Button } from "@/components/ui/button";
@@ -198,18 +199,21 @@ const environmentColumns = environmentColumn.columns([
   environmentColumn.accessor("label", {
     header: "Runner",
     sortFn: "text",
-    cell: ({ row: { original: env } }) => (
-      <ProviderLink provider={providerOf(env)} className="flex w-fit items-center gap-2.5">
-        <span>
-          <span className="block whitespace-nowrap">{env.label}</span>
-          {env.detail && (
-            <span className="block text-xs whitespace-nowrap text-muted-foreground">
-              {env.detail}
-            </span>
-          )}
-        </span>
-      </ProviderLink>
-    ),
+    cell: ({ row: { original: env } }) => {
+      const detail = [env.detail, sizeText(env.size)].filter(Boolean).join(" · ");
+      return (
+        <ProviderLink provider={providerOf(env)} className="flex w-fit items-center gap-2.5">
+          <span>
+            <span className="block whitespace-nowrap">{env.label}</span>
+            {detail && (
+              <span className="block text-xs whitespace-nowrap text-muted-foreground">
+                {detail}
+              </span>
+            )}
+          </span>
+        </ProviderLink>
+      );
+    },
   }),
   environmentColumn.accessor((env) => env.stat.runs, {
     id: "jobs",

@@ -21,7 +21,7 @@ import {
 import { useState, type ReactNode } from "react";
 import { runnerSettingsUrl } from "@/components/add-runner";
 import { GithubIcon } from "@/components/provider-logos";
-import { type Provider, providerStyle, runnerName, TILE } from "@/components/providers";
+import { type Provider, providerStyle, runnerName, runnerSpec, TILE } from "@/components/providers";
 import { SHARING_ICONS, SharingDialog, sharingLabel } from "@/components/machine-sharing";
 import { UserAvatar } from "@/components/workspace-menu";
 import { Button } from "@/components/ui/button";
@@ -1010,10 +1010,10 @@ function CloudRow({
   share: number | null;
   bar: string;
 }) {
-  const { label, detail, stat } = environment;
-  const { mono, detail: showDetail } = providerStyle(provider);
+  const { label, stat } = environment;
+  const { mono } = providerStyle(provider);
   const name = runnerName(provider, label);
-  const spec = showDetail && detail ? detail : null;
+  const spec = runnerSpec(provider, environment);
   return (
     <li className="col-span-3 grid grid-cols-subgrid items-center gap-x-3 px-4 py-2.5 text-xs text-muted-foreground tabular-nums">
       <div className="grid min-w-0 gap-1.5">
