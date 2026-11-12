@@ -466,12 +466,22 @@ export const machineRoutes = new Hono<AppEnv>()
           : OFFLINE;
       }),
     );
-    // The jobs each busy machine is running, for its card.
+    // The jobs each busy machine is running, for its card. Someone else's machine shows only this
+    // workspace's jobs: the rest belong to other GitHub accounts its owner is in, and the card
+    // just reads "Running a job". The owner sees all of theirs.
     const jobs = await runningJobs(
       c.var.db,
       rows.flatMap((row, i) =>
         statuses[i].online && statuses[i].state === "busy"
-          ? [{ id: row.machine.id, running: Math.max(1, statuses[i].running) }]
+          ? [
+              {
+                id: row.machine.id,
+                running: Math.max(1, statuses[i].running),
+                ...(row.machine.userId === c.var.user!.id
+                  ? {}
+                  : { installationId: c.var.workspace.installationId ?? null }),
+              },
+            ]
           : [],
       ),
     );
