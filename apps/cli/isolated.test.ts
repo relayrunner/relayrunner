@@ -5,14 +5,14 @@ import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { RunnerError } from "./install.ts";
 import {
   containerName,
+  isolatedLauncher,
   prepareIsolation,
   runArgs,
-  runIsolatedJob,
   vmSize,
   type Isolation,
 } from "./isolated.ts";
 import { fakeJitConfig } from "./jit-config.fixture.ts";
-import type { JobUpdate } from "./job.ts";
+import { runJob, type JobUpdate } from "./job.ts";
 
 const jitConfig = fakeJitConfig("7f3k");
 const GB = 1024 ** 3;
@@ -67,21 +67,10 @@ describe("runArgs", () => {
 });
 
 describe("prepareIsolation", () => {
-  it("refuses anything but a Mac with Apple silicon", async () => {
-    for (const system of [
-      { platform: "linux", arch: "arm64" },
-      { platform: "darwin", arch: "x64" },
-    ])
-      await expect(prepareIsolation({ slots: 1, system })).rejects.toMatchObject({
-        code: "ISOLATED_UNSUPPORTED",
-      });
-  });
-
   it("says how to install the container tool when it's missing", async () => {
     const error = await prepareIsolation({
       slots: 1,
       command: "/nonexistent/container",
-      system: { platform: "darwin", arch: "arm64" },
     }).catch((caught: unknown) => caught);
     expect(error).toBeInstanceOf(RunnerError);
     expect((error as RunnerError).code).toBe("ISOLATED_SETUP");
@@ -89,7 +78,7 @@ describe("prepareIsolation", () => {
   });
 });
 
-describe("runIsolatedJob", () => {
+describe("isolatedLauncher", () => {
   let dir: string;
   beforeEach(() => {
     dir = mkdtempSync(join(tmpdir(), "rr-isolated-"));
@@ -117,10 +106,10 @@ exit ${exit}
   async function run(isolation: Isolation, config = jitConfig) {
     const updates: JobUpdate[] = [];
     const out: Record<string, string> = { stdout: "", stderr: "" };
-    const result = await runIsolatedJob(
+    const result = await runJob(
       { v: 1, type: "run", routeId: "7f3k", jitConfig: config },
       {
-        isolation,
+        launcher: isolatedLauncher(isolation),
         report: (update) => updates.push(update),
         output: (chunk, stream) => (out[stream] += chunk.toString()),
       },
@@ -138,7 +127,13 @@ exit ${exit}
     expect(result).toEqual(updates[1]);
   });
 
-  it("deletes the container afterwards, even when the job fails", async () => {
+  it("leaves a finished job's container to --rm", async () => {
+    await run(fakeContainer(0));
+    const calls = readFileSync(join(dir, "calls"), "utf8").trim().split("\n");
+    expect(calls).toHaveLength(1);
+  });
+
+  it("deletes the container when the job fails", async () => {
     const { updates } = await run(fakeContainer(3));
     expect(updates.at(-1)).toEqual({
       routeId: "7f3k",

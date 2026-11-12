@@ -4,11 +4,9 @@
 // the user's files, the machine token, or anything an earlier job left behind.
 
 import { spawn } from "node:child_process";
-import { arch, availableParallelism, platform, totalmem } from "node:os";
-import type { RunMessage } from "@relayrunner/machine-protocol";
-import { installedRunners, latestRunnerVersion, RunnerError } from "./install.ts";
-import { checkJitConfig } from "./jit-config.ts";
-import { runnerEnv, supervise, type JobUpdate, type RunJobOptions } from "./job.ts";
+import { availableParallelism, totalmem } from "node:os";
+import { exitCode, latestRunnerVersion, RunnerError } from "./install.ts";
+import { runnerEnv, type Launcher } from "./job.ts";
 
 export interface Isolation {
   // The `container` binary. Tests point it at a stand-in.
@@ -36,20 +34,16 @@ export function vmSize(slots: number, cores = availableParallelism(), memoryByte
   };
 }
 
-// Checks this machine can run isolated jobs and downloads the runner image, so the first job
+// Checks Apple's container tool is running and downloads the runner image, so the first job
 // doesn't wait for it. Throws a RunnerError that says what to do otherwise.
 export async function prepareIsolation(options: {
   slots: number;
   image?: string;
   command?: string;
   log?: (line: string) => void;
-  system?: { platform: string; arch: string };
 }): Promise<Isolation> {
   const command = options.command ?? "container";
   const log = options.log ?? (() => {});
-  const system = options.system ?? { platform: platform(), arch: arch() };
-  if (system.platform !== "darwin" || system.arch !== "arm64")
-    throw new RunnerError("ISOLATED_UNSUPPORTED", "--isolated needs a Mac with Apple silicon.");
 
   const status = await exitCode(command, ["system", "status"]);
   if (status === null)
@@ -63,26 +57,12 @@ export async function prepareIsolation(options: {
       "Apple's container tool isn't running. Run `container system start`, then try again.",
     );
 
-  const runnerVersion = await runnerImageVersion(log);
+  const runnerVersion = await latestRunnerVersion(log);
   const image = options.image ?? `${RUNNER_IMAGE}:${runnerVersion}`;
   log(`Getting the runner image ${image}…`);
   if ((await exitCode(command, ["image", "pull", image], "inherit")) !== 0)
     throw new RunnerError("ISOLATED_IMAGE", `Could not download the runner image ${image}.`);
   return { command, image, runnerVersion, ...vmSize(options.slots) };
-}
-
-// The latest actions/runner version. If GitHub can't be reached, the newest one installed here.
-async function runnerImageVersion(log: (line: string) => void) {
-  try {
-    return await latestRunnerVersion({ os: "linux", arch: "arm64" });
-  } catch (error) {
-    const [newest] = installedRunners();
-    if (!newest) throw error;
-    log(
-      `Couldn't check for a newer runner (${(error as Error).message}). Using ${newest.version}.`,
-    );
-    return newest.version;
-  }
 }
 
 // The VM's name, which is also how a job that's still running is found and deleted.
@@ -111,57 +91,19 @@ export function runArgs(routeId: string, isolation: Isolation) {
   ];
 }
 
-// runJob's isolated twin: same checks and reports, but the runner starts inside a fresh VM.
-// Resolves with the last update it reported ("finished" or "failed"). Never rejects.
-export async function runIsolatedJob(
-  run: RunMessage,
-  options: Omit<RunJobOptions, "dir"> & { isolation: Isolation },
-): Promise<JobUpdate> {
-  const { isolation, report } = options;
-  const output =
-    options.output ??
-    ((chunk, stream) => (stream === "stdout" ? process.stdout : process.stderr).write(chunk));
-  const finish = (update: JobUpdate) => {
-    report(update);
-    return update;
+// Runs each job's runner inside a fresh VM.
+export function isolatedLauncher(isolation: Isolation): Launcher {
+  return {
+    start: (run) =>
+      spawn(isolation.command, runArgs(run.routeId, isolation), {
+        env: { ...runnerEnv(), RUNNER_JIT_CONFIG: run.jitConfig },
+        stdio: ["ignore", "pipe", "pipe"],
+      }),
+    // `--rm` deletes the VM when the runner exits with 0. Anything else may have left it behind,
+    // such as a `container run` that was stopped before its VM was.
+    async cleanup(run, clean) {
+      if (!clean)
+        await exitCode(isolation.command, ["delete", "--force", containerName(run.routeId)]);
+    },
   };
-
-  // Nothing runs on a config that points the runner anywhere but GitHub.
-  const checked = checkJitConfig(run.jitConfig, run.routeId);
-  if (!checked.ok)
-    return finish({
-      routeId: run.routeId,
-      state: "failed",
-      message: `Refused the job's runner config: ${checked.reason}.`,
-    });
-  options.onChecked?.(checked.target);
-
-  try {
-    const child = spawn(isolation.command, runArgs(run.routeId, isolation), {
-      env: { ...runnerEnv(), RUNNER_JIT_CONFIG: run.jitConfig },
-      stdio: ["ignore", "pipe", "pipe"],
-    });
-    return finish(
-      await supervise(child, { routeId: run.routeId, name: "The runner", report, output }),
-    );
-  } catch (error) {
-    return finish({
-      routeId: run.routeId,
-      state: "failed",
-      message: error instanceof Error ? error.message : String(error),
-    });
-  } finally {
-    // `--rm` deletes the VM when the runner exits. This covers a `container run` that was stopped
-    // before its VM was.
-    await exitCode(isolation.command, ["delete", "--force", containerName(run.routeId)]);
-  }
-}
-
-// The command's exit code, or null when it couldn't start (not installed).
-function exitCode(command: string, args: string[], stdio: "ignore" | "inherit" = "ignore") {
-  return new Promise<number | null>((resolve) => {
-    const child = spawn(command, args, { stdio });
-    child.once("error", () => resolve(null));
-    child.once("exit", (code) => resolve(code));
-  });
 }
