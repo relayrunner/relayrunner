@@ -28,7 +28,7 @@ export interface AppEnv {
     auth: Auth;
     user: Session["user"] | null;
     session: Session["session"] | null;
-    // Set by requireWorkspace.
+    // Set by requireWorkspace. Reads through a D1 session, so they can go to a read replica.
     db: Db;
     workspace: typeof schema.workspace.$inferSelect;
     role: string;
