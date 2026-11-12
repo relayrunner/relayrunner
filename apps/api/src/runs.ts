@@ -145,6 +145,8 @@ interface JobGroup {
   last_completed: number | null;
   /** Each environment that ran a job, `labels␟group␟machine␞`, joined by commas. */
   envs: string | null;
+  /** Each job's `started:completed` on a runner, joined by commas. */
+  spans: string | null;
 }
 
 /** The finished jobs of each run in the window, grouped by run: a range of the installation index. */
@@ -162,7 +164,9 @@ function jobGroupsQuery(workspaceId: string, since: number) {
       max(${timing.completedAt}) as last_completed,
       group_concat(distinct case when not ${PICK} and ${RAN_ON_RUNNER} then ${timing.labels}
         || char(31) || coalesce(${timing.runnerGroupName}, '')
-        || char(31) || coalesce(${timing.machineId}, '') || char(30) end) as envs
+        || char(31) || coalesce(${timing.machineId}, '') || char(30) end) as envs,
+      group_concat(case when not ${PICK} and ${timing.startedAt} is not null
+        then ${timing.startedAt} || ':' || ${timing.completedAt} end) as spans
     from ${timing}
     where ${inWorkspace(workspaceId)} and ${timing.completedAt} >= ${since}
     group by ${timing.repositoryId}, ${timing.runId}, ${timing.runAttempt}`;
@@ -175,6 +179,27 @@ export function splitEnvs(text: string | null): string[] {
     .split("\u001e")
     .map((part) => part.replace(/^,/, ""))
     .filter(Boolean);
+}
+
+/**
+ * How much of a run's wall time no job was running: before the first job started and between jobs,
+ * mostly waiting for a runner. Jobs running at the same time count once. `spans` is
+ * JobGroup.spans.
+ */
+export function waitingMs(start: number, end: number, spans: string | null): number {
+  const intervals = (spans ? spans.split(",") : [])
+    .map((span) => span.split(":").map(Number))
+    .map(([from, to]) => [Math.max(start, from), Math.min(end, to)])
+    .filter(([from, to]) => to > from)
+    .sort((a, b) => a[0] - b[0]);
+  let running = 0;
+  let reach = start;
+  for (const [from, to] of intervals) {
+    if (to <= reach) continue;
+    running += to - Math.max(from, reach);
+    reach = to;
+  }
+  return Math.max(0, end - start - running);
 }
 
 function conclusionOfJobs(group: JobGroup) {
@@ -242,6 +267,10 @@ async function runSummaries(db: Db, workspaceId: string, since: number) {
           : (row?.conclusion ?? (group ? conclusionOfJobs(group) : null)),
       wallMs:
         startedAt !== null && completedAt !== null ? Math.max(0, completedAt - startedAt) : null,
+      waitMs:
+        startedAt !== null && completedAt !== null && group
+          ? waitingMs(startedAt, completedAt, group.spans)
+          : null,
       updatedAt: Math.max(group?.last_completed ?? 0, row?.githubUpdatedAt.getTime() ?? 0),
       workflow: workflowKey(
         row?.repositoryId ?? group?.repository_id ?? 0,
@@ -410,7 +439,7 @@ export async function runJobs(
 /**
  * Each workflow's whole-run times over the last `days` days, by workflowKey, for the Performance
  * page: like a job's times, from its newest successful runs, but first job queued to last job
- * finished.
+ * finished. Its wait is the time no job was running (waitingMs).
  */
 export async function workflowTimes(
   db: Db,
@@ -430,7 +459,7 @@ export async function workflowTimes(
       const samples = runs.map((run) => ({
         completedAt: run.updatedAt,
         runMs: run.wallMs!,
-        waitMs: null,
+        waitMs: run.waitMs,
       }));
       return [key, statOf({ runs: total, successes: runs.length, samples })];
     }),

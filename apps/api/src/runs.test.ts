@@ -5,6 +5,7 @@ import type { Env } from "./env.ts";
 import {
   splitEnvs,
   purgeOldWorkflowRuns,
+  waitingMs,
   recordWorkflowRun,
   type PerformanceReport,
   type Run,
@@ -311,8 +312,24 @@ describe("workflow times and the job list", () => {
     const res = await testing.call(env, "/job-times", cookie);
     const report = (await res.json()) as PerformanceReport;
     const ci = report.workflows.find((row) => row.workflow === "CI");
-    // First queued (5s before lint started) to test finishing: 5 + 20 + 40 = 65s.
-    expect(ci?.wall).toMatchObject({ runs: 6, successes: 5, samples: 5, medianMs: 65_000 });
+    // First queued (5s before lint started) to test finishing: 5 + 20 + 40 = 65s. test queued
+    // while lint ran, so only lint's 5s queue had no job running.
+    expect(ci?.wall).toMatchObject({
+      runs: 6,
+      successes: 5,
+      samples: 5,
+      medianMs: 65_000,
+      waitMs: 5_000,
+    });
+  });
+
+  test("counts time with no job running as waiting, overlapping jobs once", () => {
+    // 0-100: a waits until 10, runs 10-40 beside b (20-50), nothing runs 50-70, c runs 70-90,
+    // then 10 more until the run ends.
+    expect(waitingMs(0, 100, "10:40,20:50,70:90")).toBe(10 + 20 + 10);
+    // A job wholly inside another counts nothing extra; spans past the run are clipped.
+    expect(waitingMs(0, 100, "0:80,10:20,90:150")).toBe(10);
+    expect(waitingMs(0, 100, null)).toBe(100);
   });
 
   test("lists finished jobs newest first, picks and other workspaces left out", async () => {

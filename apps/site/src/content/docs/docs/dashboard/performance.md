@@ -7,7 +7,7 @@ The **Performance** page, under Analytics, shows how long your workflows and job
 
 ## Workflows
 
-For each workflow: its runs, the share that succeeded, and the median and p90 time from a run's start to its last job finishing. That time includes any wait for a runner, so it's what you actually wait for.
+For each workflow: its runs, the share that succeeded, and the median and p90 time from a run's start to its last job finishing. That time includes any wait for a runner, so it's what you actually wait for. **Waiting** is how much of that time no job was running, mostly jobs waiting for a runner.
 
 **Trend** compares the newer half of the runs with the older half; red means the workflow got slower. **Slowest job** is the job that usually takes longest. Open it to compare its times on each runner.
 
