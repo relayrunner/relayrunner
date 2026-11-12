@@ -1,5 +1,5 @@
-import { mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
-import { tmpdir } from "node:os";
+import { mkdtempSync, readFileSync, rmSync, statSync, writeFileSync } from "node:fs";
+import { homedir, tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { RunnerError } from "./install.ts";
@@ -113,6 +113,20 @@ describe("the job image", () => {
     expect(jobImage("runner:1")).toBe(jobImage("runner:1"));
     expect(jobImage("runner:1")).not.toBe(jobImage("runner:2"));
     expect(dockerfile("runner:1")).toMatch(/^FROM runner:1\n/);
+  });
+});
+
+describe("debugLog", () => {
+  it("is private and leaves the home folder's path out", () => {
+    const dir = mkdtempSync(join(tmpdir(), "rr-log-"));
+    try {
+      const debug = debugLog(join(dir, "isolated.log"));
+      debug.write(`appRoot ${homedir()}/Library/x`);
+      expect(readFileSync(debug.path, "utf8")).toContain("appRoot ~/Library/x");
+      expect(statSync(debug.path).mode & 0o777).toBe(0o600);
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
   });
 });
 

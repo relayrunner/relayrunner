@@ -15,7 +15,7 @@ import {
   rmSync,
   writeFileSync,
 } from "node:fs";
-import { arch, availableParallelism, platform, release, tmpdir, totalmem } from "node:os";
+import { arch, availableParallelism, homedir, platform, release, tmpdir, totalmem } from "node:os";
 import { dirname, join } from "node:path";
 import { latestRunnerVersion, RunnerError } from "./install.ts";
 import { runnerEnv, type Launcher } from "./job.ts";
@@ -67,9 +67,12 @@ export interface DebugLog {
 export function debugLog(path = join(relayrunnerHome(), "isolated.log")): DebugLog {
   const write = (text: string, flag: "a" | "w" = "a") => {
     try {
-      const stamped = `${new Date().toISOString()} ${text.trimEnd()}\n`;
-      if (flag === "w") writeFileSync(path, stamped);
-      else appendFileSync(path, stamped);
+      // The home folder becomes `~`, so a shared log doesn't carry the user's name.
+      const stamped = `${new Date().toISOString()} ${text.trimEnd().replaceAll(homedir(), "~")}\n`;
+      if (flag === "w") {
+        rmSync(path, { force: true });
+        writeFileSync(path, stamped, { mode: 0o600 });
+      } else appendFileSync(path, stamped);
     } catch {
       // Best effort: a log that can't be written never stops a job.
     }
