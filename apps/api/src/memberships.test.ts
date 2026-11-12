@@ -1,5 +1,6 @@
 import { toWebhookMessage } from "@relayrunner/github-webhooks";
 import { afterEach, beforeAll, beforeEach, describe, expect, test, vi } from "vitest";
+import { app } from "./app.ts";
 import { createAuth } from "./auth.ts";
 import { createDb } from "./db/index.ts";
 import type { Env } from "./env.ts";
@@ -221,6 +222,40 @@ describe("membership from GitHub (#317)", () => {
     expect(reads).toBe(1);
     await list();
     expect(reads).toBe(1);
+  });
+
+  test("listing workspaces answers from D1 at once and syncs after the response", async () => {
+    const { user, githubToken, cookie } = await testing.signIn(env);
+    const github = installation();
+    await installed(github);
+    visibleTo.set(githubToken, [github]);
+    await env.DB.prepare("update user set installations_synced_at = ? where id = ?")
+      .bind(Date.now() - 10 * 60 * 1000, user.id)
+      .run();
+    const pending: Promise<unknown>[] = [];
+    const ctx = {
+      waitUntil: (promise: Promise<unknown>) => void pending.push(promise),
+      passThroughOnException: () => undefined,
+      props: {},
+    } as unknown as ExecutionContext;
+    const list = async () => {
+      const response = await app.request(
+        "/api/auth/organization/list",
+        { headers: { cookie } },
+        env,
+        ctx,
+      );
+      expect(response.status).toBe(200);
+      return ((await response.json()) as { id: string }[]).map((workspace) => workspace.id);
+    };
+
+    // The sync hasn't run yet, so the new install isn't listed...
+    expect(await list()).toEqual([]);
+    expect(pending).toHaveLength(1);
+    await Promise.all(pending);
+    expect(reads).toBe(1);
+    // ...and the next load has it.
+    expect(await list()).toEqual([await workspaceOf(github.id)]);
   });
 });
 
