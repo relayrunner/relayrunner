@@ -236,10 +236,11 @@ type Places = { labels: string[]; isolatedLabels?: string[] };
 
 /** Whether a job's wanted labels fit one of a machine's places: the machine itself or its VM. */
 export function fits(machine: Places, wanted: string[]) {
-  return (
-    hasLabels(machine.labels, wanted) ||
-    (machine.isolatedLabels !== undefined && hasLabels(machine.isolatedLabels, wanted))
-  );
+  return hasLabels(machine.labels, wanted) || vmFits(machine, wanted);
+}
+
+function vmFits(machine: Places, wanted: string[]) {
+  return machine.isolatedLabels !== undefined && hasLabels(machine.isolatedLabels, wanted);
 }
 
 /**
@@ -248,8 +249,7 @@ export function fits(machine: Places, wanted: string[]) {
  * says what it was written for: `ubuntu-*` means Linux, so the VM; anything else, the machine.
  */
 export function runsIsolated(machine: Places, wanted: string[], fallback: string[]) {
-  if (machine.isolatedLabels === undefined || !hasLabels(machine.isolatedLabels, wanted))
-    return false;
+  if (!vmFits(machine, wanted)) return false;
   if (!hasLabels(machine.labels, wanted)) return true;
   return fallback.some((label) => /^ubuntu/i.test(label));
 }

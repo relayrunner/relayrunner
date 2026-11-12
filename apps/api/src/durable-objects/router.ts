@@ -241,7 +241,7 @@ export class Router extends DurableObject<Env> {
         machine.source === "github"
           ? matchLabels(parseStoredLabels(machine.githubLabels))
           : machineLabels(machine),
-      isolatedLabels: machine.source === "github" ? undefined : isolatedLabels(machine),
+      isolatedLabels: isolatedLabels(machine),
       paused: machine.pausedAt !== null,
       sharing: machine.sharing,
       ownerGithubId: githubId(machine.ownerGithubId),

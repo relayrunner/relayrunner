@@ -175,14 +175,15 @@ async function connectMachine(args: {
 
   const slots = args.concurrency;
   const log = (line: string) => clack.log.info(line);
-  // Isolated, each job gets a fresh VM from the runner image. Otherwise each slot runs its jobs
-  // in its own copy of the runner on this machine.
-  // Where a slot's job runs: on this machine (`onHost`), in a VM (`inVm`), or either, as the
-  // gateway's `run` message says. The hello carries the runner version of the machine itself when
-  // it takes jobs there.
+  // Where each slot's jobs run: its own copy of the runner on this machine, or a VM. With --macos
+  // a machine has both, and the gateway's `run` message says which. The hello carries the runner
+  // version of the machine itself when it takes jobs there.
+  const onHost = !args.isolated || args.macos ? ensureRunner({ log }) : undefined;
+  // Its failure waits until the VM side is ready.
+  onHost?.catch(() => {});
   let runnerVersion = "";
-  let onHost: Launcher[] | undefined;
-  let inVm: Launcher | undefined;
+  let launchers: Launcher[] = [];
+  let vmLauncher: Launcher | undefined;
   if (args.isolated) {
     // The firewall on the Mac covers every VM, so with it on a job can't be let onto the network.
     const firewall = firewallInstalled();
@@ -200,15 +201,17 @@ async function connectMachine(args: {
       debug: debugLog(),
     });
     runnerVersion = isolation.runnerVersion;
-    inVm = isolatedLauncher(isolation);
+    const launcher = isolatedLauncher(isolation);
+    if (args.macos) vmLauncher = launcher;
+    else launchers = Array.from({ length: slots }, () => launcher);
   }
-  if (!args.isolated || args.macos) {
+  if (onHost) {
     const [runner, canIsolate] = await Promise.all([
-      ensureRunner({ log }),
-      args.isolated ? false : isolationAvailable(),
+      onHost,
+      !args.isolated && isolationAvailable(),
     ]);
     runnerVersion = runner.version;
-    onHost = ensureSlots(runner, slots, log).map(hostLauncher);
+    launchers = ensureSlots(runner, slots, log).map(hostLauncher);
     if (canIsolate)
       log("This Mac can run each job in its own Linux VM, away from your files. Add --isolated.");
     if (args.macos) log("Linux jobs run in a VM. macOS jobs run on this Mac itself.");
@@ -273,7 +276,7 @@ async function connectMachine(args: {
             : undefined;
         try {
           return await runJob(run, {
-            launcher: (run.isolated ? inVm : onHost?.[slot - 1]) ?? inVm!,
+            launcher: (run.isolated && vmLauncher) || launchers[slot - 1]!,
             report,
             output: prefixed?.output,
             onChecked: (target) => {
