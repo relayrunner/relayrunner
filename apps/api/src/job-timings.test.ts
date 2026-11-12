@@ -1,6 +1,6 @@
 import type { WebhookMessage, WorkflowJob } from "@relayrunner/github-webhooks";
 import { eq } from "drizzle-orm";
-import { afterAll, beforeAll, describe, expect, test, vi } from "vitest";
+import { beforeAll, describe, expect, test, vi } from "vitest";
 import { createDb, schema } from "./db/index.ts";
 import type { Env } from "./env.ts";
 import {
@@ -34,17 +34,13 @@ describe("runnerClass", () => {
   });
 });
 
-let proxy: Awaited<ReturnType<typeof testing.startD1>>["proxy"];
 let env: Env;
 
 beforeAll(async () => {
-  let d1Env: Env;
-  ({ proxy, env: d1Env } = await testing.startD1());
-  env = { ...d1Env, PICK_RUNNER: { getByName: () => ({ start: vi.fn() }) } } as unknown as Env;
-}, 60_000);
-
-afterAll(async () => {
-  await proxy?.dispose();
+  env = {
+    ...(await testing.createTestEnv()),
+    PICK_RUNNER: { getByName: () => ({ start: vi.fn() }) },
+  } as unknown as Env;
 });
 
 let ids = 0;

@@ -1,46 +1,20 @@
-import { readdirSync, readFileSync } from "node:fs";
-import { afterAll, afterEach, beforeAll, describe, expect, test, vi } from "vitest";
-import { getPlatformProxy } from "wrangler";
+import { afterEach, beforeAll, describe, expect, test, vi } from "vitest";
 import { app } from "./app.ts";
 import { sharedCookieDomain } from "./auth.ts";
 import type { Env } from "./env.ts";
+import { createTestEnv } from "./testing.ts";
 
 // Sign-in from a dashboard preview, end to end through the oAuthProxy plugin, with GitHub's OAuth
-// endpoints stubbed. Uses the vars from wrangler.jsonc (production BETTER_AUTH_URL and
-// PREVIEW_ORIGINS) and a real in-memory D1.
+// endpoints stubbed. Uses the production BETTER_AUTH_URL and the PREVIEW_ORIGINS from wrangler.jsonc.
 const production = "https://app.relayrunner.app";
 const preview = "https://feature-x-relayrunner-app.relayrun.workers.dev";
 // The old workers.dev dashboard, which older CLIs still open, signs in the same way.
 const oldDashboard = "https://relayrunner-app.relayrun.workers.dev";
 
-let proxy: Awaited<ReturnType<typeof getPlatformProxy<Env>>>;
 let env: Env;
 
 beforeAll(async () => {
-  proxy = await getPlatformProxy<Env>({
-    configPath: new URL("../wrangler.jsonc", import.meta.url).pathname,
-    persist: false,
-  });
-  env = {
-    ...proxy.env,
-    BETTER_AUTH_SECRET: "test-secret-test-secret-test-secret",
-    GITHUB_APP_CLIENT_ID: "id",
-    GITHUB_APP_CLIENT_SECRET: "secret",
-  };
-  const dir = new URL("../migrations/", import.meta.url);
-  for (const file of readdirSync(dir)
-    .filter((name) => name.endsWith(".sql"))
-    .sort()) {
-    for (const statement of readFileSync(new URL(file, dir), "utf8").split(
-      "--> statement-breakpoint",
-    )) {
-      if (statement.trim()) await env.DB.prepare(statement).run();
-    }
-  }
-}, 60_000);
-
-afterAll(async () => {
-  await proxy?.dispose();
+  env = await createTestEnv({ env: { BETTER_AUTH_URL: production } });
 });
 
 afterEach(() => {

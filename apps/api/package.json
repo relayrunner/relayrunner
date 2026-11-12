@@ -5,7 +5,7 @@
   "scripts": {
     "dev": "wrangler dev",
     "deploy": "node scripts/deploy.ts",
-    "typecheck": "tsc --noEmit && tsc --noEmit -p scripts",
+    "typecheck": "tsc --noEmit && tsc --noEmit -p tsconfig.test.json && tsc --noEmit -p scripts",
     "db:generate": "drizzle-kit generate",
     "db:migrate:local": "wrangler d1 execute relayrunner --local --file scripts/rename-legacy-migrations.sql && wrangler d1 migrations apply relayrunner --local",
     "db:migrate:remote": "wrangler d1 execute relayrunner --remote --file scripts/rename-legacy-migrations.sql && wrangler d1 migrations apply relayrunner --remote"

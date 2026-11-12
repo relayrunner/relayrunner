@@ -1,5 +1,5 @@
 import { PRICE_SOURCES, type PriceSource } from "@relayrunner/providers";
-import { afterAll, beforeAll, beforeEach, describe, expect, test, vi } from "vitest";
+import { beforeAll, beforeEach, describe, expect, test, vi } from "vitest";
 import type { Env } from "./env.ts";
 import { checkPrices } from "./price-check.ts";
 import { createDb } from "./db/index.ts";
@@ -126,22 +126,15 @@ describe("price sources", () => {
 });
 
 describe("checkPrices", () => {
-  let proxy: Awaited<ReturnType<typeof testing.startD1>>["proxy"];
   let env: Env;
   const send = vi.fn();
 
   beforeAll(async () => {
-    const started = await testing.startD1();
-    proxy = started.proxy;
     env = {
-      ...started.env,
+      ...(await testing.createTestEnv()),
       OPERATOR_ALERT_EMAIL: "ops@example.com",
       EMAIL: { send } as unknown as SendEmail,
     };
-  }, 60_000);
-
-  afterAll(async () => {
-    await proxy?.dispose();
   });
 
   beforeEach(async () => {

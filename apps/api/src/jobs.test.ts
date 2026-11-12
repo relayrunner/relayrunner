@@ -1,6 +1,6 @@
 import type { WebhookMessage, WorkflowJob } from "@relayrunner/github-webhooks";
 import { relayInputs } from "@relayrunner/runner-order";
-import { afterAll, beforeAll, describe, expect, test, vi } from "vitest";
+import { beforeAll, describe, expect, test, vi } from "vitest";
 import { createDb, schema } from "./db/index.ts";
 import type { Env } from "./env.ts";
 import type { ActivityPage, GithubActor } from "@relayrunner/activity";
@@ -10,7 +10,6 @@ import { runningJobs, startedJobStatus } from "./jobs.ts";
 import { recordPick } from "./route-decisions.ts";
 import { decideRoute } from "./routing.ts";
 
-let proxy: Awaited<ReturnType<typeof testing.startD1>>["proxy"];
 let env: Env;
 const start = vi.fn();
 // The Router and MachineLink Durable Objects, reduced to what a route job's webhooks call.
@@ -19,18 +18,12 @@ const machineFor = vi.fn();
 const run = vi.fn(async () => "sent");
 
 beforeAll(async () => {
-  let d1Env: Env;
-  ({ proxy, env: d1Env } = await testing.startD1());
   env = {
-    ...d1Env,
+    ...(await testing.createTestEnv()),
     PICK_RUNNER: { getByName: () => ({ start }) },
     ROUTER: { getByName: () => ({ claim, machineFor }) },
     MACHINE_LINK: { getByName: () => ({ run }) },
   } as unknown as Env;
-}, 60_000);
-
-afterAll(async () => {
-  await proxy?.dispose();
 });
 
 let ids = 0;

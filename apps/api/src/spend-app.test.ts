@@ -1,5 +1,5 @@
 import { generateKeyPairSync } from "node:crypto";
-import { afterAll, afterEach, beforeAll, describe, expect, test, vi } from "vitest";
+import { afterEach, beforeAll, describe, expect, test, vi } from "vitest";
 import { createDb, schema } from "./db/index.ts";
 import type { Env } from "./env.ts";
 import {
@@ -9,12 +9,10 @@ import {
 } from "./spend-app.ts";
 import * as testing from "./testing.ts";
 
-let proxy: Awaited<ReturnType<typeof testing.startD1>>["proxy"];
 let env: Env;
 beforeAll(async () => {
-  ({ proxy, env } = await testing.startD1());
+  env = await testing.createTestEnv();
 });
-afterAll(() => proxy.dispose());
 afterEach(async () => {
   vi.unstubAllGlobals();
   await createDb(env.DB).delete(schema.spendInstallation);

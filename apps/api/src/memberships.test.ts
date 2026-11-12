@@ -1,5 +1,5 @@
 import { toWebhookMessage } from "@relayrunner/github-webhooks";
-import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, test, vi } from "vitest";
+import { afterEach, beforeAll, beforeEach, describe, expect, test, vi } from "vitest";
 import { createAuth } from "./auth.ts";
 import { createDb } from "./db/index.ts";
 import type { Env } from "./env.ts";
@@ -8,15 +8,10 @@ import { syncMembershipsFromGitHub } from "./memberships.ts";
 import * as testing from "./testing.ts";
 import { processWebhook } from "./webhook-queue.ts";
 
-let proxy: Awaited<ReturnType<typeof testing.startD1>>["proxy"];
 let env: Env;
 
 beforeAll(async () => {
-  ({ proxy, env } = await testing.startD1());
-}, 60_000);
-
-afterAll(async () => {
-  await proxy?.dispose();
+  env = await testing.createTestEnv();
 });
 
 // What GET /user/installations returns per bearer token. `failing` tokens get that status.

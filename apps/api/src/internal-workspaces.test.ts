@@ -1,20 +1,13 @@
-import { afterAll, beforeAll, describe, expect, test } from "vitest";
+import { beforeAll, describe, expect, test } from "vitest";
 import { createDb } from "./db/index.ts";
 import type { Env } from "./env.ts";
 import { internalWorkspaceIds, isInternalWorkspace } from "./internal-workspaces.ts";
 import * as testing from "./testing.ts";
 
-let proxy: Awaited<ReturnType<typeof testing.startD1>>["proxy"];
 let env: Env;
 
 beforeAll(async () => {
-  const started = await testing.startD1();
-  proxy = started.proxy;
-  env = started.env;
-}, 60_000);
-
-afterAll(async () => {
-  await proxy?.dispose();
+  env = await testing.createTestEnv();
 });
 
 async function operator() {

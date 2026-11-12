@@ -1,4 +1,4 @@
-import { afterAll, beforeAll, describe, expect, test } from "vitest";
+import { beforeAll, describe, expect, test } from "vitest";
 import type { Env } from "./env.ts";
 import * as testing from "./testing.ts";
 
@@ -7,7 +7,6 @@ import * as testing from "./testing.ts";
 // rows under them.
 const RESET = "20261111193823_workspace_per_installation.sql";
 
-let proxy: Awaited<ReturnType<typeof testing.startD1>>["proxy"];
 let env: Env;
 
 const all = async <T>(sql: string, ...binds: unknown[]) =>
@@ -28,7 +27,7 @@ const workspaceOf = async (installationId: number) =>
     }>())!;
 
 beforeAll(async () => {
-  ({ proxy, env } = await testing.startD1({ before: RESET }));
+  env = await testing.createTestEnv({ before: RESET });
   const now = Date.now();
   const run = (sql: string, ...binds: unknown[]) => env.DB.prepare(sql).bind(...binds);
   await env.DB.batch([
@@ -119,10 +118,6 @@ beforeAll(async () => {
     ),
   ]);
   await testing.applyMigration(env, RESET);
-}, 60_000);
-
-afterAll(async () => {
-  await proxy?.dispose();
 });
 
 describe("reset to one workspace per installation (#316)", () => {
