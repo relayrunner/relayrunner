@@ -1,5 +1,11 @@
 import { describe, expect, test } from "vitest";
-import { describePlace, deviceName, formatMemory, type MachineDevice } from "./device.ts";
+import {
+  describeJobPlace,
+  describePlace,
+  deviceName,
+  formatMemory,
+  type MachineDevice,
+} from "./device.ts";
 
 const device = (parts: Partial<MachineDevice>): MachineDevice => ({
   kind: "unknown",
@@ -36,5 +42,32 @@ describe("describePlace", () => {
     expect(describePlace("PT", null)).toBe("Portugal");
     expect(describePlace(null, "Lisbon")).toBe("Lisbon");
     expect(describePlace(null, null)).toBeNull();
+  });
+});
+
+describe("where a machine's jobs run", () => {
+  const mac = device({ osVersion: "macOS 27.2" });
+
+  test("a Mac that reports Linux runs each job in a VM", () => {
+    expect(describeJobPlace({ os: "linux", device: mac })).toBe("Each in a Linux VM");
+  });
+
+  test("a Mac with VM labels takes Linux jobs in a VM and macOS jobs on itself", () => {
+    expect(
+      describeJobPlace({
+        os: "macos",
+        device: mac,
+        isolatedLabels: ["self-hosted", "Linux", "ARM64"],
+      }),
+    ).toBe("Linux in a VM · macOS on the Mac");
+  });
+
+  test("any other machine runs jobs on itself", () => {
+    expect(describeJobPlace({ os: "macos", device: mac })).toBe("On the machine itself");
+    expect(
+      describeJobPlace({ os: "linux", device: device({ osVersion: "Ubuntu 24.04.1 LTS" }) }),
+    ).toBe("On the machine itself");
+    expect(describeJobPlace({ os: "linux", device: null })).toBe("On the machine itself");
+    expect(describeJobPlace({ os: null })).toBeNull();
   });
 });

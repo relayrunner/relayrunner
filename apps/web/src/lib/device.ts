@@ -45,3 +45,20 @@ export function describePlace(country: string | null, city: string | null) {
   }
   return [city, countryName].filter(Boolean).join(", ") || null;
 }
+
+/**
+ * Where a connected machine's jobs run, for its card. A Mac that reports Linux runs each job in a
+ * Linux VM, and one that also has VM labels takes macOS jobs on itself. Null when the machine
+ * hasn't said what it is.
+ */
+export function describeJobPlace(machine: {
+  os: string | null;
+  isolatedLabels?: string[];
+  device?: Pick<MachineDevice, "osVersion"> | null;
+}) {
+  if (machine.isolatedLabels) return "Linux in a VM · macOS on the Mac";
+  if (!machine.os) return null;
+  if (machine.os === "linux" && machine.device?.osVersion?.startsWith("macOS"))
+    return "Each in a Linux VM";
+  return "On the machine itself";
+}

@@ -15,16 +15,21 @@ The first run signs the machine in. After that, the machine is online while `con
 
 Jobs run in GitHub's official runner, set up fresh for each job. The machine needs no runner setup of its own.
 
+Where a job runs depends on the machine:
+
+- **On a Mac with Apple silicon**, each job runs in its own Linux VM, away from your files. See [Isolated jobs on a Mac](#isolated-jobs-on-a-mac).
+- **On Linux or an Intel Mac**, jobs run on the machine itself, as the user who started `connect`.
+
 ## Labels
 
-Every machine has the label `self-hosted`, plus its OS and architecture: `macOS` or `Linux`, and `ARM64` or `X64`. A relay's `machine` input lists the labels a machine must have, all of them:
+Every machine has the label `self-hosted`, plus the OS and architecture its jobs run on: `macOS` or `Linux`, and `ARM64` or `X64`. A Mac that runs jobs in Linux VMs has the label `Linux`, and `macOS` too when you connect it with `--macos`. A relay's `machine` input lists the labels a machine must have, all of them:
 
-| `machine:`     | Runs on                     |
-| -------------- | --------------------------- |
-| `self-hosted`  | Any machine                 |
-| `macOS`        | Any Mac                     |
-| `macOS, ARM64` | Apple silicon Macs          |
-| `Linux, X64`   | Intel or AMD Linux machines |
+| `machine:`    | Runs on                                       |
+| ------------- | --------------------------------------------- |
+| `self-hosted` | Any machine                                   |
+| `Linux`       | Linux machines, and Macs that run jobs in VMs |
+| `macOS`       | Macs that take macOS jobs                     |
+| `Linux, X64`  | Intel or AMD Linux machines                   |
 
 ## Who can run jobs on it
 
@@ -51,31 +56,63 @@ Press `p` in the `connect` terminal, or use the machine's ⋯ menu on the Runner
 
 ## Jobs at once
 
-A machine runs up to 2 jobs at once when it has 8 or more CPU cores, otherwise 1. Change it with `relayrunner connect --concurrency <n>`. Each job gets its own copy of the runner, so jobs never share a workspace. When every slot is busy, the next job goes to another machine or falls through to the next step in your runner order.
+A machine runs up to 2 jobs at once when it has 8 or more CPU cores, otherwise 1. Change it with `relayrunner connect --concurrency <n>`. Each job gets its own VM or its own copy of the runner, so jobs never share a workspace. When every slot is busy, the next job goes to another machine or falls through to the next step in your runner order.
 
 ## Isolated jobs on a Mac
 
-By default a job runs on your computer as you, so it can read your files. On a Mac with Apple silicon, `relayrunner connect --isolated` runs each job in its own Linux VM instead. The VM sees none of your files, can reach the internet but not your Mac or your local network, and is deleted when the job ends.
+On a Mac with Apple silicon, each job runs in its own Linux VM. The VM sees none of your files, can reach the internet but not your Mac or your local network, and is deleted when the job ends.
 
-This is experimental. You need macOS 26 and Apple's [container](https://github.com/apple/container/releases) tool, started with `container system start`.
-
-```sh
-npx relayrunner connect --isolated
-```
+You need macOS 26 and Apple's [container](https://github.com/apple/container/releases) tool, started once with `container system start`. Without it, `connect` still works: jobs run on the Mac itself, where they can read your files, and `connect` tells you so each time it starts.
 
 The first run takes a couple of minutes to prepare the image jobs start from. After that a VM starts in a few seconds.
 
-The VM has the everyday tools a job written for `ubuntu-latest` expects: Git and Git LFS, Docker with Compose and Buildx, Node with npm, Python with pip, compilers and `make`, `curl`, `wget`, `jq`, `zip` and the `gh` CLI. For a specific version of Node or Python, or another language such as Go, Java, Ruby or Rust, use its `setup-*` action as you would on GitHub. The VM is ARM, so a job that needs x64 binaries should stay on `ubuntu-latest`.
+### What's in the VM
 
-While it runs isolated, the Mac is a Linux machine: its labels are `Linux` and `ARM64`, and it takes jobs written for `ubuntu-latest`. To keep taking macOS jobs such as Xcode builds too, add `--macos`: Linux jobs run in the VM and macOS jobs run on the Mac itself. A job that names neither goes by its GitHub fallback, so one written for `ubuntu-latest` runs in the VM. Docker works in the VM, so jobs with `services:` or `container:` run too.
+The VM has the everyday tools a job written for `ubuntu-latest` expects: Git and Git LFS, Docker with Compose and Buildx, Node with npm, Python with pip, compilers and `make`, `curl`, `wget`, `jq`, `zip` and the `gh` CLI. Jobs with `services:` or `container:` run too.
 
-If a job needs something on your network, such as a package registry or a test database, add `--local-network`. The job still can't read your files.
+For a specific version of Node or Python, or another language such as Go, Java, Ruby or Rust, use its `setup-*` action as you would on GitHub. The VM is ARM, so a job that needs x64 binaries should stay on `ubuntu-latest`.
 
-The block on your Mac and local network runs inside the VM, where a job that uses Docker could remove it. For a block no job can remove, run `relayrunner firewall on` once. It asks for your password, stays on after a restart, and `relayrunner firewall off` removes it. While it's on, `--local-network` has no effect.
+To start from your own runner image, pass `--image <image>`. Your image is used with the tools it has.
 
-Each VM gets a share of the Mac's CPU and memory, so the Mac stays usable while jobs run. `connect` removes the images it downloaded for older runner versions, so they don't fill your disk.
+### macOS jobs
 
-When something goes wrong, `~/.relayrunner/isolated.log` has the details. It records the VM commands and their results, never a job's output or credentials, so it's safe to share.
+In a VM, jobs run on Linux, so the Mac's labels are `Linux` and `ARM64` and it takes jobs written for `ubuntu-latest`. To take macOS jobs such as Xcode builds too, add `--macos`:
+
+```sh
+npx relayrunner connect --macos
+```
+
+Linux jobs still run in a VM. macOS jobs run on the Mac itself, as you, so route them only from repos you trust. A job that names neither OS goes by its GitHub fallback, so one written for `ubuntu-latest` runs in the VM.
+
+### The size of each job
+
+Each VM gets an even share of the Mac's CPU cores, and of half its memory, so the Mac stays usable while jobs run. A Mac with 14 cores and 36 GB running 2 jobs at once gives each job 7 CPUs and 9 GB.
+
+To give every job a fixed size, like a hosted runner's, set it:
+
+```sh
+npx relayrunner connect --cpus 4 --memory 16
+```
+
+That runs as many 4 CPU, 16 GB jobs at once as fit. `--concurrency` still sets the number yourself. A core on an Apple silicon Mac is faster than a hosted runner's vCPU, so the same size usually finishes sooner here.
+
+### Your network
+
+A job can't reach your Mac or your local network. If it needs something there, such as a package registry or a test database, add `--local-network`. The job still can't read your files.
+
+This block runs inside the VM, where a job that uses Docker could remove it. For a block no job can remove, run `relayrunner firewall on` once. It asks for your password, stays on after a restart, and `relayrunner firewall off` removes it. While it's on, `--local-network` has no effect.
+
+### Run jobs on the Mac itself
+
+`--no-isolated` runs every job on the Mac, as you, with the tools you have installed. Jobs can read your files, so route them only from repos you trust.
+
+```sh
+npx relayrunner connect --no-isolated
+```
+
+### When something goes wrong
+
+`~/.relayrunner/isolated.log` has the details. It records the VM commands and their results, never a job's output or credentials, so it's safe to share. `connect` removes the images it downloaded for older runner versions, so they don't fill your disk.
 
 ## Remove a machine
 

@@ -64,13 +64,14 @@ approved the machine also gets an email, since someone else may have its token.
   `~/.relayrunner/runner/<version>/slot-<n>/`, made when `connect` starts (a
   copy-on-write clone where the disk supports it). With more than one slot,
   each line of a job's output starts with its slot, such as `[slot 2]`.
-- `--isolated` (experimental) runs each job in its own Linux VM, so a job can't
-  read your files or the machine token. It needs a Mac with Apple silicon,
-  macOS 26 and Apple's [container](https://github.com/apple/container/releases)
-  tool, started with `container system start`. Each VM starts from GitHub's
-  runner image with nothing mounted and is deleted when the job ends. Jobs run
-  on Linux arm64, and Docker works in them. `connect` builds the job image
-  once per runner version.
+- On a Mac with Apple silicon, each job runs in its own Linux VM, so a job
+  can't read your files or the machine token. This needs macOS 26 and Apple's
+  [container](https://github.com/apple/container/releases) tool, started with
+  `container system start`. Without the tool, jobs run on the Mac itself and
+  `connect` says so when it starts. Each VM starts from GitHub's runner image
+  plus the everyday tools, with nothing mounted, and is deleted when the job
+  ends. Jobs run on Linux arm64, and Docker works in them. `connect` builds
+  the job image once per runner version.
   - A firewall in the VM lets the job reach the internet but not your Mac or
     your local network. It guards against accidents: a job that sets out to
     remove it can, through Docker. `--local-network` turns the firewall off,
@@ -80,7 +81,12 @@ approved the machine also gets an email, since someone else may have its token.
     `relayrunner firewall off` removes it.
   - `--macos` also takes macOS jobs, which run on the Mac itself. Linux jobs
     still run in a VM.
+  - `--cpus <n>` and `--memory <gb>` set the size of each job's VM. Without
+    them each VM gets an even share of the Mac's cores and of half its memory.
+    With a size and no `--concurrency`, as many jobs run at once as fit.
   - `--image <image>` starts from your own runner image, with the tools it has.
+  - `--no-isolated` runs jobs on the Mac itself, where they can read your
+    files. `--isolated` stops with an error when jobs can't run in VMs.
   - `connect` removes the images it downloaded or built for older runner
     versions. It never removes images you got yourself.
   - `~/.relayrunner/isolated.log` records each `container` command and its

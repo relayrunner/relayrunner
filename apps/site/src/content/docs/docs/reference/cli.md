@@ -11,19 +11,24 @@ The `relayrunner` CLI runs on macOS and Linux with Node.js 22 or newer. Run it w
 relayrunner connect
 ```
 
-Puts this machine online and runs the jobs it's sent until you stop it. It runs up to 2 jobs at once on a computer with 8 or more CPU cores, otherwise 1; `--concurrency` changes that. The first run signs the machine in. Ctrl-C takes it offline, and a job that's running stops with it. Press `p` to pause or resume.
+Puts this machine online and runs the jobs it's sent until you stop it. On a Mac with Apple silicon and Apple's container tool, each job runs in its own Linux VM; elsewhere jobs run on the machine itself. It runs up to 2 jobs at once on a computer with 8 or more CPU cores, otherwise 1; `--concurrency` changes that. The first run signs the machine in. Ctrl-C takes it offline, and a job that's running stops with it. Press `p` to pause or resume.
 
 Run inside a repo with no routed jobs, it offers to route them, the same as `init`.
 
-| Flag                      | What it does                                                             |
-| ------------------------- | ------------------------------------------------------------------------ |
-| `--name <name>`           | The machine's name. Defaults to the computer's name.                     |
-| `--share only-me\|anyone` | Who can run jobs on this machine.                                        |
-| `--concurrency <n>`       | How many jobs to run at once. Defaults to 2 with 8+ CPU cores, else 1.   |
-| `--isolated`              | Experimental. Run each job in its own Linux VM. Apple silicon Macs only. |
-| `--image <image>`         | With `--isolated`, your own runner image, used with the tools it has.    |
-| `--local-network`         | With `--isolated`, let jobs reach your Mac and your local network.       |
-| `--macos`                 | With `--isolated`, also take macOS jobs, which run on the Mac itself.    |
+| Flag                      | What it does                                                                 |
+| ------------------------- | ---------------------------------------------------------------------------- |
+| `--name <name>`           | The machine's name. Defaults to the computer's name.                         |
+| `--share only-me\|anyone` | Who can run jobs on this machine.                                            |
+| `--concurrency <n>`       | How many jobs to run at once. Defaults to 2 with 8+ CPU cores, else 1.       |
+| `--macos`                 | Also take macOS jobs, which run on the Mac itself. Linux jobs stay in VMs.   |
+| `--cpus <n>`              | CPUs for each job's VM. Defaults to an even share of the Mac's cores.        |
+| `--memory <gb>`           | Memory for each job's VM. Defaults to an even share of half the Mac's.       |
+| `--image <image>`         | Your own runner image for the VMs, used with the tools it has.               |
+| `--local-network`         | Let jobs in VMs reach your Mac and your local network.                       |
+| `--no-isolated`           | Run jobs on the Mac itself, where they can read your files.                  |
+| `--isolated`              | Stop with an error when jobs can't run in VMs, where the default falls back. |
+
+The VM flags apply to Macs with Apple silicon. See [Isolated jobs on a Mac](/docs/runners/self-hosted#isolated-jobs-on-a-mac).
 
 ## `login`
 

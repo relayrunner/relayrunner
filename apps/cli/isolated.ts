@@ -1,5 +1,5 @@
-// `connect --isolated`: each job runs in its own Linux VM instead of on this machine, using
-// Apple's `container` tool (https://github.com/apple/container). The VM starts from GitHub's
+// Isolated jobs, which `connect` runs by default on a Mac that can: each job runs in its own Linux
+// VM instead of on this machine, using Apple's `container` tool (https://github.com/apple/container). The VM starts from GitHub's
 // runner image with nothing of the Mac mounted, takes one job and is deleted, so a job can't read
 // the user's files, the machine token, or anything an earlier job left behind. Docker works inside
 // the VM. Unless `--local-network` is given, a firewall inside the VM keeps the job off the local
@@ -36,22 +36,40 @@ export interface Isolation {
 const RUNNER_IMAGE = "ghcr.io/actions/actions-runner";
 const RELEASES = "https://github.com/apple/container/releases";
 
-// Why `--isolated` can't work on this machine, or null when it can. Apple's container tool needs
+// Why jobs can't run in VMs on this machine, or null when they can. Apple's container tool needs
 // Apple silicon and macOS 26, which is Darwin 25.
 export function unsupportedReason(system = platform(), chip = arch(), darwin = release()) {
   if (system !== "darwin")
-    return "--isolated needs a Mac with Apple silicon and macOS 26 or later.";
+    return "Running jobs in VMs needs a Mac with Apple silicon and macOS 26 or later.";
   if (chip !== "arm64")
-    return "--isolated needs a Mac with Apple silicon. This one has an Intel chip.";
+    return "Running jobs in VMs needs a Mac with Apple silicon. This one has an Intel chip.";
   if (Number.parseInt(darwin, 10) < 25)
-    return "--isolated needs macOS 26 or later. Update macOS, then try again.";
+    return "Running jobs in VMs needs macOS 26 or later. Update macOS, then try again.";
   return null;
 }
 
-// Whether this Mac could run `--isolated` right now: it's supported and Apple's container tool is
-// installed. `connect` suggests the flag then.
-export async function isolationAvailable(command = "container", reason = unsupportedReason()) {
-  return reason === null && (await call(command, ["--version"], NO_LOG, true)) === 0;
+// Where this machine stands on running jobs in VMs: it can ("ready"), Apple's container tool is
+// installed but not started ("stopped") or not installed ("missing"), or the machine can't
+// ("unsupported"). `connect` runs jobs in VMs when it's ready, unless told otherwise.
+export type IsolationState = "ready" | "stopped" | "missing" | "unsupported";
+
+export async function isolationState(
+  command = "container",
+  reason = unsupportedReason(),
+): Promise<IsolationState> {
+  if (reason !== null) return "unsupported";
+  const status = await call(command, ["system", "status"], NO_LOG, true);
+  if (status === null) return "missing";
+  return status === 0 ? "ready" : "stopped";
+}
+
+// What `connect` says when jobs run on the Mac itself because the VMs aren't set up.
+export function setupHint(state: IsolationState) {
+  if (state === "missing")
+    return `Jobs run on this Mac itself, where they can read your files. To run each job in its own Linux VM, install Apple's container tool from ${RELEASES} and run \`container system start\`.`;
+  if (state === "stopped")
+    return "Jobs run on this Mac itself, where they can read your files. To run each job in its own Linux VM, run `container system start`.";
+  return null;
 }
 
 export interface DebugLog {
@@ -59,7 +77,7 @@ export interface DebugLog {
   write: (text: string) => void;
 }
 
-// A file that records what `--isolated` did, to share when something goes wrong. It starts over
+// A file that records what the VMs did, to share when something goes wrong. It starts over
 // with each `connect`. It never holds a job's output or its JIT config.
 export function debugLog(path = join(relayrunnerHome(), "isolated.log")): DebugLog {
   const home = homedir();
@@ -201,13 +219,69 @@ export function jobImage(base: string, tools = true) {
   return `relayrunner-runner:${hash.slice(0, 12)}`;
 }
 
-// An even split of the cores between slots, and of half the memory, so the Mac stays usable
-// while every slot is busy. At least 2 CPUs and 2 GB each; at most 16 GB.
-export function vmSize(slots: number, cores = availableParallelism(), memoryBytes = totalmem()) {
+// The size of each job's VM, as asked for with --cpus and --memory.
+export interface VmSize {
+  cpus?: number;
+  memoryGb?: number;
+}
+
+// The values of `--cpus` and `--memory` (in GB). Throws on anything but whole numbers this
+// machine has.
+export function parseVmSize(
+  cpus: string | undefined,
+  memory: string | undefined,
+  cores = availableParallelism(),
+  memoryBytes = totalmem(),
+): VmSize {
+  const whole = (flag: string, value: string | undefined, most: number, unit: string) => {
+    if (value === undefined || value === "") return undefined;
+    const n = Number(value);
+    if (!/^\d+$/.test(value.trim()) || n < 1)
+      throw new RunnerError("USAGE", `${flag} takes a whole number, not "${value}".`);
+    if (n > most)
+      throw new RunnerError("USAGE", `${flag} ${n} is more than this machine's ${most} ${unit}.`);
+    return n;
+  };
+  return {
+    cpus: whole("--cpus", cpus, cores, "CPU cores"),
+    memoryGb: whole("--memory", memory, Math.floor(memoryBytes / 1024 ** 3), "GB of memory"),
+  };
+}
+
+// How many jobs of a given size run at once when --concurrency doesn't say: as many as fit in
+// the cores and in half the memory, and at least 1. Undefined when no size was given.
+export function slotsFor(size: VmSize, cores = availableParallelism(), memoryBytes = totalmem()) {
+  if (size.cpus === undefined && size.memoryGb === undefined) return undefined;
+  const gb = memoryBytes / 1024 ** 3;
+  const byCpu = size.cpus ? Math.floor(cores / size.cpus) : Infinity;
+  const byMemory = size.memoryGb ? Math.floor(gb / 2 / size.memoryGb) : Infinity;
+  const fit = Math.min(byCpu, byMemory);
+  return Math.max(1, Number.isFinite(fit) ? fit : 1);
+}
+
+// Whether that many jobs of that size fit in this machine's memory. Throws when they don't.
+export function checkFits(size: VmSize, slots: number, memoryBytes = totalmem()) {
+  const gb = Math.floor(memoryBytes / 1024 ** 3);
+  if (size.memoryGb !== undefined && size.memoryGb * slots > gb)
+    throw new RunnerError(
+      "USAGE",
+      `${slots} jobs with ${size.memoryGb} GB each is more than this machine's ${gb} GB of memory. Lower --concurrency or --memory.`,
+    );
+}
+
+// Each VM's share of the machine. Without a size, an even split of the cores between slots, and
+// of half the memory, so the Mac stays usable while every slot is busy: at least 2 CPUs and 2 GB
+// each, at most 16 GB. A size given with --cpus or --memory is used as it is.
+export function vmSize(
+  slots: number,
+  wanted: VmSize = {},
+  cores = availableParallelism(),
+  memoryBytes = totalmem(),
+) {
   const gb = memoryBytes / 1024 ** 3;
   return {
-    cpus: Math.max(2, Math.floor(cores / slots)),
-    memoryGb: Math.min(16, Math.max(2, Math.floor(gb / 2 / slots))),
+    cpus: wanted.cpus ?? Math.max(2, Math.floor(cores / slots)),
+    memoryGb: wanted.memoryGb ?? Math.min(16, Math.max(2, Math.floor(gb / 2 / slots))),
   };
 }
 
@@ -218,6 +292,8 @@ export async function prepareIsolation(options: {
   // Another runner image to start from. It needs a `runner` user in /home/runner, and apt.
   image?: string;
   localNetwork?: boolean;
+  // The size of each VM, when --cpus or --memory gave one.
+  size?: VmSize;
   command?: string;
   log?: (line: string) => void;
   debug?: DebugLog;
@@ -241,7 +317,7 @@ export async function prepareIsolation(options: {
   if (status === null)
     throw new RunnerError(
       "ISOLATED_SETUP",
-      `--isolated needs Apple's container tool. Install it from ${RELEASES}, then run \`container system start\`.`,
+      `Running jobs in VMs needs Apple's container tool. Install it from ${RELEASES}, then run \`container system start\`.`,
     );
   if (status !== 0)
     throw fail(
@@ -278,7 +354,7 @@ export async function prepareIsolation(options: {
     }
   }
   await pruneImages(options.managed ?? managedImagesFile(), [base, image], mine, tool, log);
-  const size = vmSize(options.slots);
+  const size = vmSize(options.slots, options.size);
   log(
     `Each job runs in its own Linux VM with ${size.cpus} CPUs and ${size.memoryGb} GB of memory.`,
   );
