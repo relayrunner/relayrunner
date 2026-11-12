@@ -5,6 +5,7 @@ import type { Auth, Session } from "./auth.ts";
 import type { Db, schema } from "./db/index.ts";
 import type { Env } from "./env.ts";
 import { requireAccess } from "./middleware/admin.ts";
+import { d1Session } from "./middleware/d1-session.ts";
 import { attachSession } from "./middleware/session.ts";
 import { activityRoutes } from "./routes/activity.ts";
 import { agentRoutes } from "./routes/agents.ts";
@@ -28,7 +29,7 @@ export interface AppEnv {
     auth: Auth;
     user: Session["user"] | null;
     session: Session["session"] | null;
-    // Set by requireWorkspace. Reads through a D1 session, so they can go to a read replica.
+    // Set by d1Session.
     db: Db;
     workspace: typeof schema.workspace.$inferSelect;
     role: string;
@@ -50,7 +51,7 @@ app.use("/admin/*", requireAccess);
 app.route("/admin/webhooks", adminWebhookRoutes);
 
 // Everything below sees c.var.auth, c.var.user and c.var.session.
-app.use("*", attachSession);
+app.use("*", attachSession, d1Session);
 app.route("/auth", authRoutes);
 app.route("/me", meRoutes);
 app.route("/workspaces", workspaceRoutes);

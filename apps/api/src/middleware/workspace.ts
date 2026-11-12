@@ -3,7 +3,6 @@ import { createMiddleware } from "hono/factory";
 import type { AppEnv } from "../app.ts";
 import { AGENT_WORKSPACE_HEADER, agentWorkspaceId } from "../agent-auth.ts";
 import { createDb, schema, type Db } from "../db/index.ts";
-import { sessionDb } from "./d1-session.ts";
 
 // Resolves the session's active workspace and the signed-in user's membership in it. Gateway
 // routes that act on a workspace (installations, machines, repos) go behind this. Run it after
@@ -18,17 +17,17 @@ export const requireWorkspace = createMiddleware<AppEnv>(async (c, next) => {
     return c.json({ error: agent ? "workspace_required" : "no_active_workspace" }, 409);
   }
 
-  // On the primary: a workspace made by an install a moment ago may not be on a replica yet.
-  const row = await membership(createDb(c.env.DB), workspaceId, c.var.user!.id);
+  const userId = c.var.user!.id;
+  // A workspace an install made a moment ago may not be on a replica yet, so a miss asks the primary.
+  const row =
+    (await membership(c.var.db, workspaceId, userId)) ??
+    (await membership(createDb(c.env.DB), workspaceId, userId));
   // A stale active id (workspace deleted, or membership removed) reads as no workspace.
   if (!row) return c.json({ error: "no_active_workspace" }, 409);
 
-  const { db, saveBookmark } = sessionDb(c);
-  c.set("db", db);
   c.set("workspace", row.workspace);
   c.set("role", row.role);
   await next();
-  saveBookmark();
 });
 
 /** The workspace and the user's role in it, or null when they aren't a member (or it's gone). */
