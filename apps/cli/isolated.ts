@@ -137,7 +137,7 @@ fi
 # A new VM's DNS answers nothing for its first 2 seconds or so, and a lookup sent then waits 5
 # seconds to ask again. So the runner starts once a lookup gets through, or after 5 tries.
 tries=0
-until RES_OPTIONS="timeout:1 attempts:1" getent hosts github.com >/dev/null 2>&1 || [ "$tries" -ge 5 ]; do
+until RES_OPTIONS="timeout:1 attempts:1" getent hosts github.com >/dev/null 2>&1 || [ "$tries" -ge 4 ]; do
   tries=$((tries + 1))
 done
 cd /home/runner
