@@ -41,7 +41,19 @@ Two jobs, or a matrix, share one relay's output. Give each job its own relay.
 
 ## The job failed on my machine but passes on GitHub
 
-The machine is missing something the hosted image has: a tool, a Linux package, Docker for `services:` or `container:`. Install it, narrow the relay's `machine` labels, or leave that job on GitHub.
+The machine is missing something the hosted image has: a tool, a Linux package, Docker for `services:` or `container:`. Install it, narrow the relay's `machine` labels, or leave that job on GitHub. On a Mac, [isolated jobs](/docs/runners/self-hosted#isolated-jobs-on-a-mac) run on Linux, like `ubuntu-latest`.
+
+## Isolated jobs on a Mac
+
+- **"needs Apple's container tool"**: install it from [its releases page](https://github.com/apple/container/releases), then run `container system start`.
+- **"isn't running"**: run `container system start`.
+- **"needs macOS 26 or later"** or **"needs a Mac with Apple silicon"**: isolated jobs don't work on this computer. Run `relayrunner connect` without `--isolated`.
+- **A job can't reach a server on your network**: isolated jobs are kept off your Mac and local network. Add `--local-network`.
+- **A job needs Docker**, for `services:`, `container:` or `docker build`: it isn't available in isolated jobs yet. Leave that job on GitHub.
+- **A macOS job fails**: isolated jobs run on Linux. Use a regular connection for macOS jobs.
+- **`ping` fails in a job**: that's expected in isolated jobs. Use `curl` to test a connection.
+
+For anything else, `~/.relayrunner/isolated.log` records what happened. It holds no job output or credentials, so you can attach it to an issue.
 
 ## connect says the machine was removed
 

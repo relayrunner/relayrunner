@@ -57,9 +57,19 @@ A machine runs up to 2 jobs at once when it has 8 or more CPU cores, otherwise 1
 
 By default a job runs on your computer as you, so it can read your files. On a Mac with Apple silicon, `relayrunner connect --isolated` runs each job in its own Linux VM instead. The VM sees none of your files, can reach the internet but not your Mac or your local network, and is deleted when the job ends.
 
-This is experimental. You need macOS 26 and Apple's [container](https://github.com/apple/container/releases) tool, started with `container system start`. Jobs run on Linux arm64, so macOS jobs such as Xcode builds still need a regular connection. Docker isn't available in isolated jobs yet.
+This is experimental. You need macOS 26 and Apple's [container](https://github.com/apple/container/releases) tool, started with `container system start`.
+
+```sh
+npx relayrunner connect --isolated
+```
+
+The first run takes about a minute to prepare the image jobs start from. After that a VM starts in about a second.
+
+While it runs isolated, the Mac is a Linux machine: its labels are `Linux` and `ARM64`, and it takes jobs written for `ubuntu-latest`. macOS jobs such as Xcode builds still need a regular connection. Docker isn't available in isolated jobs yet, so leave jobs with `services:` or `container:` on GitHub.
 
 If a job needs something on your network, such as a package registry or a test database, add `--local-network`. The job still can't read your files.
+
+Each VM gets a share of the Mac's CPU and memory, so the Mac stays usable while jobs run. `connect` removes the images it downloaded for older runner versions, so they don't fill your disk.
 
 When something goes wrong, `~/.relayrunner/isolated.log` has the details. It records the VM commands and their results, never a job's output or credentials, so it's safe to share.
 
