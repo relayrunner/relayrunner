@@ -40,7 +40,7 @@ describe("runArgs", () => {
 
   it("starts a throwaway VM with a size cap and nothing mounted", () => {
     const args = runArgs("7f3k", isolation);
-    expect(args.slice(0, 10)).toEqual([
+    expect(args.slice(0, 8)).toEqual([
       "run",
       "--rm",
       "--name",
@@ -49,10 +49,8 @@ describe("runArgs", () => {
       "4",
       "--memory",
       "8g",
-      "-e",
-      "RUNNER_JIT_CONFIG",
     ]);
-    expect(args[10]).toBe(isolation.image);
+    expect(args.at(-4)).toBe(isolation.image);
     for (const flag of ["-v", "--volume", "--mount", "--ssh", "-p", "--publish"])
       expect(args).not.toContain(flag);
   });

@@ -82,8 +82,14 @@ export function runArgs(routeId: string, isolation: Isolation) {
     String(isolation.cpus),
     "--memory",
     `${isolation.memoryGb}g`,
+    // No image download or boot progress in the job's output.
+    "--progress",
+    "none",
     "-e",
     "RUNNER_JIT_CONFIG",
+    // GitHub's image prints the runner's diagnostic log to stdout, thousands of lines a job.
+    "-e",
+    "ACTIONS_RUNNER_PRINT_LOG_TO_STDOUT=false",
     isolation.image,
     "/bin/sh",
     "-c",
