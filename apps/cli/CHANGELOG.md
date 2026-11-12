@@ -1,5 +1,23 @@
 # relayrunner
 
+## 0.9.0
+
+### Minor Changes
+
+- 4cb5574: `relayrunner firewall on` adds a firewall on your Mac for isolated jobs. Job VMs can reach the internet, not your Mac or your local network, and no job can remove it, even with Docker. It asks for your password, stays on after a restart, and `relayrunner firewall off` removes it.
+- 9249a08: On a Mac with Apple silicon and Apple's container tool, `connect` now runs each job in its own Linux VM, away from your files. `--macos` also takes macOS jobs on the Mac itself, and `--no-isolated` runs every job there. Without the container tool, jobs run on the Mac and `connect` says how to set it up.
+
+  New `--cpus` and `--memory` flags set the size of each job's VM, like a hosted runner's size. With a size and no `--concurrency`, as many jobs run at once as fit.
+
+- d074fdf: `relayrunner connect --isolated --macos` takes both kinds of job on one Mac. Linux jobs run in a VM, and macOS jobs such as Xcode builds run on the Mac itself.
+- 4ba2184: Isolated jobs now find the everyday tools a job written for `ubuntu-latest` expects: Node with npm, pip, compilers and `make`, `wget`, `zip`, Git LFS, Docker Compose and the `gh` CLI. An image given with `--image` is used as it is.
+
+### Patch Changes
+
+- d25ac96: License the CLI under Apache 2.0 and ship the LICENSE file in the npm package.
+- 7dc2e01: `connect` says where jobs run when it starts, and how to take macOS jobs too. With `--macos` or `--no-isolated` it warns that those jobs can read your files.
+- d831af0: `init` no longer warns about Docker or Linux packages on a Mac that runs jobs in a VM.
+
 ## 0.8.0
 
 ### Minor Changes
