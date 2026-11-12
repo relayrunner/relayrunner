@@ -9,6 +9,7 @@ import {
   deviceColumns,
   helloChanged,
   helloColumns,
+  presentMachine,
   issuePendingToken,
   promotePendingToken,
   verifyMachineToken,
@@ -473,8 +474,29 @@ describe("machines in the dashboard", () => {
     expect(helloColumns({ os: "macos", arch: "arm64" }, new Date())).toEqual({
       os: "macos",
       arch: "arm64",
+      isolatedOs: null,
+      isolatedArch: null,
       cliVersion: null,
     });
+  });
+
+  test("a hello saves the machine's VM as a second place for jobs, and clears it when it's gone", async () => {
+    const { machine } = await enroll("hello-isolated");
+    const db = createDb(env.DB);
+    const save = (hello: Parameters<typeof helloColumns>[0]) =>
+      db
+        .update(schema.machine)
+        .set(helloColumns(hello, new Date()))
+        .where(eq(schema.machine.id, machine.id));
+    const read = async () =>
+      (await db.select().from(schema.machine).where(eq(schema.machine.id, machine.id)))[0];
+    await save({ os: "macos", arch: "arm64", isolated: { os: "linux", arch: "arm64" } });
+    expect(presentMachine(await read())).toMatchObject({
+      labels: ["self-hosted", "macOS", "ARM64"],
+      isolatedLabels: ["self-hosted", "Linux", "ARM64"],
+    });
+    await save({ os: "macos", arch: "arm64" });
+    expect(presentMachine(await read()).isolatedLabels).toBeUndefined();
   });
 
   test("shows the CLI version from the last hello, with the release to update to", async () => {

@@ -322,7 +322,7 @@ async function dispatchRoute(
   }
   await setJobMachine(db, message.job.id, route.machineId);
   const result = await env.MACHINE_LINK.getByName(route.machineId).run({ route, workspaceId });
-  (result === "offline" ? console.warn : console.log)(
+  (result === "offline" || result === "wrong_place" ? console.warn : console.log)(
     JSON.stringify({ ...log, result, machineId: route.machineId }),
   );
 }

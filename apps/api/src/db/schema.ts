@@ -272,6 +272,9 @@ export const machine = sqliteTable(
     // The protocol's values (linux, macos, windows; x64, arm64, arm). Null until claimed.
     os: text("os"),
     arch: text("arch"),
+    // The machine's second place for jobs, a VM per job (the hello's `isolated`). Null without one.
+    isolatedOs: text("isolated_os"),
+    isolatedArch: text("isolated_arch"),
     // SHA-256 (hex) of the machine token. The token itself is only ever shown to the CLI.
     tokenHash: text("token_hash").unique(),
     // SHA-256 (hex) of the token the gateway sent to replace it on the machine's last connect,

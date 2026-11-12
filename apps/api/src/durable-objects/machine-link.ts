@@ -17,7 +17,7 @@ import {
   pausedByName,
   promotePendingToken,
 } from "../machines.ts";
-import { takeHold, type MachineHold, type Route } from "../routing.ts";
+import { placeNow, takeHold, type MachineHold, type Route } from "../routing.ts";
 import {
   CLOSE,
   handleFrame,
@@ -33,7 +33,8 @@ import {
   type SessionState,
 } from "./machine-session.ts";
 
-export type RunResult = "sent" | "already_sent" | "offline";
+// "wrong_place": the machine reconnected without the place the job was routed to (placeNow).
+export type RunResult = "sent" | "already_sent" | "offline" | "wrong_place";
 
 // What MachineLink keeps for a route it handed to the machine, until the machine says the job is
 // over. Its presence stops a redelivered webhook from minting a second runner.
@@ -223,6 +224,7 @@ export class MachineLink extends DurableObject<Env> {
     if (await this.ctx.storage.get(key)) return "already_sent";
     const socket = this.onlineSocket();
     if (!socket) return "offline";
+    if (!placeOn(socket, route)) return "wrong_place";
     await this.ctx.storage.put<SentRoute>(key, { workspaceId });
 
     let jit;
@@ -238,12 +240,20 @@ export class MachineLink extends DurableObject<Env> {
     }
     // The socket may have closed while minting; the runner then expires unused.
     const live = this.onlineSocket() ?? socket;
+    // It may also have reconnected as something else. A job routed to a VM is never sent to a
+    // machine that would run it on itself.
+    const place = placeOn(live, route);
+    if (!place) {
+      await this.ctx.storage.delete(key);
+      return "wrong_place";
+    }
     live.send(
       encodeMessage({
         v: PROTOCOL_VERSION,
         type: "run",
         routeId: route.id,
         jitConfig: jit.encodedJitConfig,
+        ...(place === "vm" ? { isolated: true } : {}),
       }),
     );
     await this.ctx.storage.put<SentRoute>(key, { workspaceId, sentAt: Date.now() });
@@ -394,4 +404,10 @@ function close(ws: WebSocket, code: number, reason: string) {
   } catch {
     // Already closed.
   }
+}
+
+// Where the machine on this socket runs a route's job now (placeNow).
+function placeOn(ws: WebSocket, route: Route) {
+  const hello = attachment(ws)?.hello;
+  return hello ? placeNow(route, hello) : null;
 }

@@ -40,14 +40,17 @@ export const Device = z.object({
   osVersion: text.optional(),
 });
 
+const os = z.enum(["linux", "macos", "windows"]);
+const arch = z.enum(["x64", "arm64", "arm"]);
+
 // First message after the socket opens. The gateway doesn't route to the machine until it has
 // one.
 export const HelloMessage = z.object({
   v: version,
   type: z.literal("hello"),
   machineId: z.string().min(1),
-  os: z.enum(["linux", "macos", "windows"]),
-  arch: z.enum(["x64", "arm64", "arm"]),
+  os,
+  arch,
   // The actions/runner version installed on the machine, such as "2.329.0".
   runnerVersion: z.string().min(1),
   // The relayrunner CLI's own version, such as "0.7.0". Missing from CLIs older than 0.7.0.
@@ -61,6 +64,10 @@ export const HelloMessage = z.object({
   // How many jobs the machine runs at once (`connect --concurrency`). Missing from CLIs older than
   // concurrency, which run one.
   slots: z.number().int().positive().max(1_000).optional(),
+  // A second place this machine runs jobs: a VM per job, with its own OS (`connect --isolated
+  // --macos` on a Mac offers a Linux VM beside the Mac itself). The gateway says which place a job
+  // goes to in its `run` message. Missing when the machine has one place, which is `os`.
+  isolated: z.object({ os, arch }).optional(),
 });
 
 // Sent whenever the machine's state changes and again on an interval as its heartbeat.
@@ -107,6 +114,8 @@ export const RunMessage = z.object({
   type: z.literal("run"),
   routeId,
   jitConfig: z.string().min(1),
+  // Run it in the machine's VM (the hello's `isolated`), not on the machine itself.
+  isolated: z.boolean().optional(),
 });
 
 // Sent just before the gateway closes the socket because of something the machine sent.

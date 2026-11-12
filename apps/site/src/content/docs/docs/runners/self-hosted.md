@@ -65,7 +65,7 @@ npx relayrunner connect --isolated
 
 The first run takes about a minute to prepare the image jobs start from. After that a VM starts in a few seconds.
 
-While it runs isolated, the Mac is a Linux machine: its labels are `Linux` and `ARM64`, and it takes jobs written for `ubuntu-latest`. macOS jobs such as Xcode builds still need a regular connection. Docker works in the VM, so jobs with `services:` or `container:` run too.
+While it runs isolated, the Mac is a Linux machine: its labels are `Linux` and `ARM64`, and it takes jobs written for `ubuntu-latest`. To keep taking macOS jobs such as Xcode builds too, add `--macos`: Linux jobs run in the VM and macOS jobs run on the Mac itself. A job that names neither goes by its GitHub fallback, so one written for `ubuntu-latest` runs in the VM. Docker works in the VM, so jobs with `services:` or `container:` run too.
 
 If a job needs something on your network, such as a package registry or a test database, add `--local-network`. The job still can't read your files.
 

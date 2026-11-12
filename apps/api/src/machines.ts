@@ -9,7 +9,7 @@ import { type Device, isNewerVersion } from "@relayrunner/machine-protocol";
 // The CLI on main is the one npm has: the Release workflow publishes it when its version lands.
 import cliPackage from "../../cli/package.json" with { type: "json" };
 import type { MachineSharing } from "@relayrunner/activity";
-import { machineLabels } from "./routing.ts";
+import { isolatedLabels, machineLabels } from "./routing.ts";
 
 // Machine tokens: what `relayrunner connect` holds after enrolling, and sends on the MachineLink
 // WebSocket upgrade. Only their SHA-256 is stored, so a leaked database can't impersonate a
@@ -408,6 +408,8 @@ export function presentMachine(machine: Machine, pausedBy: string | null = null)
       machine.source === "github"
         ? matchLabels(parseStoredLabels(machine.githubLabels))
         : machineLabels(machine),
+    // The labels of its VM, when it also runs jobs in one. A job that fits either set matches.
+    isolatedLabels: isolatedLabels(machine),
     // 'connect' (enrolled with the CLI) or 'github' (added from GitHub).
     source: machine.source === "github" ? ("github" as const) : ("connect" as const),
     // The label RelayRunner added to a GitHub runner to route jobs to it.
@@ -469,12 +471,20 @@ export function deviceColumns(device: Device, now: Date) {
  * CLI version changes whenever its owner updates it.
  */
 export function helloColumns(
-  hello: { os: string; arch: string; cliVersion?: string; device?: Device },
+  hello: {
+    os: string;
+    arch: string;
+    isolated?: { os: string; arch: string };
+    cliVersion?: string;
+    device?: Device;
+  },
   now: Date,
 ) {
   return {
     os: hello.os,
     arch: hello.arch,
+    isolatedOs: hello.isolated?.os ?? null,
+    isolatedArch: hello.isolated?.arch ?? null,
     cliVersion: hello.cliVersion ?? null,
     ...(hello.device ? deviceColumns(hello.device, now) : {}),
   };

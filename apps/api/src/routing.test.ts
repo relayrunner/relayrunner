@@ -28,6 +28,9 @@ import {
   heldSlots,
   unavailableMachines,
   type Route,
+  fits,
+  runsIsolated,
+  placeNow,
 } from "./routing.ts";
 
 const route: Route = {
@@ -296,6 +299,66 @@ test("a route holds its machine until the job starts or the hold lapses", () => 
   expect(holdsMachine({ ...route, state: "dispatched" }, 1_000)).toBe(true);
   expect(holdsMachine({ ...route, state: "done" }, 1_000)).toBe(false);
   expect(holdsMachine(route, 1_000 + ROUTE_HOLD_MS)).toBe(false);
+});
+
+describe("a machine with a VM as a second place for jobs", () => {
+  const mac = {
+    id: "m1",
+    name: "mac",
+    online: true,
+    state: "idle" as const,
+    labels: ["self-hosted", "macOS", "ARM64"],
+    isolatedLabels: ["self-hosted", "Linux", "ARM64"],
+  };
+
+  test("fits a job that either place has the labels for", () => {
+    expect(fits(mac, ["Linux"])).toBe(true);
+    expect(fits(mac, ["macOS"])).toBe(true);
+    expect(fits(mac, ["Windows"])).toBe(false);
+    expect(fits({ labels: mac.labels }, ["Linux"])).toBe(false);
+    expect(chooseMachine([mac], new Map(), new Map(), ["self-hosted", "linux"])).toBe(mac);
+  });
+
+  test("runs a job in the place that has its labels", () => {
+    expect(runsIsolated(mac, ["Linux"], [])).toBe(true);
+    expect(runsIsolated(mac, ["macOS"], ["ubuntu-latest"])).toBe(false);
+    expect(runsIsolated({ labels: mac.labels }, ["self-hosted"], ["ubuntu-latest"])).toBe(false);
+  });
+
+  test("a job routed to the VM is never sent to the machine itself", () => {
+    const both = { os: "macos", isolated: { os: "linux" } };
+    expect(placeNow({ os: "linux", isolated: true }, both)).toBe("vm");
+    // Reconnected without the VM, or as a machine that is all VM and says so as its own OS.
+    expect(placeNow({ os: "linux", isolated: true }, { os: "macos" })).toBeNull();
+    expect(placeNow({ os: "linux", isolated: true }, { os: "linux" })).toBeNull();
+    // A route from before routes said their OS still never falls back to the machine.
+    expect(placeNow({ isolated: true }, { os: "macos" })).toBeNull();
+  });
+
+  test("a job routed to the machine itself follows its OS when the machine reconnects", () => {
+    const both = { os: "macos", isolated: { os: "linux" } };
+    expect(placeNow({ os: "macos" }, both)).toBe("host");
+    // It was all VM (reporting Linux) when the job was routed, and now offers both.
+    expect(placeNow({ os: "linux" }, both)).toBe("vm");
+    expect(placeNow({ os: "linux" }, { os: "macos" })).toBeNull();
+    expect(placeNow({ os: "macos" }, { os: "linux" })).toBeNull();
+    // A runner added from GitHub, or a route from before routes said their OS.
+    expect(placeNow({}, { os: "macos" })).toBe("host");
+  });
+
+  test("lets the GitHub fallback decide when both places fit", () => {
+    expect(runsIsolated(mac, ["self-hosted"], ["ubuntu-latest"])).toBe(true);
+    expect(runsIsolated(mac, ["self-hosted", "ARM64"], ["Ubuntu-24.04"])).toBe(true);
+    expect(runsIsolated(mac, ["self-hosted"], ["macos-15"])).toBe(false);
+    expect(runsIsolated(mac, ["self-hosted"], [])).toBe(false);
+  });
+
+  test("counts as paused or full through either place", () => {
+    expect(pausedMatches([{ ...mac, paused: true }], ["Linux"])).toEqual(["mac"]);
+    expect(fullMachines([{ ...mac, state: "busy" as const }], new Map(), ["Linux"])).toEqual([
+      { machine: "mac", running: 1, slots: 1 },
+    ]);
+  });
 });
 
 describe("canClaim", () => {
