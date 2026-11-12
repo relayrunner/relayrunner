@@ -16,7 +16,7 @@ Your workflows stay the same. Checks keep their names, logs stay in GitHub, and 
 
 ## How it fits together
 
-- **Workspace.** Your team in RelayRunner. It connects one or more GitHub organizations or personal accounts through the RelayRunner GitHub App.
+- **Workspace.** Your team in RelayRunner. Each one is a GitHub organization or personal account with the RelayRunner GitHub App installed, and its members come from GitHub.
 - **Runners.** Where jobs can run: machines you connect with the CLI, self-hosted runners you already have, hosted providers and GitHub-hosted runners. See [Providers](/docs/runners/providers).
 - **Relay job.** A small job you add in front of each job you want routed. It names the runners that job may use and finishes in about a second, with no runner and no billed minutes. See [Routing](/docs/concepts/routing).
 - **Runner order.** The order the workspace tries runners in, set on the dashboard's Router page. See [Runner order](/docs/concepts/runner-order).
