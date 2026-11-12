@@ -21,6 +21,7 @@ import {
   TriangleAlert,
 } from "lucide-react";
 import { type ReactNode, useEffect, useRef, useState } from "react";
+import { SectionBoundary } from "@/components/error-boundary";
 import { PageHeader } from "@/components/page-header";
 import { ProviderLink } from "@/components/provider-link";
 import { Button } from "@/components/ui/button";
@@ -184,8 +185,14 @@ function ActivityPage() {
         {savings &&
           savings.checks > 0 &&
           !narrowed &&
-          (!search.type || search.type === "check") && <SavingsBanner savings={savings} />}
-        <Log search={search} narrowed={narrowed} onClear={() => update(CLEARED)} />
+          (!search.type || search.type === "check") && (
+            <SectionBoundary>
+              <SavingsBanner savings={savings} />
+            </SectionBoundary>
+          )}
+        <SectionBoundary>
+          <Log search={search} narrowed={narrowed} onClear={() => update(CLEARED)} />
+        </SectionBoundary>
       </div>
     </section>
   );

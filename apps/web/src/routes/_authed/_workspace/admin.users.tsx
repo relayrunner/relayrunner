@@ -38,11 +38,6 @@ export const Route = createFileRoute("/_authed/_workspace/admin/users")({
     return { users, workspaces };
   },
   component: UsersPage,
-  errorComponent: ({ error }) => (
-    <PageHeader title="Users">
-      Couldn't load users: {error instanceof Error ? error.message : String(error)}
-    </PageHeader>
-  ),
 });
 
 function UsersPage() {

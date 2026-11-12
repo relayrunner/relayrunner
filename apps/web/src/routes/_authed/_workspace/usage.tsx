@@ -1,5 +1,6 @@
 import { createFileRoute } from "@tanstack/react-router";
 import { type ReactNode, useState } from "react";
+import { SectionBoundary } from "@/components/error-boundary";
 import { PageHeader } from "@/components/page-header";
 import { RangePicker } from "@/components/range-picker";
 import { StatTile } from "@/components/stat-tile";
@@ -58,7 +59,11 @@ function UsagePage() {
       <div className="grid max-w-4xl gap-6">
         <RangePicker ranges={RANGES} days={days} onChange={chooseRange} />
 
-        {checks.checks > 0 && <FreeChecks savings={checks} />}
+        {checks.checks > 0 && (
+          <SectionBoundary>
+            <FreeChecks savings={checks} />
+          </SectionBoundary>
+        )}
 
         {totals.jobs === 0 ? (
           <p className="rounded-xl border bg-card px-4 py-6 text-sm text-muted-foreground">

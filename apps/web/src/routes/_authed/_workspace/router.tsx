@@ -1,6 +1,7 @@
 import { DEFAULT_RUNNER_ORDER, type RunnerOrder } from "@relayrunner/runner-order";
 import { createFileRoute } from "@tanstack/react-router";
 import { useEffect, useState } from "react";
+import { SectionBoundary } from "@/components/error-boundary";
 import { PageHeader } from "@/components/page-header";
 import { RunnerOrderEditor } from "@/components/runner-order-editor";
 import { Badge } from "@/components/ui/badge";
@@ -60,16 +61,18 @@ function RouterPage() {
         {!editable && " Owners and admins can change the order."}
       </PageHeader>
       <div className="max-w-5xl">
-        <RunnerOrderEditor
-          // The page can first show cached data, then fresh: remount when the saved order changes.
-          key={JSON.stringify(loaded.order.steps)}
-          workspaceId={current.workspace.id}
-          order={loaded.order}
-          isDefault={loaded.isDefault}
-          editable={editable}
-          machines={machines}
-          accounts={loaded.accounts}
-        />
+        <SectionBoundary>
+          <RunnerOrderEditor
+            // The page can first show cached data, then fresh: remount when the saved order changes.
+            key={JSON.stringify(loaded.order.steps)}
+            workspaceId={current.workspace.id}
+            order={loaded.order}
+            isDefault={loaded.isDefault}
+            editable={editable}
+            machines={machines}
+            accounts={loaded.accounts}
+          />
+        </SectionBoundary>
       </div>
     </section>
   );

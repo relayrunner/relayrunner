@@ -22,11 +22,6 @@ import {
 export const Route = createFileRoute("/_authed/_workspace/admin/webhooks")({
   loader: (): Promise<DeadLetterPage> => listDeadLetters(),
   component: DeadLettersPage,
-  errorComponent: ({ error }) => (
-    <PageHeader title="Webhook dead letters">
-      Couldn't load dead letters: {error instanceof Error ? error.message : String(error)}
-    </PageHeader>
-  ),
 });
 
 function DeadLettersPage() {
