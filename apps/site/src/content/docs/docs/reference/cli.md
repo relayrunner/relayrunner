@@ -21,7 +21,7 @@ Run inside a repo with no routed jobs, it offers to route them, the same as `ini
 | `--share only-me\|anyone` | Who can run jobs on this machine.                                        |
 | `--concurrency <n>`       | How many jobs to run at once. Defaults to 2 with 8+ CPU cores, else 1.   |
 | `--isolated`              | Experimental. Run each job in its own Linux VM. Apple silicon Macs only. |
-| `--image <image>`         | With `--isolated`, the runner image to build on.                         |
+| `--image <image>`         | With `--isolated`, your own runner image, used with the tools it has.    |
 | `--local-network`         | With `--isolated`, let jobs reach your Mac and your local network.       |
 | `--macos`                 | With `--isolated`, also take macOS jobs, which run on the Mac itself.    |
 

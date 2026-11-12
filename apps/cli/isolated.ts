@@ -149,20 +149,50 @@ exec setpriv --reuid runner --regid runner --init-groups $drop \\
 
 const START_PATH = "/usr/local/bin/relayrunner-start";
 
-// The job image: a runner image with the start script, nftables for its firewall and iptables
-// for Docker's networks.
-export function dockerfile(base: string) {
+// The everyday tools jobs written for `ubuntu-latest` expect to find, which GitHub's runner image
+// leaves out: compilers, archive and network tools, pip, Git LFS, sqlite, Docker Compose and the gh
+// CLI. Other language toolchains come from `setup-*` actions as usual.
+export const TOOLS = [
+  "build-essential pkg-config cmake",
+  "python3-pip python3-venv python-is-python3",
+  "zip xz-utils zstd bzip2",
+  "wget rsync file gettext-base bc time",
+  "git-lfs sqlite3",
+  // Only the plugin: its recommended docker.io would shadow the Docker the runner image ships.
+  "docker-compose-v2",
+  "netcat-openbsd iputils-ping dnsutils iproute2",
+  "libssl-dev",
+  "gh",
+].join(" ");
+
+const GH_KEYRING = "/usr/share/keyrings/githubcli-archive-keyring.gpg";
+
+// The job image: a runner image with the start script, nftables for its firewall, iptables for
+// Docker's networks, and the everyday tools. The tools are their own layer, after the parts a job
+// can't start without. An image given with --image keeps the tools it came with.
+export function dockerfile(base: string, tools = true) {
+  // Node is the newest one the runner ships for its own actions, put on the PATH with its npm.
+  const install = `RUN curl -fsSL https://cli.github.com/packages/githubcli-archive-keyring.gpg -o ${GH_KEYRING} \\
+  && echo "deb [arch=$(dpkg --print-architecture) signed-by=${GH_KEYRING}] https://cli.github.com/packages stable main" > /etc/apt/sources.list.d/github-cli.list \\
+  && apt-get update && apt-get install -y --no-install-recommends ${TOOLS} \\
+  && apt-get clean && rm -rf /var/lib/apt/lists/*
+RUN node=$(ls -d /home/runner/externals/node[0-9]* 2>/dev/null | sort -V | tail -n 1) \\
+  && { [ -z "$node" ] || ln -sf "$node"/bin/* /usr/local/bin/; }
+`;
   return `FROM ${base}
 USER root
 RUN apt-get update && apt-get install -y --no-install-recommends iptables nftables && apt-get clean
-COPY --chmod=755 start.sh ${START_PATH}
+${tools ? install : ""}COPY --chmod=755 start.sh ${START_PATH}
 `;
 }
 
 // The job image's local tag. It changes with the base image, the Dockerfile or the start script,
 // so a new runner version or CLI builds a new image.
-export function jobImage(base: string) {
-  const hash = createHash("sha256").update(dockerfile(base)).update(START_SCRIPT).digest("hex");
+export function jobImage(base: string, tools = true) {
+  const hash = createHash("sha256")
+    .update(dockerfile(base, tools))
+    .update(START_SCRIPT)
+    .digest("hex");
   return `relayrunner-runner:${hash.slice(0, 12)}`;
 }
 
@@ -225,13 +255,13 @@ export async function prepareIsolation(options: {
       throw fail("ISOLATED_IMAGE", `Could not download ${base}.`);
     if (!options.image) mine.push(base);
   }
-  const image = jobImage(base);
+  const image = jobImage(base, !options.image);
   mine.push(image);
   if (!(await hasImage(image))) {
     log(`Building the job image from ${base}. This happens once per runner version…`);
     const context = mkdtempSync(join(tmpdir(), "relayrunner-image-"));
     try {
-      writeFileSync(join(context, "Dockerfile"), dockerfile(base));
+      writeFileSync(join(context, "Dockerfile"), dockerfile(base, !options.image));
       writeFileSync(join(context, "start.sh"), START_SCRIPT);
       if ((await tool(["build", "--progress", "plain", "--tag", image, context])) !== 0)
         throw fail("ISOLATED_IMAGE", `Could not build the job image from ${base}.`);
