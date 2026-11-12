@@ -64,6 +64,19 @@ describe("machine session", () => {
     expect(said([hello]).hello?.cliVersion).toBeUndefined();
   });
 
+  test("keeps the VM a hello offers as a second place, for MachineLink to store", () => {
+    const withVm = frame({
+      type: "hello",
+      machineId: "m1",
+      os: "macos",
+      arch: "arm64",
+      runnerVersion: "2.329.0",
+      isolated: { os: "linux", arch: "arm64" },
+    });
+    expect(said([withVm]).hello?.isolated).toEqual({ os: "linux", arch: "arm64" });
+    expect(said([hello]).hello?.isolated).toBeUndefined();
+  });
+
   test("keeps the device a hello reports, for MachineLink to store", () => {
     const device = { kind: "laptop", model: "MacBook Pro", cpuCores: 12 } as const;
     const withDevice = frame({

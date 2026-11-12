@@ -30,6 +30,7 @@ import {
   type Route,
   fits,
   runsIsolated,
+  placeNow,
 } from "./routing.ts";
 
 const route: Route = {
@@ -322,6 +323,27 @@ describe("a machine with a VM as a second place for jobs", () => {
     expect(runsIsolated(mac, ["Linux"], [])).toBe(true);
     expect(runsIsolated(mac, ["macOS"], ["ubuntu-latest"])).toBe(false);
     expect(runsIsolated({ labels: mac.labels }, ["self-hosted"], ["ubuntu-latest"])).toBe(false);
+  });
+
+  test("a job routed to the VM is never sent to the machine itself", () => {
+    const both = { os: "macos", isolated: { os: "linux" } };
+    expect(placeNow({ os: "linux", isolated: true }, both)).toBe("vm");
+    // Reconnected without the VM, or as a machine that is all VM and says so as its own OS.
+    expect(placeNow({ os: "linux", isolated: true }, { os: "macos" })).toBeNull();
+    expect(placeNow({ os: "linux", isolated: true }, { os: "linux" })).toBeNull();
+    // A route from before routes said their OS still never falls back to the machine.
+    expect(placeNow({ isolated: true }, { os: "macos" })).toBeNull();
+  });
+
+  test("a job routed to the machine itself follows its OS when the machine reconnects", () => {
+    const both = { os: "macos", isolated: { os: "linux" } };
+    expect(placeNow({ os: "macos" }, both)).toBe("host");
+    // It was all VM (reporting Linux) when the job was routed, and now offers both.
+    expect(placeNow({ os: "linux" }, both)).toBe("vm");
+    expect(placeNow({ os: "linux" }, { os: "macos" })).toBeNull();
+    expect(placeNow({ os: "macos" }, { os: "linux" })).toBeNull();
+    // A runner added from GitHub, or a route from before routes said their OS.
+    expect(placeNow({}, { os: "macos" })).toBe("host");
   });
 
   test("lets the GitHub fallback decide when both places fit", () => {

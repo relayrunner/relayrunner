@@ -59,7 +59,11 @@ export interface Route {
   // Set when the route chose a runner added from GitHub: the label the pick answered, which the
   // runner carries for good. Unset for connected machines, whose route answers `rr-<route id>`.
   routingLabel?: string;
-  // The job runs in the machine's VM, not on the machine itself (runsIsolated).
+  // Where on the machine the job was routed: the OS of that place, and whether it is the
+  // machine's VM, not the machine itself (runsIsolated). The machine may have reconnected as
+  // something else by the time the job is sent, so MachineLink checks both again (placeNow).
+  // `os` is unset for a runner added from GitHub and for routes older than it.
+  os?: string;
   isolated?: boolean;
 }
 
@@ -252,6 +256,21 @@ export function runsIsolated(machine: Places, wanted: string[], fallback: string
   if (!vmFits(machine, wanted)) return false;
   if (!hasLabels(machine.labels, wanted)) return true;
   return fallback.some((label) => /^ubuntu/i.test(label));
+}
+
+/**
+ * Where a machine, as it is connected now, runs a route's job: on itself ("host"), in its VM
+ * ("vm"), or nowhere (null) when it no longer has the place the job was routed to. A job routed to
+ * a VM never runs on the machine itself. A job routed to the machine itself may run in a VM that
+ * now has that OS (a Mac that was all VM and reconnected offering both).
+ */
+export function placeNow(
+  route: Pick<Route, "os" | "isolated">,
+  hello: { os: string; isolated?: { os: string } },
+): "host" | "vm" | null {
+  if (route.isolated) return hello.isolated && hello.isolated.os === route.os ? "vm" : null;
+  if (route.os === undefined || route.os === hello.os) return "host";
+  return hello.isolated?.os === route.os ? "vm" : null;
 }
 
 /** When each machine was last picked: the newest route per machine. */

@@ -287,8 +287,10 @@ export class Router extends DurableObject<Env> {
       }),
     );
     const routingLabels = new Map(fits.map((m) => [m.id, m.routingLabel ?? undefined]));
+    // The OS of each machine's two places, for the route to say where its job goes.
+    const places = new Map(fits.map((m) => [m.id, { host: m.os, vm: m.isolatedOs }]));
     return (
-      (await this.reserve(job, candidates, routingLabels)) ??
+      (await this.reserve(job, candidates, routingLabels, places)) ??
       unavailableMachines(pool, job.machine, job)
     );
   }
@@ -300,6 +302,7 @@ export class Router extends DurableObject<Env> {
     job: PickedJob,
     candidates: Candidate[],
     routingLabels: Map<string, string | undefined>,
+    places: Map<string, { host: string | null; vm: string | null }>,
   ): Promise<MachinePick | null> {
     return this.ctx.blockConcurrencyWhile(async () => {
       const now = Date.now();
@@ -333,6 +336,8 @@ export class Router extends DurableObject<Env> {
         return full ? { full } : null;
       }
       const routingLabel = routingLabels.get(machine.id);
+      const isolated = runsIsolated(machine, job.machine, job.github);
+      const os = places.get(machine.id)?.[isolated ? "vm" : "host"];
       const route: Route = {
         id: routeId,
         machineId: machine.id,
@@ -344,7 +349,8 @@ export class Router extends DurableObject<Env> {
         createdAt: now,
         state: "reserved",
         ...(routingLabel ? { routingLabel } : {}),
-        ...(runsIsolated(machine, job.machine, job.github) ? { isolated: true } : {}),
+        ...(os ? { os } : {}),
+        ...(isolated ? { isolated: true } : {}),
       };
       await this.ctx.storage.put(ROUTE_KEY + route.id, route);
       return routingLabel ?? routeLabel(route.id);

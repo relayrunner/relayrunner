@@ -184,6 +184,8 @@ async function connectMachine(args: {
   let runnerVersion = "";
   let launchers: Launcher[] = [];
   let vmLauncher: Launcher | undefined;
+  // Plain --isolated: every job runs in a VM, whatever its `run` message says.
+  let isolatedOnly: Launcher | undefined;
   if (args.isolated) {
     // The firewall on the Mac covers every VM, so with it on a job can't be let onto the network.
     const firewall = firewallInstalled();
@@ -203,7 +205,7 @@ async function connectMachine(args: {
     runnerVersion = isolation.runnerVersion;
     const launcher = isolatedLauncher(isolation);
     if (args.macos) vmLauncher = launcher;
-    else launchers = Array.from({ length: slots }, () => launcher);
+    else launchers = Array.from({ length: slots }, () => (isolatedOnly = launcher));
   }
   if (onHost) {
     const [runner, canIsolate] = await Promise.all([
@@ -274,9 +276,20 @@ async function connectMachine(args: {
                 (stream === "stdout" ? process.stdout : process.stderr).write(chunk),
               )
             : undefined;
+        // A job sent for a VM never runs on this machine itself.
+        const launcher = run.isolated ? (vmLauncher ?? isolatedOnly) : launchers[slot - 1];
+        if (!launcher) {
+          const update = {
+            routeId: run.routeId,
+            state: "failed",
+            message: "The job was sent for a VM, and this machine isn't running jobs in one.",
+          } as const;
+          report(update);
+          return update;
+        }
         try {
           return await runJob(run, {
-            launcher: (run.isolated && vmLauncher) || launchers[slot - 1]!,
+            launcher,
             report,
             output: prefixed?.output,
             onChecked: (target) => {
