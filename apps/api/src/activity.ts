@@ -84,6 +84,7 @@ export async function recordMachineEvent(
 ) {
   const [machine] = await db
     .select({
+      id: schema.machine.id,
       workspaceId: schema.machine.workspaceId,
       userId: schema.machine.userId,
       name: schema.machine.name,

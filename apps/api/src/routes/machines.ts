@@ -29,18 +29,22 @@ import {
   type GroupAccess,
 } from "../github-runners.ts";
 import {
+  addMachinesToWorkspace,
   generateMachineToken,
   inWorkspace,
   normalizeUserCode,
+  otherMachines,
   pausedByName,
   presentMachine,
   presentMachineWorkspaces,
   recordMachineEvents,
+  removeMachineFromWorkspace,
   removeRoutingLabel,
   revokeMachines,
   setMachinePaused,
   setMachineSharing,
   sha256Hex,
+  userWorkspaces,
   verifyMachineToken,
   type PauseVia,
 } from "../machines.ts";
@@ -55,10 +59,10 @@ import { canControlMachine, requireManager } from "../roles.ts";
 // 1. The CLI asks for a code: POST /api/auth/device/code with client_id "relayrunner-cli". It
 //    opens the returned verification_uri_complete (the dashboard's /device page), adding
 //    &name=<hostname> as the default machine name, and polls /api/auth/device/token.
-// 2. On /device the signed-in user picks a name and approves: POST /approve below. That creates
-//    the machine (unclaimed, keyed by a hash of the device code), owned by them and in none of
-//    their workspaces in particular: it shows up in all of them (#318). Deny goes straight to
-//    /api/auth/device/deny.
+// 2. On /device the signed-in user picks a name and the workspaces it takes jobs in, and approves:
+//    POST /approve below. That creates the machine (unclaimed, keyed by a hash of the device code),
+//    owned by them (#318), with a machine_workspace row for each workspace picked (#363). Deny
+//    goes straight to /api/auth/device/deny.
 // 3. The CLI's next poll returns a user session token. It calls POST /claim below with that
 //    session as a bearer token plus the device code, gets the machine token back once, and the
 //    session is revoked. From then on the machine authenticates as itself.
@@ -74,6 +78,14 @@ const ApproveBody = z.object({
   // dashboards that send it.
   workspaceId: z.string().min(1).optional(),
   name: z.string().trim().min(1).max(64),
+  // The workspaces it takes jobs in (#363), each one the user is a member of. At least one when
+  // they have any. Left out (dashboards from before #364), it's the workspaces they own: the ones
+  // they installed and their personal account's, never one they only joined.
+  workspaceIds: z.array(z.string().min(1)).max(100).optional(),
+});
+
+const AddToWorkspaceBody = z.object({
+  machineIds: z.array(z.string().min(1)).min(1).max(50),
 });
 
 const ClaimBody = z.object({
@@ -117,6 +129,9 @@ export const machineRoutes = new Hono<AppEnv>()
     return c.json({
       user_code: userCode,
       status: code.status,
+      // Where the machine could take jobs (#364). `joined`: a workspace the user only joined
+      // through GitHub, which /device starts unticked.
+      workspaces: await userWorkspaces(db, c.var.user!.id),
       // When and where `relayrunner connect` asked for this code, so the approver can tell
       // whether it was them.
       requested_at: code.createdAt,
@@ -173,6 +188,15 @@ export const machineRoutes = new Hono<AppEnv>()
     if (code.status !== "pending") return c.json({ error: "already_processed" }, 409);
     if (code.userId !== user.id) return c.json({ error: "forbidden" }, 403);
 
+    const mine = await userWorkspaces(db, user.id);
+    const picked = parsed.data.workspaceIds
+      ? [...new Set(parsed.data.workspaceIds)]
+      : mine.filter((workspace) => !workspace.joined).map((workspace) => workspace.id);
+    if (picked.some((id) => !mine.some((workspace) => workspace.id === id)))
+      return c.json({ error: "not_a_member" }, 403);
+    if (parsed.data.workspaceIds && picked.length === 0 && mine.length > 0)
+      return c.json({ error: "workspace_required" }, 400);
+
     const machineId = crypto.randomUUID();
     await db.insert(schema.machine).values({
       id: machineId,
@@ -180,6 +204,10 @@ export const machineRoutes = new Hono<AppEnv>()
       enrollmentHash: await sha256Hex(code.deviceCode),
       userId: user.id,
     });
+    if (picked.length > 0)
+      await db
+        .insert(schema.machineWorkspace)
+        .values(picked.map((workspaceId) => ({ machineId, workspaceId })));
 
     try {
       await c.var.auth.api.deviceApprove({ body: { userCode }, headers: c.req.raw.headers });
@@ -220,7 +248,7 @@ export const machineRoutes = new Hono<AppEnv>()
     // The CLI is done with the user session; only the machine token stays on the machine.
     await db.delete(schema.session).where(eq(schema.session.id, c.var.session!.id));
 
-    const { workspace, workspaces } = await presentMachineWorkspaces(db, machine.userId);
+    const { workspace, workspaces } = await presentMachineWorkspaces(db, machine);
 
     // Security notice to whoever approved the machine: its token can run their workspaces' jobs.
     const notice = sendEmail(c.env, {
@@ -274,7 +302,7 @@ export const machineRoutes = new Hono<AppEnv>()
     if (!machine) return c.json({ error: "unauthorized" }, 401);
 
     const [{ workspace, workspaces }, [enrolledBy], status] = await Promise.all([
-      presentMachineWorkspaces(db, machine.userId),
+      presentMachineWorkspaces(db, machine),
       machine.userId
         ? db
             .select({ id: schema.user.id, name: schema.user.name, email: schema.user.email })
@@ -311,6 +339,34 @@ export const machineRoutes = new Hono<AppEnv>()
         status: await c.env.MACHINE_LINK.getByName(machine.id).status(),
       },
     });
+  })
+  // The machine's workspaces, for `relayrunner workspaces` (#366): `Authorization: Bearer rrm_…`,
+  // 401 like /me. `workspaces` are the ones it takes jobs in, `others` its owner's other ones.
+  .get("/me/workspaces", async (c) => {
+    const db = createDb(c.env.DB);
+    const machine = await machineFromToken(db, c.req.header("authorization"));
+    if (!machine) return c.json({ error: "unauthorized" }, 401);
+    return c.json(await presentWorkspaceChoice(db, machine));
+  })
+  // Adds the machine to, or takes it out of, one of its owner's workspaces. The token lives on the
+  // owner's computer, so the change is logged as theirs.
+  .on(["PUT", "DELETE"], "/me/workspaces/:workspaceId", async (c) => {
+    const db = createDb(c.env.DB);
+    const machine = await machineFromToken(db, c.req.header("authorization"));
+    if (!machine) return c.json({ error: "unauthorized" }, 401);
+    if (!machine.userId) return c.json({ error: "not_owner" }, 403);
+    const workspaceId = c.req.param("workspaceId");
+    const mine = await userWorkspaces(db, machine.userId);
+    if (!mine.some((workspace) => workspace.id === workspaceId))
+      return c.json({ error: "not_found" }, 404);
+    if (c.req.method === "PUT")
+      await addMachinesToWorkspace(db, {
+        userId: machine.userId,
+        workspaceId,
+        machineIds: [machine.id],
+      });
+    else await removeMachineFromWorkspace(db, machine, workspaceId, machine.userId);
+    return c.json(await presentWorkspaceChoice(db, machine));
   })
   // Pausing from the machine itself, for `relayrunner pause` and `resume`: `Authorization: Bearer
   // rrm_…`, 401 like /me. Registered before /:id so "me" isn't read as a machine id.
@@ -475,7 +531,25 @@ export const machineRoutes = new Hono<AppEnv>()
           : [],
       ),
     );
+    // The signed-in user's own machines that don't take jobs here (#365). Only they see theirs.
+    // Agents read the workspace, not a user's machines, so they don't get these.
+    const others = c.var.agent
+      ? []
+      : await otherMachines(c.var.db, c.var.user!.id, c.var.workspace.id);
+    const otherStatuses = await Promise.all(
+      others.map(({ machine }) => c.env.MACHINE_LINK.getByName(machine.id).status()),
+    );
     return c.json({
+      others: others.map(({ machine, workspaces }, i) => ({
+        id: machine.id,
+        name: machine.name,
+        os: machine.os,
+        arch: machine.arch,
+        device: presentMachine(machine).device,
+        online: otherStatuses[i].online,
+        sharing: machine.sharing,
+        workspaces,
+      })),
       machines: rows.map((row, i) => {
         const presented = {
           ...presentMachine(row.machine, row.pausedBy),
@@ -700,6 +774,38 @@ export const machineRoutes = new Hono<AppEnv>()
       return c.json({ access: null });
     }
   })
+  // Puts the signed-in user's own machines in this workspace (#365). Anyone's machines but theirs
+  // are skipped, as are ones already here. `added` is the ids that joined.
+  .post("/workspace", requireUser, requireWorkspace, async (c) => {
+    const parsed = AddToWorkspaceBody.safeParse(await c.req.json().catch(() => null));
+    if (!parsed.success) return c.json({ error: "invalid_request" }, 400);
+    const added = await addMachinesToWorkspace(c.var.db, {
+      userId: c.var.user!.id,
+      workspaceId: c.var.workspace.id,
+      machineIds: [...new Set(parsed.data.machineIds)],
+    });
+    return c.json({ added });
+  })
+  // Takes one of the signed-in user's own machines out of this workspace. Only its owner may: it's
+  // their computer. It stays connected and keeps taking jobs in its other workspaces.
+  .delete("/:id/workspace", requireUser, requireWorkspace, async (c) => {
+    const [machine] = await c.var.db
+      .select({ id: schema.machine.id, name: schema.machine.name, userId: schema.machine.userId })
+      .from(schema.machine)
+      .where(
+        and(
+          eq(schema.machine.id, c.req.param("id")),
+          inWorkspace(c.var.db, c.var.workspace.id),
+          eq(schema.machine.source, "connect"),
+          isNull(schema.machine.revokedAt),
+        ),
+      )
+      .limit(1);
+    if (!machine) return c.json({ error: "not_found" }, 404);
+    if (machine.userId !== c.var.user!.id) return c.json({ error: "not_owner" }, 403);
+    await removeMachineFromWorkspace(c.var.db, machine, c.var.workspace.id, c.var.user!.id);
+    return c.json({ removed: machine.id });
+  })
   .delete("/:id", requireUser, requireWorkspace, async (c) => {
     const machineId = c.req.param("id");
     const { role, user, workspace, db } = c.var;
@@ -777,6 +883,33 @@ async function pauseResponse(
   return Response.json({
     machine: { ...presentMachine(result.machine, by), status: await link.status() },
   });
+}
+
+// The machine a `Bearer rrm_…` header belongs to, or null.
+function machineFromToken(db: ReturnType<typeof createDb>, header: string | undefined) {
+  const token = header?.match(/^Bearer\s+(\S+)$/i)?.[1];
+  return verifyMachineToken(db, token);
+}
+
+// What `relayrunner workspaces` shows: the machine, the owner's workspaces it takes jobs in, and
+// their others.
+async function presentWorkspaceChoice(
+  db: ReturnType<typeof createDb>,
+  machine: { id: string; name: string; sharing: string; userId: string | null },
+) {
+  const [mine, rows] = await Promise.all([
+    machine.userId ? userWorkspaces(db, machine.userId) : Promise.resolve([]),
+    db
+      .select({ workspaceId: schema.machineWorkspace.workspaceId })
+      .from(schema.machineWorkspace)
+      .where(eq(schema.machineWorkspace.machineId, machine.id)),
+  ]);
+  const listed = new Set(rows.map((row) => row.workspaceId));
+  return {
+    machine: { id: machine.id, name: machine.name, sharing: machine.sharing },
+    workspaces: mine.filter((workspace) => listed.has(workspace.id)),
+    others: mine.filter((workspace) => !listed.has(workspace.id)),
+  };
 }
 
 // Better Auth's device errors carry an RFC 8628 code in the body; pass it through.

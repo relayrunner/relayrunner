@@ -315,9 +315,9 @@ describe("machine counts (#136)", () => {
     const outsider = await signIn();
     await createWorkspace(outsider.cookie, "Other", "counts-other");
 
-    // Machines belong to users, not workspaces (#318).
-    const insert = (id: string, userId: string, extra = "") =>
-      env.DB.prepare(
+    // Machines belong to users (#318) and take jobs in the workspaces they're put in (#363).
+    const insert = async (id: string, userId: string, extra = "") => {
+      await env.DB.prepare(
         `insert into machine (id, user_id, name, os, arch, revoked_at, created_at, updated_at)
          values (?, ?, ?, ${extra.includes("pending") ? "null" : "'macos'"}, 'arm64', ${
            extra.includes("revoked") ? "1" : "null"
@@ -325,12 +325,21 @@ describe("machine counts (#136)", () => {
       )
         .bind(id, userId, id)
         .run();
+      if (!extra.includes("elsewhere"))
+        await env.DB.prepare(
+          "insert into machine_workspace (machine_id, workspace_id, created_at) values (?, ?, 1)",
+        )
+          .bind(id, workspace.id)
+          .run();
+    };
     await insert("count-a", user.id);
     await insert("count-b", user.id);
     await insert("count-c", member.user.id);
     await insert("count-revoked", member.user.id, "revoked");
     await insert("count-pending", member.user.id, "pending");
     await insert("count-other", outsider.user.id);
+    // The member's machine they didn't put here.
+    await insert("count-elsewhere", member.user.id, "elsewhere");
 
     for (const viewer of [jar, member.cookie]) {
       const response = await call("/workspaces/current/machine-counts", viewer);

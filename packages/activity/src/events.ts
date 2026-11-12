@@ -160,6 +160,10 @@ export const ActivityEvent = z.discriminatedUnion("type", [
     type: z.literal("machine.sharing_changed"),
     data: z.object({ ...machineData, sharing: z.enum(MACHINE_SHARING) }),
   }),
+  // The machine's owner put it in this workspace, or took it out (#363): it takes jobs here, or
+  // stops. Actor: the owner.
+  z.object({ type: z.literal("machine.workspace_added"), data: z.object(machineData) }),
+  z.object({ type: z.literal("machine.workspace_removed"), data: z.object(machineData) }),
   // Someone removed the machine from the workspace. Actor: that user.
   z.object({
     type: z.literal("machine.revoked"),

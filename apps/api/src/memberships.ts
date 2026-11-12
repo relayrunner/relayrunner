@@ -9,6 +9,7 @@ import {
   userGitHubToken,
   workspaceIdForInstallation,
 } from "./installations.ts";
+import { addHomelessMachines, removeUserMachinesFromWorkspace } from "./machines.ts";
 
 // Workspace membership comes from GitHub (#317): you're a member of every workspace whose
 // installation your GitHub sign-in can see in GET /user/installations. That list is synced into
@@ -119,12 +120,16 @@ export async function syncMemberships(
       type: "member.joined",
       data: { name: user?.name ?? "", email: user?.email ?? "", role },
     });
+    // A machine approved before they had any workspace starts taking jobs in the first one they
+    // install. A workspace they only joined waits for them to add machines (#362).
+    if (role === "owner") await addHomelessMachines(db, userId, workspaceId);
   }
 
   const removed: string[] = [];
   for (const row of current) {
     if (wanted.has(row.workspaceId)) continue;
     await db.delete(schema.workspaceMember).where(eq(schema.workspaceMember.id, row.id));
+    await removeUserMachinesFromWorkspace(db, userId, row.workspaceId);
     removed.push(row.workspaceId);
     // Reads as "<name> left the workspace": they lost access to the install on GitHub.
     await recordEvent(db, {
@@ -168,6 +173,7 @@ export async function recordInstaller(db: Db, installationId: number, githubId: 
       target: [schema.workspaceMember.workspaceId, schema.workspaceMember.userId],
       set: { role: "owner" },
     });
+  await addHomelessMachines(db, account.userId, workspaceId);
 }
 
 /** The user's numeric GitHub id, from their GitHub sign-in. Null without one. */

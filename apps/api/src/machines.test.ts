@@ -116,12 +116,18 @@ async function enroll(slug: string, name = "atticus-mbp") {
   return enrollAs(cookie, workspace.id, name);
 }
 
-// The same flow for a user already in the workspace, in whatever role.
-async function enrollAs(cookie: string, workspaceId: string, name: string) {
+// The same flow for a user already in the workspace, in whatever role. The machine takes jobs in
+// `workspaceIds`, ticked on /device: by default just that workspace.
+async function enrollAs(
+  cookie: string,
+  workspaceId: string,
+  name: string,
+  workspaceIds = [workspaceId],
+) {
   const { body: code } = await requestCode();
   const approved = await call("/machines/approve", cookie, {
     userCode: code.user_code,
-    workspaceId,
+    workspaceIds,
     name,
   });
   expect(approved.status).toBe(200);
@@ -563,7 +569,11 @@ describe("machines belong to their user (#318)", () => {
     const team = await owner(`${slug}-team`);
     const user = await testing.joinWorkspace(env, team.workspace.id, "member");
     const own = await testing.createWorkspace(env, user.cookie, `${slug}-own`, `${slug}-own`);
-    const enrolled = await enrollAs(own.cookie, own.workspace.id, `${slug}-mbp`);
+    // Ticked in both on /device, as the migration leaves machines that were already connected.
+    const enrolled = await enrollAs(own.cookie, own.workspace.id, `${slug}-mbp`, [
+      team.workspace.id,
+      own.workspace.id,
+    ]);
     return { team, user, own, enrolled };
   }
   const activate = async (cookie: string, workspaceId: string) =>
@@ -654,6 +664,171 @@ describe("machines belong to their user (#318)", () => {
       machines: { id: string }[];
     };
     expect(machines.map((machine) => machine.id)).toEqual([enrolled.machine.id]);
+  });
+});
+
+describe("choosing a machine's workspaces (#363)", () => {
+  // Someone who owns `own` and only joined `team`, with `own` active.
+  async function ownAndJoined(slug: string) {
+    const team = await owner(`${slug}-team`);
+    const user = await testing.joinWorkspace(env, team.workspace.id, "member");
+    const own = await testing.createWorkspace(env, user.cookie, `${slug}-own`, `${slug}-own`);
+    const teamCookie = testing.withSetCookies(
+      own.cookie,
+      await call("/auth/organization/set-active", own.cookie, {
+        organizationId: team.workspace.id,
+      }),
+    );
+    return { team, user, own, teamCookie };
+  }
+  const machineIds = async (cookie: string) =>
+    (
+      (await (await call("/machines", cookie)).json()) as { machines: { id: string }[] }
+    ).machines.map((machine) => machine.id);
+  const others = async (cookie: string) =>
+    (
+      (await (await call("/machines", cookie)).json()) as {
+        others: { id: string; workspaces: string[] }[];
+      }
+    ).others;
+  const send = (method: string, path: string, init: { cookie?: string; token?: string }) =>
+    app.request(
+      `/api${path}`,
+      {
+        method,
+        headers: init.token
+          ? { authorization: `Bearer ${init.token}` }
+          : init.cookie
+            ? { cookie: init.cookie, origin: env.BETTER_AUTH_URL }
+            : {},
+      },
+      env,
+    );
+
+  test("/device lists your workspaces and which ones you only joined", async () => {
+    const { team, own } = await ownAndJoined("device-list");
+    const { body: code } = await requestCode();
+    const response = await call(`/machines/device?user_code=${code.user_code}`, own.cookie);
+    const body = (await response.json()) as { workspaces: { id: string; joined: boolean }[] };
+    expect(body.workspaces).toEqual([
+      expect.objectContaining({ id: team.workspace.id, joined: true }),
+      expect.objectContaining({ id: own.workspace.id, joined: false }),
+    ]);
+  });
+
+  test("approving with no pick puts it only in the workspaces you own", async () => {
+    const { team, own, teamCookie } = await ownAndJoined("default-pick");
+    const { body: code } = await requestCode();
+    const approved = await call("/machines/approve", own.cookie, {
+      userCode: code.user_code,
+      name: "laptop",
+    });
+    expect(approved.status).toBe(200);
+    const { body: token } = await pollToken(code.device_code);
+    const claimed = (await (
+      await claim(token.access_token, { deviceCode: code.device_code, os: "macos", arch: "arm64" })
+    ).json()) as { machine: { id: string }; workspaces: { id: string }[] };
+    expect(claimed.workspaces.map((w) => w.id)).toEqual([own.workspace.id]);
+    expect(await machineIds(own.cookie)).toEqual([claimed.machine.id]);
+    // Not in the team's Runners, nor its owner's.
+    expect(await machineIds(teamCookie)).toEqual([]);
+    expect(await machineIds(team.cookie)).toEqual([]);
+  });
+
+  test("approve only takes workspaces you're in, and needs one when you have any", async () => {
+    const { own } = await ownAndJoined("approve-checks");
+    const outsider = await owner("approve-checks-outsider");
+    for (const [workspaceIds, status] of [
+      [[outsider.workspace.id], 403],
+      [[], 400],
+    ] as const) {
+      const { body: code } = await requestCode();
+      const response = await call("/machines/approve", own.cookie, {
+        userCode: code.user_code,
+        name: "laptop",
+        workspaceIds,
+      });
+      expect(response.status).toBe(status);
+    }
+  });
+
+  test("your other machines show only to you, and you add them here", async () => {
+    const { team, own, teamCookie } = await ownAndJoined("others");
+    const { machine } = await enrollAs(own.cookie, own.workspace.id, "studio");
+    expect(await others(own.cookie)).toEqual([]);
+    expect(await others(teamCookie)).toEqual([
+      expect.objectContaining({ id: machine.id, workspaces: [own.workspace.name] }),
+    ]);
+    // The team's owner doesn't see it at all.
+    expect(await others(team.cookie)).toEqual([]);
+    expect(await machineIds(team.cookie)).toEqual([]);
+
+    // Someone else can't add it.
+    const stranger = await call("/machines/workspace", team.cookie, { machineIds: [machine.id] });
+    expect(await stranger.json()).toEqual({ added: [] });
+
+    const added = await call("/machines/workspace", teamCookie, { machineIds: [machine.id] });
+    expect(await added.json()).toEqual({ added: [machine.id] });
+    expect(await others(teamCookie)).toEqual([]);
+    expect(await machineIds(team.cookie)).toEqual([machine.id]);
+    const { items } = (await (await call("/activity", team.cookie)).json()) as ActivityPage;
+    expect(items[0]).toMatchObject({
+      type: "machine.workspace_added",
+      machine: { id: machine.id },
+    });
+  });
+
+  test("only the owner takes a machine out of a workspace, and it stays in the others", async () => {
+    const { team, own, teamCookie } = await ownAndJoined("remove");
+    const { machine } = await enrollAs(own.cookie, own.workspace.id, "studio", [
+      own.workspace.id,
+      team.workspace.id,
+    ]);
+    expect(
+      (await send("DELETE", `/machines/${machine.id}/workspace`, { cookie: team.cookie })).status,
+    ).toBe(403);
+    expect(
+      (await send("DELETE", `/machines/${machine.id}/workspace`, { cookie: teamCookie })).status,
+    ).toBe(200);
+    expect(await machineIds(team.cookie)).toEqual([]);
+    expect(await machineIds(own.cookie)).toEqual([machine.id]);
+    const { items } = (await (await call("/activity", team.cookie)).json()) as ActivityPage;
+    expect(items[0]).toMatchObject({
+      type: "machine.workspace_removed",
+      machine: { id: machine.id },
+    });
+  });
+
+  test("the CLI lists and changes its machine's workspaces", async () => {
+    const { team, own } = await ownAndJoined("cli");
+    const { token } = await enrollAs(own.cookie, own.workspace.id, "studio");
+    const read = async (response: Response) =>
+      (await response.json()) as {
+        workspaces: { id: string }[];
+        others: { id: string; joined: boolean }[];
+      };
+    const ids = (list: { id: string }[]) => list.map((w) => w.id);
+
+    let body = await read(await send("GET", "/machines/me/workspaces", { token }));
+    expect(ids(body.workspaces)).toEqual([own.workspace.id]);
+    expect(body.others).toEqual([expect.objectContaining({ id: team.workspace.id, joined: true })]);
+
+    body = await read(await send("PUT", `/machines/me/workspaces/${team.workspace.id}`, { token }));
+    expect(ids(body.workspaces)).toEqual([team.workspace.id, own.workspace.id]);
+    expect(await machineIds(team.cookie)).toHaveLength(1);
+
+    body = await read(
+      await send("DELETE", `/machines/me/workspaces/${own.workspace.id}`, { token }),
+    );
+    expect(ids(body.workspaces)).toEqual([team.workspace.id]);
+    expect(await machineIds(own.cookie)).toEqual([]);
+
+    // Not a workspace the owner is in, and no token.
+    const outsider = await owner("cli-outsider");
+    expect(
+      (await send("PUT", `/machines/me/workspaces/${outsider.workspace.id}`, { token })).status,
+    ).toBe(404);
+    expect((await send("GET", "/machines/me/workspaces", {})).status).toBe(401);
   });
 });
 
