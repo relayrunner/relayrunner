@@ -254,7 +254,16 @@ function NotReported() {
   );
 }
 
-export function MachineCard({ machine, jobTime }: { machine: Machine; jobTime?: Stat }) {
+export function MachineCard({
+  machine,
+  jobTime,
+  specs = false,
+}: {
+  machine: Machine;
+  jobTime?: Stat;
+  /** Show the hardware and typical job. Off by default to keep the cards simple. */
+  specs?: boolean;
+}) {
   const router = useRouter();
   const [confirming, setConfirming] = useState(false);
   const [sharingOpen, setSharingOpen] = useState(false);
@@ -395,6 +404,44 @@ export function MachineCard({ machine, jobTime }: { machine: Machine; jobTime?: 
               ? `Session ended ${timeAgo(machine.lastSeenAt)}`
               : "Never connected";
 
+  // A runner added from GitHub lives in its org, not with a person. The GitHub mark keeps the
+  // org's name from reading as the app's (an org can be named "relayrunner").
+  const owner = isGithub ? (
+    <span className="flex min-w-0 items-center gap-1.5">
+      <GithubIcon className="size-3.5 shrink-0 text-muted-foreground" />
+      <span className="truncate">{machine.owner ?? "GitHub"}</span>
+    </span>
+  ) : ownerName ? (
+    <span className="flex min-w-0 items-center gap-1.5">
+      <UserAvatar
+        user={{
+          name: ownerName === "You" ? (machine.owner ?? "You") : ownerName,
+          image: machine.ownerImage,
+        }}
+        className="size-4 border-0 text-[9px]"
+      />
+      <span className="truncate">{ownerName}</span>
+    </span>
+  ) : (
+    <NotReported />
+  );
+  const runs = canShare ? (
+    <button
+      type="button"
+      onClick={() => setSharingOpen(true)}
+      aria-label={`Who can run jobs here: ${sharingLabel(sharing, true)}. Change`}
+      className="-mx-1 -my-0.5 flex min-w-0 items-center gap-1 rounded px-1 py-0.5 outline-none hover:bg-accent hover:text-foreground focus-visible:ring-[3px] focus-visible:ring-ring/50"
+    >
+      <SharingIcon aria-hidden className="size-3.5 shrink-0 text-idle" />
+      <span className="truncate">{sharingLabel(sharing, true)}</span>
+    </button>
+  ) : (
+    <span className="flex min-w-0 items-center gap-1">
+      <SharingIcon aria-hidden className="size-3.5 shrink-0 text-idle" />
+      <span className="truncate">{sharingLabel(sharing, mine)}</span>
+    </span>
+  );
+
   return (
     <Card
       label={machine.name}
@@ -514,75 +561,46 @@ export function MachineCard({ machine, jobTime }: { machine: Machine; jobTime?: 
           </DropdownMenu>
         </div>
 
-        {/* Every card fills the same four specs, so each sits in the same place down the grid. */}
-        <dl className="grid min-w-0 grid-cols-2 gap-x-4 gap-y-3 text-xs">
-          <Field label="Platform">{platform ? <Value>{platform}</Value> : <NotReported />}</Field>
-          <Field label="Hardware">{hardware ? <Value>{hardware}</Value> : <NotReported />}</Field>
-          <Field label="Runners">
-            {runners != null ? <Value>{runners}</Value> : <NotReported />}
-          </Field>
-          <Field label="Typical job">
-            {jobTime && jobTime.samples > 0 ? (
-              <Link
-                to="/job-times"
-                title={`Typical job · ${plural(jobTime.samples, "run")} in 14 days`}
-                className="truncate hover:text-foreground"
-              >
-                {medianText(jobTime)}
-              </Link>
-            ) : (
-              <NotReported />
-            )}
-          </Field>
-        </dl>
-        {/* Whose it is and whose jobs it takes (#243), apart from the hardware. */}
-        <dl className="grid min-w-0 grid-cols-2 gap-x-4 border-t pt-3.5 text-xs">
-          {isGithub ? (
-            // A runner added from GitHub lives in its org, not with a person. The GitHub mark keeps
-            // the org's name from reading as the app's (an org can be named "relayrunner").
-            <Field label="Registered in">
-              <span className="flex min-w-0 items-center gap-1.5">
-                <GithubIcon className="size-3.5 shrink-0 text-muted-foreground" />
-                <span className="truncate">{machine.owner ?? "GitHub"}</span>
-              </span>
-            </Field>
-          ) : (
-            <Field label="Owner">
-              {ownerName ? (
-                <span className="flex min-w-0 items-center gap-1.5">
-                  <UserAvatar
-                    user={{
-                      name: ownerName === "You" ? (machine.owner ?? "You") : ownerName,
-                      image: machine.ownerImage,
-                    }}
-                    className="size-4 border-0 text-[9px]"
-                  />
-                  <span className="truncate">{ownerName}</span>
-                </span>
-              ) : (
-                <NotReported />
-              )}
-            </Field>
-          )}
-          <Field label="Runs">
-            {canShare ? (
-              <button
-                type="button"
-                onClick={() => setSharingOpen(true)}
-                aria-label={`Who can run jobs here: ${sharingLabel(sharing, true)}. Change`}
-                className="-mx-1 -my-0.5 flex min-w-0 items-center gap-1 rounded px-1 py-0.5 outline-none hover:bg-accent hover:text-foreground focus-visible:ring-[3px] focus-visible:ring-ring/50"
-              >
-                <SharingIcon aria-hidden className="size-3.5 shrink-0 text-idle" />
-                <span className="truncate">{sharingLabel(sharing, true)}</span>
-              </button>
-            ) : (
-              <span className="flex min-w-0 items-center gap-1">
-                <SharingIcon aria-hidden className="size-3.5 shrink-0 text-idle" />
-                <span className="truncate">{sharingLabel(sharing, mine)}</span>
-              </span>
-            )}
-          </Field>
-        </dl>
+        {specs ? (
+          <>
+            {/* Every card fills the same four specs, so each sits in the same place down the grid. */}
+            <dl className="grid min-w-0 grid-cols-2 gap-x-4 gap-y-3 text-xs">
+              <Field label="Platform">
+                {platform ? <Value>{platform}</Value> : <NotReported />}
+              </Field>
+              <Field label="Hardware">
+                {hardware ? <Value>{hardware}</Value> : <NotReported />}
+              </Field>
+              <Field label="Runners">
+                {runners != null ? <Value>{runners}</Value> : <NotReported />}
+              </Field>
+              <Field label="Typical job">
+                {jobTime && jobTime.samples > 0 ? (
+                  <Link
+                    to="/job-times"
+                    title={`Typical job · ${plural(jobTime.samples, "run")} in 14 days`}
+                    className="truncate hover:text-foreground"
+                  >
+                    {medianText(jobTime)}
+                  </Link>
+                ) : (
+                  <NotReported />
+                )}
+              </Field>
+            </dl>
+            {/* Whose it is and whose jobs it takes (#243), apart from the hardware. */}
+            <dl className="grid min-w-0 grid-cols-2 gap-x-4 border-t pt-3.5 text-xs">
+              <Field label={isGithub ? "Registered in" : "Owner"}>{owner}</Field>
+              <Field label="Runs">{runs}</Field>
+            </dl>
+          </>
+        ) : (
+          // Simple by default: whose it is and whose jobs it takes, on one line.
+          <div className="flex min-w-0 items-center justify-between gap-4 text-xs text-ink-2">
+            {owner}
+            {runs}
+          </div>
+        )}
         {error && <p className="text-xs text-destructive">{error}</p>}
       </div>
       {canShare && (
