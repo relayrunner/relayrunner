@@ -45,6 +45,12 @@ export type Machine = {
    */
   device?: MachineDevice | null;
   /**
+   * The relayrunner CLI version from its last hello, and the newer release to update to, or null
+   * when up to date. Null for a runner added from GitHub or a CLI older than 0.7.0. Missing from an
+   * API that predates it.
+   */
+  cli?: { version: string; update: string | null } | null;
+  /**
    * Who connected it, or the org a runner added from GitHub belongs to. Missing from an API that
    * predates it.
    */
