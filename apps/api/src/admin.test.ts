@@ -1,20 +1,13 @@
-import { afterAll, beforeAll, describe, expect, test, vi } from "vitest";
+import { beforeAll, describe, expect, test, vi } from "vitest";
 import { app } from "./app.ts";
 import type { Env } from "./env.ts";
 import * as testing from "./testing.ts";
 import { accessEnv, accessJwt } from "./testing-access.ts";
 
-let proxy: Awaited<ReturnType<typeof testing.startD1>>["proxy"];
 let env: Env;
 
 beforeAll(async () => {
-  const started = await testing.startD1();
-  proxy = started.proxy;
-  env = { ...started.env, ...accessEnv };
-}, 60_000);
-
-afterAll(async () => {
-  await proxy?.dispose();
+  env = { ...(await testing.createTestEnv()), ...accessEnv };
 });
 
 async function call(path: string, cookie: string, init: RequestInit = {}, jwt = true) {

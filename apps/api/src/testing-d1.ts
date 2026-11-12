@@ -1,9 +1,8 @@
 import { DatabaseSync, type SQLInputValue, type StatementSync } from "node:sqlite";
 
-// An in-memory D1 for tests, on Node's built-in SQLite. Miniflare's D1 sits behind the platform
-// proxy, where every query is a round trip to workerd (~10ms), and the API tests make thousands.
-// This answers the same calls in microseconds. It covers the D1 API the app and Drizzle use:
-// prepare/bind/first/all/run/raw, batch, exec and withSession.
+// An in-memory D1 for tests, on Node's built-in SQLite, so a query costs microseconds instead of a
+// round trip to workerd. It covers the D1 API the app and Drizzle use: prepare/bind/first/all/
+// run/raw, batch, exec and withSession.
 export function createTestD1(): D1Database {
   const db = new DatabaseSync(":memory:");
   const cache = new Map<string, StatementSync>();

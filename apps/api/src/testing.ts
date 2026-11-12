@@ -1,38 +1,42 @@
 import { readdirSync, readFileSync } from "node:fs";
 import { makeSignature } from "better-auth/crypto";
 import { expect } from "vitest";
-import { getPlatformProxy } from "wrangler";
+import { parseJsonc } from "../scripts/container-images.ts";
 import { app } from "./app.ts";
 import { createAuth } from "./auth.ts";
 import type { Env } from "./env.ts";
 import { createTestD1 } from "./testing-d1.ts";
+import { createTestR2 } from "./testing-r2.ts";
 
-// Test helpers for running the app against an in-memory D1 (testing-d1.ts) with the committed
-// migrations; the other bindings come from Miniflare. Call startD1() in beforeAll and dispose the
-// proxy in afterAll.
-// `before` stops short of the migration with that file name, for testing a migration on data.
-export async function startD1({ before }: { before?: string } = {}) {
-  const proxy = await getPlatformProxy<Env>({
-    configPath: new URL("../wrangler.jsonc", import.meta.url).pathname,
-    persist: false,
-  });
+// Test helpers for running the app against the vars in wrangler.jsonc, an in-memory D1
+// (testing-d1.ts) with the committed migrations, and an in-memory R2 for dead letters. Durable
+// Objects, queues and email are left out: a test that needs one stubs it. `before` stops short of
+// the migration with that file name, for testing a migration on data; `env` replaces bindings.
+export async function createTestEnv({
+  before,
+  env: overrides,
+}: { before?: string; env?: Partial<Env> } = {}) {
   const env: Env = {
-    ...proxy.env,
+    ...vars,
     DB: createTestD1(),
+    DEAD_LETTERS: createTestR2(),
     BETTER_AUTH_URL: "http://localhost:8787",
     BETTER_AUTH_SECRET: "test-secret-test-secret-test-secret",
     GITHUB_APP_CLIENT_ID: "id",
     GITHUB_APP_CLIENT_SECRET: "secret",
     GITHUB_APP_SLUG: "relayrunner-test",
+    ...overrides,
   };
   for (const file of readdirSync(migrations)
     .filter((name) => name.endsWith(".sql") && (!before || name < before))
     .sort())
     await applyMigration(env, file);
-  return { proxy, env };
+  return env;
 }
 
 const migrations = new URL("../migrations/", import.meta.url);
+const wrangler = readFileSync(new URL("../wrangler.jsonc", import.meta.url), "utf8");
+const { vars } = parseJsonc(wrangler) as { vars: Env };
 
 export async function applyMigration(env: Env, file: string) {
   for (const statement of readFileSync(new URL(file, migrations), "utf8").split(

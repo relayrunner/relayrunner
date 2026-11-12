@@ -1,6 +1,6 @@
 import { generateKeyPairSync } from "node:crypto";
 import { toWebhookMessage } from "@relayrunner/github-webhooks";
-import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, test, vi } from "vitest";
+import { afterEach, beforeAll, beforeEach, describe, expect, test, vi } from "vitest";
 import { app } from "./app.ts";
 import type { Env } from "./env.ts";
 import { dashboardPath, type GitHubInstallation, verifyInstallState } from "./github.ts";
@@ -8,16 +8,14 @@ import { landingAfterSignIn } from "./routes/github.ts";
 import * as testing from "./testing.ts";
 import { processWebhook } from "./webhook-queue.ts";
 
-let proxy: Awaited<ReturnType<typeof testing.startD1>>["proxy"];
 let env: Env;
 
-// Uninstalling purges the workspace's Durable Objects, which the platform proxy doesn't run.
+// Uninstalling purges the workspace's Durable Objects, which these tests stub.
 const purgedRouters: string[] = [];
 
 beforeAll(async () => {
-  ({ proxy, env } = await testing.startD1());
   env = {
-    ...env,
+    ...(await testing.createTestEnv()),
     MACHINE_LINK: {
       getByName: () => ({ purge: async () => {} }),
     } as unknown as Env["MACHINE_LINK"],
@@ -25,14 +23,10 @@ beforeAll(async () => {
       getByName: (id: string) => ({ purge: async () => void purgedRouters.push(id) }),
     } as unknown as Env["ROUTER"],
   };
-}, 60_000);
-
-afterAll(async () => {
-  await proxy?.dispose();
 });
 
 // What GET /user/installations returns per bearer token. Tokens in `revoked` get a 401. Other URLs
-// go to the real fetch, which Miniflare may be using.
+// go to the real fetch.
 const visibleTo = new Map<string, GitHubInstallation[]>();
 const revoked = new Set<string>();
 

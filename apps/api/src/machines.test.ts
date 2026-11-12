@@ -1,7 +1,7 @@
 import cliPackage from "../../cli/package.json" with { type: "json" };
 import type { ActivityPage } from "@relayrunner/activity";
 import { eq } from "drizzle-orm";
-import { afterAll, beforeAll, beforeEach, describe, expect, test, vi } from "vitest";
+import { beforeAll, beforeEach, describe, expect, test, vi } from "vitest";
 import { app } from "./app.ts";
 import { createDb, schema } from "./db/index.ts";
 import type { Env } from "./env.ts";
@@ -17,10 +17,9 @@ import {
 import { forgetInstallation } from "./admin-delete.ts";
 import * as testing from "./testing.ts";
 
-let proxy: Awaited<ReturnType<typeof testing.startD1>>["proxy"];
 let env: Env;
 
-// MachineLink is a Durable Object, which the platform proxy can't run here; its own logic is
+// MachineLink is a Durable Object, which the test env leaves out; its own logic is
 // tested in durable-objects/machine-session.test.ts. Each machine id gets a stub.
 const links = new Map<string, ReturnType<typeof fakeLink>>();
 function fakeLink() {
@@ -37,15 +36,11 @@ function link(machineId: string) {
 }
 
 beforeAll(async () => {
-  ({ proxy, env } = await testing.startD1());
+  env = await testing.createTestEnv();
   env.MACHINE_LINK = { getByName: link } as unknown as Env["MACHINE_LINK"];
-}, 60_000);
+});
 
 beforeEach(() => links.clear());
-
-afterAll(async () => {
-  await proxy?.dispose();
-});
 
 const call = (path: string, cookie: string, body?: unknown) =>
   testing.call(env, path, cookie, body);

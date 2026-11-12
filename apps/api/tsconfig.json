@@ -11,5 +11,7 @@
     "verbatimModuleSyntax": true,
     "types": ["@cloudflare/workers-types"]
   },
-  "include": ["src/**/*.ts", "drizzle.config.ts"]
+  "include": ["src/**/*.ts", "drizzle.config.ts"],
+  // Tests run on Node (tsconfig.test.json); the Worker source doesn't get Node's types.
+  "exclude": ["src/**/*.test.ts", "src/testing*.ts"]
 }

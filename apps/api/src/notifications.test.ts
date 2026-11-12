@@ -1,21 +1,14 @@
-import { afterAll, beforeAll, describe, expect, test, vi } from "vitest";
+import { beforeAll, describe, expect, test, vi } from "vitest";
 import { emailOperators, sendEmail, type EmailArgs } from "./email.ts";
 import type { Env } from "./env.ts";
 import { createDb } from "./db/index.ts";
 import { operatorRecipients } from "./notifications.ts";
 import * as testing from "./testing.ts";
 
-let proxy: Awaited<ReturnType<typeof testing.startD1>>["proxy"];
 let env: Env;
 
 beforeAll(async () => {
-  const started = await testing.startD1();
-  proxy = started.proxy;
-  env = started.env;
-}, 60_000);
-
-afterAll(async () => {
-  await proxy?.dispose();
+  env = await testing.createTestEnv();
 });
 
 const list = async (cookie: string) =>

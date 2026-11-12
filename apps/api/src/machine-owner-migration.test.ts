@@ -1,11 +1,10 @@
-import { afterAll, beforeAll, describe, expect, test } from "vitest";
+import { beforeAll, describe, expect, test } from "vitest";
 import type { Env } from "./env.ts";
 import * as testing from "./testing.ts";
 
 // The #318 migration, which rebuilds the machine table so connected machines belong to their user.
 const MIGRATION = "20261111211308_machine_belongs_to_user.sql";
 
-let proxy: Awaited<ReturnType<typeof testing.startD1>>["proxy"];
 let env: Env;
 
 const all = async <T>(sql: string, ...binds: unknown[]) =>
@@ -16,7 +15,7 @@ const all = async <T>(sql: string, ...binds: unknown[]) =>
   ).results;
 
 beforeAll(async () => {
-  ({ proxy, env } = await testing.startD1({ before: MIGRATION }));
+  env = await testing.createTestEnv({ before: MIGRATION });
   const now = Date.now();
   const run = (sql: string, ...binds: unknown[]) => env.DB.prepare(sql).bind(...binds);
   await env.DB.batch([
@@ -69,10 +68,6 @@ beforeAll(async () => {
     ),
   ]);
   await testing.applyMigration(env, MIGRATION);
-}, 60_000);
-
-afterAll(async () => {
-  await proxy?.dispose();
 });
 
 describe("machines belong to their user (#318)", () => {

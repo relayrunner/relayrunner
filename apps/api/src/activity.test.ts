@@ -1,21 +1,16 @@
 import type { ActivityPage } from "@relayrunner/activity";
 import { eq } from "drizzle-orm";
-import { afterAll, beforeAll, describe, expect, test } from "vitest";
+import { beforeAll, describe, expect, test } from "vitest";
 import { recordEvent, recordMachineEvent } from "./activity.ts";
 import { createDb, schema } from "./db/index.ts";
 import type { Env } from "./env.ts";
 import { BOOKMARK_COOKIE } from "./middleware/d1-session.ts";
 import * as testing from "./testing.ts";
 
-let proxy: Awaited<ReturnType<typeof testing.startD1>>["proxy"];
 let env: Env;
 
 beforeAll(async () => {
-  ({ proxy, env } = await testing.startD1());
-}, 60_000);
-
-afterAll(async () => {
-  await proxy?.dispose();
+  env = await testing.createTestEnv();
 });
 
 let ids = 0;

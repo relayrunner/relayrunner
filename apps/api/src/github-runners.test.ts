@@ -1,4 +1,4 @@
-import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, test, vi } from "vitest";
+import { afterEach, beforeAll, beforeEach, describe, expect, test, vi } from "vitest";
 import { app } from "./app.ts";
 import { createDb, schema } from "./db/index.ts";
 import type { Env } from "./env.ts";
@@ -146,11 +146,10 @@ describe("github runner helpers", () => {
 });
 
 describe("adding GitHub runners", () => {
-  let proxy: Awaited<ReturnType<typeof testing.startD1>>["proxy"];
   let env: Env;
 
   beforeAll(async () => {
-    ({ proxy, env } = await testing.startD1());
+    env = await testing.createTestEnv();
     env.MACHINE_LINK = {
       getByName: () => ({
         status: async () => ({ online: false, state: null, connectedAt: null }),
@@ -166,10 +165,6 @@ describe("adding GitHub runners", () => {
         },
       }),
     } as unknown as Env["ROUTER"];
-  }, 60_000);
-
-  afterAll(async () => {
-    await proxy?.dispose();
   });
 
   // The org's runners and groups as GitHub would answer, and the label calls made.

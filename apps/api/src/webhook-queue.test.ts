@@ -1,9 +1,9 @@
-import { afterAll, beforeAll, describe, expect, test, vi } from "vitest";
+import { beforeAll, describe, expect, test, vi } from "vitest";
 import { WEBHOOK_DLQ, WEBHOOK_QUEUE, type WebhookMessage } from "@relayrunner/github-webhooks";
 import type { Env } from "./env.ts";
 import { recordJobTiming } from "./job-timings.ts";
 import { recordWorkflowJob, setJobMachine } from "./jobs.ts";
-import { startD1 } from "./testing.ts";
+import { createTestEnv } from "./testing.ts";
 import * as consumer from "./webhook-queue.ts";
 
 // Storage is covered against a real D1 in jobs.test.ts and job-timings.test.ts.
@@ -214,7 +214,6 @@ describe("webhook queue consumer", () => {
   });
 
   describe("route jobs", () => {
-    let stop: () => Promise<void>;
     let db: D1Database;
     const claim = vi.fn();
     const machineFor = vi.fn(async () => null);
@@ -231,8 +230,7 @@ describe("webhook queue consumer", () => {
       }) as unknown as Env;
 
     beforeAll(async () => {
-      const { proxy, env } = await startD1();
-      stop = () => proxy.dispose();
+      const env = await createTestEnv();
       db = env.DB;
       const now = Date.now();
       await db
@@ -254,7 +252,6 @@ describe("webhook queue consumer", () => {
         .bind(now, now)
         .run();
     });
-    afterAll(() => stop());
 
     test("a job on an added runner's label claims the route without minting a runner", async () => {
       const log = vi.spyOn(console, "log").mockImplementation(() => {});

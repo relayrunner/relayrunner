@@ -1,19 +1,14 @@
-import { afterAll, beforeAll, describe, expect, test, vi } from "vitest";
+import { beforeAll, describe, expect, test, vi } from "vitest";
 import { AGENT_CONSENT_PAGE, AGENT_WORKSPACE_PAGE, agentIssuer } from "./agent-auth.ts";
 import { app } from "./app.ts";
 import type { Env } from "./env.ts";
 import * as testing from "./testing.ts";
 import { wellKnown } from "./well-known.ts";
 
-let proxy: Awaited<ReturnType<typeof testing.startD1>>["proxy"];
 let env: Env;
 
 beforeAll(async () => {
-  ({ proxy, env } = await testing.startD1());
-}, 60_000);
-
-afterAll(async () => {
-  await proxy?.dispose();
+  env = await testing.createTestEnv();
 });
 
 const REDIRECT_URI = "https://agent.example.com/callback";

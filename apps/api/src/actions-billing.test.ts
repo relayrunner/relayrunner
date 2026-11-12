@@ -1,6 +1,6 @@
 import { generateKeyPairSync } from "node:crypto";
 import { eq } from "drizzle-orm";
-import { afterAll, afterEach, beforeAll, describe, expect, test, vi } from "vitest";
+import { afterEach, beforeAll, describe, expect, test, vi } from "vitest";
 import {
   type AccountUsage,
   accountUsage,
@@ -15,15 +15,10 @@ import { type InstallationTask, runInstallationTask } from "./installation-tasks
 import { recordSpendInstallation } from "./spend-app.ts";
 import * as testing from "./testing.ts";
 
-let proxy: Awaited<ReturnType<typeof testing.startD1>>["proxy"];
 let env: Env;
 
 beforeAll(async () => {
-  ({ proxy, env } = await testing.startD1());
-}, 60_000);
-
-afterAll(async () => {
-  await proxy?.dispose();
+  env = await testing.createTestEnv();
 });
 
 afterEach(() => {

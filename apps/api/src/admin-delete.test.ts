@@ -1,4 +1,4 @@
-import { afterAll, beforeAll, describe, expect, test, vi } from "vitest";
+import { beforeAll, describe, expect, test, vi } from "vitest";
 import { recordEvent } from "./activity.ts";
 import { app } from "./app.ts";
 import { createDb, schema } from "./db/index.ts";
@@ -14,18 +14,15 @@ vi.mock("./github-app.ts", async (importOriginal) => ({
   },
 }));
 
-let proxy: Awaited<ReturnType<typeof testing.startD1>>["proxy"];
 let env: Env;
 const purgedMachines: string[] = [];
 const purgedRouters: string[] = [];
 
 beforeAll(async () => {
-  const started = await testing.startD1();
-  proxy = started.proxy;
   env = {
-    ...started.env,
+    ...(await testing.createTestEnv()),
     ...accessEnv,
-    // Durable Objects don't run in the platform proxy.
+    // Durable Objects aren't in the test env.
     MACHINE_LINK: {
       getByName: (id: string) => ({ purge: async () => void purgedMachines.push(id) }),
     } as unknown as Env["MACHINE_LINK"],
@@ -34,10 +31,6 @@ beforeAll(async () => {
     } as unknown as Env["ROUTER"],
   };
   vi.spyOn(console, "log").mockImplementation(() => {});
-}, 60_000);
-
-afterAll(async () => {
-  await proxy?.dispose();
 });
 
 async function del(path: string, cookie: string, body?: unknown) {

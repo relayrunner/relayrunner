@@ -1,10 +1,10 @@
 import { WEBHOOK_DLQ, WEBHOOK_QUEUE, type WebhookMessage } from "@relayrunner/github-webhooks";
-import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, test, vi } from "vitest";
+import { afterEach, beforeAll, beforeEach, describe, expect, test, vi } from "vitest";
 import { app } from "./app.ts";
 import { checkDeadLetterGrowth } from "./dead-letter-alert.ts";
 import { archiveDeadLetter, listDeadLetters, recordLastError } from "./dead-letters.ts";
 import type { Env } from "./env.ts";
-import { startD1 } from "./testing.ts";
+import { createTestEnv } from "./testing.ts";
 import { accessEnv, accessJwt } from "./testing-access.ts";
 import { handleWebhookBatch, MAX_RETRIES } from "./webhook-queue.ts";
 
@@ -27,15 +27,12 @@ function queued(body: WebhookMessage, attempts: number) {
 function batch(queue: string, messages: ReturnType<typeof queued>[]) {
   return { queue, messages } as unknown as MessageBatch<WebhookMessage>;
 }
-
-let stop: () => Promise<void>;
 let base: Env;
 let bucket: R2Bucket;
 const send = vi.fn(async () => {});
 
 beforeAll(async () => {
-  const { proxy, env } = await startD1();
-  stop = () => proxy.dispose();
+  const env = await createTestEnv();
   bucket = env.DEAD_LETTERS;
   base = {
     ...env,
@@ -43,7 +40,6 @@ beforeAll(async () => {
     WEBHOOK_QUEUE: { send } as unknown as Queue<WebhookMessage>,
   };
 });
-afterAll(() => stop());
 
 beforeEach(async () => {
   send.mockClear();

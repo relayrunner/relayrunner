@@ -1,17 +1,12 @@
-import { afterAll, beforeAll, describe, expect, test } from "vitest";
+import { beforeAll, describe, expect, test } from "vitest";
 import { app } from "./app.ts";
 import type { Env } from "./env.ts";
 import * as testing from "./testing.ts";
 
-let proxy: Awaited<ReturnType<typeof testing.startD1>>["proxy"];
 let env: Env;
 
 beforeAll(async () => {
-  ({ proxy, env } = await testing.startD1());
-}, 60_000);
-
-afterAll(async () => {
-  await proxy?.dispose();
+  env = await testing.createTestEnv();
 });
 
 const signIn = () => testing.signIn(env);
