@@ -1,5 +1,5 @@
 import { afterAll, beforeAll, describe, expect, test, vi } from "vitest";
-import { sendEmail, type EmailArgs } from "./email.ts";
+import { emailOperators, sendEmail, type EmailArgs } from "./email.ts";
 import type { Env } from "./env.ts";
 import { createDb } from "./db/index.ts";
 import { operatorRecipients } from "./notifications.ts";
@@ -30,18 +30,18 @@ const set = (cookie: string, type: string, enabled: unknown) =>
 const operator = () => testing.signInOperator(env);
 
 describe("/api/me/notifications", () => {
-  test("starts with everything on, and operator alerts only for operators", async () => {
+  test("starts with personal emails on, operator copies off, and those only for operators", async () => {
     const person = await testing.signIn(env);
     expect(await list(person.cookie)).toEqual([
       { type: "machine-connected", operator: false, enabled: true },
     ]);
 
     const op = await operator();
-    expect((await list(op.cookie)).map((n) => n.type)).toEqual([
-      "machine-connected",
-      "feedback",
-      "dead-letter-alert",
-      "price-check",
+    expect(await list(op.cookie)).toEqual([
+      { type: "machine-connected", operator: false, enabled: true },
+      { type: "feedback", operator: true, enabled: false },
+      { type: "dead-letter-alert", operator: true, enabled: false },
+      { type: "price-check", operator: true, enabled: false },
     ]);
   });
 
@@ -61,17 +61,32 @@ describe("/api/me/notifications", () => {
     expect((await set("", "machine-connected", false)).status).toBe(401);
   });
 
-  test("operator alerts go to each operator who leaves them on", async () => {
+  test("operator alerts reach the team inbox, plus operators who opted in", async () => {
     await env.DB.prepare("update user set role = null").run();
     const [a, b] = [await operator(), await operator()];
-    expect((await operatorRecipients(createDb(env.DB), "price-check")).sort()).toEqual(
-      [a.user.email, b.user.email].sort(),
+    expect(await operatorRecipients(createDb(env.DB), "price-check")).toEqual([]);
+    await set(b.cookie, "price-check", true);
+    expect(await operatorRecipients(createDb(env.DB), "price-check")).toEqual([b.user.email]);
+    expect(await operatorRecipients(createDb(env.DB), "feedback")).toEqual([]);
+
+    const send = vi.fn(async () => ({ messageId: "m" }));
+    await emailOperators(
+      { ...env, OPERATOR_ALERT_EMAIL: "ops@example.com", EMAIL: { send } as unknown as SendEmail },
+      { template: "dead-letter-alert", context: { count: 12, threshold: 10 } },
     );
-    await set(b.cookie, "price-check", false);
-    expect(await operatorRecipients(createDb(env.DB), "price-check")).toEqual([a.user.email]);
-    expect((await operatorRecipients(createDb(env.DB), "feedback")).sort()).toEqual(
-      [a.user.email, b.user.email].sort(),
+    expect(send.mock.calls.map((call) => (call as unknown[] as [{ to: string }])[0].to)).toEqual([
+      "ops@example.com",
+    ]);
+    await set(a.cookie, "dead-letter-alert", true);
+    send.mockClear();
+    await emailOperators(
+      { ...env, OPERATOR_ALERT_EMAIL: "ops@example.com", EMAIL: { send } as unknown as SendEmail },
+      { template: "dead-letter-alert", context: { count: 12, threshold: 10 } },
     );
+    expect(send.mock.calls.map((call) => (call as unknown[] as [{ to: string }])[0].to)).toEqual([
+      "ops@example.com",
+      a.user.email,
+    ]);
   });
 
   test("skips a user's email once they turn that type off", async () => {

@@ -48,7 +48,7 @@ function NotificationSettingsPage() {
         {operator.length > 0 && (
           <EmailCard
             title="Operator alerts"
-            description="Sent to every operator. Turning one off only stops it for you."
+            description="These always go to the team inbox. Turn one on to also get it at your own address."
             settings={operator}
           />
         )}

@@ -2,7 +2,7 @@
  * The daily price check (a cron in wrangler.jsonc). Reads each provider's price page
  * (PRICE_SOURCES in @relayrunner/providers) and saves each price that differs from the one jobs
  * are priced at as a price_finding, for an operator to approve into provider_price or dismiss in
- * Admin → Prices. Nothing changes a report until then. Emails the operators when it finds
+ * Admin → Prices. Nothing changes a report until then. Emails OPERATOR_ALERT_EMAIL and operators who opted in when it finds
  * a change or a page stops reading.
  */
 import {

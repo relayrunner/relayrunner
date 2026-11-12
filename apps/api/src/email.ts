@@ -156,7 +156,10 @@ type OperatorEmail = Extract<
   { template: "feedback" | "dead-letter-alert" | "price-check" }
 >;
 
-/** Sends an operator alert to each operator who hasn't turned that alert off. Never throws. */
+/**
+ * Sends an operator alert to the team inbox (FEEDBACK_EMAIL for feedback, else
+ * OPERATOR_ALERT_EMAIL) and to each operator who asked for their own copy. Never throws.
+ */
 export async function emailOperators(env: Env, args: DistributiveOmit<OperatorEmail, "to">) {
   if (!env.EMAIL) {
     console.warn(
@@ -164,12 +167,14 @@ export async function emailOperators(env: Env, args: DistributiveOmit<OperatorEm
     );
     return;
   }
+  const inbox = args.template === "feedback" ? env.FEEDBACK_EMAIL : env.OPERATOR_ALERT_EMAIL;
+  const recipients = new Set(inbox ? [inbox] : []);
   try {
-    const recipients = await operatorRecipients(createDb(env.DB), args.template);
-    await Promise.all(recipients.map((to) => sendEmail(env, { ...args, to } as EmailArgs)));
+    for (const to of await operatorRecipients(createDb(env.DB), args.template)) recipients.add(to);
   } catch (error) {
     console.error(
-      JSON.stringify({ msg: "email not sent", template: args.template, error: message(error) }),
+      JSON.stringify({ msg: "operators not read", template: args.template, error: message(error) }),
     );
   }
+  await Promise.all([...recipients].map((to) => sendEmail(env, { ...args, to } as EmailArgs)));
 }

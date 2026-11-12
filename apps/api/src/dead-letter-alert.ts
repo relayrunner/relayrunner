@@ -2,7 +2,7 @@
  * Alerts on a rising count of webhook dead letters, not on single failures. An hourly cron
  * (wrangler.jsonc `triggers`) counts what was dead-lettered in the past hour; at or over the
  * threshold it logs `webhook dead letters rising` as an error (Workers Logs and Issues) and, when
- * DEAD_LETTER_ALERT_WEBHOOK_URL is set, posts to it. It also emails the operators who want it.
+ * DEAD_LETTER_ALERT_WEBHOOK_URL is set, posts to it. It also emails OPERATOR_ALERT_EMAIL and operators who opted in.
  */
 import { countDeadLettersSince } from "./dead-letters.ts";
 import { emailOperators } from "./email.ts";

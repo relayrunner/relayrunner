@@ -42,7 +42,7 @@ type Entry = {
 
 // Feedback from a person in the dashboard (the feedback popover) or from an agent (the MCP server's
 // send_feedback tool). Either way it's stored for the signed-in user, with the workspace it's
-// about, and emailed to the operators with a reply-to of the person. An agent's records which
+// about, and emailed to FEEDBACK_EMAIL (and operators who opted in) with a reply-to of the person. An agent's records which
 // agent sent it, and its workspace is the one the request names; a person's records the page and
 // their active workspace. The answer never repeats what was sent, so a secret the redaction missed
 // isn't echoed back.

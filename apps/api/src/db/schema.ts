@@ -950,7 +950,7 @@ export const agentGrantWorkspace = sqliteTable(
 
 // Feedback from people (the dashboard's feedback popover) and agents (the MCP server's
 // send_feedback tool), both through routes/feedback.ts, already sanitized and with secrets redacted.
-// Also emailed to the operators. grant_id and client_id are set for agents only, as plain text so
+// Also emailed to FEEDBACK_EMAIL. grant_id and client_id are set for agents only, as plain text so
 // the feedback outlives a disconnected agent; page is the dashboard path it was sent from. It goes
 // with its user.
 export const feedback = sqliteTable(

@@ -37,6 +37,11 @@ export interface Env extends AccessEnv {
   EMAIL?: SendEmail;
   // Sender address on send.relayrunner.app; must be in the binding's allowed_sender_addresses.
   EMAIL_FROM?: string;
+  // Optional: the team inbox for operator alerts (dead letters, price checks). Operators can also
+  // get their own copy (src/notifications.ts).
+  OPERATOR_ALERT_EMAIL?: string;
+  // Optional: the team inbox for feedback (routes/feedback.ts). Operators can also get their own copy.
+  FEEDBACK_EMAIL?: string;
   // The dashboard origin links in emails point at. Falls back to BETTER_AUTH_URL.
   DASHBOARD_URL?: string;
 

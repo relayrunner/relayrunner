@@ -133,9 +133,9 @@ describe("checkPrices", () => {
   beforeAll(async () => {
     const started = await testing.startD1();
     proxy = started.proxy;
-    await testing.signInOperator(started.env);
     env = {
       ...started.env,
+      OPERATOR_ALERT_EMAIL: "ops@example.com",
       EMAIL: { send } as unknown as SendEmail,
     };
   }, 60_000);
