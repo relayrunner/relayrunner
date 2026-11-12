@@ -115,6 +115,11 @@ describe("the job image", () => {
     expect(dockerfile("runner:1")).toContain("iptables nftables");
   });
 
+  it("shortens the wait for the VM's first DNS answer", () => {
+    expect(START_SCRIPT).toContain("options timeout:1");
+    expect(START_SCRIPT.indexOf("getent hosts")).toBeLessThan(START_SCRIPT.indexOf("dockerd"));
+  });
+
   it("is tagged by its contents, so a new base image builds a new one", () => {
     expect(jobImage("runner:1")).toMatch(/^relayrunner-runner:[a-f\d]{12}$/);
     expect(jobImage("runner:1")).toBe(jobImage("runner:1"));

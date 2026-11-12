@@ -97,6 +97,10 @@ export const NO_LOG: DebugLog = { path: "", write: () => {} };
 // remove the firewall, so it stops accidents, not a job that sets out to get past it.
 export const START_SCRIPT = `#!/bin/sh
 set -eu
+# The first DNS lookup in a new VM goes unanswered, and the resolver waits 5 seconds before it
+# asks again. So it asks again after 1 second, and one lookup goes out now, ahead of the job's.
+grep -q '^options' /etc/resolv.conf || echo 'options timeout:1' >> /etc/resolv.conf || true
+(getent hosts github.com >/dev/null 2>&1 &)
 drop=""
 if [ "\${RELAYRUNNER_LOCAL_NETWORK:-}" != 1 ]; then
   drop="--bounding-set -net_admin,-net_raw"
