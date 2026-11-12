@@ -14,5 +14,8 @@ export const Route = createFileRoute("/_authed")({
     }
     return { user: session.user, session };
   },
+  // The first page load shows nothing until the guards are done, rather than a page skeleton
+  // without the app around it. Later navigations reuse their answer, so only the page is pending.
+  pendingMs: Infinity,
   component: Outlet,
 });

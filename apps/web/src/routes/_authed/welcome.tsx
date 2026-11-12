@@ -2,7 +2,8 @@ import { createFileRoute, redirect, useRouter } from "@tanstack/react-router";
 import { Brand } from "@/components/brand";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
-import { authDisabled, organization, signOut } from "@/lib/auth-client";
+import { authDisabled, organization } from "@/lib/auth-client";
+import { signOut } from "@/lib/session";
 import {
   githubInstallHref,
   githubOutcomes,

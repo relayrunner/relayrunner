@@ -12,7 +12,7 @@ import {
   CardHeader,
   CardTitle,
 } from "@/components/ui/card";
-import { signOut } from "@/lib/auth-client";
+import { signOut } from "@/lib/session";
 
 export const Route = createFileRoute("/_authed/_workspace/settings/account")({
   component: AccountSettingsPage,
