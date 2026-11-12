@@ -73,12 +73,21 @@ const BANDS = {
   missing: { band: "bg-destructive/10", label: "text-destructive", dot: "bg-destructive" },
 } as const;
 
+/** What each status is called, in the order the filter menu lists them. */
+export const TONE_LABELS = {
+  running: "Running",
+  idle: "Waiting for jobs",
+  paused: "Paused",
+  offline: "Offline",
+  missing: "Not on GitHub",
+} as const satisfies Record<keyof typeof BANDS, string>;
+
 // Connection status, as a dot on the icon.
 const CONNECTION = {
   online: { dot: "bg-go", label: "Online" },
   offline: { dot: "border-2 border-idle bg-transparent", label: "Offline" },
   paused: { dot: "bg-run", label: "Paused" },
-  missing: { dot: "bg-destructive", label: "Not on GitHub" },
+  missing: { dot: "bg-destructive", label: TONE_LABELS.missing },
 } as const;
 
 /**
@@ -190,7 +199,7 @@ function Band({ tone, children }: { tone: keyof typeof BANDS; children: ReactNod
   );
 }
 
-function BandLabel({ tone, children }: { tone: keyof typeof BANDS; children: ReactNode }) {
+export function BandLabel({ tone, children }: { tone: keyof typeof BANDS; children: ReactNode }) {
   return (
     <span className={cn("flex shrink-0 items-center gap-2 font-semibold", BANDS[tone].label)}>
       <span aria-hidden className={cn("size-2 shrink-0 rounded-full", BANDS[tone].dot)} />
@@ -247,7 +256,7 @@ function MoreJobs({ jobs }: { jobs: MachineJob[] }) {
 }
 
 // A spec the machine didn't report, such as a runner added from GitHub's CPU and memory.
-function NotReported() {
+export function NotReported() {
   return (
     <span className="text-idle">
       <span aria-hidden>—</span>
@@ -256,67 +265,11 @@ function NotReported() {
   );
 }
 
-export function MachineCard({
-  machine,
-  jobTime,
-  specs = false,
-  onRemovedFromWorkspace,
-}: {
-  machine: Machine;
-  jobTime?: Stat;
-  /** Show the hardware and typical job. Off by default to keep the cards simple. */
-  specs?: boolean;
-  /** Called after the user takes their own machine out of this workspace. */
-  onRemovedFromWorkspace?: () => void;
-}) {
-  const router = useRouter();
-  const [confirming, setConfirming] = useState(false);
-  const [sharingOpen, setSharingOpen] = useState(false);
-  const [pending, setPending] = useState<"revoke" | "remove" | "pause" | "resume" | null>(null);
-  const [error, setError] = useState<string | null>(null);
+/** What a machine is doing and what it is, worked out once for its card and its list row. */
+export function machineView(machine: Machine) {
   // A self-hosted runner added from GitHub: no connection of its own, removed rather than revoked.
   const isGithub = machine.source === "github";
   const github = isGithub ? (machine.github ?? null) : null;
-  // The runner's group access, read from GitHub the first time its menu opens (several calls).
-  // undefined: not asked yet.
-  const [access, setAccess] = useState<string | null | undefined>(undefined);
-  function onMenuOpen(open: boolean) {
-    if (!open || !isGithub || access !== undefined) return;
-    setAccess(null);
-    machineAccess(machine.id).then(setAccess, () => setAccess(null));
-  }
-
-  async function act(action: "revoke" | "remove" | "pause" | "resume") {
-    setPending(action);
-    setError(null);
-    try {
-      if (action === "revoke") await revokeMachine(machine.id);
-      else if (action === "remove") await removeMachineFromWorkspace(machine.id);
-      else if (action === "pause") await pauseMachine(machine.id);
-      else await resumeMachine(machine.id);
-      if (action === "remove") onRemovedFromWorkspace?.();
-      await router.invalidate();
-      if (action !== "revoke" && action !== "remove") setPending(null);
-    } catch {
-      setError(
-        action === "revoke" && isGithub
-          ? "Couldn't remove the runner. Try again."
-          : action === "remove"
-            ? "Couldn't remove the machine from this workspace. Try again."
-            : `Couldn't ${action} the machine. Try again.`,
-      );
-      setPending(null);
-    }
-  }
-
-  async function copyLabels() {
-    try {
-      await navigator.clipboard.writeText((machine.labels ?? []).join(", "));
-    } catch {
-      // Clipboard can be blocked; the labels are also on GitHub and in relay.yml.
-    }
-  }
-
   // Previews talk to the production API, which may not send status yet: read that as offline.
   const status = machine.status ?? { online: false, state: null, connectedAt: null };
   const paused = machine.paused ?? null;
@@ -324,7 +277,6 @@ export function MachineCard({
   const busy = status.online && status.state === "busy";
   // Every job it's running, newest first (#179). An older API sends only the newest.
   const jobs = busy ? (machine.jobs ?? (machine.job ? [machine.job] : [])) : [];
-  const job = jobs[0] ?? null;
   const { slots, running } = capacity(status);
   const tone: keyof typeof BANDS = missing
     ? "missing"
@@ -335,15 +287,12 @@ export function MachineCard({
         : busy
           ? "running"
           : "idle";
-  const label = {
-    missing: "Not on GitHub",
-    paused: "Paused",
-    offline: "Offline",
-    // A machine with several runners counts them; a 1-runner machine reads as before.
-    running: slots > 1 ? `${Math.min(running, slots)} of ${slots} running` : "Running",
-    idle: "Waiting for jobs",
-  }[tone];
-  const connection = missing
+  // A machine with several runners counts them; a 1-runner machine reads as before.
+  const label =
+    tone === "running" && slots > 1
+      ? `${Math.min(running, slots)} of ${slots} running`
+      : TONE_LABELS[tone];
+  const connection: keyof typeof CONNECTION = missing
     ? "missing"
     : !status.online
       ? "offline"
@@ -376,22 +325,14 @@ export function MachineCard({
   // reported.
   const runners = isGithub ? 1 : status.online ? slots : null;
 
-  const githubUrl =
-    github?.org && github.runnerId
-      ? `${runnerSettingsUrl(github.org)}/${github.runnerId}`
-      : github?.org
-        ? runnerSettingsUrl(github.org)
-        : null;
-
   // Whose machine it is and whose jobs it takes (#243). Only the owner of a connect machine
   // changes it; a runner added from GitHub belongs to its org and takes any job.
   const sharing = machine.sharing ?? "anyone";
   const mine = machine.mine ?? false;
   const canShare = mine && !isGithub;
-  const SharingIcon = SHARING_ICONS[sharing];
   const ownerName = mine && !isGithub ? "You" : (machine.owner ?? null);
 
-  // The band's right side: what it's doing, or why it isn't.
+  // What it's doing, or why it isn't.
   const detail = missing
     ? "Removed or re-registered on GitHub"
     : paused
@@ -413,43 +354,365 @@ export function MachineCard({
               ? `Session ended ${timeAgo(machine.lastSeenAt)}`
               : "Never connected";
 
-  // A runner added from GitHub lives in its org, not with a person. The GitHub mark keeps the
-  // org's name from reading as the app's (an org can be named "relayrunner").
-  const owner = isGithub ? (
-    <span className="flex min-w-0 items-center gap-1.5">
-      <GithubIcon className="size-3.5 shrink-0 text-muted-foreground" />
-      <span className="truncate">{machine.owner ?? "GitHub"}</span>
-    </span>
-  ) : ownerName ? (
+  return {
+    isGithub,
+    github,
+    status,
+    paused,
+    missing,
+    busy,
+    jobs,
+    tone,
+    label,
+    connection,
+    chip,
+    platform,
+    hardware,
+    runners,
+    sharing,
+    mine,
+    canShare,
+    ownerName,
+    detail,
+  };
+}
+
+export type MachineView = ReturnType<typeof machineView>;
+
+type MachineAction = "revoke" | "remove" | "pause" | "resume";
+
+/** Pause, unpause, remove and revoke, with the state a card or a row needs to show them. */
+export function useMachineActions(machine: Machine, onRemovedFromWorkspace?: () => void) {
+  const router = useRouter();
+  const [confirming, setConfirming] = useState(false);
+  const [sharingOpen, setSharingOpen] = useState(false);
+  const [pending, setPending] = useState<MachineAction | null>(null);
+  const [error, setError] = useState<string | null>(null);
+  const isGithub = machine.source === "github";
+
+  async function act(action: MachineAction) {
+    setPending(action);
+    setError(null);
+    try {
+      if (action === "revoke") await revokeMachine(machine.id);
+      else if (action === "remove") await removeMachineFromWorkspace(machine.id);
+      else if (action === "pause") await pauseMachine(machine.id);
+      else await resumeMachine(machine.id);
+      if (action === "remove") onRemovedFromWorkspace?.();
+      await router.invalidate();
+      if (action !== "revoke" && action !== "remove") setPending(null);
+    } catch {
+      setError(
+        action === "revoke" && isGithub
+          ? "Couldn't remove the runner. Try again."
+          : action === "remove"
+            ? "Couldn't remove the machine from this workspace. Try again."
+            : `Couldn't ${action} the machine. Try again.`,
+      );
+      setPending(null);
+    }
+  }
+
+  return { act, pending, error, confirming, setConfirming, sharingOpen, setSharingOpen };
+}
+
+type MachineActions = ReturnType<typeof useMachineActions>;
+
+/** The machine's icon, with its connection as a dot. */
+export function MachineChip({ view }: { view: MachineView }) {
+  return (
+    <IconChip
+      icon={view.chip.icon}
+      label={view.chip.label}
+      status={CONNECTION[view.connection]}
+      session={!view.isGithub}
+    />
+  );
+}
+
+/**
+ * Whose it is. A runner added from GitHub lives in its org, not with a person. The GitHub mark
+ * keeps the org's name from reading as the app's (an org can be named "relayrunner").
+ */
+export function MachineOwner({ machine, view }: { machine: Machine; view: MachineView }) {
+  if (view.isGithub)
+    return (
+      <span className="flex min-w-0 items-center gap-1.5">
+        <GithubIcon className="size-3.5 shrink-0 text-muted-foreground" />
+        <span className="truncate">{machine.owner ?? "GitHub"}</span>
+      </span>
+    );
+  if (!view.ownerName) return <NotReported />;
+  return (
     <span className="flex min-w-0 items-center gap-1.5">
       <UserAvatar
         user={{
-          name: ownerName === "You" ? (machine.owner ?? "You") : ownerName,
+          name: view.ownerName === "You" ? (machine.owner ?? "You") : view.ownerName,
           image: machine.ownerImage,
         }}
         className="size-4 border-0 text-[9px]"
       />
-      <span className="truncate">{ownerName}</span>
+      <span className="truncate">{view.ownerName}</span>
     </span>
-  ) : (
-    <NotReported />
   );
-  const runs = canShare ? (
+}
+
+/** Whose jobs it takes. Its owner can click it to change that. */
+export function MachineRuns({ view, onChange }: { view: MachineView; onChange: () => void }) {
+  const SharingIcon = SHARING_ICONS[view.sharing];
+  return view.canShare ? (
     <button
       type="button"
-      onClick={() => setSharingOpen(true)}
-      aria-label={`Who can run jobs here: ${sharingLabel(sharing, true)}. Change`}
+      onClick={onChange}
+      aria-label={`Who can run jobs here: ${sharingLabel(view.sharing, true)}. Change`}
       className="-mx-1 -my-0.5 flex min-w-0 items-center gap-1 rounded px-1 py-0.5 outline-none hover:bg-accent hover:text-foreground focus-visible:ring-[3px] focus-visible:ring-ring/50"
     >
       <SharingIcon aria-hidden className="size-3.5 shrink-0 text-idle" />
-      <span className="truncate">{sharingLabel(sharing, true)}</span>
+      <span className="truncate">{sharingLabel(view.sharing, true)}</span>
     </button>
   ) : (
     <span className="flex min-w-0 items-center gap-1">
       <SharingIcon aria-hidden className="size-3.5 shrink-0 text-idle" />
-      <span className="truncate">{sharingLabel(sharing, mine)}</span>
+      <span className="truncate">{sharingLabel(view.sharing, view.mine)}</span>
     </span>
   );
+}
+
+/** The newest job a busy machine is running, linked, with the others behind a +N. */
+export function MachineJobLink({ jobs }: { jobs: MachineJob[] }) {
+  const job = jobs[0];
+  if (!job) return <span className="min-w-0 truncate text-ink-2">Running a job</span>;
+  return (
+    <span className="flex min-w-0 items-center gap-2">
+      <a
+        href={job.url}
+        target="_blank"
+        rel="noreferrer"
+        title={`${job.repository} · ${job.name}`}
+        className="flex min-w-0 items-baseline gap-2 text-ink-2 hover:underline"
+      >
+        <span className="min-w-0 truncate">
+          {job.repository} · {job.name}
+        </span>
+        {job.startedAt && (
+          <span className="shrink-0 text-muted-foreground">{timeAgo(job.startedAt)}</span>
+        )}
+      </a>
+      {jobs.length > 1 && <MoreJobs jobs={jobs.slice(1)} />}
+    </span>
+  );
+}
+
+/** The machine's typical job over 14 days, linked to Job times. */
+export function TypicalJob({ jobTime }: { jobTime?: Stat }) {
+  return jobTime && jobTime.samples > 0 ? (
+    <Link
+      to="/job-times"
+      title={`Typical job · ${plural(jobTime.samples, "run")} in 14 days`}
+      className="truncate hover:text-foreground"
+    >
+      {medianText(jobTime)}
+    </Link>
+  ) : (
+    <NotReported />
+  );
+}
+
+/** The ⋯ menu: pause, sharing, labels, GitHub, remove and revoke. */
+export function MachineMenu({
+  machine,
+  view,
+  actions,
+  className,
+}: {
+  machine: Machine;
+  view: MachineView;
+  actions: MachineActions;
+  className?: string;
+}) {
+  const { isGithub, github, paused, canShare, sharing } = view;
+  const SharingIcon = SHARING_ICONS[sharing];
+  // The runner's group access, read from GitHub the first time its menu opens (several calls).
+  // undefined: not asked yet.
+  const [access, setAccess] = useState<string | null | undefined>(undefined);
+  function onMenuOpen(open: boolean) {
+    if (!open || !isGithub || access !== undefined) return;
+    setAccess(null);
+    machineAccess(machine.id).then(setAccess, () => setAccess(null));
+  }
+
+  async function copyLabels() {
+    try {
+      await navigator.clipboard.writeText((machine.labels ?? []).join(", "));
+    } catch {
+      // Clipboard can be blocked; the labels are also on GitHub and in relay.yml.
+    }
+  }
+
+  const githubUrl =
+    github?.org && github.runnerId
+      ? `${runnerSettingsUrl(github.org)}/${github.runnerId}`
+      : github?.org
+        ? runnerSettingsUrl(github.org)
+        : null;
+
+  return (
+    <DropdownMenu onOpenChange={onMenuOpen}>
+      <DropdownMenuTrigger asChild>
+        <Button
+          size="icon-sm"
+          variant="ghost"
+          className={cn("shrink-0 text-muted-foreground", className)}
+          aria-label={`More actions for ${machine.name}`}
+          disabled={actions.pending !== null}
+        >
+          <EllipsisIcon aria-hidden />
+        </Button>
+      </DropdownMenuTrigger>
+      <DropdownMenuContent align="end" className="w-60">
+        {(machine.owner || access) && (
+          <>
+            <DropdownMenuLabel className="grid font-normal text-muted-foreground">
+              {machine.owner && (
+                <span className="truncate">
+                  {isGithub ? `In ${machine.owner}` : `Connected by ${machine.owner}`}
+                </span>
+              )}
+              {access && <span className="truncate text-xs">{access}</span>}
+            </DropdownMenuLabel>
+            <DropdownMenuSeparator />
+          </>
+        )}
+        {/* Only a machine's owner pauses it (#318); the API says who can. */}
+        {machine.canRevoke === false ? null : paused ? (
+          <DropdownMenuItem onSelect={() => void actions.act("resume")}>
+            <PlayIcon aria-hidden />
+            Unpause
+          </DropdownMenuItem>
+        ) : (
+          <DropdownMenuItem onSelect={() => void actions.act("pause")}>
+            <PauseIcon aria-hidden />
+            <span className="grid">
+              <span>Pause</span>
+              <span className="text-xs text-muted-foreground">Stay connected, skip new jobs</span>
+            </span>
+          </DropdownMenuItem>
+        )}
+        {canShare && (
+          <DropdownMenuItem onSelect={() => actions.setSharingOpen(true)}>
+            <SharingIcon aria-hidden />
+            <span className="grid">
+              <span>Sharing…</span>
+              <span className="text-xs text-muted-foreground">{sharingLabel(sharing, true)}</span>
+            </span>
+          </DropdownMenuItem>
+        )}
+        {machine.labels && machine.labels.length > 0 && (
+          <DropdownMenuItem onSelect={() => void copyLabels()}>
+            <CopyIcon aria-hidden />
+            <span className="grid min-w-0">
+              <span>Copy labels</span>
+              <span className="truncate font-mono text-xs text-muted-foreground">
+                {machine.labels.join(", ")}
+              </span>
+            </span>
+          </DropdownMenuItem>
+        )}
+        {githubUrl && (
+          <DropdownMenuItem asChild>
+            <a href={githubUrl} target="_blank" rel="noreferrer">
+              <ExternalLinkIcon aria-hidden />
+              View on GitHub
+            </a>
+          </DropdownMenuItem>
+        )}
+        {/* The owner can take their machine out of just this workspace (#365); it can be
+            added back from Add runner, so there's no confirm step. */}
+        {canShare && (
+          <>
+            <DropdownMenuSeparator />
+            <DropdownMenuItem onSelect={() => void actions.act("remove")}>
+              <LogOutIcon aria-hidden />
+              <span className="grid">
+                <span>Remove from this workspace</span>
+                <span className="text-xs text-muted-foreground">
+                  Keeps running jobs in your other workspaces
+                </span>
+              </span>
+            </DropdownMenuItem>
+          </>
+        )}
+        {/* Only a machine's owner revokes it (#318); the API says which. */}
+        {machine.canRevoke !== false && (
+          <>
+            <DropdownMenuSeparator />
+            <DropdownMenuItem variant="destructive" onSelect={() => actions.setConfirming(true)}>
+              <BanIcon aria-hidden />
+              {isGithub ? (
+                <span className="grid">
+                  <span>Remove from RelayRunner…</span>
+                  <span className="text-xs text-muted-foreground">Stays registered on GitHub</span>
+                </span>
+              ) : (
+                "Revoke…"
+              )}
+            </DropdownMenuItem>
+          </>
+        )}
+      </DropdownMenuContent>
+    </DropdownMenu>
+  );
+}
+
+/** The sharing dialog, for the machine's owner. */
+export function MachineSharingDialog({
+  machine,
+  view,
+  actions,
+}: {
+  machine: Machine;
+  view: MachineView;
+  actions: MachineActions;
+}) {
+  if (!view.canShare) return null;
+  return (
+    <SharingDialog
+      machineId={machine.id}
+      machineName={machine.name}
+      sharing={view.sharing}
+      open={actions.sharingOpen}
+      onOpenChange={actions.setSharingOpen}
+    />
+  );
+}
+
+/** "Revoke" or "Remove", and its pending form. */
+export function revokeVerb(view: MachineView, pending: boolean) {
+  if (view.isGithub) return pending ? "Removing…" : "Remove";
+  return pending ? "Revoking…" : "Revoke";
+}
+
+export function MachineCard({
+  machine,
+  view = machineView(machine),
+  jobTime,
+  specs = false,
+  onRemovedFromWorkspace,
+}: {
+  machine: Machine;
+  /** Worked out by the caller when it already has it. */
+  view?: MachineView;
+  jobTime?: Stat;
+  /** Show the hardware and typical job. Off by default to keep the cards simple. */
+  specs?: boolean;
+  /** Called after the user takes their own machine out of this workspace. */
+  onRemovedFromWorkspace?: () => void;
+}) {
+  const actions = useMachineActions(machine, onRemovedFromWorkspace);
+  const { tone, label, detail, jobs, busy, isGithub, missing, platform, hardware, runners } = view;
+  const { pending, error } = actions;
+  const owner = <MachineOwner machine={machine} view={view} />;
+  const runs = <MachineRuns view={view} onChange={() => actions.setSharingOpen(true)} />;
 
   return (
     <Card
@@ -459,12 +722,7 @@ export function MachineCard({
     >
       <div className="grid min-w-0 gap-4 px-4 pt-3.5 pb-4">
         <div className="flex min-w-0 items-center gap-2.5">
-          <IconChip
-            icon={chip.icon}
-            label={chip.label}
-            status={CONNECTION[connection]}
-            session={!isGithub}
-          />
+          <MachineChip view={view} />
           <h3
             title={machine.name}
             className={cn(
@@ -474,116 +732,12 @@ export function MachineCard({
           >
             {machine.name}
           </h3>
-          <DropdownMenu onOpenChange={onMenuOpen}>
-            <DropdownMenuTrigger asChild>
-              <Button
-                size="icon-sm"
-                variant="ghost"
-                className="-my-1 -mr-2 shrink-0 text-muted-foreground opacity-100 group-focus-within/card:opacity-100 group-hover/card:opacity-100 data-[state=open]:opacity-100 [@media(hover:hover)]:opacity-0"
-                aria-label={`More actions for ${machine.name}`}
-                disabled={pending !== null}
-              >
-                <EllipsisIcon aria-hidden />
-              </Button>
-            </DropdownMenuTrigger>
-            <DropdownMenuContent align="end" className="w-60">
-              {(machine.owner || access) && (
-                <>
-                  <DropdownMenuLabel className="grid font-normal text-muted-foreground">
-                    {machine.owner && (
-                      <span className="truncate">
-                        {isGithub ? `In ${machine.owner}` : `Connected by ${machine.owner}`}
-                      </span>
-                    )}
-                    {access && <span className="truncate text-xs">{access}</span>}
-                  </DropdownMenuLabel>
-                  <DropdownMenuSeparator />
-                </>
-              )}
-              {/* Only a machine's owner pauses it (#318); the API says who can. */}
-              {machine.canRevoke === false ? null : paused ? (
-                <DropdownMenuItem onSelect={() => void act("resume")}>
-                  <PlayIcon aria-hidden />
-                  Unpause
-                </DropdownMenuItem>
-              ) : (
-                <DropdownMenuItem onSelect={() => void act("pause")}>
-                  <PauseIcon aria-hidden />
-                  <span className="grid">
-                    <span>Pause</span>
-                    <span className="text-xs text-muted-foreground">
-                      Stay connected, skip new jobs
-                    </span>
-                  </span>
-                </DropdownMenuItem>
-              )}
-              {canShare && (
-                <DropdownMenuItem onSelect={() => setSharingOpen(true)}>
-                  <SharingIcon aria-hidden />
-                  <span className="grid">
-                    <span>Sharing…</span>
-                    <span className="text-xs text-muted-foreground">
-                      {sharingLabel(sharing, true)}
-                    </span>
-                  </span>
-                </DropdownMenuItem>
-              )}
-              {machine.labels && machine.labels.length > 0 && (
-                <DropdownMenuItem onSelect={() => void copyLabels()}>
-                  <CopyIcon aria-hidden />
-                  <span className="grid min-w-0">
-                    <span>Copy labels</span>
-                    <span className="truncate font-mono text-xs text-muted-foreground">
-                      {machine.labels.join(", ")}
-                    </span>
-                  </span>
-                </DropdownMenuItem>
-              )}
-              {githubUrl && (
-                <DropdownMenuItem asChild>
-                  <a href={githubUrl} target="_blank" rel="noreferrer">
-                    <ExternalLinkIcon aria-hidden />
-                    View on GitHub
-                  </a>
-                </DropdownMenuItem>
-              )}
-              {/* The owner can take their machine out of just this workspace (#365); it can be
-                  added back from Add runner, so there's no confirm step. */}
-              {canShare && (
-                <>
-                  <DropdownMenuSeparator />
-                  <DropdownMenuItem onSelect={() => void act("remove")}>
-                    <LogOutIcon aria-hidden />
-                    <span className="grid">
-                      <span>Remove from this workspace</span>
-                      <span className="text-xs text-muted-foreground">
-                        Keeps running jobs in your other workspaces
-                      </span>
-                    </span>
-                  </DropdownMenuItem>
-                </>
-              )}
-              {/* Only a machine's owner revokes it (#318); the API says which. */}
-              {machine.canRevoke !== false && (
-                <>
-                  <DropdownMenuSeparator />
-                  <DropdownMenuItem variant="destructive" onSelect={() => setConfirming(true)}>
-                    <BanIcon aria-hidden />
-                    {isGithub ? (
-                      <span className="grid">
-                        <span>Remove from RelayRunner…</span>
-                        <span className="text-xs text-muted-foreground">
-                          Stays registered on GitHub
-                        </span>
-                      </span>
-                    ) : (
-                      "Revoke…"
-                    )}
-                  </DropdownMenuItem>
-                </>
-              )}
-            </DropdownMenuContent>
-          </DropdownMenu>
+          <MachineMenu
+            machine={machine}
+            view={view}
+            actions={actions}
+            className="-my-1 -mr-2 opacity-100 group-focus-within/card:opacity-100 group-hover/card:opacity-100 data-[state=open]:opacity-100 [@media(hover:hover)]:opacity-0"
+          />
         </div>
 
         {specs ? (
@@ -600,17 +754,7 @@ export function MachineCard({
                 {runners != null ? <Value>{runners}</Value> : <NotReported />}
               </Field>
               <Field label="Typical job">
-                {jobTime && jobTime.samples > 0 ? (
-                  <Link
-                    to="/job-times"
-                    title={`Typical job · ${plural(jobTime.samples, "run")} in 14 days`}
-                    className="truncate hover:text-foreground"
-                  >
-                    {medianText(jobTime)}
-                  </Link>
-                ) : (
-                  <NotReported />
-                )}
+                <TypicalJob jobTime={jobTime} />
               </Field>
             </dl>
             {/* Whose it is and whose jobs it takes (#243), apart from the hardware. */}
@@ -628,17 +772,9 @@ export function MachineCard({
         )}
         {error && <p className="text-xs text-destructive">{error}</p>}
       </div>
-      {canShare && (
-        <SharingDialog
-          machineId={machine.id}
-          machineName={machine.name}
-          sharing={sharing}
-          open={sharingOpen}
-          onOpenChange={setSharingOpen}
-        />
-      )}
+      <MachineSharingDialog machine={machine} view={view} actions={actions} />
 
-      {confirming ? (
+      {actions.confirming ? (
         <Band tone="missing">
           <span className="min-w-0 truncate text-foreground">
             {isGithub ? "Remove from RelayRunner?" : "Revoke this machine?"}
@@ -648,7 +784,7 @@ export function MachineCard({
               size="xs"
               variant="ghost"
               disabled={pending !== null}
-              onClick={() => setConfirming(false)}
+              onClick={() => actions.setConfirming(false)}
             >
               Cancel
             </Button>
@@ -656,15 +792,9 @@ export function MachineCard({
               size="xs"
               variant="destructive"
               disabled={pending !== null}
-              onClick={() => void act("revoke")}
+              onClick={() => void actions.act("revoke")}
             >
-              {pending === "revoke"
-                ? isGithub
-                  ? "Removing…"
-                  : "Revoking…"
-                : isGithub
-                  ? "Remove"
-                  : "Revoke"}
+              {revokeVerb(view, pending === "revoke")}
             </Button>
           </span>
         </Band>
@@ -676,33 +806,15 @@ export function MachineCard({
               variant="outline"
               className="-ml-1 shrink-0"
               disabled={pending !== null}
-              onClick={() => void act("resume")}
+              onClick={() => void actions.act("resume")}
             >
               {pending === "resume" ? "Unpausing…" : "Unpause"}
             </Button>
           ) : (
             <BandLabel tone={tone}>{label}</BandLabel>
           )}
-          {job ? (
-            <span className="flex min-w-0 items-center gap-2">
-              <a
-                href={job.url}
-                target="_blank"
-                rel="noreferrer"
-                title={`${job.repository} · ${job.name}`}
-                className="flex min-w-0 items-baseline gap-2 text-ink-2 hover:underline"
-              >
-                <span className="min-w-0 truncate">
-                  {job.repository} · {job.name}
-                </span>
-                {job.startedAt && (
-                  <span className="shrink-0 text-muted-foreground">{timeAgo(job.startedAt)}</span>
-                )}
-              </a>
-              {jobs.length > 1 && <MoreJobs jobs={jobs.slice(1)} />}
-            </span>
-          ) : busy ? (
-            <span className="min-w-0 truncate text-ink-2">Running a job</span>
+          {busy ? (
+            <MachineJobLink jobs={jobs} />
           ) : (
             <span className="min-w-0 truncate text-muted-foreground" title={detail ?? undefined}>
               {detail}
