@@ -1,9 +1,9 @@
 ---
-title: Free checks
-description: Checks RelayRunner answers itself, with no runner and no billed minutes.
+title: Optimized checks
+description: Simple checks that run with no runner and no billed minutes.
 ---
 
-Some checks don't need a runner at all. RelayRunner answers them directly, so they finish in seconds and never bill a minute. A job that would have run on `ubuntu-latest` for ten seconds still bills a whole minute on GitHub. A free check bills nothing.
+Simple checks like a PR title check or lint finish in seconds, but GitHub bills each job as a whole minute. An optimized check runs without a runner, so it uses no minutes.
 
 ## As a job
 
@@ -21,7 +21,7 @@ jobs:
       - uses: relayrunner/actions/checks/pr-title@v1
 ```
 
-Keep free checks in a job of their own. A job that mixes in other steps fails with the reason.
+Keep optimized checks in a job of their own. A job that mixes in other steps fails with the reason.
 
 Each check is also an ordinary action, so the same job works on `ubuntu-latest` or your own runner if you point it there.
 
@@ -50,4 +50,4 @@ This works for public repos too. See [Repo config](/docs/reference/repo-config).
 
 ## See what they saved
 
-The Usage page counts each free check as a job that would have billed at least a minute on `ubuntu-latest`. See [Usage and savings](/docs/dashboard/usage).
+The Usage page counts each optimized check as a job that would have billed at least a minute on `ubuntu-latest`. See [Usage and savings](/docs/dashboard/usage).

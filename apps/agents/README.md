@@ -23,18 +23,18 @@ This Worker holds no secrets and no state. It doesn't call GitHub or the Router:
 
 ## Tools
 
-| Tool               | What it reads                                                       |
-| ------------------ | ------------------------------------------------------------------- |
-| `list_workspaces`  | The workspaces this connection reads, by id and name                |
-| `get_workspace`    | One workspace, your role and its connected GitHub accounts          |
-| `list_runners`     | Runners, their status, labels, pause state and current job          |
-| `get_runner_order` | The providers jobs are tried on, in order                           |
-| `list_runs`        | Recent workflow runs, filterable by repository, status, conclusion  |
-| `get_run_jobs`     | One run's jobs and where each ran                                   |
-| `list_activity`    | The activity log, including where each job was routed and why       |
-| `get_usage`        | Short jobs and round-up cost, free check savings, Actions minutes   |
-| `get_job_times`    | Typical job durations per runner environment                        |
-| `send_feedback`    | Writes: reports a bug, confusing result or missing tool to the team |
+| Tool               | What it reads                                                          |
+| ------------------ | ---------------------------------------------------------------------- |
+| `list_workspaces`  | The workspaces this connection reads, by id and name                   |
+| `get_workspace`    | One workspace, your role and its connected GitHub accounts             |
+| `list_runners`     | Runners, their status, labels, pause state and current job             |
+| `get_runner_order` | The providers jobs are tried on, in order                              |
+| `list_runs`        | Recent workflow runs, filterable by repository, status, conclusion     |
+| `get_run_jobs`     | One run's jobs and where each ran                                      |
+| `list_activity`    | The activity log, including where each job was routed and why          |
+| `get_usage`        | Short jobs and round-up cost, optimized check savings, Actions minutes |
+| `get_job_times`    | Typical job durations per runner environment                           |
+| `send_feedback`    | Writes: reports a bug, confusing result or missing tool to the team    |
 
 ## Feedback
 

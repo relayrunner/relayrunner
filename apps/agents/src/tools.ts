@@ -197,7 +197,7 @@ export function registerTools(server: McpServer, request: WorkspaceApi, workspac
     {
       title: "Activity",
       description:
-        "The workspace's activity log, newest first: jobs (where RelayRunner routed each one, which providers it skipped and why), free checks, machines connecting, pausing or going offline, and member changes. Items are compact (type, time, repo, job, runner, conclusion, route step and skipped reasons); pass detail for urls, sha, who started each run and the route's label inputs. Page with before = the previous answer's nextBefore.",
+        "The workspace's activity log, newest first: jobs (where RelayRunner routed each one, which providers it skipped and why), optimized checks, machines connecting, pausing or going offline, and member changes. Items are compact (type, time, repo, job, runner, conclusion, route step and skipped reasons); pass detail for urls, sha, who started each run and the route's label inputs. Page with before = the previous answer's nextBefore.",
       inputSchema: {
         workspace: workspaceArg,
         filter: z.enum(ACTIVITY_FILTERS).optional().describe("Only one kind of event."),
@@ -226,7 +226,7 @@ export function registerTools(server: McpServer, request: WorkspaceApi, workspac
     {
       title: "Usage",
       description:
-        "What the workspace's CI used and saved: jobs under a minute and what GitHub's round-up to whole minutes cost, what free checks saved, and each connected GitHub account's Actions minutes this billing cycle.",
+        "What the workspace's CI used and saved: jobs under a minute and what GitHub's round-up to whole minutes cost, what optimized checks saved, and each connected GitHub account's Actions minutes this billing cycle.",
       inputSchema: { workspace: workspaceArg, days: days(90, 30) },
       annotations: READ_ONLY,
     },

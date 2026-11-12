@@ -11,13 +11,13 @@ For each connected GitHub account: minutes used this month against the plan's in
 
 ## Short jobs
 
-GitHub bills each job by the minute, rounded up, so a job that finishes in 5 seconds pays for a whole minute. The page shows, per repo, how many jobs finished in under a minute and what that round-up cost. These are good candidates for free checks or a machine.
+GitHub bills each job by the minute, rounded up, so a job that finishes in 5 seconds pays for a whole minute. The page shows, per repo, how many jobs finished in under a minute and what that round-up cost. These are good candidates for optimized checks or a machine.
 
 Estimates use GitHub's list prices for private repos. Standard runners in public repos and self-hosted runners are free.
 
-## Saved by free checks
+## Saved by optimized checks
 
-Each [free check](/docs/concepts/free-checks) counts as a job on `ubuntu-latest` that would have billed at least a minute.
+Each [optimized check](/docs/concepts/optimized-checks) counts as a job on `ubuntu-latest` that would have billed at least a minute.
 
 ## Providers
 
