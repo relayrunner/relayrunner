@@ -104,8 +104,26 @@ export function listMyMachines() {
   return api<{ machines: Machine[] }>("/machines/mine");
 }
 
+/**
+ * One of the signed-in user's own machines that isn't in this workspace, so they can add it.
+ * `workspaces` names where it does run jobs.
+ */
+export type OtherMachine = Pick<Machine, "id" | "name" | "os" | "arch" | "device"> & {
+  online: boolean;
+  sharing: "only_me" | "anyone";
+  workspaces: string[];
+};
+
 export function listMachines() {
-  return api<{ machines: Machine[] }>("/machines");
+  return api<{ machines: Machine[]; others?: OtherMachine[] }>("/machines");
+}
+
+/** Adds the user's own machines to the current workspace, so they take its jobs. */
+export function addMachinesToWorkspace(machineIds: string[]) {
+  return api<{ added: number }>("/machines/workspace", {
+    method: "POST",
+    body: JSON.stringify({ machineIds }),
+  });
 }
 
 /**
@@ -199,6 +217,13 @@ export function resumeMachine(id: string) {
 /** Revokes the machine's token. Its CLI has to run `relayrunner connect` again. */
 export function revokeMachine(id: string) {
   return api<{ machine: Machine }>(`/machines/${encodeURIComponent(id)}`, { method: "DELETE" });
+}
+
+/** Takes one of the user's own machines out of this workspace; it keeps its other workspaces. */
+export function removeMachineFromWorkspace(id: string) {
+  return api<{ removed: string }>(`/machines/${encodeURIComponent(id)}/workspace`, {
+    method: "DELETE",
+  });
 }
 
 /** GET /api/auth/device: a device code's state. Opening it also ties it to the signed-in user. */

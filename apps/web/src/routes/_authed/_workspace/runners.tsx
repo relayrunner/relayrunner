@@ -22,6 +22,7 @@ import { SectionBoundary } from "@/components/error-boundary";
 import { PageHeader } from "@/components/page-header";
 import { GithubIcon } from "@/components/provider-logos";
 import { providerOf } from "@/components/providers";
+import { OtherMachinesBanner, OtherMachinesDialog } from "@/components/other-machines";
 import { CloudProviderCard, FoundCard, MachineCard } from "@/components/runner-card";
 import { Button } from "@/components/ui/button";
 import { TooltipProvider } from "@/components/ui/tooltip";
@@ -57,14 +58,15 @@ const SHOW_SPECS_KEY = "relayrunner:runners:show-specs";
 export const Route = createFileRoute("/_authed/_workspace/runners")({
   loader: async ({ context }) => {
     try {
-      const [order, { machines }] = await Promise.all([
+      const [order, { machines, others = [] }] = await Promise.all([
         getRunnerOrder(context.current.workspace.id),
         listMachines(),
       ]);
-      return { ...order, machines };
+      return { ...order, machines, others };
     } catch (error) {
       // The dev preview has no API behind it.
-      if (authDisabled) return { order: DEFAULT_RUNNER_ORDER, isDefault: true, machines: [] };
+      if (authDisabled)
+        return { order: DEFAULT_RUNNER_ORDER, isDefault: true, machines: [], others: [] };
       throw error;
     }
   },
@@ -80,11 +82,16 @@ function RunnersPage() {
   // Only the machines list is refetched: invalidating the route would also re-run the session,
   // workspace and runner order loads on every tick.
   const [allMachines, setAllMachines] = useState(loaded.machines);
+  const [others, setOthers] = useState(loaded.others);
   useEffect(() => setAllMachines(loaded.machines), [loaded.machines]);
+  useEffect(() => setOthers(loaded.others), [loaded.others]);
   useLiveRefresh(
     () =>
       listMachines()
-        .then((result) => setAllMachines(result.machines))
+        .then((result) => {
+          setAllMachines(result.machines);
+          setOthers(result.others ?? []);
+        })
         .catch(() => undefined), // Keep showing the last answer; the next tick retries.
     { intervalMs: REFRESH_MS, enabled: !authDisabled },
   );
@@ -150,10 +157,34 @@ function RunnersPage() {
       live = false;
     };
   }, []);
+  // The user's own machines that don't take this workspace's jobs (a workspace joined through
+  // GitHub starts with none). The banner can be dismissed per workspace; Add runner still has it.
+  const othersKey = `relayrunner:runners:others-dismissed:${workspaceId}`;
+  const [othersOpen, setOthersOpen] = useState(false);
+  const [othersDismissed, setOthersDismissed] = useState(() => readFlag(othersKey));
+  useEffect(() => setOthersDismissed(readFlag(othersKey)), [othersKey]);
+
+  // Also called when the user takes a machine out of this workspace: the banner would otherwise
+  // come straight back about the machine they just removed.
+  function dismissOthers() {
+    saveFlag(othersKey, true);
+    setOthersDismissed(true);
+  }
+
   function dismissFound() {
     dismissedFound.add(workspaceId);
     setDismissed(true);
   }
+
+  const othersDialog = (
+    <OtherMachinesDialog
+      open={othersOpen}
+      onOpenChange={setOthersOpen}
+      workspace={current.workspace.name}
+      others={others}
+      onAdded={() => router.invalidate()}
+    />
+  );
 
   const dialog = (
     <GithubRunnersDialog
@@ -172,14 +203,30 @@ function RunnersPage() {
   return (
     <section>
       {dialog}
+      {othersDialog}
       <PageHeader
         title="Runners"
-        action={empty ? undefined : <AddRunner onAddExisting={() => setGithubOpen(true)} />}
+        action={
+          empty && others.length === 0 ? undefined : (
+            <AddRunner
+              onAddExisting={() => setGithubOpen(true)}
+              onAddMine={others.length > 0 ? () => setOthersOpen(true) : undefined}
+            />
+          )
+        }
       >
         Self-hosted and cloud runners for your jobs.
       </PageHeader>
       <TooltipProvider>
         <div className="grid max-w-5xl gap-8">
+          {!othersDismissed && (
+            <OtherMachinesBanner
+              workspace={current.workspace.name}
+              others={others}
+              onChoose={() => setOthersOpen(true)}
+              onDismiss={dismissOthers}
+            />
+          )}
           {empty ? (
             <RunnerGroup title="Self-hosted" bare>
               <ConnectLanding
@@ -234,7 +281,12 @@ function RunnersPage() {
               )}
               {shown.map((machine) => (
                 <li key={machine.id} className="grid min-w-0">
-                  <MachineCard machine={machine} jobTime={jobTimes[machine.id]} specs={showSpecs} />
+                  <MachineCard
+                    machine={machine}
+                    jobTime={jobTimes[machine.id]}
+                    specs={showSpecs}
+                    onRemovedFromWorkspace={dismissOthers}
+                  />
                 </li>
               ))}
               {found && found.count > 0 && !dismissed && (

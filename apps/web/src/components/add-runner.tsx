@@ -40,7 +40,14 @@ export const CONNECT_COMMAND = "npx relayrunner connect";
  * machine connected with the CLI, and remote machines later. The page owns the GitHub dialog, so
  * its "found runners" banner can open it too.
  */
-export function AddRunner({ onAddExisting }: { onAddExisting: () => void }) {
+export function AddRunner({
+  onAddExisting,
+  onAddMine,
+}: {
+  onAddExisting: () => void;
+  /** Opens the dialog of the user's own machines not in this workspace; left out when none. */
+  onAddMine?: () => void;
+}) {
   const [localOpen, setLocalOpen] = useState(false);
   return (
     <>
@@ -53,6 +60,17 @@ export function AddRunner({ onAddExisting }: { onAddExisting: () => void }) {
           </Button>
         </DropdownMenuTrigger>
         <DropdownMenuContent align="end" className="w-72">
+          {onAddMine && (
+            <DropdownMenuItem onSelect={onAddMine} className="items-start">
+              <LaptopIcon className="mt-0.5" />
+              <span className="grid gap-0.5">
+                <span>Your other machines</span>
+                <span className="text-xs text-muted-foreground">
+                  Already connected, not in this workspace yet.
+                </span>
+              </span>
+            </DropdownMenuItem>
+          )}
           <DropdownMenuItem onSelect={onAddExisting} className="items-start">
             <GithubIcon className="mt-0.5" />
             <span className="grid gap-0.5">
