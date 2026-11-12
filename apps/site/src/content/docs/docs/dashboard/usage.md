@@ -1,6 +1,6 @@
 ---
 title: Usage and savings
-description: Minutes, cost estimates, and what RelayRunner saved.
+description: Minutes, cost estimates, and what optimized checks saved.
 ---
 
 The **Usage** page covers every job in your connected repos, whichever runner took it.

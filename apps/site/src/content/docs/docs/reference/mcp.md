@@ -3,7 +3,7 @@ title: MCP server
 description: Let AI agents read your workspace's runners, runs and usage.
 ---
 
-RelayRunner has an MCP server, so an agent can answer questions like "why did my last push run on GitHub?" or "which jobs cost the most this month?" without you opening the dashboard. It's read-only, apart from sending feedback.
+The MCP server lets an agent answer questions like "why did my last push run on GitHub?" or "which jobs cost the most this month?" without you opening the dashboard. It's read-only, apart from sending feedback.
 
 ```text
 https://agents.relayrunner.app/mcp

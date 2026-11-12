@@ -52,4 +52,4 @@ Give one input per provider the job may use. A provider you leave out is never u
 
 - **One relay per job.** Jobs that share one relay's output won't all run. Give each job its own relay.
 - **It shows as `relay-<job> / RelayRunner`** in the workflow run, and finishes in about a second.
-- **No minutes.** RelayRunner answers the relay itself on `runs-on: relayrunner`. Don't give any runner of your own the `relayrunner` label, or it may take relays instead.
+- **No minutes.** The relay runs on `runs-on: relayrunner`, which needs no runner. Don't give any runner of your own the `relayrunner` label, or it may take relays instead.

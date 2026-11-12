@@ -5,7 +5,7 @@ sidebar:
   label: Team machines
 ---
 
-Most teams have computers sitting idle: a Mac mini in the office, a workstation that's off-hours half the day, last year's laptop. RelayRunner pools them, so anyone's jobs can run on whichever one is free.
+Most teams have computers sitting idle: a Mac mini in the office, a workstation that's off-hours half the day, last year's laptop. Pool them, and anyone's jobs can run on whichever one is free.
 
 ## 1. Bring the team in
 
@@ -29,7 +29,7 @@ So the person who connects a shared machine should have access to every repo you
 
 ## 4. How jobs are spread
 
-RelayRunner sends each job to an idle machine. The machines of the person who started the job come first, then whichever one was picked least recently, so work spreads across the pool.
+Each job goes to an idle machine. The machines of the person who started the job come first, then whichever one was picked least recently, so work spreads across the pool.
 
 ## Personal laptops in the pool
 

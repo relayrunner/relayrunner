@@ -9,16 +9,16 @@ Your workflows stay the same. Checks keep their names, logs stay in GitHub, and 
 
 ## Why use it
 
-- **Your minutes ran out.** Coding agents push all day, and a plan's included minutes are gone before the month is. Send jobs to a machine you already own first, and keep GitHub as the fallback.
+- **Your minutes ran out.** Coding agents push all day and use up a plan's included minutes early in the month. Send jobs to a machine you already own first, and keep GitHub as the fallback.
 - **Your bill spiked.** Use your included minutes, then switch to your own machines before you pay overage.
 - **macOS builds cost 10x.** Run them on the Mac on your desk, and fall back to hosted Macs when it's asleep.
-- **One spare machine isn't enough.** A home server or old laptop is free but becomes a queue. RelayRunner only sends it a job when it's idle and hands the rest to hosted runners.
+- **One spare machine isn't enough.** A home server or old laptop is free, but jobs queue behind each other. It only gets a job when it's idle, and the rest go to hosted runners.
 
 ## How it fits together
 
 - **Workspace.** Your team in RelayRunner. It connects one or more GitHub organizations or personal accounts through the RelayRunner GitHub App.
 - **Runners.** Where jobs can run: machines you connect with the CLI, self-hosted runners you already have, hosted providers and GitHub-hosted runners. See [Providers](/docs/runners/providers).
-- **Relay job.** A small job you add in front of each job you want routed. It names the runners that job may use. RelayRunner answers it in about a second, with no runner and no billed minutes. See [Routing](/docs/concepts/routing).
+- **Relay job.** A small job you add in front of each job you want routed. It names the runners that job may use and finishes in about a second, with no runner and no billed minutes. See [Routing](/docs/concepts/routing).
 - **Runner order.** The order the workspace tries runners in, set on the dashboard's Router page. See [Runner order](/docs/concepts/runner-order).
 
 ```yaml
@@ -42,4 +42,4 @@ Each job on a machine gets a fresh one-job runner, so nothing is left behind bet
 ## Next
 
 - [Quickstart](/docs/get-started/quickstart): a green job on your own machine in a few minutes.
-- [Principles](/docs/concepts/principles): the rules RelayRunner routes by.
+- [Principles](/docs/concepts/principles): the rules routing follows.
