@@ -8,6 +8,7 @@ import {
   debugLog,
   dockerfile,
   isolatedLauncher,
+  isolationAvailable,
   jobImage,
   NO_LOG,
   prepareIsolation,
@@ -113,6 +114,21 @@ describe("the job image", () => {
     expect(jobImage("runner:1")).toBe(jobImage("runner:1"));
     expect(jobImage("runner:1")).not.toBe(jobImage("runner:2"));
     expect(dockerfile("runner:1")).toMatch(/^FROM runner:1\n/);
+  });
+});
+
+describe("isolationAvailable", () => {
+  it("is true only on a supported Mac with the container tool installed", async () => {
+    const dir = mkdtempSync(join(tmpdir(), "rr-available-"));
+    try {
+      const command = join(dir, "container");
+      writeFileSync(command, "#!/bin/sh\nexit 0\n", { mode: 0o755 });
+      expect(await isolationAvailable(command, null)).toBe(true);
+      expect(await isolationAvailable(command, "needs a Mac")).toBe(false);
+      expect(await isolationAvailable(join(dir, "missing"), null)).toBe(false);
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
   });
 });
 

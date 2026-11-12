@@ -16,7 +16,13 @@ import { initCommand, offerSetup } from "./init.ts";
 import { defaultMachineName } from "./machine-name.ts";
 import { ensureRunner, RunnerError, runnerPlatform } from "./install.ts";
 import { normalizeServer } from "./server.ts";
-import { debugLog, isolatedLauncher, prepareIsolation, unsupportedReason } from "./isolated.ts";
+import {
+  debugLog,
+  isolatedLauncher,
+  isolationAvailable,
+  prepareIsolation,
+  unsupportedReason,
+} from "./isolated.ts";
 import { hostLauncher, prefixLines, runJob, type Launcher } from "./job.ts";
 import { startLive } from "./live.ts";
 import { CHECK_INTERVAL_MS, checkForUpdate, updateNotice } from "./update-check.ts";
@@ -174,9 +180,11 @@ async function connectMachine(args: {
     runnerVersion = isolation.runnerVersion;
     launchers = Array<Launcher>(slots).fill(isolatedLauncher(isolation));
   } else {
-    const runner = await ensureRunner({ log });
+    const [runner, canIsolate] = await Promise.all([ensureRunner({ log }), isolationAvailable()]);
     runnerVersion = runner.version;
     launchers = ensureSlots(runner, slots, log).map(hostLauncher);
+    if (canIsolate)
+      log("This Mac can run each job in its own Linux VM, away from your files. Add --isolated.");
   }
   clack.log.info(
     slots === 1

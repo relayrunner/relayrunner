@@ -51,6 +51,12 @@ export function unsupportedReason(system = platform(), chip = arch(), darwin = r
   return null;
 }
 
+// Whether this Mac could run `--isolated` right now: it's supported and Apple's container tool is
+// installed. `connect` suggests the flag then.
+export async function isolationAvailable(command = "container", reason = unsupportedReason()) {
+  return reason === null && (await call(command, ["--version"], NO_LOG, true)) === 0;
+}
+
 export interface DebugLog {
   path: string;
   write: (text: string) => void;
