@@ -172,12 +172,17 @@ const GH_KEYRING = "/usr/share/keyrings/githubcli-archive-keyring.gpg";
 // can't start without. An image given with --image keeps the tools it came with.
 export function dockerfile(base: string, tools = true) {
   // Node is the newest one the runner ships for its own actions, put on the PATH with its npm.
+  // Global installs and `corepack enable` go to /usr/local, which the job's user may write, so
+  // their commands are on the PATH and the runner's own Node stays as it shipped.
   const install = `RUN curl -fsSL https://cli.github.com/packages/githubcli-archive-keyring.gpg -o ${GH_KEYRING} \\
   && echo "deb [arch=$(dpkg --print-architecture) signed-by=${GH_KEYRING}] https://cli.github.com/packages stable main" > /etc/apt/sources.list.d/github-cli.list \\
   && apt-get update && apt-get install -y --no-install-recommends ${TOOLS} \\
   && apt-get clean && rm -rf /var/lib/apt/lists/*
 RUN node=$(ls -d /home/runner/externals/node[0-9]* 2>/dev/null | sort -V | tail -n 1) \\
-  && { [ -z "$node" ] || ln -sf "$node"/bin/* /usr/local/bin/; }
+  && { [ -z "$node" ] || { ln -sf "$node"/bin/* /usr/local/bin/ \\
+    && echo prefix=/usr/local > "$node"/lib/node_modules/npm/npmrc \\
+    && mkdir -p /usr/local/lib/node_modules \\
+    && chown runner /usr/local/bin /usr/local/lib/node_modules; }; }
 `;
   return `FROM ${base}
 USER root

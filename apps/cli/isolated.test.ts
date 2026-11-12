@@ -127,6 +127,8 @@ describe("the job image", () => {
     expect(dockerfile("runner:1")).toContain("docker-compose-v2");
     expect(dockerfile("runner:1")).toContain("--no-install-recommends");
     expect(dockerfile("runner:1")).toContain("/home/runner/externals/node[0-9]*");
+    expect(dockerfile("runner:1")).toContain("prefix=/usr/local");
+    expect(dockerfile("runner:1")).toContain("chown runner /usr/local/bin");
     expect(dockerfile("runner:1", false)).not.toContain("build-essential");
     expect(dockerfile("runner:1", false)).toContain("iptables nftables");
     expect(dockerfile("runner:1", false)).toContain("COPY --chmod=755 start.sh");
