@@ -30,7 +30,8 @@ import { loadProviderCatalog } from "@/lib/provider-catalog";
 import { isOperator } from "@/lib/roles";
 import { readFlag, saveFlag } from "@/lib/stored-flag";
 import { cn } from "@/lib/utils";
-import { ensureActiveWorkspace, getCurrentWorkspace, type CurrentWorkspace } from "@/lib/workspace";
+import { cachedWorkspace, ensureActiveWorkspace } from "@/lib/session";
+import type { CurrentWorkspace } from "@/lib/workspace";
 
 const devWorkspace: CurrentWorkspace = {
   workspace: {
@@ -49,20 +50,25 @@ const devWorkspace: CurrentWorkspace = {
 export const Route = createFileRoute("/_authed/_workspace")({
   beforeLoad: async ({ context, location }) => {
     if (authDisabled || !context.session) return { current: devWorkspace };
-    if (!(await ensureActiveWorkspace(context.session))) {
+    const workspaceId = await ensureActiveWorkspace(context.session);
+    if (!workspaceId) {
       // Keep GitHub's word on the way, such as an install request waiting on an org owner.
       const { github } = location.search as { github?: unknown };
       throw redirect({ to: "/welcome", search: isGitHubOutcome(github) ? { github } : {} });
     }
     try {
       // Pages name providers synchronously from the catalog, so it's loaded before any renders.
-      const [current] = await Promise.all([getCurrentWorkspace(), loadProviderCatalog()]);
+      // Both are read once and kept (lib/session.ts), so later navigations don't wait on them.
+      const [current] = await Promise.all([cachedWorkspace(workspaceId), loadProviderCatalog()]);
       return { current };
     } catch {
       // The active workspace is gone or no longer ours.
       throw redirect({ to: "/welcome" });
     }
   },
+  // The first page load shows nothing until the guards are done, rather than a page skeleton
+  // without the app around it. Later navigations reuse their answer, so only the page is pending.
+  pendingMs: Infinity,
   component: WorkspaceLayout,
 });
 

@@ -20,7 +20,8 @@ import {
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
-import { authDisabled, organization, signOut, useListOrganizations } from "@/lib/auth-client";
+import { authDisabled, organization, useListOrganizations } from "@/lib/auth-client";
+import { signOut } from "@/lib/session";
 import { githubInstallHref } from "@/lib/github";
 import { setTheme, useTheme, type Theme } from "@/lib/theme";
 import { cn } from "@/lib/utils";
@@ -44,6 +45,10 @@ export function WorkspaceMenu({
 }) {
   const router = useRouter();
   const [switching, setSwitching] = useState(false);
+  // Read when the sidebar renders rather than when the menu opens, so the list is there by the
+  // time someone clicks.
+  const { data } = useListOrganizations();
+  const workspaces = authDisabled ? devWorkspaces : (data ?? []);
 
   async function switchTo(id: string) {
     if (id === workspace.id) return;
@@ -98,7 +103,7 @@ export function WorkspaceMenu({
             <DropdownMenuSeparator />
           </>
         )}
-        <WorkspaceList current={workspace.id} onSelect={switchTo} />
+        <WorkspaceList workspaces={workspaces} current={workspace.id} onSelect={switchTo} />
         <DropdownMenuGroup>
           <DropdownMenuItem asChild>
             <Link to="/settings/general">
@@ -179,9 +184,15 @@ function ThemePicker() {
  * organization", which installs the App somewhere new. With one workspace there is nothing to
  * switch to, so only "Add an organization" shows.
  */
-function WorkspaceList({ current, onSelect }: { current: string; onSelect: (id: string) => void }) {
-  const { data } = useListOrganizations();
-  const workspaces = authDisabled ? devWorkspaces : (data ?? []);
+function WorkspaceList({
+  workspaces,
+  current,
+  onSelect,
+}: {
+  workspaces: { id: string; name: string; logo?: string | null }[];
+  current: string;
+  onSelect: (id: string) => void;
+}) {
   return (
     <>
       <DropdownMenuGroup>

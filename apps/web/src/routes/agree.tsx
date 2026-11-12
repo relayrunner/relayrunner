@@ -5,7 +5,8 @@ import { BrandedPage } from "@/components/agent-sign-in";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { errorText } from "@/lib/api";
-import { authDisabled, getSession, signOut } from "@/lib/auth-client";
+import { authDisabled, getSession } from "@/lib/auth-client";
+import { signOut } from "@/lib/session";
 import { agreeToLegal, LEGAL_LINKS } from "@/lib/legal";
 
 type AgreeSearch = { redirect?: string };

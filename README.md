@@ -94,3 +94,7 @@ The webhooks Worker has none: its secrets live in the Secrets Store (see [`apps/
 ## Contributing
 
 Commit messages and pull request titles use [Conventional Commits](https://www.conventionalcommits.org/), such as `feat(api): add runner order rules`. [AGENTS.md](AGENTS.md) has the full conventions, which apply to people and coding agents alike.
+
+## License
+
+RelayRunner is licensed under the [Apache License 2.0](LICENSE).

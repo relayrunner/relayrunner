@@ -12,10 +12,12 @@ macOS minutes on GitHub cost about ten times Linux minutes, so iOS and Mac build
 On the Mac:
 
 ```sh
-npx relayrunner connect
+npx relayrunner connect --macos
 ```
 
-Leave it running. A Mac mini that stays on makes a good dedicated runner; set it to not sleep in System Settings. Don't add `--isolated` by itself here: isolated jobs run on Linux, and these builds need macOS. `--isolated --macos` takes both.
+`--macos` matters on a Mac with Apple silicon, which otherwise runs its jobs in Linux VMs. With it, macOS jobs run on the Mac itself, where Xcode is, and Linux jobs still run in VMs.
+
+Leave it running. A Mac mini that stays on makes a good dedicated runner; set it to not sleep in System Settings.
 
 ## 2. Route the macOS jobs
 

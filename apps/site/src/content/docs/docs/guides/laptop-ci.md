@@ -49,6 +49,6 @@ A new machine only runs jobs you started, so a teammate's push or a bot never la
 
 ## Linux jobs on a Mac
 
-Most Node, Python, Go or Rust jobs run fine on macOS. Jobs that install Linux packages with `apt`, or use `services:` or `container:`, need Linux or Docker. `init` warns about these. Give them `machine: Linux` instead, or leave them on GitHub.
+On a Mac with Apple silicon, each job runs in its own Linux VM, so jobs written for `ubuntu-latest` run as they are: `apt`, `services:` and `container:` all work, and the job can't read your files. See [Isolated jobs on a Mac](/docs/runners/self-hosted#isolated-jobs-on-a-mac).
 
-On a Mac with Apple silicon you can also run `connect --isolated`. Each job then runs in its own Linux VM, so `apt` and Docker work and the job can't read your files. It's experimental. See [Isolated jobs on a Mac](/docs/runners/self-hosted#isolated-jobs-on-a-mac).
+On an Intel Mac, jobs run on macOS. Most Node, Python, Go or Rust jobs run fine there. Jobs that install Linux packages with `apt`, or use `services:` or `container:`, need Linux or Docker. `init` warns about these. Give them `machine: Linux` instead, or leave them on GitHub.

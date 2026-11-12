@@ -25,21 +25,30 @@ export const authClient = createAuthClient({
   ],
 });
 
-export const { useSession, signIn, signOut, organization, useListOrganizations } = authClient;
+export const { useSession, signIn, organization, useListOrganizations } = authClient;
 
 export type Session = typeof authClient.$Infer.Session;
 
 /** Dev-only escape hatch so pages render before the API exists. */
 export const authDisabled = import.meta.env.DEV && import.meta.env.VITE_AUTH_DISABLED === "true";
 
-/** Resolves the current session for route guards; null when signed out. */
+/** Resolves the current session; null when signed out, or when it can't be read. */
 export async function getSession(): Promise<Session | null> {
-  let session: Session | null = null;
+  return (await readSession()) ?? null;
+}
+
+/**
+ * The current session, null when signed out, or undefined when it couldn't be read (offline, or
+ * the API erred), so a background check can tell "signed out" from "couldn't tell".
+ */
+export async function readSession(): Promise<Session | null | undefined> {
+  let session: Session | null;
   try {
-    const { data } = await authClient.getSession();
+    const { data, error } = await authClient.getSession();
+    if (error) return undefined;
     session = data ?? null;
   } catch {
-    // Treated as signed out.
+    return undefined;
   }
   rememberSignedIn(Boolean(session));
   return session;
@@ -49,7 +58,7 @@ export async function getSession(): Promise<Session | null> {
  * The homepage (apps/site, on the parent domain) swaps its header's Sign in for Open dashboard when
  * this cookie is set. The session cookie itself is HttpOnly and scoped to the dashboard's host, so
  * the site can't see it. This one holds no secret: it's only a hint, and a stale one just sends
- * someone to the sign-in page. Every route guard calls getSession, so signing out clears it too.
+ * someone to the sign-in page. Every session read sets or clears it, so signing out clears it too.
  */
 const SIGNED_IN_COOKIE = "rr_signed_in";
 
