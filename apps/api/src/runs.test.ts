@@ -315,9 +315,11 @@ describe("workflow times and the job list", () => {
     expect(ci?.wall).toMatchObject({ runs: 6, successes: 5, samples: 5, medianMs: 65_000 });
   });
 
-  test("lists finished jobs newest first, picks left out", async () => {
+  test("lists finished jobs newest first, picks and other workspaces left out", async () => {
     const { cookie, installationId } = await connectedWorkspace();
+    const other = await connectedWorkspace();
     await insert([
+      timing(other.installationId, 10, { name: "theirs", hoursAgo: 2 }),
       timing(installationId, 10, { name: "older", hoursAgo: 3 }),
       timing(installationId, 10, { name: "newer", hoursAgo: 1 }),
       timing(installationId, 2, { name: "pick", labels: ["relayrunner"] }),
