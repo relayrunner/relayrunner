@@ -50,7 +50,6 @@ import {
 } from "../machines.ts";
 import type { Env } from "../env.ts";
 import { sendEmail } from "../email.ts";
-import { wantsEmail } from "../notifications.ts";
 import { inBackground, requireUser } from "../middleware/session.ts";
 import { requireWorkspace } from "../middleware/workspace.ts";
 import { canControlMachine, requireManager } from "../roles.ts";
@@ -253,24 +252,19 @@ export const machineRoutes = new Hono<AppEnv>()
 
     // Notice to whoever approved the machine: its token can run their workspaces' jobs. They can
     // turn it off in Account settings.
-    const notice = async () => {
-      if (!(await wantsEmail(db, c.var.user!.id, "machine-connected"))) return;
-      await sendEmail(c.env, {
-        to: c.var.user!.email,
-        template: "machine-connected",
-        context: {
-          machineName: machine.name,
-          os: machine.os,
-          arch: machine.arch,
-          workspaceNames: workspaces.map((w) => w.name),
-          connectedAt: new Date(),
-        },
-      });
-    };
-    await inBackground(
-      c,
-      notice().catch(() => {}),
-    );
+    const notice = sendEmail(c.env, {
+      to: c.var.user!.email,
+      userId: c.var.user!.id,
+      template: "machine-connected",
+      context: {
+        machineName: machine.name,
+        os: machine.os,
+        arch: machine.arch,
+        workspaceNames: workspaces.map((w) => w.name),
+        connectedAt: new Date(),
+      },
+    });
+    await inBackground(c, notice);
     // memberCount tells the CLI whether to ask who can run jobs here (#244): alone in every
     // workspace, there's nobody else's jobs to take. `workspace` is for CLI 0.5.0, which reads
     // only that one; `workspaces` is every workspace the machine is now in.

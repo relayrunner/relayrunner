@@ -4,8 +4,8 @@
  * always send: the welcome email (sent once, before anyone could choose) and a machine taken over
  * (it's how you learn someone else has your machine's token).
  */
-import { and, eq } from "drizzle-orm";
-import { createDb, schema, type Db } from "./db/index.ts";
+import { and, eq, isNull, or } from "drizzle-orm";
+import { schema, type Db } from "./db/index.ts";
 import { isOperator } from "./roles.ts";
 
 export const NOTIFICATION_TYPES = {
@@ -34,7 +34,11 @@ export function notificationTypesFor(user: { role?: string | null }) {
 /** Each type the user can choose, and whether it's on. */
 export async function notificationSettings(db: Db, user: { id: string; role?: string | null }) {
   const off = await turnedOff(db, user.id);
-  return notificationTypesFor(user).map((type) => ({ type, enabled: !off.has(type) }));
+  return notificationTypesFor(user).map((type) => ({
+    type,
+    operator: NOTIFICATION_TYPES[type].operator,
+    enabled: !off.has(type),
+  }));
 }
 
 export async function setNotification(
@@ -55,32 +59,31 @@ export async function setNotification(
 
 /** Whether the user wants this email. Defaults to yes. */
 export async function wantsEmail(db: Db, userId: string, type: NotificationType) {
-  const [row] = await db
-    .select({ enabled: schema.notificationSetting.enabled })
-    .from(schema.notificationSetting)
-    .where(
-      and(eq(schema.notificationSetting.userId, userId), eq(schema.notificationSetting.type, type)),
-    )
-    .limit(1);
-  return row?.enabled ?? true;
+  return !(await turnedOff(db, userId)).has(type);
 }
 
-/** Email addresses of the operators who want this alert. */
-export async function operatorRecipients(d1: D1Database, type: NotificationType) {
-  const db = createDb(d1);
-  const operators = await db
-    .select({ id: schema.user.id, email: schema.user.email })
+/** Email addresses of the operators who haven't turned this alert off. */
+export async function operatorRecipients(db: Db, type: NotificationType) {
+  const rows = await db
+    .select({ email: schema.user.email })
     .from(schema.user)
-    .where(eq(schema.user.role, "operator"));
-  if (!operators.length) return [];
-  const off = await db
-    .select({ userId: schema.notificationSetting.userId })
-    .from(schema.notificationSetting)
+    .leftJoin(
+      schema.notificationSetting,
+      and(
+        eq(schema.notificationSetting.userId, schema.user.id),
+        eq(schema.notificationSetting.type, type),
+      ),
+    )
     .where(
-      and(eq(schema.notificationSetting.type, type), eq(schema.notificationSetting.enabled, false)),
+      and(
+        eq(schema.user.role, "operator"),
+        or(
+          isNull(schema.notificationSetting.enabled),
+          eq(schema.notificationSetting.enabled, true),
+        ),
+      ),
     );
-  const optedOut = new Set(off.map((row) => row.userId));
-  return operators.filter((op) => !optedOut.has(op.id)).map((op) => op.email);
+  return rows.map((row) => row.email);
 }
 
 async function turnedOff(db: Db, userId: string) {

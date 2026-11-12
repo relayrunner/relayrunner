@@ -388,7 +388,7 @@ export async function recordMachineEvents(
     await recordEvent(db, { ...event, workspaceId } as NewActivityEvent);
 }
 
-type DistributiveOmit<T, K extends PropertyKey> = T extends unknown ? Omit<T, K> : never;
+export type DistributiveOmit<T, K extends PropertyKey> = T extends unknown ? Omit<T, K> : never;
 
 /**
  * What the dashboard and the CLI see of a machine. Never includes the token hash. `pausedBy` is

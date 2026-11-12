@@ -16,7 +16,9 @@ import {
 } from "@relayrunner/email";
 import { providerName, rateText } from "@relayrunner/providers";
 import type { Env } from "./env.ts";
-import { operatorRecipients } from "./notifications.ts";
+import { createDb } from "./db/index.ts";
+import type { DistributiveOmit } from "./machines.ts";
+import { isNotificationType, operatorRecipients, wantsEmail } from "./notifications.ts";
 
 // send.relayrunner.app is the domain onboarded for Email Sending. Keep EMAIL_FROM inside the
 // binding's allowed_sender_addresses in wrangler.jsonc.
@@ -59,7 +61,11 @@ export type EmailArgs = (
       template: "feedback";
       context: Parameters<typeof renderFeedbackEmail>[0];
     }
-) & { replyTo?: string };
+) & {
+  replyTo?: string;
+  /** The recipient's user id. Set it and the email skips anyone who turned this type off. */
+  userId?: string;
+};
 
 /** Where links in emails point: the dashboard people actually use, not the OAuth callback host. */
 export function dashboardUrl(env: Pick<Env, "DASHBOARD_URL" | "BETTER_AUTH_URL">) {
@@ -103,6 +109,11 @@ function render(env: Env, args: EmailArgs): RenderedEmail {
 }
 
 export async function sendEmail(env: Env, args: EmailArgs): Promise<void> {
+  if (args.userId && isNotificationType(args.template)) {
+    // If the setting can't be read, send: a missed notice is worse than an unwanted one.
+    const wanted = await wantsEmail(createDb(env.DB), args.userId, args.template).catch(() => true);
+    if (!wanted) return;
+  }
   let rendered: RenderedEmail;
   try {
     rendered = render(env, args);
@@ -140,25 +151,25 @@ function message(error: unknown) {
   return error instanceof Error ? error.message : String(error);
 }
 
-type OperatorTemplate = "feedback" | "dead-letter-alert" | "price-check";
-type OperatorEmail = Extract<EmailArgs, { template: OperatorTemplate }>;
+type OperatorEmail = Extract<
+  EmailArgs,
+  { template: "feedback" | "dead-letter-alert" | "price-check" }
+>;
 
 /** Sends an operator alert to each operator who hasn't turned that alert off. Never throws. */
 export async function emailOperators(env: Env, args: DistributiveOmit<OperatorEmail, "to">) {
-  let recipients: string[];
-  try {
-    recipients = await operatorRecipients(env.DB, args.template);
-  } catch (error) {
-    console.error(
-      JSON.stringify({
-        msg: "email not sent: no operators",
-        template: args.template,
-        error: message(error),
-      }),
+  if (!env.EMAIL) {
+    console.warn(
+      JSON.stringify({ msg: "email not sent: no EMAIL binding", template: args.template }),
     );
     return;
   }
-  await Promise.all(recipients.map((to) => sendEmail(env, { ...args, to } as EmailArgs)));
+  try {
+    const recipients = await operatorRecipients(createDb(env.DB), args.template);
+    await Promise.all(recipients.map((to) => sendEmail(env, { ...args, to } as EmailArgs)));
+  } catch (error) {
+    console.error(
+      JSON.stringify({ msg: "email not sent", template: args.template, error: message(error) }),
+    );
+  }
 }
-
-type DistributiveOmit<T, K extends PropertyKey> = T extends unknown ? Omit<T, K> : never;

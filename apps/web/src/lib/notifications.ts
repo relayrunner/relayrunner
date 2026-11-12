@@ -1,7 +1,7 @@
 import { api } from "@/lib/api";
 
 /** An email the signed-in user can turn on or off (GET /api/me/notifications). */
-export type NotificationSetting = { type: string; enabled: boolean };
+export type NotificationSetting = { type: string; operator: boolean; enabled: boolean };
 
 export function listNotifications() {
   return api<{ notifications: NotificationSetting[] }>("/me/notifications");

@@ -10,8 +10,8 @@ export const Route = createFileRoute("/_authed/_workspace/settings/notifications
   component: NotificationSettingsPage,
 });
 
-// What each email is, in the order the API lists them. Operator alerts only come back for operators.
-const EMAILS: Record<string, { label: string; description: string; operator?: boolean }> = {
+// What each email is. The API lists them in order, operator alerts only for operators.
+const EMAILS: Record<string, { label: string; description: string }> = {
   "machine-connected": {
     label: "Machine connected",
     description: "When you connect a new machine with the CLI.",
@@ -19,17 +19,14 @@ const EMAILS: Record<string, { label: string; description: string; operator?: bo
   feedback: {
     label: "Feedback",
     description: "When someone sends feedback from the dashboard or an agent.",
-    operator: true,
   },
   "dead-letter-alert": {
     label: "Webhook failures",
     description: "When GitHub webhooks keep failing to process.",
-    operator: true,
   },
   "price-check": {
     label: "Price changes",
     description: "When the daily price check finds a new price or can't read a page.",
-    operator: true,
   },
 };
 
@@ -37,8 +34,8 @@ function NotificationSettingsPage() {
   const { user } = Route.useRouteContext();
   const { notifications } = Route.useLoaderData();
   const known = notifications.filter((n) => EMAILS[n.type]);
-  const yours = known.filter((n) => !EMAILS[n.type]!.operator);
-  const operator = known.filter((n) => EMAILS[n.type]!.operator);
+  const yours = known.filter((n) => !n.operator);
+  const operator = known.filter((n) => n.operator);
 
   return (
     <section>

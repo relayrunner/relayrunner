@@ -72,12 +72,21 @@ export async function signIn(env: Env) {
   };
 }
 
-export function call(env: Env, path: string, cookie: string, body?: unknown) {
+// signIn, as an operator (user.role 'operator').
+export async function signInOperator(env: Env) {
+  const signedIn = await signIn(env);
+  await env.DB.prepare("update user set role = 'operator' where id = ?")
+    .bind(signedIn.user.id)
+    .run();
+  return signedIn;
+}
+
+export function call(env: Env, path: string, cookie: string, body?: unknown, method = "POST") {
   const init: RequestInit =
     body === undefined
       ? { headers: { cookie } }
       : {
-          method: "POST",
+          method,
           headers: { cookie, "content-type": "application/json", origin: env.BETTER_AUTH_URL },
           body: JSON.stringify(body),
         };

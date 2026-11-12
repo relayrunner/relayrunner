@@ -183,10 +183,7 @@ function refresh(client_id: string, refresh_token: string) {
 // Feedback is emailed to every operator who wants it (src/notifications.ts).
 let feedbackOperator: Promise<string> | undefined;
 function operatorEmail() {
-  feedbackOperator ??= testing.signIn(env).then(async ({ user }) => {
-    await env.DB.prepare("update user set role = 'operator' where id = ?").bind(user.id).run();
-    return user.email;
-  });
+  feedbackOperator ??= testing.signInOperator(env).then(({ user }) => user.email);
   return feedbackOperator;
 }
 
