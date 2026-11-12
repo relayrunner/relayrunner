@@ -90,6 +90,7 @@ export default defineConfig({
           label: "Dashboard",
           items: [
             "docs/dashboard/activity",
+            "docs/dashboard/performance",
             "docs/dashboard/usage",
             "docs/dashboard/workspaces",
             "docs/dashboard/remove",

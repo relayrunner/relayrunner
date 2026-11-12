@@ -1,9 +1,9 @@
 ---
-title: Activity and runs
+title: Activity and history
 description: Where each job ran, why it ran there, and how long it waited.
 ---
 
-The dashboard has three views of your CI. All of them cover every repo the workspace's GitHub installation can see.
+Two dashboard pages show what happened in your CI: **Activity** and **History**. Both cover every repo the workspace's GitHub installation can see. For how long things usually take, see [Performance](/docs/dashboard/performance).
 
 ## Activity
 
@@ -11,13 +11,12 @@ The dashboard has three views of your CI. All of them cover every repo the works
 
 A relay that failed shows the same message the job failed with on GitHub. Filter by time, repo, result or machine.
 
-## Runs
+## History
 
-**Runs** lists every workflow run, newest first. Open one to see each job, where it ran, and how long it waited for a runner. Routed jobs are marked, and a run's time is compared with its usual time.
+**History** has two tabs:
 
-## Job times
-
-**Job times** shows how long each job usually takes on each runner, from its recent successful runs. Use it to see which runner suits which job: a test suite that takes 2 minutes on your Mac and 9 on `ubuntu-latest` is a good one to route. Wait is the time from queued until a runner picked the job up.
+- **Workflows** lists every workflow run, newest first. Open one to see each job, where it ran, and how long it waited for a runner. Routed runs are marked, and each run's time is compared with its workflow's usual time.
+- **Jobs** lists every job a runner finished, newest first, with where it ran, how long it waited and ran, and how it ended. Search by job or workflow name, or open a job on GitHub.
 
 ## From an agent
 

@@ -19,7 +19,9 @@ import { Route as AuthedWelcomeRouteImport } from './routes/_authed/welcome'
 import { Route as AgentsConsentRouteImport } from './routes/agents.consent'
 import { Route as AgentsWorkspaceRouteImport } from './routes/agents.workspace'
 import { Route as AuthedWorkspaceActivityRouteImport } from './routes/_authed/_workspace/activity'
+import { Route as AuthedWorkspaceHistoryRouteImport } from './routes/_authed/_workspace/history'
 import { Route as AuthedWorkspaceJobTimesRouteImport } from './routes/_authed/_workspace/job-times'
+import { Route as AuthedWorkspacePerformanceRouteImport } from './routes/_authed/_workspace/performance'
 import { Route as AuthedWorkspaceRouterRouteImport } from './routes/_authed/_workspace/router'
 import { Route as AuthedWorkspaceRunnersRouteImport } from './routes/_authed/_workspace/runners'
 import { Route as AuthedWorkspaceRunsRouteImport } from './routes/_authed/_workspace/runs'
@@ -89,11 +91,22 @@ const AuthedWorkspaceActivityRoute = AuthedWorkspaceActivityRouteImport.update({
   path: '/activity',
   getParentRoute: () => AuthedWorkspaceRoute,
 } as any)
+const AuthedWorkspaceHistoryRoute = AuthedWorkspaceHistoryRouteImport.update({
+  id: '/history',
+  path: '/history',
+  getParentRoute: () => AuthedWorkspaceRoute,
+} as any)
 const AuthedWorkspaceJobTimesRoute = AuthedWorkspaceJobTimesRouteImport.update({
   id: '/job-times',
   path: '/job-times',
   getParentRoute: () => AuthedWorkspaceRoute,
 } as any)
+const AuthedWorkspacePerformanceRoute =
+  AuthedWorkspacePerformanceRouteImport.update({
+    id: '/performance',
+    path: '/performance',
+    getParentRoute: () => AuthedWorkspaceRoute,
+  } as any)
 const AuthedWorkspaceRouterRoute = AuthedWorkspaceRouterRouteImport.update({
   id: '/router',
   path: '/router',
@@ -220,7 +233,9 @@ export interface FileRoutesByFullPath {
   '/agents/consent': typeof AgentsConsentRoute
   '/agents/workspace': typeof AgentsWorkspaceRoute
   '/activity': typeof AuthedWorkspaceActivityRoute
+  '/history': typeof AuthedWorkspaceHistoryRoute
   '/job-times': typeof AuthedWorkspaceJobTimesRoute
+  '/performance': typeof AuthedWorkspacePerformanceRoute
   '/router': typeof AuthedWorkspaceRouterRoute
   '/runners': typeof AuthedWorkspaceRunnersRoute
   '/runs': typeof AuthedWorkspaceRunsRoute
@@ -251,7 +266,9 @@ export interface FileRoutesByTo {
   '/agents/consent': typeof AgentsConsentRoute
   '/agents/workspace': typeof AgentsWorkspaceRoute
   '/activity': typeof AuthedWorkspaceActivityRoute
+  '/history': typeof AuthedWorkspaceHistoryRoute
   '/job-times': typeof AuthedWorkspaceJobTimesRoute
+  '/performance': typeof AuthedWorkspacePerformanceRoute
   '/router': typeof AuthedWorkspaceRouterRoute
   '/runners': typeof AuthedWorkspaceRunnersRoute
   '/runs': typeof AuthedWorkspaceRunsRoute
@@ -285,7 +302,9 @@ export interface FileRoutesById {
   '/agents/consent': typeof AgentsConsentRoute
   '/agents/workspace': typeof AgentsWorkspaceRoute
   '/_authed/_workspace/activity': typeof AuthedWorkspaceActivityRoute
+  '/_authed/_workspace/history': typeof AuthedWorkspaceHistoryRoute
   '/_authed/_workspace/job-times': typeof AuthedWorkspaceJobTimesRoute
+  '/_authed/_workspace/performance': typeof AuthedWorkspacePerformanceRoute
   '/_authed/_workspace/router': typeof AuthedWorkspaceRouterRoute
   '/_authed/_workspace/runners': typeof AuthedWorkspaceRunnersRoute
   '/_authed/_workspace/runs': typeof AuthedWorkspaceRunsRoute
@@ -318,7 +337,9 @@ export interface FileRouteTypes {
     | '/agents/consent'
     | '/agents/workspace'
     | '/activity'
+    | '/history'
     | '/job-times'
+    | '/performance'
     | '/router'
     | '/runners'
     | '/runs'
@@ -349,7 +370,9 @@ export interface FileRouteTypes {
     | '/agents/consent'
     | '/agents/workspace'
     | '/activity'
+    | '/history'
     | '/job-times'
+    | '/performance'
     | '/router'
     | '/runners'
     | '/runs'
@@ -382,7 +405,9 @@ export interface FileRouteTypes {
     | '/agents/consent'
     | '/agents/workspace'
     | '/_authed/_workspace/activity'
+    | '/_authed/_workspace/history'
     | '/_authed/_workspace/job-times'
+    | '/_authed/_workspace/performance'
     | '/_authed/_workspace/router'
     | '/_authed/_workspace/runners'
     | '/_authed/_workspace/runs'
@@ -487,11 +512,25 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AuthedWorkspaceActivityRouteImport
       parentRoute: typeof AuthedWorkspaceRoute
     }
+    '/_authed/_workspace/history': {
+      id: '/_authed/_workspace/history'
+      path: '/history'
+      fullPath: '/history'
+      preLoaderRoute: typeof AuthedWorkspaceHistoryRouteImport
+      parentRoute: typeof AuthedWorkspaceRoute
+    }
     '/_authed/_workspace/job-times': {
       id: '/_authed/_workspace/job-times'
       path: '/job-times'
       fullPath: '/job-times'
       preLoaderRoute: typeof AuthedWorkspaceJobTimesRouteImport
+      parentRoute: typeof AuthedWorkspaceRoute
+    }
+    '/_authed/_workspace/performance': {
+      id: '/_authed/_workspace/performance'
+      path: '/performance'
+      fullPath: '/performance'
+      preLoaderRoute: typeof AuthedWorkspacePerformanceRouteImport
       parentRoute: typeof AuthedWorkspaceRoute
     }
     '/_authed/_workspace/router': {
@@ -639,7 +678,9 @@ declare module '@tanstack/react-router' {
 
 interface AuthedWorkspaceRouteChildren {
   AuthedWorkspaceActivityRoute: typeof AuthedWorkspaceActivityRoute
+  AuthedWorkspaceHistoryRoute: typeof AuthedWorkspaceHistoryRoute
   AuthedWorkspaceJobTimesRoute: typeof AuthedWorkspaceJobTimesRoute
+  AuthedWorkspacePerformanceRoute: typeof AuthedWorkspacePerformanceRoute
   AuthedWorkspaceRouterRoute: typeof AuthedWorkspaceRouterRoute
   AuthedWorkspaceRunnersRoute: typeof AuthedWorkspaceRunnersRoute
   AuthedWorkspaceRunsRoute: typeof AuthedWorkspaceRunsRoute
@@ -664,7 +705,9 @@ interface AuthedWorkspaceRouteChildren {
 
 const AuthedWorkspaceRouteChildren: AuthedWorkspaceRouteChildren = {
   AuthedWorkspaceActivityRoute: AuthedWorkspaceActivityRoute,
+  AuthedWorkspaceHistoryRoute: AuthedWorkspaceHistoryRoute,
   AuthedWorkspaceJobTimesRoute: AuthedWorkspaceJobTimesRoute,
+  AuthedWorkspacePerformanceRoute: AuthedWorkspacePerformanceRoute,
   AuthedWorkspaceRouterRoute: AuthedWorkspaceRouterRoute,
   AuthedWorkspaceRunnersRoute: AuthedWorkspaceRunnersRoute,
   AuthedWorkspaceRunsRoute: AuthedWorkspaceRunsRoute,

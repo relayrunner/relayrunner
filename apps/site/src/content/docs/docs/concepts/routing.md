@@ -69,4 +69,4 @@ If the GitHub App isn't installed on the repo's owner, or RelayRunner can't be r
 
 ## See why a job ran where it did
 
-The dashboard's **Activity** page shows each routed job, the runner it got, and every step that was skipped with the reason. See [Activity and runs](/docs/dashboard/activity).
+The dashboard's **Activity** page shows each routed job, the runner it got, and every step that was skipped with the reason. See [Activity and history](/docs/dashboard/activity).

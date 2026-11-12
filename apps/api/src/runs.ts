@@ -1,11 +1,14 @@
-// Runs: each workflow run in the workspace's repos, newest first, for the dashboard's Runs page. A
-// run's title, trigger and status come from workflow_run webhooks (stored here); its jobs, wall time
-// and runners come from job_timing (src/job-timings.ts), so runs from before the App sent
-// workflow_run still show, with less detail. A run's detail also lists the jobs still going.
+// Runs: each workflow run in the workspace's repos, newest first, for the dashboard's History page
+// (Workflows), plus each workflow's usual time for Performance (Workflows) and a flat list of jobs
+// for History (Jobs). A run's title, trigger and status come from workflow_run webhooks (stored
+// here); its jobs, wall time and runners come from job_timing (src/job-timings.ts), so runs from
+// before the App sent workflow_run still show, with less detail. A run's detail also lists the jobs
+// still going.
 //
-// Database cost: the list is two statements, run together, each a range of an installation index
-// (job_timing_installation_idx, workflow_run_installation_idx) over the last USUAL_DAYS days, never
-// a scan. One run's jobs are a range of job_timing_run_idx.
+// Database cost: the run list and workflow times are two statements, run together, each a range of
+// an installation index (job_timing_installation_idx, workflow_run_installation_idx) over the
+// window, never a scan. The job list is one range of job_timing_installation_idx, newest first and
+// capped. One run's jobs are a range of job_timing_run_idx.
 import type { WebhookMessage } from "@relayrunner/github-webhooks";
 import { and, eq, sql } from "drizzle-orm";
 import { type Db, schema } from "./db/index.ts";
@@ -15,10 +18,15 @@ import {
   environmentFor,
   FEW_RUNS,
   inWorkspace,
+  type JobTimesReport,
+  jobTimesReport,
   nameMachines,
   PICK,
   quantile,
   RAN_ON_RUNNER,
+  type Stat,
+  statOf,
+  type WorkflowRow,
 } from "./job-times.ts";
 import { DAY_MS, purgeBefore, RAW_RETENTION_DAYS } from "./job-timings.ts";
 import { parseDate } from "./jobs.ts";
@@ -186,12 +194,12 @@ const runKey = (repositoryId: number, runId: number, runAttempt: number) =>
 
 type WorkflowRunRow = typeof table.$inferSelect;
 
-/**
- * The workspace's runs that changed in the last USUAL_DAYS days, newest first, at most RUN_LIMIT.
- * The usual times need the whole window anyway, so the dashboard narrows the range itself.
- */
-export async function listRuns(db: Db, workspaceId: string, now = Date.now()): Promise<RunsReport> {
-  const since = now - USUAL_DAYS * DAY_MS;
+/** `repositoryId␟workflow name`: a workflow, as the run list and job times both key it. */
+export const workflowKey = (repositoryId: number, workflow: string | null) =>
+  `${repositoryId}\u001f${workflow ?? ""}`;
+
+/** Every run that changed since `since`: its status, result and wall time, newest first. */
+async function runSummaries(db: Db, workspaceId: string, since: number) {
   const [groups, rows] = await Promise.all([
     db.all<JobGroup>(jobGroupsQuery(workspaceId, since)),
     db
@@ -214,7 +222,6 @@ export async function listRuns(db: Db, workspaceId: string, now = Date.now()): P
     sources.set(key, { ...sources.get(key), row });
   }
   const summaries = [];
-  const walls = new Map<string, number[]>();
   for (const { group, row } of sources.values()) {
     // A run seen only as a pick (its jobs still running, no workflow_run yet) has nothing to show.
     if (!row && !Number(group?.jobs)) continue;
@@ -236,31 +243,49 @@ export async function listRuns(db: Db, workspaceId: string, now = Date.now()): P
       wallMs:
         startedAt !== null && completedAt !== null ? Math.max(0, completedAt - startedAt) : null,
       updatedAt: Math.max(group?.last_completed ?? 0, row?.githubUpdatedAt.getTime() ?? 0),
-      workflow: `${row?.repositoryId ?? group?.repository_id}\u001f${
-        row?.workflowName ?? group?.workflow_name ?? ""
-      }`,
+      workflow: workflowKey(
+        row?.repositoryId ?? group?.repository_id ?? 0,
+        row?.workflowName ?? group?.workflow_name ?? null,
+      ),
     };
     summaries.push(summary);
-    if (summary.conclusion === "success" && summary.wallMs !== null) {
-      const times = walls.get(summary.workflow) ?? [];
-      times.push(summary.wallMs);
-      walls.set(summary.workflow, times);
-    }
   }
+  return summaries.sort((a, b) => b.updatedAt - a.updatedAt);
+}
+
+type RunSummary = Awaited<ReturnType<typeof runSummaries>>[number];
+
+/** Each workflow's successful run times, by workflowKey, newest first. */
+function successfulWalls(summaries: RunSummary[]) {
+  const walls = new Map<string, RunSummary[]>();
+  for (const summary of summaries) {
+    if (summary.conclusion !== "success" || summary.wallMs === null) continue;
+    const runs = walls.get(summary.workflow);
+    if (runs) runs.push(summary);
+    else walls.set(summary.workflow, [summary]);
+  }
+  return walls;
+}
+
+/**
+ * The workspace's runs that changed in the last USUAL_DAYS days, newest first, at most RUN_LIMIT.
+ * The usual times need the whole window anyway, so the dashboard narrows the range itself.
+ */
+export async function listRuns(db: Db, workspaceId: string, now = Date.now()): Promise<RunsReport> {
+  const summaries = await runSummaries(db, workspaceId, now - USUAL_DAYS * DAY_MS);
   // Each workflow's usual time, from its successful runs over the whole window.
   const usual = new Map<string, number | null>();
-  for (const [workflow, times] of walls)
-    if (times.length >= FEW_RUNS)
+  for (const [workflow, runs] of successfulWalls(summaries))
+    if (runs.length >= FEW_RUNS)
       usual.set(
         workflow,
         quantile(
-          times.sort((a, b) => a - b),
+          runs.map((run) => run.wallMs!).sort((a, b) => a - b),
           0.9,
         ),
       );
 
   // Then the whole run, for the newest RUN_LIMIT only.
-  summaries.sort((a, b) => b.updatedAt - a.updatedAt);
   const envs = new Map<string, Environment>();
   const envUse = new Map<string, number>();
   const parsed = new Map<string, Environment>();
@@ -379,5 +404,59 @@ export async function runJobs(
     jobs: jobs.sort(
       (a, b) => (a.queuedAt ?? Infinity) - (b.queuedAt ?? Infinity) || a.name.localeCompare(b.name),
     ),
+  };
+}
+
+/**
+ * Each workflow's whole-run times over the last `days` days, by workflowKey, for the Performance
+ * page: like a job's times, from its newest successful runs, but first job queued to last job
+ * finished.
+ */
+export async function workflowTimes(
+  db: Db,
+  workspaceId: string,
+  days: number,
+  now = Date.now(),
+): Promise<Map<string, Stat>> {
+  const summaries = await runSummaries(db, workspaceId, now - days * DAY_MS);
+  const finished = new Map<string, number>();
+  for (const summary of summaries)
+    if (summary.status === "completed" && summary.conclusion !== "cancelled")
+      finished.set(summary.workflow, (finished.get(summary.workflow) ?? 0) + 1);
+  const walls = successfulWalls(summaries);
+  return new Map(
+    [...finished].map(([key, total]) => {
+      const runs = walls.get(key) ?? [];
+      const samples = runs.map((run) => ({
+        completedAt: run.updatedAt,
+        runMs: run.wallMs!,
+        waitMs: null,
+      }));
+      return [key, statOf({ runs: total, successes: runs.length, samples })];
+    }),
+  );
+}
+
+export type PerformanceReport = Omit<JobTimesReport, "workflows"> & {
+  /** Each workflow with its whole-run times (null with no finished runs) beside its jobs'. */
+  workflows: (WorkflowRow & { wall: Stat | null })[];
+};
+
+/** The Performance page: job times per runner, plus each workflow's whole-run times. */
+export async function performanceReport(
+  db: Db,
+  workspaceId: string,
+  days: number,
+): Promise<PerformanceReport> {
+  const [report, walls] = await Promise.all([
+    jobTimesReport(db, workspaceId, days),
+    workflowTimes(db, workspaceId, days),
+  ]);
+  return {
+    ...report,
+    workflows: report.workflows.map((row) => ({
+      ...row,
+      wall: walls.get(workflowKey(row.repositoryId, row.workflow)) ?? null,
+    })),
   };
 }

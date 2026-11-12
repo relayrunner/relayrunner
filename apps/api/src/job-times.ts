@@ -509,6 +509,83 @@ export interface JobRun {
   completedAt: number;
 }
 
+const JOB_RUN_COLUMNS = {
+  id: table.id,
+  runId: table.runId,
+  runAttempt: table.runAttempt,
+  labels: table.labels,
+  runnerGroupName: table.runnerGroupName,
+  machineId: table.machineId,
+  conclusion: table.conclusion,
+  queuedAt: table.queuedAt,
+  startedAt: table.startedAt,
+  completedAt: table.completedAt,
+};
+
+type JobRunRow = Pick<typeof table.$inferSelect, keyof typeof JOB_RUN_COLUMNS>;
+
+function jobRunOf(row: JobRunRow, env?: Environment): JobRun | null {
+  if (!row.startedAt || !row.completedAt) return null;
+  return {
+    id: row.id,
+    runId: row.runId,
+    runAttempt: row.runAttempt,
+    environment: (env ?? environmentFor(row.labels, row.runnerGroupName, row.machineId)).key,
+    conclusion: row.conclusion,
+    queuedAt: row.queuedAt?.getTime() ?? null,
+    startedAt: row.startedAt.getTime(),
+    completedAt: row.completedAt.getTime(),
+  };
+}
+
+/** A job in the History page's job list: a run of one job, with what it belongs to. */
+export interface HistoryJob extends JobRun {
+  repositoryId: number;
+  repository: string;
+  workflow: string | null;
+  name: string;
+}
+
+/** Most jobs the job list returns. */
+const JOB_LIMIT = 500;
+
+/**
+ * The workspace's jobs a runner finished in the window, newest first, at most JOB_LIMIT, for the
+ * History page's job list: one range of job_timing_installation_idx, read newest first.
+ */
+export async function recentJobs(
+  db: Db,
+  workspaceId: string,
+  days = DEFAULT_DAYS,
+  now = Date.now(),
+): Promise<{ days: number; environments: Environment[]; jobs: HistoryJob[]; truncated: boolean }> {
+  const since = new Date(now - days * DAY_MS);
+  const rows = await db
+    .select({
+      ...JOB_RUN_COLUMNS,
+      repositoryId: table.repositoryId,
+      repository: table.repositoryFullName,
+      workflow: table.workflowName,
+      name: table.name,
+    })
+    .from(table)
+    .where(windowWhere(workspaceId, since))
+    .orderBy(sql`${table.completedAt} desc`)
+    .limit(JOB_LIMIT + 1);
+
+  const envs = new Map<string, Environment>();
+  const jobs = rows.slice(0, JOB_LIMIT).flatMap((row): HistoryJob[] => {
+    const env = environmentFor(row.labels, row.runnerGroupName, row.machineId);
+    const run = jobRunOf(row, env);
+    if (!run) return [];
+    if (!envs.has(env.key)) envs.set(env.key, env);
+    const { repositoryId, repository, workflow, name } = row;
+    return [{ ...run, repositoryId, repository, workflow, name }];
+  });
+  await nameMachines(db, workspaceId, envs);
+  return { days, environments: [...envs.values()], jobs, truncated: rows.length > JOB_LIMIT };
+}
+
 /**
  * One job's runs in the window, newest first, for the detail chart: a range of job_timing_job_idx.
  * `name` may be a matrix job's shared name, which takes in all its legs.
@@ -526,18 +603,7 @@ export async function jobRuns(
       and(gte(table.name, `${job.name} (`), sql`${table.name} < ${`${job.name} )`}`)
     : eq(table.name, job.name);
   const rows = await db
-    .select({
-      id: table.id,
-      runId: table.runId,
-      runAttempt: table.runAttempt,
-      labels: table.labels,
-      runnerGroupName: table.runnerGroupName,
-      machineId: table.machineId,
-      conclusion: table.conclusion,
-      queuedAt: table.queuedAt,
-      startedAt: table.startedAt,
-      completedAt: table.completedAt,
-    })
+    .select(JOB_RUN_COLUMNS)
     .from(table)
     .where(
       and(
@@ -551,21 +617,9 @@ export async function jobRuns(
     )
     .orderBy(sql`${table.completedAt} desc`)
     .limit(500);
-
-  const runs = rows.flatMap((row): JobRun[] => {
-    if (!row.startedAt || !row.completedAt) return [];
-    return [
-      {
-        id: row.id,
-        runId: row.runId,
-        runAttempt: row.runAttempt,
-        environment: environmentFor(row.labels, row.runnerGroupName, row.machineId).key,
-        conclusion: row.conclusion,
-        queuedAt: row.queuedAt?.getTime() ?? null,
-        startedAt: row.startedAt.getTime(),
-        completedAt: row.completedAt.getTime(),
-      },
-    ];
+  const runs = rows.flatMap((row) => {
+    const run = jobRunOf(row);
+    return run ? [run] : [];
   });
   return { days, runs };
 }

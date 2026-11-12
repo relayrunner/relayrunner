@@ -6,10 +6,12 @@ import {
   splitEnvs,
   purgeOldWorkflowRuns,
   recordWorkflowRun,
+  type PerformanceReport,
   type Run,
   type RunJob,
   type RunsReport,
 } from "./runs.ts";
+import type { HistoryJob } from "./job-times.ts";
 import * as testing from "./testing.ts";
 
 let env: Env;
@@ -287,6 +289,51 @@ describe("runs list", () => {
     // The other workspace's run isn't reachable by id.
     const theirs = await testing.call(env, `/runs/${other.installationId * 10}/999/1/jobs`, cookie);
     expect(((await theirs.json()) as { jobs: RunJob[] }).jobs).toEqual([]);
+  });
+});
+
+describe("workflow times and the job list", () => {
+  test("times whole workflow runs from their newest successful runs", async () => {
+    const { cookie, installationId } = await connectedWorkspace();
+    const rows: Timing[] = [];
+    // Five CI runs: lint then test, one after the other. Each run is 5s of queue, then 20s + 40s.
+    for (let i = 0; i < 5; i++) {
+      const runId = (ids += 1);
+      rows.push(
+        timing(installationId, 20, { runId, hoursAgo: i + 1 + 40_000 / HOUR }),
+        timing(installationId, 40, { runId, name: "test", hoursAgo: i + 1 }),
+      );
+    }
+    // A failed run counts as a run, not in the times.
+    rows.push(timing(installationId, 5, { conclusion: "failure" }));
+    await insert(rows);
+
+    const res = await testing.call(env, "/job-times", cookie);
+    const report = (await res.json()) as PerformanceReport;
+    const ci = report.workflows.find((row) => row.workflow === "CI");
+    // First queued (5s before lint started) to test finishing: 5 + 20 + 40 = 65s.
+    expect(ci?.wall).toMatchObject({ runs: 6, successes: 5, samples: 5, medianMs: 65_000 });
+  });
+
+  test("lists finished jobs newest first, picks left out", async () => {
+    const { cookie, installationId } = await connectedWorkspace();
+    await insert([
+      timing(installationId, 10, { name: "older", hoursAgo: 3 }),
+      timing(installationId, 10, { name: "newer", hoursAgo: 1 }),
+      timing(installationId, 2, { name: "pick", labels: ["relayrunner"] }),
+      // Outside a 1-day window.
+      timing(installationId, 10, { name: "old", hoursAgo: 30 }),
+    ]);
+    const res = await testing.call(env, "/runs/jobs?days=1", cookie);
+    expect(res.status).toBe(200);
+    const body = (await res.json()) as { jobs: HistoryJob[]; truncated: boolean };
+    expect(body.jobs.map((job) => job.name)).toEqual(["newer", "older"]);
+    expect(body.jobs[0]).toMatchObject({
+      repository: "acme/app",
+      workflow: "CI",
+      environment: "github:linux-2-core",
+    });
+    expect(body.truncated).toBe(false);
   });
 });
 

@@ -2,15 +2,13 @@ import { Hono } from "hono";
 import { z } from "zod";
 import type { AppEnv } from "../app.ts";
 import { createDb } from "../db/index.ts";
-import { DEFAULT_DAYS, MAX_DAYS } from "../job-times.ts";
 import { requireUser } from "../middleware/session.ts";
 import { requireWorkspace } from "../middleware/workspace.ts";
 import { isCatalogProvider, loadCatalog, withCatalog } from "../provider-catalog.ts";
 import { providerReport, providersOverview } from "../provider-report.ts";
+import { Days } from "./job-times.ts";
 
-const Query = z.object({
-  days: z.coerce.number().int().min(1).max(MAX_DAYS).default(DEFAULT_DAYS),
-});
+const Query = z.object({ days: Days });
 
 // The Providers page and each provider's page: the workspace's jobs over the last ?days=N days
 // (default 14).

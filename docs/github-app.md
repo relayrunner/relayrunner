@@ -62,13 +62,13 @@ An org that hasn't accepted the main App's Organization Administration (Read) ge
 
 ## Events
 
-| Event                                   | Why                                                                                                                                                   |
-| --------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------- |
-| Installation, Installation repositories | Sent to every App. Keep `github_installation` and `github_repository` current: account and its type, suspension, repo selection, uninstall.           |
-| Repository                              | Keeps repo names and visibility current after renames, visibility changes, transfers and deletes.                                                     |
-| Workflow job                            | Routing. A `queued` job on `relayrunner` starts a pick runner; a `queued` job on a route label hands it to the machine; finished jobs feed job times. |
-| Workflow run                            | Run titles, triggers and status for the Runs page.                                                                                                    |
-| Pull request                            | The PR title check.                                                                                                                                   |
+| Event                                   | Why                                                                                                                                                     |
+| --------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Installation, Installation repositories | Sent to every App. Keep `github_installation` and `github_repository` current: account and its type, suspension, repo selection, uninstall.             |
+| Repository                              | Keeps repo names and visibility current after renames, visibility changes, transfers and deletes.                                                       |
+| Workflow job                            | Routing. A `queued` job on `relayrunner` starts a pick runner; a `queued` job on a route label hands it to the machine; finished jobs feed Performance. |
+| Workflow run                            | Run titles, triggers and status for the History page.                                                                                                   |
+| Pull request                            | The PR title check.                                                                                                                                     |
 
 ## Sign-in
 

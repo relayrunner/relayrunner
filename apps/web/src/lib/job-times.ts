@@ -33,6 +33,8 @@ export type WorkflowRow = {
   repositoryId: number;
   repository: string;
   workflow: string | null;
+  /** Whole-run times: run start to last job done, like the History page. */
+  wall: Stat | null;
   jobs: JobRow[];
 };
 
@@ -192,6 +194,7 @@ export function sampleJobTimes(days: number): JobTimesReport {
         repositoryId: 1,
         repository: "acme/app",
         workflow: "CI",
+        wall: stat(214, 50, 162, 0.12),
         jobs: [
           {
             name: "test",
@@ -230,6 +233,7 @@ export function sampleJobTimes(days: number): JobTimesReport {
         repositoryId: 1,
         repository: "acme/app",
         workflow: "Release",
+        wall: stat(262, 9, 10),
         jobs: [
           { name: "build-macos", byEnvironment: { [mac]: stat(235, 12), [macos]: stat(400, 9) } },
         ],

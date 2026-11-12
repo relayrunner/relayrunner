@@ -415,7 +415,7 @@ function RunnersPage() {
   );
 }
 
-// Cloud runners from the Job times report: everything but machines and other self-hosted runners.
+// Cloud runners from the Performance report: everything but machines and other self-hosted runners.
 const isCloud = (env: EnvironmentSummary) => providerOf(env) !== "machine";
 
 // Cloud runners grouped by provider, busiest provider and runner type first, with labels we
