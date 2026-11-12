@@ -8,6 +8,7 @@ import {
   ExternalLinkIcon,
   LaptopIcon,
   MonitorIcon,
+  LogOutIcon,
   PauseIcon,
   PlayIcon,
   ServerIcon,
@@ -37,6 +38,7 @@ import { medianText, plural, type EnvironmentSummary, type Stat } from "@/lib/jo
 import {
   machineAccess,
   pauseMachine,
+  removeMachineFromWorkspace,
   resumeMachine,
   revokeMachine,
   timeAgo,
@@ -258,16 +260,19 @@ export function MachineCard({
   machine,
   jobTime,
   specs = false,
+  onRemovedFromWorkspace,
 }: {
   machine: Machine;
   jobTime?: Stat;
   /** Show the hardware and typical job. Off by default to keep the cards simple. */
   specs?: boolean;
+  /** Called after the user takes their own machine out of this workspace. */
+  onRemovedFromWorkspace?: () => void;
 }) {
   const router = useRouter();
   const [confirming, setConfirming] = useState(false);
   const [sharingOpen, setSharingOpen] = useState(false);
-  const [pending, setPending] = useState<"revoke" | "pause" | "resume" | null>(null);
+  const [pending, setPending] = useState<"revoke" | "remove" | "pause" | "resume" | null>(null);
   const [error, setError] = useState<string | null>(null);
   // A self-hosted runner added from GitHub: no connection of its own, removed rather than revoked.
   const isGithub = machine.source === "github";
@@ -281,20 +286,24 @@ export function MachineCard({
     machineAccess(machine.id).then(setAccess, () => setAccess(null));
   }
 
-  async function act(action: "revoke" | "pause" | "resume") {
+  async function act(action: "revoke" | "remove" | "pause" | "resume") {
     setPending(action);
     setError(null);
     try {
       if (action === "revoke") await revokeMachine(machine.id);
+      else if (action === "remove") await removeMachineFromWorkspace(machine.id);
       else if (action === "pause") await pauseMachine(machine.id);
       else await resumeMachine(machine.id);
+      if (action === "remove") onRemovedFromWorkspace?.();
       await router.invalidate();
-      if (action !== "revoke") setPending(null);
+      if (action !== "revoke" && action !== "remove") setPending(null);
     } catch {
       setError(
         action === "revoke" && isGithub
           ? "Couldn't remove the runner. Try again."
-          : `Couldn't ${action} the machine. Try again.`,
+          : action === "remove"
+            ? "Couldn't remove the machine from this workspace. Try again."
+            : `Couldn't ${action} the machine. Try again.`,
       );
       setPending(null);
     }
@@ -537,6 +546,22 @@ export function MachineCard({
                     View on GitHub
                   </a>
                 </DropdownMenuItem>
+              )}
+              {/* The owner can take their machine out of just this workspace (#365); it can be
+                  added back from Add runner, so there's no confirm step. */}
+              {canShare && (
+                <>
+                  <DropdownMenuSeparator />
+                  <DropdownMenuItem onSelect={() => void act("remove")}>
+                    <LogOutIcon aria-hidden />
+                    <span className="grid">
+                      <span>Remove from this workspace</span>
+                      <span className="text-xs text-muted-foreground">
+                        Keeps running jobs in your other workspaces
+                      </span>
+                    </span>
+                  </DropdownMenuItem>
+                </>
               )}
               {/* Only a machine's owner revokes it (#318); the API says which. */}
               {machine.canRevoke !== false && (
