@@ -43,8 +43,8 @@ interface SentRoute {
 }
 
 const SENT_KEY = "sent:";
-// The route holding the machine for its job (MachineHold), whichever workspace made it.
-const HOLD_KEY = "hold";
+// One per route holding a slot for its job (MachineHold), whichever workspace made it.
+const HOLD_KEY = "hold:";
 
 // One per enrolled machine, addressed by machine id. Holds the machine's `relayrunner connect`
 // WebSocket, so a live socket that has said hello means the machine is online. Uses the
@@ -101,7 +101,10 @@ export class MachineLink extends DurableObject<Env> {
       const db = createDb(this.env.DB);
       await recordMachineEvent(db, session.machineId, {
         type: "machine.connected",
-        data: { runnerVersion: outcome.state.hello.runnerVersion ?? null },
+        data: {
+          runnerVersion: outcome.state.hello.runnerVersion ?? null,
+          cliVersion: outcome.state.hello.cliVersion ?? null,
+        },
       });
       const device = outcome.state.hello.device;
       if (device)
@@ -175,23 +178,32 @@ export class MachineLink extends DurableObject<Env> {
     if (earliest !== undefined) await this.ctx.storage.setAlarm(earliest + HEARTBEAT_TIMEOUT_MS);
   }
 
-  /** Online (said hello, heard from within the heartbeat timeout), idle or busy. */
+  /**
+   * Online (said hello, heard from within the heartbeat timeout), idle or busy, with its slots and
+   * the jobs it reports running.
+   */
   async status(): Promise<MachineStatus> {
     const ws = this.onlineSocket();
     return ws ? statusOf(attachment(ws), Date.now()) : OFFLINE;
   }
 
   /**
-   * Holds the machine for a route a Router is making, unless another route still holds it: false
-   * then, and the Router tries its next machine. The read and write run with no other call in
-   * between (a Durable Object's input gate stays closed across storage calls), so when two
-   * workspaces pick this machine at once only one gets it. The hold ends when the machine reports
-   * the route's job started or failed, or after ROUTE_HOLD_MS.
+   * Holds one of the machine's slots for a route a Router is making, unless the machine has none
+   * free: its other unexpired holds plus the jobs it reports running fill its slots (takeHold).
+   * False then, and the Router tries its next machine. The reads and the write run with no other
+   * call in between (a Durable Object's input gate stays closed across storage calls), so when
+   * several workspaces pick this machine at once they can't take more slots than it has. A hold
+   * ends when the machine reports the route's job started or failed, or after ROUTE_HOLD_MS.
    */
   async reserve(want: { routeId: string; workspaceId: string }): Promise<boolean> {
-    const hold = takeHold(await this.ctx.storage.get<MachineHold>(HOLD_KEY), want, Date.now());
+    const now = Date.now();
+    const stored = await this.ctx.storage.list<MachineHold>({ prefix: HOLD_KEY });
+    const lapsed = [...stored].filter(([, hold]) => now >= hold.until).map(([key]) => key);
+    if (lapsed.length > 0) await this.ctx.storage.delete(lapsed);
+    const { slots, running } = await this.status();
+    const hold = takeHold([...stored.values()], want, { slots, running }, now);
     if (!hold) return false;
-    await this.ctx.storage.put(HOLD_KEY, hold);
+    await this.ctx.storage.put(HOLD_KEY + want.routeId, hold);
     return true;
   }
 
@@ -290,8 +302,7 @@ export class MachineLink extends DurableObject<Env> {
         known: Boolean(sent),
       }),
     );
-    const hold = await this.ctx.storage.get<MachineHold>(HOLD_KEY);
-    if (hold?.routeId === job.routeId) await this.ctx.storage.delete(HOLD_KEY);
+    await this.ctx.storage.delete(HOLD_KEY + job.routeId);
     if (!sent) return;
     await this.env.ROUTER.getByName(sent.workspaceId).release(job.routeId);
     if (job.state !== "started") await this.ctx.storage.delete(key);

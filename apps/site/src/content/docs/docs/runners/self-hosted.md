@@ -3,7 +3,7 @@ title: Your machines
 description: Running jobs on computers you own, connected with the CLI.
 ---
 
-Any Mac or Linux computer can take jobs: your laptop, a Mac mini under the desk, an old gaming PC, a home server. Connect it with the CLI and it joins your workspace's self-hosted step.
+Any Mac or Linux computer can take jobs: your laptop, a Mac mini under the desk, an old gaming PC, a home server. Connect it with the CLI and it joins the self-hosted step of every workspace you're in.
 
 ## Connect a machine
 
@@ -49,13 +49,13 @@ relayrunner resume
 
 Press `p` in the `connect` terminal, or use the machine's ⋯ menu on the Runners page. Anyone in the workspace can pause a machine.
 
-## One job at a time
+## Jobs at once
 
-A machine runs one job at a time. When it's busy, the next job goes to another machine or falls through to the next step in your runner order. To run more jobs at once, connect more machines.
+A machine runs up to 2 jobs at once when it has 8 or more CPU cores, otherwise 1. Change it with `relayrunner connect --concurrency <n>`. Each job gets its own copy of the runner, so jobs never share a workspace. When every slot is busy, the next job goes to another machine or falls through to the next step in your runner order.
 
 ## Remove a machine
 
-Remove it from the Runners page. You can remove your own machines; owners and admins can remove any. A member's machines are removed when they leave the workspace.
+Remove it from the Runners page. You can remove your own machines; owners and admins can remove any. When someone leaves a workspace, their machines stay theirs and stop taking its jobs.
 
 ## Runners your org already has
 

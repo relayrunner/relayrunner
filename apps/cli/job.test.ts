@@ -2,7 +2,7 @@ import { existsSync, mkdirSync, mkdtempSync, rmSync, symlinkSync, writeFileSync 
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
-import { runJob, type JobUpdate } from "./job.ts";
+import { prefixLines, runJob, type JobUpdate } from "./job.ts";
 import { fakeJitConfig } from "./jit-config.fixture.ts";
 
 const jitConfig = fakeJitConfig("7f3k");
@@ -30,7 +30,7 @@ describe("runJob", () => {
     const result = await runJob(
       { v: 1, type: "run", routeId: "7f3k", jitConfig },
       {
-        runner: { version: "2.329.0", dir },
+        dir,
         report: (update) => updates.push(update),
         output: (chunk, stream) => (out[stream] += chunk.toString()),
       },
@@ -69,7 +69,7 @@ describe("runJob", () => {
     const updates: JobUpdate[] = [];
     await runJob(
       { v: 1, type: "run", routeId: "7f3k", jitConfig },
-      { runner: { version: "2.329.0", dir }, report: (u) => updates.push(u), output: () => {} },
+      { dir, report: (u) => updates.push(u), output: () => {} },
     );
     expect(updates).toMatchObject([{ state: "failed", message: /Could not start the runner/ }]);
   });
@@ -86,7 +86,7 @@ describe("runJob", () => {
         jitConfig: fakeJitConfig("7f3k", { runner: { ServerUrlV2: "https://evil.example/" } }),
       },
       {
-        runner: { version: "2.329.0", dir },
+        dir,
         report: (u) => updates.push(u),
         output: (chunk) => output.push(chunk.toString()),
       },
@@ -112,5 +112,24 @@ describe("runJob", () => {
     symlinkSync("999999999", join(dir, "job.lock"));
     const { updates } = await run(0);
     expect(updates.at(-1)).toEqual({ routeId: "7f3k", state: "finished" });
+  });
+});
+
+describe("prefixLines", () => {
+  it("starts every line with the prefix, holding a partial line until it ends", () => {
+    const written: string[] = [];
+    const { output, flush } = prefixLines("[slot 2] ", (chunk, stream) =>
+      written.push(`${stream}:${chunk.toString()}`),
+    );
+    output(Buffer.from("one\ntw"), "stdout");
+    output(Buffer.from("o\n\nthree"), "stdout");
+    output(Buffer.from("err\n"), "stderr");
+    flush();
+    expect(written).toEqual([
+      "stdout:[slot 2] one\n",
+      "stdout:[slot 2] two\n\n",
+      "stderr:[slot 2] err\n",
+      "stdout:[slot 2] three\n",
+    ]);
   });
 });

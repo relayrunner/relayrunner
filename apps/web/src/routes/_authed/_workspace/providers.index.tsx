@@ -1,6 +1,7 @@
 import { PROVIDER_IDS, PROVIDERS as PROVIDER_INFO } from "@relayrunner/providers";
 import { createFileRoute, Link } from "@tanstack/react-router";
 import { useState } from "react";
+import { SectionBoundary } from "@/components/error-boundary";
 import { PageHeader } from "@/components/page-header";
 import { ProviderMark } from "@/components/providers";
 import { RangePicker } from "@/components/range-picker";
@@ -56,7 +57,9 @@ function ProvidersPage() {
               .
             </p>
           ) : (
-            <InUse overview={overview} />
+            <SectionBoundary>
+              <InUse overview={overview} />
+            </SectionBoundary>
           )}
         </div>
 
@@ -65,22 +68,21 @@ function ProvidersPage() {
             <h2 className="font-semibold">Not used yet</h2>
             <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
               {unused.map((provider) => (
-                <div key={provider} className="flex flex-col gap-2.5 rounded-xl border bg-card p-4">
-                  <span className="flex items-center gap-2.5 font-medium">
+                <Link
+                  key={provider}
+                  to="/providers/$provider"
+                  params={{ provider }}
+                  className="group flex flex-col gap-2.5 rounded-xl border bg-card p-4 transition-colors hover:border-foreground/25"
+                >
+                  <span className="flex items-center gap-2.5 font-medium group-hover:underline">
                     <ProviderMark provider={provider} className="size-7 rounded-md" />
                     {PROVIDER_INFO[provider].name}
                   </span>
                   <p className="flex-1 text-sm text-muted-foreground">
                     {PROVIDER_INFO[provider].summary}
                   </p>
-                  <Link
-                    to="/providers/$provider"
-                    params={{ provider }}
-                    className="text-sm font-medium hover:underline"
-                  >
-                    How to set up
-                  </Link>
-                </div>
+                  <span className="text-sm font-medium">How to set up</span>
+                </Link>
               ))}
             </div>
           </div>

@@ -1,4 +1,5 @@
 import { api } from "@/lib/api";
+import type { Setup } from "@/lib/admin-setup";
 
 /** Operator admin over users and workspaces (apps/api/src/routes/admin.ts). */
 export type UserRole = "operator" | null;
@@ -23,6 +24,16 @@ export type AdminWorkspace = {
   createdAt: string;
   members: { userId: string; name: string; email: string; role: string }[];
   githubAccounts: string[];
+  /** Every member is an operator: one of our own, like the test repos' accounts. */
+  internal: boolean;
+  /** When each setup step first happened, or null when it hasn't yet. */
+  setup: Setup;
+  /** Jobs a runner ran in the past 7 days, picks left out. */
+  jobs7d: number;
+  /** How many of those ran on a machine. */
+  machineJobs7d: number;
+  /** The latest job, from the 31 days of jobs kept. */
+  lastJobAt: string | null;
 };
 
 export function listUsers() {

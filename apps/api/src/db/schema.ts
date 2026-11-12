@@ -528,6 +528,8 @@ export const activityEvent = sqliteTable(
     uniqueIndex("activity_event_job_idx").on(table.jobId, table.type),
     // One type over a time range, such as the free checks the Usage page sums.
     index("activity_event_type_idx").on(table.workspaceId, table.type, table.occurredAt),
+    // One type over a time range across every workspace, for operator pings (src/operator-pings.ts).
+    index("activity_event_type_time_idx").on(table.type, table.occurredAt),
   ],
 );
 
@@ -578,6 +580,10 @@ export const routeDecision = sqliteTable(
   },
   (table) => [
     uniqueIndex("route_decision_run_idx").on(table.repositoryId, table.runId, table.runAttempt),
+    // Operator pings (src/operator-pings.ts): the decisions made in a window, and whether a
+    // workspace had a run on a machine before.
+    index("route_decision_created_idx").on(table.createdAt),
+    index("route_decision_workspace_step_idx").on(table.workspaceId, table.step),
   ],
 );
 

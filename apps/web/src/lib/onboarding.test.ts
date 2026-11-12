@@ -1,21 +1,15 @@
 import { describe, expect, test } from "vitest";
-import { shouldOpenInstall } from "./onboarding.ts";
+import { onboardingStep, shouldOpenInstall } from "./onboarding.ts";
 
-const owner = { role: "owner", installations: [] };
-const base = { current: owner, outcome: undefined, opened: false };
+const base = { hasWorkspace: false, outcome: undefined, opened: false };
 
 describe("sending a new user straight to the GitHub App install", () => {
-  test("happens when installing is the only thing left", () => {
+  test("happens with no workspace yet, since installing makes one (#316)", () => {
     expect(shouldOpenInstall(base)).toBe(true);
-    expect(shouldOpenInstall({ ...base, current: { role: "admin", installations: [] } })).toBe(
-      true,
-    );
   });
 
-  test("skips a workspace that already has an installation", () => {
-    expect(shouldOpenInstall({ ...base, current: { role: "owner", installations: [{}] } })).toBe(
-      false,
-    );
+  test("skips anyone already in a workspace, whatever their role", () => {
+    expect(shouldOpenInstall({ ...base, hasWorkspace: true })).toBe(false);
   });
 
   test("stops once GitHub has reported back, such as a request to the org's owners", () => {
@@ -26,15 +20,19 @@ describe("sending a new user straight to the GitHub App install", () => {
   test("redirects only once, so cancelling on GitHub doesn't loop", () => {
     expect(shouldOpenInstall({ ...base, opened: true })).toBe(false);
   });
+});
 
-  test("leaves members, who can't install, on the GitHub step", () => {
-    expect(shouldOpenInstall({ ...base, current: { role: "member", installations: [] } })).toBe(
-      false,
-    );
+describe("the /device step", () => {
+  test("is Approve for anyone in a workspace", () => {
+    expect(onboardingStep({ hasWorkspace: true, outcome: undefined })).toBe("approve");
   });
 
-  test("happens with no workspace yet, since installing makes one (#316)", () => {
-    expect(shouldOpenInstall({ ...base, current: null })).toBe(true);
-    expect(shouldOpenInstall({ ...base, current: null, opened: true })).toBe(false);
+  test("is Approve after a request to an org's owners, before any workspace exists", () => {
+    expect(onboardingStep({ hasWorkspace: false, outcome: "requested" })).toBe("approve");
+  });
+
+  test("is GitHub with no workspace, including after an error or a cancelled install", () => {
+    expect(onboardingStep({ hasWorkspace: false, outcome: undefined })).toBe("github");
+    expect(onboardingStep({ hasWorkspace: false, outcome: "not_found" })).toBe("github");
   });
 });

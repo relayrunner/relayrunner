@@ -76,7 +76,10 @@ export async function recordMachineEvent(
   db: Db,
   machineId: string,
   event:
-    | { type: "machine.connected"; data: { runnerVersion: string | null } }
+    | {
+        type: "machine.connected";
+        data: { runnerVersion: string | null; cliVersion?: string | null };
+      }
     | { type: "machine.disconnected"; data: { reason: DisconnectReason } },
 ) {
   const [machine] = await db

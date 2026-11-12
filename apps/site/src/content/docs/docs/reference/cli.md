@@ -11,14 +11,15 @@ The `relayrunner` CLI runs on macOS and Linux with Node.js 22 or newer. Run it w
 relayrunner connect
 ```
 
-Puts this machine online and runs the jobs it's sent, one at a time, until you stop it. The first run signs the machine in. Ctrl-C takes it offline, and a job that's running stops with it. Press `p` to pause or resume.
+Puts this machine online and runs the jobs it's sent until you stop it. It runs up to 2 jobs at once on a computer with 8 or more CPU cores, otherwise 1; `--concurrency` changes that. The first run signs the machine in. Ctrl-C takes it offline, and a job that's running stops with it. Press `p` to pause or resume.
 
 Run inside a repo with no routed jobs, it offers to route them, the same as `init`.
 
-| Flag                      | What it does                                         |
-| ------------------------- | ---------------------------------------------------- |
-| `--name <name>`           | The machine's name. Defaults to the computer's name. |
-| `--share only-me\|anyone` | Who can run jobs on this machine.                    |
+| Flag                      | What it does                                                           |
+| ------------------------- | ---------------------------------------------------------------------- |
+| `--name <name>`           | The machine's name. Defaults to the computer's name.                   |
+| `--share only-me\|anyone` | Who can run jobs on this machine.                                      |
+| `--concurrency <n>`       | How many jobs to run at once. Defaults to 2 with 8+ CPU cores, else 1. |
 
 ## `login`
 
@@ -34,7 +35,7 @@ Signs this machine in and exits, without putting it online. For agents and scrip
 relayrunner whoami [--json]
 ```
 
-Shows the machine, its workspace, who enrolled it, its sharing setting and whether it's online.
+Shows the machine, the workspaces it's in, who enrolled it, its sharing setting and whether it's online.
 
 ## `init`
 

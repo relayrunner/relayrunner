@@ -9,8 +9,7 @@ Start with the **Activity** page in the dashboard. Most routing questions are an
 
 `relay-<job> / RelayRunner` never starts, and nothing shows on the Activity page.
 
-- **The GitHub App isn't installed** on the repo's owner, or doesn't include this repo. Check **Settings → GitHub accounts**. If the install was a request to an org owner, it needs approving on GitHub first.
-- **The installation isn't connected** to a workspace. Connect it from **Settings → GitHub accounts**.
+- **The GitHub App isn't installed** on the repo's owner, or doesn't include this repo. Check **Settings → GitHub** in the repo owner's workspace. If the install was a request to an org owner, it needs approving on GitHub first.
 - **Your org limits actions.** Allow `relayrunner/actions/*` in the org's Actions settings.
 - **A runner group blocks it.** RelayRunner posts a failed `RelayRunner` check on the commit that says what to change.
 - **Another runner has the `relayrunner` label.** Remove it, or it may take relays instead of RelayRunner.

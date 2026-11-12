@@ -39,8 +39,13 @@ export interface SessionState {
   connectedAt: number;
   lastHeardAt: number;
   // Set by the machine's `hello`. Until then the machine isn't online.
-  hello?: Pick<HelloMessage, "os" | "arch" | "runnerVersion" | "device" | "rotatesToken">;
+  hello?: Pick<
+    HelloMessage,
+    "os" | "arch" | "runnerVersion" | "cliVersion" | "device" | "rotatesToken" | "slots"
+  >;
   state?: "idle" | "busy";
+  // Jobs running, from the last `status`. Unset from a CLI older than concurrency (runningOf).
+  running?: number;
   // Where the connection came from, when the edge said.
   from?: RequestOrigin;
   // SHA-256 of the token sent in a `token` message, until the machine says it saved it.
@@ -91,15 +96,27 @@ export function handleFrame(
     if (session.hello) return reject(session, "invalid_message", "hello was already sent");
     if (message.machineId !== session.machineId)
       return reject(session, "invalid_message", "machineId doesn't match this machine's token");
-    const { os, arch, runnerVersion, device, rotatesToken } = message;
+    const { os, arch, runnerVersion, cliVersion, device, rotatesToken, slots } = message;
     // A machine that just said hello has no job from this gateway yet.
     return {
-      state: { ...heard, hello: { os, arch, runnerVersion, device, rotatesToken }, state: "idle" },
+      state: {
+        ...heard,
+        hello: { os, arch, runnerVersion, cliVersion, device, rotatesToken, slots },
+        state: "idle",
+        running: 0,
+      },
     };
   }
 
   if (!session.hello) return reject(session, "invalid_message", "send hello first");
-  if (message.type === "status") return { state: { ...heard, state: message.state } };
+  if (message.type === "status")
+    return {
+      state: {
+        ...heard,
+        state: message.state,
+        running: message.running ?? (message.state === "busy" ? 1 : 0),
+      },
+    };
   // A repeat, or one for a rotation already finished, only counts as a heartbeat.
   if (message.type === "token_saved")
     return {
@@ -116,14 +133,31 @@ export interface MachineStatus {
   state: "idle" | "busy" | null;
   // Epoch ms of the current connection, or null while offline.
   connectedAt: number | null;
+  // How many jobs it runs at once (1 for a CLI older than concurrency, and while offline), and how
+  // many it reported running (0 while offline).
+  slots: number;
+  running: number;
 }
 
-export const OFFLINE: MachineStatus = { online: false, state: null, connectedAt: null };
+export const OFFLINE: MachineStatus = {
+  online: false,
+  state: null,
+  connectedAt: null,
+  slots: 1,
+  running: 0,
+};
 
 // A machine is online while it holds a socket that has said hello and isn't stale.
 export function statusOf(session: SessionState | null | undefined, now: number): MachineStatus {
   if (!session?.hello || isStale(session, now)) return OFFLINE;
-  return { online: true, state: session.state ?? "idle", connectedAt: session.connectedAt };
+  const state = session.state ?? "idle";
+  return {
+    online: true,
+    state,
+    connectedAt: session.connectedAt,
+    slots: session.hello.slots ?? 1,
+    running: session.running ?? (state === "busy" ? 1 : 0),
+  };
 }
 
 export function isStale(session: SessionState, now: number) {

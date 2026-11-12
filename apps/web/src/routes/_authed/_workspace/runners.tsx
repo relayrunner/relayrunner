@@ -18,6 +18,7 @@ import {
 } from "lucide-react";
 import { useEffect, useState, type ReactNode } from "react";
 import { AddRunner, CONNECT_COMMAND, GithubRunnersDialog } from "@/components/add-runner";
+import { SectionBoundary } from "@/components/error-boundary";
 import { PageHeader } from "@/components/page-header";
 import { GithubIcon } from "@/components/provider-logos";
 import { providerOf } from "@/components/providers";
@@ -302,13 +303,15 @@ function RunnerGroup({
         </h2>
         {action}
       </div>
-      {bare ? (
-        children
-      ) : (
-        <ul className="grid grid-cols-[repeat(auto-fill,minmax(min(100%,19rem),1fr))] gap-3">
-          {children}
-        </ul>
-      )}
+      <SectionBoundary>
+        {bare ? (
+          children
+        ) : (
+          <ul className="grid grid-cols-[repeat(auto-fill,minmax(min(100%,19rem),1fr))] gap-3">
+            {children}
+          </ul>
+        )}
+      </SectionBoundary>
     </section>
   );
 }

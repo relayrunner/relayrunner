@@ -563,7 +563,7 @@ describe("Activity", () => {
 });
 
 describe("runningJobs", () => {
-  test("gives each machine its newest in-progress job, and nothing for idle ones", async () => {
+  test("gives each machine its newest in-progress jobs, up to its running count", async () => {
     const { installationId, workspaceId, runId } = await connectedWorkspace();
     const db = createDb(env.DB);
     await db.insert(schema.machine).values([
@@ -594,15 +594,27 @@ describe("runningJobs", () => {
       row(runId + 3, "completed", 9_000, `idle-${runId}`),
     ]);
 
-    const jobs = await runningJobs(db, [`busy-${runId}`, `idle-${runId}`]);
-    expect(jobs.get(`busy-${runId}`)).toEqual({
-      repository: "acme/app",
-      workflow: "CI",
-      name: `job-${runId + 2}`,
-      url: `https://github.com/acme/app/actions/runs/${runId}/job/${runId + 2}`,
-      startedAt: new Date(6_000).toISOString(),
-    });
+    const machines = [
+      { id: `busy-${runId}`, running: 1 },
+      { id: `idle-${runId}`, running: 1 },
+    ];
+    const jobs = await runningJobs(db, machines);
+    expect(jobs.get(`busy-${runId}`)).toEqual([
+      {
+        repository: "acme/app",
+        workflow: "CI",
+        name: `job-${runId + 2}`,
+        url: `https://github.com/acme/app/actions/runs/${runId}/job/${runId + 2}`,
+        startedAt: new Date(6_000).toISOString(),
+      },
+    ]);
     expect(jobs.has(`idle-${runId}`)).toBe(false);
+    // Running two: both rows, newest first.
+    const both = await runningJobs(db, [{ id: `busy-${runId}`, running: 2 }]);
+    expect(both.get(`busy-${runId}`)?.map((job) => job.name)).toEqual([
+      `job-${runId + 2}`,
+      `job-${runId + 1}`,
+    ]);
     expect((await runningJobs(db, [])).size).toBe(0);
   });
 });

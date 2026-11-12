@@ -1,18 +1,19 @@
-// Runs the one job a `run` message hands the machine: start the installed actions/runner with the
-// message's JIT config, stream its output, report progress, and clean up after it.
+// Runs the job a `run` message hands the machine: start a slot's copy of actions/runner (slots.ts)
+// with the message's JIT config, stream its output, report progress, and clean up after it.
 
 import { spawn } from "node:child_process";
 import { readlinkSync, rmSync, symlinkSync } from "node:fs";
 import { join } from "node:path";
 import type { JobMessage, RunMessage } from "@relayrunner/machine-protocol";
-import type { InstalledRunner } from "./install.ts";
 import { checkJitConfig } from "./jit-config.ts";
 
 // A `job` message without its envelope. Whoever sends it on the socket adds `v` and `type`.
 export type JobUpdate = Omit<JobMessage, "v" | "type">;
 
 export interface RunJobOptions {
-  runner: InstalledRunner;
+  // The slot's runner directory, holding run.sh. Each slot has its own, so two jobs never share
+  // a workspace, credentials or lock.
+  dir: string;
   report: (update: JobUpdate) => void;
   // The runner's stdout and stderr as they arrive. Defaults to this process's own.
   output?: (chunk: Buffer, stream: "stdout" | "stderr") => void;
@@ -36,7 +37,7 @@ const JOB_STATE = ["_work", ".runner", ".credentials", ".credentials_rsaparams"]
 
 // Resolves with the last update it reported ("finished" or "failed"). Never rejects.
 export async function runJob(run: RunMessage, options: RunJobOptions): Promise<JobUpdate> {
-  const { runner, report } = options;
+  const { dir, report } = options;
   const output =
     options.output ??
     ((chunk, stream) => (stream === "stdout" ? process.stdout : process.stderr).write(chunk));
@@ -55,18 +56,18 @@ export async function runJob(run: RunMessage, options: RunJobOptions): Promise<J
     });
   options.onChecked?.(checked.target);
 
-  const lock = join(runner.dir, "job.lock");
+  const lock = join(dir, "job.lock");
   if (!takeLock(lock))
     return finish({
       routeId: run.routeId,
       state: "failed",
-      message: `Another job is using the runner in ${runner.dir}.`,
+      message: `Another job is using the runner in ${dir}.`,
     });
 
   try {
-    clean(runner.dir);
-    const child = spawn(join(runner.dir, "run.sh"), ["--jitconfig", run.jitConfig], {
-      cwd: runner.dir,
+    clean(dir);
+    const child = spawn(join(dir, "run.sh"), ["--jitconfig", run.jitConfig], {
+      cwd: dir,
       env: runnerEnv(),
       stdio: ["ignore", "pipe", "pipe"],
     });
@@ -101,7 +102,7 @@ export async function runJob(run: RunMessage, options: RunJobOptions): Promise<J
       message: error instanceof Error ? error.message : String(error),
     });
   } finally {
-    clean(runner.dir);
+    clean(dir);
     rmSync(lock, { force: true });
   }
 }
@@ -134,4 +135,28 @@ function isAlive(pid: number) {
   } catch (error) {
     return (error as NodeJS.ErrnoException).code === "EPERM";
   }
+}
+
+// Wraps an output callback so every line starts with `prefix`, such as "[slot 2] ", keeping
+// parallel jobs' output apart. A partial line waits for the rest of it; flush() writes what's left.
+export function prefixLines(
+  prefix: string,
+  write: (chunk: Buffer, stream: "stdout" | "stderr") => void,
+) {
+  const partial = { stdout: "", stderr: "" };
+  const output = (chunk: Buffer, stream: "stdout" | "stderr") => {
+    const text = partial[stream] + chunk.toString();
+    const end = text.lastIndexOf("\n") + 1;
+    partial[stream] = text.slice(end);
+    if (end === 0) return;
+    const lines = text.slice(0, end).replace(/^(?=.)/gm, prefix);
+    write(Buffer.from(lines), stream);
+  };
+  const flush = () => {
+    for (const stream of ["stdout", "stderr"] as const) {
+      if (partial[stream]) write(Buffer.from(`${prefix}${partial[stream]}\n`), stream);
+      partial[stream] = "";
+    }
+  };
+  return { output, flush };
 }

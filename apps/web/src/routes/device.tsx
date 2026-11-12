@@ -1,4 +1,4 @@
-import { createFileRoute, Link, useNavigate, useRouter } from "@tanstack/react-router";
+import { createFileRoute, Link, useNavigate } from "@tanstack/react-router";
 import { CheckIcon } from "lucide-react";
 import { useState, type FormEvent, type ReactNode } from "react";
 import { Brand } from "@/components/brand";
@@ -22,9 +22,8 @@ import {
   type DeviceCodeStatus,
 } from "@/lib/machines";
 import { describePlace } from "@/lib/device";
-import { shouldOpenInstall } from "@/lib/onboarding";
+import { onboardingStep, shouldOpenInstall } from "@/lib/onboarding";
 import { cn } from "@/lib/utils";
-import { ensureActiveWorkspace, getCurrentWorkspace, type CurrentWorkspace } from "@/lib/workspace";
 
 // Where `relayrunner connect` sends the browser: /device?user_code=ABCDEFGH&name=<hostname>.
 // It doubles as onboarding for someone who has never used RelayRunner, so the CLI's one link
@@ -40,8 +39,10 @@ import { ensureActiveWorkspace, getCurrentWorkspace, type CurrentWorkspace } fro
 //    GitHub step instead when GitHub has already reported back (?github=), or when they come
 //    back without installing (?install=opened), so cancelling doesn't loop. A non-admin's install
 //    only sends a request to the org's owners, so with ?github=requested they may carry on and
-//    jobs start once an owner accepts.
-// 2. Pick the machine's name and approve. The CLI picks up its machine token on its next poll.
+//    jobs start once an owner accepts. Anyone already in a workspace skips this step.
+// 2. Pick the machine's name and approve. The machine is the user's (#318): it isn't tied to a
+//    workspace, and takes their jobs in every workspace they're in, so there's nothing to pick.
+//    The CLI picks up its machine token on its next poll.
 //
 // The device code lives 15 minutes (apps/api/src/auth.ts): enough for all of that, short enough
 // that an approval link someone else started goes stale quickly.
@@ -65,22 +66,9 @@ type Loaded =
       userCode: string;
       // When and where the CLI asked for the code (null in dev).
       origin: Pick<DeviceCodeStatus, "requested_at" | "requested_from"> | null;
+      // Every workspace the user is in; the machine takes their jobs in all of them.
       workspaces: Workspace[];
-      // The workspace the machine would join: the session's active one. Null with no workspace.
-      current: CurrentWorkspace | null;
     };
-
-const devWorkspace: CurrentWorkspace = {
-  workspace: {
-    id: "dev",
-    name: "Dev workspace",
-    slug: "dev",
-    logo: "https://github.com/relayrunner.png?size=96",
-    createdAt: new Date(0).toISOString(),
-  },
-  role: "owner",
-  installations: [],
-};
 
 // Outside the _authed guard so a signed-out visitor stays here: the GitHub step signs them in.
 export const Route = createFileRoute("/device")({
@@ -105,8 +93,7 @@ export const Route = createFileRoute("/device")({
         kind: "review",
         userCode: deps.userCode,
         origin: null,
-        workspaces: [devWorkspace.workspace],
-        current: devWorkspace,
+        workspaces: [{ id: "dev", name: "Dev workspace" }],
       };
     if (!context.session) return { kind: "signin" };
     let status: DeviceCodeStatus;
@@ -118,27 +105,21 @@ export const Route = createFileRoute("/device")({
     if (status.status !== "pending") return { kind: "done", status: status.status };
     const { data } = await organization.list();
     const workspaces = (data ?? []).map(({ id, name }) => ({ id, name }));
-    const review = {
-      kind: "review" as const,
+    // No workspace yet: installing the App makes one, so go straight to GitHub.
+    if (
+      shouldOpenInstall({
+        hasWorkspace: workspaces.length > 0,
+        outcome: deps.github,
+        opened: deps.install === "opened",
+      })
+    )
+      return openInstall(returnPath(deps));
+    return {
+      kind: "review",
       userCode: deps.userCode,
       origin: { requested_at: status.requested_at, requested_from: status.requested_from },
       workspaces,
     };
-    const opened = deps.install === "opened";
-    if (!workspaces.length || !context.session) {
-      // No workspace yet: installing the App makes one, so go straight to GitHub.
-      if (shouldOpenInstall({ current: null, outcome: deps.github, opened }))
-        return openInstall(returnPath(deps));
-      return { ...review, current: null };
-    }
-
-    const active = await ensureActiveWorkspace(context.session);
-    if (!workspaces.some((workspace) => workspace.id === active))
-      await organization.setActive({ organizationId: workspaces[0]!.id });
-    const current = await getCurrentWorkspace();
-    if (shouldOpenInstall({ current, outcome: deps.github, opened }))
-      return openInstall(returnPath(deps));
-    return { ...review, current };
   },
   component: DevicePage,
 });
@@ -225,11 +206,7 @@ function Onboarding({ loaded }: { loaded: Extract<Loaded, { kind: "review" }> })
   const [result, setResult] = useState<{ action: "approved" | "denied"; name: string } | null>(
     null,
   );
-  const { current } = loaded;
-  // A request to an org's owners counts: nothing more the user can do here, and the machine is
-  // ready the moment an owner accepts.
-  const githubDone = !!current && (current.installations.length > 0 || github === "requested");
-  const step: Step = githubDone ? "approve" : "github";
+  const step = onboardingStep({ hasWorkspace: loaded.workspaces.length > 0, outcome: github });
 
   if (result?.action === "approved")
     return (
@@ -244,15 +221,12 @@ function Onboarding({ loaded }: { loaded: Extract<Loaded, { kind: "review" }> })
   return (
     <div className="flex w-full flex-col gap-4">
       <Steps current={step} />
-      {step === "github" && (
-        <ConnectGitHubStep workspaces={loaded.workspaces} current={current} outcome={github} />
-      )}
-      {step === "approve" && current && (
+      {step === "github" && <ConnectGitHubStep outcome={github} />}
+      {step === "approve" && (
         <ApproveStep
           userCode={loaded.userCode}
           origin={loaded.origin}
           workspaces={loaded.workspaces}
-          current={current}
           outcome={github}
           onDone={setResult}
         />
@@ -399,16 +373,8 @@ function SignInStep() {
   );
 }
 
-// No installation yet. Installing the App on an account makes that account's workspace (#316).
-function ConnectGitHubStep({
-  workspaces,
-  current,
-  outcome,
-}: {
-  workspaces: Workspace[];
-  current: CurrentWorkspace | null;
-  outcome?: GitHubOutcome;
-}) {
+// No workspace yet. Installing the App on an account makes that account's workspace (#316).
+function ConnectGitHubStep({ outcome }: { outcome?: GitHubOutcome }) {
   const back = useReturnPath();
   return (
     <Card className="w-full">
@@ -420,9 +386,6 @@ function ConnectGitHubStep({
         </CardDescription>
       </CardHeader>
       <CardContent className="flex flex-col gap-4">
-        {current && workspaces.length > 1 && (
-          <WorkspaceSelect workspaces={workspaces} value={current.workspace.id} disabled={false} />
-        )}
         {outcome && outcome !== "connected" && outcome !== "updated" && (
           <p
             role="status"
@@ -444,14 +407,12 @@ function ApproveStep({
   userCode,
   origin,
   workspaces,
-  current,
   outcome,
   onDone,
 }: {
   userCode: string;
   origin: Extract<Loaded, { kind: "review" }>["origin"];
   workspaces: Workspace[];
-  current: CurrentWorkspace;
   outcome?: GitHubOutcome;
   onDone: (result: { action: "approved" | "denied"; name: string }) => void;
 }) {
@@ -459,14 +420,14 @@ function ApproveStep({
   const [name, setName] = useState(search.name ?? "");
   const [pending, setPending] = useState<"approve" | "deny" | null>(null);
   const [error, setError] = useState<string | null>(null);
-  const workspaceId = current.workspace.id;
-  const awaitingOwner = current.installations.length === 0;
+  // Only reachable with no workspace after a request to an org's owners (onboardingStep).
+  const awaitingOwner = workspaces.length === 0;
 
   async function act(action: "approve" | "deny") {
     setError(null);
     setPending(action);
     try {
-      if (action === "approve") await approveDevice({ userCode, workspaceId, name: name.trim() });
+      if (action === "approve") await approveDevice({ userCode, name: name.trim() });
       else await denyDevice(userCode);
       onDone({
         action: action === "approve" ? "approved" : "denied",
@@ -484,8 +445,8 @@ function ApproveStep({
       <CardHeader>
         <CardTitle>Connect a machine</CardTitle>
         <CardDescription>
-          Check that this code matches your terminal. Approving lets the machine run jobs for the
-          workspace's private repos.
+          Check that this code matches your terminal. Approving lets the machine run your jobs,
+          private repos included, in every workspace you're in.
         </CardDescription>
       </CardHeader>
       <CardContent>
@@ -517,13 +478,7 @@ function ApproveStep({
             {formatUserCode(userCode)}
           </p>
           <RequestOrigin origin={origin} />
-          {workspaces.length > 1 && (
-            <WorkspaceSelect
-              workspaces={workspaces}
-              value={workspaceId}
-              disabled={pending !== null}
-            />
-          )}
+          {workspaces.length > 0 && <WorkspaceList workspaces={workspaces} />}
           <label className="grid gap-1.5 text-sm font-medium">
             Machine name
             <Input
@@ -561,52 +516,15 @@ function ApproveStep({
   );
 }
 
-// The machine joins the session's active workspace, so switching makes it active and re-runs the
-// page's checks: the other workspace may still need GitHub connected. The ?github= outcome was
-// about the previous workspace, so it goes.
-function WorkspaceSelect({
-  workspaces,
-  value,
-  disabled,
-}: {
-  workspaces: Workspace[];
-  value: string;
-  disabled: boolean;
-}) {
-  const router = useRouter();
-  const navigate = Route.useNavigate();
-  const [switching, setSwitching] = useState(false);
-
-  async function change(id: string) {
-    setSwitching(true);
-    try {
-      await organization.setActive({ organizationId: id });
-      await navigate({
-        search: (prev) => ({ ...prev, github: undefined }),
-        replace: true,
-      });
-      await router.invalidate();
-    } finally {
-      setSwitching(false);
-    }
-  }
-
+// Where the machine will take jobs. Read-only: a machine is in all of its owner's workspaces.
+function WorkspaceList({ workspaces }: { workspaces: Workspace[] }) {
   return (
-    <label className="grid gap-1.5 text-sm font-medium">
-      Workspace
-      <select
-        className="h-9 rounded-md border border-input bg-transparent px-3 text-sm shadow-xs focus-visible:border-ring focus-visible:ring-[3px] focus-visible:ring-ring/50 focus-visible:outline-none"
-        value={value}
-        disabled={disabled || switching}
-        onChange={(event) => void change(event.target.value)}
-      >
-        {workspaces.map((workspace) => (
-          <option key={workspace.id} value={workspace.id}>
-            {workspace.name}
-          </option>
-        ))}
-      </select>
-    </label>
+    <p className="text-center text-sm text-muted-foreground">
+      Runs your jobs in{" "}
+      <span className="font-medium text-foreground">
+        {workspaces.map((workspace) => workspace.name).join(", ")}
+      </span>
+    </p>
   );
 }
 

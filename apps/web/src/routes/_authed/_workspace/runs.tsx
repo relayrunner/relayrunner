@@ -12,6 +12,7 @@ import {
   TimerOffIcon,
 } from "lucide-react";
 import { memo, useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { SectionBoundary } from "@/components/error-boundary";
 import { PageHeader } from "@/components/page-header";
 import { ProviderLink } from "@/components/provider-link";
 import {
@@ -197,27 +198,29 @@ function RunsPage() {
           </p>
         ) : (
           <>
-            <ul className="divide-y overflow-hidden rounded-xl border bg-card">
-              {runs.length === 0 && (
-                <li className="px-4 py-6 text-sm text-muted-foreground">
-                  No runs match these filters.
-                </li>
-              )}
-              {runs.map((run) => {
-                const key = runKey(run);
-                return (
-                  <RunRow
-                    key={key}
-                    id={key}
-                    run={run}
-                    environments={environments}
-                    showRepository={repositories.length > 1}
-                    open={open === key}
-                    onToggle={toggle}
-                  />
-                );
-              })}
-            </ul>
+            <SectionBoundary>
+              <ul className="divide-y overflow-hidden rounded-xl border bg-card">
+                {runs.length === 0 && (
+                  <li className="px-4 py-6 text-sm text-muted-foreground">
+                    No runs match these filters.
+                  </li>
+                )}
+                {runs.map((run) => {
+                  const key = runKey(run);
+                  return (
+                    <RunRow
+                      key={key}
+                      id={key}
+                      run={run}
+                      environments={environments}
+                      showRepository={repositories.length > 1}
+                      open={open === key}
+                      onToggle={toggle}
+                    />
+                  );
+                })}
+              </ul>
+            </SectionBoundary>
             <Legend days={report.days} truncated={report.truncated} />
           </>
         )}

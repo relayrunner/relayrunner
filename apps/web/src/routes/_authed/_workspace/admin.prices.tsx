@@ -33,11 +33,6 @@ import { rateText } from "@/lib/providers";
 export const Route = createFileRoute("/_authed/_workspace/admin/prices")({
   loader: () => listPrices(),
   component: PricesPage,
-  errorComponent: ({ error }) => (
-    <PageHeader title="Prices">
-      Couldn't load prices: {error instanceof Error ? error.message : String(error)}
-    </PageHeader>
-  ),
 });
 
 const rateKey = (rate: Pick<AdminRate, "provider" | "rate">) => `${rate.provider}:${rate.rate}`;

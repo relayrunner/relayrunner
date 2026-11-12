@@ -130,11 +130,11 @@ describe("connect", () => {
 
     expect(connection.request.headers.authorization).toBe(`Bearer ${TOKEN}`);
     await connection.waitFor(() => connection.messages.length >= 3);
-    expect(connection.messages[0]).toEqual({ v: 1, type: "hello", ...hello });
+    expect(connection.messages[0]).toEqual({ v: 1, type: "hello", ...hello, slots: 1 });
     // The status right after hello, then at least one heartbeat.
     expect(connection.messages.slice(1, 3)).toEqual([
-      { v: 1, type: "status", state: "idle" },
-      { v: 1, type: "status", state: "idle" },
+      { v: 1, type: "status", state: "idle", running: 0 },
+      { v: 1, type: "status", state: "idle", running: 0 },
     ]);
 
     stop.abort();
@@ -208,7 +208,7 @@ describe("connect", () => {
     const gateway = await startGateway();
     let finish!: () => void;
     const { stop, end } = start(gateway, {
-      runJob: (run, report) => {
+      runJob: (run, _slot, report) => {
         report({ routeId: run.routeId, state: "started" });
         return new Promise<void>((resolve) => {
           finish = () => {
@@ -223,7 +223,7 @@ describe("connect", () => {
 
     connection.socket.send(JSON.stringify({ v: 1, type: "run", routeId: "r1", jitConfig: "x" }));
     await connection.waitFor((m) => m.type === "job" && m.state === "started");
-    // Capacity one: a second job is turned down while the first runs.
+    // One slot: a second job is turned down while the first runs.
     connection.socket.send(JSON.stringify({ v: 1, type: "run", routeId: "r2", jitConfig: "y" }));
     await connection.waitFor((m) => m.type === "job" && m.routeId === "r2");
     finish();
@@ -233,8 +233,8 @@ describe("connect", () => {
     );
 
     expect(connection.messages.slice(1)).toEqual([
-      { v: 1, type: "status", state: "idle" },
-      { v: 1, type: "status", state: "busy" },
+      { v: 1, type: "status", state: "idle", running: 0 },
+      { v: 1, type: "status", state: "busy", running: 1 },
       { v: 1, type: "job", routeId: "r1", state: "started" },
       {
         v: 1,
@@ -244,7 +244,83 @@ describe("connect", () => {
         message: "The machine is already running a job.",
       },
       { v: 1, type: "job", routeId: "r1", state: "finished" },
-      { v: 1, type: "status", state: "idle" },
+      { v: 1, type: "status", state: "idle", running: 0 },
+    ]);
+    stop.abort();
+    await end;
+  });
+
+  test("runs jobs in parallel up to its slots, and turns down one more", async () => {
+    const gateway = await startGateway();
+    const finish = new Map<string, (failed?: boolean) => void>();
+    const slots: Record<string, number> = {};
+    const { stop, end, events } = start(gateway, {
+      slots: 2,
+      runJob: (run, slot, report) => {
+        slots[run.routeId] = slot;
+        report({ routeId: run.routeId, state: "started" });
+        return new Promise<void>((resolve) => {
+          finish.set(run.routeId, (failed) => {
+            report(
+              failed
+                ? { routeId: run.routeId, state: "failed", message: "run.sh exited with 1" }
+                : { routeId: run.routeId, state: "finished" },
+            );
+            resolve();
+          });
+        });
+      },
+    });
+    const connection = await gateway.next();
+    expect(await connection.waitFor((m) => m.type === "hello")).toMatchObject({ slots: 2 });
+    await connection.waitFor((m) => m.type === "status");
+    const send = (routeId: string) =>
+      connection.socket.send(JSON.stringify({ v: 1, type: "run", routeId, jitConfig: "x" }));
+    const status = (running: number) =>
+      connection.waitFor((m) => m.type === "status" && m.running === running);
+
+    send("r1");
+    send("r2");
+    await connection.waitFor((m) => m.type === "job" && m.routeId === "r2");
+    await status(2);
+    expect(slots).toEqual({ r1: 1, r2: 2 });
+
+    send("r3");
+    expect(await connection.waitFor((m) => m.type === "job" && m.routeId === "r3")).toEqual({
+      v: 1,
+      type: "job",
+      routeId: "r3",
+      state: "failed",
+      message: "The machine is already running 2 jobs.",
+    });
+    expect(events).toContainEqual({ type: "run-refused", routeId: "r3", running: 2 });
+
+    // A failed job frees its slot like a finished one, and the next run takes the free slot.
+    finish.get("r1")!(true);
+    await connection.waitFor((m) => m.type === "job" && m.routeId === "r1" && m.state === "failed");
+    send("r4");
+    await connection.waitFor((m) => m.type === "job" && m.routeId === "r4");
+    expect(slots.r4).toBe(1);
+    finish.get("r2")!();
+    finish.get("r4")!();
+    await connection.waitFor(
+      (m) => m.type === "job" && m.routeId === "r4" && m.state === "finished",
+    );
+    await connection.waitFor(
+      (m) => m.type === "status" && m.running === 0 && connection.messages.indexOf(m) > 2,
+    );
+
+    const statuses = connection.messages
+      .filter((m) => m.type === "status")
+      .map((m) => (m.type === "status" ? [m.state, m.running] : null));
+    expect(statuses).toEqual([
+      ["idle", 0],
+      ["busy", 1],
+      ["busy", 2],
+      ["busy", 1],
+      ["busy", 2],
+      ["busy", 1],
+      ["idle", 0],
     ]);
     stop.abort();
     await end;
@@ -270,7 +346,7 @@ describe("connect", () => {
     const gateway = await startGateway();
     let report!: (update: JobUpdate) => void;
     const { stop, end } = start(gateway, {
-      runJob: (_run, r) => {
+      runJob: (_run, _slot, r) => {
         report = r;
         return new Promise(() => {});
       },
@@ -285,7 +361,7 @@ describe("connect", () => {
     const second = await gateway.next();
     await second.waitFor((m) => m.type === "job");
     expect(second.messages.map((m) => m.type)).toEqual(["hello", "status", "job"]);
-    expect(second.messages[1]).toEqual({ v: 1, type: "status", state: "busy" });
+    expect(second.messages[1]).toEqual({ v: 1, type: "status", state: "busy", running: 1 });
     stop.abort();
     await end;
   });

@@ -1,6 +1,7 @@
 import { createFileRoute } from "@tanstack/react-router";
 import { ChevronRightIcon } from "lucide-react";
 import { memo, useEffect, useMemo, useState } from "react";
+import { SectionBoundary } from "@/components/error-boundary";
 import { PageHeader } from "@/components/page-header";
 import { ProviderLink } from "@/components/provider-link";
 import { ProviderMark, providerOf } from "@/components/providers";
@@ -119,13 +120,17 @@ function JobTimesPage() {
           </p>
         ) : (
           <>
-            <Environments report={report} />
-            <Jobs
-              environments={report.environments}
-              workflows={workflows}
-              showRepository={repository === "all" && repositories.length > 1}
-              onOpen={setDetail}
-            />
+            <SectionBoundary>
+              <Environments report={report} />
+            </SectionBoundary>
+            <SectionBoundary>
+              <Jobs
+                environments={report.environments}
+                workflows={workflows}
+                showRepository={repository === "all" && repositories.length > 1}
+                onOpen={setDetail}
+              />
+            </SectionBoundary>
             <p className="max-w-[62ch] text-sm text-muted-foreground">
               Run time counts successful runs only, since a failure stops early. Medians, not
               averages, so one cold cache doesn't skew a job. Wait is the time from queued until a
@@ -136,12 +141,14 @@ function JobTimesPage() {
         )}
       </div>
       {detail && (
-        <JobDetail
-          detail={detail}
-          days={report.days}
-          environments={report.environments}
-          onClose={() => setDetail(null)}
-        />
+        <SectionBoundary>
+          <JobDetail
+            detail={detail}
+            days={report.days}
+            environments={report.environments}
+            onClose={() => setDetail(null)}
+          />
+        </SectionBoundary>
       )}
     </section>
   );

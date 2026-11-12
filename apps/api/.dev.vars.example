@@ -16,6 +16,8 @@ DASHBOARD_URL=http://localhost:5179
 # OPERATOR_ALERT_EMAIL=ops@example.com
 # Also post dead-letter alerts to a Slack or Discord incoming webhook.
 # DEAD_LETTER_ALERT_WEBHOOK_URL=
+# Post operator pings (signups, installs, first machines, unroutable runs) to a Slack incoming webhook.
+# OPERATOR_SLACK_WEBHOOK_URL=
 # Orgs whose `runs-on: relayrunner-container` jobs and lint checks get a container, comma-separated.
 # Containers need Docker locally.
 # CONTAINER_RUNNER_ORGS=your-org

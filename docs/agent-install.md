@@ -45,9 +45,10 @@ relayrunner login
 
 `login` prints a URL and a code, opens the browser, and waits until the user approves (up to 30
 minutes). Tell the user the URL and the code before you wait. In the browser they sign in with
-GitHub (this creates their account), create or pick a workspace, install the RelayRunner GitHub
-App on their organization or personal account, check that the code matches, and approve this
-computer. `login` then saves the machine's token and exits. It does not put the computer online.
+GitHub (this creates their account), install the RelayRunner GitHub App on their organization or
+personal account if they haven't yet (each install is a workspace), check that the code matches,
+and approve this computer. There's no workspace to pick: the computer takes their jobs in every
+workspace they're in. `login` then saves the machine's token and exits. It does not put the computer online.
 
 A new machine only runs jobs the user started. If the workspace has other members, `login`
 says so. Then ask the user whether teammates' jobs may run here too, and if they say yes, run
@@ -199,7 +200,7 @@ RelayRunner` finishing in about a second, then the job itself. In the job's log,
 tells where it ran: a name starting with this computer's machine name (from `relayrunner whoami`)
 means it ran here, and a GitHub-hosted name means the fallback label. If
 `relay-<job> / RelayRunner` stays queued, the GitHub App is probably not installed on the repo's
-owner, or doesn't cover this repo. The user can check under Settings → GitHub accounts in the
+owner, or doesn't cover this repo. The user can check under Settings → GitHub in the
 dashboard.
 
 To take this computer out of the rotation for a while, the user stops `relayrunner connect`, or

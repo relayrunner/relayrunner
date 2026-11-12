@@ -1,4 +1,4 @@
-import type { MinutesUsage, NotSharedMachine, RouteWalk, SkipReason } from "@relayrunner/activity";
+import type { FullMachine, MinutesUsage, NotSharedMachine, RouteWalk } from "@relayrunner/activity";
 import { notProviderLabelText, RUNNER_LABELS, type RunnerKey } from "@relayrunner/runner-order";
 
 // How the Activity page explains where a job went: a short reason after the runner, and one line
@@ -36,17 +36,24 @@ function notSharedText(notShared: NotSharedMachine[] = [], short = false) {
   return `${names.slice(0, -1).join(", ")} and ${names[names.length - 1]} only run their owners' jobs`;
 }
 
+// "atticus-mbp is full (2 of 2 running)"; for several, the short form counts them.
+export function fullText(full: FullMachine[] = [], short = false) {
+  const [only] = full;
+  if (full.length === 1 && only)
+    return `${only.machine} is full (${only.running} of ${only.slots} running)`;
+  if (full.length === 0) return "machines are full";
+  if (short) return `${full.length} machines are full`;
+  const each = full.map((m) => `${m.machine} ${m.running} of ${m.slots}`).join(", ");
+  return `every machine that fits is full (${each} running)`;
+}
+
+type SkippedStep = RouteWalk["skipped"][number];
+
 const count = (n: number) => Math.round(n).toLocaleString("en-US");
 const usedPercent = (m: MinutesUsage) => Math.floor((m.usedMinutes / m.quotaMinutes) * 100);
 
-function shortSkip(
-  walk: RouteWalk,
-  key: RunnerKey,
-  reason: SkipReason,
-  paused?: string[],
-  minutes?: MinutesUsage,
-  notShared?: NotSharedMachine[],
-): string | null {
+function shortSkip(walk: RouteWalk, step: SkippedStep): string | null {
+  const { key, reason, paused, minutes, notShared, full } = step;
   switch (reason) {
     case "minutes_limit":
       return minutes
@@ -60,6 +67,8 @@ function shortSkip(
       return pausedText(paused);
     case "machine_not_shared":
       return notSharedText(notShared, true);
+    case "machine_full":
+      return fullText(full, true);
     case "no_machine": {
       const labels = machineLabels(walk);
       return labels ? `no idle machine with ${labels}` : "no idle machine";
@@ -76,14 +85,8 @@ function shortSkip(
   }
 }
 
-function longSkip(
-  walk: RouteWalk,
-  key: RunnerKey,
-  reason: SkipReason,
-  paused: string[] = [],
-  minutes?: MinutesUsage,
-  notShared?: NotSharedMachine[],
-): string {
+function longSkip(walk: RouteWalk, step: SkippedStep): string {
+  const { key, reason, paused = [], minutes, notShared, full } = step;
   switch (reason) {
     case "minutes_limit":
     case "minutes_runway": {
@@ -102,6 +105,8 @@ function longSkip(
     }
     case "machine_not_shared":
       return notSharedText(notShared);
+    case "machine_full":
+      return fullText(full);
     case "no_machine": {
       const labels = machineLabels(walk);
       return labels
@@ -129,10 +134,10 @@ export type WalkTone = "fallback" | "info";
 export function walkSummary(walk: RouteWalk): { text: string; tone: WalkTone } | null {
   const parts: string[] = [];
   let tone: WalkTone = "info";
-  for (const { key, reason, paused, minutes, notShared } of walk.skipped) {
-    const text = shortSkip(walk, key, reason, paused, minutes, notShared);
+  for (const step of walk.skipped) {
+    const text = shortSkip(walk, step);
     if (text) parts.push(text);
-    if (reason !== "not_configured" && reason !== "public_repo") tone = "fallback";
+    if (step.reason !== "not_configured" && step.reason !== "public_repo") tone = "fallback";
   }
   for (const key of walk.notInOrder) parts.push(`${key} is set but not in your order`);
   return parts.length ? { text: parts.join("; "), tone } : null;
@@ -151,14 +156,12 @@ export interface WalkLine {
  * `runner` names where the answering step sent the job: its line reads "on <runner>".
  */
 export function walkLines(walk: RouteWalk, runner: string | null): WalkLine[] {
-  const lines: WalkLine[] = walk.skipped.map(
-    ({ key, reason, paused, minutes, notShared }, index) => ({
-      position: index + 1,
-      key,
-      state: "skipped",
-      text: longSkip(walk, key, reason, paused, minutes, notShared),
-    }),
-  );
+  const lines: WalkLine[] = walk.skipped.map((step, index) => ({
+    position: index + 1,
+    key: step.key,
+    state: "skipped",
+    text: longSkip(walk, step),
+  }));
   if (walk.step)
     lines.push({
       position: lines.length + 1,

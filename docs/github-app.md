@@ -6,7 +6,7 @@ The App can be installed on an **organization** or a **personal account**. Both 
 
 ## Visibility
 
-The App must be **public** (App settings → Advanced → Make public). A private GitHub App can only be installed on the account that owns it, here the `relayrunner` org, so every other org and personal account gets nowhere: "Connect another account" in the dashboard fails for them. Found in the personal account live test (#210), where `atticoos` couldn't install the App until it was made public. Public only means anyone can install it; installing still gives RelayRunner nothing until the installation is connected to a workspace.
+The App must be **public** (App settings → Advanced → Make public). A private GitHub App can only be installed on the account that owns it, here the `relayrunner` org, so every other org and personal account gets nowhere: "Add an organization" in the dashboard fails for them. Found in the personal account live test (#210), where `atticoos` couldn't install the App until it was made public. Public only means anyone can install it. Each installation is its own workspace (#315): the install makes it, the installer is its owner, and uninstalling deletes it.
 
 ## Permissions
 
@@ -72,7 +72,7 @@ An org that hasn't accepted the main App's Organization Administration (Read) ge
 
 ## Sign-in
 
-Better Auth uses the App's OAuth client as its GitHub provider (`GITHUB_APP_CLIENT_ID`, `GITHUB_APP_CLIENT_SECRET`), so signing in to RelayRunner is authorizing the App. The callback URL is `<BETTER_AUTH_URL>/api/auth/callback/github`. The user token from sign-in lists the user's installations when they connect one to a workspace, and reads a personal account's billing (above).
+Better Auth uses the App's OAuth client as its GitHub provider (`GITHUB_APP_CLIENT_ID`, `GITHUB_APP_CLIENT_SECRET`), so signing in to RelayRunner is authorizing the App. The callback URL is `<BETTER_AUTH_URL>/api/auth/callback/github`. The user token from sign-in lists the user's installations (`GET /user/installations`), which decides which workspaces they're a member of (`apps/api/src/memberships.ts`), and reads a personal account's billing (above).
 
 ## URLs
 

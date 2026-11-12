@@ -26,7 +26,7 @@ The first time the agent uses it, your browser opens. Sign in with GitHub, pick 
 | Tool               | What it reads                                                           |
 | ------------------ | ----------------------------------------------------------------------- |
 | `list_workspaces`  | The workspaces this connection can read                                 |
-| `get_workspace`    | One workspace, your role and its GitHub accounts                        |
+| `get_workspace`    | One workspace, your role and its GitHub installation                    |
 | `list_runners`     | Runners, their status, labels, pause state and current job              |
 | `get_runner_order` | The providers jobs are tried on, in order                               |
 | `list_runs`        | Recent workflow runs, by repo, status or result                         |

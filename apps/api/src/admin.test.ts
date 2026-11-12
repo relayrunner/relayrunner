@@ -66,6 +66,81 @@ describe("/api/admin", () => {
     ]);
   });
 
+  test("marks operators' own workspaces and reports each one's setup and jobs", async () => {
+    const op = await operator();
+    const ours = await testing.createWorkspace(env, op.cookie, "Ours", "ours-adoption");
+    const customer = await testing.signIn(env);
+    const { workspace } = await testing.createWorkspace(
+      env,
+      customer.cookie,
+      "Acme",
+      "acme-adoption",
+    );
+    const now = Date.now();
+    const hour = 60 * 60 * 1000;
+    const job = (id: number, completedAt: number, labels: string[], machineId: string | null) =>
+      env.DB.prepare(
+        `insert into job_timing (id, installation_id, repository_id, repository_full_name, run_id,
+          run_attempt, name, labels, runner_name, machine_id, started_at, completed_at, created_at,
+          updated_at) values (?, ?, 1, 'acme/app', ?, 1, 'test', ?, 'runner', ?, ?, ?, ?, ?)`,
+      ).bind(
+        id,
+        workspace.installationId,
+        id,
+        JSON.stringify(labels),
+        machineId,
+        completedAt - 1000,
+        completedAt,
+        now,
+        now,
+      );
+    await env.DB.batch([
+      env.DB.prepare(
+        "insert into activity_event (workspace_id, type, data, occurred_at) values (?, 'machine.enrolled', '{}', ?)",
+      ).bind(workspace.id, now - 3 * hour),
+      env.DB.prepare(
+        `insert into route_decision (workspace_id, repository_id, run_id, run_attempt, step, skipped,
+          not_in_order, machine, github, created_at) values (?, 1, 1, 1, 'machine', '[]', '[]', '[]', '[]', ?)`,
+      ).bind(workspace.id, now - 2 * hour),
+      job(880_000_001, now - hour, ["rr-1"], "m1"),
+      job(880_000_002, now - 2 * hour, ["ubuntu-latest"], null),
+      // A pick only routes its run, so it isn't counted.
+      job(880_000_003, now - 30_000, ["relayrunner"], null),
+      // Older than the week: only counts toward the last job.
+      job(880_000_004, now - 9 * 24 * hour, ["ubuntu-latest"], null),
+    ]);
+
+    const { workspaces } = (await (await call("/workspaces", op.cookie)).json()) as {
+      workspaces: {
+        id: string;
+        internal: boolean;
+        setup: Record<string, string | null>;
+        jobs7d: number;
+        machineJobs7d: number;
+        lastJobAt: string | null;
+      }[];
+    };
+    expect(workspaces.find((w) => w.id === ours.workspace.id)).toMatchObject({
+      internal: true,
+      jobs7d: 0,
+      lastJobAt: null,
+      setup: { machineAt: null, firstMachineJobAt: null },
+    });
+    const acme = workspaces.find((w) => w.id === workspace.id)!;
+    expect(acme).toMatchObject({
+      internal: false,
+      jobs7d: 2,
+      machineJobs7d: 1,
+      lastJobAt: new Date(now - hour).toISOString(),
+      setup: {
+        machineAt: new Date(now - 3 * hour).toISOString(),
+        firstMachineJobAt: new Date(now - 2 * hour).toISOString(),
+      },
+    });
+    expect(acme.setup.signedUpAt).toEqual(expect.any(String));
+    expect(acme.setup.installedAt).toEqual(expect.any(String));
+  });
+
   test("grants and revokes operator, but never the caller's own", async () => {
     vi.spyOn(console, "log").mockImplementation(() => {});
     const op = await operator();

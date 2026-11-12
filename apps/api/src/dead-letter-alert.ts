@@ -7,6 +7,7 @@
 import { countDeadLettersSince } from "./dead-letters.ts";
 import { sendEmail } from "./email.ts";
 import type { Env } from "./env.ts";
+import { postToWebhook } from "./operator-pings.ts";
 
 export const DEFAULT_ALERT_THRESHOLD = 10;
 const WINDOW_MS = 60 * 60 * 1000;
@@ -31,13 +32,7 @@ export async function checkDeadLetterGrowth(
   );
   if (env.DEAD_LETTER_ALERT_WEBHOOK_URL) {
     try {
-      // `text` for Slack, `content` for Discord.
-      const response = await fetcher(env.DEAD_LETTER_ALERT_WEBHOOK_URL, {
-        method: "POST",
-        headers: { "content-type": "application/json" },
-        body: JSON.stringify({ text, content: text }),
-      });
-      if (!response.ok) throw new Error(`alert webhook answered ${response.status}`);
+      await postToWebhook(env.DEAD_LETTER_ALERT_WEBHOOK_URL, text, fetcher);
     } catch (error) {
       console.error(
         JSON.stringify({

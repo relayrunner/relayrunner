@@ -50,19 +50,27 @@ export const HelloMessage = z.object({
   arch: z.enum(["x64", "arm64", "arm"]),
   // The actions/runner version installed on the machine, such as "2.329.0".
   runnerVersion: z.string().min(1),
+  // The relayrunner CLI's own version, such as "0.7.0". Missing from CLIs older than 0.7.0.
+  cliVersion: z.string().trim().min(1).max(40).optional(),
   // Missing from CLIs older than device reporting. A device the gateway can't read is dropped
   // rather than failing the hello, so a detection bug never keeps a machine offline.
   device: Device.optional().catch(undefined),
   // True when this CLI saves a new machine token from a `token` message. The gateway only rotates
   // the token of a machine that says so, since an older CLI would keep using the old one.
   rotatesToken: z.boolean().optional(),
+  // How many jobs the machine runs at once (`connect --concurrency`). Missing from CLIs older than
+  // concurrency, which run one.
+  slots: z.number().int().positive().max(1_000).optional(),
 });
 
 // Sent whenever the machine's state changes and again on an interval as its heartbeat.
 export const StatusMessage = z.object({
   v: version,
   type: z.literal("status"),
+  // busy while any slot runs a job, so a gateway that reads only `state` still works.
   state: z.enum(["idle", "busy"]),
+  // How many jobs are running now. Missing from CLIs older than concurrency: busy then means one.
+  running: z.number().int().nonnegative().max(1_000).optional(),
 });
 
 // Progress of the runner process the machine started for a `run` message. "finished" means the

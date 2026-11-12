@@ -49,6 +49,21 @@ function rejected(session: SessionState, f: string | ArrayBuffer) {
 }
 
 describe("machine session", () => {
+  test("keeps the CLI version a hello reports, for MachineLink to log", () => {
+    const session = said([
+      frame({
+        type: "hello",
+        machineId: "m1",
+        os: "macos",
+        arch: "arm64",
+        runnerVersion: "2.329.0",
+        cliVersion: "0.7.0",
+      }),
+    ]);
+    expect(session.hello?.cliVersion).toBe("0.7.0");
+    expect(said([hello]).hello?.cliVersion).toBeUndefined();
+  });
+
   test("keeps the device a hello reports, for MachineLink to store", () => {
     const device = { kind: "laptop", model: "MacBook Pro", cpuCores: 12 } as const;
     const withDevice = frame({
@@ -65,7 +80,31 @@ describe("machine session", () => {
 
   test("a connected machine isn't online until it says hello", () => {
     expect(statusOf(newSession("m1", 0), 0).online).toBe(false);
-    expect(statusOf(said([hello]), 1000)).toEqual({ online: true, state: "idle", connectedAt: 0 });
+    expect(statusOf(said([hello]), 1000)).toEqual({
+      online: true,
+      state: "idle",
+      connectedAt: 0,
+      slots: 1,
+      running: 0,
+    });
+  });
+
+  test("a CLI older than concurrency has one slot, and busy means one job running", () => {
+    const busy = said([hello, frame({ type: "status", state: "busy" })]);
+    expect(statusOf(busy, 2000)).toMatchObject({ slots: 1, running: 1, state: "busy" });
+  });
+
+  test("hello's slots and status's running carry through", () => {
+    const helloSlots = frame({
+      type: "hello",
+      machineId: "m1",
+      os: "linux",
+      arch: "x64",
+      runnerVersion: "2.329.0",
+      slots: 4,
+    });
+    const session = said([helloSlots, frame({ type: "status", state: "busy", running: 3 })]);
+    expect(statusOf(session, 2000)).toMatchObject({ slots: 4, running: 3, state: "busy" });
   });
 
   test("status messages set idle or busy", () => {

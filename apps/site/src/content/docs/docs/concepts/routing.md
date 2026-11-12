@@ -41,7 +41,7 @@ If nothing fits, the relay fails with the reason and the job doesn't start. See 
 
 ## Which machine
 
-When the self-hosted step is reached, RelayRunner looks for a machine that is online, idle, not paused, has every `machine` label, and is shared with whoever started the job. Your own machines come first for your jobs. A machine runs one job at a time.
+When the self-hosted step is reached, RelayRunner looks for a machine that is online, idle, not paused, has every `machine` label, and is shared with whoever started the job. Your own machines come first for your jobs. A machine takes jobs while it has a free slot (see [Jobs at once](/docs/runners/self-hosted#jobs-at-once)).
 
 ## Rules that always apply
 

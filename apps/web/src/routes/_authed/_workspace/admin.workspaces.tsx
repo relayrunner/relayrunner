@@ -1,18 +1,21 @@
 import { createFileRoute } from "@tanstack/react-router";
 import { EllipsisIcon, Trash2Icon } from "lucide-react";
-import { useState } from "react";
+import { useMemo, useState } from "react";
 import { AdminDeleteDialog } from "@/components/admin-delete-dialog";
 import { PageHeader } from "@/components/page-header";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import { createCellContext, DataTable, dataTableColumns } from "@/components/ui/data-table";
+import { createCellContext, DataTable, dataTableColumns, NUM } from "@/components/ui/data-table";
 import {
   DropdownMenu,
   DropdownMenuContent,
   DropdownMenuItem,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
+import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
 import { timeAgo } from "@/lib/activity";
+import { setupSteps, type SetupStep } from "@/lib/admin-setup";
+import { cn } from "@/lib/utils";
 import { WorkspaceMark } from "@/components/workspace-menu";
 import { deleteWorkspace, deletedNotice, listWorkspaces, type AdminWorkspace } from "@/lib/admin";
 import { ROLE_LABELS, type Role } from "@/lib/roles";
@@ -21,17 +24,18 @@ import { ROLE_LABELS, type Role } from "@/lib/roles";
 export const Route = createFileRoute("/_authed/_workspace/admin/workspaces")({
   loader: () => listWorkspaces(),
   component: WorkspacesPage,
-  errorComponent: ({ error }) => (
-    <PageHeader title="Workspaces">
-      Couldn't load workspaces: {error instanceof Error ? error.message : String(error)}
-    </PageHeader>
-  ),
 });
 
 function WorkspacesPage() {
   const [workspaces, setWorkspaces] = useState(Route.useLoaderData().workspaces);
   const [deleting, setDeleting] = useState<AdminWorkspace | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
+  const [showInternal, setShowInternal] = useState(false);
+  const internalCount = workspaces.filter((w) => w.internal).length;
+  const shown = useMemo(
+    () => (showInternal ? workspaces : workspaces.filter((w) => !w.internal)),
+    [workspaces, showInternal],
+  );
 
   function startDelete(target: AdminWorkspace) {
     setNotice(null);
@@ -47,10 +51,22 @@ function WorkspacesPage() {
   return (
     <section className="grid max-w-5xl gap-6">
       <PageHeader title="Workspaces">
-        Every workspace, newest first, with its members and connected GitHub accounts. Members
-        manage their own roles under each workspace's settings. Delete is for repeating sign-up and
-        onboarding tests.
+        Every workspace, newest first, with its members, connected GitHub accounts, and how far it
+        got with setup. A setup step shows amber when it hasn't happened a day after the one before
+        it. Jobs count the past 7 days. Delete is for repeating sign-up and onboarding tests.
       </PageHeader>
+
+      {internalCount > 0 && (
+        <label className="flex w-fit cursor-pointer items-center gap-2 text-sm text-muted-foreground">
+          <input
+            type="checkbox"
+            className="size-4 accent-[var(--color-go)]"
+            checked={showInternal}
+            onChange={(event) => setShowInternal(event.target.checked)}
+          />
+          Show our own workspaces ({internalCount}), where every member is an operator
+        </label>
+      )}
 
       {notice && (
         <p role="status" className="text-sm text-muted-foreground">
@@ -59,13 +75,15 @@ function WorkspacesPage() {
       )}
 
       <WorkspaceActions value={{ startDelete }}>
-        <DataTable
-          columns={columns}
-          data={workspaces}
-          getRowId={(w) => w.id}
-          initialSorting={[{ id: "createdAt", desc: true }]}
-          empty="No workspaces yet."
-        />
+        <TooltipProvider delayDuration={150}>
+          <DataTable
+            columns={columns}
+            data={shown}
+            getRowId={(w) => w.id}
+            initialSorting={[{ id: "createdAt", desc: true }]}
+            empty="No workspaces yet."
+          />
+        </TooltipProvider>
       </WorkspaceActions>
 
       <AdminDeleteDialog
@@ -135,6 +153,51 @@ const columns = column.columns([
       </ul>
     ),
   }),
+  column.accessor((w) => setupSteps(w.setup).filter((step) => step.at).length, {
+    id: "setup",
+    header: "Setup",
+    sortFn: "basic",
+    sortDescFirst: true,
+    meta: TOP,
+    cell: ({ row }) => <SetupDots steps={setupSteps(row.original.setup)} />,
+  }),
+  column.accessor("jobs7d", {
+    header: "Jobs 7d",
+    sortFn: "basic",
+    sortDescFirst: true,
+    meta: { ...NUM, className: `${NUM.className} py-3 align-top` },
+    cell: ({ getValue }) => getValue().toLocaleString(),
+  }),
+  column.accessor((w) => (w.jobs7d ? w.machineJobs7d / w.jobs7d : -1), {
+    id: "onMachine",
+    header: "On machine",
+    sortFn: "basic",
+    sortDescFirst: true,
+    meta: { ...NUM, className: `${NUM.className} py-3 align-top` },
+    cell: ({ row }) =>
+      row.original.jobs7d ? (
+        <span
+          title={`${row.original.machineJobs7d} of ${row.original.jobs7d} jobs ran on a machine`}
+        >
+          {Math.round((row.original.machineJobs7d / row.original.jobs7d) * 100)}%
+        </span>
+      ) : (
+        "—"
+      ),
+  }),
+  column.accessor((w) => w.lastJobAt ?? "", {
+    id: "lastJob",
+    header: "Last job",
+    sortFn: "text",
+    sortDescFirst: true,
+    meta: { className: "py-3 align-top whitespace-nowrap" },
+    cell: ({ row }) =>
+      row.original.lastJobAt ? (
+        <span title={row.original.lastJobAt}>{timeAgo(row.original.lastJobAt, Date.now())}</span>
+      ) : (
+        <span className="text-muted-foreground">—</span>
+      ),
+  }),
   column.accessor("createdAt", {
     header: "Created",
     sortFn: "text",
@@ -167,4 +230,51 @@ function MoreActions({ workspace }: { workspace: AdminWorkspace }) {
       </DropdownMenuContent>
     </DropdownMenu>
   );
+}
+
+const dateTime = new Intl.DateTimeFormat(undefined, { dateStyle: "medium", timeStyle: "short" });
+
+/** One dot per setup step: filled when done, amber when stuck, hollow while waiting. */
+function SetupDots({ steps }: { steps: SetupStep[] }) {
+  return (
+    <ul className="flex items-center gap-1.5 pt-1" aria-label="Setup">
+      {steps.map((step) => (
+        <li key={step.label} className="flex">
+          <Tooltip>
+            <TooltipTrigger asChild>
+              <button
+                type="button"
+                aria-label={`${step.label}: ${stepStatus(step)}`}
+                className="flex size-4 cursor-default items-center justify-center rounded-full outline-none focus-visible:ring-[3px] focus-visible:ring-ring/50"
+              >
+                <span
+                  aria-hidden
+                  className={cn(
+                    "size-2.5 rounded-full border",
+                    step.at
+                      ? "border-go bg-go"
+                      : step.stuck
+                        ? "border-run bg-run"
+                        : "border-muted-foreground/50",
+                  )}
+                />
+              </button>
+            </TooltipTrigger>
+            <TooltipContent>
+              <div className="font-medium">{step.label}</div>
+              <div>{stepStatus(step)}</div>
+            </TooltipContent>
+          </Tooltip>
+        </li>
+      ))}
+    </ul>
+  );
+}
+
+function stepStatus(step: SetupStep) {
+  if (step.at) return dateTime.format(new Date(step.at));
+  if (!step.waitingSince) return "Not yet";
+  const hours = Math.floor((Date.now() - new Date(step.waitingSince).getTime()) / 3_600_000);
+  const waited = hours < 48 ? `${hours}h` : `${Math.floor(hours / 24)}d`;
+  return `Not yet, ${waited} since the step before`;
 }

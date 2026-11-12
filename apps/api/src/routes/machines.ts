@@ -454,21 +454,26 @@ export const machineRoutes = new Hono<AppEnv>()
         if (machine.source !== "github") return c.env.MACHINE_LINK.getByName(machine.id).status();
         const read = machine.installationId ? github.get(machine.installationId) : null;
         const runner = read?.runners.find((r) => r.id === machine.githubRunnerId);
+        // One runner runs one job.
         return runner
           ? {
               online: runner.status === "online",
               state: runner.busy ? "busy" : "idle",
               connectedAt: null,
+              slots: 1,
+              running: runner.busy ? 1 : 0,
             }
           : OFFLINE;
       }),
     );
-    // The job each busy machine is running, for its card.
+    // The jobs each busy machine is running, for its card.
     const jobs = await runningJobs(
       c.var.db,
-      rows
-        .filter((_, i) => statuses[i].online && statuses[i].state === "busy")
-        .map((row) => row.machine.id),
+      rows.flatMap((row, i) =>
+        statuses[i].online && statuses[i].state === "busy"
+          ? [{ id: row.machine.id, running: Math.max(1, statuses[i].running) }]
+          : [],
+      ),
     );
     return c.json({
       machines: rows.map((row, i) => {
@@ -485,7 +490,9 @@ export const machineRoutes = new Hono<AppEnv>()
               : row.ownerImage,
           // Whether the signed-in user owns it: only the owner changes its sharing (#243).
           mine: row.machine.userId === c.var.user!.id,
-          job: jobs.get(row.machine.id) ?? null,
+          // Every job it's running, newest first (#179), and the newest alone as before.
+          jobs: jobs.get(row.machine.id) ?? [],
+          job: jobs.get(row.machine.id)?.[0] ?? null,
         };
         if (row.machine.source !== "github")
           return {

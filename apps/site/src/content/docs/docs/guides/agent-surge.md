@@ -11,7 +11,7 @@ RelayRunner lets you use every machine you have first, and send only the overflo
 
 ## 1. Connect what you have
 
-Run `relayrunner connect` on every spare computer: the Mac mini, the old laptop, the home server. Each one takes one job at a time, so more machines means more jobs at once. Share them with **anyone** in the workspace so jobs from agents and teammates can use them:
+Run `relayrunner connect` on every spare computer: the Mac mini, the old laptop, the home server. Each one runs a job or two at once (more with `--concurrency`), so more machines means more jobs at once. Share them with **anyone** in the workspace so jobs from agents and teammates can use them:
 
 ```sh
 relayrunner share anyone

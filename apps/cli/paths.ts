@@ -1,5 +1,6 @@
 import { homedir } from "node:os";
 import { join, resolve } from "node:path";
+import { cliVersion } from "./version.ts";
 
 // Everything the CLI keeps on disk lives here. RELAYRUNNER_HOME overrides it (tests use it too).
 export function relayrunnerHome() {
@@ -11,4 +12,4 @@ export function runnersDir() {
   return join(relayrunnerHome(), "runner");
 }
 
-export const userAgent = "relayrunner-cli";
+export const userAgent = `relayrunner-cli/${cliVersion}`;

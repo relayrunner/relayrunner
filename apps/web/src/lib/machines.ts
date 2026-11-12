@@ -58,21 +58,35 @@ export type Machine = {
    * predates it, which read as "anyone".
    */
   sharing?: MachineSharing;
-  /** The job it's running, while it reports itself busy. Missing from an API that predates it. */
-  job?: {
-    repository: string;
-    workflow: string | null;
-    name: string;
-    url: string;
-    startedAt: string | null;
-  } | null;
+  /** The newest job it's running, while it reports itself busy. Missing from an API that predates it. */
+  job?: MachineJob | null;
+  /**
+   * Every job it's running, newest first, up to `status.running` (#179). Missing from an API that
+   * predates concurrency.
+   */
+  jobs?: MachineJob[];
   /** Live, from the machine's connection (or GitHub, for a GitHub runner). */
   status?: {
     online: boolean;
     state: "idle" | "busy" | null;
     /** Epoch ms of the current connection. */
     connectedAt: number | null;
+    /**
+     * How many jobs it runs at once, and how many it reports running (#179). Missing from an API
+     * that predates concurrency: read as 1 slot, with busy as 1 running. Offline reads 1 slot,
+     * since the gateway doesn't keep the count once a machine disconnects (#346).
+     */
+    slots?: number;
+    running?: number;
   };
+};
+
+export type MachineJob = {
+  repository: string;
+  workflow: string | null;
+  name: string;
+  url: string;
+  startedAt: string | null;
 };
 
 export type MachineSharing = "only_me" | "anyone";
@@ -210,7 +224,7 @@ export function openDeviceCode(userCode: string) {
   return api<DeviceCodeStatus>(`/machines/device?user_code=${encodeURIComponent(userCode)}`);
 }
 
-export function approveDevice(body: { userCode: string; workspaceId: string; name: string }) {
+export function approveDevice(body: { userCode: string; name: string }) {
   return api<{ machineId: string }>("/machines/approve", {
     method: "POST",
     body: JSON.stringify(body),

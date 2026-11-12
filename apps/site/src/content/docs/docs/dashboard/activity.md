@@ -3,7 +3,7 @@ title: Activity and runs
 description: Where each job ran, why it ran there, and how long it waited.
 ---
 
-The dashboard has three views of your CI. All of them cover every repo in your connected GitHub accounts.
+The dashboard has three views of your CI. All of them cover every repo the workspace's GitHub installation can see.
 
 ## Activity
 

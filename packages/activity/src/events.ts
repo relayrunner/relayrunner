@@ -28,6 +28,9 @@ export const SKIP_REASONS = [
   "no_machine",
   // Every machine with the wanted labels is paused (listed in the step's `paused`).
   "machine_paused",
+  // Every online, unpaused machine with the wanted labels that takes the job has all its slots in
+  // use (listed in `full`).
+  "machine_full",
   // Machines with the wanted labels exist, but none takes this job's starter: each is `only_me`
   // and someone else (or a bot, or a schedule) started the run (listed in `notShared`).
   "machine_not_shared",
@@ -68,6 +71,15 @@ export type GithubActor = z.infer<typeof GithubActor>;
 export const NotSharedMachine = z.object({ machine: z.string(), owner: z.string().nullable() });
 export type NotSharedMachine = z.infer<typeof NotSharedMachine>;
 
+// A machine that fit a job but had no free slot: `running` of its `slots` were in use, counting
+// jobs about to start on it.
+export const FullMachine = z.object({
+  machine: z.string(),
+  running: z.number(),
+  slots: z.number(),
+});
+export type FullMachine = z.infer<typeof FullMachine>;
+
 const relayInputsShape = () => byRunnerKey(() => z.array(z.string()).default([]));
 
 /**
@@ -91,6 +103,8 @@ export const RouteWalk = z.object({
       // machine_not_shared: the machines that fit but only run their owner's jobs, with the
       // owner's name when known.
       notShared: z.array(NotSharedMachine).optional(),
+      // machine_full: the machines that fit, each with its slots in use.
+      full: z.array(FullMachine).optional(),
       // minutes_limit and minutes_runway: the job's GitHub account and its usage at the pick.
       minutes: MinutesUsage.optional(),
     }),
@@ -116,7 +130,12 @@ export const ActivityEvent = z.discriminatedUnion("type", [
   // The machine's CLI connected and said hello: it can take jobs.
   z.object({
     type: z.literal("machine.connected"),
-    data: z.object({ ...machineData, runnerVersion: z.string().nullable() }),
+    data: z.object({
+      ...machineData,
+      runnerVersion: z.string().nullable(),
+      // Missing from events logged before the CLI reported its version.
+      cliVersion: z.string().nullable().optional(),
+    }),
   }),
   // The machine went offline: its CLI closed the connection (`closed`), it went quiet past the
   // heartbeat timeout (`timeout`, e.g. sleep or lost network), it was revoked (`revoked`), or it
