@@ -30,7 +30,7 @@ vi.mock("@/lib/workspace", () => ({ getCurrentWorkspace: () => getCurrentWorkspa
 const session = await import("./session.ts");
 
 const user = (over: Record<string, unknown> = {}) => ({
-  session: { id: "s1", activeOrganizationId: "w1", updatedAt: new Date().toISOString() },
+  session: { id: "s1", activeOrganizationId: "w1", updatedAt: "2026-11-12T00:00:00.000Z" },
   user: { id: "u1", name: "Ada", email: "a@x", termsVersion: "1", privacyVersion: "1", ...over },
 });
 

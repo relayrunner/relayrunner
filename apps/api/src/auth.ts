@@ -104,13 +104,16 @@ export function createAuth(
     hooks: {
       // The dashboard's workspace list re-reads memberships from GitHub when they're a few
       // minutes old (src/memberships.ts), so a new install or lost access shows up without
-      // signing in again.
+      // signing in again. It runs after the response: the list answers from D1 at once, and what
+      // the sync finds shows on the next load. Sign-in still syncs first (the after hook).
       before: createAuthMiddleware(async (ctx) => {
         if (ctx.path !== "/organization/list") return;
         const session = await getSessionFromCtx(ctx).catch(() => null);
         if (!session) return;
-        await syncMembershipsFromGitHub(auth, createDb(env.DB), session.user.id).catch((error) =>
-          console.error("membership sync on workspace list failed", error),
+        await background(
+          syncMembershipsFromGitHub(auth, createDb(env.DB), session.user.id).catch((error) =>
+            console.error("membership sync on workspace list failed", error),
+          ),
         );
       }),
       after: createAuthMiddleware(async (ctx) => {
