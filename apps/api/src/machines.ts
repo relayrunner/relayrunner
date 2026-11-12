@@ -5,7 +5,9 @@ import { schema } from "./db/index.ts";
 import type { Env } from "./env.ts";
 import { appInstallationToken, removeOrgRunnerLabel } from "./github-app.ts";
 import { matchLabels, parseStoredLabels } from "./github-runners.ts";
-import type { Device } from "@relayrunner/machine-protocol";
+import { type Device, isNewerVersion } from "@relayrunner/machine-protocol";
+// The CLI on main is the one npm has: the Release workflow publishes it when its version lands.
+import cliPackage from "../../cli/package.json" with { type: "json" };
 import type { MachineSharing } from "@relayrunner/activity";
 import { machineLabels } from "./routing.ts";
 
@@ -431,6 +433,16 @@ export function presentMachine(machine: Machine, pausedBy: string | null = null)
           reportedAt: machine.deviceReportedAt,
         }
       : null,
+    // The CLI version from its last hello, and the newer release to update to, if any. Null for a
+    // runner added from GitHub, or a CLI older than 0.7.0, which doesn't say.
+    cli: machine.cliVersion
+      ? {
+          version: machine.cliVersion,
+          update: isNewerVersion(cliPackage.version, machine.cliVersion)
+            ? cliPackage.version
+            : null,
+        }
+      : null,
   };
 }
 
@@ -453,12 +465,17 @@ export function deviceColumns(device: Device, now: Date) {
 
 /**
  * The machine columns a hello sets. The OS and architecture are where the machine's jobs run,
- * which can change between connections: a Mac running `connect --isolated` takes Linux jobs.
+ * which can change between connections: a Mac running `connect --isolated` takes Linux jobs. The
+ * CLI version changes whenever its owner updates it.
  */
-export function helloColumns(hello: { os: string; arch: string; device?: Device }, now: Date) {
+export function helloColumns(
+  hello: { os: string; arch: string; cliVersion?: string; device?: Device },
+  now: Date,
+) {
   return {
     os: hello.os,
     arch: hello.arch,
+    cliVersion: hello.cliVersion ?? null,
     ...(hello.device ? deviceColumns(hello.device, now) : {}),
   };
 }

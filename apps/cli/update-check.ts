@@ -5,6 +5,7 @@
 import { mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { z } from "zod";
+import { isNewerVersion } from "@relayrunner/machine-protocol";
 import { relayrunnerHome, userAgent } from "./paths.ts";
 import { cliVersion } from "./version.ts";
 
@@ -33,7 +34,7 @@ export async function checkForUpdate(options: UpdateCheckOptions = {}): Promise<
       writeCache(cache);
     }
   }
-  return cache && isNewer(cache.latest, current) ? cache.latest : null;
+  return cache && isNewerVersion(cache.latest, current) ? cache.latest : null;
 }
 
 /** The line to print for a newer version, with the command that updates the way this one runs. */
@@ -44,20 +45,6 @@ export function updateNotice(latest: string, current = cliVersion, argv1 = proce
     ? "npx relayrunner@latest connect"
     : "npm install --global relayrunner@latest";
   return `relayrunner ${latest} is available (you have ${current}). Update with \`${command}\`.`;
-}
-
-// Only plain x.y.z releases count as newer, so a prerelease on `latest` never nags.
-export function isNewer(candidate: string, current: string) {
-  const a = parse(candidate);
-  const b = parse(current);
-  if (!a || !b) return false;
-  for (let i = 0; i < 3; i++) if (a[i] !== b[i]) return a[i]! > b[i]!;
-  return false;
-}
-
-function parse(version: string) {
-  const match = /^(\d+)\.(\d+)\.(\d+)$/.exec(version.trim());
-  return match ? [Number(match[1]), Number(match[2]), Number(match[3])] : null;
 }
 
 async function fetchLatest(fetcher: typeof fetch) {
