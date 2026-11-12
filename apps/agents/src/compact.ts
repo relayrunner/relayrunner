@@ -94,7 +94,6 @@ interface JobRow {
 interface WorkflowRow {
   repository: string;
   workflow: string | null;
-  byEnvironment: Record<string, Stat>;
   jobs: JobRow[];
 }
 interface JobTimesReport {
@@ -128,18 +127,17 @@ export function compactJobTimes<T extends JobTimesReport>(
     .filter((row) => contains(row.repository, repository) && contains(row.workflow, workflow))
     .map((row) => ({
       ...row,
-      byEnvironment: sampled(row.byEnvironment),
       jobs: row.jobs.map(sampledJob).filter((job) => Object.keys(job.byEnvironment).length > 0),
     }))
-    .filter((row) => row.jobs.length > 0 || Object.keys(row.byEnvironment).length > 0);
+    .filter((row) => row.jobs.length > 0);
   const used = new Set<string>();
-  const collect = (rows: { byEnvironment: Record<string, Stat>; legs?: JobRow[] }[]) => {
+  const collect = (rows: JobRow[]) => {
     for (const row of rows) {
       for (const key of Object.keys(row.byEnvironment)) used.add(key);
       if (row.legs) collect(row.legs);
     }
   };
-  for (const row of workflows) collect([row, ...row.jobs]);
+  for (const row of workflows) collect(row.jobs);
   return {
     ...report,
     environments: report.environments.filter((env) => env.stat.samples > 0 && used.has(env.key)),

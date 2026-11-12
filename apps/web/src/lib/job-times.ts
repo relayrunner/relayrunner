@@ -33,7 +33,6 @@ export type WorkflowRow = {
   repositoryId: number;
   repository: string;
   workflow: string | null;
-  byEnvironment: Record<string, Stat>;
   jobs: JobRow[];
 };
 
@@ -187,7 +186,6 @@ export function sampleJobTimes(days: number): JobTimesReport {
         repositoryId: 1,
         repository: "acme/app",
         workflow: "CI",
-        byEnvironment: { [linux]: stat(242, 48, 50, 0.09), [mac]: stat(95, 29) },
         jobs: [
           {
             name: "test",
@@ -226,7 +224,6 @@ export function sampleJobTimes(days: number): JobTimesReport {
         repositoryId: 1,
         repository: "acme/app",
         workflow: "Release",
-        byEnvironment: { [mac]: stat(235, 12), [macos]: stat(400, 9) },
         jobs: [
           { name: "build-macos", byEnvironment: { [mac]: stat(235, 12), [macos]: stat(400, 9) } },
         ],

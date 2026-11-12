@@ -3,10 +3,9 @@
 // which already stores every finished job. Nothing is precomputed: the window is short, medians
 // don't add up across days, and the per-job cap needs the samples anyway.
 //
-// Database cost: the summary is two statements, run together, each a range of
-// job_timing_installation_idx (the workspace's installations, completed in the window), never a
-// scan of the table. The detail is a range of job_timing_job_idx. job-times.test.ts checks the
-// rows D1 reads.
+// Database cost: the summary is one statement, a range of job_timing_installation_idx (the
+// workspace's installations, completed in the window), never a scan of the table. The detail is
+// a range of job_timing_job_idx. job-times.test.ts checks the rows D1 reads.
 import { and, eq, gte, inArray, isNull, type SQL, sql } from "drizzle-orm";
 import type { SQLiteColumn } from "drizzle-orm/sqlite-core";
 import { usesContainerRunner } from "./container-runner.ts";
@@ -147,7 +146,7 @@ export interface Stat {
   p25Ms: number | null;
   p75Ms: number | null;
   p90Ms: number | null;
-  /** Median wait from queued to started. Null for whole runs, or rows from before it was stored. */
+  /** Median wait from queued to started. Null for rows from before it was stored. */
   waitMs: number | null;
   /**
    * The newer half of the samples' median against the older half's, as a fraction (0.18 is 18%
@@ -238,8 +237,6 @@ export interface WorkflowRow {
   repositoryId: number;
   repository: string;
   workflow: string | null;
-  /** Whole runs, first job start to last job finish, for runs whose jobs all used one environment. */
-  byEnvironment: Record<string, Stat>;
   jobs: JobRow[];
 }
 
@@ -255,8 +252,7 @@ interface WindowRow {
   repository_id: number;
   repository: string;
   workflow_name: string | null;
-  /** The job's name. Null on whole-run rows. */
-  name: string | null;
+  name: string;
   labels: string;
   runner_group_name: string | null;
   machine_id: string | null;
@@ -294,46 +290,26 @@ export function inWorkspace(
     where ${schema.workspace.id} = ${workspaceId})`;
 }
 
-/**
- * The window's two aggregates, each a single range read of job_timing_installation_idx: the
- * workspace's installations, completed since `since`. Measured on D1, each reads about 2 rows per
- * row in the window (the range plus SQLite's GROUP BY sorter, which D1 counts too), however big
- * the table is. A single statement over a MATERIALIZED window with row_number() caps read more
- * than both together, since D1 also counts the temp table and the window sorts, so the
- * SAMPLE_CAP cut happens in TypeScript instead.
- */
 /** The jobs a report counts: the workspace's, finished since `since`, run by a runner, not picks. */
 export const windowWhere = (workspaceId: string, since: Date) =>
   sql`${inWorkspace(workspaceId)} and ${table.completedAt} >= ${since.getTime()} and ${RAN}`;
 
-export function windowQueries(workspaceId: string, since: Date) {
-  const where = windowWhere(workspaceId, since);
-  const jobs = sql`
+/**
+ * The window's aggregate, a single range read of job_timing_installation_idx: the workspace's
+ * installations, completed since `since`. Measured on D1, it reads about 2 rows per row in the
+ * window (the range plus SQLite's GROUP BY sorter, which D1 counts too), however big the table
+ * is. A single statement over a MATERIALIZED window with row_number() caps reads more, since D1
+ * also counts the temp table and the window sorts, so the SAMPLE_CAP cut happens in TypeScript.
+ */
+export function windowQuery(workspaceId: string, since: Date) {
+  return sql`
     select ${table.repositoryId} as repository_id, min(${table.repositoryFullName}) as repository,
       ${table.workflowName} as workflow_name, ${table.name} as name, ${table.labels} as labels,
       ${table.runnerGroupName} as runner_group_name, ${table.machineId} as machine_id,
       count(*) as runs, sum(${OK}) as successes, ${SAMPLES} as samples
-    from ${table} where ${where}
+    from ${table} where ${windowWhere(workspaceId, since)}
     group by ${table.repositoryId}, ${table.workflowName}, ${table.name}, ${table.labels},
       ${table.runnerGroupName}, ${table.machineId}`;
-  // Whole runs, first job start to last job finish, kept only when every job used one environment.
-  const env = sql`${table.labels} || char(31) || coalesce(${table.runnerGroupName}, '') || char(31) || coalesce(${table.machineId}, '')`;
-  const runs = sql`
-    select repository_id, min(repository) as repository, workflow_name, null as name, labels,
-      runner_group_name, machine_id, count(*) as runs, sum(ok) as successes,
-      group_concat(case when ok then completed_at || ':' || (completed_at - started_at) || ':' end) as samples
-    from (
-      select ${table.repositoryId} as repository_id, min(${table.repositoryFullName}) as repository,
-        ${table.workflowName} as workflow_name, min(${table.labels}) as labels,
-        min(${table.runnerGroupName}) as runner_group_name, min(${table.machineId}) as machine_id,
-        count(distinct ${env}) as envs, min(${OK}) as ok,
-        min(${table.startedAt}) as started_at, max(${table.completedAt}) as completed_at
-      from ${table} where ${where}
-      group by ${table.repositoryId}, ${table.workflowName}, ${table.runId}, ${table.runAttempt}
-    )
-    where envs = 1
-    group by repository_id, workflow_name, labels, runner_group_name, machine_id`;
-  return { jobs, runs };
 }
 
 export function parseSamples(text: string | null): Sample[] {
@@ -392,26 +368,17 @@ export async function jobTimesReport(
   now = Date.now(),
 ): Promise<JobTimesReport> {
   const since = new Date(now - days * DAY_MS);
-  const queries = windowQueries(workspaceId, since);
-  const [jobRows, runRows] = await Promise.all([
-    db.all<WindowRow>(queries.jobs),
-    db.all<WindowRow>(queries.runs),
-  ]);
-  const rows = [
-    ...jobRows.map((row) => ({ ...row, kind: "job" as const })),
-    ...runRows.map((row) => ({ ...row, kind: "run" as const })),
-  ];
+  const rows = await db.all<WindowRow>(windowQuery(workspaceId, since));
 
   const envs = new Map<string, Environment>();
   const totals: Buckets = new Map();
-  // repo + workflow -> { runs by env, job name -> buckets by env }
+  // repo + workflow -> job name -> buckets by env
   const workflows = new Map<
     string,
     {
       repositoryId: number;
       repository: string;
       workflow: string | null;
-      runs: Buckets;
       jobs: Map<string, Buckets>;
     }
   >();
@@ -430,20 +397,14 @@ export async function jobTimesReport(
         repositoryId: row.repository_id,
         repository: row.repository,
         workflow: row.workflow_name,
-        runs: new Map(),
         jobs: new Map(),
       };
       workflows.set(id, workflow);
     }
-    if (row.kind === "run") {
-      add(workflow.runs, env.key, bucket);
-      continue;
-    }
     add(totals, env.key, bucket);
-    const name = row.name ?? "";
-    const jobBuckets = workflow.jobs.get(name) ?? new Map();
+    const jobBuckets = workflow.jobs.get(row.name) ?? new Map();
     add(jobBuckets, env.key, bucket);
-    workflow.jobs.set(name, jobBuckets);
+    workflow.jobs.set(row.name, jobBuckets);
   }
 
   await nameMachines(db, workspaceId, envs);
@@ -477,7 +438,6 @@ export async function jobTimesReport(
       repositoryId: workflow.repositoryId,
       repository: workflow.repository,
       workflow: workflow.workflow,
-      byEnvironment: stats(workflow.runs),
       jobs: sortByRuns([...leaves.values()]),
     };
   });

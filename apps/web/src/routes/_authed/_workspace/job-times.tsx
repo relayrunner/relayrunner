@@ -134,8 +134,7 @@ function JobTimesPage() {
             <p className="max-w-[62ch] text-sm text-muted-foreground">
               Run time counts successful runs only, since a failure stops early. Medians, not
               averages, so one cold cache doesn't skew a job. Wait is the time from queued until a
-              runner picked the job up. A workflow's time is its whole run, first job start to last
-              job finish, for runs where every job used that runner.
+              runner picked the job up.
             </p>
           </>
         )}
@@ -301,7 +300,8 @@ function jobRows(workflows: WorkflowRow[], environments: EnvironmentSummary[]): 
     return {
       id,
       workflow,
-      ...timings(environments, workflow.byEnvironment),
+      // A plain header: times only mean something per job.
+      ...timings(environments, {}),
       subRows: workflow.jobs.map((job) => ({
         id: `${id}/${job.name}`,
         workflow,
@@ -373,7 +373,7 @@ const jobColumns = jobColumn.columns([
     sortFn: "basic",
     sortDescFirst: true,
     meta: { align: "end", className: "w-0 py-2 align-top whitespace-nowrap" },
-    cell: ({ getValue }) => <Trend trend={getValue() ?? null} />,
+    cell: ({ row, getValue }) => row.original.job && <Trend trend={getValue() ?? null} />,
   }),
 ]);
 
@@ -430,17 +430,14 @@ function NameCell({ row }: { row: DataTableRow<JobsRow> }) {
 // One stacked line per runner the job actually ran on, fastest first, instead of one column per
 // runner: most jobs only run on one or two runners, so a column each was mostly "not run".
 function MedianCell({ row: { job, ran, best } }: { row: JobsRow }) {
-  const isWorkflow = !job;
-  if (ran.length === 0)
-    return (
-      <span className="text-muted-foreground">{isWorkflow ? "no whole runs" : "not run"}</span>
-    );
+  if (!job) return null;
+  if (ran.length === 0) return <span className="text-muted-foreground">not run</span>;
   const shown = ran.length > SHOWN_RUNNERS + 1 ? ran.slice(0, SHOWN_RUNNERS) : ran;
   const hidden = ran.slice(shown.length);
   return (
     <ul className="grid gap-1">
       {shown.map(({ env, stat }) => (
-        <TimeLine key={env.key} env={env} stat={stat} best={best === env.key} perRun={isWorkflow} />
+        <TimeLine key={env.key} env={env} stat={stat} best={best === env.key} />
       ))}
       {hidden.length > 0 && (
         <li
@@ -537,17 +534,7 @@ function fastest(byEnvironment: Record<string, Stat>) {
 /** Runner lines shown per row; the rest fold into "+N more", and the job detail lists them all. */
 const SHOWN_RUNNERS = 3;
 
-function TimeLine({
-  env,
-  stat,
-  best,
-  perRun,
-}: {
-  env: EnvironmentSummary;
-  stat: Stat;
-  best: boolean;
-  perRun: boolean;
-}) {
+function TimeLine({ env, stat, best }: { env: EnvironmentSummary; stat: Stat; best: boolean }) {
   const few = stat.confidence === "few";
   return (
     <li
@@ -577,7 +564,6 @@ function TimeLine({
         )}
       >
         {plural(stat.samples, "run")}
-        {perRun && " · per run"}
       </span>
     </li>
   );
