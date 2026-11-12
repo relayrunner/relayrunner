@@ -74,7 +74,11 @@ function ProvidersAdminPage() {
     <section className="grid max-w-5xl gap-6">
       <PageHeader title="Providers">
         How the dashboard names and links each provider. Changes show up right away. A provider you
-        add counts jobs by its label prefixes, but routing to it still needs code.
+        add counts jobs by its label prefixes, and you can give it a price on the{" "}
+        <Link to="/admin/prices" className="underline">
+          Prices
+        </Link>{" "}
+        page. Routing to it still needs code.
       </PageHeader>
 
       <div className="flex flex-wrap items-center justify-between gap-3">
@@ -204,6 +208,7 @@ const EMPTY: ProviderFields = {
   setup: "",
   dashboardUrl: "",
   docsUrl: "",
+  logoUrl: "",
 };
 
 const fieldsOf = (provider: CatalogProvider): ProviderFields => ({
@@ -215,6 +220,7 @@ const fieldsOf = (provider: CatalogProvider): ProviderFields => ({
   setup: provider.setup ?? "",
   dashboardUrl: provider.dashboardUrl ?? "",
   docsUrl: provider.docsUrl ?? "",
+  logoUrl: provider.logoUrl ?? "",
 });
 
 const slug = (name: string) =>
@@ -367,6 +373,19 @@ function ProviderForm({
           />
         </Field>
       </div>
+      {!codeMatched && (
+        <Field
+          label="Logo link"
+          hint="A square image, shown on its tile. Leave blank for its initial."
+        >
+          <Input
+            type="url"
+            placeholder="https://"
+            value={fields.logoUrl}
+            onChange={(e) => set("logoUrl")(e.target.value)}
+          />
+        </Field>
+      )}
 
       {error && <p className="text-sm text-destructive">{error}</p>}
       <DialogFooter>

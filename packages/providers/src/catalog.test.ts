@@ -11,6 +11,7 @@ const row = {
   setup: null,
   dashboardUrl: null,
   docsUrl: null,
+  logoUrl: null,
   updatedBy: "op@example.com",
   updatedAt: "2026-11-12T00:00:00.000Z",
 };

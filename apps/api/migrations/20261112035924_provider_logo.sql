@@ -1,0 +1,1 @@
+ALTER TABLE `provider` ADD `logo_url` text;

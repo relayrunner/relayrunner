@@ -39,6 +39,7 @@ const ProviderBody = z.object({
   setup: optionalText(500),
   dashboardUrl: url,
   docsUrl: url,
+  logoUrl: url,
 });
 
 const NewProviderBody = ProviderBody.extend({ id: z.string().trim().toLowerCase() });
@@ -57,6 +58,7 @@ async function save(c: Context<AppEnv>, id: string, fields: ProviderFields, msg:
     ...fields,
     // Providers in code keep their matching in code.
     prefixes: isProviderId(id) ? [] : fields.prefixes,
+    logoUrl: isProviderId(id) ? null : fields.logoUrl,
     updatedBy: c.var.user!.email,
     updatedAt: new Date(),
   };

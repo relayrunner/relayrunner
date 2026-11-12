@@ -7,6 +7,7 @@
 // workspace's installations, completed in the window), grouped by the columns environmentFor reads.
 // The provider is worked out from each group's labels afterwards, since it's derived and not stored.
 import {
+  ADDED_RATE,
   isProviderId,
   listRate,
   type PriceBook,
@@ -150,8 +151,8 @@ function perMinuteOf(
   runnerGroupName: string | null,
   at: number,
 ) {
-  // Providers operators added have no list prices.
-  if (!isProviderId(provider)) return null;
+  // Providers operators added have one price a minute for any runner (admin Prices).
+  if (!isProviderId(provider)) return book.usd(provider, ADDED_RATE, at);
   if (provider !== "github") return listRate(book, provider, env.label, at);
   const cls = runnerClass(labels, runnerGroupName);
   return cls === "other" || cls === "self-hosted" ? null : classRate(book, cls, at);

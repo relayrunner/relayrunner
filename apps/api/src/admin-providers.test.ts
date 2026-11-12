@@ -21,12 +21,12 @@ afterAll(async () => {
   await proxy?.dispose();
 });
 
-async function call(path: string, cookie: string, init: RequestInit = {}) {
+async function call(path: string, cookie: string, init: RequestInit = {}, base = "providers") {
   const headers = new Headers(init.headers);
   headers.set("cookie", cookie);
   headers.set("Cf-Access-Jwt-Assertion", await accessJwt());
   if (init.body) headers.set("content-type", "application/json");
-  return app.request(`/api/admin/providers${path}`, { ...init, headers }, env);
+  return app.request(`/api/admin/${base}${path}`, { ...init, headers }, env);
 }
 
 async function operator() {
@@ -114,5 +114,35 @@ describe("/api/admin/providers", () => {
     expect((await call("/acme", op.cookie, { method: "DELETE" })).status).toBe(200);
     expect((await providers(op.cookie)).some((p) => p.id === "acme")).toBe(false);
     expect(environmentFor(["acme-4cpu"], null, null).key).not.toMatch(/^acme:/);
+  });
+
+  test("an added provider keeps its logo and takes a per-runner price", async () => {
+    const op = await operator();
+    const logoUrl = "https://acme.example/logo.png";
+    const added = { ...acme, id: "acme-two", name: "Acme Two", prefixes: ["acmetwo-"], logoUrl };
+    expect((await send(op.cookie, "POST", "", added)).status).toBe(201);
+    const depot = (await providers(op.cookie)).find((p) => p.id === "depot")!;
+    expect((await send(op.cookie, "PUT", "/depot", { ...depot, logoUrl })).status).toBe(200);
+    const list = await providers(op.cookie);
+    expect(list.find((p) => p.id === "acme-two")?.logoUrl).toBe(logoUrl);
+    expect(list.find((p) => p.id === "depot")?.logoUrl).toBeUndefined();
+
+    const prices = (init: RequestInit = {}) => call("", op.cookie, init, "prices");
+    const price = (provider: string, rate: string) =>
+      prices({
+        method: "POST",
+        body: JSON.stringify({ provider, rate, usd: 0.004, from: "2026-11-01" }),
+      });
+    expect((await price("acme-two", "runner")).status).toBe(201);
+    expect((await price("acme-two", "linux")).status).toBe(400);
+    expect((await price("namespace", "runner")).status).toBe(400);
+    expect((await price("nobody", "runner")).status).toBe(400);
+    const { rates } = (await (await prices()).json()) as {
+      rates: { provider: string; rate: string; current: number | null }[];
+    };
+    expect(rates.find((r) => r.provider === "acme-two")).toMatchObject({
+      rate: "runner",
+      current: 0.004,
+    });
   });
 });

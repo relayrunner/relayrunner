@@ -116,9 +116,13 @@ const LOOKS: Record<ProviderId | "machine", ProviderLook> = {
   },
 };
 
-// A provider an operator added has no mark of its own yet: its initial on a plain tile.
-const addedLook = (name: string): ProviderLook => ({
-  icon: <span className="text-[13px] leading-none font-semibold">{name.charAt(0)}</span>,
+// A provider an operator added: the logo they gave it, or its initial, on a plain tile.
+const addedLook = (name: string, logoUrl?: string): ProviderLook => ({
+  icon: logoUrl ? (
+    <img src={logoUrl} alt="" className="size-[70%] rounded-[3px] object-contain" />
+  ) : (
+    <span className="text-[13px] leading-none font-semibold">{name.charAt(0)}</span>
+  ),
   tile: "bg-raised-2 text-foreground",
   tint: "",
   bar: "bg-ink-2",
@@ -128,8 +132,8 @@ const addedLook = (name: string): ProviderLook => ({
 /** A provider's mark, colours, name and link. */
 export function providerStyle(provider: Provider): ProviderStyle {
   if (provider === "machine") return { ...LOOKS.machine, name: "Self-hosted" };
-  const { id, name, dashboardUrl, docsUrl } = providerInfo(provider);
-  const look = Object.hasOwn(LOOKS, id) ? LOOKS[id as ProviderId] : addedLook(name);
+  const { id, name, dashboardUrl, docsUrl, logoUrl } = providerInfo(provider);
+  const look = Object.hasOwn(LOOKS, id) ? LOOKS[id as ProviderId] : addedLook(name, logoUrl);
   return { ...look, name, url: dashboardUrl ?? docsUrl };
 }
 

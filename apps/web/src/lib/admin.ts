@@ -171,6 +171,8 @@ export type ProviderFields = {
   setup: string;
   dashboardUrl: string;
   docsUrl: string;
+  /** An https image for an added provider's mark. */
+  logoUrl: string;
 };
 
 export function listProviders() {

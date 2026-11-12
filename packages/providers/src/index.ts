@@ -177,6 +177,7 @@ export function providerOfEnvironment(
   return known(id) ? id : "other";
 }
 export {
+  ADDED_RATE,
   BASE_BOOK,
   BASE_PRICES,
   dayMs,

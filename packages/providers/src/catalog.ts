@@ -16,6 +16,8 @@ export interface CatalogProvider extends ProviderInfo {
   id: string;
   /** Label prefixes that pick out its runners. Empty for ones code matches another way. */
   prefixes: string[];
+  /** An https image URL for its mark. Only added providers use it; ones in code have their own. */
+  logoUrl?: string;
   /** In the code list. An operator can change its text but not remove it. */
   builtIn: boolean;
   /** Who last saved it in the admin, or null when it's as in code. */
@@ -35,6 +37,7 @@ export interface ProviderRow {
   setup: string | null;
   dashboardUrl: string | null;
   docsUrl: string | null;
+  logoUrl: string | null;
   updatedBy: string;
   updatedAt: string;
 }
@@ -70,6 +73,7 @@ export function providerCatalog(rows: ProviderRow[]): CatalogProvider[] {
     setup: optional(row.setup),
     dashboardUrl: optional(row.dashboardUrl),
     docsUrl: optional(row.docsUrl),
+    logoUrl: base ? undefined : optional(row.logoUrl),
     prefixes: base ? base.prefixes : row.prefixes,
     builtIn: Boolean(base),
     updatedBy: row.updatedBy,
