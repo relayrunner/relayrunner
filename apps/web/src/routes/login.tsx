@@ -1,6 +1,7 @@
 import { createFileRoute, redirect } from "@tanstack/react-router";
 import { useState } from "react";
 import { Brand } from "@/components/brand";
+import { LegalNotice } from "@/components/legal-notice";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { authDisabled, getSession, signIn } from "@/lib/auth-client";
@@ -56,17 +57,7 @@ function LoginPage() {
               Sign in with GitHub
             </Button>
             {error && <p className="text-sm text-destructive">{error}</p>}
-            <p className="text-center text-xs text-muted-foreground">
-              By signing in, you agree to the{" "}
-              <a className="underline underline-offset-2" href="https://relayrunner.app/terms">
-                Terms of Service
-              </a>{" "}
-              and{" "}
-              <a className="underline underline-offset-2" href="https://relayrunner.app/privacy">
-                Privacy Policy
-              </a>
-              .
-            </p>
+            <LegalNotice action="signing in" />
           </CardContent>
         </Card>
       </div>

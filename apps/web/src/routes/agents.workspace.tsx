@@ -1,12 +1,12 @@
 import { createFileRoute } from "@tanstack/react-router";
 import { useState } from "react";
-import { AgentSignInPage, SignedOut } from "@/components/agent-sign-in";
+import { BrandedPage, SignedOut } from "@/components/agent-sign-in";
 import { Button } from "@/components/ui/button";
 import { WorkspaceMark } from "@/components/workspace-menu";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { grantAgentWorkspaces } from "@/lib/agents";
-import { authClient, getSession, organization } from "@/lib/auth-client";
-import { requireAgreement } from "@/lib/legal";
+import { authClient, organization } from "@/lib/auth-client";
+import { agreedSession } from "@/lib/legal";
 import { githubInstallHref } from "@/lib/github";
 
 // Agent sign-in, step 1 (apps/api/src/agent-auth.ts): after sign-in, Better Auth sends the browser
@@ -15,9 +15,7 @@ import { githubInstallHref } from "@/lib/github";
 // asks for consent next.
 export const Route = createFileRoute("/agents/workspace")({
   loader: async ({ location }) => {
-    const session = await getSession();
-    if (!session) return { signedIn: false as const };
-    requireAgreement(session, location.href);
+    if (!(await agreedSession(location.href))) return { signedIn: false as const };
     const { data } = await organization.list();
     return {
       signedIn: true as const,
@@ -30,9 +28,9 @@ export const Route = createFileRoute("/agents/workspace")({
 function AgentWorkspacePage() {
   const loaded = Route.useLoaderData();
   return (
-    <AgentSignInPage>
+    <BrandedPage>
       {loaded.signedIn ? <PickWorkspaces workspaces={loaded.workspaces} /> : <SignedOut />}
-    </AgentSignInPage>
+    </BrandedPage>
   );
 }
 

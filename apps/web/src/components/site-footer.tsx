@@ -1,6 +1,7 @@
 import { Link } from "@tanstack/react-router";
 import { Brand } from "@/components/brand";
 import { FeedbackPopover } from "@/components/feedback-popover";
+import { LEGAL_LINKS } from "@/lib/legal";
 import { cn } from "@/lib/utils";
 
 export const DOCS_URL = "https://relayrunner.app/docs";
@@ -11,8 +12,8 @@ const LINKS = [
   { label: "GitHub", href: "https://github.com/relayrunner/relayrunner" },
   { label: "GitHub App", href: "https://github.com/apps/relayrunner" },
   { label: "npm", href: "https://www.npmjs.com/package/relayrunner" },
-  { label: "Privacy", href: "https://relayrunner.app/privacy" },
-  { label: "Terms", href: "https://relayrunner.app/terms" },
+  { label: "Privacy", href: LEGAL_LINKS.privacy.href },
+  { label: "Terms", href: LEGAL_LINKS.terms.href },
 ];
 
 const LINK_CLASS = "text-muted-foreground transition-colors hover:text-foreground";

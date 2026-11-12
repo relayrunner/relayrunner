@@ -2,8 +2,8 @@ import type { ReactNode } from "react";
 import { Brand } from "@/components/brand";
 import { Card, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 
-// Shared by the agent sign-in pages (routes/agents.*.tsx).
-export function AgentSignInPage({ children }: { children: ReactNode }) {
+// The brand above one centered card: the agent sign-in pages (routes/agents.*.tsx) and /agree.
+export function BrandedPage({ children }: { children: ReactNode }) {
   return (
     <main className="grid min-h-screen place-items-center p-4">
       <div className="flex w-full max-w-sm flex-col items-center gap-6">

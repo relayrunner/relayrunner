@@ -2,10 +2,11 @@ import { createFileRoute, Link, useNavigate } from "@tanstack/react-router";
 import { CheckIcon } from "lucide-react";
 import { useState, type FormEvent, type ReactNode } from "react";
 import { Brand } from "@/components/brand";
+import { LegalNotice } from "@/components/legal-notice";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
-import { authDisabled, getSession, signIn } from "@/lib/auth-client";
+import { authDisabled, signIn } from "@/lib/auth-client";
 import {
   githubInstallHref,
   githubOutcomes,
@@ -22,7 +23,7 @@ import {
   type DeviceCodeStatus,
 } from "@/lib/machines";
 import { describePlace } from "@/lib/device";
-import { requireAgreement } from "@/lib/legal";
+import { agreedSession } from "@/lib/legal";
 import { onboardingStep, shouldOpenInstall } from "@/lib/onboarding";
 import { cn } from "@/lib/utils";
 
@@ -81,11 +82,9 @@ export const Route = createFileRoute("/device")({
     github: isGitHubOutcome(search.github) ? search.github : undefined,
     install: search.install === "opened" ? "opened" : undefined,
   }),
-  beforeLoad: async ({ location }) => {
-    const session = authDisabled ? null : await getSession();
-    requireAgreement(session, location.href);
-    return { session };
-  },
+  beforeLoad: async ({ location }) => ({
+    session: authDisabled ? null : await agreedSession(location.href),
+  }),
   loaderDeps: ({ search }) => ({
     userCode: search.user_code,
     name: search.name,
@@ -371,17 +370,7 @@ function SignInStep() {
             {error}
           </p>
         )}
-        <p className="text-center text-xs text-muted-foreground">
-          By continuing, you agree to the{" "}
-          <a className="underline underline-offset-2" href="https://relayrunner.app/terms">
-            Terms of Service
-          </a>{" "}
-          and{" "}
-          <a className="underline underline-offset-2" href="https://relayrunner.app/privacy">
-            Privacy Policy
-          </a>
-          .
-        </p>
+        <LegalNotice action="continuing" />
       </CardContent>
     </Card>
   );
