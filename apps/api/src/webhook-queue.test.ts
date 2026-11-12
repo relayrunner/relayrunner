@@ -82,6 +82,22 @@ describe("webhook queue consumer", () => {
     expect(good.ack).toHaveBeenCalledOnce();
   });
 
+  test("processes a batch's messages side by side", async () => {
+    const log = vi.spyOn(console, "log").mockImplementation(() => {});
+    let finish!: () => void;
+    // The first message's pick stays slow until the second message is done.
+    start.mockImplementationOnce(() => new Promise<void>((resolve) => (finish = resolve)));
+    const slow = message(workflowJob(["relayrunner"]));
+    const fast = message(installation);
+    const done = consumer.handleWebhookBatch(batch(WEBHOOK_QUEUE, [slow, fast]), env);
+    await vi.waitFor(() => expect(fast.ack).toHaveBeenCalledOnce());
+    expect(slow.ack).not.toHaveBeenCalled();
+    finish();
+    await done;
+    expect(slow.ack).toHaveBeenCalledOnce();
+    log.mockRestore();
+  });
+
   test("archives dead letters without processing them", async () => {
     const error = vi.spyOn(console, "error").mockImplementation(() => {});
     const put = vi.fn(async () => null);

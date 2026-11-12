@@ -2,8 +2,8 @@
  * Queue consumer for GitHub webhooks. The ingress Worker (apps/webhooks) verifies each delivery and
  * sends a compact WebhookMessage to `relayrunner-github-webhooks`; this Worker processes it.
  *
- * Each message is acked or retried on its own, so one failing delivery never re-runs its
- * batchmates. Retries back off exponentially (see retryDelaySeconds), so the retry budget spans
+ * Each message in a batch runs at the same time and is acked or retried on its own, so one
+ * failing delivery never re-runs its batchmates. Retries back off exponentially (see retryDelaySeconds), so the retry budget spans
  * about half an hour: long enough to roll back a bad API deploy before anything is dead-lettered.
  *
  * After max_retries a message moves to `relayrunner-github-webhooks-dlq`. The DLQ consumer archives
@@ -46,42 +46,45 @@ const MAX_RETRY_DELAY_SECONDS = 15 * 60;
 // error so the dead letter can say why it failed.
 export const MAX_RETRIES = 6;
 
-/** Handle one batch from the webhook queue or its DLQ. Never throws. */
+/**
+ * Handle one batch from the webhook queue or its DLQ. Never throws. The messages run side by side,
+ * since processing never depends on arrival order, so a slow one doesn't hold up the pick events
+ * behind it.
+ */
 export async function handleWebhookBatch(
   batch: MessageBatch<WebhookMessage>,
   env: Env,
 ): Promise<void> {
-  const isDlq = batch.queue === WEBHOOK_DLQ;
-  for (const msg of batch.messages) {
-    if (isDlq) {
-      await deadLetter(env, msg);
-      continue;
+  const handle = batch.queue === WEBHOOK_DLQ ? deadLetter : processMessage;
+  await Promise.all(batch.messages.map((msg) => handle(env, msg)));
+}
+
+// Process one delivery and ack it, or retry it with backoff.
+async function processMessage(env: Env, msg: Message<WebhookMessage>) {
+  try {
+    await processWebhook(env, msg.body);
+    msg.ack();
+  } catch (error) {
+    const delaySeconds = retryDelaySeconds(msg.attempts);
+    const message = errorMessage(error);
+    console.warn(
+      JSON.stringify({
+        msg: "github webhook processing failed; retrying",
+        event: msg.body.event,
+        deliveryId: msg.body.deliveryId,
+        attempts: msg.attempts,
+        delaySeconds,
+        error: message,
+      }),
+    );
+    if (msg.attempts >= MAX_RETRIES) {
+      await recordLastError(env.DEAD_LETTERS, msg.body.deliveryId, {
+        error: message,
+        attempts: msg.attempts,
+        at: new Date().toISOString(),
+      });
     }
-    try {
-      await processWebhook(env, msg.body);
-      msg.ack();
-    } catch (error) {
-      const delaySeconds = retryDelaySeconds(msg.attempts);
-      const message = errorMessage(error);
-      console.warn(
-        JSON.stringify({
-          msg: "github webhook processing failed; retrying",
-          event: msg.body.event,
-          deliveryId: msg.body.deliveryId,
-          attempts: msg.attempts,
-          delaySeconds,
-          error: message,
-        }),
-      );
-      if (msg.attempts >= MAX_RETRIES) {
-        await recordLastError(env.DEAD_LETTERS, msg.body.deliveryId, {
-          error: message,
-          attempts: msg.attempts,
-          at: new Date().toISOString(),
-        });
-      }
-      msg.retry({ delaySeconds });
-    }
+    msg.retry({ delaySeconds });
   }
 }
 
