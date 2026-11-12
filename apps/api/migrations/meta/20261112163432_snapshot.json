@@ -1,7 +1,7 @@
 {
   "version": "6",
   "dialect": "sqlite",
-  "id": "7c0c99a0-abd3-4143-8c7c-ba92ea84d7e2",
+  "id": "d9573dbe-3ebd-4bbb-a25e-3c1643fa0f91",
   "prevId": "fe8363ab-b09b-4ae1-8ea4-92f1e11ec7ab",
   "tables": {
     "account": {
@@ -99,7 +99,23 @@
           "autoincrement": false
         }
       },
-      "indexes": {},
+      "indexes": {
+        "account_user_id_idx": {
+          "name": "account_user_id_idx",
+          "columns": [
+            "user_id"
+          ],
+          "isUnique": false
+        },
+        "account_provider_account_idx": {
+          "name": "account_provider_account_idx",
+          "columns": [
+            "provider_id",
+            "account_id"
+          ],
+          "isUnique": false
+        }
+      },
       "foreignKeys": {
         "account_user_id_user_id_fk": {
           "name": "account_user_id_user_id_fk",
@@ -507,6 +523,14 @@
             "occurred_at"
           ],
           "isUnique": false
+        },
+        "activity_event_machine_idx": {
+          "name": "activity_event_machine_idx",
+          "columns": [
+            "machine_id"
+          ],
+          "isUnique": false,
+          "where": "\"activity_event\".\"machine_id\" is not null"
         }
       },
       "foreignKeys": {
@@ -3513,6 +3537,13 @@
             "token"
           ],
           "isUnique": true
+        },
+        "session_user_id_idx": {
+          "name": "session_user_id_idx",
+          "columns": [
+            "user_id"
+          ],
+          "isUnique": false
         }
       },
       "foreignKeys": {
@@ -3646,27 +3677,6 @@
           "notNull": false,
           "autoincrement": false
         },
-        "terms_version": {
-          "name": "terms_version",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": false,
-          "autoincrement": false
-        },
-        "privacy_version": {
-          "name": "privacy_version",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": false,
-          "autoincrement": false
-        },
-        "legal_agreed_at": {
-          "name": "legal_agreed_at",
-          "type": "integer",
-          "primaryKey": false,
-          "notNull": false,
-          "autoincrement": false
-        },
         "created_at": {
           "name": "created_at",
           "type": "integer",
@@ -3742,7 +3752,15 @@
           "autoincrement": false
         }
       },
-      "indexes": {},
+      "indexes": {
+        "verification_identifier_idx": {
+          "name": "verification_identifier_idx",
+          "columns": [
+            "identifier"
+          ],
+          "isUnique": false
+        }
+      },
       "foreignKeys": {},
       "compositePrimaryKeys": {},
       "uniqueConstraints": {},
@@ -3915,6 +3933,23 @@
             "kind"
           ],
           "isUnique": false
+        },
+        "workflow_job_kind_created_idx": {
+          "name": "workflow_job_kind_created_idx",
+          "columns": [
+            "kind",
+            "github_created_at"
+          ],
+          "isUnique": false
+        },
+        "workflow_job_machine_idx": {
+          "name": "workflow_job_machine_idx",
+          "columns": [
+            "machine_id",
+            "status"
+          ],
+          "isUnique": false,
+          "where": "\"workflow_job\".\"machine_id\" is not null"
         }
       },
       "foreignKeys": {

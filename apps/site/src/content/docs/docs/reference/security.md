@@ -19,7 +19,7 @@ On a Mac with Apple silicon, `relayrunner connect --isolated` runs each job in i
 
 - Sees none of your files, and not the machine's token.
 - Starts clean. Nothing an earlier job left behind is there, and the VM is deleted when the job ends.
-- Reaches the internet, but not your Mac or your local network. `sudo` in the job can't change that. `--local-network` turns this off.
+- Reaches the internet, but not your Mac or your local network. `--local-network` turns this off. This block guards against accidents. A job that sets out to remove it can, through Docker, so connect only repositories you trust.
 
 See [Isolated jobs on a Mac](/docs/runners/self-hosted#isolated-jobs-on-a-mac).
 

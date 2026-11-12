@@ -306,8 +306,15 @@
     {
       "idx": 43,
       "version": "6",
-      "when": 1794501110834,
-      "tag": "20261112163150_legal_agreement",
+      "when": 1794501272558,
+      "tag": "20261112163432_query_indexes",
+      "breakpoints": true
+    },
+    {
+      "idx": 44,
+      "version": "6",
+      "when": 1794502352494,
+      "tag": "20261112165232_legal_agreement",
       "breakpoints": true
     }
   ]
