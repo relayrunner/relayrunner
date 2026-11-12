@@ -56,6 +56,16 @@
 .btn-ghost:hover {
   border-color: var(--idle);
 }
+.btn-text {
+  display: inline-flex;
+  align-items: center;
+  color: var(--ink-2);
+  text-decoration: none;
+  white-space: nowrap;
+}
+.btn-text:hover {
+  color: var(--ink);
+}
 .btn-sm {
   padding: 8px 13px;
   border-radius: 8px;
@@ -127,6 +137,10 @@
   display: flex;
   gap: 10px;
 }
+.header-actions[data-signed-in] .signed-out,
+.header-actions:not([data-signed-in]) .signed-in {
+  display: none;
+}
 
 @media (max-width: 860px) {
   .nav-page {
@@ -135,6 +149,12 @@
 }
 @media (max-width: 640px) {
   .site-header nav {
+    display: none;
+  }
+}
+/* Too narrow for all three: GitHub is in the footer. */
+@media (max-width: 520px) {
+  .header-actions:not([data-signed-in]) .header-github {
     display: none;
   }
 }

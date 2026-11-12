@@ -27,10 +27,31 @@ export const authDisabled = import.meta.env.DEV && import.meta.env.VITE_AUTH_DIS
 
 /** Resolves the current session for route guards; null when signed out. */
 export async function getSession(): Promise<Session | null> {
+  let session: Session | null = null;
   try {
     const { data } = await authClient.getSession();
-    return data ?? null;
+    session = data ?? null;
   } catch {
-    return null;
+    // Treated as signed out.
   }
+  rememberSignedIn(Boolean(session));
+  return session;
+}
+
+/**
+ * The homepage (apps/site, on the parent domain) swaps its header's Sign in for Open dashboard when
+ * this cookie is set. The session cookie itself is HttpOnly and scoped to the dashboard's host, so
+ * the site can't see it. This one holds no secret: it's only a hint, and a stale one just sends
+ * someone to the sign-in page. Every route guard calls getSession, so signing out clears it too.
+ */
+const SIGNED_IN_COOKIE = "rr_signed_in";
+
+function rememberSignedIn(signedIn: boolean) {
+  // Only the dashboard at app.<domain> shares it with <domain>; previews and localhost don't.
+  const { hostname } = window.location;
+  if (!hostname.startsWith("app.")) return;
+  const domain = hostname.slice("app.".length);
+  const value = signedIn ? "1" : "";
+  const maxAge = signedIn ? 60 * 60 * 24 * 30 : 0;
+  document.cookie = `${SIGNED_IN_COOKIE}=${value}; Domain=${domain}; Path=/; Max-Age=${maxAge}; Secure; SameSite=Lax`;
 }
