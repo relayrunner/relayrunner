@@ -22,6 +22,9 @@ export interface Env extends AccessEnv {
   // Optional: a Slack incoming webhook for operator pings (src/operator-pings.ts): signups, installs,
   // first machines, first machine runs and unroutable runs. Set with `wrangler secret put`.
   OPERATOR_SLACK_WEBHOOK_URL?: string;
+  // Test accounts that aren't operators, left out of operator pings: GitHub user ids,
+  // comma-separated (wrangler.jsonc vars).
+  OPERATOR_PINGS_IGNORE_GITHUB_IDS?: string;
   PICK_RUNNER: DurableObjectNamespace<PickRunner>;
   ROUTER: DurableObjectNamespace<Router>;
   MACHINE_LINK: DurableObjectNamespace<MachineLink>;

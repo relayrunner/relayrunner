@@ -6,9 +6,11 @@
  * is read once, so a skipped cron run skips its pings.
  *
  * Our own workspaces (internalWorkspaceIds) and operators' own signups are left out, so our own
- * testing stays quiet.
+ * testing stays quiet. So are test accounts that aren't operators, by GitHub user id
+ * (OPERATOR_PINGS_IGNORE_GITHUB_IDS): their signups, their personal account's install, and
+ * workspaces where everyone is a test account or an operator.
  */
-import { and, desc, eq, gte, inArray, lt } from "drizzle-orm";
+import { and, desc, eq, gte, inArray, lt, sql } from "drizzle-orm";
 import { type Db, createDb, schema } from "./db/index.ts";
 import type { Env } from "./env.ts";
 import { internalWorkspaceIds } from "./internal-workspaces.ts";
@@ -31,13 +33,86 @@ export async function postToWebhook(url: string, text: string, fetcher: typeof f
   if (!response.ok) throw new Error(`webhook answered ${response.status}`);
 }
 
-/** The pings for what happened in [since, until), oldest first. */
-export async function collectOperatorPings(db: Db, since: Date, until: Date): Promise<string[]> {
-  const ours = await internalWorkspaceIds(db);
+/** GitHub user ids from a comma-separated list, ignoring anything that isn't one. */
+export function parseGithubIds(value: string | undefined): number[] {
+  return (value ?? "")
+    .split(",")
+    .map((part) => Number(part.trim()))
+    .filter((id) => Number.isInteger(id) && id > 0);
+}
+
+/**
+ * The test accounts' users, and the workspaces that are only theirs: everyone in it is a test
+ * account or an operator, it's a test account's personal install, or, before members sync, a test
+ * account installed it.
+ */
+async function testAccounts(db: Db, githubIds: number[]) {
+  if (githubIds.length === 0) return { users: new Set<string>(), workspaces: new Set<string>() };
+  const ids = githubIds.map(String);
+  const accounts = await db
+    .select({ userId: schema.account.userId })
+    .from(schema.account)
+    .where(and(eq(schema.account.providerId, "github"), inArray(schema.account.accountId, ids)));
+  const users = new Set(accounts.map((row) => row.userId));
+  const [members, installs] = await Promise.all([
+    db
+      .select({
+        workspaceId: schema.workspaceMember.workspaceId,
+        userId: schema.workspaceMember.userId,
+        role: schema.user.role,
+      })
+      .from(schema.workspaceMember)
+      .innerJoin(schema.user, eq(schema.user.id, schema.workspaceMember.userId)),
+    db
+      .select({
+        id: schema.workspace.id,
+        accountId: schema.githubInstallation.accountId,
+        installerGithubId: schema.githubInstallation.installerGithubId,
+        members: sql<number>`(select count(*) from ${schema.workspaceMember} where ${schema.workspaceMember.workspaceId} = ${schema.workspace.id})`,
+      })
+      .from(schema.workspace)
+      .innerJoin(
+        schema.githubInstallation,
+        eq(schema.githubInstallation.id, schema.workspace.installationId),
+      ),
+  ]);
+  const workspaces = new Set<string>();
+  for (const [workspaceId, rows] of Map.groupBy(members, (row) => row.workspaceId)) {
+    if (
+      rows.some((row) => users.has(row.userId)) &&
+      rows.every((row) => users.has(row.userId) || row.role === "operator")
+    )
+      workspaces.add(workspaceId);
+  }
+  for (const install of installs) {
+    if (
+      githubIds.includes(install.accountId) ||
+      (Number(install.members) === 0 &&
+        install.installerGithubId !== null &&
+        githubIds.includes(install.installerGithubId))
+    )
+      workspaces.add(install.id);
+  }
+  return { users, workspaces };
+}
+
+/**
+ * The pings for what happened in [since, until), oldest first. `ignoredGithubIds` are test
+ * accounts to leave out, like our own.
+ */
+export async function collectOperatorPings(
+  db: Db,
+  since: Date,
+  until: Date,
+  ignoredGithubIds: number[] = [],
+): Promise<string[]> {
+  const tests = await testAccounts(db, ignoredGithubIds);
+  const ours = new Set([...(await internalWorkspaceIds(db)), ...tests.workspaces]);
   const pings: { at: number; text: string }[] = [];
 
   const signups = await db
     .select({
+      id: schema.user.id,
       name: schema.user.name,
       email: schema.user.email,
       createdAt: schema.user.createdAt,
@@ -46,7 +121,7 @@ export async function collectOperatorPings(db: Db, since: Date, until: Date): Pr
     .from(schema.user)
     .where(and(gte(schema.user.createdAt, since), lt(schema.user.createdAt, until)));
   for (const user of signups) {
-    if (user.role === "operator") continue;
+    if (user.role === "operator" || tests.users.has(user.id)) continue;
     pings.push({
       at: user.createdAt.getTime(),
       text: `:wave: New signup: *${esc(user.name)}* (${esc(user.email)})`,
@@ -217,7 +292,12 @@ export async function sendOperatorPings(
   if (!url) return 0;
   const until = new Date(at.getTime());
   const since = new Date(until.getTime() - PING_WINDOW_MS);
-  const pings = await collectOperatorPings(createDb(env.DB), since, until);
+  const pings = await collectOperatorPings(
+    createDb(env.DB),
+    since,
+    until,
+    parseGithubIds(env.OPERATOR_PINGS_IGNORE_GITHUB_IDS),
+  );
   let sent = 0;
   for (const text of pings) {
     try {

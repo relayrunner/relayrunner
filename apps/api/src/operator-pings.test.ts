@@ -3,7 +3,12 @@ import { beforeAll, describe, expect, test, vi } from "vitest";
 import { recordEvent } from "./activity.ts";
 import { createDb, schema } from "./db/index.ts";
 import type { Env } from "./env.ts";
-import { collectOperatorPings, PING_WINDOW_MS, sendOperatorPings } from "./operator-pings.ts";
+import {
+  collectOperatorPings,
+  parseGithubIds,
+  PING_WINDOW_MS,
+  sendOperatorPings,
+} from "./operator-pings.ts";
 import * as testing from "./testing.ts";
 
 let env: Env;
@@ -191,6 +196,52 @@ describe("operator pings", () => {
     expect(about(pings, member.user.email)).toEqual([]);
     expect(about(pings, member.workspace.slug)).toEqual([]);
     expect(about(pings, installed.workspace.slug)).toEqual([]);
+  });
+
+  test("leaves out test accounts by GitHub id, but not workspaces real users are in", async () => {
+    const db = createDb(env.DB);
+    const tester = await workspace("Tester Only");
+    await unroutable(tester.workspace.id, new Date(), "nothing fits");
+
+    // A real user's workspace the test account joined still pings.
+    const shared = await workspace("Shared With Tester");
+    await db.insert(schema.workspaceMember).values({
+      id: crypto.randomUUID(),
+      workspaceId: shared.workspace.id,
+      userId: tester.user.id,
+      role: "member",
+    });
+    await unroutable(shared.workspace.id, new Date(), "nothing fits");
+
+    // The test account's personal install, before anyone synced into it.
+    const personal = await workspace("Tester Personal");
+    await db
+      .delete(schema.workspaceMember)
+      .where(eq(schema.workspaceMember.workspaceId, personal.workspace.id));
+    await db
+      .update(schema.githubInstallation)
+      .set({ accountId: tester.githubId, accountType: "User" })
+      .where(eq(schema.githubInstallation.id, personal.workspace.installationId));
+    await machineRun(personal.workspace.id, new Date());
+
+    const { since, until } = window();
+    const pings = await collectOperatorPings(db, since, until, [tester.githubId]);
+    expect(about(pings, tester.user.email)).toEqual([]);
+    expect(about(pings, "Tester Only")).toEqual([]);
+    expect(about(pings, tester.workspace.slug)).toEqual([]);
+    expect(about(pings, "Tester Personal")).toEqual([]);
+    expect(about(pings, personal.workspace.slug)).toEqual([]);
+    expect(about(pings, "Shared With Tester")).toHaveLength(1);
+
+    // Without the list, the test account pings like anyone.
+    const unfiltered = await collectOperatorPings(db, since, until);
+    expect(about(unfiltered, tester.user.email)).toHaveLength(1);
+    expect(about(unfiltered, "Tester Only")).toHaveLength(1);
+  });
+
+  test("reads the ignore list from a comma-separated var", () => {
+    expect(parseGithubIds(" 8841125, 42 ,,nope,-1")).toEqual([8841125, 42]);
+    expect(parseGithubIds(undefined)).toEqual([]);
   });
 
   test("escapes names for Slack", async () => {
