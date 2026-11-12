@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
-  renderAgentFeedbackEmail,
   renderDeadLetterAlertEmail,
+  renderFeedbackEmail,
   renderPriceCheckEmail,
   renderMachineConnectedEmail,
   renderMachineTakenOverEmail,
@@ -9,8 +9,8 @@ import {
 } from "./index.ts";
 
 describe("templates", () => {
-  it("agent-feedback names who sent it and escapes every agent-written field", () => {
-    const email = renderAgentFeedbackEmail({
+  it("feedback from an agent names who sent it and escapes every agent-written field", () => {
+    const email = renderFeedbackEmail({
       id: "f1",
       category: "bug",
       summary: "<img src=x onerror=alert(1)>",
@@ -19,7 +19,7 @@ describe("templates", () => {
       redacted: 2,
       user: { name: "Ada", email: "ada@example.com" },
       workspaceName: "Acme & Co",
-      clientName: "Claude",
+      agent: { name: "Claude" },
       sentAt: new Date("2026-11-11T00:00:00Z"),
     });
     expect(email.subject).toBe("[feedback] bug: <img src=x onerror=alert(1)>");
@@ -31,6 +31,26 @@ describe("templates", () => {
     expect(email.text).toContain("From: Ada <ada@example.com>");
     expect(email.text).toContain("Redacted: 2 secret-like value(s)");
     expect(email.text).toContain("line one\n<script>bad()</script>");
+  });
+
+  it("feedback from the dashboard leaves out the agent fields and names the page", () => {
+    const email = renderFeedbackEmail({
+      id: "f2",
+      category: null,
+      summary: "The router page is great",
+      details: "The router page is great",
+      page: "/router",
+      redacted: 0,
+      user: { name: "Ada", email: "ada@example.com" },
+      workspaceName: "Acme",
+      agent: null,
+      sentAt: new Date("2026-11-11T00:00:00Z"),
+    });
+    expect(email.subject).toBe("[feedback] The router page is great");
+    expect(email.text).toContain("Page: /router");
+    expect(email.text).not.toContain("Agent:");
+    expect(email.text).not.toContain("Category:");
+    expect(email.text.trimEnd().endsWith("The router page is great")).toBe(true);
   });
 
   it("welcome links the dashboard in both bodies", () => {

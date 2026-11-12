@@ -2,7 +2,7 @@ import { and, eq } from "drizzle-orm";
 import { createMiddleware } from "hono/factory";
 import type { AppEnv } from "../app.ts";
 import { AGENT_WORKSPACE_HEADER, agentWorkspaceId } from "../agent-auth.ts";
-import { createDb, schema } from "../db/index.ts";
+import { createDb, schema, type Db } from "../db/index.ts";
 
 // Resolves the session's active workspace and the signed-in user's membership in it. Gateway
 // routes that act on a workspace (installations, machines, repos) go behind this. Run it after
@@ -18,17 +18,7 @@ export const requireWorkspace = createMiddleware<AppEnv>(async (c, next) => {
   }
 
   const db = createDb(c.env.DB);
-  const [row] = await db
-    .select({ workspace: schema.workspace, role: schema.workspaceMember.role })
-    .from(schema.workspaceMember)
-    .innerJoin(schema.workspace, eq(schema.workspace.id, schema.workspaceMember.workspaceId))
-    .where(
-      and(
-        eq(schema.workspaceMember.workspaceId, workspaceId),
-        eq(schema.workspaceMember.userId, c.var.user!.id),
-      ),
-    )
-    .limit(1);
+  const row = await membership(db, workspaceId, c.var.user!.id);
   // A stale active id (workspace deleted, or membership removed) reads as no workspace.
   if (!row) return c.json({ error: "no_active_workspace" }, 409);
 
@@ -37,3 +27,19 @@ export const requireWorkspace = createMiddleware<AppEnv>(async (c, next) => {
   c.set("role", row.role);
   await next();
 });
+
+/** The workspace and the user's role in it, or null when they aren't a member (or it's gone). */
+export async function membership(db: Db, workspaceId: string, userId: string) {
+  const [row] = await db
+    .select({ workspace: schema.workspace, role: schema.workspaceMember.role })
+    .from(schema.workspaceMember)
+    .innerJoin(schema.workspace, eq(schema.workspace.id, schema.workspaceMember.workspaceId))
+    .where(
+      and(
+        eq(schema.workspaceMember.workspaceId, workspaceId),
+        eq(schema.workspaceMember.userId, userId),
+      ),
+    )
+    .limit(1);
+  return row ?? null;
+}
