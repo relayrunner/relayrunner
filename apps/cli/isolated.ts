@@ -285,6 +285,28 @@ export function vmSize(
   };
 }
 
+// VMs look up hostnames through Apple's VM network, which VPN and DNS filtering software can
+// break while the Mac's own lookups keep working. This exits with NO_DNS when a VM can't look
+// up github.com. A new VM's DNS answers nothing for its first 2 seconds or so, so it gets 5 tries.
+const NO_DNS = 3;
+const DNS_CHECK = `for try in 1 2 3 4 5; do
+  RES_OPTIONS="timeout:1 attempts:1" getent ahostsv4 github.com >/dev/null && exit 0
+done
+exit ${NO_DNS}`;
+
+// What apt, curl and getent print when they can't look up a hostname.
+const DNS_FAILURE = /Temporary failure resolving|Could not resolve host|Name or service not known/;
+
+export function dnsMessage(base: string) {
+  return `Linux VMs on this Mac can't look up hostnames, though the Mac itself can.
+VPN or DNS filtering software often causes this, even when it's disconnected or its app is closed. Quit it fully, then run \`relayrunner connect\` again.
+
+To check, this should print an address:
+  container run --rm ${base} getent ahostsv4 github.com
+
+To run jobs on the Mac without VMs for now, use \`relayrunner connect --no-isolated\`.`;
+}
+
 // Checks Apple's container tool is running and gets the job image ready, so the first job
 // doesn't wait for it. Throws a RunnerError that says what to do otherwise.
 export async function prepareIsolation(options: {
@@ -336,6 +358,8 @@ export async function prepareIsolation(options: {
       throw fail("ISOLATED_IMAGE", `Could not download ${base}.`);
     if (!options.image) mine.push(base);
   }
+  const noDns = () => fail("ISOLATED_DNS", dnsMessage(base));
+  if ((await tool(["run", "--rm", base, "sh", "-c", DNS_CHECK])) === NO_DNS) throw noDns();
   const image = jobImage(base, !options.image);
   mine.push(image);
   if (!(await hasImage(image))) {
@@ -344,7 +368,13 @@ export async function prepareIsolation(options: {
     try {
       writeFileSync(join(context, "Dockerfile"), dockerfile(base, !options.image));
       writeFileSync(join(context, "start.sh"), START_SCRIPT);
-      if ((await tool(["build", "--progress", "plain", "--tag", image, context])) !== 0)
+      const build = await capture(
+        command,
+        ["build", "--progress", "plain", "--tag", image, context],
+        debug,
+      );
+      if (build.code !== 0 && DNS_FAILURE.test(build.output)) throw noDns();
+      if (build.code !== 0)
         throw fail("ISOLATED_IMAGE", `Could not build the job image from ${base}.`);
     } finally {
       rmSync(context, { recursive: true, force: true });
@@ -459,8 +489,13 @@ export function isolatedLauncher(isolation: Isolation): Launcher {
 
 // Runs a `container` command to the end and records it in the debug log, with what it printed
 // unless `quiet`. Resolves with its exit code, or null when it couldn't start.
-function call(command: string, args: string[], debug: DebugLog, quiet = false) {
-  return new Promise<number | null>((resolve) => {
+async function call(command: string, args: string[], debug: DebugLog, quiet = false) {
+  return (await capture(command, args, debug, quiet)).code;
+}
+
+// `call`, also resolving with what the command printed (nothing when `quiet`).
+function capture(command: string, args: string[], debug: DebugLog, quiet = false) {
+  return new Promise<{ code: number | null; output: string }>((resolve) => {
     const child = spawn(command, args, { stdio: ["ignore", "pipe", "pipe"] });
     let output = "";
     const keep = (chunk: Buffer) => {
@@ -470,7 +505,7 @@ function call(command: string, args: string[], debug: DebugLog, quiet = false) {
     child.stderr.on("data", keep);
     const done = (code: number | null, extra = "") => {
       debug.write(`$ ${command} ${args.join(" ")}\n${output}${extra}exit ${code}`);
-      resolve(code);
+      resolve({ code, output });
     };
     child.once("error", (error) => done(null, `${error.message}\n`));
     child.once("close", (code) => done(code));
