@@ -30,8 +30,9 @@ const RELEASES = "https://github.com/apple/container/releases";
 
 // What the VM runs, as root with NET_ADMIN, before the runner. It loads a firewall that lets the
 // job reach the internet and DNS but not private addresses (the Mac, the LAN, link-local) or any
-// IPv6 address, then starts the runner as `runner` with NET_ADMIN gone for good, so not even
-// `sudo` in a job step can take the firewall down.
+// IPv6 address, then starts the runner as `runner` with NET_ADMIN and NET_RAW gone for good. Without
+// NET_ADMIN not even `sudo` in a job step can take the firewall down, and without NET_RAW it can't
+// send raw packets underneath it.
 export const START_SCRIPT = `#!/bin/sh
 set -eu
 dns=$(awk '$1 == "nameserver" && $2 ~ /^[0-9.]+$/ { printf "%s%s", sep, $2; sep = ", " }' /etc/resolv.conf)
@@ -51,7 +52,7 @@ EOF
 cd /home/runner
 # With arguments, runs them in place of the runner, to check the firewall by hand.
 [ $# -gt 0 ] || set -- ./run.sh --jitconfig "$RUNNER_JIT_CONFIG"
-exec setpriv --reuid runner --regid runner --init-groups --bounding-set -net_admin \\
+exec setpriv --reuid runner --regid runner --init-groups --bounding-set -net_admin,-net_raw \\
   env HOME=/home/runner USER=runner LOGNAME=runner "$@"
 `;
 
@@ -116,10 +117,22 @@ export async function prepareIsolation(options: {
     try {
       writeFileSync(join(context, "Dockerfile"), dockerfile(base));
       writeFileSync(join(context, "start.sh"), START_SCRIPT);
-      if ((await exitCode(command, ["build", "--tag", image, context], "inherit")) !== 0)
+      const build = await captured(command, [
+        "build",
+        "--progress",
+        "plain",
+        "--tag",
+        image,
+        context,
+      ]);
+      if (build.code !== 0) {
+        process.stderr.write(build.output);
         throw new RunnerError("ISOLATED_IMAGE", `Could not build the job image from ${base}.`);
+      }
     } finally {
       rmSync(context, { recursive: true, force: true });
+      // The build leaves Apple's builder VM running. It starts again by itself when needed.
+      await exitCode(command, ["builder", "stop"]);
     }
   }
   return { command, image, runnerVersion, ...vmSize(options.slots) };
@@ -176,4 +189,16 @@ export function isolatedLauncher(isolation: Isolation): Launcher {
         await exitCode(isolation.command, ["delete", "--force", containerName(run.routeId)]);
     },
   };
+}
+
+// Runs a command to the end, keeping what it printed for when it fails.
+function captured(command: string, args: string[]) {
+  return new Promise<{ code: number | null; output: string }>((resolve) => {
+    const child = spawn(command, args, { stdio: ["ignore", "pipe", "pipe"] });
+    let output = "";
+    child.stdout.on("data", (chunk: Buffer) => (output += chunk.toString()));
+    child.stderr.on("data", (chunk: Buffer) => (output += chunk.toString()));
+    child.once("error", (error) => resolve({ code: null, output: `${error.message}\n` }));
+    child.once("close", (code) => resolve({ code, output }));
+  });
 }

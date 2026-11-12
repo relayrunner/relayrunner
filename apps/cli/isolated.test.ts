@@ -78,7 +78,7 @@ describe("the job image", () => {
     expect(START_SCRIPT).toContain("192.168.0.0/16");
     expect(START_SCRIPT).toContain("meta nfproto ipv6 drop");
     expect(START_SCRIPT.indexOf("nft -f")).toBeLessThan(START_SCRIPT.indexOf("run.sh"));
-    expect(START_SCRIPT).toContain("--bounding-set -net_admin");
+    expect(START_SCRIPT).toContain("--bounding-set -net_admin,-net_raw");
     expect(START_SCRIPT).toContain("--reuid runner");
   });
 
