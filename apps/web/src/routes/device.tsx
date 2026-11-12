@@ -22,6 +22,7 @@ import {
   type DeviceCodeStatus,
 } from "@/lib/machines";
 import { describePlace } from "@/lib/device";
+import { requireAgreement } from "@/lib/legal";
 import { onboardingStep, shouldOpenInstall } from "@/lib/onboarding";
 import { cn } from "@/lib/utils";
 
@@ -80,7 +81,11 @@ export const Route = createFileRoute("/device")({
     github: isGitHubOutcome(search.github) ? search.github : undefined,
     install: search.install === "opened" ? "opened" : undefined,
   }),
-  beforeLoad: async () => ({ session: authDisabled ? null : await getSession() }),
+  beforeLoad: async ({ location }) => {
+    const session = authDisabled ? null : await getSession();
+    requireAgreement(session, location.href);
+    return { session };
+  },
   loaderDeps: ({ search }) => ({
     userCode: search.user_code,
     name: search.name,

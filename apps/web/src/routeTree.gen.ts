@@ -11,6 +11,7 @@
 import { Route as rootRouteImport } from './routes/__root'
 import { Route as IndexRouteImport } from './routes/index'
 import { Route as AuthedRouteImport } from './routes/_authed'
+import { Route as AgreeRouteImport } from './routes/agree'
 import { Route as DeviceRouteImport } from './routes/device'
 import { Route as LoginRouteImport } from './routes/login'
 import { Route as AuthedWorkspaceRouteImport } from './routes/_authed/_workspace'
@@ -46,6 +47,11 @@ const IndexRoute = IndexRouteImport.update({
 } as any)
 const AuthedRoute = AuthedRouteImport.update({
   id: '/_authed',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const AgreeRoute = AgreeRouteImport.update({
+  id: '/agree',
+  path: '/agree',
   getParentRoute: () => rootRouteImport,
 } as any)
 const DeviceRoute = DeviceRouteImport.update({
@@ -200,6 +206,7 @@ const AuthedWorkspaceSettingsMembersRoute =
 
 export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
+  '/agree': typeof AgreeRoute
   '/device': typeof DeviceRoute
   '/login': typeof LoginRoute
   '/welcome': typeof AuthedWelcomeRoute
@@ -229,6 +236,7 @@ export interface FileRoutesByFullPath {
 }
 export interface FileRoutesByTo {
   '/': typeof IndexRoute
+  '/agree': typeof AgreeRoute
   '/device': typeof DeviceRoute
   '/login': typeof LoginRoute
   '/welcome': typeof AuthedWelcomeRoute
@@ -260,6 +268,7 @@ export interface FileRoutesById {
   __root__: typeof rootRouteImport
   '/': typeof IndexRoute
   '/_authed': typeof AuthedRouteWithChildren
+  '/agree': typeof AgreeRoute
   '/device': typeof DeviceRoute
   '/login': typeof LoginRoute
   '/_authed/_workspace': typeof AuthedWorkspaceRouteWithChildren
@@ -292,6 +301,7 @@ export interface FileRouteTypes {
   fileRoutesByFullPath: FileRoutesByFullPath
   fullPaths:
     | '/'
+    | '/agree'
     | '/device'
     | '/login'
     | '/welcome'
@@ -321,6 +331,7 @@ export interface FileRouteTypes {
   fileRoutesByTo: FileRoutesByTo
   to:
     | '/'
+    | '/agree'
     | '/device'
     | '/login'
     | '/welcome'
@@ -351,6 +362,7 @@ export interface FileRouteTypes {
     | '__root__'
     | '/'
     | '/_authed'
+    | '/agree'
     | '/device'
     | '/login'
     | '/_authed/_workspace'
@@ -383,6 +395,7 @@ export interface FileRouteTypes {
 export interface RootRouteChildren {
   IndexRoute: typeof IndexRoute
   AuthedRoute: typeof AuthedRouteWithChildren
+  AgreeRoute: typeof AgreeRoute
   DeviceRoute: typeof DeviceRoute
   LoginRoute: typeof LoginRoute
   AgentsConsentRoute: typeof AgentsConsentRoute
@@ -403,6 +416,13 @@ declare module '@tanstack/react-router' {
       path: ''
       fullPath: '/'
       preLoaderRoute: typeof AuthedRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/agree': {
+      id: '/agree'
+      path: '/agree'
+      fullPath: '/agree'
+      preLoaderRoute: typeof AgreeRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/device': {
@@ -665,6 +685,7 @@ const AuthedRouteWithChildren =
 const rootRouteChildren: RootRouteChildren = {
   IndexRoute: IndexRoute,
   AuthedRoute: AuthedRouteWithChildren,
+  AgreeRoute: AgreeRoute,
   DeviceRoute: DeviceRoute,
   LoginRoute: LoginRoute,
   AgentsConsentRoute: AgentsConsentRoute,

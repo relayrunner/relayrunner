@@ -5,12 +5,15 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { pendingAgentWorkspaces } from "@/lib/agents";
 import { authClient, getSession } from "@/lib/auth-client";
+import { requireAgreement } from "@/lib/legal";
 
 // Agent sign-in, step 2 (apps/api/src/agent-auth.ts): Better Auth sends the browser here, with the
 // signed authorization request in the query, once the person has picked the workspaces (step 1). Allowing returns the browser to the client with a code; denying returns an error.
 export const Route = createFileRoute("/agents/consent")({
-  loader: async () => {
-    if (!(await getSession())) return { signedIn: false as const };
+  loader: async ({ location }) => {
+    const session = await getSession();
+    if (!session) return { signedIn: false as const };
+    requireAgreement(session, location.href);
     const clientId = new URLSearchParams(window.location.search).get("client_id") ?? "";
     const [client, picked] = await Promise.all([
       authClient.oauth2.publicClient({ query: { client_id: clientId } }),
