@@ -61,7 +61,7 @@ A user delete also removes their sessions, GitHub sign-in and device codes, so a
 | `POST /api/admin/prices/:id/dismiss` | Turns a found price down. The check won't raise the same price again. Logged.                                      |
 | `POST /api/admin/prices/check`       | Runs the price check now.                                                                                          |
 
-Once a day (06:30 UTC, its own cron in `wrangler.jsonc`) the API reads each provider's price page, listed with its parser in `packages/providers/src/price-sources.ts`. A price that differs from the one jobs are priced at is saved to D1 `price_finding`, which prices nothing until an operator approves it on `/admin/prices`. The check emails `OPERATOR_ALERT_EMAIL` when it finds a change or when a page stops reading (a parser throws rather than guess when a page changes shape). Each page's last check and error are in D1 `price_check`.
+Once a day (06:30 UTC, its own cron in `wrangler.jsonc`) the API reads each provider's price page, listed with its parser in `packages/providers/src/price-sources.ts`. A price that differs from the one jobs are priced at is saved to D1 `price_finding`, which prices nothing until an operator approves it on `/admin/prices`. The check emails `OPERATOR_ALERT_EMAIL`, and any operator who turned on Price changes in Account settings, when it finds a change or when a page stops reading (a parser throws rather than guess when a page changes shape). Each page's last check and error are in D1 `price_check`.
 
 ## Webhook dead letters
 

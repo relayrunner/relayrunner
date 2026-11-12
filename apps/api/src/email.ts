@@ -16,6 +16,9 @@ import {
 } from "@relayrunner/email";
 import { providerName, rateText } from "@relayrunner/providers";
 import type { Env } from "./env.ts";
+import { createDb } from "./db/index.ts";
+import type { DistributiveOmit } from "./machines.ts";
+import { isNotificationType, operatorRecipients, wantsEmail } from "./notifications.ts";
 
 // send.relayrunner.app is the domain onboarded for Email Sending. Keep EMAIL_FROM inside the
 // binding's allowed_sender_addresses in wrangler.jsonc.
@@ -58,7 +61,11 @@ export type EmailArgs = (
       template: "feedback";
       context: Parameters<typeof renderFeedbackEmail>[0];
     }
-) & { replyTo?: string };
+) & {
+  replyTo?: string;
+  /** The recipient's user id. Set it and the email skips anyone who turned this type off. */
+  userId?: string;
+};
 
 /** Where links in emails point: the dashboard people actually use, not the OAuth callback host. */
 export function dashboardUrl(env: Pick<Env, "DASHBOARD_URL" | "BETTER_AUTH_URL">) {
@@ -71,7 +78,11 @@ function render(env: Env, args: EmailArgs): RenderedEmail {
     case "welcome":
       return renderWelcomeEmail({ ...args.context, dashboardUrl: dashboard });
     case "machine-connected":
-      return renderMachineConnectedEmail({ ...args.context, machinesUrl: `${dashboard}/runners` });
+      return renderMachineConnectedEmail({
+        ...args.context,
+        machinesUrl: `${dashboard}/runners`,
+        settingsUrl: `${dashboard}/settings/notifications`,
+      });
     case "machine-taken-over":
       return renderMachineTakenOverEmail({ ...args.context, machinesUrl: `${dashboard}/runners` });
     case "dead-letter-alert":
@@ -98,6 +109,11 @@ function render(env: Env, args: EmailArgs): RenderedEmail {
 }
 
 export async function sendEmail(env: Env, args: EmailArgs): Promise<void> {
+  if (args.userId && isNotificationType(args.template)) {
+    // If the setting can't be read, send: a missed notice is worse than an unwanted one.
+    const wanted = await wantsEmail(createDb(env.DB), args.userId, args.template).catch(() => true);
+    if (!wanted) return;
+  }
   let rendered: RenderedEmail;
   try {
     rendered = render(env, args);
@@ -133,4 +149,32 @@ export async function sendEmail(env: Env, args: EmailArgs): Promise<void> {
 
 function message(error: unknown) {
   return error instanceof Error ? error.message : String(error);
+}
+
+type OperatorEmail = Extract<
+  EmailArgs,
+  { template: "feedback" | "dead-letter-alert" | "price-check" }
+>;
+
+/**
+ * Sends an operator alert to the team inbox (FEEDBACK_EMAIL for feedback, else
+ * OPERATOR_ALERT_EMAIL) and to each operator who asked for their own copy. Never throws.
+ */
+export async function emailOperators(env: Env, args: DistributiveOmit<OperatorEmail, "to">) {
+  if (!env.EMAIL) {
+    console.warn(
+      JSON.stringify({ msg: "email not sent: no EMAIL binding", template: args.template }),
+    );
+    return;
+  }
+  const inbox = args.template === "feedback" ? env.FEEDBACK_EMAIL : env.OPERATOR_ALERT_EMAIL;
+  const recipients = new Set(inbox ? [inbox] : []);
+  try {
+    for (const to of await operatorRecipients(createDb(env.DB), args.template)) recipients.add(to);
+  } catch (error) {
+    console.error(
+      JSON.stringify({ msg: "operators not read", template: args.template, error: message(error) }),
+    );
+  }
+  await Promise.all([...recipients].map((to) => sendEmail(env, { ...args, to } as EmailArgs)));
 }

@@ -194,6 +194,9 @@ function SettingsNav({ workspace }: { workspace: { name: string; logo: string | 
           <Link to="/settings/account" className={navLink} activeProps={navActive}>
             Profile
           </Link>
+          <Link to="/settings/notifications" className={navLink} activeProps={navActive}>
+            Email
+          </Link>
           <Link to="/settings/agents" className={navLink} activeProps={navActive}>
             Agents
           </Link>

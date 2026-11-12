@@ -69,7 +69,7 @@
   },
   // Transactional email through Cloudflare Email Sending (src/email.ts). send.relayrunner.app is
   // onboarded for sending on this account. Set OPERATOR_ALERT_EMAIL with `wrangler secret put` to
-  // also email the dead-letter alert. `wrangler dev` simulates sends locally; add "remote": true
+  // email operator alerts to a team inbox; operators can also opt in to their own copy. `wrangler dev` simulates sends locally; add "remote": true
   // here to deliver for real while testing (remove before deploy).
   "send_email": [{ "name": "EMAIL", "allowed_sender_addresses": ["noreply@send.relayrunner.app"] }],
   // Webhook dead letters (src/dead-letters.ts), kept out of D1 on purpose: D1 failing is the
