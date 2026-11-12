@@ -4,7 +4,7 @@ The public site at [relayrunner.app](https://relayrunner.app): one [Astro](https
 
 ## Share images
 
-Each docs page gets its own share image at `/og/docs/<slug>.png`, drawn at build time from its title and description by [astro-og-canvas](https://github.com/delucis/astro-og-canvas) (`src/pages/og/[...route].ts`). The landing page uses `public/og-image.png`, made from `og/og-image.html` with `pnpm og`. Campaign links can swap it: `/?utm_content=minutes` shows `public/og/minutes.png`. The Worker script rewrites the landing page's `og:image` and `twitter:image` tags when `utm_content` names an entry in `SHARE_IMAGES` (`worker/index.ts`), since link previewers don't run JavaScript. To add one, put a 1200×630 PNG in `public/og/` and add a line to that map.
+`src/lib/share-images.mjs` draws the site's share images and the README hero with [Satori](https://github.com/vercel/satori) and resvg. Each docs page gets its own share image at `/og/docs/<slug>.png`, drawn at build time from its section, title and description (`src/pages/og/[...route].ts`). The home page's `public/og-image.png` and the README hero in `.github/readme/` are files: after changing a layout, run `pnpm images` to write them again.
 
 ## For agents
 

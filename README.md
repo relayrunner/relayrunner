@@ -1,10 +1,47 @@
 # RelayRunner
 
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset=".github/readme/hero-dark.png">
+  <img alt="GitHub Actions jobs go through relayrunner to the first free runner in your order: your machines, self-hosted runners, Blacksmith, then GitHub-hosted." src=".github/readme/hero-light.png">
+</picture>
+
+[Website](https://relayrunner.app) · [Quickstart](https://relayrunner.app/docs/get-started/quickstart) · [Docs](https://relayrunner.app/docs)
+
 RelayRunner routes GitHub Actions jobs across the runners you already have. Each job goes to the first runner in your workspace's runner order that can take it right now: one of your own machines when it's online and free, an existing self-hosted runner, a hosted provider such as Blacksmith or Depot, or GitHub's hosted runners. Developers keep their usual push workflow and see the same checks and logs in GitHub.
 
 It's built for small teams and individuals who don't want to pay for every push, and for any team whose CI usage spikes. Your laptops and other machines take jobs while they're online, and hosted runners take the rest, with no switch to flip.
 
 [PRODUCT.md](PRODUCT.md) describes the product in full: how routing works, the runner providers, and the principles behind them.
+
+## The dashboard
+
+**Router.** Put your runners in order. Each job takes the first one that can run it.
+
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset=".github/readme/router-dark.png">
+  <img alt="The Router page: GitHub-hosted while under 80% of included minutes, then self-hosted, then GitHub-hosted always." src=".github/readme/router-light.png">
+</picture>
+
+**Activity.** See where each job ran and why it went there.
+
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset=".github/readme/activity-dark.png">
+  <img alt="The Activity page: routed jobs, optimized checks and machine events, newest first." src=".github/readme/activity-light.png">
+</picture>
+
+**Job times.** Compare how long your jobs take on each runner.
+
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset=".github/readme/job-times-dark.png">
+  <img alt="The Job times page: median wait and run time per runner, with a MacBook Pro 2.7 times faster than Linux 2-core." src=".github/readme/job-times-light.png">
+</picture>
+
+**Usage.** Track billed minutes and what optimized checks saved.
+
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset=".github/readme/usage-dark.png">
+  <img alt="The Usage page: checks run, billed minutes saved and money saved in the last 30 days." src=".github/readme/usage-light.png">
+</picture>
 
 ## How it works
 

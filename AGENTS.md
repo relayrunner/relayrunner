@@ -14,7 +14,7 @@ Use [Conventional Commits](https://www.conventionalcommits.org/) for every commi
 - Write the description in the imperative mood and in lowercase, with no trailing period.
 - Mark a breaking change with `!` after the type or scope, such as `feat(api)!: …`.
 
-Never commit screenshots or other PR images to the repository. Upload them with the Uploads MCP or CLI and attach them to the pull request as a comment.
+Never commit screenshots or other PR images to the repository. Upload them with the Uploads MCP or CLI and attach them to the pull request as a comment. The one exception is the README's images in `.github/readme/`.
 
 ## Formatting and checks
 
