@@ -55,9 +55,9 @@ A machine runs up to 2 jobs at once when it has 8 or more CPU cores, otherwise 1
 
 ## Isolated jobs on a Mac
 
-By default a job runs on your computer as you, so it can read your files. On a Mac with Apple silicon, `relayrunner connect --isolated` runs each job in its own Linux VM instead. The VM sees none of your files and is deleted when the job ends.
+By default a job runs on your computer as you, so it can read your files. On a Mac with Apple silicon, `relayrunner connect --isolated` runs each job in its own Linux VM instead. The VM sees none of your files, can reach the internet but not your Mac or your local network, and is deleted when the job ends.
 
-This is experimental. You need macOS 26 and Apple's [container](https://github.com/apple/container/releases) tool, started with `container system start`. Jobs run on Linux arm64, so macOS jobs such as Xcode builds still need a regular connection.
+This is experimental. You need macOS 26 and Apple's [container](https://github.com/apple/container/releases) tool, started with `container system start`. Jobs run on Linux arm64, so macOS jobs such as Xcode builds still need a regular connection. Docker isn't available in isolated jobs yet.
 
 ## Remove a machine
 

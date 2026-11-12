@@ -5,9 +5,12 @@ import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { RunnerError } from "./install.ts";
 import {
   containerName,
+  dockerfile,
   isolatedLauncher,
+  jobImage,
   prepareIsolation,
   runArgs,
+  START_SCRIPT,
   vmSize,
   type Isolation,
 } from "./isolated.ts";
@@ -50,9 +53,15 @@ describe("runArgs", () => {
       "--memory",
       "8g",
     ]);
-    expect(args.at(-4)).toBe(isolation.image);
+    expect(args.slice(-2)).toEqual([isolation.image, "/usr/local/bin/relayrunner-start"]);
     for (const flag of ["-v", "--volume", "--mount", "--ssh", "-p", "--publish"])
       expect(args).not.toContain(flag);
+  });
+
+  it("adds only the capability the firewall needs", () => {
+    const args = runArgs("7f3k", isolation);
+    expect(args.filter((arg) => arg === "--cap-add")).toHaveLength(1);
+    expect(args[args.indexOf("--cap-add") + 1]).toBe("NET_ADMIN");
   });
 
   it("keeps the JIT config out of the arguments", () => {
@@ -61,6 +70,23 @@ describe("runArgs", () => {
 
   it("makes a safe container name from any route id", () => {
     expect(containerName("Ab_9/x")).toBe("relayrunner-ab-9-x");
+  });
+});
+
+describe("the job image", () => {
+  it("blocks private addresses and drops NET_ADMIN before the runner starts", () => {
+    expect(START_SCRIPT).toContain("192.168.0.0/16");
+    expect(START_SCRIPT).toContain("meta nfproto ipv6 drop");
+    expect(START_SCRIPT.indexOf("nft -f")).toBeLessThan(START_SCRIPT.indexOf("run.sh"));
+    expect(START_SCRIPT).toContain("--bounding-set -net_admin");
+    expect(START_SCRIPT).toContain("--reuid runner");
+  });
+
+  it("is tagged by its contents, so a new base image builds a new one", () => {
+    expect(jobImage("runner:1")).toMatch(/^relayrunner-runner:[a-f\d]{12}$/);
+    expect(jobImage("runner:1")).toBe(jobImage("runner:1"));
+    expect(jobImage("runner:1")).not.toBe(jobImage("runner:2"));
+    expect(dockerfile("runner:1")).toMatch(/^FROM runner:1\n/);
   });
 });
 

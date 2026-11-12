@@ -79,7 +79,7 @@ const connectCommand = defineCommand({
     },
     image: {
       type: "string",
-      description: "With --isolated, the runner image to use (default: GitHub's runner image)",
+      description: "With --isolated, the runner image to build on (default: GitHub's runner image)",
     },
   },
   async run({ args }) {

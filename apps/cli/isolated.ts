@@ -1,17 +1,21 @@
 // `connect --isolated`: each job runs in its own Linux VM instead of on this machine, using
 // Apple's `container` tool (https://github.com/apple/container). The VM starts from GitHub's
 // runner image with nothing of the Mac mounted, takes one job and is deleted, so a job can't read
-// the user's files, the machine token, or anything an earlier job left behind.
+// the user's files, the machine token, or anything an earlier job left behind. A firewall inside
+// the VM keeps the job off the local network: it reaches the internet, not the Mac or the LAN.
 
 import { spawn } from "node:child_process";
-import { availableParallelism, totalmem } from "node:os";
+import { createHash } from "node:crypto";
+import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { availableParallelism, tmpdir, totalmem } from "node:os";
+import { join } from "node:path";
 import { exitCode, latestRunnerVersion, RunnerError } from "./install.ts";
 import { runnerEnv, type Launcher } from "./job.ts";
 
 export interface Isolation {
   // The `container` binary. Tests point it at a stand-in.
   command: string;
-  // The runner image each job's VM starts from.
+  // The image each job's VM starts from: the runner image plus the firewall (jobImage).
   image: string;
   // The actions/runner version in that image, when it's GitHub's own.
   runnerVersion: string;
@@ -24,6 +28,51 @@ export interface Isolation {
 const RUNNER_IMAGE = "ghcr.io/actions/actions-runner";
 const RELEASES = "https://github.com/apple/container/releases";
 
+// What the VM runs, as root with NET_ADMIN, before the runner. It loads a firewall that lets the
+// job reach the internet and DNS but not private addresses (the Mac, the LAN, link-local) or any
+// IPv6 address, then starts the runner as `runner` with NET_ADMIN gone for good, so not even
+// `sudo` in a job step can take the firewall down.
+export const START_SCRIPT = `#!/bin/sh
+set -eu
+dns=$(awk '$1 == "nameserver" && $2 ~ /^[0-9.]+$/ { printf "%s%s", sep, $2; sep = ", " }' /etc/resolv.conf)
+allow_dns=""
+[ -z "$dns" ] || allow_dns="ip daddr { $dns } meta l4proto { tcp, udp } th dport 53 accept"
+nft -f - <<EOF
+table inet relayrunner {
+  chain out {
+    type filter hook output priority 0; policy accept;
+    oifname "lo" accept
+    $allow_dns
+    ip daddr { 10.0.0.0/8, 100.64.0.0/10, 169.254.0.0/16, 172.16.0.0/12, 192.168.0.0/16 } drop
+    meta nfproto ipv6 drop
+  }
+}
+EOF
+cd /home/runner
+# With arguments, runs them in place of the runner, to check the firewall by hand.
+[ $# -gt 0 ] || set -- ./run.sh --jitconfig "$RUNNER_JIT_CONFIG"
+exec setpriv --reuid runner --regid runner --init-groups --bounding-set -net_admin \\
+  env HOME=/home/runner USER=runner LOGNAME=runner "$@"
+`;
+
+const START_PATH = "/usr/local/bin/relayrunner-start";
+
+// The job image: a runner image with nftables and the start script added.
+export function dockerfile(base: string) {
+  return `FROM ${base}
+USER root
+RUN apt-get update && apt-get install -y --no-install-recommends nftables && apt-get clean
+COPY --chmod=755 start.sh ${START_PATH}
+`;
+}
+
+// The job image's local tag. It changes with the base image, the Dockerfile or the start script,
+// so a new runner version or CLI builds a new image.
+export function jobImage(base: string) {
+  const hash = createHash("sha256").update(dockerfile(base)).update(START_SCRIPT).digest("hex");
+  return `relayrunner-runner:${hash.slice(0, 12)}`;
+}
+
 // An even split of the cores between slots, and of half the memory, so the Mac stays usable
 // while every slot is busy. At least 2 CPUs and 2 GB each; at most 16 GB.
 export function vmSize(slots: number, cores = availableParallelism(), memoryBytes = totalmem()) {
@@ -34,10 +83,11 @@ export function vmSize(slots: number, cores = availableParallelism(), memoryByte
   };
 }
 
-// Checks Apple's container tool is running and downloads the runner image, so the first job
-// doesn't wait for it. Throws a RunnerError that says what to do otherwise.
+// Checks Apple's container tool is running and builds the job image if it isn't here yet, so the
+// first job doesn't wait for it. Throws a RunnerError that says what to do otherwise.
 export async function prepareIsolation(options: {
   slots: number;
+  // Another runner image to build on. It needs apt and a `runner` user in /home/runner.
   image?: string;
   command?: string;
   log?: (line: string) => void;
@@ -58,10 +108,20 @@ export async function prepareIsolation(options: {
     );
 
   const runnerVersion = await latestRunnerVersion(log);
-  const image = options.image ?? `${RUNNER_IMAGE}:${runnerVersion}`;
-  log(`Getting the runner image ${image}…`);
-  if ((await exitCode(command, ["image", "pull", image], "inherit")) !== 0)
-    throw new RunnerError("ISOLATED_IMAGE", `Could not download the runner image ${image}.`);
+  const base = options.image ?? `${RUNNER_IMAGE}:${runnerVersion}`;
+  const image = jobImage(base);
+  if ((await exitCode(command, ["image", "inspect", image])) !== 0) {
+    log(`Building the job image from ${base}. This happens once per runner version…`);
+    const context = mkdtempSync(join(tmpdir(), "relayrunner-image-"));
+    try {
+      writeFileSync(join(context, "Dockerfile"), dockerfile(base));
+      writeFileSync(join(context, "start.sh"), START_SCRIPT);
+      if ((await exitCode(command, ["build", "--tag", image, context], "inherit")) !== 0)
+        throw new RunnerError("ISOLATED_IMAGE", `Could not build the job image from ${base}.`);
+    } finally {
+      rmSync(context, { recursive: true, force: true });
+    }
+  }
   return { command, image, runnerVersion, ...vmSize(options.slots) };
 }
 
@@ -90,10 +150,14 @@ export function runArgs(routeId: string, isolation: Isolation) {
     // GitHub's image prints the runner's diagnostic log to stdout, thousands of lines a job.
     "-e",
     "ACTIONS_RUNNER_PRINT_LOG_TO_STDOUT=false",
+    // Root and NET_ADMIN are for the start script's firewall. It gives both up before the
+    // runner starts.
+    "--user",
+    "0",
+    "--cap-add",
+    "NET_ADMIN",
     isolation.image,
-    "/bin/sh",
-    "-c",
-    'exec /home/runner/run.sh --jitconfig "$RUNNER_JIT_CONFIG"',
+    START_PATH,
   ];
 }
 
