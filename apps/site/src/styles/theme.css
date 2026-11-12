@@ -164,7 +164,10 @@ starlight-toc ul ul a {
 starlight-toc a:hover {
   color: var(--sl-color-white);
 }
-starlight-toc a[aria-current="true"] {
+starlight-toc a[aria-current="true"],
+/* Starlight marks the heading in view only once the browser is idle, after the new page is already
+   on screen. Until then, mark the page title, where a page opens, so the marker doesn't blink. */
+starlight-toc:not(:has([aria-current="true"])) a[href="#_top"] {
   border-inline-start-color: var(--sl-color-accent);
   color: var(--sl-color-text-accent);
 }
