@@ -54,7 +54,12 @@ async function machineArrives(
   );
 }
 
-async function routed(workspaceId: string, step: string, createdAt: Date) {
+async function routed(
+  workspaceId: string,
+  step: string,
+  createdAt: Date,
+  startedById: number | null = null,
+) {
   ids += 1;
   await createDb(env.DB)
     .insert(schema.routeDecision)
@@ -69,6 +74,7 @@ async function routed(workspaceId: string, step: string, createdAt: Date) {
       notInOrder: [],
       machine: [],
       github: [],
+      startedById,
       createdAt,
     });
 }
@@ -147,21 +153,60 @@ describe("product events", () => {
     expect(forWorkspace(later, ws.id).filter((e) => e.event === "machine_connected")).toEqual([]);
   });
 
-  test("every routed job, as a workspace event with no person", async () => {
-    const { workspace: ws } = await workspace("Routing Events");
+  test("every routed job: a machine job is the person's, others the workspace's", async () => {
+    const { workspace: ws, user, githubId } = await workspace("Routing Events");
     const now = Date.now();
-    await routed(ws.id, "machine", new Date(now - 2_000));
-    await routed(ws.id, "github", new Date(now - 1_000));
+    await routed(ws.id, "machine", new Date(now - 2_000), githubId);
+    await routed(ws.id, "github", new Date(now - 1_000), githubId);
     const { since, until } = window();
     const jobs = forWorkspace(
       await collectProductEvents(createDb(env.DB), since, until),
       ws.id,
     ).filter((e) => e.event === "job_routed");
     expect(jobs.map((e) => e.properties.step)).toEqual(["machine", "github"]);
-    expect(jobs[0]).toMatchObject({
+    expect(jobs[0]?.distinct_id).toBe(user.id);
+    expect(jobs[0]?.properties).toMatchObject({ $groups: { workspace: ws.id } });
+    expect(jobs[0]?.properties.$process_person_profile).toBeUndefined();
+    expect(jobs[1]).toMatchObject({
       distinct_id: `workspace:${ws.id}`,
       properties: { $process_person_profile: false },
     });
+  });
+
+  test("a machine job goes to the machine's owner, not whoever started the run", async () => {
+    const { workspace: ws, user: owner } = await workspace("Owner Events");
+    const { githubId: starterGithubId } = await workspace("Starter Events");
+    const db = createDb(env.DB);
+    const machineId = `ev-owner-${ws.id}`;
+    await db
+      .insert(schema.machine)
+      .values({ id: machineId, workspaceId: ws.id, userId: owner.id, name: "studio" });
+    const [row] = await db
+      .select({ installationId: schema.workspace.installationId })
+      .from(schema.workspace)
+      .where(eq(schema.workspace.id, ws.id));
+    await routed(ws.id, "machine", new Date(Date.now() - 1_000), starterGithubId);
+    // routed() gave this run repository 9000 + ids and run id ids.
+    await db.insert(schema.workflowJob).values({
+      id: 990_000 + ids,
+      installationId: row!.installationId!,
+      repositoryId: 9_000 + ids,
+      repositoryFullName: "acme/app",
+      runId: ids,
+      runAttempt: 1,
+      kind: "job",
+      name: "build",
+      labels: ["rr-1"],
+      headSha: "abc",
+      status: "in_progress",
+      machineId,
+      githubCreatedAt: new Date(),
+    });
+    const { since, until } = window();
+    const jobs = forWorkspace(await collectProductEvents(db, since, until), ws.id).filter(
+      (e) => e.event === "job_routed",
+    );
+    expect(jobs.map((e) => e.distinct_id)).toEqual([owner.id]);
   });
 
   test("leaves out operators, their workspaces and test accounts", async () => {

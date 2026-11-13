@@ -72,7 +72,7 @@ export async function collectProductEvents(
   // App installs, credited to whoever installed it when they've signed in to RelayRunner.
   const installer = sql<
     string | null
-  >`(select ${schema.account.userId} from ${schema.account} where ${schema.account.providerId} = 'github' and ${schema.account.accountId} = cast(${schema.githubInstallation.installerGithubId} as text) limit 1)`;
+  >`(select ${schema.account.userId} from ${schema.account} where ${schema.account.providerId} = 'github' and ${schema.account.accountId} = cast(github_installation.installer_github_id as text) limit 1)`;
   const installs = await db
     .select({
       id: schema.workspace.id,
@@ -177,22 +177,34 @@ export async function collectProductEvents(
 
   // Every routing decision: which step of the runner order took the job.
   const decisions = schema.routeDecision;
+  // A job on a machine is credited to the machine's owner, so the per-person funnel reaches its
+  // last step without group analytics. The job may not have a machine yet at the window's edge;
+  // then it's whoever started the run, when they've signed in. Other jobs belong to the workspace.
+  const machineOwner = sql<
+    string | null
+  >`(select m.user_id from workflow_job j inner join machine m on m.id = j.machine_id where j.repository_id = route_decision.repository_id and j.run_id = route_decision.run_id limit 1)`;
+  const starter = sql<
+    string | null
+  >`(select a.user_id from account a where a.provider_id = 'github' and a.account_id = cast(route_decision.started_by_id as text) limit 1)`;
   const routed = await db
     .select({
       workspaceId: decisions.workspaceId,
       step: decisions.step,
       createdAt: decisions.createdAt,
+      machineOwner,
+      starter,
     })
     .from(decisions)
     .where(and(gte(decisions.createdAt, since), lt(decisions.createdAt, until)))
     .orderBy(decisions.id);
   for (const decision of routed) {
     if (ours.has(decision.workspaceId)) continue;
+    const person = decision.step === "machine" ? (decision.machineOwner ?? decision.starter) : null;
     events.push({
       event: "job_routed",
-      distinct_id: workspaceActor(decision.workspaceId),
+      distinct_id: person ?? workspaceActor(decision.workspaceId),
       timestamp: decision.createdAt.toISOString(),
-      properties: { ...base(decision.workspaceId, true), step: decision.step ?? "none" },
+      properties: { ...base(decision.workspaceId, !person), step: decision.step ?? "none" },
     });
   }
 
