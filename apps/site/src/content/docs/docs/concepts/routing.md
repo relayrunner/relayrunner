@@ -87,12 +87,12 @@ To take a machine out of rotation without cutting off a running job, [pause it](
 
 **Re-run failed jobs** keeps the relay's earlier answer, so where the job goes depends on the runner it had:
 
-| The job ran on             | A re-run goes to                                                      |
-| -------------------------- | --------------------------------------------------------------------- |
-| A connected machine        | The same machine if it's free, else another machine that fits the job |
-| A runner added from GitHub | The same runner                                                       |
-| GitHub-hosted              | GitHub-hosted, with the same label                                    |
-| A hosted provider          | The same provider, with the same label                                |
+| The job ran on             | A re-run goes to                                                                             |
+| -------------------------- | -------------------------------------------------------------------------------------------- |
+| A connected machine        | The same machine if it's free, else another machine that fits the job, else it waits for one |
+| A runner added from GitHub | The same runner                                                                              |
+| GitHub-hosted              | GitHub-hosted, with the same label                                                           |
+| A hosted provider          | The same provider, with the same label                                                       |
 
 To move a failed job to a different provider, use **Re-run all jobs**.
 

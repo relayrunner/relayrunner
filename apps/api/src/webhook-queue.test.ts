@@ -369,6 +369,12 @@ describe("webhook queue consumer", () => {
         repo: "relayrunner/relayrunner",
       });
       expect(run).toHaveBeenCalledWith({ route, workspaceId: "w1" });
+      // Every machine that fits is full: the re-run waits in the Router's line.
+      reroute.mockResolvedValueOnce("waiting");
+      run.mockClear();
+      await consumer.processWebhook(routeEnv(), workflowJob(["rr-0123456789ab"], "queued", 3));
+      expect(run).not.toHaveBeenCalled();
+      expect(JSON.parse(log.mock.calls.at(-1)![0])).toMatchObject({ result: "waiting" });
       log.mockRestore();
     });
   });

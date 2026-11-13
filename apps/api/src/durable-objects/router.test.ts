@@ -180,6 +180,35 @@ describe("Router: jobs wait for a full machine", () => {
     expect(run).not.toHaveBeenCalled();
   });
 
+  test("a re-run of failed jobs on its old label waits for a full machine too", async () => {
+    const now = Date.now();
+    for (const sql of [
+      "insert into github_repository (id, installation_id, full_name, private, github_state_at, created_at, updated_at) values (1, 7, 'leonel/cabal', 1, ?1, ?1, ?1)",
+      "insert into route_decision (workspace_id, repository_id, run_id, run_attempt, step, runner, skipped, not_in_order, machine, github, hosted, started_by_id, started_by_login, triggered_by_id, triggered_by_login, created_at) values ('w1', 1, 5, 1, 'machine', 'rr-0123456789ab', '[]', '[]', '[\"self-hosted\"]', '[]', '{}', 500, 'leonel', 500, 'leonel', ?1)",
+      "insert into workflow_run (id, run_attempt, installation_id, repository_id, repository_full_name, event, started_by_id, started_by_login, triggered_by_id, triggered_by_login, head_sha, status, github_updated_at, created_at, updated_at) values (5, 2, 7, 1, 'leonel/cabal', 'push', 500, 'leonel', 500, 'leonel', 'abc', 'in_progress', ?1, ?1, ?1)",
+    ])
+      await env.DB.prepare(sql).bind(now).run();
+    const rerun = {
+      ...queued(5, 77),
+      runAttempt: 2,
+      workspaceId: "w1",
+      installationId: 7,
+      repo: "leonel/cabal",
+    };
+    expect(await router.reroute("0123456789ab", rerun)).toBe("waiting");
+    // A redelivered `queued` webhook finds it in line.
+    expect(await router.claim("0123456789ab", queued(5, 77))).toBe("waiting");
+    running = 0;
+    await router.alarm();
+    expect(run).toHaveBeenCalledOnce();
+    expect(run.mock.calls[0]![0].route).toMatchObject({
+      id: "0123456789ab",
+      jobId: 77,
+      runAttempt: 2,
+      state: "dispatched",
+    });
+  });
+
   test("another run's job can't claim a waiting label", async () => {
     const routeId = (await router.route(job(1))).runner!.slice(3);
     expect(await router.claim(routeId, queued(2, 42))).toBeNull();

@@ -613,7 +613,9 @@ export class Router extends DurableObject<Env> {
         // A re-run's or claimed waiting job is already queued, so it claims the route here.
         state: jobId === undefined ? "reserved" : "dispatched",
         ...(jobId !== undefined && { jobId }),
-        ...(rerun && { runAttempt: rerun.runAttempt }),
+        ...((rerun ?? waitingNow)?.runAttempt !== undefined && {
+          runAttempt: (rerun ?? waitingNow)!.runAttempt,
+        }),
         ...(routingLabel ? { routingLabel } : {}),
         ...(os ? { os } : {}),
         ...(isolated ? { isolated: true } : {}),
@@ -748,8 +750,9 @@ export class Router extends DurableObject<Env> {
    * done or expired. When that pick was this run's (earlierPick), the route is made again under the
    * same id for this job, with that pick's inputs and this attempt's starters: the machine it ran
    * on if that one is free, else any machine the relay's labels and sharing allow. Returns the
-   * claimed route, or null when the label wasn't this run's pick, no machine can take the job, or
-   * another job of this attempt already did.
+   * claimed route, "waiting" when every machine that fits is full (it waits in line like a new
+   * pick), or null when the label wasn't this run's pick, no machine can take the job, or another
+   * job of this attempt already did.
    */
   async reroute(
     routeId: string,
@@ -759,7 +762,7 @@ export class Router extends DurableObject<Env> {
       installationId: number;
       repo: string;
     },
-  ): Promise<Route | null> {
+  ): Promise<Route | "waiting" | null> {
     const { runAttempt, installationId, repo: fullName } = queued;
     if (runAttempt <= 1) return null;
     const db = createDb(this.env.DB);
@@ -793,6 +796,21 @@ export class Router extends DurableObject<Env> {
       ...starters.get(jobKey(key)),
     };
     const answered = await this.pickMachine(job, rerun);
+    // Every machine that fits is full: the re-run waits in line on its label, like a new pick.
+    if (answered && typeof answered !== "string" && "full" in answered) {
+      const waiting: WaitingJob = {
+        id: routeId,
+        queuedAt: Date.now(),
+        repositoryId: queued.repositoryId,
+        runId: queued.runId,
+        jobId: queued.jobId,
+        runAttempt,
+        job,
+      };
+      await this.ctx.storage.put(WAIT_KEY + routeId, waiting);
+      await this.wakeIn(WAIT_POLL_MS);
+      return "waiting";
+    }
     if (typeof answered !== "string") return null;
     return (await this.ctx.storage.get<Route>(ROUTE_KEY + routeId)) ?? null;
   }
