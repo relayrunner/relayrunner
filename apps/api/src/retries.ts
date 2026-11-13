@@ -12,14 +12,15 @@
 
 import { type GithubActor, type RetryKind } from "@relayrunner/activity";
 import { readRetrySettings, type RetryRunner, type RetrySettings } from "@relayrunner/runner-order";
-import type { WebhookMessage } from "@relayrunner/github-webhooks";
+import { ranSteps, type WebhookMessage } from "@relayrunner/github-webhooks";
 import { and, count, desc, eq, gte, inArray, lte } from "drizzle-orm";
 import { recordEvent } from "./activity.ts";
 import { createDb, type Db, schema } from "./db/index.ts";
 import type { Env } from "./env.ts";
-import { appInstallationToken, jobAnnotations, rerunJob } from "./github-app.ts";
+import { appInstallationToken, attemptJobs, jobAnnotations, rerunJob } from "./github-app.ts";
 import { loadRepoConfig } from "./repo-config.ts";
 import { actor } from "./route-decisions.ts";
+import { routeIdFromLabels } from "./routing.ts";
 import { DAY_MS } from "./job-timings.ts";
 import { errorMessage } from "./webhook-queue.ts";
 
@@ -89,15 +90,15 @@ export async function retryFailedRun(env: Env, message: WorkflowRunMessage): Pro
   const { run, repository, installationId } = message;
   if (message.action !== "completed" || run.conclusion !== "failure" || !installationId) return;
   const db = createDb(env.DB);
-  const [[workspace], failed] = await Promise.all([
+  const [[workspace], routed] = await Promise.all([
     db
       .select({ id: schema.workspace.id, retrySettings: schema.workspace.retrySettings })
       .from(schema.workspace)
       .where(eq(schema.workspace.installationId, installationId))
       .limit(1),
-    failedRoutedJobs(db, repository.id, run.id, run.runAttempt),
+    routedRun(db, repository.id, run.id, run.runAttempt),
   ]);
-  if (!workspace || !failed) return;
+  if (!workspace || !routed) return;
   const log = { repository: repository.fullName, runId: run.id, runAttempt: run.runAttempt };
 
   // Retries can be on for the repo even when the workspace leaves them off, so read its file.
@@ -109,7 +110,15 @@ export async function retryFailedRun(env: Env, message: WorkflowRunMessage): Pro
   );
   if (!settings.enabled) return;
 
-  const found = await findRunnerFailure(db, token, workspace.id, repository.fullName, failed.jobs);
+  const jobs = await failedRoutedJobs(
+    db,
+    token,
+    repository.fullName,
+    run.id,
+    run.runAttempt,
+    routed.label,
+  );
+  const found = await findRunnerFailure(db, token, workspace.id, repository.fullName, jobs);
   if (!found) return;
   if (!(await underCaps(db, workspace.id, repository.id, run.id, settings.max))) {
     console.log(JSON.stringify({ msg: "retry skipped: cap reached", ...log }));
@@ -127,10 +136,10 @@ export async function retryFailedRun(env: Env, message: WorkflowRunMessage): Pro
       runId: run.id,
       runAttempt: run.runAttempt,
       jobId: found.job.id,
-      relayJobId: failed.relay.id,
+      relayJobId: routed.relay.id,
       kind: found.kind,
       runner: settings.runner,
-      failedStep: failed.step,
+      failedStep: routed.step,
       failedMachineId: found.job.machineId,
       triggeredById: triggeredBy?.id ?? null,
       triggeredByLogin: triggeredBy?.login ?? null,
@@ -143,7 +152,7 @@ export async function retryFailedRun(env: Env, message: WorkflowRunMessage): Pro
 
   let error: string | null;
   try {
-    error = await rerunJob(token, repository.fullName, failed.relay.id);
+    error = await rerunJob(token, repository.fullName, routed.relay.id);
   } catch (caught) {
     error = errorMessage(caught);
   }
@@ -173,67 +182,87 @@ export async function retryFailedRun(env: Env, message: WorkflowRunMessage): Pro
       job: found.job.name,
       kind: found.kind,
       runner: settings.runner,
-      failedOn: await failedOn(db, found.job.machineId, failed.label),
+      failedOn: await failedOn(db, found.job.machineId, routed.label),
     },
   });
 }
 
 /**
- * The attempt's failed jobs that its pick routed, the relay job to re-run, and where the pick sent
- * them. Null when there's nothing to retry: no pick, more than one (each would need its own
- * retry), or no routed job failed.
+ * The relay job to re-run and where its pick sent the run's jobs. Null when there's nothing to
+ * retry: no pick, or more than one (each would need its own retry).
  */
-async function failedRoutedJobs(db: Db, repositoryId: number, runId: number, runAttempt: number) {
-  const jobs = await db
-    .select({
-      id: schema.workflowJob.id,
-      kind: schema.workflowJob.kind,
-      name: schema.workflowJob.name,
-      labels: schema.workflowJob.labels,
-      conclusion: schema.workflowJob.conclusion,
-      ranSteps: schema.workflowJob.ranSteps,
-      machineId: schema.workflowJob.machineId,
-      runAttempt: schema.workflowJob.runAttempt,
-      startedAt: schema.workflowJob.startedAt,
-      completedAt: schema.workflowJob.completedAt,
-    })
-    .from(schema.workflowJob)
-    .where(
-      and(
-        eq(schema.workflowJob.repositoryId, repositoryId),
-        eq(schema.workflowJob.runId, runId),
-        lte(schema.workflowJob.runAttempt, runAttempt),
+async function routedRun(db: Db, repositoryId: number, runId: number, runAttempt: number) {
+  const [relays, [decision]] = await Promise.all([
+    db
+      .select({ id: schema.workflowJob.id, runAttempt: schema.workflowJob.runAttempt })
+      .from(schema.workflowJob)
+      .where(
+        and(
+          eq(schema.workflowJob.repositoryId, repositoryId),
+          eq(schema.workflowJob.runId, runId),
+          eq(schema.workflowJob.kind, "pick"),
+          lte(schema.workflowJob.runAttempt, runAttempt),
+        ),
       ),
-    );
+    db
+      .select({ step: schema.routeDecision.step, runner: schema.routeDecision.runner })
+      .from(schema.routeDecision)
+      .where(
+        and(
+          eq(schema.routeDecision.repositoryId, repositoryId),
+          eq(schema.routeDecision.runId, runId),
+          lte(schema.routeDecision.runAttempt, runAttempt),
+        ),
+      )
+      .orderBy(desc(schema.routeDecision.runAttempt))
+      .limit(1),
+  ]);
   // "Re-run failed jobs" reuses an earlier attempt's relay, so take the newest one at or before it.
-  const relays = jobs.filter((job) => job.kind === "pick");
   const newest = Math.max(...relays.map((job) => job.runAttempt));
   const latest = relays.filter((job) => job.runAttempt === newest);
-  if (latest.length !== 1) return null;
-  const [decision] = await db
-    .select({ step: schema.routeDecision.step, runner: schema.routeDecision.runner })
-    .from(schema.routeDecision)
-    .where(
-      and(
-        eq(schema.routeDecision.repositoryId, repositoryId),
-        eq(schema.routeDecision.runId, runId),
-        lte(schema.routeDecision.runAttempt, runAttempt),
-      ),
-    )
-    .orderBy(desc(schema.routeDecision.runAttempt))
-    .limit(1);
-  if (!decision?.runner) return null;
-  const label = decision.runner;
-  // A job the pick placed: on a machine's route, or on the label it answered.
-  const failed = jobs.filter(
+  if (latest.length !== 1 || !decision?.runner) return null;
+  return { relay: latest[0]!, step: decision.step, label: decision.runner };
+}
+
+/**
+ * The attempt's failed jobs that the pick placed, read from GitHub: the run's `completed` webhook
+ * can be handled before the failed job's own, so the jobs table may not have it yet. A job on a
+ * machine's route carries its `rr-` label; the machine comes from the jobs table, which has it
+ * since the job started.
+ */
+async function failedRoutedJobs(
+  db: Db,
+  token: string,
+  repo: string,
+  runId: number,
+  runAttempt: number,
+  label: string,
+): Promise<FailedJob[]> {
+  const failed = (await attemptJobs(token, repo, runId, runAttempt)).filter(
     (job) =>
-      job.kind === "job" &&
-      job.runAttempt === runAttempt &&
+      job.run_attempt === runAttempt &&
       job.conclusion === "failure" &&
-      (job.machineId !== null || job.labels.includes(label)),
+      (job.labels.includes(label) || routeIdFromLabels(job.labels) !== null),
   );
-  if (failed.length === 0) return null;
-  return { relay: latest[0]!, jobs: failed, step: decision.step, label };
+  if (failed.length === 0) return [];
+  const machines = await db
+    .select({ id: schema.workflowJob.id, machineId: schema.workflowJob.machineId })
+    .from(schema.workflowJob)
+    .where(
+      inArray(
+        schema.workflowJob.id,
+        failed.map((job) => job.id),
+      ),
+    );
+  const date = (at: string | null) => (at ? new Date(at) : null);
+  return failed.map((job) => ({
+    id: job.id,
+    name: job.name,
+    ranSteps: ranSteps(job.steps),
+    machineId: machines.find((row) => row.id === job.id)?.machineId ?? null,
+    startedAt: date(job.started_at),
+    completedAt: date(job.completed_at),
+  }));
 }
 
 // The first job whose runner failed it: what RelayRunner knows first, then GitHub's annotations.
