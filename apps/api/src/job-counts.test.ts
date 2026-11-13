@@ -8,7 +8,7 @@ import * as testing from "./testing.ts";
 import { accessEnv, accessJwt } from "./testing-access.ts";
 
 const HOUR_MS = 3_600_000;
-const MIGRATION = "20261113221256_job_count.sql";
+const MIGRATION = "20261113221716_job_count.sql";
 
 let env: Env;
 let jobIds = 0;

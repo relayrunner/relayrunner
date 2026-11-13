@@ -1,8 +1,8 @@
 {
   "version": "6",
   "dialect": "sqlite",
-  "id": "ef396e54-2dfd-4d3c-893c-cf0af49931d0",
-  "prevId": "207e255c-638b-4626-a852-78b9ddf207d1",
+  "id": "55cf77cb-3ef7-4b9a-a5ed-5cbb5df6ac23",
+  "prevId": "62ade122-4f8a-4fb5-8e64-a30e92680b1c",
   "tables": {
     "account": {
       "name": "account",
@@ -4190,6 +4190,13 @@
         "reason": {
           "name": "reason",
           "type": "text",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
+        "waited_at": {
+          "name": "waited_at",
+          "type": "integer",
           "primaryKey": false,
           "notNull": false,
           "autoincrement": false

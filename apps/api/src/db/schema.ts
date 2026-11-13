@@ -738,6 +738,9 @@ export const routeDecision = sqliteTable(
       .default({}),
     // The message the relay failed with, when nothing fit.
     reason: text("reason"),
+    // When every machine that fit was full and the job queued for a slot (Router.wait), instead of
+    // getting a runner right away. Null for picks that didn't wait, and before #456.
+    waitedAt: integer("waited_at", { mode: "timestamp_ms" }),
     // Who started the run (github.actor) and this attempt (github.triggering_actor), by GitHub
     // account id and login (#241). The id matches a member's GitHub sign-in. Null before #241.
     startedById: integer("started_by_id"),

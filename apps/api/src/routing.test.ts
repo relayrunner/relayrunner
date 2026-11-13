@@ -1326,6 +1326,7 @@ describe("waiting for a machine slot", () => {
       step: "machine",
       skipped: [],
       notInOrder: [],
+      waited: true,
     });
   });
 
@@ -1337,6 +1338,7 @@ describe("waiting for a machine slot", () => {
       step: "machine",
       skipped: [{ key: "github", reason: "not_configured" }],
       notInOrder: [],
+      waited: true,
     });
   });
 
