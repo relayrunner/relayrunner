@@ -201,7 +201,7 @@ const AGENT_ROUTES: RegExp[] = [
 
 // Routes an agent may call by method. The one write is agent feedback, which only adds a row for
 // its own user (routes/feedback.ts).
-const AGENT_ROUTES_BY_METHOD: Record<string, RegExp[]> = {
+export const AGENT_ROUTES_BY_METHOD: Record<string, RegExp[]> = {
   GET: AGENT_ROUTES,
   HEAD: AGENT_ROUTES,
   POST: [/^\/api\/feedback$/],

@@ -1,8 +1,9 @@
 {
   "$schema": "./node_modules/wrangler/config-schema.json",
-  // Landing page and docs (/docs): one Astro build served as static assets. The Worker script only
-  // runs for /docs/* and / (run_worker_first): it sends Markdown to agents that ask for it with
-  // `Accept: text/markdown`; every other request is served from assets without invoking it.
+  // Landing page and docs (/docs): one Astro build served as static assets. The Worker script runs
+  // first for /docs/* and / (run_worker_first), and for paths with no asset: it sends Markdown to
+  // agents that ask for it with `Accept: text/markdown` and answers 404s. Every other file is
+  // served from assets without invoking it.
   "name": "relayrunner-site",
   "main": "./worker/index.ts",
   "compatibility_date": "2026-11-03",
@@ -13,8 +14,9 @@
     "binding": "ASSETS",
     "run_worker_first": ["/", "/docs/*"],
     "html_handling": "drop-trailing-slash",
-    // Serves dist/404.html (Starlight's not-found page) for unknown paths, landing or docs.
-    "not_found_handling": "404-page",
+    // Unknown paths go to the Worker, which answers with dist/404.html (Starlight's not-found
+    // page) and a 404, or a Markdown 404 for agents (worker/index.ts).
+    "not_found_handling": "none",
   },
   "workers_dev": false,
   // PR preview builds (`wrangler preview` in Workers Builds) get public preview URLs.

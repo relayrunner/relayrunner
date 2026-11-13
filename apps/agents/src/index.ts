@@ -9,6 +9,7 @@ import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { WebStandardStreamableHTTPServerTransport } from "@modelcontextprotocol/sdk/server/webStandardStreamableHttp.js";
 import { ApiError, apiClient, type Me } from "./api.ts";
 import type { Env } from "./env.ts";
+import { SERVER_CARD_TYPE, SERVER_VERSION, serverCard } from "./server-card.ts";
 import { registerTools } from "./tools.ts";
 
 const RESOURCE_METADATA_PATH = "/.well-known/oauth-protected-resource";
@@ -16,8 +17,10 @@ const RESOURCE_METADATA_PATH = "/.well-known/oauth-protected-resource";
 export default {
   async fetch(request, env) {
     const url = new URL(request.url);
+    const mcpPath = new URL(env.MCP_URL).pathname;
     if (url.pathname.startsWith(RESOURCE_METADATA_PATH)) return resourceMetadata(env);
-    if (url.pathname !== new URL(env.MCP_URL).pathname) {
+    if (url.pathname === `${mcpPath}/server-card`) return card(request, env);
+    if (url.pathname !== mcpPath) {
       return Response.json({ error: "not_found" }, { status: 404 });
     }
     // Stateless: no sessions to resume or end, and no server-initiated stream.
@@ -40,7 +43,7 @@ export default {
     });
     if (!success) return jsonRpcError(429, "Rate limited. Try again in a minute.");
 
-    const server = new McpServer({ name: "relayrunner", version: "0.1.0" });
+    const server = new McpServer({ name: "relayrunner", version: SERVER_VERSION });
     registerTools(server, api, me.agent.workspaces);
     const transport = new WebStandardStreamableHTTPServerTransport({
       sessionIdGenerator: undefined,
@@ -65,7 +68,29 @@ function resourceMetadata(env: Env) {
   );
 }
 
-// A 401 that points MCP clients at the metadata above, so they start (or redo) sign-in.
+// Public metadata, so any page may read it (the Server Cards extension's CORS rules).
+const CARD_CORS = {
+  "access-control-allow-origin": "*",
+  "access-control-allow-methods": "GET",
+  "access-control-allow-headers": "Content-Type, If-None-Match",
+  "access-control-expose-headers": "ETag",
+};
+
+function card(request: Request, env: Env) {
+  if (request.method === "OPTIONS") return new Response(null, { status: 204, headers: CARD_CORS });
+  if (request.method !== "GET" && request.method !== "HEAD") {
+    return new Response(null, { status: 405, headers: { allow: "GET, HEAD, OPTIONS" } });
+  }
+  return new Response(JSON.stringify(serverCard(env.MCP_URL)), {
+    headers: {
+      ...CARD_CORS,
+      "content-type": SERVER_CARD_TYPE,
+      "cache-control": "public, max-age=3600",
+    },
+  });
+}
+
+// A 401 that points MCP clients at the resource metadata, so they start (or redo) sign-in.
 function unauthorized(env: Env, invalid = false) {
   const metadata = new URL(
     `${RESOURCE_METADATA_PATH}${new URL(env.MCP_URL).pathname}`,
