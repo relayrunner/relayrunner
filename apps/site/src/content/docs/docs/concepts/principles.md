@@ -21,9 +21,9 @@ A job lists the runners it may use, and your runner order decides between them. 
 
 Anyone can run code on a machine through a pull request to a public repo, so a public repo's jobs never run on one. Public repos can still route between hosted providers.
 
-## Jobs fail with a reason
+## Jobs wait when machines are busy, and fail with a reason otherwise
 
-When no runner fits, the relay fails right away with the reason, such as "No runner available: no self-hosted machine is online and idle". It doesn't leave the job queued.
+When every machine that fits is busy and no other step can take the job, the job waits for a free slot, the same as on any self-hosted runner. When nothing can take it, the relay fails right away with the reason, such as "No runner available: no self-hosted machine is online and idle".
 
 ## One job per runner
 

@@ -13,6 +13,7 @@ import {
 import { installationRunnerScope } from "../installations.ts";
 import { inWorkspace } from "../machines.ts";
 import { runStartersForJobs } from "../job-starters.ts";
+import { setJobMachine } from "../jobs.ts";
 import { findRepo } from "../repositories.ts";
 import {
   cleared,
@@ -50,6 +51,9 @@ import {
   newRouteId,
   routeLabel,
   unavailableMachines,
+  waitingDecision,
+  waitingLine,
+  waitsForMachine,
   ROUTE_TTL_MS,
   type Candidate,
   type HeldSlots,
@@ -59,6 +63,7 @@ import {
   type Rerun,
   type Route,
   type RouteDecision,
+  type Waiting,
 } from "../routing.ts";
 
 // The relay's inputs (RelayInputs): labels a machine must all have (`machine`), the GitHub-hosted
@@ -79,6 +84,15 @@ export interface PickedJob extends JobStarters, RelayInputs {
 }
 
 const ROUTE_KEY = "route:";
+// Jobs waiting for a machine slot (Router.wait), by the route id their pick answered.
+const WAIT_KEY = "wait:";
+// How often the Router looks for a free slot while jobs wait. A machine finishing a job also
+// wakes it (release).
+const WAIT_POLL_MS = 10_000;
+
+interface WaitingJob extends Waiting {
+  job: PickedJob;
+}
 // Each hosted provider runner type's health (src/provider-health.ts), by healthId.
 const HEALTH_KEY = "health:";
 
@@ -182,15 +196,19 @@ export class Router extends DurableObject<Env> {
    */
   async route(job: PickedJob): Promise<RouteDecision> {
     const db = createDb(this.env.DB);
-    const [workspace] = await db
-      .select({
-        runnerOrder: schema.workspace.runnerOrder,
-        skipUnhealthy: schema.workspace.skipUnhealthyRunners,
-      })
-      .from(schema.workspace)
-      .where(eq(schema.workspace.id, job.workspaceId))
-      .limit(1);
-    return decideRoute(
+    const [[workspace]] = await Promise.all([
+      db
+        .select({
+          runnerOrder: schema.workspace.runnerOrder,
+          skipUnhealthy: schema.workspace.skipUnhealthyRunners,
+        })
+        .from(schema.workspace)
+        .where(eq(schema.workspace.id, job.workspaceId))
+        .limit(1),
+      // Jobs already waiting get a free slot before this one can.
+      this.drain(),
+    ]);
+    const decision = await decideRoute(
       retryOrder(readRunnerOrder(workspace?.runnerOrder), job.retry),
       job,
       () => this.pickMachine(job),
@@ -201,6 +219,130 @@ export class Router extends DurableObject<Env> {
         ? undefined
         : (key, label) => this.checkHealth(healthId(key, label)),
     );
+    return waitsForMachine(decision) ? this.wait(job, decision) : decision;
+  }
+
+  // Every machine that fits is full and nothing else in the order takes the job: it waits in line
+  // for a slot instead of failing. The pick answers the route's label now, so the job sits queued
+  // on GitHub (up to its 24 hours) like any job waiting for a self-hosted runner; drain makes the
+  // route once a machine has room.
+  private async wait(
+    job: PickedJob,
+    decision: Extract<RouteDecision, { runner: null }>,
+  ): Promise<RouteDecision> {
+    const waiting: WaitingJob = {
+      id: newRouteId(),
+      queuedAt: Date.now(),
+      repositoryId: job.repositoryId,
+      runId: job.runId,
+      job,
+    };
+    await this.ctx.storage.put(WAIT_KEY + waiting.id, waiting);
+    await this.wakeIn(WAIT_POLL_MS);
+    console.log(
+      JSON.stringify({
+        msg: "relayrunner job waiting for a machine",
+        routeId: waiting.id,
+        repo: job.repo,
+        runId: job.runId,
+        reason: decision.reason,
+      }),
+    );
+    return waitingDecision(decision, routeLabel(waiting.id));
+  }
+
+  /**
+   * Gives free machine slots to waiting jobs, longest waiting first. A job a machine takes gets its
+   * route under the id its pick answered, and once its `queued` webhook has come, goes to the
+   * machine. Jobs that want the same machines as one that found none free wait their turn behind it.
+   */
+  async drain(): Promise<void> {
+    const now = Date.now();
+    const stored = await this.ctx.storage.list<WaitingJob>({ prefix: WAIT_KEY });
+    if (stored.size === 0) return;
+    const line = waitingLine([...stored.values()], now);
+    if (line.length < stored.size) {
+      const live = new Set(line.map((entry) => WAIT_KEY + entry.id));
+      const expired = [...stored.keys()].filter((key) => !live.has(key));
+      // delete() takes at most 128 keys at a time.
+      for (let i = 0; i < expired.length; i += 128)
+        await this.ctx.storage.delete(expired.slice(i, i + 128));
+    }
+    const stuck = new Set<string>();
+    let left = 0;
+    for (const entry of line) {
+      const wants = wantsKey(entry.job);
+      if (stuck.has(wants)) {
+        left++;
+        continue;
+      }
+      const pick = await this.pickMachine(entry.job, undefined, entry);
+      if (typeof pick !== "string") {
+        stuck.add(wants);
+        left++;
+        continue;
+      }
+      if (!(await this.handOff(entry))) left++;
+    }
+    if (left > 0) await this.wakeIn(WAIT_POLL_MS);
+  }
+
+  // Sends a waiting job its machine took to that machine, once its `queued` webhook has said which
+  // job it is (before that, the route waits for claim like any other). False when sending failed:
+  // the job goes back in line, in its old place.
+  private async handOff(entry: WaitingJob): Promise<boolean> {
+    const route = await this.ctx.storage.get<Route>(ROUTE_KEY + entry.id);
+    if (route?.jobId === undefined) return true;
+    try {
+      await setJobMachine(createDb(this.env.DB), route.jobId, route.machineId);
+      const result = await this.env.MACHINE_LINK.getByName(route.machineId).run({
+        route,
+        workspaceId: entry.job.workspaceId,
+      });
+      console.log(
+        JSON.stringify({
+          msg: "relayrunner waiting job sent",
+          routeId: route.id,
+          machineId: route.machineId,
+          jobId: route.jobId,
+          waitedMs: Date.now() - entry.queuedAt,
+          result,
+        }),
+      );
+      return true;
+    } catch (error) {
+      console.error(
+        JSON.stringify({
+          msg: "relayrunner waiting job not sent",
+          routeId: route.id,
+          machineId: route.machineId,
+          error: errorMessage(error),
+        }),
+      );
+      await this.ctx.storage.delete(ROUTE_KEY + entry.id);
+      await this.ctx.storage.put(WAIT_KEY + entry.id, { ...entry, jobId: route.jobId });
+      return false;
+    }
+  }
+
+  async alarm() {
+    await this.drain();
+  }
+
+  // Looks for free slots again within `ms`, unless an earlier look is already set.
+  private async wakeIn(ms: number) {
+    const at = Date.now() + ms;
+    const current = await this.ctx.storage.getAlarm();
+    if (current === null || current > at) await this.ctx.storage.setAlarm(at);
+  }
+
+  /**
+   * Drops a waiting job that ended before any machine took it, such as a cancelled run. Its
+   * `completed` webhook calls this.
+   */
+  async dropWaiting(routeId: string, job: QueuedJob): Promise<void> {
+    const waiting = await this.ctx.storage.get<WaitingJob>(WAIT_KEY + routeId);
+    if (waiting && canClaim(waiting, job)) await this.ctx.storage.delete(WAIT_KEY + routeId);
   }
 
   // Null when the runner type may take the job, marking it as the trial when it's due one; else
@@ -268,7 +410,11 @@ export class Router extends DurableObject<Env> {
   // one workspace's picks run side by side and a slow GitHub call holds up only its own pick. Only
   // the choice and the route that reserves the machine run one at a time (reserve), against the
   // routes as they stand then, so two picks can't both take the same machine.
-  private async pickMachine(job: PickedJob, rerun?: Rerun): Promise<MachinePick> {
+  private async pickMachine(
+    job: PickedJob,
+    rerun?: Rerun,
+    waiting?: Waiting,
+  ): Promise<MachinePick> {
     const db = createDb(this.env.DB);
     const machines = await db
       .select({
@@ -315,12 +461,14 @@ export class Router extends DurableObject<Env> {
     // installation never fits this job. An owner with two GitHub accounts linked would list a
     // machine twice: keep its first row.
     const seen = new Set<string>();
-    // A re-run keeps its `rr-<id>` label, which only a connected machine's minted runner carries.
+    // A re-run or a waiting job keeps its `rr-<id>` label, which only a connected machine's minted
+    // runner carries.
     const fits = machines
       .filter((machine) => !seen.has(machine.id) && Boolean(seen.add(machine.id)))
       .filter(
         (machine) =>
-          machine.source !== "github" || (!rerun && machine.installationId === job.installationId),
+          machine.source !== "github" ||
+          (!rerun && !waiting && machine.installationId === job.installationId),
       );
     const pool = fits.map((machine) => ({
       id: machine.id,
@@ -378,7 +526,7 @@ export class Router extends DurableObject<Env> {
     // The OS of each machine's two places, for the route to say where its job goes.
     const places = new Map(fits.map((m) => [m.id, { host: m.os, vm: m.isolatedOs }]));
     return (
-      (await this.reserve(job, candidates, routingLabels, places, rerun)) ??
+      (await this.reserve(job, candidates, routingLabels, places, rerun, waiting)) ??
       unavailableMachines(pool, job.machine, job)
     );
   }
@@ -392,6 +540,7 @@ export class Router extends DurableObject<Env> {
     routingLabels: Map<string, string | undefined>,
     places: Map<string, { host: string | null; vm: string | null }>,
     rerun?: Rerun,
+    waiting?: Waiting,
   ): Promise<MachinePick | null> {
     return this.ctx.blockConcurrencyWhile(async () => {
       const now = Date.now();
@@ -399,9 +548,17 @@ export class Router extends DurableObject<Env> {
       // Checked again under the lock: another job may have taken the route since.
       const prior = rerun && routes.find((r) => r.id === rerun.routeId);
       if (rerun && !mayReroute(prior, rerun)) return null;
+      // Read again under the lock: another drain may have given the waiting job a machine since,
+      // or its `queued` webhook said which job it is (claim).
+      const waitingNow = waiting
+        ? await this.ctx.storage.get<Waiting>(WAIT_KEY + waiting.id)
+        : undefined;
+      if (waiting && !waitingNow) return null;
       const held = heldSlots(routes, now);
       const picked = lastPicked(routes);
-      const routeId = rerun?.routeId ?? newRouteId();
+      const routeId = rerun?.routeId ?? waiting?.id ?? newRouteId();
+      // The job behind the route, when it's already queued (a re-run, or a waiting job claimed).
+      const jobId = rerun?.jobId ?? waitingNow?.jobId;
       // A re-run tries the machine it ran on first, then any other that fits. So does a retry,
       // unless it's meant for another runner: then the machine it failed on goes last.
       const failedOn = job.retry?.failedMachineId;
@@ -453,14 +610,16 @@ export class Router extends DurableObject<Env> {
         repositoryId: job.repositoryId,
         runId: job.runId,
         createdAt: now,
-        // A re-run's job is already queued, so it claims the route here.
-        state: rerun ? "dispatched" : "reserved",
-        ...(rerun && { jobId: rerun.jobId, runAttempt: rerun.runAttempt }),
+        // A re-run's or claimed waiting job is already queued, so it claims the route here.
+        state: jobId === undefined ? "reserved" : "dispatched",
+        ...(jobId !== undefined && { jobId }),
+        ...(rerun && { runAttempt: rerun.runAttempt }),
         ...(routingLabel ? { routingLabel } : {}),
         ...(os ? { os } : {}),
         ...(isolated ? { isolated: true } : {}),
       };
       await this.ctx.storage.put(ROUTE_KEY + route.id, route);
+      if (waiting) await this.ctx.storage.delete(WAIT_KEY + waiting.id);
       return routingLabel ?? routeLabel(route.id);
     });
   }
@@ -546,7 +705,14 @@ export class Router extends DurableObject<Env> {
    * belongs to another repo, run or job, or once the machine has taken the job. Claiming again with the same job returns the route again,
    * so a redelivered webhook can retry the hand-off.
    */
-  async claim(routeId: string, job: QueuedJob): Promise<Route | null> {
+  async claim(routeId: string, job: QueuedJob): Promise<Route | "waiting" | null> {
+    // A job still waiting for a machine: drain sends it once a machine takes it.
+    const waited = await this.claimWaiting(routeId, job);
+    if (waited === null) return null;
+    if (waited) {
+      await this.drain();
+      return waited;
+    }
     const route = await this.ctx.storage.get<Route>(ROUTE_KEY + routeId);
     if (!route || route.state === "done" || Date.now() - route.createdAt > ROUTE_TTL_MS)
       return null;
@@ -559,6 +725,21 @@ export class Router extends DurableObject<Env> {
     };
     await this.ctx.storage.put(ROUTE_KEY + routeId, claimed);
     return claimed;
+  }
+
+  // Notes which job a waiting route's label went to, so drain sends it once a machine takes it.
+  // Undefined when the route isn't waiting, null when the job isn't its run's. Under the same lock
+  // as reserve, so a machine taking the job meanwhile can't miss which job it is; only a waiting
+  // route takes the lock.
+  private async claimWaiting(routeId: string, job: QueuedJob) {
+    if (!(await this.ctx.storage.get(WAIT_KEY + routeId))) return undefined;
+    return this.ctx.blockConcurrencyWhile(async () => {
+      const waiting = await this.ctx.storage.get<WaitingJob>(WAIT_KEY + routeId);
+      if (!waiting) return undefined;
+      if (!canClaim(waiting, job)) return null;
+      await this.ctx.storage.put(WAIT_KEY + routeId, { ...waiting, jobId: job.jobId });
+      return "waiting" as const;
+    });
   }
 
   /**
@@ -635,6 +816,9 @@ export class Router extends DurableObject<Env> {
     const route = await this.ctx.storage.get<Route>(ROUTE_KEY + routeId);
     if (route && route.state !== "done")
       await this.ctx.storage.put(ROUTE_KEY + routeId, { ...route, state: "done" });
+    // A job ending may free a slot for one that waits.
+    if ((await this.ctx.storage.list({ prefix: WAIT_KEY, limit: 1 })).size > 0)
+      await this.wakeIn(1_000);
     return route?.jobId;
   }
 
@@ -685,4 +869,10 @@ class Recent<K, V> {
 function githubId(accountId: string | null): number | null {
   const id = Number(accountId);
   return accountId && Number.isSafeInteger(id) && id > 0 ? id : null;
+}
+
+// Which machines a waiting job can use, as far as its line order goes: the same labels, repo and
+// starters fit the same machines.
+function wantsKey(job: PickedJob): string {
+  return JSON.stringify([job.machine, job.repositoryId, job.startedBy?.id, job.triggeredBy?.id]);
 }

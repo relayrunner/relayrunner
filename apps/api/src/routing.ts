@@ -423,7 +423,7 @@ export interface QueuedJob {
 }
 
 /** Whether a queued job may take a route: same repo and run, and not claimed by another job. */
-export function canClaim(route: Route, job: QueuedJob) {
+export function canClaim(route: Pick<Route, "repositoryId" | "runId" | "jobId">, job: QueuedJob) {
   if (route.repositoryId !== job.repositoryId || route.runId !== job.runId) return false;
   return route.jobId === undefined || route.jobId === job.jobId;
 }
@@ -559,6 +559,54 @@ export type RouteDecision =
 
 export interface RouteRequest extends RelayInputs {
   private: boolean;
+}
+
+/**
+ * Whether a pick that found nowhere to go should wait for a machine instead: some machine that
+ * fits was online but full. The job then queues, as it would on GitHub with busy self-hosted
+ * runners, rather than failing. A fallback later in the order never gets here: it took the job.
+ */
+export function waitsForMachine(
+  decision: RouteDecision,
+): decision is Extract<RouteDecision, { runner: null }> {
+  return (
+    decision.runner === null && decision.skipped.some((step) => step.reason === "machine_full")
+  );
+}
+
+/**
+ * The decision for a pick that waits for a machine: the machine step answers with the waiting
+ * route's label, after the steps skipped before it.
+ */
+export function waitingDecision(
+  decision: Extract<RouteDecision, { runner: null }>,
+  label: string,
+): RouteDecision {
+  const at = decision.skipped.findIndex((step) => step.reason === "machine_full");
+  return {
+    runner: label,
+    step: "machine",
+    skipped: decision.skipped.slice(0, at),
+    notInOrder: decision.notInOrder,
+  };
+}
+
+// A job waiting in the Router's line for a machine slot (Router.wait), under the route id its
+// pick answered. Its route is made once a machine takes it (Router.drain).
+export interface Waiting {
+  id: string;
+  queuedAt: number;
+  repositoryId: number;
+  runId: number;
+  // The job queued on the label, once its `queued` webhook arrives (Router.claim).
+  jobId?: number;
+}
+
+/** The waiting jobs in line order: longest waiting first, dropping those past ROUTE_TTL_MS. */
+export function waitingLine<W extends Waiting>(waiting: W[], now: number): W[] {
+  return waiting
+    .filter((entry) => now - entry.queuedAt <= ROUTE_TTL_MS)
+    .sort((a, b) => a.queuedAt - b.queuedAt);
 }
 
 /**
