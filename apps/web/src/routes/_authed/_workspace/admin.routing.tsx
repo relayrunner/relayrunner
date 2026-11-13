@@ -145,6 +145,55 @@ function bucketLabel(start: string, range: RoutingRange) {
     : `${date.toLocaleDateString("en-US", { weekday: "short" })} ${time}`;
 }
 
+/** "14:00–15:00", or "Thu 06:00–12:00" for 6-hour buckets. */
+function bucketSpan(bucket: RoutingBucket, health: RoutingHealth) {
+  const end = new Date(new Date(bucket.start).getTime() + health.bucketMs).toISOString();
+  return `${bucketLabel(bucket.start, health.range)}–${bucketLabel(end, "24h")}`;
+}
+
+/** The card beside a hovered column, flipped to its left past the middle so it stays inside. */
+function ColumnTip({
+  index,
+  count,
+  title,
+  rows,
+}: {
+  index: number;
+  count: number;
+  title: string;
+  rows: { label: string; value: string; color?: string; line?: boolean }[];
+}) {
+  const center = ((index + 0.5) / count) * 100;
+  const right = index >= count / 2;
+  return (
+    <div
+      role="status"
+      className="pointer-events-none absolute top-0 z-10 grid min-w-44 gap-0.5 rounded-md border bg-popover px-2.5 py-1.5 text-xs shadow-md"
+      style={
+        right ? { right: `calc(${100 - center}% + 12px)` } : { left: `calc(${center}% + 12px)` }
+      }
+    >
+      <p className="font-medium">{title}</p>
+      {rows.map((row) => (
+        <p key={row.label} className="flex items-center gap-1.5 text-muted-foreground">
+          {row.color && (
+            <span
+              aria-hidden="true"
+              className={cn(
+                "shrink-0",
+                row.line ? "h-0.5 w-2.5 rounded-full" : "size-2 rounded-sm",
+              )}
+              style={{ background: row.color }}
+            />
+          )}
+          {row.label}
+          <span className="ml-auto pl-3 font-medium text-foreground tabular-nums">{row.value}</span>
+        </p>
+      ))}
+    </div>
+  );
+}
+
 /** Five evenly spaced labels under a chart of `buckets`. */
 /** Times under a chart; a narrow chart gets three so the 7-day labels don't touch. */
 function TimeAxis({ health, narrow = false }: { health: RoutingHealth; narrow?: boolean }) {
@@ -209,11 +258,9 @@ function Swatch({ color, label, line }: { color: string; label: string; line?: b
   );
 }
 
-function outcomeTip(bucket: RoutingBucket, range: RoutingRange) {
-  return `${bucketLabel(bucket.start, range)}: ${bucket.routed} got a runner, ${bucket.queued} queued, ${bucket.unroutable} couldn't route`;
-}
-
 function OutcomeChart({ health }: { health: RoutingHealth }) {
+  const [hover, setHover] = useState<number | null>(null);
+  const hovered = hover === null ? null : health.buckets[hover];
   const totals = health.buckets.map((b) => b.routed + b.queued + b.unroutable);
   const { top, ticks } = axis(Math.max(...totals));
   return (
@@ -239,13 +286,17 @@ function OutcomeChart({ health }: { health: RoutingHealth }) {
             role="img"
             aria-label={`Relays per ${health.range === "24h" ? "hour" : "6 hours"} by outcome`}
             className="relative flex h-48 min-w-0 flex-1 items-end gap-[3px] border-b"
+            onPointerLeave={() => setHover(null)}
           >
             <GridLines count={ticks.length - 1} />
-            {health.buckets.map((bucket) => (
+            {health.buckets.map((bucket, i) => (
               <div
                 key={bucket.start}
-                title={outcomeTip(bucket, health.range)}
-                className="relative flex h-full flex-1 flex-col-reverse"
+                onPointerEnter={() => setHover(i)}
+                className={cn(
+                  "relative flex h-full flex-1 flex-col-reverse",
+                  hover === i && "bg-foreground/5",
+                )}
               >
                 {OUTCOMES.map((o) =>
                   bucket[o.key] > 0 ? (
@@ -257,6 +308,24 @@ function OutcomeChart({ health }: { health: RoutingHealth }) {
                 )}
               </div>
             ))}
+            {hovered && hover !== null && (
+              <ColumnTip
+                index={hover}
+                count={health.buckets.length}
+                title={bucketSpan(hovered, health)}
+                rows={[
+                  ...OUTCOMES.map((o) => ({
+                    label: o.label,
+                    value: exact(hovered[o.key]),
+                    color: o.color,
+                  })),
+                  {
+                    label: "Relays",
+                    value: exact(hovered.routed + hovered.queued + hovered.unroutable),
+                  },
+                ]}
+              />
+            )}
           </div>
         </div>
         <div className="pl-10">
@@ -335,6 +404,8 @@ function BacklogChart({ health }: { health: RoutingHealth }) {
   const waits = health.buckets.map((b) => b.p95WaitMs ?? 0);
   const right = axis(Math.max(LONG_WAIT_MS, ...waits) / 60_000);
   const rightTop = right.top * 60_000;
+  const [hover, setHover] = useState<number | null>(null);
+  const hovered = hover === null ? null : health.buckets[hover];
   return (
     <ChartCard
       title="Backlog and wait time"
@@ -354,6 +425,7 @@ function BacklogChart({ health }: { health: RoutingHealth }) {
             role="img"
             aria-label="Jobs waiting for a machine and p95 wait over time"
             className="relative flex h-48 min-w-0 flex-1 items-end gap-[3px] border-b"
+            onPointerLeave={() => setHover(null)}
           >
             <GridLines count={left.ticks.length - 1} />
             <div
@@ -364,11 +436,14 @@ function BacklogChart({ health }: { health: RoutingHealth }) {
                 borderColor: "var(--rr-del)",
               }}
             />
-            {health.buckets.map((bucket) => (
+            {health.buckets.map((bucket, i) => (
               <div
                 key={bucket.start}
-                title={`${bucketLabel(bucket.start, health.range)}: up to ${bucket.peakWaiting} waiting, p95 wait ${elapsed(bucket.p95WaitMs)}`}
-                className="relative flex h-full flex-1 items-end"
+                onPointerEnter={() => setHover(i)}
+                className={cn(
+                  "relative flex h-full flex-1 items-end",
+                  hover === i && "bg-foreground/5",
+                )}
               >
                 {bucket.peakWaiting > 0 && (
                   <div
@@ -388,6 +463,26 @@ function BacklogChart({ health }: { health: RoutingHealth }) {
                 )}
               </div>
             ))}
+            {hovered && hover !== null && (
+              <ColumnTip
+                index={hover}
+                count={health.buckets.length}
+                title={bucketSpan(hovered, health)}
+                rows={[
+                  {
+                    label: "Most waiting at once",
+                    value: exact(hovered.peakWaiting),
+                    color: "var(--rr-run)",
+                  },
+                  {
+                    label: "p95 wait",
+                    value: hovered.p95WaitMs === null ? "—" : elapsed(hovered.p95WaitMs),
+                    color: "var(--foreground)",
+                  },
+                  { label: "Queued", value: exact(hovered.queued) },
+                ]}
+              />
+            )}
           </div>
           <div className="flex h-48 w-8 shrink-0 flex-col justify-between font-mono text-xs text-muted-foreground tabular-nums">
             {right.ticks.map((t) => (
