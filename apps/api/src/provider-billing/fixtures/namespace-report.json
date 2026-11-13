@@ -1,0 +1,56 @@
+[
+  {
+    "entries": [
+      {
+        "instanceId": "inst_a",
+        "createdAt": "2026-11-12T09:59:50Z",
+        "startedAt": "2026-11-12T09:59:55Z",
+        "destroyedAt": "2026-11-12T10:05:00Z",
+        "resourcesCpu": 4,
+        "resourcesRamGb": 8,
+        "githubJob": {
+          "jobId": "42000000001",
+          "jobName": "build",
+          "workflowName": "CI",
+          "runId": "19000000001",
+          "runAttempt": "1",
+          "jobCreatedAt": "2026-11-12T09:59:40Z",
+          "jobStartedAt": "2026-11-12T10:00:00Z",
+          "jobCompletedAt": "2026-11-12T10:04:50Z",
+          "profile": "namespace-profile-default",
+          "repository": "acme/widgets",
+          "branch": "main",
+          "conclusion": "success"
+        }
+      },
+      {
+        "instanceId": "inst_builder",
+        "startedAt": "2026-11-12T10:10:00Z",
+        "destroyedAt": "2026-11-12T10:20:00Z",
+        "resourcesCpu": 16,
+        "resourcesRamGb": 32
+      }
+    ]
+  },
+  {
+    "entries": [
+      {
+        "instanceId": "inst_b",
+        "startedAt": "2026-11-12T11:00:00Z",
+        "destroyedAt": "2026-11-12T11:02:00Z",
+        "resourcesCpu": 2,
+        "resourcesRamGb": 4,
+        "githubJob": {
+          "jobId": "42000000002",
+          "jobName": "test",
+          "runId": "19000000002",
+          "jobCreatedAt": "2026-11-12T10:59:58Z",
+          "jobStartedAt": "2026-11-12T11:00:05Z",
+          "jobCompletedAt": "2026-11-12T11:01:55Z",
+          "profile": "namespace-profile-small",
+          "repository": "acme/widgets"
+        }
+      }
+    ]
+  }
+]

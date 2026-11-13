@@ -73,4 +73,8 @@ export interface Env extends AccessEnv {
   // Administration: read) so the main App doesn't have to. No webhooks.
   GITHUB_SPEND_APP_ID: string;
   GITHUB_SPEND_APP_PRIVATE_KEY: SecretsStoreSecret;
+  // AES-256 key (32 bytes, base64) that encrypts the provider tokens workspaces paste
+  // (src/provider-tokens.ts), from the Secrets Store. Optional so tests and local dev run without
+  // it; connecting a provider fails until it's set.
+  PROVIDER_TOKEN_KEY?: SecretsStoreSecret;
 }

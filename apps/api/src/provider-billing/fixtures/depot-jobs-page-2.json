@@ -1,0 +1,23 @@
+{
+  "jobs": [
+    {
+      "jobId": "41000000002",
+      "runId": "18000000001",
+      "repository": "acme/widgets",
+      "name": "lint",
+      "status": "GITHUB_ACTIONS_JOB_STATUS_FINISHED",
+      "conclusion": "GITHUB_ACTIONS_JOB_CONCLUSION_FAILURE",
+      "runnerLabel": "depot-ubuntu-24.04",
+      "createdAt": "2026-11-12T10:00:00Z",
+      "startedAt": "2026-11-12T10:00:02Z",
+      "finishedAt": "2026-11-12T10:00:40Z",
+      "durationSeconds": 38,
+      "billableSeconds": 38,
+      "queueSeconds": 2
+    },
+    { "jobId": "", "repository": "acme/widgets", "name": "historical job without an id" }
+  ],
+  "nextPageToken": "",
+  "totalSize": "2",
+  "dataThrough": "2026-11-12T11:00:00Z"
+}
