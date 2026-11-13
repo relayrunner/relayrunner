@@ -344,6 +344,13 @@
       "when": 1794529898991,
       "tag": "20261113003138_job_usage",
       "breakpoints": true
+    },
+    {
+      "idx": 49,
+      "version": "6",
+      "when": 1794531930411,
+      "tag": "20261113010530_provider_connection",
+      "breakpoints": true
     }
   ]
 }

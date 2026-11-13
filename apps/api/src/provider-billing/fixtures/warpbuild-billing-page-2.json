@@ -1,0 +1,25 @@
+{
+  "chart": { "bucket_interval_seconds": 86400, "group_by": "repo", "daily": [] },
+  "jobs": {
+    "items": [
+      {
+        "billed_time": 60,
+        "execution_time": 41,
+        "job_name": "docs",
+        "repo": "acme/docs",
+        "run_id": "20000000002",
+        "runner_label": "warp-ubuntu-latest-x64-2x",
+        "timestamp": "2026-11-12T12:00:00Z",
+        "total_cost": 0.008,
+        "vcs_job_id": "43000000002"
+      }
+    ],
+    "next": 0,
+    "page": 2,
+    "per_page": 1,
+    "total_pages": 2,
+    "total_rows": 2
+  },
+  "organization_id": "org_abc",
+  "summary": { "total_cost": 0.18, "total_jobs": 5 }
+}

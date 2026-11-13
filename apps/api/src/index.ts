@@ -10,6 +10,7 @@ import { sendOperatorPings } from "./operator-pings.ts";
 import { checkPrices } from "./price-check.ts";
 import { purgeOldWorkflowRuns } from "./runs.ts";
 import { sweepPicks } from "./pick-sweep.ts";
+import { purgeOldProviderUsage, syncProviderConnections } from "./provider-sync.ts";
 import {
   handleInstallationTaskBatch,
   INSTALLATION_TASK_QUEUE,
@@ -40,10 +41,10 @@ export default {
   // Every 15 minutes: queue a read of each org's Actions usage from GitHub billing (#116), rescue
   // stuck relay jobs, queue a sweep for leftover pick runners (src/pick-sweep.ts), and post the
   // window's operator pings to Slack (src/operator-pings.ts). Hourly: alert when
-  // webhook dead letters pile up, drop job timings and workflow runs past retention, and reconcile
-  // which orgs installed the Spend App (src/spend-app.ts). Daily: check
-  // providers' price pages (src/price-check.ts). Each runs even if another throws; a failure still
-  // fails the invocation.
+  // webhook dead letters pile up, drop job timings and workflow runs past retention, reconcile
+  // which orgs installed the Spend App (src/spend-app.ts), and queue a sync of each connected
+  // provider account and drop its old usage (src/provider-sync.ts). Daily: check providers' price pages
+  // (src/price-check.ts). Each runs even if another throws; a failure still fails the invocation.
   async scheduled(controller, env) {
     const at = new Date(controller.scheduledTime);
     const tasks =
@@ -56,6 +57,8 @@ export default {
               purgeOldJobTimings(createDb(env.DB)),
               purgeOldWorkflowRuns(createDb(env.DB)),
               syncSpendInstallations(env, at),
+              syncProviderConnections(env),
+              purgeOldProviderUsage(createDb(env.DB), at),
             ];
     const results = await Promise.allSettled(tasks);
     const failed = results.find((result) => result.status === "rejected");

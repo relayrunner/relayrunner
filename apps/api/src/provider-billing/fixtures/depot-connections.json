@@ -1,0 +1,12 @@
+{
+  "connections": [
+    {
+      "connectionId": "conn_1",
+      "installationId": "55500001",
+      "account": "acme",
+      "status": "GITHUB_ACTIONS_CONNECTION_STATUS_ACTIVE",
+      "createdAt": "2026-10-01T00:00:00Z",
+      "settingsUrl": "https://github.com/organizations/acme/settings/installations/55500001"
+    }
+  ]
+}

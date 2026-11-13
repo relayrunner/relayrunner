@@ -1,0 +1,17 @@
+{
+  "total": { "instanceMinutes": { "unit": "1460", "wall": "380" } },
+  "perDay": [
+    {
+      "year": 2026,
+      "month": 11,
+      "day": 11,
+      "total": { "instanceMinutes": { "unit": "1040", "wall": "260" } }
+    },
+    {
+      "year": 2026,
+      "month": 11,
+      "day": 12,
+      "total": { "instanceMinutes": { "unit": "420", "wall": "120" } }
+    }
+  ]
+}

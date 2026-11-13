@@ -107,6 +107,14 @@
       "store_id": "eac3493b9fef4234a832f5f3fdcc8a41",
       "secret_name": "GITHUB_SPEND_APP_PRIVATE_KEY",
     },
+    // Encrypts the read-only provider tokens workspaces paste (src/provider-tokens.ts): 32 random
+    // bytes, base64. Create it once with
+    //   openssl rand -base64 32 | wrangler secrets-store secret create eac3493b9fef4234a832f5f3fdcc8a41 --name PROVIDER_TOKEN_KEY --scopes workers
+    {
+      "binding": "PROVIDER_TOKEN_KEY",
+      "store_id": "eac3493b9fef4234a832f5f3fdcc8a41",
+      "secret_name": "PROVIDER_TOKEN_KEY",
+    },
   ],
   "d1_databases": [
     {

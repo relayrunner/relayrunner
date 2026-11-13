@@ -1,7 +1,7 @@
 /**
- * Per-installation work the 15-minute cron hands out: reading each account's Actions usage
- * (src/actions-billing.ts) and removing leftover pick runners in each org or repo
- * (src/pick-sweep.ts). The cron only lists the installations and queues one message each, so the
+ * Per-installation work the crons hand out: reading each account's Actions usage
+ * (src/actions-billing.ts), removing leftover pick runners in each org or repo
+ * (src/pick-sweep.ts), and, hourly, syncing each connected provider account (src/provider-sync.ts). The cron only lists the installations and queues one message each, so the
  * work spreads over consumer invocations and runs in parallel instead of in one invocation, one
  * installation after another, that grows with every org that connects.
  *
@@ -12,6 +12,7 @@ import { pollAccount, type UsageAccount } from "./actions-billing.ts";
 import type { Env } from "./env.ts";
 import type { RunnerScope } from "./github-app.ts";
 import { removeLeftoverRunnersIn } from "./pick-sweep.ts";
+import { syncConnection, type ProviderSyncTask } from "./provider-sync.ts";
 import { errorMessage } from "./webhook-queue.ts";
 
 export const INSTALLATION_TASK_QUEUE = "relayrunner-installation-tasks";
@@ -19,7 +20,9 @@ export const INSTALLATION_TASK_QUEUE = "relayrunner-installation-tasks";
 export type InstallationTask =
   | { kind: "actions-usage"; account: UsageAccount; at: string }
   // Every org or repo of one installation, so they share its token.
-  | { kind: "pick-sweep"; installationId: number; scopes: RunnerScope[] };
+  | { kind: "pick-sweep"; installationId: number; scopes: RunnerScope[] }
+  // One connected provider account's usage (src/provider-sync.ts), hourly and after connecting.
+  | ProviderSyncTask;
 
 // sendBatch takes at most 100 messages.
 const SEND_BATCH = 100;
@@ -37,6 +40,8 @@ export function runInstallationTask(env: Env, task: InstallationTask): Promise<v
       return pollAccount(env, task.account, new Date(task.at));
     case "pick-sweep":
       return removeLeftoverRunnersIn(env, task.installationId, task.scopes);
+    case "provider-sync":
+      return syncConnection(env, task.workspaceId, task.provider);
   }
 }
 

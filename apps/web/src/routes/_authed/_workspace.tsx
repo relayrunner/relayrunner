@@ -205,6 +205,9 @@ function SettingsNav({ workspace }: { workspace: { name: string; logo: string | 
           <Link to="/settings/members" className={navLink} activeProps={navActive}>
             Members
           </Link>
+          <Link to="/settings/providers" className={navLink} activeProps={navActive}>
+            Providers
+          </Link>
         </NavGroup>
         <NavGroup label="Account">
           <Link to="/settings/account" className={navLink} activeProps={navActive}>

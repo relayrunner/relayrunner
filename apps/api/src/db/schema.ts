@@ -1109,3 +1109,93 @@ export const notificationSetting = sqliteTable(
   },
   (table) => [primaryKey({ columns: [table.userId, table.type] })],
 );
+
+// A third-party runner provider account a workspace connected for real usage and billing
+// (src/provider-billing): the read-only API token its owner or an admin pasted, encrypted with
+// PROVIDER_TOKEN_KEY (src/provider-tokens.ts). The token is never sent back; the dashboard sees
+// only its last four characters. The hourly cron syncs each connection (src/provider-sync.ts).
+export const providerConnection = sqliteTable(
+  "provider_connection",
+  {
+    workspaceId: text("workspace_id")
+      .notNull()
+      .references(() => workspace.id, { onDelete: "cascade" }),
+    // A BILLING_PROVIDER_IDS id from @relayrunner/providers, such as "depot".
+    provider: text("provider").notNull(),
+    // "v<key version>.<iv>.<ciphertext>", base64url. Bound to this workspace and provider.
+    token: text("token").notNull(),
+    tokenHint: text("token_hint").notNull(),
+    // Provider-specific settings, such as Namespace's region. JSON object.
+    options: text("options", { mode: "json" }).$type<Record<string, string>>().notNull(),
+    // The account the token belongs to, as the provider names it, when it says.
+    accountName: text("account_name"),
+    connectedBy: text("connected_by").references(() => user.id, { onDelete: "set null" }),
+    // The end of the window the last successful sync read, so the next starts there.
+    syncedThrough: integer("synced_through", { mode: "timestamp_ms" }),
+    lastSyncedAt: integer("last_synced_at", { mode: "timestamp_ms" }),
+    // Why the last sync failed: "token_rejected" or "error". Null after a successful one.
+    failure: text("failure"),
+    error: text("error"),
+    failedAt: integer("failed_at", { mode: "timestamp_ms" }),
+    ...timestamps,
+  },
+  (table) => [primaryKey({ columns: [table.workspaceId, table.provider] })],
+);
+
+// One job a connected provider ran, as its API reports it, keyed by GitHub's job id so it lines up
+// with job_timing. Replaced on every sync that sees the job again, and purged after 90 days.
+export const providerJobUsage = sqliteTable(
+  "provider_job_usage",
+  {
+    workspaceId: text("workspace_id")
+      .notNull()
+      .references(() => workspace.id, { onDelete: "cascade" }),
+    provider: text("provider").notNull(),
+    // GitHub's job id, as text: providers send it as a string or a 64-bit number.
+    jobId: text("job_id").notNull(),
+    runId: text("run_id"),
+    repository: text("repository"),
+    jobName: text("job_name"),
+    runnerLabel: text("runner_label"),
+    startedAt: integer("started_at", { mode: "timestamp_ms" }),
+    finishedAt: integer("finished_at", { mode: "timestamp_ms" }),
+    // What the provider bills for the job, in seconds, and the wait before it started.
+    billableSeconds: real("billable_seconds"),
+    queueSeconds: real("queue_seconds"),
+    // USD the provider says the job cost. Null when it only reports time.
+    costUsd: real("cost_usd"),
+    syncedAt: integer("synced_at", { mode: "timestamp_ms" }).notNull(),
+  },
+  (table) => [
+    primaryKey({ columns: [table.workspaceId, table.provider, table.jobId] }),
+    // One workspace's jobs over a time range.
+    index("provider_job_usage_workspace_idx").on(table.workspaceId, table.finishedAt),
+    // The retention purge, across all workspaces.
+    index("provider_job_usage_finished_idx").on(table.finishedAt),
+  ],
+);
+
+// A connected provider's own daily totals, for providers that report usage per day rather than (or
+// as well as) per job. `unit` says what `quantity` counts, such as "unit_minutes" for Namespace.
+// Replaced on every sync that reads the day, and purged after 90 days.
+export const providerDailyUsage = sqliteTable(
+  "provider_daily_usage",
+  {
+    workspaceId: text("workspace_id")
+      .notNull()
+      .references(() => workspace.id, { onDelete: "cascade" }),
+    provider: text("provider").notNull(),
+    // UTC midnight.
+    day: integer("day", { mode: "timestamp_ms" }).notNull(),
+    unit: text("unit").notNull(),
+    quantity: real("quantity").notNull(),
+    // USD, when the provider reports it.
+    costUsd: real("cost_usd"),
+    syncedAt: integer("synced_at", { mode: "timestamp_ms" }).notNull(),
+  },
+  (table) => [
+    primaryKey({ columns: [table.workspaceId, table.provider, table.day, table.unit] }),
+    // The retention purge, across all workspaces.
+    index("provider_daily_usage_day_idx").on(table.day),
+  ],
+);

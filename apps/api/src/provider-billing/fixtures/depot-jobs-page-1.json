@@ -1,0 +1,29 @@
+{
+  "jobs": [
+    {
+      "jobId": "41000000001",
+      "runId": "18000000001",
+      "repository": "acme/widgets",
+      "name": "test (ubuntu)",
+      "workflowName": "CI",
+      "workflowPath": ".github/workflows/ci.yml",
+      "status": "GITHUB_ACTIONS_JOB_STATUS_FINISHED",
+      "conclusion": "GITHUB_ACTIONS_JOB_CONCLUSION_SUCCESS",
+      "runnerLabel": "depot-ubuntu-24.04-4",
+      "requestedOs": "linux",
+      "requestedArchitecture": "amd64",
+      "requestedCpuCount": 4,
+      "requestedMemoryGib": 16,
+      "githubUrl": "https://github.com/acme/widgets/actions/runs/18000000001/job/41000000001",
+      "createdAt": "2026-11-12T10:00:00Z",
+      "startedAt": "2026-11-12T10:00:04Z",
+      "finishedAt": "2026-11-12T10:03:10Z",
+      "durationSeconds": "186",
+      "billableSeconds": "186",
+      "queueSeconds": "4"
+    }
+  ],
+  "nextPageToken": "page-2",
+  "totalSize": "2",
+  "dataThrough": "2026-11-12T11:00:00Z"
+}
