@@ -36,6 +36,10 @@ export interface Env extends AccessEnv {
   // CONTAINER_RUNNER_ORGS too.
   LINT_RUNNER: DurableObjectNamespace<LintRunner>;
 
+  // Per user and agent grant: caps agent-token requests (middleware/session.ts), from the MCP
+  // server or a client calling the API directly. Optional so tests run without it.
+  AGENT_LIMITER?: RateLimit;
+
   // Cloudflare Email Sending (src/email.ts). Optional so local dev and tests run without it.
   EMAIL?: SendEmail;
   // Sender address on send.relayrunner.app; must be in the binding's allowed_sender_addresses.

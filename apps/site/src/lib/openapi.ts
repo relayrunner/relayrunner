@@ -57,6 +57,7 @@ const errors = {
   "401": { $ref: "#/components/responses/Error" },
   "403": { $ref: "#/components/responses/Error" },
   "404": { $ref: "#/components/responses/Error" },
+  "429": { $ref: "#/components/responses/Error" },
 };
 
 const read = (
@@ -79,7 +80,7 @@ export const openApi = {
     title: "RelayRunner API",
     version: "1.0.0",
     summary: "Read a workspace's runners, workflow runs, routing activity and CI usage.",
-    description: `The read-only API that agents use to answer questions about a RelayRunner workspace. Sign in with OAuth (the \`workspace:read\` scope): the person picks which workspaces the token may read. The MCP server at ${MCP_URL} calls these same routes, and is the easier way to connect an AI agent.`,
+    description: `The read-only API behind the RelayRunner MCP server: a workspace's runners, runs, routing and usage. Sign in with OAuth (the \`workspace:read\` scope): the person picks which workspaces the token may read. To connect an AI agent, use the MCP server at ${MCP_URL} instead: MCP clients sign in on their own and get these routes as tools. Call this API directly only from your own OAuth client. Each connection can make 300 requests a minute; past that the API answers 429.`,
     contact: { url: "https://github.com/relayrunner/relayrunner/issues" },
     license: { name: "Apache-2.0", identifier: "Apache-2.0" },
   },
@@ -223,7 +224,6 @@ export const openApi = {
             redacted: { type: "integer" },
           }),
           ...errors,
-          "429": { $ref: "#/components/responses/Error" },
         },
       },
     },

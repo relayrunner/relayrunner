@@ -21,7 +21,7 @@ Each tool call forwards that token to the API, with the workspace it's about in 
 
 Clients that look before they connect can read the server's [MCP Server Card](https://modelcontextprotocol.io/seps/2127-mcp-server-cards) at `/mcp/server-card` (`src/server-card.ts`), with no sign-in. https://relayrunner.app/.well-known/ai-catalog.json points there.
 
-This Worker holds no secrets and no state. It doesn't call GitHub or the Router: runners added from GitHub show `github.unreachable` instead of a live status. Each connection gets 120 requests a minute.
+This Worker holds no secrets and no state. It doesn't call GitHub or the Router: runners added from GitHub show `github.unreachable` instead of a live status. Each connection gets 120 requests a minute here, and the API caps agent tokens at 300 calls a minute (`AGENT_LIMITER`), which also covers clients that call it directly.
 
 ## Tools
 
