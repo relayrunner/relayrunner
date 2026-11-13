@@ -1,0 +1,169 @@
+---
+import SolutionPage from "../../layouts/SolutionPage.astro";
+
+const check = "M5 12l5 5 9-10";
+---
+
+<SolutionPage
+  slug="routing"
+  title="Change where CI jobs run without editing workflows"
+  description="Add a relay to each GitHub Actions job once, then choose where jobs run from the dashboard: your machines, self-hosted runners, a hosted provider or GitHub-hosted."
+  heading="Change where jobs run without editing your workflows."
+  command="npx relayrunner init"
+  close={{
+    heading: "Take control of where CI runs.",
+    body: "Add relays once, then change the order as often as you like.",
+    steps: [
+      { label: "In your repo, add relays to the jobs you want to route", command: "npx relayrunner init" },
+      { label: "Optionally, turn this computer into a runner", command: "npx relayrunner connect" },
+    ],
+  }}
+>
+  <Fragment slot="lede">
+    Add a relay to each job once. After that, you pick where jobs go from the dashboard: your
+    machines, your self-hosted runners, a hosted provider or GitHub. A change applies from the next
+    job.
+  </Fragment>
+
+  <div class="sol-card" slot="visual">
+    <div class="sol-card-head"><b>Runner order</b><span>acme workspace</span></div>
+    <div class="sol-card-body">
+      <div class="sol-lane on">
+        <img src="/providers/machines.svg" alt="" width="30" height="30" />
+        <span><b>Your machines</b><small>3 online · 2 idle</small></span>
+        <em>Next job</em>
+      </div>
+      <div class="sol-lane">
+        <img src="/providers/github.svg" alt="" width="30" height="30" />
+        <span><b>GitHub-hosted</b><small>While under 80% of included minutes</small></span>
+        <em>Standby</em>
+      </div>
+      <div class="sol-lane moved">
+        <img src="/providers/blacksmith.svg" alt="" width="30" height="30" />
+        <span><b>Blacksmith</b><small>Moved up just now</small></span>
+        <em>Standby</em>
+      </div>
+      <div class="sol-lane">
+        <img src="/providers/github.svg" alt="" width="30" height="30" />
+        <span><b>GitHub-hosted</b><small>No limit</small></span>
+        <em>Fallback</em>
+      </div>
+      <p class="sol-card-note">
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d={check} /></svg>
+        Saved. No workflow files changed.
+      </p>
+    </div>
+  </div>
+
+  <section class="sol-band" aria-labelledby="how-h">
+    <div class="wrap">
+      <p class="kicker">How it works</p>
+      <h2 id="how-h">Set it up once. Steer it from the dashboard.</h2>
+      <ol class="sol-steps">
+        <li>
+          <h3>Add relays with one command</h3>
+          <p>
+            <code>npx relayrunner init</code> puts a relay in front of each job. The relay lists where
+            that job is allowed to run.
+          </p>
+        </li>
+        <li>
+          <h3>Set your runner order</h3>
+          <p>
+            Each job goes to the first free runner in your order. Move a provider up or down, add a
+            minutes limit, or take one out.
+          </p>
+        </li>
+        <li>
+          <h3>See why each job went where it did</h3>
+          <p>The Activity page shows the runner each job got, and why each step above it was skipped.</p>
+        </li>
+      </ol>
+    </div>
+  </section>
+
+  <section class="section wrap feature feature-flip">
+    <div class="sol-code" aria-label="A relay in a workflow file">
+      <div class="sol-code-bar">.github/workflows/ci.yml</div>
+      <pre>jobs:
+  relay-test:
+    uses: relayrunner/actions/.github/workflows/relay.yml@v1
+    with:
+      <mark>machine: self-hosted</mark>
+      <mark>github: ubuntu-latest</mark>
+      <mark>blacksmith: blacksmith-4vcpu-ubuntu-2404</mark>
+  test:
+    needs: relay-test
+    runs-on: {"${{ needs.relay-test.outputs.runner }}"}</pre>
+    </div>
+    <div class="feature-copy">
+      <p class="kicker">The relay</p>
+      <h2>The relay says where a job may run. Your order says where it does.</h2>
+      <p class="body">
+        The relay answers in about a second, needs no runner and uses no minutes. Leave a provider
+        out and the job never goes there.
+      </p>
+      <a class="sol-link" href="/docs/concepts/routing">Read how routing works →</a>
+    </div>
+  </section>
+
+  <section class="section wrap" aria-labelledby="rules-h">
+    <p class="kicker">Rules</p>
+    <h2 id="rules-h">Change the rules without a deploy.</h2>
+    <ul class="sol-steps">
+      <li>
+        <h3>Fall back when you're full</h3>
+        <p>When every machine is busy or offline, the job moves to the next step instead of waiting.</p>
+      </li>
+      <li>
+        <h3>Stay under a minutes limit</h3>
+        <p>
+          Use GitHub while you're under a share of your included minutes, then switch to your own
+          machines.
+        </p>
+      </li>
+      <li>
+        <h3>Try a new provider</h3>
+        <p>
+          Move a provider up for a day, compare job times on the Performance page, and move it back
+          if it's slower.
+        </p>
+      </li>
+    </ul>
+  </section>
+
+  <section class="section wrap sol-faq" aria-labelledby="faq-h">
+    <h2 id="faq-h">Common questions</h2>
+    <div>
+      <details open>
+        <summary>What if nothing in my order can take the job?</summary>
+        <p>
+          The relay fails right away with one line that says why each provider couldn't take it.
+          Keep GitHub-hosted at the end of your order and a job always has somewhere to go.
+        </p>
+      </details>
+      <details>
+        <summary>Which providers can I route to?</summary>
+        <p>
+          Your own machines, the self-hosted runners your org already has, GitHub-hosted, and hosted
+          providers like Blacksmith, Depot, Namespace, WarpBuild, Ubicloud and RunsOn. See
+          <a href="/docs/runners/providers">all providers</a>.
+        </p>
+      </details>
+      <details>
+        <summary>Do public repos run on my machines?</summary>
+        <p>
+          No. Jobs from public repos skip your machines, so code from a stranger's pull request never
+          runs on your computer.
+        </p>
+      </details>
+      <details>
+        <summary>Who pays the hosted providers?</summary>
+        <p>
+          You do, directly. A routed job runs under your own account with each provider, so you keep
+          your plans, credits and discounts.
+        </p>
+      </details>
+    </div>
+  </section>
+</SolutionPage>

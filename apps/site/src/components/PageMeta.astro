@@ -1,0 +1,56 @@
+---
+/*
+ * The landing pages' <head> tags: title, description, canonical, share cards and icons. Page-only
+ * tags (structured data, preloads) go in the default slot.
+ */
+import ThemeProvider from "./ThemeProvider.astro";
+
+interface Props {
+  title: string;
+  description: string;
+  /** The page's path, such as "/" or "/solutions/routing". */
+  path: string;
+  /** Share text, when it should be shorter than the description. */
+  shareDescription?: string;
+  /** Describes the share image. */
+  imageAlt?: string;
+}
+
+const {
+  title,
+  description,
+  path,
+  shareDescription = description,
+  imageAlt = "relayrunner: one router for every CI runner. A runner order sends the next job to your machines, then GitHub-hosted, then Blacksmith.",
+} = Astro.props;
+const site = Astro.site!.origin;
+const url = `${site}${path}`;
+const image = `${site}/og-image.png`;
+---
+
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<ThemeProvider />
+<title>{title}</title>
+<meta name="description" content={description} />
+<meta name="theme-color" content="#ffffff" media="(prefers-color-scheme: light)" />
+<meta name="theme-color" content="#0b0d10" media="(prefers-color-scheme: dark)" />
+<link rel="canonical" href={url} />
+<slot />
+<meta property="og:type" content="website" />
+<meta property="og:site_name" content="relayrunner" />
+<meta property="og:url" content={url} />
+<meta property="og:title" content={title} />
+<meta property="og:description" content={shareDescription} />
+<meta property="og:image" content={image} />
+<meta property="og:image:type" content="image/png" />
+<meta property="og:image:width" content="1200" />
+<meta property="og:image:height" content="630" />
+<meta property="og:image:alt" content={imageAlt} />
+<meta name="twitter:card" content="summary_large_image" />
+<meta name="twitter:title" content={title} />
+<meta name="twitter:description" content={shareDescription} />
+<meta name="twitter:image" content={image} />
+<meta name="twitter:image:alt" content={imageAlt} />
+<link rel="icon" href="/favicon.png" type="image/png" />
+<link rel="apple-touch-icon" href="/apple-touch-icon.png" />

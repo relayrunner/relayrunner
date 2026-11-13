@@ -1,6 +1,7 @@
 import { getCollection, type CollectionEntry } from "astro:content";
 import { MCP_URL } from "./mcp";
 import { isProviderId, providerMarkdown, providerTableMarkdown } from "./providers";
+import { SOLUTIONS, solutionPath } from "./solutions";
 
 /*
  * Plain-text versions of every docs page, for agents and crawlers. Each page at /docs/<slug> also
@@ -115,6 +116,10 @@ export function llmsIndex(all: DocsEntry[], site: URL) {
     `- [API](${abs("/docs/reference/api.md")}): the read-only API behind the MCP server, for your own OAuth clients, described by ${abs("/openapi.json")}`,
     `- [CLI](${abs("/docs/reference/cli.md")}): the \`relayrunner\` npm package, https://www.npmjs.com/package/relayrunner`,
     "- [Source code](https://github.com/relayrunner/relayrunner): the GitHub repository",
+    "",
+    "## Solutions",
+    "",
+    ...SOLUTIONS.map((s) => `- [${s.name}](${abs(solutionPath(s))}): ${s.blurb}`),
     "",
     "## Pages",
     "",

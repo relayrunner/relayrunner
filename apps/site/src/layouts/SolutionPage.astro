@@ -1,0 +1,92 @@
+---
+/*
+ * A solution page (src/pages/solutions/): hero, the page's own sections, the closing commands,
+ * links to the other solution pages and the footer. The page passes its sections as the default
+ * slot, the hero's text as `lede` and the hero's picture as `visual`. Its row in
+ * src/lib/solutions.ts gives the name and icon above the headline.
+ */
+import CloseBox from "../components/CloseBox.astro";
+import PageMeta from "../components/PageMeta.astro";
+import SiteFooter from "../components/SiteFooter.astro";
+import SiteHeader from "../components/SiteHeader.astro";
+import { SOLUTIONS, solutionPath } from "../lib/solutions";
+import "../style.css";
+import "../styles/solutions.css";
+
+interface Props {
+  slug: string;
+  /** The page's <title> and share title, without the site name. */
+  title: string;
+  /** Meta description and share text. */
+  description: string;
+  /** The hero headline. */
+  heading: string;
+  /** The command in the hero, next to Get started. */
+  command: string;
+  /** The closing box: its headline, one line under it, and the commands to copy. */
+  close: { heading: string; body: string; steps: { label: string; command: string }[] };
+}
+
+const { slug, title, description, heading, command, close } = Astro.props;
+const solution = SOLUTIONS.find((s) => s.slug === slug)!;
+const others = SOLUTIONS.filter((s) => s !== solution);
+---
+
+<!doctype html>
+<html lang="en">
+  <head>
+    <PageMeta title={`${title} · relayrunner`} {description} path={solutionPath(solution)} />
+  </head>
+  <body>
+    <a class="skip" href="#main">Skip to content</a>
+    <SiteHeader />
+    <main id="main">
+      <section class="wrap sol-hero">
+        <div class="sol-hero-copy">
+          <p class="eyebrow sol-eyebrow">
+            <svg viewBox="0 0 24 24" aria-hidden="true"><path d={solution.icon} /></svg>
+            {solution.name}
+          </p>
+          <h1>{heading}</h1>
+          <p class="lede"><slot name="lede" /></p>
+          <div class="hero-actions">
+            <a class="btn-go btn-lg" href="https://app.relayrunner.app">Get started with GitHub</a>
+            <button class="cmd" type="button" data-copy-inline={command}>
+              <span aria-hidden="true">$</span> <code>{command}</code>
+              <span class="visually-hidden">Copy command</span>
+            </button>
+          </div>
+        </div>
+        <div class="sol-hero-visual" aria-hidden="true">
+          <slot name="visual" />
+        </div>
+      </section>
+
+      <slot />
+
+      <CloseBox {...close} />
+
+      <nav class="wrap sol-more" aria-labelledby="more-h">
+        <p class="kicker" id="more-h">More solutions</p>
+        <ul>
+          {
+            others.map((s) => (
+              <li>
+                <a href={solutionPath(s)}>
+                  <b>{s.name} →</b>
+                  <span>{s.blurb}</span>
+                </a>
+              </li>
+            ))
+          }
+        </ul>
+      </nav>
+    </main>
+
+    <SiteFooter />
+    <p class="visually-hidden" aria-live="polite" data-announce></p>
+    <script>
+      import "../main.ts";
+    </script>
+  </body>
+</html>

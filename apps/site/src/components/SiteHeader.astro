@@ -1,38 +1,75 @@
 ---
 /*
- * The site header: the landing page's header, shared with the docs. On the home page the links are
- * in-page anchors; elsewhere (the docs) they point back at the home page's sections. Docs stays
- * visible down to the narrowest layout that shows the nav.
+ * The site header, shared by the landing pages and the docs: Solutions and Providers menus, Docs
+ * and Changelog. The menus are native popovers, so they open on click, close on Escape or a click
+ * outside, and need no script.
  *
  * Signed-in visitors get Open dashboard in place of Sign in and Get started. The dashboard sets the
  * rr_signed_in cookie on this domain (apps/web/src/lib/auth-client.ts); the inline script reads it
  * before the buttons paint, so they don't flicker.
  *
- * Narrow screens get a menu button that opens every link (a popover, so it needs no script to
- * open, close on Escape or close on a click outside).
+ * Narrow screens get a menu button that opens every link (also a popover).
  */
+import { HOSTED_PROVIDER_IDS, logoOf, PROVIDERS } from "../lib/providers";
+import { SOLUTIONS, solutionPath } from "../lib/solutions";
 import BrandSymbol from "./BrandSymbol.astro";
 import ThemeToggle from "./ThemeToggle.astro";
 
 interface Props {
-  /** Set on the home page, where the links scroll to sections instead of navigating. */
+  /** Set on the home page, where the brand and Get started scroll instead of navigating. */
   home?: boolean;
   /** The narrow-screen menu. The docs turn it off: Starlight has its own. */
   menu?: boolean;
 }
 
 const { home = false, menu = true } = Astro.props;
-const to = (hash: string) => (home ? hash : `/${hash}`);
-const inDocs = Astro.url.pathname.startsWith("/docs");
+const path = Astro.url.pathname;
+const inChangelog = path.startsWith("/docs/changelog");
+const inDocs = path.startsWith("/docs") && !inChangelog;
+const inSolutions = path.startsWith("/solutions");
 const DASHBOARD = "https://app.relayrunner.app";
 const LOGIN = `${DASHBOARD}/login`;
 const GITHUB = "https://github.com/relayrunner/relayrunner";
-const pages = [
-  ["#providers", "Providers"],
-  ["#how", "How it works"],
-  ["#checks", "Optimized checks"],
-  ["#safety", "Security"],
+
+const more = [
+  {
+    href: "/docs/get-started/agents",
+    name: "Coding agents",
+    blurb: "Set up and check CI from your agent",
+  },
+  {
+    href: "/docs/reference/security",
+    name: "Security",
+    blurb: "What runs where, and who can see it",
+  },
 ];
+const routes = [
+  {
+    href: "/docs/runners/self-hosted",
+    logo: "/providers/machines.svg",
+    name: "Your machines",
+    blurb: "Any Mac or Linux computer",
+  },
+  {
+    href: "/docs/runners/self-hosted#runners-your-org-already-has",
+    logo: "/providers/self-hosted.svg",
+    name: "Self-hosted runners",
+    blurb: "The runners your org already has",
+  },
+  {
+    href: "/docs/runners/github",
+    logo: "/providers/github.svg",
+    name: "GitHub-hosted",
+    blurb: "The minutes in your plan",
+  },
+  {
+    href: "/docs/runners/hosted",
+    logo: "/providers/blacksmith.svg",
+    name: "Hosted providers",
+    blurb: "Faster runners on your own account",
+  },
+];
+const CHEVRON = "M6 9l6 6 6-6";
 ---
 
 <header class="site-header" data-header>
@@ -43,16 +80,114 @@ const pages = [
     </a>
     <nav aria-label="Primary">
       <ul class="nav-links">
+        <li class="nav-page">
+          <button
+            class="nav-trigger"
+            type="button"
+            popovertarget="nav-solutions"
+            aria-current={inSolutions ? "page" : undefined}
+          >
+            Solutions
+            <svg viewBox="0 0 24 24" aria-hidden="true"><path d={CHEVRON} /></svg>
+          </button>
+          <div id="nav-solutions" class="nav-panel nav-panel-solutions" popover>
+            <div class="nav-panel-main">
+              <ul class="nav-grid">
+                {
+                  SOLUTIONS.map((s, i) => (
+                    <li class={i === 0 ? "nav-grid-wide" : undefined}>
+                      <a class:list={["nav-item", { "nav-featured": i === 0 }]} href={solutionPath(s)}>
+                        <span class="nav-icon">
+                          <svg viewBox="0 0 24 24" aria-hidden="true">
+                            <path d={s.icon} />
+                          </svg>
+                        </span>
+                        <span class="nav-item-text">
+                          <b>{s.name}</b>
+                          <span>{s.blurb}</span>
+                        </span>
+                      </a>
+                    </li>
+                  ))
+                }
+              </ul>
+            </div>
+            <div class="nav-panel-side">
+              <p class="nav-panel-label">More</p>
+              <ul>
+                {
+                  more.map((m) => (
+                    <li>
+                      <a class="nav-item" href={m.href}>
+                        <span class="nav-item-text">
+                          <b>{m.name}</b>
+                          <span>{m.blurb}</span>
+                        </span>
+                      </a>
+                    </li>
+                  ))
+                }
+              </ul>
+            </div>
+            <div class="nav-panel-foot">
+              <span>New here? Start with one command.</span>
+              <code><span aria-hidden="true">$ </span>npx relayrunner connect</code>
+              <a href="/docs/get-started/quickstart">Quickstart →</a>
+            </div>
+          </div>
+        </li>
+        <li class="nav-page">
+          <button class="nav-trigger" type="button" popovertarget="nav-providers">
+            Providers
+            <svg viewBox="0 0 24 24" aria-hidden="true"><path d={CHEVRON} /></svg>
+          </button>
+          <div id="nav-providers" class="nav-panel nav-panel-providers" popover>
+            <div class="nav-panel-main">
+              <p class="nav-panel-label">Route jobs to</p>
+              <ul class="nav-grid">
+                {
+                  routes.map((r) => (
+                    <li>
+                      <a class="nav-item" href={r.href}>
+                        <img src={r.logo} alt="" width="36" height="36" loading="lazy" />
+                        <span class="nav-item-text">
+                          <b>{r.name}</b>
+                          <span>{r.blurb}</span>
+                        </span>
+                      </a>
+                    </li>
+                  ))
+                }
+              </ul>
+            </div>
+            <div class="nav-panel-foot">
+              <ul class="nav-logos" aria-label="Hosted providers">
+                {
+                  HOSTED_PROVIDER_IDS.map((id) => (
+                    <li>
+                      <img
+                        src={logoOf(id)}
+                        alt={PROVIDERS[id].name}
+                        title={PROVIDERS[id].name}
+                        width="24"
+                        height="24"
+                        loading="lazy"
+                      />
+                    </li>
+                  ))
+                }
+              </ul>
+              <a href="/docs/runners/providers">All providers →</a>
+            </div>
+          </div>
+        </li>
         <li><a href="/docs" aria-current={inDocs ? "page" : undefined}>Docs</a></li>
-        {
-          pages.map(([hash, label]) => (
-            <li class="nav-page">
-              <a href={to(hash)}>{label}</a>
-            </li>
-          ))
-        }
+        <li class="nav-page">
+          <a href="/docs/changelog" aria-current={inChangelog ? "page" : undefined}>Changelog</a>
+        </li>
       </ul>
     </nav>
+
     <div class="header-actions">
       <script is:inline>
         if (/(?:^|; )rr_signed_in=1/.test(document.cookie)) {
@@ -60,11 +195,9 @@ const pages = [
         }
       </script>
       <ThemeToggle />
-      <a class="btn-ghost btn-sm header-github" href={GITHUB}
-        >GitHub</a
-      >
+      <a class="btn-ghost btn-sm header-github" href={GITHUB}>GitHub</a>
       <a class="btn-text btn-sm signed-out" href={LOGIN}>Sign in</a>
-      <a class="btn-go btn-sm signed-out" href={to("#start")}>Get started</a>
+      <a class="btn-go btn-sm signed-out" href={home ? "#start" : "/#start"}>Get started</a>
       <a class="btn-go btn-sm signed-in" href={DASHBOARD}>Open dashboard</a>
       {
         menu && (
@@ -81,15 +214,24 @@ const pages = [
               </svg>
             </button>
             <nav id="site-menu" class="site-menu" popover aria-label="Menu" data-site-menu>
+              <p class="site-menu-label">Solutions</p>
               <ul>
+                {SOLUTIONS.map((s) => (
+                  <li>
+                    <a href={solutionPath(s)}>{s.name}</a>
+                  </li>
+                ))}
+              </ul>
+              <ul class="site-menu-rest">
+                <li>
+                  <a href="/docs/runners/providers">Providers</a>
+                </li>
                 <li>
                   <a href="/docs">Docs</a>
                 </li>
-                {pages.map(([hash, label]) => (
-                  <li>
-                    <a href={to(hash)}>{label}</a>
-                  </li>
-                ))}
+                <li>
+                  <a href="/docs/changelog">Changelog</a>
+                </li>
                 <li>
                   <a href={GITHUB}>GitHub</a>
                 </li>

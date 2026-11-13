@@ -1,0 +1,149 @@
+---
+import SolutionPage from "../../layouts/SolutionPage.astro";
+
+const jobs = [
+  { name: "agent/fix-retry-logic · test", detail: "PR #611", logo: "machines", where: "Mac mini" },
+  { name: "agent/add-rate-limits · test", detail: "PR #612", logo: "machines", where: "Office workstation" },
+  { name: "main · build", detail: "push 4e8e89c", logo: "machines", where: "Zach's MacBook Pro" },
+  {
+    name: "agent/upgrade-deps · test",
+    detail: "Every machine busy, sent to the next step",
+    busy: true,
+    logo: "blacksmith",
+    where: "Blacksmith",
+  },
+];
+---
+
+<SolutionPage
+  slug="ci-surges"
+  title="Keep CI fast when coding agents push all day"
+  description="Run GitHub Actions jobs on your own machines first and send the overflow to hosted runners, so CI keeps up when coding agents and teammates push at once."
+  heading="Keep CI fast when everyone pushes at once."
+  command="npx relayrunner connect"
+  close={{
+    heading: "Let your agents push all day.",
+    body: "Connect a machine, then route your jobs. Hosted runners take the overflow.",
+    steps: [
+      { label: "Turn this computer into a runner", command: "npx relayrunner connect --share anyone" },
+      { label: "In your repo, pick the jobs to route", command: "npx relayrunner init" },
+    ],
+  }}
+>
+  <Fragment slot="lede">
+    Coding agents open pull requests around the clock. Jobs run on your own machines first and spill
+    over to hosted runners when those are full, so nothing sits in a queue.
+  </Fragment>
+
+  <div class="sol-card" slot="visual">
+    <div class="sol-card-head"><b>Last 10 minutes</b><span>14 jobs · 0 waiting</span></div>
+    <ul class="sol-feed">
+      {
+        jobs.map((job) => (
+          <li>
+            <span>
+              <b>{job.name}</b>
+              <small class={job.busy ? "run" : undefined}>{job.detail}</small>
+            </span>
+            <span class="where">
+              <img src={`/providers/${job.logo}.svg`} alt="" width="22" height="22" />
+              {job.where}
+            </span>
+          </li>
+        ))
+      }
+      <li>
+        <span><b>agent/upgrade-deps · lint</b><small>Optimized check, no runner needed</small></span>
+        <span class="where go-text">✓ Passed in 3s</span>
+      </li>
+    </ul>
+  </div>
+
+  <section class="sol-band" aria-labelledby="how-h">
+    <div class="wrap">
+      <p class="kicker">How it works</p>
+      <h2 id="how-h">Use every machine first, and pay only for the overflow.</h2>
+      <ol class="sol-steps">
+        <li>
+          <h3>Connect what you have</h3>
+          <p>
+            Run <code>npx relayrunner connect</code> on the Mac mini, the old laptop and the home
+            server. More machines means more jobs at once.
+          </p>
+        </li>
+        <li>
+          <h3>Burst to hosted runners</h3>
+          <p>
+            When every machine is busy, the next job goes straight to GitHub-hosted or a faster
+            provider instead of waiting behind the others.
+          </p>
+        </li>
+        <li>
+          <h3>Cap what overflow costs</h3>
+          <p>
+            Set a minutes limit on GitHub. Past it, jobs fail fast with the reason, and your agent can
+            retry later.
+          </p>
+        </li>
+      </ol>
+    </div>
+  </section>
+
+  <section class="section wrap feature">
+    <div class="feature-copy">
+      <p class="kicker">Optimized checks</p>
+      <h2>Don't spend a runner on a lint check.</h2>
+      <p class="body">
+        PR title checks and lint finish in seconds but still bill a whole minute and wait for a
+        runner. Run them as optimized checks and they never need one.
+      </p>
+      <a class="sol-link" href="/docs/concepts/optimized-checks">How optimized checks work →</a>
+    </div>
+    <div class="sol-stats" aria-hidden="true">
+      <div>
+        <span class="label">On a runner</span>
+        <strong>1 min</strong>
+        <p>billed for a 6 second lint job, plus time in the queue</p>
+      </div>
+      <div class="on">
+        <span class="label">Optimized check</span>
+        <strong>0 min</strong>
+        <p>starts right away, no runner needed</p>
+      </div>
+    </div>
+  </section>
+
+  <section class="section wrap sol-faq" aria-labelledby="faq-h">
+    <h2 id="faq-h">Common questions</h2>
+    <div>
+      <details open>
+        <summary>Can bot and agent jobs use my machines?</summary>
+        <p>
+          Yes, when you share a machine with anyone in the workspace. A machine you keep for yourself
+          only takes your own jobs.
+        </p>
+      </details>
+      <details>
+        <summary>Which hosted providers can take the overflow?</summary>
+        <p>
+          GitHub-hosted, or a provider like Blacksmith, Depot or Namespace on your own account. See
+          <a href="/docs/runners/providers">all providers</a>.
+        </p>
+      </details>
+      <details>
+        <summary>How do I see where time goes?</summary>
+        <p>
+          The Performance page shows how long each job takes on each runner and how long it waited for
+          one. If waits grow, connect another machine or move a provider up.
+        </p>
+      </details>
+      <details>
+        <summary>Do I need to edit my workflows to change the order?</summary>
+        <p>
+          No. You add relays once with <code>npx relayrunner init</code>, then change the order in the
+          dashboard. See <a href="/solutions/routing">Routing</a>.
+        </p>
+      </details>
+    </div>
+  </section>
+</SolutionPage>
