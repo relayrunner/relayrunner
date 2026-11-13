@@ -1,31 +1,48 @@
 import {
-  CircleCheckIcon,
+  CheckIcon,
   CircleDashedIcon,
   CircleSlashIcon,
-  CircleXIcon,
   LoaderCircleIcon,
-  type LucideIcon,
-  TimerOffIcon,
+  MinusIcon,
 } from "lucide-react";
+import type { ComponentType } from "react";
 import { cn } from "@/lib/utils";
 
-type Status = { Icon: LucideIcon; label: string; className: string };
-const CANCELLED: Status = {
-  Icon: CircleSlashIcon,
-  label: "Cancelled",
-  className: "text-muted-foreground",
-};
+type IconProps = { className?: string; role?: string; "aria-label"?: string };
+
+/** A solid red disc with a cross knocked out of it: the one result meant to catch the eye. */
+function FailedIcon({ className, ...props }: IconProps) {
+  return (
+    <svg viewBox="0 0 24 24" className={className} {...props}>
+      <circle cx="12" cy="12" r="10.5" fill="currentColor" />
+      <path
+        d="m15 9-6 6m0-6 6 6"
+        className="stroke-background"
+        strokeWidth={2.5}
+        strokeLinecap="round"
+      />
+    </svg>
+  );
+}
+
+type Status = { Icon: ComponentType<IconProps>; label: string; className: string };
+const QUIET = "text-muted-foreground";
+const FAILED: Status = { Icon: FailedIcon, label: "Failed", className: "text-destructive" };
+const CANCELLED: Status = { Icon: CircleSlashIcon, label: "Cancelled", className: QUIET };
 const STATUS: Record<string, Status> = {
   in_progress: { Icon: LoaderCircleIcon, label: "In progress", className: "animate-spin text-run" },
-  queued: { Icon: CircleDashedIcon, label: "Queued", className: "text-muted-foreground" },
-  success: { Icon: CircleCheckIcon, label: "Succeeded", className: "text-go" },
-  failure: { Icon: CircleXIcon, label: "Failed", className: "text-destructive" },
-  timed_out: { Icon: TimerOffIcon, label: "Timed out", className: "text-destructive" },
+  queued: { Icon: CircleDashedIcon, label: "Queued", className: QUIET },
+  success: { Icon: CheckIcon, label: "Passed", className: QUIET },
+  failure: FAILED,
+  timed_out: { ...FAILED, label: "Timed out" },
   cancelled: CANCELLED,
-  skipped: { ...CANCELLED, label: "Skipped" },
+  skipped: { Icon: MinusIcon, label: "Skipped", className: QUIET },
 };
 
-/** A run's, job's or step's result as an icon: a tick, a cross, a spinner while it runs. */
+/**
+ * A run's, job's, step's or check's result as an icon. A pass is a quiet grey tick and a failure a
+ * solid red disc, so a list of mostly passing jobs reads calm and the failures stand out.
+ */
 export function StatusIcon({
   status,
   conclusion,
