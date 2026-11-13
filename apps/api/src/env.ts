@@ -25,6 +25,9 @@ export interface Env extends AccessEnv {
   // Test accounts that aren't operators, left out of operator pings: GitHub user ids,
   // comma-separated (wrangler.jsonc vars).
   OPERATOR_PINGS_IGNORE_GITHUB_IDS?: string;
+  // PostHog project token for the server-side product events (src/product-events.ts). Public, so
+  // it's a wrangler.jsonc var; unset, no events are sent.
+  POSTHOG_TOKEN?: string;
   PICK_RUNNER: DurableObjectNamespace<PickRunner>;
   ROUTER: DurableObjectNamespace<Router>;
   MACHINE_LINK: DurableObjectNamespace<MachineLink>;

@@ -7,6 +7,7 @@ import { createDb } from "./db/index.ts";
 import type { Env } from "./env.ts";
 import { purgeOldJobTimings } from "./job-timings.ts";
 import { sendOperatorPings } from "./operator-pings.ts";
+import { sendProductEvents } from "./product-events.ts";
 import { checkPrices } from "./price-check.ts";
 import { purgeOldActivity } from "./retention.ts";
 import { purgeOldWorkflowRuns } from "./runs.ts";
@@ -43,7 +44,8 @@ export default {
   // Every 15 minutes: queue a read of each org's Actions usage from GitHub billing (#116), rescue
   // stuck relay jobs, queue a sweep for leftover pick runners (src/pick-sweep.ts), check which
   // hosted provider runner types stopped picking up jobs (src/provider-health.ts), and post the
-  // window's operator pings to Slack (src/operator-pings.ts). Hourly: alert when
+  // window's operator pings to Slack (src/operator-pings.ts) and its product events to PostHog
+  // (src/product-events.ts). Hourly: alert when
   // webhook dead letters pile up, drop job timings, workflow runs and Activity rows past retention, reconcile
   // which orgs installed the Spend App (src/spend-app.ts), and queue a sync of each connected
   // provider account and drop its old usage (src/provider-sync.ts). Daily: check providers' price pages
@@ -56,6 +58,7 @@ export default {
             pollActionsUsage(env, at),
             sweepPicks(env),
             sendOperatorPings(env, at),
+            sendProductEvents(env, at),
             sweepProviderHealth(env, at.getTime()),
           ]
         : controller.cron === PRICE_CRON
