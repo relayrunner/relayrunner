@@ -9,7 +9,7 @@ import {
   NamespaceIcon,
   WarpBuildIcon,
 } from "@/components/provider-logos";
-import type { Environment } from "@/lib/job-times";
+import type { Environment, EnvironmentSummary } from "@/lib/job-times";
 import { isKnownProvider, providerInfo } from "@/lib/provider-catalog";
 import { cn } from "@/lib/utils";
 
@@ -141,6 +141,21 @@ export const TILE = "flex size-7 shrink-0 items-center justify-center rounded-md
 
 export const providerOf = ({ key }: Pick<Environment, "key">): Provider =>
   providerOfEnvironment(key, isKnownProvider);
+
+/**
+ * Runners grouped by provider, busiest provider and runner first, with labels nothing recognized
+ * last.
+ */
+export function byProvider<T extends Pick<EnvironmentSummary, "key" | "stat">>(environments: T[]) {
+  const groups = new Map<Provider, T[]>();
+  for (const env of environments.toSorted((a, b) => b.stat.runs - a.stat.runs)) {
+    const provider = providerOf(env);
+    const group = groups.get(provider);
+    if (group) group.push(env);
+    else groups.set(provider, [env]);
+  }
+  return [...groups].sort(([a], [b]) => Number(a === "other") - Number(b === "other"));
+}
 
 /**
  * A provider's mark on its brand tile, shrunk to sit inline in a row or a table cell. The tile

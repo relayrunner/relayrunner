@@ -22,7 +22,7 @@ import { AddRunner, CONNECT_COMMAND, GithubRunnersDialog } from "@/components/ad
 import { SectionBoundary } from "@/components/error-boundary";
 import { PageHeader } from "@/components/page-header";
 import { GithubIcon } from "@/components/provider-logos";
-import { providerOf } from "@/components/providers";
+import { byProvider, providerOf } from "@/components/providers";
 import { sharingLabel } from "@/components/machine-sharing";
 import { OtherMachinesBanner, OtherMachinesDialog } from "@/components/other-machines";
 import { CloudProviderCard, FoundCard, MachineCard, machineView } from "@/components/runner-card";
@@ -417,17 +417,6 @@ function RunnersPage() {
 
 // Cloud runners from the Performance report: everything but machines and other self-hosted runners.
 const isCloud = (env: EnvironmentSummary) => providerOf(env) !== "machine";
-
-// Cloud runners grouped by provider, busiest provider and runner type first, with labels we
-// couldn't place last.
-function byProvider(environments: EnvironmentSummary[]) {
-  const groups = new Map<ReturnType<typeof providerOf>, EnvironmentSummary[]>();
-  for (const env of environments.toSorted((a, b) => b.stat.runs - a.stat.runs)) {
-    const provider = providerOf(env);
-    groups.set(provider, [...(groups.get(provider) ?? []), env]);
-  }
-  return [...groups].sort(([a], [b]) => Number(a === "other") - Number(b === "other"));
-}
 
 function RunnerGroup({
   title,

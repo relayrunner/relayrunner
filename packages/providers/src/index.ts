@@ -176,6 +176,9 @@ export function providerOfEnvironment(
   const id = key.slice(0, key.indexOf(":"));
   return known(id) ? id : "other";
 }
+
+/** The runner label in an environment key: `linux-2-core` for `github:linux-2-core`. */
+export const labelOfEnvironment = (key: string) => key.slice(key.indexOf(":") + 1);
 export {
   ADDED_RATE,
   BASE_BOOK,

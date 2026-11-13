@@ -25,7 +25,7 @@ import {
 } from "@/components/ui/select";
 import { timeAgo } from "@/lib/activity";
 import { authDisabled } from "@/lib/auth-client";
-import { DAY_MS, plural } from "@/lib/job-times";
+import { DAY_MS, type Environment, plural } from "@/lib/job-times";
 import { useLiveRefresh } from "@/lib/live-refresh";
 import { useNow } from "@/lib/use-now";
 import {
@@ -84,9 +84,9 @@ export const Route = createFileRoute("/_authed/_workspace/history")({
   component: HistoryPage,
 });
 
-/** A Map of each environment's name, by key. */
-const namesOf = (report: { environments: { key: string; label: string }[] }): Environments =>
-  new Map(report.environments.map((env) => [env.key, env.label]));
+/** The report's environments, by key. */
+const byKey = (report: { environments: Environment[] }): Environments =>
+  new Map(report.environments.map((env) => [env.key, env]));
 
 /** The panel the URL opens, if any, with the run from the list when the list has it. */
 function Panel({ runs, environments }: { runs?: Run[]; environments: Environments }) {
@@ -125,7 +125,7 @@ function HistoryPage() {
 }
 
 function Jobs({ report }: { report: JobsReport }) {
-  const environments = useMemo(() => namesOf(report), [report]);
+  const environments = useMemo(() => byKey(report), [report]);
   return (
     <>
       <JobList report={report} />
@@ -183,7 +183,7 @@ function WorkflowRuns({ loaded }: { loaded: RunsReport }) {
       enabled: !authDisabled && runs.some((run) => run.status !== "completed"),
     },
   );
-  const environments = useMemo(() => namesOf(report), [report]);
+  const environments = useMemo(() => byKey(report), [report]);
 
   return (
     <div className="grid gap-6">
@@ -344,7 +344,7 @@ function RanOn({ keys, environments }: { keys: string[]; environments: Environme
   for (const key of keys) {
     const provider = providerOf({ key });
     const names = byProvider.get(provider) ?? [];
-    names.push(runnerName(provider, environments.get(key) ?? key));
+    names.push(runnerName(provider, environments.get(key)?.label ?? key));
     byProvider.set(provider, names);
   }
   const marks = [...byProvider].map(([provider, names]) => {
