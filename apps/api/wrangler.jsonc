@@ -75,6 +75,11 @@
   // email operator alerts to a team inbox; operators can also opt in to their own copy. `wrangler dev` simulates sends locally; add "remote": true
   // here to deliver for real while testing (remove before deploy).
   "send_email": [{ "name": "EMAIL", "allowed_sender_addresses": ["noreply@send.relayrunner.app"] }],
+  // Agent tokens (middleware/session.ts), per user and grant: room for the MCP server's tools,
+  // which make a few API calls each, and for clients calling the API directly.
+  "ratelimits": [
+    { "name": "AGENT_LIMITER", "namespace_id": "4102", "simple": { "limit": 300, "period": 60 } },
+  ],
   // Webhook dead letters (src/dead-letters.ts), kept out of D1 on purpose: D1 failing is the
   // likeliest reason a delivery dead-letters. Create once, with the 30-day retention:
   //   wrangler r2 bucket create relayrunner-webhook-dead-letters

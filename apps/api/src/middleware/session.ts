@@ -6,7 +6,7 @@ import type { AppEnv } from "../app.ts";
 
 // Builds this request's auth instance and attaches the signed-in user and session, or null.
 // An agent access token (agent-auth.ts) attaches its user and c.var.agent instead of a session, and
-// may only reach the read-only agent routes.
+// may only reach the read-only agent routes, at AGENT_LIMITER's rate.
 export const attachSession = createMiddleware<AppEnv>(async (c, next) => {
   const url = new URL(c.req.url);
   const auth = createAuth(c.env, waitUntil(c), url.hostname);
@@ -17,6 +17,12 @@ export const attachSession = createMiddleware<AppEnv>(async (c, next) => {
     if (!result) return c.json({ error: "invalid_token" }, 401);
     if (!agentMayCall(c.req.method, url.pathname)) {
       return c.json({ error: "not_allowed_for_agents" }, 403);
+    }
+    const limit = await c.env.AGENT_LIMITER?.limit({
+      key: `${result.user.id}:${result.agent.grantId}`,
+    });
+    if (limit && !limit.success) {
+      return c.json({ error: "rate_limited" }, 429, { "retry-after": "60" });
     }
     c.set("user", result.user);
     c.set("session", null);

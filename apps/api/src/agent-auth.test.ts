@@ -235,6 +235,31 @@ describe("agent sign-in", () => {
     expect(after.workspace.id).toBe(workspace.id);
   });
 
+  test("agent tokens are rate limited per user and grant, wherever they're sent from", async () => {
+    const { user, cookie } = await testing.signIn(env);
+    const { cookie: jar } = await testing.createWorkspace(env, cookie, "Limited", "agents-limit");
+    const { access_token } = await signInAgent(jar);
+    const keys: string[] = [];
+    env.AGENT_LIMITER = {
+      limit: async ({ key }) => {
+        keys.push(key);
+        return { success: keys.length <= 2 };
+      },
+    };
+    try {
+      expect((await asAgent("/me", access_token)).status).toBe(200);
+      expect((await asAgent("/machines", access_token)).status).toBe(200);
+      const limited = await asAgent("/runs", access_token);
+      expect(limited.status).toBe(429);
+      expect(limited.headers.get("retry-after")).toBe("60");
+      expect(await limited.json()).toEqual({ error: "rate_limited" });
+      expect(new Set(keys).size).toBe(1);
+      expect(keys[0]).toMatch(new RegExp(`^${user.id}:`));
+    } finally {
+      delete env.AGENT_LIMITER;
+    }
+  });
+
   test("one token reads each workspace it was granted, one at a time", async () => {
     const { cookie } = await testing.signIn(env);
     const { workspace: first, cookie: jar } = await testing.createWorkspace(

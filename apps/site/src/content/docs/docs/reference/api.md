@@ -3,7 +3,11 @@ title: RelayRunner API
 description: Read your workspace's runners, runs, routing and usage over HTTP.
 ---
 
-The RelayRunner API is the read-only HTTP API behind the [MCP server](/docs/reference/mcp). To connect an AI agent, use the MCP server: it signs in for you and turns these routes into tools. Use the API when you want to call the routes yourself.
+The RelayRunner API is the read-only HTTP API behind the [MCP server](/docs/reference/mcp).
+
+:::tip[Connecting an AI agent?]
+Use the [MCP server](/docs/reference/mcp) instead. Claude, Cursor, VS Code and other MCP clients sign in on their own and get these routes as tools. Call the API directly only if you're writing your own OAuth client.
+:::
 
 ```text
 https://api.relayrunner.app/api
@@ -33,3 +37,7 @@ Send the access token as `Authorization: Bearer <token>`. Tokens last 15 minutes
 | `POST /feedback`                                     | Reports a bug, confusing result or missing feature to the team         |
 
 Errors come back as JSON with a short code, such as `{"error": "invalid_query"}`.
+
+## Rate limit
+
+Each person's connection can make 300 requests a minute, counting requests from the MCP server too. Past that, the API answers `429` with `{"error": "rate_limited"}` and a `Retry-After` header.
