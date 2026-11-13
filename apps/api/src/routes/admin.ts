@@ -8,10 +8,12 @@ import { count, desc, eq } from "drizzle-orm";
 import { Hono } from "hono";
 import { z } from "zod";
 import { machineMilestones, workspaceJobs } from "../admin-adoption.ts";
+import { ROUTING_RANGES, type RoutingRange, routingHealth } from "../admin-routing.ts";
 import { deleteUser, deleteWorkspaces } from "../admin-delete.ts";
 import type { AppEnv } from "../app.ts";
 import { createDb, schema } from "../db/index.ts";
 import { internalWorkspaceIds } from "../internal-workspaces.ts";
+import { parseGithubIds } from "../operator-pings.ts";
 import { requireOperator, who } from "../middleware/admin.ts";
 import { requireUser } from "../middleware/session.ts";
 import { adminPriceRoutes } from "./admin-prices.ts";
@@ -31,6 +33,16 @@ export const adminRoutes = new Hono<AppEnv>()
   .use("*", requireUser, requireOperator)
   .route("/prices", adminPriceRoutes)
   .route("/providers", adminProviderRoutes)
+  // Routing health across workspaces (src/admin-routing.ts), over the last 24 hours or 7 days.
+  .get("/routing", async (c) => {
+    const range = (c.req.query("range") ?? "24h") as RoutingRange;
+    if (!Object.hasOwn(ROUTING_RANGES, range)) return c.json({ error: "invalid_range" }, 400);
+    return c.json(
+      await routingHealth(createDb(c.env.DB), range, {
+        ignoredGithubIds: parseGithubIds(c.env.OPERATOR_PINGS_IGNORE_GITHUB_IDS),
+      }),
+    );
+  })
   .get("/users", async (c) => {
     const db = createDb(c.env.DB);
     const users = await db
