@@ -17,6 +17,7 @@
     "@dnd-kit/utilities": "^3.2.2",
     "@fontsource-variable/hanken-grotesk": "catalog:",
     "@fontsource-variable/jetbrains-mono": "catalog:",
+    "@pierre/diffs": "1.6.4",
     "@relayrunner/access": "workspace:*",
     "@relayrunner/activity": "workspace:*",
     "@relayrunner/providers": "workspace:*",

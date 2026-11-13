@@ -33,8 +33,9 @@ import {
   MoreHorizontalIcon,
   PlusIcon,
 } from "lucide-react";
-import { Fragment, useState } from "react";
+import { useState } from "react";
 import { CopyButton } from "@/components/add-runner";
+import { CodeBlock } from "@/components/code-block";
 import { Button } from "@/components/ui/button";
 import {
   DropdownMenu,
@@ -572,20 +573,6 @@ function nextCycle(cycleStart: string) {
   return next.toLocaleDateString("en-US", { month: "short", day: "numeric", timeZone: "UTC" });
 }
 
-/** A YAML line with wrap points after each `/`, so long paths break between segments. */
-function breakAtSlashes(line: string) {
-  return line.split("/").map((part, index) => (
-    <Fragment key={index}>
-      {index > 0 && (
-        <>
-          /<wbr />
-        </>
-      )}
-      {part}
-    </Fragment>
-  ));
-}
-
 /** The relay.yml inputs this order needs, as a snippet. */
 function WorkflowPanel({ steps }: { steps: RunnerStep[] }) {
   const keys = RUNNER_KEYS.filter((key) => steps.some((step) => step.key === key));
@@ -609,22 +596,8 @@ function WorkflowPanel({ steps }: { steps: RunnerStep[] }) {
         relay.yml takes one input per step. A job skips steps it doesn't name.
       </p>
       <div className="relative">
-        {/* Long lines wrap with a hanging indent, so the YAML nesting still reads. */}
-        <pre className="rounded-md border border-border/60 bg-[var(--rr-bg-deep)] py-2.5 pr-10 pl-3 font-mono text-[11.5px] leading-relaxed whitespace-pre-wrap text-[var(--rr-ink-2)] [overflow-wrap:anywhere]">
-          {snippet.split("\n").map((line, index) => {
-            const indent = line.length - line.trimStart().length;
-            return (
-              <span
-                key={index}
-                className="block"
-                style={{ paddingLeft: `${indent + 4}ch`, textIndent: "-4ch" }}
-              >
-                {breakAtSlashes(line.trimStart())}
-              </span>
-            );
-          })}
-        </pre>
-        <CopyButton text={snippet} label="Copy YAML" className="absolute top-1.5 right-1.5" />
+        <CodeBlock code={snippet} lang="yaml" wrap fontSize={11.5} className="pr-7" />
+        <CopyButton text={snippet} label="Copy YAML" className="absolute top-1 right-1" />
       </div>
     </section>
   );

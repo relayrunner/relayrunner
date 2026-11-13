@@ -2,6 +2,7 @@ import { dayMs, type RatePrices } from "@relayrunner/providers";
 import { createFileRoute, Link, notFound } from "@tanstack/react-router";
 import { ArrowLeftIcon, ArrowUpRightIcon } from "lucide-react";
 import { useState } from "react";
+import { CodeBlock } from "@/components/code-block";
 import { providerStyle, runnerName, runnerSpec, TILE } from "@/components/providers";
 import { RangePicker } from "@/components/range-picker";
 import { StatTile } from "@/components/stat-tile";
@@ -135,9 +136,11 @@ function ProviderView({ first }: { first: ProviderReport }) {
 
 function RunsOn({ example }: { example: string }) {
   return (
-    <pre className="overflow-x-auto rounded-lg border border-border/60 bg-[var(--rr-bg-deep)] px-4 py-3.5 font-mono text-[13px] leading-relaxed text-[var(--rr-ink-2)]">
-      {`jobs:\n  test:\n    runs-on: ${example}`}
-    </pre>
+    <CodeBlock
+      code={`jobs:\n  test:\n    runs-on: ${example}`}
+      lang="yaml"
+      className="rounded-lg"
+    />
   );
 }
 
