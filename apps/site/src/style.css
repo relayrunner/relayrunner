@@ -808,27 +808,50 @@ button {
 .site-footer {
   border-top: 1px solid var(--line-soft);
 }
-.footer-row {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  justify-content: space-between;
-  gap: 16px 24px;
-  padding-block: 28px;
+.footer-grid {
+  display: grid;
+  grid-template-columns: minmax(0, 1.6fr) repeat(4, minmax(0, 1fr));
+  gap: 32px 24px;
+  padding-block: 48px 56px;
 }
-.footer-row ul {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 12px 28px;
+.footer-brand p {
+  max-width: 260px;
+  margin-top: 12px;
+  color: var(--mute);
   font-size: 14px;
 }
-.footer-row a {
+.footer-brand p + p {
+  margin-top: 4px;
+}
+.footer-title {
+  color: var(--ink);
+  font-size: 13px;
+  font-weight: 700;
+}
+.footer-grid ul {
+  display: grid;
+  gap: 10px;
+  margin-top: 14px;
+  font-size: 14px;
+}
+.footer-grid a {
   color: var(--ink-2);
   text-decoration: none;
 }
-.footer-row a:hover,
-.footer-row a[aria-current="page"] {
+.footer-grid a:hover,
+.footer-grid a[aria-current="page"] {
   color: var(--ink);
+}
+.footer-brand a.brand {
+  color: var(--ink);
+}
+@media (max-width: 860px) {
+  .footer-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+  .footer-brand {
+    grid-column: 1 / -1;
+  }
 }
 
 /* ---------- Responsive ---------- */

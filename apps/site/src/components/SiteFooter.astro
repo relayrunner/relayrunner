@@ -1,5 +1,6 @@
 ---
-/* The landing pages' footer: the home page and the solution pages. */
+/* The landing pages' footer: the brand and columns of links. */
+import { INTEGRATIONS, integrationPath, SUGGEST_ISSUE_URL } from "../lib/integrations";
 import { SOLUTIONS, solutionPath } from "../lib/solutions";
 import BrandSymbol from "./BrandSymbol.astro";
 
@@ -10,40 +11,76 @@ interface Props {
 
 const { home = false } = Astro.props;
 const path = Astro.url.pathname;
+const GITHUB = "https://github.com/relayrunner/relayrunner";
+
+const columns = [
+  {
+    title: "Solutions",
+    links: SOLUTIONS.map((s) => ({ href: solutionPath(s), label: s.name })),
+  },
+  {
+    title: "Integrations",
+    links: [
+      ...INTEGRATIONS.slice(0, 4).map((p) => ({ href: integrationPath(p.id), label: p.name })),
+      { href: "/integrations", label: "All integrations" },
+      { href: SUGGEST_ISSUE_URL, label: "Suggest one" },
+    ],
+  },
+  {
+    title: "Developers",
+    links: [
+      { href: "/docs", label: "Docs" },
+      { href: "/docs/get-started/quickstart", label: "Quickstart" },
+      { href: "/docs/get-started/agents", label: "Agent setup" },
+      { href: "/docs/changelog", label: "Changelog" },
+      { href: "https://www.npmjs.com/package/relayrunner", label: "CLI on npm" },
+    ],
+  },
+  {
+    title: "Project",
+    links: [
+      { href: GITHUB, label: "GitHub" },
+      { href: "https://github.com/apps/relayrunner", label: "GitHub App" },
+      { href: "mailto:feedback@relayrunner.app", label: "Contact" },
+      { href: "/privacy", label: "Privacy" },
+      { href: "/terms", label: "Terms" },
+    ],
+  },
+];
 ---
 
 <footer class="site-footer">
-  <div class="wrap footer-row">
-    <a class="brand brand-sm" href={home ? "#top" : "/"}>
-      <BrandSymbol />
-      relayrunner
-    </a>
-    <ul>
-      {
-        SOLUTIONS.map((s) => (
-          <li>
-            <a
-              href={solutionPath(s)}
-              aria-current={path === solutionPath(s) ? "page" : undefined}
-            >
-              {s.name}
-            </a>
-          </li>
-        ))
-      }
-      <li>
-        <a href="/integrations" aria-current={path.startsWith("/integrations") ? "page" : undefined}>
-          Integrations
-        </a>
-      </li>
-      <li><a href="/docs">Docs</a></li>
-      <li><a href="/docs/changelog">Changelog</a></li>
-      <li><a href="https://github.com/relayrunner/relayrunner">GitHub</a></li>
-      <li><a href="https://github.com/apps/relayrunner">GitHub App</a></li>
-      <li><a href="https://www.npmjs.com/package/relayrunner">npm</a></li>
-      <li><a href="/docs/get-started/agents">Agent setup</a></li>
-      <li><a href="/privacy">Privacy</a></li>
-      <li><a href="/terms">Terms</a></li>
-    </ul>
+  <div class="wrap footer-grid">
+    <div class="footer-brand">
+      <a class="brand brand-sm" href={home ? "#top" : "/"}>
+        <BrandSymbol />
+        relayrunner
+      </a>
+      <p>Route GitHub Actions jobs across your machines and hosted runners.</p>
+      <p>Free and <a href={GITHUB}>open source</a>.</p>
+    </div>
+    {
+      columns.map((column) => (
+        <nav aria-label={column.title}>
+          <p class="footer-title">{column.title}</p>
+          <ul>
+            {column.links.map((link) => (
+              <li>
+                <a
+                  href={link.href}
+                  aria-current={
+                    path === link.href
+                      ? "page"
+                      : undefined
+                  }
+                >
+                  {link.label}
+                </a>
+              </li>
+            ))}
+          </ul>
+        </nav>
+      ))
+    }
   </div>
 </footer>

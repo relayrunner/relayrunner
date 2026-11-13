@@ -66,7 +66,8 @@ const routes = [
   },
   {
     href: "/integrations",
-    logo: "/providers/blacksmith.svg",
+    // A cluster of four providers' marks, so the item stands for all of them.
+    cluster: INTEGRATION_IDS.slice(0, 4).map((id) => logoOf(id)!),
     name: "Hosted providers",
     blurb: "Faster runners on your own account",
   },
@@ -156,7 +157,15 @@ const CHEVRON = "M6 9l6 6 6-6";
                   routes.map((r) => (
                     <li>
                       <a class="nav-item" href={r.href}>
-                        <img src={r.logo} alt="" width="36" height="36" loading="lazy" />
+                        {r.cluster ? (
+                          <span class="nav-cluster" aria-hidden="true">
+                            {r.cluster.map((src) => (
+                              <img src={src} alt="" width="17" height="17" loading="lazy" />
+                            ))}
+                          </span>
+                        ) : (
+                          <img src={r.logo} alt="" width="36" height="36" loading="lazy" />
+                        )}
                         <span class="nav-item-text">
                           <b>{r.name}</b>
                           <span>{r.blurb}</span>
@@ -261,3 +270,46 @@ const CHEVRON = "M6 9l6 6 6-6";
     </div>
   </div>
 </header>
+
+<script>
+  // Open a menu when a mouse rests on its item, and close it shortly after the mouse leaves both
+  // the item and its panel (the panel sits inside the item). Clicks, touch and keys work as before.
+  const OPEN_DELAY = 80;
+  const CLOSE_DELAY = 200;
+  for (const item of document.querySelectorAll<HTMLElement>(".nav-page")) {
+    const trigger = item.querySelector<HTMLButtonElement>("[popovertarget]");
+    const panel = item.querySelector<HTMLElement>("[popover]");
+    if (!trigger || !panel) continue;
+    let timer: number | undefined;
+    let hoverOpened = false;
+    const later = (fn: () => void, ms: number) => {
+      clearTimeout(timer);
+      timer = window.setTimeout(fn, ms);
+    };
+    item.addEventListener("pointerenter", (event) => {
+      if (event.pointerType !== "mouse") return;
+      later(() => {
+        if (panel.matches(":popover-open")) return;
+        panel.showPopover();
+        hoverOpened = true;
+      }, OPEN_DELAY);
+    });
+    item.addEventListener("pointerleave", (event) => {
+      if (event.pointerType !== "mouse") return;
+      later(() => {
+        if (hoverOpened && panel.matches(":popover-open")) panel.hidePopover();
+        hoverOpened = false;
+      }, CLOSE_DELAY);
+    });
+    // A click on a menu the mouse already opened keeps it open instead of closing it.
+    trigger.addEventListener("click", (event) => {
+      if (hoverOpened && panel.matches(":popover-open")) {
+        event.preventDefault();
+        hoverOpened = false;
+      }
+    });
+    panel.addEventListener("toggle", (event) => {
+      if ((event as ToggleEvent).newState === "closed") hoverOpened = false;
+    });
+  }
+</script>

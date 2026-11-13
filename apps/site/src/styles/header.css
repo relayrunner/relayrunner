@@ -429,3 +429,16 @@
     display: none;
   }
 }
+
+/* Four providers' marks in a 2×2 grid, the size of one logo. */
+.nav-cluster {
+  display: grid;
+  flex: none;
+  grid-template-columns: repeat(2, 17px);
+  gap: 2px;
+  width: 36px;
+  height: 36px;
+}
+.nav-cluster img {
+  border-radius: 4px;
+}

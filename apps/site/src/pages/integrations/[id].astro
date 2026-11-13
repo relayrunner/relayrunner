@@ -6,7 +6,13 @@
  */
 import CloseBox from "../../components/CloseBox.astro";
 import LandingPage from "../../layouts/LandingPage.astro";
-import { INTEGRATIONS, integrationPath, type Integration } from "../../lib/integrations";
+import {
+  INTEGRATIONS,
+  integrationPath,
+  SUGGEST_EMAIL,
+  SUGGEST_ISSUE_URL,
+  type Integration,
+} from "../../lib/integrations";
 import { logoOf, PRICES_AS_OF } from "../../lib/providers";
 
 export const getStaticPaths = () =>
@@ -325,5 +331,9 @@ const faqData = {
         ))
       }
     </ul>
+    <p class="int-suggest">
+      Missing a provider you use? <a href={SUGGEST_ISSUE_URL}>Open an issue on GitHub</a> or
+      <a href={SUGGEST_EMAIL}>email us</a>.
+    </p>
   </nav>
 </LandingPage>
