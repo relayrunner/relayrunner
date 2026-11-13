@@ -552,8 +552,15 @@ export type MachinePick =
 // `notInOrder` lists providers the job configured that the order leaves out, either way, so an
 // ignored input is never silent.
 export type RouteDecision =
-  // `step` answered with `runner`, after skipping `skipped` (in order).
-  | { runner: string; step: RunnerKey; skipped: SkippedStep[]; notInOrder: RunnerKey[] }
+  // `step` answered with `runner`, after skipping `skipped` (in order). `waited` when the job
+  // queued for a full machine's slot (waitingDecision) rather than getting a runner right away.
+  | {
+      runner: string;
+      step: RunnerKey;
+      skipped: SkippedStep[];
+      notInOrder: RunnerKey[];
+      waited?: true;
+    }
   // Nothing fits: fail the relay with `reason`.
   | { runner: null; reason: string; skipped: SkippedStep[]; notInOrder: RunnerKey[] };
 
@@ -588,6 +595,7 @@ export function waitingDecision(
     step: "machine",
     skipped: decision.skipped.slice(0, at),
     notInOrder: decision.notInOrder,
+    waited: true,
   };
 }
 

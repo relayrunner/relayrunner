@@ -39,6 +39,21 @@ describe("/api/admin", () => {
     expect((await call("/users", op.cookie)).status).toBe(200);
   });
 
+  test("reports routing health over 24 hours or 7 days", async () => {
+    const op = await operator();
+    const day = (await (await call("/routing", op.cookie)).json()) as {
+      range: string;
+      buckets: unknown[];
+    };
+    expect(day).toMatchObject({ range: "24h" });
+    expect(day.buckets).toHaveLength(24);
+    const week = (await (await call("/routing?range=7d", op.cookie)).json()) as {
+      buckets: unknown[];
+    };
+    expect(week.buckets).toHaveLength(28);
+    expect((await call("/routing?range=toString", op.cookie)).status).toBe(400);
+  });
+
   test("lists users and workspaces", async () => {
     const op = await operator();
     const { workspace } = await testing.createWorkspace(env, op.cookie, "Initech", "initech");

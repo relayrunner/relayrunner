@@ -45,6 +45,7 @@ export async function recordPick(db: Db, pick: PickRecord) {
         github: context.github,
         hosted: hostedInputs(context),
         reason: decision.runner === null ? decision.reason : null,
+        waitedAt: decision.runner !== null && decision.waited ? new Date() : null,
         startedById: context.startedBy?.id ?? null,
         startedByLogin: context.startedBy?.login ?? null,
         triggeredById: context.triggeredBy?.id ?? null,
