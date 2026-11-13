@@ -559,3 +559,12 @@ ol.sol-steps h3 {
   line-height: inherit;
   letter-spacing: 0.08em;
 }
+.int-suggest {
+  margin-top: 28px;
+  color: var(--ink-2);
+  font-size: 15px;
+}
+.int-suggest a {
+  color: var(--go-text);
+  font-weight: 600;
+}

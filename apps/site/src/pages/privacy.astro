@@ -1,6 +1,7 @@
 ---
 // Moved verbatim from privacy.html. Astro bundles the imported CSS into the page's <head>.
 import BrandSymbol from "../components/BrandSymbol.astro";
+import SiteFooter from "../components/SiteFooter.astro";
 import ThemeProvider from "../components/ThemeProvider.astro";
 import "../style.css";
 import "../legal.css";
@@ -258,20 +259,6 @@ const site = Astro.site!.origin;
       </p>
     </main>
 
-    <footer class="site-footer">
-      <div class="wrap footer-row">
-        <a class="brand brand-sm" href="/">
-          <BrandSymbol />
-          relayrunner
-        </a>
-        <ul>
-          <li><a href="/docs">Docs</a></li>
-          <li><a href="https://github.com/relayrunner/relayrunner">GitHub</a></li>
-          <li><a href="https://github.com/apps/relayrunner">GitHub App</a></li>
-          <li><a href="/privacy" aria-current="page">Privacy</a></li>
-          <li><a href="/terms">Terms</a></li>
-        </ul>
-      </div>
-    </footer>
+    <SiteFooter />
   </body>
 </html>

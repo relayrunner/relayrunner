@@ -77,3 +77,8 @@ export function integration(id: IntegrationId): Integration {
 }
 
 export const INTEGRATIONS = INTEGRATION_IDS.map(integration);
+
+/** Where people suggest a provider we don't support yet: a GitHub issue, or email. */
+export const SUGGEST_ISSUE_URL =
+  "https://github.com/relayrunner/relayrunner/issues/new?title=Integration%20request%3A%20";
+export const SUGGEST_EMAIL = "mailto:feedback@relayrunner.app?subject=Integration%20request";

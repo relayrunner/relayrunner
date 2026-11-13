@@ -4,6 +4,14 @@
 
 Read [PRODUCT.md](PRODUCT.md) before starting work in this repository. Use it to guide product and implementation decisions.
 
+## Writing copy
+
+These rules apply to anything people read: the site, the docs, dashboard labels, CLI output, emails, and MCP tool descriptions.
+
+- Avoid mannered prose. That means no clipped two-fragment headlines ("Fallbacks first. No surprises."), no "X, not Y" or "No A, no B" cadences, no cute turns of phrase, and no repeated catchphrases. A headline says what the reader can do, and the body explains how it works in full sentences.
+- Use active voice with a real subject, such as "you", "the job", "the dashboard", or "GitHub". Don't make the product name the subject of a body sentence ("RelayRunner runs…").
+- Be clear before you are complete. Leave out caveats, edge cases, and internal detail that don't change what the reader does.
+
 ## Commits and pull requests
 
 Use [Conventional Commits](https://www.conventionalcommits.org/) for every commit message and every pull request title. This applies to each commit you make, not only the squash-merge title, and to cloud agents as much as local ones.
