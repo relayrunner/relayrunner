@@ -23,6 +23,9 @@ export interface WorkflowJob {
   completedAt?: string | null;
   // The runner's group once one took the job. GitHub-hosted runners report "GitHub Actions".
   runnerGroupName?: string | null;
+  // Whether any of the job's own steps started, past GitHub's "Set up job". False when the job
+  // ended in setup (its runner never got going); null when GitHub sent no steps.
+  ranSteps?: boolean | null;
 }
 
 // A workflow run (one attempt), for the Runs page: what started it and how it ended. Every action
@@ -194,6 +197,7 @@ export function toWebhookMessage(
           createdAt: String(job.created_at ?? ""),
           startedAt: stringOrNull(job.started_at),
           completedAt: stringOrNull(job.completed_at),
+          ranSteps: ranSteps(job.steps),
         },
       };
     }
@@ -363,4 +367,22 @@ function isRecord(value: unknown): value is Record<string, any> {
 function githubActor(value: unknown): { id: number | null; login: string } | null {
   if (!isRecord(value) || typeof value.login !== "string" || !value.login) return null;
   return { id: typeof value.id === "number" ? value.id : null, login: value.login };
+}
+
+// The steps GitHub adds to every job around its own: setting up the runner and tearing it down.
+const RUNNER_STEPS = new Set(["Set up job", "Complete job"]);
+
+/**
+ * Whether a job's own steps started: one besides GitHub's setup and teardown has a start time and
+ * wasn't skipped. Null without steps.
+ */
+export function ranSteps(steps: unknown): boolean | null {
+  if (!Array.isArray(steps) || steps.length === 0) return null;
+  return steps.some(
+    (step) =>
+      isRecord(step) &&
+      !RUNNER_STEPS.has(String(step.name)) &&
+      typeof step.started_at === "string" &&
+      step.conclusion !== "skipped",
+  );
 }

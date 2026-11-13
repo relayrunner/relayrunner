@@ -4,6 +4,7 @@ import { RotateCwIcon, TriangleAlert } from "lucide-react";
 import { useEffect, useState } from "react";
 import { SectionBoundary } from "@/components/error-boundary";
 import { PageHeader } from "@/components/page-header";
+import { RetrySettingsCard } from "@/components/retry-settings";
 import { RunnerOrderEditor } from "@/components/runner-order-editor";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -90,6 +91,9 @@ function RouterPage() {
         </SectionBoundary>
         <SectionBoundary>
           <SkipUnhealthyToggle health={health} editable={editable} />
+        </SectionBoundary>
+        <SectionBoundary>
+          <RetrySettingsCard workspaceId={current.workspace.id} editable={editable} />
         </SectionBoundary>
       </div>
     </section>

@@ -52,19 +52,32 @@ describe("parseRepoConfig", () => {
       path: "relayrunner.yml",
       prTitle: { types: [] },
       lint: null,
+      retry: null,
     });
     expect(parseRepoConfig("p", "")).toEqual({
       kind: "config",
       path: "p",
       prTitle: null,
       lint: null,
+      retry: null,
     });
     expect(parseRepoConfig("p", "checks:\n  pr-title:\n    types: feat, fix\n")).toEqual({
       kind: "config",
       path: "p",
       prTitle: { types: ["feat", "fix"] },
       lint: null,
+      retry: null,
     });
+  });
+
+  test("reads retry as on, off, or with settings", () => {
+    expect(parseRepoConfig("p", "retry: true\n")).toMatchObject({ retry: {} });
+    expect(parseRepoConfig("p", "retry: false\n")).toMatchObject({ retry: false });
+    expect(parseRepoConfig("p", "retry:\n  runner: other\n  max: 2\n")).toMatchObject({
+      retry: { runner: "other", max: 2 },
+    });
+    expect(parseRepoConfig("p", "retry:\n  max: 3\n").kind).toBe("invalid");
+    expect(parseRepoConfig("p", "retry:\n  runners: other\n").kind).toBe("invalid");
   });
 
   test("reports YAML and schema errors", () => {

@@ -5,6 +5,7 @@
 import type { MachineSharing } from "@relayrunner/activity";
 import type { JobUsage } from "@relayrunner/machine-protocol";
 import type { HostedProviderId } from "@relayrunner/providers";
+import type { RetryRunner } from "@relayrunner/runner-order";
 import { sql } from "drizzle-orm";
 import {
   type AnySQLiteColumn,
@@ -119,6 +120,9 @@ export const workspace = sqliteTable("workspace", {
   metadata: text("metadata"),
   // JSON RunnerOrder (@relayrunner/runner-order). Null means the default order.
   runnerOrder: text("runner_order"),
+  // JSON RetrySettings (@relayrunner/runner-order): automatic retries of jobs whose runner failed
+  // (src/retries.ts). Null means off.
+  retrySettings: text("retry_settings"),
   // Whether the Router skips a hosted runner type that stopped picking up jobs
   // (src/provider-health.ts). On unless someone turns it off on the Router page.
   skipUnhealthyRunners: integer("skip_unhealthy_runners", { mode: "boolean" })
@@ -401,6 +405,9 @@ export const workflowJob = sqliteTable(
     githubCreatedAt: integer("github_created_at", { mode: "timestamp_ms" }).notNull(),
     startedAt: integer("started_at", { mode: "timestamp_ms" }),
     completedAt: integer("completed_at", { mode: "timestamp_ms" }),
+    // Whether any of the job's own steps started (WorkflowJob.ranSteps). False: it ended in
+    // GitHub's runner setup. Null when GitHub sent no steps.
+    ranSteps: integer("ran_steps", { mode: "boolean" }),
     ...timestamps,
   },
   (table) => [
@@ -563,6 +570,49 @@ export const workflowRun = sqliteTable(
     index("workflow_run_installation_idx").on(table.installationId, table.githubUpdatedAt),
     // The retention purge, across all installations.
     index("workflow_run_updated_idx").on(table.githubUpdatedAt),
+  ],
+);
+
+// An automatic retry (src/retries.ts): RelayRunner re-ran the relay of a run attempt whose routed
+// job its runner failed, so the next attempt picks again. One row per retried attempt, written
+// before the re-run is asked for, so a redelivered webhook can never retry twice. The next
+// attempt's pick reads it to place the retry and keep the original attempt's starter.
+export const jobRetry = sqliteTable(
+  "job_retry",
+  {
+    id: integer("id").primaryKey({ autoIncrement: true }),
+    workspaceId: text("workspace_id")
+      .notNull()
+      .references(() => workspace.id, { onDelete: "cascade" }),
+    repositoryId: integer("repository_id").notNull(),
+    runId: integer("run_id").notNull(),
+    // The attempt that failed. The retry is the next one.
+    runAttempt: integer("run_attempt").notNull(),
+    // The job that failed and the relay that was re-run.
+    jobId: integer("job_id").notNull(),
+    relayJobId: integer("relay_job_id").notNull(),
+    // A RetryKind (@relayrunner/activity).
+    kind: text("kind").notNull(),
+    // Where the retry goes (RetryRunner).
+    runner: text("runner").$type<RetryRunner>().notNull(),
+    // Where the job failed: the runner order step, and the machine when it ran on one.
+    failedStep: text("failed_step"),
+    failedMachineId: text("failed_machine_id"),
+    // Who started the failed attempt (github.triggering_actor). GitHub credits the re-run to the
+    // App, so the retry's pick uses this instead.
+    triggeredById: integer("triggered_by_id"),
+    triggeredByLogin: text("triggered_by_login"),
+    // 'requested' once GitHub took the re-run, 'failed' when it refused (with `error`).
+    status: text("status", { enum: ["pending", "requested", "failed"] }).notNull(),
+    error: text("error"),
+    createdAt: integer("created_at", { mode: "timestamp_ms" })
+      .notNull()
+      .$defaultFn(() => new Date()),
+  },
+  (table) => [
+    uniqueIndex("job_retry_attempt_idx").on(table.repositoryId, table.runId, table.runAttempt),
+    // The daily cap: one workspace's retries over the last day.
+    index("job_retry_workspace_idx").on(table.workspaceId, table.createdAt),
   ],
 );
 

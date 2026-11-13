@@ -91,6 +91,8 @@ checks:
 
 Suggest only linters the repo already uses or would pass. Docs: https://relayrunner.app/docs/reference/repo-config.md
 
+The same file's `retry: true` (or `false`) turns automatic retries on or off for the repo: the Router re-runs a job whose runner failed it, never one whose own steps failed. Docs: https://relayrunner.app/docs/concepts/routing.md#automatic-retries
+
 ## When something's wrong
 
 Fetch https://relayrunner.app/docs/reference/troubleshooting.md and match the error. For why one job ran where it did, use `relayrunner-ci-insights` or the job's **Show why** on the dashboard's Activity page. On a Mac, `~/.relayrunner/isolated.log` has VM details with no job output or credentials.

@@ -365,6 +365,13 @@
       "when": 1794584742726,
       "tag": "20261113154542_workspace_skip_unhealthy_runners",
       "breakpoints": true
+    },
+    {
+      "idx": 52,
+      "version": "6",
+      "when": 1794591170628,
+      "tag": "20261113173250_job_retries",
+      "breakpoints": true
     }
   ]
 }

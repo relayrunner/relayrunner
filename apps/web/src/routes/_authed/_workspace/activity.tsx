@@ -14,6 +14,7 @@ import {
   Play,
   Plug,
   Plus,
+  RotateCw,
   Unplug,
   UserCheck,
   UserMinus,
@@ -418,6 +419,8 @@ function Log({
               <UnroutableRow key={item.id} item={item} now={now} />
             ) : item.type === "check.completed" ? (
               <CheckRow key={item.id} item={item} now={now} />
+            ) : item.type === "job.retried" ? (
+              <RetryRow key={item.id} item={item} now={now} />
             ) : (
               <EventRow key={item.id} item={item} now={now} />
             ),
@@ -479,6 +482,8 @@ function sentence(item: ActivityItem) {
       return "routed a job";
     case "job.unroutable":
       return "couldn't route a job";
+    case "job.retried":
+      return "retried a job";
     case "check.completed":
       return item.data.conclusion === "success" ? "passed" : "failed";
     case "minutes.overage":
@@ -518,6 +523,7 @@ const EVENT_ICONS = {
   "member.removed": UserMinus,
   "job.routed": Laptop,
   "job.unroutable": Ban,
+  "job.retried": RotateCw,
   "check.completed": CircleCheck,
   "member.joined": UserCheck,
   "minutes.overage": TriangleAlert,
@@ -1038,6 +1044,52 @@ function UnroutableRow({
             <StartedBy starters={item.starters} />
           </span>
         )}
+      </span>
+    </Row>
+  );
+}
+
+const RETRY_REASONS = {
+  runner_start: () => "its runner never started it",
+  machine_lost: (on: string | null) => `${on ?? "its machine"} went offline`,
+  runner_lost: () => "GitHub lost touch with its runner",
+} as const;
+
+const RETRY_RUNNERS = { any: "", same: " on the same runner", other: " on a different runner" };
+
+// A job the Router re-ran because its runner failed it: "RelayRunner dev / test was retried
+// because atticus-mbp went offline · repo".
+function RetryRow({
+  item,
+  now,
+}: {
+  item: Extract<ActivityItem, { type: "job.retried" }>;
+  now: number;
+}) {
+  const { data } = item;
+  return (
+    <Row
+      icon={<RotateCw aria-hidden className={`${ICON} text-muted-foreground`} />}
+      at={item.occurredAt}
+      now={now}
+    >
+      <a
+        href={`https://github.com/${data.repository}/actions/runs/${data.runId}`}
+        target="_blank"
+        rel="noreferrer"
+        className="text-muted-foreground hover:text-foreground hover:underline"
+        title="Open the run on GitHub"
+      >
+        {data.workflow ?? "Workflow"}
+      </a>
+      <span className="text-muted-foreground"> / </span>
+      <span className="font-medium">{data.job}</span>{" "}
+      <span className="text-muted-foreground">
+        was retried{RETRY_RUNNERS[data.runner]} because {RETRY_REASONS[data.kind](data.failedOn)}
+      </span>
+      <span className="text-xs text-muted-foreground">
+        {" · "}
+        <span className="font-mono">{data.repository}</span>
       </span>
     </Row>
   );

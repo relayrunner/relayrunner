@@ -23,6 +23,7 @@ import {
   type LabelHealth,
 } from "../provider-health.ts";
 import { earlierPick, jobKey } from "../route-decisions.ts";
+import type { RetryPick } from "../retries.ts";
 import { errorMessage } from "../webhook-queue.ts";
 import {
   fetchGroupAccess,
@@ -38,6 +39,7 @@ import {
   chooseMachine,
   decideRoute,
   fullMachines,
+  retryOrder,
   heldSlots,
   isolatedLabels,
   machineLabels,
@@ -71,6 +73,9 @@ export interface PickedJob extends JobStarters, RelayInputs {
   private: boolean;
   // startedBy and triggeredBy (JobStarters): who started the run and this attempt. A machine
   // that's `only_me` takes the job only when both are its owner.
+  // Set when this attempt is an automatic retry (src/retries.ts): where the job failed and where
+  // the retry should go.
+  retry?: RetryPick | null;
 }
 
 const ROUTE_KEY = "route:";
@@ -186,7 +191,7 @@ export class Router extends DurableObject<Env> {
       .where(eq(schema.workspace.id, job.workspaceId))
       .limit(1);
     return decideRoute(
-      readRunnerOrder(workspace?.runnerOrder),
+      retryOrder(readRunnerOrder(workspace?.runnerOrder), job.retry),
       job,
       () => this.pickMachine(job),
       // The job's own account: each GitHub account has its own quota, never pooled (#117).
@@ -397,8 +402,14 @@ export class Router extends DurableObject<Env> {
       const held = heldSlots(routes, now);
       const picked = lastPicked(routes);
       const routeId = rerun?.routeId ?? newRouteId();
-      // A re-run tries the machine it ran on first, then any other that fits.
-      const preferred = candidates.filter((c) => c.id === prior?.machineId);
+      // A re-run tries the machine it ran on first, then any other that fits. So does a retry,
+      // unless it's meant for another runner: then the machine it failed on goes last.
+      const failedOn = job.retry?.failedMachineId;
+      const avoid = job.retry?.runner === "other" ? failedOn : undefined;
+      const preferredId = prior?.machineId ?? (avoid ? undefined : failedOn);
+      const preferred = candidates.filter((c) => c.id === preferredId);
+      const others = candidates.filter((c) => c.id !== avoid);
+      const avoided = candidates.filter((c) => c.id === avoid);
       const choose = (from: Candidate[], taken: HeldSlots) =>
         chooseMachine(from, taken, picked, job.machine, job);
       // This Router's held routes count against each machine's slots, and a machine whose
@@ -413,7 +424,11 @@ export class Router extends DurableObject<Env> {
       const machine = await chooseAndHold(
         (taken) => {
           refused = taken;
-          return choose(preferred, withTaken(taken)) ?? choose(candidates, withTaken(taken));
+          return (
+            choose(preferred, withTaken(taken)) ??
+            choose(others, withTaken(taken)) ??
+            choose(avoided, withTaken(taken))
+          );
         },
         async (candidate) =>
           routingLabels.get(candidate.id) !== undefined ||

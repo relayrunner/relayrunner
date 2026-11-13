@@ -69,7 +69,7 @@ The job that needs the relay doesn't start. Re-run it once a machine is back, or
 
 ## When a machine goes away mid-job
 
-Routing happens before a job starts. If you stop `relayrunner connect` or the machine sleeps while a job is running, that job fails, the same as on any self-hosted runner. See [Re-running a job](#re-running-a-job).
+Routing happens before a job starts. If you stop `relayrunner connect` or the machine sleeps while a job is running, that job fails, the same as on any self-hosted runner. Turn on [automatic retries](#automatic-retries) to have the Router re-run it, or see [Re-running a job](#re-running-a-job).
 
 To take a machine out of rotation without cutting off a running job, [pause it](/docs/runners/self-hosted#pause) first.
 
@@ -87,6 +87,23 @@ To take a machine out of rotation without cutting off a running job, [pause it](
 | A hosted provider          | The same provider, with the same label                                |
 
 To move a failed job to a different provider, use **Re-run all jobs**.
+
+## Automatic retries
+
+The Router can re-run a job that failed because of its runner rather than its own steps. A job counts when:
+
+- Its runner never started its steps.
+- The connected machine running it went offline.
+- GitHub lost touch with its runner.
+
+A job whose own steps failed is never retried. GitHub only re-runs jobs once the whole run has finished, so the retry starts then. The Router re-runs the relay with it, so the retry routes again.
+
+Turn this on with **Retry jobs when their runner fails** on the Router page. Owners and admins can choose:
+
+- **Send the retry to**: any runner, the same runner first, or a different runner first. When nothing else can take a retry meant for a different runner, it goes back to the one it failed on.
+- **Retries per run**: 1 or 2.
+
+A repo can turn retries on or off for itself with [`retry`](/docs/reference/repo-config#retry) in its `relayrunner.yml`. Each retry shows on the Activity page with the reason. Runs with more than one relay aren't retried yet.
 
 ## When RelayRunner can't answer
 

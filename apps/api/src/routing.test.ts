@@ -9,6 +9,7 @@ import {
   chooseAndHold,
   chooseMachine,
   decideRoute,
+  retryOrder,
   holdsMachine,
   jobContext,
   hasLabels,
@@ -1276,5 +1277,30 @@ describe("one machine in two workspaces", () => {
       pick("w2", "r2", [busy], links),
     ]);
     expect([a, b].filter(Boolean)).toHaveLength(1);
+  });
+});
+
+describe("retryOrder", () => {
+  const order: RunnerOrder = {
+    steps: [{ key: "machine" }, { key: "github" }, { key: "depot" }],
+  };
+  const keys = (o: RunnerOrder) => o.steps.map((step) => step.key);
+
+  test("same tries the failed step first, other tries it last", () => {
+    expect(keys(retryOrder(order, { runner: "same", failedStep: "github" }))).toEqual([
+      "github",
+      "machine",
+      "depot",
+    ]);
+    expect(keys(retryOrder(order, { runner: "other", failedStep: "machine" }))).toEqual([
+      "github",
+      "depot",
+      "machine",
+    ]);
+  });
+
+  test("any, or no retry, keeps the order", () => {
+    expect(retryOrder(order, { runner: "any", failedStep: "github" })).toBe(order);
+    expect(retryOrder(order, null)).toBe(order);
   });
 });

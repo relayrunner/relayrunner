@@ -8,10 +8,12 @@
 //   checks:
 //     pr-title: true            # or { types: [feat, fix, docs] } to narrow the allowed types
 //     lint: [oxlint, oxfmt]     # or { tools: [oxlint], paths: ["apps/**"] } to scope it
+//   retry: true                 # or { runner: other, max: 2 }, or false to turn it off here
 
 import { parse } from "yaml";
 import { z } from "zod";
 import { LINT_TOOLS, type LintTool } from "@relayrunner/lint-runner/protocol";
+import { retrySettingsSchema, type RetrySettings } from "@relayrunner/runner-order";
 import { repoFile } from "./github-app.ts";
 
 // The first one found wins.
@@ -43,6 +45,9 @@ const schema = z
       })
       .strict()
       .optional(),
+    retry: z
+      .union([z.boolean(), retrySettingsSchema.omit({ enabled: true }).partial().strict()])
+      .optional(),
   })
   .strict()
   .nullable();
@@ -53,7 +58,8 @@ export interface LintConfig {
   paths: string[];
 }
 
-// `prTitle` and `lint` are null when that check is off.
+// `prTitle` and `lint` are null when that check is off. `retry` is null when the file leaves it to
+// the workspace, false when it turns retries off for the repo, and the settings it sets otherwise.
 export type ConfigResult =
   | { kind: "none" }
   | {
@@ -61,6 +67,7 @@ export type ConfigResult =
       path: string;
       prTitle: { types: string[] } | null;
       lint: LintConfig | null;
+      retry: Partial<RetrySettings> | false | null;
     }
   | { kind: "invalid"; path: string; error: string };
 
@@ -83,6 +90,7 @@ export function parseRepoConfig(path: string, text: string): ConfigResult {
     };
   const prTitle = result.data?.checks?.["pr-title"];
   const lint = result.data?.checks?.lint;
+  const retry = result.data?.retry;
   return {
     kind: "config",
     path,
@@ -92,6 +100,7 @@ export function parseRepoConfig(path: string, text: string): ConfigResult {
       : Array.isArray(lint)
         ? { tools: dedupe(lint), paths: [] }
         : { tools: dedupe(lint.tools), paths: lint.paths ?? [] },
+    retry: retry === true ? {} : (retry ?? null),
   };
 }
 

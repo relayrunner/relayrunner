@@ -16,6 +16,7 @@ import {
   RUNNER_KEYS,
   RUNNER_LABELS,
   type RelayInputs,
+  type RetryRunner,
   type RunnerKey,
   type RunnerOrder,
 } from "@relayrunner/runner-order";
@@ -558,6 +559,20 @@ export type RouteDecision =
 
 export interface RouteRequest extends RelayInputs {
   private: boolean;
+}
+
+/**
+ * The runner order a retry walks: `same` tries the step the job failed on first, `other` tries it
+ * last, and `any` keeps the workspace's order.
+ */
+export function retryOrder(
+  order: RunnerOrder,
+  retry: { runner: RetryRunner; failedStep: string | null } | null | undefined,
+): RunnerOrder {
+  if (!retry?.failedStep || retry.runner === "any") return order;
+  const failed = order.steps.filter((step) => step.key === retry.failedStep);
+  const rest = order.steps.filter((step) => step.key !== retry.failedStep);
+  return { ...order, steps: retry.runner === "same" ? [...failed, ...rest] : [...rest, ...failed] };
 }
 
 /**

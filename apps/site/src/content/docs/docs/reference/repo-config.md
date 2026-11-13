@@ -1,6 +1,6 @@
 ---
 title: Repo config
-description: The relayrunner.yml file, which turns on checks for a repo.
+description: The relayrunner.yml file, which sets a repo's checks and retries.
 ---
 
 `relayrunner.yml` turns on [optimized checks](/docs/concepts/optimized-checks) for every pull request in a repo, with no workflow. Put it at `.github/relayrunner.yml` or the repo root.
@@ -37,6 +37,16 @@ checks:
 ```
 
 Each tool gets a `Lint / <tool>` check run. Lint needs the RelayRunner Checks GitHub App and is in preview.
+
+## `retry`
+
+Turns [automatic retries](/docs/concepts/routing#automatic-retries) on or off for the repo, whatever the workspace sets. `true` uses the workspace's choices, `false` turns retries off here, and you can set either choice:
+
+```yaml
+retry:
+  runner: other # any, same or other
+  max: 2 # retries per run, 1 or 2
+```
 
 ## Mistakes
 

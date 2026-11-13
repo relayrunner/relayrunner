@@ -230,6 +230,31 @@ export async function runAttemptTriggeringActor(
     : null;
 }
 
+/**
+ * Re-runs a job and the jobs that need it, in a new attempt of its run (Actions write). GitHub
+ * refuses with 403 while any job of the run is still going. Returns null when GitHub took it, else
+ * GitHub's message.
+ */
+export async function rerunJob(token: string, repo: string, jobId: number): Promise<string | null> {
+  const path = `/repos/${repo}/actions/jobs/${jobId}/rerun`;
+  const response = await fetch(`${API}${path}`, { method: "POST", headers: headers(token) });
+  if (response.ok) return null;
+  const body = (await response.json().catch(() => null)) as { message?: unknown } | null;
+  return typeof body?.message === "string"
+    ? `${response.status}: ${body.message}`
+    : `POST ${path} failed with ${response.status}`;
+}
+
+/** The messages of a job's annotations, where GitHub says a runner was lost (Checks read). */
+export async function jobAnnotations(token: string, repo: string, jobId: number) {
+  // A job's check run shares its id.
+  const annotations = await getJson<{ message?: unknown }[]>(
+    token,
+    `/repos/${repo}/check-runs/${jobId}/annotations`,
+  );
+  return annotations.flatMap((a) => (typeof a.message === "string" ? [a.message] : []));
+}
+
 /** Whether a runner is busy with a job, or null once it's removed (404). */
 export async function runnerBusy(token: string, scope: RunnerScope, runnerId: number) {
   const path = `${runnersPath(scope)}/${runnerId}`;

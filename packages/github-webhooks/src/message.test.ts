@@ -1,5 +1,5 @@
 import { describe, expect, test } from "vitest";
-import { toWebhookMessage } from "./message.ts";
+import { ranSteps, toWebhookMessage } from "./message.ts";
 
 describe("toWebhookMessage", () => {
   test("returns null for events RelayRunner ignores or payloads missing what it needs", () => {
@@ -230,5 +230,27 @@ describe("toWebhookMessage", () => {
     test("drops completed suites", () => {
       expect(toWebhookMessage("check_suite", "d", payload("completed"))).toBeNull();
     });
+  });
+});
+
+describe("ranSteps", () => {
+  const step = (name: string, conclusion = "success") => ({
+    name,
+    conclusion,
+    started_at: "2026-11-13T17:00:00Z",
+  });
+
+  test("is false when only the runner's own steps started", () => {
+    expect(ranSteps([step("Set up job", "failure"), step("Run tests", "skipped")])).toBe(false);
+    expect(ranSteps([step("Set up job", "failure"), step("Complete job")])).toBe(false);
+  });
+
+  test("is true once a step of the job's own started", () => {
+    expect(ranSteps([step("Set up job"), step("Run tests", "failure")])).toBe(true);
+  });
+
+  test("is null without steps", () => {
+    expect(ranSteps(undefined)).toBeNull();
+    expect(ranSteps([])).toBeNull();
   });
 });
