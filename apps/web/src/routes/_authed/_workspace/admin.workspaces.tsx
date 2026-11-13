@@ -1,4 +1,5 @@
 import { createFileRoute } from "@tanstack/react-router";
+import { Count } from "@/components/count";
 import { EllipsisIcon, Trash2Icon } from "lucide-react";
 import { useMemo, useState } from "react";
 import { AdminDeleteDialog } from "@/components/admin-delete-dialog";
@@ -166,7 +167,7 @@ const columns = column.columns([
     sortFn: "basic",
     sortDescFirst: true,
     meta: { ...NUM, className: `${NUM.className} py-3 align-top` },
-    cell: ({ getValue }) => getValue().toLocaleString(),
+    cell: ({ getValue }) => <Count value={getValue()} />,
   }),
   column.accessor((w) => (w.jobs7d ? w.machineJobs7d / w.jobs7d : -1), {
     id: "onMachine",

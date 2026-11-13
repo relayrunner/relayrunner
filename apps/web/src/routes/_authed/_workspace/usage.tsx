@@ -4,7 +4,9 @@ import { SectionBoundary } from "@/components/error-boundary";
 import { PageHeader } from "@/components/page-header";
 import { RangePicker } from "@/components/range-picker";
 import { StatTile } from "@/components/stat-tile";
+import { Count } from "@/components/count";
 import { authDisabled } from "@/lib/auth-client";
+import { count } from "@/lib/utils";
 import {
   type FreeCheckSavings,
   getCheckSavings,
@@ -75,8 +77,8 @@ function UsagePage() {
             <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
               <StatTile
                 label={`Jobs under ${report.shortJobSeconds}s`}
-                value={totals.shortJobs.toLocaleString()}
-                detail={`${shortShare}% of ${totals.jobs.toLocaleString()} jobs`}
+                value={<Count value={totals.shortJobs} />}
+                detail={`${shortShare}% of ${count(totals.jobs)} jobs`}
               />
               <StatTile
                 label="Spent on short jobs"
@@ -100,8 +102,8 @@ function UsagePage() {
                     {row.perMinute ? `${money(row.perMinute)}/min` : "free"}
                   </span>
                 </span>,
-                row.jobs.toLocaleString(),
-                row.shortJobs.toLocaleString(),
+                <Count key="jobs" value={row.jobs} />,
+                <Count key="shortJobs" value={row.shortJobs} />,
                 minutes(row.billedMinutes),
                 money(row.shortCost),
                 money(row.cost),
@@ -113,8 +115,8 @@ function UsagePage() {
               head={["Repository", "Jobs", "Under a minute", "Short-job cost"]}
               rows={report.byRepository.map((repo) => [
                 <RepoName key="repo" repository={repo.repository} isPrivate={repo.private} />,
-                repo.jobs.toLocaleString(),
-                repo.shortJobs.toLocaleString(),
+                <Count key="jobs" value={repo.jobs} />,
+                <Count key="shortJobs" value={repo.shortJobs} />,
                 money(repo.shortCost),
               ])}
             />
@@ -142,7 +144,7 @@ function FreeChecks({ savings }: { savings: FreeCheckSavings }) {
       <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
         <StatTile
           label="Checks run"
-          value={savings.checks.toLocaleString()}
+          value={<Count value={savings.checks} />}
           detail="PR title and lint, no Actions runner"
         />
         <StatTile
@@ -162,7 +164,7 @@ function FreeChecks({ savings }: { savings: FreeCheckSavings }) {
           head={["Check", "Runs", "Saved"]}
           rows={savings.byCheck.map((kind) => [
             kind.check,
-            kind.checks.toLocaleString(),
+            <Count key="checks" value={kind.checks} />,
             money(kind.savedCost),
           ])}
         />
@@ -173,7 +175,7 @@ function FreeChecks({ savings }: { savings: FreeCheckSavings }) {
           head={["Repository", "Runs", "Saved"]}
           rows={savings.byRepository.map((repo) => [
             <RepoName key="repo" repository={repo.repository} isPrivate={repo.private} />,
-            repo.checks.toLocaleString(),
+            <Count key="checks" value={repo.checks} />,
             money(repo.savedCost),
           ])}
         />

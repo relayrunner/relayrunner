@@ -1,5 +1,6 @@
 import type { RunnerSize } from "@relayrunner/providers";
 import { api } from "@/lib/api";
+import { count } from "@/lib/utils";
 
 /** How sure a time is: none (not run), few (under 5 runs), low (5 to 19), ok (20+). */
 export type Confidence = "none" | "few" | "low" | "ok";
@@ -109,8 +110,8 @@ export function clock(ms: number | null) {
 }
 
 /** "7 runs", "1 run". */
-export function plural(count: number, word: string) {
-  return `${count} ${count === 1 ? word : `${word}s`}`;
+export function plural(value: number, word: string) {
+  return `${count(value)} ${value === 1 ? word : `${word}s`}`;
 }
 
 /** The median, "~" in front when under 5 runs back it. */

@@ -1,4 +1,5 @@
 import { ChartColumnStackedIcon, ChartScatterIcon } from "lucide-react";
+import { Count } from "@/components/count";
 import { memo, type ReactNode, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { Button } from "@/components/ui/button";
 import { timeAgo } from "@/lib/activity";
@@ -6,7 +7,7 @@ import { DAY_MS, niceStep, plural } from "@/lib/job-times";
 import { type HistoryJob, isFailure, type JobUsage, type Run } from "@/lib/runs";
 import { readFlag, saveFlag } from "@/lib/stored-flag";
 import { formatMemory } from "@/lib/device";
-import { elapsed, percent } from "@/lib/utils";
+import { count, elapsed, percent } from "@/lib/utils";
 
 type Result = "success" | "failed" | "cancelled";
 
@@ -174,13 +175,15 @@ export const DurationChart = memo(function DurationChart({
             <li key={result} className="inline-flex items-center gap-1.5">
               <ResultMark result={result} />
               {RESULT[result].label}
-              <span className="font-medium text-foreground tabular-nums">{counts[result]}</span>
+              <span className="font-medium text-foreground tabular-nums">
+                <Count value={counts[result]} />
+              </span>
             </li>
           ))}
         </ul>
         {!bars && metric !== "duration" && (
           <p>
-            {sampled.length} of {plural(points.length, noun)}, from connected machines
+            {count(sampled.length)} of {plural(points.length, noun)}, from connected machines
           </p>
         )}
       </div>
