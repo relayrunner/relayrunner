@@ -1,5 +1,5 @@
 import type { InstallationRepo } from "@relayrunner/github-webhooks";
-import { and, eq, lte, sql } from "drizzle-orm";
+import { and, eq, isNull, lte, sql } from "drizzle-orm";
 import { type Db, schema } from "./db/index.ts";
 import { findInstallation } from "./installations.ts";
 
@@ -94,4 +94,20 @@ export async function recordRepositoryEvent(
       return removeRepositories(db, installationId, [repo], observedAt);
   }
   await upsertRepositories(db, installationId, [repo], observedAt);
+}
+
+/** A repo the installation can still see, by owner/name in any case, or undefined. */
+export async function findRepo(db: Db, installationId: number, fullName: string) {
+  const [repo] = await db
+    .select({ id: schema.githubRepository.id, private: schema.githubRepository.private })
+    .from(schema.githubRepository)
+    .where(
+      and(
+        eq(schema.githubRepository.installationId, installationId),
+        sql`lower(${schema.githubRepository.fullName}) = ${fullName.toLowerCase()}`,
+        isNull(schema.githubRepository.removedAt),
+      ),
+    )
+    .limit(1);
+  return repo;
 }

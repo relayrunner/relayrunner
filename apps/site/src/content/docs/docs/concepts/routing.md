@@ -59,7 +59,12 @@ The job that needs the relay doesn't start. Re-run it once a machine is back, or
 
 ## When a machine goes away mid-job
 
-Routing happens before a job starts. If you stop `relayrunner connect` or the machine sleeps while a job is running, that job fails, the same as on any self-hosted runner. Re-run it and it routes again.
+Routing happens before a job starts. If you stop `relayrunner connect` or the machine sleeps while a job is running, that job fails, the same as on any self-hosted runner.
+
+To run it again:
+
+- **Re-run failed jobs** sends it back to the same machine once it's online, or to another machine that fits. It stays on machines, because the relay doesn't run again.
+- **Re-run all jobs** runs the relay again, so the job can go anywhere in your runner order, such as GitHub-hosted.
 
 To take a machine out of rotation without cutting off a running job, [pause it](/docs/runners/self-hosted#pause) first.
 

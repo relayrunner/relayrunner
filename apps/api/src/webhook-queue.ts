@@ -307,16 +307,28 @@ async function dispatchRoute(
     repositoryId: message.repository.id,
     runId: message.job.runId,
   };
+  if (!workspaceId) {
+    console.warn(JSON.stringify({ ...log, result: "no_route" }));
+    return;
+  }
+  const router = env.ROUTER.getByName(workspaceId);
   if (message.action !== "queued") {
-    const machineId = workspaceId
-      ? await env.ROUTER.getByName(workspaceId).machineFor(routeId, job)
-      : null;
+    const machineId = await router.machineFor(routeId, job);
     if (machineId) await setJobMachine(db, message.job.id, machineId);
     console.log(JSON.stringify(log));
     return;
   }
-  const route = workspaceId ? await env.ROUTER.getByName(workspaceId).claim(routeId, job) : null;
-  if (!workspaceId || !route) {
+  // A re-run of failed jobs comes back on the earlier attempt's label: the Router routes it again.
+  const route =
+    (await router.claim(routeId, job)) ??
+    (await router.reroute(routeId, {
+      ...job,
+      runAttempt: message.job.runAttempt,
+      workspaceId,
+      installationId: message.installationId,
+      repo: message.repository.fullName,
+    }));
+  if (!route) {
     console.warn(JSON.stringify({ ...log, result: "no_route" }));
     return;
   }

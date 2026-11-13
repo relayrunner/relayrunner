@@ -1,7 +1,7 @@
 import { type GithubActor, RouteWalk } from "@relayrunner/activity";
 import { HOSTED_PROVIDER_IDS } from "@relayrunner/providers";
 import { relayInputs } from "@relayrunner/runner-order";
-import { and, inArray } from "drizzle-orm";
+import { and, desc, eq, inArray, lt } from "drizzle-orm";
 import { recordEvent } from "./activity.ts";
 import { type Db, schema } from "./db/index.ts";
 import type { JobContext, RouteDecision } from "./routing.ts";
@@ -153,3 +153,40 @@ export function actor(id: number | null, login: string | null): GithubActor | nu
 }
 
 export const jobKey = (job: JobKey) => `${job.repositoryId}:${job.runId}:${job.runAttempt}`;
+
+/**
+ * The pick that answered `label` for a job's repo and run in an earlier attempt, or null when no
+ * pick of that run did (the label was copied by hand, or from another run). "Re-run failed jobs"
+ * doesn't re-run the relay, so a re-run job comes back on that earlier pick's label.
+ */
+export async function earlierPick(db: Db, job: JobKey & { label: string }) {
+  const [row] = await db
+    .select({
+      runAttempt: table.runAttempt,
+      machine: table.machine,
+      github: table.github,
+      hosted: table.hosted,
+      startedById: table.startedById,
+      startedByLogin: table.startedByLogin,
+      triggeredById: table.triggeredById,
+      triggeredByLogin: table.triggeredByLogin,
+    })
+    .from(table)
+    .where(
+      and(
+        eq(table.repositoryId, job.repositoryId),
+        eq(table.runId, job.runId),
+        lt(table.runAttempt, job.runAttempt),
+        eq(table.runner, job.label),
+      ),
+    )
+    .orderBy(desc(table.runAttempt))
+    .limit(1);
+  if (!row) return null;
+  return {
+    runAttempt: row.runAttempt,
+    inputs: relayInputs({ machine: row.machine, github: row.github, ...row.hosted }),
+    startedBy: actor(row.startedById, row.startedByLogin),
+    triggeredBy: actor(row.triggeredById, row.triggeredByLogin),
+  };
+}

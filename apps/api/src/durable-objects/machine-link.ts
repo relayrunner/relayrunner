@@ -41,6 +41,8 @@ export type RunResult = "sent" | "already_sent" | "offline" | "wrong_place";
 // over. Its presence stops a redelivered webhook from minting a second runner.
 interface SentRoute {
   workspaceId: string;
+  // The job it was sent for. A re-run routed again on the same route is another job.
+  jobId?: number;
   // Unset while the JIT config is being minted.
   sentAt?: number;
 }
@@ -215,18 +217,20 @@ export class MachineLink extends DurableObject<Env> {
   /**
    * Hands a claimed route's job to the machine: mints a one-job runner on the route's label, on
    * the job's own repo (src/machine-runner.ts), named after the machine, and sends it in a `run`
-   * message. Safe to call again for the same route (a redelivered webhook): only the first
-   * call mints. "offline" means the machine has no
+   * message. Safe to call again for the same route and job (a redelivered webhook): only the
+   * first call mints. A re-run routed again on the route is a new job, and is sent again.
+   * "offline" means the machine has no
    * live socket, and the job stays queued (offline recovery is #71).
    */
   async run(work: { route: Route; workspaceId: string }): Promise<RunResult> {
     const { route, workspaceId } = work;
     const key = SENT_KEY + route.id;
-    if (await this.ctx.storage.get(key)) return "already_sent";
+    const sent = await this.ctx.storage.get<SentRoute>(key);
+    if (sent && sent.jobId === route.jobId) return "already_sent";
     const socket = this.onlineSocket();
     if (!socket) return "offline";
     if (!placeOn(socket, route)) return "wrong_place";
-    await this.ctx.storage.put<SentRoute>(key, { workspaceId });
+    await this.ctx.storage.put<SentRoute>(key, { workspaceId, jobId: route.jobId });
 
     let jit;
     try {
@@ -257,7 +261,11 @@ export class MachineLink extends DurableObject<Env> {
         ...(place === "vm" ? { isolated: true } : {}),
       }),
     );
-    await this.ctx.storage.put<SentRoute>(key, { workspaceId, sentAt: Date.now() });
+    await this.ctx.storage.put<SentRoute>(key, {
+      workspaceId,
+      jobId: route.jobId,
+      sentAt: Date.now(),
+    });
     console.log(
       JSON.stringify({
         msg: "relayrunner run sent",

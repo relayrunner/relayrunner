@@ -13,12 +13,12 @@ import { routeLabel, type Route } from "./routing.ts";
  */
 export async function mintMachineRunner(
   token: string,
-  route: Pick<Route, "id" | "machineId" | "machineName" | "repo" | "installationId">,
+  route: Pick<Route, "id" | "machineId" | "machineName" | "repo" | "installationId" | "runAttempt">,
   fallbackScope: () => Promise<RunnerScope>,
   mint: typeof generateJitConfig = generateJitConfig,
 ) {
   const runner = {
-    name: machineRunnerName(route.machineName, route.id),
+    name: machineRunnerName(route.machineName, route.id, route.runAttempt),
     labels: [routeLabel(route.id)],
   };
   const { jit } = await mintRepoFirst(token, route.repo, runner, {

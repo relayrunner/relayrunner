@@ -39,7 +39,7 @@ That's what you want: the laptop when it's free, GitHub otherwise.
 - **While you work**, jobs you push run on the laptop. The `connect` terminal shows each one.
 - **When the laptop is busy** with as many jobs as it runs at once, the next one goes to GitHub, so a long test run never blocks a quick lint.
 - **When the lid closes** or you stop `connect`, jobs go to GitHub, with nothing to change.
-- **A job running at that moment** stops with the laptop. Re-run it and it goes to GitHub.
+- **A job running at that moment** stops with the laptop. Use **Re-run all jobs** to send it to GitHub, or **Re-run failed jobs** to run it on the laptop again once it's back.
 
 To keep the laptop free for a while, without going offline, press `p` in the `connect` terminal or run `relayrunner pause`.
 

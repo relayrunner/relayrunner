@@ -65,6 +65,9 @@ export interface Route {
   // `os` is unset for a runner added from GitHub and for routes older than it.
   os?: string;
   isolated?: boolean;
+  // Set when "Re-run failed jobs" routed the route again (Router.reroute): the attempt it was
+  // routed for. Unset means the attempt of the pick that made it.
+  runAttempt?: number;
 }
 
 export function newRouteId() {
@@ -421,6 +424,25 @@ export interface QueuedJob {
 export function canClaim(route: Route, job: QueuedJob) {
   if (route.repositoryId !== job.repositoryId || route.runId !== job.runId) return false;
   return route.jobId === undefined || route.jobId === job.jobId;
+}
+
+// A re-run job routed again on its old route (Router.reroute).
+export interface Rerun extends QueuedJob {
+  routeId: string;
+  // The re-run's attempt, and the earlier attempt whose pick made the route.
+  runAttempt: number;
+  pickedAttempt: number;
+}
+
+/**
+ * Whether a re-run may take a route again: one from its own repo and run that no job of this
+ * attempt or a later one holds. A route left from the pick itself counts as the pick's attempt.
+ */
+export function mayReroute(route: Route | undefined, rerun: Rerun) {
+  if (!route) return true;
+  if (route.repositoryId !== rerun.repositoryId || route.runId !== rerun.runId) return false;
+  if (route.routingLabel) return false;
+  return (route.runAttempt ?? rerun.pickedAttempt) < rerun.runAttempt;
 }
 
 // What the Router needs from a claimed job: its repo and run from the `github` context, and the
