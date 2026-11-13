@@ -1,5 +1,6 @@
 import { describe, expect, test } from "vitest";
 import worker from "./index.ts";
+import type { serverCard } from "./server-card.ts";
 import type { Env } from "./env.ts";
 
 const MCP_URL = "https://agents.relayrunner.app/mcp";
@@ -75,6 +76,30 @@ describe("mcp server", () => {
       resource: MCP_URL,
       authorization_servers: ["https://app.relayrunner.app/api/auth"],
     });
+  });
+
+  test("publishes a server card anyone can read, without signing in", async () => {
+    const { env, asked } = fakeEnv();
+    const response = await worker.fetch(new Request(`${MCP_URL}/server-card`), env);
+    expect(response.status).toBe(200);
+    expect(response.headers.get("content-type")).toBe("application/mcp-server-card+json");
+    expect(response.headers.get("access-control-allow-origin")).toBe("*");
+    const card = (await response.json()) as ReturnType<typeof serverCard>;
+    expect(card).toMatchObject({
+      $schema: "https://static.modelcontextprotocol.io/schemas/v1/server-card.schema.json",
+      name: "app.relayrunner/mcp",
+      remotes: [{ type: "streamable-http", url: MCP_URL }],
+    });
+    expect(card.description.length).toBeLessThanOrEqual(100);
+    expect(card.remotes[0].supportedProtocolVersions).toContain("2025-06-18");
+    expect(asked).toEqual([]);
+
+    const preflight = await worker.fetch(
+      new Request(`${MCP_URL}/server-card`, { method: "OPTIONS" }),
+      env,
+    );
+    expect(preflight.status).toBe(204);
+    expect(preflight.headers.get("access-control-allow-methods")).toBe("GET");
   });
 
   test("asks clients without a good token to sign in", async () => {

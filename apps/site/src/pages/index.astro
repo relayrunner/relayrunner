@@ -13,6 +13,34 @@ const site = Astro.site!.origin;
 const MORE_PROVIDERS = KNOWN_PROVIDERS.filter(
   (id) => !["blacksmith", "github", "cloudflare"].includes(id),
 );
+// Structured data for search engines and agents: the project and what it is. Keywords use terms
+// that appear on the page.
+const structuredData = {
+  "@context": "https://schema.org",
+  "@graph": [
+    {
+      "@type": "Organization",
+      "@id": `${site}/#organization`,
+      name: "RelayRunner",
+      url: `${site}/`,
+      logo: `${site}/favicon.png`,
+      sameAs: ["https://github.com/relayrunner", "https://www.npmjs.com/package/relayrunner"],
+    },
+    {
+      "@type": "SoftwareApplication",
+      name: "RelayRunner",
+      url: `${site}/`,
+      description:
+        "Send each GitHub Actions job to the first free runner in your order: your own machines, self-hosted runners, a hosted provider or GitHub-hosted.",
+      applicationCategory: "DeveloperApplication",
+      operatingSystem: "macOS, Linux",
+      keywords: "GitHub Actions, self-hosted runners, CI runner",
+      license: "https://www.apache.org/licenses/LICENSE-2.0",
+      softwareHelp: `${site}/docs`,
+      publisher: { "@id": `${site}/#organization` },
+    },
+  ],
+};
 ---
 
 <!doctype html>
@@ -29,6 +57,9 @@ const MORE_PROVIDERS = KNOWN_PROVIDERS.filter(
     <meta name="theme-color" content="#ffffff" media="(prefers-color-scheme: light)" />
     <meta name="theme-color" content="#0b0d10" media="(prefers-color-scheme: dark)" />
     <link rel="canonical" href={`${site}/`} />
+    <link rel="alternate" type="text/markdown" href="/index.md" />
+    <link rel="service-desc" type="application/json" href="/openapi.json" />
+    <script type="application/ld+json" set:html={JSON.stringify(structuredData)} />
     <meta property="og:type" content="website" />
     <meta property="og:site_name" content="relayrunner" />
     <meta property="og:url" content={`${site}/`} />

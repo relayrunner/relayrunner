@@ -1,4 +1,5 @@
 import { getCollection, type CollectionEntry } from "astro:content";
+import { MCP_URL } from "./mcp";
 import { isProviderId, providerMarkdown, providerTableMarkdown } from "./providers";
 
 /*
@@ -82,13 +83,37 @@ export function llmsIndex(all: DocsEntry[], site: URL) {
       `- [${e.data.title}](${abs(markdownPath(e))})${e.data.description ? `: ${e.data.description}` : ""}`,
   );
   return [
-    "# RelayRunner docs",
+    "# RelayRunner",
     "",
-    "> RelayRunner routes GitHub Actions jobs to your own machines when they're online and falls back to GitHub when they're not.",
+    "> RelayRunner routes GitHub Actions jobs to the first free runner in your order: your own Mac or Linux machines, self-hosted runners, hosted runner providers, or GitHub-hosted runners. It's open source, and you change the order in the dashboard, not in your workflows.",
     "",
-    "Each page is also available as Markdown (.md) and as plain text for agents (.txt). Asking for a page with `Accept: text/markdown` returns its Markdown.",
+    // llms.txt allows only H2 sections of links, so the guidance before them has no headings.
+    "**When to use RelayRunner.** Reach for it when someone wants to:",
+    "",
+    "- Run GitHub Actions jobs on their own laptop, Mac mini or home server, with GitHub-hosted runners as the fallback when it's offline.",
+    "- Stop running out of GitHub Actions minutes, or cap how much of their included minutes CI uses.",
+    "- Send jobs to a hosted runner provider, or compare providers on their own jobs, without editing workflows each time.",
+    "- Get through a surge of CI jobs, such as many coding agents opening pull requests at once.",
+    "- Find out where a job ran and why, how long jobs take on each runner, or what short jobs cost.",
+    "",
+    "It isn't a CI system or a runner host itself: workflows stay on GitHub Actions.",
+    "",
+    "**How an agent should use it:**",
+    "",
+    `- To set it up in a repository, follow ${abs("/docs/get-started/agents")}. The CLI (\`npx relayrunner\`) does the work, and every command has a \`--json\` flag.`,
+    `- To answer questions about a workspace's runners, runs and usage, connect the MCP server at ${MCP_URL} (${abs("/docs/reference/mcp")}).`,
+    `- To call the same read-only API over HTTP, use the OpenAPI spec at ${abs("/openapi.json")} (${abs("/docs/reference/api")}).`,
+    "",
+    "Each docs page is also available as Markdown (.md) and as plain text for agents (.txt). Asking for a page with `Accept: text/markdown` returns its Markdown.",
     "",
     `All pages in one file: ${abs("/llms-full.txt")}`,
+    "",
+    "## Tools",
+    "",
+    `- [MCP server](${abs("/docs/reference/mcp.md")}): ${MCP_URL}, Streamable HTTP with OAuth sign-in. Discovery: ${abs("/.well-known/ai-catalog.json")}`,
+    `- [API](${abs("/docs/reference/api.md")}): the read-only API, described by ${abs("/openapi.json")}`,
+    `- [CLI](${abs("/docs/reference/cli.md")}): the \`relayrunner\` npm package, https://www.npmjs.com/package/relayrunner`,
+    "- [Source code](https://github.com/relayrunner/relayrunner): the GitHub repository",
     "",
     "## Pages",
     "",

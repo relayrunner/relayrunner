@@ -105,6 +105,7 @@ export default defineConfig({
             "docs/reference/labels",
             "docs/reference/github-app",
             "docs/reference/mcp",
+            "docs/reference/api",
             "docs/reference/security",
             "docs/reference/privacy",
             "docs/reference/troubleshooting",
