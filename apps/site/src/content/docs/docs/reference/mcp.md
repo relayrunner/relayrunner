@@ -47,6 +47,8 @@ Add the URL as a remote MCP server (streamable HTTP). The agent signs in with OA
 
 The first time the agent uses it, your browser opens. Sign in with GitHub, pick which workspaces the agent may read, and approve it. The same steps are in the dashboard under **Settings → Agents**, where you can also see and disconnect agents. Disconnecting, or leaving a workspace, cuts the agent off at once.
 
+For better answers, install the `relayrunner-ci-insights` skill with `npx skills add relayrunner/relayrunner`. It tells your agent which tool answers which question. See [Set up with an agent](/docs/get-started/agents#install-the-skills).
+
 ## Things to ask
 
 - "Are my runners online, and what are they running right now?"

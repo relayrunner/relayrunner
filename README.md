@@ -67,7 +67,17 @@ It's built for small teams and individuals who don't want to pay for every push,
 
    RelayRunner answers the relay itself in about a second, so it bills no minutes. If nothing fits, the relay fails with the reason instead of leaving the job queued.
 
-The relay workflow and the optimized checks live in [relayrunner/actions](https://github.com/relayrunner/actions). [docs/agent-install.md](docs/agent-install.md) walks a coding agent through the whole setup, including which jobs are a good fit.
+The relay workflow and the optimized checks live in [relayrunner/actions](https://github.com/relayrunner/actions).
+
+## Agent skills
+
+Give your coding agent RelayRunner's skills, so it can set up machines, route your jobs and read your CI for you:
+
+```sh
+npx skills add relayrunner/relayrunner
+```
+
+They work with Claude Code, Codex, Cursor and most other agents. See [`skills/`](skills) for what each one does. Without them, [docs/agent-install.md](docs/agent-install.md) walks an agent through the whole setup in one prompt.
 
 Public repositories never run on connected machines, since anyone could run code there through a pull request.
 
