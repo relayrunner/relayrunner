@@ -3,9 +3,10 @@ import { memo, type ReactNode, useLayoutEffect, useMemo, useRef, useState } from
 import { Button } from "@/components/ui/button";
 import { timeAgo } from "@/lib/activity";
 import { DAY_MS, niceStep, plural } from "@/lib/job-times";
-import { type HistoryJob, isFailure, type Run } from "@/lib/runs";
+import { type HistoryJob, isFailure, type JobUsage, type Run } from "@/lib/runs";
 import { readFlag, saveFlag } from "@/lib/stored-flag";
-import { elapsed } from "@/lib/utils";
+import { formatMemory } from "@/lib/device";
+import { elapsed, percent } from "@/lib/utils";
 
 type Result = "success" | "failed" | "cancelled";
 
@@ -17,6 +18,7 @@ export type ChartPoint = {
   ms: number;
   result: Result;
   name: string;
+  usage?: JobUsage;
 };
 
 // `z` is the drawing order: failures last, so they sit on top where dots crowd.
@@ -29,6 +31,44 @@ const RESULT: Record<Result, { label: string; color: string; z: number }> = {
 const RESULTS: Result[] = ["success", "failed", "cancelled"];
 const resultOf = (conclusion: string | null): Result =>
   conclusion === "success" ? "success" : isFailure(conclusion) ? "failed" : "cancelled";
+
+type Metric = "duration" | "cpu" | "memory";
+/** What the dots can show: how long each took, or the CPU or memory it used (p95). */
+const METRIC: Record<
+  Metric,
+  {
+    label: string;
+    value: (point: ChartPoint) => number;
+    scale: (max: number) => ReturnType<typeof yScale>;
+    tickText: (value: number) => string;
+    tipText: (point: ChartPoint) => string;
+  }
+> = {
+  duration: {
+    label: "Duration",
+    value: (point) => point.ms,
+    scale: (max) => yScale(Math.max(max, 1000), niceStep(Math.max(max, 1000) / 3)),
+    tickText: axisTime,
+    tipText: (point) => elapsed(point.ms),
+  },
+  cpu: {
+    label: "P95 CPU",
+    // Only points with usage are given CPU or memory.
+    value: (point) => point.usage?.cpuP95 ?? 0,
+    scale: () => yScale(1, 0.25),
+    tickText: percent,
+    tipText: ({ usage }) => `${percent(usage!.cpuP95)} of ${plural(usage!.cpus, "vCPU")}`,
+  },
+  memory: {
+    label: "P95 memory",
+    value: (point) => point.usage?.memoryP95Mb ?? 0,
+    scale: (max) => yScale(Math.max(max, 256), memoryStep(Math.max(max, 256))),
+    tickText: (mb) => (mb ? formatMemory(mb) : "0"),
+    tipText: ({ usage }) =>
+      `${formatMemory(usage!.memoryP95Mb)} of ${formatMemory(usage!.memoryMb)}`,
+  },
+};
+const METRICS: Metric[] = ["duration", "cpu", "memory"];
 
 const HOUR_MS = 3_600_000;
 const HEIGHT = 168;
@@ -51,6 +91,10 @@ export const DurationChart = memo(function DurationChart({
   noun: string;
 }) {
   const [bars, setBars] = useState(() => readFlag(BARS_FLAG));
+  const [picked, setMetric] = useState<Metric>("duration");
+  const sampled = useMemo(() => points.filter((point) => point.usage), [points]);
+  // CPU and memory only when some of what's shown reported them.
+  const metric = sampled.length > 0 ? picked : "duration";
   const [ref, width] = useWidth<HTMLDivElement>();
   const bucketMs = days <= 1 ? HOUR_MS : days <= 7 ? 6 * HOUR_MS : 12 * HOUR_MS;
   // Whole buckets, so the bar view's first and last bars are as wide as the rest.
@@ -73,9 +117,25 @@ export const DurationChart = memo(function DurationChart({
   return (
     <div className="grid gap-3 rounded-xl border bg-card px-4 pt-3 pb-4">
       <div className="flex items-center justify-between gap-3">
-        <h2 className="text-sm font-medium first-letter:uppercase">
-          {bars ? `${noun}s per ${per}` : `How long each ${noun} took`}
-        </h2>
+        {!bars && sampled.length > 0 ? (
+          <div role="group" aria-label="Measure" className="flex gap-1">
+            {METRICS.map((value) => (
+              <Button
+                key={value}
+                size="xs"
+                variant={metric === value ? "secondary" : "ghost"}
+                aria-pressed={metric === value}
+                onClick={() => setMetric(value)}
+              >
+                {METRIC[value].label}
+              </Button>
+            ))}
+          </div>
+        ) : (
+          <h2 className="text-sm font-medium first-letter:uppercase">
+            {bars ? `${noun}s per ${per}` : `How long each ${noun} took`}
+          </h2>
+        )}
         <div role="group" aria-label="Chart" className="flex gap-1">
           <ChartToggle label="Duration" pressed={!bars} onClick={() => choose(false)}>
             <ChartScatterIcon />
@@ -100,22 +160,30 @@ export const DurationChart = memo(function DurationChart({
           />
         ) : (
           <Dots
-            points={points}
+            points={metric === "duration" ? points : sampled}
+            metric={metric}
             frame={frame}
             days={days}
-            label={`How long each of ${plural(points.length, noun)} took over the last ${plural(days, "day")}`}
+            label={`${METRIC[metric].label} of each of ${plural(points.length, noun)} over the last ${plural(days, "day")}`}
           />
         )}
       </div>
-      <ul className="flex flex-wrap gap-x-5 gap-y-1 text-xs text-muted-foreground">
-        {RESULTS.map((result) => (
-          <li key={result} className="inline-flex items-center gap-1.5">
-            <ResultMark result={result} />
-            {RESULT[result].label}
-            <span className="font-medium text-foreground tabular-nums">{counts[result]}</span>
-          </li>
-        ))}
-      </ul>
+      <div className="flex flex-wrap items-center justify-between gap-x-5 gap-y-1 text-xs text-muted-foreground">
+        <ul className="flex flex-wrap gap-x-5 gap-y-1">
+          {RESULTS.map((result) => (
+            <li key={result} className="inline-flex items-center gap-1.5">
+              <ResultMark result={result} />
+              {RESULT[result].label}
+              <span className="font-medium text-foreground tabular-nums">{counts[result]}</span>
+            </li>
+          ))}
+        </ul>
+        {!bars && metric !== "duration" && (
+          <p>
+            {sampled.length} of {plural(points.length, noun)}, from connected machines
+          </p>
+        )}
+      </div>
     </div>
   );
 });
@@ -224,22 +292,28 @@ function Plot({
   );
 }
 
-function Dots({ points, ...plot }: PlotProps & { points: ChartPoint[] }) {
+function Dots({ points, metric, ...plot }: PlotProps & { points: ChartPoint[]; metric: Metric }) {
   const { frame } = plot;
+  const { value, scale, tickText, tipText } = METRIC[metric];
   const [hover, setHover] = useState<ChartPoint | null>(null);
-  const { y, ticks } = useMemo(() => {
-    const maxMs = Math.max(...points.map((point) => point.ms), 1000);
-    return yScale(maxMs, niceStep(maxMs / 3));
-  }, [points]);
+  const { y, ticks } = useMemo(
+    () => scale(Math.max(0, ...points.map((point) => value(point)))),
+    [points, scale, value],
+  );
   // Drawn once per data or size change, not on every hover.
   const marks = useMemo(
     () =>
       [...points]
         .sort((a, b) => RESULT[a.result].z - RESULT[b.result].z)
         .map((point) => (
-          <Mark key={point.key} result={point.result} x={plotX(frame, point.at)} y={y(point.ms)} />
+          <Mark
+            key={point.key}
+            result={point.result}
+            x={plotX(frame, point.at)}
+            y={y(value(point))}
+          />
         )),
-    [points, frame, y],
+    [points, frame, y, value],
   );
 
   // The nearest dot to the pointer, within reach.
@@ -250,20 +324,20 @@ function Dots({ points, ...plot }: PlotProps & { points: ChartPoint[] }) {
     let best: ChartPoint | null = null;
     let bestDistance = 16 ** 2;
     for (const point of points) {
-      const distance = (plotX(frame, point.at) - px) ** 2 + (y(point.ms) - py) ** 2;
+      const distance = (plotX(frame, point.at) - px) ** 2 + (y(value(point)) - py) ** 2;
       if (distance < bestDistance) [best, bestDistance] = [point, distance];
     }
     setHover(best);
   }
   const hx = hover ? plotX(frame, hover.at) : 0;
-  const hy = hover ? y(hover.ms) : 0;
+  const hy = hover ? y(value(hover)) : 0;
 
   return (
     <Plot
       {...plot}
       ticks={ticks}
       y={y}
-      tickText={axisTime}
+      tickText={tickText}
       onPointerMove={onPointerMove}
       onLeave={() => setHover(null)}
       tip={
@@ -271,7 +345,7 @@ function Dots({ points, ...plot }: PlotProps & { points: ChartPoint[] }) {
           <ChartTip x={hx} y={hy} width={frame.width}>
             <p className="max-w-56 truncate font-medium">{hover.name}</p>
             <p className="text-muted-foreground">
-              <span className="font-medium text-foreground tabular-nums">{elapsed(hover.ms)}</span>
+              <span className="font-medium text-foreground tabular-nums">{tipText(hover)}</span>
               {` · ${RESULT[hover.result].label} · ${timeAgo(hover.at)}`}
             </p>
           </ChartTip>
@@ -531,6 +605,13 @@ function axisTime(ms: number) {
   return minutes ? `${Math.floor(ms / HOUR_MS)}h ${minutes}m` : `${ms / HOUR_MS}h`;
 }
 
+// 256 MB, 512 MB, 1 GB, 2 GB, 4 GB, ... with about three steps to the top.
+function memoryStep(max: number) {
+  let step = 256;
+  while (step * 3 < max) step *= 2;
+  return step;
+}
+
 /** Runs that finished, as chart points. */
 export const runPoints = (runs: Run[]): ChartPoint[] =>
   runs.flatMap((run) =>
@@ -555,4 +636,5 @@ export const jobPoints = (jobs: HistoryJob[]): ChartPoint[] =>
     ms: job.completedAt - job.startedAt,
     result: resultOf(job.conclusion),
     name: job.name,
+    usage: job.usage,
   }));

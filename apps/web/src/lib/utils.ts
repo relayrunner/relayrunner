@@ -6,6 +6,9 @@ export function cn(...inputs: ClassValue[]) {
 }
 
 /** "52s", "3m 51s", "1h 2m"; "—" for none. */
+/** 0.62 → "62%". */
+export const percent = (share: number) => `${Math.round(share * 100)}%`;
+
 export function elapsed(ms: number | null) {
   if (ms === null) return "—";
   const seconds = Math.max(0, Math.round(ms / 1000));

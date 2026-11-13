@@ -14,6 +14,7 @@ import { latestRunnerVersion, RunnerError } from "./install.ts";
 import { runnerEnv, type Launcher } from "./job.ts";
 import { readList, writeList } from "./list-file.ts";
 import { relayrunnerHome } from "./paths.ts";
+import { vmUsage } from "./usage.ts";
 import { cliVersion } from "./version.ts";
 
 export interface Isolation {
@@ -475,6 +476,7 @@ export function isolatedLauncher(isolation: Isolation): Launcher {
       child.once("close", (code, signal) => debug.write(`${name}: exit ${signal ?? code}`));
       return child;
     },
+    usage: (run) => vmUsage(containerName(run.routeId), isolation, command),
     // `--rm` deletes the VM when the runner exits with 0. Anything else may have left it behind,
     // such as a `container run` that was stopped before its VM was.
     // The first delete can fail while the VM's processes are still being killed, so it gets a

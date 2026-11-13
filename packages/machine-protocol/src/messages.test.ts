@@ -61,6 +61,21 @@ describe("parseMachineMessage", () => {
     },
     { v, type: "job", routeId: "7f3k", state: "started" },
     { v, type: "job", routeId: "7f3k", state: "failed", message: "run.sh exited with 1" },
+    {
+      v,
+      type: "job",
+      routeId: "7f3k",
+      state: "finished",
+      usage: {
+        cpuP95: 0.62,
+        cpuPeak: 0.9,
+        memoryP95Mb: 2100,
+        memoryPeakMb: 2400,
+        cpus: 4,
+        memoryMb: 8192,
+        samples: 30,
+      },
+    },
   ];
 
   it.each(messages)("round-trips $type", (message) => {
@@ -86,6 +101,12 @@ describe("parseMachineMessage", () => {
     expect(parsed).toEqual({ ok: true, message: { ...hello, device: undefined } });
     const badVm = parseMachineMessage(JSON.stringify({ ...hello, vm: { cpus: 0 } }));
     expect(badVm).toMatchObject({ ok: true, message: { vm: undefined } });
+  });
+
+  it("drops usage it can't read instead of failing the job message", () => {
+    const job = { v, type: "job", routeId: "7f3k", state: "finished" };
+    const parsed = parseMachineMessage(JSON.stringify({ ...job, usage: { cpuP95: 7 } }));
+    expect(parsed).toEqual({ ok: true, message: { ...job, usage: undefined } });
   });
 
   it("rejects another protocol version before checking the shape", () => {

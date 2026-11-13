@@ -6,6 +6,7 @@
 // Database cost: the summary is one statement, a range of job_timing_installation_idx (the
 // workspace's installations, completed in the window), never a scan of the table. The detail is
 // a range of job_timing_job_idx. job-times.test.ts checks the rows D1 reads.
+import type { JobUsage } from "@relayrunner/machine-protocol";
 import { and, eq, gte, inArray, isNull, type SQL, sql } from "drizzle-orm";
 import type { SQLiteColumn } from "drizzle-orm/sqlite-core";
 import { type RunnerSize, runnerSize } from "@relayrunner/providers";
@@ -569,6 +570,8 @@ export interface HistoryJob extends JobRun {
   repository: string;
   workflow: string | null;
   name: string;
+  /** The CPU and memory it used, when its machine reported them. */
+  usage?: JobUsage;
 }
 
 /** Most jobs the job list returns. */
@@ -592,6 +595,7 @@ export async function recentJobs(
       repository: table.repositoryFullName,
       workflow: table.workflowName,
       name: table.name,
+      usage: table.usage,
     })
     .from(table)
     .where(windowWhere(workspaceId, since))
@@ -604,8 +608,8 @@ export async function recentJobs(
     const run = jobRunOf(row, env);
     if (!run) return [];
     if (!envs.has(env.key)) envs.set(env.key, env);
-    const { repositoryId, repository, workflow, name } = row;
-    return [{ ...run, repositoryId, repository, workflow, name }];
+    const { repositoryId, repository, workflow, name, usage } = row;
+    return [{ ...run, repositoryId, repository, workflow, name, ...(usage && { usage }) }];
   });
   await nameMachines(db, workspaceId, envs);
   return { days, environments: [...envs.values()], jobs, truncated: rows.length > JOB_LIMIT };

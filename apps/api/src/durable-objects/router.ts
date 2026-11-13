@@ -464,11 +464,15 @@ export class Router extends DurableObject<Env> {
     return route.machineId;
   }
 
-  /** Stops a route holding its machine. MachineLink calls this when the machine reports in. */
-  async release(routeId: string): Promise<void> {
+  /**
+   * Stops a route holding its machine. MachineLink calls this when the machine reports in, and
+   * gets back the job the route was claimed by.
+   */
+  async release(routeId: string): Promise<number | undefined> {
     const route = await this.ctx.storage.get<Route>(ROUTE_KEY + routeId);
     if (route && route.state !== "done")
       await this.ctx.storage.put(ROUTE_KEY + routeId, { ...route, state: "done" });
+    return route?.jobId;
   }
 
   /**

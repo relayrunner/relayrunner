@@ -31,9 +31,11 @@ export function deviceName(device: MachineDevice) {
   return device.model ?? KIND_NAMES[device.kind];
 }
 
-/** 36864 → "36 GB"; under a gigabyte stays in MB. */
+/** 36864 → "36 GB", 1536 → "1.5 GB"; under a gigabyte stays in MB. */
 export function formatMemory(mb: number) {
-  return mb >= 1024 ? `${Math.round(mb / 1024)} GB` : `${mb} MB`;
+  if (mb < 1024) return `${mb} MB`;
+  const gb = mb / 1024;
+  return `${gb >= 10 ? Math.round(gb) : Math.round(gb * 10) / 10} GB`;
 }
 
 /** "Lisbon, Portugal", "Portugal", or the city alone. */

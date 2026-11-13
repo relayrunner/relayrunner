@@ -7,6 +7,7 @@ import type { Env } from "../env.ts";
 import { encodeMessage, PROTOCOL_VERSION, type JobMessage } from "@relayrunner/machine-protocol";
 import { appInstallationToken } from "../github-app.ts";
 import { installationRunnerScope } from "../installations.ts";
+import { setJobUsage } from "../jobs.ts";
 import { mintMachineRunner } from "../machine-runner.ts";
 import { originFromJson, type RequestOrigin } from "../device-origin.ts";
 import { sendEmail } from "../email.ts";
@@ -317,8 +318,9 @@ export class MachineLink extends DurableObject<Env> {
     );
     await this.ctx.storage.delete(HOLD_KEY + job.routeId);
     if (!sent) return;
-    await this.env.ROUTER.getByName(sent.workspaceId).release(job.routeId);
+    const jobId = await this.env.ROUTER.getByName(sent.workspaceId).release(job.routeId);
     if (job.state !== "started") await this.ctx.storage.delete(key);
+    if (job.usage && jobId) await setJobUsage(createDb(this.env.DB), jobId, job.usage);
   }
 
   private onlineSocket() {

@@ -387,10 +387,19 @@ describe("workflow times and the job list", () => {
   test("lists finished jobs newest first, picks and other workspaces left out", async () => {
     const { cookie, installationId } = await connectedWorkspace();
     const other = await connectedWorkspace();
+    const usage = {
+      cpuP95: 0.6,
+      cpuPeak: 0.9,
+      memoryP95Mb: 2048,
+      memoryPeakMb: 2300,
+      cpus: 4,
+      memoryMb: 8192,
+      samples: 12,
+    };
     await insert([
       timing(other.installationId, 10, { name: "theirs", hoursAgo: 2 }),
       timing(installationId, 10, { name: "older", hoursAgo: 3 }),
-      timing(installationId, 10, { name: "newer", hoursAgo: 1 }),
+      timing(installationId, 10, { name: "newer", hoursAgo: 1, usage }),
       timing(installationId, 2, { name: "pick", labels: ["relayrunner"] }),
       // Outside a 1-day window.
       timing(installationId, 10, { name: "old", hoursAgo: 30 }),
@@ -403,7 +412,10 @@ describe("workflow times and the job list", () => {
       repository: "acme/app",
       workflow: "CI",
       environment: "github:linux-2-core",
+      usage,
     });
+    // A job its machine didn't report on carries no usage at all.
+    expect(body.jobs[1]).not.toHaveProperty("usage");
     expect(body.truncated).toBe(false);
   });
 });

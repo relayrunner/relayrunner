@@ -90,6 +90,20 @@ export const StatusMessage = z.object({
   running: z.number().int().nonnegative().max(1_000).optional(),
 });
 
+// How much CPU and memory a job used, sampled every few seconds while its runner ran. CPU is a
+// share (0 to 1) of the cores the job could use: its VM's, or the machine's when it ran on the
+// machine itself. 95% of samples were at or under the p95, so a short spike doesn't set it.
+export const JobUsage = z.object({
+  cpuP95: z.number().min(0).max(1),
+  cpuPeak: z.number().min(0).max(1),
+  memoryP95Mb: z.number().int().nonnegative(),
+  memoryPeakMb: z.number().int().nonnegative(),
+  // What the job could use: its VM's size, or the machine's.
+  cpus: z.number().int().positive().max(100_000),
+  memoryMb: z.number().int().positive().max(1_000_000_000),
+  samples: z.number().int().positive(),
+});
+
 // Progress of the runner process the machine started for a `run` message. "finished" means the
 // runner exited cleanly, not that the job passed: the job's conclusion comes from GitHub's
 // workflow_job webhook. "failed" means the runner couldn't start or exited with an error.
@@ -99,6 +113,9 @@ export const JobMessage = z.object({
   routeId,
   state: z.enum(["started", "finished", "failed"]),
   message: z.string().optional(),
+  // With "finished" or "failed", once the runner ran long enough to be sampled. Missing from CLIs
+  // older than usage reporting, and dropped rather than failing the message when unreadable.
+  usage: JobUsage.optional().catch(undefined),
 });
 
 // The machine saved the token from the gateway's `token` message, so the old one can stop
@@ -168,6 +185,7 @@ export type DeviceKind = z.infer<typeof DeviceKind>;
 export type Device = z.infer<typeof Device>;
 export type HelloMessage = z.infer<typeof HelloMessage>;
 export type StatusMessage = z.infer<typeof StatusMessage>;
+export type JobUsage = z.infer<typeof JobUsage>;
 export type JobMessage = z.infer<typeof JobMessage>;
 export type TokenSavedMessage = z.infer<typeof TokenSavedMessage>;
 export type MachineMessage = z.infer<typeof MachineMessage>;

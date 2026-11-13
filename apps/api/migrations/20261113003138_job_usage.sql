@@ -1,0 +1,1 @@
+ALTER TABLE `job_timing` ADD `usage` text;
