@@ -1,4 +1,4 @@
-import { byRunnerKey, RUNNER_KEYS } from "@relayrunner/runner-order";
+import { byRunnerKey, RETRY_RUNNERS, RUNNER_KEYS } from "@relayrunner/runner-order";
 import { z } from "zod";
 
 // The workspace's audit log: one append-only row per thing that happened, newest first on the
@@ -50,6 +50,17 @@ export const SKIP_REASONS = [
   "provider_unhealthy",
 ] as const;
 export type SkipReason = (typeof SKIP_REASONS)[number];
+
+// Why RelayRunner retried a job: its runner failed it, not its own steps.
+export const RETRY_KINDS = [
+  // The job ended in GitHub's "Set up job": its runner never got its steps going.
+  "runner_start",
+  // The connected machine running the job went offline while it ran.
+  "machine_lost",
+  // GitHub reported that it lost the runner, or that the runner was shut down mid-job.
+  "runner_lost",
+] as const;
+export type RetryKind = (typeof RETRY_KINDS)[number];
 
 // A GitHub account's Actions minutes when a limited GitHub step looked at it.
 export const MinutesUsage = z.object({
@@ -207,6 +218,23 @@ export const ActivityEvent = z.discriminatedUnion("type", [
       // entries logged before #241.
       startedBy: GithubActor.nullable().optional(),
       triggeredBy: GithubActor.nullable().optional(),
+    }),
+  }),
+  // RelayRunner re-ran a job whose runner failed it (src/retries.ts): the job's relay was re-run
+  // once the run finished, so the relay picked again and the job ran in the next attempt. Logged on
+  // the failed job. `kind` is what went wrong, `runner` where the retry was set to go, and
+  // `failedOn` the runner label or machine the job failed on.
+  z.object({
+    type: z.literal("job.retried"),
+    data: z.object({
+      repository: z.string(),
+      runId: z.number(),
+      runAttempt: z.number(),
+      workflow: z.string().nullable(),
+      job: z.string(),
+      kind: z.enum(RETRY_KINDS),
+      runner: z.enum(RETRY_RUNNERS),
+      failedOn: z.string().nullable(),
     }),
   }),
   // GitHub billed Actions overage for a connected account this cycle: its usage went past the

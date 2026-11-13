@@ -64,6 +64,7 @@ export async function recordWorkflowJob(
     githubCreatedAt: parseDate(job.createdAt) ?? new Date(message.receivedAt),
     startedAt: parseDate(job.startedAt),
     completedAt: parseDate(job.completedAt),
+    ranSteps: job.ranSteps ?? null,
   };
   await db
     .insert(table)
@@ -80,6 +81,7 @@ export async function recordWorkflowJob(
         runnerName: sql`coalesce(excluded.runner_name, ${table.runnerName})`,
         startedAt: sql`coalesce(excluded.started_at, ${table.startedAt})`,
         completedAt: sql`coalesce(excluded.completed_at, ${table.completedAt})`,
+        ranSteps: sql`coalesce(excluded.ran_steps, ${table.ranSteps})`,
         updatedAt: sql`excluded.updated_at`,
       },
       setWhere: sql`${rank(sql`${table.status}`)} <= ${rank(sql`excluded.status`)}`,

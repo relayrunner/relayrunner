@@ -25,6 +25,7 @@ import { createDb, schema } from "../db/index.ts";
 import { recordPick, type PickRecord } from "../route-decisions.ts";
 import { installationRunnerScope } from "../installations.ts";
 import { findRepo } from "../repositories.ts";
+import { retryOf } from "../retries.ts";
 import { startedJobStatus } from "../jobs.ts";
 import {
   type JobContext,
@@ -400,7 +401,7 @@ async function pickRunner(env: Env, token: string, installationId: number, conte
       runner: null,
       reason: `${NO_RUNNER}: RelayRunner couldn't read this job's repository and run.`,
     };
-  const context = await resolveTriggeredBy(token, parsed);
+  let context = await resolveTriggeredBy(token, parsed);
   const db = createDb(env.DB);
   const [installation] = await db
     .select({
@@ -441,6 +442,10 @@ async function pickRunner(env: Env, token: string, installationId: number, conte
       } satisfies PickInfo,
     };
   }
+  // An automatic retry's attempt is credited to the App, so it keeps the starter of the attempt it
+  // retried, which "only me" machines check.
+  const retry = await retryOf(db, repo.id, context.runId, context.runAttempt);
+  if (retry) context = { ...context, triggeredBy: retry.triggeredBy };
   const decision: RouteDecision = await env.ROUTER.getByName(workspaceId).route({
     workspaceId,
     installationId,
@@ -451,6 +456,7 @@ async function pickRunner(env: Env, token: string, installationId: number, conte
     private: repo.private,
     startedBy: context.startedBy,
     triggeredBy: context.triggeredBy,
+    retry,
   });
   return {
     ...decision,

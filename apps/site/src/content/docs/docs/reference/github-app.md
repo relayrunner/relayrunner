@@ -7,14 +7,14 @@ RelayRunner reaches GitHub through one GitHub App, [RelayRunner](https://github.
 
 ## Repository permissions
 
-| Permission     | Access                               | Why                                                                                                                                  |
-| -------------- | ------------------------------------ | ------------------------------------------------------------------------------------------------------------------------------------ |
-| Administration | Read & write                         | Registers one-job runners on the job's own repo, so only that repo's jobs can reach them.                                            |
-| Actions        | Read & write                         | Workflow job and run events, and checking whether a relay job is still queued. Write is reserved for re-running and cancelling jobs. |
-| Checks         | Read & write                         | The PR title check, and a check run that explains a relay that can't be answered.                                                    |
-| Contents       | Read & write, `relayrunner.yml` only | Reads [repo config](/docs/reference/repo-config). Write is reserved for saving it from the dashboard. It can't touch any other file. |
-| Pull requests  | Read                                 | Pull request events for the PR title check.                                                                                          |
-| Metadata       | Read                                 | Required by GitHub for every App.                                                                                                    |
+| Permission     | Access                               | Why                                                                                                                                                          |
+| -------------- | ------------------------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| Administration | Read & write                         | Registers one-job runners on the job's own repo, so only that repo's jobs can reach them.                                                                    |
+| Actions        | Read & write                         | Workflow job and run events, and checking whether a relay job is still queued. Write re-runs jobs for automatic retries and is reserved for cancelling jobs. |
+| Checks         | Read & write                         | The PR title check, a check run that explains a relay that can't be answered, and reading why a job's runner failed.                                         |
+| Contents       | Read & write, `relayrunner.yml` only | Reads [repo config](/docs/reference/repo-config). Write is reserved for saving it from the dashboard. It can't touch any other file.                         |
+| Pull requests  | Read                                 | Pull request events for the PR title check.                                                                                                                  |
+| Metadata       | Read                                 | Required by GitHub for every App.                                                                                                                            |
 
 ## Organization permissions
 

@@ -113,3 +113,32 @@ export function readRunnerOrder(stored: string | null | undefined): RunnerOrder 
     return DEFAULT_RUNNER_ORDER;
   }
 }
+
+/**
+ * Where an automatic retry goes: `any` the same runner if it's free, else the next that fits;
+ * `same` the runner that failed, first; `other` the rest of the order first, the one that failed
+ * last.
+ */
+export const RETRY_RUNNERS = ["any", "same", "other"] as const;
+export type RetryRunner = (typeof RETRY_RUNNERS)[number];
+
+/** A workspace's automatic retries: off unless turned on, at most `max` retries per run. */
+export const retrySettingsSchema = z.object({
+  enabled: z.boolean(),
+  runner: z.enum(RETRY_RUNNERS),
+  max: z.number().int().min(1).max(2),
+});
+export type RetrySettings = z.infer<typeof retrySettingsSchema>;
+
+export const DEFAULT_RETRY_SETTINGS: RetrySettings = { enabled: false, runner: "any", max: 1 };
+
+/** The stored column's value as settings. Missing or unreadable reads as off. */
+export function readRetrySettings(stored: string | null | undefined): RetrySettings {
+  if (!stored) return DEFAULT_RETRY_SETTINGS;
+  try {
+    const parsed = retrySettingsSchema.safeParse(JSON.parse(stored));
+    return parsed.success ? parsed.data : DEFAULT_RETRY_SETTINGS;
+  } catch {
+    return DEFAULT_RETRY_SETTINGS;
+  }
+}
