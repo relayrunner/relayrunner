@@ -202,8 +202,8 @@ export function RunSheet({
 
   return (
     <Sheet open onOpenChange={(open) => !open && close()}>
-      <SheetContent aria-describedby={undefined}>
-        <div className="grid gap-6 px-5 py-5 sm:px-6">{body}</div>
+      <SheetContent aria-describedby={undefined} widthKey="history-panel-width">
+        <div className="grid grid-cols-[minmax(0,1fr)] gap-6 px-5 py-5 sm:px-6">{body}</div>
       </SheetContent>
     </Sheet>
   );
@@ -261,9 +261,9 @@ function RunView({
   return (
     <>
       <header className="grid gap-1 pr-8">
-        <SheetTitle className="flex items-center gap-2">
-          <StatusIcon status={header.status} conclusion={header.conclusion} />
-          <span className="min-w-0 truncate">
+        <SheetTitle className="flex items-start gap-2">
+          <StatusIcon status={header.status} conclusion={header.conclusion} className="mt-0.5" />
+          <span className="min-w-0 break-words">
             {header.title ?? header.workflow ?? "Unnamed workflow"}
           </span>
         </SheetTitle>
@@ -324,13 +324,13 @@ function RunView({
                       <RunLink
                         run={ids}
                         job={job.id}
-                        className="group inline-flex items-center gap-2 whitespace-nowrap"
+                        className="group inline-flex items-start gap-2"
                       >
-                        <JobStatus job={job} running={running} />
+                        <JobStatus job={job} running={running} className="mt-0.5 size-4" />
                         <span className="underline-offset-4 group-hover:underline">{job.name}</span>
                       </RunLink>
                     </th>
-                    <td className="py-2 pr-4 whitespace-nowrap">
+                    <td className="py-2 pr-4">
                       {job.environment ? (
                         <ProviderLink
                           provider={providerOf({ key: job.environment })}
@@ -350,13 +350,15 @@ function RunView({
                     </td>
                     <td
                       className={cn(
-                        "py-2 pr-4 text-right",
+                        "py-2 pr-4 text-right whitespace-nowrap",
                         isLongWait(wait) && "font-semibold text-run",
                       )}
                     >
                       {elapsed(wait)}
                     </td>
-                    <td className="py-2 pr-3 text-right">{elapsed(ranOf(job, now))}</td>
+                    <td className="py-2 pr-3 text-right whitespace-nowrap">
+                      {elapsed(ranOf(job, now))}
+                    </td>
                   </tr>
                 );
               })}
@@ -437,9 +439,9 @@ function JobView({
             {header.title ? `${workflow}: ${header.title}` : workflow}
           </RunLink>
         </nav>
-        <SheetTitle className="flex items-center gap-2">
-          <JobStatus job={job} running={running} className="size-[18px]" />
-          <span className="min-w-0 truncate">{job.name}</span>
+        <SheetTitle className="flex items-start gap-2">
+          <JobStatus job={job} running={running} className="mt-0.5 size-[18px]" />
+          <span className="min-w-0 break-words">{job.name}</span>
         </SheetTitle>
         <SheetDescription className="pl-[26px]">{header.repository}</SheetDescription>
       </header>
@@ -564,9 +566,10 @@ function JobStatus({
   );
 }
 
+// Four facts, each column as wide as its value, with the second (the long one) taking what's left.
 function Facts({ items }: { items: [string, ReactNode][] }) {
   return (
-    <dl className="grid grid-cols-2 gap-x-6 gap-y-3 rounded-lg border px-4 py-3 text-sm sm:grid-cols-4">
+    <dl className="grid grid-cols-2 gap-x-6 gap-y-3 rounded-lg border px-4 py-3 text-sm sm:grid-cols-[auto_minmax(0,1fr)_auto_auto]">
       {items.map(([term, value]) => (
         <div key={term} className="grid min-w-0 gap-0.5">
           <dt className="text-xs text-muted-foreground">{term}</dt>
