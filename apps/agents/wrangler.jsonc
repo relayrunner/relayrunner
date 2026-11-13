@@ -22,6 +22,8 @@
     "issues": { "enabled": true },
   },
   "upload_source_maps": true,
+  // The agent skills in skills/ at the repo root, which src/skills.ts serves over MCP.
+  "rules": [{ "type": "Text", "globs": ["**/*.md"], "fallthrough": true }],
   "services": [{ "binding": "API", "service": "relayrunner-api" }],
   "vars": {
     // Must match AGENTS_MCP_URL in apps/api/wrangler.jsonc.

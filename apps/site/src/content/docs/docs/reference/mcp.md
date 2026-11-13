@@ -49,6 +49,16 @@ The first time the agent uses it, your browser opens. Sign in with GitHub, pick 
 
 For better answers, install the `relayrunner-ci-insights` skill with `npx skills add relayrunner/relayrunner`. It tells your agent which tool answers which question. See [Set up with an agent](/docs/get-started/agents#install-the-skills).
 
+## Skills
+
+The server also serves the RelayRunner skills, so agents that support skills over MCP can load them without installing anything. Each one is a resource at `skill://<name>/SKILL.md`:
+
+| Skill                     | What it covers                                                        |
+| ------------------------- | --------------------------------------------------------------------- |
+| `relayrunner`             | Setting up machines with the CLI and running them day to day          |
+| `relayrunner-route-jobs`  | Routing a repo's jobs, and why a job was skipped                      |
+| `relayrunner-ci-insights` | Which tool answers which question, such as why a job ran where it did |
+
 ## Things to ask
 
 - "Are my runners online, and what are they running right now?"

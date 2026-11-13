@@ -34,6 +34,7 @@ import { recordRepositoryEvent, removeRepositories, upsertRepositories } from ".
 import { recordInstaller } from "./memberships.ts";
 import { recordSpendInstallation } from "./spend-app.ts";
 import { recordWorkflowRun } from "./runs.ts";
+import { retryFailedRun } from "./retries.ts";
 import { routingLabelFromLabels } from "./github-runners.ts";
 import { routeIdFromLabels } from "./routing.ts";
 
@@ -228,6 +229,8 @@ export async function processWebhook(env: Env, message: WebhookMessage): Promise
     case "workflow_run":
       // The run's title, trigger and status, for the Runs page.
       await recordWorkflowRun(createDb(env.DB), message);
+      // A failed run whose runner failed one of its routed jobs gets one more go.
+      await retryFailedRun(env, message);
       return;
     case "installation":
     case "installation_repositories":

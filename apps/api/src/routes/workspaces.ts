@@ -1,4 +1,9 @@
-import { readRunnerOrder, runnerOrderSchema } from "@relayrunner/runner-order";
+import {
+  readRetrySettings,
+  readRunnerOrder,
+  retrySettingsSchema,
+  runnerOrderSchema,
+} from "@relayrunner/runner-order";
 import { and, asc, count, eq, isNotNull, isNull } from "drizzle-orm";
 import { Hono } from "hono";
 import { createMiddleware } from "hono/factory";
@@ -107,6 +112,25 @@ export const workspaceRoutes = new Hono<AppEnv>()
       .set({ skipUnhealthyRunners: body.enabled })
       .where(eq(schema.workspace.id, c.req.param("id")));
     return c.json({ enabled: body.enabled });
+  })
+  // Automatic retries of jobs whose runner failed them (src/retries.ts). Off until turned on.
+  .get("/:id/retry-settings", requireUser, requireMember, async (c) => {
+    const [row] = await c.var.db
+      .select({ settings: schema.workspace.retrySettings })
+      .from(schema.workspace)
+      .where(eq(schema.workspace.id, c.req.param("id")))
+      .limit(1);
+    return c.json(readRetrySettings(row?.settings));
+  })
+  // Owners and admins, like the order.
+  .put("/:id/retry-settings", requireUser, requireMember, requireManager, async (c) => {
+    const parsed = retrySettingsSchema.safeParse(await c.req.json().catch(() => null));
+    if (!parsed.success) return c.json({ error: "invalid_body" }, 400);
+    await c.var.db
+      .update(schema.workspace)
+      .set({ retrySettings: JSON.stringify(parsed.data) })
+      .where(eq(schema.workspace.id, c.req.param("id")));
+    return c.json(parsed.data);
   })
   // "Try again now": jobs go to the runner type again. Owners and admins, like the order.
   .delete(

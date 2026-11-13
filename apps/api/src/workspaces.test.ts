@@ -385,6 +385,25 @@ describe("skipping runners that stop picking up jobs", () => {
     expect(bad.status).toBe(400);
   });
 
+  test("retries are off by default, and an owner turns them on", async () => {
+    const { cookie } = await signIn();
+    const { workspace, cookie: jar } = await createWorkspace(cookie, "Retries", "retry-settings");
+    const read = await request(`${workspace.id}/retry-settings`, jar);
+    expect(await read.json()).toEqual({ enabled: false, runner: "any", max: 1 });
+
+    const settings = { enabled: true, runner: "other", max: 2 };
+    const saved = await request(`${workspace.id}/retry-settings`, jar, "PUT", settings);
+    expect(await saved.json()).toEqual(settings);
+    const again = await request(`${workspace.id}/retry-settings`, jar);
+    expect(await again.json()).toEqual(settings);
+
+    const bad = await request(`${workspace.id}/retry-settings`, jar, "PUT", {
+      ...settings,
+      max: 5,
+    });
+    expect(bad.status).toBe(400);
+  });
+
   test("Try again now clears a runner type", async () => {
     const { cookie } = await signIn();
     const { workspace, cookie: jar } = await createWorkspace(cookie, "Health", "health-clear");

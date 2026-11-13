@@ -1,4 +1,4 @@
-import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
+import type { McpServer } from "@modelcontextprotocol/server";
 import {
   ACTIVITY_FILTERS,
   ACTIVITY_RESULTS,
@@ -90,7 +90,7 @@ export function registerTools(server: McpServer, request: WorkspaceApi, workspac
       title: "Workspace",
       description:
         "One RelayRunner workspace in full: its name, your role in it, and the GitHub accounts (orgs or users) connected to it, with their install settings.",
-      inputSchema: { workspace: workspaceArg },
+      inputSchema: z.object({ workspace: workspaceArg }),
       annotations: READ_ONLY,
     },
     ({ workspace }) => answer(() => scoped(workspace)("/workspaces/current")),
@@ -102,7 +102,7 @@ export function registerTools(server: McpServer, request: WorkspaceApi, workspac
       title: "Runners",
       description:
         "Every runner in the workspace: machines connected with the RelayRunner CLI and self-hosted runners added from GitHub. Each has its labels, whether it's online, idle or busy (and the job it's running), whether it's paused, and whose jobs it takes. Runners added from GitHub show github.unreachable because this tool doesn't ask GitHub for their live status; check the dashboard for that.",
-      inputSchema: { workspace: workspaceArg },
+      inputSchema: z.object({ workspace: workspaceArg }),
       annotations: READ_ONLY,
     },
     ({ workspace }) =>
@@ -124,7 +124,7 @@ export function registerTools(server: McpServer, request: WorkspaceApi, workspac
       title: "Runner order",
       description:
         "The workspace's runner order: the providers RelayRunner tries for a job, top to bottom ('machine' for connected machines, 'github' for GitHub-hosted runners, optionally with a monthly minutes limit, and hosted providers by id: 'blacksmith', 'depot', 'namespace', 'warpbuild', 'ubicloud', 'runs-on'). A job goes to the first provider it allows that can take it. isDefault is true when nobody has changed it.",
-      inputSchema: { workspace: workspaceArg },
+      inputSchema: z.object({ workspace: workspaceArg }),
       annotations: READ_ONLY,
     },
     ({ workspace }) =>
@@ -140,7 +140,7 @@ export function registerTools(server: McpServer, request: WorkspaceApi, workspac
       title: "Workflow runs",
       description:
         "Recent workflow runs (last 14 days), newest first: repository, workflow, branch, status, conclusion, wall time against the workflow's usual time, where its jobs ran, and whether RelayRunner routed it. Use get_run_jobs for one run's jobs and list_activity for why a job went where it did.",
-      inputSchema: {
+      inputSchema: z.object({
         workspace: workspaceArg,
         repository: z
           .string()
@@ -153,7 +153,7 @@ export function registerTools(server: McpServer, request: WorkspaceApi, workspac
           .describe("Only completed runs with this conclusion, like failure or success."),
         routed: z.boolean().optional().describe("Only runs RelayRunner routed (or didn't)."),
         limit: z.number().int().min(1).max(100).default(20),
-      },
+      }),
       annotations: READ_ONLY,
     },
     ({ workspace, repository, status, conclusion, routed, limit }) =>
@@ -180,12 +180,12 @@ export function registerTools(server: McpServer, request: WorkspaceApi, workspac
       title: "Run jobs",
       description:
         "One workflow run attempt's jobs: each job's status, conclusion, timings and the environment it ran on (or is waiting for). Take repositoryId and runId from list_runs.",
-      inputSchema: {
+      inputSchema: z.object({
         workspace: workspaceArg,
         repositoryId: z.number().int().positive(),
         runId: z.number().int().positive(),
         runAttempt: z.number().int().positive().default(1),
-      },
+      }),
       annotations: READ_ONLY,
     },
     ({ workspace, repositoryId, runId, runAttempt }) =>
@@ -198,7 +198,7 @@ export function registerTools(server: McpServer, request: WorkspaceApi, workspac
       title: "Activity",
       description:
         "The workspace's activity log, newest first: jobs (where RelayRunner routed each one, which providers it skipped and why), optimized checks, machines connecting, pausing or going offline, and member changes. Items are compact (type, time, repo, job, runner, conclusion, route step and skipped reasons); pass detail for urls, sha, who started each run and the route's label inputs. Page with before = the previous answer's nextBefore.",
-      inputSchema: {
+      inputSchema: z.object({
         workspace: workspaceArg,
         filter: z.enum(ACTIVITY_FILTERS).optional().describe("Only one kind of event."),
         repository: z.string().optional().describe("Only this repository (owner/name)."),
@@ -208,7 +208,7 @@ export function registerTools(server: McpServer, request: WorkspaceApi, workspac
         before: z.number().int().positive().optional(),
         limit: z.number().int().min(1).max(50).default(15).describe("Entries to return (1-50)."),
         detail: z.boolean().default(false).describe("Return full entries instead of compact ones."),
-      },
+      }),
       annotations: READ_ONLY,
     },
     ({ workspace, since, limit, detail, ...query }) =>
@@ -227,7 +227,7 @@ export function registerTools(server: McpServer, request: WorkspaceApi, workspac
       title: "Usage",
       description:
         "What the workspace's CI used and saved: jobs under a minute and what GitHub's round-up to whole minutes cost, what optimized checks saved, and each connected GitHub account's Actions minutes this billing cycle.",
-      inputSchema: { workspace: workspaceArg, days: days(90, 30) },
+      inputSchema: z.object({ workspace: workspaceArg, days: days(90, 30) }),
       annotations: READ_ONLY,
     },
     ({ workspace, days }) =>
@@ -248,7 +248,7 @@ export function registerTools(server: McpServer, request: WorkspaceApi, workspac
       title: "Job times",
       description:
         "How long each job usually takes on each runner environment, for comparing machines against GitHub-hosted runners. Times with no successful runs behind them are left out. Narrow with repository and workflow to keep the answer small.",
-      inputSchema: {
+      inputSchema: z.object({
         workspace: workspaceArg,
         days: days(30, 14),
         repository: z
@@ -256,7 +256,7 @@ export function registerTools(server: McpServer, request: WorkspaceApi, workspac
           .optional()
           .describe("Only workflows in repositories whose owner/name contains this."),
         workflow: z.string().optional().describe("Only workflows whose name contains this."),
-      },
+      }),
       annotations: READ_ONLY,
     },
     ({ workspace, days, ...filter }) =>
@@ -269,7 +269,7 @@ export function registerTools(server: McpServer, request: WorkspaceApi, workspac
       title: "Send feedback",
       description:
         "Tell the RelayRunner team about a problem: a tool that errors or answers something that looks wrong, a result that's confusing, or something the person needs that no tool does. Say what you called, what you expected and what happened. Leave out secrets, tokens and personal data (anything that looks like a credential is redacted anyway). It's stored and emailed to the team, who may reply to the person; up to 10 an hour.",
-      inputSchema: {
+      inputSchema: z.object({
         category: z
           .enum(FEEDBACK_CATEGORIES)
           .describe(
@@ -291,7 +291,7 @@ export function registerTools(server: McpServer, request: WorkspaceApi, workspac
           .optional()
           .describe("The tool this is about, if any."),
         workspace: workspaceArg,
-      },
+      }),
       annotations: {
         readOnlyHint: false,
         destructiveHint: false,
