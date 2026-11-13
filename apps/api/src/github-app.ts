@@ -245,6 +245,27 @@ export async function rerunJob(token: string, repo: string, jobId: number): Prom
     : `POST ${path} failed with ${response.status}`;
 }
 
+/** A job of one run attempt, as GitHub's jobs API lists it (Actions read). */
+export interface AttemptJob {
+  id: number;
+  name: string;
+  run_attempt: number;
+  conclusion: string | null;
+  labels: string[];
+  started_at: string | null;
+  completed_at: string | null;
+  steps?: unknown[];
+}
+
+/** The jobs of a run attempt, straight from GitHub. */
+export function attemptJobs(token: string, repo: string, runId: number, runAttempt: number) {
+  return listAll<AttemptJob>(
+    token,
+    `/repos/${repo}/actions/runs/${runId}/attempts/${runAttempt}/jobs`,
+    "jobs",
+  );
+}
+
 /** The messages of a job's annotations, where GitHub says a runner was lost (Checks read). */
 export async function jobAnnotations(token: string, repo: string, jobId: number) {
   // A job's check run shares its id.

@@ -123,10 +123,13 @@ describe("retryFailedRun", () => {
 
   type Setup = Awaited<ReturnType<typeof setup>>;
 
+  // Each run's jobs as GitHub's jobs API lists them.
+  const githubJobs = new Map<number, object[]>();
+
   // A run whose relay routed `test` to `ubuntu-latest`, and `test` failed.
   async function failedRun(
     { workspaceId, installationId, repositoryId }: Setup,
-    test: { ranSteps: boolean | null; labels?: string[] } = { ranSteps: false },
+    test: { ranSteps: boolean; labels?: string[] } = { ranSteps: false },
   ) {
     ids += 10;
     const runId = ids;
@@ -144,23 +147,38 @@ describe("retryFailedRun", () => {
       startedAt: at(15),
       completedAt: at(10),
     };
-    await db.insert(schema.workflowJob).values([
+    // Only the relay is in the jobs table: the failed job's own webhook may not have landed yet.
+    await db.insert(schema.workflowJob).values({
+      ...base,
+      id: runId + 1,
+      kind: "pick",
+      name: "relay",
+      labels: ["relayrunner"],
+      conclusion: "success",
+    });
+    const steps = [
+      { name: "Set up job", started_at: at(15).toISOString(), conclusion: "failure" },
+      ...(test.ranSteps
+        ? [{ name: "Run tests", started_at: at(14).toISOString(), conclusion: "failure" }]
+        : []),
+    ];
+    githubJobs.set(runId, [
       {
-        ...base,
         id: runId + 1,
-        kind: "pick",
-        name: "relay",
-        labels: ["relayrunner"],
+        name: "relay / RelayRunner",
+        run_attempt: 1,
         conclusion: "success",
+        labels: ["relayrunner"],
       },
       {
-        ...base,
         id: runId + 2,
-        kind: "job",
         name: "test",
-        labels: test.labels ?? ["ubuntu-latest"],
+        run_attempt: 1,
         conclusion: "failure",
-        ranSteps: test.ranSteps,
+        labels: test.labels ?? ["ubuntu-latest"],
+        started_at: at(15).toISOString(),
+        completed_at: at(10).toISOString(),
+        steps,
       },
     ]);
     await db.insert(schema.routeDecision).values({
@@ -232,6 +250,8 @@ describe("retryFailedRun", () => {
           return rerun < 300
             ? new Response(null, { status: rerun })
             : Response.json({ message: "The workflow run is already running" }, { status: rerun });
+        const jobs = /\/actions\/runs\/(\d+)\/attempts\/\d+\/jobs/.exec(url);
+        if (jobs) return Response.json({ jobs: githubJobs.get(Number(jobs[1])) ?? [] });
         if (url.includes("/annotations"))
           return Response.json(annotations.map((message) => ({ message })));
         return new Response("", { status: 404 });
@@ -297,6 +317,10 @@ describe("retryFailedRun", () => {
     stubGithub();
     await retryFailedRun(env, completed(ws, runId));
     // The retried attempt failed the same way: max is 1, so it stays failed.
+    githubJobs.set(
+      runId,
+      githubJobs.get(runId)!.map((job) => ({ ...job, run_attempt: 2 })),
+    );
     const calls = stubGithub();
     await retryFailedRun(env, completed(ws, runId, { runAttempt: 2 }));
     expect(calls.filter((call) => call.startsWith("POST"))).toEqual([]);
