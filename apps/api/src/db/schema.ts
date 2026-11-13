@@ -361,7 +361,7 @@ export const machineWorkspace = sqliteTable(
 // run is stored too (kind 'job'): those are the real work, and GitHub has already resolved their
 // `runs-on` to the pick's answer, so `labels` is the runner RelayRunner selected. Jobs from runs
 // with no pick are never stored. Rows are written by workflow_job webhooks (src/jobs.ts) and go
-// away with their installation.
+// away with their installation, or after 90 days (src/retention.ts).
 export const workflowJob = sqliteTable(
   "workflow_job",
   {
@@ -564,7 +564,7 @@ export const workflowRun = sqliteTable(
 // The workspace's audit log for the Activity page: one append-only row per event, typed by
 // @relayrunner/activity (src/activity.ts writes and reads it). `data` holds the type's own fields
 // as JSON. The id increases with time, so it orders the log and pages it. Rows go with their
-// workspace, and a job's event goes with its workflow_job row.
+// workspace or after 90 days (src/retention.ts), and a job's event goes with its workflow_job row.
 export const activityEvent = sqliteTable(
   "activity_event",
   {
@@ -603,7 +603,8 @@ export const activityEvent = sqliteTable(
 // How each pick walked its workspace's runner order (src/routing.ts decideRoute), one row per run
 // attempt, so the Activity page can say why a run's jobs went where they did. Written by the
 // PickRunner when it answers. A re-run of failed jobs reuses an earlier attempt's pick, so a job
-// reads the newest row at or before its own attempt. Rows go with their workspace.
+// reads the newest row at or before its own attempt. Rows go with their workspace, or after 90 days
+// (src/retention.ts).
 export const routeDecision = sqliteTable(
   "route_decision",
   {
