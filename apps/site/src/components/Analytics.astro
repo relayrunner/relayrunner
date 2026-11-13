@@ -1,0 +1,12 @@
+---
+/*
+ * Starts PostHog (src/lib/analytics.ts). Goes in every page's <head>: the landing pages (PageMeta),
+ * the legal pages, and the docs (Head.astro). Astro bundles the script once per page.
+ */
+---
+
+<script>
+  import { startAnalytics } from "../lib/analytics";
+
+  startAnalytics();
+</script>

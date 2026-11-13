@@ -26,6 +26,7 @@ vi.mock("@/lib/auth-client", () => ({
   readSession: () => readSession(),
 }));
 vi.mock("@/lib/workspace", () => ({ getCurrentWorkspace: () => getCurrentWorkspace() }));
+vi.mock("@/lib/analytics", () => ({ resetAnalytics: vi.fn() }));
 
 const session = await import("./session.ts");
 

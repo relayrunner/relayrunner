@@ -8,6 +8,7 @@
 // are older than REVALIDATE_MS, when the tab comes back, and when the API answers 401 or
 // `no_active_workspace`). If the answer changed, the router re-runs the guards, which redirect as
 // before: to /login when signed out, to /agree for new terms, to /welcome without a workspace.
+import { resetAnalytics } from "@/lib/analytics";
 import { ApiError, onApiError } from "@/lib/api";
 import { authClient, organization, readSession, type Session } from "@/lib/auth-client";
 import { getCurrentWorkspace, type CurrentWorkspace } from "@/lib/workspace";
@@ -43,6 +44,7 @@ export async function signOut() {
   forgetSession();
   const result = await authClient.signOut();
   forgetSession();
+  resetAnalytics();
   return result;
 }
 
