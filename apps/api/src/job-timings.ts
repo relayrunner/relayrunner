@@ -262,7 +262,7 @@ export async function purgeBefore(
   db: Db,
   target: SQLiteTable,
   column: SQLiteColumn,
-  cutoff: Date,
+  cutoff: Date | number,
   where?: SQL,
 ): Promise<number> {
   let deleted = 0;

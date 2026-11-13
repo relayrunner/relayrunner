@@ -1,7 +1,7 @@
 import { type GithubActor, RouteWalk } from "@relayrunner/activity";
 import { HOSTED_PROVIDER_IDS } from "@relayrunner/providers";
 import { relayInputs } from "@relayrunner/runner-order";
-import { inArray } from "drizzle-orm";
+import { and, inArray } from "drizzle-orm";
 import { recordEvent } from "./activity.ts";
 import { type Db, schema } from "./db/index.ts";
 import type { JobContext, RouteDecision } from "./routing.ts";
@@ -103,9 +103,25 @@ export interface JobPick {
  */
 export async function picksForJobs(db: Db, jobs: JobKey[]): Promise<Map<string, JobPick>> {
   const picks = new Map<string, JobPick>();
-  const runIds = [...new Set(jobs.map((job) => job.runId))];
-  if (runIds.length === 0) return picks;
-  const rows = await db.select().from(table).where(inArray(table.runId, runIds));
+  // Asks by repo and run, so route_decision_run_idx (repository_id, run_id, ...) answers it. Each
+  // query takes up to 50 runs, which keeps it under D1's 100 bound values.
+  const runs = [...new Map(jobs.map((job) => [`${job.repositoryId}:${job.runId}`, job])).values()];
+  if (runs.length === 0) return picks;
+  const chunks = await Promise.all(
+    Array.from({ length: Math.ceil(runs.length / 50) }, (_, i) => {
+      const chunk = runs.slice(i * 50, i * 50 + 50);
+      return db
+        .select()
+        .from(table)
+        .where(
+          and(
+            inArray(table.repositoryId, [...new Set(chunk.map((job) => job.repositoryId))]),
+            inArray(table.runId, [...new Set(chunk.map((job) => job.runId))]),
+          ),
+        );
+    }),
+  );
+  const rows = chunks.flat();
   for (const job of jobs) {
     let best: (typeof rows)[number] | undefined;
     for (const row of rows) {
