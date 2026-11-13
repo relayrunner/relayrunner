@@ -7,6 +7,12 @@ import { cn } from "@/lib/utils";
 // Highlighting pulls in Shiki, so load it only on pages that show code.
 const File = lazy(() => import("@pierre/diffs/react").then((m) => ({ default: m.File })));
 
+// Use the dashboard's code-well background instead of the theme's, and give the code room
+// from the frame's edges.
+const BASE_CSS =
+  ":host{--diffs-light-bg:var(--rr-bg-deep);--diffs-dark-bg:var(--rr-bg-deep)}" +
+  "[data-code]{padding:10px 12px}";
+
 /**
  * Wrapped lines hang 4ch past their own indent, so nested code (like YAML) still reads.
  * The rules go inside the component's shadow root, one per indented line.
@@ -37,13 +43,11 @@ export function CodeBlock({
   className?: string;
 }) {
   const theme = useTheme();
-  // Match the dashboard's code well instead of the theme's own background and font.
+  // Match the dashboard's mono font and sizes.
   const style = {
     "--diffs-font-family": "var(--font-mono)",
     "--diffs-font-size": `${fontSize}px`,
     "--diffs-line-height": `${Math.round(fontSize * 1.6)}px`,
-    "--diffs-bg-context-override": "var(--rr-bg-deep)",
-    "--diffs-bg-buffer-override": "var(--rr-bg-deep)",
     fontSize,
   } as React.CSSProperties;
   return (
@@ -73,7 +77,7 @@ export function CodeBlock({
             disableFileHeader: true,
             disableLineNumbers: true,
             overflow: wrap ? "wrap" : "scroll",
-            unsafeCSS: wrap ? hangingIndent(code) : undefined,
+            unsafeCSS: BASE_CSS + (wrap ? hangingIndent(code) : ""),
           }}
         />
       </Suspense>

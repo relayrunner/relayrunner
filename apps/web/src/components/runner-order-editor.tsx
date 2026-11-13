@@ -596,8 +596,8 @@ function WorkflowPanel({ steps }: { steps: RunnerStep[] }) {
         relay.yml takes one input per step. A job skips steps it doesn't name.
       </p>
       <div className="relative">
-        <CodeBlock code={snippet} lang="yaml" wrap fontSize={11.5} className="pr-8" />
-        <CopyButton text={snippet} label="Copy YAML" className="absolute top-1.5 right-1.5" />
+        <CodeBlock code={snippet} lang="yaml" wrap fontSize={11.5} className="pr-7" />
+        <CopyButton text={snippet} label="Copy YAML" className="absolute top-1 right-1" />
       </div>
     </section>
   );
