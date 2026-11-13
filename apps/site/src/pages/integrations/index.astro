@@ -1,0 +1,78 @@
+---
+/* The integrations index: a card for each integration page, plus the runners you host yourself. */
+import CloseBox from "../../components/CloseBox.astro";
+import LandingPage from "../../layouts/LandingPage.astro";
+import { INTEGRATIONS, integrationPath } from "../../lib/integrations";
+import { logoOf } from "../../lib/providers";
+
+const own = [
+  {
+    href: "/solutions/mac-runner",
+    logo: "/providers/machines.svg",
+    name: "Your machines",
+    summary: "Any Mac or Linux computer, connected with one command.",
+  },
+  {
+    href: "/docs/runners/self-hosted#runners-your-org-already-has",
+    logo: "/providers/self-hosted.svg",
+    name: "Self-hosted runners",
+    summary: "The runners your organization already has.",
+  },
+];
+---
+
+<LandingPage
+  title="Integrations"
+  description="Route GitHub Actions jobs to Blacksmith, Depot, Namespace, WarpBuild, Ubicloud, RunsOn, GitHub-hosted runners or your own machines, and change the order from the dashboard."
+  path="/integrations"
+>
+  <section class="wrap int-hero">
+    <p class="eyebrow">Integrations</p>
+    <h1>Route GitHub Actions jobs to the runners you already use.</h1>
+    <p class="lede">
+      Put hosted providers, GitHub-hosted runners and your own machines in one runner order. Each job
+      goes to the first one that's free, and you change the order from the dashboard.
+    </p>
+  </section>
+
+  <section class="section wrap int-index" aria-labelledby="hosted-h">
+    <h2 id="hosted-h" class="kicker">Hosted runners</h2>
+    <ul class="int-grid">
+      {
+        INTEGRATIONS.map((p) => (
+          <li>
+            <a href={integrationPath(p.id)}>
+              <img src={logoOf(p.id)} alt="" width="40" height="40" />
+              <b>{p.name}</b>
+              <span>{p.summary}</span>
+            </a>
+          </li>
+        ))
+      }
+    </ul>
+
+    <h2 class="kicker">Runners you host</h2>
+    <ul class="int-grid">
+      {
+        own.map((o) => (
+          <li>
+            <a href={o.href}>
+              <img src={o.logo} alt="" width="40" height="40" />
+              <b>{o.name}</b>
+              <span>{o.summary}</span>
+            </a>
+          </li>
+        ))
+      }
+    </ul>
+  </section>
+
+  <CloseBox
+    heading="Start routing your jobs."
+    body="Add relays once. After that, change the order in the dashboard."
+    steps={[
+      { label: "In your repo, add relays to the jobs you want to route", command: "npx relayrunner init" },
+      { label: "Optionally, turn this computer into a runner", command: "npx relayrunner connect" },
+    ]}
+  />
+</LandingPage>
