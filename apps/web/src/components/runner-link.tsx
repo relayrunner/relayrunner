@@ -11,7 +11,7 @@ import {
   sizeText,
 } from "@relayrunner/providers";
 import { type ReactNode, useEffect, useState } from "react";
-import { ProviderMark, providerOf, providerStyle } from "@/components/providers";
+import { ProviderMark, providerOf } from "@/components/providers";
 import { CliVersion, machineView, MachineOwner, StatusDot } from "@/components/runner-card";
 import { HoverCard, HoverCardContent, HoverCardTrigger } from "@/components/ui/hover-card";
 import { deviceName } from "@/lib/device";
@@ -35,9 +35,12 @@ export function RunnerLink({
   runner,
   className,
   markClassName,
+  specsShown = false,
   children,
 }: {
   runner: RunnerRef;
+  /** The row already shows the runner's detail and size, so the card leaves them out. */
+  specsShown?: boolean;
   className?: string;
   markClassName?: string;
   /** What names it; its label when left out. */
@@ -61,38 +64,23 @@ export function RunnerLink({
           {content}
         </Link>
       </HoverCardTrigger>
-      <HoverCardContent className="w-80">
+      <HoverCardContent className="w-72">
         {runner.key.startsWith(MACHINE) ? (
-          <MachineCardBody id={runner.key.slice(MACHINE.length)} runner={runner} />
+          <MachineCardBody id={runner.key.slice(MACHINE.length)} specsShown={specsShown} />
         ) : runner.key.startsWith(SELF_HOSTED) ? (
-          <SelfHostedBody runner={runner} />
+          <SelfHostedBody runner={runner} specsShown={specsShown} />
         ) : (
-          <CloudBody runner={runner} provider={provider} />
+          <CloudBody runner={runner} provider={provider} specsShown={specsShown} />
         )}
       </HoverCardContent>
     </HoverCard>
   );
 }
 
-function Header({
-  mark,
-  title,
-  mono,
-  sub,
-}: {
-  mark: ReactNode;
-  title: string;
-  mono?: boolean;
-  sub?: ReactNode;
-}) {
+// The card's first line. The name is left out, since the link that opened the card shows it.
+function Lead({ children }: { children: ReactNode }) {
   return (
-    <div className="flex min-w-0 items-center gap-2.5">
-      {mark}
-      <div className="min-w-0">
-        <p className={cn("truncate font-semibold", mono && "font-mono text-[13px]")}>{title}</p>
-        {sub && <div className="truncate text-xs text-muted-foreground">{sub}</div>}
-      </div>
-    </div>
+    <div className="flex min-w-0 items-center gap-2 text-xs text-muted-foreground">{children}</div>
   );
 }
 
@@ -101,7 +89,7 @@ function Specs({ rows }: { rows: [string, ReactNode][] }) {
   const shown = rows.filter(([, value]) => value != null && value !== "" && value !== false);
   if (!shown.length) return null;
   return (
-    <dl className="mt-3 grid grid-cols-[auto_minmax(0,1fr)] gap-x-4 gap-y-1.5 border-t pt-3 text-xs">
+    <dl className="grid grid-cols-[auto_minmax(0,1fr)] gap-x-4 gap-y-1.5 text-xs [&:not(:first-child)]:mt-3 [&:not(:first-child)]:border-t [&:not(:first-child)]:pt-3">
       {shown.map(([label, value]) => (
         <div key={label} className="contents">
           <dt className="text-muted-foreground">{label}</dt>
@@ -113,11 +101,11 @@ function Specs({ rows }: { rows: [string, ReactNode][] }) {
 }
 
 function Footer({ children }: { children: ReactNode }) {
-  return <div className="mt-3 text-xs font-medium">{children}</div>;
+  return <div className="mt-3 border-t pt-3 text-xs font-medium">{children}</div>;
 }
 
 // A connected machine or a runner added from GitHub: read from the workspace's machines on open.
-function MachineCardBody({ id, runner }: { id: string; runner: RunnerRef }) {
+function MachineCardBody({ id, specsShown }: { id: string; specsShown: boolean }) {
   // Straight from the cache when another card already read it, so it opens without a skeleton.
   const [machine, setMachine] = useState<Machine | null | undefined>(() => cachedMachine(id));
   useEffect(() => {
@@ -129,27 +117,19 @@ function MachineCardBody({ id, runner }: { id: string; runner: RunnerRef }) {
       live = false;
     };
   }, [id]);
-  const mark = <ProviderMark provider="machine" className="size-7 rounded-md" />;
-
   if (machine === undefined)
     return (
-      <>
-        <Header mark={mark} title={runner.label} mono sub="Loading…" />
-        <div aria-hidden className="mt-3 grid gap-2 border-t pt-3">
-          {[0, 1, 2].map((row) => (
-            <span key={row} className="h-3 w-3/4 animate-pulse rounded bg-muted" />
-          ))}
-        </div>
-      </>
+      <div aria-label="Loading" className="grid gap-2">
+        {[0, 1, 2].map((row) => (
+          <span key={row} className="h-3 w-3/4 animate-pulse rounded bg-muted" />
+        ))}
+      </div>
     );
   if (machine === null || machine.revokedAt)
     return (
-      <>
-        <Header mark={mark} title={runner.label} mono sub={runner.detail || "Self-hosted"} />
-        <p className="mt-3 border-t pt-3 text-xs text-muted-foreground">
-          {machine ? "This machine was revoked." : "This machine isn't in this workspace anymore."}
-        </p>
-      </>
+      <Lead>
+        {machine ? "This machine was revoked." : "This machine isn't in this workspace anymore."}
+      </Lead>
     );
 
   const view = machineView(machine);
@@ -157,23 +137,16 @@ function MachineCardBody({ id, runner }: { id: string; runner: RunnerRef }) {
   const model = device ? [deviceName(device), device.chip].filter(Boolean).join(" · ") : null;
   return (
     <>
-      <Header
-        mark={mark}
-        title={machine.name}
-        mono
-        sub={
-          <span className="flex min-w-0 items-center gap-1.5">
-            <StatusDot connection={view.connection} />
-            <span className="truncate">
-              {view.label}
-              {view.detail && ` · ${view.detail}`}
-            </span>
-          </span>
-        }
-      />
+      <Lead>
+        <StatusDot connection={view.connection} />
+        <span className="truncate">
+          {view.label}
+          {view.detail && ` · ${view.detail}`}
+        </span>
+      </Lead>
       <Specs
         rows={[
-          ["Device", model],
+          ["Device", !specsShown && model],
           ["Hardware", view.hardware],
           ["Platform", view.platform],
           ["Jobs run", view.jobPlace],
@@ -195,17 +168,14 @@ function MachineCardBody({ id, runner }: { id: string; runner: RunnerRef }) {
 }
 
 // Jobs on self-hosted runners RelayRunner didn't connect, by runner group.
-function SelfHostedBody({ runner }: { runner: RunnerRef }) {
+function SelfHostedBody({ runner, specsShown }: { runner: RunnerRef; specsShown: boolean }) {
+  const group =
+    !specsShown && runner.detail ? `the ${runner.detail} runner group` : "a runner group";
   return (
     <>
-      <Header
-        mark={<ProviderMark provider="machine" className="size-7 rounded-md" />}
-        title={runner.label}
-        sub={runner.detail && `${runner.detail} runner group`}
-      />
-      <p className="mt-3 border-t pt-3 text-xs text-muted-foreground">
-        A self-hosted runner GitHub picked from this group. Add it from GitHub on the Runners page
-        to see its specs here.
+      <p className="text-xs text-muted-foreground">
+        A self-hosted runner GitHub picked from {group}. Add it from GitHub on the Runners page to
+        see its specs here.
       </p>
       <Footer>
         <Link to="/runners" className="hover:underline">
@@ -216,9 +186,16 @@ function SelfHostedBody({ runner }: { runner: RunnerRef }) {
   );
 }
 
-function CloudBody({ runner, provider }: { runner: RunnerRef; provider: string }) {
+function CloudBody({
+  runner,
+  provider,
+  specsShown,
+}: {
+  runner: RunnerRef;
+  provider: string;
+  specsShown: boolean;
+}) {
   const { name, summary } = providerInfo(provider);
-  const { mono } = providerStyle(provider);
   // Keys are `<provider>:<label>`; the container's is plain `container`.
   const label = labelOfEnvironment(runner.key);
   const size = runner.size ?? runnerSize(provider, label);
@@ -226,15 +203,10 @@ function CloudBody({ runner, provider }: { runner: RunnerRef; provider: string }
   const detail = runner.detail && runner.detail !== name ? runner.detail : null;
   return (
     <>
-      <Header
-        mark={<ProviderMark provider={provider} className="size-7 rounded-md" />}
-        title={runner.label}
-        mono={mono}
-        sub={detail ? `${name} · ${detail}` : name}
-      />
       <Specs
         rows={[
-          ["Size", sizeText(size)],
+          ["Provider", detail && !specsShown ? `${name} · ${detail}` : name],
+          ["Size", !specsShown && sizeText(size)],
           ["List price", price !== null && rateText(price)],
           [
             "Label",

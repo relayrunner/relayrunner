@@ -272,6 +272,7 @@ const environmentColumns = environmentColumn.columns([
       return (
         <RunnerLink
           runner={env}
+          specsShown
           className={cn("flex w-fit items-center gap-2.5", depth > 0 && "ml-7.5")}
         >
           <span>
