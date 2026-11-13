@@ -5,8 +5,9 @@ import { spawn, type ChildProcessByStdio } from "node:child_process";
 import { readlinkSync, rmSync, symlinkSync } from "node:fs";
 import { join } from "node:path";
 import type { Readable } from "node:stream";
-import type { JobMessage, RunMessage } from "@relayrunner/machine-protocol";
+import type { JobMessage, JobUsage, RunMessage } from "@relayrunner/machine-protocol";
 import { checkJitConfig } from "./jit-config.ts";
+import { processTreeUsage, sampleUsage, type UsageSource } from "./usage.ts";
 
 // A `job` message without its envelope. Whoever sends it on the socket adds `v` and `type`.
 export type JobUpdate = Omit<JobMessage, "v" | "type">;
@@ -20,6 +21,8 @@ export interface Launcher {
   // Runs once the job is over, whether it started or not. `clean` is true when the runner
   // started and exited with 0.
   cleanup: (run: RunMessage, clean: boolean) => void | Promise<void>;
+  // Where to read the job's CPU and memory while its runner runs.
+  usage?: (run: RunMessage, child: RunnerProcess) => UsageSource;
 }
 
 export interface RunJobOptions {
@@ -54,7 +57,8 @@ export async function runJob(run: RunMessage, options: RunJobOptions): Promise<J
     report(update);
     return update;
   };
-  const failed = (message: string) => finish({ routeId, state: "failed", message });
+  const failed = (message: string, usage?: JobUsage) =>
+    finish({ routeId, state: "failed", message, usage });
 
   // Nothing runs on a config that points the runner anywhere but GitHub.
   const checked = checkJitConfig(run.jitConfig, routeId);
@@ -62,6 +66,7 @@ export async function runJob(run: RunMessage, options: RunJobOptions): Promise<J
   options.onChecked?.(checked.target);
 
   let clean = false;
+  let sampler: ReturnType<typeof sampleUsage> | undefined;
   try {
     const child = launcher.start(run);
     child.stdout.on("data", (chunk: Buffer) => output(chunk, "stdout"));
@@ -73,18 +78,22 @@ export async function runJob(run: RunMessage, options: RunJobOptions): Promise<J
     });
     if (started) return failed(`Could not start the runner: ${started.message}`);
     report({ routeId, state: "started" });
+    if (launcher.usage) sampler = sampleUsage(launcher.usage(run, child));
 
     const [code, signal] = await new Promise<[number | null, NodeJS.Signals | null]>((resolve) =>
       child.once("close", (code, signal) => resolve([code, signal])),
     );
+    const usage = await sampler?.stop();
     clean = code === 0;
-    if (clean) return finish({ routeId, state: "finished" });
+    if (clean) return finish({ routeId, state: "finished", usage });
     return failed(
       signal ? `The runner was stopped by ${signal}` : `The runner exited with ${code}`,
+      usage,
     );
   } catch (error) {
     return failed(error instanceof Error ? error.message : String(error));
   } finally {
+    void sampler?.stop(); // Stops it if something threw; otherwise a no-op.
     await launcher.cleanup(run, clean);
   }
 }
@@ -109,6 +118,7 @@ export function hostLauncher(dir: string): Launcher {
         stdio: ["ignore", "pipe", "pipe"],
       });
     },
+    usage: (_run, child) => processTreeUsage(child.pid!),
     cleanup() {
       // Another job's lock, workspace and credentials are left alone.
       if (!locked) return;

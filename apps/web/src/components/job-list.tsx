@@ -15,6 +15,7 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { timeAgo } from "@/lib/activity";
+import { formatMemory } from "@/lib/device";
 import { plural } from "@/lib/job-times";
 import { authDisabled } from "@/lib/auth-client";
 import {
@@ -26,7 +27,7 @@ import {
   LONG_WAIT_MS,
   sampleJobs,
 } from "@/lib/runs";
-import { cn, elapsed } from "@/lib/utils";
+import { cn, elapsed, percent } from "@/lib/utils";
 
 const RANGES = [1, 7, 14] as const;
 
@@ -104,6 +105,40 @@ const columns = column.columns([
     cell: ({ getValue }) => timeAgo(getValue()),
   }),
 ]);
+
+// Shown when some job in the list reported what it used.
+const usageColumn = (
+  id: string,
+  header: string,
+  info: string,
+  field: "cpuP95" | "memoryP95Mb",
+  format: (value: number) => string,
+) =>
+  column.accessor((job) => job.usage?.[field], {
+    id,
+    header,
+    sortFn: "basic",
+    sortDescFirst: true,
+    enableGlobalFilter: false,
+    meta: { align: "end", info: <p>{info}</p> },
+    cell: ({ getValue }) => {
+      const value = getValue();
+      return value === undefined ? "—" : format(value);
+    },
+  });
+const usageColumns = column.columns([
+  usageColumn(
+    "cpu",
+    "CPU",
+    "The p95 of the job's CPU use, as a share of its runner's cores.",
+    "cpuP95",
+    percent,
+  ),
+  usageColumn("memory", "Memory", "The p95 of the job's memory use.", "memoryP95Mb", formatMemory),
+]);
+// Between Run and Result.
+const result = columns.findIndex((def) => def.id === "result");
+const columnsWithUsage = [...columns.slice(0, result), ...usageColumns, ...columns.slice(result)];
 
 function JobCell({ job }: { job: Row }) {
   const { showRepository } = useListContext();
@@ -183,6 +218,7 @@ export function JobList({ report: first }: { report: JobsReport }) {
     [rows, repository, result],
   );
   const chartPoints = useMemo(() => jobPoints(shown), [shown]);
+  const hasUsage = useMemo(() => shown.some((job) => job.usage), [shown]);
   const showRepository = repository === "all" && repositories.length > 1;
   const context = useMemo(() => ({ showRepository }), [showRepository]);
 
@@ -236,7 +272,7 @@ export function JobList({ report: first }: { report: JobsReport }) {
           <SectionBoundary>
             <ListContext value={context}>
               <DataTable
-                columns={columns}
+                columns={hasUsage ? columnsWithUsage : columns}
                 data={shown}
                 getRowId={(job) => String(job.id)}
                 search={query.trim()}

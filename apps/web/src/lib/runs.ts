@@ -52,12 +52,28 @@ export type RunJob = {
 
 export type RunJobs = { environments: Environment[]; jobs: RunJob[] };
 
+/**
+ * The CPU and memory a job used, as the connected machine that ran it sampled them. CPU is a share
+ * (0 to 1) of the job's `cpus`; memory is in MB, out of `memoryMb`.
+ */
+export type JobUsage = {
+  cpuP95: number;
+  cpuPeak: number;
+  memoryP95Mb: number;
+  memoryPeakMb: number;
+  cpus: number;
+  memoryMb: number;
+  samples: number;
+};
+
 /** A job a runner finished (GET /api/runs/jobs). */
 export type HistoryJob = JobRun & {
   repositoryId: number;
   repository: string;
   workflow: string | null;
   name: string;
+  /** Only for jobs on connected machines whose CLI reports it. */
+  usage?: JobUsage;
 };
 
 export type JobsReport = {
@@ -278,6 +294,18 @@ export function sampleJobs(days: number): JobsReport {
       queuedAt: startedAt - ((index * 17) % 90) * 1000,
       startedAt,
       completedAt,
+      // The Mac's jobs report what they used.
+      ...(index % 4 === 1 && {
+        usage: {
+          cpuP95: 0.25 + ((index * 29) % 70) / 100,
+          cpuPeak: Math.min(0.4 + ((index * 29) % 70) / 100, 1),
+          memoryP95Mb: 900 + ((index * 337) % 2600),
+          memoryPeakMb: 1100 + ((index * 337) % 2600),
+          cpus: 4,
+          memoryMb: 8192,
+          samples: Math.round(runMs / 5000),
+        },
+      }),
     };
   });
   return { days, environments: SAMPLE_ENVIRONMENTS, jobs, truncated: false };

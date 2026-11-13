@@ -3,6 +3,7 @@
 // Gateway tables (installations and their repos, then machines and routes) follow. After changing anything
 // here, run `pnpm db:generate` to write a new migration.
 import type { MachineSharing } from "@relayrunner/activity";
+import type { JobUsage } from "@relayrunner/machine-protocol";
 import type { HostedProviderId } from "@relayrunner/providers";
 import { sql } from "drizzle-orm";
 import {
@@ -444,6 +445,9 @@ export const jobTiming = sqliteTable(
     queuedAt: integer("queued_at", { mode: "timestamp_ms" }),
     startedAt: integer("started_at", { mode: "timestamp_ms" }),
     completedAt: integer("completed_at", { mode: "timestamp_ms" }),
+    // The CPU and memory it used, as its connected machine reported when the job ended. Only
+    // machines whose CLI samples report it.
+    usage: text("usage", { mode: "json" }).$type<JobUsage>(),
     ...timestamps,
   },
   (table) => [

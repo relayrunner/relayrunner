@@ -20,6 +20,8 @@ A relay that failed shows the same message the job failed with on GitHub. Filter
 
 A chart above each list shows how long every run or job took over the chosen range, one dot each. Switch it to bars to see how many finished per hour (or per 6 or 12 hours on longer ranges), split by result. The chart follows the range and filters above it.
 
+Jobs on your connected machines also report how much CPU and memory they used. On the Jobs tab, the chart can show either one (the p95 of the job's use), and the table gets CPU and Memory columns. CPU is a share of the job's cores: its VM's, or the machine's when the job runs on the machine itself.
+
 ## From an agent
 
 The same data is available to agents through the [MCP server](/docs/reference/mcp), such as "where did the last run of `test` go, and why?".

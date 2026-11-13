@@ -1,3 +1,4 @@
+import type { JobUsage } from "@relayrunner/machine-protocol";
 import { hostedProviderOf } from "@relayrunner/providers";
 import type {
   ActivityJob,
@@ -127,6 +128,11 @@ export async function setJobMachine(db: Db, jobId: number, machineId: string) {
       .set({ machineId })
       .where(and(eq(schema.jobTiming.id, jobId), isNull(schema.jobTiming.machineId))),
   ]);
+}
+
+/** Saves the CPU and memory a job used, as the machine that ran it reported. */
+export async function setJobUsage(db: Db, jobId: number, usage: JobUsage) {
+  await db.update(schema.jobTiming).set({ usage }).where(eq(schema.jobTiming.id, jobId));
 }
 
 /** The job a machine is running, for its card on the Runners page. */
