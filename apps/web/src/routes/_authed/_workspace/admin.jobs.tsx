@@ -8,9 +8,11 @@ import { StatTile } from "@/components/stat-tile";
 import { DataTable, dataTableColumns, NUM } from "@/components/ui/data-table";
 import { WorkspaceMark } from "@/components/workspace-menu";
 import { getJobCounts, type JobCountReport, type JobCounts } from "@/lib/admin";
+import { DAY_MS } from "@/lib/job-times";
 import { percent } from "@/lib/utils";
 
 const RANGES = [1, 7, 30, 90] as const;
+const HOUR_MS = 3_600_000;
 
 // Operator admin, behind Cloudflare Access and an operator session (apps/api/src/routes/admin.ts).
 export const Route = createFileRoute("/_authed/_workspace/admin/jobs")({
@@ -73,7 +75,13 @@ function JobsPage() {
         ))}
       </div>
 
-      <CountChart tallies={report.hours} days={days} noun="job" />
+      <CountChart
+        tallies={report.hours}
+        days={days}
+        noun="job"
+        // The counts are per hour, so a week of hourly bars costs no more than a day's.
+        bucketMs={days <= 7 ? HOUR_MS : DAY_MS}
+      />
 
       <DataTable
         columns={columns}

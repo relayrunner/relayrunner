@@ -192,19 +192,21 @@ export const DurationChart = memo(function DurationChart({
 });
 
 /**
- * How many runs or jobs finished per hour (or 6 or 12 hours) over the range, each bar stacked by
- * result, from counts made elsewhere, such as Admin › Jobs.
+ * How many runs or jobs finished per bar over the range, each bar stacked by result, from counts
+ * made elsewhere, such as Admin › Jobs. Bars are `bucketMs` wide, or History's width for the range.
  */
 export const CountChart = memo(function CountChart({
   tallies,
   days,
   noun,
+  bucketMs: wanted,
 }: {
   tallies: Tally[];
   days: number;
   noun: string;
+  bucketMs?: number;
 }) {
-  const [ref, frame, bucketMs] = useFrame(days);
+  const [ref, frame, bucketMs] = useFrame(days, wanted);
   const counts = useMemo(() => {
     const totals: Record<Result, number> = { success: 0, failed: 0, cancelled: 0 };
     for (const tally of tallies) for (const result of RESULTS) totals[result] += tally[result];
@@ -260,12 +262,11 @@ const bucketMsFor = (days: number) =>
   days <= 1 ? HOUR_MS : days <= 7 ? 6 * HOUR_MS : 12 * HOUR_MS;
 
 const perBar = (bucketMs: number) =>
-  bucketMs === HOUR_MS ? "hour" : `${bucketMs / HOUR_MS} hours`;
+  bucketMs === HOUR_MS ? "hour" : bucketMs === DAY_MS ? "day" : `${bucketMs / HOUR_MS} hours`;
 
 /** The plot's measured width and time range, in whole bars so the first and last are full width. */
-function useFrame(days: number) {
+function useFrame(days: number, bucketMs = bucketMsFor(days)) {
   const [ref, width] = useWidth<HTMLDivElement>();
-  const bucketMs = bucketMsFor(days);
   const now = Date.now();
   const end = floorTo(now, bucketMs) + bucketMs;
   const start = floorTo(now - days * DAY_MS, bucketMs);
@@ -477,7 +478,8 @@ function Bars({ tallies, bucketMs, ...plot }: PlotProps & { tallies: Tally[]; bu
   const maxCount = Math.max(...buckets.map((bucket) => bucket.total), 1);
   const { y, ticks } = yScale(maxCount, countStep(maxCount));
   const slot = plotX(frame, frame.start + bucketMs) - plotX(frame, frame.start);
-  const barWidth = Math.max(Math.min(slot - 4, 24), 2);
+  // A 4px gap, or a quarter of the slot when bars are narrow (hours over a week).
+  const barWidth = Math.max(Math.min(slot - Math.min(4, slot / 4), 24), 1);
 
   return (
     <Plot
@@ -490,7 +492,9 @@ function Bars({ tallies, bucketMs, ...plot }: PlotProps & { tallies: Tally[]; bu
         hover && (
           <ChartTip x={plotX(frame, hover.at) + slot / 2} y={PAD.top} width={frame.width}>
             <p className="font-medium">
-              {BUCKET_FORMAT.formatRange(hover.at, hover.at + bucketMs)}
+              {bucketMs >= DAY_MS
+                ? DAY_FORMAT.format(hover.at)
+                : BUCKET_FORMAT.formatRange(hover.at, hover.at + bucketMs)}
             </p>
             {RESULTS.map((result) => (
               <p key={result} className="flex items-center gap-1.5 text-muted-foreground">
