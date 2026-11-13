@@ -9,8 +9,8 @@ import SolutionPage from "../../layouts/SolutionPage.astro";
   heading="Turn your Mac into a Linux runner with one command."
   command="npx relayrunner connect"
   close={{
-    heading: "Put your Mac to work.",
-    body: "Connect it, then route your jobs. Your hosted runners stay as the fallback.",
+    heading: "Connect your Mac.",
+    body: "Run these two commands. Your hosted runners stay as the fallback.",
     steps: [
       { label: "Turn this Mac into a runner", command: "npx relayrunner connect" },
       { label: "In your repo, pick the jobs to route", command: "npx relayrunner init" },
@@ -18,9 +18,9 @@ import SolutionPage from "../../layouts/SolutionPage.astro";
   }}
 >
   <Fragment slot="lede">
-    No runner app to install, no tokens to copy, nothing to keep running. Your Mac takes the
-    <code>ubuntu-latest</code> jobs you pay for today, each in a fresh Linux VM, and steps aside when
-    it's busy or asleep.
+    Run one command and your Mac starts taking your <code>ubuntu-latest</code> jobs, each in a fresh
+    Linux VM. You don't install a runner app or copy tokens. When your Mac is busy or asleep, jobs go
+    to your hosted runners.
   </Fragment>
 
   <div class="term" slot="visual">
@@ -37,8 +37,8 @@ import SolutionPage from "../../layouts/SolutionPage.astro";
   </div>
 
   <section class="section wrap" aria-labelledby="compare-h">
-    <p class="kicker">The difference</p>
-    <h2 id="compare-h">Not the self-hosted runner you've set up before.</h2>
+    <p class="kicker">Self-hosted runners</p>
+    <h2 id="compare-h">How this differs from a GitHub self-hosted runner.</h2>
     <p class="body">
       A GitHub self-hosted runner is a server you install, register and keep online. Here, your Mac
       takes jobs only while it's connected, and a new runner registers itself for each job.
@@ -70,7 +70,7 @@ import SolutionPage from "../../layouts/SolutionPage.astro";
   <section class="sol-band" aria-labelledby="how-h">
     <div class="wrap">
       <p class="kicker">How it works</p>
-      <h2 id="how-h">Run real CI jobs on hardware you already own.</h2>
+      <h2 id="how-h">Run CI jobs on a Mac you already own.</h2>
       <ol class="sol-steps">
         <li>
           <h3>Connect in one command</h3>
@@ -87,7 +87,7 @@ import SolutionPage from "../../layouts/SolutionPage.astro";
           </p>
         </li>
         <li>
-          <h3>Fall back when you're away</h3>
+          <h3>Use hosted runners when your Mac is busy</h3>
           <p>
             Your Mac is one step in your runner order. When it's busy or asleep, the next job goes to
             GitHub-hosted or another provider, so nothing waits.
@@ -114,7 +114,7 @@ import SolutionPage from "../../layouts/SolutionPage.astro";
     </div>
     <div class="feature-copy">
       <p class="kicker">macOS builds</p>
-      <h2>Build for macOS on the same Mac.</h2>
+      <h2>Run macOS jobs on your Mac too.</h2>
       <p class="body">
         macOS minutes on GitHub cost about ten times Linux. Add <code>--macos</code> and your Mac runs
         macOS jobs directly, where Xcode is, while Linux jobs keep running in VMs.

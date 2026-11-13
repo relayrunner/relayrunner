@@ -22,8 +22,8 @@ const jobs = [
   heading="Keep CI fast when everyone pushes at once."
   command="npx relayrunner connect"
   close={{
-    heading: "Let your agents push all day.",
-    body: "Connect a machine, then route your jobs. Hosted runners take the overflow.",
+    heading: "Connect your machines.",
+    body: "Connect a machine, then route your jobs. Hosted runners take the jobs your machines can't.",
     steps: [
       { label: "Turn this computer into a runner", command: "npx relayrunner connect --share anyone" },
       { label: "In your repo, pick the jobs to route", command: "npx relayrunner init" },
@@ -31,8 +31,8 @@ const jobs = [
   }}
 >
   <Fragment slot="lede">
-    Coding agents open pull requests around the clock. Jobs run on your own machines first and spill
-    over to hosted runners when those are full, so nothing sits in a queue.
+    Coding agents open pull requests all day. Jobs run on your own machines first and go to hosted
+    runners when your machines are busy, so jobs don't wait in a queue.
   </Fragment>
 
   <div class="sol-card" slot="visual">
@@ -62,7 +62,7 @@ const jobs = [
   <section class="sol-band" aria-labelledby="how-h">
     <div class="wrap">
       <p class="kicker">How it works</p>
-      <h2 id="how-h">Use every machine first, and pay only for the overflow.</h2>
+      <h2 id="how-h">Jobs use your machines first and hosted runners only when they're busy.</h2>
       <ol class="sol-steps">
         <li>
           <h3>Connect what you have</h3>
@@ -72,14 +72,14 @@ const jobs = [
           </p>
         </li>
         <li>
-          <h3>Burst to hosted runners</h3>
+          <h3>Send extra jobs to hosted runners</h3>
           <p>
             When every machine is busy, the next job goes straight to GitHub-hosted or a faster
             provider instead of waiting behind the others.
           </p>
         </li>
         <li>
-          <h3>Cap what overflow costs</h3>
+          <h3>Set a limit on hosted minutes</h3>
           <p>
             Set a minutes limit on GitHub. Past it, jobs fail fast with the reason, and your agent can
             retry later.
@@ -92,7 +92,7 @@ const jobs = [
   <section class="section wrap feature">
     <div class="feature-copy">
       <p class="kicker">Optimized checks</p>
-      <h2>Don't spend a runner on a lint check.</h2>
+      <h2>Run lint checks without a runner.</h2>
       <p class="body">
         PR title checks and lint finish in seconds but still bill a whole minute and wait for a
         runner. Run them as optimized checks and they never need one.

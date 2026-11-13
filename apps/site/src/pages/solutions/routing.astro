@@ -11,8 +11,8 @@ const check = "M5 12l5 5 9-10";
   heading="Change where jobs run without editing your workflows."
   command="npx relayrunner init"
   close={{
-    heading: "Take control of where CI runs.",
-    body: "Add relays once, then change the order as often as you like.",
+    heading: "Start routing your jobs.",
+    body: "Add relays once. After that, change the order in the dashboard.",
     steps: [
       { label: "In your repo, add relays to the jobs you want to route", command: "npx relayrunner init" },
       { label: "Optionally, turn this computer into a runner", command: "npx relayrunner connect" },
@@ -58,7 +58,7 @@ const check = "M5 12l5 5 9-10";
   <section class="sol-band" aria-labelledby="how-h">
     <div class="wrap">
       <p class="kicker">How it works</p>
-      <h2 id="how-h">Set it up once. Steer it from the dashboard.</h2>
+      <h2 id="how-h">Run one command, then manage routing in the dashboard.</h2>
       <ol class="sol-steps">
         <li>
           <h3>Add relays with one command</h3>
@@ -75,8 +75,8 @@ const check = "M5 12l5 5 9-10";
           </p>
         </li>
         <li>
-          <h3>See why each job went where it did</h3>
-          <p>The Activity page shows the runner each job got, and why each step above it was skipped.</p>
+          <h3>See where each job ran</h3>
+          <p>The Activity page shows the runner each job got and why it skipped the runners above it.</p>
         </li>
       </ol>
     </div>
@@ -98,10 +98,10 @@ const check = "M5 12l5 5 9-10";
     </div>
     <div class="feature-copy">
       <p class="kicker">The relay</p>
-      <h2>The relay says where a job may run. Your order says where it does.</h2>
+      <h2>Each job runs on the first free runner its relay allows.</h2>
       <p class="body">
         The relay answers in about a second, needs no runner and uses no minutes. Leave a provider
-        out and the job never goes there.
+        out of a job's relay and that job never runs there.
       </p>
       <a class="sol-link" href="/docs/concepts/routing">Read how routing works →</a>
     </div>
@@ -109,10 +109,10 @@ const check = "M5 12l5 5 9-10";
 
   <section class="section wrap" aria-labelledby="rules-h">
     <p class="kicker">Rules</p>
-    <h2 id="rules-h">Change the rules without a deploy.</h2>
+    <h2 id="rules-h">Change routing rules in the dashboard.</h2>
     <ul class="sol-steps">
       <li>
-        <h3>Fall back when you're full</h3>
+        <h3>Fall back when your machines are busy</h3>
         <p>When every machine is busy or offline, the job moves to the next step instead of waiting.</p>
       </li>
       <li>
