@@ -1,0 +1,35 @@
+{
+  "$schema": "https://releases.sh/schemas/releases.json",
+  "version": 2,
+  "name": "RelayRunner",
+  "description": "Open source routing for GitHub Actions jobs across your own machines, self-hosted runners and hosted runner providers.",
+  "category": "developer-tools",
+  "tags": ["ci", "github-actions", "self-hosted-runners"],
+  "avatar": "https://relayrunner.app/favicon.png",
+  "social": { "github": "relayrunner" },
+  "products": [
+    {
+      "name": "relayrunner CLI",
+      "slug": "cli",
+      "description": "Connects your Mac or Linux machine as a runner and sets up repositories.",
+      "website": "https://www.npmjs.com/package/relayrunner",
+      "docs": "https://relayrunner.app/docs/reference/cli",
+      "releases": [
+        {
+          "title": "Changelog",
+          "url": "https://relayrunner.app/docs/changelog",
+          "feed": "https://relayrunner.app/changelog.xml",
+          "canonical": true
+        },
+        { "github": "relayrunner/relayrunner" }
+      ]
+    },
+    {
+      "name": "RelayRunner Actions",
+      "slug": "actions",
+      "description": "The GitHub Actions that route each job to a runner.",
+      "docs": "https://relayrunner.app/docs/reference/relay-inputs",
+      "releases": [{ "github": "relayrunner/actions", "canonical": true }]
+    }
+  ]
+}
