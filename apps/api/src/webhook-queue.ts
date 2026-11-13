@@ -326,14 +326,8 @@ async function dispatchRoute(
     return;
   }
   // A re-run of failed jobs comes back on the earlier attempt's label: the Router routes it again.
-  const claimed = await router.claim(routeId, job);
-  // Waiting for a machine slot: the Router sends it once a machine has room.
-  if (claimed === "waiting") {
-    console.log(JSON.stringify({ ...log, result: "waiting" }));
-    return;
-  }
   const route =
-    claimed ??
+    (await router.claim(routeId, job)) ??
     (await router.reroute(routeId, {
       ...job,
       runAttempt: message.job.runAttempt,
@@ -341,6 +335,11 @@ async function dispatchRoute(
       installationId: message.installationId,
       repo: message.repository.fullName,
     }));
+  // Waiting for a machine slot: the Router sends it once a machine has room.
+  if (route === "waiting") {
+    console.log(JSON.stringify({ ...log, result: "waiting" }));
+    return;
+  }
   if (!route) {
     console.warn(JSON.stringify({ ...log, result: "no_route" }));
     return;

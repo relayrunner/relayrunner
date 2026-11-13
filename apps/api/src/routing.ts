@@ -600,6 +600,8 @@ export interface Waiting {
   runId: number;
   // The job queued on the label, once its `queued` webhook arrives (Router.claim).
   jobId?: number;
+  // Set for a re-run waiting on its old label (Router.reroute): the attempt it's for.
+  runAttempt?: number;
 }
 
 /** The waiting jobs in line order: longest waiting first, dropping those past ROUTE_TTL_MS. */
