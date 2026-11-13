@@ -5,6 +5,7 @@ import {
   BookOpenIcon,
   Building2Icon,
   ChartColumnIcon,
+  ChartColumnStackedIcon,
   CloudIcon,
   GaugeIcon,
   HistoryIcon,
@@ -92,6 +93,7 @@ const analyticsNav = [
 
 // Operators only (user.role = "operator"). Cloudflare Access still gates these pages.
 const adminNav = [
+  { to: "/admin/jobs", label: "Jobs", icon: ChartColumnStackedIcon },
   { to: "/admin/users", label: "Users", icon: UsersIcon },
   { to: "/admin/workspaces", label: "Workspaces", icon: Building2Icon },
   { to: "/admin/routing", label: "Routing", icon: WaypointsIcon },

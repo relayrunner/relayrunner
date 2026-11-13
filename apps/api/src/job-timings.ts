@@ -3,6 +3,7 @@ import { and, asc, eq, gte, isNotNull, isNull, lt, ne, type SQL, sql } from "dri
 import type { SQLiteColumn, SQLiteTable } from "drizzle-orm/sqlite-core";
 import { type GitHubRunner, githubRate, type PriceBook } from "@relayrunner/providers";
 import { type Db, schema } from "./db/index.ts";
+import { countFinishedJob, countsAsJob } from "./job-counts.ts";
 import { findInstallation } from "./installations.ts";
 import { parseDate } from "./jobs.ts";
 import { loadPriceBook } from "./prices.ts";
@@ -12,6 +13,7 @@ type WorkflowJobMessage = Extract<WebhookMessage, { event: "workflow_job" }>;
 
 const table = schema.jobTiming;
 const daily = schema.jobTimingDaily;
+const { jobCount, jobCountDay, jobCountHour } = schema;
 export const DAY_MS = 86_400_000;
 
 // GitHub bills a job by the minute, rounded up. A job that finishes in under this is the free-checks
@@ -115,7 +117,8 @@ export async function recordJobTiming(db: Db, message: WorkflowJobMessage): Prom
   const { installationId, job, repository } = message;
   if (!installationId || !(await findInstallation(db, installationId))) return false;
   const finished = job.status === "completed";
-  await db
+  const completedAt = finished ? parseDate(job.completedAt) : null;
+  const [written] = await db
     .insert(table)
     .values({
       id: job.id,
@@ -132,7 +135,7 @@ export async function recordJobTiming(db: Db, message: WorkflowJobMessage): Prom
       runnerGroupName: job.runnerGroupName ?? null,
       queuedAt: parseDate(job.createdAt),
       startedAt: parseDate(job.startedAt),
-      completedAt: finished ? parseDate(job.completedAt) : null,
+      completedAt,
     })
     .onConflictDoUpdate({
       target: table.id,
@@ -146,7 +149,12 @@ export async function recordJobTiming(db: Db, message: WorkflowJobMessage): Prom
         updatedAt: sql`excluded.updated_at`,
       },
       setWhere: sql`${table.completedAt} is null`,
-    });
+    })
+    // A row comes back only when this delivery wrote it, so a redelivered `completed` returns
+    // nothing and the job is counted once.
+    .returning({ id: table.id });
+  if (written && completedAt && countsAsJob(job.conclusion, job.labels))
+    await countFinishedJob(db, installationId, job.conclusion, completedAt);
   return true;
 }
 
@@ -167,12 +175,13 @@ const PURGE_BATCH = 5_000;
 
 /**
  * The hourly cleanup: rolls finished jobs past RAW_RETENTION_DAYS up into job_timing_daily, drops
- * daily rows past the report's range, and drops unfinished jobs GitHub has given up on. Returns
+ * daily rows and job counts past the report's range, and drops unfinished jobs GitHub has given up on. Returns
  * how many job_timing rows went.
  */
 export async function purgeOldJobTimings(db: Db, now = Date.now()): Promise<number> {
   // Rolled up first, so a day that has just aged out of the report's range goes in this run.
   const finished = await rollUpJobTimings(db, now);
+  const retained = new Date(now - JOB_TIMING_RETENTION_DAYS * DAY_MS);
   const [unfinished] = await Promise.all([
     purgeBefore(
       db,
@@ -181,7 +190,10 @@ export async function purgeOldJobTimings(db: Db, now = Date.now()): Promise<numb
       new Date(now - UNFINISHED_RETENTION_DAYS * DAY_MS),
       isNull(table.completedAt),
     ),
-    purgeBefore(db, daily, daily.day, new Date(now - JOB_TIMING_RETENTION_DAYS * DAY_MS)),
+    purgeBefore(db, daily, daily.day, retained),
+    purgeBefore(db, jobCountHour, jobCountHour.hour, retained),
+    purgeBefore(db, jobCount, jobCount.hour, retained),
+    purgeBefore(db, jobCountDay, jobCountDay.day, retained),
   ]);
   return finished + unfinished;
 }
