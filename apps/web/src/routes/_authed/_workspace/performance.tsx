@@ -105,11 +105,11 @@ function PerformancePage() {
   const navigate = Route.useNavigate();
   const [report, setReport] = useState<JobTimesReport>(first);
   const [repository, setRepository] = useState<string>("all");
-  const [opened, setDetail] = useState<Detail | null>(null);
+  const [opened, setOpened] = useState<Detail | null>(null);
   const linked = useMemo(() => linkedDetail(report.workflows, search), [report, search]);
   const detail = opened ?? linked;
   function closeDetail() {
-    setDetail(null);
+    setOpened(null);
     if (linked) void navigate({ search: { view: search.view }, replace: true });
   }
 
@@ -182,11 +182,11 @@ function PerformancePage() {
                 environments={report.environments}
                 workflows={workflows}
                 showRepository={showRepository}
-                onOpen={setDetail}
+                onOpen={setOpened}
                 toolbar={filters}
               />
             ) : (
-              <Workflows workflows={workflows} showRepository={showRepository} onOpen={setDetail} />
+              <Workflows workflows={workflows} showRepository={showRepository} onOpen={setOpened} />
             )}
           </SectionBoundary>
         )}

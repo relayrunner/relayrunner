@@ -1,6 +1,7 @@
 import * as React from "react";
 import { XIcon } from "lucide-react";
 import { Dialog as SheetPrimitive } from "radix-ui";
+import { DialogOverlay, DialogPortal } from "@/components/ui/dialog";
 import { cn } from "@/lib/utils";
 
 /** A panel that slides in from the right edge over the page, for a row's detail. */
@@ -14,8 +15,8 @@ function SheetContent({
   ...props
 }: React.ComponentProps<typeof SheetPrimitive.Content>) {
   return (
-    <SheetPrimitive.Portal>
-      <SheetPrimitive.Overlay className="fixed inset-0 z-50 bg-black/40 data-[state=closed]:animate-out data-[state=closed]:fade-out-0 data-[state=open]:animate-in data-[state=open]:fade-in-0" />
+    <DialogPortal>
+      <DialogOverlay />
       <SheetPrimitive.Content
         data-slot="sheet-content"
         className={cn(
@@ -30,7 +31,7 @@ function SheetContent({
           <span className="sr-only">Close</span>
         </SheetPrimitive.Close>
       </SheetPrimitive.Content>
-    </SheetPrimitive.Portal>
+    </DialogPortal>
   );
 }
 

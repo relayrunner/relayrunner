@@ -259,7 +259,13 @@ describe("runs list", () => {
     const res = await testing.call(env, `/runs/${installationId * 10}/200/1/jobs`, cookie);
     expect(res.status).toBe(200);
     const { run, jobs } = (await res.json()) as { run: RunHeader; jobs: RunJob[] };
-    expect(run).toMatchObject({ repository: "acme/app", workflow: "CI", title: "fix: picks" });
+    expect(run).toMatchObject({
+      repository: "acme/app",
+      workflow: "CI",
+      title: "fix: picks",
+      status: "completed",
+      conclusion: "failure",
+    });
     expect(jobs.map((job) => [job.name, job.conclusion])).toEqual([
       ["test", "failure"],
       ["lint", "success"],

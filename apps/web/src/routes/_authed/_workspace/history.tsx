@@ -1,4 +1,4 @@
-import { createFileRoute, Link } from "@tanstack/react-router";
+import { createFileRoute } from "@tanstack/react-router";
 import { ChevronRightIcon, RouteIcon } from "lucide-react";
 import { memo, useEffect, useMemo, useRef, useState } from "react";
 import { SectionBoundary } from "@/components/error-boundary";
@@ -13,13 +13,8 @@ import {
   runnerName,
 } from "@/components/providers";
 import { RangePicker } from "@/components/range-picker";
-import {
-  type Environments,
-  fetchRunJobs,
-  RunSheet,
-  StatusIcon,
-  useNow,
-} from "@/components/run-sheet";
+import { type Environments, fetchRunJobs, RunLink, RunSheet } from "@/components/run-sheet";
+import { StatusIcon } from "@/components/status-icon";
 import {
   Select,
   SelectContent,
@@ -31,6 +26,7 @@ import { timeAgo } from "@/lib/activity";
 import { authDisabled } from "@/lib/auth-client";
 import { DAY_MS, plural } from "@/lib/job-times";
 import { useLiveRefresh } from "@/lib/live-refresh";
+import { useNow } from "@/lib/use-now";
 import {
   getJobs,
   getRuns,
@@ -67,11 +63,11 @@ type Search = { view?: View; run?: string; job?: number };
 
 export const Route = createFileRoute("/_authed/_workspace/history")({
   validateSearch: (search: Record<string, unknown>): Search => {
-    const run = parseRunParam(search.run);
+    const run = parseRunParam(search.run) ? (search.run as string) : undefined;
     const job = Number(search.job);
     return {
       view: viewOf(TABS, search.view),
-      run: run && runParam(run),
+      run,
       job: run && Number.isSafeInteger(job) && job > 0 ? job : undefined,
     };
   },
@@ -81,26 +77,36 @@ export const Route = createFileRoute("/_authed/_workspace/history")({
       return { view, jobs: authDisabled ? sampleJobs(JOB_DAYS) : await getJobs(JOB_DAYS) };
     return { view, runs: authDisabled ? sampleRuns() : await getRuns() };
   },
-  // Coming back to a tab within a minute shows it as it was; the Workflows tab refreshes itself
-  // while runs are going.
-  staleTime: 60_000,
+  // A tab shows as it was when it's come back to: the Workflows tab refreshes itself while runs
+  // are going, and opening or closing the panel only changes the search.
+  shouldReload: ({ cause }) => cause === "enter",
   component: HistoryPage,
 });
 
-function HistoryPage() {
-  const loaded = Route.useLoaderData();
+/** A Map of each environment's name, by key. */
+const namesOf = (report: { environments: { key: string; label: string }[] }): Environments =>
+  new Map(report.environments.map((env) => [env.key, env.label]));
+
+/** The panel the URL opens, if any, with the run from the list when the list has it. */
+function Panel({ runs, environments }: { runs?: Run[]; environments: Environments }) {
   const { run, job } = Route.useSearch();
   const ids = parseRunParam(run);
-  const runs = loaded.view === "workflows" ? loaded.runs : null;
-  const environments: Environments = useMemo(
-    () =>
-      new Map(
-        (runs?.environments ?? (loaded.view === "jobs" ? loaded.jobs.environments : [])).map(
-          (env) => [env.key, env.label],
-        ),
-      ),
-    [loaded, runs],
+  if (!ids) return null;
+  return (
+    <SectionBoundary>
+      <RunSheet
+        key={run}
+        ids={ids}
+        jobId={job}
+        run={runs?.find((each) => runParam(each) === run)}
+        environments={environments}
+      />
+    </SectionBoundary>
   );
+}
+
+function HistoryPage() {
+  const loaded = Route.useLoaderData();
   return (
     <section>
       <PageHeader title="History">
@@ -109,22 +115,21 @@ function HistoryPage() {
       </PageHeader>
       <PageTabs tabs={TABS} value={loaded.view} />
       {loaded.view === "jobs" ? (
-        <JobList report={loaded.jobs} />
+        <Jobs report={loaded.jobs} />
       ) : (
-        <WorkflowRuns loaded={loaded.runs} open={run} />
-      )}
-      {ids && (
-        <SectionBoundary>
-          <RunSheet
-            key={run}
-            ids={ids}
-            jobId={job}
-            run={runs?.runs.find((each) => runParam(each) === run)}
-            environments={environments}
-          />
-        </SectionBoundary>
+        <WorkflowRuns loaded={loaded.runs} />
       )}
     </section>
+  );
+}
+
+function Jobs({ report }: { report: JobsReport }) {
+  const environments = useMemo(() => namesOf(report), [report]);
+  return (
+    <>
+      <JobList report={report} />
+      <Panel environments={environments} />
+    </>
   );
 }
 
@@ -137,7 +142,8 @@ const SORTS: Record<RunSort, ((run: Run) => number) | null> = {
   longest: (run) => run.wallMs ?? -1,
   slowest: (run) => (run.wallMs !== null && run.usualMs ? run.wallMs / run.usualMs : -1),
 };
-function WorkflowRuns({ loaded, open }: { loaded: RunsReport; open: string | undefined }) {
+function WorkflowRuns({ loaded }: { loaded: RunsReport }) {
+  const open = Route.useSearch({ select: (search) => search.run });
   // Refetched while a run on screen is going, so new jobs, runs and results show without a reload.
   const [report, setReport] = useState(loaded);
   useEffect(() => setReport(loaded), [loaded]);
@@ -175,10 +181,7 @@ function WorkflowRuns({ loaded, open }: { loaded: RunsReport; open: string | und
       enabled: !authDisabled && runs.some((run) => run.status !== "completed"),
     },
   );
-  const environments: Environments = useMemo(
-    () => new Map(report.environments.map((env) => [env.key, env.label])),
-    [report],
-  );
+  const environments = useMemo(() => namesOf(report), [report]);
 
   return (
     <div className="grid gap-6">
@@ -249,7 +252,6 @@ function WorkflowRuns({ loaded, open }: { loaded: RunsReport; open: string | und
                 return (
                   <RunRow
                     key={key}
-                    id={key}
                     run={run}
                     environments={environments}
                     showRepository={repositories.length > 1}
@@ -262,19 +264,18 @@ function WorkflowRuns({ loaded, open }: { loaded: RunsReport; open: string | und
           <Legend days={report.days} truncated={report.truncated} />
         </>
       )}
+      <Panel runs={report.runs} environments={environments} />
     </div>
   );
 }
 
 // Memoized: opening one run re-renders that row, not every row.
 const RunRow = memo(function RunRow({
-  id,
   run,
   environments,
   showRepository,
   open,
 }: {
-  id: string;
   run: Run;
   environments: Environments;
   showRepository: boolean;
@@ -297,10 +298,8 @@ const RunRow = memo(function RunRow({
 
   return (
     <li>
-      <Link
-        from="/history"
-        to="/history"
-        search={(prev) => ({ ...prev, run: id, job: undefined })}
+      <RunLink
+        run={run}
         aria-current={open ? "true" : undefined}
         onPointerEnter={() => (hover.current = setTimeout(prefetch, HOVER_INTENT_MS))}
         onPointerLeave={() => clearTimeout(hover.current)}
@@ -329,7 +328,7 @@ const RunRow = memo(function RunRow({
           <WallTime run={run} />
           <ChevronRightIcon aria-hidden className="size-4 text-muted-foreground" />
         </span>
-      </Link>
+      </RunLink>
     </li>
   );
 });

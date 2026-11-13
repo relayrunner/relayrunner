@@ -1,18 +1,9 @@
-import { Link, useNavigate } from "@tanstack/react-router";
-import {
-  ChevronRightIcon,
-  CircleCheckIcon,
-  CircleDashedIcon,
-  CircleSlashIcon,
-  CircleXIcon,
-  ExternalLinkIcon,
-  LoaderCircleIcon,
-  type LucideIcon,
-  TimerOffIcon,
-} from "lucide-react";
-import { type ReactNode, useEffect, useMemo, useState } from "react";
+import { Link, type LinkProps, useNavigate } from "@tanstack/react-router";
+import { ChevronRightIcon, ExternalLinkIcon } from "lucide-react";
+import { type ReactNode, useEffect, useState } from "react";
 import { ProviderLink } from "@/components/provider-link";
 import { providerOf } from "@/components/providers";
+import { StatusIcon } from "@/components/status-icon";
 import { Sheet, SheetContent, SheetDescription, SheetTitle } from "@/components/ui/sheet";
 import { timeAgo } from "@/lib/activity";
 import { authDisabled } from "@/lib/auth-client";
@@ -21,9 +12,9 @@ import {
   getJobSteps,
   getRunJobs,
   isFailure,
+  isLongWait,
   type JobStep,
   jobUrl,
-  LONG_WAIT_MS,
   type Run,
   type RunHeader,
   type RunIds,
@@ -35,6 +26,7 @@ import {
   sampleRunJobs,
   triggerText,
 } from "@/lib/runs";
+import { useNow } from "@/lib/use-now";
 import { cn, elapsed } from "@/lib/utils";
 
 // While a run is going, how often an open run's jobs and a running job's steps are refetched.
@@ -44,58 +36,28 @@ const REFRESH_MS = 5_000;
 /** Each environment's name, by key. */
 export type Environments = Map<string, string>;
 
-export const isLongWait = (wait: number | null): wait is number =>
-  wait !== null && wait >= LONG_WAIT_MS;
-
-/** The time now, ticking every second while `enabled`. */
-export function useNow(enabled: boolean) {
-  const [now, setNow] = useState(Date.now());
-  useEffect(() => {
-    if (!enabled) return;
-    const timer = setInterval(() => setNow(Date.now()), 1000);
-    return () => clearInterval(timer);
-  }, [enabled]);
-  return now;
-}
-
-type Status = { Icon: LucideIcon; label: string; className: string };
-const CANCELLED: Status = {
-  Icon: CircleSlashIcon,
-  label: "Cancelled",
-  className: "text-muted-foreground",
-};
-const LIVE = {
-  in_progress: { Icon: LoaderCircleIcon, label: "In progress", className: "animate-spin text-run" },
-  queued: { Icon: CircleDashedIcon, label: "Queued", className: "text-muted-foreground" },
-} satisfies Record<string, Status>;
-const STATUS: Record<string, Status> = {
-  ...LIVE,
-  success: { Icon: CircleCheckIcon, label: "Succeeded", className: "text-go" },
-  failure: { Icon: CircleXIcon, label: "Failed", className: "text-destructive" },
-  timed_out: { Icon: TimerOffIcon, label: "Timed out", className: "text-destructive" },
-  cancelled: CANCELLED,
-  skipped: { ...CANCELLED, label: "Skipped" },
-};
-
-/** A run's, job's or step's result as an icon: a tick, a cross, a spinner while it runs. */
-export function StatusIcon({
-  status,
-  conclusion,
-  className,
-}: {
-  status: string;
-  conclusion: string | null;
-  className?: string;
-}) {
-  const shown = STATUS[status === "completed" ? (conclusion ?? "") : status] ?? {
-    ...CANCELLED,
-    label: conclusion ?? "Finished",
-  };
+/**
+ * A link that opens a run, or one of its jobs, in History's panel. The panel is a search change on
+ * the page already loaded, so there's nothing to preload.
+ */
+export function RunLink({
+  run,
+  job,
+  ...props
+}: { run: RunIds; job?: number } & Omit<LinkProps, "to" | "from" | "search"> & {
+    className?: string;
+    onPointerEnter?: () => void;
+    onPointerLeave?: () => void;
+    onFocus?: () => void;
+    "aria-current"?: "true";
+  }) {
   return (
-    <shown.Icon
-      role="img"
-      aria-label={shown.label}
-      className={cn("size-[18px] shrink-0", shown.className, className)}
+    <Link
+      from="/history"
+      to="/history"
+      search={(prev) => ({ ...prev, run: runParam(run), job })}
+      preload={false}
+      {...props}
     />
   );
 }
@@ -133,8 +95,19 @@ function cachedJobs(run: RunIds, status: RunStatus) {
   return (cached?.status === status && cached.jobs) || null;
 }
 
-// A finished job's steps don't change, so they're kept once read.
+// A finished job's steps don't change, so the last ones read are kept.
 const stepsCache = new Map<number, JobStep[] | null>();
+
+function fetchJobSteps(job: RunJob) {
+  const request = authDisabled ? Promise.resolve(sampleJobSteps(job)) : getJobSteps(job.id);
+  return request.then((steps) => {
+    if (job.status === "completed") {
+      stepsCache.set(job.id, steps);
+      if (stepsCache.size > CACHE_SIZE) stepsCache.delete(stepsCache.keys().next().value!);
+    }
+    return steps;
+  });
+}
 
 // A job still queued has waited until now, and one still running has run until now.
 function waitOf(job: RunJob, now: number) {
@@ -144,17 +117,6 @@ function waitOf(job: RunJob, now: number) {
 }
 const ranOf = (job: RunJob, now: number) =>
   job.startedAt === null ? null : (job.completedAt ?? now) - job.startedAt;
-
-/** A run's status and result worked out from its jobs, for a run the list hasn't loaded. */
-function outcomeOf(jobs: RunJob[]): { status: RunStatus; conclusion: string | null } {
-  if (jobs.some((job) => job.status !== "completed"))
-    return { status: "in_progress", conclusion: null };
-  const conclusions = jobs.map((job) => job.conclusion);
-  const conclusion = ["failure", "timed_out", "cancelled"].find((each) =>
-    conclusions.includes(each),
-  );
-  return { status: "completed", conclusion: conclusion ?? "success" };
-}
 
 /**
  * History's detail panel: one run attempt and its jobs, or with `jobId` one of those jobs and its
@@ -176,32 +138,28 @@ export function RunSheet({
   const close = () =>
     void navigate({ from: "/history", to: "/history", search: (prev) => ({ view: prev.view }) });
 
-  // The run's status from the list when it has the run, else from its jobs once they load.
+  // The run's status from the list when it has it, else from the detail once that loads. The panel
+  // is keyed on the run, so `ids` never changes under it.
   const [detail, setDetail] = useState<RunJobs | null>(() =>
     cachedJobs(ids, run?.status ?? "completed"),
   );
   const [failed, setFailed] = useState(false);
-  const outcome = detail ? outcomeOf(detail.jobs) : null;
-  const status = run?.status ?? outcome?.status ?? "completed";
+  const header: RunHeader | null = run ?? detail?.run ?? null;
+  const status = header?.status ?? "completed";
   const running = status !== "completed";
-  const { repositoryId, runId, runAttempt } = ids;
-  const key = useMemo(
-    () => ({ repositoryId, runId, runAttempt }),
-    [repositoryId, runId, runAttempt],
-  );
   useEffect(() => {
     let live = true;
-    setFailed(false);
-    fetchRunJobs(key, run?.status ?? "completed")
+    fetchRunJobs(ids, run?.status ?? "completed")
       .then((value) => live && setDetail(value))
       .catch(() => live && setFailed(true));
     return () => {
       live = false;
     };
-  }, [key, run?.status]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- keyed on the run
+  }, [run?.status]);
   useLiveRefresh(
     () =>
-      fetchRunJobs(key, status, true)
+      fetchRunJobs(ids, status, true)
         .then(setDetail)
         .catch(() => undefined), // Keep showing the last answer; the next tick retries.
     { intervalMs: REFRESH_MS, enabled: running && !authDisabled },
@@ -217,10 +175,8 @@ export function RunSheet({
   // A runner's name from the page's environments first, then the detail's own.
   const own = new Map(detail?.environments.map((env) => [env.key, env.label]));
   const label = (envKey: string) => environments.get(envKey) ?? own.get(envKey) ?? envKey;
-  const header: RunHeader | null = run ?? detail?.run ?? null;
   const job = jobId === undefined ? undefined : detail?.jobs.find((each) => each.id === jobId);
 
-  const titled = Boolean(!failed && detail && header && (jobId === undefined || job));
   let body: ReactNode;
   if (failed) body = <Empty>Couldn't load this run. Try again in a moment.</Empty>;
   else if (!detail) body = <JobsPlaceholder rows={Math.max(run?.environments.length ?? 0, 2)} />;
@@ -238,7 +194,6 @@ export function RunSheet({
         run={run}
         header={header}
         jobs={detail.jobs}
-        outcome={run ?? outcome!}
         now={now}
         running={running}
         label={label}
@@ -248,16 +203,22 @@ export function RunSheet({
   return (
     <Sheet open onOpenChange={(open) => !open && close()}>
       <SheetContent aria-describedby={undefined}>
-        {/* Each view titles the panel itself; until one shows, this names it for screen readers. */}
-        {!titled && <SheetTitle className="sr-only">Workflow run</SheetTitle>}
         <div className="grid gap-6 px-5 py-5 sm:px-6">{body}</div>
       </SheetContent>
     </Sheet>
   );
 }
 
+// Each view titles the panel itself; until one shows, this names it for screen readers.
+const UNTITLED = <SheetTitle className="sr-only">Workflow run</SheetTitle>;
+
 function Empty({ children }: { children: ReactNode }) {
-  return <p className="pt-8 text-sm text-muted-foreground">{children}</p>;
+  return (
+    <>
+      {UNTITLED}
+      <p className="pt-8 text-sm text-muted-foreground">{children}</p>
+    </>
+  );
 }
 
 type Label = (envKey: string) => string;
@@ -267,7 +228,6 @@ function RunView({
   run,
   header,
   jobs,
-  outcome,
   now,
   running,
   label,
@@ -276,18 +236,13 @@ function RunView({
   run: Run | undefined;
   header: RunHeader;
   jobs: RunJob[];
-  outcome: { status: RunStatus; conclusion: string | null };
   now: number;
   running: boolean;
   label: Label;
 }) {
   const firstQueued = Math.min(...jobs.map((job) => job.queuedAt ?? job.startedAt ?? Infinity));
   const startedAt = run?.startedAt ?? (Number.isFinite(firstQueued) ? firstQueued : null);
-  const wallMs = running
-    ? startedAt === null
-      ? null
-      : now - startedAt
-    : (run?.wallMs ?? (startedAt === null ? null : now - startedAt));
+  const wallMs = (running ? null : run?.wallMs) ?? (startedAt === null ? null : now - startedAt);
   const failedJobs = jobs.filter((job) => isFailure(job.conclusion)).length;
 
   let longest: { job: RunJob; wait: number } | null = null;
@@ -307,7 +262,7 @@ function RunView({
     <>
       <header className="grid gap-1 pr-8">
         <SheetTitle className="flex items-center gap-2">
-          <StatusIcon status={outcome.status} conclusion={outcome.conclusion} />
+          <StatusIcon status={header.status} conclusion={header.conclusion} />
           <span className="min-w-0 truncate">
             {header.title ?? header.workflow ?? "Unnamed workflow"}
           </span>
@@ -366,15 +321,14 @@ function RunView({
                 return (
                   <tr key={job.id} className="hover:bg-secondary/30">
                     <th scope="row" className="py-2 pr-4 pl-3 text-left font-normal">
-                      <Link
-                        from="/history"
-                        to="/history"
-                        search={(prev) => ({ ...prev, run: runParam(ids), job: job.id })}
+                      <RunLink
+                        run={ids}
+                        job={job.id}
                         className="group inline-flex items-center gap-2 whitespace-nowrap"
                       >
                         <JobStatus job={job} running={running} />
                         <span className="underline-offset-4 group-hover:underline">{job.name}</span>
-                      </Link>
+                      </RunLink>
                     </th>
                     <td className="py-2 pr-4 whitespace-nowrap">
                       {job.environment ? (
@@ -438,25 +392,30 @@ function JobView({
   running: boolean;
   label: Label;
 }) {
+  // Undefined while loading; null when GitHub has no steps for the job.
   const [steps, setSteps] = useState<JobStep[] | null | undefined>(() => stepsCache.get(job.id));
   const [failed, setFailed] = useState(false);
+  const started = job.startedAt !== null;
   const done = job.status === "completed";
-  const load = () =>
-    (authDisabled ? Promise.resolve(sampleJobSteps(job)) : getJobSteps(job.id)).then((value) => {
-      if (done) stepsCache.set(job.id, value);
-      setSteps(value);
-    });
+  // Read once the job has started, and again when it finishes, for its last steps.
   useEffect(() => {
-    if (stepsCache.has(job.id)) return;
-    setFailed(false);
-    load().catch(() => setFailed(true));
-    // Loaded again when the job finishes, for its last steps.
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [job.id, done]);
-  useLiveRefresh(() => load().catch(() => undefined), {
-    intervalMs: REFRESH_MS,
-    enabled: !done && job.startedAt !== null && !authDisabled,
-  });
+    if (!started || stepsCache.has(job.id)) return;
+    let live = true;
+    fetchJobSteps(job)
+      .then((value) => live && setSteps(value))
+      .catch(() => live && setFailed(true));
+    return () => {
+      live = false;
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- `job` is a new object every refresh
+  }, [job.id, started, done]);
+  useLiveRefresh(
+    () =>
+      fetchJobSteps(job)
+        .then(setSteps)
+        .catch(() => undefined),
+    { intervalMs: REFRESH_MS, enabled: started && !done && !authDisabled },
+  );
 
   const wait = waitOf(job, now);
   const workflow = header.workflow ?? "Unnamed workflow";
@@ -471,14 +430,12 @@ function JobView({
     <>
       <header className="grid gap-1 pr-8">
         <nav aria-label="Run" className="flex min-w-0 items-center gap-1 text-sm">
-          <Link
-            from="/history"
-            to="/history"
-            search={(prev) => ({ ...prev, run: runParam(ids), job: undefined })}
+          <RunLink
+            run={ids}
             className="truncate text-muted-foreground underline-offset-4 hover:text-foreground hover:underline"
           >
             {header.title ? `${workflow}: ${header.title}` : workflow}
-          </Link>
+          </RunLink>
         </nav>
         <SheetTitle className="flex items-center gap-2">
           <JobStatus job={job} running={running} className="size-[18px]" />
@@ -517,14 +474,14 @@ function JobView({
         <h3 className="text-sm font-medium">Steps</h3>
         {failed ? (
           <p className="text-sm text-muted-foreground">Couldn't load the steps from GitHub.</p>
+        ) : !started ? (
+          <p className="text-sm text-muted-foreground">
+            Steps show once a runner picks the job up.
+          </p>
         ) : steps === undefined ? (
           <StepsPlaceholder />
         ) : steps === null || steps.length === 0 ? (
-          <p className="text-sm text-muted-foreground">
-            {job.startedAt === null
-              ? "Steps show once a runner picks the job up."
-              : "GitHub has no steps for this job."}
-          </p>
+          <p className="text-sm text-muted-foreground">GitHub has no steps for this job.</p>
         ) : (
           <Steps steps={steps} job={job} now={now} />
         )}
@@ -590,17 +547,20 @@ function Steps({ steps, job, now }: { steps: JobStep[]; job: RunJob; now: number
 function JobStatus({
   job,
   running,
-  className,
+  className = "size-4",
 }: {
   job: RunJob;
   running: boolean;
   className?: string;
 }) {
   // A job left unfinished in a run that has ended never said how it went.
-  if (job.status !== "completed" && !running)
-    return <StatusIcon status="completed" conclusion="unknown" className={className ?? "size-4"} />;
+  const stale = job.status !== "completed" && !running;
   return (
-    <StatusIcon status={job.status} conclusion={job.conclusion} className={className ?? "size-4"} />
+    <StatusIcon
+      status={stale ? "completed" : job.status}
+      conclusion={stale ? "unknown" : job.conclusion}
+      className={className}
+    />
   );
 }
 
@@ -636,6 +596,7 @@ function ExternalLink({ href, children }: { href: string; children: ReactNode })
 function JobsPlaceholder({ rows }: { rows: number }) {
   return (
     <div aria-busy aria-label="Loading jobs" className="grid gap-6">
+      {UNTITLED}
       <div className="grid gap-2 pr-8">
         <span className="h-5 w-64 max-w-full rounded-sm bg-secondary" />
         <span className="h-3 w-40 rounded-sm bg-secondary" />

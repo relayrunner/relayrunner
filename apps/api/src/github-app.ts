@@ -156,15 +156,18 @@ export async function deleteRunner(token: string, scope: RunnerScope, runnerId: 
     throw new Error(`DELETE ${path} failed with ${response.status}`);
 }
 
+/** A workflow job as GitHub has it now, or null when it's gone. */
+async function workflowJob<T>(token: string, repo: string, jobId: number): Promise<T | null> {
+  const path = `/repos/${repo}/actions/jobs/${jobId}`;
+  const response = await fetch(`${API}${path}`, { headers: headers(token) });
+  if (response.status === 404) return null;
+  if (!response.ok) throw new Error(`GET ${path} failed with ${response.status}`);
+  return (await response.json()) as T;
+}
+
 /** A workflow job's status ("queued", "in_progress", "completed", ...), or null when it's gone. */
 export async function workflowJobStatus(token: string, repo: string, jobId: number) {
-  const response = await fetch(`${API}/repos/${repo}/actions/jobs/${jobId}`, {
-    headers: headers(token),
-  });
-  if (response.status === 404) return null;
-  if (!response.ok)
-    throw new Error(`GET /repos/${repo}/actions/jobs/${jobId} failed with ${response.status}`);
-  return ((await response.json()) as { status: string }).status;
+  return (await workflowJob<{ status: string }>(token, repo, jobId))?.status ?? null;
 }
 
 /** One step of a workflow job, as GitHub reports it. Times are epoch ms. */
@@ -183,11 +186,7 @@ export async function workflowJobSteps(
   repo: string,
   jobId: number,
 ): Promise<JobStep[] | null> {
-  const path = `/repos/${repo}/actions/jobs/${jobId}`;
-  const response = await fetch(`${API}${path}`, { headers: headers(token) });
-  if (response.status === 404) return null;
-  if (!response.ok) throw new Error(`GET ${path} failed with ${response.status}`);
-  const { steps = [] } = (await response.json()) as {
+  const job = await workflowJob<{
     steps?: {
       number: number;
       name: string;
@@ -196,7 +195,9 @@ export async function workflowJobSteps(
       started_at?: string | null;
       completed_at?: string | null;
     }[];
-  };
+  }>(token, repo, jobId);
+  if (!job) return null;
+  const { steps = [] } = job;
   const time = (value?: string | null) => (value ? Date.parse(value) : null);
   return steps.map((step) => ({
     number: step.number,

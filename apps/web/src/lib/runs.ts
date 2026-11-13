@@ -53,7 +53,16 @@ export type RunJob = {
 /** What a run's detail says about the run itself. Null when nothing of the run is known. */
 export type RunHeader = Pick<
   Run,
-  "repository" | "workflow" | "title" | "event" | "actor" | "branch" | "pullRequest" | "url"
+  | "repository"
+  | "workflow"
+  | "title"
+  | "event"
+  | "actor"
+  | "branch"
+  | "pullRequest"
+  | "url"
+  | "status"
+  | "conclusion"
 >;
 
 export type RunJobs = { run: RunHeader | null; environments: Environment[]; jobs: RunJob[] };
@@ -129,6 +138,8 @@ export const isFailure = (conclusion: string | null) =>
 
 /** A wait this long is worth pointing out. */
 export const LONG_WAIT_MS = 60_000;
+export const isLongWait = (wait: number | null): wait is number =>
+  wait !== null && wait >= LONG_WAIT_MS;
 
 const now = Date.now();
 const MIN = 60_000;
@@ -241,6 +252,8 @@ export function sampleRunJobs(run: Pick<Run, "runId">): RunJobs {
     branch: "main",
     pullRequest: null,
     url: "https://github.com",
+    status: "completed",
+    conclusion: "success",
     ...listed,
   };
   if (!listed) {
