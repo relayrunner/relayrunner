@@ -1,0 +1,162 @@
+---
+// Homepage flowchart: one job goes through the relay and fans out to each runner in the order.
+const DESTINATIONS = [
+  { name: "Your machines", logo: "/providers/machines.svg" },
+  { name: "Self-hosted runners", logo: "/providers/self-hosted.svg" },
+  { name: "Blacksmith", logo: "/providers/blacksmith.svg" },
+  { name: "GitHub-hosted", logo: "/providers/github.svg" },
+];
+// Connector end points, as a share of the fan's height, centred on each destination row.
+const ends = DESTINATIONS.map((_, i) => ((i + 0.5) / DESTINATIONS.length) * 100);
+---
+
+<figure
+  class="flow wrap"
+  aria-label="Each GitHub Actions job goes through relayrunner to the first free runner in your order: your machines, self-hosted runners, Blacksmith, then GitHub-hosted."
+>
+  <div class="flow-job" aria-hidden="true">
+    <b class="label">GitHub Actions</b>
+    <code>ci / test</code>
+  </div>
+  <span class="flow-line" aria-hidden="true"></span>
+  <div class="flow-relay" aria-hidden="true">
+    <img src="/assets/runner-head.svg" alt="" width="56" height="56" />
+    <b>relayrunner</b>
+  </div>
+  <svg class="flow-fan" viewBox="0 0 100 100" preserveAspectRatio="none" aria-hidden="true">
+    {ends.map((y) => <path d={`M0 50 C 55 50, 45 ${y}, 100 ${y}`} />)}
+  </svg>
+  <span class="flow-line flow-line-down" aria-hidden="true"></span>
+  <ol class="flow-dest" aria-hidden="true">
+    {
+      DESTINATIONS.map((d, i) => (
+        <li>
+          <span class="flow-num">{i + 1}</span>
+          <img src={d.logo} alt="" width="28" height="28" />
+          {d.name}
+        </li>
+      ))
+    }
+  </ol>
+</figure>
+
+<style>
+  .flow {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) 56px auto minmax(72px, 140px) minmax(0, 1.25fr);
+    align-items: center;
+    margin-top: 56px;
+  }
+  .flow-job {
+    position: relative;
+    justify-self: end;
+  }
+  .flow-job .label {
+    position: absolute;
+    bottom: calc(100% + 10px);
+    left: 0;
+    white-space: nowrap;
+  }
+  .flow-job code {
+    padding: 14px 18px;
+    border: 1px solid var(--line);
+    border-radius: 10px;
+    background: var(--raised);
+    font-size: 16px;
+    box-shadow: var(--shadow-card);
+  }
+  .flow-line {
+    height: 2px;
+    margin: 0 10px;
+    background: var(--go-edge);
+  }
+  .flow-line-down {
+    display: none;
+  }
+  .flow-relay {
+    position: relative;
+    padding: 0 6px;
+  }
+  .flow-relay b {
+    position: absolute;
+    top: calc(100% + 6px);
+    left: 50%;
+    font-size: 16px;
+    transform: translateX(-50%);
+  }
+  .flow-fan {
+    align-self: stretch;
+    width: 100%;
+    height: 100%;
+    overflow: visible;
+  }
+  .flow-fan path {
+    fill: none;
+    stroke: var(--go-edge);
+    stroke-width: 2;
+    vector-effect: non-scaling-stroke;
+  }
+  .flow-dest {
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+    max-width: 360px;
+  }
+  .flow-dest li {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    padding: 10px 14px;
+    border: 1px solid var(--line);
+    border-radius: 12px;
+    background: var(--bg-deep);
+    font-weight: 600;
+  }
+  .flow-dest li:first-child {
+    border-color: var(--go-edge);
+    background: var(--raised);
+    box-shadow: var(--shadow-on);
+  }
+  .flow-num {
+    width: 14px;
+    color: var(--mute);
+    font: 500 13px var(--mono);
+  }
+  .flow-dest li:first-child .flow-num {
+    color: var(--go-text);
+  }
+
+  /* Phones: stack top to bottom and drop the fan. */
+  @media (max-width: 720px) {
+    .flow {
+      grid-template-columns: 1fr;
+      justify-items: center;
+      margin-top: 40px;
+    }
+    .flow-job {
+      justify-self: center;
+      margin-top: 28px;
+    }
+    .flow-job .label {
+      left: 50%;
+      transform: translateX(-50%);
+    }
+    .flow-relay {
+      margin-bottom: 30px;
+    }
+    .flow-line {
+      width: 2px;
+      height: 28px;
+      margin: 10px 0;
+    }
+    .flow-line-down {
+      display: block;
+    }
+    .flow-fan {
+      display: none;
+    }
+    .flow-dest {
+      width: 100%;
+    }
+  }
+</style>

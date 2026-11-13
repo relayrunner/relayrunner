@@ -2,6 +2,7 @@
 // Moved from index.html; the header is now the shared SiteHeader. Astro bundles the imported CSS into the page's <head>.
 import CloseBox from "../components/CloseBox.astro";
 import LandingRelay from "../components/LandingRelay.astro";
+import RoutingFlow from "../components/RoutingFlow.astro";
 import PageMeta from "../components/PageMeta.astro";
 import SiteFooter from "../components/SiteFooter.astro";
 import SiteHeader from "../components/SiteHeader.astro";
@@ -69,12 +70,10 @@ const structuredData = {
       <section class="hero wrap" id="top">
         <img class="mascot" src="/mascot.webp" alt="" width="240" height="317" />
         <p class="eyebrow">Open source · Smart routing for GitHub Actions</p>
-        <h1>One router for <span class="hl">every CI&nbsp;runner.</span></h1>
+        <h1>One router for <span class="hl">every CI&nbsp;runner</span></h1>
         <p class="lede">
-          Turn any Mac or Linux computer into a runner with one command. Each GitHub Actions job
-          goes to the first free runner in your order: your machines, self-hosted runners, a
-          provider like Blacksmith, or GitHub-hosted. You change the order in the dashboard, not in
-          your workflows.
+          Change runners with zero code changes. Each GitHub Actions job goes to the first free
+          runner in your order.
         </p>
         <div class="hero-actions">
           <a class="btn-go btn-lg" href="https://app.relayrunner.app">Get started with GitHub</a>
@@ -95,6 +94,8 @@ const structuredData = {
           into Claude Code, Codex or Cursor and your agent does the setup.
         </p>
       </section>
+
+      <RoutingFlow />
 
       <!-- Routing demo -->
       <section class="wrap" aria-label="Routing demo">
