@@ -275,6 +275,9 @@ export const machine = sqliteTable(
     // The machine's second place for jobs, a VM per job (the hello's `isolated`). Null without one.
     isolatedOs: text("isolated_os"),
     isolatedArch: text("isolated_arch"),
+    // The size of each job's VM (the hello's `vm`). Null when jobs run on the machine itself.
+    vmCpus: integer("vm_cpus"),
+    vmMemoryGb: integer("vm_memory_gb"),
     // SHA-256 (hex) of the machine token. The token itself is only ever shown to the CLI.
     tokenHash: text("token_hash").unique(),
     // SHA-256 (hex) of the token the gateway sent to replace it on the machine's last connect,

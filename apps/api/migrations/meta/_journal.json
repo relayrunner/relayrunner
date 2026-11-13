@@ -330,6 +330,13 @@
       "when": 1794505168021,
       "tag": "20261112173928_machine_isolated",
       "breakpoints": true
+    },
+    {
+      "idx": 47,
+      "version": "6",
+      "when": 1794527883915,
+      "tag": "20261112235803_machine_vm_size",
+      "breakpoints": true
     }
   ]
 }

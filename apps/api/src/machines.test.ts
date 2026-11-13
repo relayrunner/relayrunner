@@ -471,8 +471,14 @@ describe("machines in the dashboard", () => {
       arch: "arm64",
       isolatedOs: null,
       isolatedArch: null,
+      vmCpus: null,
+      vmMemoryGb: null,
       cliVersion: null,
     });
+    // A CLI running jobs in VMs says how big each one is.
+    expect(
+      helloColumns({ os: "linux", arch: "arm64", vm: { cpus: 4, memoryGb: 8 } }, new Date()),
+    ).toMatchObject({ vmCpus: 4, vmMemoryGb: 8 });
   });
 
   test("a hello saves the machine's VM as a second place for jobs, and clears it when it's gone", async () => {

@@ -46,6 +46,8 @@ export type Machine = {
    * predates it.
    */
   device?: MachineDevice | null;
+  /** The size of each job's VM, from its last hello. Null when it doesn't run jobs in VMs. */
+  vm?: { cpus: number; memoryGb: number } | null;
   /**
    * The relayrunner CLI version from its last hello, and the newer release to update to, or null
    * when up to date. Null for a runner added from GitHub or a CLI older than 0.7.0. Missing from an

@@ -1,4 +1,5 @@
 // A connected machine's device as its CLI reported it (#165), and how the dashboard names it.
+import { sizeText } from "@relayrunner/providers";
 
 export type DeviceKind = "laptop" | "desktop" | "server" | "vm" | "unknown";
 
@@ -55,10 +56,14 @@ export function describeJobPlace(machine: {
   os: string | null;
   isolatedLabels?: string[];
   device?: Pick<MachineDevice, "osVersion"> | null;
+  vm?: { cpus: number; memoryGb: number } | null;
 }) {
   if (machine.isolatedLabels) return "Linux in a VM · macOS on the Mac";
   const runsOn = machine.device?.osVersion;
   if (!machine.os || !runsOn) return null;
-  if (machine.os === "linux" && runsOn.startsWith("macOS")) return "Each in a Linux VM";
+  if (machine.os === "linux" && runsOn.startsWith("macOS")) {
+    const size = sizeText(machine.vm && { vcpus: machine.vm.cpus, memoryGb: machine.vm.memoryGb });
+    return size ? `Each in a Linux VM · ${size}` : "Each in a Linux VM";
+  }
   return "On the machine itself";
 }
