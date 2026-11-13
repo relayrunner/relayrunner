@@ -199,3 +199,29 @@ export function saveProvider(id: string, provider: ProviderFields) {
 export function removeProvider(id: string) {
   return api<{ ok: true }>(`/admin/providers/${encodeURIComponent(id)}`, { method: "DELETE" });
 }
+
+/** Jobs that finished, by result. */
+export type JobCounts = { success: number; failed: number; cancelled: number };
+
+/** Admin › Jobs (apps/api/src/job-counts.ts): finished jobs across every workspace. */
+export type JobCountReport = {
+  days: number;
+  totals: JobCounts;
+  /** Per hour with jobs, oldest first. */
+  hours: (JobCounts & { at: number })[];
+  /** Per GitHub installation that had jobs, most first. */
+  installations: (JobCounts & {
+    installationId: number;
+    accountLogin: string;
+    workspaceId: string | null;
+    name: string;
+    logo: string | null;
+    internal: boolean;
+  })[];
+  /** How many of our own workspaces exist, counted or not. */
+  internalWorkspaces: number;
+};
+
+export function getJobCounts(days: number, internal: boolean) {
+  return api<JobCountReport>(`/admin/jobs?days=${days}&internal=${internal ? 1 : 0}`);
+}

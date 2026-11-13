@@ -526,6 +526,53 @@ export const jobTimingDaily = sqliteTable(
   ],
 );
 
+// How many jobs finished, by result, for Admin › Jobs (src/job-counts.ts). Each job is counted
+// once, when job_timing first sees it finish, into three rollups so no read grows with jobs, and
+// the chart's doesn't grow with installations either: every installation per hour, each
+// installation per hour, and each installation per day. Kept as long as job_timing_daily.
+const jobCounters = {
+  success: integer("success").notNull().default(0),
+  failed: integer("failed").notNull().default(0),
+  cancelled: integer("cancelled").notNull().default(0),
+};
+
+// Every installation's jobs per UTC hour: the chart and totals.
+export const jobCountHour = sqliteTable("job_count_hour", {
+  hour: integer("hour", { mode: "timestamp_ms" }).primaryKey(),
+  ...jobCounters,
+});
+
+// One installation's jobs per UTC hour: the 1-day breakdown, and our own installations' share to
+// take out of the chart.
+export const jobCount = sqliteTable(
+  "job_count",
+  {
+    installationId: integer("installation_id")
+      .notNull()
+      .references(() => githubInstallation.id, { onDelete: "cascade" }),
+    hour: integer("hour", { mode: "timestamp_ms" }).notNull(),
+    ...jobCounters,
+  },
+  (table) => [
+    primaryKey({ columns: [table.installationId, table.hour] }),
+    // The 1-day breakdown across every installation, and the purge.
+    index("job_count_hour_idx").on(table.hour),
+  ],
+);
+
+// One installation's jobs per UTC day: the breakdown for longer ranges.
+export const jobCountDay = sqliteTable(
+  "job_count_day",
+  {
+    day: integer("day", { mode: "timestamp_ms" }).notNull(),
+    installationId: integer("installation_id")
+      .notNull()
+      .references(() => githubInstallation.id, { onDelete: "cascade" }),
+    ...jobCounters,
+  },
+  (table) => [primaryKey({ columns: [table.day, table.installationId] })],
+);
+
 // One attempt of a GitHub Actions workflow run in a connected repo, from workflow_run webhooks
 // (src/runs.ts), for the Runs page: what started it and how it ended. Its jobs' times come from
 // job_timing. Purged with job_timing, and goes away with its installation.
