@@ -17,7 +17,7 @@ No. A relay job finishes in about a second, without a runner. Optimized checks d
 
 ## What happens when my laptop is closed?
 
-Jobs go to the next step in your runner order, usually GitHub-hosted, with nothing to change. A job that was running when it closed stops, and re-running it routes it again.
+Jobs go to the next step in your runner order, usually GitHub-hosted, with nothing to change. A job that was running when it closed stops. Re-run it and it routes again (see [Re-running a job](/docs/concepts/routing#re-running-a-job)).
 
 ## Do I need to keep a terminal open?
 

@@ -40,7 +40,7 @@ const malformed = {
   deliveryId: "d-2",
 } as unknown as WebhookMessage; // no repository/job
 
-function workflowJob(labels: string[], action = "queued"): WebhookMessage {
+function workflowJob(labels: string[], action = "queued", runAttempt = 1): WebhookMessage {
   return {
     event: "workflow_job",
     deliveryId: "d-3",
@@ -51,7 +51,7 @@ function workflowJob(labels: string[], action = "queued"): WebhookMessage {
     job: {
       id: 42,
       runId: 9,
-      runAttempt: 1,
+      runAttempt,
       name: "pick",
       workflowName: "RelayRunner dev",
       status: action,
@@ -220,11 +220,12 @@ describe("webhook queue consumer", () => {
     const run = vi.fn(async () => "sent");
     const claimRunner = vi.fn();
     const releaseRunnerJob = vi.fn();
+    const reroute = vi.fn();
     const routeEnv = () =>
       ({
         DB: db,
         ROUTER: {
-          getByName: vi.fn(() => ({ claim, machineFor, claimRunner, releaseRunnerJob })),
+          getByName: vi.fn(() => ({ claim, machineFor, claimRunner, releaseRunnerJob, reroute })),
         },
         MACHINE_LINK: { getByName: vi.fn(() => ({ run })) },
       }) as unknown as Env;
@@ -317,6 +318,26 @@ describe("webhook queue consumer", () => {
       });
       expect(run).not.toHaveBeenCalled();
       warn.mockRestore();
+      log.mockRestore();
+    });
+
+    test("a re-run the route won't take asks the Router to route it again", async () => {
+      const log = vi.spyOn(console, "log").mockImplementation(() => {});
+      claim.mockReset().mockResolvedValue(null);
+      const route = { id: "0123456789ab", machineId: "m2", jobId: 42, runAttempt: 2 };
+      reroute.mockResolvedValueOnce(route);
+      run.mockClear();
+      await consumer.processWebhook(routeEnv(), workflowJob(["rr-0123456789ab"], "queued", 2));
+      expect(reroute).toHaveBeenCalledWith("0123456789ab", {
+        jobId: 42,
+        repositoryId: 1,
+        runId: 9,
+        runAttempt: 2,
+        workspaceId: "w1",
+        installationId: 7,
+        repo: "relayrunner/relayrunner",
+      });
+      expect(run).toHaveBeenCalledWith({ route, workspaceId: "w1" });
       log.mockRestore();
     });
   });

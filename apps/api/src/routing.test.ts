@@ -5,6 +5,7 @@ import { describe, expect, test, vi } from "vitest";
 import {
   admits,
   canClaim,
+  mayReroute,
   chooseAndHold,
   chooseMachine,
   decideRoute,
@@ -377,11 +378,43 @@ describe("canClaim", () => {
   });
 });
 
+describe("mayReroute", () => {
+  const rerun = {
+    routeId: route.id,
+    jobId: 50,
+    repositoryId: 100,
+    runId: 9,
+    runAttempt: 2,
+    pickedAttempt: 1,
+  };
+  const done = { ...route, jobId: 42, state: "done" as const };
+
+  test("a later attempt of the same run takes the route again, or makes it once expired", () => {
+    expect(mayReroute(done, rerun)).toBe(true);
+    expect(mayReroute(undefined, rerun)).toBe(true);
+    expect(mayReroute({ ...done, runAttempt: 2, jobId: 51 }, { ...rerun, runAttempt: 3 })).toBe(
+      true,
+    );
+  });
+
+  test("never another repo or run, an added runner, or a job of the same attempt", () => {
+    expect(mayReroute({ ...done, repositoryId: 101 }, rerun)).toBe(false);
+    expect(mayReroute({ ...done, runId: 10 }, rerun)).toBe(false);
+    expect(mayReroute({ ...done, routingLabel: "rr-runner-0a1b2c3d" }, rerun)).toBe(false);
+    expect(mayReroute(done, { ...rerun, runAttempt: 1 })).toBe(false);
+    // Another job of attempt 2 got there first.
+    expect(mayReroute({ ...done, runAttempt: 2, jobId: 51 }, rerun)).toBe(false);
+  });
+});
+
 test("runner names start with the machine's name and stay valid", () => {
   expect(machineRunnerName("Atticus's MacBook Pro", "0123456789ab")).toBe(
     "Atticus-s-MacBook-Pro-0123456789ab",
   );
   expect(machineRunnerName("  !!  ", "0123456789ab")).toBe("machine-0123456789ab");
+  // A re-run's runner names its attempt, ahead of the route id the CLI checks for.
+  expect(machineRunnerName("mini", "0123456789ab", 2)).toBe("mini-2-0123456789ab");
+  expect(machineRunnerName("mini", "0123456789ab", 1)).toBe("mini-0123456789ab");
   expect(machineRunnerName("x".repeat(100), "0123456789ab")).toHaveLength(53);
 });
 

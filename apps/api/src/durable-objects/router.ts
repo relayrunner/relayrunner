@@ -12,6 +12,9 @@ import {
 } from "../github-app.ts";
 import { installationRunnerScope } from "../installations.ts";
 import { inWorkspace } from "../machines.ts";
+import { runStartersForJobs } from "../job-starters.ts";
+import { findRepo } from "../repositories.ts";
+import { earlierPick, jobKey } from "../route-decisions.ts";
 import { errorMessage } from "../webhook-queue.ts";
 import {
   fetchGroupAccess,
@@ -30,6 +33,7 @@ import {
   heldSlots,
   isolatedLabels,
   machineLabels,
+  mayReroute,
   runsIsolated,
   lastPicked,
   needsOwnerAccess,
@@ -42,6 +46,7 @@ import {
   type JobStarters,
   type MachinePick,
   type QueuedJob,
+  type Rerun,
   type Route,
   type RouteDecision,
 } from "../routing.ts";
@@ -61,6 +66,7 @@ export interface PickedJob extends JobStarters, RelayInputs {
 }
 
 const ROUTE_KEY = "route:";
+
 // How long a GitHub org's runner group access is reused before it's read again. Groups change
 // rarely and take a few calls to read.
 const GROUP_ACCESS_TTL_MS = 5 * 60_000;
@@ -182,7 +188,7 @@ export class Router extends DurableObject<Env> {
   // one workspace's picks run side by side and a slow GitHub call holds up only its own pick. Only
   // the choice and the route that reserves the machine run one at a time (reserve), against the
   // routes as they stand then, so two picks can't both take the same machine.
-  private async pickMachine(job: PickedJob): Promise<MachinePick> {
+  private async pickMachine(job: PickedJob, rerun?: Rerun): Promise<MachinePick> {
     const db = createDb(this.env.DB);
     const machines = await db
       .select({
@@ -229,10 +235,12 @@ export class Router extends DurableObject<Env> {
     // installation never fits this job. An owner with two GitHub accounts linked would list a
     // machine twice: keep its first row.
     const seen = new Set<string>();
+    // A re-run keeps its `rr-<id>` label, which only a connected machine's minted runner carries.
     const fits = machines
       .filter((machine) => !seen.has(machine.id) && Boolean(seen.add(machine.id)))
       .filter(
-        (machine) => machine.source !== "github" || machine.installationId === job.installationId,
+        (machine) =>
+          machine.source !== "github" || (!rerun && machine.installationId === job.installationId),
       );
     const pool = fits.map((machine) => ({
       id: machine.id,
@@ -290,7 +298,7 @@ export class Router extends DurableObject<Env> {
     // The OS of each machine's two places, for the route to say where its job goes.
     const places = new Map(fits.map((m) => [m.id, { host: m.os, vm: m.isolatedOs }]));
     return (
-      (await this.reserve(job, candidates, routingLabels, places)) ??
+      (await this.reserve(job, candidates, routingLabels, places, rerun)) ??
       unavailableMachines(pool, job.machine, job)
     );
   }
@@ -303,13 +311,21 @@ export class Router extends DurableObject<Env> {
     candidates: Candidate[],
     routingLabels: Map<string, string | undefined>,
     places: Map<string, { host: string | null; vm: string | null }>,
+    rerun?: Rerun,
   ): Promise<MachinePick | null> {
     return this.ctx.blockConcurrencyWhile(async () => {
       const now = Date.now();
       const routes = await this.routes(now);
+      // Checked again under the lock: another job may have taken the route since.
+      const prior = rerun && routes.find((r) => r.id === rerun.routeId);
+      if (rerun && !mayReroute(prior, rerun)) return null;
       const held = heldSlots(routes, now);
       const picked = lastPicked(routes);
-      const routeId = newRouteId();
+      const routeId = rerun?.routeId ?? newRouteId();
+      // A re-run tries the machine it ran on first, then any other that fits.
+      const preferred = candidates.filter((c) => c.id === prior?.machineId);
+      const choose = (from: Candidate[], taken: HeldSlots) =>
+        chooseMachine(from, taken, picked, job.machine, job);
       // This Router's held routes count against each machine's slots, and a machine whose
       // MachineLink refused the hold counts as full.
       const withTaken = (taken: Set<string>): HeldSlots =>
@@ -322,7 +338,7 @@ export class Router extends DurableObject<Env> {
       const machine = await chooseAndHold(
         (taken) => {
           refused = taken;
-          return chooseMachine(candidates, withTaken(taken), picked, job.machine, job);
+          return choose(preferred, withTaken(taken)) ?? choose(candidates, withTaken(taken));
         },
         async (candidate) =>
           routingLabels.get(candidate.id) !== undefined ||
@@ -347,7 +363,9 @@ export class Router extends DurableObject<Env> {
         repositoryId: job.repositoryId,
         runId: job.runId,
         createdAt: now,
-        state: "reserved",
+        // A re-run's job is already queued, so it claims the route here.
+        state: rerun ? "dispatched" : "reserved",
+        ...(rerun && { jobId: rerun.jobId, runAttempt: rerun.runAttempt }),
         ...(routingLabel ? { routingLabel } : {}),
         ...(os ? { os } : {}),
         ...(isolated ? { isolated: true } : {}),
@@ -451,6 +469,61 @@ export class Router extends DurableObject<Env> {
     };
     await this.ctx.storage.put(ROUTE_KEY + routeId, claimed);
     return claimed;
+  }
+
+  /**
+   * Routes a re-run job again on its old `rr-<id>` label. "Re-run failed jobs" doesn't re-run the
+   * relay, so the job comes back on the label the earlier attempt's pick answered, whose route is
+   * done or expired. When that pick was this run's (earlierPick), the route is made again under the
+   * same id for this job, with that pick's inputs and this attempt's starters: the machine it ran
+   * on if that one is free, else any machine the relay's labels and sharing allow. Returns the
+   * claimed route, or null when the label wasn't this run's pick, no machine can take the job, or
+   * another job of this attempt already did.
+   */
+  async reroute(
+    routeId: string,
+    queued: QueuedJob & {
+      runAttempt: number;
+      workspaceId: string;
+      installationId: number;
+      repo: string;
+    },
+  ): Promise<Route | null> {
+    const { runAttempt, installationId, repo: fullName } = queued;
+    if (runAttempt <= 1) return null;
+    const db = createDb(this.env.DB);
+    const key = { repositoryId: queued.repositoryId, runId: queued.runId, runAttempt };
+    const [pick, repo] = await Promise.all([
+      earlierPick(db, { ...key, label: routeLabel(routeId) }),
+      findRepo(db, installationId, fullName),
+    ]);
+    if (!pick || !repo) return null;
+    const rerun: Rerun = {
+      routeId,
+      jobId: queued.jobId,
+      ...key,
+      pickedAttempt: pick.runAttempt,
+    };
+    const stored = await this.ctx.storage.get<Route>(ROUTE_KEY + routeId);
+    if (!mayReroute(stored, rerun)) return null;
+    // Until this attempt's workflow_run arrives, nobody started it: only machines shared with
+    // anyone can take the job then.
+    const starters = await runStartersForJobs(db, [key], new Map([[jobKey(key), pick]]), jobKey);
+    const job: PickedJob = {
+      workspaceId: queued.workspaceId,
+      installationId,
+      repositoryId: repo.id,
+      repo: fullName,
+      runId: queued.runId,
+      private: repo.private,
+      ...pick.inputs,
+      startedBy: null,
+      triggeredBy: null,
+      ...starters.get(jobKey(key)),
+    };
+    const answered = await this.pickMachine(job, rerun);
+    if (typeof answered !== "string") return null;
+    return (await this.ctx.storage.get<Route>(ROUTE_KEY + routeId)) ?? null;
   }
 
   /**

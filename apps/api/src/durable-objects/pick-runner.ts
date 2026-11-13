@@ -20,10 +20,11 @@ import {
   decodeJitConfig,
 } from "../runner-protocol.ts";
 import { RELAYRUNNER_LABEL } from "../webhook-queue.ts";
-import { and, eq, isNull, sql } from "drizzle-orm";
-import { createDb, type Db, schema } from "../db/index.ts";
+import { eq } from "drizzle-orm";
+import { createDb, schema } from "../db/index.ts";
 import { recordPick, type PickRecord } from "../route-decisions.ts";
 import { installationRunnerScope } from "../installations.ts";
+import { findRepo } from "../repositories.ts";
 import { startedJobStatus } from "../jobs.ts";
 import {
   type JobContext,
@@ -504,22 +505,6 @@ class PickBlocked extends Error {
   constructor(readonly reason: string) {
     super(reason);
   }
-}
-
-// A repo the installation can still see, by owner/name in any case, or undefined.
-async function findRepo(db: Db, installationId: number, fullName: string) {
-  const [repo] = await db
-    .select({ id: schema.githubRepository.id, private: schema.githubRepository.private })
-    .from(schema.githubRepository)
-    .where(
-      and(
-        eq(schema.githubRepository.installationId, installationId),
-        sql`lower(${schema.githubRepository.fullName}) = ${fullName.toLowerCase()}`,
-        isNull(schema.githubRepository.removedAt),
-      ),
-    )
-    .limit(1);
-  return repo;
 }
 
 /**

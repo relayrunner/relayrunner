@@ -26,7 +26,7 @@ const runAttemptKey = (repositoryId: number, runId: number, runAttempt: number) 
 export async function runStartersForJobs(
   db: Db,
   jobs: JobKey[],
-  picks: Map<string, JobPick>,
+  picks: Map<string, Pick<JobPick, "runAttempt" | "startedBy" | "triggeredBy">>,
   keyOf: (job: JobKey) => string,
 ): Promise<Map<string, RunStarters>> {
   const starters = new Map<string, RunStarters>();

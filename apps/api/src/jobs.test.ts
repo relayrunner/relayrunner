@@ -21,7 +21,7 @@ beforeAll(async () => {
   env = {
     ...(await testing.createTestEnv()),
     PICK_RUNNER: { getByName: () => ({ start }) },
-    ROUTER: { getByName: () => ({ claim, machineFor }) },
+    ROUTER: { getByName: () => ({ claim, machineFor, reroute: async () => null }) },
     MACHINE_LINK: { getByName: () => ({ run }) },
   } as unknown as Env;
 });
