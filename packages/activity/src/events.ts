@@ -45,6 +45,9 @@ export const SKIP_REASONS = [
   // A GitHub step with a minutes limit: under the limit, but fewer quota minutes are left than
   // about two hours of the account's recent burn, which billing's lag could use up (#117).
   "minutes_runway",
+  // A hosted provider's runner type that stopped picking up jobs: its last few jobs waited with no
+  // runner, so the Router skips it until a trial job starts (src/provider-health.ts).
+  "provider_unhealthy",
 ] as const;
 export type SkipReason = (typeof SKIP_REASONS)[number];
 
@@ -107,6 +110,8 @@ export const RouteWalk = z.object({
       full: z.array(FullMachine).optional(),
       // minutes_limit and minutes_runway: the job's GitHub account and its usage at the pick.
       minutes: MinutesUsage.optional(),
+      // provider_unhealthy: how many jobs in a row weren't picked up, and when the next trial goes.
+      unhealthy: z.object({ misses: z.number(), retryAt: z.number() }).optional(),
     }),
   ),
   notInOrder: z.array(z.enum(RUNNER_KEYS)),

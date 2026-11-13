@@ -248,6 +248,11 @@ export function statOf(bucket: Bucket): Stat {
 export interface EnvironmentSummary extends Environment {
   stat: Stat;
   /**
+   * Jobs sent here that no runner picked up (NOT_PICKED_UP). With `stat.runs`, the share it
+   * started, which says how reliable the runner is whatever the jobs' own results.
+   */
+  missed: number;
+  /**
    * Against the baseline on the jobs both ran FEW_RUNS+ times: the median of this environment's
    * median over the baseline's (0.5 is twice as fast). Null for the baseline itself or with under
    * MIN_SHARED_JOBS shared jobs.
@@ -308,6 +313,15 @@ const RAN = sql`${RAN_ON_RUNNER} and not ${PICK}`;
 
 export const OK = sql`coalesce(${table.conclusion} = 'success', 0)`;
 
+// How long a job waits with no runner before it counts as missed. Shorter waits are left out, since
+// a concurrency group or a person cancels those.
+export const MISSED_AFTER_MS = 10 * 60_000;
+
+/** A job no runner took: it finished (GitHub gave up, or it was cancelled) after a long wait. */
+const NOT_PICKED_UP = sql`(${table.startedAt} is null or ${table.runnerName} is null)
+  and coalesce(${table.conclusion}, '') <> 'skipped' and not ${PICK}
+  and ${table.completedAt} - ${table.queuedAt} >= ${MISSED_AFTER_MS}`;
+
 // `completedAt:runMs:waitMs` per successful run, comma separated, as parseSamples reads it.
 export const SAMPLES = sql`group_concat(case when ${OK} then ${table.completedAt} || ':'
   || (${table.completedAt} - ${table.startedAt}) || ':'
@@ -343,6 +357,17 @@ export function windowQuery(workspaceId: string, since: Date) {
     from ${table} where ${windowWhere(workspaceId, since)}
     group by ${table.repositoryId}, ${table.workflowName}, ${table.name}, ${table.labels},
       ${table.runnerGroupName}, ${table.machineId}`;
+}
+
+/** The window's missed jobs (NOT_PICKED_UP) by where they were sent, from the same index range. */
+function missedQuery(workspaceId: string, since: Date) {
+  return sql`
+    select ${table.labels} as labels, ${table.runnerGroupName} as runner_group_name,
+      ${table.machineId} as machine_id, count(*) as missed
+    from ${table}
+    where ${inWorkspace(workspaceId)} and ${table.completedAt} >= ${since.getTime()}
+      and ${NOT_PICKED_UP}
+    group by ${table.labels}, ${table.runnerGroupName}, ${table.machineId}`;
 }
 
 export function parseSamples(text: string | null): Sample[] {
@@ -406,9 +431,28 @@ export async function jobTimesReport(
   now = Date.now(),
 ): Promise<JobTimesReport> {
   const since = new Date(now - days * DAY_MS);
-  const rows = await db.all<WindowRow>(windowQuery(workspaceId, since));
+  const [rows, missedRows] = await Promise.all([
+    db.all<WindowRow>(windowQuery(workspaceId, since)),
+    db.all<{
+      labels: string;
+      runner_group_name: string | null;
+      machine_id: string | null;
+      missed: number;
+    }>(missedQuery(workspaceId, since)),
+  ]);
 
   const envs = new Map<string, Environment>();
+  // A runner that missed every job it was sent still gets a row: that's when it matters most.
+  const missed = new Map<string, number>();
+  for (const row of missedRows) {
+    const env = environmentFor(
+      JSON.parse(row.labels) as string[],
+      row.runner_group_name,
+      row.machine_id,
+    );
+    if (!envs.has(env.key)) envs.set(env.key, env);
+    missed.set(env.key, (missed.get(env.key) ?? 0) + Number(row.missed));
+  }
   const totals: Buckets = new Map();
   // repo + workflow -> job name -> buckets by env
   const workflows = new Map<
@@ -483,6 +527,7 @@ export async function jobTimesReport(
   const environments = [...envs.values()].map((env) => ({
     ...env,
     stat: statOf(totals.get(env.key) ?? emptyBucket()),
+    missed: missed.get(env.key) ?? 0,
     versus: null as EnvironmentSummary["versus"],
   }));
   environments.sort((a, b) => b.stat.runs - a.stat.runs);

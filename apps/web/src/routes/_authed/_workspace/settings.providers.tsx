@@ -29,6 +29,7 @@ import {
   testConnection,
 } from "@/lib/provider-connections";
 import { canManage } from "@/lib/roles";
+import { plural } from "@/lib/job-times";
 import { minutes, money } from "@/lib/usage";
 
 export const Route = createFileRoute("/_authed/_workspace/settings/providers")({
@@ -176,8 +177,8 @@ function ConnectionStatus({ connection, name }: { connection: ProviderConnection
       <p className="text-muted-foreground">{facts.join(" · ")}</p>
       {lastSyncedAt && (
         <p>
-          {recent.jobs.toLocaleString()} {recent.jobs === 1 ? "job" : "jobs"} and{" "}
-          {minutes(recent.billableMinutes)} billable minutes in the last 30 days
+          {plural(recent.jobs, "job")} and {minutes(recent.billableMinutes)} billable minutes in the
+          last 30 days
           {recent.costUsd != null && `, ${money(recent.costUsd)} billed`}.
         </p>
       )}

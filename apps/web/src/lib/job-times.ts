@@ -1,5 +1,6 @@
 import type { RunnerSize } from "@relayrunner/providers";
 import { api } from "@/lib/api";
+import { count } from "@/lib/utils";
 
 /** How sure a time is: none (not run), few (under 5 runs), low (5 to 19), ok (20+). */
 export type Confidence = "none" | "few" | "low" | "ok";
@@ -44,6 +45,8 @@ export type Environment = {
 
 export type EnvironmentSummary = Environment & {
   stat: Stat;
+  /** Jobs sent here that no runner picked up within 10 minutes. */
+  missed: number;
   /** This environment's median over the baseline's on shared jobs: 0.5 is twice as fast. */
   versus: { ratio: number; sharedJobs: number } | null;
 };
@@ -123,8 +126,8 @@ export function clock(ms: number | null) {
 }
 
 /** "7 runs", "1 run". */
-export function plural(count: number, word: string) {
-  return `${count} ${count === 1 ? word : `${word}s`}`;
+export function plural(value: number, word: string) {
+  return `${count(value)} ${value === 1 ? word : `${word}s`}`;
 }
 
 /** The median, "~" in front when under 5 runs back it. */
@@ -193,6 +196,7 @@ export function sampleJobTimes(days: number): JobTimesReport {
         detail: "GitHub-hosted",
         size: { vcpus: 2, memoryGb: 8 },
         stat: stat(108, 50, 412),
+        missed: 0,
         versus: null,
       },
       {
@@ -200,6 +204,7 @@ export function sampleJobTimes(days: number): JobTimesReport {
         label: "Zach's MacBook Pro",
         detail: "MacBook Pro · Apple M3 Max",
         stat: stat(41, 50, 198),
+        missed: 2,
         versus: { ratio: 0.37, sharedJobs: 3 },
       },
       {
@@ -208,6 +213,7 @@ export function sampleJobTimes(days: number): JobTimesReport {
         detail: "standard-1",
         size: { vcpus: 0.5, memoryGb: 4 },
         stat: stat(19, 50, 61),
+        missed: 0,
         versus: { ratio: 1.03, sharedJobs: 3 },
       },
       {
@@ -215,6 +221,7 @@ export function sampleJobTimes(days: number): JobTimesReport {
         label: "macOS",
         detail: "GitHub-hosted",
         stat: stat(400, 9),
+        missed: 0,
         versus: null,
       },
     ],

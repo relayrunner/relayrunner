@@ -53,6 +53,7 @@ import {
 } from "@/lib/job-times";
 import { readFlag, saveFlag } from "@/lib/stored-flag";
 import { cn } from "@/lib/utils";
+import { Count } from "@/components/count";
 
 const RANGES = [7, 14, 30] as const;
 
@@ -293,8 +294,41 @@ const environmentColumns = environmentColumn.columns([
     sortFn: "basic",
     sortDescFirst: true,
     meta: END,
-    cell: ({ getValue }) => getValue().toLocaleString(),
+    cell: ({ getValue }) => <Count value={getValue()} />,
   }),
+  environmentColumn.accessor(
+    (env) => {
+      const sent = env.stat.runs + env.missed;
+      return sent ? env.stat.runs / sent : undefined;
+    },
+    {
+      id: "started",
+      header: "Started",
+      sortFn: "basic",
+      meta: {
+        ...END,
+        info: (
+          <>
+            <p>The share of jobs sent to this runner that it picked up.</p>
+            <p>
+              A job counts as missed when it waited 10 minutes and no runner took it. Failing tests
+              don't count against it.
+            </p>
+          </>
+        ),
+      },
+      cell: ({ getValue, row }) => {
+        const share = getValue();
+        if (share === undefined) return "—";
+        const { missed } = row.original;
+        return (
+          <span title={missed ? `${plural(missed, "job")} not picked up` : undefined}>
+            {`${Math.floor(share * 100)}%`}
+          </span>
+        );
+      },
+    },
+  ),
   environmentColumn.accessor((env) => env.stat.waitMs ?? undefined, {
     id: "wait",
     header: "Median wait",
@@ -487,7 +521,10 @@ const workflowColumns = workflowColumn.columns([
     sortFn: "basic",
     sortDescFirst: true,
     meta: END,
-    cell: ({ getValue }) => getValue()?.toLocaleString() ?? "—",
+    cell: ({ getValue }) => {
+      const runs = getValue();
+      return runs === undefined ? "—" : <Count value={runs} />;
+    },
   }),
   workflowColumn.accessor(
     (row) => (row.wall?.runs ? row.wall.successes / row.wall.runs : undefined),

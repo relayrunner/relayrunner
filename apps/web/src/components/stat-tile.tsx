@@ -1,3 +1,4 @@
+import type { ReactNode } from "react";
 import { Card } from "@/components/ui/card";
 
 /** A headline number on a card, with what it counts and an optional line under it. */
@@ -7,7 +8,7 @@ export function StatTile({
   detail,
 }: {
   label: string;
-  value: string;
+  value: ReactNode;
   detail?: string;
 }) {
   return (

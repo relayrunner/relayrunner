@@ -49,6 +49,16 @@ The self-hosted step takes a machine that is online, idle, not paused, has every
 - **A provider missing from the runner order is never used**, even if the relay names it.
 - **One relay routes one job.** If two jobs or a matrix share one relay's output, only the first runs. Give each job its own relay.
 
+## When a provider stops picking up jobs
+
+If a hosted provider's runner type leaves 3 jobs in a row waiting 10 minutes with no runner, the Router skips it and sends jobs to the next step instead. This covers outages, network trouble, and an account that hit its spend cap. A job that runs and fails doesn't count.
+
+After 10 minutes, the Router sends one job back to try it. If a runner picks it up, the runner type is back in use. If not, the Router waits twice as long before the next try, up to an hour.
+
+The Router page shows each runner type it's skipping, with a **Try again now** button for owners and admins. When no other step can take a job, the Router still sends it to the skipped runner type rather than failing the relay.
+
+This is on by default. To keep sending jobs to a provider however long they wait, turn off **Skip runners that stop picking up jobs** at the bottom of the Router page.
+
 ## When nothing fits
 
 The relay fails straight away with one line that names why each provider couldn't take the job, such as:

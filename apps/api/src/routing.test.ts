@@ -834,6 +834,35 @@ describe("decideRoute", () => {
         "No runner available: `ubicloud` takes a Ubicloud label such as ubicloud-standard-2, not ubuntu-latest.",
       );
     });
+
+    describe("a runner type that isn't picking up jobs", () => {
+      const job = { ...both, machine: [], depot: ["depot-ubuntu-24.04"] };
+      const unhealthy = { misses: 3, retryAt: 1_000 };
+      const depotDown = async (key: string) => (key === "depot" ? unhealthy : null);
+
+      test("is skipped for the next step", async () => {
+        expect(
+          await decideRoute(order("depot", "github"), job, free, undefined, depotDown),
+        ).toEqual({
+          runner: "ubuntu-latest",
+          step: "github",
+          skipped: [{ key: "depot", reason: "provider_unhealthy", unhealthy }],
+          notInOrder: [],
+        });
+      });
+
+      test("still takes the job when nothing else can", async () => {
+        expect(
+          await decideRoute(
+            order("depot", "github"),
+            { ...job, github: [] },
+            free,
+            undefined,
+            depotDown,
+          ),
+        ).toEqual({ runner: "depot-ubuntu-24.04", step: "depot", skipped: [], notInOrder: [] });
+      });
+    });
   });
 });
 

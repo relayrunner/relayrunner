@@ -1,4 +1,5 @@
 import { createFileRoute, Link } from "@tanstack/react-router";
+import { Count } from "@/components/count";
 import { useState } from "react";
 import { SectionBoundary } from "@/components/error-boundary";
 import { PageHeader } from "@/components/page-header";
@@ -122,7 +123,7 @@ const columns = column.columns([
     sortFn: "basic",
     sortDescFirst: true,
     meta: NUM,
-    cell: ({ getValue }) => getValue().toLocaleString(),
+    cell: ({ getValue }) => <Count value={getValue()} />,
   }),
   column.accessor("billedMinutes", {
     header: "Billed minutes",

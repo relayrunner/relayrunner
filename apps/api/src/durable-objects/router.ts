@@ -14,6 +14,14 @@ import { installationRunnerScope } from "../installations.ts";
 import { inWorkspace } from "../machines.ts";
 import { runStartersForJobs } from "../job-starters.ts";
 import { findRepo } from "../repositories.ts";
+import {
+  cleared,
+  healthGate,
+  healthId,
+  updateHealth,
+  type JobSignal,
+  type LabelHealth,
+} from "../provider-health.ts";
 import { earlierPick, jobKey } from "../route-decisions.ts";
 import { errorMessage } from "../webhook-queue.ts";
 import {
@@ -66,6 +74,8 @@ export interface PickedJob extends JobStarters, RelayInputs {
 }
 
 const ROUTE_KEY = "route:";
+// Each hosted provider runner type's health (src/provider-health.ts), by healthId.
+const HEALTH_KEY = "health:";
 
 // How long a GitHub org's runner group access is reused before it's read again. Groups change
 // rarely and take a few calls to read.
@@ -168,7 +178,10 @@ export class Router extends DurableObject<Env> {
   async route(job: PickedJob): Promise<RouteDecision> {
     const db = createDb(this.env.DB);
     const [workspace] = await db
-      .select({ runnerOrder: schema.workspace.runnerOrder })
+      .select({
+        runnerOrder: schema.workspace.runnerOrder,
+        skipUnhealthy: schema.workspace.skipUnhealthyRunners,
+      })
       .from(schema.workspace)
       .where(eq(schema.workspace.id, job.workspaceId))
       .limit(1);
@@ -178,7 +191,69 @@ export class Router extends DurableObject<Env> {
       () => this.pickMachine(job),
       // The job's own account: each GitHub account has its own quota, never pooled (#117).
       () => accountUsage(db, job.installationId),
+      // Off: every hosted step takes its jobs, however they've been going.
+      workspace?.skipUnhealthy === false
+        ? undefined
+        : (key, label) => this.checkHealth(healthId(key, label)),
     );
+  }
+
+  // Null when the runner type may take the job, marking it as the trial when it's due one; else
+  // why it's skipped.
+  private async checkHealth(id: string) {
+    const state = await this.ctx.storage.get<LabelHealth>(HEALTH_KEY + id);
+    const now = Date.now();
+    const gate = healthGate(state, now);
+    if (gate === "ok") return null;
+    if (gate === "trial") {
+      await this.ctx.storage.put(HEALTH_KEY + id, { ...state, trialAt: now });
+      console.log(JSON.stringify({ msg: "provider health trial", id }));
+      return null;
+    }
+    return gate;
+  }
+
+  /** The 15-minute sweep's recent jobs on hosted provider labels (sweepProviderHealth). */
+  async updateHealth(jobs: JobSignal[], now: number): Promise<void> {
+    const stored = await this.ctx.storage.list<LabelHealth>({ prefix: HEALTH_KEY });
+    const states = new Map(
+      [...stored].map(([key, state]) => [key.slice(HEALTH_KEY.length), state]),
+    );
+    const puts: Record<string, LabelHealth> = {};
+    const deletes: string[] = [];
+    for (const [id, state] of updateHealth(states, jobs, now)) {
+      if (!state) {
+        deletes.push(HEALTH_KEY + id);
+        continue;
+      }
+      puts[HEALTH_KEY + id] = state;
+      if ((state.trippedAt === null) !== (states.get(id)?.trippedAt == null))
+        console.log(
+          JSON.stringify({
+            msg: state.trippedAt === null ? "provider recovered" : "provider unhealthy",
+            id,
+            misses: state.misses,
+          }),
+        );
+    }
+    // put() and delete() take at most 128 keys at a time; a workspace has far fewer runner types.
+    if (Object.keys(puts).length) await this.ctx.storage.put(puts);
+    if (deletes.length) await this.ctx.storage.delete(deletes);
+  }
+
+  /** The runner types the Router skips now, for the Router page. */
+  async unhealthy() {
+    const stored = await this.ctx.storage.list<LabelHealth>({ prefix: HEALTH_KEY });
+    return [...stored.values()]
+      .filter((state) => state.trippedAt !== null)
+      .map(({ key, label, misses, retryAt }) => ({ key, label, misses, retryAt }));
+  }
+
+  /** "Try again now": clears a runner type, so jobs go to it again. */
+  async clearHealth(key: string, label: string): Promise<void> {
+    const id = HEALTH_KEY + healthId(key, label);
+    const state = await this.ctx.storage.get<LabelHealth>(id);
+    if (state?.trippedAt != null) await this.ctx.storage.put(id, cleared(state, Date.now()));
   }
 
   // A route to a free machine with the job's labels whose sharing takes the job, else why none
