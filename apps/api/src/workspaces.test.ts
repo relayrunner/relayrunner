@@ -345,3 +345,57 @@ describe("machine counts (#136)", () => {
     }
   });
 });
+
+describe("skipping runners that stop picking up jobs", () => {
+  const cleared: string[] = [];
+  const unhealthy = [{ key: "depot", label: "depot-ubuntu-24.04", misses: 3, retryAt: 1 }];
+  const withRouter = () =>
+    ({
+      ...env,
+      ROUTER: {
+        getByName: () => ({
+          unhealthy: async () => unhealthy,
+          clearHealth: async (_key: string, label: string) => void cleared.push(label),
+        }),
+      },
+    }) as unknown as Env;
+  const request = (path: string, cookie: string, method = "GET", body?: unknown) =>
+    app.request(
+      `/api/workspaces/${path}`,
+      {
+        method,
+        headers: { cookie, "content-type": "application/json", origin: env.BETTER_AUTH_URL },
+        body: body === undefined ? undefined : JSON.stringify(body),
+      },
+      withRouter(),
+    );
+
+  test("is on by default, and an owner turns it off", async () => {
+    const { cookie } = await signIn();
+    const { workspace, cookie: jar } = await createWorkspace(cookie, "Health", "health-toggle");
+    const read = await request(`${workspace.id}/provider-health`, jar);
+    expect(await read.json()).toEqual({ enabled: true, unhealthy });
+
+    const off = await request(`${workspace.id}/provider-health`, jar, "PUT", { enabled: false });
+    expect(await off.json()).toEqual({ enabled: false });
+    const again = await request(`${workspace.id}/provider-health`, jar);
+    expect(await again.json()).toMatchObject({ enabled: false });
+
+    const bad = await request(`${workspace.id}/provider-health`, jar, "PUT", { enabled: "no" });
+    expect(bad.status).toBe(400);
+  });
+
+  test("Try again now clears a runner type", async () => {
+    const { cookie } = await signIn();
+    const { workspace, cookie: jar } = await createWorkspace(cookie, "Health", "health-clear");
+    const response = await request(
+      `${workspace.id}/provider-health/depot/depot-ubuntu-24.04`,
+      jar,
+      "DELETE",
+    );
+    expect(response.status).toBe(200);
+    expect(cleared).toContain("depot-ubuntu-24.04");
+    const unknown = await request(`${workspace.id}/provider-health/nope/x`, jar, "DELETE");
+    expect(unknown.status).toBe(400);
+  });
+});

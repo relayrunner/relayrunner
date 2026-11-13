@@ -49,6 +49,9 @@ export function fullText(full: FullMachine[] = [], short = false) {
 
 type SkippedStep = RouteWalk["skipped"][number];
 
+// The label the relay asked a provider for, or the provider's name.
+const runnerOf = (walk: RouteWalk, key: RunnerKey) => walk[key][0] ?? RUNNER_LABELS[key];
+
 const count = (n: number) => Math.round(n).toLocaleString("en-US");
 const usedPercent = (m: MinutesUsage) => Math.floor((m.usedMinutes / m.quotaMinutes) * 100);
 
@@ -79,6 +82,8 @@ function shortSkip(walk: RouteWalk, step: SkippedStep): string | null {
       return `${key} takes one label`;
     case "not_provider_label":
       return `not a ${RUNNER_LABELS[key]} label`;
+    case "provider_unhealthy":
+      return `${runnerOf(walk, key)} isn't picking up jobs`;
     case "not_configured":
       // Leaving a provider out of the relay is a choice, not news.
       return null;
@@ -119,6 +124,10 @@ function longSkip(walk: RouteWalk, step: SkippedStep): string {
       return `${key} takes one label, not ${walk[key].join(", ")}`;
     case "not_provider_label":
       return `${key} ${notProviderLabelText(key, walk[key])}`;
+    case "provider_unhealthy": {
+      const jobs = step.unhealthy ? `the last ${step.unhealthy.misses} jobs` : "recent jobs";
+      return `${jobs} on ${runnerOf(walk, key)} weren't picked up, so the Router is skipping it for now`;
+    }
     case "not_configured":
       return `the relay doesn't set ${key}`;
   }

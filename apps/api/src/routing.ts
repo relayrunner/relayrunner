@@ -9,7 +9,7 @@
 // 3. The `queued` webhook for that job claims the route (same repo, same run) and the machine's
 //    MachineLink mints an org JIT runner on the label and sends the machine a `run` message.
 
-import { isProviderLabel } from "@relayrunner/providers";
+import { type HostedProviderId, isProviderLabel } from "@relayrunner/providers";
 import {
   byRunnerKey,
   notProviderLabelText,
@@ -20,6 +20,7 @@ import {
   type RunnerOrder,
 } from "@relayrunner/runner-order";
 import type {
+  RouteWalk,
   FullMachine,
   GithubActor,
   MachineSharing,
@@ -528,7 +529,15 @@ export interface SkippedStep {
   full?: FullMachine[];
   // minutes_limit and minutes_runway: the job's GitHub account and its usage at the pick.
   minutes?: Omit<MinutesSkip, "reason">;
+  unhealthy?: Unhealthy;
 }
+
+// provider_unhealthy: how many jobs in a row weren't picked up, and when the next trial goes.
+export type Unhealthy = NonNullable<RouteWalk["skipped"][number]["unhealthy"]>;
+
+// Whether a hosted provider's runner type may take the job (src/provider-health.ts): null, or
+// why it's skipped. Asking may let the job through as the runner type's trial.
+export type HealthCheck = (key: HostedProviderId, label: string) => Promise<Unhealthy | null>;
 
 // What the machine step's pick found: a route label, every matching machine paused, no matching
 // machine taking this job's starter, every online one that fits full, or nothing.
@@ -557,13 +566,17 @@ export interface RouteRequest extends RelayInputs {
  * called when the machine step is reached and may run; it returns the route label, the paused
  * machines when every one that fits is paused, or null. `githubUsage` reads the job's GitHub
  * account's Actions minutes, and is only called when a GitHub step with a minutes limit is reached
- * (once per pick, however many such steps there are).
+ * (once per pick, however many such steps there are). `health` says whether a hosted provider's
+ * runner type is skipped for not picking up jobs; when every step that could run the job was
+ * skipped that way, the first of them takes it anyway, since a job with nowhere else to go is
+ * better off waiting there.
  */
 export async function decideRoute(
   order: RunnerOrder,
   job: RouteRequest,
   pickMachine: () => Promise<MachinePick>,
   githubUsage: () => Promise<AccountUsage | null> = async () => null,
+  health: HealthCheck = async () => null,
 ): Promise<RouteDecision> {
   const skipped: SkippedStep[] = [];
   let usage: Promise<AccountUsage | null> | undefined;
@@ -604,8 +617,17 @@ export async function decideRoute(
       else if (labels.length > 1) skipped.push({ key, reason: "too_many_labels" });
       else if (!isProviderLabel(key, labels[0]))
         skipped.push({ key, reason: "not_provider_label" });
-      else return { runner: labels[0], step: key, skipped, notInOrder };
+      else {
+        const unhealthy = await health(key, labels[0]);
+        if (!unhealthy) return { runner: labels[0], step: key, skipped, notInOrder };
+        skipped.push({ key, reason: "provider_unhealthy", unhealthy });
+      }
     }
+  }
+  const fallback = skipped.findIndex((step) => step.reason === "provider_unhealthy");
+  if (fallback >= 0) {
+    const { key } = skipped[fallback];
+    return { runner: job[key][0], step: key, skipped: skipped.slice(0, fallback), notInOrder };
   }
   return { runner: null, reason: noRunnerReason(job, skipped, notInOrder), skipped, notInOrder };
 }
@@ -643,6 +665,9 @@ export function noRunnerReason(
       case "minutes_limit":
       case "minutes_runway":
         return minutesText(reason, minutes);
+      // Never the reason nothing fit: an unhealthy step takes the job when no other can.
+      case "provider_unhealthy":
+        return `${RUNNER_LABELS[key]} isn't picking up jobs`;
     }
   });
   for (const key of notInOrder) parts.push(`${RUNNER_LABELS[key]} isn't in your runner order`);

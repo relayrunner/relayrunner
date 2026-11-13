@@ -11,6 +11,7 @@ import { checkPrices } from "./price-check.ts";
 import { purgeOldActivity } from "./retention.ts";
 import { purgeOldWorkflowRuns } from "./runs.ts";
 import { sweepPicks } from "./pick-sweep.ts";
+import { sweepProviderHealth } from "./provider-health.ts";
 import { purgeOldProviderUsage, syncProviderConnections } from "./provider-sync.ts";
 import {
   handleInstallationTaskBatch,
@@ -40,7 +41,8 @@ export default {
     return handleWebhookBatch(batch as MessageBatch<WebhookMessage>, env);
   },
   // Every 15 minutes: queue a read of each org's Actions usage from GitHub billing (#116), rescue
-  // stuck relay jobs, queue a sweep for leftover pick runners (src/pick-sweep.ts), and post the
+  // stuck relay jobs, queue a sweep for leftover pick runners (src/pick-sweep.ts), check which
+  // hosted provider runner types stopped picking up jobs (src/provider-health.ts), and post the
   // window's operator pings to Slack (src/operator-pings.ts). Hourly: alert when
   // webhook dead letters pile up, drop job timings, workflow runs and Activity rows past retention, reconcile
   // which orgs installed the Spend App (src/spend-app.ts), and queue a sync of each connected
@@ -50,7 +52,12 @@ export default {
     const at = new Date(controller.scheduledTime);
     const tasks =
       controller.cron === USAGE_CRON
-        ? [pollActionsUsage(env, at), sweepPicks(env), sendOperatorPings(env, at)]
+        ? [
+            pollActionsUsage(env, at),
+            sweepPicks(env),
+            sendOperatorPings(env, at),
+            sweepProviderHealth(env, at.getTime()),
+          ]
         : controller.cron === PRICE_CRON
           ? [checkPrices(env, at)]
           : [
