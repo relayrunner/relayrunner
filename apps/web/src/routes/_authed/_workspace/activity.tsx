@@ -5,10 +5,7 @@ import {
   ChevronRight,
   CircleCheck,
   CircleMinus,
-  CircleX,
-  Clock,
   Laptop,
-  LoaderCircle,
   Lock,
   Pause,
   Play,
@@ -24,7 +21,9 @@ import {
 import { type ReactNode, useEffect, useRef, useState } from "react";
 import { SectionBoundary } from "@/components/error-boundary";
 import { PageHeader } from "@/components/page-header";
+import { GithubIcon } from "@/components/provider-logos";
 import { RunnerLink } from "@/components/runner-link";
+import { StatusIcon } from "@/components/status-icon";
 import { Button } from "@/components/ui/button";
 import {
   Select,
@@ -33,6 +32,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
+import { UserAvatar } from "@/components/workspace-menu";
 import {
   duration,
   getActivity,
@@ -59,6 +59,7 @@ import {
   sampleCheckSavings,
   type FreeCheckSavings,
 } from "@/lib/usage";
+import { cn } from "@/lib/utils";
 import { failureText, jobNames, walkLines, walkSummary, type RouteWalk } from "@/lib/route-walk";
 
 // Fast enough that a push shows up within seconds, without a live connection.
@@ -179,19 +180,14 @@ function ActivityPage() {
 
   return (
     <section>
-      <PageHeader title="Activity">
+      <PageHeader
+        title="Activity"
+        action={savings && savings.checks > 0 && <SavingsLink savings={savings} />}
+      >
         Routed jobs, optimized checks, machine events and member changes, newest first.
       </PageHeader>
-      <div className="grid max-w-4xl gap-2">
+      <div className="grid max-w-6xl gap-3">
         <Filters search={search} options={options} narrowed={narrowed} onChange={update} />
-        {savings &&
-          savings.checks > 0 &&
-          !narrowed &&
-          (!search.type || search.type === "check") && (
-            <SectionBoundary>
-              <SavingsBanner savings={savings} />
-            </SectionBoundary>
-          )}
         <SectionBoundary>
           <Log search={search} narrowed={narrowed} onClear={() => update(CLEARED)} />
         </SectionBoundary>
@@ -411,7 +407,7 @@ function Log({
           )}
         </p>
       ) : (
-        <ul className="grid gap-2">
+        <ul className={LOG_GRID}>
           {items.map((item) =>
             item.job ? (
               <JobRow key={item.id} job={item.job} now={now} />
@@ -531,10 +527,20 @@ const EVENT_ICONS = {
 
 const ICON = "size-3.5 shrink-0";
 
+// The log's columns on wider screens: icon, what happened, runner, repo, who started it, and the
+// time. Every row is a subgrid of these, so the runner, repo and person line up down the page and
+// the eye can scan a column instead of reading each sentence. Phones get the icon, the sentence
+// and the time, with the runner and repo on a second line.
+const LOG_GRID =
+  "grid grid-cols-[auto_minmax(0,1fr)_auto] gap-x-3 sm:grid-cols-[auto_minmax(0,1fr)_fit-content(10rem)_fit-content(15rem)_fit-content(9rem)_auto]";
+
+/** A job's or check's runner, repo and who started it, each in its own column. */
+type Cells = { runner?: ReactNode; repo?: ReactNode; who?: ReactNode };
+
 // Every Activity row: an icon, one line of text that ends in "…" when it doesn't fit (hover shows
-// all of it), and the time pinned on the right. A row with `toggle` gets a chevron before the time
-// that shows `detail` under the line, indented to the text. The chevron sits outside the
-// truncated text so it can always be reached, even when a phone cuts the reason off.
+// all of it), the row's `cells`, and the time pinned on the right. A row without cells (a machine
+// or member event) lets its sentence run across the cells' columns. A row with `toggle` gets a
+// chevron before the time that shows `detail` under the line, indented to the text.
 function Row({
   icon,
   at,
@@ -542,33 +548,52 @@ function Row({
   toggle,
   detail,
   why = "why it ran here",
-  aside,
+  cells,
   children,
 }: {
   icon: ReactNode;
-  // Pinned before the time on wider screens, outside the truncated line: who started a job.
-  aside?: ReactNode;
   at: string;
   now: number;
   toggle?: Toggle;
   // What the chevron shows, for its label: "Show why it ran here".
   why?: string;
   detail?: ReactNode;
+  cells?: Cells;
   children: ReactNode;
 }) {
+  const cell = "hidden min-w-0 items-center truncate text-xs text-muted-foreground sm:flex";
+  const meta = cells && [cells.runner, cells.repo].filter(Boolean);
   return (
-    <li className="min-w-0 px-4 py-1.5 text-sm">
-      <div className="flex min-w-0 items-center gap-2">
-        {icon}
+    <li className="col-span-full grid grid-cols-subgrid items-center border-b border-border/60 py-2 text-sm last:border-b-0">
+      <span className="flex w-4 justify-center">{icon}</span>
+      <div className={cells ? "min-w-0" : "min-w-0 sm:col-span-4"}>
         <p
-          className="min-w-0 flex-1 truncate"
+          className="truncate"
           ref={(el) => {
             if (el) el.title = el.textContent ?? "";
           }}
         >
           {children}
         </p>
-        {aside}
+        {meta && meta.length > 0 && (
+          <p className="mt-0.5 flex min-w-0 items-center gap-1.5 truncate text-xs text-muted-foreground sm:hidden">
+            {meta.map((node, index) => (
+              <span key={index} className="flex min-w-0 items-center gap-1.5 overflow-hidden">
+                {index > 0 && <span aria-hidden>·</span>}
+                {node}
+              </span>
+            ))}
+          </p>
+        )}
+      </div>
+      {cells && (
+        <>
+          <span className={cell}>{cells.runner}</span>
+          <span className={cell}>{cells.repo}</span>
+          <span className={cell}>{cells.who}</span>
+        </>
+      )}
+      <span className="flex shrink-0 items-center justify-end gap-1">
         {toggle && (
           <button
             type="button"
@@ -576,7 +601,7 @@ function Row({
             aria-expanded={toggle.open}
             aria-label={toggle.open ? `Hide ${why}` : `Show ${why}`}
             title={toggle.open ? "Hide why" : "Show why"}
-            className="-my-1 shrink-0 cursor-pointer rounded-sm p-1 text-muted-foreground hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+            className="-my-1 cursor-pointer rounded-sm p-1 text-muted-foreground hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
           >
             <ChevronRight
               aria-hidden
@@ -585,14 +610,76 @@ function Row({
           </button>
         )}
         <span
-          className="shrink-0 text-xs text-muted-foreground tabular-nums"
+          className="min-w-[4.5ch] text-right text-xs text-muted-foreground tabular-nums"
           title={new Date(at).toLocaleString()}
         >
           {timeAgo(at, now)}
         </span>
-      </div>
-      {toggle?.open && detail}
+      </span>
+      {toggle?.open && (
+        <div className="col-span-full min-w-0 pl-7 sm:col-[2/-1] sm:pl-0">{detail}</div>
+      )}
     </li>
+  );
+}
+
+// A repo with GitHub's mark, by its name without the owner (the filter and hover show it all), and
+// the branch after it: "relayrunner · main". The name opens the repo on GitHub.
+function RepoCell({
+  repository,
+  branch,
+  isPrivate,
+}: {
+  repository: string;
+  branch?: string | null;
+  isPrivate?: boolean | null;
+}) {
+  const name = repository.slice(repository.indexOf("/") + 1);
+  return (
+    <span
+      className="flex min-w-0 items-center gap-1.5"
+      title={branch ? `${repository} · ${branch}` : repository}
+    >
+      <GithubIcon className="size-3.5 text-muted-foreground" />
+      <a
+        href={`https://github.com/${repository}`}
+        target="_blank"
+        rel="noreferrer"
+        className="shrink-0 text-foreground/75 hover:text-foreground hover:underline"
+      >
+        {name}
+      </a>
+      {isPrivate && <Lock aria-label="Private repo" className="size-3 shrink-0" />}
+      {branch && <span className="truncate">· {branch}</span>}
+    </span>
+  );
+}
+
+// Who started the run, with their GitHub picture, the way the Runners page shows a machine's
+// owner. A re-run shows who re-ran it; the hover names both.
+function StarterCell({ starters }: { starters: ActivityStarters }) {
+  const { startedBy, rerunBy } = starters;
+  const who = rerunBy ?? startedBy;
+  if (!who) return null;
+  const label = (starter: ActivityStarter) => starter.member?.name ?? starter.login;
+  const title = [
+    startedBy && `Started by ${label(startedBy)}`,
+    rerunBy && `re-run by ${label(rerunBy)}`,
+  ]
+    .filter(Boolean)
+    .join(", ");
+  return (
+    <span className="flex min-w-0 items-center gap-1.5" title={title}>
+      <UserAvatar
+        user={{
+          name: label(who),
+          image: `https://github.com/${encodeURIComponent(who.login)}.png?size=32`,
+        }}
+        className="size-4 border-0 text-[8px]"
+      />
+      <span className={cn("truncate", !who.member && "font-mono")}>{label(who)}</span>
+      {rerunBy && <RotateCw aria-label="Re-run" className="size-3 shrink-0" />}
+    </span>
   );
 }
 
@@ -642,7 +729,7 @@ function WalkLines({ walk, runner }: { walk: RouteWalk; runner: string | null })
   return (
     <ul
       aria-label="How RelayRunner walked your runner order"
-      className="mt-1 grid gap-0.5 pl-[22px] font-mono text-xs text-muted-foreground"
+      className="mt-1 grid gap-0.5 font-mono text-xs text-muted-foreground"
     >
       {lines.map((line, index) => (
         <li
@@ -729,33 +816,22 @@ function EventRow({ item, now }: { item: ActivityItem; now: number }) {
   );
 }
 
-// What happened to the job, and where: "passed on", "waiting for", ...
+// What happened to the job: "passed", "waiting for a machine", ...
 function jobVerb(job: ActivityJob) {
-  if (job.status === "in_progress") return "running on";
+  if (job.status === "in_progress") return "running";
   if (job.status !== "completed")
-    return job.runner.type === "machine" ? "waiting for" : "queued for";
-  if (job.conclusion === "success") return "passed on";
-  if (job.conclusion === "failure" || job.conclusion === "timed_out") return "failed on";
-  return `${job.conclusion?.replace("_", " ") ?? "finished"} on`;
+    return job.runner.type === "machine" ? "waiting for its machine" : "queued";
+  if (job.conclusion === "success") return "passed";
+  if (isFailed(job.conclusion)) return "failed";
+  return job.conclusion?.replace("_", " ") ?? "finished";
 }
 
-function JobIcon({ job }: { job: ActivityJob }) {
-  const base = ICON;
-  if (job.status === "in_progress")
-    return <LoaderCircle aria-label="Running" className={`${base} animate-spin text-run`} />;
-  if (job.status !== "completed")
-    return <Clock aria-label="Queued" className={`${base} text-muted-foreground`} />;
-  if (job.conclusion === "success")
-    return <CircleCheck aria-label="Passed" className={`${base} text-go`} />;
-  if (job.conclusion === "failure" || job.conclusion === "timed_out")
-    return <CircleX aria-label="Failed" className={`${base} text-destructive`} />;
-  return <CircleMinus aria-label="Finished" className={`${base} text-muted-foreground`} />;
-}
+const isFailed = (conclusion: string | null) =>
+  conclusion === "failure" || conclusion === "timed_out";
 
-// A row in the same shape as EventRow, naming the job the way GitHub does ("workflow / job"):
-// "RelayRunner dev / test passed on Atticus's MacBook ·
-// relayrunner-ci-tests · main · 1m 30s", then the time. The job name opens the job on
-// GitHub, the workflow name opens its run.
+// A row naming the job the way GitHub does ("workflow / job"), then what happened and how long it
+// took: "CI / test passed · 1m 30s", with its runner, repo and who started it in their columns. The
+// job name opens the job on GitHub, the workflow name opens its run.
 function JobRow({ job, now }: { job: ActivityJob; now: number }) {
   const [open, setOpen] = useState(false);
   const took = duration(job, now);
@@ -769,12 +845,28 @@ function JobRow({ job, now }: { job: ActivityJob; now: number }) {
   const toggle = summary ? { open, onToggle: () => setOpen(!open) } : undefined;
   return (
     <Row
-      icon={<JobIcon job={job} />}
+      icon={<StatusIcon status={job.status} conclusion={job.conclusion} className={ICON} />}
       at={job.createdAt}
       now={now}
       toggle={toggle}
       detail={walk && <WalkLines walk={walk} runner={runnerName} />}
-      aside={<StarterAside starters={job.starters} />}
+      cells={{
+        runner: unrouted ? (
+          <Reason text="not routed" tone="info" />
+        ) : (
+          <span
+            className="min-w-0 truncate text-foreground/75"
+            title={job.runnerName ? `Ran on ${job.runnerName}` : "Not picked up yet"}
+          >
+            <RunnerLink
+              runner={{ key: runnerKey(runner), label: runnerName }}
+              markClassName="mr-1.5 inline-flex size-4 rounded-[4px] align-[-0.25em]"
+            />
+          </span>
+        ),
+        repo: <RepoCell repository={job.repository} branch={job.branch} isPrivate={job.private} />,
+        who: <StarterCell starters={job.starters} />,
+      }}
     >
       <a
         href={job.runUrl}
@@ -795,128 +887,35 @@ function JobRow({ job, now }: { job: ActivityJob; now: number }) {
       >
         {job.name}
       </a>{" "}
-      {unrouted ? (
-        <>
-          <span className="text-muted-foreground">{jobVerb(job).replace(/ (on|for)$/, "")}</span>{" "}
-          <Reason text="not routed" tone="info" />
-        </>
-      ) : (
-        <>
-          <span className="text-muted-foreground">{jobVerb(job)}</span>{" "}
-          <span
-            className="font-medium"
-            title={job.runnerName ? `Ran on ${job.runnerName}` : "Not picked up yet"}
-          >
-            <RunnerLink
-              runner={{ key: runnerKey(runner), label: runnerName }}
-              markClassName="mr-1 inline-flex size-4 rounded-[4px] align-[-0.2em]"
-            >
-              <span className={runner.type !== "machine" ? "font-mono text-xs" : undefined}>
-                {runnerName}
-              </span>
-            </RunnerLink>
-          </span>
-        </>
-      )}
+      <span className={isFailed(job.conclusion) ? "text-destructive" : "text-muted-foreground"}>
+        {jobVerb(job)}
+      </span>
+      {took && <span className="text-muted-foreground tabular-nums">{` · ${took}`}</span>}
       {summary && (
         <>
           {" "}
           <Reason text={summary.text} tone={summary.tone} toggle={toggle} />
         </>
       )}
-      <span className="text-xs text-muted-foreground">
-        {" · "}
-        {job.private && (
-          <Lock aria-label="Private repo" className="mr-1 inline size-3 align-[-0.1em]" />
-        )}
-        <span className="font-mono">{job.repository}</span>
-        {job.branch && (
-          <>
-            {" · "}
-            <span className="font-mono">{job.branch}</span>
-          </>
-        )}
-        <span className="sm:hidden">
-          <StartedBy starters={job.starters} />
-        </span>
-        {took && <span className="tabular-nums">{` · ${took}`}</span>}
-      </span>
     </Row>
   );
 }
 
-// Who started the run, after the repo and branch: " · started by Atticus", plus ", re-run by
-// Zach" when someone else started this attempt. A member shows by name; a bot or someone outside
-// the workspace by GitHub login. Nothing for runs from before RelayRunner kept this.
-function StartedBy({ starters, bare }: { starters: ActivityStarters; bare?: boolean }) {
-  const { startedBy, rerunBy } = starters;
-  if (!startedBy && !rerunBy) return null;
+// The last 30 days of optimized checks, beside the page title: "Optimized checks saved 200 minutes
+// in 30 days". Opens Usage.
+function SavingsLink({ savings }: { savings: FreeCheckSavings }) {
   return (
-    <>
-      {!bare && " · "}
-      {startedBy && (
-        <>
-          {!bare && "started by "}
-          <Starter who={startedBy} />
-        </>
-      )}
-      {startedBy && rerunBy && ", "}
-      {rerunBy && (
-        <>
-          re-run by <Starter who={rerunBy} />
-        </>
-      )}
-    </>
-  );
-}
-
-// The same, pinned beside the time on wider screens so a long row never cuts it off.
-function StarterAside({ starters }: { starters: ActivityStarters }) {
-  const { startedBy, rerunBy } = starters;
-  if (!startedBy && !rerunBy) return null;
-  const label = (who: ActivityStarter) => who.member?.name ?? who.login;
-  const title = [
-    startedBy && `Started by ${label(startedBy)}`,
-    rerunBy && `re-run by ${label(rerunBy)}`,
-  ]
-    .filter(Boolean)
-    .join(", ");
-  return (
-    <span
-      className="hidden max-w-64 shrink-0 truncate text-xs text-muted-foreground sm:inline"
-      title={title}
+    <Link
+      to="/usage"
+      className="inline-flex items-center gap-1.5 text-sm text-muted-foreground hover:text-foreground"
+      title={`One billed minute per check or lint run${savings.savedCost > 0 ? `, ${money(savings.savedCost)}` : ""}. See usage.`}
     >
-      <StartedBy starters={starters} bare />
-    </span>
-  );
-}
-
-function Starter({ who }: { who: ActivityStarter }) {
-  if (who.member) return <span className="text-foreground/75">{who.member.name}</span>;
-  return (
-    <span className="font-mono" title={`GitHub account ${who.login}, not in this workspace`}>
-      {who.login}
-    </span>
-  );
-}
-
-// The last 30 days of free checks, above the log: "Free checks saved 200 billed minutes ($0.84)".
-function SavingsBanner({ savings }: { savings: FreeCheckSavings }) {
-  return (
-    <p className="rounded-xl border bg-card px-4 py-2.5 text-sm">
-      <Zap aria-hidden className="mr-1.5 inline size-3.5 align-[-0.15em] text-go" />
-      Optimized checks saved{" "}
-      <span className="font-medium tabular-nums">
-        {minutes(savings.checks)} billed {savings.checks === 1 ? "minute" : "minutes"}
+      <Zap aria-hidden className="size-3.5 text-go" />
+      <span>
+        Optimized checks saved {minutes(savings.checks)}{" "}
+        {savings.checks === 1 ? "minute" : "minutes"} in {savings.days} days
       </span>
-      {savings.savedCost > 0 && <span className="tabular-nums"> ({money(savings.savedCost)})</span>}{" "}
-      <span className="text-muted-foreground">
-        in the last {savings.days} days, one per check or lint run.
-      </span>{" "}
-      <Link to="/usage" className="text-muted-foreground hover:text-foreground hover:underline">
-        See usage
-      </Link>
-    </p>
+    </Link>
   );
 }
 
@@ -931,8 +930,6 @@ function CheckRow({
   now: number;
 }) {
   const { data } = item;
-  const passed = data.conclusion === "success";
-  const Icon = passed ? CircleCheck : CircleX;
   const on =
     data.pullRequest === null
       ? {
@@ -949,14 +946,21 @@ function CheckRow({
         };
   return (
     <Row
-      icon={
-        <Icon
-          aria-label={passed ? "Passed" : "Failed"}
-          className={`${ICON} ${passed ? "text-go" : "text-destructive"}`}
-        />
-      }
+      icon={<StatusIcon status="completed" conclusion={data.conclusion} className={ICON} />}
       at={item.occurredAt}
       now={now}
+      cells={{
+        runner: (
+          <span
+            className="flex items-center gap-1.5 text-foreground/75"
+            title="Ran with no Actions runner, so GitHub billed no Actions minute"
+          >
+            <Zap aria-hidden className="size-3.5 shrink-0 text-go" />
+            No runner
+          </span>
+        ),
+        repo: <RepoCell repository={data.repository} />,
+      }}
     >
       {data.url ? (
         <a
@@ -971,7 +975,12 @@ function CheckRow({
       ) : (
         <span className="font-medium">{data.check}</span>
       )}{" "}
-      <span className="text-muted-foreground">{sentence(item)} on</span>{" "}
+      <span
+        className={data.conclusion === "success" ? "text-muted-foreground" : "text-destructive"}
+      >
+        {sentence(item)}
+      </span>{" "}
+      <span className="text-muted-foreground">on</span>{" "}
       <a
         href={`https://github.com/${data.repository}/${on.path}`}
         target="_blank"
@@ -980,15 +989,7 @@ function CheckRow({
         title={on.title}
       >
         {on.label}
-      </a>{" "}
-      <span className="text-go" title="Ran with no Actions runner: no Actions minute billed">
-        <Zap aria-hidden className="mr-0.5 inline size-3 align-[-0.1em]" />
-        no runner, saved a minute
-      </span>
-      <span className="text-xs text-muted-foreground">
-        {" · "}
-        <span className="font-mono">{data.repository}</span>
-      </span>
+      </a>
     </Row>
   );
 }
@@ -1017,7 +1018,10 @@ function UnroutableRow({
       toggle={toggle}
       why="why it couldn't run"
       detail={data.walk && <WalkLines walk={data.walk} runner={null} />}
-      aside={item.starters && <StarterAside starters={item.starters} />}
+      cells={{
+        repo: <RepoCell repository={data.repository} />,
+        who: item.starters && <StarterCell starters={item.starters} />,
+      }}
     >
       <a
         href={runUrl}
@@ -1036,15 +1040,6 @@ function UnroutableRow({
       )}{" "}
       <span className="text-destructive">couldn't run</span>{" "}
       <Reason text={failureText(data.reason)} tone="failure" toggle={toggle} />
-      <span className="text-xs text-muted-foreground">
-        {" · "}
-        <span className="font-mono">{data.repository}</span>
-        {item.starters && (
-          <span className="sm:hidden">
-            <StartedBy starters={item.starters} />
-          </span>
-        )}
-      </span>
     </Row>
   );
 }
@@ -1072,6 +1067,7 @@ function RetryRow({
       icon={<RotateCw aria-hidden className={`${ICON} text-muted-foreground`} />}
       at={item.occurredAt}
       now={now}
+      cells={{ repo: <RepoCell repository={data.repository} /> }}
     >
       <a
         href={`https://github.com/${data.repository}/actions/runs/${data.runId}`}
@@ -1086,10 +1082,6 @@ function RetryRow({
       <span className="font-medium">{data.job}</span>{" "}
       <span className="text-muted-foreground">
         was retried{RETRY_RUNNERS[data.runner]} because {RETRY_REASONS[data.kind](data.failedOn)}
-      </span>
-      <span className="text-xs text-muted-foreground">
-        {" · "}
-        <span className="font-mono">{data.repository}</span>
       </span>
     </Row>
   );

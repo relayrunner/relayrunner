@@ -285,10 +285,13 @@ export function UserAvatar({
     .slice(0, 2)
     .map((part) => part.charAt(0).toUpperCase())
     .join("");
-  return user.image ? (
+  // A bot or a renamed account can have no picture at its URL: show the initials instead.
+  const [broken, setBroken] = useState<string | null>(null);
+  return user.image && broken !== user.image ? (
     <img
       src={user.image}
       alt=""
+      onError={() => setBroken(user.image ?? null)}
       className={cn("size-8 shrink-0 rounded-full border border-border", className)}
     />
   ) : (
