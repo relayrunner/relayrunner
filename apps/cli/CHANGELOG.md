@@ -1,5 +1,11 @@
 # relayrunner
 
+## 0.9.2
+
+### Patch Changes
+
+- 5a6c90a: `relayrunner connect` now tells the dashboard how many CPUs and how much memory each job VM gets, so the Runners and Performance pages can show it.
+
 ## 0.9.1
 
 ### Patch Changes

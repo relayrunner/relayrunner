@@ -42,6 +42,7 @@ import {
   type JobRun,
   type JobTimesReport,
   medianText,
+  niceStep,
   plural,
   type Stat,
   sampleJobTimes,
@@ -1108,12 +1109,6 @@ function RunChart({
       )}
     </svg>
   );
-}
-
-// 10s, 15s, 30s, 1m, 2m, 5m, 10m, ... so the axis lands on round times.
-function niceStep(ms: number) {
-  const steps = [10, 15, 30, 60, 120, 300, 600, 900, 1800, 3600].map((s) => s * 1000);
-  return steps.find((step) => step >= ms) ?? 3_600_000;
 }
 
 // For local development without an API (auth disabled).

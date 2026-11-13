@@ -20,6 +20,8 @@ A relay that failed shows the same message the job failed with on GitHub. Filter
 
 Click a run to open it in a side panel: each job, where it ran, and how long it waited for a runner. Click a job to see its steps and how long each took, then step back up to its run. Each panel links to GitHub and to the job's usual times in Performance, and its address can be shared.
 
+A chart above each list shows how long every run or job took over the chosen range, one dot each. Switch it to bars to see how many finished per hour (or per 6 or 12 hours on longer ranges), split by result. The chart follows the range and filters above it.
+
 ## From an agent
 
 The same data is available to agents through the [MCP server](/docs/reference/mcp), such as "where did the last run of `test` go, and why?".
