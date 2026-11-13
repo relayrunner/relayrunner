@@ -1,0 +1,44 @@
+---
+/* The landing pages' footer: the home page and the solution pages. */
+import { SOLUTIONS, solutionPath } from "../lib/solutions";
+import BrandSymbol from "./BrandSymbol.astro";
+
+interface Props {
+  /** Set on the home page, where the brand scrolls to the top instead of navigating. */
+  home?: boolean;
+}
+
+const { home = false } = Astro.props;
+const path = Astro.url.pathname;
+---
+
+<footer class="site-footer">
+  <div class="wrap footer-row">
+    <a class="brand brand-sm" href={home ? "#top" : "/"}>
+      <BrandSymbol />
+      relayrunner
+    </a>
+    <ul>
+      {
+        SOLUTIONS.map((s) => (
+          <li>
+            <a
+              href={solutionPath(s)}
+              aria-current={path === solutionPath(s) ? "page" : undefined}
+            >
+              {s.name}
+            </a>
+          </li>
+        ))
+      }
+      <li><a href="/docs">Docs</a></li>
+      <li><a href="/docs/changelog">Changelog</a></li>
+      <li><a href="https://github.com/relayrunner/relayrunner">GitHub</a></li>
+      <li><a href="https://github.com/apps/relayrunner">GitHub App</a></li>
+      <li><a href="https://www.npmjs.com/package/relayrunner">npm</a></li>
+      <li><a href="/docs/get-started/agents">Agent setup</a></li>
+      <li><a href="/privacy">Privacy</a></li>
+      <li><a href="/terms">Terms</a></li>
+    </ul>
+  </div>
+</footer>

@@ -10,7 +10,7 @@ import {
   type ProviderId,
 } from "@relayrunner/providers";
 
-export { isProviderId } from "@relayrunner/providers";
+export { HOSTED_PROVIDER_IDS, isProviderId } from "@relayrunner/providers";
 export { PROVIDERS, type ProviderId };
 
 /** The providers a job can be sent to, in the package's order ("other" is a catch-all, not one). */

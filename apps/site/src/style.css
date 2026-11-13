@@ -128,9 +128,11 @@ button {
 .hero-actions {
   display: flex;
   flex-wrap: wrap;
-  justify-content: center;
   gap: 14px;
   margin-top: 32px;
+}
+.hero .hero-actions {
+  justify-content: center;
 }
 .cmd {
   display: inline-flex;

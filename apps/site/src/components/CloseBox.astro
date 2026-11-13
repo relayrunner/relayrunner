@@ -1,0 +1,37 @@
+---
+/* The green closing box with commands to copy, at the end of the landing pages. Copy buttons: main.ts. */
+interface Props {
+  heading: string;
+  body: string;
+  steps: { label: string; command: string }[];
+}
+
+const { heading, body, steps } = Astro.props;
+---
+
+<section class="section wrap" id="start" aria-labelledby="start-h">
+  <div class="close">
+    <div class="close-copy">
+      <h2 id="start-h">{heading}</h2>
+      <p>{body}</p>
+      <ol class="steps">
+        {
+          steps.map((step, i) => (
+            <li>
+              <span class="step-label">
+                {i + 1}. {step.label}
+              </span>
+              <div class="instruction">
+                <code><span class="mute" aria-hidden="true">$ </span>{step.command}</code>
+                <button class="copy-btn" type="button" data-copy={step.command}>
+                  <span data-copy-label>Copy</span>
+                </button>
+              </div>
+            </li>
+          ))
+        }
+      </ol>
+    </div>
+    <img class="close-mascot" src="/mascot.webp" alt="" width="240" height="317" loading="lazy" />
+  </div>
+</section>

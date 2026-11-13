@@ -1,0 +1,156 @@
+---
+import SolutionPage from "../../layouts/SolutionPage.astro";
+---
+
+<SolutionPage
+  slug="mac-runner"
+  title="Turn your Mac into a Linux runner for GitHub Actions"
+  description="Run GitHub Actions jobs on your Mac with one command. Each job gets a fresh Linux VM, and jobs go to a hosted runner when your Mac is busy or asleep."
+  heading="Turn your Mac into a Linux runner with one command."
+  command="npx relayrunner connect"
+  close={{
+    heading: "Connect your Mac.",
+    body: "Run these two commands. Your hosted runners stay as the fallback.",
+    steps: [
+      { label: "Turn this Mac into a runner", command: "npx relayrunner connect" },
+      { label: "In your repo, pick the jobs to route", command: "npx relayrunner init" },
+    ],
+  }}
+>
+  <Fragment slot="lede">
+    Run one command and your Mac starts taking your <code>ubuntu-latest</code> jobs, each in a fresh
+    Linux VM. You don't install a runner app or copy tokens. When your Mac is busy or asleep, jobs go
+    to your hosted runners.
+  </Fragment>
+
+  <div class="term" slot="visual">
+    <div class="term-bar">Zach's MacBook Pro</div>
+    <div class="term-body">
+      <div><span class="mute">$</span> npx relayrunner connect</div>
+      <div class="go-text">✓ Each job runs in a fresh Linux VM</div>
+      <div class="go-text">✓ Online. Waiting for jobs.</div>
+      <div class="mute">→ ci / test · ubuntu-latest · PR #482</div>
+      <div>&nbsp;&nbsp;starting VM (4 CPUs, 8 GB)</div>
+      <div class="go-text">✓ ci / test passed in 1m 42s</div>
+      <div class="mute">&nbsp;&nbsp;VM removed</div>
+    </div>
+  </div>
+
+  <section class="section wrap" aria-labelledby="compare-h">
+    <p class="kicker">Self-hosted runners</p>
+    <h2 id="compare-h">How this differs from a GitHub self-hosted runner.</h2>
+    <p class="body">
+      A GitHub self-hosted runner is a server you install, register and keep online. Here, your Mac
+      takes jobs only while it's connected, and a new runner registers itself for each job.
+    </p>
+    <div class="sol-compare">
+      <div>
+        <h3><img src="/providers/github.svg" alt="" width="28" height="28" />GitHub self-hosted runner</h3>
+        <ol>
+          <li>Download the runner app and copy a registration token from each repo or org's settings.</li>
+          <li>Run <code>config.sh</code>, install it as a service and keep it updated.</li>
+          <li>Change each workflow to <code>runs-on: self-hosted</code>.</li>
+          <li>Jobs run straight on the machine and share whatever the last job left behind.</li>
+          <li>When it's offline, jobs sit in the queue until it comes back.</li>
+        </ol>
+      </div>
+      <div class="ours">
+        <h3><img src="/providers/machines.svg" alt="" width="28" height="28" />Your Mac with relayrunner</h3>
+        <ol>
+          <li>Run <code>npx relayrunner connect</code> and sign in with GitHub.</li>
+          <li>Nothing to install or update. Stop it with Ctrl-C or <code>relayrunner pause</code>.</li>
+          <li>Run <code>npx relayrunner init</code> once. After that, change where jobs run from the dashboard.</li>
+          <li>Each job gets a fresh Linux VM and a one-time runner, and both go away when it's done.</li>
+          <li>When your Mac is offline, jobs go to the next runner in your order.</li>
+        </ol>
+      </div>
+    </div>
+  </section>
+
+  <section class="sol-band" aria-labelledby="how-h">
+    <div class="wrap">
+      <p class="kicker">How it works</p>
+      <h2 id="how-h">Run CI jobs on a Mac you already own.</h2>
+      <ol class="sol-steps">
+        <li>
+          <h3>Connect in one command</h3>
+          <p>
+            Run <code>npx relayrunner connect</code> on a Mac with Apple silicon. It takes jobs while
+            it's running and stops when you quit or close the lid.
+          </p>
+        </li>
+        <li>
+          <h3>Every job gets a fresh VM</h3>
+          <p>
+            The job runs in a clean Linux VM that goes away when it's done. It can't see your files or
+            reach your local network unless you allow it. Docker works inside.
+          </p>
+        </li>
+        <li>
+          <h3>Use hosted runners when your Mac is busy</h3>
+          <p>
+            Your Mac is one step in your runner order. When it's busy or asleep, the next job goes to
+            GitHub-hosted or another provider, so nothing waits.
+          </p>
+        </li>
+      </ol>
+    </div>
+  </section>
+
+  <section class="section wrap feature feature-flip">
+    <div class="panel" aria-hidden="true">
+      <div class="sol-card-body">
+        <div class="sol-lane on">
+          <img src="/providers/machines.svg" alt="" width="30" height="30" />
+          <span><b>Zach's MacBook Pro</b><small>Linux VMs · macOS</small></span>
+          <em>Next job</em>
+        </div>
+        <div class="sol-lane">
+          <img src="/providers/github.svg" alt="" width="30" height="30" />
+          <span><b>GitHub-hosted</b><small>macos-latest</small></span>
+          <em>Fallback</em>
+        </div>
+      </div>
+    </div>
+    <div class="feature-copy">
+      <p class="kicker">macOS builds</p>
+      <h2>Run macOS jobs on your Mac too.</h2>
+      <p class="body">
+        macOS minutes on GitHub cost about ten times Linux. Add <code>--macos</code> and your Mac runs
+        macOS jobs directly, where Xcode is, while Linux jobs keep running in VMs.
+      </p>
+      <a class="sol-link" href="/docs/guides/mac-builds">Read the macOS builds guide →</a>
+    </div>
+  </section>
+
+  <section class="section wrap sol-faq" aria-labelledby="faq-h">
+    <h2 id="faq-h">Common questions</h2>
+    <div>
+      <details open>
+        <summary>Will it slow down my Mac?</summary>
+        <p>
+          Set <code>--cpus</code> and <code>--memory</code> to cap what each VM gets. Run
+          <code>relayrunner pause</code> when you need the whole machine.
+        </p>
+      </details>
+      <details>
+        <summary>Which Macs work?</summary>
+        <p>
+          A Mac with Apple silicon on macOS 26 or later runs each job in its own VM. Other Macs, and
+          Linux computers, can connect too and run jobs directly.
+        </p>
+      </details>
+      <details>
+        <summary>Do I have to change my workflows?</summary>
+        <p>
+          Once. <code>npx relayrunner init</code> adds a relay to each job you pick. After that, you
+          change where jobs run in the dashboard. See <a href="/solutions/routing">Routing</a>.
+        </p>
+      </details>
+      <details>
+        <summary>What does it cost?</summary>
+        <p>relayrunner is free and open source, and jobs that run on your Mac use no GitHub minutes.</p>
+      </details>
+    </div>
+  </section>
+</SolutionPage>
