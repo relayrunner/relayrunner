@@ -22,17 +22,57 @@ const github = id === "github";
 const logo = logoOf(id)!;
 const others = INTEGRATIONS.filter((other) => other.id !== id);
 
+// What the page is about: the provider as one step in a runner order, not the provider alone.
+const who = github ? "GitHub-hosted runners" : name;
+const onItsOwn = github ? "GitHub-hosted runners on their own" : `${name} on its own`;
 const heading = github
-  ? "Keep GitHub-hosted runners in your runner order."
-  : `Route GitHub Actions jobs to ${name}.`;
+  ? "Use GitHub-hosted runners after your own machines."
+  : `Route jobs between ${name}, your machines and GitHub.`;
+const lede = github
+  ? "Jobs use GitHub minutes only when your own machines are busy. You change the order from the dashboard, not your workflows."
+  : `Jobs go to your machines first and to ${name} when they're busy. You change the order from the dashboard, not your workflows.`;
 const description = github
-  ? "Use GitHub-hosted runners as one step in your runner order: after your own machines, or as the fallback when every other runner is busy."
-  : `Send GitHub Actions jobs to ${name} when your own machines are busy. Add ${name} to your runner order and change it from the dashboard, without editing workflows.`;
+  ? "Use GitHub-hosted runners as one step in a runner order with your own machines and hosted providers. Jobs use GitHub minutes only when your machines are busy, and you change the order from the dashboard."
+  : `Use ${name} as one step in a runner order with your own machines and GitHub-hosted runners. Jobs go to your machines first and to ${name} when they're busy, and you change the order from the dashboard.`;
+
+// The same provider used directly, and as a step in a runner order.
+const alone = github
+  ? [
+      "Each workflow names ubuntu-latest, so every job uses GitHub minutes.",
+      "Your own machines sit idle.",
+      "When your included minutes run out, you pay for the rest.",
+      "Moving jobs to another host means editing every workflow.",
+    ]
+  : [
+      `Each workflow names a ${name} label, so every job runs on ${name}.`,
+      `Your own machines sit idle while ${name} bills you.`,
+      "Trying another host means editing every workflow again.",
+      "Each host shows its own job times in its own dashboard.",
+    ];
+const routed = github
+  ? [
+      "Jobs run on your machines first, and on GitHub-hosted runners when your machines are busy.",
+      "A minutes limit sends jobs to the next runner once you've used a share of your included minutes.",
+      "Add a hosted provider ahead of GitHub from the dashboard. No workflow edits.",
+      "The Performance page compares GitHub-hosted job times with your other runners.",
+    ]
+  : [
+      `Jobs run on your machines first, and on ${name} when your machines are busy.`,
+      `GitHub-hosted runners stay as the fallback after ${name}.`,
+      `Move ${name} up, down or out from the dashboard. No workflow edits.`,
+      `The Performance page compares ${name}'s job times with your machines and GitHub-hosted runners.`,
+    ];
 const order = github
   ? "your machines, then GitHub-hosted"
   : `your machines, then ${name}, then GitHub-hosted`;
 
 const faqs = [
+  {
+    q: `How is this different from using ${who} directly?`,
+    a: github
+      ? "Used directly, every job that names a GitHub label uses GitHub minutes. In a runner order, jobs go to your own machines first and to GitHub only when they're busy, and you can put a hosted provider ahead of GitHub from the dashboard without editing workflows."
+      : `Used directly, every job that names a ${name} label runs on ${name}. In a runner order, jobs go to your own machines first and to ${name} only when they're busy, and you can move ${name} up, down or out from the dashboard without editing workflows.`,
+  },
   {
     q: `Do I have to change my workflows to use ${name}?`,
     a: `Once. Run npx relayrunner init in your repo and it adds a relay to each job you pick. After that, you move ${name} up or down in the dashboard.`,
@@ -82,10 +122,7 @@ const faqData = {
         {name} integration
       </p>
       <h1>{heading}</h1>
-      <p class="lede">
-        {p.intro} Add it to your runner order, and you change where jobs go from the dashboard, not in
-        your workflows.
-      </p>
+      <p class="lede">{p.intro} {lede}</p>
       <div class="hero-actions">
         <a class="btn-go btn-lg" href="https://app.relayrunner.app">Get started with GitHub</a>
         <button class="cmd" type="button" data-copy-inline="npx relayrunner init">
@@ -106,7 +143,7 @@ const faqData = {
           <div class="sol-lane">
             <img src={logo} alt="" width="30" height="30" />
             <span><b>{github ? "GitHub-hosted" : name}</b><small>{p.example}</small></span>
-            <em>{github ? "Fallback" : "Standby"}</em>
+            <em>{github ? "Fallback" : "When busy"}</em>
           </div>
           {
             !github && (
@@ -121,6 +158,21 @@ const faqData = {
             )
           }
         </div>
+      </div>
+    </div>
+  </section>
+
+  <section class="section wrap" aria-labelledby="compare-h">
+    <p class="kicker">With routing</p>
+    <h2 id="compare-h">{onItsOwn}, or in your runner order</h2>
+    <div class="sol-compare">
+      <div>
+        <h3><img src={logo} alt="" width="28" height="28" />{onItsOwn}</h3>
+        <ol>{alone.map((line) => <li>{line}</li>)}</ol>
+      </div>
+      <div class="ours">
+        <h3><img src="/providers/machines.svg" alt="" width="28" height="28" />In your runner order</h3>
+        <ol>{routed.map((line) => <li>{line}</li>)}</ol>
       </div>
     </div>
   </section>
@@ -250,7 +302,7 @@ const faqData = {
   </section>
 
   <CloseBox
-    heading={`Route your jobs to ${github ? "GitHub-hosted runners" : name}.`}
+    heading={`Add ${who} to your runner order.`}
     body="Add relays once. After that, change the order in the dashboard."
     steps={[
       { label: "In your repo, add relays to the jobs you want to route", command: "npx relayrunner init" },
