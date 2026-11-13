@@ -1,5 +1,11 @@
 # relayrunner
 
+## 0.10.0
+
+### Minor Changes
+
+- 68da6cf: Report how much CPU and memory each job uses. The dashboard's History page shows it for jobs on your machine.
+
 ## 0.9.2
 
 ### Patch Changes
