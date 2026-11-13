@@ -68,11 +68,9 @@ function RouterPage() {
         {!editable && " Owners and admins can change the order."}
       </PageHeader>
       <div className="grid max-w-5xl gap-4">
-        {!authDisabled && (
-          <SectionBoundary>
-            <UnhealthyRunners workspaceId={current.workspace.id} editable={editable} />
-          </SectionBoundary>
-        )}
+        <SectionBoundary>
+          <UnhealthyRunners workspaceId={current.workspace.id} editable={editable} />
+        </SectionBoundary>
         <SectionBoundary>
           <RunnerOrderEditor
             // The page can first show cached data, then fresh: remount when the saved order changes.
@@ -100,7 +98,9 @@ function UnhealthyRunners({ workspaceId, editable }: { workspaceId: string; edit
   const [clearing, setClearing] = useState<UnhealthyRunner | null>(null);
   useEffect(() => {
     let live = true;
-    getUnhealthyRunners(workspaceId).then(
+    // The dev preview has no API behind it: `?sample=unhealthy` shows one skipped runner type.
+    const read = authDisabled ? sampleUnhealthy() : getUnhealthyRunners(workspaceId);
+    read.then(
       (unhealthy) => live && setRunners(unhealthy),
       // A notice, not the page: leave it off when it can't be read.
       () => undefined,
@@ -153,6 +153,13 @@ function UnhealthyRunners({ workspaceId, editable }: { workspaceId: string; edit
       ))}
     </ul>
   );
+}
+
+async function sampleUnhealthy(): Promise<UnhealthyRunner[]> {
+  if (new URLSearchParams(window.location.search).get("sample") !== "unhealthy") return [];
+  return [
+    { key: "depot", label: "depot-ubuntu-24.04", misses: 3, retryAt: Date.now() + 8 * 60_000 },
+  ];
 }
 
 /**
