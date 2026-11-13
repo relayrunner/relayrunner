@@ -54,11 +54,11 @@ A second, opt-in App, **RelayRunner Spend** ([github.com/apps/relayrunner-spend]
 
 - Permissions: Organization Administration: Read, and Metadata. Nothing else.
 - Webhook URL `https://webhooks.relayrunner.app/api/webhooks/github-spend`, secret `GITHUB_SPEND_WEBHOOK_SECRET` in the Secrets Store. It subscribes to no events: GitHub still sends it `installation` events, which keep `spend_installation` (one row per GitHub account) current. The hourly cron reconciles that table with `GET /app/installations`, which also covers installs from before the webhook was on (`apps/api/src/spend-app.ts`).
-- The 15-minute billing poll reads an org with the Spend App's installation token when the org has a row, and falls back to the main App's token when it doesn't.
+- The 15-minute billing poll reads an org with the Spend App's installation token when the org has a row, and with the main App's token when it doesn't or when GitHub refuses the Spend token.
 - The dashboard links to it only when an org's billing read was refused.
 - Personal accounts don't use it: their billing only opens to the owner's own sign-in token (Plan).
 
-An org that hasn't accepted the main App's Organization Administration (Read) gets refused, and the dashboard offers the Spend install as a fix.
+An org that hasn't accepted the main App's Organization Administration (Read) gets refused, and the dashboard offers the Spend install as a fix. A refusal is recorded as `missing_permission`, logged as `actions billing not shared` rather than an error, and the poll skips that org for 6 hours, or until its installation changes (it accepts the permission) or it installs Spend.
 
 ## Events
 

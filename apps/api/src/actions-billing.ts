@@ -4,14 +4,15 @@
 // across a workspace: each account has its own quota.
 //
 // Orgs are read with the RelayRunner Spend App's installation token when the org has installed it
-// (src/spend-app.ts), else the main App's (which still holds Organization Administration: read
-// until it's narrowed).
+// (src/spend-app.ts), falling back to the main App's (Organization Administration: read) if GitHub
+// refuses it. An org that installed the main App before it asked for Organization Administration,
+// and hasn't accepted it since, gets refused by both until it accepts or installs Spend.
 // A personal account's report only opens to its owner's own user-to-server token (User permission
 // Plan: read), so those are read with the token from the owner's RelayRunner sign-in (#208).
 //
 // The cron polls every 15 minutes. GitHub's billing lags about 6-90 minutes and arrives in bursts
 // (#115), which #117's burn-rate margin covers.
-import { and, asc, eq, gte, isNull, lt } from "drizzle-orm";
+import { and, asc, eq, gt, gte, isNull, lt, ne, or } from "drizzle-orm";
 import { recordOverage } from "./activity.ts";
 import { createAuth } from "./auth.ts";
 import { createDb, type Db, schema } from "./db/index.ts";
@@ -51,6 +52,10 @@ export const BURN_WINDOW_MS = 2 * HOUR_MS;
 // Shorter than this between the first and last reading in the window gives no burn rate.
 const MIN_BURN_SPAN_MS = 10 * 60_000;
 export const READING_RETENTION_MS = 48 * HOUR_MS;
+// An account whose billing GitHub refused is read again after this long, or sooner once something
+// that could fix it happens: the installation changes (permissions accepted, a member signs in) or
+// the org installs the Spend App.
+export const REFUSED_RETRY_MS = 6 * HOUR_MS;
 
 export type AccountUsageReason =
   | "enterprise"
@@ -108,7 +113,8 @@ export interface UsageAccount {
 /**
  * The 15-minute poll: queues one read per connected, unsuspended installation
  * (src/installation-tasks.ts), so each account is read in its own consumer invocation however many
- * there are, and drops readings past retention.
+ * there are, and drops readings past retention. Accounts whose billing GitHub refused wait for
+ * REFUSED_RETRY_MS or a change that could fix it.
  */
 export async function pollActionsUsage(env: Env, now = new Date()) {
   const db = createDb(env.DB);
@@ -122,7 +128,26 @@ export async function pollActionsUsage(env: Env, now = new Date()) {
     })
     .from(schema.githubInstallation)
     .innerJoin(schema.workspace, eq(schema.workspace.installationId, schema.githubInstallation.id))
-    .where(isNull(schema.githubInstallation.suspendedAt));
+    .leftJoin(
+      schema.actionsBilling,
+      eq(schema.actionsBilling.installationId, schema.githubInstallation.id),
+    )
+    .leftJoin(
+      schema.spendInstallation,
+      eq(schema.spendInstallation.accountId, schema.githubInstallation.accountId),
+    )
+    .where(
+      and(
+        isNull(schema.githubInstallation.suspendedAt),
+        or(
+          isNull(schema.actionsBilling.failure),
+          ne(schema.actionsBilling.failure, "missing_permission"),
+          lt(schema.actionsBilling.checkedAt, new Date(now.getTime() - REFUSED_RETRY_MS)),
+          gt(schema.githubInstallation.githubStateAt, schema.actionsBilling.checkedAt),
+          gt(schema.spendInstallation.createdAt, schema.actionsBilling.checkedAt),
+        ),
+      ),
+    );
   await enqueueInstallationTasks(
     env,
     accounts.map((account) => ({ kind: "actions-usage", account, at: now.toISOString() })),
@@ -154,11 +179,10 @@ export async function pollAccount(env: Env, account: UsageAccount, now: Date) {
       await pollInstallation(db, token, account, now);
       return;
     }
+    const mainToken = () => appInstallationToken(env, account.id);
     const spend = await spendInstallationId(db, account.accountId);
-    const token = spend
-      ? await spendAppToken(env, spend)
-      : await appInstallationToken(env, account.id);
-    await pollInstallation(db, token, account, now);
+    if (spend) await pollInstallation(db, await spendAppToken(env, spend), account, now, mainToken);
+    else await pollInstallation(db, await mainToken(), account, now);
   } catch (error) {
     // Couldn't get a token (GitHub down, App removed before the webhook landed). Recorded so the
     // dashboard says why, and the next poll tries again.
@@ -204,7 +228,8 @@ async function ownerToken(
 /**
  * Read one account's plan, budget and this month's usage, and store them. An org takes an
  * installation token; a personal account takes its owner's user token and has no budget to read
- * (GitHub has no budgets endpoint for users).
+ * (GitHub has no budgets endpoint for users). If GitHub refuses the usage read and there's a
+ * `fallback` token, the read is tried again with it.
  */
 export async function pollInstallation(
   db: Db,
@@ -216,7 +241,8 @@ export async function pollInstallation(
     workspaceId?: string | null;
   },
   now = new Date(),
-) {
+  fallback?: () => Promise<string>,
+): Promise<void> {
   const org = installation.accountLogin;
   const personal = isPersonal({ accountType: installation.accountType ?? "Organization" });
   const start = cycleStart(now);
@@ -228,11 +254,23 @@ export async function pollInstallation(
   ]);
 
   if (usage.status === "rejected") {
-    const failure = usage.reason instanceof GitHubAccessError ? "missing_permission" : "error";
-    await recordFailure(db, installation.id, failure, usage.reason, now, {
-      plan: plan.status === "fulfilled" ? plan.value : undefined,
-    });
-    logFailure(installation.id, usage.reason);
+    const refused = usage.reason instanceof GitHubAccessError;
+    if (refused && fallback) return pollInstallation(db, await fallback(), installation, now);
+    await recordFailure(
+      db,
+      installation.id,
+      refused ? "missing_permission" : "error",
+      usage.reason,
+      now,
+      { plan: plan.status === "fulfilled" ? plan.value : undefined },
+    );
+    // A refusal is the account's setup, not a fault: the dashboard says how to fix it, and the poll
+    // backs off (REFUSED_RETRY_MS). Only unexpected failures log as errors.
+    if (refused)
+      console.log(
+        JSON.stringify({ msg: "actions billing not shared", installationId: installation.id }),
+      );
+    else logFailure(installation.id, usage.reason);
     return;
   }
 
