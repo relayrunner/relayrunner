@@ -1,5 +1,5 @@
 import type { WebhookMessage } from "@relayrunner/github-webhooks";
-import { beforeAll, describe, expect, test } from "vitest";
+import { afterEach, beforeAll, describe, expect, test, vi } from "vitest";
 import { createDb, schema } from "./db/index.ts";
 import type { Env } from "./env.ts";
 import {
@@ -9,11 +9,19 @@ import {
   recordWorkflowRun,
   type PerformanceReport,
   type Run,
+  type RunHeader,
   type RunJob,
   type RunsReport,
 } from "./runs.ts";
 import type { HistoryJob } from "./job-times.ts";
 import * as testing from "./testing.ts";
+
+vi.mock("./github-app.ts", async (original) => ({
+  ...(await original<typeof import("./github-app.ts")>()),
+  appInstallationToken: async () => "ghs_test",
+}));
+
+afterEach(() => vi.unstubAllGlobals());
 
 let env: Env;
 
@@ -212,7 +220,8 @@ describe("runs list", () => {
     );
     // Another workspace's run is never listed.
     const other = await connectedWorkspace();
-    await insert([timing(other.installationId, 10, { runId: 999 })]);
+    const theirJob = timing(other.installationId, 10, { runId: 999 });
+    await insert([theirJob]);
 
     const week = await list(cookie);
     expect(week.days).toBe(14);
@@ -249,10 +258,52 @@ describe("runs list", () => {
 
     const res = await testing.call(env, `/runs/${installationId * 10}/200/1/jobs`, cookie);
     expect(res.status).toBe(200);
-    const { jobs } = (await res.json()) as { jobs: RunJob[] };
+    const { run, jobs } = (await res.json()) as { run: RunHeader; jobs: RunJob[] };
+    expect(run).toMatchObject({
+      repository: "acme/app",
+      workflow: "CI",
+      title: "fix: picks",
+      status: "completed",
+      conclusion: "failure",
+    });
     expect(jobs.map((job) => [job.name, job.conclusion])).toEqual([
       ["test", "failure"],
       ["lint", "success"],
+    ]);
+
+    // A job's steps come from GitHub, for the workspace's jobs only.
+    const requested: string[] = [];
+    vi.stubGlobal("fetch", async (url: string) => {
+      requested.push(url);
+      return Response.json({
+        steps: [
+          {
+            number: 1,
+            name: "Set up job",
+            status: "completed",
+            conclusion: "success",
+            started_at: "2026-11-12T10:00:00Z",
+            completed_at: "2026-11-12T10:00:02Z",
+          },
+        ],
+      });
+    });
+    const steps = await testing.call(env, `/runs/jobs/${jobs[0]!.id}/steps`, cookie);
+    expect(steps.status).toBe(200);
+    expect(await steps.json()).toEqual({
+      steps: [
+        {
+          number: 1,
+          name: "Set up job",
+          status: "completed",
+          conclusion: "success",
+          startedAt: Date.parse("2026-11-12T10:00:00Z"),
+          completedAt: Date.parse("2026-11-12T10:00:02Z"),
+        },
+      ],
+    });
+    expect(requested).toEqual([
+      `https://api.github.com/repos/acme/app/actions/jobs/${jobs[0]!.id}`,
     ]);
     // The live run's jobs show while they're still going: one running, one waiting for the Mac.
     const now = Date.now();
@@ -289,7 +340,8 @@ describe("runs list", () => {
 
     // The other workspace's run isn't reachable by id.
     const theirs = await testing.call(env, `/runs/${other.installationId * 10}/999/1/jobs`, cookie);
-    expect(((await theirs.json()) as { jobs: RunJob[] }).jobs).toEqual([]);
+    expect(await theirs.json()).toMatchObject({ run: null, jobs: [] });
+    expect((await testing.call(env, `/runs/jobs/${theirJob.id}/steps`, cookie)).status).toBe(404);
   });
 });
 

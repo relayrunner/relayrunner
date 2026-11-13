@@ -202,7 +202,7 @@ export function waitingMs(start: number, end: number, spans: string | null): num
   return Math.max(0, end - start - running);
 }
 
-function conclusionOfJobs(group: JobGroup) {
+function conclusionOfJobs(group: Pick<JobGroup, "failed" | "timed_out" | "cancelled">) {
   if (Number(group.failed)) return "failure";
   if (Number(group.timed_out)) return "timed_out";
   if (Number(group.cancelled)) return "cancelled";
@@ -218,6 +218,24 @@ const runKey = (repositoryId: number, runId: number, runAttempt: number) =>
   `${repositoryId}:${runId}:${runAttempt}`;
 
 type WorkflowRunRow = typeof table.$inferSelect;
+
+/** A run's fields that come from its workflow_run row, when there is one. */
+function runFields(
+  row: WorkflowRunRow | undefined,
+  run: { repository: string; runId: number; runAttempt: number },
+) {
+  return {
+    repository: run.repository,
+    title: row?.displayTitle ?? null,
+    event: row?.event ?? null,
+    actor: row?.actorLogin ?? null,
+    branch: row?.headBranch ?? null,
+    pullRequest: row?.pullRequestNumber ?? null,
+    url:
+      row?.htmlUrl ??
+      `https://github.com/${run.repository}/actions/runs/${run.runId}/attempts/${run.runAttempt}`,
+  };
+}
 
 /** `repositoryId␟workflow name`: a workflow, as the run list and job times both key it. */
 export const workflowKey = (repositoryId: number, workflow: string | null) =>
@@ -336,19 +354,11 @@ export async function listRuns(db: Db, workspaceId: string, now = Date.now()): P
     const runId = row?.id ?? group?.run_id ?? 0;
     const runAttempt = row?.runAttempt ?? group?.run_attempt ?? 1;
     return {
+      ...runFields(row, { repository, runId, runAttempt }),
       repositoryId: row?.repositoryId ?? group?.repository_id ?? 0,
-      repository,
       runId,
       runAttempt,
       workflow: row?.workflowName ?? group?.workflow_name ?? null,
-      title: row?.displayTitle ?? null,
-      event: row?.event ?? null,
-      actor: row?.actorLogin ?? null,
-      branch: row?.headBranch ?? null,
-      pullRequest: row?.pullRequestNumber ?? null,
-      url:
-        row?.htmlUrl ??
-        `https://github.com/${repository}/actions/runs/${runId}/attempts/${runAttempt}`,
       status: summary.status,
       conclusion: summary.conclusion,
       startedAt: summary.startedAt,
@@ -385,28 +395,84 @@ export interface RunJob {
   completedAt: number | null;
 }
 
+/** What a run's detail says about the run itself, for when the run list hasn't loaded it. */
+export type RunHeader = Pick<
+  Run,
+  | "repository"
+  | "workflow"
+  | "title"
+  | "event"
+  | "actor"
+  | "branch"
+  | "pullRequest"
+  | "url"
+  | "status"
+  | "conclusion"
+>;
+
 /**
  * One run attempt's jobs from job_timing, picks left out: finished ones and ones still queued or
  * running. Oldest queued first. Jobs that wait on others (`needs:`) only show once GitHub queues
- * them, since GitHub doesn't create them before.
+ * them, since GitHub doesn't create them before. `run` is null when nothing of the run is known.
  */
 export async function runJobs(
   db: Db,
   workspaceId: string,
   run: { repositoryId: number; runId: number; runAttempt: number },
-): Promise<{ environments: Environment[]; jobs: RunJob[] }> {
-  const rows = await db
-    .select()
-    .from(timing)
-    .where(
-      and(
-        eq(timing.runId, run.runId),
-        eq(timing.runAttempt, run.runAttempt),
-        eq(timing.repositoryId, run.repositoryId),
-        inWorkspace(workspaceId),
-        sql`not ${PICK}`,
+): Promise<{ run: RunHeader | null; environments: Environment[]; jobs: RunJob[] }> {
+  const [rows, [row]] = await Promise.all([
+    db
+      .select()
+      .from(timing)
+      .where(
+        and(
+          eq(timing.runId, run.runId),
+          eq(timing.runAttempt, run.runAttempt),
+          eq(timing.repositoryId, run.repositoryId),
+          inWorkspace(workspaceId),
+          sql`not ${PICK}`,
+        ),
       ),
-    );
+    db
+      .select()
+      .from(table)
+      .where(
+        and(
+          eq(table.id, run.runId),
+          eq(table.runAttempt, run.runAttempt),
+          eq(table.repositoryId, run.repositoryId),
+          inWorkspace(workspaceId, table.installationId),
+        ),
+      )
+      .limit(1),
+  ]);
+  const first = rows[0];
+  const repository = row?.repositoryFullName ?? first?.repositoryFullName;
+  let header: RunHeader | null = null;
+  if (repository) {
+    // Without a workflow_run row, the run is going while any of its jobs is.
+    const status = row
+      ? runStatus(row.status)
+      : rows.some((each) => !each.completedAt)
+        ? "in_progress"
+        : "completed";
+    const count = (conclusion: string) =>
+      rows.filter((each) => each.conclusion === conclusion).length;
+    header = {
+      ...runFields(row, { repository, ...run }),
+      workflow: row?.workflowName ?? first?.workflowName ?? null,
+      status,
+      conclusion:
+        status !== "completed"
+          ? null
+          : (row?.conclusion ??
+            conclusionOfJobs({
+              failed: count("failure"),
+              timed_out: count("timed_out"),
+              cancelled: count("cancelled"),
+            })),
+    };
+  }
 
   const envs = new Map<string, Environment>();
   const envOf = (row: (typeof rows)[number]) => {
@@ -429,11 +495,22 @@ export async function runJobs(
   });
   await nameMachines(db, workspaceId, envs);
   return {
+    run: header,
     environments: [...envs.values()],
     jobs: jobs.sort(
       (a, b) => (a.queuedAt ?? Infinity) - (b.queuedAt ?? Infinity) || a.name.localeCompare(b.name),
     ),
   };
+}
+
+/** Where one of the workspace's jobs lives on GitHub, or null when it isn't the workspace's. */
+export async function jobSource(db: Db, workspaceId: string, jobId: number) {
+  const [row] = await db
+    .select({ installationId: timing.installationId, repository: timing.repositoryFullName })
+    .from(timing)
+    .where(and(eq(timing.id, jobId), inWorkspace(workspaceId)))
+    .limit(1);
+  return row ?? null;
 }
 
 /**

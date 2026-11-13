@@ -1,10 +1,10 @@
-import { ExternalLinkIcon } from "lucide-react";
-import { useMemo, useState } from "react";
+import { memo, useMemo, useState } from "react";
 import { DurationChart, jobPoints } from "@/components/duration-chart";
 import { SectionBoundary } from "@/components/error-boundary";
 import { ProviderLink } from "@/components/provider-link";
 import { providerOf } from "@/components/providers";
 import { RangePicker } from "@/components/range-picker";
+import { RunLink } from "@/components/run-sheet";
 import { createCellContext, DataTable, dataTableColumns } from "@/components/ui/data-table";
 import { Input } from "@/components/ui/input";
 import {
@@ -22,8 +22,7 @@ import {
   type HistoryJob,
   isFailure,
   type JobsReport,
-  jobUrl,
-  LONG_WAIT_MS,
+  isLongWait,
   sampleJobs,
 } from "@/lib/runs";
 import { cn, elapsed } from "@/lib/utils";
@@ -71,11 +70,7 @@ const columns = column.columns([
       info: <p>How long the job waited from queued until a runner picked it up.</p>,
     },
     cell: ({ row: { original: job } }) => (
-      <span
-        className={cn(
-          job.waitMs !== null && job.waitMs >= LONG_WAIT_MS && "font-semibold text-run",
-        )}
-      >
+      <span className={cn(isLongWait(job.waitMs) && "font-semibold text-run")}>
         {elapsed(job.waitMs)}
       </span>
     ),
@@ -107,30 +102,27 @@ const columns = column.columns([
 
 function JobCell({ job }: { job: Row }) {
   const { showRepository } = useListContext();
-  const meta = [job.workflow ?? "Unnamed workflow", showRepository ? job.repository : null];
   return (
     <>
-      <a
-        href={jobUrl(job)}
-        target="_blank"
-        rel="noreferrer"
-        className="group inline-flex items-center gap-1 font-medium break-words underline-offset-4 hover:underline"
+      <RunLink
+        run={job}
+        job={job.id}
+        className="font-medium break-words underline-offset-4 hover:underline"
       >
         {job.name}
-        <ExternalLinkIcon
-          aria-hidden
-          className="size-3 shrink-0 text-muted-foreground opacity-0 group-hover:opacity-100"
-        />
-      </a>
+      </RunLink>
       <span className="block truncate text-xs text-muted-foreground">
-        {meta.filter(Boolean).join(" · ")}
+        <RunLink run={job} className="underline-offset-4 hover:text-foreground hover:underline">
+          {job.workflow ?? "Unnamed workflow"}
+        </RunLink>
+        {showRepository && ` · ${job.repository}`}
       </span>
     </>
   );
 }
 
 /** A finished job's result, colored: green success, red failure, grey anything else. */
-export function ConclusionText({ conclusion }: { conclusion: string | null }) {
+function ConclusionText({ conclusion }: { conclusion: string | null }) {
   return (
     <span
       className={cn(
@@ -147,8 +139,11 @@ export function ConclusionText({ conclusion }: { conclusion: string | null }) {
   );
 }
 
-/** Every job a runner finished, newest first: the History page's Jobs view. */
-export function JobList({ report: first }: { report: JobsReport }) {
+/**
+ * Every job a runner finished, newest first: the History page's Jobs view. Memoized, so opening a
+ * job's panel doesn't re-render the table.
+ */
+export const JobList = memo(function JobList({ report: first }: { report: JobsReport }) {
   const [report, setReport] = useState(first);
   const [repository, setRepository] = useState("all");
   const [result, setResult] = useState<ResultFilter>("all");
@@ -254,4 +249,4 @@ export function JobList({ report: first }: { report: JobsReport }) {
       )}
     </div>
   );
-}
+});

@@ -50,7 +50,41 @@ export type RunJob = {
   completedAt: number | null;
 };
 
-export type RunJobs = { environments: Environment[]; jobs: RunJob[] };
+/** What a run's detail says about the run itself. Null when nothing of the run is known. */
+export type RunHeader = Pick<
+  Run,
+  | "repository"
+  | "workflow"
+  | "title"
+  | "event"
+  | "actor"
+  | "branch"
+  | "pullRequest"
+  | "url"
+  | "status"
+  | "conclusion"
+>;
+
+export type RunJobs = { run: RunHeader | null; environments: Environment[]; jobs: RunJob[] };
+
+/** One step of a job, from GitHub. Times are epoch ms. */
+export type JobStep = {
+  number: number;
+  name: string;
+  status: string;
+  conclusion: string | null;
+  startedAt: number | null;
+  completedAt: number | null;
+};
+
+/** A run attempt as History's `?run=` names it: `repositoryId-runId-runAttempt`. */
+export type RunIds = Pick<Run, "repositoryId" | "runId" | "runAttempt">;
+export const runParam = (run: RunIds) => `${run.repositoryId}-${run.runId}-${run.runAttempt}`;
+export function parseRunParam(value: unknown): RunIds | undefined {
+  const match = typeof value === "string" && /^(\d+)-(\d+)-(\d+)$/.exec(value);
+  if (!match) return undefined;
+  return { repositoryId: Number(match[1]), runId: Number(match[2]), runAttempt: Number(match[3]) };
+}
 
 /** A job a runner finished (GET /api/runs/jobs). */
 export type HistoryJob = JobRun & {
@@ -80,8 +114,13 @@ export function getJobs(days: number) {
   return api<JobsReport>(`/runs/jobs?days=${days}`);
 }
 
-export function getRunJobs(run: Pick<Run, "repositoryId" | "runId" | "runAttempt">) {
+export function getRunJobs(run: RunIds) {
   return api<RunJobs>(`/runs/${run.repositoryId}/${run.runId}/${run.runAttempt}/jobs`);
+}
+
+/** A job's steps, or null when GitHub no longer has the job. */
+export function getJobSteps(jobId: number) {
+  return api<{ steps: JobStep[] | null }>(`/runs/jobs/${jobId}/steps`).then(({ steps }) => steps);
 }
 
 /** What started a run, the way people say it: "PR #12", "push", "manual". */
@@ -99,6 +138,8 @@ export const isFailure = (conclusion: string | null) =>
 
 /** A wait this long is worth pointing out. */
 export const LONG_WAIT_MS = 60_000;
+export const isLongWait = (wait: number | null): wait is number =>
+  wait !== null && wait >= LONG_WAIT_MS;
 
 const now = Date.now();
 const MIN = 60_000;
@@ -199,9 +240,33 @@ export function sampleRuns(): RunsReport {
   };
 }
 
-/** Example jobs for a sample run. */
-export function sampleRunJobs(run: Pick<Run, "runId" | "startedAt">): RunJobs {
-  const start = run.startedAt ?? now;
+/** Example jobs for a sample run: one from sampleRuns, or one the sample job list names. */
+export function sampleRunJobs(run: Pick<Run, "runId">): RunJobs {
+  const listed = sampleRuns().runs.find((each) => each.runId === run.runId);
+  const header: RunHeader = {
+    repository: "acme/app",
+    workflow: "CI",
+    title: null,
+    event: "push",
+    actor: "zach",
+    branch: "main",
+    pullRequest: null,
+    url: "https://github.com",
+    status: "completed",
+    conclusion: "success",
+    ...listed,
+  };
+  if (!listed) {
+    const jobs = sampleJobs(14).jobs.filter((job) => job.runId === run.runId);
+    return {
+      run: jobs[0]
+        ? { ...header, repository: jobs[0].repository, workflow: jobs[0].workflow }
+        : null,
+      environments: SAMPLE_ENVIRONMENTS,
+      jobs: jobs.reverse().map((job) => ({ ...job, status: "completed" })),
+    };
+  }
+  const start = listed.startedAt ?? now;
   const job = (
     id: number,
     name: string,
@@ -221,6 +286,7 @@ export function sampleRunJobs(run: Pick<Run, "runId" | "startedAt">): RunJobs {
   });
   if (run.runId === 6)
     return {
+      run: header,
       environments: SAMPLE_ENVIRONMENTS,
       jobs: [
         job(61, "Lint", "container", 2, 21),
@@ -240,6 +306,7 @@ export function sampleRunJobs(run: Pick<Run, "runId" | "startedAt">): RunJobs {
       ],
     };
   return {
+    run: header,
     environments: SAMPLE_ENVIRONMENTS,
     jobs:
       run.runId === 4
@@ -281,4 +348,36 @@ export function sampleJobs(days: number): JobsReport {
     };
   });
   return { days, environments: SAMPLE_ENVIRONMENTS, jobs, truncated: false };
+}
+
+/** Example steps for a sample job, spread over its run time. */
+export function sampleJobSteps(job: Pick<RunJob, "startedAt" | "completedAt" | "conclusion">) {
+  const names = [
+    "Set up job",
+    "Run actions/checkout@v6",
+    "Run pnpm/action-setup@v6",
+    "Run actions/setup-node@v6",
+    "Run pnpm install --frozen-lockfile",
+    "Run pnpm check",
+    "Post Run actions/checkout@v6",
+    "Complete job",
+  ];
+  const shares = [0.04, 0.06, 0.05, 0.1, 0.25, 0.48, 0.01, 0.01];
+  const start = job.startedAt ?? now;
+  const end = job.completedAt ?? now;
+  let at = start;
+  return names.map((name, index): JobStep => {
+    const from = at;
+    at = index === names.length - 1 ? end : from + (end - start) * shares[index]!;
+    const failed = job.conclusion === "failure" && name === "Run pnpm check";
+    const live = job.completedAt === null && index === names.length - 1;
+    return {
+      number: index + 1,
+      name,
+      status: live ? "in_progress" : "completed",
+      conclusion: live ? null : failed ? "failure" : "success",
+      startedAt: from,
+      completedAt: at,
+    };
+  });
 }
