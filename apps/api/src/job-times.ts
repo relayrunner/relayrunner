@@ -118,6 +118,9 @@ export async function nameMachines(db: Db, workspaceId: string, envs: Map<string
       model: schema.machine.deviceModel,
       chip: schema.machine.chip,
       os: schema.machine.os,
+      vmCpus: schema.machine.vmCpus,
+      vmMemoryGb: schema.machine.vmMemoryGb,
+      isolatedOs: schema.machine.isolatedOs,
     })
     .from(schema.machine)
     .where(and(machineInWorkspace(db, workspaceId), inArray(schema.machine.id, machineIds)));
@@ -126,6 +129,13 @@ export async function nameMachines(db: Db, workspaceId: string, envs: Map<string
     if (!env) continue;
     env.label = machine.name;
     env.detail = [machine.model, machine.chip].filter(Boolean).join(" · ") || (machine.os ?? "");
+    // Every job runs in a VM of this size, as of its last connect. With --macos some run on the
+    // Mac itself, so the size wouldn't say which.
+    if (machine.vmCpus && !machine.isolatedOs)
+      env.size = {
+        vcpus: machine.vmCpus,
+        ...(machine.vmMemoryGb && { memoryGb: machine.vmMemoryGb }),
+      };
   }
 }
 

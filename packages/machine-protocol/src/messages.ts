@@ -68,6 +68,16 @@ export const HelloMessage = z.object({
   // --macos` on a Mac offers a Linux VM beside the Mac itself). The gateway says which place a job
   // goes to in its `run` message. Missing when the machine has one place, which is `os`.
   isolated: z.object({ os, arch }).optional(),
+  // The size of each job's VM when jobs run in VMs (`--cpus`, `--memory`, or the CLI's own split).
+  // Missing when jobs run on the machine itself, and from CLIs older than this field. One the
+  // gateway can't read is dropped rather than failing the hello.
+  vm: z
+    .object({
+      cpus: z.number().int().positive().max(10_000),
+      memoryGb: z.number().int().positive().max(100_000),
+    })
+    .optional()
+    .catch(undefined),
 });
 
 // Sent whenever the machine's state changes and again on an interval as its heartbeat.

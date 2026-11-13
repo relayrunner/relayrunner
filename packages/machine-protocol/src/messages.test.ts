@@ -50,6 +50,15 @@ describe("parseMachineMessage", () => {
       cliVersion: "0.7.0",
       slots: 4,
     },
+    {
+      v,
+      type: "hello",
+      machineId: "mch_1",
+      os: "linux",
+      arch: "arm64",
+      runnerVersion: "2.329.0",
+      vm: { cpus: 4, memoryGb: 8 },
+    },
     { v, type: "job", routeId: "7f3k", state: "started" },
     { v, type: "job", routeId: "7f3k", state: "failed", message: "run.sh exited with 1" },
   ];
@@ -75,6 +84,8 @@ describe("parseMachineMessage", () => {
       JSON.stringify({ ...hello, device: { kind: "toaster", cpuCores: -1 } }),
     );
     expect(parsed).toEqual({ ok: true, message: { ...hello, device: undefined } });
+    const badVm = parseMachineMessage(JSON.stringify({ ...hello, vm: { cpus: 0 } }));
+    expect(badVm).toMatchObject({ ok: true, message: { vm: undefined } });
   });
 
   it("rejects another protocol version before checking the shape", () => {

@@ -213,6 +213,8 @@ async function connectMachine(args: {
   let vmLauncher: Launcher | undefined;
   // Without --macos every job runs in a VM, whatever its `run` message says.
   let isolatedOnly: Launcher | undefined;
+  // Each VM's CPUs and memory, for the dashboard.
+  let vmSize: { cpus: number; memoryGb: number } | undefined;
   if (isolated) {
     // The firewall on the Mac covers every VM, so with it on a job can't be let onto the network.
     const firewall = firewallInstalled();
@@ -231,6 +233,7 @@ async function connectMachine(args: {
       debug: debugLog(),
     });
     runnerVersion = isolation.runnerVersion;
+    vmSize = { cpus: isolation.cpus, memoryGb: isolation.memoryGb };
     const launcher = isolatedLauncher(isolation);
     if (args.macos) vmLauncher = launcher;
     else {
@@ -303,6 +306,7 @@ async function connectMachine(args: {
         runnerVersion,
         cliVersion,
         device,
+        ...(vmSize && { vm: vmSize }),
       },
       slots,
       runJob: async (run, slot, report) => {

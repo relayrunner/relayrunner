@@ -50,6 +50,9 @@ describe("where a machine's jobs run", () => {
 
   test("a Mac that reports Linux runs each job in a VM", () => {
     expect(describeJobPlace({ os: "linux", device: mac })).toBe("Each in a Linux VM");
+    expect(describeJobPlace({ os: "linux", device: mac, vm: { cpus: 4, memoryGb: 8 } })).toBe(
+      "Each in a Linux VM · 4 vCPU · 8 GB",
+    );
   });
 
   test("a Mac with VM labels takes Linux jobs in a VM and macOS jobs on itself", () => {

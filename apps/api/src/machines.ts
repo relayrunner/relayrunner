@@ -435,6 +435,9 @@ export function presentMachine(machine: Machine, pausedBy: string | null = null)
           reportedAt: machine.deviceReportedAt,
         }
       : null,
+    // The size of each job's VM, from its last hello. Null when its jobs run on the machine itself
+    // or its CLI doesn't say.
+    vm: machine.vmCpus ? { cpus: machine.vmCpus, memoryGb: machine.vmMemoryGb } : null,
     // The CLI version from its last hello, and the newer release to update to, if any. Null for a
     // runner added from GitHub, or a CLI older than 0.7.0, which doesn't say.
     cli: machine.cliVersion
@@ -475,6 +478,7 @@ export function helloColumns(
     os: string;
     arch: string;
     isolated?: { os: string; arch: string };
+    vm?: { cpus: number; memoryGb: number };
     cliVersion?: string;
     device?: Device;
   },
@@ -485,6 +489,8 @@ export function helloColumns(
     arch: hello.arch,
     isolatedOs: hello.isolated?.os ?? null,
     isolatedArch: hello.isolated?.arch ?? null,
+    vmCpus: hello.vm?.cpus ?? null,
+    vmMemoryGb: hello.vm?.memoryGb ?? null,
     cliVersion: hello.cliVersion ?? null,
     ...(hello.device ? deviceColumns(hello.device, now) : {}),
   };
