@@ -92,6 +92,12 @@ export function getMachineJobTimes(days = 14) {
 
 export const DAY_MS = 86_400_000;
 
+// 10s, 15s, 30s, 1m, 2m, 5m, 10m, ... so the axis lands on round times.
+export function niceStep(ms: number) {
+  const steps = [10, 15, 30, 60, 120, 300, 600, 900, 1800, 3600].map((s) => s * 1000);
+  return steps.find((step) => step >= ms) ?? 3_600_000;
+}
+
 /** "0:09", "3:10", "1:02:05": a stopwatch, so times line up in tables. */
 export function clock(ms: number | null) {
   if (ms === null) return "—";
