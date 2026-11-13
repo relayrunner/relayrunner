@@ -17,7 +17,11 @@ How long each job usually takes on each runner it ran on, fastest first. Use it 
 
 ## Runners
 
-Each runner's job count, median wait and run time, and success rate. The comparison column lines up the jobs a runner shares with Linux 2-core (or your busiest runner), so a runner that only takes quick jobs doesn't look faster than it is.
+Each runner's job count, median wait and run time, and success rate.
+
+**Started** is how reliable the runner is, separate from your tests: the share of jobs sent to it that it picked up. A job counts as missed when it waited 10 minutes and no runner took it. A runner that missed every job still gets a row.
+
+The comparison column lines up the jobs a runner shares with Linux 2-core (or your busiest runner), so a runner that only takes quick jobs doesn't look faster than it is.
 
 ## From an agent
 

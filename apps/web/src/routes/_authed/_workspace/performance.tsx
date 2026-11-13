@@ -255,6 +255,39 @@ const environmentColumns = environmentColumn.columns([
     meta: END,
     cell: ({ getValue }) => <Count value={getValue()} />,
   }),
+  environmentColumn.accessor(
+    (env) => {
+      const sent = env.stat.runs + env.missed;
+      return sent ? env.stat.runs / sent : undefined;
+    },
+    {
+      id: "started",
+      header: "Started",
+      sortFn: "basic",
+      meta: {
+        ...END,
+        info: (
+          <>
+            <p>The share of jobs sent to this runner that it picked up.</p>
+            <p>
+              A job counts as missed when it waited 10 minutes and no runner took it. Failing tests
+              don't count against it.
+            </p>
+          </>
+        ),
+      },
+      cell: ({ getValue, row }) => {
+        const share = getValue();
+        if (share === undefined) return "—";
+        const { missed } = row.original;
+        return (
+          <span title={missed ? `${plural(missed, "job")} not picked up` : undefined}>
+            {`${Math.floor(share * 100)}%`}
+          </span>
+        );
+      },
+    },
+  ),
   environmentColumn.accessor((env) => env.stat.waitMs ?? undefined, {
     id: "wait",
     header: "Median wait",

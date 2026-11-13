@@ -337,6 +337,38 @@ describe("job times report", () => {
     });
   });
 
+  test("counts jobs no runner picked up against where they were sent", async () => {
+    const { cookie, installationId } = await connectedWorkspace();
+    const missed = (minutes: number, job: Partial<Timing> = {}) => {
+      const row = timing(installationId, 0);
+      const completed = row.completedAt!.getTime();
+      return {
+        ...row,
+        conclusion: "cancelled",
+        runnerName: null,
+        startedAt: null,
+        queuedAt: new Date(completed - minutes * 60_000),
+        ...job,
+      };
+    };
+    await insert([
+      timing(installationId, 30),
+      timing(installationId, 30),
+      timing(installationId, 30),
+      // Waited long enough to count, on GitHub-hosted and on a provider that never ran anything.
+      missed(30),
+      missed(15, { labels: ["depot-ubuntu-24.04"] }),
+      // A short wait (a concurrency cancel), a skipped job and a pick: never missed.
+      missed(2),
+      missed(30, { conclusion: "skipped" }),
+      missed(30, { labels: ["relayrunner"] }),
+    ]);
+    const { environments } = await report(cookie);
+    const byKey = Object.fromEntries(environments.map((e) => [e.key, e]));
+    expect(byKey["github:linux-2-core"]).toMatchObject({ stat: { runs: 3 }, missed: 1 });
+    expect(byKey["depot:depot-ubuntu-24.04"]).toMatchObject({ stat: { runs: 0 }, missed: 1 });
+  });
+
   test("reads only the workspace's window, once", async () => {
     const mine = await connectedWorkspace();
     const other = await connectedWorkspace();
