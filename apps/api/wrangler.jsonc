@@ -69,6 +69,9 @@
     // Test accounts left out of the Slack operator pings (src/operator-pings.ts), by GitHub user id,
     // comma-separated. Operators are always left out. 8841125 = ajwhitetest (onboarding tests).
     "OPERATOR_PINGS_IGNORE_GITHUB_IDS": "8841125",
+    // PostHog (US) project token for the product events the 15-minute cron sends
+    // (src/product-events.ts). The same public token the site and dashboard use.
+    "POSTHOG_TOKEN": "phc_rKhrH8DbYLh3TKrdXtZjP5agS5a8xmj8tsEn6EJhQpCE",
   },
   // Transactional email through Cloudflare Email Sending (src/email.ts). send.relayrunner.app is
   // onboarded for sending on this account. Set OPERATOR_ALERT_EMAIL with `wrangler secret put` to

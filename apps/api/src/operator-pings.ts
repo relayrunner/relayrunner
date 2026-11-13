@@ -46,7 +46,7 @@ export function parseGithubIds(value: string | undefined): number[] {
  * account or an operator, it's a test account's personal install, or, before members sync, a test
  * account installed it.
  */
-async function testAccounts(db: Db, githubIds: number[]) {
+export async function testAccounts(db: Db, githubIds: number[]) {
   if (githubIds.length === 0) return { users: new Set<string>(), workspaces: new Set<string>() };
   const ids = githubIds.map(String);
   const accounts = await db
