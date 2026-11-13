@@ -396,3 +396,166 @@ ol.sol-steps h3 {
     grid-template-columns: minmax(0, 1fr);
   }
 }
+
+/* ---------- Integrations ---------- */
+
+.int-back {
+  display: inline-block;
+  margin-bottom: 20px;
+  color: var(--mute);
+  font-size: 14px;
+  text-decoration: none;
+}
+.int-back:hover {
+  color: var(--ink);
+}
+.int-eyebrow img {
+  border-radius: 7px;
+}
+.int-hero {
+  padding-top: clamp(48px, 7vw, 88px);
+}
+.int-hero h1 {
+  max-width: 820px;
+  margin-top: 16px;
+  text-wrap: balance;
+  font-size: clamp(38px, 4.6vw, 62px);
+  line-height: 1.04;
+  letter-spacing: -0.04em;
+}
+.int-index .kicker + .int-grid {
+  margin-top: 16px;
+}
+.int-index .int-grid + .kicker {
+  margin-top: 48px;
+}
+.int-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(260px, 1fr));
+  gap: 16px;
+}
+.int-grid a {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  height: 100%;
+  padding: 22px;
+  border: 1px solid var(--line);
+  border-radius: 14px;
+  background: var(--raised);
+  text-decoration: none;
+}
+.int-grid a:hover {
+  border-color: var(--go-edge);
+}
+.int-grid img {
+  margin-bottom: 8px;
+  border-radius: 9px;
+}
+.int-grid b {
+  font-size: 17px;
+}
+.int-grid span {
+  color: var(--mute);
+  font-size: 15px;
+}
+
+.int-details {
+  display: grid;
+  grid-template-columns: minmax(0, 7fr) minmax(0, 5fr);
+  gap: 20px;
+  align-items: start;
+  margin-top: 40px;
+}
+.int-facts,
+.int-prices,
+.int-billing {
+  padding: 28px;
+  border: 1px solid var(--line);
+  border-radius: 16px;
+  background: var(--raised);
+}
+.int-facts {
+  display: grid;
+  grid-template-columns: max-content minmax(0, 1fr);
+  gap: 14px 24px;
+  margin: 0;
+}
+.int-facts dt {
+  color: var(--mute);
+  font-size: 14px;
+  font-weight: 600;
+}
+.int-facts dd {
+  margin: 0;
+  overflow-wrap: anywhere;
+}
+.int-links {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px 20px;
+}
+.int-links a {
+  color: var(--go-text);
+  font-weight: 600;
+}
+.int-prices h3,
+.int-billing h3 {
+  font-size: 18px;
+}
+.int-prices table {
+  width: 100%;
+  margin-top: 14px;
+  border-collapse: collapse;
+}
+.int-prices th,
+.int-prices td {
+  padding: 9px 0;
+  border-bottom: 1px solid var(--line-soft);
+  font-size: 15px;
+  text-align: left;
+}
+.int-prices th {
+  font-weight: 500;
+}
+.int-prices td {
+  font-family: var(--mono);
+  font-size: 14px;
+  text-align: right;
+}
+.int-prices p,
+.int-billing p {
+  margin-top: 12px;
+  color: var(--ink-2);
+  font-size: 14px;
+}
+.int-billing {
+  margin-top: 20px;
+}
+
+.int-more img {
+  margin-bottom: 6px;
+  border-radius: 8px;
+}
+
+@media (max-width: 960px) {
+  .int-details {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}
+@media (max-width: 640px) {
+  .int-facts {
+    grid-template-columns: minmax(0, 1fr);
+    gap: 4px;
+  }
+  .int-facts dd + dt {
+    margin-top: 12px;
+  }
+}
+/* The index's group labels are headings that look like kickers. */
+.int-index h2.kicker {
+  margin-top: 0;
+  font-size: 13px;
+  line-height: inherit;
+  letter-spacing: 0.08em;
+}

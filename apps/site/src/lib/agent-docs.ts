@@ -1,6 +1,7 @@
 import { getCollection, type CollectionEntry } from "astro:content";
 import { MCP_URL } from "./mcp";
 import { isProviderId, providerMarkdown, providerTableMarkdown } from "./providers";
+import { INTEGRATIONS, integrationPath } from "./integrations";
 import { SOLUTIONS, solutionPath } from "./solutions";
 
 /*
@@ -120,6 +121,10 @@ export function llmsIndex(all: DocsEntry[], site: URL) {
     "## Solutions",
     "",
     ...SOLUTIONS.map((s) => `- [${s.name}](${abs(solutionPath(s))}): ${s.blurb}`),
+    "",
+    "## Integrations",
+    "",
+    ...INTEGRATIONS.map((p) => `- [${p.name}](${abs(integrationPath(p.id))}): ${p.intro}`),
     "",
     "## Pages",
     "",

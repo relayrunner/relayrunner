@@ -10,7 +10,8 @@
  *
  * Narrow screens get a menu button that opens every link (also a popover).
  */
-import { HOSTED_PROVIDER_IDS, logoOf, PROVIDERS } from "../lib/providers";
+import { INTEGRATION_IDS, integrationPath } from "../lib/integrations";
+import { logoOf, PROVIDERS } from "../lib/providers";
 import { SOLUTIONS, solutionPath } from "../lib/solutions";
 import BrandSymbol from "./BrandSymbol.astro";
 import ThemeToggle from "./ThemeToggle.astro";
@@ -27,6 +28,7 @@ const path = Astro.url.pathname;
 const inChangelog = path.startsWith("/docs/changelog");
 const inDocs = path.startsWith("/docs") && !inChangelog;
 const inSolutions = path.startsWith("/solutions");
+const inIntegrations = path.startsWith("/integrations");
 const DASHBOARD = "https://app.relayrunner.app";
 const LOGIN = `${DASHBOARD}/login`;
 const GITHUB = "https://github.com/relayrunner/relayrunner";
@@ -63,7 +65,7 @@ const routes = [
     blurb: "The minutes in your plan",
   },
   {
-    href: "/docs/runners/hosted",
+    href: "/integrations",
     logo: "/providers/blacksmith.svg",
     name: "Hosted providers",
     blurb: "Faster runners on your own account",
@@ -137,7 +139,12 @@ const CHEVRON = "M6 9l6 6 6-6";
           </div>
         </li>
         <li class="nav-page">
-          <button class="nav-trigger" type="button" popovertarget="nav-providers">
+          <button
+            class="nav-trigger"
+            type="button"
+            popovertarget="nav-providers"
+            aria-current={inIntegrations ? "page" : undefined}
+          >
             Providers
             <svg viewBox="0 0 24 24" aria-hidden="true"><path d={CHEVRON} /></svg>
           </button>
@@ -161,23 +168,24 @@ const CHEVRON = "M6 9l6 6 6-6";
               </ul>
             </div>
             <div class="nav-panel-foot">
-              <ul class="nav-logos" aria-label="Hosted providers">
+              <ul class="nav-logos" aria-label="Integrations">
                 {
-                  HOSTED_PROVIDER_IDS.map((id) => (
+                  INTEGRATION_IDS.map((id) => (
                     <li>
-                      <img
-                        src={logoOf(id)}
-                        alt={PROVIDERS[id].name}
-                        title={PROVIDERS[id].name}
-                        width="24"
-                        height="24"
-                        loading="lazy"
-                      />
+                      <a href={integrationPath(id)} title={PROVIDERS[id].name}>
+                        <img
+                          src={logoOf(id)}
+                          alt={PROVIDERS[id].name}
+                          width="24"
+                          height="24"
+                          loading="lazy"
+                        />
+                      </a>
                     </li>
                   ))
                 }
               </ul>
-              <a href="/docs/runners/providers">All providers →</a>
+              <a href="/integrations">All integrations →</a>
             </div>
           </div>
         </li>
@@ -224,7 +232,7 @@ const CHEVRON = "M6 9l6 6 6-6";
               </ul>
               <ul class="site-menu-rest">
                 <li>
-                  <a href="/docs/runners/providers">Providers</a>
+                  <a href="/integrations">Integrations</a>
                 </li>
                 <li>
                   <a href="/docs">Docs</a>

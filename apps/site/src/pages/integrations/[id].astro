@@ -1,0 +1,329 @@
+---
+/*
+ * One integration page per place a relay can send a job (src/lib/integrations.ts): what it is, how
+ * to set it up, the labels and prices from @relayrunner/providers, and common questions, which also
+ * go out as FAQPage structured data.
+ */
+import CloseBox from "../../components/CloseBox.astro";
+import LandingPage from "../../layouts/LandingPage.astro";
+import { INTEGRATIONS, integrationPath, type Integration } from "../../lib/integrations";
+import { logoOf, PRICES_AS_OF } from "../../lib/providers";
+
+export const getStaticPaths = () =>
+  INTEGRATIONS.map((integration) => ({ params: { id: integration.id }, props: { integration } }));
+
+interface Props {
+  integration: Integration;
+}
+
+const { integration: p } = Astro.props;
+const { id, name } = p;
+const github = id === "github";
+const logo = logoOf(id)!;
+const others = INTEGRATIONS.filter((other) => other.id !== id);
+
+// What the page is about: the provider as one step in a runner order, not the provider alone.
+const who = github ? "GitHub-hosted runners" : name;
+const onItsOwn = github ? "GitHub-hosted runners on their own" : `${name} on its own`;
+const heading = github
+  ? "Use GitHub-hosted runners after your own machines."
+  : `Route jobs between ${name}, your machines and GitHub.`;
+const lede = github
+  ? "Jobs use GitHub minutes only when your own machines are busy. You change the order from the dashboard, not your workflows."
+  : `Jobs go to your machines first and to ${name} when they're busy. You change the order from the dashboard, not your workflows.`;
+const description = github
+  ? "Use GitHub-hosted runners as one step in a runner order with your own machines and hosted providers. Jobs use GitHub minutes only when your machines are busy, and you change the order from the dashboard."
+  : `Use ${name} as one step in a runner order with your own machines and GitHub-hosted runners. Jobs go to your machines first and to ${name} when they're busy, and you change the order from the dashboard.`;
+
+// The same provider used directly, and as a step in a runner order.
+const alone = github
+  ? [
+      "Each workflow names ubuntu-latest, so every job uses GitHub minutes.",
+      "Your own machines sit idle.",
+      "When your included minutes run out, you pay for the rest.",
+      "Moving jobs to another host means editing every workflow.",
+    ]
+  : [
+      `Each workflow names a ${name} label, so every job runs on ${name}.`,
+      `Your own machines sit idle while ${name} bills you.`,
+      "Trying another host means editing every workflow again.",
+      "Each host shows its own job times in its own dashboard.",
+    ];
+const routed = github
+  ? [
+      "Jobs run on your machines first, and on GitHub-hosted runners when your machines are busy.",
+      "A minutes limit sends jobs to the next runner once you've used a share of your included minutes.",
+      "Add a hosted provider ahead of GitHub from the dashboard. No workflow edits.",
+      "The Performance page compares GitHub-hosted job times with your other runners.",
+    ]
+  : [
+      `Jobs run on your machines first, and on ${name} when your machines are busy.`,
+      `GitHub-hosted runners stay as the fallback after ${name}.`,
+      `Move ${name} up, down or out from the dashboard. No workflow edits.`,
+      `The Performance page compares ${name}'s job times with your machines and GitHub-hosted runners.`,
+    ];
+const order = github
+  ? "your machines, then GitHub-hosted"
+  : `your machines, then ${name}, then GitHub-hosted`;
+
+const faqs = [
+  {
+    q: `How is this different from using ${who} directly?`,
+    a: github
+      ? "Used directly, every job that names a GitHub label uses GitHub minutes. In a runner order, jobs go to your own machines first and to GitHub only when they're busy, and you can put a hosted provider ahead of GitHub from the dashboard without editing workflows."
+      : `Used directly, every job that names a ${name} label runs on ${name}. In a runner order, jobs go to your own machines first and to ${name} only when they're busy, and you can move ${name} up, down or out from the dashboard without editing workflows.`,
+  },
+  {
+    q: `Do I have to change my workflows to use ${name}?`,
+    a: `Once. Run npx relayrunner init in your repo and it adds a relay to each job you pick. After that, you move ${name} up or down in the dashboard.`,
+  },
+  {
+    q: `Which jobs go to ${name}?`,
+    a: `Jobs whose relay names a ${name} label, when nothing above ${name} in your runner order is free.`,
+  },
+  github
+    ? {
+        q: "Who bills me for GitHub-hosted runners?",
+        a: "GitHub does, the same way it does today. Jobs that run on your own machines use no GitHub minutes.",
+      }
+    : {
+        q: `Who bills me for ${name}?`,
+        a: `${name} does. Jobs run under your own ${name} account, so your plan, credits and discounts still apply.`,
+      },
+  github
+    ? {
+        q: "Can I stop using GitHub minutes after a limit?",
+        a: "Yes. Give the GitHub step a share of your included minutes. Past it, jobs go to the next step in your order.",
+      }
+    : {
+        q: `Do public repos run on ${name}?`,
+        a: `Yes. Your own machines skip public repos' jobs, but hosted providers like ${name} run them.`,
+      },
+];
+const faqData = {
+  "@context": "https://schema.org",
+  "@type": "FAQPage",
+  mainEntity: faqs.map(({ q, a }) => ({
+    "@type": "Question",
+    name: q,
+    acceptedAnswer: { "@type": "Answer", text: a },
+  })),
+};
+---
+
+<LandingPage title={`${name} integration`} {description} path={integrationPath(id)}>
+  <script type="application/ld+json" slot="head" set:html={JSON.stringify(faqData)} />
+
+  <section class="wrap sol-hero">
+    <div class="sol-hero-copy">
+      <a class="int-back" href="/integrations">← All integrations</a>
+      <p class="eyebrow sol-eyebrow int-eyebrow">
+        <img src={logo} alt="" width="28" height="28" />
+        {name} integration
+      </p>
+      <h1>{heading}</h1>
+      <p class="lede">{p.intro} {lede}</p>
+      <div class="hero-actions">
+        <a class="btn-go btn-lg" href="https://app.relayrunner.app">Get started with GitHub</a>
+        <button class="cmd" type="button" data-copy-inline="npx relayrunner init">
+          <span aria-hidden="true">$</span> <code>npx relayrunner init</code>
+          <span class="visually-hidden">Copy command</span>
+        </button>
+      </div>
+    </div>
+    <div class="sol-hero-visual" aria-hidden="true">
+      <div class="sol-card">
+        <div class="sol-card-head"><b>Runner order</b><span>acme workspace</span></div>
+        <div class="sol-card-body">
+          <div class="sol-lane on">
+            <img src="/providers/machines.svg" alt="" width="30" height="30" />
+            <span><b>Your machines</b><small>3 online · 2 idle</small></span>
+            <em>Next job</em>
+          </div>
+          <div class="sol-lane">
+            <img src={logo} alt="" width="30" height="30" />
+            <span><b>{github ? "GitHub-hosted" : name}</b><small>{p.example}</small></span>
+            <em>{github ? "Fallback" : "When busy"}</em>
+          </div>
+          {
+            !github && (
+              <div class="sol-lane">
+                <img src="/providers/github.svg" alt="" width="30" height="30" />
+                <span>
+                  <b>GitHub-hosted</b>
+                  <small>ubuntu-latest</small>
+                </span>
+                <em>Fallback</em>
+              </div>
+            )
+          }
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <section class="section wrap" aria-labelledby="compare-h">
+    <p class="kicker">With routing</p>
+    <h2 id="compare-h">{onItsOwn}, or in your runner order</h2>
+    <div class="sol-compare">
+      <div>
+        <h3><img src={logo} alt="" width="28" height="28" />{onItsOwn}</h3>
+        <ol>{alone.map((line) => <li>{line}</li>)}</ol>
+      </div>
+      <div class="ours">
+        <h3><img src="/providers/machines.svg" alt="" width="28" height="28" />In your runner order</h3>
+        <ol>{routed.map((line) => <li>{line}</li>)}</ol>
+      </div>
+    </div>
+  </section>
+
+  <section class="sol-band" aria-labelledby="setup-h">
+    <div class="wrap">
+      <p class="kicker">Setup</p>
+      <h2 id="setup-h">How to set up {name}</h2>
+      <ol class="sol-steps">
+        <li>
+          <h3>{github ? "Nothing to set up" : `Set up your ${name} account`}</h3>
+          <p>{p.setup}</p>
+        </li>
+        <li>
+          <h3>Add {name} to your runner order</h3>
+          <p>
+            On the Router page, put {name} where you want it. A common order is {order}.
+          </p>
+        </li>
+        <li>
+          <h3>Add relays to your jobs</h3>
+          <p>
+            Run <code>npx relayrunner init</code> in your repo. It adds a relay to each job you pick and
+            keeps the label the job uses today as its fallback.
+          </p>
+        </li>
+      </ol>
+    </div>
+  </section>
+
+  <section class="section wrap feature feature-flip">
+    <div class="sol-code" aria-label={`A relay that can send a job to ${name}`}>
+      <div class="sol-code-bar">.github/workflows/ci.yml</div>
+      <pre>jobs:
+  relay-test:
+    uses: relayrunner/actions/.github/workflows/relay.yml@v1
+    with:
+      machine: self-hosted
+      <mark>{id}: {p.example}</mark>{!github && "\n      github: ubuntu-latest"}
+  test:
+    needs: relay-test
+    runs-on: {"${{ needs.relay-test.outputs.runner }}"}</pre>
+    </div>
+    <div class="feature-copy">
+      <p class="kicker">The relay</p>
+      <h2>Name a {name} label in the relay.</h2>
+      <p class="body">
+        The relay answers in about a second and uses no minutes. It returns the label of the first
+        runner in your order that can take the job, and the job runs there.
+      </p>
+      <a class="sol-link" href="/docs/concepts/routing">Read how routing works →</a>
+    </div>
+  </section>
+
+  <section class="section wrap" aria-labelledby="details-h">
+    <p class="kicker">Details</p>
+    <h2 id="details-h">{name} at a glance</h2>
+    <div class="int-details">
+      <dl class="int-facts">
+        <dt>What it is</dt>
+        <dd>{p.summary}</dd>
+        <dt>Labels</dt>
+        <dd><code>{p.labels}</code></dd>
+        <dt>Example</dt>
+        <dd><code>runs-on: {p.example}</code></dd>
+        <dt>Relay input</dt>
+        <dd><code>{id}</code></dd>
+        {
+          (p.docsUrl || p.dashboardUrl) && (
+            <>
+              <dt>Links</dt>
+              <dd class="int-links">
+                {p.docsUrl && <a href={p.docsUrl}>{name} docs</a>}
+                {p.dashboardUrl && <a href={p.dashboardUrl}>{name} dashboard</a>}
+              </dd>
+            </>
+          )
+        }
+      </dl>
+      {
+        p.prices.length > 0 && (
+          <div class="int-prices">
+            <h3>List prices</h3>
+            <table>
+              <tbody>
+                {p.prices.map((row) => (
+                  <tr>
+                    <th scope="row">{row.name}</th>
+                    <td>{row.price}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+            <p>
+              {PRICES_AS_OF}, from {name}'s price page. {name} bills you directly, so your plan and
+              credits apply.
+            </p>
+          </div>
+        )
+      }
+    </div>
+    {
+      p.billing && (
+        <div class="int-billing">
+          <h3>See what {name} billed</h3>
+          <p>
+            Paste a read-only {p.billing.token.toLowerCase()} in Settings → Providers. The dashboard
+            then shows {p.billing.reads.charAt(0).toLowerCase() + p.billing.reads.slice(1)}
+          </p>
+        </div>
+      )
+    }
+  </section>
+
+  <section class="section wrap sol-faq" aria-labelledby="faq-h">
+    <h2 id="faq-h">Common questions</h2>
+    <div>
+      {
+        faqs.map(({ q, a }, i) => (
+          <details open={i === 0}>
+            <summary>{q}</summary>
+            <p>{a}</p>
+          </details>
+        ))
+      }
+    </div>
+  </section>
+
+  <CloseBox
+    heading={`Add ${who} to your runner order.`}
+    body="Add relays once. After that, change the order in the dashboard."
+    steps={[
+      { label: "In your repo, add relays to the jobs you want to route", command: "npx relayrunner init" },
+      { label: "Optionally, turn this computer into a runner", command: "npx relayrunner connect" },
+    ]}
+  />
+
+  <nav class="wrap sol-more int-more" aria-labelledby="more-h">
+    <p class="kicker" id="more-h">More integrations</p>
+    <ul>
+      {
+        others.map((other) => (
+          <li>
+            <a href={integrationPath(other.id)}>
+              <img src={logoOf(other.id)} alt="" width="32" height="32" loading="lazy" />
+              <b>{other.name} →</b>
+              <span>{other.summary}</span>
+            </a>
+          </li>
+        ))
+      }
+    </ul>
+  </nav>
+</LandingPage>

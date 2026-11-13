@@ -31,6 +31,11 @@ const path = Astro.url.pathname;
           </li>
         ))
       }
+      <li>
+        <a href="/integrations" aria-current={path.startsWith("/integrations") ? "page" : undefined}>
+          Integrations
+        </a>
+      </li>
       <li><a href="/docs">Docs</a></li>
       <li><a href="/docs/changelog">Changelog</a></li>
       <li><a href="https://github.com/relayrunner/relayrunner">GitHub</a></li>
