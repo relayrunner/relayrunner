@@ -8,6 +8,7 @@ import {
   cycleStart,
   pollActionsUsage,
   pollInstallation,
+  REFUSED_RETRY_MS,
 } from "./actions-billing.ts";
 import { createDb, schema } from "./db/index.ts";
 import type { Env } from "./env.ts";
@@ -115,6 +116,8 @@ interface GitHubFake {
   plan?: string;
   usage?: unknown[];
   usageStatus?: number;
+  // Tokens (as their Authorization header) whose usage reads GitHub refuses.
+  refuse?: string[];
   budgets?: unknown[];
 }
 
@@ -130,6 +133,8 @@ function fakeGitHub(fake: GitHubFake) {
     tokens[pathname] = new Headers(init?.headers).get("authorization") ?? "";
     if (pathname.endsWith("/settings/billing/usage")) {
       if (fake.usageStatus) return new Response("Forbidden", { status: fake.usageStatus });
+      if (fake.refuse?.includes(tokens[pathname]!))
+        return new Response("Forbidden", { status: 403 });
       return Response.json({ usageItems: fake.usage ?? [] });
     }
     const minted = pathname.match(/^\/app\/installations\/(\d+)\/access_tokens$/);
@@ -278,6 +283,18 @@ describe("pollInstallation", () => {
     });
   });
 
+  test("a refused usage read is tried again with the fallback token", async () => {
+    const { db, installationId, org } = await connectedOrg();
+    const calls = fakeGitHub({ usage: [item("2026-11-08", "app", 42)], refuse: ["Bearer tok"] });
+    const installation = { id: installationId, accountLogin: org };
+    await pollInstallation(db, "tok", installation, NOW, async () => "main");
+    expect(calls.tokens[`/organizations/${org}/settings/billing/usage`]).toBe("Bearer main");
+    expect(await accountUsage(db, installationId, NOW)).toMatchObject({
+      status: "ok",
+      usedMinutes: 42,
+    });
+  });
+
   test("enterprise and unknown plans aren't available yet", async () => {
     const enterprise = await connectedOrg();
     fakeGitHub({ plan: "enterprise" });
@@ -324,6 +341,21 @@ describe("accountUsage", () => {
     expect(usage).toMatchObject({ reason: "not_read_yet", usedMinutes: 0 });
   });
 });
+
+// An env with keys for both the main App and the Spend App, so either can mint a token.
+let pem: string | undefined;
+function keyedEnv(): Env {
+  pem ??= generateKeyPairSync("rsa", { modulusLength: 2048 })
+    .privateKey.export({ type: "pkcs8", format: "pem" })
+    .toString();
+  const key = { get: async () => pem! };
+  return {
+    ...env,
+    GITHUB_APP_ID: "1",
+    GITHUB_APP_PRIVATE_KEY: key,
+    GITHUB_SPEND_APP_PRIVATE_KEY: key,
+  };
+}
 
 // The cron queues one read per account; this runs what it queued, as the consumer would.
 async function runActionsUsagePoll(target: Env, now: Date) {
@@ -405,6 +437,63 @@ describe("pollActionsUsage", () => {
 
     await recordSpendInstallation(db, spendEvent("deleted", installation!.accountId, org, 77));
     expect((await accountUsage(db, installationId, NOW))?.spendApp).toBe(false);
+  });
+
+  test("a refused Spend token falls back to the main App's", async () => {
+    const { db, installationId, org } = await connectedOrg();
+    const [installation] = await db
+      .select({ accountId: schema.githubInstallation.accountId })
+      .from(schema.githubInstallation)
+      .where(eq(schema.githubInstallation.id, installationId));
+    await recordSpendInstallation(db, spendEvent("created", installation!.accountId, org, 78));
+    const calls = fakeGitHub({
+      usage: [item("2026-11-04", "app", 30)],
+      refuse: ["Bearer spend-78"],
+    });
+    await runActionsUsagePoll(keyedEnv(), NOW);
+    expect(calls.tokens[`/organizations/${org}/settings/billing/usage`]).toBe(
+      `Bearer spend-${installationId}`,
+    );
+    expect((await accountUsage(db, installationId, NOW))?.status).toBe("ok");
+  });
+
+  test("a refused org backs off without logging an error until something could fix it", async () => {
+    const { db, installationId, org } = await connectedOrg();
+    const error = vi.spyOn(console, "error").mockImplementation(() => {});
+    vi.spyOn(console, "log").mockImplementation(() => {});
+    const usagePath = `/organizations/${org}/settings/billing/usage`;
+    const polled = (calls: string[]) => calls.some((call) => call.startsWith(usagePath));
+
+    let calls = fakeGitHub({ usageStatus: 403 });
+    await runActionsUsagePoll(keyedEnv(), NOW);
+    expect(polled(calls)).toBe(true);
+    expect((await accountUsage(db, installationId, NOW))?.reason).toBe("missing_permission");
+    expect(error.mock.calls.some(([line]) => String(line).includes(String(installationId)))).toBe(
+      false,
+    );
+
+    // The next polls skip it...
+    calls = fakeGitHub({ usageStatus: 403 });
+    await runActionsUsagePoll(keyedEnv(), new Date(NOW.getTime() + 15 * 60_000));
+    expect(polled(calls)).toBe(false);
+
+    // ...until REFUSED_RETRY_MS has passed.
+    calls = fakeGitHub({ usageStatus: 403 });
+    const later = new Date(NOW.getTime() + REFUSED_RETRY_MS + 60_000);
+    await runActionsUsagePoll(keyedEnv(), later);
+    expect(polled(calls)).toBe(true);
+
+    // Installing the Spend App retries it on the next poll.
+    const [installation] = await db
+      .select({ accountId: schema.githubInstallation.accountId })
+      .from(schema.githubInstallation)
+      .where(eq(schema.githubInstallation.id, installationId));
+    vi.useFakeTimers({ now: later.getTime() + 60_000, toFake: ["Date"] });
+    await recordSpendInstallation(db, spendEvent("created", installation!.accountId, org, 79));
+    vi.useRealTimers();
+    calls = fakeGitHub({ usage: [] });
+    await runActionsUsagePoll(keyedEnv(), new Date(later.getTime() + 15 * 60_000));
+    expect(calls.tokens[usagePath]).toBe("Bearer spend-79");
   });
 
   test("records a token failure per installation and keeps going", async () => {
