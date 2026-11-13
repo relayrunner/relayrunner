@@ -319,6 +319,7 @@
 /* ---------- Theme toggle and menu ---------- */
 
 .theme-toggle,
+.header-github,
 .menu-toggle {
   align-items: center;
   justify-content: center;
@@ -331,10 +332,17 @@
   color: var(--ink-2);
   cursor: pointer;
 }
-.theme-toggle {
+.theme-toggle,
+.header-github {
   display: inline-flex;
 }
+.header-github svg {
+  width: 20px;
+  height: 20px;
+  fill: currentColor;
+}
 .theme-toggle:hover,
+.header-github:hover,
 .menu-toggle:hover {
   color: var(--ink);
 }
