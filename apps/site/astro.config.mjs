@@ -20,6 +20,7 @@ export default defineConfig({
   // /docs has no page of its own: send it to the first one, so header and app links can say /docs.
   redirects: {
     "/docs": "/docs/get-started/overview",
+    "/changelog": "/docs/changelog",
     "/docs/runners/blacksmith": "/docs/runners/hosted",
   },
   // Fetch a page when its link is hovered or focused, so moving between docs pages is near instant.
@@ -110,10 +111,8 @@ export default defineConfig({
             "docs/reference/privacy",
             "docs/reference/troubleshooting",
             "docs/reference/faq",
-            {
-              label: "Changelog",
-              link: "https://github.com/relayrunner/relayrunner/blob/main/apps/cli/CHANGELOG.md",
-            },
+            // Built from apps/cli/CHANGELOG.md (src/lib/changelog.ts).
+            "docs/changelog",
           ],
         },
         {
