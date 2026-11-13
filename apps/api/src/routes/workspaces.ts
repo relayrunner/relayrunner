@@ -10,6 +10,7 @@ import { inWorkspace } from "../machines.ts";
 import { requireUser } from "../middleware/session.ts";
 import { requireWorkspace } from "../middleware/workspace.ts";
 import { requireManager } from "../roles.ts";
+import { HOSTED_PROVIDER_IDS } from "@relayrunner/providers";
 import { present } from "./github.ts";
 
 // Any member of the workspace in the path. Someone outside it gets a 404, so ids don't leak.
@@ -82,4 +83,23 @@ export const workspaceRoutes = new Hono<AppEnv>()
       .set({ runnerOrder: JSON.stringify(parsed.data) })
       .where(eq(schema.workspace.id, c.req.param("id")));
     return c.json({ order: parsed.data, isDefault: false });
-  });
+  })
+  // Hosted provider runner types the Router skips for not picking up jobs
+  // (src/provider-health.ts).
+  .get("/:id/provider-health", requireUser, requireMember, async (c) => {
+    return c.json({ unhealthy: await c.env.ROUTER.getByName(c.req.param("id")).unhealthy() });
+  })
+  // "Try again now": jobs go to the runner type again. Owners and admins, like the order.
+  .delete(
+    "/:id/provider-health/:key/:label",
+    requireUser,
+    requireMember,
+    requireManager,
+    async (c) => {
+      const key = c.req.param("key");
+      if (!(HOSTED_PROVIDER_IDS as readonly string[]).includes(key))
+        return c.json({ error: "unknown_provider" }, 400);
+      await c.env.ROUTER.getByName(c.req.param("id")).clearHealth(key, c.req.param("label"));
+      return c.json({ cleared: true });
+    },
+  );

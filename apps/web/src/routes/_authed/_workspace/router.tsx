@@ -1,14 +1,21 @@
 import { DEFAULT_RUNNER_ORDER, type RunnerOrder } from "@relayrunner/runner-order";
 import { createFileRoute } from "@tanstack/react-router";
+import { RotateCwIcon, TriangleAlert } from "lucide-react";
 import { useEffect, useState } from "react";
 import { SectionBoundary } from "@/components/error-boundary";
 import { PageHeader } from "@/components/page-header";
 import { RunnerOrderEditor } from "@/components/runner-order-editor";
 import { Badge } from "@/components/ui/badge";
+import { Button } from "@/components/ui/button";
 import { getActionsUsage, type AccountUsage } from "@/lib/actions-usage";
 import { sampleRouterAccounts } from "@/lib/router-sample";
 import { authDisabled } from "@/lib/auth-client";
 import { listMachines, type Machine } from "@/lib/machines";
+import {
+  clearUnhealthyRunner,
+  getUnhealthyRunners,
+  type UnhealthyRunner,
+} from "@/lib/provider-health";
 import { canManage } from "@/lib/roles";
 import { getRunnerOrder } from "@/lib/runner-order";
 
@@ -60,7 +67,12 @@ function RouterPage() {
         Where jobs go. Each job takes the first step that can run it.
         {!editable && " Owners and admins can change the order."}
       </PageHeader>
-      <div className="max-w-5xl">
+      <div className="grid max-w-5xl gap-4">
+        {!authDisabled && (
+          <SectionBoundary>
+            <UnhealthyRunners workspaceId={current.workspace.id} editable={editable} />
+          </SectionBoundary>
+        )}
         <SectionBoundary>
           <RunnerOrderEditor
             // The page can first show cached data, then fresh: remount when the saved order changes.
@@ -75,6 +87,71 @@ function RouterPage() {
         </SectionBoundary>
       </div>
     </section>
+  );
+}
+
+const clock = (at: number) =>
+  new Date(at).toLocaleTimeString(undefined, { hour: "numeric", minute: "2-digit" });
+
+// Hosted runner types the Router is skipping because their last jobs weren't picked up, each with
+// "Try again now". Nothing when every one is healthy.
+function UnhealthyRunners({ workspaceId, editable }: { workspaceId: string; editable: boolean }) {
+  const [runners, setRunners] = useState<UnhealthyRunner[]>([]);
+  const [clearing, setClearing] = useState<UnhealthyRunner | null>(null);
+  useEffect(() => {
+    let live = true;
+    getUnhealthyRunners(workspaceId).then(
+      (unhealthy) => live && setRunners(unhealthy),
+      // A notice, not the page: leave it off when it can't be read.
+      () => undefined,
+    );
+    return () => {
+      live = false;
+    };
+  }, [workspaceId]);
+
+  async function tryAgain(runner: UnhealthyRunner) {
+    setClearing(runner);
+    try {
+      await clearUnhealthyRunner(workspaceId, runner);
+      setRunners((all) => all.filter((r) => r !== runner));
+    } finally {
+      setClearing(null);
+    }
+  }
+
+  if (runners.length === 0) return null;
+  return (
+    <ul className="grid gap-2" aria-label="Skipped runners">
+      {runners.map((runner) => (
+        <li
+          key={`${runner.key}:${runner.label}`}
+          className="flex flex-wrap items-center gap-x-3 gap-y-2 rounded-xl border px-4 py-3 text-sm"
+        >
+          <TriangleAlert aria-hidden className="size-4 shrink-0 text-destructive" />
+          <p className="min-w-0 flex-1">
+            <span className="font-medium">Skipping {runner.label}.</span>{" "}
+            <span className="text-muted-foreground">
+              The last {runner.misses} jobs on it weren't picked up.{" "}
+              {runner.retryAt > Date.now()
+                ? `The Router tries it again at ${clock(runner.retryAt)}.`
+                : "The Router sends it the next job to see if it's back."}
+            </span>
+          </p>
+          {editable && (
+            <Button
+              size="sm"
+              variant="outline"
+              disabled={clearing === runner}
+              onClick={() => void tryAgain(runner)}
+            >
+              <RotateCwIcon aria-hidden />
+              Try again now
+            </Button>
+          )}
+        </li>
+      ))}
+    </ul>
   );
 }
 
