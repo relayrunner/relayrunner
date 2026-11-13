@@ -16,6 +16,7 @@ import {
   ServerIcon,
   TagIcon,
   UsersIcon,
+  WaypointsIcon,
   WebhookIcon,
 } from "lucide-react";
 import { type ReactNode, useState } from "react";
@@ -93,6 +94,7 @@ const analyticsNav = [
 const adminNav = [
   { to: "/admin/users", label: "Users", icon: UsersIcon },
   { to: "/admin/workspaces", label: "Workspaces", icon: Building2Icon },
+  { to: "/admin/routing", label: "Routing", icon: WaypointsIcon },
   { to: "/admin/webhooks", label: "Webhooks", icon: WebhookIcon },
   { to: "/admin/providers", label: "Providers", icon: CloudIcon },
   { to: "/admin/prices", label: "Prices", icon: TagIcon },
