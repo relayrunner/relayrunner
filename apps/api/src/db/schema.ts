@@ -648,9 +648,10 @@ export const routeDecision = sqliteTable(
   (table) => [
     uniqueIndex("route_decision_run_idx").on(table.repositoryId, table.runId, table.runAttempt),
     // Operator pings (src/operator-pings.ts): the decisions made in a window, and whether a
-    // workspace had a run on a machine before.
+    // workspace had a run on a machine before. Admin › Workspaces (src/admin-adoption.ts): each
+    // workspace's first run on a machine, read from the index alone.
     index("route_decision_created_idx").on(table.createdAt),
-    index("route_decision_workspace_step_idx").on(table.workspaceId, table.step),
+    index("route_decision_step_workspace_idx").on(table.step, table.workspaceId, table.createdAt),
   ],
 );
 

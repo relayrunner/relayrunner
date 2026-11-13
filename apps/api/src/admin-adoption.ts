@@ -54,26 +54,52 @@ export async function machineMilestones(db: Db) {
   };
 }
 
-/** Per workspace id: its jobs over the window ending at `now`, and its latest job. */
+/**
+ * Per workspace id: its jobs over the window ending at `now`, and its latest job. The window is a
+ * range of job_timing_completed_idx; each latest job walks job_timing_installation_idx back from
+ * the newest row, so neither reads the whole table.
+ */
 export async function workspaceJobs(db: Db, now = new Date()): Promise<Map<string, WorkspaceJobs>> {
   const since = now.getTime() - ADOPTION_WINDOW_MS;
   const job = schema.jobTiming;
-  const recent = sql`${job.completedAt} >= ${since}`;
-  const rows = await db
-    .select({
-      workspaceId: schema.workspace.id,
-      jobs: sql<number>`coalesce(sum(${recent}), 0)`,
-      machineJobs: sql<number>`coalesce(sum(${recent} and ${job.machineId} is not null), 0)`,
-      lastJobAt: sql<number | null>`max(${job.completedAt})`,
-    })
-    .from(job)
-    .innerJoin(schema.workspace, eq(schema.workspace.installationId, job.installationId))
-    .where(and(isNotNull(job.completedAt), RAN_ON_RUNNER, sql`not ${PICK}`))
-    .groupBy(schema.workspace.id);
+  const ran = and(RAN_ON_RUNNER, sql`not ${PICK}`);
+  const [recent, latest] = await Promise.all([
+    db
+      .select({
+        workspaceId: schema.workspace.id,
+        jobs: sql<number>`count(*)`,
+        machineJobs: sql<number>`sum(${job.machineId} is not null)`,
+      })
+      .from(job)
+      .innerJoin(schema.workspace, eq(schema.workspace.installationId, job.installationId))
+      .where(and(sql`${job.completedAt} >= ${since}`, ran))
+      .groupBy(schema.workspace.id),
+    db
+      .select({
+        workspaceId: schema.workspace.id,
+        // Spelled out: Drizzle leaves columns unqualified when there is no join, which would make
+        // this match job_timing's own installation_id.
+        at: sql<number | null>`(select ${job.completedAt} from ${job}
+          where ${job.installationId} = "workspace"."installation_id"
+            and ${isNotNull(job.completedAt)} and ${ran}
+          order by ${job.completedAt} desc limit 1)`,
+      })
+      .from(schema.workspace),
+  ]);
+  const counts = new Map(recent.map((row) => [row.workspaceId, row]));
   return new Map(
-    rows.map((row) => [
-      row.workspaceId,
-      { jobs7d: row.jobs, machineJobs7d: row.machineJobs, lastJobAt: iso(row.lastJobAt) },
-    ]),
+    latest
+      .filter((row) => row.at !== null)
+      .map((row) => {
+        const count = counts.get(row.workspaceId);
+        return [
+          row.workspaceId,
+          {
+            jobs7d: count?.jobs ?? 0,
+            machineJobs7d: count?.machineJobs ?? 0,
+            lastJobAt: iso(row.at),
+          },
+        ];
+      }),
   );
 }
