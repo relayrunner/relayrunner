@@ -23,7 +23,7 @@ import {
 import { type ReactNode, useEffect, useRef, useState } from "react";
 import { SectionBoundary } from "@/components/error-boundary";
 import { PageHeader } from "@/components/page-header";
-import { ProviderLink } from "@/components/provider-link";
+import { RunnerLink } from "@/components/runner-link";
 import { Button } from "@/components/ui/button";
 import {
   Select,
@@ -44,6 +44,7 @@ import {
   type ActivityPage,
   type ActivityQuery,
   type ActivityResult,
+  type ActivityRunner,
   type ActivityStarter,
   type ActivityStarters,
 } from "@/lib/activity";
@@ -800,14 +801,14 @@ function JobRow({ job, now }: { job: ActivityJob; now: number }) {
             className="font-medium"
             title={job.runnerName ? `Ran on ${job.runnerName}` : "Not picked up yet"}
           >
-            <ProviderLink
-              provider={runner.type === "hosted" ? runner.provider : runner.type}
+            <RunnerLink
+              runner={{ key: runnerKey(runner), label: runnerName }}
               markClassName="mr-1 inline-flex size-4 rounded-[4px] align-[-0.2em]"
             >
               <span className={runner.type !== "machine" ? "font-mono text-xs" : undefined}>
                 {runnerName}
               </span>
-            </ProviderLink>
+            </RunnerLink>
           </span>
         </>
       )}
@@ -1456,4 +1457,12 @@ function sampleOptions(): ActivityOptions {
     repositories: ["relayrunner/actions", "relayrunner/relayrunner-ci-tests"],
     machines: [{ id: "m1", name: "Atticuss-MacBook-Pro.local" }],
   };
+}
+
+// The runner's Performance key, so its hover card can find it: a deleted or unclaimed machine has
+// no id, and reads as a self-hosted runner.
+function runnerKey(runner: ActivityRunner) {
+  if (runner.type === "machine")
+    return runner.machineId ? `machine:${runner.machineId}` : "self-hosted:";
+  return runner.type === "hosted" ? `${runner.provider}:${runner.label}` : `github:${runner.label}`;
 }

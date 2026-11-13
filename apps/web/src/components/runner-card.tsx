@@ -209,6 +209,13 @@ export function BandLabel({ tone, children }: { tone: keyof typeof BANDS; childr
   );
 }
 
+/** A status's dot on its own, for a line of text such as a hover card's. */
+export function StatusDot({ connection }: { connection: keyof typeof CONNECTION }) {
+  return (
+    <span aria-hidden className={cn("size-2 shrink-0 rounded-full", CONNECTION[connection].dot)} />
+  );
+}
+
 // One labeled fact in the card's grid.
 function Field({ label, children }: { label: string; children: ReactNode }) {
   return (

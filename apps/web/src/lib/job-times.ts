@@ -21,6 +21,20 @@ export type Stat = {
   trend: number | null;
 };
 
+/** A Stat with no runs behind it. */
+export const EMPTY_STAT: Stat = {
+  runs: 0,
+  successes: 0,
+  samples: 0,
+  confidence: "none",
+  medianMs: null,
+  p25Ms: null,
+  p75Ms: null,
+  p90Ms: null,
+  waitMs: null,
+  trend: null,
+};
+
 export type Environment = {
   key: string;
   label: string;

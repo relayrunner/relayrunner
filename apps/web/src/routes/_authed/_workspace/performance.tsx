@@ -1,12 +1,12 @@
 import { createFileRoute } from "@tanstack/react-router";
-import { ChevronRightIcon } from "lucide-react";
+import { ChevronRightIcon, LayersIcon } from "lucide-react";
 import { memo, type ReactNode, useEffect, useMemo, useState } from "react";
 import { SectionBoundary } from "@/components/error-boundary";
 import { PageHeader } from "@/components/page-header";
 import { PageTabs, type Tab, viewOf } from "@/components/page-tabs";
-import { ProviderLink } from "@/components/provider-link";
+import { RunnerLink } from "@/components/runner-link";
 import { sizeText } from "@relayrunner/providers";
-import { ProviderMark, providerOf } from "@/components/providers";
+import { byProvider, ProviderMark, providerStyle } from "@/components/providers";
 import { RangePicker } from "@/components/range-picker";
 import { Button } from "@/components/ui/button";
 import {
@@ -45,15 +45,20 @@ import {
   niceStep,
   plural,
   type Stat,
+  EMPTY_STAT,
   sampleJobTimes,
   spreadText,
   versusLabel,
   type WorkflowRow,
 } from "@/lib/job-times";
+import { readFlag, saveFlag } from "@/lib/stored-flag";
 import { cn } from "@/lib/utils";
 import { Count } from "@/components/count";
 
 const RANGES = [7, 14, 30] as const;
+
+// Whether the Runners tab groups runners by provider, kept per browser.
+const GROUPED_KEY = "relayrunner:performance:by-provider";
 
 function load(days: number) {
   return authDisabled ? Promise.resolve(sampleJobTimes(days)) : getJobTimes(days);
@@ -107,6 +112,7 @@ function PerformancePage() {
   const navigate = Route.useNavigate();
   const [report, setReport] = useState<JobTimesReport>(first);
   const [repository, setRepository] = useState<string>("all");
+  const [grouped, setGrouped] = useState(() => readFlag(GROUPED_KEY));
   const [opened, setOpened] = useState<Detail | null>(null);
   const linked = useMemo(() => linkedDetail(report.workflows, search), [report, search]);
   const detail = opened ?? linked;
@@ -155,9 +161,24 @@ function PerformancePage() {
             </SelectContent>
           </Select>
         )}
+        {view === "runners" && (
+          <Button
+            variant="ghost"
+            size="sm"
+            aria-pressed={grouped}
+            className={cn("ml-auto", !grouped && "text-muted-foreground")}
+            onClick={() => {
+              saveFlag(GROUPED_KEY, !grouped);
+              setGrouped(!grouped);
+            }}
+          >
+            <LayersIcon aria-hidden />
+            Group by provider
+          </Button>
+        )}
       </div>
     ),
-    [report.days, repositories, repository],
+    [report.days, repositories, repository, view, grouped],
   );
 
   return (
@@ -178,7 +199,7 @@ function PerformancePage() {
         ) : (
           <SectionBoundary>
             {view === "runners" ? (
-              <Environments report={report} />
+              <Environments report={report} grouped={grouped} />
             ) : view === "jobs" ? (
               <Jobs
                 environments={report.environments}
@@ -226,15 +247,35 @@ const [Baseline, useBaseline] = createCellContext<{
 
 const END = { align: "end" } as const;
 
-const environmentColumn = dataTableColumns<EnvironmentSummary>();
+/** A runner's row, or with `group` a provider's, holding its runners as subRows. */
+type EnvironmentRow = EnvironmentSummary & {
+  group?: string;
+  subRows?: EnvironmentRow[];
+};
+
+const environmentColumn = dataTableColumns<EnvironmentRow>();
 const environmentColumns = environmentColumn.columns([
   environmentColumn.accessor("label", {
     header: "Runner",
     sortFn: "text",
-    cell: ({ row: { original: env } }) => {
+    cell: ({ row: { original: env, depth } }) => {
+      if (env.group)
+        return (
+          <span className="flex items-center gap-2.5 font-semibold">
+            <ProviderMark provider={env.group} />
+            {env.label}
+            <span className="text-xs font-normal text-muted-foreground">
+              {plural(env.subRows?.length ?? 0, "runner")}
+            </span>
+          </span>
+        );
       const detail = [env.detail, sizeText(env.size)].filter(Boolean).join(" · ");
       return (
-        <ProviderLink provider={providerOf(env)} className="flex w-fit items-center gap-2.5">
+        <RunnerLink
+          runner={env}
+          specsShown
+          className={cn("flex w-fit items-center gap-2.5", depth > 0 && "ml-7.5")}
+        >
           <span>
             <span className="block whitespace-nowrap">{env.label}</span>
             {detail && (
@@ -243,7 +284,7 @@ const environmentColumns = environmentColumn.columns([
               </span>
             )}
           </span>
-        </ProviderLink>
+        </RunnerLink>
       );
     },
   }),
@@ -367,8 +408,13 @@ function VersusCell({ env }: { env: EnvironmentSummary }) {
   return <Versus env={env} isBaseline={env.key === useBaseline().key} />;
 }
 
-function Environments({ report }: { report: JobTimesReport }) {
+function Environments({ report, grouped }: { report: JobTimesReport; grouped: boolean }) {
   const baseline = report.environments.find((env) => env.key === report.baseline);
+  const rows = useMemo(
+    (): EnvironmentRow[] => (grouped ? groupRows(report.environments) : report.environments),
+    [report.environments, grouped],
+  );
+  const expanded = useMemo(() => Object.fromEntries(rows.map((row) => [row.key, true])), [rows]);
   return (
     <Baseline
       value={{
@@ -379,13 +425,36 @@ function Environments({ report }: { report: JobTimesReport }) {
       }}
     >
       <DataTable
-        caption="Runners"
         columns={environmentColumns}
-        data={report.environments}
+        data={rows}
         getRowId={(env) => env.key}
+        getSubRows={(env) => env.subRows}
+        expanded={grouped ? expanded : undefined}
+        rowClassName={(row) => (row.original.group ? "bg-muted/40 hover:bg-muted/40" : undefined)}
       />
     </Baseline>
   );
+}
+
+/**
+ * Runners under a row per provider, busiest provider first. A provider's row adds up its runners'
+ * jobs and successes; medians don't add up, so it leaves the times blank.
+ */
+function groupRows(environments: EnvironmentSummary[]): EnvironmentRow[] {
+  return byProvider(environments).map(([provider, envs]) => ({
+    key: `provider:${provider}`,
+    label: providerStyle(provider).name,
+    detail: "",
+    group: provider,
+    stat: {
+      ...EMPTY_STAT,
+      runs: envs.reduce((sum, env) => sum + env.stat.runs, 0),
+      successes: envs.reduce((sum, env) => sum + env.stat.successes, 0),
+    },
+    missed: envs.reduce((sum, env) => sum + env.missed, 0),
+    versus: null,
+    subRows: envs,
+  }));
 }
 
 function Versus({ env, isBaseline }: { env: EnvironmentSummary; isBaseline: boolean }) {
@@ -898,8 +967,13 @@ function TimeLine({ env, stat, best }: { env: EnvironmentSummary; stat: Stat; be
       className="grid grid-cols-[1rem_13rem_3.5rem_6.5rem] items-center gap-x-2"
       title={spreadText(stat)}
     >
-      <ProviderMark provider={providerOf(env)} className="size-4 rounded-[4px]" />
-      <span className={cn("truncate", few && "text-muted-foreground")}>{env.label}</span>
+      <RunnerLink
+        runner={env}
+        className="col-span-2 grid grid-cols-subgrid items-center"
+        markClassName="size-4 rounded-[4px]"
+      >
+        <span className={cn("truncate", few && "text-muted-foreground")}>{env.label}</span>
+      </RunnerLink>
       <span
         className={cn(
           "text-right font-semibold whitespace-nowrap",
@@ -1013,13 +1087,13 @@ function JobDetail({
                 className="grid grid-cols-[auto_1fr_auto] items-baseline gap-x-2 border-b pb-3 last:border-0"
               >
                 <Swatch index={index} />
-                <ProviderLink
-                  provider={providerOf(env)}
+                <RunnerLink
+                  runner={env}
                   className="flex min-w-0 items-center gap-1.5 self-center"
                   markClassName="size-4 rounded-[4px]"
                 >
                   <span className="truncate">{env.label}</span>
-                </ProviderLink>
+                </RunnerLink>
                 <span className="text-right font-semibold">{medianText(stat)}</span>
                 <span className="col-span-2 col-start-2 text-right text-xs text-muted-foreground">
                   {spreadText(stat)}

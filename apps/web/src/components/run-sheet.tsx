@@ -1,12 +1,12 @@
 import { Link, type LinkProps, useNavigate } from "@tanstack/react-router";
 import { ChevronRightIcon, ExternalLinkIcon } from "lucide-react";
-import { type ReactNode, useEffect, useState } from "react";
-import { ProviderLink } from "@/components/provider-link";
-import { providerOf } from "@/components/providers";
+import { type ReactNode, useEffect, useMemo, useState } from "react";
+import { RunnerLink, type RunnerRef } from "@/components/runner-link";
 import { StatusIcon } from "@/components/status-icon";
 import { Sheet, SheetContent, SheetDescription, SheetTitle } from "@/components/ui/sheet";
 import { timeAgo } from "@/lib/activity";
 import { authDisabled } from "@/lib/auth-client";
+import type { Environment } from "@/lib/job-times";
 import { useLiveRefresh } from "@/lib/live-refresh";
 import {
   getJobSteps,
@@ -33,8 +33,8 @@ import { cn, elapsed } from "@/lib/utils";
 // Paused while the tab is hidden or idle (lib/live-refresh.ts).
 const REFRESH_MS = 5_000;
 
-/** Each environment's name, by key. */
-export type Environments = Map<string, string>;
+/** The page's environments, by key. */
+export type Environments = Map<string, Environment>;
 
 /**
  * A link that opens a run, or one of its jobs, in History's panel. The panel is a search change on
@@ -173,8 +173,9 @@ export function RunSheet({
   const now = running ? ticking : (run?.updatedAt ?? ended);
 
   // A runner's name from the page's environments first, then the detail's own.
-  const own = new Map(detail?.environments.map((env) => [env.key, env.label]));
-  const label = (envKey: string) => environments.get(envKey) ?? own.get(envKey) ?? envKey;
+  const own = useMemo(() => new Map(detail?.environments.map((env) => [env.key, env])), [detail]);
+  const runnerOf = (key: string): RunnerRef =>
+    environments.get(key) ?? own.get(key) ?? { key, label: key };
   const job = jobId === undefined ? undefined : detail?.jobs.find((each) => each.id === jobId);
 
   let body: ReactNode;
@@ -183,7 +184,14 @@ export function RunSheet({
   else if (!header) body = <Empty>Nothing is known about this run yet.</Empty>;
   else if (jobId !== undefined)
     body = job ? (
-      <JobView ids={ids} header={header} job={job} now={now} running={running} label={label} />
+      <JobView
+        ids={ids}
+        header={header}
+        job={job}
+        now={now}
+        running={running}
+        runnerOf={runnerOf}
+      />
     ) : (
       <Empty>This job isn't part of the run anymore.</Empty>
     );
@@ -196,7 +204,7 @@ export function RunSheet({
         jobs={detail.jobs}
         now={now}
         running={running}
-        label={label}
+        runnerOf={runnerOf}
       />
     );
 
@@ -221,7 +229,8 @@ function Empty({ children }: { children: ReactNode }) {
   );
 }
 
-type Label = (envKey: string) => string;
+/** The runner a job ran on, by its environment key. */
+type RunnerOf = (key: string) => RunnerRef;
 
 function RunView({
   ids,
@@ -230,7 +239,7 @@ function RunView({
   jobs,
   now,
   running,
-  label,
+  runnerOf,
 }: {
   ids: RunIds;
   run: Run | undefined;
@@ -238,7 +247,7 @@ function RunView({
   jobs: RunJob[];
   now: number;
   running: boolean;
-  label: Label;
+  runnerOf: RunnerOf;
 }) {
   const firstQueued = Math.min(...jobs.map((job) => job.queuedAt ?? job.startedAt ?? Infinity));
   const startedAt = run?.startedAt ?? (Number.isFinite(firstQueued) ? firstQueued : null);
@@ -254,7 +263,7 @@ function RunView({
   if (longest) {
     const { job, wait } = longest;
     const verb = job.status === "queued" ? "has waited" : "waited";
-    const runner = job.environment ? label(job.environment) : "a runner";
+    const runner = job.environment ? runnerOf(job.environment).label : "a runner";
     note = `${job.name} ${verb} ${elapsed(wait)} for ${runner}.`;
   } else if (running) note = "Jobs that need others show up once GitHub queues them.";
 
@@ -318,6 +327,7 @@ function RunView({
               {jobs.map((job) => {
                 const wait = waitOf(job, now);
                 const queued = job.status === "queued";
+                const runner = job.environment ? runnerOf(job.environment) : null;
                 return (
                   <tr key={job.id} className="hover:bg-secondary/30">
                     <th scope="row" className="py-2 pr-4 pl-3 text-left font-normal">
@@ -331,19 +341,17 @@ function RunView({
                       </RunLink>
                     </th>
                     <td className="py-2 pr-4">
-                      {job.environment ? (
-                        <ProviderLink
-                          provider={providerOf({ key: job.environment })}
+                      {runner ? (
+                        <RunnerLink
+                          runner={runner}
                           className={cn(
                             "inline-flex items-center gap-2",
                             queued && "text-muted-foreground",
                           )}
                           markClassName={cn(queued && "opacity-50")}
                         >
-                          {queued
-                            ? `Waiting for ${label(job.environment)}`
-                            : label(job.environment)}
-                        </ProviderLink>
+                          {queued ? `Waiting for ${runner.label}` : runner.label}
+                        </RunnerLink>
                       ) : (
                         <span className="text-muted-foreground">No runner took it</span>
                       )}
@@ -385,14 +393,14 @@ function JobView({
   job,
   now,
   running,
-  label,
+  runnerOf,
 }: {
   ids: RunIds;
   header: RunHeader;
   job: RunJob;
   now: number;
   running: boolean;
-  label: Label;
+  runnerOf: RunnerOf;
 }) {
   // Undefined while loading; null when GitHub has no steps for the job.
   const [steps, setSteps] = useState<JobStep[] | null | undefined>(() => stepsCache.get(job.id));
@@ -452,12 +460,12 @@ function JobView({
           [
             "Runs on",
             job.environment ? (
-              <ProviderLink
-                provider={providerOf({ key: job.environment })}
+              <RunnerLink
+                runner={runnerOf(job.environment)}
                 className="inline-flex min-w-0 items-center gap-2"
               >
-                <span className="truncate">{label(job.environment)}</span>
-              </ProviderLink>
+                <span className="truncate">{runnerOf(job.environment).label}</span>
+              </RunnerLink>
             ) : (
               "No runner took it"
             ),

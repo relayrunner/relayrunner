@@ -1,10 +1,9 @@
 import { memo, useMemo, useState } from "react";
 import { DurationChart, jobPoints } from "@/components/duration-chart";
 import { SectionBoundary } from "@/components/error-boundary";
-import { ProviderLink } from "@/components/provider-link";
-import { providerOf } from "@/components/providers";
 import { RangePicker } from "@/components/range-picker";
 import { RunLink } from "@/components/run-sheet";
+import { RunnerLink, type RunnerRef } from "@/components/runner-link";
 import { createCellContext, DataTable, dataTableColumns } from "@/components/ui/data-table";
 import { Input } from "@/components/ui/input";
 import {
@@ -33,7 +32,7 @@ const RANGES = [1, 7, 14] as const;
 type ResultFilter = "all" | "failed";
 
 /** A job with what its row shows worked out once. */
-type Row = HistoryJob & { runner: string; waitMs: number | null; runMs: number };
+type Row = HistoryJob & { env: RunnerRef; runner: string; waitMs: number | null; runMs: number };
 
 const [ListContext, useListContext] = createCellContext<{ showRepository: boolean }>("Jobs");
 
@@ -52,12 +51,7 @@ const columns = column.columns([
     sortFn: "text",
     meta: { className: "whitespace-nowrap" },
     cell: ({ row: { original: job } }) => (
-      <ProviderLink
-        provider={providerOf({ key: job.environment })}
-        className="inline-flex items-center gap-2"
-      >
-        {job.runner}
-      </ProviderLink>
+      <RunnerLink runner={job.env} className="inline-flex items-center gap-2" />
     ),
   }),
   column.accessor((job) => job.waitMs ?? undefined, {
@@ -189,13 +183,20 @@ export const JobList = memo(function JobList({ report: first }: { report: JobsRe
     [report],
   );
   const rows = useMemo(() => {
-    const labels = new Map(report.environments.map((env) => [env.key, env.label]));
-    return report.jobs.map((job): Row => ({
-      ...job,
-      runner: labels.get(job.environment) ?? job.environment,
-      waitMs: job.queuedAt === null ? null : job.startedAt - job.queuedAt,
-      runMs: job.completedAt - job.startedAt,
-    }));
+    const environments = new Map(report.environments.map((env) => [env.key, env]));
+    return report.jobs.map((job): Row => {
+      const env = environments.get(job.environment) ?? {
+        key: job.environment,
+        label: job.environment,
+      };
+      return {
+        ...job,
+        env,
+        runner: env.label,
+        waitMs: job.queuedAt === null ? null : job.startedAt - job.queuedAt,
+        runMs: job.completedAt - job.startedAt,
+      };
+    });
   }, [report]);
   // Each range is its own load, since the newest jobs alone can fill a busy workspace's list.
   function chooseRange(days: number) {
