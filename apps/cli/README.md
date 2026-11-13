@@ -11,7 +11,8 @@ npm install --global relayrunner   # or use npx relayrunner
 
 Machines only take jobs from private repositories. To opt jobs in, see the
 [root README](../../README.md#how-it-works) or
-[docs/agent-install.md](../../docs/agent-install.md).
+[docs/agent-install.md](../../docs/agent-install.md). To teach your coding
+agent the CLI, see the [agent skills](../../skills).
 
 ## `relayrunner connect`
 

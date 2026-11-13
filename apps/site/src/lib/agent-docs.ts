@@ -100,6 +100,7 @@ export function llmsIndex(all: DocsEntry[], site: URL) {
     "",
     "**How an agent should use it:**",
     "",
+    "- Install the agent skills with `npx skills add relayrunner/relayrunner`: one for the CLI, one for routing a repo's jobs, one for the MCP server.",
     `- To set it up in a repository, follow ${abs("/docs/get-started/agents")}. The CLI (\`npx relayrunner\`) does the work, and every command has a \`--json\` flag.`,
     `- To answer questions about a workspace's runners, runs and usage, connect the MCP server at ${MCP_URL} (${abs("/docs/reference/mcp")}).`,
     `- Prefer the MCP server. Only if you're writing your own OAuth client, call the same read-only API over HTTP: ${abs("/openapi.json")} (${abs("/docs/reference/api")}).`,

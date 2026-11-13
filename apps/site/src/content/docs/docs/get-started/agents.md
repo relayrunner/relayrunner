@@ -3,7 +3,27 @@ title: Set up with an agent
 description: Letting a coding agent set up RelayRunner and route your jobs for you.
 ---
 
-A coding agent such as Claude Code, Codex or Cursor can do the whole setup: sign the machine in, pick which jobs to route, edit the workflows and show you the diff. Paste this into your agent, inside the repo's checkout:
+## Install the skills
+
+Give your agent RelayRunner's skills, so it knows the CLI, how to route jobs and how to read your CI:
+
+```sh
+npx skills add relayrunner/relayrunner
+```
+
+It works with Claude Code, Codex, Cursor and most other coding agents, and asks which ones to install for. You get three skills:
+
+| Skill                     | What your agent can do with it                                                                     |
+| ------------------------- | -------------------------------------------------------------------------------------------------- |
+| `relayrunner`             | Sign a machine in, put it online, size and isolate jobs on a Mac, set up `relayrunner.yml`.        |
+| `relayrunner-route-jobs`  | Route a repo's jobs with `relayrunner init`, and explain the jobs it skips.                        |
+| `relayrunner-ci-insights` | Answer questions about your runners, runs and usage through the [MCP server](/docs/reference/mcp). |
+
+Run `npx skills update` now and then to get the latest.
+
+## Set up with one prompt
+
+Without the skills, your agent can still do the whole setup: sign the machine in, pick which jobs to route, edit the workflows and show you the diff. Paste this into your agent, inside the repo's checkout:
 
 ```text
 Set up relayrunner in this checkout using https://raw.githubusercontent.com/relayrunner/relayrunner/main/docs/agent-install.md
