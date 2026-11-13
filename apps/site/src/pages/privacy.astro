@@ -2,6 +2,7 @@
 // Moved verbatim from privacy.html. Astro bundles the imported CSS into the page's <head>.
 import BrandSymbol from "../components/BrandSymbol.astro";
 import SiteFooter from "../components/SiteFooter.astro";
+import Analytics from "../components/Analytics.astro";
 import ThemeProvider from "../components/ThemeProvider.astro";
 import "../style.css";
 import "../legal.css";
@@ -15,6 +16,7 @@ const site = Astro.site!.origin;
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <ThemeProvider />
+    <Analytics />
     <title>Privacy Policy · relayrunner</title>
     <meta
       name="description"
@@ -51,7 +53,7 @@ const site = Astro.site!.origin;
     <main id="main" class="wrap legal">
       <h1>Privacy Policy</h1>
       {/* For a change people should agree to again, also bump LEGAL_VERSIONS.privacy (packages/activity/src/legal.ts). */}
-      <p class="updated">Last updated November 12, 2026</p>
+      <p class="updated">Last updated November 13, 2026</p>
 
       <p class="intro">
         RelayRunner is an open source project. This policy covers the hosted service its maintainers
@@ -72,7 +74,8 @@ const site = Astro.site!.origin;
             connect.
           </li>
           <li>
-            We don't sell your data, show ads, use third-party analytics, or train AI models on it.
+            We don't sell your data, show ads, or train AI models on it. We use PostHog to count
+            visits and see how people use the site and dashboard.
           </li>
           <li>We don't keep your source code or your job logs.</li>
           <li>
@@ -149,8 +152,12 @@ const site = Astro.site!.origin;
 
       <h3>This website and cookies</h3>
       <p>
-        relayrunner.app sets no cookies and runs no analytics. The dashboard uses one cookie to keep
-        you signed in. That's the only cookie we set.
+        The dashboard uses one cookie to keep you signed in. The website and dashboard also use
+        PostHog, a product analytics service, to record page views and some actions, such as
+        clicking through to sign up. PostHog sets a first-party cookie with a random ID so visits
+        to the website and the dashboard count as one visitor. Once you sign in, we link that ID to
+        your RelayRunner account so we can see which features are used. We don't record your
+        screen or what you type, and we don't use these cookies for advertising.
       </p>
 
       <h2>How we use it</h2>
@@ -173,6 +180,11 @@ const site = Astro.site!.origin;
         <li>
           <strong>Cloudflare</strong> hosts the service, its database, storage, containers and logs,
           and sends our email.
+        </li>
+        <li>
+          <strong>PostHog</strong> (United States) receives the page views and product events
+          described above, with your account ID and the visitor's IP address, which it uses to
+          estimate a rough location.
         </li>
         <li>
           <strong>GitHub.</strong> RelayRunner is built on GitHub. We call GitHub's API for your

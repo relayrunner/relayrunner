@@ -13,7 +13,8 @@
     "not_found_handling": "single-page-application",
     // /api/* must reach the Worker, not the SPA fallback. So must the Access-gated admin views,
     // or assets would serve their HTML without the check. Old /dev links: public/_redirects.
-    "run_worker_first": ["/api/*", "/admin", "/admin/*", "/.well-known/*"],
+    // /ingest/* is PostHog, forwarded by the Worker rather than answered with the SPA.
+    "run_worker_first": ["/api/*", "/admin", "/admin/*", "/.well-known/*", "/ingest/*"],
   },
   // Same-origin API: the dashboard forwards /api/* to apps/api over this binding,
   // so auth cookies stay first-party on workers.dev and on the custom domain.

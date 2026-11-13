@@ -3,6 +3,7 @@
  * The landing pages' <head> tags: title, description, canonical, share cards and icons. Page-only
  * tags (structured data, preloads) go in the default slot.
  */
+import Analytics from "./Analytics.astro";
 import ThemeProvider from "./ThemeProvider.astro";
 
 interface Props {
@@ -31,6 +32,7 @@ const image = `${site}/og-image.png`;
 <meta charset="utf-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1" />
 <ThemeProvider />
+<Analytics />
 <title>{title}</title>
 <meta name="description" content={description} />
 <meta name="theme-color" content="#ffffff" media="(prefers-color-scheme: light)" />

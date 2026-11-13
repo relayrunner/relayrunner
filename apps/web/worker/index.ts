@@ -10,10 +10,13 @@
  * (see packages/access). They answer 404 wherever Access isn't configured. The
  * old /dev/* paths redirect to /admin/* (public/_redirects).
  *
- * `run_worker_first` in wrangler.jsonc sends /api/*, /admin/* and /.well-known/* here before the
+ * /ingest/* is PostHog analytics, forwarded so it stays first-party (packages/posthog-proxy).
+ *
+ * `run_worker_first` in wrangler.jsonc sends /api/*, /admin/*, /.well-known/* and /ingest/* here before the
  * assets layer; every other path is answered by assets (with the SPA fallback).
  */
 import { gateAdmin, isAdminPath, type AccessEnv } from "@relayrunner/access";
+import { isPostHogPath, proxyPostHog } from "@relayrunner/posthog-proxy";
 
 interface Env extends AccessEnv {
   API: Fetcher;
@@ -24,6 +27,7 @@ interface Env extends AccessEnv {
 export default {
   async fetch(request, env) {
     const { pathname } = new URL(request.url);
+    if (isPostHogPath(pathname)) return proxyPostHog(request);
     if (pathname.startsWith("/api/webhooks/")) {
       return env.WEBHOOKS.fetch(request);
     }

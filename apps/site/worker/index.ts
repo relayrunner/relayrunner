@@ -5,6 +5,9 @@
 // - An unknown path gets a 404: the site's 404 page, or a short Markdown note for agents.
 // - The landing page swaps its share image for a campaign's when `?utm_content=` names one in
 //   SHARE_IMAGES. Link previewers don't run JavaScript, so this has to happen here.
+// - /ingest/* goes to PostHog (packages/posthog-proxy), so analytics stay first-party.
+
+import { isPostHogPath, proxyPostHog } from "@relayrunner/posthog-proxy";
 
 interface Env {
   ASSETS: { fetch(request: Request | URL): Promise<Response> };
@@ -118,6 +121,7 @@ function withShareImage(response: Response, image: { path: string; alt: string }
 export default {
   async fetch(request: Request, env: Env): Promise<Response> {
     const url = new URL(request.url);
+    if (isPostHogPath(url.pathname)) return proxyPostHog(request);
 
     const md = wantsMarkdown(request) && markdownUrl(url);
     if (md) {

@@ -2,7 +2,7 @@
 // (apps/site/src/pages/terms.astro and privacy.astro). Bump one only for a change people should
 // agree to again: everyone whose recorded version differs is asked to agree before they can use
 // the dashboard (apps/web/src/routes/agree.tsx). A typo fix only changes the page's date.
-export const LEGAL_VERSIONS = { terms: "2026-11-09", privacy: "2026-11-12" } as const;
+export const LEGAL_VERSIONS = { terms: "2026-11-09", privacy: "2026-11-13" } as const;
 
 export type LegalDocument = keyof typeof LEGAL_VERSIONS;
 

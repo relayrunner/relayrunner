@@ -1,4 +1,5 @@
 import { Outlet, createFileRoute, redirect } from "@tanstack/react-router";
+import { identifyUser } from "@/lib/analytics";
 import { authDisabled } from "@/lib/auth-client";
 import { agreedSession } from "@/lib/legal";
 
@@ -12,6 +13,7 @@ export const Route = createFileRoute("/_authed")({
     if (!session) {
       throw redirect({ to: "/login", search: { redirect: location.href } });
     }
+    identifyUser(session.user);
     return { user: session.user, session };
   },
   // The first page load shows nothing until the guards are done, rather than a page skeleton

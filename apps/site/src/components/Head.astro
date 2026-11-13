@@ -10,11 +10,13 @@
  * - a render-blocking `expect` link: the browser keeps the old page on screen until the new one is
  *   parsed down to its Back / Next links (Pagination.astro), instead of drawing the header and
  *   sidebar first and the rest a frame later. Pages without them wait for the whole page.
+ * - PostHog (Analytics.astro).
  */
 import Default from "@astrojs/starlight/components/Head.astro";
 import sans from "@fontsource-variable/hanken-grotesk/files/hanken-grotesk-latin-wght-normal.woff2?url";
 import mono from "@fontsource-variable/jetbrains-mono/files/jetbrains-mono-latin-wght-normal.woff2?url";
 import { markdownPath } from "../lib/agent-docs";
+import Analytics from "./Analytics.astro";
 
 const { entry } = Astro.locals.starlightRoute;
 const isDoc = entry.id.startsWith("docs/");
@@ -26,6 +28,7 @@ const markdown = isDoc ? markdownPath(entry) : undefined;
 <link rel="preload" href={sans} as="font" type="font/woff2" crossorigin />
 <link rel="preload" href={mono} as="font" type="font/woff2" crossorigin />
 <Default />
+<Analytics />
 <link rel="expect" href="#pagination" blocking="render" />
 <meta property="og:image" content={image} />
 <meta property="og:image:type" content="image/png" />

@@ -17,6 +17,8 @@ catalog:
 allowBuilds:
   esbuild: true
   workerd: true
+  # posthog-js pulls in core-js, whose script only prints a funding notice.
+  core-js: false
 # pnpm 11 holds back releases newer than a day (minimumReleaseAge). These
 # lockfile entries were published inside that window; drop them once they age.
 minimumReleaseAgeExclude:

@@ -24,6 +24,7 @@ import { FeedbackPopover } from "@/components/feedback-popover";
 import { DOCS_URL, SiteFooter } from "@/components/site-footer";
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
 import { WorkspaceMark, WorkspaceMenu } from "@/components/workspace-menu";
+import { setWorkspace } from "@/lib/analytics";
 import { authDisabled } from "@/lib/auth-client";
 import { isGitHubOutcome } from "@/lib/github";
 import { loadProviderCatalog } from "@/lib/provider-catalog";
@@ -60,6 +61,7 @@ export const Route = createFileRoute("/_authed/_workspace")({
       // Pages name providers synchronously from the catalog, so it's loaded before any renders.
       // Both are read once and kept (lib/session.ts), so later navigations don't wait on them.
       const [current] = await Promise.all([cachedWorkspace(workspaceId), loadProviderCatalog()]);
+      setWorkspace(current.workspace);
       return { current };
     } catch {
       // The active workspace is gone or no longer ours.

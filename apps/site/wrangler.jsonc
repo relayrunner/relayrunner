@@ -2,7 +2,8 @@
   "$schema": "./node_modules/wrangler/config-schema.json",
   // Landing page and docs (/docs): one Astro build served as static assets. The Worker script runs
   // first for /docs/* and / (run_worker_first), and for paths with no asset: it sends Markdown to
-  // agents that ask for it with `Accept: text/markdown` and answers 404s. Every other file is
+  // agents that ask for it with `Accept: text/markdown` and answers 404s. /ingest/* is PostHog,
+  // forwarded by the Worker (packages/posthog-proxy). Every other file is
   // served from assets without invoking it.
   "name": "relayrunner-site",
   "main": "./worker/index.ts",
@@ -12,7 +13,7 @@
   "assets": {
     "directory": "./dist",
     "binding": "ASSETS",
-    "run_worker_first": ["/", "/docs/*"],
+    "run_worker_first": ["/", "/docs/*", "/ingest/*"],
     "html_handling": "drop-trailing-slash",
     // Unknown paths go to the Worker, which answers with dist/404.html (Starlight's not-found
     // page) and a 404, or a Markdown 404 for agents (worker/index.ts).
