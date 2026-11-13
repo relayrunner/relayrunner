@@ -1,5 +1,6 @@
 import { ExternalLinkIcon } from "lucide-react";
 import { useMemo, useState } from "react";
+import { DurationChart, jobPoints } from "@/components/duration-chart";
 import { SectionBoundary } from "@/components/error-boundary";
 import { ProviderLink } from "@/components/provider-link";
 import { providerOf } from "@/components/providers";
@@ -181,6 +182,7 @@ export function JobList({ report: first }: { report: JobsReport }) {
       ),
     [rows, repository, result],
   );
+  const chartPoints = useMemo(() => jobPoints(shown), [shown]);
   const showRepository = repository === "all" && repositories.length > 1;
   const context = useMemo(() => ({ showRepository }), [showRepository]);
 
@@ -227,18 +229,23 @@ export function JobList({ report: first }: { report: JobsReport }) {
           GitHub App sees them run in a connected repo.
         </p>
       ) : (
-        <SectionBoundary>
-          <ListContext value={context}>
-            <DataTable
-              columns={columns}
-              data={shown}
-              getRowId={(job) => String(job.id)}
-              search={query.trim()}
-              rowHeight={53}
-              empty="No jobs match these filters."
-            />
-          </ListContext>
-        </SectionBoundary>
+        <>
+          <SectionBoundary>
+            <DurationChart points={chartPoints} days={report.days} noun="job" />
+          </SectionBoundary>
+          <SectionBoundary>
+            <ListContext value={context}>
+              <DataTable
+                columns={columns}
+                data={shown}
+                getRowId={(job) => String(job.id)}
+                search={query.trim()}
+                rowHeight={53}
+                empty="No jobs match these filters."
+              />
+            </ListContext>
+          </SectionBoundary>
+        </>
       )}
       {report.truncated && (
         <p className="text-xs text-muted-foreground">

@@ -12,6 +12,7 @@ import {
   TimerOffIcon,
 } from "lucide-react";
 import { memo, useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { DurationChart, runPoints } from "@/components/duration-chart";
 import { SectionBoundary } from "@/components/error-boundary";
 import { ConclusionText, JobList } from "@/components/job-list";
 import { PageHeader } from "@/components/page-header";
@@ -164,6 +165,7 @@ function WorkflowRuns({ loaded }: { loaded: RunsReport }) {
     const by = SORTS[sort];
     return by ? shown.sort((a, b) => by(b) - by(a)) : shown;
   }, [report, days, repository, result, routed, sort]);
+  const chartPoints = useMemo(() => runPoints(runs), [runs]);
   useLiveRefresh(
     () =>
       getRuns()
@@ -236,6 +238,9 @@ function WorkflowRuns({ loaded }: { loaded: RunsReport }) {
         </p>
       ) : (
         <>
+          <SectionBoundary>
+            <DurationChart points={chartPoints} days={days} noun="run" />
+          </SectionBoundary>
           <SectionBoundary>
             <ul className="divide-y overflow-hidden rounded-xl border bg-card">
               {runs.length === 0 && (
