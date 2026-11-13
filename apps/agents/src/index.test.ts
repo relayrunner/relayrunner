@@ -1,6 +1,7 @@
+import { SKILLS_EXTENSION_ID } from "@modelcontextprotocol/server/ext/skills";
 import { describe, expect, test } from "vitest";
 import worker from "./index.ts";
-import type { serverCard } from "./server-card.ts";
+import { serverCard } from "./server-card.ts";
 import type { Env } from "./env.ts";
 
 const MCP_URL = "https://agents.relayrunner.app/mcp";
@@ -50,7 +51,7 @@ function fakeEnv(
   return { env, asked, posted };
 }
 
-function rpc(env: Env, body: unknown, token = "good") {
+function rpc(env: Env, body: unknown, token = "good", headers: Record<string, string> = {}) {
   return worker.fetch(
     new Request(MCP_URL, {
       method: "POST",
@@ -58,12 +59,36 @@ function rpc(env: Env, body: unknown, token = "good") {
         authorization: `Bearer ${token}`,
         "content-type": "application/json",
         accept: "application/json, text/event-stream",
+        ...headers,
       },
       body: JSON.stringify({ jsonrpc: "2.0", id: 1, ...(body as object) }),
     }),
     env,
   );
 }
+
+// A 2026-07-28 request: no handshake, the client's details ride along in every request's _meta.
+async function modernRpc(env: Env, method: string, params: Record<string, unknown> = {}) {
+  const response = await rpc(
+    env,
+    {
+      method,
+      params: {
+        ...params,
+        _meta: {
+          "io.modelcontextprotocol/protocolVersion": "2026-07-28",
+          "io.modelcontextprotocol/clientInfo": { name: "test", version: "1" },
+          "io.modelcontextprotocol/clientCapabilities": {},
+        },
+      },
+    },
+    "good",
+    { "mcp-protocol-version": "2026-07-28", "mcp-method": method },
+  );
+  return (await response.json()) as { result?: any; error?: { code: number } };
+}
+
+const CI_INSIGHTS = "skill://relayrunner-ci-insights/SKILL.md";
 
 describe("mcp server", () => {
   test("publishes where to sign in", async () => {
@@ -368,6 +393,67 @@ describe("mcp server", () => {
     ).json()) as { result: { content: { text: string }[]; isError: boolean } };
     expect(called.result.isError).toBe(true);
     expect(called.result.content[0].text).toContain("404");
+  });
+
+  test("serves the agent skills to 2025-era clients", async () => {
+    const { env } = fakeEnv();
+    const initialized = (await (
+      await rpc(env, {
+        method: "initialize",
+        params: {
+          protocolVersion: "2025-11-25",
+          capabilities: {},
+          clientInfo: { name: "test", version: "1" },
+        },
+      })
+    ).json()) as { result: { capabilities: any; instructions: string } };
+    expect(initialized.result.capabilities.extensions).toHaveProperty([SKILLS_EXTENSION_ID]);
+    expect(initialized.result.instructions).toContain(CI_INSIGHTS);
+
+    const listed = (await (await rpc(env, { method: "skills/list" })).json()) as {
+      result: { skills: { uri: string; frontmatter: { name: string }; resources: unknown[] }[] };
+    };
+    expect(listed.result.skills.map((skill) => skill.uri)).toEqual([
+      CI_INSIGHTS,
+      "skill://relayrunner-route-jobs/SKILL.md",
+      "skill://relayrunner/SKILL.md",
+    ]);
+    const routeJobs = listed.result.skills[1];
+    expect(routeJobs.frontmatter.name).toBe("relayrunner-route-jobs");
+    expect(routeJobs.resources).toContainEqual(
+      expect.objectContaining({
+        uri: "skill://relayrunner-route-jobs/references/skipped-jobs.md",
+        digest: expect.stringMatching(/^sha256:[0-9a-f]{64}$/),
+      }),
+    );
+
+    const read = (await (
+      await rpc(env, { method: "resources/read", params: { uri: CI_INSIGHTS } })
+    ).json()) as { result: { contents: { text: string; mimeType: string }[] } };
+    expect(read.result.contents[0].mimeType).toBe("text/markdown");
+    expect(read.result.contents[0].text).toContain("name: relayrunner-ci-insights");
+
+    const unknown = (await (
+      await rpc(env, { method: "skills/get", params: { uri: "skill://nope/SKILL.md" } })
+    ).json()) as { error: { code: number } };
+    expect(unknown.error.code).toBe(-32602);
+  });
+
+  test("serves the agent skills over the 2026-07-28 revision too", async () => {
+    const { env } = fakeEnv();
+    const discovered = await modernRpc(env, "server/discover");
+    expect(discovered.result.capabilities.extensions).toHaveProperty([SKILLS_EXTENSION_ID]);
+    // The server card hardcodes the modern revision, since the SDK doesn't export it.
+    const [remote] = serverCard(MCP_URL).remotes;
+    expect(remote.supportedProtocolVersions).toEqual(
+      expect.arrayContaining(discovered.result.supportedVersions),
+    );
+
+    const got = await modernRpc(env, "skills/get", { uri: CI_INSIGHTS });
+    expect(got.result.skill.frontmatter.name).toBe("relayrunner-ci-insights");
+
+    const tools = await modernRpc(env, "tools/list");
+    expect(tools.result.tools.map((tool: { name: string }) => tool.name)).toContain("list_runs");
   });
 
   test("rate limits per user and workspace, and only takes POST", async () => {
