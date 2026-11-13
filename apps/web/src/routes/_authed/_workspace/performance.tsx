@@ -451,6 +451,7 @@ function groupRows(environments: EnvironmentSummary[]): EnvironmentRow[] {
       runs: envs.reduce((sum, env) => sum + env.stat.runs, 0),
       successes: envs.reduce((sum, env) => sum + env.stat.successes, 0),
     },
+    missed: envs.reduce((sum, env) => sum + env.missed, 0),
     versus: null,
     subRows: envs,
   }));
