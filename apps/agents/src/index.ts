@@ -4,12 +4,19 @@
  * read-only apart from send_feedback (tools.ts).
  * This Worker holds no state and no secrets: it answers each MCP request with a fresh server whose
  * tools call relayrunner-api with the agent's own token, and the API decides what that token sees.
+ * The server also serves the agent skills in skills/ (skills.ts), and speaks both the 2025 protocol
+ * revisions and 2026-07-28.
  */
-import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
-import { WebStandardStreamableHTTPServerTransport } from "@modelcontextprotocol/sdk/server/webStandardStreamableHttp.js";
+import {
+  createMcpHandler,
+  isLegacyRequest,
+  McpServer,
+  WebStandardStreamableHTTPServerTransport,
+} from "@modelcontextprotocol/server";
 import { ApiError, apiClient, type Me } from "./api.ts";
 import type { Env } from "./env.ts";
 import { SERVER_CARD_TYPE, SERVER_VERSION, serverCard } from "./server-card.ts";
+import { skillCatalog } from "./skills.ts";
 import { registerTools } from "./tools.ts";
 
 const RESOURCE_METADATA_PATH = "/.well-known/oauth-protected-resource";
@@ -28,6 +35,8 @@ export default {
       return new Response(null, { status: 405, headers: { allow: "POST" } });
     }
 
+    // Built once per isolate; start it while the API checks the token.
+    const catalog = skillCatalog();
     const token = /^Bearer\s+(\S+)$/i.exec(request.headers.get("authorization") ?? "")?.[1];
     if (!token) return unauthorized(env);
     const api = apiClient(env, token);
@@ -43,16 +52,33 @@ export default {
     });
     if (!success) return jsonRpcError(429, "Rate limited. Try again in a minute.");
 
-    const server = new McpServer({ name: "relayrunner", version: SERVER_VERSION });
-    registerTools(server, api, me.agent.workspaces);
-    const transport = new WebStandardStreamableHTTPServerTransport({
-      sessionIdGenerator: undefined,
-      enableJsonResponse: true,
-    });
-    await server.connect(transport);
-    return transport.handleRequest(request);
+    const skills = await catalog;
+    const createServer = () => {
+      const server = new McpServer(
+        { name: "relayrunner", version: SERVER_VERSION },
+        { instructions: INSTRUCTIONS },
+      );
+      registerTools(server, api, me.agent.workspaces);
+      skills.attach(server);
+      return server;
+    };
+
+    // 2025-era clients, which most are today: the same stateless JSON transport as before.
+    if (await isLegacyRequest(request)) {
+      const transport = new WebStandardStreamableHTTPServerTransport({
+        sessionIdGenerator: undefined,
+        enableJsonResponse: true,
+      });
+      await createServer().connect(transport);
+      return transport.handleRequest(request);
+    }
+    return createMcpHandler(createServer, { legacy: "reject" }).fetch(request);
   },
 } satisfies ExportedHandler<Env>;
+
+// For clients that read resources but don't load skills themselves.
+const INSTRUCTIONS =
+  "Read your RelayRunner workspace: runners, workflow runs, routing and CI usage. For which tool answers which question, read skill://relayrunner-ci-insights/SKILL.md.";
 
 // RFC 9728: where MCP clients learn which authorization server to sign in with.
 function resourceMetadata(env: Env) {

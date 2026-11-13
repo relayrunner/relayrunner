@@ -1,7 +1,9 @@
-import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
+import type { McpServer } from "@modelcontextprotocol/server";
 import { expect, test } from "vitest";
-import skill from "../../../skills/relayrunner-ci-insights/SKILL.md?raw";
+import { SKILL_FILES } from "./skills.ts";
 import { registerTools } from "./tools.ts";
+
+const skill = SKILL_FILES["relayrunner-ci-insights/SKILL.md"];
 
 // The relayrunner-ci-insights skill (skills/ at the repo root, installed with `npx skills add`)
 // tells agents which tool answers which question. Keep its table in step with the server.

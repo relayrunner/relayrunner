@@ -6,7 +6,7 @@
  * here. It names no tools: clients list those
  * after signing in.
  */
-import { SUPPORTED_PROTOCOL_VERSIONS } from "@modelcontextprotocol/sdk/types.js";
+import { SUPPORTED_PROTOCOL_VERSIONS } from "@modelcontextprotocol/server";
 
 /** Also the version the server reports when a client connects (index.ts). */
 export const SERVER_VERSION = "0.1.0";
@@ -30,7 +30,8 @@ export const serverCard = (mcpUrl: string) => ({
     {
       type: "streamable-http",
       url: mcpUrl,
-      supportedProtocolVersions: SUPPORTED_PROTOCOL_VERSIONS,
+      // The SDK's list holds the 2025-era revisions; index.ts serves 2026-07-28 next to them.
+      supportedProtocolVersions: ["2026-07-28", ...SUPPORTED_PROTOCOL_VERSIONS],
     },
   ],
 });
