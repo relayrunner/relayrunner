@@ -119,6 +119,11 @@ export const workspace = sqliteTable("workspace", {
   metadata: text("metadata"),
   // JSON RunnerOrder (@relayrunner/runner-order). Null means the default order.
   runnerOrder: text("runner_order"),
+  // Whether the Router skips a hosted runner type that stopped picking up jobs
+  // (src/provider-health.ts). On unless someone turns it off on the Router page.
+  skipUnhealthyRunners: integer("skip_unhealthy_runners", { mode: "boolean" })
+    .notNull()
+    .default(true),
   createdAt: integer("created_at", { mode: "timestamp_ms" })
     .notNull()
     .$defaultFn(() => new Date()),

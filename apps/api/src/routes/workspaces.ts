@@ -84,10 +84,29 @@ export const workspaceRoutes = new Hono<AppEnv>()
       .where(eq(schema.workspace.id, c.req.param("id")));
     return c.json({ order: parsed.data, isDefault: false });
   })
-  // Hosted provider runner types the Router skips for not picking up jobs
-  // (src/provider-health.ts).
+  // Whether the Router skips hosted provider runner types that stopped picking up jobs, and the
+  // ones it skips now (src/provider-health.ts).
   .get("/:id/provider-health", requireUser, requireMember, async (c) => {
-    return c.json({ unhealthy: await c.env.ROUTER.getByName(c.req.param("id")).unhealthy() });
+    const id = c.req.param("id");
+    const [[row], unhealthy] = await Promise.all([
+      c.var.db
+        .select({ enabled: schema.workspace.skipUnhealthyRunners })
+        .from(schema.workspace)
+        .where(eq(schema.workspace.id, id))
+        .limit(1),
+      c.env.ROUTER.getByName(id).unhealthy(),
+    ]);
+    return c.json({ enabled: row?.enabled ?? true, unhealthy });
+  })
+  // Turns skipping on or off. Owners and admins, like the order.
+  .put("/:id/provider-health", requireUser, requireMember, requireManager, async (c) => {
+    const body = (await c.req.json().catch(() => null)) as { enabled?: unknown } | null;
+    if (typeof body?.enabled !== "boolean") return c.json({ error: "invalid_body" }, 400);
+    await c.var.db
+      .update(schema.workspace)
+      .set({ skipUnhealthyRunners: body.enabled })
+      .where(eq(schema.workspace.id, c.req.param("id")));
+    return c.json({ enabled: body.enabled });
   })
   // "Try again now": jobs go to the runner type again. Owners and admins, like the order.
   .delete(

@@ -178,7 +178,10 @@ export class Router extends DurableObject<Env> {
   async route(job: PickedJob): Promise<RouteDecision> {
     const db = createDb(this.env.DB);
     const [workspace] = await db
-      .select({ runnerOrder: schema.workspace.runnerOrder })
+      .select({
+        runnerOrder: schema.workspace.runnerOrder,
+        skipUnhealthy: schema.workspace.skipUnhealthyRunners,
+      })
       .from(schema.workspace)
       .where(eq(schema.workspace.id, job.workspaceId))
       .limit(1);
@@ -188,7 +191,10 @@ export class Router extends DurableObject<Env> {
       () => this.pickMachine(job),
       // The job's own account: each GitHub account has its own quota, never pooled (#117).
       () => accountUsage(db, job.installationId),
-      (key, label) => this.checkHealth(healthId(key, label)),
+      // Off: every hosted step takes its jobs, however they've been going.
+      workspace?.skipUnhealthy === false
+        ? undefined
+        : (key, label) => this.checkHealth(healthId(key, label)),
     );
   }
 

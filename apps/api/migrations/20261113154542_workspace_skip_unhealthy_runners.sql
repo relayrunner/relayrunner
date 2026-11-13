@@ -1,0 +1,1 @@
+ALTER TABLE `workspace` ADD `skip_unhealthy_runners` integer DEFAULT true NOT NULL;

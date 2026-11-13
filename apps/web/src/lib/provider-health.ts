@@ -14,8 +14,16 @@ export type UnhealthyRunner = {
 const path = (workspaceId: string) =>
   `/workspaces/${encodeURIComponent(workspaceId)}/provider-health`;
 
-export async function getUnhealthyRunners(workspaceId: string) {
-  return (await api<{ unhealthy: UnhealthyRunner[] }>(path(workspaceId))).unhealthy;
+/** Whether the Router skips runner types that stop picking up jobs, and the ones it skips now. */
+export type ProviderHealth = { enabled: boolean; unhealthy: UnhealthyRunner[] };
+
+export function getProviderHealth(workspaceId: string) {
+  return api<ProviderHealth>(path(workspaceId));
+}
+
+/** Turns skipping on or off for the workspace. Owners and admins only. */
+export async function setSkipUnhealthy(workspaceId: string, enabled: boolean) {
+  await api(path(workspaceId), { method: "PUT", body: JSON.stringify({ enabled }) });
 }
 
 /** "Try again now": the Router sends jobs to the runner type again. */

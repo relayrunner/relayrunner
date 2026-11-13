@@ -57,6 +57,8 @@ After 10 minutes, the Router sends one job back to try it. If a runner picks it 
 
 The Router page shows each runner type it's skipping, with a **Try again now** button for owners and admins. When no other step can take a job, the Router still sends it to the skipped runner type rather than failing the relay.
 
+This is on by default. To keep sending jobs to a provider however long they wait, turn off **Skip runners that stop picking up jobs** at the bottom of the Router page.
+
 ## When nothing fits
 
 The relay fails straight away with one line that names why each provider couldn't take the job, such as:
