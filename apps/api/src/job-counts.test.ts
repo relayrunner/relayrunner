@@ -2,13 +2,13 @@ import { beforeAll, describe, expect, test } from "vitest";
 import { app } from "./app.ts";
 import { createDb, schema } from "./db/index.ts";
 import type { Env } from "./env.ts";
-import { jobCountRows, summarizeJobCounts } from "./job-counts.ts";
+import { countFinishedJob, jobCountReport } from "./job-counts.ts";
 import { recordJobTiming } from "./job-timings.ts";
 import * as testing from "./testing.ts";
 import { accessEnv, accessJwt } from "./testing-access.ts";
 
 const HOUR_MS = 3_600_000;
-const MIGRATION = "20261113212700_job_count.sql";
+const MIGRATION = "20261113221256_job_count.sql";
 
 let env: Env;
 let jobIds = 0;
@@ -91,7 +91,7 @@ describe("job counts", () => {
     ]);
   });
 
-  test("the report sums the range's hours per hour and per installation", async () => {
+  test("the report reads the range from the rollups and leaves out excluded installations", async () => {
     const fresh = await testing.createTestEnv();
     const db = createDb(fresh.DB);
     const now = Date.UTC(2026, 10, 13, 12, 30);
@@ -104,24 +104,35 @@ describe("job counts", () => {
       })),
     );
     const at = (hoursAgo: number) => Date.UTC(2026, 10, 13, 12) - hoursAgo * HOUR_MS;
-    await db.insert(schema.jobCount).values([
-      { hour: new Date(at(0)), installationId: 1, success: 3 },
-      { hour: new Date(at(4)), installationId: 1, failed: 1 },
-      { hour: new Date(at(4)), installationId: 2, success: 5, cancelled: 2 },
-      // Past the 1-day range.
-      { hour: new Date(at(25)), installationId: 1, success: 100 },
-    ]);
+    async function count(installationId: number, conclusion: string, hoursAgo: number, times = 1) {
+      for (let i = 0; i < times; i += 1)
+        await countFinishedJob(db, installationId, conclusion, new Date(at(hoursAgo) + 60_000));
+    }
+    await count(1, "success", 0, 3);
+    await count(1, "failure", 4);
+    await count(2, "success", 4, 5);
+    await count(2, "cancelled", 4, 2);
+    // Past the 1-day range, inside the 7-day one.
+    await count(1, "success", 30, 10);
 
-    const report = summarizeJobCounts(await jobCountRows(db, 1, now));
-    expect(report.totals).toEqual({ success: 8, failed: 1, cancelled: 2 });
-    expect(report.hours).toEqual([
+    const day = await jobCountReport(db, { days: 1, now });
+    expect(day.totals).toEqual({ success: 8, failed: 1, cancelled: 2 });
+    expect(day.hours).toEqual([
       { at: at(4), success: 5, failed: 1, cancelled: 2 },
       { at: at(0), success: 3, failed: 0, cancelled: 0 },
     ]);
-    expect(report.installations.map((row) => row.installationId)).toEqual([2, 1]);
+    expect(day.installations).toEqual([
+      { installationId: 2, success: 5, failed: 0, cancelled: 2 },
+      { installationId: 1, success: 3, failed: 1, cancelled: 0 },
+    ]);
 
-    const theirs = summarizeJobCounts(await jobCountRows(db, 1, now), (id) => id === 2);
-    expect(theirs.totals).toEqual({ success: 3, failed: 1, cancelled: 0 });
+    // The week's breakdown comes from the per-day rollup and matches the chart's totals.
+    const week = await jobCountReport(db, { days: 7, exclude: [2], now });
+    expect(week.totals).toEqual({ success: 13, failed: 1, cancelled: 0 });
+    expect(week.hours.map((row) => row.at)).toEqual([at(30), at(4), at(0)]);
+    expect(week.installations).toEqual([
+      { installationId: 1, success: 13, failed: 1, cancelled: 0 },
+    ]);
   });
 
   test("the migration counts the jobs job_timing already holds", async () => {
@@ -145,12 +156,17 @@ describe("job counts", () => {
         .bind(index + 1, labels, conclusion, completedAt)
         .run();
     await testing.applyMigration(before, MIGRATION);
-    const { results } = await before.DB.prepare(
-      "select hour, success, failed, cancelled from job_count order by hour",
-    ).all();
-    expect(results).toEqual([
+    const read = async (query: string) => (await before.DB.prepare(query).all()).results;
+    const hours = [
       { hour, success: 1, failed: 1, cancelled: 0 },
       { hour: hour + HOUR_MS, success: 0, failed: 0, cancelled: 1 },
+    ];
+    expect(
+      await read("select hour, success, failed, cancelled from job_count order by hour"),
+    ).toEqual(hours);
+    expect(await read("select * from job_count_hour order by hour")).toEqual(hours);
+    expect(await read("select day, success, failed, cancelled from job_count_day")).toEqual([
+      { day: Date.UTC(2026, 10, 13), success: 1, failed: 1, cancelled: 1 },
     ]);
   });
 });

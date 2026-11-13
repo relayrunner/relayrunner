@@ -13,7 +13,7 @@ type WorkflowJobMessage = Extract<WebhookMessage, { event: "workflow_job" }>;
 
 const table = schema.jobTiming;
 const daily = schema.jobTimingDaily;
-const counts = schema.jobCount;
+const { jobCount, jobCountDay, jobCountHour } = schema;
 export const DAY_MS = 86_400_000;
 
 // GitHub bills a job by the minute, rounded up. A job that finishes in under this is the free-checks
@@ -191,7 +191,9 @@ export async function purgeOldJobTimings(db: Db, now = Date.now()): Promise<numb
       isNull(table.completedAt),
     ),
     purgeBefore(db, daily, daily.day, retained),
-    purgeBefore(db, counts, counts.hour, retained),
+    purgeBefore(db, jobCountHour, jobCountHour.hour, retained),
+    purgeBefore(db, jobCount, jobCount.hour, retained),
+    purgeBefore(db, jobCountDay, jobCountDay.day, retained),
   ]);
   return finished + unfinished;
 }

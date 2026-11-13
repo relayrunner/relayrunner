@@ -1,7 +1,7 @@
 {
   "version": "6",
   "dialect": "sqlite",
-  "id": "6b06e22d-5441-4791-ad3c-38bee5fbb4a5",
+  "id": "ef396e54-2dfd-4d3c-893c-cf0af49931d0",
   "prevId": "207e255c-638b-4626-a852-78b9ddf207d1",
   "tables": {
     "account": {
@@ -1165,8 +1165,86 @@
     "job_count": {
       "name": "job_count",
       "columns": {
+        "installation_id": {
+          "name": "installation_id",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
         "hour": {
           "name": "hour",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "success": {
+          "name": "success",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false,
+          "default": 0
+        },
+        "failed": {
+          "name": "failed",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false,
+          "default": 0
+        },
+        "cancelled": {
+          "name": "cancelled",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false,
+          "default": 0
+        }
+      },
+      "indexes": {
+        "job_count_hour_idx": {
+          "name": "job_count_hour_idx",
+          "columns": [
+            "hour"
+          ],
+          "isUnique": false
+        }
+      },
+      "foreignKeys": {
+        "job_count_installation_id_github_installation_id_fk": {
+          "name": "job_count_installation_id_github_installation_id_fk",
+          "tableFrom": "job_count",
+          "tableTo": "github_installation",
+          "columnsFrom": [
+            "installation_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "cascade",
+          "onUpdate": "no action"
+        }
+      },
+      "compositePrimaryKeys": {
+        "job_count_installation_id_hour_pk": {
+          "columns": [
+            "installation_id",
+            "hour"
+          ],
+          "name": "job_count_installation_id_hour_pk"
+        }
+      },
+      "uniqueConstraints": {},
+      "checkConstraints": {}
+    },
+    "job_count_day": {
+      "name": "job_count_day",
+      "columns": {
+        "day": {
+          "name": "day",
           "type": "integer",
           "primaryKey": false,
           "notNull": true,
@@ -1206,9 +1284,9 @@
       },
       "indexes": {},
       "foreignKeys": {
-        "job_count_installation_id_github_installation_id_fk": {
-          "name": "job_count_installation_id_github_installation_id_fk",
-          "tableFrom": "job_count",
+        "job_count_day_installation_id_github_installation_id_fk": {
+          "name": "job_count_day_installation_id_github_installation_id_fk",
+          "tableFrom": "job_count_day",
           "tableTo": "github_installation",
           "columnsFrom": [
             "installation_id"
@@ -1221,14 +1299,55 @@
         }
       },
       "compositePrimaryKeys": {
-        "job_count_hour_installation_id_pk": {
+        "job_count_day_day_installation_id_pk": {
           "columns": [
-            "hour",
+            "day",
             "installation_id"
           ],
-          "name": "job_count_hour_installation_id_pk"
+          "name": "job_count_day_day_installation_id_pk"
         }
       },
+      "uniqueConstraints": {},
+      "checkConstraints": {}
+    },
+    "job_count_hour": {
+      "name": "job_count_hour",
+      "columns": {
+        "hour": {
+          "name": "hour",
+          "type": "integer",
+          "primaryKey": true,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "success": {
+          "name": "success",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false,
+          "default": 0
+        },
+        "failed": {
+          "name": "failed",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false,
+          "default": 0
+        },
+        "cancelled": {
+          "name": "cancelled",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false,
+          "default": 0
+        }
+      },
+      "indexes": {},
+      "foreignKeys": {},
+      "compositePrimaryKeys": {},
       "uniqueConstraints": {},
       "checkConstraints": {}
     },

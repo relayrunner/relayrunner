@@ -12,7 +12,7 @@ import { deleteUser, deleteWorkspaces } from "../admin-delete.ts";
 import type { AppEnv } from "../app.ts";
 import { createDb, schema } from "../db/index.ts";
 import { internalWorkspaceIds } from "../internal-workspaces.ts";
-import { JOB_COUNT_RANGES, jobCountRows, summarizeJobCounts } from "../job-counts.ts";
+import { JOB_COUNT_RANGES, jobCountReport } from "../job-counts.ts";
 import { requireOperator, who } from "../middleware/admin.ts";
 import { requireUser } from "../middleware/session.ts";
 import { adminPriceRoutes } from "./admin-prices.ts";
@@ -127,7 +127,7 @@ export const adminRoutes = new Hono<AppEnv>()
     if (!query.success) return c.json({ error: "invalid_query" }, 400);
     const { days, internal } = query.data;
     const db = createDb(c.env.DB);
-    const [installations, ours, rows] = await Promise.all([
+    const [installations, ours] = await Promise.all([
       db
         .select({
           installationId: schema.githubInstallation.id,
@@ -142,7 +142,6 @@ export const adminRoutes = new Hono<AppEnv>()
           eq(schema.workspace.installationId, schema.githubInstallation.id),
         ),
       internalWorkspaceIds(db),
-      jobCountRows(db, days),
     ]);
     const byId = new Map(
       installations.map((row) => [
@@ -150,14 +149,15 @@ export const adminRoutes = new Hono<AppEnv>()
         { ...row, internal: row.workspaceId !== null && ours.has(row.workspaceId) },
       ]),
     );
-    const report = summarizeJobCounts(
-      rows,
-      internal === "1" ? undefined : (id) => byId.get(id)?.internal ?? false,
-    );
+    const ourInstallations = [...byId.values()].filter((row) => row.internal);
+    const report = await jobCountReport(db, {
+      days,
+      exclude: internal === "1" ? [] : ourInstallations.map((row) => row.installationId),
+    });
     return c.json({
       ...report,
       days,
-      internalWorkspaces: [...byId.values()].filter((row) => row.internal).length,
+      internalWorkspaces: ourInstallations.length,
       installations: report.installations.map((counts) => {
         // Always found: job_count rows go with their installation.
         const { accountLogin, workspaceId, name, logo, internal } = byId.get(
