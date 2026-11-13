@@ -1,22 +1,10 @@
-import { createFileRoute } from "@tanstack/react-router";
-import {
-  ChevronRightIcon,
-  CircleCheckIcon,
-  CircleDashedIcon,
-  CircleSlashIcon,
-  CircleXIcon,
-  ExternalLinkIcon,
-  LoaderCircleIcon,
-  type LucideIcon,
-  RouteIcon,
-  TimerOffIcon,
-} from "lucide-react";
-import { memo, useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { createFileRoute, Link } from "@tanstack/react-router";
+import { ChevronRightIcon, RouteIcon } from "lucide-react";
+import { memo, useEffect, useMemo, useRef, useState } from "react";
 import { SectionBoundary } from "@/components/error-boundary";
-import { ConclusionText, JobList } from "@/components/job-list";
+import { JobList } from "@/components/job-list";
 import { PageHeader } from "@/components/page-header";
 import { PageTabs, type Tab, viewOf } from "@/components/page-tabs";
-import { ProviderLink } from "@/components/provider-link";
 import {
   providerStyle,
   type Provider,
@@ -25,7 +13,13 @@ import {
   runnerName,
 } from "@/components/providers";
 import { RangePicker } from "@/components/range-picker";
-import { Collapse } from "@/components/ui/collapse";
+import {
+  type Environments,
+  fetchRunJobs,
+  RunSheet,
+  StatusIcon,
+  useNow,
+} from "@/components/run-sheet";
 import {
   Select,
   SelectContent,
@@ -39,27 +33,23 @@ import { DAY_MS, plural } from "@/lib/job-times";
 import { useLiveRefresh } from "@/lib/live-refresh";
 import {
   getJobs,
-  getRunJobs,
   getRuns,
   isFailure,
   type JobsReport,
-  LONG_WAIT_MS,
+  parseRunParam,
   type Run,
-  type RunJob,
-  type RunJobs,
   type RunsReport,
+  runParam,
   sampleJobs,
-  sampleRunJobs,
   sampleRuns,
   triggerText,
 } from "@/lib/runs";
 import { cn, elapsed } from "@/lib/utils";
 
 const RANGES = [1, 7, 14] as const;
-// While a run is going, how often the list and an open run's jobs are refetched. Paused while the
-// tab is hidden or idle (lib/live-refresh.ts).
+// While a run is going, how often the list is refetched. Paused while the tab is hidden or idle
+// (lib/live-refresh.ts).
 const LIST_REFRESH_MS = 15_000;
-const JOBS_REFRESH_MS = 5_000;
 const HOVER_INTENT_MS = 120;
 
 const TABS = [
@@ -72,10 +62,19 @@ const JOB_DAYS = 7;
 
 type Loaded = { view: "workflows"; runs: RunsReport } | { view: "jobs"; jobs: JobsReport };
 
+// `run` and `job` name the run attempt and job open in the detail panel, in either view.
+type Search = { view?: View; run?: string; job?: number };
+
 export const Route = createFileRoute("/_authed/_workspace/history")({
-  validateSearch: (search: Record<string, unknown>): { view?: View } => ({
-    view: viewOf(TABS, search.view),
-  }),
+  validateSearch: (search: Record<string, unknown>): Search => {
+    const run = parseRunParam(search.run);
+    const job = Number(search.job);
+    return {
+      view: viewOf(TABS, search.view),
+      run: run && runParam(run),
+      job: run && Number.isSafeInteger(job) && job > 0 ? job : undefined,
+    };
+  },
   loaderDeps: ({ search }) => ({ view: search.view ?? "workflows" }),
   loader: async ({ deps: { view } }): Promise<Loaded> => {
     if (view === "jobs")
@@ -90,6 +89,18 @@ export const Route = createFileRoute("/_authed/_workspace/history")({
 
 function HistoryPage() {
   const loaded = Route.useLoaderData();
+  const { run, job } = Route.useSearch();
+  const ids = parseRunParam(run);
+  const runs = loaded.view === "workflows" ? loaded.runs : null;
+  const environments: Environments = useMemo(
+    () =>
+      new Map(
+        (runs?.environments ?? (loaded.view === "jobs" ? loaded.jobs.environments : [])).map(
+          (env) => [env.key, env.label],
+        ),
+      ),
+    [loaded, runs],
+  );
   return (
     <section>
       <PageHeader title="History">
@@ -100,7 +111,18 @@ function HistoryPage() {
       {loaded.view === "jobs" ? (
         <JobList report={loaded.jobs} />
       ) : (
-        <WorkflowRuns loaded={loaded.runs} />
+        <WorkflowRuns loaded={loaded.runs} open={run} />
+      )}
+      {ids && (
+        <SectionBoundary>
+          <RunSheet
+            key={run}
+            ids={ids}
+            jobId={job}
+            run={runs?.runs.find((each) => runParam(each) === run)}
+            environments={environments}
+          />
+        </SectionBoundary>
       )}
     </section>
   );
@@ -115,26 +137,7 @@ const SORTS: Record<RunSort, ((run: Run) => number) | null> = {
   longest: (run) => run.wallMs ?? -1,
   slowest: (run) => (run.wallMs !== null && run.usualMs ? run.wallMs / run.usualMs : -1),
 };
-/** Each environment's name, by key. */
-type Environments = Map<string, string>;
-
-type RunIds = Pick<Run, "repositoryId" | "runId" | "runAttempt" | "startedAt" | "status">;
-const runKey = (run: Pick<Run, "repositoryId" | "runId" | "runAttempt">) =>
-  `${run.repositoryId}:${run.runId}:${run.runAttempt}`;
-const isLongWait = (wait: number | null): wait is number => wait !== null && wait >= LONG_WAIT_MS;
-
-/** The time now, ticking every second while `enabled`. */
-function useNow(enabled: boolean) {
-  const [now, setNow] = useState(Date.now());
-  useEffect(() => {
-    if (!enabled) return;
-    const timer = setInterval(() => setNow(Date.now()), 1000);
-    return () => clearInterval(timer);
-  }, [enabled]);
-  return now;
-}
-
-function WorkflowRuns({ loaded }: { loaded: RunsReport }) {
+function WorkflowRuns({ loaded, open }: { loaded: RunsReport; open: string | undefined }) {
   // Refetched while a run on screen is going, so new jobs, runs and results show without a reload.
   const [report, setReport] = useState(loaded);
   useEffect(() => setReport(loaded), [loaded]);
@@ -143,8 +146,6 @@ function WorkflowRuns({ loaded }: { loaded: RunsReport }) {
   const [result, setResult] = useState<ResultFilter>("all");
   const [routed, setRouted] = useState<RoutedFilter>("all");
   const [sort, setSort] = useState<RunSort>("newest");
-  const [open, setOpen] = useState<string | null>(null);
-  const toggle = useCallback((key: string) => setOpen((now) => (now === key ? null : key)), []);
 
   const repositories = useMemo(
     () => [...new Set(report.runs.map((run) => run.repository))].sort(),
@@ -244,7 +245,7 @@ function WorkflowRuns({ loaded }: { loaded: RunsReport }) {
                 </li>
               )}
               {runs.map((run) => {
-                const key = runKey(run);
+                const key = runParam(run);
                 return (
                   <RunRow
                     key={key}
@@ -253,7 +254,6 @@ function WorkflowRuns({ loaded }: { loaded: RunsReport }) {
                     environments={environments}
                     showRepository={repositories.length > 1}
                     open={open === key}
-                    onToggle={toggle}
                   />
                 );
               })}
@@ -273,14 +273,12 @@ const RunRow = memo(function RunRow({
   environments,
   showRepository,
   open,
-  onToggle,
 }: {
   id: string;
   run: Run;
   environments: Environments;
   showRepository: boolean;
   open: boolean;
-  onToggle: (key: string) => void;
 }) {
   const meta = [
     run.title ? run.workflow : null,
@@ -292,23 +290,27 @@ const RunRow = memo(function RunRow({
     run.startedAt ? timeAgo(run.startedAt) : null,
   ].filter(Boolean);
   // Opening a run usually follows a hover or focus by a moment, so its jobs start loading then and
-  // the detail opens at its full height instead of growing out of a loading line. A hover only
-  // counts once it rests, so sweeping the pointer down the list doesn't fetch every run.
+  // the panel opens with them in place. A hover only counts once it rests, so sweeping the pointer
+  // down the list doesn't fetch every run.
   const hover = useRef<ReturnType<typeof setTimeout>>(undefined);
-  const prefetch = () => void fetchRunJobs(run).catch(() => undefined);
+  const prefetch = () => void fetchRunJobs(run, run.status).catch(() => undefined);
 
   return (
     <li>
-      <button
-        type="button"
-        aria-expanded={open}
-        onClick={() => onToggle(id)}
+      <Link
+        from="/history"
+        to="/history"
+        search={(prev) => ({ ...prev, run: id, job: undefined })}
+        aria-current={open ? "true" : undefined}
         onPointerEnter={() => (hover.current = setTimeout(prefetch, HOVER_INTENT_MS))}
         onPointerLeave={() => clearTimeout(hover.current)}
         onFocus={prefetch}
-        className="grid w-full grid-cols-[auto_1fr_auto] items-center gap-x-3 px-4 py-3 text-left outline-none hover:bg-secondary/30 focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-inset sm:grid-cols-[auto_1fr_auto_auto] sm:gap-x-5"
+        className={cn(
+          "grid w-full grid-cols-[auto_1fr_auto] items-center gap-x-3 px-4 py-3 text-left outline-none hover:bg-secondary/30 focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-inset sm:grid-cols-[auto_1fr_auto_auto] sm:gap-x-5",
+          open && "bg-secondary/40",
+        )}
       >
-        <StatusIcon run={run} />
+        <StatusIcon status={run.status} conclusion={run.conclusion} />
         <span className="min-w-0">
           <span className="flex items-center gap-1.5">
             <span className="truncate font-medium">
@@ -325,18 +327,9 @@ const RunRow = memo(function RunRow({
         <RanOn keys={run.environments} environments={environments} />
         <span className="flex items-center gap-2">
           <WallTime run={run} />
-          <ChevronRightIcon
-            aria-hidden
-            className={cn(
-              "size-4 text-muted-foreground transition-transform duration-200 ease-out",
-              open && "rotate-90",
-            )}
-          />
+          <ChevronRightIcon aria-hidden className="size-4 text-muted-foreground" />
         </span>
-      </button>
-      <Collapse open={open}>
-        <RunDetail run={run} environments={environments} />
-      </Collapse>
+      </Link>
     </li>
   );
 });
@@ -368,65 +361,6 @@ function RanOn({ keys, environments }: { keys: string[]; environments: Environme
   );
 }
 
-// The last jobs fetched for the most recent runs, so a run opens with its jobs already there when
-// it was hovered first or opened before.
-type JobsEntry = { status: Run["status"]; at: number; request: Promise<RunJobs>; jobs?: RunJobs };
-const jobsCache = new Map<string, JobsEntry>();
-const JOBS_CACHE_SIZE = 50;
-
-/**
- * A run's jobs, from the cache unless the run's status has changed since or, for a run still
- * going, the cached answer is older than a refresh. `fresh` always asks again.
- */
-function fetchRunJobs(run: RunIds, fresh = false) {
-  const key = runKey(run);
-  const cached = jobsCache.get(key);
-  const current =
-    cached?.status === run.status &&
-    (run.status === "completed" || Date.now() - cached.at < JOBS_REFRESH_MS);
-  if (cached && current && !fresh) return cached.request;
-  const request = authDisabled ? Promise.resolve(sampleRunJobs(run)) : getRunJobs(run);
-  const entry: JobsEntry = { status: run.status, at: Date.now(), request };
-  request.then(
-    (jobs) => (entry.jobs = jobs),
-    () => jobsCache.get(key) === entry && jobsCache.delete(key),
-  );
-  jobsCache.delete(key); // Re-added last, so the oldest run is first to go.
-  jobsCache.set(key, entry);
-  if (jobsCache.size > JOBS_CACHE_SIZE) jobsCache.delete(jobsCache.keys().next().value!);
-  return request;
-}
-
-function cachedJobs(run: RunIds) {
-  const cached = jobsCache.get(runKey(run));
-  return (cached?.status === run.status && cached.jobs) || null;
-}
-
-type Status = { Icon: LucideIcon; label: string; className: string };
-const CANCELLED: Status = {
-  Icon: CircleSlashIcon,
-  label: "Cancelled",
-  className: "text-muted-foreground",
-};
-const LIVE = {
-  in_progress: { Icon: LoaderCircleIcon, label: "In progress", className: "animate-spin text-run" },
-  queued: { Icon: CircleDashedIcon, label: "Queued", className: "text-muted-foreground" },
-} satisfies Record<string, Status>;
-const STATUS: Record<string, Status> = {
-  ...LIVE,
-  success: { Icon: CircleCheckIcon, label: "Succeeded", className: "text-go" },
-  failure: { Icon: CircleXIcon, label: "Failed", className: "text-destructive" },
-  timed_out: { Icon: TimerOffIcon, label: "Timed out", className: "text-destructive" },
-  cancelled: CANCELLED,
-};
-
-function StatusIcon({ run }: { run: Run }) {
-  const { Icon, label, className } = STATUS[
-    run.status === "completed" ? (run.conclusion ?? "") : run.status
-  ] ?? { ...CANCELLED, label: run.conclusion ?? "Finished" };
-  return <Icon role="img" aria-label={label} className={cn("size-[18px] shrink-0", className)} />;
-}
-
 /**
  * The run's wall time, over a bar against the workflow's usual time: the tick is the usual time
  * and the bar fills to twice it, so a run slower than usual runs past the tick in amber.
@@ -456,208 +390,6 @@ function WallTime({ run }: { run: Run }) {
         </span>
       )}
     </span>
-  );
-}
-
-// A job still queued has waited until now, and one still running has run until now.
-function waitOf(job: RunJob, now: number) {
-  if (job.queuedAt === null) return null;
-  const end = job.startedAt ?? (job.status === "queued" ? now : null);
-  return end === null ? null : end - job.queuedAt;
-}
-const ranOf = (job: RunJob, now: number) =>
-  job.startedAt === null ? null : (job.completedAt ?? now) - job.startedAt;
-
-function RunDetail({ run, environments }: { run: Run; environments: Environments }) {
-  const [detail, setDetail] = useState<RunJobs | null>(() => cachedJobs(run));
-  const [failed, setFailed] = useState(false);
-  // Keyed on the run's ids and status, not the object: the same run in a new report needn't load
-  // again, but it does once it finishes.
-  const { repositoryId, runId, runAttempt, startedAt, status } = run;
-  const running = status !== "completed";
-  const ids = useMemo(
-    () => ({ repositoryId, runId, runAttempt, startedAt, status }),
-    [repositoryId, runId, runAttempt, startedAt, status],
-  );
-  useEffect(() => {
-    let live = true;
-    fetchRunJobs(ids)
-      .then((value) => live && setDetail(value))
-      .catch(() => live && setFailed(true));
-    return () => {
-      live = false;
-    };
-  }, [ids]);
-  useLiveRefresh(
-    () =>
-      fetchRunJobs(ids, true)
-        .then(setDetail)
-        .catch(() => undefined), // Keep showing the last answer; the next tick retries.
-    { intervalMs: JOBS_REFRESH_MS, enabled: running && !authDisabled },
-  );
-  // Times of jobs still going run to now. Once the run has finished they stop where it did, so a
-  // job GitHub never said finished (a lost webhook) doesn't keep counting.
-  const ticking = useNow(
-    running && Boolean(detail?.jobs.some((job) => job.status !== "completed")),
-  );
-  const now = running ? ticking : run.updatedAt;
-
-  // A runner's name from the page's environments first, then the detail's own.
-  const own = new Map(detail?.environments.map((env) => [env.key, env.label]));
-  const label = (key: string) => environments.get(key) ?? own.get(key) ?? key;
-  let longest: { job: RunJob; wait: number } | null = null;
-  for (const job of detail?.jobs ?? []) {
-    const wait = waitOf(job, now);
-    if (isLongWait(wait) && wait > (longest?.wait ?? 0)) longest = { job, wait };
-  }
-  let note: string | null = null;
-  if (longest) {
-    const { job, wait } = longest;
-    const verb = job.status === "queued" ? "has waited" : "waited";
-    const runner = job.environment ? label(job.environment) : "a runner";
-    note = `${job.name} ${verb} ${elapsed(wait)} for ${runner}.`;
-  } else if (running) note = "Jobs that need others show up once GitHub queues them.";
-
-  return (
-    <div className="border-t bg-secondary/40 px-4 py-3 sm:pl-12">
-      {failed ? (
-        <p className="text-sm text-muted-foreground">Couldn't load this run's jobs.</p>
-      ) : !detail ? (
-        <JobsPlaceholder rows={Math.max(run.environments.length, 1)} />
-      ) : (
-        <div className="grid gap-3">
-          {detail.jobs.length === 0 ? (
-            <p className="text-sm text-muted-foreground">
-              {running ? "No jobs have been queued in this run yet." : "No jobs seen for this run."}
-            </p>
-          ) : (
-            <div className="overflow-x-auto">
-              <table className="w-full text-sm tabular-nums">
-                <thead>
-                  <tr className="text-xs text-muted-foreground">
-                    <th scope="col" className="py-1.5 pr-4 text-left font-normal">
-                      Job
-                    </th>
-                    <th scope="col" className="py-1.5 pr-4 text-left font-normal">
-                      Runs on
-                    </th>
-                    <th scope="col" className="py-1.5 pr-4 text-right font-normal">
-                      Wait
-                    </th>
-                    <th scope="col" className="py-1.5 pr-4 text-right font-normal">
-                      Run
-                    </th>
-                    <th scope="col" className="py-1.5 text-right font-normal">
-                      Result
-                    </th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {detail.jobs.map((job) => {
-                    const wait = waitOf(job, now);
-                    const queued = job.status === "queued";
-                    return (
-                      <tr key={job.id}>
-                        <th
-                          scope="row"
-                          className="py-1.5 pr-4 text-left font-normal whitespace-nowrap"
-                        >
-                          {job.name}
-                        </th>
-                        <td className="py-1.5 pr-4 whitespace-nowrap">
-                          {job.environment ? (
-                            <span
-                              className={cn(
-                                "inline-flex items-center gap-2",
-                                queued && "text-muted-foreground",
-                              )}
-                            >
-                              <ProviderLink
-                                provider={providerOf({ key: job.environment })}
-                                className="inline-flex items-center gap-2"
-                                markClassName={cn(queued && "opacity-50")}
-                              >
-                                {queued
-                                  ? `Waiting for ${label(job.environment)}`
-                                  : label(job.environment)}
-                              </ProviderLink>
-                            </span>
-                          ) : (
-                            <span className="text-muted-foreground">No runner took it</span>
-                          )}
-                        </td>
-                        <td
-                          className={cn(
-                            "py-1.5 pr-4 text-right",
-                            isLongWait(wait) && "font-semibold text-run",
-                          )}
-                        >
-                          {elapsed(wait)}
-                        </td>
-                        <td className="py-1.5 pr-4 text-right">{elapsed(ranOf(job, now))}</td>
-                        <td className="py-1.5 text-right">
-                          <JobResult job={job} running={running} />
-                        </td>
-                      </tr>
-                    );
-                  })}
-                </tbody>
-              </table>
-            </div>
-          )}
-          <div className="flex flex-wrap items-center justify-between gap-2 text-xs text-muted-foreground">
-            <span>{note}</span>
-            <a
-              href={run.url}
-              target="_blank"
-              rel="noreferrer"
-              className="inline-flex items-center gap-1 font-medium text-foreground hover:underline"
-            >
-              Open on GitHub
-              <ExternalLinkIcon aria-hidden className="size-3.5" />
-            </a>
-          </div>
-        </div>
-      )}
-    </div>
-  );
-}
-
-function JobResult({ job, running }: { job: RunJob; running: boolean }) {
-  if (job.status !== "completed" && !running)
-    return <span className="text-muted-foreground">Unknown</span>;
-  if (job.status !== "completed") {
-    const { Icon, label, className } = LIVE[job.status];
-    return (
-      <span className="inline-flex items-center justify-end gap-1.5 text-muted-foreground">
-        <Icon aria-hidden className={cn("size-3.5", className)} />
-        {label}
-      </span>
-    );
-  }
-  return <ConclusionText conclusion={job.conclusion} />;
-}
-
-/**
- * Holds the space of the jobs table while a run's jobs load (rarely seen, since hovering a run
- * starts the load), so the detail opens near its final height instead of from a single line.
- */
-function JobsPlaceholder({ rows }: { rows: number }) {
-  return (
-    <div aria-busy aria-label="Loading jobs" className="grid gap-3">
-      <div className="grid">
-        <div className="flex h-7 items-center">
-          <span className="h-2.5 w-12 rounded-sm bg-secondary" />
-        </div>
-        {Array.from({ length: rows }, (_, index) => (
-          <div key={index} className="flex h-8 items-center gap-4">
-            <span className="h-3 w-40 max-w-[40%] rounded-sm bg-secondary" />
-            <span className="h-3 w-32 max-w-[30%] rounded-sm bg-secondary" />
-          </div>
-        ))}
-      </div>
-      <div className="h-4" />
-    </div>
   );
 }
 

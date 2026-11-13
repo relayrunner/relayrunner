@@ -15,8 +15,10 @@ A relay that failed shows the same message the job failed with on GitHub. Filter
 
 **History** has two tabs:
 
-- **Workflows** lists every workflow run, newest first. Open one to see each job, where it ran, and how long it waited for a runner. Routed runs are marked, and each run's time is compared with its workflow's usual time.
-- **Jobs** lists every job a runner finished, newest first, with where it ran, how long it waited and ran, and how it ended. Search by job or workflow name, or open a job on GitHub.
+- **Workflows** lists every workflow run, newest first. Routed runs are marked, and each run's time is compared with its workflow's usual time.
+- **Jobs** lists every job a runner finished, newest first, with where it ran, how long it waited and ran, and how it ended. Search by job or workflow name.
+
+Click a run to open it in a side panel: each job, where it ran, and how long it waited for a runner. Click a job to see its steps and how long each took, then step back up to its run. Each panel links to GitHub and to the job's usual times in Performance, and its address can be shared.
 
 ## From an agent
 

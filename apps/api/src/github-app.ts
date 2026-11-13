@@ -167,6 +167,47 @@ export async function workflowJobStatus(token: string, repo: string, jobId: numb
   return ((await response.json()) as { status: string }).status;
 }
 
+/** One step of a workflow job, as GitHub reports it. Times are epoch ms. */
+export interface JobStep {
+  number: number;
+  name: string;
+  status: string;
+  conclusion: string | null;
+  startedAt: number | null;
+  completedAt: number | null;
+}
+
+/** A workflow job's steps, or null when GitHub no longer has the job. */
+export async function workflowJobSteps(
+  token: string,
+  repo: string,
+  jobId: number,
+): Promise<JobStep[] | null> {
+  const path = `/repos/${repo}/actions/jobs/${jobId}`;
+  const response = await fetch(`${API}${path}`, { headers: headers(token) });
+  if (response.status === 404) return null;
+  if (!response.ok) throw new Error(`GET ${path} failed with ${response.status}`);
+  const { steps = [] } = (await response.json()) as {
+    steps?: {
+      number: number;
+      name: string;
+      status: string;
+      conclusion: string | null;
+      started_at?: string | null;
+      completed_at?: string | null;
+    }[];
+  };
+  const time = (value?: string | null) => (value ? Date.parse(value) : null);
+  return steps.map((step) => ({
+    number: step.number,
+    name: step.name,
+    status: step.status,
+    conclusion: step.conclusion,
+    startedAt: time(step.started_at),
+    completedAt: time(step.completed_at),
+  }));
+}
+
 /**
  * Who started one attempt of a run (its `triggering_actor`), or null when GitHub doesn't say. For
  * a pick whose context names a re-runner other than the run's actor: the context has no id.

@@ -64,10 +64,20 @@ const TABS = [
 ] as const satisfies Tab<string>[];
 type View = (typeof TABS)[number]["value"];
 
+// `repo`, `workflow` and `job` open one job's detail, for links from a job on the History page.
+type Search = { view?: View; repo?: number; workflow?: string; job?: string };
+const text = (value: unknown) => (typeof value === "string" && value ? value : undefined);
+
 export const Route = createFileRoute("/_authed/_workspace/performance")({
-  validateSearch: (search: Record<string, unknown>): { view?: View } => ({
-    view: viewOf(TABS, search.view),
-  }),
+  validateSearch: (search: Record<string, unknown>): Search => {
+    const repo = Number(search.repo);
+    return {
+      view: viewOf(TABS, search.view),
+      repo: Number.isSafeInteger(repo) && repo > 0 ? repo : undefined,
+      workflow: text(search.workflow),
+      job: text(search.job),
+    };
+  },
   loader: () => load(14),
   // Every tab reads the same report, so switching tabs doesn't load it again.
   shouldReload: ({ cause }) => cause !== "stay",
@@ -76,12 +86,32 @@ export const Route = createFileRoute("/_authed/_workspace/performance")({
 
 type Detail = { workflow: WorkflowRow; job: JobRow };
 
+/** The job a link names, or a matrix job one of whose legs it names. */
+function linkedDetail(workflows: WorkflowRow[], search: Search): Detail | null {
+  if (search.repo === undefined || !search.job) return null;
+  const workflow = workflows.find(
+    (each) => each.repositoryId === search.repo && (each.workflow ?? undefined) === search.workflow,
+  );
+  const job =
+    workflow?.jobs.find((each) => each.name === search.job) ??
+    workflow?.jobs.find((each) => each.legs?.some((leg) => leg.name === search.job));
+  return workflow && job ? { workflow, job } : null;
+}
+
 function PerformancePage() {
   const first = Route.useLoaderData();
-  const view = Route.useSearch({ select: (search) => search.view ?? "workflows" });
+  const search = Route.useSearch();
+  const view = search.view ?? "workflows";
+  const navigate = Route.useNavigate();
   const [report, setReport] = useState<JobTimesReport>(first);
   const [repository, setRepository] = useState<string>("all");
-  const [detail, setDetail] = useState<Detail | null>(null);
+  const [opened, setDetail] = useState<Detail | null>(null);
+  const linked = useMemo(() => linkedDetail(report.workflows, search), [report, search]);
+  const detail = opened ?? linked;
+  function closeDetail() {
+    setDetail(null);
+    if (linked) void navigate({ search: { view: search.view }, replace: true });
+  }
 
   function chooseRange(days: number) {
     load(days)
@@ -167,7 +197,7 @@ function PerformancePage() {
             detail={detail}
             days={report.days}
             environments={report.environments}
-            onClose={() => setDetail(null)}
+            onClose={closeDetail}
           />
         </SectionBoundary>
       )}

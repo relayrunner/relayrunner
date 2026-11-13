@@ -1,4 +1,4 @@
-import { ExternalLinkIcon } from "lucide-react";
+import { Link } from "@tanstack/react-router";
 import { useMemo, useState } from "react";
 import { SectionBoundary } from "@/components/error-boundary";
 import { ProviderLink } from "@/components/provider-link";
@@ -21,8 +21,8 @@ import {
   type HistoryJob,
   isFailure,
   type JobsReport,
-  jobUrl,
   LONG_WAIT_MS,
+  runParam,
   sampleJobs,
 } from "@/lib/runs";
 import { cn, elapsed } from "@/lib/utils";
@@ -106,23 +106,27 @@ const columns = column.columns([
 
 function JobCell({ job }: { job: Row }) {
   const { showRepository } = useListContext();
-  const meta = [job.workflow ?? "Unnamed workflow", showRepository ? job.repository : null];
+  const run = runParam(job);
   return (
     <>
-      <a
-        href={jobUrl(job)}
-        target="_blank"
-        rel="noreferrer"
-        className="group inline-flex items-center gap-1 font-medium break-words underline-offset-4 hover:underline"
+      <Link
+        from="/history"
+        to="/history"
+        search={(prev) => ({ ...prev, run, job: job.id })}
+        className="font-medium break-words underline-offset-4 hover:underline"
       >
         {job.name}
-        <ExternalLinkIcon
-          aria-hidden
-          className="size-3 shrink-0 text-muted-foreground opacity-0 group-hover:opacity-100"
-        />
-      </a>
+      </Link>
       <span className="block truncate text-xs text-muted-foreground">
-        {meta.filter(Boolean).join(" · ")}
+        <Link
+          from="/history"
+          to="/history"
+          search={(prev) => ({ ...prev, run, job: undefined })}
+          className="underline-offset-4 hover:text-foreground hover:underline"
+        >
+          {job.workflow ?? "Unnamed workflow"}
+        </Link>
+        {showRepository && ` · ${job.repository}`}
       </span>
     </>
   );
