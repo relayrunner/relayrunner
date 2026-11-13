@@ -12,6 +12,7 @@ import { deleteUser, deleteWorkspaces } from "../admin-delete.ts";
 import type { AppEnv } from "../app.ts";
 import { createDb, schema } from "../db/index.ts";
 import { internalWorkspaceIds } from "../internal-workspaces.ts";
+import { JOB_COUNT_RANGES, jobCountRows, summarizeJobCounts } from "../job-counts.ts";
 import { requireOperator, who } from "../middleware/admin.ts";
 import { requireUser } from "../middleware/session.ts";
 import { adminPriceRoutes } from "./admin-prices.ts";
@@ -20,6 +21,15 @@ import { USER_ROLES } from "../roles.ts";
 
 const RoleBody = z.object({ role: z.enum(USER_ROLES).nullable() });
 const DeleteBody = z.object({ uninstallGitHubApp: z.boolean().default(false) });
+const JobsQuery = z.object({
+  days: z.coerce
+    .number()
+    .int()
+    .refine((days) => (JOB_COUNT_RANGES as readonly number[]).includes(days))
+    .default(7),
+  // "1" counts our own workspaces too.
+  internal: z.enum(["0", "1"]).default("0"),
+});
 
 async function deleteOptions(request: Request) {
   // A body is optional; without one nothing is uninstalled.
@@ -111,6 +121,51 @@ export const adminRoutes = new Hono<AppEnv>()
       }),
     );
     return c.json({ workspace: deleted });
+  })
+  .get("/jobs", async (c) => {
+    const query = JobsQuery.safeParse(c.req.query());
+    if (!query.success) return c.json({ error: "invalid_query" }, 400);
+    const { days, internal } = query.data;
+    const db = createDb(c.env.DB);
+    const [installations, ours, rows] = await Promise.all([
+      db
+        .select({
+          installationId: schema.githubInstallation.id,
+          accountLogin: schema.githubInstallation.accountLogin,
+          workspaceId: schema.workspace.id,
+          name: schema.workspace.name,
+          logo: schema.workspace.logo,
+        })
+        .from(schema.githubInstallation)
+        .leftJoin(
+          schema.workspace,
+          eq(schema.workspace.installationId, schema.githubInstallation.id),
+        ),
+      internalWorkspaceIds(db),
+      jobCountRows(db, days),
+    ]);
+    const byId = new Map(
+      installations.map((row) => [
+        row.installationId,
+        { ...row, internal: row.workspaceId !== null && ours.has(row.workspaceId) },
+      ]),
+    );
+    const report = summarizeJobCounts(
+      rows,
+      internal === "1" ? undefined : (id) => byId.get(id)?.internal ?? false,
+    );
+    return c.json({
+      ...report,
+      days,
+      internalWorkspaces: [...byId.values()].filter((row) => row.internal).length,
+      installations: report.installations.map((counts) => {
+        // Always found: job_count rows go with their installation.
+        const { accountLogin, workspaceId, name, logo, internal } = byId.get(
+          counts.installationId,
+        )!;
+        return { ...counts, accountLogin, workspaceId, name: name ?? accountLogin, logo, internal };
+      }),
+    });
   })
   .get("/workspaces", async (c) => {
     const db = createDb(c.env.DB);

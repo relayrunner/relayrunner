@@ -526,6 +526,25 @@ export const jobTimingDaily = sqliteTable(
   ],
 );
 
+// How many jobs finished per UTC hour in each installation, by result, for Admin › Jobs
+// (src/job-counts.ts). Counted once when job_timing first sees a job finish, so the page reads a
+// row per hour and installation instead of scanning jobs. Kept as long as job_timing_daily.
+export const jobCount = sqliteTable(
+  "job_count",
+  {
+    // The UTC hour the jobs finished in.
+    hour: integer("hour", { mode: "timestamp_ms" }).notNull(),
+    installationId: integer("installation_id")
+      .notNull()
+      .references(() => githubInstallation.id, { onDelete: "cascade" }),
+    success: integer("success").notNull().default(0),
+    failed: integer("failed").notNull().default(0),
+    cancelled: integer("cancelled").notNull().default(0),
+  },
+  // Hour first, so a range across every installation reads one stretch of the key.
+  (table) => [primaryKey({ columns: [table.hour, table.installationId] })],
+);
+
 // One attempt of a GitHub Actions workflow run in a connected repo, from workflow_run webhooks
 // (src/runs.ts), for the Runs page: what started it and how it ended. Its jobs' times come from
 // job_timing. Purged with job_timing, and goes away with its installation.

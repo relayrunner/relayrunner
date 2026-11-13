@@ -10,6 +10,8 @@ import { formatMemory } from "@/lib/device";
 import { count, elapsed, percent } from "@/lib/utils";
 
 type Result = "success" | "failed" | "cancelled";
+/** How many runs or jobs ended each way from `at`, in one bar or less. */
+export type Tally = { at: number } & Record<Result, number>;
 
 /** One finished run or job on the chart. */
 export type ChartPoint = {
@@ -96,24 +98,32 @@ export const DurationChart = memo(function DurationChart({
   const sampled = useMemo(() => points.filter((point) => point.usage), [points]);
   // CPU and memory only when some of what's shown reported them.
   const metric = sampled.length > 0 ? picked : "duration";
-  const [ref, width] = useWidth<HTMLDivElement>();
-  const bucketMs = days <= 1 ? HOUR_MS : days <= 7 ? 6 * HOUR_MS : 12 * HOUR_MS;
-  // Whole buckets, so the bar view's first and last bars are as wide as the rest.
-  const now = Date.now();
-  const end = floorTo(now, bucketMs) + bucketMs;
-  const start = floorTo(now - days * DAY_MS, bucketMs);
-  const frame = useMemo(() => ({ start, end, width }), [start, end, width]);
+  const [ref, frame, bucketMs] = useFrame(days);
   const counts = useMemo(() => {
     const totals: Record<Result, number> = { success: 0, failed: 0, cancelled: 0 };
     for (const point of points) totals[point.result]++;
     return totals;
   }, [points]);
+  // Only the bar view needs them.
+  const tallies = useMemo(
+    () =>
+      bars
+        ? points.map((point) => ({
+            at: point.at,
+            success: 0,
+            failed: 0,
+            cancelled: 0,
+            [point.result]: 1,
+          }))
+        : [],
+    [points, bars],
+  );
 
   function choose(next: boolean) {
     setBars(next);
     saveFlag(BARS_FLAG, next);
   }
-  const per = bucketMs === HOUR_MS ? "hour" : `${bucketMs / HOUR_MS} hours`;
+  const per = perBar(bucketMs);
 
   return (
     <div className="grid gap-3 rounded-xl border bg-card px-4 pt-3 pb-4">
@@ -151,9 +161,9 @@ export const DurationChart = memo(function DurationChart({
           <p className="grid h-full place-items-center text-sm text-muted-foreground">
             No finished {noun}s in this range.
           </p>
-        ) : width === 0 ? null : bars ? (
+        ) : frame.width === 0 ? null : bars ? (
           <Bars
-            points={points}
+            tallies={tallies}
             frame={frame}
             days={days}
             bucketMs={bucketMs}
@@ -170,17 +180,7 @@ export const DurationChart = memo(function DurationChart({
         )}
       </div>
       <div className="flex flex-wrap items-center justify-between gap-x-5 gap-y-1 text-xs text-muted-foreground">
-        <ul className="flex flex-wrap gap-x-5 gap-y-1">
-          {RESULTS.map((result) => (
-            <li key={result} className="inline-flex items-center gap-1.5">
-              <ResultMark result={result} />
-              {RESULT[result].label}
-              <span className="font-medium text-foreground tabular-nums">
-                <Count value={counts[result]} />
-              </span>
-            </li>
-          ))}
-        </ul>
+        <ResultLegend counts={counts} />
         {!bars && metric !== "duration" && (
           <p>
             {count(sampled.length)} of {plural(points.length, noun)}, from connected machines
@@ -190,6 +190,88 @@ export const DurationChart = memo(function DurationChart({
     </div>
   );
 });
+
+/**
+ * How many runs or jobs finished per hour (or 6 or 12 hours) over the range, each bar stacked by
+ * result, from counts made elsewhere, such as Admin › Jobs.
+ */
+export const CountChart = memo(function CountChart({
+  tallies,
+  days,
+  noun,
+}: {
+  tallies: Tally[];
+  days: number;
+  noun: string;
+}) {
+  const [ref, frame, bucketMs] = useFrame(days);
+  const counts = useMemo(() => {
+    const totals: Record<Result, number> = { success: 0, failed: 0, cancelled: 0 };
+    for (const tally of tallies) for (const result of RESULTS) totals[result] += tally[result];
+    return totals;
+  }, [tallies]);
+  const total = counts.success + counts.failed + counts.cancelled;
+  const per = perBar(bucketMs);
+
+  return (
+    <div className="grid gap-3 rounded-xl border bg-card px-4 pt-3 pb-4">
+      <h2 className="text-sm font-medium first-letter:uppercase">{`${noun}s per ${per}`}</h2>
+      <div ref={ref} className="relative" style={{ height: HEIGHT }}>
+        {total === 0 ? (
+          <p className="grid h-full place-items-center text-sm text-muted-foreground">
+            No finished {noun}s in this range.
+          </p>
+        ) : frame.width === 0 ? null : (
+          <Bars
+            tallies={tallies}
+            frame={frame}
+            days={days}
+            bucketMs={bucketMs}
+            label={`${plural(total, noun)} per ${per}, by result`}
+          />
+        )}
+      </div>
+      <div className="text-xs text-muted-foreground">
+        <ResultLegend counts={counts} />
+      </div>
+    </div>
+  );
+});
+
+/** Each result's mark, name and count. */
+function ResultLegend({ counts }: { counts: Record<Result, number> }) {
+  return (
+    <ul className="flex flex-wrap gap-x-5 gap-y-1">
+      {RESULTS.map((result) => (
+        <li key={result} className="inline-flex items-center gap-1.5">
+          <ResultMark result={result} />
+          {RESULT[result].label}
+          <span className="font-medium text-foreground tabular-nums">
+            <Count value={counts[result]} />
+          </span>
+        </li>
+      ))}
+    </ul>
+  );
+}
+
+/** The bar width for a range: an hour for a day, 6 hours for a week, else 12. */
+const bucketMsFor = (days: number) =>
+  days <= 1 ? HOUR_MS : days <= 7 ? 6 * HOUR_MS : 12 * HOUR_MS;
+
+const perBar = (bucketMs: number) =>
+  bucketMs === HOUR_MS ? "hour" : `${bucketMs / HOUR_MS} hours`;
+
+/** The plot's measured width and time range, in whole bars so the first and last are full width. */
+function useFrame(days: number) {
+  const [ref, width] = useWidth<HTMLDivElement>();
+  const bucketMs = bucketMsFor(days);
+  const now = Date.now();
+  const end = floorTo(now, bucketMs) + bucketMs;
+  const start = floorTo(now - days * DAY_MS, bucketMs);
+  const frame = useMemo(() => ({ start, end, width }), [start, end, width]);
+  return [ref, frame, bucketMs] as const;
+}
 
 function ChartToggle({
   label,
@@ -373,27 +455,25 @@ function Dots({ points, metric, ...plot }: PlotProps & { points: ChartPoint[]; m
   );
 }
 
-type Bucket = { at: number; total: number } & Record<Result, number>;
+type Bucket = Tally & { total: number };
 
-function Bars({
-  points,
-  bucketMs,
-  ...plot
-}: PlotProps & { points: ChartPoint[]; bucketMs: number }) {
+function Bars({ tallies, bucketMs, ...plot }: PlotProps & { tallies: Tally[]; bucketMs: number }) {
   const { frame } = plot;
   const [hover, setHover] = useState<Bucket | null>(null);
   const buckets = useMemo(() => {
     const list: Bucket[] = [];
     for (let at = frame.start; at < frame.end; at += bucketMs)
       list.push({ at, total: 0, success: 0, failed: 0, cancelled: 0 });
-    for (const point of points) {
-      const index = Math.floor((point.at - frame.start) / bucketMs);
+    for (const tally of tallies) {
+      const index = Math.floor((tally.at - frame.start) / bucketMs);
       const bucket = list[Math.min(Math.max(index, 0), list.length - 1)]!;
-      bucket[point.result]++;
-      bucket.total++;
+      for (const result of RESULTS) {
+        bucket[result] += tally[result];
+        bucket.total += tally[result];
+      }
     }
     return list;
-  }, [points, bucketMs, frame.start, frame.end]);
+  }, [tallies, bucketMs, frame.start, frame.end]);
   const maxCount = Math.max(...buckets.map((bucket) => bucket.total), 1);
   const { y, ticks } = yScale(maxCount, countStep(maxCount));
   const slot = plotX(frame, frame.start + bucketMs) - plotX(frame, frame.start);
