@@ -51,6 +51,7 @@ import {
   type WorkflowRow,
 } from "@/lib/job-times";
 import { cn } from "@/lib/utils";
+import { Count } from "@/components/count";
 
 const RANGES = [7, 14, 30] as const;
 
@@ -252,7 +253,7 @@ const environmentColumns = environmentColumn.columns([
     sortFn: "basic",
     sortDescFirst: true,
     meta: END,
-    cell: ({ getValue }) => getValue().toLocaleString(),
+    cell: ({ getValue }) => <Count value={getValue()} />,
   }),
   environmentColumn.accessor((env) => env.stat.waitMs ?? undefined, {
     id: "wait",
@@ -419,7 +420,10 @@ const workflowColumns = workflowColumn.columns([
     sortFn: "basic",
     sortDescFirst: true,
     meta: END,
-    cell: ({ getValue }) => getValue()?.toLocaleString() ?? "—",
+    cell: ({ getValue }) => {
+      const runs = getValue();
+      return runs === undefined ? "—" : <Count value={runs} />;
+    },
   }),
   workflowColumn.accessor(
     (row) => (row.wall?.runs ? row.wall.successes / row.wall.runs : undefined),

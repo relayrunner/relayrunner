@@ -1,4 +1,5 @@
 import { dayMs, type RatePrices } from "@relayrunner/providers";
+import { Count } from "@/components/count";
 import { createFileRoute, Link, notFound } from "@tanstack/react-router";
 import { ArrowLeftIcon, ArrowUpRightIcon } from "lucide-react";
 import { useState } from "react";
@@ -196,7 +197,7 @@ function Totals({ report }: { report: ProviderReport }) {
   const { jobs, failures, billedMinutes, stat } = report;
   return (
     <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-6">
-      <StatTile label="Jobs" value={jobs.toLocaleString()} />
+      <StatTile label="Jobs" value={<Count value={jobs} />} />
       <StatTile
         label="Billed minutes"
         value={billedMinutes.toLocaleString()}
@@ -225,7 +226,7 @@ const runnerColumns = runnerColumn.columns([
     sortFn: "basic",
     sortDescFirst: true,
     meta: NUM,
-    cell: ({ getValue }) => getValue().toLocaleString(),
+    cell: ({ getValue }) => <Count value={getValue()} />,
   }),
   runnerColumn.accessor((runner) => runner.stat.medianMs ?? undefined, {
     id: "typical",
