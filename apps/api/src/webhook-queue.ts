@@ -316,14 +316,24 @@ async function dispatchRoute(
   }
   const router = env.ROUTER.getByName(workspaceId);
   if (message.action !== "queued") {
-    const machineId = await router.machineFor(routeId, job);
+    const [machineId] = await Promise.all([
+      router.machineFor(routeId, job),
+      // A job that ended while it waited for a machine, such as a cancelled run, leaves the line.
+      message.action === "completed" && router.dropWaiting(routeId, job),
+    ]);
     if (machineId) await setJobMachine(db, message.job.id, machineId);
     console.log(JSON.stringify(log));
     return;
   }
   // A re-run of failed jobs comes back on the earlier attempt's label: the Router routes it again.
+  const claimed = await router.claim(routeId, job);
+  // Waiting for a machine slot: the Router sends it once a machine has room.
+  if (claimed === "waiting") {
+    console.log(JSON.stringify({ ...log, result: "waiting" }));
+    return;
+  }
   const route =
-    (await router.claim(routeId, job)) ??
+    claimed ??
     (await router.reroute(routeId, {
       ...job,
       runAttempt: message.job.runAttempt,

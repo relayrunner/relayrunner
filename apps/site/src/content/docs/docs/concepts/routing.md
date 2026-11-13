@@ -37,7 +37,7 @@ Leave out a provider and the job never runs there. See [relay.yml inputs](/docs/
 4. The relay finishes with a `runner` output: a one-time label for a machine, or the job's own label for a hosted provider.
 5. Your job runs on that label. A machine gets a fresh one-job runner for it.
 
-If nothing fits, the relay fails with the reason and the job doesn't start. See [When nothing fits](#when-nothing-fits).
+If your machines are busy and nothing else fits, the job waits for one. See [When every machine is busy](#when-every-machine-is-busy). If nothing fits at all, the relay fails with the reason and the job doesn't start. See [When nothing fits](#when-nothing-fits).
 
 ## Which machine
 
@@ -58,6 +58,14 @@ After 10 minutes, the Router sends one job back to try it. If a runner picks it 
 The Router page shows each runner type it's skipping, with a **Try again now** button for owners and admins. When no other step can take a job, the Router still sends it to the skipped runner type rather than failing the relay.
 
 This is on by default. To keep sending jobs to a provider however long they wait, turn off **Skip runners that stop picking up jobs** at the bottom of the Router page.
+
+## When every machine is busy
+
+If every machine that fits is busy and no later step in your runner order can take the job, the job waits for a free slot instead of failing. The relay passes, and the job shows as queued on GitHub until a machine has room. Jobs get free slots in the order they started waiting.
+
+A waiting job runs as soon as a slot frees, on whichever fitting machine frees first. Cancelling the run takes it out of line, and GitHub cancels a job that waits more than 24 hours.
+
+To send jobs elsewhere instead of waiting, add a step after your machines, such as `github` or a hosted provider.
 
 ## When nothing fits
 

@@ -33,5 +33,5 @@ Coding agents push often, and every push burns GitHub Actions minutes. Private p
 - **Hosted runners stay the fallback.** A job that names a `github` or hosted provider label still runs when no machine is free. Machines add capacity; they never become a single point of failure.
 - **One workflow change.** Opting a job in is a relay job and a `runs-on` change. Everything after that, such as the runner order, pausing and adding machines, happens in the dashboard or CLI with no commits.
 - **Public repositories never run on machines.** Anyone could run code on a machine through a pull request, so RelayRunner skips machines for public repositories' jobs.
-- **Fail fast and say why.** When nothing fits, the relay fails with the reason instead of leaving a job queued.
+- **Queue when busy, fail fast otherwise.** When your machines are only busy, the job waits for a free slot, as it would on any self-hosted runner. When nothing can take it, the relay fails with the reason instead of leaving a job queued.
 - **Built for people and agents.** The CLI has readable output for people and `--json` for agents, and setup is safe to retry.

@@ -56,7 +56,7 @@ Press `p` in the `connect` terminal, or use the machine's ⋯ menu on the Runner
 
 ## Jobs at once
 
-A machine runs up to 2 jobs at once when it has 8 or more CPU cores, otherwise 1. Change it with `relayrunner connect --concurrency <n>`. Each job gets its own VM or its own copy of the runner, so jobs never share a workspace. When every slot is busy, the next job goes to another machine or falls through to the next step in your runner order.
+A machine runs up to 2 jobs at once when it has 8 or more CPU cores, otherwise 1. Change it with `relayrunner connect --concurrency <n>`. Each job gets its own VM or its own copy of the runner, so jobs never share a workspace. When every slot is busy, the next job goes to another machine or falls through to the next step in your runner order. With no next step, it waits for a free slot.
 
 ## Isolated jobs on a Mac
 

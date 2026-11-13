@@ -221,11 +221,19 @@ describe("webhook queue consumer", () => {
     const claimRunner = vi.fn();
     const releaseRunnerJob = vi.fn();
     const reroute = vi.fn();
+    const dropWaiting = vi.fn();
     const routeEnv = () =>
       ({
         DB: db,
         ROUTER: {
-          getByName: vi.fn(() => ({ claim, machineFor, claimRunner, releaseRunnerJob, reroute })),
+          getByName: vi.fn(() => ({
+            claim,
+            machineFor,
+            claimRunner,
+            releaseRunnerJob,
+            reroute,
+            dropWaiting,
+          })),
         },
         MACHINE_LINK: { getByName: vi.fn(() => ({ run })) },
       }) as unknown as Env;
@@ -318,6 +326,29 @@ describe("webhook queue consumer", () => {
       });
       expect(run).not.toHaveBeenCalled();
       warn.mockRestore();
+      log.mockRestore();
+    });
+
+    test("a job waiting for a machine slot is left to the Router, and leaves the line when it ends", async () => {
+      const log = vi.spyOn(console, "log").mockImplementation(() => {});
+      claim.mockReset().mockResolvedValueOnce("waiting");
+      run.mockClear();
+      reroute.mockClear();
+      const env = routeEnv();
+      await consumer.processWebhook(env, workflowJob(["rr-0123456789ab"]));
+      expect(run).not.toHaveBeenCalled();
+      expect(reroute).not.toHaveBeenCalled();
+      expect(JSON.parse(log.mock.calls.at(-1)![0])).toMatchObject({ result: "waiting" });
+      // Cancelled before a machine took it.
+      await consumer.processWebhook(env, workflowJob(["rr-0123456789ab"], "completed"));
+      expect(dropWaiting).toHaveBeenCalledWith("0123456789ab", {
+        jobId: 42,
+        repositoryId: 1,
+        runId: 9,
+      });
+      dropWaiting.mockClear();
+      await consumer.processWebhook(env, workflowJob(["rr-0123456789ab"], "in_progress"));
+      expect(dropWaiting).not.toHaveBeenCalled();
       log.mockRestore();
     });
 

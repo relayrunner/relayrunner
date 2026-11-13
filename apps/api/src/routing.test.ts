@@ -33,6 +33,10 @@ import {
   fits,
   runsIsolated,
   placeNow,
+  waitingDecision,
+  waitingLine,
+  waitsForMachine,
+  ROUTE_TTL_MS,
 } from "./routing.ts";
 
 const route: Route = {
@@ -1302,5 +1306,56 @@ describe("retryOrder", () => {
   test("any, or no retry, keeps the order", () => {
     expect(retryOrder(order, { runner: "any", failedStep: "github" })).toBe(order);
     expect(retryOrder(order, null)).toBe(order);
+  });
+});
+
+describe("waiting for a machine slot", () => {
+  const order: RunnerOrder = { steps: [{ key: "machine" }, { key: "github" }] };
+  const machineOnly = {
+    ...relayInputs({ machine: ["self-hosted"] }),
+    private: true,
+  };
+  const full = async () => ({ full: [{ machine: "ci-runner", running: 3, slots: 3 }] });
+
+  test("a full machine with nowhere else to go waits, answering the machine step", async () => {
+    const decision = await decideRoute(order, machineOnly, full);
+    expect(waitsForMachine(decision)).toBe(true);
+    if (!waitsForMachine(decision)) return;
+    expect(waitingDecision(decision, "rr-0123456789ab")).toEqual({
+      runner: "rr-0123456789ab",
+      step: "machine",
+      skipped: [],
+      notInOrder: [],
+    });
+  });
+
+  test("keeps the steps skipped before the machine step", async () => {
+    const githubFirst: RunnerOrder = { steps: [{ key: "github" }, { key: "machine" }] };
+    const decision = await decideRoute(githubFirst, machineOnly, full);
+    expect(waitsForMachine(decision) && waitingDecision(decision, "rr-0123456789ab")).toEqual({
+      runner: "rr-0123456789ab",
+      step: "machine",
+      skipped: [{ key: "github", reason: "not_configured" }],
+      notInOrder: [],
+    });
+  });
+
+  test("a fallback takes the job instead, and offline or paused machines don't wait", async () => {
+    const withGithub = { ...machineOnly, github: ["ubuntu-latest"] };
+    expect(waitsForMachine(await decideRoute(order, withGithub, full))).toBe(false);
+    expect(waitsForMachine(await decideRoute(order, machineOnly, async () => null))).toBe(false);
+    expect(
+      waitsForMachine(await decideRoute(order, machineOnly, async () => ({ paused: ["a"] }))),
+    ).toBe(false);
+  });
+
+  test("the line is longest waiting first, without jobs past a day", () => {
+    const now = 10 * ROUTE_TTL_MS;
+    const at = (id: string, queuedAt: number) => ({ id, queuedAt, repositoryId: 1, runId: 1 });
+    expect(
+      waitingLine([at("b", now - 5), at("old", now - ROUTE_TTL_MS - 1), at("a", now - 9)], now).map(
+        (entry) => entry.id,
+      ),
+    ).toEqual(["a", "b"]);
   });
 });
