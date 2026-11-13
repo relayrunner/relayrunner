@@ -54,30 +54,31 @@ describe("vmUsage", () => {
   let dir: string | undefined;
   afterEach(() => dir && rmSync(dir, { recursive: true, force: true }));
 
-  // A stand-in for `container stats` whose CPU time grows by $STEP µs each call.
-  function fakeContainer(step: number) {
+  // A stand-in for `container stats` with the VM busy on 1.5 cores, as Apple's tool reports it.
+  function fakeContainer() {
     dir = mkdtempSync(join(tmpdir(), "rr-usage-"));
     const command = join(dir, "container");
-    const count = join(dir, "count");
     writeFileSync(
       command,
       `#!/bin/sh
-n=$(cat "${count}" 2>/dev/null || echo 0); n=$((n + 1)); echo $n > "${count}"
-echo "[{\\"id\\":\\"$5\\",\\"cpuUsageUsec\\":$((n * ${step})),\\"memoryUsageBytes\\":${512 * MB}}]"
+echo '[{"id":"'$5'","cpuUsageUsec":12236987,"cpuUtilization":1.5,"memoryUsageBytes":${512 * MB}}]'
 `,
       { mode: 0o755 },
     );
     return command;
   }
 
-  it("sets a baseline, then reads CPU time over the VM's cores", async () => {
-    const source = vmUsage("relayrunner-7f3k", { cpus: 2, memoryGb: 4 }, fakeContainer(1e9));
+  it("reads the VM's busy cores as a share of its cores", async () => {
+    const source = vmUsage("relayrunner-7f3k", { cpus: 2, memoryGb: 4 }, fakeContainer());
     expect(source).toMatchObject({ cpus: 2, memoryMb: 4096 });
-    expect(await source.read()).toBeNull();
-    const reading = await source.read();
-    expect(reading?.memoryBytes).toBe(512 * MB);
-    // A second of CPU time a call, over however long the calls took: more than both cores.
-    expect(reading!.cpu).toBeGreaterThan(0);
+    expect(await source.read()).toEqual({ cpu: 0.75, memoryBytes: 512 * MB });
+  });
+
+  it("reads nothing for a stopped VM", async () => {
+    dir = mkdtempSync(join(tmpdir(), "rr-usage-"));
+    const command = join(dir, "container");
+    writeFileSync(command, "#!/bin/sh\necho '[]'\n", { mode: 0o755 });
+    expect(await vmUsage("gone", { cpus: 2, memoryGb: 4 }, command).read()).toBeNull();
   });
 });
 

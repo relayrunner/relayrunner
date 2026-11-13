@@ -73,30 +73,27 @@ function p95(values: number[]) {
 const round = (share: number) => Math.round(share * 1000) / 1000;
 
 /**
- * A job in the VM `name`, read with `container stats`. Its CPU is the time the VM used between
- * two readings over the time its cores had, so the first reading only sets the baseline.
+ * A job in the VM `name`, read with `container stats`, which reports the cores the VM is busy
+ * on right now (it samples for about two seconds per call).
  */
 export function vmUsage(
   name: string,
   size: { cpus: number; memoryGb: number },
   command = "container",
 ): UsageSource {
-  let last: { at: number; usec: number } | null = null;
   return {
     cpus: size.cpus,
     memoryMb: size.memoryGb * 1024,
     async read() {
       const output = await run(command, ["stats", "--format", "json", "--no-stream", name]);
       if (!output) return null;
-      const [stats] = JSON.parse(output) as { cpuUsageUsec?: number; memoryUsageBytes?: number }[];
-      if (typeof stats?.cpuUsageUsec !== "number" || typeof stats.memoryUsageBytes !== "number")
+      const [stats] = JSON.parse(output) as {
+        cpuUtilization?: number;
+        memoryUsageBytes?: number;
+      }[];
+      if (typeof stats?.cpuUtilization !== "number" || typeof stats.memoryUsageBytes !== "number")
         return null;
-      const now = { at: performance.now(), usec: stats.cpuUsageUsec };
-      const before = last;
-      last = now;
-      if (!before || now.at <= before.at) return null;
-      const cpu = (now.usec - before.usec) / ((now.at - before.at) * 1000 * size.cpus);
-      return { cpu, memoryBytes: stats.memoryUsageBytes };
+      return { cpu: stats.cpuUtilization / size.cpus, memoryBytes: stats.memoryUsageBytes };
     },
   };
 }
