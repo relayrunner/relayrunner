@@ -546,7 +546,7 @@ function Steps({ steps, job, now }: { steps: JobStep[]; job: RunJob; now: number
                 />
               )}
             </span>
-            <span className="text-right text-muted-foreground">{elapsed(ms)}</span>
+            <span className="text-right text-muted-foreground">{stepTime(step, ms)}</span>
           </li>
         );
       })}
@@ -629,6 +629,15 @@ function JobsPlaceholder({ rows }: { rows: number }) {
       </div>
     </div>
   );
+}
+
+/**
+ * A step's time. GitHub times steps to the whole second, so one that starts and ends in the same
+ * second reads "<1s" rather than "0s", and a skipped step shows none.
+ */
+function stepTime(step: JobStep, ms: number | null) {
+  if (step.conclusion === "skipped") return "";
+  return ms !== null && ms < 1000 && step.completedAt !== null ? "<1s" : elapsed(ms);
 }
 
 function StepsPlaceholder() {

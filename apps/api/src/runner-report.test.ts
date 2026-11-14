@@ -73,9 +73,10 @@ async function insert(rows: Timing[]) {
 }
 
 async function report(cookie: string, key: string, query = "") {
+  const from = query.includes("from=") ? "" : `&from=${Date.now() - 14 * DAY}`;
   const res = await testing.call(
     env,
-    `/job-times/runner?key=${encodeURIComponent(key)}${query}`,
+    `/job-times/runner?key=${encodeURIComponent(key)}${from}${query}`,
     cookie,
   );
   if (res.status !== 200) throw new Error(await res.text());
@@ -100,9 +101,9 @@ describe("runner report", () => {
       label: "ubuntu-latest",
     });
     expect(result.stat).toMatchObject({ runs: 3, successes: 2, medianMs: 90_000 });
-    expect(result.daily.reduce((sum, day) => sum + day.busyMs, 0)).toBe(210_000);
-    expect(result.daily.reduce((sum, day) => sum + day.jobs, 0)).toBe(3);
-    expect(result.daily.reduce((sum, day) => sum + day.failures, 0)).toBe(1);
+    expect(result.buckets.reduce((sum, day) => sum + day.busyMs, 0)).toBe(210_000);
+    expect(result.buckets.reduce((sum, day) => sum + day.jobs, 0)).toBe(3);
+    expect(result.buckets.reduce((sum, day) => sum + day.failures, 0)).toBe(1);
     expect(result.recent.map((job) => (job.completedAt - job.startedAt) / 1000)).toEqual([
       60, 120, 30,
     ]);
@@ -113,9 +114,47 @@ describe("runner report", () => {
     const { cookie, installationId } = await connectedWorkspace();
     await insert([timing(installationId, 60)]);
     const result = await report(cookie, "github:linux-2-core", "&utcOffset=120");
-    expect(result.daily).toHaveLength(1);
+    expect(result.bucketMs).toBe(DAY);
+    expect(result.buckets).toHaveLength(1);
     // Local midnight at UTC+2 is 22:00 UTC the day before.
-    expect((result.daily[0].day + 120 * 60_000) % DAY).toBe(0);
+    expect((result.buckets[0].start + 120 * 60_000) % DAY).toBe(0);
+  });
+
+  test("counts by the hour over a short window, and leaves out jobs after it ends", async () => {
+    const { cookie, installationId } = await connectedWorkspace();
+    const now = Date.now();
+    const hour = Math.floor(now / HOUR) * HOUR;
+    const at = (ms: number) => ({ hoursAgo: (now - ms) / HOUR });
+    await insert([
+      timing(installationId, 60, at(hour - 2 * HOUR + 600_000)),
+      timing(installationId, 60, at(hour - 3 * HOUR + 600_000)),
+      timing(installationId, 60, at(hour - 3 * HOUR + 1_200_000)),
+      // Before the window, and after it.
+      timing(installationId, 60, at(hour - 30 * HOUR)),
+      timing(installationId, 60, at(hour - 1_200_000)),
+    ]);
+    const result = await report(
+      cookie,
+      "github:linux-2-core",
+      `&from=${hour - 24 * HOUR}&to=${hour - HOUR}`,
+    );
+    expect(result.bucketMs).toBe(HOUR);
+    expect(result.stat.runs).toBe(3);
+    expect(result.buckets.map((bucket) => bucket.start % HOUR)).toEqual([0, 0]);
+    expect(result.buckets.map((bucket) => bucket.jobs).sort()).toEqual([1, 2]);
+  });
+
+  test("turns down a window that's backwards or longer than 90 days", async () => {
+    const { cookie } = await connectedWorkspace();
+    const now = Date.now();
+    for (const query of [`&from=${now}&to=${now - HOUR}`, `&from=${now - 91 * DAY}`]) {
+      const res = await testing.call(
+        env,
+        `/job-times/runner?key=github:linux-2-core${query}`,
+        cookie,
+      );
+      expect(res.status).toBe(400);
+    }
   });
 
   test("reads a machine's jobs and connections, and nothing of another workspace's", async () => {

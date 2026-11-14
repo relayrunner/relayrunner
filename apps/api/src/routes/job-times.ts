@@ -6,7 +6,7 @@ import { requireUser } from "../middleware/session.ts";
 import { requireWorkspace } from "../middleware/workspace.ts";
 import { withCatalog } from "../provider-catalog.ts";
 import { performanceReport } from "../runs.ts";
-import { runnerReport } from "../runner-report.ts";
+import { MAX_RANGE_MS, runnerReport } from "../runner-report.ts";
 import { AppError } from "@relayrunner/errors";
 
 /** A report's `?days=N`, shared by the routes that take one. */
@@ -24,13 +24,19 @@ const RunsQuery = z.object({
   matrix: z.enum(["true", "false"]).default("false"),
 });
 
-const RunnerQuery = z.object({
-  days: Days,
-  // A Performance environment key, such as `github:linux-2-core` or `machine:<id>`.
-  key: z.string().min(1).max(500),
-  // Minutes east of UTC, so days end at the reader's midnight.
-  utcOffset: z.coerce.number().int().min(-840).max(840).default(0),
-});
+const Epoch = z.coerce.number().int().min(0);
+
+const RunnerQuery = z
+  .object({
+    // The window in epoch ms; `to` defaults to now.
+    from: Epoch,
+    to: Epoch.optional(),
+    // A Performance environment key, such as `github:linux-2-core` or `machine:<id>`.
+    key: z.string().min(1).max(500),
+    // Minutes east of UTC, so days end at the reader's midnight.
+    utcOffset: z.coerce.number().int().min(-840).max(840).default(0),
+  })
+  .refine(({ from, to = Date.now() }) => from < to && to - from <= MAX_RANGE_MS);
 
 // The Performance page: how long each workflow and job usually takes on each runner environment over
 // the last ?days=N days (default 14). /runs is one job's runs, for its detail chart. /machines is

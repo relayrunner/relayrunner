@@ -4,7 +4,7 @@ import { Count } from "@/components/count";
 import { SectionBoundary } from "@/components/error-boundary";
 import { PageHeader } from "@/components/page-header";
 import { StatTile } from "@/components/stat-tile";
-import { Button } from "@/components/ui/button";
+import { TimeRangePicker } from "@/components/range-picker";
 import { Card } from "@/components/ui/card";
 import {
   getRoutingHealth,
@@ -63,19 +63,12 @@ function RoutingPage() {
         out.
       </PageHeader>
       <div className="grid max-w-5xl grid-cols-[minmax(0,1fr)] gap-6">
-        <div role="group" aria-label="Range" className="flex gap-1.5">
-          {ROUTING_RANGES.map(({ value, label }) => (
-            <Button
-              key={value}
-              size="sm"
-              variant={range === value ? "secondary" : "ghost"}
-              aria-pressed={range === value}
-              onClick={() => value !== range && chooseRange(value)}
-            >
-              {label}
-            </Button>
-          ))}
-        </div>
+        <TimeRangePicker
+          presets={ROUTING_RANGES}
+          value={range}
+          onChange={(next) => chooseRange(next as RoutingRange)}
+          className="justify-self-start"
+        />
 
         <div className="grid grid-cols-2 gap-3 lg:grid-cols-5">
           <StatTile

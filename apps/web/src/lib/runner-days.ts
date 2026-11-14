@@ -1,22 +1,27 @@
-// A runner's days and online spans for its panel, kept apart from the API so tests can import them.
+// A runner's bars and online spans for its panel, kept apart from the API so tests can import them.
 
-export type RunnerDay = { day: number; jobs: number; failures: number; busyMs: number };
+export type RunnerBucket = { start: number; jobs: number; failures: number; busyMs: number };
 
-/** Local midnight `daysAgo` days back. */
-export function midnight(daysAgo: number, now = Date.now()) {
-  const date = new Date(now);
-  date.setHours(0, 0, 0, 0);
-  date.setDate(date.getDate() - daysAgo);
-  return date.getTime();
-}
-
-/** Every day in the window, oldest first, with the ones the report left out as zeros. */
-export function everyDay(report: { days: number; daily: RunnerDay[] }, now = Date.now()) {
-  const byDay = new Map(report.daily.map((day) => [day.day, day]));
-  return Array.from({ length: report.days }, (_, index) => {
-    const day = midnight(report.days - 1 - index, now);
-    return byDay.get(day) ?? { day, jobs: 0, failures: 0, busyMs: 0 };
-  });
+/**
+ * Every bar in the window, oldest first, with the ones the report left out as zeros. Bars sit on
+ * the same grid the API cut them on: `bucketMs` steps from the reader's midnight at `utcOffset`
+ * (minutes east of UTC), so a day bar starts at local midnight.
+ */
+export function everyBucket(
+  report: { from: number; to: number; bucketMs: number; buckets: RunnerBucket[] },
+  utcOffset: number,
+) {
+  const { from, to, bucketMs } = report;
+  const offsetMs = utcOffset * 60_000;
+  const byStart = new Map(report.buckets.map((bucket) => [bucket.start, bucket]));
+  const all: RunnerBucket[] = [];
+  for (
+    let start = Math.floor((from + offsetMs) / bucketMs) * bucketMs - offsetMs;
+    start < to;
+    start += bucketMs
+  )
+    all.push(byStart.get(start) ?? { start, jobs: 0, failures: 0, busyMs: 0 });
+  return all;
 }
 
 /** The machine's live connection, to close the last span with. */

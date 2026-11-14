@@ -393,13 +393,13 @@ export function windowQuery(workspaceId: string, since: Date) {
 }
 
 /** The window's missed jobs (NOT_PICKED_UP) by where they were sent, from the same index range. */
-export function missedQuery(workspaceId: string, since: Date) {
+export function missedQuery(workspaceId: string, since: Date, until = Number.MAX_SAFE_INTEGER) {
   return sql`
     select ${table.labels} as labels, ${table.runnerGroupName} as runner_group_name,
       ${table.machineId} as machine_id, count(*) as missed
     from ${table}
     where ${inWorkspace(workspaceId)} and ${table.completedAt} >= ${since.getTime()}
-      and ${NOT_PICKED_UP}
+      and ${table.completedAt} < ${until} and ${NOT_PICKED_UP}
     group by ${table.labels}, ${table.runnerGroupName}, ${table.machineId}`;
 }
 

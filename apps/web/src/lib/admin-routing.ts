@@ -3,10 +3,7 @@ import { api } from "@/lib/api";
 /** Routing health across workspaces, for Admin › Routing (apps/api/src/admin-routing.ts). */
 export type RoutingRange = "24h" | "7d";
 
-export const ROUTING_RANGES: { value: RoutingRange; label: string }[] = [
-  { value: "24h", label: "24 hours" },
-  { value: "7d", label: "7 days" },
-];
+export const ROUTING_RANGES: RoutingRange[] = ["24h", "7d"];
 
 export type SetupReason =
   | "install_suspended"

@@ -1,5 +1,5 @@
-// One runner's detail panel: how busy it was each day over the window, its times, the jobs it ran
-// last and, for a connected machine, when it was online. Read from job_timing like Performance
+// One runner's detail panel: how busy it was through the window (per quarter hour, hour or day),
+// its times, the jobs it ran last and, for a connected machine, when it was online. Read from job_timing like Performance
 // (src/job-times.ts), with the same environments and sample buckets, so its numbers match that page.
 //
 // Database cost: a machine reads its own range of the partial job_timing_machine_idx. Any other
@@ -7,7 +7,7 @@
 // environmentFor reads, like the Performance summary, since the environment is derived and not
 // stored; its recent jobs are a second, newest-first read of that range that stops at RECENT_LIMIT.
 // A machine's connections are a range of activity_event_type_idx.
-import { and, asc, eq, gte, inArray, type SQL, sql } from "drizzle-orm";
+import { and, asc, eq, gte, inArray, lt, type SQL, sql } from "drizzle-orm";
 import { type Db, schema } from "./db/index.ts";
 import {
   bucketOf,
@@ -29,18 +29,32 @@ import {
   statOf,
   windowWhere,
 } from "./job-times.ts";
-import { DAY_MS } from "./job-timings.ts";
 import { inWorkspace as machineInWorkspace } from "./machines.ts";
 
 const table = schema.jobTiming;
+const HOUR_MS = 3_600_000;
+const DAY_MS = 24 * HOUR_MS;
 const MACHINE = "machine:";
 
 /** Most recent jobs the panel lists. */
 const RECENT_LIMIT = 25;
 
-export interface RunnerDay {
-  /** Epoch ms of the day's local midnight, in the reader's UTC offset. */
-  day: number;
+/** The longest window the panel reads, as far back as job timings are kept. */
+export const MAX_RANGE_MS = 90 * DAY_MS;
+
+/**
+ * The panel's bars: a bar per 15 minutes up to 6 hours, per hour up to two days (with an hour to
+ * spare, so "today" and "yesterday" stay hourly), then per day.
+ */
+export function bucketFor(spanMs: number) {
+  if (spanMs <= 6 * HOUR_MS) return 15 * 60_000;
+  if (spanMs <= 2 * DAY_MS + HOUR_MS) return HOUR_MS;
+  return DAY_MS;
+}
+
+export interface RunnerBucket {
+  /** Epoch ms the bar starts at; a day starts at the reader's local midnight. */
+  start: number;
   jobs: number;
   /** Jobs that failed or timed out. Cancelled jobs count in neither. */
   failures: number;
@@ -52,13 +66,17 @@ export interface RunnerDay {
 export type RunnerJob = Omit<HistoryJob, "usage">;
 
 export interface RunnerReport {
-  days: number;
+  /** The window, in epoch ms. */
+  from: number;
+  to: number;
+  /** How long each of `buckets` spans (see bucketFor). */
+  bucketMs: number;
   environment: Environment;
   stat: Stat;
   /** Jobs sent here that no runner picked up (see missedQuery). */
   missed: number;
-  /** Days with jobs, oldest first. Days without any are left out. */
-  daily: RunnerDay[];
+  /** Bars with jobs, oldest first. Bars without any are left out. */
+  buckets: RunnerBucket[];
   /** Newest first, at most RECENT_LIMIT. */
   recent: RunnerJob[];
   /**
@@ -68,10 +86,10 @@ export interface RunnerReport {
   connections: { at: number; online: boolean }[] | null;
 }
 
-interface DayRow {
+interface BucketRow {
   labels: string;
   runner_group_name: string | null;
-  day: number;
+  bucket: number;
   runs: number;
   successes: number;
   failures: number;
@@ -84,20 +102,27 @@ const COMBO = sql`${table.labels} || char(31) || coalesce(${table.runnerGroupNam
 const comboOf = (labels: string, group: string | null) => `${labels}\u001f${group ?? ""}`;
 
 /**
- * One runner's report over the last `days` days, by its Performance environment key. Days are cut
- * at local midnight for `utcOffset` (minutes east of UTC).
+ * One runner's report from `from` to `to` (epoch ms, `to` defaulting to now), by its Performance
+ * environment key. Bars are cut at local midnight and hours for `utcOffset` (minutes east of UTC).
  */
 export async function runnerReport(
   db: Db,
   workspaceId: string,
   key: string,
-  { days, utcOffset = 0, now = Date.now() }: { days: number; utcOffset?: number; now?: number },
+  {
+    from,
+    to: until,
+    utcOffset = 0,
+    now = Date.now(),
+  }: { from: number; to?: number; utcOffset?: number; now?: number },
 ): Promise<RunnerReport> {
-  const since = new Date(now - days * DAY_MS);
+  const to = Math.min(until ?? now, now);
+  const since = new Date(from);
+  const bucketMs = bucketFor(to - from);
   const offsetMs = utcOffset * 60_000;
   const machineId = key.startsWith(MACHINE) ? key.slice(MACHINE.length) : null;
   // Only a machine in this workspace: another's id reads nothing.
-  const scope = machineId
+  const start = machineId
     ? machineWindowWhere(
         workspaceId,
         sql`select ${schema.machine.id} from ${schema.machine}
@@ -105,23 +130,26 @@ export async function runnerReport(
         since,
       )
     : sql`${windowWhere(workspaceId, since)} and ${table.machineId} is null`;
+  const scope = sql`${start} and ${table.completedAt} < ${to}`;
   // Cast, since D1 may bind the numbers as reals.
-  const day = sql`cast((${table.completedAt} + ${offsetMs}) / ${DAY_MS} as integer)`;
-  const groupBy = machineId ? sql`${day}` : sql`${table.labels}, ${table.runnerGroupName}, ${day}`;
+  const bucket = sql`cast((${table.completedAt} + ${offsetMs}) / ${bucketMs} as integer)`;
+  const groupBy = machineId
+    ? sql`${bucket}`
+    : sql`${table.labels}, ${table.runnerGroupName}, ${bucket}`;
 
   // A machine's jobs are found by its id; any other runner's by the label sets that map to it,
   // known once the day rows are in.
   const [rows, missedRows, connections, machineRecent] = await Promise.all([
-    db.all<DayRow>(sql`
+    db.all<BucketRow>(sql`
       select min(${table.labels}) as labels, min(${table.runnerGroupName}) as runner_group_name,
-        ${day} as day, count(*) as runs, sum(${OK}) as successes, sum(${FAILED}) as failures,
+        ${bucket} as bucket, count(*) as runs, sum(${OK}) as successes, sum(${FAILED}) as failures,
         sum(${table.completedAt} - ${table.startedAt}) as busy_ms, ${SAMPLES} as samples
       from ${table} where ${scope}
       group by ${groupBy}`),
     machineId
-      ? machineMissed(db, workspaceId, machineId, since)
-      : db.all<MissedRow>(missedQuery(workspaceId, since)),
-    machineId ? machineConnections(db, workspaceId, machineId, since) : null,
+      ? machineMissed(db, workspaceId, machineId, since, to)
+      : db.all<MissedRow>(missedQuery(workspaceId, since, to)),
+    machineId ? machineConnections(db, workspaceId, machineId, since, to) : null,
     machineId ? runnerJobs(db, scope, key) : null,
   ]);
 
@@ -138,8 +166,8 @@ export async function runnerReport(
   };
   let environment: Environment | null = machineId ? { key, label: "Machine", detail: "" } : null;
   const combos = new Set<string>();
-  const bucket = emptyBucket();
-  const daily = new Map<number, RunnerDay>();
+  const stats = emptyBucket();
+  const buckets = new Map<number, RunnerBucket>();
   for (const row of rows) {
     if (!machineId) {
       const env = envOf(row.labels, row.runner_group_name, null);
@@ -147,13 +175,13 @@ export async function runnerReport(
       environment ??= env;
       combos.add(comboOf(row.labels, row.runner_group_name));
     }
-    mergeInto(bucket, bucketOf(row));
-    const start = Number(row.day) * DAY_MS - offsetMs;
-    const into = daily.get(start) ?? { day: start, jobs: 0, failures: 0, busyMs: 0 };
+    mergeInto(stats, bucketOf(row));
+    const at = Number(row.bucket) * bucketMs - offsetMs;
+    const into = buckets.get(at) ?? { start: at, jobs: 0, failures: 0, busyMs: 0 };
     into.jobs += Number(row.runs);
     into.failures += Number(row.failures);
     into.busyMs += Number(row.busy_ms);
-    daily.set(start, into);
+    buckets.set(at, into);
   }
 
   let missed = 0;
@@ -175,11 +203,13 @@ export async function runnerReport(
   environment ??= { key, label: key.slice(key.indexOf(":") + 1) || key, detail: "" };
   if (machineId) await nameMachines(db, workspaceId, new Map([[key, environment]]));
   return {
-    days,
+    from,
+    to,
+    bucketMs,
     environment,
-    stat: statOf(bucket),
+    stat: statOf(stats),
     missed,
-    daily: [...daily.values()].sort((a, b) => a.day - b.day),
+    buckets: [...buckets.values()].sort((a, b) => a.start - b.start),
     recent,
     connections,
   };
@@ -193,7 +223,7 @@ interface MissedRow {
 }
 
 // A machine's missed jobs, from its own range of job_timing_machine_idx.
-function machineMissed(db: Db, workspaceId: string, machineId: string, since: Date) {
+function machineMissed(db: Db, workspaceId: string, machineId: string, since: Date, to: number) {
   return db.all<MissedRow>(sql`
     select null as labels, null as runner_group_name, ${table.machineId} as machine_id,
       count(*) as missed
@@ -202,7 +232,8 @@ function machineMissed(db: Db, workspaceId: string, machineId: string, since: Da
       and ${table.installationId} = (
         select ${schema.workspace.installationId} from ${schema.workspace}
         where ${schema.workspace.id} = ${workspaceId})
-      and ${table.completedAt} >= ${since.getTime()} and ${NOT_PICKED_UP}`);
+      and ${table.completedAt} >= ${since.getTime()} and ${table.completedAt} < ${to}
+      and ${NOT_PICKED_UP}`);
 }
 
 async function runnerJobs(db: Db, where: SQL, key: string): Promise<RunnerJob[]> {
@@ -230,7 +261,13 @@ const events = schema.activityEvent;
 
 // A connected machine's connections in the window. A runner added from GitHub has none: GitHub
 // keeps its connection, so it's null there.
-async function machineConnections(db: Db, workspaceId: string, machineId: string, since: Date) {
+async function machineConnections(
+  db: Db,
+  workspaceId: string,
+  machineId: string,
+  since: Date,
+  to: number,
+) {
   const [machine] = await db
     .select({ source: schema.machine.source })
     .from(schema.machine)
@@ -245,6 +282,7 @@ async function machineConnections(db: Db, workspaceId: string, machineId: string
         eq(events.workspaceId, workspaceId),
         inArray(events.type, ["machine.connected", "machine.disconnected"]),
         gte(events.occurredAt, since),
+        lt(events.occurredAt, new Date(to)),
         eq(events.machineId, machineId),
       ),
     )
