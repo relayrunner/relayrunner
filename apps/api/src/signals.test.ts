@@ -239,7 +239,7 @@ describe("rollUpSignals", () => {
       workflowPath: ".github/workflows/ci.yml",
       repositoryFullName: "acme/app",
     });
-    // 40 Linux 2-core minutes in a private repo.
+    // 40 ubuntu-latest minutes in a private repo.
     expect(rows.reduce((total, row) => total + row.cost, 0)).toBeCloseTo(0.24);
   });
 
@@ -327,7 +327,7 @@ describe("rollUpSignals", () => {
     await rollUpSignals(createDb(env.DB), ctx.installationId);
     const rows = await dayRows(ctx.installationId, "flaky-jobs");
     expect(sum(rows)).toEqual({ count: 1, minutes: 5 });
-    // 5 Linux 2-core minutes in a private repo.
+    // 5 ubuntu-latest minutes in a private repo.
     expect(rows[0]?.cost).toBeCloseTo(0.03);
     expect(rows[0]?.workflowPath).toBe(".github/workflows/ci.yml");
   });

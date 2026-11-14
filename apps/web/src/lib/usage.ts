@@ -69,7 +69,7 @@ export function sampleCheckSavings(days: number): FreeCheckSavings {
   const app = title - docs + lint;
   return {
     days,
-    runner: { label: "Linux 2-core", perMinute },
+    runner: { label: "ubuntu-latest", perMinute },
     checks: title + lint,
     savedCost: app * perMinute,
     byCheck: [

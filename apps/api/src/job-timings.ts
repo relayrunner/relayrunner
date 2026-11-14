@@ -1,7 +1,12 @@
 import type { WebhookMessage } from "@relayrunner/github-webhooks";
 import { and, asc, eq, gte, isNotNull, isNull, lt, ne, type SQL, sql } from "drizzle-orm";
 import type { SQLiteColumn, SQLiteTable } from "drizzle-orm/sqlite-core";
-import { type GitHubRunner, githubRate, type PriceBook } from "@relayrunner/providers";
+import {
+  GITHUB_LABELS,
+  type GitHubRunner,
+  githubRate,
+  type PriceBook,
+} from "@relayrunner/providers";
 import { type Db, schema } from "./db/index.ts";
 import { countFinishedJob, countsAsJob } from "./job-counts.ts";
 import { findInstallation } from "./installations.ts";
@@ -24,19 +29,16 @@ export const SHORT_JOB_SECONDS = 60;
  * Which per-minute rate a job pays. GitHub-hosted classes follow GitHub's standard runner prices;
  * `self-hosted` covers a self-hosted runner (including RelayRunner's own picks and machines), which
  * GitHub doesn't charge for. `other` is a label we can't price, such as a larger runner, and is
- * counted at the Linux 2-core rate, so the estimate is a floor.
+ * counted at the `ubuntu-latest` rate, so the estimate is a floor.
  */
 export type RunnerClass = GitHubRunner | "self-hosted" | "other";
 
+/** GitHub's standard runners go by the label its docs give them, such as `ubuntu-slim`. */
 export const RUNNER_LABELS: Record<RunnerClass, string> = {
-  "linux-1-core": "Linux 1-core",
-  "linux-2-core": "Linux 2-core",
-  "linux-arm-2-core": "Linux 2-core Arm",
-  "windows-2-core": "Windows 2-core",
-  "windows-arm-2-core": "Windows 2-core Arm",
+  ...GITHUB_LABELS,
   macos: "macOS",
   "self-hosted": "Self-hosted",
-  other: "Other (priced as Linux 2-core)",
+  other: `Other (priced as ${GITHUB_LABELS["linux-2-core"]})`,
 };
 
 /** What a minute cost on a runner class in a private repo at `at` (epoch ms, now by default). */
@@ -92,13 +94,14 @@ export function runnerClass(labels: string[], runnerGroupName?: string | null): 
     return "self-hosted";
   // A runner group other than GitHub's own means the org's runners, unless the labels name a hosted
   // image (larger hosted runners can sit in custom groups).
-  const hosted = lower.find((label) => /^(ubuntu|windows|macos)-/.test(label));
+  const hosted = lower.find((label) => /^(ubuntu|windows|macos|xcode)-/.test(label));
   if (!hosted)
     return runnerGroupName && runnerGroupName !== GITHUB_HOSTED_GROUP ? "self-hosted" : "other";
-  if (hosted.startsWith("macos")) return "macos";
-  if (hosted === "windows-11-arm") return "windows-arm-2-core";
+  // macos-latest, macos-15-intel, xcode-27: GitHub prices every macOS image the same.
+  if (hosted.startsWith("macos") || hosted.startsWith("xcode")) return "macos";
+  if (/^windows-11(-vs\d{4})?-arm$/.test(hosted)) return "windows-arm-2-core";
   if (hosted.startsWith("windows"))
-    return /^windows-(latest|\d{4})$/.test(hosted) ? "windows-2-core" : "other";
+    return /^windows-(latest|\d{4}(-vs\d{4})?)$/.test(hosted) ? "windows-2-core" : "other";
   if (hosted === "ubuntu-slim") return "linux-1-core";
   const ubuntu = /^ubuntu-(latest|\d{2}\.\d{2})(-arm)?$/.exec(hosted);
   if (ubuntu) return ubuntu[2] ? "linux-arm-2-core" : "linux-2-core";

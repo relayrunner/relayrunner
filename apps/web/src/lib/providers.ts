@@ -101,7 +101,7 @@ const SAMPLE_RUNNERS: Partial<Record<ProviderId, ProviderRunner[]>> = {
     sampleRunner("blacksmith", "blacksmith-4vcpu-ubuntu-2404", "Blacksmith", 872, 228),
     sampleRunner("blacksmith", "blacksmith-8vcpu-ubuntu-2404", "Blacksmith", 281, 365),
   ],
-  github: [sampleRunner("github", "Linux 2-core", "GitHub-hosted", 410, 128)],
+  github: [sampleRunner("github", "ubuntu-latest", "GitHub-hosted", 410, 128)],
   other: [sampleRunner("other", "gpu-runner", "Default", 57, 302)],
 };
 

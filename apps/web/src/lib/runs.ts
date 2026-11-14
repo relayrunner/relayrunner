@@ -185,7 +185,7 @@ function sampleRun(run: Partial<Run> & Pick<Run, "runId">): Run {
 }
 
 const SAMPLE_ENVIRONMENTS: Environment[] = [
-  { key: "github:linux-2-core", label: "Linux 2-core", detail: "GitHub-hosted" },
+  { key: "github:linux-2-core", label: "ubuntu-latest", detail: "GitHub-hosted" },
   { key: "container", label: "Cloudflare Container", detail: "standard-1" },
   { key: "machine:sample", label: "Zach's MacBook Pro", detail: "MacBook Pro · Apple M3 Max" },
 ];

@@ -68,7 +68,7 @@ describe("spans", () => {
     const spans = await jobSpans({
       repository,
       job,
-      ranOn: { provider: "github", runner: "Linux 2-core" },
+      ranOn: { provider: "github", runner: "ubuntu-latest" },
       usage: null,
     });
     expect(spans.map((s) => s.name)).toEqual([
@@ -90,7 +90,7 @@ describe("spans", () => {
       "cicd.pipeline.task.run.result": "failure",
       "error.type": "failure",
       "relayrunner.provider": "github",
-      "relayrunner.runner": "Linux 2-core",
+      "relayrunner.runner": "ubuntu-latest",
       "relayrunner.queue.wait_ms": 20_000,
       "relayrunner.billed_minutes": 2,
     });

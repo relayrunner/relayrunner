@@ -33,6 +33,20 @@ export type PricedProvider = keyof typeof RATES;
 /** GitHub's standard hosted runners, the ones it publishes a per-minute price for. */
 export type GitHubRunner = keyof (typeof RATES)["github"];
 
+/**
+ * The `runs-on` label GitHub's docs give each standard runner, the name people know it by. Where
+ * one runner has several labels (`ubuntu-latest`, `ubuntu-24.04`), this is the first one listed.
+ * macOS has none: one rate covers several images (`macos-latest`, `macos-15-intel`), so it stays
+ * "macOS". https://docs.github.com/en/actions/reference/runners/github-hosted-runners
+ */
+export const GITHUB_LABELS: Record<Exclude<GitHubRunner, "macos">, string> = {
+  "linux-1-core": "ubuntu-slim",
+  "linux-2-core": "ubuntu-latest",
+  "linux-arm-2-core": "ubuntu-24.04-arm",
+  "windows-2-core": "windows-latest",
+  "windows-arm-2-core": "windows-11-arm",
+};
+
 /** The one rate a provider operators added has: a minute of any of its runners. */
 export const ADDED_RATE = "runner";
 
@@ -158,14 +172,10 @@ const RATE_NAMES: Record<string, string> = {
   macos: "macOS",
   standard: "Standard",
   premium: "Premium",
-  "linux-1-core": "Linux 1-core",
-  "linux-2-core": "Linux 2-core",
-  "linux-arm-2-core": "Linux Arm 2-core",
-  "windows-2-core": "Windows 2-core",
-  "windows-arm-2-core": "Windows Arm 2-core",
+  ...GITHUB_LABELS,
 };
 
-/** A rate as people say it, such as "Linux Arm". */
+/** A rate as people say it, such as "Linux Arm" or `ubuntu-slim`. */
 export const rateName = (rate: string) => RATE_NAMES[rate] ?? rate;
 
 /** One of a provider's rates with every price it has had, oldest first. */

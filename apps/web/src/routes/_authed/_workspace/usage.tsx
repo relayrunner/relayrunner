@@ -122,10 +122,11 @@ function UsagePage() {
             />
 
             <p className="max-w-[62ch] text-sm text-muted-foreground">
-              Estimates use GitHub's per-minute prices for private repos: Linux 1-core $0.002, Linux
-              2-core $0.006, Windows $0.010, macOS $0.062. Standard runners in public repos and
-              self-hosted runners are free. Larger runners are priced as Linux 2-core, so their cost
-              is a floor. Skipped jobs and jobs cancelled before a runner took them aren't counted.
+              Estimates use GitHub's per-minute prices for private repos: ubuntu-slim $0.002,
+              ubuntu-latest $0.006, windows-latest $0.010, macOS $0.062. Standard runners in public
+              repos and self-hosted runners are free. Larger runners are priced as ubuntu-latest, so
+              their cost is a floor. Skipped jobs and jobs cancelled before a runner took them
+              aren't counted.
             </p>
           </>
         )}
@@ -279,7 +280,7 @@ function sampleReport(days: number): UsageReport {
   };
   const byRunner = [
     row("macos", "macOS", 0.062, 120, 40, 900),
-    row("linux-2-core", "Linux 2-core", 0.006, 2400, 1500, 6200),
+    row("linux-2-core", "ubuntu-latest", 0.006, 2400, 1500, 6200),
     row("self-hosted", "Self-hosted", 0, 300, 90, 1400),
   ];
   return {

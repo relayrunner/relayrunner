@@ -82,7 +82,7 @@ describe("free check savings", () => {
     const savings = await get<FreeCheckSavings>("/usage/checks", cookie);
     expect(savings).toMatchObject({
       days: 30,
-      runner: { label: "Linux 2-core", perMinute: 0.006 },
+      runner: { label: "ubuntu-latest", perMinute: 0.006 },
       checks: 4,
       savedCost: 0.018,
       byCheck: [{ check: "PR title", checks: 4, savedCost: 0.018 }],

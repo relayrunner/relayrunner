@@ -546,7 +546,7 @@ export async function jobTimesReport(
     versus: null as EnvironmentSummary["versus"],
   }));
   environments.sort((a, b) => b.stat.runs - a.stat.runs);
-  // Linux 2-core is the yardstick most people know; otherwise the busiest environment.
+  // ubuntu-latest is the yardstick most people know; otherwise the busiest environment.
   const baseline =
     environments.find((env) => env.key === "github:linux-2-core")?.key ??
     environments[0]?.key ??

@@ -18,8 +18,8 @@ import * as testing from "./testing.ts";
 
 describe("environmentFor", () => {
   test.each([
-    [["ubuntu-latest"], "GitHub Actions", null, "github:linux-2-core", "Linux 2-core"],
-    [["ubuntu-24.04"], null, null, "github:linux-2-core", "Linux 2-core"],
+    [["ubuntu-latest"], "GitHub Actions", null, "github:linux-2-core", "ubuntu-latest"],
+    [["ubuntu-24.04"], null, null, "github:linux-2-core", "ubuntu-latest"],
     [["macos-15"], null, null, "github:macos", "macOS"],
     [
       ["ubuntu-latest-8-cores"],
@@ -40,9 +40,9 @@ describe("environmentFor", () => {
     [["rr-0123456789ab"], "Default", null, "self-hosted:default", "Self-hosted"],
     [["self-hosted", "linux"], null, null, "self-hosted:default", "Self-hosted"],
     [["self-hosted", "linux"], "", null, "self-hosted:default", "Self-hosted"],
-    [["windows-11-arm"], null, null, "github:windows-arm-2-core", "Windows 2-core Arm"],
+    [["windows-11-arm"], null, null, "github:windows-arm-2-core", "windows-11-arm"],
     [["macos-15-intel"], null, null, "github:macos", "macOS"],
-    [["ubuntu-26.04"], null, null, "github:linux-2-core", "Linux 2-core"],
+    [["ubuntu-26.04"], null, null, "github:linux-2-core", "ubuntu-latest"],
     [
       ["depot-ubuntu-24.04-8"],
       "Default",

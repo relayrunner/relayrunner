@@ -195,7 +195,7 @@ export function sampleJobTimes(days: number): JobTimesReport {
     environments: [
       {
         key: linux,
-        label: "Linux 2-core",
+        label: "ubuntu-latest",
         detail: "GitHub-hosted",
         size: { vcpus: 2, memoryGb: 8 },
         stat: stat(108, 50, 412),

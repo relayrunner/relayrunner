@@ -201,6 +201,7 @@ export {
   BASE_BOOK,
   BASE_PRICES,
   dayMs,
+  GITHUB_LABELS,
   type GitHubRunner,
   githubRate,
   isRate,
