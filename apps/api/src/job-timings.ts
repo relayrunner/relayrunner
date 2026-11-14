@@ -9,6 +9,7 @@ import {
 } from "@relayrunner/providers";
 import { type Db, schema } from "./db/index.ts";
 import { countFinishedJob, countsAsJob } from "./job-counts.ts";
+import { countRunnerWait } from "./runner-waits.ts";
 import { findInstallation } from "./installations.ts";
 import { parseDate } from "./jobs.ts";
 import { loadPriceBook } from "./prices.ts";
@@ -158,6 +159,8 @@ export async function recordJobTiming(db: Db, message: WorkflowJobMessage): Prom
       queuedAt: parseDate(job.createdAt),
       startedAt: parseDate(job.startedAt),
       completedAt,
+      ranSteps: finished ? (job.ranSteps ?? null) : null,
+      failedStep: finished ? failedStep(job.steps) : null,
     })
     .onConflictDoUpdate({
       target: table.id,
@@ -169,6 +172,8 @@ export async function recordJobTiming(db: Db, message: WorkflowJobMessage): Prom
         queuedAt: sql`coalesce(${table.queuedAt}, excluded.queued_at)`,
         startedAt: sql`coalesce(excluded.started_at, ${table.startedAt})`,
         completedAt: sql`excluded.completed_at`,
+        ranSteps: sql`excluded.ran_steps`,
+        failedStep: sql`excluded.failed_step`,
         updatedAt: sql`excluded.updated_at`,
       },
       setWhere: sql`${table.completedAt} is null`,
@@ -177,8 +182,29 @@ export async function recordJobTiming(db: Db, message: WorkflowJobMessage): Prom
     // nothing and the job is counted once.
     .returning({ id: table.id });
   if (written && completedAt && countsAsJob(job.conclusion, job.labels))
-    await countFinishedJob(db, installationId, job.conclusion, completedAt);
+    await Promise.all([
+      countFinishedJob(db, installationId, job.conclusion, completedAt),
+      countRunnerWait(db, {
+        installationId,
+        labels: job.labels,
+        runnerGroupName: job.runnerGroupName ?? null,
+        runnerName: job.runnerName,
+        queuedAt: parseDate(job.createdAt),
+        startedAt: parseDate(job.startedAt),
+        completedAt,
+        ranSteps: job.ranSteps ?? null,
+        conclusion: job.conclusion,
+      }),
+    ]);
   return true;
+}
+
+/** The first step of a finished job that failed, as "3. Run tests", or null when none did. */
+export function failedStep(
+  steps: { name: string; number: number; conclusion: string | null }[] = [],
+) {
+  const step = steps.find((each) => each.conclusion === "failure");
+  return step ? `${step.number}. ${step.name}` : null;
 }
 
 // How long finished jobs are counted for, as job_timing_daily rows by then. The report's longest
