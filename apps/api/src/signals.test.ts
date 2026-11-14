@@ -332,6 +332,49 @@ describe("rollUpSignals", () => {
     expect(rows[0]?.workflowPath).toBe(".github/workflows/ci.yml");
   });
 
+  test("counts runs for docs-titled changes, except docs workflows", async () => {
+    const ctx = await connectedWorkspace();
+    await runWithJob(ctx, { start: 60, minutes: 8, displayTitle: "docs: fix a typo" });
+    await runWithJob(ctx, {
+      start: 50,
+      minutes: 3,
+      displayTitle: "docs(site): fix a typo",
+      workflowName: "Docs",
+    });
+    await runWithJob(ctx, { start: 40, minutes: 6, displayTitle: "feat: add a page" });
+    await rollUpSignals(createDb(env.DB), ctx.installationId);
+    const rows = await dayRows(ctx.installationId, "docs-changes");
+    expect(sum(rows)).toEqual({ count: 1, minutes: 8 });
+    expect(rows[0]?.subject).toBe("CI");
+  });
+
+  test("counts branch runs that start ten or more jobs", async () => {
+    const ctx = await connectedWorkspace();
+    const wide = await runWithJob(ctx, { start: 60, minutes: 2 });
+    for (let i = 1; i < 10; i += 1) {
+      await job(ctx, { start: 60, minutes: 2, runId: wide, name: `test (${i})` });
+    }
+    // Nine jobs on a branch, and ten on the default branch: neither counts.
+    const narrow = await runWithJob(ctx, { start: 40, minutes: 2 });
+    for (let i = 1; i < 9; i += 1) {
+      await job(ctx, { start: 40, minutes: 2, runId: narrow, name: `test (${i})` });
+    }
+    const main = await runWithJob(ctx, {
+      start: 20,
+      minutes: 2,
+      headBranch: "main",
+      event: "push",
+    });
+    for (let i = 1; i < 10; i += 1) {
+      await job(ctx, { start: 20, minutes: 2, runId: main, name: `test (${i})` });
+    }
+    await rollUpSignals(createDb(env.DB), ctx.installationId);
+    expect(sum(await dayRows(ctx.installationId, "wide-fanout"))).toEqual({
+      count: 1,
+      minutes: 20,
+    });
+  });
+
   test("replaces the days it works out, so running twice counts once", async () => {
     const ctx = await connectedWorkspace();
     await shortJobs(ctx, 2);

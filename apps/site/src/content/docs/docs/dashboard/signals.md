@@ -50,3 +50,21 @@ The workflow ran for the same commit from both `push` and `pull_request`. The pu
 ### Short jobs rounded up
 
 GitHub bills each job by the whole minute. These jobs finished in under a minute on a billed runner, so part of every minute went unused. The page shows that unused part. Lint and other quick checks can run as [optimized checks](/docs/concepts/optimized-checks) instead.
+
+## Complexity signals
+
+### Docs changes run CI
+
+The workflow ran for commits or pull requests titled as docs changes, such as `docs: fix a typo` in [Conventional Commits](https://www.conventionalcommits.org/). Workflows with "doc" in their name are left out, since building docs is their job. Add `paths-ignore` to the workflow's `push` and `pull_request` triggers so changes that only touch docs skip it:
+
+```yaml
+on:
+  pull_request:
+    paths-ignore:
+      - "docs/**"
+      - "**/*.md"
+```
+
+### Full matrix on every branch
+
+The workflow started 10 or more jobs for a push or pull request on a branch other than your default, usually a wide matrix. All of those runs' minutes count. Running a smaller matrix before merge, and the full one on your default branch, still catches most problems early.

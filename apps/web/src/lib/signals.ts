@@ -9,7 +9,9 @@ export type SignalId =
   | "short-jobs"
   | "queue-waits"
   | "slowest-job"
-  | "flaky-jobs";
+  | "flaky-jobs"
+  | "docs-changes"
+  | "wide-fanout";
 
 /** One repo and workflow (or workflow › job) a signal affects. Money is USD. */
 export type SignalRow = {
@@ -124,10 +126,28 @@ export const SIGNAL_COPY: Record<
     count: "Passed on re-run",
     minutes: "Failed minutes",
   },
+  "docs-changes": {
+    title: "Docs changes run CI",
+    about:
+      "These workflows ran for commits or pull requests titled as docs changes, such as docs: fix a typo. Path filters let a workflow skip changes that only touch docs.",
+    subject: "Workflow",
+    count: "Docs runs",
+    minutes: "Minutes",
+    docs: "https://docs.github.com/en/actions/writing-workflows/workflow-syntax-for-github-actions#onpushpull_requestpull_request_targetpathspaths-ignore",
+  },
+  "wide-fanout": {
+    title: "Full matrix on every branch",
+    about:
+      "These workflows started 10 or more jobs for a push or pull request on a branch other than your default. A smaller matrix before merge, with the full one on your default branch, still catches most problems.",
+    subject: "Workflow",
+    count: "Runs with 10+ jobs",
+    minutes: "Minutes",
+    docs: "https://docs.github.com/en/actions/writing-workflows/choosing-what-your-workflow-does/running-variations-of-jobs-in-a-workflow",
+  },
 };
 
 // For local development without an API (auth disabled).
-const WORKFLOWS = new Set(["CI", "Test"]);
+const WORKFLOWS = new Set(["CI", "Test", "E2E"]);
 
 export function sampleSignals(days: number): SignalsReport {
   const scale = days / 30;
@@ -185,6 +205,8 @@ export function sampleSignals(days: number): SignalsReport {
         row("acme/api", "CI › typecheck", 1000, 410, 2.5),
       ]),
       signal("same-commit", [row("acme/web", "CI", 96, 552, 22)]),
+      signal("docs-changes", [row("acme/web", "Test", 38, 366, 14)], "complexity"),
+      signal("wide-fanout", [row("acme/web", "E2E", 120, 610, 24)], "complexity"),
     ],
   };
 }

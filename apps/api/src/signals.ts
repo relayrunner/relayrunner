@@ -46,6 +46,10 @@ export const SIGNALS = {
   "slowest-job": "speed",
   // Jobs that failed and then passed when the run was tried again.
   "flaky-jobs": "speed",
+  // Runs for commits or pull requests titled as docs changes (docs: in Conventional Commits).
+  "docs-changes": "complexity",
+  // Runs on a branch other than the default that started FANOUT_JOBS jobs or more.
+  "wide-fanout": "complexity",
 } as const satisfies Record<string, SignalArea>;
 
 export type SignalId = keyof typeof SIGNALS;
@@ -61,6 +65,8 @@ const ACTIVE_MS = 2 * 60 * 60_000;
 const QUEUE_WAIT_MS = 60_000;
 // A run waited on its slowest job once that job ran this long after every other job finished.
 const SLOWEST_JOB_MS = 60_000;
+// A run fans out once it starts this many jobs.
+const FANOUT_JOBS = 10;
 // A signal shows once it covers this many minutes and this share of all the range's job minutes.
 const MIN_MINUTES = 30;
 const MIN_SHARE = 0.01;
@@ -135,6 +141,8 @@ export async function rollUpSignals(db: Db, installationId: number, now = Date.n
     addSameCommitRuns(scope),
     addSlowestJobs(scope),
     addFlakyJobs(scope),
+    addDocsRuns(scope),
+    addWideRuns(scope),
   ]);
 
   const values = rows.values();
@@ -314,6 +322,49 @@ async function addSameCommitRuns(scope: Scope) {
           and q.event = 'pull_request' and ${SAME_WORKFLOW("o", "q")}
       )`);
   addRunJobs(scope, "same-commit", found, true);
+}
+
+// First attempts of push and pull_request runs in the window, for the complexity signals.
+const FIRST_RUNS = (
+  installationId: number,
+  since: number,
+) => sql`o.installation_id = ${installationId}
+  and o.github_updated_at >= ${since} and o.event in ('push', 'pull_request')
+  and o.run_attempt = 1`;
+
+// Runs whose commit or pull request title starts with docs: or docs(scope):, the Conventional
+// Commits type for documentation. Workflows with "doc" in their name are left out, since building
+// docs is their job.
+async function addDocsRuns(scope: Scope) {
+  const { db, installationId, since } = scope;
+  const found = await db.all<RunJobRow>(sql`
+    select ${RUN_JOB_COLUMNS}, max(0, j.completed_at - j.started_at) as runMs
+    from workflow_run o
+    join job_timing j on j.run_id = o.id and j.run_attempt = o.run_attempt
+    where ${FIRST_RUNS(installationId, since)} and j.completed_at >= ${since} and ${COUNTED_JOB}
+      and (lower(o.display_title) like 'docs:%' or lower(o.display_title) like 'docs(%')
+      and lower(coalesce(o.workflow_name, '')) not like '%doc%'`);
+  addRunJobs(scope, "docs-changes", found, true);
+}
+
+// Runs on a branch other than the default that started FANOUT_JOBS jobs or more, usually a full
+// matrix. All their jobs count, since a smaller matrix before merge is what would save time.
+async function addWideRuns(scope: Scope) {
+  const { db, installationId, since } = scope;
+  const found = await db.all<RunJobRow>(sql`
+    with wide as materialized (
+      select o.id, o.run_attempt from workflow_run o
+      join job_timing j on j.run_id = o.id and j.run_attempt = o.run_attempt
+      where ${FIRST_RUNS(installationId, since)} and ${COUNTED_JOB}
+        and o.head_branch != coalesce(o.default_branch, 'main')
+      group by o.id, o.run_attempt having count(*) >= ${FANOUT_JOBS}
+    )
+    select ${RUN_JOB_COLUMNS}, max(0, j.completed_at - j.started_at) as runMs
+    from wide w
+    join workflow_run o on o.id = w.id and o.run_attempt = w.run_attempt
+    join job_timing j on j.run_id = o.id and j.run_attempt = o.run_attempt
+    where j.completed_at >= ${since} and ${COUNTED_JOB}`);
+  addRunJobs(scope, "wide-fanout", found, true);
 }
 
 // Adds run-level signal jobs, counting each run once per day and workflow. `billed`: the jobs'
