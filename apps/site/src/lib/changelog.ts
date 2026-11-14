@@ -48,7 +48,7 @@ function releaseDates() {
   return dates;
 }
 
-/** Drops the package-name title and commit ids, renames the bump-type headings, adds dates. */
+/** Drops the package-name title and commit ids, names and dates each release, renames the bump-type headings. */
 function changelogBody(raw: string, dates: Map<string, Date>) {
   const intro = `Follow new releases with the [RSS feed](${FEED_PATH}).`;
   const notes = raw
@@ -57,9 +57,13 @@ function changelogBody(raw: string, dates: Map<string, Date>) {
     .replace(/^### (.+)$/gm, (line, name: string) =>
       HEADINGS[name] ? `### ${HEADINGS[name]}` : line,
     )
-    .replace(/^## (\S+)$/gm, (line, version: string) =>
-      dates.has(version) ? `${line}\n\nReleased ${DATE.format(dates.get(version))}` : line,
-    )
+    // The changelog will hold more than CLI releases, so each heading names what was released.
+    .replace(/^## (\S+)$/gm, (_, version: string) => {
+      const heading = `## CLI v${version}`;
+      return dates.has(version)
+        ? `${heading}\n\nReleased ${DATE.format(dates.get(version))}`
+        : heading;
+    })
     .trim();
   return `${intro}\n\n${notes}`;
 }
@@ -77,7 +81,7 @@ export function docsWithChangelog(): Loader {
           id: CHANGELOG_ID,
           data: {
             title: "Changelog",
-            description: "What's new in each release of the relayrunner CLI.",
+            description: "What's new in each RelayRunner release.",
             tableOfContents: { minHeadingLevel: 2, maxHeadingLevel: 2 },
             head: [
               {
@@ -85,7 +89,7 @@ export function docsWithChangelog(): Loader {
                 attrs: {
                   rel: "alternate",
                   type: "application/rss+xml",
-                  title: "relayrunner CLI releases",
+                  title: "RelayRunner changelog",
                   href: FEED_PATH,
                 },
               },

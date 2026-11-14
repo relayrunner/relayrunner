@@ -15,7 +15,7 @@ export const GET: APIRoute = async ({ site }) => {
   const items = (entry?.rendered?.html ?? "").split(/(?=<h2\b)/).flatMap((section) => {
     const heading = section.match(/^<h2 id="([^"]+)">([^<]+)<\/h2>/);
     if (!heading) return [];
-    const [tag, id, version] = heading;
+    const [tag, id, title] = heading;
     const released = section.match(/<p>Released ([^<]+)<\/p>/);
     const date = released && new Date(`${released[1]} UTC`);
     const notes = section
@@ -25,9 +25,9 @@ export const GET: APIRoute = async ({ site }) => {
     return [
       [
         "    <item>",
-        `      <title>relayrunner ${version}</title>`,
+        `      <title>${title}</title>`,
         `      <link>${page}#${id}</link>`,
-        `      <guid isPermaLink="false">relayrunner@${version}</guid>`,
+        `      <guid isPermaLink="false">${id}</guid>`,
         date ? `      <pubDate>${date.toUTCString()}</pubDate>` : "",
         `      <description>${escape(notes)}</description>`,
         "    </item>",
@@ -41,10 +41,10 @@ export const GET: APIRoute = async ({ site }) => {
       '<?xml version="1.0" encoding="UTF-8"?>',
       '<rss version="2.0" xmlns:atom="http://www.w3.org/2005/Atom">',
       "  <channel>",
-      "    <title>relayrunner CLI releases</title>",
+      "    <title>RelayRunner changelog</title>",
       `    <link>${page}</link>`,
       `    <atom:link href="${new URL(FEED_PATH, site).href}" rel="self" type="application/rss+xml"/>`,
-      "    <description>What's new in each release of the relayrunner CLI.</description>",
+      "    <description>What's new in each RelayRunner release.</description>",
       "    <language>en</language>",
       ...items,
       "  </channel>",
