@@ -97,13 +97,18 @@ export async function recordRepositoryEvent(
 }
 
 // How many of an account's private repos are searched for repo runners, one GitHub call each.
-const MAX_RUNNER_REPOS = 100;
+export const MAX_RUNNER_REPOS = 100;
 
 /**
  * The private repos an installation still sees, where a repo runner could take jobs (machines
- * never take a public repo's jobs). `id` narrows it to one repo.
+ * never take a public repo's jobs), up to one past MAX_RUNNER_REPOS so callers can tell there are
+ * more. `id`, or `fullName` in any case, narrows it to one repo.
  */
-export function privateRepos(db: Db, installationId: number, id?: number) {
+export function privateRepos(
+  db: Db,
+  installationId: number,
+  { id, fullName }: { id?: number; fullName?: string } = {},
+) {
   return db
     .select({ id: schema.githubRepository.id, fullName: schema.githubRepository.fullName })
     .from(schema.githubRepository)
@@ -113,10 +118,13 @@ export function privateRepos(db: Db, installationId: number, id?: number) {
         eq(schema.githubRepository.private, true),
         isNull(schema.githubRepository.removedAt),
         id === undefined ? undefined : eq(schema.githubRepository.id, id),
+        fullName === undefined
+          ? undefined
+          : sql`lower(${schema.githubRepository.fullName}) = ${fullName.toLowerCase()}`,
       ),
     )
     .orderBy(asc(schema.githubRepository.fullName))
-    .limit(MAX_RUNNER_REPOS);
+    .limit(MAX_RUNNER_REPOS + 1);
 }
 
 /** A repo the installation can still see, by owner/name in any case, or undefined. */

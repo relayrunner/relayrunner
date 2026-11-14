@@ -31,7 +31,7 @@ import {
   runnerOs,
   type GroupAccess,
 } from "../github-runners.ts";
-import { privateRepos } from "../repositories.ts";
+import { MAX_RUNNER_REPOS, privateRepos } from "../repositories.ts";
 import {
   addedMachineScope,
   addMachinesToWorkspace,
@@ -634,9 +634,12 @@ export const machineRoutes = new Hono<AppEnv>()
   // belong to the account. `?groups=false` skips the org's runner groups for the Runners page's
   // found card, and reads the org list from the Router's short cache; the Add runner dialog reads
   // groups too, so it can show each runner's access and block workflow-only groups. Repo runners
-  // take one GitHub call per private repo, through the Router's cache.
+  // take one GitHub call per private repo, through the Router's cache, for the first
+  // MAX_RUNNER_REPOS (`moreRepos` says there are more). `?repo=name` (or owner/name) looks in that
+  // one repo instead, for an account with more private repos than that.
   .get("/github-runners", requireUser, requireWorkspace, requireManager, async (c) => {
     const groups = c.req.query("groups") !== "false";
+    const lookup = c.req.query("repo")?.trim() || null;
     const installations = await c.var.db
       .select({
         id: schema.githubInstallation.id,
@@ -670,8 +673,18 @@ export const machineRoutes = new Hono<AppEnv>()
       installations.map(async (installation) => {
         const personal = installation.accountType === "User";
         try {
-          const [org, onRepos] = await Promise.all([
-            personal
+          // Read once (a query builder runs again on each `then`), alongside the org's runners.
+          const repos = Promise.resolve(
+            privateRepos(c.var.db, installation.id, {
+              fullName: lookup
+                ? lookup.includes("/")
+                  ? lookup
+                  : `${installation.org}/${lookup}`
+                : undefined,
+            }),
+          );
+          const [org, onRepos, searched] = await Promise.all([
+            personal || lookup
               ? { runners: [], access: new Map<number, GroupAccess>() }
               : groups
                 ? readRunners(c.env, installation.id, { kind: "org", org: installation.org })
@@ -679,7 +692,8 @@ export const machineRoutes = new Hono<AppEnv>()
                     runners,
                     access: new Map<number, GroupAccess>(),
                   })),
-            privateRepos(c.var.db, installation.id).then(async (repos) => {
+            repos.then(async (all) => {
+              const repos = all.slice(0, MAX_RUNNER_REPOS);
               const lists = await router.githubRunnerLists(
                 installation.id,
                 repos.map((repo) => ({ kind: "repo", repo: repo.fullName }) as const),
@@ -689,6 +703,7 @@ export const machineRoutes = new Hono<AppEnv>()
                 (repo, i) => lists[i]?.map((runner) => ({ runner, repo })) ?? [],
               );
             }),
+            repos.then((all) => all.length),
           ]);
           const found = [
             ...org.runners.map((runner) => ({
@@ -702,6 +717,10 @@ export const machineRoutes = new Hono<AppEnv>()
             installationId: installation.id,
             org: installation.org,
             personal,
+            // More private repos than were searched: look in one by name (`?repo=`).
+            moreRepos: searched > MAX_RUNNER_REPOS,
+            // The repo `?repo=` named isn't one of the account's private repos.
+            repoNotFound: lookup !== null && searched === 0,
             runners: found
               .filter(({ runner }) => !isHiddenRunner(runner))
               .map(({ runner, repo, access }) =>
@@ -758,7 +777,7 @@ export const machineRoutes = new Hono<AppEnv>()
     if (!installation) throw new AppError("NOT_FOUND");
     // A repo runner's repo must be one of the installation's private repos, and only an org has
     // org runners.
-    const [repo] = repositoryId ? await privateRepos(db, installationId, repositoryId) : [];
+    const [repo] = repositoryId ? await privateRepos(db, installationId, { id: repositoryId }) : [];
     if (repositoryId && !repo) throw new AppError("NOT_FOUND");
     if (!repo && installation.accountType === "User") throw new AppError("NOT_FOUND");
     const scope: RunnerScope = repo

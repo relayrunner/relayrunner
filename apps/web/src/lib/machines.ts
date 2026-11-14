@@ -275,18 +275,30 @@ export type GitHubRunner = {
 
 /** A connected account's runners. `personal` for a personal account, which has only repo runners. */
 export type GitHubRunners = { installationId: number; org: string; personal: boolean } & (
-  | { runners: GitHubRunner[] }
+  | {
+      runners: GitHubRunner[];
+      /** It has more private repos than were searched; look in one by name. */
+      moreRepos: boolean;
+      /** A by-name lookup named a repo that isn't one of its private repos. */
+      repoNotFound: boolean;
+    }
   | { error: string }
 );
 
 /**
  * Runners in the workspace's connected account, for adding them. Owners and admins only.
  * `groups: false` skips GitHub's runner-group lookups, but a runner in a workflow-only group isn't
- * marked blocked.
+ * marked blocked. `repo` (a name, or owner/name) looks in that one private repo instead.
  */
-export function listGithubRunners({ groups = true }: { groups?: boolean } = {}) {
+export function listGithubRunners({
+  groups = true,
+  repo,
+}: { groups?: boolean; repo?: string } = {}) {
+  const query = new URLSearchParams();
+  if (!groups) query.set("groups", "false");
+  if (repo) query.set("repo", repo);
   return api<{ orgs: GitHubRunners[] }>(
-    groups ? "/machines/github-runners" : "/machines/github-runners?groups=false",
+    `/machines/github-runners${query.size > 0 ? `?${query}` : ""}`,
   );
 }
 

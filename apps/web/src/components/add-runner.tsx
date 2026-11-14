@@ -10,6 +10,7 @@ import {
 import { GithubIcon } from "@/components/provider-logos";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
 import {
   Dialog,
   DialogContent,
@@ -132,6 +133,10 @@ export function GithubRunnersDialog({
   const [picked, setPicked] = useState<Set<string>>(new Set());
   const [adding, setAdding] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  // Looking in one repo by name, for an account with more private repos than the list searches.
+  const [repoName, setRepoName] = useState("");
+  const [looking, setLooking] = useState(false);
+  const [lookupNote, setLookupNote] = useState<string | null>(null);
 
   useEffect(() => {
     if (!open) return;
@@ -139,6 +144,8 @@ export function GithubRunnersDialog({
     setLoaded({ kind: "loading" });
     setPicked(new Set());
     setError(null);
+    setRepoName("");
+    setLookupNote(null);
     listGithubRunners()
       .then(({ orgs }) => !cancelled && setLoaded({ kind: "ready", orgs }))
       .catch((err: unknown) => {
@@ -198,7 +205,67 @@ export function GithubRunnersDialog({
     }
   }
 
+  async function lookInRepo(event: React.FormEvent) {
+    event.preventDefault();
+    const name = repoName.trim();
+    if (!name) return;
+    setLooking(true);
+    setLookupNote(null);
+    try {
+      const { orgs: results } = await listGithubRunners({ repo: name });
+      const hits = results.flatMap((org) => ("runners" in org ? org.runners : []));
+      // Add what it found to the list, once each.
+      setLoaded((current) =>
+        current.kind !== "ready"
+          ? current
+          : {
+              kind: "ready",
+              orgs: current.orgs.map((org) => {
+                const result = results.find((r) => r.installationId === org.installationId);
+                if (!("runners" in org) || !result || !("runners" in result)) return org;
+                const fresh = result.runners.filter((r) => !org.runners.some((o) => o.id === r.id));
+                return { ...org, runners: [...org.runners, ...fresh] };
+              }),
+            },
+      );
+      setLookupNote(
+        results.some((org) => "repoNotFound" in org && org.repoNotFound)
+          ? `No private repo named ${name}.`
+          : hits.length === 0
+            ? `No self-hosted runners on ${name}.`
+            : null,
+      );
+    } catch {
+      setLookupNote("Couldn't look in that repo. Try again.");
+    } finally {
+      setLooking(false);
+    }
+  }
+
   const found = orgs.some((org) => "runners" in org && org.runners.length > 0);
+  const moreRepos = orgs.some((org) => "runners" in org && org.moreRepos);
+  const lookup = (
+    <form className="grid gap-2" onSubmit={(event) => void lookInRepo(event)}>
+      <label htmlFor="runner-repo" className="text-xs text-muted-foreground">
+        {moreRepos
+          ? "You have more than 100 private repos, so only the first 100 were checked. Look in another one by name:"
+          : "Don't see one? Look in a repo by name:"}
+      </label>
+      <div className="flex gap-2">
+        <Input
+          id="runner-repo"
+          className="font-mono"
+          placeholder="repo-name"
+          value={repoName}
+          onChange={(event) => setRepoName(event.target.value)}
+        />
+        <Button type="submit" variant="outline" disabled={looking || !repoName.trim()}>
+          {looking ? "Looking…" : "Look"}
+        </Button>
+      </div>
+      {lookupNote && <p className="text-xs text-muted-foreground">{lookupNote}</p>}
+    </form>
+  );
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
@@ -249,6 +316,7 @@ export function GithubRunnersDialog({
                   </Button>
                 ))}
             </div>
+            {lookup}
           </div>
         )}
         {loaded.kind === "ready" && found && (
@@ -270,8 +338,9 @@ export function GithubRunnersDialog({
                 )}
               </section>
             ))}
+            {lookup}
             <p className="text-xs text-muted-foreground">
-              Don't see one? Runners registered on a public repo or an enterprise aren't supported.
+              Runners registered on a public repo or an enterprise aren't supported.
             </p>
           </div>
         )}

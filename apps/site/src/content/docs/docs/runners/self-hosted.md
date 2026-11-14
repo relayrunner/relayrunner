@@ -122,7 +122,7 @@ Remove it from the Runners page. You can remove your own machines; owners and ad
 
 If you already run self-hosted runners, you can route jobs to them as they are, with no change on the runner's machine. On the **Runners** page, choose **Add runners from GitHub** and pick the ones to add. The list shows runners registered in your organization and runners registered on your private repos. Owners and admins can add them.
 
-A runner registered on a repo only takes that repo's jobs.
+A runner registered on a repo only takes that repo's jobs. The list checks up to 100 private repos. If you have more, type a repo's name in the dialog to look there.
 
 Added runners share the self-hosted step with your connected machines, and are picked the same way: online, idle, and with every label in the relay's `machine` input. Removing one from RelayRunner leaves it registered on GitHub.
 

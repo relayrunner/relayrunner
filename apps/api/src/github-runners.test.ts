@@ -449,17 +449,19 @@ describe("adding GitHub runners", () => {
     repos: { id: number; name: string; private: boolean }[],
   ) {
     const now = new Date();
-    await createDb(env.DB)
-      .insert(schema.githubRepository)
-      .values(
-        repos.map((repo) => ({
-          id: repo.id,
-          installationId,
-          fullName: `org-${installationId}/${repo.name}`,
-          private: repo.private,
-          githubStateAt: now,
-        })),
-      );
+    // In batches: D1 caps the variables in one statement.
+    for (let i = 0; i < repos.length; i += 10)
+      await createDb(env.DB)
+        .insert(schema.githubRepository)
+        .values(
+          repos.slice(i, i + 10).map((repo) => ({
+            id: repo.id,
+            installationId,
+            fullName: `org-${installationId}/${repo.name}`,
+            private: repo.private,
+            githubStateAt: now,
+          })),
+        );
   }
 
   test("lists runners registered on the org's private repos", async () => {
@@ -547,6 +549,45 @@ describe("adding GitHub runners", () => {
         body: undefined,
       },
     ]);
+  });
+
+  test("looks in one repo by name, past the repos it searches on its own", async () => {
+    const { cookie, installationId } = await setup();
+    const base = installationId * 1000;
+    await addRepos(
+      installationId,
+      Array.from({ length: 101 }, (_, i) => ({
+        id: base + i,
+        name: `repo-${String(i).padStart(3, "0")}`,
+        private: true,
+      })),
+    );
+    repoRunners[`org-${installationId}/repo-100`] = [
+      runner(31, "far-mac", "macOS", ["self-hosted"]),
+    ];
+    type Body = {
+      orgs: {
+        moreRepos: boolean;
+        repoNotFound: boolean;
+        runners: { id: number; repo: { fullName: string } | null }[];
+      }[];
+    };
+    const all = (await (
+      await testing.call(env, "/machines/github-runners", cookie)
+    ).json()) as Body;
+    expect(all.orgs[0].moreRepos).toBe(true);
+    expect(all.orgs[0].runners.map((r) => r.id)).toEqual([11]);
+
+    const one = (await (
+      await testing.call(env, "/machines/github-runners?repo=REPO-100", cookie)
+    ).json()) as Body;
+    // Only that repo's runners, not the org's.
+    expect(one.orgs[0]).toMatchObject({ repoNotFound: false, runners: [{ id: 31 }] });
+
+    const missing = (await (
+      await testing.call(env, "/machines/github-runners?repo=nope", cookie)
+    ).json()) as Body;
+    expect(missing.orgs[0]).toMatchObject({ repoNotFound: true, runners: [] });
   });
 
   test("won't add a runner from a repo the installation doesn't see", async () => {
