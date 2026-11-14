@@ -22,6 +22,7 @@ If no RelayRunner MCP tools are available, help the user add the remote server `
 | Which providers are tried, in what order?                         | `get_runner_order`                                        |
 | Recent workflow runs, by repo, status or result                   | `list_runs`                                               |
 | Where each job of one run ran                                     | `get_run_jobs` (`repositoryId`, `runId` from `list_runs`) |
+| Why a run's jobs failed, with the end of each log                 | `get_run_failures` (same arguments as `get_run_jobs`)     |
 | Why a job went where it did; machines connecting or going offline | `list_activity`                                           |
 | Short jobs, round-up cost, check savings, Actions minutes         | `get_usage`                                               |
 | How long jobs usually take on each runner                         | `get_job_times`                                           |
@@ -40,6 +41,8 @@ Every tool takes an optional `workspace` (id or name), needed only when the conn
 **"What did it save?" / "What does CI cost?"** `get_usage` (default 30 days, up to 90). Report jobs under a minute and what GitHub's round-up to whole minutes cost, what optimized checks saved, and each GitHub account's Actions minutes this billing cycle.
 
 **"Did my last push work?"** `list_runs` with `repository` (and `routed: true` for routed runs only), then `get_run_jobs` on the run.
+
+**"Why did CI fail?"** `list_runs` with `repository` and `conclusion: "failure"`, then `get_run_failures` on the run. Lead with the failed step and the error lines. When `runnerFailed` is true the runner failed the job before any step ran, so the code isn't the problem and a re-run is the fix.
 
 **"A job failed on my machine. Should I re-run it?"** Use `get_run_jobs` to see where the job ran, and `list_activity` with `machine` to check whether the machine went offline during the run. In GitHub, **Re-run failed jobs** sends the job back to the same machine if it's free, and **Re-run all jobs** routes it again from the top of the runner order, so use that one to move it to another provider. Details: https://relayrunner.app/docs/concepts/routing.md#re-running-a-job
 

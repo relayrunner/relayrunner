@@ -1,4 +1,5 @@
 import type { RouteWalk } from "@relayrunner/activity";
+import { logExcerpt, MAX_EXCERPT_CHARS, MAX_LINES } from "./job-failures.ts";
 import type { WebhookMessage } from "@relayrunner/github-webhooks";
 import { afterEach, beforeAll, describe, expect, test, vi } from "vitest";
 import { createDb, schema } from "./db/index.ts";
@@ -454,4 +455,85 @@ test("splitEnvs reads each environment", () => {
     `["rr-1"]\u001fDefault\u001fm1`,
   ]);
   expect(splitEnvs(null)).toEqual([]);
+});
+
+describe("run failures", () => {
+  test("logExcerpt keeps the lines up to the last error, without timestamps", () => {
+    const log = [
+      "2026-11-14T10:00:00.0000000Z ##[group]Run pnpm test",
+      ...Array.from(
+        { length: 60 },
+        (_, i) => `2026-11-14T10:00:01.0000000Z \u001b[32mline ${i}\u001b[0m`,
+      ),
+      "2026-11-14T10:00:02.0000000Z ##[error]Process completed with exit code 1.",
+      "2026-11-14T10:00:03.0000000Z Post job cleanup.",
+      "",
+    ].join("\n");
+    const excerpt = logExcerpt(log);
+    expect(excerpt).toHaveLength(MAX_LINES);
+    expect(excerpt.at(-1)).toBe("##[error]Process completed with exit code 1.");
+    expect(excerpt.at(-2)).toBe("line 59");
+    // A long log is cut to MAX_EXCERPT_CHARS, from the front.
+    const long = logExcerpt(Array.from({ length: 50 }, () => "x".repeat(400)).join("\n"));
+    expect(long.join("\n").length).toBeLessThanOrEqual(MAX_EXCERPT_CHARS);
+  });
+
+  test("lists a run's failed jobs with their step, annotations and log excerpt", async () => {
+    const { cookie, installationId } = await connectedWorkspace();
+    const failed = timing(installationId, 30, {
+      runId: 300,
+      name: "test",
+      conclusion: "failure",
+      ranSteps: true,
+      failedStep: "3. Run tests",
+    });
+    const lost = timing(installationId, 1, {
+      runId: 300,
+      name: "e2e",
+      conclusion: "failure",
+      ranSteps: false,
+      // Finished last, so it's listed second.
+      hoursAgo: 0.5,
+    });
+    await insert([timing(installationId, 20, { runId: 300 }), failed, lost]);
+    const requested: string[] = [];
+    vi.stubGlobal("fetch", async (url: string) => {
+      requested.push(url);
+      if (url.endsWith("/annotations"))
+        return Response.json(
+          url.includes(`/${lost.id}/`) ? [{ message: "lost communication" }] : [],
+        );
+      if (url.includes(`/${lost.id}/logs`)) return new Response("gone", { status: 410 });
+      return new Response("2026-11-14T10:00:00Z ok\n2026-11-14T10:00:01Z ##[error]boom\n");
+    });
+
+    const res = await testing.call(env, `/runs/${installationId * 10}/300/1/failures`, cookie);
+    expect(res.status).toBe(200);
+    expect(await res.json()).toEqual({
+      more: 0,
+      jobs: [
+        {
+          id: failed.id,
+          name: "test",
+          conclusion: "failure",
+          runner: "ubuntu-latest",
+          runnerFailed: false,
+          failedStep: "3. Run tests",
+          annotations: [],
+          log: ["ok", "##[error]boom"],
+        },
+        {
+          id: lost.id,
+          name: "e2e",
+          conclusion: "failure",
+          runner: "ubuntu-latest",
+          runnerFailed: true,
+          failedStep: null,
+          annotations: ["lost communication"],
+          log: null,
+        },
+      ],
+    });
+    expect(requested).toHaveLength(4);
+  });
 });

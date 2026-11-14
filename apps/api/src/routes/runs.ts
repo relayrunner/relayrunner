@@ -7,6 +7,7 @@ import { withCatalog } from "../provider-catalog.ts";
 import { recentJobs } from "../job-times.ts";
 import { appInstallationToken, workflowJobSteps } from "../github-app.ts";
 import { jobSource, listRuns, runJobs } from "../runs.ts";
+import { runFailures } from "../job-failures.ts";
 import { Days } from "./job-times.ts";
 import { AppError } from "@relayrunner/errors";
 
@@ -18,6 +19,8 @@ const RunParams = z.object({ repositoryId: Id, runId: Id, runAttempt: Id });
 // /:repositoryId/:runId/:runAttempt/jobs is one run attempt's jobs, for its expanded row. /jobs is
 // every job a runner finished in the last ?days=N days, newest first, for the Jobs view.
 // /jobs/:jobId/steps is one job's steps, read from GitHub when its detail opens.
+// /:repositoryId/:runId/:runAttempt/failures is why the attempt's jobs failed, with log excerpts
+// read from GitHub, for agents.
 export const runRoutes = new Hono<AppEnv>()
   .get("/", requireUser, requireWorkspace, withCatalog, async (c) =>
     c.json(await listRuns(c.var.db, c.var.workspace.id)),
@@ -44,5 +47,16 @@ export const runRoutes = new Hono<AppEnv>()
       const parsed = RunParams.safeParse(c.req.param());
       if (!parsed.success) throw new AppError("INVALID_REQUEST");
       return c.json(await runJobs(c.var.db, c.var.workspace.id, parsed.data));
+    },
+  )
+  .get(
+    "/:repositoryId/:runId/:runAttempt/failures",
+    requireUser,
+    requireWorkspace,
+    withCatalog,
+    async (c) => {
+      const parsed = RunParams.safeParse(c.req.param());
+      if (!parsed.success) throw new AppError("INVALID_REQUEST");
+      return c.json(await runFailures(c.var.db, c.env, c.var.workspace.id, parsed.data));
     },
   );

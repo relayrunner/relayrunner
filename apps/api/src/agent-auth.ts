@@ -183,16 +183,17 @@ export function agentIssuer(env: Env) {
   return new URL("/api/auth", env.BETTER_AUTH_URL).toString();
 }
 
-// What an agent token may call: read-only views of its own workspace, all D1 reads. Nothing that
-// asks GitHub per request, takes the Router's lock, or changes anything. Routes with a workspace id
-// in the path only accept the token's workspaces (requireMember in routes/workspaces.ts).
+// What an agent token may call: read-only views of its own workspace, D1 reads apart from a run's
+// failures, which read a few failed jobs' logs from GitHub (bounded by MAX_JOBS in
+// job-failures.ts). Nothing takes the Router's lock or changes anything. Routes with a workspace
+// id in the path only accept the token's workspaces (requireMember in routes/workspaces.ts).
 const AGENT_ROUTES: RegExp[] = [
   /^\/api\/me$/,
   /^\/api\/workspaces\/current$/,
   /^\/api\/workspaces\/[^/]+\/runner-order$/,
   /^\/api\/machines$/,
   /^\/api\/runs$/,
-  /^\/api\/runs\/\d+\/\d+\/\d+\/jobs$/,
+  /^\/api\/runs\/\d+\/\d+\/\d+\/(jobs|failures)$/,
   /^\/api\/activity$/,
   /^\/api\/usage$/,
   /^\/api\/usage\/(checks|actions)$/,

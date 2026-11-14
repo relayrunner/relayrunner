@@ -11,9 +11,10 @@ import { z } from "zod";
 import type { Api, Workspace, WorkspaceApi } from "./api.ts";
 import { compactActivityPage, compactJobTimes } from "./compact.ts";
 
-// Read-only tools over relayrunner-api's dashboard endpoints, all D1 reads, plus send_feedback,
-// which only records a report for the RelayRunner team. Each answers JSON. None asks GitHub or
-// takes the Router's lock (apps/api/src/agent-auth.ts keeps it that way).
+// Read-only tools over relayrunner-api's dashboard endpoints, plus send_feedback, which only
+// records a report for the RelayRunner team. Each answers JSON. All are D1 reads except
+// get_run_failures, which reads a few failed jobs' logs from GitHub. None takes the Router's lock
+// (apps/api/src/agent-auth.ts keeps it that way).
 
 // Avatars and dashboard-only permissions aren't useful to an agent.
 const DASHBOARD_ONLY = new Set(["ownerImage", "canRevoke", "mine"]);
@@ -191,6 +192,24 @@ export function registerTools(server: McpServer, request: WorkspaceApi, workspac
     },
     ({ workspace, repositoryId, runId, runAttempt }) =>
       answer(() => scoped(workspace)(`/runs/${repositoryId}/${runId}/${runAttempt}/jobs`)),
+  );
+
+  server.registerTool(
+    "get_run_failures",
+    {
+      title: "Run failures",
+      description:
+        "Why a run attempt's jobs failed, without reading whole logs: each failed job's first failed step, whether its runner failed it before any step ran (an infrastructure failure, not the code), GitHub's annotations, and up to 50 lines of its log ending at the last error. Covers up to 5 failed jobs; `more` counts the rest. Take repositoryId and runId from list_runs.",
+      inputSchema: z.object({
+        workspace: workspaceArg,
+        repositoryId: z.number().int().positive(),
+        runId: z.number().int().positive(),
+        runAttempt: z.number().int().positive().default(1),
+      }),
+      annotations: { ...READ_ONLY, openWorldHint: true },
+    },
+    ({ workspace, repositoryId, runId, runAttempt }) =>
+      answer(() => scoped(workspace)(`/runs/${repositoryId}/${runId}/${runAttempt}/failures`)),
   );
 
   server.registerTool(
