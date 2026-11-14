@@ -414,6 +414,13 @@
       "when": 1794698641924,
       "tag": "20261114232401_claim_added_runner_jobs",
       "breakpoints": true
+    },
+    {
+      "idx": 59,
+      "version": "6",
+      "when": 1794700392126,
+      "tag": "20261114235312_clear_empty_runner_names",
+      "breakpoints": true
     }
   ]
 }

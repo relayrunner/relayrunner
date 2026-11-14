@@ -208,8 +208,10 @@ export function toWebhookMessage(
             : [],
           headBranch: stringOrNull(job.head_branch),
           headSha: String(job.head_sha ?? ""),
-          runnerName: stringOrNull(job.runner_name),
-          runnerGroupName: stringOrNull(job.runner_group_name),
+          // GitHub sends "" for both when a job ended before any runner took it (cancelled while
+          // queued), with started_at set anyway: no runner, not one named "".
+          runnerName: stringOrNull(job.runner_name) || null,
+          runnerGroupName: stringOrNull(job.runner_group_name) || null,
           createdAt: String(job.created_at ?? ""),
           startedAt: stringOrNull(job.started_at),
           completedAt: stringOrNull(job.completed_at),

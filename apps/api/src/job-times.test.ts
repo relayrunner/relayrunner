@@ -501,6 +501,41 @@ describe("job times report", () => {
     expect(await record("someone-else", "Default")).toBeNull();
   });
 
+  test("a job cancelled before any runner took it has no runner", async () => {
+    const { installationId } = await connectedWorkspace();
+    const db = createDb(env.DB);
+    jobIds += 1;
+    const now = Date.now();
+    // GitHub's payload for it: an empty runner name and group, and started_at set anyway.
+    await recordJobTiming(db, {
+      event: "workflow_job",
+      deliveryId: `empty-${jobIds}`,
+      action: "completed",
+      installationId,
+      receivedAt: new Date(now).toISOString(),
+      repository: { id: installationId * 10, fullName: "acme/app" },
+      job: {
+        id: jobIds,
+        runId: jobIds,
+        runAttempt: 1,
+        name: "test",
+        workflowName: "CI",
+        status: "completed",
+        conclusion: "cancelled",
+        labels: ["self-hosted"],
+        headBranch: "main",
+        headSha: "abc",
+        runnerName: "",
+        runnerGroupName: "",
+        createdAt: new Date(now - 600_000).toISOString(),
+        startedAt: new Date(now - 600_000).toISOString(),
+        completedAt: new Date(now).toISOString(),
+      },
+    });
+    const row = await db.query.jobTiming.findFirst({ where: (t, { eq }) => eq(t.id, jobIds) });
+    expect(row).toMatchObject({ runnerName: null, runnerGroupName: null });
+  });
+
   test("adding a runner claims the jobs it already ran", async () => {
     const { installationId } = await connectedWorkspace();
     const db = createDb(env.DB);

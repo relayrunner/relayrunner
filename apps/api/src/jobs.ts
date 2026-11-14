@@ -60,7 +60,7 @@ export async function recordWorkflowJob(
     headSha: job.headSha,
     status: job.status,
     conclusion: job.conclusion,
-    runnerName: job.runnerName,
+    runnerName: job.runnerName || null,
     githubCreatedAt: parseDate(job.createdAt) ?? new Date(message.receivedAt),
     startedAt: parseDate(job.startedAt),
     completedAt: parseDate(job.completedAt),

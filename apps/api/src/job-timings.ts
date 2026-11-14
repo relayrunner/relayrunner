@@ -165,8 +165,14 @@ export async function claimRunnerJobs(
  * installation has no row yet.
  */
 export async function recordJobTiming(db: Db, message: WorkflowJobMessage): Promise<boolean> {
-  const { installationId, job, repository } = message;
+  const { installationId, repository } = message;
   if (!installationId || !(await findInstallation(db, installationId))) return false;
+  // An ingress that predates the parser's fix passes GitHub's "" for "no runner" through.
+  const job = {
+    ...message.job,
+    runnerName: message.job.runnerName || null,
+    runnerGroupName: message.job.runnerGroupName || null,
+  };
   const finished = job.status === "completed";
   const completedAt = finished ? parseDate(job.completedAt) : null;
   const [written] = await db
