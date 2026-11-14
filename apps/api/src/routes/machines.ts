@@ -54,6 +54,7 @@ import { inBackground, requireUser } from "../middleware/session.ts";
 import { requireWorkspace } from "../middleware/workspace.ts";
 import { canControlMachine, requireManager } from "../roles.ts";
 import { AppError, type ErrorCode } from "@relayrunner/errors";
+import { annotate } from "../tracing.ts";
 
 // Enrolling a machine (`relayrunner connect`) with Better Auth's device authorization plugin:
 //
@@ -281,8 +282,7 @@ export const machineRoutes = new Hono<AppEnv>()
   // close codes). The token is checked first because a failed upgrade hides its status from the
   // CLI, so it asks with a plain GET: 401 means sign in again, 426 means the token is fine.
   .get("/connect", async (c) => {
-    const token = c.req.header("authorization")?.match(/^Bearer\s+(\S+)$/i)?.[1];
-    const machine = await verifyMachineToken(createDb(c.env.DB), token);
+    const machine = await machineFromToken(createDb(c.env.DB), c.req.header("authorization"));
     if (!machine) throw new AppError("UNAUTHENTICATED");
     if (c.req.header("upgrade")?.toLowerCase() !== "websocket")
       throw new AppError("WEBSOCKET_REQUIRED");
@@ -896,9 +896,11 @@ async function pauseResponse(
 }
 
 // The machine a `Bearer rrm_…` header belongs to, or null.
-function machineFromToken(db: ReturnType<typeof createDb>, header: string | undefined) {
+async function machineFromToken(db: ReturnType<typeof createDb>, header: string | undefined) {
   const token = header?.match(/^Bearer\s+(\S+)$/i)?.[1];
-  return verifyMachineToken(db, token);
+  const machine = await verifyMachineToken(db, token);
+  annotate({ "relayrunner.machine_id": machine?.id, "user.id": machine?.userId });
+  return machine;
 }
 
 // What `relayrunner workspaces` shows: the machine, the owner's workspaces it takes jobs in, and

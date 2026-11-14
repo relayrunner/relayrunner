@@ -4,6 +4,7 @@ import { agentBearer, agentMayCall, agentSession } from "../agent-auth.ts";
 import { createAuth } from "../auth.ts";
 import type { AppEnv } from "../app.ts";
 import { AppError } from "@relayrunner/errors";
+import { annotate } from "../tracing.ts";
 
 // Builds this request's auth instance and attaches the signed-in user and session, or null.
 // An agent access token (agent-auth.ts) attaches its user and c.var.agent instead of a session, and
@@ -16,6 +17,7 @@ export const attachSession = createMiddleware<AppEnv>(async (c, next) => {
   if (token) {
     const result = await agentSession(c.env, auth, token);
     if (!result) throw new AppError("INVALID_TOKEN");
+    annotate({ "user.id": result.user.id, "relayrunner.agent_grant_id": result.agent.grantId });
     if (!agentMayCall(c.req.method, url.pathname)) {
       throw new AppError("AGENT_NOT_ALLOWED");
     }
@@ -33,6 +35,7 @@ export const attachSession = createMiddleware<AppEnv>(async (c, next) => {
   const result = await auth.api.getSession({ headers: c.req.raw.headers });
   c.set("user", result?.user ?? null);
   c.set("session", result?.session ?? null);
+  annotate({ "user.id": result?.user.id });
   await next();
 });
 

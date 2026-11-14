@@ -16,6 +16,20 @@ Cloudflare traces every invocation on its own: fetch handlers, queue batches, cr
 
 API requests are named after the route they matched, such as `GET /api/machines/:id`. The webhook ingress tags its request with `github.delivery_id`. Queue sends and consumes land in separate traces, so search for that id to follow one delivery from ingress to the consumer.
 
+### Who made the call
+
+Requests and spans carry ids, never emails, names or logins, so you can find everything one user, workspace or machine did:
+
+| Attribute                    | Set on                                                                                          |
+| ---------------------------- | ----------------------------------------------------------------------------------------------- |
+| `user.id`                    | API requests from a dashboard session, an agent token or a machine token (the owner), MCP calls |
+| `relayrunner.workspace_id`   | API requests for a workspace, `router.route`, `machine.run`                                     |
+| `relayrunner.agent_grant_id` | API requests and MCP calls made with an agent token                                             |
+| `relayrunner.machine_id`     | Machine-token API requests, the machine's WebSocket messages, `machine.run`                     |
+| `github.installation_id`     | `webhook.process`, `router.route`, `pick.run`                                                   |
+
+These land on the request's root span (or on the custom span that ran), and Workers Issues shows them with each occurrence. To filter, open **Workers & Pages** > **Observability**, pick **Traces** or the Query Builder, and add a filter such as `user.id = <id>`. A log line belongs to its invocation's trace, so open the trace from the log to see these ids.
+
 To add a span, wrap the work in `traced(name, attributes, fn)`. Use `annotate(attributes)` to tag whichever span is active. In tests, `cloudflare:workers` resolves to `tests/cloudflare-workers.ts`, whose tracing does nothing.
 
 ## Export to an OTLP backend
