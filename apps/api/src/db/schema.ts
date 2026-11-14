@@ -645,14 +645,15 @@ export const signalDay = sqliteTable(
       .references(() => githubInstallation.id, { onDelete: "cascade" }),
     // The UTC midnight starting the day the jobs finished on.
     day: integer("day", { mode: "timestamp_ms" }).notNull(),
-    // A SignalId, or 'total' for every job the usage report counts.
+    // A SignalId, 'total' for every job the usage report counts, or 'by-person', 'by-workflow',
+    // 'by-branch' or 'by-trigger' for the Breakdown, whose subject is that value.
     signal: text("signal").notNull(),
     repositoryId: integer("repository_id").notNull(),
     repositoryFullName: text("repository_full_name").notNull(),
-    // The workflow name, or "workflow › job". Empty on 'total' rows.
+    // The workflow name, or "workflow › job". Empty on 'total' rows and the Breakdown's rest.
     subject: text("subject").notNull(),
     workflowPath: text("workflow_path"),
-    // What the signal counts: runs, commits or jobs.
+    // What the signal counts: runs, commits or jobs. Runs on Breakdown rows.
     count: integer("count").notNull(),
     // The job time the signal covers, and its estimated cost in USD.
     runMs: integer("run_ms").notNull(),

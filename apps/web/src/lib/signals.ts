@@ -1,6 +1,7 @@
 import { CircleDollarSignIcon, GaugeIcon, LayersIcon, type LucideIcon } from "lucide-react";
 import { DOCS_URL } from "@/components/site-footer";
 import { api } from "@/lib/api";
+import { triggerText } from "@/lib/runs";
 
 export type SignalArea = "speed" | "cost" | "complexity";
 export type SignalId =
@@ -32,12 +33,49 @@ export type Signal = {
   rows: SignalRow[];
 };
 
-/** GET /api/signals: the signals over the threshold, the most time first. */
+export type BreakdownBy = "person" | "repository" | "workflow" | "branch" | "trigger";
+
+/** One login, repo, workflow, branch or trigger and the jobs it ran. Money is USD. */
+export type BreakdownRow = {
+  /** A trigger is an event name, or "rerun". */
+  name: string;
+  /** The workflow's repository, on workflow rows. */
+  repository: string | null;
+  workflowPath: string | null;
+  runs: number;
+  minutes: number;
+  cost: number;
+};
+
+export type Breakdown = {
+  /** The most time first. */
+  rows: BreakdownRow[];
+  /** Everything else, summed. */
+  other: { runs: number; minutes: number; cost: number } | null;
+};
+
+/** GET /api/signals: the signals over the threshold, the most time first, and the Breakdown. */
 export type SignalsReport = {
   days: number;
   totals: { jobs: number; minutes: number; cost: number };
   signals: Signal[];
+  breakdown: Record<BreakdownBy, Breakdown>;
 };
+
+/** The Breakdown's views, in the order the page offers them. */
+export const BREAKDOWN_VIEWS: { value: BreakdownBy; label: string }[] = [
+  { value: "person", label: "Person" },
+  { value: "repository", label: "Repository" },
+  { value: "workflow", label: "Workflow" },
+  { value: "branch", label: "Branch" },
+  { value: "trigger", label: "Trigger" },
+];
+
+/** A trigger the way people say it: "Push", "Pull request", "Manual", "Re-run". */
+export function triggerName(event: string) {
+  const text = event === "rerun" ? "re-run" : (triggerText({ event, pullRequest: null }) ?? event);
+  return text.charAt(0).toUpperCase() + text.slice(1);
+}
 
 export function getSignals(days = 30) {
   return api<SignalsReport>(`/signals?days=${days}`);
@@ -208,5 +246,74 @@ export function sampleSignals(days: number): SignalsReport {
       signal("docs-changes", [row("acme/web", "Test", 38, 366, 14)], "complexity"),
       signal("wide-fanout", [row("acme/web", "E2E", 120, 610, 24)], "complexity"),
     ],
+    breakdown: sampleBreakdown(scale),
+  };
+}
+
+// Sample Breakdown views that add up to the sample totals: 12.7K minutes and $486 over 30 days.
+function sampleBreakdown(scale: number): Record<BreakdownBy, Breakdown> {
+  type Row = [name: string, runs: number, minutes: number, cost: number, repository?: string];
+  const view = (rows: Row[], other?: [runs: number, minutes: number, cost: number]): Breakdown => ({
+    rows: rows.map(([name, runs, minutes, cost, repository]) => ({
+      name,
+      repository: repository ?? null,
+      workflowPath: repository && WORKFLOWS.has(name) ? ".github/workflows/ci.yml" : null,
+      runs: Math.round(runs * scale),
+      minutes: Math.round(minutes * scale),
+      cost: cost * scale,
+    })),
+    other: other
+      ? {
+          runs: Math.round(other[0] * scale),
+          minutes: Math.round(other[1] * scale),
+          cost: other[2] * scale,
+        }
+      : null,
+  });
+  return {
+    person: view(
+      [
+        ["jordan", 402, 3900, 151],
+        ["ana", 288, 2800, 107],
+        ["dependabot[bot]", 211, 1800, 68],
+        ["sam", 139, 1400, 53],
+        ["priya", 104, 1100, 44],
+        ["lee", 30, 480, 19],
+      ],
+      [110, 1220, 44],
+    ),
+    repository: view([
+      ["acme/web", 512, 6100, 233],
+      ["acme/api", 389, 3500, 131],
+      ["acme/mobile", 201, 1900, 73],
+      ["acme/infra", 120, 700, 29],
+      ["acme/docs", 62, 500, 20],
+    ]),
+    workflow: view(
+      [
+        ["CI", 388, 4300, 165, "acme/web"],
+        ["E2E", 124, 2300, 87, "acme/web"],
+        ["Test", 301, 2000, 78, "acme/api"],
+        ["Build iOS", 64, 1100, 58, "acme/mobile"],
+        ["Lint", 611, 1000, 24, "acme/web"],
+      ],
+      [120, 2000, 74],
+    ),
+    branch: view(
+      [
+        ["main", 301, 3500, 141],
+        ["dependabot/npm_and_yarn/vite-8.1.0", 211, 1800, 68],
+        ["jordan/checkout-v2", 97, 1700, 63],
+        ["ana/search", 61, 1000, 39],
+      ],
+      [614, 4700, 175],
+    ),
+    trigger: view([
+      ["push", 693, 6800, 262],
+      ["pull_request", 411, 4100, 156],
+      ["schedule", 96, 900, 34],
+      ["workflow_dispatch", 61, 600, 24],
+      ["rerun", 23, 300, 10],
+    ]),
   };
 }

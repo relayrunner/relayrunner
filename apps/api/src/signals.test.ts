@@ -375,6 +375,55 @@ describe("rollUpSignals", () => {
     });
   });
 
+  test("splits every job by who started its run, workflow, branch and trigger", async () => {
+    const ctx = await connectedWorkspace();
+    const first = await runWithJob(ctx, {
+      start: 60,
+      minutes: 4,
+      startedByLogin: "ana",
+      event: "push",
+    });
+    await job(ctx, { start: 60, minutes: 6, runId: first, name: "build" });
+    await runWithJob(ctx, { start: 40, minutes: 3, actorLogin: "sam", headBranch: "main" });
+    // Jobs whose run we never saw share the empty subject.
+    await shortJobs(ctx, 2);
+    await rollUpSignals(createDb(env.DB), ctx.installationId);
+
+    const by = async (view: string) =>
+      Object.fromEntries(
+        (await dayRows(ctx.installationId, `by-${view}`)).map((row) => [
+          row.subject,
+          { runs: row.count, minutes: row.runMs / MINUTE },
+        ]),
+      );
+    expect(await by("person")).toEqual({
+      ana: { runs: 1, minutes: 10 },
+      sam: { runs: 1, minutes: 3 },
+      "": { runs: 2, minutes: 0.5 },
+    });
+    expect(await by("trigger")).toEqual({
+      push: { runs: 1, minutes: 10 },
+      pull_request: { runs: 1, minutes: 3 },
+      "": { runs: 2, minutes: 0.5 },
+    });
+    expect(await by("branch")).toMatchObject({ feature: { runs: 1 }, main: { runs: 1 } });
+    // Workflows fall back to the job's own workflow name.
+    expect(await by("workflow")).toMatchObject({ CI: { runs: 2 }, Lint: { runs: 2 } });
+  });
+
+  test("counts a re-run as its own trigger", async () => {
+    const ctx = await connectedWorkspace();
+    const id = await runWithJob(ctx, { start: 60, minutes: 2 });
+    await rerun(ctx, id, 2, 50);
+    await job(ctx, { start: 50, minutes: 2, runId: id, runAttempt: 2 });
+    await rollUpSignals(createDb(env.DB), ctx.installationId);
+    const rows = await dayRows(ctx.installationId, "by-trigger");
+    expect(rows.map((row) => [row.subject, row.count]).sort()).toEqual([
+      ["pull_request", 1],
+      ["rerun", 1],
+    ]);
+  });
+
   test("replaces the days it works out, so running twice counts once", async () => {
     const ctx = await connectedWorkspace();
     await shortJobs(ctx, 2);
@@ -423,12 +472,47 @@ describe("GET /api/signals", () => {
     });
   });
 
+  test("breaks down every job, summing repos from the trigger view", async () => {
+    const ctx = await connectedWorkspace();
+    await runWithJob(ctx, { start: 60, minutes: 30, startedByLogin: "ana" });
+    await runWithJob(ctx, { start: 40, minutes: 10, startedByLogin: "sam" });
+    await shortJobs(ctx, 2);
+    await rollUpSignals(createDb(env.DB), ctx.installationId);
+
+    const { breakdown } = await report(ctx.cookie);
+    expect(breakdown.person).toMatchObject({
+      rows: [
+        { name: "ana", repository: null, runs: 1, minutes: 30 },
+        { name: "sam", runs: 1, minutes: 10 },
+      ],
+      other: { runs: 2 },
+    });
+    expect(breakdown.repository).toMatchObject({
+      rows: [{ name: "acme/app", runs: 4, minutes: 41 }],
+      other: null,
+    });
+    expect(breakdown.workflow.rows[0]).toMatchObject({
+      name: "CI",
+      repository: "acme/app",
+      workflowPath: ".github/workflows/ci.yml",
+      runs: 2,
+    });
+  });
+
   test("is empty before the first rollup", async () => {
     const ctx = await connectedWorkspace();
+    const empty = { rows: [], other: null };
     expect(await report(ctx.cookie)).toEqual({
       days: 7,
       totals: { jobs: 0, minutes: 0, cost: 0 },
       signals: [],
+      breakdown: {
+        person: empty,
+        workflow: empty,
+        branch: empty,
+        trigger: empty,
+        repository: empty,
+      },
     });
   });
 });

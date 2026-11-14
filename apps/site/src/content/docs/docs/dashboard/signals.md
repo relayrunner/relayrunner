@@ -11,6 +11,8 @@ Signals are grouped by the question they answer:
 - **Cost**: why does CI cost this much?
 - **Complexity**: is CI doing more than it needs to?
 
+Below the signals, the [Breakdown](#breakdown) shows who and what uses your CI minutes.
+
 The page updates every hour. A signal shows up once it covers at least 30 minutes and 1% of all your job minutes in the range, so small one-offs stay off the page. Minutes and spend sit in separate columns. Spend uses the same list prices as the [Usage](/docs/dashboard/usage) page, so public repos and self-hosted runners count as free.
 
 ## Speed signals
@@ -68,3 +70,15 @@ on:
 ### Full matrix on every branch
 
 The workflow started 10 or more jobs for a push or pull request on a branch other than your default, usually a wide matrix. All of those runs' minutes count. Running a smaller matrix before merge, and the full one on your default branch, still catches most problems early.
+
+## Breakdown
+
+The Breakdown splits all your job minutes and spend one way at a time:
+
+- **Person**: who started the run.
+- **Repository**.
+- **Workflow**, with its repo.
+- **Branch**.
+- **Trigger**: push, pull request, schedule, manual or re-run.
+
+Each view lists the 10 with the most minutes, then everything else in one row. Runs count once each, so a run with a 20-job matrix is still one run.

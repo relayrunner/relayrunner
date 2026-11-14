@@ -1,9 +1,10 @@
 import { createFileRoute } from "@tanstack/react-router";
-import { ArrowUpRightIcon } from "lucide-react";
-import { useState } from "react";
+import { ArrowUpRightIcon, ChartBarBigIcon } from "lucide-react";
+import { type ReactNode, useState } from "react";
 import { Count } from "@/components/count";
 import { PageHeader } from "@/components/page-header";
 import { RangePicker } from "@/components/range-picker";
+import { Button } from "@/components/ui/button";
 import { InfoTip } from "@/components/ui/info-tip";
 import {
   Table,
@@ -16,13 +17,16 @@ import {
 import { authDisabled } from "@/lib/auth-client";
 import {
   AREAS,
+  BREAKDOWN_VIEWS,
+  type BreakdownBy,
+  type BreakdownRow,
   getSignals,
   type Signal,
   type SignalArea,
   SIGNAL_COPY,
-  type SignalRow,
   type SignalsReport,
   sampleSignals,
+  triggerName,
 } from "@/lib/signals";
 import { money } from "@/lib/usage";
 import { count } from "@/lib/utils";
@@ -73,6 +77,7 @@ function SignalsPage() {
             <AreaSection key={area} area={area} signals={signals} report={report} />
           ))
         )}
+        {report.totals.jobs > 0 && <BreakdownSection report={report} />}
       </div>
     </section>
   );
@@ -153,7 +158,11 @@ function SignalCard({ signal }: { signal: Signal }) {
           {signal.rows.map((row) => (
             <TableRow key={`${row.repository}:${row.subject}`}>
               <TableCell className="truncate">
-                <Subject row={row} />
+                <WorkflowName
+                  repository={row.repository}
+                  name={row.subject}
+                  path={row.workflowPath}
+                />
               </TableCell>
               <TableCell className="text-right tabular-nums">
                 <Count value={row.count} />
@@ -171,17 +180,25 @@ function SignalCard({ signal }: { signal: Signal }) {
 }
 
 // "acme/web / CI", linking to the workflow file on GitHub when the run said which file it was.
-function Subject({ row }: { row: SignalRow }) {
+function WorkflowName({
+  repository,
+  name,
+  path,
+}: {
+  repository: string;
+  name: string;
+  path: string | null;
+}) {
   const text = (
     <>
-      <span className="text-muted-foreground">{row.repository} / </span>
-      {row.subject}
+      <span className="text-muted-foreground">{repository} / </span>
+      {name}
     </>
   );
-  if (!row.workflowPath) return text;
+  if (!path) return text;
   return (
     <a
-      href={`https://github.com/${row.repository}/blob/HEAD/${row.workflowPath}`}
+      href={`https://github.com/${repository}/blob/HEAD/${path}`}
       target="_blank"
       rel="noreferrer"
       className="hover:underline"
@@ -189,4 +206,107 @@ function Subject({ row }: { row: SignalRow }) {
       {text}
     </a>
   );
+}
+
+// Every counted job split one way at a time, with each row's share of all job minutes (left out on
+// phones, where the table scrolls like the signals above).
+function BreakdownSection({ report }: { report: SignalsReport }) {
+  const [by, setBy] = useState<BreakdownBy>("person");
+  const { rows, other } = report.breakdown[by];
+  const view = BREAKDOWN_VIEWS.find((option) => option.value === by)!;
+  const total = report.totals.minutes;
+  return (
+    <div className="grid gap-4">
+      <div className="flex flex-wrap items-center justify-between gap-x-4 gap-y-2">
+        <div className="flex items-center gap-2">
+          <ChartBarBigIcon aria-hidden className="size-4.5 self-center" />
+          <h2 className="font-semibold">Breakdown</h2>
+          <span className="text-muted-foreground">Who and what uses your CI</span>
+        </div>
+        <div role="group" aria-label="Break down by" className="flex flex-wrap gap-1.5">
+          {BREAKDOWN_VIEWS.map((option) => (
+            <Button
+              key={option.value}
+              size="sm"
+              variant={by === option.value ? "secondary" : "ghost"}
+              aria-pressed={by === option.value}
+              onClick={() => setBy(option.value)}
+            >
+              {option.label}
+            </Button>
+          ))}
+        </div>
+      </div>
+      <Table className="min-w-xl table-fixed">
+        <TableHeader>
+          <TableRow>
+            <TableHead>{view.label}</TableHead>
+            <TableHead className="hidden w-44 sm:table-cell">Share of minutes</TableHead>
+            <TableHead className="w-24 text-right">Runs</TableHead>
+            <TableHead className="w-24 text-right">Minutes</TableHead>
+            <TableHead className="w-28 text-right">Spend</TableHead>
+          </TableRow>
+        </TableHeader>
+        <TableBody>
+          {rows.map((row) => (
+            <BreakdownLine
+              key={`${row.repository}:${row.name}`}
+              name={<BreakdownName by={by} row={row} />}
+              sums={row}
+              total={total}
+            />
+          ))}
+          {other && (
+            <BreakdownLine
+              name={<span className="text-muted-foreground">Everything else</span>}
+              sums={other}
+              total={total}
+            />
+          )}
+        </TableBody>
+      </Table>
+    </div>
+  );
+}
+
+function BreakdownLine({
+  name,
+  sums,
+  total,
+}: {
+  name: ReactNode;
+  sums: { runs: number; minutes: number; cost: number };
+  total: number;
+}) {
+  const share = total ? Math.min(1, sums.minutes / total) : 0;
+  return (
+    <TableRow>
+      <TableCell className="truncate">{name}</TableCell>
+      <TableCell className="hidden sm:table-cell">
+        <div className="flex items-center gap-2">
+          <div aria-hidden className="h-1.5 flex-1 overflow-hidden rounded-full bg-raised-2">
+            <div className="h-full rounded-full bg-primary" style={{ width: `${share * 100}%` }} />
+          </div>
+          <span className="w-9 text-right text-xs text-muted-foreground tabular-nums">
+            {Math.round(share * 100)}%
+          </span>
+        </div>
+      </TableCell>
+      <TableCell className="text-right tabular-nums">
+        <Count value={sums.runs} />
+      </TableCell>
+      <TableCell className="text-right font-medium tabular-nums">
+        <Count value={sums.minutes} />
+      </TableCell>
+      <TableCell className="text-right tabular-nums">{money(sums.cost)}</TableCell>
+    </TableRow>
+  );
+}
+
+function BreakdownName({ by, row }: { by: BreakdownBy; row: BreakdownRow }) {
+  if (by === "workflow" && row.repository) {
+    return <WorkflowName repository={row.repository} name={row.name} path={row.workflowPath} />;
+  }
+  if (by === "trigger") return triggerName(row.name);
+  return row.name;
 }
