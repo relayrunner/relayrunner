@@ -393,6 +393,13 @@
       "when": 1794679818958,
       "tag": "20261114181018_telemetry_export",
       "breakpoints": true
+    },
+    {
+      "idx": 56,
+      "version": "6",
+      "when": 1794684922453,
+      "tag": "20261114193522_signals",
+      "breakpoints": true
     }
   ]
 }

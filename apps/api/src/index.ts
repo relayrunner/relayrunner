@@ -12,6 +12,7 @@ import { checkPrices } from "./price-check.ts";
 import { purgeOldActivity } from "./retention.ts";
 import { purgeOldWorkflowRuns } from "./runs.ts";
 import { sweepPicks } from "./pick-sweep.ts";
+import { enqueueSignalRollups } from "./signals.ts";
 import { sweepProviderHealth } from "./provider-health.ts";
 import { purgeOldProviderUsage, syncProviderConnections } from "./provider-sync.ts";
 import {
@@ -56,7 +57,8 @@ export default {
   // (src/product-events.ts). Hourly: alert when
   // webhook dead letters pile up, drop job timings, workflow runs and Activity rows past retention, reconcile
   // which orgs installed the Spend App (src/spend-app.ts), and queue a sync of each connected
-  // provider account and drop its old usage (src/provider-sync.ts). Daily: check providers' price pages
+  // provider account and drop its old usage (src/provider-sync.ts), and queue each installation's
+  // signals (src/signals.ts). Daily: check providers' price pages
   // (src/price-check.ts). Each runs even if another throws; a failure still fails the invocation.
   async scheduled(controller, env) {
     const at = new Date(controller.scheduledTime);
@@ -79,6 +81,7 @@ export default {
               syncSpendInstallations(env, at),
               syncProviderConnections(env),
               purgeOldProviderUsage(createDb(env.DB), at),
+              enqueueSignalRollups(env),
             ];
     const results = await Promise.allSettled(tasks);
     const failed = results.find((result) => result.status === "rejected");

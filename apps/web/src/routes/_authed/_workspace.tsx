@@ -14,6 +14,7 @@ import {
   MessageSquareIcon,
   PanelLeftCloseIcon,
   PanelLeftOpenIcon,
+  RadarIcon,
   RouteIcon,
   ServerIcon,
   TagIcon,
@@ -93,6 +94,7 @@ const nav = [
 ] as const satisfies NavItem[];
 
 const analyticsNav = [
+  { to: "/signals", label: "Signals", icon: RadarIcon },
   { to: "/performance", label: "Performance", icon: GaugeIcon },
   { to: "/usage", label: "Usage", icon: ChartColumnIcon },
 ] as const satisfies NavItem[];

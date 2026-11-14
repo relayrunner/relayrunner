@@ -25,6 +25,7 @@ import { Route as AuthedWorkspacePerformanceRouteImport } from './routes/_authed
 import { Route as AuthedWorkspaceRouterRouteImport } from './routes/_authed/_workspace/router'
 import { Route as AuthedWorkspaceRunnersRouteImport } from './routes/_authed/_workspace/runners'
 import { Route as AuthedWorkspaceRunsRouteImport } from './routes/_authed/_workspace/runs'
+import { Route as AuthedWorkspaceSignalsRouteImport } from './routes/_authed/_workspace/signals'
 import { Route as AuthedWorkspaceUsageRouteImport } from './routes/_authed/_workspace/usage'
 import { Route as AuthedWorkspaceWorkspaceRouteImport } from './routes/_authed/_workspace/workspace'
 import { Route as AuthedWorkspaceAdminIndexRouteImport } from './routes/_authed/_workspace/admin.index'
@@ -124,6 +125,11 @@ const AuthedWorkspaceRunnersRoute = AuthedWorkspaceRunnersRouteImport.update({
 const AuthedWorkspaceRunsRoute = AuthedWorkspaceRunsRouteImport.update({
   id: '/runs',
   path: '/runs',
+  getParentRoute: () => AuthedWorkspaceRoute,
+} as any)
+const AuthedWorkspaceSignalsRoute = AuthedWorkspaceSignalsRouteImport.update({
+  id: '/signals',
+  path: '/signals',
   getParentRoute: () => AuthedWorkspaceRoute,
 } as any)
 const AuthedWorkspaceUsageRoute = AuthedWorkspaceUsageRouteImport.update({
@@ -267,6 +273,7 @@ export interface FileRoutesByFullPath {
   '/router': typeof AuthedWorkspaceRouterRoute
   '/runners': typeof AuthedWorkspaceRunnersRoute
   '/runs': typeof AuthedWorkspaceRunsRoute
+  '/signals': typeof AuthedWorkspaceSignalsRoute
   '/usage': typeof AuthedWorkspaceUsageRoute
   '/workspace': typeof AuthedWorkspaceWorkspaceRoute
   '/admin/jobs': typeof AuthedWorkspaceAdminJobsRoute
@@ -304,6 +311,7 @@ export interface FileRoutesByTo {
   '/router': typeof AuthedWorkspaceRouterRoute
   '/runners': typeof AuthedWorkspaceRunnersRoute
   '/runs': typeof AuthedWorkspaceRunsRoute
+  '/signals': typeof AuthedWorkspaceSignalsRoute
   '/usage': typeof AuthedWorkspaceUsageRoute
   '/workspace': typeof AuthedWorkspaceWorkspaceRoute
   '/admin/jobs': typeof AuthedWorkspaceAdminJobsRoute
@@ -344,6 +352,7 @@ export interface FileRoutesById {
   '/_authed/_workspace/router': typeof AuthedWorkspaceRouterRoute
   '/_authed/_workspace/runners': typeof AuthedWorkspaceRunnersRoute
   '/_authed/_workspace/runs': typeof AuthedWorkspaceRunsRoute
+  '/_authed/_workspace/signals': typeof AuthedWorkspaceSignalsRoute
   '/_authed/_workspace/usage': typeof AuthedWorkspaceUsageRoute
   '/_authed/_workspace/workspace': typeof AuthedWorkspaceWorkspaceRoute
   '/_authed/_workspace/admin/jobs': typeof AuthedWorkspaceAdminJobsRoute
@@ -383,6 +392,7 @@ export interface FileRouteTypes {
     | '/router'
     | '/runners'
     | '/runs'
+    | '/signals'
     | '/usage'
     | '/workspace'
     | '/admin/jobs'
@@ -420,6 +430,7 @@ export interface FileRouteTypes {
     | '/router'
     | '/runners'
     | '/runs'
+    | '/signals'
     | '/usage'
     | '/workspace'
     | '/admin/jobs'
@@ -459,6 +470,7 @@ export interface FileRouteTypes {
     | '/_authed/_workspace/router'
     | '/_authed/_workspace/runners'
     | '/_authed/_workspace/runs'
+    | '/_authed/_workspace/signals'
     | '/_authed/_workspace/usage'
     | '/_authed/_workspace/workspace'
     | '/_authed/_workspace/admin/jobs'
@@ -604,6 +616,13 @@ declare module '@tanstack/react-router' {
       path: '/runs'
       fullPath: '/runs'
       preLoaderRoute: typeof AuthedWorkspaceRunsRouteImport
+      parentRoute: typeof AuthedWorkspaceRoute
+    }
+    '/_authed/_workspace/signals': {
+      id: '/_authed/_workspace/signals'
+      path: '/signals'
+      fullPath: '/signals'
+      preLoaderRoute: typeof AuthedWorkspaceSignalsRouteImport
       parentRoute: typeof AuthedWorkspaceRoute
     }
     '/_authed/_workspace/usage': {
@@ -764,6 +783,7 @@ interface AuthedWorkspaceRouteChildren {
   AuthedWorkspaceRouterRoute: typeof AuthedWorkspaceRouterRoute
   AuthedWorkspaceRunnersRoute: typeof AuthedWorkspaceRunnersRoute
   AuthedWorkspaceRunsRoute: typeof AuthedWorkspaceRunsRoute
+  AuthedWorkspaceSignalsRoute: typeof AuthedWorkspaceSignalsRoute
   AuthedWorkspaceUsageRoute: typeof AuthedWorkspaceUsageRoute
   AuthedWorkspaceWorkspaceRoute: typeof AuthedWorkspaceWorkspaceRoute
   AuthedWorkspaceAdminJobsRoute: typeof AuthedWorkspaceAdminJobsRoute
@@ -795,6 +815,7 @@ const AuthedWorkspaceRouteChildren: AuthedWorkspaceRouteChildren = {
   AuthedWorkspaceRouterRoute: AuthedWorkspaceRouterRoute,
   AuthedWorkspaceRunnersRoute: AuthedWorkspaceRunnersRoute,
   AuthedWorkspaceRunsRoute: AuthedWorkspaceRunsRoute,
+  AuthedWorkspaceSignalsRoute: AuthedWorkspaceSignalsRoute,
   AuthedWorkspaceUsageRoute: AuthedWorkspaceUsageRoute,
   AuthedWorkspaceWorkspaceRoute: AuthedWorkspaceWorkspaceRoute,
   AuthedWorkspaceAdminJobsRoute: AuthedWorkspaceAdminJobsRoute,

@@ -105,6 +105,9 @@ function runMessage(
     run: {
       runAttempt: 1,
       workflowName: "CI",
+      workflowId: null,
+      workflowPath: null,
+      defaultBranch: null,
       displayTitle: "feat: add the runs page",
       event: "pull_request",
       actorLogin: "zach",

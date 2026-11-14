@@ -1,7 +1,8 @@
 /**
  * Per-installation work the crons hand out: reading each account's Actions usage
  * (src/actions-billing.ts), removing leftover pick runners in each org or repo
- * (src/pick-sweep.ts), and, hourly, syncing each connected provider account (src/provider-sync.ts). The cron only lists the installations and queues one message each, so the
+ * (src/pick-sweep.ts), and, hourly, syncing each connected provider account (src/provider-sync.ts)
+ * and working out each installation's signals (src/signals.ts). The cron only lists the installations and queues one message each, so the
  * work spreads over consumer invocations and runs in parallel instead of in one invocation, one
  * installation after another, that grows with every org that connects.
  *
@@ -13,6 +14,8 @@ import type { Env } from "./env.ts";
 import type { RunnerScope } from "./github-app.ts";
 import { removeLeftoverRunnersIn } from "./pick-sweep.ts";
 import { syncConnection, type ProviderSyncTask } from "./provider-sync.ts";
+import { createDb } from "./db/index.ts";
+import { rollUpSignals } from "./signals.ts";
 import { errorMessage } from "./webhook-queue.ts";
 
 export const INSTALLATION_TASK_QUEUE = "relayrunner-installation-tasks";
@@ -22,7 +25,9 @@ export type InstallationTask =
   // Every org or repo of one installation, so they share its token.
   | { kind: "pick-sweep"; installationId: number; scopes: RunnerScope[] }
   // One connected provider account's usage (src/provider-sync.ts), hourly and after connecting.
-  | ProviderSyncTask;
+  | ProviderSyncTask
+  // One installation's last days of signals (src/signals.ts), hourly.
+  | { kind: "signals"; installationId: number };
 
 // sendBatch takes at most 100 messages.
 const SEND_BATCH = 100;
@@ -42,6 +47,8 @@ export function runInstallationTask(env: Env, task: InstallationTask): Promise<v
       return removeLeftoverRunnersIn(env, task.installationId, task.scopes);
     case "provider-sync":
       return syncConnection(env, task.workspaceId, task.provider);
+    case "signals":
+      return rollUpSignals(createDb(env.DB), task.installationId).then(() => undefined);
   }
 }
 

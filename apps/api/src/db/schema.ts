@@ -588,6 +588,11 @@ export const workflowRun = sqliteTable(
     repositoryId: integer("repository_id").notNull(),
     repositoryFullName: text("repository_full_name").notNull(),
     workflowName: text("workflow_name"),
+    // The workflow's id and file (.github/workflows/ci.yml). Null for runs stored before signals.
+    workflowId: integer("workflow_id"),
+    workflowPath: text("workflow_path"),
+    // The repo's default branch when the run was seen, so signals can leave it out.
+    defaultBranch: text("default_branch"),
     // The commit or PR title GitHub shows for the run.
     displayTitle: text("display_title"),
     // What triggered it: push, pull_request, schedule, workflow_dispatch, ...
@@ -617,6 +622,43 @@ export const workflowRun = sqliteTable(
     index("workflow_run_installation_idx").on(table.installationId, table.githubUpdatedAt),
     // The retention purge, across all installations.
     index("workflow_run_updated_idx").on(table.githubUpdatedAt),
+    // Signals (src/signals.ts): newer runs on the same branch, and the same commit's other runs.
+    index("workflow_run_branch_idx").on(table.repositoryId, table.headBranch, table.runStartedAt),
+    index("workflow_run_sha_idx").on(table.repositoryId, table.headSha),
+  ],
+);
+
+// What the Signals page reports (src/signals.ts), summed per UTC day, repo and subject (a workflow,
+// or a workflow's job), so its 90-day range reads a few rows per day instead of every run. The
+// hourly cron recomputes each installation's last two days from job_timing and workflow_run, so a
+// late webhook still lands. Purged with job_timing_daily, and gone with the installation.
+export const signalDay = sqliteTable(
+  "signal_day",
+  {
+    installationId: integer("installation_id")
+      .notNull()
+      .references(() => githubInstallation.id, { onDelete: "cascade" }),
+    // The UTC midnight starting the day the jobs finished on.
+    day: integer("day", { mode: "timestamp_ms" }).notNull(),
+    // A SignalId, or 'total' for every job the usage report counts.
+    signal: text("signal").notNull(),
+    repositoryId: integer("repository_id").notNull(),
+    repositoryFullName: text("repository_full_name").notNull(),
+    // The workflow name, or "workflow › job". Empty on 'total' rows.
+    subject: text("subject").notNull(),
+    workflowPath: text("workflow_path"),
+    // What the signal counts: runs, commits or jobs.
+    count: integer("count").notNull(),
+    // The job time the signal covers, and its estimated cost in USD.
+    runMs: integer("run_ms").notNull(),
+    cost: real("cost").notNull(),
+  },
+  (table) => [
+    primaryKey({
+      columns: [table.installationId, table.day, table.signal, table.repositoryId, table.subject],
+    }),
+    // The retention purge, across all installations.
+    index("signal_day_day_idx").on(table.day),
   ],
 );
 

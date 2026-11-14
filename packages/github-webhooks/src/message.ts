@@ -45,6 +45,11 @@ export interface WorkflowRun {
   id: number;
   runAttempt: number;
   workflowName: string | null;
+  // The workflow's id and file path (.github/workflows/ci.yml).
+  workflowId: number | null;
+  workflowPath: string | null;
+  // The repo's default branch.
+  defaultBranch: string | null;
   // The commit or PR title GitHub shows for the run.
   displayTitle: string | null;
   // What triggered it: push, pull_request, schedule, workflow_dispatch, and so on.
@@ -235,6 +240,9 @@ export function toWebhookMessage(
           id: run.id,
           runAttempt: Number(run.run_attempt ?? 1),
           workflowName: stringOrNull(run.name),
+          workflowId: typeof run.workflow_id === "number" ? run.workflow_id : null,
+          workflowPath: stringOrNull(run.path),
+          defaultBranch: stringOrNull(repo.default_branch),
           displayTitle: stringOrNull(run.display_title),
           event: String(run.event ?? ""),
           actorLogin: isRecord(actor) ? stringOrNull(actor.login) : null,

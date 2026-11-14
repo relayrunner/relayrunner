@@ -91,6 +91,7 @@ export default defineConfig({
           label: "Dashboard",
           items: [
             "docs/dashboard/activity",
+            "docs/dashboard/signals",
             "docs/dashboard/performance",
             "docs/dashboard/usage",
             "docs/dashboard/telemetry",
