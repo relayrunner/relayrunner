@@ -1,5 +1,11 @@
 # relayrunner
 
+## 0.10.1
+
+### Patch Changes
+
+- c088700: When the gateway refuses a request, `pause`, `share`, `whoami` and `workspaces` now show its reason and error code, such as "Only a machine with an owner can do this (MACHINE_NOT_OWNED)", instead of only the HTTP status.
+
 ## 0.10.0
 
 ### Minor Changes
