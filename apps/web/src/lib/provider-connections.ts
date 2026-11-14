@@ -45,14 +45,10 @@ export function removeConnection(provider: string) {
   return api<ProviderConnection>(`/providers/${provider}/connection`, { method: "DELETE" });
 }
 
-/** What the API's error codes mean, for errorText. */
-export const CONNECT_ERRORS: Record<string, string> = {
+/** What a failed connection test means. */
+export const TEST_FAILURES: Record<string, string> = {
   token_rejected: "The provider didn't accept that token. Check it and its scope.",
   provider_unreachable: "Couldn't reach the provider. Try again in a minute.",
-  invalid_token: "Paste the whole token.",
-  invalid_options: "Choose one of the listed options.",
-  token_storage_unavailable: "Saving tokens isn't set up on this server yet.",
-  forbidden: "Only owners and admins can connect providers.",
 };
 
 /** Previews without an API: Depot connected and synced, the others not. */

@@ -53,6 +53,7 @@ import { sendEmail } from "../email.ts";
 import { inBackground, requireUser } from "../middleware/session.ts";
 import { requireWorkspace } from "../middleware/workspace.ts";
 import { canControlMachine, requireManager } from "../roles.ts";
+import { AppError, type ErrorCode } from "@relayrunner/errors";
 
 // Enrolling a machine (`relayrunner connect`) with Better Auth's device authorization plugin:
 //
@@ -123,9 +124,8 @@ export const machineRoutes = new Hono<AppEnv>()
       .from(schema.deviceCode)
       .where(eq(schema.deviceCode.userCode, userCode))
       .limit(1);
-    if (!code || code.clientId !== MACHINE_CLIENT_ID)
-      return c.json({ error: "invalid_request" }, 400);
-    if (code.expiresAt < new Date()) return c.json({ error: "expired_token" }, 400);
+    if (!code || code.clientId !== MACHINE_CLIENT_ID) throw new AppError("DEVICE_CODE_INVALID");
+    if (code.expiresAt < new Date()) throw new AppError("DEVICE_CODE_EXPIRED");
     return c.json({
       user_code: userCode,
       status: code.status,
@@ -144,7 +144,7 @@ export const machineRoutes = new Hono<AppEnv>()
 
   .post("/deny", requireUser, async (c) => {
     const parsed = DenyBody.safeParse(await c.req.json().catch(() => null));
-    if (!parsed.success) return c.json({ error: "invalid_request" }, 400);
+    if (!parsed.success) throw new AppError("INVALID_REQUEST");
     const userCode = normalizeUserCode(parsed.data.userCode);
     try {
       // Claim it first (a no-op if this user already has), then deny.
@@ -154,14 +154,14 @@ export const machineRoutes = new Hono<AppEnv>()
       });
       await c.var.auth.api.deviceDeny({ body: { userCode }, headers: c.req.raw.headers });
     } catch (error) {
-      return deviceError(error);
+      throw deviceError(error);
     }
     return c.json({ success: true });
   })
 
   .post("/approve", requireUser, async (c) => {
     const parsed = ApproveBody.safeParse(await c.req.json().catch(() => null));
-    if (!parsed.success) return c.json({ error: "invalid_request" }, 400);
+    if (!parsed.success) throw new AppError("INVALID_REQUEST");
     const { name } = parsed.data;
     const userCode = normalizeUserCode(parsed.data.userCode);
     const user = c.var.user!;
@@ -175,7 +175,7 @@ export const machineRoutes = new Hono<AppEnv>()
         headers: c.req.raw.headers,
       });
     } catch (error) {
-      return deviceError(error);
+      throw deviceError(error);
     }
 
     const [code] = await db
@@ -183,19 +183,19 @@ export const machineRoutes = new Hono<AppEnv>()
       .from(schema.deviceCode)
       .where(eq(schema.deviceCode.userCode, userCode))
       .limit(1);
-    if (!code || code.expiresAt < new Date()) return c.json({ error: "expired_token" }, 400);
-    if (code.clientId !== MACHINE_CLIENT_ID) return c.json({ error: "invalid_request" }, 400);
-    if (code.status !== "pending") return c.json({ error: "already_processed" }, 409);
-    if (code.userId !== user.id) return c.json({ error: "forbidden" }, 403);
+    if (!code || code.expiresAt < new Date()) throw new AppError("DEVICE_CODE_EXPIRED");
+    if (code.clientId !== MACHINE_CLIENT_ID) throw new AppError("DEVICE_CODE_INVALID");
+    if (code.status !== "pending") throw new AppError("DEVICE_CODE_USED");
+    if (code.userId !== user.id) throw new AppError("FORBIDDEN");
 
     const mine = await userWorkspaces(db, user.id);
     const picked = parsed.data.workspaceIds
       ? [...new Set(parsed.data.workspaceIds)]
       : mine.filter((workspace) => !workspace.joined).map((workspace) => workspace.id);
     if (picked.some((id) => !mine.some((workspace) => workspace.id === id)))
-      return c.json({ error: "not_a_member" }, 403);
+      throw new AppError("NOT_A_MEMBER");
     if (parsed.data.workspaceIds && picked.length === 0 && mine.length > 0)
-      return c.json({ error: "workspace_required" }, 400);
+      throw new AppError("INVALID_REQUEST", { message: "Choose at least one workspace." });
 
     const machineId = crypto.randomUUID();
     await db.insert(schema.machine).values({
@@ -213,14 +213,14 @@ export const machineRoutes = new Hono<AppEnv>()
       await c.var.auth.api.deviceApprove({ body: { userCode }, headers: c.req.raw.headers });
     } catch (error) {
       await db.delete(schema.machine).where(eq(schema.machine.id, machineId));
-      return deviceError(error);
+      throw deviceError(error);
     }
     return c.json({ machineId });
   })
   // Called by the CLI with the device-flow session as `Authorization: Bearer <token>`.
   .post("/claim", requireUser, async (c) => {
     const parsed = ClaimBody.safeParse(await c.req.json().catch(() => null));
-    if (!parsed.success) return c.json({ error: "invalid_request" }, 400);
+    if (!parsed.success) throw new AppError("INVALID_REQUEST");
     const { deviceCode, os, arch } = parsed.data;
     const db = createDb(c.env.DB);
 
@@ -237,7 +237,7 @@ export const machineRoutes = new Hono<AppEnv>()
         ),
       )
       .returning();
-    if (!machine) return c.json({ error: "not_found" }, 404);
+    if (!machine) throw new AppError("NOT_FOUND");
     await recordMachineEvents(db, machine, {
       type: "machine.enrolled",
       data: { machineName: machine.name, os: machine.os, arch: machine.arch },
@@ -283,9 +283,9 @@ export const machineRoutes = new Hono<AppEnv>()
   .get("/connect", async (c) => {
     const token = c.req.header("authorization")?.match(/^Bearer\s+(\S+)$/i)?.[1];
     const machine = await verifyMachineToken(createDb(c.env.DB), token);
-    if (!machine) return c.json({ error: "unauthorized" }, 401);
+    if (!machine) throw new AppError("UNAUTHENTICATED");
     if (c.req.header("upgrade")?.toLowerCase() !== "websocket")
-      return c.json({ error: "upgrade_required" }, 426);
+      throw new AppError("WEBSOCKET_REQUIRED");
 
     const headers = new Headers(c.req.raw.headers);
     headers.delete("authorization");
@@ -301,7 +301,7 @@ export const machineRoutes = new Hono<AppEnv>()
     const token = c.req.header("authorization")?.match(/^Bearer\s+(\S+)$/i)?.[1];
     const db = createDb(c.env.DB);
     const machine = await verifyMachineToken(db, token);
-    if (!machine) return c.json({ error: "unauthorized" }, 401);
+    if (!machine) throw new AppError("UNAUTHENTICATED");
 
     const [{ workspace, workspaces }, [enrolledBy], status] = await Promise.all([
       presentMachineWorkspaces(db, machine),
@@ -329,12 +329,12 @@ export const machineRoutes = new Hono<AppEnv>()
     const token = c.req.header("authorization")?.match(/^Bearer\s+(\S+)$/i)?.[1];
     const db = createDb(c.env.DB);
     const machine = await verifyMachineToken(db, token);
-    if (!machine) return c.json({ error: "unauthorized" }, 401);
+    if (!machine) throw new AppError("UNAUTHENTICATED");
     const body = SharingBody.safeParse(await c.req.json().catch(() => null));
-    if (!body.success) return c.json({ error: "invalid_request" }, 400);
-    if (!machine.userId) return c.json({ error: "not_owner" }, 403);
+    if (!body.success) throw new AppError("INVALID_REQUEST");
+    if (!machine.userId) throw new AppError("MACHINE_NOT_OWNED");
     const result = await setMachineSharing(db, machine.id, body.data.sharing, machine.userId);
-    if (!result) return c.json({ error: "not_found" }, 404);
+    if (!result) throw new AppError("NOT_FOUND");
     return c.json({
       machine: {
         ...presentMachine(result.machine, await pausedByName(db, result.machine)),
@@ -347,7 +347,7 @@ export const machineRoutes = new Hono<AppEnv>()
   .get("/me/workspaces", async (c) => {
     const db = createDb(c.env.DB);
     const machine = await machineFromToken(db, c.req.header("authorization"));
-    if (!machine) return c.json({ error: "unauthorized" }, 401);
+    if (!machine) throw new AppError("UNAUTHENTICATED");
     return c.json(await presentWorkspaceChoice(db, machine));
   })
   // Adds the machine to, or takes it out of, one of its owner's workspaces. The token lives on the
@@ -355,12 +355,11 @@ export const machineRoutes = new Hono<AppEnv>()
   .on(["PUT", "DELETE"], "/me/workspaces/:workspaceId", async (c) => {
     const db = createDb(c.env.DB);
     const machine = await machineFromToken(db, c.req.header("authorization"));
-    if (!machine) return c.json({ error: "unauthorized" }, 401);
-    if (!machine.userId) return c.json({ error: "not_owner" }, 403);
+    if (!machine) throw new AppError("UNAUTHENTICATED");
+    if (!machine.userId) throw new AppError("MACHINE_NOT_OWNED");
     const workspaceId = c.req.param("workspaceId");
     const mine = await userWorkspaces(db, machine.userId);
-    if (!mine.some((workspace) => workspace.id === workspaceId))
-      return c.json({ error: "not_found" }, 404);
+    if (!mine.some((workspace) => workspace.id === workspaceId)) throw new AppError("NOT_FOUND");
     if (c.req.method === "PUT")
       await addMachinesToWorkspace(db, {
         userId: machine.userId,
@@ -376,7 +375,7 @@ export const machineRoutes = new Hono<AppEnv>()
     const token = c.req.header("authorization")?.match(/^Bearer\s+(\S+)$/i)?.[1];
     const db = createDb(c.env.DB);
     const machine = await verifyMachineToken(db, token);
-    if (!machine) return c.json({ error: "unauthorized" }, 401);
+    if (!machine) throw new AppError("UNAUTHENTICATED");
     return pauseResponse(c.env, db, machine.id, c.req.param("action") === "pause", {
       userId: null,
       via: "cli",
@@ -402,9 +401,8 @@ export const machineRoutes = new Hono<AppEnv>()
         ),
       )
       .limit(1);
-    if (!machine) return c.json({ error: "not_found" }, 404);
-    if (!canControlMachine(c.var.role, c.var.user!.id, machine))
-      return c.json({ error: "forbidden" }, 403);
+    if (!machine) throw new AppError("NOT_FOUND");
+    if (!canControlMachine(c.var.role, c.var.user!.id, machine)) throw new AppError("FORBIDDEN");
     return pauseResponse(c.env, c.var.db, machine.id, c.req.param("action") === "pause", {
       userId: c.var.user!.id,
       via: "dashboard",
@@ -414,7 +412,7 @@ export const machineRoutes = new Hono<AppEnv>()
   // enrolled it, may change it: it's their computer.
   .put("/:id/sharing", requireUser, requireWorkspace, async (c) => {
     const body = SharingBody.safeParse(await c.req.json().catch(() => null));
-    if (!body.success) return c.json({ error: "invalid_request" }, 400);
+    if (!body.success) throw new AppError("INVALID_REQUEST");
     const [machine] = await c.var.db
       .select({ id: schema.machine.id, userId: schema.machine.userId })
       .from(schema.machine)
@@ -426,10 +424,10 @@ export const machineRoutes = new Hono<AppEnv>()
         ),
       )
       .limit(1);
-    if (!machine) return c.json({ error: "not_found" }, 404);
-    if (machine.userId !== c.var.user!.id) return c.json({ error: "not_owner" }, 403);
+    if (!machine) throw new AppError("NOT_FOUND");
+    if (machine.userId !== c.var.user!.id) throw new AppError("MACHINE_NOT_OWNED");
     const result = await setMachineSharing(c.var.db, machine.id, body.data.sharing, c.var.user!.id);
-    if (!result) return c.json({ error: "not_found" }, 404);
+    if (!result) throw new AppError("NOT_FOUND");
     return c.json({
       machine: {
         ...presentMachine(result.machine, await pausedByName(c.var.db, result.machine)),
@@ -441,7 +439,7 @@ export const machineRoutes = new Hono<AppEnv>()
   // workspace yet" page lists them while an install is pending (#320). Agent tokens are granted
   // workspaces, not a user's machines, so they don't reach this.
   .get("/mine", requireUser, async (c) => {
-    if (c.var.agent) return c.json({ error: "not_found" }, 404);
+    if (c.var.agent) throw new AppError("NOT_FOUND");
     const db = createDb(c.env.DB);
     const rows = await db
       .select()
@@ -681,7 +679,7 @@ export const machineRoutes = new Hono<AppEnv>()
   // machine row, and routes like a connected machine from then on. Nothing changes on the machine.
   .post("/github-runners", requireUser, requireWorkspace, requireManager, async (c) => {
     const parsed = AddRunnersBody.safeParse(await c.req.json().catch(() => null));
-    if (!parsed.success) return c.json({ error: "invalid_request" }, 400);
+    if (!parsed.success) throw new AppError("INVALID_REQUEST");
     const { installationId, runnerIds } = parsed.data;
     const { db, workspace, user } = c.var;
     const [installation] = await db
@@ -695,7 +693,7 @@ export const machineRoutes = new Hono<AppEnv>()
         ),
       )
       .limit(1);
-    if (!installation) return c.json({ error: "not_found" }, 404);
+    if (!installation) throw new AppError("NOT_FOUND");
 
     const { token, runners, access } = await readOrgRunners(
       c.env,
@@ -774,7 +772,7 @@ export const machineRoutes = new Hono<AppEnv>()
           isNull(schema.machine.revokedAt),
         ),
       );
-    if (!row) return c.json({ error: "not_found" }, 404);
+    if (!row) throw new AppError("NOT_FOUND");
     const { machine, org } = row;
     if (machine.source !== "github" || !machine.installationId || !org || !machine.githubRunnerId)
       return c.json({ access: null });
@@ -790,7 +788,7 @@ export const machineRoutes = new Hono<AppEnv>()
   // are skipped, as are ones already here. `added` is the ids that joined.
   .post("/workspace", requireUser, requireWorkspace, async (c) => {
     const parsed = AddToWorkspaceBody.safeParse(await c.req.json().catch(() => null));
-    if (!parsed.success) return c.json({ error: "invalid_request" }, 400);
+    if (!parsed.success) throw new AppError("INVALID_REQUEST");
     const added = await addMachinesToWorkspace(c.var.db, {
       userId: c.var.user!.id,
       workspaceId: c.var.workspace.id,
@@ -813,8 +811,8 @@ export const machineRoutes = new Hono<AppEnv>()
         ),
       )
       .limit(1);
-    if (!machine) return c.json({ error: "not_found" }, 404);
-    if (machine.userId !== c.var.user!.id) return c.json({ error: "not_owner" }, 403);
+    if (!machine) throw new AppError("NOT_FOUND");
+    if (machine.userId !== c.var.user!.id) throw new AppError("MACHINE_NOT_OWNED");
     await removeMachineFromWorkspace(c.var.db, machine, c.var.workspace.id, c.var.user!.id);
     return c.json({ removed: machine.id });
   })
@@ -836,12 +834,12 @@ export const machineRoutes = new Hono<AppEnv>()
         ),
       )
       .limit(1);
-    if (!target) return c.json({ error: "not_found" }, 404);
+    if (!target) throw new AppError("NOT_FOUND");
     // A connected machine only by its owner; a runner added from GitHub, which belongs to the
     // org, by owners and admins (#318).
-    if (!canControlMachine(role, user!.id, target)) return c.json({ error: "forbidden" }, 403);
+    if (!canControlMachine(role, user!.id, target)) throw new AppError("FORBIDDEN");
     const [machine] = await revokeMachines(c.env, db, eq(schema.machine.id, target.id), user!.id);
-    if (!machine) return c.json({ error: "not_found" }, 404);
+    if (!machine) throw new AppError("NOT_FOUND");
     if (machine.source === "github") await removeRoutingLabel(c.env, db, machine);
     return c.json({ machine: presentMachine(machine) });
   });
@@ -888,7 +886,7 @@ async function pauseResponse(
   actor: { userId: string | null; via: PauseVia },
 ) {
   const result = await setMachinePaused(db, machineId, paused, actor);
-  if (!result) return Response.json({ error: "not_found" }, { status: 404 });
+  if (!result) throw new AppError("NOT_FOUND");
   const by = await pausedByName(db, result.machine);
   const link = env.MACHINE_LINK.getByName(machineId);
   if (result.changed) await link.notifyPaused(paused, by);
@@ -924,11 +922,14 @@ async function presentWorkspaceChoice(
   };
 }
 
-// Better Auth's device errors carry an RFC 8628 code in the body; pass it through.
+// Better Auth's device errors carry an RFC 8628 code in the body; give each its own code.
+const DEVICE_ERRORS: Record<string, ErrorCode> = {
+  expired_token: "DEVICE_CODE_EXPIRED",
+  device_code_already_processed: "DEVICE_CODE_USED",
+  access_denied: "FORBIDDEN",
+};
 function deviceError(error: unknown) {
-  if (error instanceof APIError) {
-    const body = error.body as { error?: string } | undefined;
-    return Response.json({ error: body?.error ?? "invalid_request" }, { status: error.statusCode });
-  }
-  throw error;
+  if (!(error instanceof APIError)) return error;
+  const body = error.body as { error?: string } | undefined;
+  return new AppError(DEVICE_ERRORS[body?.error ?? ""] ?? "DEVICE_CODE_INVALID", { cause: error });
 }

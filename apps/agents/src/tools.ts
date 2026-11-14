@@ -1,3 +1,4 @@
+import { AppError } from "@relayrunner/errors";
 import type { McpServer } from "@modelcontextprotocol/server";
 import {
   ACTIVITY_FILTERS,
@@ -7,7 +8,7 @@ import {
   type ActivityPage,
 } from "@relayrunner/activity";
 import { z } from "zod";
-import { ApiError, type Api, type Workspace, type WorkspaceApi } from "./api.ts";
+import type { Api, Workspace, WorkspaceApi } from "./api.ts";
 import { compactActivityPage, compactJobTimes } from "./compact.ts";
 
 // Read-only tools over relayrunner-api's dashboard endpoints, all D1 reads, plus send_feedback,
@@ -26,16 +27,14 @@ function json(value: unknown): Result {
   return { content: [{ type: "text", text: JSON.stringify(value) }] };
 }
 
-// A call the model can fix itself, such as naming a workspace.
-class ToolError extends Error {}
-
-// API errors come back as tool errors the model can read and act on, not protocol errors.
+// API errors, and calls the model can fix itself (such as naming a workspace), come back as tool
+// errors the model can read and act on, not protocol errors: the message, then the code.
 async function answer(read: () => Promise<unknown>): Promise<Result> {
   try {
     return json(await read());
   } catch (error) {
-    if (!(error instanceof ApiError || error instanceof ToolError)) throw error;
-    return { content: [{ type: "text", text: error.message }], isError: true };
+    if (!(error instanceof AppError)) throw error;
+    return { content: [{ type: "text", text: `${error.message} (${error.code})` }], isError: true };
   }
 }
 
@@ -54,15 +53,17 @@ export function registerTools(server: McpServer, request: WorkspaceApi, workspac
   function workspaceId(workspace: string | undefined) {
     if (!workspace) {
       if (workspaces.length === 1) return workspaces[0].id;
-      throw new ToolError(
-        `This connection reads ${workspaces.length} workspaces. Pass workspace (an id or name from list_workspaces).`,
-      );
+      throw new AppError("WORKSPACE_REQUIRED", {
+        message: `This connection reads ${workspaces.length} workspaces. Pass workspace (an id or name from list_workspaces).`,
+      });
     }
     const named = workspaces.find(
       ({ id, name }) => id === workspace || name.toLowerCase() === workspace.toLowerCase(),
     );
     if (!named) {
-      throw new ToolError(`No workspace "${workspace}" on this connection. See list_workspaces.`);
+      throw new AppError("NOT_FOUND", {
+        message: `No workspace "${workspace}" on this connection. See list_workspaces.`,
+      });
     }
     return named.id;
   }

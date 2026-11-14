@@ -22,6 +22,7 @@ import { who } from "../middleware/admin.ts";
 import { checkPrices } from "../price-check.ts";
 import { forgetPriceBook, readPriceBook } from "../prices.ts";
 import { readCatalog } from "../provider-catalog.ts";
+import { AppError } from "@relayrunner/errors";
 
 const PriceBody = z.object({
   provider: z.string(),
@@ -189,10 +190,10 @@ export const adminPriceRoutes = new Hono<AppEnv>()
         isNull(schema.priceFinding.dismissedAt),
       ),
     });
-    if (!finding) return c.json({ error: "not_found" }, 404);
+    if (!finding) throw new AppError("NOT_FOUND");
     const { provider, rate, usd, from, source } = finding;
     const row = await recordPrice(c, { provider, rate, usd, from, source });
-    if (!row) return c.json({ error: "price_exists" }, 409);
+    if (!row) throw new AppError("PRICE_EXISTS");
     await db.delete(schema.priceFinding).where(eq(schema.priceFinding.id, finding.id));
     return c.json({ price: row });
   })
@@ -205,18 +206,18 @@ export const adminPriceRoutes = new Hono<AppEnv>()
         and(eq(schema.priceFinding.id, c.req.param("id")), isNull(schema.priceFinding.dismissedAt)),
       )
       .returning();
-    if (!row) return c.json({ error: "not_found" }, 404);
+    if (!row) throw new AppError("NOT_FOUND");
     logPrice(c, "price finding dismissed", row);
     return c.json({ ok: true });
   })
   .post("/", async (c) => {
     const parsed = PriceBody.safeParse(await c.req.json().catch(() => null));
-    if (!parsed.success) return c.json({ error: "invalid_price" }, 400);
+    if (!parsed.success) throw new AppError("PRICE_INVALID");
     const { provider, rate, usd, from, source } = parsed.data;
     const known = (await allRates(c)).some((r) => r.provider === provider && r.rate === rate);
-    if (!known) return c.json({ error: "unknown_rate" }, 400);
+    if (!known) throw new AppError("PRICE_INVALID");
     const row = await recordPrice(c, { provider, rate, usd, from, source: source || null });
-    if (!row) return c.json({ error: "price_exists" }, 409);
+    if (!row) throw new AppError("PRICE_EXISTS");
     return c.json({ price: row }, 201);
   })
   .delete("/:id", async (c) => {
@@ -224,7 +225,7 @@ export const adminPriceRoutes = new Hono<AppEnv>()
       .delete(schema.providerPrice)
       .where(eq(schema.providerPrice.id, c.req.param("id")))
       .returning();
-    if (!row) return c.json({ error: "not_found" }, 404);
+    if (!row) throw new AppError("NOT_FOUND");
     forgetPriceBook();
     logPrice(c, "provider price removed", row);
     return c.json({ ok: true });

@@ -40,14 +40,6 @@ export const Route = createFileRoute("/_authed/_workspace/admin/providers")({
   component: ProvidersAdminPage,
 });
 
-const ERRORS: Record<string, string> = {
-  invalid_provider: "Fill in a name, summary and labels, and use https:// links.",
-  invalid_id: "Use lowercase letters, numbers and dashes for the id.",
-  provider_exists: "There's already a provider with that id.",
-  invalid_prefixes: "Add at least one label prefix, three or more characters each.",
-  prefix_taken: "Another provider, or GitHub's own runners, already use labels like that.",
-};
-
 // Who's editing what: a provider, or a new one.
 type Editing = CatalogProvider | "new" | null;
 
@@ -290,7 +282,7 @@ function ProviderForm({
       else await saveProvider(editing.id, body);
       await onSaved(isNew ? `Added ${fields.name}.` : `Saved ${fields.name}.`);
     } catch (caught) {
-      setError(errorText(caught, ERRORS));
+      setError(errorText(caught));
     } finally {
       setSaving(false);
     }

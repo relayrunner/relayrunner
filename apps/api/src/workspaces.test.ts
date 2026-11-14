@@ -35,7 +35,7 @@ describe("workspaces", () => {
     const { cookie } = await signIn();
     const response = await call("/workspaces/current", cookie);
     expect(response.status).toBe(409);
-    expect(await response.json()).toEqual({ error: "no_active_workspace" });
+    expect(await response.json()).toMatchObject({ error: { code: "NO_ACTIVE_WORKSPACE" } });
   });
 
   test("a workspace's owner reads it as active, with its one installation", async () => {
@@ -151,20 +151,27 @@ describe("runner order", () => {
 
     const empty = await put(workspace.id, jar, { steps: [] });
     expect(empty.status).toBe(400);
-    expect(await empty.json()).toEqual({
-      error: "invalid_runner_order",
-      issues: [{ path: ["steps"], message: "Add at least one provider." }],
+    expect(await empty.json()).toMatchObject({
+      error: {
+        code: "RUNNER_ORDER_INVALID",
+        details: { issues: [{ path: ["steps"], message: "Add at least one provider." }] },
+      },
     });
 
     const twice = await put(workspace.id, jar, { steps: [{ key: "github" }, { key: "github" }] });
     expect(twice.status).toBe(400);
     expect(await twice.json()).toMatchObject({
-      issues: [
-        {
-          path: ["steps", 1, "key"],
-          message: "GitHub-hosted is already in the order without a limit.",
+      error: {
+        message: "GitHub-hosted is already in the order without a limit.",
+        details: {
+          issues: [
+            {
+              path: ["steps", 1, "key"],
+              message: "GitHub-hosted is already in the order without a limit.",
+            },
+          ],
         },
-      ],
+      },
     });
 
     const unknown = await put(workspace.id, jar, { steps: [{ key: "buildkite" }] });
@@ -215,7 +222,7 @@ describe("roles (#134)", () => {
     );
     const write = await put(workspace.id, member.cookie, order);
     expect(write.status).toBe(403);
-    expect(await write.json()).toEqual({ error: "forbidden" });
+    expect(await write.json()).toMatchObject({ error: { code: "FORBIDDEN" } });
 
     expect((await put(workspace.id, admin.cookie, order)).status).toBe(200);
   });

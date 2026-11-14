@@ -11,6 +11,7 @@ import {
   notificationTypesFor,
   setNotification,
 } from "../notifications.ts";
+import { AppError } from "@relayrunner/errors";
 
 const NotificationBody = z.object({ enabled: z.boolean() });
 
@@ -29,10 +30,10 @@ export const meRoutes = new Hono<AppEnv>()
   .put("/notifications/:type", requireUser, async (c) => {
     const type = c.req.param("type");
     if (!isNotificationType(type) || !notificationTypesFor(c.var.user!).includes(type)) {
-      return c.json({ error: "not_found" }, 404);
+      throw new AppError("NOT_FOUND");
     }
     const body = NotificationBody.safeParse(await c.req.json().catch(() => null));
-    if (!body.success) return c.json({ error: "invalid_body" }, 400);
+    if (!body.success) throw new AppError("INVALID_REQUEST");
     await setNotification(createDb(c.env.DB), c.var.user!.id, type, body.data.enabled);
     return c.json({ type, enabled: body.data.enabled });
   })
@@ -40,12 +41,12 @@ export const meRoutes = new Hono<AppEnv>()
   // current versions: a page left open across a change gets `outdated` and shows the new ones.
   .post("/legal", requireUser, async (c) => {
     const parsed = LegalBody.safeParse(await c.req.json().catch(() => null));
-    if (!parsed.success) return c.json({ error: "invalid_body" }, 400);
+    if (!parsed.success) throw new AppError("INVALID_REQUEST");
     if (
       parsed.data.terms !== LEGAL_VERSIONS.terms ||
       parsed.data.privacy !== LEGAL_VERSIONS.privacy
     ) {
-      return c.json({ error: "outdated" }, 409);
+      throw new AppError("LEGAL_TERMS_OUTDATED");
     }
     const agreed = {
       termsVersion: LEGAL_VERSIONS.terms,

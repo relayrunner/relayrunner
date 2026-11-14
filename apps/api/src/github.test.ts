@@ -1114,6 +1114,6 @@ describe("installation rate limits (#166)", () => {
     rateLimitStatus = 503;
     const response = await get(`/github/installations/${id}/rate-limit`, cookie);
     expect(response.status).toBe(502);
-    expect(await response.json()).toEqual({ error: "github_unavailable" });
+    expect(await response.json()).toMatchObject({ error: { code: "GITHUB_UNAVAILABLE" } });
   });
 });

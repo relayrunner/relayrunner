@@ -1,14 +1,5 @@
+import { parseError } from "@relayrunner/errors";
 import type { Env } from "./env.ts";
-
-/** A non-2xx answer from relayrunner-api. */
-export class ApiError extends Error {
-  constructor(
-    readonly status: number,
-    readonly code: string | undefined,
-  ) {
-    super(`RelayRunner API answered ${status}${code ? ` (${code})` : ""}`);
-  }
-}
 
 export type Api = <T>(
   path: string,
@@ -52,8 +43,7 @@ export function apiClient(env: Env, token: string): WorkspaceApi {
           },
     );
     if (!response.ok) {
-      const body = (await response.json().catch(() => null)) as { error?: string } | null;
-      throw new ApiError(response.status, body?.error);
+      throw parseError(await response.json().catch(() => null), response.status);
     }
     return response.json();
   };

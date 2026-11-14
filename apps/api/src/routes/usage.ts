@@ -6,6 +6,7 @@ import { freeCheckSavings } from "../free-checks.ts";
 import { usageReport } from "../job-timings.ts";
 import { requireUser } from "../middleware/session.ts";
 import { requireWorkspace } from "../middleware/workspace.ts";
+import { AppError } from "@relayrunner/errors";
 
 const UsageQuery = z.object({
   days: z.coerce.number().int().min(1).max(90).default(30),
@@ -18,12 +19,12 @@ const UsageQuery = z.object({
 export const usageRoutes = new Hono<AppEnv>()
   .get("/", requireUser, requireWorkspace, async (c) => {
     const days = parseDays(c.req.query());
-    if (days === null) return c.json({ error: "invalid_query" }, 400);
+    if (days === null) throw new AppError("INVALID_REQUEST");
     return c.json(await usageReport(c.var.db, c.var.workspace.id, days));
   })
   .get("/checks", requireUser, requireWorkspace, async (c) => {
     const days = parseDays(c.req.query());
-    if (days === null) return c.json({ error: "invalid_query" }, 400);
+    if (days === null) throw new AppError("INVALID_REQUEST");
     return c.json(await freeCheckSavings(c.var.db, c.var.workspace.id, days));
   })
   .get("/actions", requireUser, requireWorkspace, async (c) => {

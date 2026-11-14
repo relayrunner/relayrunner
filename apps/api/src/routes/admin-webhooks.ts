@@ -15,6 +15,7 @@ import {
   type DeadLetterFilter,
 } from "../dead-letters.ts";
 import { who } from "../middleware/admin.ts";
+import { AppError } from "@relayrunner/errors";
 
 // The most a bulk replay sends at once. Fix the cause first, then replay a slice.
 export const MAX_BULK_REPLAY = 100;
@@ -45,7 +46,7 @@ export const adminWebhookRoutes = new Hono<AppEnv>()
     };
     const filter = filterFrom(body);
     if (!filter.event && !filter.repository) {
-      return c.json({ error: "filter_required" }, 400);
+      throw new AppError("INVALID_REQUEST");
     }
     const matching: DeadLetter[] = [];
     let cursor: string | undefined;
@@ -73,7 +74,7 @@ export const adminWebhookRoutes = new Hono<AppEnv>()
   .post("/dead-letters/:id/replay", async (c) => {
     const id = c.req.param("id");
     const letter = await replayDeadLetter(c.env.DEAD_LETTERS, c.env.WEBHOOK_QUEUE, id);
-    if (!letter) return c.json({ error: "not_found" }, 404);
+    if (!letter) throw new AppError("NOT_FOUND");
     console.log(
       JSON.stringify({
         msg: "webhook dead letter replayed",
@@ -88,7 +89,7 @@ export const adminWebhookRoutes = new Hono<AppEnv>()
   .delete("/dead-letters/:id", async (c) => {
     const id = c.req.param("id");
     if (!(await discardDeadLetter(c.env.DEAD_LETTERS, id))) {
-      return c.json({ error: "not_found" }, 404);
+      throw new AppError("NOT_FOUND");
     }
     console.log(
       JSON.stringify({ msg: "webhook dead letter discarded", by: who(c.var.accessIdentity), id }),

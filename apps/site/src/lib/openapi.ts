@@ -13,6 +13,7 @@ import {
   FEEDBACK_CATEGORIES,
   FEEDBACK_LIMITS,
 } from "@relayrunner/activity";
+import { ERRORS } from "@relayrunner/errors";
 import { MCP_URL } from "./mcp";
 
 const AUTH = "https://app.relayrunner.app/api/auth";
@@ -259,13 +260,28 @@ export const openApi = {
     },
     responses: {
       Error: {
-        description: "The request failed. `error` is a short code, such as invalid_query.",
+        description:
+          "The request failed. Branch on `error.code`; `error.message` is for people and can change. See https://relayrunner.app/docs/reference/errors.",
         content: {
           "application/json": {
             schema: {
               type: "object",
               required: ["error"],
-              properties: { error: { type: "string" } },
+              properties: {
+                error: {
+                  type: "object",
+                  required: ["code", "message"],
+                  properties: {
+                    code: {
+                      type: "string",
+                      description: "Stable. New codes can be added, so handle ones you don't know.",
+                      enum: Object.keys(ERRORS),
+                    },
+                    message: { type: "string" },
+                    details: { description: "More context, on some codes." },
+                  },
+                },
+              },
             },
           },
         },

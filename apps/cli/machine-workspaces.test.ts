@@ -72,7 +72,13 @@ describe("machineWorkspaces", () => {
         ...(change && { change: { action: "add" as const, workspaceId: "w9" } }),
       });
     expect(await run(() => new Response(null, { status: 401 }))).toEqual({ status: "revoked" });
-    expect(await run(() => Response.json({ error: "not_found" }, { status: 404 }), true)).toEqual({
+    expect(
+      await run(
+        () =>
+          Response.json({ error: { code: "NOT_FOUND", message: "Not found." } }, { status: 404 }),
+        true,
+      ),
+    ).toEqual({
       status: "not_found",
     });
     expect(await run(() => new Response("404 Not Found", { status: 404 }), true)).toMatchObject({

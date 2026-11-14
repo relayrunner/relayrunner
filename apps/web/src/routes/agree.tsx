@@ -32,10 +32,6 @@ export const Route = createFileRoute("/agree")({
   component: AgreePage,
 });
 
-const ERRORS = {
-  outdated: "The terms changed since you opened this page. Reload it to read the new version.",
-};
-
 function AgreePage() {
   usePageTitle("Terms");
   const { next, documents, updated } = Route.useRouteContext();
@@ -50,7 +46,7 @@ function AgreePage() {
       await agreeToLegal();
       router.history.push(next);
     } catch (caught) {
-      setError(errorText(caught, ERRORS));
+      setError(errorText(caught));
       setPending(false);
     }
   }

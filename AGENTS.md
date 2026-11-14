@@ -28,6 +28,10 @@ Never commit screenshots or other PR images to the repository. Upload them with 
 
 Format with oxfmt (`pnpm format`) and lint with Oxlint (`pnpm lint`). Run `pnpm check` before you push; CI runs the same command. The pre-commit hook formats and lints staged files, so don't skip it with `--no-verify`.
 
+## API errors
+
+The API answers every failure with a code from `@relayrunner/errors`: `throw new AppError("CODE")` in a route, and add new codes to `packages/errors/src/codes.ts` rather than returning a string. See [packages/errors/README.md](packages/errors/README.md).
+
 ## Releasing the CLI
 
 The `relayrunner` npm package (`apps/cli`) is released with [changesets](https://github.com/changesets/changesets). A PR that changes what the CLI does for people who install it adds a `.changeset/*.md` file (`pnpm changeset`) naming `"relayrunner"`, the only package a changeset may name. Merging it makes the Release workflow open a `chore: version packages` PR, and merging that one publishes to npm. Don't bump `apps/cli/package.json` by hand. See [.changeset/README.md](.changeset/README.md).

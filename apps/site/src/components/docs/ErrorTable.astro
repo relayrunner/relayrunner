@@ -1,0 +1,32 @@
+---
+/*
+ * Every error code the API can return, with its HTTP status and default message. From
+ * @relayrunner/errors, so a code added there shows up here.
+ *
+ *   <ErrorTable />
+ */
+import { ERROR_ROWS } from "../../lib/errors";
+---
+
+<table>
+  <thead>
+    <tr>
+      <th>Code</th>
+      <th>Status</th>
+      <th>Message</th>
+    </tr>
+  </thead>
+  <tbody>
+    {
+      ERROR_ROWS.map(({ code, status, message }) => (
+        <tr>
+          <td>
+            <code>{code}</code>
+          </td>
+          <td>{status}</td>
+          <td>{message}</td>
+        </tr>
+      ))
+    }
+  </tbody>
+</table>

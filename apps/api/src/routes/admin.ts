@@ -20,6 +20,7 @@ import { requireUser } from "../middleware/session.ts";
 import { adminPriceRoutes } from "./admin-prices.ts";
 import { adminProviderRoutes } from "./admin-providers.ts";
 import { USER_ROLES } from "../roles.ts";
+import { AppError } from "@relayrunner/errors";
 
 const RoleBody = z.object({ role: z.enum(USER_ROLES).nullable() });
 const DeleteBody = z.object({ uninstallGitHubApp: z.boolean().default(false) });
@@ -46,7 +47,7 @@ export const adminRoutes = new Hono<AppEnv>()
   // Routing health across workspaces (src/admin-routing.ts), over the last 24 hours or 7 days.
   .get("/routing", async (c) => {
     const range = (c.req.query("range") ?? "24h") as RoutingRange;
-    if (!Object.hasOwn(ROUTING_RANGES, range)) return c.json({ error: "invalid_range" }, 400);
+    if (!Object.hasOwn(ROUTING_RANGES, range)) throw new AppError("INVALID_REQUEST");
     return c.json(
       await routingHealth(createDb(c.env.DB), range, {
         ignoredGithubIds: parseGithubIds(c.env.OPERATOR_PINGS_IGNORE_GITHUB_IDS),
@@ -74,18 +75,18 @@ export const adminRoutes = new Hono<AppEnv>()
   })
   .patch("/users/:id", async (c) => {
     const parsed = RoleBody.safeParse(await c.req.json().catch(() => null));
-    if (!parsed.success) return c.json({ error: "invalid_role" }, 400);
+    if (!parsed.success) throw new AppError("INVALID_REQUEST");
     const id = c.req.param("id");
     // Keeps at least the caller an operator, so nobody locks the last one out by accident.
     if (id === c.var.user!.id && parsed.data.role !== "operator") {
-      return c.json({ error: "cannot_demote_self" }, 400);
+      throw new AppError("CANNOT_DEMOTE_SELF");
     }
     const [updated] = await createDb(c.env.DB)
       .update(schema.user)
       .set({ role: parsed.data.role })
       .where(eq(schema.user.id, id))
       .returning({ id: schema.user.id, role: schema.user.role });
-    if (!updated) return c.json({ error: "not_found" }, 404);
+    if (!updated) throw new AppError("NOT_FOUND");
     console.log(
       JSON.stringify({
         msg: "user role changed",
@@ -99,13 +100,15 @@ export const adminRoutes = new Hono<AppEnv>()
   })
   .delete("/users/:id", async (c) => {
     const options = await deleteOptions(c.req.raw).catch(() => null);
-    if (!options?.success) return c.json({ error: "invalid_body" }, 400);
+    if (!options?.success) throw new AppError("INVALID_REQUEST");
     const id = c.req.param("id");
-    if (id === c.var.user!.id) return c.json({ error: "cannot_delete_self" }, 400);
+    if (id === c.var.user!.id) throw new AppError("CANNOT_DELETE_SELF");
     const result = await deleteUser(c.env, createDb(c.env.DB), id, options.data);
     if (!result.ok) {
-      if (result.error === "not_found") return c.json({ error: "not_found" }, 404);
-      return c.json({ error: result.error, workspaces: result.workspaces }, 409);
+      if (result.error === "not_found") throw new AppError("NOT_FOUND");
+      throw new AppError("USER_HAS_SHARED_WORKSPACES", {
+        details: { workspaces: result.workspaces },
+      });
     }
     console.log(
       JSON.stringify({
@@ -120,10 +123,10 @@ export const adminRoutes = new Hono<AppEnv>()
   })
   .delete("/workspaces/:id", async (c) => {
     const options = await deleteOptions(c.req.raw).catch(() => null);
-    if (!options?.success) return c.json({ error: "invalid_body" }, 400);
+    if (!options?.success) throw new AppError("INVALID_REQUEST");
     const id = c.req.param("id");
     const [deleted] = await deleteWorkspaces(c.env, createDb(c.env.DB), [id], options.data);
-    if (!deleted) return c.json({ error: "not_found" }, 404);
+    if (!deleted) throw new AppError("NOT_FOUND");
     console.log(
       JSON.stringify({
         msg: "workspace deleted",
@@ -136,7 +139,7 @@ export const adminRoutes = new Hono<AppEnv>()
   })
   .get("/jobs", async (c) => {
     const query = JobsQuery.safeParse(c.req.query());
-    if (!query.success) return c.json({ error: "invalid_query" }, 400);
+    if (!query.success) throw new AppError("INVALID_REQUEST");
     const { days, internal } = query.data;
     const db = createDb(c.env.DB);
     const [installations, ours] = await Promise.all([

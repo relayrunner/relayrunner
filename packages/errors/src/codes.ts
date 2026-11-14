@@ -1,0 +1,112 @@
+/** What every code in {@link ERRORS} says about itself. */
+export interface ErrorSpec {
+  /** The HTTP status the API answers with. */
+  status: number;
+  /** The default message: a plain sentence a person or an agent can act on. */
+  message: string;
+  /** Asking again later can work. The API sets `Retry-After` when it knows how long to wait. */
+  retryable?: boolean;
+}
+
+/**
+ * Every error code the API can return. A code never changes once it ships; its message can.
+ * Feature-specific codes read `DOMAIN_FAILURE`, so the code alone names the feature and what
+ * went wrong. Add a code here before returning it: apps/site builds the errors page and the
+ * OpenAPI enum from this list.
+ */
+export const ERRORS = {
+  // Requests
+  INVALID_REQUEST: { status: 400, message: "The request isn't valid." },
+  PAYLOAD_TOO_LARGE: { status: 413, message: "The request body is too large." },
+  NOT_FOUND: { status: 404, message: "Not found." },
+  CONFLICT: { status: 409, message: "That was already done." },
+  RATE_LIMITED: { status: 429, message: "Too many requests. Try again shortly.", retryable: true },
+  INTERNAL_ERROR: { status: 500, message: "Something went wrong on our side." },
+
+  // Sign-in and access
+  UNAUTHENTICATED: { status: 401, message: "Sign in first." },
+  INVALID_TOKEN: { status: 401, message: "The token is invalid, expired or revoked." },
+  FORBIDDEN: { status: 403, message: "You don't have access to that." },
+  AGENT_NOT_ALLOWED: { status: 403, message: "Agent tokens can't call this route." },
+  NOT_A_MEMBER: { status: 403, message: "You aren't a member of that workspace." },
+  LEGAL_TERMS_OUTDATED: {
+    status: 409,
+    message: "The terms changed since you opened this page. Reload it to read the new version.",
+  },
+
+  // Workspaces and users
+  NO_ACTIVE_WORKSPACE: { status: 409, message: "Pick a workspace first." },
+  WORKSPACE_REQUIRED: {
+    status: 409,
+    message:
+      "This token reads more than one workspace. Name one with the x-relayrunner-workspace header.",
+  },
+  CANNOT_DEMOTE_SELF: { status: 400, message: "You can't remove your own operator role." },
+  CANNOT_DELETE_SELF: { status: 400, message: "You can't delete your own account here." },
+  USER_HAS_SHARED_WORKSPACES: {
+    status: 409,
+    message: "The user is in workspaces with other members. Remove them from those first.",
+  },
+
+  // Machines and the CLI
+  MACHINE_NOT_OWNED: { status: 403, message: "Only a machine with an owner can do this." },
+  DEVICE_CODE_INVALID: {
+    status: 400,
+    message: "That code doesn't match a sign-in request. Check it against your terminal.",
+  },
+  DEVICE_CODE_EXPIRED: {
+    status: 400,
+    message: "That code has expired. Run `relayrunner connect` again for a new one.",
+  },
+  DEVICE_CODE_USED: { status: 409, message: "That code has already been used." },
+  WEBSOCKET_REQUIRED: { status: 426, message: "Connect with a WebSocket upgrade." },
+
+  // Routing
+  RUNNER_ORDER_INVALID: { status: 400, message: "The runner order isn't valid." },
+
+  // Providers and prices
+  PROVIDER_UNKNOWN: { status: 400, message: "There's no provider with that id." },
+  PROVIDER_EXISTS: { status: 409, message: "There's already a provider with that id." },
+  PROVIDER_PREFIX_TAKEN: {
+    status: 409,
+    message: "Another provider, or GitHub's own runners, already use labels like that.",
+  },
+  PROVIDER_NOT_CONNECTED: { status: 404, message: "That provider isn't connected." },
+  PROVIDER_TOKEN_REJECTED: {
+    status: 400,
+    message: "The provider didn't accept that token. Check it and its scope.",
+  },
+  PROVIDER_UNREACHABLE: {
+    status: 502,
+    message: "The provider's API didn't answer. Try again shortly.",
+    retryable: true,
+  },
+  PRICE_INVALID: { status: 400, message: "Check the price and date." },
+  PRICE_EXISTS: {
+    status: 409,
+    message: "That rate already has a price from that day. Remove it first to correct it.",
+  },
+  TOKEN_STORAGE_UNAVAILABLE: {
+    status: 503,
+    message: "Saving provider tokens isn't set up on this server yet.",
+  },
+
+  // GitHub
+  GITHUB_UNAVAILABLE: {
+    status: 502,
+    message: "GitHub didn't answer. Try again shortly.",
+    retryable: true,
+  },
+  GITHUB_RATE_LIMITED: {
+    status: 503,
+    message: "GitHub's API limit was reached. Try again shortly.",
+    retryable: true,
+  },
+  GITHUB_APP_NOT_CONFIGURED: { status: 500, message: "The GitHub App isn't set up." },
+} as const satisfies Record<string, ErrorSpec>;
+
+export type ErrorCode = keyof typeof ERRORS;
+
+export function isErrorCode(code: unknown): code is ErrorCode {
+  return typeof code === "string" && Object.hasOwn(ERRORS, code);
+}

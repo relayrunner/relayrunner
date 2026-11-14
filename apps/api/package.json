@@ -17,6 +17,7 @@
     "@relayrunner/access": "workspace:*",
     "@relayrunner/activity": "workspace:*",
     "@relayrunner/email": "workspace:*",
+    "@relayrunner/errors": "workspace:*",
     "@relayrunner/github-webhooks": "workspace:*",
     "@relayrunner/lint-runner": "workspace:*",
     "@relayrunner/machine-protocol": "workspace:*",

@@ -63,6 +63,24 @@ describe("setPaused", () => {
       await setPaused({ server: SERVER, token: "t", paused: true, fetcher: broken.fetcher }),
     ).toEqual({ status: "failed", reason: `${SERVER} answered HTTP 500` });
 
+    const owned = gateway(() =>
+      Response.json(
+        {
+          error: {
+            code: "MACHINE_NOT_OWNED",
+            message: "Only a machine with an owner can do this.",
+          },
+        },
+        { status: 403 },
+      ),
+    );
+    expect(
+      await setPaused({ server: SERVER, token: "t", paused: true, fetcher: owned.fetcher }),
+    ).toEqual({
+      status: "failed",
+      reason: "Only a machine with an owner can do this (MACHINE_NOT_OWNED)",
+    });
+
     const offline = (async () => {
       throw new TypeError("fetch failed", { cause: { message: "ENOTFOUND" } });
     }) as typeof fetch;

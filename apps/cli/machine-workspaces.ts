@@ -7,6 +7,8 @@
 import { z } from "zod";
 import { userAgent } from "./paths.ts";
 import { sharingMeaning, toChoice } from "./share.ts";
+import { isErrorBody } from "@relayrunner/errors";
+import { failureReason } from "./api-error.ts";
 
 const Choice = z.object({
   id: z.string().min(1),
@@ -61,9 +63,9 @@ export async function machineWorkspaces(options: {
   }
   if (response.status === 401) return { status: "revoked" };
   const body = await response.json().catch(() => null);
-  // The route answers 404 { error: "not_found" } for a workspace the owner isn't in. Any other
-  // 404, or a 405, is a gateway from before #363 that has no such route.
-  if (change && response.status === 404 && (body as { error?: unknown })?.error === "not_found")
+  // The route answers 404 NOT_FOUND for a workspace the owner isn't in. Any other 404, or a 405,
+  // is a gateway from before #363 that has no such route.
+  if (change && response.status === 404 && isErrorBody(body) && body.error.code === "NOT_FOUND")
     return { status: "not_found" };
   if (response.status === 404 || response.status === 405)
     return {
@@ -73,7 +75,7 @@ export async function machineWorkspaces(options: {
   if (response.status === 403)
     return { status: "failed", reason: "only the machine's owner can change its workspaces" };
   if (!response.ok)
-    return { status: "failed", reason: `${options.server} answered HTTP ${response.status}` };
+    return { status: "failed", reason: failureReason(options.server, response, body) };
   const parsed = MachineWorkspaces.safeParse(body);
   if (!parsed.success)
     return { status: "failed", reason: `${options.server} sent an unexpected response` };

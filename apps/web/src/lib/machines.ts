@@ -383,21 +383,10 @@ export function formatUserCode(userCode: string) {
   return code.length === 8 ? `${code.slice(0, 4)}-${code.slice(4)}` : code;
 }
 
-/** What a device-flow error code means for the person at the approval page. */
+/** What a failed approval means for the person at the approval page. */
 export function describeDeviceError(error: unknown) {
-  const code = error instanceof ApiError ? error.code : undefined;
-  switch (code) {
-    case "invalid_request":
-      return "That code doesn't match a sign-in request. Check it against your terminal.";
-    case "expired_token":
-      return "That code has expired. Run `relayrunner connect` again for a new one.";
-    case "already_processed":
-    case "device_code_already_processed":
-      return "That code has already been used.";
-    case "forbidden":
-    case "access_denied":
-      return "Another account already approved or denied this request, or you aren't in that workspace. Run `relayrunner connect` again for a new code.";
-    default:
-      return "Something went wrong. Try again.";
-  }
+  if (!(error instanceof ApiError)) return "Something went wrong. Try again.";
+  if (error.code === "FORBIDDEN")
+    return "Another account already approved or denied this request, or you aren't in that workspace. Run `relayrunner connect` again for a new code.";
+  return error.message;
 }

@@ -1,4 +1,5 @@
 import { getCollection, type CollectionEntry } from "astro:content";
+import { errorTableMarkdown } from "./errors";
 import { MCP_URL } from "./mcp";
 import { isProviderId, providerMarkdown, providerTableMarkdown } from "./providers";
 import { INTEGRATIONS, integrationPath } from "./integrations";
@@ -43,6 +44,7 @@ function stripMdx(body: string) {
 function componentsToMarkdown(body: string) {
   return body
     .replace(/^<ProviderTable\s*\/>[ \t]*$/gm, providerTableMarkdown)
+    .replace(/^<ErrorTable\s*\/>[ \t]*$/gm, errorTableMarkdown)
     .replace(/^<Provider id="([\w-]+)"\s*\/>[ \t]*$/gm, (tag, id: string) =>
       isProviderId(id) ? providerMarkdown(id) : tag,
     );

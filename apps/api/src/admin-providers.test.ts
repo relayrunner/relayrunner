@@ -84,10 +84,10 @@ describe("/api/admin/providers", () => {
   test("an added provider is matched by its prefixes at once, and can be removed", async () => {
     const op = await operator();
     expect((await send(op.cookie, "POST", "", { ...acme, prefixes: ["depot-x"] })).status).toBe(
-      400,
+      409,
     );
     expect((await send(op.cookie, "POST", "", { ...acme, prefixes: ["ubuntu-"] })).status).toBe(
-      400,
+      409,
     );
     expect((await send(op.cookie, "POST", "", { ...acme, id: "depot" })).status).toBe(409);
     expect((await send(op.cookie, "POST", "", { ...acme, docsUrl: "http://x" })).status).toBe(400);

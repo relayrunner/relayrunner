@@ -252,7 +252,7 @@ describe("agent sign-in", () => {
       const limited = await asAgent("/runs", access_token);
       expect(limited.status).toBe(429);
       expect(limited.headers.get("retry-after")).toBe("60");
-      expect(await limited.json()).toEqual({ error: "rate_limited" });
+      expect(await limited.json()).toMatchObject({ error: { code: "RATE_LIMITED" } });
       expect(new Set(keys).size).toBe(1);
       expect(keys[0]).toMatch(new RegExp(`^${user.id}:`));
     } finally {
@@ -301,7 +301,7 @@ describe("agent sign-in", () => {
     // With two workspaces, a request has to say which.
     const unsaid = await asAgent("/workspaces/current", access_token);
     expect(unsaid.status).toBe(409);
-    expect(await unsaid.json()).toEqual({ error: "workspace_required" });
+    expect(await unsaid.json()).toMatchObject({ error: { code: "WORKSPACE_REQUIRED" } });
     for (const workspace of [first, second]) {
       const current = await asAgent("/workspaces/current", access_token, {}, workspace.id);
       expect(current.status).toBe(200);

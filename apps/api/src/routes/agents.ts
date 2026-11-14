@@ -6,6 +6,7 @@ import type { AppEnv } from "../app.ts";
 import { createDb, schema } from "../db/index.ts";
 import { requireUser } from "../middleware/session.ts";
 import { requireWorkspace } from "../middleware/workspace.ts";
+import { AppError } from "@relayrunner/errors";
 
 const GrantBody = z.object({ workspaceIds: z.array(z.string().min(1)).min(1).max(100) });
 
@@ -16,9 +17,9 @@ const GrantBody = z.object({ workspaceIds: z.array(z.string().min(1)).min(1).max
 export const agentRoutes = new Hono<AppEnv>()
   .post("/grants", requireUser, async (c) => {
     const session = c.var.session;
-    if (!session) return c.json({ error: "unauthorized" }, 401);
+    if (!session) throw new AppError("UNAUTHENTICATED");
     const parsed = GrantBody.safeParse(await c.req.json().catch(() => null));
-    if (!parsed.success) return c.json({ error: "invalid_body" }, 400);
+    if (!parsed.success) throw new AppError("INVALID_REQUEST");
     const workspaceIds = [...new Set(parsed.data.workspaceIds)];
     const db = createDb(c.env.DB);
     const memberships = await db
@@ -30,7 +31,7 @@ export const agentRoutes = new Hono<AppEnv>()
           inArray(schema.workspaceMember.workspaceId, workspaceIds),
         ),
       );
-    if (memberships.length !== workspaceIds.length) return c.json({ error: "not_found" }, 404);
+    if (memberships.length !== workspaceIds.length) throw new AppError("NOT_FOUND");
     const id = crypto.randomUUID();
     await db.batch([
       db.insert(schema.agentGrant).values({ id, userId: c.var.user!.id, sessionId: session.id }),
@@ -43,7 +44,7 @@ export const agentRoutes = new Hono<AppEnv>()
   .get("/grants/pending", requireUser, async (c) => {
     const db = createDb(c.env.DB);
     const grantId = await pendingGrant(db, c.var.session?.id, c.var.user!.id);
-    if (!grantId) return c.json({ error: "not_found" }, 404);
+    if (!grantId) throw new AppError("NOT_FOUND");
     const workspaces = await db
       .select({ id: schema.workspace.id, name: schema.workspace.name })
       .from(schema.agentGrantWorkspace)
@@ -92,7 +93,7 @@ export const agentRoutes = new Hono<AppEnv>()
       )
       .where(mine)
       .limit(1);
-    if (!consent?.grantId) return c.json({ error: "not_found" }, 404);
+    if (!consent?.grantId) throw new AppError("NOT_FOUND");
     const { grantId } = consent;
     const [[{ left }]] = await db.batch([
       db

@@ -1,13 +1,7 @@
-/** A non-2xx response. `code` is the gateway's `{ error }` value, when it sent one. */
-export class ApiError extends Error {
-  constructor(
-    message: string,
-    readonly status: number,
-    readonly code?: string,
-  ) {
-    super(message);
-  }
-}
+import { AppError as ApiError, parseError } from "@relayrunner/errors";
+
+/** A non-2xx response: the API's error code, status and message (@relayrunner/errors). */
+export { ApiError };
 
 let errorListener: ((error: ApiError, path: string) => void) | undefined;
 
@@ -27,19 +21,17 @@ export async function api<T>(path: string, init?: RequestInit): Promise<T> {
     headers: { "content-type": "application/json", ...init?.headers },
   });
   if (!res.ok) {
-    const body = (await res.json().catch(() => null)) as { error?: string } | null;
-    const error = new ApiError(
-      `API ${res.status} ${res.statusText} for ${path}`,
-      res.status,
-      body?.error,
-    );
+    const error = parseError(await res.json().catch(() => null), res.status);
     errorListener?.(error, path);
     throw error;
   }
   return (await res.json()) as T;
 }
 
-/** What went wrong, in words: `messages` for the API's error codes, else the error's own message. */
+/**
+ * What went wrong, in words: the API's own message, unless `messages` words that code differently
+ * for this page.
+ */
 export function errorText(caught: unknown, messages: Record<string, string> = {}) {
   const code = caught instanceof ApiError ? caught.code : undefined;
   return (code && messages[code]) ?? (caught instanceof Error ? caught.message : String(caught));

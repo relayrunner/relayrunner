@@ -19,6 +19,7 @@ import { ensureWorkspace, upsertInstallation, userGitHubToken } from "../install
 import { syncMemberships } from "../memberships.ts";
 import { requireUser } from "../middleware/session.ts";
 import { requireWorkspace } from "../middleware/workspace.ts";
+import { AppError } from "@relayrunner/errors";
 
 // GitHub App installations, each of which is a workspace (#316).
 //
@@ -62,7 +63,7 @@ const cookieOptions = (c: Context<AppEnv>) => ({
 
 export const githubRoutes = new Hono<AppEnv>()
   .get("/install", requireUser, async (c) => {
-    if (!c.env.GITHUB_APP_SLUG) return c.json({ error: "github_app_slug_not_configured" }, 500);
+    if (!c.env.GITHUB_APP_SLUG) throw new AppError("GITHUB_APP_NOT_CONFIGURED");
     const state = await signInstallState(c.env.BETTER_AUTH_SECRET, c.var.user!.id, {
       next: dashboardPath(c.req.query("next")),
       origin: new URL(c.req.url).origin,
@@ -73,7 +74,7 @@ export const githubRoutes = new Hono<AppEnv>()
 
   // Sign up and install in one trip, for someone with no account yet (see 3. above).
   .get("/signup", async (c) => {
-    if (!c.env.GITHUB_APP_SLUG) return c.json({ error: "github_app_slug_not_configured" }, 500);
+    if (!c.env.GITHUB_APP_SLUG) throw new AppError("GITHUB_APP_NOT_CONFIGURED");
     // GitHub comes back to the production host, so the cookie has to be set there.
     const production = new URL(c.env.BETTER_AUTH_URL).origin;
     const here = new URL(c.req.url);
@@ -154,7 +155,7 @@ export const githubRoutes = new Hono<AppEnv>()
   .get("/installations/:id/rate-limit", requireUser, requireWorkspace, async (c) => {
     const installationId = Number(c.req.param("id"));
     if (!Number.isSafeInteger(installationId) || installationId <= 0)
-      return c.json({ error: "not_found" }, 404);
+      throw new AppError("NOT_FOUND");
     const [row] = await c.var.db
       .select({ id: schema.githubInstallation.id })
       .from(schema.githubInstallation)
@@ -165,7 +166,7 @@ export const githubRoutes = new Hono<AppEnv>()
         ),
       )
       .limit(1);
-    if (!row) return c.json({ error: "not_found" }, 404);
+    if (!row) throw new AppError("NOT_FOUND");
 
     try {
       const token = await appInstallationToken(c.env, installationId);
@@ -180,7 +181,7 @@ export const githubRoutes = new Hono<AppEnv>()
           error: error instanceof Error ? error.message : String(error),
         }),
       );
-      return c.json({ error: "github_unavailable" }, 502);
+      throw new AppError("GITHUB_UNAVAILABLE");
     }
   });
 

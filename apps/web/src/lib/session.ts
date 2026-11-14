@@ -188,5 +188,5 @@ if (typeof document !== "undefined") {
 onApiError((error, path) => {
   if (path === "/workspaces/current") return; // revalidateWorkspace handles its own answer
   if (error.status === 401) void revalidateSession();
-  else if (error.code === "no_active_workspace") void revalidateWorkspace();
+  else if (error.code === "NO_ACTIVE_WORKSPACE") void revalidateWorkspace();
 });

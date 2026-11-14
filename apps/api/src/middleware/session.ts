@@ -3,6 +3,7 @@ import { createMiddleware } from "hono/factory";
 import { agentBearer, agentMayCall, agentSession } from "../agent-auth.ts";
 import { createAuth } from "../auth.ts";
 import type { AppEnv } from "../app.ts";
+import { AppError } from "@relayrunner/errors";
 
 // Builds this request's auth instance and attaches the signed-in user and session, or null.
 // An agent access token (agent-auth.ts) attaches its user and c.var.agent instead of a session, and
@@ -14,15 +15,15 @@ export const attachSession = createMiddleware<AppEnv>(async (c, next) => {
   const token = agentBearer(c.req.raw.headers);
   if (token) {
     const result = await agentSession(c.env, auth, token);
-    if (!result) return c.json({ error: "invalid_token" }, 401);
+    if (!result) throw new AppError("INVALID_TOKEN");
     if (!agentMayCall(c.req.method, url.pathname)) {
-      return c.json({ error: "not_allowed_for_agents" }, 403);
+      throw new AppError("AGENT_NOT_ALLOWED");
     }
     const limit = await c.env.AGENT_LIMITER?.limit({
       key: `${result.user.id}:${result.agent.grantId}`,
     });
     if (limit && !limit.success) {
-      return c.json({ error: "rate_limited" }, 429, { "retry-after": "60" });
+      throw new AppError("RATE_LIMITED", { retryAfter: 60 });
     }
     c.set("user", result.user);
     c.set("session", null);
@@ -53,6 +54,6 @@ export async function inBackground(c: Context<AppEnv>, promise: Promise<unknown>
 }
 
 export const requireUser = createMiddleware<AppEnv>(async (c, next) => {
-  if (!c.var.user) return c.json({ error: "unauthorized" }, 401);
+  if (!c.var.user) throw new AppError("UNAUTHENTICATED");
   await next();
 });

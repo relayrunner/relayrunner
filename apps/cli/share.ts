@@ -4,6 +4,7 @@
 
 import { z } from "zod";
 import { userAgent } from "./paths.ts";
+import { failureReason } from "./api-error.ts";
 
 export const SHARE_CHOICES = ["only-me", "anyone"] as const;
 export type ShareChoice = (typeof SHARE_CHOICES)[number];
@@ -71,9 +72,10 @@ export async function setSharing(options: {
   // A gateway from before #244 has no such route.
   if (response.status === 404 || response.status === 405)
     return { status: "failed", reason: `${options.server} doesn't support sharing yet` };
+  const body = await response.json().catch(() => null);
   if (!response.ok)
-    return { status: "failed", reason: `${options.server} answered HTTP ${response.status}` };
-  const parsed = SharingResponse.safeParse(await response.json().catch(() => null));
+    return { status: "failed", reason: failureReason(options.server, response, body) };
+  const parsed = SharingResponse.safeParse(body);
   if (!parsed.success)
     return { status: "failed", reason: `${options.server} sent an unexpected response` };
   return { status: "ok", sharing: parsed.data.machine.sharing };

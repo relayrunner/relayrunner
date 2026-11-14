@@ -1,5 +1,5 @@
 import { and, eq, gt, sql } from "drizzle-orm";
-import { type Context, Hono } from "hono";
+import { Hono } from "hono";
 import { bodyLimit } from "hono/body-limit";
 import { z } from "zod";
 import { AGENT_WORKSPACE_HEADER, agentWorkspaceId } from "../agent-auth.ts";
@@ -10,6 +10,7 @@ import { FEEDBACK_CATEGORIES, FEEDBACK_LIMITS } from "@relayrunner/activity";
 import { FEEDBACK_RATE, sanitizeFeedback, sanitizeMessage } from "../feedback.ts";
 import { inBackground, requireUser } from "../middleware/session.ts";
 import { membership } from "../middleware/workspace.ts";
+import { AppError } from "@relayrunner/errors";
 
 // Raw input may run a little over the stored limits (whitespace, invisible characters) before
 // cleaning trims it; anything far over is refused rather than silently cut.
@@ -48,7 +49,12 @@ type Entry = {
 // isn't echoed back.
 export const feedbackRoutes = new Hono<AppEnv>().post(
   "/",
-  bodyLimit({ maxSize: 16 * 1024, onError: (c) => c.json({ error: "too_large" }, 413) }),
+  bodyLimit({
+    maxSize: 16 * 1024,
+    onError: () => {
+      throw new AppError("PAYLOAD_TOO_LARGE");
+    },
+  }),
   requireUser,
   async (c) => {
     const { agent, user } = c.var;
@@ -60,9 +66,9 @@ export const feedbackRoutes = new Hono<AppEnv>().post(
     if (agent) {
       const requested = c.req.header(AGENT_WORKSPACE_HEADER);
       const workspaceId = agentWorkspaceId(agent, requested);
-      if (requested && !workspaceId) return c.json({ error: "not_found" }, 404);
+      if (requested && !workspaceId) throw new AppError("NOT_FOUND");
       const parsed = AgentBody.safeParse(body);
-      if (!parsed.success) return invalid(c, parsed.error);
+      if (!parsed.success) throw invalid(parsed.error);
       entry = {
         ...sanitizeFeedback(parsed.data),
         source: "agent",
@@ -72,7 +78,7 @@ export const feedbackRoutes = new Hono<AppEnv>().post(
       workspace = async () => agent.workspaces.find((w) => w.id === workspaceId) ?? null;
     } else {
       const parsed = DashboardBody.safeParse(body);
-      if (!parsed.success) return invalid(c, parsed.error);
+      if (!parsed.success) throw invalid(parsed.error);
       entry = {
         ...sanitizeMessage(parsed.data.message, parsed.data.page),
         source: "dashboard",
@@ -83,7 +89,7 @@ export const feedbackRoutes = new Hono<AppEnv>().post(
       workspace = async () =>
         activeId ? ((await membership(db, activeId, user!.id))?.workspace ?? null) : null;
     }
-    if (!entry.summary) return c.json({ error: "invalid_body", fields: ["summary"] }, 400);
+    if (!entry.summary) throw new AppError("INVALID_REQUEST", { details: { fields: ["summary"] } });
 
     const now = Date.now();
     // The workspace lookup (a person's active workspace) runs alongside the rate-limit count.
@@ -102,8 +108,10 @@ export const feedbackRoutes = new Hono<AppEnv>().post(
     const [[recent], about] = await Promise.all([recentQuery, workspace()]);
     const hourly = recent.hour >= FEEDBACK_RATE.hour;
     if (hourly || recent.day >= FEEDBACK_RATE.day) {
-      c.header("retry-after", hourly ? "3600" : "86400");
-      return c.json({ error: "rate_limited" }, 429);
+      throw new AppError("RATE_LIMITED", {
+        message: "You've sent a lot of feedback today. Try again later, or email us.",
+        retryAfter: hourly ? 3600 : 86400,
+      });
     }
 
     const id = crypto.randomUUID();
@@ -149,7 +157,7 @@ export const feedbackRoutes = new Hono<AppEnv>().post(
   },
 );
 
-function invalid(c: Context<AppEnv>, error: z.ZodError) {
+function invalid(error: z.ZodError) {
   const fields = [...new Set(error.issues.map((issue) => issue.path.join(".")))];
-  return c.json({ error: "invalid_body", fields }, 400);
+  return new AppError("INVALID_REQUEST", { details: { fields } });
 }

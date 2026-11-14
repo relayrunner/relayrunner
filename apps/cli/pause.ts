@@ -5,6 +5,7 @@
 import { z } from "zod";
 import { withCurrentToken, type Credentials } from "./credentials.ts";
 import { userAgent } from "./paths.ts";
+import { failureReason } from "./api-error.ts";
 
 const PauseResponse = z.object({
   machine: z.object({
@@ -43,9 +44,10 @@ export async function setPaused(options: {
     };
   }
   if (response.status === 401) return { status: "revoked" };
+  const body = await response.json().catch(() => null);
   if (!response.ok)
-    return { status: "failed", reason: `${options.server} answered HTTP ${response.status}` };
-  const parsed = PauseResponse.safeParse(await response.json().catch(() => null));
+    return { status: "failed", reason: failureReason(options.server, response, body) };
+  const parsed = PauseResponse.safeParse(body);
   if (!parsed.success)
     return { status: "failed", reason: `${options.server} sent an unexpected response` };
   return {

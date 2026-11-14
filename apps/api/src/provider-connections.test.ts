@@ -124,7 +124,7 @@ describe("connecting a provider", () => {
     const { workspace, cookie } = await owner();
     const response = await connect(cookie, "depot", { token: "wrong-token-0000" });
     expect(response.status).toBe(400);
-    expect(await response.json()).toMatchObject({ error: "token_rejected" });
+    expect(await response.json()).toMatchObject({ error: { code: "PROVIDER_TOKEN_REJECTED" } });
     const row = await env.DB.prepare("select 1 from provider_connection where workspace_id = ?")
       .bind(workspace.id)
       .first();
@@ -139,7 +139,7 @@ describe("connecting a provider", () => {
       token: "good-token-1234",
       options: { region: "mars" },
     });
-    expect(await badRegion.json()).toEqual({ error: "invalid_options" });
+    expect(await badRegion.json()).toMatchObject({ error: { code: "INVALID_REQUEST" } });
     expect((await connect(cookie, "blacksmith", { token: "good-token-1234" })).status).toBe(404);
     expect((await connect(cookie, "depot", { token: "short" })).status).toBe(400);
   });
@@ -156,7 +156,7 @@ describe("connecting a provider", () => {
       "PUT",
     );
     expect(response.status).toBe(503);
-    expect(await response.json()).toEqual({ error: "token_storage_unavailable" });
+    expect(await response.json()).toMatchObject({ error: { code: "TOKEN_STORAGE_UNAVAILABLE" } });
   });
 
   test("a member can look but not connect, test or remove", async () => {

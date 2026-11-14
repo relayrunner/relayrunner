@@ -1,0 +1,28 @@
+---
+title: Errors
+description: The error codes the API returns, and what each one means.
+---
+
+import ErrorTable from "@/components/docs/ErrorTable.astro";
+
+When a request fails, the API answers with an HTTP error status and a JSON body like this one:
+
+```json
+{
+  "error": {
+    "code": "NOT_FOUND",
+    "message": "Not found.",
+    "details": {}
+  }
+}
+```
+
+- `code` names what went wrong. Codes never change once they ship, so branch on the code.
+- `message` is a sentence you can show a person or pass to an agent. Its wording can change.
+- `details` appears on some codes with more context, such as the problems in a runner order.
+
+When a code means you can try again later, such as `RATE_LIMITED`, the response also has a `Retry-After` header with the seconds to wait. The [MCP server](/docs/reference/mcp) passes the message and the code to your agent.
+
+## Codes
+
+<ErrorTable />

@@ -48,9 +48,10 @@ import {
 } from "@/components/ui/dropdown-menu";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { hasQuota, type AccountUsage } from "@/lib/actions-usage";
+import { ApiError } from "@/lib/api";
 import type { Machine } from "@/lib/machines";
 import { previewRoute, type StepVerdict } from "@/lib/route-preview";
-import { RunnerOrderError, saveRunnerOrder } from "@/lib/runner-order";
+import { saveRunnerOrder } from "@/lib/runner-order";
 import { cn } from "@/lib/utils";
 
 type SaveStatus =
@@ -118,8 +119,8 @@ export function RunnerOrderEditor({
       void router.invalidate();
     } catch (error) {
       const message =
-        error instanceof RunnerOrderError && error.reason
-          ? error.reason
+        error instanceof ApiError && error.code === "RUNNER_ORDER_INVALID"
+          ? error.message
           : "Couldn't save the order. Try again.";
       setStatus({ kind: "error", message });
     }

@@ -320,7 +320,7 @@ describe("machine enrollment", () => {
     const { cookie } = await owner("enroll-missing");
     const response = await call("/machines/device?user_code=NOPENOPE", cookie);
     expect(response.status).toBe(400);
-    expect(await response.json()).toEqual({ error: "invalid_request" });
+    expect(await response.json()).toMatchObject({ error: { code: "DEVICE_CODE_INVALID" } });
   });
 
   test("a code another user claimed can't be approved", async () => {
@@ -615,7 +615,7 @@ describe("machines and roles (#134)", () => {
     ]);
     const response = await revoke(machine.id, member.cookie);
     expect(response.status).toBe(403);
-    expect(await response.json()).toEqual({ error: "forbidden" });
+    expect(await response.json()).toMatchObject({ error: { code: "FORBIDDEN" } });
     expect(await verifyMachineToken(createDb(env.DB), token)).not.toBeNull();
     expect(link(machine.id).revoke).not.toHaveBeenCalled();
   });
@@ -1061,7 +1061,7 @@ describe("sharing a machine (#242)", () => {
     for (const other of [admin, member]) {
       const response = await share(machine.id, other.cookie, "anyone");
       expect(response.status).toBe(403);
-      expect(await response.json()).toEqual({ error: "not_owner" });
+      expect(await response.json()).toMatchObject({ error: { code: "MACHINE_NOT_OWNED" } });
     }
     expect((await share(machine.id, cookie, "anyone")).status).toBe(200);
   });

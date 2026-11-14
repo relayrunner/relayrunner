@@ -3,6 +3,7 @@ import { createMiddleware } from "hono/factory";
 import type { AppEnv } from "../app.ts";
 import { AGENT_WORKSPACE_HEADER, agentWorkspaceId } from "../agent-auth.ts";
 import { createDb, schema, type Db } from "../db/index.ts";
+import { AppError } from "@relayrunner/errors";
 
 // Resolves the session's active workspace and the signed-in user's membership in it. Gateway
 // routes that act on a workspace (installations, machines, repos) go behind this. Run it after
@@ -14,7 +15,7 @@ export const requireWorkspace = createMiddleware<AppEnv>(async (c, next) => {
     ? agentWorkspaceId(agent, c.req.header(AGENT_WORKSPACE_HEADER))
     : c.var.session?.activeOrganizationId;
   if (!workspaceId) {
-    return c.json({ error: agent ? "workspace_required" : "no_active_workspace" }, 409);
+    throw new AppError(agent ? "WORKSPACE_REQUIRED" : "NO_ACTIVE_WORKSPACE");
   }
 
   const userId = c.var.user!.id;
@@ -23,7 +24,7 @@ export const requireWorkspace = createMiddleware<AppEnv>(async (c, next) => {
     (await membership(c.var.db, workspaceId, userId)) ??
     (await membership(createDb(c.env.DB), workspaceId, userId));
   // A stale active id (workspace deleted, or membership removed) reads as no workspace.
-  if (!row) return c.json({ error: "no_active_workspace" }, 409);
+  if (!row) throw new AppError("NO_ACTIVE_WORKSPACE");
 
   c.set("workspace", row.workspace);
   c.set("role", row.role);

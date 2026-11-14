@@ -233,9 +233,11 @@ describe("operator deletes", () => {
     const teammate = await testing.joinWorkspace(env, tester.workspace.id, "member");
     const res = await del(`/users/${teammate.user.id}`, op.cookie);
     expect(res.status).toBe(409);
-    expect(await res.json()).toEqual({
-      error: "shared_workspaces",
-      workspaces: [{ id: tester.workspace.id, name: `Test ${seq}` }],
+    expect(await res.json()).toMatchObject({
+      error: {
+        code: "USER_HAS_SHARED_WORKSPACES",
+        details: { workspaces: [{ id: tester.workspace.id, name: `Test ${seq}` }] },
+      },
     });
     const row = await env.DB.prepare("select count(*) n from user where id = ?")
       .bind(teammate.user.id)

@@ -15,10 +15,6 @@ import { Textarea } from "@/components/ui/textarea";
 import { errorText } from "@/lib/api";
 import { FEEDBACK_EMAIL, sendFeedback } from "@/lib/feedback";
 
-const ERRORS = {
-  rate_limited: "You've sent a lot of feedback today. Try again later, or email us.",
-};
-
 /**
  * A short form for feedback, opened from `children` (the trigger). Other props go to the trigger, so
  * a tooltip can wrap it.
@@ -57,7 +53,7 @@ export function FeedbackPopover({
       setMessage("");
       setStatus("sent");
     } catch (caught) {
-      setError(errorText(caught, ERRORS));
+      setError(errorText(caught));
       setStatus("idle");
     }
   };

@@ -139,8 +139,8 @@ describe("the workspace the route guards read", () => {
     session.setOnSessionChange(onChange);
     getCurrentWorkspace.mockResolvedValue(workspace());
     await session.cachedWorkspace("w1");
-    getCurrentWorkspace.mockRejectedValue(new ApiError(409, "no_active_workspace"));
-    apiErrorListener?.(new ApiError(409, "no_active_workspace"), "/machines");
+    getCurrentWorkspace.mockRejectedValue(new ApiError(409, "NO_ACTIVE_WORKSPACE"));
+    apiErrorListener?.(new ApiError(409, "NO_ACTIVE_WORKSPACE"), "/machines");
     await settle();
     expect(onChange).toHaveBeenCalledTimes(1);
     // The guard reads it again, which fails and sends them to /welcome.

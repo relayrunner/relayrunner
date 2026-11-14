@@ -6,6 +6,7 @@ import { requireUser } from "../middleware/session.ts";
 import { requireWorkspace } from "../middleware/workspace.ts";
 import { withCatalog } from "../provider-catalog.ts";
 import { performanceReport } from "../runs.ts";
+import { AppError } from "@relayrunner/errors";
 
 /** A report's `?days=N`, shared by the routes that take one. */
 export const Days = z.coerce.number().int().min(1).max(MAX_DAYS).default(DEFAULT_DAYS);
@@ -28,18 +29,18 @@ const RunsQuery = z.object({
 export const jobTimesRoutes = new Hono<AppEnv>()
   .get("/", requireUser, requireWorkspace, withCatalog, async (c) => {
     const parsed = DaysQuery.safeParse(c.req.query());
-    if (!parsed.success) return c.json({ error: "invalid_query" }, 400);
+    if (!parsed.success) throw new AppError("INVALID_REQUEST");
     return c.json(await performanceReport(c.var.db, c.var.workspace.id, parsed.data.days));
   })
   .get("/runs", requireUser, requireWorkspace, withCatalog, async (c) => {
     const parsed = RunsQuery.safeParse(c.req.query());
-    if (!parsed.success) return c.json({ error: "invalid_query" }, 400);
+    if (!parsed.success) throw new AppError("INVALID_REQUEST");
     const { days, repositoryId, workflow, name, matrix } = parsed.data;
     const job = { repositoryId, workflow: workflow ?? null, name, matrix: matrix === "true" };
     return c.json(await jobRuns(c.var.db, c.var.workspace.id, job, days));
   })
   .get("/machines", requireUser, requireWorkspace, withCatalog, async (c) => {
     const parsed = DaysQuery.safeParse(c.req.query());
-    if (!parsed.success) return c.json({ error: "invalid_query" }, 400);
+    if (!parsed.success) throw new AppError("INVALID_REQUEST");
     return c.json(await machineJobTimes(c.var.db, c.var.workspace.id, parsed.data.days));
   });

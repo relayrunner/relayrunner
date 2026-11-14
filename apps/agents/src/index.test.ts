@@ -1,3 +1,4 @@
+import { AppError } from "@relayrunner/errors";
 import { SKILLS_EXTENSION_ID } from "@modelcontextprotocol/server/ext/skills";
 import { describe, expect, test } from "vitest";
 import worker from "./index.ts";
@@ -43,7 +44,7 @@ function fakeEnv(
         const found = answers[url.pathname];
         const answer = typeof found === "function" ? found(workspace) : found;
         return answer === undefined
-          ? Response.json({ error: "not_found" }, { status: 404 })
+          ? Response.json(new AppError("NOT_FOUND"), { status: 404 })
           : Response.json(answer);
       },
     },
@@ -392,7 +393,7 @@ describe("mcp server", () => {
       await rpc(env, { method: "tools/call", params: { name: "get_workspace", arguments: {} } })
     ).json()) as { result: { content: { text: string }[]; isError: boolean } };
     expect(called.result.isError).toBe(true);
-    expect(called.result.content[0].text).toContain("404");
+    expect(called.result.content[0].text).toBe("Not found. (NOT_FOUND)");
   });
 
   test("serves the agent skills to 2025-era clients", async () => {

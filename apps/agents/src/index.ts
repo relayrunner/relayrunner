@@ -1,3 +1,4 @@
+import { AppError } from "@relayrunner/errors";
 /**
  * RelayRunner's MCP server, at https://agents.relayrunner.app/mcp. Agents sign in with OAuth
  * against the dashboard (apps/api/src/agent-auth.ts) and get a token for the workspaces they pick,
@@ -13,7 +14,7 @@ import {
   McpServer,
   WebStandardStreamableHTTPServerTransport,
 } from "@modelcontextprotocol/server";
-import { ApiError, apiClient, type Me } from "./api.ts";
+import { apiClient, type Me } from "./api.ts";
 import type { Env } from "./env.ts";
 import { SERVER_CARD_TYPE, SERVER_VERSION, serverCard } from "./server-card.ts";
 import { skillCatalog } from "./skills.ts";
@@ -28,7 +29,8 @@ export default {
     if (url.pathname.startsWith(RESOURCE_METADATA_PATH)) return resourceMetadata(env);
     if (url.pathname === `${mcpPath}/server-card`) return card(request, env);
     if (url.pathname !== mcpPath) {
-      return Response.json({ error: "not_found" }, { status: 404 });
+      const notFound = new AppError("NOT_FOUND");
+      return Response.json(notFound.toJSON(), { status: notFound.status });
     }
     // Stateless: no sessions to resume or end, and no server-initiated stream.
     if (request.method !== "POST") {
@@ -44,7 +46,7 @@ export default {
     try {
       me = await api<Me>("/me");
     } catch (error) {
-      if (error instanceof ApiError && error.status === 401) return unauthorized(env, true);
+      if (error instanceof AppError && error.status === 401) return unauthorized(env, true);
       throw error;
     }
     const { success } = await env.LIMITER.limit({

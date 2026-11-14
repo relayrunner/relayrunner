@@ -20,7 +20,7 @@ import { errorText } from "@/lib/api";
 import { authDisabled } from "@/lib/auth-client";
 import { providerInfo } from "@/lib/provider-catalog";
 import {
-  CONNECT_ERRORS,
+  TEST_FAILURES,
   connectProvider,
   listConnections,
   type ProviderConnection,
@@ -72,7 +72,7 @@ function ProviderCard({ first, manager }: { first: ProviderConnection; manager: 
     try {
       await action();
     } catch (caught) {
-      setNotice({ ok: false, text: errorText(caught, CONNECT_ERRORS) });
+      setNotice({ ok: false, text: errorText(caught) });
     } finally {
       setPending(false);
     }
@@ -85,7 +85,7 @@ function ProviderCard({ first, manager }: { first: ProviderConnection; manager: 
       setNotice(
         result.ok
           ? { ok: true, text: "The token works." }
-          : { ok: false, text: CONNECT_ERRORS[result.error ?? ""] ?? result.message ?? "" },
+          : { ok: false, text: TEST_FAILURES[result.error ?? ""] ?? result.message ?? "" },
       );
     });
 

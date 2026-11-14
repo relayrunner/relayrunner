@@ -1,5 +1,6 @@
 import { createMiddleware } from "hono/factory";
 import type { AppEnv } from "./app.ts";
+import { AppError } from "@relayrunner/errors";
 
 // Workspace roles (#134). These are Better Auth's stock organization roles:
 // - owner and admin manage GitHub installations, runner order and members.
@@ -31,7 +32,8 @@ export function canControlMachine(
 // Owner or admin of the request's workspace. Reads the role set by requireWorkspace (or a
 // route's own membership middleware), so it costs no extra query. Run it after that.
 export const requireManager = createMiddleware<AppEnv>(async (c, next) => {
-  if (!canManage(c.var.role)) return c.json({ error: "forbidden" }, 403);
+  if (!canManage(c.var.role))
+    throw new AppError("FORBIDDEN", { message: "Only owners and admins can do that." });
   await next();
 });
 

@@ -47,7 +47,7 @@ describe("POST /api/me/legal", () => {
       terms: "2000-01-01",
     });
     expect(old.status).toBe(409);
-    expect(await old.json()).toEqual({ error: "outdated" });
+    expect(await old.json()).toMatchObject({ error: { code: "LEGAL_TERMS_OUTDATED" } });
     expect((await testing.call(env, "/me/legal", cookie, {})).status).toBe(400);
     expect(legalToAgree(await session(cookie))).toEqual(["terms", "privacy"]);
   });

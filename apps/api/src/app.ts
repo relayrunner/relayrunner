@@ -1,9 +1,11 @@
 import { Hono } from "hono";
+import { AppError } from "@relayrunner/errors";
 import type { AccessIdentity } from "@relayrunner/access";
 import type { AgentPrincipal } from "./agent-auth.ts";
 import type { Auth, Session } from "./auth.ts";
 import type { Db, schema } from "./db/index.ts";
 import type { Env } from "./env.ts";
+import { respondError } from "./errors.ts";
 import { requireAccess } from "./middleware/admin.ts";
 import { d1Session } from "./middleware/d1-session.ts";
 import { attachSession } from "./middleware/session.ts";
@@ -68,4 +70,5 @@ app.route("/feedback", feedbackRoutes);
 // session.
 app.route("/admin", adminRoutes);
 
-app.notFound((c) => c.json({ error: "not_found" }, 404));
+app.notFound((c) => respondError(c, new AppError("NOT_FOUND")));
+app.onError((error, c) => respondError(c, error));

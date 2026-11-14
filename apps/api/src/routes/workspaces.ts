@@ -18,20 +18,21 @@ import { requireManager } from "../roles.ts";
 import { HOSTED_PROVIDER_IDS, providersOfAppSlugs } from "@relayrunner/providers";
 import { appInstallationToken, orgAppSlugs } from "../github-app.ts";
 import { present } from "./github.ts";
+import { AppError } from "@relayrunner/errors";
 
 // Any member of the workspace in the path. Someone outside it gets a 404, so ids don't leak.
 // An agent token (agent-auth.ts) only reaches the workspaces it was granted.
 const requireMember = createMiddleware<AppEnv>(async (c, next) => {
   const workspaceId = c.req.param("id") ?? "";
   if (c.var.agent && agentWorkspaceId(c.var.agent, workspaceId) === null) {
-    return c.json({ error: "not_found" }, 404);
+    throw new AppError("NOT_FOUND");
   }
   const userId = c.var.user!.id;
   // A miss asks the primary, in case the replica hasn't caught up with a new workspace.
   const membership =
     (await isWorkspaceMember(c.var.db, workspaceId, userId)) ??
     (await isWorkspaceMember(createDb(c.env.DB), workspaceId, userId));
-  if (!membership) return c.json({ error: "not_found" }, 404);
+  if (!membership) throw new AppError("NOT_FOUND");
   c.set("role", membership.role);
   await next();
 });
@@ -82,7 +83,10 @@ export const workspaceRoutes = new Hono<AppEnv>()
     const parsed = runnerOrderSchema.safeParse(await c.req.json().catch(() => null));
     if (!parsed.success) {
       const issues = parsed.error.issues.map(({ path, message }) => ({ path, message }));
-      return c.json({ error: "invalid_runner_order", issues }, 400);
+      throw new AppError("RUNNER_ORDER_INVALID", {
+        message: issues[0]?.message,
+        details: { issues },
+      });
     }
     await c.var.db
       .update(schema.workspace)
@@ -139,7 +143,7 @@ export const workspaceRoutes = new Hono<AppEnv>()
   // Turns skipping on or off. Owners and admins, like the order.
   .put("/:id/provider-health", requireUser, requireMember, requireManager, async (c) => {
     const body = (await c.req.json().catch(() => null)) as { enabled?: unknown } | null;
-    if (typeof body?.enabled !== "boolean") return c.json({ error: "invalid_body" }, 400);
+    if (typeof body?.enabled !== "boolean") throw new AppError("INVALID_REQUEST");
     await c.var.db
       .update(schema.workspace)
       .set({ skipUnhealthyRunners: body.enabled })
@@ -158,7 +162,7 @@ export const workspaceRoutes = new Hono<AppEnv>()
   // Owners and admins, like the order.
   .put("/:id/retry-settings", requireUser, requireMember, requireManager, async (c) => {
     const parsed = retrySettingsSchema.safeParse(await c.req.json().catch(() => null));
-    if (!parsed.success) return c.json({ error: "invalid_body" }, 400);
+    if (!parsed.success) throw new AppError("INVALID_REQUEST");
     await c.var.db
       .update(schema.workspace)
       .set({ retrySettings: JSON.stringify(parsed.data) })
@@ -174,7 +178,7 @@ export const workspaceRoutes = new Hono<AppEnv>()
     async (c) => {
       const key = c.req.param("key");
       if (!(HOSTED_PROVIDER_IDS as readonly string[]).includes(key))
-        return c.json({ error: "unknown_provider" }, 400);
+        throw new AppError("PROVIDER_UNKNOWN");
       await c.env.ROUTER.getByName(c.req.param("id")).clearHealth(key, c.req.param("label"));
       return c.json({ cleared: true });
     },

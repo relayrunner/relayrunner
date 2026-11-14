@@ -20,6 +20,7 @@
     "@pierre/diffs": "1.6.4",
     "@relayrunner/access": "workspace:*",
     "@relayrunner/activity": "workspace:*",
+    "@relayrunner/errors": "workspace:*",
     "@relayrunner/posthog-proxy": "workspace:*",
     "@relayrunner/providers": "workspace:*",
     "@relayrunner/runner-order": "workspace:*",

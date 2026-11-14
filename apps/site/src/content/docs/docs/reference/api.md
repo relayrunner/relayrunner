@@ -36,8 +36,8 @@ Send the access token as `Authorization: Bearer <token>`. Tokens last 15 minutes
 | `GET /job-times`                                     | Typical job durations per runner                                       |
 | `POST /feedback`                                     | Reports a bug, confusing result or missing feature to the team         |
 
-Errors come back as JSON with a short code, such as `{"error": "invalid_query"}`.
+A failed request answers with a code and a message, such as `{"error": {"code": "INVALID_REQUEST", "message": "The request isn't valid."}}`. [Errors](/docs/reference/errors) lists every code.
 
 ## Rate limit
 
-Each person's connection can make 300 requests a minute, counting requests from the MCP server too. Past that, the API answers `429` with `{"error": "rate_limited"}` and a `Retry-After` header.
+Each person's connection can make 300 requests a minute, counting requests from the MCP server too. Past that, the API answers `429` with the `RATE_LIMITED` code and a `Retry-After` header.

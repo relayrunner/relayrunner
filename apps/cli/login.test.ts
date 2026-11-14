@@ -162,7 +162,9 @@ describe("login", () => {
     const { result } = run({
       "/api/auth/device/code": [code],
       "/api/auth/device/token": [{ status: 200, body: { access_token: "session-tok" } }],
-      "/api/machines/claim": [{ status: 404, body: { error: "not_found" } }],
+      "/api/machines/claim": [
+        { status: 404, body: { error: { code: "NOT_FOUND", message: "Not found." } } },
+      ],
     });
     await expect(result).rejects.toMatchObject({ code: "CLAIM_FAILED" });
   });

@@ -29,6 +29,7 @@
     "zod": "catalog:"
   },
   "devDependencies": {
+    "@relayrunner/errors": "workspace:*",
     "@relayrunner/machine-protocol": "workspace:*",
     "@relayrunner/providers": "workspace:*",
     "@types/ws": "^8.18.2",
