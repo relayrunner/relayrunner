@@ -286,7 +286,8 @@ function OutcomeChart({ health }: { health: RoutingHealth }) {
             role="img"
             aria-label={`Relays per ${health.range === "24h" ? "hour" : "6 hours"} by outcome`}
             className="relative flex h-48 min-w-0 flex-1 items-end gap-[3px] border-b"
-            onPointerLeave={() => setHover(null)}
+            // A touch leaves as soon as the finger lifts: keep its tip until the next tap.
+            onPointerLeave={(event) => event.pointerType !== "touch" && setHover(null)}
           >
             <GridLines count={ticks.length - 1} />
             {health.buckets.map((bucket, i) => (
@@ -425,7 +426,8 @@ function BacklogChart({ health }: { health: RoutingHealth }) {
             role="img"
             aria-label="Jobs waiting for a machine and p95 wait over time"
             className="relative flex h-48 min-w-0 flex-1 items-end gap-[3px] border-b"
-            onPointerLeave={() => setHover(null)}
+            // A touch leaves as soon as the finger lifts: keep its tip until the next tap.
+            onPointerLeave={(event) => event.pointerType !== "touch" && setHover(null)}
           >
             <GridLines count={left.ticks.length - 1} />
             <div

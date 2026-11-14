@@ -366,7 +366,10 @@ function Plot({
         role="img"
         aria-label={label}
         onPointerMove={onPointerMove}
-        onPointerLeave={onLeave}
+        // A tap picks the nearest dot too, since a touch doesn't move before it lands.
+        onPointerDown={onPointerMove}
+        // A touch leaves as soon as the finger lifts: keep its tip until the next tap.
+        onPointerLeave={(event) => event.pointerType !== "touch" && onLeave()}
         className="block"
       >
         <YAxis ticks={ticks} y={y} width={frame.width} tickText={tickText} />
