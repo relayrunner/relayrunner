@@ -1,6 +1,6 @@
 ---
 title: Your machines
-description: Running jobs on computers you own, connected with the CLI.
+description: Turn computers you own into GitHub Actions runners with the CLI.
 ---
 
 Any Mac or Linux computer can take jobs: your laptop, a Mac mini under the desk, an old gaming PC, a home server. Connect it with the CLI and it joins the self-hosted step of every workspace you're in.

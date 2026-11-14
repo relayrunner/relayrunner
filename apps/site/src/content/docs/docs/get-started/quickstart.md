@@ -1,6 +1,6 @@
 ---
 title: Quickstart
-description: Shortest path from sign-up to a green job on your own machine.
+description: Go from sign-up to a green GitHub Actions job on your own machine.
 ---
 
 You need a private GitHub repository, and a Mac or Linux computer with Node.js 22 or newer.

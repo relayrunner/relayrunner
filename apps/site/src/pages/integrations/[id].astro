@@ -38,8 +38,8 @@ const lede = github
   ? "Jobs use GitHub minutes only when your own machines are busy. You change the order from the dashboard, not your workflows."
   : `Jobs go to your machines first and to ${name} when they're busy. You change the order from the dashboard, not your workflows.`;
 const description = github
-  ? "Use GitHub-hosted runners as one step in a runner order with your own machines and hosted providers. Jobs use GitHub minutes only when your machines are busy, and you change the order from the dashboard."
-  : `Use ${name} as one step in a runner order with your own machines and GitHub-hosted runners. Jobs go to your machines first and to ${name} when they're busy, and you change the order from the dashboard.`;
+  ? "Route GitHub Actions jobs to GitHub-hosted runners as one step in a runner order with your own machines and hosted providers. Jobs use GitHub minutes only when your machines are busy, and you change the order from the dashboard."
+  : `Route GitHub Actions jobs to ${name} as one step in a runner order with your own machines and GitHub-hosted runners. Jobs go to your machines first and to ${name} when they're busy, and you change the order from the dashboard.`;
 
 // The same provider used directly, and as a step in a runner order.
 const alone = github
@@ -117,7 +117,7 @@ const faqData = {
 };
 ---
 
-<LandingPage title={`${name} integration`} {description} path={integrationPath(id)}>
+<LandingPage title={`Route GitHub Actions jobs to ${who}`} {description} path={integrationPath(id)}>
   <script type="application/ld+json" slot="head" set:html={JSON.stringify(faqData)} />
 
   <section class="wrap sol-hero">
