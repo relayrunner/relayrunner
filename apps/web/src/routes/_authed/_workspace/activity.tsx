@@ -24,6 +24,7 @@ import { PageHeader } from "@/components/page-header";
 import { GithubIcon } from "@/components/provider-logos";
 import { RunnerLink } from "@/components/runner-link";
 import { StatusIcon } from "@/components/status-icon";
+import { WalkLines } from "@/components/walk-lines";
 import { Button } from "@/components/ui/button";
 import {
   Select,
@@ -60,7 +61,7 @@ import {
   type FreeCheckSavings,
 } from "@/lib/usage";
 import { cn } from "@/lib/utils";
-import { failureText, jobNames, walkLines, walkSummary, type RouteWalk } from "@/lib/route-walk";
+import { failureText, jobNames, walkSummary } from "@/lib/route-walk";
 
 // Fast enough that a push shows up within seconds, without a live connection.
 const POLL_MS = 5_000;
@@ -713,45 +714,6 @@ function Reason({
     >
       {text}
     </button>
-  );
-}
-
-const LINE_STATES = {
-  skipped: "skipped",
-  ran: "ran it",
-  not_tried: "not tried",
-} as const;
-
-// How the pick walked the runner order, one log line per step: "├ 1 machine  skipped · no
-// machine with macOS was online and idle".
-function WalkLines({ walk, runner }: { walk: RouteWalk; runner: string | null }) {
-  const lines = walkLines(walk, runner);
-  return (
-    <ul
-      aria-label="How RelayRunner walked your runner order"
-      className="mt-1 grid gap-0.5 font-mono text-xs text-muted-foreground"
-    >
-      {lines.map((line, index) => (
-        <li
-          key={`${line.key}-${line.state}`}
-          className="break-words sm:truncate"
-          ref={(el) => {
-            if (el) el.title = el.textContent ?? "";
-          }}
-        >
-          <span aria-hidden className="text-muted-foreground/50">
-            {index === lines.length - 1 ? "└ " : "├ "}
-          </span>
-          <span className="text-foreground/75">
-            {line.position ?? "–"} {line.key}
-          </span>{" "}
-          <span className={line.state === "ran" ? "text-go" : undefined}>
-            {LINE_STATES[line.state]}
-          </span>
-          {line.text && (line.state === "ran" ? ` ${line.text}` : ` · ${line.text}`)}
-        </li>
-      ))}
-    </ul>
   );
 }
 

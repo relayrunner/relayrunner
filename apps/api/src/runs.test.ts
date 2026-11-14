@@ -1,3 +1,4 @@
+import type { RouteWalk } from "@relayrunner/activity";
 import type { WebhookMessage } from "@relayrunner/github-webhooks";
 import { afterEach, beforeAll, describe, expect, test, vi } from "vitest";
 import { createDb, schema } from "./db/index.ts";
@@ -259,9 +260,32 @@ describe("runs list", () => {
     // Runs older than the window are left out.
     expect(week.runs.every((run) => run.updatedAt >= Date.now() - 14 * 24 * HOUR)).toBe(true);
 
+    // The run's pick: the machine was busy, so GitHub-hosted took it.
+    await db.insert(schema.routeDecision).values({
+      workspaceId,
+      repositoryId: installationId * 10,
+      runId: 200,
+      runAttempt: 1,
+      step: "github",
+      runner: "ubuntu-latest",
+      skipped: [{ key: "machine", reason: "machine_full" }],
+      notInOrder: [],
+      machine: ["self-hosted"],
+      github: ["ubuntu-latest"],
+      hosted: {},
+    });
+
     const res = await testing.call(env, `/runs/${installationId * 10}/200/1/jobs`, cookie);
     expect(res.status).toBe(200);
-    const { run, jobs } = (await res.json()) as { run: RunHeader; jobs: RunJob[] };
+    const { run, jobs, walk } = (await res.json()) as {
+      run: RunHeader;
+      jobs: RunJob[];
+      walk: RouteWalk | null;
+    };
+    expect(walk).toMatchObject({
+      step: "github",
+      skipped: [{ key: "machine", reason: "machine_full" }],
+    });
     expect(run).toMatchObject({
       repository: "acme/app",
       workflow: "CI",

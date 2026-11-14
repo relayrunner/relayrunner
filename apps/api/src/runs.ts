@@ -9,6 +9,7 @@
 // an installation index (job_timing_installation_idx, workflow_run_installation_idx) over the
 // window, never a scan. The job list is one range of job_timing_installation_idx, newest first and
 // capped. One run's jobs are a range of job_timing_run_idx.
+import type { RouteWalk } from "@relayrunner/activity";
 import type { WebhookMessage } from "@relayrunner/github-webhooks";
 import { and, eq, sql } from "drizzle-orm";
 import { type Db, schema } from "./db/index.ts";
@@ -30,6 +31,7 @@ import {
 } from "./job-times.ts";
 import { DAY_MS, purgeBefore, RAW_RETENTION_DAYS } from "./job-timings.ts";
 import { parseDate } from "./jobs.ts";
+import { jobKey, picksForJobs } from "./route-decisions.ts";
 
 type WorkflowRunMessage = Extract<WebhookMessage, { event: "workflow_run" }>;
 
@@ -417,13 +419,19 @@ export type RunHeader = Pick<
  * One run attempt's jobs from job_timing, picks left out: finished ones and ones still queued or
  * running. Oldest queued first. Jobs that wait on others (`needs:`) only show once GitHub queues
  * them, since GitHub doesn't create them before. `run` is null when nothing of the run is known.
+ * `walk` is how the run's pick walked the runner order, for a run RelayRunner routed.
  */
 export async function runJobs(
   db: Db,
   workspaceId: string,
   run: { repositoryId: number; runId: number; runAttempt: number },
-): Promise<{ run: RunHeader | null; environments: Environment[]; jobs: RunJob[] }> {
-  const [rows, [row]] = await Promise.all([
+): Promise<{
+  run: RunHeader | null;
+  environments: Environment[];
+  jobs: RunJob[];
+  walk: RouteWalk | null;
+}> {
+  const [rows, [row], picks] = await Promise.all([
     db
       .select()
       .from(timing)
@@ -448,6 +456,7 @@ export async function runJobs(
         ),
       )
       .limit(1),
+    picksForJobs(db, [run]),
   ]);
   const first = rows[0];
   const repository = row?.repositoryFullName ?? first?.repositoryFullName;
@@ -499,6 +508,8 @@ export async function runJobs(
   await nameMachines(db, workspaceId, envs);
   return {
     run: header,
+    // Only once the run is known to be the workspace's: decisions aren't scoped to one.
+    walk: header ? (picks.get(jobKey(run))?.walk ?? null) : null,
     environments: [...envs.values()],
     jobs: jobs.sort(
       (a, b) => (a.queuedAt ?? Infinity) - (b.queuedAt ?? Infinity) || a.name.localeCompare(b.name),

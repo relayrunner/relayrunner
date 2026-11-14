@@ -3,6 +3,7 @@ import { ChevronRightIcon, ExternalLinkIcon } from "lucide-react";
 import { type ReactNode, useEffect, useMemo, useState } from "react";
 import { RunnerLink, type RunnerRef } from "@/components/runner-link";
 import { StatusIcon } from "@/components/status-icon";
+import { WalkLines } from "@/components/walk-lines";
 import { Sheet, SheetContent, SheetDescription, SheetTitle } from "@/components/ui/sheet";
 import { timeAgo } from "@/lib/activity";
 import { authDisabled } from "@/lib/auth-client";
@@ -26,6 +27,7 @@ import {
   sampleRunJobs,
   triggerText,
 } from "@/lib/runs";
+import type { RouteWalk } from "@/lib/route-walk";
 import { useNow } from "@/lib/use-now";
 import { cn, elapsed } from "@/lib/utils";
 
@@ -202,6 +204,7 @@ export function RunSheet({
         run={run}
         header={header}
         jobs={detail.jobs}
+        walk={detail.walk}
         now={now}
         running={running}
         runnerOf={runnerOf}
@@ -237,6 +240,7 @@ function RunView({
   run,
   header,
   jobs,
+  walk,
   now,
   running,
   runnerOf,
@@ -245,6 +249,7 @@ function RunView({
   run: Run | undefined;
   header: RunHeader;
   jobs: RunJob[];
+  walk: RouteWalk | null;
   now: number;
   running: boolean;
   runnerOf: RunnerOf;
@@ -376,6 +381,12 @@ function RunView({
       )}
 
       {note && <p className="text-xs text-muted-foreground">{note}</p>}
+      {walk && (
+        <section className="grid gap-1">
+          <h3 className="text-xs font-medium text-muted-foreground">Routing</h3>
+          <WalkLines walk={walk} runner={null} />
+        </section>
+      )}
       <Links>
         <ExternalLink href={header.url}>Open on GitHub</ExternalLink>
         <Link to="/performance" className={LINK}>
