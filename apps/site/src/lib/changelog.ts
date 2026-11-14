@@ -9,9 +9,10 @@ import type { Loader } from "astro/loaders";
  * - CLI releases, from the CLI's CHANGELOG.md, which the Release workflow writes from changesets.
  * - Platform updates, hand-written in src/content/changelog/*.md (a title and a date in the
  *   frontmatter, a few lines of Markdown under it), only for changes worth announcing.
- * /docs/changelog/platform and /docs/changelog/cli show one list each. The pages are added to the
- * docs collection, so they get the docs layout and the .md, .txt and llms.txt versions like any
- * other page. /changelog.xml (src/pages/changelog.xml.ts) is the combined list as an RSS feed.
+ * /docs/changelog/platform and /docs/changelog/cli show one list each, and each platform update
+ * also gets its own page at /docs/changelog/<slug> (the file name without its date) to share. The
+ * pages are added to the docs collection, so they get the docs layout, share image and the .md,
+ * .txt and llms.txt versions like any other page. /changelog.xml (src/pages/changelog.xml.ts) is the combined list as an RSS feed.
  */
 
 export const CHANGELOG_ID = "docs/changelog";
@@ -28,7 +29,15 @@ const HEADINGS: Record<string, string> = {
 const DATE = new Intl.DateTimeFormat("en-US", { dateStyle: "long", timeZone: "UTC" });
 
 type Kind = "CLI" | "Platform";
-type Entry = { kind: Kind; title: string; date?: Date; body: string };
+/** A platform update also gets its own page at /docs/changelog/<slug>, for sharing one link. */
+type Entry = {
+  kind: Kind;
+  title: string;
+  date?: Date;
+  body: string;
+  slug?: string;
+  description?: string;
+};
 
 const PAGES: { id: string; kind?: Kind; label: string; title: string; description: string }[] = [
   {
@@ -94,7 +103,10 @@ function cliReleases(raw: string, dates: Map<string, Date>): Entry[] {
   });
 }
 
-/** Hand-written platform updates: `title` and `date` (YYYY-MM-DD) frontmatter over a Markdown body. */
+/**
+ * Hand-written platform updates: `title`, `date` (YYYY-MM-DD) and optional `description` (the share
+ * card's subtitle) frontmatter over a Markdown body. The file name without its date is the slug.
+ */
 async function platformUpdates(): Promise<Entry[]> {
   const files = (await readdir(UPDATES).catch(() => [])).filter((file) => file.endsWith(".md"));
   return Promise.all(
@@ -112,7 +124,12 @@ async function platformUpdates(): Promise<Entry[]> {
       if (!title || Number.isNaN(date.getTime())) {
         throw new Error(`src/content/changelog/${file} needs a title and a date (YYYY-MM-DD)`);
       }
-      return { kind: "Platform" as const, title, date, body: body.trim() };
+      const slug = file.replace(/^\d{4}-\d{2}-\d{2}-/, "").replace(/\.md$/, "");
+      if (PAGES.some((page) => page.id === `${CHANGELOG_ID}/${slug}`)) {
+        throw new Error(`src/content/changelog/${file}: "${slug}" is taken by a changelog view`);
+      }
+      const description = field("description");
+      return { kind: "Platform" as const, title, date, body: body.trim(), slug, description };
     }),
   );
 }
@@ -129,6 +146,14 @@ function byDate(entries: Entry[]) {
   return entries.sort((a, b) => time.get(b)! - time.get(a)!);
 }
 
+const metaLine = (entry: Entry) => {
+  const label = entry.kind === "CLI" ? "CLI release" : "Platform update";
+  if (!entry.date) return label;
+  const date = DATE.format(entry.date);
+  // The date links to a platform update's own page.
+  return `${label} · ${entry.slug ? `[${date}](/${CHANGELOG_ID}/${entry.slug})` : date}`;
+};
+
 function pageBody(page: (typeof PAGES)[number], entries: Entry[]) {
   const filter = PAGES.map((other) =>
     other === page ? `**${other.label}**` : `[${other.label}](/${other.id})`,
@@ -136,15 +161,48 @@ function pageBody(page: (typeof PAGES)[number], entries: Entry[]) {
   const intro = `Show: ${filter}\n\nFollow along with the [RSS feed](${FEED_PATH}).`;
   const sections = entries
     .filter((entry) => !page.kind || entry.kind === page.kind)
-    .map((entry) => {
-      const label = entry.kind === "CLI" ? "CLI release" : "Platform update";
-      const meta = entry.date ? `${label} · ${DATE.format(entry.date)}` : label;
-      return `## ${entry.title}\n\n${meta}\n\n${entry.body}`;
-    });
+    .map((entry) => `## ${entry.title}\n\n${metaLine(entry)}\n\n${entry.body}`);
   return [intro, ...sections].join("\n\n");
 }
 
-/** Starlight's docs loader, plus the changelog pages. */
+type LoaderContext = Parameters<Loader["load"]>[0];
+
+async function addPage(
+  context: LoaderContext,
+  id: string,
+  title: string,
+  description: string | undefined,
+  body: string,
+) {
+  const data = await context.parseData({
+    id,
+    data: {
+      title,
+      description,
+      tableOfContents: { minHeadingLevel: 2, maxHeadingLevel: 2 },
+      head: [
+        {
+          tag: "link",
+          attrs: {
+            rel: "alternate",
+            type: "application/rss+xml",
+            title: "RelayRunner changelog",
+            href: FEED_PATH,
+          },
+        },
+      ],
+    },
+  });
+  context.store.set({
+    id,
+    data,
+    body,
+    rendered: await context.renderMarkdown(body),
+    digest: context.generateDigest(body),
+  });
+}
+
+/** Starlight's docs loader, plus the changelog pages and a page per platform update. */
 export function docsWithChangelog(): Loader {
   const docs = docsLoader();
   return {
@@ -157,33 +215,18 @@ export function docsWithChangelog(): Loader {
           ...(await platformUpdates()),
         ]);
         for (const page of PAGES) {
-          const body = pageBody(page, entries);
-          const data = await context.parseData({
-            id: page.id,
-            data: {
-              title: page.title,
-              description: page.description,
-              tableOfContents: { minHeadingLevel: 2, maxHeadingLevel: 2 },
-              head: [
-                {
-                  tag: "link",
-                  attrs: {
-                    rel: "alternate",
-                    type: "application/rss+xml",
-                    title: "RelayRunner changelog",
-                    href: FEED_PATH,
-                  },
-                },
-              ],
-            },
-          });
-          context.store.set({
-            id: page.id,
-            data,
+          await addPage(context, page.id, page.title, page.description, pageBody(page, entries));
+        }
+        for (const entry of entries) {
+          if (!entry.slug) continue;
+          const body = `${metaLine({ ...entry, slug: undefined })}\n\n${entry.body}\n\n[All updates](/${CHANGELOG_ID})`;
+          await addPage(
+            context,
+            `${CHANGELOG_ID}/${entry.slug}`,
+            entry.title,
+            entry.description,
             body,
-            rendered: await context.renderMarkdown(body),
-            digest: context.generateDigest(body),
-          });
+          );
         }
       };
       await addChangelog();

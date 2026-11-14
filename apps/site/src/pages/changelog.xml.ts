@@ -17,8 +17,12 @@ export const GET: APIRoute = async ({ site }) => {
     const heading = section.match(/^<h2 id="([^"]+)">([^<]+)<\/h2>/);
     if (!heading) return [];
     const [tag, id, title] = heading;
-    const meta = section.match(/<p>(?:CLI release|Platform update)(?: · ([^<]+))?<\/p>/);
-    const date = meta?.[1] ? new Date(`${meta[1]} UTC`) : undefined;
+    // A platform update's date links to its own page, which is then the item's link.
+    const meta = section.match(
+      /<p>(?:CLI release|Platform update)(?: · (?:<a href="([^"]+)">)?([^<]+)(?:<\/a>)?)?<\/p>/,
+    );
+    const date = meta?.[2] ? new Date(`${meta[2]} UTC`) : undefined;
+    const link = meta?.[1] ? new URL(meta[1], site).href : `${page}#${id}`;
     const notes = section
       .slice(tag.length)
       .replace(meta?.[0] ?? "", "")
@@ -27,7 +31,7 @@ export const GET: APIRoute = async ({ site }) => {
       [
         "    <item>",
         `      <title>${title}</title>`,
-        `      <link>${page}#${id}</link>`,
+        `      <link>${link}</link>`,
         `      <guid isPermaLink="false">${id}</guid>`,
         date ? `      <pubDate>${date.toUTCString()}</pubDate>` : "",
         `      <description>${escape(notes)}</description>`,
