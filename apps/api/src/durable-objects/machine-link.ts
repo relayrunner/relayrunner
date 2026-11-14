@@ -215,12 +215,20 @@ export class MachineLink extends DurableObject<Env> {
   }
 
   /**
+   * Gives back the slot a route held, when its job is going elsewhere: the machine went offline
+   * before the job was sent (Router.requeue), so a reconnect finds the slot free.
+   */
+  async dropHold(routeId: string): Promise<void> {
+    await this.ctx.storage.delete(HOLD_KEY + routeId);
+  }
+
+  /**
    * Hands a claimed route's job to the machine: mints a one-job runner on the route's label, on
    * the job's own repo (src/machine-runner.ts), named after the machine, and sends it in a `run`
    * message. Safe to call again for the same route and job (a redelivered webhook): only the
    * first call mints. A re-run routed again on the route is a new job, and is sent again.
-   * "offline" means the machine has no
-   * live socket, and the job stays queued (offline recovery is #71).
+   * "offline" means the machine has no live socket: the Router puts the job back in line
+   * (Router.requeue).
    */
   async run(work: { route: Route; workspaceId: string }): Promise<RunResult> {
     const { route, workspaceId } = work;

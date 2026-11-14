@@ -65,6 +65,8 @@ If every machine that fits is busy and no later step in your runner order can ta
 
 A waiting job runs as soon as a slot frees, on whichever fitting machine frees first. Cancelling the run takes it out of line, and GitHub cancels a job that waits more than 24 hours.
 
+If the machine a job was sent to goes offline before the job reaches it, the job goes back in line the same way. It runs on the next fitting machine with room, or on the same machine once it reconnects.
+
 To send jobs elsewhere instead of waiting, add a step after your machines, such as `github` or a hosted provider.
 
 ## When nothing fits

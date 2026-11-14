@@ -214,3 +214,91 @@ describe("Router: jobs wait for a full machine", () => {
     expect(await router.claim(routeId, queued(2, 42))).toBeNull();
   });
 });
+
+describe("Router: a machine that goes offline after the pick", () => {
+  let state: ReturnType<typeof memoryState>;
+  let router: InstanceType<typeof Router>;
+  let online: boolean;
+  const run = vi.fn(async (_work: { route: Record<string, unknown> }) =>
+    online ? "sent" : "offline",
+  );
+  const dropHold = vi.fn();
+
+  beforeEach(async () => {
+    vi.spyOn(console, "log").mockImplementation(() => {});
+    online = true;
+    run.mockClear();
+    dropHold.mockClear();
+    const testEnv = await createTestEnv();
+    const now = Date.now();
+    for (const sql of [
+      "insert into github_installation (id, account_id, account_login, account_type, created_at, updated_at) values (7, 10, 'leonel', 'User', ?1, ?1)",
+      "insert into workspace (id, installation_id, name, slug, created_at) values ('w1', 7, 'W', 'w', ?1)",
+      "insert into user (id, name, email, email_verified, created_at, updated_at) values ('u1', 'Leonel', 'l@example.com', 1, ?1, ?1)",
+      "insert into account (id, account_id, provider_id, user_id, created_at, updated_at) values ('a1', '500', 'github', 'u1', ?1, ?1)",
+      "insert into machine (id, workspace_id, user_id, name, os, arch, token_hash, source, sharing, created_at, updated_at) values ('m1', 'w1', 'u1', 'ci-runner', 'linux', 'x64', 'hash', 'connect', 'only_me', ?1, ?1)",
+    ])
+      await testEnv.DB.prepare(sql).bind(now).run();
+    const env = {
+      ...testEnv,
+      MACHINE_LINK: {
+        getByName: () => ({
+          status: async () =>
+            online
+              ? { online: true, state: "idle", connectedAt: now, slots: 1, running: 0 }
+              : { online: false, state: null, connectedAt: null, slots: 1, running: 0 },
+          reserve: async () => online,
+          run,
+          dropHold,
+        }),
+      },
+    } as unknown as Env;
+    state = memoryState();
+    router = new Router(state.ctx as never, env);
+  });
+
+  test("the job waits in line and goes out once the machine is back", async () => {
+    const routeId = (await router.route(job(1))).runner!.slice(3);
+    expect(await router.claim(routeId, queued(1, 42))).toMatchObject({ state: "dispatched" });
+    // The hand-off found the machine gone.
+    online = false;
+    await router.requeue(routeId);
+    expect(state.data.has(`route:${routeId}`)).toBe(false);
+    expect(state.data.get(`wait:${routeId}`)).toMatchObject({ jobId: 42 });
+    expect(dropHold).toHaveBeenCalledWith(routeId);
+    expect(run).not.toHaveBeenCalled();
+    online = true;
+    await router.alarm();
+    expect(run).toHaveBeenCalledOnce();
+    expect(run.mock.calls[0]![0].route).toMatchObject({ id: routeId, jobId: 42 });
+    expect(state.data.has(`wait:${routeId}`)).toBe(false);
+  });
+
+  test("a waiting job sent to a machine that just went offline stays in line", async () => {
+    const routeId = (await router.route(job(1))).runner!.slice(3);
+    await router.claim(routeId, queued(1, 42));
+    online = false;
+    await router.requeue(routeId);
+    // The machine looks online again, but its socket is gone by the time the job is sent.
+    online = true;
+    run.mockResolvedValueOnce("offline");
+    await router.alarm();
+    expect(state.data.get(`wait:${routeId}`)).toMatchObject({ jobId: 42 });
+    await router.alarm();
+    expect(run).toHaveBeenCalledTimes(2);
+    expect(run.mock.calls[1]![0].route).toMatchObject({ id: routeId, jobId: 42 });
+  });
+
+  test("a route that's unclaimed, done or unknown is left alone", async () => {
+    const routeId = (await router.route(job(1))).runner!.slice(3);
+    // No job has claimed it yet, so there's nothing to put back.
+    await router.requeue(routeId);
+    expect(state.data.has(`route:${routeId}`)).toBe(true);
+    await router.claim(routeId, queued(1, 42));
+    await router.release(routeId);
+    await router.requeue(routeId);
+    await router.requeue("ffffffffffff");
+    expect([...state.data.keys()].some((key) => key.startsWith("wait:"))).toBe(false);
+    expect(dropHold).not.toHaveBeenCalled();
+  });
+});

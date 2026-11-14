@@ -349,6 +349,8 @@ async function dispatchRoute(
   (result === "offline" || result === "wrong_place" ? console.warn : console.log)(
     JSON.stringify({ ...log, result, machineId: route.machineId }),
   );
+  // The machine went offline after the pick chose it: the job goes back in line for another.
+  if (result === "offline") await router.requeue(route.id);
 }
 
 // Follows a job on a runner added from GitHub. GitHub delivers it to the runner itself, so there is
