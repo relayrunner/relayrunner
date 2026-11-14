@@ -1,6 +1,8 @@
 ---
 title: Routing
 description: How a job opts in to routing, and how the relay picks its runner.
+sidebar:
+  label: How routing works
 ---
 
 A job opts in to routing with a relay job. The relay names the runners the job may use, and gets one of them back.
