@@ -1,11 +1,10 @@
 import { Hono } from "hono";
-import { createMiddleware } from "hono/factory";
 import { z } from "zod";
 import type { AppEnv } from "../app.ts";
 import { requireUser } from "../middleware/session.ts";
 import { requireWorkspace } from "../middleware/workspace.ts";
-import { TokenKeyError } from "../provider-tokens.ts";
 import { requireManager } from "../roles.ts";
+import { tokenStorage } from "./providers.ts";
 import {
   deleteTelemetry,
   saveTelemetry,
@@ -24,19 +23,12 @@ const SaveBody = z.object({
   headers: z
     .array(z.object({ name: HeaderName, value: z.string().trim().max(4096).optional() }))
     .max(20)
-    .refine(
-      (headers) =>
-        new Set(headers.map((h) => h.name.toLowerCase())).size === headers.length &&
-        headers.every((h) => h.name.toLowerCase() !== "content-type"),
-    ),
+    .refine((headers) => {
+      const names = headers.map((h) => h.name.toLowerCase());
+      return new Set(names).size === names.length && !names.includes("content-type");
+    }),
   serviceName: z.string().trim().max(200),
   enabled: z.boolean(),
-});
-
-// Sealing or opening headers needs PROVIDER_TOKEN_KEY; without it, say so instead of a bare 500.
-const keyStorage = createMiddleware<AppEnv>(async (c, next) => {
-  await next();
-  if (c.error instanceof TokenKeyError) c.res = c.json({ error: "token_storage_unavailable" }, 503);
 });
 
 // Settings → Telemetry: where the workspace sends its CI traces. Any member can look; owners and
@@ -44,7 +36,7 @@ const keyStorage = createMiddleware<AppEnv>(async (c, next) => {
 export const telemetryRoutes = new Hono<AppEnv>()
   .use("*", requireUser, requireWorkspace)
   .get("/", async (c) => c.json(await telemetryView(c.var.db, c.var.workspace.id)))
-  .use("*", requireManager, keyStorage)
+  .use("*", requireManager, tokenStorage)
   .put("/", async (c) => {
     const parsed = SaveBody.safeParse(await c.req.json().catch(() => null));
     if (!parsed.success) return c.json({ error: "invalid_body" }, 400);

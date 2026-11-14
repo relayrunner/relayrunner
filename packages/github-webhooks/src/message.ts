@@ -387,7 +387,7 @@ const MAX_STEPS = 300;
 const MAX_STEP_NAME = 200;
 
 /** A completed job's steps, compacted for the queue message. */
-export function jobSteps(steps: unknown): JobStep[] {
+function jobSteps(steps: unknown): JobStep[] {
   if (!Array.isArray(steps)) return [];
   return steps
     .filter(isRecord)

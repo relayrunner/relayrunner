@@ -187,11 +187,15 @@ export async function processWebhook(env: Env, message: WebhookMessage): Promise
       const isPick = usesRelayRunner(message.job.labels);
       const db = createDb(env.DB);
       // Every job's timing, ours or not, goes to job_timing too: the Runs page shows it while it
-      // runs, and the usage report once it finishes. The two writes touch separate tables, so they
-      // run together.
-      await Promise.all([recordWorkflowJob(db, message, isPick), recordJobTiming(db, message)]);
-      // A finished job's spans, for workspaces that export traces (Settings → Telemetry).
-      await exportJob(env, db, message);
+      // runs, and the usage report once it finishes. The writes touch separate tables, so they run
+      // together.
+      // A finished job's spans go out alongside, for workspaces that export traces (Settings →
+      // Telemetry). The export never throws.
+      await Promise.all([
+        recordWorkflowJob(db, message, isPick),
+        recordJobTiming(db, message),
+        exportJob(env, db, message),
+      ]);
       // A job on a route's `rr-<id>` label: the run's pick chose a machine for it.
       const routeId = routeIdFromLabels(message.job.labels);
       if (routeId) return dispatchRoute(env, message, routeId, lagMs);
@@ -232,9 +236,8 @@ export async function processWebhook(env: Env, message: WebhookMessage): Promise
     case "workflow_run":
       // The run's title, trigger and status, for the Runs page.
       const db = createDb(env.DB);
-      await recordWorkflowRun(db, message);
-      // A finished run's root span, for workspaces that export traces.
-      await exportRun(env, db, message);
+      // And a finished run's root span, for workspaces that export traces.
+      await Promise.all([recordWorkflowRun(db, message), exportRun(env, db, message)]);
       // A failed run whose runner failed one of its routed jobs gets one more go.
       await retryFailedRun(env, message);
       return;

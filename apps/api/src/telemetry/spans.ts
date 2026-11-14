@@ -188,10 +188,10 @@ export async function jobSpans({ repository, job, ranOn, usage }: JobDetails): P
       end: started,
       attributes: { "relayrunner.provider": ranOn?.provider },
     });
-  for (const step of job.steps ?? []) {
-    const span = await stepSpan(traceId, spanId, job.id, step);
-    if (span) spans.push(span);
-  }
+  const steps = await Promise.all(
+    (job.steps ?? []).map((step) => stepSpan(traceId, spanId, job.id, step)),
+  );
+  for (const span of steps) if (span) spans.push(span);
   return spans;
 }
 
@@ -273,7 +273,7 @@ function encodeAttributes(attributes: Attributes) {
 
 const nanos = (ms: number) => `${Math.round(ms)}000000`;
 
-export const SCOPE = { name: "relayrunner" };
+const SCOPE = { name: "relayrunner" };
 
 /** The OTLP export request for some spans, one entry per resource. */
 export function otlpRequest(groups: { resource: Attributes; spans: Span[] }[]) {

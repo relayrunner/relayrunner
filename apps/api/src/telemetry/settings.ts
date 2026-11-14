@@ -5,7 +5,14 @@ import { eq } from "drizzle-orm";
 import { type Db, schema } from "../db/index.ts";
 import type { Env } from "../env.ts";
 import { sealToken, tokenHint } from "../provider-tokens.ts";
-import { HEADERS_PURPOSE, openHeaders, recordSend, type SendResult, sendSpans } from "./export.ts";
+import {
+  exportingInstallations,
+  HEADERS_PURPOSE,
+  openHeaders,
+  recordSend,
+  type SendResult,
+  sendSpans,
+} from "./export.ts";
 import { testSpans } from "./spans.ts";
 
 export const DEFAULT_SERVICE_NAME = "github-actions";
@@ -27,17 +34,30 @@ type Row = typeof schema.telemetryExport.$inferSelect;
 
 const iso = (date: Date | null) => date?.toISOString() ?? null;
 
+const NOT_CONFIGURED: TelemetryView = {
+  configured: false,
+  endpoint: "",
+  headers: [],
+  serviceName: DEFAULT_SERVICE_NAME,
+  enabled: false,
+  lastSentAt: null,
+  error: null,
+  failingSince: null,
+  pausedAt: null,
+};
+
 function present(row: Row | undefined): TelemetryView {
+  if (!row) return NOT_CONFIGURED;
   return {
-    configured: !!row,
-    endpoint: row?.endpoint ?? "",
-    headers: row?.headerHints ?? [],
-    serviceName: row?.serviceName ?? DEFAULT_SERVICE_NAME,
-    enabled: row?.enabled ?? false,
-    lastSentAt: iso(row?.lastSentAt ?? null),
-    error: row?.error ?? null,
-    failingSince: iso(row?.failingSince ?? null),
-    pausedAt: iso(row?.pausedAt ?? null),
+    configured: true,
+    endpoint: row.endpoint,
+    headers: row.headerHints,
+    serviceName: row.serviceName,
+    enabled: row.enabled,
+    lastSentAt: iso(row.lastSentAt),
+    error: row.error,
+    failingSince: iso(row.failingSince),
+    pausedAt: iso(row.pausedAt),
   };
 }
 
@@ -124,6 +144,7 @@ export async function saveTelemetry(
     .insert(schema.telemetryExport)
     .values({ workspaceId, createdBy: userId, ...values })
     .onConflictDoUpdate({ target: schema.telemetryExport.workspaceId, set: values });
+  exportingInstallations.forget();
   return { ok: true, telemetry: await telemetryView(db, workspaceId) };
 }
 
@@ -131,7 +152,8 @@ export async function deleteTelemetry(db: Db, workspaceId: string) {
   await db
     .delete(schema.telemetryExport)
     .where(eq(schema.telemetryExport.workspaceId, workspaceId));
-  return present(undefined);
+  exportingInstallations.forget();
+  return NOT_CONFIGURED;
 }
 
 /** Send a small test trace with the saved settings, and record how it went. Null when unset. */

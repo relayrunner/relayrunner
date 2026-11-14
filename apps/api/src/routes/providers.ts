@@ -26,8 +26,8 @@ const ConnectBody = z.object({
   options: z.record(z.string(), z.string()).optional(),
 });
 
-// Saving or reading a token needs PROVIDER_TOKEN_KEY; without it, say so instead of a bare 500.
-const tokenStorage = createMiddleware<AppEnv>(async (c, next) => {
+// Saving or reading a token (or telemetry headers, routes/telemetry.ts) needs PROVIDER_TOKEN_KEY; without it, say so instead of a bare 500.
+export const tokenStorage = createMiddleware<AppEnv>(async (c, next) => {
   await next();
   if (c.error instanceof TokenKeyError) c.res = c.json({ error: "token_storage_unavailable" }, 503);
 });

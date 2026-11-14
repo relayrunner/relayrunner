@@ -38,9 +38,14 @@ type PresetId = (typeof PRESETS)[number]["id"];
 // A header row: a saved one has a hint and may leave its value blank to keep it.
 type HeaderRow = { name: string; value: string; hint?: string };
 
+const rowsFrom = (telemetry: Telemetry): HeaderRow[] =>
+  telemetry.configured
+    ? telemetry.headers.map(({ name, hint }) => ({ name, value: "", hint }))
+    : PRESETS[0].headers.map((name) => ({ name, value: "" }));
+
 const presetFor = (telemetry: Telemetry): PresetId =>
   !telemetry.configured
-    ? "honeycomb"
+    ? PRESETS[0].id
     : (PRESETS.find((p) => p.endpoint && telemetry.endpoint.startsWith(p.endpoint))?.id ?? "other");
 
 function TelemetrySettingsPage() {
@@ -118,11 +123,7 @@ function ExportForm({
   const [endpoint, setEndpoint] = useState(
     telemetry.configured ? telemetry.endpoint : PRESETS[0].endpoint,
   );
-  const [headers, setHeaders] = useState<HeaderRow[]>(
-    telemetry.configured
-      ? telemetry.headers.map(({ name, hint }) => ({ name, value: "", hint }))
-      : PRESETS[0].headers.map((name) => ({ name, value: "" })),
-  );
+  const [headers, setHeaders] = useState(() => rowsFrom(telemetry));
   const [serviceName, setServiceName] = useState(telemetry.serviceName);
   const [enabled, setEnabled] = useState(telemetry.configured ? telemetry.enabled : true);
   const [pending, setPending] = useState(false);
@@ -169,7 +170,7 @@ function ExportForm({
         enabled,
       });
       onChange(saved);
-      setHeaders(saved.headers.map(({ name, hint }) => ({ name, value: "", hint })));
+      setHeaders(rowsFrom(saved));
       setNotice({ ok: true, text: "Saved. Send a test trace to check it works." });
     });
   }
@@ -188,9 +189,10 @@ function ExportForm({
   const remove = () => {
     if (!window.confirm("Stop sending traces and forget these settings?")) return;
     void run(async () => {
-      onChange(await removeTelemetry());
-      choosePreset("honeycomb");
-      setServiceName("github-actions");
+      const removed = await removeTelemetry();
+      onChange(removed);
+      choosePreset(PRESETS[0].id);
+      setServiceName(removed.serviceName);
     });
   };
 
