@@ -2,6 +2,7 @@ import { sizeText } from "@relayrunner/providers";
 import { Link, useNavigate } from "@tanstack/react-router";
 import { ChevronRightIcon } from "lucide-react";
 import { type ReactNode, useEffect, useMemo, useState } from "react";
+import { CopyButton } from "@/components/add-runner";
 import { providerOf, providerStyle, RunnerMark } from "@/components/providers";
 import { RangePicker } from "@/components/range-picker";
 import { withRunner } from "@/components/runner-panel-link";
@@ -138,6 +139,7 @@ function RunnerView({
           <span className="min-w-0 break-words">{env.label}</span>
         </SheetTitle>
         {detail && <SheetDescription className="pl-[38px]">{detail}</SheetDescription>}
+        {machine && <Labels machine={machine} />}
       </header>
 
       <div className={cn("grid gap-6 transition-opacity", loading && "opacity-60")}>
@@ -188,6 +190,24 @@ function RunnerView({
         )}
       </Links>
     </>
+  );
+}
+
+/**
+ * A self-hosted runner's labels, as GitHub lists them: the ones a job's `runs-on` or `machine:`
+ * matches, then the one RelayRunner added to route jobs to a runner added from GitHub.
+ */
+function Labels({ machine }: { machine: Machine }) {
+  const labels = [
+    ...(machine.labels ?? []),
+    ...(machine.routingLabel ? [machine.routingLabel] : []),
+  ];
+  if (labels.length === 0) return null;
+  return (
+    <p className="flex items-center gap-1 pl-[38px] text-xs text-muted-foreground">
+      <span className="min-w-0 font-mono break-words">{labels.join(", ")}</span>
+      <CopyButton text={labels.join(", ")} label="Copy labels" className="-my-1.5 shrink-0" />
+    </p>
   );
 }
 
