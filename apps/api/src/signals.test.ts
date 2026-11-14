@@ -166,6 +166,32 @@ async function job(
     });
 }
 
+// The workflow_run row for a run's re-run `attempt`, started `start` minutes ago.
+async function rerun(
+  { installationId, repositoryId }: Ctx,
+  id: number,
+  attempt: number,
+  start: number,
+) {
+  await createDb(env.DB)
+    .insert(schema.workflowRun)
+    .values({
+      id,
+      runAttempt: attempt,
+      installationId,
+      repositoryId,
+      repositoryFullName: "acme/app",
+      workflowName: "CI",
+      workflowPath: ".github/workflows/ci.yml",
+      event: "pull_request",
+      headSha: `sha-${id}`,
+      status: "completed",
+      conclusion: "success",
+      runStartedAt: new Date(NOW - start * MINUTE),
+      githubUpdatedAt: new Date(NOW - start * MINUTE + 5 * MINUTE),
+    });
+}
+
 async function dayRows(installationId: number, signal: string) {
   return createDb(env.DB)
     .select()
@@ -292,14 +318,18 @@ describe("rollUpSignals", () => {
   test("counts failed jobs that passed on the next attempt, with the failed attempt's time", async () => {
     const ctx = await connectedWorkspace();
     await job(ctx, { start: 60, minutes: 5, runId: 3, conclusion: "failure" });
+    await rerun(ctx, 3, 2, 50);
     await job(ctx, { start: 50, minutes: 5, runId: 3, runAttempt: 2 });
-    // Failed and stayed failed: not flaky.
+    // Failed on the re-run too: not flaky.
     await job(ctx, { start: 40, minutes: 5, runId: 4, conclusion: "failure" });
+    await rerun(ctx, 4, 2, 30);
+    await job(ctx, { start: 30, minutes: 5, runId: 4, runAttempt: 2, conclusion: "failure" });
     await rollUpSignals(createDb(env.DB), ctx.installationId);
     const rows = await dayRows(ctx.installationId, "flaky-jobs");
     expect(sum(rows)).toEqual({ count: 1, minutes: 5 });
     // 5 Linux 2-core minutes in a private repo.
     expect(rows[0]?.cost).toBeCloseTo(0.03);
+    expect(rows[0]?.workflowPath).toBe(".github/workflows/ci.yml");
   });
 
   test("replaces the days it works out, so running twice counts once", async () => {

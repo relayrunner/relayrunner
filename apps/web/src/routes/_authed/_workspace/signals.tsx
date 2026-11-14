@@ -111,6 +111,8 @@ function AreaSection({
 
 function SignalCard({ signal }: { signal: Signal }) {
   const copy = SIGNAL_COPY[signal.id];
+  // Signals that cost time but no money keep the column, empty, so columns line up down the page.
+  const spend = copy.spend !== false;
   return (
     <div className="grid gap-2">
       <div className="flex flex-wrap items-center gap-x-4 gap-y-1">
@@ -144,7 +146,7 @@ function SignalCard({ signal }: { signal: Signal }) {
             <TableHead>{copy.subject}</TableHead>
             <TableHead className="w-36 text-right">{copy.count}</TableHead>
             <TableHead className="w-36 text-right">{copy.minutes}</TableHead>
-            <TableHead className="w-28 text-right">{copy.spend === false ? "" : "Spend"}</TableHead>
+            <TableHead className="w-28 text-right">{spend && "Spend"}</TableHead>
           </TableRow>
         </TableHeader>
         <TableBody>
@@ -159,9 +161,7 @@ function SignalCard({ signal }: { signal: Signal }) {
               <TableCell className="text-right font-medium tabular-nums">
                 <Count value={row.minutes} />
               </TableCell>
-              <TableCell className="text-right tabular-nums">
-                {copy.spend === false ? "" : money(row.cost)}
-              </TableCell>
+              <TableCell className="text-right tabular-nums">{spend && money(row.cost)}</TableCell>
             </TableRow>
           ))}
         </TableBody>

@@ -127,6 +127,8 @@ export const SIGNAL_COPY: Record<
 };
 
 // For local development without an API (auth disabled).
+const WORKFLOWS = new Set(["CI", "Test"]);
+
 export function sampleSignals(days: number): SignalsReport {
   const scale = days / 30;
   const row = (
@@ -138,7 +140,8 @@ export function sampleSignals(days: number): SignalsReport {
   ) => ({
     repository,
     subject,
-    workflowPath: /^[A-Z][^›]*$/.test(subject) ? ".github/workflows/ci.yml" : null,
+    // Workflow rows link to their file; job and runner rows don't.
+    workflowPath: WORKFLOWS.has(subject) ? ".github/workflows/ci.yml" : null,
     count: Math.round(count * scale),
     minutes: Math.round(minutes * scale),
     cost: cost * scale,
