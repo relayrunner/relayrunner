@@ -29,7 +29,11 @@ This job ran alongside the others in its run and was still going after they all 
 
 ### Flaky jobs
 
-These jobs failed and then passed when the run was tried again, so the failure likely had nothing to do with the change. The minutes and spend are the failed attempts. Fixing the test or step that fails now and then saves the re-run and the wait for it.
+These jobs failed in one of their steps and then passed when the run was tried again, so the failure likely had nothing to do with the change. The minutes and spend are the failed attempts. Fixing the test or step that fails now and then saves the re-run and the wait for it.
+
+### Runner failures
+
+These jobs failed before any of their steps started, grouped by their `runs-on` labels. The runner was the problem, not your code. Turn on [automatic retries](/docs/concepts/routing#automatic-retries) to send them to another runner.
 
 ## Cost signals
 

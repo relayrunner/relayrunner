@@ -11,6 +11,7 @@ export type SignalId =
   | "queue-waits"
   | "slowest-job"
   | "flaky-jobs"
+  | "runner-failures"
   | "docs-changes"
   | "wide-fanout";
 
@@ -159,10 +160,19 @@ export const SIGNAL_COPY: Record<
   "flaky-jobs": {
     title: "Flaky jobs",
     about:
-      "These jobs failed and then passed when the run was tried again, so the failure likely wasn't the change. Minutes and spend are the failed attempts.",
+      "These jobs failed in one of their steps and then passed when the run was tried again, so the failure likely wasn't the change. Minutes and spend are the failed attempts.",
     subject: "Job",
     count: "Passed on re-run",
     minutes: "Failed minutes",
+  },
+  "runner-failures": {
+    title: "Runner failures",
+    about:
+      "These jobs failed before any of their steps started, so the runner was the problem, not your code. Automatic retries can send them to another runner.",
+    subject: "Runner",
+    count: "Jobs failed",
+    minutes: "Failed minutes",
+    action: { label: "Set up retries", href: "/router" },
   },
   "docs-changes": {
     title: "Docs changes run CI",

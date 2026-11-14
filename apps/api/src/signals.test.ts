@@ -332,6 +332,20 @@ describe("rollUpSignals", () => {
     expect(rows[0]?.workflowPath).toBe(".github/workflows/ci.yml");
   });
 
+  test("counts jobs their runner failed before any step as runner failures, not flaky", async () => {
+    const ctx = await connectedWorkspace();
+    await job(ctx, { start: 60, minutes: 1, runId: 5, conclusion: "failure", ranSteps: false });
+    await rerun(ctx, 5, 2, 50);
+    await job(ctx, { start: 50, minutes: 5, runId: 5, runAttempt: 2 });
+    // Failed in a step: neither a runner failure nor (without a passing re-run) flaky.
+    await job(ctx, { start: 40, minutes: 3, conclusion: "failure", ranSteps: true });
+    await rollUpSignals(createDb(env.DB), ctx.installationId);
+    expect(await dayRows(ctx.installationId, "flaky-jobs")).toEqual([]);
+    const rows = await dayRows(ctx.installationId, "runner-failures");
+    expect(sum(rows)).toEqual({ count: 1, minutes: 1 });
+    expect(rows[0]?.subject).toBe("ubuntu-latest");
+  });
+
   test("counts runs for docs-titled changes, except docs workflows", async () => {
     const ctx = await connectedWorkspace();
     await runWithJob(ctx, { start: 60, minutes: 8, displayTitle: "docs: fix a typo" });

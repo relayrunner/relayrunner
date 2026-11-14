@@ -47,8 +47,10 @@ export const SIGNALS = {
   "queue-waits": "speed",
   // A job that ran alongside others in its run and kept the run going after they all finished.
   "slowest-job": "speed",
-  // Jobs that failed and then passed when the run was tried again.
+  // Jobs that failed in one of their steps and then passed when the run was tried again.
   "flaky-jobs": "speed",
+  // Jobs whose runner failed them before any of their steps started, by runs-on labels.
+  "runner-failures": "speed",
   // Runs for commits or pull requests titled as docs changes (docs: in Conventional Commits).
   "docs-changes": "complexity",
   // Runs on a branch other than the default that started FANOUT_JOBS jobs or more.
@@ -211,6 +213,7 @@ async function addJobs(scope: Scope) {
   const isShort = sql`(${DURATION_MS} < ${SHORT_JOB_SECONDS * 1000})`;
   const waitMs = sql`(${timing.startedAt} - ${timing.queuedAt})`;
   const waited = sql`(${waitMs} >= ${QUEUE_WAIT_MS} and not ${PICK})`;
+  const runnerFailed = sql`(${timing.conclusion} = 'failure' and ${timing.ranSteps} = 0)`;
   // A run counts once, on its first counted job (job_timing_run_idx), even across midnight.
   const first = sql`(${timing.id} = (select min(k.id) from job_timing k
     where k.run_id = ${timing.runId} and k.run_attempt = ${timing.runAttempt}
@@ -245,6 +248,9 @@ async function addJobs(scope: Scope) {
       shortBilled: sql<number>`sum(case when ${isShort} then ${BILLED_MINUTES} else 0 end)`,
       waitedJobs: sql<number>`sum(${waited})`,
       waitedMs: sql<number>`sum(case when ${waited} then ${waitMs} else 0 end)`,
+      runnerFailedJobs: sql<number>`sum(${runnerFailed})`,
+      runnerFailedMs: sql<number>`sum(case when ${runnerFailed} then ${DURATION_MS} else 0 end)`,
+      runnerFailedBilled: sql<number>`sum(case when ${runnerFailed} then ${BILLED_MINUTES} else 0 end)`,
     })
     .from(timing)
     .leftJoin(run, and(eq(run.id, timing.runId), eq(run.runAttempt, timing.runAttempt)))
@@ -280,6 +286,14 @@ async function addJobs(scope: Scope) {
         row.waitedJobs,
         row.waitedMs,
         0,
+      );
+    }
+    if (row.runnerFailedJobs) {
+      rows.add(
+        { ...where, signal: "runner-failures", subject: runnerSubject(row.labels) },
+        row.runnerFailedJobs,
+        row.runnerFailedMs,
+        row.runnerFailedBilled * perMinute,
       );
     }
     if (!perMinute || !row.shortJobs) continue;
@@ -570,8 +584,9 @@ async function addSlowestJobs(scope: Scope) {
     addJob(scope, "slowest-job", utcDay(job.completedAt), job, job.aloneMs, 0);
 }
 
-// Jobs that failed (or timed out) and passed on the run's next attempt, whether someone re-ran them
-// or automatic retries did. The time and cost are the failed attempt's. Starts from the window's
+// Jobs that failed (or timed out) in a step and passed on the run's next attempt, whether someone
+// re-ran them or automatic retries did. Jobs their runner failed before any step are
+// runner-failures instead. The time and cost are the failed attempt's. Starts from the window's
 // re-run attempts, so only those runs' jobs are read (job_timing_run_idx).
 async function addFlakyJobs(scope: Scope) {
   const { db, installationId, since } = scope;
@@ -586,7 +601,7 @@ async function addFlakyJobs(scope: Scope) {
     join job_timing p on p.run_id = o.id and p.run_attempt = o.run_attempt
       and p.conclusion = 'success'
     join job_timing j on j.run_id = o.id and j.run_attempt = o.run_attempt - 1 and j.name = p.name
-      and j.conclusion in ('failure', 'timed_out')
+      and j.conclusion in ('failure', 'timed_out') and coalesce(j.ran_steps, 1) = 1
     where o.installation_id = ${installationId} and o.github_updated_at >= ${since}
       and o.run_attempt > 1 and ${COUNTED_JOB}`);
   for (const job of found) {
