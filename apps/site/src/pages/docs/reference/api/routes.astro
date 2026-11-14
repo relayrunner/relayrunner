@@ -69,4 +69,9 @@ import { ScalarComponent } from "@scalar/astro";
     --scalar-button-1-color: var(--bg);
     --scalar-button-1-hover: var(--ink-2);
   }
+  /* The "Powered by Scalar" line at the foot of Scalar's sidebar. Scalar's own .flex rule loads
+     later with the same specificity, hence !important. */
+  .scalar-app .darklight-reference {
+    display: none !important;
+  }
 </style>
