@@ -575,9 +575,15 @@ function JobStatus({
 }
 
 // Four facts, each column as wide as its value, with the second (the long one) taking what's left.
-function Facts({ items }: { items: [string, ReactNode][] }) {
+// `className` sets other columns.
+export function Facts({ items, className }: { items: [string, ReactNode][]; className?: string }) {
   return (
-    <dl className="grid grid-cols-2 gap-x-6 gap-y-3 rounded-lg border px-4 py-3 text-sm sm:grid-cols-[auto_minmax(0,1fr)_auto_auto]">
+    <dl
+      className={cn(
+        "grid grid-cols-2 gap-x-6 gap-y-3 rounded-lg border px-4 py-3 text-sm sm:grid-cols-[auto_minmax(0,1fr)_auto_auto]",
+        className,
+      )}
+    >
       {items.map(([term, value]) => (
         <div key={term} className="grid min-w-0 gap-0.5">
           <dt className="text-xs text-muted-foreground">{term}</dt>
@@ -588,9 +594,9 @@ function Facts({ items }: { items: [string, ReactNode][] }) {
   );
 }
 
-const LINK = "inline-flex items-center gap-1 font-medium text-foreground hover:underline";
+export const LINK = "inline-flex items-center gap-1 font-medium text-foreground hover:underline";
 
-function Links({ children }: { children: ReactNode }) {
+export function Links({ children }: { children: ReactNode }) {
   return <div className="flex flex-wrap items-center gap-x-5 gap-y-2 text-xs">{children}</div>;
 }
 

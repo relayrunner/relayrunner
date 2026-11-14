@@ -375,7 +375,7 @@ export function windowQuery(workspaceId: string, since: Date) {
 }
 
 /** The window's missed jobs (NOT_PICKED_UP) by where they were sent, from the same index range. */
-function missedQuery(workspaceId: string, since: Date) {
+export function missedQuery(workspaceId: string, since: Date) {
   return sql`
     select ${table.labels} as labels, ${table.runnerGroupName} as runner_group_name,
       ${table.machineId} as machine_id, count(*) as missed
@@ -714,6 +714,19 @@ export async function jobRuns(
 }
 
 /**
+ * The jobs machines ran in the window, `machines` being a subquery of their ids: a range of the
+ * partial job_timing_machine_idx per machine, so only machine jobs are read. A member's machine
+ * also runs other workspaces' jobs (#318), so only this workspace's installation counts.
+ */
+export const machineWindowWhere = (workspaceId: string, machines: SQL, since: Date) =>
+  sql`${table.machineId} in (${machines})
+    and ${table.installationId} = (
+      select ${schema.workspace.installationId} from ${schema.workspace}
+      where ${schema.workspace.id} = ${workspaceId})
+    and ${table.completedAt} >= ${since.getTime()}
+    and ${RAN}`;
+
+/**
  * Each of the workspace's machines' jobs in the window, for its card on the Runners page: a range
  * of the partial job_timing_machine_idx per machine, so only machine jobs are read.
  */
@@ -724,7 +737,8 @@ export async function machineJobTimes(
   now = Date.now(),
 ): Promise<{ days: number; machines: Record<string, Stat> }> {
   const since = new Date(now - days * DAY_MS);
-  // A member's machine also runs other workspaces' jobs (#318): count only this one's.
+  const machines = sql`select ${schema.machine.id} from ${schema.machine}
+    where ${machineInWorkspace(db, workspaceId)}`;
   const rows = await db.all<{
     machine_id: string;
     runs: number;
@@ -734,13 +748,7 @@ export async function machineJobTimes(
     select ${table.machineId} as machine_id, count(*) as runs, sum(${OK}) as successes,
       ${SAMPLES} as samples
     from ${table}
-    where ${table.machineId} in (
-        select ${schema.machine.id} from ${schema.machine} where ${machineInWorkspace(db, workspaceId)})
-      and ${table.installationId} = (
-        select ${schema.workspace.installationId} from ${schema.workspace}
-        where ${schema.workspace.id} = ${workspaceId})
-      and ${table.completedAt} >= ${since.getTime()}
-      and ${RAN}
+    where ${machineWindowWhere(workspaceId, machines, since)}
     group by ${table.machineId}`);
   return {
     days,

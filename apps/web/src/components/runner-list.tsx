@@ -15,6 +15,7 @@ import {
   type MachineView,
 } from "@/components/runner-card";
 import { Button } from "@/components/ui/button";
+import { RunnerPanelLink } from "@/components/runner-panel-link";
 import { createCellContext, DataTable, dataTableColumns } from "@/components/ui/data-table";
 import {
   Dialog,
@@ -60,12 +61,13 @@ const columns = column.columns([
       <span className="flex min-w-0 items-center gap-2.5">
         <MachineChip view={row.original.view} />
         <span className="grid min-w-0 gap-0.5">
-          <span
+          <RunnerPanelLink
+            runner={`machine:${row.original.machine.id}`}
             title={row.original.machine.name}
-            className="max-w-40 truncate font-mono text-[13px] font-medium"
+            className="max-w-40 truncate font-mono text-[13px] font-medium hover:underline hover:underline-offset-2"
           >
             {row.original.machine.name}
-          </span>
+          </RunnerPanelLink>
           {/* The CLI version under the name, so the row stays narrow enough for the dashboard. */}
           {row.original.machine.cli && (
             <span className="flex text-xs text-muted-foreground tabular-nums">
