@@ -15,7 +15,7 @@
  */
 import { and, eq, exists, gte, isNull, sql } from "drizzle-orm";
 import type { PriceBook } from "@relayrunner/providers";
-import { type Db, createDb, schema } from "./db/index.ts";
+import { type Db, createDb, prepare, schema } from "./db/index.ts";
 import type { Env } from "./env.ts";
 import { enqueueInstallationTasks } from "./installation-tasks.ts";
 import { PICK, RAN_ON_RUNNER } from "./job-times.ts";
@@ -153,7 +153,6 @@ export async function rollUpSignals(db: Db, installationId: number, now = Date.n
     addFlakyJobs(scope),
     addDocsRuns(scope),
     addWideRuns(scope),
-    addBreakdown(scope),
   ]);
 
   // The rows go in as JSON parameters, a few thousand per statement, so even a first run's 30 days
@@ -162,19 +161,15 @@ export async function rollUpSignals(db: Db, installationId: number, now = Date.n
   const d1 = db.$client;
   const cleared = db
     .delete(day)
-    .where(and(eq(day.installationId, installationId), gte(day.day, new Date(since))))
-    .toSQL();
+    .where(and(eq(day.installationId, installationId), gte(day.day, new Date(since))));
   await d1.batch([
-    d1.prepare(cleared.sql).bind(...cleared.params),
+    prepare(db, cleared),
     ...chunk(values, ROWS_PER_INSERT).map((part) =>
       d1.prepare(INSERT_SQL).bind(installationId, JSON.stringify(part)),
     ),
   ]);
   return values.length;
 }
-
-// Rows per insert statement: well under D1's limit on one parameter's size.
-const ROWS_PER_INSERT = 2000;
 
 const INSERT_SQL = `
   insert into signal_day (installation_id, day, signal, repository_id, repository_full_name,
@@ -183,6 +178,9 @@ const INSERT_SQL = `
     value ->> 'repositoryFullName', value ->> 'subject', value ->> 'workflowPath',
     value ->> 'count', value ->> 'runMs', value ->> 'cost'
   from json_each(?2)`;
+
+// Rows per insert statement: well under D1's limit on one parameter's size.
+const ROWS_PER_INSERT = 2000;
 
 type Scope = {
   db: Db;
@@ -204,15 +202,25 @@ function rate(
   return rateFor(book, runnerClass(labels, group), privacy.get(repositoryId) ?? null, at);
 }
 
-// Every counted job (the usage report's filter) into the totals; the short ones on a billed runner
-// into short-jobs, with the unused part of their last minute as its time and cost; and the ones
-// that waited for a runner into queue-waits, with the wait as its time. Picks (runs-on:
-// relayrunner) only wait for RelayRunner, so they don't count as waiting.
+// Every counted job (the usage report's filter) into the totals and the Breakdown; the short ones
+// on a billed runner into short-jobs, with the unused part of their last minute as its time and
+// cost; and the ones that waited for a runner into queue-waits, with the wait as its time. Picks
+// (runs-on: relayrunner) only wait for RelayRunner, so they don't count as waiting.
 async function addJobs(scope: Scope) {
   const { db, rows, installationId, since } = scope;
   const isShort = sql`(${DURATION_MS} < ${SHORT_JOB_SECONDS * 1000})`;
   const waitMs = sql`(${timing.startedAt} - ${timing.queuedAt})`;
   const waited = sql`(${waitMs} >= ${QUEUE_WAIT_MS} and not ${PICK})`;
+  // A run counts once, on its first counted job (job_timing_run_idx), even across midnight.
+  const first = sql`(${timing.id} = (select min(k.id) from job_timing k
+    where k.run_id = ${timing.runId} and k.run_attempt = ${timing.runAttempt}
+      and k.started_at is not null and k.runner_name is not null
+      and coalesce(k.conclusion, '') != 'skipped'))`;
+  // Who started the run, and what: re-runs count as their own trigger.
+  const person = sql<string | null>`coalesce(${run.startedByLogin}, ${run.actorLogin})`;
+  const trigger = sql<
+    string | null
+  >`case when ${run.runAttempt} > 1 then 'rerun' else ${run.event} end`;
   const found = await db
     .select({
       // Whole UTC days: a bound number divides as a real, so cast it back.
@@ -225,7 +233,11 @@ async function addJobs(scope: Scope) {
       job: timing.name,
       labels: timing.labels,
       runnerGroupName: timing.runnerGroupName,
+      person,
+      branch: run.headBranch,
+      trigger,
       jobs: sql<number>`count(*)`,
+      runs: sql<number>`sum(${first})`,
       runMs: sql<number>`sum(${DURATION_MS})`,
       billed: sql<number>`sum(${BILLED_MINUTES})`,
       shortJobs: sql<number>`sum(${isShort})`,
@@ -250,12 +262,18 @@ async function addJobs(scope: Scope) {
       timing.name,
       timing.labels,
       timing.runnerGroupName,
+      person,
+      run.headBranch,
+      trigger,
     );
+  const breakdown = new DayBreakdown();
   for (const row of found) {
     const at = Number(row.day);
     const perMinute = rate(scope, row.labels, row.runnerGroupName, row.repositoryId, at);
     const where = { day: at, repositoryId: row.repositoryId, repository: row.repository };
-    rows.add({ ...where, signal: TOTAL, subject: "" }, row.jobs, row.runMs, row.billed * perMinute);
+    const cost = row.billed * perMinute;
+    rows.add({ ...where, signal: TOTAL, subject: "" }, row.jobs, row.runMs, cost);
+    breakdown.add(where, row, { runs: Number(row.runs), runMs: Number(row.runMs), cost });
     if (row.waitedJobs) {
       rows.add(
         { ...where, signal: "queue-waits", subject: runnerSubject(row.labels) },
@@ -278,7 +296,61 @@ async function addJobs(scope: Scope) {
       (unusedMs / 60_000) * perMinute,
     );
   }
+  breakdown.addTo(rows);
 }
+
+type DaySums = { runs: number; runMs: number; cost: number };
+
+// The Breakdown's rows for each day: logins, branches and triggers for the whole installation
+// (repositoryId 0), and workflows per repo, which the repository view sums. Each day and view
+// keeps its MAX_DAY_VALUES values with the most time; the rest, and jobs whose run we never saw,
+// share the empty subject.
+class DayBreakdown {
+  #groups = new Map<string, { key: Omit<RowKey, "subject">; values: Map<string, Value> }>();
+
+  add(
+    where: { day: number; repositoryId: number; repository: string },
+    job: { workflow: string | null; workflowPath: string | null } & Record<
+      "person" | "branch" | "trigger",
+      string | null
+    >,
+    sums: DaySums,
+  ) {
+    for (const by of BREAKDOWNS) {
+      const perRepo = by === "workflow";
+      const key = perRepo
+        ? { ...where, signal: `by-${by}` }
+        : { day: where.day, repositoryId: 0, repository: "", signal: `by-${by}` };
+      const id = `${key.day}:${key.signal}:${key.repositoryId}`;
+      const group = this.#groups.get(id) ?? { key, values: new Map<string, Value>() };
+      this.#groups.set(id, group);
+      const subject = job[by] ?? "";
+      const value = group.values.get(subject) ?? { path: null, runs: 0, runMs: 0, cost: 0 };
+      group.values.set(subject, value);
+      if (perRepo) value.path ??= job.workflowPath;
+      value.runs += sums.runs;
+      value.runMs += sums.runMs;
+      value.cost += sums.cost;
+    }
+  }
+
+  addTo(rows: Rows) {
+    for (const { key, values } of this.#groups.values()) {
+      const ranked = [...values].sort(([, a], [, b]) => b.runMs - a.runMs);
+      ranked.forEach(([subject, value], index) => {
+        const kept = subject !== "" && index < MAX_DAY_VALUES;
+        rows.add(
+          { ...key, subject: kept ? subject : "", workflowPath: kept ? value.path : null },
+          value.runs,
+          value.runMs,
+          value.cost,
+        );
+      });
+    }
+  }
+}
+
+type Value = DaySums & { path: string | null };
 
 // The same workflow, matched by id once runs carry one and by name before that.
 const SAME_WORKFLOW = (a: string, b: string) =>
@@ -423,95 +495,6 @@ function addRunJobs(scope: Scope, signal: SignalId, found: RunJobRow[], billed: 
   }
 }
 
-type BreakdownJobRow = {
-  day: number;
-  repositoryId: number;
-  repository: string;
-  workflow: string | null;
-  path: string | null;
-  person: string | null;
-  branch: string | null;
-  trigger: string | null;
-  labels: string;
-  runnerGroupName: string | null;
-  runs: number;
-  runMs: number;
-  billed: number;
-};
-
-// Every counted job by who started its run, its workflow, branch and trigger, for the Breakdown.
-// Each run counts once, on its first job to finish. Re-runs count as their own trigger. Each day,
-// repo and view keeps its MAX_DAY_VALUES values with the most time; the rest share one row.
-async function addBreakdown(scope: Scope) {
-  const { db, installationId, since } = scope;
-  const found = await db.all<BreakdownJobRow>(sql`
-    with jobs as (
-      select cast(j.completed_at / ${DAY_MS} as integer) * ${DAY_MS} as day,
-        j.repository_id as repositoryId, j.repository_full_name as repository,
-        coalesce(o.workflow_name, j.workflow_name) as workflow, o.workflow_path as path,
-        coalesce(o.started_by_login, o.actor_login) as person, o.head_branch as branch,
-        case when o.run_attempt > 1 then 'rerun' else o.event end as trigger,
-        j.labels as labels, j.runner_group_name as runnerGroupName,
-        max(0, j.completed_at - j.started_at) as runMs,
-        row_number() over (partition by j.run_id, j.run_attempt order by j.completed_at) = 1 as first
-      from job_timing j
-      left join workflow_run o on o.id = j.run_id and o.run_attempt = j.run_attempt
-      where j.installation_id = ${installationId} and j.completed_at >= ${since} and ${COUNTED_JOB}
-    )
-    select day, repositoryId, max(repository) as repository, workflow, max(path) as path, person,
-      branch, trigger, labels, runnerGroupName, sum(first) as runs, sum(runMs) as runMs,
-      sum(max(1, (runMs + 59999) / 60000)) as billed
-    from jobs
-    group by day, repositoryId, workflow, person, branch, trigger, labels, runnerGroupName`);
-
-  // Each day, repo and view's values with their runs, time and cost, before the cap.
-  type Value = { path: string | null; runs: number; runMs: number; cost: number };
-  const groups = new Map<string, { key: Omit<RowKey, "subject">; values: Map<string, Value> }>();
-  for (const job of found) {
-    const at = Number(job.day);
-    const labels = JSON.parse(job.labels) as string[];
-    const cost = job.billed * rate(scope, labels, job.runnerGroupName, job.repositoryId, at);
-    const subjects = {
-      person: job.person,
-      workflow: job.workflow,
-      branch: job.branch,
-      trigger: job.trigger,
-    };
-    for (const by of BREAKDOWNS) {
-      const id = `${at}:${job.repositoryId}:${by}`;
-      const group = groups.get(id) ?? {
-        key: {
-          day: at,
-          signal: `by-${by}`,
-          repositoryId: job.repositoryId,
-          repository: job.repository,
-        },
-        values: new Map<string, Value>(),
-      };
-      groups.set(id, group);
-      const subject = subjects[by] ?? "";
-      const value = group.values.get(subject) ?? { path: null, runs: 0, runMs: 0, cost: 0 };
-      group.values.set(subject, value);
-      if (by === "workflow") value.path ??= job.path;
-      value.runs += Number(job.runs);
-      value.runMs += Number(job.runMs);
-      value.cost += cost;
-    }
-  }
-  for (const { key, values } of groups.values()) {
-    const ranked = [...values].sort(([, a], [, b]) => b.runMs - a.runMs);
-    ranked.forEach(([subject, value], index) => {
-      const kept = subject !== "" && index < MAX_DAY_VALUES;
-      scope.rows.add(
-        { ...key, subject: kept ? subject : "", workflowPath: kept ? value.path : null },
-        value.runs,
-        value.runMs,
-        value.cost,
-      );
-    });
-  }
-}
-
 // A job's runs-on labels as people wrote them: a routed job's rr-<route> label is left out.
 function runnerSubject(labels: string[]) {
   const written = labels.filter((label) => routeIdFromLabels([label]) === null);
@@ -615,18 +598,8 @@ async function addFlakyJobs(scope: Scope) {
   }
 }
 
-// A signal_day row as it goes into INSERT_SQL, less the installation.
-type InsertRow = {
-  day: number;
-  signal: string;
-  repositoryId: number;
-  repositoryFullName: string;
-  subject: string;
-  workflowPath: string | null;
-  count: number;
-  runMs: number;
-  cost: number;
-};
+// A signal_day row as it goes into the insert, less the installation.
+type InsertRow = Omit<typeof day.$inferInsert, "installationId" | "day"> & { day: number };
 
 type RowKey = Pick<InsertRow, "day" | "signal" | "repositoryId" | "subject"> & {
   repository: string;
@@ -749,8 +722,9 @@ export async function signalsReport(
       totals.cost += cost;
       continue;
     }
-    if (row.signal.startsWith("by-")) {
-      breakdowns.add(row.signal.slice(3), row, Number(row.count), minutes, cost);
+    const by = BREAKDOWNS.find((view) => row.signal === `by-${view}`);
+    if (by) {
+      breakdowns.add(by, row, { runs: Number(row.count), minutes, cost });
       continue;
     }
     if (!(row.signal in SIGNALS)) continue;
@@ -781,73 +755,57 @@ export async function signalsReport(
   const signals = [...bySignal.values()]
     .filter((signal) => signal.minutes >= floor)
     .map((signal) => ({
-      ...signal,
-      minutes: Math.round(signal.minutes),
-      cost: cents(signal.cost),
+      ...rounded(signal),
       rows: signal.rows
         .filter((row) => row.minutes >= MIN_ROW_MINUTES)
         .sort((a, b) => b.minutes - a.minutes)
         .slice(0, MAX_ROWS)
-        .map((row) => ({ ...row, minutes: Math.round(row.minutes), cost: cents(row.cost) })),
+        .map(rounded),
     }))
     .sort((a, b) => b.minutes - a.minutes);
   return {
     days,
-    totals: { jobs: totals.jobs, minutes: Math.round(totals.minutes), cost: cents(totals.cost) },
+    totals: rounded(totals),
     signals,
     breakdown: breakdowns.report(),
   };
 }
 
 type BreakdownSums = { runs: number; minutes: number; cost: number };
+type BreakdownName = Pick<BreakdownRow, "name" | "repository" | "workflowPath">;
 
-// The Breakdown's views being summed from signal_day rows. Logins, branches and triggers sum
-// across repos; workflows stay per repo; repositories sum the trigger view, which splits every job
-// once. Empty subjects are the rest of a day's values, and go to `other`.
+// The Breakdown's views summed from signal_day rows over the range. Logins, branches and triggers
+// are stored for the whole installation; workflows per repo, which the repository view sums.
+// Empty names are the rest of a day's values, and go to `other`.
 class Breakdowns {
   #views = new Map<BreakdownBy, Map<string, BreakdownRow>>(
     [...BREAKDOWNS, "repository" as const].map((by) => [by, new Map()]),
   );
 
   add(
-    view: string,
+    by: (typeof BREAKDOWNS)[number],
     row: { repository: string; subject: string; workflowPath: string | null },
-    runs: number,
-    minutes: number,
-    cost: number,
-  ) {
-    const by = view as BreakdownBy;
-    if (!this.#views.has(by) || by === "repository") return;
-    const sums = { runs, minutes, cost };
-    if (by === "workflow") {
-      const name = row.subject;
-      this.#sum(by, `${row.repository}:${name}`, name, row.repository, row.workflowPath, sums);
-    } else {
-      this.#sum(by, row.subject, row.subject, null, null, sums);
-    }
-    if (by === "trigger") {
-      this.#sum("repository", row.repository, row.repository, null, null, sums);
-    }
-  }
-
-  #sum(
-    by: BreakdownBy,
-    id: string,
-    name: string,
-    repository: string | null,
-    workflowPath: string | null,
     sums: BreakdownSums,
   ) {
-    const view = this.#views.get(by)!;
-    const found = view.get(id) ?? {
-      name,
+    const name = row.subject;
+    if (by !== "workflow") {
+      this.#sum(by, name, { name, repository: null, workflowPath: null }, sums);
+      return;
+    }
+    const { repository, workflowPath } = row;
+    this.#sum(by, `${repository}:${name}`, { name, repository, workflowPath }, sums);
+    this.#sum(
+      "repository",
       repository,
-      workflowPath,
-      runs: 0,
-      minutes: 0,
-      cost: 0,
-    };
-    found.workflowPath ??= workflowPath;
+      { name: repository, repository: null, workflowPath: null },
+      sums,
+    );
+  }
+
+  #sum(by: BreakdownBy, id: string, name: BreakdownName, sums: BreakdownSums) {
+    const view = this.#views.get(by)!;
+    const found = view.get(id) ?? { ...name, runs: 0, minutes: 0, cost: 0 };
+    found.workflowPath ??= name.workflowPath;
     found.runs += sums.runs;
     found.minutes += sums.minutes;
     found.cost += sums.cost;
@@ -855,32 +813,31 @@ class Breakdowns {
   }
 
   report() {
-    const round = <T extends BreakdownSums>(sums: T): T => ({
-      ...sums,
-      minutes: Math.round(sums.minutes),
-      cost: cents(sums.cost),
-    });
     const entries = [...this.#views].map(([by, view]) => {
-      const rows = [...view.values()];
-      const top = rows
-        .filter((row) => row.name !== "")
-        .sort((a, b) => b.minutes - a.minutes)
-        .slice(0, MAX_BREAKDOWN_ROWS);
-      const rest = rows.filter((row) => !top.includes(row));
-      const other = { runs: 0, minutes: 0, cost: 0 };
-      for (const row of rest) {
-        other.runs += row.runs;
-        other.minutes += row.minutes;
-        other.cost += row.cost;
-      }
+      const rows = [...view.values()].sort((a, b) => b.minutes - a.minutes);
+      const named = rows.filter((row) => row.name !== "");
+      const rest = [...named.slice(MAX_BREAKDOWN_ROWS), ...rows.filter((row) => row.name === "")];
+      const other = rest.reduce(
+        (sum, row) => ({
+          runs: sum.runs + row.runs,
+          minutes: sum.minutes + row.minutes,
+          cost: sum.cost + row.cost,
+        }),
+        { runs: 0, minutes: 0, cost: 0 },
+      );
       const breakdown: Breakdown = {
-        rows: top.map(round),
-        other: rest.length ? round(other) : null,
+        rows: named.slice(0, MAX_BREAKDOWN_ROWS).map(rounded),
+        other: rest.length ? rounded(other) : null,
       };
       return [by, breakdown] as const;
     });
     return Object.fromEntries(entries) as Record<BreakdownBy, Breakdown>;
   }
+}
+
+// Minutes to the whole minute and USD to the cent, for the page.
+function rounded<T extends { minutes: number; cost: number }>(sums: T): T {
+  return { ...sums, minutes: Math.round(sums.minutes), cost: cents(sums.cost) };
 }
 
 function chunk<T>(items: T[], size: number): T[][] {

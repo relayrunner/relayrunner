@@ -472,7 +472,7 @@ describe("GET /api/signals", () => {
     });
   });
 
-  test("breaks down every job, summing repos from the trigger view", async () => {
+  test("breaks down every job, summing repos from the workflow view", async () => {
     const ctx = await connectedWorkspace();
     await runWithJob(ctx, { start: 60, minutes: 30, startedByLogin: "ana" });
     await runWithJob(ctx, { start: 40, minutes: 10, startedByLogin: "sam" });

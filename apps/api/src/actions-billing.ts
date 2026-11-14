@@ -15,7 +15,7 @@
 import { and, asc, eq, gt, gte, isNull, lt, ne, or } from "drizzle-orm";
 import { recordOverage } from "./activity.ts";
 import { createAuth } from "./auth.ts";
-import { createDb, type Db, schema } from "./db/index.ts";
+import { createDb, type Db, prepare, schema } from "./db/index.ts";
 import type { Env } from "./env.ts";
 import { enqueueInstallationTasks } from "./installation-tasks.ts";
 import { userGitHubToken } from "./installations.ts";
@@ -293,12 +293,9 @@ export async function pollInstallation(
   // statement as a JSON parameter, so a poll costs the same few D1 queries whatever the repo count.
   // Sent straight to D1 rather than through Drizzle's batch, which can't carry a raw statement.
   const d1 = db.$client;
-  const prepare = (query: { toSQL(): { sql: string; params: unknown[] } }) => {
-    const built = query.toSQL();
-    return d1.prepare(built.sql).bind(...built.params);
-  };
   await d1.batch([
     prepare(
+      db,
       db
         .delete(schema.actionsUsage)
         .where(
@@ -318,6 +315,7 @@ export async function pollInstallation(
       )
       .bind(installation.id, start.getTime(), now.getTime(), JSON.stringify(rows)),
     prepare(
+      db,
       db.insert(schema.actionsUsageReading).values({
         installationId: installation.id,
         readAt: now,
@@ -326,6 +324,7 @@ export async function pollInstallation(
       }),
     ),
     prepare(
+      db,
       db
         .insert(schema.actionsBilling)
         .values({ installationId: installation.id, ...billing })

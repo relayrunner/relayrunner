@@ -3,8 +3,7 @@ import { ArrowUpRightIcon, ChartBarBigIcon } from "lucide-react";
 import { type ReactNode, useState } from "react";
 import { Count } from "@/components/count";
 import { PageHeader } from "@/components/page-header";
-import { RangePicker } from "@/components/range-picker";
-import { Button } from "@/components/ui/button";
+import { OptionPicker, RangePicker } from "@/components/range-picker";
 import { InfoTip } from "@/components/ui/info-tip";
 import {
   Table,
@@ -223,19 +222,7 @@ function BreakdownSection({ report }: { report: SignalsReport }) {
           <h2 className="font-semibold">Breakdown</h2>
           <span className="text-muted-foreground">Who and what uses your CI</span>
         </div>
-        <div role="group" aria-label="Break down by" className="flex flex-wrap gap-1.5">
-          {BREAKDOWN_VIEWS.map((option) => (
-            <Button
-              key={option.value}
-              size="sm"
-              variant={by === option.value ? "secondary" : "ghost"}
-              aria-pressed={by === option.value}
-              onClick={() => setBy(option.value)}
-            >
-              {option.label}
-            </Button>
-          ))}
-        </div>
+        <OptionPicker label="Break down by" options={BREAKDOWN_VIEWS} value={by} onChange={setBy} />
       </div>
       <Table className="min-w-xl table-fixed">
         <TableHeader>
@@ -278,7 +265,7 @@ function BreakdownLine({
   sums: { runs: number; minutes: number; cost: number };
   total: number;
 }) {
-  const share = total ? Math.min(1, sums.minutes / total) : 0;
+  const share = total ? sums.minutes / total : 0;
   return (
     <TableRow>
       <TableCell className="truncate">{name}</TableCell>

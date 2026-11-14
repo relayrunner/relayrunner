@@ -9,3 +9,12 @@ export function createDb(d1: D1Database | D1DatabaseSession) {
 
 export type Db = ReturnType<typeof createDb>;
 export { schema };
+
+/**
+ * A Drizzle query as a raw D1 statement, for a `$client.batch` that also carries hand-written SQL,
+ * which Drizzle's own batch can't.
+ */
+export function prepare(db: Db, query: { toSQL(): { sql: string; params: unknown[] } }) {
+  const built = query.toSQL();
+  return db.$client.prepare(built.sql).bind(...built.params);
+}

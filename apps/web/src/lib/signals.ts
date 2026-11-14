@@ -252,23 +252,20 @@ export function sampleSignals(days: number): SignalsReport {
 
 // Sample Breakdown views that add up to the sample totals: 12.7K minutes and $486 over 30 days.
 function sampleBreakdown(scale: number): Record<BreakdownBy, Breakdown> {
-  type Row = [name: string, runs: number, minutes: number, cost: number, repository?: string];
-  const view = (rows: Row[], other?: [runs: number, minutes: number, cost: number]): Breakdown => ({
+  type Sums = [runs: number, minutes: number, cost: number];
+  const scaled = ([runs, minutes, cost]: Sums) => ({
+    runs: Math.round(runs * scale),
+    minutes: Math.round(minutes * scale),
+    cost: cost * scale,
+  });
+  const view = (rows: [string, ...Sums, string?][], other?: Sums): Breakdown => ({
     rows: rows.map(([name, runs, minutes, cost, repository]) => ({
       name,
       repository: repository ?? null,
       workflowPath: repository && WORKFLOWS.has(name) ? ".github/workflows/ci.yml" : null,
-      runs: Math.round(runs * scale),
-      minutes: Math.round(minutes * scale),
-      cost: cost * scale,
+      ...scaled([runs, minutes, cost]),
     })),
-    other: other
-      ? {
-          runs: Math.round(other[0] * scale),
-          minutes: Math.round(other[1] * scale),
-          cost: other[2] * scale,
-        }
-      : null,
+    other: other ? scaled(other) : null,
   });
   return {
     person: view(

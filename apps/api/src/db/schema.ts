@@ -646,7 +646,8 @@ export const signalDay = sqliteTable(
     // The UTC midnight starting the day the jobs finished on.
     day: integer("day", { mode: "timestamp_ms" }).notNull(),
     // A SignalId, 'total' for every job the usage report counts, or 'by-person', 'by-workflow',
-    // 'by-branch' or 'by-trigger' for the Breakdown, whose subject is that value.
+    // 'by-branch' or 'by-trigger' for the Breakdown, whose subject is that value. Only workflows
+    // keep their repo: the other Breakdown rows have repository_id 0.
     signal: text("signal").notNull(),
     repositoryId: integer("repository_id").notNull(),
     repositoryFullName: text("repository_full_name").notNull(),
