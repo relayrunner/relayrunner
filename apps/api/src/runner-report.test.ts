@@ -95,7 +95,10 @@ describe("runner report", () => {
       timing(installationId, 600, { hoursAgo: 20 * 24 }),
     ]);
     const result = await report(cookie, "github:linux-2-core");
-    expect(result.environment).toMatchObject({ key: "github:linux-2-core", label: "Linux 2-core" });
+    expect(result.environment).toMatchObject({
+      key: "github:linux-2-core",
+      label: "ubuntu-latest",
+    });
     expect(result.stat).toMatchObject({ runs: 3, successes: 2, medianMs: 90_000 });
     expect(result.daily.reduce((sum, day) => sum + day.busyMs, 0)).toBe(210_000);
     expect(result.daily.reduce((sum, day) => sum + day.jobs, 0)).toBe(3);
