@@ -7,6 +7,8 @@ import {
   clearListedPages,
   deleteRunner,
   generateJitConfig,
+  GitHubAccessError,
+  GitHubRateLimitError,
   importAppPrivateKey,
   listRunners,
   runnerBusy,
@@ -216,6 +218,25 @@ describe("userCanReadRepo", () => {
     expect(urls[1]).toBe(
       "https://api.github.com/repos/acme/app/collaborators/zach%20dunn/permission",
     );
+  });
+
+  test("a spent API limit throws GitHubRateLimitError; a missing permission doesn't", async () => {
+    const respond = (status: number, headers: Record<string, string> = {}) =>
+      vi.stubGlobal("fetch", async () => new Response("", { status, headers }));
+    respond(429);
+    await expect(userCanReadRepo("ghs_x", "acme/app", 2)).rejects.toBeInstanceOf(
+      GitHubRateLimitError,
+    );
+    respond(403, { "x-ratelimit-remaining": "0" });
+    await expect(userCanReadRepo("ghs_x", "acme/app", 2)).rejects.toBeInstanceOf(
+      GitHubRateLimitError,
+    );
+    respond(403, { "retry-after": "60" });
+    await expect(userCanReadRepo("ghs_x", "acme/app", 2)).rejects.toBeInstanceOf(
+      GitHubRateLimitError,
+    );
+    respond(403, { "x-ratelimit-remaining": "4000" });
+    await expect(userCanReadRepo("ghs_x", "acme/app", 2)).rejects.toBeInstanceOf(GitHubAccessError);
   });
 
   test("a 404 is no access; other failures throw", async () => {

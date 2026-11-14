@@ -93,6 +93,14 @@ describe("walkSummary", () => {
     );
   });
 
+  test("names GitHub's API limit when it kept machines out", () => {
+    const limited = walk({ skipped: [{ key: "machine", reason: "github_rate_limited" }] });
+    expect(walkSummary(limited)).toEqual({ text: "GitHub API limit reached", tone: "fallback" });
+    expect(walkLines(limited, "ubuntu-latest")[0]?.text).toBe(
+      "GitHub's API limit for this org was reached, so no machine could be checked",
+    );
+  });
+
   test("explains a hosted provider step that couldn't take the job", () => {
     const depot = walk({
       skipped: [{ key: "depot", reason: "not_provider_label" }],

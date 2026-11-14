@@ -6,6 +6,7 @@ import { createDb, schema } from "../db/index.ts";
 import type { Env } from "../env.ts";
 import {
   appInstallationToken,
+  GitHubRateLimitError,
   listOrgRunners,
   userCanReadRepo,
   type OrgRunner,
@@ -39,6 +40,7 @@ import {
   chooseAndHold,
   chooseMachine,
   decideRoute,
+  fits as fitsLabels,
   fullMachines,
   retryOrder,
   heldSlots,
@@ -149,13 +151,14 @@ export class Router extends DurableObject<Env> {
   /**
    * Whether a machine's owner can read the job's repo, as the job's installation sees it. Reused
    * for OWNER_ACCESS_TTL_MS. No owner, or GitHub can't be asked: no, and the machine sits this job
-   * out (nothing is cached, so the next pick asks again).
+   * out (nothing is cached, so the next pick asks again). `rate_limited` when GitHub refused for
+   * the installation's API limit, so the pick can say why.
    */
   private async ownerCanRead(
     machineId: string,
     ownerGithubId: number | null,
     job: PickedJob,
-  ): Promise<boolean> {
+  ): Promise<boolean | "rate_limited"> {
     let allowed = false;
     if (ownerGithubId !== null) {
       const key = `${job.installationId}:${job.repositoryId}:${ownerGithubId}`;
@@ -173,9 +176,11 @@ export class Router extends DurableObject<Env> {
             msg: "machine owner access unknown",
             machineId,
             repo: job.repo,
+            rateLimited: error instanceof GitHubRateLimitError,
             error: errorMessage(error),
           }),
         );
+        if (error instanceof GitHubRateLimitError) return "rate_limited";
       }
     }
     if (!allowed)
@@ -495,18 +500,24 @@ export class Router extends DurableObject<Env> {
         ),
     );
     // A connected machine shared with anyone only takes the job if its owner can read the repo.
-    // A runner added from GitHub is the org's own, already limited by its runner group.
+    // A runner added from GitHub is the org's own, already limited by its runner group. Only
+    // machines with the job's labels are asked about, since no other could take it anyway.
     const readable = await Promise.all(
       admitted.map((machine) => {
         const entry = pool.find((e) => e.id === machine.id)!;
         if (machine.source === "github" || !needsOwnerAccess(entry, job)) return true;
+        if (!fitsLabels(entry, job.machine)) return false;
         return this.ownerCanRead(machine.id, entry.ownerGithubId ?? null, job);
       }),
     );
-    const live = admitted.filter((_, index) => readable[index]);
-    const runners = live.some((machine) => machine.source === "github")
+    const live = admitted.filter((_, index) => readable[index] === true);
+    const orgRunners = live.some((machine) => machine.source === "github")
       ? await this.orgRunners(job)
       : null;
+    const runners = orgRunners === "rate_limited" ? null : orgRunners;
+    // GitHub's API limit kept a machine out of this pick: when nothing else takes the job, the
+    // pick says so instead of reporting no idle machine.
+    const rateLimited = orgRunners === "rate_limited" || readable.includes("rate_limited");
     const candidates: Candidate[] = await Promise.all(
       live.map(async (machine): Promise<Candidate> => {
         const { ownerName: _, ...base } = pool.find((entry) => entry.id === machine.id)!;
@@ -527,7 +538,7 @@ export class Router extends DurableObject<Env> {
     const places = new Map(fits.map((m) => [m.id, { host: m.os, vm: m.isolatedOs }]));
     return (
       (await this.reserve(job, candidates, routingLabels, places, rerun, waiting)) ??
-      unavailableMachines(pool, job.machine, job)
+      (rateLimited ? { rateLimited: true } : unavailableMachines(pool, job.machine, job))
     );
   }
 
@@ -627,11 +638,11 @@ export class Router extends DurableObject<Env> {
   }
 
   // The job's org's self-hosted runners, read within the last few seconds, with their group access
-  // (cached), or null when GitHub can't be reached: added runners then sit this pick out. A
-  // personal account has none.
+  // (cached), or null when GitHub can't be reached (`rate_limited` when it refused for the API
+  // limit): added runners then sit this pick out. A personal account has none.
   private async orgRunners(
     job: PickedJob,
-  ): Promise<{ runners: OrgRunner[]; access: Map<number, GroupAccess> } | null> {
+  ): Promise<{ runners: OrgRunner[]; access: Map<number, GroupAccess> } | null | "rate_limited"> {
     const org = job.repo.split("/")[0];
     try {
       // A personal account has no org runners. Adopting its repo runners is #162.
@@ -657,10 +668,11 @@ export class Router extends DurableObject<Env> {
           msg: "github runners unavailable",
           installationId: job.installationId,
           org,
+          rateLimited: error instanceof GitHubRateLimitError,
           error: errorMessage(error),
         }),
       );
-      return null;
+      return error instanceof GitHubRateLimitError ? "rate_limited" : null;
     }
   }
 
