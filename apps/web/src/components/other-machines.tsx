@@ -43,21 +43,15 @@ export function OtherMachinesBanner({
     >
       <LaptopIcon aria-hidden className="size-4 shrink-0 text-muted-foreground" />
       <p className="min-w-0 flex-1 basis-56">
-        {!one ? (
+        You've used{" "}
+        {one ? (
           <>
-            {others.length} of your machines don't run {ws} jobs.
-          </>
-        ) : one.workspaces.length > 0 ? (
-          <>
-            Your machine <span className="font-mono">{one.name}</span> runs jobs for{" "}
-            {workspaceList(one.workspaces)}, but not {ws}.
+            your machine <span className="font-mono">{one.name}</span>
           </>
         ) : (
-          <>
-            Your machine <span className="font-mono">{one.name}</span> isn't running jobs for any
-            workspace.
-          </>
-        )}
+          `${others.length} of your machines`
+        )}{" "}
+        elsewhere, but not in {ws} yet.
       </p>
       <div className="ml-auto flex items-center gap-1">
         <Button size="sm" variant="outline" onClick={onChoose}>
@@ -74,24 +68,6 @@ export function OtherMachinesBanner({
         </Button>
       </div>
     </div>
-  );
-}
-
-// "relayrunner", "relayrunner and acme", or "relayrunner and 2 others", for the banner line.
-function workspaceList(names: string[]) {
-  const [first, ...rest] = names;
-  const mono = (name: string) => <span className="font-mono">{name}</span>;
-  if (rest.length === 0) return mono(first!);
-  if (rest.length === 1)
-    return (
-      <>
-        {mono(first!)} and {mono(rest[0]!)}
-      </>
-    );
-  return (
-    <>
-      {mono(first!)} and {rest.length} others
-    </>
   );
 }
 
