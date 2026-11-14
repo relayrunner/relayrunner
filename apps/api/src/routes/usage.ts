@@ -1,16 +1,12 @@
 import { Hono } from "hono";
-import { z } from "zod";
 import { workspaceActionsUsage } from "../actions-billing.ts";
 import type { AppEnv } from "../app.ts";
 import { freeCheckSavings } from "../free-checks.ts";
 import { usageReport } from "../job-timings.ts";
 import { requireUser } from "../middleware/session.ts";
 import { requireWorkspace } from "../middleware/workspace.ts";
+import { parseDays } from "./days.ts";
 import { AppError } from "@relayrunner/errors";
-
-const UsageQuery = z.object({
-  days: z.coerce.number().int().min(1).max(90).default(30),
-});
 
 // The Usage page: how many of the workspace's jobs ran under a minute, and what GitHub's round-up
 // to whole minutes cost, over the last ?days=N days (default 30). /checks is what the free checks
@@ -30,8 +26,3 @@ export const usageRoutes = new Hono<AppEnv>()
   .get("/actions", requireUser, requireWorkspace, async (c) => {
     return c.json(await workspaceActionsUsage(c.var.db, c.var.workspace.id));
   });
-
-function parseDays(query: Record<string, string>) {
-  const parsed = UsageQuery.safeParse(query);
-  return parsed.success ? parsed.data.days : null;
-}

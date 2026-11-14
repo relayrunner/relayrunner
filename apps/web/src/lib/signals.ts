@@ -1,3 +1,4 @@
+import { CircleDollarSignIcon, GaugeIcon, LayersIcon, type LucideIcon } from "lucide-react";
 import { DOCS_URL } from "@/components/site-footer";
 import { api } from "@/lib/api";
 
@@ -34,10 +35,14 @@ export function getSignals(days = 30) {
   return api<SignalsReport>(`/signals?days=${days}`);
 }
 
-export const AREAS: Record<SignalArea, { title: string; question: string }> = {
-  speed: { title: "Speed", question: "Why is CI slow?" },
-  cost: { title: "Cost", question: "Why does CI cost this much?" },
-  complexity: { title: "Complexity", question: "Is CI doing more than it needs to?" },
+export const AREAS: Record<SignalArea, { title: string; question: string; icon: LucideIcon }> = {
+  speed: { title: "Speed", question: "Why is CI slow?", icon: GaugeIcon },
+  cost: { title: "Cost", question: "Why does CI cost this much?", icon: CircleDollarSignIcon },
+  complexity: {
+    title: "Complexity",
+    question: "Is CI doing more than it needs to?",
+    icon: LayersIcon,
+  },
 };
 
 type Link = { label: string; href: string };

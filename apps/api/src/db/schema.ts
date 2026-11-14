@@ -630,8 +630,9 @@ export const workflowRun = sqliteTable(
 
 // What the Signals page reports (src/signals.ts), summed per UTC day, repo and subject (a workflow,
 // or a workflow's job), so its 90-day range reads a few rows per day instead of every run. The
-// hourly cron recomputes each installation's last two days from job_timing and workflow_run, so a
-// late webhook still lands. Purged with job_timing_daily, and gone with the installation.
+// hourly cron recomputes each active installation's current day from job_timing and
+// workflow_run, so a late webhook still lands. Purged with job_timing_daily, and gone with the
+// installation.
 export const signalDay = sqliteTable(
   "signal_day",
   {

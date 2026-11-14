@@ -2,7 +2,8 @@ import { beforeAll, describe, expect, test } from "vitest";
 import { eq } from "drizzle-orm";
 import { createDb, schema } from "./db/index.ts";
 import type { Env } from "./env.ts";
-import { rollUpSignals, type SignalsReport } from "./signals.ts";
+import type { InstallationTask } from "./installation-tasks.ts";
+import { enqueueSignalRollups, rollUpSignals, type SignalsReport } from "./signals.ts";
 import * as testing from "./testing.ts";
 
 let env: Env;
@@ -232,6 +233,23 @@ describe("rollUpSignals", () => {
     await rollUpSignals(db, ctx.installationId);
     await rollUpSignals(db, ctx.installationId);
     expect(sum(await dayRows(ctx.installationId, "total")).count).toBe(2);
+  });
+});
+
+describe("enqueueSignalRollups", () => {
+  test("queues installations that finished a job in the last two hours", async () => {
+    const active = await connectedWorkspace();
+    await shortJobs(active, 1);
+    const idle = await connectedWorkspace();
+    const queued: InstallationTask[] = [];
+    const queue = {
+      sendBatch: async (messages: { body: InstallationTask }[]) => {
+        queued.push(...messages.map((message) => message.body));
+      },
+    } as unknown as Queue<InstallationTask>;
+    await enqueueSignalRollups({ ...env, INSTALLATION_TASKS: queue }, NOW);
+    expect(queued).toContainEqual({ kind: "signals", installationId: active.installationId });
+    expect(queued).not.toContainEqual({ kind: "signals", installationId: idle.installationId });
   });
 });
 

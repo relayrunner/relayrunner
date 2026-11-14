@@ -262,8 +262,8 @@ const ROLLUP_SQL = `
     billed_minutes = billed_minutes + excluded.billed_minutes,
     short_billed_minutes = short_billed_minutes + excluded.short_billed_minutes`;
 
-// The UTC midnight starting the day `ms` falls on.
-function utcDay(ms: number) {
+/** The UTC midnight starting the day `ms` falls on. */
+export function utcDay(ms: number) {
   return Math.floor(ms / DAY_MS) * DAY_MS;
 }
 

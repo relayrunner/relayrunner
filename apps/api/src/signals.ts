@@ -3,24 +3,29 @@
  * workflows it affects, for the Signals page. Every signal belongs to one area: speed (why CI is
  * slow), cost (why it costs this much) or complexity (whether it does more than it needs to).
  *
- * The hourly cron queues one task per installation (src/installation-tasks.ts), which works out
- * the installation's last two UTC days from job_timing and workflow_run and replaces their
- * signal_day rows. The page then sums a few rows per day, whatever the range, instead of reading
- * every run. An installation with no rows yet gets the last BACKFILL_DAYS at once.
+ * The hourly cron queues one task per installation that finished a job in the last two hours
+ * (src/installation-tasks.ts). The task works out the installation's current UTC day from
+ * job_timing and workflow_run, and yesterday too for the first hours after midnight so late
+ * webhooks still land, and replaces those days' signal_day rows. The page then sums a few rows per
+ * day, whatever the range, instead of reading every run. An installation with no rows yet gets the
+ * last 30 days at once, as many whole days as job_timing keeps single jobs.
  */
-import { and, eq, gte, isNotNull, isNull, ne, sql } from "drizzle-orm";
+import { and, eq, exists, gte, isNull, sql } from "drizzle-orm";
 import type { PriceBook } from "@relayrunner/providers";
 import { type Db, createDb, schema } from "./db/index.ts";
 import type { Env } from "./env.ts";
 import { enqueueInstallationTasks } from "./installation-tasks.ts";
+import { RAN_ON_RUNNER } from "./job-times.ts";
 import {
   BILLED_MINUTES,
   cents,
   DAY_MS,
   DURATION_MS,
+  RAW_RETENTION_DAYS,
   rateFor,
   runnerClass,
   SHORT_JOB_SECONDS,
+  utcDay,
 } from "./job-timings.ts";
 import { loadPriceBook } from "./prices.ts";
 
@@ -40,11 +45,10 @@ export type SignalId = keyof typeof SIGNALS;
 
 // signal_day rows that hold every counted job, for the page's totals and the threshold.
 const TOTAL = "total";
-// Days each hourly run works out again: today and yesterday, so a late webhook still counts.
-const RECOMPUTE_DAYS = 2;
-// Days an installation's first run works out: inside job_timing's RAW_RETENTION_DAYS (31), which
-// keeps single jobs that long.
-const BACKFILL_DAYS = 30;
+// How long after UTC midnight each run still works out yesterday, for late webhooks.
+const LATE_MS = 3 * 60 * 60_000;
+// Only installations that finished a job this recently get a run.
+const ACTIVE_MS = 2 * 60 * 60_000;
 // A signal shows once it covers this many minutes and this share of all the range's job minutes.
 const MIN_MINUTES = 30;
 const MIN_SHARE = 0.01;
@@ -54,19 +58,36 @@ const MIN_ROW_MINUTES = 1;
 
 const timing = schema.jobTiming;
 const run = schema.workflowRun;
-const repo = schema.githubRepository;
 const day = schema.signalDay;
+const installation = schema.githubInstallation;
 
 type DayRow = typeof day.$inferInsert;
+// Whether each of the installation's repos is private, by id, for the price of its minutes.
+type Privacy = Map<number, boolean>;
 
-/** Queues a signal rollup for each installation a workspace uses. */
-export async function enqueueSignalRollups(env: Env) {
+/** Queues a signal rollup for each installation a workspace uses that finished a job lately. */
+export async function enqueueSignalRollups(env: Env, now = Date.now()) {
   const db = createDb(env.DB);
   const installations = await db
-    .select({ id: schema.githubInstallation.id })
-    .from(schema.githubInstallation)
-    .innerJoin(schema.workspace, eq(schema.workspace.installationId, schema.githubInstallation.id))
-    .where(isNull(schema.githubInstallation.suspendedAt));
+    .select({ id: installation.id })
+    .from(installation)
+    .innerJoin(schema.workspace, eq(schema.workspace.installationId, installation.id))
+    .where(
+      and(
+        isNull(installation.suspendedAt),
+        exists(
+          db
+            .select({ one: sql`1` })
+            .from(timing)
+            .where(
+              and(
+                eq(timing.installationId, installation.id),
+                gte(timing.completedAt, new Date(now - ACTIVE_MS)),
+              ),
+            ),
+        ),
+      ),
+    );
   await enqueueInstallationTasks(
     env,
     installations.map(({ id }) => ({ kind: "signals", installationId: id })),
@@ -74,26 +95,31 @@ export async function enqueueSignalRollups(env: Env) {
 }
 
 /**
- * Works out one installation's signals for its last RECOMPUTE_DAYS UTC days (BACKFILL_DAYS on its
- * first run) and replaces those days' signal_day rows in one batch.
+ * Works out one installation's signals for today (and yesterday, just after midnight), or the last
+ * 30 days on its first run, and replaces those days' signal_day rows in one batch.
  */
 export async function rollUpSignals(db: Db, installationId: number, now = Date.now()) {
-  const [seen] = await db
-    .select({ day: day.day })
-    .from(day)
-    .where(eq(day.installationId, installationId))
-    .limit(1);
-  const since = utcDay(now) - ((seen ? RECOMPUTE_DAYS : BACKFILL_DAYS) - 1) * DAY_MS;
-  const book = await loadPriceBook(db, now);
-  const rows = new Rows();
-  const paths = await workflowPaths(db, installationId, since);
-  await Promise.all([
-    addJobs(db, book, rows, paths, installationId, since),
-    addSupersededRuns(db, book, rows, installationId, since),
-    addSameCommitRuns(db, book, rows, installationId, since),
+  const [seen, book, repos] = await Promise.all([
+    db
+      .select({ day: day.day })
+      .from(day)
+      .where(eq(day.installationId, installationId))
+      .limit(1)
+      .then(([row]) => row),
+    loadPriceBook(db, now),
+    db
+      .select({ id: schema.githubRepository.id, private: schema.githubRepository.private })
+      .from(schema.githubRepository)
+      .where(eq(schema.githubRepository.installationId, installationId)),
   ]);
+  // The first run goes back as far as job_timing keeps single jobs, in whole days.
+  const since = seen ? utcDay(now - LATE_MS) : utcDay(now) - (RAW_RETENTION_DAYS - 2) * DAY_MS;
+  const privacy: Privacy = new Map(repos.map((repo) => [repo.id, repo.private]));
+  const rows = new Rows(installationId);
+  const scope = { db, book, rows, privacy, installationId, since };
+  await Promise.all([addJobs(scope), addSupersededRuns(scope), addSameCommitRuns(scope)]);
 
-  const values = rows.values(installationId);
+  const values = rows.values();
   // A statement binds at most 100 values; a signal_day row has 10.
   const inserts = chunk(values, 9).map((part) => db.insert(day).values(part));
   await db.batch([
@@ -105,35 +131,30 @@ export async function rollUpSignals(db: Db, installationId: number, now = Date.n
   return values.length;
 }
 
-// Each workflow's file, by repo and name, from the window's runs. job_timing doesn't know it.
-async function workflowPaths(db: Db, installationId: number, since: number) {
-  const found = await db
-    .selectDistinct({
-      repositoryId: run.repositoryId,
-      name: run.workflowName,
-      path: run.workflowPath,
-    })
-    .from(run)
-    .where(
-      and(
-        eq(run.installationId, installationId),
-        gte(run.githubUpdatedAt, new Date(since)),
-        isNotNull(run.workflowPath),
-      ),
-    );
-  return new Map(found.map((row) => [`${row.repositoryId}:${row.name}`, row.path]));
+type Scope = {
+  db: Db;
+  book: PriceBook;
+  rows: Rows;
+  privacy: Privacy;
+  installationId: number;
+  since: number;
+};
+
+// The price of a minute on these labels in this repo, on the given day.
+function rate(
+  { book, privacy }: Scope,
+  labels: string[],
+  group: string | null,
+  repositoryId: number,
+  at: number,
+) {
+  return rateFor(book, runnerClass(labels, group), privacy.get(repositoryId) ?? null, at);
 }
 
 // Every counted job (the usage report's filter) into the totals, and the short ones on a billed
 // runner into short-jobs, with the unused part of their last minute as its time and cost.
-async function addJobs(
-  db: Db,
-  book: PriceBook,
-  rows: Rows,
-  paths: Map<string, string | null>,
-  installationId: number,
-  since: number,
-) {
+async function addJobs(scope: Scope) {
+  const { db, rows, installationId, since } = scope;
   const isShort = sql`(${DURATION_MS} < ${SHORT_JOB_SECONDS * 1000})`;
   const found = await db
     .select({
@@ -141,10 +162,11 @@ async function addJobs(
       repositoryId: timing.repositoryId,
       repository: sql<string>`max(${timing.repositoryFullName})`,
       workflow: timing.workflowName,
+      // job_timing doesn't know the workflow's file; its run does.
+      workflowPath: sql<string | null>`max(${run.workflowPath})`,
       job: timing.name,
       labels: timing.labels,
       runnerGroupName: timing.runnerGroupName,
-      private: repo.private,
       jobs: sql<number>`count(*)`,
       runMs: sql<number>`sum(${DURATION_MS})`,
       billed: sql<number>`sum(${BILLED_MINUTES})`,
@@ -153,14 +175,12 @@ async function addJobs(
       shortBilled: sql<number>`sum(case when ${isShort} then ${BILLED_MINUTES} else 0 end)`,
     })
     .from(timing)
-    .leftJoin(repo, eq(repo.id, timing.repositoryId))
+    .leftJoin(run, and(eq(run.id, timing.runId), eq(run.runAttempt, timing.runAttempt)))
     .where(
       and(
         eq(timing.installationId, installationId),
         gte(timing.completedAt, new Date(since)),
-        isNotNull(timing.startedAt),
-        isNotNull(timing.runnerName),
-        ne(sql`coalesce(${timing.conclusion}, '')`, "skipped"),
+        RAN_ON_RUNNER,
       ),
     )
     .groupBy(
@@ -170,25 +190,24 @@ async function addJobs(
       timing.name,
       timing.labels,
       timing.runnerGroupName,
-      repo.private,
     );
   for (const row of found) {
     const at = Number(row.day);
-    const rate = rateFor(book, runnerClass(row.labels, row.runnerGroupName), row.private, at);
+    const perMinute = rate(scope, row.labels, row.runnerGroupName, row.repositoryId, at);
     const where = { day: at, repositoryId: row.repositoryId, repository: row.repository };
-    rows.add({ ...where, signal: TOTAL, subject: "" }, row.jobs, row.runMs, row.billed * rate);
-    if (!rate || !row.shortJobs) continue;
+    rows.add({ ...where, signal: TOTAL, subject: "" }, row.jobs, row.runMs, row.billed * perMinute);
+    if (!perMinute || !row.shortJobs) continue;
     const unusedMs = row.shortBilled * 60_000 - row.shortRunMs;
     rows.add(
       {
         ...where,
         signal: "short-jobs",
         subject: `${row.workflow ?? "Workflow"} › ${row.job}`,
-        workflowPath: paths.get(`${row.repositoryId}:${row.workflow}`) ?? null,
+        workflowPath: row.workflowPath,
       },
       row.shortJobs,
       unusedMs,
-      (unusedMs / 60_000) * rate,
+      (unusedMs / 60_000) * perMinute,
     );
   }
 }
@@ -197,10 +216,16 @@ async function addJobs(
 const SAME_WORKFLOW = (a: string, b: string) =>
   sql.raw(`${b}.workflow_id is ${a}.workflow_id and ${b}.workflow_name is ${a}.workflow_name`);
 
-// A counted job's filter, for the raw queries below.
+// A counted job's filter (RAN_ON_RUNNER), for the raw queries below.
 const COUNTED_JOB = sql.raw(
   "j.started_at is not null and j.runner_name is not null and coalesce(j.conclusion, '') != 'skipped'",
 );
+
+// The columns addRunJobs reads, from a run `o` and its job `j`.
+const RUN_JOB_COLUMNS = sql.raw(`o.repository_id as repositoryId,
+  o.repository_full_name as repository, o.workflow_name as workflow, o.workflow_path as path,
+  o.id as runId, j.labels as labels, j.runner_group_name as runnerGroupName,
+  j.completed_at as completedAt`);
 
 type RunJobRow = {
   repositoryId: number;
@@ -210,7 +235,6 @@ type RunJobRow = {
   runId: number;
   labels: string;
   runnerGroupName: string | null;
-  private: number | null;
   completedAt: number;
   runMs: number;
 };
@@ -218,13 +242,8 @@ type RunJobRow = {
 // Runs on a branch other than the default that GitHub didn't cancel though a newer run of the same
 // workflow started on that branch before they finished. The time is each job's part after the
 // newer run started: what a concurrency group with cancel-in-progress would have saved.
-async function addSupersededRuns(
-  db: Db,
-  book: PriceBook,
-  rows: Rows,
-  installationId: number,
-  since: number,
-) {
+async function addSupersededRuns(scope: Scope) {
+  const { db, installationId, since } = scope;
   const found = await db.all<RunJobRow>(sql`
     with older as (
       select o.*, (
@@ -238,70 +257,46 @@ async function addSupersededRuns(
         and o.event in ('push', 'pull_request') and o.run_started_at is not null
         and o.head_branch != coalesce(o.default_branch, 'main')
     )
-    select o.repository_id as repositoryId, o.repository_full_name as repository,
-      o.workflow_name as workflow, o.workflow_path as path, o.id as runId,
-      j.labels as labels, j.runner_group_name as runnerGroupName, r.private as private,
-      j.completed_at as completedAt, j.completed_at - max(j.started_at, o.newer_at) as runMs
+    select ${RUN_JOB_COLUMNS}, j.completed_at - max(j.started_at, o.newer_at) as runMs
     from older o
     join job_timing j on j.run_id = o.id and j.run_attempt = o.run_attempt
-    left join github_repository r on r.id = o.repository_id
     where o.newer_at is not null and j.completed_at > o.newer_at and j.completed_at >= ${since}
       and ${COUNTED_JOB}`);
-  addRunJobs(book, rows, "no-concurrency", found, false);
+  addRunJobs(scope, "no-concurrency", found, false);
 }
 
 // Push runs whose commit also ran the same workflow from a pull request. The push run is the
 // extra one, so its jobs are the time and cost; the count is commits.
-async function addSameCommitRuns(
-  db: Db,
-  book: PriceBook,
-  rows: Rows,
-  installationId: number,
-  since: number,
-) {
+async function addSameCommitRuns(scope: Scope) {
+  const { db, installationId, since } = scope;
   const found = await db.all<RunJobRow>(sql`
-    select p.repository_id as repositoryId, p.repository_full_name as repository,
-      p.workflow_name as workflow, p.workflow_path as path, p.id as runId,
-      j.labels as labels, j.runner_group_name as runnerGroupName, r.private as private,
-      j.completed_at as completedAt, max(0, j.completed_at - j.started_at) as runMs
-    from workflow_run p
-    join job_timing j on j.run_id = p.id and j.run_attempt = p.run_attempt
-    left join github_repository r on r.id = p.repository_id
-    where p.installation_id = ${installationId} and p.github_updated_at >= ${since}
-      and p.event = 'push' and p.run_attempt = 1 and j.completed_at >= ${since} and ${COUNTED_JOB}
+    select ${RUN_JOB_COLUMNS}, max(0, j.completed_at - j.started_at) as runMs
+    from workflow_run o
+    join job_timing j on j.run_id = o.id and j.run_attempt = o.run_attempt
+    where o.installation_id = ${installationId} and o.github_updated_at >= ${since}
+      and o.event = 'push' and o.run_attempt = 1 and j.completed_at >= ${since} and ${COUNTED_JOB}
       and exists (
         select 1 from workflow_run q
-        where q.repository_id = p.repository_id and q.head_sha = p.head_sha
-          and q.event = 'pull_request' and ${SAME_WORKFLOW("p", "q")}
+        where q.repository_id = o.repository_id and q.head_sha = o.head_sha
+          and q.event = 'pull_request' and ${SAME_WORKFLOW("o", "q")}
       )`);
-  addRunJobs(book, rows, "same-commit", found, true);
+  addRunJobs(scope, "same-commit", found, true);
 }
 
 // Adds run-level signal jobs, counting each run once per day and workflow. `billed`: the jobs'
 // whole time was billed, rounded up per job; otherwise only part of it is the signal's.
-function addRunJobs(
-  book: PriceBook,
-  rows: Rows,
-  signal: SignalId,
-  found: RunJobRow[],
-  billed: boolean,
-) {
+function addRunJobs(scope: Scope, signal: SignalId, found: RunJobRow[], billed: boolean) {
   const counted = new Set<string>();
   for (const job of found) {
     const at = utcDay(job.completedAt);
     const labels = JSON.parse(job.labels) as string[];
-    const rate = rateFor(
-      book,
-      runnerClass(labels, job.runnerGroupName),
-      job.private === null ? null : Boolean(job.private),
-      at,
-    );
+    const perMinute = rate(scope, labels, job.runnerGroupName, job.repositoryId, at);
     const subject = job.workflow ?? "Workflow";
     const key = `${at}:${job.repositoryId}:${subject}:${job.runId}`;
     const first = !counted.has(key);
     counted.add(key);
     const minutes = job.runMs / 60_000;
-    rows.add(
+    scope.rows.add(
       {
         day: at,
         signal,
@@ -312,28 +307,26 @@ function addRunJobs(
       },
       first ? 1 : 0,
       job.runMs,
-      (billed ? Math.max(1, Math.ceil(minutes)) : minutes) * rate,
+      (billed ? Math.max(1, Math.ceil(minutes)) : minutes) * perMinute,
     );
   }
 }
 
-type RowKey = {
+type RowKey = Pick<DayRow, "signal" | "repositoryId" | "subject" | "workflowPath"> & {
   day: number;
-  signal: string;
-  repositoryId: number;
   repository: string;
-  subject: string;
-  workflowPath?: string | null;
 };
 
-// signal_day rows being summed, by their primary key.
+// One installation's signal_day rows being summed, by their primary key.
 class Rows {
   #rows = new Map<string, DayRow>();
+
+  constructor(readonly installationId: number) {}
 
   add(key: RowKey, count: number, runMs: number, cost: number) {
     const id = `${key.day}:${key.signal}:${key.repositoryId}:${key.subject}`;
     const row = this.#rows.get(id) ?? {
-      installationId: 0,
+      installationId: this.installationId,
       day: new Date(key.day),
       signal: key.signal,
       repositoryId: key.repositoryId,
@@ -350,12 +343,8 @@ class Rows {
     this.#rows.set(id, row);
   }
 
-  values(installationId: number) {
-    return [...this.#rows.values()].map((row) => ({
-      ...row,
-      installationId,
-      cost: cents(row.cost),
-    }));
+  values() {
+    return [...this.#rows.values()].map((row) => ({ ...row, cost: cents(row.cost) }));
   }
 }
 
@@ -468,11 +457,6 @@ export async function signalsReport(
     totals: { jobs: totals.jobs, minutes: Math.round(totals.minutes), cost: cents(totals.cost) },
     signals,
   };
-}
-
-// The UTC midnight starting the day `ms` falls on.
-function utcDay(ms: number) {
-  return Math.floor(ms / DAY_MS) * DAY_MS;
 }
 
 function chunk<T>(items: T[], size: number): T[][] {

@@ -1,11 +1,5 @@
 import { createFileRoute } from "@tanstack/react-router";
-import {
-  ArrowUpRightIcon,
-  CircleDollarSignIcon,
-  GaugeIcon,
-  LayersIcon,
-  type LucideIcon,
-} from "lucide-react";
+import { ArrowUpRightIcon } from "lucide-react";
 import { useState } from "react";
 import { Count } from "@/components/count";
 import { PageHeader } from "@/components/page-header";
@@ -34,12 +28,6 @@ import { money } from "@/lib/usage";
 import { count } from "@/lib/utils";
 
 const RANGES = [7, 30, 90] as const;
-
-const AREA_ICONS: Record<SignalArea, LucideIcon> = {
-  speed: GaugeIcon,
-  cost: CircleDollarSignIcon,
-  complexity: LayersIcon,
-};
 
 function load(days: number): Promise<SignalsReport> {
   return authDisabled ? Promise.resolve(sampleSignals(days)) : getSignals(days);
@@ -99,8 +87,7 @@ function AreaSection({
   signals: Signal[];
   report: SignalsReport;
 }) {
-  const Icon = AREA_ICONS[area];
-  const { title, question } = AREAS[area];
+  const { title, question, icon: Icon } = AREAS[area];
   return (
     <div className="grid gap-4">
       <div className="flex flex-wrap items-baseline justify-between gap-x-4 gap-y-1">
