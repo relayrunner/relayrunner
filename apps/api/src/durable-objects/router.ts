@@ -7,9 +7,10 @@ import type { Env } from "../env.ts";
 import {
   appInstallationToken,
   GitHubRateLimitError,
-  listOrgRunners,
+  listRunners,
   userCanReadRepo,
-  type OrgRunner,
+  type GitHubRunner,
+  type RunnerScope,
 } from "../github-app.ts";
 import { installationRunnerScope } from "../installations.ts";
 import { inWorkspace } from "../machines.ts";
@@ -33,6 +34,8 @@ import {
   matchLabels,
   parseStoredLabels,
   runnerStatus,
+  runnerListKey,
+  scopeKey,
   type GroupAccess,
 } from "../github-runners.ts";
 import {
@@ -109,7 +112,7 @@ const HEALTH_KEY = "health:";
 const GROUP_ACCESS_TTL_MS = 5 * 60_000;
 // How long a machine owner's read access to a repo is reused before GitHub is asked again.
 const OWNER_ACCESS_TTL_MS = 10 * 60_000;
-// How long the dashboard reuses an org's runner list (status, busy, labels).
+// How long the dashboard reuses an org's (or repo's) runner list (status, busy, labels).
 const RUNNER_LIST_TTL_MS = 30_000;
 // How old a runner list a pick accepts, so a push that starts many runs at once asks GitHub once
 // rather than once per run. Short, since a runner's busy status decides whether it gets the job.
@@ -119,27 +122,27 @@ const PICK_RUNNER_LIST_TTL_MS = 5_000;
 // keeps the routes it hands out (src/routing.ts), so the job queued on a route's label can find
 // its machine.
 export class Router extends DurableObject<Env> {
-  // What GitHub said, kept in memory while the object is awake: runner group access and each
-  // org's runner list by installation id, and whether a machine owner can read a repo by
-  // `<installation>:<repo id>:<owner GitHub id>`.
+  // What GitHub said, kept in memory while the object is awake: runner group access by
+  // installation id, each org's or repo's runner list by `<installation>:<scope key>`, and whether
+  // a machine owner can read a repo by `<installation>:<repo id>:<owner GitHub id>`.
   private groupAccess = new Recent<number, Map<number, GroupAccess>>();
-  private runnerLists = new Recent<number, OrgRunner[]>();
+  private runnerLists = new Recent<string, GitHubRunner[]>();
   private ownerAccess = new Recent<string, boolean>();
 
   /**
-   * An org's self-hosted runners for the dashboard's Runners and Router pages, reused for
-   * RUNNER_LIST_TTL_MS so the pages' refreshes don't each ask GitHub. Null when GitHub can't be
-   * asked.
+   * An org's (or repo's) self-hosted runners for the dashboard's Runners and Router pages, reused
+   * for RUNNER_LIST_TTL_MS so the pages' refreshes don't each ask GitHub. Null when GitHub can't
+   * be asked.
    */
-  async githubRunners(installationId: number, org: string): Promise<OrgRunner[] | null> {
+  async githubRunners(installationId: number, scope: RunnerScope): Promise<GitHubRunner[] | null> {
     try {
-      return await this.runnerList(RUNNER_LIST_TTL_MS, installationId, org);
+      return await this.runnerList(RUNNER_LIST_TTL_MS, installationId, scope);
     } catch (error) {
       console.warn(
         JSON.stringify({
           msg: "github runners unavailable",
           installationId,
-          org,
+          scope: scopeKey(scope),
           error: errorMessage(error),
         }),
       );
@@ -147,10 +150,19 @@ export class Router extends DurableObject<Env> {
     }
   }
 
-  // An org's runner list, no older than `maxAge`. The dashboard and picks share one copy.
-  private runnerList(maxAge: number, installationId: number, org: string): Promise<OrgRunner[]> {
-    return this.runnerLists.get(installationId, maxAge, async () =>
-      listOrgRunners(await appInstallationToken(this.env, installationId), org),
+  /** githubRunners for several scopes at once, such as each of an account's private repos. */
+  githubRunnerLists(installationId: number, scopes: RunnerScope[]) {
+    return Promise.all(scopes.map((scope) => this.githubRunners(installationId, scope)));
+  }
+
+  // An org's or repo's runner list, no older than `maxAge`. The dashboard and picks share one copy.
+  private runnerList(
+    maxAge: number,
+    installationId: number,
+    scope: RunnerScope,
+  ): Promise<GitHubRunner[]> {
+    return this.runnerLists.get(runnerListKey(installationId, scope), maxAge, async () =>
+      listRunners(await appInstallationToken(this.env, installationId), scope),
     );
   }
 
@@ -499,6 +511,7 @@ export class Router extends DurableObject<Env> {
         source: schema.machine.source,
         installationId: schema.machine.installationId,
         githubRunnerId: schema.machine.githubRunnerId,
+        githubRepositoryId: schema.machine.githubRepositoryId,
         routingLabel: schema.machine.routingLabel,
         githubLabels: schema.machine.githubLabels,
         sharing: schema.machine.sharing,
@@ -529,8 +542,8 @@ export class Router extends DurableObject<Env> {
         ),
       );
     // An org runner only serves its own org's repos, so a runner added from another
-    // installation never fits this job. An owner with two GitHub accounts linked would list a
-    // machine twice: keep its first row.
+    // installation never fits this job, and a repo runner only serves its own repo. An owner
+    // with two GitHub accounts linked would list a machine twice: keep its first row.
     const seen = new Set<string>();
     // A re-run or a waiting job keeps its `rr-<id>` label, which only a connected machine's minted
     // runner carries.
@@ -539,7 +552,11 @@ export class Router extends DurableObject<Env> {
       .filter(
         (machine) =>
           machine.source !== "github" ||
-          (!rerun && !waiting && machine.installationId === job.installationId),
+          (!rerun &&
+            !waiting &&
+            machine.installationId === job.installationId &&
+            (machine.githubRepositoryId === null ||
+              machine.githubRepositoryId === job.repositoryId)),
       );
     const pool = fits.map((machine) => ({
       id: machine.id,
@@ -577,19 +594,28 @@ export class Router extends DurableObject<Env> {
       }),
     );
     const live = admitted.filter((_, index) => readable[index] === true);
-    const orgRunners = live.some((machine) => machine.source === "github")
-      ? await this.orgRunners(job)
-      : null;
+    const added = live.filter((machine) => machine.source === "github");
+    const [orgRunners, repoRunners] = await Promise.all([
+      added.some((machine) => machine.githubRepositoryId === null) ? this.orgRunners(job) : null,
+      added.some((machine) => machine.githubRepositoryId !== null) ? this.repoRunners(job) : null,
+    ]);
     const runners = orgRunners === "rate_limited" ? null : orgRunners;
+    const repoList = repoRunners === "rate_limited" ? null : repoRunners;
     // GitHub's API limit kept a machine out of this pick: when nothing else takes the job, the
     // pick says so instead of reporting no idle machine.
-    const rateLimited = orgRunners === "rate_limited" || readable.includes("rate_limited");
+    const rateLimited =
+      orgRunners === "rate_limited" ||
+      repoRunners === "rate_limited" ||
+      readable.includes("rate_limited");
     const candidates: Candidate[] = await Promise.all(
       live.map(async (machine): Promise<Candidate> => {
         const { ownerName: _, ...base } = pool.find((entry) => entry.id === machine.id)!;
         if (machine.source !== "github")
           return { ...base, ...(await this.env.MACHINE_LINK.getByName(machine.id).status()) };
-        const runner = runners?.runners.find((r) => r.id === machine.githubRunnerId);
+        // A repo runner has no runner group: it takes its own repo's jobs, which fits checked.
+        const runner = (machine.githubRepositoryId === null ? runners?.runners : repoList)?.find(
+          (r) => r.id === machine.githubRunnerId,
+        );
         return {
           ...base,
           ...runnerStatus(runner, runner && runners?.access.get(runner.id), {
@@ -708,17 +734,22 @@ export class Router extends DurableObject<Env> {
   // limit): added runners then sit this pick out. A personal account has none.
   private async orgRunners(
     job: PickedJob,
-  ): Promise<{ runners: OrgRunner[]; access: Map<number, GroupAccess> } | null | "rate_limited"> {
+  ): Promise<
+    { runners: GitHubRunner[]; access: Map<number, GroupAccess> } | null | "rate_limited"
+  > {
     const org = job.repo.split("/")[0];
     try {
-      // A personal account has no org runners. Adopting its repo runners is #162.
+      // A personal account has no org runners, only repo runners (repoRunners).
       const scope = await installationRunnerScope(
         createDb(this.env.DB),
         job.installationId,
         job.repo,
       );
       if (scope.kind === "repo") return { runners: [], access: new Map() };
-      const runners = await this.runnerList(PICK_RUNNER_LIST_TTL_MS, job.installationId, org);
+      const runners = await this.runnerList(PICK_RUNNER_LIST_TTL_MS, job.installationId, {
+        kind: "org",
+        org,
+      });
       const readAccess = async () =>
         fetchGroupAccess(await appInstallationToken(this.env, job.installationId), org, runners);
       let access = await this.groupAccess.get(job.installationId, GROUP_ACCESS_TTL_MS, readAccess);
@@ -729,16 +760,20 @@ export class Router extends DurableObject<Env> {
       }
       return { runners, access };
     } catch (error) {
-      console.warn(
-        JSON.stringify({
-          msg: "github runners unavailable",
-          installationId: job.installationId,
-          org,
-          rateLimited: error instanceof GitHubRateLimitError,
-          error: errorMessage(error),
-        }),
-      );
-      return error instanceof GitHubRateLimitError ? "rate_limited" : null;
+      return runnersUnavailable(job, error);
+    }
+  }
+
+  // The runners registered on the job's own repo, read within the last few seconds, or as
+  // orgRunners when GitHub can't be reached.
+  private async repoRunners(job: PickedJob): Promise<GitHubRunner[] | null | "rate_limited"> {
+    try {
+      return await this.runnerList(PICK_RUNNER_LIST_TTL_MS, job.installationId, {
+        kind: "repo",
+        repo: job.repo,
+      });
+    } catch (error) {
+      return runnersUnavailable(job, error);
     }
   }
 
@@ -935,6 +970,20 @@ export class Router extends DurableObject<Env> {
     if (expired.length) await this.ctx.storage.delete(expired.slice(0, 128));
     return [...stored.values()].filter((r) => now - r.createdAt <= ROUTE_TTL_MS);
   }
+}
+
+// Logs a failed runner list read for a pick: `rate_limited` when GitHub refused for the API limit.
+function runnersUnavailable(job: PickedJob, error: unknown) {
+  console.warn(
+    JSON.stringify({
+      msg: "github runners unavailable",
+      installationId: job.installationId,
+      repo: job.repo,
+      rateLimited: error instanceof GitHubRateLimitError,
+      error: errorMessage(error),
+    }),
+  );
+  return error instanceof GitHubRateLimitError ? ("rate_limited" as const) : null;
 }
 
 // Values read from GitHub, reused while younger than the age a caller accepts. Each is kept as a

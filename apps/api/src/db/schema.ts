@@ -259,7 +259,8 @@ export const deviceCode = sqliteTable("device_code", {
 //   user session, and runs one-job JIT runners the gateway mints. It belongs to its user (user_id),
 //   not to a workspace (#318): it takes jobs in the workspaces its owner picked (machine_workspace,
 //   #363). workspace_id is null.
-// - 'github': a self-hosted runner its owner already registered in a connected org (#159).
+// - 'github': a self-hosted runner already registered in a connected org (#159) or on one of its
+//   repos (#162).
 //   RelayRunner never talks to the machine: it reads the runner's status from GitHub and steers
 //   jobs to it with routing_label, a label it added to the runner on GitHub. token_hash and
 //   enrollment_hash stay null. It is the org's, so it belongs to its installation's one workspace
@@ -315,6 +316,9 @@ export const machine = sqliteTable(
       onDelete: "set null",
     }),
     githubRunnerId: integer("github_runner_id"),
+    // 'github' only: the repo a repo-level runner is registered on (GitHub's repository id), which
+    // is the only repo whose jobs it takes. Null for a runner registered in the org.
+    githubRepositoryId: integer("github_repository_id"),
     routingLabel: text("routing_label").unique(),
     githubLabels: text("github_labels"),
     // 'connect' only: the device the CLI reported on its last hello (#165). Each part is its own

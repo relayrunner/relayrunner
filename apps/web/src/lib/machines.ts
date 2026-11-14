@@ -36,6 +36,8 @@ export type Machine = {
   /** A GitHub runner's org and whether GitHub still has it. Its group access: machineAccess. */
   github?: {
     org: string | null;
+    /** owner/name when it's registered on a repo, which is then the only repo it takes jobs from. */
+    repo: string | null;
     runnerId: number | null;
     /** GitHub answered and the runner wasn't there: removed or re-registered. */
     missing: boolean;
@@ -221,7 +223,7 @@ export const SAMPLE_MACHINES: Machine[] = [
     revokedAt: null,
     createdAt: "2026-11-01T00:00:00Z",
     source: "github",
-    github: { org: "acme", runnerId: 7, missing: false, unreachable: false },
+    github: { org: "acme", repo: null, runnerId: 7, missing: false, unreachable: false },
     device: null,
     owner: "acme",
     mine: false,
@@ -249,8 +251,11 @@ export async function machineAccess(machineId: string) {
   return access;
 }
 
-/** A self-hosted runner registered in a connected org (GET /api/machines/github-runners). */
-export type OrgRunner = {
+/**
+ * A self-hosted runner registered in a connected org or on one of its private repos
+ * (GET /api/machines/github-runners).
+ */
+export type GitHubRunner = {
   id: number;
   name: string;
   os: Machine["os"];
@@ -258,39 +263,50 @@ export type OrgRunner = {
   status: "online" | "offline";
   busy: boolean;
   labels: string[];
-  /** "Default group · all private repos", or null when unknown. */
+  /** "Default group · all private repos", "Repo runner · acme/app", or null when unknown. */
   access: string | null;
+  /** The repo it's registered on, or null for an org runner. */
+  repo: { id: number; fullName: string } | null;
   /** Why it can't be added: "workflows" when its group only allows selected workflows. */
   blocked: "workflows" | "own" | "ephemeral" | null;
   /** The machine it's already added as. */
   machineId: string | null;
 };
 
-export type OrgRunners =
-  | { installationId: number; org: string; runners: OrgRunner[] }
-  | { installationId: number; org: string; error: string };
+/** A connected account's runners. `personal` for a personal account, which has only repo runners. */
+export type GitHubRunners = { installationId: number; org: string; personal: boolean } & (
+  | { runners: GitHubRunner[] }
+  | { error: string }
+);
 
-/** The connected orgs' self-hosted runners, for adding them. Owners and admins only. */
 /**
- * Runners in the workspace's connected orgs. `groups: false` skips GitHub's runner-group lookups:
- * one call per org instead of several, but a runner in a workflow-only group isn't marked blocked.
+ * Runners in the workspace's connected account, for adding them. Owners and admins only.
+ * `groups: false` skips GitHub's runner-group lookups, but a runner in a workflow-only group isn't
+ * marked blocked.
  */
 export function listGithubRunners({ groups = true }: { groups?: boolean } = {}) {
-  return api<{ orgs: OrgRunners[] }>(
+  return api<{ orgs: GitHubRunners[] }>(
     groups ? "/machines/github-runners" : "/machines/github-runners?groups=false",
   );
 }
 
-/** Adds org runners: RelayRunner labels each on GitHub and routes jobs to it from then on. */
-export function addGithubRunners(installationId: number, runnerIds: number[]) {
+/**
+ * Adds runners from the org, or from one repo (`repositoryId`): RelayRunner labels each on GitHub
+ * and routes jobs to it from then on.
+ */
+export function addGithubRunners(
+  installationId: number,
+  runnerIds: number[],
+  repositoryId?: number,
+) {
   return api<{ added: Machine[]; skipped: { runnerId: number; reason: string }[] }>(
     "/machines/github-runners",
-    { method: "POST", body: JSON.stringify({ installationId, runnerIds }) },
+    { method: "POST", body: JSON.stringify({ installationId, repositoryId, runnerIds }) },
   );
 }
 
 /** Runners in connected orgs that could be added and aren't yet. */
-export function addableRunners(orgs: OrgRunners[]) {
+export function addableRunners(orgs: GitHubRunners[]) {
   return orgs.flatMap((org) =>
     "runners" in org ? org.runners.filter((r) => !r.machineId && !r.blocked) : [],
   );

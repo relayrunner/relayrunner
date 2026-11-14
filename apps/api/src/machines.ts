@@ -3,8 +3,8 @@ import { type NewActivityEvent, recordEvent } from "./activity.ts";
 import type { Db } from "./db/index.ts";
 import { schema } from "./db/index.ts";
 import type { Env } from "./env.ts";
-import { appInstallationToken, removeOrgRunnerLabel } from "./github-app.ts";
-import { matchLabels, parseStoredLabels } from "./github-runners.ts";
+import { appInstallationToken, removeRunnerLabel, type RunnerScope } from "./github-app.ts";
+import { addedRunnerScope, matchLabels, parseStoredLabels } from "./github-runners.ts";
 import { type Device, isNewerVersion } from "@relayrunner/machine-protocol";
 // The CLI on main is the one npm has: the Release workflow publishes it when its version lands.
 import cliPackage from "../../cli/package.json" with { type: "json" };
@@ -631,24 +631,43 @@ export async function pausedByName(db: Db, machine: Machine) {
   return user?.name ?? null;
 }
 
+/**
+ * Where a runner added from GitHub is registered, read from its installation and repo rows: its
+ * org, or its repo. Null when it isn't one, or the installation no longer sees its repo.
+ */
+export async function addedMachineScope(db: Db, machine: Machine): Promise<RunnerScope | null> {
+  if (!machine.installationId) return null;
+  const [installation] = await db
+    .select({ org: schema.githubInstallation.accountLogin })
+    .from(schema.githubInstallation)
+    .where(eq(schema.githubInstallation.id, machine.installationId))
+    .limit(1);
+  if (!installation) return null;
+  const [repo] =
+    machine.githubRepositoryId === null
+      ? []
+      : await db
+          .select({ fullName: schema.githubRepository.fullName })
+          .from(schema.githubRepository)
+          .where(
+            and(
+              eq(schema.githubRepository.id, machine.githubRepositoryId),
+              isNull(schema.githubRepository.removedAt),
+            ),
+          )
+          .limit(1);
+  return addedRunnerScope(machine, installation.org, repo?.fullName);
+}
+
 // Takes RelayRunner's label off a removed GitHub runner, so jobs can't reach it through the label.
 // Best effort: the machine row is already revoked, so routing never picks it again either way.
 export async function removeRoutingLabel(env: Env, db: Db, machine: Machine) {
   if (!machine.installationId || !machine.githubRunnerId || !machine.routingLabel) return;
   try {
-    const [installation] = await db
-      .select({ org: schema.githubInstallation.accountLogin })
-      .from(schema.githubInstallation)
-      .where(eq(schema.githubInstallation.id, machine.installationId))
-      .limit(1);
-    if (!installation) return;
+    const scope = await addedMachineScope(db, machine);
+    if (!scope) return;
     const token = await appInstallationToken(env, machine.installationId);
-    await removeOrgRunnerLabel(
-      token,
-      installation.org,
-      machine.githubRunnerId,
-      machine.routingLabel,
-    );
+    await removeRunnerLabel(token, scope, machine.githubRunnerId, machine.routingLabel);
   } catch (error) {
     console.warn(
       JSON.stringify({

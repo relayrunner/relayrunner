@@ -1,5 +1,5 @@
 import type { InstallationRepo } from "@relayrunner/github-webhooks";
-import { and, eq, isNull, lte, sql } from "drizzle-orm";
+import { and, asc, eq, isNull, lte, sql } from "drizzle-orm";
 import { type Db, schema } from "./db/index.ts";
 import { findInstallation } from "./installations.ts";
 
@@ -94,6 +94,29 @@ export async function recordRepositoryEvent(
       return removeRepositories(db, installationId, [repo], observedAt);
   }
   await upsertRepositories(db, installationId, [repo], observedAt);
+}
+
+// How many of an account's private repos are searched for repo runners, one GitHub call each.
+const MAX_RUNNER_REPOS = 100;
+
+/**
+ * The private repos an installation still sees, where a repo runner could take jobs (machines
+ * never take a public repo's jobs). `id` narrows it to one repo.
+ */
+export function privateRepos(db: Db, installationId: number, id?: number) {
+  return db
+    .select({ id: schema.githubRepository.id, fullName: schema.githubRepository.fullName })
+    .from(schema.githubRepository)
+    .where(
+      and(
+        eq(schema.githubRepository.installationId, installationId),
+        eq(schema.githubRepository.private, true),
+        isNull(schema.githubRepository.removedAt),
+        id === undefined ? undefined : eq(schema.githubRepository.id, id),
+      ),
+    )
+    .orderBy(asc(schema.githubRepository.fullName))
+    .limit(MAX_RUNNER_REPOS);
 }
 
 /** A repo the installation can still see, by owner/name in any case, or undefined. */

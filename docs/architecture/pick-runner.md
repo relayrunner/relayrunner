@@ -180,7 +180,7 @@ What a repo runner changes:
 - **Public repos get their relay answered.** No group stands in the way. Machines still never take a public repo's jobs, so the relay needs a `github` or `blacksmith` label to route to.
 - **A pick runner only sees its own repo's jobs.** It can still claim a different relay job than the one it was made for, but only one from the same repo.
 - **The sweep goes repo by repo.** Listing every repo would cost a call each, so the 15-minute sweep checks only repos that had a relay job in the last day, plus each org for runners that fell back (`sweepTargets` in `src/pick-sweep.ts`).
-- **Personal accounts: no existing runners.** A personal account's own self-hosted runners can't be added to the runner order yet (#162).
+- **Existing repo runners take only their repo's jobs.** A runner someone registered on a repo can be added like an org runner (#162), in an org or a personal account. Routing only considers it for jobs from that repo, and reads its status from the repo's runner list.
 
 ## Decisions and why
 

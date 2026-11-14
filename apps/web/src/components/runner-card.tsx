@@ -13,7 +13,7 @@ import {
   ZapIcon,
 } from "lucide-react";
 import { useState, type ReactNode } from "react";
-import { runnerSettingsUrl } from "@/components/add-runner";
+import { repoRunnerSettingsUrl, runnerSettingsUrl } from "@/components/add-runner";
 import { GithubIcon } from "@/components/provider-logos";
 import { type Provider, providerStyle, runnerName, runnerSpec, TILE } from "@/components/providers";
 import { SHARING_ICONS, SharingDialog, sharingLabel } from "@/components/machine-sharing";
@@ -333,6 +333,8 @@ export function machineView(machine: Machine) {
   const canShare = mine && !isGithub;
   const ownerName = mine && !isGithub ? "You" : (machine.owner ?? null);
 
+  // Where a GitHub runner is registered: its repo, or its org.
+  const place = github?.repo ?? github?.org;
   // What it's doing, or why it isn't.
   const detail = missing
     ? "Removed or re-registered on GitHub"
@@ -348,8 +350,8 @@ export function machineView(machine: Machine) {
           : isGithub
             ? github?.unreachable
               ? "Couldn't reach GitHub"
-              : github?.org
-                ? `In ${github.org}`
+              : place
+                ? `In ${place}`
                 : "Not reported by GitHub"
             : machine.lastSeenAt
               ? `Session ended ${timeAgo(machine.lastSeenAt)}`
@@ -574,12 +576,13 @@ export function MachineMenu({
     }
   }
 
+  const settingsUrl = github?.repo
+    ? repoRunnerSettingsUrl(github.repo)
+    : github?.org
+      ? runnerSettingsUrl(github.org)
+      : null;
   const githubUrl =
-    github?.org && github.runnerId
-      ? `${runnerSettingsUrl(github.org)}/${github.runnerId}`
-      : github?.org
-        ? runnerSettingsUrl(github.org)
-        : null;
+    settingsUrl && github?.runnerId ? `${settingsUrl}/${github.runnerId}` : settingsUrl;
 
   return (
     <DropdownMenu onOpenChange={onMenuOpen}>

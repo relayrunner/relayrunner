@@ -28,8 +28,8 @@ import { AppError } from "@relayrunner/errors";
 import {
   addGithubRunners,
   listGithubRunners,
-  type OrgRunner,
-  type OrgRunners,
+  type GitHubRunner,
+  type GitHubRunners,
 } from "@/lib/machines";
 import { DOCS_URL } from "@/components/site-footer";
 import { cn } from "@/lib/utils";
@@ -109,11 +109,12 @@ type Loaded =
   | { kind: "loading" }
   | { kind: "forbidden" }
   | { kind: "error" }
-  | { kind: "ready"; orgs: OrgRunners[] };
+  | { kind: "ready"; orgs: GitHubRunners[] };
 
 /**
- * Picks self-hosted runners already registered in the workspace's connected orgs and adds them.
- * RelayRunner puts one label on each runner on GitHub; nothing changes on the machine.
+ * Picks self-hosted runners already registered in the workspace's connected org, or on its private
+ * repos, and adds them. RelayRunner puts one label on each runner on GitHub; nothing changes on the
+ * machine.
  */
 export function GithubRunnersDialog({
   open,
@@ -149,6 +150,7 @@ export function GithubRunnersDialog({
     };
   }, [open]);
 
+  const orgs = loaded.kind === "ready" ? loaded.orgs : [];
   const key = (installationId: number, runnerId: number) => `${installationId}:${runnerId}`;
   function toggle(id: string) {
     setPicked((current) => {
@@ -162,14 +164,31 @@ export function GithubRunnersDialog({
   async function add() {
     setAdding(true);
     setError(null);
-    const byInstallation = new Map<number, number[]>();
-    for (const id of picked) {
-      const [installationId = 0, runnerId = 0] = id.split(":").map(Number);
-      byInstallation.set(installationId, [...(byInstallation.get(installationId) ?? []), runnerId]);
+    // One call per org, or per repo for repo runners.
+    const byPlace = new Map<
+      string,
+      { installationId: number; repositoryId?: number; runnerIds: number[] }
+    >();
+    for (const org of orgs) {
+      if (!("runners" in org)) continue;
+      for (const runner of org.runners) {
+        if (!picked.has(key(org.installationId, runner.id))) continue;
+        const place = `${org.installationId}:${runner.repo?.id ?? 0}`;
+        const group = byPlace.get(place) ?? {
+          installationId: org.installationId,
+          repositoryId: runner.repo?.id,
+          runnerIds: [],
+        };
+        group.runnerIds.push(runner.id);
+        byPlace.set(place, group);
+      }
     }
     try {
-      for (const [installationId, runnerIds] of byInstallation)
-        await addGithubRunners(installationId, runnerIds);
+      await Promise.all(
+        [...byPlace.values()].map(({ installationId, runnerIds, repositoryId }) =>
+          addGithubRunners(installationId, runnerIds, repositoryId),
+        ),
+      );
       await onAdded();
       onOpenChange(false);
     } catch {
@@ -179,7 +198,6 @@ export function GithubRunnersDialog({
     }
   }
 
-  const orgs = loaded.kind === "ready" ? loaded.orgs : [];
   const found = orgs.some((org) => "runners" in org && org.runners.length > 0);
 
   return (
@@ -188,8 +206,8 @@ export function GithubRunnersDialog({
         <DialogHeader>
           <DialogTitle>Add runners from GitHub</DialogTitle>
           <DialogDescription>
-            Self-hosted runners already registered in your connected orgs. RelayRunner adds one
-            label to each runner on GitHub. Nothing changes on the machine.
+            Self-hosted runners already registered in your org or on your private repos. RelayRunner
+            adds one label to each runner on GitHub. Nothing changes on the machine.
           </DialogDescription>
         </DialogHeader>
 
@@ -210,7 +228,7 @@ export function GithubRunnersDialog({
         {loaded.kind === "ready" && orgs.length === 0 && (
           <p className="text-sm text-muted-foreground">
             {hasAccounts
-              ? "Existing runners can only be added from GitHub orgs for now."
+              ? "The GitHub App is suspended on your account."
               : "Connect a GitHub account first."}
           </p>
         )}
@@ -218,16 +236,18 @@ export function GithubRunnersDialog({
           <div className="grid gap-2 text-sm">
             <p className="font-medium">No self-hosted runners found</p>
             <p className="text-muted-foreground">
-              Register one in your org's Actions settings, then come back.
+              Register one in your org's or a private repo's Actions settings, then come back.
             </p>
             <div className="flex flex-wrap gap-2">
-              {orgs.map((org) => (
-                <Button key={org.installationId} asChild size="sm" variant="outline">
-                  <a href={runnerSettingsUrl(org.org)} target="_blank" rel="noreferrer">
-                    {org.org} runner settings
-                  </a>
-                </Button>
-              ))}
+              {orgs
+                .filter((org) => !org.personal)
+                .map((org) => (
+                  <Button key={org.installationId} asChild size="sm" variant="outline">
+                    <a href={runnerSettingsUrl(org.org)} target="_blank" rel="noreferrer">
+                      {org.org} runner settings
+                    </a>
+                  </Button>
+                ))}
             </div>
           </div>
         )}
@@ -251,8 +271,7 @@ export function GithubRunnersDialog({
               </section>
             ))}
             <p className="text-xs text-muted-foreground">
-              Don't see one? Runners registered to a single repo or an enterprise aren't supported
-              yet.
+              Don't see one? Runners registered on a public repo or an enterprise aren't supported.
             </p>
           </div>
         )}
@@ -280,12 +299,16 @@ export function GithubRunnersDialog({
 export const runnerSettingsUrl = (org: string) =>
   `https://github.com/organizations/${encodeURIComponent(org)}/settings/actions/runners`;
 
+/** A repo's runner settings on GitHub, for a runner registered on `repo` (owner/name). */
+export const repoRunnerSettingsUrl = (repo: string) =>
+  `https://github.com/${repo}/settings/actions/runners`;
+
 function RunnerOption({
   runner,
   checked,
   onToggle,
 }: {
-  runner: OrgRunner;
+  runner: GitHubRunner;
   checked: boolean;
   onToggle: () => void;
 }) {
