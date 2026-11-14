@@ -39,6 +39,7 @@ export default defineConfig({
       favicon: "/favicon.png",
       social: [
         { icon: "github", label: "GitHub", href: "https://github.com/relayrunner/relayrunner" },
+        { icon: "x.com", label: "RelayRunner on X", href: "https://x.com/relayrunnerCI" },
       ],
       customCss: [
         // Landing tokens (and its fonts) and the shared header, then the Starlight theme.
