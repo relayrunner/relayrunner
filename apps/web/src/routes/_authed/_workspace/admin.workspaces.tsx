@@ -188,7 +188,8 @@ const columns = column.columns([
     header: "Stickiness",
     sortFn: "basic",
     sortDescFirst: true,
-    meta: TOP,
+    // As narrow as its label: the table spends spare width on other columns.
+    meta: { className: "w-px py-3 align-top whitespace-nowrap" },
     cell: ({ row }) => <StickinessLabel stickiness={row.original.stickiness} />,
   }),
   column.accessor("jobs7d", {
@@ -262,7 +263,7 @@ function MoreActions({ workspace }: { workspace: AdminWorkspace }) {
   );
 }
 
-/** Sorts Adopted first, then Trying, Removed, Trial abandoned, and never relayed last. */
+/** Sorts Adopted first, then Trying, Removed, Abandoned, and never relayed last. */
 const STICKINESS_ORDER: Record<StickinessState, number> = {
   adopted: 4,
   trying: 3,
@@ -276,7 +277,7 @@ const STICKINESS: Record<
 > = {
   trying: { label: "Trying", variant: "outline" },
   adopted: { label: "Adopted", variant: "go" },
-  trial_abandoned: { label: "Trial abandoned", variant: "idle" },
+  trial_abandoned: { label: "Abandoned", variant: "idle" },
   removed: { label: "Removed", variant: "run" },
 };
 
@@ -310,12 +311,12 @@ function stickinessWhy(s: Stickiness) {
   switch (s.state) {
     case "trying": {
       const idleBy = day.format(new Date(new Date(s.lastRelayAt).getTime() + 7 * 86_400_000));
-      return `The relay has only run on ${s.branch ?? "the branch that added it"} (${where}). Adopted once it runs on the default branch or another branch; Trial abandoned if it doesn't relay again by ${idleBy}.`;
+      return `The relay has only run on ${s.branch ?? "the branch that added it"} (${where}). Adopted once it runs on the default branch or another branch; Abandoned if it doesn't relay again by ${idleBy}.`;
     }
     case "adopted":
       return `The relay runs on merged code (${where}). Last relayed ${lastRelay}.`;
     case "trial_abandoned":
-      return `The relay only ran on ${s.branch ?? "the branch that added it"} (${where}) and hasn't run for 7 days. Last relayed ${lastRelay}.`;
+      return `A trial that was never adopted: the relay only ran on ${s.branch ?? "the branch that added it"} (${where}) and hasn't run for 7 days. Last relayed ${lastRelay}.`;
     case "removed":
       return `${s.runsWithout} runs on merged code without the relay since it last relayed (${where}, ${lastRelay}). Back to Adopted if it relays again.`;
   }
