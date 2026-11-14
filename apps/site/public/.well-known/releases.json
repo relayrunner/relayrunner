@@ -9,6 +9,21 @@
   "social": { "github": "relayrunner" },
   "products": [
     {
+      "name": "RelayRunner",
+      "slug": "platform",
+      "description": "The dashboard, routing and docs.",
+      "website": "https://relayrunner.app",
+      "docs": "https://relayrunner.app/docs",
+      "releases": [
+        {
+          "title": "Platform changelog",
+          "url": "https://relayrunner.app/docs/changelog/platform",
+          "feed": "https://relayrunner.app/changelog.xml",
+          "canonical": true
+        }
+      ]
+    },
+    {
       "name": "relayrunner CLI",
       "slug": "cli",
       "description": "Connects your Mac or Linux machine as a runner and sets up repositories.",
@@ -17,7 +32,7 @@
       "releases": [
         {
           "title": "Changelog",
-          "url": "https://relayrunner.app/docs/changelog",
+          "url": "https://relayrunner.app/docs/changelog/cli",
           "feed": "https://relayrunner.app/changelog.xml",
           "canonical": true
         },

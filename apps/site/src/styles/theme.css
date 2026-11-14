@@ -128,7 +128,9 @@
   [data-has-sidebar][data-has-toc] .main-pane {
     width: calc(100% - 14rem);
   }
+  /* Starlight's rail is fixed and full width, sized by its container: keep long headings inside it. */
   .right-sidebar {
+    width: 14rem;
     border-inline-start: 0;
   }
   .right-sidebar-panel .sl-container {
