@@ -294,6 +294,22 @@ export async function repoInstallationId(jwt: string, repo: string): Promise<num
   return ((await response.json()) as { id: number }).id;
 }
 
+/**
+ * The slugs of every GitHub App installed on an org, ours included. Needs the org Administration
+ * read permission, which the App asks for (#335).
+ */
+export async function orgAppSlugs(token: string, org: string) {
+  const slugs: string[] = [];
+  for (let page = 1; ; page++) {
+    const path = `/orgs/${encodeURIComponent(org)}/installations?per_page=100&page=${page}`;
+    const response = await fetch(`${API}${path}`, { headers: headers(token) });
+    if (!response.ok) throw new Error(`GET ${path} failed with ${response.status}`);
+    const { installations } = (await response.json()) as { installations: { app_slug: string }[] };
+    slugs.push(...installations.map((installation) => installation.app_slug));
+    if (installations.length < 100) return slugs;
+  }
+}
+
 /** Every installation of the App, from its JWT. */
 export async function listAppInstallations(jwt: string) {
   const installations: {

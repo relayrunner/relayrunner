@@ -1,3 +1,4 @@
+import type { HostedProviderId } from "@relayrunner/providers";
 import { DEFAULT_RUNNER_ORDER, type RunnerOrder } from "@relayrunner/runner-order";
 import { createFileRoute } from "@tanstack/react-router";
 import { RotateCwIcon, TriangleAlert } from "lucide-react";
@@ -12,6 +13,7 @@ import { getActionsUsage, type AccountUsage } from "@/lib/actions-usage";
 import { sampleRouterAccounts } from "@/lib/router-sample";
 import { authDisabled } from "@/lib/auth-client";
 import { listMachines, type Machine } from "@/lib/machines";
+import { getProviderApps } from "@/lib/provider-apps";
 import {
   clearUnhealthyRunner,
   getProviderHealth,
@@ -63,6 +65,7 @@ function RouterPage() {
   }, [loaded.machines]);
 
   const health = useProviderHealth(current.workspace.id);
+  const installedApps = useProviderApps(current.workspace.id);
 
   return (
     <section>
@@ -87,6 +90,7 @@ function RouterPage() {
             editable={editable}
             machines={machines}
             accounts={loaded.accounts}
+            installedApps={installedApps}
           />
         </SectionBoundary>
         <SectionBoundary>
@@ -284,4 +288,22 @@ function sampleRouter(): {
     machines: [machine],
     accounts: sampleRouterAccounts("team"),
   };
+}
+
+// The provider apps the org has installed, read from GitHub after the page loads. Null until it
+// arrives, or when it can't be told; the Add step menu then just says what each one needs.
+function useProviderApps(workspaceId: string) {
+  const [installed, setInstalled] = useState<HostedProviderId[] | null>(null);
+  useEffect(() => {
+    if (authDisabled) return;
+    let live = true;
+    getProviderApps(workspaceId).then(
+      (apps) => live && setInstalled(apps),
+      () => undefined,
+    );
+    return () => {
+      live = false;
+    };
+  }, [workspaceId]);
+  return installed;
 }

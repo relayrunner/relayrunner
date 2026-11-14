@@ -24,7 +24,7 @@ import {
   type RunnerKey,
   type RunnerStep,
 } from "@relayrunner/runner-order";
-import { HOSTED_PROVIDER_IDS } from "@relayrunner/providers";
+import { HOSTED_PROVIDER_IDS, type HostedProviderId } from "@relayrunner/providers";
 import { Link, useRouter } from "@tanstack/react-router";
 import {
   CheckIcon,
@@ -32,6 +32,7 @@ import {
   GripVerticalIcon,
   MoreHorizontalIcon,
   PlusIcon,
+  TriangleAlertIcon,
 } from "lucide-react";
 import { useState } from "react";
 import { CopyButton } from "@/components/add-runner";
@@ -69,6 +70,7 @@ export function RunnerOrderEditor({
   editable,
   machines,
   accounts,
+  installedApps = null,
 }: {
   workspaceId: string;
   order: { steps: RunnerStep[] };
@@ -79,6 +81,8 @@ export function RunnerOrderEditor({
   machines: Machine[] | null;
   /** This month's Actions minutes per connected GitHub account (#116). */
   accounts: AccountUsage[];
+  /** The providers whose GitHub App the org has installed, or null when we can't tell. */
+  installedApps?: HostedProviderId[] | null;
 }) {
   const router = useRouter();
   const [saved, setSaved] = useState({ steps: order.steps, isDefault });
@@ -150,6 +154,7 @@ export function RunnerOrderEditor({
                     accounts={accounts}
                     limits={limits}
                     slots={slots}
+                    appMissing={appMissing(step.key, installedApps)}
                     onChange={(next) => change(steps.map((s, i) => (i === index ? next : s)))}
                     onMove={(by) => change(arrayMove(steps, index, index + by))}
                     onRemove={() => change(steps.filter((_, i) => i !== index))}
@@ -198,7 +203,9 @@ export function RunnerOrderEditor({
                     note={
                       slots.has(id)
                         ? "Already in the order"
-                        : `Needs ${RUNNER_LABELS[id]}'s GitHub app`
+                        : installedApps?.includes(id)
+                          ? "App installed"
+                          : `Needs ${RUNNER_LABELS[id]}'s GitHub app`
                     }
                     disabled={slots.has(id)}
                     onSelect={() => addStep(id)}
@@ -301,6 +308,7 @@ function StepCard({
   accounts,
   limits,
   slots,
+  appMissing,
   onChange,
   onMove,
   onRemove,
@@ -313,6 +321,8 @@ function StepCard({
   accounts: AccountUsage[];
   limits: LimitAvailability;
   slots: Set<string>;
+  /** A hosted provider whose GitHub App the org doesn't have, so its runners never start. */
+  appMissing: boolean;
   onChange: (step: RunnerStep) => void;
   onMove: (by: -1 | 1) => void;
   onRemove: () => void;
@@ -380,6 +390,12 @@ function StepCard({
             {step.key === "machine" && (
               <p className="text-xs text-muted-foreground">{SELF_HOSTED_NOTE}</p>
             )}
+            {appMissing && (
+              <p className="flex items-center gap-1.5 text-xs text-muted-foreground">
+                <TriangleAlertIcon aria-hidden className="size-3.5 shrink-0 text-destructive" />
+                GitHub app not installed, so jobs here won't start.
+              </p>
+            )}
           </div>
           {step.key === "github" && editable ? (
             <GitHubRule
@@ -420,6 +436,12 @@ function StepCard({
       </div>
     </li>
   );
+}
+
+/** Whether a step is a hosted provider the org hasn't installed. False when we can't tell. */
+function appMissing(key: RunnerKey, installed: HostedProviderId[] | null) {
+  if (!installed || key === "machine" || key === "github") return false;
+  return !installed.includes(key);
 }
 
 function ruleText(step: RunnerStep) {

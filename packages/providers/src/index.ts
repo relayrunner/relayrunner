@@ -158,6 +158,23 @@ export function hostedProviderOf(label: string): HostedProviderId | null {
   return HOSTED_PROVIDER_IDS.find((id) => matches(id, lower)) ?? null;
 }
 
+// How each service's GitHub App slug reads, as listed in an org's installed apps. Matched loosely:
+// RunsOn's app is one each customer creates from its stack, so its slug varies.
+export const APP_SLUG_PATTERNS: Record<HostedProviderId, RegExp> = {
+  blacksmith: /blacksmith/,
+  depot: /depot/,
+  namespace: /namespace|nscloud/,
+  warpbuild: /warpbuild/,
+  ubicloud: /ubicloud/,
+  "runs-on": /runs-?on/,
+};
+
+/** The hosted providers whose GitHub App is among these installed app slugs. */
+export function providersOfAppSlugs(slugs: string[]): HostedProviderId[] {
+  const lower = slugs.map((slug) => slug.toLowerCase());
+  return HOSTED_PROVIDER_IDS.filter((id) => lower.some((slug) => APP_SLUG_PATTERNS[id].test(slug)));
+}
+
 /** A provider's name, or the id itself when it isn't one RelayRunner knows. */
 export const providerName = (id: string) => (isProviderId(id) ? PROVIDERS[id].name : id);
 

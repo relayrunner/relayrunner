@@ -1,5 +1,11 @@
 import { describe, expect, test } from "vitest";
-import { HOSTED_PROVIDER_IDS, hostedProviderOf, isProviderLabel, PROVIDERS } from "./index.ts";
+import {
+  HOSTED_PROVIDER_IDS,
+  hostedProviderOf,
+  isProviderLabel,
+  PROVIDERS,
+  providersOfAppSlugs,
+} from "./index.ts";
 
 describe("hosted provider labels", () => {
   test("each provider's example label is its own", () => {
@@ -23,5 +29,18 @@ describe("hosted provider labels", () => {
   test("a label only matches its own provider", () => {
     expect(isProviderLabel("depot", "depot-ubuntu-24.04")).toBe(true);
     expect(isProviderLabel("depot", "warp-ubuntu-latest-x64-2x")).toBe(false);
+  });
+});
+
+describe("provider GitHub Apps", () => {
+  test("installed app slugs map to their providers", () => {
+    expect(
+      providersOfAppSlugs(["blacksmith-sh", "Depot", "runs-on-acme", "relayrunner", "claude"]),
+    ).toEqual(["blacksmith", "depot", "runs-on"]);
+  });
+
+  test("no provider apps, no providers", () => {
+    expect(providersOfAppSlugs([])).toEqual([]);
+    expect(providersOfAppSlugs(["relayrunner", "dependabot"])).toEqual([]);
   });
 });
