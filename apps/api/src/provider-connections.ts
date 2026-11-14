@@ -122,7 +122,7 @@ export function parseOptions(
 
 export type VerifyResult =
   | { ok: true; accountName: string | null }
-  | { ok: false; error: "token_rejected" | "provider_unreachable"; message: string };
+  | { ok: false; error: "PROVIDER_TOKEN_REJECTED" | "PROVIDER_UNREACHABLE"; message: string };
 
 /** One read with the token, to check it before saving it or when asked to test it. */
 export async function verifyToken(
@@ -137,8 +137,8 @@ export async function verifyToken(
   } catch (error) {
     const message = errorMessage(error);
     return error instanceof ProviderAuthError
-      ? { ok: false, error: "token_rejected", message }
-      : { ok: false, error: "provider_unreachable", message };
+      ? { ok: false, error: "PROVIDER_TOKEN_REJECTED", message }
+      : { ok: false, error: "PROVIDER_UNREACHABLE", message };
   }
 }
 
@@ -216,7 +216,7 @@ export async function testConnection(
   const verified = await verifyToken(provider, token, row.options);
   const update = verified.ok
     ? { accountName: verified.accountName, ...NO_FAILURE }
-    : verified.error === "token_rejected"
+    : verified.error === "PROVIDER_TOKEN_REJECTED"
       ? { failure: "token_rejected", error: verified.message, failedAt: new Date() }
       : null;
   if (update) await db.update(schema.providerConnection).set(update).where(where);

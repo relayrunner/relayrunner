@@ -45,12 +45,6 @@ export function removeConnection(provider: string) {
   return api<ProviderConnection>(`/providers/${provider}/connection`, { method: "DELETE" });
 }
 
-/** What a failed connection test means. */
-export const TEST_FAILURES: Record<string, string> = {
-  token_rejected: "The provider didn't accept that token. Check it and its scope.",
-  provider_unreachable: "Couldn't reach the provider. Try again in a minute.",
-};
-
 /** Previews without an API: Depot connected and synced, the others not. */
 export function sampleConnections(): { connections: ProviderConnection[] } {
   return {

@@ -12,6 +12,7 @@ import { z } from "zod";
 import type { Credentials } from "./credentials.ts";
 import { userAgent } from "./paths.ts";
 import { readWorkspaces, type Workspace, WorkspaceFields } from "./workspaces.ts";
+import { failureReason } from "./api-error.ts";
 
 export const CLIENT_ID = "relayrunner-cli";
 const DEVICE_GRANT = "urn:ietf:params:oauth:grant-type:device_code";
@@ -150,11 +151,13 @@ export async function login(options: LoginOptions): Promise<LoginResult> {
     { deviceCode: code.device_code, ...options.platform },
     { authorization: `Bearer ${accessToken}` },
   );
-  if (!claimResponse.ok)
+  if (!claimResponse.ok) {
+    const body = await claimResponse.json().catch(() => null);
     throw new LoginError(
       "CLAIM_FAILED",
-      `The gateway approved the sign-in but wouldn't enroll this machine (HTTP ${claimResponse.status}).`,
+      `The gateway approved the sign-in but wouldn't enroll this machine: ${failureReason(options.server, claimResponse.status, body)}.`,
     );
+  }
   const claimed = ClaimResponse.parse(await claimResponse.json());
   return {
     credentials: {

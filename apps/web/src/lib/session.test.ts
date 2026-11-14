@@ -1,3 +1,4 @@
+import { parseError } from "@relayrunner/errors";
 import { beforeEach, describe, expect, test, vi } from "vitest";
 
 const readSession = vi.fn();
@@ -5,17 +6,11 @@ const getCurrentWorkspace = vi.fn();
 const signOutCall = vi.fn();
 let apiErrorListener: ((error: unknown, path: string) => void) | undefined;
 
-class ApiError extends Error {
-  constructor(
-    readonly status: number,
-    readonly code?: string,
-  ) {
-    super(`API ${status}`);
-  }
-}
+// What the API answers: an error with this status and, when given, this code.
+const apiError = (status: number, code?: string) =>
+  parseError(code ? { error: { code, message: code } } : null, status);
 
 vi.mock("@/lib/api", () => ({
-  ApiError,
   onApiError: (listener: typeof apiErrorListener) => {
     apiErrorListener = listener;
   },
@@ -109,7 +104,7 @@ describe("the session the route guards read", () => {
     readSession.mockResolvedValue(user());
     await session.cachedSession();
     readSession.mockResolvedValue(null);
-    apiErrorListener?.(new ApiError(401), "/machines");
+    apiErrorListener?.(apiError(401), "/machines");
     await settle();
     expect(onChange).toHaveBeenCalledTimes(1);
     expect(await session.cachedSession()).toBeNull();
@@ -139,8 +134,8 @@ describe("the workspace the route guards read", () => {
     session.setOnSessionChange(onChange);
     getCurrentWorkspace.mockResolvedValue(workspace());
     await session.cachedWorkspace("w1");
-    getCurrentWorkspace.mockRejectedValue(new ApiError(409, "NO_ACTIVE_WORKSPACE"));
-    apiErrorListener?.(new ApiError(409, "NO_ACTIVE_WORKSPACE"), "/machines");
+    getCurrentWorkspace.mockRejectedValue(apiError(409, "NO_ACTIVE_WORKSPACE"));
+    apiErrorListener?.(apiError(409, "NO_ACTIVE_WORKSPACE"), "/machines");
     await settle();
     expect(onChange).toHaveBeenCalledTimes(1);
     // The guard reads it again, which fails and sends them to /welcome.
@@ -163,7 +158,7 @@ describe("the workspace the route guards read", () => {
     session.setOnSessionChange(onChange);
     getCurrentWorkspace.mockResolvedValue(workspace());
     await session.cachedWorkspace("w1");
-    getCurrentWorkspace.mockRejectedValue(new ApiError(500));
+    getCurrentWorkspace.mockRejectedValue(apiError(500));
     await session.revalidateWorkspace();
     expect(onChange).not.toHaveBeenCalled();
     expect(getCurrentWorkspace).toHaveBeenCalledTimes(2);

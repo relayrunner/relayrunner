@@ -112,10 +112,20 @@ const RESERVED = new Set(["machine", "container", "self-hosted", "relayrunner", 
 // Labels that already mean a runner of GitHub's, a person's own, or RelayRunner's.
 const TAKEN_STARTS = ["ubuntu", "windows", "macos", "xcode", "self-hosted", "relayrunner"];
 
+/** Why a new provider can't take this id or these prefixes, as an API error code (@relayrunner/errors). */
+export type ProviderProblem =
+  | "PROVIDER_ID_INVALID"
+  | "PROVIDER_EXISTS"
+  | "PROVIDER_PREFIXES_INVALID"
+  | "PROVIDER_PREFIX_TAKEN";
+
 /** Why a new provider can't take this id, or null when it can. */
-export function providerIdProblem(catalog: readonly CatalogProvider[], id: string): string | null {
-  if (!/^[a-z0-9][a-z0-9-]{1,39}$/.test(id) || RESERVED.has(id)) return "invalid_id";
-  return catalog.some((p) => p.id === id) ? "provider_exists" : null;
+export function providerIdProblem(
+  catalog: readonly CatalogProvider[],
+  id: string,
+): ProviderProblem | null {
+  if (!/^[a-z0-9][a-z0-9-]{1,39}$/.test(id) || RESERVED.has(id)) return "PROVIDER_ID_INVALID";
+  return catalog.some((p) => p.id === id) ? "PROVIDER_EXISTS" : null;
 }
 
 /**
@@ -126,18 +136,18 @@ export function prefixProblem(
   catalog: readonly CatalogProvider[],
   id: string,
   prefixes: readonly string[],
-): string | null {
-  if (prefixes.length === 0) return "invalid_prefixes";
+): ProviderProblem | null {
+  if (prefixes.length === 0) return "PROVIDER_PREFIXES_INVALID";
   for (const prefix of prefixes) {
-    if (!/^[a-z0-9][a-z0-9._=/-]{2,}$/.test(prefix)) return "invalid_prefixes";
+    if (!/^[a-z0-9][a-z0-9._=/-]{2,}$/.test(prefix)) return "PROVIDER_PREFIXES_INVALID";
     // Either one starting the other means some label would match both.
     const bare = prefix.replace(/-$/, "");
     const clash = (other: string) => {
       const theirs = other.replace(/-$/, "");
       return theirs.startsWith(bare) || bare.startsWith(theirs);
     };
-    if (TAKEN_STARTS.some(clash)) return "prefix_taken";
-    if (catalog.some((p) => p.id !== id && p.prefixes.some(clash))) return "prefix_taken";
+    if (TAKEN_STARTS.some(clash)) return "PROVIDER_PREFIX_TAKEN";
+    if (catalog.some((p) => p.id !== id && p.prefixes.some(clash))) return "PROVIDER_PREFIX_TAKEN";
   }
   return null;
 }

@@ -48,7 +48,7 @@ import {
 } from "@/components/ui/dropdown-menu";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { hasQuota, type AccountUsage } from "@/lib/actions-usage";
-import { ApiError } from "@/lib/api";
+import { AppError } from "@relayrunner/errors";
 import type { Machine } from "@/lib/machines";
 import { previewRoute, type StepVerdict } from "@/lib/route-preview";
 import { saveRunnerOrder } from "@/lib/runner-order";
@@ -119,7 +119,7 @@ export function RunnerOrderEditor({
       void router.invalidate();
     } catch (error) {
       const message =
-        error instanceof ApiError && error.code === "RUNNER_ORDER_INVALID"
+        error instanceof AppError && error.code === "RUNNER_ORDER_INVALID"
           ? error.message
           : "Couldn't save the order. Try again.";
       setStatus({ kind: "error", message });

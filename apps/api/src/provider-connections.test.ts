@@ -186,7 +186,7 @@ describe("connecting a provider", () => {
     const revoked = await testing.call(env, "/providers/depot/connection/test", cookie, {});
     expect(await revoked.json()).toMatchObject({
       ok: false,
-      error: "token_rejected",
+      error: "PROVIDER_TOKEN_REJECTED",
       connection: { failure: "token_rejected" },
     });
     const notConnected = await testing.call(

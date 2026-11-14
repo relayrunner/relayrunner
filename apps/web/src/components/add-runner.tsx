@@ -24,7 +24,7 @@ import {
   DropdownMenuItem,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
-import { ApiError } from "@/lib/api";
+import { AppError } from "@relayrunner/errors";
 import {
   addGithubRunners,
   listGithubRunners,
@@ -142,7 +142,7 @@ export function GithubRunnersDialog({
       .then(({ orgs }) => !cancelled && setLoaded({ kind: "ready", orgs }))
       .catch((err: unknown) => {
         if (cancelled) return;
-        setLoaded({ kind: err instanceof ApiError && err.status === 403 ? "forbidden" : "error" });
+        setLoaded({ kind: err instanceof AppError && err.status === 403 ? "forbidden" : "error" });
       });
     return () => {
       cancelled = true;

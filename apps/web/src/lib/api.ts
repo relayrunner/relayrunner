@@ -1,12 +1,9 @@
-import { AppError as ApiError, parseError } from "@relayrunner/errors";
+import { AppError, parseError } from "@relayrunner/errors";
 
-/** A non-2xx response: the API's error code, status and message (@relayrunner/errors). */
-export { ApiError };
-
-let errorListener: ((error: ApiError, path: string) => void) | undefined;
+let errorListener: ((error: AppError, path: string) => void) | undefined;
 
 /** Hears every non-2xx answer, such as a 401 that means the session ended (lib/session.ts). */
-export function onApiError(listener: (error: ApiError, path: string) => void) {
+export function onApiError(listener: (error: AppError, path: string) => void) {
   errorListener = listener;
 }
 
@@ -28,11 +25,7 @@ export async function api<T>(path: string, init?: RequestInit): Promise<T> {
   return (await res.json()) as T;
 }
 
-/**
- * What went wrong, in words: the API's own message, unless `messages` words that code differently
- * for this page.
- */
-export function errorText(caught: unknown, messages: Record<string, string> = {}) {
-  const code = caught instanceof ApiError ? caught.code : undefined;
-  return (code && messages[code]) ?? (caught instanceof Error ? caught.message : String(caught));
+/** What went wrong, in words: the API's own message for an API error. */
+export function errorText(caught: unknown) {
+  return caught instanceof Error ? caught.message : String(caught);
 }

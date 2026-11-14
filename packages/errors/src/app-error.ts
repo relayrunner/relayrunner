@@ -67,14 +67,19 @@ export function isErrorBody(body: unknown): body is ErrorBody {
  * {@link ErrorBody} (a proxy's HTML page, an empty body) keeps the status with a generic message.
  */
 export function parseError(body: unknown, status: number): AppError {
-  if (!isErrorBody(body)) {
-    const parsed = new AppError("INTERNAL_ERROR", {
-      message: `The request failed with status ${status}.`,
-    });
-    return Object.assign(parsed, { status });
-  }
-  const { code, message, details } = body.error;
+  const { code, message, details } = isErrorBody(body)
+    ? body.error
+    : {
+        code: "INTERNAL_ERROR",
+        message: `The request failed with status ${status}.`,
+        details: undefined,
+      };
   const parsed = new AppError(isErrorCode(code) ? code : "INTERNAL_ERROR", { message, details });
   // Keep what the server said, including a code newer than this build.
   return Object.assign(parsed, { status, code });
+}
+
+/** An error in one line for an agent or a terminal: "Not found (NOT_FOUND)". */
+export function describeError(error: AppError) {
+  return `${error.message.replace(/\.$/, "")} (${error.code})`;
 }

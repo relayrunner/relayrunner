@@ -74,7 +74,7 @@ export async function setSharing(options: {
     return { status: "failed", reason: `${options.server} doesn't support sharing yet` };
   const body = await response.json().catch(() => null);
   if (!response.ok)
-    return { status: "failed", reason: failureReason(options.server, response, body) };
+    return { status: "failed", reason: failureReason(options.server, response.status, body) };
   const parsed = SharingResponse.safeParse(body);
   if (!parsed.success)
     return { status: "failed", reason: `${options.server} sent an unexpected response` };

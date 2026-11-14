@@ -1,4 +1,4 @@
-import { AppError } from "@relayrunner/errors";
+import { AppError, describeError } from "@relayrunner/errors";
 import type { McpServer } from "@modelcontextprotocol/server";
 import {
   ACTIVITY_FILTERS,
@@ -34,7 +34,7 @@ async function answer(read: () => Promise<unknown>): Promise<Result> {
     return json(await read());
   } catch (error) {
     if (!(error instanceof AppError)) throw error;
-    return { content: [{ type: "text", text: `${error.message} (${error.code})` }], isError: true };
+    return { content: [{ type: "text", text: describeError(error) }], isError: true };
   }
 }
 

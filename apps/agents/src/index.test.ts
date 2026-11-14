@@ -393,7 +393,7 @@ describe("mcp server", () => {
       await rpc(env, { method: "tools/call", params: { name: "get_workspace", arguments: {} } })
     ).json()) as { result: { content: { text: string }[]; isError: boolean } };
     expect(called.result.isError).toBe(true);
-    expect(called.result.content[0].text).toBe("Not found. (NOT_FOUND)");
+    expect(called.result.content[0].text).toBe("Not found (NOT_FOUND)");
   });
 
   test("serves the agent skills to 2025-era clients", async () => {

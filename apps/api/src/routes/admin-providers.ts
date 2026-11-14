@@ -72,50 +72,28 @@ async function save(c: Context<AppEnv>, id: string, fields: ProviderFields, msg:
 }
 
 // Mounted under adminRoutes, which requires an operator session.
-const invalidProvider = new AppError("INVALID_REQUEST", {
-  message: "Fill in a name, summary and labels, and use https:// links.",
-});
-
-// providerIdProblem and prefixProblem's answers, as errors.
-function providerProblem(problem: string) {
-  switch (problem) {
-    case "provider_exists":
-      return new AppError("PROVIDER_EXISTS");
-    case "prefix_taken":
-      return new AppError("PROVIDER_PREFIX_TAKEN");
-    case "invalid_id":
-      return new AppError("INVALID_REQUEST", {
-        message: "Use lowercase letters, numbers and dashes for the id.",
-      });
-    default:
-      return new AppError("INVALID_REQUEST", {
-        message: "Add at least one label prefix, three or more characters each.",
-      });
-  }
-}
-
 export const adminProviderRoutes = new Hono<AppEnv>()
   // Read fresh, so the page shows what was just saved.
   .get("/", async (c) => c.json({ providers: await readCatalog(createDb(c.env.DB)) }))
   .post("/", async (c) => {
     const parsed = NewProviderBody.safeParse(await c.req.json().catch(() => null));
-    if (!parsed.success) throw invalidProvider;
+    if (!parsed.success) throw new AppError("PROVIDER_INVALID");
     const { id, ...fields } = parsed.data;
     const catalog = await readCatalog(createDb(c.env.DB));
     const problem = providerIdProblem(catalog, id) ?? prefixProblem(catalog, id, fields.prefixes);
-    if (problem) throw providerProblem(problem);
+    if (problem) throw new AppError(problem);
     await save(c, id, fields, "provider added");
     return c.json({ ok: true }, 201);
   })
   .put("/:id", async (c) => {
     const id = c.req.param("id");
     const parsed = ProviderBody.safeParse(await c.req.json().catch(() => null));
-    if (!parsed.success) throw invalidProvider;
+    if (!parsed.success) throw new AppError("PROVIDER_INVALID");
     const catalog = await readCatalog(createDb(c.env.DB));
     if (!catalog.some((provider) => provider.id === id)) throw new AppError("NOT_FOUND");
     if (!isProviderId(id)) {
       const problem = prefixProblem(catalog, id, parsed.data.prefixes);
-      if (problem) throw providerProblem(problem);
+      if (problem) throw new AppError(problem);
     }
     await save(c, id, parsed.data, "provider saved");
     return c.json({ ok: true });

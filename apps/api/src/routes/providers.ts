@@ -1,6 +1,5 @@
 import { isBillingProvider } from "@relayrunner/providers";
 import { Hono } from "hono";
-import { createMiddleware } from "hono/factory";
 import { z } from "zod";
 import type { AppEnv } from "../app.ts";
 import { createDb } from "../db/index.ts";
@@ -15,24 +14,15 @@ import {
   testConnection,
 } from "../provider-connections.ts";
 import { providerReport, providersOverview } from "../provider-report.ts";
-import { TokenKeyError } from "../provider-tokens.ts";
 import { requireManager } from "../roles.ts";
 import { Days } from "./job-times.ts";
 import { AppError } from "@relayrunner/errors";
-import { respondError } from "../errors.ts";
 
 const Query = z.object({ days: Days });
 
 const ConnectBody = z.object({
   token: z.string().trim().min(8).max(4096),
   options: z.record(z.string(), z.string()).optional(),
-});
-
-// Saving or reading a token needs PROVIDER_TOKEN_KEY; without it, say so instead of a bare 500.
-const tokenStorage = createMiddleware<AppEnv>(async (c, next) => {
-  await next();
-  if (c.error instanceof TokenKeyError)
-    c.res = respondError(c, new AppError("TOKEN_STORAGE_UNAVAILABLE"));
 });
 
 // The Providers page and each provider's page: the workspace's jobs over the last ?days=N days
@@ -48,7 +38,7 @@ export const providerRoutes = new Hono<AppEnv>()
   .get("/connections", requireUser, requireWorkspace, async (c) =>
     c.json({ connections: await listConnections(c.var.db, c.var.workspace.id) }),
   )
-  .use("/:provider/connection/*", requireUser, requireWorkspace, requireManager, tokenStorage)
+  .use("/:provider/connection/*", requireUser, requireWorkspace, requireManager)
   // Save (or replace) a token, after one read proves it works. Then sync right away.
   .put("/:provider/connection", async (c) => {
     const provider = c.req.param("provider");
@@ -66,11 +56,8 @@ export const providerRoutes = new Hono<AppEnv>()
       options,
       userId: c.var.user!.id,
     });
-    if (!result.ok) {
-      const code =
-        result.error === "token_rejected" ? "PROVIDER_TOKEN_REJECTED" : "PROVIDER_UNREACHABLE";
-      throw new AppError(code, { message: result.message });
-    }
+    // The provider's own words go in details; the message says what to do.
+    if (!result.ok) throw new AppError(result.error, { details: { reason: result.message } });
     return c.json(result.connection);
   })
   // Check the saved token still works.

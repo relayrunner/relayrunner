@@ -1,4 +1,5 @@
-import { ApiError, api } from "@/lib/api";
+import { AppError } from "@relayrunner/errors";
+import { api } from "@/lib/api";
 import { authDisabled } from "@/lib/auth-client";
 import type { MachineDevice } from "./device.ts";
 
@@ -385,8 +386,5 @@ export function formatUserCode(userCode: string) {
 
 /** What a failed approval means for the person at the approval page. */
 export function describeDeviceError(error: unknown) {
-  if (!(error instanceof ApiError)) return "Something went wrong. Try again.";
-  if (error.code === "FORBIDDEN")
-    return "Another account already approved or denied this request, or you aren't in that workspace. Run `relayrunner connect` again for a new code.";
-  return error.message;
+  return error instanceof AppError ? error.message : "Something went wrong. Try again.";
 }

@@ -1,3 +1,4 @@
+import { ERRORS } from "@relayrunner/errors";
 import { createFileRoute } from "@tanstack/react-router";
 import { Trash2Icon } from "lucide-react";
 import { type FormEvent, useState } from "react";
@@ -288,7 +289,7 @@ function AddPrice({
     const perRunner = Number(price);
     const size = rate.per === "vcpu" ? Number(vcpus) : 1;
     if (!(perRunner > 0) || !(size > 0)) {
-      setError("Check the price and date.");
+      setError(ERRORS.PRICE_INVALID.message);
       return;
     }
     setError(null);

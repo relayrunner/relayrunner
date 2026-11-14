@@ -2,7 +2,7 @@ import { CatchBoundary, Link, useRouter, type ErrorComponentProps } from "@tanst
 import { RotateCwIcon, TriangleAlert } from "lucide-react";
 import { useState, type ReactNode } from "react";
 import { Button } from "@/components/ui/button";
-import { ApiError } from "@/lib/api";
+import { AppError } from "@relayrunner/errors";
 
 // After a deploy, an open tab can ask for a page's code by a file name that no longer exists.
 const isStaleBuild = (error: unknown) =>
@@ -13,7 +13,7 @@ const isStaleBuild = (error: unknown) =>
 
 function describe(error: unknown): string {
   if (isStaleBuild(error)) return "RelayRunner was updated. Reload to get the latest version.";
-  if (error instanceof ApiError) {
+  if (error instanceof AppError) {
     if (error.status === 401) return "Your session ended. Sign in again to keep going.";
     if (error.status === 403) return "You don't have access to this.";
     if (error.status === 404) return "We couldn't find that.";
@@ -31,7 +31,7 @@ function describe(error: unknown): string {
 export function RouteError({ error, reset }: ErrorComponentProps) {
   const router = useRouter();
   const [retrying, setRetrying] = useState(false);
-  const signedOut = error instanceof ApiError && error.status === 401;
+  const signedOut = error instanceof AppError && error.status === 401;
 
   async function retry() {
     if (isStaleBuild(error)) return window.location.reload();

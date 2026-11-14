@@ -186,7 +186,7 @@ export const machineRoutes = new Hono<AppEnv>()
     if (!code || code.expiresAt < new Date()) throw new AppError("DEVICE_CODE_EXPIRED");
     if (code.clientId !== MACHINE_CLIENT_ID) throw new AppError("DEVICE_CODE_INVALID");
     if (code.status !== "pending") throw new AppError("DEVICE_CODE_USED");
-    if (code.userId !== user.id) throw new AppError("FORBIDDEN");
+    if (code.userId !== user.id) throw new AppError("DEVICE_CODE_CLAIMED");
 
     const mine = await userWorkspaces(db, user.id);
     const picked = parsed.data.workspaceIds
@@ -926,7 +926,7 @@ async function presentWorkspaceChoice(
 const DEVICE_ERRORS: Record<string, ErrorCode> = {
   expired_token: "DEVICE_CODE_EXPIRED",
   device_code_already_processed: "DEVICE_CODE_USED",
-  access_denied: "FORBIDDEN",
+  access_denied: "DEVICE_CODE_CLAIMED",
 };
 function deviceError(error: unknown) {
   if (!(error instanceof APIError)) return error;

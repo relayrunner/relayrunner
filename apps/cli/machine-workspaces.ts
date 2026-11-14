@@ -75,7 +75,7 @@ export async function machineWorkspaces(options: {
   if (response.status === 403)
     return { status: "failed", reason: "only the machine's owner can change its workspaces" };
   if (!response.ok)
-    return { status: "failed", reason: failureReason(options.server, response, body) };
+    return { status: "failed", reason: failureReason(options.server, response.status, body) };
   const parsed = MachineWorkspaces.safeParse(body);
   if (!parsed.success)
     return { status: "failed", reason: `${options.server} sent an unexpected response` };

@@ -36,11 +36,11 @@ describe("provider catalog", () => {
 
   test.each([
     [["acme-"], null],
-    [[], "invalid_prefixes"],
-    [["a"], "invalid_prefixes"],
-    [["blacksmith-big-"], "prefix_taken"],
-    [["depot"], "prefix_taken"],
-    [["ubuntu-gpu"], "prefix_taken"],
+    [[], "PROVIDER_PREFIXES_INVALID"],
+    [["a"], "PROVIDER_PREFIXES_INVALID"],
+    [["blacksmith-big-"], "PROVIDER_PREFIX_TAKEN"],
+    [["depot"], "PROVIDER_PREFIX_TAKEN"],
+    [["ubuntu-gpu"], "PROVIDER_PREFIX_TAKEN"],
   ])("prefixes %j: %s", (prefixes, problem) => {
     expect(prefixProblem(BASE_CATALOG, "acme", prefixes)).toBe(problem);
   });

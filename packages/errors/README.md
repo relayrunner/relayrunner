@@ -4,9 +4,10 @@ Every error code the API can return, and the one shape it returns them in. Used 
 
 ## What's in it
 
-- **`ERRORS`**: each code in SCREAMING_SNAKE_CASE, with its HTTP status, a default message and whether asking again later can work. A code never changes once it ships; its message can.
-- **`AppError`**: `throw new AppError("MACHINE_NOT_FOUND")` in an API route, optionally with `message`, `details`, `retryAfter` (sent as `Retry-After`) or `cause`. The API's `onError` answers with the code's status and the body below; anything else thrown becomes `INTERNAL_ERROR`, logged but not shown.
+- **`ERRORS`**: each code in SCREAMING_SNAKE_CASE, with its HTTP status and a default message. A code never changes once it ships; its message can.
+- **`AppError`**: `throw new AppError("PROVIDER_EXISTS")` in an API route, optionally with `message`, `details`, `retryAfter` (sent as `Retry-After`) or `cause`. The API's `onError` answers with the code's status and the body below; anything else thrown becomes `INTERNAL_ERROR`, logged but not shown.
 - **`parseError`** and **`isErrorBody`**: read a response body back. `parseError` never throws, and keeps a code newer than the reader.
+- **`describeError`**: an error in one line for an agent or a terminal, such as `Not found (NOT_FOUND)`.
 
 Every non-2xx response has this body:
 

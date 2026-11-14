@@ -54,7 +54,7 @@ export async function whoami(options: {
   if (response.status === 401) return { status: "revoked" };
   const body = await response.json().catch(() => null);
   if (!response.ok)
-    return { status: "unverified", reason: failureReason(options.server, response, body) };
+    return { status: "unverified", reason: failureReason(options.server, response.status, body) };
   const parsed = WhoamiResponse.safeParse(body);
   if (!parsed.success)
     return { status: "unverified", reason: `${options.server} sent an unexpected response` };

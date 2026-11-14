@@ -4,8 +4,6 @@ export interface ErrorSpec {
   status: number;
   /** The default message: a plain sentence a person or an agent can act on. */
   message: string;
-  /** Asking again later can work. The API sets `Retry-After` when it knows how long to wait. */
-  retryable?: boolean;
 }
 
 /**
@@ -19,8 +17,7 @@ export const ERRORS = {
   INVALID_REQUEST: { status: 400, message: "The request isn't valid." },
   PAYLOAD_TOO_LARGE: { status: 413, message: "The request body is too large." },
   NOT_FOUND: { status: 404, message: "Not found." },
-  CONFLICT: { status: 409, message: "That was already done." },
-  RATE_LIMITED: { status: 429, message: "Too many requests. Try again shortly.", retryable: true },
+  RATE_LIMITED: { status: 429, message: "Too many requests. Try again shortly." },
   INTERNAL_ERROR: { status: 500, message: "Something went wrong on our side." },
 
   // Sign-in and access
@@ -59,6 +56,11 @@ export const ERRORS = {
     message: "That code has expired. Run `relayrunner connect` again for a new one.",
   },
   DEVICE_CODE_USED: { status: 409, message: "That code has already been used." },
+  DEVICE_CODE_CLAIMED: {
+    status: 403,
+    message:
+      "Another account already approved or denied this request. Run `relayrunner connect` again for a new code.",
+  },
   WEBSOCKET_REQUIRED: { status: 426, message: "Connect with a WebSocket upgrade." },
 
   // Routing
@@ -66,6 +68,18 @@ export const ERRORS = {
 
   // Providers and prices
   PROVIDER_UNKNOWN: { status: 400, message: "There's no provider with that id." },
+  PROVIDER_INVALID: {
+    status: 400,
+    message: "Fill in a name, summary and labels, and use https:// links.",
+  },
+  PROVIDER_ID_INVALID: {
+    status: 400,
+    message: "Use lowercase letters, numbers and dashes for the id.",
+  },
+  PROVIDER_PREFIXES_INVALID: {
+    status: 400,
+    message: "Add at least one label prefix, three or more characters each.",
+  },
   PROVIDER_EXISTS: { status: 409, message: "There's already a provider with that id." },
   PROVIDER_PREFIX_TAKEN: {
     status: 409,
@@ -79,7 +93,6 @@ export const ERRORS = {
   PROVIDER_UNREACHABLE: {
     status: 502,
     message: "The provider's API didn't answer. Try again shortly.",
-    retryable: true,
   },
   PRICE_INVALID: { status: 400, message: "Check the price and date." },
   PRICE_EXISTS: {
@@ -95,12 +108,10 @@ export const ERRORS = {
   GITHUB_UNAVAILABLE: {
     status: 502,
     message: "GitHub didn't answer. Try again shortly.",
-    retryable: true,
   },
   GITHUB_RATE_LIMITED: {
     status: 503,
     message: "GitHub's API limit was reached. Try again shortly.",
-    retryable: true,
   },
   GITHUB_APP_NOT_CONFIGURED: { status: 500, message: "The GitHub App isn't set up." },
 } as const satisfies Record<string, ErrorSpec>;

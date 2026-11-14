@@ -9,7 +9,8 @@
 // `no_active_workspace`). If the answer changed, the router re-runs the guards, which redirect as
 // before: to /login when signed out, to /agree for new terms, to /welcome without a workspace.
 import { resetAnalytics } from "@/lib/analytics";
-import { ApiError, onApiError } from "@/lib/api";
+import { AppError } from "@relayrunner/errors";
+import { onApiError } from "@/lib/api";
 import { authClient, organization, readSession, type Session } from "@/lib/auth-client";
 import { getCurrentWorkspace, type CurrentWorkspace } from "@/lib/workspace";
 
@@ -143,7 +144,7 @@ export function revalidateWorkspace(): Promise<void> {
         // Gone or no longer ours: the guard reads it again and sends them to /welcome. Anything
         // else (offline, a 500) keeps the copy.
         if (workspace !== cached) return;
-        if (error instanceof ApiError && (error.status === 409 || error.status === 401)) {
+        if (error instanceof AppError && (error.status === 409 || error.status === 401)) {
           forgetSession();
           onChange();
         }

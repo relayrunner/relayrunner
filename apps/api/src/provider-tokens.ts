@@ -7,12 +7,20 @@
 // Create the key once:
 //   openssl rand -base64 32 | wrangler secrets-store secret create eac3493b9fef4234a832f5f3fdcc8a41 \
 //     --name PROVIDER_TOKEN_KEY --scopes workers
+import { AppError } from "@relayrunner/errors";
 import type { Env } from "./env.ts";
 
 const KEY_VERSION = 1;
 
-/** The key isn't configured, or isn't 32 bytes. Saving or reading a token can't work. */
-export class TokenKeyError extends Error {}
+/**
+ * The key isn't configured, or isn't 32 bytes. Saving or reading a token can't work, so the API
+ * answers TOKEN_STORAGE_UNAVAILABLE.
+ */
+export class TokenKeyError extends AppError {
+  constructor(problem: string) {
+    super("TOKEN_STORAGE_UNAVAILABLE", { cause: new Error(problem) });
+  }
+}
 
 const keys = new WeakMap<object, Promise<CryptoKey>>();
 
