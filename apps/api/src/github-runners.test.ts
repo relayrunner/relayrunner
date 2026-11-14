@@ -297,6 +297,41 @@ describe("adding GitHub runners", () => {
     });
   });
 
+  test("says when a runner last finished a job, from recent job times", async () => {
+    const { cookie, installationId } = await setup();
+    const job = (id: number, runnerName: string, hoursAgo: number) => {
+      const completedAt = new Date(Date.now() - hoursAgo * 3_600_000);
+      return {
+        id,
+        installationId,
+        repositoryId: 1,
+        repositoryFullName: "acme/app",
+        runId: id,
+        runAttempt: 1,
+        name: "build",
+        labels: ["self-hosted"],
+        runnerName,
+        startedAt: completedAt,
+        completedAt,
+      };
+    };
+    await createDb(env.DB)
+      .insert(schema.jobTiming)
+      .values([
+        job(installationId * 10 + 1, "atticus-mac-mini", 5),
+        job(installationId * 10 + 2, "atticus-mac-mini", 2),
+        // Too old to count as recent.
+        job(installationId * 10 + 3, "atticus-mac-mini", 24 * 30),
+      ]);
+    const response = await testing.call(env, "/machines/github-runners?groups=false", cookie);
+    const { orgs } = (await response.json()) as {
+      orgs: { runners: { id: number; lastJobAt: string | null }[] }[];
+    };
+    const lastJobAt = orgs[0].runners[0].lastJobAt;
+    expect(lastJobAt).not.toBeNull();
+    expect(Date.now() - Date.parse(lastJobAt!)).toBeLessThan(3 * 3_600_000);
+  });
+
   test("groups=false reads only the runner list, for the found card", async () => {
     const { cookie } = await setup();
     const before = routerReads;

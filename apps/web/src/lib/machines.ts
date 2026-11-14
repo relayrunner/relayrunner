@@ -271,6 +271,8 @@ export type GitHubRunner = {
   blocked: "workflows" | "own" | "ephemeral" | null;
   /** The machine it's already added as. */
   machineId: string | null;
+  /** When it last finished a job (last 14 days), as an ISO time, or null. */
+  lastJobAt: string | null;
 };
 
 /** A connected account's runners. `personal` for a personal account, which has only repo runners. */
@@ -323,15 +325,17 @@ export function addGithubRunners(
 /** A runner that could be added, with the installation it's added through. */
 export type AddableRunner = GitHubRunner & { installationId: number };
 
-/** Runners in the connected account that could be added and aren't yet. */
+/** Runners in the connected account that could be added and aren't yet, recently used first. */
 export function addableRunners(orgs: GitHubRunners[]): AddableRunner[] {
-  return orgs.flatMap((org) =>
-    "runners" in org
-      ? org.runners
-          .filter((r) => !r.machineId && !r.blocked)
-          .map((r) => ({ ...r, installationId: org.installationId }))
-      : [],
-  );
+  return orgs
+    .flatMap((org) =>
+      "runners" in org
+        ? org.runners
+            .filter((r) => !r.machineId && !r.blocked)
+            .map((r) => ({ ...r, installationId: org.installationId }))
+        : [],
+    )
+    .sort((a, b) => (b.lastJobAt ?? "").localeCompare(a.lastJobAt ?? ""));
 }
 
 /** "just now", "5 minutes ago", "3 days ago". */

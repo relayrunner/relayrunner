@@ -915,7 +915,14 @@ export function FoundRunnerRows({
           <span className="grid min-w-0 flex-1">
             <span className="truncate font-mono text-sm">{runner.name}</span>
             <span className="truncate text-xs text-muted-foreground">
-              {[runner.repo?.fullName, runner.status === "online" ? "Online" : "Offline"]
+              {[
+                runner.repo?.fullName,
+                runner.lastJobAt
+                  ? `Last job ${timeAgo(runner.lastJobAt)}`
+                  : runner.status === "online"
+                    ? "Online"
+                    : "Offline",
+              ]
                 .filter(Boolean)
                 .join(" · ")}
             </span>

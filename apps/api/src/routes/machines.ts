@@ -1,5 +1,5 @@
 import { recordEvent } from "../activity.ts";
-import { and, asc, eq, inArray, isNotNull, isNull } from "drizzle-orm";
+import { and, asc, eq, gt, inArray, isNotNull, isNull, max } from "drizzle-orm";
 import { alias } from "drizzle-orm/sqlite-core";
 import { Hono } from "hono";
 import { APIError } from "better-auth/api";
@@ -8,7 +8,7 @@ import { MACHINE_SHARING } from "@relayrunner/activity";
 import { z } from "zod";
 import type { AppEnv } from "../app.ts";
 import { MACHINE_CLIENT_ID } from "../auth.ts";
-import { createDb, schema } from "../db/index.ts";
+import { createDb, type Db, schema } from "../db/index.ts";
 import { presentOrigin, requestOrigin } from "../device-origin.ts";
 import { runningJobs } from "../jobs.ts";
 import {
@@ -708,6 +708,7 @@ export const machineRoutes = new Hono<AppEnv>()
             }),
             repos.then((all) => all.length),
           ]);
+          const lastJobAt = await recentRunnerJobs(c.var.db, installation.id);
           const found = [
             ...org.runners.map((runner) => ({
               runner,
@@ -730,6 +731,7 @@ export const machineRoutes = new Hono<AppEnv>()
                 presentGithubRunner(runner, {
                   access,
                   repo,
+                  lastJobAt: lastJobAt(runner.name, repo?.id ?? null),
                   machineId:
                     added.find(
                       (m) => m.installationId === installation.id && m.githubRunnerId === runner.id,
@@ -949,11 +951,14 @@ function presentGithubRunner(
   {
     access,
     repo,
+    lastJobAt,
     machineId,
   }: {
     // An org runner's group access, when it was read.
     access: GroupAccess | undefined;
     repo: { id: number; fullName: string } | null;
+    // When it last finished a job, from job_timing, or null.
+    lastJobAt: Date | null;
     // The machine it's already added as, or null.
     machineId: string | null;
   },
@@ -972,6 +977,39 @@ function presentGithubRunner(
     blocked: cannotAdd(runner, access),
     machineId,
     repo,
+    lastJobAt: lastJobAt?.toISOString() ?? null,
+  };
+}
+
+// Runners seen in jobs this long ago or less count as recently used.
+const RECENT_JOB_DAYS = 14;
+
+/**
+ * When each runner in the installation last finished a job, from job_timing (which records every
+ * job's runner name, whoever routed it). Runner names are unique per org or per repo, so an org
+ * runner matches by name across repos and a repo runner by name on its own repo.
+ */
+async function recentRunnerJobs(db: Db, installationId: number) {
+  const t = schema.jobTiming;
+  const rows = await db
+    .select({ name: t.runnerName, repositoryId: t.repositoryId, at: max(t.completedAt) })
+    .from(t)
+    .where(
+      and(
+        eq(t.installationId, installationId),
+        gt(t.completedAt, new Date(Date.now() - RECENT_JOB_DAYS * 86_400_000)),
+        isNotNull(t.runnerName),
+      ),
+    )
+    .groupBy(t.runnerName, t.repositoryId);
+  return (name: string, repositoryId: number | null): Date | null => {
+    let latest: Date | null = null;
+    for (const row of rows) {
+      if (row.name !== name || (repositoryId !== null && row.repositoryId !== repositoryId))
+        continue;
+      if (row.at && (!latest || row.at > latest)) latest = row.at;
+    }
+    return latest;
   };
 }
 
