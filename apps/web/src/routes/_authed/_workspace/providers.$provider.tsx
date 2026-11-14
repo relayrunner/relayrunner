@@ -22,7 +22,7 @@ import {
   sampleProviderReport,
 } from "@/lib/providers";
 import { cn } from "@/lib/utils";
-import { rangeParam, unlessDefault, useRangeReport } from "@/lib/search-params";
+import { rangeParam, unlessDefault, useRangeReport, useSetSearch } from "@/lib/search-params";
 import { usePageTitle } from "@/lib/page-title";
 
 const RANGES = [1, 7, 14] as const;
@@ -60,7 +60,7 @@ function ProviderPage() {
 function ProviderView({ first }: { first: ProviderReport }) {
   const { provider } = first;
   const days = daysOf(Route.useSearch());
-  const navigate = Route.useNavigate();
+  const setSearch = useSetSearch<Search>();
   const report = useRangeReport(first, days, (next) => load(provider, next));
   const info = providerInfo(provider);
   usePageTitle(info.name);
@@ -69,10 +69,7 @@ function ProviderView({ first }: { first: ProviderReport }) {
   const { icon, tile } = providerStyle(provider);
 
   function chooseRange(next: number) {
-    void navigate({
-      search: (prev) => ({ ...prev, days: unlessDefault(next, DEFAULT_DAYS) }),
-      replace: true,
-    });
+    setSearch({ days: unlessDefault(next, DEFAULT_DAYS) });
   }
 
   return (

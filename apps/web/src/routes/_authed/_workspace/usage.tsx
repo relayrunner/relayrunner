@@ -6,7 +6,7 @@ import { RangePicker } from "@/components/range-picker";
 import { StatTile } from "@/components/stat-tile";
 import { Count } from "@/components/count";
 import { authDisabled } from "@/lib/auth-client";
-import { rangeParam, unlessDefault, useRangeReport } from "@/lib/search-params";
+import { rangeParam, unlessDefault, useRangeReport, useSetSearch } from "@/lib/search-params";
 import { count } from "@/lib/utils";
 import {
   type FreeCheckSavings,
@@ -50,15 +50,12 @@ export const Route = createFileRoute("/_authed/_workspace/usage")({
 
 function UsagePage() {
   const days = daysOf(Route.useSearch());
-  const navigate = Route.useNavigate();
+  const setSearch = useSetSearch<Search>();
   const first = Route.useLoaderData();
   const { report, checks } = useRangeReport(first, days, load, (data) => data.report.days);
 
   function chooseRange(next: number) {
-    void navigate({
-      search: (prev) => ({ ...prev, days: unlessDefault(next, DEFAULT_DAYS) }),
-      replace: true,
-    });
+    setSearch({ days: unlessDefault(next, DEFAULT_DAYS) });
   }
 
   const { totals } = report;

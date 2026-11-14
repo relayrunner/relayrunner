@@ -1,5 +1,6 @@
 // A page's range and filters live in its URL, so a view can be linked to. Each is left out of the
 // URL while it's at its default, so a plain link shows the page as it always has.
+import { useNavigate } from "@tanstack/react-router";
 import { useEffect, useState } from "react";
 
 /** `?days=` when it's one of the page's ranges other than its default. */
@@ -16,6 +17,20 @@ export function optionParam<V extends string>(value: unknown, options: readonly 
 /** Free text from the URL, such as a repo or a search, when there is any. */
 export const textParam = (value: unknown) =>
   typeof value === "string" && value.trim() ? value.trim() : undefined;
+
+/**
+ * Sets some of the page's params, keeping the rest. A filter change replaces the history entry, so
+ * the back button leaves the page rather than stepping through each choice.
+ */
+export function useSetSearch<S>() {
+  const navigate = useNavigate();
+  return (patch: Partial<S>) =>
+    void navigate({
+      to: ".",
+      search: ((prev: S) => ({ ...prev, ...patch })) as never,
+      replace: true,
+    });
+}
 
 /** The value to put in the URL: nothing for the default. */
 export const unlessDefault = <V>(value: V, fallback: V) => (value === fallback ? undefined : value);

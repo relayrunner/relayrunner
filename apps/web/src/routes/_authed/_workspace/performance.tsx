@@ -51,7 +51,13 @@ import {
   versusLabel,
   type WorkflowRow,
 } from "@/lib/job-times";
-import { rangeParam, textParam, unlessDefault, useRangeReport } from "@/lib/search-params";
+import {
+  rangeParam,
+  textParam,
+  unlessDefault,
+  useRangeReport,
+  useSetSearch,
+} from "@/lib/search-params";
 import { readFlag, saveFlag } from "@/lib/stored-flag";
 import { cn } from "@/lib/utils";
 import { Count } from "@/components/count";
@@ -123,9 +129,7 @@ function PerformancePage() {
   const view = search.view ?? "workflows";
   const days = search.days ?? DEFAULT_DAYS;
   const repository = search.repos ?? "all";
-  const navigate = Route.useNavigate();
-  const setSearch = (patch: Partial<Search>) =>
-    void navigate({ search: (prev) => ({ ...prev, ...patch }), replace: true });
+  const setSearch = useSetSearch<Search>();
   const report: JobTimesReport = useRangeReport(Route.useLoaderData(), days, load);
   const [grouped, setGrouped] = useState(() => readFlag(GROUPED_KEY));
   const [opened, setOpened] = useState<Detail | null>(null);

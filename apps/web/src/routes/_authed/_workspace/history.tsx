@@ -41,7 +41,13 @@ import {
   sampleRuns,
   triggerText,
 } from "@/lib/runs";
-import { optionParam, rangeParam, textParam, unlessDefault } from "@/lib/search-params";
+import {
+  optionParam,
+  rangeParam,
+  textParam,
+  unlessDefault,
+  useSetSearch,
+} from "@/lib/search-params";
 import { cn, elapsed } from "@/lib/utils";
 
 const RANGES = [1, 7, 14] as const;
@@ -180,9 +186,7 @@ function WorkflowRuns({ loaded }: { loaded: RunsReport }) {
   const result = search.result ?? "all";
   const routed = search.routed ?? "all";
   const sort = search.sort ?? "newest";
-  const navigate = Route.useNavigate();
-  const setSearch = (patch: Partial<HistorySearch>) =>
-    void navigate({ search: (prev) => ({ ...prev, ...patch }), replace: true });
+  const setSearch = useSetSearch<HistorySearch>();
   const setDays = (next: number) => setSearch({ days: unlessDefault(next, DEFAULT_DAYS) });
   const setRepository = (next: string) => setSearch({ repo: unlessDefault(next, "all") });
   const setResult = (next: ResultFilter) => setSearch({ result: unlessDefault(next, "all") });

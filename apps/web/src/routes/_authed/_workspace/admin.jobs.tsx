@@ -9,7 +9,7 @@ import { DataTable, dataTableColumns, NUM } from "@/components/ui/data-table";
 import { WorkspaceMark } from "@/components/workspace-menu";
 import { getJobCounts, type JobCountReport, type JobCounts } from "@/lib/admin";
 import { DAY_MS } from "@/lib/job-times";
-import { rangeParam, unlessDefault } from "@/lib/search-params";
+import { rangeParam, unlessDefault, useSetSearch } from "@/lib/search-params";
 import { percent } from "@/lib/utils";
 
 const RANGES = [1, 7, 30, 90] as const;
@@ -46,7 +46,7 @@ function JobsPage() {
   const search = Route.useSearch();
   const days = search.days ?? DEFAULT_DAYS;
   const internal = Boolean(search.internal);
-  const navigate = Route.useNavigate();
+  const setSearch = useSetSearch<Search>();
   const first = Route.useLoaderData();
   const [report, setReport] = useState<JobCountReport>(first);
   useEffect(() => setReport(first), [first]);
@@ -65,13 +65,7 @@ function JobsPage() {
   }, [days, internal]);
 
   function load(nextDays: number, withInternal: boolean) {
-    void navigate({
-      search: {
-        days: unlessDefault(nextDays, DEFAULT_DAYS),
-        internal: withInternal || undefined,
-      },
-      replace: true,
-    });
+    setSearch({ days: unlessDefault(nextDays, DEFAULT_DAYS), internal: withInternal || undefined });
   }
 
   const { totals } = report;

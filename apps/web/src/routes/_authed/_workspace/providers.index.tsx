@@ -8,7 +8,7 @@ import { DataTable, dataTableColumns, NUM } from "@/components/ui/data-table";
 import { authDisabled } from "@/lib/auth-client";
 import { medianText, plural } from "@/lib/job-times";
 import { providerCatalog, providerInfo } from "@/lib/provider-catalog";
-import { rangeParam, unlessDefault, useRangeReport } from "@/lib/search-params";
+import { rangeParam, unlessDefault, useRangeReport, useSetSearch } from "@/lib/search-params";
 import {
   costText,
   getProvidersOverview,
@@ -40,17 +40,14 @@ export const Route = createFileRoute("/_authed/_workspace/providers/")({
 
 function ProvidersPage() {
   const days = daysOf(Route.useSearch());
-  const navigate = Route.useNavigate();
+  const setSearch = useSetSearch<Search>();
   const overview: ProvidersOverview = useRangeReport(Route.useLoaderData(), days, load);
   const used = new Set(overview.providers.map((p) => p.provider));
   // Only providers a job can ask for by name: "Other" has no runs-on example to set up.
   const unused = providerCatalog().filter((p) => p.example && !used.has(p.id));
 
   function chooseRange(next: number) {
-    void navigate({
-      search: (prev) => ({ ...prev, days: unlessDefault(next, DEFAULT_DAYS) }),
-      replace: true,
-    });
+    setSearch({ days: unlessDefault(next, DEFAULT_DAYS) });
   }
 
   return (

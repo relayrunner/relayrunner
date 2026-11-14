@@ -15,7 +15,7 @@ import { cachedMachine, type Machine, workspaceMachine } from "@/lib/machines";
 import { everyDay, onlineSpans, type RunnerDay } from "@/lib/runner-days";
 import { getRunnerReport, type RunnerReport, sampleRunnerReport } from "@/lib/runner-report";
 import { isLongWait, runParam } from "@/lib/runs";
-import { unlessDefault } from "@/lib/search-params";
+import { unlessDefault, useSetSearch } from "@/lib/search-params";
 import { minutes } from "@/lib/usage";
 import { cn, count, percent } from "@/lib/utils";
 
@@ -49,15 +49,9 @@ function loadReport(key: string, days: number) {
 export function RunnerSheet({ runnerKey, days }: { runnerKey: string; days: number }) {
   const navigate = useNavigate();
   const close = () => void navigate({ to: ".", search: withRunner() });
+  const setSearch = useSetSearch<{ runnerDays?: number }>();
   const setDays = (next: number) =>
-    void navigate({
-      to: ".",
-      search: ((prev: Record<string, unknown>) => ({
-        ...prev,
-        runnerDays: unlessDefault(next, RUNNER_DEFAULT_DAYS),
-      })) as never,
-      replace: true,
-    });
+    setSearch({ runnerDays: unlessDefault(next, RUNNER_DEFAULT_DAYS) });
   const [report, setReport] = useState<RunnerReport | null>(null);
   const [failed, setFailed] = useState(false);
   useEffect(() => {

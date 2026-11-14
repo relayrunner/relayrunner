@@ -27,7 +27,13 @@ import {
   sampleSignals,
   triggerName,
 } from "@/lib/signals";
-import { optionParam, rangeParam, unlessDefault, useRangeReport } from "@/lib/search-params";
+import {
+  optionParam,
+  rangeParam,
+  unlessDefault,
+  useRangeReport,
+  useSetSearch,
+} from "@/lib/search-params";
 import { money } from "@/lib/usage";
 import { count } from "@/lib/utils";
 
@@ -57,14 +63,11 @@ export const Route = createFileRoute("/_authed/_workspace/signals")({
 
 function SignalsPage() {
   const days = daysOf(Route.useSearch());
-  const navigate = Route.useNavigate();
+  const setSearch = useSetSearch<Search>();
   const report = useRangeReport(Route.useLoaderData(), days, load);
 
   function chooseRange(next: number) {
-    void navigate({
-      search: (prev) => ({ ...prev, days: unlessDefault(next, DEFAULT_DAYS) }),
-      replace: true,
-    });
+    setSearch({ days: unlessDefault(next, DEFAULT_DAYS) });
   }
 
   const areas = (Object.keys(AREAS) as SignalArea[])
@@ -225,12 +228,8 @@ function WorkflowName({
 // phones, where the table scrolls like the signals above).
 function BreakdownSection({ report }: { report: SignalsReport }) {
   const by = Route.useSearch({ select: (search) => search.by ?? BREAKDOWNS[0]! });
-  const navigate = Route.useNavigate();
-  const setBy = (next: BreakdownBy) =>
-    void navigate({
-      search: (prev) => ({ ...prev, by: unlessDefault(next, BREAKDOWNS[0]) }),
-      replace: true,
-    });
+  const setSearch = useSetSearch<Search>();
+  const setBy = (next: BreakdownBy) => setSearch({ by: unlessDefault(next, BREAKDOWNS[0]) });
   const { rows, other } = report.breakdown[by];
   const view = BREAKDOWN_VIEWS.find((option) => option.value === by)!;
   const total = report.totals.minutes;

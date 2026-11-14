@@ -26,7 +26,7 @@ import {
   isLongWait,
   sampleJobs,
 } from "@/lib/runs";
-import { unlessDefault, useRangeReport } from "@/lib/search-params";
+import { unlessDefault, useRangeReport, useSetSearch } from "@/lib/search-params";
 import { cn, elapsed, percent } from "@/lib/utils";
 import type { HistorySearch } from "@/routes/_authed/_workspace/history";
 
@@ -186,9 +186,7 @@ export const JobList = memo(function JobList({ report: first }: { report: JobsRe
     select: (search): ResultFilter => (search.result === "failed" ? "failed" : "all"),
   });
   const query = history.useSearch({ select: (search) => search.q ?? "" });
-  const navigate = history.useNavigate();
-  const setSearch = (patch: Partial<HistorySearch>) =>
-    void navigate({ search: (prev) => ({ ...prev, ...patch }), replace: true });
+  const setSearch = useSetSearch<HistorySearch>();
   // Each range is its own load, since the newest jobs alone can fill a busy workspace's list.
   const report = useRangeReport(first, days, load);
 
