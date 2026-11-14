@@ -239,6 +239,23 @@ describe("userCanReadRepo", () => {
     await expect(userCanReadRepo("ghs_x", "acme/app", 2)).rejects.toBeInstanceOf(GitHubAccessError);
   });
 
+  test("a spent API limit answers GITHUB_RATE_LIMITED with GitHub's wait", async () => {
+    const respond = (headers: Record<string, string>) =>
+      vi.stubGlobal("fetch", async () => new Response("", { status: 403, headers }));
+    respond({ "retry-after": "60" });
+    await expect(userCanReadRepo("ghs_x", "acme/app", 2)).rejects.toMatchObject({
+      code: "GITHUB_RATE_LIMITED",
+      status: 503,
+      retryAfter: 60,
+    });
+    const reset = Math.floor(Date.now() / 1000) + 120;
+    respond({ "x-ratelimit-remaining": "0", "x-ratelimit-reset": String(reset) });
+    const error = await userCanReadRepo("ghs_x", "acme/app", 2).catch((e: unknown) => e);
+    expect((error as GitHubRateLimitError).retryAfter).toBeGreaterThan(110);
+    expect((error as GitHubRateLimitError).retryAfter).toBeLessThanOrEqual(120);
+    expect(String((error as Error).cause)).toContain("GET /user/2 failed with 403");
+  });
+
   test("a 404 is no access; other failures throw", async () => {
     answer(404);
     expect(await userCanReadRepo("ghs_x", "acme/app", 2)).toBe(false);

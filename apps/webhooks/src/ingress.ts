@@ -6,7 +6,7 @@
  * what GitHub sees: a bad API deploy only makes messages retry (and, past the retry budget, land in
  * the dead letter queue), it never fails a delivery. Keep this file small and boring.
  *
- * Responses, as GitHub's Recent Deliveries shows them:
+ * Responses, as GitHub's Recent Deliveries shows them (failures carry a @relayrunner/errors code):
  * - 200 ping
  * - 202 accepted (queued, or an event RelayRunner doesn't act on)
  * - 401 bad or missing signature
@@ -14,6 +14,7 @@
  * - 503 the queue rejected the message; GitHub doesn't retry, so redeliver from the App settings
  */
 import { tracing } from "cloudflare:workers";
+import { AppError, type ErrorCode } from "@relayrunner/errors";
 import {
   toWebhookMessage,
   verifyGitHubSignature,
@@ -68,8 +69,8 @@ const ROUTES: Record<string, Route> = {
 
 export async function handleRequest(request: Request, env: Env): Promise<Response> {
   const route = ROUTES[new URL(request.url).pathname];
-  if (!route) return json({ error: "not_found" }, 404);
-  if (request.method !== "POST") return json({ error: "method_not_allowed" }, 405);
+  if (!route) return fail("NOT_FOUND");
+  if (request.method !== "POST") return fail("METHOD_NOT_ALLOWED", { allow: "POST" });
 
   const { app } = route;
   const event = request.headers.get("x-github-event") ?? "";
@@ -84,18 +85,18 @@ export async function handleRequest(request: Request, env: Env): Promise<Respons
   const secret = await readSecret(env[route.secret]);
   if (!secret) {
     log("error", "github webhook secret not configured", { app, event, deliveryId });
-    return json({ error: "webhook_secret_not_configured" }, 500);
+    return fail("WEBHOOK_SECRET_NOT_CONFIGURED");
   }
 
   const body = await request.text();
   if (!(await verifyGitHubSignature(secret, body, request.headers.get("x-hub-signature-256")))) {
     log("warn", "github webhook signature rejected", { app, event, deliveryId });
-    return json({ error: "invalid_signature" }, 401);
+    return fail("WEBHOOK_SIGNATURE_INVALID");
   }
 
   if (event === "ping") {
     log("log", "github webhook received", { app, event, deliveryId });
-    return json({ ok: true }, 200);
+    return Response.json({ ok: true });
   }
 
   let payload: unknown = null;
@@ -127,7 +128,7 @@ export async function handleRequest(request: Request, env: Env): Promise<Respons
       ...summary,
       error: error instanceof Error ? error.message : String(error),
     });
-    return json({ error: "enqueue_failed" }, 503);
+    return fail("WEBHOOK_ENQUEUE_FAILED");
   }
   log("log", "github webhook queued", summary);
   return new Response(null, { status: 202 });
@@ -143,8 +144,9 @@ async function readSecret(binding: SecretsStoreSecret | undefined) {
   }
 }
 
-function json(body: unknown, status: number) {
-  return Response.json(body, { status });
+function fail(code: ErrorCode, headers?: HeadersInit) {
+  const error = new AppError(code);
+  return Response.json(error.toJSON(), { status: error.status, headers });
 }
 
 function log(level: "log" | "warn" | "error", msg: string, fields: Record<string, unknown>) {

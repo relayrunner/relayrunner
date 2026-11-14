@@ -153,8 +153,13 @@ function webhookAttributes(msg: Message<WebhookMessage>) {
   };
 }
 
-export function errorMessage(error: unknown) {
-  return error instanceof Error ? error.message : String(error);
+// An error's message, with its cause's when it has one (a GitHubRateLimitError keeps GitHub's
+// answer there).
+export function errorMessage(error: unknown): string {
+  if (!(error instanceof Error)) return String(error);
+  return error.cause instanceof Error
+    ? `${error.message} (${errorMessage(error.cause)})`
+    : error.message;
 }
 
 // GitHub matches runs-on labels case-insensitively, so `RelayRunner` counts too.

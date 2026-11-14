@@ -9,6 +9,7 @@
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {
+    "@relayrunner/errors": "workspace:*",
     "@relayrunner/github-webhooks": "workspace:*"
   },
   "devDependencies": {

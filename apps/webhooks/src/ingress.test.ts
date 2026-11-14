@@ -77,7 +77,9 @@ const workflowJob = JSON.stringify({
 describe("webhook ingress", () => {
   test("rejects a missing or wrong signature", async () => {
     const { post, queue } = setup();
-    expect((await post("{}", { "x-github-event": "ping" })).status).toBe(401);
+    const missing = await post("{}", { "x-github-event": "ping" });
+    expect(missing.status).toBe(401);
+    expect(await missing.json()).toMatchObject({ error: { code: "WEBHOOK_SIGNATURE_INVALID" } });
     expect(
       (
         await post("{}", {
@@ -91,7 +93,11 @@ describe("webhook ingress", () => {
 
   test("fails loudly when the secret is not configured", async () => {
     const { post } = setup({ GITHUB_WEBHOOK_SECRET: missingSecret });
-    expect((await post("{}", { "x-github-event": "ping" })).status).toBe(500);
+    const response = await post("{}", { "x-github-event": "ping" });
+    expect(response.status).toBe(500);
+    expect(await response.json()).toMatchObject({
+      error: { code: "WEBHOOK_SECRET_NOT_CONFIGURED" },
+    });
   });
 
   test("answers ping with ok and does not enqueue it", async () => {
@@ -144,6 +150,7 @@ describe("webhook ingress", () => {
       "x-hub-signature-256": await sign(workflowJob),
     });
     expect(response.status).toBe(503);
+    expect(await response.json()).toMatchObject({ error: { code: "WEBHOOK_ENQUEUE_FAILED" } });
   });
 
   test("only answers POST on the webhook path", async () => {
@@ -152,9 +159,10 @@ describe("webhook ingress", () => {
       GITHUB_WEBHOOK_SECRET: storeSecret(secret),
       WEBHOOK_QUEUE: queue,
     } as unknown as Env;
-    expect(
-      (await handleRequest(new Request("https://hooks.test/api/webhooks/github"), env)).status,
-    ).toBe(405);
+    const get = await handleRequest(new Request("https://hooks.test/api/webhooks/github"), env);
+    expect(get.status).toBe(405);
+    expect(get.headers.get("allow")).toBe("POST");
+    expect(await get.json()).toMatchObject({ error: { code: "METHOD_NOT_ALLOWED" } });
     expect(
       (await handleRequest(new Request("https://hooks.test/other", { method: "POST" }), env))
         .status,

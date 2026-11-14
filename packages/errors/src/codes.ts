@@ -17,6 +17,7 @@ export const ERRORS = {
   INVALID_REQUEST: { status: 400, message: "The request isn't valid." },
   PAYLOAD_TOO_LARGE: { status: 413, message: "The request body is too large." },
   NOT_FOUND: { status: 404, message: "Not found." },
+  METHOD_NOT_ALLOWED: { status: 405, message: "That method isn't allowed here." },
   RATE_LIMITED: { status: 429, message: "Too many requests. Try again shortly." },
   INTERNAL_ERROR: { status: 500, message: "Something went wrong on our side." },
 
@@ -111,6 +112,20 @@ export const ERRORS = {
   },
   TELEMETRY_HEADER_MISSING: { status: 400, message: "Enter a value for each header." },
   TELEMETRY_NOT_CONFIGURED: { status: 404, message: "Telemetry isn't set up for this workspace." },
+
+  // GitHub webhooks
+  WEBHOOK_SIGNATURE_INVALID: {
+    status: 401,
+    message: "The webhook signature is missing or doesn't match the App's secret.",
+  },
+  WEBHOOK_SECRET_NOT_CONFIGURED: {
+    status: 500,
+    message: "The webhook secret for this App isn't set up on this server.",
+  },
+  WEBHOOK_ENQUEUE_FAILED: {
+    status: 503,
+    message: "The delivery couldn't be queued. Redeliver it from the App's settings.",
+  },
 
   // GitHub
   GITHUB_UNAVAILABLE: {

@@ -851,7 +851,7 @@ async function cachedRunners(
   org: string,
 ) {
   const runners = await router.githubRunners(installationId, org);
-  if (!runners) throw new Error("GitHub runners unavailable");
+  if (!runners) throw new AppError("GITHUB_UNAVAILABLE");
   return runners;
 }
 

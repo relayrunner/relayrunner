@@ -28,13 +28,10 @@ export default {
     const mcpPath = new URL(env.MCP_URL).pathname;
     if (url.pathname.startsWith(RESOURCE_METADATA_PATH)) return resourceMetadata(env);
     if (url.pathname === `${mcpPath}/server-card`) return card(request, env);
-    if (url.pathname !== mcpPath) {
-      const notFound = new AppError("NOT_FOUND");
-      return Response.json(notFound.toJSON(), { status: notFound.status });
-    }
+    if (url.pathname !== mcpPath) return errorResponse(new AppError("NOT_FOUND"));
     // Stateless: no sessions to resume or end, and no server-initiated stream.
     if (request.method !== "POST") {
-      return new Response(null, { status: 405, headers: { allow: "POST" } });
+      return errorResponse(new AppError("METHOD_NOT_ALLOWED"), { allow: "POST" });
     }
 
     // Built once per isolate; start it while the API checks the token.
@@ -107,7 +104,10 @@ const CARD_CORS = {
 function card(request: Request, env: Env) {
   if (request.method === "OPTIONS") return new Response(null, { status: 204, headers: CARD_CORS });
   if (request.method !== "GET" && request.method !== "HEAD") {
-    return new Response(null, { status: 405, headers: { allow: "GET, HEAD, OPTIONS" } });
+    return errorResponse(new AppError("METHOD_NOT_ALLOWED"), {
+      ...CARD_CORS,
+      allow: "GET, HEAD, OPTIONS",
+    });
   }
   return new Response(JSON.stringify(serverCard(env.MCP_URL)), {
     headers: {
@@ -139,4 +139,8 @@ function jsonRpcError(status: number, message: string, headers: HeadersInit = {}
     { jsonrpc: "2.0", error: { code: -32000, message }, id: null },
     { status, headers },
   );
+}
+
+function errorResponse(error: AppError, headers?: HeadersInit) {
+  return Response.json(error.toJSON(), { status: error.status, headers });
 }

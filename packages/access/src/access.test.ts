@@ -167,6 +167,13 @@ describe("gateAdmin", () => {
   test("answers 403 without a valid token", async () => {
     const result = await gateAdmin(new Request("https://x/admin"), env, options);
     expect("response" in result && result.response.status).toBe(403);
+    expect("response" in result && (await result.response.json())).toEqual({
+      error: {
+        code: "FORBIDDEN",
+        message: "You don't have access to that.",
+        details: { reason: "missing_token" },
+      },
+    });
   });
 
   test("lets a valid token through with its identity", async () => {

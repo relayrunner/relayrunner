@@ -1,6 +1,7 @@
 // Operator admin views: paths that only people and agents let through by Cloudflare Access may
 // reach. Everywhere else (production workers.dev today, which has no Access app) they answer 404,
 // so an admin view can never leak by forgetting to configure Access.
+import { AppError } from "@relayrunner/errors";
 import {
   accessConfig,
   verifyAccessRequest,
@@ -23,12 +24,16 @@ export async function gateAdmin(
   options?: VerifyOptions,
 ): Promise<{ response: Response } | { identity: AccessIdentity }> {
   const config = accessConfig(env);
-  if (!config) return { response: Response.json({ error: "not_found" }, { status: 404 }) };
+  if (!config) return { response: errorResponse(new AppError("NOT_FOUND")) };
   const result = await verifyAccessRequest(request, config, options);
   if (!result.ok) {
     return {
-      response: Response.json({ error: "forbidden", reason: result.reason }, { status: 403 }),
+      response: errorResponse(new AppError("FORBIDDEN", { details: { reason: result.reason } })),
     };
   }
   return { identity: result.identity };
+}
+
+function errorResponse(error: AppError) {
+  return Response.json(error.toJSON(), { status: error.status });
 }

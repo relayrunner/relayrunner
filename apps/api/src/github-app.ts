@@ -1,6 +1,8 @@
 // Talking to GitHub as the RelayRunner App: App JWTs, installation tokens, and one-job (JIT) runner
 // configs. Signed-in-user calls live in github.ts.
 
+import { AppError } from "@relayrunner/errors";
+
 const API = "https://api.github.com";
 
 const headers = (token: string) => ({
@@ -421,7 +423,7 @@ async function getPage(token: string, path: string): Promise<unknown> {
   if (response.status === 304 && cached) return cached.body;
   if (!response.ok) {
     const message = `GET ${path} failed with ${response.status}: ${(await response.text()).slice(0, 300)}`;
-    if (isRateLimited(response)) throw new GitHubRateLimitError(message);
+    if (isRateLimited(response)) throw new GitHubRateLimitError(message, response);
     throw new Error(message);
   }
   const body: unknown = await response.json();
@@ -721,10 +723,11 @@ type RawBucket = { limit: number; used: number; remaining: number; reset: number
  */
 export async function rateLimits(token: string): Promise<RateLimits> {
   const response = await fetch(`${API}/rate_limit`, { headers: headers(token) });
-  if (!response.ok)
-    throw new Error(
-      `GET /rate_limit failed with ${response.status}: ${(await response.text()).slice(0, 300)}`,
-    );
+  if (!response.ok) {
+    const message = `GET /rate_limit failed with ${response.status}: ${(await response.text()).slice(0, 300)}`;
+    if (isRateLimited(response)) throw new GitHubRateLimitError(message, response);
+    throw new Error(message);
+  }
   const { resources = {} } = (await response.json()) as {
     resources?: Record<string, RawBucket | undefined>;
   };
@@ -756,9 +759,27 @@ export class GitHubAccessError extends Error {
 
 /**
  * Thrown when GitHub refuses a call because the installation ran out of API calls: its hourly
- * limit, or a secondary limit for too many calls at once.
+ * limit, or a secondary limit for too many calls at once. Reaching a route, it answers
+ * GITHUB_RATE_LIMITED with a `Retry-After` from GitHub's own headers. GitHub's answer is the cause.
  */
-export class GitHubRateLimitError extends Error {}
+export class GitHubRateLimitError extends AppError {
+  constructor(detail: string, response?: Response) {
+    super("GITHUB_RATE_LIMITED", {
+      cause: new Error(detail),
+      retryAfter: response && retryAfterSeconds(response),
+    });
+  }
+}
+
+// Seconds until GitHub takes calls again: its `retry-after` (secondary limits), else the time to
+// `x-ratelimit-reset` (the hourly limit).
+function retryAfterSeconds(response: Response): number | undefined {
+  const retryAfter = Number(response.headers.get("retry-after"));
+  if (Number.isFinite(retryAfter) && retryAfter > 0) return Math.ceil(retryAfter);
+  const reset = Number(response.headers.get("x-ratelimit-reset"));
+  if (!Number.isFinite(reset) || reset <= 0) return undefined;
+  return Math.max(1, Math.ceil(reset - Date.now() / 1000));
+}
 
 // GitHub answers a spent limit with 429, or with 403 and either no calls remaining or a
 // `retry-after` (a secondary limit). A 403 without either is a missing permission.
@@ -774,7 +795,7 @@ async function getJson<T>(token: string, path: string): Promise<T> {
   const response = await fetch(`${API}${path}`, { headers: headers(token) });
   if (!response.ok) {
     const message = `GET ${path} failed with ${response.status}: ${(await response.text()).slice(0, 300)}`;
-    if (isRateLimited(response)) throw new GitHubRateLimitError(message);
+    if (isRateLimited(response)) throw new GitHubRateLimitError(message, response);
     if (response.status === 403 || response.status === 404)
       throw new GitHubAccessError(message, response.status);
     throw new Error(message);

@@ -172,8 +172,9 @@ export const githubRoutes = new Hono<AppEnv>()
       const token = await appInstallationToken(c.env, installationId);
       return c.json(await rateLimits(token));
     } catch (error) {
-      // A suspended installation can't get a token, and GitHub can be down. Either way the page
-      // just says it couldn't read the usage.
+      // A spent limit says so. Otherwise a suspended installation can't get a token, or GitHub is
+      // down; either way the page just says it couldn't read the usage.
+      if (error instanceof AppError) throw error;
       console.error(
         JSON.stringify({
           msg: "github rate limit read failed",
