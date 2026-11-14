@@ -1,6 +1,6 @@
 import { createFileRoute } from "@tanstack/react-router";
 import { ArrowUpRightIcon, ChartBarBigIcon } from "lucide-react";
-import { type ReactNode, useState } from "react";
+import type { ReactNode } from "react";
 import { Count } from "@/components/count";
 import { PageHeader } from "@/components/page-header";
 import { OptionPicker, RangePicker } from "@/components/range-picker";
@@ -27,6 +27,7 @@ import {
   sampleSignals,
   triggerName,
 } from "@/lib/signals";
+import { optionParam, rangeParam, unlessDefault, useRangeReport } from "@/lib/search-params";
 import { money } from "@/lib/usage";
 import { count } from "@/lib/utils";
 
@@ -36,21 +37,34 @@ function load(days: number): Promise<SignalsReport> {
   return authDisabled ? Promise.resolve(sampleSignals(days)) : getSignals(days);
 }
 
+const DEFAULT_DAYS = 30;
+const BREAKDOWNS = BREAKDOWN_VIEWS.map((option) => option.value);
+// `by` is how the Breakdown splits jobs.
+type Search = { days?: number; by?: BreakdownBy };
+const validateSearch = (search: Record<string, unknown>): Search => ({
+  days: rangeParam(search.days, RANGES, DEFAULT_DAYS),
+  by: optionParam(search.by, BREAKDOWNS),
+});
+const daysOf = (search: Search) => search.days ?? DEFAULT_DAYS;
+
 export const Route = createFileRoute("/_authed/_workspace/signals")({
-  loader: () => load(30),
+  validateSearch,
+  loader: ({ location }) => load(daysOf(validateSearch(location.search))),
+  // A new range loads in the page, keeping the last one up meanwhile.
+  shouldReload: ({ cause }) => cause !== "stay",
   component: SignalsPage,
 });
 
 function SignalsPage() {
-  const first = Route.useLoaderData();
-  const [report, setReport] = useState<SignalsReport>(first);
-  const [days, setDays] = useState<number>(first.days);
+  const days = daysOf(Route.useSearch());
+  const navigate = Route.useNavigate();
+  const report = useRangeReport(Route.useLoaderData(), days, load);
 
   function chooseRange(next: number) {
-    setDays(next);
-    load(next)
-      .then(setReport)
-      .catch(() => undefined);
+    void navigate({
+      search: (prev) => ({ ...prev, days: unlessDefault(next, DEFAULT_DAYS) }),
+      replace: true,
+    });
   }
 
   const areas = (Object.keys(AREAS) as SignalArea[])
@@ -210,7 +224,13 @@ function WorkflowName({
 // Every counted job split one way at a time, with each row's share of all job minutes (left out on
 // phones, where the table scrolls like the signals above).
 function BreakdownSection({ report }: { report: SignalsReport }) {
-  const [by, setBy] = useState<BreakdownBy>("person");
+  const by = Route.useSearch({ select: (search) => search.by ?? BREAKDOWNS[0]! });
+  const navigate = Route.useNavigate();
+  const setBy = (next: BreakdownBy) =>
+    void navigate({
+      search: (prev) => ({ ...prev, by: unlessDefault(next, BREAKDOWNS[0]) }),
+      replace: true,
+    });
   const { rows, other } = report.breakdown[by];
   const view = BREAKDOWN_VIEWS.find((option) => option.value === by)!;
   const total = report.totals.minutes;

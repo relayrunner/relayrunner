@@ -1,4 +1,5 @@
-import { memo, useMemo, useState } from "react";
+import { getRouteApi } from "@tanstack/react-router";
+import { memo, useMemo } from "react";
 import { DurationChart, jobPoints } from "@/components/duration-chart";
 import { SectionBoundary } from "@/components/error-boundary";
 import { RangePicker } from "@/components/range-picker";
@@ -25,9 +26,15 @@ import {
   isLongWait,
   sampleJobs,
 } from "@/lib/runs";
+import { unlessDefault, useRangeReport } from "@/lib/search-params";
 import { cn, elapsed, percent } from "@/lib/utils";
+import type { HistorySearch } from "@/routes/_authed/_workspace/history";
 
 const RANGES = [1, 7, 14] as const;
+const DEFAULT_DAYS = 7;
+// The range and filters live in the History page's URL.
+const history = getRouteApi("/_authed/_workspace/history");
+const load = (days: number) => (authDisabled ? Promise.resolve(sampleJobs(days)) : getJobs(days));
 
 type ResultFilter = "all" | "failed";
 
@@ -173,10 +180,17 @@ function ConclusionText({ conclusion }: { conclusion: string | null }) {
  * job's panel doesn't re-render the table.
  */
 export const JobList = memo(function JobList({ report: first }: { report: JobsReport }) {
-  const [report, setReport] = useState(first);
-  const [repository, setRepository] = useState("all");
-  const [result, setResult] = useState<ResultFilter>("all");
-  const [query, setQuery] = useState("");
+  const days = history.useSearch({ select: (search) => search.days ?? DEFAULT_DAYS });
+  const repository = history.useSearch({ select: (search) => search.repo ?? "all" });
+  const result = history.useSearch({
+    select: (search): ResultFilter => (search.result === "failed" ? "failed" : "all"),
+  });
+  const query = history.useSearch({ select: (search) => search.q ?? "" });
+  const navigate = history.useNavigate();
+  const setSearch = (patch: Partial<HistorySearch>) =>
+    void navigate({ search: (prev) => ({ ...prev, ...patch }), replace: true });
+  // Each range is its own load, since the newest jobs alone can fill a busy workspace's list.
+  const report = useRangeReport(first, days, load);
 
   const repositories = useMemo(
     () => [...new Set(report.jobs.map((job) => job.repository))].sort(),
@@ -198,12 +212,6 @@ export const JobList = memo(function JobList({ report: first }: { report: JobsRe
       };
     });
   }, [report]);
-  // Each range is its own load, since the newest jobs alone can fill a busy workspace's list.
-  function chooseRange(days: number) {
-    (authDisabled ? Promise.resolve(sampleJobs(days)) : getJobs(days))
-      .then(setReport)
-      .catch(() => undefined);
-  }
   const shown = useMemo(
     () =>
       rows.filter(
@@ -221,9 +229,16 @@ export const JobList = memo(function JobList({ report: first }: { report: JobsRe
   return (
     <div className="grid gap-6">
       <div className="flex flex-wrap items-center gap-3">
-        <RangePicker ranges={RANGES} days={report.days} onChange={chooseRange} />
+        <RangePicker
+          ranges={RANGES}
+          days={days}
+          onChange={(next) => setSearch({ days: unlessDefault(next, DEFAULT_DAYS) })}
+        />
         {repositories.length > 1 && (
-          <Select value={repository} onValueChange={setRepository}>
+          <Select
+            value={repository}
+            onValueChange={(next) => setSearch({ repo: unlessDefault(next, "all") })}
+          >
             <SelectTrigger size="sm" aria-label="Repo">
               <SelectValue />
             </SelectTrigger>
@@ -237,7 +252,12 @@ export const JobList = memo(function JobList({ report: first }: { report: JobsRe
             </SelectContent>
           </Select>
         )}
-        <Select value={result} onValueChange={(value) => setResult(value as ResultFilter)}>
+        <Select
+          value={result}
+          onValueChange={(next) =>
+            setSearch({ result: unlessDefault(next as ResultFilter, "all") })
+          }
+        >
           <SelectTrigger size="sm" aria-label="Result">
             <SelectValue />
           </SelectTrigger>
@@ -249,7 +269,7 @@ export const JobList = memo(function JobList({ report: first }: { report: JobsRe
         <Input
           type="search"
           value={query}
-          onChange={(event) => setQuery(event.target.value)}
+          onChange={(event) => setSearch({ q: event.target.value || undefined })}
           placeholder="Search jobs"
           aria-label="Search jobs"
           className="h-8 w-48"

@@ -25,7 +25,7 @@ import {
 import { type ReactNode, useEffect, useState } from "react";
 import { SectionBoundary } from "@/components/error-boundary";
 import { FeedbackPopover } from "@/components/feedback-popover";
-import { RunnerSheet } from "@/components/runner-sheet";
+import { RUNNER_DEFAULT_DAYS, RUNNER_RANGES, RunnerSheet } from "@/components/runner-sheet";
 import { DOCS_URL, SiteFooter } from "@/components/site-footer";
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
 import { WorkspaceMark, WorkspaceMenu } from "@/components/workspace-menu";
@@ -34,6 +34,7 @@ import { authDisabled } from "@/lib/auth-client";
 import { isGitHubOutcome } from "@/lib/github";
 import { loadProviderCatalog } from "@/lib/provider-catalog";
 import { isOperator } from "@/lib/roles";
+import { rangeParam, textParam } from "@/lib/search-params";
 import { readFlag, saveFlag } from "@/lib/stored-flag";
 import { cn } from "@/lib/utils";
 import {
@@ -59,10 +60,17 @@ const devWorkspace: CurrentWorkspace = {
 // Pathless layout for pages that act on a workspace. Sends users without one to /welcome (installing
 // the GitHub App is what makes a workspace), and puts the active workspace in route context.
 export const Route = createFileRoute("/_authed/_workspace")({
-  // `runner` opens a runner's panel over any page (components/runner-sheet.tsx).
-  validateSearch: (search: Record<string, unknown>): { runner?: string } => ({
-    runner: typeof search.runner === "string" && search.runner ? search.runner : undefined,
-  }),
+  // `runner` opens a runner's panel over any page (components/runner-sheet.tsx), and `runnerDays`
+  // is its range when that isn't the default.
+  validateSearch: (search: Record<string, unknown>): { runner?: string; runnerDays?: number } => {
+    const runner = textParam(search.runner);
+    return {
+      runner,
+      runnerDays: runner
+        ? rangeParam(search.runnerDays, RUNNER_RANGES, RUNNER_DEFAULT_DAYS)
+        : undefined,
+    };
+  },
   beforeLoad: async ({ context, location }) => {
     if (authDisabled || !context.session) return { current: devWorkspace };
     const workspaceId = await ensureActiveWorkspace(context.session);
@@ -125,7 +133,7 @@ const COLLAPSED_KEY = "relayrunner:sidebar:collapsed";
 
 function WorkspaceLayout() {
   const { user, current } = Route.useRouteContext();
-  const { runner } = Route.useSearch();
+  const { runner, runnerDays } = Route.useSearch();
   const inSettings = useMatchRoute()({ to: "/settings", fuzzy: true });
   const [collapsedPref, setCollapsedPref] = useState(() => readFlag(COLLAPSED_KEY));
   // Settings has its own short nav and a way back, so it always shows in full.
@@ -191,7 +199,7 @@ function WorkspaceLayout() {
       </main>
       {runner && (
         <SectionBoundary>
-          <RunnerSheet key={runner} runnerKey={runner} />
+          <RunnerSheet key={runner} runnerKey={runner} days={runnerDays ?? RUNNER_DEFAULT_DAYS} />
         </SectionBoundary>
       )}
     </div>

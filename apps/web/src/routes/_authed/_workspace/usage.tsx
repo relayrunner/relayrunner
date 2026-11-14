@@ -1,11 +1,12 @@
 import { createFileRoute } from "@tanstack/react-router";
-import { type ReactNode, useState } from "react";
+import type { ReactNode } from "react";
 import { SectionBoundary } from "@/components/error-boundary";
 import { PageHeader } from "@/components/page-header";
 import { RangePicker } from "@/components/range-picker";
 import { StatTile } from "@/components/stat-tile";
 import { Count } from "@/components/count";
 import { authDisabled } from "@/lib/auth-client";
+import { rangeParam, unlessDefault, useRangeReport } from "@/lib/search-params";
 import { count } from "@/lib/utils";
 import {
   type FreeCheckSavings,
@@ -32,21 +33,32 @@ function load(days: number): Promise<UsageData> {
   }));
 }
 
+const DEFAULT_DAYS = 30;
+type Search = { days?: number };
+const validateSearch = (search: Record<string, unknown>): Search => ({
+  days: rangeParam(search.days, RANGES, DEFAULT_DAYS),
+});
+const daysOf = (search: Search) => search.days ?? DEFAULT_DAYS;
+
 export const Route = createFileRoute("/_authed/_workspace/usage")({
-  loader: () => load(30),
+  validateSearch,
+  loader: ({ location }) => load(daysOf(validateSearch(location.search))),
+  // A new range loads in the page, keeping the last one up meanwhile.
+  shouldReload: ({ cause }) => cause !== "stay",
   component: UsagePage,
 });
 
 function UsagePage() {
+  const days = daysOf(Route.useSearch());
+  const navigate = Route.useNavigate();
   const first = Route.useLoaderData();
-  const [{ report, checks }, setData] = useState(first);
-  const [days, setDays] = useState<number>(first.report.days);
+  const { report, checks } = useRangeReport(first, days, load, (data) => data.report.days);
 
   function chooseRange(next: number) {
-    setDays(next);
-    load(next)
-      .then(setData)
-      .catch(() => undefined);
+    void navigate({
+      search: (prev) => ({ ...prev, days: unlessDefault(next, DEFAULT_DAYS) }),
+      replace: true,
+    });
   }
 
   const { totals } = report;

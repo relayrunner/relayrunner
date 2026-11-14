@@ -51,6 +51,7 @@ import {
   versusLabel,
   type WorkflowRow,
 } from "@/lib/job-times";
+import { rangeParam, textParam, unlessDefault, useRangeReport } from "@/lib/search-params";
 import { readFlag, saveFlag } from "@/lib/stored-flag";
 import { cn } from "@/lib/utils";
 import { Count } from "@/components/count";
@@ -71,22 +72,34 @@ const TABS = [
 ] as const satisfies Tab<string>[];
 type View = (typeof TABS)[number]["value"];
 
-// `repo`, `workflow` and `job` open one job's detail, for links from a job on the History page.
-type Search = { view?: View; repo?: number; workflow?: string; job?: string };
-const text = (value: unknown) => (typeof value === "string" && value ? value : undefined);
+const DEFAULT_DAYS = 14;
+// `days` and `repos` (a repo's full name) narrow every tab. `repo`, `workflow` and `job` open one
+// job's detail, for links from a job on the History page.
+type Search = {
+  view?: View;
+  days?: number;
+  repos?: string;
+  repo?: number;
+  workflow?: string;
+  job?: string;
+};
+const validateSearch = (search: Record<string, unknown>): Search => {
+  const repo = Number(search.repo);
+  return {
+    view: viewOf(TABS, search.view),
+    days: rangeParam(search.days, RANGES, DEFAULT_DAYS),
+    repos: textParam(search.repos),
+    repo: Number.isSafeInteger(repo) && repo > 0 ? repo : undefined,
+    workflow: textParam(search.workflow),
+    job: textParam(search.job),
+  };
+};
 
 export const Route = createFileRoute("/_authed/_workspace/performance")({
-  validateSearch: (search: Record<string, unknown>): Search => {
-    const repo = Number(search.repo);
-    return {
-      view: viewOf(TABS, search.view),
-      repo: Number.isSafeInteger(repo) && repo > 0 ? repo : undefined,
-      workflow: text(search.workflow),
-      job: text(search.job),
-    };
-  },
-  loader: () => load(14),
-  // Every tab reads the same report, so switching tabs doesn't load it again.
+  validateSearch,
+  loader: ({ location }) => load(validateSearch(location.search).days ?? DEFAULT_DAYS),
+  // Every tab reads the same report, so switching tabs doesn't load it again, and a new range
+  // loads in the page, keeping the last one up meanwhile.
   shouldReload: ({ cause }) => cause !== "stay",
   component: PerformancePage,
 });
@@ -106,25 +119,21 @@ function linkedDetail(workflows: WorkflowRow[], search: Search): Detail | null {
 }
 
 function PerformancePage() {
-  const first = Route.useLoaderData();
   const search = Route.useSearch();
   const view = search.view ?? "workflows";
+  const days = search.days ?? DEFAULT_DAYS;
+  const repository = search.repos ?? "all";
   const navigate = Route.useNavigate();
-  const [report, setReport] = useState<JobTimesReport>(first);
-  const [repository, setRepository] = useState<string>("all");
+  const setSearch = (patch: Partial<Search>) =>
+    void navigate({ search: (prev) => ({ ...prev, ...patch }), replace: true });
+  const report: JobTimesReport = useRangeReport(Route.useLoaderData(), days, load);
   const [grouped, setGrouped] = useState(() => readFlag(GROUPED_KEY));
   const [opened, setOpened] = useState<Detail | null>(null);
   const linked = useMemo(() => linkedDetail(report.workflows, search), [report, search]);
   const detail = opened ?? linked;
   function closeDetail() {
     setOpened(null);
-    if (linked) void navigate({ search: { view: search.view }, replace: true });
-  }
-
-  function chooseRange(days: number) {
-    load(days)
-      .then(setReport)
-      .catch(() => undefined);
+    if (linked) setSearch({ repo: undefined, workflow: undefined, job: undefined });
   }
 
   const repositories = useMemo(
@@ -145,9 +154,16 @@ function PerformancePage() {
   const filters = useMemo(
     () => (
       <div className="flex flex-wrap items-center gap-3">
-        <RangePicker ranges={RANGES} days={report.days} onChange={chooseRange} />
+        <RangePicker
+          ranges={RANGES}
+          days={days}
+          onChange={(next) => setSearch({ days: unlessDefault(next, DEFAULT_DAYS) })}
+        />
         {repositories.length > 1 && (
-          <Select value={repository} onValueChange={setRepository}>
+          <Select
+            value={repository}
+            onValueChange={(next) => setSearch({ repos: unlessDefault(next, "all") })}
+          >
             <SelectTrigger size="sm" aria-label="Repo">
               <SelectValue />
             </SelectTrigger>
@@ -178,7 +194,7 @@ function PerformancePage() {
         )}
       </div>
     ),
-    [report.days, repositories, repository, view, grouped],
+    [days, repositories, repository, view, grouped],
   );
 
   return (

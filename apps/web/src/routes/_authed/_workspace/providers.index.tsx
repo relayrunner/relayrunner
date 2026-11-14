@@ -1,6 +1,5 @@
 import { createFileRoute, Link } from "@tanstack/react-router";
 import { Count } from "@/components/count";
-import { useState } from "react";
 import { SectionBoundary } from "@/components/error-boundary";
 import { PageHeader } from "@/components/page-header";
 import { ProviderMark } from "@/components/providers";
@@ -9,6 +8,7 @@ import { DataTable, dataTableColumns, NUM } from "@/components/ui/data-table";
 import { authDisabled } from "@/lib/auth-client";
 import { medianText, plural } from "@/lib/job-times";
 import { providerCatalog, providerInfo } from "@/lib/provider-catalog";
+import { rangeParam, unlessDefault, useRangeReport } from "@/lib/search-params";
 import {
   costText,
   getProvidersOverview,
@@ -23,21 +23,34 @@ function load(days: number) {
   return authDisabled ? Promise.resolve(sampleProvidersOverview(days)) : getProvidersOverview(days);
 }
 
+const DEFAULT_DAYS = 14;
+type Search = { days?: number };
+const validateSearch = (search: Record<string, unknown>): Search => ({
+  days: rangeParam(search.days, RANGES, DEFAULT_DAYS),
+});
+const daysOf = (search: Search) => search.days ?? DEFAULT_DAYS;
+
 export const Route = createFileRoute("/_authed/_workspace/providers/")({
-  loader: () => load(14),
+  validateSearch,
+  loader: ({ location }) => load(daysOf(validateSearch(location.search))),
+  // A new range loads in the page, keeping the last one up meanwhile.
+  shouldReload: ({ cause }) => cause !== "stay",
   component: ProvidersPage,
 });
 
 function ProvidersPage() {
-  const [overview, setOverview] = useState<ProvidersOverview>(Route.useLoaderData());
+  const days = daysOf(Route.useSearch());
+  const navigate = Route.useNavigate();
+  const overview: ProvidersOverview = useRangeReport(Route.useLoaderData(), days, load);
   const used = new Set(overview.providers.map((p) => p.provider));
   // Only providers a job can ask for by name: "Other" has no runs-on example to set up.
   const unused = providerCatalog().filter((p) => p.example && !used.has(p.id));
 
-  function chooseRange(days: number) {
-    load(days)
-      .then(setOverview)
-      .catch(() => undefined);
+  function chooseRange(next: number) {
+    void navigate({
+      search: (prev) => ({ ...prev, days: unlessDefault(next, DEFAULT_DAYS) }),
+      replace: true,
+    });
   }
 
   return (
@@ -50,7 +63,7 @@ function ProvidersPage() {
         <div className="grid gap-3">
           <div className="flex flex-wrap items-center justify-between gap-3">
             <h2 className="font-semibold">In use</h2>
-            <RangePicker ranges={RANGES} days={overview.days} onChange={chooseRange} />
+            <RangePicker ranges={RANGES} days={days} onChange={chooseRange} />
           </div>
           {overview.providers.length === 0 ? (
             <p className="rounded-xl border border-dashed bg-card px-4 py-6 text-sm text-muted-foreground">

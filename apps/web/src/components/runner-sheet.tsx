@@ -15,10 +15,12 @@ import { cachedMachine, type Machine, workspaceMachine } from "@/lib/machines";
 import { everyDay, onlineSpans, type RunnerDay } from "@/lib/runner-days";
 import { getRunnerReport, type RunnerReport, sampleRunnerReport } from "@/lib/runner-report";
 import { isLongWait, runParam } from "@/lib/runs";
+import { unlessDefault } from "@/lib/search-params";
 import { minutes } from "@/lib/usage";
 import { cn, count, percent } from "@/lib/utils";
 
-const RANGES = [7, 14, 30] as const;
+export const RUNNER_RANGES = [7, 14, 30] as const;
+export const RUNNER_DEFAULT_DAYS = 14;
 const MACHINE = "machine:";
 
 // The last reports read, by runner and range, so reopening a runner shows it at once.
@@ -44,10 +46,18 @@ function loadReport(key: string, days: number) {
  * the jobs it ran last. Which runner is open lives in the URL (`?runner=`), so any page can open
  * it and the back button steps out of it.
  */
-export function RunnerSheet({ runnerKey }: { runnerKey: string }) {
+export function RunnerSheet({ runnerKey, days }: { runnerKey: string; days: number }) {
   const navigate = useNavigate();
   const close = () => void navigate({ to: ".", search: withRunner() });
-  const [days, setDays] = useState(14);
+  const setDays = (next: number) =>
+    void navigate({
+      to: ".",
+      search: ((prev: Record<string, unknown>) => ({
+        ...prev,
+        runnerDays: unlessDefault(next, RUNNER_DEFAULT_DAYS),
+      })) as never,
+      replace: true,
+    });
   const [report, setReport] = useState<RunnerReport | null>(null);
   const [failed, setFailed] = useState(false);
   useEffect(() => {
@@ -137,7 +147,7 @@ function RunnerView({
       </header>
 
       <div className={cn("grid gap-6 transition-opacity", loading && "opacity-60")}>
-        <RangePicker ranges={RANGES} days={days} onChange={onDays} />
+        <RangePicker ranges={RUNNER_RANGES} days={days} onChange={onDays} />
         <Facts
           className="sm:grid-cols-4"
           items={[

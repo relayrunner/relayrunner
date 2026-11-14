@@ -1,5 +1,5 @@
 import { createFileRoute } from "@tanstack/react-router";
-import { type ReactNode, useState } from "react";
+import { type ReactNode, useEffect, useRef, useState } from "react";
 import { Count } from "@/components/count";
 import { CountChart } from "@/components/duration-chart";
 import { PageHeader } from "@/components/page-header";
@@ -9,14 +9,29 @@ import { DataTable, dataTableColumns, NUM } from "@/components/ui/data-table";
 import { WorkspaceMark } from "@/components/workspace-menu";
 import { getJobCounts, type JobCountReport, type JobCounts } from "@/lib/admin";
 import { DAY_MS } from "@/lib/job-times";
+import { rangeParam, unlessDefault } from "@/lib/search-params";
 import { percent } from "@/lib/utils";
 
 const RANGES = [1, 7, 30, 90] as const;
 const HOUR_MS = 3_600_000;
 
 // Operator admin, behind Cloudflare Access and an operator session (apps/api/src/routes/admin.ts).
+const DEFAULT_DAYS = 7;
+// `internal` counts our own workspaces too.
+type Search = { days?: number; internal?: true };
+const validateSearch = (search: Record<string, unknown>): Search => ({
+  days: rangeParam(search.days, RANGES, DEFAULT_DAYS),
+  internal: [true, "true", 1, "1"].includes(search.internal as never) || undefined,
+});
+
 export const Route = createFileRoute("/_authed/_workspace/admin/jobs")({
-  loader: () => getJobCounts(7, false),
+  validateSearch,
+  loader: ({ location }) => {
+    const search = validateSearch(location.search);
+    return getJobCounts(search.days ?? DEFAULT_DAYS, Boolean(search.internal));
+  },
+  // A new range or filter loads in the page, keeping the last one up meanwhile.
+  shouldReload: ({ cause }) => cause !== "stay",
   component: JobsPage,
 });
 
@@ -28,17 +43,38 @@ const RESULTS = [
 ] as const;
 
 function JobsPage() {
-  const [report, setReport] = useState<JobCountReport>(Route.useLoaderData());
-  const [internal, setInternal] = useState(false);
-
-  function load(days: number, withInternal: boolean) {
-    setInternal(withInternal);
-    getJobCounts(days, withInternal)
-      .then(setReport)
+  const search = Route.useSearch();
+  const days = search.days ?? DEFAULT_DAYS;
+  const internal = Boolean(search.internal);
+  const navigate = Route.useNavigate();
+  const first = Route.useLoaderData();
+  const [report, setReport] = useState<JobCountReport>(first);
+  useEffect(() => setReport(first), [first]);
+  // The loader read the first; another range or filter loads here.
+  const loaded = useRef({ days, internal });
+  useEffect(() => {
+    if (loaded.current.days === days && loaded.current.internal === internal) return;
+    loaded.current = { days, internal };
+    let live = true;
+    getJobCounts(days, internal)
+      .then((next) => live && setReport(next))
       .catch(() => undefined);
+    return () => {
+      live = false;
+    };
+  }, [days, internal]);
+
+  function load(nextDays: number, withInternal: boolean) {
+    void navigate({
+      search: {
+        days: unlessDefault(nextDays, DEFAULT_DAYS),
+        internal: withInternal || undefined,
+      },
+      replace: true,
+    });
   }
 
-  const { totals, days } = report;
+  const { totals } = report;
   const jobs = jobsIn(totals);
 
   return (
@@ -77,10 +113,10 @@ function JobsPage() {
 
       <CountChart
         tallies={report.hours}
-        days={days}
+        days={report.days}
         noun="job"
         // The counts are per hour, so a week of hourly bars costs no more than a day's.
-        bucketMs={days <= 7 ? HOUR_MS : DAY_MS}
+        bucketMs={report.days <= 7 ? HOUR_MS : DAY_MS}
       />
 
       <DataTable
