@@ -38,6 +38,7 @@ import { retryFailedRun } from "./retries.ts";
 import { routingLabelFromLabels } from "./github-runners.ts";
 import { routeIdFromLabels } from "./routing.ts";
 import { exportJob, exportRun } from "./telemetry/export.ts";
+import { traced } from "./tracing.ts";
 
 // The `runs-on` label that routes a job through RelayRunner.
 export const RELAYRUNNER_LABEL = "relayrunner";
@@ -64,7 +65,7 @@ export async function handleWebhookBatch(
 // Process one delivery and ack it, or retry it with backoff.
 async function processMessage(env: Env, msg: Message<WebhookMessage>) {
   try {
-    await processWebhook(env, msg.body);
+    await traced("webhook.process", webhookAttributes(msg), () => processWebhook(env, msg.body));
     msg.ack();
   } catch (error) {
     const delaySeconds = retryDelaySeconds(msg.attempts);
@@ -95,7 +96,9 @@ async function processMessage(env: Env, msg: Message<WebhookMessage>) {
 // message, so even one that runs out of retries can be replayed from Workers Logs.
 async function deadLetter(env: Env, msg: Message<WebhookMessage>) {
   try {
-    const letter = await archiveDeadLetter(env.DEAD_LETTERS, msg.body, msg.attempts);
+    const letter = await traced("webhook.dead_letter", webhookAttributes(msg), () =>
+      archiveDeadLetter(env.DEAD_LETTERS, msg.body, msg.attempts),
+    );
     console.error(
       JSON.stringify({
         msg: "github webhook dead-lettered",
@@ -121,6 +124,33 @@ async function deadLetter(env: Env, msg: Message<WebhookMessage>) {
     );
     msg.retry({ delaySeconds: retryDelaySeconds(msg.attempts) });
   }
+}
+
+// What a delivery's span is tagged with, to find it by delivery, repo, job or run. Read loosely:
+// a dead letter can be a message that never had the shape its event promises.
+function webhookAttributes(msg: Message<WebhookMessage>) {
+  const body = (msg.body ?? {}) as {
+    app?: string;
+    event?: string;
+    action?: string;
+    deliveryId?: string;
+    installationId?: number | null;
+    receivedAt?: string;
+    repository?: { fullName?: string };
+    job?: { id?: number; runId?: number };
+  };
+  return {
+    "github.app": body.app ?? "main",
+    "github.event": body.event,
+    "github.action": body.action,
+    "github.delivery_id": body.deliveryId,
+    "github.installation_id": body.installationId,
+    "github.repository": body.repository?.fullName,
+    "github.job_id": body.job?.id,
+    "github.run_id": body.job?.runId,
+    "queue.attempts": msg.attempts,
+    "webhook.lag_ms": body.receivedAt ? Date.now() - Date.parse(body.receivedAt) : undefined,
+  };
 }
 
 export function errorMessage(error: unknown) {

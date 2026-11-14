@@ -13,6 +13,7 @@
  * - 500 the path's webhook secret can't be read from the Secrets Store
  * - 503 the queue rejected the message; GitHub doesn't retry, so redeliver from the App settings
  */
+import { tracing } from "cloudflare:workers";
 import {
   toWebhookMessage,
   verifyGitHubSignature,
@@ -73,6 +74,12 @@ export async function handleRequest(request: Request, env: Env): Promise<Respons
   const { app } = route;
   const event = request.headers.get("x-github-event") ?? "";
   const deliveryId = request.headers.get("x-github-delivery") ?? "";
+  // The delivery id also tags the API's `webhook.process` span, which runs in another trace.
+  tracing.getActiveSpan()?.setAttributes({
+    "github.app": app,
+    "github.event": event,
+    "github.delivery_id": deliveryId,
+  });
 
   const secret = await readSecret(env[route.secret]);
   if (!secret) {

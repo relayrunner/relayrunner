@@ -19,6 +19,7 @@ import {
   promotePendingToken,
 } from "../machines.ts";
 import { placeNow, takeHold, type MachineHold, type Route } from "../routing.ts";
+import { traced } from "../tracing.ts";
 import {
   CLOSE,
   handleFrame,
@@ -231,6 +232,25 @@ export class MachineLink extends DurableObject<Env> {
    * (Router.requeue).
    */
   async run(work: { route: Route; workspaceId: string }): Promise<RunResult> {
+    const { route } = work;
+    return traced(
+      "machine.run",
+      {
+        "relayrunner.workspace_id": work.workspaceId,
+        "relayrunner.machine_id": route.machineId,
+        "relayrunner.route_id": route.id,
+        "github.repository": route.repo,
+        "github.job_id": route.jobId,
+      },
+      async (span) => {
+        const result = await this.send(work);
+        span.setAttribute("relayrunner.run.result", result);
+        return result;
+      },
+    );
+  }
+
+  private async send(work: { route: Route; workspaceId: string }): Promise<RunResult> {
     const { route, workspaceId } = work;
     const key = SENT_KEY + route.id;
     const sent = await this.ctx.storage.get<SentRoute>(key);
