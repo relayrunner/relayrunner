@@ -4,6 +4,8 @@ export {
   toWebhookMessage,
   type WebhookMessage,
   type WorkflowJob,
+  type JobStep,
+  type WorkflowRun,
   type InstallationRepo,
   type InstallationSummary,
   type PullRequest,

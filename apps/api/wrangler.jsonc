@@ -181,6 +181,9 @@
       // The 15-minute cron's per-installation work (src/installation-tasks.ts). Create once:
       //   wrangler queues create relayrunner-installation-tasks
       { "binding": "INSTALLATION_TASKS", "queue": "relayrunner-installation-tasks" },
+      // Finished runs and jobs as spans for workspaces that export traces (src/telemetry). Create once:
+      //   wrangler queues create relayrunner-telemetry
+      { "binding": "TELEMETRY_QUEUE", "queue": "relayrunner-telemetry" },
     ],
     "consumers": [
       {
@@ -196,6 +199,14 @@
         "max_batch_size": 10,
         "max_batch_timeout": 5,
         "max_retries": 1,
+      },
+      // Up to 100 spans' messages per batch, sent as one request per workspace. 429s, 5xx and
+      // network errors retry with backoff for about an hour (src/telemetry/export.ts), then drop.
+      {
+        "queue": "relayrunner-telemetry",
+        "max_batch_size": 100,
+        "max_batch_timeout": 5,
+        "max_retries": 8,
       },
       {
         "queue": "relayrunner-github-webhooks-dlq",

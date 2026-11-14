@@ -254,3 +254,41 @@ describe("ranSteps", () => {
     expect(ranSteps([])).toBeNull();
   });
 });
+
+describe("job steps", () => {
+  const payload = (status: string) => ({
+    action: status,
+    repository: { id: 1, full_name: "a/b" },
+    workflow_job: {
+      id: 9,
+      run_id: 3,
+      status,
+      head_sha: "abc",
+      created_at: "2026-11-14T10:00:00Z",
+      steps: [
+        {
+          name: "Run tests",
+          number: 2,
+          conclusion: "success",
+          started_at: "2026-11-14T10:00:05Z",
+          completed_at: "2026-11-14T10:01:00Z",
+        },
+      ],
+    },
+  });
+
+  test("ride along on completed jobs only", () => {
+    const done = toWebhookMessage("workflow_job", "d", payload("completed"));
+    expect(done?.event === "workflow_job" && done.job.steps).toEqual([
+      {
+        name: "Run tests",
+        number: 2,
+        conclusion: "success",
+        startedAt: "2026-11-14T10:00:05Z",
+        completedAt: "2026-11-14T10:01:00Z",
+      },
+    ]);
+    const queued = toWebhookMessage("workflow_job", "d", payload("queued"));
+    expect(queued?.event === "workflow_job" && queued.job.steps).toBeUndefined();
+  });
+});

@@ -37,6 +37,7 @@ import { recordWorkflowRun } from "./runs.ts";
 import { retryFailedRun } from "./retries.ts";
 import { routingLabelFromLabels } from "./github-runners.ts";
 import { routeIdFromLabels } from "./routing.ts";
+import { exportJob, exportRun } from "./telemetry/export.ts";
 
 // The `runs-on` label that routes a job through RelayRunner.
 export const RELAYRUNNER_LABEL = "relayrunner";
@@ -189,6 +190,8 @@ export async function processWebhook(env: Env, message: WebhookMessage): Promise
       // runs, and the usage report once it finishes. The two writes touch separate tables, so they
       // run together.
       await Promise.all([recordWorkflowJob(db, message, isPick), recordJobTiming(db, message)]);
+      // A finished job's spans, for workspaces that export traces (Settings → Telemetry).
+      await exportJob(env, db, message);
       // A job on a route's `rr-<id>` label: the run's pick chose a machine for it.
       const routeId = routeIdFromLabels(message.job.labels);
       if (routeId) return dispatchRoute(env, message, routeId, lagMs);
@@ -228,7 +231,10 @@ export async function processWebhook(env: Env, message: WebhookMessage): Promise
     }
     case "workflow_run":
       // The run's title, trigger and status, for the Runs page.
-      await recordWorkflowRun(createDb(env.DB), message);
+      const db = createDb(env.DB);
+      await recordWorkflowRun(db, message);
+      // A finished run's root span, for workspaces that export traces.
+      await exportRun(env, db, message);
       // A failed run whose runner failed one of its routed jobs gets one more go.
       await retryFailedRun(env, message);
       return;

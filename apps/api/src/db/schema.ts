@@ -1306,3 +1306,32 @@ export const providerDailyUsage = sqliteTable(
     index("provider_daily_usage_day_idx").on(table.day),
   ],
 );
+
+// Where a workspace sends its CI traces (Settings → Telemetry, src/telemetry): each finished run
+// and job as OpenTelemetry spans, POSTed to `endpoint` as OTLP/HTTP JSON. The header values (API
+// keys) are one JSON object, encrypted like provider tokens (src/provider-tokens.ts) and never sent
+// back; the dashboard sees each header's name and last four characters. One per workspace.
+export const telemetryExport = sqliteTable("telemetry_export", {
+  workspaceId: text("workspace_id")
+    .primaryKey()
+    .references(() => workspace.id, { onDelete: "cascade" }),
+  // The OTLP base URL, such as https://api.honeycomb.io. Traces go to `${endpoint}/v1/traces`.
+  endpoint: text("endpoint").notNull(),
+  // "v<key version>.<iv>.<ciphertext>" of a JSON object of header name to value.
+  headers: text("headers").notNull(),
+  headerHints: text("header_hints", { mode: "json" })
+    .$type<{ name: string; hint: string }[]>()
+    .notNull(),
+  // The resource's service.name.
+  serviceName: text("service_name").notNull(),
+  enabled: integer("enabled", { mode: "boolean" }).notNull(),
+  createdBy: text("created_by").references(() => user.id, { onDelete: "set null" }),
+  lastSentAt: integer("last_sent_at", { mode: "timestamp_ms" }),
+  // The latest refusal or network error, and when the current run of failures began. Cleared by
+  // the next successful send. Past FAILING_DAYS of nothing but failures the export turns itself
+  // off and sets pausedAt.
+  error: text("error"),
+  failingSince: integer("failing_since", { mode: "timestamp_ms" }),
+  pausedAt: integer("paused_at", { mode: "timestamp_ms" }),
+  ...timestamps,
+});

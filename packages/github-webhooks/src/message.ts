@@ -26,6 +26,17 @@ export interface WorkflowJob {
   // Whether any of the job's own steps started, past GitHub's "Set up job". False when the job
   // ended in setup (its runner never got going); null when GitHub sent no steps.
   ranSteps?: boolean | null;
+  // The job's steps, on `completed` only, for trace export (apps/api/src/telemetry). Absent on
+  // other actions and from an ingress that predates them.
+  steps?: JobStep[];
+}
+
+export interface JobStep {
+  name: string;
+  number: number;
+  conclusion: string | null;
+  startedAt: string | null;
+  completedAt: string | null;
 }
 
 // A workflow run (one attempt), for the Runs page: what started it and how it ended. Every action
@@ -198,6 +209,7 @@ export function toWebhookMessage(
           startedAt: stringOrNull(job.started_at),
           completedAt: stringOrNull(job.completed_at),
           ranSteps: ranSteps(job.steps),
+          ...(job.status === "completed" && { steps: jobSteps(job.steps) }),
         },
       };
     }
@@ -367,6 +379,26 @@ function isRecord(value: unknown): value is Record<string, any> {
 function githubActor(value: unknown): { id: number | null; login: string } | null {
   if (!isRecord(value) || typeof value.login !== "string" || !value.login) return null;
   return { id: typeof value.id === "number" ? value.id : null, login: value.login };
+}
+
+// Steps kept per job and characters per step name, so one job never comes near the 128 KB message
+// cap. GitHub allows 1,000 steps; real jobs have tens.
+const MAX_STEPS = 300;
+const MAX_STEP_NAME = 200;
+
+/** A completed job's steps, compacted for the queue message. */
+export function jobSteps(steps: unknown): JobStep[] {
+  if (!Array.isArray(steps)) return [];
+  return steps
+    .filter(isRecord)
+    .slice(0, MAX_STEPS)
+    .map((step) => ({
+      name: String(step.name ?? "").slice(0, MAX_STEP_NAME),
+      number: Number(step.number ?? 0),
+      conclusion: stringOrNull(step.conclusion),
+      startedAt: stringOrNull(step.started_at),
+      completedAt: stringOrNull(step.completed_at),
+    }));
 }
 
 // The steps GitHub adds to every job around its own: setting up the runner and tearing it down.
