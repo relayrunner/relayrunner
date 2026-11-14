@@ -108,6 +108,9 @@ export function environmentFor(
   );
 }
 
+/** Who runs an environment: `machine`, `github`, `self-hosted`, `container`, a provider's id... */
+export const environmentProvider = (env: Environment) => env.key.split(":")[0]!;
+
 /**
  * Names each `machine:<id>` environment from its machine row. A deleted machine keeps its generic
  * name.

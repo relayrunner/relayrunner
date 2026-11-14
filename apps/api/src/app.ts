@@ -16,6 +16,7 @@ import { adminWebhookRoutes } from "./routes/admin-webhooks.ts";
 import { adminRoutes } from "./routes/admin.ts";
 import { authRoutes } from "./routes/auth.ts";
 import { feedbackRoutes } from "./routes/feedback.ts";
+import { telemetryRoutes } from "./routes/telemetry.ts";
 import { githubRoutes } from "./routes/github.ts";
 import { healthRoutes } from "./routes/health.ts";
 import { machineRoutes } from "./routes/machines.ts";
@@ -75,6 +76,7 @@ app.route("/github", githubRoutes);
 app.route("/machines", machineRoutes);
 app.route("/agents", agentRoutes);
 app.route("/feedback", feedbackRoutes);
+app.route("/telemetry", telemetryRoutes);
 // Operator admin over D1 (users, workspaces, runner prices): Access (above) and an operator
 // session.
 app.route("/admin", adminRoutes);

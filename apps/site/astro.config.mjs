@@ -93,6 +93,7 @@ export default defineConfig({
             "docs/dashboard/activity",
             "docs/dashboard/performance",
             "docs/dashboard/usage",
+            "docs/dashboard/telemetry",
             "docs/dashboard/workspaces",
             "docs/dashboard/remove",
           ],

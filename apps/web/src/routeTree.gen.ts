@@ -45,6 +45,7 @@ import { Route as AuthedWorkspaceSettingsGithubRouteImport } from './routes/_aut
 import { Route as AuthedWorkspaceSettingsMembersRouteImport } from './routes/_authed/_workspace/settings.members'
 import { Route as AuthedWorkspaceSettingsNotificationsRouteImport } from './routes/_authed/_workspace/settings.notifications'
 import { Route as AuthedWorkspaceSettingsProvidersRouteImport } from './routes/_authed/_workspace/settings.providers'
+import { Route as AuthedWorkspaceSettingsTelemetryRouteImport } from './routes/_authed/_workspace/settings.telemetry'
 
 const IndexRoute = IndexRouteImport.update({
   id: '/',
@@ -244,6 +245,12 @@ const AuthedWorkspaceSettingsProvidersRoute =
     path: '/settings/providers',
     getParentRoute: () => AuthedWorkspaceRoute,
   } as any)
+const AuthedWorkspaceSettingsTelemetryRoute =
+  AuthedWorkspaceSettingsTelemetryRouteImport.update({
+    id: '/settings/telemetry',
+    path: '/settings/telemetry',
+    getParentRoute: () => AuthedWorkspaceRoute,
+  } as any)
 
 export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
@@ -277,6 +284,7 @@ export interface FileRoutesByFullPath {
   '/settings/members': typeof AuthedWorkspaceSettingsMembersRoute
   '/settings/notifications': typeof AuthedWorkspaceSettingsNotificationsRoute
   '/settings/providers': typeof AuthedWorkspaceSettingsProvidersRoute
+  '/settings/telemetry': typeof AuthedWorkspaceSettingsTelemetryRoute
   '/admin/': typeof AuthedWorkspaceAdminIndexRoute
   '/providers/': typeof AuthedWorkspaceProvidersIndexRoute
   '/settings/': typeof AuthedWorkspaceSettingsIndexRoute
@@ -313,6 +321,7 @@ export interface FileRoutesByTo {
   '/settings/members': typeof AuthedWorkspaceSettingsMembersRoute
   '/settings/notifications': typeof AuthedWorkspaceSettingsNotificationsRoute
   '/settings/providers': typeof AuthedWorkspaceSettingsProvidersRoute
+  '/settings/telemetry': typeof AuthedWorkspaceSettingsTelemetryRoute
   '/admin': typeof AuthedWorkspaceAdminIndexRoute
   '/providers': typeof AuthedWorkspaceProvidersIndexRoute
   '/settings': typeof AuthedWorkspaceSettingsIndexRoute
@@ -352,6 +361,7 @@ export interface FileRoutesById {
   '/_authed/_workspace/settings/members': typeof AuthedWorkspaceSettingsMembersRoute
   '/_authed/_workspace/settings/notifications': typeof AuthedWorkspaceSettingsNotificationsRoute
   '/_authed/_workspace/settings/providers': typeof AuthedWorkspaceSettingsProvidersRoute
+  '/_authed/_workspace/settings/telemetry': typeof AuthedWorkspaceSettingsTelemetryRoute
   '/_authed/_workspace/admin/': typeof AuthedWorkspaceAdminIndexRoute
   '/_authed/_workspace/providers/': typeof AuthedWorkspaceProvidersIndexRoute
   '/_authed/_workspace/settings/': typeof AuthedWorkspaceSettingsIndexRoute
@@ -390,6 +400,7 @@ export interface FileRouteTypes {
     | '/settings/members'
     | '/settings/notifications'
     | '/settings/providers'
+    | '/settings/telemetry'
     | '/admin/'
     | '/providers/'
     | '/settings/'
@@ -426,6 +437,7 @@ export interface FileRouteTypes {
     | '/settings/members'
     | '/settings/notifications'
     | '/settings/providers'
+    | '/settings/telemetry'
     | '/admin'
     | '/providers'
     | '/settings'
@@ -464,6 +476,7 @@ export interface FileRouteTypes {
     | '/_authed/_workspace/settings/members'
     | '/_authed/_workspace/settings/notifications'
     | '/_authed/_workspace/settings/providers'
+    | '/_authed/_workspace/settings/telemetry'
     | '/_authed/_workspace/admin/'
     | '/_authed/_workspace/providers/'
     | '/_authed/_workspace/settings/'
@@ -733,6 +746,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AuthedWorkspaceSettingsProvidersRouteImport
       parentRoute: typeof AuthedWorkspaceRoute
     }
+    '/_authed/_workspace/settings/telemetry': {
+      id: '/_authed/_workspace/settings/telemetry'
+      path: '/settings/telemetry'
+      fullPath: '/settings/telemetry'
+      preLoaderRoute: typeof AuthedWorkspaceSettingsTelemetryRouteImport
+      parentRoute: typeof AuthedWorkspaceRoute
+    }
   }
 }
 
@@ -761,6 +781,7 @@ interface AuthedWorkspaceRouteChildren {
   AuthedWorkspaceSettingsMembersRoute: typeof AuthedWorkspaceSettingsMembersRoute
   AuthedWorkspaceSettingsNotificationsRoute: typeof AuthedWorkspaceSettingsNotificationsRoute
   AuthedWorkspaceSettingsProvidersRoute: typeof AuthedWorkspaceSettingsProvidersRoute
+  AuthedWorkspaceSettingsTelemetryRoute: typeof AuthedWorkspaceSettingsTelemetryRoute
   AuthedWorkspaceAdminIndexRoute: typeof AuthedWorkspaceAdminIndexRoute
   AuthedWorkspaceProvidersIndexRoute: typeof AuthedWorkspaceProvidersIndexRoute
   AuthedWorkspaceSettingsIndexRoute: typeof AuthedWorkspaceSettingsIndexRoute
@@ -792,6 +813,7 @@ const AuthedWorkspaceRouteChildren: AuthedWorkspaceRouteChildren = {
   AuthedWorkspaceSettingsNotificationsRoute:
     AuthedWorkspaceSettingsNotificationsRoute,
   AuthedWorkspaceSettingsProvidersRoute: AuthedWorkspaceSettingsProvidersRoute,
+  AuthedWorkspaceSettingsTelemetryRoute: AuthedWorkspaceSettingsTelemetryRoute,
   AuthedWorkspaceAdminIndexRoute: AuthedWorkspaceAdminIndexRoute,
   AuthedWorkspaceProvidersIndexRoute: AuthedWorkspaceProvidersIndexRoute,
   AuthedWorkspaceSettingsIndexRoute: AuthedWorkspaceSettingsIndexRoute,

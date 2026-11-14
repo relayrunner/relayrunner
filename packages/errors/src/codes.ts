@@ -104,6 +104,14 @@ export const ERRORS = {
     message: "Saving provider tokens isn't set up on this server yet.",
   },
 
+  // Telemetry
+  TELEMETRY_ENDPOINT_INVALID: {
+    status: 400,
+    message: "Use an https URL on the internet, like https://api.honeycomb.io.",
+  },
+  TELEMETRY_HEADER_MISSING: { status: 400, message: "Enter a value for each header." },
+  TELEMETRY_NOT_CONFIGURED: { status: 404, message: "Telemetry isn't set up for this workspace." },
+
   // GitHub
   GITHUB_UNAVAILABLE: {
     status: 502,

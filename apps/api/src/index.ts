@@ -19,6 +19,11 @@ import {
   INSTALLATION_TASK_QUEUE,
   type InstallationTask,
 } from "./installation-tasks.ts";
+import {
+  handleTelemetryBatch,
+  TELEMETRY_QUEUE,
+  type TelemetryMessage,
+} from "./telemetry/export.ts";
 import { handleWebhookBatch } from "./webhook-queue.ts";
 import { wellKnown } from "./well-known.ts";
 
@@ -35,10 +40,13 @@ const PRICE_CRON = "30 6 * * *";
 export default {
   fetch: (request, env, ctx) => wellKnown(request, env) ?? app.fetch(request, env, ctx),
   // GitHub webhooks arrive on a queue from the ingress Worker (apps/webhooks), not over HTTP. The
-  // cron's per-installation work arrives on its own queue.
+  // cron's per-installation work and the spans for workspaces' trace exports have queues of their
+  // own.
   async queue(batch, env) {
     if (batch.queue === INSTALLATION_TASK_QUEUE)
       return handleInstallationTaskBatch(batch as MessageBatch<InstallationTask>, env);
+    if (batch.queue === TELEMETRY_QUEUE)
+      return handleTelemetryBatch(batch as MessageBatch<TelemetryMessage>, env);
     return handleWebhookBatch(batch as MessageBatch<WebhookMessage>, env);
   },
   // Every 15 minutes: queue a read of each org's Actions usage from GitHub billing (#116), rescue
@@ -76,4 +84,4 @@ export default {
     const failed = results.find((result) => result.status === "rejected");
     if (failed) throw failed.reason;
   },
-} satisfies ExportedHandler<Env, WebhookMessage | InstallationTask>;
+} satisfies ExportedHandler<Env, WebhookMessage | InstallationTask | TelemetryMessage>;
