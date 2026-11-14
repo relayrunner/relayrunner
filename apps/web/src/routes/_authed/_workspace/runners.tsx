@@ -47,7 +47,7 @@ import {
   type Stat,
 } from "@/lib/job-times";
 import { useLiveRefresh } from "@/lib/live-refresh";
-import { addableRunners, listGithubRunners, listMachines } from "@/lib/machines";
+import { addableRunners, listGithubRunners, listMachines, SAMPLE_MACHINES } from "@/lib/machines";
 import { canManage } from "@/lib/roles";
 import {
   CLEARED_FILTERS,
@@ -96,7 +96,12 @@ export const Route = createFileRoute("/_authed/_workspace/runners")({
     } catch (error) {
       // The dev preview has no API behind it.
       if (authDisabled)
-        return { order: DEFAULT_RUNNER_ORDER, isDefault: true, machines: [], others: [] };
+        return {
+          order: DEFAULT_RUNNER_ORDER,
+          isDefault: true,
+          machines: SAMPLE_MACHINES,
+          others: [],
+        };
       throw error;
     }
   },

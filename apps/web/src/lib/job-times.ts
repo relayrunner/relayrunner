@@ -1,4 +1,5 @@
 import type { RunnerSize } from "@relayrunner/providers";
+import type { DeviceKind } from "@/lib/device";
 import { api } from "@/lib/api";
 import { count } from "@/lib/utils";
 
@@ -41,6 +42,8 @@ export type Environment = {
   detail: string;
   /** Its vCPUs and memory, when the label or the service says. */
   size?: RunnerSize;
+  /** `machine:<id>` only: how it joined and the device it reported, for its icon. */
+  machine?: { source: "connect" | "github"; kind: DeviceKind | null; model: string | null };
 };
 
 export type EnvironmentSummary = Environment & {
@@ -203,9 +206,36 @@ export function sampleJobTimes(days: number): JobTimesReport {
         key: mac,
         label: "Zach's MacBook Pro",
         detail: "MacBook Pro · Apple M3 Max",
+        machine: { source: "connect", kind: "laptop", model: "MacBook Pro" },
         stat: stat(41, 50, 198),
         missed: 2,
         versus: { ratio: 0.37, sharedJobs: 3 },
+      },
+      {
+        key: "machine:sample-mini",
+        label: "studio-mini",
+        detail: "Mac mini · Apple M4 Pro",
+        machine: { source: "connect", kind: "desktop", model: "Mac mini" },
+        stat: stat(23, 23, 171),
+        missed: 0,
+        versus: null,
+      },
+      {
+        key: "machine:sample-github",
+        label: "build-01",
+        detail: "",
+        machine: { source: "github", kind: null, model: null },
+        stat: stat(64, 50, 240),
+        missed: 0,
+        versus: null,
+      },
+      {
+        key: "self-hosted:default",
+        label: "Self-hosted",
+        detail: "Default",
+        stat: stat(88, 50, 260),
+        missed: 0,
+        versus: null,
       },
       {
         key: container,

@@ -308,6 +308,7 @@ describe("job times report", () => {
     expect(mac).toMatchObject({
       label: "Zach's MacBook Pro",
       detail: "MacBook Pro · Apple M3 Max",
+      machine: { source: "connect", model: "MacBook Pro" },
     });
     expect(mac?.stat).toMatchObject({
       runs: 6,

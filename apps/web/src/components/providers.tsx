@@ -1,4 +1,4 @@
-import { CircleHelpIcon, CloudIcon, LaptopIcon } from "lucide-react";
+import { CircleHelpIcon, CloudIcon, ZapIcon } from "lucide-react";
 import { type ProviderId, providerOfEnvironment, sizeText } from "@relayrunner/providers";
 import type { ReactNode } from "react";
 import {
@@ -9,6 +9,7 @@ import {
   NamespaceIcon,
   WarpBuildIcon,
 } from "@/components/provider-logos";
+import { deviceIcon, SelfHostedIcon } from "@/components/device-icon";
 import type { Environment, EnvironmentSummary } from "@/lib/job-times";
 import { isKnownProvider, providerInfo } from "@/lib/provider-catalog";
 import { cn } from "@/lib/utils";
@@ -101,7 +102,7 @@ const LOOKS: Record<ProviderId | "machine", ProviderLook> = {
     detail: true,
   },
   machine: {
-    icon: <LaptopIcon aria-hidden className="size-4" />,
+    icon: <SelfHostedIcon aria-hidden className="size-4" />,
     tile: "bg-raised-2 text-foreground",
     tint: "",
     bar: "bg-ink-2",
@@ -174,6 +175,35 @@ export function ProviderMark({ provider, className }: { provider: Provider; clas
       )}
     >
       {icon}
+    </span>
+  );
+}
+
+/**
+ * A runner's mark: its provider's, except a `relayrunner connect` machine, which shows its device
+ * with a bolt, since it comes and goes with one person's terminal. Runners added from GitHub and
+ * runner groups keep the self-hosted server.
+ */
+export function RunnerMark({
+  runner,
+  className,
+}: {
+  runner: Pick<Environment, "key" | "machine">;
+  className?: string;
+}) {
+  const provider = providerOf(runner);
+  if (!runner.key.startsWith("machine:") || runner.machine?.source === "github")
+    return <ProviderMark provider={provider} className={className} />;
+  const Icon = deviceIcon(runner.machine ?? null);
+  return (
+    <span
+      aria-hidden
+      className={cn(TILE, "relative size-5 rounded-[5px]", LOOKS.machine.tile, className)}
+    >
+      <Icon className="size-3" />
+      <span className="absolute -right-[3px] -bottom-[3px] flex size-3 items-center justify-center rounded-full bg-raised-2 text-muted-foreground">
+        <ZapIcon className="size-2 fill-current" strokeWidth={1} />
+      </span>
     </span>
   );
 }

@@ -1,22 +1,16 @@
 import { Link, useRouter } from "@tanstack/react-router";
 import {
   BanIcon,
-  BoxIcon,
   CircleArrowUpIcon,
   CopyIcon,
-  CpuIcon,
   EllipsisIcon,
   ExternalLinkIcon,
-  LaptopIcon,
-  MonitorIcon,
   LogOutIcon,
   PauseIcon,
   PlayIcon,
-  ServerIcon,
   TimerIcon,
   XIcon,
   ZapIcon,
-  type LucideIcon,
 } from "lucide-react";
 import { useState, type ReactNode } from "react";
 import { runnerSettingsUrl } from "@/components/add-runner";
@@ -34,7 +28,8 @@ import {
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
-import { describeJobPlace, deviceName, formatMemory, type DeviceKind } from "@/lib/device";
+import { describeJobPlace, deviceName, formatMemory } from "@/lib/device";
+import { deviceIcon, SelfHostedIcon } from "@/components/device-icon";
 import { medianText, plural, type EnvironmentSummary, type Stat } from "@/lib/job-times";
 import {
   machineAccess,
@@ -48,14 +43,6 @@ import {
 } from "@/lib/machines";
 import { capacity } from "@/lib/capacity";
 import { cn } from "@/lib/utils";
-
-const KIND_ICONS: Record<DeviceKind, LucideIcon> = {
-  laptop: LaptopIcon,
-  desktop: MonitorIcon,
-  server: ServerIcon,
-  vm: BoxIcon,
-  unknown: CpuIcon,
-};
 
 const OS_NAMES = { linux: "Linux", macos: "macOS", windows: "Windows" } as const;
 const ARCH_NAMES = { x64: "x64", arm64: "ARM64", arm: "ARM" } as const;
@@ -310,10 +297,13 @@ export function machineView(machine: Machine) {
 
   const device = machine.device ?? null;
   const model = device ? deviceName(device) : null;
-  const Icon = device ? KIND_ICONS[device.kind] : CpuIcon;
-  const chip = isGithub
-    ? { icon: <GithubIcon className="size-3.5" />, label: "Runner added from GitHub" }
-    : { icon: <Icon className="size-3.5" aria-hidden />, label: model ?? "Self-hosted machine" };
+  // A runner added from GitHub is a server someone keeps running; a connected machine shows its
+  // device, with a bolt for its session (IconChip).
+  const Icon = isGithub ? SelfHostedIcon : deviceIcon(device);
+  const chip = {
+    icon: <Icon className="size-3.5" aria-hidden />,
+    label: isGithub ? "Runner added from GitHub" : (model ?? "Self-hosted machine"),
+  };
 
   const platform = [
     device?.osVersion ?? (machine.os ? OS_NAMES[machine.os] : null),

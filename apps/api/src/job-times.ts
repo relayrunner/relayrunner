@@ -39,6 +39,11 @@ export interface Environment {
   detail: string;
   /** Its vCPUs and memory, when the label or the service says. */
   size?: RunnerSize;
+  /**
+   * `machine:<id>` only: how it joined (a `relayrunner connect` machine or a runner added from
+   * GitHub) and the device it reported, so the dashboard can pick its icon.
+   */
+  machine?: { source: "connect" | "github"; kind: string | null; model: string | null };
 }
 
 // Adds the size runnerSize finds for a provider's label, when it finds one.
@@ -116,6 +121,8 @@ export async function nameMachines(db: Db, workspaceId: string, envs: Map<string
     .select({
       id: schema.machine.id,
       name: schema.machine.name,
+      source: schema.machine.source,
+      kind: schema.machine.deviceKind,
       model: schema.machine.deviceModel,
       chip: schema.machine.chip,
       os: schema.machine.os,
@@ -129,6 +136,11 @@ export async function nameMachines(db: Db, workspaceId: string, envs: Map<string
     const env = envs.get(`${MACHINE}${machine.id}`);
     if (!env) continue;
     env.label = machine.name;
+    env.machine = {
+      source: machine.source === "github" ? "github" : "connect",
+      kind: machine.kind,
+      model: machine.model,
+    };
     env.detail = [machine.model, machine.chip].filter(Boolean).join(" · ") || (machine.os ?? "");
     // Every job runs in a VM of this size, as of its last connect. With --macos some run on the
     // Mac itself, so the size wouldn't say which.

@@ -11,7 +11,7 @@ import {
   sizeText,
 } from "@relayrunner/providers";
 import { type ReactNode, useEffect, useState } from "react";
-import { ProviderMark, providerOf } from "@/components/providers";
+import { providerOf, RunnerMark } from "@/components/providers";
 import { CliVersion, machineView, MachineOwner, StatusDot } from "@/components/runner-card";
 import { HoverCard, HoverCardContent, HoverCardTrigger } from "@/components/ui/hover-card";
 import { deviceName } from "@/lib/device";
@@ -49,7 +49,7 @@ export function RunnerLink({
   const provider = providerOf(runner);
   const content = (
     <>
-      <ProviderMark provider={provider} className={markClassName} />
+      <RunnerMark runner={runner} className={markClassName} />
       {children ?? runner.label}
     </>
   );

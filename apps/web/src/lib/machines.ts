@@ -144,7 +144,7 @@ export function cachedMachine(id: string) {
 export async function workspaceMachine(id: string) {
   if (!machines || Date.now() - machines.at > FRESH_MS) {
     const list = authDisabled
-      ? Promise.resolve([SAMPLE_MACHINE])
+      ? Promise.resolve(SAMPLE_MACHINES)
       : listMachines().then((result) => result.machines);
     // A failed read isn't kept, so the next hover asks again.
     list.catch(() => {
@@ -160,7 +160,7 @@ export async function workspaceMachine(id: string) {
   return (await machines.list).find((machine) => machine.id === id) ?? null;
 }
 
-// The dev preview's machine, matching the sample reports' `machine:sample`.
+// The dev preview's machines, matching the sample reports' `machine:` keys.
 const SAMPLE_MACHINE: Machine = {
   id: "sample",
   name: "zach-mbp",
@@ -193,6 +193,41 @@ const SAMPLE_MACHINE: Machine = {
     running: 0,
   },
 };
+
+export const SAMPLE_MACHINES: Machine[] = [
+  SAMPLE_MACHINE,
+  {
+    ...SAMPLE_MACHINE,
+    id: "sample-mini",
+    name: "studio-mini",
+    device: {
+      ...SAMPLE_MACHINE.device!,
+      kind: "desktop",
+      model: "Mac mini",
+      modelId: "Mac16,10",
+      chip: "Apple M4 Pro",
+      cpuCores: 14,
+      memoryMb: 24_576,
+    },
+    status: { online: false, state: null, connectedAt: null },
+  },
+  {
+    id: "sample-github",
+    name: "build-01",
+    os: "linux",
+    arch: "x64",
+    lastSeenAt: null,
+    revokedAt: null,
+    createdAt: "2026-11-01T00:00:00Z",
+    source: "github",
+    github: { org: "acme", runnerId: 7, missing: false, unreachable: false },
+    device: null,
+    owner: "acme",
+    mine: false,
+    sharing: "anyone",
+    status: { online: true, state: "idle", connectedAt: null },
+  },
+];
 
 /** Adds the user's own machines to the current workspace, so they take its jobs. */
 export function addMachinesToWorkspace(machineIds: string[]) {
