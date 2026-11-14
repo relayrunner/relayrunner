@@ -9,6 +9,7 @@ import {
   CloudIcon,
   GaugeIcon,
   HistoryIcon,
+  LoaderCircleIcon,
   type LucideIcon,
   MessageSquareIcon,
   PanelLeftCloseIcon,
@@ -20,7 +21,7 @@ import {
   WaypointsIcon,
   WebhookIcon,
 } from "lucide-react";
-import { type ReactNode, useState } from "react";
+import { type ReactNode, useEffect, useState } from "react";
 import { SectionBoundary } from "@/components/error-boundary";
 import { FeedbackPopover } from "@/components/feedback-popover";
 import { DOCS_URL, SiteFooter } from "@/components/site-footer";
@@ -33,7 +34,12 @@ import { loadProviderCatalog } from "@/lib/provider-catalog";
 import { isOperator } from "@/lib/roles";
 import { readFlag, saveFlag } from "@/lib/stored-flag";
 import { cn } from "@/lib/utils";
-import { cachedWorkspace, ensureActiveWorkspace } from "@/lib/session";
+import {
+  awaitingOwner,
+  cachedWorkspace,
+  ensureActiveWorkspace,
+  watchForOwner,
+} from "@/lib/session";
 import type { CurrentWorkspace } from "@/lib/workspace";
 
 const devWorkspace: CurrentWorkspace = {
@@ -170,11 +176,29 @@ function WorkspaceLayout() {
           rows expand. */}
       <main className="flex min-w-0 flex-col">
         <div className="flex-1 p-4 sm:p-8">
+          <OwnerPending current={current} />
           <Outlet />
         </div>
         <SiteFooter className="sticky bottom-0 z-10" />
       </main>
     </div>
+  );
+}
+
+// Just after installing the App on an org, GitHub takes a few seconds to say who installed it,
+// and until then the installer can't change anything. Say so, and unlock once it arrives.
+function OwnerPending({ current }: { current: CurrentWorkspace }) {
+  const waiting = awaitingOwner(current);
+  useEffect(() => (waiting ? watchForOwner() : undefined), [waiting]);
+  if (!waiting) return null;
+  return (
+    <p
+      role="status"
+      className="mb-4 flex items-center gap-2 rounded-xl border px-4 py-3 text-sm text-muted-foreground"
+    >
+      <LoaderCircleIcon aria-hidden className="size-4 shrink-0 animate-spin" />
+      Finishing setup with GitHub. You can make changes in a few seconds.
+    </p>
   );
 }
 

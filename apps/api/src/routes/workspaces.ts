@@ -48,7 +48,18 @@ export const workspaceRoutes = new Hono<AppEnv>()
       .where(eq(schema.githubInstallation.id, workspace.installationId))
       .orderBy(asc(schema.githubInstallation.accountLogin));
     const { runnerOrder: _, ...rest } = workspace;
-    return c.json({ workspace: rest, role, installations: installations.map(present) });
+    // Right after installing on an org, the Setup URL usually lands before GitHub's
+    // `installation.created` webhook, which is what names the installer as owner (#317). Until it
+    // does, the installer reads as a member. Saying so lets the dashboard wait for it.
+    const ownerPending =
+      role === "member" &&
+      installations.some((row) => row.accountType === "Organization" && !row.installerGithubId);
+    return c.json({
+      workspace: rest,
+      role,
+      ownerPending,
+      installations: installations.map(present),
+    });
   })
   // How many live machines each member owns, keyed by user id, for the Members page (#136).
   // Same filter as GET /api/machines: claimed and not revoked.

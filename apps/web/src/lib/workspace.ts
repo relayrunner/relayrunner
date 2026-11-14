@@ -22,6 +22,11 @@ export type CurrentWorkspace = {
     createdAt: string;
   };
   role: string;
+  /**
+   * True while GitHub hasn't yet said who installed the App on this org, so its installer still
+   * reads as a member. Usually a few seconds right after installing.
+   */
+  ownerPending?: boolean;
   installations: Installation[];
 };
 

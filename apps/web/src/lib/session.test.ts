@@ -1,5 +1,6 @@
 import { parseError } from "@relayrunner/errors";
 import { beforeEach, describe, expect, test, vi } from "vitest";
+import type { CurrentWorkspace } from "@/lib/workspace";
 
 const readSession = vi.fn();
 const getCurrentWorkspace = vi.fn();
@@ -162,5 +163,44 @@ describe("the workspace the route guards read", () => {
     await session.revalidateWorkspace();
     expect(onChange).not.toHaveBeenCalled();
     expect(getCurrentWorkspace).toHaveBeenCalledTimes(2);
+  });
+});
+
+describe("waiting for GitHub to name the installer", () => {
+  const made = "2026-11-14T12:00:00.000Z";
+  const pending = (ownerPending: boolean): CurrentWorkspace => ({
+    workspace: { id: "w1", name: "Acme", slug: "acme", logo: null, createdAt: made },
+    role: "member",
+    ownerPending,
+    installations: [],
+  });
+
+  test("only while the owner is pending on a freshly made workspace", () => {
+    const at = Date.parse(made);
+    expect(session.awaitingOwner(pending(true), at + 5_000)).toBe(true);
+    expect(session.awaitingOwner(pending(false), at + 5_000)).toBe(false);
+    expect(session.awaitingOwner(pending(true), at + session.OWNER_WAIT_MS)).toBe(false);
+  });
+
+  test("checks the workspace every few seconds and re-runs the guards once the role changes", async () => {
+    const onChange = vi.fn();
+    session.setOnSessionChange(onChange);
+    getCurrentWorkspace.mockResolvedValue(pending(true));
+    await session.cachedWorkspace("w1");
+
+    vi.useFakeTimers();
+    const stop = session.watchForOwner();
+    await vi.advanceTimersByTimeAsync(2_000);
+    expect(getCurrentWorkspace).toHaveBeenCalledTimes(2);
+    expect(onChange).not.toHaveBeenCalled();
+
+    getCurrentWorkspace.mockResolvedValue({ ...pending(false), role: "owner" });
+    await vi.advanceTimersByTimeAsync(2_000);
+    expect(onChange).toHaveBeenCalledTimes(1);
+    expect(await session.cachedWorkspace("w1")).toMatchObject({ role: "owner" });
+
+    stop();
+    await vi.advanceTimersByTimeAsync(10_000);
+    expect(getCurrentWorkspace).toHaveBeenCalledTimes(3);
   });
 });

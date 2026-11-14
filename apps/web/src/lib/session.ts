@@ -156,6 +156,24 @@ export function revalidateWorkspace(): Promise<void> {
   return checkingWorkspace;
 }
 
+// Right after an org install, the installer reads as a member until GitHub's webhook names them
+// owner (`ownerPending`). The dashboard checks again every few seconds so editing unlocks without
+// a reload, but only for a freshly made workspace: a webhook that never came shouldn't poll forever.
+const OWNER_POLL_MS = 2_000;
+export const OWNER_WAIT_MS = 10 * 60_000;
+
+/** Whether the dashboard should wait for GitHub to name the installer of `current`. */
+export function awaitingOwner(current: CurrentWorkspace, now = Date.now()) {
+  if (!current.ownerPending) return false;
+  return now - Date.parse(current.workspace.createdAt) < OWNER_WAIT_MS;
+}
+
+/** Reads the workspace every few seconds, re-running the guards once it changes. Returns a stop. */
+export function watchForOwner(): () => void {
+  const timer = setInterval(() => void revalidateWorkspace(), OWNER_POLL_MS);
+  return () => clearInterval(timer);
+}
+
 /**
  * Makes sure the session has an active workspace, picking the user's first one if none is set.
  * Returns null when the user has no workspace yet.

@@ -52,6 +52,7 @@ describe("workspaces", () => {
         installationId: workspace.installationId,
       }),
       role: "owner",
+      ownerPending: false,
       installations: [expect.objectContaining({ id: workspace.installationId })],
     });
 

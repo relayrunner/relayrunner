@@ -210,6 +210,7 @@ describe("installing the GitHub App makes a workspace (#316)", () => {
         logo: `https://avatars.githubusercontent.com/u/${github.account!.id}?v=4`,
       }),
       role: "owner",
+      ownerPending: false,
       installations: [
         {
           id: github.id,
@@ -281,6 +282,33 @@ describe("installing the GitHub App makes a workspace (#316)", () => {
 
     await webhook("installation", { action: "new_permissions_accepted", installation: github });
     expect((await row(github.id))!.workspace_id).toBe(made);
+  });
+
+  test("setup landing before the webhook says the owner is pending, until the webhook names them", async () => {
+    const { user, githubId, githubToken, cookie } = await testing.signIn(env);
+    const github = installation();
+    visibleTo.set(githubToken, [github]);
+
+    // GitHub sends the browser back before its `installation.created` webhook is processed.
+    const back = await setupWith(cookie, github.id, await installState(cookie));
+    expect(await current(back.cookie)).toMatchObject({ role: "member", ownerPending: true });
+
+    await installed(github, githubId);
+    const { workspace_id } = (await row(github.id))!;
+    expect(await members(workspace_id!)).toEqual([{ user_id: user.id, role: "owner" }]);
+    expect(await current(back.cookie)).toMatchObject({ role: "owner", ownerPending: false });
+  });
+
+  test("a member of an org whose installer is known isn't told to wait", async () => {
+    const first = await testing.signIn(env);
+    const second = await testing.signIn(env);
+    const github = installation();
+    visibleTo.set(first.githubToken, [github]);
+    visibleTo.set(second.githubToken, [github]);
+    await installed(github, first.githubId);
+
+    const back = await setupWith(second.cookie, github.id);
+    expect(await current(back.cookie)).toMatchObject({ role: "member", ownerPending: false });
   });
 
   test("an installation the token cannot see is not found, and makes nothing", async () => {
