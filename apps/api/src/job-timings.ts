@@ -109,6 +109,24 @@ export function runnerClass(labels: string[], runnerGroupName?: string | null): 
 }
 
 /**
+ * The runner added from GitHub (Runners page) that took a job, by the runner's name, so its jobs
+ * show under it even when they asked for it by hand (`runs-on: self-hosted`) rather than through a
+ * route. Runner names are unique in an org, and a repo-level runner only takes its own repo's jobs.
+ */
+function addedRunner(
+  installationId: number,
+  repositoryId: number,
+  runnerName: string | null,
+  runnerGroupName: string | null | undefined,
+) {
+  if (!runnerName || runnerGroupName === GITHUB_HOSTED_GROUP) return null;
+  const m = schema.machine;
+  return sql`(select ${m.id} from ${m} where ${m.installationId} = ${installationId}
+    and ${m.source} = 'github' and ${m.name} = ${runnerName} and ${m.revokedAt} is null
+    and (${m.githubRepositoryId} is null or ${m.githubRepositoryId} = ${repositoryId}) limit 1)`;
+}
+
+/**
  * Stores a job's timing, for every job in a connected repo, whoever's runner it asked for. Each
  * delivery carries the job's whole state, so `queued` writes the row, `in_progress` adds its runner
  * and start, and `completed` its finish and conclusion. A finished row never changes again, so an
@@ -136,6 +154,7 @@ export async function recordJobTiming(db: Db, message: WorkflowJobMessage): Prom
       conclusion: finished ? job.conclusion : null,
       runnerName: job.runnerName,
       runnerGroupName: job.runnerGroupName ?? null,
+      machineId: addedRunner(installationId, repository.id, job.runnerName, job.runnerGroupName),
       queuedAt: parseDate(job.createdAt),
       startedAt: parseDate(job.startedAt),
       completedAt,
@@ -146,6 +165,7 @@ export async function recordJobTiming(db: Db, message: WorkflowJobMessage): Prom
         conclusion: sql`excluded.conclusion`,
         runnerName: sql`coalesce(excluded.runner_name, ${table.runnerName})`,
         runnerGroupName: sql`coalesce(excluded.runner_group_name, ${table.runnerGroupName})`,
+        machineId: sql`coalesce(${table.machineId}, excluded.machine_id)`,
         queuedAt: sql`coalesce(${table.queuedAt}, excluded.queued_at)`,
         startedAt: sql`coalesce(excluded.started_at, ${table.startedAt})`,
         completedAt: sql`excluded.completed_at`,

@@ -16,6 +16,19 @@ import { recordJobTiming } from "./job-timings.ts";
 import { setJobMachine } from "./jobs.ts";
 import * as testing from "./testing.ts";
 
+describe("environmentFor details", () => {
+  test.each([
+    [["self-hosted"], "Default", ""],
+    [["self-hosted"], null, ""],
+    [["self-hosted"], "Mac minis", "Runner group: Mac minis"],
+    [["gpu-runner"], "Default", "Self-hosted"],
+    [["gpu-runner"], null, "Unrecognized label"],
+    [["ubuntu-latest"], "GitHub Actions", "GitHub-hosted"],
+  ])("%j in %s reads %j", (labels, group, detail) => {
+    expect(environmentFor(labels, group, null).detail).toBe(detail);
+  });
+});
+
 describe("environmentFor", () => {
   test.each([
     [["ubuntu-latest"], "GitHub Actions", null, "github:linux-2-core", "ubuntu-latest"],
@@ -427,6 +440,65 @@ describe("job times report", () => {
       stranger,
     );
     expect(((await theirs.json()) as { runs: unknown[] }).runs).toHaveLength(0);
+  });
+
+  test("puts a job on the added GitHub runner that took it", async () => {
+    const { installationId, workspaceId } = await connectedWorkspace();
+    const db = createDb(env.DB);
+    const repositoryId = installationId * 10;
+    await db.insert(schema.machine).values([
+      // A repo-level runner on this repo, and one with the same name on another repo.
+      {
+        id: `gh-${installationId}`,
+        workspaceId,
+        name: "mighty-m1",
+        source: "github",
+        installationId,
+        githubRepositoryId: repositoryId,
+      },
+      {
+        id: `gh-other-${installationId}`,
+        workspaceId,
+        name: "elsewhere",
+        source: "github",
+        installationId,
+        githubRepositoryId: repositoryId + 1,
+      },
+    ]);
+    const record = async (runnerName: string, runnerGroupName: string) => {
+      jobIds += 1;
+      const now = Date.now();
+      await recordJobTiming(db, {
+        event: "workflow_job",
+        deliveryId: `added-${jobIds}`,
+        action: "completed",
+        installationId,
+        receivedAt: new Date(now).toISOString(),
+        repository: { id: repositoryId, fullName: "acme/app" },
+        job: {
+          id: jobIds,
+          runId: jobIds,
+          runAttempt: 1,
+          name: "lint",
+          workflowName: "CI",
+          status: "completed",
+          conclusion: "success",
+          labels: ["self-hosted", "macOS"],
+          headBranch: "main",
+          headSha: "abc",
+          runnerName,
+          runnerGroupName,
+          createdAt: new Date(now - 20_000).toISOString(),
+          startedAt: new Date(now - 15_000).toISOString(),
+          completedAt: new Date(now).toISOString(),
+        },
+      });
+      const row = await db.query.jobTiming.findFirst({ where: (t, { eq }) => eq(t.id, jobIds) });
+      return row?.machineId ?? null;
+    };
+    expect(await record("mighty-m1", "Default")).toBe(`gh-${installationId}`);
+    expect(await record("elsewhere", "Default")).toBeNull();
+    expect(await record("someone-else", "Default")).toBeNull();
   });
 
   test("records the queued time and the routed machine", async () => {

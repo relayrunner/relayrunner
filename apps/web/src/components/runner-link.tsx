@@ -68,7 +68,7 @@ export function RunnerLink({
         {runner.key.startsWith(MACHINE) ? (
           <MachineCardBody id={runner.key.slice(MACHINE.length)} specsShown={specsShown} />
         ) : runner.key.startsWith(SELF_HOSTED) ? (
-          <SelfHostedBody runner={runner} specsShown={specsShown} />
+          <SelfHostedBody />
         ) : (
           <CloudBody runner={runner} provider={provider} specsShown={specsShown} />
         )}
@@ -167,15 +167,13 @@ function MachineCardBody({ id, specsShown }: { id: string; specsShown: boolean }
   );
 }
 
-// Jobs on self-hosted runners RelayRunner didn't connect, by runner group.
-function SelfHostedBody({ runner, specsShown }: { runner: RunnerRef; specsShown: boolean }) {
-  const group =
-    !specsShown && runner.detail ? `the ${runner.detail} runner group` : "a runner group";
+// Jobs on self-hosted runners nobody added, by runner group (the row says which).
+function SelfHostedBody() {
   return (
     <>
       <p className="text-xs text-muted-foreground">
-        A self-hosted runner GitHub picked from {group}. Add it from GitHub on the Runners page to
-        see its specs here.
+        A self-hosted runner you haven't added. Add it from GitHub on the Runners page to see its
+        jobs and specs under its own name.
       </p>
       <Footer>
         <Link to="/runners" className="hover:underline">

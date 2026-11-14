@@ -54,6 +54,11 @@ function sized(env: Environment, provider: string, label = env.label): Environme
 
 const MACHINE = "machine:";
 
+// A runner group as GitHub shows it under a runner, or nothing for Default: repo-level runners have
+// no group, and GitHub reports them as Default.
+const groupDetail = (group: string) =>
+  group.toLowerCase() === "default" ? "" : `Runner group: ${group}`;
+
 /**
  * The runner environment a job ran on. Derived when read, like runnerClass, so changing the rules
  * needs no backfill: the window is only a few weeks long.
@@ -86,7 +91,11 @@ export function environmentFor(
     lower.includes(RELAYRUNNER_LABEL) ||
     routeIdFromLabels(labels)
   )
-    return { key: `self-hosted:${group.toLowerCase()}`, label: "Self-hosted", detail: group };
+    return {
+      key: `self-hosted:${group.toLowerCase()}`,
+      label: "Self-hosted",
+      detail: groupDetail(group),
+    };
   if (lower.some(isGitHubHostedLabel) || runnerGroupName === GITHUB_HOSTED_GROUP) {
     const cls = runnerClass(labels, runnerGroupName);
     if (cls !== "other" && cls !== "self-hosted")
@@ -103,7 +112,14 @@ export function environmentFor(
   // its custom labels.
   const label = lower[0] ?? "unknown";
   return sized(
-    { key: `other:${label}`, label, detail: runnerGroupName ?? "Unrecognized label" },
+    {
+      key: `other:${label}`,
+      label,
+      // A runner in an org group is self-hosted, even when nothing knows its labels.
+      detail: runnerGroupName
+        ? groupDetail(runnerGroupName) || "Self-hosted"
+        : "Unrecognized label",
+    },
     "other",
   );
 }

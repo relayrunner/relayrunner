@@ -232,7 +232,7 @@ export function sampleJobTimes(days: number): JobTimesReport {
       {
         key: "self-hosted:default",
         label: "Self-hosted",
-        detail: "Default",
+        detail: "",
         stat: stat(88, 50, 260),
         missed: 0,
         versus: null,
