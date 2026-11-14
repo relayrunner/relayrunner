@@ -327,13 +327,15 @@ export const RAN_ON_RUNNER = sql`${table.startedAt} is not null and ${table.runn
 const RAN = sql`${RAN_ON_RUNNER} and not ${PICK}`;
 
 export const OK = sql`coalesce(${table.conclusion} = 'success', 0)`;
+/** A job that failed or timed out. Cancelled jobs are neither this nor OK. */
+export const FAILED = sql`coalesce(${table.conclusion} in ('failure', 'timed_out'), 0)`;
 
 // How long a job waits with no runner before it counts as missed. Shorter waits are left out, since
 // a concurrency group or a person cancels those.
 export const MISSED_AFTER_MS = 10 * 60_000;
 
 /** A job no runner took: it finished (GitHub gave up, or it was cancelled) after a long wait. */
-const NOT_PICKED_UP = sql`(${table.startedAt} is null or ${table.runnerName} is null)
+export const NOT_PICKED_UP = sql`(${table.startedAt} is null or ${table.runnerName} is null)
   and coalesce(${table.conclusion}, '') <> 'skipped' and not ${PICK}
   and ${table.completedAt} - ${table.queuedAt} >= ${MISSED_AFTER_MS}`;
 
@@ -595,7 +597,7 @@ export interface JobRun {
   completedAt: number;
 }
 
-const JOB_RUN_COLUMNS = {
+export const JOB_RUN_COLUMNS = {
   id: table.id,
   runId: table.runId,
   runAttempt: table.runAttempt,
@@ -610,7 +612,7 @@ const JOB_RUN_COLUMNS = {
 
 type JobRunRow = Pick<typeof table.$inferSelect, keyof typeof JOB_RUN_COLUMNS>;
 
-function jobRunOf(row: JobRunRow, env?: Environment): JobRun | null {
+export function jobRunOf(row: JobRunRow, env?: Environment): JobRun | null {
   if (!row.startedAt || !row.completedAt) return null;
   return {
     id: row.id,

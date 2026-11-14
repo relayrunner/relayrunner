@@ -4,6 +4,7 @@ import { ChevronRightIcon } from "lucide-react";
 import { type ReactNode, useEffect, useMemo, useState } from "react";
 import { providerOf, providerStyle, RunnerMark } from "@/components/providers";
 import { RangePicker } from "@/components/range-picker";
+import { withRunner } from "@/components/runner-panel-link";
 import { Facts, LINK, Links } from "@/components/run-sheet";
 import { StatusIcon } from "@/components/status-icon";
 import { Sheet, SheetContent, SheetDescription, SheetTitle } from "@/components/ui/sheet";
@@ -11,14 +12,8 @@ import { timeAgo } from "@/lib/activity";
 import { authDisabled } from "@/lib/auth-client";
 import { clock, plural } from "@/lib/job-times";
 import { cachedMachine, type Machine, workspaceMachine } from "@/lib/machines";
-import {
-  everyDay,
-  getRunnerReport,
-  onlineSpans,
-  type RunnerDay,
-  type RunnerReport,
-  sampleRunnerReport,
-} from "@/lib/runner-report";
+import { everyDay, onlineSpans, type RunnerDay } from "@/lib/runner-days";
+import { getRunnerReport, type RunnerReport, sampleRunnerReport } from "@/lib/runner-report";
 import { isLongWait, runParam } from "@/lib/runs";
 import { minutes } from "@/lib/usage";
 import { cn, count, percent } from "@/lib/utils";
@@ -51,11 +46,7 @@ function loadReport(key: string, days: number) {
  */
 export function RunnerSheet({ runnerKey }: { runnerKey: string }) {
   const navigate = useNavigate();
-  const close = () =>
-    void navigate({
-      to: ".",
-      search: ((prev: Record<string, unknown>) => ({ ...prev, runner: undefined })) as never,
-    });
+  const close = () => void navigate({ to: ".", search: withRunner() });
   const [days, setDays] = useState(14);
   const [report, setReport] = useState<RunnerReport | null>(null);
   const [failed, setFailed] = useState(false);
@@ -70,8 +61,6 @@ export function RunnerSheet({ runnerKey }: { runnerKey: string }) {
     };
   }, [runnerKey, days]);
   const machine = useMachine(runnerKey);
-  // The last answer stays up while another range loads, unless it was another runner's.
-  const shown = report?.environment.key === runnerKey ? report : null;
 
   return (
     <Sheet open onOpenChange={(open) => !open && close()}>
@@ -84,15 +73,15 @@ export function RunnerSheet({ runnerKey }: { runnerKey: string }) {
                 Couldn't load this runner. Try again in a moment.
               </p>
             </>
-          ) : !shown ? (
+          ) : !report ? (
             <Placeholder />
           ) : (
             <RunnerView
-              report={shown}
+              report={report}
               machine={machine}
               days={days}
               onDays={setDays}
-              loading={shown.days !== days}
+              loading={report.days !== days}
             />
           )}
         </div>
@@ -106,7 +95,7 @@ function useMachine(key: string) {
   const id = key.startsWith(MACHINE) ? key.slice(MACHINE.length) : null;
   const [machine, setMachine] = useState<Machine | null>(() => (id && cachedMachine(id)) || null);
   useEffect(() => {
-    if (!id) return setMachine(null);
+    if (!id) return;
     let live = true;
     workspaceMachine(id)
       .then((found) => live && setMachine(found))
@@ -135,6 +124,7 @@ function RunnerView({
   const provider = providerOf(env);
   const detail = [env.detail, sizeText(env.size)].filter(Boolean).join(" · ");
   const sent = stat.runs + missed;
+  const byDay = useMemo(() => everyDay(report), [report]);
 
   return (
     <>
@@ -171,8 +161,8 @@ function RunnerView({
           ]}
         />
 
-        {report.connections && <Uptime report={report} machine={machine} />}
-        <Throughput report={report} />
+        {report.connections && <Uptime report={report} since={byDay[0]!.day} machine={machine} />}
+        <Throughput report={report} days={byDay} />
         <RecentJobs report={report} />
       </div>
 
@@ -221,10 +211,17 @@ const dayLabel = (day: number) =>
   new Date(day).toLocaleDateString(undefined, { month: "short", day: "numeric" });
 
 /** A strip across the window, filled where the machine was online. */
-function Uptime({ report, machine }: { report: RunnerReport; machine: Machine | null }) {
+// From `since`, the first day the jobs chart shows, so the two line up.
+function Uptime({
+  report,
+  since,
+  machine,
+}: {
+  report: RunnerReport;
+  since: number;
+  machine: Machine | null;
+}) {
   const now = Date.now();
-  // From the first day the jobs chart shows, so the two line up.
-  const since = everyDay(report, now)[0]!.day;
   const spans = onlineSpans(
     report.connections ?? [],
     {
@@ -237,14 +234,12 @@ function Uptime({ report, machine }: { report: RunnerReport; machine: Machine | 
   );
   const onlineMs = spans.reduce((sum, [from, to]) => sum + (to - from), 0);
   const span = now - since;
+  const share = percent(onlineMs / span);
   return (
-    <Section
-      title="Online"
-      aside={`${percent(onlineMs / span)} of the last ${plural(report.days, "day")}`}
-    >
+    <Section title="Online" aside={`${share} of the last ${plural(report.days, "day")}`}>
       <div
         role="img"
-        aria-label={`Online ${percent(onlineMs / span)} of the time`}
+        aria-label={`Online ${share} of the time`}
         className="relative h-3 overflow-hidden rounded-sm bg-secondary"
       >
         {spans.map(([from, to]) => (
@@ -276,15 +271,15 @@ function Axis({ from }: { from: number }) {
 }
 
 /** Jobs per day as bars, failures stacked on top, with the time spent running them. */
-function Throughput({ report }: { report: RunnerReport }) {
-  const days = useMemo(() => everyDay(report), [report]);
+function Throughput({ report, days }: { report: RunnerReport; days: RunnerDay[] }) {
+  const busyMs = days.reduce((sum, day) => sum + day.busyMs, 0);
   const most = Math.max(1, ...days.map((day) => day.jobs));
   const busiest = days.reduce<RunnerDay | null>(
     (best, day) => (day.jobs > (best?.jobs ?? 0) ? day : best),
     null,
   );
   return (
-    <Section title="Jobs per day" aside={`${minutes(report.busyMs / 60_000)} min running jobs`}>
+    <Section title="Jobs per day" aside={`${minutes(busyMs / 60_000)} min running jobs`}>
       {report.stat.runs === 0 ? (
         <p className="text-sm text-muted-foreground">
           No jobs in the last {plural(report.days, "day")}.

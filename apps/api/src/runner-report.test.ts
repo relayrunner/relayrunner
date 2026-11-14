@@ -97,7 +97,7 @@ describe("runner report", () => {
     const result = await report(cookie, "github:linux-2-core");
     expect(result.environment).toMatchObject({ key: "github:linux-2-core", label: "Linux 2-core" });
     expect(result.stat).toMatchObject({ runs: 3, successes: 2, medianMs: 90_000 });
-    expect(result.busyMs).toBe(210_000);
+    expect(result.daily.reduce((sum, day) => sum + day.busyMs, 0)).toBe(210_000);
     expect(result.daily.reduce((sum, day) => sum + day.jobs, 0)).toBe(3);
     expect(result.daily.reduce((sum, day) => sum + day.failures, 0)).toBe(1);
     expect(result.recent.map((job) => (job.completedAt - job.startedAt) / 1000)).toEqual([

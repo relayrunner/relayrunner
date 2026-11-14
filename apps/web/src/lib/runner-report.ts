@@ -1,16 +1,9 @@
 import { api } from "@/lib/api";
-import { DAY_MS, type Environment, type JobRun, sampleJobTimes, type Stat } from "@/lib/job-times";
+import { DAY_MS, type Environment, sampleJobTimes, type Stat } from "@/lib/job-times";
 import { midnight, type RunnerDay } from "./runner-days.ts";
+import type { HistoryJob } from "./runs.ts";
 
-export type { RunnerDay };
-export { everyDay, onlineSpans } from "./runner-days.ts";
-
-export type RunnerJob = JobRun & {
-  repositoryId: number;
-  repository: string;
-  workflow: string | null;
-  name: string;
-};
+export type RunnerJob = Omit<HistoryJob, "usage">;
 
 /** One runner over a window (GET /api/job-times/runner), for its detail panel. */
 export type RunnerReport = {
@@ -19,7 +12,6 @@ export type RunnerReport = {
   stat: Stat;
   /** Jobs sent here that no runner picked up within 10 minutes. */
   missed: number;
-  busyMs: number;
   /** Days with jobs, oldest first, cut at the reader's midnight. */
   daily: RunnerDay[];
   /** Newest first. */
@@ -101,7 +93,6 @@ export function sampleRunnerReport(key: string, days: number): RunnerReport {
     environment,
     stat,
     missed,
-    busyMs: daily.reduce((sum, day) => sum + day.busyMs, 0),
     daily,
     recent,
     connections,

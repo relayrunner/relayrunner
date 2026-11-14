@@ -34,6 +34,7 @@ import {
   DEFAULT_DAYS,
   emptyBucket,
   type Environment,
+  FAILED,
   environmentFor,
   mergeInto,
   OK,
@@ -131,7 +132,6 @@ interface Group extends Sums {
   bucket: Bucket;
 }
 
-const FAILED = sql`coalesce(${table.conclusion} in ('failure', 'timed_out'), 0)`;
 const PUBLIC = sql`coalesce(${repo.private} = 0, 0)`;
 
 // Machines are never a provider, so their jobs are left out in SQL.

@@ -14,11 +14,15 @@ import {
   emptyBucket,
   type Environment,
   environmentFor,
-  type JobRun,
+  FAILED,
+  type HistoryJob,
+  JOB_RUN_COLUMNS,
+  jobRunOf,
   machineWindowWhere,
   mergeInto,
   missedQuery,
   nameMachines,
+  NOT_PICKED_UP,
   OK,
   SAMPLES,
   type Stat,
@@ -32,7 +36,7 @@ const table = schema.jobTiming;
 const MACHINE = "machine:";
 
 /** Most recent jobs the panel lists. */
-export const RECENT_LIMIT = 25;
+const RECENT_LIMIT = 25;
 
 export interface RunnerDay {
   /** Epoch ms of the day's local midnight, in the reader's UTC offset. */
@@ -45,12 +49,7 @@ export interface RunnerDay {
 }
 
 /** A job the runner ran, with what it belongs to, for its row in the panel. */
-export interface RunnerJob extends JobRun {
-  repositoryId: number;
-  repository: string;
-  workflow: string | null;
-  name: string;
-}
+export type RunnerJob = Omit<HistoryJob, "usage">;
 
 export interface RunnerReport {
   days: number;
@@ -58,7 +57,6 @@ export interface RunnerReport {
   stat: Stat;
   /** Jobs sent here that no runner picked up (see missedQuery). */
   missed: number;
-  busyMs: number;
   /** Days with jobs, oldest first. Days without any are left out. */
   daily: RunnerDay[];
   /** Newest first, at most RECENT_LIMIT. */
@@ -69,8 +67,6 @@ export interface RunnerReport {
    */
   connections: { at: number; online: boolean }[] | null;
 }
-
-const FAILED = sql`coalesce(${table.conclusion} in ('failure', 'timed_out'), 0)`;
 
 interface DayRow {
   labels: string;
@@ -113,24 +109,33 @@ export async function runnerReport(
   const day = sql`cast((${table.completedAt} + ${offsetMs}) / ${DAY_MS} as integer)`;
   const groupBy = machineId ? sql`${day}` : sql`${table.labels}, ${table.runnerGroupName}, ${day}`;
 
-  const [rows, missedRows, connections] = await Promise.all([
+  // A machine's jobs are found by its id; any other runner's by the label sets that map to it,
+  // known once the day rows are in.
+  const [rows, missedRows, connections, machineRecent] = await Promise.all([
     db.all<DayRow>(sql`
       select min(${table.labels}) as labels, min(${table.runnerGroupName}) as runner_group_name,
         ${day} as day, count(*) as runs, sum(${OK}) as successes, sum(${FAILED}) as failures,
         sum(${table.completedAt} - ${table.startedAt}) as busy_ms, ${SAMPLES} as samples
       from ${table} where ${scope}
       group by ${groupBy}`),
-    db.all<{
-      labels: string;
-      runner_group_name: string | null;
-      machine_id: string | null;
-      missed: number;
-    }>(missedQuery(workspaceId, since)),
+    machineId
+      ? machineMissed(db, workspaceId, machineId, since)
+      : db.all<MissedRow>(missedQuery(workspaceId, since)),
     machineId ? machineConnections(db, workspaceId, machineId, since) : null,
+    machineId ? runnerJobs(db, scope, key) : null,
   ]);
 
-  const envOf = (labels: string, group: string | null, machine: string | null) =>
-    environmentFor(JSON.parse(labels) as string[], group, machine);
+  // Label sets repeat across days, so each is worked out once.
+  const envs = new Map<string, Environment>();
+  const envOf = (labels: string, group: string | null, machine: string | null) => {
+    const combo = `${comboOf(labels, group)}\u001f${machine ?? ""}`;
+    let env = envs.get(combo);
+    if (!env) {
+      env = environmentFor(JSON.parse(labels) as string[], group, machine);
+      envs.set(combo, env);
+    }
+    return env;
+  };
   let environment: Environment | null = machineId ? { key, label: "Machine", detail: "" } : null;
   const combos = new Set<string>();
   const bucket = emptyBucket();
@@ -153,68 +158,72 @@ export async function runnerReport(
 
   let missed = 0;
   for (const row of missedRows) {
-    const env = envOf(row.labels, row.runner_group_name, row.machine_id);
-    if (env.key !== key) continue;
-    environment ??= env;
+    if (!machineId) {
+      const env = envOf(row.labels, row.runner_group_name, row.machine_id);
+      if (env.key !== key) continue;
+      environment ??= env;
+    }
     missed += Number(row.missed);
   }
 
-  const recent =
-    machineId || combos.size
-      ? await recentJobs(
-          db,
-          machineId ? scope : sql`${scope} and ${COMBO} in (${sql.join([...combos], sql`, `)})`,
-          key,
-        )
-      : [];
+  let recent = machineRecent ?? [];
+  if (combos.size) {
+    const sets = sql.join([...combos], sql`, `);
+    recent = await runnerJobs(db, sql`${scope} and ${COMBO} in (${sets})`, key);
+  }
 
   environment ??= { key, label: key.slice(key.indexOf(":") + 1) || key, detail: "" };
   if (machineId) await nameMachines(db, workspaceId, new Map([[key, environment]]));
-  const byDay = [...daily.values()].sort((a, b) => a.day - b.day);
   return {
     days,
     environment,
     stat: statOf(bucket),
     missed,
-    busyMs: byDay.reduce((sum, each) => sum + each.busyMs, 0),
-    daily: byDay,
+    daily: [...daily.values()].sort((a, b) => a.day - b.day),
     recent,
     connections,
   };
 }
 
-async function recentJobs(db: Db, where: SQL, key: string): Promise<RunnerJob[]> {
+interface MissedRow {
+  labels: string;
+  runner_group_name: string | null;
+  machine_id: string | null;
+  missed: number;
+}
+
+// A machine's missed jobs, from its own range of job_timing_machine_idx.
+function machineMissed(db: Db, workspaceId: string, machineId: string, since: Date) {
+  return db.all<MissedRow>(sql`
+    select null as labels, null as runner_group_name, ${table.machineId} as machine_id,
+      count(*) as missed
+    from ${table}
+    where ${table.machineId} = ${machineId}
+      and ${table.installationId} = (
+        select ${schema.workspace.installationId} from ${schema.workspace}
+        where ${schema.workspace.id} = ${workspaceId})
+      and ${table.completedAt} >= ${since.getTime()} and ${NOT_PICKED_UP}`);
+}
+
+async function runnerJobs(db: Db, where: SQL, key: string): Promise<RunnerJob[]> {
   const rows = await db
     .select({
-      id: table.id,
-      runId: table.runId,
-      runAttempt: table.runAttempt,
+      ...JOB_RUN_COLUMNS,
       repositoryId: table.repositoryId,
       repository: table.repositoryFullName,
       workflow: table.workflowName,
       name: table.name,
-      conclusion: table.conclusion,
-      queuedAt: table.queuedAt,
-      startedAt: table.startedAt,
-      completedAt: table.completedAt,
     })
     .from(table)
     .where(where)
     .orderBy(sql`${table.completedAt} desc`)
     .limit(RECENT_LIMIT);
-  return rows.flatMap((row) =>
-    row.startedAt && row.completedAt
-      ? [
-          {
-            ...row,
-            environment: key,
-            queuedAt: row.queuedAt?.getTime() ?? null,
-            startedAt: row.startedAt.getTime(),
-            completedAt: row.completedAt.getTime(),
-          },
-        ]
-      : [],
-  );
+  return rows.flatMap((row) => {
+    const run = jobRunOf(row, { key, label: "", detail: "" });
+    if (!run) return [];
+    const { repositoryId, repository, workflow, name } = row;
+    return [{ ...run, repositoryId, repository, workflow, name }];
+  });
 }
 
 const events = schema.activityEvent;
