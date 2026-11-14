@@ -144,7 +144,7 @@ function SignalCard({ signal }: { signal: Signal }) {
             <TableHead>{copy.subject}</TableHead>
             <TableHead className="w-36 text-right">{copy.count}</TableHead>
             <TableHead className="w-36 text-right">{copy.minutes}</TableHead>
-            <TableHead className="w-28 text-right">Spend</TableHead>
+            <TableHead className="w-28 text-right">{copy.spend === false ? "" : "Spend"}</TableHead>
           </TableRow>
         </TableHeader>
         <TableBody>
@@ -159,7 +159,9 @@ function SignalCard({ signal }: { signal: Signal }) {
               <TableCell className="text-right font-medium tabular-nums">
                 <Count value={row.minutes} />
               </TableCell>
-              <TableCell className="text-right tabular-nums">{money(row.cost)}</TableCell>
+              <TableCell className="text-right tabular-nums">
+                {copy.spend === false ? "" : money(row.cost)}
+              </TableCell>
             </TableRow>
           ))}
         </TableBody>

@@ -15,7 +15,7 @@ import type { PriceBook } from "@relayrunner/providers";
 import { type Db, createDb, schema } from "./db/index.ts";
 import type { Env } from "./env.ts";
 import { enqueueInstallationTasks } from "./installation-tasks.ts";
-import { RAN_ON_RUNNER } from "./job-times.ts";
+import { PICK, RAN_ON_RUNNER } from "./job-times.ts";
 import {
   BILLED_MINUTES,
   cents,
@@ -28,6 +28,7 @@ import {
   utcDay,
 } from "./job-timings.ts";
 import { loadPriceBook } from "./prices.ts";
+import { ROUTE_LABEL_PREFIX } from "./labels.ts";
 
 export type SignalArea = "speed" | "cost" | "complexity";
 
@@ -39,6 +40,12 @@ export const SIGNALS = {
   "same-commit": "cost",
   // Jobs under a minute on a billed runner, which pay for the rest of the minute.
   "short-jobs": "cost",
+  // Jobs that waited over a minute for a runner to take them, by runs-on labels.
+  "queue-waits": "speed",
+  // A job that ran alongside others in its run and kept the run going after they all finished.
+  "slowest-job": "speed",
+  // Jobs that failed and then passed when the run was tried again.
+  "flaky-jobs": "speed",
 } as const satisfies Record<string, SignalArea>;
 
 export type SignalId = keyof typeof SIGNALS;
@@ -49,6 +56,10 @@ const TOTAL = "total";
 const LATE_MS = 3 * 60 * 60_000;
 // Only installations that finished a job this recently get a run.
 const ACTIVE_MS = 2 * 60 * 60_000;
+// A job waited for a runner once it was queued this long before one took it.
+const QUEUE_WAIT_MS = 60_000;
+// A run waited on its slowest job once that job ran this long after every other job finished.
+const SLOWEST_JOB_MS = 60_000;
 // A signal shows once it covers this many minutes and this share of all the range's job minutes.
 const MIN_MINUTES = 30;
 const MIN_SHARE = 0.01;
@@ -117,7 +128,13 @@ export async function rollUpSignals(db: Db, installationId: number, now = Date.n
   const privacy: Privacy = new Map(repos.map((repo) => [repo.id, repo.private]));
   const rows = new Rows(installationId);
   const scope = { db, book, rows, privacy, installationId, since };
-  await Promise.all([addJobs(scope), addSupersededRuns(scope), addSameCommitRuns(scope)]);
+  await Promise.all([
+    addJobs(scope),
+    addSupersededRuns(scope),
+    addSameCommitRuns(scope),
+    addSlowestJobs(scope),
+    addFlakyJobs(scope),
+  ]);
 
   const values = rows.values();
   // A statement binds at most 100 values; a signal_day row has 10.
@@ -151,14 +168,19 @@ function rate(
   return rateFor(book, runnerClass(labels, group), privacy.get(repositoryId) ?? null, at);
 }
 
-// Every counted job (the usage report's filter) into the totals, and the short ones on a billed
-// runner into short-jobs, with the unused part of their last minute as its time and cost.
+// Every counted job (the usage report's filter) into the totals; the short ones on a billed runner
+// into short-jobs, with the unused part of their last minute as its time and cost; and the ones
+// that waited for a runner into queue-waits, with the wait as its time. Picks (runs-on:
+// relayrunner) only wait for RelayRunner, so they don't count as waiting.
 async function addJobs(scope: Scope) {
   const { db, rows, installationId, since } = scope;
   const isShort = sql`(${DURATION_MS} < ${SHORT_JOB_SECONDS * 1000})`;
-  const found = await db
+  const waitMs = sql`(${timing.startedAt} - ${timing.queuedAt})`;
+  const waited = sql`(${waitMs} >= ${QUEUE_WAIT_MS} and not ${PICK})`;
+  const q = db
     .select({
-      day: sql<number>`(${timing.completedAt} / ${DAY_MS}) * ${DAY_MS}`,
+      // Whole UTC days: a bound number divides as a real, so cast it back.
+      day: sql<number>`cast(${timing.completedAt} / ${DAY_MS} as integer) * ${DAY_MS}`,
       repositoryId: timing.repositoryId,
       repository: sql<string>`max(${timing.repositoryFullName})`,
       workflow: timing.workflowName,
@@ -173,6 +195,8 @@ async function addJobs(scope: Scope) {
       shortJobs: sql<number>`sum(${isShort})`,
       shortRunMs: sql<number>`sum(case when ${isShort} then ${DURATION_MS} else 0 end)`,
       shortBilled: sql<number>`sum(case when ${isShort} then ${BILLED_MINUTES} else 0 end)`,
+      waitedJobs: sql<number>`coalesce(sum(${waited}), 0)`,
+      waitedMs: sql<number>`sum(case when ${waited} then ${waitMs} else 0 end)`,
     })
     .from(timing)
     .leftJoin(run, and(eq(run.id, timing.runId), eq(run.runAttempt, timing.runAttempt)))
@@ -191,11 +215,20 @@ async function addJobs(scope: Scope) {
       timing.labels,
       timing.runnerGroupName,
     );
+  const found = await q;
   for (const row of found) {
     const at = Number(row.day);
     const perMinute = rate(scope, row.labels, row.runnerGroupName, row.repositoryId, at);
     const where = { day: at, repositoryId: row.repositoryId, repository: row.repository };
     rows.add({ ...where, signal: TOTAL, subject: "" }, row.jobs, row.runMs, row.billed * perMinute);
+    if (row.waitedJobs) {
+      rows.add(
+        { ...where, signal: "queue-waits", subject: runnerSubject(row.labels) },
+        row.waitedJobs,
+        row.waitedMs,
+        0,
+      );
+    }
     if (!perMinute || !row.shortJobs) continue;
     const unusedMs = row.shortBilled * 60_000 - row.shortRunMs;
     rows.add(
@@ -308,6 +341,121 @@ function addRunJobs(scope: Scope, signal: SignalId, found: RunJobRow[], billed: 
       first ? 1 : 0,
       job.runMs,
       (billed ? Math.max(1, Math.ceil(minutes)) : minutes) * perMinute,
+    );
+  }
+}
+
+// A job's runs-on labels as people wrote them: a routed job's rr-<route> label is left out.
+function runnerSubject(labels: string[]) {
+  const written = labels.filter((label) => !label.startsWith(ROUTE_LABEL_PREFIX));
+  return written.length ? written.join(", ") : "Routed jobs";
+}
+
+type SlowestJobRow = {
+  repositoryId: number;
+  repository: string;
+  workflow: string | null;
+  job: string;
+  path: string | null;
+  completedAt: number;
+  aloneMs: number;
+};
+
+// Per run attempt, the job that finished last though it started before the next-to-last one
+// finished: the slow branch of jobs that ran side by side. The time is how long the run kept
+// going on that job alone. Jobs that wait for others (needs:) start after them, so they're left
+// out; so are picks, which finish first.
+async function addSlowestJobs(scope: Scope) {
+  const { db, installationId, since } = scope;
+  const found = await db.all<SlowestJobRow>(sql`
+    with ranked as (
+      select ${timing.repositoryId} as repositoryId, ${timing.repositoryFullName} as repository,
+        ${timing.workflowName} as workflow, ${timing.name} as job, ${timing.runId} as runId,
+        ${timing.runAttempt} as runAttempt, ${timing.startedAt} as startedAt,
+        ${timing.completedAt} as completedAt,
+        row_number() over latest as rank, lead(${timing.completedAt}) over latest as nextAt
+      from ${timing}
+      where ${timing.installationId} = ${installationId} and ${timing.completedAt} >= ${since}
+        and ${RAN_ON_RUNNER} and not ${PICK}
+      window latest as (
+        partition by ${timing.runId}, ${timing.runAttempt} order by ${timing.completedAt} desc
+      )
+    )
+    select k.repositoryId, k.repository, k.workflow, k.job, r.workflow_path as path,
+      k.completedAt, k.completedAt - k.nextAt as aloneMs
+    from ranked k
+    left join workflow_run r on r.id = k.runId and r.run_attempt = k.runAttempt
+    where k.rank = 1 and k.startedAt < k.nextAt and k.completedAt - k.nextAt >= ${SLOWEST_JOB_MS}`);
+  for (const job of found) {
+    scope.rows.add(
+      {
+        day: utcDay(job.completedAt),
+        signal: "slowest-job",
+        repositoryId: job.repositoryId,
+        repository: job.repository,
+        subject: `${job.workflow ?? "Workflow"} › ${job.job}`,
+        workflowPath: job.path,
+      },
+      1,
+      job.aloneMs,
+      0,
+    );
+  }
+}
+
+// Jobs that failed and passed on the run's next attempt, whether someone re-ran them or automatic
+// retries did. The time and cost are the failed attempt's. Matched here rather than joined in SQL:
+// job_timing has no index by run.
+async function addFlakyJobs(scope: Scope) {
+  const { db, installationId, since } = scope;
+  const found = await db
+    .select({
+      repositoryId: timing.repositoryId,
+      repository: timing.repositoryFullName,
+      workflow: timing.workflowName,
+      job: timing.name,
+      path: run.workflowPath,
+      runId: timing.runId,
+      runAttempt: timing.runAttempt,
+      conclusion: timing.conclusion,
+      labels: timing.labels,
+      runnerGroupName: timing.runnerGroupName,
+      completedAt: timing.completedAt,
+      runMs: DURATION_MS,
+      billed: BILLED_MINUTES,
+    })
+    .from(timing)
+    .leftJoin(run, and(eq(run.id, timing.runId), eq(run.runAttempt, timing.runAttempt)))
+    .where(
+      and(
+        eq(timing.installationId, installationId),
+        gte(timing.completedAt, new Date(since)),
+        RAN_ON_RUNNER,
+        sql`(${timing.conclusion} = 'failure' or (${timing.conclusion} = 'success' and ${timing.runAttempt} > 1))`,
+      ),
+    );
+  const passed = new Set(
+    found
+      .filter((job) => job.conclusion === "success")
+      .map((job) => `${job.runId}:${job.runAttempt}:${job.job}`),
+  );
+  for (const job of found) {
+    if (job.conclusion !== "failure") continue;
+    if (!passed.has(`${job.runId}:${job.runAttempt + 1}:${job.job}`)) continue;
+    const at = utcDay(job.completedAt!.getTime());
+    const perMinute = rate(scope, job.labels, job.runnerGroupName, job.repositoryId, at);
+    scope.rows.add(
+      {
+        day: at,
+        signal: "flaky-jobs",
+        repositoryId: job.repositoryId,
+        repository: job.repository,
+        subject: `${job.workflow ?? "Workflow"} › ${job.job}`,
+        workflowPath: job.path,
+      },
+      1,
+      Number(job.runMs),
+      Number(job.billed) * perMinute,
     );
   }
 }

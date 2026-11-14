@@ -19,7 +19,7 @@ import {
   RunnerClient,
   decodeJitConfig,
 } from "../runner-protocol.ts";
-import { RELAYRUNNER_LABEL } from "../webhook-queue.ts";
+import { RELAYRUNNER_LABEL } from "../labels.ts";
 import { eq } from "drizzle-orm";
 import { createDb, schema } from "../db/index.ts";
 import { recordPick, type PickRecord } from "../route-decisions.ts";

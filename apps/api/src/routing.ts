@@ -9,6 +9,7 @@
 // 3. The `queued` webhook for that job claims the route (same repo, same run) and the machine's
 //    MachineLink mints an org JIT runner on the label and sends the machine a `run` message.
 
+import { ROUTE_LABEL_PREFIX } from "./labels.ts";
 import { type HostedProviderId, isProviderLabel } from "@relayrunner/providers";
 import {
   byRunnerKey,
@@ -31,7 +32,6 @@ import type { AccountUsage } from "./actions-billing.ts";
 import { minutesCheck, type MinutesSkip } from "./minutes-rule.ts";
 import { context, scalar } from "./pipeline-context.ts";
 
-export const ROUTE_LABEL_PREFIX = "rr-";
 // 12 lowercase hex characters.
 const ROUTE_LABEL = /^rr-([0-9a-f]{12})$/;
 

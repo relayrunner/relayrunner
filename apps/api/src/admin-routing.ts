@@ -11,7 +11,8 @@ import { and, eq, gte } from "drizzle-orm";
 import { type Db, schema } from "./db/index.ts";
 import { internalWorkspaceIds } from "./internal-workspaces.ts";
 import { testAccounts } from "./operator-pings.ts";
-import { ROUTE_LABEL_PREFIX, ROUTE_TTL_MS } from "./routing.ts";
+import { ROUTE_LABEL_PREFIX } from "./labels.ts";
+import { ROUTE_TTL_MS } from "./routing.ts";
 
 const HOUR_MS = 60 * 60 * 1000;
 

@@ -3,7 +3,13 @@ import { DOCS_URL } from "@/components/site-footer";
 import { api } from "@/lib/api";
 
 export type SignalArea = "speed" | "cost" | "complexity";
-export type SignalId = "no-concurrency" | "same-commit" | "short-jobs";
+export type SignalId =
+  | "no-concurrency"
+  | "same-commit"
+  | "short-jobs"
+  | "queue-waits"
+  | "slowest-job"
+  | "flaky-jobs";
 
 /** One repo and workflow (or workflow › job) a signal affects. Money is USD. */
 export type SignalRow = {
@@ -56,6 +62,8 @@ export const SIGNAL_COPY: Record<
     subject: string;
     count: string;
     minutes: string;
+    /** False when the signal costs time but no money, so its spend column stays empty. */
+    spend?: false;
     action?: Link;
     docs?: string;
   }
@@ -87,6 +95,35 @@ export const SIGNAL_COPY: Record<
     minutes: "Unused minutes",
     action: { label: "Set up optimized checks", href: `${DOCS_URL}/concepts/optimized-checks` },
   },
+  "queue-waits": {
+    title: "Waiting for a runner",
+    about:
+      "These jobs waited more than a minute after GitHub queued them before a runner took them. That happens when every runner with these labels is busy, or when the account hits its limit on jobs running at once. Adding a step to your runner order sends them somewhere free instead.",
+    subject: "Runner",
+    count: "Jobs waited",
+    minutes: "Minutes waited",
+    spend: false,
+    action: { label: "Edit the runner order", href: "/router" },
+    docs: "https://docs.github.com/en/actions/reference/limits",
+  },
+  "slowest-job": {
+    title: "One job sets the pace",
+    about:
+      "This job ran alongside the others in its run and was still going after they all finished, so the run waited on it alone. Minutes are that wait. Splitting the job or giving it a faster runner shortens every run.",
+    subject: "Job",
+    count: "Finished last",
+    minutes: "Minutes alone",
+    spend: false,
+    action: { label: "Compare runners", href: "/performance?view=jobs" },
+  },
+  "flaky-jobs": {
+    title: "Flaky jobs",
+    about:
+      "These jobs failed and then passed when the run was tried again, so the failure likely wasn't the change. Minutes and spend are the failed attempts.",
+    subject: "Job",
+    count: "Passed on re-run",
+    minutes: "Failed minutes",
+  },
 };
 
 // For local development without an API (auth disabled).
@@ -101,14 +138,14 @@ export function sampleSignals(days: number): SignalsReport {
   ) => ({
     repository,
     subject,
-    workflowPath: subject.includes("›") ? null : ".github/workflows/ci.yml",
+    workflowPath: /^[A-Z][^›]*$/.test(subject) ? ".github/workflows/ci.yml" : null,
     count: Math.round(count * scale),
     minutes: Math.round(minutes * scale),
     cost: cost * scale,
   });
-  const signal = (id: SignalId, rows: SignalRow[]): Signal => ({
+  const signal = (id: SignalId, rows: SignalRow[], area: SignalArea = "cost"): Signal => ({
     id,
-    area: "cost",
+    area,
     count: rows.reduce((total, r) => total + r.count, 0),
     minutes: rows.reduce((total, r) => total + r.minutes, 0),
     cost: rows.reduce((total, r) => total + r.cost, 0),
@@ -122,6 +159,20 @@ export function sampleSignals(days: number): SignalsReport {
       cost: 486 * scale,
     },
     signals: [
+      signal(
+        "queue-waits",
+        [row("acme/web", "ubuntu-latest", 412, 1300, 0), row("acme/web", "macos-14", 96, 540, 0)],
+        "speed",
+      ),
+      signal("slowest-job", [row("acme/web", "CI › e2e", 640, 920, 0)], "speed"),
+      signal(
+        "flaky-jobs",
+        [
+          row("acme/web", "CI › e2e", 34, 264, 11),
+          row("acme/api", "Test › integration", 12, 96, 4),
+        ],
+        "speed",
+      ),
       signal("no-concurrency", [
         row("acme/web", "CI", 143, 1116, 44),
         row("acme/api", "Test", 38, 240, 9),

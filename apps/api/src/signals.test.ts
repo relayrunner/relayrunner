@@ -130,6 +130,42 @@ async function shortJobs(
   }
 }
 
+// One finished job, `start` minutes ago for `minutes`, queued `waited` minutes before it started.
+async function job(
+  { installationId, repositoryId }: Ctx,
+  {
+    start,
+    minutes,
+    waited = 0,
+    ...rest
+  }: { start: number; minutes: number; waited?: number } & Partial<
+    typeof schema.jobTiming.$inferInsert
+  >,
+) {
+  ids += 1;
+  const startedAt = NOW - start * MINUTE;
+  await createDb(env.DB)
+    .insert(schema.jobTiming)
+    .values({
+      id: ids,
+      installationId,
+      repositoryId,
+      repositoryFullName: "acme/app",
+      runId: ids,
+      runAttempt: 1,
+      workflowName: "CI",
+      name: "test",
+      labels: ["ubuntu-latest"],
+      conclusion: "success",
+      runnerName: "runner",
+      runnerGroupName: "GitHub Actions",
+      queuedAt: new Date(startedAt - waited * MINUTE),
+      startedAt: new Date(startedAt),
+      completedAt: new Date(startedAt + minutes * MINUTE),
+      ...rest,
+    });
+}
+
 async function dayRows(installationId: number, signal: string) {
   return createDb(env.DB)
     .select()
@@ -224,6 +260,46 @@ describe("rollUpSignals", () => {
     await rollUpSignals(createDb(env.DB), free.installationId);
     expect(await dayRows(free.installationId, "short-jobs")).toEqual([]);
     expect(sum(await dayRows(free.installationId, "total")).count).toBe(4);
+  });
+
+  test("counts jobs that waited over a minute for a runner, picks left out", async () => {
+    const ctx = await connectedWorkspace();
+    await job(ctx, { start: 30, minutes: 2, waited: 5 });
+    await job(ctx, { start: 20, minutes: 2, waited: 0.5 });
+    await job(ctx, { start: 10, minutes: 1, waited: 8, labels: ["relayrunner"] });
+    await rollUpSignals(createDb(env.DB), ctx.installationId);
+    const rows = await dayRows(ctx.installationId, "queue-waits");
+    expect(sum(rows)).toEqual({ count: 1, minutes: 5 });
+    expect(rows[0]).toMatchObject({ subject: "ubuntu-latest", cost: 0 });
+    // Summed per whole UTC day.
+    expect(rows[0]!.day.getTime() % (24 * 60 * MINUTE)).toBe(0);
+  });
+
+  test("counts the time a run kept going on one job after the jobs beside it finished", async () => {
+    const ctx = await connectedWorkspace();
+    // Side by side: e2e runs 6 minutes past lint.
+    await job(ctx, { start: 60, minutes: 10, runId: 1, name: "e2e" });
+    await job(ctx, { start: 60, minutes: 4, runId: 1, name: "lint" });
+    // Deploy needs build, so it starts after build finished: not counted.
+    await job(ctx, { start: 120, minutes: 3, runId: 2, name: "build" });
+    await job(ctx, { start: 117, minutes: 5, runId: 2, name: "deploy" });
+    await rollUpSignals(createDb(env.DB), ctx.installationId);
+    const rows = await dayRows(ctx.installationId, "slowest-job");
+    expect(sum(rows)).toEqual({ count: 1, minutes: 6 });
+    expect(rows[0]?.subject).toBe("CI › e2e");
+  });
+
+  test("counts failed jobs that passed on the next attempt, with the failed attempt's time", async () => {
+    const ctx = await connectedWorkspace();
+    await job(ctx, { start: 60, minutes: 5, runId: 3, conclusion: "failure" });
+    await job(ctx, { start: 50, minutes: 5, runId: 3, runAttempt: 2 });
+    // Failed and stayed failed: not flaky.
+    await job(ctx, { start: 40, minutes: 5, runId: 4, conclusion: "failure" });
+    await rollUpSignals(createDb(env.DB), ctx.installationId);
+    const rows = await dayRows(ctx.installationId, "flaky-jobs");
+    expect(sum(rows)).toEqual({ count: 1, minutes: 5 });
+    // 5 Linux 2-core minutes in a private repo.
+    expect(rows[0]?.cost).toBeCloseTo(0.03);
   });
 
   test("replaces the days it works out, so running twice counts once", async () => {

@@ -14,6 +14,7 @@
  * `workflow_job` `queued` can arrive after `in_progress`, so processing must be idempotent and
  * keyed on the job's state, not on arrival order.
  */
+import { RELAYRUNNER_LABEL } from "./labels.ts";
 import { WEBHOOK_DLQ, type WebhookMessage } from "@relayrunner/github-webhooks";
 import { and, eq, isNull } from "drizzle-orm";
 import { archiveDeadLetter, recordLastError } from "./dead-letters.ts";
@@ -39,9 +40,6 @@ import { routingLabelFromLabels } from "./github-runners.ts";
 import { routeIdFromLabels } from "./routing.ts";
 import { exportJob, exportRun } from "./telemetry/export.ts";
 import { traced } from "./tracing.ts";
-
-// The `runs-on` label that routes a job through RelayRunner.
-export const RELAYRUNNER_LABEL = "relayrunner";
 
 const BASE_RETRY_DELAY_SECONDS = 30;
 const MAX_RETRY_DELAY_SECONDS = 15 * 60;

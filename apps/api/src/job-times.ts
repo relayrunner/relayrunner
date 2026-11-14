@@ -17,7 +17,7 @@ import { cloudProviderFor, isGitHubHostedLabel } from "./cloud-providers.ts";
 import { inWorkspace as machineInWorkspace } from "./machines.ts";
 import { currentProviders } from "./provider-catalog.ts";
 import { routeIdFromLabels } from "./routing.ts";
-import { RELAYRUNNER_LABEL } from "./webhook-queue.ts";
+import { RELAYRUNNER_LABEL } from "./labels.ts";
 
 const table = schema.jobTiming;
 
