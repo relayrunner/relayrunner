@@ -25,7 +25,14 @@ import { GithubIcon } from "@/components/provider-logos";
 import { byProvider, providerOf } from "@/components/providers";
 import { sharingLabel } from "@/components/machine-sharing";
 import { OtherMachinesBanner, OtherMachinesDialog } from "@/components/other-machines";
-import { CloudProviderCard, FoundCard, MachineCard, machineView } from "@/components/runner-card";
+import {
+  CloudProviderCard,
+  FOUND_PREVIEW,
+  FoundCard,
+  FoundRunnerRows,
+  MachineCard,
+  machineView,
+} from "@/components/runner-card";
 import { RunnerList, type RunnerRow } from "@/components/runner-list";
 import { Button } from "@/components/ui/button";
 import {
@@ -47,7 +54,15 @@ import {
   type Stat,
 } from "@/lib/job-times";
 import { useLiveRefresh } from "@/lib/live-refresh";
-import { addableRunners, listGithubRunners, listMachines, SAMPLE_MACHINES } from "@/lib/machines";
+import {
+  addableRunners,
+  addGithubRunners,
+  listGithubRunners,
+  listMachines,
+  SAMPLE_MACHINES,
+  type AddableRunner,
+  type GitHubRunners,
+} from "@/lib/machines";
 import { canManage } from "@/lib/roles";
 import {
   CLEARED_FILTERS,
@@ -67,9 +82,9 @@ import { readFlag, saveFlag } from "@/lib/stored-flag";
 import { cn } from "@/lib/utils";
 
 // Found runners per workspace, kept for the tab's life so leaving and coming back doesn't wait on
-// GitHub again. The page still re-checks in the background on each visit.
-type Found = { count: number; orgs: string[] };
-const foundCache = new Map<string, Found>();
+// GitHub again. The page still re-checks in the background on each visit, against the API's
+// cached scan, and the Add runners dialog opens with them.
+const foundCache = new Map<string, GitHubRunners[]>();
 const dismissedFound = new Set<string>();
 
 // How often the page refetches machines while someone is looking, so a machine connecting, going
@@ -140,19 +155,20 @@ function RunnersPage() {
   // refresh, and the last answer is kept for the tab so coming back shows it at once.
   const workspaceId = current.workspace.id;
   const [githubOpen, setGithubOpen] = useState(false);
-  const [found, setFound] = useState<Found | null>(() => foundCache.get(workspaceId) ?? null);
+  const [found, setFound] = useState<GitHubRunners[] | null>(
+    () => foundCache.get(workspaceId) ?? null,
+  );
+  const addable = found ? addableRunners(found) : [];
+  function keepFound(orgs: GitHubRunners[]) {
+    foundCache.set(workspaceId, orgs);
+    setFound(orgs);
+  }
   const [dismissed, setDismissed] = useState(() => dismissedFound.has(workspaceId));
   async function findRunners() {
     if (!editable) return;
     try {
       const { orgs } = await listGithubRunners({ groups: false });
-      const addable = addableRunners(orgs);
-      const withRunners = orgs.filter(
-        (org) => "runners" in org && org.runners.some((r) => !r.machineId && !r.blocked),
-      );
-      const next = { count: addable.length, orgs: withRunners.map((org) => org.org) };
-      foundCache.set(workspaceId, next);
-      setFound(next);
+      keepFound(orgs);
     } catch {
       // Keep showing the last answer; GitHub may just be slow or down.
     }
@@ -236,6 +252,23 @@ function RunnersPage() {
     setOthersDismissed(true);
   }
 
+  // One click from the page: adds the runner, then refreshes the machines and what's left to add.
+  async function addFound(runner: AddableRunner) {
+    try {
+      const { added } = await addGithubRunners(runner.installationId, [runner.id], runner.repo?.id);
+      if (added.length === 0) {
+        // Skipped, e.g. its group only allows selected workflows: the dialog says why.
+        setGithubOpen(true);
+        return;
+      }
+    } catch {
+      setGithubOpen(true);
+      return;
+    }
+    await router.invalidate();
+    await findRunners();
+  }
+
   function dismissFound() {
     dismissedFound.add(workspaceId);
     setDismissed(true);
@@ -256,6 +289,8 @@ function RunnersPage() {
       open={githubOpen}
       onOpenChange={setGithubOpen}
       hasAccounts={current.installations.length > 0}
+      initial={found}
+      onLoaded={keepFound}
       onAdded={async () => {
         await router.invalidate();
         await findRunners();
@@ -264,7 +299,7 @@ function RunnersPage() {
   );
 
   const empty = rows.length === 0;
-  const showFound = found !== null && found.count > 0 && !dismissed;
+  const showFound = addable.length > 0 && !dismissed;
 
   return (
     <section>
@@ -301,7 +336,8 @@ function RunnersPage() {
             <RunnerGroup title="Self-hosted" bare>
               <ConnectLanding
                 fallback={fallbackAfterMachine(loaded.order.steps)}
-                found={found?.count ?? 0}
+                found={editable ? addable : []}
+                onAddFound={addFound}
                 onAddExisting={editable ? () => setGithubOpen(true) : undefined}
               />
             </RunnerGroup>
@@ -366,8 +402,8 @@ function RunnersPage() {
                   />
                   {showFound && (
                     <p className="text-sm text-muted-foreground">
-                      {found.count} more {found.count === 1 ? "runner is" : "runners are"} already
-                      registered on GitHub.{" "}
+                      {addable.length} more {addable.length === 1 ? "runner is" : "runners are"}{" "}
+                      already registered on GitHub.{" "}
                       <button
                         type="button"
                         className="rounded-sm font-semibold text-go outline-none hover:text-go-hover focus-visible:ring-[3px] focus-visible:ring-ring/50"
@@ -394,8 +430,8 @@ function RunnersPage() {
                   {showFound && (
                     <li className="grid min-w-0">
                       <FoundCard
-                        count={found.count}
-                        orgs={found.orgs}
+                        runners={addable}
+                        onAdd={addFound}
                         onReview={() => setGithubOpen(true)}
                         onDismiss={dismissFound}
                       />
@@ -680,11 +716,13 @@ function fallbackAfterMachine(steps: RunnerStep[]): RunnerKey | null {
 function ConnectLanding({
   fallback,
   found,
+  onAddFound,
   onAddExisting,
 }: {
   fallback: RunnerKey | null;
   /** Runners already on GitHub that could be added. */
-  found: number;
+  found: AddableRunner[];
+  onAddFound: (runner: AddableRunner) => Promise<void>;
   /** Missing for members, who can't add runners from GitHub. */
   onAddExisting?: () => void;
 }) {
@@ -784,12 +822,30 @@ function ConnectLanding({
         <p className="text-center text-sm text-muted-foreground">
           Run it in a terminal on the computer you want CI on.
         </p>
-        {onAddExisting && (
+        {onAddExisting && found.length > 0 && (
+          <div className="mt-3 grid w-full max-w-md gap-1">
+            <p className="flex items-center gap-1.5 text-sm text-muted-foreground">
+              <GithubIcon className="size-4" />
+              Or add {found.length === 1 ? "the runner" : `the ${found.length} runners`} already on
+              GitHub
+            </p>
+            <FoundRunnerRows runners={found} onAdd={onAddFound} />
+            {found.length > FOUND_PREVIEW && (
+              <Button
+                variant="ghost"
+                size="sm"
+                className="justify-self-start"
+                onClick={onAddExisting}
+              >
+                See all {found.length}
+              </Button>
+            )}
+          </div>
+        )}
+        {onAddExisting && found.length === 0 && (
           <Button variant="ghost" size="sm" className="mt-1" onClick={onAddExisting}>
             <GithubIcon />
-            {found > 0
-              ? `Add the ${found} self-hosted ${found === 1 ? "runner" : "runners"} already on GitHub`
-              : "Already have a self-hosted runner? Add it"}
+            Already have a self-hosted runner? Add it
           </Button>
         )}
       </div>

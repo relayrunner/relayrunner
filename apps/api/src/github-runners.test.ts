@@ -164,8 +164,14 @@ describe("adding GitHub runners", () => {
     env.ROUTER = {
       getByName: () => ({
         githubRunners,
-        githubRunnerLists: (installationId: number, scopes: RunnerScope[]) =>
-          Promise.all(scopes.map((scope) => githubRunners(installationId, scope))),
+        githubRunnerLists: (
+          installationId: number,
+          scopes: RunnerScope[],
+          options?: { fresh?: boolean },
+        ) => {
+          freshScans.push(options?.fresh ?? false);
+          return Promise.all(scopes.map((scope) => githubRunners(installationId, scope)));
+        },
       }),
     } as unknown as Env["ROUTER"];
   });
@@ -181,6 +187,8 @@ describe("adding GitHub runners", () => {
   let githubPaths: string[];
   // Runner lists read through the Router's cache (the fake reads GitHub every time).
   let routerReads = 0;
+  // Whether each repo scan asked to skip the Router's cache.
+  let freshScans: boolean[] = [];
 
   beforeEach(() => {
     runners = [
@@ -192,6 +200,7 @@ describe("adding GitHub runners", () => {
       runner(16, "blacksmith-2vcpu-ubuntu-2404-def", "Linux", []),
     ];
     repoRunners = {};
+    freshScans = [];
     groups = [{ id: 1, name: "Default", visibility: "all" }];
     labelCalls = [];
     githubPaths = [];
@@ -549,6 +558,13 @@ describe("adding GitHub runners", () => {
         body: undefined,
       },
     ]);
+  });
+
+  test("a rescan skips the cached repo scan", async () => {
+    const { cookie } = await setup();
+    await testing.call(env, "/machines/github-runners", cookie);
+    await testing.call(env, "/machines/github-runners?fresh=true", cookie);
+    expect(freshScans).toEqual([false, true]);
   });
 
   test("looks in one repo by name, past the repos it searches on its own", async () => {

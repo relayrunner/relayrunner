@@ -5,6 +5,7 @@ import {
   CopyIcon,
   LaptopIcon,
   PlusIcon,
+  RefreshCwIcon,
   ServerIcon,
 } from "lucide-react";
 import { GithubIcon } from "@/components/provider-logos";
@@ -122,8 +123,14 @@ export function GithubRunnersDialog({
   onOpenChange,
   onAdded,
   hasAccounts,
+  initial,
+  onLoaded,
 }: {
   open: boolean;
+  /** Runners the page already found, shown at once while the dialog reads their group access. */
+  initial?: GitHubRunners[] | null;
+  /** Called with each list the dialog reads, so the page's found runners stay current. */
+  onLoaded?: (orgs: GitHubRunners[]) => void;
   /** Whether the workspace has any GitHub account connected, org or personal. */
   hasAccounts: boolean;
   onOpenChange: (open: boolean) => void;
@@ -138,24 +145,46 @@ export function GithubRunnersDialog({
   const [looking, setLooking] = useState(false);
   const [lookupNote, setLookupNote] = useState<string | null>(null);
 
+  const [rescanning, setRescanning] = useState(false);
+
+  // Reads the runners with their group access. A failed read keeps what's already shown.
+  async function load(fresh = false, isCancelled = () => false) {
+    try {
+      const { orgs } = await listGithubRunners({ fresh });
+      if (isCancelled()) return;
+      setLoaded({ kind: "ready", orgs });
+      onLoaded?.(orgs);
+    } catch (err) {
+      if (isCancelled()) return;
+      setLoaded((current) =>
+        current.kind === "ready"
+          ? current
+          : { kind: err instanceof AppError && err.status === 403 ? "forbidden" : "error" },
+      );
+    }
+  }
+
   useEffect(() => {
     if (!open) return;
     let cancelled = false;
-    setLoaded({ kind: "loading" });
+    setLoaded(initial?.length ? { kind: "ready", orgs: initial } : { kind: "loading" });
     setPicked(new Set());
     setError(null);
     setRepoName("");
     setLookupNote(null);
-    listGithubRunners()
-      .then(({ orgs }) => !cancelled && setLoaded({ kind: "ready", orgs }))
-      .catch((err: unknown) => {
-        if (cancelled) return;
-        setLoaded({ kind: err instanceof AppError && err.status === 403 ? "forbidden" : "error" });
-      });
+    void load(false, () => cancelled);
     return () => {
       cancelled = true;
     };
+    // `initial` only seeds the dialog when it opens.
   }, [open]);
+
+  async function rescan() {
+    setRescanning(true);
+    setLookupNote(null);
+    await load(true);
+    setRescanning(false);
+  }
 
   const orgs = loaded.kind === "ready" ? loaded.orgs : [];
   const key = (installationId: number, runnerId: number) => `${installationId}:${runnerId}`;
@@ -347,6 +376,17 @@ export function GithubRunnersDialog({
         {error && <p className="text-sm text-destructive">{error}</p>}
 
         <DialogFooter>
+          {loaded.kind === "ready" && orgs.length > 0 && (
+            <Button
+              variant="ghost"
+              className="sm:mr-auto"
+              disabled={rescanning}
+              onClick={() => void rescan()}
+            >
+              <RefreshCwIcon aria-hidden className={cn(rescanning && "animate-spin")} />
+              {rescanning ? "Rescanning…" : "Rescan"}
+            </Button>
+          )}
           <Button variant="outline" onClick={() => onOpenChange(false)}>
             Cancel
           </Button>

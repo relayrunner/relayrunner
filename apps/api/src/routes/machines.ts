@@ -640,6 +640,8 @@ export const machineRoutes = new Hono<AppEnv>()
   .get("/github-runners", requireUser, requireWorkspace, requireManager, async (c) => {
     const groups = c.req.query("groups") !== "false";
     const lookup = c.req.query("repo")?.trim() || null;
+    // `?fresh=true` (the dialog's Rescan, and a lookup by name) skips the cached repo scan.
+    const fresh = lookup !== null || c.req.query("fresh") === "true";
     const installations = await c.var.db
       .select({
         id: schema.githubInstallation.id,
@@ -697,6 +699,7 @@ export const machineRoutes = new Hono<AppEnv>()
               const lists = await router.githubRunnerLists(
                 installation.id,
                 repos.map((repo) => ({ kind: "repo", repo: repo.fullName }) as const),
+                { fresh },
               );
               // A repo GitHub won't list (no repository Administration there) is left out.
               return repos.flatMap(

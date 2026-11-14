@@ -38,6 +38,7 @@ import {
   resumeMachine,
   revokeMachine,
   timeAgo,
+  type AddableRunner,
   type Machine,
   type MachineJob,
 } from "@/lib/machines";
@@ -884,29 +885,79 @@ export function MachineCard({
 }
 
 // Runners already on GitHub that RelayRunner isn't using: a stub card with the same rows.
+/** How many found runners the page lists inline; the dialog has the rest. */
+export const FOUND_PREVIEW = 3;
+
+/**
+ * Runners already on GitHub that could be added, one row each with its own Add button, so adding
+ * one takes a click instead of a dialog.
+ */
+export function FoundRunnerRows({
+  runners,
+  onAdd,
+}: {
+  runners: AddableRunner[];
+  onAdd: (runner: AddableRunner) => Promise<void>;
+}) {
+  const [adding, setAdding] = useState<number | null>(null);
+  async function add(runner: AddableRunner) {
+    setAdding(runner.id);
+    try {
+      await onAdd(runner);
+    } finally {
+      setAdding(null);
+    }
+  }
+  return (
+    <ul className="grid min-w-0 divide-y divide-dashed">
+      {runners.slice(0, FOUND_PREVIEW).map((runner) => (
+        <li key={runner.id} className="flex min-w-0 items-center gap-3 py-1.5">
+          <span className="grid min-w-0 flex-1">
+            <span className="truncate font-mono text-sm">{runner.name}</span>
+            <span className="truncate text-xs text-muted-foreground">
+              {[runner.repo?.fullName, runner.status === "online" ? "Online" : "Offline"]
+                .filter(Boolean)
+                .join(" · ")}
+            </span>
+          </span>
+          <Button
+            size="xs"
+            variant="outline"
+            disabled={adding !== null}
+            onClick={() => void add(runner)}
+          >
+            {adding === runner.id ? "Adding…" : "Add"}
+          </Button>
+        </li>
+      ))}
+    </ul>
+  );
+}
+
 export function FoundCard({
-  count,
-  orgs,
+  runners,
+  onAdd,
   onReview,
   onDismiss,
 }: {
-  count: number;
-  orgs: string[];
+  runners: AddableRunner[];
+  onAdd: (runner: AddableRunner) => Promise<void>;
   onReview: () => void;
   onDismiss: () => void;
 }) {
+  const count = runners.length;
   return (
     <article
       aria-label="Runners found on GitHub"
       className="flex min-w-0 flex-col overflow-hidden rounded-xl border border-dashed"
     >
-      <div className="grid min-w-0 gap-2 px-4 pt-3 pb-3.5">
+      <div className="grid min-w-0 gap-2 px-4 pt-3 pb-2">
         <div className="flex min-w-0 items-center gap-2.5">
           <span className="flex size-6 shrink-0 items-center justify-center rounded-md border border-dashed text-muted-foreground">
             <GithubIcon className="size-3.5" />
           </span>
           <h3 className="min-w-0 flex-1 truncate text-sm font-medium">
-            {count} {count === 1 ? "runner" : "runners"} found
+            {count} {count === 1 ? "runner" : "runners"} already on GitHub
           </h3>
           <Button
             size="icon-sm"
@@ -918,9 +969,7 @@ export function FoundCard({
             <XIcon aria-hidden />
           </Button>
         </div>
-        <p className="min-w-0 truncate text-xs text-muted-foreground">
-          Already registered in <span className="font-mono">{orgs.join(", ")}</span> on GitHub
-        </p>
+        <FoundRunnerRows runners={runners} onAdd={onAdd} />
       </div>
       <div className="mt-auto flex min-h-10 items-center border-t border-dashed px-4 py-2 text-xs">
         <button
@@ -928,7 +977,7 @@ export function FoundCard({
           className="-mx-1 rounded-sm px-1 font-semibold text-go outline-none hover:text-go-hover focus-visible:ring-[3px] focus-visible:ring-ring/50"
           onClick={onReview}
         >
-          Review and add
+          {count > FOUND_PREVIEW ? `See all ${count}` : "See details"}
         </button>
       </div>
     </article>

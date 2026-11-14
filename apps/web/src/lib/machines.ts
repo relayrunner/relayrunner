@@ -288,15 +288,18 @@ export type GitHubRunners = { installationId: number; org: string; personal: boo
 /**
  * Runners in the workspace's connected account, for adding them. Owners and admins only.
  * `groups: false` skips GitHub's runner-group lookups, but a runner in a workflow-only group isn't
- * marked blocked. `repo` (a name, or owner/name) looks in that one private repo instead.
+ * marked blocked. `repo` (a name, or owner/name) looks in that one private repo instead. The scan
+ * of private repos is cached for a few minutes; `fresh` scans again.
  */
 export function listGithubRunners({
   groups = true,
   repo,
-}: { groups?: boolean; repo?: string } = {}) {
+  fresh = false,
+}: { groups?: boolean; repo?: string; fresh?: boolean } = {}) {
   const query = new URLSearchParams();
   if (!groups) query.set("groups", "false");
   if (repo) query.set("repo", repo);
+  if (fresh) query.set("fresh", "true");
   return api<{ orgs: GitHubRunners[] }>(
     `/machines/github-runners${query.size > 0 ? `?${query}` : ""}`,
   );
@@ -317,10 +320,17 @@ export function addGithubRunners(
   );
 }
 
-/** Runners in connected orgs that could be added and aren't yet. */
-export function addableRunners(orgs: GitHubRunners[]) {
+/** A runner that could be added, with the installation it's added through. */
+export type AddableRunner = GitHubRunner & { installationId: number };
+
+/** Runners in the connected account that could be added and aren't yet. */
+export function addableRunners(orgs: GitHubRunners[]): AddableRunner[] {
   return orgs.flatMap((org) =>
-    "runners" in org ? org.runners.filter((r) => !r.machineId && !r.blocked) : [],
+    "runners" in org
+      ? org.runners
+          .filter((r) => !r.machineId && !r.blocked)
+          .map((r) => ({ ...r, installationId: org.installationId }))
+      : [],
   );
 }
 

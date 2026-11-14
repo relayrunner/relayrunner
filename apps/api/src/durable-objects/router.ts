@@ -117,6 +117,9 @@ const RUNNER_LIST_TTL_MS = 30_000;
 // How old a runner list a pick accepts, so a push that starts many runs at once asks GitHub once
 // rather than once per run. Short, since a runner's busy status decides whether it gets the job.
 const PICK_RUNNER_LIST_TTL_MS = 5_000;
+// How long the scan of an account's private repos for runners to add is reused. The Runners page
+// and the Add runners dialog share it; the dialog's Rescan reads it fresh.
+const FOUND_LIST_TTL_MS = 10 * 60_000;
 
 // One per workspace, addressed by workspace id. Decides where each picked job's run goes and
 // keeps the routes it hands out (src/routing.ts), so the job queued on a route's label can find
@@ -134,9 +137,13 @@ export class Router extends DurableObject<Env> {
    * for RUNNER_LIST_TTL_MS so the pages' refreshes don't each ask GitHub. Null when GitHub can't
    * be asked.
    */
-  async githubRunners(installationId: number, scope: RunnerScope): Promise<GitHubRunner[] | null> {
+  async githubRunners(
+    installationId: number,
+    scope: RunnerScope,
+    maxAge = RUNNER_LIST_TTL_MS,
+  ): Promise<GitHubRunner[] | null> {
     try {
-      return await this.runnerList(RUNNER_LIST_TTL_MS, installationId, scope);
+      return await this.runnerList(maxAge, installationId, scope);
     } catch (error) {
       console.warn(
         JSON.stringify({
@@ -150,9 +157,13 @@ export class Router extends DurableObject<Env> {
     }
   }
 
-  /** githubRunners for several scopes at once, such as each of an account's private repos. */
-  githubRunnerLists(installationId: number, scopes: RunnerScope[]) {
-    return Promise.all(scopes.map((scope) => this.githubRunners(installationId, scope)));
+  /**
+   * The runner lists of several scopes, such as each of an account's private repos, for finding
+   * runners to add. Reused for FOUND_LIST_TTL_MS unless `fresh`. Null for a list GitHub refused.
+   */
+  githubRunnerLists(installationId: number, scopes: RunnerScope[], { fresh = false } = {}) {
+    const maxAge = fresh ? 0 : FOUND_LIST_TTL_MS;
+    return Promise.all(scopes.map((scope) => this.githubRunners(installationId, scope, maxAge)));
   }
 
   // An org's or repo's runner list, no older than `maxAge`. The dashboard and picks share one copy.
