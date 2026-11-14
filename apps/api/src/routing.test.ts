@@ -587,6 +587,15 @@ describe("decideRoute", () => {
     });
   });
 
+  test("machine first: GitHub's API limit falls to github and says why", async () => {
+    expect(await decideRoute(machineFirst, both, async () => ({ rateLimited: true }))).toEqual({
+      runner: "ubuntu-latest",
+      step: "github",
+      skipped: [{ key: "machine", reason: "github_rate_limited" }],
+      notInOrder: [],
+    });
+  });
+
   test("github first: github answers without looking at machines", async () => {
     const pick = vi.fn(free);
     expect(await decideRoute(githubFirst, both, pick)).toMatchObject({

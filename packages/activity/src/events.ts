@@ -34,6 +34,9 @@ export const SKIP_REASONS = [
   // Machines with the wanted labels exist, but none takes this job's starter: each is `only_me`
   // and someone else (or a bot, or a schedule) started the run (listed in `notShared`).
   "machine_not_shared",
+  // GitHub refused a read the machine step needed (an owner's repo access, or the org's runners)
+  // because the installation ran out of API calls, so machines sat the job out.
+  "github_rate_limited",
   // `github` or a hosted provider's input named more than one label.
   "too_many_labels",
   // A hosted provider's input named a label that isn't that provider's (such as `depot` naming

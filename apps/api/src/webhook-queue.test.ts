@@ -222,6 +222,7 @@ describe("webhook queue consumer", () => {
     const releaseRunnerJob = vi.fn();
     const reroute = vi.fn();
     const dropWaiting = vi.fn();
+    const requeue = vi.fn();
     const routeEnv = () =>
       ({
         DB: db,
@@ -233,6 +234,7 @@ describe("webhook queue consumer", () => {
             releaseRunnerJob,
             reroute,
             dropWaiting,
+            requeue,
           })),
         },
         MACHINE_LINK: { getByName: vi.fn(() => ({ run })) },
@@ -306,6 +308,17 @@ describe("webhook queue consumer", () => {
       expect(setJobMachine).toHaveBeenCalledWith(expect.anything(), 42, "m1");
       expect(JSON.parse(log.mock.calls.at(-1)![0])).toMatchObject({ result: "sent" });
       log.mockRestore();
+    });
+
+    test("a job whose machine went offline after the pick goes back in line", async () => {
+      const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
+      claim.mockResolvedValueOnce({ id: "0123456789ab", machineId: "m1" });
+      run.mockResolvedValueOnce("offline");
+      requeue.mockClear();
+      await consumer.processWebhook(routeEnv(), workflowJob(["rr-0123456789ab"]));
+      expect(requeue).toHaveBeenCalledWith("0123456789ab");
+      expect(JSON.parse(warn.mock.calls.at(-1)![0])).toMatchObject({ result: "offline" });
+      warn.mockRestore();
     });
 
     test("an unknown or mismatched route gets nothing, and only queued jobs claim", async () => {

@@ -6,6 +6,7 @@ import { createDb, schema } from "../db/index.ts";
 import type { Env } from "../env.ts";
 import {
   appInstallationToken,
+  GitHubRateLimitError,
   listOrgRunners,
   userCanReadRepo,
   type OrgRunner,
@@ -26,6 +27,7 @@ import {
 import { earlierPick, jobKey } from "../route-decisions.ts";
 import type { RetryPick } from "../retries.ts";
 import { errorMessage } from "../webhook-queue.ts";
+import { traced } from "../tracing.ts";
 import {
   fetchGroupAccess,
   matchLabels,
@@ -39,6 +41,7 @@ import {
   chooseAndHold,
   chooseMachine,
   decideRoute,
+  fits as fitsLabels,
   fullMachines,
   retryOrder,
   heldSlots,
@@ -92,6 +95,11 @@ const WAIT_POLL_MS = 10_000;
 
 interface WaitingJob extends Waiting {
   job: PickedJob;
+}
+// A route as the Router keeps it. A route to a connected machine keeps the job its pick was for,
+// so the job can go back in line if the machine goes offline before the job is sent (requeue).
+interface StoredRoute extends Route {
+  job?: PickedJob;
 }
 // Each hosted provider runner type's health (src/provider-health.ts), by healthId.
 const HEALTH_KEY = "health:";
@@ -149,13 +157,14 @@ export class Router extends DurableObject<Env> {
   /**
    * Whether a machine's owner can read the job's repo, as the job's installation sees it. Reused
    * for OWNER_ACCESS_TTL_MS. No owner, or GitHub can't be asked: no, and the machine sits this job
-   * out (nothing is cached, so the next pick asks again).
+   * out (nothing is cached, so the next pick asks again). `rate_limited` when GitHub refused for
+   * the installation's API limit, so the pick can say why.
    */
   private async ownerCanRead(
     machineId: string,
     ownerGithubId: number | null,
     job: PickedJob,
-  ): Promise<boolean> {
+  ): Promise<boolean | "rate_limited"> {
     let allowed = false;
     if (ownerGithubId !== null) {
       const key = `${job.installationId}:${job.repositoryId}:${ownerGithubId}`;
@@ -173,9 +182,11 @@ export class Router extends DurableObject<Env> {
             msg: "machine owner access unknown",
             machineId,
             repo: job.repo,
+            rateLimited: error instanceof GitHubRateLimitError,
             error: errorMessage(error),
           }),
         );
+        if (error instanceof GitHubRateLimitError) return "rate_limited";
       }
     }
     if (!allowed)
@@ -195,6 +206,33 @@ export class Router extends DurableObject<Env> {
    * minutes limit passes the job on once the job's account nears its included quota.
    */
   async route(job: PickedJob): Promise<RouteDecision> {
+    return traced(
+      "router.route",
+      {
+        "relayrunner.workspace_id": job.workspaceId,
+        "github.installation_id": job.installationId,
+        "github.repository": job.repo,
+        "github.run_id": job.runId,
+        "relayrunner.retry": Boolean(job.retry),
+      },
+      async (span) => {
+        const decision = await this.decide(job);
+        span.setAttributes({
+          "relayrunner.skipped": decision.skipped.length,
+          ...(decision.runner === null
+            ? { "relayrunner.reason": decision.reason }
+            : {
+                "relayrunner.runner": decision.runner,
+                "relayrunner.step": decision.step,
+                "relayrunner.waited": Boolean(decision.waited),
+              }),
+        });
+        return decision;
+      },
+    );
+  }
+
+  private async decide(job: PickedJob): Promise<RouteDecision> {
     const db = createDb(this.env.DB);
     const [[workspace]] = await Promise.all([
       db
@@ -288,10 +326,10 @@ export class Router extends DurableObject<Env> {
   }
 
   // Sends a waiting job its machine took to that machine, once its `queued` webhook has said which
-  // job it is (before that, the route waits for claim like any other). False when sending failed:
-  // the job goes back in line, in its old place.
+  // job it is (before that, the route waits for claim like any other). False when sending failed
+  // or the machine went offline: the job goes back in line, in its old place.
   private async handOff(entry: WaitingJob): Promise<boolean> {
-    const route = await this.ctx.storage.get<Route>(ROUTE_KEY + entry.id);
+    const route = await this.ctx.storage.get<StoredRoute>(ROUTE_KEY + entry.id);
     if (route?.jobId === undefined) return true;
     try {
       await setJobMachine(createDb(this.env.DB), route.jobId, route.machineId);
@@ -309,7 +347,7 @@ export class Router extends DurableObject<Env> {
           result,
         }),
       );
-      return true;
+      if (result !== "offline") return true;
     } catch (error) {
       console.error(
         JSON.stringify({
@@ -319,10 +357,43 @@ export class Router extends DurableObject<Env> {
           error: errorMessage(error),
         }),
       );
-      await this.ctx.storage.delete(ROUTE_KEY + entry.id);
-      await this.ctx.storage.put(WAIT_KEY + entry.id, { ...entry, jobId: route.jobId });
-      return false;
     }
+    await this.backInLine(route, entry);
+    return false;
+  }
+
+  /**
+   * Puts a claimed job back in line when its machine went offline before the job reached it
+   * (MachineLink.run said "offline"), so it doesn't sit queued on a label nobody serves (#71). The
+   * next machine with room takes it, or the same one once it reconnects; until then it waits like
+   * a job for a full machine. The job keeps its place in line and its label.
+   */
+  async requeue(routeId: string): Promise<void> {
+    const queued = await this.ctx.blockConcurrencyWhile(async () => {
+      const route = await this.ctx.storage.get<StoredRoute>(ROUTE_KEY + routeId);
+      if (!route?.job || route.jobId === undefined || route.state === "done") return false;
+      await this.backInLine(route, {
+        id: route.id,
+        queuedAt: route.createdAt,
+        repositoryId: route.repositoryId,
+        runId: route.runId,
+        ...(route.runAttempt !== undefined && { runAttempt: route.runAttempt }),
+        job: route.job,
+      });
+      return true;
+    });
+    if (!queued) return;
+    console.log(JSON.stringify({ msg: "relayrunner job back in line", routeId }));
+    await this.drain();
+  }
+
+  // Ends a route whose job didn't reach its machine and puts the job back in line under the same
+  // id, giving back the machine's slot.
+  private async backInLine(route: StoredRoute, entry: WaitingJob) {
+    await this.ctx.storage.delete(ROUTE_KEY + route.id);
+    await this.ctx.storage.put(WAIT_KEY + route.id, { ...entry, jobId: route.jobId });
+    await this.env.MACHINE_LINK.getByName(route.machineId).dropHold(route.id);
+    await this.wakeIn(WAIT_POLL_MS);
   }
 
   async alarm() {
@@ -495,18 +566,24 @@ export class Router extends DurableObject<Env> {
         ),
     );
     // A connected machine shared with anyone only takes the job if its owner can read the repo.
-    // A runner added from GitHub is the org's own, already limited by its runner group.
+    // A runner added from GitHub is the org's own, already limited by its runner group. Only
+    // machines with the job's labels are asked about, since no other could take it anyway.
     const readable = await Promise.all(
       admitted.map((machine) => {
         const entry = pool.find((e) => e.id === machine.id)!;
         if (machine.source === "github" || !needsOwnerAccess(entry, job)) return true;
+        if (!fitsLabels(entry, job.machine)) return false;
         return this.ownerCanRead(machine.id, entry.ownerGithubId ?? null, job);
       }),
     );
-    const live = admitted.filter((_, index) => readable[index]);
-    const runners = live.some((machine) => machine.source === "github")
+    const live = admitted.filter((_, index) => readable[index] === true);
+    const orgRunners = live.some((machine) => machine.source === "github")
       ? await this.orgRunners(job)
       : null;
+    const runners = orgRunners === "rate_limited" ? null : orgRunners;
+    // GitHub's API limit kept a machine out of this pick: when nothing else takes the job, the
+    // pick says so instead of reporting no idle machine.
+    const rateLimited = orgRunners === "rate_limited" || readable.includes("rate_limited");
     const candidates: Candidate[] = await Promise.all(
       live.map(async (machine): Promise<Candidate> => {
         const { ownerName: _, ...base } = pool.find((entry) => entry.id === machine.id)!;
@@ -527,7 +604,7 @@ export class Router extends DurableObject<Env> {
     const places = new Map(fits.map((m) => [m.id, { host: m.os, vm: m.isolatedOs }]));
     return (
       (await this.reserve(job, candidates, routingLabels, places, rerun, waiting)) ??
-      unavailableMachines(pool, job.machine, job)
+      (rateLimited ? { rateLimited: true } : unavailableMachines(pool, job.machine, job))
     );
   }
 
@@ -601,7 +678,7 @@ export class Router extends DurableObject<Env> {
       const routingLabel = routingLabels.get(machine.id);
       const isolated = runsIsolated(machine, job.machine, job.github);
       const os = places.get(machine.id)?.[isolated ? "vm" : "host"];
-      const route: Route = {
+      const route: StoredRoute = {
         id: routeId,
         machineId: machine.id,
         machineName: machine.name,
@@ -616,7 +693,7 @@ export class Router extends DurableObject<Env> {
         ...((rerun ?? waitingNow)?.runAttempt !== undefined && {
           runAttempt: (rerun ?? waitingNow)!.runAttempt,
         }),
-        ...(routingLabel ? { routingLabel } : {}),
+        ...(routingLabel ? { routingLabel } : { job }),
         ...(os ? { os } : {}),
         ...(isolated ? { isolated: true } : {}),
       };
@@ -627,11 +704,11 @@ export class Router extends DurableObject<Env> {
   }
 
   // The job's org's self-hosted runners, read within the last few seconds, with their group access
-  // (cached), or null when GitHub can't be reached: added runners then sit this pick out. A
-  // personal account has none.
+  // (cached), or null when GitHub can't be reached (`rate_limited` when it refused for the API
+  // limit): added runners then sit this pick out. A personal account has none.
   private async orgRunners(
     job: PickedJob,
-  ): Promise<{ runners: OrgRunner[]; access: Map<number, GroupAccess> } | null> {
+  ): Promise<{ runners: OrgRunner[]; access: Map<number, GroupAccess> } | null | "rate_limited"> {
     const org = job.repo.split("/")[0];
     try {
       // A personal account has no org runners. Adopting its repo runners is #162.
@@ -657,10 +734,11 @@ export class Router extends DurableObject<Env> {
           msg: "github runners unavailable",
           installationId: job.installationId,
           org,
+          rateLimited: error instanceof GitHubRateLimitError,
           error: errorMessage(error),
         }),
       );
-      return null;
+      return error instanceof GitHubRateLimitError ? "rate_limited" : null;
     }
   }
 

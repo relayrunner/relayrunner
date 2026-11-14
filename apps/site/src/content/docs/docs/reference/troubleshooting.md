@@ -26,12 +26,14 @@ The message says why each provider couldn't take the job. The usual causes:
 - **"public repos never run on self-hosted machines"**: give the relay a `github` label.
 - **"isn't in your runner order"**: add the provider on the Router page.
 - **A minutes limit**: the account is over its limit. Add a step after it.
+- **"GitHub's API limit … was reached"**: your org used up its GitHub API calls for the hour, so the Router couldn't check your machines. Routing goes back to normal when GitHub resets the limit. Add a `github` fallback so jobs still run in the meantime.
 
 ## The job ran somewhere I didn't expect
 
 Open the job on the Activity page and choose **Show why**. Each skipped step has its reason. Common surprises:
 
 - The machine was busy with another job, so the next step took it.
+- GitHub's API limit was reached, so the Router couldn't check your machines and the next step took the job.
 - A GitHub step with a minutes limit came first and the account was still under it.
 - The relay's `machine` labels didn't match, such as `macOS` when the machine is Linux.
 
