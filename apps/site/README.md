@@ -14,7 +14,7 @@ The small Worker script in `worker/index.ts` runs first for `/` and `/docs/*`, a
 
 Machine-readable files for agents:
 
-- `/openapi.json`: the agent API (`src/lib/openapi.ts`), documented at `/docs/reference/api`. `apps/api/src/agent-openapi.test.ts` fails when it drifts from the routes agent tokens may call.
+- `/openapi.json`: the agent API (`src/lib/openapi.ts`), documented at `/docs/reference/api` and rendered by Scalar at `/docs/reference/api/routes` (`src/pages/docs/reference/api/routes.astro`). `apps/api/src/agent-openapi.test.ts` fails when it drifts from the routes agent tokens may call.
 - `/.well-known/ai-catalog.json`: points agents at the MCP server's card, which the server serves itself at `https://agents.relayrunner.app/mcp/server-card`. `/.well-known/mcp.json` and `/.well-known/mcp/server-card.json`, where older clients look, redirect there.
 
 ```sh

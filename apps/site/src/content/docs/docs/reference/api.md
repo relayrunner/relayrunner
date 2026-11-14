@@ -13,7 +13,7 @@ Use the [MCP server](/docs/reference/mcp) instead. Claude, Cursor, VS Code and o
 https://api.relayrunner.app/api
 ```
 
-The [OpenAPI spec](/openapi.json) describes every route, its parameters and its errors.
+[API routes](/docs/reference/api/routes) lists every route with its parameters and responses, and you can try them there. The [OpenAPI spec](/openapi.json) has the same in JSON.
 
 ## Sign in
 

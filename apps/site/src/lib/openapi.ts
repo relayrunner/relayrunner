@@ -43,14 +43,13 @@ const object = (description: string, properties: Record<string, object> = {}) =>
         type: "object",
         properties,
         required: Object.keys(properties),
-        additionalProperties: true,
       },
     },
   },
 });
 
-const list = { type: "array", items: { type: "object", additionalProperties: true } };
-const record = { type: "object", additionalProperties: true };
+const list = { type: "array", items: { type: "object" } };
+const record = { type: "object" };
 
 const errors = {
   "400": { $ref: "#/components/responses/Error" },
