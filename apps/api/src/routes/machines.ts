@@ -11,6 +11,7 @@ import { MACHINE_CLIENT_ID } from "../auth.ts";
 import { createDb, type Db, schema } from "../db/index.ts";
 import { presentOrigin, requestOrigin } from "../device-origin.ts";
 import { runningJobs } from "../jobs.ts";
+import { claimRunnerJobs } from "../job-timings.ts";
 import {
   MACHINE_ID_HEADER,
   MACHINE_ORIGIN_HEADER,
@@ -833,6 +834,8 @@ export const machineRoutes = new Hono<AppEnv>()
           sharing: "anyone",
         })
         .returning();
+      // Jobs it already ran show under it from the start.
+      await claimRunnerJobs(db, machine);
       await recordEvent(db, {
         workspaceId: workspace.id,
         type: "machine.enrolled",

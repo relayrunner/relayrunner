@@ -407,6 +407,13 @@
       "when": 1794687215600,
       "tag": "20261114201335_signals",
       "breakpoints": true
+    },
+    {
+      "idx": 58,
+      "version": "6",
+      "when": 1794698641924,
+      "tag": "20261114232401_claim_added_runner_jobs",
+      "breakpoints": true
     }
   ]
 }

@@ -12,7 +12,7 @@ import {
   versusBaseline,
   windowQuery,
 } from "./job-times.ts";
-import { recordJobTiming } from "./job-timings.ts";
+import { claimRunnerJobs, recordJobTiming } from "./job-timings.ts";
 import { setJobMachine } from "./jobs.ts";
 import * as testing from "./testing.ts";
 
@@ -499,6 +499,38 @@ describe("job times report", () => {
     expect(await record("mighty-m1", "Default")).toBe(`gh-${installationId}`);
     expect(await record("elsewhere", "Default")).toBeNull();
     expect(await record("someone-else", "Default")).toBeNull();
+  });
+
+  test("adding a runner claims the jobs it already ran", async () => {
+    const { installationId } = await connectedWorkspace();
+    const db = createDb(env.DB);
+    const repositoryId = installationId * 10;
+    const mine = timing(installationId, 30, {
+      labels: ["self-hosted"],
+      runnerName: "mighty-m1",
+      runnerGroupName: "Default",
+    });
+    const otherRepo = timing(installationId, 30, {
+      labels: ["self-hosted"],
+      runnerName: "mighty-m1",
+      runnerGroupName: "Default",
+      repositoryId: repositoryId + 1,
+    });
+    const hosted = timing(installationId, 30, { runnerName: "mighty-m1" });
+    await insert([mine, otherRepo, hosted]);
+    await claimRunnerJobs(db, {
+      id: "m-claim",
+      installationId,
+      name: "mighty-m1",
+      githubRepositoryId: repositoryId,
+    });
+    const rows = await db.query.jobTiming.findMany({
+      where: (t, { inArray }) => inArray(t.id, [mine.id!, otherRepo.id!, hosted.id!]),
+    });
+    const byId = new Map(rows.map((row) => [row.id, row.machineId]));
+    expect(byId.get(mine.id!)).toBe("m-claim");
+    expect(byId.get(otherRepo.id!)).toBeNull();
+    expect(byId.get(hosted.id!)).toBeNull();
   });
 
   test("records the queued time and the routed machine", async () => {
