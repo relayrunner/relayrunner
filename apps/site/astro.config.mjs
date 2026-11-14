@@ -107,6 +107,8 @@ export default defineConfig({
             "docs/reference/github-app",
             "docs/reference/mcp",
             "docs/reference/api",
+            // An Astro page, not a docs file: Scalar renders /openapi.json there.
+            { label: "API routes", link: "/docs/reference/api/routes" },
             "docs/reference/security",
             "docs/reference/privacy",
             "docs/reference/troubleshooting",

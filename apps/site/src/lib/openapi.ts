@@ -43,14 +43,13 @@ const object = (description: string, properties: Record<string, object> = {}) =>
         type: "object",
         properties,
         required: Object.keys(properties),
-        additionalProperties: true,
       },
     },
   },
 });
 
-const list = { type: "array", items: { type: "object", additionalProperties: true } };
-const record = { type: "object", additionalProperties: true };
+const list = { type: "array", items: { type: "object" } };
+const record = { type: "object" };
 
 const errors = {
   "400": { $ref: "#/components/responses/Error" },
@@ -63,12 +62,14 @@ const errors = {
 const read = (
   operationId: string,
   summary: string,
+  description: string,
   ok: object,
   parameters: object[] = [],
 ): object => ({
   get: {
     operationId,
     summary,
+    description,
     parameters: [workspaceHeader, ...parameters],
     responses: { "200": ok, ...errors },
   },
@@ -90,12 +91,14 @@ export const openApi = {
   paths: {
     "/me": read(
       "getMe",
-      "The signed-in user and the workspaces this token may read",
+      "Get the current user",
+      "The signed-in user and the workspaces this token may read.",
       object("The user and the token's grant.", { user: record, agent: record }),
     ),
     "/workspaces/current": read(
       "getWorkspace",
-      "One workspace, your role in it and its connected GitHub accounts",
+      "Get a workspace",
+      "One workspace, your role in it and its connected GitHub accounts.",
       object("The workspace.", {
         workspace: record,
         role: { type: "string" },
@@ -104,23 +107,27 @@ export const openApi = {
     ),
     "/workspaces/{workspaceId}/runner-order": read(
       "getRunnerOrder",
-      "The providers jobs are tried on, top to bottom",
+      "Get the runner order",
+      "The providers jobs are tried on, top to bottom.",
       object("The runner order.", { order: list, isDefault: { type: "boolean" } }),
       [{ name: "workspaceId", in: "path", required: true, schema: { type: "string" } }],
     ),
     "/machines": read(
       "listRunners",
-      "Every runner: connected machines and self-hosted runners from GitHub",
+      "List runners",
+      "Every runner: connected machines and self-hosted runners from GitHub.",
       object("The workspace's runners.", { machines: list }),
     ),
     "/runs": read(
       "listRuns",
-      "Workflow runs from the last 14 days, newest first",
+      "List runs",
+      "Workflow runs from the last 14 days, newest first.",
       object("Recent runs.", { runs: list, truncated: { type: "boolean" } }),
     ),
     "/runs/{repositoryId}/{runId}/{runAttempt}/jobs": read(
       "getRunJobs",
-      "One run attempt's jobs and where each ran",
+      "List a run's jobs",
+      "One run attempt's jobs and where each ran.",
       object("The run's jobs."),
       ["repositoryId", "runId", "runAttempt"].map((name) => ({
         name,
@@ -131,7 +138,8 @@ export const openApi = {
     ),
     "/activity": read(
       "listActivity",
-      "The activity log, newest first: where each job was routed and why",
+      "List activity",
+      "The activity log, newest first: where each job was routed and why.",
       object("One page of activity.", {
         items: list,
         nextBefore: { type: ["integer", "null"] },
@@ -175,31 +183,36 @@ export const openApi = {
     ),
     "/usage": read(
       "getUsage",
-      "Jobs under a minute and what rounding up to whole minutes cost",
+      "Get usage",
+      "Jobs under a minute and what rounding up to whole minutes cost.",
       object("The usage report."),
       [daysQuery(90, 30)],
     ),
     "/usage/checks": read(
       "getCheckSavings",
-      "What optimized checks saved",
+      "Get check savings",
+      "What optimized checks saved.",
       object("Optimized check savings."),
       [daysQuery(90, 30)],
     ),
     "/usage/actions": read(
       "getActionsMinutes",
-      "Each connected GitHub account's Actions minutes this billing cycle",
+      "Get Actions minutes",
+      "Each connected GitHub account's Actions minutes this billing cycle.",
       object("Actions minutes by account."),
     ),
     "/job-times": read(
       "getJobTimes",
-      "How long each job usually takes on each runner environment",
+      "Get job times",
+      "How long each job usually takes on each runner environment.",
       object("Job times by workflow, job and environment."),
       [daysQuery(30, 14)],
     ),
     "/feedback": {
       post: {
         operationId: "sendFeedback",
-        summary: "Report a bug, a confusing result or a missing feature to the team",
+        summary: "Send feedback",
+        description: "Report a bug, a confusing result or a missing feature to the team.",
         parameters: [workspaceHeader],
         requestBody: {
           required: true,

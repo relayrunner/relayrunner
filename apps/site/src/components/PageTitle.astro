@@ -2,11 +2,12 @@
 /*
  * Page title, the frontmatter `description` as a muted summary, and a row of links to the page's
  * agent-readable versions (src/lib/agent-docs.ts): copy as Markdown, view the .md, view the .txt.
- * The row is left out of the search index so its labels don't show up in result snippets.
+ * The row is left out of the search index so its labels don't show up in result snippets. Astro
+ * pages rendered with <StarlightPage> (empty body) have no Markdown version, so they get no row.
  */
 const { entry } = Astro.locals.starlightRoute;
 const { title, description } = entry.data;
-const showLinks = entry.id !== "404";
+const showLinks = entry.id !== "404" && entry.body !== "";
 const md = `/${entry.id}.md`;
 const txt = `/${entry.id}.txt`;
 ---
