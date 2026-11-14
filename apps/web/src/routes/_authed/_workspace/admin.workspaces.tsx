@@ -18,7 +18,14 @@ import { timeAgo } from "@/lib/activity";
 import { setupSteps, type SetupStep } from "@/lib/admin-setup";
 import { cn } from "@/lib/utils";
 import { WorkspaceMark } from "@/components/workspace-menu";
-import { deleteWorkspace, deletedNotice, listWorkspaces, type AdminWorkspace } from "@/lib/admin";
+import {
+  deleteWorkspace,
+  deletedNotice,
+  listWorkspaces,
+  type AdminWorkspace,
+  type Stickiness,
+  type StickinessState,
+} from "@/lib/admin";
 import { ROLE_LABELS, type Role } from "@/lib/roles";
 
 // Operator admin, behind Cloudflare Access and an operator session (apps/api/src/routes/admin.ts).
@@ -37,6 +44,10 @@ function WorkspacesPage() {
     () => (showInternal ? workspaces : workspaces.filter((w) => !w.internal)),
     [workspaces, showInternal],
   );
+  const everAdopted = shown.filter(
+    (w) => w.stickiness?.state === "adopted" || w.stickiness?.state === "removed",
+  ).length;
+  const removed = shown.filter((w) => w.stickiness?.state === "removed").length;
 
   function startDelete(target: AdminWorkspace) {
     setNotice(null);
@@ -54,20 +65,30 @@ function WorkspacesPage() {
       <PageHeader title="Workspaces">
         Every workspace, newest first, with its members, connected GitHub accounts, and how far it
         got with setup. A setup step shows amber when it hasn't happened a day after the one before
-        it. Jobs count the past 7 days. Delete is for repeating sign-up and onboarding tests.
+        it. Jobs count the past 7 days. Stickiness is whether it kept the relay once it tried it;
+        hover a value for why. Delete is for repeating sign-up and onboarding tests.
       </PageHeader>
 
-      {internalCount > 0 && (
-        <label className="flex w-fit cursor-pointer items-center gap-2 text-sm text-muted-foreground">
-          <input
-            type="checkbox"
-            className="size-4 accent-[var(--color-go)]"
-            checked={showInternal}
-            onChange={(event) => setShowInternal(event.target.checked)}
-          />
-          Show our own workspaces ({internalCount}), where every member is an operator
-        </label>
-      )}
+      <div className="flex flex-wrap items-center justify-between gap-x-6 gap-y-2 text-sm text-muted-foreground">
+        {internalCount > 0 && (
+          <label className="flex w-fit cursor-pointer items-center gap-2">
+            <input
+              type="checkbox"
+              className="size-4 accent-[var(--color-go)]"
+              checked={showInternal}
+              onChange={(event) => setShowInternal(event.target.checked)}
+            />
+            Show our own workspaces ({internalCount}), where every member is an operator
+          </label>
+        )}
+        <span className="ml-auto">
+          Bounce rate{" "}
+          <span className="font-medium text-foreground">
+            {removed} of {everAdopted}
+          </span>{" "}
+          {everAdopted === 1 ? "workspace" : "workspaces"} that adopted the relay
+        </span>
+      </div>
 
       {notice && (
         <p role="status" className="text-sm text-muted-foreground">
@@ -162,6 +183,14 @@ const columns = column.columns([
     meta: TOP,
     cell: ({ row }) => <SetupDots steps={setupSteps(row.original.setup)} />,
   }),
+  column.accessor((w) => (w.stickiness ? STICKINESS_ORDER[w.stickiness.state] : 0), {
+    id: "stickiness",
+    header: "Stickiness",
+    sortFn: "basic",
+    sortDescFirst: true,
+    meta: TOP,
+    cell: ({ row }) => <StickinessLabel stickiness={row.original.stickiness} />,
+  }),
   column.accessor("jobs7d", {
     header: "Jobs 7d",
     sortFn: "basic",
@@ -231,6 +260,65 @@ function MoreActions({ workspace }: { workspace: AdminWorkspace }) {
       </DropdownMenuContent>
     </DropdownMenu>
   );
+}
+
+/** Sorts Adopted first, then Trying, Removed, Trial abandoned, and never relayed last. */
+const STICKINESS_ORDER: Record<StickinessState, number> = {
+  adopted: 4,
+  trying: 3,
+  removed: 2,
+  trial_abandoned: 1,
+};
+
+const STICKINESS: Record<
+  StickinessState,
+  { label: string; variant: "go" | "outline" | "run" | "idle" }
+> = {
+  trying: { label: "Trying", variant: "outline" },
+  adopted: { label: "Adopted", variant: "go" },
+  trial_abandoned: { label: "Trial abandoned", variant: "idle" },
+  removed: { label: "Removed", variant: "run" },
+};
+
+/** The state's label, with why in a tooltip. */
+function StickinessLabel({ stickiness }: { stickiness: Stickiness | null }) {
+  if (!stickiness) return <span className="text-muted-foreground">—</span>;
+  const { label, variant } = STICKINESS[stickiness.state];
+  return (
+    <Tooltip>
+      <TooltipTrigger asChild>
+        <button
+          type="button"
+          className="cursor-default rounded-md outline-none focus-visible:ring-[3px] focus-visible:ring-ring/50"
+        >
+          <Badge variant={variant}>{label}</Badge>
+        </button>
+      </TooltipTrigger>
+      <TooltipContent className="max-w-72">
+        <div className="font-medium">{label}</div>
+        <div>{stickinessWhy(stickiness)}</div>
+      </TooltipContent>
+    </Tooltip>
+  );
+}
+
+const day = new Intl.DateTimeFormat(undefined, { month: "short", day: "numeric" });
+
+function stickinessWhy(s: Stickiness) {
+  const where = `${s.workflow} in ${s.repository}`;
+  const lastRelay = dateTime.format(new Date(s.lastRelayAt));
+  switch (s.state) {
+    case "trying": {
+      const idleBy = day.format(new Date(new Date(s.lastRelayAt).getTime() + 7 * 86_400_000));
+      return `The relay has only run on ${s.branch ?? "the branch that added it"} (${where}). Adopted once it runs on the default branch or another branch; Trial abandoned if it doesn't relay again by ${idleBy}.`;
+    }
+    case "adopted":
+      return `The relay runs on merged code (${where}). Last relayed ${lastRelay}.`;
+    case "trial_abandoned":
+      return `The relay only ran on ${s.branch ?? "the branch that added it"} (${where}) and hasn't run for 7 days. Last relayed ${lastRelay}.`;
+    case "removed":
+      return `${s.runsWithout} runs on merged code without the relay since it last relayed (${where}, ${lastRelay}). Back to Adopted if it relays again.`;
+  }
 }
 
 const dateTime = new Intl.DateTimeFormat(undefined, { dateStyle: "medium", timeStyle: "short" });

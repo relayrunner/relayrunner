@@ -9,6 +9,7 @@ import {
   PING_WINDOW_MS,
   sendOperatorPings,
 } from "./operator-pings.ts";
+import { SETTLE_MS } from "./stickiness.ts";
 import * as testing from "./testing.ts";
 
 let env: Env;
@@ -95,6 +96,45 @@ async function unroutable(workspaceId: string, occurredAt: Date, reason: string)
   });
 }
 
+/** A first-attempt CI run on main, first seen at `seenAt`, with a pick when relayed. */
+async function ciRun(installationId: number, seenAt: Date, relayed: boolean) {
+  ids += 1;
+  const runId = 90_000 + ids;
+  const db = createDb(env.DB);
+  await db.insert(schema.workflowRun).values({
+    id: runId,
+    runAttempt: 1,
+    installationId,
+    repositoryId: 8_000,
+    repositoryFullName: "acme/dropped",
+    workflowName: "CI",
+    workflowPath: ".github/workflows/ci.yml",
+    defaultBranch: "main",
+    event: "push",
+    headBranch: "main",
+    headSha: "abc",
+    status: "completed",
+    runStartedAt: seenAt,
+    githubUpdatedAt: seenAt,
+    createdAt: seenAt,
+  });
+  if (!relayed) return;
+  await db.insert(schema.workflowJob).values({
+    id: runId * 10,
+    installationId,
+    repositoryId: 8_000,
+    repositoryFullName: "acme/dropped",
+    runId,
+    runAttempt: 1,
+    kind: "pick",
+    name: "relay",
+    labels: ["relayrunner"],
+    headSha: "abc",
+    status: "completed",
+    githubCreatedAt: seenAt,
+  });
+}
+
 function window() {
   const until = new Date(Date.now() + 1_000);
   return { since: new Date(until.getTime() - PING_WINDOW_MS), until };
@@ -156,6 +196,31 @@ describe("operator pings", () => {
     expect(about(await collectOperatorPings(createDb(env.DB), since, until), "Stuck Co")).toEqual([
       ':warning: *Stuck Co*: 2 runs couldn\'t be routed in the last 15 minutes. Latest in acme/app: "nothing fits: github not set"',
     ]);
+  });
+
+  test("pings once when a workspace that adopted the relay takes it out", async () => {
+    const { workspace: ws } = await workspace("Dropped Co");
+    const db = createDb(env.DB);
+    const [row] = await db
+      .select({ installationId: schema.workspace.installationId })
+      .from(schema.workspace)
+      .where(eq(schema.workspace.id, ws.id));
+    const installationId = row!.installationId;
+    const now = Date.now();
+    const hoursAgo = (hours: number) => new Date(now - hours * 3_600_000);
+    await ciRun(installationId, hoursAgo(5), true);
+    await ciRun(installationId, hoursAgo(4), false);
+    await ciRun(installationId, hoursAgo(3), false);
+    // The third run without the relay settles in this window.
+    await ciRun(installationId, new Date(now - SETTLE_MS - 1_000), false);
+    const { since, until } = window();
+    const pings = about(await collectOperatorPings(db, since, until), "Dropped Co");
+    expect(pings).toHaveLength(1);
+    expect(pings[0]).toMatch(
+      /^:leftwards_arrow_with_hook: \*Dropped Co\* took the relay out: 3 runs without it in acme\/dropped since its last relay \(CI, /,
+    );
+    const later = await collectOperatorPings(db, until, new Date(until.getTime() + PING_WINDOW_MS));
+    expect(about(later, "Dropped Co")).toEqual([]);
   });
 
   test("leaves out operators' signups and our own workspaces, but not a user's org with an operator in it", async () => {

@@ -13,6 +13,7 @@ import { deleteUser, deleteWorkspaces } from "../admin-delete.ts";
 import type { AppEnv } from "../app.ts";
 import { createDb, schema } from "../db/index.ts";
 import { internalWorkspaceIds } from "../internal-workspaces.ts";
+import { workspaceStickiness } from "../stickiness.ts";
 import { JOB_COUNT_RANGES, jobCountReport } from "../job-counts.ts";
 import { parseGithubIds } from "../operator-pings.ts";
 import { requireOperator, who } from "../middleware/admin.ts";
@@ -184,34 +185,36 @@ export const adminRoutes = new Hono<AppEnv>()
   })
   .get("/workspaces", async (c) => {
     const db = createDb(c.env.DB);
-    const [workspaces, members, installations, milestones, jobs, internal] = await Promise.all([
-      db.select().from(schema.workspace).orderBy(desc(schema.workspace.createdAt)),
-      db
-        .select({
-          workspaceId: schema.workspaceMember.workspaceId,
-          userId: schema.user.id,
-          name: schema.user.name,
-          email: schema.user.email,
-          role: schema.workspaceMember.role,
-          signedUpAt: schema.user.createdAt,
-        })
-        .from(schema.workspaceMember)
-        .innerJoin(schema.user, eq(schema.user.id, schema.workspaceMember.userId)),
-      db
-        .select({
-          workspaceId: schema.workspace.id,
-          accountLogin: schema.githubInstallation.accountLogin,
-          installedAt: schema.githubInstallation.createdAt,
-        })
-        .from(schema.githubInstallation)
-        .innerJoin(
-          schema.workspace,
-          eq(schema.workspace.installationId, schema.githubInstallation.id),
-        ),
-      machineMilestones(db),
-      workspaceJobs(db),
-      internalWorkspaceIds(db),
-    ]);
+    const [workspaces, members, installations, milestones, jobs, internal, stickiness] =
+      await Promise.all([
+        db.select().from(schema.workspace).orderBy(desc(schema.workspace.createdAt)),
+        db
+          .select({
+            workspaceId: schema.workspaceMember.workspaceId,
+            userId: schema.user.id,
+            name: schema.user.name,
+            email: schema.user.email,
+            role: schema.workspaceMember.role,
+            signedUpAt: schema.user.createdAt,
+          })
+          .from(schema.workspaceMember)
+          .innerJoin(schema.user, eq(schema.user.id, schema.workspaceMember.userId)),
+        db
+          .select({
+            workspaceId: schema.workspace.id,
+            accountLogin: schema.githubInstallation.accountLogin,
+            installedAt: schema.githubInstallation.createdAt,
+          })
+          .from(schema.githubInstallation)
+          .innerJoin(
+            schema.workspace,
+            eq(schema.workspace.installationId, schema.githubInstallation.id),
+          ),
+        machineMilestones(db),
+        workspaceJobs(db),
+        internalWorkspaceIds(db),
+        workspaceStickiness(db),
+      ]);
     const membersOf = Map.groupBy(members, (member) => member.workspaceId);
     const accountsOf = Map.groupBy(installations, (installation) => installation.workspaceId);
     const earliest = (dates: Date[]) =>
@@ -242,6 +245,7 @@ export const adminRoutes = new Hono<AppEnv>()
             firstMachineJobAt: milestones.firstMachineJobAt.get(workspace.id) ?? null,
           },
           ...(jobs.get(workspace.id) ?? { jobs7d: 0, machineJobs7d: 0, lastJobAt: null }),
+          stickiness: stickiness.get(workspace.id) ?? null,
         };
       }),
     });

@@ -1,6 +1,7 @@
 /**
  * Tells operators about early-access milestones in Slack: a new signup, an App install, a
- * workspace's first machine, its first job on a machine, and runs that couldn't be routed. The
+ * workspace's first machine, its first job on a machine, runs that couldn't be routed, and a
+ * workspace that adopted the relay and then took it out (src/stickiness.ts). The
  * 15-minute cron (wrangler.jsonc `triggers`) reads what happened in the window that just ended from
  * D1 and posts one message per ping to OPERATOR_SLACK_WEBHOOK_URL. Nothing is stored: each window
  * is read once, so a skipped cron run skips its pings.
@@ -14,6 +15,7 @@ import { and, desc, eq, gte, inArray, lt, sql } from "drizzle-orm";
 import { type Db, createDb, schema } from "./db/index.ts";
 import type { Env } from "./env.ts";
 import { internalWorkspaceIds } from "./internal-workspaces.ts";
+import { SETTLE_MS, workspaceStickiness } from "./stickiness.ts";
 
 export const PING_WINDOW_MS = 15 * 60 * 1000;
 const MACHINE_ARRIVALS = ["machine.enrolled", "machine.connected"];
@@ -274,6 +276,42 @@ export async function collectOperatorPings(
       at: latest.occurredAt.getTime(),
       text: `:warning: *${esc(latest.workspace)}*: ${runs} couldn't be routed in the last 15 minutes${detail ? `. Latest ${detail}` : ""}`,
     });
+  }
+
+  // A workspace that adopted the relay and took it out. Its state only counts runs SETTLE_MS old,
+  // so the run that tipped it lands in the window that ends SETTLE_MS before this one.
+  // Only worth reading every run when one changed lately (through workflow_run_updated_idx).
+  const [arrived] = await db
+    .select({ id: schema.workflowRun.id })
+    .from(schema.workflowRun)
+    .where(gte(schema.workflowRun.githubUpdatedAt, new Date(since.getTime() - 2 * SETTLE_MS)))
+    .limit(1);
+  const stickiness = arrived
+    ? await workspaceStickiness(db, until.getTime())
+    : new Map<string, never>();
+  const removed = [...stickiness].filter(([workspaceId, state]) => {
+    if (ours.has(workspaceId) || state.state !== "removed" || !state.removedSeenAt) return false;
+    const seen = Date.parse(state.removedSeenAt) + SETTLE_MS;
+    return seen >= since.getTime() && seen < until.getTime();
+  });
+  if (removed.length) {
+    const names = await db
+      .select({ id: schema.workspace.id, name: schema.workspace.name })
+      .from(schema.workspace)
+      .where(
+        inArray(
+          schema.workspace.id,
+          removed.map(([id]) => id),
+        ),
+      );
+    const nameOf = new Map(names.map((row) => [row.id, row.name]));
+    for (const [workspaceId, state] of removed) {
+      const lastRelay = new Date(state.lastRelayAt).toUTCString();
+      pings.push({
+        at: Date.parse(state.since),
+        text: `:leftwards_arrow_with_hook: *${esc(nameOf.get(workspaceId) ?? workspaceId)}* took the relay out: ${state.runsWithout} runs without it in ${esc(state.repository)} since its last relay (${esc(state.workflow)}, ${lastRelay})`,
+      });
+    }
   }
 
   return pings.sort((a, b) => a.at - b.at).map((ping) => ping.text);
