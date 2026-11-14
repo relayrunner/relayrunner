@@ -1,13 +1,15 @@
 ---
 /*
- * Flat sidebar: section labels are small secondary text, page titles are the primary text, and
- * nothing collapses. Replaces Starlight's default <details>-based sidebar. Groups are only one
- * level deep (see `sidebar` in astro.config.mjs); a nested group would render as a flat list.
- * SidebarPersister (Starlight's) keeps the sidebar's scroll position from page to page.
+ * Flat sidebar: section labels are small secondary text and page titles are the primary text.
+ * Each group is a <details>: groups marked `collapsed` in astro.config.mjs start closed, unless
+ * they hold the current page. Groups are only one level deep; a nested group renders as a flat list.
+ * SidebarPersister and SidebarRestorePoint (Starlight's) keep the scroll position and each group's
+ * open or closed state from page to page.
  */
 import MobileMenuFooter from "@astrojs/starlight/components/MobileMenuFooter.astro";
 import Search from "@astrojs/starlight/components/Search.astro";
 import SidebarPersister from "@astrojs/starlight/components/SidebarPersister.astro";
+import SidebarRestorePoint from "@astrojs/starlight/components/SidebarRestorePoint.astro";
 
 type Entry = (typeof Astro.locals.starlightRoute.sidebar)[number];
 
@@ -28,8 +30,14 @@ const { sidebar } = Astro.locals.starlightRoute;
           {entry.label}
         </a>
       ) : (
-        <section>
-          <h2>{entry.label}</h2>
+        <details open={!entry.collapsed || flatten(entry.entries).some((link) => link.isCurrent)}>
+          <summary>
+            <h2>{entry.label}</h2>
+            <svg class="caret" viewBox="0 0 16 16" aria-hidden="true">
+              <path d="M6 4l4 4-4 4" />
+            </svg>
+          </summary>
+          <SidebarRestorePoint />
           <ul>
             {flatten(entry.entries).map((link) => (
               <li>
@@ -39,7 +47,7 @@ const { sidebar } = Astro.locals.starlightRoute;
               </li>
             ))}
           </ul>
-        </section>
+        </details>
       ),
     )
   }
@@ -78,19 +86,56 @@ const { sidebar } = Astro.locals.starlightRoute;
     display: flex;
     flex-direction: column;
   }
-  section + section {
-    margin-top: 14px;
+  details + details {
+    margin-top: 10px;
+  }
+  summary {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 2px 8px;
+    border-radius: 5px;
+    color: var(--sl-color-gray-3);
+    cursor: pointer;
+    user-select: none;
+    list-style: none;
+  }
+  summary::-webkit-details-marker {
+    display: none;
+  }
+  summary:hover {
+    color: var(--sl-color-white);
+  }
+  summary:focus-visible {
+    outline: 2px solid var(--sl-color-accent);
+    outline-offset: 1px;
+  }
+  .caret {
+    width: 12px;
+    height: 12px;
+    flex-shrink: 0;
+    fill: none;
+    stroke: currentColor;
+    stroke-width: 1.5;
+    stroke-linecap: round;
+    stroke-linejoin: round;
+    transition: transform 0.15s ease;
+  }
+  details[open] > summary .caret {
+    transform: rotate(90deg);
+  }
+  details[open] > ul {
+    margin-top: 4px;
   }
   h2 {
-    margin: 0 0 4px;
-    padding-inline-start: 8px;
+    margin: 0;
     font-family: var(--sl-font-mono);
     font-size: 11px;
     font-weight: 500;
     line-height: 1.6;
     letter-spacing: 0.07em;
     text-transform: uppercase;
-    color: var(--sl-color-gray-3);
+    color: inherit;
   }
   ul {
     display: flex;

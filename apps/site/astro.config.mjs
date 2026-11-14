@@ -56,8 +56,8 @@ export default defineConfig({
             "docs/get-started/overview",
             "docs/get-started/quickstart",
             "docs/get-started/install",
-            "docs/get-started/move-over",
             "docs/get-started/agents",
+            "docs/get-started/move-over",
           ],
         },
         {
@@ -78,18 +78,21 @@ export default defineConfig({
             "docs/runners/hosted",
           ],
         },
+        // Collapsed groups start closed, but the one holding the current page always opens.
         {
           label: "Guides",
+          collapsed: true,
           items: [
             "docs/guides/laptop-ci",
-            "docs/guides/spend-controls",
             "docs/guides/mac-builds",
-            "docs/guides/agent-surge",
             "docs/guides/team-machines",
+            "docs/guides/agent-surge",
+            "docs/guides/spend-controls",
           ],
         },
         {
           label: "Dashboard",
+          collapsed: true,
           items: [
             "docs/dashboard/activity",
             "docs/dashboard/signals",
@@ -102,6 +105,7 @@ export default defineConfig({
         },
         {
           label: "Reference",
+          collapsed: true,
           items: [
             "docs/reference/cli",
             "docs/reference/relay-inputs",
@@ -113,24 +117,28 @@ export default defineConfig({
             // An Astro page, not a docs file: Scalar renders /openapi.json there.
             { label: "API routes", link: "/docs/reference/api/routes" },
             "docs/reference/errors",
-            "docs/reference/security",
-            "docs/reference/privacy",
-            "docs/reference/troubleshooting",
-            "docs/reference/faq",
-            // Built from apps/cli/CHANGELOG.md (src/lib/changelog.ts).
-            "docs/changelog",
           ],
         },
         {
-          label: "Contribute",
-          items: ["docs/contribute/add-provider", "docs/contribute/feedback"],
+          label: "Help",
+          collapsed: true,
+          items: [
+            "docs/reference/troubleshooting",
+            "docs/reference/faq",
+            "docs/reference/security",
+            "docs/reference/privacy",
+            // Built from apps/cli/CHANGELOG.md (src/lib/changelog.ts).
+            "docs/changelog",
+            "docs/contribute/feedback",
+            "docs/contribute/add-provider",
+          ],
         },
       ],
       // Put the code block styles inline in each page. By default they're a separate stylesheet
       // linked from the first code block, in the body, so a page change paints the header first
       // and the rest only once that file arrives: on pages with code, the docs blinked.
       expressiveCode: { emitExternalStylesheet: false },
-      // Flat, non-collapsing sidebar, and the page title with its description under it.
+      // Flat sidebar with collapsible groups, and the page title with its description under it.
       components: {
         Sidebar: "./src/components/Sidebar.astro",
         PageTitle: "./src/components/PageTitle.astro",
