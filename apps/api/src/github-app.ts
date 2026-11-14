@@ -419,10 +419,11 @@ async function getPage(token: string, path: string): Promise<unknown> {
     headers: cached ? { ...headers(token), "if-none-match": cached.etag } : headers(token),
   });
   if (response.status === 304 && cached) return cached.body;
-  if (!response.ok)
-    throw new Error(
-      `GET ${path} failed with ${response.status}: ${(await response.text()).slice(0, 300)}`,
-    );
+  if (!response.ok) {
+    const message = `GET ${path} failed with ${response.status}: ${(await response.text()).slice(0, 300)}`;
+    if (isRateLimited(response)) throw new GitHubRateLimitError(message);
+    throw new Error(message);
+  }
   const body: unknown = await response.json();
   const etag = response.headers.get("etag");
   listedPages.delete(path);
@@ -753,10 +754,27 @@ export class GitHubAccessError extends Error {
   }
 }
 
+/**
+ * Thrown when GitHub refuses a call because the installation ran out of API calls: its hourly
+ * limit, or a secondary limit for too many calls at once.
+ */
+export class GitHubRateLimitError extends Error {}
+
+// GitHub answers a spent limit with 429, or with 403 and either no calls remaining or a
+// `retry-after` (a secondary limit). A 403 without either is a missing permission.
+function isRateLimited(response: Response) {
+  if (response.status === 429) return true;
+  return (
+    response.status === 403 &&
+    (response.headers.get("x-ratelimit-remaining") === "0" || response.headers.has("retry-after"))
+  );
+}
+
 async function getJson<T>(token: string, path: string): Promise<T> {
   const response = await fetch(`${API}${path}`, { headers: headers(token) });
   if (!response.ok) {
     const message = `GET ${path} failed with ${response.status}: ${(await response.text()).slice(0, 300)}`;
+    if (isRateLimited(response)) throw new GitHubRateLimitError(message);
     if (response.status === 403 || response.status === 404)
       throw new GitHubAccessError(message, response.status);
     throw new Error(message);

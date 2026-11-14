@@ -79,6 +79,7 @@ const ROUTING_REASONS: Record<string, string> = {
   machine_full: "every machine full",
   machine_paused: "machine paused",
   machine_not_shared: "machine only runs its owner's jobs",
+  github_rate_limited: "GitHub API limit reached",
   public_repo: "public repo",
   not_configured: "not set on the relay",
   too_many_labels: "more than one label",

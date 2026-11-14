@@ -13,7 +13,16 @@ vi.mock("cloudflare:workers", () => ({
   },
 }));
 
+// GitHub reads the Router makes itself: tests that need them set the answers.
+const github = vi.hoisted(() => ({ userCanReadRepo: vi.fn() }));
+vi.mock("../github-app.ts", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("../github-app.ts")>()),
+  appInstallationToken: async () => "ghs_test",
+  userCanReadRepo: github.userCanReadRepo,
+}));
+
 const { Router } = await import("./router.ts");
+const { GitHubRateLimitError } = await import("../github-app.ts");
 
 function memoryState() {
   const data = new Map<string, unknown>();
@@ -212,6 +221,79 @@ describe("Router: jobs wait for a full machine", () => {
   test("another run's job can't claim a waiting label", async () => {
     const routeId = (await router.route(job(1))).runner!.slice(3);
     expect(await router.claim(routeId, queued(2, 42))).toBeNull();
+  });
+});
+
+describe("Router: GitHub's API limit", () => {
+  let router: InstanceType<typeof Router>;
+  // Started by someone other than the machine's owner, so a machine shared with anyone needs to
+  // know its owner can read the repo.
+  const someoneElse = { id: 501, login: "atticus" };
+  const othersJob = (machine: string[]) => ({
+    ...job(1),
+    ...relayInputs({ machine }),
+    startedBy: someoneElse,
+    triggeredBy: someoneElse,
+  });
+
+  beforeEach(async () => {
+    vi.spyOn(console, "log").mockImplementation(() => {});
+    vi.spyOn(console, "warn").mockImplementation(() => {});
+    github.userCanReadRepo.mockReset();
+    const testEnv = await createTestEnv();
+    const now = Date.now();
+    for (const sql of [
+      "insert into github_installation (id, account_id, account_login, account_type, created_at, updated_at) values (7, 10, 'leonel', 'User', ?1, ?1)",
+      "insert into workspace (id, installation_id, name, slug, created_at) values ('w1', 7, 'W', 'w', ?1)",
+      "insert into user (id, name, email, email_verified, created_at, updated_at) values ('u1', 'Leonel', 'l@example.com', 1, ?1, ?1)",
+      "insert into account (id, account_id, provider_id, user_id, created_at, updated_at) values ('a1', '500', 'github', 'u1', ?1, ?1)",
+      "insert into machine (id, workspace_id, user_id, name, os, arch, token_hash, source, sharing, created_at, updated_at) values ('m1', 'w1', 'u1', 'ci-runner', 'linux', 'x64', 'hash', 'connect', 'anyone', ?1, ?1)",
+    ])
+      await testEnv.DB.prepare(sql).bind(now).run();
+    const env = {
+      ...testEnv,
+      MACHINE_LINK: {
+        getByName: () => ({
+          status: async () => ({
+            online: true,
+            state: "idle",
+            connectedAt: now,
+            slots: 1,
+            running: 0,
+          }),
+          reserve: async () => true,
+        }),
+      },
+    } as unknown as Env;
+    router = new Router(memoryState().ctx as never, env);
+  });
+
+  test("a machine kept out by the limit says so, instead of no idle machine", async () => {
+    github.userCanReadRepo.mockRejectedValue(
+      new GitHubRateLimitError("GET /user/500 failed with 403"),
+    );
+    const decision = await router.route(othersJob(["self-hosted"]));
+    expect(decision.runner).toBeNull();
+    expect(decision.skipped).toContainEqual({ key: "machine", reason: "github_rate_limited" });
+  });
+
+  test("other GitHub failures still read as no idle machine", async () => {
+    github.userCanReadRepo.mockRejectedValue(new Error("GET /user/500 failed with 502"));
+    const decision = await router.route(othersJob(["self-hosted"]));
+    expect(decision.skipped).toContainEqual({ key: "machine", reason: "no_machine" });
+  });
+
+  test("GitHub isn't asked about a machine without the job's labels", async () => {
+    github.userCanReadRepo.mockResolvedValue(true);
+    const decision = await router.route(othersJob(["self-hosted", "gpu"]));
+    expect(github.userCanReadRepo).not.toHaveBeenCalled();
+    expect(decision.skipped).toContainEqual({ key: "machine", reason: "no_machine" });
+  });
+
+  test("an owner who can read the repo still gets the job", async () => {
+    github.userCanReadRepo.mockResolvedValue(true);
+    const decision = await router.route(othersJob(["self-hosted"]));
+    expect(decision.runner).toMatch(/^rr-/);
   });
 });
 

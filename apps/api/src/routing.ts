@@ -541,12 +541,14 @@ export type Unhealthy = NonNullable<RouteWalk["skipped"][number]["unhealthy"]>;
 export type HealthCheck = (key: HostedProviderId, label: string) => Promise<Unhealthy | null>;
 
 // What the machine step's pick found: a route label, every matching machine paused, no matching
-// machine taking this job's starter, every online one that fits full, or nothing.
+// machine taking this job's starter, every online one that fits full, GitHub's API limit keeping
+// machines out, or nothing.
 export type MachinePick =
   | string
   | { paused: string[] }
   | { notShared: NotSharedMachine[] }
   | { full: FullMachine[] }
+  | { rateLimited: true }
   | null;
 
 // `notInOrder` lists providers the job configured that the order leaves out, either way, so an
@@ -669,6 +671,8 @@ export async function decideRoute(
           skipped.push({ key, reason: "machine_paused", paused: pick.paused });
         else if (pick && "full" in pick && pick.full.length > 0)
           skipped.push({ key, reason: "machine_full", full: pick.full });
+        else if (pick && "rateLimited" in pick)
+          skipped.push({ key, reason: "github_rate_limited" });
         else skipped.push({ key, reason: "no_machine" });
       }
     } else if (key === "github") {
@@ -731,6 +735,8 @@ export function noRunnerReason(
         return notSharedText(notShared);
       case "machine_full":
         return fullText(full);
+      case "github_rate_limited":
+        return "GitHub's API limit for this org was reached, so no machine could be checked";
       case "too_many_labels":
         return `\`${key}\` takes one label, not ${job[key].join(", ")}`;
       case "not_provider_label":

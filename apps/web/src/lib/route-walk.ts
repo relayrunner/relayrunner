@@ -72,6 +72,8 @@ function shortSkip(walk: RouteWalk, step: SkippedStep): string | null {
       return notSharedText(notShared, true);
     case "machine_full":
       return fullText(full, true);
+    case "github_rate_limited":
+      return "GitHub API limit reached";
     case "no_machine": {
       const labels = machineLabels(walk);
       return labels ? `no idle machine with ${labels}` : "no idle machine";
@@ -112,6 +114,8 @@ function longSkip(walk: RouteWalk, step: SkippedStep): string {
       return notSharedText(notShared);
     case "machine_full":
       return fullText(full);
+    case "github_rate_limited":
+      return "GitHub's API limit for this org was reached, so no machine could be checked";
     case "no_machine": {
       const labels = machineLabels(walk);
       return labels
