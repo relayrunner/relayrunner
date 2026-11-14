@@ -41,6 +41,13 @@ import {
   sampleRuns,
   triggerText,
 } from "@/lib/runs";
+import {
+  optionParam,
+  rangeParam,
+  textParam,
+  unlessDefault,
+  useSetSearch,
+} from "@/lib/search-params";
 import { cn, elapsed } from "@/lib/utils";
 
 const RANGES = [1, 7, 14] as const;
@@ -54,28 +61,53 @@ const TABS = [
   { value: "jobs", label: "Jobs" },
 ] as const satisfies Tab<string>[];
 type View = (typeof TABS)[number]["value"];
-// The job list's first range. Its range picker loads others.
-const JOB_DAYS = 7;
+// Both views open on the last week.
+const DEFAULT_DAYS = 7;
+const RESULTS = ["all", "failed", "running"] as const;
+const ROUTED = ["all", "routed"] as const;
+const RUN_SORTS = ["newest", "longest", "slowest"] as const;
 
 type Loaded = { view: "workflows"; runs: RunsReport } | { view: "jobs"; jobs: JobsReport };
 
-// `run` and `job` name the run attempt and job open in the detail panel, in either view.
-type Search = { view?: View; run?: string; job?: number };
+// `run` and `job` name the run attempt and job open in the detail panel, in either view. The range
+// and filters are in the URL too, each left out at its default; switching tabs clears them.
+export type HistorySearch = {
+  view?: View;
+  run?: string;
+  job?: number;
+  days?: number;
+  repo?: string;
+  result?: ResultFilter;
+  routed?: RoutedFilter;
+  sort?: RunSort;
+  /** The Jobs view's search. */
+  q?: string;
+};
 
 export const Route = createFileRoute("/_authed/_workspace/history")({
-  validateSearch: (search: Record<string, unknown>): Search => {
+  validateSearch: (search: Record<string, unknown>): HistorySearch => {
     const run = parseRunParam(search.run) ? (search.run as string) : undefined;
     const job = Number(search.job);
     return {
       view: viewOf(TABS, search.view),
       run,
       job: run && Number.isSafeInteger(job) && job > 0 ? job : undefined,
+      days: rangeParam(search.days, RANGES, DEFAULT_DAYS),
+      repo: textParam(search.repo),
+      result: optionParam(search.result, RESULTS),
+      routed: optionParam(search.routed, ROUTED),
+      sort: optionParam(search.sort, RUN_SORTS),
+      // Not trimmed, so a space typed between words stays.
+      q: typeof search.q === "string" && search.q ? search.q : undefined,
     };
   },
   loaderDeps: ({ search }) => ({ view: search.view ?? "workflows" }),
-  loader: async ({ deps: { view } }): Promise<Loaded> => {
-    if (view === "jobs")
-      return { view, jobs: authDisabled ? sampleJobs(JOB_DAYS) : await getJobs(JOB_DAYS) };
+  // The Jobs view loads its range; the Workflows report holds the whole window.
+  loader: async ({ deps: { view }, location }): Promise<Loaded> => {
+    if (view === "jobs") {
+      const days = (location.search as HistorySearch).days ?? DEFAULT_DAYS;
+      return { view, jobs: authDisabled ? sampleJobs(days) : await getJobs(days) };
+    }
     return { view, runs: authDisabled ? sampleRuns() : await getRuns() };
   },
   // A tab shows as it was when it's come back to: the Workflows tab refreshes itself while runs
@@ -134,9 +166,9 @@ function Jobs({ report }: { report: JobsReport }) {
   );
 }
 
-type ResultFilter = "all" | "failed" | "running";
-type RoutedFilter = "all" | "routed";
-type RunSort = "newest" | "longest" | "slowest";
+type ResultFilter = (typeof RESULTS)[number];
+type RoutedFilter = (typeof ROUTED)[number];
+type RunSort = (typeof RUN_SORTS)[number];
 // Runs still going, and ones without a usual time to compare with, go last.
 const SORTS: Record<RunSort, ((run: Run) => number) | null> = {
   newest: null, // The report's own order.
@@ -148,11 +180,18 @@ function WorkflowRuns({ loaded }: { loaded: RunsReport }) {
   // Refetched while a run on screen is going, so new jobs, runs and results show without a reload.
   const [report, setReport] = useState(loaded);
   useEffect(() => setReport(loaded), [loaded]);
-  const [days, setDays] = useState(7);
-  const [repository, setRepository] = useState("all");
-  const [result, setResult] = useState<ResultFilter>("all");
-  const [routed, setRouted] = useState<RoutedFilter>("all");
-  const [sort, setSort] = useState<RunSort>("newest");
+  const search = Route.useSearch();
+  const days = search.days ?? DEFAULT_DAYS;
+  const repository = search.repo ?? "all";
+  const result = search.result ?? "all";
+  const routed = search.routed ?? "all";
+  const sort = search.sort ?? "newest";
+  const setSearch = useSetSearch<HistorySearch>();
+  const setDays = (next: number) => setSearch({ days: unlessDefault(next, DEFAULT_DAYS) });
+  const setRepository = (next: string) => setSearch({ repo: unlessDefault(next, "all") });
+  const setResult = (next: ResultFilter) => setSearch({ result: unlessDefault(next, "all") });
+  const setRouted = (next: RoutedFilter) => setSearch({ routed: unlessDefault(next, "all") });
+  const setSort = (next: RunSort) => setSearch({ sort: unlessDefault(next, "newest") });
 
   const repositories = useMemo(
     () => [...new Set(report.runs.map((run) => run.repository))].sort(),

@@ -37,6 +37,25 @@ export type AdminWorkspace = {
   machineJobs7d: number;
   /** The latest job, from the 31 days of jobs kept. */
   lastJobAt: string | null;
+  /** Whether it stuck with the relay (apps/api/src/stickiness.ts), or null when it never relayed. */
+  stickiness: Stickiness | null;
+};
+
+export type StickinessState = "trying" | "adopted" | "trial_abandoned" | "removed";
+
+export type Stickiness = {
+  state: StickinessState;
+  /** When the workspace entered this state. */
+  since: string;
+  /** The workflow the state is about: the latest relayed, or the last one removed. */
+  repository: string;
+  workflow: string;
+  /** The branch that added the relay, while trying or after the trial was abandoned. */
+  branch: string | null;
+  lastRelayAt: string;
+  /** Removed: runs on up-to-date code without the relay since the last relay. */
+  runsWithout: number;
+  removedSeenAt: string | null;
 };
 
 export function listUsers() {

@@ -43,6 +43,7 @@ import {
   type MachineJob,
 } from "@/lib/machines";
 import { capacity } from "@/lib/capacity";
+import { RunnerPanelLink } from "@/components/runner-panel-link";
 import { cn } from "@/lib/utils";
 
 const OS_NAMES = { linux: "Linux", macos: "macOS", windows: "Windows" } as const;
@@ -782,7 +783,12 @@ export function MachineCard({
               tone === "offline" && "text-ink-2",
             )}
           >
-            {machine.name}
+            <RunnerPanelLink
+              runner={`machine:${machine.id}`}
+              className="rounded-sm outline-none hover:underline hover:underline-offset-2 focus-visible:ring-[3px] focus-visible:ring-ring/50"
+            >
+              {machine.name}
+            </RunnerPanelLink>
           </h3>
           <MachineMenu
             machine={machine}
@@ -1074,7 +1080,12 @@ function CloudRow({
     <li className="col-span-3 grid grid-cols-subgrid items-center gap-x-3 px-4 py-2.5 text-xs text-muted-foreground tabular-nums">
       <div className="grid min-w-0 gap-1.5">
         <span title={label} className="truncate text-sm text-foreground">
-          <span className={cn(mono && "font-mono")}>{name}</span>
+          <RunnerPanelLink
+            runner={environment.key}
+            className={cn("hover:underline hover:underline-offset-2", mono && "font-mono")}
+          >
+            {name}
+          </RunnerPanelLink>
           {spec && <span className="text-xs text-muted-foreground"> · {spec}</span>}
         </span>
         {share !== null && (

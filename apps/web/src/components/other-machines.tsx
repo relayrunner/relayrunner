@@ -18,7 +18,8 @@ const SHARING = { only_me: "Only your jobs", anyone: "Any job" } as const;
 
 /**
  * Above the Runners page when some of the signed-in user's own machines don't take this
- * workspace's jobs: a workspace they joined through GitHub starts with none of them. Dismissing it
+ * workspace's jobs, usually because they were connected to another workspace: a workspace they
+ * joined through GitHub starts with none of them. Only the user sees it. Dismissing it
  * hides it; the Add runner menu still opens the same dialog.
  */
 export function OtherMachinesBanner({
@@ -33,7 +34,8 @@ export function OtherMachinesBanner({
   onDismiss: () => void;
 }) {
   if (others.length === 0) return null;
-  const one = others.length === 1;
+  const one = others.length === 1 ? others[0]! : null;
+  const ws = <span className="font-mono">{workspace}</span>;
   return (
     <div
       role="status"
@@ -41,22 +43,19 @@ export function OtherMachinesBanner({
     >
       <LaptopIcon aria-hidden className="size-4 shrink-0 text-muted-foreground" />
       <p className="min-w-0 flex-1 basis-56">
+        You've used{" "}
         {one ? (
           <>
-            Your machine <span className="font-mono">{others[0]!.name}</span> doesn't run{" "}
-            <span className="font-mono">{workspace}</span> jobs.
+            your machine <span className="font-mono">{one.name}</span>
           </>
         ) : (
-          <>
-            {others.length} of your machines don't run{" "}
-            <span className="font-mono">{workspace}</span> jobs.
-          </>
+          `${others.length} of your machines`
         )}{" "}
-        <span className="text-muted-foreground">Only you see this.</span>
+        elsewhere, but not in {ws} yet.
       </p>
       <div className="ml-auto flex items-center gap-1">
         <Button size="sm" variant="outline" onClick={onChoose}>
-          {one ? "Add it" : "Choose machines"}
+          {one ? `Add to ${workspace}` : "Choose machines"}
         </Button>
         <Button
           size="icon-sm"
@@ -91,7 +90,8 @@ export function OtherMachinesDialog({
   const [error, setError] = useState<string | null>(null);
   useEffect(() => {
     if (!open) return;
-    setPicked(new Set());
+    // With one machine to add, it's the one the user came for.
+    setPicked(new Set(others.length === 1 ? [others[0]!.id] : []));
     setError(null);
   }, [open]);
 
@@ -124,8 +124,8 @@ export function OtherMachinesDialog({
         <DialogHeader>
           <DialogTitle>Add your machines</DialogTitle>
           <DialogDescription>
-            Machines you've connected that don't run <span className="font-mono">{workspace}</span>{" "}
-            jobs yet. Adding one lets it take this workspace's jobs, as its sharing allows.
+            Adding a machine lets it run <span className="font-mono">{workspace}</span> jobs too. It
+            keeps running jobs for its other workspaces.
           </DialogDescription>
         </DialogHeader>
         {others.length === 0 ? (

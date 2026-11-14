@@ -1,4 +1,4 @@
-import { Link } from "@tanstack/react-router";
+import { Link, useSearch } from "@tanstack/react-router";
 import {
   BASE_BOOK,
   githubRate,
@@ -12,6 +12,7 @@ import {
 } from "@relayrunner/providers";
 import { type ReactNode, useEffect, useState } from "react";
 import { providerOf, RunnerMark } from "@/components/providers";
+import { RunnerPanelLink } from "@/components/runner-panel-link";
 import { CliVersion, machineView, MachineOwner, StatusDot } from "@/components/runner-card";
 import { HoverCard, HoverCardContent, HoverCardTrigger } from "@/components/ui/hover-card";
 import { deviceName } from "@/lib/device";
@@ -29,7 +30,7 @@ const SELF_HOSTED = "self-hosted:";
 /**
  * A runner's mark and name inline (in a table, a feed or a run), with a card on hover showing its
  * specs: a connected machine's hardware, VM size, CLI and status, or a cloud runner's size and
- * list price. Cloud runners link to their provider's page, machines to the Runners page.
+ * list price. A click opens the runner's panel; the card links on to its provider or Runners.
  */
 export function RunnerLink({
   runner,
@@ -53,16 +54,18 @@ export function RunnerLink({
       {children ?? runner.label}
     </>
   );
-  const to =
-    provider === "machine"
-      ? ({ to: "/runners" } as const)
-      : ({ to: "/providers/$provider", params: { provider } } as const);
+  // Closed while a runner's panel is open, so the card doesn't sit over the panel a click opens.
+  const panelOpen = useSearch({ strict: false, select: (search) => Boolean(search.runner) });
+  const [open, setOpen] = useState(false);
   return (
-    <HoverCard>
+    <HoverCard open={open && !panelOpen} onOpenChange={setOpen}>
       <HoverCardTrigger asChild>
-        <Link {...to} className={cn("hover:underline hover:underline-offset-2", className)}>
+        <RunnerPanelLink
+          runner={runner.key}
+          className={cn("hover:underline hover:underline-offset-2", className)}
+        >
           {content}
-        </Link>
+        </RunnerPanelLink>
       </HoverCardTrigger>
       <HoverCardContent className="w-72">
         {runner.key.startsWith(MACHINE) ? (

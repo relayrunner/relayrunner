@@ -16,11 +16,18 @@ import {
   LayoutGridIcon,
   ListFilterIcon,
   ListIcon,
+  XIcon,
 } from "lucide-react";
 import { useEffect, useMemo, useState, type ReactNode } from "react";
-import { AddRunner, CONNECT_COMMAND, GithubRunnersDialog } from "@/components/add-runner";
+import {
+  AddRunner,
+  CONNECT_COMMAND,
+  CopyCommand,
+  GithubRunnersDialog,
+} from "@/components/add-runner";
 import { SectionBoundary } from "@/components/error-boundary";
 import { PageHeader } from "@/components/page-header";
+import { DOCS_URL } from "@/components/site-footer";
 import { GithubIcon } from "@/components/provider-logos";
 import { byProvider, providerOf } from "@/components/providers";
 import { sharingLabel } from "@/components/machine-sharing";
@@ -96,6 +103,8 @@ const NO_JOB_TIMES: Record<string, Stat> = {};
 
 // Whether self-hosted runners show as a list instead of cards, kept per browser.
 const LIST_KEY = "relayrunner:runners:list";
+// Whether the user closed the card that shows how to connect their own computer, kept per browser.
+const CONNECT_DISMISSED_KEY = "relayrunner:runners:connect-dismissed";
 // Whether self-hosted cards show their hardware and typical job, kept per browser.
 const SHOW_SPECS_KEY = "relayrunner:runners:show-specs";
 
@@ -300,6 +309,15 @@ function RunnersPage() {
 
   const empty = rows.length === 0;
   const showFound = addable.length > 0 && !dismissed;
+  // The user hasn't connected a computer with the CLI anywhere yet: the page shows the command.
+  const [connectDismissed, setConnectDismissed] = useState(() => readFlag(CONNECT_DISMISSED_KEY));
+  const hasOwnMachine =
+    others.length > 0 || allMachines.some((machine) => machine.mine && machine.source !== "github");
+  const showConnect = !hasOwnMachine && !connectDismissed;
+  function dismissConnect() {
+    saveFlag(CONNECT_DISMISSED_KEY, true);
+    setConnectDismissed(true);
+  }
 
   return (
     <section>
@@ -400,6 +418,11 @@ function RunnersPage() {
                     jobTimes={jobTimes ?? NO_JOB_TIMES}
                     onRemovedFromWorkspace={dismissOthers}
                   />
+                  {showConnect && (
+                    <div className="max-w-md">
+                      <ConnectCard onDismiss={dismissConnect} />
+                    </div>
+                  )}
                   {showFound && (
                     <p className="text-sm text-muted-foreground">
                       {addable.length} more {addable.length === 1 ? "runner is" : "runners are"}{" "}
@@ -427,6 +450,11 @@ function RunnersPage() {
                       />
                     </li>
                   ))}
+                  {showConnect && (
+                    <li className="grid min-w-0">
+                      <ConnectCard onDismiss={dismissConnect} />
+                    </li>
+                  )}
                   {showFound && (
                     <li className="grid min-w-0">
                       <FoundCard
@@ -850,6 +878,48 @@ function ConnectLanding({
         )}
       </div>
     </div>
+  );
+}
+
+// Beside other runners, for a user who hasn't connected a computer yet: the landing's command, small.
+function ConnectCard({ onDismiss }: { onDismiss: () => void }) {
+  return (
+    <article
+      aria-label="Connect your computer"
+      className="flex min-w-0 flex-col overflow-hidden rounded-xl border border-dashed"
+    >
+      <div className="grid min-w-0 gap-2.5 px-4 pt-3 pb-3">
+        <div className="flex min-w-0 items-center gap-2.5">
+          <span className="flex size-6 shrink-0 items-center justify-center rounded-md border border-dashed text-muted-foreground">
+            <LaptopIcon aria-hidden className="size-3.5" />
+          </span>
+          <h3 className="min-w-0 flex-1 truncate text-sm font-medium">Run jobs on your computer</h3>
+          <Button
+            size="icon-sm"
+            variant="ghost"
+            className="-my-1 -mr-2 shrink-0 text-muted-foreground"
+            aria-label="Dismiss"
+            onClick={onDismiss}
+          >
+            <XIcon aria-hidden />
+          </Button>
+        </div>
+        <CopyCommand command={CONNECT_COMMAND} />
+        <p className="text-xs text-muted-foreground">
+          Run it in a terminal. Your computer takes jobs while it's running.
+        </p>
+      </div>
+      <div className="mt-auto flex min-h-10 items-center border-t border-dashed px-4 py-2 text-xs">
+        <a
+          href={`${DOCS_URL}/get-started/quickstart`}
+          target="_blank"
+          rel="noreferrer"
+          className="-mx-1 rounded-sm px-1 font-semibold text-go outline-none hover:text-go-hover focus-visible:ring-[3px] focus-visible:ring-ring/50"
+        >
+          See the quickstart
+        </a>
+      </div>
+    </article>
   );
 }
 
