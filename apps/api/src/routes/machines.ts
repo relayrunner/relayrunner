@@ -16,19 +16,24 @@ import {
   MACHINE_ORIGIN_HEADER,
   OFFLINE,
 } from "../durable-objects/machine-session.ts";
-import { addOrgRunnerLabels, type OrgRunner } from "../github-app.ts";
+import { addRunnerLabels, type GitHubRunner, type RunnerScope } from "../github-app.ts";
 import {
+  addedRunnerScope,
   cannotAdd,
   describeAccess,
+  describeRepoAccess,
+  runnerListKey,
   isHiddenRunner,
   matchLabels,
   newRoutingLabel,
-  readOrgRunners,
+  readRunners,
   runnerArch,
   runnerOs,
   type GroupAccess,
 } from "../github-runners.ts";
+import { MAX_RUNNER_REPOS, privateRepos } from "../repositories.ts";
 import {
+  addedMachineScope,
   addMachinesToWorkspace,
   generateMachineToken,
   inWorkspace,
@@ -54,6 +59,7 @@ import { inBackground, requireUser } from "../middleware/session.ts";
 import { requireWorkspace } from "../middleware/workspace.ts";
 import { canControlMachine, requireManager } from "../roles.ts";
 import { AppError, type ErrorCode } from "@relayrunner/errors";
+import { annotate } from "../tracing.ts";
 
 // Enrolling a machine (`relayrunner connect`) with Better Auth's device authorization plugin:
 //
@@ -101,6 +107,8 @@ const SharingBody = z.object({ sharing: z.enum(MACHINE_SHARING) });
 
 const AddRunnersBody = z.object({
   installationId: z.number().int().positive(),
+  // The repo the runners are registered on; left out for org runners.
+  repositoryId: z.number().int().positive().optional(),
   runnerIds: z.array(z.number().int().positive()).min(1).max(50),
 });
 
@@ -281,8 +289,7 @@ export const machineRoutes = new Hono<AppEnv>()
   // close codes). The token is checked first because a failed upgrade hides its status from the
   // CLI, so it asks with a plain GET: 401 means sign in again, 426 means the token is fine.
   .get("/connect", async (c) => {
-    const token = c.req.header("authorization")?.match(/^Bearer\s+(\S+)$/i)?.[1];
-    const machine = await verifyMachineToken(createDb(c.env.DB), token);
+    const machine = await machineFromToken(createDb(c.env.DB), c.req.header("authorization"));
     if (!machine) throw new AppError("UNAUTHENTICATED");
     if (c.req.header("upgrade")?.toLowerCase() !== "websocket")
       throw new AppError("WEBSOCKET_REQUIRED");
@@ -469,6 +476,7 @@ export const machineRoutes = new Hono<AppEnv>()
         ownerName: creator.name,
         ownerImage: creator.image,
         org: schema.githubInstallation.accountLogin,
+        repo: schema.githubRepository.fullName,
       })
       .from(schema.machine)
       .leftJoin(schema.user, eq(schema.user.id, schema.machine.pausedBy))
@@ -476,6 +484,10 @@ export const machineRoutes = new Hono<AppEnv>()
       .leftJoin(
         schema.githubInstallation,
         eq(schema.githubInstallation.id, schema.machine.installationId),
+      )
+      .leftJoin(
+        schema.githubRepository,
+        eq(schema.githubRepository.id, schema.machine.githubRepositoryId),
       )
       .where(
         and(
@@ -486,30 +498,39 @@ export const machineRoutes = new Hono<AppEnv>()
         ),
       )
       .orderBy(asc(schema.machine.name));
-    // Runners added from GitHub: each org's runner list for their live status, cached for a short
-    // while in the workspace's Router so the page's refreshes don't each ask GitHub. Their group
-    // access is read on demand (GET /:id/access) when a card's menu opens.
+    // Runners added from GitHub: the runner list of each org (or repo, for a repo runner) for their
+    // live status, cached for a short while in the workspace's Router so the page's refreshes
+    // don't each ask GitHub. Their group access is read on demand (GET /:id/access) when a card's
+    // menu opens.
     // Agents (agent-auth.ts) skip this: their reads stay off the Router, which picks jobs, so those
     // runners come back with github.unreachable.
-    const orgs = new Map<number, string>();
-    for (const row of rows)
-      if (!c.var.agent && row.machine.source === "github" && row.machine.installationId && row.org)
-        orgs.set(row.machine.installationId, row.org);
-    const router = orgs.size > 0 ? c.env.ROUTER.getByName(c.var.workspace.id) : null;
+    // Each row's runner list key, and the distinct lists to read.
+    const reads = new Map<string, { installationId: number; scope: RunnerScope }>();
+    const keys = rows.map(({ machine, org, repo }) => {
+      const scope =
+        !c.var.agent && machine.source === "github" && machine.installationId && org
+          ? addedRunnerScope(machine, org, repo)
+          : null;
+      if (!scope) return null;
+      const key = runnerListKey(machine.installationId!, scope);
+      reads.set(key, { installationId: machine.installationId!, scope });
+      return key;
+    });
+    const router = reads.size > 0 ? c.env.ROUTER.getByName(c.var.workspace.id) : null;
     const github = new Map(
       await Promise.all(
-        [...orgs].map(async ([installationId, org]) => {
-          const runners = await router!.githubRunners(installationId, org).catch(() => null);
-          return [installationId, runners ? { runners } : null] as const;
+        [...reads].map(async ([key, { installationId, scope }]) => {
+          const runners = await router!.githubRunners(installationId, scope).catch(() => null);
+          return [key, runners ? { runners } : null] as const;
         }),
       ),
     );
+    const readOf = (i: number) => (keys[i] ? github.get(keys[i]) : null);
     // Live status from each connected machine's MachineLink. Fine for a handful per workspace.
     const statuses = await Promise.all(
-      rows.map(async ({ machine }) => {
+      rows.map(async ({ machine }, i) => {
         if (machine.source !== "github") return c.env.MACHINE_LINK.getByName(machine.id).status();
-        const read = machine.installationId ? github.get(machine.installationId) : null;
-        const runner = read?.runners.find((r) => r.id === machine.githubRunnerId);
+        const runner = readOf(i)?.runners.find((r) => r.id === machine.githubRunnerId);
         // One runner runs one job.
         return runner
           ? {
@@ -586,7 +607,7 @@ export const machineRoutes = new Hono<AppEnv>()
             // dashboard can hide it.
             canRevoke: canControlMachine(c.var.role, c.var.user!.id, row.machine),
           };
-        const read = row.machine.installationId ? github.get(row.machine.installationId) : null;
+        const read = readOf(i);
         const runner = read?.runners.find((r) => r.id === row.machine.githubRunnerId);
         return {
           ...presented,
@@ -596,6 +617,8 @@ export const machineRoutes = new Hono<AppEnv>()
           canRevoke: canControlMachine(c.var.role, c.var.user!.id, row.machine),
           github: {
             org: row.org,
+            // owner/name for a runner registered on a repo, null for an org runner.
+            repo: row.repo,
             runnerId: row.machine.githubRunnerId,
             // GitHub answered, and the runner isn't there: removed or re-registered.
             missing: Boolean(read) && !runner,
@@ -606,23 +629,30 @@ export const machineRoutes = new Hono<AppEnv>()
       }),
     });
   })
-  // Self-hosted runners already registered in the workspace's connected orgs, for adding them
-  // (#159). Owners and admins only: the runners belong to the org. `?groups=false` reads only the
-  // runner list (one GitHub call per org) for the Runners page's found card; the Add runner dialog
-  // reads groups too, so it can show each runner's access and block workflow-only groups.
+  // Self-hosted runners already registered in the workspace's connected account, in its org
+  // (#159) or on its private repos (#162), for adding them. Owners and admins only: the runners
+  // belong to the account. `?groups=false` skips the org's runner groups for the Runners page's
+  // found card, and reads the org list from the Router's short cache; the Add runner dialog reads
+  // groups too, so it can show each runner's access and block workflow-only groups. Repo runners
+  // take one GitHub call per private repo, through the Router's cache, for the first
+  // MAX_RUNNER_REPOS (`moreRepos` says there are more). `?repo=name` (or owner/name) looks in that
+  // one repo instead, for an account with more private repos than that.
   .get("/github-runners", requireUser, requireWorkspace, requireManager, async (c) => {
     const groups = c.req.query("groups") !== "false";
+    const lookup = c.req.query("repo")?.trim() || null;
     const installations = await c.var.db
-      .select({ id: schema.githubInstallation.id, org: schema.githubInstallation.accountLogin })
+      .select({
+        id: schema.githubInstallation.id,
+        org: schema.githubInstallation.accountLogin,
+        accountType: schema.githubInstallation.accountType,
+      })
       .from(schema.githubInstallation)
       .where(
         and(
           eq(schema.githubInstallation.id, c.var.workspace.installationId),
-          eq(schema.githubInstallation.accountType, "Organization"),
           isNull(schema.githubInstallation.suspendedAt),
         ),
-      )
-      .orderBy(asc(schema.githubInstallation.accountLogin));
+      );
     const added = await c.var.db
       .select({
         id: schema.machine.id,
@@ -637,29 +667,72 @@ export const machineRoutes = new Hono<AppEnv>()
           isNull(schema.machine.revokedAt),
         ),
       );
-    // Without groups (the Runners page's found card) the runner list comes from the Router's
-    // short cache, shared with GET /machines. The Add runner dialog reads fresh, with groups.
-    const router = groups ? null : c.env.ROUTER.getByName(c.var.workspace.id);
+    // Repo lists always come through the Router's short cache, whose isolate keeps the ETags.
+    const router = c.env.ROUTER.getByName(c.var.workspace.id);
     const orgs = await Promise.all(
       installations.map(async (installation) => {
+        const personal = installation.accountType === "User";
         try {
-          const { runners, access } = router
-            ? {
-                runners: await cachedRunners(router, installation.id, installation.org),
-                access: new Map<number, GroupAccess>(),
-              }
-            : await readOrgRunners(c.env, installation.id, installation.org, { groups });
+          // Read once (a query builder runs again on each `then`), alongside the org's runners.
+          const repos = Promise.resolve(
+            privateRepos(c.var.db, installation.id, {
+              fullName: lookup
+                ? lookup.includes("/")
+                  ? lookup
+                  : `${installation.org}/${lookup}`
+                : undefined,
+            }),
+          );
+          const [org, onRepos, searched] = await Promise.all([
+            personal || lookup
+              ? { runners: [], access: new Map<number, GroupAccess>() }
+              : groups
+                ? readRunners(c.env, installation.id, { kind: "org", org: installation.org })
+                : cachedRunners(router, installation.id, installation.org).then((runners) => ({
+                    runners,
+                    access: new Map<number, GroupAccess>(),
+                  })),
+            repos.then(async (all) => {
+              const repos = all.slice(0, MAX_RUNNER_REPOS);
+              const lists = await router.githubRunnerLists(
+                installation.id,
+                repos.map((repo) => ({ kind: "repo", repo: repo.fullName }) as const),
+              );
+              // A repo GitHub won't list (no repository Administration there) is left out.
+              return repos.flatMap(
+                (repo, i) => lists[i]?.map((runner) => ({ runner, repo })) ?? [],
+              );
+            }),
+            repos.then((all) => all.length),
+          ]);
+          const found = [
+            ...org.runners.map((runner) => ({
+              runner,
+              repo: null,
+              access: org.access.get(runner.id),
+            })),
+            ...onRepos.map(({ runner, repo }) => ({ runner, repo, access: undefined })),
+          ];
           return {
             installationId: installation.id,
             org: installation.org,
-            runners: runners
-              .filter((runner) => !isHiddenRunner(runner))
-              .map((runner) => {
-                const machine = added.find(
-                  (m) => m.installationId === installation.id && m.githubRunnerId === runner.id,
-                );
-                return presentOrgRunner(runner, access.get(runner.id), machine?.id ?? null);
-              }),
+            personal,
+            // More private repos than were searched: look in one by name (`?repo=`).
+            moreRepos: searched > MAX_RUNNER_REPOS,
+            // The repo `?repo=` named isn't one of the account's private repos.
+            repoNotFound: lookup !== null && searched === 0,
+            runners: found
+              .filter(({ runner }) => !isHiddenRunner(runner))
+              .map(({ runner, repo, access }) =>
+                presentGithubRunner(runner, {
+                  access,
+                  repo,
+                  machineId:
+                    added.find(
+                      (m) => m.installationId === installation.id && m.githubRunnerId === runner.id,
+                    )?.id ?? null,
+                }),
+              ),
           };
         } catch (error) {
           console.warn(
@@ -669,37 +742,48 @@ export const machineRoutes = new Hono<AppEnv>()
               error: error instanceof Error ? error.message : String(error),
             }),
           );
-          return { installationId: installation.id, org: installation.org, error: "unavailable" };
+          return {
+            installationId: installation.id,
+            org: installation.org,
+            personal,
+            error: "unavailable",
+          };
         }
       }),
     );
     return c.json({ orgs });
   })
-  // Adds org runners to the workspace: each gets RelayRunner's routing label on GitHub and a
-  // machine row, and routes like a connected machine from then on. Nothing changes on the machine.
+  // Adds runners to the workspace, from the org or from one repo (`repositoryId`): each gets
+  // RelayRunner's routing label on GitHub and a machine row, and routes like a connected machine
+  // from then on. Nothing changes on the machine.
   .post("/github-runners", requireUser, requireWorkspace, requireManager, async (c) => {
     const parsed = AddRunnersBody.safeParse(await c.req.json().catch(() => null));
     if (!parsed.success) throw new AppError("INVALID_REQUEST");
-    const { installationId, runnerIds } = parsed.data;
+    const { installationId, repositoryId, runnerIds } = parsed.data;
     const { db, workspace, user } = c.var;
     const [installation] = await db
-      .select({ org: schema.githubInstallation.accountLogin })
+      .select({
+        org: schema.githubInstallation.accountLogin,
+        accountType: schema.githubInstallation.accountType,
+      })
       .from(schema.githubInstallation)
       .where(
         and(
           eq(schema.githubInstallation.id, installationId),
           eq(schema.githubInstallation.id, workspace.installationId),
-          eq(schema.githubInstallation.accountType, "Organization"),
         ),
       )
       .limit(1);
     if (!installation) throw new AppError("NOT_FOUND");
-
-    const { token, runners, access } = await readOrgRunners(
-      c.env,
-      installationId,
-      installation.org,
-    );
+    // A repo runner's repo must be one of the installation's private repos, and only an org has
+    // org runners.
+    const [repo] = repositoryId ? await privateRepos(db, installationId, { id: repositoryId }) : [];
+    if (repositoryId && !repo) throw new AppError("NOT_FOUND");
+    if (!repo && installation.accountType === "User") throw new AppError("NOT_FOUND");
+    const scope: RunnerScope = repo
+      ? { kind: "repo", repo: repo.fullName }
+      : { kind: "org", org: installation.org };
+    const { token, runners, access } = await readRunners(c.env, installationId, scope);
     const existing = await db
       .select({ githubRunnerId: schema.machine.githubRunnerId })
       .from(schema.machine)
@@ -725,7 +809,7 @@ export const machineRoutes = new Hono<AppEnv>()
         continue;
       }
       const routingLabel = newRoutingLabel();
-      await addOrgRunnerLabels(token, installation.org, runner.id, [routingLabel]);
+      await addRunnerLabels(token, scope, runner.id, [routingLabel]);
       const [machine] = await db
         .insert(schema.machine)
         .values({
@@ -737,6 +821,7 @@ export const machineRoutes = new Hono<AppEnv>()
           source: "github",
           installationId,
           githubRunnerId: runner.id,
+          githubRepositoryId: repo?.id ?? null,
           routingLabel,
           githubLabels: JSON.stringify([...runner.labels, routingLabel]),
           // The org's runner, usually shared team hardware: it takes anyone's jobs (#242).
@@ -755,16 +840,12 @@ export const machineRoutes = new Hono<AppEnv>()
     return c.json({ added, skipped });
   })
   // Which repos a runner added from GitHub may take jobs from, e.g. "Default group · all private
-  // repos", for its card's menu. Read on demand: it takes several GitHub calls (the org's runner
+  // repos" or "Repo runner · acme/app", for its card's menu. Read on demand: it takes several GitHub calls (the org's runner
   // groups, then each group's runners and repos), so the Runners page doesn't wait on it.
   .get("/:id/access", requireUser, requireWorkspace, async (c) => {
-    const [row] = await c.var.db
-      .select({ machine: schema.machine, org: schema.githubInstallation.accountLogin })
+    const [machine] = await c.var.db
+      .select()
       .from(schema.machine)
-      .leftJoin(
-        schema.githubInstallation,
-        eq(schema.githubInstallation.id, schema.machine.installationId),
-      )
       .where(
         and(
           eq(schema.machine.id, c.req.param("id")),
@@ -772,12 +853,14 @@ export const machineRoutes = new Hono<AppEnv>()
           isNull(schema.machine.revokedAt),
         ),
       );
-    if (!row) throw new AppError("NOT_FOUND");
-    const { machine, org } = row;
-    if (machine.source !== "github" || !machine.installationId || !org || !machine.githubRunnerId)
+    if (!machine) throw new AppError("NOT_FOUND");
+    const scope = machine.source === "github" ? await addedMachineScope(c.var.db, machine) : null;
+    if (!scope || !machine.installationId || !machine.githubRunnerId)
       return c.json({ access: null });
+    // A repo runner takes only its repo's jobs; it has no runner group to read.
+    if (scope.kind === "repo") return c.json({ access: describeRepoAccess(scope.repo) });
     try {
-      const { access } = await readOrgRunners(c.env, machine.installationId, org);
+      const { access } = await readRunners(c.env, machine.installationId, scope);
       return c.json({ access: describeAccess(access.get(machine.githubRunnerId)) });
     } catch {
       // GitHub couldn't be asked; the menu just leaves the line out.
@@ -846,20 +929,31 @@ export const machineRoutes = new Hono<AppEnv>()
 
 /** An org's runners from the Router's short cache; throws when GitHub couldn't be asked. */
 async function cachedRunners(
-  router: { githubRunners(installationId: number, org: string): Promise<OrgRunner[] | null> },
+  router: {
+    githubRunners(installationId: number, scope: RunnerScope): Promise<GitHubRunner[] | null>;
+  },
   installationId: number,
   org: string,
 ) {
-  const runners = await router.githubRunners(installationId, org);
+  const runners = await router.githubRunners(installationId, { kind: "org", org });
   if (!runners) throw new AppError("GITHUB_UNAVAILABLE");
   return runners;
 }
 
-/** What the add dialog shows of an org runner. */
-function presentOrgRunner(
-  runner: OrgRunner,
-  access: GroupAccess | undefined,
-  machineId: string | null,
+/** What the add dialog shows of a runner on GitHub: an org runner, or one registered on `repo`. */
+function presentGithubRunner(
+  runner: GitHubRunner,
+  {
+    access,
+    repo,
+    machineId,
+  }: {
+    // An org runner's group access, when it was read.
+    access: GroupAccess | undefined;
+    repo: { id: number; fullName: string } | null;
+    // The machine it's already added as, or null.
+    machineId: string | null;
+  },
 ) {
   return {
     id: runner.id,
@@ -869,11 +963,12 @@ function presentOrgRunner(
     status: runner.status,
     busy: runner.busy,
     labels: matchLabels(runner.labels),
-    access: describeAccess(access),
+    // "Default group · all private repos", "Repo runner · acme/app", or null.
+    access: repo ? describeRepoAccess(repo.fullName) : describeAccess(access),
     // Why it can't be added ("workflows": its group only allows selected workflows), or null.
     blocked: cannotAdd(runner, access),
-    // The machine it's already added as, or null.
     machineId,
+    repo,
   };
 }
 
@@ -896,9 +991,11 @@ async function pauseResponse(
 }
 
 // The machine a `Bearer rrm_…` header belongs to, or null.
-function machineFromToken(db: ReturnType<typeof createDb>, header: string | undefined) {
+async function machineFromToken(db: ReturnType<typeof createDb>, header: string | undefined) {
   const token = header?.match(/^Bearer\s+(\S+)$/i)?.[1];
-  return verifyMachineToken(db, token);
+  const machine = await verifyMachineToken(db, token);
+  annotate({ "relayrunner.machine_id": machine?.id, "user.id": machine?.userId });
+  return machine;
 }
 
 // What `relayrunner workspaces` shows: the machine, the owner's workspaces it takes jobs in, and

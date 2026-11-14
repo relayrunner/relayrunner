@@ -11,7 +11,7 @@ Installing the App makes the workspace, and the person who installed it is its o
 
 If the App was installed by someone who isn't an org owner, GitHub sends the owners a request. The workspace appears once an owner accepts it.
 
-Organizations and personal accounts both work. A few things only work for organizations, such as [adding existing runners](/docs/runners/self-hosted#runners-your-org-already-has).
+Organizations and personal accounts both work. A few things only work for organizations, such as runner groups and reading your Actions budget.
 
 ## Roles
 

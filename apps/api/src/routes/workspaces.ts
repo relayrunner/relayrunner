@@ -19,11 +19,13 @@ import { HOSTED_PROVIDER_IDS, providersOfAppSlugs } from "@relayrunner/providers
 import { appInstallationToken, orgAppSlugs } from "../github-app.ts";
 import { present } from "./github.ts";
 import { AppError } from "@relayrunner/errors";
+import { annotate } from "../tracing.ts";
 
 // Any member of the workspace in the path. Someone outside it gets a 404, so ids don't leak.
 // An agent token (agent-auth.ts) only reaches the workspaces it was granted.
 const requireMember = createMiddleware<AppEnv>(async (c, next) => {
   const workspaceId = c.req.param("id") ?? "";
+  annotate({ "relayrunner.workspace_id": workspaceId });
   if (c.var.agent && agentWorkspaceId(c.var.agent, workspaceId) === null) {
     throw new AppError("NOT_FOUND");
   }

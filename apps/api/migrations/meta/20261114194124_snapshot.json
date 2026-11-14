@@ -1,7 +1,7 @@
 {
   "version": "6",
   "dialect": "sqlite",
-  "id": "63a4fe04-d6fe-4cfa-ae2b-8fae6f0a2035",
+  "id": "573af52f-e1d1-4398-abc3-266289515cb7",
   "prevId": "bed64f34-f4de-4521-b463-59447e89d24d",
   "tables": {
     "account": {
@@ -2040,6 +2040,13 @@
         },
         "github_runner_id": {
           "name": "github_runner_id",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
+        "github_repository_id": {
+          "name": "github_repository_id",
           "type": "integer",
           "primaryKey": false,
           "notNull": false,
@@ -4385,119 +4392,6 @@
       "uniqueConstraints": {},
       "checkConstraints": {}
     },
-    "signal_day": {
-      "name": "signal_day",
-      "columns": {
-        "installation_id": {
-          "name": "installation_id",
-          "type": "integer",
-          "primaryKey": false,
-          "notNull": true,
-          "autoincrement": false
-        },
-        "day": {
-          "name": "day",
-          "type": "integer",
-          "primaryKey": false,
-          "notNull": true,
-          "autoincrement": false
-        },
-        "signal": {
-          "name": "signal",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true,
-          "autoincrement": false
-        },
-        "repository_id": {
-          "name": "repository_id",
-          "type": "integer",
-          "primaryKey": false,
-          "notNull": true,
-          "autoincrement": false
-        },
-        "repository_full_name": {
-          "name": "repository_full_name",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true,
-          "autoincrement": false
-        },
-        "subject": {
-          "name": "subject",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true,
-          "autoincrement": false
-        },
-        "workflow_path": {
-          "name": "workflow_path",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": false,
-          "autoincrement": false
-        },
-        "count": {
-          "name": "count",
-          "type": "integer",
-          "primaryKey": false,
-          "notNull": true,
-          "autoincrement": false
-        },
-        "run_ms": {
-          "name": "run_ms",
-          "type": "integer",
-          "primaryKey": false,
-          "notNull": true,
-          "autoincrement": false
-        },
-        "cost": {
-          "name": "cost",
-          "type": "real",
-          "primaryKey": false,
-          "notNull": true,
-          "autoincrement": false
-        }
-      },
-      "indexes": {
-        "signal_day_day_idx": {
-          "name": "signal_day_day_idx",
-          "columns": [
-            "day"
-          ],
-          "isUnique": false
-        }
-      },
-      "foreignKeys": {
-        "signal_day_installation_id_github_installation_id_fk": {
-          "name": "signal_day_installation_id_github_installation_id_fk",
-          "tableFrom": "signal_day",
-          "tableTo": "github_installation",
-          "columnsFrom": [
-            "installation_id"
-          ],
-          "columnsTo": [
-            "id"
-          ],
-          "onDelete": "cascade",
-          "onUpdate": "no action"
-        }
-      },
-      "compositePrimaryKeys": {
-        "signal_day_installation_id_day_signal_repository_id_subject_pk": {
-          "columns": [
-            "installation_id",
-            "day",
-            "signal",
-            "repository_id",
-            "subject"
-          ],
-          "name": "signal_day_installation_id_day_signal_repository_id_subject_pk"
-        }
-      },
-      "uniqueConstraints": {},
-      "checkConstraints": {}
-    },
     "spend_installation": {
       "name": "spend_installation",
       "columns": {
@@ -5118,27 +5012,6 @@
           "notNull": false,
           "autoincrement": false
         },
-        "workflow_id": {
-          "name": "workflow_id",
-          "type": "integer",
-          "primaryKey": false,
-          "notNull": false,
-          "autoincrement": false
-        },
-        "workflow_path": {
-          "name": "workflow_path",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": false,
-          "autoincrement": false
-        },
-        "default_branch": {
-          "name": "default_branch",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": false,
-          "autoincrement": false
-        },
         "display_title": {
           "name": "display_title",
           "type": "text",
@@ -5272,23 +5145,6 @@
           "name": "workflow_run_updated_idx",
           "columns": [
             "github_updated_at"
-          ],
-          "isUnique": false
-        },
-        "workflow_run_branch_idx": {
-          "name": "workflow_run_branch_idx",
-          "columns": [
-            "repository_id",
-            "head_branch",
-            "run_started_at"
-          ],
-          "isUnique": false
-        },
-        "workflow_run_sha_idx": {
-          "name": "workflow_run_sha_idx",
-          "columns": [
-            "repository_id",
-            "head_sha"
           ],
           "isUnique": false
         }

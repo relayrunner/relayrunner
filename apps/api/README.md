@@ -19,7 +19,7 @@ It does four jobs:
 | `/api/workspaces/*` | The active workspace, its machine counts and its runner order.                                                                      |
 | `/api/invites/*`    | Workspace invitations.                                                                                                              |
 | `/api/github/*`     | Installing the GitHub App, its Setup URL, and claiming installations made straight from GitHub.                                     |
-| `/api/machines/*`   | Machine enrollment (`relayrunner connect`), the machine WebSocket, pause and resume, and adding existing org runners.               |
+| `/api/machines/*`   | Machine enrollment (`relayrunner connect`), the machine WebSocket, pause and resume, and adding existing org and repo runners.      |
 | `/api/activity`     | The activity log and its filter options.                                                                                            |
 | `/api/runs`         | Workflow runs and their jobs.                                                                                                       |
 | `/api/job-times`    | Job durations by run and by machine.                                                                                                |

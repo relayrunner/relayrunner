@@ -4,11 +4,12 @@ import type { Env } from "../env.ts";
 import { createTestEnv } from "../testing.ts";
 
 // GitHub reads the Router makes itself: tests that need them set the answers.
-const github = vi.hoisted(() => ({ userCanReadRepo: vi.fn() }));
+const github = vi.hoisted(() => ({ userCanReadRepo: vi.fn(), listRunners: vi.fn() }));
 vi.mock("../github-app.ts", async (importOriginal) => ({
   ...(await importOriginal<typeof import("../github-app.ts")>()),
   appInstallationToken: async () => "ghs_test",
   userCanReadRepo: github.userCanReadRepo,
+  listRunners: github.listRunners,
 }));
 
 const { Router } = await import("./router.ts");
@@ -284,6 +285,51 @@ describe("Router: GitHub's API limit", () => {
     github.userCanReadRepo.mockResolvedValue(true);
     const decision = await router.route(othersJob(["self-hosted"]));
     expect(decision.runner).toMatch(/^rr-/);
+  });
+});
+
+describe("Router: runners added from a repo", () => {
+  let router: InstanceType<typeof Router>;
+
+  beforeEach(async () => {
+    vi.spyOn(console, "log").mockImplementation(() => {});
+    const env = await createTestEnv();
+    const now = Date.now();
+    for (const sql of [
+      "insert into github_installation (id, account_id, account_login, account_type, created_at, updated_at) values (7, 10, 'leonel', 'User', ?1, ?1)",
+      "insert into workspace (id, installation_id, name, slug, created_at) values ('w1', 7, 'W', 'w', ?1)",
+      // Registered on leonel/cabal (repository id 1).
+      `insert into machine (id, workspace_id, name, os, arch, source, sharing, installation_id, github_runner_id, github_repository_id, routing_label, github_labels, created_at, updated_at) values ('gh1', 'w1', 'mighty-m1', 'macos', 'arm64', 'github', 'anyone', 7, 21, 1, 'rr-runner-0a1b2c3d', '["self-hosted","macOS","ARM64","rr-runner-0a1b2c3d"]', ?1, ?1)`,
+    ])
+      await env.DB.prepare(sql).bind(now).run();
+    github.listRunners.mockReset().mockResolvedValue([
+      {
+        id: 21,
+        name: "mighty-m1",
+        os: "macOS",
+        status: "online",
+        busy: false,
+        ephemeral: false,
+        labels: ["self-hosted", "macOS", "ARM64", "rr-runner-0a1b2c3d"],
+      },
+    ]);
+    router = new Router(memoryState().ctx as never, env);
+  });
+
+  test("its own repo's job goes to it, by its routing label", async () => {
+    const decision = await router.route(job(1));
+    expect(decision.runner).toBe("rr-runner-0a1b2c3d");
+    expect(github.listRunners).toHaveBeenCalledWith("ghs_test", {
+      kind: "repo",
+      repo: "leonel/cabal",
+    });
+  });
+
+  test("another repo's job never goes to it", async () => {
+    const decision = await router.route({ ...job(2), repositoryId: 2, repo: "leonel/other" });
+    expect(decision.runner).toBeNull();
+    expect(decision.skipped).toContainEqual({ key: "machine", reason: "no_machine" });
+    expect(github.listRunners).not.toHaveBeenCalled();
   });
 });
 

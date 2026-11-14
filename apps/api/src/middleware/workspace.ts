@@ -4,6 +4,7 @@ import type { AppEnv } from "../app.ts";
 import { AGENT_WORKSPACE_HEADER, agentWorkspaceId } from "../agent-auth.ts";
 import { createDb, schema, type Db } from "../db/index.ts";
 import { AppError } from "@relayrunner/errors";
+import { annotate } from "../tracing.ts";
 
 // Resolves the session's active workspace and the signed-in user's membership in it. Gateway
 // routes that act on a workspace (installations, machines, repos) go behind this. Run it after
@@ -17,6 +18,7 @@ export const requireWorkspace = createMiddleware<AppEnv>(async (c, next) => {
   if (!workspaceId) {
     throw new AppError(agent ? "WORKSPACE_REQUIRED" : "NO_ACTIVE_WORKSPACE");
   }
+  annotate({ "relayrunner.workspace_id": workspaceId });
 
   const userId = c.var.user!.id;
   // A workspace an install made a moment ago may not be on a replica yet, so a miss asks the primary.

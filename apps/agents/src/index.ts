@@ -14,6 +14,7 @@ import {
   McpServer,
   WebStandardStreamableHTTPServerTransport,
 } from "@modelcontextprotocol/server";
+import { tracing } from "cloudflare:workers";
 import { apiClient, type Me } from "./api.ts";
 import type { Env } from "./env.ts";
 import { SERVER_CARD_TYPE, SERVER_VERSION, serverCard } from "./server-card.ts";
@@ -46,6 +47,11 @@ export default {
       if (error instanceof AppError && error.status === 401) return unauthorized(env, true);
       throw error;
     }
+    // Ids only, so traces and Workers Issues can be filtered by who made the call.
+    tracing.getActiveSpan()?.setAttributes({
+      "user.id": me.user.id,
+      "relayrunner.agent_grant_id": me.agent.grantId,
+    });
     const { success } = await env.LIMITER.limit({
       key: `${me.user.id}:${me.agent.grantId}`,
     });

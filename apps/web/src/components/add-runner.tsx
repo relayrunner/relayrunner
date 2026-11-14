@@ -10,6 +10,7 @@ import {
 import { GithubIcon } from "@/components/provider-logos";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
 import {
   Dialog,
   DialogContent,
@@ -28,8 +29,8 @@ import { AppError } from "@relayrunner/errors";
 import {
   addGithubRunners,
   listGithubRunners,
-  type OrgRunner,
-  type OrgRunners,
+  type GitHubRunner,
+  type GitHubRunners,
 } from "@/lib/machines";
 import { DOCS_URL } from "@/components/site-footer";
 import { cn } from "@/lib/utils";
@@ -109,11 +110,12 @@ type Loaded =
   | { kind: "loading" }
   | { kind: "forbidden" }
   | { kind: "error" }
-  | { kind: "ready"; orgs: OrgRunners[] };
+  | { kind: "ready"; orgs: GitHubRunners[] };
 
 /**
- * Picks self-hosted runners already registered in the workspace's connected orgs and adds them.
- * RelayRunner puts one label on each runner on GitHub; nothing changes on the machine.
+ * Picks self-hosted runners already registered in the workspace's connected org, or on its private
+ * repos, and adds them. RelayRunner puts one label on each runner on GitHub; nothing changes on the
+ * machine.
  */
 export function GithubRunnersDialog({
   open,
@@ -131,6 +133,10 @@ export function GithubRunnersDialog({
   const [picked, setPicked] = useState<Set<string>>(new Set());
   const [adding, setAdding] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  // Looking in one repo by name, for an account with more private repos than the list searches.
+  const [repoName, setRepoName] = useState("");
+  const [looking, setLooking] = useState(false);
+  const [lookupNote, setLookupNote] = useState<string | null>(null);
 
   useEffect(() => {
     if (!open) return;
@@ -138,6 +144,8 @@ export function GithubRunnersDialog({
     setLoaded({ kind: "loading" });
     setPicked(new Set());
     setError(null);
+    setRepoName("");
+    setLookupNote(null);
     listGithubRunners()
       .then(({ orgs }) => !cancelled && setLoaded({ kind: "ready", orgs }))
       .catch((err: unknown) => {
@@ -149,6 +157,7 @@ export function GithubRunnersDialog({
     };
   }, [open]);
 
+  const orgs = loaded.kind === "ready" ? loaded.orgs : [];
   const key = (installationId: number, runnerId: number) => `${installationId}:${runnerId}`;
   function toggle(id: string) {
     setPicked((current) => {
@@ -162,14 +171,31 @@ export function GithubRunnersDialog({
   async function add() {
     setAdding(true);
     setError(null);
-    const byInstallation = new Map<number, number[]>();
-    for (const id of picked) {
-      const [installationId = 0, runnerId = 0] = id.split(":").map(Number);
-      byInstallation.set(installationId, [...(byInstallation.get(installationId) ?? []), runnerId]);
+    // One call per org, or per repo for repo runners.
+    const byPlace = new Map<
+      string,
+      { installationId: number; repositoryId?: number; runnerIds: number[] }
+    >();
+    for (const org of orgs) {
+      if (!("runners" in org)) continue;
+      for (const runner of org.runners) {
+        if (!picked.has(key(org.installationId, runner.id))) continue;
+        const place = `${org.installationId}:${runner.repo?.id ?? 0}`;
+        const group = byPlace.get(place) ?? {
+          installationId: org.installationId,
+          repositoryId: runner.repo?.id,
+          runnerIds: [],
+        };
+        group.runnerIds.push(runner.id);
+        byPlace.set(place, group);
+      }
     }
     try {
-      for (const [installationId, runnerIds] of byInstallation)
-        await addGithubRunners(installationId, runnerIds);
+      await Promise.all(
+        [...byPlace.values()].map(({ installationId, runnerIds, repositoryId }) =>
+          addGithubRunners(installationId, runnerIds, repositoryId),
+        ),
+      );
       await onAdded();
       onOpenChange(false);
     } catch {
@@ -179,8 +205,67 @@ export function GithubRunnersDialog({
     }
   }
 
-  const orgs = loaded.kind === "ready" ? loaded.orgs : [];
+  async function lookInRepo(event: React.FormEvent) {
+    event.preventDefault();
+    const name = repoName.trim();
+    if (!name) return;
+    setLooking(true);
+    setLookupNote(null);
+    try {
+      const { orgs: results } = await listGithubRunners({ repo: name });
+      const hits = results.flatMap((org) => ("runners" in org ? org.runners : []));
+      // Add what it found to the list, once each.
+      setLoaded((current) =>
+        current.kind !== "ready"
+          ? current
+          : {
+              kind: "ready",
+              orgs: current.orgs.map((org) => {
+                const result = results.find((r) => r.installationId === org.installationId);
+                if (!("runners" in org) || !result || !("runners" in result)) return org;
+                const fresh = result.runners.filter((r) => !org.runners.some((o) => o.id === r.id));
+                return { ...org, runners: [...org.runners, ...fresh] };
+              }),
+            },
+      );
+      setLookupNote(
+        results.some((org) => "repoNotFound" in org && org.repoNotFound)
+          ? `No private repo named ${name}.`
+          : hits.length === 0
+            ? `No self-hosted runners on ${name}.`
+            : null,
+      );
+    } catch {
+      setLookupNote("Couldn't look in that repo. Try again.");
+    } finally {
+      setLooking(false);
+    }
+  }
+
   const found = orgs.some((org) => "runners" in org && org.runners.length > 0);
+  const moreRepos = orgs.some((org) => "runners" in org && org.moreRepos);
+  const lookup = (
+    <form className="grid gap-2" onSubmit={(event) => void lookInRepo(event)}>
+      <label htmlFor="runner-repo" className="text-xs text-muted-foreground">
+        {moreRepos
+          ? "You have more than 100 private repos, so only the first 100 were checked. Look in another one by name:"
+          : "Don't see one? Look in a repo by name:"}
+      </label>
+      <div className="flex gap-2">
+        <Input
+          id="runner-repo"
+          className="font-mono"
+          placeholder="repo-name"
+          value={repoName}
+          onChange={(event) => setRepoName(event.target.value)}
+        />
+        <Button type="submit" variant="outline" disabled={looking || !repoName.trim()}>
+          {looking ? "Looking…" : "Look"}
+        </Button>
+      </div>
+      {lookupNote && <p className="text-xs text-muted-foreground">{lookupNote}</p>}
+    </form>
+  );
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
@@ -188,8 +273,8 @@ export function GithubRunnersDialog({
         <DialogHeader>
           <DialogTitle>Add runners from GitHub</DialogTitle>
           <DialogDescription>
-            Self-hosted runners already registered in your connected orgs. RelayRunner adds one
-            label to each runner on GitHub. Nothing changes on the machine.
+            Self-hosted runners already registered in your org or on your private repos. RelayRunner
+            adds one label to each runner on GitHub. Nothing changes on the machine.
           </DialogDescription>
         </DialogHeader>
 
@@ -210,7 +295,7 @@ export function GithubRunnersDialog({
         {loaded.kind === "ready" && orgs.length === 0 && (
           <p className="text-sm text-muted-foreground">
             {hasAccounts
-              ? "Existing runners can only be added from GitHub orgs for now."
+              ? "The GitHub App is suspended on your account."
               : "Connect a GitHub account first."}
           </p>
         )}
@@ -218,17 +303,20 @@ export function GithubRunnersDialog({
           <div className="grid gap-2 text-sm">
             <p className="font-medium">No self-hosted runners found</p>
             <p className="text-muted-foreground">
-              Register one in your org's Actions settings, then come back.
+              Register one in your org's or a private repo's Actions settings, then come back.
             </p>
             <div className="flex flex-wrap gap-2">
-              {orgs.map((org) => (
-                <Button key={org.installationId} asChild size="sm" variant="outline">
-                  <a href={runnerSettingsUrl(org.org)} target="_blank" rel="noreferrer">
-                    {org.org} runner settings
-                  </a>
-                </Button>
-              ))}
+              {orgs
+                .filter((org) => !org.personal)
+                .map((org) => (
+                  <Button key={org.installationId} asChild size="sm" variant="outline">
+                    <a href={runnerSettingsUrl(org.org)} target="_blank" rel="noreferrer">
+                      {org.org} runner settings
+                    </a>
+                  </Button>
+                ))}
             </div>
+            {lookup}
           </div>
         )}
         {loaded.kind === "ready" && found && (
@@ -250,9 +338,9 @@ export function GithubRunnersDialog({
                 )}
               </section>
             ))}
+            {lookup}
             <p className="text-xs text-muted-foreground">
-              Don't see one? Runners registered to a single repo or an enterprise aren't supported
-              yet.
+              Runners registered on a public repo or an enterprise aren't supported.
             </p>
           </div>
         )}
@@ -280,12 +368,16 @@ export function GithubRunnersDialog({
 export const runnerSettingsUrl = (org: string) =>
   `https://github.com/organizations/${encodeURIComponent(org)}/settings/actions/runners`;
 
+/** A repo's runner settings on GitHub, for a runner registered on `repo` (owner/name). */
+export const repoRunnerSettingsUrl = (repo: string) =>
+  `https://github.com/${repo}/settings/actions/runners`;
+
 function RunnerOption({
   runner,
   checked,
   onToggle,
 }: {
-  runner: OrgRunner;
+  runner: GitHubRunner;
   checked: boolean;
   onToggle: () => void;
 }) {

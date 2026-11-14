@@ -160,8 +160,8 @@ function RunnersPage() {
   useEffect(() => {
     setFound(foundCache.get(workspaceId) ?? null);
     setDismissed(dismissedFound.has(workspaceId));
-    void findRunners();
-    // Once per visit and workspace.
+    // Once per visit and workspace, and not once the card is dismissed: it asks GitHub per repo.
+    if (!dismissedFound.has(workspaceId)) void findRunners();
   }, [workspaceId, editable]);
   // Each machine's jobs over the last INACTIVE_DAYS, loaded after the cards so they never wait on
   // it. Null until it answers, so runners added from GitHub aren't hidden as inactive meanwhile.

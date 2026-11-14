@@ -2,7 +2,7 @@ import { afterEach, beforeAll, beforeEach, describe, expect, test, vi } from "vi
 import { app } from "./app.ts";
 import { createDb, schema } from "./db/index.ts";
 import type { Env } from "./env.ts";
-import { listOrgRunners } from "./github-app.ts";
+import { listRunners, type RunnerScope } from "./github-app.ts";
 import {
   describeAccess,
   groupAllows,
@@ -157,26 +157,25 @@ describe("adding GitHub runners", () => {
       }),
     } as unknown as Env["MACHINE_LINK"];
     // The Router's cached runner list, read fresh here so each test sees its own runners.
+    const githubRunners = (_installationId: number, scope: RunnerScope) => {
+      routerReads += 1;
+      return listRunners("ghs_test", scope).catch(() => null);
+    };
     env.ROUTER = {
       getByName: () => ({
-        githubRunners: (_installationId: number, org: string) => {
-          routerReads += 1;
-          return listOrgRunners("ghs_test", org).catch(() => null);
-        },
+        githubRunners,
+        githubRunnerLists: (installationId: number, scopes: RunnerScope[]) =>
+          Promise.all(scopes.map((scope) => githubRunners(installationId, scope))),
       }),
     } as unknown as Env["ROUTER"];
   });
 
   // The org's runners and groups as GitHub would answer, and the label calls made.
-  let runners: {
-    id: number;
-    name: string;
-    os: string;
-    status: string;
-    busy: boolean;
-    ephemeral: boolean;
-    labels: { name: string }[];
-  }[];
+  type Runner = ReturnType<typeof runner>;
+  let runners: Runner[];
+  // Each repo's own runners, by owner/name. A repo missing here answers 403, as GitHub does
+  // without repository Administration.
+  let repoRunners: Record<string, Runner[]>;
   let groups: { id: number; name: string; visibility: string; restricted_to_workflows?: boolean }[];
   let labelCalls: { method: string; url: string; body?: unknown }[];
   let githubPaths: string[];
@@ -192,6 +191,7 @@ describe("adding GitHub runners", () => {
       runner(15, "blacksmith-2vcpu-ubuntu-2404-abc", "Linux", ["blacksmith-2vcpu-ubuntu-2404"]),
       runner(16, "blacksmith-2vcpu-ubuntu-2404-def", "Linux", []),
     ];
+    repoRunners = {};
     groups = [{ id: 1, name: "Default", visibility: "all" }];
     labelCalls = [];
     githubPaths = [];
@@ -208,6 +208,13 @@ describe("adding GitHub runners", () => {
           body: init?.body ? JSON.parse(String(init.body)) : undefined,
         });
         return Response.json({ labels: [] });
+      }
+      const repo = path.match(/^\/repos\/([^/]+\/[^/]+)\/actions\/runners$/)?.[1];
+      if (repo) {
+        const list = repoRunners[repo];
+        return list
+          ? Response.json({ total_count: list.length, runners: list })
+          : new Response("forbidden", { status: 403 });
       }
       if (path.endsWith("/actions/runners"))
         return Response.json({ total_count: runners.length, runners });
@@ -235,8 +242,8 @@ describe("adding GitHub runners", () => {
 
   let installations = 900;
 
-  // An owner with a workspace that has connected one org.
-  async function setup() {
+  // An owner with a workspace that has connected one org (or a personal account).
+  async function setup(accountType = "Organization") {
     const { cookie } = await testing.signIn(env);
     installations += 1;
     const created = await testing.createWorkspace(
@@ -251,7 +258,7 @@ describe("adding GitHub runners", () => {
         id: installations,
         accountId: installations,
         accountLogin: `org-${installations}`,
-        accountType: "Organization",
+        accountType,
       });
     await testing.useInstallation(env, created.workspace.id, installations);
     return {
@@ -435,5 +442,162 @@ describe("adding GitHub runners", () => {
       machines: { status: { online: boolean }; github?: { missing: boolean } }[];
     };
     expect(machines[0]).toMatchObject({ status: { online: false }, github: { missing: true } });
+  });
+  // Repos the installation sees, as the repository webhooks would have mirrored them.
+  async function addRepos(
+    installationId: number,
+    repos: { id: number; name: string; private: boolean }[],
+  ) {
+    const now = new Date();
+    // In batches: D1 caps the variables in one statement.
+    for (let i = 0; i < repos.length; i += 10)
+      await createDb(env.DB)
+        .insert(schema.githubRepository)
+        .values(
+          repos.slice(i, i + 10).map((repo) => ({
+            id: repo.id,
+            installationId,
+            fullName: `org-${installationId}/${repo.name}`,
+            private: repo.private,
+            githubStateAt: now,
+          })),
+        );
+  }
+
+  test("lists runners registered on the org's private repos", async () => {
+    const { cookie, installationId } = await setup();
+    const id = installationId * 10;
+    await addRepos(installationId, [
+      { id: id + 1, name: "app", private: true },
+      { id: id + 2, name: "site", private: false },
+      // GitHub refuses this one (403): left out, the rest still list.
+      { id: id + 3, name: "locked", private: true },
+    ]);
+    repoRunners[`org-${installationId}/app`] = [
+      runner(21, "mighty-m1", "macOS", ["self-hosted", "macOS", "ARM64"]),
+      runner(22, "pick-def", "Linux", ["relayrunner"]),
+    ];
+    repoRunners[`org-${installationId}/site`] = [runner(23, "public-box", "Linux", [])];
+    const response = await testing.call(env, "/machines/github-runners", cookie);
+    const { orgs } = (await response.json()) as {
+      orgs: { runners: { id: number; access: string; repo: { fullName: string } | null }[] }[];
+    };
+    expect(orgs[0].runners.map((r) => [r.id, r.repo?.fullName ?? null, r.access])).toEqual([
+      [11, null, "Default group · all private repos"],
+      [21, `org-${installationId}/app`, `Repo runner · org-${installationId}/app`],
+    ]);
+    // Public repos aren't asked: machines never take their jobs.
+    expect(githubPaths).not.toContain(`/repos/org-${installationId}/site/actions/runners`);
+  });
+
+  test("lists a personal account's repo runners", async () => {
+    const { cookie, installationId } = await setup("User");
+    await addRepos(installationId, [{ id: installationId * 10, name: "app", private: true }]);
+    repoRunners[`org-${installationId}/app`] = [runner(21, "mighty-m1", "macOS", ["self-hosted"])];
+    const response = await testing.call(env, "/machines/github-runners", cookie);
+    const { orgs } = (await response.json()) as {
+      orgs: { personal: boolean; runners: { id: number }[] }[];
+    };
+    expect(orgs[0]).toMatchObject({ personal: true, runners: [{ id: 21 }] });
+    // A personal account has no org runners to ask for.
+    expect(githubPaths).not.toContain(`/orgs/org-${installationId}/actions/runners`);
+  });
+
+  test("adds a repo runner: labels it on its repo and lists it with its repo", async () => {
+    const { cookie, installationId } = await setup();
+    const repositoryId = installationId * 10;
+    const repo = `org-${installationId}/app`;
+    await addRepos(installationId, [{ id: repositoryId, name: "app", private: true }]);
+    repoRunners[repo] = [runner(21, "mighty-m1", "macOS", ["self-hosted", "macOS", "ARM64"])];
+
+    const added = await testing.call(env, "/machines/github-runners", cookie, {
+      installationId,
+      repositoryId,
+      runnerIds: [21],
+    });
+    const machine = ((await added.json()) as { added: { id: string; routingLabel: string }[] })
+      .added[0];
+    expect(labelCalls).toEqual([
+      {
+        method: "POST",
+        url: `/repos/${repo}/actions/runners/21/labels`,
+        body: { labels: [machine.routingLabel] },
+      },
+    ]);
+
+    repoRunners[repo][0].busy = true;
+    const { machines } = (await (await testing.call(env, "/machines", cookie)).json()) as {
+      machines: { id: string; status: { state: string }; github: { repo: string | null } }[];
+    };
+    expect(machines.find((m) => m.id === machine.id)).toMatchObject({
+      status: { state: "busy" },
+      github: { repo },
+    });
+    const access = await testing.call(env, `/machines/${machine.id}/access`, cookie);
+    expect(await access.json()).toEqual({ access: `Repo runner · ${repo}` });
+
+    labelCalls = [];
+    await app.request(
+      `/api/machines/${machine.id}`,
+      { method: "DELETE", headers: { cookie, origin: env.BETTER_AUTH_URL } },
+      env,
+    );
+    expect(labelCalls).toEqual([
+      {
+        method: "DELETE",
+        url: `/repos/${repo}/actions/runners/21/labels/${machine.routingLabel}`,
+        body: undefined,
+      },
+    ]);
+  });
+
+  test("looks in one repo by name, past the repos it searches on its own", async () => {
+    const { cookie, installationId } = await setup();
+    const base = installationId * 1000;
+    await addRepos(
+      installationId,
+      Array.from({ length: 101 }, (_, i) => ({
+        id: base + i,
+        name: `repo-${String(i).padStart(3, "0")}`,
+        private: true,
+      })),
+    );
+    repoRunners[`org-${installationId}/repo-100`] = [
+      runner(31, "far-mac", "macOS", ["self-hosted"]),
+    ];
+    type Body = {
+      orgs: {
+        moreRepos: boolean;
+        repoNotFound: boolean;
+        runners: { id: number; repo: { fullName: string } | null }[];
+      }[];
+    };
+    const all = (await (
+      await testing.call(env, "/machines/github-runners", cookie)
+    ).json()) as Body;
+    expect(all.orgs[0].moreRepos).toBe(true);
+    expect(all.orgs[0].runners.map((r) => r.id)).toEqual([11]);
+
+    const one = (await (
+      await testing.call(env, "/machines/github-runners?repo=REPO-100", cookie)
+    ).json()) as Body;
+    // Only that repo's runners, not the org's.
+    expect(one.orgs[0]).toMatchObject({ repoNotFound: false, runners: [{ id: 31 }] });
+
+    const missing = (await (
+      await testing.call(env, "/machines/github-runners?repo=nope", cookie)
+    ).json()) as Body;
+    expect(missing.orgs[0]).toMatchObject({ repoNotFound: true, runners: [] });
+  });
+
+  test("won't add a runner from a repo the installation doesn't see", async () => {
+    const { cookie, installationId } = await setup();
+    const response = await testing.call(env, "/machines/github-runners", cookie, {
+      installationId,
+      repositoryId: 424242,
+      runnerIds: [21],
+    });
+    expect(response.status).toBe(404);
+    expect(labelCalls).toEqual([]);
   });
 });

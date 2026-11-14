@@ -19,7 +19,7 @@ import {
   promotePendingToken,
 } from "../machines.ts";
 import { placeNow, takeHold, type MachineHold, type Route } from "../routing.ts";
-import { traced } from "../tracing.ts";
+import { annotate, traced } from "../tracing.ts";
 import {
   CLOSE,
   handleFrame,
@@ -62,6 +62,7 @@ export class MachineLink extends DurableObject<Env> {
       return new Response("Expected a WebSocket.", { status: 426 });
     const machineId = request.headers.get(MACHINE_ID_HEADER);
     if (!machineId) return new Response("Missing machine id.", { status: 400 });
+    annotate({ "relayrunner.machine_id": machineId });
 
     // One socket per machine: a newer connection wins, so a restarted CLI never waits for the
     // old socket to time out. When it pushes out a live connection from another address, someone
@@ -100,6 +101,7 @@ export class MachineLink extends DurableObject<Env> {
   async webSocketMessage(ws: WebSocket, frame: string | ArrayBuffer) {
     const session = attachment(ws);
     if (!session) return close(ws, CLOSE.policy, "unknown socket");
+    annotate({ "relayrunner.machine_id": session.machineId });
     const outcome = handleFrame(session, frame, Date.now());
     ws.serializeAttachment(outcome.state);
     // The first hello is when the machine comes online. A paused machine hears so right away.
@@ -156,6 +158,7 @@ export class MachineLink extends DurableObject<Env> {
     close(ws, code === 1005 || code === 1006 ? 1000 : code, reason);
     const session = attachment(ws);
     if (!session) return;
+    annotate({ "relayrunner.machine_id": session.machineId });
     await this.touch(session.machineId);
     // A close this side started (timeout, revoke, replaced, protocol error) was logged when it
     // closed, or deliberately not logged (replaced), so only the machine's own close counts here.
@@ -164,7 +167,9 @@ export class MachineLink extends DurableObject<Env> {
 
   async webSocketError(ws: WebSocket) {
     const session = attachment(ws);
-    if (session) await this.touch(session.machineId);
+    if (!session) return;
+    annotate({ "relayrunner.machine_id": session.machineId });
+    await this.touch(session.machineId);
   }
 
   // Closes sockets that have gone quiet, and checks again while any remain.

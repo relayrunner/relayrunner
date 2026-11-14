@@ -1,21 +1,24 @@
-// Self-hosted runners an org already has, added to RelayRunner as they are (#159). RelayRunner
+// Self-hosted runners an org already has, added to RelayRunner as they are: registered in the org
+// (#159) or on one of its repos (#162). RelayRunner
 // never talks to the machine. It reads the runner from GitHub, adds one label of its own to it
 // (`rr-runner-<hex>`, kept for as long as the runner is added), and a pick that chooses the runner
 // answers that label. GitHub then hands the job to the runner through its normal long poll.
 //
 // Every org runner sits in a runner group that decides which repos may use it. A job from a repo
 // the group leaves out is never delivered and sits queued until GitHub cancels it, so routing
-// checks the group's access before it picks the runner.
+// checks the group's access before it picks the runner. A repo runner has no group: it takes only
+// its own repo's jobs.
 
 import {
   appInstallationToken,
   getOrgRunnerGroup,
-  listOrgRunners,
   listOrgRunnerGroups,
   listRunnerGroupRepositoryIds,
   listRunnerGroupRunnerIds,
-  type OrgRunner,
+  listRunners,
+  type GitHubRunner,
   type RunnerGroup,
+  type RunnerScope,
 } from "./github-app.ts";
 import { hostedProviderOf } from "@relayrunner/providers";
 import { routeIdFromLabels } from "./routing.ts";
@@ -177,7 +180,7 @@ export function describeAccess(access: GroupAccess | null | undefined) {
 export async function fetchGroupAccess(
   token: string,
   org: string,
-  runners: OrgRunner[],
+  runners: GitHubRunner[],
 ): Promise<Map<number, GroupAccess>> {
   const groups = await listOrgRunnerGroups(token, org);
   const access = new Map<number, GroupAccess>();
@@ -195,8 +198,32 @@ export async function fetchGroupAccess(
   return access;
 }
 
-/** Why an org runner can't be added, or null when it can. */
-export function cannotAdd(runner: OrgRunner, access: GroupAccess | null | undefined) {
+/** "Repo runner · acme/app", for the dashboard. */
+export const describeRepoAccess = (repo: string) => `Repo runner · ${repo}`;
+
+/**
+ * Where an added runner is registered: on its repo (`repo`, owner/name) or in its org. Null for a
+ * repo runner whose repo the installation no longer sees, so it can't be read.
+ */
+export function addedRunnerScope(
+  machine: { githubRepositoryId: number | null },
+  org: string,
+  repo: string | null | undefined,
+): RunnerScope | null {
+  if (machine.githubRepositoryId === null) return { kind: "org", org };
+  return repo ? { kind: "repo", repo } : null;
+}
+
+/** A runner scope's name in logs, such as `org:acme` or `repo:acme/app`. */
+export const scopeKey = (scope: RunnerScope) =>
+  scope.kind === "org" ? `org:${scope.org}` : `repo:${scope.repo}`;
+
+/** The cache key of an installation's runner list for a scope. */
+export const runnerListKey = (installationId: number, scope: RunnerScope) =>
+  `${installationId}:${scopeKey(scope)}`;
+
+/** Why a runner can't be added, or null when it can. */
+export function cannotAdd(runner: GitHubRunner, access: GroupAccess | null | undefined) {
   if (isOwnRunner(runner)) return "own";
   if (isEphemeralRunner(runner)) return "ephemeral";
   if (access?.restrictedToWorkflows) return "workflows";
@@ -204,21 +231,23 @@ export function cannotAdd(runner: OrgRunner, access: GroupAccess | null | undefi
 }
 
 /**
- * An org's self-hosted runners with their group access, read fresh from GitHub. `groups: false`
- * skips the group lookups (one call per group, plus one per selected-repos group) and reads only the
- * runner list: enough to know which runners exist, not which ones a workflow-only group blocks.
+ * An org's (or repo's) self-hosted runners with their group access, read fresh from GitHub. A repo
+ * runner has no group. `groups: false` skips the group lookups (one call per group, plus one per
+ * selected-repos group) and reads only the runner list: enough to know which runners exist, not
+ * which ones a workflow-only group blocks.
  */
-export async function readOrgRunners(
+export async function readRunners(
   env: { GITHUB_APP_ID: string; GITHUB_APP_PRIVATE_KEY: { get(): Promise<string> } },
   installationId: number,
-  org: string,
+  scope: RunnerScope,
   { groups = true }: { groups?: boolean } = {},
 ) {
   const token = await appInstallationToken(env, installationId);
-  const runners = await listOrgRunners(token, org);
-  const access = groups
-    ? await fetchGroupAccess(token, org, runners)
-    : new Map<number, GroupAccess>();
+  const runners = await listRunners(token, scope);
+  const access =
+    groups && scope.kind === "org"
+      ? await fetchGroupAccess(token, scope.org, runners)
+      : new Map<number, GroupAccess>();
   return { token, runners, access };
 }
 
@@ -241,7 +270,7 @@ export function parseStoredLabels(json: string | null): string[] {
  * it's never picked: the job would sit queued.
  */
 export function runnerStatus(
-  runner: OrgRunner | undefined,
+  runner: GitHubRunner | undefined,
   access: GroupAccess | null | undefined,
   repo: { id: number; private: boolean },
 ): { online: boolean; state: "idle" | "busy" | null; labels?: string[] } {

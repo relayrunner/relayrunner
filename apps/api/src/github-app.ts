@@ -436,8 +436,8 @@ async function getPage(token: string, path: string): Promise<unknown> {
   return body;
 }
 
-/** A self-hosted runner registered in an org, as GET /orgs/{org}/actions/runners lists it. */
-export interface OrgRunner {
+/** A self-hosted runner registered in an org or on a repo, as GitHub lists it. */
+export interface GitHubRunner {
   id: number;
   name: string;
   // "macOS", "Linux" or "Windows".
@@ -449,12 +449,8 @@ export interface OrgRunner {
   labels: string[];
 }
 
-export function listOrgRunners(token: string, org: string): Promise<OrgRunner[]> {
-  return listRunners(token, { kind: "org", org });
-}
-
 /** The self-hosted runners registered in an org, or on a repo. */
-export async function listRunners(token: string, scope: RunnerScope): Promise<OrgRunner[]> {
+export async function listRunners(token: string, scope: RunnerScope): Promise<GitHubRunner[]> {
   const runners = await listAll<{
     id: number;
     name: string;
@@ -475,31 +471,27 @@ export async function listRunners(token: string, scope: RunnerScope): Promise<Or
   }));
 }
 
-/** Adds custom labels to an org runner. GitHub keeps them on its side; the machine doesn't change. */
-export async function addOrgRunnerLabels(
+/** Adds custom labels to a runner. GitHub keeps them on its side; the machine doesn't change. */
+export async function addRunnerLabels(
   token: string,
-  org: string,
+  scope: RunnerScope,
   runnerId: number,
   labels: string[],
 ) {
-  await sendJson(token, "POST", `/orgs/${org}/actions/runners/${runnerId}/labels`, { labels });
+  await sendJson(token, "POST", `${runnersPath(scope)}/${runnerId}/labels`, { labels });
 }
 
-/** Removes one custom label from an org runner. A runner or label already gone is fine. */
-export async function removeOrgRunnerLabel(
+/** Removes one custom label from a runner. A runner or label already gone is fine. */
+export async function removeRunnerLabel(
   token: string,
-  org: string,
+  scope: RunnerScope,
   runnerId: number,
   label: string,
 ) {
-  const response = await fetch(
-    `${API}/orgs/${org}/actions/runners/${runnerId}/labels/${encodeURIComponent(label)}`,
-    { method: "DELETE", headers: headers(token) },
-  );
+  const path = `${runnersPath(scope)}/${runnerId}/labels/${encodeURIComponent(label)}`;
+  const response = await fetch(`${API}${path}`, { method: "DELETE", headers: headers(token) });
   if (!response.ok && response.status !== 404)
-    throw new Error(
-      `DELETE /orgs/${org}/actions/runners/${runnerId}/labels/${label} failed with ${response.status}`,
-    );
+    throw new Error(`DELETE ${path} failed with ${response.status}`);
 }
 
 /** An org's runner group: which repos (and workflows) may use the runners in it. */
