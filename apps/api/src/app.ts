@@ -1,4 +1,5 @@
 import { Hono } from "hono";
+import { routePath } from "hono/route";
 import type { AccessIdentity } from "@relayrunner/access";
 import type { AgentPrincipal } from "./agent-auth.ts";
 import type { Auth, Session } from "./auth.ts";
@@ -22,6 +23,7 @@ import { providerRoutes } from "./routes/providers.ts";
 import { runRoutes } from "./routes/runs.ts";
 import { usageRoutes } from "./routes/usage.ts";
 import { workspaceRoutes } from "./routes/workspaces.ts";
+import { renameSpan } from "./tracing.ts";
 
 export interface AppEnv {
   Bindings: Env;
@@ -42,6 +44,13 @@ export interface AppEnv {
 
 // Everything lives under /api so the dashboard can call it same-origin.
 export const app = new Hono<AppEnv>().basePath("/api");
+
+// Name each request's trace after the route it matched (`GET /api/machines/:id`), so traces group
+// by endpoint rather than by URL.
+app.use("*", async (c, next) => {
+  await next();
+  renameSpan(`${c.req.method} ${routePath(c, -1)}`);
+});
 
 // Public routes. These never touch auth or D1.
 app.route("/health", healthRoutes);

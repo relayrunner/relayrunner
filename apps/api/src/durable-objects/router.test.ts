@@ -3,16 +3,6 @@ import { beforeEach, describe, expect, test, vi } from "vitest";
 import type { Env } from "../env.ts";
 import { createTestEnv } from "../testing.ts";
 
-// The Router runs here without the Workers runtime: a plain object stands in for its state.
-vi.mock("cloudflare:workers", () => ({
-  DurableObject: class {
-    constructor(
-      readonly ctx: unknown,
-      readonly env: unknown,
-    ) {}
-  },
-}));
-
 // GitHub reads the Router makes itself: tests that need them set the answers.
 const github = vi.hoisted(() => ({ userCanReadRepo: vi.fn() }));
 vi.mock("../github-app.ts", async (importOriginal) => ({

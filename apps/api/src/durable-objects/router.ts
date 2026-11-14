@@ -27,6 +27,7 @@ import {
 import { earlierPick, jobKey } from "../route-decisions.ts";
 import type { RetryPick } from "../retries.ts";
 import { errorMessage } from "../webhook-queue.ts";
+import { traced } from "../tracing.ts";
 import {
   fetchGroupAccess,
   matchLabels,
@@ -205,6 +206,33 @@ export class Router extends DurableObject<Env> {
    * minutes limit passes the job on once the job's account nears its included quota.
    */
   async route(job: PickedJob): Promise<RouteDecision> {
+    return traced(
+      "router.route",
+      {
+        "relayrunner.workspace_id": job.workspaceId,
+        "github.installation_id": job.installationId,
+        "github.repository": job.repo,
+        "github.run_id": job.runId,
+        "relayrunner.retry": Boolean(job.retry),
+      },
+      async (span) => {
+        const decision = await this.decide(job);
+        span.setAttributes({
+          "relayrunner.skipped": decision.skipped.length,
+          ...(decision.runner === null
+            ? { "relayrunner.reason": decision.reason }
+            : {
+                "relayrunner.runner": decision.runner,
+                "relayrunner.step": decision.step,
+                "relayrunner.waited": Boolean(decision.waited),
+              }),
+        });
+        return decision;
+      },
+    );
+  }
+
+  private async decide(job: PickedJob): Promise<RouteDecision> {
     const db = createDb(this.env.DB);
     const [[workspace]] = await Promise.all([
       db

@@ -37,6 +37,7 @@ import {
 import { jobStepLogs, type StepLog, uploadJobLogs } from "../job-logs.ts";
 import { jobSteps, nativeFreeCheck, nativeVerdict } from "../native-checks.ts";
 import { recordRepoCheck } from "../free-checks.ts";
+import { annotate, traced } from "../tracing.ts";
 import {
   afterAttempt,
   MAX_ATTEMPTS,
@@ -106,7 +107,16 @@ export class PickRunner extends DurableObject<Env> {
     await this.ctx.storage.delete("work");
     await this.ctx.storage.put("runningSince", Date.now());
     try {
-      await this.run(work, attempt);
+      await traced(
+        "pick.run",
+        {
+          "github.job_id": work.jobId,
+          "github.installation_id": work.installationId,
+          "github.repository": work.repo,
+          "relayrunner.pick.attempt": attempt,
+        },
+        () => this.run(work, attempt),
+      );
     } finally {
       await this.ctx.storage.delete("runningSince");
     }
@@ -297,6 +307,10 @@ export class PickRunner extends DurableObject<Env> {
           .catch((error) => logCleanupError("delete runner", work, error));
       }
     }
+    annotate({
+      "relayrunner.pick.result": String(outcome.result),
+      "relayrunner.runner": typeof outcome.runner === "string" ? outcome.runner : undefined,
+    });
     const log = outcome.result === "error" ? console.error : console.log;
     log(
       JSON.stringify({

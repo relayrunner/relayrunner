@@ -1,3 +1,4 @@
+import { fileURLToPath } from "node:url";
 import { defineConfig } from "vitest/config";
 
 export default defineConfig({
@@ -11,6 +12,12 @@ export default defineConfig({
       },
     },
   ],
+  resolve: {
+    // Only workerd has `cloudflare:workers`; tests get a stand-in with no-op tracing.
+    alias: {
+      "cloudflare:workers": fileURLToPath(new URL("tests/cloudflare-workers.ts", import.meta.url)),
+    },
+  },
   test: {
     // Vitest's default glob walks the whole repo, including agent worktrees under `.claude/`.
     include: ["{apps,packages,tests}/**/*.{test,spec}.?(c|m)[jt]s?(x)"],
