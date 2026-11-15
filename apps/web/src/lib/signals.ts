@@ -11,6 +11,7 @@ export type SignalId =
   | "queue-waits"
   | "slowest-job"
   | "flaky-jobs"
+  | "runner-failures"
   | "docs-changes"
   | "wide-fanout";
 
@@ -19,6 +20,8 @@ export type SignalRow = {
   repository: string;
   subject: string;
   workflowPath: string | null;
+  /** On Waiting for a runner rows, the runner the jobs went to, for its panel. */
+  runnerKey: string | null;
   count: number;
   minutes: number;
   cost: number;
@@ -93,10 +96,14 @@ export const AREAS: Record<SignalArea, { title: string; question: string; icon: 
 
 type Link = { label: string; href: string };
 
-/** Each signal's fixed title, what it means, its table's column names and where to go next. */
+/**
+ * Each signal's area, fixed title, what it means, its table's column names and where to go next,
+ * in the order the page lists signals that didn't show up.
+ */
 export const SIGNAL_COPY: Record<
   SignalId,
   {
+    area: SignalArea;
     title: string;
     about: string;
     subject: string;
@@ -109,6 +116,7 @@ export const SIGNAL_COPY: Record<
   }
 > = {
   "no-concurrency": {
+    area: "cost",
     title: "No concurrency limit",
     about:
       "These runs kept going after someone pushed again to the same branch. A concurrency group with cancel-in-progress stops the older run when a newer one starts. Minutes count from when the newer run started. Your default branch is left out.",
@@ -118,6 +126,7 @@ export const SIGNAL_COPY: Record<
     docs: "https://docs.github.com/en/actions/using-jobs/using-concurrency",
   },
   "same-commit": {
+    area: "cost",
     title: "Same commit runs twice",
     about:
       "These workflows ran for the same commit from both push and pull_request. Limiting push to your default branch keeps the pull request run. Minutes and spend are the push runs.",
@@ -127,6 +136,7 @@ export const SIGNAL_COPY: Record<
     docs: "https://docs.github.com/en/actions/writing-workflows/workflow-syntax-for-github-actions#onpushbranchestagsbranches-ignoretags-ignore",
   },
   "short-jobs": {
+    area: "cost",
     title: "Short jobs rounded up",
     about:
       "GitHub bills each job by the whole minute. These jobs finished in under a minute on a billed runner, so you paid for time they didn't use. Minutes and spend are the unused part.",
@@ -136,6 +146,7 @@ export const SIGNAL_COPY: Record<
     action: { label: "Set up optimized checks", href: `${DOCS_URL}/concepts/optimized-checks` },
   },
   "queue-waits": {
+    area: "speed",
     title: "Waiting for a runner",
     about:
       "These jobs waited more than a minute after GitHub queued them before a runner took them. That happens when every runner with these labels is busy, or when the account hits its limit on jobs running at once. Adding a step to your runner order sends them somewhere free instead.",
@@ -147,6 +158,7 @@ export const SIGNAL_COPY: Record<
     docs: "https://docs.github.com/en/actions/reference/limits",
   },
   "slowest-job": {
+    area: "speed",
     title: "One job sets the pace",
     about:
       "This job ran alongside the others in its run and was still going after they all finished, so the run waited on it alone. Minutes are that wait. Splitting the job or giving it a faster runner shortens every run.",
@@ -157,14 +169,26 @@ export const SIGNAL_COPY: Record<
     action: { label: "Compare runners", href: "/performance?view=jobs" },
   },
   "flaky-jobs": {
+    area: "speed",
     title: "Flaky jobs",
     about:
-      "These jobs failed and then passed when the run was tried again, so the failure likely wasn't the change. Minutes and spend are the failed attempts.",
+      "These jobs failed in one of their steps and then passed when the run was tried again, so the failure likely wasn't the change. Minutes and spend are the failed attempts.",
     subject: "Job",
     count: "Passed on re-run",
     minutes: "Failed minutes",
   },
+  "runner-failures": {
+    area: "speed",
+    title: "Runner failures",
+    about:
+      "These jobs failed before any of their steps started, so the runner was the problem, not your code. Automatic retries can send them to another runner.",
+    subject: "Runner",
+    count: "Jobs failed",
+    minutes: "Failed minutes",
+    action: { label: "Set up retries", href: "/router" },
+  },
   "docs-changes": {
+    area: "complexity",
     title: "Docs changes run CI",
     about:
       "These workflows ran for commits or pull requests titled as docs changes, such as docs: fix a typo. Path filters let a workflow skip changes that only touch docs.",
@@ -174,6 +198,7 @@ export const SIGNAL_COPY: Record<
     docs: "https://docs.github.com/en/actions/writing-workflows/workflow-syntax-for-github-actions#onpushpull_requestpull_request_targetpathspaths-ignore",
   },
   "wide-fanout": {
+    area: "complexity",
     title: "Full matrix on every branch",
     about:
       "These workflows started 10 or more jobs for a push or pull request on a branch other than your default. A smaller matrix before merge, with the full one on your default branch, still catches most problems.",
@@ -186,6 +211,7 @@ export const SIGNAL_COPY: Record<
 
 // For local development without an API (auth disabled).
 const WORKFLOWS = new Set(["CI", "Test", "E2E"]);
+const SAMPLE_RUNNERS = new Set(["ubuntu-latest", "macos-14"]);
 
 export function sampleSignals(days: number): SignalsReport {
   const scale = days / 30;
@@ -198,15 +224,16 @@ export function sampleSignals(days: number): SignalsReport {
   ) => ({
     repository,
     subject,
-    // Workflow rows link to their file; job and runner rows don't.
+    // Workflow rows link to their file; job rows don't, and runner rows open its panel.
     workflowPath: WORKFLOWS.has(subject) ? ".github/workflows/ci.yml" : null,
+    runnerKey: SAMPLE_RUNNERS.has(subject) ? `github:${subject}` : null,
     count: Math.round(count * scale),
     minutes: Math.round(minutes * scale),
     cost: cost * scale,
   });
-  const signal = (id: SignalId, rows: SignalRow[], area: SignalArea = "cost"): Signal => ({
+  const signal = (id: SignalId, rows: SignalRow[]): Signal => ({
     id,
-    area,
+    area: SIGNAL_COPY[id].area,
     count: rows.reduce((total, r) => total + r.count, 0),
     minutes: rows.reduce((total, r) => total + r.minutes, 0),
     cost: rows.reduce((total, r) => total + r.cost, 0),
@@ -220,20 +247,15 @@ export function sampleSignals(days: number): SignalsReport {
       cost: 486 * scale,
     },
     signals: [
-      signal(
-        "queue-waits",
-        [row("acme/web", "ubuntu-latest", 412, 1300, 0), row("acme/web", "macos-14", 96, 540, 0)],
-        "speed",
-      ),
-      signal("slowest-job", [row("acme/web", "CI › e2e", 640, 920, 0)], "speed"),
-      signal(
-        "flaky-jobs",
-        [
-          row("acme/web", "CI › e2e", 34, 264, 11),
-          row("acme/api", "Test › integration", 12, 96, 4),
-        ],
-        "speed",
-      ),
+      signal("queue-waits", [
+        row("acme/web", "ubuntu-latest", 412, 1300, 0),
+        row("acme/web", "macos-14", 96, 540, 0),
+      ]),
+      signal("slowest-job", [row("acme/web", "CI › e2e", 640, 920, 0)]),
+      signal("flaky-jobs", [
+        row("acme/web", "CI › e2e", 34, 264, 11),
+        row("acme/api", "Test › integration", 12, 96, 4),
+      ]),
       signal("no-concurrency", [
         row("acme/web", "CI", 143, 1116, 44),
         row("acme/api", "Test", 38, 240, 9),
@@ -243,8 +265,7 @@ export function sampleSignals(days: number): SignalsReport {
         row("acme/api", "CI › typecheck", 1000, 410, 2.5),
       ]),
       signal("same-commit", [row("acme/web", "CI", 96, 552, 22)]),
-      signal("docs-changes", [row("acme/web", "Test", 38, 366, 14)], "complexity"),
-      signal("wide-fanout", [row("acme/web", "E2E", 120, 610, 24)], "complexity"),
+      signal("docs-changes", [row("acme/web", "Test", 38, 366, 14)]),
     ],
     breakdown: sampleBreakdown(scale),
   };

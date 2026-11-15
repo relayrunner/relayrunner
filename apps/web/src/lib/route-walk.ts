@@ -1,4 +1,11 @@
-import type { FullMachine, MinutesUsage, NotSharedMachine, RouteWalk } from "@relayrunner/activity";
+import {
+  dollars,
+  spendText,
+  type FullMachine,
+  type MinutesUsage,
+  type NotSharedMachine,
+  type RouteWalk,
+} from "@relayrunner/activity";
 import { notProviderLabelText, RUNNER_LABELS, type RunnerKey } from "@relayrunner/runner-order";
 
 // How the Activity page explains where a job went: a short reason after the runner, and one line
@@ -86,6 +93,10 @@ function shortSkip(walk: RouteWalk, step: SkippedStep): string | null {
       return `not a ${RUNNER_LABELS[key]} label`;
     case "provider_unhealthy":
       return `${runnerOf(walk, key)} isn't picking up jobs`;
+    case "spend_limit":
+      return step.spend
+        ? `${step.spend.account} past its ${dollars(step.spend.limitUsd)} ${RUNNER_LABELS[key]} limit`
+        : `past the ${RUNNER_LABELS[key]} spend limit`;
     case "not_configured":
       // Leaving a provider out of the relay is a choice, not news.
       return null;
@@ -132,6 +143,8 @@ function longSkip(walk: RouteWalk, step: SkippedStep): string {
       const jobs = step.unhealthy ? `the last ${step.unhealthy.misses} jobs` : "recent jobs";
       return `${jobs} on ${runnerOf(walk, key)} weren't picked up, so the Router is skipping it for now`;
     }
+    case "spend_limit":
+      return spendText(RUNNER_LABELS[key], step.spend);
     case "not_configured":
       return `the relay doesn't set ${key}`;
   }

@@ -1,5 +1,6 @@
 import { type RelayInputs, readRunnerOrder } from "@relayrunner/runner-order";
 import { accountUsage } from "../actions-billing.ts";
+import { accountSpend } from "../provider-spend.ts";
 import { DurableObject } from "cloudflare:workers";
 import { and, eq, isNotNull, isNull, or } from "drizzle-orm";
 import { createDb, schema } from "../db/index.ts";
@@ -112,6 +113,8 @@ const HEALTH_KEY = "health:";
 const GROUP_ACCESS_TTL_MS = 5 * 60_000;
 // How long a machine owner's read access to a repo is reused before GitHub is asked again.
 const OWNER_ACCESS_TTL_MS = 10 * 60_000;
+// How long a pick reuses an account's provider spend for spend limits.
+const SPEND_TTL_MS = 60_000;
 // How long the dashboard reuses an org's (or repo's) runner list (status, busy, labels).
 const RUNNER_LIST_TTL_MS = 30_000;
 // How old a runner list a pick accepts, so a push that starts many runs at once asks GitHub once
@@ -127,10 +130,13 @@ const FOUND_LIST_TTL_MS = 10 * 60_000;
 export class Router extends DurableObject<Env> {
   // What GitHub said, kept in memory while the object is awake: runner group access by
   // installation id, each org's or repo's runner list by `<installation>:<scope key>`, and whether
-  // a machine owner can read a repo by `<installation>:<repo id>:<owner GitHub id>`.
+  // a machine owner can read a repo by `<installation>:<repo id>:<owner GitHub id>`. Also each
+  // account's provider spend this month by `<installation>:<provider>`, so a burst of jobs doesn't
+  // read D1 for every pick.
   private groupAccess = new Recent<number, Map<number, GroupAccess>>();
   private runnerLists = new Recent<string, GitHubRunner[]>();
   private ownerAccess = new Recent<string, boolean>();
+  private spend = new Recent<string, { account: string; spentUsd: number }>();
 
   /**
    * An org's (or repo's) self-hosted runners for the dashboard's Runners and Router pages, reused
@@ -279,6 +285,12 @@ export class Router extends DurableObject<Env> {
       workspace?.skipUnhealthy === false
         ? undefined
         : (key, label) => this.checkHealth(healthId(key, label)),
+      // Also per account: a provider bills each GitHub org on its own.
+      // Spend only grows as jobs finish, and a limit is a soft cap, so a minute-old read will do.
+      (key) =>
+        this.spend.get(`${job.installationId}:${key}`, SPEND_TTL_MS, () =>
+          accountSpend(db, job.installationId, key),
+        ),
     );
     return waitsForMachine(decision) ? this.wait(job, decision) : decision;
   }
@@ -997,7 +1009,7 @@ function runnersUnavailable(job: PickedJob, error: unknown) {
   return error instanceof GitHubRateLimitError ? ("rate_limited" as const) : null;
 }
 
-// Values read from GitHub, reused while younger than the age a caller accepts. Each is kept as a
+// Values read from GitHub (or D1), reused while younger than the age a caller accepts. Each is kept as a
 // promise so callers that arrive together share one read, and a failed read is forgotten so the
 // next caller asks again.
 class Recent<K, V> {

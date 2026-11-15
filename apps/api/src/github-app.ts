@@ -268,6 +268,42 @@ export function attemptJobs(token: string, repo: string, runId: number, runAttem
   );
 }
 
+/**
+ * The end of a job's log (Actions read), at most `maxBytes` of it, or null when GitHub no longer
+ * has the log (expired or deleted). GitHub answers with a redirect to the log file, which fetch
+ * follows; only the tail is kept while it streams, so a long log never sits in memory whole.
+ */
+export async function jobLogTail(
+  token: string,
+  repo: string,
+  jobId: number,
+  maxBytes: number,
+): Promise<string | null> {
+  const path = `/repos/${repo}/actions/jobs/${jobId}/logs`;
+  const response = await fetch(`${API}${path}`, { headers: headers(token) });
+  if (response.status === 404 || response.status === 410) return null;
+  if (!response.ok || !response.body) throw new Error(`GET ${path} failed with ${response.status}`);
+  // Keep the last chunks that cover maxBytes, dropping older ones as newer arrive.
+  const chunks: Uint8Array[] = [];
+  let size = 0;
+  const reader = response.body.getReader();
+  for (;;) {
+    const { done, value } = await reader.read();
+    if (done) break;
+    chunks.push(value);
+    size += value.length;
+    while (chunks.length > 1 && size - chunks[0]!.length >= maxBytes)
+      size -= chunks.shift()!.length;
+  }
+  const tail = new Uint8Array(size);
+  let offset = 0;
+  for (const chunk of chunks) {
+    tail.set(chunk, offset);
+    offset += chunk.length;
+  }
+  return new TextDecoder().decode(tail.subarray(Math.max(0, size - maxBytes)));
+}
+
 /** The messages of a job's annotations, where GitHub says a runner was lost (Checks read). */
 export async function jobAnnotations(token: string, repo: string, jobId: number) {
   // A job's check run shares its id.

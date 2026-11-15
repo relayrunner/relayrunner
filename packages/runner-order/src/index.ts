@@ -1,4 +1,4 @@
-import { HOSTED_PROVIDER_IDS, PROVIDERS } from "@relayrunner/providers";
+import { HOSTED_PROVIDER_IDS, hasListPrices, PROVIDERS } from "@relayrunner/providers";
 import { z } from "zod";
 
 // A workspace's runner order: an ordered allowlist of providers. The Router walks it top to
@@ -39,11 +39,31 @@ export const minutesLimitSchema = z.object({
 });
 export type MinutesLimit = z.infer<typeof minutesLimitSchema>;
 
+/**
+ * "While under $X a month": a hosted provider step passes a job on once the job's GitHub account
+ * has spent `usd` on that provider this calendar month (UTC), at list prices. Only providers with
+ * list prices (SPEND_LIMIT_PROVIDERS) can count spend.
+ */
+export const spendLimitSchema = z.object({
+  usd: z
+    .number()
+    .int("Use whole dollars.")
+    .min(1, "Pick a limit from $1 to $100,000.")
+    .max(100_000, "Pick a limit from $1 to $100,000."),
+});
+export type SpendLimit = z.infer<typeof spendLimitSchema>;
+
+/** What a new spend limit starts at, in dollars a month. */
+export const DEFAULT_SPEND_LIMIT_USD = 100;
+
+/** The hosted providers RelayRunner knows list prices for, so a spend limit can count spend. */
+export const SPEND_LIMIT_PROVIDERS = HOSTED_PROVIDER_IDS.filter(hasListPrices);
+
 export const runnerStepSchema = z.discriminatedUnion("key", [
   z.object({ key: z.literal("machine") }),
   z.object({ key: z.literal("github"), limit: minutesLimitSchema.optional() }),
   // A hosted provider: it takes any job whose relay names one of its labels.
-  z.object({ key: z.enum(HOSTED_PROVIDER_IDS) }),
+  z.object({ key: z.enum(HOSTED_PROVIDER_IDS), spendLimit: spendLimitSchema.optional() }),
 ]);
 export type RunnerStep = z.infer<typeof runnerStepSchema>;
 
@@ -68,6 +88,12 @@ export const runnerOrderSchema = z.object({
           });
         }
         seen.add(slot);
+        if ("spendLimit" in step && step.spendLimit && !hasSpendLimit(step.key))
+          ctx.addIssue({
+            code: "custom",
+            path: [index, "spendLimit"],
+            message: `${RUNNER_LABELS[step.key]} has no list prices, so its spend can't be counted.`,
+          });
       });
     }),
 });
@@ -77,6 +103,10 @@ export type RunnerOrder = z.infer<typeof runnerOrderSchema>;
 export const DEFAULT_RUNNER_ORDER: RunnerOrder = {
   steps: [{ key: "machine" }, { key: "github" }],
 };
+
+/** Whether a provider's step can take a spend limit. */
+export const hasSpendLimit = (key: RunnerKey) =>
+  (SPEND_LIMIT_PROVIDERS as readonly string[]).includes(key);
 
 /** What makes a step unique in an order: its provider, and for GitHub whether it has a limit. */
 export function stepSlot(step: RunnerStep) {

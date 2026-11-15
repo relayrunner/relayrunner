@@ -51,6 +51,9 @@ export const SKIP_REASONS = [
   // A hosted provider's runner type that stopped picking up jobs: its last few jobs waited with no
   // runner, so the Router skips it until a trial job starts (src/provider-health.ts).
   "provider_unhealthy",
+  // A hosted provider step with a spend limit: the job's account has spent the limit on that
+  // provider this month, at list prices.
+  "spend_limit",
 ] as const;
 export type SkipReason = (typeof SKIP_REASONS)[number];
 
@@ -75,6 +78,14 @@ export const MinutesUsage = z.object({
   burnRatePerHour: z.number().nullable(),
 });
 export type MinutesUsage = z.infer<typeof MinutesUsage>;
+
+// spend_limit: what the job's account spent on the provider this month, and the step's limit.
+export const SpendUsage = z.object({
+  account: z.string(),
+  spentUsd: z.number(),
+  limitUsd: z.number(),
+});
+export type SpendUsage = z.infer<typeof SpendUsage>;
 
 /**
  * A GitHub account that started a run or an attempt: `id` is GitHub's account id, which is what
@@ -124,6 +135,8 @@ export const RouteWalk = z.object({
       full: z.array(FullMachine).optional(),
       // minutes_limit and minutes_runway: the job's GitHub account and its usage at the pick.
       minutes: MinutesUsage.optional(),
+      // spend_limit: the job's account's spend on the provider this month.
+      spend: SpendUsage.optional(),
       // provider_unhealthy: how many jobs in a row weren't picked up, and when the next trial goes.
       unhealthy: z.object({ misses: z.number(), retryAt: z.number() }).optional(),
     }),

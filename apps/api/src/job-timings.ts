@@ -1,5 +1,6 @@
 import type { WebhookMessage } from "@relayrunner/github-webhooks";
 import { and, asc, eq, gte, isNotNull, isNull, lt, ne, type SQL, sql } from "drizzle-orm";
+import type { BatchItem } from "drizzle-orm/batch";
 import type { SQLiteColumn, SQLiteTable } from "drizzle-orm/sqlite-core";
 import {
   GITHUB_LABELS,
@@ -8,7 +9,9 @@ import {
   type PriceBook,
 } from "@relayrunner/providers";
 import { type Db, schema } from "./db/index.ts";
-import { countFinishedJob, countsAsJob } from "./job-counts.ts";
+import { countsAsJob, jobCountUpserts } from "./job-counts.ts";
+import { providerSpendUpsert } from "./provider-spend.ts";
+import { hostedRunner, runnerWaitUpsert } from "./runner-waits.ts";
 import { findInstallation } from "./installations.ts";
 import { parseDate } from "./jobs.ts";
 import { loadPriceBook } from "./prices.ts";
@@ -18,7 +21,8 @@ type WorkflowJobMessage = Extract<WebhookMessage, { event: "workflow_job" }>;
 
 const table = schema.jobTiming;
 const daily = schema.jobTimingDaily;
-const { jobCount, jobCountDay, jobCountHour, signalDay } = schema;
+const { jobCount, jobCountDay, jobCountHour, providerSpendMonth, runnerWaitDay, signalDay } =
+  schema;
 export const DAY_MS = 86_400_000;
 
 // GitHub bills a job by the minute, rounded up. A job that finishes in under this is the free-checks
@@ -175,6 +179,8 @@ export async function recordJobTiming(db: Db, message: WorkflowJobMessage): Prom
   };
   const finished = job.status === "completed";
   const completedAt = finished ? parseDate(job.completedAt) : null;
+  const queuedAt = parseDate(job.createdAt);
+  const startedAt = parseDate(job.startedAt);
   const [written] = await db
     .insert(table)
     .values({
@@ -191,9 +197,11 @@ export async function recordJobTiming(db: Db, message: WorkflowJobMessage): Prom
       runnerName: job.runnerName,
       runnerGroupName: job.runnerGroupName ?? null,
       machineId: addedRunner(installationId, repository.id, job.runnerName, job.runnerGroupName),
-      queuedAt: parseDate(job.createdAt),
-      startedAt: parseDate(job.startedAt),
+      queuedAt,
+      startedAt,
       completedAt,
+      ranSteps: finished ? (job.ranSteps ?? null) : null,
+      failedStep: finished ? failedStep(job.steps) : null,
     })
     .onConflictDoUpdate({
       target: table.id,
@@ -205,6 +213,8 @@ export async function recordJobTiming(db: Db, message: WorkflowJobMessage): Prom
         queuedAt: sql`coalesce(${table.queuedAt}, excluded.queued_at)`,
         startedAt: sql`coalesce(excluded.started_at, ${table.startedAt})`,
         completedAt: sql`excluded.completed_at`,
+        ranSteps: sql`excluded.ran_steps`,
+        failedStep: sql`excluded.failed_step`,
         updatedAt: sql`excluded.updated_at`,
       },
       setWhere: sql`${table.completedAt} is null`,
@@ -212,9 +222,35 @@ export async function recordJobTiming(db: Db, message: WorkflowJobMessage): Prom
     // A row comes back only when this delivery wrote it, so a redelivered `completed` returns
     // nothing and the job is counted once.
     .returning({ id: table.id });
-  if (written && completedAt && countsAsJob(job.conclusion, job.labels))
-    await countFinishedJob(db, installationId, job.conclusion, completedAt);
+  if (written && completedAt && countsAsJob(job.conclusion, job.labels)) {
+    const finishedJob = {
+      installationId,
+      runner: hostedRunner(job.labels, job.runnerGroupName ?? null),
+      runnerName: job.runnerName,
+      queuedAt,
+      startedAt,
+      completedAt,
+      ranSteps: job.ranSteps ?? null,
+      conclusion: job.conclusion,
+    };
+    const spend = await providerSpendUpsert(db, finishedJob);
+    const wait = runnerWaitUpsert(db, finishedJob);
+    // One round trip for every rollup the job counts toward.
+    await db.batch([
+      ...jobCountUpserts(db, installationId, job.conclusion, completedAt),
+      ...(wait ? [wait] : []),
+      ...(spend ? [spend.upsert] : []),
+    ] as [BatchItem<"sqlite">, ...BatchItem<"sqlite">[]]);
+  }
   return true;
+}
+
+/** The first step of a finished job that failed, as "3. Run tests", or null when none did. */
+export function failedStep(
+  steps: { name: string; number: number; conclusion: string | null }[] = [],
+) {
+  const step = steps.find((each) => each.conclusion === "failure");
+  return step ? `${step.number}. ${step.name}` : null;
 }
 
 // How long finished jobs are counted for, as job_timing_daily rows by then. The report's longest
@@ -234,8 +270,8 @@ const PURGE_BATCH = 5_000;
 
 /**
  * The hourly cleanup: rolls finished jobs past RAW_RETENTION_DAYS up into job_timing_daily, drops
- * daily rows, job counts and signal days past the report's range, and drops unfinished jobs GitHub has given up on. Returns
- * how many job_timing rows went.
+ * daily rows, job counts, signal days, runner waits and provider spend months past the report's
+ * range, and drops unfinished jobs GitHub has given up on. Returns how many job_timing rows went.
  */
 export async function purgeOldJobTimings(db: Db, now = Date.now()): Promise<number> {
   // Rolled up first, so a day that has just aged out of the report's range goes in this run.
@@ -254,6 +290,9 @@ export async function purgeOldJobTimings(db: Db, now = Date.now()): Promise<numb
     purgeBefore(db, jobCount, jobCount.hour, retained),
     purgeBefore(db, jobCountDay, jobCountDay.day, retained),
     purgeBefore(db, signalDay, signalDay.day, retained),
+    purgeBefore(db, runnerWaitDay, runnerWaitDay.day, retained),
+    // Spend limits only read the current month; older months go once they start before the range.
+    purgeBefore(db, providerSpendMonth, providerSpendMonth.month, retained),
   ]);
   return finished + unfinished;
 }
@@ -464,6 +503,8 @@ export async function usageReport(db: Db, workspaceId: string, days = 30): Promi
 
 /** A finished job's run time, start to finish, in SQL. */
 export const DURATION_MS = sql`max(0, ${table.completedAt} - ${table.startedAt})`;
+/** The minutes GitHub bills a job that ran `ms`: rounded up, at least one (BILLED_MINUTES in SQL). */
+export const billedMinutes = (ms: number) => Math.max(1, Math.ceil(ms / 60_000));
 /** The minutes GitHub bills a job: its run time rounded up, at least one. */
 export const BILLED_MINUTES = sql`max(1, (${DURATION_MS} + 59999) / 60000)`;
 

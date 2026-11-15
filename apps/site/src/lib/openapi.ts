@@ -137,6 +137,18 @@ export const openApi = {
         schema: { type: "integer", minimum: 1 },
       })),
     ),
+    "/runs/{repositoryId}/{runId}/{runAttempt}/failures": read(
+      "getRunFailures",
+      "Explain a run's failures",
+      "Why a run attempt's jobs failed: each failed job's first failed step, whether its runner failed it before any step ran, GitHub's annotations, and the end of its log up to the last error. Covers up to 5 failed jobs.",
+      object("The run's failed jobs.", { jobs: list, more: { type: "integer" } }),
+      ["repositoryId", "runId", "runAttempt"].map((name) => ({
+        name,
+        in: "path",
+        required: true,
+        schema: { type: "integer", minimum: 1 },
+      })),
+    ),
     "/activity": read(
       "listActivity",
       "List activity",

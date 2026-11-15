@@ -213,6 +213,27 @@ const platformOf = (label: string) => {
   return label.includes("arm") ? "arm" : "linux";
 };
 
+/** The platforms runners come in, for comparing runners across providers. */
+export type RunnerPlatform = "linux" | "arm" | "windows" | "windows-arm" | "macos";
+
+/**
+ * The platform a provider's runner label asks for, or null when the label doesn't say (a
+ * Namespace profile or a GitHub larger runner is named by whoever made it). For GitHub, `label`
+ * is the standard runner's rate, such as `linux-arm-2-core`.
+ */
+export function runnerPlatform(provider: string, label: string): RunnerPlatform | null {
+  const lower = label.toLowerCase();
+  if (provider === "github" && !Object.hasOwn(RATES.github, lower)) return null;
+  if (provider === "namespace" && lower.startsWith("namespace-profile-")) return null;
+  if (provider === "ubicloud") return lower.includes("gpu") ? null : platformOf(lower);
+  const platform = platformOf(lower);
+  return platform === "windows" && lower.includes("arm") ? "windows-arm" : platform;
+}
+
+/** Whether RelayRunner knows a hosted provider's list prices, so it can count what jobs cost. */
+export const hasListPrices = (provider: string) =>
+  provider !== "github" && Object.hasOwn(RATES, provider);
+
 // The size a label asks for, or the service's smallest when it doesn't say.
 const vcpusIn = (label: string, pattern: RegExp, fallback: number) => {
   const match = pattern.exec(label);

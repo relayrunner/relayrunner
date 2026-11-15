@@ -421,6 +421,27 @@
       "when": 1794700392126,
       "tag": "20261114235312_clear_empty_runner_names",
       "breakpoints": true
+    },
+    {
+      "idx": 60,
+      "version": "6",
+      "when": 1794701998448,
+      "tag": "20261115001958_runner_insights",
+      "breakpoints": true
+    },
+    {
+      "idx": 61,
+      "version": "6",
+      "when": 1794702693892,
+      "tag": "20261115003133_signal_runner_key",
+      "breakpoints": true
+    },
+    {
+      "idx": 62,
+      "version": "6",
+      "when": 1794703537310,
+      "tag": "20261115004537_spend_month_index",
+      "breakpoints": true
     }
   ]
 }

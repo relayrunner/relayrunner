@@ -297,8 +297,27 @@ describe("rollUpSignals", () => {
     const rows = await dayRows(ctx.installationId, "queue-waits");
     expect(sum(rows)).toEqual({ count: 1, minutes: 5 });
     expect(rows[0]).toMatchObject({ subject: "ubuntu-latest", cost: 0 });
+    expect(rows[0]!.runnerKey).toMatch(/^github:/);
     // Summed per whole UTC day.
     expect(rows[0]!.day.getTime() % (24 * 60 * MINUTE)).toBe(0);
+  });
+
+  test("names the machine waited-for jobs ran on, or their labels when they ran on several", async () => {
+    const labels = ["self-hosted", "mac"];
+    const group = { labels, runnerGroupName: "Default", waited: 5 };
+    const one = await connectedWorkspace();
+    await job(one, { start: 30, minutes: 2, machineId: "m1", ...group });
+    await job(one, { start: 30, minutes: 2, machineId: "m1", name: "lint", ...group });
+    await rollUpSignals(createDb(env.DB), one.installationId);
+    expect((await dayRows(one.installationId, "queue-waits"))[0]?.runnerKey).toBe("machine:m1");
+
+    const two = await connectedWorkspace();
+    await job(two, { start: 30, minutes: 2, machineId: "m1", ...group });
+    await job(two, { start: 30, minutes: 2, machineId: "m2", name: "lint", ...group });
+    await rollUpSignals(createDb(env.DB), two.installationId);
+    expect((await dayRows(two.installationId, "queue-waits"))[0]?.runnerKey).toBe(
+      "self-hosted:default",
+    );
   });
 
   test("counts the time a run kept going on one job after the jobs beside it finished", async () => {
@@ -330,6 +349,20 @@ describe("rollUpSignals", () => {
     // 5 ubuntu-latest minutes in a private repo.
     expect(rows[0]?.cost).toBeCloseTo(0.03);
     expect(rows[0]?.workflowPath).toBe(".github/workflows/ci.yml");
+  });
+
+  test("counts jobs their runner failed before any step as runner failures, not flaky", async () => {
+    const ctx = await connectedWorkspace();
+    await job(ctx, { start: 60, minutes: 1, runId: 5, conclusion: "failure", ranSteps: false });
+    await rerun(ctx, 5, 2, 50);
+    await job(ctx, { start: 50, minutes: 5, runId: 5, runAttempt: 2 });
+    // Failed in a step: neither a runner failure nor (without a passing re-run) flaky.
+    await job(ctx, { start: 40, minutes: 3, conclusion: "failure", ranSteps: true });
+    await rollUpSignals(createDb(env.DB), ctx.installationId);
+    expect(await dayRows(ctx.installationId, "flaky-jobs")).toEqual([]);
+    const rows = await dayRows(ctx.installationId, "runner-failures");
+    expect(sum(rows)).toEqual({ count: 1, minutes: 1 });
+    expect(rows[0]?.subject).toBe("ubuntu-latest");
   });
 
   test("counts runs for docs-titled changes, except docs workflows", async () => {
@@ -389,7 +422,7 @@ describe("rollUpSignals", () => {
     await shortJobs(ctx, 2);
     await rollUpSignals(createDb(env.DB), ctx.installationId);
 
-    // Summed over days: just after midnight UTC, the runs an hour back fall on yesterday.
+    // Summed per subject, since jobs from an hour ago fall on yesterday just after UTC midnight.
     const by = async (view: string) => {
       const totals: Record<string, { runs: number; minutes: number }> = {};
       for (const row of await dayRows(ctx.installationId, `by-${view}`)) {

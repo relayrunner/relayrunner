@@ -17,6 +17,8 @@ import {
 import { CSS } from "@dnd-kit/utilities";
 import {
   DEFAULT_LIMIT_PERCENT,
+  DEFAULT_SPEND_LIMIT_USD,
+  hasSpendLimit,
   RUNNER_EXAMPLES,
   RUNNER_KEYS,
   RUNNER_LABELS,
@@ -408,6 +410,11 @@ function StepCard({
               canAlways={!limit || !slots.has("github")}
               onChange={onChange}
             />
+          ) : step.key !== "machine" &&
+            step.key !== "github" &&
+            hasSpendLimit(step.key) &&
+            editable ? (
+            <SpendRule step={step} onChange={onChange} />
           ) : (
             <span className="px-2.5 text-[13px] text-muted-foreground">{ruleText(step)}</span>
           )}
@@ -448,7 +455,78 @@ function appMissing(key: RunnerKey, installed: HostedProviderId[] | null) {
 function ruleText(step: RunnerStep) {
   if (step.key === "machine") return "When available";
   if (step.key === "github" && step.limit) return `While under ${step.limit.percent}%`;
+  if ("spendLimit" in step && step.spendLimit)
+    return `While under $${step.spendLimit.usd.toLocaleString("en-US")}/mo`;
   return "Always";
+}
+
+type HostedStep = Exclude<RunnerStep, { key: "machine" | "github" }>;
+
+/** A priced hosted provider's rule: "while under $N a month" or "always". */
+function SpendRule({ step, onChange }: { step: HostedStep; onChange: (step: RunnerStep) => void }) {
+  const [usd, setUsd] = useState(String(step.spendLimit?.usd ?? DEFAULT_SPEND_LIMIT_USD));
+
+  function setLimit(value = usd) {
+    const parsed = Number.parseInt(value, 10);
+    if (Number.isNaN(parsed)) return;
+    onChange({ key: step.key, spendLimit: { usd: Math.min(100_000, Math.max(1, parsed)) } });
+  }
+
+  return (
+    <Popover>
+      <PopoverTrigger asChild>
+        <Button variant="outline" size="sm" className="h-8 gap-1.5 px-2.5 text-[13px] font-normal">
+          {ruleText(step)}
+          <ChevronDownIcon aria-hidden className="size-3.5 text-muted-foreground" />
+        </Button>
+      </PopoverTrigger>
+      <PopoverContent align="end" className="w-72 p-1 text-[13px]">
+        <div
+          role="radiogroup"
+          aria-label={`When ${RUNNER_LABELS[step.key]} takes jobs`}
+          className="grid"
+        >
+          <div className="flex items-center gap-1 rounded-md pr-2 hover:bg-accent/60">
+            <button
+              type="button"
+              role="radio"
+              aria-checked={!!step.spendLimit}
+              onClick={() => setLimit()}
+              className="flex flex-1 items-center gap-2 px-2 py-1.5 text-left whitespace-nowrap"
+            >
+              <Check on={!!step.spendLimit} />
+              While under
+            </button>
+            <span>$</span>
+            <input
+              type="number"
+              inputMode="numeric"
+              min={1}
+              max={100_000}
+              value={usd}
+              aria-label="Limit, dollars a month"
+              onChange={(event) => {
+                setUsd(event.target.value);
+                if (step.spendLimit) setLimit(event.target.value);
+              }}
+              className="h-6 w-16 rounded border bg-background px-1 text-right tabular-nums [appearance:textfield] focus-visible:border-ring focus-visible:outline-none [&::-webkit-inner-spin-button]:appearance-none"
+            />
+            <span className="ml-auto text-xs text-muted-foreground">a month</span>
+          </div>
+          <button
+            type="button"
+            role="radio"
+            aria-checked={!step.spendLimit}
+            onClick={() => onChange({ key: step.key })}
+            className="flex items-center gap-2 rounded-md px-2 py-1.5 text-left hover:bg-accent/60"
+          >
+            <Check on={!step.spendLimit} />
+            Always
+          </button>
+        </div>
+      </PopoverContent>
+    </Popover>
+  );
 }
 
 /** The GitHub step's rule: a compact menu of "while under N%" and "always". */

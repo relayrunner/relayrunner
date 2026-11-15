@@ -1,4 +1,6 @@
+import { relayInputs } from "@relayrunner/runner-order";
 import { api } from "@/lib/api";
+import type { RouteWalk } from "@/lib/route-walk";
 import type { Environment, JobRun } from "@/lib/job-times";
 
 export type RunStatus = "queued" | "in_progress" | "completed";
@@ -65,7 +67,13 @@ export type RunHeader = Pick<
   | "conclusion"
 >;
 
-export type RunJobs = { run: RunHeader | null; environments: Environment[]; jobs: RunJob[] };
+/** A run's jobs, and how its pick walked the runner order when RelayRunner routed it. */
+export type RunJobs = {
+  run: RunHeader | null;
+  environments: Environment[];
+  jobs: RunJob[];
+  walk: RouteWalk | null;
+};
 
 /** One step of a job, from GitHub. Times are epoch ms. */
 export type JobStep = {
@@ -256,6 +264,20 @@ export function sampleRuns(): RunsReport {
   };
 }
 
+// A sample run's pick: the machine was busy, so GitHub-hosted took it.
+const SAMPLE_WALK: RouteWalk = {
+  step: "github",
+  skipped: [
+    {
+      key: "machine",
+      reason: "machine_full",
+      full: [{ machine: "MacBook Pro", running: 2, slots: 2 }],
+    },
+  ],
+  notInOrder: [],
+  ...relayInputs({ machine: ["self-hosted"], github: ["ubuntu-latest"] }),
+};
+
 /** Example jobs for a sample run: one from sampleRuns, or one the sample job list names. */
 export function sampleRunJobs(run: Pick<Run, "runId">): RunJobs {
   const listed = sampleRuns().runs.find((each) => each.runId === run.runId);
@@ -280,6 +302,7 @@ export function sampleRunJobs(run: Pick<Run, "runId">): RunJobs {
         : null,
       environments: SAMPLE_ENVIRONMENTS,
       jobs: jobs.reverse().map((job) => ({ ...job, status: "completed" })),
+      walk: null,
     };
   }
   const start = listed.startedAt ?? now;
@@ -303,6 +326,7 @@ export function sampleRunJobs(run: Pick<Run, "runId">): RunJobs {
   if (run.runId === 6)
     return {
       run: header,
+      walk: SAMPLE_WALK,
       environments: SAMPLE_ENVIRONMENTS,
       jobs: [
         job(61, "Lint", "container", 2, 21),
@@ -323,6 +347,7 @@ export function sampleRunJobs(run: Pick<Run, "runId">): RunJobs {
     };
   return {
     run: header,
+    walk: null,
     environments: SAMPLE_ENVIRONMENTS,
     jobs:
       run.runId === 4

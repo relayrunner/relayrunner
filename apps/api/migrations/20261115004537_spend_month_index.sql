@@ -1,0 +1,1 @@
+CREATE INDEX `provider_spend_month_month_idx` ON `provider_spend_month` (`month`);

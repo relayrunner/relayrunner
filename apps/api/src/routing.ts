@@ -517,7 +517,7 @@ export const sameLogin = (a: string, b: string) => a.toLowerCase() === b.toLower
 // input names a label that provider doesn't serve, so the job would sit queued). Shared with the
 // Activity page, which explains each.
 export type { SkipReason } from "@relayrunner/activity";
-import type { SkipReason } from "@relayrunner/activity";
+import { spendText, type SkipReason, type SpendUsage } from "@relayrunner/activity";
 
 export interface SkippedStep {
   key: RunnerKey;
@@ -530,8 +530,13 @@ export interface SkippedStep {
   full?: FullMachine[];
   // minutes_limit and minutes_runway: the job's GitHub account and its usage at the pick.
   minutes?: Omit<MinutesSkip, "reason">;
+  // spend_limit: the job's GitHub account's spend on the provider this month.
+  spend?: SpendUsage;
   unhealthy?: Unhealthy;
 }
+
+// What the job's GitHub account has spent on a hosted provider this month (src/provider-spend.ts).
+export type SpendCheck = (key: HostedProviderId) => Promise<{ account: string; spentUsd: number }>;
 
 // provider_unhealthy: how many jobs in a row weren't picked up, and when the next trial goes.
 export type Unhealthy = NonNullable<RouteWalk["skipped"][number]["unhealthy"]>;
@@ -644,7 +649,8 @@ export function retryOrder(
  * (once per pick, however many such steps there are). `health` says whether a hosted provider's
  * runner type is skipped for not picking up jobs; when every step that could run the job was
  * skipped that way, the first of them takes it anyway, since a job with nowhere else to go is
- * better off waiting there.
+ * better off waiting there. `spend` reads the job's account's spend this month on a provider, and
+ * is only called when a hosted step with a spend limit is reached.
  */
 export async function decideRoute(
   order: RunnerOrder,
@@ -652,6 +658,7 @@ export async function decideRoute(
   pickMachine: () => Promise<MachinePick>,
   githubUsage: () => Promise<AccountUsage | null> = async () => null,
   health: HealthCheck = async () => null,
+  spend: SpendCheck = async () => ({ account: "", spentUsd: 0 }),
 ): Promise<RouteDecision> {
   const skipped: SkippedStep[] = [];
   let usage: Promise<AccountUsage | null> | undefined;
@@ -695,6 +702,14 @@ export async function decideRoute(
       else if (!isProviderLabel(key, labels[0]))
         skipped.push({ key, reason: "not_provider_label" });
       else {
+        if (step.spendLimit) {
+          const { account, spentUsd } = await spend(key);
+          const limitUsd = step.spendLimit.usd;
+          if (spentUsd >= limitUsd) {
+            skipped.push({ key, reason: "spend_limit", spend: { account, spentUsd, limitUsd } });
+            continue;
+          }
+        }
         const unhealthy = await health(key, labels[0]);
         if (!unhealthy) return { runner: labels[0], step: key, skipped, notInOrder };
         skipped.push({ key, reason: "provider_unhealthy", unhealthy });
@@ -717,38 +732,42 @@ export function noRunnerReason(
 ): string {
   if (RUNNER_KEYS.every((key) => job[key].length === 0))
     return `${NO_RUNNER}: the relay sets no provider, such as \`machine\` or \`github\`.`;
-  const parts = skipped.map(({ key, reason, paused = [], notShared = [], full = [], minutes }) => {
-    switch (reason) {
-      case "not_configured":
-        return `\`${key}\` isn't set on this relay`;
-      case "public_repo":
-        return "public repos never run on self-hosted machines";
-      case "no_machine":
-        return job.machine.length === 1 && job.machine[0].toLowerCase() === "self-hosted"
-          ? "no self-hosted machine is online and idle"
-          : `no self-hosted machine with ${job.machine.join(", ")} is online and idle`;
-      case "machine_paused":
-        return paused.length === 1
-          ? `the only machine that fits, ${paused[0]}, is paused`
-          : `every machine that fits is paused (${paused.join(", ")})`;
-      case "machine_not_shared":
-        return notSharedText(notShared);
-      case "machine_full":
-        return fullText(full);
-      case "github_rate_limited":
-        return "GitHub's API limit for this org was reached, so no machine could be checked";
-      case "too_many_labels":
-        return `\`${key}\` takes one label, not ${job[key].join(", ")}`;
-      case "not_provider_label":
-        return `\`${key}\` ${notProviderLabelText(key, job[key])}`;
-      case "minutes_limit":
-      case "minutes_runway":
-        return minutesText(reason, minutes);
-      // Never the reason nothing fit: an unhealthy step takes the job when no other can.
-      case "provider_unhealthy":
-        return `${RUNNER_LABELS[key]} isn't picking up jobs`;
-    }
-  });
+  const parts = skipped.map(
+    ({ key, reason, paused = [], notShared = [], full = [], minutes, spend }) => {
+      switch (reason) {
+        case "not_configured":
+          return `\`${key}\` isn't set on this relay`;
+        case "public_repo":
+          return "public repos never run on self-hosted machines";
+        case "no_machine":
+          return job.machine.length === 1 && job.machine[0].toLowerCase() === "self-hosted"
+            ? "no self-hosted machine is online and idle"
+            : `no self-hosted machine with ${job.machine.join(", ")} is online and idle`;
+        case "machine_paused":
+          return paused.length === 1
+            ? `the only machine that fits, ${paused[0]}, is paused`
+            : `every machine that fits is paused (${paused.join(", ")})`;
+        case "machine_not_shared":
+          return notSharedText(notShared);
+        case "machine_full":
+          return fullText(full);
+        case "github_rate_limited":
+          return "GitHub's API limit for this org was reached, so no machine could be checked";
+        case "too_many_labels":
+          return `\`${key}\` takes one label, not ${job[key].join(", ")}`;
+        case "not_provider_label":
+          return `\`${key}\` ${notProviderLabelText(key, job[key])}`;
+        case "minutes_limit":
+        case "minutes_runway":
+          return minutesText(reason, minutes);
+        case "spend_limit":
+          return spendText(RUNNER_LABELS[key], spend);
+        // Never the reason nothing fit: an unhealthy step takes the job when no other can.
+        case "provider_unhealthy":
+          return `${RUNNER_LABELS[key]} isn't picking up jobs`;
+      }
+    },
+  );
   for (const key of notInOrder) parts.push(`${RUNNER_LABELS[key]} isn't in your runner order`);
   return `${NO_RUNNER}: ${parts.join("; ")}.`;
 }
