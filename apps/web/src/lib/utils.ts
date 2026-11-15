@@ -26,3 +26,15 @@ export function elapsed(ms: number | null) {
   if (seconds < 3600) return `${Math.floor(seconds / 60)}m ${seconds % 60}s`;
   return `${Math.floor(seconds / 3600)}h ${Math.floor((seconds % 3600) / 60)}m`;
 }
+
+/**
+ * A chart's top for counts up to `max`: a round number (such as 2, 5, 12 or 50) with some
+ * headroom, so the tallest bar doesn't touch the top.
+ */
+export function niceMax(max: number) {
+  const target = Math.max(1, max * 1.1);
+  const power = 10 ** Math.floor(Math.log10(target));
+  return (
+    ([1, 1.2, 1.5, 2, 2.5, 3, 4, 5, 6, 8, 10].find((step) => step * power >= target) ?? 10) * power
+  );
+}

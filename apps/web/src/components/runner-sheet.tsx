@@ -25,7 +25,7 @@ import {
   type TimeRange,
 } from "@/lib/time-range";
 import { minutes } from "@/lib/usage";
-import { cn, count, percent } from "@/lib/utils";
+import { cn, count, niceMax, percent } from "@/lib/utils";
 
 /**
  * The panel's ranges, down to the past hour, with bars per 15 minutes, per hour or per day. They
@@ -347,7 +347,7 @@ function Axis({ from, to }: { from: number; to: number }) {
 function Throughput({ report, phrase }: { report: RunnerReport; phrase: string }) {
   const bars = report.buckets;
   const busyMs = bars.reduce((sum, bar) => sum + bar.busyMs, 0);
-  const most = Math.max(1, ...bars.map((bar) => bar.jobs));
+  const most = niceMax(Math.max(...bars.map((bar) => bar.jobs)));
   const busiest = bars.reduce<RunnerBucket | null>(
     (best, bar) => (bar.jobs > (best?.jobs ?? 0) ? bar : best),
     null,
