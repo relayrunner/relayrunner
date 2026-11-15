@@ -558,6 +558,7 @@ describe("run failures", () => {
           failedStep: "3. Run tests",
           annotations: [],
           log: ["ok", "##[error]boom"],
+          cause: null,
         },
         {
           id: lost.id,
@@ -568,6 +569,7 @@ describe("run failures", () => {
           failedStep: null,
           annotations: ["lost communication"],
           log: null,
+          cause: null,
         },
       ],
     });

@@ -48,7 +48,7 @@ Every tool takes an optional `workspace` (id or name), needed only when the conn
 
 **"Did my last push work?"** `list_runs` with `repository` (and `routed: true` for routed runs only), then `get_run_jobs` on the run.
 
-**"Why did CI fail?"** `list_runs` with `repository` and `conclusion: "failure"`, then `get_run_failures` on the run. Lead with the failed step and the error lines. When `runnerFailed` is true the runner failed the job before any step ran, so the code isn't the problem and a re-run is the fix.
+**"Why did CI fail?"** `list_runs` with `repository` and `conclusion: "failure"`, then `get_run_failures` on the run. Lead with the failed step and the error lines. When `runnerFailed` is true the runner failed the job before any step ran, so the code isn't the problem and a re-run is the fix. When a job has a `cause`, use it as a hint: `flaky` or `infra` with a high `passesOnRerun` means a re-run is worth trying, while `lint`, `test`, `build` or `config` means the code or workflow needs a fix. Check it against the error lines before you say so.
 
 **"A job failed on my machine. Should I re-run it?"** Use `get_run_jobs` to see where the job ran, and `list_activity` with `machine` to check whether the machine went offline during the run. In GitHub, **Re-run failed jobs** sends the job back to the same machine if it's free, and **Re-run all jobs** routes it again from the top of the runner order, so use that one to move it to another provider. Details: https://relayrunner.app/docs/concepts/routing.md#re-running-a-job
 

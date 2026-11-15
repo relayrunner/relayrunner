@@ -21,6 +21,7 @@ import {
 import { Recent } from "./recent.ts";
 import { userGitHubId } from "./memberships.ts";
 import { environmentFor, inWorkspace, PICK } from "./job-times.ts";
+import { type FailureCause, failureCauseOf } from "./ai/failure-cause.ts";
 
 const timing = schema.jobTiming;
 
@@ -46,6 +47,9 @@ export interface JobFailure {
   annotations: string[];
   // The log's last lines up to its last error, or null when GitHub no longer has the log.
   log: string[] | null;
+  // What most likely caused it, from the AI model (src/ai/failure-cause.ts). Null when AI is off
+  // for the workspace or couldn't tell.
+  cause: FailureCause | null;
 }
 
 export interface RunFailures {
@@ -104,7 +108,7 @@ type FailedRow = Awaited<ReturnType<typeof failedJobs>>[number];
 // Held in this isolate's memory only, never written anywhere.
 const RECENT_MS = 10 * 60_000;
 const access = new Recent<string, boolean>(500);
-const failures = new Recent<number, JobFailure>(200);
+const failures = new Recent<number, Omit<JobFailure, "cause">>(200);
 
 /** Forgets every read kept above, for tests. */
 export function forgetRecentFailures() {
@@ -154,7 +158,10 @@ async function requireRepoAccess(db: Db, userId: string, row: FailedRow, github:
 }
 
 /** One failed job with what GitHub says about it. A log GitHub no longer has is null. */
-async function readFailure(github: Installation, row: FailedRow): Promise<JobFailure> {
+async function readFailure(
+  github: Installation,
+  row: FailedRow,
+): Promise<Omit<JobFailure, "cause">> {
   const repo = row.repositoryFullName;
   await github.headroom();
   const token = await github.token();
@@ -177,14 +184,22 @@ async function readFailure(github: Installation, row: FailedRow): Promise<JobFai
   };
 }
 
-// A read that came back without its log may have hit a passing error, so it isn't kept.
-const failureRead = (github: Installation, row: FailedRow) =>
-  failures.get(
+// A read that came back without its log may have hit a passing error, so it isn't kept. The cause
+// is asked for after, since ai_cache already keeps answers and AI can be turned off meanwhile.
+async function failureRead(
+  env: Env,
+  workspaceId: string,
+  github: Installation,
+  row: FailedRow,
+): Promise<JobFailure> {
+  const failure = await failures.get(
     row.id,
     RECENT_MS,
     () => readFailure(github, row),
-    (failure) => failure.log !== null,
+    (read) => read.log !== null,
   );
+  return { ...failure, cause: await failureCauseOf(env, workspaceId, failure) };
+}
 
 /** The failed jobs of one of the workspace's run attempts, with what GitHub says about each. */
 export async function runFailures(
@@ -206,7 +221,7 @@ export async function runFailures(
   if (read.length === 0) return { jobs: [], more: 0 };
   const github = installation(env, read[0]!.installationId);
   await requireRepoAccess(db, userId, read[0]!, github);
-  const jobs = await Promise.all(read.map((row) => failureRead(github, row)));
+  const jobs = await Promise.all(read.map((row) => failureRead(env, workspaceId, github, row)));
   return { jobs, more: rows.length - read.length };
 }
 
@@ -225,5 +240,5 @@ export async function jobFailure(
   if (!row) return null;
   const github = installation(env, row.installationId);
   await requireRepoAccess(db, userId, row, github);
-  return failureRead(github, row);
+  return failureRead(env, workspaceId, github, row);
 }

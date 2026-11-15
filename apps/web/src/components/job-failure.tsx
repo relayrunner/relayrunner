@@ -4,7 +4,7 @@ import { ExternalLinkIcon, TriangleAlert } from "lucide-react";
 import { useEffect, useState } from "react";
 import { Button } from "@/components/ui/button";
 import { authDisabled } from "@/lib/auth-client";
-import { getJobFailure, type JobFailure, sampleJobFailure } from "@/lib/runs";
+import { type FailureCause, getJobFailure, type JobFailure, sampleJobFailure } from "@/lib/runs";
 import { cn } from "@/lib/utils";
 
 // A failed job's failure doesn't change, so the last ones read are kept.
@@ -101,6 +101,7 @@ function FailureDetail({ jobId, logUrl }: { jobId: number; logUrl: string }) {
         <div aria-busy aria-label="Loading the log" className="h-32 rounded-lg border" />
       ) : (
         <>
+          {failure.cause && <CauseNote cause={failure.cause} />}
           {failure.runnerFailed && (
             <p className="text-sm">The runner failed the job before any step ran.</p>
           )}
@@ -129,6 +130,34 @@ function FailureDetail({ jobId, logUrl }: { jobId: number; logUrl: string }) {
         </>
       )}
     </>
+  );
+}
+
+const CAUSES: Record<FailureCause["kind"], string> = {
+  flaky: "This looks like a flaky failure",
+  lint: "This looks like a lint, format or type error",
+  test: "This looks like a failing test",
+  build: "This looks like a build or install error",
+  infra: "This looks like a runner or service problem",
+  config: "This looks like a problem with the workflow setup",
+};
+
+// Below this, the model isn't sure enough to be worth showing.
+const MIN_CONFIDENCE = 0.5;
+
+/** The model's read on the failure, in one sentence, when it's fairly sure. */
+function CauseNote({ cause }: { cause: FailureCause }) {
+  if (cause.confidence < MIN_CONFIDENCE) return null;
+  const rerun =
+    cause.passesOnRerun >= 0.6
+      ? " Running it again will probably pass."
+      : cause.passesOnRerun <= 0.3
+        ? " Running it again probably won't help."
+        : "";
+  return (
+    <p className="text-sm text-muted-foreground">
+      {CAUSES[cause.kind]}.{rerun}
+    </p>
   );
 }
 

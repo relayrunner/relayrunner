@@ -165,6 +165,17 @@ export type JobFailure = {
   annotations: string[];
   /** The log's last lines up to its last error, or null when GitHub no longer has the log. */
   log: string[] | null;
+  /** What most likely caused it, from the AI model, or null when AI is off or couldn't tell. */
+  cause: FailureCause | null;
+};
+
+/** apps/api/src/ai/failure-cause.ts */
+export type FailureCause = {
+  kind: "flaky" | "lint" | "test" | "build" | "infra" | "config";
+  /** How sure the model is of `kind`, from 0 to 1. */
+  confidence: number;
+  /** The chance that running the job again, with no change, passes. */
+  passesOnRerun: number;
 };
 
 export function getJobFailure(jobId: number) {
@@ -188,6 +199,7 @@ export function sampleJobFailure(): JobFailure {
       " ELIFECYCLE  Command failed with exit code 2.",
       "##[error]Process completed with exit code 2.",
     ],
+    cause: { kind: "lint", confidence: 0.92, passesOnRerun: 0.04 },
   };
 }
 
