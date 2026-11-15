@@ -709,7 +709,8 @@ function WorkflowPanel({ steps }: { steps: RunnerStep[] }) {
     >
       <h2 className="text-sm font-semibold">In your workflow</h2>
       <p className="text-[12.5px] text-muted-foreground">
-        relay.yml takes one input per step. A job skips steps it doesn't name.
+        Each job gets its own relay with one label per step, so jobs can use different sizes. A job
+        skips steps it doesn't name.
       </p>
       <div className="relative">
         <CodeBlock code={snippet} lang="yaml" wrap fontSize={11.5} className="pr-7" />
