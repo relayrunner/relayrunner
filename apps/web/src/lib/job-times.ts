@@ -110,7 +110,8 @@ export function getMachineJobTimes(days = 14) {
   return api<{ days: number; machines: Record<string, Stat> }>(`/job-times/machines?days=${days}`);
 }
 
-export const DAY_MS = 86_400_000;
+export const HOUR_MS = 3_600_000;
+export const DAY_MS = 24 * HOUR_MS;
 
 // 10s, 15s, 30s, 1m, 2m, 5m, 10m, ... so the axis lands on round times.
 export function niceStep(ms: number) {

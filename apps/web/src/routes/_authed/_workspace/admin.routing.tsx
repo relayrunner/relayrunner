@@ -66,7 +66,7 @@ function RoutingPage() {
         <TimeRangePicker
           presets={ROUTING_RANGES}
           value={range}
-          onChange={(next) => chooseRange(next as RoutingRange)}
+          onChange={chooseRange}
           className="justify-self-start"
         />
 

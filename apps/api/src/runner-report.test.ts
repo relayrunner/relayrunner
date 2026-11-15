@@ -115,7 +115,9 @@ describe("runner report", () => {
     await insert([timing(installationId, 60)]);
     const result = await report(cookie, "github:linux-2-core", "&utcOffset=120");
     expect(result.bucketMs).toBe(DAY);
-    expect(result.buckets).toHaveLength(1);
+    // Every day of the window, the one `from` falls in included.
+    expect(result.buckets).toHaveLength(15);
+    expect(result.buckets.filter((bucket) => bucket.jobs)).toHaveLength(1);
     // Local midnight at UTC+2 is 22:00 UTC the day before.
     expect((result.buckets[0].start + 120 * 60_000) % DAY).toBe(0);
   });
@@ -140,14 +142,15 @@ describe("runner report", () => {
     );
     expect(result.bucketMs).toBe(HOUR);
     expect(result.stat.runs).toBe(3);
-    expect(result.buckets.map((bucket) => bucket.start % HOUR)).toEqual([0, 0]);
-    expect(result.buckets.map((bucket) => bucket.jobs).sort()).toEqual([1, 2]);
+    expect(result.buckets).toHaveLength(23);
+    expect(result.buckets.every((bucket) => bucket.start % HOUR === 0)).toBe(true);
+    expect(result.buckets.slice(-3).map((bucket) => bucket.jobs)).toEqual([0, 2, 1]);
   });
 
-  test("turns down a window that's backwards or longer than 90 days", async () => {
+  test("turns down a window that's backwards or longer than 30 days", async () => {
     const { cookie } = await connectedWorkspace();
     const now = Date.now();
-    for (const query of [`&from=${now}&to=${now - HOUR}`, `&from=${now - 91 * DAY}`]) {
+    for (const query of [`&from=${now}&to=${now - HOUR}`, `&from=${now - 31 * DAY}`]) {
       const res = await testing.call(
         env,
         `/job-times/runner?key=github:linux-2-core${query}`,

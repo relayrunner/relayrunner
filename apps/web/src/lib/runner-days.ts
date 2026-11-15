@@ -1,28 +1,6 @@
-// A runner's bars and online spans for its panel, kept apart from the API so tests can import them.
+// A runner's online spans for its panel, kept apart from the API so tests can import them.
 
 export type RunnerBucket = { start: number; jobs: number; failures: number; busyMs: number };
-
-/**
- * Every bar in the window, oldest first, with the ones the report left out as zeros. Bars sit on
- * the same grid the API cut them on: `bucketMs` steps from the reader's midnight at `utcOffset`
- * (minutes east of UTC), so a day bar starts at local midnight.
- */
-export function everyBucket(
-  report: { from: number; to: number; bucketMs: number; buckets: RunnerBucket[] },
-  utcOffset: number,
-) {
-  const { from, to, bucketMs } = report;
-  const offsetMs = utcOffset * 60_000;
-  const byStart = new Map(report.buckets.map((bucket) => [bucket.start, bucket]));
-  const all: RunnerBucket[] = [];
-  for (
-    let start = Math.floor((from + offsetMs) / bucketMs) * bucketMs - offsetMs;
-    start < to;
-    start += bucketMs
-  )
-    all.push(byStart.get(start) ?? { start, jobs: 0, failures: 0, busyMs: 0 });
-  return all;
-}
 
 /** The machine's live connection, to close the last span with. */
 export type LiveConnection = {
@@ -34,7 +12,7 @@ export type LiveConnection = {
 };
 
 /**
- * When a machine was online from `since` to now, as [from, to] spans, from its connections and its
+ * When a machine was online from `since` to `until` (now by default), as [from, to] spans, from its connections and its
  * live state. Before its first connection event it was in the opposite state; with none it's been
  * as it is now all along (or since it connected).
  */
@@ -43,11 +21,13 @@ export function onlineSpans(
   live: LiveConnection,
   since: number,
   now = Date.now(),
+  until = now,
 ): [number, number][] {
   const spans: [number, number][] = [];
   const add = (from: number, to: number) => {
     const start = Math.max(from, since);
-    if (to > start) spans.push([start, to]);
+    const end = Math.min(to, until);
+    if (end > start) spans.push([start, end]);
   };
   const first = connections[0];
   let from: number | null = null;

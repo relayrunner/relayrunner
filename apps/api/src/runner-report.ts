@@ -39,8 +39,8 @@ const MACHINE = "machine:";
 /** Most recent jobs the panel lists. */
 const RECENT_LIMIT = 25;
 
-/** The longest window the panel reads, as far back as job timings are kept. */
-export const MAX_RANGE_MS = 90 * DAY_MS;
+/** The longest window the panel reads, as Performance does. */
+export const MAX_RANGE_MS = 30 * DAY_MS;
 
 /**
  * The panel's bars: a bar per 15 minutes up to 6 hours, per hour up to two days (with an hour to
@@ -75,7 +75,7 @@ export interface RunnerReport {
   stat: Stat;
   /** Jobs sent here that no runner picked up (see missedQuery). */
   missed: number;
-  /** Bars with jobs, oldest first. Bars without any are left out. */
+  /** Every bar in the window, oldest first, with zeros where there were no jobs. */
   buckets: RunnerBucket[];
   /** Newest first, at most RECENT_LIMIT. */
   recent: RunnerJob[];
@@ -109,28 +109,24 @@ export async function runnerReport(
   db: Db,
   workspaceId: string,
   key: string,
-  {
-    from,
-    to: until,
-    utcOffset = 0,
-    now = Date.now(),
-  }: { from: number; to?: number; utcOffset?: number; now?: number },
+  options: { from: number; to?: number; utcOffset?: number; now?: number },
 ): Promise<RunnerReport> {
-  const to = Math.min(until ?? now, now);
+  const { from, utcOffset = 0, now = Date.now() } = options;
+  const to = Math.min(options.to ?? now, now);
   const since = new Date(from);
   const bucketMs = bucketFor(to - from);
   const offsetMs = utcOffset * 60_000;
   const machineId = key.startsWith(MACHINE) ? key.slice(MACHINE.length) : null;
   // Only a machine in this workspace: another's id reads nothing.
-  const start = machineId
+  const scope = machineId
     ? machineWindowWhere(
         workspaceId,
         sql`select ${schema.machine.id} from ${schema.machine}
           where ${machineInWorkspace(db, workspaceId)} and ${schema.machine.id} = ${machineId}`,
         since,
+        to,
       )
-    : sql`${windowWhere(workspaceId, since)} and ${table.machineId} is null`;
-  const scope = sql`${start} and ${table.completedAt} < ${to}`;
+    : sql`${windowWhere(workspaceId, since, to)} and ${table.machineId} is null`;
   // Cast, since D1 may bind the numbers as reals.
   const bucket = sql`cast((${table.completedAt} + ${offsetMs}) / ${bucketMs} as integer)`;
   const groupBy = machineId
@@ -167,7 +163,11 @@ export async function runnerReport(
   let environment: Environment | null = machineId ? { key, label: "Machine", detail: "" } : null;
   const combos = new Set<string>();
   const stats = emptyBucket();
+  // Every bar from the one `from` falls in, so the panel draws them as they come.
   const buckets = new Map<number, RunnerBucket>();
+  const first = Math.floor((from + offsetMs) / bucketMs) * bucketMs - offsetMs;
+  for (let start = first; start < to; start += bucketMs)
+    buckets.set(start, { start, jobs: 0, failures: 0, busyMs: 0 });
   for (const row of rows) {
     if (!machineId) {
       const env = envOf(row.labels, row.runner_group_name, null);
@@ -176,12 +176,11 @@ export async function runnerReport(
       combos.add(comboOf(row.labels, row.runner_group_name));
     }
     mergeInto(stats, bucketOf(row));
-    const at = Number(row.bucket) * bucketMs - offsetMs;
-    const into = buckets.get(at) ?? { start: at, jobs: 0, failures: 0, busyMs: 0 };
+    const into = buckets.get(Number(row.bucket) * bucketMs - offsetMs);
+    if (!into) continue;
     into.jobs += Number(row.runs);
     into.failures += Number(row.failures);
     into.busyMs += Number(row.busy_ms);
-    buckets.set(at, into);
   }
 
   let missed = 0;
@@ -209,7 +208,7 @@ export async function runnerReport(
     environment,
     stat: statOf(stats),
     missed,
-    buckets: [...buckets.values()].sort((a, b) => a.start - b.start),
+    buckets: [...buckets.values()],
     recent,
     connections,
   };

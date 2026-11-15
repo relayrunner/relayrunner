@@ -2,10 +2,11 @@
 // `24h` or `14d`, a calendar one such as `today` or `week`, or a custom range of local dates,
 // `2026-11-01..2026-11-07` (both days included).
 
+// Kept free of imports so tests can load it, like runner-days.ts.
 const HOUR_MS = 3_600_000;
 const DAY_MS = 24 * HOUR_MS;
 
-export const ROLLING = ["1h", "3h", "12h", "24h", "2d", "7d", "14d", "30d", "90d"] as const;
+const ROLLING = ["1h", "3h", "24h", "2d", "7d", "14d", "30d", "90d"] as const;
 export const CALENDAR = ["today", "yesterday", "week", "lastweek"] as const;
 
 export type RollingRange = (typeof ROLLING)[number];
@@ -17,7 +18,6 @@ export type TimeRange = RangePreset | CustomRange;
 const NAMES: Record<RangePreset, string> = {
   "1h": "Past hour",
   "3h": "Past 3 hours",
-  "12h": "Past 12 hours",
   "24h": "Past 24 hours",
   "2d": "Past 2 days",
   "7d": "Past 7 days",
@@ -33,13 +33,18 @@ const NAMES: Record<RangePreset, string> = {
 const DATE = /^\d{4}-\d{2}-\d{2}$/;
 
 /** A rolling preset's length. */
-export function rollingMs(range: RollingRange) {
+function rollingMs(range: RollingRange) {
   const amount = Number.parseInt(range, 10);
   return amount * (range.endsWith("h") ? HOUR_MS : DAY_MS);
 }
 
 const isRolling = (value: unknown): value is RollingRange =>
   (ROLLING as readonly unknown[]).includes(value);
+
+export const isCalendar = (value: unknown): value is CalendarRange =>
+  (CALENDAR as readonly unknown[]).includes(value);
+
+export const isCustom = (range: TimeRange): range is CustomRange => range.includes("..");
 
 /** The rolling preset for a range of `days` days, as the older `?days=` params counted them. */
 export const dayPreset = (days: number) => (days === 1 ? "24h" : `${days}d`) as RollingRange;
@@ -77,6 +82,18 @@ function parseDate(text: string) {
   return date.getDate() === day ? date.getTime() : Number.NaN;
 }
 
+/** A custom range's two days as local midnights, or null when it isn't two valid days in order. */
+function parseCustom(range: string) {
+  const [from = "", to = "", extra] = range.split("..");
+  const start = parseDate(from);
+  const end = parseDate(to);
+  return extra === undefined && start <= end ? { start, end } : null;
+}
+
+/** The earliest day a custom range may start, `customDays` back. */
+export const customRangeStart = (customDays: number, now = Date.now()) =>
+  startOfDay(now, -customDays);
+
 /** A custom range from two local days, in order, both included. */
 export function customRange(from: string, to: string): CustomRange {
   return parseDate(from) <= parseDate(to) ? `${from}..${to}` : `${to}..${from}`;
@@ -97,9 +114,9 @@ export function resolveRange(range: TimeRange, now = Date.now()): { from: number
       return { from: startOfDay(week, -7), to: week };
     }
   }
-  const [from = "", to = ""] = range.split("..");
+  const { start, end } = parseCustom(range) ?? { start: Number.NaN, end: Number.NaN };
   // A custom range ends at the end of its last day, or now if that's today.
-  return { from: parseDate(from), to: Math.min(now, startOfDay(parseDate(to), 1)) };
+  return { from: start, to: Math.min(now, startOfDay(end, 1)) };
 }
 
 /** A short code for how long a range spans, such as `3h`, `19h` or `6d`. */
@@ -112,22 +129,22 @@ export function spanCode(range: TimeRange, now = Date.now()) {
   return `${Math.round(span / DAY_MS)}d`;
 }
 
-const shortDate = (ms: number) =>
-  new Date(ms).toLocaleDateString(undefined, { month: "short", day: "numeric" });
+const dayFormat = new Intl.DateTimeFormat(undefined, { month: "short", day: "numeric" });
+
+/** A day as "Nov 14". */
+export const shortDate = (ms: number) => dayFormat.format(ms);
 
 /** The range's name, such as "Past 24 hours", "This week" or "Nov 1 – Nov 7". */
 export function rangeName(range: TimeRange) {
-  if (range in NAMES) return NAMES[range as RangePreset];
-  const [from = "", to = ""] = range.split("..");
-  return from === to
-    ? shortDate(parseDate(from))
-    : `${shortDate(parseDate(from))} – ${shortDate(parseDate(to))}`;
+  if (!isCustom(range)) return NAMES[range];
+  const { start, end } = parseCustom(range) ?? { start: Number.NaN, end: Number.NaN };
+  return start === end ? shortDate(start) : `${shortDate(start)} – ${shortDate(end)}`;
 }
 
 /** The range as the end of a sentence: "the past 24 hours", "this week", "Nov 1 – Nov 7". */
 export function rangePhrase(range: TimeRange) {
   if (range === "today" || range === "yesterday") return range;
-  if (range in NAMES) return `the ${NAMES[range as RangePreset].toLowerCase()}`;
+  if (!isCustom(range)) return `the ${NAMES[range].toLowerCase()}`;
   return rangeName(range);
 }
 
@@ -148,9 +165,8 @@ export function timeRangeParam(
   if (typeof value !== "string" || value === fallback) return undefined;
   if ((presets as readonly string[]).includes(value)) return value as RangePreset;
   if (!customDays) return undefined;
-  const [from = "", to = "", extra] = value.split("..");
-  const start = parseDate(from);
-  const end = parseDate(to);
-  if (extra !== undefined || !(start <= end)) return undefined;
-  return start >= startOfDay(now, -customDays) && end <= now ? (value as CustomRange) : undefined;
+  const custom = parseCustom(value);
+  return custom && custom.start >= customRangeStart(customDays, now) && custom.end <= now
+    ? (value as CustomRange)
+    : undefined;
 }

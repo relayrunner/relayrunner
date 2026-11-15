@@ -4,14 +4,14 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import {
-  CALENDAR,
   customRange,
+  customRangeStart,
   dateText,
   dayPreset,
+  isCalendar,
+  isCustom,
   presetDays,
-  type RangeOptions,
   type RangePreset,
-  type RollingRange,
   rangeName,
   resolveRange,
   spanCode,
@@ -51,29 +51,33 @@ export function OptionPicker<V extends string | number>({
 /**
  * Picks a report's time range from a menu: rolling presets (past hour to past 90 days), then
  * calendar ones (today, this week) in two columns, then a custom range of days when the page
- * takes one. Each lists how long it spans, so "Today" at 7 PM reads `19h`.
+ * takes one (`customDays`, so `V` then takes in custom ranges). Each lists how long it spans, so
+ * "Today" at 7 PM reads `19h`.
  */
-export function TimeRangePicker({
+export function TimeRangePicker<V extends TimeRange>({
   value,
   onChange,
   presets,
   customDays,
   className,
-}: RangeOptions & {
-  value: TimeRange;
-  onChange: (range: TimeRange) => void;
+}: {
+  presets: readonly (V & RangePreset)[];
+  customDays?: number;
+  value: V;
+  onChange: (range: V) => void;
   className?: string;
 }) {
   const [open, setOpen] = useState(false);
   const [custom, setCustom] = useState(false);
   const now = Date.now();
-  const rolling = presets.filter((preset) => !CALENDAR.includes(preset as never));
-  const calendar = presets.filter((preset) => CALENDAR.includes(preset as never));
-  const choose = (range: TimeRange) => {
+  const rolling = presets.filter((preset) => !isCalendar(preset));
+  const calendar = presets.filter(isCalendar);
+  const customValue = isCustom(value);
+  const choose = (range: V) => {
     setOpen(false);
     if (range !== value) onChange(range);
   };
-  const item = (preset: RangePreset) => (
+  const item = (preset: V & RangePreset) => (
     <RangeItem
       key={preset}
       code={spanCode(preset, now)}
@@ -104,7 +108,7 @@ export function TimeRangePicker({
           <CustomForm
             value={value}
             customDays={customDays}
-            onApply={choose}
+            onApply={(range) => choose(range as V)}
             onBack={() => setCustom(false)}
           />
         ) : (
@@ -119,10 +123,10 @@ export function TimeRangePicker({
               <div className="border-t pt-1">
                 <RangeItem
                   code={<CalendarIcon aria-hidden className="size-3.5" />}
-                  selected={value.includes("..")}
+                  selected={customValue}
                   onSelect={() => setCustom(true)}
                 >
-                  {value.includes("..") ? rangeName(value) : "Custom range…"}
+                  {customValue ? rangeName(value) : "Custom range…"}
                 </RangeItem>
               </div>
             ) : null}
@@ -177,7 +181,7 @@ function CustomForm({
   const current = resolveRange(value, now);
   const [from, setFrom] = useState(dateText(current.from));
   const [to, setTo] = useState(dateText(Math.max(current.from, current.to - 1)));
-  const min = dateText(now - customDays * 86_400_000);
+  const min = dateText(customRangeStart(customDays, now));
   const max = dateText(now);
   const valid = Boolean(from && to) && from >= min && to <= max;
   return (
@@ -239,7 +243,7 @@ export function RangePicker({
     <TimeRangePicker
       presets={ranges.map(dayPreset)}
       value={dayPreset(days)}
-      onChange={(range) => onChange(presetDays(range as RollingRange))}
+      onChange={(range) => onChange(presetDays(range))}
     />
   );
 }

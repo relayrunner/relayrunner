@@ -371,8 +371,13 @@ export function inWorkspace(
 }
 
 /** The jobs a report counts: the workspace's, finished since `since`, run by a runner, not picks. */
-export const windowWhere = (workspaceId: string, since: Date) =>
-  sql`${inWorkspace(workspaceId)} and ${table.completedAt} >= ${since.getTime()} and ${RAN}`;
+/** Before `until` (epoch ms), when the window ends before now. */
+const before = (until?: number) =>
+  until === undefined ? sql`` : sql` and ${table.completedAt} < ${until}`;
+
+export const windowWhere = (workspaceId: string, since: Date, until?: number) =>
+  sql`${inWorkspace(workspaceId)} and ${table.completedAt} >= ${since.getTime()}${before(until)}
+    and ${RAN}`;
 
 /**
  * The window's aggregate, a single range read of job_timing_installation_idx: the workspace's
@@ -393,13 +398,13 @@ export function windowQuery(workspaceId: string, since: Date) {
 }
 
 /** The window's missed jobs (NOT_PICKED_UP) by where they were sent, from the same index range. */
-export function missedQuery(workspaceId: string, since: Date, until = Number.MAX_SAFE_INTEGER) {
+export function missedQuery(workspaceId: string, since: Date, until?: number) {
   return sql`
     select ${table.labels} as labels, ${table.runnerGroupName} as runner_group_name,
       ${table.machineId} as machine_id, count(*) as missed
     from ${table}
     where ${inWorkspace(workspaceId)} and ${table.completedAt} >= ${since.getTime()}
-      and ${table.completedAt} < ${until} and ${NOT_PICKED_UP}
+      ${before(until)} and ${NOT_PICKED_UP}
     group by ${table.labels}, ${table.runnerGroupName}, ${table.machineId}`;
 }
 
@@ -736,12 +741,17 @@ export async function jobRuns(
  * partial job_timing_machine_idx per machine, so only machine jobs are read. A member's machine
  * also runs other workspaces' jobs (#318), so only this workspace's installation counts.
  */
-export const machineWindowWhere = (workspaceId: string, machines: SQL, since: Date) =>
+export const machineWindowWhere = (
+  workspaceId: string,
+  machines: SQL,
+  since: Date,
+  until?: number,
+) =>
   sql`${table.machineId} in (${machines})
     and ${table.installationId} = (
       select ${schema.workspace.installationId} from ${schema.workspace}
       where ${schema.workspace.id} = ${workspaceId})
-    and ${table.completedAt} >= ${since.getTime()}
+    and ${table.completedAt} >= ${since.getTime()}${before(until)}
     and ${RAN}`;
 
 /**

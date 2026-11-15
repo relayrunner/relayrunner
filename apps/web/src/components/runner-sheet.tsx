@@ -1,7 +1,7 @@
 import { sizeText } from "@relayrunner/providers";
 import { Link, useNavigate } from "@tanstack/react-router";
 import { ChevronRightIcon } from "lucide-react";
-import { type ReactNode, useEffect, useMemo, useState } from "react";
+import { type ReactNode, useEffect, useState } from "react";
 import { CopyButton } from "@/components/add-runner";
 import { providerOf, providerStyle, RunnerMark } from "@/components/providers";
 import { TimeRangePicker } from "@/components/range-picker";
@@ -11,38 +11,29 @@ import { StatusIcon } from "@/components/status-icon";
 import { Sheet, SheetContent, SheetDescription, SheetTitle } from "@/components/ui/sheet";
 import { timeAgo } from "@/lib/activity";
 import { authDisabled } from "@/lib/auth-client";
-import { clock, plural } from "@/lib/job-times";
+import { clock, DAY_MS, HOUR_MS, plural } from "@/lib/job-times";
 import { cachedMachine, type Machine, workspaceMachine } from "@/lib/machines";
-import { everyBucket, onlineSpans, type RunnerBucket } from "@/lib/runner-days";
-import {
-  getRunnerReport,
-  type RunnerReport,
-  sampleRunnerReport,
-  utcOffset,
-} from "@/lib/runner-report";
+import { onlineSpans, type RunnerBucket } from "@/lib/runner-days";
+import { getRunnerReport, type RunnerReport, sampleRunnerReport } from "@/lib/runner-report";
 import { isLongWait, runParam } from "@/lib/runs";
 import { unlessDefault, useSetSearch } from "@/lib/search-params";
-import { type RangeOptions, rangePhrase, resolveRange, type TimeRange } from "@/lib/time-range";
+import {
+  type RangeOptions,
+  rangePhrase,
+  resolveRange,
+  shortDate,
+  type TimeRange,
+} from "@/lib/time-range";
 import { minutes } from "@/lib/usage";
 import { cn, count, percent } from "@/lib/utils";
 
-/** The panel's ranges: down to the past hour, with bars per 15 minutes, per hour or per day. */
+/**
+ * The panel's ranges, down to the past hour, with bars per 15 minutes, per hour or per day. They
+ * reach back 30 days, as far as Performance does.
+ */
 export const RUNNER_RANGES: RangeOptions = {
-  presets: [
-    "1h",
-    "3h",
-    "24h",
-    "2d",
-    "7d",
-    "14d",
-    "30d",
-    "90d",
-    "today",
-    "yesterday",
-    "week",
-    "lastweek",
-  ],
-  customDays: 90,
+  presets: ["1h", "3h", "24h", "2d", "7d", "14d", "30d", "today", "yesterday", "week", "lastweek"],
+  customDays: 30,
 };
 export const RUNNER_DEFAULT_RANGE: TimeRange = "14d";
 const MACHINE = "machine:";
@@ -60,8 +51,10 @@ function loadReport(key: string, range: TimeRange) {
       : getRunnerReport(key, window);
     request.catch(() => reports.delete(id));
     reports.set(id, request);
-    // Kept for a minute: a runner's numbers move as it takes jobs.
-    setTimeout(() => reports.get(id) === request && reports.delete(id), 60_000);
+    // A window that runs to now is kept for a minute, since a runner's numbers move as it takes
+    // jobs. One that's over, such as yesterday, stays put.
+    if (window.to > Date.now() - 60_000)
+      setTimeout(() => reports.get(id) === request && reports.delete(id), 60_000);
   }
   return request;
 }
@@ -156,7 +149,6 @@ function RunnerView({
   const provider = providerOf(env);
   const detail = [env.detail, sizeText(env.size)].filter(Boolean).join(" · ");
   const sent = stat.runs + missed;
-  const bars = useMemo(() => everyBucket(report, utcOffset()), [report]);
   const phrase = rangePhrase(reportRange);
 
   return (
@@ -200,10 +192,8 @@ function RunnerView({
           ]}
         />
 
-        {report.connections && (
-          <Uptime report={report} since={bars[0]!.start} phrase={phrase} machine={machine} />
-        )}
-        <Throughput report={report} bars={bars} phrase={phrase} />
+        {report.connections && <Uptime report={report} phrase={phrase} machine={machine} />}
+        <Throughput report={report} phrase={phrase} />
         <RecentJobs report={report} />
       </div>
 
@@ -266,43 +256,39 @@ function Section({
   );
 }
 
-const HOUR_MS = 3_600_000;
-const DAY_MS = 24 * HOUR_MS;
+const timeFormat = new Intl.DateTimeFormat(undefined, { hour: "numeric", minute: "2-digit" });
 
-const dayLabel = (ms: number) =>
-  new Date(ms).toLocaleDateString(undefined, { month: "short", day: "numeric" });
-const timeLabel = (ms: number) =>
-  new Date(ms).toLocaleTimeString(undefined, { hour: "numeric", minute: "2-digit" });
+/** A time as "3:00 PM" today, or "Nov 13, 3:00 PM" on another day. */
+function timeLabel(ms: number) {
+  const time = timeFormat.format(ms);
+  return new Date(ms).toDateString() === new Date().toDateString()
+    ? time
+    : `${shortDate(ms)}, ${time}`;
+}
 
 /** When a bar starts, as its tooltip and the busiest line name it. */
-function barLabel(start: number, bucketMs: number) {
-  if (bucketMs >= DAY_MS) return dayLabel(start);
-  const time = timeLabel(start);
-  return new Date(start).toDateString() === new Date().toDateString()
-    ? time
-    : `${dayLabel(start)}, ${time}`;
-}
+const barLabel = (start: number, bucketMs: number) =>
+  bucketMs >= DAY_MS ? shortDate(start) : timeLabel(start);
 
 /** What each bar counts, for the chart's title. */
 const perBar = (bucketMs: number) =>
   bucketMs >= DAY_MS ? "day" : bucketMs >= HOUR_MS ? "hour" : "15 minutes";
 
 /**
- * A strip across the window, filled where the machine was online. It starts at `since`, the first
- * bar of the jobs chart, so the two line up.
+ * A strip across the window, filled where the machine was online. It starts where the jobs
+ * chart's first bar does, so the two line up.
  */
 function Uptime({
   report,
-  since: from,
   phrase,
   machine,
 }: {
   report: RunnerReport;
-  since: number;
   phrase: string;
   machine: Machine | null;
 }) {
   const { to } = report;
+  const from = report.buckets[0]!.start;
   const now = Date.now();
   const spans = onlineSpans(
     report.connections ?? [],
@@ -313,7 +299,8 @@ function Uptime({
     },
     from,
     now,
-  ).flatMap(([start, end]): [number, number][] => (start < to ? [[start, Math.min(end, to)]] : []));
+    to,
+  );
   const onlineMs = spans.reduce((sum, [start, end]) => sum + (end - start), 0);
   const span = to - from;
   const share = percent(onlineMs / span);
@@ -347,7 +334,7 @@ function Uptime({
 function Axis({ from, to }: { from: number; to: number }) {
   const now = Date.now();
   const short = to - from <= 2 * DAY_MS;
-  const label = (ms: number) => (short ? barLabel(ms, HOUR_MS) : dayLabel(ms));
+  const label = short ? timeLabel : shortDate;
   return (
     <div className="flex justify-between text-[11px] text-muted-foreground tabular-nums">
       <span>{label(from)}</span>
@@ -357,15 +344,8 @@ function Axis({ from, to }: { from: number; to: number }) {
 }
 
 /** Jobs per bar, failures stacked on top, with the time spent running them. */
-function Throughput({
-  report,
-  bars,
-  phrase,
-}: {
-  report: RunnerReport;
-  bars: RunnerBucket[];
-  phrase: string;
-}) {
+function Throughput({ report, phrase }: { report: RunnerReport; phrase: string }) {
+  const bars = report.buckets;
   const busyMs = bars.reduce((sum, bar) => sum + bar.busyMs, 0);
   const most = Math.max(1, ...bars.map((bar) => bar.jobs));
   const busiest = bars.reduce<RunnerBucket | null>(

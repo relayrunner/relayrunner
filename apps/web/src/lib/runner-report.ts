@@ -1,9 +1,7 @@
 import { api } from "@/lib/api";
-import { DAY_MS, type Environment, sampleJobTimes, type Stat } from "@/lib/job-times";
+import { DAY_MS, type Environment, HOUR_MS, sampleJobTimes, type Stat } from "@/lib/job-times";
 import type { RunnerBucket } from "./runner-days.ts";
 import type { HistoryJob } from "./runs.ts";
-
-const HOUR_MS = DAY_MS / 24;
 
 export type RunnerJob = Omit<HistoryJob, "usage">;
 
@@ -18,7 +16,7 @@ export type RunnerReport = {
   stat: Stat;
   /** Jobs sent here that no runner picked up within 10 minutes. */
   missed: number;
-  /** Bars with jobs, oldest first, cut at the reader's midnight and hours. */
+  /** Every bar in the window, oldest first, cut at the reader's midnight and hours. */
   buckets: RunnerBucket[];
   /** Newest first. */
   recent: RunnerJob[];
@@ -27,7 +25,7 @@ export type RunnerReport = {
 };
 
 /** The reader's minutes east of UTC, which bars are cut at. */
-export const utcOffset = () => -new Date().getTimezoneOffset();
+const utcOffset = () => -new Date().getTimezoneOffset();
 
 export function getRunnerReport(key: string, { from, to }: { from: number; to: number }) {
   const query = new URLSearchParams({
@@ -57,7 +55,6 @@ export function sampleRunnerReport(
     detail: "",
     stat: sample.environments[0]!.stat,
   };
-  const now = to;
   let seed = key.length * 7 + 3;
   const random = () => {
     seed = (seed * 9301 + 49297) % 233280;
@@ -65,6 +62,7 @@ export function sampleRunnerReport(
   };
   const median = stat.medianMs ?? 60_000;
   const span = to - from;
+  // As the API's bucketFor cuts them.
   const bucketMs = span <= 6 * HOUR_MS ? 900_000 : span <= 2 * DAY_MS + HOUR_MS ? HOUR_MS : DAY_MS;
   const offsetMs = utcOffset() * 60_000;
   const buckets: RunnerBucket[] = [];
@@ -80,12 +78,12 @@ export function sampleRunnerReport(
       (date.getDay() % 6 === 0 ? 0.5 : 1) *
       (bucketMs === DAY_MS ? 14 : hour >= 9 && hour < 19 ? (bucketMs === HOUR_MS ? 6 : 2) : 0.4);
     const jobs = Math.round(random() * busy);
-    if (jobs)
-      buckets.push({ start, jobs, failures: random() > 0.8 ? 1 : 0, busyMs: jobs * median });
+    const failures = jobs && random() > 0.8 ? 1 : 0;
+    buckets.push({ start, jobs, failures, busyMs: jobs * median });
   }
   const names = ["lint", "test (node 24)", "build", "typecheck", "e2e"];
   const recent = Array.from({ length: 12 }, (_, index) => {
-    const completedAt = now - (index * span) / 14 - random() * (span / 14);
+    const completedAt = to - (index * span) / 14 - random() * (span / 14);
     const runMs = median * (0.7 + random() * 0.6);
     const startedAt = completedAt - runMs;
     return {

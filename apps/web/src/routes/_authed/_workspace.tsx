@@ -35,7 +35,7 @@ import { isGitHubOutcome } from "@/lib/github";
 import { loadProviderCatalog } from "@/lib/provider-catalog";
 import { isOperator } from "@/lib/roles";
 import { textParam } from "@/lib/search-params";
-import { type TimeRange, timeRangeParam } from "@/lib/time-range";
+import { dayPreset, type TimeRange, timeRangeParam } from "@/lib/time-range";
 import { readFlag, saveFlag } from "@/lib/stored-flag";
 import { cn } from "@/lib/utils";
 import {
@@ -67,7 +67,8 @@ export const Route = createFileRoute("/_authed/_workspace")({
     search: Record<string, unknown>,
   ): { runner?: string; runnerRange?: TimeRange } => {
     const runner = textParam(search.runner);
-    const range = search.runnerRange ?? (search.runnerDays ? `${search.runnerDays}d` : undefined);
+    const range =
+      search.runnerRange ?? (search.runnerDays ? dayPreset(Number(search.runnerDays)) : undefined);
     return {
       runner,
       runnerRange: runner ? timeRangeParam(range, RUNNER_RANGES, RUNNER_DEFAULT_RANGE) : undefined,
