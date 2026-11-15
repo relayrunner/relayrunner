@@ -587,7 +587,8 @@ export const jobCountDay = sqliteTable(
 // job_timing's raw retention so a public comparison of runners (#492) can later report medians
 // and the share started within a minute over any range, and only show a runner once enough
 // installations used it. Holds no repo, workflow or label text: a runner is its provider, platform
-// and vCPUs. Goes away with its installation.
+// and vCPUs. Kept JOB_TIMING_RETENTION_DAYS like the other rollups, and goes away with its
+// installation.
 export const WAIT_BUCKETS = {
   under10s: 10_000,
   under30s: 30_000,
@@ -640,6 +641,7 @@ export const runnerWaitDay = sqliteTable(
 // What each GitHub account spent on each priced hosted provider per UTC calendar month, at list
 // prices, counted once when job_timing first records a job finished (src/provider-spend.ts). A
 // hosted step with a spend limit reads its row when it's reached, so the check is one key lookup.
+// Months that start before JOB_TIMING_RETENTION_DAYS are purged hourly.
 export const providerSpendMonth = sqliteTable(
   "provider_spend_month",
   {
@@ -653,7 +655,11 @@ export const providerSpendMonth = sqliteTable(
     usdMicros: integer("usd_micros").notNull().default(0),
     jobs: integer("jobs").notNull().default(0),
   },
-  (table) => [primaryKey({ columns: [table.installationId, table.month, table.provider] })],
+  (table) => [
+    primaryKey({ columns: [table.installationId, table.month, table.provider] }),
+    // The hourly purge of past months.
+    index("provider_spend_month_month_idx").on(table.month),
+  ],
 );
 
 // One attempt of a GitHub Actions workflow run in a connected repo, from workflow_run webhooks

@@ -435,6 +435,13 @@
       "when": 1794702693892,
       "tag": "20261115003133_signal_runner_key",
       "breakpoints": true
+    },
+    {
+      "idx": 62,
+      "version": "6",
+      "when": 1794703537310,
+      "tag": "20261115004537_spend_month_index",
+      "breakpoints": true
     }
   ]
 }

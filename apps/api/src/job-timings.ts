@@ -21,7 +21,8 @@ type WorkflowJobMessage = Extract<WebhookMessage, { event: "workflow_job" }>;
 
 const table = schema.jobTiming;
 const daily = schema.jobTimingDaily;
-const { jobCount, jobCountDay, jobCountHour, signalDay } = schema;
+const { jobCount, jobCountDay, jobCountHour, providerSpendMonth, runnerWaitDay, signalDay } =
+  schema;
 export const DAY_MS = 86_400_000;
 
 // GitHub bills a job by the minute, rounded up. A job that finishes in under this is the free-checks
@@ -269,8 +270,8 @@ const PURGE_BATCH = 5_000;
 
 /**
  * The hourly cleanup: rolls finished jobs past RAW_RETENTION_DAYS up into job_timing_daily, drops
- * daily rows, job counts and signal days past the report's range, and drops unfinished jobs GitHub has given up on. Returns
- * how many job_timing rows went.
+ * daily rows, job counts, signal days, runner waits and provider spend months past the report's
+ * range, and drops unfinished jobs GitHub has given up on. Returns how many job_timing rows went.
  */
 export async function purgeOldJobTimings(db: Db, now = Date.now()): Promise<number> {
   // Rolled up first, so a day that has just aged out of the report's range goes in this run.
@@ -289,6 +290,9 @@ export async function purgeOldJobTimings(db: Db, now = Date.now()): Promise<numb
     purgeBefore(db, jobCount, jobCount.hour, retained),
     purgeBefore(db, jobCountDay, jobCountDay.day, retained),
     purgeBefore(db, signalDay, signalDay.day, retained),
+    purgeBefore(db, runnerWaitDay, runnerWaitDay.day, retained),
+    // Spend limits only read the current month; older months go once they start before the range.
+    purgeBefore(db, providerSpendMonth, providerSpendMonth.month, retained),
   ]);
   return finished + unfinished;
 }

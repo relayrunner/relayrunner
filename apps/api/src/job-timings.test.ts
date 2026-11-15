@@ -316,6 +316,34 @@ describe("usage report", () => {
     expect(raw).toHaveLength(1);
   });
 
+  test("purges runner waits and spend months past the report's range", async () => {
+    const { installationId } = await connectedWorkspace();
+    const db = createDb(env.DB);
+    const old = new Date(Date.now() - 100 * 86_400_000);
+    const recent = new Date(Date.now() - 86_400_000);
+    const runner = { provider: "github", platform: "linux", vcpus: 2, installationId, jobs: 1 };
+    await db.insert(schema.runnerWaitDay).values([
+      { ...runner, day: old },
+      { ...runner, day: recent },
+    ]);
+    const spend = { installationId, provider: "depot", usdMicros: 1, jobs: 1 };
+    await db.insert(schema.providerSpendMonth).values([
+      { ...spend, month: old },
+      { ...spend, month: recent },
+    ]);
+    await purgeOldJobTimings(db);
+    const waits = await db
+      .select({ day: schema.runnerWaitDay.day })
+      .from(schema.runnerWaitDay)
+      .where(eq(schema.runnerWaitDay.installationId, installationId));
+    expect(waits).toEqual([{ day: recent }]);
+    const months = await db
+      .select({ month: schema.providerSpendMonth.month })
+      .from(schema.providerSpendMonth)
+      .where(eq(schema.providerSpendMonth.installationId, installationId));
+    expect(months).toEqual([{ month: recent }]);
+  });
+
   test("purges jobs that never finished after a week", async () => {
     const { installationId } = await connectedWorkspace();
     const db = createDb(env.DB);
