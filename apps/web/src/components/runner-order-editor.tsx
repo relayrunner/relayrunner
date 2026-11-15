@@ -56,7 +56,8 @@ import type { Machine } from "@/lib/machines";
 import { previewRoute, type StepVerdict } from "@/lib/route-preview";
 import { saveRunnerOrder } from "@/lib/runner-order";
 import type { LabelUse } from "@/lib/router-setup";
-import { cn, count as compactCount } from "@/lib/utils";
+import { cn } from "@/lib/utils";
+import { plural } from "@/lib/job-times";
 
 type SaveStatus =
   | { kind: "idle" }
@@ -753,7 +754,7 @@ function SetupPanel({ steps, labels }: { steps: RunnerStep[]; labels: LabelUse[]
                 <ProviderMark provider={use.key} className="size-4 shrink-0" />
                 <code className="min-w-0 truncate font-mono">{use.label}</code>
                 <span className="ml-auto shrink-0 text-muted-foreground tabular-nums">
-                  {compactCount(use.jobs)} {use.jobs === 1 ? "job" : "jobs"}
+                  {plural(use.jobs, "job")}
                 </span>
               </li>
             ))}

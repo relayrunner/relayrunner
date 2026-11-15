@@ -15,9 +15,13 @@ let ids = 700_000;
 
 type Timing = typeof schema.jobTiming.$inferInsert;
 
-function job(installationId: number, runId: number, job: Partial<Timing> & { hoursAgo?: number }) {
+function job(
+  installationId: number,
+  runId: number,
+  overrides: Partial<Timing> & { hoursAgo?: number },
+) {
   ids += 1;
-  const { hoursAgo = 1, ...rest } = job;
+  const { hoursAgo = 1, ...rest } = overrides;
   const completed = Date.now() - hoursAgo * HOUR;
   return {
     id: ids,
@@ -65,8 +69,7 @@ test("lists workflows, routed or not, and the hosted labels jobs ran on", async 
     // Older than the window.
     job(installationId, 4, { workflowName: "Nightly", hoursAgo: 24 * 20 }),
   ];
-  for (let i = 0; i < rows.length; i += 5)
-    await db.insert(schema.jobTiming).values(rows.slice(i, i + 5));
+  await db.insert(schema.jobTiming).values(rows);
 
   const setup = await routerSetup(db, workspace.id);
   expect(setup.workflows).toMatchObject([

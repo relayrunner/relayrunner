@@ -2,6 +2,7 @@ import { CheckIcon, MinusIcon } from "lucide-react";
 import { useState } from "react";
 import { Button } from "@/components/ui/button";
 import type { RouterSetup } from "@/lib/router-setup";
+import { plural } from "@/lib/job-times";
 import { count, exact } from "@/lib/utils";
 
 /** Rows shown before "Show all". */
@@ -47,7 +48,7 @@ export function RouterWorkflows({ setup }: { setup: RouterSetup | null }) {
               {w.routedRuns === 0
                 ? "Not routed"
                 : w.routedRuns === w.runs
-                  ? `${count(w.runs)} ${w.runs === 1 ? "run" : "runs"}`
+                  ? plural(w.runs, "run")
                   : `${count(w.routedRuns)} of ${count(w.runs)} runs`}
             </span>
           </li>

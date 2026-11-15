@@ -11,11 +11,11 @@ import { RouterWorkflows } from "@/components/router-workflows";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { getActionsUsage, type AccountUsage } from "@/lib/actions-usage";
-import { sampleRouterAccounts } from "@/lib/router-sample";
+import { sampleRouterAccounts, sampleRouterSetup } from "@/lib/router-sample";
 import { authDisabled } from "@/lib/auth-client";
 import { listMachines, type Machine } from "@/lib/machines";
 import { getProviderApps } from "@/lib/provider-apps";
-import { getRouterSetup, sampleRouterSetup, type RouterSetup } from "@/lib/router-setup";
+import { getRouterSetup, type RouterSetup } from "@/lib/router-setup";
 import {
   clearUnhealthyRunner,
   getProviderHealth,
@@ -297,8 +297,6 @@ function sampleRouter(): {
   };
 }
 
-// The provider apps the org has installed, read from GitHub after the page loads. Null until it
-// arrives, or when it can't be told; the Add step menu then just says what each one needs.
 // Recent workflows, routed or not, and the hosted labels jobs ran on. Null until it loads, and when
 // it can't be read: the page still works without it.
 function useRouterSetup(workspaceId: string) {
@@ -316,6 +314,8 @@ function useRouterSetup(workspaceId: string) {
   return setup;
 }
 
+// The provider apps the org has installed, read from GitHub after the page loads. Null until it
+// arrives, or when it can't be told; the Add step menu then just says what each one needs.
 function useProviderApps(workspaceId: string) {
   const [installed, setInstalled] = useState<HostedProviderId[] | null>(null);
   useEffect(() => {

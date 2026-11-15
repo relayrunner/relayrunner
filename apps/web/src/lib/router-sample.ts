@@ -1,4 +1,5 @@
 import type { AccountUsage } from "./actions-usage.ts";
+import type { RouterSetup } from "./router-setup.ts";
 
 /** Example GitHub accounts for the Router page's `VITE_AUTH_DISABLED=true` dev preview and tests. */
 export function sampleRouterAccounts(
@@ -54,4 +55,38 @@ export function sampleRouterAccounts(
       usedMinutes: 2520,
     },
   ];
+}
+
+/** Example workflows for the Router page's `VITE_AUTH_DISABLED=true` dev preview. */
+export function sampleRouterSetup(): RouterSetup {
+  return {
+    days: 14,
+    workflows: [
+      {
+        repositoryId: 2,
+        repository: "acme/site",
+        workflow: "Deploy",
+        runs: 9,
+        routedRuns: 0,
+      },
+      {
+        repositoryId: 1,
+        repository: "acme/app",
+        workflow: "CI",
+        runs: 212,
+        routedRuns: 208,
+      },
+      {
+        repositoryId: 1,
+        repository: "acme/app",
+        workflow: "E2E",
+        runs: 41,
+        routedRuns: 41,
+      },
+    ],
+    labels: [
+      { key: "blacksmith", label: "blacksmith-2vcpu-ubuntu-2404", jobs: 1_180 },
+      { key: "blacksmith", label: "blacksmith-4vcpu-ubuntu-2404", jobs: 640 },
+    ],
+  };
 }

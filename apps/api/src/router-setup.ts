@@ -7,13 +7,10 @@
 import { hostedProviderOf, type HostedProviderId } from "@relayrunner/providers";
 import { sql } from "drizzle-orm";
 import { type Db, schema } from "./db/index.ts";
-import { inWorkspace, PICK } from "./job-times.ts";
+import { DEFAULT_DAYS, inWorkspace, PICK } from "./job-times.ts";
 import { DAY_MS } from "./job-timings.ts";
 
 const table = schema.jobTiming;
-
-/** The window the page reads. */
-export const SETUP_DAYS = 14;
 
 /** One workflow in one repo, over the window. */
 export interface SetupWorkflow {
@@ -23,7 +20,6 @@ export interface SetupWorkflow {
   runs: number;
   /** Runs where at least one job went through a relay. */
   routedRuns: number;
-  lastRunAt: number;
 }
 
 /** A hosted provider label the workspace's jobs ran on, and how many jobs. */
@@ -39,8 +35,12 @@ export interface RouterSetup {
   labels: LabelUse[];
 }
 
-export async function routerSetup(db: Db, workspaceId: string, now = Date.now()) {
-  const since = now - SETUP_DAYS * DAY_MS;
+export async function routerSetup(
+  db: Db,
+  workspaceId: string,
+  now = Date.now(),
+): Promise<RouterSetup> {
+  const since = now - DEFAULT_DAYS * DAY_MS;
   const [workflows, labels] = await Promise.all([
     db.all<{
       repository_id: number;
@@ -48,31 +48,30 @@ export async function routerSetup(db: Db, workspaceId: string, now = Date.now())
       workflow: string;
       runs: number;
       routed_runs: number;
-      last_run_at: number;
     }>(sql`
       with runs as (
         select ${table.repositoryId} as repository_id,
           min(${table.repositoryFullName}) as repository,
           min(${table.workflowName}) as workflow,
-          max(${PICK}) as routed, max(${table.completedAt}) as last_at
+          max(${PICK}) as routed
         from ${table}
         where ${inWorkspace(workspaceId)} and ${table.completedAt} >= ${since}
           and ${table.workflowName} is not null
         group by ${table.repositoryId}, ${table.runId}, ${table.runAttempt})
       select repository_id, min(repository) as repository, workflow, count(*) as runs,
-        sum(routed) as routed_runs, max(last_at) as last_run_at
+        sum(routed) as routed_runs
       from runs
       group by repository_id, workflow`),
     db.all<{ labels: string; jobs: number }>(sql`
       select ${table.labels} as labels, count(*) as jobs
       from ${table}
       where ${inWorkspace(workspaceId)} and ${table.completedAt} >= ${since}
-        and json_array_length(${table.labels}) = 1
+        and json_array_length(${table.labels}) = 1 and coalesce(${table.conclusion}, '') <> 'skipped'
       group by ${table.labels}`),
   ]);
 
-  const setup: RouterSetup = {
-    days: SETUP_DAYS,
+  return {
+    days: DEFAULT_DAYS,
     workflows: workflows
       .map((row) => ({
         repositoryId: row.repository_id,
@@ -80,7 +79,6 @@ export async function routerSetup(db: Db, workspaceId: string, now = Date.now())
         workflow: row.workflow,
         runs: Number(row.runs),
         routedRuns: Number(row.routed_runs),
-        lastRunAt: Number(row.last_run_at),
       }))
       // Not routed first: those are what's left to set up. Then the busiest.
       .sort(
@@ -98,5 +96,4 @@ export async function routerSetup(db: Db, workspaceId: string, now = Date.now())
       })
       .sort((a, b) => b.jobs - a.jobs || a.label.localeCompare(b.label)),
   };
-  return setup;
 }
