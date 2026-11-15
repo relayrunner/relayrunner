@@ -42,6 +42,8 @@ A GitHub-hosted step can have a limit, such as "while under 80%". It then takes 
 
 If GitHub won't share an account's minutes, the limit never blocks its jobs. The Router page shows when that's the case.
 
+A limit can't judge an org that shares its enterprise's minutes yet, because GitHub reports those minutes to the enterprise, not the org.
+
 ## Spend limits
 
 A Blacksmith, Depot, WarpBuild or Ubicloud step can have a spend limit, such as "while under $200 a month". It then takes a job only while the job's GitHub account has spent less than that on the provider this calendar month (UTC). Spend is worked out from each finished job's minutes and the provider's list price, so it can differ a little from your bill, and jobs still running count once they finish.

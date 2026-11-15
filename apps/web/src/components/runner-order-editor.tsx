@@ -283,23 +283,30 @@ function AddItem({
 
 /**
  * Whether a GitHub step can use a minutes limit: only when some connected account has a quota
- * we know. When none does, `blocked` is the one line saying why and `fix` where to fix it.
+ * we know. When none does, `blocked` is the one line saying why, and `fixable` whether the
+ * GitHub settings page has a way to fix it.
  */
-type LimitAvailability = { allowed: true } | { allowed: false; blocked: string };
+type LimitAvailability = { allowed: true } | { allowed: false; blocked: string; fixable: boolean };
 
 function limitAvailability(accounts: AccountUsage[]): LimitAvailability {
   if (accounts.some(hasQuota)) return { allowed: true };
-  if (accounts.length === 0) return { allowed: false, blocked: "Connect a GitHub account first." };
+  const blocked = (text: string, fixable = true) => ({
+    allowed: false as const,
+    blocked: text,
+    fixable,
+  });
+  if (accounts.length === 0) return blocked("Connect a GitHub account first.");
   const reasons = new Set(accounts.map((account) => account.reason));
-  if (reasons.has("enterprise"))
-    return { allowed: false, blocked: "Needs RelayRunner on your enterprise." };
   if (reasons.has("missing_permission"))
-    return { allowed: false, blocked: "Install RelayRunner Spend to share your org's billing." };
+    return blocked("Install RelayRunner Spend to share your org's billing.");
   if (reasons.has("sign_in_needed"))
-    return { allowed: false, blocked: "Sign in again to share your account's minutes." };
-  if (reasons.has("not_read_yet"))
-    return { allowed: false, blocked: "Waiting for the first minutes reading." };
-  return { allowed: false, blocked: "Your GitHub plan's minutes aren't known." };
+    return blocked("Sign in again to share your account's minutes.");
+  // GitHub keeps an enterprise's pooled minutes at the enterprise, out of reach of an org install.
+  // Nothing in settings fixes that yet, so no link.
+  if (reasons.has("enterprise"))
+    return blocked("Not available yet for orgs that share an enterprise's minutes.", false);
+  if (reasons.has("not_read_yet")) return blocked("Waiting for the first minutes reading.", false);
+  return blocked("Your GitHub plan's minutes aren't known.");
 }
 
 function StepCard({
@@ -608,10 +615,15 @@ function GitHubRule({
                 While under a limit
               </span>
               <span className="pl-6 text-xs text-muted-foreground">
-                {limits.blocked}{" "}
-                <Link to="/settings/github" className="text-go hover:text-go-hover">
-                  Set up
-                </Link>
+                {limits.blocked}
+                {limits.fixable && (
+                  <>
+                    {" "}
+                    <Link to="/settings/github" className="text-go hover:text-go-hover">
+                      Set up
+                    </Link>
+                  </>
+                )}
               </span>
             </div>
           )}
