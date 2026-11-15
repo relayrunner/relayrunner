@@ -175,6 +175,20 @@ describe("classify", () => {
     });
   });
 
+  test("reads answers that partner models wrap in a result", async () => {
+    await enable();
+    run.mockResolvedValueOnce({
+      state: "Completed",
+      result: { answers, usage: { input_tokens: 400, output_tokens: 60 } },
+    });
+    expect(await classify(env, jobType, workspaceId, { name: "a", id: 1 }, NOW)).toEqual({
+      ok: true,
+      answers,
+      cached: false,
+    });
+    expect(await usage()).toMatchObject({ calls: 1, input_tokens: 400, output_tokens: 60 });
+  });
+
   test("fails without throwing when the model errors or answers in another shape", async () => {
     await enable();
     run.mockRejectedValueOnce(new Error("gateway timeout"));

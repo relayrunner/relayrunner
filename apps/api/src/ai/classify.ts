@@ -118,16 +118,18 @@ export async function classify<Input, Qs extends Questions>(
       return skip("rate_limited");
     }
 
-    const response = await env.AI.run(
-      model,
-      { state, questions: classifier.questions },
-      {
-        gateway: {
-          id: env.AI_GATEWAY_ID,
-          metadata: { workspace: workspaceId, feature },
-          requestTimeoutMs: TIMEOUT_MS,
+    const response = unwrap(
+      await env.AI.run(
+        model,
+        { state, questions: classifier.questions },
+        {
+          gateway: {
+            id: env.AI_GATEWAY_ID,
+            metadata: { workspace: workspaceId, feature },
+            requestTimeoutMs: TIMEOUT_MS,
+          },
         },
-      },
+      ),
     );
     const usage = response.usage as { input_tokens?: number; output_tokens?: number } | undefined;
     const tokens = {
@@ -157,6 +159,19 @@ export async function classify<Input, Qs extends Questions>(
     log(reason);
     return { ok: false, reason };
   }
+}
+
+type ModelResponse = { answers?: unknown; usage?: unknown };
+
+/**
+ * The model's response body. Partner models like Jev answer as `{ state: "Completed", result }`
+ * through the binding, while Cloudflare's Clef models answer with the body itself.
+ */
+function unwrap(response: unknown): ModelResponse {
+  const body = (response ?? {}) as ModelResponse & { result?: unknown };
+  return body.answers === undefined && body.result && typeof body.result === "object"
+    ? (body.result as ModelResponse)
+    : body;
 }
 
 /** The model's answers, if there's one of the right type for every question. */
