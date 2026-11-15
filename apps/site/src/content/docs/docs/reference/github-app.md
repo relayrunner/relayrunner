@@ -25,9 +25,9 @@ RelayRunner reaches GitHub through one GitHub App, [RelayRunner](https://github.
 
 ## Enterprise permissions
 
-| Permission | Access | Why                                                                                                                                              |
-| ---------- | ------ | ------------------------------------------------------------------------------------------------------------------------------------------------ |
-| Billing    | Read   | Your enterprise's shared Actions minutes, for the minutes limit. Only used if an enterprise owner [installs it on the enterprise](#enterprises). |
+| Permission         | Access | Why                                                                                                                                              |
+| ------------------ | ------ | ------------------------------------------------------------------------------------------------------------------------------------------------ |
+| Enterprise billing | Read   | Your enterprise's shared Actions minutes, for the minutes limit. Only used if an enterprise owner [installs it on the enterprise](#enterprises). |
 
 ## Account permissions
 
