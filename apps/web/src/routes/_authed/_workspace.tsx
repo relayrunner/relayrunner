@@ -1,4 +1,11 @@
-import { Link, Outlet, createFileRoute, redirect, useMatchRoute } from "@tanstack/react-router";
+import {
+  Link,
+  Outlet,
+  createFileRoute,
+  redirect,
+  useLocation,
+  useMatchRoute,
+} from "@tanstack/react-router";
 import {
   ActivityIcon,
   ArrowLeftIcon,
@@ -11,6 +18,7 @@ import {
   HistoryIcon,
   LoaderCircleIcon,
   type LucideIcon,
+  MenuIcon,
   MessageSquareIcon,
   PanelLeftCloseIcon,
   PanelLeftOpenIcon,
@@ -27,6 +35,7 @@ import { SectionBoundary } from "@/components/error-boundary";
 import { FeedbackPopover } from "@/components/feedback-popover";
 import { RUNNER_DEFAULT_RANGE, RUNNER_RANGES, RunnerSheet } from "@/components/runner-sheet";
 import { DOCS_URL, SiteFooter } from "@/components/site-footer";
+import { Sheet, SheetContent, SheetTitle, SheetTrigger } from "@/components/ui/sheet";
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
 import { WorkspaceMark, WorkspaceMenu } from "@/components/workspace-menu";
 import { setWorkspace } from "@/lib/analytics";
@@ -129,14 +138,18 @@ const adminNav = [
 const navLink =
   "rounded-md px-2.5 py-1.5 text-[15px] text-sidebar-foreground transition-colors hover:text-sidebar-accent-foreground";
 const navActive = { className: "bg-sidebar-accent text-sidebar-accent-foreground" };
+// The sidebar's collapse toggle and the phone's menu button.
+const iconButton =
+  "flex items-center justify-center rounded-md text-sidebar-foreground outline-none transition-colors hover:bg-sidebar-accent hover:text-sidebar-accent-foreground focus-visible:ring-[3px] focus-visible:ring-ring/50";
 
-// Whether the sidebar is collapsed to icons, kept per browser. Phones always get the full top bar.
+// Whether the sidebar is collapsed to icons, kept per browser. Phones get a top bar with a menu instead.
 // The sidebar's children style themselves off its data-collapsed attribute (the sidebar group).
 const COLLAPSED_KEY = "relayrunner:sidebar:collapsed";
 
 function WorkspaceLayout() {
   const { user, current } = Route.useRouteContext();
   const { runner, runnerRange } = Route.useSearch();
+  const showAdmin = authDisabled || isOperator(user);
   const inSettings = useMatchRoute()({ to: "/settings", fuzzy: true });
   const [collapsedPref, setCollapsedPref] = useState(() => readFlag(COLLAPSED_KEY));
   // Settings has its own short nav and a way back, so it always shows in full.
@@ -154,9 +167,27 @@ function WorkspaceLayout() {
         collapsed ? "sm:grid-cols-[60px_1fr]" : "sm:grid-cols-[240px_1fr]",
       )}
     >
+      {/* Phones get a top bar with the workspace menu and a button for the page menu. */}
+      <header className="sticky top-0 z-20 flex items-center gap-2 border-b border-sidebar-border bg-sidebar px-3 py-2 sm:hidden">
+        <div className="min-w-0 flex-1">
+          <SectionBoundary>
+            <WorkspaceMenu workspace={current.workspace} user={user} />
+          </SectionBoundary>
+        </div>
+        <MobileMenu>
+          {inSettings ? (
+            <SettingsNav workspace={current.workspace} />
+          ) : (
+            <>
+              <PageNav showAdmin={showAdmin} />
+              <SidebarFoot inMenu />
+            </>
+          )}
+        </MobileMenu>
+      </header>
       <aside
         data-collapsed={collapsed || undefined}
-        className="group/sidebar flex flex-col gap-3 border-b border-sidebar-border bg-sidebar px-3 py-4 sm:sticky sm:top-0 sm:h-screen sm:gap-6 sm:overflow-y-auto sm:border-r sm:border-b-0 sm:py-5 sm:data-[collapsed]:px-2"
+        className="group/sidebar sticky top-0 hidden h-screen flex-col gap-6 overflow-y-auto border-r border-sidebar-border bg-sidebar px-3 py-5 data-[collapsed]:px-2 sm:flex"
       >
         {inSettings ? (
           <SettingsNav workspace={current.workspace} />
@@ -165,40 +196,20 @@ function WorkspaceLayout() {
             <SectionBoundary>
               <WorkspaceMenu workspace={current.workspace} user={user} compact={collapsed} />
             </SectionBoundary>
-            <nav className="flex flex-row flex-wrap gap-0.5 px-1 sm:flex-col sm:group-data-[collapsed]/sidebar:px-0">
-              {nav.map((item) => (
-                <NavLink key={item.to} item={item} collapsed={collapsed} />
-              ))}
-            </nav>
-            <nav aria-label="Analytics" className="px-1 sm:group-data-[collapsed]/sidebar:px-0">
-              <NavGroup label="Analytics">
-                {analyticsNav.map((item) => (
-                  <NavLink key={item.to} item={item} collapsed={collapsed} />
-                ))}
-              </NavGroup>
-            </nav>
-            {(authDisabled || isOperator(user)) && (
-              <nav aria-label="Admin" className="px-1 sm:group-data-[collapsed]/sidebar:px-0">
-                <NavGroup label="Admin">
-                  {adminNav.map((item) => (
-                    <NavLink key={item.to} item={item} collapsed={collapsed} />
-                  ))}
-                </NavGroup>
-              </nav>
-            )}
+            <PageNav showAdmin={showAdmin} collapsed={collapsed} />
             <SidebarFoot collapsed={collapsed} />
             <SidebarToggle collapsed={collapsed} onToggle={toggle} />
           </TooltipProvider>
         )}
       </aside>
-      {/* The footer stays pinned to the bottom of the window, so it doesn't move as pages load or
-          rows expand. */}
+      {/* On wider screens the footer stays pinned to the bottom of the window, so it doesn't move as
+          pages load or rows expand. Phones keep the room for the page. */}
       <main className="flex min-w-0 flex-col">
         <div className="flex-1 p-4 sm:p-8">
           <OwnerPending current={current} />
           <Outlet />
         </div>
-        <SiteFooter className="sticky bottom-0 z-10" />
+        <SiteFooter className="sm:sticky sm:bottom-0 sm:z-10" />
       </main>
       {runner && (
         <SectionBoundary>
@@ -210,6 +221,58 @@ function WorkspaceLayout() {
         </SectionBoundary>
       )}
     </div>
+  );
+}
+
+/** The pages, in a panel from the right. Going to a page closes it. */
+function MobileMenu({ children }: { children: ReactNode }) {
+  const [open, setOpen] = useState(false);
+  const pathname = useLocation({ select: (location) => location.pathname });
+  useEffect(() => setOpen(false), [pathname]);
+  return (
+    <Sheet open={open} onOpenChange={setOpen}>
+      <SheetTrigger aria-label="Menu" className={cn(iconButton, "size-9 shrink-0")}>
+        <MenuIcon aria-hidden className="size-5" />
+      </SheetTrigger>
+      <SheetContent
+        aria-describedby={undefined}
+        className="max-w-72 border-sidebar-border bg-sidebar"
+      >
+        <div className="flex min-h-full flex-col gap-6 px-3 pt-14 pb-5">
+          <SheetTitle className="sr-only">Menu</SheetTitle>
+          {children}
+        </div>
+      </SheetContent>
+    </Sheet>
+  );
+}
+
+/** Every page of the dashboard, in its groups. Admin pages show to operators only. */
+function PageNav({ showAdmin, collapsed = false }: { showAdmin: boolean; collapsed?: boolean }) {
+  return (
+    <>
+      <nav className="flex flex-col gap-0.5 px-1 group-data-[collapsed]/sidebar:px-0">
+        {nav.map((item) => (
+          <NavLink key={item.to} item={item} collapsed={collapsed} />
+        ))}
+      </nav>
+      <nav aria-label="Analytics" className="px-1 group-data-[collapsed]/sidebar:px-0">
+        <NavGroup label="Analytics">
+          {analyticsNav.map((item) => (
+            <NavLink key={item.to} item={item} collapsed={collapsed} />
+          ))}
+        </NavGroup>
+      </nav>
+      {showAdmin && (
+        <nav aria-label="Admin" className="px-1 group-data-[collapsed]/sidebar:px-0">
+          <NavGroup label="Admin">
+            {adminNav.map((item) => (
+              <NavLink key={item.to} item={item} collapsed={collapsed} />
+            ))}
+          </NavGroup>
+        </nav>
+      )}
+    </>
   );
 }
 
@@ -233,7 +296,7 @@ function OwnerPending({ current }: { current: CurrentWorkspace }) {
 /** Takes the sidebar's place under /settings: workspace pages, then the user's own. */
 function SettingsNav({ workspace }: { workspace: { name: string; logo: string | null } }) {
   return (
-    <div className="grid gap-3 px-1 sm:gap-5">
+    <div className="grid gap-5 px-1">
       <Link
         to="/runners"
         className="inline-flex items-center gap-1.5 px-2.5 text-sm text-muted-foreground hover:text-foreground"
@@ -241,7 +304,7 @@ function SettingsNav({ workspace }: { workspace: { name: string; logo: string | 
         <ArrowLeftIcon aria-hidden className="size-4" />
         Back to dashboard
       </Link>
-      <nav className="flex flex-row flex-wrap gap-x-4 gap-y-3 sm:flex-col">
+      <nav className="flex flex-col gap-5">
         <NavGroup
           label={
             <span className="flex min-w-0 items-center gap-1.5">
@@ -287,7 +350,7 @@ function SettingsNav({ workspace }: { workspace: { name: string; logo: string | 
 }
 
 const navItem =
-  "flex items-center gap-2.5 sm:group-data-[collapsed]/sidebar:justify-center sm:group-data-[collapsed]/sidebar:px-0";
+  "flex items-center gap-2.5 group-data-[collapsed]/sidebar:justify-center group-data-[collapsed]/sidebar:px-0";
 
 /** A page in the sidebar: icon and name, or just the icon with the name on hover when collapsed. */
 function NavLink({ item, collapsed }: { item: NavItem; collapsed: boolean }) {
@@ -295,30 +358,36 @@ function NavLink({ item, collapsed }: { item: NavItem; collapsed: boolean }) {
   return (
     <CollapsedTooltip label={label} collapsed={collapsed}>
       <Link to={to} className={cn(navLink, navItem)} activeProps={navActive}>
-        <Icon aria-hidden className="hidden size-4 shrink-0 sm:block" />
-        <span className="sm:group-data-[collapsed]/sidebar:sr-only">{label}</span>
+        <Icon aria-hidden className="size-4 shrink-0" />
+        <span className="group-data-[collapsed]/sidebar:sr-only">{label}</span>
       </Link>
     </CollapsedTooltip>
   );
 }
 
-/** Feedback and the docs, at the foot of the sidebar above the collapse toggle. Phones get them in
- * the footer. */
-function SidebarFoot({ collapsed }: { collapsed: boolean }) {
+/** Feedback and the docs, at the foot of the sidebar above the collapse toggle, and of the phone's
+ * menu. */
+function SidebarFoot({
+  collapsed = false,
+  inMenu = false,
+}: {
+  collapsed?: boolean;
+  inMenu?: boolean;
+}) {
   return (
-    <div className="mt-auto hidden gap-0.5 px-1 sm:grid sm:group-data-[collapsed]/sidebar:px-0">
+    <div className="mt-auto grid gap-0.5 px-1 group-data-[collapsed]/sidebar:px-0">
       <CollapsedTooltip label="Feedback" collapsed={collapsed}>
-        <FeedbackPopover side="right" align="end">
+        <FeedbackPopover side={inMenu ? "top" : "right"} align={inMenu ? "start" : "end"}>
           <button type="button" className={cn(navLink, navItem, "w-full")}>
             <MessageSquareIcon aria-hidden className="size-4 shrink-0" />
-            <span className="sm:group-data-[collapsed]/sidebar:sr-only">Feedback</span>
+            <span className="group-data-[collapsed]/sidebar:sr-only">Feedback</span>
           </button>
         </FeedbackPopover>
       </CollapsedTooltip>
       <CollapsedTooltip label="Docs" collapsed={collapsed}>
         <a href={DOCS_URL} className={cn(navLink, navItem)}>
           <BookOpenIcon aria-hidden className="size-4 shrink-0" />
-          <span className="sm:group-data-[collapsed]/sidebar:sr-only">Docs</span>
+          <span className="group-data-[collapsed]/sidebar:sr-only">Docs</span>
         </a>
       </CollapsedTooltip>
     </div>
@@ -338,9 +407,7 @@ function CollapsedTooltip({
   return (
     <Tooltip>
       <TooltipTrigger asChild>{children}</TooltipTrigger>
-      <TooltipContent side="right" className="max-sm:hidden">
-        {label}
-      </TooltipContent>
+      <TooltipContent side="right">{label}</TooltipContent>
     </Tooltip>
   );
 }
@@ -356,10 +423,7 @@ function SidebarToggle({ collapsed, onToggle }: { collapsed: boolean; onToggle: 
           onClick={onToggle}
           aria-label={label}
           aria-expanded={!collapsed}
-          className={cn(
-            "hidden size-8 items-center justify-center self-start rounded-md text-sidebar-foreground outline-none transition-colors hover:bg-sidebar-accent hover:text-sidebar-accent-foreground focus-visible:ring-[3px] focus-visible:ring-ring/50 sm:flex",
-            collapsed ? "self-center" : "ml-1",
-          )}
+          className={cn(iconButton, "size-8", collapsed ? "self-center" : "ml-1")}
         >
           <Icon aria-hidden className="size-4" />
         </button>
@@ -372,10 +436,10 @@ function SidebarToggle({ collapsed, onToggle }: { collapsed: boolean; onToggle: 
 function NavGroup({ label, children }: { label: ReactNode; children: ReactNode }) {
   return (
     <div className="grid min-w-0 content-start gap-0.5">
-      <span className="truncate px-2.5 pb-1 text-xs text-muted-foreground sm:group-data-[collapsed]/sidebar:sr-only">
+      <span className="truncate px-2.5 pb-1 text-xs text-muted-foreground group-data-[collapsed]/sidebar:sr-only">
         {label}
       </span>
-      <div className="flex flex-row flex-wrap gap-0.5 sm:flex-col">{children}</div>
+      <div className="flex flex-col gap-0.5">{children}</div>
     </div>
   );
 }

@@ -1,6 +1,5 @@
 import { Link } from "@tanstack/react-router";
 import { Brand } from "@/components/brand";
-import { FeedbackPopover } from "@/components/feedback-popover";
 import { LEGAL_LINKS } from "@/lib/legal";
 import { cn } from "@/lib/utils";
 
@@ -30,14 +29,6 @@ export function SiteFooter({ className }: { className?: string }) {
     >
       <Brand className="gap-2 text-sm text-ink-2 max-sm:hidden [&_img]:size-5" />
       <ul className="flex flex-wrap gap-x-6 gap-y-2">
-        {/* The sidebar has it on wider screens. */}
-        <li className="sm:hidden">
-          <FeedbackPopover side="top" align="start">
-            <button type="button" className={LINK_CLASS}>
-              Feedback
-            </button>
-          </FeedbackPopover>
-        </li>
         <li>
           <Link to="/settings/agents" className={LINK_CLASS}>
             Use with agents

@@ -5,7 +5,7 @@ import { DialogOverlay, DialogPortal } from "@/components/ui/dialog";
 import { readNumber, saveNumber } from "@/lib/stored-flag";
 import { cn } from "@/lib/utils";
 
-/** A panel that slides in from the right edge over the page, for a row's detail. */
+/** A panel that slides in from the right edge over the page, for a row's detail or the phone menu. */
 function Sheet({ ...props }: React.ComponentProps<typeof SheetPrimitive.Root>) {
   return <SheetPrimitive.Root data-slot="sheet" {...props} />;
 }
@@ -89,6 +89,10 @@ function SheetContent({
   );
 }
 
+function SheetTrigger({ ...props }: React.ComponentProps<typeof SheetPrimitive.Trigger>) {
+  return <SheetPrimitive.Trigger data-slot="sheet-trigger" {...props} />;
+}
+
 function SheetTitle({ className, ...props }: React.ComponentProps<typeof SheetPrimitive.Title>) {
   return (
     <SheetPrimitive.Title
@@ -112,4 +116,4 @@ function SheetDescription({
   );
 }
 
-export { Sheet, SheetContent, SheetDescription, SheetTitle };
+export { Sheet, SheetContent, SheetDescription, SheetTitle, SheetTrigger };
