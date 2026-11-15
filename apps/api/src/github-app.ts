@@ -940,11 +940,31 @@ export async function enterpriseBillingUsage(
   enterprise: string,
   month: { year: number; month: number },
 ): Promise<BillingUsageItem[]> {
-  const body = await getJson<{ usageItems?: BillingUsageItem[] }>(
-    token,
-    `/enterprises/${enterprise}/settings/billing/usage?year=${month.year}&month=${month.month}`,
+  const path = `/enterprises/${enterprise}/settings/billing/usage?year=${month.year}&month=${month.month}`;
+  // GitHub's report leaves out usage that belongs to a cost center unless it's asked for by the
+  // cost center's id, so each one's report is read too.
+  const costCenters = await enterpriseCostCenters(token, enterprise);
+  const reports = await Promise.all(
+    [path, ...costCenters.map((id) => `${path}&cost_center_id=${encodeURIComponent(id)}`)].map(
+      (report) => getJson<{ usageItems?: BillingUsageItem[] }>(token, report),
+    ),
   );
-  return body.usageItems ?? [];
+  return reports.flatMap((report) => report.usageItems ?? []);
+}
+
+// Every cost center's id, deleted ones included: usage this month can belong to one deleted since.
+// An enterprise that can't list them is read without them.
+async function enterpriseCostCenters(token: string, enterprise: string): Promise<string[]> {
+  try {
+    const body = await getJson<{ costCenters?: { id: string }[] }>(
+      token,
+      `/enterprises/${enterprise}/settings/billing/cost-centers`,
+    );
+    return (body.costCenters ?? []).map((center) => center.id);
+  } catch (error) {
+    if (error instanceof GitHubAccessError) return [];
+    throw error;
+  }
 }
 
 /** An org or enterprise budget, trimmed to what the minutes rule needs. Amounts are whole dollars. */

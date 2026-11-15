@@ -124,6 +124,8 @@ interface GitHubFake {
   appInstallations?: unknown[];
   // Usage reports per account, by the account's name in the path; others get `usage`.
   usageFor?: Record<string, unknown[]>;
+  // An enterprise's cost centers, by id, and the usage each one's report holds.
+  costCenters?: Record<string, unknown[]>;
 }
 
 function fakeGitHub(fake: GitHubFake) {
@@ -140,6 +142,8 @@ function fakeGitHub(fake: GitHubFake) {
       if (fake.usageStatus) return new Response("Forbidden", { status: fake.usageStatus });
       if (fake.refuse?.includes(tokens[pathname]!))
         return new Response("Forbidden", { status: 403 });
+      const center = new URLSearchParams(search).get("cost_center_id");
+      if (center) return Response.json({ usageItems: fake.costCenters?.[center] ?? [] });
       const own = Object.entries(fake.usageFor ?? {}).find(([name]) =>
         pathname.includes(`/${name}/`),
       );
@@ -148,6 +152,10 @@ function fakeGitHub(fake: GitHubFake) {
     const minted = pathname.match(/^\/app\/installations\/(\d+)\/access_tokens$/);
     if (minted) return Response.json({ token: `spend-${minted[1]}` }, { status: 201 });
     if (pathname === "/app/installations") return Response.json(fake.appInstallations ?? []);
+    if (pathname.endsWith("/settings/billing/cost-centers"))
+      return Response.json({
+        costCenters: Object.keys(fake.costCenters ?? {}).map((id) => ({ id, name: id })),
+      });
     if (pathname.endsWith("/settings/billing/budgets"))
       return Response.json({ budgets: fake.budgets ?? [] });
     if (pathname.startsWith("/orgs/") || pathname === "/user")
@@ -431,6 +439,31 @@ describe("enterprise", () => {
       enterprise: "found-ent",
       usedMinutes: 300,
       quotaMinutes: 50_000,
+    });
+  });
+
+  test("an org whose usage belongs to a cost center is linked from that cost center's report", async () => {
+    const org = await connectedOrg();
+    const id = ENTERPRISE_INSTALL + 3;
+    const db = await enterpriseInstalled(id, "centered-ent");
+    const calls = fakeGitHub({
+      usage: [enterpriseItem("not-installed", "tools", 26)],
+      costCenters: { "cc-1": [enterpriseItem(org.org, "app", 6000)] },
+    });
+    await pollInstallation(
+      db,
+      "ent-token",
+      { id, accountLogin: "centered-ent", accountType: "Enterprise" },
+      NOW,
+    );
+    expect(calls).toContain(
+      "/enterprises/centered-ent/settings/billing/usage?year=2026&month=11&cost_center_id=cc-1",
+    );
+    expect(await accountUsage(db, org.installationId, NOW)).toMatchObject({
+      status: "ok",
+      enterprise: "centered-ent",
+      quotaMinutes: 50_000,
+      usedMinutes: 6026,
     });
   });
 });
