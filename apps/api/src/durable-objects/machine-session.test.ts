@@ -120,6 +120,14 @@ describe("machine session", () => {
     expect(statusOf(session, 2000)).toMatchObject({ slots: 4, running: 3, state: "busy" });
   });
 
+  test("a status with a new runner version gives the session a new hello", () => {
+    const session = said([hello]);
+    const status = (runnerVersion: string) =>
+      handleFrame(session, frame({ type: "status", state: "idle", runnerVersion }), 3000).state;
+    expect(status("2.329.0").hello).toBe(session.hello);
+    expect(status("2.330.0").hello).toEqual({ ...session.hello, runnerVersion: "2.330.0" });
+  });
+
   test("status messages set idle or busy", () => {
     const busy = said([hello, frame({ type: "status", state: "busy" })]);
     expect(statusOf(busy, 2000).state).toBe("busy");

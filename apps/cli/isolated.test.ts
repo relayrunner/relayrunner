@@ -57,6 +57,7 @@ describe("vmSize", () => {
 describe("runArgs", () => {
   const isolation: Isolation = {
     command: "container",
+    base: "ghcr.io/actions/actions-runner:2.338.2",
     image: "ghcr.io/actions/actions-runner:2.338.2",
     localNetwork: false,
     debug: NO_LOG,
@@ -306,6 +307,30 @@ esac
     expect(JSON.parse(readFileSync(fake.managed, "utf8"))).toEqual([BASE, isolation.image]);
   });
 
+  it("updates to a given runner version, keeping the images jobs may still be running from", async () => {
+    const fake = fakeContainer([]);
+    const options = { slots: 1, command: fake.command, managed: fake.managed };
+    const before = await prepareIsolation(options);
+    const after = await prepareIsolation({
+      ...options,
+      runnerVersion: "2.339.0",
+      keep: [before.base, before.image],
+    });
+    const next = "ghcr.io/actions/actions-runner:2.339.0";
+    expect(after).toMatchObject({ base: next, image: jobImage(next), runnerVersion: "2.339.0" });
+    expect(fake.images()).toEqual([BASE, before.image, next, after.image]);
+    expect(JSON.parse(readFileSync(fake.managed, "utf8"))).toEqual([
+      next,
+      after.image,
+      BASE,
+      before.image,
+    ]);
+
+    // The next update removes them.
+    await prepareIsolation({ ...options, runnerVersion: "2.339.0" });
+    expect(fake.images()).toEqual([next, after.image]);
+  });
+
   it("never records an image given with --image, so it's never removed", async () => {
     const fake = fakeContainer([]);
     await prepareIsolation({
@@ -426,6 +451,7 @@ exit ${exit}
     );
     return {
       command,
+      base: "runner:base",
       image: "runner:test",
       localNetwork: false,
       debug: debugLog(join(dir, "isolated.log")),

@@ -14,7 +14,8 @@ import {
 import { detectDevice } from "./device.ts";
 import { initCommand, offerSetup } from "./init.ts";
 import { defaultMachineName } from "./machine-name.ts";
-import { ensureRunner, RunnerError, runnerPlatform } from "./install.ts";
+import { ensureRunner, RunnerError, runnerPlatform, type InstalledRunner } from "./install.ts";
+import { keepRunnerUpdated } from "./runner-update.ts";
 import { normalizeServer } from "./server.ts";
 import {
   debugLog,
@@ -24,6 +25,7 @@ import {
   parseVmSize,
   prepareIsolation,
   setupHint,
+  type Isolation,
   slotsFor,
   unsupportedReason,
   type VmSize,
@@ -209,44 +211,61 @@ async function connectMachine(args: {
   // Its failure waits until the VM side is ready.
   onHost?.catch(() => {});
   let runnerVersion = "";
+  let isolation: Isolation | undefined;
   let launchers: Launcher[] = [];
   let vmLauncher: Launcher | undefined;
   // Without --macos every job runs in a VM, whatever its `run` message says.
   let isolatedOnly: Launcher | undefined;
   // Each VM's CPUs and memory, for the dashboard.
   let vmSize: { cpus: number; memoryGb: number } | undefined;
+  // Jobs take the launchers that are current when they start, so switching to a new runner never
+  // touches a job that's running (runner-update.ts). The hello carries the runner version of the
+  // machine itself when it takes jobs there.
+  const useRunner = (runner: InstalledRunner) => {
+    launchers = ensureSlots(runner, slots, log).map(hostLauncher);
+    runnerVersion = runner.version;
+  };
+  const useIsolation = (next: Isolation) => {
+    const launcher = isolatedLauncher(next);
+    if (args.macos) vmLauncher = launcher;
+    else {
+      launchers = Array.from({ length: slots }, () => (isolatedOnly = launcher));
+      runnerVersion = next.runnerVersion;
+    }
+  };
+  // The firewall on the Mac covers every VM, so with it on a job can't be let onto the network.
+  const firewall = isolated && firewallInstalled();
+  const isolationOptions = {
+    slots,
+    size: args.size,
+    image: args.image,
+    localNetwork: args["local-network"] && !firewall,
+    log,
+    debug: isolated ? debugLog() : undefined,
+  };
   if (isolated) {
-    // The firewall on the Mac covers every VM, so with it on a job can't be let onto the network.
-    const firewall = firewallInstalled();
     if (firewall)
       log(
         args["local-network"]
           ? "The firewall on this Mac is on, so --local-network has no effect. Turn it off with `relayrunner firewall off`."
           : "The firewall on this Mac is on.",
       );
-    const isolation = await prepareIsolation({
-      slots,
-      size: args.size,
-      image: args.image,
-      localNetwork: args["local-network"] && !firewall,
-      log,
-      debug: debugLog(),
-    });
-    runnerVersion = isolation.runnerVersion;
+    isolation = await prepareIsolation(isolationOptions);
+    useIsolation(isolation);
     vmSize = { cpus: isolation.cpus, memoryGb: isolation.memoryGb };
-    const launcher = isolatedLauncher(isolation);
-    if (args.macos) vmLauncher = launcher;
-    else {
-      launchers = Array.from({ length: slots }, () => (isolatedOnly = launcher));
+    log(
+      `Each job runs in its own Linux VM with ${vmSize.cpus} CPUs and ${vmSize.memoryGb} GB of memory.`,
+    );
+    if (isolation.localNetwork) log("Jobs can reach this Mac and your local network.");
+    if (isolation.debug.path)
+      log(`If something goes wrong, ${isolation.debug.path} has the details.`);
+    if (!args.macos)
       log(
         "Jobs run in a Linux VM on this Mac. To take macOS jobs too, run `relayrunner connect --macos`.",
       );
-    }
   }
   if (onHost) {
-    const runner = await onHost;
-    runnerVersion = runner.version;
-    launchers = ensureSlots(runner, slots, log).map(hostLauncher);
+    useRunner(await onHost);
     const hint = !isolated && state ? setupHint(state) : null;
     if (hint) clack.log.warn(hint);
     if (args.macos)
@@ -265,6 +284,33 @@ async function connectMachine(args: {
   );
   // What kind of device this is and its specs, for the dashboard's badge. Best effort.
   const device = await detectDevice();
+
+  // While `connect` stays open, a newer actions/runner is set up between jobs. An image given with
+  // --image brings its own runner, so the VMs keep it.
+  let running = 0;
+  const stopUpdating =
+    onHost || (isolation && !args.image)
+      ? keepRunnerUpdated({
+          current: () => runnerVersion,
+          running: () => running,
+          log,
+          update: async (version) => {
+            // Jobs may still be running from the old images, so they stay until the next update.
+            const [vm, runner] = await Promise.all([
+              isolation &&
+                !args.image &&
+                prepareIsolation({
+                  ...isolationOptions,
+                  runnerVersion: version,
+                  keep: [isolation.base, isolation.image],
+                }),
+              onHost && ensureRunner({ log }),
+            ]);
+            if (vm) useIsolation((isolation = vm));
+            if (runner) useRunner(runner);
+          },
+        })
+      : undefined;
 
   const stop = new AbortController();
   // The tab's title follows the machine's state, and `p` pauses or resumes it, while someone's at
@@ -308,6 +354,7 @@ async function connectMachine(args: {
         device,
         ...(vmSize && { vm: vmSize }),
       },
+      runnerVersion: () => runnerVersion,
       slots,
       runJob: async (run, slot, report) => {
         // With more than one slot, each line of a job's output says which slot it came from.
@@ -328,6 +375,7 @@ async function connectMachine(args: {
           report(update);
           return update;
         }
+        running++;
         try {
           return await runJob(run, {
             launcher,
@@ -341,6 +389,7 @@ async function connectMachine(args: {
             },
           });
         } finally {
+          running--;
           prefixed?.flush();
         }
       },
@@ -355,6 +404,7 @@ async function connectMachine(args: {
     });
   } finally {
     clearInterval(updateTimer);
+    stopUpdating?.();
     live.end();
     process.off("SIGINT", onInterrupt);
   }

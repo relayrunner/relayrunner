@@ -118,14 +118,17 @@ export function handleFrame(
   }
 
   if (!session.hello) return reject(session, "invalid_message", "send hello first");
-  if (message.type === "status")
-    return {
-      state: {
-        ...heard,
-        state: message.state,
-        running: message.running ?? (message.state === "busy" ? 1 : 0),
-      },
-    };
+  if (message.type === "status") {
+    const running = message.running ?? (message.state === "busy" ? 1 : 0);
+    // A new hello object only when the CLI updated its runner while connected, so MachineLink
+    // can tell it changed.
+    const { runnerVersion } = message;
+    const hello =
+      runnerVersion && runnerVersion !== session.hello.runnerVersion
+        ? { ...session.hello, runnerVersion }
+        : session.hello;
+    return { state: { ...heard, hello, state: message.state, running } };
+  }
   // A repeat, or one for a rotation already finished, only counts as a heartbeat.
   if (message.type === "token_saved")
     return {

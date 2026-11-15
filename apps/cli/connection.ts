@@ -57,6 +57,9 @@ export interface ConnectOptions {
   server: string;
   token: string;
   hello: Omit<HelloMessage, "v" | "type" | "slots">;
+  // The runner version new jobs run on now, when it can change while connected. It goes in each
+  // hello and status in place of hello.runnerVersion.
+  runnerVersion?: () => string;
   // How many jobs it runs at once. Defaults to 1.
   slots?: number;
   // Run one job in the given slot (from 1) and report its progress. Must not reject.
@@ -116,13 +119,22 @@ export async function connect(options: ConnectOptions): Promise<ConnectionEnd> {
     if (socket?.readyState === WebSocket.OPEN) socket.send(encodeMessage(message));
     else if (message.type === "job") pending.push(message);
   };
-  const sendStatus = () =>
+  const runnerVersion = () => options.runnerVersion?.() ?? options.hello.runnerVersion;
+  // The runner version the gateway last heard on this socket. A status carries the version only
+  // when it differs, after the runner was updated while connected.
+  let saidVersion = "";
+  const sendStatus = () => {
+    const version = runnerVersion();
+    const changed = version !== saidVersion && socket?.readyState === WebSocket.OPEN;
     send({
       v: PROTOCOL_VERSION,
       type: "status",
       state: busy.size > 0 ? "busy" : "idle",
       running: busy.size,
+      ...(changed && { runnerVersion: version }),
     });
+    if (changed) saidVersion = version;
+  };
 
   // Saved first, then acknowledged: once the gateway hears `token_saved` the old token is dead.
   const saveToken = (next: string) => {
@@ -201,11 +213,13 @@ export async function connect(options: ConnectOptions): Promise<ConnectionEnd> {
         opened = true;
         emit({ type: "connected" });
         const rotatesToken = options.saveToken ? true : undefined;
+        saidVersion = runnerVersion();
         ws.send(
           encodeMessage({
             v: PROTOCOL_VERSION,
             type: "hello",
             ...options.hello,
+            runnerVersion: saidVersion,
             slots,
             rotatesToken,
           }),

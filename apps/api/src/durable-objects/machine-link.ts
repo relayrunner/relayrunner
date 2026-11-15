@@ -114,19 +114,7 @@ export class MachineLink extends DurableObject<Env> {
           cliVersion: outcome.state.hello.cliVersion ?? null,
         },
       });
-      const [machine] = await db
-        .select()
-        .from(schema.machine)
-        .where(eq(schema.machine.id, session.machineId))
-        .limit(1);
-      // Written only when it changed: a deploy reconnects every machine at once, and most report
-      // the same OS and device as last time.
-      const columns = helloColumns(outcome.state.hello, new Date());
-      if (machine && helloChanged(machine, columns))
-        await db
-          .update(schema.machine)
-          .set(columns)
-          .where(eq(schema.machine.id, session.machineId));
+      const machine = await saveHello(db, session.machineId, outcome.state.hello);
       if (machine?.pausedAt) ws.send(pausedFrame(true, await pausedByName(db, machine)));
       // Rotate the token on every connect, so a copy of the token file taken earlier stops
       // working once the CLI saves the new one (TokenMessage in @relayrunner/machine-protocol).
@@ -144,6 +132,10 @@ export class MachineLink extends DurableObject<Env> {
     }
     if ("promote" in outcome && outcome.promote)
       await promotePendingToken(createDb(this.env.DB), session.machineId, outcome.promote);
+    // A status can change what the hello said, such as the runner version after the CLI updated
+    // it while connected.
+    if (session.hello && outcome.state.hello && outcome.state.hello !== session.hello)
+      await saveHello(createDb(this.env.DB), session.machineId, outcome.state.hello);
     if ("job" in outcome && outcome.job) await this.onJob(session.machineId, outcome.job);
     if ("reply" in outcome) {
       ws.send(outcome.reply);
@@ -453,4 +445,23 @@ function close(ws: WebSocket, code: number, reason: string) {
 function placeOn(ws: WebSocket, route: Route) {
   const hello = attachment(ws)?.hello;
   return hello ? placeNow(route, hello) : null;
+}
+
+// Saves what a machine's hello says about it, and returns the machine as it was. Written only when
+// it changed: a deploy reconnects every machine at once, and most report the same OS and device as
+// last time.
+async function saveHello(
+  db: ReturnType<typeof createDb>,
+  machineId: string,
+  hello: NonNullable<SessionState["hello"]>,
+) {
+  const [machine] = await db
+    .select()
+    .from(schema.machine)
+    .where(eq(schema.machine.id, machineId))
+    .limit(1);
+  const columns = helloColumns(hello, new Date());
+  if (machine && helloChanged(machine, columns))
+    await db.update(schema.machine).set(columns).where(eq(schema.machine.id, machineId));
+  return machine;
 }

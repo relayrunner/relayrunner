@@ -88,6 +88,9 @@ export const StatusMessage = z.object({
   state: z.enum(["idle", "busy"]),
   // How many jobs are running now. Missing from CLIs older than concurrency: busy then means one.
   running: z.number().int().nonnegative().max(1_000).optional(),
+  // The actions/runner version new jobs run on now. It changes from the one in `hello` when the
+  // CLI updates the runner while connected. Missing from CLIs older than that.
+  runnerVersion: z.string().min(1).optional(),
 });
 
 // How much CPU and memory a job used, sampled every few seconds while its runner ran. CPU is a

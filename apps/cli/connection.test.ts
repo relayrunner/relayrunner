@@ -142,6 +142,28 @@ describe("connect", () => {
     expect(await end).toEqual({ reason: "stopped" });
   });
 
+  test("tells the gateway about a runner updated while connected, and says hello with it next time", async () => {
+    const gateway = await startGateway();
+    let version = "2.329.0";
+    const { stop, end } = start(gateway, { heartbeatMs: 20, runnerVersion: () => version });
+    const first = await gateway.next();
+    await first.waitFor((m) => m.type === "status");
+    expect(first.messages.filter((m) => m.type === "status" && m.runnerVersion)).toEqual([]);
+
+    version = "2.330.0";
+    expect(await first.waitFor((m) => m.type === "status" && !!m.runnerVersion)).toMatchObject({
+      runnerVersion: "2.330.0",
+    });
+
+    first.socket.close(4000, "heartbeat timeout");
+    const second = await gateway.next();
+    expect(await second.waitFor((m) => m.type === "hello")).toMatchObject({
+      runnerVersion: "2.330.0",
+    });
+    stop.abort();
+    expect(await end).toEqual({ reason: "stopped" });
+  });
+
   test("saves a token the gateway sends, says so, and connects with it next time", async () => {
     const gateway = await startGateway();
     const saved: string[] = [];

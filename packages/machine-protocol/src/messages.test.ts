@@ -40,6 +40,7 @@ describe("parseMachineMessage", () => {
     { v, type: "status", state: "idle" },
     { v, type: "status", state: "busy" },
     { v, type: "status", state: "busy", running: 2 },
+    { v, type: "status", state: "idle", running: 0, runnerVersion: "2.330.0" },
     {
       v,
       type: "hello",

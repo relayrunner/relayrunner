@@ -20,7 +20,9 @@ import { cliVersion } from "./version.ts";
 export interface Isolation {
   // The `container` binary. Tests point it at a stand-in.
   command: string;
-  // The image each job's VM starts from: the runner image plus the start script (jobImage).
+  // The runner image (GitHub's or --image), and the image each job's VM starts from: that plus
+  // the start script (jobImage).
+  base: string;
   image: string;
   // No firewall: jobs can reach this Mac and the local network.
   localNetwork: boolean;
@@ -322,6 +324,11 @@ export async function prepareIsolation(options: {
   debug?: DebugLog;
   // The record of images earlier runs downloaded or built (managedImagesFile).
   managed?: string;
+  // The actions/runner version to use, when the caller already looked it up.
+  runnerVersion?: string;
+  // Images jobs may still be running from, which aren't removed yet: the ones from before an
+  // update made while connected.
+  keep?: string[];
 }): Promise<Isolation> {
   const command = options.command ?? "container";
   const log = options.log ?? (() => {});
@@ -334,7 +341,9 @@ export async function prepareIsolation(options: {
     new RunnerError(code, debug.path ? `${message} Details are in ${debug.path}.` : message);
 
   // The lookup's failure waits until the container tool has been checked.
-  const latest = latestRunnerVersion(log);
+  const latest = options.runnerVersion
+    ? Promise.resolve(options.runnerVersion)
+    : latestRunnerVersion(log);
   latest.catch(() => {});
   const [status] = await Promise.all([tool(["system", "status"]), tool(["--version"])]);
   if (status === null)
@@ -384,14 +393,15 @@ export async function prepareIsolation(options: {
       await tool(["builder", "delete"]);
     }
   }
-  await pruneImages(options.managed ?? managedImagesFile(), [base, image], mine, tool, log);
-  const size = vmSize(options.slots, options.size);
-  log(
-    `Each job runs in its own Linux VM with ${size.cpus} CPUs and ${size.memoryGb} GB of memory.`,
+  await pruneImages(
+    options.managed ?? managedImagesFile(),
+    [base, image, ...(options.keep ?? [])],
+    mine,
+    tool,
+    log,
   );
-  if (localNetwork) log("Jobs can reach this Mac and your local network.");
-  if (debug.path) log(`If something goes wrong, ${debug.path} has the details.`);
-  return { command, image, localNetwork, debug, runnerVersion, ...size };
+  const size = vmSize(options.slots, options.size);
+  return { command, base, image, localNetwork, debug, runnerVersion, ...size };
 }
 
 export function managedImagesFile() {

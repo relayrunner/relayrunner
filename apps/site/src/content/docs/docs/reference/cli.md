@@ -11,7 +11,7 @@ The `relayrunner` CLI runs on macOS and Linux with Node.js 22 or newer. Run it w
 relayrunner connect
 ```
 
-Puts this machine online and runs the jobs it's sent until you stop it. On a Mac with Apple silicon and Apple's container tool, each job runs in its own Linux VM; elsewhere jobs run on the machine itself. It runs up to 2 jobs at once on a computer with 8 or more CPU cores, otherwise 1; `--concurrency` changes that. The first run signs the machine in. Ctrl-C takes it offline, and a job that's running stops with it. Press `p` to pause or resume.
+Puts this machine online and runs the jobs it's sent until you stop it. On a Mac with Apple silicon and Apple's container tool, each job runs in its own Linux VM; elsewhere jobs run on the machine itself. It runs up to 2 jobs at once on a computer with 8 or more CPU cores, otherwise 1; `--concurrency` changes that. The first run signs the machine in. Ctrl-C takes it offline, and a job that's running stops with it. Press `p` to pause or resume. While it stays open, it checks for a newer GitHub runner every few hours and switches to it between jobs.
 
 Run inside a repo with no routed jobs, it offers to route them, the same as `init`.
 

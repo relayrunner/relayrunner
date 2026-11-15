@@ -40,6 +40,13 @@ resume it without going offline (see `relayrunner pause`). The terminal tab's
 title shows the machine and what it's doing, such as
 `RelayRunner · M3P0 · Waiting for jobs`.
 
+`connect` installs the latest GitHub runner when it starts. While it stays
+open, it checks for a newer one every 6 hours, waiting until no job is running,
+or going ahead after a busy day. New jobs run on the new runner, and a job
+that's already running finishes on the one it started with. GitHub stops
+sending jobs to a runner about 30 days after a newer release, so a machine left
+connected for weeks keeps taking jobs.
+
 Before it starts a job, `connect` checks the job's runner config: it must hold
 only the files GitHub's do, every server in it must be GitHub's, over https, and
 the runner must be named for that job. Anything else is refused and reported as
@@ -89,7 +96,8 @@ approved the machine also gets an email, since someone else may have its token.
   - `--no-isolated` runs jobs on the Mac itself, where they can read your
     files. `--isolated` stops with an error when jobs can't run in VMs.
   - `connect` removes the images it downloaded or built for older runner
-    versions. It never removes images you got yourself.
+    versions. It never removes images you got yourself. With `--image`, the
+    VMs keep your image when a newer runner comes out.
   - `~/.relayrunner/isolated.log` records each `container` command and its
     result, never a job's output or credentials. Send it along when you report
     a problem.
