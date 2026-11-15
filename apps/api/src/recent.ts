@@ -22,11 +22,6 @@ export class Recent<K, V> {
     return value;
   }
 
-  /** When the kept value for `key` was read (epoch ms), or undefined when none is kept. */
-  readAt(key: K) {
-    return this.entries.get(key)?.at;
-  }
-
   forget(key: K) {
     this.entries.delete(key);
   }

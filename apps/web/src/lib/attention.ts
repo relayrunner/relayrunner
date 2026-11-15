@@ -1,4 +1,4 @@
-import { type LiveJobs, matches, waitReason } from "./live-jobs.ts";
+import { type LiveJob, type LiveJobs, matches, waitReason } from "./live-jobs.ts";
 import type { Machine } from "./machines.ts";
 
 /**
@@ -16,6 +16,8 @@ export type AttentionFix =
 /** Something on the Runners page that won't sort itself out, and what fixes it. */
 export type AttentionItem = { key: string; text: string; fix: AttentionFix };
 
+// lib/job-times.ts has plural(), but importing it pulls in the API client, which this module's
+// tests can't load.
 const jobs = (count: number) => (count === 1 ? "1 job" : `${count} jobs`);
 
 /**
@@ -26,38 +28,47 @@ const jobs = (count: number) => (count === 1 ? "1 job" : `${count} jobs`);
  */
 export function attentionItems(machines: Machine[], live: LiveJobs): AttentionItem[] {
   const active = machines.filter((machine) => !machine.revokedAt);
-  // Queued jobs that won't start on their own, with the machines they're waiting on.
+  // Queued jobs that won't start on their own.
   const stuck = live.queued.filter((job) => waitReason(job, undefined, active).problem);
+  const pinned = (job: LiveJob) => job.environment.startsWith("machine:");
   const waitingOn = (machine: Machine) =>
     stuck.filter((job) =>
-      job.environment.startsWith("machine:")
-        ? job.environment === `machine:${machine.id}`
-        : matches(job, machine),
+      pinned(job) ? job.environment === `machine:${machine.id}` : matches(job, machine),
     ).length;
 
   const items: AttentionItem[] = [];
+  const missing: AttentionItem[] = [];
   for (const machine of active) {
-    // Gone from GitHub has its own row below; GitHub not answering leaves its status unknown.
-    if (machine.github?.missing || machine.github?.unreachable) continue;
+    if (machine.github?.missing) {
+      missing.push({
+        key: `missing:${machine.id}`,
+        text: `${machine.name} was removed or re-registered on GitHub`,
+        fix: { kind: "add-runner" },
+      });
+      continue;
+    }
+    // GitHub not answering leaves its status unknown.
+    if (machine.github?.unreachable) continue;
     const waiting = waitingOn(machine);
     if (!waiting) continue;
-    const github = machine.source === "github";
-    if (machine.paused) {
-      items.push({
-        key: `paused:${machine.id}`,
-        text: `${machine.name} is paused with ${jobs(waiting)} waiting`,
-        fix: machine.canRevoke ? { kind: "unpause", machine } : { kind: "runner", machine },
-      });
-    } else if (!machine.status?.online) {
+    // In waitReason's order: offline first, then paused.
+    if (!machine.status?.online) {
       items.push({
         key: `offline:${machine.id}`,
         text: `${machine.name} is offline with ${jobs(waiting)} waiting`,
         // Only its owner can start its CLI again; a GitHub runner is looked after on GitHub.
-        fix: github
-          ? { kind: "github", machine }
-          : machine.mine
-            ? { kind: "connect" }
-            : { kind: "runner", machine },
+        fix:
+          machine.source === "github"
+            ? { kind: "github", machine }
+            : machine.mine
+              ? { kind: "connect" }
+              : { kind: "runner", machine },
+      });
+    } else if (machine.paused) {
+      items.push({
+        key: `paused:${machine.id}`,
+        text: `${machine.name} is paused with ${jobs(waiting)} waiting`,
+        fix: machine.canRevoke ? { kind: "unpause", machine } : { kind: "runner", machine },
       });
     }
   }
@@ -65,8 +76,7 @@ export function attentionItems(machines: Machine[], live: LiveJobs): AttentionIt
   // Jobs no runner in the workspace could take, one row per set of labels.
   const unmatched = new Map<string, number>();
   for (const job of stuck) {
-    if (job.environment.startsWith("machine:")) continue;
-    if (active.some((machine) => matches(job, machine))) continue;
+    if (pinned(job) || active.some((machine) => matches(job, machine))) continue;
     const labels = job.labels.join(", ");
     unmatched.set(labels, (unmatched.get(labels) ?? 0) + 1);
   }
@@ -77,25 +87,5 @@ export function attentionItems(machines: Machine[], live: LiveJobs): AttentionIt
       fix: { kind: "add-runner" },
     });
   }
-
-  for (const machine of active) {
-    if (!machine.github?.missing) continue;
-    items.push({
-      key: `missing:${machine.id}`,
-      text: `${machine.name} was removed or re-registered on GitHub`,
-      fix: { kind: "add-runner" },
-    });
-  }
-  return items;
-}
-
-/**
- * When GitHub was last asked about the workspace's runners added from GitHub: the oldest check,
- * since that's how stale the page could be. Null when there are none, or none answered.
- */
-export function githubCheckedAt(machines: Machine[]) {
-  const checks = machines.flatMap((machine) =>
-    !machine.revokedAt && machine.github?.checkedAt ? [machine.github.checkedAt] : [],
-  );
-  return checks.length ? Math.min(...checks) : null;
+  return [...items, ...missing];
 }

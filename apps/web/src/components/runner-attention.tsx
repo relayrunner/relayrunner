@@ -1,6 +1,6 @@
 import { ExternalLinkIcon, TriangleAlertIcon } from "lucide-react";
 import { useState } from "react";
-import { CONNECT_COMMAND, CopyButton } from "@/components/add-runner";
+import { CONNECT_COMMAND, CopyCommand } from "@/components/add-runner";
 import { githubRunnerUrl } from "@/components/runner-card";
 import { RunnerPanelLink } from "@/components/runner-panel-link";
 import { DOCS_URL } from "@/components/site-footer";
@@ -55,40 +55,15 @@ function Fix({
   onAddRunner?: () => void;
   onChanged: () => unknown;
 }) {
-  const [pending, setPending] = useState(false);
   const link = "text-sm text-muted-foreground underline underline-offset-2 hover:text-foreground";
   switch (fix.kind) {
     case "unpause":
-      return (
-        <Button
-          size="xs"
-          variant="outline"
-          disabled={pending}
-          onClick={async () => {
-            setPending(true);
-            try {
-              await resumeMachine(fix.machine.id);
-              await onChanged();
-            } catch {
-              // The row stays, so they can try again or use the card's menu.
-            } finally {
-              setPending(false);
-            }
-          }}
-        >
-          {pending ? "Unpausing…" : "Unpause"}
-        </Button>
-      );
+      return <UnpauseButton machineId={fix.machine.id} onChanged={onChanged} />;
     case "connect":
       // Started again on the machine itself.
-      return (
-        <span className="flex min-w-0 items-center gap-1 rounded-md border bg-muted/50 py-0.5 pr-0.5 pl-2">
-          <code className="truncate font-mono text-xs">{CONNECT_COMMAND}</code>
-          <CopyButton text={CONNECT_COMMAND} label="Copy command" />
-        </span>
-      );
+      return <CopyCommand command={CONNECT_COMMAND} prompt={false} />;
     case "github": {
-      const href = githubRunnerUrl(fix.machine.github ?? null);
+      const href = githubRunnerUrl(fix.machine.github);
       return href ? (
         <a
           href={href}
@@ -118,4 +93,28 @@ function Fix({
         </RunnerPanelLink>
       );
   }
+}
+
+function UnpauseButton({ machineId, onChanged }: { machineId: string; onChanged: () => unknown }) {
+  const [pending, setPending] = useState(false);
+  return (
+    <Button
+      size="xs"
+      variant="outline"
+      disabled={pending}
+      onClick={async () => {
+        setPending(true);
+        try {
+          await resumeMachine(machineId);
+          await onChanged();
+        } catch {
+          // The row stays, so they can try again or use the card's menu.
+        } finally {
+          setPending(false);
+        }
+      }}
+    >
+      {pending ? "Unpausing…" : "Unpause"}
+    </Button>
+  );
 }

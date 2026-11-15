@@ -1,5 +1,5 @@
 import { describe, expect, test } from "vitest";
-import { attentionItems, githubCheckedAt } from "./attention.ts";
+import { attentionItems } from "./attention.ts";
 import { type LiveJob, type LiveJobs, NO_LIVE_JOBS } from "./live-jobs.ts";
 import type { Machine } from "./machines.ts";
 
@@ -112,23 +112,4 @@ describe("attentionItems", () => {
       },
     ]);
   });
-});
-
-test("githubCheckedAt is the oldest check of the runners added from GitHub", () => {
-  const github = (checkedAt: number | null) => ({
-    org: "acme",
-    repo: null,
-    runnerId: 1,
-    missing: false,
-    unreachable: checkedAt === null,
-    checkedAt,
-  });
-  expect(githubCheckedAt([machine({ id: "a", name: "laptop" })])).toBeNull();
-  expect(
-    githubCheckedAt([
-      machine({ id: "a", name: "a", github: github(2_000) }),
-      machine({ id: "b", name: "b", github: github(1_000) }),
-      machine({ id: "c", name: "c", github: github(null) }),
-    ]),
-  ).toBe(1_000);
 });

@@ -155,15 +155,13 @@ function RunnersPage() {
   const [live, setLive] = useState(loaded.live);
   useEffect(() => setLive(loaded.live), [loaded.live]);
   // When the machines last came back, for the freshness line and greying out stale numbers.
-  const [updatedAt, setUpdatedAt] = useState(Date.now);
-  useEffect(() => setUpdatedAt(Date.now()), [loaded.machines]);
+
   // Each keeps showing its last answer when a refresh fails; the next tick retries.
   const refreshMachines = () =>
     listMachines()
       .then((result) => {
         setAllMachines(result.machines);
         setOthers(result.others ?? []);
-        setUpdatedAt(Date.now());
       })
       .catch(() => undefined);
   const refreshLive = () =>
@@ -175,6 +173,11 @@ function RunnersPage() {
     () => Promise.all([refreshMachines(), allMachines.length ? refreshLive() : null]),
     { intervalMs: REFRESH_MS, enabled: !authDisabled },
   );
+
+  // When the machines last came back, for the freshness line and greying out stale numbers.
+  const [updatedAt, setUpdatedAt] = useState(Date.now);
+  useEffect(() => setUpdatedAt(Date.now()), [allMachines]);
+  const attention = useMemo(() => attentionItems(allMachines, live), [allMachines, live]);
 
   const editable = canManage(current.role);
   const [showSpecs, setShowSpecs] = useState(() => readFlag(SHOW_SPECS_KEY));
@@ -378,7 +381,7 @@ function RunnersPage() {
               updatedAt={updatedAt}
               attention={
                 <NeedsAttention
-                  items={attentionItems(allMachines, live)}
+                  items={attention}
                   onAddRunner={editable ? () => setGithubOpen(true) : undefined}
                   onChanged={refreshMachines}
                 />

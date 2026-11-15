@@ -7,8 +7,8 @@ import { StatusIcon } from "@/components/status-icon";
 import { Card } from "@/components/ui/card";
 import { clock } from "@/lib/job-times";
 import { type LiveJob, type LiveJobs, runnerCounts, waitReason } from "@/lib/live-jobs";
-import { githubCheckedAt } from "@/lib/attention";
-import { timeAgo, type Machine } from "@/lib/machines";
+import { timeAgo } from "@/lib/activity";
+import type { Machine } from "@/lib/machines";
 import { useNow } from "@/lib/use-now";
 import { cn } from "@/lib/utils";
 
@@ -137,13 +137,22 @@ export function RunnersNow({
   );
 }
 
+// When GitHub was last asked about the runners added from it: the oldest check, since that's how
+// stale the page could be. Null when there are none, or none answered.
+function githubCheckedAt(machines: Machine[]) {
+  const checks = machines.flatMap((machine) =>
+    !machine.revokedAt && machine.github?.checkedAt ? [machine.github.checkedAt] : [],
+  );
+  return checks.length ? Math.min(...checks) : null;
+}
+
 // How long the page's numbers stay current without hearing back: two missed refreshes. Past it they
 // grey out, since the page may be idle, hidden, or failing to reach the API.
 const STALE_MS = 40_000;
 
 /** Whether `updatedAt` is older than STALE_MS, flipping when it gets there with no ticking. */
 function useStale(updatedAt: number) {
-  const [stale, setStale] = useState(() => Date.now() - updatedAt > STALE_MS);
+  const [stale, setStale] = useState(false);
   useEffect(() => {
     const left = updatedAt + STALE_MS - Date.now();
     setStale(left <= 0);
@@ -174,20 +183,14 @@ function Freshness({
         stale && "text-run",
       )}
     >
-      <span>Updated {ago(updatedAt, now)}</span>
+      <span>Updated {timeAgo(updatedAt, now)}</span>
       {githubDown ? (
         <span>· Couldn't reach GitHub</span>
       ) : (
-        githubAt !== null && <span>· GitHub checked {ago(githubAt, now)}</span>
+        githubAt !== null && <span>· GitHub checked {timeAgo(githubAt, now)}</span>
       )}
     </p>
   );
-}
-
-/** "5s ago" under a minute, then "2 minutes ago". */
-function ago(at: number, now: number) {
-  const seconds = Math.max(0, Math.round((now - at) / 1000));
-  return seconds < 60 ? `${seconds}s ago` : timeAgo(at, now);
 }
 
 const share = (part: number, total: number) => `${total ? (part / total) * 100 : 0}%`;

@@ -521,7 +521,7 @@ export const machineRoutes = new Hono<AppEnv>()
     const github = new Map(
       await Promise.all(
         [...reads].map(async ([key, { installationId, scope }]) => {
-          const read = await router!.githubRunnersChecked(installationId, scope).catch(() => null);
+          const read = await router!.githubRunners(installationId, scope).catch(() => null);
           return [key, read] as const;
         }),
       ),
@@ -940,14 +940,17 @@ export const machineRoutes = new Hono<AppEnv>()
 /** An org's runners from the Router's short cache; throws when GitHub couldn't be asked. */
 async function cachedRunners(
   router: {
-    githubRunners(installationId: number, scope: RunnerScope): Promise<GitHubRunner[] | null>;
+    githubRunners(
+      installationId: number,
+      scope: RunnerScope,
+    ): Promise<{ runners: GitHubRunner[]; checkedAt: number } | null>;
   },
   installationId: number,
   org: string,
 ) {
-  const runners = await router.githubRunners(installationId, { kind: "org", org });
-  if (!runners) throw new AppError("GITHUB_UNAVAILABLE");
-  return runners;
+  const list = await router.githubRunners(installationId, { kind: "org", org });
+  if (!list) throw new AppError("GITHUB_UNAVAILABLE");
+  return list.runners;
 }
 
 /** What the add dialog shows of a runner on GitHub: an org runner, or one registered on `repo`. */

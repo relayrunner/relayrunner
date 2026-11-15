@@ -87,7 +87,7 @@ const columns = column.columns([
       const { view } = row.original;
       return (
         <span className="grid min-w-0 gap-0.5 text-xs">
-          <BandLabel tone={view.tone} slots={view.slots}>
+          <BandLabel tone={view.tone} slotBars={view.slotBars}>
             {view.label}
           </BandLabel>
           {view.busy ? (

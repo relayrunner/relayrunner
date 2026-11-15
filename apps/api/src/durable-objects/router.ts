@@ -125,6 +125,9 @@ const PICK_RUNNER_LIST_TTL_MS = 5_000;
 // and the Add runners dialog share it; the dialog's Rescan reads it fresh.
 const FOUND_LIST_TTL_MS = 10 * 60_000;
 
+/** A runner list as GitHub answered it, and when (epoch ms). */
+export type RunnerList = { runners: GitHubRunner[]; checkedAt: number };
+
 // One per workspace, addressed by workspace id. Decides where each picked job's run goes and
 // keeps the routes it hands out (src/routing.ts), so the job queued on a route's label can find
 // its machine.
@@ -135,22 +138,22 @@ export class Router extends DurableObject<Env> {
   // account's provider spend this month by `<installation>:<provider>`, so a burst of jobs doesn't
   // read D1 for every pick.
   private groupAccess = new Recent<number, Map<number, GroupAccess>>();
-  private runnerLists = new Recent<string, GitHubRunner[]>();
+  private runnerLists = new Recent<string, RunnerList>();
   private ownerAccess = new Recent<string, boolean>();
   private spend = new Recent<string, { account: string; spentUsd: number }>();
 
   /**
    * An org's (or repo's) self-hosted runners for the dashboard's Runners and Router pages, reused
-   * for RUNNER_LIST_TTL_MS so the pages' refreshes don't each ask GitHub. Null when GitHub can't
-   * be asked.
+   * for RUNNER_LIST_TTL_MS so the pages' refreshes don't each ask GitHub, with when GitHub was
+   * asked (epoch ms). Null when GitHub can't be asked.
    */
   async githubRunners(
     installationId: number,
     scope: RunnerScope,
     maxAge = RUNNER_LIST_TTL_MS,
-  ): Promise<GitHubRunner[] | null> {
+  ): Promise<RunnerList | null> {
     try {
-      return await this.runnerList(maxAge, installationId, scope);
+      return await this.checkedRunnerList(maxAge, installationId, scope);
     } catch (error) {
       console.warn(
         JSON.stringify({
@@ -165,34 +168,33 @@ export class Router extends DurableObject<Env> {
   }
 
   /**
-   * githubRunners with when GitHub was asked (epoch ms), so the Runners page can say how fresh the
-   * runners' status is.
-   */
-  async githubRunnersChecked(installationId: number, scope: RunnerScope) {
-    const runners = await this.githubRunners(installationId, scope);
-    if (!runners) return null;
-    const checkedAt = this.runnerLists.readAt(runnerListKey(installationId, scope)) ?? Date.now();
-    return { runners, checkedAt };
-  }
-
-  /**
    * The runner lists of several scopes, such as each of an account's private repos, for finding
    * runners to add. Reused for FOUND_LIST_TTL_MS unless `fresh`. Null for a list GitHub refused.
    */
   githubRunnerLists(installationId: number, scopes: RunnerScope[], { fresh = false } = {}) {
     const maxAge = fresh ? 0 : FOUND_LIST_TTL_MS;
-    return Promise.all(scopes.map((scope) => this.githubRunners(installationId, scope, maxAge)));
+    return Promise.all(
+      scopes.map(async (scope) => {
+        const list = await this.githubRunners(installationId, scope, maxAge);
+        return list?.runners ?? null;
+      }),
+    );
   }
 
   // An org's or repo's runner list, no older than `maxAge`. The dashboard and picks share one copy.
-  private runnerList(
+  private checkedRunnerList(
     maxAge: number,
     installationId: number,
     scope: RunnerScope,
-  ): Promise<GitHubRunner[]> {
-    return this.runnerLists.get(runnerListKey(installationId, scope), maxAge, async () =>
-      listRunners(await appInstallationToken(this.env, installationId), scope),
-    );
+  ): Promise<RunnerList> {
+    return this.runnerLists.get(runnerListKey(installationId, scope), maxAge, async () => ({
+      runners: await listRunners(await appInstallationToken(this.env, installationId), scope),
+      checkedAt: Date.now(),
+    }));
+  }
+
+  private async runnerList(maxAge: number, installationId: number, scope: RunnerScope) {
+    return (await this.checkedRunnerList(maxAge, installationId, scope)).runners;
   }
 
   /**

@@ -157,24 +157,25 @@ describe("adding GitHub runners", () => {
       }),
     } as unknown as Env["MACHINE_LINK"];
     // The Router's cached runner list, read fresh here so each test sees its own runners.
-    const githubRunners = (_installationId: number, scope: RunnerScope) => {
+    const githubRunners = async (_installationId: number, scope: RunnerScope) => {
       routerReads += 1;
-      return listRunners("ghs_test", scope).catch(() => null);
+      const runners = await listRunners("ghs_test", scope).catch(() => null);
+      return runners ? { runners, checkedAt: Date.now() } : null;
     };
     env.ROUTER = {
       getByName: () => ({
         githubRunners,
-        githubRunnersChecked: async (installationId: number, scope: RunnerScope) => {
-          const runners = await githubRunners(installationId, scope);
-          return runners ? { runners, checkedAt: Date.now() } : null;
-        },
         githubRunnerLists: (
           installationId: number,
           scopes: RunnerScope[],
           options?: { fresh?: boolean },
         ) => {
           freshScans.push(options?.fresh ?? false);
-          return Promise.all(scopes.map((scope) => githubRunners(installationId, scope)));
+          return Promise.all(
+            scopes.map(
+              async (scope) => (await githubRunners(installationId, scope))?.runners ?? null,
+            ),
+          );
         },
       }),
     } as unknown as Env["ROUTER"];

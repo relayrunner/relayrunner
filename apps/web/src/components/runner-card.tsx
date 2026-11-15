@@ -195,21 +195,21 @@ function Band({ tone, children }: { tone: keyof typeof BANDS; children: ReactNod
  */
 export function BandLabel({
   tone,
-  slots,
+  slotBars,
   children,
 }: {
   tone: keyof typeof BANDS;
-  slots?: MachineView["slots"];
+  slotBars?: MachineView["slotBars"];
   children: ReactNode;
 }) {
   return (
     <span className={cn("flex shrink-0 items-center gap-2 font-semibold", BANDS[tone].label)}>
-      {slots ? (
+      {slotBars ? (
         <span aria-hidden className="flex items-center gap-0.5">
-          {Array.from({ length: slots.slots }, (_, i) => (
+          {Array.from({ length: slotBars.total }, (_, i) => (
             <span
               key={i}
-              className={cn("h-3 w-1 rounded-full", i < slots.running ? "bg-run" : "bg-go")}
+              className={cn("h-3 w-1 rounded-full", i < slotBars.running ? "bg-run" : "bg-go")}
             />
           ))}
         </span>
@@ -357,7 +357,7 @@ export function machineView(machine: Machine) {
   // count isn't known.
   const slotBars =
     (tone === "running" || tone === "idle") && slots <= MAX_SLOT_BARS
-      ? { slots, running: Math.min(running, slots) }
+      ? { total: slots, running: Math.min(running, slots) }
       : null;
 
   // Whose machine it is and whose jobs it takes (#243). Only the owner of a connect machine
@@ -407,7 +407,7 @@ export function machineView(machine: Machine) {
     hardware,
     jobPlace,
     runners,
-    slots: slotBars,
+    slotBars,
     sharing,
     mine,
     canShare,
@@ -756,7 +756,7 @@ export function MachineSharingDialog({
 }
 
 /** A runner added from GitHub's settings page on GitHub, or its org's or repo's runners. */
-export function githubRunnerUrl(github: Machine["github"] | null) {
+export function githubRunnerUrl(github: Machine["github"] | null | undefined) {
   const settingsUrl = github?.repo
     ? repoRunnerSettingsUrl(github.repo)
     : github?.org
@@ -913,7 +913,7 @@ export function MachineCard({
               {pending === "resume" ? "Unpausing…" : "Unpause"}
             </Button>
           ) : (
-            <BandLabel tone={tone} slots={view.slots}>
+            <BandLabel tone={tone} slotBars={view.slotBars}>
               {label}
             </BandLabel>
           )}
