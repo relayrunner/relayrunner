@@ -1,6 +1,7 @@
 import { Link, type LinkProps, useNavigate } from "@tanstack/react-router";
 import { ChevronRightIcon, ExternalLinkIcon } from "lucide-react";
 import { type ReactNode, useEffect, useMemo, useState } from "react";
+import { JobFailureSection } from "@/components/job-failure";
 import { RunnerLink, type RunnerRef } from "@/components/runner-link";
 import { StatusIcon } from "@/components/status-icon";
 import { WalkLines } from "@/components/walk-lines";
@@ -490,6 +491,8 @@ function JobView({
           ["Ran", elapsed(ranOf(job, now))],
         ]}
       />
+
+      {isFailure(job.conclusion) && <JobFailureSection key={job.id} jobId={job.id} />}
 
       <section className="grid gap-2">
         <h3 className="text-sm font-medium">Steps</h3>

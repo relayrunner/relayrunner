@@ -147,6 +147,41 @@ export function getJobSteps(jobId: number) {
   return api<{ steps: JobStep[] | null }>(`/runs/jobs/${jobId}/steps`).then(({ steps }) => steps);
 }
 
+/** Why a job failed: its failed step, GitHub's annotations and the end of its log. */
+export type JobFailure = {
+  /** "3. Run tests", or null when GitHub sent no failed step. */
+  failedStep: string | null;
+  /** True when the runner failed the job before any of its steps started. */
+  runnerFailed: boolean;
+  annotations: string[];
+  /** The log's last lines up to its last error, or null when GitHub no longer has the log. */
+  log: string[] | null;
+};
+
+export function getJobFailure(jobId: number) {
+  return api<JobFailure>(`/runs/jobs/${jobId}/failure`);
+}
+
+/** An example failure for a sample job. */
+export function sampleJobFailure(): JobFailure {
+  return {
+    failedStep: "6. Run pnpm check",
+    runnerFailed: false,
+    annotations: [],
+    log: [
+      "##[group]Run pnpm check",
+      "pnpm check",
+      "##[endgroup]",
+      "> relayrunner@ check /home/runner/work/app/app",
+      "> pnpm lint && pnpm typecheck",
+      "",
+      "src/routes/runs.ts(49,7): error TS18047: 'user' is possibly 'null'.",
+      " ELIFECYCLE  Command failed with exit code 2.",
+      "##[error]Process completed with exit code 2.",
+    ],
+  };
+}
+
 /** What started a run, the way people say it: "PR #12", "push", "manual". */
 export function triggerText(run: Pick<Run, "event" | "pullRequest">) {
   if (!run.event) return null;

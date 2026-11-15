@@ -177,7 +177,7 @@ export async function recordInstaller(db: Db, installationId: number, githubId: 
 }
 
 /** The user's numeric GitHub id, from their GitHub sign-in. Null without one. */
-async function userGitHubId(db: Db, userId: string) {
+export async function userGitHubId(db: Db, userId: string) {
   const [row] = await db
     .select({ accountId: schema.account.accountId })
     .from(schema.account)

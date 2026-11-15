@@ -1,4 +1,5 @@
 import { type RelayInputs, readRunnerOrder } from "@relayrunner/runner-order";
+import { Recent } from "../recent.ts";
 import { accountUsage } from "../actions-billing.ts";
 import { accountSpend } from "../provider-spend.ts";
 import { DurableObject } from "cloudflare:workers";
@@ -1007,29 +1008,6 @@ function runnersUnavailable(job: PickedJob, error: unknown) {
     }),
   );
   return error instanceof GitHubRateLimitError ? ("rate_limited" as const) : null;
-}
-
-// Values read from GitHub (or D1), reused while younger than the age a caller accepts. Each is kept as a
-// promise so callers that arrive together share one read, and a failed read is forgotten so the
-// next caller asks again.
-class Recent<K, V> {
-  private entries = new Map<K, { at: number; value: Promise<V> }>();
-
-  get(key: K, maxAge: number, read: () => Promise<V>): Promise<V> {
-    const now = Date.now();
-    const cached = this.entries.get(key);
-    if (cached && now - cached.at < maxAge) return cached.value;
-    const value = read();
-    this.entries.set(key, { at: now, value });
-    value.catch(() => {
-      if (this.entries.get(key)?.value === value) this.entries.delete(key);
-    });
-    return value;
-  }
-
-  forget(key: K) {
-    this.entries.delete(key);
-  }
 }
 
 // The machines a live route still holds.

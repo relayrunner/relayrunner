@@ -7,7 +7,7 @@ import { withCatalog } from "../provider-catalog.ts";
 import { recentJobs } from "../job-times.ts";
 import { appInstallationToken, workflowJobSteps } from "../github-app.ts";
 import { jobSource, listRuns, runJobs } from "../runs.ts";
-import { runFailures } from "../job-failures.ts";
+import { jobFailure, runFailures } from "../job-failures.ts";
 import { Days } from "./job-times.ts";
 import { AppError } from "@relayrunner/errors";
 
@@ -19,8 +19,9 @@ const RunParams = z.object({ repositoryId: Id, runId: Id, runAttempt: Id });
 // /:repositoryId/:runId/:runAttempt/jobs is one run attempt's jobs, for its expanded row. /jobs is
 // every job a runner finished in the last ?days=N days, newest first, for the Jobs view.
 // /jobs/:jobId/steps is one job's steps, read from GitHub when its detail opens.
+// /jobs/:jobId/failure is why one failed job failed, with the end of its log, for its detail.
 // /:repositoryId/:runId/:runAttempt/failures is why the attempt's jobs failed, with log excerpts
-// read from GitHub, for agents.
+// read from GitHub, for agents. Both answer only someone who can read the repo on GitHub.
 export const runRoutes = new Hono<AppEnv>()
   .get("/", requireUser, requireWorkspace, withCatalog, async (c) =>
     c.json(await listRuns(c.var.db, c.var.workspace.id)),
@@ -37,6 +38,19 @@ export const runRoutes = new Hono<AppEnv>()
     if (!source) throw new AppError("NOT_FOUND");
     const token = await appInstallationToken(c.env, source.installationId);
     return c.json({ steps: await workflowJobSteps(token, source.repository, jobId.data) });
+  })
+  .get("/jobs/:jobId/failure", requireUser, requireWorkspace, async (c) => {
+    const jobId = Id.safeParse(c.req.param("jobId"));
+    if (!jobId.success) throw new AppError("INVALID_REQUEST");
+    const failure = await jobFailure(
+      c.var.db,
+      c.env,
+      c.var.workspace.id,
+      c.var.user!.id,
+      jobId.data,
+    );
+    if (!failure) throw new AppError("NOT_FOUND");
+    return c.json(failure);
   })
   .get(
     "/:repositoryId/:runId/:runAttempt/jobs",
@@ -57,6 +71,8 @@ export const runRoutes = new Hono<AppEnv>()
     async (c) => {
       const parsed = RunParams.safeParse(c.req.param());
       if (!parsed.success) throw new AppError("INVALID_REQUEST");
-      return c.json(await runFailures(c.var.db, c.env, c.var.workspace.id, parsed.data));
+      return c.json(
+        await runFailures(c.var.db, c.env, c.var.workspace.id, c.var.user!.id, parsed.data),
+      );
     },
   );

@@ -1,5 +1,5 @@
 import type { RouteWalk } from "@relayrunner/activity";
-import { logExcerpt, MAX_EXCERPT_CHARS, MAX_LINES } from "./job-failures.ts";
+import { forgetRecentFailures, logExcerpt, MAX_EXCERPT_CHARS, MAX_LINES } from "./job-failures.ts";
 import type { WebhookMessage } from "@relayrunner/github-webhooks";
 import { afterEach, beforeAll, describe, expect, test, vi } from "vitest";
 import { createDb, schema } from "./db/index.ts";
@@ -478,6 +478,40 @@ describe("run failures", () => {
     expect(long.join("\n").length).toBeLessThanOrEqual(MAX_EXCERPT_CHARS);
   });
 
+  // GitHub for the failure reads: `access` is the user's permission on the repo, `remaining` the
+  // installation's calls left of 5,000. Logs answer from `logs`, by job id, else a short failure.
+  function stubGitHub({
+    access = "read",
+    remaining = 4000,
+    logs = {},
+    annotations = {},
+  }: {
+    access?: string;
+    remaining?: number;
+    logs?: Record<number, Response>;
+    annotations?: Record<number, string[]>;
+  } = {}) {
+    const requested: string[] = [];
+    vi.stubGlobal("fetch", async (url: string) => {
+      requested.push(url);
+      if (url.endsWith("/rate_limit"))
+        return Response.json({
+          resources: { core: { limit: 5000, used: 5000 - remaining, remaining, reset: 2e9 } },
+        });
+      if (/\/user\/\d+$/.test(url)) return Response.json({ login: "octo" });
+      if (url.endsWith("/permission")) return Response.json({ permission: access });
+      const job = Number(url.match(/\/(\d+)\/(annotations|logs)$/)?.[1]);
+      if (url.endsWith("/annotations"))
+        return Response.json((annotations[job] ?? []).map((message) => ({ message })));
+      return (
+        logs[job] ?? new Response("2026-11-14T10:00:00Z ok\n2026-11-14T10:00:01Z ##[error]boom\n")
+      );
+    });
+    return requested;
+  }
+
+  afterEach(() => forgetRecentFailures());
+
   test("lists a run's failed jobs with their step, annotations and log excerpt", async () => {
     const { cookie, installationId } = await connectedWorkspace();
     const failed = timing(installationId, 30, {
@@ -496,15 +530,9 @@ describe("run failures", () => {
       hoursAgo: 0.5,
     });
     await insert([timing(installationId, 20, { runId: 300 }), failed, lost]);
-    const requested: string[] = [];
-    vi.stubGlobal("fetch", async (url: string) => {
-      requested.push(url);
-      if (url.endsWith("/annotations"))
-        return Response.json(
-          url.includes(`/${lost.id}/`) ? [{ message: "lost communication" }] : [],
-        );
-      if (url.includes(`/${lost.id}/logs`)) return new Response("gone", { status: 410 });
-      return new Response("2026-11-14T10:00:00Z ok\n2026-11-14T10:00:01Z ##[error]boom\n");
+    const requested = stubGitHub({
+      logs: { [lost.id!]: new Response("gone", { status: 410 }) },
+      annotations: { [lost.id!]: ["lost communication"] },
     });
 
     const res = await testing.call(env, `/runs/${installationId * 10}/300/1/failures`, cookie);
@@ -534,6 +562,47 @@ describe("run failures", () => {
         },
       ],
     });
-    expect(requested).toHaveLength(4);
+    // The access check (2) and a rate check, then annotations and log per job.
+    expect(requested).toHaveLength(7);
+  });
+
+  test("reads one failed job's excerpt once, then reuses it", async () => {
+    const { cookie, installationId } = await connectedWorkspace();
+    const failed = timing(installationId, 30, { conclusion: "failure", failedStep: "2. Test" });
+    const passed = timing(installationId, 30);
+    await insert([failed, passed]);
+    const requested = stubGitHub();
+
+    const res = await testing.call(env, `/runs/jobs/${failed.id}/failure`, cookie);
+    expect(res.status).toBe(200);
+    expect(await res.json()).toMatchObject({ failedStep: "2. Test", log: ["ok", "##[error]boom"] });
+    const reads = requested.length;
+    expect((await testing.call(env, `/runs/jobs/${failed.id}/failure`, cookie)).status).toBe(200);
+    expect(requested).toHaveLength(reads);
+    // A job that passed has no failure to show.
+    expect((await testing.call(env, `/runs/jobs/${passed.id}/failure`, cookie)).status).toBe(404);
+  });
+
+  test("shows a failure only to someone who can read the repo on GitHub", async () => {
+    const { cookie, installationId } = await connectedWorkspace();
+    const failed = timing(installationId, 30, { conclusion: "failure" });
+    await insert([failed]);
+    const requested = stubGitHub({ access: "none" });
+
+    const res = await testing.call(env, `/runs/jobs/${failed.id}/failure`, cookie);
+    expect(res.status).toBe(403);
+    expect(requested.some((url) => url.endsWith("/logs"))).toBe(false);
+  });
+
+  test("leaves the installation's last API calls to routing", async () => {
+    const { cookie, installationId } = await connectedWorkspace();
+    const failed = timing(installationId, 30, { conclusion: "failure" });
+    await insert([failed]);
+    const requested = stubGitHub({ remaining: 300 });
+
+    const res = await testing.call(env, `/runs/jobs/${failed.id}/failure`, cookie);
+    expect(res.status).toBe(503);
+    expect(await res.json()).toMatchObject({ error: { code: "GITHUB_RATE_LIMITED" } });
+    expect(requested.some((url) => url.endsWith("/logs"))).toBe(false);
   });
 });
