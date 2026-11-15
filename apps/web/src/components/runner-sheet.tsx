@@ -2,7 +2,7 @@ import { sizeText } from "@relayrunner/providers";
 import { Link, useNavigate } from "@tanstack/react-router";
 import { ChevronRightIcon } from "lucide-react";
 import { type ReactNode, useEffect, useState } from "react";
-import { BranchHeading } from "@/components/branch-heading";
+import { BranchHeading, toggleKey } from "@/components/branch-heading";
 import { CommitBy } from "@/components/commit";
 import { CopyButton } from "@/components/add-runner";
 import { providerOf, providerStyle, RunnerMark } from "@/components/providers";
@@ -22,7 +22,7 @@ import {
   type RunnerReport,
   sampleRunnerReport,
 } from "@/lib/runner-report";
-import { type BranchGroup, groupByBranch } from "@/lib/branch-groups";
+import { groupByBranch } from "@/lib/branch-groups";
 import { isLongWait, runParam } from "@/lib/runs";
 import { unlessDefault, useSetSearch } from "@/lib/search-params";
 import {
@@ -409,6 +409,7 @@ function Throughput({ report, phrase }: { report: RunnerReport; phrase: string }
 }
 
 function RecentJobs({ report }: { report: RunnerReport }) {
+  const [folded, setFolded] = useState<ReadonlySet<string>>(new Set());
   if (!report.recent.length) return null;
   return (
     <Section title="Recent jobs">
@@ -431,11 +432,35 @@ function RecentJobs({ report }: { report: RunnerReport }) {
             </tr>
           </thead>
           {groupByBranch(report.recent).map((group) => (
-            <tbody key={group.key} className="divide-y">
-              {group.branch !== null && <BranchRow group={group} />}
-              {group.jobs.map((job) => (
-                <RecentJobRow key={job.id} job={job} />
-              ))}
+            <tbody key={group.key}>
+              {group.branch === null ? (
+                <RecentJobRow job={group.jobs[0]!} />
+              ) : (
+                <>
+                  <tr className="border-b bg-secondary/20">
+                    <th
+                      scope="rowgroup"
+                      colSpan={4}
+                      className="py-1.5 pr-3 pl-2 text-left font-normal"
+                    >
+                      <BranchHeading
+                        group={group}
+                        open={!folded.has(group.key)}
+                        onToggle={() => setFolded((keys) => toggleKey(keys, group.key))}
+                      />
+                    </th>
+                  </tr>
+                  {!folded.has(group.key) &&
+                    group.jobs.map((job, index) => (
+                      <RecentJobRow
+                        key={job.id}
+                        job={job}
+                        grouped
+                        newCommit={index > 0 && job.sha !== group.jobs[index - 1]!.sha}
+                      />
+                    ))}
+                </>
+              )}
             </tbody>
           ))}
         </table>
@@ -444,21 +469,37 @@ function RecentJobs({ report }: { report: RunnerReport }) {
   );
 }
 
-function BranchRow({ group }: { group: BranchGroup<RunnerJob> }) {
-  return (
-    <tr className="bg-secondary/20 text-xs text-muted-foreground">
-      <th scope="rowgroup" colSpan={4} className="py-1.5 pr-3 pl-3 text-left font-normal">
-        <BranchHeading group={group} />
-      </th>
-    </tr>
-  );
-}
-
-function RecentJobRow({ job }: { job: RunnerJob }) {
+/**
+ * A job's row. `grouped` indents it on a rail under its group's heading, with no dividers between a
+ * group's jobs, only a short one from the rail where a `newCommit`'s jobs start.
+ */
+function RecentJobRow({
+  job,
+  grouped = false,
+  newCommit = false,
+}: {
+  job: RunnerJob;
+  grouped?: boolean;
+  newCommit?: boolean;
+}) {
   const wait = job.queuedAt === null ? null : job.startedAt - job.queuedAt;
   return (
-    <tr className="hover:bg-secondary/30">
-      <th scope="row" className="py-2 pr-4 pl-3 text-left font-normal">
+    <tr
+      className={cn(
+        "hover:bg-secondary/30",
+        newCommit &&
+          "[&>td]:border-t [&>th]:after:absolute [&>th]:after:top-0 [&>th]:after:right-0 [&>th]:after:left-[17.5px] [&>th]:after:h-px [&>th]:after:bg-border",
+      )}
+    >
+      <th
+        scope="row"
+        className={cn(
+          "py-2 pr-4 text-left font-normal",
+          grouped
+            ? "relative pl-9 before:absolute before:inset-y-0 before:left-[17.5px] before:w-px before:bg-border"
+            : "pl-3",
+        )}
+      >
         <Link
           to="/history"
           search={{ run: runParam(job), job: job.id }}

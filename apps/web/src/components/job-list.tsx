@@ -1,14 +1,19 @@
 import { getRouteApi } from "@tanstack/react-router";
 import { GitPullRequestIcon } from "lucide-react";
 import { memo, useMemo, useState } from "react";
-import { BranchHeading } from "@/components/branch-heading";
+import { BranchHeading, toggleKey } from "@/components/branch-heading";
 import { DurationChart, jobPoints } from "@/components/duration-chart";
 import { SectionBoundary } from "@/components/error-boundary";
 import { RangePicker } from "@/components/range-picker";
 import { CommitBy } from "@/components/commit";
 import { RunLink } from "@/components/run-sheet";
 import { RunnerLink, type RunnerRef } from "@/components/runner-link";
-import { createCellContext, DataTable, dataTableColumns } from "@/components/ui/data-table";
+import {
+  createCellContext,
+  DataTable,
+  dataTableColumns,
+  type DataTableRow,
+} from "@/components/ui/data-table";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import {
@@ -64,6 +69,30 @@ const FLAT_KEY = "relayrunner:history:jobs-flat";
 function groupRows(rows: Row[]): Row[] {
   return groupByBranch(rows).map((group) =>
     group.branch === null ? group.jobs[0]! : { ...group.jobs[0]!, group, subRows: group.jobs },
+  );
+}
+
+// A group's jobs: indented on a rail that drops from its heading's toggle, with no dividers between
+// them, only a short one from the rail where a new commit's jobs start.
+const GROUPED_ROW =
+  "[&>td:first-child]:relative [&>td:first-child]:pl-10 [&>td:first-child]:before:absolute [&>td:first-child]:before:inset-y-0 [&>td:first-child]:before:left-[21.5px] [&>td:first-child]:before:w-px [&>td:first-child]:before:bg-border";
+const NEW_COMMIT =
+  "[&>td:not(:first-child)]:border-t [&>td:first-child]:after:absolute [&>td:first-child]:after:top-0 [&>td:first-child]:after:right-0 [&>td:first-child]:after:left-[21.5px] [&>td:first-child]:after:h-px [&>td:first-child]:after:bg-border";
+
+function groupedRowClass(
+  row: DataTableRow<Row>,
+  around: { previous?: DataTableRow<Row>; next?: DataTableRow<Row> },
+) {
+  if (row.original.group) return "bg-secondary/20 hover:bg-secondary/20 [&>td]:py-2 [&>td]:pl-3";
+  if (row.depth === 0) return undefined;
+  const { previous, next } = around;
+  return cn(
+    GROUPED_ROW,
+    next?.parentId === row.parentId && "border-b-0",
+    previous &&
+      previous.parentId === row.parentId &&
+      previous.original.sha !== row.original.sha &&
+      NEW_COMMIT,
   );
 }
 
@@ -218,6 +247,7 @@ export const JobList = memo(function JobList({ report: first }: { report: JobsRe
   });
   const query = history.useSearch({ select: (search) => search.q ?? "" });
   const [flat, setFlat] = useState(() => readFlag(FLAT_KEY));
+  const [folded, setFolded] = useState<ReadonlySet<string>>(new Set());
   const setSearch = useSetSearch<HistorySearch>();
   // Each range is its own load, since the newest jobs alone can fill a busy workspace's list.
   const report = useRangeReport(first, days, load);
@@ -255,8 +285,13 @@ export const JobList = memo(function JobList({ report: first }: { report: JobsRe
   const grouped = !flat && !query.trim();
   const tableRows = useMemo(() => (grouped ? groupRows(shown) : shown), [grouped, shown]);
   const expanded = useMemo(
-    () => Object.fromEntries(tableRows.filter((row) => row.group).map((row) => [rowId(row), true])),
-    [tableRows],
+    () =>
+      Object.fromEntries(
+        tableRows.flatMap((row) =>
+          row.group && !folded.has(row.group.key) ? [[rowId(row), true]] : [],
+        ),
+      ),
+    [tableRows, folded],
   );
   const chartPoints = useMemo(() => jobPoints(shown), [shown]);
   const hasUsage = useMemo(() => shown.some((job) => job.usage), [shown]);
@@ -343,16 +378,19 @@ export const JobList = memo(function JobList({ report: first }: { report: JobsRe
                 getRowId={rowId}
                 getSubRows={(row) => row.subRows}
                 expanded={grouped ? expanded : undefined}
-                rowClassName={(row) =>
-                  row.original.group ? "bg-secondary/20 hover:bg-secondary/20" : undefined
-                }
-                fullRow={(row) =>
-                  row.group && (
-                    <span className="block text-xs text-muted-foreground">
-                      <BranchHeading group={row.group} />
-                    </span>
-                  )
-                }
+                rowClassName={groupedRowClass}
+                fullRow={(row) => {
+                  const group = row.group;
+                  return (
+                    group && (
+                      <BranchHeading
+                        group={group}
+                        open={!folded.has(group.key)}
+                        onToggle={() => setFolded((keys) => toggleKey(keys, group.key))}
+                      />
+                    )
+                  );
+                }}
                 search={query.trim()}
                 rowHeight={53}
                 empty="No jobs match these filters."

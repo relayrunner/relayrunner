@@ -100,6 +100,11 @@ export const NUM: ColumnMeta = {
   className: "whitespace-nowrap text-muted-foreground",
 };
 
+type RowClassName<TData extends RowData> = (
+  row: Row<typeof features, TData>,
+  around: { previous?: Row<typeof features, TData>; next?: Row<typeof features, TData> },
+) => string | undefined;
+
 const ARIA_SORT = { asc: "ascending", desc: "descending" } as const;
 
 // Below this many rows every row renders. Above it, only the rows near the viewport do.
@@ -134,7 +139,8 @@ export function DataTable<TData extends RowData>({
   getSubRows?: (row: TData) => TData[] | undefined;
   expanded?: ExpandedState;
   onExpandedChange?: OnChangeFn<ExpandedState>;
-  rowClassName?: (row: Row<typeof features, TData>) => string | undefined;
+  /** A row's classes, which can look at the rows shown either side of it. */
+  rowClassName?: RowClassName<TData>;
   /** What a row shows across the whole width instead of its cells, such as a group's heading. */
   fullRow?: (row: TData) => ReactNode;
 }) {
@@ -216,12 +222,12 @@ export function DataTable<TData extends RowData>({
         />
       ) : (
         <TableBody>
-          {rows.map((row) => (
+          {rows.map((row, index) => (
             <DataRow
               key={row.id}
               row={row}
               expanded={row.getIsExpanded()}
-              className={rowClassName?.(row)}
+              className={rowClassName?.(row, { previous: rows[index - 1], next: rows[index + 1] })}
               full={fullRow?.(row.original)}
             />
           ))}
@@ -284,7 +290,7 @@ function VirtualRows<TData extends RowData>({
   rows: Row<typeof features, TData>[];
   columns: number;
   rowHeight: number;
-  rowClassName?: (row: Row<typeof features, TData>) => string | undefined;
+  rowClassName?: RowClassName<TData>;
   fullRow?: (row: TData) => ReactNode;
 }) {
   const bodyRef = useRef<HTMLTableSectionElement>(null);
@@ -316,7 +322,10 @@ function VirtualRows<TData extends RowData>({
             key={item.key}
             row={row}
             expanded={row.getIsExpanded()}
-            className={rowClassName?.(row)}
+            className={rowClassName?.(row, {
+              previous: rows[item.index - 1],
+              next: rows[item.index + 1],
+            })}
             full={fullRow?.(row.original)}
             index={item.index}
             measure={virtualizer.measureElement}

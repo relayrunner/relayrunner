@@ -11,13 +11,13 @@ export type BranchGroup<Job> = {
 
 type Groupable = Pick<
   HistoryJob,
-  "id" | "repositoryId" | "repository" | "branch" | "pullRequest" | "title"
+  "id" | "repositoryId" | "repository" | "branch" | "pullRequest" | "title" | "sha"
 >;
 
 /**
  * Jobs grouped by repository and branch, so a pull request's pushes and PR runs land together.
- * Groups keep the jobs' order and come in the order of their first job; a job with no known branch
- * is a group of its own.
+ * Groups come in the order of their first job, and hold their jobs by commit, newest first, keeping
+ * the jobs' order within a commit. A job with no known branch is a group of its own.
  */
 export function groupByBranch<Job extends Groupable>(jobs: Job[]): BranchGroup<Job>[] {
   const groups = new Map<string, BranchGroup<Job>>();
@@ -33,6 +33,12 @@ export function groupByBranch<Job extends Groupable>(jobs: Job[]): BranchGroup<J
       group.pullRequest = { number: job.pullRequest, title: job.title };
     }
     group.jobs.push(job);
+  }
+  // A group's commits newest first, each commit's jobs together, so back-to-back pushes read apart.
+  for (const group of groups.values()) {
+    const order = new Map<string | null, number>();
+    for (const job of group.jobs) if (!order.has(job.sha)) order.set(job.sha, order.size);
+    group.jobs.sort((a, b) => order.get(a.sha)! - order.get(b.sha)!);
   }
   return [...groups.values()];
 }

@@ -3,7 +3,7 @@ import { groupByBranch } from "./branch-groups.ts";
 
 const job = (
   id: number,
-  fields: { branch: string | null; pullRequest?: number; title?: string },
+  fields: { branch: string | null; pullRequest?: number; title?: string; sha?: string },
 ) => ({
   id,
   repositoryId: 1,
@@ -11,6 +11,7 @@ const job = (
   branch: fields.branch,
   pullRequest: fields.pullRequest ?? null,
   title: fields.title ?? null,
+  sha: fields.sha ?? null,
 });
 
 describe("groupByBranch", () => {
@@ -27,6 +28,15 @@ describe("groupByBranch", () => {
     expect(groups[0]!.pullRequest).toEqual({ number: 7, title: "Fix the cache" });
     expect(groups[1]!.pullRequest).toBeNull();
     expect(groups[2]!.branch).toBeNull();
+  });
+
+  test("keeps a commit's jobs together, newest commit first", () => {
+    const groups = groupByBranch([
+      job(1, { branch: "fix", sha: "b" }),
+      job(2, { branch: "fix", sha: "a" }),
+      job(3, { branch: "fix", sha: "b" }),
+    ]);
+    expect(groups[0]!.jobs.map((each) => each.id)).toEqual([1, 3, 2]);
   });
 
   test("keeps the same branch name in two repositories apart", () => {
