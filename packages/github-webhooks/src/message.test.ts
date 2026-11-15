@@ -297,3 +297,31 @@ describe("job steps", () => {
     expect(queued?.event === "workflow_job" && queued.job.steps).toBeUndefined();
   });
 });
+
+describe("job runner", () => {
+  const payload = (runner_name: string, runner_group_name: string) => ({
+    action: "completed",
+    repository: { id: 1, full_name: "a/b" },
+    workflow_job: {
+      id: 9,
+      run_id: 3,
+      status: "completed",
+      head_sha: "abc",
+      runner_name,
+      runner_group_name,
+    },
+  });
+
+  test("an empty name and group mean no runner took the job", () => {
+    const message = toWebhookMessage("workflow_job", "d", payload("", ""));
+    expect(message?.event === "workflow_job" && message.job).toMatchObject({
+      runnerName: null,
+      runnerGroupName: null,
+    });
+    const ran = toWebhookMessage("workflow_job", "d", payload("mighty-m1", "Default"));
+    expect(ran?.event === "workflow_job" && ran.job).toMatchObject({
+      runnerName: "mighty-m1",
+      runnerGroupName: "Default",
+    });
+  });
+});

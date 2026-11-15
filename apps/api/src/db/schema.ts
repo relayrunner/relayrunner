@@ -632,6 +632,8 @@ export const runnerWaitDay = sqliteTable(
     primaryKey({
       columns: [table.day, table.provider, table.platform, table.vcpus, table.installationId],
     }),
+    // The cascade when an installation is removed; reads go by day.
+    index("runner_wait_day_installation_idx").on(table.installationId),
   ],
 );
 

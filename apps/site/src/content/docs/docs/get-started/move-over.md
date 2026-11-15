@@ -1,6 +1,6 @@
 ---
 title: Move your workflows over
-description: What relayrunner init changes in your workflows, and which jobs it leaves alone.
+description: What relayrunner init changes in your GitHub Actions workflows, and which jobs it leaves alone.
 ---
 
 Routing a job through RelayRunner is one change: a relay job in front of it, and a `runs-on` that points at the relay's answer. `relayrunner init` makes that change for you.

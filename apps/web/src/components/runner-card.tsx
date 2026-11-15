@@ -437,15 +437,16 @@ export function MachineChip({ view }: { view: MachineView }) {
 }
 
 /**
- * Whose it is. A runner added from GitHub lives in its org, not with a person. The GitHub mark
- * keeps the org's name from reading as the app's (an org can be named "relayrunner").
+ * Whose it is. A runner added from GitHub lives in its org, or on one repo (owner/name), not with a
+ * person. The GitHub mark keeps the org's name from reading as the app's (an org can be named
+ * "relayrunner").
  */
 export function MachineOwner({ machine, view }: { machine: Machine; view: MachineView }) {
   if (view.isGithub)
     return (
       <span className="flex min-w-0 items-center gap-1.5">
         <GithubIcon className="size-3.5 shrink-0 text-muted-foreground" />
-        <span className="truncate">{machine.owner ?? "GitHub"}</span>
+        <span className="truncate">{machine.github?.repo ?? machine.owner ?? "GitHub"}</span>
       </span>
     );
   if (!view.ownerName) return <NotReported />;

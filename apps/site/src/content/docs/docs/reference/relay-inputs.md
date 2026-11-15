@@ -1,6 +1,6 @@
 ---
 title: relay.yml inputs
-description: Every input and output of the relay workflow.
+description: Every input and output of the relay, a reusable GitHub Actions workflow.
 ---
 
 The relay is a reusable workflow in [relayrunner/actions](https://github.com/relayrunner/actions). Add one in front of each job you want routed.

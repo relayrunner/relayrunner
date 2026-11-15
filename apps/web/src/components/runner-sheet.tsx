@@ -1,43 +1,60 @@
 import { sizeText } from "@relayrunner/providers";
 import { Link, useNavigate } from "@tanstack/react-router";
 import { ChevronRightIcon } from "lucide-react";
-import { type ReactNode, useEffect, useMemo, useState } from "react";
+import { type ReactNode, useEffect, useState } from "react";
 import { CopyButton } from "@/components/add-runner";
 import { providerOf, providerStyle, RunnerMark } from "@/components/providers";
-import { RangePicker } from "@/components/range-picker";
+import { TimeRangePicker } from "@/components/range-picker";
 import { withRunner } from "@/components/runner-panel-link";
 import { Facts, LINK, Links } from "@/components/run-sheet";
 import { StatusIcon } from "@/components/status-icon";
 import { Sheet, SheetContent, SheetDescription, SheetTitle } from "@/components/ui/sheet";
 import { timeAgo } from "@/lib/activity";
 import { authDisabled } from "@/lib/auth-client";
-import { clock, plural } from "@/lib/job-times";
+import { clock, DAY_MS, HOUR_MS, plural } from "@/lib/job-times";
 import { cachedMachine, type Machine, workspaceMachine } from "@/lib/machines";
-import { everyDay, onlineSpans, type RunnerDay } from "@/lib/runner-days";
+import { onlineSpans, type RunnerBucket } from "@/lib/runner-days";
 import { getRunnerReport, type RunnerReport, sampleRunnerReport } from "@/lib/runner-report";
 import { isLongWait, runParam } from "@/lib/runs";
 import { unlessDefault, useSetSearch } from "@/lib/search-params";
+import {
+  type RangeOptions,
+  rangePhrase,
+  resolveRange,
+  shortDate,
+  type TimeRange,
+} from "@/lib/time-range";
 import { minutes } from "@/lib/usage";
-import { cn, count, percent } from "@/lib/utils";
+import { cn, count, niceMax, percent } from "@/lib/utils";
 
-export const RUNNER_RANGES = [7, 14, 30] as const;
-export const RUNNER_DEFAULT_DAYS = 14;
+/**
+ * The panel's ranges, down to the past hour, with bars per 15 minutes, per hour or per day. They
+ * reach back 30 days, as far as Performance does.
+ */
+export const RUNNER_RANGES: RangeOptions = {
+  presets: ["1h", "3h", "24h", "2d", "7d", "14d", "30d", "today", "yesterday", "week", "lastweek"],
+  customDays: 30,
+};
+export const RUNNER_DEFAULT_RANGE: TimeRange = "14d";
 const MACHINE = "machine:";
 
 // The last reports read, by runner and range, so reopening a runner shows it at once.
 const reports = new Map<string, Promise<RunnerReport>>();
 
-function loadReport(key: string, days: number) {
-  const id = `${key}\u001f${days}`;
+function loadReport(key: string, range: TimeRange) {
+  const id = `${key}\u001f${range}`;
   let request = reports.get(id);
   if (!request) {
+    const window = resolveRange(range);
     request = authDisabled
-      ? Promise.resolve(sampleRunnerReport(key, days))
-      : getRunnerReport(key, days);
+      ? Promise.resolve(sampleRunnerReport(key, window))
+      : getRunnerReport(key, window);
     request.catch(() => reports.delete(id));
     reports.set(id, request);
-    // Kept for a minute: a runner's numbers move as it takes jobs.
-    setTimeout(() => reports.get(id) === request && reports.delete(id), 60_000);
+    // A window that runs to now is kept for a minute, since a runner's numbers move as it takes
+    // jobs. One that's over, such as yesterday, stays put.
+    if (window.to > Date.now() - 60_000)
+      setTimeout(() => reports.get(id) === request && reports.delete(id), 60_000);
   }
   return request;
 }
@@ -47,24 +64,25 @@ function loadReport(key: string, days: number) {
  * the jobs it ran last. Which runner is open lives in the URL (`?runner=`), so any page can open
  * it and the back button steps out of it.
  */
-export function RunnerSheet({ runnerKey, days }: { runnerKey: string; days: number }) {
+export function RunnerSheet({ runnerKey, range }: { runnerKey: string; range: TimeRange }) {
   const navigate = useNavigate();
   const close = () => void navigate({ to: ".", search: withRunner() });
-  const setSearch = useSetSearch<{ runnerDays?: number }>();
-  const setDays = (next: number) =>
-    setSearch({ runnerDays: unlessDefault(next, RUNNER_DEFAULT_DAYS) });
-  const [report, setReport] = useState<RunnerReport | null>(null);
+  const setSearch = useSetSearch<{ runnerRange?: TimeRange }>();
+  const setRange = (next: TimeRange) =>
+    setSearch({ runnerRange: unlessDefault(next, RUNNER_DEFAULT_RANGE) });
+  // The report shown, with the range it's for: the last one stays up while another loads.
+  const [shown, setShown] = useState<{ range: TimeRange; report: RunnerReport } | null>(null);
   const [failed, setFailed] = useState(false);
   useEffect(() => {
     let live = true;
     setFailed(false);
-    loadReport(runnerKey, days)
-      .then((value) => live && setReport(value))
+    loadReport(runnerKey, range)
+      .then((report) => live && setShown({ range, report }))
       .catch(() => live && setFailed(true));
     return () => {
       live = false;
     };
-  }, [runnerKey, days]);
+  }, [runnerKey, range]);
   const machine = useMachine(runnerKey);
 
   return (
@@ -78,15 +96,15 @@ export function RunnerSheet({ runnerKey, days }: { runnerKey: string; days: numb
                 Couldn't load this runner. Try again in a moment.
               </p>
             </>
-          ) : !report ? (
+          ) : !shown ? (
             <Placeholder />
           ) : (
             <RunnerView
-              report={report}
+              report={shown.report}
               machine={machine}
-              days={days}
-              onDays={setDays}
-              loading={report.days !== days}
+              reportRange={shown.range}
+              range={range}
+              onRange={setRange}
             />
           )}
         </div>
@@ -115,21 +133,23 @@ function useMachine(key: string) {
 function RunnerView({
   report,
   machine,
-  days,
-  onDays,
-  loading,
+  reportRange,
+  range,
+  onRange,
 }: {
   report: RunnerReport;
   machine: Machine | null;
-  days: number;
-  onDays: (days: number) => void;
-  loading: boolean;
+  /** The range `report` is for, which lags `range` while another loads. */
+  reportRange: TimeRange;
+  range: TimeRange;
+  onRange: (range: TimeRange) => void;
 }) {
+  const loading = reportRange !== range;
   const { environment: env, stat, missed } = report;
   const provider = providerOf(env);
   const detail = [env.detail, sizeText(env.size)].filter(Boolean).join(" · ");
   const sent = stat.runs + missed;
-  const byDay = useMemo(() => everyDay(report), [report]);
+  const phrase = rangePhrase(reportRange);
 
   return (
     <>
@@ -143,7 +163,12 @@ function RunnerView({
       </header>
 
       <div className={cn("grid gap-6 transition-opacity", loading && "opacity-60")}>
-        <RangePicker ranges={RUNNER_RANGES} days={days} onChange={onDays} />
+        <TimeRangePicker
+          {...RUNNER_RANGES}
+          value={range}
+          onChange={onRange}
+          className="justify-self-start"
+        />
         <Facts
           className="sm:grid-cols-4"
           items={[
@@ -167,8 +192,8 @@ function RunnerView({
           ]}
         />
 
-        {report.connections && <Uptime report={report} since={byDay[0]!.day} machine={machine} />}
-        <Throughput report={report} days={byDay} />
+        {report.connections && <Uptime report={report} phrase={phrase} machine={machine} />}
+        <Throughput report={report} phrase={phrase} />
         <RecentJobs report={report} />
       </div>
 
@@ -231,20 +256,39 @@ function Section({
   );
 }
 
-const dayLabel = (day: number) =>
-  new Date(day).toLocaleDateString(undefined, { month: "short", day: "numeric" });
+const timeFormat = new Intl.DateTimeFormat(undefined, { hour: "numeric", minute: "2-digit" });
 
-/** A strip across the window, filled where the machine was online. */
-// From `since`, the first day the jobs chart shows, so the two line up.
+/** A time as "3:00 PM" today, or "Nov 13, 3:00 PM" on another day. */
+function timeLabel(ms: number) {
+  const time = timeFormat.format(ms);
+  return new Date(ms).toDateString() === new Date().toDateString()
+    ? time
+    : `${shortDate(ms)}, ${time}`;
+}
+
+/** When a bar starts, as its tooltip and the busiest line name it. */
+const barLabel = (start: number, bucketMs: number) =>
+  bucketMs >= DAY_MS ? shortDate(start) : timeLabel(start);
+
+/** What each bar counts, for the chart's title. */
+const perBar = (bucketMs: number) =>
+  bucketMs >= DAY_MS ? "day" : bucketMs >= HOUR_MS ? "hour" : "15 minutes";
+
+/**
+ * A strip across the window, filled where the machine was online. It starts where the jobs
+ * chart's first bar does, so the two line up.
+ */
 function Uptime({
   report,
-  since,
+  phrase,
   machine,
 }: {
   report: RunnerReport;
-  since: number;
+  phrase: string;
   machine: Machine | null;
 }) {
+  const { to } = report;
+  const from = report.buckets[0]!.start;
   const now = Date.now();
   const spans = onlineSpans(
     report.connections ?? [],
@@ -253,95 +297,98 @@ function Uptime({
       connectedAt: machine?.status?.connectedAt ?? null,
       lastSeenAt: machine?.lastSeenAt ? Date.parse(machine.lastSeenAt) : null,
     },
-    since,
+    from,
     now,
+    to,
   );
-  const onlineMs = spans.reduce((sum, [from, to]) => sum + (to - from), 0);
-  const span = now - since;
+  const onlineMs = spans.reduce((sum, [start, end]) => sum + (end - start), 0);
+  const span = to - from;
   const share = percent(onlineMs / span);
   return (
-    <Section title="Online" aside={`${share} of the last ${plural(report.days, "day")}`}>
+    <Section title="Online" aside={`${share} of ${phrase}`}>
       <div
         role="img"
         aria-label={`Online ${share} of the time`}
         className="relative h-3 overflow-hidden rounded-sm bg-secondary"
       >
-        {spans.map(([from, to]) => (
+        {spans.map(([start, end]) => (
           <span
-            key={from}
-            title={`${new Date(from).toLocaleString()} to ${
-              to >= now - 60_000 ? "now" : new Date(to).toLocaleString()
+            key={start}
+            title={`${new Date(start).toLocaleString()} to ${
+              end >= now - 60_000 ? "now" : new Date(end).toLocaleString()
             }`}
             className="absolute inset-y-0 min-w-px bg-go"
             style={{
-              left: `${((from - since) / span) * 100}%`,
-              width: `${((to - from) / span) * 100}%`,
+              left: `${((start - from) / span) * 100}%`,
+              width: `${((end - start) / span) * 100}%`,
             }}
           />
         ))}
       </div>
-      <Axis from={since} />
+      <Axis from={from} to={to} />
     </Section>
   );
 }
 
-function Axis({ from }: { from: number }) {
+/** The window's two ends under a chart: days, or times of day for a window under two days. */
+function Axis({ from, to }: { from: number; to: number }) {
+  const now = Date.now();
+  const short = to - from <= 2 * DAY_MS;
+  const label = short ? timeLabel : shortDate;
   return (
-    <div className="flex justify-between text-[11px] text-muted-foreground">
-      <span>{dayLabel(from)}</span>
-      <span>Today</span>
+    <div className="flex justify-between text-[11px] text-muted-foreground tabular-nums">
+      <span>{label(from)}</span>
+      <span>{to >= now - 60_000 ? (short ? "Now" : "Today") : label(to - 1)}</span>
     </div>
   );
 }
 
-/** Jobs per day as bars, failures stacked on top, with the time spent running them. */
-function Throughput({ report, days }: { report: RunnerReport; days: RunnerDay[] }) {
-  const busyMs = days.reduce((sum, day) => sum + day.busyMs, 0);
-  const most = Math.max(1, ...days.map((day) => day.jobs));
-  const busiest = days.reduce<RunnerDay | null>(
-    (best, day) => (day.jobs > (best?.jobs ?? 0) ? day : best),
+/** Jobs per bar, failures stacked on top, with the time spent running them. */
+function Throughput({ report, phrase }: { report: RunnerReport; phrase: string }) {
+  const bars = report.buckets;
+  const busyMs = bars.reduce((sum, bar) => sum + bar.busyMs, 0);
+  const most = niceMax(Math.max(...bars.map((bar) => bar.jobs)));
+  const busiest = bars.reduce<RunnerBucket | null>(
+    (best, bar) => (bar.jobs > (best?.jobs ?? 0) ? bar : best),
     null,
   );
+  const title = `Jobs per ${perBar(report.bucketMs)}`;
   return (
-    <Section title="Jobs per day" aside={`${minutes(busyMs / 60_000)} min running jobs`}>
+    <Section title={title} aside={`${minutes(busyMs / 60_000)} min running jobs`}>
       {report.stat.runs === 0 ? (
-        <p className="text-sm text-muted-foreground">
-          No jobs in the last {plural(report.days, "day")}.
-        </p>
+        <p className="text-sm text-muted-foreground">No jobs in {phrase}.</p>
       ) : (
         <>
-          <div className="flex h-24 items-end gap-[2px]" role="img" aria-label="Jobs per day">
-            {days.map((day) => {
-              const ok = day.jobs - day.failures;
+          <div className="flex h-24 items-end gap-[2px]" role="img" aria-label={title}>
+            {bars.map((bar) => {
+              const ok = bar.jobs - bar.failures;
               return (
                 <div
-                  key={day.day}
-                  title={`${dayLabel(day.day)}: ${plural(day.jobs, "job")}${
-                    day.failures ? `, ${day.failures} failed` : ""
-                  } · ${minutes(day.busyMs / 60_000)} min`}
+                  key={bar.start}
+                  title={`${barLabel(bar.start, report.bucketMs)}: ${plural(bar.jobs, "job")}${
+                    bar.failures ? `, ${bar.failures} failed` : ""
+                  } · ${minutes(bar.busyMs / 60_000)} min`}
                   className="flex h-full min-w-0 flex-1 flex-col justify-end rounded-t-[2px] hover:bg-secondary/60"
                 >
-                  {day.failures > 0 && (
+                  {bar.failures > 0 && (
                     <span
                       className="block bg-destructive/80"
-                      style={{ height: `${(day.failures / most) * 100}%` }}
+                      style={{ height: `${(bar.failures / most) * 100}%` }}
                     />
                   )}
                   <span
-                    className={cn(
-                      "block bg-muted-foreground/60",
-                      day.jobs === 0 && "h-px bg-border",
-                    )}
-                    style={day.jobs ? { height: `${(ok / most) * 100}%` } : undefined}
+                    className={cn("block bg-go/70", bar.jobs === 0 && "h-px bg-border")}
+                    style={bar.jobs ? { height: `${(ok / most) * 100}%` } : undefined}
                   />
                 </div>
               );
             })}
           </div>
-          <Axis from={days[0]!.day} />
+          <Axis from={bars[0]!.start} to={report.to} />
           {busiest && (
             <p className="text-xs text-muted-foreground">
-              Busiest on {dayLabel(busiest.day)} with {plural(busiest.jobs, "job")}.
+              Busiest {report.bucketMs >= DAY_MS ? "on" : "at"}{" "}
+              {barLabel(busiest.start, report.bucketMs)} with {plural(busiest.jobs, "job")}.
             </p>
           )}
         </>

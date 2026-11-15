@@ -54,6 +54,7 @@ export default defineConfig({
           label: "Get started",
           items: [
             "docs/get-started/overview",
+            "docs/get-started/github-actions",
             "docs/get-started/quickstart",
             "docs/get-started/install",
             "docs/get-started/agents",

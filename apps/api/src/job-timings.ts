@@ -130,6 +130,36 @@ function addedRunner(
 }
 
 /**
+ * Puts the jobs a runner ran before it was added from GitHub under it, matched by name like
+ * addedRunner, so its history shows from the day it's added.
+ */
+export async function claimRunnerJobs(
+  db: Db,
+  machine: {
+    id: string;
+    installationId: number | null;
+    name: string;
+    githubRepositoryId: number | null;
+  },
+) {
+  if (!machine.installationId) return;
+  await db
+    .update(table)
+    .set({ machineId: machine.id })
+    .where(
+      and(
+        eq(table.installationId, machine.installationId),
+        eq(table.runnerName, machine.name),
+        isNull(table.machineId),
+        sql`coalesce(${table.runnerGroupName}, '') <> ${GITHUB_HOSTED_GROUP}`,
+        machine.githubRepositoryId === null
+          ? undefined
+          : eq(table.repositoryId, machine.githubRepositoryId),
+      ),
+    );
+}
+
+/**
  * Stores a job's timing, for every job in a connected repo, whoever's runner it asked for. Each
  * delivery carries the job's whole state, so `queued` writes the row, `in_progress` adds its runner
  * and start, and `completed` its finish and conclusion. A finished row never changes again, so an
@@ -138,8 +168,14 @@ function addedRunner(
  * installation has no row yet.
  */
 export async function recordJobTiming(db: Db, message: WorkflowJobMessage): Promise<boolean> {
-  const { installationId, job, repository } = message;
+  const { installationId, repository } = message;
   if (!installationId || !(await findInstallation(db, installationId))) return false;
+  // An ingress that predates the parser's fix passes GitHub's "" for "no runner" through.
+  const job = {
+    ...message.job,
+    runnerName: message.job.runnerName || null,
+    runnerGroupName: message.job.runnerGroupName || null,
+  };
   const finished = job.status === "completed";
   const completedAt = finished ? parseDate(job.completedAt) : null;
   const queuedAt = parseDate(job.createdAt);

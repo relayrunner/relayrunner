@@ -58,7 +58,7 @@ const METRIC: Record<
     label: "P95 CPU",
     // Only points with usage are given CPU or memory.
     value: (point) => point.usage?.cpuP95 ?? 0,
-    scale: () => yScale(1, 0.25),
+    scale: () => yScale(1, 0.25, true),
     tickText: percent,
     tipText: ({ usage }) => `${percent(usage!.cpuP95)} of ${plural(usage!.cpus, "vCPU")}`,
   },
@@ -327,8 +327,10 @@ const plotX = ({ start, end, width }: Frame, t: number) =>
   PAD.left + ((t - start) / (end - start)) * (width - PAD.left - PAD.right);
 
 /** A y scale from 0 to a round number at or over `max`, with a tick every `step`. */
-function yScale(max: number, step: number) {
-  const top = Math.ceil(max / step) * step;
+// The axis ends at the next whole step above the tallest mark with some headroom, so the tallest
+// bar or dot doesn't touch the top. A fixed scale such as CPU (0 to 100%) passes `exact`.
+function yScale(max: number, step: number, exact = false) {
+  const top = Math.max(step, Math.ceil((exact ? max : max * 1.1) / step) * step);
   return {
     y: (value: number) => PAD.top + (1 - value / top) * PLOT_HEIGHT,
     ticks: Array.from({ length: Math.round(top / step) + 1 }, (_, i) => i * step),

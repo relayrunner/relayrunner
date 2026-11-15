@@ -28,5 +28,6 @@ CREATE TABLE `runner_wait_day` (
 	FOREIGN KEY (`installation_id`) REFERENCES `github_installation`(`id`) ON UPDATE no action ON DELETE cascade
 );
 --> statement-breakpoint
+CREATE INDEX `runner_wait_day_installation_idx` ON `runner_wait_day` (`installation_id`);--> statement-breakpoint
 ALTER TABLE `job_timing` ADD `ran_steps` integer;--> statement-breakpoint
 ALTER TABLE `job_timing` ADD `failed_step` text;

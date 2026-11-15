@@ -533,7 +533,7 @@ function Steps({ steps, job, now }: { steps: JobStep[]; job: RunJob; now: number
     <ol className="divide-y rounded-lg border text-sm tabular-nums">
       {steps.map((step) => {
         const from = step.startedAt;
-        const to = step.completedAt ?? (step.status === "in_progress" ? now : from);
+        const to = step.completedAt ?? (step.status === "in_progress" ? now : null);
         const ms = from === null || to === null ? null : to - from;
         const left = from === null ? 0 : Math.min(Math.max((from - start) / span, 0), 1);
         const width = ms === null ? 0 : Math.min(ms / span, 1 - left);
@@ -557,7 +557,9 @@ function Steps({ steps, job, now }: { steps: JobStep[]; job: RunJob; now: number
                 />
               )}
             </span>
-            <span className="text-right text-muted-foreground">{elapsed(ms)}</span>
+            <span className="text-right text-muted-foreground">
+              {step.conclusion === "skipped" ? "" : elapsed(ms)}
+            </span>
           </li>
         );
       })}

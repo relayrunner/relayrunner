@@ -15,6 +15,10 @@ No. Your machines are yours, and hosted providers bill you directly under your o
 
 No. A relay job finishes in about a second, without a runner. Optimized checks don't use minutes either.
 
+## Does it work with my existing GitHub Actions workflows?
+
+Yes. Each routed job gets a relay job in front of it and a `runs-on` that reads its answer. Steps, check names and logs stay the same. See [GitHub Actions](/docs/get-started/github-actions).
+
 ## What happens when my laptop is closed?
 
 Jobs go to the next step in your runner order, usually GitHub-hosted, with nothing to change. A job that was running when it closed stops. Re-run it and it routes again (see [Re-running a job](/docs/concepts/routing#re-running-a-job)), or turn on [automatic retries](/docs/concepts/routing#automatic-retries) to have the Router re-run it for you.

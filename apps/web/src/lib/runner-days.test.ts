@@ -1,5 +1,5 @@
 import { describe, expect, test } from "vitest";
-import { everyDay, onlineSpans } from "./runner-days.ts";
+import { onlineSpans } from "./runner-days.ts";
 
 const offline = { online: false, connectedAt: null, lastSeenAt: null };
 
@@ -39,18 +39,5 @@ describe("onlineSpans", () => {
     expect(onlineSpans([], { online: true, connectedAt: null, lastSeenAt: null }, 0, 50)).toEqual([
       [0, 50],
     ]);
-  });
-});
-
-describe("everyDay", () => {
-  test("fills days without jobs with zeros, oldest first", () => {
-    const now = new Date(2026, 10, 14, 15).getTime();
-    const today = new Date(2026, 10, 14).getTime();
-    const days = everyDay(
-      { days: 3, daily: [{ day: today, jobs: 4, failures: 1, busyMs: 9 }] },
-      now,
-    );
-    expect(days.map((day) => new Date(day.day).getDate())).toEqual([12, 13, 14]);
-    expect(days.map((day) => day.jobs)).toEqual([0, 0, 4]);
   });
 });

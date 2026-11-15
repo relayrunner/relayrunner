@@ -226,7 +226,7 @@ export const SAMPLE_MACHINES: Machine[] = [
     revokedAt: null,
     createdAt: "2026-11-01T00:00:00Z",
     source: "github",
-    github: { org: "acme", repo: null, runnerId: 7, missing: false, unreachable: false },
+    github: { org: "acme", repo: "acme/app", runnerId: 7, missing: false, unreachable: false },
     device: null,
     owner: "acme",
     mine: false,

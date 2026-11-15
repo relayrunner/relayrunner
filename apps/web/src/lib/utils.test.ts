@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { count, exact } from "./utils";
+import { count, exact, niceMax } from "./utils";
 
 describe("count", () => {
   it("keeps counts under 1,000 as they are", () => {
@@ -16,5 +16,11 @@ describe("count", () => {
 
   it("gives the full number for the hover", () => {
     expect(exact(1149)).toBe("1,149");
+  });
+});
+
+describe("niceMax", () => {
+  it("rounds a chart's top up with headroom", () => {
+    expect([0, 1, 4, 9, 14, 43, 95].map(niceMax)).toEqual([1, 1.2, 5, 10, 20, 50, 120]);
   });
 });

@@ -1,5 +1,7 @@
 ---
-title: Overview
+title: Route GitHub Actions jobs to any runner
+sidebar:
+  label: Overview
 description: RelayRunner routes each GitHub Actions job to the first runner in your list that can take it, from your own machines to hosted runners.
 ---
 

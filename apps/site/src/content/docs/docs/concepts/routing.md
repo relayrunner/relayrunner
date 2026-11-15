@@ -1,6 +1,6 @@
 ---
 title: Routing
-description: How a job opts in to routing, and how the relay picks its runner.
+description: How a GitHub Actions job opts in to routing, and how the relay picks its runner.
 sidebar:
   label: How routing works
 ---
