@@ -11,7 +11,8 @@
  * last 30 days at once, as many whole days as job_timing keeps single jobs.
  *
  * The same rows hold the page's Breakdown: every counted job by who started its run, its workflow,
- * branch and trigger.
+ * branch and trigger, and pull request runs by the folders their pull request changed
+ * (src/pull-request-paths.ts).
  *
  * A filtered page (one person, repo, workflow, branch or trigger) can't come from those rows, since
  * a signal's rows don't say who or what started their runs. It works the same queries out on the
@@ -56,7 +57,8 @@ export const SIGNALS = {
   "flaky-jobs": "speed",
   // Jobs whose runner failed them before any of their steps started, by runs-on labels.
   "runner-failures": "speed",
-  // Runs for commits or pull requests titled as docs changes (docs: in Conventional Commits).
+  // Runs for pull requests that only changed docs, or, where we haven't read a run's files, for
+  // commits or pull requests titled as docs changes (docs: in Conventional Commits).
   "docs-changes": "complexity",
   // Runs on a branch other than the default that started FANOUT_JOBS jobs or more.
   "wide-fanout": "complexity",
@@ -64,13 +66,18 @@ export const SIGNALS = {
 
 export type SignalId = keyof typeof SIGNALS;
 
-/** How the Breakdown splits every counted job. The repository view sums any of the others. */
-export const BREAKDOWNS = ["person", "workflow", "branch", "trigger"] as const;
+/**
+ * How the Breakdown splits counted jobs. The repository view sums the workflow view. The path view
+ * holds only pull request runs whose files we read, each under every folder it changed, so its
+ * rows overlap.
+ */
+export const BREAKDOWNS = ["person", "workflow", "branch", "trigger", "path"] as const;
 export type BreakdownBy = (typeof BREAKDOWNS)[number] | "repository";
 
 /**
  * What a filtered page narrows to: a Breakdown value, by view. Each is a fact about the whole run,
- * so a run's jobs all match or none do. A workflow is matched by name, so it comes with its repo.
+ * so a run's jobs all match or none do. A workflow is matched by name and a path is a folder of
+ * one repo, so both come with their repo.
  */
 export type SignalFilter = Partial<Record<BreakdownBy, string>>;
 
@@ -78,7 +85,7 @@ export type SignalFilter = Partial<Record<BreakdownBy, string>>;
  * The days a filtered page or a signal's runs can cover: whole days of single jobs, and today. A
  * function, so modules that mock job-timings.ts can still import this one.
  */
-const liveDays = () => RAW_RETENTION_DAYS - 1;
+export const liveDays = () => RAW_RETENTION_DAYS - 1;
 
 // signal_day rows that hold every counted job, for the page's totals and the threshold.
 const TOTAL = "total";
@@ -107,6 +114,7 @@ const MAX_BREAKDOWN_ROWS = 10;
 const timing = schema.jobTiming;
 const run = schema.workflowRun;
 const day = schema.signalDay;
+const paths = schema.pullRequestPaths;
 const installation = schema.githubInstallation;
 
 // Whether each of the installation's repos is private, by id, for the price of its minutes.
@@ -239,6 +247,10 @@ function matching(filter: SignalFilter, alias: string) {
   if (filter.trigger === "rerun") parts.push(sql`${run}.run_attempt > 1`);
   else if (filter.trigger)
     parts.push(sql`${run}.run_attempt = 1 and ${run}.event = ${filter.trigger}`);
+  if (filter.path)
+    parts.push(sql`exists (select 1 from pull_request_paths f, json_each(f.areas) a
+      where f.repository_id = ${run}.repository_id
+        and f.pull_request_number = ${run}.pull_request_number and a.value = ${filter.path})`);
   return parts.length ? sql`(${sql.join(parts, sql` and `)})` : sql`1`;
 }
 
@@ -289,6 +301,8 @@ async function addJobs(scope: Scope) {
       person,
       branch: run.headBranch,
       trigger,
+      // The folders the run's pull request changed, when we read them.
+      areas: paths.areas,
       jobs: sql<number>`count(*)`,
       runs: sql<number>`sum(${first})`,
       runMs: sql<number>`sum(${DURATION_MS})`,
@@ -311,6 +325,13 @@ async function addJobs(scope: Scope) {
     })
     .from(timing)
     .leftJoin(run, and(eq(run.id, timing.runId), eq(run.runAttempt, timing.runAttempt)))
+    .leftJoin(
+      paths,
+      and(
+        eq(paths.repositoryId, run.repositoryId),
+        eq(paths.pullRequestNumber, run.pullRequestNumber),
+      ),
+    )
     .where(
       and(
         eq(timing.installationId, installationId),
@@ -335,6 +356,7 @@ async function addJobs(scope: Scope) {
       person,
       run.headBranch,
       trigger,
+      paths.areas,
       ...(perJob ? [timing.id] : []),
     );
   const breakdown = new DayBreakdown();
@@ -436,35 +458,38 @@ class DayWaits {
 type DaySums = { runs: number; runMs: number; cost: number };
 
 // The Breakdown's rows for each day: logins, branches and triggers for the whole installation
-// (repositoryId 0), and workflows per repo, which the repository view sums. Each day and view
-// keeps its MAX_DAY_VALUES values with the most time; the rest, and jobs whose run we never saw,
-// share the empty subject.
+// (repositoryId 0), and workflows and folders per repo; the repository view sums the workflows. A
+// pull request run counts in full under each folder it changed, and a run without read files under
+// none. Each day and view keeps its MAX_DAY_VALUES values with the most time; the rest, jobs whose
+// run we never saw and pull requests with too many files to list share the empty subject.
 class DayBreakdown {
   #groups = new Map<string, { key: Omit<RowKey, "subject">; values: Map<string, Value> }>();
 
   add(
     where: { day: number; repositoryId: number; repository: string },
-    job: { workflow: string | null; workflowPath: string | null } & Record<
-      "person" | "branch" | "trigger",
-      string | null
-    >,
+    job: {
+      workflow: string | null;
+      workflowPath: string | null;
+      areas: string[] | null;
+    } & Record<"person" | "branch" | "trigger", string | null>,
     sums: DaySums,
   ) {
     for (const by of BREAKDOWNS) {
-      const perRepo = by === "workflow";
+      const perRepo = by === "workflow" || by === "path";
       const key = perRepo
         ? { ...where, signal: `by-${by}` }
         : { day: where.day, repositoryId: 0, repository: "", signal: `by-${by}` };
       const id = `${key.day}:${key.signal}:${key.repositoryId}`;
       const group = this.#groups.get(id) ?? { key, values: new Map<string, Value>() };
       this.#groups.set(id, group);
-      const subject = job[by] ?? "";
-      const value = group.values.get(subject) ?? { path: null, runs: 0, runMs: 0, cost: 0 };
-      group.values.set(subject, value);
-      if (perRepo) value.path ??= job.workflowPath;
-      value.runs += sums.runs;
-      value.runMs += sums.runMs;
-      value.cost += sums.cost;
+      for (const subject of subjectsOf(by, job)) {
+        const value = group.values.get(subject) ?? { path: null, runs: 0, runMs: 0, cost: 0 };
+        group.values.set(subject, value);
+        if (by === "workflow") value.path ??= job.workflowPath;
+        value.runs += sums.runs;
+        value.runMs += sums.runMs;
+        value.cost += sums.cost;
+      }
     }
   }
 
@@ -485,6 +510,20 @@ class DayBreakdown {
 }
 
 type Value = DaySums & { path: string | null };
+
+// The Breakdown values a job counts under in one view: every folder its pull request changed in
+// the path view (none without read files, the rest's empty subject without listed ones).
+function subjectsOf(
+  by: (typeof BREAKDOWNS)[number],
+  job: { areas: string[] | null } & Record<
+    "person" | "workflow" | "branch" | "trigger",
+    string | null
+  >,
+) {
+  if (by !== "path") return [job[by] ?? ""];
+  if (!job.areas) return [];
+  return job.areas.length ? job.areas : [""];
+}
 
 // The same workflow, matched by id once runs carry one and by name before that.
 const SAME_WORKFLOW = (a: string, b: string) =>
@@ -570,17 +609,21 @@ const FIRST_RUNS = ({
   and o.github_updated_at >= ${since} and o.event in ('push', 'pull_request')
   and o.run_attempt = 1 and ${matching(filter, "o")}`;
 
-// Runs whose commit or pull request title starts with docs: or docs(scope):, the Conventional
-// Commits type for documentation. Workflows with "doc" in their name are left out, since building
-// docs is their job.
+// Runs for pull requests that only changed docs (src/pull-request-paths.ts). A run whose files we
+// haven't read counts when its commit or pull request title starts with docs: or docs(scope):, the
+// Conventional Commits type for documentation. Workflows with "doc" in their name are left out,
+// since building docs is their job.
 async function addDocsRuns(scope: Scope) {
   const { db, since } = scope;
   const found = await db.all<RunJobRow>(sql`
     select ${RUN_JOB_COLUMNS}, max(0, j.completed_at - j.started_at) as runMs
     from workflow_run o
     join job_timing j on j.run_id = o.id and j.run_attempt = o.run_attempt
+    left join pull_request_paths p on p.repository_id = o.repository_id
+      and p.pull_request_number = o.pull_request_number
     where ${FIRST_RUNS(scope)} and j.completed_at >= ${since} and ${COUNTED_JOB}
-      and (lower(o.display_title) like 'docs:%' or lower(o.display_title) like 'docs(%')
+      and coalesce(p.docs_only,
+        lower(o.display_title) like 'docs:%' or lower(o.display_title) like 'docs(%')
       and lower(coalesce(o.workflow_name, '')) not like '%doc%'`);
   addRunJobs(scope, "docs-changes", found, true);
 }
@@ -826,9 +869,12 @@ export interface Signal {
 }
 
 export interface BreakdownRow {
-  /** A login, workflow, branch, trigger (an event name, or "rerun") or repository. */
+  /**
+   * A login, workflow, branch, trigger (an event name, or "rerun"), folder (ROOT_AREA for files at
+   * the root) or repository.
+   */
   name: string;
-  /** The workflow's repository, on workflow rows. */
+  /** The workflow's or folder's repository, on workflow and path rows. */
   repository: string | null;
   workflowPath: string | null;
   runs: number;
@@ -851,8 +897,8 @@ export interface SignalsReport {
   /** Signals over the threshold, the most time first. */
   signals: Signal[];
   /**
-   * Every counted job split by who started it, repo, workflow, branch and trigger. Left out when
-   * the caller asks for signals only.
+   * Every counted job split by who started it, repo, workflow, branch and trigger, and pull request
+   * runs by the folders they changed. Left out when the caller asks for signals only.
    */
   breakdown?: Record<BreakdownBy, Breakdown>;
   /** On a filtered page, the filter's minutes per day against the range before. */
@@ -1014,18 +1060,19 @@ function summarize(found: FoundRow[], days: number, breakdown: boolean): Signals
   };
 }
 
-// The Breakdown's day rows that hold a filter's jobs: a person, branch or trigger, or a repo's
-// workflows (one of them, with a workflow). Null for a filter on more than that, since each view's
-// rows are kept apart.
+// The Breakdown's day rows that hold a filter's jobs: a person, branch or trigger, a repo's
+// workflows (one of them, with a workflow) or one of its folders. Null for a filter on more than
+// that, since each view's rows are kept apart.
 function trendRows(filter: SignalFilter) {
-  const { repository, workflow, ...rest } = filter;
+  const { repository, workflow, path, ...rest } = filter;
   const others = Object.entries(rest).filter(([, value]) => value);
-  if (repository || workflow) {
-    if (others.length) return null;
+  if (repository || workflow || path) {
+    if (others.length || (workflow && path)) return null;
+    const subject = path ?? workflow;
     return and(
-      eq(day.signal, "by-workflow"),
+      eq(day.signal, path ? "by-path" : "by-workflow"),
       repository ? eq(day.repositoryFullName, repository) : undefined,
-      workflow ? eq(day.subject, workflow) : undefined,
+      subject ? eq(day.subject, subject) : undefined,
     );
   }
   if (others.length !== 1) return null;
@@ -1220,8 +1267,8 @@ type BreakdownSums = { runs: number; minutes: number; cost: number };
 type BreakdownName = Pick<BreakdownRow, "name" | "repository" | "workflowPath">;
 
 // The Breakdown's views summed from signal_day rows over the range. Logins, branches and triggers
-// are stored for the whole installation; workflows per repo, which the repository view sums.
-// Empty names are the rest of a day's values, and go to `other`.
+// are stored for the whole installation; workflows and folders per repo, and the repository view
+// sums the workflows. Empty names are the rest of a day's values, and go to `other`.
 class Breakdowns {
   #views = new Map<BreakdownBy, Map<string, BreakdownRow>>(
     [...BREAKDOWNS, "repository" as const].map((by) => [by, new Map()]),
@@ -1233,12 +1280,13 @@ class Breakdowns {
     sums: BreakdownSums,
   ) {
     const name = row.subject;
-    if (by !== "workflow") {
+    if (by !== "workflow" && by !== "path") {
       this.#sum(by, name, { name, repository: null, workflowPath: null }, sums);
       return;
     }
     const { repository, workflowPath } = row;
     this.#sum(by, `${repository}:${name}`, { name, repository, workflowPath }, sums);
+    if (by === "path") return;
     this.#sum(
       "repository",
       repository,

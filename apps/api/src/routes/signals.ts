@@ -15,14 +15,15 @@ import { AppError } from "@relayrunner/errors";
 
 const value = z.string().trim().min(1).max(300).optional();
 
-// The page's filter: ?person=, ?repo=, ?workflow=, ?branch= and ?trigger= (an event name, or
-// "rerun"), each a Breakdown value.
+// The page's filter: ?person=, ?repo=, ?workflow=, ?branch=, ?trigger= (an event name, or
+// "rerun") and ?path= (a folder a pull request changed), each a Breakdown value.
 const FilterQuery = z.object({
   person: value,
   repo: value,
   workflow: value,
   branch: value,
   trigger: value,
+  path: value,
 });
 
 function parseFilter(query: Record<string, string>): SignalFilter {

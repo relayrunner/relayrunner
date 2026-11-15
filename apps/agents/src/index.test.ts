@@ -358,6 +358,8 @@ describe("mcp server", () => {
     expect(asked).toContain("/api/signals?days=30 @w1");
     await call("get_signals", { repository: "acme/app", workflow: "CI" });
     expect(asked).toContain("/api/signals?days=30&breakdown=0&repo=acme%2Fapp&workflow=CI @w1");
+    await call("get_signals", { repository: "acme/app", path: "apps/web" });
+    expect(asked).toContain("/api/signals?days=30&breakdown=0&repo=acme%2Fapp&path=apps%2Fweb @w1");
   });
 
   test("a connection with several workspaces asks which, by id or name", async () => {

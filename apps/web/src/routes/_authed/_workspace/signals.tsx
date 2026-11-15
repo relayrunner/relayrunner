@@ -31,6 +31,7 @@ import { runParam } from "@/lib/runs";
 import {
   AREAS,
   BREAKDOWN_VIEWS,
+  folderName,
   type BreakdownBy,
   type BreakdownRow,
   FILTER_KEYS,
@@ -194,13 +195,17 @@ const FILTER_LABELS: Record<FilterKey, string> = {
   workflow: "Workflow",
   branch: "Branch",
   trigger: "Trigger",
+  path: "Folder",
 };
 
 // What the page is narrowed to, each value with a button to drop it, and the filter's trend.
 function FilterBar({ filter, report }: { filter: SignalFilter; report: SignalsReport }) {
   const setSearch = useSetSearch<Search>();
-  // A workflow shows with its repo, and goes with it, so the repo shows on its own only without one.
-  const shown = FILTER_KEYS.filter((key) => filter[key] && !(key === "repo" && filter.workflow));
+  // A workflow or folder shows with its repo, and goes with it, so the repo shows on its own only
+  // without one.
+  const shown = FILTER_KEYS.filter(
+    (key) => filter[key] && !(key === "repo" && (filter.workflow || filter.path)),
+  );
   const parts = shown.map((key) => {
     const value = filter[key]!;
     if (key === "workflow") {
@@ -208,7 +213,14 @@ function FilterBar({ filter, report }: { filter: SignalFilter; report: SignalsRe
       return {
         label: FILTER_LABELS[key],
         value: <WorkflowName repository={filter.repo ?? ""} name={value} path={path} />,
-        clear: { workflow: undefined, repo: undefined },
+        clear: { workflow: undefined, repo: filter.path ? filter.repo : undefined },
+      };
+    }
+    if (key === "path") {
+      return {
+        label: FILTER_LABELS[key],
+        value: <SubjectText repository={filter.repo ?? ""} name={folderName(value)} />,
+        clear: { path: undefined, repo: filter.workflow ? filter.repo : undefined },
       };
     }
     return {
@@ -613,6 +625,11 @@ function BreakdownSection({ report }: { report: SignalsReport }) {
           )}
         </TableBody>
       </Table>
+      {by === "path" && (
+        <p className="text-sm text-muted-foreground">
+          Pull request runs only. A run counts under every folder its pull request changed.
+        </p>
+      )}
     </Section>
   );
 }
@@ -663,8 +680,9 @@ function BreakdownLine({
 }
 
 function BreakdownName({ by, row }: { by: BreakdownBy; row: BreakdownRow }) {
-  if (by === "workflow" && row.repository) {
-    return <SubjectText repository={row.repository} name={row.name} />;
+  if ((by === "workflow" || by === "path") && row.repository) {
+    const name = by === "path" ? folderName(row.name) : row.name;
+    return <SubjectText repository={row.repository} name={name} />;
   }
   if (by === "trigger") return triggerName(row.name);
   return row.name;

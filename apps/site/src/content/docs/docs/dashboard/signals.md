@@ -67,7 +67,7 @@ GitHub bills each job by the whole minute. These jobs finished in under a minute
 
 ### Docs changes run CI
 
-The workflow ran for commits or pull requests titled as docs changes, such as `docs: fix a typo` in [Conventional Commits](https://www.conventionalcommits.org/). Workflows with "doc" in their name are left out, since building docs is their job. Add `paths-ignore` to the workflow's `push` and `pull_request` triggers so changes that only touch docs skip it:
+The workflow ran for a pull request that only changed docs: Markdown and other prose files, anything in a `docs` folder, or a license. For runs without a pull request, it goes by the title instead: commits titled as docs changes, such as `docs: fix a typo` in [Conventional Commits](https://www.conventionalcommits.org/). Workflows with "doc" in their name are left out, since building docs is their job. Add `paths-ignore` to the workflow's `push` and `pull_request` triggers so changes that only touch docs skip it:
 
 ```yaml
 on:
@@ -90,11 +90,14 @@ The Breakdown splits all your job minutes and spend one way at a time:
 - **Workflow**, with its repo.
 - **Branch**.
 - **Trigger**: push, pull request, schedule, manual or re-run.
+- **Changed folder**: the folders a pull request changed, with their repo, such as `src` or `docs`. Inside folders like `apps` and `packages`, each project is its own folder, such as `apps/web`. Only pull request runs count here, and a run counts under every folder it changed, so the rows overlap.
 
 Each view lists the 10 with the most minutes, then everything else in one row. Runs count once each, so a run with a 20-job matrix is still one run.
 
+To know which folders a pull request changed, the dashboard reads the names of its files from GitHub once an hour. It keeps only the folders, never the files' contents.
+
 ### Filter the page
 
-Click a row in the Breakdown to narrow the whole page to it: the signals, their rows and the other Breakdown views then only count that person's, repo's, workflow's, branch's or trigger's runs. Click a row in another view to narrow it further, and use the × beside a filter to remove it.
+Click a row in the Breakdown to narrow the whole page to it: the signals, their rows and the other Breakdown views then only count that person's, repo's, workflow's, branch's, trigger's or folder's runs. Click a row in another view to narrow it further, and use the × beside a filter to remove it.
 
 A filtered page also shows that filter's minutes per day, with the same number of days before as a dashed line, so you can see whether it's growing. Filtered pages cover up to the last 30 days.

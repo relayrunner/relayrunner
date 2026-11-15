@@ -15,6 +15,7 @@ import type { RunnerScope } from "./github-app.ts";
 import { removeLeftoverRunnersIn } from "./pick-sweep.ts";
 import { syncConnection, type ProviderSyncTask } from "./provider-sync.ts";
 import { createDb } from "./db/index.ts";
+import { syncPullRequestPaths } from "./pull-request-paths.ts";
 import { rollUpSignals } from "./signals.ts";
 import { errorMessage } from "./webhook-queue.ts";
 
@@ -48,8 +49,23 @@ export function runInstallationTask(env: Env, task: InstallationTask): Promise<v
     case "provider-sync":
       return syncConnection(env, task.workspaceId, task.provider);
     case "signals":
-      return rollUpSignals(createDb(env.DB), task.installationId).then(() => undefined);
+      return signals(env, task.installationId);
   }
+}
+
+// Pull request files first, so the rollup sees them. Failing to read them never holds it back.
+async function signals(env: Env, installationId: number) {
+  const db = createDb(env.DB);
+  await syncPullRequestPaths(env, db, installationId).catch((error) =>
+    console.warn(
+      JSON.stringify({
+        msg: "pull request files failed",
+        installationId,
+        error: errorMessage(error),
+      }),
+    ),
+  );
+  await rollUpSignals(db, installationId);
 }
 
 /**

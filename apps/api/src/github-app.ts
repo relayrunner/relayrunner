@@ -441,11 +441,18 @@ const MAX_LISTED = 1000;
 // Every page of a list endpoint whose response holds its items under `key`, or is the list itself
 // without one. Capped at MAX_LISTED, far more runners or groups than an org that adds runners by
 // hand has.
-async function listAll<T>(token: string, path: string, key?: string): Promise<T[]> {
+// `cache` false skips the ETag cache, for pages read once that would push out ones polled often.
+async function listAll<T>(
+  token: string,
+  path: string,
+  key?: string,
+  { cache = true } = {},
+): Promise<T[]> {
   const items: T[] = [];
   for (let page = 1; page <= MAX_LISTED / 100; page++) {
     const separator = path.includes("?") ? "&" : "?";
-    const body = (await getPage(token, `${path}${separator}per_page=100&page=${page}`)) as Record<
+    const pagePath = `${path}${separator}per_page=100&page=${page}`;
+    const body = (await (cache ? getPage(token, pagePath) : getJson(token, pagePath))) as Record<
       string,
       unknown
     >;
@@ -698,10 +705,20 @@ export interface PullRequestFile {
 
 /**
  * The files a pull request touches, or null when it touches more than listAll reads (GitHub lists
- * at most 3,000 anyway), so the caller can treat it as touching everything.
+ * at most 3,000 anyway), so the caller can treat it as touching everything. `cache` as in listAll.
  */
-export async function pullRequestFiles(token: string, repo: string, pullRequest: number) {
-  const files = await listAll<PullRequestFile>(token, `/repos/${repo}/pulls/${pullRequest}/files`);
+export async function pullRequestFiles(
+  token: string,
+  repo: string,
+  pullRequest: number,
+  { cache = true } = {},
+) {
+  const files = await listAll<PullRequestFile>(
+    token,
+    `/repos/${repo}/pulls/${pullRequest}/files`,
+    undefined,
+    { cache },
+  );
   return files.length >= MAX_LISTED ? null : files;
 }
 

@@ -772,6 +772,34 @@ export const signalDay = sqliteTable(
   ],
 );
 
+// The parts of the repo a pull request changes (src/pull-request-paths.ts), for the Signals page:
+// its files' top folders, and whether every file is docs. One row per pull request, read again
+// when a newer run's head commit differs from the one read. Purged with signal_day, and gone with
+// the installation.
+export const pullRequestPaths = sqliteTable(
+  "pull_request_paths",
+  {
+    installationId: integer("installation_id")
+      .notNull()
+      .references(() => githubInstallation.id, { onDelete: "cascade" }),
+    repositoryId: integer("repository_id").notNull(),
+    pullRequestNumber: integer("pull_request_number").notNull(),
+    // The run's head commit when the files were read.
+    headSha: text("head_sha").notNull(),
+    // Distinct areas, such as "docs", "apps/web" or "/" for files at the root. Empty when the pull
+    // request changes more files than GitHub lists.
+    areas: text("areas", { mode: "json" }).$type<string[]>().notNull(),
+    // Whether every changed file is docs. False when there were too many files to tell.
+    docsOnly: integer("docs_only", { mode: "boolean" }).notNull(),
+    readAt: integer("read_at", { mode: "timestamp_ms" }).notNull(),
+  },
+  (table) => [
+    primaryKey({ columns: [table.repositoryId, table.pullRequestNumber] }),
+    // The retention purge, across all installations.
+    index("pull_request_paths_read_idx").on(table.readAt),
+  ],
+);
+
 // An automatic retry (src/retries.ts): RelayRunner re-ran the relay of a run attempt whose routed
 // job its runner failed, so the next attempt picks again. One row per retried attempt, written
 // before the re-run is asked for, so a redelivered webhook can never retry twice. The next

@@ -36,13 +36,13 @@ export type Signal = {
   rows: SignalRow[];
 };
 
-export type BreakdownBy = "person" | "repository" | "workflow" | "branch" | "trigger";
+export type BreakdownBy = "person" | "repository" | "workflow" | "branch" | "trigger" | "path";
 
-/** One login, repo, workflow, branch or trigger and the jobs it ran. Money is USD. */
+/** One login, repo, workflow, branch, trigger or folder and the jobs it ran. Money is USD. */
 export type BreakdownRow = {
-  /** A trigger is an event name, or "rerun". */
+  /** A trigger is an event name, or "rerun"; a folder is ROOT_FOLDER for files at the root. */
   name: string;
-  /** The workflow's repository, on workflow rows. */
+  /** The workflow's or folder's repository, on workflow and path rows. */
   repository: string | null;
   workflowPath: string | null;
   runs: number;
@@ -71,10 +71,10 @@ export type SignalsReport = {
 };
 
 /**
- * What the page narrows to, as the URL and the API name it: Breakdown values, a workflow with its
- * repo. A trigger is an event name, or "rerun".
+ * What the page narrows to, as the URL and the API name it: Breakdown values, a workflow or folder
+ * with its repo. A trigger is an event name, or "rerun".
  */
-export const FILTER_KEYS = ["person", "repo", "workflow", "branch", "trigger"] as const;
+export const FILTER_KEYS = ["person", "repo", "workflow", "branch", "trigger", "path"] as const;
 export type FilterKey = (typeof FILTER_KEYS)[number];
 export type SignalFilter = Partial<Record<FilterKey, string>>;
 
@@ -85,7 +85,8 @@ export const isFiltered = (filter: SignalFilter) => FILTER_KEYS.some((key) => fi
 
 /** The filter a Breakdown row narrows the page to. */
 export function rowFilter(by: BreakdownBy, row: BreakdownRow): SignalFilter {
-  if (by === "workflow") return { repo: row.repository ?? undefined, workflow: row.name };
+  if (by === "workflow" || by === "path")
+    return { repo: row.repository ?? undefined, [by]: row.name };
   return { [by === "repository" ? "repo" : by]: row.name };
 }
 
@@ -122,7 +123,14 @@ export const BREAKDOWN_VIEWS: { value: BreakdownBy; label: string }[] = [
   { value: "workflow", label: "Workflow" },
   { value: "branch", label: "Branch" },
   { value: "trigger", label: "Trigger" },
+  { value: "path", label: "Changed folder" },
 ];
+
+/** The folder pull request files at the root of a repo go under. */
+export const ROOT_FOLDER = "/";
+
+/** A folder the way the page names it. */
+export const folderName = (folder: string) => (folder === ROOT_FOLDER ? "Root files" : folder);
 
 /** A trigger the way people say it: "Push", "Pull request", "Manual", "Re-run". */
 export function triggerName(event: string) {
@@ -252,7 +260,7 @@ export const SIGNAL_COPY: Record<
     area: "complexity",
     title: "Docs changes run CI",
     about:
-      "These workflows ran for commits or pull requests titled as docs changes, such as docs: fix a typo. Path filters let a workflow skip changes that only touch docs.",
+      "These workflows ran for pull requests that only changed docs, or for commits titled as docs changes, such as docs: fix a typo. Path filters let a workflow skip changes that only touch docs.",
     subject: "Workflow",
     count: "Docs runs",
     minutes: "Minutes",
@@ -437,6 +445,14 @@ function sampleBreakdown(scale: number): Record<BreakdownBy, Breakdown> {
       ["schedule", 96, 900, 34],
       ["workflow_dispatch", 61, 600, 24],
       ["rerun", 23, 300, 10],
+    ]),
+    // Pull request runs only, each under every folder it changed, so these overlap.
+    path: view([
+      ["apps/web", 302, 3100, 119, "acme/web"],
+      ["packages/ui", 141, 1600, 61, "acme/web"],
+      ["src", 188, 1500, 57, "acme/api"],
+      ["docs", 64, 700, 26, "acme/web"],
+      ["/", 52, 400, 15, "acme/api"],
     ]),
   };
 }

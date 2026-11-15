@@ -197,6 +197,26 @@ async function rerun(
     });
 }
 
+// The files read for a pull request, as src/pull-request-paths.ts stores them.
+async function prFiles(
+  { installationId, repositoryId }: Ctx,
+  pullRequestNumber: number,
+  areas: string[],
+  docsOnly = false,
+) {
+  await createDb(env.DB)
+    .insert(schema.pullRequestPaths)
+    .values({
+      installationId,
+      repositoryId,
+      pullRequestNumber,
+      headSha: "sha",
+      areas,
+      docsOnly,
+      readAt: new Date(NOW),
+    });
+}
+
 async function dayRows(installationId: number, signal: string) {
   return createDb(env.DB)
     .select()
@@ -600,6 +620,67 @@ describe("GET /api/signals", () => {
     expect((await report(fresh.cookie, "&person=ana")).trend?.previous).toBeNull();
   });
 
+  test("breaks pull request runs down by the folders they changed, and filters by one", async () => {
+    const ctx = await connectedWorkspace();
+    await runWithJob(ctx, { start: 300, minutes: 30, pullRequestNumber: 1, headBranch: "a" });
+    await runWithJob(ctx, { start: 200, minutes: 10, pullRequestNumber: 2, headBranch: "b" });
+    // A push to main has no pull request, so no folders.
+    await runWithJob(ctx, { start: 100, minutes: 5, event: "push", headBranch: "main" });
+    await prFiles(ctx, 1, ["apps/web", "docs"]);
+    await prFiles(ctx, 2, ["apps/web"]);
+    await rollUpSignals(createDb(env.DB), ctx.installationId);
+
+    const { breakdown } = await report(ctx.cookie);
+    // Each run counts in full under every folder it changed.
+    expect(breakdown?.path).toEqual({
+      rows: [
+        {
+          name: "apps/web",
+          repository: "acme/app",
+          workflowPath: null,
+          runs: 2,
+          minutes: 40,
+          cost: expect.any(Number),
+        },
+        {
+          name: "docs",
+          repository: "acme/app",
+          workflowPath: null,
+          runs: 1,
+          minutes: 30,
+          cost: expect.any(Number),
+        },
+      ],
+      other: null,
+    });
+
+    const docs = await report(ctx.cookie, "&repo=acme/app&path=docs");
+    expect(docs.totals).toMatchObject({ jobs: 1, minutes: 30 });
+    expect(docs.trend?.minutes).toContain(30);
+    expect((await report(ctx.cookie, "&repo=acme/app&path=apps/web")).totals.jobs).toBe(2);
+  });
+
+  test("counts runs of pull requests that only changed docs, whatever their title", async () => {
+    const ctx = await connectedWorkspace();
+    await runWithJob(ctx, { start: 300, minutes: 40, pullRequestNumber: 1, headBranch: "a" });
+    // Titled as docs, but its files say otherwise.
+    await runWithJob(ctx, {
+      start: 200,
+      minutes: 40,
+      pullRequestNumber: 2,
+      headBranch: "b",
+      displayTitle: "docs: and a fix",
+    });
+    // No files read: the title still counts.
+    await runWithJob(ctx, { start: 100, minutes: 40, headBranch: "c", displayTitle: "docs: typo" });
+    await prFiles(ctx, 1, ["docs"], true);
+    await prFiles(ctx, 2, ["docs", "src"]);
+    await rollUpSignals(createDb(env.DB), ctx.installationId);
+
+    const docs = (await report(ctx.cookie)).signals.find((signal) => signal.id === "docs-changes");
+    expect(docs).toMatchObject({ count: 2, minutes: 80 });
+  });
+
   test("keeps a filtered page to the days single jobs cover", async () => {
     const ctx = await connectedWorkspace();
     const res = await testing.call(env, "/signals?days=90&repo=acme/app", ctx.cookie);
@@ -618,6 +699,7 @@ describe("GET /api/signals", () => {
         workflow: empty,
         branch: empty,
         trigger: empty,
+        path: empty,
         repository: empty,
       },
     });
