@@ -2,6 +2,7 @@ import { AppError } from "@relayrunner/errors";
 import { api } from "@/lib/api";
 import { authDisabled } from "@/lib/auth-client";
 import type { MachineDevice } from "./device.ts";
+import { sampleMachineJob } from "./live-jobs.ts";
 
 /**
  * A machine jobs can route to (GET /api/machines): enrolled with `relayrunner connect`, or a
@@ -199,7 +200,12 @@ const SAMPLE_MACHINE: Machine = {
 };
 
 export const SAMPLE_MACHINES: Machine[] = [
-  SAMPLE_MACHINE,
+  // Running the sample live jobs' job on it (lib/live-jobs.ts).
+  {
+    ...SAMPLE_MACHINE,
+    status: { ...SAMPLE_MACHINE.status!, state: "busy", running: 1 },
+    job: sampleMachineJob(),
+  },
   {
     ...SAMPLE_MACHINE,
     id: "sample-mini",

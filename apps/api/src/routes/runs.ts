@@ -6,7 +6,7 @@ import { requireWorkspace } from "../middleware/workspace.ts";
 import { withCatalog } from "../provider-catalog.ts";
 import { recentJobs } from "../job-times.ts";
 import { appInstallationToken, workflowJobSteps } from "../github-app.ts";
-import { jobSource, listRuns, runJobs } from "../runs.ts";
+import { jobSource, listRuns, liveJobs, runJobs } from "../runs.ts";
 import { jobFailure, runFailures } from "../job-failures.ts";
 import { Days } from "./job-times.ts";
 import { AppError } from "@relayrunner/errors";
@@ -16,6 +16,7 @@ const JobsQuery = z.object({ days: Days });
 const RunParams = z.object({ repositoryId: Id, runId: Id, runAttempt: Id });
 
 // The History page: the workspace's workflow runs from the last 14 days, newest first.
+// /live is the jobs still going, running or queued, for the Runners page.
 // /:repositoryId/:runId/:runAttempt/jobs is one run attempt's jobs, for its expanded row. /jobs is
 // every job a runner finished in the last ?days=N days, newest first, for the Jobs view.
 // /jobs/:jobId/steps is one job's steps, read from GitHub when its detail opens.
@@ -25,6 +26,9 @@ const RunParams = z.object({ repositoryId: Id, runId: Id, runAttempt: Id });
 export const runRoutes = new Hono<AppEnv>()
   .get("/", requireUser, requireWorkspace, withCatalog, async (c) =>
     c.json(await listRuns(c.var.db, c.var.workspace.id)),
+  )
+  .get("/live", requireUser, requireWorkspace, withCatalog, async (c) =>
+    c.json(await liveJobs(c.var.db, c.var.workspace.id)),
   )
   .get("/jobs", requireUser, requireWorkspace, withCatalog, async (c) => {
     const parsed = JobsQuery.safeParse(c.req.query());

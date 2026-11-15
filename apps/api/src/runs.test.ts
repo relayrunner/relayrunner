@@ -10,6 +10,7 @@ import {
   waitingMs,
   recordWorkflowRun,
   type PerformanceReport,
+  type LiveJobs,
   type Run,
   type RunHeader,
   type RunJob,
@@ -620,5 +621,70 @@ describe("run failures", () => {
     expect(res.status).toBe(503);
     expect(await res.json()).toMatchObject({ error: { code: "GITHUB_RATE_LIMITED" } });
     expect(requested.some((url) => url.endsWith("/logs"))).toBe(false);
+  });
+});
+
+describe("live jobs", () => {
+  test("lists the workspace's running and queued jobs, picks and finished jobs left out", async () => {
+    const { cookie, installationId, workspaceId } = await connectedWorkspace();
+    const db = createDb(env.DB);
+    const [machine] = await db
+      .insert(schema.machine)
+      .values({ id: `live-mac-${installationId}`, workspaceId, name: "studio" })
+      .returning();
+    const now = Date.now();
+    const going = { conclusion: null, completedAt: null } as const;
+    const rows = [
+      // Running on the machine, started 2 minutes ago.
+      timing(installationId, 0, {
+        ...going,
+        name: "build",
+        labels: ["rr-0123456789ab"],
+        machineId: machine.id,
+        queuedAt: new Date(now - 3 * 60_000),
+        startedAt: new Date(now - 2 * 60_000),
+      }),
+      // Running on GitHub, started 5 minutes ago: listed first.
+      timing(installationId, 0, {
+        ...going,
+        name: "test",
+        queuedAt: new Date(now - 6 * 60_000),
+        startedAt: new Date(now - 5 * 60_000),
+      }),
+      // Waiting for a self-hosted runner.
+      timing(installationId, 0, {
+        ...going,
+        name: "gpu",
+        labels: ["self-hosted", "gpu"],
+        runnerName: null,
+        runnerGroupName: null,
+        queuedAt: new Date(now - 60_000),
+        startedAt: null,
+      }),
+      // A pick still going, a finished job and a job GitHub never finished two days ago.
+      timing(installationId, 0, { ...going, name: "pick", labels: ["relayrunner"] }),
+      timing(installationId, 30, { name: "done" }),
+      timing(installationId, 0, {
+        ...going,
+        name: "ghost",
+        queuedAt: new Date(now - 48 * HOUR),
+        startedAt: null,
+      }),
+    ];
+    await insert(rows);
+    const other = await connectedWorkspace();
+    await insert([timing(other.installationId, 0, { ...going, name: "theirs" })]);
+
+    const res = await testing.call(env, "/runs/live", cookie);
+    expect(res.status).toBe(200);
+    const live = (await res.json()) as LiveJobs;
+    expect(live.running.map((job) => job.name)).toEqual(["test", "build"]);
+    expect(live.queued).toMatchObject([
+      { name: "gpu", labels: ["self-hosted", "gpu"], environment: "self-hosted:default" },
+    ]);
+    expect(live.running[1]).toMatchObject({ environment: `machine:${machine.id}` });
+    expect(live.environments.find((env) => env.key === `machine:${machine.id}`)?.label).toBe(
+      "studio",
+    );
   });
 });

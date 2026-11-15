@@ -16,6 +16,7 @@ import { findInstallation } from "./installations.ts";
 import { parseDate } from "./jobs.ts";
 import { loadPriceBook } from "./prices.ts";
 import { routeIdFromLabels } from "./routing.ts";
+import { DAY_MS } from "./time.ts";
 
 type WorkflowJobMessage = Extract<WebhookMessage, { event: "workflow_job" }>;
 
@@ -31,7 +32,7 @@ const {
   runnerWaitDay,
   signalDay,
 } = schema;
-export const DAY_MS = 86_400_000;
+export { DAY_MS };
 
 // GitHub bills a job by the minute, rounded up. A job that finishes in under this is the free-checks
 // opportunity: it pays for a whole minute however little of it ran.

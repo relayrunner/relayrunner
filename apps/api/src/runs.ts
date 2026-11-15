@@ -30,7 +30,8 @@ import {
   statOf,
   type WorkflowRow,
 } from "./job-times.ts";
-import { DAY_MS, purgeBefore, RAW_RETENTION_DAYS } from "./job-timings.ts";
+import { purgeBefore, RAW_RETENTION_DAYS } from "./job-timings.ts";
+import { DAY_MS } from "./time.ts";
 import { parseDate } from "./jobs.ts";
 import { jobKey, picksForJobs } from "./route-decisions.ts";
 
@@ -520,6 +521,85 @@ export async function runJobs(
       (a, b) => (a.queuedAt ?? Infinity) - (b.queuedAt ?? Infinity) || a.name.localeCompare(b.name),
     ),
   };
+}
+
+/** A job still going: running on a runner, or queued and waiting for one. Times are epoch ms. */
+export interface LiveJob {
+  id: number;
+  repositoryId: number;
+  repository: string;
+  runId: number;
+  runAttempt: number;
+  workflow: string | null;
+  name: string;
+  /** Its runs-on labels. */
+  labels: string[];
+  /** Environment key: where it runs, or for a queued job the runner it's waiting for. */
+  environment: string;
+  queuedAt: number | null;
+  startedAt: number | null;
+}
+
+export interface LiveJobs {
+  environments: Environment[];
+  /** Running now, longest running first. */
+  running: LiveJob[];
+  /** Waiting for a runner, longest waiting first. */
+  queued: LiveJob[];
+}
+
+/** Jobs left unfinished longer than this are left out: GitHub never said they ended. */
+const LIVE_MS = DAY_MS;
+/** Most jobs the live list returns. */
+const LIVE_LIMIT = 200;
+
+/**
+ * The workspace's jobs still going, picks left out, for the Runners page. One range of
+ * job_timing_installation_idx: the workspace's installations with completed_at null.
+ */
+export async function liveJobs(db: Db, workspaceId: string, now = Date.now()): Promise<LiveJobs> {
+  const since = sql`coalesce(${timing.startedAt}, ${timing.queuedAt}, ${timing.createdAt})`;
+  const rows = await db
+    .select({
+      id: timing.id,
+      repositoryId: timing.repositoryId,
+      repository: timing.repositoryFullName,
+      runId: timing.runId,
+      runAttempt: timing.runAttempt,
+      workflow: timing.workflowName,
+      name: timing.name,
+      labels: timing.labels,
+      runnerGroupName: timing.runnerGroupName,
+      machineId: timing.machineId,
+      queuedAt: timing.queuedAt,
+      startedAt: timing.startedAt,
+    })
+    .from(timing)
+    .where(
+      and(
+        inWorkspace(workspaceId),
+        sql`${timing.completedAt} is null and not ${PICK} and ${since} >= ${now - LIVE_MS}`,
+      ),
+    )
+    // Running jobs by when they started, queued ones by when they were queued: oldest first.
+    .orderBy(since)
+    .limit(LIVE_LIMIT);
+  const envs = new Map<string, Environment>();
+  const running: LiveJob[] = [];
+  const queued: LiveJob[] = [];
+  for (const { runnerGroupName, machineId, ...row } of rows) {
+    const env = environmentFor(row.labels, runnerGroupName, machineId);
+    envs.set(env.key, env);
+    const job: LiveJob = {
+      ...row,
+      environment: env.key,
+      queuedAt: row.queuedAt?.getTime() ?? null,
+      startedAt: row.startedAt?.getTime() ?? null,
+    };
+    (job.startedAt === null ? queued : running).push(job);
+  }
+  await nameMachines(db, workspaceId, envs);
+  return { environments: [...envs.values()], running, queued };
 }
 
 /** Where one of the workspace's jobs lives on GitHub, or null when it isn't the workspace's. */

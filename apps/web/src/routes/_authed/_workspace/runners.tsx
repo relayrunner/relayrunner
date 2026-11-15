@@ -41,6 +41,7 @@ import {
   machineView,
 } from "@/components/runner-card";
 import { RunnerList, type RunnerRow } from "@/components/runner-list";
+import { RunnersNow } from "@/components/runners-now";
 import { Button } from "@/components/ui/button";
 import {
   DropdownMenu,
@@ -60,6 +61,7 @@ import {
   type EnvironmentSummary,
   type Stat,
 } from "@/lib/job-times";
+import { getLiveJobs, NO_LIVE_JOBS, sampleLiveJobs } from "@/lib/live-jobs";
 import { useLiveRefresh } from "@/lib/live-refresh";
 import {
   addableRunners,
@@ -112,11 +114,13 @@ export const Route = createFileRoute("/_authed/_workspace/runners")({
   validateSearch: validateRunnerSearch,
   loader: async ({ context }) => {
     try {
-      const [order, { machines, others = [] }] = await Promise.all([
+      const [order, { machines, others = [] }, live] = await Promise.all([
         getRunnerOrder(context.current.workspace.id),
         listMachines(),
+        // The page still loads without them; the next refresh tries again.
+        getLiveJobs().catch(() => NO_LIVE_JOBS),
       ]);
-      return { ...order, machines, others };
+      return { ...order, machines, others, live };
     } catch (error) {
       // The dev preview has no API behind it.
       if (authDisabled)
@@ -125,6 +129,7 @@ export const Route = createFileRoute("/_authed/_workspace/runners")({
           isDefault: true,
           machines: SAMPLE_MACHINES,
           others: [],
+          live: sampleLiveJobs(),
         };
       throw error;
     }
@@ -144,14 +149,24 @@ function RunnersPage() {
   const [others, setOthers] = useState(loaded.others);
   useEffect(() => setAllMachines(loaded.machines), [loaded.machines]);
   useEffect(() => setOthers(loaded.others), [loaded.others]);
+  // The jobs running and queued right now, for the top of the page.
+  const [live, setLive] = useState(loaded.live);
+  useEffect(() => setLive(loaded.live), [loaded.live]);
+  // Each keeps showing its last answer when a refresh fails; the next tick retries.
+  const refreshMachines = () =>
+    listMachines()
+      .then((result) => {
+        setAllMachines(result.machines);
+        setOthers(result.others ?? []);
+      })
+      .catch(() => undefined);
+  const refreshLive = () =>
+    getLiveJobs()
+      .then(setLive)
+      .catch(() => undefined);
   useLiveRefresh(
-    () =>
-      listMachines()
-        .then((result) => {
-          setAllMachines(result.machines);
-          setOthers(result.others ?? []);
-        })
-        .catch(() => undefined), // Keep showing the last answer; the next tick retries.
+    // The live jobs only show once the workspace has a runner.
+    () => Promise.all([refreshMachines(), allMachines.length ? refreshLive() : null]),
     { intervalMs: REFRESH_MS, enabled: !authDisabled },
   );
 
@@ -350,6 +365,7 @@ function RunnersPage() {
               onDismiss={dismissOthers}
             />
           )}
+          {!empty && <RunnersNow machines={allMachines} live={live} />}
           {empty ? (
             <RunnerGroup title="Self-hosted" bare>
               <ConnectLanding
