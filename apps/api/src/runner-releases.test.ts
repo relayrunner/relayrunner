@@ -30,7 +30,7 @@ test("a runner behind has the newest release and 30 days from the first one past
 test("saves published releases from GitHub, skipping drafts and prereleases", async () => {
   const env = await createTestEnv();
   const db = createDb(env.DB);
-  const fetcher = vi.fn(async () =>
+  const fetcher: typeof fetch = vi.fn(async () =>
     Response.json([
       { tag_name: "v2.332.0", draft: true, prerelease: false, published_at: null },
       {
@@ -53,17 +53,15 @@ test("saves published releases from GitHub, skipping drafts and prereleases", as
       },
     ]),
   );
-  expect(await syncRunnerReleases(db, fetcher as unknown as typeof fetch)).toBe(2);
+  expect(await syncRunnerReleases(db, fetcher)).toBe(2);
   // Running again keeps the rows as they are.
-  await syncRunnerReleases(db, fetcher as unknown as typeof fetch);
+  await syncRunnerReleases(db, fetcher);
   const rows = await db.select().from(schema.runnerRelease);
   expect(rows.map((row) => row.version).sort()).toEqual(["2.330.0", "2.331.0"]);
 });
 
 test("fails when GitHub doesn't answer", async () => {
   const env = await createTestEnv();
-  const fetcher = async () => new Response("rate limited", { status: 403 });
-  await expect(
-    syncRunnerReleases(createDb(env.DB), fetcher as unknown as typeof fetch),
-  ).rejects.toThrow("Status 403");
+  const fetcher: typeof fetch = async () => new Response("rate limited", { status: 403 });
+  await expect(syncRunnerReleases(createDb(env.DB), fetcher)).rejects.toThrow("Status 403");
 });

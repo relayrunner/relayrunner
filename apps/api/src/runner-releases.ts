@@ -7,11 +7,12 @@ import { z } from "zod";
 import { cachedRead } from "./d1-cache.ts";
 import { type Db, schema } from "./db/index.ts";
 import { userAgent } from "./runner-protocol.ts";
+import { DAY_MS } from "./time.ts";
 
 export type RunnerRelease = { version: string; publishedAt: Date };
 
 /** How long GitHub keeps sending jobs to a runner once a newer release is out. */
-export const UPDATE_WINDOW_MS = 30 * 24 * 60 * 60 * 1000;
+export const UPDATE_WINDOW_MS = 30 * DAY_MS;
 
 const RELEASES_URL = "https://api.github.com/repos/actions/runner/releases?per_page=30";
 
@@ -41,17 +42,15 @@ export async function syncRunnerReleases(db: Db, fetcher: typeof fetch = fetch) 
   return rows.length;
 }
 
-const runnerReleases = cachedRead(
+/**
+ * The saved releases, cached per isolate; none when D1 can't be read, so nothing reads as behind.
+ * forgetRunnerReleases drops the cache after new ones are saved.
+ */
+export const { load: loadRunnerReleases, forget: forgetRunnerReleases } = cachedRead(
   "runner releases",
   (db) => db.select().from(schema.runnerRelease),
   (): RunnerRelease[] => [],
 );
-
-/** The saved releases, cached per isolate; none when D1 can't be read, so nothing reads as behind. */
-export const loadRunnerReleases = runnerReleases.load;
-
-/** Drops this isolate's cached releases, after new ones are saved. */
-export const forgetRunnerReleases = runnerReleases.forget;
 
 /**
  * The newest release past `version`, and when GitHub may stop sending the runner jobs: 30 days

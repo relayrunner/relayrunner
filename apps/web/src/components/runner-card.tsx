@@ -577,7 +577,7 @@ export function RunnerUpdateNote({ machine, className }: { machine: Machine; cla
   if (!update) return null;
   const text = update.overdue
     ? "Runner update overdue"
-    : update.urgent && update.updateBy !== null
+    : update.updateBy !== null && update.urgent
       ? `Update runner by ${shortDate(update.updateBy)}`
       : "Runner update available";
   const Icon = update.urgent ? TriangleAlertIcon : CircleArrowUpIcon;

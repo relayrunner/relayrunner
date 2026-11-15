@@ -43,6 +43,7 @@ import {
   otherMachines,
   pausedByName,
   presentMachine,
+  presentRunner,
   presentMachineWorkspaces,
   recordMachineEvents,
   removeMachineFromWorkspace,
@@ -468,12 +469,15 @@ export const machineRoutes = new Hono<AppEnv>()
     ]);
     return c.json({
       machines: rows.map((machine, i) => ({
-        ...presentMachine(machine, null, releases),
+        ...presentMachine(machine),
+        runner: presentRunner(machine, releases),
         status: statuses[i],
       })),
     });
   })
   .get("/", requireUser, requireWorkspace, async (c) => {
+    // Read alongside everything below; nothing here depends on it.
+    const loadingReleases = loadRunnerReleases(c.var.db);
     const creator = alias(schema.user, "owner");
     const rows = await c.var.db
       .select({
@@ -576,7 +580,7 @@ export const machineRoutes = new Hono<AppEnv>()
     const otherStatuses = await Promise.all(
       others.map(({ machine }) => c.env.MACHINE_LINK.getByName(machine.id).status()),
     );
-    const releases = await loadRunnerReleases(c.var.db);
+    const releases = await loadingReleases;
     return c.json({
       others: others.map(({ machine, workspaces }, i) => ({
         id: machine.id,
@@ -590,7 +594,8 @@ export const machineRoutes = new Hono<AppEnv>()
       })),
       machines: rows.map((row, i) => {
         const presented = {
-          ...presentMachine(row.machine, row.pausedBy, releases),
+          ...presentMachine(row.machine, row.pausedBy),
+          runner: presentRunner(row.machine, releases),
           // Who connected it. A runner added from GitHub belongs to its org instead.
           owner: row.machine.source === "github" ? row.org : row.ownerName,
           // The owner's GitHub avatar, or the org's for a runner added from GitHub.

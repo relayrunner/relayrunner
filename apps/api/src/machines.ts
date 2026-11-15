@@ -397,11 +397,7 @@ export type DistributiveOmit<T, K extends PropertyKey> = T extends unknown ? Omi
  * What the dashboard and the CLI see of a machine. Never includes the token hash. `pausedBy` is
  * the name of the user who paused it, when the caller looked it up.
  */
-export function presentMachine(
-  machine: Machine,
-  pausedBy: string | null = null,
-  releases: RunnerRelease[] = [],
-) {
+export function presentMachine(machine: Machine, pausedBy: string | null = null) {
   return {
     id: machine.id,
     name: machine.name,
@@ -453,16 +449,18 @@ export function presentMachine(
             : null,
         }
       : null,
-    // The actions/runner version from its last hello, the newer release, and when GitHub may stop
-    // sending it jobs (runner-releases.ts). No update without `releases`, which only the lists
-    // the Runners page reads pass. Null for a runner added from GitHub, which doesn't say.
-    runner: machine.runnerVersion
-      ? {
-          version: machine.runnerVersion,
-          ...runnerUpdate(machine.runnerVersion, releases),
-        }
-      : null,
   };
+}
+
+/**
+ * The actions/runner version from the machine's last hello, the newer release, and when GitHub may
+ * stop sending it jobs (runner-releases.ts). Null for a runner added from GitHub, which doesn't
+ * say. The lists the Runners page reads add it to presentMachine, as they add status.
+ */
+export function presentRunner(machine: Machine, releases: RunnerRelease[]) {
+  return machine.runnerVersion
+    ? { version: machine.runnerVersion, ...runnerUpdate(machine.runnerVersion, releases) }
+    : null;
 }
 
 /**

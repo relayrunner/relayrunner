@@ -1,7 +1,7 @@
 import type { Machine } from "./machines.ts";
 
 /** How close to GitHub's cutoff a runner update turns from a note into a warning. */
-const UPDATE_SOON_MS = 7 * 24 * 60 * 60 * 1000;
+const UPDATE_SOON_MS = 7 * 86_400_000;
 
 /**
  * The machine's runner update, or null when its runner is up to date or it doesn't say. `urgent`
