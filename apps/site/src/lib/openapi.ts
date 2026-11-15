@@ -113,6 +113,17 @@ export const openApi = {
       object("The runner order.", { order: list, isDefault: { type: "boolean" } }),
       [{ name: "workspaceId", in: "path", required: true, schema: { type: "string" } }],
     ),
+    "/workspaces/{workspaceId}/router-setup": read(
+      "listWorkflows",
+      "List workflows",
+      "Every workflow that ran in the workspace's repos in the last 14 days, with how many of its runs went through RelayRunner, unrouted first, plus the hosted provider labels jobs ran on.",
+      object("Recent workflows and hosted labels.", {
+        days: { type: "integer" },
+        workflows: list,
+        labels: list,
+      }),
+      [{ name: "workspaceId", in: "path", required: true, schema: { type: "string" } }],
+    ),
     "/machines": read(
       "listRunners",
       "List runners",
@@ -220,6 +231,25 @@ export const openApi = {
       "How long each job usually takes on each runner environment.",
       object("Job times by workflow, job and environment."),
       [daysQuery(30, 14)],
+    ),
+    "/signals": read(
+      "getSignals",
+      "Get signals",
+      "What's making CI slow, costly or busier than it needs to be: each signal's area, jobs, minutes, estimated cost and the repos and workflows it affects most, plus every job's minutes by person, repository, workflow, branch and trigger.",
+      object("Signals and the breakdown.", {
+        days: { type: "integer" },
+        totals: record,
+        signals: list,
+      }),
+      [
+        daysQuery(90, 30),
+        {
+          name: "breakdown",
+          in: "query",
+          description: "0 leaves out the breakdown.",
+          schema: { type: "integer", enum: [0, 1], default: 1 },
+        },
+      ],
     ),
     "/feedback": {
       post: {

@@ -12,6 +12,8 @@ Routing a job is one change: a relay job in front of it, and a `runs-on` that po
 
 Work in the user's checkout and ask before changing files. `init` never commits; leave committing and pushing to the user unless they ask. If the CLI isn't installed, see the `relayrunner` skill.
 
+If the user isn't sure which repo to start with, the `list_workflows` MCP tool (see `relayrunner-ci-insights`) lists recent workflows with the ones not routed yet first, as does the dashboard's Router page.
+
 ## 1. Plan
 
 ```sh

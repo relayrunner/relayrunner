@@ -65,6 +65,8 @@ The server also serves the RelayRunner skills, so agents that support skills ove
 - "Why did my last push run on GitHub instead of my Mac?"
 - "Which jobs cost the most this month?"
 - "How long does the test job usually take on each runner?"
+- "What's making our CI slow?"
+- "Which workflows aren't routed yet?"
 
 ## Tools
 
@@ -74,12 +76,14 @@ The server also serves the RelayRunner skills, so agents that support skills ove
 | `get_workspace`    | One workspace, your role and its GitHub installation                    |
 | `list_runners`     | Runners, their status, labels, pause state and current job              |
 | `get_runner_order` | The providers jobs are tried on, in order                               |
+| `list_workflows`   | Recent workflows and which ones are routed                              |
 | `list_runs`        | Recent workflow runs, by repo, status or result                         |
 | `get_run_jobs`     | One run's jobs and where each ran                                       |
 | `get_run_failures` | Why a run's jobs failed, with the end of each log (read from GitHub)    |
 | `list_activity`    | The activity log, including where each job was routed and why           |
 | `get_usage`        | Short jobs and round-up cost, optimized check savings, Actions minutes  |
 | `get_job_times`    | Typical job durations per runner                                        |
+| `get_signals`      | What's making CI slow, costly or busier than it needs to be             |
 | `send_feedback`    | Reports a bug, confusing result or missing tool to the RelayRunner team |
 
 Every tool takes an optional `workspace`, needed only when the agent can read more than one.

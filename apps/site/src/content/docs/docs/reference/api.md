@@ -28,6 +28,7 @@ Send the access token as `Authorization: Bearer <token>`. Tokens last 15 minutes
 | `GET /me`                                                | You and the workspaces the token may read                              |
 | `GET /workspaces/current`                                | One workspace, your role and its GitHub accounts                       |
 | `GET /workspaces/{id}/runner-order`                      | The providers jobs are tried on, in order                              |
+| `GET /workspaces/{id}/router-setup`                      | Recent workflows and how many of their runs were routed                |
 | `GET /machines`                                          | Runners, their status, labels, pause state and current job             |
 | `GET /runs`                                              | Workflow runs from the last 14 days                                    |
 | `GET /runs/{repositoryId}/{runId}/{runAttempt}/jobs`     | One run's jobs and where each ran                                      |
@@ -35,6 +36,7 @@ Send the access token as `Authorization: Bearer <token>`. Tokens last 15 minutes
 | `GET /activity`                                          | The activity log, including where each job was routed and why          |
 | `GET /usage`, `/usage/checks`, `/usage/actions`          | Short jobs and round-up cost, optimized check savings, Actions minutes |
 | `GET /job-times`                                         | Typical job durations per runner                                       |
+| `GET /signals`                                           | What's making CI slow, costly or busier than it needs to be            |
 | `POST /feedback`                                         | Reports a bug, confusing result or missing feature to the team         |
 
 A failed request answers with a code and a message, such as `{"error": {"code": "INVALID_REQUEST", "message": "The request isn't valid."}}`. [Errors](/docs/reference/errors) lists every code.

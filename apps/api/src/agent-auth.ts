@@ -190,7 +190,7 @@ export function agentIssuer(env: Env) {
 const AGENT_ROUTES: RegExp[] = [
   /^\/api\/me$/,
   /^\/api\/workspaces\/current$/,
-  /^\/api\/workspaces\/[^/]+\/runner-order$/,
+  /^\/api\/workspaces\/[^/]+\/(runner-order|router-setup)$/,
   /^\/api\/machines$/,
   /^\/api\/runs$/,
   /^\/api\/runs\/\d+\/\d+\/\d+\/(jobs|failures)$/,
@@ -198,6 +198,7 @@ const AGENT_ROUTES: RegExp[] = [
   /^\/api\/usage$/,
   /^\/api\/usage\/(checks|actions)$/,
   /^\/api\/job-times$/,
+  /^\/api\/signals$/,
 ];
 
 // Routes an agent may call by method. The one write is agent feedback, which only adds a row for

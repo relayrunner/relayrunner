@@ -1,4 +1,10 @@
-import type { ActivityItem, ActivityPage, ActivityStarter, RouteWalk } from "@relayrunner/activity";
+import {
+  dollars,
+  type ActivityItem,
+  type ActivityPage,
+  type ActivityStarter,
+  type RouteWalk,
+} from "@relayrunner/activity";
 
 // Agent clients cap tool results (Claude Code's is about 25k tokens), and the dashboard's answers
 // carry everything a page might render. These cut them down to what an agent reasons over.
@@ -11,12 +17,12 @@ function route(walk: RouteWalk | null) {
   if (!walk) return undefined;
   return {
     step: walk.step,
-    skipped: walk.skipped.map(({ key, reason, paused, notShared, minutes }) => ({
-      key,
-      reason,
-      ...(paused && { paused }),
+    // Every skip's own fields pass through, with the bulky ones cut to what an agent reads.
+    skipped: walk.skipped.map(({ notShared, minutes, spend, ...skip }) => ({
+      ...skip,
       ...(notShared && { notShared: notShared.map((machine) => machine.machine) }),
       ...(minutes && { minutes: `${minutes.usedMinutes}/${minutes.quotaMinutes}` }),
+      ...(spend && { spend: `${dollars(spend.spentUsd)}/${dollars(spend.limitUsd)}` }),
     })),
   };
 }
@@ -112,7 +118,8 @@ function sampledJob(job: JobRow): JobRow {
   };
 }
 
-const contains = (value: string | null, part: string | undefined) =>
+/** Whether `value` contains `part`, ignoring case; true when no part is asked for. */
+export const contains = (value: string | null, part: string | undefined) =>
   !part || (value ?? "").toLowerCase().includes(part.toLowerCase());
 
 /**

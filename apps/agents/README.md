@@ -32,10 +32,13 @@ This Worker holds no secrets and no state. It doesn't call GitHub or the Router:
 | `list_runners`     | Runners, their status, labels, pause state and current job             |
 | `get_runner_order` | The providers jobs are tried on, in order                              |
 | `list_runs`        | Recent workflow runs, filterable by repository, status, conclusion     |
+| `list_workflows`   | Recent workflows and which ones are routed                             |
 | `get_run_jobs`     | One run's jobs and where each ran                                      |
+| `get_run_failures` | Why a run's jobs failed, with the end of each log (read from GitHub)   |
 | `list_activity`    | The activity log, including where each job was routed and why          |
 | `get_usage`        | Short jobs and round-up cost, optimized check savings, Actions minutes |
 | `get_job_times`    | Typical job durations per runner environment                           |
+| `get_signals`      | What's making CI slow, costly or busier than it needs to be            |
 | `send_feedback`    | Writes: reports a bug, confusing result or missing tool to the team    |
 
 ## Feedback

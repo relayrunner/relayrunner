@@ -207,8 +207,8 @@ function sum(rows: { count: number; runMs: number }[]) {
   };
 }
 
-async function report(cookie: string) {
-  const res = await testing.call(env, "/signals?days=7", cookie);
+async function report(cookie: string, query = "") {
+  const res = await testing.call(env, `/signals?days=7${query}`, cookie);
   expect(res.status).toBe(200);
   return (await res.json()) as SignalsReport;
 }
@@ -516,6 +516,7 @@ describe("GET /api/signals", () => {
     await rollUpSignals(createDb(env.DB), ctx.installationId);
 
     const { breakdown } = await report(ctx.cookie);
+    if (!breakdown) throw new Error("no breakdown");
     expect(breakdown.person).toMatchObject({
       rows: [
         { name: "ana", repository: null, runs: 1, minutes: 30 },
@@ -533,6 +534,19 @@ describe("GET /api/signals", () => {
       workflowPath: ".github/workflows/ci.yml",
       runs: 2,
     });
+  });
+
+  test("leaves the breakdown out with breakdown=0, keeping the signals", async () => {
+    const ctx = await connectedWorkspace();
+    await runWithJob(ctx, { start: 60, minutes: 30, startedByLogin: "ana" });
+    await shortJobs(ctx, 2);
+    await rollUpSignals(createDb(env.DB), ctx.installationId);
+
+    const full = await report(ctx.cookie);
+    const only = await report(ctx.cookie, "&breakdown=0");
+    expect(only).not.toHaveProperty("breakdown");
+    expect(only.signals).toEqual(full.signals);
+    expect(only.totals).toEqual(full.totals);
   });
 
   test("is empty before the first rollup", async () => {

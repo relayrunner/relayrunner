@@ -186,7 +186,14 @@ describe("mcp server", () => {
   test("list_activity answers a few compact entries and pages past the last one", async () => {
     const walk = {
       step: "github",
-      skipped: [{ key: "machine", reason: "machine_paused", paused: ["mini"] }],
+      skipped: [
+        { key: "machine", reason: "machine_paused", paused: ["mini"] },
+        {
+          key: "depot",
+          reason: "spend_limit",
+          spend: { account: "acme", spentUsd: 212.4, limitUsd: 200 },
+        },
+      ],
       notInOrder: [],
       machine: ["macos"],
       github: ["ubuntu-latest"],
@@ -252,7 +259,10 @@ describe("mcp server", () => {
       conclusion: "success",
       route: {
         step: "github",
-        skipped: [{ key: "machine", reason: "machine_paused", paused: ["mini"] }],
+        skipped: [
+          { key: "machine", reason: "machine_paused", paused: ["mini"] },
+          { key: "depot", reason: "spend_limit", spend: "$212/$200" },
+        ],
       },
       startedBy: "Ada",
     });
@@ -310,6 +320,42 @@ describe("mcp server", () => {
     expect(report.workflows).toHaveLength(1);
     expect(report.workflows[0].jobs[0].byEnvironment).toEqual({ "github:linux-2-core": stat(5) });
     expect(report.workflows[0].jobs.map((job: { name: string }) => job.name)).toEqual(["test"]);
+  });
+
+  test("list_workflows filters by repository and get_signals asks for the breakdown only when wanted", async () => {
+    const { env, asked } = fakeEnv({
+      "/api/workspaces/w1/router-setup": {
+        days: 14,
+        workflows: [
+          { repositoryId: 1, repository: "acme/app", workflow: "CI", runs: 9, routedRuns: 0 },
+          { repositoryId: 2, repository: "acme/site", workflow: "Deploy", runs: 3, routedRuns: 3 },
+        ],
+        labels: [],
+      },
+      "/api/signals": {
+        days: 30,
+        totals: { jobs: 10, minutes: 40, cost: 0.32 },
+        signals: [{ id: "short-jobs", area: "cost", count: 8, minutes: 31, cost: 0.25, rows: [] }],
+        breakdown: { person: { rows: [], other: null } },
+      },
+    });
+    const call = async (name: string, args: object) =>
+      JSON.parse(
+        (
+          (await (
+            await rpc(env, { method: "tools/call", params: { name, arguments: args } })
+          ).json()) as { result: { content: { text: string }[] } }
+        ).result.content[0].text,
+      );
+
+    const setup = await call("list_workflows", { repository: "APP" });
+    expect(setup.workflows.map((row: { workflow: string }) => row.workflow)).toEqual(["CI"]);
+
+    const signals = await call("get_signals", { days: 7 });
+    expect(signals.signals[0].id).toBe("short-jobs");
+    await call("get_signals", { breakdown: true });
+    expect(asked).toContain("/api/signals?days=7&breakdown=0 @w1");
+    expect(asked).toContain("/api/signals?days=30 @w1");
   });
 
   test("a connection with several workspaces asks which, by id or name", async () => {

@@ -13,7 +13,7 @@
  * The same rows hold the page's Breakdown: every counted job by who started its run, its workflow,
  * branch and trigger.
  */
-import { and, eq, exists, gte, isNull, sql } from "drizzle-orm";
+import { and, eq, exists, gte, isNull, notLike, sql } from "drizzle-orm";
 import type { PriceBook } from "@relayrunner/providers";
 import { type Db, createDb, prepare, schema } from "./db/index.ts";
 import type { Env } from "./env.ts";
@@ -747,19 +747,23 @@ export interface SignalsReport {
   totals: { jobs: number; minutes: number; cost: number };
   /** Signals over the threshold, the most time first. */
   signals: Signal[];
-  /** Every counted job split by who started it, repo, workflow, branch and trigger. */
-  breakdown: Record<BreakdownBy, Breakdown>;
+  /**
+   * Every counted job split by who started it, repo, workflow, branch and trigger. Left out when
+   * the caller asks for signals only.
+   */
+  breakdown?: Record<BreakdownBy, Breakdown>;
 }
 
 /**
  * The workspace's signals over the last `days` whole UTC days and today. A signal shows when it
- * covers at least MIN_MINUTES and MIN_SHARE of every job's minutes.
+ * covers at least MIN_MINUTES and MIN_SHARE of every job's minutes. With `breakdown` false, the
+ * Breakdown's rows aren't read at all.
  */
 export async function signalsReport(
   db: Db,
   workspaceId: string,
   days = 30,
-  now = Date.now(),
+  { breakdown = true, now = Date.now() } = {},
 ): Promise<SignalsReport> {
   const since = new Date(utcDay(now) - (days - 1) * DAY_MS);
   const found = await db
@@ -775,7 +779,13 @@ export async function signalsReport(
     })
     .from(day)
     .innerJoin(schema.workspace, eq(schema.workspace.installationId, day.installationId))
-    .where(and(eq(schema.workspace.id, workspaceId), gte(day.day, since)))
+    .where(
+      and(
+        eq(schema.workspace.id, workspaceId),
+        gte(day.day, since),
+        breakdown ? undefined : notLike(day.signal, "by-%"),
+      ),
+    )
     .groupBy(day.signal, day.repositoryId, day.subject);
 
   const totals = { jobs: 0, minutes: 0, cost: 0 };
@@ -836,7 +846,7 @@ export async function signalsReport(
     days,
     totals: rounded(totals),
     signals,
-    breakdown: breakdowns.report(),
+    ...(breakdown && { breakdown: breakdowns.report() }),
   };
 }
 

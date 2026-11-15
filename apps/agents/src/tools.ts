@@ -9,7 +9,7 @@ import {
 } from "@relayrunner/activity";
 import { z } from "zod";
 import type { Api, Workspace, WorkspaceApi } from "./api.ts";
-import { compactActivityPage, compactJobTimes } from "./compact.ts";
+import { compactActivityPage, compactJobTimes, contains } from "./compact.ts";
 
 // Read-only tools over relayrunner-api's dashboard endpoints, plus send_feedback, which only
 // records a report for the RelayRunner team. Each answers JSON. All are D1 reads except
@@ -75,6 +75,10 @@ export function registerTools(server: McpServer, request: WorkspaceApi, workspac
     (path, query) =>
       request(path, { query, workspaceId: workspaceId(workspace) });
 
+  // A /workspaces/:id route, for the workspace a call names.
+  const workspaceRoute = <T>(workspace: string | undefined, route: string) =>
+    request<T>(`/workspaces/${encodeURIComponent(workspaceId(workspace))}/${route}`);
+
   server.registerTool(
     "list_workspaces",
     {
@@ -125,14 +129,38 @@ export function registerTools(server: McpServer, request: WorkspaceApi, workspac
     {
       title: "Runner order",
       description:
-        "The workspace's runner order: the providers RelayRunner tries for a job, top to bottom ('machine' for connected machines, 'github' for GitHub-hosted runners, optionally with a monthly minutes limit, and hosted providers by id: 'blacksmith', 'depot', 'namespace', 'warpbuild', 'ubicloud', 'runs-on'). A job goes to the first provider it allows that can take it. isDefault is true when nobody has changed it.",
+        "The workspace's runner order: the providers RelayRunner tries for a job, top to bottom ('machine' for connected machines, 'github' for GitHub-hosted runners, optionally with a monthly minutes limit, and hosted providers by id: 'blacksmith', 'depot', 'namespace', 'warpbuild', 'ubicloud', 'runs-on', optionally with a monthly spendLimit in dollars). A job goes to the first provider it allows that can take it. A minutes limit counts the job's GitHub account's minutes, or its enterprise's shared minutes for an org in a GitHub enterprise. isDefault is true when nobody has changed it.",
       inputSchema: z.object({ workspace: workspaceArg }),
       annotations: READ_ONLY,
     },
-    ({ workspace }) =>
+    ({ workspace }) => answer(() => workspaceRoute(workspace, "runner-order")),
+  );
+
+  server.registerTool(
+    "list_workflows",
+    {
+      title: "Workflows",
+      description:
+        "Every workflow that ran in the workspace's repos in the last 14 days, with its runs and how many went through RelayRunner (routedRuns). Workflows with no routed runs come first: those are what's left to route. Also the hosted provider runner labels jobs ran on, with job counts.",
+      inputSchema: z.object({
+        workspace: workspaceArg,
+        repository: z
+          .string()
+          .optional()
+          .describe("Only workflows in repositories whose owner/name contains this."),
+      }),
+      annotations: READ_ONLY,
+    },
+    ({ workspace, repository }) =>
       answer(async () => {
-        const id = workspaceId(workspace);
-        return request(`/workspaces/${encodeURIComponent(id)}/runner-order`);
+        const setup = await workspaceRoute<{ workflows: { repository: string }[] }>(
+          workspace,
+          "router-setup",
+        );
+        return {
+          ...setup,
+          workflows: setup.workflows.filter((row) => contains(row.repository, repository)),
+        };
       }),
   );
 
@@ -161,13 +189,12 @@ export function registerTools(server: McpServer, request: WorkspaceApi, workspac
     ({ workspace, repository, status, conclusion, routed, limit }) =>
       answer(async () => {
         const report = await scoped(workspace)<{
-          runs: Record<string, unknown>[];
+          runs: (Record<string, unknown> & { repository: string })[];
           truncated: boolean;
         }>("/runs");
         const runs = report.runs.filter(
           (run) =>
-            (!repository ||
-              String(run.repository).toLowerCase().includes(repository.toLowerCase())) &&
+            contains(run.repository, repository) &&
             (!status || run.status === status) &&
             (!conclusion || run.conclusion === conclusion) &&
             (routed === undefined || run.routed === routed),
@@ -246,7 +273,7 @@ export function registerTools(server: McpServer, request: WorkspaceApi, workspac
     {
       title: "Usage",
       description:
-        "What the workspace's CI used and saved: jobs under a minute and what GitHub's round-up to whole minutes cost, what optimized checks saved, and each connected GitHub account's Actions minutes this billing cycle.",
+        "What the workspace's CI used and saved: jobs under a minute and what GitHub's round-up to whole minutes cost, what optimized checks saved, and each connected GitHub account's Actions minutes this billing cycle (an org in a GitHub enterprise shows its enterprise's shared minutes, named by `enterprise`).",
       inputSchema: z.object({ workspace: workspaceArg, days: days(90, 30) }),
       annotations: READ_ONLY,
     },
@@ -267,7 +294,7 @@ export function registerTools(server: McpServer, request: WorkspaceApi, workspac
     {
       title: "Job times",
       description:
-        "How long each job usually takes on each runner environment, for comparing machines against GitHub-hosted runners. Times with no successful runs behind them are left out. Narrow with repository and workflow to keep the answer small.",
+        "How long each job usually takes on each runner environment, for comparing machines against GitHub-hosted runners: median and p90 run time, median wait for a runner, and the trend against the window before (0.18 is 18% slower). Times with no successful runs behind them are left out. Narrow with repository and workflow to keep the answer small.",
       inputSchema: z.object({
         workspace: workspaceArg,
         days: days(30, 14),
@@ -281,6 +308,28 @@ export function registerTools(server: McpServer, request: WorkspaceApi, workspac
     },
     ({ workspace, days, ...filter }) =>
       answer(async () => compactJobTimes(await scoped(workspace)("/job-times", { days }), filter)),
+  );
+
+  server.registerTool(
+    "get_signals",
+    {
+      title: "Signals",
+      description:
+        "What's making the workspace's CI slow, costly or busier than it needs to be, such as queue waits, flaky jobs, runner failures, short jobs or runs that kept going after a newer push. Each signal has an id, an area (speed, cost or complexity), its jobs, minutes and estimated cost, and the repos and workflows it affects most. Only signals over 30 minutes and 1% of all job minutes show.",
+      inputSchema: z.object({
+        workspace: workspaceArg,
+        days: days(90, 30),
+        breakdown: z
+          .boolean()
+          .default(false)
+          .describe(
+            "Also return minutes and cost by person, repository, workflow, branch and trigger.",
+          ),
+      }),
+      annotations: READ_ONLY,
+    },
+    ({ workspace, days, breakdown }) =>
+      answer(() => scoped(workspace)("/signals", { days, breakdown: breakdown ? undefined : 0 })),
   );
 
   server.registerTool(
