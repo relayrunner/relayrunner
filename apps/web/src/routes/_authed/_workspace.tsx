@@ -10,21 +10,28 @@ import {
   ActivityIcon,
   ArrowLeftIcon,
   BookOpenIcon,
+  BotIcon,
   Building2Icon,
   ChartColumnIcon,
   ChartColumnStackedIcon,
+  ChevronRightIcon,
+  CircleUserIcon,
   CloudIcon,
   GaugeIcon,
   HistoryIcon,
   LoaderCircleIcon,
   type LucideIcon,
+  MailIcon,
   MenuIcon,
   MessageSquareIcon,
   PanelLeftCloseIcon,
   PanelLeftOpenIcon,
   RadarIcon,
+  RadioTowerIcon,
   RouteIcon,
   ServerIcon,
+  SettingsIcon,
+  SlidersHorizontalIcon,
   TagIcon,
   UsersIcon,
   WaypointsIcon,
@@ -33,6 +40,7 @@ import {
 import { type ReactNode, useEffect, useState } from "react";
 import { SectionBoundary } from "@/components/error-boundary";
 import { FeedbackPopover } from "@/components/feedback-popover";
+import { GithubIcon } from "@/components/provider-logos";
 import { RUNNER_DEFAULT_RANGE, RUNNER_RANGES, RunnerSheet } from "@/components/runner-sheet";
 import { DOCS_URL, SiteFooter } from "@/components/site-footer";
 import { Sheet, SheetContent, SheetTitle, SheetTrigger } from "@/components/ui/sheet";
@@ -108,7 +116,7 @@ export const Route = createFileRoute("/_authed/_workspace")({
   component: WorkspaceLayout,
 });
 
-type NavItem = { to: string; label: string; icon: LucideIcon };
+type NavItem = { to: string; label: string; icon: LucideIcon | typeof GithubIcon };
 
 const nav = [
   { to: "/runners", label: "Runners", icon: ServerIcon },
@@ -135,6 +143,33 @@ const adminNav = [
   { to: "/admin/prices", label: "Prices", icon: TagIcon },
 ] as const satisfies NavItem[];
 
+// Under /settings: the workspace's pages in two groups, then the user's own.
+const settingsNav = [
+  {
+    label: "Workspace",
+    items: [
+      { to: "/settings/general", label: "General", icon: SlidersHorizontalIcon },
+      { to: "/settings/members", label: "Members", icon: UsersIcon },
+    ],
+  },
+  {
+    label: "Connections",
+    items: [
+      { to: "/settings/github", label: "GitHub", icon: GithubIcon },
+      { to: "/settings/providers", label: "Providers", icon: CloudIcon },
+      { to: "/settings/telemetry", label: "Telemetry", icon: RadioTowerIcon },
+    ],
+  },
+  {
+    label: "Account",
+    items: [
+      { to: "/settings/account", label: "Profile", icon: CircleUserIcon },
+      { to: "/settings/notifications", label: "Email", icon: MailIcon },
+      { to: "/settings/agents", label: "Agents", icon: BotIcon },
+    ],
+  },
+] as const satisfies { label: string; items: NavItem[] }[];
+
 const navLink =
   "rounded-md px-2.5 py-1.5 text-[15px] text-sidebar-foreground transition-colors hover:text-sidebar-accent-foreground";
 const navActive = { className: "bg-sidebar-accent text-sidebar-accent-foreground" };
@@ -145,6 +180,8 @@ const iconButton =
 // Whether the sidebar is collapsed to icons, kept per browser. Phones get a top bar with a menu instead.
 // The sidebar's children style themselves off its data-collapsed attribute (the sidebar group).
 const COLLAPSED_KEY = "relayrunner:sidebar:collapsed";
+// Whether an operator has folded the Admin group away, kept per browser.
+const ADMIN_COLLAPSED_KEY = "relayrunner:sidebar:admin-collapsed";
 
 function WorkspaceLayout() {
   const { user, current } = Route.useRouteContext();
@@ -263,16 +300,41 @@ function PageNav({ showAdmin, collapsed = false }: { showAdmin: boolean; collaps
           ))}
         </NavGroup>
       </nav>
-      {showAdmin && (
-        <nav aria-label="Admin" className="px-1 group-data-[collapsed]/sidebar:px-0">
-          <NavGroup label="Admin">
-            {adminNav.map((item) => (
-              <NavLink key={item.to} item={item} collapsed={collapsed} />
-            ))}
-          </NavGroup>
-        </nav>
-      )}
+      {showAdmin && <AdminNav collapsed={collapsed} />}
     </>
+  );
+}
+
+/** The operator pages, under a heading that folds them away. Always open on an admin page. */
+function AdminNav({ collapsed }: { collapsed: boolean }) {
+  const [foldedPref, setFoldedPref] = useState(() => readFlag(ADMIN_COLLAPSED_KEY));
+  const inAdmin = useMatchRoute()({ to: "/admin", fuzzy: true });
+  const open = !foldedPref || Boolean(inAdmin);
+  const toggle = () => {
+    saveFlag(ADMIN_COLLAPSED_KEY, open);
+    setFoldedPref(open);
+  };
+  const label = open ? "Hide admin pages" : "Show admin pages";
+  return (
+    <nav aria-label="Admin" className="grid gap-0.5 px-1 group-data-[collapsed]/sidebar:px-0">
+      <CollapsedTooltip label={label} collapsed={collapsed}>
+        <button
+          type="button"
+          onClick={toggle}
+          disabled={Boolean(inAdmin)}
+          aria-expanded={open}
+          aria-label={collapsed ? label : undefined}
+          className="flex items-center gap-1 rounded-md px-2.5 pb-1 text-xs text-muted-foreground outline-none transition-colors hover:text-foreground focus-visible:ring-[3px] focus-visible:ring-ring/50 disabled:pointer-events-none group-data-[collapsed]/sidebar:justify-center group-data-[collapsed]/sidebar:px-0"
+        >
+          <span className="group-data-[collapsed]/sidebar:sr-only">Admin</span>
+          <ChevronRightIcon
+            aria-hidden
+            className={cn("size-3.5 transition-transform", open && "rotate-90")}
+          />
+        </button>
+      </CollapsedTooltip>
+      {open && adminNav.map((item) => <NavLink key={item.to} item={item} collapsed={collapsed} />)}
+    </nav>
   );
 }
 
@@ -293,7 +355,7 @@ function OwnerPending({ current }: { current: CurrentWorkspace }) {
   );
 }
 
-/** Takes the sidebar's place under /settings: workspace pages, then the user's own. */
+/** Takes the sidebar's place under /settings: the workspace's pages, then the user's own. */
 function SettingsNav({ workspace }: { workspace: { name: string; logo: string | null } }) {
   return (
     <div className="grid gap-5 px-1">
@@ -304,46 +366,18 @@ function SettingsNav({ workspace }: { workspace: { name: string; logo: string | 
         <ArrowLeftIcon aria-hidden className="size-4" />
         Back to dashboard
       </Link>
-      <nav className="flex flex-col gap-5">
-        <NavGroup
-          label={
-            <span className="flex min-w-0 items-center gap-1.5">
-              <WorkspaceMark
-                name={workspace.name}
-                logo={workspace.logo}
-                className="size-4 text-[9px]"
-              />
-              <span className="truncate">{workspace.name}</span>
-            </span>
-          }
-        >
-          <Link to="/settings/general" className={navLink} activeProps={navActive}>
-            General
-          </Link>
-          <Link to="/settings/github" className={navLink} activeProps={navActive}>
-            GitHub
-          </Link>
-          <Link to="/settings/members" className={navLink} activeProps={navActive}>
-            Members
-          </Link>
-          <Link to="/settings/providers" className={navLink} activeProps={navActive}>
-            Providers
-          </Link>
-          <Link to="/settings/telemetry" className={navLink} activeProps={navActive}>
-            Telemetry
-          </Link>
-        </NavGroup>
-        <NavGroup label="Account">
-          <Link to="/settings/account" className={navLink} activeProps={navActive}>
-            Profile
-          </Link>
-          <Link to="/settings/notifications" className={navLink} activeProps={navActive}>
-            Email
-          </Link>
-          <Link to="/settings/agents" className={navLink} activeProps={navActive}>
-            Agents
-          </Link>
-        </NavGroup>
+      <div className="flex min-w-0 items-center gap-2.5 px-2.5">
+        <WorkspaceMark name={workspace.name} logo={workspace.logo} className="size-6 text-xs" />
+        <span className="truncate text-[15px] font-semibold">{workspace.name}</span>
+      </div>
+      <nav aria-label="Settings" className="flex flex-col gap-5">
+        {settingsNav.map((group) => (
+          <NavGroup key={group.label} label={group.label}>
+            {group.items.map((item) => (
+              <NavLink key={item.to} item={item} collapsed={false} />
+            ))}
+          </NavGroup>
+        ))}
       </nav>
     </div>
   );
@@ -365,7 +399,7 @@ function NavLink({ item, collapsed }: { item: NavItem; collapsed: boolean }) {
   );
 }
 
-/** Feedback and the docs, at the foot of the sidebar above the collapse toggle, and of the phone's
+/** Settings, feedback and the docs, at the foot of the sidebar above the collapse toggle, and of the phone's
  * menu. */
 function SidebarFoot({
   collapsed = false,
@@ -376,6 +410,10 @@ function SidebarFoot({
 }) {
   return (
     <div className="mt-auto grid gap-0.5 px-1 group-data-[collapsed]/sidebar:px-0">
+      <NavLink
+        item={{ to: "/settings", label: "Settings", icon: SettingsIcon }}
+        collapsed={collapsed}
+      />
       <CollapsedTooltip label="Feedback" collapsed={collapsed}>
         <FeedbackPopover side={inMenu ? "top" : "right"} align={inMenu ? "start" : "end"}>
           <button type="button" className={cn(navLink, navItem, "w-full")}>
@@ -433,7 +471,7 @@ function SidebarToggle({ collapsed, onToggle }: { collapsed: boolean; onToggle: 
   );
 }
 
-function NavGroup({ label, children }: { label: ReactNode; children: ReactNode }) {
+function NavGroup({ label, children }: { label: string; children: ReactNode }) {
   return (
     <div className="grid min-w-0 content-start gap-0.5">
       <span className="truncate px-2.5 pb-1 text-xs text-muted-foreground group-data-[collapsed]/sidebar:sr-only">

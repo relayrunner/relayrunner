@@ -1,4 +1,4 @@
-import { Link, useRouter } from "@tanstack/react-router";
+import { useRouter } from "@tanstack/react-router";
 import {
   CheckIcon,
   ChevronsUpDownIcon,
@@ -6,9 +6,7 @@ import {
   MonitorIcon,
   MoonIcon,
   PlusIcon,
-  SettingsIcon,
   SunIcon,
-  UserIcon,
 } from "lucide-react";
 import { useState } from "react";
 import {
@@ -29,9 +27,9 @@ import { cn } from "@/lib/utils";
 type MenuUser = { name: string; email: string; image?: string | null } | null;
 
 /**
- * The one menu for everything that isn't a page about runners: who you're
- * signed in as, which workspace you're in, settings, and sign out. It opens
- * from the workspace name at the top of the sidebar.
+ * Who you're signed in as, which workspace you're in, the theme, and sign out.
+ * It opens from the workspace name at the top of the sidebar. Settings has its
+ * own link in the sidebar.
  */
 export function WorkspaceMenu({
   workspace,
@@ -104,21 +102,6 @@ export function WorkspaceMenu({
           </>
         )}
         <WorkspaceList workspaces={workspaces} current={workspace.id} onSelect={switchTo} />
-        <DropdownMenuGroup>
-          <DropdownMenuItem asChild>
-            <Link to="/settings/general">
-              <SettingsIcon />
-              Workspace settings
-            </Link>
-          </DropdownMenuItem>
-          <DropdownMenuItem asChild>
-            <Link to="/settings/account">
-              <UserIcon />
-              Account settings
-            </Link>
-          </DropdownMenuItem>
-        </DropdownMenuGroup>
-        <DropdownMenuSeparator />
         <ThemePicker />
         {user && (
           <>
