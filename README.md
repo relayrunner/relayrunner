@@ -1,51 +1,42 @@
-# RelayRunner
+<div align="center">
 
 <picture>
   <source media="(prefers-color-scheme: dark)" srcset=".github/readme/hero-dark.png">
   <img alt="GitHub Actions jobs go through relayrunner to the first free runner in your order: your machines, self-hosted runners, Blacksmith, then GitHub-hosted." src=".github/readme/hero-light.png">
 </picture>
 
-[Website](https://relayrunner.app) · [Quickstart](https://relayrunner.app/docs/get-started/quickstart) · [Docs](https://relayrunner.app/docs)
+<h1>RelayRunner</h1>
 
-RelayRunner routes GitHub Actions jobs across the runners you already have. Each job goes to the first runner in your workspace's runner order that can take it right now: one of your own machines when it's online and free, an existing self-hosted runner, a hosted provider such as Blacksmith or Depot, or GitHub's hosted runners. Developers keep their usual push workflow and see the same checks and logs in GitHub.
+**Route GitHub Actions jobs to the runners you already have.**
 
-It's built for small teams and individuals who don't want to pay for every push, and for any team whose CI usage spikes. Your laptops and other machines take jobs while they're online, and hosted runners take the rest, with no switch to flip.
+<p>
+  <a href="https://github.com/apps/relayrunner"><b>Install the GitHub App</b></a> &nbsp;·&nbsp;
+  <a href="https://app.relayrunner.app"><b>Dashboard</b></a> &nbsp;·&nbsp;
+  <a href="https://relayrunner.app">Website</a> &nbsp;·&nbsp;
+  <a href="https://relayrunner.app/docs/get-started/quickstart">Quickstart</a> &nbsp;·&nbsp;
+  <a href="https://relayrunner.app/docs">Docs</a>
+</p>
+
+<p>
+  <a href="https://github.com/apps/relayrunner"><img alt="GitHub App: relayrunner" src="https://img.shields.io/badge/GitHub%20App-relayrunner-181717?logo=github&logoColor=white"></a>
+  <a href="https://github.com/relayrunner/relayrunner/actions/workflows/ci.yml"><img alt="CI" src="https://github.com/relayrunner/relayrunner/actions/workflows/ci.yml/badge.svg"></a>
+  <a href="https://www.npmjs.com/package/relayrunner"><img alt="npm" src="https://img.shields.io/npm/v/relayrunner?color=cb3837&label=npm&logo=npm"></a>
+  <a href="https://skills.sh/relayrunner/relayrunner"><img alt="skills.sh" src="https://skills.sh/b/relayrunner/relayrunner"></a>
+  <a href="https://relayrunner.app/docs/reference/mcp"><img alt="MCP server" src="https://img.shields.io/badge/MCP-server-000"></a>
+  <a href="LICENSE"><img alt="License: Apache 2.0" src="https://img.shields.io/badge/license-Apache%202.0-blue"></a>
+</p>
+
+</div>
+
+Each job goes to the first runner in your order that can take it right now: one of your own machines when it's online and free, an existing self-hosted runner, a hosted provider such as Blacksmith or Depot, or GitHub's hosted runners. You keep your usual push workflow and see the same checks and logs in GitHub.
+
+It's built for small teams and individuals who don't want to pay for every push, and for any team whose CI usage spikes. Your laptops and other machines take jobs while they're online, and hosted runners take the rest.
 
 [PRODUCT.md](PRODUCT.md) describes the product in full: how routing works, the runner providers, and the principles behind them.
 
-## The dashboard
+## Get started
 
-**Router.** Put your runners in order. Each job takes the first one that can run it.
-
-<picture>
-  <source media="(prefers-color-scheme: dark)" srcset=".github/readme/router-dark.png">
-  <img alt="The Router page: GitHub-hosted while under 80% of included minutes, then self-hosted, then GitHub-hosted always." src=".github/readme/router-light.png">
-</picture>
-
-**Activity.** See where each job ran and why it went there.
-
-<picture>
-  <source media="(prefers-color-scheme: dark)" srcset=".github/readme/activity-dark.png">
-  <img alt="The Activity page: routed jobs, optimized checks and machine events, newest first." src=".github/readme/activity-light.png">
-</picture>
-
-**Performance.** Compare how long your workflows and jobs take on each runner.
-
-<picture>
-  <source media="(prefers-color-scheme: dark)" srcset=".github/readme/job-times-dark.png">
-  <img alt="The Performance page: median wait and run time per runner, with a MacBook Pro 2.7 times faster than Linux 2-core." src=".github/readme/job-times-light.png">
-</picture>
-
-**Usage.** Track billed minutes and what optimized checks saved.
-
-<picture>
-  <source media="(prefers-color-scheme: dark)" srcset=".github/readme/usage-dark.png">
-  <img alt="The Usage page: checks run, billed minutes saved and money saved in the last 30 days." src=".github/readme/usage-light.png">
-</picture>
-
-## How it works
-
-1. **Install the GitHub App** on an organization or personal account. Each install is its own RelayRunner workspace, and everyone who can see the install on GitHub is a member.
+1. **[Install the GitHub App](https://github.com/apps/relayrunner)** on an organization or personal account. Each install is its own workspace, and everyone who can see the install on GitHub is a member.
 2. **Connect a machine** with `npx relayrunner connect`. While it runs, the machine takes jobs; Ctrl-C takes it offline.
 3. **Opt a job in** by adding a relay job in front of it and pointing its `runs-on` at the relay's answer:
 
@@ -65,13 +56,43 @@ It's built for small teams and individuals who don't want to pay for every push,
          - run: npm test
    ```
 
-   RelayRunner answers the relay itself in about a second, so it bills no minutes. If nothing fits, the relay fails with the reason instead of leaving the job queued.
+   The relay job gets its answer in about a second and bills no minutes. If nothing fits, it fails with the reason instead of leaving the job queued.
 
-The relay workflow and the optimized checks live in [relayrunner/actions](https://github.com/relayrunner/actions).
+Public repositories never run on connected machines, since anyone could run code there through a pull request. The relay workflow and the optimized checks live in [relayrunner/actions](https://github.com/relayrunner/actions).
 
-## Agent skills
+## The dashboard
 
-Give your coding agent RelayRunner's skills, so it can set up machines, route your jobs and read your CI for you:
+**Router.** Put your runners in order. Each job takes the first one that can run it.
+
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset=".github/readme/router-dark.png">
+  <img alt="The Router page: GitHub-hosted while under 80% of included minutes, then self-hosted, then GitHub-hosted always." src=".github/readme/router-light.png">
+</picture>
+
+**History.** See every job, where it ran, how long it waited and how long it took.
+
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset=".github/readme/history-dark.png">
+  <img alt="The History page's job list: each job's commit and author, the runner it ran on, its wait and run time, and its result." src=".github/readme/history-light.png">
+</picture>
+
+**Performance.** Compare how long jobs take on each runner.
+
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset=".github/readme/performance-dark.png">
+  <img alt="The Performance page's runner table: jobs, median wait and run time per runner, with a MacBook Pro 2.7 times faster than ubuntu-latest." src=".github/readme/performance-light.png">
+</picture>
+
+**Signals.** Find what makes your CI slow or costly, such as long runner waits and flaky jobs.
+
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset=".github/readme/signals-dark.png">
+  <img alt="The Signals page: jobs waiting for a runner, the job that finishes last, and flaky jobs with the minutes they cost." src=".github/readme/signals-light.png">
+</picture>
+
+## Use with agents
+
+Give your coding agent the RelayRunner skills, so it can set up machines, route your jobs and read your CI for you:
 
 ```sh
 npx skills add relayrunner/relayrunner
@@ -79,7 +100,7 @@ npx skills add relayrunner/relayrunner
 
 They work with Claude Code, Codex, Cursor and most other agents. See [`skills/`](skills) for what each one does. Without them, [docs/agent-install.md](docs/agent-install.md) walks an agent through the whole setup in one prompt.
 
-Public repositories never run on connected machines, since anyone could run code there through a pull request.
+Agents can also read your workspace through the [MCP server](https://relayrunner.app/docs/reference/mcp) at `https://agents.relayrunner.app/mcp`.
 
 ## Repository layout
 
