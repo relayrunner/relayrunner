@@ -142,18 +142,14 @@ const CAUSES: Record<FailureCause["kind"], string> = {
   config: "This looks like a problem with the workflow setup",
 };
 
-// Below this, the model isn't sure enough to be worth showing.
-const MIN_CONFIDENCE = 0.5;
+const RERUN = {
+  passes: " Running it again will probably pass.",
+  fails: " Running it again probably won't help.",
+};
 
-/** The model's read on the failure, in one sentence, when it's fairly sure. */
+/** The model's read on the failure, in one sentence. */
 function CauseNote({ cause }: { cause: FailureCause }) {
-  if (cause.confidence < MIN_CONFIDENCE) return null;
-  const rerun =
-    cause.passesOnRerun >= 0.6
-      ? " Running it again will probably pass."
-      : cause.passesOnRerun <= 0.3
-        ? " Running it again probably won't help."
-        : "";
+  const rerun = cause.rerun ? RERUN[cause.rerun] : "";
   return (
     <p className="text-sm text-muted-foreground">
       {CAUSES[cause.kind]}.{rerun}

@@ -226,7 +226,7 @@ export function registerTools(server: McpServer, request: WorkspaceApi, workspac
     {
       title: "Run failures",
       description:
-        "Why a run attempt's jobs failed, without reading whole logs: each failed job's first failed step, whether its runner failed it before any step ran (an infrastructure failure, not the code), GitHub's annotations, up to 50 lines of its log ending at the last error, and `cause` when AI is on for the workspace: the likely kind (flaky, lint, test, build, infra or config), how sure it is, and the chance a re-run passes (passesOnRerun, 0-1). Covers up to 5 failed jobs; `more` counts the rest. Take repositoryId and runId from list_runs.",
+        "Why a run attempt's jobs failed, without reading whole logs: each failed job's first failed step, whether its runner failed it before any step ran (an infrastructure failure, not the code), GitHub's annotations, up to 50 lines of its log ending at the last error, and `cause` when AI is on for the workspace: the likely kind (flaky, lint, test, build, infra or config), how sure it is, the chance a re-run passes (passesOnRerun, 0-1), and `rerun` (passes or fails) when the model is sure enough to say. Covers up to 5 failed jobs; `more` counts the rest. Take repositoryId and runId from list_runs.",
       inputSchema: z.object({
         workspace: workspaceArg,
         repositoryId: z.number().int().positive(),

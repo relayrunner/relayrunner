@@ -541,7 +541,12 @@ describe("run failures", () => {
     await insert([timing(installationId, 20, { runId: 300 }), failed, lost]);
     const requested = stubGitHub({
       logs: { [lost.id!]: new Response("gone", { status: 410 }) },
-      annotations: { [lost.id!]: ["lost communication"] },
+      annotations: {
+        [lost.id!]: [
+          "The ubuntu-latest label will migrate to Ubuntu 26.04 soon",
+          "lost communication",
+        ],
+      },
     });
 
     const res = await testing.call(env, `/runs/${installationId * 10}/300/1/failures`, cookie);

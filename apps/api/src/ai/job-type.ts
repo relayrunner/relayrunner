@@ -5,7 +5,7 @@ import { and, eq, gte, sql } from "drizzle-orm";
 import { createDb, type Db, schema } from "../db/index.ts";
 import type { Env } from "../env.ts";
 import { DAY_MS } from "../job-timings.ts";
-import { matrixName } from "../job-times.ts";
+import { matrixName, PICK } from "../job-times.ts";
 import { classify, defineClassifier } from "./classify.ts";
 import { aiAccess } from "./settings.ts";
 
@@ -45,7 +45,11 @@ const PER_RUN = 25;
 export const jobTypeKey = (repositoryId: number, workflow: string | null, job: string) =>
   `${repositoryId}\0${workflow ?? ""}\0${matrixName(job) ?? job}`;
 
-/** The workspace's job types by jobTypeKey. */
+// The model runs overconfident, so an answer below this is kept (the job isn't asked about again)
+// but not shown.
+const SHOWN = 0.7;
+
+/** The workspace's job types by jobTypeKey; null for a job the model wasn't sure about. */
 export async function readJobTypes(db: Db, workspaceId: string) {
   const rows = await db
     .select({
@@ -53,13 +57,14 @@ export async function readJobTypes(db: Db, workspaceId: string) {
       workflow: schema.jobType.workflow,
       job: schema.jobType.job,
       kind: schema.jobType.kind,
+      confidence: schema.jobType.confidence,
     })
     .from(schema.jobType)
     .where(eq(schema.jobType.workspaceId, workspaceId));
   return new Map(
     rows.map((row) => [
       jobTypeKey(row.repositoryId, row.workflow, row.job),
-      row.kind as JobTypeKind,
+      row.confidence >= SHOWN ? (row.kind as JobTypeKind) : null,
     ]),
   );
 }
@@ -90,6 +95,8 @@ export async function classifyJobTypes(env: Env, installationId: number, now = D
         and(
           eq(timing.installationId, installationId),
           gte(timing.completedAt, new Date(now - RECENT_DAYS * DAY_MS)),
+          // A pick only routes its run, and takes its workflow's name, so it reads as that work.
+          sql`not ${PICK}`,
         ),
       )
       .groupBy(timing.repositoryId, timing.workflowName, timing.name),

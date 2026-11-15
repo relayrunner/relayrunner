@@ -176,6 +176,8 @@ export type FailureCause = {
   confidence: number;
   /** The chance that running the job again, with no change, passes. */
   passesOnRerun: number;
+  /** What a re-run will likely do, when the model is sure; else null. */
+  rerun: "passes" | "fails" | null;
 };
 
 export function getJobFailure(jobId: number) {
@@ -199,7 +201,7 @@ export function sampleJobFailure(): JobFailure {
       " ELIFECYCLE  Command failed with exit code 2.",
       "##[error]Process completed with exit code 2.",
     ],
-    cause: { kind: "lint", confidence: 0.92, passesOnRerun: 0.04 },
+    cause: { kind: "lint", confidence: 0.92, passesOnRerun: 0.04, rerun: "fails" },
   };
 }
 

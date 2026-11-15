@@ -20,7 +20,23 @@ export type FailureCause = {
   confidence: number;
   /** The chance that running the job again, with no change, passes. */
   passesOnRerun: number;
+  /** What a re-run will likely do, when the answers are sure enough and agree; else null. */
+  rerun: "passes" | "fails" | null;
 };
+
+// The model runs overconfident: it called a failed deep-equal test "flaky" at 74%. Causes below
+// SHOWN aren't given, and a re-run verdict needs a sure answer that agrees with the cause.
+const SHOWN = 0.7;
+const SURE = 0.85;
+const PASSES_ON_RERUN: ReadonlySet<FailureCauseKind> = new Set(["flaky", "infra"]);
+
+function rerunVerdict(kind: FailureCauseKind, confidence: number, passesOnRerun: number) {
+  if (confidence < SURE) return null;
+  const transient = PASSES_ON_RERUN.has(kind);
+  if (transient && passesOnRerun >= SURE) return "passes";
+  if (!transient && passesOnRerun <= 1 - SURE) return "fails";
+  return null;
+}
 
 /** What the model reads about a failure. */
 type FailureInput = Pick<
@@ -38,7 +54,7 @@ const normalize = (line: string) => line.replace(VARYING, "#").replace(/\s+/g, "
 
 const failureCause = defineClassifier({
   feature: "failure_cause",
-  version: 1,
+  version: 2,
   questions: {
     cause: {
       type: "choice",
@@ -50,7 +66,8 @@ const failureCause = defineClassifier({
       instructions: "Would running this job again, with no change to the code, most likely pass?",
       criteria: {
         true: "The failure looks intermittent or caused by the runner or a service",
-        false: "The failure comes from the code or the workflow and would happen again",
+        false:
+          "The failure comes from the code or the workflow and would happen again, such as a failed assertion",
       },
     },
   },
@@ -70,8 +87,8 @@ const failureCause = defineClassifier({
 });
 
 /**
- * The likely cause of one failure, or null when AI is off for the workspace, the model said no,
- * or there's nothing to go on (no log and no annotations).
+ * The likely cause of one failure, or null when AI is off for the workspace, the model said no or
+ * isn't sure, or there's nothing to go on (no log and no annotations).
  */
 export async function failureCauseOf(
   env: Env,
@@ -82,5 +99,11 @@ export async function failureCauseOf(
   const result = await classify(env, failureCause, workspaceId, failure);
   if (!result.ok) return null;
   const { cause, rerun } = result.answers;
-  return { kind: cause.choice, confidence: cause.confidence, passesOnRerun: rerun.noul };
+  if (cause.confidence < SHOWN) return null;
+  return {
+    kind: cause.choice,
+    confidence: cause.confidence,
+    passesOnRerun: rerun.noul,
+    rerun: rerunVerdict(cause.choice, cause.confidence, rerun.noul),
+  };
 }

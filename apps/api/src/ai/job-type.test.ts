@@ -13,8 +13,10 @@ let run: ReturnType<typeof vi.fn>;
 let ids = 0;
 
 const kinds: Record<string, string> = { lint: "lint", test: "test", deploy: "deploy" };
+// Jobs the model isn't sure about.
+const unsure = new Set(["misc"]);
 
-async function job(name: string, workflow = "CI") {
+async function job(name: string, workflow = "CI", labels = ["ubuntu-latest"]) {
   ids += 1;
   const completed = Date.now() - 3_600_000;
   await createDb(env.DB)
@@ -28,7 +30,7 @@ async function job(name: string, workflow = "CI") {
       runAttempt: 1,
       workflowName: workflow,
       name,
-      labels: ["ubuntu-latest"],
+      labels,
       conclusion: "success",
       runnerName: "runner",
       runnerGroupName: "GitHub Actions",
@@ -58,7 +60,12 @@ beforeEach(async () => {
     const choice = kinds[input.state.job.split(" ")[0]!] ?? "other";
     return {
       answers: {
-        kind: { type: "choice", choice, confidence: 0.9, probabilities: { [choice]: 0.9 } },
+        kind: {
+          type: "choice",
+          choice,
+          confidence: unsure.has(input.state.job) ? 0.5 : 0.9,
+          probabilities: { [choice]: 0.9 },
+        },
       },
       usage: { input_tokens: 150, output_tokens: 10 },
     };
@@ -83,16 +90,22 @@ describe("classifyJobTypes", () => {
     await job("test (node 22)");
     await job("test (node 24)");
     await job("publish", "Release");
+    // A pick takes its workflow's name, so it would read as that work: it's left out.
+    await job("relay / RelayRunner", "CI", ["relayrunner"]);
 
-    expect(await classifyJobTypes(env, installationId)).toBe(3);
-    expect(run).toHaveBeenCalledTimes(3);
+    await job("misc");
+
+    expect(await classifyJobTypes(env, installationId)).toBe(4);
+    expect(run).toHaveBeenCalledTimes(4);
     // Already known: no more calls.
     expect(await classifyJobTypes(env, installationId)).toBe(0);
-    expect(run).toHaveBeenCalledTimes(3);
+    expect(run).toHaveBeenCalledTimes(4);
 
     const report = await jobTimesReport(createDb(env.DB), workspaceId, 7);
     const ci = report.workflows.find((w) => w.workflow === "CI")!;
     expect(ci.jobs.find((j) => j.name === "lint")?.type).toBe("lint");
+    // Too unsure to show.
+    expect(ci.jobs.find((j) => j.name === "misc")?.type).toBeUndefined();
     const test = ci.jobs.find((j) => j.name === "test")!;
     expect(test.type).toBe("test");
     expect(test.legs?.every((leg) => leg.type === "test")).toBe(true);

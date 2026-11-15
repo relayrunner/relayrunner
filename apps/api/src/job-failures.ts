@@ -157,6 +157,10 @@ async function requireRepoAccess(db: Db, userId: string, row: FailedRow, github:
   if (!allowed) throw new AppError("FORBIDDEN");
 }
 
+// GitHub's notices about runner images, such as "The ubuntu-latest label will migrate to Ubuntu
+// 24.04", show on every job with the label and say nothing about why one failed.
+const IMAGE_NOTICE = /\b(?:ubuntu|windows|macos)-latest\b.*\b(?:migrat|redirect)/i;
+
 /** One failed job with what GitHub says about it. A log GitHub no longer has is null. */
 async function readFailure(
   github: Installation,
@@ -178,6 +182,7 @@ async function readFailure(
     runnerFailed: row.ranSteps === false,
     failedStep: row.failedStep,
     annotations: annotations
+      .filter((message) => !IMAGE_NOTICE.test(message))
       .slice(0, MAX_ANNOTATIONS)
       .map((message) => message.slice(0, MAX_LINE_CHARS)),
     log: log === null ? null : logExcerpt(log),
