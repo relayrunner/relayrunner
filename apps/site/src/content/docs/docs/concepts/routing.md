@@ -59,7 +59,7 @@ After 10 minutes, the Router sends one job back to try it. If a runner picks it 
 
 The Router page shows each runner type it's skipping, with a **Try again now** button for owners and admins. When no other step can take a job, the Router still sends it to the skipped runner type rather than failing the relay.
 
-This is on by default. To keep sending jobs to a provider however long they wait, turn off **Skip runners that stop picking up jobs** at the bottom of the Router page.
+This is on by default. To keep sending jobs to a provider however long they wait, turn off **Skip runners that stop picking up jobs** under **Settings** on the Router page.
 
 ## When every machine is busy
 
@@ -110,7 +110,7 @@ The Router can re-run a job that failed because of its runner rather than its ow
 
 A job whose own steps failed is never retried. GitHub only re-runs jobs once the whole run has finished, so the retry starts then. The Router re-runs the relay with it, so the retry routes again.
 
-Turn this on with **Retry jobs when their runner fails** on the Router page. Owners and admins can choose:
+Turn this on with **Retry jobs when their runner fails** under **Settings** on the Router page. Owners and admins can choose:
 
 - **Send the retry to**: any runner, the same runner first, or a different runner first. When nothing else can take a retry meant for a different runner, it goes back to the one it failed on.
 - **Retries per run**: 1 or 2.

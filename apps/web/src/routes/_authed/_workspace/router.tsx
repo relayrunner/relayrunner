@@ -1,7 +1,7 @@
 import type { HostedProviderId } from "@relayrunner/providers";
 import { DEFAULT_RUNNER_ORDER, type RunnerOrder } from "@relayrunner/runner-order";
 import { createFileRoute } from "@tanstack/react-router";
-import { RotateCwIcon, TriangleAlert } from "lucide-react";
+import { RotateCwIcon, Settings2Icon, TriangleAlert } from "lucide-react";
 import { useEffect, useState } from "react";
 import { SectionBoundary } from "@/components/error-boundary";
 import { PageHeader } from "@/components/page-header";
@@ -10,6 +10,7 @@ import { RunnerOrderEditor } from "@/components/runner-order-editor";
 import { RouterWorkflows } from "@/components/router-workflows";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
+import { Sheet, SheetContent, SheetTitle } from "@/components/ui/sheet";
 import { getActionsUsage, type AccountUsage } from "@/lib/actions-usage";
 import { sampleRouterAccounts, sampleRouterSetup } from "@/lib/router-sample";
 import { authDisabled } from "@/lib/auth-client";
@@ -69,12 +70,21 @@ function RouterPage() {
   const health = useProviderHealth(current.workspace.id);
   const installedApps = useProviderApps(current.workspace.id);
   const setup = useRouterSetup(current.workspace.id);
+  const [settingsOpen, setSettingsOpen] = useState(false);
 
   return (
     <section>
       <PageHeader
         title="Router"
-        action={loaded.isDefault ? <Badge variant="outline">Default</Badge> : undefined}
+        action={
+          <div className="flex items-center gap-2">
+            {loaded.isDefault && <Badge variant="outline">Default</Badge>}
+            <Button variant="outline" size="sm" onClick={() => setSettingsOpen(true)}>
+              <Settings2Icon aria-hidden />
+              Settings
+            </Button>
+          </div>
+        }
       >
         Where jobs go. Each job takes the first step that can run it.
         {!editable && " Owners and admins can change the order."}
@@ -100,13 +110,23 @@ function RouterPage() {
         <SectionBoundary>
           <RouterWorkflows setup={setup} />
         </SectionBoundary>
-        <SectionBoundary>
-          <SkipUnhealthyToggle health={health} editable={editable} />
-        </SectionBoundary>
-        <SectionBoundary>
-          <RetrySettingsCard workspaceId={current.workspace.id} editable={editable} />
-        </SectionBoundary>
       </div>
+      <Sheet open={settingsOpen} onOpenChange={setSettingsOpen}>
+        <SheetContent aria-describedby={undefined} className="sm:max-w-md">
+          <div className="grid gap-4 px-5 py-5 sm:px-6">
+            <SheetTitle>Router settings</SheetTitle>
+            {!editable && (
+              <p className="text-sm text-muted-foreground">Owners and admins can change these.</p>
+            )}
+            <SectionBoundary>
+              <SkipUnhealthyToggle health={health} editable={editable} />
+            </SectionBoundary>
+            <SectionBoundary>
+              <RetrySettingsCard workspaceId={current.workspace.id} editable={editable} />
+            </SectionBoundary>
+          </div>
+        </SheetContent>
+      </Sheet>
     </section>
   );
 }
