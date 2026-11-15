@@ -47,7 +47,8 @@ export function accountAvatarUrl(accountId: number) {
  */
 export async function ensureWorkspace(db: Db, installationId: number) {
   const installation = await findInstallation(db, installationId);
-  if (!installation) return null;
+  // An enterprise install only reads its enterprise's billing (src/enterprise.ts): no workspace.
+  if (!installation || installation.accountType === "Enterprise") return null;
   const fields = {
     name: installation.accountLogin,
     slug: installation.accountLogin.toLowerCase(),

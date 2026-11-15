@@ -92,7 +92,8 @@ export async function syncSpendInstallations(env: Env, now = new Date()) {
   const installations = await listAppInstallations(await appJwt(env.GITHUB_SPEND_APP_ID, key));
   const db = createDb(env.DB);
   for (const installation of installations) {
-    if (!installation.account) continue;
+    // Spend is an org App; an account without a login (an enterprise) isn't one it reads.
+    if (!installation.account?.login) continue;
     await upsert(
       db,
       {

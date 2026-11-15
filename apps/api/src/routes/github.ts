@@ -4,6 +4,7 @@ import type { Context } from "hono";
 import { deleteCookie, getCookie, setCookie } from "hono/cookie";
 import type { AppEnv } from "../app.ts";
 import { createDb, schema } from "../db/index.ts";
+import { recordEnterpriseInstallation } from "../enterprise.ts";
 import { appInstallationToken, rateLimits } from "../github-app.ts";
 import {
   dashboardPath,
@@ -46,7 +47,14 @@ import { AppError } from "@relayrunner/errors";
 //    workspace list (src/memberships.ts).
 
 // Where /setup sends the browser, with ?github=<outcome> for the dashboard to explain.
-type SetupOutcome = "connected" | "updated" | "requested" | "not_found" | "reauth" | "invalid";
+type SetupOutcome =
+  | "connected"
+  | "updated"
+  | "requested"
+  | "not_found"
+  | "reauth"
+  | "invalid"
+  | "enterprise";
 
 // Cookies that carry the install across GitHub when GitHub's redirect drops our `state`. Scoped
 // to these routes, and only good for as long as the install might take.
@@ -139,7 +147,14 @@ export const githubRoutes = new Hono<AppEnv>()
     const visible = await visibleInstallations(c);
     if (visible === "reauth") return done("reauth");
     const verified = visible.find((installation) => installation.id === installationId);
-    if (!verified) return done("not_found");
+    // An install on an enterprise isn't one a user's token lists. It only reads the enterprise's
+    // billing for the orgs in it, so record it and go back to the workspace (src/enterprise.ts).
+    if (!verified)
+      return done(
+        (await recordEnterpriseInstallation(c.env, db, installationId))
+          ? "enterprise"
+          : "not_found",
+      );
     await upsertInstallation(db, verified);
     const workspaceId = await ensureWorkspace(db, installationId);
     if (!workspaceId) return done("not_found");

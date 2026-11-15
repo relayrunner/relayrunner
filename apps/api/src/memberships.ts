@@ -81,6 +81,8 @@ export async function syncMemberships(
 ): Promise<SyncResult> {
   const wanted = new Map<string, number>();
   for (const installation of installations) {
+    // An enterprise install has no workspace to join (src/enterprise.ts).
+    if (!installation.account?.login || installation.account.type === "Enterprise") continue;
     let workspaceId: string | null = await workspaceIdForInstallation(db, installation.id);
     if (!workspaceId) {
       await upsertInstallation(db, installation);

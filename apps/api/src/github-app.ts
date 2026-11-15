@@ -348,13 +348,19 @@ export async function orgAppSlugs(token: string, org: string) {
   }
 }
 
+/** An installation as GET /app/installations lists it. */
+export interface AppInstallation {
+  id: number;
+  // An enterprise account has a `slug` and `name` where others have a `login`.
+  account: { id: number; login?: string; slug?: string; type?: string } | null;
+  // "Organization", "User" or "Enterprise".
+  target_type?: string;
+  suspended_at: string | null;
+}
+
 /** Every installation of the App, from its JWT. */
 export async function listAppInstallations(jwt: string) {
-  const installations: {
-    id: number;
-    account: { id: number; login: string } | null;
-    suspended_at: string | null;
-  }[] = [];
+  const installations: AppInstallation[] = [];
   for (let page = 1; ; page++) {
     const response = await fetch(`${API}/app/installations?per_page=100&page=${page}`, {
       headers: headers(jwt),
@@ -366,9 +372,28 @@ export async function listAppInstallations(jwt: string) {
   }
 }
 
+/** One installation of the App, from its JWT. Null when GitHub has no such installation. */
+export async function getAppInstallation(jwt: string, installationId: number) {
+  const response = await fetch(`${API}/app/installations/${installationId}`, {
+    headers: headers(jwt),
+  });
+  if (response.status === 404) return null;
+  if (!response.ok)
+    throw new Error(`GET /app/installations/${installationId} failed with ${response.status}`);
+  return (await response.json()) as AppInstallation;
+}
+
+type AppCredentials = { GITHUB_APP_ID: string; GITHUB_APP_PRIVATE_KEY: { get(): Promise<string> } };
+
+/** A JWT for the main App, from its id and private key. */
+export async function mainAppJwt(env: AppCredentials) {
+  const key = await importAppPrivateKey(await env.GITHUB_APP_PRIVATE_KEY.get());
+  return appJwt(env.GITHUB_APP_ID, key);
+}
+
 /** An installation token from the App's id and private key, as the Durable Objects hold them. */
 export async function appInstallationToken(
-  env: { GITHUB_APP_ID: string; GITHUB_APP_PRIVATE_KEY: { get(): Promise<string> } },
+  env: AppCredentials,
   installationId: number,
   now = Date.now(),
 ) {
@@ -377,10 +402,7 @@ export async function appInstallationToken(
   // Callers that miss together share one mint.
   let minting = mintingTokens.get(installationId);
   if (!minting) {
-    minting = (async () => {
-      const key = await importAppPrivateKey(await env.GITHUB_APP_PRIVATE_KEY.get());
-      return mintInstallationToken(await appJwt(env.GITHUB_APP_ID, key), installationId);
-    })();
+    minting = (async () => mintInstallationToken(await mainAppJwt(env), installationId))();
     mintingTokens.set(installationId, minting);
     minting
       .then((minted) => installationTokens.set(installationId, minted))
@@ -404,14 +426,10 @@ export function clearInstallationTokens() {
 }
 
 /** Uninstall the App from an account, as the App. Already gone (404) counts as done. */
-export async function deleteInstallation(
-  env: { GITHUB_APP_ID: string; GITHUB_APP_PRIVATE_KEY: { get(): Promise<string> } },
-  installationId: number,
-) {
-  const key = await importAppPrivateKey(await env.GITHUB_APP_PRIVATE_KEY.get());
+export async function deleteInstallation(env: AppCredentials, installationId: number) {
   const response = await fetch(`${API}/app/installations/${installationId}`, {
     method: "DELETE",
-    headers: headers(await appJwt(env.GITHUB_APP_ID, key)),
+    headers: headers(await mainAppJwt(env)),
   });
   if (!response.ok && response.status !== 404)
     throw new Error(`DELETE /app/installations/${installationId} failed with ${response.status}`);
@@ -866,6 +884,8 @@ export interface BillingUsageItem {
   grossAmount: number;
   discountAmount?: number;
   netAmount: number;
+  // Only in an enterprise's report: the org the usage belongs to.
+  organizationName?: string;
   repositoryName?: string;
 }
 
@@ -911,7 +931,23 @@ export async function userBillingUsage(
   return body.usageItems ?? [];
 }
 
-/** An org budget, trimmed to what the minutes rule needs. Amounts are whole dollars. */
+/**
+ * An enterprise's usage report for one UTC month, every org's rows together, each naming its org.
+ * Needs an installation of the App on the enterprise with read access to enterprise billing.
+ */
+export async function enterpriseBillingUsage(
+  token: string,
+  enterprise: string,
+  month: { year: number; month: number },
+): Promise<BillingUsageItem[]> {
+  const body = await getJson<{ usageItems?: BillingUsageItem[] }>(
+    token,
+    `/enterprises/${enterprise}/settings/billing/usage?year=${month.year}&month=${month.month}`,
+  );
+  return body.usageItems ?? [];
+}
+
+/** An org or enterprise budget, trimmed to what the minutes rule needs. Amounts are whole dollars. */
 export interface BillingBudget {
   scope: string;
   type: string;
@@ -920,7 +956,13 @@ export interface BillingBudget {
   preventFurtherUsage: boolean;
 }
 
-export async function orgBudgets(token: string, org: string): Promise<BillingBudget[]> {
+export const orgBudgets = (token: string, org: string) =>
+  budgets(token, `/organizations/${org}/settings/billing/budgets`);
+
+export const enterpriseBudgets = (token: string, enterprise: string) =>
+  budgets(token, `/enterprises/${enterprise}/settings/billing/budgets`);
+
+async function budgets(token: string, path: string): Promise<BillingBudget[]> {
   const body = await getJson<{
     budgets?: {
       budget_scope: string;
@@ -931,7 +973,7 @@ export async function orgBudgets(token: string, org: string): Promise<BillingBud
       budget_amount: number;
       prevent_further_usage: boolean;
     }[];
-  }>(token, `/organizations/${org}/settings/billing/budgets`);
+  }>(token, path);
   return (body.budgets ?? []).map((budget) => ({
     scope: budget.budget_scope,
     type: budget.budget_type,

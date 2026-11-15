@@ -42,7 +42,7 @@ A GitHub-hosted step can have a limit, such as "while under 80%". It then takes 
 
 If GitHub won't share an account's minutes, the limit never blocks its jobs. The Router page shows when that's the case.
 
-A limit can't judge an org that shares its enterprise's minutes yet, because GitHub reports those minutes to the enterprise, not the org.
+An org that shares its enterprise's minutes is judged against the enterprise's, once the App is [installed on the enterprise](/docs/reference/github-app#enterprises).
 
 ## Spend limits
 

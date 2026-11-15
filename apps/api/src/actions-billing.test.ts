@@ -11,6 +11,7 @@ import {
   REFUSED_RETRY_MS,
 } from "./actions-billing.ts";
 import { createDb, schema } from "./db/index.ts";
+import { syncEnterpriseInstallations } from "./enterprise.ts";
 import type { Env } from "./env.ts";
 import { type InstallationTask, runInstallationTask } from "./installation-tasks.ts";
 import { recordSpendInstallation } from "./spend-app.ts";
@@ -119,6 +120,8 @@ interface GitHubFake {
   // Tokens (as their Authorization header) whose usage reads GitHub refuses.
   refuse?: string[];
   budgets?: unknown[];
+  // What GET /app/installations lists.
+  appInstallations?: unknown[];
 }
 
 function fakeGitHub(fake: GitHubFake) {
@@ -139,6 +142,7 @@ function fakeGitHub(fake: GitHubFake) {
     }
     const minted = pathname.match(/^\/app\/installations\/(\d+)\/access_tokens$/);
     if (minted) return Response.json({ token: `spend-${minted[1]}` }, { status: 201 });
+    if (pathname === "/app/installations") return Response.json(fake.appInstallations ?? []);
     if (pathname.endsWith("/settings/billing/budgets"))
       return Response.json({ budgets: fake.budgets ?? [] });
     if (pathname.startsWith("/orgs/") || pathname === "/user")
@@ -314,6 +318,115 @@ describe("pollInstallation", () => {
     fakeGitHub({ plan: "legacy_gold" });
     await pollInstallation(odd.db, "tok", { id: odd.installationId, accountLogin: odd.org }, NOW);
     expect((await accountUsage(odd.db, odd.installationId, NOW))?.reason).toBe("unknown_plan");
+  });
+});
+
+describe("enterprise", () => {
+  const ENTERPRISE_INSTALL = 9100;
+
+  function enterpriseItem(org: string, repositoryName: string, quantity: number) {
+    return { ...item("2026-11-04", repositoryName, quantity), organizationName: org };
+  }
+
+  async function enterpriseInstalled(id: number, slug: string) {
+    const db = createDb(env.DB);
+    await db
+      .insert(schema.githubInstallation)
+      .values({ id, accountId: id, accountLogin: slug, accountType: "Enterprise" });
+    return db;
+  }
+
+  test("an org in an enterprise is judged against the enterprise's shared minutes", async () => {
+    const org = await connectedOrg();
+    const other = await connectedOrg();
+    const db = await enterpriseInstalled(ENTERPRISE_INSTALL, "acme-ent");
+    const calls = fakeGitHub({
+      usage: [
+        enterpriseItem(org.org, "app", 1000),
+        // Public repos don't use the quota.
+        enterpriseItem(org.org, "site", 400),
+        enterpriseItem(other.org, "app", 500),
+        // An org without the App still counts, as private.
+        enterpriseItem("not-installed", "tools", 250),
+      ],
+      budgets: [{ ...actionsBudget, budget_scope: "enterprise", budget_amount: 50 }],
+    });
+    await pollInstallation(
+      db,
+      "ent-token",
+      { id: ENTERPRISE_INSTALL, accountLogin: "acme-ent", accountType: "Enterprise" },
+      NOW,
+    );
+    expect(calls).toContain("/enterprises/acme-ent/settings/billing/usage?year=2026&month=11");
+
+    for (const { installationId, org: login } of [org, other])
+      expect(await accountUsage(db, installationId, NOW)).toMatchObject({
+        installationId,
+        accountLogin: login,
+        accountType: "Organization",
+        status: "ok",
+        reason: null,
+        enterprise: "acme-ent",
+        quotaMinutes: 50_000,
+        usedMinutes: 1750,
+        budget: { amountUsd: 50, preventFurtherUsage: true },
+      });
+  });
+
+  test("a refused enterprise read asks the enterprise to accept the permission", async () => {
+    const org = await connectedOrg();
+    const db = await enterpriseInstalled(ENTERPRISE_INSTALL + 1, "refusing-ent");
+    await db.insert(schema.githubEnterpriseOrganization).values({
+      organizationId: org.installationId,
+      enterpriseInstallationId: ENTERPRISE_INSTALL + 1,
+    });
+    fakeGitHub({ usageStatus: 403 });
+    vi.spyOn(console, "log").mockImplementation(() => {});
+    await pollInstallation(
+      db,
+      "ent-token",
+      { id: ENTERPRISE_INSTALL + 1, accountLogin: "refusing-ent", accountType: "Enterprise" },
+      NOW,
+    );
+    expect(await accountUsage(db, org.installationId, NOW)).toMatchObject({
+      status: "not_available",
+      reason: "enterprise_permission",
+      enterprise: "refusing-ent",
+    });
+  });
+
+  test("the hourly sync finds a new enterprise install, and the poll reads it without a workspace", async () => {
+    const org = await connectedOrg();
+    const id = ENTERPRISE_INSTALL + 2;
+    const calls = fakeGitHub({
+      plan: "enterprise",
+      usage: [enterpriseItem(org.org, "app", 300)],
+      appInstallations: [
+        {
+          id,
+          account: { id: 555, slug: "found-ent", name: "Found" },
+          target_type: "Enterprise",
+          suspended_at: null,
+        },
+      ],
+    });
+    await syncEnterpriseInstallations(keyedEnv(), org.db, NOW);
+    await runActionsUsagePoll(keyedEnv(), NOW);
+
+    expect(calls).toContain("/enterprises/found-ent/settings/billing/usage?year=2026&month=11");
+    expect(calls.tokens["/enterprises/found-ent/settings/billing/usage"]).toBe(
+      `Bearer spend-${id}`,
+    );
+    const [workspace] = await org.db
+      .select()
+      .from(schema.workspace)
+      .where(eq(schema.workspace.installationId, id));
+    expect(workspace).toBeUndefined();
+    expect(await accountUsage(org.db, org.installationId, NOW)).toMatchObject({
+      enterprise: "found-ent",
+      usedMinutes: 300,
+      quotaMinutes: 50_000,
+    });
   });
 });
 

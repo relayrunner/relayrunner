@@ -1,4 +1,5 @@
 import { pollActionsUsage } from "./actions-billing.ts";
+import { syncEnterpriseInstallations } from "./enterprise.ts";
 import { syncSpendInstallations } from "./spend-app.ts";
 import { app } from "./app.ts";
 import type { WebhookMessage } from "@relayrunner/github-webhooks";
@@ -56,7 +57,8 @@ export default {
   // window's operator pings to Slack (src/operator-pings.ts) and its product events to PostHog
   // (src/product-events.ts). Hourly: alert when
   // webhook dead letters pile up, drop job timings, workflow runs and Activity rows past retention, reconcile
-  // which orgs installed the Spend App (src/spend-app.ts), and queue a sync of each connected
+  // which orgs installed the Spend App (src/spend-app.ts) and which enterprises installed the App
+  // (src/enterprise.ts), and queue a sync of each connected
   // provider account and drop its old usage (src/provider-sync.ts), and queue each installation's
   // signals (src/signals.ts). Daily: check providers' price pages
   // (src/price-check.ts). Each runs even if another throws; a failure still fails the invocation.
@@ -79,6 +81,7 @@ export default {
               purgeOldWorkflowRuns(createDb(env.DB)),
               purgeOldActivity(createDb(env.DB)),
               syncSpendInstallations(env, at),
+              syncEnterpriseInstallations(env, createDb(env.DB), at),
               syncProviderConnections(env),
               purgeOldProviderUsage(createDb(env.DB), at),
               enqueueSignalRollups(env),

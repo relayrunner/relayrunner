@@ -6,6 +6,7 @@ import { api } from "./api";
 
 export type AccountUsageReason =
   | "enterprise"
+  | "enterprise_permission"
   | "missing_permission"
   | "sign_in_needed"
   | "unknown_plan"
@@ -32,6 +33,8 @@ export interface AccountUsage {
   readAt: string | null;
   // Whether the org installed RelayRunner Spend. Null for a personal account.
   spendApp: boolean | null;
+  // The enterprise whose shared minutes these are, when the org is in one RelayRunner reads.
+  enterprise: string | null;
 }
 
 export interface ActionsUsage {
@@ -59,7 +62,9 @@ export function unavailableText(account: AccountUsage): string | null {
     case null:
       return null;
     case "enterprise":
-      return "This org shares its enterprise's minutes, which GitHub doesn't report to an org install. A minutes limit can't judge it yet.";
+      return "This org shares its enterprise's minutes, which GitHub only reports to the enterprise. An enterprise owner can install RelayRunner on the enterprise to share them.";
+    case "enterprise_permission":
+      return `GitHub refused to share ${account.enterprise ?? "the enterprise"}'s billing. An enterprise owner needs to accept RelayRunner's enterprise billing permission.`;
     case "missing_permission":
       return account.accountType === "Organization"
         ? "GitHub refused to share this org's billing. Install the RelayRunner Spend App on the org to share it."
@@ -87,6 +92,7 @@ export function sampleActionsUsage(): ActionsUsage {
     cycleStart,
     readAt,
     spendApp: true,
+    enterprise: null,
   };
   return {
     accounts: [

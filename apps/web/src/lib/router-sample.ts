@@ -18,6 +18,7 @@ export function sampleRouterAccounts(
     cycleStart,
     readAt: new Date().toISOString(),
     spendApp: true,
+    enterprise: null,
   };
   if (kind === "enterprise")
     return [

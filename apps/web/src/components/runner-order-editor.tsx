@@ -301,10 +301,9 @@ function limitAvailability(accounts: AccountUsage[]): LimitAvailability {
     return blocked("Install RelayRunner Spend to share your org's billing.");
   if (reasons.has("sign_in_needed"))
     return blocked("Sign in again to share your account's minutes.");
-  // GitHub keeps an enterprise's pooled minutes at the enterprise, out of reach of an org install.
-  // Nothing in settings fixes that yet, so no link.
-  if (reasons.has("enterprise"))
-    return blocked("Not available yet for orgs that share an enterprise's minutes.", false);
+  if (reasons.has("enterprise")) return blocked("Needs RelayRunner on your enterprise.");
+  if (reasons.has("enterprise_permission"))
+    return blocked("Your enterprise needs to accept RelayRunner's billing permission.");
   if (reasons.has("not_read_yet")) return blocked("Waiting for the first minutes reading.", false);
   return blocked("Your GitHub plan's minutes aren't known.");
 }

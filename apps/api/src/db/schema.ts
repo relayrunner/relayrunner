@@ -189,7 +189,9 @@ export const githubInstallation = sqliteTable("github_installation", {
   id: integer("id").primaryKey({ autoIncrement: false }),
   accountId: integer("account_id").notNull(),
   accountLogin: text("account_login").notNull(),
-  // 'Organization' or 'User', as GitHub reports it.
+  // 'Organization', 'User' or 'Enterprise', as GitHub reports it. An Enterprise install only
+  // reads its enterprise's billing (src/enterprise.ts): it has no workspace, repos or webhooks, and
+  // its account_login is the enterprise's slug.
   accountType: text("account_type").notNull(),
   // 'all' or 'selected': whether the App sees every repo in the account or a chosen list.
   repositorySelection: text("repository_selection").notNull().default("all"),
@@ -201,6 +203,19 @@ export const githubInstallation = sqliteTable("github_installation", {
   // The GitHub user id of whoever installed the App (the `installation.created` webhook's sender).
   // They're the workspace's owner (src/memberships.ts). Null for installs from before #317.
   installerGithubId: integer("installer_github_id"),
+  ...timestamps,
+});
+
+// Which enterprise an org belongs to, learned from the enterprise's billing usage report (each row
+// names its org), so an org that shares its enterprise's minutes is judged against them. Kept
+// across months: an org with no usage this month is still in its enterprise.
+export const githubEnterpriseOrganization = sqliteTable("github_enterprise_organization", {
+  // The org's GitHub account id. An org belongs to at most one enterprise.
+  organizationId: integer("organization_id").primaryKey({ autoIncrement: false }),
+  // The enterprise's installation (a github_installation row with account_type 'Enterprise').
+  enterpriseInstallationId: integer("enterprise_installation_id")
+    .notNull()
+    .references(() => githubInstallation.id, { onDelete: "cascade" }),
   ...timestamps,
 });
 

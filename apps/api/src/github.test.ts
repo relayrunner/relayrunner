@@ -321,6 +321,37 @@ describe("installing the GitHub App makes a workspace (#316)", () => {
     expect(await row(github.id)).toBeNull();
   });
 
+  test("an install on an enterprise is recorded without a workspace", async () => {
+    const { cookie } = await testing.signIn(env);
+    nextId += 1;
+    const id = nextId;
+    const pem = generateKeyPairSync("rsa", { modulusLength: 2048 })
+      .privateKey.export({ type: "pkcs8", format: "pem" })
+      .toString();
+    const keyed = { ...env, GITHUB_APP_ID: "1", GITHUB_APP_PRIVATE_KEY: { get: async () => pem } };
+    const stubbed = globalThis.fetch;
+    vi.stubGlobal("fetch", (input: RequestInfo | URL, init?: RequestInit) => {
+      const url = input instanceof Request ? input.url : String(input);
+      if (url === `https://api.github.com/app/installations/${id}`)
+        return Promise.resolve(
+          Response.json({
+            id,
+            account: { id: 4242, slug: "acme-ent", name: "Acme" },
+            target_type: "Enterprise",
+            suspended_at: null,
+          }),
+        );
+      return stubbed(input, init);
+    });
+    const response = await app.request(
+      `/api/github/setup?installation_id=${id}&setup_action=install`,
+      { headers: { cookie } },
+      keyed as Env,
+    );
+    expect(response.headers.get("location")).toBe("/settings/github?github=enterprise");
+    expect(await row(id)).toMatchObject({ account_login: "acme-ent", workspace_id: null });
+  });
+
   test("coming back after changing an installation on GitHub reads as updated", async () => {
     const { githubToken, cookie } = await testing.signIn(env);
     const github = installation();

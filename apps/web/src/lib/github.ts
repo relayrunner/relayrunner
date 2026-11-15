@@ -17,6 +17,11 @@ export const githubOutcomes = {
     message:
       "Your GitHub sign-in has expired, so nothing was connected. Sign in again, then install again.",
   },
+  enterprise: {
+    tone: "go",
+    message:
+      "RelayRunner is on your enterprise. Its shared minutes show up within 15 minutes, once the first reading is in.",
+  },
   invalid: {
     tone: "run",
     message: "GitHub didn't say which installation to connect. Try connecting again.",

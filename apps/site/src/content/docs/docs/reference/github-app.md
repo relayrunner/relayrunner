@@ -23,12 +23,24 @@ RelayRunner reaches GitHub through one GitHub App, [RelayRunner](https://github.
 | Self-hosted runners | Read & write | Registers one-job runners in the org when a repo runner isn't allowed, and lists and labels [existing runners](/docs/runners/self-hosted#runners-your-org-already-has) you add. |
 | Administration      | Read         | Reads your plan, Actions usage and budget for the [minutes limit](/docs/concepts/runner-order#the-minutes-limit). It can't change any setting.                                  |
 
+## Enterprise permissions
+
+| Permission | Access | Why                                                                                                                                              |
+| ---------- | ------ | ------------------------------------------------------------------------------------------------------------------------------------------------ |
+| Billing    | Read   | Your enterprise's shared Actions minutes, for the minutes limit. Only used if an enterprise owner [installs it on the enterprise](#enterprises). |
+
 ## Account permissions
 
 | Permission      | Access | Why                                                        |
 | --------------- | ------ | ---------------------------------------------------------- |
 | Email addresses | Read   | Your email at sign-in.                                     |
 | Plan            | Read   | A personal account's Actions usage, for the minutes limit. |
+
+## Enterprises
+
+An org in a GitHub enterprise shares the enterprise's Actions minutes, and GitHub only reports those to the enterprise. To use a minutes limit there, an enterprise owner installs the App on the enterprise too: open [the install page](https://github.com/apps/relayrunner/installations/new) and pick the enterprise. Settings > GitHub links there when it's needed.
+
+That install only reads the enterprise's billing. It sees no repos, and your org installs keep doing the routing. Each org in the enterprise is then judged against the shared minutes.
 
 ## What it never gets
 

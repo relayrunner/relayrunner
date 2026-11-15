@@ -1,4 +1,5 @@
 import { TriangleAlert } from "lucide-react";
+import { githubInstallHref } from "@/lib/github";
 import {
   type AccountUsage,
   needsSpendApp,
@@ -45,6 +46,7 @@ export function OverageBanner({ accounts }: { accounts: AccountUsage[] }) {
 /** Used vs included minutes, the burn rate, and why it can't be judged when it can't. */
 export function ActionsMinutes({ usage }: { usage: AccountUsage }) {
   const unavailable = unavailableText(usage);
+  const fix = fixLink(usage);
   const quota = usage.quotaMinutes;
   const share = quota ? usage.usedMinutes / quota : 0;
   const over = usage.netAmount > 0 || share >= 1;
@@ -66,7 +68,11 @@ export function ActionsMinutes({ usage }: { usage: AccountUsage }) {
         </span>
         <span className="text-muted-foreground">
           {usage.burnRatePerHour !== null && `${count(usage.burnRatePerHour)} min/hour · `}
-          {usage.plan ? `${planName(usage.plan)} plan` : "Plan unknown"}
+          {usage.enterprise
+            ? `Shared with ${usage.enterprise}`
+            : usage.plan
+              ? `${planName(usage.plan)} plan`
+              : "Plan unknown"}
         </span>
       </div>
       {quota !== null && usage.status === "ok" && (
@@ -87,24 +93,39 @@ export function ActionsMinutes({ usage }: { usage: AccountUsage }) {
           />
         </div>
       )}
-      {(unavailable || needsSpendApp(usage)) && (
+      {unavailable && (
         <p className="text-xs text-muted-foreground">
           {unavailable}
-          {unavailable && needsSpendApp(usage) && " "}
-          {needsSpendApp(usage) && (
-            <a
-              href={SPEND_APP_INSTALL_URL}
-              target="_blank"
-              rel="noreferrer"
-              className="underline underline-offset-2 hover:text-foreground"
-            >
-              Install RelayRunner Spend
-            </a>
+          {fix && (
+            <>
+              {" "}
+              <a
+                href={fix.href}
+                {...(fix.external && { target: "_blank", rel: "noreferrer" })}
+                className="underline underline-offset-2 hover:text-foreground"
+              >
+                {fix.label}
+              </a>
+            </>
           )}
         </p>
       )}
     </div>
   );
+}
+
+/** The link that fixes why an account's minutes can't be judged, when there is one. */
+function fixLink(usage: AccountUsage) {
+  if (needsSpendApp(usage))
+    return { label: "Install RelayRunner Spend", href: SPEND_APP_INSTALL_URL, external: true };
+  // GitHub's install page lists the enterprise as a target for its owners.
+  if (usage.reason === "enterprise")
+    return {
+      label: "Install on your enterprise",
+      href: githubInstallHref("/settings/github"),
+      external: false,
+    };
+  return null;
 }
 
 const planName = (plan: string) => plan.charAt(0).toUpperCase() + plan.slice(1).replace(/_/g, " ");
