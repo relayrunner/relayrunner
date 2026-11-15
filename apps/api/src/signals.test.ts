@@ -297,8 +297,27 @@ describe("rollUpSignals", () => {
     const rows = await dayRows(ctx.installationId, "queue-waits");
     expect(sum(rows)).toEqual({ count: 1, minutes: 5 });
     expect(rows[0]).toMatchObject({ subject: "ubuntu-latest", cost: 0 });
+    expect(rows[0]!.runnerKey).toMatch(/^github:/);
     // Summed per whole UTC day.
     expect(rows[0]!.day.getTime() % (24 * 60 * MINUTE)).toBe(0);
+  });
+
+  test("names the machine waited-for jobs ran on, or their labels when they ran on several", async () => {
+    const labels = ["self-hosted", "mac"];
+    const group = { labels, runnerGroupName: "Default", waited: 5 };
+    const one = await connectedWorkspace();
+    await job(one, { start: 30, minutes: 2, machineId: "m1", ...group });
+    await job(one, { start: 30, minutes: 2, machineId: "m1", name: "lint", ...group });
+    await rollUpSignals(createDb(env.DB), one.installationId);
+    expect((await dayRows(one.installationId, "queue-waits"))[0]?.runnerKey).toBe("machine:m1");
+
+    const two = await connectedWorkspace();
+    await job(two, { start: 30, minutes: 2, machineId: "m1", ...group });
+    await job(two, { start: 30, minutes: 2, machineId: "m2", name: "lint", ...group });
+    await rollUpSignals(createDb(env.DB), two.installationId);
+    expect((await dayRows(two.installationId, "queue-waits"))[0]?.runnerKey).toBe(
+      "self-hosted:default",
+    );
   });
 
   test("counts the time a run kept going on one job after the jobs beside it finished", async () => {

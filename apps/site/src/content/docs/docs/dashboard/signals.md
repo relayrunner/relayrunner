@@ -13,6 +13,8 @@ Signals are grouped by the question they answer:
 
 Below the signals, the [Breakdown](#breakdown) shows who and what uses your CI minutes.
 
+Every area shows on the page, even when none of its signals came up. Signals that didn't come up are listed under their area, after **No sign of**, so you can see everything the page checks for. The ⓘ beside any signal explains it and links to its section here.
+
 The page updates every hour. A signal shows up once it covers at least 30 minutes and 1% of all your job minutes in the range, so small one-offs stay off the page. Minutes and spend sit in separate columns. Spend uses the same list prices as the [Usage](/docs/dashboard/usage) page, so public repos and self-hosted runners count as free.
 
 ## Speed signals
@@ -22,6 +24,8 @@ Waiting for a runner and waiting on one job cost time rather than money, so thos
 ### Waiting for a runner
 
 These jobs waited more than a minute after GitHub queued them before a runner took them, grouped by their `runs-on` labels. Jobs wait when every runner with those labels is busy, or when the account reaches GitHub's limit on jobs running at once. Add a step to your [runner order](/docs/concepts/runner-order) so jobs go to the next runner that's free instead of waiting.
+
+Click a row to open that runner's panel, with its jobs per day and recent jobs. When every waiting job ran on the same machine, the row opens that machine.
 
 ### One job sets the pace
 

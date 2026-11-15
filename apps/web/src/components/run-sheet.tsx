@@ -613,7 +613,8 @@ export function Links({ children }: { children: ReactNode }) {
   return <div className="flex flex-wrap items-center gap-x-5 gap-y-2 text-xs">{children}</div>;
 }
 
-function ExternalLink({ href, children }: { href: string; children: ReactNode }) {
+/** A link that opens in a new tab, in LINK's style with an arrow out. */
+export function ExternalLink({ href, children }: { href: string; children: ReactNode }) {
   return (
     <a href={href} target="_blank" rel="noreferrer" className={LINK}>
       {children}

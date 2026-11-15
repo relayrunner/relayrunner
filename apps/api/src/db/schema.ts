@@ -733,6 +733,9 @@ export const signalDay = sqliteTable(
     // The workflow name, or "workflow › job". Empty on 'total' rows and the Breakdown's rest.
     subject: text("subject").notNull(),
     workflowPath: text("workflow_path"),
+    // On queue-waits rows, the runner the jobs went to, as a Job times environment key, so the page
+    // can open its panel: one machine when they all ran there, or else their labels' environment.
+    runnerKey: text("runner_key"),
     // What the signal counts: runs, commits or jobs. Runs on Breakdown rows.
     count: integer("count").notNull(),
     // The job time the signal covers, and its estimated cost in USD.

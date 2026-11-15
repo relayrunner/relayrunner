@@ -18,7 +18,7 @@ import type { PriceBook } from "@relayrunner/providers";
 import { type Db, createDb, prepare, schema } from "./db/index.ts";
 import type { Env } from "./env.ts";
 import { enqueueInstallationTasks } from "./installation-tasks.ts";
-import { PICK, RAN_ON_RUNNER } from "./job-times.ts";
+import { environmentFor, PICK, RAN_ON_RUNNER } from "./job-times.ts";
 import {
   BILLED_MINUTES,
   cents,
@@ -175,9 +175,10 @@ export async function rollUpSignals(db: Db, installationId: number, now = Date.n
 
 const INSERT_SQL = `
   insert into signal_day (installation_id, day, signal, repository_id, repository_full_name,
-    subject, workflow_path, count, run_ms, cost)
+    subject, workflow_path, runner_key, count, run_ms, cost)
   select ?1, value ->> 'day', value ->> 'signal', value ->> 'repositoryId',
     value ->> 'repositoryFullName', value ->> 'subject', value ->> 'workflowPath',
+    value ->> 'runnerKey',
     value ->> 'count', value ->> 'runMs', value ->> 'cost'
   from json_each(?2)`;
 
@@ -251,6 +252,9 @@ async function addJobs(scope: Scope) {
       runnerFailedJobs: sql<number>`sum(${runnerFailed})`,
       runnerFailedMs: sql<number>`sum(case when ${runnerFailed} then ${DURATION_MS} else 0 end)`,
       runnerFailedBilled: sql<number>`sum(case when ${runnerFailed} then ${BILLED_MINUTES} else 0 end)`,
+      // The one machine every job ran on, if there was one.
+      machineId: sql<string | null>`case when count(${timing.machineId}) = count(*)
+        and min(${timing.machineId}) = max(${timing.machineId}) then min(${timing.machineId}) end`,
     })
     .from(timing)
     .leftJoin(run, and(eq(run.id, timing.runId), eq(run.runAttempt, timing.runAttempt)))
@@ -273,6 +277,7 @@ async function addJobs(scope: Scope) {
       trigger,
     );
   const breakdown = new DayBreakdown();
+  const waits = new DayWaits();
   for (const row of found) {
     const at = Number(row.day);
     const perMinute = rate(scope, row.labels, row.runnerGroupName, row.repositoryId, at);
@@ -280,14 +285,7 @@ async function addJobs(scope: Scope) {
     const cost = row.billed * perMinute;
     rows.add({ ...where, signal: TOTAL, subject: "" }, row.jobs, row.runMs, cost);
     breakdown.add(where, row, { runs: Number(row.runs), runMs: Number(row.runMs), cost });
-    if (row.waitedJobs) {
-      rows.add(
-        { ...where, signal: "queue-waits", subject: runnerSubject(row.labels) },
-        row.waitedJobs,
-        row.waitedMs,
-        0,
-      );
-    }
+    if (row.waitedJobs) waits.add(where, row);
     if (row.runnerFailedJobs) {
       rows.add(
         { ...where, signal: "runner-failures", subject: runnerSubject(row.labels) },
@@ -311,6 +309,56 @@ async function addJobs(scope: Scope) {
     );
   }
   breakdown.addTo(rows);
+  waits.addTo(rows);
+}
+
+// queue-waits rows per day, repo and runs-on labels, with the runner they went to: the machine
+// when every one of them ran on the same machine, or else the labels' environment.
+class DayWaits {
+  #groups = new Map<
+    string,
+    {
+      key: RowKey;
+      labels: string[];
+      group: string | null;
+      machines: Set<string | null>;
+      jobs: number;
+      ms: number;
+    }
+  >();
+
+  add(
+    where: { day: number; repositoryId: number; repository: string },
+    row: {
+      labels: string[];
+      runnerGroupName: string | null;
+      machineId: string | null;
+      waitedJobs: number;
+      waitedMs: number;
+    },
+  ) {
+    const subject = runnerSubject(row.labels);
+    const id = `${where.day}:${where.repositoryId}:${subject}`;
+    const group = this.#groups.get(id) ?? {
+      key: { ...where, signal: "queue-waits", subject },
+      labels: row.labels,
+      group: row.runnerGroupName,
+      machines: new Set(),
+      jobs: 0,
+      ms: 0,
+    };
+    group.machines.add(row.machineId);
+    group.jobs += Number(row.waitedJobs);
+    group.ms += Number(row.waitedMs);
+    this.#groups.set(id, group);
+  }
+
+  addTo(rows: Rows) {
+    for (const { key, labels, group, machines, jobs, ms } of this.#groups.values()) {
+      const machine = machines.size === 1 ? [...machines][0]! : null;
+      rows.add({ ...key, runnerKey: environmentFor(labels, group, machine).key }, jobs, ms, 0);
+    }
+  }
 }
 
 type DaySums = { runs: number; runMs: number; cost: number };
@@ -619,6 +667,7 @@ type InsertRow = Omit<typeof day.$inferInsert, "installationId" | "day"> & { day
 type RowKey = Pick<InsertRow, "day" | "signal" | "repositoryId" | "subject"> & {
   repository: string;
   workflowPath?: string | null;
+  runnerKey?: string | null;
 };
 
 // One installation's signal_day rows being summed, by their primary key.
@@ -634,6 +683,7 @@ class Rows {
       repositoryFullName: key.repository,
       subject: key.subject,
       workflowPath: key.workflowPath ?? null,
+      runnerKey: key.runnerKey ?? null,
       count: 0,
       runMs: 0,
       cost: 0,
@@ -654,6 +704,8 @@ export interface SignalRow {
   /** The workflow, or "workflow › job". */
   subject: string;
   workflowPath: string | null;
+  /** On queue-waits rows, the runner's Job times environment key, for its panel. */
+  runnerKey: string | null;
   count: number;
   minutes: number;
   /** Estimated USD. */
@@ -716,6 +768,7 @@ export async function signalsReport(
       repository: sql<string>`max(${day.repositoryFullName})`,
       subject: day.subject,
       workflowPath: sql<string | null>`max(${day.workflowPath})`,
+      runnerKey: sql<string | null>`max(${day.runnerKey})`,
       count: sql<number>`sum(${day.count})`,
       runMs: sql<number>`sum(${day.runMs})`,
       cost: sql<number>`sum(${day.cost})`,
@@ -759,6 +812,7 @@ export async function signalsReport(
       repository: row.repository,
       subject: row.subject,
       workflowPath: row.workflowPath,
+      runnerKey: row.runnerKey,
       count: Number(row.count),
       minutes,
       cost,

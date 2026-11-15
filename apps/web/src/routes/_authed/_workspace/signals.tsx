@@ -1,9 +1,12 @@
-import { createFileRoute } from "@tanstack/react-router";
-import { ArrowUpRightIcon, ChartBarBigIcon } from "lucide-react";
+import { createFileRoute, Link } from "@tanstack/react-router";
+import { ArrowUpRightIcon, ChartBarBigIcon, type LucideIcon } from "lucide-react";
 import type { ReactNode } from "react";
 import { Count } from "@/components/count";
 import { PageHeader } from "@/components/page-header";
 import { OptionPicker, RangePicker } from "@/components/range-picker";
+import { ExternalLink, LINK } from "@/components/run-sheet";
+import { RunnerLink } from "@/components/runner-link";
+import { DOCS_URL } from "@/components/site-footer";
 import { InfoTip } from "@/components/ui/info-tip";
 import {
   Table,
@@ -22,6 +25,8 @@ import {
   getSignals,
   type Signal,
   type SignalArea,
+  type SignalId,
+  type SignalRow,
   SIGNAL_COPY,
   type SignalsReport,
   sampleSignals,
@@ -53,6 +58,11 @@ const validateSearch = (search: Record<string, unknown>): Search => ({
 });
 const daysOf = (search: Search) => search.days ?? DEFAULT_DAYS;
 
+const SIGNALS_DOCS = `${DOCS_URL}/dashboard/signals`;
+// A signal's section on the docs page: Starlight's heading id for its title.
+const docsAnchor = (title: string) =>
+  `${SIGNALS_DOCS}#${title.toLowerCase().replace(/[^a-z0-9]+/g, "-")}`;
+
 export const Route = createFileRoute("/_authed/_workspace/signals")({
   validateSearch,
   loader: ({ location }) => load(daysOf(validateSearch(location.search))),
@@ -70,63 +80,107 @@ function SignalsPage() {
     setSearch({ days: unlessDefault(next, DEFAULT_DAYS) });
   }
 
-  const areas = (Object.keys(AREAS) as SignalArea[])
-    .map((area) => ({ area, signals: report.signals.filter((signal) => signal.area === area) }))
-    .filter(({ signals }) => signals.length > 0);
-
   return (
     <section>
       <PageHeader title="Signals">
         What makes your CI slow, costly or busier than it needs to be, and where. Updated every
-        hour.
+        hour. <ExternalLink href={SIGNALS_DOCS}>How signals work</ExternalLink>
       </PageHeader>
-      <div className="grid max-w-4xl gap-8">
+      <div className="grid max-w-4xl gap-10">
         <RangePicker ranges={RANGES} days={days} onChange={chooseRange} />
-        {areas.length === 0 ? (
+        {report.totals.jobs === 0 ? (
           <p className="rounded-xl border bg-card px-4 py-6 text-sm text-muted-foreground">
-            {report.totals.jobs === 0
-              ? "No finished jobs in this range yet. Signals show up within an hour of jobs running in a connected repo."
-              : `Nothing stands out in the last ${report.days} days.`}
+            No finished jobs in this range yet. Signals show up within an hour of jobs running in a
+            connected repo.
           </p>
         ) : (
-          areas.map(({ area, signals }) => (
-            <AreaSection key={area} area={area} signals={signals} report={report} />
-          ))
+          <>
+            {/* Every area shows, with the signals that didn't show up named under it, so the page
+                says what it looks for and not only what it found. */}
+            {(Object.keys(AREAS) as SignalArea[]).map((area) => (
+              <AreaSection key={area} area={area} report={report} />
+            ))}
+            <BreakdownSection report={report} />
+          </>
         )}
-        {report.totals.jobs > 0 && <BreakdownSection report={report} />}
       </div>
     </section>
   );
 }
 
-function AreaSection({
-  area,
-  signals,
-  report,
+// A section's heading, with the signals or table under it indented past the icon.
+function Section({
+  icon: Icon,
+  title,
+  question,
+  aside,
+  children,
 }: {
-  area: SignalArea;
-  signals: Signal[];
-  report: SignalsReport;
+  icon: LucideIcon;
+  title: string;
+  question: string;
+  aside?: ReactNode;
+  children: ReactNode;
 }) {
-  const { title, question, icon: Icon } = AREAS[area];
   return (
-    <div className="grid gap-4">
-      <div className="flex flex-wrap items-baseline justify-between gap-x-4 gap-y-1">
-        <div className="flex items-center gap-2">
-          <Icon aria-hidden className="size-4.5 self-center" />
-          <h2 className="font-semibold">{title}</h2>
+    <div className="grid gap-5 border-t pt-6">
+      <div className="flex flex-wrap items-center justify-between gap-x-4 gap-y-2">
+        <div className="flex items-baseline gap-2.5">
+          <Icon aria-hidden className="size-5 self-center" />
+          <h2 className="text-lg font-semibold">{title}</h2>
           <span className="text-muted-foreground">{question}</span>
         </div>
-        {area === "cost" && (
+        {aside}
+      </div>
+      <div className="grid gap-6 sm:pl-7.5">{children}</div>
+    </div>
+  );
+}
+
+function AreaSection({ area, report }: { area: SignalArea; report: SignalsReport }) {
+  const signals = report.signals.filter((signal) => signal.area === area);
+  const shown = new Set(signals.map((signal) => signal.id));
+  const quiet = (Object.keys(SIGNAL_COPY) as SignalId[]).filter(
+    (id) => SIGNAL_COPY[id].area === area && !shown.has(id),
+  );
+  return (
+    <Section
+      {...AREAS[area]}
+      aside={
+        area === "cost" && (
           <span className="text-sm text-muted-foreground">
             {money(report.totals.cost)} across {count(report.totals.minutes)} minutes
           </span>
-        )}
-      </div>
+        )
+      }
+    >
       {signals.map((signal) => (
         <SignalCard key={signal.id} signal={signal} />
       ))}
-    </div>
+      {quiet.length > 0 && (
+        <p className="flex flex-wrap items-center gap-x-1.5 gap-y-1 text-sm text-muted-foreground">
+          No sign of
+          {quiet.map((id, index) => (
+            <span key={id} className="inline-flex items-center gap-1">
+              <span className="text-foreground">{SIGNAL_COPY[id].title}</span>
+              <SignalInfo id={id} />
+              {index < quiet.length - 1 && ","}
+            </span>
+          ))}
+        </p>
+      )}
+    </Section>
+  );
+}
+
+// The ⓘ beside a signal's title: what it means, and where the docs explain how it's worked out.
+function SignalInfo({ id }: { id: SignalId }) {
+  const { title, about } = SIGNAL_COPY[id];
+  return (
+    <InfoTip label={title}>
+      {about}
+      <ExternalLink href={docsAnchor(title)}>How it's worked out</ExternalLink>
+    </InfoTip>
   );
 }
 
@@ -139,14 +193,19 @@ function SignalCard({ signal }: { signal: Signal }) {
       <div className="flex flex-wrap items-center gap-x-4 gap-y-1">
         <h3 className="flex items-center gap-1.5 text-[15px] font-medium">
           {copy.title}
-          <InfoTip label={copy.title}>{copy.about}</InfoTip>
+          <SignalInfo id={signal.id} />
         </h3>
         <div className="ml-auto flex items-center gap-4 text-sm">
-          {copy.action && (
-            <a href={copy.action.href} className="font-medium text-primary hover:underline">
-              {copy.action.label}
-            </a>
-          )}
+          {copy.action &&
+            (copy.action.href.startsWith("/") ? (
+              <Link to={copy.action.href} className={LINK}>
+                {copy.action.label}
+              </Link>
+            ) : (
+              <a href={copy.action.href} className={LINK}>
+                {copy.action.label}
+              </a>
+            ))}
           {copy.docs && (
             <a
               href={copy.docs}
@@ -174,11 +233,7 @@ function SignalCard({ signal }: { signal: Signal }) {
           {signal.rows.map((row) => (
             <TableRow key={`${row.repository}:${row.subject}`}>
               <TableCell className="truncate">
-                <WorkflowName
-                  repository={row.repository}
-                  name={row.subject}
-                  path={row.workflowPath}
-                />
+                <SubjectName row={row} />
               </TableCell>
               <TableCell className="text-right tabular-nums">
                 <Count value={row.count} />
@@ -195,6 +250,33 @@ function SignalCard({ signal }: { signal: Signal }) {
   );
 }
 
+// A runner row opens the runner's panel; a workflow row links to its file.
+function SubjectName({ row }: { row: SignalRow }) {
+  if (!row.runnerKey)
+    return <WorkflowName repository={row.repository} name={row.subject} path={row.workflowPath} />;
+  return (
+    <RunnerLink
+      runner={{ key: row.runnerKey, label: row.subject }}
+      className="inline-flex max-w-full items-center gap-2"
+      markClassName="size-4"
+    >
+      <span className="truncate">
+        <SubjectText repository={row.repository} name={row.subject} />
+      </span>
+    </RunnerLink>
+  );
+}
+
+// "acme/web / CI", with the repo quieter.
+function SubjectText({ repository, name }: { repository: string; name: string }) {
+  return (
+    <>
+      <span className="text-muted-foreground">{repository} / </span>
+      {name}
+    </>
+  );
+}
+
 // "acme/web / CI", linking to the workflow file on GitHub when the run said which file it was.
 function WorkflowName({
   repository,
@@ -205,12 +287,7 @@ function WorkflowName({
   name: string;
   path: string | null;
 }) {
-  const text = (
-    <>
-      <span className="text-muted-foreground">{repository} / </span>
-      {name}
-    </>
-  );
+  const text = <SubjectText repository={repository} name={name} />;
   if (!path) return text;
   return (
     <a
@@ -234,15 +311,14 @@ function BreakdownSection({ report }: { report: SignalsReport }) {
   const view = BREAKDOWN_VIEWS.find((option) => option.value === by)!;
   const total = report.totals.minutes;
   return (
-    <div className="grid gap-4">
-      <div className="flex flex-wrap items-center justify-between gap-x-4 gap-y-2">
-        <div className="flex items-center gap-2">
-          <ChartBarBigIcon aria-hidden className="size-4.5 self-center" />
-          <h2 className="font-semibold">Breakdown</h2>
-          <span className="text-muted-foreground">Who and what uses your CI</span>
-        </div>
+    <Section
+      icon={ChartBarBigIcon}
+      title="Breakdown"
+      question="Who and what uses your CI"
+      aside={
         <OptionPicker label="Break down by" options={BREAKDOWN_VIEWS} value={by} onChange={setBy} />
-      </div>
+      }
+    >
       <Table className="min-w-xl table-fixed">
         <TableHeader>
           <TableRow>
@@ -271,7 +347,7 @@ function BreakdownSection({ report }: { report: SignalsReport }) {
           )}
         </TableBody>
       </Table>
-    </div>
+    </Section>
   );
 }
 
