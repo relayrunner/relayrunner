@@ -53,6 +53,7 @@ type SkippedStep = RouteWalk["skipped"][number];
 const runnerOf = (walk: RouteWalk, key: RunnerKey) => walk[key][0] ?? RUNNER_LABELS[key];
 
 const count = (n: number) => Math.round(n).toLocaleString("en-US");
+const dollars = (usd: number) => `$${count(usd)}`;
 const usedPercent = (m: MinutesUsage) => Math.floor((m.usedMinutes / m.quotaMinutes) * 100);
 
 function shortSkip(walk: RouteWalk, step: SkippedStep): string | null {
@@ -86,6 +87,10 @@ function shortSkip(walk: RouteWalk, step: SkippedStep): string | null {
       return `not a ${RUNNER_LABELS[key]} label`;
     case "provider_unhealthy":
       return `${runnerOf(walk, key)} isn't picking up jobs`;
+    case "spend_limit":
+      return step.spend
+        ? `${step.spend.account} past its ${dollars(step.spend.limitUsd)} ${RUNNER_LABELS[key]} limit`
+        : `past the ${RUNNER_LABELS[key]} spend limit`;
     case "not_configured":
       // Leaving a provider out of the relay is a choice, not news.
       return null;
@@ -131,6 +136,11 @@ function longSkip(walk: RouteWalk, step: SkippedStep): string {
     case "provider_unhealthy": {
       const jobs = step.unhealthy ? `the last ${step.unhealthy.misses} jobs` : "recent jobs";
       return `${jobs} on ${runnerOf(walk, key)} weren't picked up, so the Router is skipping it for now`;
+    }
+    case "spend_limit": {
+      if (!step.spend) return "past its spend limit";
+      const { account, spentUsd, limitUsd } = step.spend;
+      return `${account} has spent ${dollars(spentUsd)} on ${RUNNER_LABELS[key]} this month, past its ${dollars(limitUsd)} limit`;
     }
     case "not_configured":
       return `the relay doesn't set ${key}`;

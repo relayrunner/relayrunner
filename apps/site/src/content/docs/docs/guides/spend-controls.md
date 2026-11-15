@@ -27,6 +27,10 @@ Each GitHub account is checked on its own. One org going over its limit doesn't 
 
 The limit only helps if there's a next step. Connect at least one machine, share it with the workspace if teammates push too, and route the jobs that use the most minutes. The **Usage** page shows which repos those are.
 
+## Cap other providers too
+
+Blacksmith, Depot, WarpBuild and Ubicloud steps can have a monthly dollar limit the same way. See [Spend limits](/docs/concepts/runner-order#spend-limits).
+
 ## Watch it
 
 - **Router**: each account's minutes used this month, next to the limit.

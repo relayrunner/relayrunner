@@ -11,7 +11,7 @@ The runner order is your workspace's list of providers, top to bottom. Each job 
 | --------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | **Self-hosted**       | A connected machine or added runner is online, idle, has the relay's `machine` labels and is shared with whoever started the job. Never for public repos. |
 | **GitHub-hosted**     | The relay names a `github` label. With a minutes limit, only while the account is under it.                                                               |
-| **A hosted provider** | The relay names one of its labels, such as `depot-*` in the `depot` input. Always takes the job.                                                          |
+| **A hosted provider** | The relay names one of its labels, such as `depot-*` in the `depot` input. With a spend limit, only while the account is under it.                        |
 
 A step that can't take the job is skipped with a reason, and the next one is tried.
 
@@ -41,6 +41,12 @@ GitHub can appear twice: once with a minutes limit and once without.
 A GitHub-hosted step can have a limit, such as "while under 80%". It then takes a job only while the job's GitHub account has used less than that share of its plan's included minutes this month. Each account is checked on its own.
 
 If GitHub won't share an account's minutes, the limit never blocks its jobs. The Router page shows when that's the case.
+
+## Spend limits
+
+A Blacksmith, Depot, WarpBuild or Ubicloud step can have a spend limit, such as "while under $200 a month". It then takes a job only while the job's GitHub account has spent less than that on the provider this calendar month (UTC). Spend is worked out from each finished job's minutes and the provider's list price, so it can differ a little from your bill, and jobs still running count once they finish.
+
+Put another step after it, such as GitHub-hosted or your machines, so jobs past the limit still have somewhere to go.
 
 ## Changes take effect at once
 

@@ -1,5 +1,10 @@
 import { machineRunnerName } from "@relayrunner/machine-protocol";
-import { relayInputs, type RunnerKey, type RunnerOrder } from "@relayrunner/runner-order";
+import {
+  relayInputs,
+  type RunnerKey,
+  type RunnerOrder,
+  runnerOrderSchema,
+} from "@relayrunner/runner-order";
 import type { AccountUsage } from "./actions-billing.ts";
 import { describe, expect, test, vi } from "vitest";
 import {
@@ -1368,5 +1373,66 @@ describe("waiting for a machine slot", () => {
         (entry) => entry.id,
       ),
     ).toEqual(["a", "b"]);
+  });
+});
+
+describe("decideRoute with a spend limit", () => {
+  const job = {
+    ...relayInputs({ depot: ["depot-ubuntu-24.04"], github: ["ubuntu-latest"] }),
+    private: true,
+  };
+  // Depot while under $200 a month, then GitHub.
+  const order: RunnerOrder = {
+    steps: [{ key: "depot", spendLimit: { usd: 200 } }, { key: "github" }],
+  };
+  const none = async () => null;
+  const spent = (spentUsd: number) => async () => ({ account: "acme", spentUsd });
+
+  test("under the limit, the provider takes the job", async () => {
+    const decision = await decideRoute(order, job, none, undefined, undefined, spent(120));
+    expect(decision).toMatchObject({ runner: "depot-ubuntu-24.04", step: "depot", skipped: [] });
+  });
+
+  test("at the limit, the job moves on with the numbers recorded", async () => {
+    const decision = await decideRoute(order, job, none, undefined, undefined, spent(200));
+    expect(decision).toMatchObject({
+      runner: "ubuntu-latest",
+      step: "github",
+      skipped: [
+        {
+          key: "depot",
+          reason: "spend_limit",
+          spend: { account: "acme", spentUsd: 200, limitUsd: 200 },
+        },
+      ],
+    });
+  });
+
+  test("spend is only read for a step with a limit, and says why when nothing else fits", async () => {
+    const read = vi.fn(spent(250));
+    await decideRoute({ steps: [{ key: "depot" }] }, job, none, undefined, undefined, read);
+    expect(read).not.toHaveBeenCalled();
+    const failed = await decideRoute(
+      { steps: [{ key: "depot", spendLimit: { usd: 200 } }] },
+      job,
+      none,
+      undefined,
+      undefined,
+      read,
+    );
+    expect(read).toHaveBeenCalledWith("depot");
+    expect(failed.runner === null && failed.reason).toContain(
+      "acme has spent $250 on Depot this month, past its $200 limit",
+    );
+  });
+
+  test("only providers with list prices take a spend limit", () => {
+    expect(
+      runnerOrderSchema.safeParse({ steps: [{ key: "depot", spendLimit: { usd: 50 } }] }).success,
+    ).toBe(true);
+    const unpriced = runnerOrderSchema.safeParse({
+      steps: [{ key: "namespace", spendLimit: { usd: 50 } }],
+    });
+    expect(unpriced.success).toBe(false);
   });
 });

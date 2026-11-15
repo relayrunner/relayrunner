@@ -1,5 +1,6 @@
 import { type RelayInputs, readRunnerOrder } from "@relayrunner/runner-order";
 import { accountUsage } from "../actions-billing.ts";
+import { accountSpend } from "../provider-spend.ts";
 import { DurableObject } from "cloudflare:workers";
 import { and, eq, isNotNull, isNull, or } from "drizzle-orm";
 import { createDb, schema } from "../db/index.ts";
@@ -279,6 +280,8 @@ export class Router extends DurableObject<Env> {
       workspace?.skipUnhealthy === false
         ? undefined
         : (key, label) => this.checkHealth(healthId(key, label)),
+      // Also per account: a provider bills each GitHub org on its own.
+      (key) => accountSpend(db, job.installationId, key),
     );
     return waitsForMachine(decision) ? this.wait(job, decision) : decision;
   }

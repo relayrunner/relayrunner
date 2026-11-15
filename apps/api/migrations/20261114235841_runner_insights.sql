@@ -1,3 +1,13 @@
+CREATE TABLE `provider_spend_month` (
+	`installation_id` integer NOT NULL,
+	`month` integer NOT NULL,
+	`provider` text NOT NULL,
+	`usd_micros` integer DEFAULT 0 NOT NULL,
+	`jobs` integer DEFAULT 0 NOT NULL,
+	PRIMARY KEY(`installation_id`, `month`, `provider`),
+	FOREIGN KEY (`installation_id`) REFERENCES `github_installation`(`id`) ON UPDATE no action ON DELETE cascade
+);
+--> statement-breakpoint
 CREATE TABLE `runner_wait_day` (
 	`day` integer NOT NULL,
 	`provider` text NOT NULL,

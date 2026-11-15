@@ -635,6 +635,25 @@ export const runnerWaitDay = sqliteTable(
   ],
 );
 
+// What each GitHub account spent on each priced hosted provider per UTC calendar month, at list
+// prices, counted once when job_timing first records a job finished (src/provider-spend.ts). A
+// hosted step with a spend limit reads its row when it's reached, so the check is one key lookup.
+export const providerSpendMonth = sqliteTable(
+  "provider_spend_month",
+  {
+    installationId: integer("installation_id")
+      .notNull()
+      .references(() => githubInstallation.id, { onDelete: "cascade" }),
+    // The UTC midnight starting the month.
+    month: integer("month", { mode: "timestamp_ms" }).notNull(),
+    provider: text("provider").notNull(),
+    // Millionths of a dollar, so sums of per-minute prices stay whole numbers.
+    usdMicros: integer("usd_micros").notNull().default(0),
+    jobs: integer("jobs").notNull().default(0),
+  },
+  (table) => [primaryKey({ columns: [table.installationId, table.month, table.provider] })],
+);
+
 // One attempt of a GitHub Actions workflow run in a connected repo, from workflow_run webhooks
 // (src/runs.ts), for the Runs page: what started it and how it ended. Its jobs' times come from
 // job_timing. Purged with job_timing, and goes away with its installation.

@@ -9,6 +9,7 @@ import {
 } from "@relayrunner/providers";
 import { type Db, schema } from "./db/index.ts";
 import { countFinishedJob, countsAsJob } from "./job-counts.ts";
+import { countProviderSpend } from "./provider-spend.ts";
 import { countRunnerWait } from "./runner-waits.ts";
 import { findInstallation } from "./installations.ts";
 import { parseDate } from "./jobs.ts";
@@ -181,21 +182,24 @@ export async function recordJobTiming(db: Db, message: WorkflowJobMessage): Prom
     // A row comes back only when this delivery wrote it, so a redelivered `completed` returns
     // nothing and the job is counted once.
     .returning({ id: table.id });
-  if (written && completedAt && countsAsJob(job.conclusion, job.labels))
+  if (written && completedAt && countsAsJob(job.conclusion, job.labels)) {
+    const finishedJob = {
+      installationId,
+      labels: job.labels,
+      runnerGroupName: job.runnerGroupName ?? null,
+      runnerName: job.runnerName,
+      queuedAt: parseDate(job.createdAt),
+      startedAt: parseDate(job.startedAt),
+      completedAt,
+      ranSteps: job.ranSteps ?? null,
+      conclusion: job.conclusion,
+    };
     await Promise.all([
       countFinishedJob(db, installationId, job.conclusion, completedAt),
-      countRunnerWait(db, {
-        installationId,
-        labels: job.labels,
-        runnerGroupName: job.runnerGroupName ?? null,
-        runnerName: job.runnerName,
-        queuedAt: parseDate(job.createdAt),
-        startedAt: parseDate(job.startedAt),
-        completedAt,
-        ranSteps: job.ranSteps ?? null,
-        conclusion: job.conclusion,
-      }),
+      countRunnerWait(db, finishedJob),
+      countProviderSpend(db, finishedJob),
     ]);
+  }
   return true;
 }
 

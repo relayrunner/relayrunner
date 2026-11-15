@@ -3,6 +3,8 @@ import { createDb } from "./db/index.ts";
 import type { Env } from "./env.ts";
 import { failedStep, recordJobTiming } from "./job-timings.ts";
 import { waitBucket, waitRunner } from "./runner-waits.ts";
+import { accountSpend, monthOf } from "./provider-spend.ts";
+import { BASE_BOOK, listRate } from "@relayrunner/providers";
 import * as testing from "./testing.ts";
 
 const DAY_MS = 86_400_000;
@@ -164,5 +166,21 @@ describe("runner waits", () => {
       ]),
     ).toBe("3. Run tests");
     expect(failedStep([{ name: "Build", number: 2, conclusion: "success" }])).toBeNull();
+  });
+
+  test("adds each finished priced provider job to its account's month, at list price", async () => {
+    const { installationId } = await workspace();
+    const label = "blacksmith-4vcpu-ubuntu-2404";
+    // 30 seconds each: billed a whole minute.
+    await deliver(installationId, { labels: [label], runnerGroupName: null });
+    await deliver(installationId, { labels: [label], runnerGroupName: null });
+    // GitHub-hosted isn't counted: its minutes have their own limit.
+    await deliver(installationId);
+    const rate = listRate(BASE_BOOK, "blacksmith", label)!;
+    const spend = await accountSpend(createDb(env.DB), installationId, "blacksmith");
+    expect(spend.spentUsd).toBeCloseTo(2 * rate, 6);
+    expect(spend.account).not.toBe("");
+    expect((await accountSpend(createDb(env.DB), installationId, "depot")).spentUsd).toBe(0);
+    expect(monthOf(Date.UTC(2026, 10, 14, 23)).toISOString()).toBe("2026-11-01T00:00:00.000Z");
   });
 });

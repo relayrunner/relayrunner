@@ -1,7 +1,7 @@
 {
   "version": "6",
   "dialect": "sqlite",
-  "id": "4ae6c69c-b0a8-4c36-a562-1addd72a1dec",
+  "id": "81c6df30-c0ba-49f7-b8e6-06e35133b190",
   "prevId": "67bf124a-2ff0-447f-99aa-5d7ee7385653",
   "tables": {
     "account": {
@@ -4117,6 +4117,76 @@
       },
       "foreignKeys": {},
       "compositePrimaryKeys": {},
+      "uniqueConstraints": {},
+      "checkConstraints": {}
+    },
+    "provider_spend_month": {
+      "name": "provider_spend_month",
+      "columns": {
+        "installation_id": {
+          "name": "installation_id",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "month": {
+          "name": "month",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "provider": {
+          "name": "provider",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "usd_micros": {
+          "name": "usd_micros",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false,
+          "default": 0
+        },
+        "jobs": {
+          "name": "jobs",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false,
+          "default": 0
+        }
+      },
+      "indexes": {},
+      "foreignKeys": {
+        "provider_spend_month_installation_id_github_installation_id_fk": {
+          "name": "provider_spend_month_installation_id_github_installation_id_fk",
+          "tableFrom": "provider_spend_month",
+          "tableTo": "github_installation",
+          "columnsFrom": [
+            "installation_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "cascade",
+          "onUpdate": "no action"
+        }
+      },
+      "compositePrimaryKeys": {
+        "provider_spend_month_installation_id_month_provider_pk": {
+          "columns": [
+            "installation_id",
+            "month",
+            "provider"
+          ],
+          "name": "provider_spend_month_installation_id_month_provider_pk"
+        }
+      },
       "uniqueConstraints": {},
       "checkConstraints": {}
     },
