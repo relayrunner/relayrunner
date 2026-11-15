@@ -11,7 +11,7 @@ import { type Context, Hono } from "hono";
 import { z } from "zod";
 import type { AppEnv } from "../app.ts";
 import { createDb, schema } from "../db/index.ts";
-import { who } from "../middleware/admin.ts";
+import { audit } from "../middleware/admin.ts";
 import { forgetCatalog, readCatalog } from "../provider-catalog.ts";
 import { AppError } from "@relayrunner/errors";
 
@@ -47,12 +47,6 @@ const NewProviderBody = ProviderBody.extend({ id: z.string().trim().toLowerCase(
 
 type ProviderFields = z.infer<typeof ProviderBody>;
 
-// A provider change, for the audit log.
-const audit = (c: Context<AppEnv>, msg: string, id: string) =>
-  console.log(
-    JSON.stringify({ msg, by: c.var.user!.email, access: who(c.var.accessIdentity), id }),
-  );
-
 // Saves a provider's row, replacing any it had, and logs who did it.
 async function save(c: Context<AppEnv>, id: string, fields: ProviderFields, msg: string) {
   const values = {
@@ -68,7 +62,7 @@ async function save(c: Context<AppEnv>, id: string, fields: ProviderFields, msg:
     .values({ id, ...values })
     .onConflictDoUpdate({ target: schema.provider.id, set: values });
   forgetCatalog();
-  audit(c, msg, id);
+  audit(c, msg, { id });
 }
 
 // Mounted under adminRoutes, which requires an operator session.
@@ -106,6 +100,6 @@ export const adminProviderRoutes = new Hono<AppEnv>()
       .returning();
     if (!row) throw new AppError("NOT_FOUND");
     forgetCatalog();
-    audit(c, isProviderId(id) ? "provider reset" : "provider removed", id);
+    audit(c, isProviderId(id) ? "provider reset" : "provider removed", { id });
     return c.json({ ok: true });
   });

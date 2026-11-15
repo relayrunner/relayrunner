@@ -29,6 +29,7 @@ import { Route as AuthedWorkspaceSignalsRouteImport } from './routes/_authed/_wo
 import { Route as AuthedWorkspaceUsageRouteImport } from './routes/_authed/_workspace/usage'
 import { Route as AuthedWorkspaceWorkspaceRouteImport } from './routes/_authed/_workspace/workspace'
 import { Route as AuthedWorkspaceAdminIndexRouteImport } from './routes/_authed/_workspace/admin.index'
+import { Route as AuthedWorkspaceAdminAiRouteImport } from './routes/_authed/_workspace/admin.ai'
 import { Route as AuthedWorkspaceAdminJobsRouteImport } from './routes/_authed/_workspace/admin.jobs'
 import { Route as AuthedWorkspaceAdminPricesRouteImport } from './routes/_authed/_workspace/admin.prices'
 import { Route as AuthedWorkspaceAdminProvidersRouteImport } from './routes/_authed/_workspace/admin.providers'
@@ -149,6 +150,11 @@ const AuthedWorkspaceAdminIndexRoute =
     path: '/admin/',
     getParentRoute: () => AuthedWorkspaceRoute,
   } as any)
+const AuthedWorkspaceAdminAiRoute = AuthedWorkspaceAdminAiRouteImport.update({
+  id: '/admin/ai',
+  path: '/admin/ai',
+  getParentRoute: () => AuthedWorkspaceRoute,
+} as any)
 const AuthedWorkspaceAdminJobsRoute =
   AuthedWorkspaceAdminJobsRouteImport.update({
     id: '/admin/jobs',
@@ -276,6 +282,7 @@ export interface FileRoutesByFullPath {
   '/signals': typeof AuthedWorkspaceSignalsRoute
   '/usage': typeof AuthedWorkspaceUsageRoute
   '/workspace': typeof AuthedWorkspaceWorkspaceRoute
+  '/admin/ai': typeof AuthedWorkspaceAdminAiRoute
   '/admin/jobs': typeof AuthedWorkspaceAdminJobsRoute
   '/admin/prices': typeof AuthedWorkspaceAdminPricesRoute
   '/admin/providers': typeof AuthedWorkspaceAdminProvidersRoute
@@ -314,6 +321,7 @@ export interface FileRoutesByTo {
   '/signals': typeof AuthedWorkspaceSignalsRoute
   '/usage': typeof AuthedWorkspaceUsageRoute
   '/workspace': typeof AuthedWorkspaceWorkspaceRoute
+  '/admin/ai': typeof AuthedWorkspaceAdminAiRoute
   '/admin/jobs': typeof AuthedWorkspaceAdminJobsRoute
   '/admin/prices': typeof AuthedWorkspaceAdminPricesRoute
   '/admin/providers': typeof AuthedWorkspaceAdminProvidersRoute
@@ -355,6 +363,7 @@ export interface FileRoutesById {
   '/_authed/_workspace/signals': typeof AuthedWorkspaceSignalsRoute
   '/_authed/_workspace/usage': typeof AuthedWorkspaceUsageRoute
   '/_authed/_workspace/workspace': typeof AuthedWorkspaceWorkspaceRoute
+  '/_authed/_workspace/admin/ai': typeof AuthedWorkspaceAdminAiRoute
   '/_authed/_workspace/admin/jobs': typeof AuthedWorkspaceAdminJobsRoute
   '/_authed/_workspace/admin/prices': typeof AuthedWorkspaceAdminPricesRoute
   '/_authed/_workspace/admin/providers': typeof AuthedWorkspaceAdminProvidersRoute
@@ -395,6 +404,7 @@ export interface FileRouteTypes {
     | '/signals'
     | '/usage'
     | '/workspace'
+    | '/admin/ai'
     | '/admin/jobs'
     | '/admin/prices'
     | '/admin/providers'
@@ -433,6 +443,7 @@ export interface FileRouteTypes {
     | '/signals'
     | '/usage'
     | '/workspace'
+    | '/admin/ai'
     | '/admin/jobs'
     | '/admin/prices'
     | '/admin/providers'
@@ -473,6 +484,7 @@ export interface FileRouteTypes {
     | '/_authed/_workspace/signals'
     | '/_authed/_workspace/usage'
     | '/_authed/_workspace/workspace'
+    | '/_authed/_workspace/admin/ai'
     | '/_authed/_workspace/admin/jobs'
     | '/_authed/_workspace/admin/prices'
     | '/_authed/_workspace/admin/providers'
@@ -646,6 +658,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AuthedWorkspaceAdminIndexRouteImport
       parentRoute: typeof AuthedWorkspaceRoute
     }
+    '/_authed/_workspace/admin/ai': {
+      id: '/_authed/_workspace/admin/ai'
+      path: '/admin/ai'
+      fullPath: '/admin/ai'
+      preLoaderRoute: typeof AuthedWorkspaceAdminAiRouteImport
+      parentRoute: typeof AuthedWorkspaceRoute
+    }
     '/_authed/_workspace/admin/jobs': {
       id: '/_authed/_workspace/admin/jobs'
       path: '/admin/jobs'
@@ -786,6 +805,7 @@ interface AuthedWorkspaceRouteChildren {
   AuthedWorkspaceSignalsRoute: typeof AuthedWorkspaceSignalsRoute
   AuthedWorkspaceUsageRoute: typeof AuthedWorkspaceUsageRoute
   AuthedWorkspaceWorkspaceRoute: typeof AuthedWorkspaceWorkspaceRoute
+  AuthedWorkspaceAdminAiRoute: typeof AuthedWorkspaceAdminAiRoute
   AuthedWorkspaceAdminJobsRoute: typeof AuthedWorkspaceAdminJobsRoute
   AuthedWorkspaceAdminPricesRoute: typeof AuthedWorkspaceAdminPricesRoute
   AuthedWorkspaceAdminProvidersRoute: typeof AuthedWorkspaceAdminProvidersRoute
@@ -818,6 +838,7 @@ const AuthedWorkspaceRouteChildren: AuthedWorkspaceRouteChildren = {
   AuthedWorkspaceSignalsRoute: AuthedWorkspaceSignalsRoute,
   AuthedWorkspaceUsageRoute: AuthedWorkspaceUsageRoute,
   AuthedWorkspaceWorkspaceRoute: AuthedWorkspaceWorkspaceRoute,
+  AuthedWorkspaceAdminAiRoute: AuthedWorkspaceAdminAiRoute,
   AuthedWorkspaceAdminJobsRoute: AuthedWorkspaceAdminJobsRoute,
   AuthedWorkspaceAdminPricesRoute: AuthedWorkspaceAdminPricesRoute,
   AuthedWorkspaceAdminProvidersRoute: AuthedWorkspaceAdminProvidersRoute,

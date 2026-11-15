@@ -18,6 +18,7 @@ import { JOB_COUNT_RANGES, jobCountReport } from "../job-counts.ts";
 import { parseGithubIds } from "../operator-pings.ts";
 import { requireOperator, who } from "../middleware/admin.ts";
 import { requireUser } from "../middleware/session.ts";
+import { adminAiRoutes } from "./admin-ai.ts";
 import { adminPriceRoutes } from "./admin-prices.ts";
 import { adminProviderRoutes } from "./admin-providers.ts";
 import { USER_ROLES } from "../roles.ts";
@@ -43,6 +44,7 @@ async function deleteOptions(request: Request) {
 
 export const adminRoutes = new Hono<AppEnv>()
   .use("*", requireUser, requireOperator)
+  .route("/ai", adminAiRoutes)
   .route("/prices", adminPriceRoutes)
   .route("/providers", adminProviderRoutes)
   // Routing health across workspaces (src/admin-routing.ts), over the last 24 hours or 7 days.

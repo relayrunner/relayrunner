@@ -1515,3 +1515,80 @@ export const telemetryExport = sqliteTable("telemetry_export", {
   pausedAt: integer("paused_at", { mode: "timestamp_ms" }),
   ...timestamps,
 });
+
+// AI model calls (src/ai): the switch for every workspace at once, and the defaults each workspace
+// starts from. One row, id "global"; with no row, AI is off. Operators change it in Admin › AI.
+export const aiSetting = sqliteTable("ai_setting", {
+  id: text("id").primaryKey(),
+  enabled: integer("enabled", { mode: "boolean" }).notNull(),
+  // The AiFeature ids (src/ai/settings.ts) turned on anywhere. A workspace can narrow them.
+  features: text("features", { mode: "json" }).$type<string[]>().notNull(),
+  // Input plus output tokens a day, for one workspace (unless its own row says otherwise) and for
+  // all of them together. Past either, calls stop until the next UTC day.
+  workspaceDailyTokens: integer("workspace_daily_tokens").notNull(),
+  dailyTokens: integer("daily_tokens").notNull(),
+  updatedBy: text("updated_by").references(() => user.id, { onDelete: "set null" }),
+  updatedAt: integer("updated_at", { mode: "timestamp_ms" })
+    .notNull()
+    .$defaultFn(() => new Date()),
+});
+
+// AI for one workspace, set by operators in Admin › AI. No row means off.
+export const workspaceAiSetting = sqliteTable("workspace_ai_setting", {
+  workspaceId: text("workspace_id")
+    .primaryKey()
+    .references(() => workspace.id, { onDelete: "cascade" }),
+  enabled: integer("enabled", { mode: "boolean" }).notNull(),
+  // The features this workspace may use, within the global ones. Null means all of them.
+  features: text("features", { mode: "json" }).$type<string[]>(),
+  // Overrides ai_setting.workspace_daily_tokens for this workspace. Null uses the default.
+  dailyTokens: integer("daily_tokens"),
+  updatedBy: text("updated_by").references(() => user.id, { onDelete: "set null" }),
+  updatedAt: integer("updated_at", { mode: "timestamp_ms" })
+    .notNull()
+    .$defaultFn(() => new Date()),
+});
+
+// AI calls per workspace, feature and UTC day: what the budgets count and Admin › AI shows.
+// Purged after 90 days.
+export const aiUsageDay = sqliteTable(
+  "ai_usage_day",
+  {
+    day: integer("day", { mode: "timestamp_ms" }).notNull(),
+    workspaceId: text("workspace_id")
+      .notNull()
+      .references(() => workspace.id, { onDelete: "cascade" }),
+    feature: text("feature").notNull(),
+    // Model calls made, answers served from ai_cache instead, calls refused by a budget or the
+    // rate limit, and calls that failed.
+    calls: integer("calls").notNull().default(0),
+    cacheHits: integer("cache_hits").notNull().default(0),
+    limited: integer("limited").notNull().default(0),
+    failures: integer("failures").notNull().default(0),
+    inputTokens: integer("input_tokens").notNull().default(0),
+    outputTokens: integer("output_tokens").notNull().default(0),
+  },
+  (table) => [
+    primaryKey({ columns: [table.day, table.workspaceId, table.feature] }),
+    // One workspace's recent days, for its budget and the admin page.
+    index("ai_usage_day_workspace_idx").on(table.workspaceId, table.day),
+  ],
+);
+
+// Answers the model already gave, by a hash of the feature, its question version, the model and
+// the input (src/ai/cache.ts), so the same question costs one call. Kept per workspace; expired
+// rows are purged hourly.
+export const aiCache = sqliteTable(
+  "ai_cache",
+  {
+    key: text("key").primaryKey(),
+    workspaceId: text("workspace_id")
+      .notNull()
+      .references(() => workspace.id, { onDelete: "cascade" }),
+    feature: text("feature").notNull(),
+    // The model's answers object, as JSON.
+    answers: text("answers").notNull(),
+    expiresAt: integer("expires_at", { mode: "timestamp_ms" }).notNull(),
+  },
+  (table) => [index("ai_cache_expires_idx").on(table.expiresAt)],
+);

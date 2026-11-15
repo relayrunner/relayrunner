@@ -71,6 +71,8 @@
     "OPERATOR_PINGS_IGNORE_GITHUB_IDS": "8841125",
     // PostHog (US) project token for the product events the 15-minute cron sends
     // (src/product-events.ts). The same public token the site and dashboard use.
+    // The AI Gateway that model calls from src/ai go through (env.AI.run's gateway option).
+    "AI_GATEWAY_ID": "relayrunner-ai-gateway",
     "POSTHOG_TOKEN": "phc_rKhrH8DbYLh3TKrdXtZjP5agS5a8xmj8tsEn6EJhQpCE",
   },
   // Transactional email through Cloudflare Email Sending (src/email.ts). send.relayrunner.app is
@@ -82,7 +84,12 @@
   // which make a few API calls each, and for clients calling the API directly.
   "ratelimits": [
     { "name": "AGENT_LIMITER", "namespace_id": "4102", "simple": { "limit": 300, "period": 60 } },
+    // AI model calls per workspace (src/ai/classify.ts), on top of the daily token budgets.
+    { "name": "AI_LIMITER", "namespace_id": "4103", "simple": { "limit": 60, "period": 60 } },
   ],
+  // Workers AI, for the decision models in src/ai. Calls are off until an operator turns them on
+  // in Admin › AI, and go through the AI_GATEWAY_ID gateway. The binding needs no API token.
+  "ai": { "binding": "AI" },
   // Webhook dead letters (src/dead-letters.ts), kept out of D1 on purpose: D1 failing is the
   // likeliest reason a delivery dead-letters. Create once, with the 30-day retention:
   //   wrangler r2 bucket create relayrunner-webhook-dead-letters

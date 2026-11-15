@@ -1,4 +1,5 @@
 import { gateAdmin, type AccessIdentity } from "@relayrunner/access";
+import type { Context } from "hono";
 import { createMiddleware } from "hono/factory";
 import type { AppEnv } from "../app.ts";
 import { isOperator } from "../roles.ts";
@@ -26,4 +27,11 @@ export const requireOperator = createMiddleware<AppEnv>(async (c, next) => {
 // Who did it, for audit logs: a person's email or a service token's Client ID.
 export function who(identity: AccessIdentity) {
   return identity.kind === "user" ? identity.email : identity.clientId;
+}
+
+/** Logs an operator's change with who made it, for the audit trail in Workers Logs. */
+export function audit(c: Context<AppEnv>, msg: string, detail: object) {
+  console.log(
+    JSON.stringify({ msg, by: c.var.user!.email, access: who(c.var.accessIdentity), ...detail }),
+  );
 }

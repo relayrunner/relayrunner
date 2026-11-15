@@ -244,3 +244,73 @@ export type JobCountReport = {
 export function getJobCounts(days: number, internal: boolean) {
   return api<JobCountReport>(`/admin/jobs?days=${days}&internal=${internal ? 1 : 0}`);
 }
+
+/** AI model calls (apps/api/src/routes/admin-ai.ts). */
+export type AiSettings = {
+  enabled: boolean;
+  features: string[];
+  workspaceDailyTokens: number;
+  dailyTokens: number;
+};
+
+export type AiWorkspaceSetting = {
+  enabled: boolean;
+  /** Null allows every feature that's on globally. */
+  features: string[] | null;
+  /** Null uses the global per-workspace budget. */
+  dailyTokens: number | null;
+};
+
+export type AiUsage = {
+  calls: number;
+  cacheHits: number;
+  limited: number;
+  failures: number;
+  tokensToday: number;
+};
+
+export type AiAdmin = {
+  /** Whether the API Worker has the Workers AI binding. */
+  binding: boolean;
+  gateway: string;
+  model: string;
+  features: { id: string; label: string }[];
+  settings: AiSettings;
+  usageDays: number;
+  workspaces: {
+    id: string;
+    name: string;
+    logo: string | null;
+    setting: AiWorkspaceSetting | null;
+    usage: AiUsage | null;
+  }[];
+};
+
+export type AiResult =
+  | { ok: true; answers: Record<string, unknown>; cached: boolean }
+  | { ok: false; reason: "off" | "budget" | "rate_limited" | "failed" };
+
+export function getAi() {
+  return api<AiAdmin>("/admin/ai");
+}
+
+export function saveAi(settings: AiSettings) {
+  return api<{ settings: AiSettings }>("/admin/ai", {
+    method: "PUT",
+    body: JSON.stringify(settings),
+  });
+}
+
+export function saveWorkspaceAi(id: string, setting: AiWorkspaceSetting) {
+  return api<{ setting: AiWorkspaceSetting }>(`/admin/ai/workspaces/${encodeURIComponent(id)}`, {
+    method: "PUT",
+    body: JSON.stringify(setting),
+  });
+}
+
+export function testAi(workspaceId: string, text: string) {
+  return api<{ result: AiResult; ms: number }>("/admin/ai/test", {
+    method: "POST",
+    body: JSON.stringify({ workspaceId, text }),
+  });
+}

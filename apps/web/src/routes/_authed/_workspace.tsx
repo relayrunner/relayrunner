@@ -11,6 +11,7 @@ import {
   ArrowLeftIcon,
   BookOpenIcon,
   BotIcon,
+  BrainCircuitIcon,
   Building2Icon,
   ChartColumnIcon,
   ChartColumnStackedIcon,
@@ -141,6 +142,7 @@ const adminNav = [
   { to: "/admin/webhooks", label: "Webhooks", icon: WebhookIcon },
   { to: "/admin/providers", label: "Providers", icon: CloudIcon },
   { to: "/admin/prices", label: "Prices", icon: TagIcon },
+  { to: "/admin/ai", label: "AI", icon: BrainCircuitIcon },
 ] as const satisfies NavItem[];
 
 // Under /settings: the workspace's pages in two groups, then the user's own.

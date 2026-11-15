@@ -49,3 +49,8 @@ export async function purgeOldActivity(db: Db, now = Date.now()): Promise<number
   );
   return jobs + events + decisions;
 }
+
+/** Drops cached AI answers past their expiry (src/ai/classify.ts). */
+export async function purgeExpiredAiAnswers(db: Db, now = Date.now()): Promise<number> {
+  return purgeBefore(db, schema.aiCache, schema.aiCache.expiresAt, new Date(now));
+}

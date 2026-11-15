@@ -10,7 +10,7 @@ import { purgeOldJobTimings } from "./job-timings.ts";
 import { sendOperatorPings } from "./operator-pings.ts";
 import { sendProductEvents } from "./product-events.ts";
 import { checkPrices } from "./price-check.ts";
-import { purgeOldActivity } from "./retention.ts";
+import { purgeExpiredAiAnswers, purgeOldActivity } from "./retention.ts";
 import { purgeOldWorkflowRuns } from "./runs.ts";
 import { sweepPicks } from "./pick-sweep.ts";
 import { enqueueSignalRollups } from "./signals.ts";
@@ -59,7 +59,8 @@ export default {
   // webhook dead letters pile up, drop job timings, workflow runs and Activity rows past retention, reconcile
   // which orgs installed the Spend App (src/spend-app.ts) and which enterprises installed the App
   // (src/enterprise.ts), and queue a sync of each connected
-  // provider account and drop its old usage (src/provider-sync.ts), and queue each installation's
+  // provider account and drop its old usage (src/provider-sync.ts), drop expired cached AI
+  // answers (src/retention.ts), and queue each installation's
   // signals (src/signals.ts). Daily: check providers' price pages
   // (src/price-check.ts). Each runs even if another throws; a failure still fails the invocation.
   async scheduled(controller, env) {
@@ -84,6 +85,7 @@ export default {
               syncEnterpriseInstallations(env, createDb(env.DB), at),
               syncProviderConnections(env),
               purgeOldProviderUsage(createDb(env.DB), at),
+              purgeExpiredAiAnswers(createDb(env.DB), at.getTime()),
               enqueueSignalRollups(env),
             ];
     const results = await Promise.allSettled(tasks);

@@ -22,6 +22,7 @@ type WorkflowJobMessage = Extract<WebhookMessage, { event: "workflow_job" }>;
 const table = schema.jobTiming;
 const daily = schema.jobTimingDaily;
 const {
+  aiUsageDay,
   jobCount,
   jobCountDay,
   jobCountHour,
@@ -298,6 +299,7 @@ export async function purgeOldJobTimings(db: Db, now = Date.now()): Promise<numb
     purgeBefore(db, jobCountDay, jobCountDay.day, retained),
     purgeBefore(db, signalDay, signalDay.day, retained),
     purgeBefore(db, runnerWaitDay, runnerWaitDay.day, retained),
+    purgeBefore(db, aiUsageDay, aiUsageDay.day, retained),
     // Pull request files only matter while their runs keep raw rows; a pull request still running
     // past that is read again.
     purgeBefore(

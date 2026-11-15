@@ -47,6 +47,15 @@ export interface Env extends AccessEnv {
   // server or a client calling the API directly. Optional so tests run without it.
   AGENT_LIMITER?: RateLimit;
 
+  // Workers AI, for the decision models in src/ai. Optional so tests and local dev run without
+  // it; with no binding every AI call answers "off".
+  AI?: Ai;
+  // The AI Gateway every model call goes through, for its logs, analytics and limits. The binding
+  // is already signed in to the account, so the gateway needs no token.
+  AI_GATEWAY_ID: string;
+  // Per workspace: caps model calls a minute (src/ai/classify.ts), on top of the daily budgets.
+  AI_LIMITER?: RateLimit;
+
   // Cloudflare Email Sending (src/email.ts). Optional so local dev and tests run without it.
   EMAIL?: SendEmail;
   // Sender address on send.relayrunner.app; must be in the binding's allowed_sender_addresses.
