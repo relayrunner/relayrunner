@@ -40,7 +40,7 @@ Every tool takes an optional `workspace` (id or name), needed only when the conn
 
 **"Is my machine faster than GitHub?"** `get_job_times`, narrowed with `repository` and `workflow` to keep the answer small. Compare the same job's median (and p90 for the slow runs) across environments, and say how many runs each time is based on.
 
-**"Why is CI slow?" / "Where is our CI money going?"** `get_signals` (default 30 days, up to 90). Lead with the signals in the area asked about, the biggest first, and name the repos and workflows each one hits. Each signal points at its own fix: `concurrency` with `cancel-in-progress` for no-concurrency, one trigger for same-commit, path filters for docs-changes, a faster or different runner for queue-waits and runner-failures. Pass `breakdown: true` to say who or what used the minutes.
+**"Why is CI slow?" / "Where is our CI money going?"** `get_signals` (default 30 days, up to 90). Lead with the signals in the area asked about, the biggest first, and name the repos and workflows each one hits. Each signal points at its own fix: `concurrency` with `cancel-in-progress` for no-concurrency, one trigger for same-commit, path filters for docs-changes, a faster or different runner for queue-waits and runner-failures. Pass `breakdown: true` to say who or what used the minutes. To dig into one of them, pass `person`, `repository` (with `workflow` for one workflow), `branch` or `trigger`: the signals and totals narrow to those runs, and `trend` gives their minutes per day against the days before.
 
 **"Which workflows still need routing?"** `list_workflows` (narrow with `repository`). Workflows with `routedRuns: 0` come first. To route one, use the `relayrunner-route-jobs` skill in that repo.
 

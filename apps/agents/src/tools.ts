@@ -315,7 +315,7 @@ export function registerTools(server: McpServer, request: WorkspaceApi, workspac
     {
       title: "Signals",
       description:
-        "What's making the workspace's CI slow, costly or busier than it needs to be, such as queue waits, flaky jobs, runner failures, short jobs or runs that kept going after a newer push. Each signal has an id, an area (speed, cost or complexity), its jobs, minutes and estimated cost, and the repos and workflows it affects most. Only signals over 30 minutes and 1% of all job minutes show.",
+        "What's making the workspace's CI slow, costly or busier than it needs to be, such as queue waits, flaky jobs, runner failures, short jobs or runs that kept going after a newer push. Each signal has an id, an area (speed, cost or complexity), its jobs, minutes and estimated cost, and the repos and workflows it affects most. Only signals over 30 minutes and 1% of all job minutes show. A person, repository, workflow, branch or trigger narrows everything to those runs over at most 30 days and adds their minutes per day against the days before.",
       inputSchema: z.object({
         workspace: workspaceArg,
         days: days(90, 30),
@@ -325,11 +325,29 @@ export function registerTools(server: McpServer, request: WorkspaceApi, workspac
           .describe(
             "Also return minutes and cost by person, repository, workflow, branch and trigger.",
           ),
+        person: z.string().optional().describe("Only runs this GitHub login started."),
+        repository: z.string().optional().describe("Only this repo, as owner/name."),
+        workflow: z
+          .string()
+          .optional()
+          .describe("Only this workflow, by name. Pass its repository too."),
+        branch: z.string().optional().describe("Only runs on this branch."),
+        trigger: z
+          .string()
+          .optional()
+          .describe('Only runs from this event, such as push or pull_request, or "rerun".'),
       }),
       annotations: READ_ONLY,
     },
-    ({ workspace, days, breakdown }) =>
-      answer(() => scoped(workspace)("/signals", { days, breakdown: breakdown ? undefined : 0 })),
+    ({ workspace, days, breakdown, repository, ...filter }) =>
+      answer(() =>
+        scoped(workspace)("/signals", {
+          days,
+          breakdown: breakdown ? undefined : 0,
+          repo: repository,
+          ...filter,
+        }),
+      ),
   );
 
   server.registerTool(

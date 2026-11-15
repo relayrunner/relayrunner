@@ -1,7 +1,7 @@
 import { CircleDollarSignIcon, GaugeIcon, LayersIcon, type LucideIcon } from "lucide-react";
 import { DOCS_URL } from "@/components/site-footer";
 import { api } from "@/lib/api";
-import { triggerText } from "@/lib/runs";
+import { sampleActor, sampleSha, triggerText } from "@/lib/runs";
 
 export type SignalArea = "speed" | "cost" | "complexity";
 export type SignalId =
@@ -57,13 +57,63 @@ export type Breakdown = {
   other: { runs: number; minutes: number; cost: number } | null;
 };
 
+/** A filter's job minutes per UTC day, oldest first, and the same days of the range before. */
+export type SignalTrend = { minutes: number[]; previous: number[] | null };
+
 /** GET /api/signals: the signals over the threshold, the most time first, and the Breakdown. */
 export type SignalsReport = {
   days: number;
   totals: { jobs: number; minutes: number; cost: number };
   signals: Signal[];
   breakdown: Record<BreakdownBy, Breakdown>;
+  /** On a filtered page; null when the filter is on more than one view. */
+  trend?: SignalTrend | null;
 };
+
+/**
+ * What the page narrows to, as the URL and the API name it: Breakdown values, a workflow with its
+ * repo. A trigger is an event name, or "rerun".
+ */
+export const FILTER_KEYS = ["person", "repo", "workflow", "branch", "trigger"] as const;
+export type FilterKey = (typeof FILTER_KEYS)[number];
+export type SignalFilter = Partial<Record<FilterKey, string>>;
+
+/** A filtered page works its numbers out from single jobs, which go back this many days. */
+export const FILTERED_MAX_DAYS = 30;
+
+export const isFiltered = (filter: SignalFilter) => FILTER_KEYS.some((key) => filter[key]);
+
+/** The filter a Breakdown row narrows the page to. */
+export function rowFilter(by: BreakdownBy, row: BreakdownRow): SignalFilter {
+  if (by === "workflow") return { repo: row.repository ?? undefined, workflow: row.name };
+  return { [by === "repository" ? "repo" : by]: row.name };
+}
+
+/** One run attempt behind a signal row (GET /api/signals/runs). Times are epoch ms. */
+export type SignalRun = {
+  repositoryId: number;
+  repository: string;
+  runId: number;
+  runAttempt: number;
+  /** The job the signal is about, on job signals. */
+  jobId: number | null;
+  workflow: string | null;
+  title: string | null;
+  event: string | null;
+  branch: string | null;
+  sha: string | null;
+  actor: string | null;
+  conclusion: string | null;
+  startedAt: number | null;
+  /** The part of the run the signal counts. */
+  runMs: number;
+  cost: number;
+};
+
+export type SignalRunsReport = { days: number; runs: SignalRun[]; total: number };
+
+/** A signal row, as the runs panel names it. */
+export type SignalRowRef = { signal: SignalId; repository: string; subject: string };
 
 /** The Breakdown's views, in the order the page offers them. */
 export const BREAKDOWN_VIEWS: { value: BreakdownBy; label: string }[] = [
@@ -80,8 +130,19 @@ export function triggerName(event: string) {
   return text.charAt(0).toUpperCase() + text.slice(1);
 }
 
-export function getSignals(days = 30) {
-  return api<SignalsReport>(`/signals?days=${days}`);
+function query(days: number, filter: SignalFilter, extra: Record<string, string> = {}) {
+  const params = new URLSearchParams({ days: String(days), ...extra });
+  for (const key of FILTER_KEYS) if (filter[key]) params.set(key, filter[key]);
+  return params.toString();
+}
+
+export function getSignals(days = 30, filter: SignalFilter = {}) {
+  return api<SignalsReport>(`/signals?${query(days, filter)}`);
+}
+
+export function getSignalRuns(row: SignalRowRef, days: number, filter: SignalFilter) {
+  const extra = { signal: row.signal, in: row.repository, subject: row.subject };
+  return api<SignalRunsReport>(`/signals/runs?${query(days, filter, extra)}`);
 }
 
 export const AREAS: Record<SignalArea, { title: string; question: string; icon: LucideIcon }> = {
@@ -213,8 +274,11 @@ export const SIGNAL_COPY: Record<
 const WORKFLOWS = new Set(["CI", "Test", "E2E"]);
 const SAMPLE_RUNNERS = new Set(["ubuntu-latest", "macos-14"]);
 
-export function sampleSignals(days: number): SignalsReport {
-  const scale = days / 30;
+export function sampleSignals(days: number, filter: SignalFilter = {}): SignalsReport {
+  const filtered = isFiltered(filter);
+  if (filtered) days = Math.min(days, FILTERED_MAX_DAYS);
+  // A filtered sample is about a third of everything.
+  const scale = (days / 30) * (filtered ? 0.35 : 1);
   const row = (
     repository: string,
     subject: string,
@@ -268,7 +332,48 @@ export function sampleSignals(days: number): SignalsReport {
       signal("docs-changes", [row("acme/web", "Test", 38, 366, 14)]),
     ],
     breakdown: sampleBreakdown(scale),
+    ...(filtered && { trend: sampleTrend(days, scale) }),
   };
+}
+
+function sampleTrend(days: number, scale: number): SignalTrend {
+  const perDay = (12_700 * scale) / days;
+  const wave = (day: number, lift: number) =>
+    Math.max(
+      0,
+      Math.round(perDay * lift * (1 + 0.35 * Math.sin(day * 0.9) - (day % 7 > 4 ? 0.6 : 0))),
+    );
+  return {
+    minutes: Array.from({ length: days }, (_, day) => wave(day, 1)),
+    previous: Array.from({ length: days }, (_, day) => wave(day + 3, 0.82)),
+  };
+}
+
+export function sampleSignalRuns(row: SignalRowRef, days: number): SignalRunsReport {
+  const titles = [
+    "Fix flaky checkout test",
+    "Add search filters",
+    "Bump vite to 8.1",
+    "Docs: API keys",
+  ];
+  const runs = Array.from({ length: 8 }, (_, n): SignalRun => ({
+    repositoryId: 1,
+    repository: row.repository,
+    runId: 9_000 - n,
+    runAttempt: 1,
+    jobId: row.subject.includes("›") ? 90_000 - n : null,
+    workflow: row.subject.split(" › ")[0] ?? null,
+    title: titles[n % titles.length]!,
+    event: n % 3 === 0 ? "push" : "pull_request",
+    branch: n % 3 === 0 ? "main" : `feature-${n}`,
+    sha: sampleSha(n),
+    actor: sampleActor(n),
+    conclusion: row.signal === "flaky-jobs" || n % 4 === 1 ? "failure" : "success",
+    startedAt: Date.now() - (n * 7 + 1) * 3_600_000,
+    runMs: (4 + ((n * 5) % 11)) * 60_000 + n * 7_000,
+    cost: 0.1 * (n + 1),
+  }));
+  return { days: Math.min(days, FILTERED_MAX_DAYS), runs, total: 34 };
 }
 
 // Sample Breakdown views that add up to the sample totals: 12.7K minutes and $486 over 30 days.

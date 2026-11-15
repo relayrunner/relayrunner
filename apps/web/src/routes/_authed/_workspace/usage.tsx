@@ -58,7 +58,7 @@ function UsagePage() {
   const days = daysOf(Route.useSearch());
   const setSearch = useSetSearch<Search>();
   const first = Route.useLoaderData();
-  const { report, checks } = useRangeReport(first, days, load, (data) => data.report.days);
+  const { report, checks } = useRangeReport(first, days, load);
 
   function chooseRange(next: number) {
     setSearch({ days: unlessDefault(next, DEFAULT_DAYS) });

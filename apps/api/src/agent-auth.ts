@@ -198,7 +198,7 @@ const AGENT_ROUTES: RegExp[] = [
   /^\/api\/usage$/,
   /^\/api\/usage\/(checks|actions)$/,
   /^\/api\/job-times$/,
-  /^\/api\/signals$/,
+  /^\/api\/signals(\/runs)?$/,
 ];
 
 // Routes an agent may call by method. The one write is agent feedback, which only adds a row for

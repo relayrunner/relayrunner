@@ -356,6 +356,8 @@ describe("mcp server", () => {
     await call("get_signals", { breakdown: true });
     expect(asked).toContain("/api/signals?days=7&breakdown=0 @w1");
     expect(asked).toContain("/api/signals?days=30 @w1");
+    await call("get_signals", { repository: "acme/app", workflow: "CI" });
+    expect(asked).toContain("/api/signals?days=30&breakdown=0&repo=acme%2Fapp&workflow=CI @w1");
   });
 
   test("a connection with several workspaces asks which, by id or name", async () => {

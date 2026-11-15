@@ -3,7 +3,12 @@ import { eq } from "drizzle-orm";
 import { createDb, schema } from "./db/index.ts";
 import type { Env } from "./env.ts";
 import type { InstallationTask } from "./installation-tasks.ts";
-import { enqueueSignalRollups, rollUpSignals, type SignalsReport } from "./signals.ts";
+import {
+  enqueueSignalRollups,
+  rollUpSignals,
+  type SignalRunsReport,
+  type SignalsReport,
+} from "./signals.ts";
 import * as testing from "./testing.ts";
 
 let env: Env;
@@ -549,6 +554,58 @@ describe("GET /api/signals", () => {
     expect(only.totals).toEqual(full.totals);
   });
 
+  test("narrows the page to a filter's runs, worked out on the spot", async () => {
+    const ctx = await connectedWorkspace();
+    // ana's two runs on one branch: the older kept going 40 minutes past the newer push.
+    await runWithJob(ctx, { start: 120, minutes: 60, startedByLogin: "ana" });
+    await runWithJob(ctx, { start: 100, minutes: 30, startedByLogin: "ana" });
+    await runWithJob(ctx, { start: 50, minutes: 20, startedByLogin: "sam", headBranch: "b" });
+    await rollUpSignals(createDb(env.DB), ctx.installationId);
+
+    const ana = await report(ctx.cookie, "&person=ana");
+    expect(ana.totals).toMatchObject({ jobs: 2, minutes: 90 });
+    expect(ana.signals.map((signal) => signal.id)).toEqual(["no-concurrency"]);
+    expect(ana.breakdown?.person.rows.map((row) => row.name)).toEqual(["ana"]);
+    expect(ana.breakdown?.branch.rows).toMatchObject([{ name: "feature", runs: 2 }]);
+
+    const sam = await report(ctx.cookie, "&person=sam");
+    expect(sam.totals).toMatchObject({ jobs: 1, minutes: 20 });
+    expect(sam.signals).toEqual([]);
+    // Triggers match the Breakdown's: re-runs are their own.
+    expect((await report(ctx.cookie, "&trigger=rerun")).totals.jobs).toBe(0);
+    expect((await report(ctx.cookie, "&trigger=pull_request")).totals.jobs).toBe(3);
+  });
+
+  test("gives a filter's minutes per day against the range before", async () => {
+    const ctx = await connectedWorkspace();
+    await runWithJob(ctx, { start: 60, minutes: 30, startedByLogin: "ana" });
+    // Ten days ago: in the week before this one.
+    await runWithJob(ctx, { start: 10 * 24 * 60, minutes: 12, startedByLogin: "ana" });
+    await rollUpSignals(createDb(env.DB), ctx.installationId);
+
+    const { trend } = await report(ctx.cookie, "&person=ana");
+    const total = (minutes: number[] = []) => minutes.reduce((sum, each) => sum + each, 0);
+    expect(trend?.minutes).toHaveLength(7);
+    expect(total(trend?.minutes)).toBe(30);
+    expect(trend?.previous).toHaveLength(7);
+    expect(total(trend?.previous ?? [])).toBe(12);
+    expect((await report(ctx.cookie, "&repo=acme/app&workflow=CI")).trend?.minutes).toContain(30);
+    // Two views at once have no rollup rows to read.
+    expect((await report(ctx.cookie, "&person=ana&branch=feature")).trend).toBeNull();
+    expect((await report(ctx.cookie)).trend).toBeUndefined();
+    // Nothing rolled up before the range: nothing to compare with.
+    const fresh = await connectedWorkspace();
+    await runWithJob(fresh, { start: 60, minutes: 30, startedByLogin: "ana" });
+    await rollUpSignals(createDb(env.DB), fresh.installationId);
+    expect((await report(fresh.cookie, "&person=ana")).trend?.previous).toBeNull();
+  });
+
+  test("keeps a filtered page to the days single jobs cover", async () => {
+    const ctx = await connectedWorkspace();
+    const res = await testing.call(env, "/signals?days=90&repo=acme/app", ctx.cookie);
+    expect(((await res.json()) as SignalsReport).days).toBe(30);
+  });
+
   test("is empty before the first rollup", async () => {
     const ctx = await connectedWorkspace();
     const empty = { rows: [], other: null };
@@ -564,5 +621,62 @@ describe("GET /api/signals", () => {
         repository: empty,
       },
     });
+  });
+});
+
+describe("GET /api/signals/runs", () => {
+  async function runs(cookie: string, query: string) {
+    const res = await testing.call(env, `/signals/runs?days=7&in=acme/app&${query}`, cookie);
+    expect(res.status).toBe(200);
+    return (await res.json()) as SignalRunsReport;
+  }
+
+  test("lists the runs behind a run signal's row, newest first", async () => {
+    const ctx = await connectedWorkspace();
+    const older = await runWithJob(ctx, {
+      start: 120,
+      minutes: 60,
+      startedByLogin: "ana",
+      displayTitle: "Add search",
+    });
+    await runWithJob(ctx, { start: 100, minutes: 30 });
+
+    const body = await runs(ctx.cookie, "signal=no-concurrency&subject=CI");
+    expect(body).toMatchObject({
+      days: 7,
+      total: 1,
+      runs: [
+        {
+          runId: older,
+          runAttempt: 1,
+          jobId: null,
+          repository: "acme/app",
+          workflow: "CI",
+          title: "Add search",
+          actor: "ana",
+          branch: "feature",
+          runMs: 40 * MINUTE,
+        },
+      ],
+    });
+    // Another subject, or a filter that leaves the run out, lists nothing.
+    expect((await runs(ctx.cookie, "signal=no-concurrency&subject=Deploy")).total).toBe(0);
+    expect((await runs(ctx.cookie, "signal=no-concurrency&subject=CI&person=sam")).total).toBe(0);
+  });
+
+  test("names the job behind a job signal's row", async () => {
+    const ctx = await connectedWorkspace();
+    await job(ctx, { start: 30, minutes: 2, waited: 5 });
+    await job(ctx, { start: 20, minutes: 2, waited: 0.5 });
+    const body = await runs(ctx.cookie, "signal=queue-waits&subject=ubuntu-latest");
+    expect(body.total).toBe(1);
+    expect(body.runs[0]).toMatchObject({ runMs: 5 * MINUTE, title: null });
+    expect(body.runs[0]!.jobId).toBe(body.runs[0]!.runId);
+  });
+
+  test("rejects a signal it doesn't know", async () => {
+    const ctx = await connectedWorkspace();
+    const res = await testing.call(env, "/signals/runs?signal=nope&in=a&subject=b", ctx.cookie);
+    expect(res.status).toBe(400);
   });
 });

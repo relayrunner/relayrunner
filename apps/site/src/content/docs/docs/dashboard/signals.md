@@ -15,6 +15,8 @@ Below the signals, the [Breakdown](#breakdown) shows who and what uses your CI m
 
 Every area shows on the page, even when none of its signals came up. Signals that didn't come up are listed under their area, after **No sign of**, so you can see everything the page checks for. The ⓘ beside any signal explains it and links to its section here.
 
+Click a row under any signal to see the runs behind it, newest first. Each run opens in [History](/docs/dashboard/activity#history) with its jobs, and on signals about one job, that job.
+
 The page updates every hour. A signal shows up once it covers at least 30 minutes and 1% of all your job minutes in the range, so small one-offs stay off the page. Minutes and spend sit in separate columns. Spend uses the same list prices as the [Usage](/docs/dashboard/usage) page, so public repos and self-hosted runners count as free.
 
 ## Speed signals
@@ -25,7 +27,7 @@ Waiting for a runner and waiting on one job cost time rather than money, so thos
 
 These jobs waited more than a minute after GitHub queued them before a runner took them, grouped by their `runs-on` labels. Jobs wait when every runner with those labels is busy, or when the account reaches GitHub's limit on jobs running at once. Add a step to your [runner order](/docs/concepts/runner-order) so jobs go to the next runner that's free instead of waiting.
 
-Click a row to open that runner's panel, with its jobs per day and recent jobs. When every waiting job ran on the same machine, the row opens that machine.
+Click a runner's name to open its panel, with its jobs per day and recent jobs. When every waiting job ran on the same machine, the name opens that machine.
 
 ### One job sets the pace
 
@@ -90,3 +92,9 @@ The Breakdown splits all your job minutes and spend one way at a time:
 - **Trigger**: push, pull request, schedule, manual or re-run.
 
 Each view lists the 10 with the most minutes, then everything else in one row. Runs count once each, so a run with a 20-job matrix is still one run.
+
+### Filter the page
+
+Click a row in the Breakdown to narrow the whole page to it: the signals, their rows and the other Breakdown views then only count that person's, repo's, workflow's, branch's or trigger's runs. Click a row in another view to narrow it further, and use the × beside a filter to remove it.
+
+A filtered page also shows that filter's minutes per day, with the same number of days before as a dashed line, so you can see whether it's growing. Filtered pages cover up to the last 30 days.

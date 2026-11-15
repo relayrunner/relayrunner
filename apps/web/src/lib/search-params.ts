@@ -44,26 +44,27 @@ export const unlessDefault = <V>(value: V, fallback: V) => (value === fallback ?
 
 /**
  * A report for the range in the URL. The route's loader reads the first one; another range loads
- * here, with the last report shown until it's back.
+ * here, with the last report shown until it's back. A page with filters passes a key for the range
+ * and filters together.
  */
-export function useRangeReport<T>(
+export function useRangeReport<T, K extends string | number = number>(
   first: T,
-  days: number,
-  load: (days: number) => Promise<T>,
-  daysOf: (report: T) => number = (report) => (report as { days: number }).days,
+  key: K,
+  load: (key: K) => Promise<T>,
 ) {
-  const [report, setReport] = useState(first);
-  useEffect(() => setReport(first), [first]);
+  // The report, and the key it was loaded for.
+  const [[loaded, report], setLoaded] = useState<[K, T]>([key, first]);
+  useEffect(() => setLoaded([key, first]), [first]);
   useEffect(() => {
-    if (daysOf(report) === days) return;
+    if (loaded === key) return;
     let live = true;
-    load(days)
-      .then((next) => live && setReport(next))
+    load(key)
+      .then((next) => live && setLoaded([key, next]))
       .catch(() => undefined);
     return () => {
       live = false;
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps -- only a new range loads
-  }, [days]);
+  }, [key]);
   return report;
 }
