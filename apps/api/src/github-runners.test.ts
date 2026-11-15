@@ -164,6 +164,10 @@ describe("adding GitHub runners", () => {
     env.ROUTER = {
       getByName: () => ({
         githubRunners,
+        githubRunnersChecked: async (installationId: number, scope: RunnerScope) => {
+          const runners = await githubRunners(installationId, scope);
+          return runners ? { runners, checkedAt: Date.now() } : null;
+        },
         githubRunnerLists: (
           installationId: number,
           scopes: RunnerScope[],

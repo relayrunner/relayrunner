@@ -1,13 +1,14 @@
 import { Link } from "@tanstack/react-router";
 import { TriangleAlertIcon } from "lucide-react";
-import type { ReactNode } from "react";
+import { useEffect, useState, type ReactNode } from "react";
 import { RunLink } from "@/components/run-sheet";
 import { RunnerLink } from "@/components/runner-link";
 import { StatusIcon } from "@/components/status-icon";
 import { Card } from "@/components/ui/card";
 import { clock } from "@/lib/job-times";
 import { type LiveJob, type LiveJobs, runnerCounts, waitReason } from "@/lib/live-jobs";
-import type { Machine } from "@/lib/machines";
+import { githubCheckedAt } from "@/lib/attention";
+import { timeAgo, type Machine } from "@/lib/machines";
 import { useNow } from "@/lib/use-now";
 import { cn } from "@/lib/utils";
 
@@ -18,41 +19,68 @@ const SHOWN = 5;
  * The top of the Runners page: how many of the workspace's runners are running, idle or offline,
  * how many jobs are queued, and the jobs running and waiting right now, with why each is waiting.
  */
-export function RunnersNow({ machines, live }: { machines: Machine[]; live: LiveJobs }) {
+export function RunnersNow({
+  machines,
+  live,
+  updatedAt,
+  attention,
+}: {
+  machines: Machine[];
+  live: LiveJobs;
+  /** When the page last heard back about its runners (epoch ms), for the freshness line. */
+  updatedAt: number;
+  /** The Needs attention list, beside the strip when there's anything in it. */
+  attention?: ReactNode;
+}) {
   const counts = runnerCounts(machines);
   const { running, queued } = live;
   const envs = new Map(live.environments.map((env) => [env.key, env]));
   const longest = queued[0]?.queuedAt;
+  const stale = useStale(updatedAt);
   return (
     <section aria-label="Right now" className="grid gap-6">
-      <Card className="grid grid-cols-2 gap-0 divide-line-soft overflow-hidden py-0 sm:grid-cols-4 sm:divide-x">
-        <Tile label="Running" value={counts.running} detail={`of ${counts.total} runners`}>
-          <div aria-hidden className="mt-2 flex h-1 overflow-hidden rounded-full bg-well">
-            <span className="bg-run" style={{ width: share(counts.running, counts.total) }} />
-            <span className="bg-go" style={{ width: share(counts.idle, counts.total) }} />
-          </div>
-        </Tile>
-        <Tile
-          label="Idle"
-          value={counts.idle}
-          detail={counts.paused ? `ready for jobs · ${counts.paused} paused` : "ready for jobs"}
+      <div className="grid gap-2">
+        <Freshness
+          updatedAt={updatedAt}
+          githubAt={githubCheckedAt(machines)}
+          githubDown={machines.some((machine) => machine.github?.unreachable)}
+          stale={stale}
         />
-        <Tile label="Offline" value={counts.offline} detail="not connected" />
-        <Tile
-          label="Queued jobs"
-          value={queued.length}
-          detail={
-            longest ? (
-              <>
-                longest waiting <Clock from={longest} />
-              </>
-            ) : (
-              "nothing waiting"
-            )
-          }
-        />
-      </Card>
-      <div className="grid gap-6 lg:grid-cols-2">
+        <Card
+          className={cn(
+            "grid grid-cols-2 gap-0 divide-line-soft overflow-hidden py-0 transition-colors sm:grid-cols-4 sm:divide-x",
+            stale && "text-muted-foreground",
+          )}
+        >
+          <Tile label="Running" value={counts.running} detail={`of ${counts.total} runners`}>
+            <div aria-hidden className="mt-2 flex h-1 overflow-hidden rounded-full bg-well">
+              <span className="bg-run" style={{ width: share(counts.running, counts.total) }} />
+              <span className="bg-go" style={{ width: share(counts.idle, counts.total) }} />
+            </div>
+          </Tile>
+          <Tile
+            label="Idle"
+            value={counts.idle}
+            detail={counts.paused ? `ready for jobs · ${counts.paused} paused` : "ready for jobs"}
+          />
+          <Tile label="Offline" value={counts.offline} detail="not connected" />
+          <Tile
+            label="Queued jobs"
+            value={queued.length}
+            detail={
+              longest ? (
+                <>
+                  longest waiting <Clock from={longest} />
+                </>
+              ) : (
+                "nothing waiting"
+              )
+            }
+          />
+        </Card>
+      </div>
+      {attention}
+      <div className={cn("grid gap-6 transition-opacity lg:grid-cols-2", stale && "opacity-60")}>
         <JobList title="Running now" count={running.length} empty="No jobs are running.">
           {running.slice(0, SHOWN).map((job) => (
             <JobRow
@@ -107,6 +135,59 @@ export function RunnersNow({ machines, live }: { machines: Machine[]; live: Live
       </div>
     </section>
   );
+}
+
+// How long the page's numbers stay current without hearing back: two missed refreshes. Past it they
+// grey out, since the page may be idle, hidden, or failing to reach the API.
+const STALE_MS = 40_000;
+
+/** Whether `updatedAt` is older than STALE_MS, flipping when it gets there with no ticking. */
+function useStale(updatedAt: number) {
+  const [stale, setStale] = useState(() => Date.now() - updatedAt > STALE_MS);
+  useEffect(() => {
+    const left = updatedAt + STALE_MS - Date.now();
+    setStale(left <= 0);
+    if (left <= 0) return;
+    const timer = setTimeout(() => setStale(true), left);
+    return () => clearTimeout(timer);
+  }, [updatedAt]);
+  return stale;
+}
+
+// "Updated 8s ago · GitHub checked 20s ago", ticking each second on its own.
+function Freshness({
+  updatedAt,
+  githubAt,
+  githubDown,
+  stale,
+}: {
+  updatedAt: number;
+  githubAt: number | null;
+  githubDown: boolean;
+  stale: boolean;
+}) {
+  const now = useNow(true);
+  return (
+    <p
+      className={cn(
+        "flex flex-wrap justify-end gap-x-1.5 text-xs text-muted-foreground tabular-nums",
+        stale && "text-run",
+      )}
+    >
+      <span>Updated {ago(updatedAt, now)}</span>
+      {githubDown ? (
+        <span>· Couldn't reach GitHub</span>
+      ) : (
+        githubAt !== null && <span>· GitHub checked {ago(githubAt, now)}</span>
+      )}
+    </p>
+  );
+}
+
+/** "5s ago" under a minute, then "2 minutes ago". */
+function ago(at: number, now: number) {
+  const seconds = Math.max(0, Math.round((now - at) / 1000));
+  return seconds < 60 ? `${seconds}s ago` : timeAgo(at, now);
 }
 
 const share = (part: number, total: number) => `${total ? (part / total) * 100 : 0}%`;

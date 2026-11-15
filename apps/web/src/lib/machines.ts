@@ -44,6 +44,8 @@ export type Machine = {
     missing: boolean;
     /** GitHub couldn't be asked, so the status reads offline. */
     unreachable: boolean;
+    /** When GitHub was last asked for its status (epoch ms). Missing from an API that predates it. */
+    checkedAt?: number | null;
   };
   /**
    * What the machine's CLI reported on its last hello: the kind of device and its specs. Null
@@ -232,7 +234,14 @@ export const SAMPLE_MACHINES: Machine[] = [
     revokedAt: null,
     createdAt: "2026-11-01T00:00:00Z",
     source: "github",
-    github: { org: "acme", repo: "acme/app", runnerId: 7, missing: false, unreachable: false },
+    github: {
+      org: "acme",
+      repo: "acme/app",
+      runnerId: 7,
+      missing: false,
+      unreachable: false,
+      checkedAt: Date.now() - 12_000,
+    },
     device: null,
     owner: "acme",
     mine: false,

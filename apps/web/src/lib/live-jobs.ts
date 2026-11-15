@@ -64,8 +64,8 @@ function hasLabels(job: string[], runner: string[] | undefined) {
   return job.every((label) => have.has(label.toLowerCase()));
 }
 
-// The Router's fits (apps/api/src/routing.ts): the machine's own labels, or its VM's.
-const matches = (job: LiveJob, machine: Machine) =>
+/** The Router's fits (apps/api/src/routing.ts): the machine's own labels, or its VM's. */
+export const matches = (job: LiveJob, machine: Machine) =>
   hasLabels(job.labels, machine.labels) || hasLabels(job.labels, machine.isolatedLabels);
 
 /**

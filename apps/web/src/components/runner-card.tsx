@@ -189,10 +189,33 @@ function Band({ tone, children }: { tone: keyof typeof BANDS; children: ReactNod
   );
 }
 
-export function BandLabel({ tone, children }: { tone: keyof typeof BANDS; children: ReactNode }) {
+/**
+ * A status's label, after its dot, or after one small bar per runner slot while the machine is
+ * online: filled for a slot running a job, green for one waiting.
+ */
+export function BandLabel({
+  tone,
+  slots,
+  children,
+}: {
+  tone: keyof typeof BANDS;
+  slots?: MachineView["slots"];
+  children: ReactNode;
+}) {
   return (
     <span className={cn("flex shrink-0 items-center gap-2 font-semibold", BANDS[tone].label)}>
-      <span aria-hidden className={cn("size-2 shrink-0 rounded-full", BANDS[tone].dot)} />
+      {slots ? (
+        <span aria-hidden className="flex items-center gap-0.5">
+          {Array.from({ length: slots.slots }, (_, i) => (
+            <span
+              key={i}
+              className={cn("h-3 w-1 rounded-full", i < slots.running ? "bg-run" : "bg-go")}
+            />
+          ))}
+        </span>
+      ) : (
+        <span aria-hidden className={cn("size-2 shrink-0 rounded-full", BANDS[tone].dot)} />
+      )}
       {children}
     </span>
   );
@@ -262,6 +285,9 @@ export function NotReported() {
   );
 }
 
+// Past this many slots the bars would crowd the band, so it keeps the plain label.
+const MAX_SLOT_BARS = 16;
+
 /** What a machine is doing and what it is, worked out once for its card and its list row. */
 export function machineView(machine: Machine) {
   // A self-hosted runner added from GitHub: no connection of its own, removed rather than revoked.
@@ -327,6 +353,12 @@ export function machineView(machine: Machine) {
   // one. The gateway forgets the count once a machine disconnects (#346), so offline reads as not
   // reported.
   const runners = isGithub ? 1 : status.online ? slots : null;
+  // Its slots, busy first, for the bars by its status. Only while it takes jobs: offline, the
+  // count isn't known.
+  const slotBars =
+    (tone === "running" || tone === "idle") && slots <= MAX_SLOT_BARS
+      ? { slots, running: Math.min(running, slots) }
+      : null;
 
   // Whose machine it is and whose jobs it takes (#243). Only the owner of a connect machine
   // changes it; a runner added from GitHub belongs to its org and takes any job.
@@ -375,6 +407,7 @@ export function machineView(machine: Machine) {
     hardware,
     jobPlace,
     runners,
+    slots: slotBars,
     sharing,
     mine,
     canShare,
@@ -579,13 +612,7 @@ export function MachineMenu({
     }
   }
 
-  const settingsUrl = github?.repo
-    ? repoRunnerSettingsUrl(github.repo)
-    : github?.org
-      ? runnerSettingsUrl(github.org)
-      : null;
-  const githubUrl =
-    settingsUrl && github?.runnerId ? `${settingsUrl}/${github.runnerId}` : settingsUrl;
+  const githubUrl = githubRunnerUrl(github);
 
   return (
     <DropdownMenu onOpenChange={onMenuOpen}>
@@ -726,6 +753,16 @@ export function MachineSharingDialog({
       onOpenChange={actions.setSharingOpen}
     />
   );
+}
+
+/** A runner added from GitHub's settings page on GitHub, or its org's or repo's runners. */
+export function githubRunnerUrl(github: Machine["github"] | null) {
+  const settingsUrl = github?.repo
+    ? repoRunnerSettingsUrl(github.repo)
+    : github?.org
+      ? runnerSettingsUrl(github.org)
+      : null;
+  return settingsUrl && github?.runnerId ? `${settingsUrl}/${github.runnerId}` : settingsUrl;
 }
 
 /** "Revoke" or "Remove", and its pending form. */
@@ -876,7 +913,9 @@ export function MachineCard({
               {pending === "resume" ? "Unpausing…" : "Unpause"}
             </Button>
           ) : (
-            <BandLabel tone={tone}>{label}</BandLabel>
+            <BandLabel tone={tone} slots={view.slots}>
+              {label}
+            </BandLabel>
           )}
           {busy ? (
             <MachineJobLink jobs={jobs} />

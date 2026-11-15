@@ -521,8 +521,8 @@ export const machineRoutes = new Hono<AppEnv>()
     const github = new Map(
       await Promise.all(
         [...reads].map(async ([key, { installationId, scope }]) => {
-          const runners = await router!.githubRunners(installationId, scope).catch(() => null);
-          return [key, runners ? { runners } : null] as const;
+          const read = await router!.githubRunnersChecked(installationId, scope).catch(() => null);
+          return [key, read] as const;
         }),
       ),
     );
@@ -625,6 +625,8 @@ export const machineRoutes = new Hono<AppEnv>()
             missing: Boolean(read) && !runner,
             // GitHub couldn't be asked; the status shown is offline.
             unreachable: !read,
+            // When GitHub was last asked for its status (epoch ms), or null when it couldn't be.
+            checkedAt: read?.checkedAt ?? null,
           },
         };
       }),

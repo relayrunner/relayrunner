@@ -165,6 +165,17 @@ export class Router extends DurableObject<Env> {
   }
 
   /**
+   * githubRunners with when GitHub was asked (epoch ms), so the Runners page can say how fresh the
+   * runners' status is.
+   */
+  async githubRunnersChecked(installationId: number, scope: RunnerScope) {
+    const runners = await this.githubRunners(installationId, scope);
+    if (!runners) return null;
+    const checkedAt = this.runnerLists.readAt(runnerListKey(installationId, scope)) ?? Date.now();
+    return { runners, checkedAt };
+  }
+
+  /**
    * The runner lists of several scopes, such as each of an account's private repos, for finding
    * runners to add. Reused for FOUND_LIST_TTL_MS unless `fresh`. Null for a list GitHub refused.
    */

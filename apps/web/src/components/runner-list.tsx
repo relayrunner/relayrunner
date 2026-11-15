@@ -87,7 +87,9 @@ const columns = column.columns([
       const { view } = row.original;
       return (
         <span className="grid min-w-0 gap-0.5 text-xs">
-          <BandLabel tone={view.tone}>{view.label}</BandLabel>
+          <BandLabel tone={view.tone} slots={view.slots}>
+            {view.label}
+          </BandLabel>
           {view.busy ? (
             <span className="flex max-w-60">
               <MachineJobLink jobs={view.jobs} />
