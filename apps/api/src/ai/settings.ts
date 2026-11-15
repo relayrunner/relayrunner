@@ -10,6 +10,8 @@ import { utcDay } from "../job-timings.ts";
 export const AI_FEATURES = {
   job_type: "Classify jobs by what they do, such as lint, tests or a build",
   failure_cause: "Classify why a job failed, such as a flaky test or a lint error",
+  retry_decision:
+    "Let failure causes decide automatic retries: retry flaky jobs, skip broken setups",
   test: "Test calls from Admin › AI",
 } as const;
 export type AiFeature = keyof typeof AI_FEATURES;

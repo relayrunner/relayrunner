@@ -256,7 +256,7 @@ export interface AttemptJob {
   labels: string[];
   started_at: string | null;
   completed_at: string | null;
-  steps?: unknown[];
+  steps?: { name: string; number: number; conclusion: string | null; started_at: string | null }[];
 }
 
 /** The jobs of a run attempt, straight from GitHub. */

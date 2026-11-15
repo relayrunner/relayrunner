@@ -166,13 +166,8 @@ async function readFailure(
   github: Installation,
   row: FailedRow,
 ): Promise<Omit<JobFailure, "cause">> {
-  const repo = row.repositoryFullName;
   await github.headroom();
-  const token = await github.token();
-  const [annotations, log] = await Promise.all([
-    jobAnnotations(token, repo, row.id).catch(() => []),
-    jobLogTail(token, repo, row.id, TAIL_BYTES).catch(() => null),
-  ]);
+  const details = await failureDetails(await github.token(), row.repositoryFullName, row.id);
   const where = row.startedAt ? environmentFor(row.labels, row.runnerGroupName, null) : null;
   return {
     id: row.id,
@@ -181,6 +176,17 @@ async function readFailure(
     runner: where?.label ?? null,
     runnerFailed: row.ranSteps === false,
     failedStep: row.failedStep,
+    ...details,
+  };
+}
+
+/** A failed job's annotations and log excerpt from GitHub. A log GitHub no longer has is null. */
+export async function failureDetails(token: string, repo: string, jobId: number) {
+  const [annotations, log] = await Promise.all([
+    jobAnnotations(token, repo, jobId).catch(() => []),
+    jobLogTail(token, repo, jobId, TAIL_BYTES).catch(() => null),
+  ]);
+  return {
     annotations: annotations
       .filter((message) => !IMAGE_NOTICE.test(message))
       .slice(0, MAX_ANNOTATIONS)

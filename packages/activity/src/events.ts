@@ -65,6 +65,8 @@ export const RETRY_KINDS = [
   "machine_lost",
   // GitHub reported that it lost the runner, or that the runner was shut down mid-job.
   "runner_lost",
+  // The AI model was sure a re-run would pass (the retry_decision feature).
+  "flaky",
 ] as const;
 export type RetryKind = (typeof RETRY_KINDS)[number];
 

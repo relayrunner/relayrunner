@@ -1,4 +1,5 @@
-// Automatic retries of jobs whose runner failed them (phase 1 of #448).
+// Automatic retries of jobs whose runner failed them (phase 1 of #448), and, with the
+// retry_decision AI feature on, of jobs the model is sure were flaky (decideWithAi).
 //
 // When a run that RelayRunner routed finishes as failed, each of its routed jobs that failed is
 // checked for a runner failure: the runner never got the job's steps going, the connected machine
@@ -17,11 +18,14 @@ import { and, count, desc, eq, gte, inArray, lte } from "drizzle-orm";
 import { recordEvent } from "./activity.ts";
 import { createDb, type Db, schema } from "./db/index.ts";
 import type { Env } from "./env.ts";
+import { failureCauseOf } from "./ai/failure-cause.ts";
+import { aiAccess } from "./ai/settings.ts";
 import { appInstallationToken, attemptJobs, jobAnnotations, rerunJob } from "./github-app.ts";
+import { failureDetails } from "./job-failures.ts";
 import { loadRepoConfig } from "./repo-config.ts";
 import { actor } from "./route-decisions.ts";
 import { routeIdFromLabels } from "./routing.ts";
-import { DAY_MS } from "./job-timings.ts";
+import { DAY_MS, failedStep } from "./job-timings.ts";
 import { errorMessage } from "./webhook-queue.ts";
 
 type WorkflowRunMessage = Extract<WebhookMessage, { event: "workflow_run" }>;
@@ -35,6 +39,9 @@ const DAILY_RETRY_CAP = 100;
 // GitHub can mark the job failed before the socket's close reaches us.
 const DISCONNECT_SLACK_MS = 2 * 60_000;
 
+// Failed jobs the model is asked about per run: each costs GitHub a log and an annotations read.
+const AI_JOBS = 3;
+
 // What GitHub writes on a job whose runner went away mid-job.
 const LOST_RUNNER = [/lost communication with the server/i, /received a shutdown signal/i];
 
@@ -43,6 +50,8 @@ export interface FailedJob {
   id: number;
   name: string;
   ranSteps: boolean | null;
+  // "3. Run tests", or null when no step failed.
+  failedStep: string | null;
   machineId: string | null;
   startedAt: Date | null;
   completedAt: Date | null;
@@ -118,7 +127,16 @@ export async function retryFailedRun(env: Env, message: WorkflowRunMessage): Pro
     run.runAttempt,
     routed.label,
   );
-  const found = await findRunnerFailure(db, token, workspace.id, repository.fullName, jobs);
+  const found = await decideWithAi(
+    env,
+    db,
+    token,
+    workspace.id,
+    repository.fullName,
+    jobs,
+    await findRunnerFailure(db, token, workspace.id, repository.fullName, jobs),
+    log,
+  );
   if (!found) return;
   if (!(await underCaps(db, workspace.id, repository.id, run.id, settings.max))) {
     console.log(JSON.stringify({ msg: "retry skipped: cap reached", ...log }));
@@ -259,6 +277,7 @@ async function failedRoutedJobs(
     id: job.id,
     name: job.name,
     ranSteps: ranSteps(job.steps),
+    failedStep: failedStep(job.steps),
     machineId: machines.find((row) => row.id === job.id)?.machineId ?? null,
     startedAt: date(job.started_at),
     completedAt: date(job.completed_at),
@@ -318,6 +337,54 @@ async function findRunnerFailure(
   );
   const job = jobs.find((_, index) => lost[index]);
   return job ? { job, kind: "runner_lost" as const } : null;
+}
+
+type Found = { job: FailedJob; kind: RetryKind } | null;
+
+/**
+ * With the retry_decision AI feature on, the model's re-run verdict (src/ai/failure-cause.ts) has
+ * a say. A runner that never started its job is still retried unless the model is sure a re-run
+ * fails, since a bad action ref also fails in "Set up job". With no runner failure, the first job
+ * the model is sure a re-run passes is retried as flaky. Off or unsure, the rules decide alone.
+ * Each answer is logged.
+ */
+async function decideWithAi(
+  env: Env,
+  db: Db,
+  token: string,
+  workspaceId: string,
+  repo: string,
+  jobs: FailedJob[],
+  found: Found,
+  log: object,
+): Promise<Found> {
+  if (found && found.kind !== "runner_start") return found;
+  if (!(await aiAccess(db, workspaceId, "retry_decision"))) return found;
+  const asked = found
+    ? [found.job]
+    : jobs.filter((job) => job.ranSteps !== false).slice(0, AI_JOBS);
+  for (const job of asked) {
+    const cause = await failureCauseOf(env, workspaceId, {
+      name: job.name,
+      failedStep: job.failedStep,
+      runnerFailed: job.ranSteps === false,
+      ...(await failureDetails(token, repo, job.id)),
+    });
+    const retry = found ? cause?.rerun !== "fails" : cause?.rerun === "passes";
+    console.log(
+      JSON.stringify({
+        msg: "retry decision",
+        ...log,
+        jobId: job.id,
+        rule: found?.kind ?? null,
+        cause,
+        retry,
+      }),
+    );
+    if (found) return retry ? found : null;
+    if (retry) return { job, kind: "flaky" };
+  }
+  return null;
 }
 
 // Under the run's `max` retries and the workspace's daily cap.
