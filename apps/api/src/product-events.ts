@@ -27,10 +27,17 @@ export type ProductEvent = {
   properties: Record<string, unknown>;
 };
 
-/** The id for events about a workspace rather than a person: they make no person profile. */
+/**
+ * The id for events about a workspace rather than a person. These events keep a person profile
+ * (one per workspace): PostHog drops the group from personless events, so without one a job routed
+ * to GitHub would belong to no workspace.
+ */
 const workspaceActor = (workspaceId: string) => `workspace:${workspaceId}`;
 
-/** The properties every server event carries, putting it in its workspace's group. */
+/**
+ * The properties every server event carries, putting it in its workspace's group. Only
+ * `$groupidentify` is personless: it sets the group's properties and has no person to speak of.
+ */
 function base(workspaceId: string | null, personless = false) {
   return {
     app: "api",
@@ -109,7 +116,7 @@ export async function collectProductEvents(
       distinct_id: install.installer ?? workspaceActor(install.id),
       timestamp,
       properties: {
-        ...base(install.id, !install.installer),
+        ...base(install.id),
         account_type: accountType,
         repository_selection: install.selection,
       },
@@ -165,7 +172,7 @@ export async function collectProductEvents(
       distinct_id: arrival.owner ?? workspaceActor(arrival.workspaceId),
       timestamp: arrival.occurredAt.toISOString(),
       properties: {
-        ...base(arrival.workspaceId, !arrival.owner),
+        ...base(arrival.workspaceId),
         machine_id: arrival.machineId,
         source: arrival.source,
         os: arrival.os,
@@ -204,7 +211,7 @@ export async function collectProductEvents(
       event: "job_routed",
       distinct_id: person ?? workspaceActor(decision.workspaceId),
       timestamp: decision.createdAt.toISOString(),
-      properties: { ...base(decision.workspaceId, !person), step: decision.step ?? "none" },
+      properties: { ...base(decision.workspaceId), step: decision.step ?? "none" },
     });
   }
 

@@ -167,10 +167,12 @@ describe("product events", () => {
     expect(jobs[0]?.distinct_id).toBe(user.id);
     expect(jobs[0]?.properties).toMatchObject({ $groups: { workspace: ws.id } });
     expect(jobs[0]?.properties.$process_person_profile).toBeUndefined();
+    // Not personless: PostHog drops the group from personless events.
     expect(jobs[1]).toMatchObject({
       distinct_id: `workspace:${ws.id}`,
-      properties: { $process_person_profile: false },
+      properties: { $groups: { workspace: ws.id } },
     });
+    expect(jobs[1]?.properties.$process_person_profile).toBeUndefined();
   });
 
   test("a machine job goes to the machine's owner, not whoever started the run", async () => {
