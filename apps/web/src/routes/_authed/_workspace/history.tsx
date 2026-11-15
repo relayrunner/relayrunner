@@ -1,6 +1,7 @@
 import { createFileRoute } from "@tanstack/react-router";
 import { ChevronRightIcon, RouteIcon } from "lucide-react";
 import { memo, useEffect, useMemo, useRef, useState } from "react";
+import { CommitBy } from "@/components/commit";
 import { DurationChart, runPoints } from "@/components/duration-chart";
 import { SectionBoundary } from "@/components/error-boundary";
 import { JobList } from "@/components/job-list";
@@ -329,7 +330,6 @@ const RunRow = memo(function RunRow({
   const meta = [
     run.title ? run.workflow : null,
     showRepository ? run.repository : null,
-    run.actor,
     triggerText(run),
     run.branch,
     run.runAttempt > 1 ? `attempt ${run.runAttempt}` : null,
@@ -366,7 +366,10 @@ const RunRow = memo(function RunRow({
               </span>
             )}
           </span>
-          <span className="block truncate text-xs text-muted-foreground">{meta.join(" · ")}</span>
+          <span className="flex min-w-0 items-center gap-2.5 text-xs text-muted-foreground">
+            <CommitBy actor={run.actor} sha={run.sha} className="shrink-0" />
+            <span className="truncate">{meta.join(" · ")}</span>
+          </span>
         </span>
         <RanOn keys={run.environments} environments={environments} />
         <span className="flex items-center gap-2">

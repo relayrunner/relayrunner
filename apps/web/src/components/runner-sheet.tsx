@@ -2,6 +2,7 @@ import { sizeText } from "@relayrunner/providers";
 import { Link, useNavigate } from "@tanstack/react-router";
 import { ChevronRightIcon } from "lucide-react";
 import { type ReactNode, useEffect, useState } from "react";
+import { CommitBy } from "@/components/commit";
 import { CopyButton } from "@/components/add-runner";
 import { providerOf, providerStyle, RunnerMark } from "@/components/providers";
 import { TimeRangePicker } from "@/components/range-picker";
@@ -11,7 +12,7 @@ import { StatusIcon } from "@/components/status-icon";
 import { Sheet, SheetContent, SheetDescription, SheetTitle } from "@/components/ui/sheet";
 import { timeAgo } from "@/lib/activity";
 import { authDisabled } from "@/lib/auth-client";
-import { clock, DAY_MS, HOUR_MS, plural } from "@/lib/job-times";
+import { clock, DAY_MS, HOUR_MS, p90Text, plural } from "@/lib/job-times";
 import { cachedMachine, type Machine, workspaceMachine } from "@/lib/machines";
 import { onlineSpans, type RunnerBucket } from "@/lib/runner-days";
 import { getRunnerReport, type RunnerReport, sampleRunnerReport } from "@/lib/runner-report";
@@ -183,7 +184,15 @@ function RunnerView({
             ],
             ["Success", stat.runs ? percent(stat.successes / stat.runs) : "—"],
             ["Median wait", clock(stat.waitMs)],
-            ["Median run", clock(stat.medianMs)],
+            [
+              "Median run",
+              <>
+                {clock(stat.medianMs)}
+                {stat.p90Ms !== null && (
+                  <span className="block text-xs text-muted-foreground">{p90Text(stat)}</span>
+                )}
+              </>,
+            ],
           ]}
         />
 
@@ -434,8 +443,9 @@ function RecentJobs({ report }: { report: RunnerReport }) {
                         <span className="block underline-offset-4 group-hover:underline">
                           {job.name}
                         </span>
-                        <span className="block text-xs text-muted-foreground">
-                          {[job.workflow, job.repository].filter(Boolean).join(" · ")}
+                        <span className="flex flex-wrap items-center gap-x-2.5 text-xs text-muted-foreground">
+                          <span>{[job.workflow, job.repository].filter(Boolean).join(" · ")}</span>
+                          <CommitBy actor={job.actor} sha={job.sha} />
                         </span>
                       </span>
                     </Link>

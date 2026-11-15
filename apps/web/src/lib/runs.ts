@@ -16,6 +16,8 @@ export type Run = {
   title: string | null;
   event: string | null;
   actor: string | null;
+  /** The commit the run is for. Null when only job data is known. */
+  sha: string | null;
   branch: string | null;
   pullRequest: number | null;
   url: string;
@@ -60,6 +62,7 @@ export type RunHeader = Pick<
   | "title"
   | "event"
   | "actor"
+  | "sha"
   | "branch"
   | "pullRequest"
   | "url"
@@ -114,6 +117,9 @@ export type HistoryJob = JobRun & {
   repository: string;
   workflow: string | null;
   name: string;
+  /** The run's commit and who started the run. Null for runs from before they were stored. */
+  sha: string | null;
+  actor: string | null;
   /** Only for jobs on connected machines whose CLI reports it. */
   usage?: JobUsage;
 };
@@ -168,6 +174,12 @@ export const isLongWait = (wait: number | null): wait is number =>
 const now = Date.now();
 const MIN = 60_000;
 
+/** A made-up commit sha for sample data, the same for the same number. */
+export const sampleSha = (n: number) =>
+  `${((n * 2_654_435_761) >>> 0).toString(16).padStart(8, "0")}${"0".repeat(32)}`;
+/** Made-up GitHub accounts for sample data. */
+export const sampleActor = (n: number) => (n % 3 === 0 ? "hubot" : "octocat");
+
 function sampleRun(run: Partial<Run> & Pick<Run, "runId">): Run {
   return {
     repositoryId: 1,
@@ -176,7 +188,8 @@ function sampleRun(run: Partial<Run> & Pick<Run, "runId">): Run {
     workflow: "CI",
     title: null,
     event: "push",
-    actor: "zach",
+    actor: sampleActor(run.runId),
+    sha: sampleSha(run.runId),
     branch: "main",
     pullRequest: null,
     url: "https://github.com",
@@ -286,7 +299,8 @@ export function sampleRunJobs(run: Pick<Run, "runId">): RunJobs {
     workflow: "CI",
     title: null,
     event: "push",
-    actor: "zach",
+    actor: sampleActor(run.runId),
+    sha: sampleSha(run.runId),
     branch: "main",
     pullRequest: null,
     url: "https://github.com",
@@ -373,9 +387,12 @@ export function sampleJobs(days: number): JobsReport {
     const completedAt = now - index * 37 * MIN;
     const runMs = (20 + ((index * 53) % 170)) * 1000;
     const startedAt = completedAt - runMs;
+    const runId = 500 - Math.floor(index / 4);
     return {
       id: 1000 - index,
-      runId: 500 - Math.floor(index / 4),
+      runId,
+      sha: sampleSha(runId),
+      actor: sampleActor(runId),
       runAttempt: 1,
       repositoryId: 1,
       repository: index % 9 === 4 ? "acme/ci-tests" : "acme/app",

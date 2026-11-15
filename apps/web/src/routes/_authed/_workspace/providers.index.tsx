@@ -6,7 +6,7 @@ import { ProviderMark } from "@/components/providers";
 import { RangePicker } from "@/components/range-picker";
 import { DataTable, dataTableColumns, NUM } from "@/components/ui/data-table";
 import { authDisabled } from "@/lib/auth-client";
-import { medianText, plural } from "@/lib/job-times";
+import { medianText, p90Text, plural } from "@/lib/job-times";
 import { providerCatalog, providerInfo } from "@/lib/provider-catalog";
 import {
   dayRanges,
@@ -153,7 +153,9 @@ const columns = column.columns([
     header: "Typical job",
     sortFn: "basic",
     meta: NUM,
-    cell: ({ row }) => medianText(row.original.stat),
+    cell: ({ row }) => (
+      <span title={p90Text(row.original.stat)}>{medianText(row.original.stat)}</span>
+    ),
   }),
   column.accessor("cost", {
     header: "Est. cost",

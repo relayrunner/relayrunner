@@ -10,7 +10,7 @@ import { StatTile } from "@/components/stat-tile";
 import { Button } from "@/components/ui/button";
 import { createCellContext, DataTable, dataTableColumns, NUM } from "@/components/ui/data-table";
 import { authDisabled } from "@/lib/auth-client";
-import { clock, medianText, plural } from "@/lib/job-times";
+import { clock, medianText, p90Text, plural } from "@/lib/job-times";
 import { isKnownProvider, providerInfo } from "@/lib/provider-catalog";
 import {
   costText,
@@ -221,7 +221,11 @@ function Totals({ report }: { report: ProviderReport }) {
         detail="Rounded up per job"
       />
       <StatTile label="Estimated cost" value={costText(report)} detail="At list prices" />
-      <StatTile label="Typical job" value={medianText(stat)} detail="Median of successful jobs" />
+      <StatTile
+        label="Typical job"
+        value={medianText(stat)}
+        detail={stat.p90Ms === null ? "Median of successful jobs" : `Median · ${p90Text(stat)}`}
+      />
       <StatTile label="Queue wait" value={clock(stat.waitMs)} detail="Median, queued to started" />
       <StatTile label="Failed" value={percent(failures, jobs)} detail={plural(failures, "job")} />
     </div>
@@ -250,7 +254,9 @@ const runnerColumns = runnerColumn.columns([
     header: "Typical",
     sortFn: "basic",
     meta: NUM,
-    cell: ({ row }) => medianText(row.original.stat),
+    cell: ({ row }) => (
+      <span title={p90Text(row.original.stat)}>{medianText(row.original.stat)}</span>
+    ),
   }),
   runnerColumn.accessor((runner) => runner.perMinute ?? undefined, {
     id: "rate",

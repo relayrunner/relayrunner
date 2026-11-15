@@ -1,6 +1,7 @@
 import { Link, type LinkProps, useNavigate } from "@tanstack/react-router";
 import { ChevronRightIcon, ExternalLinkIcon } from "lucide-react";
 import { type ReactNode, useEffect, useMemo, useState } from "react";
+import { CommitBy } from "@/components/commit";
 import { RunnerLink, type RunnerRef } from "@/components/runner-link";
 import { StatusIcon } from "@/components/status-icon";
 import { WalkLines } from "@/components/walk-lines";
@@ -281,8 +282,11 @@ function RunView({
             {header.title ?? header.workflow ?? "Unnamed workflow"}
           </span>
         </SheetTitle>
-        <SheetDescription className="pl-[26px]">
-          {[header.title ? header.workflow : null, header.repository].filter(Boolean).join(" · ")}
+        <SheetDescription className="flex flex-wrap items-center gap-x-2.5 pl-[26px]">
+          <span>
+            {[header.title ? header.workflow : null, header.repository].filter(Boolean).join(" · ")}
+          </span>
+          <CommitBy actor={header.actor} sha={header.sha} repository={header.repository} />
         </SheetDescription>
       </header>
 
@@ -462,7 +466,10 @@ function JobView({
           <JobStatus job={job} running={running} className="mt-0.5 size-[18px]" />
           <span className="min-w-0 break-words">{job.name}</span>
         </SheetTitle>
-        <SheetDescription className="pl-[26px]">{header.repository}</SheetDescription>
+        <SheetDescription className="flex flex-wrap items-center gap-x-2.5 pl-[26px]">
+          <span>{header.repository}</span>
+          <CommitBy actor={header.actor} sha={header.sha} repository={header.repository} />
+        </SheetDescription>
       </header>
 
       <Facts

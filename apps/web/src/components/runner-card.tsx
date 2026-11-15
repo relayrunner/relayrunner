@@ -30,7 +30,7 @@ import {
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import { describeJobPlace, deviceName, formatMemory } from "@/lib/device";
 import { deviceIcon, SelfHostedIcon } from "@/components/device-icon";
-import { medianText, plural, type EnvironmentSummary, type Stat } from "@/lib/job-times";
+import { medianText, p90Text, plural, type EnvironmentSummary, type Stat } from "@/lib/job-times";
 import {
   machineAccess,
   pauseMachine,
@@ -538,7 +538,7 @@ export function TypicalJob({ jobTime }: { jobTime?: Stat }) {
     <Link
       to="/performance"
       search={{ view: "runners" }}
-      title={`Typical job · ${plural(jobTime.samples, "run")} in 14 days`}
+      title={`Typical job · ${p90Text(jobTime)} · ${plural(jobTime.samples, "run")} in 14 days`}
       className="truncate hover:text-foreground"
     >
       {medianText(jobTime)}
@@ -1103,7 +1103,7 @@ function CloudRow({
         <Link
           to="/performance"
           search={{ view: "runners" }}
-          title={`Typical job · ${plural(stat.samples, "run")}`}
+          title={`Typical job · ${p90Text(stat)} · ${plural(stat.samples, "run")}`}
           className="flex items-center justify-end gap-1 hover:text-foreground"
         >
           <TimerIcon aria-hidden className="size-3.5 text-idle" />
