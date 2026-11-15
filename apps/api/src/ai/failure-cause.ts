@@ -11,8 +11,10 @@ export const FAILURE_CAUSES = {
   build: "Compiling, bundling or installing dependencies failed",
   infra: "The runner or its environment broke: out of disk or memory, lost runner, service down",
   config: "The workflow or its setup is wrong: bad YAML, missing secret, permission or tool",
+  unclear: "There isn't enough to tell, or it could be several of these",
 } as const;
-export type FailureCauseKind = keyof typeof FAILURE_CAUSES;
+// "unclear" is how the model says it isn't sure; it's never given as a cause.
+export type FailureCauseKind = Exclude<keyof typeof FAILURE_CAUSES, "unclear">;
 
 export type FailureCause = {
   kind: FailureCauseKind;
@@ -54,7 +56,7 @@ const normalize = (line: string) => line.replace(VARYING, "#").replace(/\s+/g, "
 
 const failureCause = defineClassifier({
   feature: "failure_cause",
-  version: 2,
+  version: 3,
   questions: {
     cause: {
       type: "choice",
@@ -99,7 +101,7 @@ export async function failureCauseOf(
   const result = await classify(env, failureCause, workspaceId, failure);
   if (!result.ok) return null;
   const { cause, rerun } = result.answers;
-  if (cause.confidence < SHOWN) return null;
+  if (cause.choice === "unclear" || cause.confidence < SHOWN) return null;
   return {
     kind: cause.choice,
     confidence: cause.confidence,

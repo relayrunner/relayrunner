@@ -57,7 +57,7 @@ describe("failureCauseOf", () => {
   });
 
   test("says what a re-run will do only when the answers are sure and agree", async () => {
-    const errors = ["first", "second", "third", "fourth", "fifth"];
+    const errors = ["first", "second", "third", "fourth", "fifth", "sixth"];
     const verdict = async (choice: string, confidence: number, noul: number) => {
       run.mockResolvedValueOnce(answers(choice, confidence, noul));
       // A different error each time, so no answer comes from the cache.
@@ -70,8 +70,9 @@ describe("failureCauseOf", () => {
     expect(await verdict("flaky", 0.74, 0.9)).toBeNull();
     // The cause and the re-run answer disagree.
     expect(await verdict("test", 0.95, 0.9)).toBeNull();
-    // Too unsure to give a cause at all.
+    // Too unsure to give a cause at all, or the model says so.
     expect(await verdict("lint", 0.6, 0.1)).toBeUndefined();
+    expect(await verdict("unclear", 0.95, 0.5)).toBeUndefined();
   });
 
   test("asks once for the same error with different ids and timings", async () => {
