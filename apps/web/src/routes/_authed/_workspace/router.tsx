@@ -7,6 +7,7 @@ import { SectionBoundary } from "@/components/error-boundary";
 import { PageHeader } from "@/components/page-header";
 import { RetrySettingsCard } from "@/components/retry-settings";
 import { RunnerOrderEditor } from "@/components/runner-order-editor";
+import { RouterWorkflows } from "@/components/router-workflows";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { getActionsUsage, type AccountUsage } from "@/lib/actions-usage";
@@ -14,6 +15,7 @@ import { sampleRouterAccounts } from "@/lib/router-sample";
 import { authDisabled } from "@/lib/auth-client";
 import { listMachines, type Machine } from "@/lib/machines";
 import { getProviderApps } from "@/lib/provider-apps";
+import { getRouterSetup, sampleRouterSetup, type RouterSetup } from "@/lib/router-setup";
 import {
   clearUnhealthyRunner,
   getProviderHealth,
@@ -66,6 +68,7 @@ function RouterPage() {
 
   const health = useProviderHealth(current.workspace.id);
   const installedApps = useProviderApps(current.workspace.id);
+  const setup = useRouterSetup(current.workspace.id);
 
   return (
     <section>
@@ -91,7 +94,11 @@ function RouterPage() {
             machines={machines}
             accounts={loaded.accounts}
             installedApps={installedApps}
+            labels={setup?.labels ?? null}
           />
+        </SectionBoundary>
+        <SectionBoundary>
+          <RouterWorkflows setup={setup} />
         </SectionBoundary>
         <SectionBoundary>
           <SkipUnhealthyToggle health={health} editable={editable} />
@@ -292,6 +299,23 @@ function sampleRouter(): {
 
 // The provider apps the org has installed, read from GitHub after the page loads. Null until it
 // arrives, or when it can't be told; the Add step menu then just says what each one needs.
+// Recent workflows, routed or not, and the hosted labels jobs ran on. Null until it loads, and when
+// it can't be read: the page still works without it.
+function useRouterSetup(workspaceId: string) {
+  const [setup, setSetup] = useState<RouterSetup | null>(null);
+  useEffect(() => {
+    let live = true;
+    (authDisabled ? Promise.resolve(sampleRouterSetup()) : getRouterSetup(workspaceId)).then(
+      (loaded) => live && setSetup(loaded),
+      () => undefined,
+    );
+    return () => {
+      live = false;
+    };
+  }, [workspaceId]);
+  return setup;
+}
+
 function useProviderApps(workspaceId: string) {
   const [installed, setInstalled] = useState<HostedProviderId[] | null>(null);
   useEffect(() => {

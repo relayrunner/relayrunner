@@ -37,7 +37,8 @@ import {
   TriangleAlertIcon,
 } from "lucide-react";
 import { useState } from "react";
-import { CopyButton } from "@/components/add-runner";
+import { CopyButton, CopyCommand } from "@/components/add-runner";
+import { DOCS_URL } from "@/components/site-footer";
 import { CodeBlock } from "@/components/code-block";
 import { ProviderMark } from "@/components/providers";
 import { Button } from "@/components/ui/button";
@@ -54,7 +55,8 @@ import { AppError } from "@relayrunner/errors";
 import type { Machine } from "@/lib/machines";
 import { previewRoute, type StepVerdict } from "@/lib/route-preview";
 import { saveRunnerOrder } from "@/lib/runner-order";
-import { cn } from "@/lib/utils";
+import type { LabelUse } from "@/lib/router-setup";
+import { cn, count as compactCount } from "@/lib/utils";
 
 type SaveStatus =
   | { kind: "idle" }
@@ -74,6 +76,7 @@ export function RunnerOrderEditor({
   machines,
   accounts,
   installedApps = null,
+  labels = null,
 }: {
   workspaceId: string;
   order: { steps: RunnerStep[] };
@@ -86,6 +89,8 @@ export function RunnerOrderEditor({
   accounts: AccountUsage[];
   /** The providers whose GitHub App the org has installed, or null when we can't tell. */
   installedApps?: HostedProviderId[] | null;
+  /** The hosted labels the workspace's jobs ran on lately, busiest first, or null while loading. */
+  labels?: LabelUse[] | null;
 }) {
   const router = useRouter();
   const [saved, setSaved] = useState({ steps: order.steps, isDefault });
@@ -219,7 +224,7 @@ export function RunnerOrderEditor({
           )}
         </div>
 
-        <WorkflowPanel steps={steps} />
+        <SetupPanel steps={steps} labels={labels} />
       </div>
 
       {(dirty || status.kind !== "idle") && (
@@ -689,33 +694,72 @@ function nextCycle(cycleStart: string) {
   return next.toLocaleDateString("en-US", { month: "short", day: "numeric", timeZone: "UTC" });
 }
 
-/** The relay.yml inputs this order needs, as a snippet. */
-function WorkflowPanel({ steps }: { steps: RunnerStep[] }) {
+const INIT_COMMAND = "npx relayrunner init";
+
+/**
+ * How to route a repo's jobs: `init` in a checkout, then an example of what it writes, with the
+ * labels this workspace's jobs ran on most where it knows them, and every hosted label in use.
+ */
+function SetupPanel({ steps, labels }: { steps: RunnerStep[]; labels: LabelUse[] | null }) {
   const keys = RUNNER_KEYS.filter((key) => steps.some((step) => step.key === key));
+  // Busiest first, so the first one per provider is the label its jobs use most.
+  const inUse = (labels ?? []).filter((use) => keys.includes(use.key));
+  const label = (key: RunnerKey) =>
+    inUse.find((use) => use.key === key)?.label ?? RUNNER_EXAMPLES[key];
   const snippet = [
     "jobs:",
     "  relay:",
     "    uses: relayrunner/actions/.github/workflows/relay.yml@v1.0.0-beta.5",
     "    with:",
-    ...keys.map((key) => `      ${key}: ${RUNNER_EXAMPLES[key]}`),
+    ...keys.map((key) => `      ${key}: ${label(key)}`),
     "  test:",
     "    needs: relay",
     "    runs-on: ${{ needs.relay.outputs.runner }}",
   ].join("\n");
   return (
     <section
-      aria-label="In your workflow"
-      className="grid min-w-0 flex-[1_1_300px] gap-2 rounded-lg border border-border/60 bg-[var(--rr-dormant)] px-4 py-3.5"
+      aria-label="Set up a repo"
+      className="grid min-w-0 flex-[1_1_300px] content-start gap-2 rounded-lg border border-border/60 bg-[var(--rr-dormant)] px-4 py-3.5"
     >
-      <h2 className="text-sm font-semibold">In your workflow</h2>
+      <h2 className="text-sm font-semibold">Set up a repo</h2>
       <p className="text-[12.5px] text-muted-foreground">
-        Each job gets its own relay with one label per step, so jobs can use different sizes. A job
-        skips steps it doesn't name.
+        In a checkout of the repo, run this and pick the jobs to route:
       </p>
+      <CopyCommand command={INIT_COMMAND} />
+      <p className="text-[12.5px] text-muted-foreground">
+        Each job gets its own relay and keeps its current label, so jobs can use different sizes.{" "}
+        <a
+          href={`${DOCS_URL}/get-started/quickstart#2-route-a-job`}
+          target="_blank"
+          rel="noreferrer"
+          className="text-go hover:text-go-hover"
+        >
+          Getting started
+        </a>
+      </p>
+      <h3 className="mt-2 text-xs font-medium text-muted-foreground">Example relay job</h3>
       <div className="relative">
         <CodeBlock code={snippet} lang="yaml" wrap fontSize={11.5} className="pr-7" />
         <CopyButton text={snippet} label="Copy YAML" className="absolute top-1 right-1" />
       </div>
+      {inUse.length > 0 && (
+        <>
+          <h3 className="mt-2 text-xs font-medium text-muted-foreground">
+            Labels your jobs ran on
+          </h3>
+          <ul className="grid gap-1 text-[12.5px]">
+            {inUse.map((use) => (
+              <li key={use.label} className="flex min-w-0 items-center gap-2">
+                <ProviderMark provider={use.key} className="size-4 shrink-0" />
+                <code className="min-w-0 truncate font-mono">{use.label}</code>
+                <span className="ml-auto shrink-0 text-muted-foreground tabular-nums">
+                  {compactCount(use.jobs)} {use.jobs === 1 ? "job" : "jobs"}
+                </span>
+              </li>
+            ))}
+          </ul>
+        </>
+      )}
     </section>
   );
 }

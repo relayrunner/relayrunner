@@ -20,6 +20,7 @@ import { appInstallationToken, orgAppSlugs } from "../github-app.ts";
 import { present } from "./github.ts";
 import { AppError } from "@relayrunner/errors";
 import { annotate } from "../tracing.ts";
+import { routerSetup } from "../router-setup.ts";
 
 // Any member of the workspace in the path. Someone outside it gets a 404, so ids don't leak.
 // An agent token (agent-auth.ts) only reaches the workspaces it was granted.
@@ -139,6 +140,11 @@ export const workspaceRoutes = new Hono<AppEnv>()
       return c.json({ installed: null });
     }
   })
+  // The Router page's setup panel: recent workflows, routed or not, and the hosted labels jobs
+  // ran on (src/router-setup.ts).
+  .get("/:id/router-setup", requireUser, requireMember, async (c) =>
+    c.json(await routerSetup(c.var.db, c.req.param("id"))),
+  )
   // Whether the Router skips hosted provider runner types that stopped picking up jobs, and the
   // ones it skips now (src/provider-health.ts).
   .get("/:id/provider-health", requireUser, requireMember, async (c) => {
