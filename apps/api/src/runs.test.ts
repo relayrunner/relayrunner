@@ -433,7 +433,7 @@ describe("workflow times and the job list", () => {
       // Outside a 1-day window.
       timing(installationId, 10, { name: "old", hoursAgo: 30 }),
     ]);
-    // The newer job's run is known, so it carries the run's commit and who started it.
+    // The newer job's run is known, so it carries the run's commit, branch, PR and who started it.
     await recordWorkflowRun(createDb(env.DB), runMessage(installationId, { id: 300 }));
     const res = await testing.call(env, "/runs/jobs?days=1", cookie);
     expect(res.status).toBe(200);
@@ -445,11 +445,14 @@ describe("workflow times and the job list", () => {
       environment: "github:linux-2-core",
       sha: "abc",
       actor: "zach",
+      branch: "runs-page",
+      pullRequest: 12,
+      title: "feat: add the runs page",
       usage,
     });
     // A job its machine didn't report on carries no usage at all, nor a commit without its run.
     expect(body.jobs[1]).not.toHaveProperty("usage");
-    expect(body.jobs[1]).toMatchObject({ sha: null, actor: null });
+    expect(body.jobs[1]).toMatchObject({ sha: null, actor: null, branch: null, pullRequest: null });
     expect(body.truncated).toBe(false);
   });
 });

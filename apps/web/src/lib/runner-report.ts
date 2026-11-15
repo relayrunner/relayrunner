@@ -1,7 +1,7 @@
 import { api } from "@/lib/api";
 import { DAY_MS, type Environment, HOUR_MS, sampleJobTimes, type Stat } from "@/lib/job-times";
 import type { RunnerBucket } from "./runner-days.ts";
-import { type HistoryJob, sampleActor, sampleSha } from "./runs.ts";
+import { type HistoryJob, sampleRunInfo } from "./runs.ts";
 
 export type RunnerJob = Omit<HistoryJob, "usage">;
 
@@ -86,12 +86,13 @@ export function sampleRunnerReport(
     const completedAt = to - (index * span) / 14 - random() * (span / 14);
     const runMs = median * (0.7 + random() * 0.6);
     const startedAt = completedAt - runMs;
+    // A few jobs to a run, as a workflow's jobs share one.
+    const runId = 500 + Math.floor(index / 3);
     return {
       id: 1000 + index,
-      runId: 500 + index,
+      runId,
       runAttempt: 1,
-      sha: sampleSha(500 + index),
-      actor: sampleActor(500 + index),
+      ...sampleRunInfo(runId),
       environment: key,
       conclusion: random() > 0.9 ? "failure" : "success",
       queuedAt: startedAt - random() * 20_000,

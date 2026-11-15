@@ -1,6 +1,6 @@
 import { sizeText } from "@relayrunner/providers";
 import { Link, useNavigate } from "@tanstack/react-router";
-import { ChevronRightIcon } from "lucide-react";
+import { ChevronRightIcon, GitBranchIcon, GitPullRequestIcon } from "lucide-react";
 import { type ReactNode, useEffect, useState } from "react";
 import { CommitBy } from "@/components/commit";
 import { CopyButton } from "@/components/add-runner";
@@ -15,8 +15,14 @@ import { authDisabled } from "@/lib/auth-client";
 import { clock, DAY_MS, HOUR_MS, p90Text, plural } from "@/lib/job-times";
 import { cachedMachine, type Machine, workspaceMachine } from "@/lib/machines";
 import { onlineSpans, type RunnerBucket } from "@/lib/runner-days";
-import { getRunnerReport, type RunnerReport, sampleRunnerReport } from "@/lib/runner-report";
-import { isLongWait, runParam } from "@/lib/runs";
+import {
+  getRunnerReport,
+  type RunnerJob,
+  type RunnerReport,
+  sampleRunnerReport,
+} from "@/lib/runner-report";
+import { type BranchGroup, groupByBranch } from "@/lib/branch-groups";
+import { isLongWait, pullRequestUrl, runParam } from "@/lib/runs";
 import { unlessDefault, useSetSearch } from "@/lib/search-params";
 import {
   type RangeOptions,
@@ -406,7 +412,7 @@ function RecentJobs({ report }: { report: RunnerReport }) {
   return (
     <Section title="Recent jobs">
       <div className="overflow-x-auto rounded-lg border">
-        <table className="w-full text-sm tabular-nums">
+        <table className="w-full divide-y text-sm tabular-nums">
           <thead className="bg-secondary/40">
             <tr className="text-xs text-muted-foreground">
               <th scope="col" className="py-2 pr-4 pl-3 text-left font-normal">
@@ -423,54 +429,88 @@ function RecentJobs({ report }: { report: RunnerReport }) {
               </th>
             </tr>
           </thead>
-          <tbody className="divide-y">
-            {report.recent.map((job) => {
-              const wait = job.queuedAt === null ? null : job.startedAt - job.queuedAt;
-              return (
-                <tr key={job.id} className="hover:bg-secondary/30">
-                  <th scope="row" className="py-2 pr-4 pl-3 text-left font-normal">
-                    <Link
-                      to="/history"
-                      search={{ run: runParam(job), job: job.id }}
-                      className="group inline-flex min-w-0 items-start gap-2"
-                    >
-                      <StatusIcon
-                        status="completed"
-                        conclusion={job.conclusion ?? "unknown"}
-                        className="mt-0.5 size-4"
-                      />
-                      <span className="min-w-0">
-                        <span className="block underline-offset-4 group-hover:underline">
-                          {job.name}
-                        </span>
-                        <span className="flex flex-wrap items-center gap-x-2.5 text-xs text-muted-foreground">
-                          <span>{[job.workflow, job.repository].filter(Boolean).join(" · ")}</span>
-                          <CommitBy actor={job.actor} sha={job.sha} />
-                        </span>
-                      </span>
-                    </Link>
-                  </th>
-                  <td
-                    className={cn(
-                      "py-2 pr-4 text-right align-top whitespace-nowrap",
-                      isLongWait(wait) && "font-semibold text-run",
-                    )}
-                  >
-                    {clock(wait)}
-                  </td>
-                  <td className="py-2 pr-4 text-right align-top whitespace-nowrap">
-                    {clock(job.completedAt - job.startedAt)}
-                  </td>
-                  <td className="py-2 pr-3 text-right align-top whitespace-nowrap text-muted-foreground">
-                    {timeAgo(job.completedAt)}
-                  </td>
-                </tr>
-              );
-            })}
-          </tbody>
+          {groupByBranch(report.recent).map((group) => (
+            <tbody key={group.key} className="divide-y">
+              {group.branch !== null && <BranchRow group={group} />}
+              {group.jobs.map((job) => (
+                <RecentJobRow key={job.id} job={job} />
+              ))}
+            </tbody>
+          ))}
         </table>
       </div>
     </Section>
+  );
+}
+
+/** A branch's jobs heading: its pull request when a run came from one, else the branch. */
+function BranchRow({ group }: { group: BranchGroup<RunnerJob> }) {
+  const pr = group.pullRequest;
+  return (
+    <tr className="bg-secondary/20 text-xs text-muted-foreground">
+      <th scope="rowgroup" colSpan={4} className="py-1.5 pr-3 pl-3 text-left font-normal">
+        {pr ? (
+          <a
+            href={pullRequestUrl(group.repository, pr.number)}
+            target="_blank"
+            rel="noreferrer"
+            title="Open the pull request on GitHub"
+            className="inline-flex max-w-full items-center gap-1.5 underline-offset-4 hover:text-foreground hover:underline"
+          >
+            <GitPullRequestIcon aria-hidden className="size-3.5 shrink-0" />
+            {pr.title && <span className="truncate text-foreground">{pr.title}</span>}
+            <span className="shrink-0">#{pr.number}</span>
+          </a>
+        ) : (
+          <span className="inline-flex max-w-full items-center gap-1.5">
+            <GitBranchIcon aria-hidden className="size-3.5 shrink-0" />
+            <span className="truncate">{group.branch}</span>
+          </span>
+        )}
+      </th>
+    </tr>
+  );
+}
+
+function RecentJobRow({ job }: { job: RunnerJob }) {
+  const wait = job.queuedAt === null ? null : job.startedAt - job.queuedAt;
+  return (
+    <tr className="hover:bg-secondary/30">
+      <th scope="row" className="py-2 pr-4 pl-3 text-left font-normal">
+        <Link
+          to="/history"
+          search={{ run: runParam(job), job: job.id }}
+          className="group inline-flex min-w-0 items-start gap-2"
+        >
+          <StatusIcon
+            status="completed"
+            conclusion={job.conclusion ?? "unknown"}
+            className="mt-0.5 size-4"
+          />
+          <span className="min-w-0">
+            <span className="block underline-offset-4 group-hover:underline">{job.name}</span>
+            <span className="flex flex-wrap items-center gap-x-2.5 text-xs text-muted-foreground">
+              <span>{[job.workflow, job.repository].filter(Boolean).join(" · ")}</span>
+              <CommitBy actor={job.actor} sha={job.sha} />
+            </span>
+          </span>
+        </Link>
+      </th>
+      <td
+        className={cn(
+          "py-2 pr-4 text-right align-top whitespace-nowrap",
+          isLongWait(wait) && "font-semibold text-run",
+        )}
+      >
+        {clock(wait)}
+      </td>
+      <td className="py-2 pr-4 text-right align-top whitespace-nowrap">
+        {clock(job.completedAt - job.startedAt)}
+      </td>
+      <td className="py-2 pr-3 text-right align-top whitespace-nowrap text-muted-foreground">
+        {timeAgo(job.completedAt)}
+      </td>
+    </tr>
   );
 }
 

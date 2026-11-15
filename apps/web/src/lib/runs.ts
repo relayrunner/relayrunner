@@ -112,17 +112,16 @@ export type JobUsage = {
 };
 
 /** A job a runner finished (GET /api/runs/jobs). */
-export type HistoryJob = JobRun & {
-  repositoryId: number;
-  repository: string;
-  workflow: string | null;
-  name: string;
-  /** The run's commit and who started the run. Null for runs from before they were stored. */
-  sha: string | null;
-  actor: string | null;
-  /** Only for jobs on connected machines whose CLI reports it. */
-  usage?: JobUsage;
-};
+export type HistoryJob = JobRun &
+  // Its run's, null for runs from before they were stored.
+  Pick<Run, "sha" | "actor" | "branch" | "pullRequest" | "title"> & {
+    repositoryId: number;
+    repository: string;
+    workflow: string | null;
+    name: string;
+    /** Only for jobs on connected machines whose CLI reports it. */
+    usage?: JobUsage;
+  };
 
 export type JobsReport = {
   days: number;
@@ -135,6 +134,10 @@ export type JobsReport = {
 /** A job's page on GitHub. */
 export const jobUrl = (job: Pick<HistoryJob, "repository" | "runId" | "id">) =>
   `https://github.com/${job.repository}/actions/runs/${job.runId}/job/${job.id}`;
+
+/** A pull request's page on GitHub. */
+export const pullRequestUrl = (repository: string, number: number) =>
+  `https://github.com/${repository}/pull/${number}`;
 
 export function getRuns() {
   return api<RunsReport>("/runs");
@@ -214,6 +217,19 @@ export const sampleSha = (n: number) =>
   `${((n * 2_654_435_761) >>> 0).toString(16).padStart(8, "0")}${"0".repeat(32)}`;
 /** Made-up GitHub accounts for sample data. */
 export const sampleActor = (n: number) => (n % 3 === 0 ? "hubot" : "octocat");
+const SAMPLE_PRS = [
+  { branch: "fix-flaky-cache", pullRequest: 214, title: "Fix the flaky cache test" },
+  { branch: "main", pullRequest: null, title: "Bump the Node version" },
+  { branch: "faster-builds", pullRequest: 211, title: "Build packages in parallel" },
+];
+/** A made-up branch and pull request for sample run `n`. */
+const sampleBranch = (n: number) => SAMPLE_PRS[n % SAMPLE_PRS.length]!;
+/** Sample run `n`'s commit, who started it, and its branch and pull request. */
+export const sampleRunInfo = (n: number) => ({
+  sha: sampleSha(n),
+  actor: sampleActor(n),
+  ...sampleBranch(n),
+});
 
 function sampleRun(run: Partial<Run> & Pick<Run, "runId">): Run {
   return {
@@ -426,8 +442,7 @@ export function sampleJobs(days: number): JobsReport {
     return {
       id: 1000 - index,
       runId,
-      sha: sampleSha(runId),
-      actor: sampleActor(runId),
+      ...sampleRunInfo(runId),
       runAttempt: 1,
       repositoryId: 1,
       repository: index % 9 === 4 ? "acme/ci-tests" : "acme/app",

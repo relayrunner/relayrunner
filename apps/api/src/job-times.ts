@@ -697,6 +697,10 @@ export interface HistoryJob extends JobRun {
   /** The run's commit and who started the run, from workflow_run. Null for runs without one. */
   sha: string | null;
   actor: string | null;
+  /** The run's branch and pull request, and the PR or commit title GitHub shows for it. */
+  branch: string | null;
+  pullRequest: number | null;
+  title: string | null;
   /** The CPU and memory it used, when its machine reported them. */
   usage?: JobUsage;
 }
@@ -704,8 +708,9 @@ export interface HistoryJob extends JobRun {
 const workflowRun = schema.workflowRun;
 
 /**
- * Jobs as a job list shows them, newest finished first, at most `limit`, with their run's commit.
- * The limit applies before the join, so only the listed jobs look up their run.
+ * Jobs as a job list shows them, newest finished first, at most `limit`, with their run's commit,
+ * branch and pull request. The limit applies before the join, so only the listed jobs look up their
+ * run.
  */
 export function jobListQuery(db: Db, where: SQL, limit: number) {
   const jobs = db
@@ -723,7 +728,14 @@ export function jobListQuery(db: Db, where: SQL, limit: number) {
     .limit(limit)
     .as("jobs");
   return db
-    .select({ ...jobs._.selectedFields, sha: workflowRun.headSha, actor: workflowRun.actorLogin })
+    .select({
+      ...jobs._.selectedFields,
+      sha: workflowRun.headSha,
+      actor: workflowRun.actorLogin,
+      branch: workflowRun.headBranch,
+      pullRequest: workflowRun.pullRequestNumber,
+      title: workflowRun.displayTitle,
+    })
     .from(jobs)
     .leftJoin(
       workflowRun,
@@ -738,8 +750,9 @@ type JobListRow = Awaited<ReturnType<typeof jobListQuery>>[number];
 export function historyJobOf(row: JobListRow, env?: Environment): HistoryJob | null {
   const run = jobRunOf(row, env);
   if (!run) return null;
-  const { repositoryId, repository, workflow, name, sha, actor, usage } = row;
-  return { ...run, repositoryId, repository, workflow, name, sha, actor, ...(usage && { usage }) };
+  // The run's converted fields replace the raw ones; labels and the like only made `run`.
+  const { labels: _l, runnerGroupName: _g, machineId: _m, usage, ...rest } = row;
+  return { ...rest, ...run, ...(usage && { usage }) };
 }
 
 /** Most jobs the job list returns. */
