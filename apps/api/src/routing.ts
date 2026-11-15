@@ -517,7 +517,7 @@ export const sameLogin = (a: string, b: string) => a.toLowerCase() === b.toLower
 // input names a label that provider doesn't serve, so the job would sit queued). Shared with the
 // Activity page, which explains each.
 export type { SkipReason } from "@relayrunner/activity";
-import type { SkipReason, SpendUsage } from "@relayrunner/activity";
+import { spendText, type SkipReason, type SpendUsage } from "@relayrunner/activity";
 
 export interface SkippedStep {
   key: RunnerKey;
@@ -664,12 +664,6 @@ export async function decideRoute(
   let usage: Promise<AccountUsage | null> | undefined;
   const inOrder = new Set(order.steps.map((step) => step.key));
   const notInOrder = RUNNER_KEYS.filter((key) => !inOrder.has(key) && job[key].length > 0);
-  // The skip for a step whose job's account has spent `limitUsd` on `key` this month, or null.
-  async function spendSkip(key: HostedProviderId, limitUsd: number): Promise<SkippedStep | null> {
-    const { account, spentUsd } = await spend(key);
-    if (spentUsd < limitUsd) return null;
-    return { key, reason: "spend_limit", spend: { account, spentUsd, limitUsd } };
-  }
   for (const step of order.steps) {
     const { key } = step;
     if (key === "machine") {
@@ -708,11 +702,17 @@ export async function decideRoute(
       else if (!isProviderLabel(key, labels[0]))
         skipped.push({ key, reason: "not_provider_label" });
       else {
-        const over = step.spendLimit ? await spendSkip(key, step.spendLimit.usd) : null;
-        const unhealthy = over ? null : await health(key, labels[0]);
-        if (over) skipped.push(over);
-        else if (unhealthy) skipped.push({ key, reason: "provider_unhealthy", unhealthy });
-        else return { runner: labels[0], step: key, skipped, notInOrder };
+        if (step.spendLimit) {
+          const { account, spentUsd } = await spend(key);
+          const limitUsd = step.spendLimit.usd;
+          if (spentUsd >= limitUsd) {
+            skipped.push({ key, reason: "spend_limit", spend: { account, spentUsd, limitUsd } });
+            continue;
+          }
+        }
+        const unhealthy = await health(key, labels[0]);
+        if (!unhealthy) return { runner: labels[0], step: key, skipped, notInOrder };
+        skipped.push({ key, reason: "provider_unhealthy", unhealthy });
       }
     }
   }
@@ -761,7 +761,7 @@ export function noRunnerReason(
         case "minutes_runway":
           return minutesText(reason, minutes);
         case "spend_limit":
-          return spendText(key, spend);
+          return spendText(RUNNER_LABELS[key], spend);
         // Never the reason nothing fit: an unhealthy step takes the job when no other can.
         case "provider_unhealthy":
           return `${RUNNER_LABELS[key]} isn't picking up jobs`;
@@ -799,13 +799,6 @@ export function fullText(machines: FullMachine[]): string {
 }
 
 const count = (n: number) => Math.round(n).toLocaleString("en-US");
-
-/** "relayrunner has spent $212 on Depot this month, past its $200 limit". */
-export function spendText(key: RunnerKey, spend: SpendUsage | undefined): string {
-  if (!spend) return `${RUNNER_LABELS[key]} is past its spend limit`;
-  const dollars = (usd: number) => `$${count(usd)}`;
-  return `${spend.account} has spent ${dollars(spend.spentUsd)} on ${RUNNER_LABELS[key]} this month, past its ${dollars(spend.limitUsd)} limit`;
-}
 
 /** "relayrunner has used 1,640 of its 2,000 included minutes (82%), past the 80% limit". */
 export function minutesText(

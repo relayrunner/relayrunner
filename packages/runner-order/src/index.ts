@@ -1,4 +1,4 @@
-import { HOSTED_PROVIDER_IDS, PROVIDERS, RATES } from "@relayrunner/providers";
+import { HOSTED_PROVIDER_IDS, hasListPrices, PROVIDERS } from "@relayrunner/providers";
 import { z } from "zod";
 
 // A workspace's runner order: an ordered allowlist of providers. The Router walks it top to
@@ -57,7 +57,7 @@ export type SpendLimit = z.infer<typeof spendLimitSchema>;
 export const DEFAULT_SPEND_LIMIT_USD = 100;
 
 /** The hosted providers RelayRunner knows list prices for, so a spend limit can count spend. */
-export const SPEND_LIMIT_PROVIDERS = HOSTED_PROVIDER_IDS.filter((id) => Object.hasOwn(RATES, id));
+export const SPEND_LIMIT_PROVIDERS = HOSTED_PROVIDER_IDS.filter(hasListPrices);
 
 export const runnerStepSchema = z.discriminatedUnion("key", [
   z.object({ key: z.literal("machine") }),

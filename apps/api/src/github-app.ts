@@ -283,17 +283,25 @@ export async function jobLogTail(
   const response = await fetch(`${API}${path}`, { headers: headers(token) });
   if (response.status === 404 || response.status === 410) return null;
   if (!response.ok || !response.body) throw new Error(`GET ${path} failed with ${response.status}`);
-  let tail = new Uint8Array(0);
+  // Keep the last chunks that cover maxBytes, dropping older ones as newer arrive.
+  const chunks: Uint8Array[] = [];
+  let size = 0;
   const reader = response.body.getReader();
   for (;;) {
     const { done, value } = await reader.read();
     if (done) break;
-    const joined = new Uint8Array(tail.length + value.length);
-    joined.set(tail);
-    joined.set(value, tail.length);
-    tail = joined.length > maxBytes ? joined.slice(joined.length - maxBytes) : joined;
+    chunks.push(value);
+    size += value.length;
+    while (chunks.length > 1 && size - chunks[0]!.length >= maxBytes)
+      size -= chunks.shift()!.length;
   }
-  return new TextDecoder().decode(tail);
+  const tail = new Uint8Array(size);
+  let offset = 0;
+  for (const chunk of chunks) {
+    tail.set(chunk, offset);
+    offset += chunk.length;
+  }
+  return new TextDecoder().decode(tail.subarray(Math.max(0, size - maxBytes)));
 }
 
 /** The messages of a job's annotations, where GitHub says a runner was lost (Checks read). */

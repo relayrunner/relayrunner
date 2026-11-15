@@ -74,7 +74,18 @@ export async function runFailures(
   run: { repositoryId: number; runId: number; runAttempt: number },
 ): Promise<RunFailures> {
   const rows = await db
-    .select()
+    .select({
+      id: timing.id,
+      installationId: timing.installationId,
+      repositoryFullName: timing.repositoryFullName,
+      name: timing.name,
+      conclusion: timing.conclusion,
+      labels: timing.labels,
+      runnerGroupName: timing.runnerGroupName,
+      startedAt: timing.startedAt,
+      ranSteps: timing.ranSteps,
+      failedStep: timing.failedStep,
+    })
     .from(timing)
     .where(
       and(
@@ -97,12 +108,12 @@ export async function runFailures(
         jobAnnotations(token, repo, row.id).catch(() => []),
         jobLogTail(token, repo, row.id, TAIL_BYTES).catch(() => null),
       ]);
-      const env = row.startedAt ? environmentFor(row.labels, row.runnerGroupName, null) : null;
+      const where = row.startedAt ? environmentFor(row.labels, row.runnerGroupName, null) : null;
       return {
         id: row.id,
         name: row.name,
         conclusion: row.conclusion!,
-        runner: env?.label ?? null,
+        runner: where?.label ?? null,
         runnerFailed: row.ranSteps === false,
         failedStep: row.failedStep,
         annotations: annotations

@@ -1,4 +1,11 @@
-import type { FullMachine, MinutesUsage, NotSharedMachine, RouteWalk } from "@relayrunner/activity";
+import {
+  dollars,
+  spendText,
+  type FullMachine,
+  type MinutesUsage,
+  type NotSharedMachine,
+  type RouteWalk,
+} from "@relayrunner/activity";
 import { notProviderLabelText, RUNNER_LABELS, type RunnerKey } from "@relayrunner/runner-order";
 
 // How the Activity page explains where a job went: a short reason after the runner, and one line
@@ -53,7 +60,6 @@ type SkippedStep = RouteWalk["skipped"][number];
 const runnerOf = (walk: RouteWalk, key: RunnerKey) => walk[key][0] ?? RUNNER_LABELS[key];
 
 const count = (n: number) => Math.round(n).toLocaleString("en-US");
-const dollars = (usd: number) => `$${count(usd)}`;
 const usedPercent = (m: MinutesUsage) => Math.floor((m.usedMinutes / m.quotaMinutes) * 100);
 
 function shortSkip(walk: RouteWalk, step: SkippedStep): string | null {
@@ -137,11 +143,8 @@ function longSkip(walk: RouteWalk, step: SkippedStep): string {
       const jobs = step.unhealthy ? `the last ${step.unhealthy.misses} jobs` : "recent jobs";
       return `${jobs} on ${runnerOf(walk, key)} weren't picked up, so the Router is skipping it for now`;
     }
-    case "spend_limit": {
-      if (!step.spend) return "past its spend limit";
-      const { account, spentUsd, limitUsd } = step.spend;
-      return `${account} has spent ${dollars(spentUsd)} on ${RUNNER_LABELS[key]} this month, past its ${dollars(limitUsd)} limit`;
-    }
+    case "spend_limit":
+      return spendText(RUNNER_LABELS[key], step.spend);
     case "not_configured":
       return `the relay doesn't set ${key}`;
   }

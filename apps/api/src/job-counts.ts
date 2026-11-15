@@ -39,12 +39,22 @@ export async function countFinishedJob(
   conclusion: string | null,
   completedAt: Date,
 ) {
+  await db.batch(jobCountUpserts(db, installationId, conclusion, completedAt));
+}
+
+/** The upserts adding a finished job to its hour and day, to send in one batch. */
+export function jobCountUpserts(
+  db: Db,
+  installationId: number,
+  conclusion: string | null,
+  completedAt: Date,
+) {
   const at = completedAt.getTime();
   const hour = new Date(Math.floor(at / HOUR_MS) * HOUR_MS);
   const day = new Date(Math.floor(at / DAY_MS) * DAY_MS);
   const result = resultOf(conclusion);
   const bump = (column: SQLiteColumn) => ({ [result]: sql`${column} + 1` });
-  await db.batch([
+  return [
     db
       .insert(jobCountHour)
       .values({ hour, [result]: 1 })
@@ -63,7 +73,7 @@ export async function countFinishedJob(
         target: [jobCountDay.day, jobCountDay.installationId],
         set: bump(jobCountDay[result]),
       }),
-  ]);
+  ] as const;
 }
 
 export const JOB_COUNT_RANGES = [1, 7, 30, 90] as const;

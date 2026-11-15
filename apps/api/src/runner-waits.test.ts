@@ -2,7 +2,13 @@ import { beforeAll, describe, expect, test } from "vitest";
 import { createDb } from "./db/index.ts";
 import type { Env } from "./env.ts";
 import { failedStep, recordJobTiming } from "./job-timings.ts";
-import { waitBucket, waitRunner } from "./runner-waits.ts";
+import { hostedRunner, waitBucket, waitKey } from "./runner-waits.ts";
+
+// runner_wait_day's key for a job's labels, or null when it isn't a hosted runner.
+function waitRunner(labels: string[], runnerGroupName: string | null) {
+  const runner = hostedRunner(labels, runnerGroupName);
+  return runner && waitKey(runner);
+}
 import { accountSpend, monthOf } from "./provider-spend.ts";
 import { BASE_BOOK, listRate } from "@relayrunner/providers";
 import * as testing from "./testing.ts";

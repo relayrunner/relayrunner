@@ -6,48 +6,38 @@
  * the GitHub minutes limit (src/minutes-rule.ts). Jobs still running aren't counted until they
  * finish, so a busy month can go a little past the limit.
  */
-import { isProviderId, listRate } from "@relayrunner/providers";
-import type { HostedProviderId } from "@relayrunner/providers";
+import { hasListPrices, type HostedProviderId, listRate } from "@relayrunner/providers";
 import { and, eq, sql } from "drizzle-orm";
+import { cycleStart } from "./actions-billing.ts";
 import { type Db, schema } from "./db/index.ts";
-import { environmentFor, environmentProvider } from "./job-times.ts";
+import { billedMinutes } from "./job-timings.ts";
 import { loadPriceBook } from "./prices.ts";
+import type { FinishedJob } from "./runner-waits.ts";
 
 const table = schema.providerSpendMonth;
 const MICROS = 1_000_000;
 
-/** The UTC midnight starting `at`'s month. */
-export function monthOf(at: number): Date {
-  const date = new Date(at);
-  return new Date(Date.UTC(date.getUTCFullYear(), date.getUTCMonth(), 1));
-}
+/** The UTC midnight starting `at`'s month: the same month the GitHub minutes limit counts. */
+export const monthOf = (at: number) => cycleStart(new Date(at));
 
-/** A job that just finished, as the spend rollup reads it. */
-export interface SpentJob {
-  installationId: number;
-  labels: string[];
-  runnerGroupName: string | null;
-  startedAt: Date | null;
-  completedAt: Date;
-}
-
-/** Adds a job that just finished to its account's month on its provider, when it has a price. */
-export async function countProviderSpend(db: Db, job: SpentJob) {
-  if (!job.startedAt) return;
-  const env = environmentFor(job.labels, job.runnerGroupName, null);
-  const provider = environmentProvider(env);
-  if (!isProviderId(provider) || provider === "github") return;
+/**
+ * The upsert adding a finished job to its account's month on its provider, or null without a
+ * price. Wrapped, since a query builder is thenable and awaiting it would run it.
+ */
+export async function providerSpendUpsert(db: Db, job: FinishedJob) {
+  const { runner, startedAt } = job;
+  if (!runner || !startedAt || !hasListPrices(runner.provider)) return null;
   const at = job.completedAt.getTime();
-  const rate = listRate(await loadPriceBook(db), provider, env.label.toLowerCase(), at);
-  if (!rate) return;
-  const minutes = Math.max(1, Math.ceil((at - job.startedAt.getTime()) / 60_000));
-  const usdMicros = Math.round(minutes * rate * MICROS);
-  await db
+  const book = await loadPriceBook(db);
+  const rate = listRate(book, runner.provider as HostedProviderId, runner.label.toLowerCase(), at);
+  if (!rate) return null;
+  const usdMicros = Math.round(billedMinutes(at - startedAt.getTime()) * rate * MICROS);
+  const upsert = db
     .insert(table)
     .values({
       installationId: job.installationId,
       month: monthOf(at),
-      provider,
+      provider: runner.provider,
       usdMicros,
       jobs: 1,
     })
@@ -55,6 +45,7 @@ export async function countProviderSpend(db: Db, job: SpentJob) {
       target: [table.installationId, table.month, table.provider],
       set: { usdMicros: sql`${table.usdMicros} + ${usdMicros}`, jobs: sql`${table.jobs} + 1` },
     });
+  return { upsert };
 }
 
 /** What a GitHub account has spent on a provider this month, in dollars, with its login. */

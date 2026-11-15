@@ -8,62 +8,41 @@
  * vCPUs, never its label, since labels can carry names people chose (Namespace profiles, larger
  * runners) or run ids (RunsOn). Self-hosted runners and machines aren't counted.
  */
-import { RATES } from "@relayrunner/providers";
+import { labelOfEnvironment, runnerPlatform, type RunnerSize } from "@relayrunner/providers";
 import { sql } from "drizzle-orm";
 import { type Db, schema } from "./db/index.ts";
 import { WAIT_BUCKETS } from "./db/schema.ts";
 import { environmentFor, environmentProvider } from "./job-times.ts";
+import { utcDay } from "./job-timings.ts";
 
 const table = schema.runnerWaitDay;
-const DAY_MS = 86_400_000;
 
 // Who runs a job but isn't a hosted runner anyone could pick for a comparison.
 const NOT_HOSTED = new Set(["machine", "self-hosted", "other", "container"]);
 
-export type RunnerPlatform = "linux" | "arm" | "windows" | "windows-arm" | "macos" | "other";
-
-export interface WaitRunner {
+/** The hosted runner a job ran on: its provider (`github` or a hosted provider) and label. */
+export interface HostedRunner {
   provider: string;
-  platform: RunnerPlatform;
-  vcpus: number;
+  // For GitHub, the standard runner's rate (`linux-2-core`), else the label itself.
+  label: string;
+  size?: RunnerSize;
 }
 
-/** The hosted runner a job asked for, as runner_wait_day keys it, or null for any other runner. */
-export function waitRunner(labels: string[], runnerGroupName: string | null): WaitRunner | null {
+/** The hosted runner a job asked for, or null for a machine or a runner people host themselves. */
+export function hostedRunner(
+  labels: string[],
+  runnerGroupName: string | null,
+): HostedRunner | null {
   const env = environmentFor(labels, runnerGroupName, null);
   const provider = environmentProvider(env);
   if (NOT_HOSTED.has(provider)) return null;
-  const label = env.key.slice(provider.length + 1);
-  // A GitHub larger runner is named by whoever made it, so its name says nothing reliable.
-  const named = provider === "github" && !Object.hasOwn(RATES.github, label);
-  return {
-    provider,
-    platform: named ? "other" : platformOf(label),
-    vcpus: env.size?.vcpus ?? 0,
-  };
+  return { provider, label: labelOfEnvironment(env.key), size: env.size };
 }
 
-function platformOf(label: string): RunnerPlatform {
-  const lower = label.toLowerCase();
-  const arm = /arm|aarch64/.test(lower);
-  if (/macos|xcode/.test(lower)) return "macos";
-  if (lower.includes("windows")) return arm ? "windows-arm" : "windows";
-  if (arm) return "arm";
-  // Ubicloud's standard and premium runners are Linux x64.
-  if (/ubuntu|linux|x64|amd64|standard|premium/.test(lower)) return "linux";
-  return "other";
-}
-
-/** The wait bucket column a wait lands in. */
-export function waitBucket(waitMs: number): keyof typeof WAIT_BUCKETS {
-  const entries = Object.entries(WAIT_BUCKETS) as [keyof typeof WAIT_BUCKETS, number][];
-  return entries.find(([, under]) => waitMs < under)![0];
-}
-
+/** A job that just finished, as the rollups in this file and src/provider-spend.ts read it. */
 export interface FinishedJob {
   installationId: number;
-  labels: string[];
-  runnerGroupName: string | null;
+  runner: HostedRunner | null;
   // Null when no runner ever took the job (cancelled while queued).
   runnerName: string | null;
   queuedAt: Date | null;
@@ -74,19 +53,33 @@ export interface FinishedJob {
   conclusion: string | null;
 }
 
-/** Adds a job that just finished to its runner's day, when a hosted runner took it. */
-export async function countRunnerWait(db: Db, job: FinishedJob) {
-  if (!job.runnerName || !job.queuedAt || !job.startedAt) return;
-  const runner = waitRunner(job.labels, job.runnerGroupName);
-  if (!runner) return;
+/** runner_wait_day's key for a hosted runner: never its label, which can be someone's own name. */
+export function waitKey({ provider, label, size }: HostedRunner) {
+  return {
+    provider,
+    platform: runnerPlatform(provider, label) ?? "other",
+    vcpus: size?.vcpus ?? 0,
+  };
+}
+
+const BUCKETS = Object.entries(WAIT_BUCKETS) as [keyof typeof WAIT_BUCKETS, number][];
+
+/** The wait bucket column a wait lands in. */
+export function waitBucket(waitMs: number): keyof typeof WAIT_BUCKETS {
+  return BUCKETS.find(([, under]) => waitMs < under)![0];
+}
+
+/** The upsert adding a finished job to its runner's day, or null when it doesn't count. */
+export function runnerWaitUpsert(db: Db, job: FinishedJob) {
+  if (!job.runner || !job.runnerName || !job.queuedAt || !job.startedAt) return null;
   const waitMs = Math.max(0, job.startedAt.getTime() - job.queuedAt.getTime());
   const bucket = waitBucket(waitMs);
   const failed = job.ranSteps === false && job.conclusion === "failure" ? 1 : 0;
-  await db
+  return db
     .insert(table)
     .values({
-      day: new Date(Math.floor(job.completedAt.getTime() / DAY_MS) * DAY_MS),
-      ...runner,
+      day: new Date(utcDay(job.completedAt.getTime())),
+      ...waitKey(job.runner),
       installationId: job.installationId,
       jobs: 1,
       waitMs,
