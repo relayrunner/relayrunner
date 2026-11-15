@@ -389,13 +389,16 @@ describe("rollUpSignals", () => {
     await shortJobs(ctx, 2);
     await rollUpSignals(createDb(env.DB), ctx.installationId);
 
-    const by = async (view: string) =>
-      Object.fromEntries(
-        (await dayRows(ctx.installationId, `by-${view}`)).map((row) => [
-          row.subject,
-          { runs: row.count, minutes: row.runMs / MINUTE },
-        ]),
-      );
+    // Summed over days: just after midnight UTC, the runs an hour back fall on yesterday.
+    const by = async (view: string) => {
+      const totals: Record<string, { runs: number; minutes: number }> = {};
+      for (const row of await dayRows(ctx.installationId, `by-${view}`)) {
+        const total = (totals[row.subject] ??= { runs: 0, minutes: 0 });
+        total.runs += row.count;
+        total.minutes += row.runMs / MINUTE;
+      }
+      return totals;
+    };
     expect(await by("person")).toEqual({
       ana: { runs: 1, minutes: 10 },
       sam: { runs: 1, minutes: 3 },
