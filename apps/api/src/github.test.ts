@@ -321,10 +321,13 @@ describe("installing the GitHub App makes a workspace (#316)", () => {
     expect(await row(github.id)).toBeNull();
   });
 
-  test("an install on an enterprise is recorded without a workspace", async () => {
+  test("an install on an enterprise is recorded without a workspace and read right away", async () => {
     const { cookie } = await testing.signIn(env);
+    const org = installation();
+    await installed(org);
     nextId += 1;
     const id = nextId;
+    const reads: string[] = [];
     const pem = generateKeyPairSync("rsa", { modulusLength: 2048 })
       .privateKey.export({ type: "pkcs8", format: "pem" })
       .toString();
@@ -341,6 +344,29 @@ describe("installing the GitHub App makes a workspace (#316)", () => {
             suspended_at: null,
           }),
         );
+      if (url === `https://api.github.com/app/installations/${id}/access_tokens`)
+        return Promise.resolve(Response.json({ token: "ent-token" }, { status: 201 }));
+      if (url.startsWith("https://api.github.com/enterprises/acme-ent/")) {
+        reads.push(new URL(url).pathname);
+        return Promise.resolve(
+          Response.json({
+            budgets: [],
+            usageItems: [
+              {
+                date: "2026-11-04T00:00:00Z",
+                product: "actions",
+                sku: "Actions Linux",
+                quantity: 10,
+                unitType: "Minutes",
+                grossAmount: 0.06,
+                netAmount: 0,
+                organizationName: org.account!.login,
+                repositoryName: "app",
+              },
+            ],
+          }),
+        );
+      }
       return stubbed(input, init);
     });
     const response = await app.request(
@@ -350,6 +376,13 @@ describe("installing the GitHub App makes a workspace (#316)", () => {
     );
     expect(response.headers.get("location")).toBe("/settings/github?github=enterprise");
     expect(await row(id)).toMatchObject({ account_login: "acme-ent", workspace_id: null });
+    expect(reads).toContain("/enterprises/acme-ent/settings/billing/usage");
+    const link = await env.DB.prepare(
+      "select enterprise_installation_id from github_enterprise_organization where organization_id = ?",
+    )
+      .bind(org.account!.id)
+      .first<{ enterprise_installation_id: number }>();
+    expect(link?.enterprise_installation_id).toBe(id);
   });
 
   test("coming back after changing an installation on GitHub reads as updated", async () => {

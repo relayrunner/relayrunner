@@ -2,6 +2,7 @@ import { and, eq } from "drizzle-orm";
 import { Hono } from "hono";
 import type { Context } from "hono";
 import { deleteCookie, getCookie, setCookie } from "hono/cookie";
+import { pollAccount } from "../actions-billing.ts";
 import type { AppEnv } from "../app.ts";
 import { createDb, schema } from "../db/index.ts";
 import { recordEnterpriseInstallation } from "../enterprise.ts";
@@ -149,12 +150,24 @@ export const githubRoutes = new Hono<AppEnv>()
     const verified = visible.find((installation) => installation.id === installationId);
     // An install on an enterprise isn't one a user's token lists. It only reads the enterprise's
     // billing for the orgs in it, so record it and go back to the workspace (src/enterprise.ts).
-    if (!verified)
-      return done(
-        (await recordEnterpriseInstallation(c.env, db, installationId))
-          ? "enterprise"
-          : "not_found",
+    if (!verified) {
+      const enterprise = await recordEnterpriseInstallation(c.env, db, installationId);
+      if (!enterprise?.account) return done("not_found");
+      // Read its billing now, so the page they land on already shows the shared minutes instead
+      // of asking for the install they just made. A failure is recorded for the page to explain.
+      await pollAccount(
+        c.env,
+        {
+          id: enterprise.id,
+          accountId: enterprise.account.id,
+          accountLogin: enterprise.account.login,
+          accountType: "Enterprise",
+          workspaceId: null,
+        },
+        new Date(),
       );
+      return done("enterprise");
+    }
     await upsertInstallation(db, verified);
     const workspaceId = await ensureWorkspace(db, installationId);
     if (!workspaceId) return done("not_found");

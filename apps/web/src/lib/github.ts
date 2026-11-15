@@ -20,7 +20,7 @@ export const githubOutcomes = {
   enterprise: {
     tone: "go",
     message:
-      "RelayRunner is on your enterprise. Its shared minutes show up within 15 minutes, once the first reading is in.",
+      "RelayRunner is on your enterprise, so your org's minutes limit now uses the enterprise's shared minutes.",
   },
   invalid: {
     tone: "run",

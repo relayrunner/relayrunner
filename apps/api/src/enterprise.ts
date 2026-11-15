@@ -49,7 +49,7 @@ export async function syncEnterpriseInstallations(env: Env, db: Db, now = new Da
 /**
  * Records one installation if it's on an enterprise, as the Setup URL hands it over. GitHub
  * vouches for it through the App's own JWT, and recording it grants nobody anything. Returns
- * whether it was an enterprise install.
+ * the install when it was one on an enterprise.
  */
 export async function recordEnterpriseInstallation(env: Env, db: Db, installationId: number) {
   let installation: AppInstallation | null;
@@ -63,12 +63,12 @@ export async function recordEnterpriseInstallation(env: Env, db: Db, installatio
         error: error instanceof Error ? error.message : String(error),
       }),
     );
-    return false;
+    return null;
   }
   const enterprise = installation && enterpriseInstallation(installation);
-  if (!enterprise) return false;
+  if (!enterprise) return null;
   await upsertInstallation(db, enterprise);
-  return true;
+  return enterprise;
 }
 
 /**
