@@ -1,5 +1,6 @@
 import { type LiveJob, type LiveJobs, matches, waitReason } from "./live-jobs.ts";
 import type { Machine } from "./machines.ts";
+import { runnerUpdate } from "./runner-update.ts";
 
 /**
  * What fixes an attention item: unpausing the machine, running `relayrunner connect` on it, its
@@ -23,7 +24,8 @@ const jobs = (count: number) => (count === 1 ? "1 job" : `${count} jobs`);
 /**
  * The Runners page's "Needs attention" list, empty when all is well: machines that jobs are stuck
  * waiting on (offline or paused), queued jobs no runner has the labels for, and runners added from
- * GitHub that GitHub no longer has. A machine that's offline with nothing waiting on it isn't
+ * GitHub that GitHub no longer has, and machines whose runner GitHub will soon stop sending jobs
+ * to. A machine that's offline with nothing waiting on it isn't
  * listed, since laptops come and go.
  */
 export function attentionItems(machines: Machine[], live: LiveJobs): AttentionItem[] {
@@ -38,6 +40,7 @@ export function attentionItems(machines: Machine[], live: LiveJobs): AttentionIt
 
   const items: AttentionItem[] = [];
   const missing: AttentionItem[] = [];
+  const updates: AttentionItem[] = [];
   for (const machine of active) {
     if (machine.github?.missing) {
       missing.push({
@@ -47,6 +50,17 @@ export function attentionItems(machines: Machine[], live: LiveJobs): AttentionIt
       });
       continue;
     }
+    // A week from GitHub's cutoff for a runner update, or past it. Restarting `connect` updates
+    // it, so only its owner can.
+    const update = runnerUpdate(machine);
+    if (update?.urgent)
+      updates.push({
+        key: `runner-update:${machine.id}`,
+        text: update.overdue
+          ? `${machine.name} needs a runner update`
+          : `${machine.name} needs a runner update soon`,
+        fix: machine.mine ? { kind: "connect" } : { kind: "runner", machine },
+      });
     // GitHub not answering leaves its status unknown.
     if (machine.github?.unreachable) continue;
     const waiting = waitingOn(machine);
@@ -87,5 +101,5 @@ export function attentionItems(machines: Machine[], live: LiveJobs): AttentionIt
       fix: { kind: "add-runner" },
     });
   }
-  return [...items, ...missing];
+  return [...items, ...updates, ...missing];
 }

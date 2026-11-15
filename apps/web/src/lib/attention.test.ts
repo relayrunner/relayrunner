@@ -112,4 +112,24 @@ describe("attentionItems", () => {
       },
     ]);
   });
+
+  test("a runner near or past GitHub's update cutoff, restarted by its owner", () => {
+    const runner = (days: number) => ({
+      version: "2.329.0",
+      update: "2.331.0",
+      updateBy: new Date(Date.now() + days * 86_400_000).toISOString(),
+    });
+    const mine = machine({ id: "m", name: "studio", mine: true, runner: runner(-1) });
+    const theirs = machine({ id: "t", name: "mini", runner: runner(3) });
+    // Weeks before the cutoff it's only a note on the card.
+    const later = machine({ id: "l", name: "laptop", runner: runner(20) });
+    expect(attentionItems([mine, theirs, later], NO_LIVE_JOBS)).toEqual([
+      { key: "runner-update:m", text: "studio needs a runner update", fix: { kind: "connect" } },
+      {
+        key: "runner-update:t",
+        text: "mini needs a runner update soon",
+        fix: { kind: "runner", machine: theirs },
+      },
+    ]);
+  });
 });
