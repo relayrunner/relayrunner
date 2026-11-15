@@ -6,7 +6,13 @@ import { RangePicker } from "@/components/range-picker";
 import { StatTile } from "@/components/stat-tile";
 import { Count } from "@/components/count";
 import { authDisabled } from "@/lib/auth-client";
-import { rangeParam, unlessDefault, useRangeReport, useSetSearch } from "@/lib/search-params";
+import {
+  dayRanges,
+  rangeParam,
+  unlessDefault,
+  useRangeReport,
+  useSetSearch,
+} from "@/lib/search-params";
 import { count } from "@/lib/utils";
 import {
   type FreeCheckSavings,
@@ -19,7 +25,7 @@ import {
   sampleCheckSavings,
 } from "@/lib/usage";
 
-const RANGES = [7, 30, 90] as const;
+const RANGES = dayRanges(1, 90);
 
 type UsageData = { report: UsageReport; checks: FreeCheckSavings };
 

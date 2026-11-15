@@ -163,12 +163,7 @@ function RunnerView({
       </header>
 
       <div className={cn("grid gap-6 transition-opacity", loading && "opacity-60")}>
-        <TimeRangePicker
-          {...RUNNER_RANGES}
-          value={range}
-          onChange={onRange}
-          className="justify-self-start"
-        />
+        <TimeRangePicker {...RUNNER_RANGES} value={range} onChange={onRange} />
         <Facts
           className="sm:grid-cols-4"
           items={[

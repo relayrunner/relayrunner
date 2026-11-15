@@ -42,6 +42,7 @@ import {
   triggerText,
 } from "@/lib/runs";
 import {
+  dayRanges,
   optionParam,
   rangeParam,
   textParam,
@@ -50,7 +51,7 @@ import {
 } from "@/lib/search-params";
 import { cn, elapsed } from "@/lib/utils";
 
-const RANGES = [1, 7, 14] as const;
+const RANGES = dayRanges(1, 30);
 // While a run is going, how often the list is refetched. Paused while the tab is hidden or idle
 // (lib/live-refresh.ts).
 const LIST_REFRESH_MS = 15_000;

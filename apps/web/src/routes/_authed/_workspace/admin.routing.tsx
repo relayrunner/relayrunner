@@ -63,12 +63,7 @@ function RoutingPage() {
         out.
       </PageHeader>
       <div className="grid max-w-5xl grid-cols-[minmax(0,1fr)] gap-6">
-        <TimeRangePicker
-          presets={ROUTING_RANGES}
-          value={range}
-          onChange={chooseRange}
-          className="justify-self-start"
-        />
+        <TimeRangePicker presets={ROUTING_RANGES} value={range} onChange={chooseRange} />
 
         <div className="grid grid-cols-2 gap-3 lg:grid-cols-5">
           <StatTile

@@ -8,7 +8,13 @@ import { DataTable, dataTableColumns, NUM } from "@/components/ui/data-table";
 import { authDisabled } from "@/lib/auth-client";
 import { medianText, plural } from "@/lib/job-times";
 import { providerCatalog, providerInfo } from "@/lib/provider-catalog";
-import { rangeParam, unlessDefault, useRangeReport, useSetSearch } from "@/lib/search-params";
+import {
+  dayRanges,
+  rangeParam,
+  unlessDefault,
+  useRangeReport,
+  useSetSearch,
+} from "@/lib/search-params";
 import {
   costText,
   getProvidersOverview,
@@ -17,7 +23,7 @@ import {
   sampleProvidersOverview,
 } from "@/lib/providers";
 
-const RANGES = [1, 7, 14] as const;
+const RANGES = dayRanges(1, 30);
 
 function load(days: number) {
   return authDisabled ? Promise.resolve(sampleProvidersOverview(days)) : getProvidersOverview(days);

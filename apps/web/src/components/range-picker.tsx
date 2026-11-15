@@ -97,7 +97,12 @@ export function TimeRangePicker<V extends TimeRange>({
       }}
     >
       <PopoverTrigger asChild>
-        <Button variant="outline" size="sm" className={cn("justify-between", className)}>
+        <Button
+          variant="outline"
+          size="sm"
+          // As wide as its label, even in a grid or a column that would stretch it.
+          className={cn("w-fit self-start justify-self-start", className)}
+        >
           <CalendarIcon aria-hidden className="text-muted-foreground" />
           <span>{rangeName(value)}</span>
           <ChevronDownIcon aria-hidden className="text-muted-foreground" />

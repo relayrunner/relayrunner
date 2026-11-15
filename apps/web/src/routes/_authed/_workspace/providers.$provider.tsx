@@ -22,10 +22,16 @@ import {
   sampleProviderReport,
 } from "@/lib/providers";
 import { cn } from "@/lib/utils";
-import { rangeParam, unlessDefault, useRangeReport, useSetSearch } from "@/lib/search-params";
+import {
+  dayRanges,
+  rangeParam,
+  unlessDefault,
+  useRangeReport,
+  useSetSearch,
+} from "@/lib/search-params";
 import { usePageTitle } from "@/lib/page-title";
 
-const RANGES = [1, 7, 14] as const;
+const RANGES = dayRanges(1, 30);
 
 function load(provider: string, days: number) {
   return authDisabled

@@ -52,6 +52,7 @@ import {
   type WorkflowRow,
 } from "@/lib/job-times";
 import {
+  dayRanges,
   rangeParam,
   textParam,
   unlessDefault,
@@ -62,7 +63,7 @@ import { readFlag, saveFlag } from "@/lib/stored-flag";
 import { cn } from "@/lib/utils";
 import { Count } from "@/components/count";
 
-const RANGES = [7, 14, 30] as const;
+const RANGES = dayRanges(1, 30);
 
 // Whether the Runners tab groups runners by provider, kept per browser.
 const GROUPED_KEY = "relayrunner:performance:by-provider";

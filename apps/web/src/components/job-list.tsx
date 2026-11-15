@@ -26,11 +26,11 @@ import {
   isLongWait,
   sampleJobs,
 } from "@/lib/runs";
-import { unlessDefault, useRangeReport, useSetSearch } from "@/lib/search-params";
+import { dayRanges, unlessDefault, useRangeReport, useSetSearch } from "@/lib/search-params";
 import { cn, elapsed, percent } from "@/lib/utils";
 import type { HistorySearch } from "@/routes/_authed/_workspace/history";
 
-const RANGES = [1, 7, 14] as const;
+const RANGES = dayRanges(1, 30);
 const DEFAULT_DAYS = 7;
 // The range and filters live in the History page's URL.
 const history = getRouteApi("/_authed/_workspace/history");
