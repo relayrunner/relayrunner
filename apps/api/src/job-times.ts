@@ -23,6 +23,7 @@ import { cloudProviderFor, isGitHubHostedLabel } from "./cloud-providers.ts";
 import { inWorkspace as machineInWorkspace } from "./machines.ts";
 import { currentProviders } from "./provider-catalog.ts";
 import { routeIdFromLabels } from "./routing.ts";
+import { type JobTypeKind, jobTypeKey, readJobTypes } from "./ai/job-type.ts";
 import { RELAYRUNNER_LABEL } from "./labels.ts";
 
 const table = schema.jobTiming;
@@ -303,6 +304,8 @@ export interface JobRow {
   byEnvironment: Record<string, Stat>;
   /** Matrix legs (`test (node 24)`), when this row groups them under their shared name. */
   legs?: JobRow[];
+  /** What the job does, from the AI model (src/ai/job-type.ts), once it has read the job. */
+  type?: JobTypeKind;
 }
 
 export interface WorkflowRow {
@@ -430,7 +433,7 @@ export function parseSamples(text: string | null): Sample[] {
 }
 
 // `test (node 24)` is a leg of matrix job `test`.
-function matrixName(name: string) {
+export function matrixName(name: string) {
   const at = name.indexOf(" (");
   return at > 0 && name.endsWith(")") ? name.slice(0, at) : null;
 }
@@ -566,7 +569,10 @@ export async function jobTimesReport(
   // Runners seen only in the window before don't get a row.
   const prior = trend ? collect(priorRows, new Map()) : null;
 
-  await nameMachines(db, workspaceId, envs);
+  const [types] = await Promise.all([
+    readJobTypes(db, workspaceId),
+    nameMachines(db, workspaceId, envs),
+  ]);
 
   const leafStats: Record<string, Stat>[] = [];
   const workflowRows: WorkflowRow[] = [...workflows].map(([id, workflow]) => {
@@ -574,7 +580,12 @@ export async function jobTimesReport(
     const leaves = new Map<string, JobRow>();
     const matrices = new Map<string, { buckets: Buckets; legs: JobRow[] }>();
     for (const [name, buckets] of workflow.jobs) {
-      const row: JobRow = { name, byEnvironment: stats(buckets, priorJobs?.get(name)) };
+      const type = types.get(jobTypeKey(workflow.repositoryId, workflow.workflow, name));
+      const row: JobRow = {
+        name,
+        byEnvironment: stats(buckets, priorJobs?.get(name)),
+        ...(type && { type }),
+      };
       leafStats.push(row.byEnvironment);
       const base = matrixName(name);
       if (base) {
@@ -590,6 +601,7 @@ export async function jobTimesReport(
       else
         leaves.set(base, {
           name: base,
+          ...(matrix.legs[0].type && { type: matrix.legs[0].type }),
           byEnvironment: stats(matrix.buckets, priorJobs && matrixBuckets(priorJobs, base)),
           legs: sortByRuns(matrix.legs),
         });

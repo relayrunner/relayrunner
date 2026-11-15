@@ -463,6 +463,13 @@
       "when": 1794769108534,
       "tag": "20261115185828_ai_controls",
       "breakpoints": true
+    },
+    {
+      "idx": 66,
+      "version": "6",
+      "when": 1794770178545,
+      "tag": "20261115191618_job_type",
+      "breakpoints": true
     }
   ]
 }

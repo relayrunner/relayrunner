@@ -1592,3 +1592,28 @@ export const aiCache = sqliteTable(
   },
   (table) => [index("ai_cache_expires_idx").on(table.expiresAt)],
 );
+
+// What a job does (lint, tests, a build...), as the AI model read it from the job's name, its
+// workflow's and its runner labels (src/ai/job-type.ts). One row per workspace, repository,
+// workflow and job; matrix legs share their job's row. Filled a few jobs at a time by the hourly
+// signals task while AI is on for the workspace.
+export const jobType = sqliteTable(
+  "job_type",
+  {
+    workspaceId: text("workspace_id")
+      .notNull()
+      .references(() => workspace.id, { onDelete: "cascade" }),
+    repositoryId: integer("repository_id").notNull(),
+    // The workflow's name, or "" when GitHub sent none.
+    workflow: text("workflow").notNull(),
+    // The job's name, without a matrix leg's "(…)".
+    job: text("job").notNull(),
+    // A JOB_TYPES id (src/ai/job-type.ts).
+    kind: text("kind").notNull(),
+    confidence: real("confidence").notNull(),
+    classifiedAt: integer("classified_at", { mode: "timestamp_ms" }).notNull(),
+  },
+  (table) => [
+    primaryKey({ columns: [table.workspaceId, table.repositoryId, table.workflow, table.job] }),
+  ],
+);

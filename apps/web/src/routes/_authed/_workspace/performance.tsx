@@ -39,6 +39,7 @@ import {
   type EnvironmentSummary,
   getJobRuns,
   getJobTimes,
+  JOB_TYPE_LABELS,
   type JobRow,
   type JobRun,
   type JobTimesReport,
@@ -891,6 +892,11 @@ function NameCell({ row }: { row: DataTableRow<JobsRow> }) {
       </button>
       {job.legs && (
         <span className="mt-0.5 shrink-0 text-xs text-muted-foreground">⊞ {job.legs.length}</span>
+      )}
+      {job.type && row.depth === 1 && (
+        <span className="mt-0.5 shrink-0 text-xs text-muted-foreground">
+          {JOB_TYPE_LABELS[job.type]}
+        </span>
       )}
     </span>
   );

@@ -294,7 +294,7 @@ export function registerTools(server: McpServer, request: WorkspaceApi, workspac
     {
       title: "Job times",
       description:
-        "How long each job usually takes on each runner environment, for comparing machines against GitHub-hosted runners: median and p90 run time, median wait for a runner, and the trend against the window before (0.18 is 18% slower). Times with no successful runs behind them are left out. Narrow with repository and workflow to keep the answer small.",
+        "How long each job usually takes on each runner environment, for comparing machines against GitHub-hosted runners: median and p90 run time, median wait for a runner, and the trend against the window before (0.18 is 18% slower). When AI is on for the workspace, a job also has `type`: lint, test, e2e, build, deploy or other. Times with no successful runs behind them are left out. Narrow with repository and workflow to keep the answer small.",
       inputSchema: z.object({
         workspace: workspaceArg,
         days: days(30, 14),

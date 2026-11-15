@@ -50,7 +50,24 @@ export type EnvironmentSummary = Environment & {
   versus: { ratio: number; sharedJobs: number } | null;
 };
 
-export type JobRow = { name: string; byEnvironment: Record<string, Stat>; legs?: JobRow[] };
+export type JobRow = {
+  name: string;
+  byEnvironment: Record<string, Stat>;
+  legs?: JobRow[];
+  /** What the job does, from the AI model, once it has read the job (apps/api/src/ai/job-type.ts). */
+  type?: JobType;
+};
+
+export type JobType = "lint" | "test" | "e2e" | "build" | "deploy" | "other";
+
+export const JOB_TYPE_LABELS: Record<JobType, string> = {
+  lint: "Lint",
+  test: "Tests",
+  e2e: "End-to-end",
+  build: "Build",
+  deploy: "Deploy",
+  other: "Other",
+};
 
 export type WorkflowRow = {
   repositoryId: number;

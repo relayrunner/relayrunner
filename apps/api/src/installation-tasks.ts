@@ -17,6 +17,7 @@ import { syncConnection, type ProviderSyncTask } from "./provider-sync.ts";
 import { createDb } from "./db/index.ts";
 import { syncPullRequestPaths } from "./pull-request-paths.ts";
 import { rollUpSignals } from "./signals.ts";
+import { classifyJobTypes } from "./ai/job-type.ts";
 import { errorMessage } from "./webhook-queue.ts";
 
 export const INSTALLATION_TASK_QUEUE = "relayrunner-installation-tasks";
@@ -66,6 +67,12 @@ async function signals(env: Env, installationId: number) {
     ),
   );
   await rollUpSignals(db, installationId);
+  // Only while AI is on for the workspace, and never holding the signals back.
+  await classifyJobTypes(env, installationId).catch((error) =>
+    console.warn(
+      JSON.stringify({ msg: "job types failed", installationId, error: errorMessage(error) }),
+    ),
+  );
 }
 
 /**
