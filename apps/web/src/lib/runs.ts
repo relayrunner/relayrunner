@@ -444,8 +444,9 @@ export function sampleJobs(days: number): JobsReport {
       runId,
       ...sampleRunInfo(runId),
       runAttempt: 1,
-      repositoryId: 1,
-      repository: index % 9 === 4 ? "acme/ci-tests" : "acme/app",
+      ...(index % 9 === 4
+        ? { repositoryId: 2, repository: "acme/ci-tests" }
+        : { repositoryId: 1, repository: "acme/app" }),
       workflow: index % 7 === 3 ? "Release" : "CI",
       name: names[index % 4]!,
       environment: environments[index % 4]!,

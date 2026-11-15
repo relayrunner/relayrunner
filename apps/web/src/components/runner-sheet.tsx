@@ -1,7 +1,8 @@
 import { sizeText } from "@relayrunner/providers";
 import { Link, useNavigate } from "@tanstack/react-router";
-import { ChevronRightIcon, GitBranchIcon, GitPullRequestIcon } from "lucide-react";
+import { ChevronRightIcon } from "lucide-react";
 import { type ReactNode, useEffect, useState } from "react";
+import { BranchHeading } from "@/components/branch-heading";
 import { CommitBy } from "@/components/commit";
 import { CopyButton } from "@/components/add-runner";
 import { providerOf, providerStyle, RunnerMark } from "@/components/providers";
@@ -22,7 +23,7 @@ import {
   sampleRunnerReport,
 } from "@/lib/runner-report";
 import { type BranchGroup, groupByBranch } from "@/lib/branch-groups";
-import { isLongWait, pullRequestUrl, runParam } from "@/lib/runs";
+import { isLongWait, runParam } from "@/lib/runs";
 import { unlessDefault, useSetSearch } from "@/lib/search-params";
 import {
   type RangeOptions,
@@ -443,30 +444,11 @@ function RecentJobs({ report }: { report: RunnerReport }) {
   );
 }
 
-/** A branch's jobs heading: its pull request when a run came from one, else the branch. */
 function BranchRow({ group }: { group: BranchGroup<RunnerJob> }) {
-  const pr = group.pullRequest;
   return (
     <tr className="bg-secondary/20 text-xs text-muted-foreground">
       <th scope="rowgroup" colSpan={4} className="py-1.5 pr-3 pl-3 text-left font-normal">
-        {pr ? (
-          <a
-            href={pullRequestUrl(group.repository, pr.number)}
-            target="_blank"
-            rel="noreferrer"
-            title="Open the pull request on GitHub"
-            className="inline-flex max-w-full items-center gap-1.5 underline-offset-4 hover:text-foreground hover:underline"
-          >
-            <GitPullRequestIcon aria-hidden className="size-3.5 shrink-0" />
-            {pr.title && <span className="truncate text-foreground">{pr.title}</span>}
-            <span className="shrink-0">#{pr.number}</span>
-          </a>
-        ) : (
-          <span className="inline-flex max-w-full items-center gap-1.5">
-            <GitBranchIcon aria-hidden className="size-3.5 shrink-0" />
-            <span className="truncate">{group.branch}</span>
-          </span>
-        )}
+        <BranchHeading group={group} />
       </th>
     </tr>
   );

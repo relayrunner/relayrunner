@@ -118,6 +118,7 @@ export function DataTable<TData extends RowData>({
   expanded,
   onExpandedChange,
   rowClassName,
+  fullRow,
 }: {
   columns: Columns<TData>;
   data: TData[];
@@ -134,6 +135,8 @@ export function DataTable<TData extends RowData>({
   expanded?: ExpandedState;
   onExpandedChange?: OnChangeFn<ExpandedState>;
   rowClassName?: (row: Row<typeof features, TData>) => string | undefined;
+  /** What a row shows across the whole width instead of its cells, such as a group's heading. */
+  fullRow?: (row: TData) => ReactNode;
 }) {
   const [sorting, setSorting] = useState(initialSorting);
   const table = useTable({
@@ -209,6 +212,7 @@ export function DataTable<TData extends RowData>({
           columns={headers.length}
           rowHeight={rowHeight}
           rowClassName={rowClassName}
+          fullRow={fullRow}
         />
       ) : (
         <TableBody>
@@ -218,6 +222,7 @@ export function DataTable<TData extends RowData>({
               row={row}
               expanded={row.getIsExpanded()}
               className={rowClassName?.(row)}
+              full={fullRow?.(row.original)}
             />
           ))}
         </TableBody>
@@ -231,6 +236,8 @@ type DataRowProps<TData extends RowData> = {
   /** Passed so a memoized row re-renders when it opens or closes. */
   expanded: boolean;
   className?: string;
+  /** Shown across the row in place of its cells. */
+  full?: ReactNode;
   index?: number;
   measure?: (element: HTMLTableRowElement | null) => void;
 };
@@ -239,22 +246,28 @@ type DataRowProps<TData extends RowData> = {
 const DataRow = memo(function DataRow<TData extends RowData>({
   row,
   className,
+  full,
   index,
   measure,
 }: DataRowProps<TData>) {
+  const cells = row.getAllCells();
   return (
     <TableRow data-index={index} ref={measure} className={className}>
-      {row.getAllCells().map((cell) => (
-        <TableCell
-          key={cell.id}
-          className={cn(
-            cell.column.columnDef.meta?.align === "end" && "text-right",
-            cell.column.columnDef.meta?.className,
-          )}
-        >
-          <FlexRender cell={cell} />
-        </TableCell>
-      ))}
+      {full ? (
+        <TableCell colSpan={cells.length}>{full}</TableCell>
+      ) : (
+        cells.map((cell) => (
+          <TableCell
+            key={cell.id}
+            className={cn(
+              cell.column.columnDef.meta?.align === "end" && "text-right",
+              cell.column.columnDef.meta?.className,
+            )}
+          >
+            <FlexRender cell={cell} />
+          </TableCell>
+        ))
+      )}
     </TableRow>
   );
 }) as <TData extends RowData>(props: DataRowProps<TData>) => ReactNode;
@@ -266,11 +279,13 @@ function VirtualRows<TData extends RowData>({
   columns,
   rowHeight,
   rowClassName,
+  fullRow,
 }: {
   rows: Row<typeof features, TData>[];
   columns: number;
   rowHeight: number;
   rowClassName?: (row: Row<typeof features, TData>) => string | undefined;
+  fullRow?: (row: TData) => ReactNode;
 }) {
   const bodyRef = useRef<HTMLTableSectionElement>(null);
   const [offset, setOffset] = useState(0);
@@ -302,6 +317,7 @@ function VirtualRows<TData extends RowData>({
             row={row}
             expanded={row.getIsExpanded()}
             className={rowClassName?.(row)}
+            full={fullRow?.(row.original)}
             index={item.index}
             measure={virtualizer.measureElement}
           />
