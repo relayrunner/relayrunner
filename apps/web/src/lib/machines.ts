@@ -62,6 +62,12 @@ export type Machine = {
    */
   cli?: { version: string; update: string | null } | null;
   /**
+   * The actions/runner version from its last hello, the newer release (null when up to date), and
+   * when GitHub may stop sending it jobs (ISO, about 30 days after the first release past it).
+   * Null for a runner added from GitHub. Missing from an API that predates it. See runnerUpdate (lib/runner-update.ts).
+   */
+  runner?: { version: string; update: string | null; updateBy: string | null } | null;
+  /**
    * Who connected it, or the org a runner added from GitHub belongs to. Missing from an API that
    * predates it.
    */
@@ -189,6 +195,12 @@ const SAMPLE_MACHINE: Machine = {
   },
   vm: { cpus: 4, memoryGb: 8 },
   cli: { version: "0.9.0", update: null },
+  // A newer runner came out last week.
+  runner: {
+    version: "2.330.0",
+    update: "2.331.0",
+    updateBy: new Date(Date.now() + 23 * 86_400_000).toISOString(),
+  },
   owner: "Zach",
   mine: true,
   sharing: "anyone",
@@ -220,6 +232,12 @@ export const SAMPLE_MACHINES: Machine[] = [
       chip: "Apple M4 Pro",
       cpuCores: 14,
       memoryMb: 24_576,
+    },
+    // Left connected past GitHub's cutoff.
+    runner: {
+      version: "2.328.0",
+      update: "2.331.0",
+      updateBy: new Date(Date.now() - 2 * 86_400_000).toISOString(),
     },
     status: { online: false, state: null, connectedAt: null },
   },

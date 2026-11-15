@@ -7,6 +7,7 @@ import { CommitBy } from "@/components/commit";
 import { CopyButton } from "@/components/add-runner";
 import { providerOf, providerStyle, RunnerMark } from "@/components/providers";
 import { TimeRangePicker } from "@/components/range-picker";
+import { RunnerUpdateNote } from "@/components/runner-card";
 import { withRunner } from "@/components/runner-panel-link";
 import { Facts, LINK, Links } from "@/components/run-sheet";
 import { StatusIcon } from "@/components/status-icon";
@@ -168,6 +169,7 @@ function RunnerView({
         </SheetTitle>
         {detail && <SheetDescription className="pl-[38px]">{detail}</SheetDescription>}
         {machine && <Labels machine={machine} />}
+        {machine && <RunnerUpdateNote machine={machine} className="pl-[38px] text-xs" />}
       </header>
 
       <div className={cn("grid gap-6 transition-opacity", loading && "opacity-60")}>

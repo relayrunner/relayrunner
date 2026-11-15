@@ -2,6 +2,7 @@ import { api } from "./api.ts";
 import { capacity } from "./capacity.ts";
 import type { Environment } from "./job-times.ts";
 import type { Machine, MachineJob } from "./machines.ts";
+import { runnerUpdate } from "./runner-update.ts";
 
 /** A job still going: running on a runner, or queued and waiting for one (GET /api/runs/live). */
 export type LiveJob = {
@@ -83,6 +84,9 @@ export function waitReason(
     if (!machine) return { text: "Waiting for its machine", problem: false };
     if (!machine.status?.online) return { text: `${machine.name} is offline`, problem: true };
     if (machine.paused) return { text: `${machine.name} is paused`, problem: true };
+    // Past GitHub's cutoff, GitHub may stop sending it jobs at all.
+    if (runnerUpdate(machine)?.overdue)
+      return { text: `${machine.name} needs a runner update`, problem: true };
     if (!capacity(machine.status).free) return { text: `${machine.name} is busy`, problem: false };
     return { text: `Starting on ${machine.name}`, problem: false };
   }
@@ -93,6 +97,8 @@ export function waitReason(
     if (!online.length) return { text: "Matching runners are offline", problem: true };
     const open = online.filter((machine) => !machine.paused);
     if (!open.length) return { text: "Matching runners are paused", problem: true };
+    if (open.every((machine) => runnerUpdate(machine)?.overdue))
+      return { text: "Matching runners need a runner update", problem: true };
     const idle = open.filter((machine) => capacity(machine.status).free).length;
     if (idle)
       return { text: `${idle} idle ${idle === 1 ? "runner" : "runners"} match`, problem: false };

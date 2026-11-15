@@ -9,6 +9,7 @@ import {
   PauseIcon,
   PlayIcon,
   TimerIcon,
+  TriangleAlertIcon,
   XIcon,
   ZapIcon,
 } from "lucide-react";
@@ -43,6 +44,8 @@ import {
   type MachineJob,
 } from "@/lib/machines";
 import { capacity } from "@/lib/capacity";
+import { runnerUpdate } from "@/lib/runner-update";
+import { shortDate } from "@/lib/time-range";
 import { RunnerPanelLink } from "@/components/runner-panel-link";
 import { cn } from "@/lib/utils";
 
@@ -565,6 +568,40 @@ export function CliVersion({ cli, prefix = "" }: { cli?: Machine["cli"]; prefix?
   );
 }
 
+/**
+ * A note when the machine's runner is behind GitHub's latest release: quiet at first, then a
+ * warning a week before GitHub's cutoff, when it may stop sending the machine jobs.
+ */
+export function RunnerUpdateNote({ machine, className }: { machine: Machine; className?: string }) {
+  const update = runnerUpdate(machine);
+  if (!update) return null;
+  const text = update.overdue
+    ? "Runner update overdue"
+    : update.urgent && update.updateBy !== null
+      ? `Update runner by ${shortDate(update.updateBy)}`
+      : "Runner update available";
+  const Icon = update.urgent ? TriangleAlertIcon : CircleArrowUpIcon;
+  return (
+    <span
+      className={cn(
+        "flex min-w-0 items-center gap-1.5",
+        update.urgent ? "text-run" : "text-muted-foreground",
+        className,
+      )}
+      title={[
+        `actions/runner ${update.latest} is out. This machine runs ${update.version}.`,
+        update.overdue && "GitHub may stop sending it jobs.",
+        "Restart relayrunner connect to update.",
+      ]
+        .filter(Boolean)
+        .join(" ")}
+    >
+      <Icon aria-hidden className="size-3.5 shrink-0" />
+      <span className="truncate">{text}</span>
+    </span>
+  );
+}
+
 /** The machine's typical job over 14 days, linked to Performance. */
 export function TypicalJob({ jobTime }: { jobTime?: Stat }) {
   return jobTime && jobTime.samples > 0 ? (
@@ -872,6 +909,7 @@ export function MachineCard({
             {runs}
           </div>
         )}
+        <RunnerUpdateNote machine={machine} className="text-xs" />
         {error && <p className="text-xs text-destructive">{error}</p>}
       </div>
       <MachineSharingDialog machine={machine} view={view} actions={actions} />

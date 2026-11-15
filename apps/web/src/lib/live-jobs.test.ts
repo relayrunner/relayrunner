@@ -54,6 +54,12 @@ describe("waitReason", () => {
     expect(reason({ paused: { at: "", by: null } })).toBe("studio is paused");
     expect(reason({ status: busy })).toBe("studio is busy");
     expect(reason({})).toBe("Starting on studio");
+    // Past GitHub's cutoff for a runner update, GitHub may not send it the job at all.
+    const overdue = { version: "2.329.0", update: "2.331.0", updateBy: "2026-01-01T00:00:00Z" };
+    expect(reason({ runner: overdue })).toBe("studio needs a runner update");
+    expect(reason({ runner: { ...overdue, updateBy: "2999-01-01T00:00:00Z" } })).toBe(
+      "Starting on studio",
+    );
     expect(waitReason(routed, undefined, []).text).toBe("Waiting for its machine");
   });
 
@@ -68,6 +74,11 @@ describe("waitReason", () => {
     );
     expect(waitReason(job({}), undefined, [{ ...linux, status: offline }])).toEqual({
       text: "Matching runners are offline",
+      problem: true,
+    });
+    const overdue = { version: "2.329.0", update: "2.331.0", updateBy: "2026-01-01T00:00:00Z" };
+    expect(waitReason(job({}), undefined, [{ ...linux, runner: overdue }])).toEqual({
+      text: "Matching runners need a runner update",
       problem: true,
     });
     expect(waitReason(job({ labels: ["self-hosted", "gpu"] }), undefined, [linux])).toEqual({

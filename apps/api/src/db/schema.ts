@@ -352,6 +352,9 @@ export const machine = sqliteTable(
     // 'connect' only: the relayrunner CLI version from its last hello, such as "0.7.0". Null for
     // CLIs older than 0.7.0, which don't send it.
     cliVersion: text("cli_version"),
+    // 'connect' only: the actions/runner version from its last hello, such as "2.330.0": the one
+    // `connect` installed when it started. Null until a CLI with this column says hello.
+    runnerVersion: text("runner_version"),
     ...timestamps,
   },
   (table) => [
@@ -1352,6 +1355,15 @@ export const priceFinding = sqliteTable("price_finding", {
   source: text("source").notNull(),
   foundAt: integer("found_at", { mode: "timestamp_ms" }).notNull(),
   dismissedAt: integer("dismissed_at", { mode: "timestamp_ms" }),
+});
+
+/**
+ * GitHub's actions/runner releases, refreshed hourly (src/runner-releases.ts), so the dashboard can
+ * say when a machine's runner is behind and how long until GitHub stops sending it jobs.
+ */
+export const runnerRelease = sqliteTable("runner_release", {
+  version: text("version").primaryKey(),
+  publishedAt: integer("published_at", { mode: "timestamp_ms" }).notNull(),
 });
 
 /**

@@ -41,4 +41,6 @@ To stop taking new jobs without going offline, run `relayrunner pause`, or press
 
 `npx relayrunner` always fetches the latest version. For a global install, run `npm install --global relayrunner@latest`.
 
+`connect` installs GitHub's latest runner each time it starts. GitHub stops sending jobs to a runner about 30 days after a newer one comes out, so restart `connect` now and then if you leave it open for weeks. The Runners page says when a machine's runner needs an update.
+
 See the [CLI reference](/docs/reference/cli) for every command and flag.

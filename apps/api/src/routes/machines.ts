@@ -33,6 +33,7 @@ import {
   type GroupAccess,
 } from "../github-runners.ts";
 import { MAX_RUNNER_REPOS, privateRepos } from "../repositories.ts";
+import { loadRunnerReleases } from "../runner-releases.ts";
 import {
   addedMachineScope,
   addMachinesToWorkspace,
@@ -461,11 +462,15 @@ export const machineRoutes = new Hono<AppEnv>()
         ),
       )
       .orderBy(asc(schema.machine.name));
-    const statuses = await Promise.all(
-      rows.map((machine) => c.env.MACHINE_LINK.getByName(machine.id).status()),
-    );
+    const [statuses, releases] = await Promise.all([
+      Promise.all(rows.map((machine) => c.env.MACHINE_LINK.getByName(machine.id).status())),
+      loadRunnerReleases(c.var.db),
+    ]);
     return c.json({
-      machines: rows.map((machine, i) => ({ ...presentMachine(machine), status: statuses[i] })),
+      machines: rows.map((machine, i) => ({
+        ...presentMachine(machine, null, releases),
+        status: statuses[i],
+      })),
     });
   })
   .get("/", requireUser, requireWorkspace, async (c) => {
@@ -571,6 +576,7 @@ export const machineRoutes = new Hono<AppEnv>()
     const otherStatuses = await Promise.all(
       others.map(({ machine }) => c.env.MACHINE_LINK.getByName(machine.id).status()),
     );
+    const releases = await loadRunnerReleases(c.var.db);
     return c.json({
       others: others.map(({ machine, workspaces }, i) => ({
         id: machine.id,
@@ -584,7 +590,7 @@ export const machineRoutes = new Hono<AppEnv>()
       })),
       machines: rows.map((row, i) => {
         const presented = {
-          ...presentMachine(row.machine, row.pausedBy),
+          ...presentMachine(row.machine, row.pausedBy, releases),
           // Who connected it. A runner added from GitHub belongs to its org instead.
           owner: row.machine.source === "github" ? row.org : row.ownerName,
           // The owner's GitHub avatar, or the org's for a runner added from GitHub.

@@ -3,6 +3,7 @@ import { SharingDialog } from "@/components/machine-sharing";
 import {
   BandLabel,
   CliVersion,
+  RunnerUpdateNote,
   MachineChip,
   MachineJobLink,
   MachineMenu,
@@ -101,6 +102,7 @@ const columns = column.columns([
               </span>
             )
           )}
+          <RunnerUpdateNote machine={row.original.machine} />
         </span>
       );
     },
