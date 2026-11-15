@@ -45,6 +45,11 @@ export function getActionsUsage() {
   return api<ActionsUsage>("/usage/actions");
 }
 
+/** Reads GitHub billing again now (at most once a minute per account) and returns the result. */
+export function refreshActionsUsage() {
+  return api<ActionsUsage>("/usage/actions/refresh", { method: "POST", body: "{}" });
+}
+
 /** Whether a "while under N%" GitHub step can judge this account. */
 export const hasQuota = (account: AccountUsage) =>
   account.status === "ok" && account.quotaMinutes !== null;

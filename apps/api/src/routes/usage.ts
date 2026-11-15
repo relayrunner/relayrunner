@@ -1,5 +1,5 @@
 import { Hono } from "hono";
-import { workspaceActionsUsage } from "../actions-billing.ts";
+import { refreshWorkspaceUsage, workspaceActionsUsage } from "../actions-billing.ts";
 import type { AppEnv } from "../app.ts";
 import { freeCheckSavings } from "../free-checks.ts";
 import { usageReport } from "../job-timings.ts";
@@ -24,5 +24,10 @@ export const usageRoutes = new Hono<AppEnv>()
     return c.json(await freeCheckSavings(c.var.db, c.var.workspace.id, days));
   })
   .get("/actions", requireUser, requireWorkspace, async (c) => {
+    return c.json(await workspaceActionsUsage(c.var.db, c.var.workspace.id));
+  })
+  // Reads GitHub billing again now (at most once a minute per account), then answers as GET does.
+  .post("/actions/refresh", requireUser, requireWorkspace, async (c) => {
+    await refreshWorkspaceUsage(c.env, c.var.workspace.id);
     return c.json(await workspaceActionsUsage(c.var.db, c.var.workspace.id));
   });

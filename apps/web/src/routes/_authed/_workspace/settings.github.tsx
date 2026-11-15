@@ -10,6 +10,7 @@ import {
   type AccountUsage,
   type ActionsUsage,
   getActionsUsage,
+  refreshActionsUsage,
   sampleActionsUsage,
 } from "@/lib/actions-usage";
 import { authDisabled, signIn } from "@/lib/auth-client";
@@ -33,7 +34,7 @@ function GitHubSettingsPage() {
   const { current } = Route.useRouteContext();
   const { github } = Route.useSearch();
   const { workspace } = current;
-  const minutes = useActionsUsage();
+  const { usage: minutes, refresh, refreshing } = useActionsUsage();
   // Previews without an API show the sample accounts as connected accounts.
   const installations =
     authDisabled && current.installations.length === 0
@@ -71,6 +72,8 @@ function GitHubSettingsPage() {
                 <ConnectedOrg
                   installation={installation}
                   minutes={minutes?.accounts.find((a) => a.installationId === installation.id)}
+                  onRefresh={authDisabled ? undefined : refresh}
+                  refreshing={refreshing}
                 />
               </ul>
             ) : (
@@ -102,6 +105,7 @@ function GitHubNotice({ outcome }: { outcome: GitHubOutcome }) {
 /** Each account's Actions minutes this month, loaded after the page. Null until read, or on error. */
 function useActionsUsage() {
   const [usage, setUsage] = useState<ActionsUsage | null>(null);
+  const [refreshing, setRefreshing] = useState(false);
   useEffect(() => {
     if (authDisabled) return setUsage(sampleActionsUsage());
     let live = true;
@@ -113,7 +117,13 @@ function useActionsUsage() {
       live = false;
     };
   }, []);
-  return usage;
+  const refresh = () => {
+    setRefreshing(true);
+    refreshActionsUsage()
+      .then(setUsage, () => undefined)
+      .finally(() => setRefreshing(false));
+  };
+  return { usage, refresh, refreshing };
 }
 
 function sampleInstallations(usage: ActionsUsage | null): Installation[] {
@@ -133,9 +143,13 @@ function sampleInstallations(usage: ActionsUsage | null): Installation[] {
 function ConnectedOrg({
   installation,
   minutes,
+  onRefresh,
+  refreshing,
 }: {
   installation: Installation;
   minutes?: AccountUsage;
+  onRefresh?: () => void;
+  refreshing: boolean;
 }) {
   const { accountLogin, repositorySelection, suspendedAt, settingsUrl } = installation;
   return (
@@ -166,7 +180,13 @@ function ConnectedOrg({
         </div>
       </div>
       {/* A suspended installation can't get a token, so there's nothing to read. */}
-      {minutes && <ActionsMinutes usage={minutes} />}
+      {minutes && (
+        <ActionsMinutes
+          usage={minutes}
+          onRefresh={suspendedAt ? undefined : onRefresh}
+          refreshing={refreshing}
+        />
+      )}
       {!suspendedAt && <ApiUsage installationId={installation.id} />}
     </li>
   );

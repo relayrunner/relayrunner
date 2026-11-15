@@ -1,4 +1,4 @@
-import { TriangleAlert } from "lucide-react";
+import { RefreshCwIcon, TriangleAlert } from "lucide-react";
 import { githubInstallHref } from "@/lib/github";
 import {
   type AccountUsage,
@@ -6,6 +6,7 @@ import {
   SPEND_APP_INSTALL_URL,
   unavailableText,
 } from "@/lib/actions-usage";
+import { timeAgo } from "@/lib/machines";
 import { cn } from "@/lib/utils";
 
 // One GitHub account's Actions minutes this month (#116, #117), and the alarm when GitHub has
@@ -44,7 +45,16 @@ export function OverageBanner({ accounts }: { accounts: AccountUsage[] }) {
 }
 
 /** Used vs included minutes, the burn rate, and why it can't be judged when it can't. */
-export function ActionsMinutes({ usage }: { usage: AccountUsage }) {
+export function ActionsMinutes({
+  usage,
+  onRefresh,
+  refreshing = false,
+}: {
+  usage: AccountUsage;
+  /** Reads GitHub billing again now. No button without it. */
+  onRefresh?: () => void;
+  refreshing?: boolean;
+}) {
   const unavailable = unavailableText(usage);
   const fix = fixLink(usage);
   const quota = usage.quotaMinutes;
@@ -66,13 +76,29 @@ export function ActionsMinutes({ usage }: { usage: AccountUsage }) {
             </span>
           )}
         </span>
-        <span className="text-muted-foreground">
-          {usage.burnRatePerHour !== null && `${count(usage.burnRatePerHour)} min/hour · `}
-          {usage.enterprise
-            ? `Shared with ${usage.enterprise}`
-            : usage.plan
-              ? `${planName(usage.plan)} plan`
-              : "Plan unknown"}
+        <span className="flex items-center gap-1.5 text-muted-foreground">
+          <span>
+            {usage.burnRatePerHour !== null && `${count(usage.burnRatePerHour)} min/hour · `}
+            {usage.enterprise
+              ? `Shared with ${usage.enterprise}`
+              : usage.plan
+                ? `${planName(usage.plan)} plan`
+                : "Plan unknown"}
+          </span>
+          {onRefresh && (
+            <button
+              type="button"
+              onClick={onRefresh}
+              disabled={refreshing}
+              title={
+                usage.readAt ? `Read from GitHub ${timeAgo(usage.readAt)}` : "Read from GitHub"
+              }
+              aria-label="Read minutes from GitHub again"
+              className="rounded p-0.5 hover:text-foreground disabled:opacity-60"
+            >
+              <RefreshCwIcon aria-hidden className={cn("size-3.5", refreshing && "animate-spin")} />
+            </button>
+          )}
         </span>
       </div>
       {quota !== null && usage.status === "ok" && (

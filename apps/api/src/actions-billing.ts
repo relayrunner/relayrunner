@@ -16,7 +16,20 @@
 //
 // The cron polls every 15 minutes. GitHub's billing lags about 6-90 minutes and arrives in bursts
 // (#115), which #117's burn-rate margin covers.
-import { and, asc, desc, eq, gt, gte, isNotNull, isNull, lt, notInArray, or } from "drizzle-orm";
+import {
+  and,
+  asc,
+  desc,
+  eq,
+  gt,
+  gte,
+  inArray,
+  isNotNull,
+  isNull,
+  lt,
+  notInArray,
+  or,
+} from "drizzle-orm";
 import { recordOverage } from "./activity.ts";
 import { createAuth } from "./auth.ts";
 import { createDb, type Db, prepare, schema } from "./db/index.ts";
@@ -694,6 +707,105 @@ async function latestTotals(db: Db, installationId: number, start: Date) {
     .orderBy(desc(schema.actionsUsageReading.readAt))
     .limit(1);
   return reading ?? { usedMinutes: 0, grossAmount: 0, netAmount: 0 };
+}
+
+// A refresh reads an account again only when its last read is older than this, so repeated clicks
+// cost GitHub nothing.
+export const REFRESH_MIN_MS = 60_000;
+
+/**
+ * Read the workspace's account again now, rather than waiting for the 15-minute poll, along with
+ * its enterprise's: the one it's linked to, or for an enterprise org not linked yet, any enterprise
+ * install that hasn't been read (one just installed). Accounts read in the last minute are skipped.
+ */
+export async function refreshWorkspaceUsage(env: Env, workspaceId: string, now = new Date()) {
+  const db = createDb(env.DB);
+  const [org] = await db
+    .select({
+      id: schema.githubInstallation.id,
+      accountId: schema.githubInstallation.accountId,
+      accountLogin: schema.githubInstallation.accountLogin,
+      accountType: schema.githubInstallation.accountType,
+      workspaceId: schema.workspace.id,
+      plan: schema.actionsBilling.plan,
+      enterpriseInstallationId: schema.githubEnterpriseOrganization.enterpriseInstallationId,
+    })
+    .from(schema.workspace)
+    .innerJoin(
+      schema.githubInstallation,
+      eq(schema.githubInstallation.id, schema.workspace.installationId),
+    )
+    .leftJoin(
+      schema.actionsBilling,
+      eq(schema.actionsBilling.installationId, schema.githubInstallation.id),
+    )
+    .leftJoin(
+      schema.githubEnterpriseOrganization,
+      eq(schema.githubEnterpriseOrganization.organizationId, schema.githubInstallation.accountId),
+    )
+    .where(and(eq(schema.workspace.id, workspaceId), isNull(schema.githubInstallation.suspendedAt)))
+    .limit(1);
+  if (!org) return;
+
+  const enterpriseIds =
+    org.enterpriseInstallationId !== null
+      ? [org.enterpriseInstallationId]
+      : org.plan && ENTERPRISE_PLANS.has(org.plan)
+        ? (
+            await db
+              .select({ id: schema.githubInstallation.id })
+              .from(schema.githubInstallation)
+              .leftJoin(
+                schema.actionsBilling,
+                eq(schema.actionsBilling.installationId, schema.githubInstallation.id),
+              )
+              .where(
+                and(
+                  eq(schema.githubInstallation.accountType, "Enterprise"),
+                  isNull(schema.githubInstallation.suspendedAt),
+                  isNull(schema.actionsBilling.readAt),
+                ),
+              )
+          ).map((row) => row.id)
+        : [];
+  const enterprises = enterpriseIds.length
+    ? await db
+        .select({
+          id: schema.githubInstallation.id,
+          accountId: schema.githubInstallation.accountId,
+          accountLogin: schema.githubInstallation.accountLogin,
+          accountType: schema.githubInstallation.accountType,
+        })
+        .from(schema.githubInstallation)
+        .where(inArray(schema.githubInstallation.id, enterpriseIds))
+    : [];
+
+  const accounts: UsageAccount[] = [
+    {
+      id: org.id,
+      accountId: org.accountId,
+      accountLogin: org.accountLogin,
+      accountType: org.accountType,
+      workspaceId: org.workspaceId,
+    },
+    ...enterprises.map((enterprise) => ({ ...enterprise, workspaceId: null })),
+  ];
+  const checked = await db
+    .select({ id: schema.actionsBilling.installationId, at: schema.actionsBilling.checkedAt })
+    .from(schema.actionsBilling)
+    .where(
+      inArray(
+        schema.actionsBilling.installationId,
+        accounts.map((account) => account.id),
+      ),
+    );
+  const fresh = new Set(
+    checked.filter((row) => now.getTime() - row.at.getTime() < REFRESH_MIN_MS).map((row) => row.id),
+  );
+  // Enterprises first: reading one links its orgs, which the org's own read doesn't need but the
+  // page's next read does.
+  for (const account of accounts.reverse())
+    if (!fresh.has(account.id)) await pollAccount(env, account, now);
 }
 
 /** Every installation in the workspace, for GET /api/usage/actions. */

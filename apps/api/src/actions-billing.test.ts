@@ -122,6 +122,8 @@ interface GitHubFake {
   budgets?: unknown[];
   // What GET /app/installations lists.
   appInstallations?: unknown[];
+  // Usage reports per account, by the account's name in the path; others get `usage`.
+  usageFor?: Record<string, unknown[]>;
 }
 
 function fakeGitHub(fake: GitHubFake) {
@@ -138,7 +140,10 @@ function fakeGitHub(fake: GitHubFake) {
       if (fake.usageStatus) return new Response("Forbidden", { status: fake.usageStatus });
       if (fake.refuse?.includes(tokens[pathname]!))
         return new Response("Forbidden", { status: 403 });
-      return Response.json({ usageItems: fake.usage ?? [] });
+      const own = Object.entries(fake.usageFor ?? {}).find(([name]) =>
+        pathname.includes(`/${name}/`),
+      );
+      return Response.json({ usageItems: own ? own[1] : (fake.usage ?? []) });
     }
     const minted = pathname.match(/^\/app\/installations\/(\d+)\/access_tokens$/);
     if (minted) return Response.json({ token: `spend-${minted[1]}` }, { status: 201 });
@@ -638,6 +643,51 @@ describe("GET /api/usage/actions", () => {
     const body = (await res.json()) as { accounts: AccountUsage[] };
     expect(body.accounts).toHaveLength(1);
     expect(body.accounts[0]).toMatchObject({ installationId, accountLogin: org, usedMinutes: 12 });
+  });
+});
+
+describe("POST /api/usage/actions/refresh", () => {
+  test("reads an enterprise org's new enterprise install now, then holds off for a minute", async () => {
+    const { db, cookie, installationId, org } = await connectedOrg();
+    const now = new Date();
+    await db.insert(schema.actionsBilling).values({
+      installationId,
+      plan: "enterprise",
+      checkedAt: new Date(now.getTime() - 10 * 60_000),
+      readAt: new Date(now.getTime() - 10 * 60_000),
+    });
+    const id = 9300;
+    await db
+      .insert(schema.githubInstallation)
+      .values({ id, accountId: id, accountLogin: "new-ent", accountType: "Enterprise" });
+    const calls = fakeGitHub({
+      plan: "enterprise",
+      usageFor: {
+        "new-ent": [{ ...item(now.toISOString().slice(0, 10), "app", 40), organizationName: org }],
+      },
+      usage: [],
+    });
+    const refresh = () => testing.call(keyedEnv(), "/usage/actions/refresh", cookie, {});
+
+    const res = await refresh();
+    expect(res.status).toBe(200);
+    const body = (await res.json()) as { accounts: AccountUsage[] };
+    expect(body.accounts[0]).toMatchObject({
+      installationId,
+      enterprise: "new-ent",
+      quotaMinutes: 50_000,
+    });
+    expect(calls).toContain(
+      `/enterprises/new-ent/settings/billing/usage?year=${now.getUTCFullYear()}&month=${now.getUTCMonth() + 1}`,
+    );
+
+    const before = calls.filter(
+      (call) => call.includes(`/new-ent/`) || call.includes(`/${org}`),
+    ).length;
+    expect((await refresh()).status).toBe(200);
+    expect(
+      calls.filter((call) => call.includes(`/new-ent/`) || call.includes(`/${org}`)).length,
+    ).toBe(before);
   });
 });
 
