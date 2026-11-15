@@ -16,8 +16,8 @@ import {
   environmentFor,
   FAILED,
   type HistoryJob,
-  JOB_RUN_COLUMNS,
-  jobRunOf,
+  historyJobOf,
+  jobListQuery,
   machineWindowWhere,
   mergeInto,
   missedQuery,
@@ -63,7 +63,7 @@ export interface RunnerBucket {
 }
 
 /** A job the runner ran, with what it belongs to, for its row in the panel. */
-export type RunnerJob = Omit<HistoryJob, "usage">;
+export type RunnerJob = HistoryJob;
 
 export interface RunnerReport {
   /** The window, in epoch ms. */
@@ -236,23 +236,10 @@ function machineMissed(db: Db, workspaceId: string, machineId: string, since: Da
 }
 
 async function runnerJobs(db: Db, where: SQL, key: string): Promise<RunnerJob[]> {
-  const rows = await db
-    .select({
-      ...JOB_RUN_COLUMNS,
-      repositoryId: table.repositoryId,
-      repository: table.repositoryFullName,
-      workflow: table.workflowName,
-      name: table.name,
-    })
-    .from(table)
-    .where(where)
-    .orderBy(sql`${table.completedAt} desc`)
-    .limit(RECENT_LIMIT);
+  const rows = await jobListQuery(db, where, RECENT_LIMIT);
   return rows.flatMap((row) => {
-    const run = jobRunOf(row, { key, label: "", detail: "" });
-    if (!run) return [];
-    const { repositoryId, repository, workflow, name } = row;
-    return [{ ...run, repositoryId, repository, workflow, name }];
+    const job = historyJobOf(row, { key, label: "", detail: "" });
+    return job ? [job] : [];
   });
 }
 

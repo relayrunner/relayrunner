@@ -17,7 +17,7 @@ How long each job usually takes on each runner it ran on, fastest first. Use it 
 
 ## Runners
 
-Each runner's job count, median wait and run time, and success rate.
+Each runner's job count, median wait, median and p90 run time, and success rate.
 
 **Started** is how reliable the runner is, separate from your tests: the share of jobs sent to it that it picked up. A job counts as missed when it waited 10 minutes and no runner took it. A runner that missed every job still gets a row.
 

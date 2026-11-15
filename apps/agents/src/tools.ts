@@ -141,7 +141,7 @@ export function registerTools(server: McpServer, request: WorkspaceApi, workspac
     {
       title: "Workflow runs",
       description:
-        "Recent workflow runs (last 14 days), newest first: repository, workflow, branch, status, conclusion, wall time against the workflow's usual time, where its jobs ran, and whether RelayRunner routed it. Use get_run_jobs for one run's jobs and list_activity for why a job went where it did.",
+        "Recent workflow runs (last 14 days), newest first: repository, workflow, branch, commit sha, who started it, status, conclusion, wall time against the workflow's usual time, where its jobs ran, and whether RelayRunner routed it. Use get_run_jobs for one run's jobs and list_activity for why a job went where it did.",
       inputSchema: z.object({
         workspace: workspaceArg,
         repository: z

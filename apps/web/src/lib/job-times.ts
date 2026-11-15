@@ -14,8 +14,6 @@ export type Stat = {
   samples: number;
   confidence: Confidence;
   medianMs: number | null;
-  p25Ms: number | null;
-  p75Ms: number | null;
   p90Ms: number | null;
   waitMs: number | null;
   /** Against the window just before, same length: 0.18 is 18% slower. */
@@ -29,8 +27,6 @@ export const EMPTY_STAT: Stat = {
   samples: 0,
   confidence: "none",
   medianMs: null,
-  p25Ms: null,
-  p75Ms: null,
   p90Ms: null,
   waitMs: null,
   trend: null,
@@ -141,11 +137,9 @@ export function medianText(stat: Stat) {
   return `${stat.confidence === "few" ? "~" : ""}${clock(stat.medianMs)}`;
 }
 
-/** p90 with 20+ runs, otherwise the middle half of the runs. */
-export function spreadText(stat: Stat) {
-  return stat.confidence === "ok"
-    ? `p90 ${clock(stat.p90Ms)}`
-    : `middle half ${clock(stat.p25Ms)}–${clock(stat.p75Ms)}`;
+/** "p90 1:24": 9 in 10 successful runs finished within it. "~" in front when under 5 runs. */
+export function p90Text(stat: Stat) {
+  return `p90 ${stat.confidence === "few" ? "~" : ""}${clock(stat.p90Ms)}`;
 }
 
 /** "2.7× faster", "1.4× slower", "about even" (within 10%). */
@@ -174,8 +168,6 @@ export function sampleStat(
     samples: Math.min(samples, 50),
     confidence: samples === 0 ? "none" : samples < 5 ? "few" : samples < 20 ? "low" : "ok",
     medianMs: medianS * 1000,
-    p25Ms: medianS * 900,
-    p75Ms: medianS * 1150,
     p90Ms: medianS * 1300,
     waitMs: samples ? 6000 : null,
     trend,

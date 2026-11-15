@@ -1,7 +1,7 @@
 import { api } from "@/lib/api";
 import { DAY_MS, type Environment, HOUR_MS, sampleJobTimes, type Stat } from "@/lib/job-times";
 import type { RunnerBucket } from "./runner-days.ts";
-import type { HistoryJob } from "./runs.ts";
+import { type HistoryJob, sampleActor, sampleSha } from "./runs.ts";
 
 export type RunnerJob = Omit<HistoryJob, "usage">;
 
@@ -90,6 +90,8 @@ export function sampleRunnerReport(
       id: 1000 + index,
       runId: 500 + index,
       runAttempt: 1,
+      sha: sampleSha(500 + index),
+      actor: sampleActor(500 + index),
       environment: key,
       conclusion: random() > 0.9 ? "failure" : "success",
       queuedAt: startedAt - random() * 20_000,

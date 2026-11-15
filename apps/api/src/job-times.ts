@@ -209,8 +209,6 @@ export interface Stat {
   samples: number;
   confidence: Confidence;
   medianMs: number | null;
-  p25Ms: number | null;
-  p75Ms: number | null;
   p90Ms: number | null;
   /** Median wait from queued to started. Null for rows from before it was stored. */
   waitMs: number | null;
@@ -279,8 +277,6 @@ export function statOf(bucket: Bucket, prior?: Bucket): Stat {
     samples: newest.length,
     confidence: confidence(newest.length),
     medianMs: quantile(runs, 0.5),
-    p25Ms: quantile(runs, 0.25),
-    p75Ms: quantile(runs, 0.75),
     p90Ms: quantile(runs, 0.9),
     waitMs: quantile(waits, 0.5),
     trend,
@@ -698,8 +694,52 @@ export interface HistoryJob extends JobRun {
   repository: string;
   workflow: string | null;
   name: string;
+  /** The run's commit and who started the run, from workflow_run. Null for runs without one. */
+  sha: string | null;
+  actor: string | null;
   /** The CPU and memory it used, when its machine reported them. */
   usage?: JobUsage;
+}
+
+const workflowRun = schema.workflowRun;
+
+/**
+ * Jobs as a job list shows them, newest finished first, at most `limit`, with their run's commit.
+ * The limit applies before the join, so only the listed jobs look up their run.
+ */
+export function jobListQuery(db: Db, where: SQL, limit: number) {
+  const jobs = db
+    .select({
+      ...JOB_RUN_COLUMNS,
+      repositoryId: table.repositoryId,
+      repository: table.repositoryFullName,
+      workflow: table.workflowName,
+      name: table.name,
+      usage: table.usage,
+    })
+    .from(table)
+    .where(where)
+    .orderBy(sql`${table.completedAt} desc`)
+    .limit(limit)
+    .as("jobs");
+  return db
+    .select({ ...jobs._.selectedFields, sha: workflowRun.headSha, actor: workflowRun.actorLogin })
+    .from(jobs)
+    .leftJoin(
+      workflowRun,
+      and(eq(workflowRun.id, jobs.runId), eq(workflowRun.runAttempt, jobs.runAttempt)),
+    )
+    .orderBy(sql`${jobs.completedAt} desc`);
+}
+
+type JobListRow = Awaited<ReturnType<typeof jobListQuery>>[number];
+
+/** A job list's row, or null for a job no runner finished. */
+export function historyJobOf(row: JobListRow, env?: Environment): HistoryJob | null {
+  const run = jobRunOf(row, env);
+  if (!run) return null;
+  const { repositoryId, repository, workflow, name, sha, actor, usage } = row;
+  return { ...run, repositoryId, repository, workflow, name, sha, actor, ...(usage && { usage }) };
 }
 
 /** Most jobs the job list returns. */
@@ -716,28 +756,15 @@ export async function recentJobs(
   now = Date.now(),
 ): Promise<{ days: number; environments: Environment[]; jobs: HistoryJob[]; truncated: boolean }> {
   const since = new Date(now - days * DAY_MS);
-  const rows = await db
-    .select({
-      ...JOB_RUN_COLUMNS,
-      repositoryId: table.repositoryId,
-      repository: table.repositoryFullName,
-      workflow: table.workflowName,
-      name: table.name,
-      usage: table.usage,
-    })
-    .from(table)
-    .where(windowWhere(workspaceId, since))
-    .orderBy(sql`${table.completedAt} desc`)
-    .limit(JOB_LIMIT + 1);
+  const rows = await jobListQuery(db, windowWhere(workspaceId, since), JOB_LIMIT + 1);
 
   const envs = new Map<string, Environment>();
   const jobs = rows.slice(0, JOB_LIMIT).flatMap((row): HistoryJob[] => {
     const env = environmentFor(row.labels, row.runnerGroupName, row.machineId);
-    const run = jobRunOf(row, env);
-    if (!run) return [];
+    const job = historyJobOf(row, env);
+    if (!job) return [];
     if (!envs.has(env.key)) envs.set(env.key, env);
-    const { repositoryId, repository, workflow, name, usage } = row;
-    return [{ ...run, repositoryId, repository, workflow, name, ...(usage && { usage }) }];
+    return [job];
   });
   await nameMachines(db, workspaceId, envs);
   return { days, environments: [...envs.values()], jobs, truncated: rows.length > JOB_LIMIT };

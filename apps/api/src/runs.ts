@@ -107,6 +107,8 @@ export interface Run {
   /** push, pull_request, schedule, ... Null when only job data is known. */
   event: string | null;
   actor: string | null;
+  /** The commit the run is for. Null when only job data is known. */
+  sha: string | null;
   branch: string | null;
   pullRequest: number | null;
   url: string;
@@ -235,6 +237,7 @@ function runFields(
     title: row?.displayTitle ?? null,
     event: row?.event ?? null,
     actor: row?.actorLogin ?? null,
+    sha: row?.headSha ?? null,
     branch: row?.headBranch ?? null,
     pullRequest: row?.pullRequestNumber ?? null,
     url:
@@ -409,6 +412,7 @@ export type RunHeader = Pick<
   | "title"
   | "event"
   | "actor"
+  | "sha"
   | "branch"
   | "pullRequest"
   | "url"

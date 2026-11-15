@@ -13,7 +13,7 @@ A relay that failed shows the same message the job failed with on GitHub. Filter
 
 ## History
 
-**History** has two tabs:
+**History** has two tabs. Each run and job shows who started it and its short commit, so you can tell pushes apart.
 
 - **Workflows** lists every workflow run, newest first. Routed runs are marked, and each run's time is compared with its workflow's usual time.
 - **Jobs** lists every job a runner finished, newest first, with where it ran, how long it waited and ran, and how it ended. Search by job or workflow name.

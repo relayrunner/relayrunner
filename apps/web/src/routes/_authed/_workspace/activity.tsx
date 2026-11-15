@@ -19,6 +19,7 @@ import {
   TriangleAlert,
 } from "lucide-react";
 import { type ReactNode, useEffect, useRef, useState } from "react";
+import { GithubUser, shortSha } from "@/components/commit";
 import { SectionBoundary } from "@/components/error-boundary";
 import { PageHeader } from "@/components/page-header";
 import { GithubIcon } from "@/components/provider-logos";
@@ -33,7 +34,6 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import { UserAvatar } from "@/components/workspace-menu";
 import {
   duration,
   getActivity,
@@ -60,7 +60,6 @@ import {
   sampleCheckSavings,
   type FreeCheckSavings,
 } from "@/lib/usage";
-import { cn } from "@/lib/utils";
 import { failureText, jobNames, walkSummary } from "@/lib/route-walk";
 
 // Fast enough that a push shows up within seconds, without a live connection.
@@ -671,14 +670,11 @@ function StarterCell({ starters }: { starters: ActivityStarters }) {
     .join(", ");
   return (
     <span className="flex min-w-0 items-center gap-1.5" title={title}>
-      <UserAvatar
-        user={{
-          name: label(who),
-          image: `https://github.com/${encodeURIComponent(who.login)}.png?size=32`,
-        }}
-        className="size-4 border-0 text-[8px]"
+      <GithubUser
+        login={who.login}
+        name={label(who)}
+        nameClassName={who.member ? undefined : "font-mono"}
       />
-      <span className={cn("truncate", !who.member && "font-mono")}>{label(who)}</span>
       {rerunBy && <RotateCw aria-label="Re-run" className="size-3 shrink-0" />}
     </span>
   );
@@ -897,7 +893,7 @@ function CheckRow({
       ? {
           path: `commit/${data.headSha}/checks`,
           title: "Open the commit's checks on GitHub",
-          label: data.headSha.slice(0, 7),
+          label: shortSha(data.headSha),
           className: "font-mono",
         }
       : {

@@ -48,7 +48,7 @@ import {
   type Stat,
   EMPTY_STAT,
   sampleJobTimes,
-  spreadText,
+  p90Text,
   versusLabel,
   type WorkflowRow,
 } from "@/lib/job-times";
@@ -391,6 +391,16 @@ const environmentColumns = environmentColumn.columns([
     },
     cell: ({ row }) => clock(row.original.stat.medianMs),
   }),
+  environmentColumn.accessor((env) => env.stat.p90Ms ?? undefined, {
+    id: "p90",
+    header: "p90 run",
+    sortFn: "basic",
+    meta: {
+      ...END,
+      info: <p>9 in 10 successful jobs on this runner finished within this.</p>,
+    },
+    cell: ({ row }) => <P90 stat={row.original.stat} />,
+  }),
   environmentColumn.accessor(
     (env) => (env.stat.runs ? env.stat.successes / env.stat.runs : undefined),
     {
@@ -585,16 +595,11 @@ const workflowColumns = workflowColumn.columns([
       info: (
         <p>
           From the start of a run to its last job finishing, over successful runs. It includes time
-          jobs spent waiting for a runner. Hover a time for its spread.
+          jobs spent waiting for a runner.
         </p>
       ),
     },
-    cell: ({ row: { original } }) =>
-      original.wall ? (
-        <span title={spreadText(original.wall)}>{medianText(original.wall)}</span>
-      ) : (
-        "—"
-      ),
+    cell: ({ row: { original } }) => (original.wall ? medianText(original.wall) : "—"),
   }),
   workflowColumn.accessor((row) => row.wall?.waitMs ?? undefined, {
     id: "waiting",
@@ -623,11 +628,7 @@ const workflowColumns = workflowColumn.columns([
       ...END,
       info: <p>9 in 10 successful runs finished within this. Under 20 runs it's a rough guide.</p>,
     },
-    cell: ({ row: { original } }) => (
-      <span className={cn(original.wall?.confidence !== "ok" && "text-muted-foreground")}>
-        {clock(original.wall?.p90Ms ?? null)}
-      </span>
-    ),
+    cell: ({ row }) => <P90 stat={row.original.wall} />,
   }),
   workflowColumn.accessor((row) => row.wall?.trend ?? undefined, {
     id: "trend",
@@ -910,7 +911,9 @@ function MedianCell({ row: { job, ran, best } }: { row: JobsRow }) {
       {hidden.length > 0 && (
         <li
           className="pl-6 text-xs text-muted-foreground"
-          title={hidden.map(({ env, stat }) => `${env.label}: ${medianText(stat)}`).join("\n")}
+          title={hidden
+            .map(({ env, stat }) => `${env.label}: ${medianText(stat)}, ${p90Text(stat)}`)
+            .join("\n")}
         >
           +{hidden.length} more
         </li>
@@ -987,6 +990,15 @@ function Chevron({ open, className }: { open: boolean; className?: string }) {
   );
 }
 
+/** A p90, faint under 20 runs, where it's a rough guide. */
+function P90({ stat }: { stat: Stat | null | undefined }) {
+  return (
+    <span className={cn(stat?.confidence !== "ok" && "text-muted-foreground")}>
+      {clock(stat?.p90Ms ?? null)}
+    </span>
+  );
+}
+
 /** The fastest environment among those with 5+ runs, when at least two qualify. */
 function fastest(byEnvironment: Record<string, Stat>) {
   const ranked = Object.entries(byEnvironment)
@@ -1003,7 +1015,7 @@ function TimeLine({ env, stat, best }: { env: EnvironmentSummary; stat: Stat; be
   return (
     <li
       className="grid grid-cols-[1rem_13rem_3.5rem_6.5rem] items-center gap-x-2"
-      title={spreadText(stat)}
+      title={p90Text(stat)}
     >
       <RunnerLink
         runner={env}
@@ -1154,7 +1166,7 @@ function JobDetail({
                 </RunnerLink>
                 <span className="text-right font-semibold">{medianText(stat)}</span>
                 <span className="col-span-2 col-start-2 text-right text-xs text-muted-foreground">
-                  {spreadText(stat)}
+                  {p90Text(stat)}
                   {stat.waitMs !== null && ` · wait ${clock(stat.waitMs)}`} ·{" "}
                   <RunCount stat={stat} />
                 </span>

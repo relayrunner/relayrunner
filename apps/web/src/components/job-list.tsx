@@ -3,6 +3,7 @@ import { memo, useMemo } from "react";
 import { DurationChart, jobPoints } from "@/components/duration-chart";
 import { SectionBoundary } from "@/components/error-boundary";
 import { RangePicker } from "@/components/range-picker";
+import { CommitBy } from "@/components/commit";
 import { RunLink } from "@/components/run-sheet";
 import { RunnerLink, type RunnerRef } from "@/components/runner-link";
 import { createCellContext, DataTable, dataTableColumns } from "@/components/ui/data-table";
@@ -82,7 +83,7 @@ const columns = column.columns([
     sortFn: "basic",
     sortDescFirst: true,
     enableGlobalFilter: false,
-    meta: { align: "end", className: "font-semibold" },
+    meta: { align: "end", className: "font-semibold whitespace-nowrap" },
     cell: ({ getValue }) => elapsed(getValue()),
   }),
   column.accessor((job) => job.conclusion ?? "", {
@@ -147,11 +148,14 @@ function JobCell({ job }: { job: Row }) {
       >
         {job.name}
       </RunLink>
-      <span className="block truncate text-xs text-muted-foreground">
-        <RunLink run={job} className="underline-offset-4 hover:text-foreground hover:underline">
-          {job.workflow ?? "Unnamed workflow"}
-        </RunLink>
-        {showRepository && ` · ${job.repository}`}
+      <span className="flex min-w-0 items-center gap-2.5 text-xs text-muted-foreground">
+        <span className="truncate">
+          <RunLink run={job} className="underline-offset-4 hover:text-foreground hover:underline">
+            {job.workflow ?? "Unnamed workflow"}
+          </RunLink>
+          {showRepository && ` · ${job.repository}`}
+        </span>
+        <CommitBy actor={job.actor} sha={job.sha} repository={job.repository} />
       </span>
     </>
   );

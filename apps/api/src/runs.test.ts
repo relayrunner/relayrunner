@@ -237,6 +237,7 @@ describe("runs list", () => {
       title: "fix: picks",
       event: "pull_request",
       actor: "zach",
+      sha: "abc",
       pullRequest: 12,
       status: "completed",
       conclusion: "failure",
@@ -427,11 +428,13 @@ describe("workflow times and the job list", () => {
     await insert([
       timing(other.installationId, 10, { name: "theirs", hoursAgo: 2 }),
       timing(installationId, 10, { name: "older", hoursAgo: 3 }),
-      timing(installationId, 10, { name: "newer", hoursAgo: 1, usage }),
+      timing(installationId, 10, { name: "newer", hoursAgo: 1, usage, runId: 300 }),
       timing(installationId, 2, { name: "pick", labels: ["relayrunner"] }),
       // Outside a 1-day window.
       timing(installationId, 10, { name: "old", hoursAgo: 30 }),
     ]);
+    // The newer job's run is known, so it carries the run's commit and who started it.
+    await recordWorkflowRun(createDb(env.DB), runMessage(installationId, { id: 300 }));
     const res = await testing.call(env, "/runs/jobs?days=1", cookie);
     expect(res.status).toBe(200);
     const body = (await res.json()) as { jobs: HistoryJob[]; truncated: boolean };
@@ -440,10 +443,13 @@ describe("workflow times and the job list", () => {
       repository: "acme/app",
       workflow: "CI",
       environment: "github:linux-2-core",
+      sha: "abc",
+      actor: "zach",
       usage,
     });
-    // A job its machine didn't report on carries no usage at all.
+    // A job its machine didn't report on carries no usage at all, nor a commit without its run.
     expect(body.jobs[1]).not.toHaveProperty("usage");
+    expect(body.jobs[1]).toMatchObject({ sha: null, actor: null });
     expect(body.truncated).toBe(false);
   });
 });
