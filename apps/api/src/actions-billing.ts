@@ -715,8 +715,9 @@ export const REFRESH_MIN_MS = 60_000;
 
 /**
  * Read the workspace's account again now, rather than waiting for the 15-minute poll, along with
- * its enterprise's: the one it's linked to, or for an enterprise org not linked yet, any enterprise
- * install that hasn't been read (one just installed). Accounts read in the last minute are skipped.
+ * its enterprise's: the one it's linked to, or for an enterprise org not linked yet, every enterprise
+ * install (one just installed, or one whose report didn't name the org last time). Accounts read in
+ * the last minute are skipped.
  */
 export async function refreshWorkspaceUsage(env: Env, workspaceId: string, now = new Date()) {
   const db = createDb(env.DB);
@@ -755,15 +756,10 @@ export async function refreshWorkspaceUsage(env: Env, workspaceId: string, now =
             await db
               .select({ id: schema.githubInstallation.id })
               .from(schema.githubInstallation)
-              .leftJoin(
-                schema.actionsBilling,
-                eq(schema.actionsBilling.installationId, schema.githubInstallation.id),
-              )
               .where(
                 and(
                   eq(schema.githubInstallation.accountType, "Enterprise"),
                   isNull(schema.githubInstallation.suspendedAt),
-                  isNull(schema.actionsBilling.readAt),
                 ),
               )
           ).map((row) => row.id)

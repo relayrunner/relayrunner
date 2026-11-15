@@ -680,7 +680,7 @@ describe("GET /api/usage/actions", () => {
 });
 
 describe("POST /api/usage/actions/refresh", () => {
-  test("reads an enterprise org's new enterprise install now, then holds off for a minute", async () => {
+  test("reads an enterprise org's enterprise install again now, then holds off for a minute", async () => {
     const { db, cookie, installationId, org } = await connectedOrg();
     const now = new Date();
     await db.insert(schema.actionsBilling).values({
@@ -693,6 +693,13 @@ describe("POST /api/usage/actions/refresh", () => {
     await db
       .insert(schema.githubInstallation)
       .values({ id, accountId: id, accountLogin: "new-ent", accountType: "Enterprise" });
+    // Read before, when its report didn't name the org.
+    await db.insert(schema.actionsBilling).values({
+      installationId: id,
+      plan: "enterprise",
+      checkedAt: new Date(now.getTime() - 10 * 60_000),
+      readAt: new Date(now.getTime() - 10 * 60_000),
+    });
     const calls = fakeGitHub({
       plan: "enterprise",
       usageFor: {
