@@ -9,6 +9,7 @@ import { sizeText } from "@relayrunner/providers";
 import { byProvider, ProviderMark, providerStyle } from "@/components/providers";
 import { RangePicker } from "@/components/range-picker";
 import { Button } from "@/components/ui/button";
+import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
 import {
   createCellContext,
   DataTable,
@@ -203,49 +204,57 @@ function PerformancePage() {
   );
 
   return (
-    <section>
-      <PageHeader title="Performance">
-        How long your workflows and jobs usually take, and how each runner compares. Times come from
-        successful runs, so failures that stop early don't skew them.
-      </PageHeader>
-      <PageTabs tabs={TABS} value={view} />
-      <div className="grid gap-6">
-        {/* The Jobs table puts them in a row with its Expand all. */}
-        {(view !== "jobs" || report.environments.length === 0) && filters}
-        {report.environments.length === 0 ? (
-          <p className="rounded-xl border bg-card px-4 py-6 text-sm text-muted-foreground">
-            No finished jobs in the last {report.days} days. Jobs show up here once the GitHub App
-            sees them run in a connected repo.
-          </p>
-        ) : (
+    <TooltipProvider>
+      <section>
+        <PageHeader title="Performance">
+          How long your workflows and jobs usually take, and how each runner compares. Times come
+          from successful runs, so failures that stop early don't skew them.
+        </PageHeader>
+        <PageTabs tabs={TABS} value={view} />
+        <div className="grid gap-6">
+          {/* The Jobs table puts them in a row with its Expand all. */}
+          {(view !== "jobs" || report.environments.length === 0) && filters}
+          {report.environments.length === 0 ? (
+            <p className="rounded-xl border bg-card px-4 py-6 text-sm text-muted-foreground">
+              No finished jobs in the last {report.days} days. Jobs show up here once the GitHub App
+              sees them run in a connected repo.
+            </p>
+          ) : (
+            <SectionBoundary>
+              {view === "runners" ? (
+                <Environments report={report} grouped={grouped} />
+              ) : view === "jobs" ? (
+                <Jobs
+                  environments={report.environments}
+                  workflows={workflows}
+                  showRepository={showRepository}
+                  onOpen={setOpened}
+                  toolbar={filters}
+                  trend={report.trend}
+                />
+              ) : (
+                <Workflows
+                  workflows={workflows}
+                  showRepository={showRepository}
+                  onOpen={setOpened}
+                  trend={report.trend}
+                />
+              )}
+            </SectionBoundary>
+          )}
+        </div>
+        {detail && (
           <SectionBoundary>
-            {view === "runners" ? (
-              <Environments report={report} grouped={grouped} />
-            ) : view === "jobs" ? (
-              <Jobs
-                environments={report.environments}
-                workflows={workflows}
-                showRepository={showRepository}
-                onOpen={setOpened}
-                toolbar={filters}
-              />
-            ) : (
-              <Workflows workflows={workflows} showRepository={showRepository} onOpen={setOpened} />
-            )}
+            <JobDetail
+              detail={detail}
+              days={report.days}
+              environments={report.environments}
+              onClose={closeDetail}
+            />
           </SectionBoundary>
         )}
-      </div>
-      {detail && (
-        <SectionBoundary>
-          <JobDetail
-            detail={detail}
-            days={report.days}
-            environments={report.environments}
-            onClose={closeDetail}
-          />
-        </SectionBoundary>
-      )}
-    </section>
+      </section>
+    </TooltipProvider>
   );
 }
 
@@ -628,7 +637,10 @@ const workflowColumns = workflowColumn.columns([
     meta: {
       ...END,
       info: (
-        <p>The newer half of the runs against the older half. Red means the workflow got slower.</p>
+        <p>
+          This range against the one just before it, such as the past 7 days against the 7 days
+          before. Red means the workflow got slower.
+        </p>
       ),
     },
     cell: ({ getValue }) => <Trend trend={getValue() ?? null} />,
@@ -650,6 +662,8 @@ const workflowColumns = workflowColumn.columns([
     cell: ({ row }) => <SlowestCell row={row.original} />,
   }),
 ]);
+
+const workflowColumnsWithoutTrend = workflowColumns.filter((column) => column.id !== "trend");
 
 function WorkflowCell({ row }: { row: WorkflowsRow }) {
   const { showRepository } = useWorkflowsContext();
@@ -684,10 +698,13 @@ const Workflows = memo(function Workflows({
   workflows,
   showRepository,
   onOpen,
+  trend,
 }: {
   workflows: WorkflowRow[];
   showRepository: boolean;
   onOpen: (detail: Detail) => void;
+  /** Whether the range has a trend (30 days doesn't). */
+  trend: boolean;
 }) {
   const rows = useMemo(
     () =>
@@ -702,7 +719,7 @@ const Workflows = memo(function Workflows({
   return (
     <WorkflowsContext value={context}>
       <DataTable
-        columns={workflowColumns}
+        columns={trend ? workflowColumns : workflowColumnsWithoutTrend}
         data={rows}
         getRowId={(row) => row.id}
         initialSorting={[{ id: "runs", desc: true }]}
@@ -799,21 +816,16 @@ const jobColumns = jobColumn.columns([
             The median of each runner's newest 50 successful runs, fastest first. Medians, not
             averages, so one cold cache doesn't skew a job. Hover a time for its spread.
           </p>
-          <ul className="grid gap-1">
-            <li>
-              <span className="text-go">▲</span> The fastest runner with 5+ runs
-            </li>
-            <li>
-              <span className="text-run">7 runs</span> in amber: 5 to 19 runs, read with care
-            </li>
-            <li>~0:52 in grey: under 5 runs, never marked fastest</li>
-          </ul>
+          <p>
+            <span className="text-go">▲</span> marks the fastest runner with 5+ runs.
+          </p>
         </>
       ),
     },
     cell: ({ row }) => <MedianCell row={row.original} />,
   }),
   jobColumn.accessor("trend", {
+    id: "trend",
     header: "Trend",
     sortFn: "basic",
     sortDescFirst: true,
@@ -822,14 +834,16 @@ const jobColumns = jobColumn.columns([
       className: "w-0 py-2 align-top whitespace-nowrap",
       info: (
         <p>
-          The newer half of the runs against the older half, on the runner the job ran on most. Red
-          means the job got slower.
+          This range against the one just before it, on the runner the job ran on most. Red means
+          the job got slower.
         </p>
       ),
     },
     cell: ({ row, getValue }) => row.original.job && <Trend trend={getValue() ?? null} />,
   }),
 ]);
+
+const jobColumnsWithoutTrend = jobColumns.filter((column) => column.id !== "trend");
 
 function NameCell({ row }: { row: DataTableRow<JobsRow> }) {
   const { showRepository, onOpen } = useJobsContext();
@@ -912,6 +926,7 @@ const Jobs = memo(function Jobs({
   showRepository,
   onOpen,
   toolbar,
+  trend,
 }: {
   environments: EnvironmentSummary[];
   workflows: WorkflowRow[];
@@ -919,6 +934,8 @@ const Jobs = memo(function Jobs({
   onOpen: (detail: Detail) => void;
   /** The page's filters, sharing a row with Expand all. */
   toolbar: ReactNode;
+  /** Whether the range has a trend (30 days doesn't). */
+  trend: boolean;
 }) {
   const rows = useMemo(() => jobRows(workflows, environments), [workflows, environments]);
   const allOpen = useMemo(() => Object.fromEntries(rows.map((row) => [row.id, true])), [rows]);
@@ -943,7 +960,7 @@ const Jobs = memo(function Jobs({
       </div>
       <JobsContext value={context}>
         <DataTable
-          columns={jobColumns}
+          columns={trend ? jobColumns : jobColumnsWithoutTrend}
           data={rows}
           getRowId={(row) => row.id}
           getSubRows={(row) => row.subRows}
@@ -1009,15 +1026,35 @@ function TimeLine({ env, stat, best }: { env: EnvironmentSummary; stat: Stat; be
         )}
         {medianText(stat)}
       </span>
-      <span
-        className={cn(
-          "text-xs whitespace-nowrap",
-          stat.confidence === "low" ? "text-run" : few ? "text-idle" : "text-muted-foreground",
-        )}
-      >
-        {plural(stat.samples, "run")}
-      </span>
+      <RunCount stat={stat} />
     </li>
+  );
+}
+
+/**
+ * How many runs a time comes from. Under 20 it reads "only 7 runs", with a tooltip on what that
+ * means for the time.
+ */
+function RunCount({ stat }: { stat: Stat }) {
+  const count = plural(stat.samples, "run");
+  if (stat.confidence !== "low" && stat.confidence !== "few")
+    return <span className="text-xs whitespace-nowrap text-muted-foreground">{count}</span>;
+  return (
+    <Tooltip>
+      <TooltipTrigger asChild>
+        <span
+          tabIndex={0}
+          className="cursor-help text-xs whitespace-nowrap text-muted-foreground underline decoration-dotted underline-offset-2"
+        >
+          only {count}
+        </span>
+      </TooltipTrigger>
+      <TooltipContent className="max-w-64 font-normal">
+        {stat.confidence === "few"
+          ? "Too few runs to compare, so this runner is never marked fastest."
+          : "A rough guide until there are 20 runs."}
+      </TooltipContent>
+    </Tooltip>
   );
 }
 
@@ -1119,9 +1156,7 @@ function JobDetail({
                 <span className="col-span-2 col-start-2 text-right text-xs text-muted-foreground">
                   {spreadText(stat)}
                   {stat.waitMs !== null && ` · wait ${clock(stat.waitMs)}`} ·{" "}
-                  <span className={cn(stat.confidence === "low" && "text-run")}>
-                    {plural(stat.samples, "run")}
-                  </span>
+                  <RunCount stat={stat} />
                 </span>
               </div>
             ))}

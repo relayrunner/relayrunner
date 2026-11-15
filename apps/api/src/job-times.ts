@@ -12,7 +12,13 @@ import type { SQLiteColumn } from "drizzle-orm/sqlite-core";
 import { type RunnerSize, runnerSize } from "@relayrunner/providers";
 import { INSTANCE, usesContainerRunner } from "./container-runner.ts";
 import { type Db, schema } from "./db/index.ts";
-import { DAY_MS, GITHUB_HOSTED_GROUP, RUNNER_LABELS, runnerClass } from "./job-timings.ts";
+import {
+  DAY_MS,
+  GITHUB_HOSTED_GROUP,
+  RAW_RETENTION_DAYS,
+  RUNNER_LABELS,
+  runnerClass,
+} from "./job-timings.ts";
 import { cloudProviderFor, isGitHubHostedLabel } from "./cloud-providers.ts";
 import { inWorkspace as machineInWorkspace } from "./machines.ts";
 import { currentProviders } from "./provider-catalog.ts";
@@ -209,8 +215,8 @@ export interface Stat {
   /** Median wait from queued to started. Null for rows from before it was stored. */
   waitMs: number | null;
   /**
-   * The newer half of the samples' median against the older half's, as a fraction (0.18 is 18%
-   * slower). Null under 2 × FEW_RUNS samples. Comes from the same rows, so it costs no extra read.
+   * The median against the previous window of the same length, as a fraction (0.18 is 18%
+   * slower). Null when either window has under FEW_RUNS samples, or nothing was compared.
    */
   trend: number | null;
 }
@@ -247,21 +253,26 @@ export function bucketOf(row: { runs: number; successes: number; samples: string
 const ascending = (a: number, b: number) => a - b;
 const medianRun = (samples: Sample[]) => quantile(samples.map((s) => s.runMs).sort(ascending), 0.5);
 
-/** Times from a bucket's newest SAMPLE_CAP successful runs (kept newest first by mergeInto). */
-export function statOf(bucket: Bucket): Stat {
+/** How much slower `now` is than `before` as a fraction, when both have FEW_RUNS+ samples. */
+function trendOf(now: Sample[], before: Sample[] | undefined) {
+  if (!before || now.length < FEW_RUNS || before.length < FEW_RUNS) return null;
+  const recent = medianRun(now);
+  const older = medianRun(newestOf([...before]));
+  return recent !== null && older ? Math.round(((recent - older) / older) * 100) / 100 : null;
+}
+
+/**
+ * Times from a bucket's newest SAMPLE_CAP successful runs (kept newest first by mergeInto), with
+ * the trend against `prior`, the same runs in the window before.
+ */
+export function statOf(bucket: Bucket, prior?: Bucket): Stat {
   const newest = newestOf([...bucket.samples]);
   const runs = newest.map((s) => s.runMs).sort(ascending);
   const waits = newest
     .map((s) => s.waitMs)
     .filter((ms): ms is number => ms !== null)
     .sort(ascending);
-  let trend: number | null = null;
-  if (newest.length >= 2 * FEW_RUNS) {
-    const half = Math.floor(newest.length / 2);
-    const recent = medianRun(newest.slice(0, half));
-    const older = medianRun(newest.slice(half));
-    if (recent !== null && older) trend = Math.round(((recent - older) / older) * 100) / 100;
-  }
+  const trend = trendOf(newest, prior?.samples);
   return {
     runs: bucket.runs,
     successes: bucket.successes,
@@ -307,6 +318,8 @@ export interface WorkflowRow {
 
 export interface JobTimesReport {
   days: number;
+  /** Whether times carry a trend against the window before (hasTrend). */
+  trend: boolean;
   sampleCap: number;
   /** Runs a job needs on both runners to count toward `versus`. */
   fewRuns: number;
@@ -386,13 +399,13 @@ export const windowWhere = (workspaceId: string, since: Date, until?: number) =>
  * is. A single statement over a MATERIALIZED window with row_number() caps reads more, since D1
  * also counts the temp table and the window sorts, so the SAMPLE_CAP cut happens in TypeScript.
  */
-export function windowQuery(workspaceId: string, since: Date) {
+export function windowQuery(workspaceId: string, since: Date, until?: number) {
   return sql`
     select ${table.repositoryId} as repository_id, min(${table.repositoryFullName}) as repository,
       ${table.workflowName} as workflow_name, ${table.name} as name, ${table.labels} as labels,
       ${table.runnerGroupName} as runner_group_name, ${table.machineId} as machine_id,
       count(*) as runs, sum(${OK}) as successes, ${SAMPLES} as samples
-    from ${table} where ${windowWhere(workspaceId, since)}
+    from ${table} where ${windowWhere(workspaceId, since, until)}
     group by ${table.repositoryId}, ${table.workflowName}, ${table.name}, ${table.labels},
       ${table.runnerGroupName}, ${table.machineId}`;
 }
@@ -434,8 +447,63 @@ function add(buckets: Buckets, envKey: string, bucket: Bucket) {
   buckets.set(envKey, into);
 }
 
-function stats(buckets: Buckets): Record<string, Stat> {
-  return Object.fromEntries([...buckets].map(([key, bucket]) => [key, statOf(bucket)]));
+function stats(buckets: Buckets, prior?: Buckets): Record<string, Stat> {
+  return Object.fromEntries(
+    [...buckets].map(([key, bucket]) => [key, statOf(bucket, prior?.get(key))]),
+  );
+}
+
+/**
+ * Whether a `days` window gets a trend: the window before it must still be in job_timing, whose
+ * rows last RAW_RETENTION_DAYS. So 30 days has none.
+ */
+export const hasTrend = (days: number) => 2 * days <= RAW_RETENTION_DAYS;
+
+type WorkflowBuckets = {
+  repositoryId: number;
+  repository: string;
+  workflow: string | null;
+  jobs: Map<string, Buckets>;
+};
+
+/** The window's rows as buckets by environment: in total, and per workflow and job. */
+function collect(rows: WindowRow[], envs: Map<string, Environment>) {
+  const totals: Buckets = new Map();
+  // repo + workflow -> job name -> buckets by env
+  const workflows = new Map<string, WorkflowBuckets>();
+  for (const row of rows) {
+    const env = environmentFor(
+      JSON.parse(row.labels) as string[],
+      row.runner_group_name,
+      row.machine_id,
+    );
+    if (!envs.has(env.key)) envs.set(env.key, env);
+    const bucket = bucketOf(row);
+    const id = `${row.repository_id}\u001f${row.workflow_name ?? ""}`;
+    let workflow = workflows.get(id);
+    if (!workflow) {
+      workflow = {
+        repositoryId: row.repository_id,
+        repository: row.repository,
+        workflow: row.workflow_name,
+        jobs: new Map(),
+      };
+      workflows.set(id, workflow);
+    }
+    add(totals, env.key, bucket);
+    const jobBuckets = workflow.jobs.get(row.name) ?? new Map();
+    add(jobBuckets, env.key, bucket);
+    workflow.jobs.set(row.name, jobBuckets);
+  }
+  return { totals, workflows };
+}
+
+/** A matrix job's buckets: its legs' merged. */
+function matrixBuckets(jobs: Map<string, Buckets> | undefined, base: string) {
+  const merged: Buckets = new Map();
+  for (const [name, buckets] of jobs ?? [])
+    if (matrixName(name) === base) for (const [key, bucket] of buckets) add(merged, key, bucket);
+  return merged;
 }
 
 /**
@@ -469,7 +537,8 @@ export async function jobTimesReport(
   now = Date.now(),
 ): Promise<JobTimesReport> {
   const since = new Date(now - days * DAY_MS);
-  const [rows, missedRows] = await Promise.all([
+  const trend = hasTrend(days);
+  const [rows, missedRows, priorRows] = await Promise.all([
     db.all<WindowRow>(windowQuery(workspaceId, since)),
     db.all<{
       labels: string;
@@ -477,6 +546,12 @@ export async function jobTimesReport(
       machine_id: string | null;
       missed: number;
     }>(missedQuery(workspaceId, since)),
+    // The window before, for each time's trend: the same read again, a range just as long.
+    trend
+      ? db.all<WindowRow>(
+          windowQuery(workspaceId, new Date(since.getTime() - days * DAY_MS), since.getTime()),
+        )
+      : Promise.resolve([]),
   ]);
 
   const envs = new Map<string, Environment>();
@@ -491,50 +566,19 @@ export async function jobTimesReport(
     if (!envs.has(env.key)) envs.set(env.key, env);
     missed.set(env.key, (missed.get(env.key) ?? 0) + Number(row.missed));
   }
-  const totals: Buckets = new Map();
-  // repo + workflow -> job name -> buckets by env
-  const workflows = new Map<
-    string,
-    {
-      repositoryId: number;
-      repository: string;
-      workflow: string | null;
-      jobs: Map<string, Buckets>;
-    }
-  >();
-  for (const row of rows) {
-    const env = environmentFor(
-      JSON.parse(row.labels) as string[],
-      row.runner_group_name,
-      row.machine_id,
-    );
-    if (!envs.has(env.key)) envs.set(env.key, env);
-    const bucket = bucketOf(row);
-    const id = `${row.repository_id}\u001f${row.workflow_name ?? ""}`;
-    let workflow = workflows.get(id);
-    if (!workflow) {
-      workflow = {
-        repositoryId: row.repository_id,
-        repository: row.repository,
-        workflow: row.workflow_name,
-        jobs: new Map(),
-      };
-      workflows.set(id, workflow);
-    }
-    add(totals, env.key, bucket);
-    const jobBuckets = workflow.jobs.get(row.name) ?? new Map();
-    add(jobBuckets, env.key, bucket);
-    workflow.jobs.set(row.name, jobBuckets);
-  }
+  const { totals, workflows } = collect(rows, envs);
+  // Runners seen only in the window before don't get a row.
+  const prior = trend ? collect(priorRows, new Map()) : null;
 
   await nameMachines(db, workspaceId, envs);
 
   const leafStats: Record<string, Stat>[] = [];
-  const workflowRows: WorkflowRow[] = [...workflows.values()].map((workflow) => {
+  const workflowRows: WorkflowRow[] = [...workflows].map(([id, workflow]) => {
+    const priorJobs = prior?.workflows.get(id)?.jobs;
     const leaves = new Map<string, JobRow>();
     const matrices = new Map<string, { buckets: Buckets; legs: JobRow[] }>();
     for (const [name, buckets] of workflow.jobs) {
-      const row: JobRow = { name, byEnvironment: stats(buckets) };
+      const row: JobRow = { name, byEnvironment: stats(buckets, priorJobs?.get(name)) };
       leafStats.push(row.byEnvironment);
       const base = matrixName(name);
       if (base) {
@@ -550,7 +594,7 @@ export async function jobTimesReport(
       else
         leaves.set(base, {
           name: base,
-          byEnvironment: stats(matrix.buckets),
+          byEnvironment: stats(matrix.buckets, priorJobs && matrixBuckets(priorJobs, base)),
           legs: sortByRuns(matrix.legs),
         });
     }
@@ -564,7 +608,7 @@ export async function jobTimesReport(
 
   const environments = [...envs.values()].map((env) => ({
     ...env,
-    stat: statOf(totals.get(env.key) ?? emptyBucket()),
+    stat: statOf(totals.get(env.key) ?? emptyBucket(), prior?.totals.get(env.key)),
     missed: missed.get(env.key) ?? 0,
     versus: null as EnvironmentSummary["versus"],
   }));
@@ -580,6 +624,7 @@ export async function jobTimesReport(
 
   return {
     days,
+    trend,
     sampleCap: SAMPLE_CAP,
     fewRuns: FEW_RUNS,
     minSharedJobs: MIN_SHARED_JOBS,

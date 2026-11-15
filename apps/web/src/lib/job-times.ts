@@ -18,7 +18,7 @@ export type Stat = {
   p75Ms: number | null;
   p90Ms: number | null;
   waitMs: number | null;
-  /** Newer half of the runs against the older half: 0.18 is 18% slower. */
+  /** Against the window just before, same length: 0.18 is 18% slower. */
   trend: number | null;
 };
 
@@ -67,6 +67,8 @@ export type WorkflowRow = {
 
 export type JobTimesReport = {
   days: number;
+  /** Whether times carry a trend against the window before (not on 30 days). */
+  trend: boolean;
   sampleCap: number;
   /** Runs a job needs on both runners to count toward `versus`. */
   fewRuns: number;
@@ -189,6 +191,7 @@ export function sampleJobTimes(days: number): JobTimesReport {
   const macos = "github:macos";
   return {
     days,
+    trend: days * 2 <= 31,
     sampleCap: 50,
     fewRuns: 5,
     minSharedJobs: 3,

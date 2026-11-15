@@ -133,7 +133,7 @@ describe("stats", () => {
     ]);
   });
 
-  test("keeps the newest runs and compares the newer half with the older", () => {
+  test("keeps the newest runs and compares them with the window before", () => {
     // 60 runs, one a minute: the newest 30 took 20s, the older 30 took 10s.
     const samples = Array.from({ length: 60 }, (_, i) => ({
       completedAt: 1_000_000 - i * 60_000,
@@ -144,7 +144,17 @@ describe("stats", () => {
     expect(stat).toMatchObject({ runs: 64, successes: 60, samples: SAMPLE_CAP, waitMs: 1_000 });
     // The cap drops the 10 oldest 10s runs: 30 at 20s, 20 at 10s.
     expect(stat.medianMs).toBe(20_000);
-    expect(stat.trend).toBe(1);
+    // No window before, no trend.
+    expect(stat.trend).toBeNull();
+    const before = (runMs: number, count: number) => ({
+      runs: count,
+      successes: count,
+      samples: Array.from({ length: count }, (_, i) => ({ completedAt: i, runMs, waitMs: null })),
+    });
+    expect(statOf({ runs: 64, successes: 60, samples }, before(10_000, 8)).trend).toBe(1);
+    expect(statOf({ runs: 64, successes: 60, samples }, before(25_000, 8)).trend).toBe(-0.2);
+    // Under FEW_RUNS before: too few to compare.
+    expect(statOf({ runs: 64, successes: 60, samples }, before(10_000, 4)).trend).toBeNull();
   });
 
   const median = (medianMs: number, samples = 20) => ({
@@ -381,6 +391,37 @@ describe("job times report", () => {
     const byKey = Object.fromEntries(environments.map((e) => [e.key, e]));
     expect(byKey["github:linux-2-core"]).toMatchObject({ stat: { runs: 3 }, missed: 1 });
     expect(byKey["depot:depot-ubuntu-24.04"]).toMatchObject({ stat: { runs: 0 }, missed: 1 });
+  });
+
+  test("trends against the window before, only while it's still kept", async () => {
+    const { cookie, installationId } = await connectedWorkspace();
+    const runs = (seconds: number, fromHours: number, name = "build") =>
+      Array.from({ length: 6 }, (_, i) =>
+        timing(installationId, seconds, { name, hoursAgo: fromHours + i }),
+      );
+    await insert([
+      ...runs(20, 1),
+      // The 7 days before: half as long.
+      ...runs(10, 8 * 24),
+      // Ran before, too few times now.
+      ...runs(10, 8 * 24, "lint"),
+      timing(installationId, 10, { name: "lint" }),
+    ]);
+    const week = await report(cookie, "?days=7");
+    expect(week.trend).toBe(true);
+    const jobs = week.workflows.flatMap((row) => row.jobs);
+    const trend = (name: string) =>
+      jobs.find((job) => job.name === name)?.byEnvironment["github:linux-2-core"]?.trend;
+    expect(trend("build")).toBe(1);
+    expect(trend("lint")).toBeNull();
+    // 30 days back plus 30 before is past what job_timing keeps.
+    const month = await report(cookie, "?days=30");
+    expect(month.trend).toBe(false);
+    expect(
+      month.workflows
+        .flatMap((row) => row.jobs)
+        .every((job) => Object.values(job.byEnvironment).every((stat) => stat.trend === null)),
+    ).toBe(true);
   });
 
   test("reads only the workspace's window, once", async () => {

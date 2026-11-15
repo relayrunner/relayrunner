@@ -19,6 +19,7 @@ import {
   FEW_RUNS,
   inWorkspace,
   type JobTimesReport,
+  hasTrend,
   jobTimesReport,
   nameMachines,
   PICK,
@@ -519,7 +520,8 @@ export async function jobSource(db: Db, workspaceId: string, jobId: number) {
 /**
  * Each workflow's whole-run times over the last `days` days, by workflowKey, for the Performance
  * page: like a job's times, from its newest successful runs, but first job queued to last job
- * finished. Its wait is the time no job was running (waitingMs).
+ * finished. Its wait is the time no job was running (waitingMs). When hasTrend, it reads the
+ * window before too, for the trend.
  */
 export async function workflowTimes(
   db: Db,
@@ -527,22 +529,32 @@ export async function workflowTimes(
   days: number,
   now = Date.now(),
 ): Promise<Map<string, Stat>> {
-  const summaries = await runSummaries(db, workspaceId, now - days * DAY_MS);
+  const since = now - days * DAY_MS;
+  const all = await runSummaries(db, workspaceId, hasTrend(days) ? since - days * DAY_MS : since);
+  const current = all.filter((summary) => summary.updatedAt >= since);
   const finished = new Map<string, number>();
-  for (const summary of summaries)
+  for (const summary of current)
     if (summary.status === "completed" && summary.conclusion !== "cancelled")
       finished.set(summary.workflow, (finished.get(summary.workflow) ?? 0) + 1);
-  const walls = successfulWalls(summaries);
+  const bucket = (runs: RunSummary[] = [], total = runs.length) => ({
+    runs: total,
+    successes: runs.length,
+    samples: runs.map((run) => ({
+      completedAt: run.updatedAt,
+      runMs: run.wallMs!,
+      waitMs: run.waitMs,
+    })),
+  });
+  const walls = successfulWalls(current);
+  const priorWalls = successfulWalls(all.filter((summary) => summary.updatedAt < since));
   return new Map(
-    [...finished].map(([key, total]) => {
-      const runs = walls.get(key) ?? [];
-      const samples = runs.map((run) => ({
-        completedAt: run.updatedAt,
-        runMs: run.wallMs!,
-        waitMs: run.waitMs,
-      }));
-      return [key, statOf({ runs: total, successes: runs.length, samples })];
-    }),
+    [...finished].map(([key, total]) => [
+      key,
+      statOf(
+        bucket(walls.get(key), total),
+        hasTrend(days) ? bucket(priorWalls.get(key)) : undefined,
+      ),
+    ]),
   );
 }
 
