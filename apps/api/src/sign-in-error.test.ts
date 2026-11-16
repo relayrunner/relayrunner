@@ -82,4 +82,56 @@ describe("sign-in errors", () => {
     expect(response.status).toBe(302);
     expect(response.headers.get("location")).toBe("/login?error=invalid_code");
   });
+
+  test("a rate-limited exchange is retried once, then reported as github_busy", async () => {
+    const { state, cookie } = await startSignIn({});
+    let calls = 0;
+    const realFetch = globalThis.fetch;
+    vi.stubGlobal("fetch", async (input: RequestInfo | URL, init?: RequestInit) => {
+      const url = new URL(input instanceof Request ? input.url : input.toString());
+      if (url.href === "https://github.com/login/oauth/access_token") {
+        calls++;
+        return new Response("Access to this site has been restricted.", { status: 429 });
+      }
+      return realFetch(input, init);
+    });
+    // Waits out the real two-second pause before the retry.
+    const response = await callback(state, cookie);
+    expect(calls).toBe(2);
+    expect(response.headers.get("location")).toBe("/login?error=github_busy");
+  });
+
+  test("a sign-in that GitHub lets through on the retry succeeds", async () => {
+    const { state, cookie } = await startSignIn({});
+    let calls = 0;
+    const realFetch = globalThis.fetch;
+    vi.stubGlobal("fetch", async (input: RequestInfo | URL, init?: RequestInit) => {
+      const url = new URL(input instanceof Request ? input.url : input.toString());
+      if (url.href === "https://github.com/login/oauth/access_token") {
+        calls++;
+        if (calls === 1) return new Response("restricted", { status: 429 });
+        return Response.json({
+          access_token: "gho_test",
+          token_type: "bearer",
+          scope: "user:email",
+        });
+      }
+      if (url.href === "https://api.github.com/user") {
+        return Response.json({
+          id: 4243,
+          login: "busy",
+          name: "Busy Cat",
+          email: "busy@example.com",
+        });
+      }
+      if (url.href === "https://api.github.com/user/emails") {
+        return Response.json([{ email: "busy@example.com", primary: true, verified: true }]);
+      }
+      return realFetch(input, init);
+    });
+    // Waits out the real two-second pause before the retry.
+    const response = await callback(state, cookie);
+    expect(calls).toBe(2);
+    expect(response.headers.get("location")).toBe("/runners");
+  });
 });

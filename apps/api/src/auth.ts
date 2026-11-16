@@ -7,6 +7,7 @@ import { eq } from "drizzle-orm";
 import { createDb, schema } from "./db/index.ts";
 import { requestOrigin } from "./device-origin.ts";
 import { sendEmail } from "./email.ts";
+import { githubBusy } from "./github-busy.ts";
 import { installSignIn } from "./install-sign-in.ts";
 import { syncMembershipsFromGitHub } from "./memberships.ts";
 import type { Env } from "./env.ts";
@@ -158,6 +159,9 @@ export function createAuth(
     },
     plugins: [
       workspaces(),
+      // GitHub sometimes rate-limits the sign-in code exchange: retry once, then say so
+      // (/login?error=github_busy) instead of invalid_code (src/github-busy.ts).
+      githubBusy(),
       // Sign-in from a preview: GitHub returns to the production callback, which exchanges the
       // code and redirects to <preview>/api/auth/callback/github/oauth-proxy with the profile
       // encrypted (BETTER_AUTH_SECRET). The preview then creates the session and sets the

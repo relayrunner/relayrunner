@@ -16,6 +16,9 @@ export function signInErrorURL() {
 export function describeSignInError(code: string | undefined): string | null {
   if (!code) return null;
   switch (code) {
+    case "github_busy":
+      // GitHub rate-limited the sign-in (apps/api/src/github-busy.ts), even after a retry.
+      return "GitHub is busy right now. Wait a minute and try again.";
     case "access_denied":
       return "Sign-in was cancelled on GitHub.";
     case "email_not_found":
@@ -36,16 +39,16 @@ export function describeSignInError(code: string | undefined): string | null {
   }
 }
 
-// GitHub sometimes refuses the code exchange for a moment (HTTP 429 from its token endpoint, which
-// Better Auth reports as invalid_code), and a fresh sign-in seconds later goes through. So the
-// sign-in page tries once more on its own, then leaves it to the person.
+// GitHub sometimes rate-limits the code exchange for a moment (github_busy), and a fresh sign-in
+// seconds later goes through. So the sign-in page tries once more on its own, then leaves it to
+// the person.
 const RETRY_KEY = "rr_sign_in_retry";
 const RETRY_WINDOW_MS = 2 * 60 * 1000;
 export const AUTO_RETRY_DELAY_MS = 3000;
 
 /** Whether this failed sign-in should start over on its own: at most once per two minutes. */
 export function canAutoRetry(code: string | undefined): boolean {
-  if (code !== "invalid_code") return false;
+  if (code !== "github_busy") return false;
   try {
     const last = Number(sessionStorage.getItem(RETRY_KEY));
     return !last || Date.now() - last >= RETRY_WINDOW_MS;

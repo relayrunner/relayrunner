@@ -57,7 +57,7 @@ function LoginPage() {
     }
   }
 
-  // GitHub was briefly refusing sign-ins (lib/sign-in.ts): try once more on our own.
+  // GitHub was briefly rate-limiting sign-ins (lib/sign-in.ts): try once more on our own.
   useEffect(() => {
     if (!retrying) return;
     const timer = setTimeout(() => {
@@ -91,7 +91,9 @@ function LoginPage() {
               Sign in with GitHub
             </Button>
             {retrying && (
-              <p className="text-sm text-muted-foreground">GitHub was busy. Trying again…</p>
+              <p className="text-sm text-muted-foreground">
+                GitHub is busy right now. Trying again…
+              </p>
             )}
             {error && <p className="text-sm text-destructive">{error}</p>}
             <LegalNotice action="signing in" />
