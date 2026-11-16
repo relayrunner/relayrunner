@@ -1,5 +1,16 @@
 # relayrunner
 
+## 0.12.0
+
+### Minor Changes
+
+- a3adbb5: `relayrunner init` recognises Boat labels (`boat`, `boat-large` and the like), keeps them as a job's fallback, and writes relays pinned to `relay.yml@v1.0.0-beta.6`, which takes a `boat` input.
+- cc9f37e: `connect --events` writes JSON events to stdout and takes `pause` or `resume` on stdin, for apps that run `connect`. Only one `connect` runs on a computer at a time now.
+
+### Patch Changes
+
+- 70a5aab: `relayrunner workspaces list --json` includes each workspace's logo.
+
 ## 0.11.0
 
 ### Minor Changes
