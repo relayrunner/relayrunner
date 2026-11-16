@@ -9,6 +9,7 @@ import {
 import {
   noSizeText,
   notProviderLabelText,
+  publicRepoText,
   RUNNER_LABELS,
   type RunnerKey,
 } from "@relayrunner/runner-order";
@@ -141,7 +142,7 @@ function longSkip(walk: RouteWalk, step: SkippedStep): string {
         : "no machine was online and idle";
     }
     case "public_repo":
-      return "public repos never run on self-hosted machines";
+      return publicRepoText(key);
     case "too_many_labels":
       return `${key} takes one label, not ${walk[key].join(", ")}`;
     case "not_provider_label":

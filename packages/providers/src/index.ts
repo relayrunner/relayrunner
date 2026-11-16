@@ -134,6 +134,7 @@ export const HOSTED_PROVIDER_IDS = [
   "namespace",
   "warpbuild",
   "ubicloud",
+  "boat",
   "runs-on",
 ] as const satisfies readonly ProviderId[];
 
@@ -141,9 +142,8 @@ export type HostedProviderId = (typeof HOSTED_PROVIDER_IDS)[number];
 
 // How each service's labels start, e.g. `depot-ubuntu-24.04-8`. A prefix ending in `-` also
 // matches the bare name (`ubicloud`). RunsOn's carry the run id, `runs-on=<run id>/runner=...`.
-// Boat isn't a Router step yet, so its labels are only recognised in reports; options follow a
-// `/`, as in `boat-large/debug`.
-export const LABEL_PREFIXES: Record<HostedProviderId | "boat", string[]> = {
+// Boat's take options after a `/`, as in `boat-large/debug`.
+export const LABEL_PREFIXES: Record<HostedProviderId, string[]> = {
   blacksmith: ["blacksmith-"],
   depot: ["depot-"],
   namespace: ["namespace-profile-", "nscloud-"],
@@ -180,8 +180,15 @@ export const APP_SLUG_PATTERNS: Record<HostedProviderId, RegExp> = {
   namespace: /namespace|nscloud/,
   warpbuild: /warpbuild/,
   ubicloud: /ubicloud/,
+  boat: /boat/,
   "runs-on": /runs-?on/,
 };
+
+/**
+ * Hosted providers that refuse public repos' jobs unless the account allows them, so the Router
+ * skips them for public repos instead of leaving the job queued. Boat: https://docs.boat.dev/ci
+ */
+export const SKIPS_PUBLIC_REPOS: readonly HostedProviderId[] = ["boat"];
 
 /** The hosted providers whose GitHub App is among these installed app slugs. */
 export function providersOfAppSlugs(slugs: string[]): HostedProviderId[] {

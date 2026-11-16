@@ -9,12 +9,13 @@
 // 3. The `queued` webhook for that job claims the route (same repo, same run) and the machine's
 //    MachineLink mints an org JIT runner on the label and sends the machine a `run` message.
 
-import { type HostedProviderId, isProviderLabel } from "@relayrunner/providers";
+import { type HostedProviderId, isProviderLabel, SKIPS_PUBLIC_REPOS } from "@relayrunner/providers";
 import {
   AUTO,
   byRunnerKey,
   noSizeText,
   notProviderLabelText,
+  publicRepoText,
   RUNNER_KEYS,
   RUNNER_LABELS,
   type RelayInputs,
@@ -720,6 +721,8 @@ export async function decideRoute(
       // that names one of its labels; another label would queue forever.
       const labels = job[key];
       if (labels.length === 0) skipped.push({ key, reason: "not_configured" });
+      else if (!job.private && SKIPS_PUBLIC_REPOS.includes(key))
+        skipped.push({ key, reason: "public_repo" });
       else if (unsized(labels)) skipped.push({ key, reason: "no_size", vcpus: job.size });
       else if (labels.length > 1) skipped.push({ key, reason: "too_many_labels" });
       else if (!isProviderLabel(key, labels[0]))
@@ -764,7 +767,7 @@ export function noRunnerReason(
         case "not_configured":
           return `\`${key}\` isn't set on this relay`;
         case "public_repo":
-          return "public repos never run on self-hosted machines";
+          return publicRepoText(key);
         case "no_machine":
           return job.machine.length === 1 && job.machine[0].toLowerCase() === "self-hosted"
             ? "no self-hosted machine is online and idle"

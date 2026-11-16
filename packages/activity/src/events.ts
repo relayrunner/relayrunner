@@ -22,7 +22,7 @@ export type DisconnectReason = (typeof DISCONNECT_REASONS)[number];
 export const SKIP_REASONS = [
   // The relay left that provider's input empty.
   "not_configured",
-  // Machines never run a public repo's jobs.
+  // Machines never run a public repo's jobs, nor do hosted providers that refuse them (Boat).
   "public_repo",
   // No online, idle machine had every wanted label.
   "no_machine",

@@ -34,6 +34,11 @@ const LABELS: Partial<
     sizes: [2, 4, 8, 16, 30],
     label: (n) => `ubicloud-standard-${n}`,
   },
+  // boat-xlarge (16 vCPU) needs Boat's $100 plan and is refused on the $20 one, so auto stops at 8.
+  boat: {
+    sizes: [2, 4, 8],
+    label: (n) => ({ 2: "boat-small", 4: "boat" })[n] ?? "boat-large",
+  },
   "runs-on": {
     sizes: [2, 4, 8, 16, 32, 64],
     label: (n, runId) => `runs-on=${runId}/runner=${n}cpu-linux-x64`,

@@ -1,6 +1,6 @@
 ---
 title: Hosted providers
-description: Routing jobs to Blacksmith, Depot, Namespace, WarpBuild, Ubicloud and RunsOn.
+description: Routing jobs to Blacksmith, Depot, Namespace, WarpBuild, Ubicloud, Boat and RunsOn.
 ---
 
 import Provider from "@/components/docs/Provider.astro";
@@ -28,7 +28,7 @@ Each job has its own relay, so each job picks its own size, such as `blacksmith-
 
 A provider's step always takes a job that names one of its labels. There's no way to see a provider's capacity, so steps below it only run for jobs that don't name one. A common order is your machines, then a hosted provider, then GitHub-hosted.
 
-Unlike machines, hosted providers also run public repos' jobs.
+Unlike machines, hosted providers also run public repos' jobs, except Boat, which refuses them unless you allow them in Boat. RelayRunner skips Boat for public repos.
 
 ## The providers
 
@@ -39,6 +39,7 @@ Unlike machines, hosted providers also run public repos' jobs.
 | Namespace  | `namespace`  |
 | WarpBuild  | `warpbuild`  |
 | Ubicloud   | `ubicloud`   |
+| Boat       | `boat`       |
 | RunsOn     | `runs-on`    |
 
 <Provider id="blacksmith" />
@@ -50,6 +51,10 @@ Unlike machines, hosted providers also run public repos' jobs.
 <Provider id="warpbuild" />
 
 <Provider id="ubicloud" />
+
+<Provider id="boat" />
+
+Boat runs Linux x64 only. Its CI needs Boat's $20 plan or higher, and `boat-xlarge` its $100 plan, so `auto` picks Boat sizes up to `boat-large`. Boat caps job starts per minute, hour and day; past the hour or day cap it pauses a job until someone re-runs it. Starts past the plan's included ones cost extra, which spend limits don't count.
 
 <Provider id="runs-on" />
 

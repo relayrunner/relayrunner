@@ -29,7 +29,7 @@ The limit only helps if there's a next step. Connect at least one machine, share
 
 ## Cap other providers too
 
-Blacksmith, Depot, WarpBuild and Ubicloud steps can have a monthly dollar limit the same way. See [Spend limits](/docs/concepts/runner-order#spend-limits).
+Blacksmith, Depot, WarpBuild, Ubicloud and Boat steps can have a monthly dollar limit the same way. See [Spend limits](/docs/concepts/runner-order#spend-limits).
 
 ## Watch it
 

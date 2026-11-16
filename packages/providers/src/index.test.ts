@@ -27,12 +27,12 @@ describe("hosted provider labels", () => {
     expect(hostedProviderOf(label)).toBe(id);
   });
 
-  test("Boat's labels are recognised in reports, but Boat isn't a Router step yet", () => {
-    expect(hostedProviderOf("boat")).toBeNull();
+  test("Boat's labels, with or without options", () => {
+    expect(hostedProviderOf("boat")).toBe("boat");
+    expect(hostedProviderOf("boat-large/from=ci-base")).toBe("boat");
+    expect(hostedProviderOf("boathouse")).toBeNull();
     expect(BASE_CATALOG.find((p) => p.id === "boat")?.prefixes).toEqual(["boat-", "boat/"]);
     expect(catalogProviderOf(BASE_CATALOG, ["boat"])?.id).toBe("boat");
-    expect(catalogProviderOf(BASE_CATALOG, ["boat-large/from=ci-base"])?.id).toBe("boat");
-    expect(catalogProviderOf(BASE_CATALOG, ["boathouse"])).toBeNull();
   });
 
   test("a label only matches its own provider", () => {

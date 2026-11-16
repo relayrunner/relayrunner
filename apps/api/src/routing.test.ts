@@ -868,6 +868,24 @@ describe("decideRoute", () => {
       );
     });
 
+    test("Boat takes private repos' jobs and skips public ones", async () => {
+      const job = { ...both, machine: [], boat: ["boat-large/debug"] };
+      expect(await decideRoute(order("boat", "github"), job, free)).toMatchObject({
+        runner: "boat-large/debug",
+        step: "boat",
+      });
+      expect(await decideRoute(order("boat", "github"), { ...job, private: false }, free)).toEqual({
+        runner: "ubuntu-latest",
+        step: "github",
+        skipped: [{ key: "boat", reason: "public_repo" }],
+        notInOrder: [],
+      });
+      const alone = await decideRoute(order("boat"), { ...job, github: [], private: false }, free);
+      expect(alone.runner === null && alone.reason).toBe(
+        "No runner available: Boat doesn't run public repos.",
+      );
+    });
+
     describe("a runner type that isn't picking up jobs", () => {
       const job = { ...both, machine: [], depot: ["depot-ubuntu-24.04"] };
       const unhealthy = { misses: 3, retryAt: 1_000 };

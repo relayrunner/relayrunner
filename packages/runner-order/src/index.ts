@@ -131,6 +131,15 @@ export const notProviderLabelText = (key: RunnerKey, labels: string[]) =>
   `takes a ${RUNNER_LABELS[key]} label such as ${RUNNER_EXAMPLES[key]}, not ${labels.join(", ")}`;
 
 /**
+ * Why a step skipped a public repo's job: machines never run them, and some hosted providers
+ * (Boat) refuse them unless the account allows them.
+ */
+export const publicRepoText = (key: RunnerKey) =>
+  key === "machine"
+    ? "public repos never run on self-hosted machines"
+    : `${RUNNER_LABELS[key]} doesn't run public repos`;
+
+/**
  * The stored column's value as an order. A missing or unreadable value reads as the default,
  * so routing never stalls on a bad row.
  */

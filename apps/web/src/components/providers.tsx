@@ -84,7 +84,7 @@ const LOOKS: Record<ProviderId | "machine", ProviderLook> = {
     mono: true,
   },
   boat: {
-    icon: <BoatIcon className="w-3.5" />,
+    icon: <BoatIcon className="w-3.5 text-white" />,
     tile: "bg-boat text-white",
     tint: "bg-boat/8",
     bar: "bg-boat",

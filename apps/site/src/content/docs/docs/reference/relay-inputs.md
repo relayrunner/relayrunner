@@ -33,6 +33,7 @@ Any input can say `auto` instead of a label. The Router then picks that provider
 | `namespace`  | none    | One Namespace label, such as `namespace-profile-default`.                                                                                                                                                    |
 | `warpbuild`  | none    | One WarpBuild label, such as `warp-ubuntu-latest-x64-2x`.                                                                                                                                                    |
 | `ubicloud`   | none    | One Ubicloud label, such as `ubicloud-standard-2`.                                                                                                                                                           |
+| `boat`       | none    | One Boat label, such as `boat` or `boat-large`.                                                                                                                                                              |
 | `runs-on`    | none    | One RunsOn label, such as `runs-on=${{ github.run_id }}/runner=2cpu-linux-x64`.                                                                                                                              |
 
 ## Auto sizes
