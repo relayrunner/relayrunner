@@ -1,12 +1,18 @@
 import { createFileRoute, redirect } from "@tanstack/react-router";
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { Brand } from "@/components/brand";
 import { LegalNotice } from "@/components/legal-notice";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { authDisabled, getSession, signIn } from "@/lib/auth-client";
 import { usePageTitle } from "@/lib/page-title";
-import { describeSignInError, signInErrorURL } from "@/lib/sign-in";
+import {
+  AUTO_RETRY_DELAY_MS,
+  canAutoRetry,
+  describeSignInError,
+  markAutoRetry,
+  signInErrorURL,
+} from "@/lib/sign-in";
 
 // `error`: why the last sign-in failed, when GitHub's callback sends the browser back here.
 type LoginSearch = { redirect?: string; error?: string };
@@ -33,7 +39,10 @@ function connectingAgent() {
 function LoginPage() {
   usePageTitle("Sign in");
   const { redirect: next, error: errorCode } = Route.useSearch();
-  const [error, setError] = useState<string | null>(() => describeSignInError(errorCode));
+  const [retrying, setRetrying] = useState(() => canAutoRetry(errorCode));
+  const [error, setError] = useState<string | null>(() =>
+    retrying ? null : describeSignInError(errorCode),
+  );
 
   async function signInWithGitHub() {
     setError(null);
@@ -42,8 +51,22 @@ function LoginPage() {
       callbackURL: next ?? "/runners",
       errorCallbackURL: signInErrorURL(),
     });
-    if (error) setError(error.message ?? "Sign-in failed");
+    if (error) {
+      setRetrying(false);
+      setError(error.message ?? "Sign-in failed");
+    }
   }
+
+  // GitHub was briefly refusing sign-ins (lib/sign-in.ts): try once more on our own.
+  useEffect(() => {
+    if (!retrying) return;
+    const timer = setTimeout(() => {
+      markAutoRetry();
+      void signInWithGitHub();
+    }, AUTO_RETRY_DELAY_MS);
+    return () => clearTimeout(timer);
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- once, on arrival
+  }, []);
 
   return (
     <main className="grid min-h-screen place-items-center p-4">
@@ -59,9 +82,17 @@ function LoginPage() {
             </CardDescription>
           </CardHeader>
           <CardContent className="flex flex-col gap-3">
-            <Button size="lg" className="w-full font-bold" onClick={signInWithGitHub}>
+            <Button
+              size="lg"
+              className="w-full font-bold"
+              onClick={signInWithGitHub}
+              disabled={retrying}
+            >
               Sign in with GitHub
             </Button>
+            {retrying && (
+              <p className="text-sm text-muted-foreground">GitHub was busy. Trying again…</p>
+            )}
             {error && <p className="text-sm text-destructive">{error}</p>}
             <LegalNotice action="signing in" />
           </CardContent>
