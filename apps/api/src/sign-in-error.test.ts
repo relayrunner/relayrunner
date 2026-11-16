@@ -76,4 +76,10 @@ describe("sign-in errors", () => {
     const response = await app.request(`${production}/api/auth/callback/github?code=abc`, {}, env);
     expect(response.headers.get("location")).toBe("/login?error=state_not_found");
   });
+
+  test("an old /api/auth/error link goes to the sign-in page", async () => {
+    const response = await app.request(`${production}/api/auth/error?error=invalid_code`, {}, env);
+    expect(response.status).toBe(302);
+    expect(response.headers.get("location")).toBe("/login?error=invalid_code");
+  });
 });

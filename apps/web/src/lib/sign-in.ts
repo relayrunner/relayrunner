@@ -21,6 +21,14 @@ export function describeSignInError(code: string | undefined): string | null {
     case "email_not_found":
     case "unable_to_get_user_info":
       return "GitHub didn't share your account details. Try again, or check the RelayRunner app's access in your GitHub settings.";
+    // An agent's sign-in request that RelayRunner can't accept (agent-auth.ts): trying again from
+    // here won't help, the agent has to start over.
+    case "invalid_client":
+    case "invalid_redirect":
+    case "unauthorized_client":
+    case "unsupported_response_type":
+    case "client_disabled":
+      return "This agent's sign-in request isn't valid. Start connecting again from the agent.";
     default:
       // invalid_code, state_mismatch, please_restart_the_process and the rest: the hand-off from
       // GitHub didn't complete. Starting over fixes it.
