@@ -16,6 +16,7 @@ import {
 
 export const INTEGRATION_IDS = [
   ...HOSTED_PROVIDER_IDS,
+  "boat",
   "github",
 ] as const satisfies readonly ProviderId[];
 
@@ -33,8 +34,38 @@ const INTROS: Record<IntegrationId, string> = {
   warpbuild:
     "WarpBuild runs GitHub Actions jobs on its own machines, under your WarpBuild account.",
   ubicloud: "Ubicloud runs GitHub Actions jobs on its own machines, under your Ubicloud account.",
+  boat: "Boat runs each GitHub Actions job in a fresh Linux VM, under your Boat account.",
   "runs-on": "RunsOn starts a runner for each job in your own AWS account.",
   github: "GitHub-hosted runners work in every repository with nothing to set up.",
+};
+
+// Where a provider works differently from the rest, in its own words on its page.
+interface Quirks {
+  /** Shown under its list prices. */
+  priceNote?: string;
+  /** The answer to "Do public repos run on it?", when it isn't "yes". */
+  publicRepos?: string;
+  /** Questions only this provider raises. */
+  faqs?: { q: string; a: string }[];
+}
+
+const QUIRKS: Partial<Record<IntegrationId, Quirks>> = {
+  boat: {
+    priceNote:
+      "CI needs Boat's $20 plan or higher, which comes back as VM time. Starts past the plan's limits cost $0.03 to $0.07 each.",
+    publicRepos:
+      "Not by default. Boat refuses jobs from public repos until you allow them with boat ci public, and then runs only the people you list.",
+    faqs: [
+      {
+        q: "What happens when I reach Boat's start limits?",
+        a: "Each job is one start, and Boat caps starts per minute, hour and day: 12, 60 and 200 on the $20 plan. Past the hour or day limit a job shows Paused by plan limit on GitHub and waits until someone re-runs it. Putting your own machines first in the runner order keeps those starts for when you need them.",
+      },
+      {
+        q: "Which runners does Boat have?",
+        a: "Linux x64 only, on Ubuntu 24.04: boat-small (2 vCPU), boat (4 vCPU), boat-large (8 vCPU) and boat-xlarge (16 vCPU, on the $100 plan and up). For macOS, Windows or Arm, put another runner after Boat in your order.",
+      },
+    ],
+  },
 };
 
 export interface Integration {
@@ -51,6 +82,7 @@ export interface Integration {
   prices: { name: string; price: string }[];
   /** How to connect its billing, for the providers whose real spend the dashboard can read. */
   billing?: BillingProviderInfo;
+  quirks: Quirks;
 }
 
 export function integration(id: IntegrationId): Integration {
@@ -73,6 +105,7 @@ export function integration(id: IntegrationId): Integration {
     dashboardUrl,
     prices,
     billing: isBillingProvider(id) ? BILLING_PROVIDERS[id] : undefined,
+    quirks: QUIRKS[id] ?? {},
   };
 }
 

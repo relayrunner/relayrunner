@@ -138,6 +138,23 @@ export const PRICE_SOURCES: PriceSource[] = [
     },
   },
   {
+    provider: "boat",
+    url: "https://docs.boat.dev/pricing.md",
+    page: "https://docs.boat.dev/pricing",
+    // The cost per hour table: size, price an hour, CPU, RAM, disk. Each size has its own rate.
+    parse(md) {
+      const sizes: Record<string, string> = {
+        small: "boat-small",
+        default: "boat",
+        large: "boat-large",
+        xlarge: "boat-xlarge",
+      };
+      return Object.entries(sizes).map(([size, rate]) =>
+        found(rate, dollars(tableRow(md, runnerIs(size))[1]!) / 60),
+      );
+    },
+  },
+  {
     provider: "github",
     url: "https://docs.github.com/api/article/body?pathname=/en/billing/reference/actions-runner-pricing",
     page: "https://docs.github.com/en/billing/reference/actions-runner-pricing",

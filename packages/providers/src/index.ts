@@ -9,6 +9,7 @@ export const PROVIDER_IDS = [
   "namespace",
   "warpbuild",
   "ubicloud",
+  "boat",
   "runs-on",
   "github",
   "cloudflare",
@@ -77,6 +78,16 @@ export const PROVIDERS: Record<ProviderId, ProviderInfo> = {
     setup: "Sign up for Ubicloud and install its GitHub App on your organization.",
     dashboardUrl: "https://console.ubicloud.com",
   },
+  boat: {
+    name: "Boat",
+    summary: "Hosted Linux runners for GitHub Actions, billed per second.",
+    labels: "boat, boat-*",
+    example: "boat",
+    setup:
+      "Get Boat's $20 plan or higher, then run boat ci connect to install the boat CI GitHub App on your organization.",
+    dashboardUrl: "https://boat.dev",
+    docsUrl: "https://docs.boat.dev/ci",
+  },
   "runs-on": {
     name: "RunsOn",
     summary: "Runners started in your own AWS account.",
@@ -130,12 +141,15 @@ export type HostedProviderId = (typeof HOSTED_PROVIDER_IDS)[number];
 
 // How each service's labels start, e.g. `depot-ubuntu-24.04-8`. A prefix ending in `-` also
 // matches the bare name (`ubicloud`). RunsOn's carry the run id, `runs-on=<run id>/runner=...`.
-export const LABEL_PREFIXES: Record<HostedProviderId, string[]> = {
+// Boat isn't a Router step yet, so its labels are only recognised in reports; options follow a
+// `/`, as in `boat-large/debug`.
+export const LABEL_PREFIXES: Record<HostedProviderId | "boat", string[]> = {
   blacksmith: ["blacksmith-"],
   depot: ["depot-"],
   namespace: ["namespace-profile-", "nscloud-"],
   warpbuild: ["warp-"],
   ubicloud: ["ubicloud-"],
+  boat: ["boat-", "boat/"],
   "runs-on": ["runs-on=", "runs-on/"],
 };
 

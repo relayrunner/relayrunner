@@ -26,6 +26,10 @@ describe("list prices", () => {
     ["ubicloud", "ubicloud", 0.00125],
     ["ubicloud", "ubicloud-standard-8-arm", 0.005],
     ["ubicloud", "ubicloud-premium-4", 0.004],
+    ["boat", "boat-small", 0.0003],
+    ["boat", "boat", 0.0006],
+    ["boat", "boat-large/debug", 0.0012],
+    ["boat", "boat-xlarge", 0.2 / 60],
   ] as const)("%s %s costs $%d a minute", (provider, label, usd) => {
     expect(rate(provider, label)).toBeCloseTo(usd, 6);
   });

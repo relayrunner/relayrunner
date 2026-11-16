@@ -6,6 +6,7 @@ import {
   PROVIDERS,
   providersOfAppSlugs,
 } from "./index.ts";
+import { BASE_CATALOG, catalogProviderOf } from "./catalog.ts";
 
 describe("hosted provider labels", () => {
   test("each provider's example label is its own", () => {
@@ -24,6 +25,14 @@ describe("hosted provider labels", () => {
     ["self-hosted", null],
   ])("%s belongs to %s", (label, id) => {
     expect(hostedProviderOf(label)).toBe(id);
+  });
+
+  test("Boat's labels are recognised in reports, but Boat isn't a Router step yet", () => {
+    expect(hostedProviderOf("boat")).toBeNull();
+    expect(BASE_CATALOG.find((p) => p.id === "boat")?.prefixes).toEqual(["boat-", "boat/"]);
+    expect(catalogProviderOf(BASE_CATALOG, ["boat"])?.id).toBe("boat");
+    expect(catalogProviderOf(BASE_CATALOG, ["boat-large/from=ci-base"])?.id).toBe("boat");
+    expect(catalogProviderOf(BASE_CATALOG, ["boathouse"])).toBeNull();
   });
 
   test("a label only matches its own provider", () => {

@@ -103,8 +103,11 @@ const faqs = [
       }
     : {
         q: `Do public repos run on ${name}?`,
-        a: `Yes. Your own machines skip public repos' jobs, but hosted providers like ${name} run them.`,
+        a:
+          p.quirks.publicRepos ??
+          `Yes. Your own machines skip public repos' jobs, but hosted providers like ${name} run them.`,
       },
+  ...(p.quirks.faqs ?? []),
 ];
 const faqData = {
   "@context": "https://schema.org",
@@ -276,6 +279,7 @@ const faqData = {
               {PRICES_AS_OF}, from {name}'s price page. {name} bills you directly, so your plan and
               credits apply.
             </p>
+            {p.quirks.priceNote && <p>{p.quirks.priceNote}</p>}
           </div>
         )
       }

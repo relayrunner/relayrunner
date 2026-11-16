@@ -74,6 +74,14 @@ const PAGES: Record<string, string> = {
     "- { id: f, resource_type: GitHubRunnerMinutes, resource_family: premium-2, location: global, unit_price: 0.0016000000, billed_by: amount, active_from: 2025-05-01T00:00:00Z, byoc: false }",
     "- { id: g, resource_type: GitHubRunnerMinutes, resource_family: standard-2, location: global, unit_price: 0.0050000000, billed_by: amount, active_from: 2026-09-01T00:00:00Z, byoc: true }",
   ].join("\n"),
+  boat: [
+    "| Size | Per hour | CPU | RAM | Disk |",
+    "| - | - | - | - | - |",
+    "| `small` | **\\$0.018** | 2 vCPU | 4 GB | 51 GB |",
+    "| `default` | **\\$0.036** | 4 vCPU | 8 GB | 51 GB |",
+    "| `large` | **\\$0.072** | 8 vCPU | 16 GB | 111 GB |",
+    "| `xlarge` \\* | **\\$0.200** | 16 vCPU | 32 GB | 251 GB |",
+  ].join("\n"),
   github: [
     "| Operating system | SKU | Per-minute rate (USD) |",
     "| --- | --- | --- |",
@@ -112,6 +120,12 @@ describe("price sources", () => {
       { rate: "standard", usd: 0.0004, from: "2023-01-01" },
       { rate: "standard", usd: 0.0005, from: "2026-05-01" },
       { rate: "premium", usd: 0.0008, from: "2025-05-01" },
+    ]);
+    expect(source("boat").parse(PAGES.boat!)).toEqual([
+      { rate: "boat-small", usd: 0.018 / 60 },
+      { rate: "boat", usd: 0.036 / 60 },
+      { rate: "boat-large", usd: 0.072 / 60 },
+      { rate: "boat-xlarge", usd: 0.2 / 60 },
     ]);
     expect(source("github").parse(PAGES.github!)).toContainEqual({
       rate: "linux-2-core",

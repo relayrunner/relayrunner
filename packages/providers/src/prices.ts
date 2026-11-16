@@ -18,6 +18,8 @@ export const RATES = {
   depot: { linux: "vcpu", arm: "vcpu", windows: "vcpu", macos: "vcpu" },
   warpbuild: { linux: "vcpu", arm: "vcpu", windows: "vcpu", macos: "vcpu" },
   ubicloud: { standard: "vcpu", premium: "vcpu" },
+  // Per runner, by label: boat-xlarge costs more per vCPU than the other sizes.
+  boat: { "boat-small": "runner", boat: "runner", "boat-large": "runner", "boat-xlarge": "runner" },
   github: {
     "linux-1-core": "runner",
     "linux-2-core": "runner",
@@ -104,6 +106,12 @@ export const BASE_PRICES: PriceRow[] = [
   { provider: "ubicloud", rate: "standard", usd: vcpu(0.00125, 2), from: "2026-09-01" },
   { provider: "ubicloud", rate: "premium", usd: vcpu(0.0016, 2), from: "2025-05-01" },
   { provider: "ubicloud", rate: "premium", usd: vcpu(0.002, 2), from: "2026-09-01" },
+  // Boat, per hour billed by the second: $0.018 small, $0.036 default, $0.072 large, $0.20 xlarge.
+  // CI needs its $20 plan or higher. https://docs.boat.dev/pricing
+  { provider: "boat", rate: "boat-small", usd: 0.018 / 60, from: "2026-11-16" },
+  { provider: "boat", rate: "boat", usd: 0.036 / 60, from: "2026-11-16" },
+  { provider: "boat", rate: "boat-large", usd: 0.072 / 60, from: "2026-11-16" },
+  { provider: "boat", rate: "boat-xlarge", usd: 0.2 / 60, from: "2026-11-16" },
   // GitHub, in a private repo; standard runners are free in public ones.
   // https://docs.github.com/en/billing/reference/actions-runner-pricing
   { provider: "github", rate: "linux-1-core", usd: 0.002, from: "2026-11-11" },
@@ -230,6 +238,11 @@ export function runnerPlatform(provider: string, label: string): RunnerPlatform 
   return platform === "windows" && lower.includes("arm") ? "windows-arm" : platform;
 }
 
+// Whether a rate is priced per runner rather than per vCPU.
+const isRunnerRate = (provider: string, rate: string) =>
+  Object.hasOwn(RATES, provider) &&
+  (RATES[provider as PricedProvider] as Record<string, string>)[rate] === "runner";
+
 /** Whether RelayRunner knows a hosted provider's list prices, so it can count what jobs cost. */
 export const hasListPrices = (provider: string) =>
   provider !== "github" && Object.hasOwn(RATES, provider);
@@ -238,6 +251,14 @@ export const hasListPrices = (provider: string) =>
 const vcpusIn = (label: string, pattern: RegExp, fallback: number) => {
   const match = pattern.exec(label);
   return match ? Number(match[1]) : fallback;
+};
+
+// Boat's sizes, by label. https://docs.boat.dev/machines
+const BOAT_VCPUS: Partial<Record<string, number>> = {
+  "boat-small": 2,
+  boat: 4,
+  "boat-large": 8,
+  "boat-xlarge": 16,
 };
 
 // A label's rate and vCPU count, or null when RelayRunner can't tell.
@@ -256,6 +277,12 @@ function rateOf(provider: ProviderId, label: string): { rate: string; vcpus: num
     // warp-ubuntu-latest-x64-4x, warp-ubuntu-2404-arm64-2x-spot, warp-macos-15-arm64-6x
     case "warpbuild":
       return { rate: platformOf(label), vcpus: vcpusIn(label, /-(\d+)x(?=-|$)/, 2) };
+    // boat-small, boat, boat-large, boat-xlarge, each optionally followed by /options.
+    case "boat": {
+      const size = label.split("/")[0]!;
+      const vcpus = BOAT_VCPUS[size];
+      return vcpus ? { rate: size, vcpus } : null;
+    }
     // ubicloud, ubicloud-standard-4, ubicloud-standard-2-arm, ubicloud-premium-8-ubuntu-2404
     case "ubicloud":
       if (label.includes("gpu")) return null;
@@ -283,7 +310,8 @@ export function listRate(
   const sized = rateOf(provider, label);
   if (!sized) return null;
   const usd = book.usd(provider, sized.rate, at);
-  return usd === null ? null : usd * sized.vcpus;
+  if (usd === null) return null;
+  return isRunnerRate(provider, sized.rate) ? usd : usd * sized.vcpus;
 }
 
 /** How big a runner is: its vCPUs, and its memory when the label or the service says. */
@@ -329,6 +357,11 @@ export function runnerSize(provider: string, label: string): RunnerSize | null {
     case "namespace": {
       const match = /-(\d+)x(\d+)$/.exec(label);
       return match ? { vcpus: Number(match[1]), memoryGb: Number(match[2]) } : null;
+    }
+    // boat-small is 2 vCPU · 4 GB; each size up doubles both.
+    case "boat": {
+      const vcpus = BOAT_VCPUS[label.split("/")[0]!];
+      return vcpus ? { vcpus, memoryGb: vcpus * 2 } : null;
     }
     // The runner= part of its labels, such as 2cpu-linux-x64.
     case "runs-on": {
