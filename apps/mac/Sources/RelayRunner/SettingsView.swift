@@ -80,6 +80,7 @@ private struct ApplyNote: View {
 
 private struct AboutView: View {
   private let version = Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String
+  private let cliVersion = Bundle.main.object(forInfoDictionaryKey: "RRCLIVersion") as? String
 
   var body: some View {
     VStack(spacing: 10) {
@@ -87,7 +88,10 @@ private struct AboutView: View {
         .resizable()
         .frame(width: 96, height: 96)
       Text("RelayRunner").font(.title2.weight(.semibold))
-      if let version { Text("Version \(version)").foregroundStyle(.secondary) }
+      if let version {
+        Text(cliVersion.map { "Version \(version) (CLI \($0))" } ?? "Version \(version)")
+          .foregroundStyle(.secondary)
+      }
       HStack(spacing: 16) {
         Link("Website", destination: URL(string: "https://relayrunner.app")!)
         Link("Docs", destination: URL(string: "https://relayrunner.app/docs")!)

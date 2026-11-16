@@ -20,6 +20,9 @@
   <string>__VERSION__</string>
   <key>CFBundleVersion</key>
   <string>__VERSION__</string>
+  <!-- The bundled relayrunner CLI's version, shown in the About tab. -->
+  <key>RRCLIVersion</key>
+  <string>__CLI_VERSION__</string>
   <key>LSMinimumSystemVersion</key>
   <string>14.0</string>
   <!-- A menu bar app: no Dock icon or app menu. -->

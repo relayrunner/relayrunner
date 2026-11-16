@@ -1,11 +1,11 @@
-// Fails when a changeset names any package other than the published CLI.
-// `changeset version` throws on a name that isn't in the workspace, and the
-// private packages are never versioned, so either mistake would stop the
-// Release workflow after merge. This catches it in the PR instead.
+// Fails when a changeset names any package other than the two that are released: the CLI (npm)
+// and the Mac app (apps/mac/scripts/release.sh). `changeset version` throws on a name that isn't in
+// the workspace, and versioning a package nobody releases is a mistake, so either would surprise
+// someone after merge. This catches it in the PR instead.
 import { readdirSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 
-const PUBLISHED = "relayrunner";
+const RELEASED = ["relayrunner", "@relayrunner/mac"];
 const dir = join(import.meta.dirname, "..", ".changeset");
 
 const problems = [];
@@ -21,8 +21,10 @@ for (const file of readdirSync(dir)) {
     if (!line.trim()) continue;
     const match = /^\s*["']?([^"':]+)["']?\s*:\s*(major|minor|patch)\s*$/.exec(line);
     if (!match) problems.push(`${file}: can't read "${line.trim()}"`);
-    else if (match[1] !== PUBLISHED) {
-      problems.push(`${file}: names "${match[1]}", but only "${PUBLISHED}" is released`);
+    else if (!RELEASED.includes(match[1])) {
+      problems.push(
+        `${file}: names "${match[1]}", but only ${RELEASED.map((n) => `"${n}"`).join(" and ")} are released`,
+      );
     }
   }
 }

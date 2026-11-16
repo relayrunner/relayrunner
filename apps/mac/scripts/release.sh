@@ -1,13 +1,13 @@
 #!/usr/bin/env bash
-# Releases RelayRunner for Mac from this Mac, at the CLI's version, after that CLI release is out
-# (its v<version> GitHub release exists). Needs, in this Mac's keychain: a Developer ID Application
-# certificate, a notarytool profile named "relayrunner" (xcrun notarytool store-credentials) and
-# Sparkle's private key (setup-sparkle.sh's bin/generate_keys). Also gh, signed in.
+# Releases RelayRunner for Mac from this Mac, at apps/mac/package.json's version (changesets bump it),
+# from a commit on main. Needs, in this Mac's keychain: a Developer ID Application certificate, a
+# notarytool profile named "relayrunner" (xcrun notarytool store-credentials) and Sparkle's private
+# key (setup-sparkle.sh's bin/generate_keys). Also gh, signed in.
 #
 #   apps/mac/scripts/release.sh            build, notarize and publish
 #   apps/mac/scripts/release.sh --dry-run  build and notarize only, into apps/mac/dist
 #
-# Publishing uploads the DMG and the update zip to the v<version> release, bumps the cask in
+# Publishing makes the mac-v<version> GitHub release with the DMG and the update zip, bumps the cask in
 # relayrunner/homebrew-tap, and opens a PR with the new apps/site/public/mac/appcast.xml. Apps
 # see the update once that PR merges and the site deploys.
 set -euo pipefail
@@ -18,8 +18,9 @@ dry_run=false
 [[ "${1:-}" == "--dry-run" ]] && dry_run=true
 
 repo=relayrunner/relayrunner
-version="$(node -p "require('$root/apps/cli/package.json').version")"
-tag="v$version"
+version="$(node -p "require('./package.json').version")"
+cli_version="$(node -p "require('$root/apps/cli/package.json').version")"
+tag="mac-v$version"
 dmg="dist/RelayRunner-$version.dmg"
 zip="dist/RelayRunner-$version.zip"
 profile="${RELAYRUNNER_NOTARY_PROFILE:-relayrunner}"
@@ -33,11 +34,14 @@ xcrun notarytool history --keychain-profile "$profile" >/dev/null ||
   fail "no notarytool profile \"$profile\": run xcrun notarytool store-credentials $profile."
 if ! $dry_run; then
   gh auth status >/dev/null 2>&1 || fail "gh isn't signed in: run gh auth login."
-  gh release view "$tag" --repo "$repo" >/dev/null 2>&1 ||
-    fail "$repo has no $tag release yet. Release the CLI first, then run this from that commit."
+  gh release view "$tag" --repo "$repo" >/dev/null 2>&1 &&
+    fail "$tag is out already. Merge a changeset for @relayrunner/mac and its version PR first."
   [[ -z "$(git -C "$root" status --porcelain)" ]] || fail "the checkout has uncommitted changes."
+  git -C "$root" fetch --quiet origin main
+  git -C "$root" merge-base --is-ancestor HEAD origin/main ||
+    fail "this commit isn't on main. Release from main, after the version PR merges."
 fi
-echo "Version $version, signed by $identity"
+echo "Version $version (CLI $cli_version), signed by $identity"
 
 step "Building"
 RELAYRUNNER_SIGN_IDENTITY="$identity" bash scripts/build-app.sh
@@ -98,8 +102,14 @@ if $dry_run; then
   exit 0
 fi
 
-step "Uploading to the $tag release"
-gh release upload "$tag" "$dmg" "$zip" --repo "$repo" --clobber
+step "Making the $tag release"
+# Its notes are this version's section of apps/mac/CHANGELOG.md. Not marked latest, so the CLI's
+# release stays the one GitHub shows first.
+notes="$(awk -v v="## $version" '$0 == v { found=1; next } found && /^## / { exit } found { print }' \
+  CHANGELOG.md 2>/dev/null || true)"
+gh release create "$tag" "$dmg" "$zip" --repo "$repo" --target "$(git -C "$root" rev-parse HEAD)" \
+  --title "RelayRunner for Mac $version" --latest=false \
+  --notes "${notes:-RelayRunner for Mac $version}"$'\n\n'"Includes the relayrunner CLI $cli_version."
 
 step "Bumping the Homebrew cask"
 sha="$(shasum -a 256 "$dmg" | cut -d' ' -f1)"
@@ -111,7 +121,7 @@ cask "relayrunner" do
   version "$version"
   sha256 "$sha"
 
-  url "https://github.com/$repo/releases/download/v#{version}/RelayRunner-#{version}.dmg"
+  url "https://github.com/$repo/releases/download/mac-v#{version}/RelayRunner-#{version}.dmg"
   name "RelayRunner"
   desc "Take GitHub Actions jobs on your Mac from the menu bar"
   homepage "https://relayrunner.app/"
@@ -136,13 +146,13 @@ git -C "$tap" commit --quiet -m "relayrunner $version"
 git -C "$tap" push --quiet
 
 step "Opening the appcast PR"
-branch="release/mac-$tag"
+branch="release/$tag"
 git -C "$root" checkout -B "$branch"
 git -C "$root" add apps/site/public/mac/appcast.xml
 git -C "$root" commit --quiet -m "chore(mac): release RelayRunner for Mac $version"
 git -C "$root" push --quiet -u origin "$branch"
 gh pr create --repo "$repo" --head "$branch" --title "chore(mac): release RelayRunner for Mac $version" \
-  --body "Points the Mac app's update feed at $version ($tag). The DMG and update zip are on the [$tag release](https://github.com/$repo/releases/tag/$tag), and the Homebrew cask is bumped. Apps get the update once this merges and the site deploys."
+  --body "Points the Mac app's update feed at $version. The DMG and update zip are on the [$tag release](https://github.com/$repo/releases/tag/$tag), and the Homebrew cask is bumped. Apps get the update once this merges and the site deploys."
 
 echo
 echo "Released RelayRunner for Mac $version. Merge the appcast PR to ship the update to existing installs."

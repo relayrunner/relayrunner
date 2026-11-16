@@ -34,7 +34,7 @@ The API answers every failure with a code from `@relayrunner/errors`: `throw new
 
 ## Releasing the CLI
 
-The `relayrunner` npm package (`apps/cli`) is released with [changesets](https://github.com/changesets/changesets). A PR that changes what the CLI does for people who install it adds a `.changeset/*.md` file (`pnpm changeset`) naming `"relayrunner"`, the only package a changeset may name. Merging it makes the Release workflow open a `chore: version packages` PR, and merging that one publishes to npm. Don't bump `apps/cli/package.json` by hand. See [.changeset/README.md](.changeset/README.md).
+The `relayrunner` npm package (`apps/cli`) is released with [changesets](https://github.com/changesets/changesets). A PR that changes what the CLI does for people who install it adds a `.changeset/*.md` file (`pnpm changeset`) naming `"relayrunner"`. A PR that changes the Mac app (`apps/mac`) names `"@relayrunner/mac"`, which has its own version; those are the only two names a changeset may use. Merging it makes the Release workflow open a `chore: version packages` PR, and merging that one publishes the CLI to npm (the Mac app ships with `apps/mac/scripts/release.sh`). Don't bump either `package.json` version by hand. See [.changeset/README.md](.changeset/README.md).
 
 ## Agent skills
 
