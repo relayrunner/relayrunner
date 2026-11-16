@@ -1,19 +1,9 @@
 name: Mac app
 
+# Manual only for now: GitHub's hosted macOS pool often has no free
+# runner, and queued jobs are cancelled after 15 minutes.
 on:
-  pull_request:
-    paths:
-      - apps/mac/**
-      - apps/cli/**
-      - scripts/build-cli-binary.sh
-      - .github/workflows/mac.yml
-  push:
-    branches: [main]
-    paths:
-      - apps/mac/**
-      - apps/cli/**
-      - scripts/build-cli-binary.sh
-      - .github/workflows/mac.yml
+  workflow_dispatch:
 
 permissions:
   contents: read
