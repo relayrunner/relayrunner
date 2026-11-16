@@ -6,7 +6,8 @@ as the CLI, compiled into the app, so there's nothing else to install.
 The robot head in the menu bar opens a panel where you can turn it on and off, pause new jobs, see
 what's running, and open the dashboard. The head is faded while it isn't taking jobs and has a dot
 while a job runs. Settings has the same options as `connect`: jobs at once, each VM's CPUs and memory,
-macOS jobs, and local network access. The first time you turn it on, it asks who can run jobs here
+macOS jobs, and local network access. Its Workspaces tab picks which workspaces the Mac takes jobs
+from and who can run them, like `relayrunner workspaces` and `relayrunner share`. The first time you turn it on, it asks who can run jobs here
 and opens your browser to sign the Mac in. It shares `~/.relayrunner` with the CLI, so a Mac already
 connected with `npx relayrunner connect` is signed in already. Only one of them runs at a time.
 

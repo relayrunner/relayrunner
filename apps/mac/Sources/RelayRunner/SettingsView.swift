@@ -2,11 +2,12 @@ import AppKit
 import ServiceManagement
 import SwiftUI
 
-/// The Settings window: General, Linux VMs and About.
+/// The Settings window: General, Workspaces, Linux VMs and About.
 struct SettingsView: View {
   var body: some View {
     TabView {
       GeneralSettings().tabItem { Label("General", systemImage: "gearshape") }
+      WorkspaceSettings().tabItem { Label("Workspaces", systemImage: "person.2") }
       VMSettings().tabItem { Label("Linux VMs", systemImage: "shippingbox") }
       AboutView().tabItem { Label("About", systemImage: "info.circle") }
     }

@@ -164,3 +164,41 @@ enum CLI {
     return environment
   }
 }
+
+extension CLI {
+  struct Output {
+    var status: Int32
+    var stdout: Data
+    var stderr: String
+
+    /// What went wrong, in the CLI's words.
+    var problem: String {
+      let text = stderr.trimmingCharacters(in: .whitespacesAndNewlines)
+      return text.isEmpty ? "It stopped with exit code \(status)." : text
+    }
+  }
+
+  /// Runs one of the CLI's quick commands, such as `workspaces list --json`, and waits for it.
+  static func run(_ arguments: [String]) async throws -> Output {
+    guard let executable else { throw CocoaError(.fileNoSuchFile) }
+    return try await withCheckedThrowingContinuation { continuation in
+      let process = Process()
+      process.executableURL = executable
+      process.arguments = arguments
+      process.environment = environment
+      let stdout = Pipe()
+      let stderr = Pipe()
+      process.standardOutput = stdout
+      process.standardError = stderr
+      process.standardInput = FileHandle.nullDevice
+      process.terminationHandler = { process in
+        let out = stdout.fileHandleForReading.readDataToEndOfFile()
+        let err = stderr.fileHandleForReading.readDataToEndOfFile()
+        continuation.resume(
+          returning: Output(status: process.terminationStatus, stdout: out, stderr: String(decoding: err, as: UTF8.self))
+        )
+      }
+      do { try process.run() } catch { continuation.resume(throwing: error) }
+    }
+  }
+}
