@@ -16,8 +16,9 @@ import { cn } from "@/lib/utils";
 const SHOWN = 5;
 
 /**
- * The top of the Runners page: how many of the workspace's runners are running, idle or offline,
- * how many jobs are queued, and the jobs running and waiting right now, with why each is waiting.
+ * The top of the Runners page: how many jobs are running (on any runner, cloud ones too) and how
+ * many of the workspace's own runners they keep busy, how many are idle or offline, how many jobs
+ * are queued, and the jobs running and waiting right now, with why each is waiting.
  */
 export function RunnersNow({
   machines,
@@ -52,7 +53,11 @@ export function RunnersNow({
             stale && "text-muted-foreground",
           )}
         >
-          <Tile label="Running" value={counts.running} detail={`of ${counts.total} runners`}>
+          <Tile
+            label="Running jobs"
+            value={running.length}
+            detail={`${counts.running} of ${counts.total} ${counts.total === 1 ? "runner" : "runners"} busy`}
+          >
             <div aria-hidden className="mt-2 flex h-1 overflow-hidden rounded-full bg-well">
               <span className="bg-run" style={{ width: share(counts.running, counts.total) }} />
               <span className="bg-go" style={{ width: share(counts.idle, counts.total) }} />
