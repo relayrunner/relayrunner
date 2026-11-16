@@ -12,6 +12,8 @@ final class CLIProcess {
 
   let pid: pid_t
   private let input: FileHandle
+  /// Kept for as long as this is, since letting it go would close stdout's read end.
+  private let output: FileHandle
 
   /// `onLine` gets each line of stdout and `onExit` the exit code once stdout has closed too, both
   /// on the main queue.
@@ -69,7 +71,7 @@ final class CLIProcess {
     done.enter()
     done.enter()
     var buffer = Data()
-    let output = FileHandle(fileDescriptor: stdoutPipe[0], closeOnDealloc: true)
+    output = FileHandle(fileDescriptor: stdoutPipe[0], closeOnDealloc: true)
     output.readabilityHandler = { handle in
       let chunk = handle.availableData
       if chunk.isEmpty {
