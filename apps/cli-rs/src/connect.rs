@@ -387,11 +387,15 @@ async fn connect_machine(args: &Args, size: Wanted, slots: u32) -> Result<Option
         isolated: place,
         vm: vm_size,
     };
+    // Jobs still running when the connection ends; going offline waits for them.
+    let (jobs_tx, mut jobs_rx) = watch::channel(0usize);
     let run_job: RunJob = {
         let current = current.clone();
+        let jobs_tx = jobs_tx.clone();
         let isolated_only = use_vms && !args.macos;
         Arc::new(move |run: Run, slot: u32, report: Report| {
             let current = current.clone();
+            let jobs_tx = jobs_tx.clone();
             Box::pin(async move {
                 // A job sent for a VM never runs on this machine itself.
                 let launcher = {
@@ -417,7 +421,9 @@ async fn connect_machine(args: &Args, size: Wanted, slots: u32) -> Result<Option
                     (String::new(), String::new())
                 };
                 current.lock().unwrap().running += 1;
+                jobs_tx.send_modify(|n| *n += 1);
                 job::run(launcher, run, prefix, report, note).await;
+                jobs_tx.send_modify(|n| *n -= 1);
                 current.lock().unwrap().running -= 1;
             })
         })
@@ -434,13 +440,24 @@ async fn connect_machine(args: &Args, size: Wanted, slots: u32) -> Result<Option
     })
     .await;
     let _ = stop_tx.send(true);
-    signals.abort();
     if let Some(u) = updater {
         u.abort();
     }
     if let Some(c) = commands {
         c.abort();
     }
+    // A running job's runner finishes (or, after Ctrl-C, exits and cleans up) before this does,
+    // so its VM goes away. A second Ctrl-C still exits on the spot.
+    let running = *jobs_rx.borrow();
+    if running > 0 {
+        events::log(if running == 1 {
+            "Waiting for the running job to finish. Press Ctrl-C again to stop it now."
+        } else {
+            "Waiting for the running jobs to finish. Press Ctrl-C again to stop them now."
+        });
+        let _ = jobs_rx.wait_for(|n| *n == 0).await;
+    }
+    signals.abort();
 
     let (reason, message, code) = match &end {
         End::Stopped => ("stopped", None, 0),
