@@ -62,18 +62,25 @@ Public repositories never run on connected machines, since anyone could run code
 
 ## The dashboard
 
+**Runners.** See what's running and queued right now, which runners are busy, and anything that needs you, like an offline machine with a job waiting.
+
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset=".github/readme/runners-dark.png">
+  <img alt="The Runners page: running, idle and offline counts, a Needs attention list, jobs running now and queued, and each self-hosted runner's slots." src=".github/readme/runners-light.png">
+</picture>
+
 **Router.** Put your runners in order. Each job takes the first one that can run it.
 
 <picture>
   <source media="(prefers-color-scheme: dark)" srcset=".github/readme/router-dark.png">
-  <img alt="The Router page: GitHub-hosted while under 80% of included minutes, then self-hosted, then GitHub-hosted always." src=".github/readme/router-light.png">
+  <img alt="The Router page: GitHub-hosted while under 80% of included minutes, then self-hosted, then GitHub-hosted always, with the command to set up a repo and the workflows already routed." src=".github/readme/router-light.png">
 </picture>
 
-**History.** See every job, where it ran, how long it waited and how long it took.
+**History.** See every run and job, where it ran and how long it waited. A failed job shows the failing step, its log and whether a re-run will likely help.
 
 <picture>
   <source media="(prefers-color-scheme: dark)" srcset=".github/readme/history-dark.png">
-  <img alt="The History page's job list: each job's commit and author, the runner it ran on, its wait and run time, and its result." src=".github/readme/history-light.png">
+  <img alt="A failed job in History: it failed at Run pnpm check, looks like a type error that a re-run won't fix, with the log excerpt and step times." src=".github/readme/history-light.png">
 </picture>
 
 **Performance.** Compare how long jobs take on each runner.
