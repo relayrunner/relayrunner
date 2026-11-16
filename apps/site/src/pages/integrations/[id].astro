@@ -120,7 +120,13 @@ const faqData = {
 };
 ---
 
-<LandingPage title={`Route GitHub Actions jobs to ${who}`} {description} path={integrationPath(id)}>
+<LandingPage
+  title={`Route GitHub Actions jobs to ${who}`}
+  {description}
+  path={integrationPath(id)}
+  image={`/og${integrationPath(id)}.png`}
+  imageAlt={`relayrunner: your machines first, ${name} when they're busy. A runner order sends a queued job past busy machines to ${who}.`}
+>
   <script type="application/ld+json" slot="head" set:html={JSON.stringify(faqData)} />
 
   <section class="wrap sol-hero">

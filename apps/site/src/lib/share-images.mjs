@@ -1,5 +1,5 @@
 // Share images (Open Graph cards) and the README hero, drawn with Satori and rasterized with resvg.
-// The docs cards render at build time (src/pages/og/[...route].ts); the home card and the README
+// The docs and integration cards render at build time (src/pages/og/); the home card and the README
 // hero are written to disk by `pnpm images` (scripts/images.mjs). Paths are relative to apps/site,
 // where both run.
 import { readFileSync } from "node:fs";
@@ -119,8 +119,11 @@ const brand = (c, size = 26, suffix) =>
     suffix ? h("div", { color: c.mute, fontWeight: 500 }, suffix) : [],
   );
 
-/** The home page card: a queued job skipping busy machines for the next runner in the order. */
-export function homeCard() {
+/**
+ * The landing pages' card: a headline on the left (its `accent` lines in green), and on the right a
+ * queued job skipping busy machines for the next runner in the order.
+ */
+function routeCard({ headline, accent, sub, lanes, url, size = 72 }) {
   const c = dark;
   return h(
     "div",
@@ -144,19 +147,15 @@ export function homeCard() {
         {
           flexDirection: "column",
           marginTop: 40,
-          fontSize: 72,
+          fontSize: size,
           fontWeight: 700,
           lineHeight: 1.02,
           letterSpacing: "-0.045em",
         },
-        h("div", {}, "One router for"),
-        h("div", { color: c.go }, "every CI runner."),
+        h("div", {}, headline),
+        [accent].flat().map((line) => h("div", { color: c.go }, line)),
       ),
-      h(
-        "div",
-        { marginTop: 24, color: c.body, fontSize: 24, lineHeight: 1.45 },
-        "Run jobs on your own machines and send the rest to hosted runners when they're busy.",
-      ),
+      h("div", { marginTop: 24, color: c.body, fontSize: 24, lineHeight: 1.45 }, sub),
     ),
     h(
       "div",
@@ -178,16 +177,55 @@ export function homeCard() {
       ),
       h("div", { margin: "2px 0 2px 22px", width: 2, height: 18, background: c.go }),
       h("div", caps(c), "Runner order"),
-      lane(c, { n: 1, id: "machines", name: "Your machines", note: "Busy", state: "off" }),
-      lane(c, { n: 2, id: "blacksmith", name: "Blacksmith", note: "Takes the job", state: "on" }),
-      lane(c, { n: 3, id: "github", name: "GitHub-hosted" }),
+      lanes.map((l, i) => lane(c, { n: i + 1, ...l })),
     ),
     h(
       "div",
       { position: "absolute", left: 72, bottom: 40, color: c.mute, fontSize: 18, fontWeight: 500 },
-      "relayrunner.app",
+      url,
     ),
   );
+}
+
+const busyMachines = { id: "machines", name: "Your machines", note: "Busy", state: "off" };
+
+/** The home page card. */
+export function homeCard() {
+  return routeCard({
+    headline: "One router for",
+    accent: "every CI runner.",
+    sub: "Run jobs on your own machines and send the rest to hosted runners when they're busy.",
+    lanes: [
+      busyMachines,
+      { id: "blacksmith", name: "Blacksmith", note: "Takes the job", state: "on" },
+      { id: "github", name: "GitHub-hosted" },
+    ],
+    url: "relayrunner.app",
+  });
+}
+
+/**
+ * An integration page's card: your machines first, and this provider when they're busy. The
+ * runner order shows it taking the job, with GitHub-hosted runners after it (on GitHub's own card,
+ * nothing after it). `url` is the page's address without the scheme.
+ */
+export function integrationCard({ id, name, url }) {
+  const github = id === "github";
+  const runner = github ? "GitHub-hosted" : name;
+  return routeCard({
+    headline: "Your machines first.",
+    accent: [`${name} when`, "they're busy."],
+    size: 60,
+    sub: `relayrunner sends each job to your own machines and falls back to ${
+      github ? "GitHub-hosted runners" : name
+    } on its own. No workflow edits.`,
+    lanes: [
+      busyMachines,
+      { id, name: runner, note: "Takes the job", state: "on" },
+      ...(github ? [] : [{ id: "github", name: "GitHub-hosted" }]),
+    ],
+    url,
+  });
 }
 
 /** A docs page's card: its sidebar section, title, description and address. */

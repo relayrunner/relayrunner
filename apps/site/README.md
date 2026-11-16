@@ -4,7 +4,7 @@ The public site at [relayrunner.app](https://relayrunner.app): one [Astro](https
 
 ## Share images
 
-`src/lib/share-images.mjs` draws the site's share images and the README hero with [Satori](https://github.com/vercel/satori) and resvg. Each docs page gets its own share image at `/og/docs/<slug>.png`, drawn at build time from its section, title and description (`src/pages/og/[...route].ts`). The home page's `public/og-image.png` and the README hero in `.github/readme/` are files: after changing a layout, run `pnpm images` to write them again.
+`src/lib/share-images.mjs` draws the site's share images and the README hero with [Satori](https://github.com/vercel/satori) and resvg. Each docs page gets its own share image at `/og/docs/<slug>.png`, drawn at build time from its section, title and description (`src/pages/og/[...route].ts`). Each integration page gets one at `/og/integrations/<id>.png` that shows its provider taking the job after busy machines (`src/pages/og/integrations/[id].png.ts`). The home page's `public/og-image.png` and the README hero in `.github/readme/` are files: after changing a layout, run `pnpm images` to write them again.
 
 ## For agents
 

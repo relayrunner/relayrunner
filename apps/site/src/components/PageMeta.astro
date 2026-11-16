@@ -13,6 +13,8 @@ interface Props {
   path: string;
   /** Share text, when it should be shorter than the description. */
   shareDescription?: string;
+  /** The share image's path, a 1200×630 PNG. Defaults to the home page's. */
+  image?: string;
   /** Describes the share image. */
   imageAlt?: string;
 }
@@ -22,11 +24,12 @@ const {
   description,
   path,
   shareDescription = description,
+  image: imagePath = "/og-image.png",
   imageAlt = "relayrunner: one router for every CI runner. A runner order sends the next job to your machines, then GitHub-hosted, then Blacksmith.",
 } = Astro.props;
 const site = Astro.site!.origin;
 const url = `${site}${path}`;
-const image = `${site}/og-image.png`;
+const image = `${site}${imagePath}`;
 ---
 
 <meta charset="utf-8" />

@@ -16,15 +16,18 @@ interface Props {
   /** Meta description and share text. */
   description: string;
   path: string;
+  /** The share image's path and its description, when not the home page's. */
+  image?: string;
+  imageAlt?: string;
 }
 
-const { title, description, path } = Astro.props;
+const { title, description, path, image, imageAlt } = Astro.props;
 ---
 
 <!doctype html>
 <html lang="en">
   <head>
-    <PageMeta title={`${title} · relayrunner`} {description} {path}>
+    <PageMeta title={`${title} · relayrunner`} {description} {path} {image} {imageAlt}>
       <slot name="head" />
     </PageMeta>
   </head>
