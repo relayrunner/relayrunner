@@ -21,17 +21,15 @@ import {
 } from "@/components/ui/select";
 import { errorText } from "@/lib/api";
 import { authDisabled } from "@/lib/auth-client";
-import { forgetSession, signOut } from "@/lib/session";
+import { saveTimeZone, signOut } from "@/lib/session";
 import {
   browserTimeZone,
   chosenTimeZone,
+  formatDate,
   formatTime,
   offsetName,
-  setTimeZone,
   timeZones,
 } from "@/lib/time-zone";
-import { saveTimeZone } from "@/lib/time-zone-setting";
-import { formatDate } from "@/lib/time-zone";
 
 export const Route = createFileRoute("/_authed/_workspace/settings/account")({
   component: AccountSettingsPage,
@@ -119,10 +117,8 @@ function TimeZoneCard() {
     setPending(true);
     setError(null);
     try {
-      if (!authDisabled) await saveTimeZone(zone);
-      setTimeZone(zone);
-      // The zone rides the session, so read it again and re-render every page with the new zone.
-      forgetSession();
+      await saveTimeZone(zone);
+      // Re-renders every page with the new zone.
       await router.invalidate();
     } catch (caught) {
       setValue(previous);

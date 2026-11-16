@@ -2,7 +2,7 @@ import { api } from "@/lib/api";
 import { DAY_MS, type Environment, HOUR_MS, sampleJobTimes, type Stat } from "@/lib/job-times";
 import type { RunnerBucket } from "./runner-days.ts";
 import { type HistoryJob, sampleRunInfo } from "./runs.ts";
-import { zoneOffset } from "@/lib/time-zone";
+import { zoneOffset, zoneParts } from "@/lib/time-zone";
 
 export type RunnerJob = Omit<HistoryJob, "usage">;
 
@@ -73,10 +73,9 @@ export function sampleRunnerReport(
     start += bucketMs
   ) {
     // Busy in working hours on weekdays, quiet at night and at weekends.
-    const date = new Date(start);
-    const hour = date.getHours();
+    const { hour, weekday } = zoneParts(start);
     const busy =
-      (date.getDay() % 6 === 0 ? 0.5 : 1) *
+      (weekday % 6 === 0 ? 0.5 : 1) *
       (bucketMs === DAY_MS ? 14 : hour >= 9 && hour < 19 ? (bucketMs === HOUR_MS ? 6 : 2) : 0.4);
     const jobs = Math.round(random() * busy);
     const failures = jobs && random() > 0.8 ? 1 : 0;

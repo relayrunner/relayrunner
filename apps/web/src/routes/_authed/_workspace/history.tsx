@@ -17,6 +17,7 @@ import {
 import { RangePicker } from "@/components/range-picker";
 import { type Environments, fetchRunJobs, RunLink, RunSheet } from "@/components/run-sheet";
 import { StatusIcon } from "@/components/status-icon";
+import { SECTION_HEADING } from "@/components/ui/data-table";
 import {
   Select,
   SelectContent,
@@ -305,9 +306,7 @@ function WorkflowRuns({ loaded }: { loaded: RunsReport }) {
                 return (
                   <Fragment key={key}>
                     {day && day !== runDays[index - 1] && (
-                      <li className="bg-secondary/30 px-4 py-1.5 text-xs font-medium text-muted-foreground">
-                        {day}
-                      </li>
+                      <li className={SECTION_HEADING}>{day}</li>
                     )}
                     <RunRow
                       run={run}

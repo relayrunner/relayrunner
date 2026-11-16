@@ -226,7 +226,6 @@ export function DataTable<TData extends RowData>({
       ) : items.length > VIRTUALIZE_ABOVE ? (
         <VirtualRows
           items={items}
-          rows={rows}
           columns={headers.length}
           rowHeight={rowHeight}
           rowClassName={rowClassName}
@@ -242,10 +241,7 @@ export function DataTable<TData extends RowData>({
                 key={item.row.id}
                 row={item.row}
                 expanded={item.row.getIsExpanded()}
-                className={rowClassName?.(item.row, {
-                  previous: rows[item.index - 1],
-                  next: rows[item.index + 1],
-                })}
+                className={rowClassName?.(item.row, item.around)}
                 full={fullRow?.(item.row.original)}
               />
             ),
@@ -258,8 +254,15 @@ export function DataTable<TData extends RowData>({
 
 /** A row and where it sits among the rows, or a heading over the rows after it. */
 type Item<TData extends RowData> =
-  | { row: Row<typeof features, TData>; index: number }
+  | {
+      row: Row<typeof features, TData>;
+      around: { previous?: Row<typeof features, TData>; next?: Row<typeof features, TData> };
+    }
   | { section: string; key: string };
+
+/** A section heading's look, shared with lists that aren't tables (History's Workflows). */
+export const SECTION_HEADING =
+  "bg-secondary/30 px-4 py-1.5 text-xs font-medium text-muted-foreground";
 
 /** The rows with a heading above each top-level row that starts a new section. */
 function withSections<TData extends RowData>(
@@ -274,7 +277,7 @@ function withSections<TData extends RowData>(
       if (section !== last) items.push({ section, key: `section:${row.id}` });
       last = section;
     }
-    items.push({ row, index });
+    items.push({ row, around: { previous: rows[index - 1], next: rows[index + 1] } });
   });
   return items;
 }
@@ -291,8 +294,8 @@ function SectionRow({
   measure?: (element: HTMLTableRowElement | null) => void;
 }) {
   return (
-    <TableRow data-index={index} ref={measure} className="bg-secondary/30 hover:bg-secondary/30">
-      <TableCell colSpan={columns} className="py-1.5 text-xs font-medium text-muted-foreground">
+    <TableRow data-index={index} ref={measure} className="hover:bg-transparent">
+      <TableCell colSpan={columns} className={SECTION_HEADING}>
         {label}
       </TableCell>
     </TableRow>
@@ -344,14 +347,12 @@ const DataRow = memo(function DataRow<TData extends RowData>({
 // and columns keep their natural widths.
 function VirtualRows<TData extends RowData>({
   items: list,
-  rows,
   columns,
   rowHeight,
   rowClassName,
   fullRow,
 }: {
   items: Item<TData>[];
-  rows: Row<typeof features, TData>[];
   columns: number;
   rowHeight: number;
   rowClassName?: RowClassName<TData>;
@@ -398,13 +399,13 @@ function VirtualRows<TData extends RowData>({
             />
           );
         }
-        const { row, index } = item;
+        const { row, around } = item;
         return (
           <DataRow
             key={virtual.key}
             row={row}
             expanded={row.getIsExpanded()}
-            className={rowClassName?.(row, { previous: rows[index - 1], next: rows[index + 1] })}
+            className={rowClassName?.(row, around)}
             full={fullRow?.(row.original)}
             index={virtual.index}
             measure={virtualizer.measureElement}

@@ -1,4 +1,5 @@
 import { api } from "@/lib/api";
+import { zoneParts } from "@/lib/time-zone";
 
 /** Routing health across workspaces, for Admin › Routing (apps/api/src/admin-routing.ts). */
 export type RoutingRange = "24h" | "7d";
@@ -116,7 +117,7 @@ export function sampleRoutingHealth(range: RoutingRange): RoutingHealth {
   const from = to - count * bucketMs;
   const noise = (i: number) => Math.abs(Math.sin(i * 12.9898) * 43758.5453) % 1;
   const buckets: RoutingBucket[] = Array.from({ length: count }, (_, i) => {
-    const hour = new Date(from + i * bucketMs).getHours();
+    const { hour } = zoneParts(from + i * bucketMs);
     const busy = range === "7d" || (hour >= 9 && hour < 19);
     const spike = range === "24h" ? hour === 14 : i === count - 4;
     const scale = range === "24h" ? 1 : 5;

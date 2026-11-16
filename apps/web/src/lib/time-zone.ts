@@ -1,5 +1,5 @@
 // The time zone the dashboard shows times and days in: the one the person picked in Settings ›
-// Preferences, else the browser's. Every date the dashboard prints, every "today" and every day
+// Profile, else the browser's. Every date the dashboard prints, every "today" and every day
 // or hour a chart buckets by goes through here, so they all agree.
 
 // Kept free of imports so tests can load it, like time-range.ts.
@@ -14,7 +14,7 @@ let partsFormat: Intl.DateTimeFormat | undefined;
 export const browserTimeZone = () => Intl.DateTimeFormat().resolvedOptions().timeZone;
 
 /** The zone the dashboard uses now. */
-export const timeZone = () => chosen ?? browserTimeZone();
+const timeZone = () => chosen ?? browserTimeZone();
 
 /** The zone the person picked, or null when it follows the browser. */
 export const chosenTimeZone = () => chosen;
@@ -25,6 +25,7 @@ export function setTimeZone(zone: string | null | undefined) {
   if (next === chosen) return;
   chosen = next;
   formats.clear();
+  offsets.clear();
   partsFormat = undefined;
 }
 
@@ -61,45 +62,55 @@ type Parts = {
   weekday: number;
 };
 
-const WEEKDAYS = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
-
-/** The wall clock in the dashboard's zone at `ms`. */
-export function zoneParts(ms: number): Parts {
-  // English numerals and names whatever the locale, so they parse.
-  partsFormat ??= new Intl.DateTimeFormat("en-US", {
-    timeZone: timeZone(),
-    hourCycle: "h23",
-    year: "numeric",
-    month: "numeric",
-    day: "numeric",
-    hour: "numeric",
-    minute: "numeric",
-    weekday: "short",
-  });
-  const parts: Record<string, string> = {};
-  for (const { type, value } of partsFormat.formatToParts(ms)) parts[type] = value;
-  return {
-    year: Number(parts.year),
-    month: Number(parts.month),
-    day: Number(parts.day),
-    hour: Number(parts.hour) % 24,
-    minute: Number(parts.minute),
-    weekday: WEEKDAYS.indexOf(parts.weekday!),
-  };
-}
+// Zones only change offset on the hour or half hour, so the offset is read once per half hour
+// and the wall clock worked out from it, which keeps per-row headings and chart buckets cheap.
+const HALF_HOUR_MS = HOUR_MS / 2;
+const offsets = new Map<number, number>();
 
 /** The zone's minutes east of UTC at `ms`. */
 export function zoneOffset(ms: number) {
-  const p = zoneParts(ms);
-  const wall = Date.UTC(p.year, p.month - 1, p.day, p.hour, p.minute);
-  return Math.round((wall - Math.floor(ms / 60_000) * 60_000) / 60_000);
+  const slot = Math.floor(ms / HALF_HOUR_MS);
+  let offset = offsets.get(slot);
+  if (offset === undefined) {
+    // English numerals whatever the locale, so they parse.
+    partsFormat ??= new Intl.DateTimeFormat("en-US", {
+      timeZone: timeZone(),
+      hourCycle: "h23",
+      year: "numeric",
+      month: "numeric",
+      day: "numeric",
+      hour: "numeric",
+      minute: "numeric",
+    });
+    const at = slot * HALF_HOUR_MS;
+    const p: Record<string, string> = {};
+    for (const { type, value } of partsFormat.formatToParts(at)) p[type] = value;
+    const wall = Date.UTC(+p.year!, +p.month! - 1, +p.day!, +p.hour! % 24, +p.minute!);
+    offset = Math.round((wall - at) / 60_000);
+    if (offsets.size > 10_000) offsets.clear();
+    offsets.set(slot, offset);
+  }
+  return offset;
+}
+
+/** The wall clock in the dashboard's zone at `ms`. */
+export function zoneParts(ms: number): Parts {
+  const wall = new Date(ms + zoneOffset(ms) * 60_000);
+  return {
+    year: wall.getUTCFullYear(),
+    month: wall.getUTCMonth() + 1,
+    day: wall.getUTCDate(),
+    hour: wall.getUTCHours(),
+    minute: wall.getUTCMinutes(),
+    weekday: wall.getUTCDay(),
+  };
 }
 
 /**
  * The moment the zone's clock reads this wall time. Days and hours past the end of their unit roll
  * over, as with `Date.UTC`.
  */
-export function zonedTime(year: number, month: number, day: number, hour = 0) {
+function zonedTime(year: number, month: number, day: number, hour = 0) {
   const wall = Date.UTC(year, month - 1, day, hour);
   // The offset at the guess, then again at the answer in case a daylight saving change sits between.
   const guess = wall - zoneOffset(wall) * 60_000;

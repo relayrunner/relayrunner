@@ -10,8 +10,15 @@
 // before: to /login when signed out, to /agree for new terms, to /welcome without a workspace.
 import { resetAnalytics } from "@/lib/analytics";
 import { AppError } from "@relayrunner/errors";
-import { onApiError } from "@/lib/api";
-import { authClient, organization, readSession, type Session } from "@/lib/auth-client";
+import { api, onApiError } from "@/lib/api";
+import {
+  authClient,
+  authDisabled,
+  organization,
+  readSession,
+  type Session,
+} from "@/lib/auth-client";
+import { setTimeZone } from "./time-zone.ts";
 import { getCurrentWorkspace, type CurrentWorkspace } from "@/lib/workspace";
 
 /** How old a copy can get before the guards check it again, in the background. */
@@ -38,6 +45,18 @@ export function forgetSession() {
   sessionLoad = undefined;
   workspace = undefined;
   workspaceLoad = undefined;
+}
+
+/**
+ * Saves the zone the dashboard shows times in, or null for the browser's, and uses it from now on.
+ * The zone rides the session, so the copy is dropped and read again with it.
+ */
+export async function saveTimeZone(timeZone: string | null) {
+  if (!authDisabled) {
+    await api("/me/time-zone", { method: "PUT", body: JSON.stringify({ timeZone }) });
+  }
+  setTimeZone(timeZone);
+  forgetSession();
 }
 
 /** Signs out, and drops the copies so no page can render from them after. */
