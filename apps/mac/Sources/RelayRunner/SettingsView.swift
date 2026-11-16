@@ -18,6 +18,7 @@ struct SettingsView: View {
 private struct GeneralSettings: View {
   @AppStorage(AppSettings.Key.concurrency) private var concurrency = 0
   @State private var openAtLogin = SMAppService.mainApp.status == .enabled
+  @State private var checksForUpdates = Updates.shared.updater?.automaticallyChecksForUpdates ?? false
 
   var body: some View {
     Form {
@@ -26,6 +27,10 @@ private struct GeneralSettings: View {
           if on { try? SMAppService.mainApp.register() } else { try? SMAppService.mainApp.unregister() }
           openAtLogin = SMAppService.mainApp.status == .enabled
         }
+      if let updater = Updates.shared.updater {
+        Toggle("Check for updates automatically", isOn: $checksForUpdates)
+          .onChange(of: checksForUpdates) { _, on in updater.automaticallyChecksForUpdates = on }
+      }
       Picker("Jobs at once", selection: $concurrency) {
         Text("Automatic").tag(0)
         ForEach(1...8, id: \.self) { Text("\($0)").tag($0) }

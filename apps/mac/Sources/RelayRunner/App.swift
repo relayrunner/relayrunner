@@ -24,7 +24,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
   func applicationDidFinishLaunching(_ notification: Notification) {
     // A command written after `connect` exits would otherwise end the app.
     signal(SIGPIPE, SIG_IGN)
-    MainActor.assumeIsolated { Connection.shared.resumeIfWanted() }
+    MainActor.assumeIsolated {
+      Updates.shared.start()
+      Connection.shared.resumeIfWanted()
+    }
   }
 
   func applicationWillTerminate(_ notification: Notification) {

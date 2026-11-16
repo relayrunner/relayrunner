@@ -23,6 +23,9 @@ struct Panel: View {
         NSApp.activate(ignoringOtherApps: true)
         openSettings()
       }
+      if Updates.shared.updater != nil {
+        PanelRow("Check for Updates…", systemImage: "arrow.down.circle") { Updates.shared.checkForUpdates() }
+      }
       Divider().padding(.vertical, 5)
       PanelRow("Quit RelayRunner", systemImage: "power", shortcut: "q") { NSApp.terminate(nil) }
     }
