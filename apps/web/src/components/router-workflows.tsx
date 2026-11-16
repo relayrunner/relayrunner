@@ -1,11 +1,12 @@
 import { AUTO_SIZES } from "@relayrunner/providers";
 import { RUNNER_LABELS, type RunnerKey } from "@relayrunner/runner-order";
-import { CheckIcon, MinusIcon, PinIcon, XIcon } from "lucide-react";
+import { CheckIcon, ChevronRightIcon, MinusIcon, PinIcon, XIcon } from "lucide-react";
 import { useState } from "react";
 import { CopyCommand } from "@/components/add-runner";
 import { ProviderMark } from "@/components/providers";
 import { DOCS_URL } from "@/components/site-footer";
 import { Button } from "@/components/ui/button";
+import { Sheet, SheetContent, SheetDescription, SheetTitle } from "@/components/ui/sheet";
 import { HoverCard, HoverCardContent, HoverCardTrigger } from "@/components/ui/hover-card";
 import {
   Select,
@@ -33,8 +34,9 @@ type Workflow = Pick<SetupWorkflow, "repositoryId" | "repository" | "workflow"> 
 
 /**
  * The workspace's workflows by repo, from their runs in the last `days` days, and whether they go
- * through a relay. Under each workflow, its auto jobs (a relay set to `auto`) with the size and
- * first provider the Router picks for them. Owners and admins change those; each change saves.
+ * through a relay. A workflow with auto jobs (a relay set to `auto`) opens a panel listing them with
+ * the size and first provider the Router picks for each. Owners and admins change those there; each
+ * change saves.
  */
 export function RouterWorkflows({
   setup,
@@ -54,7 +56,10 @@ export function RouterWorkflows({
 }) {
   const [repo, setRepo] = useState(ALL);
   const [hintDismissed, setHintDismissed] = useState(() => readFlag(HINT_KEY));
+  // The workflow whose auto jobs the panel shows, by workflowKey.
+  const [openKey, setOpenKey] = useState<string | null>(null);
   const workflows = mergeWorkflows(setup?.workflows ?? [], jobs);
+  const open = workflows.find((w) => workflowKey(w) === openKey);
   if (workflows.length === 0) return null;
   const repos = [...new Set(workflows.map((w) => w.repository))].sort();
   const shown = repo === ALL ? repos : repos.filter((r) => r === repo);
@@ -99,12 +104,33 @@ export function RouterWorkflows({
           key={name}
           name={name}
           workflows={workflows.filter((w) => w.repository === name)}
-          defaultSize={defaultSize}
-          steps={steps}
-          editable={editable}
-          onChange={onChange}
+          onOpen={(w) => setOpenKey(workflowKey(w))}
         />
       ))}
+      <Sheet open={!!open} onOpenChange={(next) => !next && setOpenKey(null)}>
+        <SheetContent className="sm:max-w-lg">
+          {open && (
+            <div className="grid gap-4 px-5 py-5 sm:px-6">
+              <div className="grid gap-1">
+                <SheetTitle>{open.workflow}</SheetTitle>
+                <SheetDescription>{open.repository}</SheetDescription>
+              </div>
+              <p className="text-[13px] text-muted-foreground">
+                {editable
+                  ? "Pick each job's size and the provider it tries first. Changes apply to the next run."
+                  : "Owners and admins can change these."}
+              </p>
+              <AutoJobRows
+                jobs={open.jobs}
+                defaultSize={defaultSize}
+                steps={steps}
+                editable={editable}
+                onChange={onChange}
+              />
+            </div>
+          )}
+        </SheetContent>
+      </Sheet>
     </section>
   );
 }
@@ -112,14 +138,11 @@ export function RouterWorkflows({
 function RepoWorkflows({
   name,
   workflows,
-  ...rest
+  onOpen,
 }: {
   name: string;
   workflows: Workflow[];
-  defaultSize: number;
-  steps: RunnerKey[];
-  editable: boolean;
-  onChange: (job: AutoJob, setting: Pick<AutoJob, "size" | "first">) => Promise<void>;
+  onOpen: (workflow: Workflow) => void;
 }) {
   const [all, setAll] = useState(false);
   const shown = all ? workflows : workflows.slice(0, FIRST_ROWS);
@@ -128,7 +151,7 @@ function RepoWorkflows({
       <h3 className="text-[13px] font-semibold">{name}</h3>
       <ul className="grid gap-1.5 text-sm">
         {shown.map((w) => (
-          <li key={w.workflow} className="grid gap-1">
+          <li key={w.workflow}>
             <div className="flex min-w-0 items-center gap-2.5">
               {(w.routedRuns ?? 0) > 0 || w.jobs.length > 0 ? (
                 <CheckIcon aria-label="Routed" className="size-4 shrink-0 text-go" />
@@ -140,6 +163,16 @@ function RepoWorkflows({
               )}
               <span className="min-w-0 truncate">{w.workflow}</span>
               {(w.routedRuns ?? 0) > 0 && w.jobs.length === 0 && <PinnedNote />}
+              {w.jobs.length > 0 && (
+                <button
+                  type="button"
+                  onClick={() => onOpen(w)}
+                  className="flex shrink-0 items-center gap-0.5 rounded text-xs text-muted-foreground outline-none hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring"
+                >
+                  {plural(w.jobs.length, "auto job")}
+                  <ChevronRightIcon aria-hidden className="size-3.5" />
+                </button>
+              )}
               {w.runs !== undefined && (
                 <span
                   className="ml-auto shrink-0 text-xs text-muted-foreground tabular-nums"
@@ -153,7 +186,6 @@ function RepoWorkflows({
                 </span>
               )}
             </div>
-            {w.jobs.length > 0 && <AutoJobRows jobs={w.jobs} {...rest} />}
           </li>
         ))}
       </ul>
@@ -249,11 +281,11 @@ function AutoJobRows({
   onChange: (job: AutoJob, setting: Pick<AutoJob, "size" | "first">) => Promise<void>;
 }) {
   return (
-    <table className="mb-1 ml-6.5 max-w-xl text-[13px]">
+    <table className="w-full text-[13px]">
       <thead>
         <tr className="text-left text-xs text-muted-foreground">
-          <th className="w-36 py-1 pr-4 font-normal">Job</th>
-          <th className="w-48 py-1 pr-4 font-normal">Size</th>
+          <th className="py-1 pr-4 font-normal">Job</th>
+          <th className="py-1 pr-4 font-normal">Size</th>
           <th className="py-1 font-normal">Try first</th>
         </tr>
       </thead>
@@ -331,6 +363,8 @@ function AutoJobRows({
 
 // The setup's workflows with each one's auto jobs, plus any workflow only an auto job names (one
 // that hasn't finished a run in the window). Not routed first, then the busiest, as the setup sorts.
+const workflowKey = (w: Workflow) => `${w.repositoryId}:${w.workflow}`;
+
 function mergeWorkflows(workflows: SetupWorkflow[], jobs: AutoJob[]): Workflow[] {
   const key = (repositoryId: number, workflow: string) => `${repositoryId}:${workflow}`;
   const merged = new Map<string, Workflow>(
