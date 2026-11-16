@@ -63,3 +63,14 @@ pub fn now_iso() -> String {
         since.subsec_millis()
     )
 }
+
+/// The local time of day, such as 14:03:09, for log lines.
+pub fn local_time() -> String {
+    // SAFETY: localtime_r writes only into the struct we pass.
+    unsafe {
+        let now = libc::time(std::ptr::null_mut());
+        let mut tm: libc::tm = std::mem::zeroed();
+        libc::localtime_r(&now, &mut tm);
+        format!("{:02}:{:02}:{:02}", tm.tm_hour, tm.tm_min, tm.tm_sec)
+    }
+}

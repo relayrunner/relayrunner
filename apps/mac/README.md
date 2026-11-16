@@ -1,7 +1,7 @@
 # RelayRunner for Mac
 
-A menu bar app that takes jobs on your Mac with one switch. It runs the same `relayrunner connect`
-as the CLI, compiled into the app, so there's nothing else to install.
+A menu bar app that takes jobs on your Mac with one switch. It runs `relayrunner connect` from the
+Rust build of the CLI (`apps/cli-rs`), which is inside the app, so there's nothing else to install.
 
 The robot head in the menu bar opens a panel where you can turn it on and off, pause new jobs, see
 what's running, and open the dashboard. The head is faded while it isn't taking jobs and has a dot
@@ -13,7 +13,8 @@ connected with `npx relayrunner connect` is signed in already. Only one of them 
 
 ## Build
 
-You need Xcode (or its command line tools), Node and Bun on a Mac with Apple silicon.
+You need Xcode (or its command line tools), Node and Rust ([rustup](https://rustup.rs)) on a Mac
+with Apple silicon.
 
 ```sh
 apps/mac/scripts/build-app.sh

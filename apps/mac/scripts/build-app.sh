@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
-# Builds RelayRunner.app for Apple silicon into apps/mac/dist: the menu bar app, with the CLI
-# compiled into it (scripts/build-cli-binary.sh) and Sparkle for updates. Needs Xcode or its
-# command line tools, Node and Bun. The version is apps/mac/package.json's; the CLI's goes in
+# Builds RelayRunner.app for Apple silicon into apps/mac/dist: the menu bar app, with the Rust
+# build of the CLI (apps/cli-rs) inside it and Sparkle for updates. Needs Xcode or its command line
+# tools, Node and Rust (rustup). The version is apps/mac/package.json's; the CLI's goes in
 # Info.plist too, for the About tab.
 #
 # Signed ad hoc, so it runs on the Mac that built it, unless RELAYRUNNER_SIGN_IDENTITY names a
@@ -16,7 +16,7 @@ cli_version="$(node -p "require('$root/apps/cli/package.json').version")"
 identity="${RELAYRUNNER_SIGN_IDENTITY:--}"
 sparkle="$(bash scripts/setup-sparkle.sh)"
 
-bash "$root/scripts/build-cli-binary.sh" bun-darwin-arm64
+cargo build --release --locked --manifest-path "$root/apps/cli-rs/Cargo.toml" --target aarch64-apple-darwin
 swift build -c release --arch arm64
 bin="$(swift build -c release --arch arm64 --show-bin-path)"
 
@@ -24,7 +24,7 @@ app=dist/RelayRunner.app
 rm -rf "$app"
 mkdir -p "$app/Contents/MacOS" "$app/Contents/Helpers" "$app/Contents/Resources" "$app/Contents/Frameworks"
 cp "$bin/RelayRunner" "$app/Contents/MacOS/RelayRunner"
-cp "$root/apps/cli/dist-bin/relayrunner-darwin-arm64" "$app/Contents/Helpers/relayrunner"
+cp "$root/apps/cli-rs/target/aarch64-apple-darwin/release/relayrunner" "$app/Contents/Helpers/relayrunner"
 cp Resources/AppIcon.icns "$app/Contents/Resources/AppIcon.icns"
 ditto "$sparkle/Sparkle.framework" "$app/Contents/Frameworks/Sparkle.framework"
 sed -e "s/__VERSION__/$version/g" -e "s/__CLI_VERSION__/$cli_version/g" Info.plist >"$app/Contents/Info.plist"
@@ -45,8 +45,7 @@ framework="$app/Contents/Frameworks/Sparkle.framework/Versions/B"
 "${sign[@]}" "$framework/Autoupdate"
 "${sign[@]}" "$framework/Updater.app"
 "${sign[@]}" "$app/Contents/Frameworks/Sparkle.framework"
-"${sign[@]}" --entitlements scripts/helper.entitlements --identifier app.relayrunner.mac.cli \
-  "$app/Contents/Helpers/relayrunner"
+"${sign[@]}" --identifier app.relayrunner.mac.cli "$app/Contents/Helpers/relayrunner"
 "${sign[@]}" "$app"
 codesign --verify --deep --strict "$app"
 echo "Built $PWD/$app ($version, CLI $cli_version)"

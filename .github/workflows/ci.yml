@@ -36,7 +36,17 @@ jobs:
       - run: pnpm changeset:lint
       - name: Verify npm package
         run: bash scripts/smoke-npm-package.sh
-      # The single-file CLI that apps bundle (the Mac menu bar app).
+      # The Rust build of the CLI, which the Mac menu bar app bundles.
+      - name: Test the Rust CLI
+        working-directory: apps/cli-rs
+        run: |
+          cargo fmt --check
+          cargo clippy --locked --all-targets -- -D warnings
+          cargo test --locked
+          cargo build --locked --release
+      - name: Verify the Rust CLI
+        run: bash scripts/smoke-cli-binary.sh apps/cli-rs/target/release/relayrunner
+      # The single-file Bun build of the TypeScript CLI.
       - uses: oven-sh/setup-bun@v2
         with:
           bun-version: 1.4.4

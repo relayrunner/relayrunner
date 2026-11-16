@@ -6,14 +6,36 @@ use serde_json::Value;
 
 pub const PROTOCOL_VERSION: u32 = 1;
 
-#[derive(Serialize, Clone, Debug)]
+#[derive(Serialize, Clone, Debug, Default)]
 #[serde(rename_all = "camelCase")]
 pub struct Device {
     pub kind: &'static str,
     #[serde(skip_serializing_if = "Option::is_none")]
+    pub model: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub model_id: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub chip: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub cpu_cores: Option<u32>,
     #[serde(skip_serializing_if = "Option::is_none")]
+    pub memory_mb: Option<u64>,
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub os_version: Option<String>,
+}
+
+/// Where a VM-per-job place runs, beside the machine's own OS.
+#[derive(Serialize, Clone, Debug)]
+pub struct Place {
+    pub os: &'static str,
+    pub arch: &'static str,
+}
+
+#[derive(Serialize, Clone, Debug)]
+#[serde(rename_all = "camelCase")]
+pub struct VmSize {
+    pub cpus: u32,
+    pub memory_gb: u32,
 }
 
 #[derive(Serialize, Clone, Debug)]
@@ -27,6 +49,10 @@ pub struct Hello {
     pub device: Device,
     pub rotates_token: bool,
     pub slots: u32,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub isolated: Option<Place>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub vm: Option<VmSize>,
 }
 
 #[derive(Serialize, Deserialize, Clone, Debug, PartialEq)]
@@ -45,6 +71,21 @@ pub struct JobUpdate {
     pub state: JobState,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub message: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub usage: Option<JobUsage>,
+}
+
+/// CPU (a 0-1 share of what the job could use) and memory, sampled while the runner ran.
+#[derive(Serialize, Clone, Debug, PartialEq)]
+#[serde(rename_all = "camelCase")]
+pub struct JobUsage {
+    pub cpu_p95: f64,
+    pub cpu_peak: f64,
+    pub memory_p95_mb: u64,
+    pub memory_peak_mb: u64,
+    pub cpus: u32,
+    pub memory_mb: u64,
+    pub samples: u32,
 }
 
 #[derive(Serialize, Debug)]
@@ -128,6 +169,102 @@ pub fn parse_gateway(frame: &str) -> Result<GatewayMessage, (&'static str, Strin
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    fn fixtures() -> Value {
+        let text = include_str!("../../../packages/machine-protocol/fixtures.json");
+        serde_json::from_str(text).unwrap()
+    }
+
+    fn same(name: &str, message: MachineMessage) {
+        let sent: Value = serde_json::from_str(&message.encode()).unwrap();
+        assert_eq!(sent, fixtures()["machine"][name], "{name}");
+    }
+
+    #[test]
+    fn sends_the_shared_machine_fixtures() {
+        same(
+            "hello",
+            MachineMessage::Hello(Hello {
+                machine_id: "mch_1".into(),
+                os: "macos",
+                arch: "arm64",
+                runner_version: "2.330.0".into(),
+                cli_version: "0.13.0".into(),
+                device: Device {
+                    kind: "laptop",
+                    model: Some("MacBook Pro".into()),
+                    model_id: Some("Mac15,9".into()),
+                    chip: Some("Apple M3 Pro".into()),
+                    cpu_cores: Some(12),
+                    memory_mb: Some(36864),
+                    os_version: Some("macOS 15.1".into()),
+                },
+                rotates_token: true,
+                slots: 2,
+                isolated: Some(Place {
+                    os: "linux",
+                    arch: "arm64",
+                }),
+                vm: Some(VmSize {
+                    cpus: 4,
+                    memory_gb: 8,
+                }),
+            }),
+        );
+        same(
+            "statusIdle",
+            MachineMessage::Status {
+                state: "idle",
+                running: 0,
+                runner_version: None,
+            },
+        );
+        same(
+            "statusBusy",
+            MachineMessage::Status {
+                state: "busy",
+                running: 1,
+                runner_version: Some("2.331.0".into()),
+            },
+        );
+        let job = |state, message: Option<&str>, usage| {
+            MachineMessage::Job(JobUpdate {
+                route_id: "rt_1".into(),
+                state,
+                message: message.map(Into::into),
+                usage,
+            })
+        };
+        same("jobStarted", job(JobState::Started, None, None));
+        let usage = JobUsage {
+            cpu_p95: 0.5,
+            cpu_peak: 0.75,
+            memory_p95_mb: 900,
+            memory_peak_mb: 1200,
+            cpus: 4,
+            memory_mb: 8192,
+            samples: 12,
+        };
+        same("jobFinished", job(JobState::Finished, None, Some(usage)));
+        same(
+            "jobFailed",
+            job(JobState::Failed, Some("The runner exited with 1"), None),
+        );
+        same("tokenSaved", MachineMessage::TokenSaved);
+        assert_eq!(
+            fixtures()["machine"].as_object().unwrap().len(),
+            7,
+            "a machine fixture isn't checked here"
+        );
+    }
+
+    #[test]
+    fn reads_every_shared_gateway_fixture() {
+        for (name, message) in fixtures()["gateway"].as_object().unwrap() {
+            let parsed = parse_gateway(&message.to_string());
+            assert!(parsed.is_ok(), "{name}: {parsed:?}");
+        }
+    }
 
     #[test]
     fn encodes_with_version() {

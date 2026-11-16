@@ -1,17 +1,19 @@
 [package]
 name = "relayrunner"
-version = "0.0.0-spike"
+version = "0.0.0"
 edition = "2024"
 publish = false
-description = "Spike: `relayrunner connect --events` in Rust, to measure size and effort."
+description = "The relayrunner CLI in Rust: connect, workspaces and share, as the Mac app runs them."
 license = "Apache-2.0"
 
 [dependencies]
 base64 = "0.22"
 fastrand = "2"
 futures-util = { version = "0.3", default-features = false, features = ["sink", "std"] }
+libc = "0.2"
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
+sha2 = "0.10"
 tokio = { version = "1", features = [
   "rt",
   "macros",
@@ -25,9 +27,13 @@ tokio = { version = "1", features = [
 ] }
 tokio-tungstenite = { version = "0.30", default-features = false, features = [
   "connect",
-  "rustls-tls-webpki-roots",
+  "rustls-tls-native-roots",
 ] }
-ureq = { version = "3", default-features = false, features = ["rustls", "json"] }
+ureq = { version = "3", default-features = false, features = [
+  "rustls",
+  "json",
+  "platform-verifier",
+] }
 url = "2"
 
 [profile.release]

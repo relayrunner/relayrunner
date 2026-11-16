@@ -1,0 +1,13 @@
+// The CLI's version is apps/cli/package.json's, so the TypeScript and Rust builds of one commit
+// say the same version to the gateway and in `--version`.
+fn main() {
+    let path = "../cli/package.json";
+    println!("cargo:rerun-if-changed={path}");
+    let text = std::fs::read_to_string(path).expect("apps/cli/package.json");
+    let after = text
+        .split("\"version\"")
+        .nth(1)
+        .expect("a version in apps/cli/package.json");
+    let version = after.split('"').nth(1).expect("a quoted version");
+    println!("cargo:rustc-env=RELAYRUNNER_VERSION={version}");
+}

@@ -1,0 +1,78 @@
+{
+  "$comment": "Messages both clients must agree on. messages.test.ts checks each one against the schemas, and apps/cli-rs checks that it sends exactly the machine messages and reads every gateway message.",
+  "machine": {
+    "hello": {
+      "v": 1,
+      "type": "hello",
+      "machineId": "mch_1",
+      "os": "macos",
+      "arch": "arm64",
+      "runnerVersion": "2.330.0",
+      "cliVersion": "0.13.0",
+      "device": {
+        "kind": "laptop",
+        "model": "MacBook Pro",
+        "modelId": "Mac15,9",
+        "chip": "Apple M3 Pro",
+        "cpuCores": 12,
+        "memoryMb": 36864,
+        "osVersion": "macOS 15.1"
+      },
+      "rotatesToken": true,
+      "slots": 2,
+      "isolated": { "os": "linux", "arch": "arm64" },
+      "vm": { "cpus": 4, "memoryGb": 8 }
+    },
+    "statusIdle": { "v": 1, "type": "status", "state": "idle", "running": 0 },
+    "statusBusy": {
+      "v": 1,
+      "type": "status",
+      "state": "busy",
+      "running": 1,
+      "runnerVersion": "2.331.0"
+    },
+    "jobStarted": { "v": 1, "type": "job", "routeId": "rt_1", "state": "started" },
+    "jobFinished": {
+      "v": 1,
+      "type": "job",
+      "routeId": "rt_1",
+      "state": "finished",
+      "usage": {
+        "cpuP95": 0.5,
+        "cpuPeak": 0.75,
+        "memoryP95Mb": 900,
+        "memoryPeakMb": 1200,
+        "cpus": 4,
+        "memoryMb": 8192,
+        "samples": 12
+      }
+    },
+    "jobFailed": {
+      "v": 1,
+      "type": "job",
+      "routeId": "rt_1",
+      "state": "failed",
+      "message": "The runner exited with 1"
+    },
+    "tokenSaved": { "v": 1, "type": "token_saved" }
+  },
+  "gateway": {
+    "run": { "v": 1, "type": "run", "routeId": "rt_1", "jitConfig": "e30=" },
+    "runIsolated": {
+      "v": 1,
+      "type": "run",
+      "routeId": "rt_2",
+      "jitConfig": "e30=",
+      "isolated": true
+    },
+    "pausedBy": { "v": 1, "type": "paused", "paused": true, "by": "Sam" },
+    "resumedHere": { "v": 1, "type": "paused", "paused": false, "by": null },
+    "token": { "v": 1, "type": "token", "token": "rrm_next" },
+    "error": {
+      "v": 1,
+      "type": "error",
+      "code": "version_mismatch",
+      "message": "expected protocol version 1, got 2"
+    }
+  }
+}

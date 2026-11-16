@@ -3,12 +3,13 @@
 
 use crate::credentials::{self, Credentials};
 use crate::events;
-use crate::job;
 use crate::protocol::{GatewayMessage, Hello, JobState, JobUpdate, MachineMessage, parse_gateway};
 use futures_util::{SinkExt, StreamExt};
 use serde_json::json;
 use std::collections::BTreeSet;
-use std::path::PathBuf;
+use std::future::Future;
+use std::pin::Pin;
+use std::sync::Arc;
 use std::time::Duration;
 use tokio::sync::{mpsc, watch};
 use tokio_tungstenite::tungstenite::client::IntoClientRequest;
@@ -26,7 +27,10 @@ const RECONNECT_SPREAD_MS: u64 = 10_000;
 
 pub enum End {
     Stopped,
-    Revoked,
+    /// `online` says whether it ever came online this time.
+    Revoked {
+        online: bool,
+    },
     Replaced,
     Rejected(String),
 }
@@ -37,10 +41,27 @@ enum FromJob {
     Done(u32),
 }
 
+/// A job the gateway sent.
+#[derive(Clone, Debug)]
+pub struct Run {
+    pub route_id: String,
+    pub jit_config: String,
+    /// Run it in the machine's VM, not on the machine itself.
+    pub isolated: bool,
+}
+
+pub type Report = Arc<dyn Fn(JobUpdate) + Send + Sync>;
+/// Runs one job in the given slot (from 1) and reports its progress.
+pub type RunJob =
+    Arc<dyn Fn(Run, u32, Report) -> Pin<Box<dyn Future<Output = ()> + Send>> + Send + Sync>;
+
 pub struct Options {
     pub credentials: Credentials,
     pub hello: Hello,
-    pub slot_dirs: Vec<PathBuf>,
+    pub slots: u32,
+    pub run_job: RunJob,
+    /// The runner version new jobs run on now, which changes when the runner updates.
+    pub runner_version: Arc<dyn Fn() -> String + Send + Sync>,
     pub user_agent: String,
     pub stop: watch::Receiver<bool>,
 }
@@ -61,11 +82,14 @@ struct Conn {
     live: Live,
     jobs_tx: mpsc::UnboundedSender<FromJob>,
     gateway_error: String,
+    /// The runner version the gateway last heard on this socket.
+    said_version: String,
+    online: bool,
 }
 
 impl Conn {
     fn emit(&mut self, kind: &str, fields: serde_json::Value) {
-        events::emit(kind, fields.clone());
+        say(kind, fields.clone());
         let mut next = self.live.clone();
         match kind {
             "connecting" if next.link == "online" => next.link = "reconnecting",
@@ -81,25 +105,32 @@ impl Conn {
     }
 
     fn emit_state(&self) {
-        events::emit(
+        say(
             "state",
             json!({ "link": self.live.link, "paused": self.live.paused, "jobs": self.live.jobs }),
         );
     }
 
-    fn status(&self) -> MachineMessage {
+    /// A status, carrying the runner version only when it changed since the gateway heard it.
+    fn status(&mut self) -> MachineMessage {
+        let version = (self.options.runner_version)();
+        let changed = version != self.said_version;
+        if changed {
+            self.said_version.clone_from(&version);
+        }
         MachineMessage::Status {
             state: if self.busy.is_empty() { "idle" } else { "busy" },
             running: self.busy.len() as u32,
-            runner_version: None,
+            runner_version: changed.then_some(version),
         }
     }
 
-    fn start_job(&mut self, route_id: String, jit_config: String) -> Option<MachineMessage> {
+    fn start_job(&mut self, run: Run) -> Option<MachineMessage> {
+        let route_id = run.route_id.clone();
         let slot = (1..).find(|s| !self.busy.contains(s)).unwrap();
-        if slot as usize > self.options.slot_dirs.len() {
+        if slot > self.options.slots {
             let running = self.busy.len();
-            events::emit(
+            say(
                 "run-refused",
                 json!({ "routeId": route_id, "running": running }),
             );
@@ -112,20 +143,21 @@ impl Conn {
                 route_id,
                 state: JobState::Failed,
                 message: Some(message),
+                usage: None,
             }));
         }
-        events::emit("run", json!({ "routeId": route_id, "slot": slot }));
+        say("run", json!({ "routeId": route_id, "slot": slot }));
         self.live.jobs.push(route_id.clone());
         self.emit_state();
         self.busy.insert(slot);
-        let dir = self.options.slot_dirs[slot as usize - 1].clone();
         let tx = self.jobs_tx.clone();
+        let report_tx = tx.clone();
+        let report: Report = Arc::new(move |u| {
+            let _ = report_tx.send(FromJob::Update(u, slot));
+        });
+        let job = (self.options.run_job)(run, slot, report);
         tokio::spawn(async move {
-            let report_tx = tx.clone();
-            job::run(dir, slot, route_id, jit_config, move |u| {
-                let _ = report_tx.send(FromJob::Update(u, slot));
-            })
-            .await;
+            job.await;
             let _ = tx.send(FromJob::Done(slot));
         });
         Some(self.status())
@@ -135,7 +167,7 @@ impl Conn {
     fn on_job(&mut self, news: FromJob) -> MachineMessage {
         match news {
             FromJob::Update(update, slot) => {
-                events::emit("job", json!({ "update": update, "slot": slot }));
+                say("job", json!({ "update": update, "slot": slot }));
                 if update.state != JobState::Started {
                     self.live.jobs.retain(|id| *id != update.route_id);
                     self.emit_state();
@@ -148,6 +180,74 @@ impl Conn {
             }
         }
     }
+}
+
+/// An event for the app, and a line for a person.
+fn say(kind: &str, fields: serde_json::Value) {
+    let at = crate::events::local_time();
+    let slot = fields["slot"]
+        .as_u64()
+        .map(|s| format!(" (slot {s})"))
+        .unwrap_or_default();
+    let text = |key: &str| fields[key].as_str().unwrap_or_default().to_string();
+    let line = match kind {
+        "connecting" if fields["attempt"] == 1 => Some(format!("{at} Connecting…")),
+        "connected" => Some(format!("{at} Online. Waiting for jobs.")),
+        "disconnected" => {
+            let reason = text("reason");
+            let secs = fields["retryInMs"].as_u64().unwrap_or(0).div_ceil(1000);
+            let reason = if reason.is_empty() {
+                String::new()
+            } else {
+                format!(" {reason}")
+            };
+            Some(format!(
+                "{at} Disconnected ({}{reason}). Retrying in {secs}s.",
+                fields["code"]
+            ))
+        }
+        "gateway-error" => Some(format!("{at} Gateway: {}", text("message"))),
+        "run" => Some(format!("{at} Starting job {}{slot}", text("routeId"))),
+        "paused" => {
+            let by = fields["by"]
+                .as_str()
+                .map(|b| format!(" by {b}"))
+                .unwrap_or_default();
+            Some(if fields["paused"] == true {
+                format!(
+                    "{at} Paused{by}. Staying online, but new jobs skip this machine until it's resumed."
+                )
+            } else {
+                format!("{at} Resumed{by}. Waiting for jobs.")
+            })
+        }
+        "token-not-saved" => Some(format!(
+            "{at} Couldn't save the machine's new token ({}). Keeping the old one.",
+            text("message")
+        )),
+        "run-refused" => Some(format!(
+            "{at} Turned down job {}: already running {}.",
+            text("routeId"),
+            fields["running"]
+        )),
+        "job" => {
+            let update = &fields["update"];
+            let message = update["message"]
+                .as_str()
+                .map(|m| format!(": {m}"))
+                .unwrap_or_default();
+            Some(format!(
+                "{at} Job {}{slot} {}{message}",
+                update["routeId"].as_str().unwrap_or_default(),
+                update["state"].as_str().unwrap_or_default()
+            ))
+        }
+        _ => None,
+    };
+    if let Some(line) = line {
+        events::log(&line);
+    }
+    events::emit(kind, fields);
 }
 
 fn backoff(attempt: u32) -> u64 {
@@ -180,6 +280,8 @@ pub async fn run(options: Options) -> End {
         },
         jobs_tx,
         gateway_error: String::new(),
+        said_version: String::new(),
+        online: false,
     };
 
     let mut attempt = 0;
@@ -195,7 +297,11 @@ pub async fn run(options: Options) -> End {
             attempt = 1;
         }
         match code {
-            CLOSE_REVOKED => return End::Revoked,
+            CLOSE_REVOKED => {
+                return End::Revoked {
+                    online: conn.online,
+                };
+            }
             CLOSE_REPLACED => return End::Replaced,
             CLOSE_POLICY => {
                 let message = [&conn.gateway_error, &reason]
@@ -203,7 +309,11 @@ pub async fn run(options: Options) -> End {
                     .find(|s| !s.is_empty());
                 return End::Rejected(message.cloned().unwrap_or_else(|| "protocol error".into()));
             }
-            _ if unauthorized => return End::Revoked,
+            _ if unauthorized => {
+                return End::Revoked {
+                    online: conn.online,
+                };
+            }
             _ => {}
         }
         let retry = if opened {
@@ -266,9 +376,12 @@ async fn session(
         }
     };
 
+    conn.online = true;
     conn.emit("connected", json!({}));
     let mut hello = conn.options.hello.clone();
-    hello.slots = conn.options.slot_dirs.len() as u32;
+    hello.slots = conn.options.slots;
+    conn.said_version = (conn.options.runner_version)();
+    hello.runner_version.clone_from(&conn.said_version);
     let mut first = vec![MachineMessage::Hello(hello), conn.status()];
     first.append(&mut conn.pending);
     for message in first {
@@ -295,16 +408,7 @@ async fn session(
                         None
                     }
                     Ok(GatewayMessage::Run { route_id, jit_config, isolated }) => {
-                        if isolated {
-                            // VMs (isolated.ts) aren't part of the spike.
-                            Some(MachineMessage::Job(JobUpdate {
-                                route_id,
-                                state: JobState::Failed,
-                                message: Some("This build can't run jobs in a VM yet.".into()),
-                            }))
-                        } else {
-                            conn.start_job(route_id, jit_config)
-                        }
+                        conn.start_job(Run { route_id, jit_config, isolated })
                     }
                     Ok(GatewayMessage::Paused { paused, by }) => {
                         conn.emit("paused", json!({ "paused": paused, "by": by }));

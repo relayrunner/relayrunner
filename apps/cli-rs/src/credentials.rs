@@ -12,7 +12,7 @@ pub struct Machine {
     pub name: String,
 }
 
-#[derive(Deserialize, Clone, Debug)]
+#[derive(Deserialize, Serialize, Clone, Debug)]
 pub struct Credentials {
     pub server: String,
     pub machine: Machine,
@@ -34,9 +34,13 @@ fn sends_token_safely(server: &str) -> bool {
     let Ok(url) = url::Url::parse(server) else {
         return false;
     };
-    url.scheme() == "https"
-        || (url.scheme() == "http"
-            && matches!(url.host_str(), Some("localhost" | "127.0.0.1" | "[::1]")))
+    let loopback = match url.host() {
+        Some(url::Host::Domain(d)) => d == "localhost",
+        Some(url::Host::Ipv4(ip)) => ip.is_loopback(),
+        Some(url::Host::Ipv6(ip)) => ip.is_loopback(),
+        None => false,
+    };
+    url.scheme() == "https" || (url.scheme() == "http" && loopback)
 }
 
 /// The stored credentials, or None when there are none or they don't read.
@@ -49,6 +53,35 @@ pub fn read() -> std::io::Result<Option<Credentials>> {
     Ok(serde_json::from_str::<Credentials>(&text).ok().filter(|c| {
         !c.machine.id.is_empty() && !c.token.is_empty() && sends_token_safely(&c.server)
     }))
+}
+
+/// Saves a new sign-in in place of whatever was there.
+pub fn save(credentials: &Credentials) -> std::io::Result<()> {
+    write(&serde_json::to_value(credentials)?)
+}
+
+pub fn delete() {
+    let _ = std::fs::remove_file(path());
+}
+
+pub fn path_display() -> String {
+    path().display().to_string()
+}
+
+/// The URL's origin, or a USAGE error for anything but https, or http to this computer.
+pub fn normalize_server(value: &str) -> Result<String, crate::error::Error> {
+    let usage = |m: String| crate::error::Error::new("USAGE", m);
+    let url = url::Url::parse(value)
+        .ok()
+        .filter(|u| matches!(u.scheme(), "https" | "http"))
+        .ok_or_else(|| usage(format!("Not a valid RelayRunner URL: {value}")))?;
+    let origin = url.origin().ascii_serialization();
+    if !sends_token_safely(&origin) {
+        return Err(usage(format!(
+            "{origin} isn't https. RelayRunner only uses plain http for localhost, since the machine token is sent on every connect."
+        )));
+    }
+    Ok(origin)
 }
 
 /// Saves a token the gateway rotated, keeping the rest of the file as it is. Fails, saving
