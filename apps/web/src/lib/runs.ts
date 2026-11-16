@@ -32,6 +32,8 @@ export type Run = {
   routed: boolean;
   /** The workflow's p90 over its successful runs in the report's window. */
   usualMs: number | null;
+  /** For a cancelled run, the newer run on the same branch that it was cancelled for. */
+  supersededBy: Pick<Run, "runId" | "runAttempt"> | null;
 };
 
 export type RunsReport = {
@@ -266,6 +268,7 @@ function sampleRun(run: Partial<Run> & Pick<Run, "runId">): Run {
     environments: ["container", "github:linux-2-core"],
     routed: true,
     usualMs: 170_000,
+    supersededBy: null,
     ...run,
   };
 }
@@ -299,6 +302,18 @@ export function sampleRuns(): RunsReport {
         branch: "feat/lint-savings",
       }),
       sampleRun({
+        runId: 7,
+        title: "feat(api,web): count lint runs in the free check savings",
+        event: "pull_request",
+        pullRequest: 193,
+        branch: "feat/lint-savings",
+        conclusion: "cancelled",
+        startedAt: now - 15 * MIN,
+        updatedAt: now - 12 * MIN,
+        wallMs: 74_000,
+        supersededBy: { runId: 5, runAttempt: 1 },
+      }),
+      sampleRun({
         runId: 4,
         repository: "acme/ci-tests",
         title: "fix(api): start a new pick runner when a relay job is left without one",
@@ -329,11 +344,11 @@ export function sampleRuns(): RunsReport {
         title: null,
         event: "schedule",
         actor: null,
-        conclusion: "cancelled",
+        conclusion: "timed_out",
         routed: false,
         startedAt: now - 9 * 60 * MIN,
-        updatedAt: now - 9 * 60 * MIN + 30_000,
-        wallMs: 30_000,
+        updatedAt: now - 9 * 60 * MIN + 15 * MIN,
+        wallMs: 15 * MIN + 12_000,
         usualMs: null,
         environments: ["github:linux-2-core"],
       }),
@@ -428,14 +443,21 @@ export function sampleRunJobs(run: Pick<Run, "runId">): RunJobs {
     run: header,
     walk: null,
     environments: SAMPLE_ENVIRONMENTS,
-    jobs:
-      run.runId === 4
-        ? [
-            job(41, "Lint", "container", 22, 24),
-            job(42, "Typecheck", "machine:sample", 190, 41),
-            job(43, "Test", "github:linux-2-core", 8, 150, "failure"),
-          ]
-        : [job(51, "Lint", "container", 20, 23), job(52, "Test", "github:linux-2-core", 7, 131)],
+    jobs: {
+      4: [
+        job(41, "Lint", "container", 22, 24),
+        job(42, "Typecheck", "machine:sample", 190, 41),
+        job(43, "Test", "github:linux-2-core", 8, 150, "failure"),
+      ],
+      2: [job(21, "End-to-end", "github:linux-2-core", 12, 15 * 60, "timed_out")],
+      7: [
+        job(71, "Lint", "container", 20, 23),
+        job(72, "Test", "github:linux-2-core", 7, 47, "cancelled"),
+      ],
+    }[run.runId] ?? [
+      job(51, "Lint", "container", 20, 23),
+      job(52, "Test", "github:linux-2-core", 7, 131),
+    ],
   };
 }
 

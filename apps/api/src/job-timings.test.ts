@@ -1,6 +1,6 @@
 import type { WebhookMessage, WorkflowJob } from "@relayrunner/github-webhooks";
 import { eq } from "drizzle-orm";
-import { beforeAll, describe, expect, test, vi } from "vitest";
+import { afterEach, beforeAll, describe, expect, test, vi } from "vitest";
 import { createDb, schema } from "./db/index.ts";
 import type { Env } from "./env.ts";
 import {
@@ -12,6 +12,13 @@ import {
 } from "./job-timings.ts";
 import * as testing from "./testing.ts";
 import { processWebhook } from "./webhook-queue.ts";
+
+vi.mock("./github-app.ts", async (original) => ({
+  ...(await original<typeof import("./github-app.ts")>()),
+  appInstallationToken: async () => "ghs_test",
+}));
+
+afterEach(() => vi.unstubAllGlobals());
 
 describe("runnerClass", () => {
   test.each([
@@ -227,6 +234,47 @@ describe("usage report", () => {
     await processWebhook(env, { ...running, deliveryId: "late" });
     expect((await timingOf())?.completedAt?.toISOString()).toBe(done.job.completedAt);
     expect((await usage(cookie)).totals).toMatchObject({ jobs: 1, shortJobs: 1 });
+  });
+
+  test("stores a cancelled job that ran out of time as timed out", async () => {
+    const { installationId } = await connectedWorkspace();
+    const annotations = new Map<number, string[]>();
+    const requested: string[] = [];
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async (input: RequestInfo | URL) => {
+        const url = String(input);
+        requested.push(new URL(url).pathname);
+        const id = Number(/check-runs\/(\d+)\/annotations/.exec(url)?.[1]);
+        return Response.json((annotations.get(id) ?? []).map((message) => ({ message })));
+      }),
+    );
+    const conclusionOf = async (message: WebhookMessage) => {
+      if (message.event !== "workflow_job") throw new Error("expected a job");
+      await processWebhook(env, message);
+      const [row] = await createDb(env.DB)
+        .select()
+        .from(schema.jobTiming)
+        .where(eq(schema.jobTiming.id, message.job.id));
+      return row?.conclusion;
+    };
+
+    const timedOut = finished(installationId, 900, { conclusion: "cancelled" });
+    if (timedOut.event !== "workflow_job") throw new Error("expected a job");
+    annotations.set(timedOut.job.id, [
+      "The job has exceeded the maximum execution time of 15m0s",
+      "The operation was canceled.",
+    ]);
+    expect(await conclusionOf(timedOut)).toBe("timed_out");
+    // Cancelled by hand or by a newer run: no such annotation.
+    expect(await conclusionOf(finished(installationId, 60, { conclusion: "cancelled" }))).toBe(
+      "cancelled",
+    );
+    // Cancelled before a runner took it, or not cancelled at all: GitHub isn't asked.
+    const asked = requested.length;
+    await conclusionOf(finished(installationId, 0, { conclusion: "cancelled", runnerName: null }));
+    await conclusionOf(finished(installationId, 60, { conclusion: "failure" }));
+    expect(requested).toHaveLength(asked);
   });
 
   test("purges timings past retention", async () => {

@@ -4,6 +4,7 @@ import {
   CircleSlashIcon,
   LoaderCircleIcon,
   MinusIcon,
+  TimerOffIcon,
 } from "lucide-react";
 import type { ComponentType } from "react";
 import { cn } from "@/lib/utils";
@@ -34,7 +35,8 @@ const STATUS: Record<string, Status> = {
   queued: { Icon: CircleDashedIcon, label: "Queued", className: QUIET },
   success: { Icon: CheckIcon, label: "Passed", className: QUIET },
   failure: FAILED,
-  timed_out: { ...FAILED, label: "Timed out" },
+  // A job that hit its timeout-minutes: a failure, with a timer so it reads as one at a glance.
+  timed_out: { Icon: TimerOffIcon, label: "Timed out", className: "text-destructive" },
   cancelled: CANCELLED,
   skipped: { Icon: MinusIcon, label: "Skipped", className: QUIET },
 };
@@ -46,10 +48,13 @@ const STATUS: Record<string, Status> = {
 export function StatusIcon({
   status,
   conclusion,
+  label,
   className,
 }: {
   status: string;
   conclusion: string | null;
+  /** Says more than the result does, such as why a run was cancelled. */
+  label?: string;
   className?: string;
 }) {
   const shown = STATUS[status === "completed" ? (conclusion ?? "") : status] ?? {
@@ -59,7 +64,7 @@ export function StatusIcon({
   return (
     <shown.Icon
       role="img"
-      aria-label={shown.label}
+      aria-label={label ?? shown.label}
       className={cn("size-[18px] shrink-0", shown.className, className)}
     />
   );

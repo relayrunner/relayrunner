@@ -1,5 +1,5 @@
 import { Link, type LinkProps, useNavigate } from "@tanstack/react-router";
-import { ChevronRightIcon, ExternalLinkIcon } from "lucide-react";
+import { ChevronRightIcon, CircleSlashIcon, ExternalLinkIcon, TimerOffIcon } from "lucide-react";
 import { type ReactNode, useEffect, useMemo, useState } from "react";
 import { CommitBy } from "@/components/commit";
 import { JobFailureSection } from "@/components/job-failure";
@@ -310,6 +310,8 @@ function RunView({
         ]}
       />
 
+      <EndedEarly ids={ids} run={run} jobs={jobs} now={now} />
+
       {jobs.length === 0 ? (
         <p className="text-sm text-muted-foreground">
           {running ? "No jobs have been queued in this run yet." : "No jobs seen for this run."}
@@ -500,6 +502,7 @@ function JobView({
         ]}
       />
 
+      {job.conclusion === "timed_out" && <TimedOut job={job} now={now} />}
       {isFailure(job.conclusion) && (
         <JobFailureSection key={job.id} jobId={job.id} logUrl={logUrl} />
       )}
@@ -575,6 +578,54 @@ function Steps({ steps, job, now }: { steps: JobStep[]; job: RunJob; now: number
         );
       })}
     </ol>
+  );
+}
+
+const NOTE = "flex items-start gap-2 text-sm [&>svg]:mt-0.5 [&>svg]:size-4 [&>svg]:shrink-0";
+
+/** Why a finished run ended early: a job ran out of time, or a newer run took its place. */
+function EndedEarly({
+  ids,
+  run,
+  jobs,
+  now,
+}: {
+  ids: RunIds;
+  run: Run | undefined;
+  jobs: RunJob[];
+  now: number;
+}) {
+  const timedOut = jobs.filter((job) => job.conclusion === "timed_out");
+  if (timedOut[0]) return <TimedOut job={timedOut[0]} others={timedOut.length - 1} now={now} />;
+  if (!run?.supersededBy) return null;
+  return (
+    <p className={NOTE}>
+      <CircleSlashIcon aria-hidden className="text-muted-foreground" />
+      <span>
+        Cancelled when a newer run started{run.branch ? ` on ${run.branch}` : ""}.{" "}
+        <RunLink
+          run={{ ...ids, ...run.supersededBy }}
+          className="underline underline-offset-4 hover:text-foreground"
+        >
+          Open the newer run
+        </RunLink>
+      </span>
+    </p>
+  );
+}
+
+/** A job that hit its `timeout-minutes`, and when: GitHub ends it as soon as time is up. */
+function TimedOut({ job, others = 0, now }: { job: RunJob; others?: number; now: number }) {
+  const minutes = Math.round((ranOf(job, now) ?? 0) / 60_000);
+  return (
+    <p className={NOTE}>
+      <TimerOffIcon aria-hidden className="text-destructive" />
+      <span>
+        {others
+          ? `${others + 1} jobs ran out of time, their timeout-minutes limit.`
+          : `${job.name} ran out of time at ${minutes} min, its timeout-minutes limit.`}
+      </span>
+    </p>
   );
 }
 

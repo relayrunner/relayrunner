@@ -26,7 +26,7 @@ import {
   upsertInstallation,
   workspaceIdForInstallation,
 } from "./installations.ts";
-import { recordJobTiming } from "./job-timings.ts";
+import { recordJobTiming, withTimeout } from "./job-timings.ts";
 import { lintTarget, startLintChecks } from "./lint-check.ts";
 import { recordWorkflowJob, setJobMachine } from "./jobs.ts";
 import { containerRunnerAllowed, usesContainerRunner } from "./container-runner.ts";
@@ -219,6 +219,9 @@ export async function processWebhook(env: Env, message: WebhookMessage): Promise
       // every other job the App sees is some other runner's, so recordWorkflowJob drops it.
       const isPick = usesRelayRunner(message.job.labels);
       const db = createDb(env.DB);
+      // A job that hit its timeout-minutes comes as cancelled: stored as timed out, it reads as the
+      // failure it is everywhere the job shows.
+      message = await withTimeout(env, db, message);
       // Every job's timing, ours or not, goes to job_timing too: the Runs page shows it while it
       // runs, and the usage report once it finishes. The writes touch separate tables, so they run
       // together.

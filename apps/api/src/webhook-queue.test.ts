@@ -11,7 +11,10 @@ vi.mock("./jobs.ts", () => ({
   recordWorkflowJob: vi.fn(async () => true),
   setJobMachine: vi.fn(async () => {}),
 }));
-vi.mock("./job-timings.ts", () => ({ recordJobTiming: vi.fn(async () => true) }));
+vi.mock("./job-timings.ts", () => ({
+  recordJobTiming: vi.fn(async () => true),
+  withTimeout: vi.fn(async (_env: unknown, _db: unknown, message: unknown) => message),
+}));
 
 const start = vi.fn();
 const getByName = vi.fn(() => ({ start }));

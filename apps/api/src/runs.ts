@@ -127,6 +127,8 @@ export interface Run {
   routed: boolean;
   /** The workflow's usual time: the p90 of its successful runs, with FEW_RUNS+ of them. */
   usualMs: number | null;
+  /** For a cancelled run, the newer run on the same branch that it was cancelled for. */
+  supersededBy: { runId: number; runAttempt: number } | null;
 }
 
 export interface RunsReport {
@@ -211,11 +213,22 @@ export function waitingMs(start: number, end: number, spans: string | null): num
   return Math.max(0, end - start - running);
 }
 
-function conclusionOfJobs(group: Pick<JobGroup, "failed" | "timed_out" | "cancelled">) {
+type JobConclusions = Pick<JobGroup, "failed" | "timed_out" | "cancelled">;
+
+function conclusionOfJobs(group: JobConclusions) {
   if (Number(group.failed)) return "failure";
   if (Number(group.timed_out)) return "timed_out";
   if (Number(group.cancelled)) return "cancelled";
   return "success";
+}
+
+/**
+ * A finished run's result: GitHub's, or one worked out from its jobs. GitHub ends a run whose job
+ * hit its `timeout-minutes` as cancelled, so a job that timed out makes the run timed out too.
+ */
+function runConclusion(github: string | null | undefined, jobs: JobConclusions | undefined) {
+  if (github === "cancelled" && Number(jobs?.timed_out)) return "timed_out";
+  return github ?? (jobs ? conclusionOfJobs(jobs) : null);
 }
 
 function runStatus(status: string | undefined): RunStatus {
@@ -289,10 +302,8 @@ async function runSummaries(db: Db, workspaceId: string, since: number) {
       row,
       status,
       startedAt,
-      conclusion:
-        status !== "completed"
-          ? null
-          : (row?.conclusion ?? (group ? conclusionOfJobs(group) : null)),
+      conclusion: status !== "completed" ? null : runConclusion(row?.conclusion, group),
+      completedAt,
       wallMs:
         startedAt !== null && completedAt !== null ? Math.max(0, completedAt - startedAt) : null,
       waitMs:
@@ -311,6 +322,40 @@ async function runSummaries(db: Db, workspaceId: string, since: number) {
 }
 
 type RunSummary = Awaited<ReturnType<typeof runSummaries>>[number];
+
+// How long after a run ended a newer run's start still counts as what cancelled it, for clock skew
+// between GitHub's run and job times.
+const SUPERSEDE_SLACK_MS = 60_000;
+
+/**
+ * For each of `targets` that was cancelled, the newer run of the same workflow on the same branch
+ * that started before it ended: the run a concurrency group with cancel-in-progress cancelled it
+ * for. Someone cancelling a run just after pushing again reads the same, which is close enough.
+ */
+export function supersedingRuns(summaries: RunSummary[], targets: RunSummary[]) {
+  const started = (summary: RunSummary) => summary.row?.runStartedAt?.getTime() ?? null;
+  const branchKey = (summary: RunSummary) =>
+    summary.row?.headBranch && started(summary) !== null
+      ? `${summary.workflow}\u001f${summary.row.headBranch}`
+      : null;
+  const byBranch = Map.groupBy(summaries, branchKey);
+  const found = new Map<RunSummary, { runId: number; runAttempt: number }>();
+  for (const summary of targets) {
+    const key = branchKey(summary);
+    const start = started(summary);
+    if (summary.conclusion !== "cancelled" || key === null || start === null) continue;
+    if (summary.completedAt === null) continue;
+    const ended = summary.completedAt + SUPERSEDE_SLACK_MS;
+    let newer: RunSummary | undefined;
+    for (const other of byBranch.get(key) ?? []) {
+      const at = started(other)!;
+      if (other.row!.id === summary.row!.id || at <= start || at > ended) continue;
+      if (!newer || at < started(newer)!) newer = other;
+    }
+    if (newer) found.set(summary, { runId: newer.row!.id, runAttempt: newer.row!.runAttempt });
+  }
+  return found;
+}
 
 /** Each workflow's successful run times, by workflowKey, newest first. */
 function successfulWalls(summaries: RunSummary[]) {
@@ -343,10 +388,12 @@ export async function listRuns(db: Db, workspaceId: string, now = Date.now()): P
       );
 
   // Then the whole run, for the newest RUN_LIMIT only.
+  const shown = summaries.slice(0, RUN_LIMIT);
+  const superseded = supersedingRuns(summaries, shown);
   const envs = new Map<string, Environment>();
   const envUse = new Map<string, number>();
   const parsed = new Map<string, Environment>();
-  const runs = summaries.slice(0, RUN_LIMIT).map((summary): Run => {
+  const runs = shown.map((summary): Run => {
     const { group, row } = summary;
     const keys = new Set<string>();
     for (const raw of splitEnvs(group?.envs ?? null)) {
@@ -377,6 +424,7 @@ export async function listRuns(db: Db, workspaceId: string, now = Date.now()): P
       environments: [...keys],
       routed: Boolean(Number(group?.routed ?? 0)),
       usualMs: usual.get(summary.workflow) ?? null,
+      supersededBy: superseded.get(summary) ?? null,
     };
   });
   await nameMachines(db, workspaceId, envs);
@@ -483,12 +531,11 @@ export async function runJobs(
       conclusion:
         status !== "completed"
           ? null
-          : (row?.conclusion ??
-            conclusionOfJobs({
+          : runConclusion(row?.conclusion, {
               failed: count("failure"),
               timed_out: count("timed_out"),
               cancelled: count("cancelled"),
-            })),
+            }),
     };
   }
 

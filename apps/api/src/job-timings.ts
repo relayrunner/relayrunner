@@ -9,6 +9,8 @@ import {
   type PriceBook,
 } from "@relayrunner/providers";
 import { type Db, schema } from "./db/index.ts";
+import type { Env } from "./env.ts";
+import { appInstallationToken, jobAnnotations } from "./github-app.ts";
 import { countsAsJob, jobCountUpserts } from "./job-counts.ts";
 import { providerSpendUpsert } from "./provider-spend.ts";
 import { hostedRunner, runnerWaitUpsert } from "./runner-waits.ts";
@@ -167,6 +169,34 @@ export async function claimRunnerJobs(
           : eq(table.repositoryId, machine.githubRepositoryId),
       ),
     );
+}
+
+// The runner's annotation on a job that ran past its `timeout-minutes`.
+const TIMEOUT_ANNOTATION = /exceeded the maximum execution time/i;
+
+/**
+ * The job message with `timed_out` for a job that hit its `timeout-minutes`. GitHub reports such a
+ * job as cancelled, the same as a cancel by hand or by a concurrency group, and only the runner's
+ * annotation tells them apart, so a cancelled job that a runner took reads its annotations. The
+ * message comes back unchanged when it isn't one or GitHub can't be read.
+ */
+export async function withTimeout(
+  env: Pick<Env, "GITHUB_APP_ID" | "GITHUB_APP_PRIVATE_KEY">,
+  db: Db,
+  message: WorkflowJobMessage,
+): Promise<WorkflowJobMessage> {
+  const { job, installationId } = message;
+  if (message.action !== "completed" || job.conclusion !== "cancelled") return message;
+  if (!job.runnerName || !installationId || !(await findInstallation(db, installationId)))
+    return message;
+  try {
+    const token = await appInstallationToken(env, installationId);
+    const annotations = await jobAnnotations(token, message.repository.fullName, job.id);
+    if (!annotations.some((each) => TIMEOUT_ANNOTATION.test(each))) return message;
+    return { ...message, job: { ...job, conclusion: "timed_out" } };
+  } catch {
+    return message;
+  }
 }
 
 /**

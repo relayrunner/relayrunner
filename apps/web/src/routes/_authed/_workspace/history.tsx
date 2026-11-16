@@ -342,12 +342,14 @@ const RunRow = memo(function RunRow({
   showRepository: boolean;
   open: boolean;
 }) {
+  const superseded = run.supersededBy ? "Superseded by a newer run" : undefined;
   const meta = [
     run.title ? run.workflow : null,
     showRepository ? run.repository : null,
     triggerText(run),
     run.branch,
     run.runAttempt > 1 ? `attempt ${run.runAttempt}` : null,
+    superseded?.toLowerCase(),
     run.startedAt ? timeAgo(run.startedAt) : null,
   ].filter(Boolean);
   // Opening a run usually follows a hover or focus by a moment, so its jobs start loading then and
@@ -369,7 +371,7 @@ const RunRow = memo(function RunRow({
           open && "bg-secondary/40",
         )}
       >
-        <StatusIcon status={run.status} conclusion={run.conclusion} />
+        <StatusIcon status={run.status} conclusion={run.conclusion} label={superseded} />
         <span className="min-w-0">
           <span className="flex items-center gap-1.5">
             <span className="truncate font-medium">

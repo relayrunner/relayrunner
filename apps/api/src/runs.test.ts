@@ -375,6 +375,57 @@ describe("runs list", () => {
   });
 });
 
+describe("runs that ended early", () => {
+  test("names the newer run a cancelled run was superseded by", async () => {
+    const { cookie, installationId } = await connectedWorkspace();
+    const db = createDb(env.DB);
+    const at = (hoursAgo: number) => new Date(Date.now() - hoursAgo * HOUR).toISOString();
+    // Started 3h ago, cancelled 2h ago, a moment after a newer push started run 401.
+    await insert([
+      timing(installationId, 3600, { runId: 400, conclusion: "cancelled", hoursAgo: 2 }),
+      timing(installationId, 60, { runId: 401, hoursAgo: 1.9 }),
+      // Cancelled by hand, with nothing newer on its branch until well after.
+      timing(installationId, 60, { runId: 402, conclusion: "cancelled", hoursAgo: 1.5 }),
+      timing(installationId, 60, { runId: 403, hoursAgo: 0.1 }),
+    ]);
+    for (const [id, conclusion, startedHoursAgo, branch] of [
+      [400, "cancelled", 3, "runs-page"],
+      [401, "success", 2.01, "runs-page"],
+      [402, "cancelled", 1.6, "other"],
+      [403, "success", 0.2, "other"],
+    ] as const)
+      await recordWorkflowRun(
+        db,
+        runMessage(installationId, {
+          id,
+          conclusion,
+          headBranch: branch,
+          runStartedAt: at(startedHoursAgo),
+          updatedAt: at(startedHoursAgo - 0.05),
+        }),
+      );
+
+    const byId = new Map((await list(cookie)).runs.map((run) => [run.runId, run]));
+    expect(byId.get(400)?.supersededBy).toEqual({ runId: 401, runAttempt: 1 });
+    expect(byId.get(401)?.supersededBy).toBeNull();
+    expect(byId.get(402)?.supersededBy).toBeNull();
+  });
+
+  test("reads a run GitHub cancelled as timed out when one of its jobs ran out of time", async () => {
+    const { cookie, installationId } = await connectedWorkspace();
+    await insert([
+      timing(installationId, 900, { runId: 410, name: "e2e", conclusion: "timed_out" }),
+      timing(installationId, 60, { runId: 410 }),
+    ]);
+    await recordWorkflowRun(
+      createDb(env.DB),
+      runMessage(installationId, { id: 410, conclusion: "cancelled" }),
+    );
+    const [run] = (await list(cookie)).runs;
+    expect(run).toMatchObject({ runId: 410, conclusion: "timed_out", supersededBy: null });
+  });
+});
+
 describe("workflow times and the job list", () => {
   test("times whole workflow runs from their newest successful runs", async () => {
     const { cookie, installationId } = await connectedWorkspace();
