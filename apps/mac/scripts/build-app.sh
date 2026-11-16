@@ -14,9 +14,10 @@ bin="$(swift build -c release --arch arm64 --show-bin-path)"
 
 app=dist/RelayRunner.app
 rm -rf "$app"
-mkdir -p "$app/Contents/MacOS" "$app/Contents/Helpers"
+mkdir -p "$app/Contents/MacOS" "$app/Contents/Helpers" "$app/Contents/Resources"
 cp "$bin/RelayRunner" "$app/Contents/MacOS/RelayRunner"
 cp "$root/apps/cli/dist-bin/relayrunner-darwin-arm64" "$app/Contents/Helpers/relayrunner"
+cp Resources/AppIcon.icns "$app/Contents/Resources/AppIcon.icns"
 sed "s/__VERSION__/$version/g" Info.plist >"$app/Contents/Info.plist"
 
 codesign --force --sign - "$app/Contents/Helpers/relayrunner"

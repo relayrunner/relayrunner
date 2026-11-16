@@ -1,4 +1,5 @@
 import AppKit
+import RelayRunnerKit
 import SwiftUI
 
 @main
@@ -8,10 +9,11 @@ struct RelayRunnerApp: App {
 
   var body: some Scene {
     MenuBarExtra {
-      MenuContent(connection: connection)
+      Panel(connection: connection)
     } label: {
-      Image(systemName: connection.symbol)
+      Image(nsImage: connection.menuBarImage)
     }
+    .menuBarExtraStyle(.window)
     Settings {
       SettingsView()
     }
@@ -32,16 +34,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 }
 
 extension Connection {
-  /// The menu bar icon.
-  var symbol: String {
-    switch phase {
-    case .off: "bolt.slash"
-    case .online: jobs.isEmpty ? (paused ? "pause.circle" : "bolt") : "bolt.fill"
-    default: "ellipsis.circle"
-    }
+  /// The menu bar icon: faded unless it's taking jobs, with a dot while one runs.
+  var menuBarImage: NSImage {
+    RobotHead.menuBarImage(faded: phase != .online || paused, busy: !jobs.isEmpty)
   }
 
-  /// The line under the switch.
+  /// The line beside the switch.
   var status: String {
     switch phase {
     case .off: return problem ?? "Off"

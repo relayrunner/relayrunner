@@ -3,8 +3,9 @@
 A menu bar app that takes jobs on your Mac with one switch. It runs the same `relayrunner connect`
 as the CLI, compiled into the app, so there's nothing else to install.
 
-From the menu bar you can turn it on and off, pause new jobs, see what's running, and open the
-dashboard. Settings has the same options as `connect`: jobs at once, each VM's CPUs and memory,
+The robot head in the menu bar opens a panel where you can turn it on and off, pause new jobs, see
+what's running, and open the dashboard. The head is faded while it isn't taking jobs and has a dot
+while a job runs. Settings has the same options as `connect`: jobs at once, each VM's CPUs and memory,
 macOS jobs, and local network access. The first time you turn it on, it asks who can run jobs here
 and opens your browser to sign the Mac in. It shares `~/.relayrunner` with the CLI, so a Mac already
 connected with `npx relayrunner connect` is signed in already. Only one of them runs at a time.
@@ -29,3 +30,6 @@ The app starts `relayrunner connect --events` in its own process group and reads
 per line from its stdout (see `apps/cli/events.ts`). It sends `pause` and `resume` on stdin and
 stops it with SIGINT to the group, as Ctrl-C does in a terminal. What `connect` would print for a
 person goes to `~/.relayrunner/app.log`, which Show Log opens.
+
+The robot head is drawn from the same paths as `apps/site/public/assets/runner-head.svg`
+(`Sources/RelayRunnerKit/RobotHead.swift`). `Resources/AppIcon.icns` is that head on a cream tile.
