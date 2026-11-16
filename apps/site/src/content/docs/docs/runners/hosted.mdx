@@ -22,7 +22,7 @@ relay-test:
     github: ubuntu-latest
 ```
 
-Each job has its own relay, so each job picks its own size, such as `blacksmith-2vcpu-ubuntu-2404` for a lint job and `blacksmith-4vcpu-ubuntu-2404` for tests. `relayrunner init` keeps a job's existing provider label as its fallback, so a job already on a hosted provider stays there whenever no machine is free.
+Each job has its own relay, so each job picks its own size, such as `blacksmith-2vcpu-ubuntu-2404` for a lint job and `blacksmith-4vcpu-ubuntu-2404` for tests. Or write `auto`, such as `depot: auto`, and pick each job's size on the Router page instead (see [Auto sizes](/docs/reference/relay-inputs#auto-sizes)). `relayrunner init` keeps a job's existing provider label as its fallback, so a job already on a hosted provider stays there whenever no machine is free.
 
 ## Where it sits in the order
 
