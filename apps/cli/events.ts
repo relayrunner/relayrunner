@@ -6,7 +6,8 @@
 //
 // To go offline the way Ctrl-C does, start `connect` in its own process group and send that group
 // SIGINT (a second one exits on the spot). Closing stdin goes offline too, for when the app quits
-// or crashes, and lets a running job finish.
+// or crashes, and lets a running job finish. Give it an anonymous pipe: on macOS, neither Node
+// nor Bun sees a named FIFO close.
 
 import { createInterface } from "node:readline";
 import type { ConnectionEnd, ConnectionEvent } from "./connection.ts";
