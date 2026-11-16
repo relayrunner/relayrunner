@@ -32,7 +32,7 @@
   <key>SUFeedURL</key>
   <string>https://relayrunner.app/mac/appcast.xml</string>
   <key>SUPublicEDKey</key>
-  <string>__SPARKLE_PUBLIC_KEY__</string>
+  <string>Su8dbde8agaYdpte8/A5y8r/UC5z9OjtO61S85gXIrc=</string>
   <key>SUEnableAutomaticChecks</key>
   <true/>
   <key>SUVerifyUpdateBeforeExtraction</key>
