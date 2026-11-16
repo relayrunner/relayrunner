@@ -138,9 +138,11 @@
     const dt = Math.min(50, elapsed),
       k = 1 - Math.exp(-dt / 95);
     time = now;
+    // Lay the course out in the layout viewport, where fixed elements live. Safari on iOS shrinks
+    // innerWidth/innerHeight to the zoomed area on pinch-zoom, which pulled the lanes over content.
     const y = Math.max(0, scrollY),
-      w = innerWidth,
-      h = innerHeight,
+      w = Math.max(innerWidth, document.documentElement.clientWidth),
+      h = Math.max(innerHeight, document.documentElement.clientHeight),
       box = hero.getBoundingClientRect(),
       home = box.top + box.height / 2;
     const scrollDelta = Math.abs(y - previousScroll);
