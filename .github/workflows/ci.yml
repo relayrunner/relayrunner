@@ -31,7 +31,7 @@ jobs:
           cache: pnpm
       - run: pnpm install --frozen-lockfile
       - run: pnpm check
-      # A changeset naming anything but the published CLI would stop the
+      # A changeset naming anything but the CLI or the Mac app would stop the
       # Release workflow after merge, so catch it here.
       - run: pnpm changeset:lint
       - name: Verify npm package
