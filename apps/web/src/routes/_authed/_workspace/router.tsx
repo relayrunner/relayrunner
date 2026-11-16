@@ -329,7 +329,12 @@ function sampleRouter(): {
     };
   return {
     order: {
-      steps: [{ key: "github", limit: { percent: 80 } }, { key: "machine" }, { key: "github" }],
+      steps: [
+        { key: "github", limit: { percent: 80 } },
+        { key: "machine" },
+        { key: "blacksmith" },
+        { key: "github" },
+      ],
     },
     isDefault: false,
     machines: [machine],

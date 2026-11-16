@@ -85,6 +85,13 @@ export function sampleRouterSetup(): RouterSetup {
         runs: 41,
         routedRuns: 41,
       },
+      {
+        repositoryId: 2,
+        repository: "acme/site",
+        workflow: "Preview",
+        runs: 63,
+        routedRuns: 63,
+      },
     ],
     labels: [
       { key: "blacksmith", label: "blacksmith-2vcpu-ubuntu-2404", jobs: 1_180 },

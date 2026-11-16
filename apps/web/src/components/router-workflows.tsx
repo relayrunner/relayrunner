@@ -1,9 +1,12 @@
 import { AUTO_SIZES } from "@relayrunner/providers";
 import { RUNNER_LABELS, type RunnerKey } from "@relayrunner/runner-order";
-import { CheckIcon, MinusIcon } from "lucide-react";
+import { CheckIcon, MinusIcon, PinIcon, XIcon } from "lucide-react";
 import { useState } from "react";
+import { CopyCommand } from "@/components/add-runner";
 import { ProviderMark } from "@/components/providers";
+import { DOCS_URL } from "@/components/site-footer";
 import { Button } from "@/components/ui/button";
+import { HoverCard, HoverCardContent, HoverCardTrigger } from "@/components/ui/hover-card";
 import {
   Select,
   SelectContent,
@@ -13,6 +16,7 @@ import {
 } from "@/components/ui/select";
 import { type AutoJob, autoJobName } from "@/lib/auto-jobs";
 import { plural } from "@/lib/job-times";
+import { readFlag, saveFlag } from "@/lib/stored-flag";
 import type { RouterSetup, SetupWorkflow } from "@/lib/router-setup";
 import { count, exact } from "@/lib/utils";
 
@@ -21,6 +25,8 @@ const FIRST_ROWS = 6;
 const ALL = "all";
 const DEFAULT = "default";
 const ORDER = "order";
+const HINT_KEY = "rr-auto-hint-dismissed";
+const AUTO_DOCS = `${DOCS_URL}/reference/relay-inputs#auto-sizes`;
 
 type Workflow = Pick<SetupWorkflow, "repositoryId" | "repository" | "workflow"> &
   Partial<Pick<SetupWorkflow, "runs" | "routedRuns">> & { jobs: AutoJob[] };
@@ -47,6 +53,7 @@ export function RouterWorkflows({
   onChange: (job: AutoJob, setting: Pick<AutoJob, "size" | "first">) => Promise<void>;
 }) {
   const [repo, setRepo] = useState(ALL);
+  const [hintDismissed, setHintDismissed] = useState(() => readFlag(HINT_KEY));
   const workflows = mergeWorkflows(setup?.workflows ?? [], jobs);
   if (workflows.length === 0) return null;
   const repos = [...new Set(workflows.map((w) => w.repository))].sort();
@@ -78,6 +85,15 @@ export function RouterWorkflows({
           )}
         </div>
       </div>
+      {jobs.length === 0 && !hintDismissed && (
+        <AutoHint
+          provider={steps.find((key) => key !== "machine" && key !== "github") ?? "github"}
+          onDismiss={() => {
+            saveFlag(HINT_KEY, true);
+            setHintDismissed(true);
+          }}
+        />
+      )}
       {shown.map((name) => (
         <RepoWorkflows
           key={name}
@@ -89,13 +105,6 @@ export function RouterWorkflows({
           onChange={onChange}
         />
       ))}
-      {jobs.length === 0 && (
-        <p className="text-xs text-muted-foreground">
-          Set a relay's provider to <code className="font-mono">auto</code>, such as{" "}
-          <code className="font-mono">blacksmith: auto</code>, and its job shows here so you can
-          pick its size.
-        </p>
-      )}
     </section>
   );
 }
@@ -130,6 +139,7 @@ function RepoWorkflows({
                 />
               )}
               <span className="min-w-0 truncate">{w.workflow}</span>
+              {(w.routedRuns ?? 0) > 0 && w.jobs.length === 0 && <PinnedNote />}
               {w.runs !== undefined && (
                 <span
                   className="ml-auto shrink-0 text-xs text-muted-foreground tabular-nums"
@@ -158,6 +168,70 @@ function RepoWorkflows({
         </Button>
       )}
     </div>
+  );
+}
+
+// Shown once, until dismissed, while no job uses `auto`: what it does and the line to write.
+function AutoHint({ provider, onDismiss }: { provider: RunnerKey; onDismiss: () => void }) {
+  return (
+    <div className="flex items-start gap-3 rounded-lg bg-muted/50 px-3 py-2.5">
+      <div className="grid min-w-0 flex-1 gap-2">
+        <p className="text-[13px]">
+          Pick each job's runner size here, with no commit. In a relay, write{" "}
+          <code className="font-mono">auto</code> in place of a label.{" "}
+          <a
+            href={AUTO_DOCS}
+            target="_blank"
+            rel="noreferrer"
+            className="text-go hover:text-go-hover"
+          >
+            How it works
+          </a>
+        </p>
+        <div className="max-w-60">
+          <CopyCommand command={`${provider}: auto`} prompt={false} />
+        </div>
+      </div>
+      <Button size="icon-sm" variant="ghost" aria-label="Dismiss" onClick={onDismiss}>
+        <XIcon aria-hidden />
+      </Button>
+    </div>
+  );
+}
+
+// A routed workflow with no auto jobs: its relays name their labels, so sizes live in the file.
+function PinnedNote() {
+  return (
+    <HoverCard openDelay={150}>
+      <HoverCardTrigger asChild>
+        <button
+          type="button"
+          className="flex shrink-0 items-center gap-1 rounded text-xs text-muted-foreground outline-none hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring"
+        >
+          <PinIcon aria-hidden className="size-3" />
+          Pinned
+        </button>
+      </HoverCardTrigger>
+      <HoverCardContent className="grid w-72 gap-2 text-[13px] text-muted-foreground">
+        <p>
+          <span className="font-medium text-foreground">Labels pinned in the workflow file.</span>{" "}
+          Its jobs run on the labels their relays name, at the size those labels set.
+        </p>
+        <p>
+          Write <code className="font-mono text-foreground">auto</code> in place of a label, such as{" "}
+          <code className="font-mono text-foreground">blacksmith: auto</code>, to pick the size here
+          instead.{" "}
+          <a
+            href={AUTO_DOCS}
+            target="_blank"
+            rel="noreferrer"
+            className="text-go hover:text-go-hover"
+          >
+            Auto sizes
+          </a>
+        </p>
+      </HoverCardContent>
+    </HoverCard>
   );
 }
 

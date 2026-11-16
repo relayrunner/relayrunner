@@ -404,6 +404,9 @@ function StepCard({
             {step.key === "machine" && (
               <p className="text-xs text-muted-foreground">{SELF_HOSTED_NOTE}</p>
             )}
+            {step.key !== "machine" && step.key !== "github" && (
+              <p className="text-xs text-muted-foreground">Sized per job under Workflows</p>
+            )}
             {appMissing && (
               <p className="flex items-center gap-1.5 text-xs text-muted-foreground">
                 <TriangleAlertIcon aria-hidden className="size-3.5 shrink-0 text-destructive" />
