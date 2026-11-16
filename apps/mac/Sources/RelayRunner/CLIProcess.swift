@@ -32,14 +32,14 @@ final class CLIProcess {
       throw SpawnError(code: errno)
     }
 
-    var actions: posix_spawn_file_actions_t = nil
+    var actions: posix_spawn_file_actions_t? = nil
     posix_spawn_file_actions_init(&actions)
     defer { posix_spawn_file_actions_destroy(&actions) }
     posix_spawn_file_actions_adddup2(&actions, stdinPipe[0], 0)
     posix_spawn_file_actions_adddup2(&actions, stdoutPipe[1], 1)
     posix_spawn_file_actions_addopen(&actions, 2, log.path, O_WRONLY | O_CREAT | O_TRUNC, 0o600)
 
-    var attributes: posix_spawnattr_t = nil
+    var attributes: posix_spawnattr_t? = nil
     posix_spawnattr_init(&attributes)
     defer { posix_spawnattr_destroy(&attributes) }
     // Its own process group, and only stdin, stdout and stderr: the app's other files stay its own.
