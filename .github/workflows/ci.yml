@@ -36,3 +36,11 @@ jobs:
       - run: pnpm changeset:lint
       - name: Verify npm package
         run: bash scripts/smoke-npm-package.sh
+      # The single-file CLI that apps bundle (the Mac menu bar app).
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: 1.4.4
+      - name: Verify compiled CLI
+        run: |
+          bash scripts/build-cli-binary.sh bun-linux-x64
+          bash scripts/smoke-cli-binary.sh apps/cli/dist-bin/relayrunner-linux-x64

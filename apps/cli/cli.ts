@@ -32,6 +32,8 @@ import {
 } from "./isolated.ts";
 import { hostLauncher, prefixLines, runJob, type Launcher } from "./job.ts";
 import { startLive } from "./live.ts";
+import { emitEvent, readCommands, startEvents } from "./events.ts";
+import { lockConnect } from "./connect-lock.ts";
 import { CHECK_INTERVAL_MS, checkForUpdate, updateNotice } from "./update-check.ts";
 import { cliVersion } from "./version.ts";
 import { login, LoginError, openBrowser } from "./login.ts";
@@ -113,8 +115,14 @@ const connectCommand = defineCommand({
       type: "boolean",
       description: "Let jobs in VMs reach this Mac and your local network. They can't by default.",
     },
+    events: {
+      type: "boolean",
+      description:
+        "For apps that run connect: JSON events on stdout, one per line, and `pause` or `resume` on stdin",
+    },
   },
   async run({ args }) {
+    if (args.events) startEvents();
     clack.intro("RelayRunner");
     let concurrency: number;
     let size: VmSize;
@@ -126,19 +134,27 @@ const connectCommand = defineCommand({
         : (slotsFor(size) ?? parseConcurrency(undefined));
       checkFits(size, concurrency);
     } catch (error) {
-      clack.log.error((error as Error).message);
-      process.exitCode = 1;
+      fail("USAGE", (error as Error).message);
       return;
     }
+    let unlock: (() => void) | undefined;
     try {
+      unlock = lockConnect();
       await connectMachine({ ...args, concurrency, size });
     } catch (error) {
       if (!(error instanceof LoginError || error instanceof RunnerError)) throw error;
-      clack.log.error(error.message);
-      process.exitCode = 1;
+      fail(error.code, error.message);
+    } finally {
+      unlock?.();
     }
   },
 });
+
+function fail(code: string, message: string) {
+  clack.log.error(message);
+  emitEvent({ type: "error", code, message });
+  process.exitCode = 1;
+}
 
 async function connectMachine(args: {
   server?: string;
@@ -149,6 +165,7 @@ async function connectMachine(args: {
   isolated?: boolean;
   image?: string;
   "local-network"?: boolean;
+  events?: boolean;
   macos?: boolean;
 }) {
   const share = shareArg(args.share);
@@ -184,6 +201,9 @@ async function connectMachine(args: {
     clack.log.info(`Machine ${credentials.machine.name} (${credentials.server})`);
     if (share) await applySharing(credentials, share, null);
   }
+
+  const { id, name } = credentials.machine;
+  emitEvent({ type: "machine", id, name, server: credentials.server });
 
   // Run inside a repo that isn't set up yet, offer to route its jobs here (`relayrunner init`).
   // Only when someone is at the terminal to answer.
@@ -317,16 +337,20 @@ async function connectMachine(args: {
   // the terminal. On success the gateway sends `paused`, which logs it and updates the title.
   const enrolled = credentials;
   let toggling = false;
+  const setPaused = async (paused: boolean) => {
+    if (toggling || stop.signal.aborted) return;
+    toggling = true;
+    const result = await pauseMachine(enrolled, paused);
+    toggling = false;
+    if (result.status !== "failed") return;
+    const command = paused ? "pause" : "resume";
+    const message = `Couldn't ${command}: ${result.reason}.`;
+    clack.log.error(message);
+    emitEvent({ type: "error", code: "PAUSE_FAILED", message, command });
+  };
   const live = startLive({
     machine: enrolled.machine.name,
-    onTogglePause: async ({ paused }) => {
-      if (toggling || stop.signal.aborted) return;
-      toggling = true;
-      const result = await pauseMachine(enrolled, !paused);
-      toggling = false;
-      if (result.status === "failed")
-        clack.log.error(`Couldn't ${paused ? "resume" : "pause"}: ${result.reason}.`);
-    },
+    onTogglePause: ({ paused }) => void setPaused(!paused),
   });
 
   // First Ctrl-C goes offline and lets a running job's runner exit and clean up (the terminal
@@ -339,6 +363,12 @@ async function connectMachine(args: {
     stop.abort();
   };
   process.on("SIGINT", onInterrupt);
+  const stopCommands = args.events
+    ? readCommands({
+        onCommand: (command) => void setPaused(command === "pause"),
+        onClose: onInterrupt,
+      })
+    : undefined;
 
   let online = false;
   let end;
@@ -382,10 +412,11 @@ async function connectMachine(args: {
             report,
             output: prefixed?.output,
             onChecked: (target) => {
-              if (target)
-                clack.log.info(
-                  `${new Date().toLocaleTimeString()} Job ${run.routeId}${slots > 1 ? ` (slot ${slot})` : ""} is from ${target}`,
-                );
+              if (!target) return;
+              clack.log.info(
+                `${new Date().toLocaleTimeString()} Job ${run.routeId}${slots > 1 ? ` (slot ${slot})` : ""} is from ${target}`,
+              );
+              emitEvent({ type: "job-repo", routeId: run.routeId, repo: target });
             },
           });
         } finally {
@@ -398,7 +429,10 @@ async function connectMachine(args: {
       onEvent: (event) => {
         if (event.type === "connected") online = true;
         show(event, slots > 1);
+        const before = live.state;
         live.onEvent(event);
+        emitEvent(event);
+        if (live.state !== before) emitEvent({ type: "state", ...live.state });
       },
       signal: stop.signal,
     });
@@ -406,8 +440,10 @@ async function connectMachine(args: {
     clearInterval(updateTimer);
     stopUpdating?.();
     live.end();
+    stopCommands?.();
     process.off("SIGINT", onInterrupt);
   }
+  emitEvent({ type: "offline", ...end });
 
   switch (end.reason) {
     case "stopped":
@@ -624,6 +660,7 @@ async function signIn(
           `${url}\n\nConfirm the code ${userCode} matches the one in your browser.`,
           "Sign in",
         );
+        emitEvent({ type: "sign-in", url, code: userCode });
         openBrowser(url);
         waiting.start("Waiting for approval in the browser");
       },

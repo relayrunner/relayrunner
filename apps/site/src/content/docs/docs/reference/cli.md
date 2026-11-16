@@ -27,8 +27,28 @@ Run inside a repo with no routed jobs, it offers to route them, the same as `ini
 | `--local-network`         | Let jobs in VMs reach your Mac and your local network.                       |
 | `--no-isolated`           | Run jobs on the Mac itself, where they can read your files.                  |
 | `--isolated`              | Stop with an error when jobs can't run in VMs, where the default falls back. |
+| `--events`                | For apps that run `connect`. See [Events](#events).                          |
 
 The VM flags apply to Macs with Apple silicon. See [Isolated jobs on a Mac](/docs/runners/self-hosted#isolated-jobs-on-a-mac).
+
+Only one `connect` runs on a computer at a time. A second one stops and says so.
+
+### Events
+
+With `--events`, `connect` writes one JSON object per line to stdout and nothing else; what it would print for you goes to stderr. Send `pause` or `resume` on stdin, one per line. To go offline as Ctrl-C does, start it in its own process group and send that group SIGINT. Closing stdin also takes it offline.
+
+```json
+{
+  "v": 1,
+  "at": "2026-11-16T18:00:00.000Z",
+  "type": "state",
+  "link": "online",
+  "paused": false,
+  "jobs": []
+}
+```
+
+Types: `sign-in` (the page and code to approve), `machine`, `state`, `job-repo`, `offline`, `error`, and the connection's own: `connecting`, `connected`, `disconnected`, `run`, `job`, `paused`.
 
 ## `login`
 

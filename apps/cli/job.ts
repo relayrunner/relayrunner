@@ -135,18 +135,29 @@ function clean(dir: string) {
 
 // A symlink pointing at our pid: creating one is atomic, and a lock left by a process that has
 // since exited is taken over.
-function takeLock(lock: string): boolean {
+export function takeLock(lock: string): boolean {
   for (let attempt = 0; attempt < 2; attempt++) {
     try {
       symlinkSync(String(process.pid), lock);
       return true;
     } catch (error) {
       if ((error as NodeJS.ErrnoException).code !== "EEXIST") throw error;
-      if (isAlive(Number(readlinkSync(lock)))) return false;
+      if (lockHolder(lock)) return false;
       rmSync(lock, { force: true });
     }
   }
   return false;
+}
+
+/** The pid of the live process holding a lock taken with takeLock, or null. */
+export function lockHolder(lock: string) {
+  let pid: number;
+  try {
+    pid = Number(readlinkSync(lock));
+  } catch {
+    return null;
+  }
+  return isAlive(pid) ? pid : null;
 }
 
 function isAlive(pid: number) {

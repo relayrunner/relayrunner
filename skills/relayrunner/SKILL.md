@@ -54,7 +54,7 @@ A new machine only runs jobs the user started. If they want teammates' jobs on i
 
 `connect` keeps running, so suggest the user start it in their own terminal, where it outlives your session. If you start it, run it in the background and tell the user it stops when your session ends.
 
-`--concurrency <n>` sets how many jobs run at once (default 2 with 8+ CPU cores, else 1). `--name` and `--share` answer the first sign-in's questions.
+`--concurrency <n>` sets how many jobs run at once (default 2 with 8+ CPU cores, else 1). `--name` and `--share` answer the first sign-in's questions. `--events` prints one JSON event per line on stdout (state, jobs, the sign-in code) and takes `pause` or `resume` on stdin, which is easier to follow from a background process than the log. Only one `connect` runs on a computer at a time.
 
 ## Isolated jobs on a Mac
 

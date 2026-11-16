@@ -55,6 +55,10 @@ server of its own or write files outside the runner. It can't tell a job the
 gateway routed here from a runner it minted on a GitHub repo of its own, so the
 terminal shows which repo each job is from.
 
+Only one `connect` runs on a computer at a time; a second one stops and says
+so. For an app that runs `connect` for you, `--events` writes one JSON event
+per line to stdout and takes `pause` or `resume` on stdin (see `events.ts`).
+
 If another `connect` signs in as this machine while it's online, this one stops
 and says so. When that happens from a different network, the person who
 approved the machine also gets an email, since someone else may have its token.
