@@ -57,30 +57,25 @@ pub async fn run(launcher: Launcher, run: Run, prefix: String, report: Report, s
     }
 
     let mut command;
-    let lock;
     match &launcher {
         Launcher::Host(dir) => {
-            lock = Some(dir.join("job.lock"));
-            if !take_lock(lock.as_ref().unwrap()) {
+            if !take_lock(&dir.join("job.lock")) {
                 let message = format!("Another job is using the runner in {}.", dir.display());
                 report(update(JobState::Failed, Some(message), None));
                 return;
             }
-            clean(dir);
+            clean(dir).await;
             command = Command::new(dir.join("run.sh"));
             command
                 .args(["--jitconfig", &run.jit_config])
                 .current_dir(dir);
         }
         Launcher::Vm(isolation) => {
-            lock = None;
             let args = isolated::run_args(&route_id, isolation);
             isolation
                 .debug
                 .write(&format!("$ container {}", args.join(" ")));
-            command = Command::new(
-                std::env::var("RELAYRUNNER_CONTAINER").unwrap_or_else(|_| "container".into()),
-            );
+            command = Command::new(isolated::container_command());
             command.args(&args);
         }
     }
@@ -110,28 +105,20 @@ pub async fn run(launcher: Launcher, run: Run, prefix: String, report: Report, s
         Ok(mut child) => {
             report(update(JobState::Started, None, None));
             let source = match &launcher {
-                Launcher::Host(_) => child.id().map(|pid| Source::Tree {
-                    pid,
-                    cpus: crate::sys::cpu_count(),
-                    memory_mb: 0,
-                }),
+                Launcher::Host(_) => match child.id() {
+                    Some(pid) => Some(Source::Tree {
+                        pid,
+                        cpus: crate::sys::cpu_count(),
+                        memory_mb: (crate::sys::total_memory().await as f64 / 1024.0 / 1024.0)
+                            .round() as u64,
+                    }),
+                    None => None,
+                },
                 Launcher::Vm(i) => Some(Source::Vm {
                     name: isolated::container_name(&route_id),
                     cpus: i.cpus,
                     memory_mb: u64::from(i.memory_gb) * 1024,
                 }),
-            };
-            let source = match source {
-                Some(Source::Tree { pid, cpus, .. }) => {
-                    let memory_mb =
-                        (crate::sys::total_memory().await as f64 / 1024.0 / 1024.0).round() as u64;
-                    Some(Source::Tree {
-                        pid,
-                        cpus,
-                        memory_mb,
-                    })
-                }
-                other => other,
             };
             let sampler = source.map(usage::sample);
             let out = child
@@ -173,10 +160,8 @@ pub async fn run(launcher: Launcher, run: Run, prefix: String, report: Report, s
 
     match &launcher {
         Launcher::Host(dir) => {
-            clean(dir);
-            if let Some(lock) = lock {
-                let _ = std::fs::remove_file(lock);
-            }
+            clean(dir).await;
+            let _ = std::fs::remove_file(dir.join("job.lock"));
         }
         // `--rm` deletes the VM after a clean exit. Anything else may have left it behind.
         Launcher::Vm(i) if !clean_exit => isolated::cleanup(&route_id, i).await,
@@ -213,11 +198,16 @@ fn forward<R: tokio::io::AsyncRead + Unpin + Send + 'static>(
     })
 }
 
-fn clean(dir: &Path) {
-    for name in JOB_STATE {
-        let path = dir.join(name);
-        let _ = std::fs::remove_dir_all(&path).or_else(|_| std::fs::remove_file(&path));
-    }
+/// Off the runtime's thread: `_work` can hold a whole checkout and its build output.
+async fn clean(dir: &Path) {
+    let dir = dir.to_path_buf();
+    let _ = tokio::task::spawn_blocking(move || {
+        for name in JOB_STATE {
+            let path = dir.join(name);
+            let _ = std::fs::remove_dir_all(&path).or_else(|_| std::fs::remove_file(&path));
+        }
+    })
+    .await;
 }
 
 /// A symlink to our pid, the same lock the TypeScript CLI takes. A lock left by a process that

@@ -167,24 +167,18 @@ pub fn login(
     let claim = json!({ "deviceCode": device_code, "os": platform.0, "arch": platform.1 });
     let claimed = match post("/api/machines/claim", claim, Some(&access_token)) {
         Reply::Ok(body) => body,
-        Reply::Revoked => return Err(claim_failed(server, "HTTP 401".into())),
+        Reply::Revoked => return Err(claim_failed("HTTP 401".into())),
         Reply::Status(status, body) => {
-            return Err(claim_failed(
-                server,
-                api::failure_reason(server, status, &body),
-            ));
+            return Err(claim_failed(api::failure_reason(server, status, &body)));
         }
-        Reply::Unreachable(reason) => return Err(claim_failed(server, reason)),
+        Reply::Unreachable(reason) => return Err(claim_failed(reason)),
     };
     let (Some(id), Some(machine_name), Some(token)) = (
         claimed["machine"]["id"].as_str(),
         claimed["machine"]["name"].as_str(),
         claimed["token"].as_str(),
     ) else {
-        return Err(claim_failed(
-            server,
-            "it sent an unexpected response".into(),
-        ));
+        return Err(claim_failed("it sent an unexpected response".into()));
     };
     let origin = url::Url::parse(server)
         .map(|u| u.origin().ascii_serialization())
@@ -202,8 +196,7 @@ pub fn login(
     })
 }
 
-fn claim_failed(server: &str, reason: String) -> Error {
-    let _ = server;
+fn claim_failed(reason: String) -> Error {
     Error::new(
         "CLAIM_FAILED",
         format!("The gateway approved the sign-in but wouldn't enroll this machine: {reason}."),

@@ -16,9 +16,15 @@ pub enum Reply {
 }
 
 pub fn agent() -> ureq::Agent {
+    agent_with(Duration::from_secs(30), false)
+}
+
+/// The HTTP client every request uses, with its own timeout and, when `status_as_error`, a
+/// failed status as an error.
+pub fn agent_with(timeout: Duration, status_as_error: bool) -> ureq::Agent {
     ureq::Agent::config_builder()
-        .http_status_as_error(false)
-        .timeout_global(Some(Duration::from_secs(30)))
+        .http_status_as_error(status_as_error)
+        .timeout_global(Some(timeout))
         .user_agent(crate::USER_AGENT.as_str())
         // The system's trust store, so a company proxy with its own root works as it does in a browser.
         .tls_config(

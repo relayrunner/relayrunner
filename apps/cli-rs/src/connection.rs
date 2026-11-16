@@ -125,7 +125,7 @@ impl Conn {
         }
     }
 
-    fn start_job(&mut self, run: Run) -> Option<MachineMessage> {
+    fn start_job(&mut self, run: Run) -> MachineMessage {
         let route_id = run.route_id.clone();
         let slot = (1..).find(|s| !self.busy.contains(s)).unwrap();
         if slot > self.options.slots {
@@ -139,12 +139,12 @@ impl Conn {
             } else {
                 format!("The machine is already running {running} jobs.")
             };
-            return Some(MachineMessage::Job(JobUpdate {
+            return MachineMessage::Job(JobUpdate {
                 route_id,
                 state: JobState::Failed,
                 message: Some(message),
                 usage: None,
-            }));
+            });
         }
         say("run", json!({ "routeId": route_id, "slot": slot }));
         self.live.jobs.push(route_id.clone());
@@ -160,10 +160,10 @@ impl Conn {
             job.await;
             let _ = tx.send(FromJob::Done(slot));
         });
-        Some(self.status())
+        self.status()
     }
 
-    /// A job task's news: the message to send, if any.
+    /// A job task's news: the message to send.
     fn on_job(&mut self, news: FromJob) -> MachineMessage {
         match news {
             FromJob::Update(update, slot) => {
@@ -283,13 +283,36 @@ pub async fn run(options: Options) -> End {
         said_version: String::new(),
         online: false,
     };
+    let end = stay_connected(&mut conn, &mut jobs_rx, &mut stop).await;
 
+    // A running job's runner finishes (or, after Ctrl-C, exits and cleans up) before this returns,
+    // so its VM goes away and its end still shows. A second Ctrl-C exits on the spot.
+    if !conn.busy.is_empty() {
+        events::log(if conn.busy.len() == 1 {
+            "Waiting for the running job to finish. Press Ctrl-C again to stop it now."
+        } else {
+            "Waiting for the running jobs to finish. Press Ctrl-C again to stop them now."
+        });
+    }
+    while !conn.busy.is_empty() {
+        let Some(news) = jobs_rx.recv().await else {
+            break;
+        };
+        conn.on_job(news);
+    }
+    end
+}
+
+async fn stay_connected(
+    conn: &mut Conn,
+    jobs_rx: &mut mpsc::UnboundedReceiver<FromJob>,
+    stop: &mut watch::Receiver<bool>,
+) -> End {
     let mut attempt = 0;
     while !*stop.borrow() {
         attempt += 1;
         conn.emit("connecting", json!({ "attempt": attempt }));
-        let (opened, code, reason, unauthorized) =
-            session(&mut conn, &mut jobs_rx, &mut stop).await;
+        let (opened, code, reason, unauthorized) = session(conn, jobs_rx, stop).await;
         if *stop.borrow() {
             break;
         }
@@ -408,7 +431,7 @@ async fn session(
                         None
                     }
                     Ok(GatewayMessage::Run { route_id, jit_config, isolated }) => {
-                        conn.start_job(Run { route_id, jit_config, isolated })
+                        Some(conn.start_job(Run { route_id, jit_config, isolated }))
                     }
                     Ok(GatewayMessage::Paused { paused, by }) => {
                         conn.emit("paused", json!({ "paused": paused, "by": by }));

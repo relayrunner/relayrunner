@@ -49,7 +49,7 @@ impl Source {
             }
             Source::Vm { name, cpus, .. } => {
                 let output = sys::run(
-                    "container",
+                    &crate::isolated::container_command(),
                     &["stats", "--format", "json", "--no-stream", name],
                 )
                 .await?;

@@ -125,17 +125,7 @@ pub fn pick_download(release: &Value, (os, arch): (&str, &str)) -> Result<Downlo
 }
 
 fn agent() -> ureq::Agent {
-    ureq::Agent::config_builder()
-        .timeout_global(Some(Duration::from_secs(600)))
-        .user_agent(crate::USER_AGENT.as_str())
-        // The system's trust store, so a company proxy with its own root works as it does in a browser.
-        .tls_config(
-            ureq::tls::TlsConfig::builder()
-                .root_certs(ureq::tls::RootCerts::PlatformVerifier)
-                .build(),
-        )
-        .build()
-        .into()
+    crate::api::agent_with(Duration::from_secs(600), true)
 }
 
 fn latest_release() -> Result<Value, Error> {
@@ -179,39 +169,36 @@ pub fn installed(root: &Path) -> Vec<Installed> {
 
 /// The latest actions/runner version, or the newest installed one when GitHub can't be reached.
 pub fn latest_version(root: &Path, log: &dyn Fn(&str)) -> Result<String, Error> {
-    match latest_release().and_then(|r| pick_download(&r, platform()?)) {
+    match latest_download() {
         Ok(download) => Ok(download.version),
-        Err(e) => match installed(root).into_iter().next() {
-            Some(newest) => {
-                log(&format!(
-                    "Couldn't check for a newer runner ({e}). Using {}.",
-                    newest.version
-                ));
-                Ok(newest.version)
-            }
-            None => Err(e),
-        },
+        Err(e) => newest_installed(root, e, log).map(|newest| newest.version),
     }
+}
+
+fn latest_download() -> Result<Download, Error> {
+    pick_download(&latest_release()?, platform()?)
+}
+
+/// The newest installed runner, for when the latest release couldn't be looked up.
+fn newest_installed(root: &Path, e: Error, log: &dyn Fn(&str)) -> Result<Installed, Error> {
+    let Some(newest) = installed(root).into_iter().next() else {
+        return Err(e);
+    };
+    log(&format!(
+        "Couldn't check for a newer runner ({e}). Using {}.",
+        newest.version
+    ));
+    Ok(newest)
 }
 
 /// The latest runner, downloading it if it isn't installed. Falls back to the newest installed
 /// one when GitHub can't be reached, so a machine keeps working without GitHub's API.
 pub fn ensure(root: &Path, log: &dyn Fn(&str)) -> Result<Installed, Error> {
-    let target = platform()?;
-    let download = match latest_release().and_then(|r| pick_download(&r, target)) {
+    // A platform that can't run the runner fails here, never falling back.
+    platform()?;
+    let download = match latest_download() {
         Ok(download) => download,
-        Err(e) => {
-            return match installed(root).into_iter().next() {
-                Some(newest) => {
-                    log(&format!(
-                        "Couldn't check for a newer runner ({e}). Using {}.",
-                        newest.version
-                    ));
-                    Ok(newest)
-                }
-                None => Err(e),
-            };
-        }
+        Err(e) => return newest_installed(root, e, log),
     };
     let dir = root.join(&download.version);
     if !dir.join("run.sh").exists() {
@@ -262,7 +249,7 @@ pub fn install(root: &Path, download: &Download) -> Result<(), Error> {
             hash.update(&buffer[..n]);
             file.write_all(&buffer[..n]).map_err(io)?;
         }
-        let digest: String = hash.finalize().iter().map(|b| format!("{b:02x}")).collect();
+        let digest = format!("{:x}", hash.finalize());
         if digest != download.sha256 {
             return Err(Error::new(
                 "RUNNER_CHECKSUM",
@@ -296,7 +283,7 @@ pub fn install(root: &Path, download: &Download) -> Result<(), Error> {
 
 /// Installs a given version from the latest release. For updates while connected.
 pub fn install_version(root: &Path, version: &str) -> Result<Installed, Error> {
-    let download = pick_download(&latest_release()?, platform()?)?;
+    let download = latest_download()?;
     if download.version != version {
         return Err(Error::new(
             "RUNNER_DOWNLOAD",

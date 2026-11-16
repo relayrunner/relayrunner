@@ -30,18 +30,24 @@ pub fn cpu_count() -> u32 {
 }
 
 /// Total memory in bytes.
+/// Read once: it doesn't change while `connect` runs.
 pub async fn total_memory() -> u64 {
-    if cfg!(target_os = "macos") {
-        run("sysctl", &["-n", "hw.memsize"])
-            .await
-            .and_then(|s| s.parse().ok())
-            .unwrap_or(0)
-    } else {
-        read("/proc/meminfo")
-            .and_then(|text| {
-                let line = text.lines().find(|l| l.starts_with("MemTotal:"))?;
-                line.split_whitespace().nth(1)?.parse::<u64>().ok()
-            })
-            .map_or(0, |kb| kb * 1024)
-    }
+    static TOTAL: tokio::sync::OnceCell<u64> = tokio::sync::OnceCell::const_new();
+    *TOTAL
+        .get_or_init(|| async {
+            if cfg!(target_os = "macos") {
+                run("sysctl", &["-n", "hw.memsize"])
+                    .await
+                    .and_then(|s| s.parse().ok())
+                    .unwrap_or(0)
+            } else {
+                read("/proc/meminfo")
+                    .and_then(|text| {
+                        let line = text.lines().find(|l| l.starts_with("MemTotal:"))?;
+                        line.split_whitespace().nth(1)?.parse::<u64>().ok()
+                    })
+                    .map_or(0, |kb| kb * 1024)
+            }
+        })
+        .await
 }

@@ -155,7 +155,7 @@ pub fn job_image(base: &str, tools: bool) -> String {
     let mut hash = Sha256::new();
     hash.update(dockerfile(base, tools));
     hash.update(START_SCRIPT);
-    let hex: String = hash.finalize().iter().map(|b| format!("{b:02x}")).collect();
+    let hex = format!("{:x}", hash.finalize());
     format!("relayrunner-runner:{}", &hex[..12])
 }
 
@@ -493,10 +493,15 @@ pub async fn cleanup(route_id: &str, isolation: &Arc<Isolation>) {
     }
 }
 
+/// Apple's `container` CLI. Tests point RELAYRUNNER_CONTAINER at a stand-in.
+pub fn container_command() -> String {
+    std::env::var("RELAYRUNNER_CONTAINER").unwrap_or_else(|_| "container".into())
+}
+
 /// Runs a `container` command to the end and logs it. (exit code or None when it couldn't start,
 /// what it printed unless `quiet`).
 async fn call(args: &[&str], debug: Option<&DebugLog>, quiet: bool) -> (Option<i32>, String) {
-    let command = std::env::var("RELAYRUNNER_CONTAINER").unwrap_or_else(|_| "container".into());
+    let command = container_command();
     let result = tokio::process::Command::new(&command)
         .args(args)
         .stdin(Stdio::null())

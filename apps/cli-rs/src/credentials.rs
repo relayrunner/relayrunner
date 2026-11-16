@@ -1,7 +1,7 @@
 //! ~/.relayrunner/machine.json, shared with the TypeScript CLI. A port of apps/cli/credentials.ts.
 
 use serde::{Deserialize, Serialize};
-use serde_json::{Map, Value};
+use serde_json::Value;
 use std::io::Write;
 use std::os::unix::fs::{OpenOptionsExt, PermissionsExt};
 use std::path::PathBuf;
@@ -87,16 +87,18 @@ pub fn normalize_server(value: &str) -> Result<String, crate::error::Error> {
 /// Saves a token the gateway rotated, keeping the rest of the file as it is. Fails, saving
 /// nothing, when the file now holds another sign-in or is gone.
 pub fn save_rotated_token(was: &Credentials, token: &str) -> Result<(), String> {
-    let now = read()
-        .map_err(|e| e.to_string())?
-        .ok_or("machine.json was removed")?;
-    if now.machine.id != was.machine.id || now.server != was.server {
+    let text = match std::fs::read_to_string(path()) {
+        Err(e) if e.kind() == std::io::ErrorKind::NotFound => {
+            return Err("machine.json was removed".into());
+        }
+        result => result.map_err(|e| e.to_string())?,
+    };
+    let mut value: Value = serde_json::from_str(&text).map_err(|e| e.to_string())?;
+    if value["machine"]["id"] != was.machine.id.as_str() || value["server"] != was.server.as_str() {
         return Err("machine.json now holds another sign-in".into());
     }
-    let text = std::fs::read_to_string(path()).map_err(|e| e.to_string())?;
-    let mut value: Map<String, Value> = serde_json::from_str(&text).map_err(|e| e.to_string())?;
-    value.insert("token".into(), token.into());
-    write(&Value::Object(value)).map_err(|e| e.to_string())
+    value["token"] = token.into();
+    write(&value).map_err(|e| e.to_string())
 }
 
 // 0600 in a temp file, then renamed, so a crash never leaves half a token.
