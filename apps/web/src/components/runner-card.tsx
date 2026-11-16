@@ -45,7 +45,7 @@ import {
 } from "@/lib/machines";
 import { capacity } from "@/lib/capacity";
 import { runnerUpdate } from "@/lib/runner-update";
-import { shortDate } from "@/lib/time-range";
+import { shortDate } from "@/lib/time-zone";
 import { RunnerPanelLink } from "@/components/runner-panel-link";
 import { cn } from "@/lib/utils";
 

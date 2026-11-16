@@ -56,3 +56,40 @@ describe("POST /api/me/legal", () => {
     expect((await testing.call(env, "/me/legal", "", LEGAL_VERSIONS)).status).toBe(401);
   });
 });
+
+describe("PUT /api/me/time-zone", () => {
+  const put = (cookie: string, body: unknown) =>
+    testing.call(env, "/me/time-zone", cookie, body, "PUT");
+  const zoneOf = async (cookie: string) =>
+    (
+      (await (await testing.call(env, "/auth/get-session", cookie)).json()) as {
+        user: { timeZone?: string | null };
+      }
+    ).user.timeZone ?? null;
+
+  test("saves a zone and puts it on the session, and null goes back to the browser's", async () => {
+    const { cookie } = await testing.signIn(env);
+    const before = await testing.call(env, "/auth/get-session", cookie);
+    const cached = testing.withSetCookies(cookie, before);
+    expect(await zoneOf(cached)).toBeNull();
+
+    const saved = await put(cached, { timeZone: "Europe/Berlin" });
+    expect(saved.status).toBe(200);
+    const withZone = testing.withSetCookies(cached, saved);
+    expect(await zoneOf(withZone)).toBe("Europe/Berlin");
+
+    const cleared = await put(withZone, { timeZone: null });
+    expect(await cleared.json()).toEqual({ timeZone: null });
+    expect(await zoneOf(testing.withSetCookies(withZone, cleared))).toBeNull();
+  });
+
+  test("refuses a zone the runtime doesn't know", async () => {
+    const { cookie } = await testing.signIn(env);
+    expect((await put(cookie, { timeZone: "Mars/Olympus" })).status).toBe(400);
+    expect((await put(cookie, {})).status).toBe(400);
+  });
+
+  test("needs a signed-in user", async () => {
+    expect((await put("", { timeZone: null })).status).toBe(401);
+  });
+});

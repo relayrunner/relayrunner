@@ -2,7 +2,10 @@
 // `24h` or `14d`, a calendar one such as `today` or `week`, or a custom range of local dates,
 // `2026-11-01..2026-11-07` (both days included).
 
-// Kept free of imports so tests can load it, like runner-days.ts.
+// Days are the dashboard's time zone's (time-zone.ts). Kept free of `@/` imports so tests can load
+// it, like runner-days.ts.
+import { parseDateText, shortDate, startOfDay, startOfWeek } from "./time-zone.ts";
+
 const HOUR_MS = 3_600_000;
 const DAY_MS = 24 * HOUR_MS;
 
@@ -30,8 +33,6 @@ const NAMES: Record<RangePreset, string> = {
   lastweek: "Last week",
 };
 
-const DATE = /^\d{4}-\d{2}-\d{2}$/;
-
 /** A rolling preset's length. */
 function rollingMs(range: RollingRange) {
   const amount = Number.parseInt(range, 10);
@@ -53,40 +54,11 @@ export const dayPreset = (days: number) => (days === 1 ? "24h" : `${days}d`) as 
 export const presetDays = (range: RollingRange) =>
   Math.max(1, Math.round(rollingMs(range) / DAY_MS));
 
-/** Local midnight of the day `ms` falls in, `addDays` days on. */
-function startOfDay(ms: number, addDays = 0) {
-  const date = new Date(ms);
-  date.setHours(0, 0, 0, 0);
-  date.setDate(date.getDate() + addDays);
-  return date.getTime();
-}
-
-/** Local midnight on the Monday of the week `ms` falls in. */
-function startOfWeek(ms: number) {
-  const day = new Date(ms).getDay();
-  return startOfDay(ms, -((day + 6) % 7));
-}
-
-/** `YYYY-MM-DD` for the local day `ms` falls in. */
-export function dateText(ms: number) {
-  const date = new Date(ms);
-  const pad = (n: number) => String(n).padStart(2, "0");
-  return `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())}`;
-}
-
-/** Local midnight of a `YYYY-MM-DD` day, or NaN. */
-function parseDate(text: string) {
-  if (!DATE.test(text)) return Number.NaN;
-  const [year, month, day] = text.split("-").map(Number) as [number, number, number];
-  const date = new Date(year, month - 1, day);
-  return date.getDate() === day ? date.getTime() : Number.NaN;
-}
-
 /** A custom range's two days as local midnights, or null when it isn't two valid days in order. */
 function parseCustom(range: string) {
   const [from = "", to = "", extra] = range.split("..");
-  const start = parseDate(from);
-  const end = parseDate(to);
+  const start = parseDateText(from);
+  const end = parseDateText(to);
   return extra === undefined && start <= end ? { start, end } : null;
 }
 
@@ -96,7 +68,7 @@ export const customRangeStart = (customDays: number, now = Date.now()) =>
 
 /** A custom range from two local days, in order, both included. */
 export function customRange(from: string, to: string): CustomRange {
-  return parseDate(from) <= parseDate(to) ? `${from}..${to}` : `${to}..${from}`;
+  return parseDateText(from) <= parseDateText(to) ? `${from}..${to}` : `${to}..${from}`;
 }
 
 /** Where a range starts and ends, in epoch ms, as of `now`. */
@@ -128,11 +100,6 @@ export function spanCode(range: TimeRange, now = Date.now()) {
   if (span < 2 * DAY_MS) return `${Math.round(span / HOUR_MS)}h`;
   return `${Math.round(span / DAY_MS)}d`;
 }
-
-const dayFormat = new Intl.DateTimeFormat(undefined, { month: "short", day: "numeric" });
-
-/** A day as "Nov 14". */
-export const shortDate = (ms: number) => dayFormat.format(ms);
 
 /** The range's name, such as "Past 24 hours", "This week" or "Nov 1 – Nov 7". */
 export function rangeName(range: TimeRange) {

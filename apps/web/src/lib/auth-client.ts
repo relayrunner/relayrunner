@@ -10,12 +10,14 @@ export const authClient = createAuthClient({
   plugins: [
     organizationClient(),
     // user.role (apps/api/src/auth.ts): "operator" sees the Admin section. termsVersion and
-    // privacyVersion: what they last agreed to (lib/legal.ts).
+    // privacyVersion: what they last agreed to (lib/legal.ts). timeZone: the zone they picked for
+    // the dashboard's times, or null for the browser's (lib/time-zone.ts).
     inferAdditionalFields({
       user: {
         role: { type: "string", required: false, input: false },
         termsVersion: { type: "string", required: false, input: false },
         privacyVersion: { type: "string", required: false, input: false },
+        timeZone: { type: "string", required: false, input: false },
       },
     }),
     // Agent sign-in (apps/api/src/agent-auth.ts): on the pages Better Auth sends an MCP client's

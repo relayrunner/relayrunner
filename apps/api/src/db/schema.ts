@@ -45,6 +45,9 @@ export const user = sqliteTable("user", {
   termsVersion: text("terms_version"),
   privacyVersion: text("privacy_version"),
   legalAgreedAt: integer("legal_agreed_at", { mode: "timestamp_ms" }),
+  // The IANA time zone the dashboard shows their times and days in (routes/me.ts). Null follows
+  // the browser's zone.
+  timeZone: text("time_zone"),
   ...timestamps,
 });
 

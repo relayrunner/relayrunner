@@ -19,6 +19,7 @@ export type {
   ActivityStarter,
   ActivityStarters,
 } from "@relayrunner/activity";
+import { formatDate } from "@/lib/time-zone";
 
 /** A page of the workspace's Activity log, newest first, narrowed on the server by `query`. */
 export function getActivity(query: ActivityQuery & { before?: number } = {}) {
@@ -40,7 +41,7 @@ export function timeAgo(date: string | number, now = Date.now()) {
   if (seconds < 60) return `${seconds}s ago`;
   if (seconds < 3600) return `${Math.floor(seconds / 60)}m ago`;
   if (seconds < 86_400) return `${Math.floor(seconds / 3600)}h ago`;
-  return new Date(date).toLocaleDateString();
+  return formatDate(date);
 }
 
 /** "45s", "3m 12s", or null when the job hasn't started. Runs to now while it's in progress. */

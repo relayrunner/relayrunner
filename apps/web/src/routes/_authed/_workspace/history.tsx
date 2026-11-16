@@ -1,6 +1,6 @@
 import { createFileRoute } from "@tanstack/react-router";
 import { ChevronRightIcon, RouteIcon } from "lucide-react";
-import { memo, useEffect, useMemo, useRef, useState } from "react";
+import { Fragment, memo, useEffect, useMemo, useRef, useState } from "react";
 import { CommitBy } from "@/components/commit";
 import { DurationChart, runPoints } from "@/components/duration-chart";
 import { SectionBoundary } from "@/components/error-boundary";
@@ -17,6 +17,8 @@ import {
 import { RangePicker } from "@/components/range-picker";
 import { type Environments, fetchRunJobs, RunLink, RunSheet } from "@/components/run-sheet";
 import { StatusIcon } from "@/components/status-icon";
+import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
+import { SECTION_HEADING } from "@/components/ui/data-table";
 import {
   Select,
   SelectContent,
@@ -28,6 +30,7 @@ import { timeAgo } from "@/lib/activity";
 import { authDisabled } from "@/lib/auth-client";
 import { DAY_MS, type Environment, plural } from "@/lib/job-times";
 import { useLiveRefresh } from "@/lib/live-refresh";
+import { dayHeading } from "@/lib/time-zone";
 import { useNow } from "@/lib/use-now";
 import {
   getJobs,
@@ -214,6 +217,11 @@ function WorkflowRuns({ loaded }: { loaded: RunsReport }) {
     return by ? shown.sort((a, b) => by(b) - by(a)) : shown;
   }, [report, days, repository, result, routed, sort]);
   const chartPoints = useMemo(() => runPoints(runs), [runs]);
+  // Newest first, a heading starts each day: when each run last changed, as the list is ordered.
+  const runDays = useMemo(
+    () => (sort === "newest" ? runs.map((run) => dayHeading(run.updatedAt)) : null),
+    [runs, sort],
+  );
   useLiveRefresh(
     () =>
       getRuns()
@@ -287,25 +295,32 @@ function WorkflowRuns({ loaded }: { loaded: RunsReport }) {
             <DurationChart points={chartPoints} days={days} noun="run" />
           </SectionBoundary>
           <SectionBoundary>
-            <ul className="divide-y overflow-hidden rounded-xl border bg-card">
-              {runs.length === 0 && (
-                <li className="px-4 py-6 text-sm text-muted-foreground">
-                  No runs match these filters.
-                </li>
-              )}
-              {runs.map((run) => {
-                const key = runParam(run);
-                return (
-                  <RunRow
-                    key={key}
-                    run={run}
-                    environments={environments}
-                    showRepository={repositories.length > 1}
-                    open={open === key}
-                  />
-                );
-              })}
-            </ul>
+            <TooltipProvider>
+              <ul className="divide-y overflow-hidden rounded-xl border bg-card">
+                {runs.length === 0 && (
+                  <li className="px-4 py-6 text-sm text-muted-foreground">
+                    No runs match these filters.
+                  </li>
+                )}
+                {runs.map((run, index) => {
+                  const key = runParam(run);
+                  const day = runDays?.[index];
+                  return (
+                    <Fragment key={key}>
+                      {day && day !== runDays[index - 1] && (
+                        <li className={SECTION_HEADING}>{day}</li>
+                      )}
+                      <RunRow
+                        run={run}
+                        environments={environments}
+                        showRepository={repositories.length > 1}
+                        open={open === key}
+                      />
+                    </Fragment>
+                  );
+                })}
+              </ul>
+            </TooltipProvider>
           </SectionBoundary>
           <Legend days={report.days} truncated={report.truncated} />
         </>
@@ -361,9 +376,19 @@ const RunRow = memo(function RunRow({
               {run.title ?? run.workflow ?? "Unnamed workflow"}
             </span>
             {run.routed && (
-              <span title="Routed by RelayRunner" className="shrink-0 text-muted-foreground">
-                <RouteIcon role="img" aria-label="Routed by RelayRunner" className="size-3.5" />
-              </span>
+              <Tooltip>
+                <TooltipTrigger asChild>
+                  <span className="shrink-0 text-muted-foreground">
+                    <RouteIcon role="img" aria-label="Routed by RelayRunner" className="size-3.5" />
+                  </span>
+                </TooltipTrigger>
+                <TooltipContent className="grid max-w-64 gap-0.5 py-2">
+                  <span className="font-medium">Routed by RelayRunner</span>
+                  <span className="opacity-80">
+                    Your Router picked the runner for this run's jobs.
+                  </span>
+                </TooltipContent>
+              </Tooltip>
             )}
           </span>
           <span className="flex min-w-0 items-center gap-2.5 text-xs text-muted-foreground">

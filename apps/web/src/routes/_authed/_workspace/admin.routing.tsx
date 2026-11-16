@@ -19,6 +19,7 @@ import {
 } from "@/lib/admin-routing";
 import { authDisabled } from "@/lib/auth-client";
 import { cn, elapsed, exact } from "@/lib/utils";
+import { formatTime } from "@/lib/time-zone";
 
 function load(range: RoutingRange): Promise<RoutingHealth> {
   if (authDisabled) return Promise.resolve(sampleRoutingHealth(range));
@@ -122,15 +123,8 @@ function RoutingPage() {
 
 /** "14:00", or "Thu 18:00" for the 7-day range. */
 function bucketLabel(start: string, range: RoutingRange) {
-  const date = new Date(start);
-  const time = date.toLocaleTimeString("en-US", {
-    hour: "2-digit",
-    minute: "2-digit",
-    hour12: false,
-  });
-  return range === "24h"
-    ? time
-    : `${date.toLocaleDateString("en-US", { weekday: "short" })} ${time}`;
+  const time = formatTime(start, { hour: "2-digit", minute: "2-digit", hourCycle: "h23" });
+  return range === "24h" ? time : `${formatTime(start, { weekday: "short" })} ${time}`;
 }
 
 /** "14:00–15:00", or "Thu 06:00–12:00" for 6-hour buckets. */

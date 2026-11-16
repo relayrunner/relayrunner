@@ -6,7 +6,6 @@ import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover
 import {
   customRange,
   customRangeStart,
-  dateText,
   dayPreset,
   isCalendar,
   isCustom,
@@ -17,6 +16,7 @@ import {
   spanCode,
   type TimeRange,
 } from "@/lib/time-range";
+import { dateText } from "@/lib/time-zone";
 import { cn } from "@/lib/utils";
 
 /** A row of buttons that picks one option, such as a report's view. */

@@ -27,6 +27,7 @@ import {
   type StickinessState,
 } from "@/lib/admin";
 import { ROLE_LABELS, type Role } from "@/lib/roles";
+import { formatTime, shortDate } from "@/lib/time-zone";
 
 // Operator admin, behind Cloudflare Access and an operator session (apps/api/src/routes/admin.ts).
 export const Route = createFileRoute("/_authed/_workspace/admin/workspaces")({
@@ -303,14 +304,12 @@ function StickinessLabel({ stickiness }: { stickiness: Stickiness | null }) {
   );
 }
 
-const day = new Intl.DateTimeFormat(undefined, { month: "short", day: "numeric" });
-
 function stickinessWhy(s: Stickiness) {
   const where = `${s.workflow} in ${s.repository}`;
-  const lastRelay = dateTime.format(new Date(s.lastRelayAt));
+  const lastRelay = dateTime(s.lastRelayAt);
   switch (s.state) {
     case "trying": {
-      const idleBy = day.format(new Date(new Date(s.lastRelayAt).getTime() + 7 * 86_400_000));
+      const idleBy = shortDate(new Date(s.lastRelayAt).getTime() + 7 * 86_400_000);
       return `The relay has only run on ${s.branch ?? "the branch that added it"} (${where}). Adopted once it runs on the default branch or another branch; Abandoned if it doesn't relay again by ${idleBy}.`;
     }
     case "adopted":
@@ -322,7 +321,8 @@ function stickinessWhy(s: Stickiness) {
   }
 }
 
-const dateTime = new Intl.DateTimeFormat(undefined, { dateStyle: "medium", timeStyle: "short" });
+const dateTime = (at: string | number) =>
+  formatTime(at, { dateStyle: "medium", timeStyle: "short" });
 
 /** One dot per setup step: filled when done, amber when stuck, hollow while waiting. */
 function SetupDots({ steps }: { steps: SetupStep[] }) {
@@ -362,7 +362,7 @@ function SetupDots({ steps }: { steps: SetupStep[] }) {
 }
 
 function stepStatus(step: SetupStep) {
-  if (step.at) return dateTime.format(new Date(step.at));
+  if (step.at) return dateTime(step.at);
   if (!step.waitingSince) return "Not yet";
   const hours = Math.floor((Date.now() - new Date(step.waitingSince).getTime()) / 3_600_000);
   const waited = hours < 48 ? `${hours}h` : `${Math.floor(hours / 24)}d`;

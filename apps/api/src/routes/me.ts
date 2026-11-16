@@ -1,6 +1,6 @@
 import { LEGAL_VERSIONS } from "@relayrunner/activity";
 import { eq } from "drizzle-orm";
-import { Hono } from "hono";
+import { type Context, Hono } from "hono";
 import { z } from "zod";
 import type { AppEnv } from "../app.ts";
 import { createDb, schema } from "../db/index.ts";
@@ -17,6 +17,32 @@ const NotificationBody = z.object({ enabled: z.boolean() });
 
 // The versions the dashboard showed, so the record is what the person actually read.
 const LegalBody = z.object({ terms: z.string(), privacy: z.string() });
+
+// An IANA zone such as "Europe/Berlin", or null to follow the browser's.
+const TimeZoneBody = z.object({ timeZone: z.string().max(64).nullable() });
+
+/** Whether this runtime knows `zone` as a time zone. */
+function isTimeZone(zone: string) {
+  try {
+    new Intl.DateTimeFormat("en-US", { timeZone: zone });
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+/**
+ * Re-reads the session past its cookie cache (auth.ts) and passes on the fresh cookie, so the
+ * dashboard sees a change to the user's fields right away instead of in up to five minutes.
+ */
+async function refreshSessionCookie(c: Context<AppEnv>) {
+  const { headers } = await c.var.auth.api.getSession({
+    headers: c.req.raw.headers,
+    query: { disableCookieCache: true },
+    returnHeaders: true,
+  });
+  for (const cookie of headers.getSetCookie()) c.header("set-cookie", cookie, { append: true });
+}
 
 export const meRoutes = new Hono<AppEnv>()
   // The signed-in user. For an agent token, also the workspace and scopes it was granted.
@@ -57,13 +83,20 @@ export const meRoutes = new Hono<AppEnv>()
       .update(schema.user)
       .set(agreed)
       .where(eq(schema.user.id, c.var.user!.id));
-    // The versions ride the session's cookie cache (auth.ts): re-read it so the dashboard sees
-    // the agreement right away instead of in up to five minutes.
-    const { headers } = await c.var.auth.api.getSession({
-      headers: c.req.raw.headers,
-      query: { disableCookieCache: true },
-      returnHeaders: true,
-    });
-    for (const cookie of headers.getSetCookie()) c.header("set-cookie", cookie, { append: true });
+    await refreshSessionCookie(c);
     return c.json(agreed);
+  })
+  // The time zone the dashboard shows times and days in, or null for the browser's.
+  .put("/time-zone", requireUser, async (c) => {
+    const parsed = TimeZoneBody.safeParse(await c.req.json().catch(() => null));
+    const timeZone = parsed.success ? parsed.data.timeZone : undefined;
+    if (timeZone === undefined || (timeZone !== null && !isTimeZone(timeZone))) {
+      throw new AppError("INVALID_REQUEST");
+    }
+    await createDb(c.env.DB)
+      .update(schema.user)
+      .set({ timeZone })
+      .where(eq(schema.user.id, c.var.user!.id));
+    await refreshSessionCookie(c);
+    return c.json({ timeZone });
   });

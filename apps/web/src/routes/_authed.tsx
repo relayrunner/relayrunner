@@ -2,6 +2,7 @@ import { Outlet, createFileRoute, redirect } from "@tanstack/react-router";
 import { identifyUser } from "@/lib/analytics";
 import { authDisabled } from "@/lib/auth-client";
 import { agreedSession } from "@/lib/legal";
+import { setTimeZone } from "@/lib/time-zone";
 
 // Pathless layout: every route under routes/_authed/ requires a session.
 // It also requires agreeing to the current Terms of Service and Privacy Policy (routes/agree.tsx).
@@ -14,6 +15,7 @@ export const Route = createFileRoute("/_authed")({
       throw redirect({ to: "/login", search: { redirect: location.href } });
     }
     identifyUser(session.user);
+    setTimeZone(session.user.timeZone);
     return { user: session.user, session };
   },
   // The first page load shows nothing until the guards are done, rather than a page skeleton

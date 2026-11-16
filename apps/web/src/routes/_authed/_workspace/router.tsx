@@ -36,6 +36,7 @@ import {
 import { canManage } from "@/lib/roles";
 import { cn } from "@/lib/utils";
 import { getRunnerOrder } from "@/lib/runner-order";
+import { formatTime } from "@/lib/time-zone";
 
 export const Route = createFileRoute("/_authed/_workspace/router")({
   loader: async ({ context }) => {
@@ -151,8 +152,7 @@ function RouterPage() {
   );
 }
 
-const clock = (at: number) =>
-  new Date(at).toLocaleTimeString(undefined, { hour: "numeric", minute: "2-digit" });
+const clock = (at: number) => formatTime(at, { hour: "numeric", minute: "2-digit" });
 
 type HealthState = ReturnType<typeof useProviderHealth>;
 
