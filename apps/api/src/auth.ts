@@ -71,6 +71,11 @@ export function createAuth(
     secret: env.BETTER_AUTH_SECRET,
     // Lets preview origins call /api/auth/* (origin check) and be redirect targets.
     trustedOrigins: previewOrigins(env),
+    // A sign-in that fails on the way back from GitHub lands on the dashboard's sign-in page
+    // with ?error=<code>, which explains it and offers to try again, instead of Better Auth's
+    // own error page. Root-relative, so it stays on whichever dashboard host the browser is on.
+    // Sign-in buttons pass errorCallbackURL to keep their redirect (apps/web/src/lib/sign-in.ts).
+    onAPIError: { errorURL: "/login" },
     database: drizzleAdapter(createDb(env.DB), { provider: "sqlite", schema }),
     // Global role (schema.ts): "operator" sees the dashboard's Admin section. On session.user, so
     // it rides the session cookie cache. Granted by SQL only, never by the user.

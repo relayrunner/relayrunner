@@ -6,12 +6,15 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { authDisabled, getSession, signIn } from "@/lib/auth-client";
 import { usePageTitle } from "@/lib/page-title";
+import { describeSignInError, signInErrorURL } from "@/lib/sign-in";
 
-type LoginSearch = { redirect?: string };
+// `error`: why the last sign-in failed, when GitHub's callback sends the browser back here.
+type LoginSearch = { redirect?: string; error?: string };
 
 export const Route = createFileRoute("/login")({
   validateSearch: (search: Record<string, unknown>): LoginSearch => ({
     redirect: typeof search.redirect === "string" ? search.redirect : undefined,
+    error: typeof search.error === "string" ? search.error : undefined,
   }),
   beforeLoad: async ({ search }) => {
     if (authDisabled || (await getSession())) {
@@ -29,14 +32,15 @@ function connectingAgent() {
 
 function LoginPage() {
   usePageTitle("Sign in");
-  const { redirect: next } = Route.useSearch();
-  const [error, setError] = useState<string | null>(null);
+  const { redirect: next, error: errorCode } = Route.useSearch();
+  const [error, setError] = useState<string | null>(() => describeSignInError(errorCode));
 
   async function signInWithGitHub() {
     setError(null);
     const { error } = await signIn.social({
       provider: "github",
       callbackURL: next ?? "/runners",
+      errorCallbackURL: signInErrorURL(),
     });
     if (error) setError(error.message ?? "Sign-in failed");
   }

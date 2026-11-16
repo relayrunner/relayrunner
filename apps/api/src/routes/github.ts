@@ -282,7 +282,13 @@ async function signInFromInstall(c: Context<AppEnv>, code: string) {
 // `callbackURL` (a dashboard path) once signed in.
 async function signInWithGitHub(c: Context<AppEnv>, callbackURL: string) {
   const response = await c.var.auth.api.signInSocial({
-    body: { provider: "github", callbackURL, disableRedirect: true },
+    body: {
+      provider: "github",
+      callbackURL,
+      // A failed sign-in shows on the sign-in page, which then returns here (auth.ts onAPIError).
+      errorCallbackURL: `/login?redirect=${encodeURIComponent(callbackURL)}`,
+      disableRedirect: true,
+    },
     headers: c.req.raw.headers,
     asResponse: true,
   });

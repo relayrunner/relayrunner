@@ -338,7 +338,12 @@ function SignInStep() {
   async function signInOnly() {
     setError(null);
     setPending(true);
-    const { error } = await signIn.social({ provider: "github", callbackURL: back });
+    const { error } = await signIn.social({
+      provider: "github",
+      callbackURL: back,
+      // A failed sign-in shows on the sign-in page, which then returns here.
+      errorCallbackURL: `/login?redirect=${encodeURIComponent(back)}`,
+    });
     if (error) {
       setError(error.message ?? "Sign-in failed");
       setPending(false);
