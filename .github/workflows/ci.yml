@@ -1,6 +1,17 @@
 name: CI
 
-on: [push, pull_request]
+# Pull requests get their run from pull_request, so push runs only on main. Running both would
+# check every pull request commit twice.
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+# A newer push to a pull request cancels its older run. Runs on main each get their own group, so
+# none is cancelled.
+concurrency:
+  group: ci-${{ github.head_ref || github.run_id }}
+  cancel-in-progress: true
 
 permissions:
   contents: read
