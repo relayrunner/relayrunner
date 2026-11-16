@@ -11,7 +11,9 @@
 
 import { type HostedProviderId, isProviderLabel } from "@relayrunner/providers";
 import {
+  AUTO,
   byRunnerKey,
+  noSizeText,
   notProviderLabelText,
   RUNNER_KEYS,
   RUNNER_LABELS,
@@ -457,6 +459,9 @@ export interface JobContext extends RelayInputs {
   runAttempt: number;
   // The workflow's name, or null when missing.
   workflow: string | null;
+  // The workflow's file in its repo, such as `.github/workflows/ci.yml`, from
+  // `github.workflow_ref` (the caller's, in a reusable workflow), or null when missing.
+  workflowPath: string | null;
   // Who started the run (`github.actor`, `github.actor_id`), or null when missing.
   startedBy: GithubActor | null;
   // Who started this attempt (`github.triggering_actor`), which differs from `startedBy` on a
@@ -492,10 +497,21 @@ export function jobContext(contextData: unknown): JobContext | null {
     runId,
     runAttempt: Number.isSafeInteger(runAttempt) && runAttempt > 0 ? runAttempt : 1,
     workflow: typeof workflow === "string" && workflow ? workflow : null,
+    workflowPath: workflowPathOf(scalar(github.get("workflow_ref")), repo),
     ...byRunnerKey((key) => parseLabels(scalar(inputs?.get(key)))),
     startedBy,
     triggeredBy,
   };
+}
+
+// `acme/app/.github/workflows/ci.yml@refs/heads/main` is `.github/workflows/ci.yml`.
+function workflowPathOf(ref: unknown, repo: string): string | null {
+  if (typeof ref !== "string") return null;
+  const path = ref.split("@")[0];
+  const prefix = `${repo}/`;
+  return path.toLowerCase().startsWith(prefix.toLowerCase()) && path.length > prefix.length
+    ? path.slice(prefix.length)
+    : null;
 }
 
 function actorOf(login: unknown, id: unknown): GithubActor | null {
@@ -533,6 +549,8 @@ export interface SkippedStep {
   // spend_limit: the job's GitHub account's spend on the provider this month.
   spend?: SpendUsage;
   unhealthy?: Unhealthy;
+  // no_size: the job's size, in vCPUs.
+  vcpus?: number;
 }
 
 // What the job's GitHub account has spent on a hosted provider this month (src/provider-spend.ts).
@@ -573,6 +591,9 @@ export type RouteDecision =
 
 export interface RouteRequest extends RelayInputs {
   private: boolean;
+  // An auto relay's size in vCPUs (src/auto-jobs.ts). A provider still set to `auto` has no
+  // runner that big.
+  size?: number;
 }
 
 /**
@@ -684,6 +705,7 @@ export async function decideRoute(
       }
     } else if (key === "github") {
       if (job.github.length === 0) skipped.push({ key, reason: "not_configured" });
+      else if (unsized(job.github)) skipped.push({ key, reason: "no_size", vcpus: job.size });
       else if (job.github.length > 1) skipped.push({ key, reason: "too_many_labels" });
       else {
         const over = step.limit
@@ -698,6 +720,7 @@ export async function decideRoute(
       // that names one of its labels; another label would queue forever.
       const labels = job[key];
       if (labels.length === 0) skipped.push({ key, reason: "not_configured" });
+      else if (unsized(labels)) skipped.push({ key, reason: "no_size", vcpus: job.size });
       else if (labels.length > 1) skipped.push({ key, reason: "too_many_labels" });
       else if (!isProviderLabel(key, labels[0]))
         skipped.push({ key, reason: "not_provider_label" });
@@ -724,6 +747,9 @@ export async function decideRoute(
   return { runner: null, reason: noRunnerReason(job, skipped, notInOrder), skipped, notInOrder };
 }
 
+// An `auto` input that no label of the job's size replaced (resolveAutoInputs).
+const unsized = (labels: string[]) => labels.length === 1 && labels[0] === AUTO;
+
 /** The message a relay fails with when nothing fits, naming why each provider couldn't take it. */
 export function noRunnerReason(
   job: RouteRequest,
@@ -733,7 +759,7 @@ export function noRunnerReason(
   if (RUNNER_KEYS.every((key) => job[key].length === 0))
     return `${NO_RUNNER}: the relay sets no provider, such as \`machine\` or \`github\`.`;
   const parts = skipped.map(
-    ({ key, reason, paused = [], notShared = [], full = [], minutes, spend }) => {
+    ({ key, reason, paused = [], notShared = [], full = [], minutes, spend, vcpus }) => {
       switch (reason) {
         case "not_configured":
           return `\`${key}\` isn't set on this relay`;
@@ -765,6 +791,8 @@ export function noRunnerReason(
         // Never the reason nothing fit: an unhealthy step takes the job when no other can.
         case "provider_unhealthy":
           return `${RUNNER_LABELS[key]} isn't picking up jobs`;
+        case "no_size":
+          return noSizeText(key, vcpus);
       }
     },
   );

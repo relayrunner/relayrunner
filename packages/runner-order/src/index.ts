@@ -172,3 +172,51 @@ export function readRetrySettings(stored: string | null | undefined): RetrySetti
     return DEFAULT_RETRY_SETTINGS;
   }
 }
+
+/** The relay input value that hands a provider's label to the Router: `blacksmith: auto`. */
+export const AUTO = "auto";
+
+const isAutoInput = (labels: string[]) => labels.length === 1 && labels[0]?.toLowerCase() === AUTO;
+const noInputs = (inputs: RelayInputs) => RUNNER_KEYS.every((key) => inputs[key].length === 0);
+
+/**
+ * Whether the Router picks the job's labels: the relay sets some provider to `auto`, or sets no
+ * provider at all. A relay that names its own labels everywhere runs as written.
+ */
+export const isAutoRelay = (inputs: RelayInputs) =>
+  noInputs(inputs) || RUNNER_KEYS.some((key) => isAutoInput(inputs[key]));
+
+/**
+ * A relay's inputs with each `auto` (every provider, when it sets none) turned into a label:
+ * `machine` takes any machine, and the rest get `label(key)`, the provider's label for the job's
+ * size. A provider with no label that big keeps `auto`, which the Router skips as `no_size`.
+ * Labels the relay names itself stay as they are.
+ */
+export function resolveAutoInputs(
+  inputs: RelayInputs,
+  label: (key: Exclude<RunnerKey, "machine">) => string | null,
+): RelayInputs {
+  const all = noInputs(inputs);
+  return byRunnerKey((key) => {
+    if (!all && !isAutoInput(inputs[key])) return inputs[key];
+    return key === "machine" ? ["self-hosted"] : [label(key) ?? AUTO];
+  });
+}
+
+/** The order with `first`'s steps moved to the top, the rest as they were. */
+export function preferFirst(order: RunnerOrder, first: RunnerKey | null | undefined): RunnerOrder {
+  if (!first) return order;
+  return {
+    ...order,
+    steps: [
+      ...order.steps.filter((step) => step.key === first),
+      ...order.steps.filter((step) => step.key !== first),
+    ],
+  };
+}
+
+/** Why an `auto` provider skipped a job: "GitHub-hosted has no runner with 8 vCPU or more". */
+export const noSizeText = (key: RunnerKey, vcpus: number | undefined) =>
+  vcpus
+    ? `${RUNNER_LABELS[key]} has no runner with ${vcpus} vCPU or more`
+    : `${RUNNER_LABELS[key]} has no runner that size`;

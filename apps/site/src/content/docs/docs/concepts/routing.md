@@ -29,7 +29,7 @@ The relay takes one input per provider:
 - **`github`**: a GitHub-hosted label, such as `ubuntu-latest`.
 - **A hosted provider's input**, such as `depot` or `blacksmith`: one of that provider's labels, such as `depot-ubuntu-24.04`. See [Hosted providers](/docs/runners/hosted).
 
-Leave out a provider and the job never runs there. See [relay.yml inputs](/docs/reference/relay-inputs) for the details.
+Leave out a provider and the job never runs there. Set one to `auto`, such as `blacksmith: auto`, and you pick the job's size on the Router page instead of in the file. See [relay.yml inputs](/docs/reference/relay-inputs) for the details.
 
 ## What happens on a push
 

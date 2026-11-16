@@ -21,6 +21,8 @@ import { present } from "./github.ts";
 import { AppError } from "@relayrunner/errors";
 import { annotate } from "../tracing.ts";
 import { routerSetup } from "../router-setup.ts";
+import { DEFAULT_AUTO_SIZE } from "@relayrunner/providers";
+import { autoJobSettingSchema, autoSizeSchema, listAutoJobs, setAutoJob } from "../auto-jobs.ts";
 
 // Any member of the workspace in the path. Someone outside it gets a 404, so ids don't leak.
 // An agent token (agent-auth.ts) only reaches the workspaces it was granted.
@@ -145,6 +147,40 @@ export const workspaceRoutes = new Hono<AppEnv>()
   .get("/:id/router-setup", requireUser, requireMember, async (c) =>
     c.json(await routerSetup(c.var.db, c.req.param("id"))),
   )
+  // Jobs whose relay hands their runner to the Router (`auto`), with the size and first provider
+  // set for each, and the workspace's default size (src/auto-jobs.ts).
+  .get("/:id/auto-jobs", requireUser, requireMember, async (c) => {
+    const id = c.req.param("id");
+    const [[row], jobs] = await Promise.all([
+      c.var.db
+        .select({ size: schema.workspace.autoSize })
+        .from(schema.workspace)
+        .where(eq(schema.workspace.id, id))
+        .limit(1),
+      listAutoJobs(c.var.db, id),
+    ]);
+    return c.json({ size: row?.size ?? DEFAULT_AUTO_SIZE, jobs });
+  })
+  // The default size for auto jobs. Owners and admins, like the order.
+  .put("/:id/auto-size", requireUser, requireMember, requireManager, async (c) => {
+    const body = (await c.req.json().catch(() => null)) as { size?: unknown } | null;
+    const parsed = autoSizeSchema.safeParse(body?.size);
+    if (!parsed.success) throw new AppError("INVALID_REQUEST");
+    await c.var.db
+      .update(schema.workspace)
+      .set({ autoSize: parsed.data })
+      .where(eq(schema.workspace.id, c.req.param("id")));
+    return c.json({ size: parsed.data });
+  })
+  // One auto job's size and the provider it tries first. Owners and admins, like the order.
+  .put("/:id/auto-jobs/:jobId", requireUser, requireMember, requireManager, async (c) => {
+    const parsed = autoJobSettingSchema.safeParse(await c.req.json().catch(() => null));
+    const jobId = Number(c.req.param("jobId"));
+    if (!parsed.success || !Number.isSafeInteger(jobId)) throw new AppError("INVALID_REQUEST");
+    const found = await setAutoJob(c.var.db, c.req.param("id"), jobId, parsed.data, c.var.user!.id);
+    if (!found) throw new AppError("NOT_FOUND");
+    return c.json(parsed.data);
+  })
   // Whether the Router skips hosted provider runner types that stopped picking up jobs, and the
   // ones it skips now (src/provider-health.ts).
   .get("/:id/provider-health", requireUser, requireMember, async (c) => {

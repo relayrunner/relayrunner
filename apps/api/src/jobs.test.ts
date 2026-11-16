@@ -110,6 +110,7 @@ function pickContext(
     runId,
     runAttempt,
     workflow: "RelayRunner dev",
+    workflowPath: null,
     ...relayInputs({ machine: ["macOS"], github: ["ubuntu-latest"] }),
   };
 }

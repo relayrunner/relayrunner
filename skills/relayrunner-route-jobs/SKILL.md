@@ -65,7 +65,7 @@ jobs:
     runs-on: ${{ needs.relay-test.outputs.runner }}
 ```
 
-The check keeps its name in GitHub, so required checks keep working. The relay takes one input per provider the job may use (`machine`, `github`, or a hosted provider such as `depot`); see https://relayrunner.app/docs/reference/relay-inputs.md. Which provider is tried first is the workspace's runner order, set on the dashboard's Router page.
+The check keeps its name in GitHub, so required checks keep working. The relay takes one input per provider the job may use (`machine`, `github`, or a hosted provider such as `depot`); see https://relayrunner.app/docs/reference/relay-inputs.md. Which provider is tried first is the workspace's runner order, set on the dashboard's Router page. A provider set to `auto` (such as `blacksmith: auto`) lets the Router page pick the job's size, so it can change without a commit; a label written there runs as written.
 
 ## 4. Confirm it works
 

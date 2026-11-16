@@ -54,6 +54,9 @@ export const SKIP_REASONS = [
   // A hosted provider step with a spend limit: the job's account has spent the limit on that
   // provider this month, at list prices.
   "spend_limit",
+  // The relay set the provider to `auto` and it has no runner as big as the job's size (in the
+  // step's `vcpus`), such as GitHub-hosted past 2 vCPU.
+  "no_size",
 ] as const;
 export type SkipReason = (typeof SKIP_REASONS)[number];
 
@@ -141,6 +144,8 @@ export const RouteWalk = z.object({
       spend: SpendUsage.optional(),
       // provider_unhealthy: how many jobs in a row weren't picked up, and when the next trial goes.
       unhealthy: z.object({ misses: z.number(), retryAt: z.number() }).optional(),
+      // no_size: the job's size, in vCPUs.
+      vcpus: z.number().optional(),
     }),
   ),
   notInOrder: z.array(z.enum(RUNNER_KEYS)),

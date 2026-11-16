@@ -449,6 +449,7 @@ describe("jobContext", () => {
       runId: 41902043823,
       runAttempt: 2,
       workflow: "RelayRunner dev",
+      workflowPath: null,
       ...relayInputs({ machine: [], github: [] }),
       startedBy: null,
       triggeredBy: null,
@@ -465,10 +466,22 @@ describe("jobContext", () => {
       runId: 5,
       runAttempt: 1,
       workflow: null,
+      workflowPath: null,
       ...relayInputs({ machine: [], github: [] }),
       startedBy: null,
       triggeredBy: null,
     });
+  });
+
+  test("reads the workflow file from workflow_ref", () => {
+    const context = jobContext(
+      github([
+        ["repository", "acme/app"],
+        ["run_id", "5"],
+        ["workflow_ref", "acme/app/.github/workflows/ci.yml@refs/pull/12/merge"],
+      ]),
+    );
+    expect(context?.workflowPath).toBe(".github/workflows/ci.yml");
   });
 
   test("reads who started the run and this attempt", () => {
@@ -529,6 +542,7 @@ describe("jobContext", () => {
       runId: 42078905012,
       runAttempt: 1,
       workflow: null,
+      workflowPath: null,
       ...relayInputs({ machine: ["self-hosted"], github: ["ubuntu-latest"] }),
       startedBy: null,
       triggeredBy: null,
@@ -912,6 +926,32 @@ describe("pausedMatches", () => {
     ).toEqual([]);
     expect(pausedMatches([{ name: "a", labels: mac, paused: true }], ["Windows"])).toEqual([]);
     expect(pausedMatches([], [])).toEqual([]);
+  });
+});
+
+describe("decideRoute for an auto relay", () => {
+  const order: RunnerOrder = { steps: [{ key: "github" }, { key: "blacksmith" }] };
+
+  test("a provider with no runner of the job's size is skipped with why", async () => {
+    const job = {
+      ...relayInputs({ github: ["auto"], blacksmith: ["blacksmith-8vcpu-ubuntu-2404"] }),
+      private: true,
+      size: 8,
+    };
+    expect(await decideRoute(order, job, async () => null)).toEqual({
+      runner: "blacksmith-8vcpu-ubuntu-2404",
+      step: "blacksmith",
+      skipped: [{ key: "github", reason: "no_size", vcpus: 8 }],
+      notInOrder: [],
+    });
+  });
+
+  test("the relay fails naming the size when nothing has it", async () => {
+    const job = { ...relayInputs({ github: ["auto"] }), private: true, size: 8 };
+    const decision = await decideRoute({ steps: [{ key: "github" }] }, job, async () => null);
+    expect(decision.runner === null && decision.reason).toContain(
+      "GitHub-hosted has no runner with 8 vCPU or more",
+    );
   });
 });
 

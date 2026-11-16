@@ -1,5 +1,13 @@
 import { describe, expect, test } from "vitest";
-import { DEFAULT_RUNNER_ORDER, readRunnerOrder, runnerOrderSchema } from "./index.ts";
+import {
+  DEFAULT_RUNNER_ORDER,
+  isAutoRelay,
+  preferFirst,
+  readRunnerOrder,
+  relayInputs,
+  resolveAutoInputs,
+  runnerOrderSchema,
+} from "./index.ts";
 
 describe("runnerOrderSchema", () => {
   test("accepts the providers in any order, or one alone", () => {
@@ -85,5 +93,45 @@ describe("readRunnerOrder", () => {
   test("an unreadable value falls back to the default", () => {
     expect(readRunnerOrder("not json")).toEqual(DEFAULT_RUNNER_ORDER);
     expect(readRunnerOrder('{"steps":[]}')).toEqual(DEFAULT_RUNNER_ORDER);
+  });
+});
+
+describe("auto relays", () => {
+  const label = (key: string) => (key === "github" ? null : `${key}-8`);
+
+  test("a relay with no inputs hands every provider to the Router", () => {
+    const inputs = relayInputs({});
+    expect(isAutoRelay(inputs)).toBe(true);
+    const resolved = resolveAutoInputs(inputs, label);
+    expect(resolved.machine).toEqual(["self-hosted"]);
+    expect(resolved.blacksmith).toEqual(["blacksmith-8"]);
+    // GitHub has no runner that big here, so it stays auto and the Router skips it.
+    expect(resolved.github).toEqual(["auto"]);
+  });
+
+  test("only the providers set to auto get a label", () => {
+    const inputs = relayInputs({ blacksmith: ["Auto"], github: ["ubuntu-latest"] });
+    expect(isAutoRelay(inputs)).toBe(true);
+    const resolved = resolveAutoInputs(inputs, label);
+    expect(resolved.blacksmith).toEqual(["blacksmith-8"]);
+    expect(resolved.github).toEqual(["ubuntu-latest"]);
+    expect(resolved.depot).toEqual([]);
+    expect(resolved.machine).toEqual([]);
+  });
+
+  test("a relay that names its labels runs as written", () => {
+    expect(isAutoRelay(relayInputs({ github: ["ubuntu-latest"] }))).toBe(false);
+  });
+
+  test("preferFirst moves a provider to the top", () => {
+    const order = {
+      steps: [{ key: "machine" as const }, { key: "github" as const }, { key: "depot" as const }],
+    };
+    expect(preferFirst(order, "depot").steps.map((s) => s.key)).toEqual([
+      "depot",
+      "machine",
+      "github",
+    ]);
+    expect(preferFirst(order, null)).toBe(order);
   });
 });

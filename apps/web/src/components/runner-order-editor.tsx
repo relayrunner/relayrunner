@@ -19,7 +19,6 @@ import {
   DEFAULT_LIMIT_PERCENT,
   DEFAULT_SPEND_LIMIT_USD,
   hasSpendLimit,
-  RUNNER_EXAMPLES,
   RUNNER_KEYS,
   RUNNER_LABELS,
   stepSlot,
@@ -709,21 +708,19 @@ function nextCycle(cycleStart: string) {
 const INIT_COMMAND = "npx relayrunner init";
 
 /**
- * How to route a repo's jobs: `init` in a checkout, then an example of what it writes, with the
- * labels this workspace's jobs ran on most where it knows them, and every hosted label in use.
+ * How to route a repo's jobs: `init` in a checkout, then an example relay that hands each provider
+ * in the order to the Router (`auto`), and every hosted label in use.
  */
 function SetupPanel({ steps, labels }: { steps: RunnerStep[]; labels: LabelUse[] | null }) {
   const keys = RUNNER_KEYS.filter((key) => steps.some((step) => step.key === key));
   // Busiest first, so the first one per provider is the label its jobs use most.
   const inUse = (labels ?? []).filter((use) => keys.includes(use.key));
-  const label = (key: RunnerKey) =>
-    inUse.find((use) => use.key === key)?.label ?? RUNNER_EXAMPLES[key];
   const snippet = [
     "jobs:",
     "  relay:",
     "    uses: relayrunner/actions/.github/workflows/relay.yml@v1.0.0-beta.5",
     "    with:",
-    ...keys.map((key) => `      ${key}: ${label(key)}`),
+    ...keys.map((key) => `      ${key}: auto`),
     "  test:",
     "    needs: relay",
     "    runs-on: ${{ needs.relay.outputs.runner }}",
@@ -739,7 +736,8 @@ function SetupPanel({ steps, labels }: { steps: RunnerStep[]; labels: LabelUse[]
       </p>
       <CopyCommand command={INIT_COMMAND} />
       <p className="text-[12.5px] text-muted-foreground">
-        Each job gets its own relay and keeps its current label, so jobs can use different sizes.{" "}
+        With <code className="font-mono">auto</code>, you pick each job's size under Workflows, with
+        no commit. A label written in its place runs as written.{" "}
         <a
           href={`${DOCS_URL}/get-started/quickstart#2-route-a-job`}
           target="_blank"

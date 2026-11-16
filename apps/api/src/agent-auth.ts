@@ -190,7 +190,7 @@ export function agentIssuer(env: Env) {
 const AGENT_ROUTES: RegExp[] = [
   /^\/api\/me$/,
   /^\/api\/workspaces\/current$/,
-  /^\/api\/workspaces\/[^/]+\/(runner-order|router-setup)$/,
+  /^\/api\/workspaces\/[^/]+\/(runner-order|router-setup|auto-jobs)$/,
   /^\/api\/machines$/,
   /^\/api\/runs$/,
   /^\/api\/runs\/\d+\/\d+\/\d+\/(jobs|failures)$/,

@@ -12,7 +12,16 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Sheet, SheetContent, SheetTitle } from "@/components/ui/sheet";
 import { getActionsUsage, type AccountUsage } from "@/lib/actions-usage";
-import { sampleRouterAccounts, sampleRouterSetup } from "@/lib/router-sample";
+import { sampleAutoJobs, sampleRouterAccounts, sampleRouterSetup } from "@/lib/router-sample";
+import { type AutoJob, type AutoJobs, getAutoJobs, setAutoJob, setAutoSize } from "@/lib/auto-jobs";
+import { AUTO_SIZES } from "@relayrunner/providers";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
 import { authDisabled } from "@/lib/auth-client";
 import { listMachines, type Machine } from "@/lib/machines";
 import { getProviderApps } from "@/lib/provider-apps";
@@ -70,6 +79,7 @@ function RouterPage() {
   const health = useProviderHealth(current.workspace.id);
   const installedApps = useProviderApps(current.workspace.id);
   const setup = useRouterSetup(current.workspace.id);
+  const auto = useAutoJobs(current.workspace.id);
   const [settingsOpen, setSettingsOpen] = useState(false);
 
   return (
@@ -108,7 +118,14 @@ function RouterPage() {
           />
         </SectionBoundary>
         <SectionBoundary>
-          <RouterWorkflows setup={setup} />
+          <RouterWorkflows
+            setup={setup}
+            jobs={auto.jobs?.jobs ?? []}
+            defaultSize={auto.jobs?.size ?? AUTO_SIZES[0]}
+            steps={[...new Set(loaded.order.steps.map((step) => step.key))]}
+            editable={editable}
+            onChange={auto.setJob}
+          />
         </SectionBoundary>
       </div>
       <Sheet open={settingsOpen} onOpenChange={setSettingsOpen}>
@@ -120,6 +137,9 @@ function RouterPage() {
             )}
             <SectionBoundary>
               <SkipUnhealthyToggle health={health} editable={editable} />
+            </SectionBoundary>
+            <SectionBoundary>
+              <AutoSizeSetting auto={auto} editable={editable} />
             </SectionBoundary>
             <SectionBoundary>
               <RetrySettingsCard workspaceId={current.workspace.id} editable={editable} />
@@ -332,6 +352,90 @@ function useRouterSetup(workspaceId: string) {
     };
   }, [workspaceId]);
   return setup;
+}
+
+// The workspace's auto jobs (a relay set to `auto`) and their default size. Null until they load,
+// and when they can't be read: the page still works without them. Changes save as they're made.
+function useAutoJobs(workspaceId: string) {
+  const [jobs, setJobs] = useState<AutoJobs | null>(null);
+  useEffect(() => {
+    let live = true;
+    (authDisabled ? Promise.resolve(sampleAutoJobs()) : getAutoJobs(workspaceId)).then(
+      (loaded) => live && setJobs(loaded),
+      () => undefined,
+    );
+    return () => {
+      live = false;
+    };
+  }, [workspaceId]);
+
+  async function setJob(job: AutoJob, setting: Pick<AutoJob, "size" | "first">) {
+    const update = (value: Pick<AutoJob, "size" | "first">) =>
+      setJobs(
+        (j) =>
+          j && {
+            ...j,
+            jobs: j.jobs.map((each) => (each.id === job.id ? { ...each, ...value } : each)),
+          },
+      );
+    update(setting);
+    try {
+      if (!authDisabled) await setAutoJob(workspaceId, job.id, setting);
+    } catch {
+      update(job);
+    }
+  }
+
+  async function setSize(size: number) {
+    if (!authDisabled) await setAutoSize(workspaceId, size);
+    setJobs((j) => j && { ...j, size });
+  }
+
+  return { jobs, setJob, setSize };
+}
+
+// The size auto jobs get when nobody picked one for the job. Saves on change.
+function AutoSizeSetting({
+  auto,
+  editable,
+}: {
+  auto: ReturnType<typeof useAutoJobs>;
+  editable: boolean;
+}) {
+  const [failed, setFailed] = useState(false);
+  if (!auto.jobs) return null;
+  return (
+    <div className="grid gap-2 rounded-xl border px-4 py-3 text-sm">
+      <div className="flex items-center justify-between gap-3">
+        <span className="font-medium">Default size</span>
+        <Select
+          value={String(auto.jobs.size)}
+          disabled={!editable}
+          onValueChange={(value) => {
+            setFailed(false);
+            auto.setSize(Number(value)).catch(() => setFailed(true));
+          }}
+        >
+          <SelectTrigger size="sm" aria-label="Default size">
+            <SelectValue />
+          </SelectTrigger>
+          <SelectContent align="end">
+            {AUTO_SIZES.map((size) => (
+              <SelectItem key={size} value={String(size)}>
+                {size} vCPU
+              </SelectItem>
+            ))}
+          </SelectContent>
+        </Select>
+      </div>
+      <span className="text-muted-foreground">
+        The size jobs get when their relay says <code className="font-mono">auto</code> and you
+        haven't picked one for the job under Workflows. A provider without that size gets the next
+        size up, or is skipped.
+      </span>
+      {failed && <span className="text-destructive">Couldn't save. Try again.</span>}
+    </div>
+  );
 }
 
 // The provider apps the org has installed, read from GitHub after the page loads. Null until it

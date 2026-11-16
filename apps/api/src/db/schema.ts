@@ -128,6 +128,9 @@ export const workspace = sqliteTable("workspace", {
   skipUnhealthyRunners: integer("skip_unhealthy_runners", { mode: "boolean" })
     .notNull()
     .default(true),
+  // The size, in vCPUs, of a job whose relay hands its runner to the Router (`auto`) and that has
+  // no size of its own (auto_job.size). Null means DEFAULT_AUTO_SIZE.
+  autoSize: integer("auto_size"),
   createdAt: integer("created_at", { mode: "timestamp_ms" })
     .notNull()
     .$defaultFn(() => new Date()),
@@ -882,6 +885,43 @@ export const activityEvent = sqliteTable(
     index("activity_event_machine_idx")
       .on(table.machineId)
       .where(sql`${table.machineId} is not null`),
+  ],
+);
+
+// Each job whose relay hands its runner to the Router (`blacksmith: auto`, or no inputs), by its
+// repo, workflow file and relay job, with what the Router page set for it. A pick of such a job adds
+// or touches its row (src/auto-jobs.ts), so the Router page lists the jobs it can size. Rows go with
+// their workspace.
+export const autoJob = sqliteTable(
+  "auto_job",
+  {
+    id: integer("id").primaryKey({ autoIncrement: true }),
+    workspaceId: text("workspace_id")
+      .notNull()
+      .references(() => workspace.id, { onDelete: "cascade" }),
+    repositoryId: integer("repository_id").notNull(),
+    repository: text("repository").notNull(),
+    // The workflow file, such as `.github/workflows/ci.yml`, or the workflow's name when GitHub
+    // didn't say. With the relay job, what identifies the job across renames of the workflow.
+    workflowPath: text("workflow_path").notNull(),
+    workflow: text("workflow"),
+    // The relay's job in the caller workflow, such as `relay-test`.
+    relayJob: text("relay_job").notNull(),
+    // The job's size in vCPUs, or null for the workspace's (workspace.auto_size).
+    size: integer("size"),
+    // A runner order key to try before the rest of the order, or null for the order as it is.
+    first: text("first"),
+    updatedBy: text("updated_by").references(() => user.id, { onDelete: "set null" }),
+    updatedAt: integer("updated_at", { mode: "timestamp_ms" }),
+    lastSeenAt: integer("last_seen_at", { mode: "timestamp_ms" }).notNull(),
+  },
+  (table) => [
+    uniqueIndex("auto_job_identity_idx").on(
+      table.workspaceId,
+      table.repositoryId,
+      table.workflowPath,
+      table.relayJob,
+    ),
   ],
 );
 

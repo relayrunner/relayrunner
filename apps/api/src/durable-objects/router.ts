@@ -1,4 +1,9 @@
-import { type RelayInputs, readRunnerOrder } from "@relayrunner/runner-order";
+import {
+  preferFirst,
+  type RelayInputs,
+  readRunnerOrder,
+  type RunnerKey,
+} from "@relayrunner/runner-order";
 import { Recent } from "../recent.ts";
 import { accountUsage } from "../actions-billing.ts";
 import { accountSpend } from "../provider-spend.ts";
@@ -89,6 +94,10 @@ export interface PickedJob extends JobStarters, RelayInputs {
   // Set when this attempt is an automatic retry (src/retries.ts): where the job failed and where
   // the retry should go.
   retry?: RetryPick | null;
+  // An auto relay's size in vCPUs and the provider the Router page put first for the job
+  // (src/auto-jobs.ts).
+  size?: number;
+  first?: RunnerKey | null;
 }
 
 const ROUTE_KEY = "route:";
@@ -290,7 +299,7 @@ export class Router extends DurableObject<Env> {
       this.drain(),
     ]);
     const decision = await decideRoute(
-      retryOrder(readRunnerOrder(workspace?.runnerOrder), job.retry),
+      retryOrder(preferFirst(readRunnerOrder(workspace?.runnerOrder), job.first), job.retry),
       job,
       () => this.pickMachine(job),
       // The job's own account: each GitHub account has its own quota, never pooled (#117).

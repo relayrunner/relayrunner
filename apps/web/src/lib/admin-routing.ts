@@ -79,6 +79,7 @@ const ROUTING_REASONS: Record<string, string> = {
   github_rate_limited: "GitHub API limit reached",
   public_repo: "public repo",
   not_configured: "not set on the relay",
+  no_size: "no runner that size",
   too_many_labels: "more than one label",
   not_provider_label: "label isn't the provider's",
   minutes_limit: "over the minutes limit",

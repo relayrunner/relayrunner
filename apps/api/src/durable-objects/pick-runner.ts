@@ -1,5 +1,6 @@
 import { DurableObject } from "cloudflare:workers";
-import { relayInputs } from "@relayrunner/runner-order";
+import { isAutoRelay, relayInputs } from "@relayrunner/runner-order";
+import { autoPick, relayJobOf } from "../auto-jobs.ts";
 import type { Env } from "../env.ts";
 import {
   appInstallationToken,
@@ -265,6 +266,7 @@ export class PickRunner extends DurableObject<Env> {
             token,
             work.installationId,
             job.message.contextData,
+            job.message.jobDisplayName,
           );
           // Fail fast without a runner: the job that needs the relay doesn't start.
           await client.complete(
@@ -408,7 +410,13 @@ type PickInfo = Omit<PickRecord, "jobName">;
 // Where the claimed pick job's run goes. Only a repo of a workspace's installation reaches the
 // workspace's Router, which walks the runner order. Anything we can't place gets no runner and a
 // reason, and the relay fails. `record` is what the Activity page keeps (no workspace, no record).
-async function pickRunner(env: Env, token: string, installationId: number, contextData: unknown) {
+async function pickRunner(
+  env: Env,
+  token: string,
+  installationId: number,
+  contextData: unknown,
+  jobDisplayName?: string | null,
+) {
   const parsed = jobContext(contextData);
   if (!parsed)
     return {
@@ -460,6 +468,16 @@ async function pickRunner(env: Env, token: string, installationId: number, conte
   // retried, which "only me" machines check.
   const retry = await retryOf(db, repo.id, context.runId, context.runAttempt);
   if (retry) context = { ...context, triggeredBy: retry.triggeredBy };
+  // An auto relay's `auto` inputs become labels of the job's size, so the walk shows what it got.
+  const auto = isAutoRelay(context)
+    ? await autoPick(db, {
+        workspaceId,
+        repositoryId: repo.id,
+        context,
+        relayJob: relayJobOf(jobDisplayName),
+      })
+    : null;
+  if (auto) context = { ...context, ...auto.inputs };
   const decision: RouteDecision = await env.ROUTER.getByName(workspaceId).route({
     workspaceId,
     installationId,
@@ -471,6 +489,8 @@ async function pickRunner(env: Env, token: string, installationId: number, conte
     startedBy: context.startedBy,
     triggeredBy: context.triggeredBy,
     retry,
+    size: auto?.size,
+    first: auto?.first,
   });
   return {
     ...decision,
@@ -574,6 +594,7 @@ async function reportBlocked(env: Env, token: string, work: PickWork, reason: st
           runId: row.runId,
           runAttempt: row.runAttempt,
           workflow: row.workflow,
+          workflowPath: null,
           ...relayInputs({}),
           startedBy: null,
           triggeredBy: null,

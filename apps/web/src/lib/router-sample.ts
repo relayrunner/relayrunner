@@ -1,4 +1,5 @@
 import type { AccountUsage } from "./actions-usage.ts";
+import type { AutoJob, AutoJobs } from "./auto-jobs.ts";
 import type { RouterSetup } from "./router-setup.ts";
 
 /** Example GitHub accounts for the Router page's `VITE_AUTH_DISABLED=true` dev preview and tests. */
@@ -88,6 +89,34 @@ export function sampleRouterSetup(): RouterSetup {
     labels: [
       { key: "blacksmith", label: "blacksmith-2vcpu-ubuntu-2404", jobs: 1_180 },
       { key: "blacksmith", label: "blacksmith-4vcpu-ubuntu-2404", jobs: 640 },
+    ],
+  };
+}
+
+/** Example auto jobs for the Router page's `VITE_AUTH_DISABLED=true` dev preview. */
+export function sampleAutoJobs(): AutoJobs {
+  const now = Date.now();
+  const job = (id: number, relayJob: string, fields: Partial<AutoJob> = {}): AutoJob => ({
+    id,
+    repositoryId: 1,
+    repository: "acme/app",
+    workflowPath: ".github/workflows/ci.yml",
+    workflow: "CI",
+    relayJob,
+    size: null,
+    first: null,
+    updatedAt: null,
+    lastSeenAt: now - 3_600_000,
+    ...fields,
+  });
+  return {
+    size: 2,
+    jobs: [
+      job(1, "relay-lint"),
+      job(2, "relay-typecheck"),
+      job(3, "relay-test", { size: 8, updatedAt: now - 2 * 86_400_000 }),
+      job(4, "relay-build", { size: 4, first: "blacksmith" }),
+      job(5, "relay", { workflowPath: ".github/workflows/e2e.yml", workflow: "E2E" }),
     ],
   };
 }

@@ -6,7 +6,12 @@ import {
   type NotSharedMachine,
   type RouteWalk,
 } from "@relayrunner/activity";
-import { notProviderLabelText, RUNNER_LABELS, type RunnerKey } from "@relayrunner/runner-order";
+import {
+  noSizeText,
+  notProviderLabelText,
+  RUNNER_LABELS,
+  type RunnerKey,
+} from "@relayrunner/runner-order";
 
 // How the Activity page explains where a job went: a short reason after the runner, and one line
 // per step when the reason is opened. Worded here from the stored walk, so the copy can change
@@ -97,6 +102,8 @@ function shortSkip(walk: RouteWalk, step: SkippedStep): string | null {
       return step.spend
         ? `${step.spend.account} past its ${dollars(step.spend.limitUsd)} ${RUNNER_LABELS[key]} limit`
         : `past the ${RUNNER_LABELS[key]} spend limit`;
+    case "no_size":
+      return noSizeText(key, step.vcpus);
     case "not_configured":
       // Leaving a provider out of the relay is a choice, not news.
       return null;
@@ -145,6 +152,8 @@ function longSkip(walk: RouteWalk, step: SkippedStep): string {
     }
     case "spend_limit":
       return spendText(RUNNER_LABELS[key], step.spend);
+    case "no_size":
+      return noSizeText(key, step.vcpus);
     case "not_configured":
       return `the relay doesn't set ${key}`;
   }
