@@ -44,7 +44,12 @@ struct WorkspaceSettings: View {
             .foregroundStyle(.secondary)
         }
         ForEach(choice.all) { item in
-          Toggle(item.workspace.name, isOn: Binding(get: { item.on }, set: { set(item.workspace, on: $0) }))
+          Toggle(isOn: Binding(get: { item.on }, set: { set(item.workspace, on: $0) })) {
+            HStack(spacing: 8) {
+              WorkspaceMark(workspace: item.workspace)
+              Text(item.workspace.name)
+            }
+          }
         }
       } header: {
         Text("Take jobs from")
@@ -111,6 +116,28 @@ struct WorkspaceSettings: View {
       }
       await reload()
     }
+  }
+}
+
+/// The workspace's GitHub avatar, or its first letter on green while there's none, as on the
+/// dashboard.
+private struct WorkspaceMark: View {
+  let workspace: MachineWorkspaces.Workspace
+
+  var body: some View {
+    AsyncImage(url: workspace.logo) { image in
+      image.resizable().scaledToFill()
+    } placeholder: {
+      ZStack {
+        Color(red: 0x06 / 255, green: 0x47 / 255, blue: 0x2B / 255).opacity(0.12)
+        Text(workspace.name.prefix(1).uppercased())
+          .font(.system(size: 11, weight: .bold))
+          .foregroundStyle(Color(red: 0x06 / 255, green: 0x47 / 255, blue: 0x2B / 255))
+      }
+    }
+    .frame(width: 20, height: 20)
+    .clipShape(RoundedRectangle(cornerRadius: 5))
+    .overlay(RoundedRectangle(cornerRadius: 5).strokeBorder(.separator))
   }
 }
 

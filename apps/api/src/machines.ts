@@ -148,6 +148,8 @@ export async function userWorkspaces(db: Db, userId: string) {
       id: schema.workspace.id,
       name: schema.workspace.name,
       slug: schema.workspace.slug,
+      // Its GitHub account's avatar, for the Mac app's workspace list.
+      logo: schema.workspace.logo,
       role: schema.workspaceMember.role,
     })
     .from(schema.workspaceMember)

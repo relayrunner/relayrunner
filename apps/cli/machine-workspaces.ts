@@ -14,6 +14,8 @@ const Choice = z.object({
   id: z.string().min(1),
   name: z.string(),
   slug: z.string().nullish(),
+  // The GitHub account's avatar, which `workspaces list --json` passes on for the Mac app.
+  logo: z.string().nullish(),
 });
 export type WorkspaceChoice = z.infer<typeof Choice>;
 

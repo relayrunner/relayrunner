@@ -190,7 +190,7 @@ describe("machine enrollment", () => {
     expect(token).toMatch(/^rrm_[\w-]{43}$/);
     expect(workspace?.id).toBe(workspaceId);
     expect(workspaces).toEqual([
-      { id: workspaceId, name: "enroll-ok", slug: "enroll-ok", memberCount: 1 },
+      { id: workspaceId, name: "enroll-ok", slug: "enroll-ok", logo: null, memberCount: 1 },
     ]);
     expect(machine).toMatchObject({ name: "atticus-mbp", os: "macos" });
 
@@ -914,6 +914,7 @@ describe("choosing a machine's workspaces (#363)", () => {
     let body = await read(await send("GET", "/machines/me/workspaces", { token }));
     expect(ids(body.workspaces)).toEqual([own.workspace.id]);
     expect(body.others).toEqual([expect.objectContaining({ id: team.workspace.id, joined: true })]);
+    expect(body.others[0]).toHaveProperty("logo");
 
     body = await read(await send("PUT", `/machines/me/workspaces/${team.workspace.id}`, { token }));
     expect(ids(body.workspaces)).toEqual([team.workspace.id, own.workspace.id]);
@@ -1303,6 +1304,7 @@ describe("a machine looking itself up", () => {
       id: workspaceId,
       name: "me-ok",
       slug: "me-ok",
+      logo: null,
       memberCount: 1,
     });
     expect(body.enrolledBy).toMatchObject({ name: expect.any(String), email: expect.any(String) });

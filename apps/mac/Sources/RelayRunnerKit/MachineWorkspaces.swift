@@ -21,6 +21,8 @@ public struct MachineWorkspaces: Equatable, Decodable {
     public var id: String
     public var name: String
     public var slug: String?
+    /// Its GitHub account's avatar.
+    public var logo: URL?
   }
 
   public var machine: Machine
