@@ -3,6 +3,8 @@ title: Signals
 description: What makes your CI slow, costly or busier than it needs to be, and which workflows it affects.
 ---
 
+import Screenshot from "@/components/Screenshot.astro";
+
 The **Signals** page, under Analytics, points out patterns in your CI that cost you time or money. Each signal has the same title every time, with the repos and workflows it affects listed underneath, most minutes first.
 
 Signals are grouped by the question they answer:
@@ -18,6 +20,12 @@ Every area shows on the page, even when none of its signals came up. Signals tha
 Click a row under any signal to see the runs behind it, newest first. Each run opens in [History](/docs/dashboard/activity#history) with its jobs, and on signals about one job, that job.
 
 The page updates every hour. A signal shows up once it covers at least 30 minutes and 1% of all your job minutes in the range, so small one-offs stay off the page. Minutes and spend sit in separate columns. Spend uses the same list prices as the [Usage](/docs/dashboard/usage) page, so public repos and self-hosted runners count as free.
+
+<Screenshot
+  name="signals"
+  alt="The Signals page: jobs waiting for a runner, the job that finishes last, and flaky jobs with the minutes they cost."
+  sizes="(min-width: 50rem) 45rem, 100vw"
+/>
 
 ## Speed signals
 

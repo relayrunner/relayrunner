@@ -47,6 +47,10 @@ function componentsToMarkdown(body: string) {
     .replace(/^<ErrorTable\s*\/>[ \t]*$/gm, errorTableMarkdown)
     .replace(/^<Provider id="([\w-]+)"\s*\/>[ \t]*$/gm, (tag, id: string) =>
       isProviderId(id) ? providerMarkdown(id) : tag,
+    )
+    .replace(
+      /^<Screenshot\s+name="(\w+)"\s+alt="([^"]*)"[^>]*\/>[ \t]*$/gm,
+      (_, name: string, alt: string) => `![${alt}](/screenshots/${name}-light.webp)`,
     );
 }
 

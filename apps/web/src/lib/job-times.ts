@@ -217,7 +217,7 @@ export function sampleJobTimes(days: number): JobTimesReport {
       },
       {
         key: mac,
-        label: "Zach's MacBook Pro",
+        label: "Ada's MacBook Pro",
         detail: "MacBook Pro · Apple M3 Max",
         machine: { source: "connect", kind: "laptop", model: "MacBook Pro" },
         stat: stat(41, 50, 198),

@@ -175,7 +175,7 @@ export async function workspaceMachine(id: string) {
 // The dev preview's machines, matching the sample reports' `machine:` keys.
 const SAMPLE_MACHINE: Machine = {
   id: "sample",
-  name: "zach-mbp",
+  name: "ada-mbp",
   os: "linux",
   arch: "arm64",
   labels: ["self-hosted", "Linux", "ARM64"],
@@ -201,7 +201,7 @@ const SAMPLE_MACHINE: Machine = {
     update: "2.331.0",
     updateBy: new Date(Date.now() + 23 * 86_400_000).toISOString(),
   },
-  owner: "Zach",
+  owner: "Ada",
   mine: true,
   sharing: "anyone",
   status: {

@@ -3,6 +3,8 @@ title: Your machines
 description: Turn computers you own into GitHub Actions runners with the CLI.
 ---
 
+import Screenshot from "@/components/Screenshot.astro";
+
 Any Mac or Linux computer can take jobs: your laptop, a Mac mini under the desk, an old gaming PC, a home server. Connect it with the CLI and it joins the self-hosted step of every workspace you're in.
 
 ## Connect a machine
@@ -19,6 +21,14 @@ Where a job runs depends on the machine:
 
 - **On a Mac with Apple silicon**, each job runs in its own Linux VM, away from your files. See [Isolated jobs on a Mac](#isolated-jobs-on-a-mac).
 - **On Linux or an Intel Mac**, jobs run on the machine itself, as the user who started `connect`.
+
+The dashboard's **Runners** page shows each connected machine, the jobs running on it and anything that needs you, like a machine that went offline with jobs waiting.
+
+<Screenshot
+  name="runners"
+  alt="The Runners page: running, idle and offline counts, a Needs attention list, jobs running now and queued, and each self-hosted runner."
+  sizes="(min-width: 50rem) 45rem, 100vw"
+/>
 
 ## Labels
 

@@ -448,6 +448,12 @@ button {
 .feature code {
   font-size: 15px;
 }
+.section > .body {
+  max-width: 62ch;
+}
+.section .shot {
+  margin-top: clamp(28px, 4vw, 48px);
+}
 .panel {
   padding: clamp(18px, 2.5vw, 32px);
   border: 1px solid var(--line-soft);

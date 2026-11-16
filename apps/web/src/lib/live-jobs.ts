@@ -127,7 +127,7 @@ export function sampleLiveJobs(now = Date.now()): LiveJobs {
   return {
     environments: [
       { key: "github:linux-2-core", label: "ubuntu-latest", detail: "GitHub-hosted" },
-      { key: "machine:sample", label: "zach-mbp", detail: "" },
+      { key: "machine:sample", label: "ada-mbp", detail: "" },
       { key: "machine:sample-mini", label: "studio-mini", detail: "" },
       { key: "self-hosted:default", label: "Self-hosted", detail: "" },
     ],

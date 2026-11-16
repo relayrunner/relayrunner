@@ -1,5 +1,6 @@
 ---
 import SolutionPage from "../../layouts/SolutionPage.astro";
+import Screenshot from "../../components/Screenshot.astro";
 ---
 
 <SolutionPage
@@ -121,6 +122,19 @@ import SolutionPage from "../../layouts/SolutionPage.astro";
       </p>
       <a class="sol-link" href="/docs/guides/mac-builds">Read the macOS builds guide →</a>
     </div>
+  </section>
+
+  <section class="section wrap" aria-labelledby="speed-h">
+    <p class="kicker">Performance</p>
+    <h2 id="speed-h">Compare your Mac with GitHub-hosted runners.</h2>
+    <p class="body">
+      The Performance page compares how long the same jobs take on each runner, so you can see how
+      much faster your Mac is than ubuntu-latest.
+    </p>
+    <Screenshot
+      name="performance"
+      alt="The Performance page's runner table, with a MacBook Pro 2.7 times faster than ubuntu-latest."
+    />
   </section>
 
   <section class="section wrap sol-faq" aria-labelledby="faq-h">

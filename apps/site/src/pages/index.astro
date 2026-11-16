@@ -5,6 +5,7 @@ import LandingRelay from "../components/LandingRelay.astro";
 import RoutingFlow from "../components/RoutingFlow.astro";
 import PageMeta from "../components/PageMeta.astro";
 import SiteFooter from "../components/SiteFooter.astro";
+import Screenshot from "../components/Screenshot.astro";
 import SiteHeader from "../components/SiteHeader.astro";
 import ProviderLogo from "../components/docs/ProviderLogo.astro";
 import { KNOWN_PROVIDERS, PROVIDERS } from "../lib/providers";
@@ -409,6 +410,20 @@ const structuredData = {
             instead: they need no runner, post results to your pull request and use no minutes.
           </p>
         </div>
+      </section>
+
+      <!-- Dashboard -->
+      <section class="section wrap" aria-labelledby="dashboard-h">
+        <p class="kicker">Dashboard</p>
+        <h2 id="dashboard-h">See every runner and queued job <span class="hl">in one place.</span></h2>
+        <p class="body">
+          The Runners page shows what's running and waiting right now, how busy each runner is, and
+          anything that needs you, like a machine that went offline with a job waiting.
+        </p>
+        <Screenshot
+          name="runners"
+          alt="The Runners page: running, idle and offline counts, a Needs attention list, jobs running now and queued, and each self-hosted runner."
+        />
       </section>
 
       <!-- Safety -->

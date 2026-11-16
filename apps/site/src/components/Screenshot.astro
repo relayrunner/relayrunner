@@ -1,0 +1,23 @@
+---
+// A dashboard screenshot from public/screenshots/, made by `pnpm screenshots`. Shows the light or
+// dark capture to match the site theme.
+import shots from "../lib/screenshots.json";
+import "../styles/screenshot.css";
+
+interface Props {
+  name: keyof typeof shots;
+  alt: string;
+  /** How wide the image shows, for picking the 1440 or 2880 wide file. Defaults to the landing column. */
+  sizes?: string;
+}
+
+const { name, alt, sizes = "(min-width: 1264px) 1200px, 100vw" } = Astro.props;
+const attrs = { alt, sizes, width: 1440, height: shots[name].height, loading: "lazy", decoding: "async" } as const;
+const srcset = (theme: string) =>
+  `/screenshots/${name}-${theme}-1440.webp 1440w, /screenshots/${name}-${theme}.webp 2880w`;
+---
+
+<figure class="shot">
+  <img class="shot-light" src={`/screenshots/${name}-light-1440.webp`} srcset={srcset("light")} {...attrs} />
+  <img class="shot-dark" src={`/screenshots/${name}-dark-1440.webp`} srcset={srcset("dark")} {...attrs} />
+</figure>

@@ -1,0 +1,18 @@
+/* Dashboard screenshots (Screenshot.astro). Each has a light and a dark image; only the one
+   matching the site theme shows. */
+.shot {
+  margin-inline: 0;
+  overflow: hidden;
+  border: 1px solid var(--line);
+  border-radius: 14px;
+  box-shadow: var(--shadow-card);
+}
+.shot img {
+  display: block;
+  width: 100%;
+  height: auto;
+}
+:root[data-theme="dark"] .shot-light,
+:root:not([data-theme="dark"]) .shot-dark {
+  display: none;
+}

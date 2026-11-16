@@ -1,5 +1,6 @@
 ---
 import SolutionPage from "../../layouts/SolutionPage.astro";
+import Screenshot from "../../components/Screenshot.astro";
 
 const jobs = [
   { name: "agent/fix-retry-logic · test", detail: "PR #611", logo: "machines", where: "Mac mini" },
@@ -87,6 +88,19 @@ const jobs = [
         </li>
       </ol>
     </div>
+  </section>
+
+  <section class="section wrap" aria-labelledby="busy-h">
+    <p class="kicker">Dashboard</p>
+    <h2 id="busy-h">See which machines are busy and which jobs are waiting.</h2>
+    <p class="body">
+      The Runners page shows every job running and queued right now, and tells you when a machine
+      goes offline with jobs waiting for it.
+    </p>
+    <Screenshot
+      name="runners"
+      alt="The Runners page: jobs running now and queued, a Needs attention list, and each self-hosted runner's slots."
+    />
   </section>
 
   <section class="section wrap feature">

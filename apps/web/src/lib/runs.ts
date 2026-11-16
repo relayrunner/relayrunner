@@ -273,7 +273,7 @@ function sampleRun(run: Partial<Run> & Pick<Run, "runId">): Run {
 const SAMPLE_ENVIRONMENTS: Environment[] = [
   { key: "github:linux-2-core", label: "ubuntu-latest", detail: "GitHub-hosted" },
   { key: "container", label: "Cloudflare Container", detail: "standard-1" },
-  { key: "machine:sample", label: "Zach's MacBook Pro", detail: "MacBook Pro · Apple M3 Max" },
+  { key: "machine:sample", label: "Ada's MacBook Pro", detail: "MacBook Pro · Apple M3 Max" },
 ];
 
 /** Example runs for `VITE_AUTH_DISABLED=true` dev builds, which have no API. */
@@ -296,7 +296,7 @@ export function sampleRuns(): RunsReport {
         title: "feat(api,web): count lint runs in the free check savings",
         event: "pull_request",
         pullRequest: 193,
-        branch: "claude/lint-savings",
+        branch: "feat/lint-savings",
       }),
       sampleRun({
         runId: 4,
@@ -304,7 +304,7 @@ export function sampleRuns(): RunsReport {
         title: "fix(api): start a new pick runner when a relay job is left without one",
         event: "pull_request",
         pullRequest: 12,
-        branch: "claude/fix-picks",
+        branch: "feat/fix-picks",
         conclusion: "failure",
         startedAt: now - 25 * MIN,
         updatedAt: now - 21 * MIN,
