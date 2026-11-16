@@ -4,6 +4,7 @@ import { PageHeader } from "@/components/page-header";
 import { WorkspaceMark } from "@/components/workspace-menu";
 import { Badge } from "@/components/ui/badge";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { formatDate } from "@/lib/time-zone";
 
 export const Route = createFileRoute("/_authed/_workspace/settings/general")({
   component: GeneralSettingsPage,
@@ -40,7 +41,7 @@ function GeneralSettingsPage() {
                 {role}
               </Badge>
             </Row>
-            <Row label="Created">{new Date(workspace.createdAt).toLocaleDateString()}</Row>
+            <Row label="Created">{formatDate(workspace.createdAt)}</Row>
           </CardContent>
         </Card>
       </div>

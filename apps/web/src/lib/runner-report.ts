@@ -2,6 +2,7 @@ import { api } from "@/lib/api";
 import { DAY_MS, type Environment, HOUR_MS, sampleJobTimes, type Stat } from "@/lib/job-times";
 import type { RunnerBucket } from "./runner-days.ts";
 import { type HistoryJob, sampleRunInfo } from "./runs.ts";
+import { zoneOffset } from "@/lib/time-zone";
 
 export type RunnerJob = Omit<HistoryJob, "usage">;
 
@@ -24,8 +25,8 @@ export type RunnerReport = {
   connections: { at: number; online: boolean }[] | null;
 };
 
-/** The reader's minutes east of UTC, which bars are cut at. */
-const utcOffset = () => -new Date().getTimezoneOffset();
+/** The reader's minutes east of UTC, in their chosen zone, which bars are cut at. */
+const utcOffset = () => zoneOffset(Date.now());
 
 export function getRunnerReport(key: string, { from, to }: { from: number; to: number }) {
   const query = new URLSearchParams({

@@ -1,6 +1,6 @@
 import { createFileRoute } from "@tanstack/react-router";
 import { ChevronRightIcon, RouteIcon } from "lucide-react";
-import { memo, useEffect, useMemo, useRef, useState } from "react";
+import { Fragment, memo, useEffect, useMemo, useRef, useState } from "react";
 import { CommitBy } from "@/components/commit";
 import { DurationChart, runPoints } from "@/components/duration-chart";
 import { SectionBoundary } from "@/components/error-boundary";
@@ -28,6 +28,7 @@ import { timeAgo } from "@/lib/activity";
 import { authDisabled } from "@/lib/auth-client";
 import { DAY_MS, type Environment, plural } from "@/lib/job-times";
 import { useLiveRefresh } from "@/lib/live-refresh";
+import { dayHeading } from "@/lib/time-zone";
 import { useNow } from "@/lib/use-now";
 import {
   getJobs,
@@ -214,6 +215,11 @@ function WorkflowRuns({ loaded }: { loaded: RunsReport }) {
     return by ? shown.sort((a, b) => by(b) - by(a)) : shown;
   }, [report, days, repository, result, routed, sort]);
   const chartPoints = useMemo(() => runPoints(runs), [runs]);
+  // Newest first, a heading starts each day: when each run last changed, as the list is ordered.
+  const runDays = useMemo(
+    () => (sort === "newest" ? runs.map((run) => dayHeading(run.updatedAt)) : null),
+    [runs, sort],
+  );
   useLiveRefresh(
     () =>
       getRuns()
@@ -293,16 +299,23 @@ function WorkflowRuns({ loaded }: { loaded: RunsReport }) {
                   No runs match these filters.
                 </li>
               )}
-              {runs.map((run) => {
+              {runs.map((run, index) => {
                 const key = runParam(run);
+                const day = runDays?.[index];
                 return (
-                  <RunRow
-                    key={key}
-                    run={run}
-                    environments={environments}
-                    showRepository={repositories.length > 1}
-                    open={open === key}
-                  />
+                  <Fragment key={key}>
+                    {day && day !== runDays[index - 1] && (
+                      <li className="bg-secondary/30 px-4 py-1.5 text-xs font-medium text-muted-foreground">
+                        {day}
+                      </li>
+                    )}
+                    <RunRow
+                      run={run}
+                      environments={environments}
+                      showRepository={repositories.length > 1}
+                      open={open === key}
+                    />
+                  </Fragment>
                 );
               })}
             </ul>

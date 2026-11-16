@@ -7,6 +7,7 @@ import { DAY_MS, niceStep, plural } from "@/lib/job-times";
 import { type HistoryJob, isFailure, type JobUsage, type Run } from "@/lib/runs";
 import { readFlag, saveFlag } from "@/lib/stored-flag";
 import { formatMemory } from "@/lib/device";
+import { startOfHours, zoneFormat } from "@/lib/time-zone";
 import { count, elapsed, percent } from "@/lib/utils";
 
 type Result = "success" | "failed" | "cancelled";
@@ -498,8 +499,8 @@ function Bars({ tallies, bucketMs, ...plot }: PlotProps & { tallies: Tally[]; bu
           <ChartTip x={plotX(frame, hover.at) + slot / 2} y={PAD.top} width={frame.width}>
             <p className="font-medium">
               {bucketMs >= DAY_MS
-                ? DAY_FORMAT.format(hover.at)
-                : BUCKET_FORMAT.formatRange(hover.at, hover.at + bucketMs)}
+                ? zoneFormat(DAY_FORMAT).format(hover.at)
+                : zoneFormat(BUCKET_FORMAT).formatRange(hover.at, hover.at + bucketMs)}
             </p>
             {RESULTS.map((result) => (
               <p key={result} className="flex items-center gap-1.5 text-muted-foreground">
@@ -596,18 +597,18 @@ function YAxis({
   ));
 }
 
-const HOUR_FORMAT = new Intl.DateTimeFormat(undefined, { hour: "numeric" });
-const DAY_FORMAT = new Intl.DateTimeFormat(undefined, { month: "short", day: "numeric" });
-const BUCKET_FORMAT = new Intl.DateTimeFormat(undefined, {
+const HOUR_FORMAT: Intl.DateTimeFormatOptions = { hour: "numeric" };
+const DAY_FORMAT: Intl.DateTimeFormatOptions = { month: "short", day: "numeric" };
+const BUCKET_FORMAT: Intl.DateTimeFormatOptions = {
   month: "short",
   day: "numeric",
   hour: "numeric",
-});
+};
 
 /** Time labels along the bottom: every 6 hours for a day, else every day or two. */
 function XAxis({ frame, days }: { frame: Frame; days: number }) {
   const stepMs = days <= 1 ? 6 * HOUR_MS : days <= 7 ? DAY_MS : 2 * DAY_MS;
-  const format = stepMs < DAY_MS ? HOUR_FORMAT : DAY_FORMAT;
+  const format = zoneFormat(stepMs < DAY_MS ? HOUR_FORMAT : DAY_FORMAT);
   const ticks: number[] = [];
   for (let at = floorTo(frame.start, stepMs) + stepMs; at < frame.end; at += stepMs) {
     // Daylight saving can shift a step off the hour; snap back to it.
@@ -673,14 +674,9 @@ function useWidth<T extends HTMLElement>() {
   return [ref, width] as const;
 }
 
-/** The local hour or midnight at or before `at`, on a `stepMs` boundary (1, 6 or 12 hours, or a day). */
-function floorTo(at: number, stepMs: number) {
-  const date = new Date(at);
-  date.setMinutes(0, 0, 0);
-  const hours = Math.min(stepMs, DAY_MS) / HOUR_MS;
-  date.setHours(date.getHours() - (date.getHours() % hours));
-  return date.getTime();
-}
+/** The hour or midnight at or before `at`, on a `stepMs` boundary (1, 6 or 12 hours, or a day). */
+const floorTo = (at: number, stepMs: number) =>
+  startOfHours(at, Math.min(stepMs, DAY_MS) / HOUR_MS);
 
 // 1, 2, 5, 10, 20, 50, ... so a count axis lands on round numbers with about three steps.
 function countStep(max: number) {

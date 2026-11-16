@@ -67,7 +67,7 @@ import {
 } from "@/lib/search-params";
 import { money } from "@/lib/usage";
 import { DAY_MS, plural } from "@/lib/job-times";
-import { shortDate } from "@/lib/time-range";
+import { shortDate } from "@/lib/time-zone";
 import { cn, count, elapsed, niceMax } from "@/lib/utils";
 
 const RANGES = dayRanges(7, 90);

@@ -26,13 +26,8 @@ import {
 import { groupByBranch } from "@/lib/branch-groups";
 import { isLongWait, runParam } from "@/lib/runs";
 import { unlessDefault, useSetSearch } from "@/lib/search-params";
-import {
-  type RangeOptions,
-  rangePhrase,
-  resolveRange,
-  shortDate,
-  type TimeRange,
-} from "@/lib/time-range";
+import { type RangeOptions, rangePhrase, resolveRange, type TimeRange } from "@/lib/time-range";
+import { formatDateTime, formatTime, shortDate, startOfDay } from "@/lib/time-zone";
 import { minutes } from "@/lib/usage";
 import { cn, count, niceMax, percent } from "@/lib/utils";
 
@@ -269,14 +264,10 @@ function Section({
   );
 }
 
-const timeFormat = new Intl.DateTimeFormat(undefined, { hour: "numeric", minute: "2-digit" });
-
 /** A time as "3:00 PM" today, or "Nov 13, 3:00 PM" on another day. */
 function timeLabel(ms: number) {
-  const time = timeFormat.format(ms);
-  return new Date(ms).toDateString() === new Date().toDateString()
-    ? time
-    : `${shortDate(ms)}, ${time}`;
+  const time = formatTime(ms, { hour: "numeric", minute: "2-digit" });
+  return startOfDay(ms) === startOfDay(Date.now()) ? time : `${shortDate(ms)}, ${time}`;
 }
 
 /** When a bar starts, as its tooltip and the busiest line name it. */
@@ -327,8 +318,8 @@ function Uptime({
         {spans.map(([start, end]) => (
           <span
             key={start}
-            title={`${new Date(start).toLocaleString()} to ${
-              end >= now - 60_000 ? "now" : new Date(end).toLocaleString()
+            title={`${formatDateTime(start)} to ${
+              end >= now - 60_000 ? "now" : formatDateTime(end)
             }`}
             className="absolute inset-y-0 min-w-px bg-go"
             style={{

@@ -76,11 +76,13 @@ export function createAuth(
     // it rides the session cookie cache. Granted by SQL only, never by the user.
     // termsVersion and privacyVersion (routes/me.ts) ride it too, so the dashboard knows without
     // asking whether someone still has to agree to the Terms of Service and Privacy Policy.
+    // timeZone too, so every page shows times in their zone from the first render.
     user: {
       additionalFields: {
         role: { type: "string", required: false, input: false },
         termsVersion: { type: "string", required: false, input: false },
         privacyVersion: { type: "string", required: false, input: false },
+        timeZone: { type: "string", required: false, input: false },
       },
     },
     socialProviders: {

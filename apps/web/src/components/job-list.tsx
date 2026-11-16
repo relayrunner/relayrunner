@@ -24,6 +24,7 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { timeAgo } from "@/lib/activity";
+import { dayHeading } from "@/lib/time-zone";
 import { formatMemory } from "@/lib/device";
 import { plural } from "@/lib/job-times";
 import { authDisabled } from "@/lib/auth-client";
@@ -95,6 +96,9 @@ function groupedRowClass(
       NEW_COMMIT,
   );
 }
+
+// Day headings go by when a job finished, as the list is ordered.
+const daySection = (row: Row) => dayHeading(row.completedAt);
 
 const rowId = (row: Row) => (row.group ? `group:${row.group.key}` : String(row.id));
 
@@ -391,6 +395,7 @@ export const JobList = memo(function JobList({ report: first }: { report: JobsRe
                     )
                   );
                 }}
+                sectionOf={daySection}
                 search={query.trim()}
                 rowHeight={53}
                 empty="No jobs match these filters."

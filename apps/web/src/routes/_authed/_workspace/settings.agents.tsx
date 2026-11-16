@@ -14,6 +14,7 @@ import { CopyCommand } from "@/components/add-runner";
 import { DOCS_URL } from "@/components/site-footer";
 import { disconnectAgent, listAgents, type ConnectedAgent } from "@/lib/agents";
 import { cn } from "@/lib/utils";
+import { formatDate } from "@/lib/time-zone";
 
 export const Route = createFileRoute("/_authed/_workspace/settings/agents")({
   loader: () => listAgents(),
@@ -178,7 +179,7 @@ function AgentCard({ agent }: { agent: ConnectedAgent }) {
       <CardHeader className="px-4">
         <CardTitle className="text-sm">{agent.clientName || "Unnamed agent"}</CardTitle>
         <CardDescription>
-          Connected {new Date(agent.connectedAt).toLocaleDateString()}
+          Connected {formatDate(agent.connectedAt)}
           {agent.clientUri && <> · {agent.clientUri}</>}
         </CardDescription>
         <CardAction>

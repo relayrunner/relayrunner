@@ -61,6 +61,7 @@ import {
   type FreeCheckSavings,
 } from "@/lib/usage";
 import { failureText, jobNames, walkSummary } from "@/lib/route-walk";
+import { formatDateTime } from "@/lib/time-zone";
 
 // Fast enough that a push shows up within seconds, without a live connection.
 const POLL_MS = 5_000;
@@ -611,7 +612,7 @@ function Row({
         )}
         <span
           className="min-w-[4.5ch] text-right text-xs text-muted-foreground tabular-nums"
-          title={new Date(at).toLocaleString()}
+          title={formatDateTime(at)}
         >
           {timeAgo(at, now)}
         </span>

@@ -29,6 +29,7 @@ import {
   use,
   useCallback,
   useLayoutEffect,
+  useMemo,
   useRef,
   useState,
 } from "react";
@@ -124,6 +125,7 @@ export function DataTable<TData extends RowData>({
   onExpandedChange,
   rowClassName,
   fullRow,
+  sectionOf,
 }: {
   columns: Columns<TData>;
   data: TData[];
@@ -143,6 +145,11 @@ export function DataTable<TData extends RowData>({
   rowClassName?: RowClassName<TData>;
   /** What a row shows across the whole width instead of its cells, such as a group's heading. */
   fullRow?: (row: TData) => ReactNode;
+  /**
+   * A heading for the rows a top-level row starts, such as its day. It shows above each row whose
+   * heading differs from the one before, while the table is in the data's own order.
+   */
+  sectionOf?: (row: TData) => string;
 }) {
   const [sorting, setSorting] = useState(initialSorting);
   const table = useTable({
@@ -160,6 +167,10 @@ export function DataTable<TData extends RowData>({
   });
   const rows = table.getRowModel().rows;
   const headers = table.getHeaderGroups()[0]?.headers ?? [];
+  const items = useMemo(
+    () => withSections(rows, sorting.length ? undefined : sectionOf),
+    [rows, sorting, sectionOf],
+  );
 
   return (
     <Table className="tabular-nums">
@@ -212,8 +223,9 @@ export function DataTable<TData extends RowData>({
             </TableCell>
           </TableRow>
         </TableBody>
-      ) : rows.length > VIRTUALIZE_ABOVE ? (
+      ) : items.length > VIRTUALIZE_ABOVE ? (
         <VirtualRows
+          items={items}
           rows={rows}
           columns={headers.length}
           rowHeight={rowHeight}
@@ -222,18 +234,68 @@ export function DataTable<TData extends RowData>({
         />
       ) : (
         <TableBody>
-          {rows.map((row, index) => (
-            <DataRow
-              key={row.id}
-              row={row}
-              expanded={row.getIsExpanded()}
-              className={rowClassName?.(row, { previous: rows[index - 1], next: rows[index + 1] })}
-              full={fullRow?.(row.original)}
-            />
-          ))}
+          {items.map((item) =>
+            "section" in item ? (
+              <SectionRow key={item.key} label={item.section} columns={headers.length} />
+            ) : (
+              <DataRow
+                key={item.row.id}
+                row={item.row}
+                expanded={item.row.getIsExpanded()}
+                className={rowClassName?.(item.row, {
+                  previous: rows[item.index - 1],
+                  next: rows[item.index + 1],
+                })}
+                full={fullRow?.(item.row.original)}
+              />
+            ),
+          )}
         </TableBody>
       )}
     </Table>
+  );
+}
+
+/** A row and where it sits among the rows, or a heading over the rows after it. */
+type Item<TData extends RowData> =
+  | { row: Row<typeof features, TData>; index: number }
+  | { section: string; key: string };
+
+/** The rows with a heading above each top-level row that starts a new section. */
+function withSections<TData extends RowData>(
+  rows: Row<typeof features, TData>[],
+  sectionOf?: (row: TData) => string,
+): Item<TData>[] {
+  const items: Item<TData>[] = [];
+  let last: string | undefined;
+  rows.forEach((row, index) => {
+    if (sectionOf && row.depth === 0) {
+      const section = sectionOf(row.original);
+      if (section !== last) items.push({ section, key: `section:${row.id}` });
+      last = section;
+    }
+    items.push({ row, index });
+  });
+  return items;
+}
+
+function SectionRow({
+  label,
+  columns,
+  index,
+  measure,
+}: {
+  label: string;
+  columns: number;
+  index?: number;
+  measure?: (element: HTMLTableRowElement | null) => void;
+}) {
+  return (
+    <TableRow data-index={index} ref={measure} className="bg-secondary/30 hover:bg-secondary/30">
+      <TableCell colSpan={columns} className="py-1.5 text-xs font-medium text-muted-foreground">
+        {label}
+      </TableCell>
+    </TableRow>
   );
 }
 
@@ -281,12 +343,14 @@ const DataRow = memo(function DataRow<TData extends RowData>({
 // Window-scrolled rows with spacer rows above and below, so the markup stays a real <table>
 // and columns keep their natural widths.
 function VirtualRows<TData extends RowData>({
+  items: list,
   rows,
   columns,
   rowHeight,
   rowClassName,
   fullRow,
 }: {
+  items: Item<TData>[];
   rows: Row<typeof features, TData>[];
   columns: number;
   rowHeight: number;
@@ -301,12 +365,18 @@ function VirtualRows<TData extends RowData>({
   }, []);
 
   const virtualizer = useWindowVirtualizer({
-    count: rows.length,
+    count: list.length,
     estimateSize: useCallback(() => rowHeight, [rowHeight]),
     overscan: 10,
     scrollMargin: offset,
     // Stable between renders: the virtualizer re-measures every row when this changes.
-    getItemKey: useCallback((index: number) => rows[index]!.id, [rows]),
+    getItemKey: useCallback(
+      (index: number) => {
+        const item = list[index]!;
+        return "section" in item ? item.key : item.row.id;
+      },
+      [list],
+    ),
   });
   const items = virtualizer.getVirtualItems();
   const before = items.length ? items[0]!.start - offset : 0;
@@ -315,19 +385,28 @@ function VirtualRows<TData extends RowData>({
   return (
     <TableBody ref={bodyRef}>
       {before > 0 && <Spacer height={before} columns={columns} />}
-      {items.map((item) => {
-        const row = rows[item.index]!;
+      {items.map((virtual) => {
+        const item = list[virtual.index]!;
+        if ("section" in item) {
+          return (
+            <SectionRow
+              key={virtual.key}
+              label={item.section}
+              columns={columns}
+              index={virtual.index}
+              measure={virtualizer.measureElement}
+            />
+          );
+        }
+        const { row, index } = item;
         return (
           <DataRow
-            key={item.key}
+            key={virtual.key}
             row={row}
             expanded={row.getIsExpanded()}
-            className={rowClassName?.(row, {
-              previous: rows[item.index - 1],
-              next: rows[item.index + 1],
-            })}
+            className={rowClassName?.(row, { previous: rows[index - 1], next: rows[index + 1] })}
             full={fullRow?.(row.original)}
-            index={item.index}
+            index={virtual.index}
             measure={virtualizer.measureElement}
           />
         );

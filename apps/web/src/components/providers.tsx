@@ -23,6 +23,8 @@ type ProviderLook = {
   icon: ReactNode;
   /** Brand tile behind the mark, header tint and share-bar colour. */
   tile: string;
+  /** The inline mark's classes in place of the tile, for a mark that reads best on its own. */
+  bare?: string;
   tint: string;
   bar: string;
   /** Dropped from each runner's label, since the card already names the provider. */
@@ -90,6 +92,7 @@ const LOOKS: Record<ProviderId | "machine", ProviderLook> = {
   github: {
     icon: <GithubIcon className="size-4" />,
     tile: "bg-foreground text-background",
+    bare: "text-foreground [&_svg]:max-h-4 [&_svg]:max-w-4",
     tint: "bg-foreground/4",
     bar: "bg-ink-2",
   },
@@ -160,17 +163,18 @@ export function byProvider<T extends Pick<EnvironmentSummary, "key" | "stat">>(e
 
 /**
  * A provider's mark on its brand tile, shrunk to sit inline in a row or a table cell. The tile
- * colours are the ones the Runners page cards use, so a provider looks the same everywhere.
+ * colours are the ones the Runners page cards use, so a provider looks the same everywhere. GitHub's
+ * mark stands on its own, in the text colour, so it suits light and dark.
  */
 export function ProviderMark({ provider, className }: { provider: Provider; className?: string }) {
-  const { icon, tile } = providerStyle(provider);
+  const { icon, tile, bare } = providerStyle(provider);
   return (
     <span
       aria-hidden
       className={cn(
         TILE,
         "size-5 rounded-[5px] [&_svg]:max-h-3 [&_svg]:max-w-3 [&>span]:text-[11px]",
-        tile,
+        bare ?? tile,
         className,
       )}
     >
