@@ -1,4 +1,4 @@
-// swift-tools-version: 6.0
+// swift-tools-version: 5.10
 import PackageDescription
 
 let package = Package(
@@ -7,16 +7,14 @@ let package = Package(
   targets: [
     // What the app reads from and says to `relayrunner connect --events`, kept apart from the UI so
     // `swift test` covers it.
-    .target(name: "RelayRunnerKit", swiftSettings: [.swiftLanguageMode(.v5)]),
+    .target(name: "RelayRunnerKit"),
     .executableTarget(
       name: "RelayRunner",
-      dependencies: ["RelayRunnerKit"],
-      swiftSettings: [.swiftLanguageMode(.v5)]
+      dependencies: ["RelayRunnerKit"]
     ),
     .testTarget(
       name: "RelayRunnerKitTests",
-      dependencies: ["RelayRunnerKit"],
-      swiftSettings: [.swiftLanguageMode(.v5)]
+      dependencies: ["RelayRunnerKit"]
     ),
   ]
 )

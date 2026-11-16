@@ -28,7 +28,6 @@ struct MenuContent: View {
     Divider()
     Button("Open Dashboard") { NSWorkspace.shared.open(connection.server) }
     Button("Show Log") { NSWorkspace.shared.open(CLI.log) }
-      .disabled(!FileManager.default.fileExists(atPath: CLI.log.path))
     Button("Settings…") {
       NSApp.activate(ignoringOtherApps: true)
       openSettings()

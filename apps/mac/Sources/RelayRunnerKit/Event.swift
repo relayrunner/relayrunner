@@ -29,7 +29,6 @@ public enum Event: Equatable {
 
   /// The event on a line, or nil for a line that isn't one this app understands.
   public static func parse(_ line: Data) -> Event? {
-    let decoder = JSONDecoder()
     guard let head = try? decoder.decode(Head.self, from: line), head.v == 1 else { return nil }
     func body<T: Decodable>(_: T.Type) -> T? { try? decoder.decode(T.self, from: line) }
     switch head.type {
@@ -52,6 +51,7 @@ public enum Event: Equatable {
     }
   }
 
+  private static let decoder = JSONDecoder()
   private struct Head: Decodable { var v: Int; var type: String }
   private struct SignIn: Decodable { var url: String; var code: String }
   private struct Machine: Decodable { var id: String; var name: String; var server: String }

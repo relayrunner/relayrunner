@@ -66,17 +66,16 @@ final class CLIProcess {
     self.pid = pid
     input = FileHandle(fileDescriptor: stdinPipe[1], closeOnDealloc: true)
 
-    // Exit is reported after the last line, so nothing that came before it is lost.
-    let done = DispatchGroup()
-    done.enter()
-    done.enter()
+    // Exit is reported after the last line, so nothing that came before it is lost, but no more
+    // than a moment after the process ends, in case something it started keeps stdout open.
+    let closed = DispatchSemaphore(value: 0)
     var buffer = Data()
     output = FileHandle(fileDescriptor: stdoutPipe[0], closeOnDealloc: true)
     output.readabilityHandler = { handle in
       let chunk = handle.availableData
       if chunk.isEmpty {
         handle.readabilityHandler = nil
-        done.leave()
+        closed.signal()
         return
       }
       buffer.append(chunk)
@@ -86,15 +85,14 @@ final class CLIProcess {
         DispatchQueue.main.async { onLine(line) }
       }
     }
-    var exitCode: Int32 = 0
     DispatchQueue.global().async {
       var status: Int32 = 0
       while waitpid(pid, &status, 0) == -1 && errno == EINTR {}
       // WIFEXITED / WEXITSTATUS: a signal's number is in the low bits, an exit code in the next 8.
-      exitCode = status & 0x7f == 0 ? (status >> 8) & 0xff : 128 + (status & 0x7f)
-      done.leave()
+      let code = status & 0x7f == 0 ? (status >> 8) & 0xff : 128 + (status & 0x7f)
+      _ = closed.wait(timeout: .now() + 2)
+      DispatchQueue.main.async { onExit(code) }
     }
-    done.notify(queue: .main) { onExit(exitCode) }
   }
 
   /// A command for `connect` on stdin, such as `pause`. Does nothing once it has exited.

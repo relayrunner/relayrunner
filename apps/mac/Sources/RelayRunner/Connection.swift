@@ -27,7 +27,6 @@ final class Connection {
   private(set) var problem: String?
 
   @ObservationIgnored private var process: CLIProcess?
-  @ObservationIgnored private var stopping = false
   @ObservationIgnored private var lastError: String?
   @ObservationIgnored private var offlineReason: String?
 
@@ -49,7 +48,6 @@ final class Connection {
     problem = nil
     lastError = nil
     offlineReason = nil
-    stopping = false
     try? FileManager.default.createDirectory(at: CLI.home, withIntermediateDirectories: true)
     do {
       process = try CLIProcess(
@@ -75,7 +73,6 @@ final class Connection {
   /// Goes offline the way Ctrl-C does. A job that's running stops with it.
   func stop() {
     guard let process else { return }
-    stopping = true
     phase = .stopping
     process.interrupt()
   }
@@ -99,12 +96,13 @@ final class Connection {
       self.server = server
       signIn = nil
     case .state(let state):
-      switch state.link {
-      case .connecting: phase = .connecting
-      case .online: phase = .online
-      case .reconnecting: phase = .reconnecting
+      if phase != .stopping {
+        switch state.link {
+        case .connecting: phase = .connecting
+        case .online: phase = .online
+        case .reconnecting: phase = .reconnecting
+        }
       }
-      if stopping { phase = .stopping }
       paused = state.paused
       jobs = state.jobs
       repos = repos.filter { state.jobs.contains($0.key) }
@@ -121,6 +119,7 @@ final class Connection {
   }
 
   private func exited(_ code: Int32) {
+    let stopping = phase == .stopping
     process = nil
     phase = .off
     paused = false
