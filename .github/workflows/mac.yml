@@ -1,0 +1,42 @@
+name: Mac app
+
+on:
+  pull_request:
+    paths:
+      - apps/mac/**
+      - apps/cli/**
+      - scripts/build-cli-binary.sh
+      - .github/workflows/mac.yml
+  push:
+    branches: [main]
+    paths:
+      - apps/mac/**
+      - apps/cli/**
+      - scripts/build-cli-binary.sh
+      - .github/workflows/mac.yml
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    name: Test and build the app
+    runs-on: macos-15
+    env:
+      HUSKY: "0"
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          persist-credentials: false
+      - uses: pnpm/action-setup@v6
+      - uses: actions/setup-node@v6
+        with:
+          node-version-file: .nvmrc
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: 1.4.4
+      - run: swift test
+        working-directory: apps/mac
+      - run: bash apps/mac/scripts/build-app.sh
