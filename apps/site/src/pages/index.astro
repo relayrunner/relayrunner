@@ -8,6 +8,7 @@ import SiteFooter from "../components/SiteFooter.astro";
 import Screenshot from "../components/Screenshot.astro";
 import SiteHeader from "../components/SiteHeader.astro";
 import ProviderLogo from "../components/docs/ProviderLogo.astro";
+import { setupPrompt } from "../lib/agent-setup";
 import { KNOWN_PROVIDERS, PROVIDERS } from "../lib/providers";
 import "../style.css";
 
@@ -87,7 +88,7 @@ const structuredData = {
           Or <button
             class="link-btn"
             type="button"
-            data-copy-inline="Set up relayrunner in this checkout using https://raw.githubusercontent.com/relayrunner/relayrunner/main/docs/agent-install.md"
+            data-copy-inline={setupPrompt(Astro.site!)}
             data-copied-label="copied the instruction"
           >
             <code>copy one line</code>

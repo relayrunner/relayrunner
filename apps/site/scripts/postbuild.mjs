@@ -47,6 +47,10 @@ writeFileSync(
     "  Access-Control-Allow-Origin: *",
     "/llms.txt",
     "  Access-Control-Allow-Origin: *",
+    "/setup.md",
+    "  Access-Control-Allow-Origin: *",
+    "/skills/*",
+    "  Access-Control-Allow-Origin: *",
     "",
   ].join("\n"),
 );

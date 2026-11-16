@@ -10,6 +10,8 @@ The public site at [relayrunner.app](https://relayrunner.app): one [Astro](https
 
 Every docs page has a Markdown version at `/docs/<slug>.md` and a plain-text one at `/docs/<slug>.txt`, linked from the page's `<head>` as `rel="alternate" type="text/markdown"`; the home page's is `/index.md` (`src/pages/index.md.ts`, kept in step with `index.astro` by hand). `/llms.txt` (also at `/docs/llms.txt`) says when an agent should reach for RelayRunner and how, and lists every page; `/llms-full.txt` has all of them in one file. For search engines, `/sitemap-index.xml` (also at `/sitemap.xml`, and named in `/robots.txt`) lists every page with the date of its last commit, generated at build time, so new pages show up on their own. The home page also carries schema.org JSON-LD.
 
+`/setup.md` is the setup guide for coding agents ("Set up relayrunner in this checkout using https://relayrunner.app/setup.md"), and `/skills/<name>/SKILL.md` are the agent skills it links to. Both are built from the repo's `docs/agent-install.md` and `skills/` (`src/lib/agent-setup.ts`), with raw GitHub links to the skills rewritten to the site's own URLs, so edit those files, not the site.
+
 The small Worker script in `worker/index.ts` runs first for `/` and `/docs/*`, and for any path with no file (`not_found_handling: "none"`). Asking for one of those pages with `Accept: text/markdown` returns its Markdown, with `Vary: Accept`. An unknown path gets a 404: the 404 page, or a short Markdown note with links for agents. It also swaps the home page's share image for campaigns (above).
 
 Machine-readable files for agents:

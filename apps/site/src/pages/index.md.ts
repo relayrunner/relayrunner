@@ -1,6 +1,7 @@
 // The landing page as Markdown, for agents. The Worker serves it for / when a request asks for
 // `Accept: text/markdown` (worker/index.ts). Keep it in step with index.astro's sections.
 import type { APIRoute } from "astro";
+import { setupPrompt } from "../lib/agent-setup";
 import { KNOWN_PROVIDERS, PROVIDERS } from "../lib/providers";
 
 export const GET: APIRoute = ({ site }) => {
@@ -25,7 +26,7 @@ npx relayrunner init
 Or paste this into Claude Code, Codex or Cursor and your agent does the setup:
 
 \`\`\`text
-Set up relayrunner in this checkout using https://raw.githubusercontent.com/relayrunner/relayrunner/main/docs/agent-install.md
+${setupPrompt(site!)}
 \`\`\`
 
 ## Your machines

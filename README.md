@@ -105,7 +105,7 @@ Give your coding agent the RelayRunner skills, so it can set up machines, route 
 npx skills add relayrunner/relayrunner
 ```
 
-They work with Claude Code, Codex, Cursor and most other agents. See [`skills/`](skills) for what each one does. Without them, [docs/agent-install.md](docs/agent-install.md) walks an agent through the whole setup in one prompt.
+They work with Claude Code, Codex, Cursor and most other agents. See [`skills/`](skills) for what each one does. Without them, the [setup guide](https://relayrunner.app/setup.md) ([source](docs/agent-install.md)) walks an agent through the whole setup in one prompt.
 
 Agents can also read your workspace through the [MCP server](https://relayrunner.app/docs/reference/mcp) at `https://agents.relayrunner.app/mcp`.
 
