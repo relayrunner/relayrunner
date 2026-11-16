@@ -17,6 +17,7 @@ import {
 import { RangePicker } from "@/components/range-picker";
 import { type Environments, fetchRunJobs, RunLink, RunSheet } from "@/components/run-sheet";
 import { StatusIcon } from "@/components/status-icon";
+import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
 import { SECTION_HEADING } from "@/components/ui/data-table";
 import {
   Select,
@@ -294,30 +295,32 @@ function WorkflowRuns({ loaded }: { loaded: RunsReport }) {
             <DurationChart points={chartPoints} days={days} noun="run" />
           </SectionBoundary>
           <SectionBoundary>
-            <ul className="divide-y overflow-hidden rounded-xl border bg-card">
-              {runs.length === 0 && (
-                <li className="px-4 py-6 text-sm text-muted-foreground">
-                  No runs match these filters.
-                </li>
-              )}
-              {runs.map((run, index) => {
-                const key = runParam(run);
-                const day = runDays?.[index];
-                return (
-                  <Fragment key={key}>
-                    {day && day !== runDays[index - 1] && (
-                      <li className={SECTION_HEADING}>{day}</li>
-                    )}
-                    <RunRow
-                      run={run}
-                      environments={environments}
-                      showRepository={repositories.length > 1}
-                      open={open === key}
-                    />
-                  </Fragment>
-                );
-              })}
-            </ul>
+            <TooltipProvider>
+              <ul className="divide-y overflow-hidden rounded-xl border bg-card">
+                {runs.length === 0 && (
+                  <li className="px-4 py-6 text-sm text-muted-foreground">
+                    No runs match these filters.
+                  </li>
+                )}
+                {runs.map((run, index) => {
+                  const key = runParam(run);
+                  const day = runDays?.[index];
+                  return (
+                    <Fragment key={key}>
+                      {day && day !== runDays[index - 1] && (
+                        <li className={SECTION_HEADING}>{day}</li>
+                      )}
+                      <RunRow
+                        run={run}
+                        environments={environments}
+                        showRepository={repositories.length > 1}
+                        open={open === key}
+                      />
+                    </Fragment>
+                  );
+                })}
+              </ul>
+            </TooltipProvider>
           </SectionBoundary>
           <Legend days={report.days} truncated={report.truncated} />
         </>
@@ -373,9 +376,19 @@ const RunRow = memo(function RunRow({
               {run.title ?? run.workflow ?? "Unnamed workflow"}
             </span>
             {run.routed && (
-              <span title="Routed by RelayRunner" className="shrink-0 text-muted-foreground">
-                <RouteIcon role="img" aria-label="Routed by RelayRunner" className="size-3.5" />
-              </span>
+              <Tooltip>
+                <TooltipTrigger asChild>
+                  <span className="shrink-0 text-muted-foreground">
+                    <RouteIcon role="img" aria-label="Routed by RelayRunner" className="size-3.5" />
+                  </span>
+                </TooltipTrigger>
+                <TooltipContent className="grid max-w-64 gap-0.5 py-2">
+                  <span className="font-medium">Routed by RelayRunner</span>
+                  <span className="opacity-80">
+                    Your Router picked the runner for this run's jobs.
+                  </span>
+                </TooltipContent>
+              </Tooltip>
             )}
           </span>
           <span className="flex min-w-0 items-center gap-2.5 text-xs text-muted-foreground">
