@@ -3,7 +3,7 @@ name = "relayrunner"
 version = "0.0.0"
 edition = "2024"
 publish = false
-description = "The relayrunner CLI in Rust: connect, workspaces and share, as the Mac app runs them."
+description = "The relayrunner CLI in Rust."
 license = "Apache-2.0"
 
 [dependencies]
@@ -35,6 +35,7 @@ ureq = { version = "3", default-features = false, features = [
   "platform-verifier",
 ] }
 url = "2"
+yaml-rust2 = { version = "0.13.0", default-features = false }
 
 [profile.release]
 opt-level = "z"

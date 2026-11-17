@@ -202,11 +202,16 @@ impl Drop for RawMode {
     }
 }
 
+#[derive(Clone, Copy, PartialEq, Eq, Debug)]
 enum Key {
     Up,
     Down,
+    Left,
+    Right,
+    Space,
     Enter,
     Cancel,
+    Char(u8),
     Other,
 }
 
@@ -218,89 +223,277 @@ fn read_key(input: &mut impl Read) -> Key {
     match byte[0] {
         b'\r' | b'\n' => Key::Enter,
         3 | 4 => Key::Cancel,
+        b' ' => Key::Space,
         b'k' | b'w' => Key::Up,
         b'j' | b's' => Key::Down,
+        b'h' => Key::Left,
+        b'l' => Key::Right,
         0x1b => {
             let mut seq = [0u8; 2];
             if input.read(&mut seq).unwrap_or(0) == 2 && seq[0] == b'[' {
                 match seq[1] {
                     b'A' => Key::Up,
                     b'B' => Key::Down,
+                    b'C' => Key::Right,
+                    b'D' => Key::Left,
                     _ => Key::Other,
                 }
             } else {
                 Key::Cancel
             }
         }
+        c if c.is_ascii_graphic() => Key::Char(c.to_ascii_lowercase()),
         _ => Key::Other,
     }
 }
 
-/// Asks to pick one, with the arrow keys and Enter. None when cancelled (Ctrl-C or Escape) or
-/// when nobody's at a terminal to ask.
-pub fn select(question: &str, choices: &[Choice], initial: usize) -> Option<usize> {
-    if !can_ask() || choices.is_empty() {
+/// What a key press does to a prompt.
+enum Step<T> {
+    Stay,
+    Done(T),
+    Cancel,
+}
+
+/// Draws a prompt under `question`, its lines from `render`, and redraws it after each key until
+/// `on_key` answers or cancels. Then it leaves the question with `summary`, the answer as text.
+/// None when cancelled or when nobody's at a terminal to ask.
+fn prompt<S, T>(
+    question: &str,
+    state: &mut S,
+    render: impl Fn(&S) -> Vec<String>,
+    mut on_key: impl FnMut(&mut S, Key) -> Step<T>,
+    summary: impl Fn(&S) -> String,
+) -> Option<T> {
+    if !can_ask() {
         return None;
     }
     let raw = RawMode::start(false)?;
     let mut stdin = std::io::stdin().lock();
-    let mut current = initial.min(choices.len() - 1);
-    let render = |current: usize| {
+    let draw = |state: &S| {
+        let lines = render(state);
         let mut out = format!(
             "{}\n{}  {question}\n",
             paint(Style::Gray, BAR),
             paint(Style::Cyan, "◆")
         );
-        for (i, choice) in choices.iter().enumerate() {
-            let line = if i == current {
-                let hint = choice
-                    .hint
-                    .as_ref()
-                    .map(|h| format!(" {}", paint(Style::Dim, &format!("({h})"))))
-                    .unwrap_or_default();
-                format!("{} {}{hint}", paint(Style::Green, "●"), choice.label)
-            } else {
-                format!(
-                    "{} {}",
-                    paint(Style::Dim, "○"),
-                    paint(Style::Dim, &choice.label)
-                )
-            };
+        for line in &lines {
             out.push_str(&format!("{}  {line}\n", paint(Style::Cyan, BAR)));
         }
         out.push_str(&format!("{}\n", paint(Style::Cyan, BAR_END)));
-        out
+        (out, lines.len() + 3)
     };
-    // The prompt's height, to redraw it in place.
-    let height = choices.len() + 3;
     write("\x1b[?25l");
-    write(&render(current));
-    let picked = loop {
-        match read_key(&mut stdin) {
-            Key::Up => current = (current + choices.len() - 1) % choices.len(),
-            Key::Down => current = (current + 1) % choices.len(),
-            Key::Enter => break Some(current),
-            Key::Cancel => break None,
-            Key::Other => continue,
+    let (out, mut height) = draw(state);
+    write(&out);
+    let answer = loop {
+        match on_key(state, read_key(&mut stdin)) {
+            Step::Stay => {}
+            Step::Done(answer) => break Some(answer),
+            Step::Cancel => break None,
         }
-        write(&format!("\x1b[{height}A\x1b[J{}", render(current)));
+        let (out, next) = draw(state);
+        write(&format!("\x1b[{height}A\x1b[J{out}"));
+        height = next;
     };
     drop(raw);
     let bar = paint(Style::Gray, BAR);
-    let done = match picked {
-        Some(i) => format!(
-            "{bar}\n{}  {question}\n{bar}  {}\n",
-            paint(Style::Green, "◇"),
-            paint(Style::Dim, &choices[i].label)
-        ),
-        None => format!(
-            "{bar}\n{}  {question}\n{bar}  {}\n",
+    let (symbol, text) = match answer {
+        Some(_) => (paint(Style::Green, "◇"), paint(Style::Dim, &summary(state))),
+        None => (
             paint(Style::Red, "■"),
-            paint(Style::Strike, &paint(Style::Dim, &choices[current].label))
+            paint(Style::Strike, &paint(Style::Dim, &summary(state))),
         ),
     };
-    write(&format!("\x1b[{height}A\x1b[J{done}\x1b[?25h"));
-    picked
+    write(&format!(
+        "\x1b[{height}A\x1b[J{bar}\n{symbol}  {question}\n{bar}  {text}\n\x1b[?25h"
+    ));
+    answer
+}
+
+fn hint_of(choice: &Choice) -> String {
+    choice
+        .hint
+        .as_ref()
+        .map(|h| format!(" {}", paint(Style::Dim, &format!("({h})"))))
+        .unwrap_or_default()
+}
+
+/// Asks to pick one, with the arrow keys and Enter. None when cancelled (Ctrl-C or Escape) or
+/// when nobody's at a terminal to ask.
+pub fn select(question: &str, choices: &[Choice], initial: usize) -> Option<usize> {
+    if choices.is_empty() {
+        return None;
+    }
+    let n = choices.len();
+    let mut current = initial.min(n - 1);
+    prompt(
+        question,
+        &mut current,
+        |&current| {
+            choices
+                .iter()
+                .enumerate()
+                .map(|(i, choice)| {
+                    if i == current {
+                        format!(
+                            "{} {}{}",
+                            paint(Style::Green, "●"),
+                            choice.label,
+                            hint_of(choice)
+                        )
+                    } else {
+                        format!(
+                            "{} {}",
+                            paint(Style::Dim, "○"),
+                            paint(Style::Dim, &choice.label)
+                        )
+                    }
+                })
+                .collect()
+        },
+        |current, key| match key {
+            Key::Up | Key::Left => {
+                *current = (*current + n - 1) % n;
+                Step::Stay
+            }
+            Key::Down | Key::Right => {
+                *current = (*current + 1) % n;
+                Step::Stay
+            }
+            Key::Enter => Step::Done(*current),
+            Key::Cancel => Step::Cancel,
+            _ => Step::Stay,
+        },
+        |&current| choices[current].label.clone(),
+    )
+}
+
+/// Asks to pick any number, all picked to start with: Space picks or unpicks, `a` all or none,
+/// Enter answers. The picks in order; None when cancelled.
+pub fn multiselect(question: &str, choices: &[Choice]) -> Option<Vec<usize>> {
+    if choices.is_empty() {
+        return Some(Vec::new());
+    }
+    let n = choices.len();
+    let mut state = (0usize, vec![true; n]);
+    let picked = |picks: &[bool]| (0..n).filter(|&i| picks[i]).collect::<Vec<_>>();
+    prompt(
+        question,
+        &mut state,
+        |(current, picks)| {
+            choices
+                .iter()
+                .enumerate()
+                .map(|(i, choice)| {
+                    let box_ = if picks[i] {
+                        paint(Style::Green, "◼")
+                    } else if i == *current {
+                        paint(Style::Cyan, "◻")
+                    } else {
+                        paint(Style::Dim, "◻")
+                    };
+                    if i == *current {
+                        format!("{box_} {}{}", choice.label, hint_of(choice))
+                    } else {
+                        format!("{box_} {}", paint(Style::Dim, &choice.label))
+                    }
+                })
+                .collect()
+        },
+        |(current, picks), key| match key {
+            Key::Up | Key::Left => {
+                *current = (*current + n - 1) % n;
+                Step::Stay
+            }
+            Key::Down | Key::Right => {
+                *current = (*current + 1) % n;
+                Step::Stay
+            }
+            Key::Space => {
+                picks[*current] = !picks[*current];
+                Step::Stay
+            }
+            Key::Char(b'a') => {
+                let all = picks.iter().all(|&p| p);
+                picks.iter_mut().for_each(|p| *p = !all);
+                Step::Stay
+            }
+            Key::Enter => Step::Done(picked(picks)),
+            Key::Cancel => Step::Cancel,
+            _ => Step::Stay,
+        },
+        |(_, picks)| {
+            let labels: Vec<&str> = picked(picks)
+                .into_iter()
+                .map(|i| choices[i].label.as_str())
+                .collect();
+            if labels.is_empty() {
+                "none".to_string()
+            } else {
+                labels.join(", ")
+            }
+        },
+    )
+}
+
+/// Asks yes or no: the arrow keys switch, `y` or `n` answer at once, Enter takes what's shown.
+/// None when cancelled.
+pub fn confirm(question: &str, initial: bool) -> Option<bool> {
+    let mut yes = initial;
+    prompt(
+        question,
+        &mut yes,
+        |&yes| {
+            let option = |on: bool, label: &str| {
+                if on {
+                    format!("{} {label}", paint(Style::Green, "●"))
+                } else {
+                    format!("{} {}", paint(Style::Dim, "○"), paint(Style::Dim, label))
+                }
+            };
+            vec![format!(
+                "{} {} {}",
+                option(yes, "Yes"),
+                paint(Style::Dim, "/"),
+                option(!yes, "No")
+            )]
+        },
+        |yes, key| match key {
+            Key::Up | Key::Down | Key::Left | Key::Right => {
+                *yes = !*yes;
+                Step::Stay
+            }
+            Key::Char(b'y') => {
+                *yes = true;
+                Step::Done(true)
+            }
+            Key::Char(b'n') => {
+                *yes = false;
+                Step::Done(false)
+            }
+            Key::Enter => Step::Done(*yes),
+            Key::Cancel => Step::Cancel,
+            _ => Step::Stay,
+        },
+        |&yes| if yes { "Yes" } else { "No" }.to_string(),
+    )
+}
+
+/// A unified diff with added lines green, removed ones red and the rest dim.
+pub fn colored_diff(diff: &str) -> String {
+    diff.lines()
+        .map(|line| {
+            let style = if line.starts_with('+') && !line.starts_with("+++") {
+                Style::Green
+            } else if line.starts_with('-') && !line.starts_with("---") {
+                Style::Red
+            } else {
+                Style::Dim
+            };
+            paint(style, line)
+        })
+        .collect::<Vec<_>>()
+        .join("\n")
 }
 
 static SPINNING: Mutex<Option<std::thread::JoinHandle<()>>> = Mutex::new(None);
@@ -360,6 +553,9 @@ mod tests {
         assert!(matches!(key(b"\r"), Key::Enter));
         assert!(matches!(key(b"\x03"), Key::Cancel));
         assert!(matches!(key(b""), Key::Cancel));
-        assert!(matches!(key(b"x"), Key::Other));
+        assert!(matches!(key(b" "), Key::Space));
+        assert!(matches!(key(b"\x1b[C"), Key::Right));
+        assert!(matches!(key(b"Y"), Key::Char(b'y')));
+        assert!(matches!(key(b"\x7f"), Key::Other));
     }
 }

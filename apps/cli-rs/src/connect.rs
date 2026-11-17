@@ -244,6 +244,12 @@ async fn connect_machine(args: &Args, size: Wanted, slots: u32) -> Result<Option
         json!({ "id": credentials.machine.id, "name": credentials.machine.name, "server": credentials.server }),
     );
 
+    // Run inside a repo that isn't set up yet, offer to route its jobs here (`relayrunner init`).
+    // Only when someone is at the terminal to answer.
+    if ui::can_ask() {
+        let _ = tokio::task::spawn_blocking(move || crate::init::offer_setup(use_vms)).await;
+    }
+
     // Someone at the terminal hears about a newer CLI now, and again each day `connect` stays up.
     // The check runs in the background and never holds up connecting.
     let update_notices = (ui::interactive() && !events::on() && std::env::var_os("CI").is_none())

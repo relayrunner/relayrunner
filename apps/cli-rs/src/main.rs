@@ -1,6 +1,6 @@
-//! `relayrunner` in Rust: `connect` (with sign-in, runner install and updates, and VMs), `login`,
-//! `whoami`, `pause`, `resume`, `share`, `workspaces` and `firewall`. It shares ~/.relayrunner
-//! with the TypeScript CLI. `init` is still TypeScript only.
+//! `relayrunner` in Rust: `connect` (with sign-in, runner install and updates, and VMs), `init`,
+//! `login`, `whoami`, `pause`, `resume`, `share`, `workspaces` and `firewall`. It shares
+//! ~/.relayrunner with the TypeScript CLI.
 
 mod api;
 mod connect;
@@ -10,6 +10,7 @@ mod device;
 mod error;
 mod events;
 mod firewall;
+mod init;
 mod install;
 mod isolated;
 mod jit_config;
@@ -90,6 +91,25 @@ const COMMANDS: &[Command] = &[
             (
                 "--events",
                 "For apps that run connect: JSON events on stdout, one per line, and `pause` or `resume` on stdin",
+            ),
+        ],
+    ),
+    (
+        "init",
+        "Route this repo's GitHub Actions jobs through RelayRunner, so they run on your machine when it's online. Edits workflow files; never commits.",
+        "relayrunner init [--plan] [--apply <jobs>] [--json]",
+        &[
+            (
+                "--plan",
+                "List every job and whether it can be routed. Changes nothing.",
+            ),
+            (
+                "--apply JOBS",
+                "Route these jobs without prompting: comma-separated ids or file:job, or `all` for every ready job",
+            ),
+            (
+                "--json",
+                "Print the result as JSON (with --plan or --apply)",
             ),
         ],
     ),
@@ -258,12 +278,7 @@ async fn main() {
                 1
             }
         },
-        "init" => {
-            eprintln!(
-                "`relayrunner init` isn't in this build yet. Run `npx relayrunner init` for now."
-            );
-            2
-        }
+        "init" => init::command(&rest).await,
         other => {
             eprintln!("Unknown command {other:?}.\n\n{}", usage());
             2
