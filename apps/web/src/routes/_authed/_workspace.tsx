@@ -152,7 +152,6 @@ const settingsNav = [
     items: [
       { to: "/settings/general", label: "General", icon: SlidersHorizontalIcon },
       { to: "/settings/members", label: "Members", icon: UsersIcon },
-      { to: "/settings/ai", label: "AI", icon: BrainCircuitIcon },
     ],
   },
   {

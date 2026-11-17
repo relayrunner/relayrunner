@@ -101,7 +101,7 @@ function AiPage() {
     <section className="grid max-w-5xl gap-6">
       <PageHeader title="AI">
         Model calls that classify jobs and failures. A workspace gets them once AI is on here and an
-        owner or admin opts in on its AI settings page. Every call goes through the {data.gateway}{" "}
+        owner or admin opts in under Settings › General. Every call goes through the {data.gateway}{" "}
         gateway.
       </PageHeader>
 

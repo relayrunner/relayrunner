@@ -136,7 +136,7 @@ export const workspace = sqliteTable(
     // The size, in vCPUs, of a job whose relay hands its runner to the Router (`auto`) and that has
     // no size of its own (auto_job.size). Null means DEFAULT_AUTO_SIZE.
     autoSize: integer("auto_size"),
-    // When an owner or admin turned on AI features (src/ai/settings.ts) on the AI settings page, and
+    // When an owner or admin turned on AI features (src/ai/settings.ts) in Settings › General, and
     // who. Null means off: nothing about the workspace goes to a model.
     aiOptInAt: integer("ai_opt_in_at", { mode: "timestamp_ms" }),
     aiOptInBy: text("ai_opt_in_by").references((): AnySQLiteColumn => user.id, {

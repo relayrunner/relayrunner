@@ -1,5 +1,5 @@
 // Who may call the AI model, and how much (src/ai/classify.ts): a global switch and budget that
-// operators set in Admin › AI, each workspace's own opt-in (its AI settings page), and operator
+// operators set in Admin › AI, each workspace's own opt-in (Settings › General), and operator
 // overrides per workspace. Nothing runs until an operator turns on the global switch and a feature,
 // and an owner or admin opts the workspace in.
 import { eq, isNotNull, sql } from "drizzle-orm";
@@ -106,18 +106,6 @@ export async function saveAiSettings(db: Db, values: AiGlobalSettings, by: strin
     .values({ id: GLOBAL_ID, ...row })
     .onConflictDoUpdate({ target: schema.aiSetting.id, set: row });
   forgetAiSettings();
-}
-
-/** The features that run for `workspaceId` once it opts in, less test calls. */
-export async function aiFeaturesFor(db: Db, workspaceId: string): Promise<AiFeature[]> {
-  const [global, [override]] = await Promise.all([
-    readAiSettings(db),
-    db
-      .select()
-      .from(schema.workspaceAiSetting)
-      .where(eq(schema.workspaceAiSetting.workspaceId, workspaceId)),
-  ]);
-  return featuresOf(global, override).filter((id) => id !== "test");
 }
 
 /**

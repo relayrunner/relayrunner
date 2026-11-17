@@ -1,18 +1,23 @@
 import { createFileRoute } from "@tanstack/react-router";
 import type { ReactNode } from "react";
+import { AiOptInCard } from "@/components/ai-opt-in";
 import { PageHeader } from "@/components/page-header";
 import { WorkspaceMark } from "@/components/workspace-menu";
 import { Badge } from "@/components/ui/badge";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { getAiOptIn } from "@/lib/ai";
+import { canManage } from "@/lib/roles";
 import { formatDate } from "@/lib/time-zone";
 
 export const Route = createFileRoute("/_authed/_workspace/settings/general")({
+  loader: ({ context }) => getAiOptIn(context.current.workspace.id),
   component: GeneralSettingsPage,
 });
 
 function GeneralSettingsPage() {
   const { current } = Route.useRouteContext();
   const { workspace, role } = current;
+  const aiSince = Route.useLoaderData();
 
   return (
     <section>
@@ -44,6 +49,7 @@ function GeneralSettingsPage() {
             <Row label="Created">{formatDate(workspace.createdAt)}</Row>
           </CardContent>
         </Card>
+        <AiOptInCard workspaceId={workspace.id} since={aiSince} manager={canManage(role)} />
       </div>
     </section>
   );

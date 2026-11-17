@@ -397,7 +397,7 @@ describe("skipping runners that stop picking up jobs", () => {
     const { cookie } = await signIn();
     const { workspace, cookie: jar } = await createWorkspace(cookie, "Ai", "ai-opt-in");
     const read = await request(`${workspace.id}/ai`, jar);
-    expect(await read.json()).toEqual({ since: null, features: [] });
+    expect(await read.json()).toEqual({ since: null });
 
     const on = await request(`${workspace.id}/ai`, jar, "PUT", { enabled: true });
     expect(await on.json()).toEqual({ enabled: true });

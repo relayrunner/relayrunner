@@ -27,7 +27,7 @@ A decision model called Clef-flash answers. Cloudflare hosts it on Workers AI, t
 
 ## Turn it on or off
 
-1. Open **Settings → AI**. Owners and admins can change it.
+1. Open **Settings → General**. Owners and admins can change it.
 2. Check **Use AI in this workspace**.
 
 Turning it off stops AI right away, and History and Performance go back to how they looked before.
