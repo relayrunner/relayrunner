@@ -62,7 +62,7 @@ fn colored() -> bool {
     interactive() && std::env::var_os("NO_COLOR").is_none_or(|v| v.is_empty())
 }
 
-fn write(text: &str) {
+pub(crate) fn write(text: &str) {
     if to_stderr() {
         let mut err = std::io::stderr().lock();
         let _ = err.write_all(text.as_bytes());
@@ -171,10 +171,11 @@ pub struct Choice {
 }
 
 /// Puts the terminal into character-at-a-time mode until dropped.
-struct RawMode(libc::termios);
+pub(crate) struct RawMode(libc::termios);
 
 impl RawMode {
-    fn start(keep_signals: bool) -> Option<RawMode> {
+    /// Keys one at a time, unechoed, with Ctrl-C as a key rather than a signal.
+    pub(crate) fn start() -> Option<RawMode> {
         // SAFETY: tcgetattr and tcsetattr only read and write the struct we pass.
         unsafe {
             let mut was: libc::termios = std::mem::zeroed();
@@ -182,10 +183,7 @@ impl RawMode {
                 return None;
             }
             let mut raw = was;
-            raw.c_lflag &= !(libc::ICANON | libc::ECHO);
-            if !keep_signals {
-                raw.c_lflag &= !libc::ISIG;
-            }
+            raw.c_lflag &= !(libc::ICANON | libc::ECHO | libc::ISIG);
             raw.c_cc[libc::VMIN] = 1;
             raw.c_cc[libc::VTIME] = 0;
             (libc::tcsetattr(0, libc::TCSANOW, &raw) == 0).then_some(RawMode(was))
@@ -267,7 +265,7 @@ fn prompt<S, T>(
     if !can_ask() {
         return None;
     }
-    let raw = RawMode::start(false)?;
+    let raw = RawMode::start()?;
     let mut stdin = std::io::stdin().lock();
     let draw = |state: &S| {
         let lines = render(state);

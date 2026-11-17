@@ -71,7 +71,11 @@ fn fetch(credentials: &Credentials, change: Option<(&str, &str)>) -> Outcome {
 }
 
 fn names(list: &[Choice]) -> String {
-    let names: Vec<&str> = list.iter().map(|w| w.name.as_str()).collect();
+    join_names(list.iter().map(|w| w.name.as_str()).collect())
+}
+
+/// "Acme", "Acme and atticoos", "Acme, Beta and atticoos".
+pub fn join_names(names: Vec<&str>) -> String {
     match names.split_last() {
         None => String::new(),
         Some((last, [])) => (*last).to_string(),
@@ -181,7 +185,6 @@ pub fn command(credentials: &Credentials, args: &[String]) -> Result<(), Error> 
         Outcome::Ok(choice) => choice,
         Outcome::NotFound => unreachable!("only changes answer not found"),
         Outcome::Failed(e) if e.code == "WORKSPACES_FAILED" => {
-            let verb = if action == "list" { "list" } else { action };
             let what = if action == "list" {
                 "workspaces"
             } else {
@@ -189,7 +192,7 @@ pub fn command(credentials: &Credentials, args: &[String]) -> Result<(), Error> 
             };
             return Err(Error::new(
                 e.code,
-                format!("Couldn't {verb} {what} for {name}: {}.", e.message),
+                format!("Couldn't {action} {what} for {name}: {}.", e.message),
             ));
         }
         Outcome::Failed(e) => return Err(e),
@@ -235,9 +238,7 @@ pub fn command(credentials: &Credentials, args: &[String]) -> Result<(), Error> 
                 ));
             }
             Ok(None) => {
-                if let Ok(found) = find(elsewhere, query)
-                    && let Some(w) = found
-                {
+                if let Ok(Some(w)) = find(elsewhere, query) {
                     println!(
                         "{name} {} {}.",
                         if adding {

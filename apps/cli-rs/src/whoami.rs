@@ -35,14 +35,8 @@ pub fn fetch(credentials: &Credentials) -> Identity {
     }
 }
 
-/// "Acme", "Acme and atticoos", "Acme, Beta and atticoos".
 pub fn names(workspaces: &[Workspace]) -> String {
-    let names: Vec<&str> = workspaces.iter().map(|w| w.name.as_str()).collect();
-    match names.split_last() {
-        None => String::new(),
-        Some((last, [])) => (*last).to_string(),
-        Some((last, rest)) => format!("{} and {last}", rest.join(", ")),
-    }
+    crate::workspaces::join_names(workspaces.iter().map(|w| w.name.as_str()).collect())
 }
 
 /// What "anyone" reaches: the one workspace by name, or "your workspaces".
@@ -130,9 +124,7 @@ pub fn command(args: &[String]) -> Result<i32, Error> {
             let notice = (!json_out && workspaces.is_empty())
                 .then(|| crate::workspaces::empty_notice(&credentials));
             let mut out = json!({ "status": "ok", "server": credentials.server });
-            if let (Some(out), Value::Object(fields)) = (out.as_object_mut(), identity.clone()) {
-                out.extend(fields);
-            }
+            merge(&mut out, &identity);
             print(
                 &describe(&credentials.server, &identity, notice.as_deref()),
                 out,

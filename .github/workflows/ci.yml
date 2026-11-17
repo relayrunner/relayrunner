@@ -53,9 +53,8 @@ jobs:
           cargo clippy --locked --all-targets -- -D warnings
           cargo test --locked
           cargo build --locked --release
-      - name: Verify the Rust CLI
-        run: bash scripts/smoke-cli-binary.sh apps/cli-rs/target/release/relayrunner
-      # What npm ships: `relayrunner` and the package with this platform's binary.
+      # What npm ships: `relayrunner` and the package with this platform's binary, checked
+      # through the launcher with scripts/smoke-cli-binary.sh.
       - name: Verify npm packages
         run: bash scripts/smoke-npm-package.sh
       # The single-file Bun build of the TypeScript CLI.

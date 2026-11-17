@@ -43,11 +43,16 @@ fn host_os() -> Option<&'static str> {
 
 /// `vm`: this machine runs Linux jobs in VMs, which have Docker and Linux packages.
 fn plan(cwd: &Path, vm: bool) -> Result<Plan, String> {
+    let mut plan = local_plan(cwd, vm)?;
+    plan.check_visibility();
+    Ok(plan)
+}
+
+/// Everything but whether the repo is public, which takes asking GitHub.
+fn local_plan(cwd: &Path, vm: bool) -> Result<Plan, String> {
     let root = repo::find_root(cwd).ok_or(NOT_A_CHECKOUT)?;
     let repo = repo::origin_repo(&root);
-    let visibility = repo
-        .as_deref()
-        .map_or(Visibility::Unknown, repo::visibility);
+    let visibility = Visibility::Unknown;
     let files = repo::read_workflow_files(&root);
     let (jobs, errors) = workflows::analyze(
         &files,
@@ -64,6 +69,14 @@ fn plan(cwd: &Path, vm: bool) -> Result<Plan, String> {
         jobs,
         errors,
     })
+}
+
+impl Plan {
+    fn check_visibility(&mut self) {
+        if let Some(repo) = &self.repo {
+            self.visibility = repo::visibility(repo);
+        }
+    }
 }
 
 fn short_file(file: &str) -> &str {
@@ -422,7 +435,12 @@ pub async fn command(args: &[String]) -> i32 {
             },
         }
     }
-    let vm = crate::isolated::state().await == crate::isolated::State::Ready;
+    // Whether jobs here would run in VMs only matters inside a checkout.
+    let in_checkout = std::env::current_dir()
+        .ok()
+        .and_then(|cwd| repo::find_root(&cwd))
+        .is_some();
+    let vm = in_checkout && crate::isolated::state().await == crate::isolated::State::Ready;
     let run = move || -> Result<(), String> {
         let cwd = std::env::current_dir().map_err(|e| e.to_string())?;
         let plan = plan(&cwd, vm)?;
@@ -514,13 +532,10 @@ pub fn offer_setup(vm: bool) {
     let Ok(cwd) = std::env::current_dir() else {
         return;
     };
-    // Outside a checkout there's nothing to offer.
-    if repo::find_root(&cwd).is_none() {
+    // Outside a checkout there's nothing to offer. GitHub is only asked once the local checks
+    // say there would be an offer, since `connect` waits on this before going online.
+    let Ok(mut plan) = local_plan(&cwd, vm) else {
         return;
-    }
-    let plan = match plan(&cwd, vm) {
-        Ok(plan) => plan,
-        Err(_) => return,
     };
     if !should_offer_setup(&plan) {
         return;
@@ -531,6 +546,10 @@ pub fn offer_setup(vm: bool) {
         .unwrap_or_else(|| plan.root.display().to_string());
     let path = declined_path();
     if declined(&path).contains(&key) {
+        return;
+    }
+    plan.check_visibility();
+    if !should_offer_setup(&plan) {
         return;
     }
     let name = plan.repo.clone().unwrap_or_else(|| {

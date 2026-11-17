@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 // Runs the relayrunner binary built for this computer. npm installs it as an optional dependency,
-// one package per platform, and skips the ones for other platforms (scripts/npm-platform-packages.mjs).
+// one package per platform, and skips the ones for other platforms (scripts/npm-packages.mjs).
 
 import { spawn } from "node:child_process";
 import { createRequire } from "node:module";

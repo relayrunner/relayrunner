@@ -1,6 +1,6 @@
 //! `relayrunner connect`: signs in when needed, gets the runner (and the VMs) ready, and keeps the
 //! machine online, and `relayrunner login`. A port of connectCommand, connectMachine and
-//! loginCommand in apps/cli/cli.ts. Not ported yet: the `init` offer.
+//! loginCommand in apps/cli/cli.ts.
 
 use crate::connection::{self, End, Report, Run, RunJob};
 use crate::credentials::{self, Credentials};

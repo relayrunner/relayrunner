@@ -20,14 +20,15 @@ import {
 } from "node:fs";
 import { join, resolve } from "node:path";
 
-// os and cpu as npm and Node name them, and the Rust target each is built for.
-export const PLATFORMS = [
-  { os: "darwin", cpu: "arm64", target: "aarch64-apple-darwin", name: "macOS on Apple silicon" },
-  { os: "darwin", cpu: "x64", target: "x86_64-apple-darwin", name: "macOS on Intel" },
-  { os: "linux", cpu: "arm64", target: "aarch64-unknown-linux-musl", name: "Linux on arm64" },
-  { os: "linux", cpu: "x64", target: "x86_64-unknown-linux-musl", name: "Linux on x64" },
+// os and cpu as npm and Node name them. The Release workflow's build matrix and the launcher
+// (apps/cli/bin/relayrunner.js) list the same four.
+const PLATFORMS = [
+  { os: "darwin", cpu: "arm64", name: "macOS on Apple silicon" },
+  { os: "darwin", cpu: "x64", name: "macOS on Intel" },
+  { os: "linux", cpu: "arm64", name: "Linux on arm64" },
+  { os: "linux", cpu: "x64", name: "Linux on x64" },
 ];
-export const packageName = ({ os, cpu }) => `@relayrunner/cli-${os}-${cpu}`;
+const packageName = ({ os, cpu }) => `@relayrunner/cli-${os}-${cpu}`;
 
 const root = resolve(import.meta.dirname, "..");
 const cli = JSON.parse(readFileSync(join(root, "apps/cli/package.json"), "utf8"));
@@ -52,11 +53,7 @@ function main(args) {
   }
   out = resolve(out);
   const stage = join(out, "stage");
-  const shared = {
-    version: cli.version,
-    license: cli.license,
-    repository: { ...cli.repository, directory: "apps/cli-rs" },
-  };
+  const shared = { version: cli.version, license: cli.license };
   const tarballs = [];
   for (const platform of PLATFORMS) {
     const binary = join(binaries, `relayrunner-${platform.os}-${platform.cpu}`);
@@ -74,6 +71,7 @@ function main(args) {
         {
           name: packageName(platform),
           ...shared,
+          repository: { ...cli.repository, directory: "apps/cli-rs" },
           description: `The relayrunner CLI for ${platform.name}. Install relayrunner, which picks this for you.`,
           os: [platform.os],
           cpu: [platform.cpu],
@@ -119,4 +117,4 @@ function main(args) {
   console.log(tarballs.join("\n"));
 }
 
-if (import.meta.main ?? process.argv[1] === import.meta.filename) main(process.argv.slice(2));
+main(process.argv.slice(2));

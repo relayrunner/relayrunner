@@ -2,7 +2,8 @@
 //! machine's live state, and the keys it answers to (`p` pauses or resumes). A port of
 //! apps/cli/live.ts.
 
-use std::io::{IsTerminal, Read, Write};
+use crate::ui::{self, RawMode};
+use std::io::{IsTerminal, Read};
 use std::sync::Mutex;
 
 const SAVE_TITLE: &str = "\x1b[22;0t";
@@ -11,13 +12,12 @@ const RESTORE_TITLE: &str = "\x1b[23;0t";
 struct Live {
     machine: String,
     title: bool,
-    keys: bool,
     /// Whether it has come online yet, for the one-time key hint.
     online_once: bool,
     paused: bool,
     shown: String,
-    /// The terminal settings to put back.
-    termios: Option<libc::termios>,
+    /// Keys one at a time while `p` works; dropping it puts the terminal back.
+    keys: Option<RawMode>,
 }
 
 static LIVE: Mutex<Option<Live>> = Mutex::new(None);
@@ -46,33 +46,29 @@ fn title_sequence(title: &str) -> String {
     format!("\x1b]0;{clean}\x07")
 }
 
-fn write_out(text: &str) {
-    let mut out = std::io::stdout().lock();
-    let _ = out.write_all(text.as_bytes());
-    let _ = out.flush();
-}
-
 /// Starts the title (when stdout is a terminal) and the keys (when stdin is one too, and stdout
 /// doesn't carry events). `toggle` gets whether the machine is paused now, when `p` is pressed.
 pub fn start(machine: &str, toggle: impl Fn(bool) + Send + 'static) {
-    let events = crate::events::on();
-    let title = !events && std::io::stdout().is_terminal();
-    let keys = title && std::io::stdin().is_terminal();
+    let title = !crate::events::on() && std::io::stdout().is_terminal();
     let shown = title_for(machine, "connecting", false, 0);
     if title {
-        write_out(&format!("{SAVE_TITLE}{}", title_sequence(&shown)));
+        ui::write(&format!("{SAVE_TITLE}{}", title_sequence(&shown)));
     }
-    let termios = if keys { raw_keys() } else { None };
+    let keys = if ui::can_ask() {
+        RawMode::start()
+    } else {
+        None
+    };
+    let reads_keys = keys.is_some();
     *LIVE.lock().unwrap() = Some(Live {
         machine: machine.to_string(),
         title,
-        keys: termios.is_some(),
+        keys,
         online_once: false,
         paused: false,
         shown,
-        termios,
     });
-    if termios.is_some() {
+    if reads_keys {
         std::thread::spawn(move || {
             let mut stdin = std::io::stdin().lock();
             let mut byte = [0u8; 1];
@@ -95,25 +91,12 @@ pub fn start(machine: &str, toggle: impl Fn(bool) + Send + 'static) {
     }
 }
 
-/// Keys one at a time, unechoed, with Ctrl-C as a key. The old settings, to put back.
-fn raw_keys() -> Option<libc::termios> {
-    // SAFETY: tcgetattr and tcsetattr only read and write the struct we pass.
-    unsafe {
-        let mut was: libc::termios = std::mem::zeroed();
-        if libc::tcgetattr(0, &mut was) != 0 {
-            return None;
-        }
-        let mut raw = was;
-        raw.c_lflag &= !(libc::ICANON | libc::ECHO | libc::ISIG);
-        raw.c_cc[libc::VMIN] = 1;
-        raw.c_cc[libc::VTIME] = 0;
-        (libc::tcsetattr(0, libc::TCSANOW, &raw) == 0).then_some(was)
-    }
-}
-
 /// Whether `p` works, for the "Press p to resume" hint.
 pub fn keys() -> bool {
-    LIVE.lock().unwrap().as_ref().is_some_and(|l| l.keys)
+    LIVE.lock()
+        .unwrap()
+        .as_ref()
+        .is_some_and(|l| l.keys.is_some())
 }
 
 /// The machine's state after each event.
@@ -123,13 +106,13 @@ pub fn update(link: &str, paused: bool, jobs: usize) {
         return;
     };
     live.paused = paused;
-    let hint = live.keys && link == "online" && !live.online_once;
+    let hint = live.keys.is_some() && link == "online" && !live.online_once;
     if link == "online" {
         live.online_once = true;
     }
     let next = title_for(&live.machine, link, paused, jobs);
     if live.title && next != live.shown {
-        write_out(&title_sequence(&next));
+        ui::write(&title_sequence(&next));
     }
     live.shown = next;
     drop(guard);
@@ -144,14 +127,9 @@ pub fn end() {
         return;
     };
     if live.title {
-        write_out(RESTORE_TITLE);
+        ui::write(RESTORE_TITLE);
     }
-    if let Some(was) = live.termios {
-        // SAFETY: as in raw_keys.
-        unsafe {
-            libc::tcsetattr(0, libc::TCSANOW, &was);
-        }
-    }
+    // Dropping `live.keys` puts line-at-a-time input back.
 }
 
 #[cfg(test)]

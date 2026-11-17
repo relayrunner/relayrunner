@@ -17,13 +17,8 @@ done
 
 if [[ ${#tarballs[@]} -eq 0 ]]; then
   (cd "$root/apps/cli-rs" && cargo build --locked --release)
-  case "$(uname -s)-$(uname -m)" in
-    Darwin-arm64) platform=darwin-arm64 ;;
-    Darwin-x86_64) platform=darwin-x64 ;;
-    Linux-aarch64) platform=linux-arm64 ;;
-    Linux-x86_64) platform=linux-x64 ;;
-    *) echo "No relayrunner package for $(uname -s) $(uname -m)." >&2; exit 1 ;;
-  esac
+  # Spelled as Node and the package names spell it, such as linux-x64.
+  platform="$(node -p 'process.platform + "-" + process.arch')"
   mkdir "$smoke_dir/bins"
   cp "$root/apps/cli-rs/target/release/relayrunner" "$smoke_dir/bins/relayrunner-$platform"
   mapfile -t tarballs < <(node "$root/scripts/npm-packages.mjs" "$smoke_dir/bins" "$smoke_dir/out" --allow-missing)
