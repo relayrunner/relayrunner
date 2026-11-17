@@ -1,5 +1,11 @@
 # relayrunner
 
+## 0.13.0
+
+### Minor Changes
+
+- 72b7e65: `relayrunner` is now a native binary rather than a Node.js program, so it's a smaller download and starts faster. npm installs the one for your computer, and the commands are the same.
+
 ## 0.12.0
 
 ### Minor Changes
