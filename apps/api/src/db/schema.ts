@@ -4,7 +4,8 @@
 // here, run `pnpm db:generate` to write a new migration.
 import type { MachineSharing } from "@relayrunner/activity";
 import type { JobUsage } from "@relayrunner/machine-protocol";
-import type { HostedProviderId } from "@relayrunner/providers";
+import type { HostedProviderId, Platform } from "@relayrunner/providers";
+import type { ProviderStatus } from "@relayrunner/providers/catalog";
 import type { RetryRunner } from "@relayrunner/runner-order";
 import { sql } from "drizzle-orm";
 import {
@@ -1437,8 +1438,20 @@ export const provider = sqliteTable("provider", {
   setup: text("setup"),
   dashboardUrl: text("dashboard_url"),
   docsUrl: text("docs_url"),
-  /** An https image for an added provider's mark; providers in code have their own. */
+  /**
+   * An image for an added provider's mark: https, or a path under the dashboard's /provider-logos/.
+   * Providers in code have their own.
+   */
   logoUrl: text("logo_url"),
+  /** live | hidden | off (ProviderStatus in @relayrunner/providers/catalog). */
+  status: text("status").$type<ProviderStatus>().notNull().default("live"),
+  /** Listed first on the Providers page. Null keeps the code's choice. */
+  featured: integer("featured", { mode: "boolean" }),
+  // What the Providers page shows; null falls back to plans.ts and the price list.
+  platforms: text("platforms", { mode: "json" }).$type<Platform[]>(),
+  feeUsd: real("fee_usd"),
+  perMinute: real("per_minute"),
+  connectUrl: text("connect_url"),
   updatedBy: text("updated_by").notNull(),
   updatedAt: integer("updated_at", { mode: "timestamp_ms" })
     .notNull()

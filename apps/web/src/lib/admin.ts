@@ -1,4 +1,5 @@
-import type { CatalogProvider } from "@relayrunner/providers/catalog";
+import type { Platform } from "@relayrunner/providers";
+import type { CatalogProvider, ProviderStatus } from "@relayrunner/providers/catalog";
 import { api } from "@/lib/api";
 import type { Setup } from "@/lib/admin-setup";
 
@@ -192,8 +193,16 @@ export type ProviderFields = {
   setup: string;
   dashboardUrl: string;
   docsUrl: string;
-  /** An https image for an added provider's mark. */
+  /** An https image, or a /provider-logos/ path, for an added provider's mark. */
   logoUrl: string;
+  status: ProviderStatus;
+  featured: boolean;
+  platforms: Platform[];
+  /** USD a month for its cheapest plan; null when unset. */
+  feeUsd: number | null;
+  /** USD for a 2 vCPU Linux minute; null when unset. */
+  perMinute: number | null;
+  connectUrl: string;
 };
 
 export function listProviders() {
@@ -211,6 +220,17 @@ export function saveProvider(id: string, provider: ProviderFields) {
   return api<{ ok: true }>(`/admin/providers/${encodeURIComponent(id)}`, {
     method: "PUT",
     body: JSON.stringify(provider),
+  });
+}
+
+/** Changes a provider's status or Featured from the table, keeping the rest. */
+export function setProviderFlags(
+  id: string,
+  flags: { status?: ProviderStatus; featured?: boolean },
+) {
+  return api<{ ok: true }>(`/admin/providers/${encodeURIComponent(id)}`, {
+    method: "PATCH",
+    body: JSON.stringify(flags),
   });
 }
 

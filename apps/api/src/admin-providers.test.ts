@@ -1,4 +1,4 @@
-import type { CatalogProvider } from "@relayrunner/providers/catalog";
+import { BASE_CATALOG, type CatalogProvider } from "@relayrunner/providers/catalog";
 import { beforeAll, describe, expect, test } from "vitest";
 import { app } from "./app.ts";
 import { createDb } from "./db/index.ts";
@@ -95,7 +95,13 @@ describe("/api/admin/providers", () => {
     expect((await send(op.cookie, "POST", "", acme)).status).toBe(201);
     expect((await send(op.cookie, "POST", "", acme)).status).toBe(409);
     const list = await providers(op.cookie);
-    expect(list.at(-2)).toMatchObject({ id: "acme", builtIn: false, prefixes: ["acme-"] });
+    expect(list.at(-1)?.id).toBe("other");
+    expect(list.find((p) => p.id === "acme")).toMatchObject({
+      builtIn: false,
+      prefixes: ["acme-"],
+      status: "hidden",
+      featured: false,
+    });
 
     await loadCatalog(createDb(env.DB));
     expect(environmentFor(["acme-4cpu"], null, null)).toEqual({
@@ -138,5 +144,44 @@ describe("/api/admin/providers", () => {
       rate: "runner",
       current: 0.004,
     });
+  });
+
+  test("status and Featured change from the table, and edits keep them", async () => {
+    const op = await operator();
+    const flags = (id: string, body: object) => send(op.cookie, "PATCH", `/${id}`, body);
+    const find = async (id: string) => (await providers(op.cookie)).find((p) => p.id === id)!;
+
+    // The runner clouds from the provider review start Hidden.
+    expect(await find("avrea")).toMatchObject({ status: "hidden", featured: false });
+    expect((await flags("avrea", { status: "live", featured: true })).status).toBe(200);
+    expect(await find("avrea")).toMatchObject({ status: "live", featured: true });
+    const avrea = await find("avrea");
+    expect((await send(op.cookie, "PUT", "/avrea", { ...avrea, status: undefined })).status).toBe(
+      200,
+    );
+    expect(await find("avrea")).toMatchObject({ status: "live", featured: true });
+
+    // A provider in code keeps its text when only its flags change, and can't be turned off.
+    expect(await find("blacksmith")).toMatchObject({ status: "live", featured: true });
+    expect((await flags("blacksmith", { featured: false })).status).toBe(200);
+    expect((await flags("blacksmith", { status: "off" })).status).toBe(200);
+    const blacksmith = await find("blacksmith");
+    expect(blacksmith).toMatchObject({ status: "hidden", featured: false, builtIn: true });
+    expect(blacksmith.summary).toBe(BASE_CATALOG.find((p) => p.id === "blacksmith")!.summary);
+    expect((await flags("github", { status: "hidden" })).status).toBe(200);
+    expect(await find("github")).toMatchObject({ status: "live" });
+
+    expect((await flags("avrea", {})).status).toBe(400);
+    expect((await flags("avrea", { status: "gone" })).status).toBe(400);
+    expect((await flags("nobody", { status: "live" })).status).toBe(404);
+  });
+
+  test("an Off provider isn't recognised, so its jobs count as Other", async () => {
+    const op = await operator();
+    await loadCatalog(createDb(env.DB));
+    expect(environmentFor(["sengi-basic-2-ubuntu-2404"], null, null).key).toMatch(/^sengi:/);
+    expect((await send(op.cookie, "PATCH", "/sengi", { status: "off" })).status).toBe(200);
+    await loadCatalog(createDb(env.DB));
+    expect(environmentFor(["sengi-basic-2-ubuntu-2404"], null, null).key).not.toMatch(/^sengi:/);
   });
 });

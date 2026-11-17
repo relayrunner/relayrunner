@@ -11,6 +11,21 @@ import {
   PROVIDERS,
   type ProviderInfo,
 } from "./index.ts";
+import type { Platform } from "./plans.ts";
+
+/**
+ * Whether users are offered a provider. Live: listed on the Providers page. Hidden: recognised
+ * when a job runs on its labels, and kept working for workspaces that use it, but not offered.
+ * Off: not recognised at all, so its jobs count as Other; only for providers operators add.
+ */
+export const PROVIDER_STATUSES = ["live", "hidden", "off"] as const;
+export type ProviderStatus = (typeof PROVIDER_STATUSES)[number];
+
+/** Providers in code that are featured until an operator says otherwise: the names people know. */
+const FEATURED = new Set(["blacksmith", "depot", "namespace", "warpbuild", "ubicloud"]);
+
+/** Providers whose status can't change: GitHub is the fallback and Other catches the rest. */
+export const FIXED_STATUS = new Set(["github", "other"]);
 
 export interface CatalogProvider extends ProviderInfo {
   id: string;
@@ -20,6 +35,17 @@ export interface CatalogProvider extends ProviderInfo {
   logoUrl?: string;
   /** In the code list. An operator can change its text but not remove it. */
   builtIn: boolean;
+  status: ProviderStatus;
+  /** Listed first on the Providers page, with the names people know. */
+  featured: boolean;
+  /** What its runners run on, for the Providers page. Providers in code fall back to plans.ts. */
+  platforms?: Platform[];
+  /** USD a month for its cheapest plan; 0 for none. Unset falls back to plans.ts. */
+  feeUsd?: number;
+  /** USD for a 2 vCPU Linux minute. Unset falls back to the price list. */
+  perMinute?: number;
+  /** Where to sign up and connect its GitHub App. */
+  connectUrl?: string;
   /** Who last saved it in the admin, or null when it's as in code. */
   updatedBy: string | null;
   updatedAt: string | null;
@@ -38,6 +64,13 @@ export interface ProviderRow {
   dashboardUrl: string | null;
   docsUrl: string | null;
   logoUrl: string | null;
+  status: ProviderStatus;
+  /** Null keeps the code's choice. */
+  featured: boolean | null;
+  platforms: Platform[] | null;
+  feeUsd: number | null;
+  perMinute: number | null;
+  connectUrl: string | null;
   updatedBy: string;
   updatedAt: string;
 }
@@ -50,6 +83,8 @@ const fromCode = (id: (typeof PROVIDER_IDS)[number]): CatalogProvider => ({
   ...PROVIDERS[id],
   prefixes: prefixesOf(id),
   builtIn: true,
+  status: "live",
+  featured: FEATURED.has(id),
   updatedBy: null,
   updatedAt: null,
 });
@@ -76,6 +111,17 @@ export function providerCatalog(rows: ProviderRow[]): CatalogProvider[] {
     logoUrl: base ? undefined : optional(row.logoUrl),
     prefixes: base ? base.prefixes : row.prefixes,
     builtIn: Boolean(base),
+    // Off only applies to added providers: code matches its own providers' labels elsewhere too.
+    status: FIXED_STATUS.has(row.id)
+      ? "live"
+      : base && row.status === "off"
+        ? "hidden"
+        : row.status,
+    featured: row.featured ?? base?.featured ?? false,
+    platforms: row.platforms ?? undefined,
+    feeUsd: row.feeUsd ?? undefined,
+    perMinute: row.perMinute ?? undefined,
+    connectUrl: optional(row.connectUrl),
     updatedBy: row.updatedBy,
     updatedAt: row.updatedAt,
   });
@@ -94,13 +140,15 @@ export function providerCatalog(rows: ProviderRow[]): CatalogProvider[] {
 
 /**
  * The first provider in the list whose prefixes match one of the (lowercase) labels, with that
- * label. Providers in code come first, so an added one never takes their labels.
+ * label. Providers in code come first, so an added one never takes their labels. Ones turned off
+ * match nothing.
  */
 export function catalogProviderOf(
   catalog: readonly CatalogProvider[],
   labels: readonly string[],
 ): { id: string; name: string; label: string } | null {
   for (const provider of catalog) {
+    if (provider.status === "off") continue;
     const label = labels.find((l) => matchesPrefix(provider.prefixes, l));
     if (label) return { id: provider.id, name: provider.name, label };
   }
