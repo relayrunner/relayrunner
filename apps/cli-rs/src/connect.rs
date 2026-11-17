@@ -12,7 +12,7 @@ use crate::job::{self, Launcher};
 use crate::login;
 use crate::protocol::{Hello, JobState, JobUpdate, Place, VmSize};
 use crate::share::{self, Share};
-use crate::sys;
+use crate::sys::{self, blocking};
 use serde_json::json;
 use std::path::PathBuf;
 use std::sync::{Arc, Mutex};
@@ -342,13 +342,14 @@ async fn connect_machine(args: &Args, size: Wanted, slots: u32) -> Result<Option
 
     let (stop_tx, stop_rx) = watch::channel(false);
     // An image given with --image brings its own runner, so the VMs keep it.
-    let updater = (on_host || (use_vms && args.image.is_none())).then(|| {
+    let update_vms = use_vms && args.image.is_none();
+    let updater = (on_host || update_vms).then(|| {
         tokio::spawn(keep_runner_updated(UpdateContext {
             current: current.clone(),
             runners: runners.clone(),
             slots,
             on_host,
-            vms: use_vms && args.image.is_none(),
+            vms: update_vms,
             macos: args.macos,
             size,
             home: home.clone(),
@@ -426,7 +427,6 @@ async fn connect_machine(args: &Args, size: Wanted, slots: u32) -> Result<Option
     let end = connection::run(connection::Options {
         credentials: credentials.clone(),
         hello,
-        slots,
         run_job,
         runner_version,
         user_agent: crate::USER_AGENT.clone(),
@@ -483,14 +483,6 @@ async fn connect_machine(args: &Args, size: Wanted, slots: u32) -> Result<Option
         }
     }
     Ok(Some(code))
-}
-
-async fn blocking<T: Send + 'static>(
-    f: impl FnOnce() -> Result<T, Error> + Send + 'static,
-) -> Result<T, Error> {
-    tokio::task::spawn_blocking(f)
-        .await
-        .map_err(|e| Error::new("INTERNAL", e.to_string()))?
 }
 
 async fn use_runner(

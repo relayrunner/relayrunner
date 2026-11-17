@@ -51,3 +51,12 @@ pub async fn total_memory() -> u64 {
         })
         .await
 }
+
+/// Runs blocking work off the async runtime.
+pub async fn blocking<T: Send + 'static>(
+    f: impl FnOnce() -> Result<T, crate::error::Error> + Send + 'static,
+) -> Result<T, crate::error::Error> {
+    tokio::task::spawn_blocking(f)
+        .await
+        .map_err(|e| crate::error::Error::new("INTERNAL", e.to_string()))?
+}

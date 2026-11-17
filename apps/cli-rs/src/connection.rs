@@ -58,7 +58,6 @@ pub type RunJob =
 pub struct Options {
     pub credentials: Credentials,
     pub hello: Hello,
-    pub slots: u32,
     pub run_job: RunJob,
     /// The runner version new jobs run on now, which changes when the runner updates.
     pub runner_version: Arc<dyn Fn() -> String + Send + Sync>,
@@ -128,7 +127,7 @@ impl Conn {
     fn start_job(&mut self, run: Run) -> MachineMessage {
         let route_id = run.route_id.clone();
         let slot = (1..).find(|s| !self.busy.contains(s)).unwrap();
-        if slot > self.options.slots {
+        if slot > self.options.hello.slots {
             let running = self.busy.len();
             say(
                 "run-refused",
@@ -320,11 +319,6 @@ async fn stay_connected(
             attempt = 1;
         }
         match code {
-            CLOSE_REVOKED => {
-                return End::Revoked {
-                    online: conn.online,
-                };
-            }
             CLOSE_REPLACED => return End::Replaced,
             CLOSE_POLICY => {
                 let message = [&conn.gateway_error, &reason]
@@ -332,7 +326,7 @@ async fn stay_connected(
                     .find(|s| !s.is_empty());
                 return End::Rejected(message.cloned().unwrap_or_else(|| "protocol error".into()));
             }
-            _ if unauthorized => {
+            _ if code == CLOSE_REVOKED || unauthorized => {
                 return End::Revoked {
                     online: conn.online,
                 };
@@ -402,7 +396,6 @@ async fn session(
     conn.online = true;
     conn.emit("connected", json!({}));
     let mut hello = conn.options.hello.clone();
-    hello.slots = conn.options.slots;
     conn.said_version = (conn.options.runner_version)();
     hello.runner_version.clone_from(&conn.said_version);
     let mut first = vec![MachineMessage::Hello(hello), conn.status()];

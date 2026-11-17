@@ -71,7 +71,7 @@ async fn main() {
         "workspaces" | "share" => {
             let rest = rest.to_vec();
             let command = command.to_string();
-            let result = tokio::task::spawn_blocking(move || {
+            let result = sys::blocking(move || {
                 let credentials = credentials::read()
                     .map_err(|e| error::Error::new("CREDENTIALS_UNREADABLE", e.to_string()))?
                     .ok_or_else(|| {
@@ -80,14 +80,10 @@ async fn main() {
                 if command == "workspaces" {
                     workspaces::command(&credentials, &rest)
                 } else {
-                    match rest.first() {
-                        Some(value) => share::command(&credentials, value),
-                        None => Err(error::Error::new("USAGE", "Use `relayrunner share only-me` or `relayrunner share anyone`.")),
-                    }
+                    share::command(&credentials, rest.first().map_or("", String::as_str))
                 }
             })
-            .await
-            .unwrap_or_else(|e| Err(error::Error::new("INTERNAL", e.to_string())));
+            .await;
             match result {
                 Ok(()) => 0,
                 Err(e) => {
