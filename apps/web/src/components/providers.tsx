@@ -1,5 +1,11 @@
 import { CircleHelpIcon, CloudIcon, ZapIcon } from "lucide-react";
-import { type ProviderId, providerOfEnvironment, sizeText } from "@relayrunner/providers";
+import {
+  LISTED_PROVIDER_IDS,
+  type ListedProviderId,
+  type ProviderId,
+  providerOfEnvironment,
+  sizeText,
+} from "@relayrunner/providers";
 import type { ReactNode } from "react";
 import {
   BlacksmithIcon,
@@ -42,7 +48,23 @@ export type ProviderStyle = ProviderLook & {
   url?: string;
 };
 
+// A listed runner cloud's logo, served from public/providers, on a plain tile.
+const logoLook = (id: string): ProviderLook => ({
+  icon: (
+    <img src={`/providers/${id}.svg`} alt="" className="size-[70%] rounded-[3px] object-contain" />
+  ),
+  tile: "bg-raised-2 text-foreground",
+  tint: "",
+  bar: "bg-ink-2",
+  prefix: new RegExp(`^${id}-`),
+  mono: true,
+});
+
 const LOOKS: Record<ProviderId | "machine", ProviderLook> = {
+  ...(Object.fromEntries(LISTED_PROVIDER_IDS.map((id) => [id, logoLook(id)])) as Record<
+    ListedProviderId,
+    ProviderLook
+  >),
   blacksmith: {
     icon: <BlacksmithIcon className="w-4" />,
     tile: "bg-blacksmith text-blacksmith-ink",

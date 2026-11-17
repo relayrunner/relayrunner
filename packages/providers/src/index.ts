@@ -11,6 +11,15 @@ export const PROVIDER_IDS = [
   "ubicloud",
   "boat",
   "runs-on",
+  "starsling",
+  "monkci",
+  "runloft",
+  "latchkey",
+  "vitko",
+  "berrybox",
+  "celesto",
+  "instabox",
+  "runjob",
   "github",
   "cloudflare",
   "other",
@@ -108,6 +117,93 @@ export const PROVIDERS: Record<ProviderId, ProviderInfo> = {
     setup: "Deploy RunsOn into your AWS account and install the GitHub App it creates.",
     docsUrl: "https://runs-on.com/docs/",
   },
+  // Listed runner clouds (LISTED_PROVIDER_IDS): recognised and offered, not routed to yet. Read
+  // from each one's own docs on 2026-11-17.
+  starsling: {
+    name: "StarSling",
+    summary: "Hosted Linux runners for GitHub Actions, with GPU runners on request.",
+    labels: "starsling-ubuntu-<version>-<vcpus>",
+    example: "starsling-ubuntu-24.04-2",
+    setup: "Sign up for StarSling with GitHub and install its GitHub App from its dashboard.",
+    dashboardUrl: "https://runners.starsling.dev",
+    docsUrl: "https://docs.starsling.dev",
+  },
+  monkci: {
+    name: "Monk CI",
+    summary: "Hosted Linux runners for GitHub Actions.",
+    labels: "monkci-ubuntu-24.04-<vcpus>",
+    example: "monkci-ubuntu-24.04-2",
+    setup: "Sign up for Monk CI and have an organization owner install its GitHub App.",
+    dashboardUrl: "https://app.monkci.com",
+    docsUrl: "https://monkci.com/docs",
+  },
+  runloft: {
+    name: "Runloft",
+    summary: "Hosted runners for GitHub Actions, billed per second.",
+    labels: "runloft-*",
+    example: "runloft-ubuntu-24.04",
+    setup: "Sign in to Runloft with GitHub and buy credit or use its free minutes.",
+    dashboardUrl: "https://runloft.dev/app/",
+    docsUrl: "https://runloft.dev/docs/",
+  },
+  latchkey: {
+    name: "Latchkey",
+    summary: "Hosted Linux runners for GitHub Actions.",
+    labels: "latchkey-small, -medium, -large, -xlarge",
+    example: "latchkey-small",
+    setup: "Sign up for Latchkey and install its GitHub App on your organization.",
+    dashboardUrl: "https://latchkey.dev/sign-in",
+    docsUrl: "https://latchkey.dev/documentation",
+  },
+  vitko: {
+    name: "Vitko",
+    summary: "Hosted Linux runners for GitHub Actions, in private beta.",
+    labels: "vitko-ubuntu-24.04",
+    example: "vitko-ubuntu-24.04",
+    setup:
+      "Join Vitko's waitlist. Its label works once Vitko onboards your organization, which needs GitHub Team or Enterprise.",
+    dashboardUrl: "https://runners.vitko.inc",
+    docsUrl: "https://runners.vitko.inc/docs/",
+  },
+  berrybox: {
+    name: "BerryBox",
+    summary: "Hosted Linux runners for GitHub Actions, billed per second.",
+    labels: "berrybox-<vcpus>vcpu-ubuntu-2404",
+    example: "berrybox-2vcpu-ubuntu-2404",
+    setup:
+      "Sign up for BerryBox, install its GitHub App, add credit and turn on the sizes you want in team settings.",
+    dashboardUrl: "https://berrybox.io/login",
+    docsUrl: "https://docs.berrybox.io",
+  },
+  celesto: {
+    name: "Celesto",
+    summary: "Linux runners for GitHub Actions on Celesto's sandboxes.",
+    labels: "celesto, celesto-*",
+    example: "celesto-standard",
+    setup:
+      "Sign up for Celesto, add credit or start its trial, and install the celesto-ci GitHub App.",
+    dashboardUrl: "https://celesto.ai/dashboard",
+    docsUrl: "https://celesto.ai/docs/ci",
+  },
+  instabox: {
+    name: "InstaBox",
+    summary: "Linux runners for GitHub Actions on InstaBox's sandboxes.",
+    labels: "instabox-*",
+    example: "instabox-medium",
+    setup: "Sign up for InstaBox and connect GitHub from the CI page of its dashboard.",
+    dashboardUrl: "https://instabox.sh",
+    docsUrl: "https://instabox.sh/docs/use-cases/ci",
+  },
+  runjob: {
+    name: "RunJob",
+    summary: "Linux runners for GitHub Actions in microVMs, billed by the CPU and memory used.",
+    labels: "puzl-*, runjob-*",
+    example: "puzl-ubuntu-latest",
+    setup:
+      "Sign up for RunJob and install its GitHub App from the dashboard's GitHub Integrations.",
+    dashboardUrl: "https://runjob.eu",
+    docsUrl: "https://runjob.eu/docs",
+  },
   github: {
     name: "GitHub",
     summary: "GitHub's own hosted runners, billed per minute in private repos.",
@@ -163,6 +259,38 @@ export const LABEL_PREFIXES: Record<HostedProviderId, string[]> = {
   ubicloud: ["ubicloud-"],
   boat: ["boat-", "boat/"],
   "runs-on": ["runs-on=", "runs-on/"],
+};
+
+/**
+ * Runner clouds RelayRunner recognises and lists but doesn't route to yet: a job on one of their
+ * labels is counted as theirs, and the Providers page offers them, but they aren't steps in the
+ * runner order and the relay has no input for them.
+ */
+export const LISTED_PROVIDER_IDS = [
+  "starsling",
+  "monkci",
+  "runloft",
+  "latchkey",
+  "vitko",
+  "berrybox",
+  "celesto",
+  "instabox",
+  "runjob",
+] as const satisfies readonly ProviderId[];
+
+export type ListedProviderId = (typeof LISTED_PROVIDER_IDS)[number];
+
+/** How each listed runner cloud's labels start, matched the same way as LABEL_PREFIXES. */
+export const LISTED_LABEL_PREFIXES: Record<ListedProviderId, string[]> = {
+  starsling: ["starsling-"],
+  monkci: ["monkci-"],
+  runloft: ["runloft-"],
+  latchkey: ["latchkey-"],
+  vitko: ["vitko-"],
+  berrybox: ["berrybox-"],
+  celesto: ["celesto-"],
+  instabox: ["instabox-"],
+  runjob: ["puzl-", "runjob-"],
 };
 
 /** Whether a lowercase label starts with one of `prefixes`, or is the bare name one ends in `-`. */

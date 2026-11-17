@@ -6,6 +6,7 @@
 import {
   isProviderId,
   LABEL_PREFIXES,
+  LISTED_LABEL_PREFIXES,
   matchesPrefix,
   PROVIDER_IDS,
   PROVIDERS,
@@ -60,7 +61,11 @@ export interface ProviderRow {
 }
 
 const prefixesOf = (id: string): string[] =>
-  Object.hasOwn(LABEL_PREFIXES, id) ? LABEL_PREFIXES[id as keyof typeof LABEL_PREFIXES] : [];
+  Object.hasOwn(LABEL_PREFIXES, id)
+    ? LABEL_PREFIXES[id as keyof typeof LABEL_PREFIXES]
+    : Object.hasOwn(LISTED_LABEL_PREFIXES, id)
+      ? LISTED_LABEL_PREFIXES[id as keyof typeof LISTED_LABEL_PREFIXES]
+      : [];
 
 const fromCode = (id: (typeof PROVIDER_IDS)[number]): CatalogProvider => ({
   id,
