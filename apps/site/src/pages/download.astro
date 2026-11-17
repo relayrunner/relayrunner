@@ -1,0 +1,183 @@
+---
+/*
+ * /download: the Mac app and the CLI side by side. A small script guesses the visitor's computer and
+ * puts the right one first: the Mac app on Apple silicon, the CLI on Linux and Intel Macs, and a
+ * note on Windows and phones. Both stay on the page, since the guess can be wrong (Safari reports
+ * every Mac the same way, so a Mac counts as Apple silicon unless the browser says otherwise).
+ * The Mac button goes to /mac/download, which redirects to the newest DMG (scripts/postbuild.mjs).
+ */
+import LandingPage from "../layouts/LandingPage.astro";
+
+const BREW = "brew install --cask relayrunner/tap/relayrunner";
+const NPX = "npx relayrunner connect";
+---
+
+<LandingPage
+  title="Download"
+  description="Download RelayRunner for Mac, or run the CLI on Linux, to turn your computer into a GitHub Actions runner."
+  path="/download"
+>
+  <section class="wrap hero dl-hero">
+    <p class="eyebrow">Download</p>
+    <h1>Turn this computer into a runner</h1>
+    <p class="lede">
+      While it's on, your computer takes GitHub Actions jobs. When it's off, jobs go to the next
+      runner in your order.
+    </p>
+  </section>
+
+  <section class="wrap dl" data-dl data-platform="mac" aria-label="Downloads">
+    <p class="dl-note" data-note="windows">
+      RelayRunner doesn't run on Windows yet. Use it on a Mac or Linux computer.
+    </p>
+    <p class="dl-note" data-note="mobile">
+      Open this page on the Mac or Linux computer you want to run jobs on.
+    </p>
+
+    <article class="dl-card dl-mac">
+      <p class="dl-for">For this computer</p>
+      <h2>RelayRunner for Mac</h2>
+      <p>A menu bar app: turn it on and your Mac takes jobs. For Apple silicon, macOS 14 or newer.</p>
+      <a class="btn-go btn-lg" href="/mac/download">
+        <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 4v11m0 0-4.5-4.5M12 15l4.5-4.5M5 20h14" /></svg>
+        Download for Mac
+      </a>
+      <p class="dl-or">Or with Homebrew:</p>
+      <button class="cmd" type="button" data-copy-inline={BREW}>
+        <span aria-hidden="true">$</span> <code>{BREW}</code>
+        <span class="visually-hidden">Copy command</span>
+      </button>
+      <a class="dl-docs" href="/docs/get-started/mac-app">Mac app docs →</a>
+    </article>
+
+    <article class="dl-card dl-cli">
+      <p class="dl-for">For this computer</p>
+      <h2>CLI</h2>
+      <p>For Linux, Intel Macs and servers. Run it in a terminal; needs Node.js 22 or newer.</p>
+      <button class="cmd" type="button" data-copy-inline={NPX}>
+        <span aria-hidden="true">$</span> <code>{NPX}</code>
+        <span class="visually-hidden">Copy command</span>
+      </button>
+      <a class="dl-docs" href="/docs/get-started/install">Install docs →</a>
+    </article>
+  </section>
+
+  <script is:inline>
+    (() => {
+      const dl = document.querySelector("[data-dl]");
+      const ua = navigator.userAgent;
+      const data = navigator.userAgentData;
+      const set = (platform) => dl.setAttribute("data-platform", platform);
+      if (/Android|iPhone|iPad|iPod/.test(ua) || data?.mobile) set("mobile");
+      else if (/Windows/.test(ua)) set("windows");
+      else if (/Linux|CrOS/.test(ua)) set("linux");
+      else if (/Mac/.test(ua) && data?.platform === "macOS") {
+        // Only Chromium browsers say which chip a Mac has.
+        data
+          .getHighEntropyValues(["architecture"])
+          .then((v) => v.architecture === "x86" && set("intel-mac"))
+          .catch(() => {});
+      }
+    })();
+  </script>
+</LandingPage>
+
+<style>
+  .dl-hero {
+    padding-bottom: clamp(32px, 4vw, 48px);
+  }
+  .dl {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 20px;
+    max-width: 980px;
+    padding-bottom: clamp(64px, 8vw, 112px);
+  }
+  .dl-card {
+    display: flex;
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 14px;
+    padding: clamp(22px, 3vw, 36px);
+    border: 1px solid var(--line-soft);
+    border-radius: 20px;
+    background: var(--raised);
+  }
+  .dl-card h2 {
+    font-size: clamp(24px, 2.4vw, 30px);
+    letter-spacing: -0.03em;
+  }
+  .dl-card > p {
+    color: var(--ink-2);
+  }
+  .dl-card .btn-go {
+    gap: 10px;
+    margin-top: 6px;
+  }
+  .dl-card .btn-go svg {
+    width: 20px;
+    height: 20px;
+    fill: none;
+    stroke: currentColor;
+    stroke-width: 2;
+    stroke-linecap: round;
+    stroke-linejoin: round;
+  }
+  .dl-card .cmd {
+    max-width: 100%;
+    font-size: 14px;
+    text-align: left;
+  }
+  .dl-card .cmd code {
+    overflow-wrap: anywhere;
+  }
+  p.dl-or {
+    margin-top: 4px;
+    color: var(--mute);
+    font-size: 14px;
+  }
+  .dl-docs {
+    margin-top: auto;
+    padding-top: 6px;
+    color: var(--go-text);
+    font-weight: 600;
+    text-decoration: none;
+  }
+  .dl-docs:hover {
+    text-decoration: underline;
+  }
+  p.dl-for {
+    display: none;
+    color: var(--go-text);
+    font-size: 14px;
+    font-weight: 600;
+  }
+  .dl-note {
+    display: none;
+    grid-column: 1 / -1;
+    color: var(--ink-2);
+    text-align: center;
+  }
+
+  /* The card for the visitor's computer goes first, with an edge and a line saying so. */
+  [data-platform="mac"] .dl-mac,
+  :is([data-platform="linux"], [data-platform="intel-mac"]) .dl-cli {
+    order: -1;
+    border-color: var(--go-edge);
+  }
+  [data-platform="mac"] .dl-mac .dl-for,
+  :is([data-platform="linux"], [data-platform="intel-mac"]) .dl-cli .dl-for {
+    display: block;
+  }
+  [data-platform="windows"] [data-note="windows"],
+  [data-platform="mobile"] [data-note="mobile"] {
+    display: block;
+    order: -2;
+  }
+
+  @media (max-width: 760px) {
+    .dl {
+      grid-template-columns: minmax(0, 1fr);
+    }
+  }
+</style>
