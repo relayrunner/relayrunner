@@ -58,8 +58,8 @@ const site = Astro.site!.origin;
       <p class="intro">
         RelayRunner is an open source project. This policy covers the hosted service its maintainers
         run: the dashboard at app.relayrunner.app, its API and webhooks, the RelayRunner GitHub
-        Apps, RelayRunner's hosted runners, the <code>relayrunner</code> CLI when it talks to that
-        service, and this website. "RelayRunner", "we" and "us" mean the maintainers who operate it.
+        Apps, RelayRunner's hosted runners, the <code>relayrunner</code> CLI and the RelayRunner app for Mac
+        when they talk to that service, and this website. "RelayRunner", "we" and "us" mean the maintainers who operate it.
         If you run RelayRunner yourself from the
         <a href="https://github.com/relayrunner/relayrunner">source code</a>, you operate your copy
         and this policy doesn't apply to it.
@@ -131,6 +131,32 @@ const site = Astro.site!.origin;
         and a hash of its access token. Jobs that run on your machine use GitHub's own runner, which
         talks to GitHub directly. Their code, secrets and logs don't pass through us.
       </p>
+      <p>
+        The RelayRunner app for Mac runs <code>relayrunner connect</code> for you. It checks
+        relayrunner.app for updates about once a day, which sends the app's version. It doesn't send
+        anything else about your Mac.
+      </p>
+
+      <h3>Tokens you give us</h3>
+      <p>
+        If you paste a read-only token from a hosted runner provider, we store it encrypted and use
+        it only to read what that provider billed you. If you send traces to an observability tool,
+        we store the endpoint you give us and its headers, encrypted.
+      </p>
+
+      <h3>AI agents</h3>
+      <p>
+        If you connect an AI agent to RelayRunner, we store the connection and the workspaces you
+        picked. The agent can read those workspaces' runners, runs and usage, and can't change
+        anything. You can disconnect it in Settings › Agents.
+      </p>
+
+      <h3>Feedback</h3>
+      <p>
+        If you send feedback from the dashboard or an agent, we store it with your account and the
+        page it came from, and email it to the maintainers. We remove anything that looks like a
+        secret first.
+      </p>
 
       <h3>Repository contents, for lint checks only</h3>
       <p>
@@ -182,8 +208,10 @@ const site = Astro.site!.origin;
           check results.
         </li>
         <li>
-          To send service email: a welcome message and security notices when a machine connects
-          or signs in from somewhere new. We don't send marketing email.
+          To send service email: a welcome message, security notices when a machine connects or
+          signs in from somewhere new, and alerts about your runners and machines. You choose most
+          of these in Settings › Email; security notices always send. We don't send marketing
+          email.
         </li>
         <li>To keep the service secure, fix problems and prevent abuse.</li>
         <li>To meet legal obligations.</li>
@@ -209,6 +237,10 @@ const site = Astro.site!.origin;
           <strong>Other runner providers.</strong> When a job uses a label for another provider,
           such as Blacksmith, that provider's own GitHub App runs it under your agreement with them.
           We don't send them your data.
+        </li>
+        <li>
+          <strong>Tools you choose.</strong> If you send traces to an observability tool or connect
+          an AI agent, it gets what you send it under your agreement with its provider.
         </li>
         <li>
           <strong>Your workspace.</strong> Members of a workspace can see its machines, runners,
