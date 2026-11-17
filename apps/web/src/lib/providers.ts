@@ -40,7 +40,12 @@ export type ProviderReport = ProviderCounts & {
   prices: RatePrices[];
 };
 
-export type ProviderSummary = ProviderCounts & { provider: string; stat: Stat };
+export type ProviderSummary = ProviderCounts & {
+  provider: string;
+  stat: Stat;
+  /** Its runner types, busiest first. */
+  runners: ProviderRunner[];
+};
 
 /** The Providers page (GET /api/providers): every provider the workspace's jobs ran on. */
 export type ProvidersOverview = {
@@ -99,7 +104,9 @@ function sampleRunner(
 const SAMPLE_RUNNERS: Partial<Record<ProviderId, ProviderRunner[]>> = {
   blacksmith: [
     sampleRunner("blacksmith", "blacksmith-4vcpu-ubuntu-2404", "Blacksmith", 872, 228),
+    sampleRunner("blacksmith", "blacksmith-2vcpu-ubuntu-2404", "Blacksmith", 410, 130),
     sampleRunner("blacksmith", "blacksmith-8vcpu-ubuntu-2404", "Blacksmith", 281, 365),
+    sampleRunner("blacksmith", "blacksmith-16vcpu-ubuntu-2404-arm", "Blacksmith", 40, 552),
   ],
   github: [sampleRunner("github", "ubuntu-latest", "GitHub-hosted", 410, 128)],
   depot: [sampleRunner("depot", "depot-ubuntu-24.04", "Depot", 96, 400)],
@@ -141,7 +148,11 @@ export function sampleProviderReport(provider: string, days: number): ProviderRe
 
 export function sampleProvidersOverview(days: number): ProvidersOverview {
   const providers = Object.entries(SAMPLE_RUNNERS)
-    .map(([provider, runners]) => ({ provider: provider as ProviderId, ...sampleTotals(runners) }))
+    .map(([provider, runners]) => ({
+      provider: provider as ProviderId,
+      ...sampleTotals(runners),
+      runners,
+    }))
     .sort((a, b) => b.jobs - a.jobs);
   return { days, pricesChecked: PRICES_CHECKED, providers };
 }
