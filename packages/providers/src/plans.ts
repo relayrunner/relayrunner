@@ -1,5 +1,5 @@
 // The plans each provider sells for GitHub Actions: what a month costs, what it includes and how
-// the plans differ. The dashboard lists runner clouds by their cheapest plan and shows every plan
+// the plans differ. The dashboard lists runner clouds by their cheapest plan for real CI and shows every plan
 // on the provider's page, next to its machine prices. Nothing tells RelayRunner which plan a
 // workspace is on, so nothing here is used to price jobs: costs still come from the price list
 // (prices.ts), and the per-minute price shown beside a plan is read from it too.
@@ -24,6 +24,11 @@ export interface ProviderPlan {
   included: string;
   /** What sets it apart from the provider's other plans (job-start limits, sizes), when anything. */
   limits?: string;
+  /**
+   * A free trial, or a free tier too small for real CI (one machine at a time), so the list's
+   * Starts at skips it and shows the plan people need.
+   */
+  trial?: boolean;
 }
 
 export interface ProviderPlans {
@@ -82,8 +87,8 @@ export const PLANS: Partial<Record<ProviderId, ProviderPlans>> = {
     note: "A unit minute is 1 vCPU and 2 GB for a minute, so a 2 vCPU Linux runner uses 2 a minute. Windows counts double and macOS ten times.",
     platforms: ["x64", "arm", "mac", "win"],
     connectUrl: "https://cloud.namespace.so",
-    // 2 vCPU, 4 GB past the plan's unit minutes.
-    perMinute: 0.003,
+    // 2 vCPU, 8 GB on the pay-as-you-go Developer plan; minutes inside a paid plan cost a third less.
+    perMinute: 0.006,
     source: "https://namespace.so/pricing",
     checked: "2026-11-17",
   },
@@ -143,7 +148,7 @@ export const PLANS: Partial<Record<ProviderId, ProviderPlans>> = {
   // Listed runner clouds, read from their own pages on 2026-11-17.
   starsling: {
     plans: [{ name: "Pay as you go", feeUsd: 0, included: "2,000 min in the first month" }],
-    note: "GPU runners are available on request.",
+    note: "Concurrency is unlimited. GPU runners are available on request.",
     platforms: ["x64"],
     connectUrl: "https://runners.starsling.dev/login",
     perMinute: 0.004,
@@ -152,11 +157,12 @@ export const PLANS: Partial<Record<ProviderId, ProviderPlans>> = {
   },
   monkci: {
     plans: [
+      { name: "Free trial", feeUsd: 0, included: "5,000 min for 14 days", trial: true },
       { name: "Pro", feeUsd: 20, included: "5,000 min a month" },
       { name: "Max", feeUsd: 100, included: "20,000 min a month" },
       { name: "Custom", feeUsd: null, included: "Custom" },
     ],
-    note: "A 14-day trial includes 5,000 minutes. GitHub organizations only.",
+    note: "Builds stop when the trial ends. Users are unlimited. GitHub organizations only.",
     platforms: ["x64"],
     connectUrl: "https://app.monkci.com",
     perMinute: 0.004,
@@ -174,13 +180,28 @@ export const PLANS: Partial<Record<ProviderId, ProviderPlans>> = {
   },
   latchkey: {
     plans: [
-      { name: "Developer", feeUsd: 5, included: "2,000 min a month", limits: "1" },
-      { name: "Launch", feeUsd: 19, included: "4,000 min a month", limits: "3" },
-      { name: "Scale", feeUsd: 49, included: "6,000 min a month", limits: "5" },
+      {
+        name: "Developer",
+        feeUsd: 5,
+        included: "2,000 min a month",
+        limits: "20 jobs, 1 repo, 1 seat",
+      },
+      {
+        name: "Launch",
+        feeUsd: 19,
+        included: "4,000 min a month",
+        limits: "40 jobs, 10 repos, 3 seats",
+      },
+      {
+        name: "Scale",
+        feeUsd: 49,
+        included: "6,000 min a month",
+        limits: "80 jobs, 40 repos, 5 seats",
+      },
       { name: "Enterprise", feeUsd: null, included: "Custom", limits: "Custom" },
     ],
-    limitsLabel: "Seats",
-    note: "Minutes count as latchkey-small minutes. Extra seats are $5 each. GitHub organizations only.",
+    limitsLabel: "Jobs at once, repos, seats",
+    note: "Launch has a 30-day trial. Minutes count as latchkey-small minutes. Extra seats are $5 each. GitHub organizations only.",
     platforms: ["x64"],
     connectUrl: "https://github.com/apps/latchkey-app",
     perMinute: 0.0025,
@@ -189,9 +210,10 @@ export const PLANS: Partial<Record<ProviderId, ProviderPlans>> = {
   },
   berrybox: {
     plans: [
-      { name: "Pay as you go", feeUsd: 0, included: "None" },
-      { name: "Build", feeUsd: 100, included: "$100 credit a month" },
+      { name: "Pay as you go", feeUsd: 0, included: "None", limits: "16 vCPU" },
+      { name: "Build", feeUsd: 100, included: "$100 credit a month", limits: "64 vCPU" },
     ],
+    limitsLabel: "At once",
     note: "Credit is prepaid, $20 at a time. Private repositories in GitHub organizations only.",
     platforms: ["x64"],
     connectUrl: "https://berrybox.io/login",
@@ -211,14 +233,35 @@ export const PLANS: Partial<Record<ProviderId, ProviderPlans>> = {
   },
   instabox: {
     plans: [
-      { name: "Free", feeUsd: 0, included: "None", limits: "instabox-medium" },
-      { name: "Pro", feeUsd: 20, included: "$20 credit a month" },
-      { name: "Builder", feeUsd: 100, included: "$100 credit a month" },
-      { name: "Team", feeUsd: 500, included: "$500 credit a month" },
-      { name: "Enterprise", feeUsd: null, included: "Custom" },
+      {
+        name: "Free",
+        feeUsd: 0,
+        included: "None",
+        limits: "1 machine, instabox-medium only",
+        trial: true,
+      },
+      {
+        name: "Pro",
+        feeUsd: 20,
+        included: "$20 credit a month",
+        limits: "100 machines, up to 8 vCPU",
+      },
+      {
+        name: "Builder",
+        feeUsd: 100,
+        included: "$100 credit a month",
+        limits: "200 machines, up to 16 vCPU",
+      },
+      {
+        name: "Team",
+        feeUsd: 500,
+        included: "$500 credit a month",
+        limits: "500 machines, up to 32 vCPU",
+      },
+      { name: "Enterprise", feeUsd: null, included: "Custom", limits: "Custom" },
     ],
-    limitsLabel: "Sizes",
-    note: "Usage is $0.004 per vCPU-hour plus $0.00225 per GiB-hour, billed per second. The plan decides which sizes you can use.",
+    limitsLabel: "At once",
+    note: "Usage is $0.004 per vCPU-hour plus $0.00225 per GiB-hour, billed per second, on top of the plan.",
     platforms: ["x64"],
     connectUrl: "https://instabox.sh",
     // instabox-small, 2 vCPU and 4 GiB, worked out from the hourly rates.
@@ -264,8 +307,11 @@ export function twoVcpuMinute(provider: string): number | null {
   return providerPlans(provider)?.perMinute ?? null;
 }
 
-/** What the cheapest plan costs a month: "$20/mo", or "No monthly fee". */
+/**
+ * What the cheapest plan you can run real CI on costs a month: "$20/mo", or "Pay as you go" when
+ * usage is all you pay. Trials and one-machine free tiers don't count.
+ */
 export function startsAt({ plans }: ProviderPlans): string {
-  const fee = plans[0]!.feeUsd;
-  return fee ? `$${fee.toLocaleString("en-US")}/mo` : "No monthly fee";
+  const fee = (plans.find((plan) => !plan.trial) ?? plans[0]!).feeUsd;
+  return fee ? `$${fee.toLocaleString("en-US")}/mo` : "Pay as you go";
 }

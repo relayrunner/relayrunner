@@ -29,14 +29,17 @@ describe("plans", () => {
 
   it("says what the cheapest plan costs", () => {
     expect(startsAt(PLANS.boat!)).toBe("$20/mo");
-    expect(startsAt(PLANS.blacksmith!)).toBe("No monthly fee");
+    expect(startsAt(PLANS.blacksmith!)).toBe("Pay as you go");
+    // A one-machine free tier or a trial isn't where real CI starts.
+    expect(startsAt(PLANS.instabox!)).toBe("$20/mo");
+    expect(startsAt(PLANS.monkci!)).toBe("$20/mo");
   });
 
   it("prices a 2 vCPU Linux minute from the price list, or the plan where the list has none", () => {
     expect(twoVcpuMinute("blacksmith")).toBeCloseTo(0.004);
     expect(twoVcpuMinute("depot")).toBeCloseTo(0.006);
     expect(twoVcpuMinute("boat")).toBeCloseTo(0.0003);
-    expect(twoVcpuMinute("namespace")).toBe(0.003);
+    expect(twoVcpuMinute("namespace")).toBe(0.006);
     expect(twoVcpuMinute("berrybox")).toBe(0.002);
     expect(twoVcpuMinute("other")).toBeNull();
   });

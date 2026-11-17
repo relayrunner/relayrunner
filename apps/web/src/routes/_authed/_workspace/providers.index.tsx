@@ -105,8 +105,8 @@ function ProvidersPage() {
         <p className="max-w-3xl text-xs text-muted-foreground">
           Est. cost is at list prices before any included minutes (checked {overview.pricesChecked}
           ), with GitHub's standard runners free in public repos. Starts at is each runner cloud's
-          cheapest plan; its page lists them all. Your own machines and other self-hosted runners
-          stay on{" "}
+          cheapest plan for real CI, leaving out trials and one-machine free tiers; its page lists
+          them all. Your own machines and other self-hosted runners stay on{" "}
           <Link to="/runners" className="underline">
             Runners
           </Link>
