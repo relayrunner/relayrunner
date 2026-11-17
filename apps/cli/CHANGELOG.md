@@ -1,5 +1,11 @@
 # relayrunner
 
+## 0.13.1
+
+### Patch Changes
+
+- 310290e: The Runners page shows when a machine runs through the Mac app, with the app's version beside its CLI's.
+
 ## 0.13.0
 
 ### Minor Changes
