@@ -110,6 +110,8 @@ describe("provider report", () => {
       ["blacksmith", 4, 0.056],
       ["github", 2, 0.006],
     ]);
+    // Each provider carries its runner types, as its own page lists them.
+    expect(overview.body.providers[0]?.runners).toEqual(body.runners);
 
     expect((await report(cookie, "/providers/nope")).status).toBe(404);
   });
