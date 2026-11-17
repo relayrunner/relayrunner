@@ -33,6 +33,8 @@ ${setupPrompt(site!)}
 
 Run \`npx relayrunner connect\` on a laptop, Mac mini or home server and it starts taking jobs. Close the lid and jobs go to the next runner in your order. Share it with your team or keep it private.
 
+On a Mac, [RelayRunner for Mac](${abs("/docs/get-started/mac-app")}) does the same from the menu bar with one switch. [Download it](${abs("/mac/download")}) or run \`brew install --cask relayrunner/tap/relayrunner\`.
+
 ## Providers
 
 Each provider is a step in your runner order. Add, reorder or remove them in the dashboard. Supported: ${providers}.
@@ -67,6 +69,7 @@ PR title and lint checks (oxlint, ruff, actionlint and more) finish in seconds, 
 - [MCP server](${abs("/docs/reference/mcp")})
 - [API](${abs("/docs/reference/api")}) and its [OpenAPI spec](${abs("/openapi.json")})
 - [CLI](${abs("/docs/reference/cli")}) ([npm](https://www.npmjs.com/package/relayrunner))
+- [Mac app](${abs("/docs/get-started/mac-app")}) ([download](${abs("/mac/download")}))
 - [GitHub](https://github.com/relayrunner/relayrunner)
 - [GitHub App](https://github.com/apps/relayrunner)
 `;

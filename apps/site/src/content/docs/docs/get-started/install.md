@@ -22,6 +22,10 @@ npm install --global relayrunner
 relayrunner --help
 ```
 
+:::tip[On a Mac?]
+[RelayRunner for Mac](/docs/get-started/mac-app) does the same from the menu bar, with the CLI built in.
+:::
+
 ## Sign in
 
 There are two ways to sign a machine in. Both open the dashboard, where you sign in with GitHub and name the machine. There's no workspace to pick: the machine is in all of yours.

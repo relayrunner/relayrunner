@@ -37,7 +37,7 @@ It's built for small teams and individuals who don't want to pay for every push,
 ## Get started
 
 1. **[Install the GitHub App](https://github.com/apps/relayrunner)** on an organization or personal account. Each install is its own workspace, and everyone who can see the install on GitHub is a member.
-2. **Connect a machine** with `npx relayrunner connect`. While it runs, the machine takes jobs; Ctrl-C takes it offline.
+2. **Connect a machine** with `npx relayrunner connect`. While it runs, the machine takes jobs; Ctrl-C takes it offline. On a Mac with Apple silicon, [RelayRunner for Mac](https://relayrunner.app/docs/get-started/mac-app) does the same from the menu bar ([download](https://relayrunner.app/mac/download), or `brew install --cask relayrunner/tap/relayrunner`).
 3. **Opt a job in** by adding a relay job in front of it and pointing its `runs-on` at the relay's answer:
 
    ```yaml
@@ -120,6 +120,7 @@ This is a pnpm workspace. The apps are deployed as Cloudflare Workers, except th
 | [`apps/webhooks`](apps/webhooks) | Verifies GitHub webhook deliveries and queues them for the API.                             |
 | [`apps/agents`](apps/agents)     | The MCP server agents connect to, read-only, at agents.relayrunner.app/mcp.                 |
 | [`apps/cli`](apps/cli)           | The `relayrunner` CLI, in Rust, that connects a machine to a workspace.                     |
+| [`apps/mac`](apps/mac)           | RelayRunner for Mac, a menu bar app that runs the CLI's `connect` for you.                  |
 | [`apps/site`](apps/site)         | The public site at [relayrunner.app](https://relayrunner.app): landing page and docs.       |
 
 | Package                                                  | What it is                                                             |

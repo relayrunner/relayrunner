@@ -13,7 +13,7 @@ Your laptop is idle most of the time you're coding, and it's usually faster than
 npx relayrunner connect
 ```
 
-Sign up and install the GitHub App when it asks. Leave `connect` running in a terminal tab.
+Sign up and install the GitHub App when it asks. Leave `connect` running in a terminal tab, or use [RelayRunner for Mac](/docs/get-started/mac-app) to keep a Mac online from the menu bar.
 
 ## 2. Route your jobs
 

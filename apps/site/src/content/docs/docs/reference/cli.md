@@ -3,7 +3,7 @@ title: CLI
 description: Every relayrunner command and flag.
 ---
 
-The `relayrunner` CLI runs on macOS and Linux with Node.js 22 or newer. Run it with `npx relayrunner <command>`, or install it with `npm install --global relayrunner`. See [Install](/docs/get-started/install).
+The `relayrunner` CLI runs on macOS and Linux with Node.js 22 or newer. Run it with `npx relayrunner <command>`, or install it with `npm install --global relayrunner`. See [Install](/docs/get-started/install). On a Mac, [RelayRunner for Mac](/docs/get-started/mac-app) runs `connect` for you from the menu bar.
 
 ## `connect`
 

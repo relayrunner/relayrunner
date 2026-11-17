@@ -122,6 +122,7 @@ export function llmsIndex(all: DocsEntry[], site: URL) {
     `- [MCP server](${abs("/docs/reference/mcp.md")}): ${MCP_URL}, Streamable HTTP with OAuth sign-in. Discovery: ${abs("/.well-known/ai-catalog.json")}`,
     `- [API](${abs("/docs/reference/api.md")}): the read-only API behind the MCP server, for your own OAuth clients, described by ${abs("/openapi.json")}`,
     `- [CLI](${abs("/docs/reference/cli.md")}): the \`relayrunner\` npm package, https://www.npmjs.com/package/relayrunner`,
+    `- [Mac app](${abs("/docs/get-started/mac-app.md")}): a menu bar app that runs \`connect\` for you, ${abs("/mac/download")}`,
     "- [Source code](https://github.com/relayrunner/relayrunner): the GitHub repository",
     "",
     "## Solutions",

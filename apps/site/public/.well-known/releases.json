@@ -40,6 +40,21 @@
       ]
     },
     {
+      "name": "RelayRunner for Mac",
+      "slug": "mac",
+      "description": "A menu bar app that connects your Mac as a runner with one switch.",
+      "website": "https://relayrunner.app/docs/get-started/mac-app",
+      "docs": "https://relayrunner.app/docs/get-started/mac-app",
+      "releases": [
+        {
+          "title": "Mac app updates",
+          "url": "https://relayrunner.app/mac/appcast.xml",
+          "feed": "https://relayrunner.app/mac/appcast.xml"
+        },
+        { "github": "relayrunner/relayrunner" }
+      ]
+    },
+    {
       "name": "RelayRunner Actions",
       "slug": "actions",
       "description": "The GitHub Actions that route each job to a runner.",

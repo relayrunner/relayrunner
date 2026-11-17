@@ -4,11 +4,19 @@
 //   slashes are dropped by the asset server (html_handling in wrangler.jsonc). /sitemap.xml, where
 //   crawlers look first, goes to the sitemap index. The older well-known MCP card paths go to the
 //   server's own card (apps/agents/src/server-card.ts); /.well-known/ai-catalog.json points there too.
+//   /mac/download goes to the newest Mac app DMG, read from the Sparkle feed release.sh writes, so
+//   download links never name a version. /mac goes to the Mac app's docs page.
 // - _headers: long-lived caching for Astro's hashed files in /_astro/ (CSS, JS, fonts). Without
 //   it every page load revalidates the fonts, and text paints in the fallback font first. The
 //   machine-readable files agents fetch get their media types and open CORS, since any page may
 //   read them.
-import { writeFileSync } from "node:fs";
+import { readFileSync, writeFileSync } from "node:fs";
+
+// The feed's enclosure is the zip Sparkle installs; the DMG sits next to it in the same release.
+const appcast = readFileSync(new URL("../public/mac/appcast.xml", import.meta.url), "utf8");
+const macZip = appcast.match(/<enclosure url="([^"]+\.zip)"/)?.[1];
+if (!macZip) throw new Error("public/mac/appcast.xml has no .zip enclosure to find the DMG from");
+const macDmg = macZip.replace(/\.zip$/, ".dmg");
 
 writeFileSync(
   new URL("../dist/_redirects", import.meta.url),
@@ -24,6 +32,8 @@ writeFileSync(
     "/docs/guides/stay-under-quota /docs/guides/spend-controls 301",
     "/docs/guides/stay-under-quota/ /docs/guides/spend-controls 301",
     "/sitemap.xml /sitemap-index.xml 301",
+    "/mac /docs/get-started/mac-app 302",
+    `/mac/download ${macDmg} 302`,
     "/.well-known/mcp.json https://agents.relayrunner.app/mcp/server-card 302",
     "/.well-known/mcp/server-card.json https://agents.relayrunner.app/mcp/server-card 302",
     "",

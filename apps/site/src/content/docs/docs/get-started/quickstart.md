@@ -17,6 +17,10 @@ The first run shows a code and opens the dashboard. Continue with GitHub to sign
 
 Leave `connect` running. While it runs, the machine is online and takes jobs. Ctrl-C takes it offline.
 
+:::tip[On a Mac?]
+Use [RelayRunner for Mac](/docs/get-started/mac-app) instead of a terminal: turn it on from the menu bar and sign in the same way.
+:::
+
 ## 2. Route a job
 
 In another terminal, inside a checkout of your repository, run:

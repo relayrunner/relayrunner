@@ -57,6 +57,7 @@ export default defineConfig({
             "docs/get-started/github-actions",
             "docs/get-started/quickstart",
             "docs/get-started/install",
+            "docs/get-started/mac-app",
             "docs/get-started/agents",
             "docs/get-started/move-over",
           ],
