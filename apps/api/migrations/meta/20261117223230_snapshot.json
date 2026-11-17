@@ -1,7 +1,7 @@
 {
   "version": "6",
   "dialect": "sqlite",
-  "id": "00899799-0699-49a2-84b9-59c88c44c41f",
+  "id": "6a3bf2a4-4345-4d8c-933d-4886eb241a37",
   "prevId": "13041f6a-bc28-4156-a3e7-8f49249d4e3f",
   "tables": {
     "account": {
@@ -4192,34 +4192,6 @@
         "featured": {
           "name": "featured",
           "type": "integer",
-          "primaryKey": false,
-          "notNull": false,
-          "autoincrement": false
-        },
-        "platforms": {
-          "name": "platforms",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": false,
-          "autoincrement": false
-        },
-        "fee_usd": {
-          "name": "fee_usd",
-          "type": "real",
-          "primaryKey": false,
-          "notNull": false,
-          "autoincrement": false
-        },
-        "per_minute": {
-          "name": "per_minute",
-          "type": "real",
-          "primaryKey": false,
-          "notNull": false,
-          "autoincrement": false
-        },
-        "connect_url": {
-          "name": "connect_url",
-          "type": "text",
           "primaryKey": false,
           "notNull": false,
           "autoincrement": false

@@ -5,7 +5,7 @@
  * deploy. Removing a row puts a provider in code back as it was, or removes an added one. Status
  * and Featured decide what the Providers page offers; a new provider starts Hidden.
  */
-import { isProviderId, PLATFORMS } from "@relayrunner/providers";
+import { isProviderId } from "@relayrunner/providers";
 import {
   type CatalogProvider,
   FIXED_STATUS,
@@ -34,12 +34,6 @@ const url = optional(
     .refine((value) => !value || value.startsWith("https://")),
 );
 const status = z.enum(PROVIDER_STATUSES);
-const price = z
-  .number()
-  .min(0)
-  .max(10_000)
-  .nullish()
-  .transform((value) => value ?? null);
 
 const ProviderBody = z.object({
   name: text(60),
@@ -58,14 +52,6 @@ const ProviderBody = z.object({
   // Left out: a new provider starts Hidden, and a saved one keeps what it had.
   status: status.optional(),
   featured: z.boolean().optional(),
-  platforms: z
-    .array(z.enum(PLATFORMS))
-    .max(PLATFORMS.length)
-    .nullish()
-    .transform((list) => (list?.length ? [...new Set(list)] : null)),
-  feeUsd: price,
-  perMinute: price,
-  connectUrl: url,
 });
 
 const NewProviderBody = ProviderBody.extend({ id: z.string().trim().toLowerCase() });
@@ -119,10 +105,6 @@ const fieldsOf = (provider: CatalogProvider): ProviderFields => ({
   status: provider.status,
   // A provider in code keeps following the code until someone changes Featured.
   featured: provider.builtIn && !provider.updatedBy ? null : provider.featured,
-  platforms: provider.platforms ?? null,
-  feeUsd: provider.feeUsd ?? null,
-  perMinute: provider.perMinute ?? null,
-  connectUrl: provider.connectUrl ?? null,
 });
 
 // Mounted under adminRoutes, which requires an operator session.

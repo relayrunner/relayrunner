@@ -1,4 +1,3 @@
-import type { Platform } from "@relayrunner/providers";
 import type { CatalogProvider, ProviderStatus } from "@relayrunner/providers/catalog";
 import { api } from "@/lib/api";
 import type { Setup } from "@/lib/admin-setup";
@@ -197,12 +196,6 @@ export type ProviderFields = {
   logoUrl: string;
   status: ProviderStatus;
   featured: boolean;
-  platforms: Platform[];
-  /** USD a month for its cheapest plan; null when unset. */
-  feeUsd: number | null;
-  /** USD for a 2 vCPU Linux minute; null when unset. */
-  perMinute: number | null;
-  connectUrl: string;
 };
 
 export function listProviders() {

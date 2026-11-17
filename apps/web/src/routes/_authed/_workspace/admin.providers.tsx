@@ -1,4 +1,3 @@
-import { type Platform, PLATFORMS, providerPlans } from "@relayrunner/providers";
 import {
   type CatalogProvider,
   FIXED_STATUS,
@@ -333,10 +332,6 @@ const EMPTY: ProviderFields = {
   logoUrl: "",
   status: "hidden",
   featured: false,
-  platforms: ["x64"],
-  feeUsd: null,
-  perMinute: null,
-  connectUrl: "",
 };
 
 const fieldsOf = (provider: CatalogProvider): ProviderFields => ({
@@ -351,21 +346,7 @@ const fieldsOf = (provider: CatalogProvider): ProviderFields => ({
   logoUrl: provider.logoUrl ?? "",
   status: provider.status,
   featured: provider.featured,
-  platforms: provider.platforms ?? providerPlans(provider.id)?.platforms.slice() ?? [],
-  feeUsd: provider.feeUsd ?? null,
-  perMinute: provider.perMinute ?? null,
-  connectUrl: provider.connectUrl ?? "",
 });
-
-const PLATFORM_NAMES: Record<Platform, string> = {
-  x64: "Linux x64",
-  arm: "Linux arm",
-  mac: "macOS",
-  win: "Windows",
-};
-
-// A dollar amount typed in a field, or null when it's blank.
-const dollars = (value: string) => (value.trim() === "" ? null : Number(value));
 
 const slug = (name: string) =>
   name
@@ -416,14 +397,7 @@ function ProviderForm({
 
   const set = (key: keyof ProviderFields) => (value: string) =>
     setFields((current) => ({ ...current, [key]: value }));
-  const [fee, setFee] = useState(fields.feeUsd?.toString() ?? "");
-  const [perMinute, setPerMinute] = useState(fields.perMinute?.toString() ?? "");
   const fixed = !isNew && FIXED_STATUS.has(editing.id);
-  const togglePlatform = (platform: Platform, on: boolean) =>
-    setFields((current) => ({
-      ...current,
-      platforms: PLATFORMS.filter((p) => (p === platform ? on : current.platforms.includes(p))),
-    }));
 
   async function submit(event: FormEvent) {
     event.preventDefault();
@@ -431,8 +405,6 @@ function ProviderForm({
     setSaving(true);
     const body = {
       ...fields,
-      feeUsd: dollars(fee),
-      perMinute: dollars(perMinute),
       prefixes: prefixes
         .split(",")
         .map((prefix) => prefix.trim())
@@ -552,52 +524,6 @@ function ProviderForm({
             placeholder="https://"
             value={fields.docsUrl}
             onChange={(e) => set("docsUrl")(e.target.value)}
-          />
-        </Field>
-      </div>
-      <fieldset className="grid gap-2">
-        <legend className="mb-2 text-sm font-medium">Runs on</legend>
-        <div className="flex flex-wrap gap-x-5 gap-y-2">
-          {PLATFORMS.map((platform) => (
-            <label key={platform} className="flex items-center gap-2 text-sm">
-              <input
-                type="checkbox"
-                className="size-4 accent-[var(--color-go)]"
-                checked={fields.platforms.includes(platform)}
-                onChange={(e) => togglePlatform(platform, e.target.checked)}
-              />
-              {PLATFORM_NAMES[platform]}
-            </label>
-          ))}
-        </div>
-      </fieldset>
-      <div className="grid gap-3 sm:grid-cols-3">
-        <Field label="Starts at, $/mo" hint="Its cheapest plan. 0 for none.">
-          <Input
-            type="number"
-            min={0}
-            step="any"
-            className="font-mono"
-            value={fee}
-            onChange={(e) => setFee(e.target.value)}
-          />
-        </Field>
-        <Field label="Per minute, $" hint="A 2 vCPU Linux runner.">
-          <Input
-            type="number"
-            min={0}
-            step="any"
-            className="font-mono"
-            value={perMinute}
-            onChange={(e) => setPerMinute(e.target.value)}
-          />
-        </Field>
-        <Field label="Connect link" hint="Its signup.">
-          <Input
-            type="url"
-            placeholder="https://"
-            value={fields.connectUrl}
-            onChange={(e) => set("connectUrl")(e.target.value)}
           />
         </Field>
       </div>

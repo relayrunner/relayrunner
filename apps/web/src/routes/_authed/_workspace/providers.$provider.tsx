@@ -74,7 +74,7 @@ function ProviderView({ first }: { first: ProviderReport }) {
   // Nothing ran here in the widest range: lead with how to start instead of empty numbers.
   const [notSetUp] = useState(first.jobs === 0 && first.days === DEFAULT_DAYS && !!info.example);
   const { icon, tile } = providerStyle(provider);
-  const connectUrl = info.connectUrl ?? providerPlans(provider)?.connectUrl;
+  const connectUrl = providerPlans(provider)?.connectUrl;
 
   function chooseRange(next: number) {
     setSearch({ days: unlessDefault(next, DEFAULT_DAYS) });

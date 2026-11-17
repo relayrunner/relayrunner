@@ -14,10 +14,6 @@ const row = {
   logoUrl: null,
   status: "live" as const,
   featured: null,
-  platforms: null,
-  feeUsd: null,
-  perMinute: null,
-  connectUrl: null,
   updatedBy: "op@example.com",
   updatedAt: "2026-11-12T00:00:00.000Z",
 };

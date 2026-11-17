@@ -11,7 +11,6 @@ import {
   PROVIDERS,
   type ProviderInfo,
 } from "./index.ts";
-import type { Platform } from "./plans.ts";
 
 /**
  * Whether users are offered a provider. Live: listed on the Providers page. Hidden: recognised
@@ -38,14 +37,6 @@ export interface CatalogProvider extends ProviderInfo {
   status: ProviderStatus;
   /** Listed first on the Providers page, with the names people know. */
   featured: boolean;
-  /** What its runners run on, for the Providers page. Providers in code fall back to plans.ts. */
-  platforms?: Platform[];
-  /** USD a month for its cheapest plan; 0 for none. Unset falls back to plans.ts. */
-  feeUsd?: number;
-  /** USD for a 2 vCPU Linux minute. Unset falls back to the price list. */
-  perMinute?: number;
-  /** Where to sign up and connect its GitHub App. */
-  connectUrl?: string;
   /** Who last saved it in the admin, or null when it's as in code. */
   updatedBy: string | null;
   updatedAt: string | null;
@@ -67,10 +58,6 @@ export interface ProviderRow {
   status: ProviderStatus;
   /** Null keeps the code's choice. */
   featured: boolean | null;
-  platforms: Platform[] | null;
-  feeUsd: number | null;
-  perMinute: number | null;
-  connectUrl: string | null;
   updatedBy: string;
   updatedAt: string;
 }
@@ -118,10 +105,6 @@ export function providerCatalog(rows: ProviderRow[]): CatalogProvider[] {
         ? "hidden"
         : row.status,
     featured: row.featured ?? base?.featured ?? false,
-    platforms: row.platforms ?? undefined,
-    feeUsd: row.feeUsd ?? undefined,
-    perMinute: row.perMinute ?? undefined,
-    connectUrl: optional(row.connectUrl),
     updatedBy: row.updatedBy,
     updatedAt: row.updatedAt,
   });

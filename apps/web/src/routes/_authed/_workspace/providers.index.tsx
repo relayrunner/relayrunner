@@ -18,7 +18,7 @@ import { Button } from "@/components/ui/button";
 import { DataTable, dataTableColumns, NUM } from "@/components/ui/data-table";
 import { authDisabled } from "@/lib/auth-client";
 import { medianText, p90Text, plural } from "@/lib/job-times";
-import { providerCatalog, providerInfo } from "@/lib/provider-catalog";
+import { isKnownProvider, providerInfo } from "@/lib/provider-catalog";
 import {
   dayRanges,
   rangeParam,
@@ -60,16 +60,11 @@ function ProvidersPage() {
   const setSearch = useSetSearch<Search>();
   const overview: ProvidersOverview = useRangeReport(Route.useLoaderData(), days, load);
   const used = new Set(overview.providers.map((p) => p.provider));
-  // Third-party runner clouds you add with their own GitHub App and a label, not used here yet:
-  // the ones in code and the ones operators added, as long as an operator made them Live.
-  const unused = providerCatalog()
-    .filter(
-      (p) =>
-        p.status === "live" &&
-        !used.has(p.id) &&
-        (p.builtIn ? (RUNNER_CLOUD_IDS as readonly string[]).includes(p.id) : true),
-    )
-    .map((p) => p.id);
+  // Third-party runner clouds you add with their own GitHub App and a label, not used here yet,
+  // that an operator made Live.
+  const unused = RUNNER_CLOUD_IDS.filter(
+    (id) => isKnownProvider(id) && providerInfo(id).status === "live" && !used.has(id),
+  );
 
   function chooseRange(next: number) {
     setSearch({ days: unlessDefault(next, DEFAULT_DAYS) });
@@ -249,35 +244,25 @@ const cloudColumns = cloud.columns([
   }),
 ]);
 
-// What the admin saved for a provider, else its plans in code and the price list.
-function cloudRow(id: string): CloudRow {
-  const info = providerInfo(id);
-  const plans = providerPlans(id);
-  const fee = info.feeUsd;
-  return {
-    id,
-    name: info.name,
-    featured: info.featured,
-    platforms: info.platforms ?? plans?.platforms ?? [],
-    startsAt:
-      fee !== undefined
-        ? fee
-          ? `$${fee.toLocaleString("en-US")}/mo`
-          : "No monthly fee"
-        : plans
-          ? startsAt(plans)
-          : "—",
-    perMinute: info.perMinute ?? twoVcpuMinute(id),
-    connectUrl: info.connectUrl ?? plans?.connectUrl,
-  };
-}
-
 function AddRunnerCloud({ ids }: { ids: string[] }) {
   const [platform, setPlatform] = useState<Platform | "all">("all");
   const [showMore, setShowMore] = useState(false);
-  const rows = ids
-    .map(cloudRow)
-    .filter((row) => platform === "all" || row.platforms.includes(platform));
+  const rows: CloudRow[] = ids.flatMap((id) => {
+    const plans = providerPlans(id);
+    if (!plans || (platform !== "all" && !plans.platforms.includes(platform))) return [];
+    const info = providerInfo(id);
+    return [
+      {
+        id,
+        name: info.name,
+        featured: info.featured,
+        platforms: plans.platforms,
+        startsAt: startsAt(plans),
+        perMinute: twoVcpuMinute(id),
+        connectUrl: plans.connectUrl,
+      },
+    ];
+  });
   // The names people know first; the rest wait behind a button so they don't bury them.
   const featured = rows.filter((row) => row.featured);
   const more = rows.filter((row) => !row.featured);
