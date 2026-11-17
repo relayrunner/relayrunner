@@ -31,6 +31,13 @@ export interface ProviderInfo {
   /** Its own dashboard, where its runners and billing live. */
   dashboardUrl?: string;
   docsUrl?: string;
+  /**
+   * Starts Hidden: recognised by its labels but not offered on the Providers page until an
+   * operator makes it Live in Admin › Providers. Set it when adding a provider.
+   */
+  hidden?: boolean;
+  /** Listed first on the Providers page, with the names people know, until an operator changes it. */
+  featured?: boolean;
 }
 
 export const PROVIDERS: Record<ProviderId, ProviderInfo> = {
@@ -42,6 +49,7 @@ export const PROVIDERS: Record<ProviderId, ProviderInfo> = {
     setup: "Sign up for Blacksmith and install its GitHub App on your organization.",
     dashboardUrl: "https://app.blacksmith.sh",
     docsUrl: "https://docs.blacksmith.sh",
+    featured: true,
   },
   depot: {
     name: "Depot",
@@ -51,6 +59,7 @@ export const PROVIDERS: Record<ProviderId, ProviderInfo> = {
     setup: "Sign up for Depot and install its GitHub App on your organization.",
     dashboardUrl: "https://depot.dev/orgs",
     docsUrl: "https://depot.dev/docs/github-actions/overview",
+    featured: true,
   },
   namespace: {
     name: "Namespace",
@@ -60,6 +69,7 @@ export const PROVIDERS: Record<ProviderId, ProviderInfo> = {
     setup: "Sign up for Namespace and connect it to your GitHub organization.",
     dashboardUrl: "https://cloud.namespace.so",
     docsUrl: "https://namespace.so/docs",
+    featured: true,
   },
   warpbuild: {
     name: "WarpBuild",
@@ -69,6 +79,7 @@ export const PROVIDERS: Record<ProviderId, ProviderInfo> = {
     setup: "Sign up for WarpBuild and install its GitHub App on your organization.",
     dashboardUrl: "https://app.warpbuild.com",
     docsUrl: "https://docs.warpbuild.com",
+    featured: true,
   },
   ubicloud: {
     name: "Ubicloud",
@@ -77,6 +88,7 @@ export const PROVIDERS: Record<ProviderId, ProviderInfo> = {
     example: "ubicloud-standard-2",
     setup: "Sign up for Ubicloud and install its GitHub App on your organization.",
     dashboardUrl: "https://console.ubicloud.com",
+    featured: true,
   },
   boat: {
     name: "Boat",

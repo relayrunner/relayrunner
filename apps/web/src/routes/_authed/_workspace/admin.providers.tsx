@@ -1,6 +1,11 @@
-import type { CatalogProvider } from "@relayrunner/providers/catalog";
+import {
+  type CatalogProvider,
+  FIXED_STATUS,
+  PROVIDER_STATUSES,
+  type ProviderStatus,
+} from "@relayrunner/providers/catalog";
 import { createFileRoute, Link } from "@tanstack/react-router";
-import { PencilIcon, PlusIcon, RotateCcwIcon, Trash2Icon } from "lucide-react";
+import { PencilIcon, PlusIcon, RotateCcwIcon, StarIcon, Trash2Icon } from "lucide-react";
 import { type FormEvent, useState } from "react";
 import { PageHeader } from "@/components/page-header";
 import { ProviderMark } from "@/components/providers";
@@ -16,6 +21,14 @@ import {
 } from "@/components/ui/dialog";
 import { Field } from "@/components/ui/field";
 import { Input } from "@/components/ui/input";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
+import { OptionPicker } from "@/components/range-picker";
 import { Textarea } from "@/components/ui/textarea";
 import { timeAgo } from "@/lib/activity";
 import {
@@ -24,9 +37,11 @@ import {
   type ProviderFields,
   removeProvider,
   saveProvider,
+  setProviderFlags,
 } from "@/lib/admin";
 import { errorText } from "@/lib/api";
 import { setProviderCatalog } from "@/lib/provider-catalog";
+import { cn } from "@/lib/utils";
 
 // Operator admin, behind Cloudflare Access and an operator session
 // (apps/api/src/routes/admin-providers.ts).
@@ -43,16 +58,67 @@ export const Route = createFileRoute("/_authed/_workspace/admin/providers")({
 // Who's editing what: a provider, or a new one.
 type Editing = CatalogProvider | "new" | null;
 
+const STATUS: Record<ProviderStatus, { label: string; hint: string; dot: string }> = {
+  live: { label: "Live", hint: "Offered on the Providers page.", dot: "bg-go" },
+  hidden: {
+    label: "Hidden",
+    hint: "Not offered. Jobs on its labels still count as it, and keep working.",
+    dot: "bg-run",
+  },
+  off: {
+    label: "Off",
+    hint: "Not recognised. Jobs on its labels count as Other.",
+    dot: "bg-dormant",
+  },
+};
+
+type Filter = ProviderStatus | "all";
+
+// Off is only for added providers: code matches its own providers' labels in more places.
+const statusesFor = (provider: CatalogProvider | "new") =>
+  provider !== "new" && provider.builtIn
+    ? PROVIDER_STATUSES.filter((status) => status !== "off")
+    : PROVIDER_STATUSES;
+
 function ProvidersAdminPage() {
   const [providers, setProviders] = useState(Route.useLoaderData().providers);
   const [editing, setEditing] = useState<Editing>(null);
   const [notice, setNotice] = useState<string | null>(null);
+  const [filter, setFilter] = useState<Filter>("all");
+  const count = (status: Filter) =>
+    status === "all" ? providers.length : providers.filter((p) => p.status === status).length;
+  const filters = (["all", ...PROVIDER_STATUSES] as const).map((value) => ({
+    value,
+    label: `${value === "all" ? "All" : STATUS[value].label} ${count(value)}`,
+  }));
+  const shown = filter === "all" ? providers : providers.filter((p) => p.status === filter);
 
   async function reload(message: string) {
     const { providers } = await listProviders();
     setProviders(providers);
     setProviderCatalog(providers);
     setNotice(message);
+  }
+
+  async function setFlags(
+    provider: CatalogProvider,
+    flags: { status?: ProviderStatus; featured?: boolean },
+  ) {
+    setNotice(null);
+    // Show it at once; the reload puts back what the API kept.
+    setProviders((list) => list.map((p) => (p.id === provider.id ? { ...p, ...flags } : p)));
+    try {
+      await setProviderFlags(provider.id, flags);
+      await reload(
+        flags.status
+          ? `${provider.name} is ${STATUS[flags.status].label}.`
+          : flags.featured
+            ? `Featured ${provider.name}.`
+            : `${provider.name} is no longer featured.`,
+      );
+    } catch (caught) {
+      await reload(errorText(caught));
+    }
   }
 
   async function remove(provider: CatalogProvider) {
@@ -66,8 +132,10 @@ function ProvidersAdminPage() {
   return (
     <section className="grid max-w-5xl gap-6">
       <PageHeader title="Providers">
-        How the dashboard names and links each provider. Changes show up right away. A provider you
-        add counts jobs by its label prefixes, and you can give it a price on the{" "}
+        Every provider we know, and which ones users are offered. Live ones are listed on the
+        Providers page, and Featured ones come first there. Hidden ones aren't offered, but jobs on
+        their labels still count as them. Changes show up right away. A provider you add starts
+        Hidden, counts jobs by its label prefixes, and you can give it a price on the{" "}
         <Link to="/admin/prices" className="underline">
           Prices
         </Link>{" "}
@@ -75,21 +143,20 @@ function ProvidersAdminPage() {
       </PageHeader>
 
       <div className="flex flex-wrap items-center justify-between gap-3">
-        {notice ? (
-          <p role="status" className="text-sm text-muted-foreground">
-            {notice}
-          </p>
-        ) : (
-          <span />
-        )}
+        <OptionPicker label="Status" options={filters} value={filter} onChange={setFilter} />
         <Button onClick={() => setEditing("new")}>
           <PlusIcon aria-hidden />
           Add provider
         </Button>
       </div>
+      {notice && (
+        <p role="status" className="-mt-3 text-sm text-muted-foreground">
+          {notice}
+        </p>
+      )}
 
-      <ProviderActions value={{ edit: setEditing, remove }}>
-        <DataTable columns={columns} data={providers} getRowId={(provider) => provider.id} />
+      <ProviderActions value={{ edit: setEditing, remove, setFlags }}>
+        <DataTable columns={columns} data={shown} getRowId={(provider) => provider.id} />
       </ProviderActions>
 
       <ProviderDialog
@@ -107,6 +174,10 @@ function ProvidersAdminPage() {
 const [ProviderActions, useProviderActions] = createCellContext<{
   edit: (provider: CatalogProvider) => void;
   remove: (provider: CatalogProvider) => Promise<void>;
+  setFlags: (
+    provider: CatalogProvider,
+    flags: { status?: ProviderStatus; featured?: boolean },
+  ) => Promise<void>;
 }>("Providers");
 
 const TOP = { className: "py-3 align-top" };
@@ -128,10 +199,17 @@ const columns = column.columns([
       </Link>
     ),
   }),
-  column.accessor("summary", {
-    header: "Summary",
-    sortFn: "text",
-    meta: { className: "py-3 align-top text-muted-foreground" },
+  column.accessor("status", {
+    header: "Status",
+    sortFn: (a, b) =>
+      PROVIDER_STATUSES.indexOf(a.original.status) - PROVIDER_STATUSES.indexOf(b.original.status),
+    meta: { className: "py-2 align-top" },
+    cell: ({ row }) => <StatusCell provider={row.original} />,
+  }),
+  column.accessor("featured", {
+    header: () => <span className="sr-only">Featured</span>,
+    meta: { className: "py-2 align-top" },
+    cell: ({ row }) => <FeaturedCell provider={row.original} />,
   }),
   column.accessor("labels", {
     header: "Labels",
@@ -152,6 +230,56 @@ const columns = column.columns([
     cell: ({ row }) => <Actions provider={row.original} />,
   }),
 ]);
+
+function StatusCell({ provider }: { provider: CatalogProvider }) {
+  const { setFlags } = useProviderActions();
+  const fixed = FIXED_STATUS.has(provider.id);
+  return (
+    <Select
+      value={provider.status}
+      disabled={fixed}
+      onValueChange={(status) =>
+        status !== provider.status && setFlags(provider, { status: status as ProviderStatus })
+      }
+    >
+      <SelectTrigger
+        size="sm"
+        aria-label={`Status of ${provider.name}`}
+        title={fixed ? "Always Live" : STATUS[provider.status].hint}
+        className="w-[7.5rem]"
+      >
+        <SelectValue />
+      </SelectTrigger>
+      <SelectContent>
+        {statusesFor(provider).map((status) => (
+          <SelectItem key={status} value={status}>
+            <span aria-hidden className={cn("size-2 rounded-full", STATUS[status].dot)} />
+            {STATUS[status].label}
+          </SelectItem>
+        ))}
+      </SelectContent>
+    </Select>
+  );
+}
+
+function FeaturedCell({ provider }: { provider: CatalogProvider }) {
+  const { setFlags } = useProviderActions();
+  return (
+    <Button
+      size="icon-sm"
+      variant="ghost"
+      aria-pressed={provider.featured}
+      aria-label={`Feature ${provider.name}`}
+      title={provider.featured ? "Featured: listed first" : "Feature it: list it first"}
+      onClick={() => setFlags(provider, { featured: !provider.featured })}
+    >
+      <StarIcon
+        aria-hidden
+        className={cn(provider.featured ? "fill-run text-run" : "text-muted-foreground/60")}
+      />
+    </Button>
+  );
+}
 
 function changedText({ builtIn, updatedBy, updatedAt }: CatalogProvider) {
   if (!updatedBy || !updatedAt) return "As in code";
@@ -202,6 +330,8 @@ const EMPTY: ProviderFields = {
   dashboardUrl: "",
   docsUrl: "",
   logoUrl: "",
+  status: "hidden",
+  featured: false,
 };
 
 const fieldsOf = (provider: CatalogProvider): ProviderFields => ({
@@ -214,6 +344,8 @@ const fieldsOf = (provider: CatalogProvider): ProviderFields => ({
   dashboardUrl: provider.dashboardUrl ?? "",
   docsUrl: provider.docsUrl ?? "",
   logoUrl: provider.logoUrl ?? "",
+  status: provider.status,
+  featured: provider.featured,
 });
 
 const slug = (name: string) =>
@@ -265,6 +397,7 @@ function ProviderForm({
 
   const set = (key: keyof ProviderFields) => (value: string) =>
     setFields((current) => ({ ...current, [key]: value }));
+  const fixed = !isNew && FIXED_STATUS.has(editing.id);
 
   async function submit(event: FormEvent) {
     event.preventDefault();
@@ -312,6 +445,39 @@ function ProviderForm({
             <Input value={editing.id} disabled />
           </Field>
         )}
+      </div>
+      <div className="grid gap-3 sm:grid-cols-2">
+        <Field label="Status" hint={fixed ? "Always Live." : STATUS[fields.status].hint}>
+          <Select
+            value={fields.status}
+            disabled={fixed}
+            onValueChange={(status) => set("status")(status)}
+          >
+            <SelectTrigger className="w-full">
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+              {statusesFor(editing).map((status) => (
+                <SelectItem key={status} value={status}>
+                  <span aria-hidden className={cn("size-2 rounded-full", STATUS[status].dot)} />
+                  {STATUS[status].label}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+        </Field>
+        <label className="flex items-start gap-2.5 pt-7 text-sm">
+          <input
+            type="checkbox"
+            className="mt-0.5 size-4 accent-[var(--color-go)]"
+            checked={fields.featured}
+            onChange={(e) => setFields((current) => ({ ...current, featured: e.target.checked }))}
+          />
+          <span className="grid gap-0.5">
+            <span className="font-medium">Featured</span>
+            <span className="text-muted-foreground">Listed first on the Providers page.</span>
+          </span>
+        </label>
       </div>
       <Field label="Summary" hint="One line, shown under its name.">
         <Input required value={fields.summary} onChange={(e) => set("summary")(e.target.value)} />

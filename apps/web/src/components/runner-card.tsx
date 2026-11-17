@@ -8,7 +8,6 @@ import {
   LogOutIcon,
   PauseIcon,
   PlayIcon,
-  TimerIcon,
   TriangleAlertIcon,
   XIcon,
   ZapIcon,
@@ -16,7 +15,6 @@ import {
 import { useState, type ReactNode } from "react";
 import { repoRunnerSettingsUrl, runnerSettingsUrl } from "@/components/add-runner";
 import { GithubIcon } from "@/components/provider-logos";
-import { type Provider, providerStyle, runnerName, runnerSpec, TILE } from "@/components/providers";
 import { SHARING_ICONS, SharingDialog, sharingLabel } from "@/components/machine-sharing";
 import { UserAvatar } from "@/components/workspace-menu";
 import { Button } from "@/components/ui/button";
@@ -31,7 +29,7 @@ import {
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import { describeJobPlace, deviceName, formatMemory } from "@/lib/device";
 import { deviceIcon, SelfHostedIcon } from "@/components/device-icon";
-import { medianText, p90Text, plural, type EnvironmentSummary, type Stat } from "@/lib/job-times";
+import { medianText, p90Text, plural, type Stat } from "@/lib/job-times";
 import {
   machineAccess,
   pauseMachine,
@@ -1072,123 +1070,5 @@ export function FoundCard({
         </button>
       </div>
     </article>
-  );
-}
-
-/** One card per cloud provider, with a row for each runner type its jobs used. */
-export function CloudProviderCard({
-  provider,
-  environments,
-}: {
-  provider: Provider;
-  environments: EnvironmentSummary[];
-}) {
-  const { name, icon, tile, tint, bar, url } = providerStyle(provider);
-  const total = environments.reduce((sum, env) => sum + env.stat.runs, 0);
-  // A share bar only says something when there's more than one runner type to compare.
-  const showShare = environments.length > 1;
-  return (
-    <Card label={name}>
-      <div className={cn("flex items-center gap-2.5 border-b border-line-soft px-4 py-3", tint)}>
-        {url ? (
-          <a
-            href={url}
-            target="_blank"
-            rel="noreferrer"
-            aria-label={`Open ${name}`}
-            title={`Open ${name}`}
-            className={cn(
-              TILE,
-              tile,
-              "outline-none hover:opacity-85 focus-visible:ring-[3px] focus-visible:ring-ring/50",
-            )}
-          >
-            {icon}
-          </a>
-        ) : (
-          <span className={cn(TILE, tile)}>{icon}</span>
-        )}
-        <h3 className="min-w-0 flex-1 truncate text-sm font-medium">
-          {provider === "machine" ? (
-            name
-          ) : (
-            <Link
-              to="/providers/$provider"
-              params={{ provider }}
-              className="rounded-sm outline-none hover:underline hover:underline-offset-2 focus-visible:ring-[3px] focus-visible:ring-ring/50"
-            >
-              {name}
-            </Link>
-          )}
-        </h3>
-        <span className="text-xs text-muted-foreground tabular-nums">{plural(total, "job")}</span>
-      </div>
-      {/* One grid for every row, so share bars and numbers line up down the card. */}
-      <ul className="grid grid-cols-[minmax(0,1fr)_auto_auto] divide-y divide-line-soft py-1">
-        {environments.map((env) => (
-          <CloudRow
-            key={env.key}
-            environment={env}
-            provider={provider}
-            share={showShare && total > 0 ? env.stat.runs / total : null}
-            bar={bar}
-          />
-        ))}
-      </ul>
-    </Card>
-  );
-}
-
-function CloudRow({
-  environment,
-  provider,
-  share,
-  bar,
-}: {
-  environment: EnvironmentSummary;
-  provider: Provider;
-  share: number | null;
-  bar: string;
-}) {
-  const { label, stat } = environment;
-  const { mono } = providerStyle(provider);
-  const name = runnerName(provider, label);
-  const spec = runnerSpec(provider, environment);
-  return (
-    <li className="col-span-3 grid grid-cols-subgrid items-center gap-x-3 px-4 py-2.5 text-xs text-muted-foreground tabular-nums">
-      <div className="grid min-w-0 gap-1.5">
-        <span title={label} className="truncate text-sm text-foreground">
-          <RunnerPanelLink
-            runner={environment.key}
-            className={cn("hover:underline hover:underline-offset-2", mono && "font-mono")}
-          >
-            {name}
-          </RunnerPanelLink>
-          {spec && <span className="text-xs text-muted-foreground"> · {spec}</span>}
-        </span>
-        {share !== null && (
-          <span aria-hidden className="h-[3px] overflow-hidden rounded-full bg-raised-2">
-            <span
-              className={cn("block h-full rounded-full", bar)}
-              style={{ width: `${Math.max(share * 100, 2)}%` }}
-            />
-          </span>
-        )}
-      </div>
-      <span className="text-right">{plural(stat.runs, "job")}</span>
-      {stat.samples > 0 ? (
-        <Link
-          to="/performance"
-          search={{ view: "runners" }}
-          title={`Typical job · ${p90Text(stat)} · ${plural(stat.samples, "run")}`}
-          className="flex items-center justify-end gap-1 hover:text-foreground"
-        >
-          <TimerIcon aria-hidden className="size-3.5 text-idle" />
-          {medianText(stat)}
-        </Link>
-      ) : (
-        <span />
-      )}
-    </li>
   );
 }

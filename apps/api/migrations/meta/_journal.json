@@ -502,8 +502,15 @@
     {
       "idx": 71,
       "version": "6",
-      "when": 1794951069920,
-      "tag": "20261117213109_ai_on_by_default",
+      "when": 1794954750606,
+      "tag": "20261117223230_provider_status",
+      "breakpoints": true
+    },
+    {
+      "idx": 72,
+      "version": "6",
+      "when": 1794955722540,
+      "tag": "20261117224842_ai_on_by_default",
       "breakpoints": true
     }
   ]

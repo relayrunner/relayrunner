@@ -1,8 +1,8 @@
 {
   "version": "6",
   "dialect": "sqlite",
-  "id": "72a50fe2-8ff6-4cc9-aeb6-ab91b545ee25",
-  "prevId": "13041f6a-bc28-4156-a3e7-8f49249d4e3f",
+  "id": "ff6767aa-d0f8-4aea-8d3f-f4cf789513c0",
+  "prevId": "6a3bf2a4-4345-4d8c-933d-4886eb241a37",
   "tables": {
     "account": {
       "name": "account",
@@ -4177,6 +4177,21 @@
         "logo_url": {
           "name": "logo_url",
           "type": "text",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
+        "status": {
+          "name": "status",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false,
+          "default": "'live'"
+        },
+        "featured": {
+          "name": "featured",
+          "type": "integer",
           "primaryKey": false,
           "notNull": false,
           "autoincrement": false

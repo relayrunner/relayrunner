@@ -60,8 +60,11 @@ function ProvidersPage() {
   const setSearch = useSetSearch<Search>();
   const overview: ProvidersOverview = useRangeReport(Route.useLoaderData(), days, load);
   const used = new Set(overview.providers.map((p) => p.provider));
-  // Third-party runner clouds you add with their own GitHub App and a label, not used here yet.
-  const unused = RUNNER_CLOUD_IDS.filter((id) => isKnownProvider(id) && !used.has(id));
+  // Third-party runner clouds you add with their own GitHub App and a label, not used here yet,
+  // that an operator made Live.
+  const unused = RUNNER_CLOUD_IDS.filter(
+    (id) => isKnownProvider(id) && providerInfo(id).status === "live" && !used.has(id),
+  );
 
   function chooseRange(next: number) {
     setSearch({ days: unlessDefault(next, DEFAULT_DAYS) });
@@ -174,6 +177,7 @@ const PLATFORM_FILTERS = [
 type CloudRow = {
   id: string;
   name: string;
+  featured: boolean;
   platforms: readonly Platform[];
   startsAt: string;
   perMinute: number | null;
@@ -242,13 +246,16 @@ const cloudColumns = cloud.columns([
 
 function AddRunnerCloud({ ids }: { ids: string[] }) {
   const [platform, setPlatform] = useState<Platform | "all">("all");
+  const [showMore, setShowMore] = useState(false);
   const rows: CloudRow[] = ids.flatMap((id) => {
     const plans = providerPlans(id);
     if (!plans || (platform !== "all" && !plans.platforms.includes(platform))) return [];
+    const info = providerInfo(id);
     return [
       {
         id,
-        name: providerInfo(id).name,
+        name: info.name,
+        featured: info.featured,
         platforms: plans.platforms,
         startsAt: startsAt(plans),
         perMinute: twoVcpuMinute(id),
@@ -256,6 +263,9 @@ function AddRunnerCloud({ ids }: { ids: string[] }) {
       },
     ];
   });
+  // The names people know first; the rest wait behind a button so they don't bury them.
+  const featured = rows.filter((row) => row.featured);
+  const more = rows.filter((row) => !row.featured);
   return (
     <div className="grid gap-3">
       <div className="flex flex-wrap items-end justify-between gap-3">
@@ -274,12 +284,38 @@ function AddRunnerCloud({ ids }: { ids: string[] }) {
       </div>
       <DataTable
         columns={cloudColumns}
-        data={rows}
+        data={featured.length > 0 ? featured : more}
         getRowId={(row) => row.id}
         initialSorting={[{ id: "perMinute", desc: false }]}
         rowHeight={53}
         empty="None of the runner clouds you haven't used yet run on this platform."
       />
+      {featured.length > 0 && more.length > 0 && (
+        <div className="grid gap-3 pt-2">
+          <div className="flex flex-wrap items-center justify-between gap-3">
+            <h3 className="text-sm font-semibold">
+              More runner clouds <span className="text-muted-foreground">· {more.length}</span>
+            </h3>
+            <Button
+              size="sm"
+              variant="ghost"
+              aria-expanded={showMore}
+              onClick={() => setShowMore(!showMore)}
+            >
+              {showMore ? "Hide" : "Show all"}
+            </Button>
+          </div>
+          {showMore && (
+            <DataTable
+              columns={cloudColumns}
+              data={more}
+              getRowId={(row) => row.id}
+              initialSorting={[{ id: "perMinute", desc: false }]}
+              rowHeight={53}
+            />
+          )}
+        </div>
+      )}
     </div>
   );
 }
