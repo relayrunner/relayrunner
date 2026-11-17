@@ -3,6 +3,9 @@
 // on the provider's page, next to its machine prices. Nothing tells RelayRunner which plan a
 // workspace is on, so nothing here is used to price jobs: costs still come from the price list
 // (prices.ts), and the per-minute price shown beside a plan is read from it too.
+//
+// These live in code only as a small starting point. They will move to the database, so plans can
+// be edited without a deploy and a workspace's own plan can be saved against them.
 import { BASE_BOOK, listRate } from "./prices.ts";
 import type { ProviderId } from "./index.ts";
 
