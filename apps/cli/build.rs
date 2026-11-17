@@ -1,6 +1,6 @@
-// The CLI's version is apps/cli/package.json's: the npm package's, which changesets bumps.
+// The CLI's version is package.json's: the npm package's, which changesets bumps.
 fn main() {
-    let path = "../cli/package.json";
+    let path = "package.json";
     println!("cargo:rerun-if-changed={path}");
     let text = std::fs::read_to_string(path).expect("apps/cli/package.json");
     let after = text

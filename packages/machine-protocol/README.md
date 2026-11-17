@@ -2,7 +2,7 @@
 
 The messages a connected machine and the gateway exchange over the machine WebSocket. The API's `MachineLink` Durable Object holds one end, and `relayrunner connect` holds the other.
 
-Used by [`apps/api`](../../apps/api). The Rust CLI ([`apps/cli-rs`](../../apps/cli-rs)) mirrors it and checks itself against `fixtures.json`.
+Used by [`apps/api`](../../apps/api). The Rust CLI ([`apps/cli`](../../apps/cli)) mirrors it and checks itself against `fixtures.json`.
 
 ## Messages
 

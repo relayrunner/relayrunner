@@ -71,7 +71,7 @@ function main(args) {
         {
           name: packageName(platform),
           ...shared,
-          repository: { ...cli.repository, directory: "apps/cli-rs" },
+          repository: cli.repository,
           description: `The relayrunner CLI for ${platform.name}. Install relayrunner, which picks this for you.`,
           os: [platform.os],
           cpu: [platform.cpu],

@@ -1,7 +1,7 @@
 # RelayRunner for Mac
 
 A menu bar app that takes jobs on your Mac with one switch. It runs `relayrunner connect` from the
-Rust build of the CLI (`apps/cli-rs`), which is inside the app, so there's nothing else to install.
+Rust build of the CLI (`apps/cli`), which is inside the app, so there's nothing else to install.
 
 The robot head in the menu bar opens a panel where you can turn it on and off, pause new jobs, see
 what's running, and open the dashboard. The head is faded while it isn't taking jobs and has a dot
@@ -53,7 +53,7 @@ keep a copy (`generate_keys -x <file>` exports it).
 ## How it works
 
 The app starts `relayrunner connect --events` in its own process group and reads one JSON event
-per line from its stdout (see `apps/cli-rs/src/events.rs`). It sends `pause` and `resume` on stdin and
+per line from its stdout (see `apps/cli/src/events.rs`). It sends `pause` and `resume` on stdin and
 stops it with SIGINT to the group, as Ctrl-C does in a terminal. What `connect` would print for a
 person goes to `~/.relayrunner/app.log`, which Show Log opens.
 

@@ -16,11 +16,11 @@ for tarball in "$@"; do
 done
 
 if [[ ${#tarballs[@]} -eq 0 ]]; then
-  (cd "$root/apps/cli-rs" && cargo build --locked --release)
+  (cd "$root/apps/cli" && cargo build --locked --release)
   # Spelled as Node and the package names spell it, such as linux-x64.
   platform="$(node -p 'process.platform + "-" + process.arch')"
   mkdir "$smoke_dir/bins"
-  cp "$root/apps/cli-rs/target/release/relayrunner" "$smoke_dir/bins/relayrunner-$platform"
+  cp "$root/apps/cli/target/release/relayrunner" "$smoke_dir/bins/relayrunner-$platform"
   mapfile -t tarballs < <(node "$root/scripts/npm-packages.mjs" "$smoke_dir/bins" "$smoke_dir/out" --allow-missing)
 fi
 

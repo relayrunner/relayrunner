@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # Builds RelayRunner.app for Apple silicon into apps/mac/dist: the menu bar app, with the Rust
-# build of the CLI (apps/cli-rs) inside it and Sparkle for updates. Needs Xcode or its command line
+# build of the CLI (apps/cli) inside it and Sparkle for updates. Needs Xcode or its command line
 # tools, Node and Rust (rustup). The version is apps/mac/package.json's; the CLI's goes in
 # Info.plist too, for the About tab.
 #
@@ -16,7 +16,7 @@ cli_version="$(node -p "require('$root/apps/cli/package.json').version")"
 identity="${RELAYRUNNER_SIGN_IDENTITY:--}"
 sparkle="$(bash scripts/setup-sparkle.sh)"
 
-cargo build --release --locked --manifest-path "$root/apps/cli-rs/Cargo.toml" --target aarch64-apple-darwin
+cargo build --release --locked --manifest-path "$root/apps/cli/Cargo.toml" --target aarch64-apple-darwin
 swift build -c release --arch arm64
 bin="$(swift build -c release --arch arm64 --show-bin-path)"
 
@@ -24,7 +24,7 @@ app=dist/RelayRunner.app
 rm -rf "$app"
 mkdir -p "$app/Contents/MacOS" "$app/Contents/Helpers" "$app/Contents/Resources" "$app/Contents/Frameworks"
 cp "$bin/RelayRunner" "$app/Contents/MacOS/RelayRunner"
-cp "$root/apps/cli-rs/target/aarch64-apple-darwin/release/relayrunner" "$app/Contents/Helpers/relayrunner"
+cp "$root/apps/cli/target/aarch64-apple-darwin/release/relayrunner" "$app/Contents/Helpers/relayrunner"
 cp Resources/AppIcon.icns "$app/Contents/Resources/AppIcon.icns"
 ditto "$sparkle/Sparkle.framework" "$app/Contents/Frameworks/Sparkle.framework"
 sed -e "s/__VERSION__/$version/g" -e "s/__CLI_VERSION__/$cli_version/g" Info.plist >"$app/Contents/Info.plist"

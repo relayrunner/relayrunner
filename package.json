@@ -16,7 +16,7 @@
     "vitest": "^5.1.0"
   },
   "scripts": {
-    "relayrunner": "cargo run --quiet --manifest-path apps/cli-rs/Cargo.toml --",
+    "relayrunner": "cargo run --quiet --manifest-path apps/cli/Cargo.toml --",
     "setup:worktree": "pnpm install --frozen-lockfile",
     "typecheck": "tsc --noEmit && pnpm --filter @relayrunner/api typecheck && pnpm --filter @relayrunner/webhooks typecheck && pnpm --filter @relayrunner/agents typecheck && pnpm --filter @relayrunner/web typecheck",
     "lint": "oxlint --deny-warnings apps packages tests",

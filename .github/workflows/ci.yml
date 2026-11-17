@@ -47,7 +47,7 @@ jobs:
       - run: pnpm changeset:lint
       # The CLI, which npm ships and the Mac menu bar app bundles.
       - name: Test the Rust CLI
-        working-directory: apps/cli-rs
+        working-directory: apps/cli
         run: |
           cargo fmt --check
           cargo clippy --locked --all-targets -- -D warnings

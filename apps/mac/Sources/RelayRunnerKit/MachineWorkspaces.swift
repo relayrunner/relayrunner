@@ -1,6 +1,6 @@
 import Foundation
 
-/// What `relayrunner workspaces list --json` prints (apps/cli-rs/src/workspaces.rs): the
+/// What `relayrunner workspaces list --json` prints (apps/cli/src/workspaces.rs): the
 /// workspaces this Mac takes jobs in, its owner's other ones, and who can run jobs on it.
 public struct MachineWorkspaces: Equatable, Decodable {
   public struct Machine: Equatable, Decodable {
