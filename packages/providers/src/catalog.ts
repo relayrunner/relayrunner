@@ -20,9 +20,6 @@ import {
 export const PROVIDER_STATUSES = ["live", "hidden", "off"] as const;
 export type ProviderStatus = (typeof PROVIDER_STATUSES)[number];
 
-/** Providers in code that are featured until an operator says otherwise: the names people know. */
-const FEATURED = new Set(["blacksmith", "depot", "namespace", "warpbuild", "ubicloud"]);
-
 /** Providers whose status can't change: GitHub is the fallback and Other catches the rest. */
 export const FIXED_STATUS = new Set(["github", "other"]);
 
@@ -70,8 +67,8 @@ const fromCode = (id: (typeof PROVIDER_IDS)[number]): CatalogProvider => ({
   ...PROVIDERS[id],
   prefixes: prefixesOf(id),
   builtIn: true,
-  status: "live",
-  featured: FEATURED.has(id),
+  status: PROVIDERS[id].hidden ? "hidden" : "live",
+  featured: PROVIDERS[id].featured ?? false,
   updatedBy: null,
   updatedAt: null,
 });
