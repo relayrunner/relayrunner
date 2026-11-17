@@ -30,17 +30,16 @@ import { MacAppButton, MacAppLink, ON_MAC } from "@/components/mac-app";
 import { PageHeader } from "@/components/page-header";
 import { DOCS_URL } from "@/components/site-footer";
 import { GithubIcon } from "@/components/provider-logos";
-import { byProvider, providerOf } from "@/components/providers";
 import { sharingLabel } from "@/components/machine-sharing";
 import { OtherMachinesBanner, OtherMachinesDialog } from "@/components/other-machines";
 import {
-  CloudProviderCard,
   FOUND_PREVIEW,
   FoundCard,
   FoundRunnerRows,
   MachineCard,
   machineView,
 } from "@/components/runner-card";
+import { CloudRunnersTable } from "@/components/cloud-runners";
 import { RunnerList, type RunnerRow } from "@/components/runner-list";
 import { NeedsAttention } from "@/components/runner-attention";
 import { RunnersNow } from "@/components/runners-now";
@@ -57,13 +56,7 @@ import {
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
 import { attentionItems } from "@/lib/attention";
 import { authDisabled } from "@/lib/auth-client";
-import {
-  getJobTimes,
-  getMachineJobTimes,
-  plural,
-  type EnvironmentSummary,
-  type Stat,
-} from "@/lib/job-times";
+import { getMachineJobTimes, plural, type Stat } from "@/lib/job-times";
 import { getLiveJobs, NO_LIVE_JOBS, sampleLiveJobs } from "@/lib/live-jobs";
 import { useLiveRefresh } from "@/lib/live-refresh";
 import {
@@ -75,6 +68,11 @@ import {
   type AddableRunner,
   type GitHubRunners,
 } from "@/lib/machines";
+import {
+  getProvidersOverview,
+  type ProviderSummary,
+  sampleProvidersOverview,
+} from "@/lib/providers";
 import { canManage } from "@/lib/roles";
 import {
   CLEARED_FILTERS,
@@ -261,12 +259,14 @@ function RunnersPage() {
   );
 
   // Cloud runners jobs used over the same 14 days: GitHub-hosted classes, hosted providers, containers.
-  const [cloud, setCloud] = useState<EnvironmentSummary[]>([]);
+  const [cloud, setCloud] = useState<ProviderSummary[]>(() =>
+    authDisabled ? sampleProvidersOverview(CLOUD_DAYS).providers : [],
+  );
   useEffect(() => {
     if (authDisabled) return;
     let live = true;
-    getJobTimes(14)
-      .then((report) => live && setCloud(report.environments.filter(isCloud)))
+    getProvidersOverview(CLOUD_DAYS)
+      .then((report) => live && setCloud(report.providers))
       .catch(() => undefined);
     return () => {
       live = false;
@@ -509,12 +509,18 @@ function RunnersPage() {
             </RunnerGroup>
           )}
           {cloud.length > 0 && (
-            <RunnerGroup title="Cloud-hosted" note="Used in the last 14 days">
-              {byProvider(cloud).map(([provider, environments]) => (
-                <li key={provider} className="grid min-w-0 self-start">
-                  <CloudProviderCard provider={provider} environments={environments} />
-                </li>
-              ))}
+            <RunnerGroup
+              title="Cloud-hosted"
+              note={`Used in the last ${CLOUD_DAYS} days`}
+              bare
+              footer={
+                <p className="text-xs text-muted-foreground">
+                  Est. cost is at list prices, before any included minutes. Each provider's page has
+                  its plans and prices.
+                </p>
+              }
+            >
+              <CloudRunnersTable providers={cloud} />
             </RunnerGroup>
           )}
         </div>
@@ -523,8 +529,8 @@ function RunnersPage() {
   );
 }
 
-// Cloud runners from the Performance report: everything but machines and other self-hosted runners.
-const isCloud = (env: EnvironmentSummary) => providerOf(env) !== "machine";
+// How far back the cloud runners table looks.
+const CLOUD_DAYS = 14;
 
 function RunnerGroup({
   title,

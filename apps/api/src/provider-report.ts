@@ -90,6 +90,8 @@ export interface ProviderReport extends ProviderCounts {
 export interface ProviderSummary extends ProviderCounts {
   provider: string;
   stat: Stat;
+  /** Its runner types, busiest first. */
+  runners: ProviderRunner[];
 }
 
 export interface ProvidersOverview {
@@ -216,6 +218,17 @@ function totalOf(groups: Group[]) {
   return countsOf(bucket, sums);
 }
 
+// Each group as a runner type, busiest first.
+function runnersOf(groups: Group[]): ProviderRunner[] {
+  return groups
+    .map((group) => ({
+      ...group.env,
+      perMinute: group.perMinute,
+      ...countsOf(group.bucket, group),
+    }))
+    .sort((a, b) => b.jobs - a.jobs || a.label.localeCompare(b.label));
+}
+
 function countsOf(bucket: Bucket, c: Sums): ProviderCounts & { stat: Stat } {
   return {
     jobs: bucket.runs,
@@ -289,19 +302,12 @@ export async function providerReport(
     loadPriceBook(db, now),
   ]);
   const groups = all.filter((group) => group.provider === provider);
-  const runners: ProviderRunner[] = groups
-    .map((group) => ({
-      ...group.env,
-      perMinute: group.perMinute,
-      ...countsOf(group.bucket, group),
-    }))
-    .sort((a, b) => b.jobs - a.jobs || a.label.localeCompare(b.label));
   return {
     provider,
     days,
     pricesChecked: PRICES_CHECKED,
     ...totalOf(groups),
-    runners,
+    runners: runnersOf(groups),
     workflows,
     prices: ratePrices(book, provider),
   };
@@ -319,6 +325,7 @@ export async function providersOverview(
   const providers = [...byProvider].map(([provider, groups]) => ({
     provider,
     ...totalOf(groups),
+    runners: runnersOf(groups),
   }));
   providers.sort((a, b) => b.jobs - a.jobs);
   return { days, pricesChecked: PRICES_CHECKED, providers };

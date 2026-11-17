@@ -5,6 +5,7 @@
 import type { MachineSharing } from "@relayrunner/activity";
 import type { JobUsage } from "@relayrunner/machine-protocol";
 import type { HostedProviderId } from "@relayrunner/providers";
+import type { ProviderStatus } from "@relayrunner/providers/catalog";
 import type { RetryRunner } from "@relayrunner/runner-order";
 import { sql } from "drizzle-orm";
 import {
@@ -1442,6 +1443,10 @@ export const provider = sqliteTable("provider", {
   docsUrl: text("docs_url"),
   /** An https image for an added provider's mark; providers in code have their own. */
   logoUrl: text("logo_url"),
+  /** live | hidden | off (ProviderStatus in @relayrunner/providers/catalog). */
+  status: text("status").$type<ProviderStatus>().notNull().default("live"),
+  /** Listed first on the Providers page. Null keeps the code's choice. */
+  featured: integer("featured", { mode: "boolean" }),
   updatedBy: text("updated_by").notNull(),
   updatedAt: integer("updated_at", { mode: "timestamp_ms" })
     .notNull()
