@@ -1,8 +1,8 @@
 {
   "version": "6",
   "dialect": "sqlite",
-  "id": "3d92c024-751d-4ece-8780-9fb9f4f71481",
-  "prevId": "6a3bf2a4-4345-4d8c-933d-4886eb241a37",
+  "id": "0973b37f-d798-46a6-a6f1-6a2b951d227b",
+  "prevId": "ff6767aa-d0f8-4aea-8d3f-f4cf789513c0",
   "tables": {
     "account": {
       "name": "account",
@@ -6332,15 +6332,15 @@
           "notNull": false,
           "autoincrement": false
         },
-        "ai_opt_in_at": {
-          "name": "ai_opt_in_at",
+        "ai_off_at": {
+          "name": "ai_off_at",
           "type": "integer",
           "primaryKey": false,
           "notNull": false,
           "autoincrement": false
         },
-        "ai_opt_in_by": {
-          "name": "ai_opt_in_by",
+        "ai_off_by": {
+          "name": "ai_off_by",
           "type": "text",
           "primaryKey": false,
           "notNull": false,
@@ -6369,10 +6369,10 @@
           ],
           "isUnique": true
         },
-        "workspace_ai_opt_in_idx": {
-          "name": "workspace_ai_opt_in_idx",
+        "workspace_ai_off_idx": {
+          "name": "workspace_ai_off_idx",
           "columns": [
-            "ai_opt_in_at"
+            "ai_off_at"
           ],
           "isUnique": false
         }
@@ -6391,12 +6391,12 @@
           "onDelete": "cascade",
           "onUpdate": "no action"
         },
-        "workspace_ai_opt_in_by_user_id_fk": {
-          "name": "workspace_ai_opt_in_by_user_id_fk",
+        "workspace_ai_off_by_user_id_fk": {
+          "name": "workspace_ai_off_by_user_id_fk",
           "tableFrom": "workspace",
           "tableTo": "user",
           "columnsFrom": [
-            "ai_opt_in_by"
+            "ai_off_by"
           ],
           "columnsTo": [
             "id"

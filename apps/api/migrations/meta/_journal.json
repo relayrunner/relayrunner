@@ -509,8 +509,15 @@
     {
       "idx": 72,
       "version": "6",
-      "when": 1794955697347,
-      "tag": "20261117224817_mac_app_version",
+      "when": 1794955722540,
+      "tag": "20261117224842_ai_on_by_default",
+      "breakpoints": true
+    },
+    {
+      "idx": 73,
+      "version": "6",
+      "when": 1794956162279,
+      "tag": "20261117225602_mac_app_version",
       "breakpoints": true
     }
   ]

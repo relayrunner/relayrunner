@@ -1,7 +1,7 @@
 // Who may call the AI model, and how much (src/ai/classify.ts): a global switch and budget that
-// operators set in Admin › AI, each workspace's own opt-in (Settings › General), and operator
-// overrides per workspace. Nothing runs until an operator turns on the global switch and a feature,
-// and an owner or admin opts the workspace in.
+// operators set in Admin › AI, each workspace's own switch (Settings › General), and operator
+// overrides per workspace. Workspaces start on: nothing runs until an operator turns on the global
+// switch and a feature, and an owner or admin can turn it off for their workspace.
 import { eq, isNotNull, sql } from "drizzle-orm";
 import { cachedRead } from "../d1-cache.ts";
 import { type Db, schema } from "../db/index.ts";
@@ -48,50 +48,43 @@ const featuresOf = (global: AiGlobalSettings, override?: Override): AiFeature[] 
     ? []
     : global.features.filter((id) => !override?.features || override.features.includes(id));
 
-type WorkspaceAi = { features: AiFeature[]; dailyTokens: number | null };
-type AiSettings = { global: AiGlobalSettings; workspaces: Map<string, WorkspaceAi> };
+type WorkspaceOverride = Override & { dailyTokens: number | null };
+type AiSettings = {
+  global: AiGlobalSettings;
+  /** Workspaces whose owner or admin turned AI off. */
+  off: Set<string>;
+  overrides: Map<string, WorkspaceOverride>;
+};
 
-// Read on every call, so reused for a minute per isolate: the global row and every opted-in
-// workspace. A change applies at once in the isolate that made it, and within a minute everywhere
-// else. If D1 can't be read, AI is off.
+// Read on every call, so reused for a minute per isolate: the global row, the workspaces that
+// turned AI off and the operators' overrides (both few, since AI is on by default). A change
+// applies at once in the isolate that made it, and within a minute everywhere else. If D1 can't be
+// read, AI is off.
 const settings = cachedRead(
   "ai settings",
   async (db): Promise<AiSettings> => {
-    const [[row], workspaces] = await Promise.all([
+    const [[row], off, overrides] = await Promise.all([
       db.select().from(schema.aiSetting).where(eq(schema.aiSetting.id, GLOBAL_ID)),
       db
-        .select({
-          workspaceId: schema.workspace.id,
-          enabled: schema.workspaceAiSetting.enabled,
-          features: schema.workspaceAiSetting.features,
-          dailyTokens: schema.workspaceAiSetting.dailyTokens,
-        })
+        .select({ id: schema.workspace.id })
         .from(schema.workspace)
-        .leftJoin(
-          schema.workspaceAiSetting,
-          eq(schema.workspaceAiSetting.workspaceId, schema.workspace.id),
-        )
-        .where(isNotNull(schema.workspace.aiOptInAt)),
+        .where(isNotNull(schema.workspace.aiOffAt)),
+      db.select().from(schema.workspaceAiSetting),
     ]);
-    const global = row
-      ? {
-          enabled: row.enabled,
-          features: row.features.filter(isFeature),
-          workspaceDailyTokens: row.workspaceDailyTokens,
-          dailyTokens: row.dailyTokens,
-        }
-      : AI_DEFAULTS;
     return {
-      global,
-      workspaces: new Map(
-        workspaces.map((w) => [
-          w.workspaceId,
-          { features: featuresOf(global, w), dailyTokens: w.dailyTokens },
-        ]),
-      ),
+      global: row
+        ? {
+            enabled: row.enabled,
+            features: row.features.filter(isFeature),
+            workspaceDailyTokens: row.workspaceDailyTokens,
+            dailyTokens: row.dailyTokens,
+          }
+        : AI_DEFAULTS,
+      off: new Set(off.map((w) => w.id)),
+      overrides: new Map(overrides.map((o) => [o.workspaceId, o])),
     };
   },
-  () => ({ global: AI_DEFAULTS, workspaces: new Map() }),
+  () => ({ global: AI_DEFAULTS, off: new Set(), overrides: new Map() }),
 );
 
 export const readAiSettings = async (db: Db) => (await settings.load(db)).global;
@@ -109,22 +102,27 @@ export async function saveAiSettings(db: Db, values: AiGlobalSettings, by: strin
 }
 
 /**
- * Opts a workspace in to AI features, or out. Opting out also deletes the answers AI saved for it
- * (job types and cached answers), so the dashboard looks as it did before. Applies everywhere
- * within a minute.
+ * Turns AI on or off for a workspace. It's on until an owner or admin turns it off, which also
+ * deletes the answers AI saved for it (job types and cached answers), so the dashboard looks as it
+ * would without AI. Applies everywhere within a minute.
  */
-export async function setAiOptIn(db: Db, workspaceId: string, enabled: boolean, by: string | null) {
+export async function setWorkspaceAi(
+  db: Db,
+  workspaceId: string,
+  enabled: boolean,
+  by: string | null,
+) {
   const workspace = schema.workspace;
   if (enabled) {
     await db
       .update(workspace)
-      .set({ aiOptInAt: new Date(), aiOptInBy: by })
+      .set({ aiOffAt: null, aiOffBy: null })
       .where(eq(workspace.id, workspaceId));
   } else {
     await db.batch([
       db
         .update(workspace)
-        .set({ aiOptInAt: null, aiOptInBy: null })
+        .set({ aiOffAt: new Date(), aiOffBy: by })
         .where(eq(workspace.id, workspaceId)),
       ...purgeAiAnswers(db, workspaceId),
     ]);
@@ -137,8 +135,8 @@ export type AiLimits = { workspace: number; all: number };
 
 /**
  * The limits `workspaceId` makes `feature` calls under, or null when the global switch or the
- * feature is off, or the workspace hasn't opted in or is blocked. The budget is a separate check
- * (withinBudget), since cached answers don't spend it.
+ * feature is off, the workspace turned AI off, or an operator blocked it. The budget is a separate
+ * check (withinBudget), since cached answers don't spend it.
  */
 export async function aiAccess(
   db: Db,
@@ -146,11 +144,11 @@ export async function aiAccess(
   feature: AiFeature,
   now = Date.now(),
 ): Promise<AiLimits | null> {
-  const { global, workspaces } = await settings.load(db, now);
-  const workspace = workspaces.get(workspaceId);
-  if (!workspace?.features.includes(feature)) return null;
+  const { global, off, overrides } = await settings.load(db, now);
+  const override = overrides.get(workspaceId);
+  if (off.has(workspaceId) || !featuresOf(global, override).includes(feature)) return null;
   return {
-    workspace: workspace.dailyTokens ?? global.workspaceDailyTokens,
+    workspace: override?.dailyTokens ?? global.workspaceDailyTokens,
     all: global.dailyTokens,
   };
 }

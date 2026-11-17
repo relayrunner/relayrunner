@@ -3,7 +3,7 @@ import { createDb } from "../db/index.ts";
 import type { Env } from "../env.ts";
 import * as testing from "../testing.ts";
 import { failureCauseOf } from "./failure-cause.ts";
-import { AI_DEFAULTS, saveAiSettings, setAiOptIn } from "./settings.ts";
+import { AI_DEFAULTS, saveAiSettings, setWorkspaceAi } from "./settings.ts";
 
 let env: Env;
 let workspaceId: string;
@@ -37,7 +37,6 @@ beforeEach(async () => {
     { ...AI_DEFAULTS, enabled: true, features: ["failure_cause"] },
     op.user.id,
   );
-  await setAiOptIn(createDb(env.DB), workspaceId, true, null);
 });
 
 describe("failureCauseOf", () => {
@@ -82,7 +81,8 @@ describe("failureCauseOf", () => {
 
   test("is null with nothing to go on, or when AI is off for the workspace", async () => {
     expect(await failureCauseOf(env, workspaceId, failure([]))).toBeNull();
-    expect(await failureCauseOf(env, "another-workspace", failure(["boom"]))).toBeNull();
+    await setWorkspaceAi(createDb(env.DB), workspaceId, false, null);
+    expect(await failureCauseOf(env, workspaceId, failure(["boom"]))).toBeNull();
     expect(run).not.toHaveBeenCalled();
   });
 });

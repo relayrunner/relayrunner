@@ -22,7 +22,7 @@ RelayRunner needs to know about your jobs to route them, but not what's in them.
 
 ## AI
 
-AI is off until an owner or admin turns it on. Then it reads job names and the end of failed jobs' logs to explain failures. Cloudflare runs the model, keeps nothing and trains on nothing. See [AI](/docs/dashboard/ai).
+AI is on by default, and an owner or admin can turn it off. It reads job names and the end of failed jobs' logs to explain failures. Cloudflare runs the model, keeps nothing and trains on nothing. See [AI](/docs/dashboard/ai).
 
 ## Who sees it
 

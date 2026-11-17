@@ -137,18 +137,18 @@ export const workspace = sqliteTable(
     // The size, in vCPUs, of a job whose relay hands its runner to the Router (`auto`) and that has
     // no size of its own (auto_job.size). Null means DEFAULT_AUTO_SIZE.
     autoSize: integer("auto_size"),
-    // When an owner or admin turned on AI features (src/ai/settings.ts) in Settings › General, and
-    // who. Null means off: nothing about the workspace goes to a model.
-    aiOptInAt: integer("ai_opt_in_at", { mode: "timestamp_ms" }),
-    aiOptInBy: text("ai_opt_in_by").references((): AnySQLiteColumn => user.id, {
+    // When an owner or admin turned off AI features (src/ai/settings.ts) in Settings › General, and
+    // who. Null means on, the default.
+    aiOffAt: integer("ai_off_at", { mode: "timestamp_ms" }),
+    aiOffBy: text("ai_off_by").references((): AnySQLiteColumn => user.id, {
       onDelete: "set null",
     }),
     createdAt: integer("created_at", { mode: "timestamp_ms" })
       .notNull()
       .$defaultFn(() => new Date()),
   },
-  // The AI settings read (src/ai/settings.ts) loads the opted-in workspaces each minute.
-  (table) => [index("workspace_ai_opt_in_idx").on(table.aiOptInAt)],
+  // The AI settings read (src/ai/settings.ts) loads the workspaces that turned AI off each minute.
+  (table) => [index("workspace_ai_off_idx").on(table.aiOffAt)],
 );
 
 // Who can see a workspace, synced from the installations their GitHub sign-in can see (#317).
@@ -1608,7 +1608,7 @@ export const aiSetting = sqliteTable("ai_setting", {
 });
 
 // Operator overrides for one workspace's AI, set in Admin › AI: a block, fewer features or another
-// budget. AI only runs for a workspace that opted in (workspace.ai_opt_in_at); no row means allowed.
+// budget. A workspace can also turn AI off itself (workspace.ai_off_at); no row means allowed.
 export const workspaceAiSetting = sqliteTable("workspace_ai_setting", {
   workspaceId: text("workspace_id")
     .primaryKey()
@@ -1667,7 +1667,7 @@ export const aiCache = sqliteTable(
   },
   (table) => [
     index("ai_cache_expires_idx").on(table.expiresAt),
-    // Opting out of AI deletes a workspace's answers (setAiOptIn).
+    // Turning off AI deletes a workspace's answers (setWorkspaceAi).
     index("ai_cache_workspace_idx").on(table.workspaceId),
   ],
 );

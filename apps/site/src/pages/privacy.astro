@@ -58,8 +58,8 @@ const site = Astro.site!.origin;
       <p class="intro">
         RelayRunner is an open source project. This policy covers the hosted service its maintainers
         run: the dashboard at app.relayrunner.app, its API and webhooks, the RelayRunner GitHub
-        Apps, RelayRunner's hosted runners, the <code>relayrunner</code> CLI when it talks to that
-        service, and this website. "RelayRunner", "we" and "us" mean the maintainers who operate it.
+        Apps, RelayRunner's hosted runners, the <code>relayrunner</code> CLI and the RelayRunner app for Mac
+        when they talk to that service, and this website. "RelayRunner", "we" and "us" mean the maintainers who operate it.
         If you run RelayRunner yourself from the
         <a href="https://github.com/relayrunner/relayrunner">source code</a>, you operate your copy
         and this policy doesn't apply to it.
@@ -79,8 +79,8 @@ const site = Astro.site!.origin;
           </li>
           <li>We don't keep your source code or your job logs.</li>
           <li>
-            AI features are off until a workspace owner or admin turns them on. The model runs on
-            Cloudflare, which doesn't keep what it reads or train on it.
+            AI features are on by default, and a workspace owner or admin can turn them off. The model
+            runs on Cloudflare, which doesn't keep what it reads or train on it.
           </li>
           <li>
             Email <a href="mailto:privacy@relayrunner.app">privacy@relayrunner.app</a> to get a copy
@@ -131,6 +131,32 @@ const site = Astro.site!.origin;
         and a hash of its access token. Jobs that run on your machine use GitHub's own runner, which
         talks to GitHub directly. Their code, secrets and logs don't pass through us.
       </p>
+      <p>
+        The RelayRunner app for Mac runs <code>relayrunner connect</code> for you. It checks
+        relayrunner.app for updates about once a day, which sends the app's version. It doesn't send
+        anything else about your Mac.
+      </p>
+
+      <h3>Tokens you give us</h3>
+      <p>
+        If you paste a read-only token from a hosted runner provider, we store it encrypted and use
+        it only to read what that provider billed you. If you send traces to an observability tool,
+        we store the endpoint you give us and its headers, encrypted.
+      </p>
+
+      <h3>AI agents</h3>
+      <p>
+        If you connect an AI agent to RelayRunner, we store the connection and the workspaces you
+        picked. The agent can read those workspaces' runners, runs and usage, and can't change
+        anything. You can disconnect it in Settings › Agents.
+      </p>
+
+      <h3>Feedback</h3>
+      <p>
+        If you send feedback from the dashboard or an agent, we store it with your account and the
+        page it came from, and email it to the maintainers. We remove anything that looks like a
+        secret first.
+      </p>
 
       <h3>Repository contents, for lint checks only</h3>
       <p>
@@ -143,12 +169,12 @@ const site = Astro.site!.origin;
 
       <h3>AI features</h3>
       <p>
-        If an owner or admin turns on AI for a workspace, we send a model the workspace's workflow,
+        Unless an owner or admin turns off AI for a workspace, we send a model the workspace's workflow,
         job and step names and runner labels, and for failed jobs the last lines of the log and
         GitHub's error annotations. The model, Clef-flash, runs on Cloudflare Workers AI. Cloudflare
         doesn't keep what we send after it answers or use it to train models. We keep only the
-        answer, such as "flaky test". We never send your source code. Turning AI off stops this right
-        away.
+        answer, such as "flaky test". We never send your source code. Turning AI off in Settings ›
+        General stops this right away and deletes the saved answers.
       </p>
 
       <h3>Hosted runners</h3>
@@ -182,8 +208,10 @@ const site = Astro.site!.origin;
           check results.
         </li>
         <li>
-          To send service email: a welcome message and security notices when a machine connects
-          or signs in from somewhere new. We don't send marketing email.
+          To send service email: a welcome message, security notices when a machine connects or
+          signs in from somewhere new, and alerts about your runners and machines. You choose most
+          of these in Settings › Email; security notices always send. We don't send marketing
+          email.
         </li>
         <li>To keep the service secure, fix problems and prevent abuse.</li>
         <li>To meet legal obligations.</li>
@@ -194,7 +222,7 @@ const site = Astro.site!.origin;
       <ul>
         <li>
           <strong>Cloudflare</strong> hosts the service, its database, storage, containers and logs,
-          runs the AI model for workspaces that turn AI on, and sends our email.
+          runs the AI model for workspaces that use AI, and sends our email.
         </li>
         <li>
           <strong>PostHog</strong> (United States) receives the page views and product events
@@ -209,6 +237,10 @@ const site = Astro.site!.origin;
           <strong>Other runner providers.</strong> When a job uses a label for another provider,
           such as Blacksmith, that provider's own GitHub App runs it under your agreement with them.
           We don't send them your data.
+        </li>
+        <li>
+          <strong>Tools you choose.</strong> If you send traces to an observability tool or connect
+          an AI agent, it gets what you send it under your agreement with its provider.
         </li>
         <li>
           <strong>Your workspace.</strong> Members of a workspace can see its machines, runners,

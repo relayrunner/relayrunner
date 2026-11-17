@@ -1,6 +1,6 @@
 /**
  * Operator admin for AI model calls (src/ai): the global switch, features and budgets, which
- * workspaces opted in, a block or override per workspace, recent usage, and a test call. Needs Cloudflare Access (app.ts) and an
+ * workspaces turned it off, a block or override per workspace, recent usage, and a test call. Needs Cloudflare Access (app.ts) and an
  * operator session (admin.ts). Changes apply at once in this isolate and within a minute in others.
  */
 import { AppError } from "@relayrunner/errors";
@@ -65,7 +65,7 @@ export const adminAiRoutes = new Hono<AppEnv>()
           id: schema.workspace.id,
           name: schema.workspace.name,
           logo: schema.workspace.logo,
-          optInAt: schema.workspace.aiOptInAt,
+          offAt: schema.workspace.aiOffAt,
           enabled: schema.workspaceAiSetting.enabled,
           features: schema.workspaceAiSetting.features,
           dailyTokens: schema.workspaceAiSetting.dailyTokens,
