@@ -248,6 +248,7 @@ that name.
 
 ## Building
 
-`pnpm --filter relayrunner build` bundles the CLI into `dist/cli.js` with
-tsdown, including the workspace's `@relayrunner/machine-protocol` package.
+The CLI is written in Rust, in [`apps/cli-rs`](../cli-rs). This package holds
+only `bin/relayrunner.js`, which runs the binary npm installed for your
+platform from one of the `@relayrunner/cli-<os>-<cpu>` packages.
 Releases go out through changesets; see [.changeset/README.md](../../.changeset/README.md).

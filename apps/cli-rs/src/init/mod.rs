@@ -6,8 +6,7 @@
 //!   relayrunner init --plan [--json]   list every job with its verdict; changes nothing
 //!   relayrunner init --apply <jobs>    route those jobs without prompting (`all` = every ready job)
 //!
-//! `--plan --json` and `--apply` are what an agent setting up RelayRunner drives. A port of
-//! apps/cli/init.ts.
+//! `--plan --json` and `--apply` are what an agent setting up RelayRunner drives.
 
 mod diff;
 mod repo;

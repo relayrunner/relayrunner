@@ -1,6 +1,6 @@
 //! `relayrunner` in Rust: `connect` (with sign-in, runner install and updates, and VMs), `init`,
 //! `login`, `whoami`, `pause`, `resume`, `share`, `workspaces` and `firewall`. It shares
-//! ~/.relayrunner with the TypeScript CLI.
+//! ~/.relayrunner with older (TypeScript) versions.
 
 mod api;
 mod connect;

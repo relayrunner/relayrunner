@@ -1,6 +1,6 @@
 //! `relayrunner whoami`: asks the gateway who the saved machine token belongs to
 //! (GET /api/machines/me). Only reads: a revoked token is reported, not deleted, since the next
-//! `connect` replaces it. A port of apps/cli/whoami.ts and whoamiCommand in cli.ts.
+//! `connect` replaces it.
 
 use crate::api::{self, Reply};
 use crate::credentials::{self, Credentials};

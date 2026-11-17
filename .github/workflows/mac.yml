@@ -22,15 +22,10 @@ jobs:
       - uses: actions/checkout@v5
         with:
           persist-credentials: false
-      - uses: pnpm/action-setup@v6
+      # build-app.sh reads versions with Node and builds the CLI with Rust.
       - uses: actions/setup-node@v6
         with:
           node-version-file: .nvmrc
-          cache: pnpm
-      - run: pnpm install --frozen-lockfile --filter relayrunner...
-      - uses: oven-sh/setup-bun@v2
-        with:
-          bun-version: 1.4.4
       - run: swift test
         working-directory: apps/mac
       - run: bash apps/mac/scripts/build-app.sh

@@ -1,4 +1,4 @@
-//! What a person sees: the same look as the TypeScript CLI's @clack/prompts output (a bar down the
+//! What a person sees: the look of @clack/prompts output (a bar down the
 //! left with a symbol per line), a pick-one prompt, and a spinner. Output goes to stderr when
 //! stdout carries `--events`, and is coloured only on a terminal without NO_COLOR.
 

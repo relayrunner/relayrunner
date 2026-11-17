@@ -1,5 +1,5 @@
-//! Signs this computer in as a machine with the browser device-code flow. A port of
-//! apps/cli/login.ts: get a code, wait for approval, then trade the session for a machine token.
+//! Signs this computer in as a machine with the browser device-code flow: get a code, wait
+//! for approval, then trade the session for a machine token.
 
 use crate::api::{self, Reply};
 use crate::credentials::{Credentials, Machine};

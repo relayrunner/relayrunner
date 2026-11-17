@@ -45,7 +45,7 @@ jobs:
       # A changeset naming anything but the CLI or the Mac app would stop the
       # Release workflow after merge, so catch it here.
       - run: pnpm changeset:lint
-      # The Rust build of the CLI, which npm ships and the Mac menu bar app bundles.
+      # The CLI, which npm ships and the Mac menu bar app bundles.
       - name: Test the Rust CLI
         working-directory: apps/cli-rs
         run: |
@@ -57,11 +57,3 @@ jobs:
       # through the launcher with scripts/smoke-cli-binary.sh.
       - name: Verify npm packages
         run: bash scripts/smoke-npm-package.sh
-      # The single-file Bun build of the TypeScript CLI.
-      - uses: oven-sh/setup-bun@v2
-        with:
-          bun-version: 1.4.4
-      - name: Verify compiled CLI
-        run: |
-          bash scripts/build-cli-binary.sh bun-linux-x64
-          bash scripts/smoke-cli-binary.sh apps/cli/dist-bin/relayrunner-linux-x64

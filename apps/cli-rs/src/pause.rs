@@ -1,6 +1,5 @@
 //! `relayrunner pause` and `resume`: stop or start routing jobs to this machine
-//! (POST /api/machines/me/pause|resume). The machine stays connected either way. A port of
-//! apps/cli/pause.ts.
+//! (POST /api/machines/me/pause|resume). The machine stays connected either way.
 
 use crate::api::{self, Reply};
 use crate::credentials::Credentials;

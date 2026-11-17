@@ -1,4 +1,16 @@
-//! `connect --events`: one JSON object per line on stdout. See apps/cli/events.ts for the format.
+//! `connect --events`: for an app that runs `connect` on someone's behalf, such as the Mac menu bar
+//! app.
+//!
+//! stdout carries one JSON object per line and nothing else: everything `connect` would print for
+//! a person, job output included, goes to stderr instead. Each object has `v` (this format's
+//! version), `at` (an ISO time) and `type`: `sign-in` (the page to approve this machine on and its
+//! code), `machine` (once signed in), what the connection reports (`connecting`, `connected`,
+//! `run`, `job`, `paused` and so on), `state` (the machine's state after each of those),
+//! `job-repo`, `offline` and `error`. stdin takes one command per line: `pause` or `resume`.
+//!
+//! To go offline the way Ctrl-C does, start `connect` in its own process group and send that group
+//! SIGINT (a second one exits on the spot). Closing stdin goes offline too, for when the app quits
+//! or crashes, and lets a running job finish.
 
 use serde_json::{Value, json};
 use std::io::Write;

@@ -1,5 +1,4 @@
-//! Checks the JIT config in a `run` message before run.sh gets it. A port of
-//! apps/cli/jit-config.ts: same rules, same reasons.
+//! Checks the JIT config in a `run` message before run.sh gets it.
 
 use base64::Engine;
 use serde::de::{Deserialize, Deserializer, MapAccess, SeqAccess, Visitor};

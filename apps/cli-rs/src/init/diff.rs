@@ -1,5 +1,5 @@
 //! A small unified diff for showing `init`'s edits before writing them. Workflow files are short,
-//! so a plain longest-common-subsequence table is fast enough. A port of apps/cli/diff.ts.
+//! so a plain longest-common-subsequence table is fast enough.
 
 pub fn unified(before: &str, after: &str, file: &str) -> String {
     const CONTEXT: usize = 2;

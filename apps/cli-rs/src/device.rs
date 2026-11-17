@@ -1,4 +1,4 @@
-//! What kind of device this is, for `hello`. A port of apps/cli/device.ts: best effort, each part
+//! What kind of device this is, for `hello`: best effort, each part
 //! from a file or a quick command, and anything unreadable left out.
 
 use crate::protocol::Device;

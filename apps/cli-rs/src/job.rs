@@ -1,5 +1,5 @@
 //! Runs the job a `run` message hands the machine: on this machine in a slot's copy of
-//! actions/runner, or in a VM. A port of apps/cli/job.ts.
+//! actions/runner, or in a VM.
 
 use crate::connection::{Report, Run};
 use crate::events;
@@ -210,8 +210,8 @@ async fn clean(dir: &Path) {
     .await;
 }
 
-/// A symlink to our pid, the same lock the TypeScript CLI takes. A lock left by a process that
-/// has exited is taken over.
+/// A symlink to our pid, the same lock older (TypeScript) versions take. A lock left by a process
+/// that has exited is taken over.
 pub fn take_lock(lock: &Path) -> bool {
     for _ in 0..2 {
         match std::os::unix::fs::symlink(std::process::id().to_string(), lock) {

@@ -1,6 +1,5 @@
 //! What a running `connect` shows outside its log: the terminal tab's title, kept to the
-//! machine's live state, and the keys it answers to (`p` pauses or resumes). A port of
-//! apps/cli/live.ts.
+//! machine's live state, and the keys it answers to (`p` pauses or resumes).
 
 use crate::ui::{self, RawMode};
 use std::io::{IsTerminal, Read};

@@ -34,13 +34,13 @@ The API answers every failure with a code from `@relayrunner/errors`: `throw new
 
 ## Releasing the CLI
 
-The `relayrunner` npm package (`apps/cli`) is released with [changesets](https://github.com/changesets/changesets). A PR that changes what the CLI does for people who install it adds a `.changeset/*.md` file (`pnpm changeset`) naming `"relayrunner"`. A PR that changes the Mac app (`apps/mac`) names `"@relayrunner/mac"`, which has its own version; those are the only two names a changeset may use. Merging it makes the Release workflow open a `chore: version packages` PR, and merging that one publishes the CLI to npm (the Mac app ships with `apps/mac/scripts/release.sh`). Don't bump either `package.json` version by hand. See [.changeset/README.md](.changeset/README.md).
+The `relayrunner` npm package (`apps/cli`, a launcher for the Rust CLI in `apps/cli-rs`) is released with [changesets](https://github.com/changesets/changesets). A PR that changes what the CLI does for people who install it adds a `.changeset/*.md` file (`pnpm changeset`) naming `"relayrunner"`. A PR that changes the Mac app (`apps/mac`) names `"@relayrunner/mac"`, which has its own version; those are the only two names a changeset may use. Merging it makes the Release workflow open a `chore: version packages` PR, and merging that one publishes the CLI to npm (the Mac app ships with `apps/mac/scripts/release.sh`). Don't bump either `package.json` version by hand. See [.changeset/README.md](.changeset/README.md).
 
 ## Agent skills
 
 The `security-audit` skill from [cloudflare/security-audit-skill](https://github.com/cloudflare/security-audit-skill) is a project default, listed under `skills` in `package.json` and pinned in `skills-lock.json`. Load it for a security audit, a vulnerability review, or a pen test. The canonical copy lives in `.agents/skills`, which Codex, Cursor, and Grok read directly; Claude Code reads it through the `.claude/skills/security-audit` symlink. Don't edit the vendored files by hand, since oxfmt and Oxlint skip them to keep them byte-identical to the lock. Update with `npx skills update`.
 
-The skills in `skills/` are for people who use RelayRunner, not for working on this repo; they install with `npx skills add relayrunner/relayrunner`. When you change a CLI command or flag, the relay version, or the MCP tools, update the matching skill in the same PR. `apps/cli/skills.test.ts` (relay version) and `apps/agents/src/skill.test.ts` (MCP tools) catch the most likely drift.
+The skills in `skills/` are for people who use RelayRunner, not for working on this repo; they install with `npx skills add relayrunner/relayrunner`. When you change a CLI command or flag, the relay version, or the MCP tools, update the matching skill in the same PR. `skills_show_the_relay_version_init_writes` in `apps/cli-rs/src/init/workflows.rs` (relay version) and `apps/agents/src/skill.test.ts` (MCP tools) catch the most likely drift.
 
 ## Preview URLs and admin views
 

@@ -1,6 +1,6 @@
 import Foundation
 
-/// One line of `relayrunner connect --events` (apps/cli/events.ts).
+/// One line of `relayrunner connect --events` (apps/cli-rs/src/events.rs).
 public enum Event: Equatable {
   /// The page to approve this Mac on, and the code it shows.
   case signIn(url: URL, code: String)

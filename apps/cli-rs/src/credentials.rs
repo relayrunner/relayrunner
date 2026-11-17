@@ -1,4 +1,4 @@
-//! ~/.relayrunner/machine.json, shared with the TypeScript CLI. A port of apps/cli/credentials.ts.
+//! ~/.relayrunner/machine.json, shared with older (TypeScript) versions.
 
 use serde::{Deserialize, Serialize};
 use serde_json::Value;

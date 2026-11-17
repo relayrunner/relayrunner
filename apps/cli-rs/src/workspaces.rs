@@ -1,5 +1,5 @@
 //! `relayrunner workspaces [list|add|remove]`: which of its owner's workspaces this machine runs
-//! jobs in. A port of apps/cli/machine-workspaces.ts and workspaces-command.ts.
+//! jobs in.
 
 use crate::api::{self, Reply};
 use crate::credentials::Credentials;

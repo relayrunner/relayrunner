@@ -1,4 +1,4 @@
-//! How much CPU and memory a job uses, sampled while its runner runs. A port of apps/cli/usage.ts.
+//! How much CPU and memory a job uses, sampled while its runner runs.
 
 use crate::protocol::JobUsage;
 use crate::sys;

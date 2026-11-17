@@ -1,6 +1,6 @@
 //! `relayrunner firewall [on|off]`: a firewall on the Mac for isolated jobs. It keeps every job VM
 //! off this Mac and the local network, using macOS's own packet filter (pf), from outside the VM
-//! where no job can reach it. A port of apps/cli/firewall.ts.
+//! where no job can reach it.
 //!
 //! `on` installs two files with `sudo` and `off` removes them: the rules, and a LaunchDaemon that
 //! loads them at startup and again every few minutes, in case something else reloaded pf.

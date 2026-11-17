@@ -53,7 +53,7 @@ keep a copy (`generate_keys -x <file>` exports it).
 ## How it works
 
 The app starts `relayrunner connect --events` in its own process group and reads one JSON event
-per line from its stdout (see `apps/cli/events.ts`). It sends `pause` and `resume` on stdin and
+per line from its stdout (see `apps/cli-rs/src/events.rs`). It sends `pause` and `resume` on stdin and
 stops it with SIGINT to the group, as Ctrl-C does in a terminal. What `connect` would print for a
 person goes to `~/.relayrunner/app.log`, which Show Log opens.
 

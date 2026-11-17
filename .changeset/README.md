@@ -1,6 +1,6 @@
 # Changesets
 
-Pending releases of the `relayrunner` npm package (the CLI in `apps/cli`) and of
+Pending releases of the `relayrunner` npm package (the CLI: `apps/cli` on npm, built from `apps/cli-rs`) and of
 `@relayrunner/mac`, the Mac app in `apps/mac`, which has its own version.
 
 ## Adding a changeset

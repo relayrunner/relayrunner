@@ -1,5 +1,4 @@
 //! Downloads GitHub's actions/runner once per version and checks its SHA-256 before unpacking.
-//! A port of apps/cli/install.ts and slots.ts.
 
 use crate::error::Error;
 use serde_json::Value;

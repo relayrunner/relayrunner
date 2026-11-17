@@ -119,7 +119,8 @@ This is a pnpm workspace. The apps are deployed as Cloudflare Workers, except th
 | [`apps/web`](apps/web)           | The dashboard, a React SPA that reaches the API over a service binding.                     |
 | [`apps/webhooks`](apps/webhooks) | Verifies GitHub webhook deliveries and queues them for the API.                             |
 | [`apps/agents`](apps/agents)     | The MCP server agents connect to, read-only, at agents.relayrunner.app/mcp.                 |
-| [`apps/cli`](apps/cli)           | The `relayrunner` CLI that connects a machine to a workspace.                               |
+| [`apps/cli-rs`](apps/cli-rs)     | The `relayrunner` CLI, in Rust, that connects a machine to a workspace.                     |
+| [`apps/cli`](apps/cli)           | The `relayrunner` npm package: a launcher for the CLI's binary, and the CLI's docs.         |
 | [`apps/site`](apps/site)         | The public site at [relayrunner.app](https://relayrunner.app): landing page and docs.       |
 
 | Package                                                  | What it is                                                             |
@@ -151,6 +152,8 @@ pnpm check
 - `pnpm test` runs the Vitest suite once; `pnpm test:watch` reruns affected tests as files change.
 
 Write code in TypeScript and put tests next to the code they cover, as `*.test.ts` or `*.test.mts`. `pnpm install` sets up a Husky pre-commit hook that runs Oxlint and oxfmt on staged files and then type checks. In VS Code or Cursor, install the recommended Oxc extension to format on save.
+
+The CLI (`apps/cli-rs`) needs Rust (rustup); `cargo test` there runs its tests, and `pnpm relayrunner` runs it.
 
 To run the stack locally, start the API and the dashboard (see [`apps/api`](apps/api#run-it-locally) and [`apps/web`](apps/web#develop)).
 

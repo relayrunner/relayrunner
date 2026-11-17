@@ -1,5 +1,4 @@
-// The CLI's version is apps/cli/package.json's, so the TypeScript and Rust builds of one commit
-// say the same version to the gateway and in `--version`.
+// The CLI's version is apps/cli/package.json's: the npm package's, which changesets bumps.
 fn main() {
     let path = "../cli/package.json";
     println!("cargo:rerun-if-changed={path}");

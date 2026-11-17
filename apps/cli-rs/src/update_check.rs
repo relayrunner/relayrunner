@@ -1,6 +1,6 @@
 //! Tells someone at the terminal when npm has a newer relayrunner. It asks the npm registry at
 //! most once a day and keeps the answer in <home>/update-check.json, so most runs read a file and
-//! never touch the network. Any failure means no notice. A port of apps/cli/update-check.ts.
+//! never touch the network. Any failure means no notice.
 
 use serde::{Deserialize, Serialize};
 use std::time::{Duration, SystemTime, UNIX_EPOCH};

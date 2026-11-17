@@ -1,5 +1,5 @@
-//! Who can run jobs on this machine: `relayrunner share`, `connect --share`. A port of
-//! apps/cli/share.ts. The CLI says only-me and anyone; the gateway stores only_me and anyone.
+//! Who can run jobs on this machine: `relayrunner share`, `connect --share`. The CLI says only-me
+//! and anyone; the gateway stores only_me and anyone.
 
 use crate::api::{self, Reply};
 use crate::credentials::Credentials;

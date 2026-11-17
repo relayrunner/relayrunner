@@ -1,6 +1,5 @@
 //! The checkout `relayrunner init` runs in: its root, its workflow files, and which GitHub repo
-//! `origin` points at and whether that repo is public. Nothing here needs a GitHub sign-in. A
-//! port of apps/cli/repo.ts.
+//! `origin` points at and whether that repo is public. Nothing here needs a GitHub sign-in.
 
 use super::workflows::WorkflowFile;
 use std::path::{Path, PathBuf};

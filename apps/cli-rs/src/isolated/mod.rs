@@ -1,6 +1,6 @@
 //! Isolated jobs: each job runs in its own Linux VM with Apple's `container` tool, from GitHub's
-//! runner image with nothing of the Mac mounted. A port of apps/cli/isolated.ts. The start script
-//! and Dockerfile match the TypeScript CLI's byte for byte, so both use the same job images.
+//! runner image with nothing of the Mac mounted. The start script and
+//! Dockerfile match older (TypeScript) versions' byte for byte, so images they built are reused.
 
 use crate::error::Error;
 use sha2::{Digest, Sha256};
@@ -537,8 +537,8 @@ mod tests {
     use super::*;
 
     #[test]
-    fn job_images_match_the_typescript_cli() {
-        // From apps/cli/isolated.ts's jobImage() for the same base.
+    fn job_images_match_older_versions() {
+        // The tags older (TypeScript) versions gave the same base, so their images are reused.
         let base = "ghcr.io/actions/actions-runner:2.330.0";
         assert_eq!(job_image(base, true), "relayrunner-runner:3d4e65219708");
         assert_eq!(job_image(base, false), "relayrunner-runner:2bc0e1cc2f65");

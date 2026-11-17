@@ -1,5 +1,5 @@
-//! Keeps the machine connected to the gateway. A port of apps/cli/connection.ts: hello, status
-//! heartbeat, `run` into a free slot, token rotation, close codes, backoff with jitter.
+//! Keeps the machine connected to the gateway: hello, status heartbeat, `run`
+//! into a free slot, token rotation, close codes, backoff with jitter.
 
 use crate::credentials::{self, Credentials};
 use crate::events;

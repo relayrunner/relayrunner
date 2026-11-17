@@ -1,5 +1,4 @@
-//! Calls to the gateway's HTTP API with the machine token, and the reasons they fail, as in
-//! apps/cli/api-error.ts.
+//! Calls to the gateway's HTTP API with the machine token, and the reasons they fail.
 
 use crate::credentials::{self, Credentials};
 use serde_json::Value;

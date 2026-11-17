@@ -1,7 +1,7 @@
 //! What `relayrunner init` knows about a repo's workflows: which jobs can route through the relay,
-//! which already do, and which it leaves alone and why. Then the edit itself. A port of
-//! apps/cli/workflows.ts, with one difference: the edit works on the file's lines, so everything
-//! it doesn't add or change stays byte for byte, and it checks that the result reads back routed.
+//! which already do, and which it leaves alone and why. Then the edit itself,
+//! which works on the file's lines, so everything it doesn't add or change stays byte for byte,
+//! and it checks that the result reads back routed.
 //!
 //! A routed job gets a relay job in front of it, the reusable workflow in relayrunner/actions,
 //! and runs wherever the relay answers:
@@ -18,8 +18,8 @@
 use serde::Serialize;
 use yaml_rust2::{Yaml, YamlLoader, yaml::Hash};
 
-/// The relay version `init` writes. Bump it with each relayrunner/actions release, as in
-/// apps/cli/workflows.ts.
+/// The relay version `init` writes. Bump it with each relayrunner/actions release, along with the
+/// skills and agent guide that show it (a test checks them).
 pub const RELAY_REF: &str = "v1.0.0-beta.6";
 pub const RELAY_WORKFLOW: &str = "relayrunner/actions/.github/workflows/relay.yml";
 
@@ -770,11 +770,43 @@ mod tests {
         format!("on: push\njobs:\n  test:\n{body}")
     }
 
-    /// The TypeScript CLI writes the same relay and knows the same providers.
+    /// The agent skills (skills/, installed with `npx skills add relayrunner/relayrunner`) and the
+    /// agent guide show the relay version for hand-routed jobs. Keep it the one init writes.
     #[test]
-    fn matches_the_typescript_cli() {
-        let cli = include_str!("../../../cli/workflows.ts");
-        assert!(cli.contains(&format!("RELAY_REF = \"{RELAY_REF}\"")));
+    fn skills_show_the_relay_version_init_writes() {
+        fn markdown(dir: &std::path::Path, files: &mut Vec<std::path::PathBuf>) {
+            for entry in std::fs::read_dir(dir).unwrap() {
+                let path = entry.unwrap().path();
+                if path.is_dir() {
+                    markdown(&path, files);
+                } else if path.extension().is_some_and(|ext| ext == "md") {
+                    files.push(path);
+                }
+            }
+        }
+        let repo = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../..");
+        let mut files = vec![repo.join("docs/agent-install.md")];
+        markdown(&repo.join("skills"), &mut files);
+        for path in files {
+            let text = std::fs::read_to_string(&path).unwrap();
+            for marker in ["relay.yml@", "\"relay\": \""] {
+                for (at, _) in text.match_indices(marker) {
+                    let rest = &text[at + marker.len()..];
+                    let end = rest
+                        .find(|c: char| !(c.is_alphanumeric() || "._-".contains(c)))
+                        .unwrap_or(rest.len());
+                    let version = &rest[..end];
+                    if version.starts_with('v') {
+                        assert_eq!(version, RELAY_REF, "{}", path.display());
+                    }
+                }
+            }
+        }
+    }
+
+    /// The hosted providers match @relayrunner/providers.
+    #[test]
+    fn knows_the_same_providers_as_the_providers_package() {
         let providers = include_str!("../../../../packages/providers/src/index.ts");
         let table = providers
             .split_once("LABEL_PREFIXES")
@@ -970,7 +1002,6 @@ jobs:
       - run: npm run build
 ";
 
-    /// The same output as the TypeScript test in apps/cli/workflows.test.ts.
     #[test]
     fn adds_a_relay_in_front_of_each_job() {
         let jobs = judge(SOURCE, "macos", false);

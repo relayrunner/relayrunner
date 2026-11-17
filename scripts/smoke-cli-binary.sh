@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Checks a compiled CLI (scripts/build-cli-binary.sh) runs, and that `connect --events` keeps
+# Checks a build of the CLI (apps/cli-rs) runs, and that `connect --events` keeps
 # stdout to JSON lines: here, the one error it stops with when it can't reach a gateway.
 set -euo pipefail
 

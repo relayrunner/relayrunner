@@ -1,6 +1,6 @@
 # @relayrunner/errors
 
-Every error code the API can return, and the one shape it returns them in. Used by [`apps/api`](../../apps/api) (which throws them), [`apps/web`](../../apps/web), [`apps/agents`](../../apps/agents) and [`apps/cli`](../../apps/cli) (which read them), and [`apps/site`](../../apps/site) (the [Errors](https://relayrunner.app/docs/reference/errors) page and the OpenAPI enum).
+Every error code the API can return, and the one shape it returns them in. Used by [`apps/api`](../../apps/api) (which throws them), [`apps/web`](../../apps/web) and [`apps/agents`](../../apps/agents) (which read them), and [`apps/site`](../../apps/site) (the [Errors](https://relayrunner.app/docs/reference/errors) page and the OpenAPI enum).
 
 ## What's in it
 

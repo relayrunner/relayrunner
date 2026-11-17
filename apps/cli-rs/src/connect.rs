@@ -1,6 +1,5 @@
 //! `relayrunner connect`: signs in when needed, gets the runner (and the VMs) ready, and keeps the
-//! machine online, and `relayrunner login`. A port of connectCommand, connectMachine and
-//! loginCommand in apps/cli/cli.ts.
+//! machine online, and `relayrunner login`.
 
 use crate::connection::{self, End, Report, Run, RunJob};
 use crate::credentials::{self, Credentials};
@@ -783,7 +782,7 @@ struct UpdateContext {
 }
 
 /// Every few hours, sets up a newer actions/runner between jobs: GitHub stops sending jobs to a
-/// runner about 30 days after a newer release. A port of apps/cli/runner-update.ts.
+/// runner about 30 days after a newer release.
 async fn keep_runner_updated(ctx: UpdateContext) {
     let mut due = tokio::time::Instant::now() + RUNNER_CHECK;
     let mut wait = RUNNER_CHECK;
