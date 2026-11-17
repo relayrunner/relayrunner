@@ -187,15 +187,6 @@ export const PLANS: Partial<Record<ProviderId, ProviderPlans>> = {
     source: "https://latchkey.dev/pricing",
     checked: "2026-11-17",
   },
-  vitko: {
-    plans: [{ name: "Private beta", feeUsd: 0, included: "2,000 min a month" }],
-    note: "In private beta: jobs start once Vitko onboards your organization. Needs GitHub Team or Enterprise, and runs private repositories only.",
-    platforms: ["x64"],
-    connectUrl: "https://runners.vitko.inc/#join",
-    perMinute: 0.002,
-    source: "https://runners.vitko.inc",
-    checked: "2026-11-17",
-  },
   berrybox: {
     plans: [
       { name: "Pay as you go", feeUsd: 0, included: "None" },

@@ -14,7 +14,6 @@ describe("plans", () => {
       "monkci",
       "runloft",
       "latchkey",
-      "vitko",
       "berrybox",
       "celesto",
       "instabox",
@@ -39,7 +38,7 @@ describe("plans", () => {
     expect(twoVcpuMinute("depot")).toBeCloseTo(0.006);
     expect(twoVcpuMinute("boat")).toBeCloseTo(0.0003);
     expect(twoVcpuMinute("namespace")).toBe(0.003);
-    expect(twoVcpuMinute("vitko")).toBe(0.002);
+    expect(twoVcpuMinute("berrybox")).toBe(0.002);
     expect(twoVcpuMinute("runjob")).toBeNull();
     expect(twoVcpuMinute("other")).toBeNull();
   });

@@ -43,8 +43,8 @@ describe("provider catalog", () => {
     expect(of("puzl-ubuntu-latest")).toBe("runjob");
     expect(of("runjob-any")).toBe("runjob");
     expect(of("berrybox-2vcpu-ubuntu-2404")).toBe("berrybox");
-    const vitko = BASE_CATALOG.find((p) => p.id === "vitko")!;
-    expect(vitko).toMatchObject({ status: "live", featured: false, prefixes: ["vitko-"] });
+    const berrybox = BASE_CATALOG.find((p) => p.id === "berrybox")!;
+    expect(berrybox).toMatchObject({ status: "live", featured: false, prefixes: ["berrybox-"] });
   });
 
   test("an Off provider matches nothing, and a provider in code can only be hidden", () => {
