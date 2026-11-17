@@ -18,7 +18,6 @@ export const PROVIDER_IDS = [
   "berrybox",
   "celesto",
   "instabox",
-  "runjob",
   "github",
   "cloudflare",
   "other",
@@ -183,16 +182,6 @@ export const PROVIDERS: Record<ProviderId, ProviderInfo> = {
     dashboardUrl: "https://instabox.sh",
     docsUrl: "https://instabox.sh/docs/use-cases/ci",
   },
-  runjob: {
-    name: "RunJob",
-    summary: "Linux runners for GitHub Actions in microVMs, billed by the CPU and memory used.",
-    labels: "puzl-*, runjob-*",
-    example: "puzl-ubuntu-latest",
-    setup:
-      "Sign up for RunJob and install its GitHub App from the dashboard's GitHub Integrations.",
-    dashboardUrl: "https://runjob.eu",
-    docsUrl: "https://runjob.eu/docs",
-  },
   github: {
     name: "GitHub",
     summary: "GitHub's own hosted runners, billed per minute in private repos.",
@@ -263,7 +252,6 @@ export const LISTED_PROVIDER_IDS = [
   "berrybox",
   "celesto",
   "instabox",
-  "runjob",
 ] as const satisfies readonly ProviderId[];
 
 export type ListedProviderId = (typeof LISTED_PROVIDER_IDS)[number];
@@ -277,7 +265,6 @@ export const LISTED_LABEL_PREFIXES: Record<ListedProviderId, string[]> = {
   berrybox: ["berrybox-"],
   celesto: ["celesto-"],
   instabox: ["instabox-"],
-  runjob: ["puzl-", "runjob-"],
 };
 
 /** Whether a lowercase label starts with one of `prefixes`, or is the bare name one ends in `-`. */

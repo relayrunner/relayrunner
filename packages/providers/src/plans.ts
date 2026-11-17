@@ -226,29 +226,6 @@ export const PLANS: Partial<Record<ProviderId, ProviderPlans>> = {
     source: "https://instabox.sh/docs/pricing",
     checked: "2026-11-17",
   },
-  runjob: {
-    plans: [
-      {
-        name: "Free",
-        feeUsd: 0,
-        included: "400 vCPU min and 800 GB min a month",
-        limits: "12 vCPU, 10 jobs at once",
-      },
-      {
-        name: "Business",
-        feeUsd: 58,
-        included: "2,000 vCPU min and 4,000 GB min a month",
-        limits: "48 vCPU, no limit",
-      },
-      { name: "Enterprise", feeUsd: null, included: "Custom", limits: "Custom" },
-    ],
-    limitsLabel: "Per job",
-    note: "Priced in euros: Business is €50 a month. Usage past the plan is billed by the CPU and memory a job actually uses. GitHub organizations only.",
-    platforms: ["x64"],
-    connectUrl: "https://ui.auth.runjob.eu/sign-up",
-    source: "https://runjob.eu",
-    checked: "2026-11-17",
-  },
   github: {
     plans: [
       { name: "Free", included: "$12 a month, about 2,000 Linux min" },

@@ -40,8 +40,6 @@ describe("provider catalog", () => {
     const of = (label: string) => catalogProviderOf(BASE_CATALOG, [label])?.id;
     expect(of("starsling-ubuntu-24.04-2")).toBe("starsling");
     expect(of("celesto")).toBe("celesto");
-    expect(of("puzl-ubuntu-latest")).toBe("runjob");
-    expect(of("runjob-any")).toBe("runjob");
     expect(of("berrybox-2vcpu-ubuntu-2404")).toBe("berrybox");
     const berrybox = BASE_CATALOG.find((p) => p.id === "berrybox")!;
     expect(berrybox).toMatchObject({ status: "live", featured: false, prefixes: ["berrybox-"] });
