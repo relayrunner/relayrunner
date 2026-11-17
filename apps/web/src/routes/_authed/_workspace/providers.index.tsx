@@ -1,13 +1,24 @@
+import {
+  type Platform,
+  providerPlans,
+  RUNNER_CLOUD_IDS,
+  startsAt,
+  twoVcpuMinute,
+} from "@relayrunner/providers";
 import { createFileRoute, Link } from "@tanstack/react-router";
+import { ArrowUpRightIcon } from "lucide-react";
+import { useState } from "react";
 import { Count } from "@/components/count";
 import { SectionBoundary } from "@/components/error-boundary";
 import { PageHeader } from "@/components/page-header";
+import { perMinuteText } from "@/components/provider-plans";
 import { ProviderMark } from "@/components/providers";
-import { RangePicker } from "@/components/range-picker";
+import { OptionPicker, RangePicker } from "@/components/range-picker";
+import { Button } from "@/components/ui/button";
 import { DataTable, dataTableColumns, NUM } from "@/components/ui/data-table";
 import { authDisabled } from "@/lib/auth-client";
 import { medianText, p90Text, plural } from "@/lib/job-times";
-import { providerCatalog, providerInfo } from "@/lib/provider-catalog";
+import { isKnownProvider, providerInfo } from "@/lib/provider-catalog";
 import {
   dayRanges,
   rangeParam,
@@ -49,8 +60,8 @@ function ProvidersPage() {
   const setSearch = useSetSearch<Search>();
   const overview: ProvidersOverview = useRangeReport(Route.useLoaderData(), days, load);
   const used = new Set(overview.providers.map((p) => p.provider));
-  // Only providers a job can ask for by name: "Other" has no runs-on example to set up.
-  const unused = providerCatalog().filter((p) => p.example && !used.has(p.id));
+  // Third-party runner clouds you add with their own GitHub App and a label, not used here yet.
+  const unused = RUNNER_CLOUD_IDS.filter((id) => isKnownProvider(id) && !used.has(id));
 
   function chooseRange(next: number) {
     setSearch({ days: unlessDefault(next, DEFAULT_DAYS) });
@@ -59,8 +70,8 @@ function ProvidersPage() {
   return (
     <section>
       <PageHeader title="Providers">
-        Where your jobs run, and what each place costs. Pick one to see its runner types, setup and
-        busiest workflows.
+        Where your jobs run, and what each place costs. Add a runner cloud by connecting its GitHub
+        App, then use its label in <code>runs-on</code>.
       </PageHeader>
       <div className="grid max-w-5xl gap-8">
         <div className="grid gap-3">
@@ -75,42 +86,28 @@ function ProvidersPage() {
             </p>
           ) : (
             <SectionBoundary>
-              <InUse overview={overview} />
+              <DataTable
+                columns={inUseColumns}
+                data={overview.providers}
+                getRowId={(row) => row.provider}
+                initialSorting={[{ id: "jobs", desc: true }]}
+                rowHeight={53}
+              />
             </SectionBoundary>
           )}
         </div>
 
-        {unused.length > 0 && (
-          <div className="grid gap-3">
-            <h2 className="font-semibold">Not used yet</h2>
-            <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
-              {unused.map(({ id: provider, name, summary }) => (
-                <Link
-                  key={provider}
-                  to="/providers/$provider"
-                  params={{ provider }}
-                  className="group flex flex-col gap-2.5 rounded-xl border bg-card p-4 transition-colors hover:border-foreground/25"
-                >
-                  <span className="flex items-center gap-2.5 font-medium group-hover:underline">
-                    <ProviderMark provider={provider} className="size-7 rounded-md" />
-                    {name}
-                  </span>
-                  <p className="flex-1 text-sm text-muted-foreground">{summary}</p>
-                  <span className="text-sm font-medium">How to set up</span>
-                </Link>
-              ))}
-            </div>
-          </div>
-        )}
+        {unused.length > 0 && <AddRunnerCloud ids={unused} />}
 
         <p className="max-w-3xl text-xs text-muted-foreground">
-          Your own machines and other self-hosted runners stay on{" "}
+          Est. cost is at list prices before any included minutes (checked {overview.pricesChecked}
+          ), with GitHub's standard runners free in public repos. Starts at is each runner cloud's
+          cheapest plan; its page lists them all. Your own machines and other self-hosted runners
+          stay on{" "}
           <Link to="/runners" className="underline">
             Runners
           </Link>
-          . Labels RelayRunner doesn't recognise land under Other. Costs are estimates at list
-          prices (checked {overview.pricesChecked}), with GitHub's standard runners free in public
-          repos.
+          .
         </p>
       </div>
     </section>
@@ -118,7 +115,7 @@ function ProvidersPage() {
 }
 
 const column = dataTableColumns<ProviderSummary>();
-const columns = column.columns([
+const inUseColumns = column.columns([
   column.accessor((row) => providerInfo(row.provider).name, {
     id: "provider",
     header: "Provider",
@@ -127,9 +124,9 @@ const columns = column.columns([
       <Link
         to="/providers/$provider"
         params={{ provider: row.original.provider }}
-        className="flex w-fit items-center gap-2.5 font-medium hover:underline"
+        className="flex w-fit items-center gap-3 font-medium hover:underline"
       >
-        <ProviderMark provider={row.original.provider} className="size-6 rounded-md" />
+        <ProviderMark provider={row.original.provider} className="size-7 rounded-md" />
         {providerInfo(row.original.provider).name}
       </Link>
     ),
@@ -166,13 +163,123 @@ const columns = column.columns([
   }),
 ]);
 
-function InUse({ overview }: { overview: ProvidersOverview }) {
+const PLATFORM_FILTERS = [
+  { value: "all", label: "All" },
+  { value: "x64", label: "Linux x64" },
+  { value: "arm", label: "Arm" },
+  { value: "mac", label: "macOS" },
+  { value: "win", label: "Windows" },
+] as const satisfies readonly { value: Platform | "all"; label: string }[];
+
+type CloudRow = {
+  id: string;
+  name: string;
+  platforms: readonly Platform[];
+  startsAt: string;
+  perMinute: number | null;
+  connectUrl?: string;
+};
+
+const cloud = dataTableColumns<CloudRow>();
+const cloudColumns = cloud.columns([
+  cloud.accessor("name", {
+    header: "Provider",
+    sortFn: "text",
+    cell: ({ row }) => (
+      <Link
+        to="/providers/$provider"
+        params={{ provider: row.original.id }}
+        className="flex w-fit items-center gap-3 font-medium hover:underline"
+      >
+        <ProviderMark provider={row.original.id} className="size-7 rounded-md" />
+        {row.original.name}
+      </Link>
+    ),
+  }),
+  cloud.display({
+    id: "platforms",
+    header: "Runs on",
+    cell: ({ row }) => (
+      <span className="flex gap-1">
+        {row.original.platforms.map((platform) => (
+          <span
+            key={platform}
+            className="inline-flex h-5 items-center rounded-[5px] border bg-well px-1.5 font-mono text-[11px] text-muted-foreground"
+          >
+            {platform}
+          </span>
+        ))}
+      </span>
+    ),
+  }),
+  cloud.accessor("startsAt", {
+    header: "Starts at",
+    cell: ({ getValue }) => <span className="text-ink-2">{getValue()}</span>,
+  }),
+  cloud.accessor((row) => row.perMinute ?? undefined, {
+    id: "perMinute",
+    header: "Per minute",
+    sortFn: "basic",
+    meta: { ...NUM, info: "A 2 vCPU Linux runner at list price, past any included minutes." },
+    cell: ({ row }) => perMinuteText(row.original.perMinute),
+  }),
+  cloud.display({
+    id: "connect",
+    header: () => <span className="sr-only">Connect</span>,
+    meta: { align: "end" },
+    cell: ({ row }) =>
+      row.original.connectUrl && (
+        <Button asChild size="sm" variant="outline">
+          <a href={row.original.connectUrl} target="_blank" rel="noreferrer">
+            Connect
+            <ArrowUpRightIcon aria-hidden />
+            <span className="sr-only"> {row.original.name} (opens its site)</span>
+          </a>
+        </Button>
+      ),
+  }),
+]);
+
+function AddRunnerCloud({ ids }: { ids: string[] }) {
+  const [platform, setPlatform] = useState<Platform | "all">("all");
+  const rows: CloudRow[] = ids.flatMap((id) => {
+    const plans = providerPlans(id);
+    if (!plans || (platform !== "all" && !plans.platforms.includes(platform))) return [];
+    return [
+      {
+        id,
+        name: providerInfo(id).name,
+        platforms: plans.platforms,
+        startsAt: startsAt(plans),
+        perMinute: twoVcpuMinute(id),
+        connectUrl: plans.connectUrl,
+      },
+    ];
+  });
   return (
-    <DataTable
-      columns={columns}
-      data={overview.providers}
-      getRowId={(row) => row.provider}
-      initialSorting={[{ id: "jobs", desc: true }]}
-    />
+    <div className="grid gap-3">
+      <div className="flex flex-wrap items-end justify-between gap-3">
+        <div className="grid gap-0.5">
+          <h2 className="font-semibold">Add a runner cloud</h2>
+          <p className="text-sm text-muted-foreground">
+            Connect its GitHub App to your organization, then use its label in <code>runs-on</code>.
+          </p>
+        </div>
+        <OptionPicker
+          label="Runs on"
+          options={PLATFORM_FILTERS}
+          value={platform}
+          onChange={setPlatform}
+        />
+      </div>
+      <DataTable
+        columns={cloudColumns}
+        data={rows}
+        getRowId={(row) => row.id}
+        initialSorting={[{ id: "perMinute", desc: false }]}
+        rowHeight={53}
+        empty="None of the runner clouds you haven't used yet run on this platform."
+      />
+    </div>
   );
 }

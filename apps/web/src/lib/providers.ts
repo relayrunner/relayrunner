@@ -102,6 +102,8 @@ const SAMPLE_RUNNERS: Partial<Record<ProviderId, ProviderRunner[]>> = {
     sampleRunner("blacksmith", "blacksmith-8vcpu-ubuntu-2404", "Blacksmith", 281, 365),
   ],
   github: [sampleRunner("github", "ubuntu-latest", "GitHub-hosted", 410, 128)],
+  depot: [sampleRunner("depot", "depot-ubuntu-24.04", "Depot", 96, 400)],
+  ubicloud: [sampleRunner("ubicloud", "ubicloud-standard-2", "Ubicloud", 174, 332)],
   other: [sampleRunner("other", "gpu-runner", "Self-hosted", 57, 302)],
 };
 

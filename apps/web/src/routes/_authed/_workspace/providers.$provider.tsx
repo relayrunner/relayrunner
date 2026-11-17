@@ -1,9 +1,10 @@
-import { dayMs, type RatePrices } from "@relayrunner/providers";
+import { dayMs, providerPlans, type RatePrices } from "@relayrunner/providers";
 import { Count } from "@/components/count";
 import { createFileRoute, Link, notFound } from "@tanstack/react-router";
 import { ArrowLeftIcon, ArrowUpRightIcon } from "lucide-react";
 import { useState } from "react";
 import { CodeBlock } from "@/components/code-block";
+import { ProviderPlans } from "@/components/provider-plans";
 import { providerStyle, runnerName, runnerSpec, TILE } from "@/components/providers";
 import { RangePicker } from "@/components/range-picker";
 import { StatTile } from "@/components/stat-tile";
@@ -73,6 +74,7 @@ function ProviderView({ first }: { first: ProviderReport }) {
   // Nothing ran here in the widest range: lead with how to start instead of empty numbers.
   const [notSetUp] = useState(first.jobs === 0 && first.days === DEFAULT_DAYS && !!info.example);
   const { icon, tile } = providerStyle(provider);
+  const connectUrl = providerPlans(provider)?.connectUrl;
 
   function chooseRange(next: number) {
     setSearch({ days: unlessDefault(next, DEFAULT_DAYS) });
@@ -97,8 +99,13 @@ function ProviderView({ first }: { first: ProviderReport }) {
           </div>
         </div>
         <div className="flex flex-wrap gap-2">
-          {info.dashboardUrl && (
-            <ExternalLink href={info.dashboardUrl}>Open dashboard</ExternalLink>
+          {/* Before its first job here, the way in is connecting it; after, its dashboard. */}
+          {notSetUp && connectUrl ? (
+            <ExternalLink href={connectUrl}>Connect</ExternalLink>
+          ) : (
+            info.dashboardUrl && (
+              <ExternalLink href={info.dashboardUrl}>Open dashboard</ExternalLink>
+            )
           )}
           {info.docsUrl && <ExternalLink href={info.docsUrl}>Docs</ExternalLink>}
         </div>
@@ -131,6 +138,8 @@ function ProviderView({ first }: { first: ProviderReport }) {
           )}
         </div>
       )}
+
+      <ProviderPlans provider={provider} />
 
       <Prices prices={report.prices} />
 
@@ -359,7 +368,7 @@ function Prices({ prices }: { prices: RatePrices[] }) {
   const now = Date.now();
   return (
     <div className="grid max-w-3xl gap-3">
-      <h2 className="font-semibold">List prices</h2>
+      <h2 className="font-semibold">Machine prices</h2>
       <div className="overflow-x-auto rounded-xl border bg-card">
         <table className="w-full text-sm">
           <tbody>
