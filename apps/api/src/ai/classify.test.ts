@@ -3,7 +3,7 @@ import type { Env } from "../env.ts";
 import * as testing from "../testing.ts";
 import { aiCacheKey, classify, defineClassifier } from "./classify.ts";
 import { purgeExpiredAiAnswers } from "../retention.ts";
-import { AI_DEFAULTS, forgetAiSettings, saveAiSettings, setAiOptIn } from "./settings.ts";
+import { AI_DEFAULTS, forgetAiSettings, saveAiSettings, setWorkspaceAi } from "./settings.ts";
 import { createDb } from "../db/index.ts";
 
 const jobType = defineClassifier({
@@ -56,7 +56,6 @@ async function enable(
       NOW,
     )
     .run();
-  await setAiOptIn(createDb(env.DB), workspaceId, true, null);
 }
 
 const usage = () =>
@@ -78,7 +77,7 @@ beforeEach(async () => {
 });
 
 describe("classify", () => {
-  test("is off until both the global switch is on and the workspace opts in", async () => {
+  test("is off until the global switch is on, and workspaces start on", async () => {
     expect(await classify(env, jobType, workspaceId, { name: "lint", id: 1 }, NOW)).toEqual({
       ok: false,
       reason: "off",
@@ -89,24 +88,19 @@ describe("classify", () => {
       { ...AI_DEFAULTS, enabled: true, features: ["job_type"] },
       op.user.id,
     );
-    expect((await classify(env, jobType, workspaceId, { name: "lint", id: 1 }, NOW)).ok).toBe(
-      false,
-    );
-    expect(run).not.toHaveBeenCalled();
-    // Opting in is enough: no operator row means allowed.
-    await setAiOptIn(createDb(env.DB), workspaceId, true, null);
+    // Workspaces start on, and no operator row means allowed.
     expect((await classify(env, jobType, workspaceId, { name: "lint", id: 1 }, NOW)).ok).toBe(true);
   });
 
-  test("stops when the workspace opts out or an operator blocks it", async () => {
+  test("stops when the workspace turns it off or an operator blocks it", async () => {
     await enable();
     const db = createDb(env.DB);
-    await setAiOptIn(db, workspaceId, false, null);
+    await setWorkspaceAi(db, workspaceId, false, null);
     expect(await classify(env, jobType, workspaceId, { name: "lint", id: 1 }, NOW)).toEqual({
       ok: false,
       reason: "off",
     });
-    await setAiOptIn(db, workspaceId, true, null);
+    await setWorkspaceAi(db, workspaceId, true, null);
     await env.DB.prepare("update workspace_ai_setting set enabled = 0 where workspace_id = ?")
       .bind(workspaceId)
       .run();

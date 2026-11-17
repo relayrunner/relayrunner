@@ -2,7 +2,7 @@ import type { WebhookMessage } from "@relayrunner/github-webhooks";
 import { DEFAULT_RETRY_SETTINGS } from "@relayrunner/runner-order";
 import { and, eq } from "drizzle-orm";
 import { afterEach, beforeAll, describe, expect, test, vi } from "vitest";
-import { AI_DEFAULTS, saveAiSettings, setAiOptIn } from "./ai/settings.ts";
+import { AI_DEFAULTS, saveAiSettings } from "./ai/settings.ts";
 import { createDb, schema } from "./db/index.ts";
 import type { Env } from "./env.ts";
 import {
@@ -399,9 +399,9 @@ describe("retryFailedRun", () => {
       env.AI = undefined;
     });
 
-    // Turns AI on for the workspace, with the model answering `cause` at `confidence` and a
+    // Turns AI on, with the model answering `cause` at `confidence` and a
     // `noul` chance that a re-run passes.
-    async function aiOn({ workspaceId }: Setup, choice: string, confidence: number, noul: number) {
+    async function aiOn(choice: string, confidence: number, noul: number) {
       const run = vi.fn(async () => ({
         answers: {
           cause: { type: "choice", choice, confidence, probabilities: { [choice]: confidence } },
@@ -416,13 +416,12 @@ describe("retryFailedRun", () => {
         { ...AI_DEFAULTS, enabled: true, features: ["failure_cause", "retry_decision"] },
         op.user.id,
       );
-      await setAiOptIn(createDb(env.DB), workspaceId, true, null);
       return run;
     }
 
     test("retries a job the model is sure was flaky", async () => {
       const ws = await setup();
-      const run = await aiOn(ws, "flaky", 0.95, 0.95);
+      const run = await aiOn("flaky", 0.95, 0.95);
       const runId = await failedRun(ws, { ranSteps: true });
       stubGithub({ annotations: ["Process completed with exit code 1."] });
       await retryFailedRun(env, completed(ws, runId));
@@ -433,7 +432,7 @@ describe("retryFailedRun", () => {
 
     test("leaves a failure the model isn't sure about", async () => {
       const ws = await setup();
-      await aiOn(ws, "flaky", 0.74, 0.9);
+      await aiOn("flaky", 0.74, 0.9);
       const runId = await failedRun(ws, { ranSteps: true });
       const calls = stubGithub({ annotations: ["Process completed with exit code 1."] });
       await retryFailedRun(env, completed(ws, runId));
@@ -443,7 +442,7 @@ describe("retryFailedRun", () => {
 
     test("skips a runner that never started when the model is sure a re-run fails", async () => {
       const ws = await setup();
-      await aiOn(ws, "config", 0.95, 0.05);
+      await aiOn("config", 0.95, 0.05);
       const runId = await failedRun(ws);
       const calls = stubGithub({ annotations: ["Unable to resolve action actions/chekout@v9"] });
       await retryFailedRun(env, completed(ws, runId));

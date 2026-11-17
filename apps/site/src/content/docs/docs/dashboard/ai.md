@@ -3,7 +3,7 @@ title: AI
 description: What AI does in RelayRunner, what it reads, and how to turn it on or off.
 ---
 
-AI tells you why a job failed and what each job does. It's off until an owner or admin turns it on for the workspace.
+AI tells you why a job failed and what each job does. It's on for every workspace, and an owner or admin can turn it off.
 
 ## What it does
 
@@ -28,6 +28,6 @@ A decision model called Clef-flash answers. Cloudflare hosts it on Workers AI, t
 ## Turn it on or off
 
 1. Open **Settings → General**. Owners and admins can change it.
-2. Check **Use AI in this workspace**.
+2. Check or clear **Use AI in this workspace**.
 
-Turning it off stops AI right away, and History and Performance go back to how they looked before.
+Turning it off stops AI right away, deletes the answers it saved, and History and Performance go back to how they looked without it.

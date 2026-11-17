@@ -393,17 +393,19 @@ describe("skipping runners that stop picking up jobs", () => {
     expect(bad.status).toBe(400);
   });
 
-  test("AI is off by default, an owner opts in, and members can't change it", async () => {
+  test("AI is on by default, an owner turns it off, and members can't change it", async () => {
     const { cookie } = await signIn();
-    const { workspace, cookie: jar } = await createWorkspace(cookie, "Ai", "ai-opt-in");
+    const { workspace, cookie: jar } = await createWorkspace(cookie, "Ai", "ai-on");
     const read = await request(`${workspace.id}/ai`, jar);
-    expect(await read.json()).toEqual({ since: null });
+    expect(await read.json()).toEqual({ offAt: null });
 
-    const on = await request(`${workspace.id}/ai`, jar, "PUT", { enabled: true });
-    expect(await on.json()).toEqual({ enabled: true });
+    const off = await request(`${workspace.id}/ai`, jar, "PUT", { enabled: false });
+    expect(await off.json()).toEqual({ enabled: false });
     expect(await (await request(`${workspace.id}/ai`, jar)).json()).toMatchObject({
-      since: expect.any(String),
+      offAt: expect.any(String),
     });
+    await request(`${workspace.id}/ai`, jar, "PUT", { enabled: true });
+    expect(await (await request(`${workspace.id}/ai`, jar)).json()).toEqual({ offAt: null });
 
     const member = await testing.joinWorkspace(env, workspace.id, "member");
     const denied = await request(`${workspace.id}/ai`, member.cookie, "PUT", { enabled: false });

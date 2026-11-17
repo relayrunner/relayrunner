@@ -79,8 +79,8 @@ const site = Astro.site!.origin;
           </li>
           <li>We don't keep your source code or your job logs.</li>
           <li>
-            AI features are off until a workspace owner or admin turns them on. The model runs on
-            Cloudflare, which doesn't keep what it reads or train on it.
+            AI features are on by default, and a workspace owner or admin can turn them off. The model
+            runs on Cloudflare, which doesn't keep what it reads or train on it.
           </li>
           <li>
             Email <a href="mailto:privacy@relayrunner.app">privacy@relayrunner.app</a> to get a copy
@@ -143,12 +143,12 @@ const site = Astro.site!.origin;
 
       <h3>AI features</h3>
       <p>
-        If an owner or admin turns on AI for a workspace, we send a model the workspace's workflow,
+        Unless an owner or admin turns off AI for a workspace, we send a model the workspace's workflow,
         job and step names and runner labels, and for failed jobs the last lines of the log and
         GitHub's error annotations. The model, Clef-flash, runs on Cloudflare Workers AI. Cloudflare
         doesn't keep what we send after it answers or use it to train models. We keep only the
-        answer, such as "flaky test". We never send your source code. Turning AI off stops this right
-        away.
+        answer, such as "flaky test". We never send your source code. Turning AI off in Settings ›
+        General stops this right away and deletes the saved answers.
       </p>
 
       <h3>Hosted runners</h3>
@@ -194,7 +194,7 @@ const site = Astro.site!.origin;
       <ul>
         <li>
           <strong>Cloudflare</strong> hosts the service, its database, storage, containers and logs,
-          runs the AI model for workspaces that turn AI on, and sends our email.
+          runs the AI model for workspaces that use AI, and sends our email.
         </li>
         <li>
           <strong>PostHog</strong> (United States) receives the page views and product events

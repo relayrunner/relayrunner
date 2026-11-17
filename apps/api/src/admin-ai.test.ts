@@ -34,7 +34,7 @@ describe("/api/admin/ai", () => {
     expect((await call("", regular.cookie, "PUT", { enabled: true })).status).toBe(403);
   });
 
-  test("runs a test call once AI is on and the workspace opts in, and blocks it", async () => {
+  test("runs a test call once AI is on, and blocks it", async () => {
     const op = await testing.signInOperator(env);
     const { workspace } = await testing.createWorkspace(env, op.cookie, "Acme", "acme-ai");
 
@@ -60,16 +60,6 @@ describe("/api/admin/ai", () => {
       dailyTokens: 10000,
     };
     expect((await call("", op.cookie, "PUT", global)).status).toBe(200);
-    // The workspace's own switch, which its owner (the operator here) turns on.
-    const optIn = await testing.call(
-      env,
-      `/workspaces/${workspace.id}/ai`,
-      op.cookie,
-      { enabled: true },
-      "PUT",
-    );
-    expect(optIn.status).toBe(200);
-
     const on = await call("/test", op.cookie, "POST", {
       workspaceId: workspace.id,
       text: "The build failed on lint",
@@ -83,13 +73,13 @@ describe("/api/admin/ai", () => {
     const after = (await (await call("", op.cookie)).json()) as {
       workspaces: {
         id: string;
-        optInAt: string | null;
+        offAt: string | null;
         setting: unknown;
         usage: { calls: number; tokensToday: number };
       }[];
     };
     const row = after.workspaces.find((w) => w.id === workspace.id)!;
-    expect(row.optInAt).not.toBeNull();
+    expect(row.offAt).toBeNull();
     expect(row.setting).toBeNull();
     expect(row.usage).toMatchObject({ calls: 1, tokensToday: 125 });
 
