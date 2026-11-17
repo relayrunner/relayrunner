@@ -1,0 +1,16 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Written by apps/mac/scripts/release.sh: the newest RelayRunner for Mac, for Sparkle. -->
+<rss version="2.0" xmlns:sparkle="http://www.andymatuschak.org/xml-namespaces/sparkle">
+  <channel>
+    <title>RelayRunner for Mac</title>
+    <item>
+      <title>0.2.0</title>
+      <pubDate>Tue, 17 Nov 2026 01:59:55 +0000</pubDate>
+      <sparkle:version>0.2.0</sparkle:version>
+      <sparkle:shortVersionString>0.2.0</sparkle:shortVersionString>
+      <sparkle:minimumSystemVersion>14.0</sparkle:minimumSystemVersion>
+      <sparkle:releaseNotesLink>https://github.com/relayrunner/relayrunner/releases/tag/mac-v0.2.0</sparkle:releaseNotesLink>
+      <enclosure url="https://github.com/relayrunner/relayrunner/releases/download/mac-v0.2.0/RelayRunner-0.2.0.zip" sparkle:edSignature="gERHQCHY8WbAKOqDWIsdLSZ7i893t5Y9QJCW+BaLJDRd2KP9geAVL/8SBglc+3Z9DmQEBWzRhJ3/uNeLihr4CQ==" length="2806946" type="application/octet-stream"/>
+    </item>
+  </channel>
+</rss>
