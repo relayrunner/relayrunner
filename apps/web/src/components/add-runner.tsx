@@ -33,6 +33,7 @@ import {
   type GitHubRunner,
   type GitHubRunners,
 } from "@/lib/machines";
+import { MacAppButton, MacAppLink, ON_MAC } from "@/components/mac-app";
 import { DOCS_URL } from "@/components/site-footer";
 import { cn } from "@/lib/utils";
 
@@ -88,7 +89,7 @@ export function AddRunner({
             <span className="grid gap-0.5">
               <span>Connect a machine</span>
               <span className="text-xs text-muted-foreground">
-                Run the CLI on a laptop or server.
+                The Mac app or the CLI, on a laptop or server.
               </span>
             </span>
           </DropdownMenuItem>
@@ -492,8 +493,21 @@ function LocalMachineDialog({
           </DialogDescription>
         </DialogHeader>
         <ol className="grid gap-4 text-sm">
-          <Step n={1} title="Run the CLI on the machine">
-            <p className="text-muted-foreground">Needs Node.js 22 or later.</p>
+          <Step
+            n={1}
+            title={ON_MAC ? "Get the Mac app, or run the CLI" : "Run the CLI on the machine"}
+          >
+            {ON_MAC && (
+              <div className="flex flex-wrap items-center gap-2">
+                <MacAppButton />
+                <span className="text-muted-foreground">or, in a terminal:</span>
+              </div>
+            )}
+            {!ON_MAC && (
+              <p className="text-muted-foreground">
+                Needs Node.js 22 or later. On a Mac? <MacAppLink />
+              </p>
+            )}
             <CopyCommand command={CONNECT_COMMAND} />
             <p className="text-muted-foreground">
               On a Mac with Apple silicon, each job runs in its own Linux VM, away from your files.
@@ -510,14 +524,14 @@ function LocalMachineDialog({
           </Step>
           <Step n={2} title="Approve it in your browser">
             <p className="text-muted-foreground">
-              The CLI shows a code and opens this dashboard. Check the code matches, pick the
+              The app or CLI shows a code and opens this dashboard. Check the code matches, pick the
               workspace and a name for the machine, then approve.
             </p>
           </Step>
           <Step n={3} title="Keep it running">
             <p className="text-muted-foreground">
-              The machine shows up on this page as online and picks up jobs one at a time. Press
-              Ctrl-C to take it offline. Later runs reuse the saved sign-in.
+              The machine shows up on this page as online and picks up jobs. Turn the app off, or
+              press Ctrl-C in the terminal, to take it offline. Later runs reuse the saved sign-in.
             </p>
           </Step>
         </ol>

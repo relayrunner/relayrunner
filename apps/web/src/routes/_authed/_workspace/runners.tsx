@@ -26,6 +26,7 @@ import {
   GithubRunnersDialog,
 } from "@/components/add-runner";
 import { SectionBoundary } from "@/components/error-boundary";
+import { MacAppButton, MacAppLink, ON_MAC } from "@/components/mac-app";
 import { PageHeader } from "@/components/page-header";
 import { DOCS_URL } from "@/components/site-footer";
 import { GithubIcon } from "@/components/provider-logos";
@@ -861,11 +862,7 @@ function ConnectLanding({
               on
               icon={<LaptopIcon aria-hidden className="size-5" />}
               name="Your laptop"
-              when={
-                <>
-                  while <code className="font-mono text-ink-2">relayrunner connect</code> is running
-                </>
-              }
+              when={<>while it's connected</>}
             />
           </div>
           <RouteEnd icon={elsewhere.icon} name={elsewhere.name} when={elsewhere.when} />
@@ -873,6 +870,12 @@ function ConnectLanding({
       </figure>
 
       <div className="grid justify-items-center gap-3">
+        {ON_MAC && (
+          <>
+            <MacAppButton size="default" />
+            <p className="text-center text-sm text-muted-foreground">Or run this in a terminal:</p>
+          </>
+        )}
         <div className="flex w-full max-w-md items-center justify-between gap-3 rounded-md border bg-card py-2 pr-2 pl-4 font-mono text-sm">
           <span className="truncate">
             <span aria-hidden className="text-muted-foreground select-none">
@@ -885,9 +888,11 @@ function ConnectLanding({
             {copied ? "Copied" : "Copy"}
           </Button>
         </div>
-        <p className="text-center text-sm text-muted-foreground">
-          Run it in a terminal on the computer you want CI on.
-        </p>
+        {!ON_MAC && (
+          <p className="text-center text-sm text-muted-foreground">
+            Run it in a terminal on the computer you want CI on. On a Mac? <MacAppLink />
+          </p>
+        )}
         {onAddExisting && found.length > 0 && (
           <div className="mt-3 grid w-full max-w-md gap-1">
             <p className="flex items-center gap-1.5 text-sm text-muted-foreground">
@@ -942,9 +947,17 @@ function ConnectCard({ onDismiss }: { onDismiss: () => void }) {
             <XIcon aria-hidden />
           </Button>
         </div>
+        {ON_MAC && <MacAppButton />}
         <CopyCommand command={CONNECT_COMMAND} />
         <p className="text-xs text-muted-foreground">
-          Run it in a terminal. Your computer takes jobs while it's running.
+          {ON_MAC ? "Or run the command in a terminal. " : "Run it in a terminal. "}
+          Your computer takes jobs while it's connected.
+          {!ON_MAC && (
+            <>
+              {" "}
+              On a Mac? <MacAppLink />
+            </>
+          )}
         </p>
       </div>
       <div className="mt-auto flex min-h-10 items-center border-t border-dashed px-4 py-2 text-xs">

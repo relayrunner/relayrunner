@@ -232,7 +232,7 @@ function RowActions({ row }: { row: RunnerRow }) {
             <DialogDescription>
               {view.isGithub
                 ? "It stays registered on GitHub."
-                : "Its token stops working, so it has to run relayrunner connect again."}
+                : "Its token stops working, so it has to sign in again with relayrunner connect or the Mac app."}
             </DialogDescription>
           </DialogHeader>
           {error && <p className="text-sm text-destructive">{error}</p>}

@@ -591,7 +591,7 @@ export function RunnerUpdateNote({ machine, className }: { machine: Machine; cla
       title={[
         `actions/runner ${update.latest} is out. This machine runs ${update.version}.`,
         update.overdue && "GitHub may stop sending it jobs.",
-        "Restart relayrunner connect to update.",
+        "Restart relayrunner connect, or turn the Mac app off and on, to update.",
       ]
         .filter(Boolean)
         .join(" ")}

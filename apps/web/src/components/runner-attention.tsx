@@ -61,7 +61,12 @@ function Fix({
       return <UnpauseButton machineId={fix.machine.id} onChanged={onChanged} />;
     case "connect":
       // Started again on the machine itself.
-      return <CopyCommand command={CONNECT_COMMAND} prompt={false} />;
+      return (
+        <div className="grid gap-1">
+          <CopyCommand command={CONNECT_COMMAND} prompt={false} />
+          <span className="text-xs text-muted-foreground">Or turn the Mac app back on.</span>
+        </div>
+      );
     case "github": {
       const href = githubRunnerUrl(fix.machine.github);
       return href ? (

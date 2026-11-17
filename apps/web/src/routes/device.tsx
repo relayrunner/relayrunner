@@ -157,7 +157,7 @@ function DevicePage() {
             body={
               loaded.status === "approved"
                 ? "This machine is already approved. Head back to your terminal."
-                : "This request was denied. Run `relayrunner connect` again to start over."
+                : "This request was denied. Sign in again from the CLI or the Mac app to start over."
             }
           />
         )}
@@ -185,9 +185,7 @@ function EnterCode() {
     <Card className="w-full">
       <CardHeader>
         <CardTitle>Connect a machine</CardTitle>
-        <CardDescription>
-          Enter the code `relayrunner connect` printed in your terminal.
-        </CardDescription>
+        <CardDescription>Enter the code the CLI or the Mac app showed you.</CardDescription>
       </CardHeader>
       <CardContent>
         <form className="flex flex-col gap-3" onSubmit={handleSubmit}>
