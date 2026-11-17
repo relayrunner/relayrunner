@@ -604,9 +604,10 @@ function ProviderForm({
       {!codeMatched && (
         <Field
           label="Logo link"
-          hint="A square image, shown on its tile: https, or /provider-logos/<file>. Leave blank for its initial."
+          hint="A square image, shown on its tile. Leave blank for its initial."
         >
           <Input
+            type="url"
             placeholder="https://"
             value={fields.logoUrl}
             onChange={(e) => set("logoUrl")(e.target.value)}

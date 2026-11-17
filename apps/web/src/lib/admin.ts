@@ -193,7 +193,7 @@ export type ProviderFields = {
   setup: string;
   dashboardUrl: string;
   docsUrl: string;
-  /** An https image, or a /provider-logos/ path, for an added provider's mark. */
+  /** An https image for an added provider's mark. */
   logoUrl: string;
   status: ProviderStatus;
   featured: boolean;

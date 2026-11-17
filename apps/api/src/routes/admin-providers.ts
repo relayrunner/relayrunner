@@ -33,17 +33,6 @@ const url = optional(
     .max(500)
     .refine((value) => !value || value.startsWith("https://")),
 );
-// Or one of the logos the dashboard serves itself (apps/web/public/provider-logos).
-const logoUrl = optional(
-  z
-    .string()
-    .trim()
-    .max(500)
-    .refine(
-      (value) =>
-        !value || value.startsWith("https://") || /^\/provider-logos\/[a-z0-9.-]+$/.test(value),
-    ),
-);
 const status = z.enum(PROVIDER_STATUSES);
 const price = z
   .number()
@@ -65,7 +54,7 @@ const ProviderBody = z.object({
   setup: optionalText(500),
   dashboardUrl: url,
   docsUrl: url,
-  logoUrl,
+  logoUrl: url,
   // Left out: a new provider starts Hidden, and a saved one keeps what it had.
   status: status.optional(),
   featured: z.boolean().optional(),

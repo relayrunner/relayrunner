@@ -151,7 +151,15 @@ describe("/api/admin/providers", () => {
     const flags = (id: string, body: object) => send(op.cookie, "PATCH", `/${id}`, body);
     const find = async (id: string) => (await providers(op.cookie)).find((p) => p.id === id)!;
 
-    // The runner clouds from the provider review start Hidden.
+    const avreaBody = {
+      id: "avrea",
+      name: "Avrea",
+      summary: "Hosted runners.",
+      labels: "avrea-*",
+      prefixes: ["avrea-"],
+    };
+    expect((await send(op.cookie, "POST", "", avreaBody)).status).toBe(201);
+    // A provider an operator adds starts Hidden.
     expect(await find("avrea")).toMatchObject({ status: "hidden", featured: false });
     expect((await flags("avrea", { status: "live", featured: true })).status).toBe(200);
     expect(await find("avrea")).toMatchObject({ status: "live", featured: true });
@@ -178,6 +186,10 @@ describe("/api/admin/providers", () => {
 
   test("an Off provider isn't recognised, so its jobs count as Other", async () => {
     const op = await operator();
+    const sengi = { id: "sengi", name: "Sengi", summary: "Hosted runners.", labels: "sengi-*" };
+    expect((await send(op.cookie, "POST", "", { ...sengi, prefixes: ["sengi-"] })).status).toBe(
+      201,
+    );
     await loadCatalog(createDb(env.DB));
     expect(environmentFor(["sengi-basic-2-ubuntu-2404"], null, null).key).toMatch(/^sengi:/);
     expect((await send(op.cookie, "PATCH", "/sengi", { status: "off" })).status).toBe(200);

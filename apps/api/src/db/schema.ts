@@ -1438,10 +1438,7 @@ export const provider = sqliteTable("provider", {
   setup: text("setup"),
   dashboardUrl: text("dashboard_url"),
   docsUrl: text("docs_url"),
-  /**
-   * An image for an added provider's mark: https, or a path under the dashboard's /provider-logos/.
-   * Providers in code have their own.
-   */
+  /** An https image for an added provider's mark; providers in code have their own. */
   logoUrl: text("logo_url"),
   /** live | hidden | off (ProviderStatus in @relayrunner/providers/catalog). */
   status: text("status").$type<ProviderStatus>().notNull().default("live"),
