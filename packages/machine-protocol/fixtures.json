@@ -9,6 +9,7 @@
       "arch": "arm64",
       "runnerVersion": "2.330.0",
       "cliVersion": "0.13.0",
+      "macAppVersion": "0.2.0",
       "device": {
         "kind": "laptop",
         "model": "MacBook Pro",

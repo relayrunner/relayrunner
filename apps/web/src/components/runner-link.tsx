@@ -13,7 +13,13 @@ import {
 import { type ReactNode, useEffect, useState } from "react";
 import { providerOf, RunnerMark } from "@/components/providers";
 import { RunnerPanelLink } from "@/components/runner-panel-link";
-import { CliVersion, machineView, MachineOwner, StatusDot } from "@/components/runner-card";
+import {
+  CliVersion,
+  clientLabel,
+  machineView,
+  MachineOwner,
+  StatusDot,
+} from "@/components/runner-card";
 import { HoverCard, HoverCardContent, HoverCardTrigger } from "@/components/ui/hover-card";
 import { deviceName } from "@/lib/device";
 import type { Environment } from "@/lib/job-times";
@@ -154,7 +160,7 @@ function MachineCardBody({ id, specsShown }: { id: string; specsShown: boolean }
           ["Platform", view.platform],
           ["Jobs run", view.jobPlace],
           ["Runners", view.runners != null && `${view.runners} at once`],
-          ["CLI", machine.cli && <CliVersion cli={machine.cli} />],
+          [clientLabel(machine), machine.cli && <CliVersion machine={machine} />],
           [
             view.isGithub ? "Registered in" : "Owner",
             <MachineOwner machine={machine} view={view} />,

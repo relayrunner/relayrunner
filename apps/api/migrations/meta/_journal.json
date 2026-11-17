@@ -498,6 +498,13 @@
       "when": 1794944376371,
       "tag": "20261117193936_ai_opt_in",
       "breakpoints": true
+    },
+    {
+      "idx": 71,
+      "version": "6",
+      "when": 1794953223147,
+      "tag": "20261117220703_mac_app_version",
+      "breakpoints": true
     }
   ]
 }

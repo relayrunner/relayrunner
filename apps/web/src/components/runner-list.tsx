@@ -69,10 +69,10 @@ const columns = column.columns([
           >
             {row.original.machine.name}
           </RunnerPanelLink>
-          {/* The CLI version under the name, so the row stays narrow enough for the dashboard. */}
+          {/* The Mac app or CLI version under the name, so the row stays narrow enough for the dashboard. */}
           {row.original.machine.cli && (
             <span className="flex text-xs text-muted-foreground tabular-nums">
-              <CliVersion cli={row.original.machine.cli} prefix="CLI " />
+              <CliVersion machine={row.original.machine} prefix />
             </span>
           )}
         </span>

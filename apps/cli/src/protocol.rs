@@ -46,6 +46,9 @@ pub struct Hello {
     pub arch: &'static str,
     pub runner_version: String,
     pub cli_version: String,
+    /// The Mac app's version, when the Mac app runs this CLI.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub mac_app_version: Option<String>,
     pub device: Device,
     pub rotates_token: bool,
     pub slots: u32,
@@ -88,6 +91,8 @@ pub struct JobUsage {
     pub samples: u32,
 }
 
+// Hello is much bigger than the rest, but it's sent once per connection, so boxing it buys nothing.
+#[allow(clippy::large_enum_variant)]
 #[derive(Serialize, Debug)]
 #[serde(tag = "type", rename_all = "snake_case")]
 pub enum MachineMessage {
@@ -190,6 +195,7 @@ mod tests {
                 arch: "arm64",
                 runner_version: "2.330.0".into(),
                 cli_version: "0.13.0".into(),
+                mac_app_version: Some("0.2.0".into()),
                 device: Device {
                     kind: "laptop",
                     model: Some("MacBook Pro".into()),

@@ -61,6 +61,8 @@ export type Machine = {
    * API that predates it.
    */
   cli?: { version: string; update: string | null } | null;
+  /** The Mac app's version when the Mac app runs the CLI, from its last hello. Null otherwise. */
+  macApp?: { version: string } | null;
   /**
    * The actions/runner version from its last hello, the newer release (null when up to date), and
    * when GitHub may stop sending it jobs (ISO, about 30 days after the first release past it).
@@ -195,6 +197,7 @@ const SAMPLE_MACHINE: Machine = {
   },
   vm: { cpus: 4, memoryGb: 8 },
   cli: { version: "0.9.0", update: null },
+  macApp: { version: "0.2.0" },
   // A newer runner came out last week.
   runner: {
     version: "2.330.0",

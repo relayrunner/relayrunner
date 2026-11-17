@@ -158,9 +158,12 @@ enum CLI {
   }
 
   /// An app opened from Finder gets a bare PATH, and Apple's `container` tool is in /usr/local/bin.
+  /// The app's version tells the dashboard the Mac app runs this machine, not the CLI on its own.
   static var environment: [String: String] {
     var environment = ProcessInfo.processInfo.environment
     environment["PATH"] = "/opt/homebrew/bin:/usr/local/bin:" + (environment["PATH"] ?? "/usr/bin:/bin:/usr/sbin:/sbin")
+    environment["RELAYRUNNER_MAC_APP_VERSION"] =
+      Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String
     return environment
   }
 }

@@ -1,0 +1,1 @@
+ALTER TABLE `machine` ADD `mac_app_version` text;

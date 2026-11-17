@@ -58,9 +58,11 @@ describe("machine session", () => {
         arch: "arm64",
         runnerVersion: "2.329.0",
         cliVersion: "0.7.0",
+        macAppVersion: "0.2.0",
       }),
     ]);
     expect(session.hello?.cliVersion).toBe("0.7.0");
+    expect(session.hello?.macAppVersion).toBe("0.2.0");
     expect(said([hello]).hello?.cliVersion).toBeUndefined();
   });
 

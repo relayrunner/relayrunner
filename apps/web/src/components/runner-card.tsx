@@ -546,22 +546,32 @@ export function MachineJobLink({ jobs }: { jobs: MachineJob[] }) {
   );
 }
 
-/** The machine's CLI version, with an arrow when a newer release is out. */
-export function CliVersion({ cli, prefix = "" }: { cli?: Machine["cli"]; prefix?: string }) {
+/** What runs the machine: the Mac app or the CLI on its own. */
+export function clientLabel(machine: Machine) {
+  return machine.macApp ? "Mac app" : "CLI";
+}
+
+/**
+ * The machine's CLI version, with an arrow when a newer release is out. When the Mac app runs the
+ * CLI, the app's version leads and there's no arrow: the app updates itself, CLI included.
+ */
+export function CliVersion({ machine, prefix = false }: { machine: Machine; prefix?: boolean }) {
+  const { cli, macApp } = machine;
   if (!cli) return <NotReported />;
+  const update = !macApp && cli.update;
   return (
     <span
       className="flex min-w-0 items-center gap-1.5"
-      title={cli.update ? `relayrunner ${cli.update} is out` : undefined}
+      title={update ? `relayrunner ${update} is out` : undefined}
     >
       <span className="truncate">
-        {prefix}
-        {cli.version}
+        {prefix && `${clientLabel(machine)} `}
+        {macApp ? `${macApp.version} · CLI ${cli.version}` : cli.version}
       </span>
-      {cli.update && (
+      {update && (
         <>
           <CircleArrowUpIcon aria-hidden className="size-3.5 shrink-0 text-run" />
-          <span className="sr-only">, update to {cli.update}</span>
+          <span className="sr-only">, update to {update}</span>
         </>
       )}
     </span>
@@ -886,8 +896,8 @@ export function MachineCard({
               <Field label="Runners">
                 {runners != null ? <Value>{runners}</Value> : <NotReported />}
               </Field>
-              <Field label="CLI">
-                <CliVersion cli={machine.cli} />
+              <Field label={clientLabel(machine)}>
+                <CliVersion machine={machine} />
               </Field>
               <Field label="Typical job">
                 <TypicalJob jobTime={jobTime} />

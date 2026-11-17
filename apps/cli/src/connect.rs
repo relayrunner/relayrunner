@@ -398,6 +398,10 @@ async fn connect_machine(args: &Args, size: Wanted, slots: u32) -> Result<Option
         arch,
         runner_version: runner_version(),
         cli_version: crate::VERSION.into(),
+        // Set by the Mac app for the CLI it bundles, so the dashboard can say so.
+        mac_app_version: std::env::var("RELAYRUNNER_MAC_APP_VERSION")
+            .ok()
+            .filter(|v| !v.is_empty()),
         device,
         rotates_token: true,
         slots,

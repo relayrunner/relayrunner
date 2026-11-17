@@ -451,6 +451,8 @@ export function presentMachine(machine: Machine, pausedBy: string | null = null)
             : null,
         }
       : null,
+    // The Mac app's version from its last hello, when the Mac app runs the CLI. Null otherwise.
+    macApp: machine.macAppVersion ? { version: machine.macAppVersion } : null,
   };
 }
 
@@ -485,7 +487,7 @@ export function deviceColumns(device: Device, now: Date) {
 /**
  * The machine columns a hello sets. The OS and architecture are where the machine's jobs run,
  * which can change between connections: a Mac running `connect --isolated` takes Linux jobs. The
- * CLI version changes whenever its owner updates it, and the runner version whenever `connect`
+ * CLI version changes whenever its owner updates it (or the Mac app that runs it), and the runner version whenever `connect`
  * restarts after a new actions/runner release.
  */
 export function helloColumns(
@@ -495,6 +497,7 @@ export function helloColumns(
     isolated?: { os: string; arch: string };
     vm?: { cpus: number; memoryGb: number };
     cliVersion?: string;
+    macAppVersion?: string;
     runnerVersion?: string;
     device?: Device;
   },
@@ -508,6 +511,7 @@ export function helloColumns(
     vmCpus: hello.vm?.cpus ?? null,
     vmMemoryGb: hello.vm?.memoryGb ?? null,
     cliVersion: hello.cliVersion ?? null,
+    macAppVersion: hello.macAppVersion ?? null,
     runnerVersion: hello.runnerVersion ?? null,
     ...(hello.device ? deviceColumns(hello.device, now) : {}),
   };

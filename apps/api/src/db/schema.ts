@@ -369,6 +369,9 @@ export const machine = sqliteTable(
     // 'connect' only: the relayrunner CLI version from its last hello, such as "0.7.0". Null for
     // CLIs older than 0.7.0, which don't send it.
     cliVersion: text("cli_version"),
+    // 'connect' only: the Mac app's version, such as "0.2.0", when the Mac app runs the CLI. Null
+    // for a CLI run on its own, or one older than this column.
+    macAppVersion: text("mac_app_version"),
     // 'connect' only: the actions/runner version from its last hello, such as "2.330.0": the one
     // `connect` installed when it started. Null until a CLI with this column says hello.
     runnerVersion: text("runner_version"),

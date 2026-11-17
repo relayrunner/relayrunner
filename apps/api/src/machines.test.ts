@@ -475,6 +475,7 @@ describe("machines in the dashboard", () => {
       vmCpus: null,
       vmMemoryGb: null,
       cliVersion: null,
+      macAppVersion: null,
       runnerVersion: null,
     });
     // A CLI running jobs in VMs says how big each one is.
@@ -517,6 +518,28 @@ describe("machines in the dashboard", () => {
     };
     expect(await cliOf("0.1.0")).toEqual({ version: "0.1.0", update: cliPackage.version });
     expect(await cliOf(cliPackage.version)).toEqual({ version: cliPackage.version, update: null });
+  });
+
+  test("shows the Mac app version when the Mac app runs the CLI, and drops it when it doesn't", async () => {
+    const { cookie, machine } = await enroll("mac-app-version", "zach-mbp");
+    const db = createDb(env.DB);
+    const macAppOf = async (macAppVersion?: string) => {
+      await db
+        .update(schema.machine)
+        .set(
+          helloColumns(
+            { os: "macos", arch: "arm64", cliVersion: "0.13.0", macAppVersion },
+            new Date(),
+          ),
+        )
+        .where(eq(schema.machine.id, machine.id));
+      const { machines } = (await (await call("/machines", cookie)).json()) as {
+        machines: { macApp: unknown }[];
+      };
+      return machines[0].macApp;
+    };
+    expect(await macAppOf("0.2.0")).toEqual({ version: "0.2.0" });
+    expect(await macAppOf()).toBeNull();
   });
 
   test("shows the runner version from the last hello, with the release to update to", async () => {

@@ -55,6 +55,9 @@ export const HelloMessage = z.object({
   runnerVersion: z.string().min(1),
   // The relayrunner CLI's own version, such as "0.7.0". Missing from CLIs older than 0.7.0.
   cliVersion: z.string().trim().min(1).max(40).optional(),
+  // The Mac app's version, such as "0.2.0", when the Mac app runs this CLI. Missing from a CLI run
+  // on its own, and from CLIs older than this field. One the gateway can't read is dropped.
+  macAppVersion: z.string().trim().min(1).max(40).optional().catch(undefined),
   // Missing from CLIs older than device reporting. A device the gateway can't read is dropped
   // rather than failing the hello, so a detection bug never keeps a machine offline.
   device: Device.optional().catch(undefined),

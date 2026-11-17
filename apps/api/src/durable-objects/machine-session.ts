@@ -45,6 +45,7 @@ export interface SessionState {
     | "arch"
     | "runnerVersion"
     | "cliVersion"
+    | "macAppVersion"
     | "device"
     | "rotatesToken"
     | "slots"
@@ -104,13 +105,34 @@ export function handleFrame(
     if (session.hello) return reject(session, "invalid_message", "hello was already sent");
     if (message.machineId !== session.machineId)
       return reject(session, "invalid_message", "machineId doesn't match this machine's token");
-    const { os, arch, runnerVersion, cliVersion, device, rotatesToken, slots, isolated, vm } =
-      message;
+    const {
+      os,
+      arch,
+      runnerVersion,
+      cliVersion,
+      macAppVersion,
+      device,
+      rotatesToken,
+      slots,
+      isolated,
+      vm,
+    } = message;
     // A machine that just said hello has no job from this gateway yet.
     return {
       state: {
         ...heard,
-        hello: { os, arch, runnerVersion, cliVersion, device, rotatesToken, slots, isolated, vm },
+        hello: {
+          os,
+          arch,
+          runnerVersion,
+          cliVersion,
+          macAppVersion,
+          device,
+          rotatesToken,
+          slots,
+          isolated,
+          vm,
+        },
         state: "idle",
         running: 0,
       },
