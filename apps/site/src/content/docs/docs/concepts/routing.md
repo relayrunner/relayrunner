@@ -110,7 +110,7 @@ The Router can re-run a job that failed because of its runner rather than its ow
 - The connected machine running it went offline.
 - GitHub lost touch with its runner.
 
-A job whose own steps failed is never retried. GitHub only re-runs jobs once the whole run has finished, so the retry starts then. The Router re-runs the relay with it, so the retry routes again.
+A job whose own steps failed isn't retried, unless [AI](/docs/dashboard/ai) is on and sure the failure is flaky, like a timeout. GitHub only re-runs jobs once the whole run has finished, so the retry starts then. The Router re-runs the relay with it, so the retry routes again.
 
 Turn this on with **Retry jobs when their runner fails** under **Settings** on the Router page. Owners and admins can choose:
 

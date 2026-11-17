@@ -53,7 +53,7 @@ const site = Astro.site!.origin;
     <main id="main" class="wrap legal">
       <h1>Privacy Policy</h1>
       {/* For a change people should agree to again, also bump LEGAL_VERSIONS.privacy (packages/activity/src/legal.ts). */}
-      <p class="updated">Last updated November 13, 2026</p>
+      <p class="updated">Last updated November 17, 2026</p>
 
       <p class="intro">
         RelayRunner is an open source project. This policy covers the hosted service its maintainers
@@ -78,6 +78,10 @@ const site = Astro.site!.origin;
             visits and see how people use the site and dashboard.
           </li>
           <li>We don't keep your source code or your job logs.</li>
+          <li>
+            AI features are off until a workspace owner or admin turns them on. The model runs on
+            Cloudflare, which doesn't keep what it reads or train on it.
+          </li>
           <li>
             Email <a href="mailto:privacy@relayrunner.app">privacy@relayrunner.app</a> to get a copy
             of your data or have it deleted.
@@ -116,7 +120,8 @@ const site = Astro.site!.origin;
         pull request title), branch, commit SHA, pull request number, the GitHub username that
         triggered the run, runner labels, status, result and timings, along with where we routed
         each job and why. We use the timings to report minutes used and saved. We don't receive your
-        job logs or your repository secrets.
+        repository secrets, and we don't store job logs. When you open a failed job in the dashboard,
+        or an agent asks about it, we read the end of its log from GitHub to show you.
       </p>
 
       <h3>Connected machines</h3>
@@ -134,6 +139,16 @@ const site = Astro.site!.origin;
         internet access, post the results to GitHub as check runs (file paths, line numbers and
         messages), and then stop the container. We don't keep a copy of your code. We also read your
         <code>relayrunner.yml</code> to see which checks you've turned on.
+      </p>
+
+      <h3>AI features</h3>
+      <p>
+        If an owner or admin turns on AI for a workspace, we send a model the workspace's workflow,
+        job and step names and runner labels, and for failed jobs the last lines of the log and
+        GitHub's error annotations. The model, Clef-flash, runs on Cloudflare Workers AI. Cloudflare
+        doesn't keep what we send after it answers or use it to train models. We keep only the
+        answer, such as "flaky test". We never send your source code. Turning AI off stops this right
+        away.
       </p>
 
       <h3>Hosted runners</h3>
@@ -179,7 +194,7 @@ const site = Astro.site!.origin;
       <ul>
         <li>
           <strong>Cloudflare</strong> hosts the service, its database, storage, containers and logs,
-          and sends our email.
+          runs the AI model for workspaces that turn AI on, and sends our email.
         </li>
         <li>
           <strong>PostHog</strong> (United States) receives the page views and product events

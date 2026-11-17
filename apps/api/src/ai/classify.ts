@@ -19,8 +19,16 @@ import { DAY_MS, utcDay } from "../job-timings.ts";
 import { sha256Hex } from "../machines.ts";
 import { type AiFeature, aiAccess, withinBudget } from "./settings.ts";
 
-/** TypeSafe's Jev on Workers AI. Cloudflare's Clef models take the same questions. */
-export const DEFAULT_AI_MODEL = "typesafe/jev-1.14.0";
+/**
+ * Cloudflare's Clef-flash: hosted by Cloudflare, which keeps no prompts and trains on none. It
+ * takes the same questions as TypeSafe's Jev, which it replaced.
+ */
+export const DEFAULT_AI_MODEL = "@cf/cloudflare/clef-flash";
+
+// Clef models also want their own name in the input ("clef" or "clef-flash").
+const CLEF = "@cf/cloudflare/";
+const selector = (model: string) =>
+  model.startsWith(CLEF) ? { model: model.slice(CLEF.length) } : {};
 
 const TIMEOUT_MS = 10_000;
 const DEFAULT_CACHE_DAYS = 30;
@@ -121,10 +129,13 @@ export async function classify<Input, Qs extends Questions>(
     const response = unwrap(
       await env.AI.run(
         model,
-        { state, questions: classifier.questions },
+        { ...selector(model), state, questions: classifier.questions },
         {
           gateway: {
             id: env.AI_GATEWAY_ID,
+            // The gateway would otherwise keep each prompt and answer in its logs. Prompts can
+            // hold log lines, and we promise not to keep those.
+            collectLog: false,
             metadata: { workspace: workspaceId, feature },
             requestTimeoutMs: TIMEOUT_MS,
           },

@@ -3,7 +3,7 @@ import type { Env } from "../env.ts";
 import * as testing from "../testing.ts";
 import { aiCacheKey, classify, defineClassifier } from "./classify.ts";
 import { purgeExpiredAiAnswers } from "../retention.ts";
-import { AI_DEFAULTS, forgetAiSettings, saveAiSettings } from "./settings.ts";
+import { AI_DEFAULTS, forgetAiSettings, saveAiSettings, setAiOptIn } from "./settings.ts";
 import { createDb } from "../db/index.ts";
 
 const jobType = defineClassifier({
@@ -56,7 +56,7 @@ async function enable(
       NOW,
     )
     .run();
-  forgetAiSettings();
+  await setAiOptIn(createDb(env.DB), workspaceId, true, null);
 }
 
 const usage = () =>
@@ -64,7 +64,7 @@ const usage = () =>
 
 beforeEach(async () => {
   run = vi.fn(async () => ({
-    model: "jev-1.14.0",
+    model: "clef-flash",
     answers,
     usage: { input_tokens: 400, output_tokens: 20 },
   }));
@@ -78,7 +78,7 @@ beforeEach(async () => {
 });
 
 describe("classify", () => {
-  test("is off until both the global switch and the workspace are on", async () => {
+  test("is off until both the global switch is on and the workspace opts in", async () => {
     expect(await classify(env, jobType, workspaceId, { name: "lint", id: 1 }, NOW)).toEqual({
       ok: false,
       reason: "off",
@@ -89,6 +89,28 @@ describe("classify", () => {
       { ...AI_DEFAULTS, enabled: true, features: ["job_type"] },
       op.user.id,
     );
+    expect((await classify(env, jobType, workspaceId, { name: "lint", id: 1 }, NOW)).ok).toBe(
+      false,
+    );
+    expect(run).not.toHaveBeenCalled();
+    // Opting in is enough: no operator row means allowed.
+    await setAiOptIn(createDb(env.DB), workspaceId, true, null);
+    expect((await classify(env, jobType, workspaceId, { name: "lint", id: 1 }, NOW)).ok).toBe(true);
+  });
+
+  test("stops when the workspace opts out or an operator blocks it", async () => {
+    await enable();
+    const db = createDb(env.DB);
+    await setAiOptIn(db, workspaceId, false, null);
+    expect(await classify(env, jobType, workspaceId, { name: "lint", id: 1 }, NOW)).toEqual({
+      ok: false,
+      reason: "off",
+    });
+    await setAiOptIn(db, workspaceId, true, null);
+    await env.DB.prepare("update workspace_ai_setting set enabled = 0 where workspace_id = ?")
+      .bind(workspaceId)
+      .run();
+    forgetAiSettings();
     expect((await classify(env, jobType, workspaceId, { name: "lint", id: 1 }, NOW)).ok).toBe(
       false,
     );
@@ -124,11 +146,12 @@ describe("classify", () => {
     expect(first).toEqual({ ok: true, answers, cached: false });
     if (first.ok) expect(first.answers.kind.choice).toBe("lint");
     expect(run).toHaveBeenCalledWith(
-      "typesafe/jev-1.14.0",
-      { state: { name: "lint" }, questions: jobType.questions },
+      "@cf/cloudflare/clef-flash",
+      { model: "clef-flash", state: { name: "lint" }, questions: jobType.questions },
       expect.objectContaining({
         gateway: expect.objectContaining({
           id: "relayrunner-ai-gateway",
+          collectLog: false,
           metadata: { workspace: workspaceId, feature: "job_type" },
         }),
       }),

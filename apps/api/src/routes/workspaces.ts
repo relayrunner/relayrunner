@@ -22,6 +22,7 @@ import { AppError } from "@relayrunner/errors";
 import { annotate } from "../tracing.ts";
 import { routerSetup } from "../router-setup.ts";
 import { DEFAULT_AUTO_SIZE } from "@relayrunner/providers";
+import { AI_FEATURES, aiFeaturesFor, setAiOptIn } from "../ai/settings.ts";
 import { autoJobSettingSchema, autoSizeSchema, listAutoJobs, setAutoJob } from "../auto-jobs.ts";
 
 // Any member of the workspace in the path. Someone outside it gets a 404, so ids don't leak.
@@ -203,6 +204,29 @@ export const workspaceRoutes = new Hono<AppEnv>()
       .update(schema.workspace)
       .set({ skipUnhealthyRunners: body.enabled })
       .where(eq(schema.workspace.id, c.req.param("id")));
+    return c.json({ enabled: body.enabled });
+  })
+  // When the workspace opted in to AI features (src/ai), or null, and the ones that run for it.
+  .get("/:id/ai", requireUser, requireMember, async (c) => {
+    const id = c.req.param("id");
+    const [[row], features] = await Promise.all([
+      c.var.db
+        .select({ at: schema.workspace.aiOptInAt })
+        .from(schema.workspace)
+        .where(eq(schema.workspace.id, id))
+        .limit(1),
+      aiFeaturesFor(c.var.db, id),
+    ]);
+    return c.json({
+      since: row?.at ?? null,
+      features: features.map((id) => ({ id, label: AI_FEATURES[id] })),
+    });
+  })
+  // Opts in or out. Owners and admins, like the order.
+  .put("/:id/ai", requireUser, requireMember, requireManager, async (c) => {
+    const body = (await c.req.json().catch(() => null)) as { enabled?: unknown } | null;
+    if (typeof body?.enabled !== "boolean") throw new AppError("INVALID_REQUEST");
+    await setAiOptIn(c.var.db, c.req.param("id"), body.enabled, c.var.user!.id);
     return c.json({ enabled: body.enabled });
   })
   // Automatic retries of jobs whose runner failed them (src/retries.ts). Off until turned on.

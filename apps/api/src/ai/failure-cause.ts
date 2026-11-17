@@ -26,7 +26,8 @@ export type FailureCause = {
   rerun: "passes" | "fails" | null;
 };
 
-// The model runs overconfident: it called a failed deep-equal test "flaky" at 74%. Causes below
+// Jev, the first model, ran overconfident: it called a failed deep-equal test "flaky" at 74%. These
+// thresholds are kept for Clef-flash until real failures say otherwise. Causes below
 // SHOWN aren't given, and a re-run verdict needs a sure answer that agrees with the cause.
 const SHOWN = 0.7;
 const SURE = 0.85;

@@ -2,7 +2,7 @@ import type { WebhookMessage } from "@relayrunner/github-webhooks";
 import { DEFAULT_RETRY_SETTINGS } from "@relayrunner/runner-order";
 import { and, eq } from "drizzle-orm";
 import { afterEach, beforeAll, describe, expect, test, vi } from "vitest";
-import { AI_DEFAULTS, forgetAiSettings, saveAiSettings } from "./ai/settings.ts";
+import { AI_DEFAULTS, saveAiSettings, setAiOptIn } from "./ai/settings.ts";
 import { createDb, schema } from "./db/index.ts";
 import type { Env } from "./env.ts";
 import {
@@ -416,12 +416,7 @@ describe("retryFailedRun", () => {
         { ...AI_DEFAULTS, enabled: true, features: ["failure_cause", "retry_decision"] },
         op.user.id,
       );
-      await env.DB.prepare(
-        "insert into workspace_ai_setting (workspace_id, enabled, updated_at) values (?, 1, ?)",
-      )
-        .bind(workspaceId, Date.now())
-        .run();
-      forgetAiSettings();
+      await setAiOptIn(createDb(env.DB), workspaceId, true, null);
       return run;
     }
 

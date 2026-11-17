@@ -34,7 +34,7 @@ describe("/api/admin/ai", () => {
     expect((await call("", regular.cookie, "PUT", { enabled: true })).status).toBe(403);
   });
 
-  test("turns AI on globally and for one workspace, then runs a test call", async () => {
+  test("runs a test call once AI is on and the workspace opts in, and blocks it", async () => {
     const op = await testing.signInOperator(env);
     const { workspace } = await testing.createWorkspace(env, op.cookie, "Acme", "acme-ai");
 
@@ -60,15 +60,15 @@ describe("/api/admin/ai", () => {
       dailyTokens: 10000,
     };
     expect((await call("", op.cookie, "PUT", global)).status).toBe(200);
-    expect(
-      (
-        await call(`/workspaces/${workspace.id}`, op.cookie, "PUT", {
-          enabled: true,
-          features: null,
-          dailyTokens: null,
-        })
-      ).status,
-    ).toBe(200);
+    // The workspace's own switch, which its owner (the operator here) turns on.
+    const optIn = await testing.call(
+      env,
+      `/workspaces/${workspace.id}/ai`,
+      op.cookie,
+      { enabled: true },
+      "PUT",
+    );
+    expect(optIn.status).toBe(200);
 
     const on = await call("/test", op.cookie, "POST", {
       workspaceId: workspace.id,
@@ -83,13 +83,26 @@ describe("/api/admin/ai", () => {
     const after = (await (await call("", op.cookie)).json()) as {
       workspaces: {
         id: string;
-        setting: { enabled: boolean };
+        optInAt: string | null;
+        setting: unknown;
         usage: { calls: number; tokensToday: number };
       }[];
     };
     const row = after.workspaces.find((w) => w.id === workspace.id)!;
-    expect(row.setting.enabled).toBe(true);
+    expect(row.optInAt).not.toBeNull();
+    expect(row.setting).toBeNull();
     expect(row.usage).toMatchObject({ calls: 1, tokensToday: 125 });
+
+    const block = { enabled: false, features: null, dailyTokens: null };
+    expect((await call(`/workspaces/${workspace.id}`, op.cookie, "PUT", block)).status).toBe(200);
+    const blocked = await call("/test", op.cookie, "POST", {
+      workspaceId: workspace.id,
+      text: "CI",
+    });
+    expect(((await blocked.json()) as { result: unknown }).result).toEqual({
+      ok: false,
+      reason: "off",
+    });
   });
 
   test("rejects unknown features and workspaces", async () => {

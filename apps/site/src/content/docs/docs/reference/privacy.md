@@ -17,8 +17,12 @@ RelayRunner needs to know about your jobs to route them, but not what's in them.
 ## What it never gets
 
 - **Your code.** The App can only read `relayrunner.yml`. The one exception is lint: it reads a commit with the lint job's own token, or through the separate Checks App if you install it, lints it in a sandbox with no internet access and discards it.
-- **Job logs and secrets.** Jobs on your machines use GitHub's runner, which talks to GitHub directly.
+- **Secrets, and a copy of your logs.** Jobs on your machines use GitHub's runner, which talks to GitHub directly. When you open a failed job, the dashboard reads the end of its log from GitHub to show you, and doesn't keep it.
 - **Provider accounts.** A routed job only gets a label. The provider, such as GitHub or Depot, runs it under your agreement with them.
+
+## AI
+
+AI is off until an owner or admin turns it on. Then it reads job names and the end of failed jobs' logs to explain failures. Cloudflare runs the model, keeps nothing and trains on nothing. See [AI](/docs/dashboard/ai).
 
 ## Who sees it
 

@@ -393,6 +393,25 @@ describe("skipping runners that stop picking up jobs", () => {
     expect(bad.status).toBe(400);
   });
 
+  test("AI is off by default, an owner opts in, and members can't change it", async () => {
+    const { cookie } = await signIn();
+    const { workspace, cookie: jar } = await createWorkspace(cookie, "Ai", "ai-opt-in");
+    const read = await request(`${workspace.id}/ai`, jar);
+    expect(await read.json()).toEqual({ since: null, features: [] });
+
+    const on = await request(`${workspace.id}/ai`, jar, "PUT", { enabled: true });
+    expect(await on.json()).toEqual({ enabled: true });
+    expect(await (await request(`${workspace.id}/ai`, jar)).json()).toMatchObject({
+      since: expect.any(String),
+    });
+
+    const member = await testing.joinWorkspace(env, workspace.id, "member");
+    const denied = await request(`${workspace.id}/ai`, member.cookie, "PUT", { enabled: false });
+    expect(denied.status).toBe(403);
+    const bad = await request(`${workspace.id}/ai`, jar, "PUT", { enabled: "yes" });
+    expect(bad.status).toBe(400);
+  });
+
   test("retries are off by default, and an owner turns them on", async () => {
     const { cookie } = await signIn();
     const { workspace, cookie: jar } = await createWorkspace(cookie, "Retries", "retry-settings");

@@ -2,7 +2,7 @@
 // activity_event and route_decision keep JOB_TIMING_RETENTION_DAYS, as far back as the Usage page
 // reads (it sums free checks from activity_event). Each workspace's first machine event and first
 // run routed to a machine stay, because Admin › Workspaces shows when those first happened.
-import { inArray, sql } from "drizzle-orm";
+import { eq, inArray, sql } from "drizzle-orm";
 import { type Db, schema } from "./db/index.ts";
 import { DAY_MS, JOB_TIMING_RETENTION_DAYS, purgeBefore } from "./job-timings.ts";
 
@@ -51,6 +51,16 @@ export async function purgeOldActivity(db: Db, now = Date.now()): Promise<number
 }
 
 /** Drops cached AI answers past their expiry (src/ai/classify.ts). */
+/**
+ * Deletes everything AI saved for a workspace: job types and cached answers. Statements for a batch,
+ * so callers run them with their own writes.
+ */
+export const purgeAiAnswers = (db: Db, workspaceId: string) =>
+  [
+    db.delete(schema.jobType).where(eq(schema.jobType.workspaceId, workspaceId)),
+    db.delete(schema.aiCache).where(eq(schema.aiCache.workspaceId, workspaceId)),
+  ] as const;
+
 export async function purgeExpiredAiAnswers(db: Db, now = Date.now()): Promise<number> {
   return purgeBefore(db, schema.aiCache, schema.aiCache.expiresAt, new Date(now));
 }

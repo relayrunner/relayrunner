@@ -4,7 +4,7 @@ import type { Env } from "../env.ts";
 import { jobTimesReport } from "../job-times.ts";
 import * as testing from "../testing.ts";
 import { classifyJobTypes } from "./job-type.ts";
-import { AI_DEFAULTS, forgetAiSettings, saveAiSettings } from "./settings.ts";
+import { AI_DEFAULTS, saveAiSettings, setAiOptIn } from "./settings.ts";
 
 let env: Env;
 let workspaceId: string;
@@ -47,12 +47,7 @@ async function enableAi(on = true) {
     { ...AI_DEFAULTS, enabled: on, features: ["job_type"] },
     op.user.id,
   );
-  await env.DB.prepare(
-    "insert or replace into workspace_ai_setting (workspace_id, enabled, updated_at) values (?, 1, ?)",
-  )
-    .bind(workspaceId, Date.now())
-    .run();
-  forgetAiSettings();
+  await setAiOptIn(createDb(env.DB), workspaceId, true, null);
 }
 
 beforeEach(async () => {
@@ -110,5 +105,10 @@ describe("classifyJobTypes", () => {
     expect(test.type).toBe("test");
     expect(test.legs?.every((leg) => leg.type === "test")).toBe(true);
     expect(report.workflows.find((w) => w.workflow === "Release")?.jobs[0]?.type).toBe("other");
+
+    // Opting out deletes the saved types.
+    await setAiOptIn(createDb(env.DB), workspaceId, false, null);
+    const after = await jobTimesReport(createDb(env.DB), workspaceId, 7);
+    expect(after.workflows.flatMap((w) => w.jobs).some((j) => j.type)).toBe(false);
   });
 });

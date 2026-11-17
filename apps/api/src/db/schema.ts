@@ -111,33 +111,44 @@ export const verification = sqliteTable(
 // A workspace is one GitHub App installation (#315): installing the App on an account or org makes
 // its workspace, and uninstalling deletes it with everything under it. Name, slug and logo follow
 // the account's login and avatar (src/installations.ts ensureWorkspace). Users can't create one.
-export const workspace = sqliteTable("workspace", {
-  id: text("id").primaryKey(),
-  installationId: integer("installation_id")
-    .notNull()
-    .unique()
-    .references((): AnySQLiteColumn => githubInstallation.id, { onDelete: "cascade" }),
-  name: text("name").notNull(),
-  slug: text("slug").notNull().unique(),
-  logo: text("logo"),
-  metadata: text("metadata"),
-  // JSON RunnerOrder (@relayrunner/runner-order). Null means the default order.
-  runnerOrder: text("runner_order"),
-  // JSON RetrySettings (@relayrunner/runner-order): automatic retries of jobs whose runner failed
-  // (src/retries.ts). Null means off.
-  retrySettings: text("retry_settings"),
-  // Whether the Router skips a hosted runner type that stopped picking up jobs
-  // (src/provider-health.ts). On unless someone turns it off on the Router page.
-  skipUnhealthyRunners: integer("skip_unhealthy_runners", { mode: "boolean" })
-    .notNull()
-    .default(true),
-  // The size, in vCPUs, of a job whose relay hands its runner to the Router (`auto`) and that has
-  // no size of its own (auto_job.size). Null means DEFAULT_AUTO_SIZE.
-  autoSize: integer("auto_size"),
-  createdAt: integer("created_at", { mode: "timestamp_ms" })
-    .notNull()
-    .$defaultFn(() => new Date()),
-});
+export const workspace = sqliteTable(
+  "workspace",
+  {
+    id: text("id").primaryKey(),
+    installationId: integer("installation_id")
+      .notNull()
+      .unique()
+      .references((): AnySQLiteColumn => githubInstallation.id, { onDelete: "cascade" }),
+    name: text("name").notNull(),
+    slug: text("slug").notNull().unique(),
+    logo: text("logo"),
+    metadata: text("metadata"),
+    // JSON RunnerOrder (@relayrunner/runner-order). Null means the default order.
+    runnerOrder: text("runner_order"),
+    // JSON RetrySettings (@relayrunner/runner-order): automatic retries of jobs whose runner failed
+    // (src/retries.ts). Null means off.
+    retrySettings: text("retry_settings"),
+    // Whether the Router skips a hosted runner type that stopped picking up jobs
+    // (src/provider-health.ts). On unless someone turns it off on the Router page.
+    skipUnhealthyRunners: integer("skip_unhealthy_runners", { mode: "boolean" })
+      .notNull()
+      .default(true),
+    // The size, in vCPUs, of a job whose relay hands its runner to the Router (`auto`) and that has
+    // no size of its own (auto_job.size). Null means DEFAULT_AUTO_SIZE.
+    autoSize: integer("auto_size"),
+    // When an owner or admin turned on AI features (src/ai/settings.ts) on the AI settings page, and
+    // who. Null means off: nothing about the workspace goes to a model.
+    aiOptInAt: integer("ai_opt_in_at", { mode: "timestamp_ms" }),
+    aiOptInBy: text("ai_opt_in_by").references((): AnySQLiteColumn => user.id, {
+      onDelete: "set null",
+    }),
+    createdAt: integer("created_at", { mode: "timestamp_ms" })
+      .notNull()
+      .$defaultFn(() => new Date()),
+  },
+  // The AI settings read (src/ai/settings.ts) loads the opted-in workspaces each minute.
+  (table) => [index("workspace_ai_opt_in_idx").on(table.aiOptInAt)],
+);
 
 // Who can see a workspace, synced from the installations their GitHub sign-in can see (#317).
 export const workspaceMember = sqliteTable(
@@ -1588,7 +1599,8 @@ export const aiSetting = sqliteTable("ai_setting", {
     .$defaultFn(() => new Date()),
 });
 
-// AI for one workspace, set by operators in Admin › AI. No row means off.
+// Operator overrides for one workspace's AI, set in Admin › AI: a block, fewer features or another
+// budget. AI only runs for a workspace that opted in (workspace.ai_opt_in_at); no row means allowed.
 export const workspaceAiSetting = sqliteTable("workspace_ai_setting", {
   workspaceId: text("workspace_id")
     .primaryKey()
@@ -1645,7 +1657,11 @@ export const aiCache = sqliteTable(
     answers: text("answers").notNull(),
     expiresAt: integer("expires_at", { mode: "timestamp_ms" }).notNull(),
   },
-  (table) => [index("ai_cache_expires_idx").on(table.expiresAt)],
+  (table) => [
+    index("ai_cache_expires_idx").on(table.expiresAt),
+    // Opting out of AI deletes a workspace's answers (setAiOptIn).
+    index("ai_cache_workspace_idx").on(table.workspaceId),
+  ],
 );
 
 // What a job does (lint, tests, a build...), as the AI model read it from the job's name, its

@@ -3,7 +3,7 @@ import { createDb } from "../db/index.ts";
 import type { Env } from "../env.ts";
 import * as testing from "../testing.ts";
 import { failureCauseOf } from "./failure-cause.ts";
-import { AI_DEFAULTS, forgetAiSettings, saveAiSettings } from "./settings.ts";
+import { AI_DEFAULTS, saveAiSettings, setAiOptIn } from "./settings.ts";
 
 let env: Env;
 let workspaceId: string;
@@ -37,12 +37,7 @@ beforeEach(async () => {
     { ...AI_DEFAULTS, enabled: true, features: ["failure_cause"] },
     op.user.id,
   );
-  await env.DB.prepare(
-    "insert into workspace_ai_setting (workspace_id, enabled, updated_at) values (?, 1, ?)",
-  )
-    .bind(workspaceId, Date.now())
-    .run();
-  forgetAiSettings();
+  await setAiOptIn(createDb(env.DB), workspaceId, true, null);
 });
 
 describe("failureCauseOf", () => {

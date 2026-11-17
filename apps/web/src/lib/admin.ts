@@ -281,6 +281,9 @@ export type AiAdmin = {
     id: string;
     name: string;
     logo: string | null;
+    /** When an owner or admin opted the workspace in to AI. Null means it hasn't. */
+    optInAt: string | null;
+    /** The operator override: a block, fewer features or another budget. Null allows. */
     setting: AiWorkspaceSetting | null;
     usage: AiUsage | null;
   }[];

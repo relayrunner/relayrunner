@@ -16,6 +16,7 @@ import {
 } from "@/components/ui/select";
 import { WorkspaceMark } from "@/components/workspace-menu";
 import { errorText } from "@/lib/api";
+import { formatDate } from "@/lib/time-zone";
 import { money } from "@/lib/usage";
 import {
   type AiAdmin,
@@ -94,13 +95,14 @@ function AiPage() {
       onChange={(e) => setSettings((s) => ({ ...s, [key]: Math.max(0, Number(e.target.value)) }))}
     />
   );
-  const enabledCount = workspaces.filter((w) => w.setting?.enabled).length;
+  const optedIn = workspaces.filter((w) => w.optInAt).length;
 
   return (
     <section className="grid max-w-5xl gap-6">
       <PageHeader title="AI">
-        Model calls that classify jobs and failures. They stay off until you turn on both AI here
-        and the workspace below, and every call goes through the {data.gateway} gateway.
+        Model calls that classify jobs and failures. A workspace gets them once AI is on here and an
+        owner or admin opts in on its AI settings page. Every call goes through the {data.gateway}{" "}
+        gateway.
       </PageHeader>
 
       {!data.binding && (
@@ -178,7 +180,8 @@ function AiPage() {
       <div className="grid gap-2">
         <h2 className="font-medium">Workspaces</h2>
         <p className="text-sm text-muted-foreground">
-          {enabledCount} of {workspaces.length} on. Usage covers the last {data.usageDays} days.
+          {optedIn} of {workspaces.length} opted in. Clear Allowed to block one. Usage covers the
+          last {data.usageDays} days.
         </p>
       </div>
       <WorkspaceActions value={{ toggle, settings }}>
@@ -194,13 +197,13 @@ function AiPage() {
   );
 }
 
-// Jev's input price; output tokens are free.
-const USD_PER_TOKEN = 0.042 / 1_000_000;
+// Clef-flash's input price; output tokens are free.
+const USD_PER_TOKEN = 0.038 / 1_000_000;
 const cost = (tokens: number) => `About ${money(tokens * USD_PER_TOKEN)} a day`;
 
 function TestCall({ workspaces }: { workspaces: Row[] }) {
   const [workspaceId, setWorkspaceId] = useState(
-    () => workspaces.find((w) => w.setting?.enabled)?.id ?? workspaces[0]?.id ?? "",
+    () => workspaces.find((w) => w.optInAt)?.id ?? workspaces[0]?.id ?? "",
   );
   const [text, setText] = useState("The lint job failed: 3 files need formatting.");
   const [result, setResult] = useState<string | null>(null);
@@ -230,7 +233,7 @@ function TestCall({ workspaces }: { workspaces: Row[] }) {
             <h2 className="font-medium">Test call</h2>
             <p className="text-muted-foreground">
               Asks the model whether the text is about CI, as the workspace, with every check
-              applied. It needs AI, the Test feature and the workspace turned on.
+              applied. It needs AI and the Test feature on, and the workspace opted in.
             </p>
           </div>
           <div className="flex flex-wrap items-end gap-3">
@@ -280,9 +283,10 @@ function Toggle({ row }: { row: Row }) {
   return (
     <input
       type="checkbox"
-      aria-label={`AI for ${row.name}`}
+      aria-label={`Allow AI for ${row.name}`}
       className={checkbox}
-      checked={Boolean(row.setting?.enabled)}
+      // No operator row allows the workspace.
+      checked={row.setting?.enabled ?? true}
       onChange={(e) => toggle(row, e.target.checked)}
     />
   );
@@ -320,8 +324,19 @@ const usage = (
 const columns = column.columns([
   column.display({
     id: "enabled",
-    header: "On",
+    header: "Allowed",
     cell: ({ row }) => <Toggle row={row.original} />,
+  }),
+  column.accessor((row) => row.optInAt ?? "", {
+    id: "optInAt",
+    header: "Opted in",
+    sortFn: "text",
+    cell: ({ row }) =>
+      row.original.optInAt ? (
+        formatDate(row.original.optInAt)
+      ) : (
+        <span className="text-muted-foreground">No</span>
+      ),
   }),
   column.accessor("name", {
     header: "Workspace",

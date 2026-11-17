@@ -42,6 +42,7 @@ import { Route as AuthedWorkspaceProvidersProviderRouteImport } from './routes/_
 import { Route as AuthedWorkspaceSettingsIndexRouteImport } from './routes/_authed/_workspace/settings.index'
 import { Route as AuthedWorkspaceSettingsAccountRouteImport } from './routes/_authed/_workspace/settings.account'
 import { Route as AuthedWorkspaceSettingsAgentsRouteImport } from './routes/_authed/_workspace/settings.agents'
+import { Route as AuthedWorkspaceSettingsAiRouteImport } from './routes/_authed/_workspace/settings.ai'
 import { Route as AuthedWorkspaceSettingsGeneralRouteImport } from './routes/_authed/_workspace/settings.general'
 import { Route as AuthedWorkspaceSettingsGithubRouteImport } from './routes/_authed/_workspace/settings.github'
 import { Route as AuthedWorkspaceSettingsMembersRouteImport } from './routes/_authed/_workspace/settings.members'
@@ -227,6 +228,12 @@ const AuthedWorkspaceSettingsAgentsRoute =
     path: '/settings/agents',
     getParentRoute: () => AuthedWorkspaceRoute,
   } as any)
+const AuthedWorkspaceSettingsAiRoute =
+  AuthedWorkspaceSettingsAiRouteImport.update({
+    id: '/settings/ai',
+    path: '/settings/ai',
+    getParentRoute: () => AuthedWorkspaceRoute,
+  } as any)
 const AuthedWorkspaceSettingsGeneralRoute =
   AuthedWorkspaceSettingsGeneralRouteImport.update({
     id: '/settings/general',
@@ -293,6 +300,7 @@ export interface FileRoutesByFullPath {
   '/providers/$provider': typeof AuthedWorkspaceProvidersProviderRoute
   '/settings/account': typeof AuthedWorkspaceSettingsAccountRoute
   '/settings/agents': typeof AuthedWorkspaceSettingsAgentsRoute
+  '/settings/ai': typeof AuthedWorkspaceSettingsAiRoute
   '/settings/general': typeof AuthedWorkspaceSettingsGeneralRoute
   '/settings/github': typeof AuthedWorkspaceSettingsGithubRoute
   '/settings/members': typeof AuthedWorkspaceSettingsMembersRoute
@@ -332,6 +340,7 @@ export interface FileRoutesByTo {
   '/providers/$provider': typeof AuthedWorkspaceProvidersProviderRoute
   '/settings/account': typeof AuthedWorkspaceSettingsAccountRoute
   '/settings/agents': typeof AuthedWorkspaceSettingsAgentsRoute
+  '/settings/ai': typeof AuthedWorkspaceSettingsAiRoute
   '/settings/general': typeof AuthedWorkspaceSettingsGeneralRoute
   '/settings/github': typeof AuthedWorkspaceSettingsGithubRoute
   '/settings/members': typeof AuthedWorkspaceSettingsMembersRoute
@@ -374,6 +383,7 @@ export interface FileRoutesById {
   '/_authed/_workspace/providers/$provider': typeof AuthedWorkspaceProvidersProviderRoute
   '/_authed/_workspace/settings/account': typeof AuthedWorkspaceSettingsAccountRoute
   '/_authed/_workspace/settings/agents': typeof AuthedWorkspaceSettingsAgentsRoute
+  '/_authed/_workspace/settings/ai': typeof AuthedWorkspaceSettingsAiRoute
   '/_authed/_workspace/settings/general': typeof AuthedWorkspaceSettingsGeneralRoute
   '/_authed/_workspace/settings/github': typeof AuthedWorkspaceSettingsGithubRoute
   '/_authed/_workspace/settings/members': typeof AuthedWorkspaceSettingsMembersRoute
@@ -415,6 +425,7 @@ export interface FileRouteTypes {
     | '/providers/$provider'
     | '/settings/account'
     | '/settings/agents'
+    | '/settings/ai'
     | '/settings/general'
     | '/settings/github'
     | '/settings/members'
@@ -454,6 +465,7 @@ export interface FileRouteTypes {
     | '/providers/$provider'
     | '/settings/account'
     | '/settings/agents'
+    | '/settings/ai'
     | '/settings/general'
     | '/settings/github'
     | '/settings/members'
@@ -495,6 +507,7 @@ export interface FileRouteTypes {
     | '/_authed/_workspace/providers/$provider'
     | '/_authed/_workspace/settings/account'
     | '/_authed/_workspace/settings/agents'
+    | '/_authed/_workspace/settings/ai'
     | '/_authed/_workspace/settings/general'
     | '/_authed/_workspace/settings/github'
     | '/_authed/_workspace/settings/members'
@@ -749,6 +762,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AuthedWorkspaceSettingsAgentsRouteImport
       parentRoute: typeof AuthedWorkspaceRoute
     }
+    '/_authed/_workspace/settings/ai': {
+      id: '/_authed/_workspace/settings/ai'
+      path: '/settings/ai'
+      fullPath: '/settings/ai'
+      preLoaderRoute: typeof AuthedWorkspaceSettingsAiRouteImport
+      parentRoute: typeof AuthedWorkspaceRoute
+    }
     '/_authed/_workspace/settings/general': {
       id: '/_authed/_workspace/settings/general'
       path: '/settings/general'
@@ -816,6 +836,7 @@ interface AuthedWorkspaceRouteChildren {
   AuthedWorkspaceProvidersProviderRoute: typeof AuthedWorkspaceProvidersProviderRoute
   AuthedWorkspaceSettingsAccountRoute: typeof AuthedWorkspaceSettingsAccountRoute
   AuthedWorkspaceSettingsAgentsRoute: typeof AuthedWorkspaceSettingsAgentsRoute
+  AuthedWorkspaceSettingsAiRoute: typeof AuthedWorkspaceSettingsAiRoute
   AuthedWorkspaceSettingsGeneralRoute: typeof AuthedWorkspaceSettingsGeneralRoute
   AuthedWorkspaceSettingsGithubRoute: typeof AuthedWorkspaceSettingsGithubRoute
   AuthedWorkspaceSettingsMembersRoute: typeof AuthedWorkspaceSettingsMembersRoute
@@ -849,6 +870,7 @@ const AuthedWorkspaceRouteChildren: AuthedWorkspaceRouteChildren = {
   AuthedWorkspaceProvidersProviderRoute: AuthedWorkspaceProvidersProviderRoute,
   AuthedWorkspaceSettingsAccountRoute: AuthedWorkspaceSettingsAccountRoute,
   AuthedWorkspaceSettingsAgentsRoute: AuthedWorkspaceSettingsAgentsRoute,
+  AuthedWorkspaceSettingsAiRoute: AuthedWorkspaceSettingsAiRoute,
   AuthedWorkspaceSettingsGeneralRoute: AuthedWorkspaceSettingsGeneralRoute,
   AuthedWorkspaceSettingsGithubRoute: AuthedWorkspaceSettingsGithubRoute,
   AuthedWorkspaceSettingsMembersRoute: AuthedWorkspaceSettingsMembersRoute,
