@@ -5,7 +5,12 @@ import { recordMachineEvent } from "../activity.ts";
 import { createDb, schema } from "../db/index.ts";
 import type { Env } from "../env.ts";
 import { encodeMessage, PROTOCOL_VERSION, type JobMessage } from "@relayrunner/machine-protocol";
-import { appInstallationToken } from "../github-app.ts";
+import {
+  appInstallationToken,
+  deleteRunner,
+  runnerOnline,
+  type RunnerScope,
+} from "../github-app.ts";
 import { installationRunnerScope } from "../installations.ts";
 import { setJobUsage } from "../jobs.ts";
 import { mintMachineRunner } from "../machine-runner.ts";
@@ -18,7 +23,9 @@ import {
   pausedByName,
   promotePendingToken,
 } from "../machines.ts";
-import { placeNow, takeHold, type MachineHold, type Route } from "../routing.ts";
+import { placeNow, ROUTE_TTL_MS, takeHold, type MachineHold, type Route } from "../routing.ts";
+import { jobStillQueued, LOST_GRACE_MS } from "../stranded-jobs.ts";
+import { errorMessage } from "../webhook-queue.ts";
 import { annotate, traced } from "../tracing.ts";
 import {
   CLOSE,
@@ -46,6 +53,19 @@ interface SentRoute {
   jobId?: number;
   // Unset while the JIT config is being minted.
   sentAt?: number;
+  // The job's runner and where it's registered, so a job that never reached it can go elsewhere
+  // (src/stranded-jobs.ts). Missing from routes sent before this was kept.
+  runner?: {
+    machineId: string;
+    installationId: number;
+    repo: string;
+    id: number;
+    scope: RunnerScope;
+  };
+  // When to check that the job reached its runner, set when the machine drops (watchSent).
+  checkAt?: number;
+  // The machine said the runner is over (finished or failed), so it can't take the job.
+  runnerGone?: boolean;
 }
 
 const SENT_KEY = "sent:";
@@ -70,7 +90,8 @@ export class MachineLink extends DurableObject<Env> {
     const now = Date.now();
     const from = originFromJson(request.headers.get(MACHINE_ORIGIN_HEADER));
     let takenFrom: RequestOrigin | undefined;
-    for (const old of this.ctx.getWebSockets()) {
+    const replaced = this.ctx.getWebSockets();
+    for (const old of replaced) {
       const session = attachment(old);
       if (session && isTakeover(session, from, now)) takenFrom = session.from;
       close(old, CLOSE.replaced, "replaced");
@@ -79,7 +100,9 @@ export class MachineLink extends DurableObject<Env> {
     const { 0: client, 1: server } = new WebSocketPair();
     this.ctx.acceptWebSocket(server);
     server.serializeAttachment(newSession(machineId, now, from));
-    await this.ctx.storage.setAlarm(now + HEARTBEAT_TIMEOUT_MS);
+    // A restarted CLI may have left its runners behind, so check the jobs sent to them.
+    if (replaced.length > 0) await this.watchSent(now);
+    await this.armAlarm(now + HEARTBEAT_TIMEOUT_MS);
     await this.touch(machineId);
     // Not awaited: the email shouldn't hold up the new connection, and the socket keeps this
     // object alive while it sends.
@@ -164,7 +187,8 @@ export class MachineLink extends DurableObject<Env> {
     await this.touch(session.machineId);
   }
 
-  // Closes sockets that have gone quiet, and checks again while any remain.
+  // Closes sockets that have gone quiet, and checks again while any remain. Also checks the jobs
+  // sent to the machine that are due (checkSent).
   async alarm() {
     const now = Date.now();
     let earliest: number | undefined;
@@ -180,7 +204,105 @@ export class MachineLink extends DurableObject<Env> {
       }
       earliest = Math.min(earliest ?? Infinity, session.lastHeardAt);
     }
-    if (earliest !== undefined) await this.ctx.storage.setAlarm(earliest + HEARTBEAT_TIMEOUT_MS);
+    const next = Math.min(
+      earliest === undefined ? Infinity : earliest + HEARTBEAT_TIMEOUT_MS,
+      (await this.checkSent(now)) ?? Infinity,
+    );
+    if (next !== Infinity) await this.ctx.storage.setAlarm(next);
+  }
+
+  // Sets the alarm for `at`, unless it's already set sooner.
+  private async armAlarm(at: number) {
+    const current = await this.ctx.storage.getAlarm();
+    if (current === null || current > at) await this.ctx.storage.setAlarm(at);
+  }
+
+  // The machine dropped: each job sent to it that may not have reached its runner gets checked
+  // after LOST_GRACE_MS (checkSent). Also forgets routes older than any job could still be queued.
+  private async watchSent(now: number) {
+    const sent = [...(await this.ctx.storage.list<SentRoute>({ prefix: SENT_KEY }))];
+    const live = (r: SentRoute) => now - (r.sentAt ?? now) <= ROUTE_TTL_MS;
+    const expired = sent.filter(([, r]) => !live(r)).map(([key]) => key);
+    if (expired.length > 0) await this.ctx.storage.delete(expired.slice(0, 128));
+    const checkAt = now + LOST_GRACE_MS;
+    const watch = Object.fromEntries(
+      sent
+        .filter(([, r]) => r.runner && r.checkAt === undefined && live(r))
+        .map(([key, r]) => [key, { ...r, checkAt }]),
+    );
+    if (Object.keys(watch).length === 0) return;
+    await this.ctx.storage.put(watch);
+    await this.armAlarm(checkAt);
+  }
+
+  // Checks each sent job that's due, and returns when the next one is.
+  private async checkSent(now: number): Promise<number | undefined> {
+    const sent = await this.ctx.storage.list<SentRoute>({ prefix: SENT_KEY });
+    let next = Infinity;
+    for (const [key, route] of sent) {
+      if (route.checkAt === undefined) continue;
+      const at = route.checkAt > now ? route.checkAt : await this.checkOne(key, route, now);
+      if (at !== undefined) next = Math.min(next, at);
+    }
+    return next === Infinity ? undefined : next;
+  }
+
+  // Checks one sent job now (recover). When GitHub couldn't say, returns when to look again.
+  private async checkOne(key: string, route: SentRoute, now: number) {
+    const routeId = key.slice(SENT_KEY.length);
+    // Cleared first, so a check that runs meanwhile (another job report) leaves it alone.
+    await this.ctx.storage.put<SentRoute>(key, { ...route, checkAt: undefined });
+    try {
+      await this.recover(routeId, route);
+      return undefined;
+    } catch (error) {
+      const checkAt = now + LOST_GRACE_MS;
+      await this.ctx.storage.put<SentRoute>(key, { ...route, checkAt });
+      console.warn(
+        JSON.stringify({
+          msg: "relayrunner sent job not checked",
+          routeId,
+          error: errorMessage(error),
+        }),
+      );
+      return checkAt;
+    }
+  }
+
+  /**
+   * Sends a job back to its Router when it never reached the runner minted for it: GitHub still has
+   * it queued, and the runner is over or not connected to GitHub. The runner is removed first, so a
+   * machine that wakes up later can't take the job too; if GitHub won't remove it, it may have just
+   * taken the job, and this throws to look again later. A job that started stays.
+   */
+  private async recover(routeId: string, sent: SentRoute) {
+    const key = SENT_KEY + routeId;
+    const { runner, jobId } = sent;
+    let token: string | undefined;
+    const getToken = async () =>
+      (token ??= await appInstallationToken(this.env, runner!.installationId));
+    const stays =
+      !runner ||
+      jobId === undefined ||
+      !(await jobStillQueued(createDb(this.env.DB), getToken, runner.repo, jobId)) ||
+      (!sent.runnerGone && (await runnerOnline(await getToken(), runner.scope, runner.id)));
+    if (stays) {
+      // It started, or its runner is still there to take it. Kept for a redelivered webhook until
+      // the machine says the runner is over.
+      if (sent.runnerGone) await this.ctx.storage.delete(key);
+      return;
+    }
+    await deleteRunner(await getToken(), runner.scope, runner.id);
+    await this.ctx.storage.delete([key, HOLD_KEY + routeId]);
+    console.warn(
+      JSON.stringify({
+        msg: "relayrunner job never reached its runner",
+        routeId,
+        jobId,
+        runnerGone: Boolean(sent.runnerGone),
+      }),
+    );
+    await this.env.ROUTER.getByName(sent.workspaceId).requeueSent(routeId, jobId, runner.machineId);
   }
 
   /**
@@ -257,12 +379,12 @@ export class MachineLink extends DurableObject<Env> {
     if (!placeOn(socket, route)) return "wrong_place";
     await this.ctx.storage.put<SentRoute>(key, { workspaceId, jobId: route.jobId });
 
-    let jit;
+    let jit, scope;
     try {
       const token = await appInstallationToken(this.env, route.installationId);
-      jit = await mintMachineRunner(token, route, () =>
+      ({ jit, scope } = await mintMachineRunner(token, route, () =>
         installationRunnerScope(createDb(this.env.DB), route.installationId, route.repo),
-      );
+      ));
     } catch (error) {
       // Let a retry of the webhook try again.
       await this.ctx.storage.delete(key);
@@ -290,6 +412,13 @@ export class MachineLink extends DurableObject<Env> {
       workspaceId,
       jobId: route.jobId,
       sentAt: Date.now(),
+      runner: {
+        machineId: route.machineId,
+        installationId: route.installationId,
+        repo: route.repo,
+        id: jit.runnerId,
+        scope,
+      },
     });
     console.log(
       JSON.stringify({
@@ -352,8 +481,11 @@ export class MachineLink extends DurableObject<Env> {
     await this.ctx.storage.delete(HOLD_KEY + job.routeId);
     if (!sent) return;
     const jobId = await this.env.ROUTER.getByName(sent.workspaceId).release(job.routeId);
-    if (job.state !== "started") await this.ctx.storage.delete(key);
     if (job.usage && jobId) await setJobUsage(createDb(this.env.DB), jobId, job.usage);
+    if (job.state === "started") return;
+    // The runner is over. If it never got the job, the job goes elsewhere now.
+    const next = await this.checkOne(key, { ...sent, runnerGone: true }, Date.now());
+    if (next !== undefined) await this.armAlarm(next);
   }
 
   private onlineSocket() {
@@ -370,6 +502,7 @@ export class MachineLink extends DurableObject<Env> {
   // it logs nothing.
   private async disconnected(session: SessionState, reason: DisconnectReason) {
     if (!session.hello) return;
+    await this.watchSent(Date.now());
     await recordMachineEvent(createDb(this.env.DB), session.machineId, {
       type: "machine.disconnected",
       data: { reason },

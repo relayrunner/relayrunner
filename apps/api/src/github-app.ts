@@ -314,13 +314,23 @@ export async function jobAnnotations(token: string, repo: string, jobId: number)
   return annotations.flatMap((a) => (typeof a.message === "string" ? [a.message] : []));
 }
 
-/** Whether a runner is busy with a job, or null once it's removed (404). */
-export async function runnerBusy(token: string, scope: RunnerScope, runnerId: number) {
+/** A runner's status as GitHub has it, or null once it's removed (404). */
+async function runner(token: string, scope: RunnerScope, runnerId: number) {
   const path = `${runnersPath(scope)}/${runnerId}`;
   const response = await fetch(`${API}${path}`, { headers: headers(token) });
   if (response.status === 404) return null;
   if (!response.ok) throw new Error(`GET ${path} failed with ${response.status}`);
-  return ((await response.json()) as { busy: boolean }).busy;
+  return (await response.json()) as { busy: boolean; status: string };
+}
+
+/** Whether a runner is busy with a job, or null once it's removed (404). */
+export async function runnerBusy(token: string, scope: RunnerScope, runnerId: number) {
+  return (await runner(token, scope, runnerId))?.busy ?? null;
+}
+
+/** Whether a runner is connected to GitHub now. False once it's gone (removed, or never made). */
+export async function runnerOnline(token: string, scope: RunnerScope, runnerId: number) {
+  return (await runner(token, scope, runnerId))?.status === "online";
 }
 
 /** The App's installation on a repo, or null when the App isn't installed there. */

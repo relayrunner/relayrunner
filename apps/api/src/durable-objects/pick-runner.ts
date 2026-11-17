@@ -19,6 +19,7 @@ import {
   latestRunnerVersion,
   RunnerClient,
   decodeJitConfig,
+  waitForJob,
 } from "../runner-protocol.ts";
 import { RELAYRUNNER_LABEL } from "../labels.ts";
 import { eq } from "drizzle-orm";
@@ -56,7 +57,6 @@ export interface PickWork {
   repo: string;
 }
 
-const POLL_TIMEOUT_MS = 60_000;
 // One per queued `pick` job, addressed by job id. Acts as a one-job runner: registers a JIT runner
 // on the `relayrunner` label, claims a job, and reports the route as its `runner` output without
 // running any steps. GitHub hands a runner any pending job with its label, so the job it claims
@@ -194,7 +194,7 @@ export class PickRunner extends DurableObject<Env> {
 
       client = new RunnerClient(decodeJitConfig(jit.encodedJitConfig), await latestRunnerVersion());
       await client.openSession();
-      const request = await waitForJob(client);
+      const request = await waitForJob(client, WAIT_FOR_JOB_MS);
       const job = request ? await client.claim(request) : null;
       if (job) {
         const startedAt = new Date();
@@ -390,19 +390,6 @@ function logCleanupError(step: string, work: PickWork, error: unknown) {
       error: error instanceof Error ? error.message : String(error),
     }),
   );
-}
-
-async function waitForJob(client: RunnerClient) {
-  const deadline = Date.now() + WAIT_FOR_JOB_MS;
-  while (Date.now() < deadline) {
-    try {
-      const request = await client.poll(AbortSignal.timeout(POLL_TIMEOUT_MS));
-      if (request) return request;
-    } catch (error) {
-      if (!(error instanceof Error && error.name === "TimeoutError")) throw error;
-    }
-  }
-  return null;
 }
 
 type PickInfo = Omit<PickRecord, "jobName">;

@@ -132,6 +132,23 @@ export async function setJobMachine(db: Db, jobId: number, machineId: string) {
   ]);
 }
 
+/**
+ * Forgets the machine a job was sent to when the job never started there and goes back in line,
+ * so the machine that takes it next is the one setJobMachine notes.
+ */
+export async function clearJobMachine(db: Db, jobId: number, machineId: string) {
+  await db.batch([
+    db
+      .update(table)
+      .set({ machineId: null })
+      .where(and(eq(table.id, jobId), eq(table.machineId, machineId))),
+    db
+      .update(schema.jobTiming)
+      .set({ machineId: null })
+      .where(and(eq(schema.jobTiming.id, jobId), eq(schema.jobTiming.machineId, machineId))),
+  ]);
+}
+
 /** Saves the CPU and memory a job used, as the machine that ran it reported. */
 export async function setJobUsage(db: Db, jobId: number, usage: JobUsage) {
   await db.update(schema.jobTiming).set({ usage }).where(eq(schema.jobTiming.id, jobId));

@@ -334,6 +334,22 @@ export class RunnerClient {
   }
 }
 
+const POLL_TIMEOUT_MS = 60_000;
+
+/** Long-polls until GitHub offers the runner a job, or `waitMs` passes (null). */
+export async function waitForJob(client: RunnerClient, waitMs: number) {
+  const deadline = Date.now() + waitMs;
+  while (Date.now() < deadline) {
+    try {
+      const request = await client.poll(AbortSignal.timeout(POLL_TIMEOUT_MS));
+      if (request) return request;
+    } catch (error) {
+      if (!(error instanceof Error && error.name === "TimeoutError")) throw error;
+    }
+  }
+  return null;
+}
+
 export async function latestRunnerVersion() {
   const response = await fetch("https://github.com/actions/runner/releases/latest", {
     redirect: "manual",

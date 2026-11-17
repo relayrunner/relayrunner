@@ -25,6 +25,7 @@ import { failureDetails } from "./job-failures.ts";
 import { loadRepoConfig } from "./repo-config.ts";
 import { actor } from "./route-decisions.ts";
 import { routeIdFromLabels } from "./routing.ts";
+import { strandedJob } from "./stranded-jobs.ts";
 import { DAY_MS, failedStep } from "./job-timings.ts";
 import { errorMessage } from "./webhook-queue.ts";
 
@@ -317,12 +318,15 @@ async function findRunnerFailure(
     const kind = classifyFailure(job, at);
     if (kind) return { job, kind };
   }
-  // GitHub's word, asked for every job at once; the first in order wins.
-  const lost = await Promise.all(
-    jobs.map(async (job) => {
-      if (job.ranSteps === false) return false;
+  // GitHub's word, asked for every job at once; the first in order wins. A job ended because no
+  // machine could take it (src/stranded-jobs.ts) never started, like a runner that failed setup.
+  const kinds = await Promise.all(
+    jobs.map(async (job): Promise<RetryKind | null> => {
+      if (job.ranSteps === false) return null;
       try {
-        return lostRunner(await jobAnnotations(token, repo, job.id));
+        const messages = await jobAnnotations(token, repo, job.id);
+        if (strandedJob(messages)) return "runner_start";
+        return lostRunner(messages) ? "runner_lost" : null;
       } catch (error) {
         console.warn(
           JSON.stringify({
@@ -331,12 +335,12 @@ async function findRunnerFailure(
             error: errorMessage(error),
           }),
         );
-        return false;
+        return null;
       }
     }),
   );
-  const job = jobs.find((_, index) => lost[index]);
-  return job ? { job, kind: "runner_lost" as const } : null;
+  const index = kinds.findIndex(Boolean);
+  return index === -1 ? null : { job: jobs[index]!, kind: kinds[index]! };
 }
 
 type Found = { job: FailedJob; kind: RetryKind } | null;

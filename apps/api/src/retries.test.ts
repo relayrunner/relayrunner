@@ -13,6 +13,7 @@ import {
   retryOf,
   type FailedJob,
 } from "./retries.ts";
+import { STRANDED_MESSAGES } from "./stranded-jobs.ts";
 import * as testing from "./testing.ts";
 
 vi.mock("./github-app.ts", async (original) => ({
@@ -359,6 +360,14 @@ describe("retryFailedRun", () => {
     stubGithub({ annotations: ["The runner has received a shutdown signal."] });
     await retryFailedRun(env, completed(ws, runId));
     expect((await retries(runId))[0]).toMatchObject({ kind: "runner_lost", status: "requested" });
+  });
+
+  test("retries a job that ended because no machine could take it", async () => {
+    const ws = await setup();
+    const runId = await failedRun(ws, { ranSteps: true });
+    stubGithub({ annotations: [STRANDED_MESSAGES.no_machine] });
+    await retryFailedRun(env, completed(ws, runId));
+    expect((await retries(runId))[0]).toMatchObject({ kind: "runner_start", status: "requested" });
   });
 
   test("does nothing while retries are off, unless the repo turns them on", async () => {

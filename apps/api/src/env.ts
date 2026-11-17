@@ -5,6 +5,7 @@ import type { LintRunner } from "./durable-objects/lint-runner.ts";
 import type { MachineLink } from "./durable-objects/machine-link.ts";
 import type { PickRunner } from "./durable-objects/pick-runner.ts";
 import type { Router } from "./durable-objects/router.ts";
+import type { StrandedJob } from "./durable-objects/stranded-job.ts";
 import type { InstallationTask } from "./installation-tasks.ts";
 import type { TelemetryMessage } from "./telemetry/export.ts";
 
@@ -35,6 +36,8 @@ export interface Env extends AccessEnv {
   PICK_RUNNER: DurableObjectNamespace<PickRunner>;
   ROUTER: DurableObjectNamespace<Router>;
   MACHINE_LINK: DurableObjectNamespace<MachineLink>;
+  // Ends a routed job no machine can take (src/stranded-jobs.ts).
+  STRANDED_JOB: DurableObjectNamespace<StrandedJob>;
   // Container runners (src/container-runner.ts) and the orgs allowed to start them,
   // comma-separated (unset allows none).
   CONTAINER_RUNNER: DurableObjectNamespace<ContainerRunner>;

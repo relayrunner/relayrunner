@@ -67,7 +67,9 @@ If every machine that fits is busy and no later step in your runner order can ta
 
 A waiting job runs as soon as a slot frees, on whichever fitting machine frees first. Cancelling the run takes it out of line, and GitHub cancels a job that waits more than 24 hours.
 
-If the machine a job was sent to goes offline before the job reaches it, the job goes back in line the same way. It runs on the next fitting machine with room, or on the same machine once it reconnects.
+If the machine a job was sent to goes offline before the job starts, or its runner fails to start, the job goes back in line the same way. It runs on the next fitting machine with room, or on the same machine once it reconnects. A machine that stays offline for a minute counts as gone.
+
+If no machine that fits comes back within 5 minutes, or the job's runner fails to start on three tries, the job fails with a message saying why, so the run finishes instead of waiting 24 hours. With [automatic retries](#automatic-retries) on, the Router re-runs it and routes it again from your runner order.
 
 To send jobs elsewhere instead of waiting, add a step after your machines, such as `github` or a hosted provider.
 

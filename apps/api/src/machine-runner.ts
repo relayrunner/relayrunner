@@ -9,7 +9,7 @@ import { routeLabel, type Route } from "./routing.ts";
  * an org runner would also match any queued `self-hosted` job its runner group allows, from repos
  * that never routed to this machine. A repo runner only ever gets that repo's jobs, and routing has
  * already checked the repo is private. When GitHub refuses the repo, it falls back to the org and
- * logs `machine runner registered on the org`.
+ * logs `machine runner registered on the org`. Returns the runner and where it registered.
  */
 export async function mintMachineRunner(
   token: string,
@@ -21,7 +21,7 @@ export async function mintMachineRunner(
     name: machineRunnerName(route.machineName, route.id, route.runAttempt),
     labels: [routeLabel(route.id)],
   };
-  const { jit } = await mintRepoFirst(token, route.repo, runner, {
+  return mintRepoFirst(token, route.repo, runner, {
     fallbackScope,
     mint,
     log: {
@@ -31,5 +31,4 @@ export async function mintMachineRunner(
       installationId: route.installationId,
     },
   });
-  return jit;
 }

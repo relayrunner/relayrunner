@@ -209,6 +209,20 @@ describe("Router: jobs wait for a full machine", () => {
     });
   });
 
+  test("a job waiting for a busy machine keeps waiting", async () => {
+    vi.useFakeTimers({ toFake: ["Date"] });
+    try {
+      const routeId = (await router.route(job(1))).runner!.slice(3);
+      await router.claim(routeId, queued(1, 42));
+      await router.alarm();
+      vi.advanceTimersByTime(60 * 60_000);
+      await router.alarm();
+      expect(state.data.has(`wait:${routeId}`)).toBe(true);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
   test("another run's job can't claim a waiting label", async () => {
     const routeId = (await router.route(job(1))).runner!.slice(3);
     expect(await router.claim(routeId, queued(2, 42))).toBeNull();
@@ -341,12 +355,15 @@ describe("Router: a machine that goes offline after the pick", () => {
     online ? "sent" : "offline",
   );
   const dropHold = vi.fn();
+  const endJob = vi.fn();
 
   beforeEach(async () => {
     vi.spyOn(console, "log").mockImplementation(() => {});
+    vi.spyOn(console, "warn").mockImplementation(() => {});
     online = true;
     run.mockClear();
     dropHold.mockClear();
+    endJob.mockClear();
     const testEnv = await createTestEnv();
     const now = Date.now();
     for (const sql of [
@@ -370,6 +387,7 @@ describe("Router: a machine that goes offline after the pick", () => {
           dropHold,
         }),
       },
+      STRANDED_JOB: { getByName: () => ({ start: endJob }) },
     } as unknown as Env;
     state = memoryState();
     router = new Router(state.ctx as never, env);
@@ -418,5 +436,73 @@ describe("Router: a machine that goes offline after the pick", () => {
     await router.requeue("ffffffffffff");
     expect([...state.data.keys()].some((key) => key.startsWith("wait:"))).toBe(false);
     expect(dropHold).not.toHaveBeenCalled();
+  });
+
+  test("a job sent but never started goes back in line and out again", async () => {
+    const routeId = (await router.route(job(1))).runner!.slice(3);
+    await router.claim(routeId, queued(1, 42));
+    // The machine said its runner failed. Another machine's report changes nothing.
+    await router.requeueSent(routeId, 42, "m2");
+    expect(run).not.toHaveBeenCalled();
+    await router.requeueSent(routeId, 42, "m1");
+    expect(dropHold).toHaveBeenCalledWith(routeId);
+    // The machine it failed on goes last, but it's the only one.
+    expect(run).toHaveBeenCalledOnce();
+    expect(run.mock.calls[0]![0].route).toMatchObject({ id: routeId, jobId: 42, requeues: 1 });
+  });
+
+  test("a job whose runner keeps failing ends after three tries", async () => {
+    const routeId = (await router.route(job(1))).runner!.slice(3);
+    await router.claim(routeId, queued(1, 42));
+    for (let i = 0; i < 3; i++) await router.requeueSent(routeId, 42, "m1");
+    expect(run).toHaveBeenCalledTimes(2);
+    expect(endJob).toHaveBeenCalledWith({
+      routeId,
+      jobId: 42,
+      installationId: 7,
+      repo: "leonel/cabal",
+      reason: "runner_failed",
+    });
+    expect([...state.data.keys()].filter((key) => key.includes(routeId))).toEqual([]);
+  });
+
+  test("a job with no machine online ends after 5 minutes", async () => {
+    vi.useFakeTimers({ toFake: ["Date"] });
+    try {
+      const routeId = (await router.route(job(1))).runner!.slice(3);
+      await router.claim(routeId, queued(1, 42));
+      online = false;
+      await router.requeue(routeId);
+      await router.alarm();
+      vi.advanceTimersByTime(4 * 60_000);
+      await router.alarm();
+      expect(endJob).not.toHaveBeenCalled();
+      vi.advanceTimersByTime(60_000);
+      await router.alarm();
+      expect(endJob).toHaveBeenCalledWith(
+        expect.objectContaining({ routeId, reason: "no_machine" }),
+      );
+      expect(state.data.has(`wait:${routeId}`)).toBe(false);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  test("a machine back in time takes the job", async () => {
+    vi.useFakeTimers({ toFake: ["Date"] });
+    try {
+      const routeId = (await router.route(job(1))).runner!.slice(3);
+      await router.claim(routeId, queued(1, 42));
+      online = false;
+      await router.requeue(routeId);
+      await router.alarm();
+      vi.advanceTimersByTime(4 * 60_000);
+      online = true;
+      await router.alarm();
+      expect(run).toHaveBeenCalledOnce();
+      expect(endJob).not.toHaveBeenCalled();
+    } finally {
+      vi.useRealTimers();
+    }
   });
 });

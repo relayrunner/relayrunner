@@ -20,7 +20,10 @@ describe("mintMachineRunner", () => {
   test("registers on the job's repo, with the route label only", async () => {
     const mint = vi.fn<typeof generateJitConfig>().mockResolvedValue(jit);
     const fallback = vi.fn(async () => org);
-    await expect(mintMachineRunner("ghs_x", route, fallback, mint)).resolves.toBe(jit);
+    await expect(mintMachineRunner("ghs_x", route, fallback, mint)).resolves.toEqual({
+      jit,
+      scope: { kind: "repo", repo: "acme/app" },
+    });
     expect(mint).toHaveBeenCalledOnce();
     expect(mint).toHaveBeenCalledWith(
       "ghs_x",
@@ -36,7 +39,10 @@ describe("mintMachineRunner", () => {
       .fn<typeof generateJitConfig>()
       .mockRejectedValueOnce(refused(403))
       .mockResolvedValueOnce(jit);
-    await expect(mintMachineRunner("ghs_x", route, async () => org, mint)).resolves.toBe(jit);
+    await expect(mintMachineRunner("ghs_x", route, async () => org, mint)).resolves.toEqual({
+      jit,
+      scope: org,
+    });
     expect(mint).toHaveBeenLastCalledWith("ghs_x", org, expect.anything());
     expect(warn.mock.calls[0][0]).toContain("machine runner registered on the org");
   });

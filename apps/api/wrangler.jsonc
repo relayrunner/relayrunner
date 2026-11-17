@@ -146,12 +146,14 @@
       { "name": "MACHINE_LINK", "class_name": "MachineLink" },
       { "name": "CONTAINER_RUNNER", "class_name": "ContainerRunner" },
       { "name": "LINT_RUNNER", "class_name": "LintRunner" },
+      { "name": "STRANDED_JOB", "class_name": "StrandedJob" },
     ],
   },
   "migrations": [
     { "tag": "v1", "new_sqlite_classes": ["PickRunner", "Router", "MachineLink"] },
     { "tag": "v2", "new_sqlite_classes": ["ContainerRunner"] },
     { "tag": "v3", "new_sqlite_classes": ["LintRunner"] },
+    { "tag": "v4", "new_sqlite_classes": ["StrandedJob"] },
   ],
   // GitHub's runner image for container runners (src/durable-objects/container-runner.ts), which
   // picks the instance size when it starts one. `pnpm run deploy` (scripts/deploy.ts) tags each

@@ -35,6 +35,7 @@ export { LintRunner } from "./durable-objects/lint-runner.ts";
 export { MachineLink } from "./durable-objects/machine-link.ts";
 export { PickRunner } from "./durable-objects/pick-runner.ts";
 export { Router } from "./durable-objects/router.ts";
+export { StrandedJob } from "./durable-objects/stranded-job.ts";
 
 // Match the second and third entries of triggers.crons in wrangler.jsonc.
 const USAGE_CRON = "*/15 * * * *";
