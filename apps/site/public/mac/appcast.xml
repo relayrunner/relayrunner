@@ -4,13 +4,13 @@
   <channel>
     <title>RelayRunner for Mac</title>
     <item>
-      <title>0.2.0</title>
-      <pubDate>Tue, 17 Nov 2026 01:59:55 +0000</pubDate>
-      <sparkle:version>0.2.0</sparkle:version>
-      <sparkle:shortVersionString>0.2.0</sparkle:shortVersionString>
+      <title>0.2.1</title>
+      <pubDate>Tue, 17 Nov 2026 23:37:46 +0000</pubDate>
+      <sparkle:version>0.2.1</sparkle:version>
+      <sparkle:shortVersionString>0.2.1</sparkle:shortVersionString>
       <sparkle:minimumSystemVersion>14.0</sparkle:minimumSystemVersion>
-      <sparkle:releaseNotesLink>https://github.com/relayrunner/relayrunner/releases/tag/mac-v0.2.0</sparkle:releaseNotesLink>
-      <enclosure url="https://github.com/relayrunner/relayrunner/releases/download/mac-v0.2.0/RelayRunner-0.2.0.zip" sparkle:edSignature="gERHQCHY8WbAKOqDWIsdLSZ7i893t5Y9QJCW+BaLJDRd2KP9geAVL/8SBglc+3Z9DmQEBWzRhJ3/uNeLihr4CQ==" length="2806946" type="application/octet-stream"/>
+      <sparkle:releaseNotesLink>https://github.com/relayrunner/relayrunner/releases/tag/mac-v0.2.1</sparkle:releaseNotesLink>
+      <enclosure url="https://github.com/relayrunner/relayrunner/releases/download/mac-v0.2.1/RelayRunner-0.2.1.zip" sparkle:edSignature="id01iP/T2S4g/BGbnH4Dh8fq8E+G2vKiUFGGp9C/ZT4NgscowNhDD4uS663hxoMTKR4VJO+OBL6MDuv1aeWPBQ==" length="2807454" type="application/octet-stream"/>
     </item>
   </channel>
 </rss>
