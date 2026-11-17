@@ -29,13 +29,9 @@ pub fn emit(kind: &str, fields: Value) {
     let _ = out.flush();
 }
 
-/// Human output: stderr when stdout carries events, stdout otherwise.
+/// A line for a person, as clack's log.info: stderr when stdout carries events, stdout otherwise.
 pub fn log(line: &str) {
-    if on() {
-        eprintln!("{line}");
-    } else {
-        println!("{line}");
-    }
+    crate::ui::info(line);
 }
 
 /// The time as JavaScript's toISOString writes it: 2026-11-16T22:28:36.123Z.

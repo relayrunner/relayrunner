@@ -1,6 +1,6 @@
 //! `relayrunner connect`: signs in when needed, gets the runner (and the VMs) ready, and keeps the
-//! machine online. A port of connectCommand and connectMachine in apps/cli/cli.ts. Not ported yet:
-//! the interactive sharing question, the `init` offer, the CLI update notice, and the `p` key.
+//! machine online, and `relayrunner login`. A port of connectCommand, connectMachine and
+//! loginCommand in apps/cli/cli.ts. Not ported yet: the `init` offer.
 
 use crate::connection::{self, End, Report, Run, RunJob};
 use crate::credentials::{self, Credentials};
@@ -13,6 +13,8 @@ use crate::login;
 use crate::protocol::{Hello, JobState, JobUpdate, Place, VmSize};
 use crate::share::{self, Share};
 use crate::sys::{self, blocking};
+use crate::ui;
+use crate::whoami;
 use serde_json::json;
 use std::path::PathBuf;
 use std::sync::{Arc, Mutex};
@@ -81,7 +83,7 @@ impl Args {
 }
 
 fn fail(error: &Error) {
-    eprintln!("{}", error.message);
+    crate::ui::error(&error.message);
     events::emit(
         "error",
         json!({ "code": error.code, "message": error.message }),
@@ -113,6 +115,7 @@ pub async fn command(args: Args) -> i32 {
     if args.events {
         events::start();
     }
+    crate::ui::intro("RelayRunner");
     let cores = sys::cpu_count();
     let memory = sys::total_memory().await;
     let prepared =
@@ -216,20 +219,11 @@ async fn connect_machine(args: &Args, size: Wanted, slots: u32) -> Result<Option
 
     let mut saved =
         credentials::read().map_err(|e| Error::new("CREDENTIALS_UNREADABLE", e.to_string()))?;
-    let requested = args
-        .server
-        .clone()
-        .or_else(|| std::env::var("RELAYRUNNER_URL").ok())
-        .filter(|s| !s.is_empty());
-    let server = credentials::normalize_server(
-        &requested
-            .or_else(|| saved.as_ref().map(|c| c.server.clone()))
-            .unwrap_or_else(|| DEFAULT_SERVER.into()),
-    )?;
+    let server = server_for(args.server.as_deref(), saved.as_ref())?;
     if let Some(c) = &saved
         && c.server != server
     {
-        events::log(&format!(
+        ui::warn(&format!(
             "This machine is enrolled with {}, not {server}. Signing in again.",
             c.server
         ));
@@ -237,9 +231,9 @@ async fn connect_machine(args: &Args, size: Wanted, slots: u32) -> Result<Option
     }
     let credentials = match saved {
         Some(c) => {
-            events::log(&format!("Machine {} ({})", c.machine.name, c.server));
+            ui::info(&format!("Machine {} ({})", c.machine.name, c.server));
             if let Some(share) = share {
-                apply_sharing(&c, share).await;
+                apply_sharing(&c, share, None).await;
             }
             c
         }
@@ -249,6 +243,22 @@ async fn connect_machine(args: &Args, size: Wanted, slots: u32) -> Result<Option
         "machine",
         json!({ "id": credentials.machine.id, "name": credentials.machine.name, "server": credentials.server }),
     );
+
+    // Someone at the terminal hears about a newer CLI now, and again each day `connect` stays up.
+    // The check runs in the background and never holds up connecting.
+    let update_notices = (ui::interactive() && !events::on() && std::env::var_os("CI").is_none())
+        .then(|| {
+            tokio::spawn(async {
+                loop {
+                    if let Ok(Some(latest)) =
+                        tokio::task::spawn_blocking(crate::update_check::check).await
+                    {
+                        ui::warn(&crate::update_check::notice(&latest));
+                    }
+                    tokio::time::sleep(crate::update_check::CHECK_INTERVAL).await;
+                }
+            })
+        });
 
     let home = credentials::home();
     let runners = home.join("runner");
@@ -321,14 +331,14 @@ async fn connect_machine(args: &Args, size: Wanted, slots: u32) -> Result<Option
         let runner = blocking(move || install::ensure(&r, &events::log)).await?;
         use_runner(&current, &runner, slots).await?;
         if let Some(hint) = state.filter(|_| !use_vms).and_then(isolated::setup_hint) {
-            log(&hint);
+            crate::ui::warn(&hint);
         }
         if args.macos {
-            log(
+            crate::ui::warn(
                 "Linux jobs run in a VM. macOS jobs run on this Mac itself, where they can read your files. Only take macOS jobs from repos you trust.",
             );
         } else if args.isolated == Some(false) {
-            log(
+            crate::ui::warn(
                 "Jobs run on this machine itself, where they can read your files. Only take jobs from repos you trust.",
             );
         }
@@ -366,6 +376,7 @@ async fn connect_machine(args: &Args, size: Wanted, slots: u32) -> Result<Option
         sigint.recv().await;
         let _ = sigint_stop.send(true);
         sigint.recv().await;
+        crate::live::end();
         std::process::exit(130);
     });
     let commands = args
@@ -424,6 +435,15 @@ async fn connect_machine(args: &Args, size: Wanted, slots: u32) -> Result<Option
         })
     };
 
+    // The tab's title follows the machine's state, and `p` pauses or resumes it, while someone's
+    // at the terminal. On success the gateway sends `paused`, which logs it.
+    {
+        let credentials = credentials.clone();
+        let runtime = tokio::runtime::Handle::current();
+        crate::live::start(&credentials.machine.name.clone(), move |paused| {
+            runtime.spawn(set_paused(credentials.clone(), !paused));
+        });
+    }
     let end = connection::run(connection::Options {
         credentials: credentials.clone(),
         hello,
@@ -434,6 +454,10 @@ async fn connect_machine(args: &Args, size: Wanted, slots: u32) -> Result<Option
     })
     .await;
     let _ = stop_tx.send(true);
+    crate::live::end();
+    if let Some(u) = update_notices {
+        u.abort();
+    }
     if let Some(u) = updater {
         u.abort();
     }
@@ -454,32 +478,32 @@ async fn connect_machine(args: &Args, size: Wanted, slots: u32) -> Result<Option
     }
     events::emit("offline", offline);
     match end {
-        End::Stopped => events::log("Offline."),
+        End::Stopped => ui::outro("Offline."),
         End::Revoked { online } => {
             credentials::delete();
             // A token that was already dead means someone is here to sign in. One revoked while
             // online may be unattended, so that one stops and says so.
             if !online {
-                events::log(
+                ui::warn(
                     "This machine was removed or its token is no longer valid. If you didn't remove it, another copy of its token may have signed in elsewhere: check the Runners page. Signing in again.",
                 );
                 return Ok(None);
             }
-            eprintln!(
-                "This machine was removed or its token is no longer valid. If you didn't remove it, another copy of its token may have signed in elsewhere: check the Runners page and revoke it if so."
+            ui::error(
+                "This machine was removed or its token is no longer valid. If you didn't remove it, another copy of its token may have signed in elsewhere: check the Runners page and revoke it if so.",
             );
-            eprintln!("Run `relayrunner connect` again to sign in.");
+            ui::outro("Run `relayrunner connect` again to sign in.");
         }
         End::Replaced => {
-            eprintln!("Another `relayrunner connect` signed in as this machine and took over.");
-            eprintln!(
-                "If that wasn't you, someone has this machine's token: revoke it at {}/runners, then run `relayrunner connect` to sign in again.",
+            ui::warn(&format!(
+                "Another `relayrunner connect` signed in as this machine and took over.\nIf that wasn't you, someone has this machine's token: revoke it at {}/runners, then run `relayrunner connect` to sign in again.",
                 credentials.server
-            );
+            ));
+            ui::outro("Offline here.");
         }
         End::Rejected(m) => {
-            eprintln!("The gateway rejected this CLI: {m}");
-            eprintln!("Update it with `npx relayrunner@latest connect`.");
+            ui::error(&format!("The gateway rejected this CLI: {m}"));
+            ui::outro("Update it with `npx relayrunner@latest connect`.");
         }
     }
     Ok(Some(code))
@@ -498,7 +522,7 @@ async fn use_runner(
     Ok(())
 }
 
-/// Signs in through the browser, saves the token, and sets sharing when --share says.
+/// Signs in through the browser, saves the machine token, and settles who can run jobs here.
 async fn enroll(
     server: &str,
     name: Option<String>,
@@ -512,62 +536,211 @@ async fn enroll(
     let server = server.to_string();
     let signed_in = blocking(move || {
         login::login(&server, &name, platform, |url, code| {
-            events::log(&format!(
-                "Sign in: {url}\nConfirm the code {code} matches the one in your browser."
-            ));
+            ui::note(
+                &format!("{url}\n\nConfirm the code {code} matches the one in your browser."),
+                "Sign in",
+            );
             events::emit("sign-in", json!({ "url": url, "code": code }));
             login::open_browser(url);
-            events::log("Waiting for approval in the browser…");
+            ui::spinner("Waiting for approval in the browser");
         })
     })
-    .await?;
+    .await;
+    let signed_in = match signed_in {
+        Ok(s) => {
+            ui::stop_spinner("Approved", true);
+            s
+        }
+        Err(e) => {
+            ui::stop_spinner("Sign-in failed", false);
+            return Err(e);
+        }
+    };
     let credentials = signed_in.credentials;
     credentials::save(&credentials)
         .map_err(|e| Error::new("CREDENTIALS_UNWRITABLE", e.to_string()))?;
-    events::log(&format!(
+    ui::success(&format!(
         "Enrolled as {}. Token saved to {}.",
         credentials.machine.name,
         credentials::path_display()
     ));
-    let names: Vec<&str> = signed_in
-        .workspaces
-        .iter()
-        .map(|w| w.name.as_str())
-        .collect();
-    if !names.is_empty() {
-        events::log(&format!(
+    let workspaces = signed_in.workspaces;
+    // /device picked the workspaces it runs jobs in; this is where they're changed later.
+    if workspaces.is_empty() {
+        let c = credentials.clone();
+        let notice = blocking(move || Ok(crate::workspaces::empty_notice(&c))).await?;
+        ui::warn(&notice);
+    } else {
+        ui::info(&format!(
             "Runs jobs in {}.\nChange with: relayrunner workspaces",
-            names.join(", ")
+            whoami::names(&workspaces)
         ));
     }
-    if let Some(share) = share {
-        apply_sharing(&credentials, share).await;
-    } else if signed_in
-        .workspaces
-        .iter()
-        .any(|w| w.member_count.unwrap_or(0) > 1)
-    {
-        events::log(
-            "Only jobs you started run here. `relayrunner share anyone` lets teammates' jobs run here too.",
-        );
+    // A new machine runs only its owner's jobs. Ask whether teammates' jobs may run here too,
+    // but only when one of its workspaces has teammates. Reconnecting never asks again.
+    let mut choice = share;
+    if choice.is_none() && whoami::has_teammates(&workspaces) {
+        if ui::can_ask() {
+            choice = ask_sharing(&workspaces);
+        } else {
+            ui::info(
+                "Only jobs you started run here. `relayrunner share anyone` lets teammates' jobs run here too.",
+            );
+        }
+    }
+    if let Some(choice) = choice {
+        apply_sharing(&credentials, choice, Some(&workspaces)).await;
     }
     Ok(credentials)
 }
 
+fn ask_sharing(workspaces: &[login::Workspace]) -> Option<Share> {
+    let choices = [
+        ui::Choice {
+            label: "Only me".into(),
+            hint: Some("jobs you started".into()),
+        },
+        ui::Choice {
+            label: format!("Anyone in {}", whoami::scope(workspaces)),
+            hint: Some("teammates' and bots' jobs too, from repos you can open".into()),
+        },
+    ];
+    match ui::select("Who can run jobs on this machine?", &choices, 0) {
+        Some(0) => Some(Share::OnlyMe),
+        Some(_) => Some(Share::Anyone),
+        None => {
+            ui::info("Keeping only-me. Change it any time with `relayrunner share`.");
+            None
+        }
+    }
+}
+
 /// Best effort while connecting: a machine that couldn't change its sharing still connects.
-async fn apply_sharing(credentials: &Credentials, share: Share) {
+async fn apply_sharing(
+    credentials: &Credentials,
+    share: Share,
+    workspaces: Option<&[login::Workspace]>,
+) {
+    let scope = workspaces.map_or_else(|| "your workspaces".to_string(), whoami::scope);
     let c = credentials.clone();
     match tokio::task::spawn_blocking(move || share::set(&c, share)).await {
-        Ok(share::Outcome::Ok(now)) => events::log(&format!(
+        Ok(share::Outcome::Ok(now)) => ui::info(&format!(
             "Sharing: {}: {}",
             now.choice(),
-            now.meaning("your workspaces")
+            now.meaning(&scope)
         )),
-        Ok(share::Outcome::Failed(reason)) => events::log(&format!(
+        Ok(share::Outcome::Failed(reason)) => ui::warn(&format!(
             "Couldn't set sharing: {reason}. Run `relayrunner share {}` to try again.",
             share.choice()
         )),
         _ => {}
+    }
+}
+
+/// An explicit --server or RELAYRUNNER_URL wins; otherwise the gateway this machine enrolled with.
+fn server_for(requested: Option<&str>, saved: Option<&Credentials>) -> Result<String, Error> {
+    let env = std::env::var("RELAYRUNNER_URL").ok();
+    let value = requested
+        .filter(|s| !s.is_empty())
+        .or(env.as_deref().filter(|s| !s.is_empty()))
+        .or(saved.map(|c| c.server.as_str()))
+        .unwrap_or(DEFAULT_SERVER);
+    credentials::normalize_server(value)
+}
+
+/// `relayrunner login`: the sign-in half of `connect`. It enrolls the machine and exits without
+/// going online, so an agent can run it start to finish.
+pub async fn login_command(args: &[String]) -> i32 {
+    ui::intro("RelayRunner");
+    let result = async {
+        let args = Args::parse(args)?;
+        if args.concurrency.is_some()
+            || args.isolated.is_some()
+            || args.macos
+            || args.cpus.is_some()
+            || args.memory.is_some()
+            || args.image.is_some()
+            || args.local_network
+            || args.events
+        {
+            return Err(Error::new(
+                "USAGE",
+                "`relayrunner login` takes --server, --name and --share. See `relayrunner login --help`.",
+            ));
+        }
+        let share = share::arg(args.share.as_deref())?;
+        let saved = credentials::read()
+            .map_err(|e| Error::new("CREDENTIALS_UNREADABLE", e.to_string()))?;
+        let server = server_for(args.server.as_deref(), saved.as_ref())?;
+        match &saved {
+            Some(c) if c.server == server => {
+                let c2 = c.clone();
+                match blocking(move || Ok(whoami::fetch(&c2))).await? {
+                    whoami::Identity::Revoked => ui::warn(&format!(
+                        "{} is no longer signed in. Signing in again.",
+                        c.machine.name
+                    )),
+                    identity => {
+                        let workspaces = match &identity {
+                            whoami::Identity::Ok(body) => Some(login::read_workspaces(body)),
+                            _ => None,
+                        };
+                        if let Some(share) = share {
+                            apply_sharing(c, share, workspaces.as_deref()).await;
+                        }
+                        let place = match workspaces.as_deref() {
+                            Some(w) if !w.is_empty() => format!(" in {}", whoami::names(w)),
+                            _ => String::new(),
+                        };
+                        ui::outro(&format!(
+                            "Already signed in as {}{place}. Run `relayrunner connect` to go online.",
+                            c.machine.name
+                        ));
+                        return Ok(());
+                    }
+                }
+            }
+            Some(c) => ui::warn(&format!(
+                "This machine is enrolled with {}, not {server}. Signing in again.",
+                c.server
+            )),
+            None => {}
+        }
+        let (os, arch) = install::platform()?;
+        let os = if os == "osx" { "macos" } else { "linux" };
+        enroll(&server, args.name, (os, arch), share).await?;
+        ui::outro("Run `relayrunner connect` to put this machine online.");
+        Ok(())
+    }
+    .await;
+    match result {
+        Ok(()) => 0,
+        Err(e) => {
+            ui::error(&e.message);
+            1
+        }
+    }
+}
+
+/// Pauses or resumes the machine for `p` or a command on stdin. Success shows up as the gateway's
+/// `paused` message. One at a time: a press while one is on its way does nothing.
+async fn set_paused(credentials: Credentials, paused: bool) {
+    static TOGGLING: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
+    use std::sync::atomic::Ordering;
+    if TOGGLING.swap(true, Ordering::SeqCst) {
+        return;
+    }
+    let outcome =
+        tokio::task::spawn_blocking(move || crate::pause::set(&credentials, paused)).await;
+    TOGGLING.store(false, Ordering::SeqCst);
+    if let Ok(crate::pause::Outcome::Failed(reason)) = outcome {
+        let command = if paused { "pause" } else { "resume" };
+        let message = format!("Couldn't {command}: {reason}.");
+        ui::error(&message);
+        events::emit(
+            "error",
+            json!({ "code": "PAUSE_FAILED", "message": message, "command": command }),
+        );
     }
 }
 
@@ -586,26 +759,7 @@ async fn read_commands(credentials: Credentials, stop: watch::Sender<bool>) {
             );
             continue;
         }
-        let c = credentials.clone();
-        let w = word.clone();
-        let result = tokio::task::spawn_blocking(move || {
-            match crate::api::call_as_machine(&c, "POST", &format!("/api/machines/me/{w}"), None) {
-                crate::api::Reply::Ok(_) | crate::api::Reply::Revoked => Ok(()),
-                crate::api::Reply::Status(status, body) => {
-                    Err(crate::api::failure_reason(&c.server, status, &body))
-                }
-                crate::api::Reply::Unreachable(reason) => Err(reason),
-            }
-        })
-        .await;
-        if let Ok(Err(reason)) = result {
-            let message = format!("Couldn't {word}: {reason}.");
-            eprintln!("{message}");
-            events::emit(
-                "error",
-                json!({ "code": "PAUSE_FAILED", "message": message, "command": word }),
-            );
-        }
+        set_paused(credentials.clone(), word == "pause").await;
     }
     let _ = stop.send(true);
 }

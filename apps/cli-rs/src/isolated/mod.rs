@@ -16,10 +16,9 @@ const START_PATH: &str = "/usr/local/bin/relayrunner-start";
 const GH_KEYRING: &str = "/usr/share/keyrings/githubcli-archive-keyring.gpg";
 const TOOLS: &str = "build-essential pkg-config cmake python3-pip python3-venv python-is-python3 zip xz-utils zstd bzip2 wget rsync file gettext-base bc time git-lfs sqlite3 docker-compose-v2 netcat-openbsd iputils-ping dnsutils iproute2 libssl-dev gh";
 const NO_DNS: i32 = 3;
-const FIREWALL_FILES: [&str; 2] = [
-    "/etc/pf.anchors/app.relayrunner",
-    "/Library/LaunchDaemons/app.relayrunner.firewall.plist",
-];
+/// What `relayrunner firewall on` installs.
+pub const RULES_FILE: &str = "/etc/pf.anchors/app.relayrunner";
+pub const DAEMON_FILE: &str = "/Library/LaunchDaemons/app.relayrunner.firewall.plist";
 
 #[derive(Debug, Clone)]
 pub struct Isolation {
@@ -87,7 +86,9 @@ pub fn setup_hint(state: State) -> Option<String> {
 }
 
 pub fn firewall_installed() -> bool {
-    FIREWALL_FILES.iter().all(|f| Path::new(f).exists())
+    [RULES_FILE, DAEMON_FILE]
+        .iter()
+        .all(|f| Path::new(f).exists())
 }
 
 /// A file recording what the VMs did, to share when something goes wrong. Never a job's output or

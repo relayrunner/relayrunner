@@ -96,9 +96,12 @@ pub fn set(credentials: &Credentials, share: Share) -> Outcome {
     }
 }
 
-/// `relayrunner share only-me|anyone`. Showing the current setting stays in the TS CLI for now.
-pub fn command(credentials: &Credentials, value: &str) -> Result<(), Error> {
+/// `relayrunner share [only-me|anyone]`: shows the setting, or changes it.
+pub fn command(credentials: &Credentials, value: Option<&str>) -> Result<(), Error> {
     let name = &credentials.machine.name;
+    let Some(value) = value else {
+        return show(credentials);
+    };
     let share = Share::parse(value).ok_or_else(|| {
         Error::new(
             "USAGE",
@@ -116,6 +119,44 @@ pub fn command(credentials: &Credentials, value: &str) -> Result<(), Error> {
             format!("Couldn't change sharing for {name}: {reason}."),
         )),
     }
+}
+
+fn show(credentials: &Credentials) -> Result<(), Error> {
+    use crate::whoami::{self, Identity};
+    let name = &credentials.machine.name;
+    let identity = match whoami::fetch(credentials) {
+        Identity::Ok(identity) => identity,
+        Identity::Revoked => return Err(revoked(name)),
+        Identity::Unverified(reason) => {
+            return Err(Error::new(
+                "SHARE_FAILED",
+                format!("Couldn't check sharing for {name}: {reason}."),
+            ));
+        }
+    };
+    let Some(share) = identity["machine"]["sharing"]
+        .as_str()
+        .and_then(Share::from_sharing)
+    else {
+        return Err(Error::new(
+            "SHARE_UNSUPPORTED",
+            format!("{} doesn't support sharing yet.", credentials.server),
+        ));
+    };
+    let workspaces = crate::login::read_workspaces(&identity);
+    let scope = whoami::scope(&workspaces);
+    let other = match share {
+        Share::OnlyMe => "anyone",
+        Share::Anyone => "only-me",
+    };
+    println!("{name} {} ({}).", share.meaning(&scope), share.choice());
+    if workspaces.is_empty() {
+        println!("{name} isn't in a workspace yet, so this matters once it is.");
+    } else if workspaces.iter().all(|w| w.member_count == Some(1)) {
+        println!("Nobody else is in {scope} yet, so this matters once a teammate joins.");
+    }
+    println!("Change it with `relayrunner share {other}`.");
+    Ok(())
 }
 
 pub fn revoked(name: &str) -> Error {
