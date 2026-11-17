@@ -263,7 +263,9 @@ fn local_date(value: &Value) -> Option<String> {
     };
     // SAFETY: localtime_r writes only into the struct we pass.
     unsafe {
-        let t: libc::time_t = secs as libc::time_t;
+        // libc marks time_t deprecated on musl while it widens it; the cast is right either way.
+        #[allow(deprecated)]
+        let t = secs as libc::time_t;
         let mut tm: libc::tm = std::mem::zeroed();
         libc::localtime_r(&t, &mut tm);
         Some(format!(
