@@ -9,6 +9,9 @@ import {
   SAMPLE_CAP,
   type Stat,
   statOf,
+  typicalJobTime,
+  typicalJobTimes,
+  typicalKey,
   versusBaseline,
   windowQuery,
 } from "./job-times.ts";
@@ -663,5 +666,54 @@ describe("job times report", () => {
     const row = await db.query.jobTiming.findFirst({ where: (t, { eq }) => eq(t.id, jobId) });
     expect(row).toMatchObject({ machineId: `rec-${installationId}` });
     expect(row?.queuedAt?.getTime()).toBe(now - 20_000);
+  });
+});
+
+describe("typical job times", () => {
+  test("times each job on its environment, leaving out thin ones", async () => {
+    const { installationId, workspaceId } = await connectedWorkspace();
+    const db = createDb(env.DB);
+    const [machine] = await db
+      .insert(schema.machine)
+      .values({ id: `typical-mac-${installationId}`, workspaceId, name: "studio" })
+      .returning();
+    const rows: Timing[] = [];
+    for (let i = 0; i < 6; i += 1) {
+      rows.push(timing(installationId, 40 + i, { hoursAgo: i + 1 }));
+      rows.push(
+        timing(installationId, 10, {
+          labels: ["rr-0123456789ab"],
+          runnerGroupName: "Default",
+          machineId: machine.id,
+          hoursAgo: i + 1,
+        }),
+      );
+    }
+    // Under FEW_RUNS on Linux: no typical time.
+    for (let i = 0; i < 3; i += 1) rows.push(timing(installationId, 90, { name: "build" }));
+    // Failures and old runs don't count.
+    rows.push(timing(installationId, 999, { conclusion: "failure" }));
+    rows.push(timing(installationId, 999, { hoursAgo: 15 * 24 }));
+    await insert(rows);
+
+    const repositoryId = installationId * 10;
+    const lint = { repositoryId, workflow: "CI", name: "lint" };
+    const linux = { ...lint, environment: "github:linux-2-core" };
+    const mac = { ...lint, environment: `machine:${machine.id}` };
+    const build = { ...lint, name: "build", environment: "github:linux-2-core" };
+    const times = await typicalJobTimes(db, workspaceId, [linux, mac, build]);
+    expect(times.get(typicalKey(linux))).toEqual({ medianMs: 42_500, p90Ms: 44_500, samples: 6 });
+    expect(times.get(typicalKey(mac))).toEqual({ medianMs: 10_000, p90Ms: 10_000, samples: 6 });
+    expect(times.has(typicalKey(build))).toBe(false);
+
+    expect(await typicalJobTime(db, workspaceId, { ...lint, machineId: machine.id })).toEqual({
+      medianMs: 10_000,
+      p90Ms: 10_000,
+      samples: 6,
+    });
+    expect(await typicalJobTime(db, workspaceId, { ...lint, machineId: "elsewhere" })).toBeNull();
+    // Another workspace sees none of it.
+    const other = await connectedWorkspace();
+    expect((await typicalJobTimes(db, other.workspaceId, [linux])).size).toBe(0);
   });
 });

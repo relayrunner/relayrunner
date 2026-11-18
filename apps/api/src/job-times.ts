@@ -880,3 +880,117 @@ export async function machineJobTimes(
     machines: Object.fromEntries(rows.map((row) => [row.machine_id, statOf(bucketOf(row))])),
   };
 }
+
+/** A job a typical time is asked for: one job of one workflow, on one runner environment. */
+export interface TypicalJobKey {
+  repositoryId: number;
+  workflow: string | null;
+  /** The job's name as GitHub shows it: a matrix leg is its own job (`test (node 24)`). */
+  name: string;
+  /** Its environment key (environmentFor), such as `machine:<id>` or `github:linux-2-core`. */
+  environment: string;
+}
+
+/**
+ * How long a job usually takes on an environment: the median and p90 of its newest SAMPLE_CAP
+ * successful runs there over DEFAULT_DAYS, as on the Job times page.
+ */
+export interface TypicalTime {
+  medianMs: number;
+  p90Ms: number;
+  /** Successful runs behind it: FEW_RUNS at least, at most SAMPLE_CAP. */
+  samples: number;
+}
+
+/** The key typicalJobTimes' map uses for a job. */
+export const typicalKey = (job: TypicalJobKey) =>
+  [job.repositoryId, job.workflow ?? "", job.name, job.environment].join("\u001f");
+
+// Jobs per statement: three bound values each, under D1's 100 per statement.
+const TYPICAL_CHUNK = 25;
+
+/**
+ * Each job's typical time on its environment, keyed by typicalKey. A job with under FEW_RUNS
+ * successful runs there in the window has no entry, since a time that thin isn't worth comparing
+ * with. Each statement is a range of job_timing_job_idx per distinct job, never a scan.
+ */
+export async function typicalJobTimes(
+  db: Db,
+  workspaceId: string,
+  jobs: TypicalJobKey[],
+  now = Date.now(),
+): Promise<Map<string, TypicalTime>> {
+  const typical = new Map<string, TypicalTime>();
+  const wanted = new Set(jobs.map(typicalKey));
+  // One lookup per job, whatever environments it's asked for on.
+  const distinct = [
+    ...new Map(jobs.map((job) => [typicalKey({ ...job, environment: "" }), job] as const)).values(),
+  ];
+  if (!distinct.length) return typical;
+  const since = now - DEFAULT_DAYS * DAY_MS;
+  const chunks: TypicalJobKey[][] = [];
+  for (let i = 0; i < distinct.length; i += TYPICAL_CHUNK)
+    chunks.push(distinct.slice(i, i + TYPICAL_CHUNK));
+  const results = await Promise.all(
+    chunks.map((chunk) => {
+      const which = sql.join(
+        chunk.map(
+          (job) =>
+            sql`(${table.repositoryId} = ${job.repositoryId} and ${
+              job.workflow === null
+                ? sql`${table.workflowName} is null`
+                : sql`${table.workflowName} = ${job.workflow}`
+            } and ${table.name} = ${job.name})`,
+        ),
+        sql` or `,
+      );
+      return db.all<Omit<WindowRow, "repository">>(sql`
+        select ${table.repositoryId} as repository_id, ${table.workflowName} as workflow_name,
+          ${table.name} as name, ${table.labels} as labels,
+          ${table.runnerGroupName} as runner_group_name, ${table.machineId} as machine_id,
+          count(*) as runs, sum(${OK}) as successes, ${SAMPLES} as samples
+        from ${table}
+        where (${which}) and ${table.completedAt} >= ${since} and ${inWorkspace(workspaceId)}
+          and ${RAN}
+        group by ${table.repositoryId}, ${table.workflowName}, ${table.name}, ${table.labels},
+          ${table.runnerGroupName}, ${table.machineId}`);
+    }),
+  );
+  const buckets: Buckets = new Map();
+  for (const row of results.flat()) {
+    const environment = environmentFor(
+      JSON.parse(row.labels) as string[],
+      row.runner_group_name,
+      row.machine_id,
+    ).key;
+    const key = typicalKey({
+      repositoryId: Number(row.repository_id),
+      workflow: row.workflow_name,
+      name: row.name,
+      environment,
+    });
+    if (wanted.has(key)) add(buckets, key, bucketOf(row));
+  }
+  for (const [key, bucket] of buckets) {
+    const stat = statOf(bucket);
+    if (stat.samples >= FEW_RUNS && stat.medianMs !== null && stat.p90Ms !== null)
+      typical.set(key, { medianMs: stat.medianMs, p90Ms: stat.p90Ms, samples: stat.samples });
+  }
+  return typical;
+}
+
+/**
+ * One job's typical time on one of the workspace's machines, or null under FEW_RUNS successful
+ * runs there. For what a machine is handed with a job, so it can show elapsed against usual.
+ */
+export async function typicalJobTime(
+  db: Db,
+  workspaceId: string,
+  job: { repositoryId: number; workflow: string | null; name: string; machineId: string },
+  now = Date.now(),
+): Promise<TypicalTime | null> {
+  const { machineId, ...rest } = job;
+  const key = { ...rest, environment: `${MACHINE}${machineId}` };
+  const times = await typicalJobTimes(db, workspaceId, [key], now);
+  return times.get(typicalKey(key)) ?? null;
+}

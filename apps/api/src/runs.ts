@@ -28,6 +28,9 @@ import {
   RAN_ON_RUNNER,
   type Stat,
   statOf,
+  type TypicalTime,
+  typicalJobTimes,
+  typicalKey,
   type WorkflowRow,
 } from "./job-times.ts";
 import { purgeBefore, RAW_RETENTION_DAYS } from "./job-timings.ts";
@@ -451,6 +454,8 @@ export interface RunJob {
   queuedAt: number | null;
   startedAt: number | null;
   completedAt: number | null;
+  /** How long the job usually takes where it runs, when it has FEW_RUNS+ successful runs there. */
+  typical: TypicalTime | null;
 }
 
 /** What a run's detail says about the run itself, for when the run list hasn't loaded it. */
@@ -556,9 +561,27 @@ export async function runJobs(
       queuedAt: row.queuedAt?.getTime() ?? null,
       startedAt: row.startedAt?.getTime() ?? null,
       completedAt: row.completedAt?.getTime() ?? null,
+      typical: null,
     };
   });
-  await nameMachines(db, workspaceId, envs);
+  const keyOf = (job: RunJob, environment: string) => ({
+    repositoryId: run.repositoryId,
+    workflow: header?.workflow ?? null,
+    name: job.name,
+    environment,
+  });
+  const [typical] = await Promise.all([
+    header
+      ? typicalJobTimes(
+          db,
+          workspaceId,
+          jobs.flatMap((job) => (job.environment ? [keyOf(job, job.environment)] : [])),
+        )
+      : Promise.resolve(new Map<string, TypicalTime>()),
+    nameMachines(db, workspaceId, envs),
+  ]);
+  for (const job of jobs)
+    if (job.environment) job.typical = typical.get(typicalKey(keyOf(job, job.environment))) ?? null;
   return {
     run: header,
     // Only once the run is known to be the workspace's: decisions aren't scoped to one.
@@ -585,6 +608,11 @@ export interface LiveJob {
   environment: string;
   queuedAt: number | null;
   startedAt: number | null;
+  /**
+   * How long the job usually takes on its environment, when it has FEW_RUNS+ successful runs there.
+   * With startedAt, when it should finish.
+   */
+  typical: TypicalTime | null;
 }
 
 export interface LiveJobs {
@@ -642,10 +670,16 @@ export async function liveJobs(db: Db, workspaceId: string, now = Date.now()): P
       environment: env.key,
       queuedAt: row.queuedAt?.getTime() ?? null,
       startedAt: row.startedAt?.getTime() ?? null,
+      typical: null,
     };
     (job.startedAt === null ? queued : running).push(job);
   }
-  await nameMachines(db, workspaceId, envs);
+  const all = [...running, ...queued];
+  const [typical] = await Promise.all([
+    typicalJobTimes(db, workspaceId, all, now),
+    nameMachines(db, workspaceId, envs),
+  ]);
+  for (const job of all) job.typical = typical.get(typicalKey(job)) ?? null;
   return { environments: [...envs.values()], running, queued };
 }
 

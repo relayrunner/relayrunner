@@ -715,6 +715,10 @@ describe("live jobs", () => {
       // A pick still going, a finished job and a job GitHub never finished two days ago.
       timing(installationId, 0, { ...going, name: "pick", labels: ["relayrunner"] }),
       timing(installationId, 30, { name: "done" }),
+      // Five finished runs of test on GitHub, for its typical time.
+      ...[300, 310, 320, 330, 340].map((seconds) =>
+        timing(installationId, seconds, { name: "test" }),
+      ),
       timing(installationId, 0, {
         ...going,
         name: "ghost",
@@ -734,6 +738,9 @@ describe("live jobs", () => {
       { name: "gpu", labels: ["self-hosted", "gpu"], environment: "self-hosted:default" },
     ]);
     expect(live.running[1]).toMatchObject({ environment: `machine:${machine.id}` });
+    expect(live.running[0]?.typical).toEqual({ medianMs: 320_000, p90Ms: 336_000, samples: 5 });
+    // No finished runs of build on that machine.
+    expect(live.running[1]?.typical).toBeNull();
     expect(live.environments.find((env) => env.key === `machine:${machine.id}`)?.label).toBe(
       "studio",
     );
