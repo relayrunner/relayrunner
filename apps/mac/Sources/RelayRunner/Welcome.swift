@@ -14,6 +14,10 @@ final class Welcome: NSObject, NSWindowDelegate {
   /// On a first launch only. A Mac that's signed in already (someone updating from an older version)
   /// skips it.
   func showIfNew() {
+    // For development: RELAYRUNNER_WELCOME=hello, signIn or done opens it at that step regardless.
+    if let name = ProcessInfo.processInfo.environment["RELAYRUNNER_WELCOME"] {
+      return show(step: name == "done" ? .done : name == "signIn" ? .signIn : .hello)
+    }
     let moved = AppSettings.welcomeMoved
     AppSettings.welcomeMoved = false
     if (AppSettings.welcomed && !moved) || Connection.shared.isEnrolled {
