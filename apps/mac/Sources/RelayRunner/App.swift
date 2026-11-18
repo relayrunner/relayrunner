@@ -31,7 +31,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     signal(SIGPIPE, SIG_IGN)
     MainActor.assumeIsolated {
       Updates.shared.start()
-      Connection.shared.resumeIfWanted()
+      // A welcome opened for development (RELAYRUNNER_WELCOME) leaves this Mac's connection alone.
+      if ProcessInfo.processInfo.environment["RELAYRUNNER_WELCOME"] == nil { Connection.shared.resumeIfWanted() }
       Welcome.shared.showIfNew()
     }
   }
