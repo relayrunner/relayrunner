@@ -29,8 +29,11 @@ tests. To try changes to the CLI without rebuilding the app, point it at another
 ## Release
 
 The app has its own version, in `package.json`. A PR that changes the app adds a changeset naming
-`"@relayrunner/mac"`, and the `chore: version packages` PR bumps it. After that merges, release from
-main on a Mac:
+`"@relayrunner/mac"`, and the `chore: version packages` PR bumps it. CI can't release the app,
+because it has to be signed with a certificate that lives in a keychain. After the version PR
+merges, release from that commit of main, with a clean tree, on a Mac that holds the release
+credentials (listed below) and has `gh` signed in with push access to this repo and
+[relayrunner/homebrew-tap](https://github.com/relayrunner/homebrew-tap):
 
 ```sh
 apps/mac/scripts/release.sh --dry-run   # build, sign and notarize into apps/mac/dist

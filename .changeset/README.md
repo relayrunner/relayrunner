@@ -39,9 +39,16 @@ through Workers Builds, so they never get a changeset. `pnpm changeset:lint`
    It bumps `apps/mac/package.json` and writes `apps/mac/CHANGELOG.md` too when
    the Mac app has changesets.
 3. Merging that PR publishes `relayrunner` to npm with trusted publishing (no
-   npm token), then tags `v<version>` and creates a GitHub release. The Mac app
-   isn't published by the workflow: run `apps/mac/scripts/release.sh` on a Mac
-   from that commit, which makes its `mac-v<version>` release.
+   npm token), then tags `v<version>` and creates a GitHub release.
+4. When the version PR bumped the Mac app, release it by hand: the workflow
+   can't, because it has to be signed and notarized. On a Mac whose keychain
+   holds the release credentials (a Developer ID Application certificate, a
+   notarytool profile and Sparkle's private key; see
+   [apps/mac/README.md](../apps/mac/README.md#release)), check out that commit
+   of `main` with a clean tree and run `apps/mac/scripts/release.sh`. It makes
+   the `mac-v<version>` GitHub release, bumps the Homebrew cask and opens a
+   `chore(mac): release RelayRunner for Mac <version>` PR with the new appcast.
+5. Merge the appcast PR. Installed apps offer the update once the site deploys.
 
 Don't edit the `version` in `apps/cli/package.json` or `apps/mac/package.json`
 by hand; changesets owns them.
