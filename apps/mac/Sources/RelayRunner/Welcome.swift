@@ -39,13 +39,14 @@ final class Welcome: NSObject, NSWindowDelegate {
     window.delegate = self
     window.center()
     self.window = window
-    NSApp.activate(ignoringOtherApps: true)
+    AppWindows.opened()
     window.makeKeyAndOrderFront(nil)
   }
 
   func windowWillClose(_ notification: Notification) {
     AppSettings.welcomed = true
     window = nil
+    AppWindows.closed()
   }
 
   // MARK: Moving to Applications

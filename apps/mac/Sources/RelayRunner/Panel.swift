@@ -6,6 +6,8 @@ import SwiftUI
 struct Panel: View {
   let connection: Connection
   @Environment(\.openSettings) private var openSettings
+  /// The panel's own window, to close it when a row opens something else.
+  @State private var window: NSWindow?
 
   var body: some View {
     VStack(alignment: .leading, spacing: 0) {
@@ -17,20 +19,29 @@ struct Panel: View {
       }
 
       Divider().padding(.vertical, 5)
-      PanelRow("Open Dashboard", systemImage: "safari") { NSWorkspace.shared.open(connection.server) }
-      PanelRow("Show Log", systemImage: "doc.text") { NSWorkspace.shared.open(CLI.log) }
+      PanelRow("Open Dashboard", systemImage: "safari") { close { NSWorkspace.shared.open(connection.server) } }
+      PanelRow("Show Log", systemImage: "doc.text") { close { NSWorkspace.shared.open(CLI.log) } }
       PanelRow("Settings…", systemImage: "gearshape", shortcut: ",") {
-        NSApp.activate(ignoringOtherApps: true)
-        openSettings()
+        close {
+          NSApp.activate(ignoringOtherApps: true)
+          openSettings()
+        }
       }
       if Updates.shared.updater != nil {
-        PanelRow("Check for Updates…", systemImage: "arrow.down.circle") { Updates.shared.checkForUpdates() }
+        PanelRow("Check for Updates…", systemImage: "arrow.down.circle") { close { Updates.shared.checkForUpdates() } }
       }
       Divider().padding(.vertical, 5)
       PanelRow("Quit RelayRunner", systemImage: "power", shortcut: "q") { NSApp.terminate(nil) }
     }
     .padding(6)
     .frame(width: 300)
+    .background(WindowReader { window = $0 })
+  }
+
+  /// Closes the panel, the way a menu closes once you pick an item, then does `then`.
+  private func close(then: @escaping () -> Void) {
+    window?.close()
+    then()
   }
 
   private var header: some View {
@@ -191,6 +202,27 @@ private struct PanelRow: View {
       button.keyboardShortcut(KeyEquivalent(shortcut), modifiers: .command)
     } else {
       button
+    }
+  }
+}
+
+/// Hands over the window a view sits in, once it's in one.
+private struct WindowReader: NSViewRepresentable {
+  let found: (NSWindow?) -> Void
+
+  func makeNSView(context: Context) -> NSView { Reader(found: found) }
+  func updateNSView(_ view: NSView, context: Context) {}
+
+  private final class Reader: NSView {
+    let found: (NSWindow?) -> Void
+    init(found: @escaping (NSWindow?) -> Void) {
+      self.found = found
+      super.init(frame: .zero)
+    }
+    required init?(coder: NSCoder) { nil }
+    override func viewDidMoveToWindow() {
+      super.viewDidMoveToWindow()
+      found(window)
     }
   }
 }

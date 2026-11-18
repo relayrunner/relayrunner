@@ -11,6 +11,8 @@ struct SettingsView: View {
       AboutView().tabItem { Label("About", systemImage: "info.circle") }
     }
     .frame(width: 460)
+    .onAppear { AppWindows.opened() }
+    .onDisappear { AppWindows.closed() }
   }
 }
 
