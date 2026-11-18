@@ -5,15 +5,8 @@ import SwiftUI
 @main
 struct RelayRunnerApp: App {
   @NSApplicationDelegateAdaptor(AppDelegate.self) private var appDelegate
-  private let connection = Connection.shared
-
+  // The menu bar icon and its menu are AppKit's (MenuBar), so the menu is a real menu.
   var body: some Scene {
-    MenuBarExtra {
-      Panel(connection: connection)
-    } label: {
-      Image(nsImage: connection.menuBarImage)
-    }
-    .menuBarExtraStyle(.window)
     Settings {
       SettingsView()
     }
@@ -31,8 +24,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     signal(SIGPIPE, SIG_IGN)
     MainActor.assumeIsolated {
       Updates.shared.start()
-      // A welcome opened for development (RELAYRUNNER_WELCOME) leaves this Mac's connection alone.
-      if ProcessInfo.processInfo.environment["RELAYRUNNER_WELCOME"] == nil { Connection.shared.resumeIfWanted() }
+      MenuBar.shared.start()
+      // For development: RELAYRUNNER_MENU opens the menu at launch. It and RELAYRUNNER_WELCOME leave
+      // this Mac's connection alone.
+      let env = ProcessInfo.processInfo.environment
+      if env["RELAYRUNNER_WELCOME"] == nil && env["RELAYRUNNER_MENU"] == nil { Connection.shared.resumeIfWanted() }
+      if env["RELAYRUNNER_MENU"] != nil { DispatchQueue.main.async { MenuBar.shared.open() } }
       Welcome.shared.showIfNew()
     }
   }

@@ -28,7 +28,7 @@ final class Notifications: NSObject, UNUserNotificationCenterDelegate {
     center.add(UNNotificationRequest(identifier: UUID().uuidString, content: content, trigger: nil))
   }
 
-  // Shown even while the panel or Settings is open.
+  // Shown even while the menu or Settings is open.
   func userNotificationCenter(
     _ center: UNUserNotificationCenter,
     willPresent notification: UNNotification,

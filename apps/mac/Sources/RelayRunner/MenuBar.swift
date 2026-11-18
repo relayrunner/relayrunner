@@ -2,12 +2,106 @@ import AppKit
 import RelayRunnerKit
 import SwiftUI
 
-/// What opens from the menu bar: the switch and what this Mac is doing, then a few actions.
-struct Panel: View {
+/// The menu bar icon and its menu. A real menu rather than a window, so it looks and behaves like
+/// the system's own: it closes when you pick an item, and takes the system's shape and material.
+@MainActor
+final class MenuBar: NSObject, NSMenuDelegate {
+  static let shared = MenuBar()
+
+  private let connection = Connection.shared
+  private let item = NSStatusBar.system.statusItem(withLength: NSStatusItem.squareLength)
+  private let menu = NSMenu()
+  private var header: NSHostingView<MenuHeader>?
+
+  func start() {
+    menu.delegate = self
+    menu.autoenablesItems = false
+
+    let header = NSHostingView(rootView: MenuHeader(connection: connection) { [weak self] in self?.menu.cancelTracking() })
+    self.header = header
+    let top = NSMenuItem()
+    top.view = header
+    menu.addItem(top)
+    menu.addItem(.separator())
+    menu.addItem(row("Open Dashboard", "safari") { NSWorkspace.shared.open(Connection.shared.server) })
+    menu.addItem(row("Show Log", "doc.text") { NSWorkspace.shared.open(CLI.log) })
+    menu.addItem(row("Settings…", "gearshape", key: ",") { MenuBar.openSettings() })
+    if Updates.shared.updater != nil {
+      menu.addItem(row("Check for Updates…", "arrow.down.circle") { Updates.shared.checkForUpdates() })
+    }
+    menu.addItem(.separator())
+    menu.addItem(row("Quit RelayRunner", "power", key: "q") { NSApp.terminate(nil) })
+
+    item.menu = menu
+    item.button?.setAccessibilityLabel("RelayRunner")
+    watch()
+  }
+
+  /// Keeps the icon current, and the header's height as rows come and go.
+  private func watch() {
+    withObservationTracking {
+      item.button?.image = connection.menuBarImage
+      _ = (connection.status, connection.signIn, connection.jobs, connection.repos, connection.machineName, connection.problem)
+    } onChange: {
+      Task { @MainActor [weak self] in
+        self?.watch()
+        self?.fitHeader()
+      }
+    }
+    fitHeader()
+  }
+
+  private func fitHeader() {
+    guard let header else { return }
+    header.setFrameSize(NSSize(width: MenuHeader.width, height: header.fittingSize.height))
+  }
+
+  func menuWillOpen(_ menu: NSMenu) { fitHeader() }
+
+  func open() { item.button?.performClick(nil) }
+
+  private func row(_ title: String, _ symbol: String, key: String = "", action: @escaping () -> Void) -> NSMenuItem {
+    let item = ActionItem(title: title, action: action)
+    item.image = NSImage(systemSymbolName: symbol, accessibilityDescription: nil)
+    item.keyEquivalent = key
+    return item
+  }
+
+  /// SwiftUI owns the Settings window, and its item in the app menu is the way in from AppKit.
+  static func openSettings() {
+    NSApp.activate(ignoringOtherApps: true)
+    if let appMenu = NSApp.mainMenu?.items.first?.submenu,
+      let index = appMenu.items.firstIndex(where: { $0.keyEquivalent == "," })
+    {
+      appMenu.performActionForItem(at: index)
+    } else {
+      NSApp.sendAction(Selector(("showSettingsWindow:")), to: nil, from: nil)
+    }
+  }
+}
+
+/// A menu item that runs a closure.
+private final class ActionItem: NSMenuItem {
+  private let run: () -> Void
+
+  init(title: String, action: @escaping () -> Void) {
+    run = action
+    super.init(title: title, action: #selector(perform), keyEquivalent: "")
+    target = self
+  }
+
+  required init(coder: NSCoder) { fatalError() }
+
+  @objc private func perform() { run() }
+}
+
+/// The top of the menu: the switch and what this Mac is doing.
+struct MenuHeader: View {
+  static let width: CGFloat = 300
+
   let connection: Connection
-  @Environment(\.openSettings) private var openSettings
-  /// The panel's own window, to close it when a row opens something else.
-  @State private var window: NSWindow?
+  /// Closes the menu, before a question that would otherwise sit behind it.
+  let closeMenu: () -> Void
 
   var body: some View {
     VStack(alignment: .leading, spacing: 0) {
@@ -17,31 +111,10 @@ struct Panel: View {
       } else if connection.isOn {
         details
       }
-
-      Divider().padding(.vertical, 5)
-      PanelRow("Open Dashboard", systemImage: "safari") { close { NSWorkspace.shared.open(connection.server) } }
-      PanelRow("Show Log", systemImage: "doc.text") { close { NSWorkspace.shared.open(CLI.log) } }
-      PanelRow("Settings…", systemImage: "gearshape", shortcut: ",") {
-        close {
-          NSApp.activate(ignoringOtherApps: true)
-          openSettings()
-        }
-      }
-      if Updates.shared.updater != nil {
-        PanelRow("Check for Updates…", systemImage: "arrow.down.circle") { close { Updates.shared.checkForUpdates() } }
-      }
-      Divider().padding(.vertical, 5)
-      PanelRow("Quit RelayRunner", systemImage: "power", shortcut: "q") { NSApp.terminate(nil) }
     }
-    .padding(6)
-    .frame(width: 300)
-    .background(WindowReader { window = $0 })
-  }
-
-  /// Closes the panel, the way a menu closes once you pick an item, then does `then`.
-  private func close(then: @escaping () -> Void) {
-    window?.close()
-    then()
+    .padding(.horizontal, 6)
+    .padding(.top, 2)
+    .frame(width: Self.width, alignment: .leading)
   }
 
   private var header: some View {
@@ -95,8 +168,9 @@ struct Panel: View {
   private func toggle(_ on: Bool) {
     guard on else { return connection.turnOff() }
     if connection.isEnrolled { return connection.turnOn() }
-    // The first time, ask who can run jobs here before signing in. After the panel closes, so the
+    // The first time, ask who can run jobs here before signing in. After the menu closes, so the
     // question isn't hidden behind it.
+    closeMenu()
     DispatchQueue.main.async {
       if let share = askSharing() { connection.turnOn(share: share) }
     }
@@ -156,74 +230,6 @@ private struct DetailRow: View {
       Text(title).lineLimit(1).truncationMode(.middle)
       Spacer(minLength: 8)
       Text(note).foregroundStyle(.secondary)
-    }
-  }
-}
-
-/// A row that works like a menu item: highlighted under the pointer, with its shortcut on the right.
-private struct PanelRow: View {
-  let title: String
-  let systemImage: String
-  let shortcut: Character?
-  let action: () -> Void
-  @State private var hovering = false
-
-  init(_ title: String, systemImage: String, shortcut: Character? = nil, action: @escaping () -> Void) {
-    self.title = title
-    self.systemImage = systemImage
-    self.shortcut = shortcut
-    self.action = action
-  }
-
-  var body: some View {
-    let button = Button(action: action) {
-      HStack(spacing: 8) {
-        Image(systemName: systemImage)
-          .frame(width: 18)
-          .foregroundStyle(hovering ? AnyShapeStyle(.white) : AnyShapeStyle(.secondary))
-        Text(title)
-        Spacer()
-        if let shortcut {
-          Text("⌘\(String(shortcut).uppercased())")
-            .foregroundStyle(hovering ? AnyShapeStyle(.white.opacity(0.8)) : AnyShapeStyle(.tertiary))
-        }
-      }
-      .foregroundStyle(hovering ? Color.white : Color.primary)
-      .padding(.horizontal, 8)
-      .padding(.vertical, 4)
-      .frame(maxWidth: .infinity, alignment: .leading)
-      .background(hovering ? Color.accentColor : .clear, in: RoundedRectangle(cornerRadius: 5))
-      .contentShape(Rectangle())
-    }
-    .buttonStyle(.plain)
-    .onHover { hovering = $0 }
-
-    if let shortcut {
-      button.keyboardShortcut(KeyEquivalent(shortcut), modifiers: .command)
-    } else {
-      button
-    }
-  }
-}
-
-/// Hands over the window a view sits in, once it's in one.
-private struct WindowReader: NSViewRepresentable {
-  let found: (NSWindow?) -> Void
-
-  func makeNSView(context: Context) -> NSView { Reader(found: found) }
-  func updateNSView(_ view: NSView, context: Context) {}
-
-  private final class Reader: NSView {
-    let found: (NSWindow?) -> Void
-    init(found: @escaping (NSWindow?) -> Void) {
-      self.found = found
-      super.init(frame: .zero)
-    }
-    required init?(coder: NSCoder) { nil }
-    override func viewDidMoveToWindow() {
-      super.viewDidMoveToWindow()
-      let window = window
-      DispatchQueue.main.async { self.found(window) }
     }
   }
 }
