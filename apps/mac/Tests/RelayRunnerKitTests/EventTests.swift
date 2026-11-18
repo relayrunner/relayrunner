@@ -22,6 +22,10 @@ final class EventTests: XCTestCase {
       parse(#"{"v":1,"at":"x","type":"job-repo","routeId":"r1","repo":"acme/api"}"#),
       .jobRepo(routeId: "r1", repo: "acme/api")
     )
+    XCTAssertEqual(
+      parse(#"{"v":1,"at":"x","type":"job-result","routeId":"r1","job":"test","result":"Failed"}"#),
+      .jobResult(routeId: "r1", job: "test", result: "Failed")
+    )
     XCTAssertEqual(parse(#"{"v":1,"at":"x","type":"offline","reason":"stopped"}"#), .offline(reason: "stopped", message: nil))
     XCTAssertEqual(
       parse(#"{"v":1,"at":"x","type":"error","code":"UNKNOWN_COMMAND","message":"m","command":"bogus"}"#),

@@ -10,6 +10,8 @@ enum AppSettings {
     static let macOSJobs = "macOSJobs"
     static let localNetwork = "localNetwork"
     static let wantsOnline = "wantsOnline"
+    static let notifiesOnFailure = "notifiesOnFailure"
+    static let welcomed = "welcomed"
   }
 
   private static var defaults: UserDefaults { .standard }
@@ -28,5 +30,14 @@ enum AppSettings {
   static var wantsOnline: Bool {
     get { defaults.bool(forKey: Key.wantsOnline) }
     set { defaults.set(newValue, forKey: Key.wantsOnline) }
+  }
+
+  /// Off until someone turns it on in Settings or the welcome window.
+  static var notifiesOnFailure: Bool { defaults.bool(forKey: Key.notifiesOnFailure) }
+
+  /// Set once the welcome window has been through, or closed, so it shows on a first launch only.
+  static var welcomed: Bool {
+    get { defaults.bool(forKey: Key.welcomed) }
+    set { defaults.set(newValue, forKey: Key.welcomed) }
   }
 }

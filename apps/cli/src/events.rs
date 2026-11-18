@@ -6,7 +6,8 @@
 //! version), `at` (an ISO time) and `type`: `sign-in` (the page to approve this machine on and its
 //! code), `machine` (once signed in), what the connection reports (`connecting`, `connected`,
 //! `run`, `job`, `paused` and so on), `state` (the machine's state after each of those),
-//! `job-repo`, `offline` and `error`. stdin takes one command per line: `pause` or `resume`.
+//! `job-repo`, `job-result` (the job's name and GitHub's result for it, from the runner), `offline`
+//! and `error`. stdin takes one command per line: `pause` or `resume`.
 //!
 //! To go offline the way Ctrl-C does, start `connect` in its own process group and send that group
 //! SIGINT (a second one exits on the spot). Closing stdin goes offline too, for when the app quits

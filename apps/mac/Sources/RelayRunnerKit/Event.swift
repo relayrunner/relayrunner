@@ -7,6 +7,8 @@ public enum Event: Equatable {
   case machine(id: String, name: String, server: URL)
   case state(State)
   case jobRepo(routeId: String, repo: String)
+  /// How a job ended, in GitHub's words: Succeeded, Failed, Canceled and so on.
+  case jobResult(routeId: String, job: String, result: String)
   case offline(reason: String, message: String?)
   /// `command` is set when a command failed; without it, `connect` is stopping.
   case error(code: String, message: String, command: String?)
@@ -42,6 +44,8 @@ public enum Event: Equatable {
       return body(State.self).map(Event.state)
     case "job-repo":
       return body(JobRepo.self).map { .jobRepo(routeId: $0.routeId, repo: $0.repo) }
+    case "job-result":
+      return body(JobResult.self).map { .jobResult(routeId: $0.routeId, job: $0.job, result: $0.result) }
     case "offline":
       return body(Offline.self).map { .offline(reason: $0.reason, message: $0.message) }
     case "error":
@@ -56,6 +60,7 @@ public enum Event: Equatable {
   private struct SignIn: Decodable { var url: String; var code: String }
   private struct Machine: Decodable { var id: String; var name: String; var server: String }
   private struct JobRepo: Decodable { var routeId: String; var repo: String }
+  private struct JobResult: Decodable { var routeId: String; var job: String; var result: String }
   private struct Offline: Decodable { var reason: String; var message: String? }
   private struct Failure: Decodable { var code: String; var message: String; var command: String? }
 }

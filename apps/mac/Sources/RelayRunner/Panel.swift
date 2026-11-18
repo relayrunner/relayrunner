@@ -108,8 +108,8 @@ struct Panel: View {
   }
 }
 
-/// The code to check in the browser while a first sign-in waits.
-private struct SignInBox: View {
+/// The code to check in the browser while a first sign-in waits. The welcome window shows it too.
+struct SignInBox: View {
   let signIn: Connection.SignIn
 
   var body: some View {

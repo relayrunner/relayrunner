@@ -124,8 +124,11 @@ pub async fn run(launcher: Launcher, run: Run, prefix: String, report: Report, s
             let out = child
                 .stdout
                 .take()
-                .map(|s| forward(s, prefix.clone(), false));
-            let err = child.stderr.take().map(|s| forward(s, prefix, true));
+                .map(|s| forward(s, prefix.clone(), false, route_id.clone()));
+            let err = child
+                .stderr
+                .take()
+                .map(|s| forward(s, prefix, true, route_id.clone()));
             let status = child.wait().await;
             for task in [out, err].into_iter().flatten() {
                 let _ = task.await;
@@ -180,15 +183,23 @@ fn signal_name(sig: i32) -> String {
     }
 }
 
-/// The runner's output, line by line with `prefix`, to stderr when stdout carries events.
+/// The runner's output, line by line with `prefix`, to stderr when stdout carries events. The
+/// runner's line for how the job ended becomes a `job-result` event.
 fn forward<R: tokio::io::AsyncRead + Unpin + Send + 'static>(
     stream: R,
     prefix: String,
     is_err: bool,
+    route_id: String,
 ) -> tokio::task::JoinHandle<()> {
     tokio::spawn(async move {
         let mut lines = BufReader::new(stream).lines();
         while let Ok(Some(line)) = lines.next_line().await {
+            if let Some((job, result)) = job_result(&line) {
+                events::emit(
+                    "job-result",
+                    serde_json::json!({ "routeId": route_id, "job": job, "result": result }),
+                );
+            }
             if is_err || events::on() {
                 eprintln!("{prefix}{line}");
             } else {
@@ -196,6 +207,15 @@ fn forward<R: tokio::io::AsyncRead + Unpin + Send + 'static>(
             }
         }
     })
+}
+
+/// The job's name and result from the runner's last line for it, such as
+/// `2026-11-18 01:02:03Z: Job test completed with result: Failed`. The result is GitHub's:
+/// Succeeded, Failed, Canceled and so on.
+fn job_result(line: &str) -> Option<(&str, &str)> {
+    let (head, result) = line.rsplit_once(" completed with result: ")?;
+    let (_, job) = head.split_once(": Job ")?;
+    Some((job, result.trim()))
 }
 
 /// Off the runtime's thread: `_work` can hold a whole checkout and its build output.
@@ -241,6 +261,22 @@ pub fn lock_holder(lock: &Path) -> Option<i32> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn reads_the_runners_job_result() {
+        assert_eq!(
+            job_result("2026-11-18 01:02:03Z: Job test completed with result: Failed"),
+            Some(("test", "Failed"))
+        );
+        assert_eq!(
+            job_result(
+                "2026-11-18 01:02:03Z: Job build (macos, 18) completed with result: Succeeded"
+            ),
+            Some(("build (macos, 18)", "Succeeded"))
+        );
+        assert_eq!(job_result("2026-11-18 01:02:03Z: Running job: test"), None);
+        assert_eq!(job_result("Step completed with result: Failed"), None);
+    }
 
     #[test]
     fn locks_and_takes_over_stale_locks() {

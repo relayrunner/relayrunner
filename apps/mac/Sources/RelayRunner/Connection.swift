@@ -125,6 +125,8 @@ final class Connection {
       quitIfIdle()
     case .jobRepo(let routeId, let repo):
       repos[routeId] = repo
+    case .jobResult(let routeId, let job, let result):
+      if result == "Failed" { Notifications.shared.jobFailed(job: job, repo: repos[routeId], server: server) }
     case .offline(let reason, let message):
       offlineReason = reason
       if let message { lastError = message }

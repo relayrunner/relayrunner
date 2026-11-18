@@ -31,6 +31,7 @@ private struct GeneralSettings: View {
         Toggle("Check for updates automatically", isOn: $checksForUpdates)
           .onChange(of: checksForUpdates) { _, on in updater.automaticallyChecksForUpdates = on }
       }
+      NotifyToggle()
       Picker("Jobs at once", selection: $concurrency) {
         Text("Automatic").tag(0)
         ForEach(1...8, id: \.self) { Text("\($0)").tag($0) }

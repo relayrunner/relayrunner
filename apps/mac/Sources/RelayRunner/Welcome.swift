@@ -1,0 +1,258 @@
+import AppKit
+import RelayRunnerKit
+import ServiceManagement
+import SwiftUI
+
+/// The window a first launch opens. A menu bar app has no window of its own, so without it a new
+/// download looks like it did nothing. It moves the app to Applications, signs this Mac in and turns
+/// on opening at login.
+@MainActor
+final class Welcome: NSObject, NSWindowDelegate {
+  static let shared = Welcome()
+
+  /// Set before the app relaunches from Applications, so the new copy picks up at signing in.
+  static let movedKey = "welcomeMoved"
+
+  private var window: NSWindow?
+
+  /// On a first launch only. A Mac that's signed in already (someone updating from an older version)
+  /// skips it.
+  func showIfNew() {
+    let moved = UserDefaults.standard.bool(forKey: Self.movedKey)
+    if (AppSettings.welcomed && !moved) || Connection.shared.isEnrolled {
+      AppSettings.welcomed = true
+      return
+    }
+    UserDefaults.standard.removeObject(forKey: Self.movedKey)
+    show(step: moved ? .signIn : .hello)
+  }
+
+  private func show(step: WelcomeView.Step) {
+    let view = WelcomeView(connection: .shared, step: step) { [weak self] in self?.window?.close() }
+    let window = NSWindow(contentViewController: NSHostingController(rootView: view))
+    window.styleMask = [.titled, .closable, .fullSizeContentView]
+    window.titlebarAppearsTransparent = true
+    window.titleVisibility = .hidden
+    window.isMovableByWindowBackground = true
+    window.isReleasedWhenClosed = false
+    window.delegate = self
+    window.center()
+    self.window = window
+    NSApp.activate(ignoringOtherApps: true)
+    window.makeKeyAndOrderFront(nil)
+  }
+
+  func windowWillClose(_ notification: Notification) {
+    AppSettings.welcomed = true
+    window = nil
+  }
+}
+
+struct WelcomeView: View {
+  enum Step { case hello, signIn, done }
+
+  let connection: Connection
+  @State var step: Step
+  let close: () -> Void
+
+  @State private var share = LaunchOptions.Share.onlyMe
+  @State private var opensAtLogin = true
+  @State private var problem: String?
+
+  var body: some View {
+    VStack(spacing: 0) {
+      Group {
+        switch step {
+        case .hello: hello
+        case .signIn: signIn
+        case .done: done
+        }
+      }
+      .id(step)
+      .transition(.asymmetric(insertion: .move(edge: .trailing), removal: .move(edge: .leading)).combined(with: .opacity))
+      .frame(maxWidth: .infinity, alignment: .top)
+      Spacer(minLength: 20)
+      footer
+    }
+    .padding(.horizontal, 36)
+    .padding(.top, 40)
+    .padding(.bottom, 24)
+    .frame(width: 480, height: 440)
+    .clipped()
+    .animation(.smooth(duration: 0.35), value: step)
+    .onChange(of: connection.phase) { _, phase in
+      if step == .signIn && phase == .online { step = .done }
+    }
+  }
+
+  // MARK: Steps
+
+  private var hello: some View {
+    VStack(spacing: 0) {
+      Image(nsImage: RobotHead.colorImage(side: 96))
+      heading(
+        "Welcome to RelayRunner",
+        "Run GitHub Actions jobs on this Mac, right from the menu bar."
+      )
+      if !Self.inApplications {
+        note("RelayRunner works best from your Applications folder, where it can update itself.")
+      }
+      if let problem { note(problem) }
+    }
+  }
+
+  private var signIn: some View {
+    VStack(spacing: 0) {
+      heading("Who can run jobs on this Mac?", "Your own jobs can always run here. Next, your browser opens to sign this Mac in.")
+      if let signIn = connection.signIn {
+        SignInBox(signIn: signIn)
+          .padding(.top, 22)
+      } else {
+        VStack(spacing: 8) {
+          ShareChoice(title: "Only me", value: .onlyMe, selection: $share)
+          ShareChoice(title: "Anyone in my workspaces", value: .anyone, selection: $share)
+        }
+        .padding(.top, 22)
+        .disabled(connection.isOn)
+      }
+      if let problem = connection.problem {
+        note(problem)
+      } else if connection.isOn && connection.signIn == nil {
+        note(connection.status)
+      }
+    }
+  }
+
+  private var done: some View {
+    VStack(spacing: 0) {
+      Image(nsImage: RobotHead.colorImage(side: 72))
+      heading(
+        "This Mac is ready",
+        "\(connection.machineName.map { "Connected as \($0). " } ?? "")RelayRunner lives in the menu bar. Look for the robot at the top of your screen."
+      )
+      VStack(alignment: .leading, spacing: 10) {
+        Toggle("Open RelayRunner at login", isOn: $opensAtLogin)
+        NotifyToggle()
+      }
+      .toggleStyle(.checkbox)
+      .padding(.top, 22)
+    }
+  }
+
+  // MARK: Footer
+
+  @ViewBuilder private var footer: some View {
+    HStack {
+      if step == .hello && !Self.inApplications {
+        Button("Not Now") { step = .signIn }
+      }
+      Spacer()
+      switch step {
+      case .hello:
+        primary(Self.inApplications ? "Get Started" : "Move to Applications") {
+          if Self.inApplications { step = .signIn } else { moveToApplications() }
+        }
+      case .signIn:
+        if connection.isOn {
+          Button("Cancel") { connection.turnOff() }
+        } else {
+          primary("Sign In") { connection.turnOn(share: share) }
+        }
+      case .done:
+        primary("Done") {
+          if opensAtLogin { try? SMAppService.mainApp.register() }
+          close()
+        }
+      }
+    }
+  }
+
+  private func primary(_ title: String, action: @escaping () -> Void) -> some View {
+    Button(title, action: action)
+      .buttonStyle(.borderedProminent)
+      .keyboardShortcut(.defaultAction)
+  }
+
+  private func heading(_ title: String, _ body: String) -> some View {
+    VStack(spacing: 8) {
+      Text(title)
+        .font(.system(size: 22, weight: .semibold))
+      Text(body)
+        .foregroundStyle(.secondary)
+        .frame(maxWidth: 380)
+        .fixedSize(horizontal: false, vertical: true)
+    }
+    .multilineTextAlignment(.center)
+    .padding(.top, 18)
+  }
+
+  private func note(_ text: String) -> some View {
+    Text(text)
+      .font(.callout)
+      .foregroundStyle(.secondary)
+      .multilineTextAlignment(.center)
+      .frame(maxWidth: 380)
+      .fixedSize(horizontal: false, vertical: true)
+      .padding(.top, 14)
+  }
+
+  // MARK: Moving to Applications
+
+  /// In /Applications or ~/Applications. A build run from Xcode or `swift run` isn't an app bundle, so
+  /// it counts as moved.
+  static var inApplications: Bool {
+    let url = Bundle.main.bundleURL
+    guard url.pathExtension == "app" else { return true }
+    let folders = [URL(fileURLWithPath: "/Applications"), FileManager.default.homeDirectoryForCurrentUser.appendingPathComponent("Applications")]
+    return folders.contains { url.deletingLastPathComponent().standardizedFileURL.path == $0.standardizedFileURL.path }
+  }
+
+  /// Copies the app to /Applications, replacing an older copy, and opens it from there.
+  private func moveToApplications() {
+    let source = Bundle.main.bundleURL
+    let target = URL(fileURLWithPath: "/Applications").appendingPathComponent(source.lastPathComponent)
+    let files = FileManager.default
+    do {
+      if files.fileExists(atPath: target.path) { try files.trashItem(at: target, resultingItemURL: nil) }
+      try files.copyItem(at: source, to: target)
+    } catch {
+      problem = "Couldn't move it (\(error.localizedDescription)). Drag RelayRunner into Applications yourself, then open it from there."
+      return
+    }
+    // From Downloads this tidies up. From the disk image it fails, which is fine.
+    try? files.trashItem(at: source, resultingItemURL: nil)
+    UserDefaults.standard.set(true, forKey: Welcome.movedKey)
+    let configuration = NSWorkspace.OpenConfiguration()
+    configuration.createsNewApplicationInstance = true
+    NSWorkspace.shared.openApplication(at: target, configuration: configuration) { _, error in
+      DispatchQueue.main.async {
+        if error == nil { NSApp.terminate(nil) }
+      }
+    }
+  }
+}
+
+/// One answer to "who can run jobs here", as a card.
+private struct ShareChoice: View {
+  let title: String
+  let value: LaunchOptions.Share
+  @Binding var selection: LaunchOptions.Share
+
+  var body: some View {
+    let selected = selection == value
+    Button {
+      selection = value
+    } label: {
+      HStack(spacing: 10) {
+        Image(systemName: selected ? "largecircle.fill.circle" : "circle")
+          .foregroundStyle(selected ? AnyShapeStyle(.tint) : AnyShapeStyle(.secondary))
+        Text(title)
+        Spacer()
+      }
+      .padding(10)
+      .contentShape(Rectangle())
+      .background(.quaternary.opacity(selected ? 0.8 : 0.35), in: RoundedRectangle(cornerRadius: 8))
+    }
+    .buttonStyle(.plain)
+  }
+}
