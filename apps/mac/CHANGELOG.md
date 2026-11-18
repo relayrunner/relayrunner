@@ -1,5 +1,12 @@
 # @relayrunner/mac
 
+## 0.3.0
+
+### Minor Changes
+
+- 385cc15: A welcome window on first launch moves the app to Applications, signs your Mac in and turns on opening at login. You can also turn on a notification for when a job fails on your Mac (off by default).
+- 71b8060: Quitting while a job runs asks first. You can quit once the job is done, quit now, or cancel.
+
 ## 0.2.1
 
 ### Patch Changes

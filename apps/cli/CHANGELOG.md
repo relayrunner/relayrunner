@@ -1,5 +1,11 @@
 # relayrunner
 
+## 0.13.2
+
+### Patch Changes
+
+- 385cc15: `connect --events` reports each job's result, so the Mac app can tell you when a job fails.
+
 ## 0.13.1
 
 ### Patch Changes
