@@ -5,8 +5,8 @@
 // version it was sealed with so the key can be rotated later without a flag day.
 //
 // Create the key once:
-//   openssl rand -base64 32 | wrangler secrets-store secret create eac3493b9fef4234a832f5f3fdcc8a41 \
-//     --name PROVIDER_TOKEN_KEY --scopes workers
+//   cf secrets-store secrets create eac3493b9fef4234a832f5f3fdcc8a41 \
+//     --body "$(jq -n --arg v "$(openssl rand -base64 32)" '[{name: "PROVIDER_TOKEN_KEY", value: $v, scopes: ["workers"]}]')"
 import { AppError } from "@relayrunner/errors";
 import type { Env } from "./env.ts";
 

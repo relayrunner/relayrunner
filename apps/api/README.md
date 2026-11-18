@@ -80,16 +80,16 @@ The same cron sweeps stale pick runners (`src/pick-sweep.ts`). The hourly cron c
 
 - `src/app.ts` builds the Hono app. Routes after `attachSession` get `c.var.auth`, `c.var.user` and `c.var.session`. The auth instance is made per request because Workers only hand out bindings per request. Better Auth's cookie cache is on, so most session checks skip D1.
 - Workspaces are Better Auth organizations stored under gateway names: `workspace`, `workspace_member`, `workspace_invitation` and `session.active_workspace_id` (mapped in `workspaces()` in `src/auth.ts`). `github_installation` is keyed by the installation id with one nullable `workspace_id`, so a workspace connects many installations and each installation belongs to at most one workspace (null while unclaimed). Routes that act on a workspace go behind `requireWorkspace` (`src/middleware/workspace.ts`), which checks membership in D1.
-- `src/db/schema.ts` is the Drizzle schema for D1. `pnpm db:generate` writes migrations into `migrations/`, and Wrangler applies them. See [Migrations](#migrations).
+- `src/db/schema.ts` is the Drizzle schema for D1. `pnpm db:generate` writes migrations into `migrations/`, and `cf` (production) or Wrangler (local) applies them. See [Migrations](#migrations).
 - `src/durable-objects/` holds the Durable Objects: `PickRunner` (one per pick job), `Router` (one per workspace, holding machine reservations and routes), `MachineLink` (one per machine, holding its WebSocket), `LintRunner` (one per commit or lint job) and `ContainerRunner` (one per container job). Logic that doesn't need Durable Object APIs, such as `src/routing.ts` and `durable-objects/machine-session.ts`, lives beside them so it can be tested on its own.
 
 ## Migrations
 
-Change `src/db/schema.ts`, then run `pnpm db:generate`. Drizzle names the file with a UTC timestamp prefix (`20261104160202_workspaces.sql`), so two branches that each add a migration don't both claim `0002`. Don't use `wrangler d1 migrations create`, which numbers files and skips the Drizzle snapshot. `src/migrations.test.ts` fails on any file that isn't timestamp-prefixed or isn't in `migrations/meta/_journal.json`.
+Change `src/db/schema.ts`, then run `pnpm db:generate`. Drizzle names the file with a UTC timestamp prefix (`20261104160202_workspaces.sql`), so two branches that each add a migration don't both claim `0002`. Don't use `cf d1 migrations create` or `wrangler d1 migrations create`, which number files and skips the Drizzle snapshot. `src/migrations.test.ts` fails on any file that isn't timestamp-prefixed or isn't in `migrations/meta/_journal.json`.
 
-Merging to `main` applies new migrations to the production database: the `Apply D1 migrations` workflow runs `pnpm db:migrate:remote` with the `CLOUDFLARE_API_TOKEN` secret. It is the only thing that migrates production: the Workers Builds deploy (`pnpm run deploy:api`) does not. Migrations must be safe to run against the Worker that's already deployed, since the workflow can land before the new Worker does.
+Merging to `main` applies new migrations to the production database: the `Apply D1 migrations` workflow runs `pnpm db:migrate:remote` (`cf d1 migrations apply`) with the `CLOUDFLARE_API_TOKEN` and `CLOUDFLARE_ACCOUNT_ID` secrets. `pnpm db:migrations:remote` lists the ones production hasn't run yet. It is the only thing that migrates production: the Workers Builds deploy (`pnpm run deploy:api`) does not. Migrations must be safe to run against the Worker that's already deployed, since the workflow can land before the new Worker does.
 
-The first four migrations were renamed from `0000_init.sql`, `0001_workspaces.sql`, `0002_installation_repository_selection.sql` and `0003_installation_github_state_at.sql`. Wrangler tracks applied migrations by filename, so `db:migrate:local` and `db:migrate:remote` first run `scripts/rename-legacy-migrations.sql`, which renames those rows in `d1_migrations` and does nothing on a fresh database or once they're renamed. It can go once every database (including your local `.wrangler` state) has been migrated with it.
+The first four migrations were renamed from `0000_init.sql`, `0001_workspaces.sql`, `0002_installation_repository_selection.sql` and `0003_installation_github_state_at.sql`. Wrangler tracks applied migrations by filename, so `db:migrate:local` first runs `scripts/rename-legacy-migrations.sql`, which renames those rows in `d1_migrations` and does nothing on a fresh database or once they're renamed. Production already has the new names. The script can go once every local `.wrangler` state has been migrated with it.
 
 ## Run it locally
 
@@ -101,25 +101,26 @@ pnpm dev                          # http://localhost:8787/api/health
 
 ## Deploy
 
-`wrangler.jsonc` pins the RelayRunner Cloudflare account (`account_id`), so wrangler targets it even if your login can see other accounts. Then:
+Deploys still go through Wrangler (`wrangler.jsonc` pins the RelayRunner account). The one-time setup below uses the [cf CLI](https://developers.cloudflare.com/cf/), which reads the account from `CLOUDFLARE_ACCOUNT_ID`, so load the repo's `.env` first (`set -a; source .env; set +a`). Then:
 
 ```sh
-pnpm db:migrate:remote                   # the D1 Migrations workflow does this on merge to main; only needed by hand for a new database
-wrangler secret put BETTER_AUTH_SECRET   # and GITHUB_APP_CLIENT_ID, GITHUB_APP_CLIENT_SECRET
-wrangler r2 bucket create relayrunner-webhook-dead-letters   # once; a deploy fails until it exists
-wrangler r2 bucket lifecycle add relayrunner-webhook-dead-letters expire-30d --expire-days 30
-pnpm run deploy:api                      # from the repo root; deploys only, no migrations
+pnpm db:migrate:remote      # the D1 Migrations workflow does this on merge to main
+cf workers secrets update BETTER_AUTH_SECRET --worker relayrunner-api --type secret_text --text "$(openssl rand -base64 32)"
+                            # and GITHUB_APP_CLIENT_ID, GITHUB_APP_CLIENT_SECRET the same way
+cf r2 buckets create --name relayrunner-webhook-dead-letters   # once; a deploy fails until it exists
+cf r2 buckets lifecycle update relayrunner-webhook-dead-letters \
+  --rules '[{"id":"expire-30d","enabled":true,"conditions":{"prefix":""},"deleteObjectsTransition":{"condition":{"type":"Age","maxAge":2592000}}}]'
+pnpm run deploy:api         # from the repo root; deploys only, no migrations
 ```
 
 `pnpm run deploy` (`scripts/deploy.ts`) runs `wrangler deploy` without rebuilding container images that haven't changed. It tags each image (`container/`, `packages/lint-runner/`) by a hash of its folder. When the Cloudflare registry already has that tag, it reuses the image. Otherwise it builds and pushes it with `wrangler containers build --push`, which needs Docker. It then deploys from `wrangler.deploy.jsonc`, a generated copy of `wrangler.jsonc` that points each container at its digest-pinned image. Plain `wrangler deploy` still works but rebuilds both images every time. Pass `--dry-run` to see which images would be built.
 
-`GITHUB_APP_PRIVATE_KEY` comes from the account's Secrets Store, not `wrangler secret put`, and a deploy fails until it exists there. Store it once as PKCS#8 PEM (GitHub downloads PKCS#1, which WebCrypto can't import):
+`GITHUB_APP_PRIVATE_KEY` comes from the account's Secrets Store, not a Worker secret, and a deploy fails until it exists there. Store it once as PKCS#8 PEM (GitHub downloads PKCS#1, which WebCrypto can't import):
 
 ```sh
-# The prompt only takes one line, so pass the PEM as --value. Command substitution keeps it out of
-# shell history.
-wrangler secrets-store secret create eac3493b9fef4234a832f5f3fdcc8a41 --remote --scopes workers \
-  --name GITHUB_APP_PRIVATE_KEY --value "$(openssl pkcs8 -topk8 -nocrypt -in relayrunner.*.private-key.pem)"
+cf secrets-store secrets create eac3493b9fef4234a832f5f3fdcc8a41 --body "$(jq -n \
+  --arg v "$(openssl pkcs8 -topk8 -nocrypt -in relayrunner.*.private-key.pem)" \
+  '[{name: "GITHUB_APP_PRIVATE_KEY", value: $v, scopes: ["workers"]}]')"
 ```
 
 The browser never talks to this Worker directly: the dashboard Worker (`apps/web`) forwards `/api/*` here over a service binding, so `BETTER_AUTH_URL` (in `wrangler.jsonc` vars) is the dashboard's origin: `https://app.relayrunner.app` until `app.relayrunner.dev` moves to this account. `.dev.vars` overrides it for local dev. Deploy this Worker before `apps/web`, since the binding needs it to exist. The GitHub App's callback URL is `<BETTER_AUTH_URL>/api/auth/callback/github`. Its webhook URL points at the webhooks Worker (`apps/webhooks`), not this one.

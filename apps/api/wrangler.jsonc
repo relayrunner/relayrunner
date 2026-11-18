@@ -60,7 +60,7 @@
     "ACCESS_TEAM_DOMAIN": "relayrunner.cloudflareaccess.com",
     "ACCESS_AUD": "bc8e87c4c78375b0b1e61b4a2a73354543030492e218d02a28c56bc0f95702f7, 45a666d9534b30a03ef5e04e9ce04da805afa430d00b6bffddeb245aef130460",
     // Alert when at least this many webhook deliveries are dead-lettered in an hour
-    // (src/dead-letter-alert.ts). Set DEAD_LETTER_ALERT_WEBHOOK_URL with `wrangler secret put` to
+    // (src/dead-letter-alert.ts). Set DEAD_LETTER_ALERT_WEBHOOK_URL with `cf workers secrets update` to
     // also post the alert to a Slack or Discord incoming webhook.
     "DEAD_LETTER_ALERT_THRESHOLD": "10",
     // Orgs whose `runs-on: relayrunner-container` jobs get a container runner, comma-separated
@@ -76,7 +76,7 @@
     "POSTHOG_TOKEN": "phc_rKhrH8DbYLh3TKrdXtZjP5agS5a8xmj8tsEn6EJhQpCE",
   },
   // Transactional email through Cloudflare Email Sending (src/email.ts). send.relayrunner.app is
-  // onboarded for sending on this account. Set OPERATOR_ALERT_EMAIL with `wrangler secret put` to
+  // onboarded for sending on this account. Set OPERATOR_ALERT_EMAIL with `cf workers secrets update` to
   // email operator alerts to a team inbox; operators can also opt in to their own copy. `wrangler dev` simulates sends locally; add "remote": true
   // here to deliver for real while testing (remove before deploy).
   "send_email": [{ "name": "EMAIL", "allowed_sender_addresses": ["noreply@send.relayrunner.app"] }],
@@ -92,13 +92,13 @@
   "ai": { "binding": "AI" },
   // Webhook dead letters (src/dead-letters.ts), kept out of D1 on purpose: D1 failing is the
   // likeliest reason a delivery dead-letters. Create once, with the 30-day retention:
-  //   wrangler r2 bucket create relayrunner-webhook-dead-letters
-  //   wrangler r2 bucket lifecycle add relayrunner-webhook-dead-letters expire-30d --expire-days 30
+  //   cf r2 buckets create --name relayrunner-webhook-dead-letters
+  //   cf r2 buckets lifecycle update relayrunner-webhook-dead-letters --rules '[{"id":"expire-30d","enabled":true,"conditions":{"prefix":""},"deleteObjectsTransition":{"condition":{"type":"Age","maxAge":2592000}}}]'
   "r2_buckets": [{ "binding": "DEAD_LETTERS", "bucket_name": "relayrunner-webhook-dead-letters" }],
   // Hourly dead-letter growth check (src/dead-letter-alert.ts), and the 15-minute Actions usage
   // poll (src/actions-billing.ts) plus the relay sweep (src/pick-sweep.ts). src/index.ts tells them apart by the cron string.
   "triggers": { "crons": ["0 * * * *", "*/15 * * * *", "30 6 * * *"] },
-  // From the account's Secrets Store (default_secrets_store), not `wrangler secret put`.
+  // From the account's Secrets Store (default_secrets_store), not a Worker secret.
   // GITHUB_APP_PRIVATE_KEY is the App's private key converted to PKCS#8 PEM, which is what
   // WebCrypto imports (GitHub downloads PKCS#1):
   //   openssl pkcs8 -topk8 -nocrypt -in relayrunner.*.private-key.pem
@@ -124,7 +124,8 @@
     },
     // Encrypts the read-only provider tokens workspaces paste (src/provider-tokens.ts): 32 random
     // bytes, base64. Create it once with
-    //   openssl rand -base64 32 | wrangler secrets-store secret create eac3493b9fef4234a832f5f3fdcc8a41 --name PROVIDER_TOKEN_KEY --scopes workers
+    //   cf secrets-store secrets create eac3493b9fef4234a832f5f3fdcc8a41 \
+    //     --body "$(jq -n --arg v "$(openssl rand -base64 32)" '[{name: "PROVIDER_TOKEN_KEY", value: $v, scopes: ["workers"]}]')"
     {
       "binding": "PROVIDER_TOKEN_KEY",
       "store_id": "eac3493b9fef4234a832f5f3fdcc8a41",
@@ -182,16 +183,16 @@
   // export (src/webhook-queue.ts) processes it. Messages that fail max_retries times (with backoff,
   // about half an hour) move to the DLQ, whose consumer archives them to R2 and only then acks.
   // The producer is for replays from /api/admin/webhooks. Create both queues once:
-  //   wrangler queues create relayrunner-github-webhooks
-  //   wrangler queues create relayrunner-github-webhooks-dlq
+  //   cf queues create --queue-name relayrunner-github-webhooks
+  //   cf queues create --queue-name relayrunner-github-webhooks-dlq
   "queues": {
     "producers": [
       { "binding": "WEBHOOK_QUEUE", "queue": "relayrunner-github-webhooks" },
       // The 15-minute cron's per-installation work (src/installation-tasks.ts). Create once:
-      //   wrangler queues create relayrunner-installation-tasks
+      //   cf queues create --queue-name relayrunner-installation-tasks
       { "binding": "INSTALLATION_TASKS", "queue": "relayrunner-installation-tasks" },
       // Finished runs and jobs as spans for workspaces that export traces (src/telemetry). Create once:
-      //   wrangler queues create relayrunner-telemetry
+      //   cf queues create --queue-name relayrunner-telemetry
       { "binding": "TELEMETRY_QUEUE", "queue": "relayrunner-telemetry" },
     ],
     "consumers": [

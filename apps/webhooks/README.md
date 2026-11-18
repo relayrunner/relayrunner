@@ -46,8 +46,8 @@ npx wrangler dev -c apps/webhooks/wrangler.jsonc -c apps/api/wrangler.jsonc
 Once per account, create the queues:
 
 ```sh
-wrangler queues create relayrunner-github-webhooks
-wrangler queues create relayrunner-github-webhooks-dlq
+cf queues create --queue-name relayrunner-github-webhooks
+cf queues create --queue-name relayrunner-github-webhooks-dlq
 ```
 
 `GITHUB_WEBHOOK_SECRET` and `GITHUB_CHECK_WEBHOOK_SECRET` already live in the account's Secrets Store, so there's nothing to set. Then deploy in this order, since each step binds to the one before it:

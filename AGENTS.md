@@ -36,6 +36,12 @@ The API answers every failure with a code from `@relayrunner/errors`: `throw new
 
 The `relayrunner` npm package (the Rust CLI in `apps/cli`, shipped as a launcher plus one binary package per platform) is released with [changesets](https://github.com/changesets/changesets). A PR that changes what the CLI does for people who install it adds a `.changeset/*.md` file (`pnpm changeset`) naming `"relayrunner"`. A PR that changes the Mac app (`apps/mac`) names `"@relayrunner/mac"`, which has its own version; those are the only two names a changeset may use. Merging it makes the Release workflow open a `chore: version packages` PR, and merging that one publishes the CLI to npm (the Mac app ships with `apps/mac/scripts/release.sh`). Don't bump either `package.json` version by hand. See [.changeset/README.md](.changeset/README.md).
 
+## Cloudflare CLI
+
+Use the [cf CLI](https://developers.cloudflare.com/cf/) for Cloudflare account and resource work: D1, R2, queues, Worker secrets, the Secrets Store, DNS, Access and anything else in the Cloudflare API. Find a command with `cf cli search "<task>"` and check it with `--dry-run` before running it, rather than translating a Wrangler command from memory. `cf` reads the account from `CLOUDFLARE_ACCOUNT_ID`, not from `wrangler.jsonc`, so load the repo's `.env` first. `apps/api` pins `cf` as a dev dependency (`pnpm --filter @relayrunner/api exec cf ...`).
+
+Keep Wrangler for what reads `wrangler.jsonc`: `wrangler dev`, `wrangler deploy`, `wrangler preview` (Workers Builds), `wrangler containers build`, local D1 migrations and the local Secrets Store that `wrangler dev` uses. Never run `cf dev`, `cf build` or `cf deploy` here: until the Workers move to `cloudflare.config.ts` with `cf migrate`, they ignore `wrangler.jsonc` and can rewrite `package.json`.
+
 ## Agent skills
 
 The `security-audit` skill from [cloudflare/security-audit-skill](https://github.com/cloudflare/security-audit-skill) is a project default, listed under `skills` in `package.json` and pinned in `skills-lock.json`. Load it for a security audit, a vulnerability review, or a pen test. The canonical copy lives in `.agents/skills`, which Codex, Cursor, and Grok read directly; Claude Code reads it through the `.claude/skills/security-audit` symlink. Don't edit the vendored files by hand, since oxfmt and Oxlint skip them to keep them byte-identical to the lock. Update with `npx skills update`.

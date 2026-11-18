@@ -28,12 +28,12 @@
   },
   "upload_source_maps": true,
   // Create once per account before the first deploy (apps/api consumes both):
-  //   wrangler queues create relayrunner-github-webhooks
-  //   wrangler queues create relayrunner-github-webhooks-dlq
+  //   cf queues create --queue-name relayrunner-github-webhooks
+  //   cf queues create --queue-name relayrunner-github-webhooks-dlq
   "queues": {
     "producers": [{ "binding": "WEBHOOK_QUEUE", "queue": "relayrunner-github-webhooks" }],
   },
-  // From the account's Secrets Store (default_secrets_store), not `wrangler secret put`.
+  // From the account's Secrets Store (default_secrets_store), not a Worker secret.
   // Locally, `wrangler dev` reads a local store: seed it once with
   //   wrangler secrets-store secret create eac3493b9fef4234a832f5f3fdcc8a41 --name GITHUB_WEBHOOK_SECRET --scopes workers
   // (and the same for GITHUB_CHECK_WEBHOOK_SECRET and GITHUB_SPEND_WEBHOOK_SECRET).

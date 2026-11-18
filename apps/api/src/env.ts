@@ -9,7 +9,7 @@ import type { StrandedJob } from "./durable-objects/stranded-job.ts";
 import type { InstallationTask } from "./installation-tasks.ts";
 import type { TelemetryMessage } from "./telemetry/export.ts";
 
-// Bindings from wrangler.jsonc, plus secrets set with `wrangler secret put` (or .dev.vars locally).
+// Bindings from wrangler.jsonc, plus Worker secrets (`cf workers secrets update`, or .dev.vars locally).
 export interface Env extends AccessEnv {
   DB: D1Database;
   // Webhook dead letters (src/dead-letters.ts), and the queue a replay sends them back to.
@@ -22,10 +22,10 @@ export interface Env extends AccessEnv {
   TELEMETRY_QUEUE: Queue<TelemetryMessage>;
   // Alert when more than this many messages are dead-lettered in an hour (src/dead-letter-alert.ts).
   DEAD_LETTER_ALERT_THRESHOLD?: string;
-  // Optional: also POST the alert here (a Slack or Discord incoming webhook), via `wrangler secret put`.
+  // Optional: also POST the alert here (a Slack or Discord incoming webhook), a Worker secret.
   DEAD_LETTER_ALERT_WEBHOOK_URL?: string;
   // Optional: a Slack incoming webhook for operator pings (src/operator-pings.ts): signups, installs,
-  // first machines, first machine runs and unroutable runs. Set with `wrangler secret put`.
+  // first machines, first machine runs and unroutable runs. A Worker secret.
   OPERATOR_SLACK_WEBHOOK_URL?: string;
   // Test accounts that aren't operators, left out of operator pings: GitHub user ids,
   // comma-separated (wrangler.jsonc vars).
