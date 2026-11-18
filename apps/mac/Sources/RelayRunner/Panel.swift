@@ -222,7 +222,8 @@ private struct WindowReader: NSViewRepresentable {
     required init?(coder: NSCoder) { nil }
     override func viewDidMoveToWindow() {
       super.viewDidMoveToWindow()
-      found(window)
+      let window = window
+      DispatchQueue.main.async { self.found(window) }
     }
   }
 }
