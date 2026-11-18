@@ -299,8 +299,13 @@ export class Router extends DurableObject<Env> {
         .select({
           runnerOrder: schema.workspace.runnerOrder,
           skipUnhealthy: schema.workspace.skipUnhealthyRunners,
+          accountType: schema.githubInstallation.accountType,
         })
         .from(schema.workspace)
+        .leftJoin(
+          schema.githubInstallation,
+          eq(schema.githubInstallation.id, schema.workspace.installationId),
+        )
         .where(eq(schema.workspace.id, job.workspaceId))
         .limit(1),
       // Jobs already waiting get a free slot before this one can.
@@ -308,7 +313,8 @@ export class Router extends DurableObject<Env> {
     ]);
     const decision = await decideRoute(
       retryOrder(preferFirst(readRunnerOrder(workspace?.runnerOrder), job.first), job.retry),
-      job,
+      // Some hosted providers only serve organizations (SKIPS_PERSONAL_ACCOUNTS).
+      { ...job, personal: workspace?.accountType === "User" },
       () => this.pickMachine(job),
       // The job's own account: each GitHub account has its own quota, never pooled (#117).
       () => accountUsage(db, job.installationId),

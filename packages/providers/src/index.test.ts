@@ -21,6 +21,9 @@ describe("hosted provider labels", () => {
     ["nscloud-ubuntu-22.04-amd64-4x8", "namespace"],
     ["ubicloud", "ubicloud"],
     ["runs-on/runner=2cpu-linux-x64", "runs-on"],
+    ["starsling-ubuntu-26.04-gpu/gpus=rtx-5090:1", "starsling"],
+    ["celesto", "celesto"],
+    ["instabox-medium-snapshot-acme-warm", "instabox"],
     ["ubuntu-latest", null],
     ["self-hosted", null],
   ])("%s belongs to %s", (label, id) => {
@@ -46,6 +49,12 @@ describe("provider GitHub Apps", () => {
     expect(
       providersOfAppSlugs(["blacksmith-sh", "Depot", "runs-on-acme", "relayrunner", "claude"]),
     ).toEqual(["blacksmith", "depot", "runs-on"]);
+  });
+
+  test("the runner clouds' own app slugs", () => {
+    expect(
+      providersOfAppSlugs(["starslingdev", "latchkey-app", "celesto-ci", "instabox", "berrybox"]),
+    ).toEqual(["starsling", "latchkey", "berrybox", "celesto", "instabox"]);
   });
 
   test("no provider apps, no providers", () => {

@@ -5,6 +5,7 @@ import {
   BASE_BOOK,
   BILLING_PROVIDERS,
   HOSTED_PROVIDER_IDS,
+  type HostedProviderId,
   isBillingProvider,
   PROVIDERS,
   rateName,
@@ -14,8 +15,23 @@ import {
   type ProviderId,
 } from "@relayrunner/providers";
 
+// The runner clouds added on 2026-11-17 get their pages in their own change.
+const NEW_RUNNER_CLOUDS = [
+  "starsling",
+  "monkci",
+  "runloft",
+  "latchkey",
+  "berrybox",
+  "celesto",
+  "instabox",
+] as const;
+type NewRunnerCloud = (typeof NEW_RUNNER_CLOUDS)[number];
+
 export const INTEGRATION_IDS = [
-  ...HOSTED_PROVIDER_IDS,
+  ...HOSTED_PROVIDER_IDS.filter(
+    (id): id is Exclude<HostedProviderId, NewRunnerCloud> =>
+      !(NEW_RUNNER_CLOUDS as readonly string[]).includes(id),
+  ),
   "github",
 ] as const satisfies readonly ProviderId[];
 

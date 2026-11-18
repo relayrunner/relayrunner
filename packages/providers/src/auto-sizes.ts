@@ -43,6 +43,43 @@ const LABELS: Partial<
     sizes: [2, 4, 8, 16, 32, 64],
     label: (n, runId) => `runs-on=${runId}/runner=${n}cpu-linux-x64`,
   },
+  // The runner clouds below stop at sizes every account can run, since a label the account's
+  // plan or settings don't allow sits queued on GitHub.
+  // starsling-ubuntu-24.04 with no size is 4 vCPU.
+  starsling: {
+    sizes: [2, 4, 8, 16, 32, 64],
+    label: (n) => (n === 4 ? "starsling-ubuntu-24.04" : `starsling-ubuntu-24.04-${n}`),
+  },
+  monkci: {
+    sizes: [2, 4, 8, 16, 32],
+    label: (n) => `monkci-ubuntu-24.04-${n}`,
+  },
+  // Bigger sizes run once Runloft turns them on for the account.
+  runloft: {
+    sizes: [2],
+    label: () => "runloft-ubuntu-24.04",
+  },
+  latchkey: {
+    sizes: [2, 4, 8, 16],
+    label: (n) =>
+      ({ 2: "latchkey-small", 4: "latchkey-medium", 8: "latchkey-large" })[n] ?? "latchkey-xlarge",
+  },
+  berrybox: {
+    sizes: [2, 4, 8, 16],
+    label: (n) => `berrybox-${n}vcpu-ubuntu-2404`,
+  },
+  // celesto-micro and -small (1 vCPU) are below the smallest size the dashboard offers.
+  celesto: {
+    sizes: [2, 4, 8],
+    label: (n) => ({ 2: "celesto-standard", 4: "celesto-large" })[n] ?? "celesto-xl",
+  },
+  // instabox-medium (4 vCPU) is the one size every plan runs, so it also answers 2 vCPU.
+  instabox: {
+    sizes: [4, 8, 16, 32],
+    label: (n) =>
+      ({ 4: "instabox-medium", 8: "instabox-large", 16: "instabox-xlarge" })[n] ??
+      "instabox-2xlarge",
+  },
   // GitHub's standard runners. Bigger ones are larger runners each org names itself.
   github: {
     sizes: [1, 2],

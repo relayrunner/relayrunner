@@ -886,6 +886,46 @@ describe("decideRoute", () => {
       );
     });
 
+    test("BerryBox skips public repos too", async () => {
+      const job = {
+        ...both,
+        machine: [],
+        berrybox: ["berrybox-2vcpu-ubuntu-2404"],
+        private: false,
+      };
+      expect(await decideRoute(order("berrybox", "github"), job, free)).toMatchObject({
+        step: "github",
+        skipped: [{ key: "berrybox", reason: "public_repo" }],
+      });
+    });
+
+    test("org-only runner clouds skip a personal account's jobs", async () => {
+      const job = { ...both, machine: [], starsling: ["starsling-ubuntu-24.04-2"] };
+      expect(await decideRoute(order("starsling", "github"), job, free)).toMatchObject({
+        runner: "starsling-ubuntu-24.04-2",
+        step: "starsling",
+      });
+      expect(
+        await decideRoute(order("starsling", "github"), { ...job, personal: true }, free),
+      ).toEqual({
+        runner: "ubuntu-latest",
+        step: "github",
+        skipped: [{ key: "starsling", reason: "personal_account" }],
+        notInOrder: [],
+      });
+      const alone = await decideRoute(
+        order("starsling"),
+        { ...job, github: [], personal: true },
+        free,
+      );
+      expect(alone.runner === null && alone.reason).toBe(
+        "No runner available: StarSling only runs organizations' repos.",
+      );
+      // Runloft serves personal accounts.
+      const runloft = { ...both, machine: [], runloft: ["runloft-ubuntu-24.04"], personal: true };
+      expect(await decideRoute(order("runloft"), runloft, free)).toMatchObject({ step: "runloft" });
+    });
+
     describe("a runner type that isn't picking up jobs", () => {
       const job = { ...both, machine: [], depot: ["depot-ubuntu-24.04"] };
       const unhealthy = { misses: 3, retryAt: 1_000 };
