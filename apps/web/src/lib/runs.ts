@@ -1,7 +1,7 @@
 import { relayInputs } from "@relayrunner/runner-order";
 import { api } from "@/lib/api";
 import type { RouteWalk } from "@/lib/route-walk";
-import type { Environment, JobRun } from "@/lib/job-times";
+import type { Environment, JobRun, TypicalTime } from "@/lib/job-times";
 
 export type RunStatus = "queued" | "in_progress" | "completed";
 
@@ -54,6 +54,8 @@ export type RunJob = {
   queuedAt: number | null;
   startedAt: number | null;
   completedAt: number | null;
+  /** How long it usually takes on its runner, when it has 5+ successful runs there. */
+  typical: TypicalTime | null;
 };
 
 /** What a run's detail says about the run itself. Null when nothing of the run is known. */
@@ -371,6 +373,13 @@ const SAMPLE_WALK: RouteWalk = {
   ...relayInputs({ machine: ["self-hosted"], github: ["ubuntu-latest"] }),
 };
 
+// Usual times for the sample runs' jobs, by name.
+const SAMPLE_TYPICAL: Record<string, TypicalTime> = {
+  Lint: { medianMs: 22_000, p90Ms: 26_000, samples: 50 },
+  Test: { medianMs: 140_000, p90Ms: 170_000, samples: 44 },
+  Typecheck: { medianMs: 39_000, p90Ms: 45_000, samples: 31 },
+};
+
 /** Example jobs for a sample run: one from sampleRuns, or one the sample job list names. */
 export function sampleRunJobs(run: Pick<Run, "runId">): RunJobs {
   const listed = sampleRuns().runs.find((each) => each.runId === run.runId);
@@ -395,7 +404,7 @@ export function sampleRunJobs(run: Pick<Run, "runId">): RunJobs {
         ? { ...header, repository: jobs[0].repository, workflow: jobs[0].workflow }
         : null,
       environments: SAMPLE_ENVIRONMENTS,
-      jobs: jobs.reverse().map((job) => ({ ...job, status: "completed" })),
+      jobs: jobs.reverse().map((job) => ({ ...job, status: "completed", typical: null })),
       walk: null,
     };
   }
@@ -416,6 +425,7 @@ export function sampleRunJobs(run: Pick<Run, "runId">): RunJobs {
     queuedAt: start,
     startedAt: start + waitS * 1000,
     completedAt: start + (waitS + runS) * 1000,
+    typical: SAMPLE_TYPICAL[name] ?? null,
   });
   if (run.runId === 6)
     return {

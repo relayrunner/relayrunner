@@ -28,6 +28,7 @@ const job = (rest: Partial<LiveJob>): LiveJob => ({
   environment: "self-hosted:default",
   queuedAt: 0,
   startedAt: null,
+  typical: null,
   ...rest,
 });
 

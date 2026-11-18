@@ -9,7 +9,7 @@ import { WalkLines } from "@/components/walk-lines";
 import { Sheet, SheetContent, SheetDescription, SheetTitle } from "@/components/ui/sheet";
 import { timeAgo } from "@/lib/activity";
 import { authDisabled } from "@/lib/auth-client";
-import type { Environment } from "@/lib/job-times";
+import { type Environment, progressOf, progressText, timeLeft } from "@/lib/job-times";
 import { useLiveRefresh } from "@/lib/live-refresh";
 import {
   getJobSteps,
@@ -121,6 +121,39 @@ function waitOf(job: RunJob, now: number) {
 }
 const ranOf = (job: RunJob, now: number) =>
   job.startedAt === null ? null : (job.completedAt ?? now) - job.startedAt;
+
+// A job's run time, and under it how that compares with its usual time on the runner: time left
+// while it runs, or its usual time once it's done.
+function RanCell({ job, now }: { job: RunJob; now: number }) {
+  const ran = ranOf(job, now);
+  const progress =
+    ran !== null && job.status === "in_progress" ? progressOf(job.typical, ran) : null;
+  const slow =
+    progress?.state === "slow" ||
+    (job.status === "completed" && ran !== null && !!job.typical && ran > job.typical.p90Ms);
+  const under = progress
+    ? progressText(progress, elapsed)
+    : job.status === "completed" && job.typical
+      ? `usual ${elapsed(job.typical.medianMs)}`
+      : null;
+  return (
+    <>
+      {elapsed(ran)}
+      {under && (
+        <span
+          className={cn("block text-xs text-muted-foreground", slow && "text-run")}
+          title={
+            job.typical
+              ? `Usually takes ${elapsed(job.typical.medianMs)} on this runner, from its last ${job.typical.samples} successful runs`
+              : undefined
+          }
+        >
+          {under}
+        </span>
+      )}
+    </>
+  );
+}
 
 /**
  * History's detail panel: one run attempt and its jobs, or with `jobId` one of those jobs and its
@@ -260,6 +293,13 @@ function RunView({
   const startedAt = run?.startedAt ?? (Number.isFinite(firstQueued) ? firstQueued : null);
   const wallMs = (running ? null : run?.wallMs) ?? (startedAt === null ? null : now - startedAt);
   const failedJobs = jobs.filter((job) => isFailure(job.conclusion)).length;
+  // Until the slowest job still going should be done. Jobs GitHub hasn't queued yet aren't known.
+  const left = running
+    ? timeLeft(
+        jobs.filter((job) => job.status !== "completed"),
+        now,
+      )
+    : null;
 
   let longest: { job: RunJob; wait: number } | null = null;
   for (const job of jobs) {
@@ -300,7 +340,11 @@ function RunView({
             "Duration",
             <>
               {elapsed(wallMs)}
-              {run?.usualMs ? (
+              {running && left !== null ? (
+                <span className="block text-xs text-muted-foreground">
+                  about {elapsed(left)} left
+                </span>
+              ) : run?.usualMs ? (
                 <span className="block text-xs text-muted-foreground">
                   usual {elapsed(run.usualMs)}
                 </span>
@@ -377,7 +421,7 @@ function RunView({
                       {elapsed(wait)}
                     </td>
                     <td className="py-2 pr-3 text-right whitespace-nowrap">
-                      {elapsed(ranOf(job, now))}
+                      <RanCell job={job} now={now} />
                     </td>
                   </tr>
                 );
@@ -498,7 +542,7 @@ function JobView({
               {elapsed(wait)}
             </span>,
           ],
-          ["Ran", elapsed(ranOf(job, now))],
+          ["Ran", <RanCell job={job} now={now} />],
         ]}
       />
 

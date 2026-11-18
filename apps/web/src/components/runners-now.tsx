@@ -5,7 +5,7 @@ import { RunLink } from "@/components/run-sheet";
 import { RunnerLink } from "@/components/runner-link";
 import { StatusIcon } from "@/components/status-icon";
 import { Card } from "@/components/ui/card";
-import { clock } from "@/lib/job-times";
+import { clock, progressOf, progressText } from "@/lib/job-times";
 import { type LiveJob, type LiveJobs, runnerCounts, waitReason } from "@/lib/live-jobs";
 import { timeAgo } from "@/lib/activity";
 import type { Machine } from "@/lib/machines";
@@ -264,12 +264,34 @@ function JobRow({ job, from, detail }: { job: LiveJob; from: number | null; deta
           {detail}
         </div>
       </div>
-      {from !== null && (
-        <span className="shrink-0 text-sm text-muted-foreground tabular-nums">
-          <Clock from={from} />
-        </span>
-      )}
+      {from !== null &&
+        (job.startedAt !== null && job.typical ? (
+          <Running job={job} startedAt={job.startedAt} />
+        ) : (
+          <span className="shrink-0 text-sm text-muted-foreground tabular-nums">
+            <Clock from={from} />
+          </span>
+        ))}
     </div>
+  );
+}
+
+// A running job's timer with how it's doing against its usual time on that runner: the time left,
+// its usual time once it's past it, or a warning once it's slower than 9 in 10 of its runs.
+function Running({ job, startedAt }: { job: LiveJob; startedAt: number }) {
+  const ran = useNow(true) - startedAt;
+  const progress = progressOf(job.typical, ran)!;
+  const slow = progress.state === "slow";
+  return (
+    <span className="grid shrink-0 justify-items-end gap-0.5 tabular-nums">
+      <span className={cn("text-sm text-muted-foreground", slow && "text-run")}>{clock(ran)}</span>
+      <span
+        className={cn("text-xs text-muted-foreground", slow && "text-run")}
+        title={`Usually takes ${clock(progress.typical.medianMs)} on this runner, from its last ${progress.typical.samples} successful runs`}
+      >
+        {progressText(progress)}
+      </span>
+    </span>
   );
 }
 
