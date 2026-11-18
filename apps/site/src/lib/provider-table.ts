@@ -153,7 +153,7 @@ export const TABLE_ROWS: TableRow[] = PRICED.map((id) => {
   return {
     id,
     name: PROVIDERS[id].name,
-    href: integrationPath(id),
+    href: `${integrationPath(id)}#details`,
     logo: `/providers/${id}.svg`,
     plan: entry?.plan ?? "—",
     included: entry?.included ?? "—",
@@ -194,7 +194,7 @@ export const FEATURED_TILES = FEATURED.map((id) => {
   return {
     id,
     name: PROVIDERS[id].name,
-    href: integrationPath(id),
+    href: `${integrationPath(id)}#details`,
     logo: `/providers/${id}.svg`,
     plan: id === "github" ? "Free with GitHub" : (entry?.plan ?? "—"),
     included: entry ? shortIncluded(entry.included) : "—",
