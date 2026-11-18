@@ -16,7 +16,6 @@ import {
 
 export const INTEGRATION_IDS = [
   ...HOSTED_PROVIDER_IDS,
-  "boat",
   "github",
 ] as const satisfies readonly ProviderId[];
 
