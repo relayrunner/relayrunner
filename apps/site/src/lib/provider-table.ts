@@ -3,6 +3,8 @@
 // the same list the dashboard's Providers page reads.
 import {
   BASE_BOOK,
+  LISTED_PROVIDER_IDS,
+  type ListedProviderId,
   listRate,
   providerPlans,
   PROVIDERS,
@@ -34,7 +36,7 @@ type RunnerOf = (platform: TablePlatform, vcpus: TableSize) => Runner | null;
 const sized = (label: string, vcpus: number): Runner => ({ label, vcpus });
 
 // The label each provider uses for a platform and size, or null when it sells no such runner.
-const RUNNERS: Partial<Record<IntegrationId, RunnerOf>> = {
+const RUNNERS: Partial<Record<ProviderId, RunnerOf>> = {
   blacksmith: (platform, n) =>
     ({
       linux: sized(`blacksmith-${n}vcpu-ubuntu-2404`, n),
@@ -82,6 +84,46 @@ const RUNNERS: Partial<Record<IntegrationId, RunnerOf>> = {
       : null,
 };
 
+// The runner clouds RelayRunner lists but doesn't route to yet (LISTED_PROVIDER_IDS).
+const linuxOnly =
+  (label: (n: TableSize) => string | null): RunnerOf =>
+  (platform, n) => {
+    const name = platform === "linux" ? label(n) : null;
+    return name ? sized(name, n) : null;
+  };
+const LISTED_RUNNERS: Record<ListedProviderId, RunnerOf> = {
+  starsling: linuxOnly((n) => `starsling-ubuntu-24.04-${n}`),
+  monkci: linuxOnly((n) => `monkci-ubuntu-24.04-${n}`),
+  // Arm and Windows are turned on per account on request; macOS is too, and it isn't sized by vCPU.
+  runloft: (platform, n) => {
+    const size = n === 2 ? "" : `-${n}cpu`;
+    return (
+      {
+        linux: sized(`runloft-ubuntu-24.04${size}`, n),
+        arm: sized(`runloft-ubuntu-24.04-arm${size}`, n),
+        windows: sized(`runloft-windows-2025-${n}cpu`, n),
+        macos: null,
+      }[platform] ?? null
+    );
+  },
+  latchkey: linuxOnly(
+    (n) =>
+      ({ 2: "latchkey-small", 4: "latchkey-medium", 8: "latchkey-large", 16: "latchkey-xlarge" })[
+        n
+      ],
+  ),
+  berrybox: linuxOnly((n) => `berrybox-${n}vcpu-ubuntu-2404`),
+  celesto: linuxOnly(
+    (n) => ({ 2: "celesto-standard", 4: "celesto-large", 8: "celesto-xl" })[n as 2 | 4 | 8] ?? null,
+  ),
+  instabox: linuxOnly(
+    (n) =>
+      ({ 2: "instabox-small", 4: "instabox-medium", 8: "instabox-large", 16: "instabox-xlarge" })[
+        n
+      ],
+  ),
+};
+
 // GitHub's runners are priced by rate, not by label.
 const GITHUB_RATES: Record<TablePlatform, string> = {
   linux: "linux-2-core",
@@ -90,9 +132,9 @@ const GITHUB_RATES: Record<TablePlatform, string> = {
   macos: "macos",
 };
 
-function perMinute(id: IntegrationId, platform: TablePlatform, label: string): number | null {
+function perMinute(id: ProviderId, platform: TablePlatform, label: string): number | null {
   if (id === "github") return BASE_BOOK.usd("github", GITHUB_RATES[platform], Date.now());
-  return listRate(BASE_BOOK, id as ProviderId, label);
+  return listRate(BASE_BOOK, id, label);
 }
 
 /** "3,000 min a month" as "3,000 min/mo" and "$20 a month" as "$20/mo", for the featured strip. */
@@ -110,7 +152,7 @@ export const includedText = (text: string) =>
     .replace(" credit", "");
 
 /** A provider's cheapest plan for real CI, trials and one-machine free tiers left out. */
-function entryPlan(id: IntegrationId) {
+function entryPlan(id: ProviderId) {
   const plans = providerPlans(id);
   if (!plans) return null;
   const plan = plans.plans.find((each) => !each.trial) ?? plans.plans[0]!;
@@ -122,9 +164,11 @@ function entryPlan(id: IntegrationId) {
 }
 
 export interface TableRow {
-  id: IntegrationId;
+  id: ProviderId;
   name: string;
   href: string;
+  /** A runner cloud RelayRunner lists but can't route jobs to yet; its link goes to its own site. */
+  soon: boolean;
   logo: string;
   plan: string;
   included: string;
@@ -137,10 +181,9 @@ export const cellKey = (platform: TablePlatform, vcpus: TableSize) =>
   platform === "macos" ? "macos" : `${platform}-${vcpus}`;
 
 /** The providers the table prices, in this order. Namespace and RunsOn get a line of their own. */
-const PRICED: IntegrationId[] = ["blacksmith", "boat", "depot", "github", "ubicloud", "warpbuild"];
+const PRICED: ProviderId[] = ["blacksmith", "boat", "depot", "github", "ubicloud", "warpbuild"];
 
-export const TABLE_ROWS: TableRow[] = PRICED.map((id) => {
-  const runnerOf = RUNNERS[id]!;
+const row = (id: ProviderId, runnerOf: RunnerOf, soon: boolean): TableRow => {
   const cells: TableRow["cells"] = {};
   for (const { id: platform } of TABLE_PLATFORMS) {
     for (const size of platform === "macos" ? ([2] as const) : TABLE_SIZES) {
@@ -153,21 +196,33 @@ export const TABLE_ROWS: TableRow[] = PRICED.map((id) => {
   return {
     id,
     name: PROVIDERS[id].name,
-    href: `${integrationPath(id)}#details`,
+    href: soon
+      ? (providerPlans(id)?.source ?? PROVIDERS[id].docsUrl ?? "#")
+      : `${integrationPath(id as IntegrationId)}#details`,
+    soon,
     logo: `/providers/${id}.svg`,
     plan: entry?.plan ?? "—",
     included: entry?.included ?? "—",
     cells,
   };
-});
+};
+
+/** The providers you can route to first, then the runner clouds that are coming, each by name. */
+export const TABLE_ROWS: TableRow[] = [
+  ...PRICED.map((id) => row(id, RUNNERS[id]!, false)),
+  ...[...LISTED_PROVIDER_IDS]
+    .sort((a, b) => PROVIDERS[a].name.localeCompare(PROVIDERS[b].name))
+    .map((id) => row(id, LISTED_RUNNERS[id], true)),
+];
 
 /** Why a row has no runner for a platform and size: "No Windows runners", "Windows from 4 vCPU". */
-export function missingText(row: TableRow, platform: TablePlatform): string {
+export function missingText(row: TableRow, platform: TablePlatform, size: TableSize): string {
   const name = TABLE_PLATFORMS.find((each) => each.id === platform)!.label;
-  const sizes = TABLE_SIZES.filter((size) => row.cells[cellKey(platform, size)]);
+  const sizes = TABLE_SIZES.filter((each) => row.cells[cellKey(platform, each)]);
+  if (row.id === "runloft" && platform === "macos") return "macOS on request";
   if (sizes.length === 0) return `No ${name} runners`;
   if (row.id === "github") return "Larger GitHub runners aren't in the price list";
-  return `${name} from ${sizes[0]} vCPU`;
+  return size < sizes[0]! ? `${name} from ${sizes[0]} vCPU` : `${name} up to ${sizes.at(-1)} vCPU`;
 }
 
 /** Each row's line for every platform and size it has no runner for, keyed as its cells are. */
@@ -176,7 +231,7 @@ export const missingLines = (row: TableRow) =>
     TABLE_PLATFORMS.flatMap(({ id: platform }) =>
       (platform === "macos" ? ([2] as const) : TABLE_SIZES)
         .filter((size) => !row.cells[cellKey(platform, size)])
-        .map((size) => [cellKey(platform, size), missingText(row, platform)]),
+        .map((size) => [cellKey(platform, size), missingText(row, platform, size)]),
     ),
   );
 
