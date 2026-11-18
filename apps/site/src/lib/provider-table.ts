@@ -3,15 +3,13 @@
 // the same list the dashboard's Providers page reads.
 import {
   BASE_BOOK,
-  LISTED_PROVIDER_IDS,
-  type ListedProviderId,
   listRate,
   providerPlans,
   PROVIDERS,
   startsAt,
   type ProviderId,
 } from "@relayrunner/providers";
-import { integrationPath, type IntegrationId } from "./integrations";
+import { integrationPath, NEWER_CLOUD_IDS, type IntegrationId } from "./integrations";
 
 export const TABLE_PLATFORMS = [
   { id: "linux", label: "Linux x64" },
@@ -84,14 +82,14 @@ const RUNNERS: Partial<Record<ProviderId, RunnerOf>> = {
       : null,
 };
 
-// The runner clouds added since the site's provider pages (LISTED_PROVIDER_IDS).
+// The runner clouds added on 2026-11-17 (NEWER_CLOUD_IDS).
 const linuxOnly =
   (label: (n: TableSize) => string | null): RunnerOf =>
   (platform, n) => {
     const name = platform === "linux" ? label(n) : null;
     return name ? sized(name, n) : null;
   };
-const LISTED_RUNNERS: Record<ListedProviderId, RunnerOf> = {
+const NEWER_RUNNERS: Record<(typeof NEWER_CLOUD_IDS)[number], RunnerOf> = {
   starsling: linuxOnly((n) => `starsling-ubuntu-24.04-${n}`),
   monkci: linuxOnly((n) => `monkci-ubuntu-24.04-${n}`),
   // Arm and Windows are turned on per account on request; macOS is too, and it isn't sized by vCPU.
@@ -181,7 +179,7 @@ export const cellKey = (platform: TablePlatform, vcpus: TableSize) =>
 /** The providers with a page on the site that the table prices. Namespace and RunsOn get a line of their own. */
 const PRICED: ProviderId[] = ["blacksmith", "boat", "depot", "github", "ubicloud", "warpbuild"];
 
-const row = (id: ProviderId, runnerOf: RunnerOf, external: boolean): TableRow => {
+const row = (id: ProviderId, runnerOf: RunnerOf): TableRow => {
   const cells: TableRow["cells"] = {};
   for (const { id: platform } of TABLE_PLATFORMS) {
     for (const size of platform === "macos" ? ([2] as const) : TABLE_SIZES) {
@@ -194,10 +192,7 @@ const row = (id: ProviderId, runnerOf: RunnerOf, external: boolean): TableRow =>
   return {
     id,
     name: PROVIDERS[id].name,
-    // Runner clouds without a page of their own on the site link to their pricing page.
-    href: external
-      ? (providerPlans(id)?.source ?? PROVIDERS[id].docsUrl ?? "#")
-      : `${integrationPath(id as IntegrationId)}#relay`,
+    href: `${integrationPath(id as IntegrationId)}#relay`,
     logo: `/providers/${id}.svg`,
     plan: entry?.plan ?? "—",
     included: entry?.included ?? "—",
@@ -207,8 +202,8 @@ const row = (id: ProviderId, runnerOf: RunnerOf, external: boolean): TableRow =>
 
 /** Every priced provider, by name. */
 export const TABLE_ROWS: TableRow[] = [
-  ...PRICED.map((id) => row(id, RUNNERS[id]!, false)),
-  ...LISTED_PROVIDER_IDS.map((id) => row(id, LISTED_RUNNERS[id], true)),
+  ...PRICED.map((id) => row(id, RUNNERS[id]!)),
+  ...NEWER_CLOUD_IDS.map((id) => row(id, NEWER_RUNNERS[id])),
 ].sort((a, b) => a.name.localeCompare(b.name));
 
 /** Providers the table can't price per runner, and why. */

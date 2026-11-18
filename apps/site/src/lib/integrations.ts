@@ -14,9 +14,19 @@ import {
   type ProviderId,
 } from "@relayrunner/providers";
 
+/** The runner clouds added on 2026-11-17, named here so their pages exist whichever list holds them. */
+export const NEWER_CLOUD_IDS = [
+  "starsling",
+  "monkci",
+  "runloft",
+  "latchkey",
+  "berrybox",
+  "celesto",
+  "instabox",
+] as const satisfies readonly ProviderId[];
+
 export const INTEGRATION_IDS = [
-  ...HOSTED_PROVIDER_IDS,
-  "github",
+  ...new Set([...HOSTED_PROVIDER_IDS, ...NEWER_CLOUD_IDS, "github"] as const),
 ] as const satisfies readonly ProviderId[];
 
 export type IntegrationId = (typeof INTEGRATION_IDS)[number];
@@ -35,6 +45,14 @@ const INTROS: Record<IntegrationId, string> = {
   ubicloud: "Ubicloud runs GitHub Actions jobs on its own machines, under your Ubicloud account.",
   boat: "Boat runs each GitHub Actions job in a fresh Linux VM, under your Boat account.",
   "runs-on": "RunsOn starts a runner for each job in your own AWS account.",
+  starsling:
+    "StarSling runs GitHub Actions jobs on its own machines, under your StarSling account.",
+  monkci: "Monk CI runs GitHub Actions jobs on its own machines, under your Monk CI account.",
+  runloft: "Runloft runs GitHub Actions jobs on its own machines, under your Runloft account.",
+  latchkey: "Latchkey runs GitHub Actions jobs on its own machines, under your Latchkey account.",
+  berrybox: "BerryBox runs GitHub Actions jobs on its own machines, under your BerryBox account.",
+  celesto: "Celesto runs GitHub Actions jobs on its own machines, under your Celesto account.",
+  instabox: "InstaBox runs GitHub Actions jobs on its own machines, under your InstaBox account.",
   github: "GitHub-hosted runners work in every repository with nothing to set up.",
 };
 
@@ -48,7 +66,37 @@ interface Quirks {
   faqs?: { q: string; a: string }[];
 }
 
+/** A question for the runner clouds that only take jobs from GitHub organizations. */
+const orgsOnly = (name: string) => ({
+  q: `Can I use ${name} with a personal GitHub account?`,
+  a: `No. ${name} only runs jobs for repositories owned by a GitHub organization. Jobs from a personal account's repos go to the next runner in your order.`,
+});
+
 const QUIRKS: Partial<Record<IntegrationId, Quirks>> = {
+  starsling: { faqs: [orgsOnly("StarSling")] },
+  monkci: { faqs: [orgsOnly("Monk CI")] },
+  latchkey: { faqs: [orgsOnly("Latchkey")] },
+  runloft: {
+    faqs: [
+      {
+        q: "Which runners does Runloft have?",
+        a: "Every account starts with 2 vCPU Linux x64 runners. Larger sizes, Arm, Windows and macOS runners are turned on per account when you ask Runloft.",
+      },
+    ],
+  },
+  instabox: {
+    faqs: [
+      {
+        q: "Which runners does InstaBox's free plan run?",
+        a: "Only instabox-medium (4 vCPU). Other sizes need a paid plan, and InstaBox leaves jobs for them queued until you have one.",
+      },
+    ],
+  },
+  berrybox: {
+    publicRepos:
+      "No. BerryBox only runs jobs from private repositories, so a public repo's jobs go to the next runner in your order.",
+    faqs: [orgsOnly("BerryBox")],
+  },
   boat: {
     priceNote:
       "CI needs Boat's $20 plan or higher, which comes back as VM time. Starts past the plan's limits cost $0.03 to $0.07 each.",
