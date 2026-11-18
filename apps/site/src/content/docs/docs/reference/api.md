@@ -10,7 +10,7 @@ Use the [MCP server](/docs/reference/mcp) instead. Claude, Cursor, VS Code and o
 :::
 
 ```text
-https://api.relayrunner.app/api
+https://api.relayrunner.dev/api
 ```
 
 [API routes](/docs/reference/api/routes) lists every route with its parameters and responses, and you can try them there. The [OpenAPI spec](/openapi.json) has the same in JSON.

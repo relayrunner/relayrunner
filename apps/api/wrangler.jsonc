@@ -10,10 +10,14 @@
   // No preview URLs: nothing reaches this Worker by one (dashboard previews bind to production),
   // and each would be another public, unprotected hostname.
   "preview_urls": false,
-  // Custom domain on relayrunner.app, kept there after the move to relayrunner.dev: published API
-  // docs and agents call it. The dashboard reaches this Worker over its service binding; this host is
-  // for direct API calls. /api/admin/* stays behind gateAdmin.
-  "routes": [{ "pattern": "api.relayrunner.app", "custom_domain": true }],
+  // Custom domains for direct API calls: api.relayrunner.dev, which the docs and OpenAPI spec
+  // publish, and api.relayrunner.app, kept after the move to relayrunner.dev for anything already
+  // calling it. The dashboard reaches this Worker over its service binding instead.
+  // /api/admin/* stays behind gateAdmin on both.
+  "routes": [
+    { "pattern": "api.relayrunner.dev", "custom_domain": true },
+    { "pattern": "api.relayrunner.app", "custom_domain": true },
+  ],
   // Workers Logs, traces and Issues (errors grouped per Worker). Wrangler deploys overwrite
   // dashboard settings, so these must stay on here. Source maps make Issues' stacks point at
   // the TypeScript source.

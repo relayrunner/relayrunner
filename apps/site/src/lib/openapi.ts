@@ -1,6 +1,6 @@
 /*
  * The OpenAPI description of the agent API, served at /openapi.json. These are the routes an
- * agent's OAuth token may call on https://api.relayrunner.app (AGENT_ROUTES in
+ * agent's OAuth token may call on https://api.relayrunner.dev (AGENT_ROUTES in
  * apps/api/src/agent-auth.ts); the MCP server's tools call the same routes. A test in
  * apps/api/src/agent-openapi.test.ts keeps the two lists in step.
  *
@@ -87,7 +87,7 @@ export const openApi = {
     license: { name: "Apache-2.0", identifier: "Apache-2.0" },
   },
   externalDocs: { url: "https://relayrunner.dev/docs/reference/api" },
-  servers: [{ url: "https://api.relayrunner.app/api" }],
+  servers: [{ url: "https://api.relayrunner.dev/api" }],
   security: [{ oauth: ["workspace:read"] }],
   paths: {
     "/me": read(
