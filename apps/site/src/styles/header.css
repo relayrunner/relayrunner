@@ -306,6 +306,21 @@
   display: flex;
   gap: 12px;
 }
+/* The Providers menu shows as many logos as fit on one row, and "All integrations" stays beside them:
+   logos that would wrap fall onto a second row, which the fixed height hides. */
+.nav-panel-providers .nav-panel-foot {
+  flex-wrap: nowrap;
+}
+.nav-panel-providers .nav-logos {
+  flex: 1;
+  flex-wrap: wrap;
+  min-width: 0;
+  height: 24px;
+  overflow: hidden;
+}
+.nav-panel-providers .nav-panel-foot > a {
+  white-space: nowrap;
+}
 .header-actions {
   display: flex;
   align-items: center;
