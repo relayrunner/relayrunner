@@ -4,22 +4,22 @@
   <channel>
     <title>RelayRunner for Mac</title>
     <item>
-      <title>0.3.0</title>
-      <pubDate>Wed, 18 Nov 2026 01:52:22 +0000</pubDate>
-      <sparkle:version>0.3.0</sparkle:version>
-      <sparkle:shortVersionString>0.3.0</sparkle:shortVersionString>
+      <title>0.3.1</title>
+      <pubDate>Wed, 18 Nov 2026 02:38:02 +0000</pubDate>
+      <sparkle:version>0.3.1</sparkle:version>
+      <sparkle:shortVersionString>0.3.1</sparkle:shortVersionString>
       <sparkle:minimumSystemVersion>14.0</sparkle:minimumSystemVersion>
       <description sparkle:format="markdown"><![CDATA[
 
-### New
+### Fixes and improvements
 
-- A welcome window on first launch moves the app to Applications, signs your Mac in and turns on opening at login. You can also turn on a notification for when a job fails on your Mac (off by default).
-- Quitting while a job runs asks first. You can quit once the job is done, quit now, or cancel.
+- The menu bar menu is now a real macOS menu, so it has the system's shape and look.
+- The menu bar panel closes when you pick Settings or another item, and Settings stays in front while you use the menu bar.
 
 Includes the relayrunner CLI 0.13.2.
 ]]></description>
       <sparkle:fullReleaseNotesLink>https://github.com/relayrunner/relayrunner/blob/main/apps/mac/CHANGELOG.md</sparkle:fullReleaseNotesLink>
-      <enclosure url="https://github.com/relayrunner/relayrunner/releases/download/mac-v0.3.0/RelayRunner-0.3.0.zip" sparkle:edSignature="xqnotjSZgiSqwozEwUvCoXQjELMc6QJ0Nm9t4q4p/zTeuFXowe2gTrghk8peXqs6vzc+iZ+iVhPqOCwcFKbXBA==" length="2864032" type="application/octet-stream"/>
+      <enclosure url="https://github.com/relayrunner/relayrunner/releases/download/mac-v0.3.1/RelayRunner-0.3.1.zip" sparkle:edSignature="/I92ypFpml7BtE7CEhml0wedgOUYFBKEviDTQAFDAQhx1ClycH58I4F7WIR/sA/p4r5vl8TlqEaCBHoAUvU0CQ==" length="2856819" type="application/octet-stream"/>
     </item>
   </channel>
 </rss>
