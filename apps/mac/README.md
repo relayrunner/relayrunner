@@ -30,10 +30,9 @@ tests. To try changes to the CLI without rebuilding the app, point it at another
 
 The app has its own version, in `package.json`. A PR that changes the app adds a changeset naming
 `"@relayrunner/mac"`, and the `chore: version packages` PR bumps it. CI can't release the app,
-because it has to be signed with a certificate that lives in a keychain. After the version PR
-merges, release from that commit of main, with a clean tree, on a Mac that holds the release
-credentials (listed below) and has `gh` signed in with push access to this repo and
-[relayrunner/homebrew-tap](https://github.com/relayrunner/homebrew-tap):
+because it has to be signed with the Developer ID certificate. After the version PR merges, release
+from main on any Mac with access to that certificate and the rest of the signing setup below (see
+[Before you publish](#before-you-publish)):
 
 ```sh
 apps/mac/scripts/release.sh --dry-run   # build, sign and notarize into apps/mac/dist
@@ -53,6 +52,34 @@ The keychain needs a Developer ID Application certificate, a notarytool profile 
 key was made once with `generate_keys` from `scripts/setup-sparkle.sh`'s folder; its public half is
 `SUPublicEDKey` in `Info.plist`. Losing the private key means existing installs can't update, so
 keep a copy (`generate_keys -x <file>` exports it).
+
+### Before you publish
+
+- Install the tools from [Build](#build), then run `pnpm install` at the root of the repo. The
+  script commits the appcast, and the pre-commit hook runs the typecheck, which needs the
+  dependencies.
+- Sign in to `gh` as someone who can push to this repo and to
+  [relayrunner/homebrew-tap](https://github.com/relayrunner/homebrew-tap). The script pushes the cask
+  straight to the tap's default branch.
+- Start from a clean checkout of a commit on main. The script stops if either isn't true. It leaves
+  the checkout on a new `release/mac-v<version>` branch, so a separate worktree keeps your usual one
+  as it was:
+
+  ```sh
+  git worktree add --detach ../relayrunner-release origin/main
+  cd ../relayrunner-release && pnpm install --frozen-lockfile
+  apps/mac/scripts/release.sh
+  ```
+
+A release takes a few minutes. Most of that is the build and the two notarizations, which Apple
+usually finishes in under a minute each. The first time `codesign` or Sparkle's `sign_update` reads
+a key, macOS may ask to allow keychain access. Choose Always Allow so later releases run without the
+prompt.
+
+The script doesn't mark the GitHub release as latest, so the CLI's release stays the one GitHub
+shows first. After it finishes, review and merge the appcast PR. If you run the script through a
+coding agent, the agent needs your approval to publish, because the release, the cask and the PR
+are public.
 
 ## How it works
 
