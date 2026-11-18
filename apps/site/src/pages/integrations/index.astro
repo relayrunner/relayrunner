@@ -140,10 +140,7 @@ const first = cellKey("linux", 2);
                     <a href={row.href}>
                       <img src={row.logo} alt="" width="28" height="28" />
                       <span>
-                        <span class="int-name">
-                          <b>{row.name}</b>
-                          {row.soon && <span class="int-soon">Coming soon</span>}
-                        </span>
+                        <b>{row.name}</b>
                         <code data-label hidden={!cell}>
                           {cell?.label}
                         </code>
@@ -191,7 +188,7 @@ const first = cellKey("linux", 2);
     <p class="int-note">
       {PRICES_AS_OF}, list prices and plans from each provider's own pricing page. Plan is
       the cheapest one you can run real CI on, leaving out trials and one-machine free tiers, and each
-      provider's page lists them all. Per minute is past any included minutes. You can't route jobs to the runner clouds marked Coming soon yet, so their names link to their own pricing pages.
+      provider's page lists them all. Per minute is past any included minutes.
     </p>
 
     <h2 class="kicker">Runners you host</h2>

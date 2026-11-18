@@ -84,7 +84,7 @@ const RUNNERS: Partial<Record<ProviderId, RunnerOf>> = {
       : null,
 };
 
-// The runner clouds RelayRunner lists but doesn't route to yet (LISTED_PROVIDER_IDS).
+// The runner clouds added since the site's provider pages (LISTED_PROVIDER_IDS).
 const linuxOnly =
   (label: (n: TableSize) => string | null): RunnerOf =>
   (platform, n) => {
@@ -167,8 +167,6 @@ export interface TableRow {
   id: ProviderId;
   name: string;
   href: string;
-  /** A runner cloud RelayRunner lists but can't route jobs to yet; its link goes to its own site. */
-  soon: boolean;
   logo: string;
   plan: string;
   included: string;
@@ -180,10 +178,10 @@ export interface TableRow {
 export const cellKey = (platform: TablePlatform, vcpus: TableSize) =>
   platform === "macos" ? "macos" : `${platform}-${vcpus}`;
 
-/** The providers the table prices, in this order. Namespace and RunsOn get a line of their own. */
+/** The providers with a page on the site that the table prices. Namespace and RunsOn get a line of their own. */
 const PRICED: ProviderId[] = ["blacksmith", "boat", "depot", "github", "ubicloud", "warpbuild"];
 
-const row = (id: ProviderId, runnerOf: RunnerOf, soon: boolean): TableRow => {
+const row = (id: ProviderId, runnerOf: RunnerOf, external: boolean): TableRow => {
   const cells: TableRow["cells"] = {};
   for (const { id: platform } of TABLE_PLATFORMS) {
     for (const size of platform === "macos" ? ([2] as const) : TABLE_SIZES) {
@@ -196,10 +194,10 @@ const row = (id: ProviderId, runnerOf: RunnerOf, soon: boolean): TableRow => {
   return {
     id,
     name: PROVIDERS[id].name,
-    href: soon
+    // Runner clouds without a page of their own on the site link to their pricing page.
+    href: external
       ? (providerPlans(id)?.source ?? PROVIDERS[id].docsUrl ?? "#")
       : `${integrationPath(id as IntegrationId)}#relay`,
-    soon,
     logo: `/providers/${id}.svg`,
     plan: entry?.plan ?? "—",
     included: entry?.included ?? "—",
@@ -207,13 +205,11 @@ const row = (id: ProviderId, runnerOf: RunnerOf, soon: boolean): TableRow => {
   };
 };
 
-/** The providers you can route to first, then the runner clouds that are coming, each by name. */
+/** Every priced provider, by name. */
 export const TABLE_ROWS: TableRow[] = [
   ...PRICED.map((id) => row(id, RUNNERS[id]!, false)),
-  ...[...LISTED_PROVIDER_IDS]
-    .sort((a, b) => PROVIDERS[a].name.localeCompare(PROVIDERS[b].name))
-    .map((id) => row(id, LISTED_RUNNERS[id], true)),
-];
+  ...LISTED_PROVIDER_IDS.map((id) => row(id, LISTED_RUNNERS[id], true)),
+].sort((a, b) => a.name.localeCompare(b.name));
 
 /** Why a row has no runner for a platform and size: "No Windows runners", "Windows from 4 vCPU". */
 export function missingText(row: TableRow, platform: TablePlatform, size: TableSize): string {

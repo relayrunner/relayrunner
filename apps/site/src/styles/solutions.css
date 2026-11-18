@@ -822,20 +822,3 @@ ol.sol-steps h3 {
 .int-plans .num {
   padding-right: 28px;
 }
-.int-table tbody th .int-name {
-  flex-direction: row;
-  align-items: center;
-  gap: 8px;
-}
-.int-soon {
-  display: inline-flex;
-  align-items: center;
-  height: 20px;
-  padding: 0 7px;
-  border: 1px solid var(--line);
-  border-radius: 6px;
-  background: var(--bg-deep);
-  color: var(--mute);
-  font-size: 11.5px;
-  font-weight: 600;
-}
