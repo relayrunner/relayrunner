@@ -38,11 +38,11 @@ public enum Lane: Hashable {
 }
 
 extension Durations {
-  /// How far a running job is through its usual time: 0 to 1 until then, and `over` once it's past
-  /// it, when the bar fills and turns amber. Nil without a usual time.
+  /// How far a running job is through its usual time: 0 to 1 until then, and `over` once it's
+  /// meaningfully slower (`isSlow`), when the full bar turns amber. Nil without a usual time.
   public static func share(elapsed: TimeInterval, typicalMs: Int?) -> (fraction: Double, over: Bool)? {
     guard let typicalMs, typicalMs > 0 else { return nil }
     let fraction = elapsed / (TimeInterval(typicalMs) / 1000)
-    return (min(max(fraction, 0), 1), fraction > 1)
+    return (min(max(fraction, 0), 1), isSlow(elapsed: elapsed, typicalMs: typicalMs))
   }
 }

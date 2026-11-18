@@ -27,7 +27,7 @@ While it's on, the Mac takes jobs, each in its own Linux VM. The head is faded w
 
 ### Now
 
-A row for each job slot, free ones included. A running job shows its name, how long it has run and a bar against how long it usually takes on this Mac, with about how long it has left. Once it runs past its usual time, the bar says so. Below the slots are this Mac's CPU and memory use while the menu is open.
+A row for each job slot, free ones included. A running job shows its name, how long it has run and a bar against how long it usually takes on this Mac, with about how long it has left. Once it's clearly slower than usual, at least 30 seconds and a quarter over, the bar turns orange. Below the slots are this Mac's CPU and memory use while the menu is open.
 
 ### Queue
 

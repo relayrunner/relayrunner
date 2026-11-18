@@ -9,7 +9,14 @@ import { WalkLines } from "@/components/walk-lines";
 import { Sheet, SheetContent, SheetDescription, SheetTitle } from "@/components/ui/sheet";
 import { timeAgo } from "@/lib/activity";
 import { authDisabled } from "@/lib/auth-client";
-import { type Environment, progressOf, progressText, timeLeft } from "@/lib/job-times";
+import {
+  type Environment,
+  isSlow,
+  progressOf,
+  progressText,
+  slowText,
+  timeLeft,
+} from "@/lib/job-times";
 import { useLiveRefresh } from "@/lib/live-refresh";
 import {
   getJobSteps,
@@ -123,18 +130,18 @@ const ranOf = (job: RunJob, now: number) =>
   job.startedAt === null ? null : (job.completedAt ?? now) - job.startedAt;
 
 // A job's run time, and under it how that compares with its usual time on the runner: time left
-// while it runs, or its usual time once it's done.
+// while it runs, and a warning when it ran or is running meaningfully slower than usual. Nothing
+// when it's within its normal range.
 function RanCell({ job, now }: { job: RunJob; now: number }) {
   const ran = ranOf(job, now);
   const progress =
     ran !== null && job.status === "in_progress" ? progressOf(job.typical, ran) : null;
-  const slow =
-    progress?.state === "slow" ||
-    (job.status === "completed" && ran !== null && !!job.typical && ran > job.typical.p90Ms);
+  const slowDone = job.status === "completed" && ran !== null && isSlow(job.typical, ran);
+  const slow = progress?.state === "slow" || slowDone;
   const under = progress
     ? progressText(progress, elapsed)
-    : job.status === "completed" && job.typical
-      ? `usual ${elapsed(job.typical.medianMs)}`
+    : slowDone && job.typical
+      ? slowText(job.typical, elapsed)
       : null;
   return (
     <>

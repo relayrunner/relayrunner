@@ -29,6 +29,8 @@ final class LaneTests: XCTestCase {
     XCTAssertNil(Durations.share(elapsed: 10, typicalMs: nil))
     XCTAssertEqual(Durations.share(elapsed: 30, typicalMs: 60_000)?.fraction, 0.5)
     XCTAssertEqual(Durations.share(elapsed: 30, typicalMs: 60_000)?.over, false)
+    XCTAssertEqual(Durations.share(elapsed: 80, typicalMs: 60_000)?.fraction, 1)
+    XCTAssertEqual(Durations.share(elapsed: 80, typicalMs: 60_000)?.over, false)
     XCTAssertEqual(Durations.share(elapsed: 90, typicalMs: 60_000)?.fraction, 1)
     XCTAssertEqual(Durations.share(elapsed: 90, typicalMs: 60_000)?.over, true)
   }

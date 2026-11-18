@@ -202,11 +202,21 @@ public enum Durations {
   }
 
   /// A running job's time against how long it usually takes here, worded like the dashboard:
-  /// "about 1:48 left" until the usual time, then "usual 5:12".
+  /// "about 1:48 left" until the usual time, nothing while it's past that but still normal, then
+  /// "slower than usual (5:12)" once `isSlow`.
   public static func progress(elapsed: TimeInterval, typicalMs: Int?) -> String? {
     guard let typicalMs, typicalMs > 0 else { return nil }
     let usual = TimeInterval(typicalMs) / 1000
-    return elapsed < usual ? "about \(clock(usual - elapsed)) left" : "usual \(clock(usual))"
+    if elapsed < usual { return "about \(clock(usual - elapsed)) left" }
+    return isSlow(elapsed: elapsed, typicalMs: typicalMs) ? "slower than usual (\(clock(usual)))" : nil
+  }
+
+  /// Whether a job is meaningfully slower than usual here: at least 30 seconds and a quarter past
+  /// its usual time, so ordinary run-to-run variance (1:31 against 1:22) doesn't read as a problem.
+  /// The dashboard also checks the job's p90, which the machine doesn't get.
+  public static func isSlow(elapsed: TimeInterval, typicalMs: Int) -> Bool {
+    let usual = TimeInterval(typicalMs) / 1000
+    return elapsed - usual >= max(30, usual * 0.25)
   }
 
   /// just now, 12m ago, 3h ago, 2d ago.

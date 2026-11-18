@@ -277,20 +277,23 @@ function JobRow({ job, from, detail }: { job: LiveJob; from: number | null; deta
 }
 
 // A running job's timer with how it's doing against its usual time on that runner: the time left,
-// its usual time once it's past it, or a warning once it's slower than 9 in 10 of its runs.
+// nothing once it's past that but still normal, or a warning once it's meaningfully slower.
 function Running({ job, startedAt }: { job: LiveJob; startedAt: number }) {
   const ran = useNow(true) - startedAt;
   const progress = progressOf(job.typical, ran)!;
   const slow = progress.state === "slow";
+  const text = progressText(progress);
   return (
     <span className="grid shrink-0 justify-items-end gap-0.5 tabular-nums">
       <span className={cn("text-sm text-muted-foreground", slow && "text-run")}>{clock(ran)}</span>
-      <span
-        className={cn("text-xs text-muted-foreground", slow && "text-run")}
-        title={`Usually takes ${clock(progress.typical.medianMs)} on this runner, from its last ${progress.typical.samples} successful runs`}
-      >
-        {progressText(progress)}
-      </span>
+      {text && (
+        <span
+          className={cn("text-xs text-muted-foreground", slow && "text-run")}
+          title={`Usually takes ${clock(progress.typical.medianMs)} on this runner, from its last ${progress.typical.samples} successful runs`}
+        >
+          {text}
+        </span>
+      )}
     </span>
   );
 }

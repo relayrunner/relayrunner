@@ -151,12 +151,27 @@ export function clock(ms: number | null) {
 export type TypicalTime = { medianMs: number; p90Ms: number; samples: number };
 
 /**
- * A running job against its usual time: time left before its median, past the median but within
- * what's normal for it, or slower than 9 in 10 of its runs.
+ * How far past its median a job has to run before it counts as slow: at least this long and this
+ * share of the median, and past its p90 too. Keeps ordinary run-to-run variance (1:31 against a
+ * usual 1:22) from reading as a problem.
+ */
+const SLOW_MIN_MS = 30_000;
+const SLOW_MIN_SHARE = 0.25;
+
+/** Whether a job that has run `ranMs` is meaningfully slower than it usually is on its runner. */
+export function isSlow(typical: TypicalTime | null | undefined, ranMs: number) {
+  if (!typical) return false;
+  const over = ranMs - typical.medianMs;
+  return ranMs > typical.p90Ms && over >= Math.max(SLOW_MIN_MS, typical.medianMs * SLOW_MIN_SHARE);
+}
+
+/**
+ * A running job against its usual time: time left before its median, past the median but still
+ * within what's normal for it, or meaningfully slower than usual (see `isSlow`).
  */
 export type Progress =
   | { state: "left"; leftMs: number; typical: TypicalTime }
-  | { state: "late"; typical: TypicalTime }
+  | { state: "normal"; typical: TypicalTime }
   | { state: "slow"; typical: TypicalTime };
 
 export function progressOf(
@@ -165,17 +180,23 @@ export function progressOf(
 ): Progress | null {
   if (!typical) return null;
   if (ranMs < typical.medianMs) return { state: "left", leftMs: typical.medianMs - ranMs, typical };
-  return { state: ranMs > typical.p90Ms ? "slow" : "late", typical };
+  return { state: isSlow(typical, ranMs) ? "slow" : "normal", typical };
 }
 
 /**
- * "about 1:20 left", "usual 2:10", "slower than usual (2:10)": what a running job's timer says
- * under it, with `format` for the times.
+ * "about 1:20 left" or "slower than usual (2:10)": what a running job's timer says under it, with
+ * `format` for the times. Null once it's past its usual time but still normal, since saying so
+ * only adds noise.
  */
 export function progressText(progress: Progress, format: (ms: number) => string = clock) {
   if (progress.state === "left") return `about ${format(progress.leftMs)} left`;
-  if (progress.state === "late") return `usual ${format(progress.typical.medianMs)}`;
-  return `slower than usual (${format(progress.typical.medianMs)})`;
+  if (progress.state === "normal") return null;
+  return slowText(progress.typical, format);
+}
+
+/** "slower than usual (2:10)". */
+export function slowText(typical: TypicalTime, format: (ms: number) => string = clock) {
+  return `slower than usual (${format(typical.medianMs)})`;
 }
 
 /**

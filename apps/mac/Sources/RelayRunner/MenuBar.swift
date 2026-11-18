@@ -397,7 +397,7 @@ private struct RunningRow: View {
 }
 
 /// A running job's time against its usual time here: fills as it goes, and turns amber once the
-/// job runs longer than usual.
+/// job runs meaningfully longer than usual.
 private struct UsualBar: View {
   let fraction: Double
   let over: Bool
