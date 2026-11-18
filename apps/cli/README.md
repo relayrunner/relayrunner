@@ -210,6 +210,18 @@ Runners page, and a running `relayrunner connect` prints when that happens.
 In the terminal running `relayrunner connect`, `p` does the same.
 Both exit 1 when not signed in or when the token is no longer valid.
 
+## `relayrunner history`
+
+```sh
+npx relayrunner history              # the last 20 jobs this machine ran
+npx relayrunner history --limit 50
+npx relayrunner history --json
+```
+
+Lists the jobs `relayrunner connect` ran on this machine, newest first, with
+each one's result and how long it took. They're kept in
+`~/.relayrunner/history.jsonl`, which RelayRunner for Mac reads too.
+
 ## `relayrunner share`
 
 ```sh
