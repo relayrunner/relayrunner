@@ -11,7 +11,6 @@ import {
   FEATURED_TILES,
   hourText,
   minuteText,
-  missingLines,
   TABLE_PLATFORMS,
   TABLE_ROWS,
   TABLE_SIZES,
@@ -129,19 +128,18 @@ const first = cellKey("linux", 2);
                   },
                 ]),
               );
-              const missing = missingLines(row);
               return (
                 <tr
                   data-row
                   data-cells={JSON.stringify(cells)}
-                  data-missing={JSON.stringify(missing)}
+                  hidden={!cell}
                 >
                   <th scope="row">
                     <a href={row.href}>
                       <img src={row.logo} alt="" width="28" height="28" />
                       <span>
                         <b>{row.name}</b>
-                        <code data-label hidden={!cell}>
+                        <code data-label>
                           {cell?.label}
                         </code>
                       </span>
@@ -149,17 +147,14 @@ const first = cellKey("linux", 2);
                   </th>
                   <td>{row.plan}</td>
                   <td class="int-mute">{row.included}</td>
-                  <td class="num" data-vcpus hidden={!cell}>
+                  <td class="num" data-vcpus>
                     {cell?.vcpus}
                   </td>
-                  <td class="num" data-min hidden={!cell}>
+                  <td class="num" data-min>
                     {cell && minuteText(cell.usd)}
                   </td>
-                  <td class="num int-mute" data-hour hidden={!cell}>
+                  <td class="num int-mute" data-hour>
                     {cell && hourText(cell.usd)}
-                  </td>
-                  <td class="num int-mute" colspan="3" data-missing-line hidden={!!cell}>
-                    {missing[first]}
                   </td>
                 </tr>
               );
@@ -222,7 +217,7 @@ const first = cellKey("linux", 2);
 </LandingPage>
 
 <script>
-  // Switches the runner table between platforms and sizes, and sorts it by name or price. Without
+  // Shows the providers with a runner for the picked platform and size, sorted by name or price. Without
   // this the table shows 2 vCPU Linux x64 runners, sorted by name.
   interface Cell {
     label: string;
@@ -255,30 +250,19 @@ const first = cellKey("linux", 2);
       for (const button of controls.querySelectorAll<HTMLButtonElement>("[data-size]")) {
         button.disabled = mac;
       }
-      const shown = rows.map((row) => {
+      const shown = rows.flatMap((row) => {
         const cell = (JSON.parse(row.dataset.cells!) as Record<string, Cell>)[key];
-        const missing = (JSON.parse(row.dataset.missing!) as Record<string, string>)[key];
-        const label = row.querySelector<HTMLElement>("[data-label]")!;
-        const fields = ["[data-vcpus]", "[data-min]", "[data-hour]"].map(
-          (selector) => row.querySelector<HTMLElement>(selector)!,
-        );
-        const line = row.querySelector<HTMLElement>("[data-missing-line]")!;
-        label.hidden = !cell;
-        for (const field of fields) field.hidden = !cell;
-        line.hidden = !!cell;
-        if (cell) {
-          label.textContent = cell.label;
-          fields[0]!.textContent = String(cell.vcpus);
-          fields[1]!.textContent = cell.min;
-          fields[2]!.textContent = cell.hour;
-        } else {
-          line.textContent = missing ?? "";
-        }
-        return { row, usd: cell?.usd ?? null };
+        // A provider with no runner for this platform and size leaves the table.
+        row.hidden = !cell;
+        if (!cell) return [];
+        row.querySelector<HTMLElement>("[data-label]")!.textContent = cell.label;
+        row.querySelector<HTMLElement>("[data-vcpus]")!.textContent = String(cell.vcpus);
+        row.querySelector<HTMLElement>("[data-min]")!.textContent = cell.min;
+        row.querySelector<HTMLElement>("[data-hour]")!.textContent = cell.hour;
+        return [{ row, usd: cell.usd }];
       });
-      const priced = shown.filter((each) => each.usd !== null);
-      if (state.sort === "price") priced.sort((a, b) => a.usd! - b.usd!);
-      const order = [...priced, ...shown.filter((each) => each.usd === null)].map((e) => e.row);
+      if (state.sort === "price") shown.sort((a, b) => a.usd - b.usd);
+      const order = shown.map((each) => each.row);
       tbody.append(...order, ...unpriced);
     };
 

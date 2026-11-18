@@ -211,26 +211,6 @@ export const TABLE_ROWS: TableRow[] = [
   ...LISTED_PROVIDER_IDS.map((id) => row(id, LISTED_RUNNERS[id], true)),
 ].sort((a, b) => a.name.localeCompare(b.name));
 
-/** Why a row has no runner for a platform and size: "No Windows runners", "Windows from 4 vCPU". */
-export function missingText(row: TableRow, platform: TablePlatform, size: TableSize): string {
-  const name = TABLE_PLATFORMS.find((each) => each.id === platform)!.label;
-  const sizes = TABLE_SIZES.filter((each) => row.cells[cellKey(platform, each)]);
-  if (row.id === "runloft" && platform === "macos") return "macOS on request";
-  if (sizes.length === 0) return `No ${name} runners`;
-  if (row.id === "github") return "Larger GitHub runners aren't in the price list";
-  return size < sizes[0]! ? `${name} from ${sizes[0]} vCPU` : `${name} up to ${sizes.at(-1)} vCPU`;
-}
-
-/** Each row's line for every platform and size it has no runner for, keyed as its cells are. */
-export const missingLines = (row: TableRow) =>
-  Object.fromEntries(
-    TABLE_PLATFORMS.flatMap(({ id: platform }) =>
-      (platform === "macos" ? ([2] as const) : TABLE_SIZES)
-        .filter((size) => !row.cells[cellKey(platform, size)])
-        .map((size) => [cellKey(platform, size), missingText(row, platform, size)]),
-    ),
-  );
-
 /** Providers the table can't price per runner, and why. */
 export const UNPRICED_ROWS: { id: IntegrationId; why: string }[] = [
   { id: "namespace", why: "Priced by runner profile" },
