@@ -164,7 +164,7 @@ const first = cellKey("linux", 2);
             UNPRICED_ROWS.map((row) => (
               <tr class="int-unpriced">
                 <th scope="row">
-                  <a href={`${integrationPath(row.id)}#relay`}>
+                  <a href={integrationPath(row.id)}>
                     <img src={`/providers/${row.id}.svg`} alt="" width="28" height="28" />
                     <span>
                       <b>{PROVIDERS[row.id].name}</b>

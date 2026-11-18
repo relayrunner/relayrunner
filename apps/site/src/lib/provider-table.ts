@@ -192,7 +192,7 @@ const row = (id: ProviderId, runnerOf: RunnerOf): TableRow => {
   return {
     id,
     name: PROVIDERS[id].name,
-    href: `${integrationPath(id as IntegrationId)}#relay`,
+    href: integrationPath(id as IntegrationId),
     logo: `/providers/${id}.svg`,
     plan: entry?.plan ?? "—",
     included: entry?.included ?? "—",
@@ -220,7 +220,7 @@ export const FEATURED_TILES = FEATURED.map((id) => {
   return {
     id,
     name: PROVIDERS[id].name,
-    href: `${integrationPath(id)}#relay`,
+    href: integrationPath(id),
     logo: `/providers/${id}.svg`,
     plan: id === "github" ? "Free with GitHub" : (entry?.plan ?? "—"),
     included: entry ? shortIncluded(entry.included) : "—",
