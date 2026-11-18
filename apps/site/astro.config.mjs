@@ -137,7 +137,7 @@ export default defineConfig({
             "docs/reference/troubleshooting",
             "docs/reference/errors",
             "docs/reference/faq",
-            // Built from apps/cli/CHANGELOG.md (src/lib/changelog.ts).
+            // Built from apps/cli/CHANGELOG.md, apps/mac/CHANGELOG.md and src/content/changelog (src/lib/changelog.ts).
             "docs/changelog",
             "docs/contribute/feedback",
           ],

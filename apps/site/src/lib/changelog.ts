@@ -5,19 +5,25 @@ import { docsLoader } from "@astrojs/starlight/loaders";
 import type { Loader } from "astro/loaders";
 
 /*
- * /docs/changelog merges two lists by date:
+ * /docs/changelog merges three lists by date:
  * - CLI releases, from the CLI's CHANGELOG.md, which the Release workflow writes from changesets.
+ * - Mac app releases, from the Mac app's CHANGELOG.md, also written from changesets.
  * - Platform updates, hand-written in src/content/changelog/*.md (a title and a date in the
  *   frontmatter, a few lines of Markdown under it), only for changes worth announcing.
- * /docs/changelog/platform and /docs/changelog/cli show one list each, and each platform update
- * also gets its own page at /docs/changelog/<slug> (the file name without its date) to share. The
+ * /docs/changelog/platform, /docs/changelog/cli and /docs/changelog/mac show one list each, and
+ * each platform update also gets its own page at /docs/changelog/<slug> (the file name without its
+ * date) to share. The
  * pages are added to the docs collection, so they get the docs layout, share image and the .md,
  * .txt and llms.txt versions like any other page. /changelog.xml (src/pages/changelog.xml.ts) is the combined list as an RSS feed.
  */
 
 export const CHANGELOG_ID = "docs/changelog";
 export const FEED_PATH = "/changelog.xml";
-const CHANGELOG = new URL("../../../cli/CHANGELOG.md", import.meta.url);
+/** Versioned apps whose CHANGELOG.md (changesets) feeds the changelog, with their entry title prefix. */
+const RELEASES = [
+  { kind: "CLI", prefix: "CLI", file: new URL("../../../cli/CHANGELOG.md", import.meta.url) },
+  { kind: "Mac", prefix: "Mac app", file: new URL("../../../mac/CHANGELOG.md", import.meta.url) },
+] as const;
 const UPDATES = new URL("../content/changelog/", import.meta.url);
 
 const HEADINGS: Record<string, string> = {
@@ -28,7 +34,12 @@ const HEADINGS: Record<string, string> = {
 
 const DATE = new Intl.DateTimeFormat("en-US", { dateStyle: "long", timeZone: "UTC" });
 
-type Kind = "CLI" | "Platform";
+type Kind = "CLI" | "Mac" | "Platform";
+const LABELS: Record<Kind, string> = {
+  CLI: "CLI release",
+  Mac: "Mac app release",
+  Platform: "Platform update",
+};
 /** A platform update also gets its own page at /docs/changelog/<slug>, for sharing one link. */
 type Entry = {
   kind: Kind;
@@ -44,7 +55,7 @@ const PAGES: { id: string; kind?: Kind; label: string; title: string; descriptio
     id: CHANGELOG_ID,
     label: "All",
     title: "Changelog",
-    description: "What's new in RelayRunner and the CLI.",
+    description: "What's new in RelayRunner, the CLI and the Mac app.",
   },
   {
     id: `${CHANGELOG_ID}/platform`,
@@ -60,14 +71,21 @@ const PAGES: { id: string; kind?: Kind; label: string; title: string; descriptio
     title: "CLI changelog",
     description: "What's new in each release of the relayrunner CLI.",
   },
+  {
+    id: `${CHANGELOG_ID}/mac`,
+    kind: "Mac",
+    label: "Mac app",
+    title: "Mac app changelog",
+    description: "What's new in each release of RelayRunner for Mac.",
+  },
 ];
 
 /** Release date per version: when its "## x.y.z" line was committed. Empty without git history. */
-function releaseDates() {
+function releaseDates(changelog: URL) {
   const dates = new Map<string, Date>();
   try {
-    const blame = execFileSync("git", ["blame", "--line-porcelain", fileURLToPath(CHANGELOG)], {
-      cwd: fileURLToPath(new URL(".", CHANGELOG)),
+    const blame = execFileSync("git", ["blame", "--line-porcelain", fileURLToPath(changelog)], {
+      cwd: fileURLToPath(new URL(".", changelog)),
       encoding: "utf8",
       stdio: ["ignore", "pipe", "ignore"],
     });
@@ -87,8 +105,10 @@ function releaseDates() {
   return dates;
 }
 
-/** One entry per CLI release, without the package-name title and commit ids, with friendlier headings. */
-function cliReleases(raw: string, dates: Map<string, Date>): Entry[] {
+/** One entry per release, without the package-name title and commit ids, with friendlier headings. */
+async function releases({ kind, prefix, file }: (typeof RELEASES)[number]): Promise<Entry[]> {
+  const raw = await readFile(file, "utf8");
+  const dates = releaseDates(file);
   const notes = raw
     .replace(/^# .*\n+/, "")
     .replace(/^- [0-9a-f]{7,}: /gm, "- ")
@@ -99,7 +119,7 @@ function cliReleases(raw: string, dates: Map<string, Date>): Entry[] {
     const version = section.match(/^## (\S+)\n/)?.[1];
     if (!version) return [];
     const body = section.slice(section.indexOf("\n")).trim();
-    return [{ kind: "CLI" as const, title: `CLI v${version}`, date: dates.get(version), body }];
+    return [{ kind, title: `${prefix} v${version}`, date: dates.get(version), body }];
   });
 }
 
@@ -134,7 +154,7 @@ async function platformUpdates(): Promise<Entry[]> {
   );
 }
 
-/** Newest first. A CLI release with no known date (a shallow clone) keeps its place after the newer one. */
+/** Newest first. A release with no known date (a shallow clone) keeps its place after the newer one. */
 function byDate(entries: Entry[]) {
   let last = Infinity;
   const time = new Map(
@@ -147,7 +167,7 @@ function byDate(entries: Entry[]) {
 }
 
 const metaLine = (entry: Entry) => {
-  const label = entry.kind === "CLI" ? "CLI release" : "Platform update";
+  const label = LABELS[entry.kind];
   if (!entry.date) return label;
   const date = DATE.format(entry.date);
   // The date links to a platform update's own page.
@@ -211,7 +231,7 @@ export function docsWithChangelog(): Loader {
       await docs.load(context);
       const addChangelog = async () => {
         const entries = byDate([
-          ...cliReleases(await readFile(CHANGELOG, "utf8"), releaseDates()),
+          ...(await Promise.all(RELEASES.map(releases))).flat(),
           ...(await platformUpdates()),
         ]);
         for (const page of PAGES) {
@@ -230,7 +250,7 @@ export function docsWithChangelog(): Loader {
         }
       };
       await addChangelog();
-      const watched = [fileURLToPath(CHANGELOG), fileURLToPath(UPDATES)];
+      const watched = [...RELEASES.map(({ file }) => fileURLToPath(file)), fileURLToPath(UPDATES)];
       context.watcher?.add(watched);
       context.watcher?.on("all", (_, changed) => {
         if (watched.some((path) => changed.startsWith(path))) void addChangelog();

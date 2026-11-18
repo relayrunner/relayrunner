@@ -47,9 +47,10 @@
       "docs": "https://relayrunner.app/docs/get-started/mac-app",
       "releases": [
         {
-          "title": "Mac app updates",
-          "url": "https://relayrunner.app/mac/appcast.xml",
-          "feed": "https://relayrunner.app/mac/appcast.xml"
+          "title": "Changelog",
+          "url": "https://relayrunner.app/docs/changelog/mac",
+          "feed": "https://relayrunner.app/changelog.xml",
+          "canonical": true
         },
         { "github": "relayrunner/relayrunner" }
       ]
