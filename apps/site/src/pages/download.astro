@@ -6,6 +6,7 @@
  * every Mac the same way, so a Mac counts as Apple silicon unless the browser says otherwise).
  * The Mac button goes to /mac/download, which redirects to the newest DMG (scripts/postbuild.mjs).
  */
+import MacAppPreview from "../components/MacAppPreview.astro";
 import LandingPage from "../layouts/LandingPage.astro";
 
 const BREW = "brew install --cask relayrunner/tap/relayrunner";
@@ -62,6 +63,12 @@ const NPX = "npx relayrunner connect";
     </article>
   </section>
 
+  <section class="wrap dl-preview" aria-labelledby="dl-preview-title">
+    <h2 id="dl-preview-title">RelayRunner for Mac</h2>
+    <p>See what's running, how long it has left and what ran this week, from the menu bar.</p>
+    <MacAppPreview />
+  </section>
+
   <script is:inline>
     (() => {
       const dl = document.querySelector("[data-dl]");
@@ -91,7 +98,21 @@ const NPX = "npx relayrunner connect";
     grid-template-columns: repeat(2, minmax(0, 1fr));
     gap: 20px;
     max-width: 980px;
+  }
+  .dl-preview {
+    display: grid;
+    gap: 14px;
+    max-width: 980px;
+    padding-top: clamp(56px, 7vw, 96px);
     padding-bottom: clamp(64px, 8vw, 112px);
+  }
+  .dl-preview h2 {
+    font-size: clamp(24px, 2.4vw, 30px);
+    letter-spacing: -0.03em;
+  }
+  .dl-preview > p {
+    margin-bottom: 14px;
+    color: var(--ink-2);
   }
   .dl-card {
     display: flex;
