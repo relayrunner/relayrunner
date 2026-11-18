@@ -74,6 +74,14 @@ final class HistoryTests: XCTestCase {
     XCTAssertEqual(Spillover.lastHour([], now: now), 0)
   }
 
+  func testOffersOneMoreSlotWhileThereIsRoom() {
+    XCTAssertEqual(Spillover.moreSlots(than: 2, memory: 0.6), 3)
+    XCTAssertEqual(Spillover.moreSlots(than: 2, memory: nil), 3)
+    XCTAssertNil(Spillover.moreSlots(than: 2, memory: 0.9))
+    XCTAssertNil(Spillover.moreSlots(than: 8, memory: 0.2))
+    XCTAssertNil(Spillover.moreSlots(than: nil, memory: 0.2))
+  }
+
   func testWritesShortTimes() {
     XCTAssertEqual(Durations.short(45_000), "45s")
     XCTAssertEqual(Durations.short(250_000), "4m 10s")

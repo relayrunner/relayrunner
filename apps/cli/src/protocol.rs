@@ -181,11 +181,16 @@ pub enum GatewayMessage {
     },
 }
 
-/// A job waiting for a slot: its repo and since when, in ms since the epoch.
+/// A job waiting for a slot: its repo, since when in ms since the epoch, and its name and workflow
+/// once the gateway knows which job it is.
 #[derive(Deserialize, Serialize, Debug, Clone, PartialEq)]
 pub struct QueueEntry {
     pub repo: String,
     pub since: u64,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub name: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub workflow: Option<String>,
 }
 
 /// A text frame from the gateway, or why it was rejected. Checks the version before the shape,
@@ -332,10 +337,20 @@ mod tests {
         assert_eq!(jobs, 3);
         assert_eq!(
             queue,
-            vec![QueueEntry {
-                repo: "octo/app".into(),
-                since: 1_763_481_600_000
-            }]
+            vec![
+                QueueEntry {
+                    repo: "octo/app".into(),
+                    since: 1_763_481_600_000,
+                    name: Some("test".into()),
+                    workflow: Some("CI".into()),
+                },
+                QueueEntry {
+                    repo: "octo/app".into(),
+                    since: 1_763_481_700_000,
+                    name: None,
+                    workflow: None,
+                },
+            ]
         );
         assert_eq!(spilled, vec![1_763_481_000_000]);
         let Ok(GatewayMessage::Waiting { queue, spilled, .. }) =

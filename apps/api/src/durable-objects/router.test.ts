@@ -144,6 +144,28 @@ describe("Router: jobs wait for a full machine", () => {
     expect(counts().at(-1)).toEqual(["w1", 0]);
   });
 
+  test("a waiting job is named in the queue once its queued webhook says which job it is", async () => {
+    await env.DB.prepare(
+      `insert into job_timing (id, installation_id, repository_id, repository_full_name, run_id,
+        run_attempt, workflow_name, name, labels, created_at, updated_at)
+        values (42, 7, 1, 'leonel/cabal', 2, 1, 'CI', 'test', '[]', ?1, ?1)`,
+    )
+      .bind(Date.now())
+      .run();
+    await router.route(job(1));
+    const waiting = (await router.route(job(2))).runner!.slice(3);
+    await router.alarm();
+    expect(setWaiting.mock.calls.at(-1)![1]).toEqual([
+      { repo: "leonel/cabal", since: expect.any(Number) },
+      { repo: "leonel/cabal", since: expect.any(Number) },
+    ]);
+    expect(await router.claim(waiting, queued(2, 42))).toBe("waiting");
+    expect(setWaiting.mock.calls.at(-1)![1]).toEqual([
+      { repo: "leonel/cabal", since: expect.any(Number) },
+      { repo: "leonel/cabal", since: expect.any(Number), name: "test", workflow: "CI" },
+    ]);
+  });
+
   test("a full machine hears when a job that fit it went to GitHub instead", async () => {
     const decision = await router.route({
       ...job(1),

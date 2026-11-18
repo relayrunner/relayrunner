@@ -1,13 +1,18 @@
 import Foundation
 
-/// A job waiting for a slot on this Mac: its repo, and since when in ms since the epoch.
+/// A job waiting for a slot on this Mac: its repo, since when in ms since the epoch, and its name
+/// and workflow once the gateway knows which job it is.
 public struct QueuedJob: Equatable, Decodable, Hashable {
   public var repo: String
   public var since: Double
+  public var name: String?
+  public var workflow: String?
 
-  public init(repo: String, since: Double) {
+  public init(repo: String, since: Double, name: String? = nil, workflow: String? = nil) {
     self.repo = repo
     self.since = since
+    self.name = name
+    self.workflow = workflow
   }
 
   public var waitingSince: Date { Date(timeIntervalSince1970: since / 1000) }

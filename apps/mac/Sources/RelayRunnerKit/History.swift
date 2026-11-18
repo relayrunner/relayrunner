@@ -155,6 +155,17 @@ public enum Spillover {
     let from = (now.timeIntervalSince1970 - 3600) * 1000
     return spilled.filter { $0 > from }.count
   }
+
+  /// The most jobs at once Settings offers.
+  public static let mostSlots = 8
+
+  /// How many jobs at once to offer instead of `slots`: one more, while it stays within Settings'
+  /// choices and memory isn't nearly full (`memory` is the share in use). Nil when it shouldn't.
+  public static func moreSlots(than slots: Int?, memory: Double?) -> Int? {
+    guard let slots, slots < mostSlots else { return nil }
+    if let memory, memory >= 0.85 { return nil }
+    return slots + 1
+  }
 }
 
 /// Short times for the menu.

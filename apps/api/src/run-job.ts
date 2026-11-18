@@ -14,6 +14,23 @@ const table = schema.jobTiming;
 export const jobUrl = (repo: string, runId: number, jobId: number) =>
   `https://github.com/${repo}/actions/runs/${runId}/job/${jobId}`;
 
+/**
+ * A job's name and workflow, for a machine's queue (WaitingMessage.queue), or undefined when its
+ * row isn't stored yet. One primary-key read.
+ */
+export async function jobName(
+  db: Db,
+  jobId: number,
+): Promise<{ name: string; workflow?: string } | undefined> {
+  const [row] = await db
+    .select({ name: table.name, workflow: table.workflowName })
+    .from(table)
+    .where(eq(table.id, jobId))
+    .limit(1);
+  if (!row) return undefined;
+  return { name: row.name, ...(row.workflow ? { workflow: row.workflow } : {}) };
+}
+
 /** The job for a `run` message, or undefined when its row isn't stored yet. */
 export async function runJob(
   db: Db,

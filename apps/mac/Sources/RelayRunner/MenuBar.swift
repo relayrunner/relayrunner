@@ -51,7 +51,8 @@ final class MenuBar: NSObject, NSMenuDelegate {
       _ = (
         connection.status, connection.signIn, connection.jobs, connection.repos, connection.running,
         connection.machineName, connection.problem, connection.pausedUntil, connection.waiting,
-        connection.slots, connection.queue, connection.spilled, connection.recent
+        connection.slots, connection.queue, connection.spilled, connection.recent,
+        connection.allowingSlots
       )
     } onChange: { [weak self] in
       Task { @MainActor in
@@ -203,7 +204,7 @@ struct MenuHeader: View {
       .controlSize(.small)
       switch tab {
       case .now: now
-      case .queue: QueueTab(connection: connection, allowMore: allowMore)
+      case .queue: QueueTab(connection: connection, load: HostLoad.shared, openSettings: openSettings)
       case .history: HistoryTab(entries: connection.recent, open: openOnGitHub, relayout: relayout)
       }
       if connection.phase == .online {
@@ -244,7 +245,7 @@ struct MenuHeader: View {
     }
   }
 
-  private func allowMore() {
+  private func openSettings() {
     closeMenu()
     DispatchQueue.main.async { MenuBar.openSettings() }
   }
@@ -261,6 +262,7 @@ struct MenuHeader: View {
   }
 
   private var pauseLabel: String {
+    if let count = connection.allowingSlots { return "Paused to switch to \(count) jobs at once" }
     guard connection.paused, let until = connection.pausedUntil else { return "Pause new jobs" }
     let calendar = Calendar.current
     let time = until.formatted(date: .omitted, time: .shortened)
@@ -425,8 +427,9 @@ private struct Bar: View {
 /// was busy.
 private struct QueueTab: View {
   let connection: Connection
+  let load: HostLoad
   /// Opens Settings, where "Jobs at once" is.
-  let allowMore: () -> Void
+  let openSettings: () -> Void
 
   var body: some View {
     VStack(alignment: .leading, spacing: 8) {
@@ -435,7 +438,16 @@ private struct QueueTab: View {
           Image(systemName: "hourglass")
             .foregroundStyle(.orange)
             .frame(width: 18)
-          Text(job.repo).lineLimit(1).truncationMode(.middle)
+          VStack(alignment: .leading, spacing: 1) {
+            Text(job.name ?? job.repo).lineLimit(1).truncationMode(.middle)
+            if job.name != nil {
+              Text([job.workflow, job.repo].compactMap { $0 }.joined(separator: " · "))
+                .font(.caption)
+                .foregroundStyle(.secondary)
+                .lineLimit(1)
+                .truncationMode(.middle)
+            }
+          }
           Spacer(minLength: 8)
           TimelineView(.periodic(from: job.waitingSince, by: 1)) { context in
             Text("waiting \(Durations.clock(context.date.timeIntervalSince(job.waitingSince)))")
@@ -456,30 +468,50 @@ private struct QueueTab: View {
       if connection.waiting == 0 {
         DetailRow(systemImage: "checkmark.circle", title: "Nothing waiting", note: "for this Mac")
       }
-      TimelineView(.periodic(from: .now, by: 30)) { context in
-        let spilled = Spillover.lastHour(connection.spilled, now: context.date)
-        if spilled > 0 {
-          SpillNote(jobs: spilled, allowMore: allowMore)
+      if let count = connection.allowingSlots {
+        Note(
+          text: "Taking \(count) jobs at once as soon as the running jobs finish. New jobs go elsewhere until then."
+        )
+      } else {
+        TimelineView(.periodic(from: .now, by: 30)) { context in
+          let spilled = Spillover.lastHour(connection.spilled, now: context.date)
+          if spilled > 0 {
+            Note(
+              text:
+                "In the last hour, \(spilled == 1 ? "1 job" : "\(spilled) jobs") went to hosted runners because every slot here was busy."
+            ) {
+              if let more = Spillover.moreSlots(than: connection.slots, memory: memoryShare) {
+                Button("Allow \(more) Jobs at Once") { connection.allowJobs(more) }
+                  .controlSize(.small)
+                  .help("Pauses new jobs until the running ones finish, then takes up to \(more) at once")
+              } else {
+                Button("Open Settings…", action: openSettings)
+                  .controlSize(.small)
+              }
+            }
+          }
         }
       }
     }
   }
+
+  /// How much of this Mac's memory is in use, while the menu is open.
+  private var memoryShare: Double? {
+    load.memoryUsed.map { Double($0) / Double(max(load.memoryTotal, 1)) }
+  }
 }
 
-/// Jobs that fit this Mac but went to hosted runners in the last hour, since every slot was busy.
-private struct SpillNote: View {
-  let jobs: Int
-  let allowMore: () -> Void
+/// An amber note in the queue, with an action under it when there is one.
+private struct Note<Action: View>: View {
+  let text: String
+  @ViewBuilder var action: () -> Action
 
   var body: some View {
     VStack(alignment: .leading, spacing: 6) {
-      Text(
-        "In the last hour, \(jobs == 1 ? "1 job" : "\(jobs) jobs") went to hosted runners because every slot here was busy."
-      )
-      .font(.subheadline)
-      .fixedSize(horizontal: false, vertical: true)
-      Button("Allow More Jobs at Once…", action: allowMore)
-        .controlSize(.small)
+      Text(text)
+        .font(.subheadline)
+        .fixedSize(horizontal: false, vertical: true)
+      action()
     }
     .frame(maxWidth: .infinity, alignment: .leading)
     .padding(8)
@@ -490,6 +522,10 @@ private struct SpillNote: View {
         .frame(width: 3)
     }
   }
+}
+
+extension Note where Action == EmptyView {
+  init(text: String) { self.init(text: text) { EmptyView() } }
 }
 
 /// The last 12 hours here: a bar per hour, a summary, and the latest jobs, all or only failed.

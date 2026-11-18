@@ -203,10 +203,13 @@ export const TokenMessage = z.object({
   token: z.string().min(1),
 });
 
-// A job waiting for a slot: its repo (owner/name) and when it started waiting, in ms since the epoch.
+// A job waiting for a slot: its repo (owner/name), when it started waiting in ms since the epoch,
+// and its name and workflow once GitHub's `queued` webhook has said which job it is.
 export const QueueEntry = z.object({
   repo: z.string(),
   since: z.number().int().nonnegative(),
+  name: z.string().optional(),
+  workflow: z.string().optional(),
 });
 
 // How many jobs are waiting for a slot on this machine: jobs queued in a workspace it takes jobs

@@ -25,6 +25,7 @@ import { inWorkspace } from "../machines.ts";
 import { runStartersForJobs } from "../job-starters.ts";
 import { clearJobMachine, setJobMachine } from "../jobs.ts";
 import { findRepo } from "../repositories.ts";
+import { jobName } from "../run-job.ts";
 import {
   cleared,
   healthGate,
@@ -125,6 +126,10 @@ interface WaitingJob extends Waiting {
   avoid?: string;
   // Since when no machine that could take it has been online (drain).
   noMachineSince?: number;
+  // The job's name and workflow once its `queued` webhook said which job it is, for the queue its
+  // machines show (tellWaiting).
+  name?: string;
+  workflow?: string;
 }
 // A route as the Router keeps it. A route to a connected machine keeps the job its pick was for,
 // so the job can go back in line if it never starts on the machine (requeue, requeueSent).
@@ -440,7 +445,12 @@ export class Router extends DurableObject<Env> {
       }
       if (await this.noMachine(entry, none, now)) continue;
       left++;
-      const queued: QueueEntry = { repo: entry.job.repo, since: entry.queuedAt };
+      const queued: QueueEntry = {
+        repo: entry.job.repo,
+        since: entry.queuedAt,
+        ...(entry.name ? { name: entry.name } : {}),
+        ...(entry.workflow ? { workflow: entry.workflow } : {}),
+      };
       for (const id of busy.get(wants) ?? [])
         waitingOn.set(id, [...(waitingOn.get(id) ?? []), queued]);
     }
@@ -1057,11 +1067,13 @@ export class Router extends DurableObject<Env> {
   // route takes the lock.
   private async claimWaiting(routeId: string, job: QueuedJob) {
     if (!(await this.ctx.storage.get(WAIT_KEY + routeId))) return undefined;
+    // Outside the lock: the name only labels the job in its machines' queue.
+    const named = await jobName(createDb(this.env.DB), job.jobId).catch(() => undefined);
     return this.ctx.blockConcurrencyWhile(async () => {
       const waiting = await this.ctx.storage.get<WaitingJob>(WAIT_KEY + routeId);
       if (!waiting) return undefined;
       if (!canClaim(waiting, job)) return null;
-      await this.ctx.storage.put(WAIT_KEY + routeId, { ...waiting, jobId: job.jobId });
+      await this.ctx.storage.put(WAIT_KEY + routeId, { ...waiting, ...named, jobId: job.jobId });
       return "waiting" as const;
     });
   }

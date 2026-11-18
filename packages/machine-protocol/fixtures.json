@@ -88,7 +88,10 @@
       "v": 1,
       "type": "waiting",
       "jobs": 3,
-      "queue": [{ "repo": "octo/app", "since": 1763481600000 }],
+      "queue": [
+        { "repo": "octo/app", "since": 1763481600000, "name": "test", "workflow": "CI" },
+        { "repo": "octo/app", "since": 1763481700000 }
+      ],
       "spilled": [1763481000000]
     },
     "waitingCountOnly": { "v": 1, "type": "waiting", "jobs": 1 },

@@ -29,6 +29,12 @@ enum AppSettings {
     )
   }
 
+  /// "Jobs at once" in Settings. 0 is the CLI's own choice.
+  static var concurrency: Int {
+    get { defaults.integer(forKey: Key.concurrency) }
+    set { defaults.set(newValue, forKey: Key.concurrency) }
+  }
+
   /// On when the app last quit, so it goes back online when it opens.
   static var wantsOnline: Bool {
     get { defaults.bool(forKey: Key.wantsOnline) }

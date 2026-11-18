@@ -47,11 +47,19 @@ final class Connection {
   private(set) var problem: String?
   /// Set by "Quit When It's Done": paused, and the app quits once no job is running.
   private(set) var quitsWhenIdle = false
+  /// Set by "Allow N Jobs at Once": paused until no job is running, then back on taking that many.
+  private(set) var allowingSlots: Int?
 
   @ObservationIgnored private var process: CLIProcess?
   @ObservationIgnored private var resumeTimer: Timer?
   @ObservationIgnored private var lastError: String?
   @ObservationIgnored private var offlineReason: String?
+  /// "Jobs at once" before allowJobs changed it, to go back to if `connect` won't start with more.
+  @ObservationIgnored private var slotsBefore = 0
+  /// Where allowJobs is: waiting for running jobs to finish, stopping `connect`, or starting it
+  /// again until it's back online.
+  private enum Raise { case draining, restarting, starting }
+  @ObservationIgnored private var raise: Raise?
 
   var isOn: Bool { phase != .off }
 
@@ -90,7 +98,37 @@ final class Connection {
 
   func turnOff() {
     AppSettings.wantsOnline = false
+    allowingSlots = nil
+    raise = nil
     stop()
+  }
+
+  /// Takes `count` jobs at once from now on. `connect` reads it when it starts, so this pauses new
+  /// jobs, waits for the running ones to finish, starts `connect` again and takes jobs again.
+  func allowJobs(_ count: Int) {
+    guard process != nil, allowingSlots == nil, !quitsWhenIdle else { return }
+    slotsBefore = AppSettings.concurrency
+    AppSettings.concurrency = count
+    allowingSlots = count
+    raise = .draining
+    setPausedUntil(nil)
+    process?.send("pause")
+    restartIfIdle()
+  }
+
+  /// Once paused with no job running, stops `connect` so exited() starts it again.
+  private func restartIfIdle() {
+    guard raise == .draining, paused, jobs.isEmpty, process != nil else { return }
+    raise = .restarting
+    stop()
+  }
+
+  /// Back online after starting again: takes jobs again.
+  private func finishAllowing(_ state: Event.State) {
+    guard raise == .starting, state.link == .online else { return }
+    raise = nil
+    allowingSlots = nil
+    if state.paused { process?.send("resume") }
   }
 
   /// Goes offline the way Ctrl-C does. A job that's running stops with it.
@@ -179,6 +217,8 @@ final class Connection {
       if !state.paused && pausedUntil != nil && !quitsWhenIdle { setPausedUntil(nil) }
       if state.link == .online { resumeIfPauseEnded() }
       quitIfIdle()
+      restartIfIdle()
+      finishAllowing(state)
     case .run(let routeId, let slot, let job):
       running[routeId] = Running(slot: slot, job: job, startedAt: Date())
       if let job { repos[routeId] = job.repo }
@@ -215,6 +255,21 @@ final class Connection {
     running = [:]
     signIn = nil
     quitIfIdle()
+    if raise == .restarting {
+      raise = .starting
+      turnOn()
+      return
+    }
+    if raise == .starting, let count = allowingSlots {
+      // It stopped before coming back online with more slots: go back to what worked, once.
+      allowingSlots = nil
+      AppSettings.concurrency = slotsBefore
+      let reason = lastError.map { " \($0)" } ?? ""
+      turnOn()
+      problem = "Couldn't take \(count) jobs at once, so it's back to the earlier setting.\(reason)"
+      return
+    }
+    raise = nil
     if stopping { return }
     AppSettings.wantsOnline = false
     switch offlineReason {
