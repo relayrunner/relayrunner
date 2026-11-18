@@ -262,7 +262,7 @@ private struct JobsListView: View {
       Picker("Repo", selection: $store.filter.repo) {
         Text("All Repos").tag(String?.none)
         Divider()
-        ForEach(choices(store.page.repos, \.repo, chosen: store.filter.repo), id: \.self) { repo in
+        ForEach(choices(store.page.repos, { $0.repo }, chosen: store.filter.repo), id: \.self) { repo in
           Text(repo).tag(String?.some(repo))
         }
       }
@@ -270,7 +270,7 @@ private struct JobsListView: View {
       Picker("Workflow", selection: $store.filter.workflow) {
         Text("All Workflows").tag(String?.none)
         Divider()
-        ForEach(choices(store.page.workflows, \.workflow, chosen: store.filter.workflow), id: \.self) { workflow in
+        ForEach(choices(store.page.workflows, { $0.workflow }, chosen: store.filter.workflow), id: \.self) { workflow in
           Text(workflow).tag(String?.some(workflow))
         }
       }
@@ -308,9 +308,9 @@ private struct JobsListView: View {
 
   /// A filter's choices: what the gateway offers or, from one that doesn't yet, what's in the list,
   /// and the chosen one even when it's in neither.
-  private func choices(_ offered: [String]?, _ value: KeyPath<GatewayJob, String?>, chosen: String?) -> [String] {
+  private func choices(_ offered: [String]?, _ value: (GatewayJob) -> String?, chosen: String?) -> [String] {
     var seen = Set<String>()
-    var names = offered ?? store.page.all.compactMap { $0[keyPath: value] }.filter { seen.insert($0).inserted }
+    var names = offered ?? store.page.all.compactMap(value).filter { seen.insert($0).inserted }
     if let chosen, !names.contains(chosen) { names.insert(chosen, at: 0) }
     return names
   }
