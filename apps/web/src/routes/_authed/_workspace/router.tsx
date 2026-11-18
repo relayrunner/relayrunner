@@ -1,4 +1,3 @@
-import type { HostedProviderId } from "@relayrunner/providers";
 import { DEFAULT_RUNNER_ORDER, type RunnerOrder } from "@relayrunner/runner-order";
 import { createFileRoute } from "@tanstack/react-router";
 import { RotateCwIcon, Settings2Icon, TriangleAlert } from "lucide-react";
@@ -24,7 +23,7 @@ import {
 } from "@/components/ui/select";
 import { authDisabled } from "@/lib/auth-client";
 import { listMachines, type Machine } from "@/lib/machines";
-import { getProviderApps } from "@/lib/provider-apps";
+import { useProviderApps } from "@/lib/provider-apps";
 import { getRouterSetup, type RouterSetup } from "@/lib/router-setup";
 import {
   clearUnhealthyRunner,
@@ -441,22 +440,4 @@ function AutoSizeSetting({
       {failed && <span className="text-destructive">Couldn't save. Try again.</span>}
     </div>
   );
-}
-
-// The provider apps the org has installed, read from GitHub after the page loads. Null until it
-// arrives, or when it can't be told; the Add step menu then just says what each one needs.
-function useProviderApps(workspaceId: string) {
-  const [installed, setInstalled] = useState<HostedProviderId[] | null>(null);
-  useEffect(() => {
-    if (authDisabled) return;
-    let live = true;
-    getProviderApps(workspaceId).then(
-      (apps) => live && setInstalled(apps),
-      () => undefined,
-    );
-    return () => {
-      live = false;
-    };
-  }, [workspaceId]);
-  return installed;
 }

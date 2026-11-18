@@ -25,11 +25,14 @@ export function OptionPicker<V extends string | number>({
   options,
   value,
   onChange,
+  disabled = false,
 }: {
   label: string;
   options: readonly { value: V; label: string }[];
-  value: V;
+  /** Null when no option applies, such as a size for a runner that comes in one. */
+  value: V | null;
   onChange: (value: V) => void;
+  disabled?: boolean;
 }) {
   return (
     <div role="group" aria-label={label} className="flex flex-wrap gap-1.5">
@@ -39,6 +42,7 @@ export function OptionPicker<V extends string | number>({
           size="sm"
           variant={value === option.value ? "secondary" : "ghost"}
           aria-pressed={value === option.value}
+          disabled={disabled}
           onClick={() => option.value !== value && onChange(option.value)}
         >
           {option.label}
