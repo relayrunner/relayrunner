@@ -3,7 +3,9 @@
 
 use crate::credentials::{self, Credentials};
 use crate::events;
-use crate::protocol::{GatewayMessage, Hello, JobState, JobUpdate, MachineMessage, parse_gateway};
+use crate::protocol::{
+    GatewayMessage, Hello, JobState, JobUpdate, MachineMessage, RunJob as JobInfo, parse_gateway,
+};
 use futures_util::{SinkExt, StreamExt};
 use serde_json::json;
 use std::collections::BTreeSet;
@@ -48,6 +50,8 @@ pub struct Run {
     pub jit_config: String,
     /// Run it in the machine's VM, not on the machine itself.
     pub isolated: bool,
+    /// Which job it is, when the gateway said.
+    pub job: Option<JobInfo>,
 }
 
 pub type Report = Arc<dyn Fn(JobUpdate) + Send + Sync>;
@@ -153,11 +157,11 @@ impl Conn {
                 usage: None,
             });
         }
-        say(
-            "run",
-            json!({ "routeId": route_id, "slot": slot }),
-            self.slotted(),
-        );
+        let mut fields = json!({ "routeId": route_id, "slot": slot });
+        if let Some(job) = &run.job {
+            fields["job"] = json!(job);
+        }
+        say("run", fields, self.slotted());
         self.live.jobs.push(route_id.clone());
         self.emit_state();
         self.busy.insert(slot);
@@ -229,7 +233,15 @@ fn say(kind: &str, fields: serde_json::Value, slotted: bool) {
                 .filter(|_| slotted)
                 .map(|s| format!(" in slot {s}"))
                 .unwrap_or_default();
-            ui::step(&format!("{at} Starting job {}{slot}", text("routeId")));
+            let job = &fields["job"];
+            let name = match (job["workflow"].as_str(), job["name"].as_str()) {
+                (Some(workflow), Some(name)) => {
+                    format!(" {workflow} › {name} ({})", text("routeId"))
+                }
+                (None, Some(name)) => format!(" {name} ({})", text("routeId")),
+                _ => format!(" {}", text("routeId")),
+            };
+            ui::step(&format!("{at} Starting job{name}{slot}"));
         }
         "paused" => {
             let by = fields["by"]
@@ -460,8 +472,9 @@ async fn session(
                         conn.emit("gateway-error", json!({ "code": code, "message": message }));
                         None
                     }
-                    Ok(GatewayMessage::Run { route_id, jit_config, isolated }) => {
-                        Some(conn.start_job(Run { route_id, jit_config, isolated }))
+                    Ok(GatewayMessage::Run { route_id, jit_config, isolated, job }) => {
+                        let job = JobInfo::read(job);
+                        Some(conn.start_job(Run { route_id, jit_config, isolated, job }))
                     }
                     Ok(GatewayMessage::Paused { paused, by }) => {
                         conn.emit("paused", json!({ "paused": paused, "by": by }));

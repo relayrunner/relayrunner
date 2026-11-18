@@ -48,7 +48,7 @@ With `--events`, `connect` writes one JSON object per line to stdout and nothing
 }
 ```
 
-Types: `sign-in` (the page and code to approve), `machine`, `state`, `job-repo`, `offline`, `error`, and the connection's own: `connecting`, `connected`, `disconnected`, `run`, `job`, `paused`.
+Types: `sign-in` (the page and code to approve), `machine`, `state`, `job-repo`, `job-result`, `job-end` (the job's line in [`history`](#history)), `offline`, `error`, and the connection's own: `connecting`, `connected`, `disconnected`, `run`, `job`, `paused`. A `run` event carries `job` when the gateway knows which job it is: its name, workflow, repo, GitHub link and `typicalMs`, how long it usually takes on this machine.
 
 ## `login`
 
@@ -108,6 +108,16 @@ relayrunner workspaces remove acme    # stop running Acme's jobs here
 You pick the machine's workspaces when you approve it; this changes them later. `add` and `remove` take a workspace's name, slug or id, or show a list to pick from when you leave it out. Adding a workspace while sharing is `anyone` warns that anyone who can push to its private repos can run jobs on the machine.
 
 See the [changelog](/docs/changelog) for what's new.
+
+## `history`
+
+```sh
+relayrunner history              # the last 20 jobs this machine ran
+relayrunner history --limit 50
+relayrunner history --json
+```
+
+Lists the jobs `connect` ran on this machine, newest first, with each one's result and how long it took. They're kept in `~/.relayrunner/history.jsonl`, the newest 500 at least, which the Mac app reads too.
 
 ## `firewall`
 

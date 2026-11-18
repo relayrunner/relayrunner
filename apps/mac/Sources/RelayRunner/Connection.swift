@@ -16,9 +16,21 @@ final class Connection {
 
   private(set) var phase = Phase.off
   private(set) var paused = false
+  /// A job running now: its slot, which job it is when the gateway said, and when it started here.
+  struct Running: Equatable {
+    var slot: Int
+    var job: RunJob?
+    var startedAt: Date
+  }
+
   /// The route ids of the jobs running now, and the repo each is from once it's known.
   private(set) var jobs: [String] = []
   private(set) var repos: [String: String] = [:]
+  private(set) var running: [String: Running] = [:]
+  /// The jobs this Mac ran, newest first, from `connect`'s history file.
+  private(set) var recent: [HistoryEntry] = History.read(CLI.history)
+  /// When a timed pause ends. Nil when it isn't paused for a while.
+  private(set) var pausedUntil: Date? = AppSettings.pausedUntil
   private(set) var machineName: String?
   private(set) var server = URL(string: "https://app.relayrunner.app")!
   /// Set while a first sign-in waits for approval in the browser.
@@ -29,6 +41,7 @@ final class Connection {
   private(set) var quitsWhenIdle = false
 
   @ObservationIgnored private var process: CLIProcess?
+  @ObservationIgnored private var resumeTimer: Timer?
   @ObservationIgnored private var lastError: String?
   @ObservationIgnored private var offlineReason: String?
 
@@ -82,7 +95,34 @@ final class Connection {
   func setPaused(_ paused: Bool) {
     // Taking jobs again means staying open.
     if !paused { quitsWhenIdle = false }
+    setPausedUntil(nil)
     process?.send(paused ? "pause" : "resume")
+  }
+
+  /// Pauses new jobs, and takes them again when the time is up.
+  func pause(for length: PauseLength) {
+    setPaused(true)
+    setPausedUntil(length.end())
+  }
+
+  private func setPausedUntil(_ date: Date?) {
+    pausedUntil = date
+    AppSettings.pausedUntil = date
+    resumeTimer?.invalidate()
+    resumeTimer = nil
+    guard let date else { return }
+    let timer = Timer(fire: date, interval: 0, repeats: false) { [weak self] _ in
+      MainActor.assumeIsolated { self?.resumeIfPauseEnded() }
+    }
+    RunLoop.main.add(timer, forMode: .common)
+    resumeTimer = timer
+  }
+
+  /// Takes jobs again once a timed pause is over, including one that ended while the app was closed.
+  private func resumeIfPauseEnded() {
+    guard let pausedUntil, pausedUntil <= Date() else { return }
+    setPausedUntil(nil)
+    if paused { process?.send("resume") }
   }
 
   /// Takes no new jobs, and quits the app once the running ones finish.
@@ -122,11 +162,23 @@ final class Connection {
       paused = state.paused
       jobs = state.jobs
       repos = repos.filter { state.jobs.contains($0.key) }
+      running = running.filter { state.jobs.contains($0.key) }
+      // Resumed from the dashboard or the CLI: the timed pause is over too.
+      if !state.paused && pausedUntil != nil && !quitsWhenIdle { setPausedUntil(nil) }
+      if state.link == .online { resumeIfPauseEnded() }
       quitIfIdle()
+    case .run(let routeId, let slot, let job):
+      running[routeId] = Running(slot: slot, job: job, startedAt: Date())
+      if let job { repos[routeId] = job.repo }
+    case .jobEnd(let entry):
+      recent = History.adding(entry, to: recent)
     case .jobRepo(let routeId, let repo):
-      repos[routeId] = repo
+      if running[routeId]?.job == nil { repos[routeId] = repo }
     case .jobResult(let routeId, let job, let result):
-      if result == "Failed" { Notifications.shared.jobFailed(job: job, repo: repos[routeId], server: server) }
+      if result == "Failed" {
+        let known = running[routeId]?.job
+        Notifications.shared.jobFailed(job: known?.name ?? job, repo: repos[routeId], url: known?.url, server: server)
+      }
     case .offline(let reason, let message):
       offlineReason = reason
       if let message { lastError = message }
@@ -144,6 +196,7 @@ final class Connection {
     paused = false
     jobs = []
     repos = [:]
+    running = [:]
     signIn = nil
     quitIfIdle()
     if stopping { return }
@@ -167,6 +220,8 @@ enum CLI {
   static let home = FileManager.default.homeDirectoryForCurrentUser.appendingPathComponent(".relayrunner")
   /// What `connect` prints for a person, from its last run.
   static let log = home.appendingPathComponent("app.log")
+  /// The jobs `connect` ran here, which `relayrunner history` prints too.
+  static let history = home.appendingPathComponent("history.jsonl")
 
   /// RELAYRUNNER_CLI overrides the bundled one, for development.
   static var executable: URL? {

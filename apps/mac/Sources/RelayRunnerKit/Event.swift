@@ -6,9 +6,13 @@ public enum Event: Equatable {
   case signIn(url: URL, code: String)
   case machine(id: String, name: String, server: URL)
   case state(State)
+  /// A job was handed to this Mac, in a slot from 1. `job` says which, when the gateway knew.
+  case run(routeId: String, slot: Int, job: RunJob?)
   case jobRepo(routeId: String, repo: String)
   /// How a job ended, in GitHub's words: Succeeded, Failed, Canceled and so on.
   case jobResult(routeId: String, job: String, result: String)
+  /// A job's runner exited: the line `connect` added to the history file.
+  case jobEnd(HistoryEntry)
   case offline(reason: String, message: String?)
   /// `command` is set when a command failed; without it, `connect` is stopping.
   case error(code: String, message: String, command: String?)
@@ -42,6 +46,11 @@ public enum Event: Equatable {
       return .machine(id: e.id, name: e.name, server: server)
     case "state":
       return body(State.self).map(Event.state)
+    case "run":
+      guard let e = body(Run.self) else { return nil }
+      return .run(routeId: e.routeId, slot: e.slot ?? 1, job: e.job)
+    case "job-end":
+      return body(HistoryEntry.self).map(Event.jobEnd)
     case "job-repo":
       return body(JobRepo.self).map { .jobRepo(routeId: $0.routeId, repo: $0.repo) }
     case "job-result":
@@ -59,6 +68,21 @@ public enum Event: Equatable {
   private struct Head: Decodable { var v: Int; var type: String }
   private struct SignIn: Decodable { var url: String; var code: String }
   private struct Machine: Decodable { var id: String; var name: String; var server: String }
+  private struct Run: Decodable {
+    var routeId: String
+    var slot: Int?
+    var job: RunJob?
+
+    init(from decoder: Decoder) throws {
+      let c = try decoder.container(keyedBy: CodingKeys.self)
+      routeId = try c.decode(String.self, forKey: .routeId)
+      slot = try? c.decode(Int.self, forKey: .slot)
+      // A job this app can't read still runs.
+      job = try? c.decode(RunJob.self, forKey: .job)
+    }
+
+    enum CodingKeys: String, CodingKey { case routeId, slot, job }
+  }
   private struct JobRepo: Decodable { var routeId: String; var repo: String }
   private struct JobResult: Decodable { var routeId: String; var job: String; var result: String }
   private struct Offline: Decodable { var reason: String; var message: String? }

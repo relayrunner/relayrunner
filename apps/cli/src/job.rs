@@ -3,13 +3,14 @@
 
 use crate::connection::{Report, Run};
 use crate::events;
+use crate::history;
 use crate::isolated::{self, Isolation};
 use crate::jit_config;
 use crate::protocol::{JobState, JobUpdate, JobUsage};
 use crate::usage::{self, Source};
 use std::path::{Path, PathBuf};
 use std::process::Stdio;
-use std::sync::Arc;
+use std::sync::{Arc, Mutex};
 use tokio::io::{AsyncBufReadExt, BufReader};
 use tokio::process::Command;
 
@@ -27,8 +28,18 @@ pub enum Launcher {
     Vm(Arc<Isolation>),
 }
 
+/// The runner's own name for the job and GitHub's result for it, once it prints them.
+type RunnerResult = Arc<Mutex<Option<(String, String)>>>;
+
 /// Runs the job and reports each update. `prefix` goes in front of each line of its output.
-pub async fn run(launcher: Launcher, run: Run, prefix: String, report: Report, slot_note: String) {
+pub async fn run(
+    launcher: Launcher,
+    run: Run,
+    slot: u32,
+    prefix: String,
+    report: Report,
+    slot_note: String,
+) {
     let route_id = run.route_id.clone();
     let update = |state, message: Option<String>, usage: Option<JobUsage>| JobUpdate {
         route_id: route_id.clone(),
@@ -36,6 +47,7 @@ pub async fn run(launcher: Launcher, run: Run, prefix: String, report: Report, s
         message,
         usage,
     };
+    let mut repo = None;
     // Nothing runs on a config that points the runner anywhere but GitHub.
     match jit_config::check(&run.jit_config, &route_id) {
         Err(reason) => {
@@ -46,12 +58,13 @@ pub async fn run(launcher: Launcher, run: Run, prefix: String, report: Report, s
             ));
             return;
         }
-        Ok(Some(repo)) => {
-            events::log(&format!("Job {route_id}{slot_note} is from {repo}"));
+        Ok(Some(name)) => {
+            events::log(&format!("Job {route_id}{slot_note} is from {name}"));
             events::emit(
                 "job-repo",
-                serde_json::json!({ "routeId": route_id, "repo": repo }),
+                serde_json::json!({ "routeId": route_id, "repo": name }),
             );
+            repo = Some(name.to_string());
         }
         Ok(None) => {}
     }
@@ -93,6 +106,8 @@ pub async fn run(launcher: Launcher, run: Run, prefix: String, report: Report, s
         command.env("RUNNER_JIT_CONFIG", &run.jit_config);
     }
 
+    let runner_result: RunnerResult = Arc::default();
+    let mut started = None;
     let (result, clean_exit) = match command.spawn() {
         Err(e) => (
             update(
@@ -104,6 +119,11 @@ pub async fn run(launcher: Launcher, run: Run, prefix: String, report: Report, s
         ),
         Ok(mut child) => {
             report(update(JobState::Started, None, None));
+            started = Some((
+                events::now_iso(),
+                history::now_ms(),
+                std::time::Instant::now(),
+            ));
             let source = match &launcher {
                 Launcher::Host(_) => match child.id() {
                     Some(pid) => Some(Source::Tree {
@@ -121,10 +141,10 @@ pub async fn run(launcher: Launcher, run: Run, prefix: String, report: Report, s
                 }),
             };
             let sampler = source.map(usage::sample);
-            let out = child
-                .stdout
-                .take()
-                .map(|s| forward(s, prefix.clone(), false, Some(route_id.clone())));
+            let out = child.stdout.take().map(|s| {
+                let watch = Some((route_id.clone(), runner_result.clone()));
+                forward(s, prefix.clone(), false, watch)
+            });
             let err = child.stderr.take().map(|s| forward(s, prefix, true, None));
             let status = child.wait().await;
             for task in [out, err].into_iter().flatten() {
@@ -167,6 +187,23 @@ pub async fn run(launcher: Launcher, run: Run, prefix: String, report: Report, s
         Launcher::Vm(i) if !clean_exit => isolated::cleanup(&route_id, i).await,
         Launcher::Vm(_) => {}
     }
+    if let Some((started_at, started_at_ms, clock)) = started {
+        let entry = history::Entry::from(history::Finished {
+            route_id: &route_id,
+            repo,
+            job: run.job.as_ref(),
+            runner_result: runner_result.lock().unwrap().take(),
+            state: result.state.clone(),
+            message: result.message.clone(),
+            slot,
+            started_at,
+            started_at_ms,
+            duration_ms: clock.elapsed().as_millis() as u64,
+            usage: result.usage.clone(),
+        });
+        history::append(&history::path(), &entry);
+        events::emit("job-end", serde_json::json!(entry));
+    }
     report(result);
 }
 
@@ -181,19 +218,21 @@ fn signal_name(sig: i32) -> String {
 }
 
 /// The runner's output, line by line with `prefix`, to stderr when stdout carries events. On
-/// stdout (`route_id` set), the runner's line for how the job ended becomes a `job-result` event.
+/// stdout (`watch` set), the runner's line for how the job ended is kept for the history and
+/// becomes a `job-result` event.
 fn forward<R: tokio::io::AsyncRead + Unpin + Send + 'static>(
     stream: R,
     prefix: String,
     is_err: bool,
-    route_id: Option<String>,
+    watch: Option<(String, RunnerResult)>,
 ) -> tokio::task::JoinHandle<()> {
     tokio::spawn(async move {
         let mut lines = BufReader::new(stream).lines();
         while let Ok(Some(line)) = lines.next_line().await {
-            if let (Some(route_id), true) = (&route_id, events::on())
+            if let Some((route_id, kept)) = &watch
                 && let Some((job, result)) = job_result(&line)
             {
+                *kept.lock().unwrap() = Some((job.to_string(), result.to_string()));
                 events::emit(
                     "job-result",
                     serde_json::json!({ "routeId": route_id, "job": job, "result": result }),

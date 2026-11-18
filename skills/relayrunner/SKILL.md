@@ -77,6 +77,7 @@ relayrunner resume
 relayrunner share              # show who can run jobs here
 relayrunner workspaces --json  # which workspaces this machine takes jobs from
 relayrunner workspaces add     # or remove; takes a name, slug or id
+relayrunner history --json     # the jobs this machine ran, newest first
 ```
 
 ## Optimized checks

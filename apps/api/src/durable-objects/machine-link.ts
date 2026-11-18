@@ -13,6 +13,7 @@ import {
 } from "../github-app.ts";
 import { installationRunnerScope } from "../installations.ts";
 import { setJobUsage } from "../jobs.ts";
+import { runJob } from "../run-job.ts";
 import { mintMachineRunner } from "../machine-runner.ts";
 import { originFromJson, type RequestOrigin } from "../device-origin.ts";
 import { sendEmail } from "../email.ts";
@@ -379,6 +380,24 @@ export class MachineLink extends DurableObject<Env> {
     if (!placeOn(socket, route)) return "wrong_place";
     await this.ctx.storage.put<SentRoute>(key, { workspaceId, jobId: route.jobId });
 
+    // Read while the runner is minted. A job the machine can't name still runs.
+    const job =
+      route.jobId === undefined
+        ? Promise.resolve(undefined)
+        : runJob(createDb(this.env.DB), workspaceId, {
+            jobId: route.jobId,
+            machineId: route.machineId,
+          }).catch((error) => {
+            console.error(
+              JSON.stringify({
+                msg: "relayrunner run job not read",
+                routeId: route.id,
+                jobId: route.jobId,
+                error: errorMessage(error),
+              }),
+            );
+            return undefined;
+          });
     let jit, scope;
     try {
       const token = await appInstallationToken(this.env, route.installationId);
@@ -390,6 +409,7 @@ export class MachineLink extends DurableObject<Env> {
       await this.ctx.storage.delete(key);
       throw error;
     }
+    const details = await job;
     // The socket may have closed while minting; the runner then expires unused.
     const live = this.onlineSocket() ?? socket;
     // It may also have reconnected as something else. A job routed to a VM is never sent to a
@@ -406,6 +426,7 @@ export class MachineLink extends DurableObject<Env> {
         routeId: route.id,
         jitConfig: jit.encodedJitConfig,
         ...(place === "vm" ? { isolated: true } : {}),
+        ...(details ? { job: details } : {}),
       }),
     );
     await this.ctx.storage.put<SentRoute>(key, {

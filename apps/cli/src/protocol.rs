@@ -79,7 +79,7 @@ pub struct JobUpdate {
 }
 
 /// CPU (a 0-1 share of what the job could use) and memory, sampled while the runner ran.
-#[derive(Serialize, Clone, Debug, PartialEq)]
+#[derive(Serialize, Deserialize, Clone, Debug, PartialEq)]
 #[serde(rename_all = "camelCase")]
 pub struct JobUsage {
     pub cpu_p95: f64,
@@ -118,6 +118,31 @@ impl MachineMessage {
     }
 }
 
+/// Which job a `run` message hands the machine, when the gateway knows.
+#[derive(Serialize, Deserialize, Clone, Debug, PartialEq)]
+#[serde(rename_all = "camelCase")]
+pub struct RunJob {
+    pub name: String,
+    pub workflow: Option<String>,
+    pub repo: String,
+    pub url: String,
+    #[serde(default = "first_attempt")]
+    pub run_attempt: u32,
+    /// The median of the job's recent successful runs on this machine.
+    pub typical_ms: Option<u64>,
+}
+
+fn first_attempt() -> u32 {
+    1
+}
+
+impl RunJob {
+    /// The `job` of a `run` message, or None when it's missing or unreadable.
+    pub fn read(value: Option<Value>) -> Option<RunJob> {
+        serde_json::from_value(value?).ok()
+    }
+}
+
 #[derive(Deserialize, Debug, Clone)]
 #[serde(tag = "type", rename_all = "snake_case")]
 pub enum GatewayMessage {
@@ -128,6 +153,9 @@ pub enum GatewayMessage {
         jit_config: String,
         #[serde(default)]
         isolated: bool,
+        /// Read with `RunJob::read`, so a job the CLI can't read never refuses the run.
+        #[serde(default)]
+        job: Option<Value>,
     },
     Error {
         code: String,
@@ -270,6 +298,33 @@ mod tests {
             let parsed = parse_gateway(&message.to_string());
             assert!(parsed.is_ok(), "{name}: {parsed:?}");
         }
+    }
+
+    #[test]
+    fn reads_the_job_a_run_names() {
+        let Ok(GatewayMessage::Run { job, .. }) =
+            parse_gateway(&fixtures()["gateway"]["runWithJob"].to_string())
+        else {
+            panic!("runWithJob should parse");
+        };
+        assert_eq!(
+            RunJob::read(job),
+            Some(RunJob {
+                name: "test".into(),
+                workflow: Some("CI".into()),
+                repo: "acme/app".into(),
+                url: "https://github.com/acme/app/actions/runs/42/job/7".into(),
+                run_attempt: 1,
+                typical_ms: Some(312_000),
+            })
+        );
+        let odd = parse_gateway(
+            r#"{"v":1,"type":"run","routeId":"r1","jitConfig":"abc","job":{"name":3}}"#,
+        );
+        let Ok(GatewayMessage::Run { job, .. }) = odd else {
+            panic!("a run with an unreadable job still runs");
+        };
+        assert_eq!(RunJob::read(job), None);
     }
 
     #[test]

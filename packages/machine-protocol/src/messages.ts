@@ -140,6 +140,22 @@ export const MachineMessage = z.discriminatedUnion("type", [
 
 // gateway → machine
 
+// The job a `run` message hands the machine, as GitHub names it.
+export const RunJob = z.object({
+  // The job's name, such as "test" or "build (macos, 18)".
+  name: z.string().min(1),
+  // The workflow's name. Null when GitHub didn't send one.
+  workflow: z.string().min(1).nullable(),
+  // owner/name.
+  repo: z.string().min(1),
+  // The job's page on GitHub.
+  url: z.string().url(),
+  runAttempt: z.number().int().positive(),
+  // How long this job usually runs on this machine: the median of its recent successful runs
+  // here, in milliseconds. Null when it hasn't run here often enough to say.
+  typicalMs: z.number().int().nonnegative().nullable(),
+});
+
 // Run one job: start `run.sh --jitconfig <jitConfig>` in a fresh work directory. The config is
 // GitHub's encoded_jit_config for a one-job runner, so it's only good for this job.
 export const RunMessage = z.object({
@@ -149,6 +165,10 @@ export const RunMessage = z.object({
   jitConfig: z.string().min(1),
   // Run it in the machine's VM (the hello's `isolated`), not on the machine itself.
   isolated: z.boolean().optional(),
+  // Which job this is, for the CLI and the Mac app to show and to keep in the machine's local
+  // history. Missing when the gateway hasn't recorded the job yet, and from gateways older than
+  // this field. The CLI ignores one it can't read.
+  job: RunJob.optional(),
 });
 
 // Sent just before the gateway closes the socket because of something the machine sent.
@@ -195,6 +215,7 @@ export type JobUsage = z.infer<typeof JobUsage>;
 export type JobMessage = z.infer<typeof JobMessage>;
 export type TokenSavedMessage = z.infer<typeof TokenSavedMessage>;
 export type MachineMessage = z.infer<typeof MachineMessage>;
+export type RunJob = z.infer<typeof RunJob>;
 export type RunMessage = z.infer<typeof RunMessage>;
 export type ErrorMessage = z.infer<typeof ErrorMessage>;
 export type PausedMessage = z.infer<typeof PausedMessage>;

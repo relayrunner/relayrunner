@@ -1,5 +1,5 @@
 //! `relayrunner` in Rust: `connect` (with sign-in, runner install and updates, and VMs), `init`,
-//! `login`, `whoami`, `pause`, `resume`, `share`, `workspaces` and `firewall`. It shares
+//! `login`, `whoami`, `pause`, `resume`, `share`, `workspaces`, `firewall` and `history`. It shares
 //! ~/.relayrunner with older (TypeScript) versions.
 
 mod api;
@@ -10,6 +10,7 @@ mod device;
 mod error;
 mod events;
 mod firewall;
+mod history;
 mod init;
 mod install;
 mod isolated;
@@ -168,6 +169,15 @@ const COMMANDS: &[Command] = &[
         "relayrunner firewall [on|off]",
         &[],
     ),
+    (
+        "history",
+        "Show the jobs this machine ran most recently, newest first.",
+        "relayrunner history [--json] [--limit N]",
+        &[
+            ("--json", "Print the jobs as JSON"),
+            ("--limit", "How many jobs to show (default 20)"),
+        ],
+    ),
 ];
 
 fn usage() -> String {
@@ -279,6 +289,13 @@ async fn main() {
             }
         },
         "init" => init::command(&rest).await,
+        "history" => match history::command(&rest) {
+            Ok(()) => 0,
+            Err(e) => {
+                eprintln!("{e}");
+                1
+            }
+        },
         other => {
             eprintln!("Unknown command {other:?}.\n\n{}", usage());
             2

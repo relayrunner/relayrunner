@@ -14,6 +14,7 @@ enum AppSettings {
     static let notifiesOnFailure = "notifiesOnFailure"
     static let welcomed = "welcomed"
     static let welcomeMoved = "welcomeMoved"
+    static let pausedUntil = "pausedUntil"
   }
 
   private static var defaults: UserDefaults { .standard }
@@ -50,6 +51,12 @@ enum AppSettings {
   static var welcomeMoved: Bool {
     get { defaults.bool(forKey: Key.welcomeMoved) }
     set { defaults.set(newValue, forKey: Key.welcomeMoved) }
+  }
+
+  /// When a timed pause from the menu ends, so it still ends if the app was closed meanwhile.
+  static var pausedUntil: Date? {
+    get { defaults.object(forKey: Key.pausedUntil) as? Date }
+    set { defaults.set(newValue, forKey: Key.pausedUntil) }
   }
 
   /// A login item, kept by macOS rather than in defaults. Reads back what macOS settled on.

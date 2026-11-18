@@ -438,7 +438,7 @@ async fn connect_machine(args: &Args, size: Wanted, slots: u32) -> Result<Option
                     (String::new(), String::new())
                 };
                 current.lock().unwrap().running += 1;
-                job::run(launcher, run, prefix, report, note).await;
+                job::run(launcher, run, slot, prefix, report, note).await;
                 current.lock().unwrap().running -= 1;
             })
         })

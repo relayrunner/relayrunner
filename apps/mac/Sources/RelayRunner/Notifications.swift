@@ -18,13 +18,14 @@ final class Notifications: NSObject, UNUserNotificationCenterDelegate {
     (try? await center.requestAuthorization(options: [.alert, .sound])) ?? false
   }
 
-  func jobFailed(job: String, repo: String?, server: URL) {
+  /// `url` is the job's page on GitHub, when the gateway sent it; else clicking opens History.
+  func jobFailed(job: String, repo: String?, url: URL?, server: URL) {
     guard AppSettings.notifiesOnFailure else { return }
     let content = UNMutableNotificationContent()
     content.title = "A job failed on this Mac"
     content.body = [repo, job].compactMap { $0 }.joined(separator: " · ")
     content.sound = .default
-    content.userInfo = ["url": server.appendingPathComponent("history").absoluteString]
+    content.userInfo = ["url": (url ?? server.appendingPathComponent("history")).absoluteString]
     center.add(UNNotificationRequest(identifier: UUID().uuidString, content: content, trigger: nil))
   }
 
@@ -37,7 +38,7 @@ final class Notifications: NSObject, UNUserNotificationCenterDelegate {
     completionHandler([.banner, .sound])
   }
 
-  // Clicking one opens History in the dashboard.
+  // Clicking one opens the job on GitHub, or History in the dashboard.
   func userNotificationCenter(
     _ center: UNUserNotificationCenter,
     didReceive response: UNNotificationResponse,

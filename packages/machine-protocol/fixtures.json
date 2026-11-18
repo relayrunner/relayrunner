@@ -66,6 +66,20 @@
       "jitConfig": "e30=",
       "isolated": true
     },
+    "runWithJob": {
+      "v": 1,
+      "type": "run",
+      "routeId": "rt_3",
+      "jitConfig": "e30=",
+      "job": {
+        "name": "test",
+        "workflow": "CI",
+        "repo": "acme/app",
+        "url": "https://github.com/acme/app/actions/runs/42/job/7",
+        "runAttempt": 1,
+        "typicalMs": 312000
+      }
+    },
     "pausedBy": { "v": 1, "type": "paused", "paused": true, "by": "Sam" },
     "resumedHere": { "v": 1, "type": "paused", "paused": false, "by": null },
     "token": { "v": 1, "type": "token", "token": "rrm_next" },

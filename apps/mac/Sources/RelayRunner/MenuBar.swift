@@ -12,6 +12,8 @@ final class MenuBar: NSObject, NSMenuDelegate {
   private let item = NSStatusBar.system.statusItem(withLength: NSStatusItem.squareLength)
   private let menu = NSMenu()
   private var header: NSHostingView<MenuHeader>?
+  /// Recent jobs and the timed pause, rebuilt each time the menu opens.
+  private var jobItems: [NSMenuItem] = []
 
   func start() {
     menu.delegate = self
@@ -41,7 +43,10 @@ final class MenuBar: NSObject, NSMenuDelegate {
   private func watch() {
     withObservationTracking {
       item.button?.image = connection.menuBarImage
-      _ = (connection.status, connection.signIn, connection.jobs, connection.repos, connection.machineName, connection.problem)
+      _ = (
+        connection.status, connection.signIn, connection.jobs, connection.repos, connection.running,
+        connection.machineName, connection.problem, connection.pausedUntil
+      )
     } onChange: { [weak self] in
       Task { @MainActor in
         self?.watch()
@@ -57,6 +62,106 @@ final class MenuBar: NSObject, NSMenuDelegate {
   }
 
   func menuWillOpen(_ menu: NSMenu) { fitHeader() }
+
+  func menuNeedsUpdate(_ menu: NSMenu) { rebuildJobItems() }
+
+  /// The timed pause and the Recent section, between the header and Open Dashboard.
+  private func rebuildJobItems() {
+    for item in jobItems { menu.removeItem(item) }
+    var items: [NSMenuItem] = []
+    if connection.phase == .online && !connection.paused {
+      let pause = NSMenuItem(title: "Pause New Jobs", action: nil, keyEquivalent: "")
+      pause.image = NSImage(systemSymbolName: "pause.circle", accessibilityDescription: nil)
+      let lengths = NSMenu()
+      for length in PauseLength.allCases {
+        lengths.addItem(ActionItem(title: length.title) { [weak self] in self?.connection.pause(for: length) })
+      }
+      pause.submenu = lengths
+      items.append(pause)
+    }
+    let recent = Array(connection.recent.prefix(MenuBar.recentRows))
+    if !recent.isEmpty {
+      if !items.isEmpty { items.append(.separator()) }
+      items.append(.sectionHeader(title: "Recent"))
+      let now = Date()
+      for entry in recent { items.append(recentItem(entry, now: now)) }
+      let day = History.day(connection.recent, of: now)
+      if day.jobs > 0 {
+        var summary = "Today: \(day.jobs == 1 ? "1 job" : "\(day.jobs) jobs") · \(Durations.short(day.busyMs))"
+        if day.failed > 0 { summary += " · \(day.failed) failed" }
+        let today = NSMenuItem(title: summary, action: nil, keyEquivalent: "")
+        today.isEnabled = false
+        items.append(today)
+      }
+      items.append(
+        row("Show All in Dashboard", "clock.arrow.circlepath") {
+          NSWorkspace.shared.open(Connection.shared.server.appendingPathComponent("history"))
+        })
+    }
+    if !items.isEmpty { items.append(.separator()) }
+    // Right after the header and its separator.
+    for (offset, item) in items.enumerated() { menu.insertItem(item, at: 2 + offset) }
+    jobItems = items
+  }
+
+  static let recentRows = 5
+
+  /// A job that ran here, with a submenu to open it on GitHub.
+  private func recentItem(_ entry: HistoryEntry, now: Date) -> NSMenuItem {
+    let when = "\(Durations.short(entry.durationMs)) · \(Durations.ago(entry.endedAt, now: now))"
+    let item = NSMenuItem(title: entry.title, action: nil, keyEquivalent: "")
+    if #available(macOS 14.4, *) {
+      item.subtitle = [entry.repo, when].compactMap { $0 }.joined(separator: " · ")
+    } else {
+      item.title = "\(entry.title)  \(when)"
+    }
+    item.image = MenuBar.outcomeImage(entry.outcome)
+    let details = NSMenu()
+    if let url = entry.url {
+      details.addItem(ActionItem(title: "Open on GitHub") { NSWorkspace.shared.open(url) })
+      details.addItem(
+        ActionItem(title: "Copy Link") {
+          NSPasteboard.general.clearContents()
+          NSPasteboard.general.setString(url.absoluteString, forType: .string)
+        })
+      details.addItem(.separator())
+    }
+    for line in MenuBar.facts(entry) {
+      let fact = NSMenuItem(title: line, action: nil, keyEquivalent: "")
+      fact.isEnabled = false
+      details.addItem(fact)
+    }
+    item.submenu = details
+    return item
+  }
+
+  /// What a recent job's submenu says about it.
+  static func facts(_ entry: HistoryEntry) -> [String] {
+    var lines: [String] = []
+    if let workflow = entry.workflow, let repo = entry.repo {
+      lines.append("\(repo) · \(workflow)")
+    } else if let repo = entry.repo {
+      lines.append(repo)
+    }
+    var took = "\(entry.result ?? (entry.outcome == .failed ? "Runner failed" : "Done")) in \(Durations.short(entry.durationMs))"
+    if let typical = entry.typicalMs { took += " (usual \(Durations.clock(Double(typical) / 1000)))" }
+    lines.append(took)
+    if let message = entry.message { lines.append(message) }
+    if let slot = entry.slot { lines.append("Slot \(slot)") }
+    return lines
+  }
+
+  static func outcomeImage(_ outcome: HistoryEntry.Outcome) -> NSImage? {
+    let (symbol, color): (String, NSColor) =
+      switch outcome {
+      case .succeeded: ("checkmark.circle.fill", .systemGreen)
+      case .failed: ("xmark.circle.fill", .systemRed)
+      case .canceled: ("minus.circle.fill", .systemGray)
+      case .other: ("circle.fill", .systemGray)
+      }
+    let image = NSImage(systemSymbolName: symbol, accessibilityDescription: nil)
+    return image?.withSymbolConfiguration(.init(paletteColors: [color]))
+  }
 
   func open() { item.button?.performClick(nil) }
 
@@ -143,11 +248,11 @@ struct MenuHeader: View {
         DetailRow(systemImage: "laptopcomputer", title: name, note: "This Mac")
       }
       ForEach(connection.jobs, id: \.self) { job in
-        DetailRow(systemImage: "hammer", title: connection.repos[job] ?? "Starting a job…", note: "Running")
+        RunningRow(running: connection.running[job], repo: connection.repos[job], slotted: connection.running.count > 1)
       }
       if connection.phase == .online {
         HStack {
-          Label("Pause new jobs", systemImage: "pause.circle")
+          Label(pauseLabel, systemImage: "pause.circle")
           Spacer()
           Toggle("Pause new jobs", isOn: Binding(get: { connection.paused }, set: connection.setPaused))
             .toggleStyle(.switch)
@@ -163,6 +268,15 @@ struct MenuHeader: View {
     }
     .padding(.horizontal, 8)
     .padding(.bottom, 6)
+  }
+
+  private var pauseLabel: String {
+    guard connection.paused, let until = connection.pausedUntil else { return "Pause new jobs" }
+    let calendar = Calendar.current
+    let time = until.formatted(date: .omitted, time: .shortened)
+    if calendar.isDateInToday(until) { return "Paused until \(time)" }
+    if calendar.isDateInTomorrow(until) { return "Paused until tomorrow, \(time)" }
+    return "Paused until \(until.formatted(date: .abbreviated, time: .shortened))"
   }
 
   private func toggle(_ on: Bool) {
@@ -231,5 +345,48 @@ private struct DetailRow: View {
       Spacer(minLength: 8)
       Text(note).foregroundStyle(.secondary)
     }
+  }
+}
+
+/// A job running now: its name, how long it has run against how long it usually takes here, and
+/// its repo and slot.
+private struct RunningRow: View {
+  let running: Connection.Running?
+  let repo: String?
+  /// Whether more than one job is running, so the slot says which is which.
+  let slotted: Bool
+
+  var body: some View {
+    HStack(alignment: .firstTextBaseline, spacing: 8) {
+      Image(systemName: "hammer")
+        .foregroundStyle(.secondary)
+        .frame(width: 18)
+      VStack(alignment: .leading, spacing: 1) {
+        Text(running?.job?.name ?? repo ?? "Starting a job…").lineLimit(1).truncationMode(.middle)
+        if let detail {
+          Text(detail).font(.caption).foregroundStyle(.secondary).lineLimit(1).truncationMode(.middle)
+        }
+      }
+      Spacer(minLength: 8)
+      if let startedAt = running?.startedAt {
+        TimelineView(.periodic(from: startedAt, by: 1)) { context in
+          let elapsed = context.date.timeIntervalSince(startedAt)
+          VStack(alignment: .trailing, spacing: 1) {
+            Text(Durations.clock(elapsed)).monospacedDigit()
+            if let progress = Durations.progress(elapsed: elapsed, typicalMs: running?.job?.typicalMs) {
+              Text(progress).font(.caption).foregroundStyle(.secondary).monospacedDigit()
+            }
+          }
+        }
+      } else {
+        Text("Running").foregroundStyle(.secondary)
+      }
+    }
+  }
+
+  private var detail: String? {
+    let place = running.flatMap { slotted ? "Slot \($0.slot)" : nil }
+    let parts = [running?.job?.workflow, running?.job == nil ? nil : (running?.job?.repo ?? repo), place].compactMap { $0 }
+    return parts.isEmpty ? nil : parts.joined(separator: " · ")
   }
 }
