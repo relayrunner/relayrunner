@@ -42,8 +42,8 @@ final class MenuBar: NSObject, NSMenuDelegate {
     withObservationTracking {
       item.button?.image = connection.menuBarImage
       _ = (connection.status, connection.signIn, connection.jobs, connection.repos, connection.machineName, connection.problem)
-    } onChange: {
-      Task { @MainActor [weak self] in
+    } onChange: { [weak self] in
+      Task { @MainActor in
         self?.watch()
         self?.fitHeader()
       }
@@ -86,13 +86,13 @@ private final class ActionItem: NSMenuItem {
 
   init(title: String, action: @escaping () -> Void) {
     run = action
-    super.init(title: title, action: #selector(perform), keyEquivalent: "")
+    super.init(title: title, action: #selector(fire), keyEquivalent: "")
     target = self
   }
 
   required init(coder: NSCoder) { fatalError() }
 
-  @objc private func perform() { run() }
+  @objc private func fire() { run() }
 }
 
 /// The top of the menu: the switch and what this Mac is doing.
