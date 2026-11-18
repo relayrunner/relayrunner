@@ -1,6 +1,6 @@
 import { api } from "./api.ts";
 import { capacity } from "./capacity.ts";
-import type { Environment } from "./job-times.ts";
+import type { Environment, TypicalTime } from "./job-times.ts";
 import type { Machine, MachineJob } from "./machines.ts";
 import { runnerUpdate } from "./runner-update.ts";
 
@@ -19,6 +19,8 @@ export type LiveJob = {
   environment: string;
   queuedAt: number | null;
   startedAt: number | null;
+  /** How long it usually takes on its runner, when it has 5+ successful runs there. */
+  typical: TypicalTime | null;
 };
 
 export type LiveJobs = {
@@ -122,6 +124,7 @@ export function sampleLiveJobs(now = Date.now()): LiveJobs {
     labels: ["ubuntu-latest"],
     queuedAt: null,
     startedAt: null,
+    typical: null,
     ...rest,
   });
   return {
@@ -138,12 +141,14 @@ export function sampleLiveJobs(now = Date.now()): LiveJobs {
         environment: "machine:sample",
         labels: ["rr-0123456789ab"],
         startedAt: now - 4 * MIN - 57_000,
+        typical: { medianMs: 6 * MIN + 20_000, p90Ms: 7 * MIN + 30_000, samples: 38 },
       }),
       job({
         id: 102,
         name: "lint",
         environment: "github:linux-2-core",
         startedAt: now - 73_000,
+        typical: { medianMs: 41_000, p90Ms: 55_000, samples: 50 },
       }),
     ],
     queued: [

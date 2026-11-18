@@ -144,6 +144,58 @@ export function clock(ms: number | null) {
   return h ? `${h}:${String(m).padStart(2, "0")}:${s}` : `${m}:${s}`;
 }
 
+/**
+ * How long a job usually takes on the runner it runs on (GET /api/runs/live and a run's jobs): the
+ * median and p90 of its newest successful runs there over 14 days, with 5 or more of them.
+ */
+export type TypicalTime = { medianMs: number; p90Ms: number; samples: number };
+
+/**
+ * A running job against its usual time: time left before its median, past the median but within
+ * what's normal for it, or slower than 9 in 10 of its runs.
+ */
+export type Progress =
+  | { state: "left"; leftMs: number; typical: TypicalTime }
+  | { state: "late"; typical: TypicalTime }
+  | { state: "slow"; typical: TypicalTime };
+
+export function progressOf(
+  typical: TypicalTime | null | undefined,
+  ranMs: number,
+): Progress | null {
+  if (!typical) return null;
+  if (ranMs < typical.medianMs) return { state: "left", leftMs: typical.medianMs - ranMs, typical };
+  return { state: ranMs > typical.p90Ms ? "slow" : "late", typical };
+}
+
+/**
+ * "about 1:20 left", "usual 2:10", "slower than usual (2:10)": what a running job's timer says
+ * under it, with `format` for the times.
+ */
+export function progressText(progress: Progress, format: (ms: number) => string = clock) {
+  if (progress.state === "left") return `about ${format(progress.leftMs)} left`;
+  if (progress.state === "late") return `usual ${format(progress.typical.medianMs)}`;
+  return `slower than usual (${format(progress.typical.medianMs)})`;
+}
+
+/**
+ * About how long until the last of these jobs is done, from their usual times: a running job has
+ * its median less what it has run, a queued one its whole median. Null when any of them has no
+ * usual time, since the estimate would leave it out.
+ */
+export function timeLeft(
+  jobs: { startedAt: number | null; typical: TypicalTime | null }[],
+  now: number,
+): number | null {
+  let left = 0;
+  for (const job of jobs) {
+    if (!job.typical) return null;
+    const ran = job.startedAt === null ? 0 : now - job.startedAt;
+    left = Math.max(left, job.typical.medianMs - ran);
+  }
+  return jobs.length ? left : null;
+}
+
 /** "7 runs", "1 run". */
 export function plural(value: number, word: string) {
   return `${count(value)} ${value === 1 ? word : `${word}s`}`;
