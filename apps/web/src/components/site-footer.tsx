@@ -3,7 +3,7 @@ import { Brand } from "@/components/brand";
 import { LEGAL_LINKS } from "@/lib/legal";
 import { cn } from "@/lib/utils";
 
-export const DOCS_URL = "https://relayrunner.app/docs";
+export const DOCS_URL = "https://relayrunner.dev/docs";
 const X_URL = "https://x.com/relayrunnerCI";
 
 // The same links as the landing site's footer. The agents link comes first.

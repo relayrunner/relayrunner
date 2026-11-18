@@ -35,7 +35,7 @@ const same = (a: number, b: number) => Math.abs(a - b) < 1e-9;
 
 async function read(source: PriceSource, fetcher: typeof fetch): Promise<FoundPrice[]> {
   const response = await fetcher(source.url, {
-    headers: { "user-agent": "RelayRunner price check (+https://relayrunner.app)" },
+    headers: { "user-agent": "RelayRunner price check (+https://relayrunner.dev)" },
     signal: AbortSignal.timeout(FETCH_TIMEOUT_MS),
   });
   if (!response.ok) throw new Error(`answered ${response.status}`);

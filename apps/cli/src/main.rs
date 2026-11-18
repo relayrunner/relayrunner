@@ -34,7 +34,7 @@ pub const VERSION: &str = env!("RELAYRUNNER_VERSION");
 pub static USER_AGENT: LazyLock<String> = LazyLock::new(|| format!("relayrunner-cli/{VERSION}"));
 
 const SERVER_HELP: &str =
-    "RelayRunner URL (default: $RELAYRUNNER_URL or https://app.relayrunner.app)";
+    "RelayRunner URL (default: $RELAYRUNNER_URL or https://app.relayrunner.dev)";
 const SHARE_HELP: &str = "Who can run jobs on this machine: only-me (jobs you started) or anyone in your workspaces. Skips the question.";
 
 /// A command's name, what it does, its usage line, and its options with what each does.

@@ -91,7 +91,7 @@ export function endpointProblem(endpoint: string): string | null {
   if (/^[\d.]+$/.test(host) || host.startsWith("[")) return "Use a host name, not an IP address";
   if (host === "localhost" || host.endsWith(".local") || !host.includes("."))
     return "The endpoint must be reachable on the internet";
-  if (host === "relayrunner.app" || host.endsWith(".relayrunner.app"))
+  if (["relayrunner.app", "relayrunner.dev"].some((d) => host === d || host.endsWith(`.${d}`)))
     return "The endpoint can't be RelayRunner itself";
   if (url.search || url.hash) return "Leave the query string out of the endpoint";
   return null;

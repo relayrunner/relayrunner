@@ -17,7 +17,7 @@ To route a repo's jobs (relay jobs and `runs-on`), use the `relayrunner-route-jo
 - Explain each step in a sentence before you run it.
 - Machines only take jobs from private repos. Don't try to work around that.
 - Leave sharing and workspaces to the user. Ask before `share anyone` or `workspaces add`.
-- For details, fetch the docs as Markdown: any page under https://relayrunner.app/docs with `.md` added.
+- For details, fetch the docs as Markdown: any page under https://relayrunner.dev/docs with `.md` added.
 
 ## Install
 
@@ -67,7 +67,7 @@ On a Mac with Apple silicon, macOS 26 and Apple's `container` tool (started once
 - `--no-isolated`: run jobs on the Mac itself, where they can read the user's files.
 - `--isolated`: fail instead of falling back when VMs aren't available.
 
-`relayrunner firewall on` adds a block no job can remove (it asks for the user's password; `firewall off` removes it). Docs: https://relayrunner.app/docs/runners/self-hosted.md
+`relayrunner firewall on` adds a block no job can remove (it asks for the user's password; `firewall off` removes it). Docs: https://relayrunner.dev/docs/runners/self-hosted.md
 
 ## Everyday commands
 
@@ -90,10 +90,10 @@ checks:
   lint: [oxlint, typos]
 ```
 
-Suggest only linters the repo already uses or would pass. Docs: https://relayrunner.app/docs/reference/repo-config.md
+Suggest only linters the repo already uses or would pass. Docs: https://relayrunner.dev/docs/reference/repo-config.md
 
-The same file's `retry: true` (or `false`) turns automatic retries on or off for the repo: the Router re-runs a job whose runner failed it, never one whose own steps failed. Docs: https://relayrunner.app/docs/concepts/routing.md#automatic-retries
+The same file's `retry: true` (or `false`) turns automatic retries on or off for the repo: the Router re-runs a job whose runner failed it, never one whose own steps failed. Docs: https://relayrunner.dev/docs/concepts/routing.md#automatic-retries
 
 ## When something's wrong
 
-Fetch https://relayrunner.app/docs/reference/troubleshooting.md and match the error. For why one job ran where it did, use `relayrunner-ci-insights` or the job's **Show why** on the dashboard's Activity page. On a Mac, `~/.relayrunner/isolated.log` has VM details with no job output or credentials.
+Fetch https://relayrunner.dev/docs/reference/troubleshooting.md and match the error. For why one job ran where it did, use `relayrunner-ci-insights` or the job's **Show why** on the dashboard's Activity page. On a Mac, `~/.relayrunner/isolated.log` has VM details with no job output or credentials.

@@ -9,7 +9,7 @@ const lastmod = lastModified();
 export default defineConfig({
   // One site: the landing pages (src/pages/*.astro) at /, the docs at /docs/. The canonical and
   // share-image tags need an absolute origin; SITE_URL overrides it for preview builds.
-  site: process.env.SITE_URL ?? "https://relayrunner.app",
+  site: process.env.SITE_URL ?? "https://relayrunner.dev",
   // Keep the landing HTML's whitespace as written. Astro's default compression drops the line break
   // between text and an inline link wrapped onto its own line ("Or<a>copy one line</a>into").
   compressHTML: false,

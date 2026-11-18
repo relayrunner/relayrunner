@@ -2,7 +2,7 @@
  * Dashboard Worker. Serves the SPA from static assets and forwards /api/* to
  * the API Worker (apps/api) over a service binding, so the browser only ever
  * sees one origin. That keeps Better Auth cookies first-party on workers.dev
- * today and on app.relayrunner.dev later, without a route on the API Worker.
+ * and on app.relayrunner.dev, without a route on the API Worker.
  * GitHub webhooks (/api/webhooks/*) go to the webhook ingress Worker
  * (apps/webhooks) instead, which queues them for the API.
  *

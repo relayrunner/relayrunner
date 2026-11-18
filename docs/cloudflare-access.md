@@ -7,8 +7,8 @@ Cloudflare Access keeps dashboard preview URLs and the operator admin views priv
 | Hostname                                                                | Access          | Why                                                                                               |
 | ----------------------------------------------------------------------- | --------------- | ------------------------------------------------------------------------------------------------- |
 | `<alias>-relayrunner-app.relayrun.workers.dev` (dashboard previews)     | Yes, whole host | Previews run unreviewed code against production data.                                             |
-| `relayrunner-app.relayrun.workers.dev` (dashboard)                      | No              | The old dashboard host, which older CLIs still open. `app.relayrunner.app` is the live one.       |
-| `app.relayrunner.app` (dashboard, interim custom domain)                | Only `/admin`   | Same Worker as above. `/admin` and `/api/admin` sit behind the `relayrunner-app admin views` app. |
+| `relayrunner-app.relayrun.workers.dev` (dashboard)                      | No              | The old dashboard host, which older CLIs still open. `app.relayrunner.dev` is the live one.       |
+| `app.relayrunner.dev`, `app.relayrunner.app` (dashboard)                | Only `/admin`   | Same Worker as above. `/admin` and `/api/admin` sit behind the `relayrunner-app admin views` app. |
 | `relayrunner-webhooks.relayrun.workers.dev`, `webhooks.relayrunner.app` | No              | GitHub posts webhooks here and can't log in. The signature check protects it.                     |
 | `relayrunner-api.relayrun.workers.dev`, `api.relayrunner.app`           | No              | The dashboard reaches it over a service binding. `/api/admin/*` checks the Access JWT itself.     |
 
@@ -85,7 +85,7 @@ Every 15 minutes the API also posts operator pings to `OPERATOR_SLACK_WEBHOOK_UR
 All of this is already set up in the RelayRunner Zero Trust organization (team domain `relayrunner.cloudflareaccess.com`). Look in Zero Trust > Access to find each item.
 
 - **Application** `relayrunner-app previews`: self-hosted, with the domain `*-relayrunner-app.relayrun.workers.dev` and 24-hour sessions. Its AUD tag is in `previews.vars.ACCESS_AUD` in `apps/web/wrangler.jsonc`.
-- **Application** `relayrunner-app admin views`: self-hosted, with the destinations `app.relayrunner.app/admin` and `app.relayrunner.app/api/admin`, 24-hour sessions, and the same login methods and policies. Its AUD is the second entry of `vars.ACCESS_AUD` in `apps/web/wrangler.jsonc` and `apps/api/wrangler.jsonc`.
+- **Application** `relayrunner-app admin views`: self-hosted, with the destinations `app.relayrunner.dev/admin`, `app.relayrunner.dev/api/admin`, `app.relayrunner.app/admin` and `app.relayrunner.app/api/admin`, 24-hour sessions, and the same login methods and policies. Its AUD is the second entry of `vars.ACCESS_AUD` in `apps/web/wrangler.jsonc` and `apps/api/wrangler.jsonc`.
 - **Login methods**: GitHub (the `RelayRunner Cloudflare` OAuth app in the relayrunner org), Cloudflare login (limited to members of the RelayRunner account), and One-time PIN.
 - **Policy** `RelayRunner team` (Allow): members of the `relayrunner` GitHub org, plus the team's email addresses as a fallback. Adding someone to the GitHub org gives them access.
 - **Policy** `RelayRunner agents` (Service Auth): the `relayrunner-agents` service token. The token expires after one year.
@@ -115,4 +115,4 @@ To rotate the token, create a new one, add it to the Service Auth policy, update
 
 ## Custom domains
 
-The dashboard serves `app.relayrunner.app` now, as an interim domain while `relayrunner.dev` waits out its transfer lock, and will serve `app.relayrunner.dev` after that. `relayrunner-app admin views` covers `app.relayrunner.app`. For each new host, add a destination to that app, or add a self-hosted Access application for the paths `<host>/admin` and `<host>/api/admin`, with the same two policies. Add any new AUD to the top-level `vars.ACCESS_AUD` in both `apps/web/wrangler.jsonc` and `apps/api/wrangler.jsonc`, separated by a comma from the AUDs already there. Admin views then work in production for allowed people and agents.
+The dashboard serves `app.relayrunner.dev`. It also keeps `app.relayrunner.app`, where CLIs and Mac apps connected before the move still call `/api/*`; a Redirect Rule on the relayrunner.app zone sends every other path there to `app.relayrunner.dev`. `relayrunner-app admin views` covers both hosts. For each new host, add a destination to that app, or add a self-hosted Access application for the paths `<host>/admin` and `<host>/api/admin`, with the same two policies. Add any new AUD to the top-level `vars.ACCESS_AUD` in both `apps/web/wrangler.jsonc` and `apps/api/wrangler.jsonc`, separated by a comma from the AUDs already there. Admin views then work in production for allowed people and agents.

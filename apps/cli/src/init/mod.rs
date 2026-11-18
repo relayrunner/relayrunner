@@ -161,7 +161,7 @@ fn changes_for(plan: &Plan, chosen: &[WorkflowJob]) -> Result<Vec<Change>, Strin
     for change in &mut changes {
         change.after = workflows::route_jobs(&change.before, &change.jobs).map_err(|reason| {
             format!(
-                "Couldn't edit {}: {reason}. Route its jobs by hand: https://relayrunner.app/docs/get-started/github-actions",
+                "Couldn't edit {}: {reason}. Route its jobs by hand: https://relayrunner.dev/docs/get-started/github-actions",
                 change.file
             )
         })?;

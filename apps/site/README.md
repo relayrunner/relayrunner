@@ -1,6 +1,6 @@
 # Landing page
 
-The public site at [relayrunner.app](https://relayrunner.app): one [Astro](https://astro.build) build served as Worker static assets (Worker `relayrunner-site`). The home page, privacy policy and terms are `src/pages/index.astro`, `privacy.astro` and `terms.astro`, plain HTML with `src/style.css`, `src/legal.css` and `src/main.ts`. The docs are [Starlight](https://starlight.astro.build) pages at `/docs/`, written in `src/content/docs/docs/`. Pages can be `.md` or `.mdx`; MDX pages can import components, such as `<Provider id="depot" />` and `<ProviderTable />` from `@/components/docs/`, which read names, labels and list prices from `@relayrunner/providers`. When you add a component, also teach `componentsToMarkdown` in `src/lib/agent-docs.ts` to write it out for the pages' `.md` and `.txt` versions. [DESIGN.md](DESIGN.md) holds the visual system, which the dashboard's theme borrows from.
+The public site at [relayrunner.dev](https://relayrunner.dev): one [Astro](https://astro.build) build served as Worker static assets (Worker `relayrunner-site`). The home page, privacy policy and terms are `src/pages/index.astro`, `privacy.astro` and `terms.astro`, plain HTML with `src/style.css`, `src/legal.css` and `src/main.ts`. The docs are [Starlight](https://starlight.astro.build) pages at `/docs/`, written in `src/content/docs/docs/`. Pages can be `.md` or `.mdx`; MDX pages can import components, such as `<Provider id="depot" />` and `<ProviderTable />` from `@/components/docs/`, which read names, labels and list prices from `@relayrunner/providers`. When you add a component, also teach `componentsToMarkdown` in `src/lib/agent-docs.ts` to write it out for the pages' `.md` and `.txt` versions. [DESIGN.md](DESIGN.md) holds the visual system, which the dashboard's theme borrows from.
 
 ## Share images
 
@@ -10,7 +10,7 @@ The public site at [relayrunner.app](https://relayrunner.app): one [Astro](https
 
 Every docs page has a Markdown version at `/docs/<slug>.md` and a plain-text one at `/docs/<slug>.txt`, linked from the page's `<head>` as `rel="alternate" type="text/markdown"`; the home page's is `/index.md` (`src/pages/index.md.ts`, kept in step with `index.astro` by hand). `/llms.txt` (also at `/docs/llms.txt`) says when an agent should reach for RelayRunner and how, and lists every page; `/llms-full.txt` has all of them in one file. For search engines, `/sitemap-index.xml` (also at `/sitemap.xml`, and named in `/robots.txt`) lists every page with the date of its last commit, generated at build time, so new pages show up on their own. The home page also carries schema.org JSON-LD.
 
-`/setup.md` is the setup guide for coding agents ("Set up relayrunner in this checkout using https://relayrunner.app/setup.md"), and `/skills/<name>/SKILL.md` are the agent skills it links to. Both are built from the repo's `docs/agent-install.md` and `skills/` (`src/lib/agent-setup.ts`), with raw GitHub links to the skills rewritten to the site's own URLs, so edit those files, not the site.
+`/setup.md` is the setup guide for coding agents ("Set up relayrunner in this checkout using https://relayrunner.dev/setup.md"), and `/skills/<name>/SKILL.md` are the agent skills it links to. Both are built from the repo's `docs/agent-install.md` and `skills/` (`src/lib/agent-setup.ts`), with raw GitHub links to the skills rewritten to the site's own URLs, so edit those files, not the site.
 
 The small Worker script in `worker/index.ts` runs first for `/` and `/docs/*`, and for any path with no file (`not_found_handling: "none"`). Asking for one of those pages with `Accept: text/markdown` returns its Markdown, with `Vary: Accept`. An unknown path gets a 404: the 404 page, or a short Markdown note with links for agents. It also swaps the home page's share image for campaigns (above).
 
@@ -34,4 +34,4 @@ Workers Builds deploys it on merge to `main`, like the other Workers, with root 
 
 ## Moving to relayrunner.dev
 
-`relayrunner.dev` is attached as a second custom domain in `wrangler.jsonc`, so both domains serve the site. To switch over, change `SITE_URL` in `build:site` to `https://relayrunner.dev`, then redirect relayrunner.app to it.
+The site moved from relayrunner.app to relayrunner.dev. Both apexes are custom domains in `wrangler.jsonc`, `SITE_URL` in `build:site` is `https://relayrunner.dev`, and a Redirect Rule on the relayrunner.app zone sends the old apex to it with the path and query kept.

@@ -39,7 +39,7 @@ If you run `connect` inside the repository, it offers to do this step for you.
 
 Commit the change and push. In the workflow run on GitHub you'll see `relay-<job> / RelayRunner` finish in about a second, then your job start. The terminal running `connect` shows the job as it runs.
 
-Open **Activity** in the [dashboard](https://app.relayrunner.app) to see where the job ran and why. Stop `connect`, push again, and the same job runs on its old label instead.
+Open **Activity** in the [dashboard](https://app.relayrunner.dev) to see where the job ran and why. Stop `connect`, push again, and the same job runs on its old label instead.
 
 ## Next
 

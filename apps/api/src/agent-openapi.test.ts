@@ -1,5 +1,5 @@
 import { describe, expect, test } from "vitest";
-// The site publishes this at https://relayrunner.app/openapi.json.
+// The site publishes this at https://relayrunner.dev/openapi.json.
 import { openApi } from "../../site/src/lib/openapi.ts";
 import { AGENT_ROUTES_BY_METHOD, agentMayCall } from "./agent-auth.ts";
 

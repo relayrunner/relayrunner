@@ -2,7 +2,7 @@ import { DownloadIcon } from "lucide-react";
 import { Button } from "@/components/ui/button";
 
 /** The site's download page: it picks the Mac app or the CLI for the visitor's computer. */
-export const DOWNLOAD_URL = "https://relayrunner.app/download";
+export const DOWNLOAD_URL = "https://relayrunner.dev/download";
 
 /**
  * Whether this browser is on a Mac, where the dashboard offers the Mac app ahead of the CLI. iPads

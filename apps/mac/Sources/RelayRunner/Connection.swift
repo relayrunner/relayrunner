@@ -36,7 +36,7 @@ final class Connection {
   /// When a timed pause ends. Nil when it isn't paused for a while.
   private(set) var pausedUntil: Date? = AppSettings.pausedUntil
   private(set) var machineName: String?
-  private(set) var server = URL(string: "https://app.relayrunner.app")!
+  private(set) var server = URL(string: "https://app.relayrunner.dev")!
   /// Set while a first sign-in waits for approval in the browser.
   private(set) var signIn: SignIn?
   /// Why it went off on its own, or why a command failed.

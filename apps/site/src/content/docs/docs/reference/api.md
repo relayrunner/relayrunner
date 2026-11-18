@@ -17,7 +17,7 @@ https://api.relayrunner.app/api
 
 ## Sign in
 
-The API uses OAuth 2.1 with PKCE and the `workspace:read` scope. Clients can register themselves, and the authorization server publishes its endpoints at `https://app.relayrunner.app/.well-known/oauth-authorization-server/api/auth`. While signing in, you pick which workspaces the token may read.
+The API uses OAuth 2.1 with PKCE and the `workspace:read` scope. Clients can register themselves, and the authorization server publishes its endpoints at `https://app.relayrunner.dev/.well-known/oauth-authorization-server/api/auth`. While signing in, you pick which workspaces the token may read.
 
 Send the access token as `Authorization: Bearer <token>`. Tokens last 15 minutes; use the refresh token for a new one. When a token covers more than one workspace, name the one you're asking about in the `x-relayrunner-workspace` header.
 

@@ -57,7 +57,7 @@ No. Jobs on your machines use GitHub's own runner, which talks to GitHub directl
 
 ## Can I run RelayRunner myself?
 
-The code is on [GitHub](https://github.com/relayrunner/relayrunner). The hosted service at app.relayrunner.app is the supported way to use it today.
+The code is on [GitHub](https://github.com/relayrunner/relayrunner). The hosted service at app.relayrunner.dev is the supported way to use it today.
 
 ## What providers does it support?
 

@@ -19,7 +19,7 @@ function fakeEnv(
   const posted: unknown[] = [];
   const env = {
     MCP_URL,
-    AUTH_ISSUER: "https://app.relayrunner.app/api/auth",
+    AUTH_ISSUER: "https://app.relayrunner.dev/api/auth",
     LIMITER: { limit: async () => ({ success: !limited }) },
     API: {
       fetch: async (input: RequestInfo | URL, init?: RequestInit) => {
@@ -100,7 +100,7 @@ describe("mcp server", () => {
     );
     expect(await response.json()).toMatchObject({
       resource: MCP_URL,
-      authorization_servers: ["https://app.relayrunner.app/api/auth"],
+      authorization_servers: ["https://app.relayrunner.dev/api/auth"],
     });
   });
 

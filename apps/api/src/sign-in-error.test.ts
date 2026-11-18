@@ -5,7 +5,7 @@ import { createTestEnv } from "./testing.ts";
 
 // A GitHub sign-in that fails on the way back lands on the dashboard's sign-in page with the
 // error code (auth.ts onAPIError), never on Better Auth's own error page.
-const production = "https://app.relayrunner.app";
+const production = "https://app.relayrunner.dev";
 
 let env: Env;
 

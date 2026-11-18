@@ -132,10 +132,10 @@ cask "relayrunner" do
   url "https://github.com/$repo/releases/download/mac-v#{version}/RelayRunner-#{version}.dmg"
   name "RelayRunner"
   desc "Take GitHub Actions jobs on your Mac from the menu bar"
-  homepage "https://relayrunner.app/"
+  homepage "https://relayrunner.dev/"
 
   livecheck do
-    url "https://relayrunner.app/mac/appcast.xml"
+    url "https://relayrunner.dev/mac/appcast.xml"
     strategy :sparkle
   end
 

@@ -143,6 +143,7 @@ describe("telemetry settings", () => {
       "https://localhost:4318",
       "https://user:pass@example.com",
       "https://api.relayrunner.app",
+      "https://relayrunner.dev",
     ]) {
       const response = await save(cookie, { ...settings, endpoint });
       expect(await response.json(), endpoint).toMatchObject({

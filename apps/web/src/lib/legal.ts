@@ -4,8 +4,8 @@ import { api } from "@/lib/api";
 import { cachedSession, forgetSession } from "@/lib/session";
 
 export const LEGAL_LINKS = {
-  terms: { label: "Terms of Service", href: "https://relayrunner.app/terms" },
-  privacy: { label: "Privacy Policy", href: "https://relayrunner.app/privacy" },
+  terms: { label: "Terms of Service", href: "https://relayrunner.dev/terms" },
+  privacy: { label: "Privacy Policy", href: "https://relayrunner.dev/privacy" },
 } as const;
 
 /**

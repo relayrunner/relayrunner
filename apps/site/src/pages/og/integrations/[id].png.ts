@@ -12,7 +12,7 @@ export const getStaticPaths = (() =>
 
 export const GET: APIRoute = async ({ props, site }) => {
   const { id, name } = (props as { integration: Integration }).integration;
-  const host = (site ?? new URL("https://relayrunner.app")).host;
+  const host = (site ?? new URL("https://relayrunner.dev")).host;
   const png = await renderPng(integrationCard({ id, name, url: `${host}${integrationPath(id)}` }));
   return new Response(png, { headers: { "Content-Type": "image/png" } });
 };

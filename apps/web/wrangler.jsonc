@@ -31,7 +31,7 @@
     // Zero Trust team domain and Access app AUD whose JWTs the admin views accept
     // (packages/access). Per-version preview URLs (<version>-relayrunner-app...) use these top-level
     // vars, not `previews`, so the AUD has to be here too. The second AUD is "relayrunner-app admin
-    // views" (app.relayrunner.app/admin and /api/admin). Production workers.dev has no Access app,
+    // views" (app.relayrunner.app and app.relayrunner.dev, /admin and /api/admin). Production workers.dev has no Access app,
     // so a request there carries no JWT and /admin/* answers 403.
     "ACCESS_TEAM_DOMAIN": "relayrunner.cloudflareaccess.com",
     "ACCESS_AUD": "bc8e87c4c78375b0b1e61b4a2a73354543030492e218d02a28c56bc0f95702f7, 45a666d9534b30a03ef5e04e9ce04da805afa430d00b6bffddeb245aef130460",
@@ -63,9 +63,10 @@
       "ACCESS_AUD": "bc8e87c4c78375b0b1e61b4a2a73354543030492e218d02a28c56bc0f95702f7",
     },
   },
-  // Custom domains. app.relayrunner.app is BETTER_AUTH_URL (apps/api/wrangler.jsonc), so GitHub's
-  // sign-in callback lands there, and every connected CLI and Mac app keeps it as its server, so it
-  // stays attached after the move. app.relayrunner.dev serves the same Worker ahead of the switch.
+  // Custom domains. app.relayrunner.dev is BETTER_AUTH_URL (apps/api/wrangler.jsonc), so GitHub's
+  // sign-in callback lands there. app.relayrunner.app stays attached: CLIs and Mac apps connected
+  // before the move keep it as their server and still call /api/* there. A Redirect Rule on the
+  // relayrunner.app zone sends every other path on it to app.relayrunner.dev.
   "routes": [
     { "pattern": "app.relayrunner.app", "custom_domain": true },
     { "pattern": "app.relayrunner.dev", "custom_domain": true },

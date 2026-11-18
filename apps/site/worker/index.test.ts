@@ -29,7 +29,7 @@ const FILES = {
 };
 
 const get = (path: string, accept?: string, method = "GET") =>
-  new Request(`https://relayrunner.app${path}`, {
+  new Request(`https://relayrunner.dev${path}`, {
     method,
     headers: accept ? { Accept: accept } : {},
   });
@@ -66,7 +66,7 @@ describe("site worker", () => {
     expect(md.headers.get("Content-Type")).toBe("text/markdown; charset=utf-8");
     const body = await md.text();
     expect(body).toContain("# Page not found");
-    expect(body).toContain("https://relayrunner.app/llms.txt");
+    expect(body).toContain("https://relayrunner.dev/llms.txt");
 
     const html = await worker.fetch(get("/nope", "text/html"), env);
     expect(html.status).toBe(404);

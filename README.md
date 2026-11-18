@@ -11,10 +11,10 @@
 
 <p>
   <a href="https://github.com/apps/relayrunner"><b>Install the GitHub App</b></a> &nbsp;·&nbsp;
-  <a href="https://app.relayrunner.app"><b>Dashboard</b></a> &nbsp;·&nbsp;
-  <a href="https://relayrunner.app">Website</a> &nbsp;·&nbsp;
-  <a href="https://relayrunner.app/docs/get-started/quickstart">Quickstart</a> &nbsp;·&nbsp;
-  <a href="https://relayrunner.app/docs">Docs</a>
+  <a href="https://app.relayrunner.dev"><b>Dashboard</b></a> &nbsp;·&nbsp;
+  <a href="https://relayrunner.dev">Website</a> &nbsp;·&nbsp;
+  <a href="https://relayrunner.dev/docs/get-started/quickstart">Quickstart</a> &nbsp;·&nbsp;
+  <a href="https://relayrunner.dev/docs">Docs</a>
 </p>
 
 <p>
@@ -22,7 +22,7 @@
   <a href="https://github.com/relayrunner/relayrunner/actions/workflows/ci.yml"><img alt="CI" src="https://github.com/relayrunner/relayrunner/actions/workflows/ci.yml/badge.svg"></a>
   <a href="https://www.npmjs.com/package/relayrunner"><img alt="npm" src="https://img.shields.io/npm/v/relayrunner?color=cb3837&label=npm&logo=npm"></a>
   <a href="https://skills.sh/relayrunner/relayrunner"><img alt="skills.sh" src="https://skills.sh/b/relayrunner/relayrunner"></a>
-  <a href="https://relayrunner.app/docs/reference/mcp"><img alt="MCP server" src="https://img.shields.io/badge/MCP-server-000"></a>
+  <a href="https://relayrunner.dev/docs/reference/mcp"><img alt="MCP server" src="https://img.shields.io/badge/MCP-server-000"></a>
   <a href="LICENSE"><img alt="License: Apache 2.0" src="https://img.shields.io/badge/license-Apache%202.0-blue"></a>
 </p>
 
@@ -37,7 +37,7 @@ It's built for small teams and individuals who don't want to pay for every push,
 ## Get started
 
 1. **[Install the GitHub App](https://github.com/apps/relayrunner)** on an organization or personal account. Each install is its own workspace, and everyone who can see the install on GitHub is a member.
-2. **Connect a machine** with `npx relayrunner connect`. While it runs, the machine takes jobs; Ctrl-C takes it offline. On a Mac with Apple silicon, [RelayRunner for Mac](https://relayrunner.app/docs/get-started/mac-app) does the same from the menu bar ([download](https://relayrunner.app/mac/download), or `brew install --cask relayrunner/tap/relayrunner`).
+2. **Connect a machine** with `npx relayrunner connect`. While it runs, the machine takes jobs; Ctrl-C takes it offline. On a Mac with Apple silicon, [RelayRunner for Mac](https://relayrunner.dev/docs/get-started/mac-app) does the same from the menu bar ([download](https://relayrunner.dev/mac/download), or `brew install --cask relayrunner/tap/relayrunner`).
 3. **Opt a job in** by adding a relay job in front of it and pointing its `runs-on` at the relay's answer:
 
    ```yaml
@@ -105,9 +105,9 @@ Give your coding agent the RelayRunner skills, so it can set up machines, route 
 npx skills add relayrunner/relayrunner
 ```
 
-They work with Claude Code, Codex, Cursor and most other agents. See [`skills/`](skills) for what each one does. Without them, the [setup guide](https://relayrunner.app/setup.md) ([source](docs/agent-install.md)) walks an agent through the whole setup in one prompt.
+They work with Claude Code, Codex, Cursor and most other agents. See [`skills/`](skills) for what each one does. Without them, the [setup guide](https://relayrunner.dev/setup.md) ([source](docs/agent-install.md)) walks an agent through the whole setup in one prompt.
 
-Agents can also read your workspace through the [MCP server](https://relayrunner.app/docs/reference/mcp) at `https://agents.relayrunner.app/mcp`.
+Agents can also read your workspace through the [MCP server](https://relayrunner.dev/docs/reference/mcp) at `https://agents.relayrunner.app/mcp`.
 
 ## Repository layout
 
@@ -121,7 +121,7 @@ This is a pnpm workspace. The apps are deployed as Cloudflare Workers, except th
 | [`apps/agents`](apps/agents)     | The MCP server agents connect to, read-only, at agents.relayrunner.app/mcp.                 |
 | [`apps/cli`](apps/cli)           | The `relayrunner` CLI, in Rust, that connects a machine to a workspace.                     |
 | [`apps/mac`](apps/mac)           | RelayRunner for Mac, a menu bar app that runs the CLI's `connect` for you.                  |
-| [`apps/site`](apps/site)         | The public site at [relayrunner.app](https://relayrunner.app): landing page and docs.       |
+| [`apps/site`](apps/site)         | The public site at [relayrunner.dev](https://relayrunner.dev): landing page and docs.       |
 
 | Package                                                  | What it is                                                             |
 | -------------------------------------------------------- | ---------------------------------------------------------------------- |

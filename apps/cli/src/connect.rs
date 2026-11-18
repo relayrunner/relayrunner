@@ -21,7 +21,7 @@ use std::time::Duration;
 use tokio::io::AsyncBufReadExt;
 use tokio::sync::watch;
 
-const DEFAULT_SERVER: &str = "https://app.relayrunner.app";
+const DEFAULT_SERVER: &str = "https://app.relayrunner.dev";
 const RUNNER_CHECK: Duration = Duration::from_secs(6 * 60 * 60);
 const BUSY_RETRY: Duration = Duration::from_secs(10 * 60);
 const MAX_WAIT: Duration = Duration::from_secs(24 * 60 * 60);

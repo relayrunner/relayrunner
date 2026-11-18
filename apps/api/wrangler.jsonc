@@ -10,8 +10,9 @@
   // No preview URLs: nothing reaches this Worker by one (dashboard previews bind to production),
   // and each would be another public, unprotected hostname.
   "preview_urls": false,
-  // Custom domain on the interim relayrunner.app zone. The dashboard still reaches this Worker over
-  // its service binding; this host is for direct API calls. /api/admin/* stays behind gateAdmin.
+  // Custom domain on relayrunner.app, kept there after the move to relayrunner.dev: published API
+  // docs and agents call it. The dashboard reaches this Worker over its service binding; this host is
+  // for direct API calls. /api/admin/* stays behind gateAdmin.
   "routes": [{ "pattern": "api.relayrunner.app", "custom_domain": true }],
   // Workers Logs, traces and Issues (errors grouped per Worker). Wrangler deploys overwrite
   // dashboard settings, so these must stay on here. Source maps make Issues' stacks point at
@@ -27,9 +28,9 @@
     // The dashboard origin (apps/web forwards /api/* here over a service binding): GitHub's OAuth
     // callback and the link `relayrunner connect` opens. Switch to https://app.relayrunner.dev once
     // that domain moves to this account. Local dev overrides this in .dev.vars.
-    "BETTER_AUTH_URL": "https://app.relayrunner.app",
+    "BETTER_AUTH_URL": "https://app.relayrunner.dev",
     // Where links in emails point (src/email.ts): the dashboard people use, not the OAuth host.
-    "DASHBOARD_URL": "https://app.relayrunner.app",
+    "DASHBOARD_URL": "https://app.relayrunner.dev",
     // The MCP server (apps/agents). Agent access tokens are issued for this URL only (src/agent-auth.ts).
     "AGENTS_MCP_URL": "https://agents.relayrunner.app/mcp",
     // Sender for transactional email; must stay in send_email's allowed_sender_addresses below.
@@ -55,7 +56,7 @@
     // Zero Trust team domain and the Access app AUD whose JWTs /api/admin/* accepts
     // (packages/access). Dashboard previews forward /api/* here with the Access JWT, so this is
     // the AUDs of "relayrunner-app previews" and "relayrunner-app admin views"
-    // (app.relayrunner.app/admin and /api/admin), the same as in apps/web/wrangler.jsonc. Requests to
+    // (app.relayrunner.{app,dev}/admin and /api/admin), the same as in apps/web/wrangler.jsonc. Requests to
     // this Worker's own URLs, or from the dashboard's workers.dev host, carry no JWT and get 403.
     "ACCESS_TEAM_DOMAIN": "relayrunner.cloudflareaccess.com",
     "ACCESS_AUD": "bc8e87c4c78375b0b1e61b4a2a73354543030492e218d02a28c56bc0f95702f7, 45a666d9534b30a03ef5e04e9ce04da805afa430d00b6bffddeb245aef130460",

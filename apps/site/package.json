@@ -8,7 +8,7 @@
     "build": "astro build && node scripts/postbuild.mjs",
     "preview": "wrangler dev",
     "images": "node scripts/images.mjs",
-    "build:site": "SITE_URL=https://relayrunner.app pnpm build",
+    "build:site": "SITE_URL=https://relayrunner.dev pnpm build",
     "deploy": "pnpm build:site && wrangler deploy",
     "deploy:preview": "pnpm build && wrangler preview"
   },

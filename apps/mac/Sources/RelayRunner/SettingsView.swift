@@ -95,8 +95,8 @@ private struct AboutView: View {
           .foregroundStyle(.secondary)
       }
       HStack(spacing: 16) {
-        Link("Website", destination: URL(string: "https://relayrunner.app")!)
-        Link("Docs", destination: URL(string: "https://relayrunner.app/docs")!)
+        Link("Website", destination: URL(string: "https://relayrunner.dev")!)
+        Link("Docs", destination: URL(string: "https://relayrunner.dev/docs")!)
         Link("GitHub", destination: URL(string: "https://github.com/relayrunner/relayrunner")!)
       }
       .padding(.top, 4)

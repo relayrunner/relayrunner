@@ -6,20 +6,20 @@ The MCP server at `https://agents.relayrunner.app/mcp`. An AI agent connects to 
 agent ──▶ relayrunner-agents ──▶ relayrunner-api (service binding)
           MCP, stateless          checks the token, reads D1
    │
-   └─ OAuth sign-in ──▶ app.relayrunner.app (Better Auth in relayrunner-api)
+   └─ OAuth sign-in ──▶ app.relayrunner.dev (Better Auth in relayrunner-api)
 ```
 
 ## Signing in
 
 The server speaks MCP's OAuth flow, so clients sign in on their own when you add the URL:
 
-1. The first request gets a `401` pointing at `/.well-known/oauth-protected-resource/mcp`, which names the dashboard's auth server (`https://app.relayrunner.app/api/auth`).
+1. The first request gets a `401` pointing at `/.well-known/oauth-protected-resource/mcp`, which names the dashboard's auth server (`https://app.relayrunner.dev/api/auth`).
 2. The client registers itself (dynamic client registration) and opens the dashboard. The person signs in with GitHub if needed, picks the workspaces it may read (`/agents/workspace`, all of them checked to start) and approves the client (`/agents/consent`).
 3. The client gets a 15-minute access token for this server's URL, naming that grant of workspaces, with the `workspace:read` scope, plus a refresh token.
 
 Each tool call forwards that token to the API, with the workspace it's about in `x-relayrunner-workspace`. The API verifies the token and only lets it read that one workspace, if the grant covers it, through a fixed list of GET routes (`apps/api/src/agent-auth.ts`). Every tool takes an optional `workspace` (an id or name from `list_workspaces`), needed only when the connection reads more than one; no answer mixes workspaces. The grant and membership are checked on every call and every refresh, so removing someone from a workspace, or disconnecting the agent from it under Settings → Agents, cuts it off from that workspace at once. Workspaces joined later need a new connection.
 
-Clients that look before they connect can read the server's [MCP Server Card](https://modelcontextprotocol.io/seps/2127-mcp-server-cards) at `/mcp/server-card` (`src/server-card.ts`), with no sign-in. https://relayrunner.app/.well-known/ai-catalog.json points there.
+Clients that look before they connect can read the server's [MCP Server Card](https://modelcontextprotocol.io/seps/2127-mcp-server-cards) at `/mcp/server-card` (`src/server-card.ts`), with no sign-in. https://relayrunner.dev/.well-known/ai-catalog.json points there.
 
 This Worker holds no secrets and no state. It doesn't call GitHub or the Router: runners added from GitHub show `github.unreachable` instead of a live status. Each connection gets 120 requests a minute here, and the API caps agent tokens at 300 calls a minute (`AGENT_LIMITER`), which also covers clients that call it directly.
 

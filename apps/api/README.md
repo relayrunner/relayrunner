@@ -123,7 +123,7 @@ cf secrets-store secrets create eac3493b9fef4234a832f5f3fdcc8a41 --body "$(jq -n
   '[{name: "GITHUB_APP_PRIVATE_KEY", value: $v, scopes: ["workers"]}]')"
 ```
 
-The browser never talks to this Worker directly: the dashboard Worker (`apps/web`) forwards `/api/*` here over a service binding, so `BETTER_AUTH_URL` (in `wrangler.jsonc` vars) is the dashboard's origin: `https://app.relayrunner.app` until `app.relayrunner.dev` moves to this account. `.dev.vars` overrides it for local dev. Deploy this Worker before `apps/web`, since the binding needs it to exist. The GitHub App's callback URL is `<BETTER_AUTH_URL>/api/auth/callback/github`. Its webhook URL points at the webhooks Worker (`apps/webhooks`), not this one.
+The browser never talks to this Worker directly: the dashboard Worker (`apps/web`) forwards `/api/*` here over a service binding, so `BETTER_AUTH_URL` (in `wrangler.jsonc` vars) is the dashboard's origin: `https://app.relayrunner.dev` until `app.relayrunner.dev` moves to this account. `.dev.vars` overrides it for local dev. Deploy this Worker before `apps/web`, since the binding needs it to exist. The GitHub App's callback URL is `<BETTER_AUTH_URL>/api/auth/callback/github`. Its webhook URL points at the webhooks Worker (`apps/webhooks`), not this one.
 
 ### Sign-in on dashboard previews
 

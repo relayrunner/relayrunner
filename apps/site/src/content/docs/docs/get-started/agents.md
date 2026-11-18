@@ -26,7 +26,7 @@ Run `npx skills update` now and then to get the latest.
 Without the skills, your agent can still do the whole setup: sign the machine in, pick which jobs to route, edit the workflows and show you the diff. Paste this into your agent, inside the repo's checkout:
 
 ```text
-Set up relayrunner in this checkout using https://relayrunner.app/setup.md
+Set up relayrunner in this checkout using https://relayrunner.dev/setup.md
 ```
 
 The [setup guide](/setup.md) is plain Markdown written for agents. It tells the agent to:

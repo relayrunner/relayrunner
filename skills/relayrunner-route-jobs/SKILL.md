@@ -65,11 +65,11 @@ jobs:
     runs-on: ${{ needs.relay-test.outputs.runner }}
 ```
 
-The check keeps its name in GitHub, so required checks keep working. The relay takes one input per provider the job may use (`machine`, `github`, or a hosted provider such as `depot`); see https://relayrunner.app/docs/reference/relay-inputs.md. Which provider is tried first is the workspace's runner order, set on the dashboard's Router page. A provider set to `auto` (such as `blacksmith: auto`) lets the Router page pick the job's size, so it can change without a commit; a label written there runs as written.
+The check keeps its name in GitHub, so required checks keep working. The relay takes one input per provider the job may use (`machine`, `github`, or a hosted provider such as `depot`); see https://relayrunner.dev/docs/reference/relay-inputs.md. Which provider is tried first is the workspace's runner order, set on the dashboard's Router page. A provider set to `auto` (such as `blacksmith: auto`) lets the Router page pick the job's size, so it can change without a commit; a label written there runs as written.
 
 ## 4. Confirm it works
 
-Once pushed, with `relayrunner connect` running, the run shows `relay-<job> / RelayRunner` finishing in about a second, then the job. A runner name starting with the machine's name (from `relayrunner whoami`) means it ran on the machine; a GitHub-hosted name means the fallback. If the relay stays queued, the GitHub App probably isn't installed on the repo's owner: see https://relayrunner.app/docs/reference/troubleshooting.md.
+Once pushed, with `relayrunner connect` running, the run shows `relay-<job> / RelayRunner` finishing in about a second, then the job. A runner name starting with the machine's name (from `relayrunner whoami`) means it ran on the machine; a GitHub-hosted name means the fallback. If the relay stays queued, the GitHub App probably isn't installed on the repo's owner: see https://relayrunner.dev/docs/reference/troubleshooting.md.
 
 ## Undo
 

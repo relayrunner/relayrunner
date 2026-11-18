@@ -10,13 +10,13 @@ describe("posthog proxy", () => {
   });
 
   test("sends events to the ingestion host and static files to the assets host", () => {
-    expect(postHogUrl(new URL("https://relayrunner.app/ingest/e/?ip=0&ver=1")).href).toBe(
+    expect(postHogUrl(new URL("https://relayrunner.dev/ingest/e/?ip=0&ver=1")).href).toBe(
       "https://us.i.posthog.com/e/?ip=0&ver=1",
     );
     expect(postHogUrl(new URL("https://app.relayrunner.dev/ingest/static/array.js")).href).toBe(
       "https://us-assets.i.posthog.com/static/array.js",
     );
-    expect(postHogUrl(new URL("https://relayrunner.app/ingest/array/phc_x/config.js")).href).toBe(
+    expect(postHogUrl(new URL("https://relayrunner.dev/ingest/array/phc_x/config.js")).href).toBe(
       "https://us-assets.i.posthog.com/array/phc_x/config.js",
     );
   });
@@ -27,7 +27,7 @@ describe("posthog proxy", () => {
       sent = { url: url.href, init };
       return new Response("ok");
     }) as unknown as typeof fetch;
-    const request = new Request("https://app.relayrunner.app/ingest/flags/?v=2", {
+    const request = new Request("https://app.relayrunner.dev/ingest/flags/?v=2", {
       method: "POST",
       headers: {
         cookie: "better-auth.session_token=secret",

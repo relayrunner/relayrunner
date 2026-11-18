@@ -5,20 +5,20 @@
   "description": "Open source routing for GitHub Actions jobs across your own machines, self-hosted runners and hosted runner providers.",
   "category": "developer-tools",
   "tags": ["ci", "github-actions", "self-hosted-runners"],
-  "avatar": "https://relayrunner.app/favicon.png",
+  "avatar": "https://relayrunner.dev/favicon.png",
   "social": { "github": "relayrunner" },
   "products": [
     {
       "name": "RelayRunner",
       "slug": "platform",
       "description": "The dashboard, routing and docs.",
-      "website": "https://relayrunner.app",
-      "docs": "https://relayrunner.app/docs",
+      "website": "https://relayrunner.dev",
+      "docs": "https://relayrunner.dev/docs",
       "releases": [
         {
           "title": "Platform changelog",
-          "url": "https://relayrunner.app/docs/changelog/platform",
-          "feed": "https://relayrunner.app/changelog.xml",
+          "url": "https://relayrunner.dev/docs/changelog/platform",
+          "feed": "https://relayrunner.dev/changelog.xml",
           "canonical": true
         }
       ]
@@ -28,12 +28,12 @@
       "slug": "cli",
       "description": "Connects your Mac or Linux machine as a runner and sets up repositories.",
       "website": "https://www.npmjs.com/package/relayrunner",
-      "docs": "https://relayrunner.app/docs/reference/cli",
+      "docs": "https://relayrunner.dev/docs/reference/cli",
       "releases": [
         {
           "title": "Changelog",
-          "url": "https://relayrunner.app/docs/changelog/cli",
-          "feed": "https://relayrunner.app/changelog.xml",
+          "url": "https://relayrunner.dev/docs/changelog/cli",
+          "feed": "https://relayrunner.dev/changelog.xml",
           "canonical": true
         },
         { "github": "relayrunner/relayrunner" }
@@ -43,13 +43,13 @@
       "name": "RelayRunner for Mac",
       "slug": "mac",
       "description": "A menu bar app that connects your Mac as a runner with one switch.",
-      "website": "https://relayrunner.app/docs/get-started/mac-app",
-      "docs": "https://relayrunner.app/docs/get-started/mac-app",
+      "website": "https://relayrunner.dev/docs/get-started/mac-app",
+      "docs": "https://relayrunner.dev/docs/get-started/mac-app",
       "releases": [
         {
           "title": "Changelog",
-          "url": "https://relayrunner.app/docs/changelog/mac",
-          "feed": "https://relayrunner.app/changelog.xml",
+          "url": "https://relayrunner.dev/docs/changelog/mac",
+          "feed": "https://relayrunner.dev/changelog.xml",
           "canonical": true
         },
         { "github": "relayrunner/relayrunner" }
@@ -59,7 +59,7 @@
       "name": "RelayRunner Actions",
       "slug": "actions",
       "description": "The GitHub Actions that route each job to a runner.",
-      "docs": "https://relayrunner.app/docs/reference/relay-inputs",
+      "docs": "https://relayrunner.dev/docs/reference/relay-inputs",
       "releases": [{ "github": "relayrunner/actions", "canonical": true }]
     }
   ]

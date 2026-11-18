@@ -13,9 +13,9 @@
   // No preview URLs: nothing reaches this Worker by one (dashboard previews bind to production),
   // and each would be another public, unprotected hostname.
   "preview_urls": false,
-  // Custom domain on the interim relayrunner.app zone:
-  // https://webhooks.relayrunner.app/api/webhooks/github. The GitHub App still posts to the
-  // workers.dev URL above until someone repoints it.
+  // Custom domain on relayrunner.app, kept there after the move to relayrunner.dev:
+  // https://webhooks.relayrunner.app/api/webhooks/github (and -checks, -spend). All three GitHub
+  // Apps post here, so it doesn't move.
   "routes": [{ "pattern": "webhooks.relayrunner.app", "custom_domain": true }],
   // Workers Logs, traces and Issues (errors grouped per Worker). Wrangler deploys overwrite
   // dashboard settings, so these must stay on here. Source maps make Issues' stacks point at

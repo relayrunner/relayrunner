@@ -16,7 +16,7 @@ import {
 import { ERRORS } from "@relayrunner/errors";
 import { MCP_URL } from "./mcp";
 
-const AUTH = "https://app.relayrunner.app/api/auth";
+const AUTH = "https://app.relayrunner.dev/api/auth";
 
 const workspaceHeader = {
   name: "x-relayrunner-workspace",
@@ -86,7 +86,7 @@ export const openApi = {
     contact: { url: "https://github.com/relayrunner/relayrunner/issues" },
     license: { name: "Apache-2.0", identifier: "Apache-2.0" },
   },
-  externalDocs: { url: "https://relayrunner.app/docs/reference/api" },
+  externalDocs: { url: "https://relayrunner.dev/docs/reference/api" },
   servers: [{ url: "https://api.relayrunner.app/api" }],
   security: [{ oauth: ["workspace:read"] }],
   paths: {
@@ -289,7 +289,7 @@ export const openApi = {
       oauth: {
         type: "oauth2",
         description:
-          "OAuth 2.1 with PKCE. Clients can register themselves (dynamic client registration). Discovery: https://app.relayrunner.app/.well-known/oauth-authorization-server/api/auth",
+          "OAuth 2.1 with PKCE. Clients can register themselves (dynamic client registration). Discovery: https://app.relayrunner.dev/.well-known/oauth-authorization-server/api/auth",
         flows: {
           authorizationCode: {
             authorizationUrl: `${AUTH}/oauth2/authorize`,
@@ -303,7 +303,7 @@ export const openApi = {
     responses: {
       Error: {
         description:
-          "The request failed. Branch on `error.code`; `error.message` is for people and can change. See https://relayrunner.app/docs/reference/errors.",
+          "The request failed. Branch on `error.code`; `error.message` is for people and can change. See https://relayrunner.dev/docs/reference/errors.",
         content: {
           "application/json": {
             schema: {

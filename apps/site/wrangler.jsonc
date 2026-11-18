@@ -32,7 +32,8 @@
   // Apexes of both domains. Each zone's MX/TXT records (Email Routing on relayrunner.app, Google
   // Workspace on relayrunner.dev) live alongside the custom domain's records and are not touched by
   // it. relayrunner.dev must have no A/AAAA/CNAME record on the apex before deploying, or the
-  // custom domain fails to attach. SITE_URL in package.json still names relayrunner.app.
+  // custom domain fails to attach. SITE_URL in package.json is relayrunner.dev; a Redirect Rule on
+  // the relayrunner.app zone sends the old apex there.
   "routes": [
     { "pattern": "relayrunner.app", "custom_domain": true },
     { "pattern": "relayrunner.dev", "custom_domain": true },

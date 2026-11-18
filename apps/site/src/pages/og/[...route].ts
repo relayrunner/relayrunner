@@ -19,7 +19,7 @@ export const getStaticPaths = (async () =>
 
 export const GET: APIRoute = async ({ props, site }) => {
   const { entry } = props as Awaited<ReturnType<typeof getStaticPaths>>[number]["props"];
-  const host = (site ?? new URL("https://relayrunner.app")).host;
+  const host = (site ?? new URL("https://relayrunner.dev")).host;
   const png = await renderPng(
     docsCard({
       section: sectionName(entry.id),

@@ -200,7 +200,7 @@ export function homeCard() {
       { id: "blacksmith", name: "Blacksmith", note: "Takes the job", state: "on" },
       { id: "github", name: "GitHub-hosted" },
     ],
-    url: "relayrunner.app",
+    url: "relayrunner.dev",
   });
 }
 

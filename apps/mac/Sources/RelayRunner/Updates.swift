@@ -1,7 +1,7 @@
 import AppKit
 import Sparkle
 
-/// Sparkle, which checks https://relayrunner.app/mac/appcast.xml (Info.plist's SUFeedURL) about
+/// Sparkle, which checks https://relayrunner.dev/mac/appcast.xml (Info.plist's SUFeedURL) about
 /// once a day and offers each new version. Off in a build without that key, such as `swift run`.
 @MainActor
 final class Updates: NSObject, SPUStandardUserDriverDelegate {

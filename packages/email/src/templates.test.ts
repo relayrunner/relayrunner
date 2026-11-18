@@ -24,7 +24,7 @@ describe("templates", () => {
     });
     expect(email.subject).toBe("[feedback] bug: <img src=x onerror=alert(1)>");
     expect(email.html.match(/<img\b[^>]*>/g)).toEqual([
-      expect.stringContaining('src="https://relayrunner.app/favicon.png"'),
+      expect.stringContaining('src="https://relayrunner.dev/favicon.png"'),
     ]);
     expect(email.html).toContain("&lt;img src=x onerror=alert(1)&gt;");
     expect(email.html).not.toContain("<script>");

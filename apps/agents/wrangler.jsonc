@@ -29,7 +29,7 @@
     // Must match AGENTS_MCP_URL in apps/api/wrangler.jsonc.
     "MCP_URL": "https://agents.relayrunner.app/mcp",
     // The OAuth issuer agents sign in with: the dashboard's Better Auth.
-    "AUTH_ISSUER": "https://app.relayrunner.app/api/auth",
+    "AUTH_ISSUER": "https://app.relayrunner.dev/api/auth",
   },
   // Per user and workspace: generous for an agent, low enough that one can't hammer D1.
   "ratelimits": [

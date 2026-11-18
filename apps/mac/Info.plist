@@ -33,7 +33,7 @@
   <!-- Updates (Sparkle): scripts/release.sh publishes the feed and signs each update with the
        private half of this key, which lives in the releasing Mac's keychain. -->
   <key>SUFeedURL</key>
-  <string>https://relayrunner.app/mac/appcast.xml</string>
+  <string>https://relayrunner.dev/mac/appcast.xml</string>
   <key>SUPublicEDKey</key>
   <string>Su8dbde8agaYdpte8/A5y8r/UC5z9OjtO61S85gXIrc=</string>
   <key>SUEnableAutomaticChecks</key>

@@ -6,7 +6,7 @@ import { createTestEnv } from "./testing.ts";
 
 // Sign-in from a dashboard preview, end to end through the oAuthProxy plugin, with GitHub's OAuth
 // endpoints stubbed. Uses the production BETTER_AUTH_URL and the PREVIEW_ORIGINS from wrangler.jsonc.
-const production = "https://app.relayrunner.app";
+const production = "https://app.relayrunner.dev";
 const preview = "https://feature-x-relayrunner-app.relayrun.workers.dev";
 // The old workers.dev dashboard, which older CLIs still open, signs in the same way.
 const oldDashboard = "https://relayrunner-app.relayrun.workers.dev";

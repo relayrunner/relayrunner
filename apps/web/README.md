@@ -1,6 +1,6 @@
 # RelayRunner dashboard
 
-The gateway dashboard at `app.relayrunner.app`: a React SPA on TanStack Router,
+The gateway dashboard at `app.relayrunner.dev`: a React SPA on TanStack Router,
 built with Vite and served as static assets from a Cloudflare Worker
 (`relayrunner-app`). The Worker script (`worker/index.ts`) only forwards
 `/api/*` to the API Worker over a service binding, so the dashboard and API
@@ -63,6 +63,6 @@ Add components with `pnpm dlx shadcn@latest add <name>` from `apps/web`
 `wrangler.jsonc` pins the RelayRunner Cloudflare account (`account_id`); run
 `pnpm run deploy:web` from the repo root.
 Deploy `apps/api` first: the `API` service binding needs `relayrunner-api` to
-exist. In production `app.relayrunner.app` (and later `app.relayrunner.dev`) is this
-Worker's custom domain, and
+exist. In production `app.relayrunner.dev` and `app.relayrunner.app` (kept for older CLIs) are this
+Worker's custom domains, and
 `/api/*` reaches the API Worker through the binding, so the API needs no route.
