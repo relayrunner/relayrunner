@@ -30,6 +30,7 @@ final class MenuBar: NSObject, NSMenuDelegate {
     top.view = header
     menu.addItem(top)
     menu.addItem(.separator())
+    menu.addItem(row("Jobs…", "list.bullet.rectangle", key: "j") { JobsWindow.shared.show() })
     menu.addItem(row("Open Dashboard", "safari") { NSWorkspace.shared.open(Connection.shared.server) })
     menu.addItem(row("Show Log", "doc.text") { NSWorkspace.shared.open(CLI.log) })
     menu.addItem(row("Settings…", "gearshape", key: ",") { MenuBar.openSettings() })
@@ -670,7 +671,8 @@ private struct HistoryRow: View {
   }
 }
 
-private struct OutcomeIcon: View {
+/// A job's result as a coloured symbol, in the menu and the Jobs window.
+struct OutcomeIcon: View {
   let outcome: HistoryEntry.Outcome
 
   var body: some View {

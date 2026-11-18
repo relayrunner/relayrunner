@@ -1,5 +1,5 @@
 //! `relayrunner` in Rust: `connect` (with sign-in, runner install and updates, and VMs), `init`,
-//! `login`, `whoami`, `pause`, `resume`, `share`, `workspaces`, `firewall` and `history`. It shares
+//! `login`, `whoami`, `pause`, `resume`, `share`, `workspaces`, `firewall`, `history` and `jobs`. It shares
 //! ~/.relayrunner with older (TypeScript) versions.
 
 mod api;
@@ -16,6 +16,7 @@ mod install;
 mod isolated;
 mod jit_config;
 mod job;
+mod jobs;
 mod live;
 mod login;
 mod pause;
@@ -178,6 +179,19 @@ const COMMANDS: &[Command] = &[
             ("--limit", "How many jobs to show (default 20)"),
         ],
     ),
+    (
+        "jobs",
+        "Show the jobs this machine ran in the last week as the gateway has them, or one job's steps and why it failed.",
+        "relayrunner jobs [--json] [--limit N] [--before MS] | relayrunner jobs <id> [--json]",
+        &[
+            ("--json", "Print the result as JSON"),
+            ("--limit", "How many jobs to show (default 50, at most 100)"),
+            (
+                "--before",
+                "Show jobs that finished before this time, in ms (the `next` of a page)",
+            ),
+        ],
+    ),
 ];
 
 fn usage() -> String {
@@ -281,6 +295,7 @@ async fn main() {
             plain(move || share::command(&signed_in()?, rest.first().map(String::as_str))).await
         }
         "workspaces" => plain(move || workspaces::command(&signed_in()?, &rest)).await,
+        "jobs" => plain(move || jobs::command(&signed_in()?, &rest)).await,
         "firewall" => match firewall::command(rest.first().map(String::as_str)).await {
             Ok(()) => 0,
             Err(e) => {
