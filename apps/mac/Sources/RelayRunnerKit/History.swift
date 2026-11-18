@@ -102,6 +102,12 @@ public enum History {
     public var jobs: Int
     public var busyMs: Double
     public var failed: Int
+
+    public init(jobs: Int, busyMs: Double, failed: Int) {
+      self.jobs = jobs
+      self.busyMs = busyMs
+      self.failed = failed
+    }
   }
 
   public static func day(_ entries: [HistoryEntry], of date: Date = Date(), calendar: Calendar = .current) -> Day {
