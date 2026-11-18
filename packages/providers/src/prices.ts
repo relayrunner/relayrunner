@@ -20,6 +20,33 @@ export const RATES = {
   ubicloud: { standard: "vcpu", premium: "vcpu" },
   // Per runner, by label: boat-xlarge costs more per vCPU than the other sizes.
   boat: { "boat-small": "runner", boat: "runner", "boat-large": "runner", "boat-xlarge": "runner" },
+  // Listed runner clouds (LISTED_PROVIDER_IDS).
+  starsling: { linux: "vcpu" },
+  monkci: { linux: "vcpu" },
+  runloft: { linux: "vcpu", arm: "vcpu", windows: "vcpu", macos: "runner" },
+  berrybox: { linux: "vcpu", memory: "vcpu" },
+  // Per runner, by size name: their labels name a size, not a vCPU count.
+  latchkey: {
+    "latchkey-small": "runner",
+    "latchkey-medium": "runner",
+    "latchkey-large": "runner",
+    "latchkey-xlarge": "runner",
+  },
+  celesto: {
+    "celesto-micro": "runner",
+    "celesto-small": "runner",
+    "celesto-standard": "runner",
+    "celesto-memory": "runner",
+    "celesto-large": "runner",
+    "celesto-xl": "runner",
+  },
+  instabox: {
+    "instabox-small": "runner",
+    "instabox-medium": "runner",
+    "instabox-large": "runner",
+    "instabox-xlarge": "runner",
+    "instabox-2xlarge": "runner",
+  },
   github: {
     "linux-1-core": "runner",
     "linux-2-core": "runner",
@@ -112,6 +139,42 @@ export const BASE_PRICES: PriceRow[] = [
   { provider: "boat", rate: "boat", usd: 0.036 / 60, from: "2026-11-16" },
   { provider: "boat", rate: "boat-large", usd: 0.072 / 60, from: "2026-11-16" },
   { provider: "boat", rate: "boat-xlarge", usd: 0.2 / 60, from: "2026-11-16" },
+  // StarSling: $0.004 per 2 vCPU, linear to 64 vCPU. https://starsling.dev/pricing
+  { provider: "starsling", rate: "linux", usd: vcpu(0.004, 2), from: "2026-11-17" },
+  // Monk CI: $0.002 per vCPU-minute past the plan's minutes. https://monkci.com/pricing
+  { provider: "monkci", rate: "linux", usd: 0.002, from: "2026-11-17" },
+  // Runloft: $0.003 per 2 vCPU x64, Arm 20% less, Windows $0.007 per 2 vCPU, macOS 15 $0.06.
+  // https://runloft.dev/pricing/
+  { provider: "runloft", rate: "linux", usd: vcpu(0.003, 2), from: "2026-11-17" },
+  { provider: "runloft", rate: "arm", usd: vcpu(0.0024, 2), from: "2026-11-17" },
+  { provider: "runloft", rate: "windows", usd: vcpu(0.007, 2), from: "2026-11-17" },
+  { provider: "runloft", rate: "macos", usd: 0.06, from: "2026-11-17" },
+  // BerryBox: $0.002 per 2 vCPU (8 GiB a vCPU), memory-heavy $0.003 per 2 vCPU.
+  // https://docs.berrybox.io/docs/teams-and-billing/billing
+  { provider: "berrybox", rate: "linux", usd: vcpu(0.002, 2), from: "2026-11-17" },
+  { provider: "berrybox", rate: "memory", usd: vcpu(0.003, 2), from: "2026-11-17" },
+  // Latchkey: small $0.0025, medium $0.005, large $0.01, xlarge $0.02. https://latchkey.dev/pricing
+  { provider: "latchkey", rate: "latchkey-small", usd: 0.0025, from: "2026-11-17" },
+  { provider: "latchkey", rate: "latchkey-medium", usd: 0.005, from: "2026-11-17" },
+  { provider: "latchkey", rate: "latchkey-large", usd: 0.01, from: "2026-11-17" },
+  { provider: "latchkey", rate: "latchkey-xlarge", usd: 0.02, from: "2026-11-17" },
+  // Celesto, per hour: micro $0.015, standard $0.03, memory $0.04, xl $0.16. Small and large
+  // aren't listed with a price; they're worked out from the same per-vCPU and per-GB rates
+  // (1 vCPU/4 GB and 4 vCPU/16 GB). https://celesto.ai/pricing
+  { provider: "celesto", rate: "celesto-micro", usd: 0.015 / 60, from: "2026-11-17" },
+  { provider: "celesto", rate: "celesto-small", usd: 0.02 / 60, from: "2026-11-17" },
+  { provider: "celesto", rate: "celesto-standard", usd: 0.03 / 60, from: "2026-11-17" },
+  { provider: "celesto", rate: "celesto-memory", usd: 0.04 / 60, from: "2026-11-17" },
+  { provider: "celesto", rate: "celesto-large", usd: 0.08 / 60, from: "2026-11-17" },
+  { provider: "celesto", rate: "celesto-xl", usd: 0.16 / 60, from: "2026-11-17" },
+  // InstaBox: $0.004 per vCPU-hour plus $0.00225 per GiB-hour, so per hour small (2/4) $0.017,
+  // medium (4/8) $0.034, large $0.068, xlarge $0.136, 2xlarge $0.272.
+  // https://instabox.sh/docs/pricing
+  { provider: "instabox", rate: "instabox-small", usd: 0.017 / 60, from: "2026-11-17" },
+  { provider: "instabox", rate: "instabox-medium", usd: 0.034 / 60, from: "2026-11-17" },
+  { provider: "instabox", rate: "instabox-large", usd: 0.068 / 60, from: "2026-11-17" },
+  { provider: "instabox", rate: "instabox-xlarge", usd: 0.136 / 60, from: "2026-11-17" },
+  { provider: "instabox", rate: "instabox-2xlarge", usd: 0.272 / 60, from: "2026-11-17" },
   // GitHub, in a private repo; standard runners are free in public ones.
   // https://docs.github.com/en/billing/reference/actions-runner-pricing
   { provider: "github", rate: "linux-1-core", usd: 0.002, from: "2026-11-11" },
@@ -180,6 +243,7 @@ const RATE_NAMES: Record<string, string> = {
   macos: "macOS",
   standard: "Standard",
   premium: "Premium",
+  memory: "Memory-heavy",
   ...GITHUB_LABELS,
 };
 
@@ -261,6 +325,35 @@ const BOAT_VCPUS: Partial<Record<string, number>> = {
   "boat-xlarge": 16,
 };
 
+// Runners named by size rather than vCPU count, by their label's first part.
+const NAMED_RUNNERS: Partial<Record<string, RunnerSize>> = {
+  // https://latchkey.dev/pricing
+  "latchkey-small": { vcpus: 2, memoryGb: 8 },
+  "latchkey-medium": { vcpus: 4, memoryGb: 16 },
+  "latchkey-large": { vcpus: 8, memoryGb: 32 },
+  "latchkey-xlarge": { vcpus: 16, memoryGb: 64 },
+  // https://celesto.ai/docs/ci/runner-sizes.md (a bare `celesto` is micro)
+  "celesto-micro": { vcpus: 1, memoryGb: 2 },
+  "celesto-small": { vcpus: 1, memoryGb: 4 },
+  "celesto-standard": { vcpus: 2, memoryGb: 4 },
+  "celesto-memory": { vcpus: 2, memoryGb: 8 },
+  "celesto-large": { vcpus: 4, memoryGb: 16 },
+  "celesto-xl": { vcpus: 8, memoryGb: 32 },
+  // https://instabox.sh/docs/use-cases/ci (`-snapshot-<name>` may follow the size)
+  "instabox-small": { vcpus: 2, memoryGb: 4 },
+  "instabox-medium": { vcpus: 4, memoryGb: 8 },
+  "instabox-large": { vcpus: 8, memoryGb: 16 },
+  "instabox-xlarge": { vcpus: 16, memoryGb: 32 },
+  "instabox-2xlarge": { vcpus: 32, memoryGb: 64 },
+};
+
+// The size-named runner a label asks for: `celesto` is micro, `instabox-medium-snapshot-x` medium.
+const namedRunner = (label: string) => {
+  if (label === "celesto") return "celesto-micro";
+  const [provider, size] = label.split("-");
+  return `${provider}-${size}`;
+};
+
 // A label's rate and vCPU count, or null when RelayRunner can't tell.
 function rateOf(provider: ProviderId, label: string): { rate: string; vcpus: number } | null {
   switch (provider) {
@@ -282,6 +375,30 @@ function rateOf(provider: ProviderId, label: string): { rate: string; vcpus: num
       const size = label.split("/")[0]!;
       const vcpus = BOAT_VCPUS[size];
       return vcpus ? { rate: size, vcpus } : null;
+    }
+    // starsling-ubuntu-24.04-8; no suffix is 4 vCPU. GPU runners aren't priced here.
+    case "starsling":
+      if (label.includes("gpu")) return null;
+      return { rate: "linux", vcpus: vcpusIn(label, /-\d+\.\d+-(\d+)$/, 4) };
+    // monkci-ubuntu-24.04-4; monkci-ubuntu-latest is the largest, 32 vCPU.
+    case "monkci":
+      return { rate: "linux", vcpus: vcpusIn(label, /-\d+\.\d+-(\d+)$/, 32) };
+    // runloft-ubuntu-24.04[-arm][-8cpu], runloft-windows-2025-4cpu, runloft-macos-15, runloft-2cpu
+    case "runloft":
+      if (label.includes("macos")) return { rate: "macos", vcpus: 1 };
+      return { rate: platformOf(label), vcpus: vcpusIn(label, /-(\d+)cpu$/, 2) };
+    // berrybox-4vcpu-ubuntu-2404, berrybox-memory-2vcpu-ubuntu-2404, berrybox-ubuntu-latest (2)
+    case "berrybox":
+      return {
+        rate: label.includes("-memory-") ? "memory" : "linux",
+        vcpus: vcpusIn(label, /-(\d+)vcpu-/, 2),
+      };
+    case "latchkey":
+    case "celesto":
+    case "instabox": {
+      const rate = namedRunner(label);
+      const size = NAMED_RUNNERS[rate];
+      return size ? { rate, vcpus: size.vcpus } : null;
     }
     // ubicloud, ubicloud-standard-4, ubicloud-standard-2-arm, ubicloud-premium-8-ubuntu-2404
     case "ubicloud":
@@ -363,6 +480,11 @@ export function runnerSize(provider: string, label: string): RunnerSize | null {
       const vcpus = BOAT_VCPUS[label.split("/")[0]!];
       return vcpus ? { vcpus, memoryGb: vcpus * 2 } : null;
     }
+    // Named sizes, with their memory.
+    case "latchkey":
+    case "celesto":
+    case "instabox":
+      return NAMED_RUNNERS[namedRunner(label)] ?? null;
     // The runner= part of its labels, such as 2cpu-linux-x64.
     case "runs-on": {
       const vcpus = count(/^(\d+)cpu-/.exec(label));

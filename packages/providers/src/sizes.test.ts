@@ -24,6 +24,18 @@ describe("runnerSize", () => {
     ["cloudflare", "standard-1", "0.5 vCPU · 4 GB"],
     ["other", "linux-8-cores", "8 vCPU"],
     ["acme", "acme-32cpu", "32 vCPU"],
+    ["starsling", "starsling-ubuntu-24.04", "4 vCPU"],
+    ["starsling", "starsling-ubuntu-26.04-16", "16 vCPU"],
+    ["monkci", "monkci-ubuntu-24.04-8", "8 vCPU"],
+    ["monkci", "monkci-ubuntu-latest", "32 vCPU"],
+    ["runloft", "runloft-ubuntu-24.04", "2 vCPU"],
+    ["runloft", "runloft-ubuntu-24.04-arm-8cpu", "8 vCPU"],
+    ["berrybox", "berrybox-4vcpu-ubuntu-2404", "4 vCPU"],
+    ["berrybox", "berrybox-ubuntu-latest", "2 vCPU"],
+    ["latchkey", "latchkey-medium", "4 vCPU · 16 GB"],
+    ["celesto", "celesto", "1 vCPU · 2 GB"],
+    ["celesto", "celesto-large", "4 vCPU · 16 GB"],
+    ["instabox", "instabox-medium-snapshot-web", "4 vCPU · 8 GB"],
   ])("%s %s is %s", (provider, label, text) => {
     expect(sizeText(runnerSize(provider, label))).toBe(text);
   });

@@ -41,6 +41,11 @@ describe("plans", () => {
     expect(twoVcpuMinute("boat")).toBeCloseTo(0.0003);
     expect(twoVcpuMinute("namespace")).toBe(0.006);
     expect(twoVcpuMinute("berrybox")).toBe(0.002);
+    // Listed runner clouds come from the price list, at a 2 vCPU size.
+    expect(twoVcpuMinute("latchkey")).toBe(0.0025);
+    expect(twoVcpuMinute("celesto")).toBe(0.0005);
+    expect(twoVcpuMinute("instabox")).toBeCloseTo(0.000283, 6);
+    expect(twoVcpuMinute("monkci")).toBe(0.004);
     expect(twoVcpuMinute("other")).toBeNull();
   });
 });
