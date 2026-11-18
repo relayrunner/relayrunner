@@ -30,6 +30,7 @@ final class Welcome: NSObject, NSWindowDelegate {
   private func show(step: WelcomeView.Step) {
     let view = WelcomeView(connection: .shared, step: step) { [weak self] in self?.window?.close() }
     let window = NSWindow(contentViewController: NSHostingController(rootView: view))
+    window.title = "Welcome to RelayRunner"
     window.styleMask = [.titled, .closable, .fullSizeContentView]
     window.titlebarAppearsTransparent = true
     window.titleVisibility = .hidden
@@ -113,7 +114,7 @@ struct WelcomeView: View {
     .padding(.horizontal, 36)
     .padding(.top, 40)
     .padding(.bottom, 24)
-    .frame(width: 480, height: 440)
+    .frame(width: 480, height: 390)
     .clipped()
     .animation(.smooth(duration: 0.35), value: step)
     .onChange(of: connection.phase) { _, phase in
@@ -125,7 +126,7 @@ struct WelcomeView: View {
 
   private var hello: some View {
     VStack(spacing: 0) {
-      Image(nsImage: RobotHead.colorImage(side: 96))
+      art
       heading(
         "Welcome to RelayRunner",
         "Run GitHub Actions jobs on this Mac, right from the menu bar."
@@ -139,6 +140,7 @@ struct WelcomeView: View {
 
   private var signIn: some View {
     VStack(spacing: 0) {
+      art
       heading("Who can run jobs on this Mac?", "Your own jobs can always run here. Next, your browser opens to sign this Mac in.")
       if let signIn = connection.signIn {
         SignInBox(signIn: signIn)
@@ -161,7 +163,7 @@ struct WelcomeView: View {
 
   private var done: some View {
     VStack(spacing: 0) {
-      Image(nsImage: RobotHead.colorImage(side: 72))
+      art
       heading(
         "This Mac is ready",
         "\(connection.machineName.map { "Connected as \($0). " } ?? "")RelayRunner lives in the menu bar. Look for the robot at the top of your screen."
@@ -201,6 +203,11 @@ struct WelcomeView: View {
         }
       }
     }
+  }
+
+  /// The same robot on every step, so each heading sits at the same height.
+  private var art: some View {
+    Image(nsImage: RobotHead.colorImage(side: 64))
   }
 
   private func primary(_ title: String, action: @escaping () -> Void) -> some View {
