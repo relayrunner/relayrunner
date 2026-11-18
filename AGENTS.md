@@ -38,9 +38,9 @@ The `relayrunner` npm package (the Rust CLI in `apps/cli`, shipped as a launcher
 
 ## Cloudflare CLI
 
-Use the [cf CLI](https://developers.cloudflare.com/cf/) for Cloudflare account and resource work: D1, R2, queues, Worker secrets, the Secrets Store, DNS, Access and anything else in the Cloudflare API. Find a command with `cf cli search "<task>"` and check it with `--dry-run` before running it, rather than translating a Wrangler command from memory. `cf` reads the account from `CLOUDFLARE_ACCOUNT_ID`, not from `wrangler.jsonc`, so load the repo's `.env` first. `apps/api` pins `cf` as a dev dependency (`pnpm --filter @relayrunner/api exec cf ...`).
+Use the [cf CLI](https://developers.cloudflare.com/cf/) for Cloudflare account and resource work: D1, R2, queues, Worker secrets, the Secrets Store, DNS, Access and anything else in the Cloudflare API. Find a command with `cf cli search "<task>"` and check it with `--dry-run` before running it, rather than translating a Wrangler command from memory. `cf` reads the account from `CLOUDFLARE_ACCOUNT_ID`, not from `wrangler.jsonc`, so load the repo's `.env` first.
 
-Keep Wrangler for what reads `wrangler.jsonc`: `wrangler dev`, `wrangler deploy`, `wrangler preview` (Workers Builds), `wrangler containers build`, local D1 migrations and the local Secrets Store that `wrangler dev` uses. Never run `cf dev`, `cf build` or `cf deploy` here: until the Workers move to `cloudflare.config.ts` with `cf migrate`, they ignore `wrangler.jsonc` and can rewrite `package.json`.
+Keep Wrangler for what reads `wrangler.jsonc`: `wrangler dev`, `wrangler deploy`, `wrangler preview` (Workers Builds), `wrangler containers build`, D1 migrations (`pnpm db:migrate:*`, until `cf` 1.0 is stable) and the local Secrets Store that `wrangler dev` uses. Never run `cf dev`, `cf build` or `cf deploy` here: until the Workers move to `cloudflare.config.ts` with `cf migrate`, they ignore `wrangler.jsonc` and can rewrite `package.json`.
 
 ## Agent skills
 

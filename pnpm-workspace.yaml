@@ -38,8 +38,3 @@ minimumReleaseAgeExclude:
   - "@astrojs/runtime@0.1.0"
   - "@astrojs/vite-plugin-astro@0.1.1"
   - astro@7.4.10
-  - "@cloudflare/build-output-utils@1.0.0-rc.1"
-  - "@cloudflare/config@1.0.0-rc.1"
-  - "@cloudflare/runtime-types@0.1.30"
-  - cf@1.0.0-rc.1
-  - miniflare@5.20261117.0-beta

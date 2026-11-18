@@ -1,14 +1,15 @@
 name: Apply D1 migrations
 
 # Applies apps/api/migrations to the production D1 database (relayrunner) on every merge to main
-# that touches them, with the cf CLI. Needs the CLOUDFLARE_API_TOKEN (D1 Edit on the RelayRunner
-# account) and CLOUDFLARE_ACCOUNT_ID repo secrets.
+# that touches them. Needs the CLOUDFLARE_API_TOKEN repo secret (D1 Edit on the RelayRunner account;
+# wrangler.jsonc pins the account id).
 on:
   push:
     branches: [main]
     paths:
       - apps/api/migrations/**
       - apps/api/wrangler.jsonc
+      - apps/api/scripts/rename-legacy-migrations.sql
       - .github/workflows/d1-migrations.yml
   workflow_dispatch:
 
@@ -47,6 +48,6 @@ jobs:
             exit 1
           fi
       - name: List pending migrations
-        run: pnpm --filter @relayrunner/api db:migrations:remote
+        run: pnpm --filter @relayrunner/api exec wrangler d1 migrations list relayrunner --remote
       - name: Apply migrations
         run: pnpm --filter @relayrunner/api db:migrate:remote

@@ -1,9 +1,8 @@
 import { defineConfig } from "drizzle-kit";
 
-// Only generates SQL into ./migrations. Wrangler applies it locally (`pnpm db:migrate:local`) and
-// cf in production (`pnpm db:migrate:remote`).
+// Only generates SQL into ./migrations. Wrangler applies it: `pnpm db:migrate:local`.
 // Timestamp prefixes (YYYYMMDDHHMMSS_name.sql) so migrations written on parallel branches
-// don't collide on the same counter. Don't use `cf`/`wrangler d1 migrations create`: they number them.
+// don't collide on the same counter. Don't use `wrangler d1 migrations create`: it numbers them.
 export default defineConfig({
   dialect: "sqlite",
   schema: "./src/db/schema.ts",

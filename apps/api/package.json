@@ -9,8 +9,7 @@
     "typecheck": "tsc --noEmit && tsc --noEmit -p tsconfig.test.json && tsc --noEmit -p scripts",
     "db:generate": "drizzle-kit generate",
     "db:migrate:local": "wrangler d1 execute relayrunner --local --file scripts/rename-legacy-migrations.sql && wrangler d1 migrations apply relayrunner --local",
-    "db:migrate:remote": "cf d1 migrations apply e6f4f176-aa75-45fe-83f7-64e468cc23f6",
-    "db:migrations:remote": "cf d1 migrations list e6f4f176-aa75-45fe-83f7-64e468cc23f6"
+    "db:migrate:remote": "wrangler d1 execute relayrunner --remote --file scripts/rename-legacy-migrations.sql && wrangler d1 migrations apply relayrunner --remote"
   },
   "dependencies": {
     "@better-auth/mcp": "^1.7.16",
@@ -33,7 +32,6 @@
   },
   "devDependencies": {
     "@cloudflare/workers-types": "catalog:",
-    "cf": "1.0.0-rc.1",
     "drizzle-kit": "^0.31.11",
     "typescript": "catalog:",
     "wrangler": "catalog:"

@@ -80,16 +80,16 @@ The same cron sweeps stale pick runners (`src/pick-sweep.ts`). The hourly cron c
 
 - `src/app.ts` builds the Hono app. Routes after `attachSession` get `c.var.auth`, `c.var.user` and `c.var.session`. The auth instance is made per request because Workers only hand out bindings per request. Better Auth's cookie cache is on, so most session checks skip D1.
 - Workspaces are Better Auth organizations stored under gateway names: `workspace`, `workspace_member`, `workspace_invitation` and `session.active_workspace_id` (mapped in `workspaces()` in `src/auth.ts`). `github_installation` is keyed by the installation id with one nullable `workspace_id`, so a workspace connects many installations and each installation belongs to at most one workspace (null while unclaimed). Routes that act on a workspace go behind `requireWorkspace` (`src/middleware/workspace.ts`), which checks membership in D1.
-- `src/db/schema.ts` is the Drizzle schema for D1. `pnpm db:generate` writes migrations into `migrations/`, and `cf` (production) or Wrangler (local) applies them. See [Migrations](#migrations).
+- `src/db/schema.ts` is the Drizzle schema for D1. `pnpm db:generate` writes migrations into `migrations/`, and Wrangler applies them. See [Migrations](#migrations).
 - `src/durable-objects/` holds the Durable Objects: `PickRunner` (one per pick job), `Router` (one per workspace, holding machine reservations and routes), `MachineLink` (one per machine, holding its WebSocket), `LintRunner` (one per commit or lint job) and `ContainerRunner` (one per container job). Logic that doesn't need Durable Object APIs, such as `src/routing.ts` and `durable-objects/machine-session.ts`, lives beside them so it can be tested on its own.
 
 ## Migrations
 
-Change `src/db/schema.ts`, then run `pnpm db:generate`. Drizzle names the file with a UTC timestamp prefix (`20261104160202_workspaces.sql`), so two branches that each add a migration don't both claim `0002`. Don't use `cf d1 migrations create` or `wrangler d1 migrations create`, which number files and skips the Drizzle snapshot. `src/migrations.test.ts` fails on any file that isn't timestamp-prefixed or isn't in `migrations/meta/_journal.json`.
+Change `src/db/schema.ts`, then run `pnpm db:generate`. Drizzle names the file with a UTC timestamp prefix (`20261104160202_workspaces.sql`), so two branches that each add a migration don't both claim `0002`. Don't use `wrangler d1 migrations create`, which numbers files and skips the Drizzle snapshot. `src/migrations.test.ts` fails on any file that isn't timestamp-prefixed or isn't in `migrations/meta/_journal.json`.
 
-Merging to `main` applies new migrations to the production database: the `Apply D1 migrations` workflow runs `pnpm db:migrate:remote` (`cf d1 migrations apply`) with the `CLOUDFLARE_API_TOKEN` and `CLOUDFLARE_ACCOUNT_ID` secrets. `pnpm db:migrations:remote` lists the ones production hasn't run yet. It is the only thing that migrates production: the Workers Builds deploy (`pnpm run deploy:api`) does not. Migrations must be safe to run against the Worker that's already deployed, since the workflow can land before the new Worker does.
+Merging to `main` applies new migrations to the production database: the `Apply D1 migrations` workflow runs `pnpm db:migrate:remote` with the `CLOUDFLARE_API_TOKEN` secret. It is the only thing that migrates production: the Workers Builds deploy (`pnpm run deploy:api`) does not. Migrations must be safe to run against the Worker that's already deployed, since the workflow can land before the new Worker does.
 
-The first four migrations were renamed from `0000_init.sql`, `0001_workspaces.sql`, `0002_installation_repository_selection.sql` and `0003_installation_github_state_at.sql`. Wrangler tracks applied migrations by filename, so `db:migrate:local` first runs `scripts/rename-legacy-migrations.sql`, which renames those rows in `d1_migrations` and does nothing on a fresh database or once they're renamed. Production already has the new names. The script can go once every local `.wrangler` state has been migrated with it.
+The first four migrations were renamed from `0000_init.sql`, `0001_workspaces.sql`, `0002_installation_repository_selection.sql` and `0003_installation_github_state_at.sql`. Wrangler tracks applied migrations by filename, so `db:migrate:local` and `db:migrate:remote` first run `scripts/rename-legacy-migrations.sql`, which renames those rows in `d1_migrations` and does nothing on a fresh database or once they're renamed. It can go once every database (including your local `.wrangler` state) has been migrated with it.
 
 ## Run it locally
 
@@ -104,7 +104,7 @@ pnpm dev                          # http://localhost:8787/api/health
 Deploys still go through Wrangler (`wrangler.jsonc` pins the RelayRunner account). The one-time setup below uses the [cf CLI](https://developers.cloudflare.com/cf/), which reads the account from `CLOUDFLARE_ACCOUNT_ID`, so load the repo's `.env` first (`set -a; source .env; set +a`). Then:
 
 ```sh
-pnpm db:migrate:remote      # the D1 Migrations workflow does this on merge to main
+pnpm db:migrate:remote      # the D1 Migrations workflow does this on merge to main; only needed by hand for a new database
 cf workers secrets update BETTER_AUTH_SECRET --worker relayrunner-api --type secret_text --text "$(openssl rand -base64 32)"
                             # and GITHUB_APP_CLIENT_ID, GITHUB_APP_CLIENT_SECRET the same way
 cf r2 buckets create --name relayrunner-webhook-dead-letters   # once; a deploy fails until it exists
