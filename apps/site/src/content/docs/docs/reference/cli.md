@@ -45,12 +45,14 @@ With `--events`, `connect` writes one JSON object per line to stdout and nothing
   "link": "online",
   "paused": false,
   "jobs": [],
-  "waiting": 0,
+  "waiting": 1,
+  "queue": [{ "repo": "acme/app", "since": 1763481600000 }],
+  "spilled": [],
   "slots": 2
 }
 ```
 
-Types: `sign-in` (the page and code to approve), `machine`, `state`, `job-repo`, `job-result`, `job-end` (the job's line in [`history`](#history)), `offline`, `error`, and the connection's own: `connecting`, `connected`, `disconnected`, `run`, `job`, `paused`, `waiting`. `waiting` (also in `state`) is how many jobs are queued for a slot on this machine: jobs it could run whose machines are all busy. `state` also has `slots`, how many jobs it runs at once. A `run` event carries `job` when the gateway knows which job it is: its name, workflow, repo, GitHub link and `typicalMs`, how long it usually takes on this machine.
+Types: `sign-in` (the page and code to approve), `machine`, `state`, `job-repo`, `job-result`, `job-end` (the job's line in [`history`](#history)), `offline`, `error`, and the connection's own: `connecting`, `connected`, `disconnected`, `run`, `job`, `paused`, `waiting`. `waiting` (also in `state`) is how many jobs are queued for a slot on this machine: jobs it could run whose machines are all busy. `queue` lists the longest-waiting of them (repo, and since when in ms), and `spilled` holds when jobs in the last hour went to another runner because every slot was busy. `state` also has `slots`, how many jobs it runs at once. A `run` event carries `job` when the gateway knows which job it is: its name, workflow, repo, GitHub link and `typicalMs`, how long it usually takes on this machine.
 
 ## `login`
 

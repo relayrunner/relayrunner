@@ -203,13 +203,25 @@ export const TokenMessage = z.object({
   token: z.string().min(1),
 });
 
+// A job waiting for a slot: its repo (owner/name) and when it started waiting, in ms since the epoch.
+export const QueueEntry = z.object({
+  repo: z.string(),
+  since: z.number().int().nonnegative(),
+});
+
 // How many jobs are waiting for a slot on this machine: jobs queued in a workspace it takes jobs
-// from, that this machine could run but whose machines are all busy. Sent when the count changes,
-// and after hello when it isn't 0. Only to a CLI whose hello set `hearsWaiting`.
+// from, that this machine could run but whose machines are all busy. Sent when the count or the
+// jobs change, when a job goes elsewhere, and after hello when there's something to say. Only to a
+// CLI whose hello set `hearsWaiting`.
 export const WaitingMessage = z.object({
   v: version,
   type: z.literal("waiting"),
   jobs: z.number().int().nonnegative(),
+  // The longest-waiting of those jobs, longest first, at most 5. Missing from older gateways.
+  queue: z.array(QueueEntry).max(5).optional(),
+  // When jobs in the last hour went to another runner (such as a hosted one) because every slot
+  // that fit them was busy, in ms since the epoch, oldest first. Missing from older gateways.
+  spilled: z.array(z.number().int().nonnegative()).optional(),
 });
 
 export const GatewayMessage = z.discriminatedUnion("type", [
@@ -234,6 +246,7 @@ export type ErrorMessage = z.infer<typeof ErrorMessage>;
 export type PausedMessage = z.infer<typeof PausedMessage>;
 export type TokenMessage = z.infer<typeof TokenMessage>;
 export type WaitingMessage = z.infer<typeof WaitingMessage>;
+export type QueueEntry = z.infer<typeof QueueEntry>;
 export type GatewayMessage = z.infer<typeof GatewayMessage>;
 
 export type ParseResult<T> =

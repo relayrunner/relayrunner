@@ -1,5 +1,18 @@
 import Foundation
 
+/// A job waiting for a slot on this Mac: its repo, and since when in ms since the epoch.
+public struct QueuedJob: Equatable, Decodable, Hashable {
+  public var repo: String
+  public var since: Double
+
+  public init(repo: String, since: Double) {
+    self.repo = repo
+    self.since = since
+  }
+
+  public var waitingSince: Date { Date(timeIntervalSince1970: since / 1000) }
+}
+
 /// One line of `relayrunner connect --events` (apps/cli/src/events.rs).
 public enum Event: Equatable {
   /// The page to approve this Mac on, and the code it shows.
@@ -27,18 +40,28 @@ public enum Event: Equatable {
     public var jobs: [String]
     /// How many jobs wait for a slot on this Mac, as the gateway said. 0 from a CLI that doesn't say.
     public var waiting: Int
+    /// The longest-waiting of those jobs, longest first.
+    public var queue: [QueuedJob]
+    /// When jobs went to another runner because every slot here was busy, in ms since the epoch:
+    /// the last hour's, as the gateway last said.
+    public var spilled: [Double]
     /// How many jobs this Mac runs at once. Nil from a CLI that doesn't say.
     public var slots: Int?
 
-    public init(link: Link, paused: Bool, jobs: [String], waiting: Int = 0, slots: Int? = nil) {
+    public init(
+      link: Link, paused: Bool, jobs: [String], waiting: Int = 0, queue: [QueuedJob] = [],
+      spilled: [Double] = [], slots: Int? = nil
+    ) {
       self.link = link
       self.paused = paused
       self.jobs = jobs
       self.waiting = waiting
+      self.queue = queue
+      self.spilled = spilled
       self.slots = slots
     }
 
-    private enum CodingKeys: String, CodingKey { case link, paused, jobs, waiting, slots }
+    private enum CodingKeys: String, CodingKey { case link, paused, jobs, waiting, queue, spilled, slots }
 
     public init(from decoder: Decoder) throws {
       let c = try decoder.container(keyedBy: CodingKeys.self)
@@ -46,6 +69,9 @@ public enum Event: Equatable {
       paused = try c.decode(Bool.self, forKey: .paused)
       jobs = try c.decode([String].self, forKey: .jobs)
       waiting = try c.decodeIfPresent(Int.self, forKey: .waiting) ?? 0
+      // What an older CLI doesn't say, or says in a way this app can't read, is nothing.
+      queue = (try? c.decodeIfPresent([QueuedJob].self, forKey: .queue)) ?? []
+      spilled = (try? c.decodeIfPresent([Double].self, forKey: .spilled)) ?? []
       slots = try c.decodeIfPresent(Int.self, forKey: .slots)
     }
   }

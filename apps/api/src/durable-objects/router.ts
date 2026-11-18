@@ -11,6 +11,7 @@ import { DurableObject } from "cloudflare:workers";
 import { and, eq, isNotNull, isNull, or } from "drizzle-orm";
 import { createDb, schema } from "../db/index.ts";
 import type { Env } from "../env.ts";
+import type { QueueEntry } from "@relayrunner/machine-protocol";
 import {
   appInstallationToken,
   GitHubRateLimitError,
@@ -105,11 +106,12 @@ export interface PickedJob extends JobStarters, RelayInputs {
 const ROUTE_KEY = "route:";
 // Jobs waiting for a machine slot (Router.wait), by the route id their pick answered.
 const WAIT_KEY = "wait:";
-// How many waiting jobs each machine was last told wait on it (tellWaiting).
+// Which waiting jobs each machine was last told wait on it (tellWaiting): the jobs, or a count
+// from before the Router said which.
 const WAITING_TOLD_KEY = "waiting-told";
 interface WaitingTold {
   workspaceId: string;
-  machines: Record<string, number>;
+  machines: Record<string, QueueEntry[] | number>;
 }
 // How often the Router looks for a free slot while jobs wait. A machine finishing a job also
 // wakes it (release).
@@ -301,6 +303,8 @@ export class Router extends DurableObject<Env> {
 
   private async decide(job: PickedJob): Promise<RouteDecision> {
     const db = createDb(this.env.DB);
+    // The machine step's pick, if the walk got that far.
+    let pick: MachinePick | undefined;
     const [[workspace]] = await Promise.all([
       db
         .select({
@@ -322,7 +326,7 @@ export class Router extends DurableObject<Env> {
       retryOrder(preferFirst(readRunnerOrder(workspace?.runnerOrder), job.first), job.retry),
       // Some hosted providers only serve organizations (SKIPS_PERSONAL_ACCOUNTS).
       { ...job, personal: workspace?.accountType === "User" },
-      () => this.pickMachine(job),
+      async () => (pick = await this.pickMachine(job)),
       // The job's own account: each GitHub account has its own quota, never pooled (#117).
       () => accountUsage(db, job.installationId),
       // Off: every hosted step takes its jobs, however they've been going.
@@ -336,7 +340,36 @@ export class Router extends DurableObject<Env> {
           accountSpend(db, job.installationId, key),
         ),
     );
-    return waitsForMachine(decision) ? this.wait(job, decision) : decision;
+    if (waitsForMachine(decision)) return this.wait(job, decision);
+    if (
+      decision.runner !== null &&
+      typeof pick === "object" &&
+      pick &&
+      "full" in pick &&
+      pick.machineIds?.length
+    )
+      await this.tellSpilled(pick.machineIds);
+    return decision;
+  }
+
+  // Tells each full machine a job that fit it went elsewhere, so its app can say so.
+  private async tellSpilled(machineIds: string[]) {
+    const at = Date.now();
+    await Promise.all(
+      machineIds.map(async (id) => {
+        try {
+          await this.env.MACHINE_LINK.getByName(id).spilled(at);
+        } catch (error) {
+          console.warn(
+            JSON.stringify({
+              msg: "relayrunner spillover not sent",
+              machineId: id,
+              error: errorMessage(error),
+            }),
+          );
+        }
+      }),
+    );
   }
 
   // Every machine that fits is full and nothing else in the order takes the job: it waits in line
@@ -390,7 +423,7 @@ export class Router extends DurableObject<Env> {
     const stuck = new Map<string, boolean>();
     // Per set of wanted machines that are all busy, their ids, and how many jobs wait on each.
     const busy = new Map<string, string[]>();
-    const waitingOn = new Map<string, number>();
+    const waitingOn = new Map<string, QueueEntry[]>();
     let left = 0;
     for (const entry of line) {
       const wants = wantsKey(entry.job);
@@ -407,7 +440,9 @@ export class Router extends DurableObject<Env> {
       }
       if (await this.noMachine(entry, none, now)) continue;
       left++;
-      for (const id of busy.get(wants) ?? []) waitingOn.set(id, (waitingOn.get(id) ?? 0) + 1);
+      const queued: QueueEntry = { repo: entry.job.repo, since: entry.queuedAt };
+      for (const id of busy.get(wants) ?? [])
+        waitingOn.set(id, [...(waitingOn.get(id) ?? []), queued]);
     }
     await this.tellWaiting(waitingOn, line[0]?.job.workspaceId);
     if (left > 0) await this.wakeIn(WAIT_POLL_MS);
@@ -545,20 +580,22 @@ export class Router extends DurableObject<Env> {
     await this.wakeIn(WAIT_POLL_MS);
   }
 
-  // Tells each machine how many of this workspace's jobs wait on it, when that changed since it
-  // was last told, including machines no job waits on any more. `workspaceId` is unknown when no
-  // job is left, and then comes from the last time.
-  private async tellWaiting(waitingOn: Map<string, number>, workspaceId?: string) {
+  // Tells each machine which of this workspace's jobs wait on it, when that changed since it was
+  // last told, including machines no job waits on any more. `workspaceId` is unknown when no job
+  // is left, and then comes from the last time.
+  private async tellWaiting(waitingOn: Map<string, QueueEntry[]>, workspaceId?: string) {
     const told = await this.ctx.storage.get<WaitingTold>(WAITING_TOLD_KEY);
     const workspace = workspaceId ?? told?.workspaceId;
     const before = told?.machines ?? {};
     const ids = new Set([...Object.keys(before), ...waitingOn.keys()]);
-    const changed = [...ids].filter((id) => (waitingOn.get(id) ?? 0) !== (before[id] ?? 0));
+    const said = (jobs: QueueEntry[] | number | undefined) =>
+      jobs === undefined || (Array.isArray(jobs) && jobs.length === 0) ? "" : JSON.stringify(jobs);
+    const changed = [...ids].filter((id) => said(waitingOn.get(id)) !== said(before[id]));
     if (!workspace || changed.length === 0) return;
     await Promise.all(
       changed.map(async (id) => {
         try {
-          await this.env.MACHINE_LINK.getByName(id).setWaiting(workspace, waitingOn.get(id) ?? 0);
+          await this.env.MACHINE_LINK.getByName(id).setWaiting(workspace, waitingOn.get(id) ?? []);
         } catch (error) {
           console.warn(
             JSON.stringify({

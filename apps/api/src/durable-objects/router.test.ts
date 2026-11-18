@@ -70,13 +70,19 @@ describe("Router: jobs wait for a full machine", () => {
   // ci-runner: one slot, in use until a test frees it.
   let running: number;
   const run = vi.fn(async (_work: { route: Record<string, unknown> }) => "sent");
-  const setWaiting = vi.fn(async (_workspaceId: string, _jobs: number) => {});
+  const setWaiting = vi.fn(
+    async (_workspaceId: string, _jobs: { repo: string; since: number }[]) => {},
+  );
+  const spilled = vi.fn(async (_at: number) => {});
+  // How many jobs the machine was told wait on it, in order.
+  const counts = () => setWaiting.mock.calls.map(([workspace, jobs]) => [workspace, jobs.length]);
 
   beforeEach(async () => {
     vi.spyOn(console, "log").mockImplementation(() => {});
     running = 1;
     run.mockClear();
     setWaiting.mockClear();
+    spilled.mockClear();
     const testEnv = await createTestEnv();
     const now = Date.now();
     for (const sql of [
@@ -101,6 +107,7 @@ describe("Router: jobs wait for a full machine", () => {
           reserve: async () => running < 1,
           run,
           setWaiting,
+          spilled,
         }),
       },
     } as unknown as Env;
@@ -113,9 +120,13 @@ describe("Router: jobs wait for a full machine", () => {
     await router.route(job(2));
     await router.alarm();
     // The second pick drains the line first, with one job in it.
-    expect(setWaiting.mock.calls).toEqual([
+    expect(counts()).toEqual([
       ["w1", 1],
       ["w1", 2],
+    ]);
+    expect(setWaiting.mock.calls[1]![1].map((queued) => queued.repo)).toEqual([
+      "leonel/cabal",
+      "leonel/cabal",
     ]);
     // Unchanged: nothing more to say.
     await router.alarm();
@@ -124,13 +135,28 @@ describe("Router: jobs wait for a full machine", () => {
     running = 0;
     await router.alarm();
     expect(run).toHaveBeenCalledOnce();
-    expect(setWaiting.mock.calls.at(-1)).toEqual(["w1", 1]);
+    expect(counts().at(-1)).toEqual(["w1", 1]);
     // The last one ends while it waits.
     const [second] = [...state.data.keys()].filter((key) => key.startsWith("wait:"));
     running = 1;
     await router.dropWaiting(second!.slice(5), queued(2, 42));
     await router.alarm();
-    expect(setWaiting.mock.calls.at(-1)).toEqual(["w1", 0]);
+    expect(counts().at(-1)).toEqual(["w1", 0]);
+  });
+
+  test("a full machine hears when a job that fit it went to GitHub instead", async () => {
+    const decision = await router.route({
+      ...job(1),
+      ...relayInputs({ machine: ["self-hosted"], github: ["ubuntu-latest"] }),
+    });
+    expect(decision).toMatchObject({ step: "github", runner: "ubuntu-latest" });
+    expect(spilled).toHaveBeenCalledOnce();
+    running = 0;
+    await router.route({
+      ...job(2),
+      ...relayInputs({ machine: ["self-hosted"], github: ["ubuntu-latest"] }),
+    });
+    expect(spilled).toHaveBeenCalledOnce();
   });
 
   test("a full machine with no fallback answers a route label instead of failing", async () => {

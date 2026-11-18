@@ -4,7 +4,12 @@ import type { DisconnectReason } from "@relayrunner/activity";
 import { recordMachineEvent } from "../activity.ts";
 import { createDb, schema } from "../db/index.ts";
 import type { Env } from "../env.ts";
-import { encodeMessage, PROTOCOL_VERSION, type JobMessage } from "@relayrunner/machine-protocol";
+import {
+  encodeMessage,
+  PROTOCOL_VERSION,
+  type JobMessage,
+  type QueueEntry,
+} from "@relayrunner/machine-protocol";
 import {
   appInstallationToken,
   deleteRunner,
@@ -72,8 +77,14 @@ interface SentRoute {
 const SENT_KEY = "sent:";
 // One per route holding a slot for its job (MachineHold), whichever workspace made it.
 const HOLD_KEY = "hold:";
-// Jobs waiting for a slot here, per workspace whose Router counted them (setWaiting).
+// Jobs waiting for a slot here, per workspace whose Router counted them (setWaiting): a count from
+// before the Router said which jobs, else the jobs.
 const WAITING_KEY = "waiting:";
+// When jobs that fit here went elsewhere because every slot was busy (spilled), for an hour.
+const SPILLED_KEY = "spilled";
+const SPILLED_FOR_MS = 60 * 60_000;
+// How many waiting jobs the CLI hears about by name (WaitingMessage.queue).
+const QUEUE_SHOWN = 5;
 
 // One per enrolled machine, addressed by machine id. Holds the machine's `relayrunner connect`
 // WebSocket, so a live socket that has said hello means the machine is online. Uses the
@@ -143,8 +154,9 @@ export class MachineLink extends DurableObject<Env> {
       const machine = await saveHello(db, session.machineId, outcome.state.hello);
       if (machine?.pausedAt) ws.send(pausedFrame(true, await pausedByName(db, machine)));
       if (outcome.state.hello.hearsWaiting) {
-        const jobs = await this.waitingJobs();
-        if (jobs > 0 && ws.readyState === WebSocket.OPEN) ws.send(waitingFrame(jobs));
+        const waiting = await this.waiting();
+        if ((waiting.jobs > 0 || waiting.spilled.length > 0) && ws.readyState === WebSocket.OPEN)
+          ws.send(waitingFrame(waiting));
       }
       // Rotate the token on every connect, so a copy of the token file taken earlier stops
       // working once the CLI saves the new one (TokenMessage in @relayrunner/machine-protocol).
@@ -472,19 +484,46 @@ export class MachineLink extends DurableObject<Env> {
   }
 
   /**
-   * Notes how many of a workspace's jobs wait for a slot on this machine (Router.drain), and tells
-   * the machine's CLI the total over its workspaces, if it's online and reads `waiting`.
+   * Notes which of a workspace's jobs wait for a slot on this machine (Router.drain), and tells
+   * the machine's CLI about them over all its workspaces, if it's online and reads `waiting`.
    */
-  async setWaiting(workspaceId: string, jobs: number): Promise<void> {
-    if (jobs > 0) await this.ctx.storage.put(WAITING_KEY + workspaceId, jobs);
+  async setWaiting(workspaceId: string, jobs: QueueEntry[]): Promise<void> {
+    if (jobs.length > 0) await this.ctx.storage.put(WAITING_KEY + workspaceId, jobs);
     else await this.ctx.storage.delete(WAITING_KEY + workspaceId);
-    const ws = this.onlineSocket();
-    if (ws && attachment(ws)?.hello?.hearsWaiting) ws.send(waitingFrame(await this.waitingJobs()));
+    await this.tellWaiting();
   }
 
-  private async waitingJobs(): Promise<number> {
-    const stored = await this.ctx.storage.list<number>({ prefix: WAITING_KEY });
-    return [...stored.values()].reduce((sum, jobs) => sum + jobs, 0);
+  /**
+   * Notes that a job that fit this machine went to another runner because every slot was busy
+   * (Router.decide), so the app can say so for the next hour.
+   */
+  async spilled(at: number): Promise<void> {
+    const kept = (await this.ctx.storage.get<number[]>(SPILLED_KEY)) ?? [];
+    await this.ctx.storage.put(SPILLED_KEY, [...recent(kept, at), at]);
+    await this.tellWaiting();
+  }
+
+  private async tellWaiting() {
+    const ws = this.onlineSocket();
+    if (ws && attachment(ws)?.hello?.hearsWaiting) ws.send(waitingFrame(await this.waiting()));
+  }
+
+  private async waiting(): Promise<{ jobs: number; queue: QueueEntry[]; spilled: number[] }> {
+    const [stored, spilled] = await Promise.all([
+      this.ctx.storage.list<QueueEntry[] | number>({ prefix: WAITING_KEY }),
+      this.ctx.storage.get<number[]>(SPILLED_KEY),
+    ]);
+    let jobs = 0;
+    const queue: QueueEntry[] = [];
+    for (const value of stored.values()) {
+      if (typeof value === "number") jobs += value;
+      else {
+        jobs += value.length;
+        queue.push(...value);
+      }
+    }
+    queue.sort((a, b) => a.since - b.since);
+    return { jobs, queue: queue.slice(0, QUEUE_SHOWN), spilled: recent(spilled ?? [], Date.now()) };
   }
 
   /** Closes the machine's socket for good. DELETE /api/machines/:id calls this on revoke. */
@@ -597,8 +636,13 @@ export class MachineLink extends DurableObject<Env> {
   }
 }
 
-function waitingFrame(jobs: number): string {
-  return encodeMessage({ v: PROTOCOL_VERSION, type: "waiting", jobs });
+function waitingFrame(waiting: { jobs: number; queue: QueueEntry[]; spilled: number[] }): string {
+  return encodeMessage({ v: PROTOCOL_VERSION, type: "waiting", ...waiting });
+}
+
+// The times within the last hour.
+function recent(times: number[], now: number): number[] {
+  return times.filter((at) => at > now - SPILLED_FOR_MS);
 }
 
 function pausedFrame(paused: boolean, by: string | null) {

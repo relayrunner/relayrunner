@@ -170,10 +170,22 @@ pub enum GatewayMessage {
     Token {
         token: String,
     },
-    /// How many jobs are waiting for a slot on this machine.
+    /// How many jobs are waiting for a slot on this machine, the longest-waiting of them, and
+    /// when jobs in the last hour went elsewhere because every slot was busy.
     Waiting {
         jobs: u32,
+        #[serde(default)]
+        queue: Vec<QueueEntry>,
+        #[serde(default)]
+        spilled: Vec<u64>,
     },
+}
+
+/// A job waiting for a slot: its repo and since when, in ms since the epoch.
+#[derive(Deserialize, Serialize, Debug, Clone, PartialEq)]
+pub struct QueueEntry {
+    pub repo: String,
+    pub since: u64,
 }
 
 /// A text frame from the gateway, or why it was rejected. Checks the version before the shape,
@@ -305,6 +317,33 @@ mod tests {
             let parsed = parse_gateway(&message.to_string());
             assert!(parsed.is_ok(), "{name}: {parsed:?}");
         }
+    }
+
+    #[test]
+    fn reads_what_waits_and_what_went_elsewhere() {
+        let Ok(GatewayMessage::Waiting {
+            jobs,
+            queue,
+            spilled,
+        }) = parse_gateway(&fixtures()["gateway"]["waiting"].to_string())
+        else {
+            panic!("waiting should parse");
+        };
+        assert_eq!(jobs, 3);
+        assert_eq!(
+            queue,
+            vec![QueueEntry {
+                repo: "octo/app".into(),
+                since: 1_763_481_600_000
+            }]
+        );
+        assert_eq!(spilled, vec![1_763_481_000_000]);
+        let Ok(GatewayMessage::Waiting { queue, spilled, .. }) =
+            parse_gateway(&fixtures()["gateway"]["waitingCountOnly"].to_string())
+        else {
+            panic!("an older gateway's waiting should parse");
+        };
+        assert!(queue.is_empty() && spilled.is_empty());
     }
 
     #[test]

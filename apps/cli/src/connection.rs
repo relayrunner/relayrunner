@@ -4,7 +4,8 @@
 use crate::credentials::{self, Credentials};
 use crate::events;
 use crate::protocol::{
-    GatewayMessage, Hello, JobState, JobUpdate, MachineMessage, RunJob as JobInfo, parse_gateway,
+    GatewayMessage, Hello, JobState, JobUpdate, MachineMessage, QueueEntry, RunJob as JobInfo,
+    parse_gateway,
 };
 use futures_util::{SinkExt, StreamExt};
 use serde_json::json;
@@ -77,6 +78,10 @@ struct Live {
     jobs: Vec<String>,
     /// Jobs waiting for a slot here, as the gateway last said. 0 while not connected.
     waiting: u32,
+    /// The longest-waiting of them, longest first.
+    queue: Vec<QueueEntry>,
+    /// When jobs in the last hour went elsewhere because every slot was busy, in ms since the epoch.
+    spilled: Vec<u64>,
 }
 
 struct Conn {
@@ -102,8 +107,14 @@ impl Conn {
             "disconnected" => {
                 next.link = "reconnecting";
                 next.waiting = 0;
+                next.queue.clear();
             }
-            "waiting" => next.waiting = fields["jobs"].as_u64().unwrap_or(0) as u32,
+            "waiting" => {
+                next.waiting = fields["jobs"].as_u64().unwrap_or(0) as u32;
+                next.queue = serde_json::from_value(fields["queue"].clone()).unwrap_or_default();
+                next.spilled =
+                    serde_json::from_value(fields["spilled"].clone()).unwrap_or_default();
+            }
             "paused" => next.paused = fields["paused"].as_bool().unwrap_or(next.paused),
             _ => {}
         }
@@ -122,6 +133,8 @@ impl Conn {
                 "paused": self.live.paused,
                 "jobs": self.live.jobs,
                 "waiting": self.live.waiting,
+                "queue": self.live.queue,
+                "spilled": self.live.spilled,
                 "slots": self.options.hello.slots,
             }),
             false,
@@ -338,6 +351,8 @@ pub async fn run(options: Options) -> End {
             paused: false,
             jobs: Vec::new(),
             waiting: 0,
+            queue: Vec::new(),
+            spilled: Vec::new(),
         },
         jobs_tx,
         gateway_error: String::new(),
@@ -489,8 +504,8 @@ async fn session(
                         let job = JobInfo::read(job);
                         Some(conn.start_job(Run { route_id, jit_config, isolated, job }))
                     }
-                    Ok(GatewayMessage::Waiting { jobs }) => {
-                        conn.emit("waiting", json!({ "jobs": jobs }));
+                    Ok(GatewayMessage::Waiting { jobs, queue, spilled }) => {
+                        conn.emit("waiting", json!({ "jobs": jobs, "queue": queue, "spilled": spilled }));
                         None
                     }
                     Ok(GatewayMessage::Paused { paused, by }) => {
