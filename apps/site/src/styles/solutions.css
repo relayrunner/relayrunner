@@ -572,11 +572,25 @@ ol.sol-steps h3 {
   background: var(--raised);
   box-shadow: var(--shadow-card);
 }
+/* Fixed column widths, so switching platform or size doesn't move the columns. */
 .int-table table {
   width: 100%;
-  min-width: 860px;
+  min-width: 1100px;
   border-collapse: collapse;
+  table-layout: fixed;
   font-size: 15px;
+}
+.int-col-provider {
+  width: 38%;
+}
+.int-col-plan {
+  width: 17%;
+}
+.int-col-included {
+  width: 21%;
+}
+.int-col-price {
+  width: 12%;
 }
 .int-table th,
 .int-table td {

@@ -102,12 +102,18 @@ const first = cellKey("linux", 2);
 
     <div class="int-table">
       <table data-runner-table>
+        <colgroup>
+          <col class="int-col-provider" />
+          <col class="int-col-plan" />
+          <col class="int-col-included" />
+          <col class="int-col-price" />
+          <col class="int-col-price" />
+        </colgroup>
         <thead>
           <tr>
             <th scope="col">Provider</th>
             <th scope="col">Plan</th>
             <th scope="col">Included</th>
-            <th scope="col" class="num">vCPU</th>
             <th scope="col" class="num">Per minute</th>
             <th scope="col" class="num">Per hour</th>
           </tr>
@@ -147,9 +153,6 @@ const first = cellKey("linux", 2);
                   </th>
                   <td>{row.plan}</td>
                   <td class="int-mute">{row.included}</td>
-                  <td class="num" data-vcpus>
-                    {cell?.vcpus}
-                  </td>
                   <td class="num" data-min>
                     {cell && minuteText(cell.usd)}
                   </td>
@@ -171,7 +174,7 @@ const first = cellKey("linux", 2);
                     </span>
                   </a>
                 </th>
-                <td colspan="5" class="num int-mute">
+                <td colspan="4" class="num int-mute">
                   {row.why}
                 </td>
               </tr>
@@ -255,8 +258,10 @@ const first = cellKey("linux", 2);
         // A provider with no runner for this platform and size leaves the table.
         row.hidden = !cell;
         if (!cell) return [];
-        row.querySelector<HTMLElement>("[data-label]")!.textContent = cell.label;
-        row.querySelector<HTMLElement>("[data-vcpus]")!.textContent = String(cell.vcpus);
+        // macOS runners come in one size each, which differs by provider, so the label says it.
+        row.querySelector<HTMLElement>("[data-label]")!.textContent = mac
+          ? `${cell.label} · ${cell.vcpus} vCPU`
+          : cell.label;
         row.querySelector<HTMLElement>("[data-min]")!.textContent = cell.min;
         row.querySelector<HTMLElement>("[data-hour]")!.textContent = cell.hour;
         return [{ row, usd: cell.usd }];
