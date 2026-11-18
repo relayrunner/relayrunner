@@ -32,6 +32,8 @@
     "deploy:web": "pnpm --filter @relayrunner/web run deploy",
     "deploy:site": "pnpm --filter @relayrunner/site run deploy",
     "deploy:site:preview": "pnpm --filter @relayrunner/site run deploy:preview",
+    "release:mac": "apps/mac/scripts/release-worktree.sh",
+    "release:mac:dry-run": "apps/mac/scripts/release-worktree.sh --dry-run",
     "screenshots": "node scripts/screenshots.mjs",
     "changeset": "changeset",
     "changeset:lint": "node scripts/changeset-lint.mjs",
