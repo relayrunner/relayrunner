@@ -74,6 +74,14 @@ ditto -c -k --sequesterRsrc --keepParent "$app" "$zip"
 sparkle="$(bash scripts/setup-sparkle.sh)"
 # Prints sparkle:edSignature="…" length="…", with the private key from the keychain.
 signature="$("$sparkle/bin/sign_update" "$zip")"
+# The release notes are this version's section of apps/mac/CHANGELOG.md, without commit ids and with
+# plain headings. The appcast carries them inline as Markdown, which Sparkle shows as native text
+# (no web view), in the system font and appearance.
+notes="$(awk -v v="## $version" '$0 == v { found=1; next } found && /^## / { exit } found { print }' \
+  CHANGELOG.md 2>/dev/null |
+  sed -E 's/^- [0-9a-f]{7,}: /- /; s/^### Major Changes$/### Breaking changes/;
+    s/^### Minor Changes$/### New/; s/^### Patch Changes$/### Fixes and improvements/' || true)"
+notes="${notes:-RelayRunner for Mac $version}"$'\n\n'"Includes the relayrunner CLI $cli_version."
 appcast="$root/apps/site/public/mac/appcast.xml"
 mkdir -p "$(dirname "$appcast")"
 cat >"$appcast" <<XML
@@ -88,7 +96,10 @@ cat >"$appcast" <<XML
       <sparkle:version>$version</sparkle:version>
       <sparkle:shortVersionString>$version</sparkle:shortVersionString>
       <sparkle:minimumSystemVersion>14.0</sparkle:minimumSystemVersion>
-      <sparkle:releaseNotesLink>https://github.com/$repo/releases/tag/$tag</sparkle:releaseNotesLink>
+      <description sparkle:format="markdown"><![CDATA[
+$notes
+]]></description>
+      <sparkle:fullReleaseNotesLink>https://github.com/$repo/blob/main/apps/mac/CHANGELOG.md</sparkle:fullReleaseNotesLink>
       <enclosure url="https://github.com/$repo/releases/download/$tag/RelayRunner-$version.zip" $signature type="application/octet-stream"/>
     </item>
   </channel>
@@ -103,13 +114,10 @@ if $dry_run; then
 fi
 
 step "Making the $tag release"
-# Its notes are this version's section of apps/mac/CHANGELOG.md. Not marked latest, so the CLI's
-# release stays the one GitHub shows first.
-notes="$(awk -v v="## $version" '$0 == v { found=1; next } found && /^## / { exit } found { print }' \
-  CHANGELOG.md 2>/dev/null || true)"
+# Not marked latest, so the CLI's release stays the one GitHub shows first.
 gh release create "$tag" "$dmg" "$zip" --repo "$repo" --target "$(git -C "$root" rev-parse HEAD)" \
   --title "RelayRunner for Mac $version" --latest=false \
-  --notes "${notes:-RelayRunner for Mac $version}"$'\n\n'"Includes the relayrunner CLI $cli_version."
+  --notes "$notes"
 
 step "Bumping the Homebrew cask"
 sha="$(shasum -a 256 "$dmg" | cut -d' ' -f1)"

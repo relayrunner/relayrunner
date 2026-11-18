@@ -42,7 +42,8 @@ app and a DMG, and signs a zip for Sparkle. It bundles the CLI from the same com
 the About tab shows. Publishing makes a `mac-v<version>` GitHub release with the DMG and zip, bumps the cask in [relayrunner/homebrew-tap](https://github.com/relayrunner/homebrew-tap)
 (`brew install --cask relayrunner/tap/relayrunner`), and opens a PR with the new
 `apps/site/public/mac/appcast.xml`. Installed apps check that feed about once a day and offer the
-update once the PR merges and the site deploys.
+update once the PR merges and the site deploys. The update window shows that version's
+`CHANGELOG.md` section, which the appcast carries inline as Markdown.
 
 The keychain needs a Developer ID Application certificate, a notarytool profile named
 `relayrunner` (`xcrun notarytool store-credentials relayrunner`), and Sparkle's private key. The

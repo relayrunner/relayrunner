@@ -9,7 +9,14 @@
       <sparkle:version>0.2.1</sparkle:version>
       <sparkle:shortVersionString>0.2.1</sparkle:shortVersionString>
       <sparkle:minimumSystemVersion>14.0</sparkle:minimumSystemVersion>
-      <sparkle:releaseNotesLink>https://github.com/relayrunner/relayrunner/releases/tag/mac-v0.2.1</sparkle:releaseNotesLink>
+      <description sparkle:format="markdown"><![CDATA[
+### Fixes and improvements
+
+- The Runners page shows when a machine runs through the Mac app, with the app's version beside its CLI's.
+
+Includes the relayrunner CLI 0.13.1.
+]]></description>
+      <sparkle:fullReleaseNotesLink>https://github.com/relayrunner/relayrunner/blob/main/apps/mac/CHANGELOG.md</sparkle:fullReleaseNotesLink>
       <enclosure url="https://github.com/relayrunner/relayrunner/releases/download/mac-v0.2.1/RelayRunner-0.2.1.zip" sparkle:edSignature="id01iP/T2S4g/BGbnH4Dh8fq8E+G2vKiUFGGp9C/ZT4NgscowNhDD4uS663hxoMTKR4VJO+OBL6MDuv1aeWPBQ==" length="2807454" type="application/octet-stream"/>
     </item>
   </channel>
