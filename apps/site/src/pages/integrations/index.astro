@@ -104,18 +104,18 @@ const first = cellKey("linux", 2);
       <table data-runner-table>
         <colgroup>
           <col class="int-col-provider" />
+          <col class="int-col-price" />
+          <col class="int-col-price" />
           <col class="int-col-plan" />
           <col class="int-col-included" />
-          <col class="int-col-price" />
-          <col class="int-col-price" />
         </colgroup>
         <thead>
           <tr>
             <th scope="col">Provider</th>
-            <th scope="col">Plan</th>
-            <th scope="col">Included</th>
             <th scope="col" class="num">Per minute</th>
             <th scope="col" class="num">Per hour</th>
+            <th scope="col" class="int-after-price">Plan</th>
+            <th scope="col">Included</th>
           </tr>
         </thead>
         <tbody>
@@ -151,14 +151,14 @@ const first = cellKey("linux", 2);
                       </span>
                     </a>
                   </th>
-                  <td>{row.plan}</td>
-                  <td class="int-mute">{row.included}</td>
                   <td class="num" data-min>
                     {cell && minuteText(cell.usd)}
                   </td>
                   <td class="num int-mute" data-hour>
                     {cell && hourText(cell.usd)}
                   </td>
+                  <td class="int-after-price">{row.plan}</td>
+                  <td class="int-mute">{row.included}</td>
                 </tr>
               );
             })

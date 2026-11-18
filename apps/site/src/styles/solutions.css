@@ -581,16 +581,20 @@ ol.sol-steps h3 {
   font-size: 15px;
 }
 .int-col-provider {
-  width: 38%;
-}
-.int-col-plan {
-  width: 17%;
-}
-.int-col-included {
-  width: 21%;
+  width: 36%;
 }
 .int-col-price {
-  width: 12%;
+  width: 10%;
+}
+.int-col-plan {
+  width: 21%;
+}
+.int-col-included {
+  width: 23%;
+}
+/* A gap between the right-aligned prices and the left-aligned plan after them. */
+.int-table .int-after-price {
+  padding-left: 40px;
 }
 .int-table th,
 .int-table td {
