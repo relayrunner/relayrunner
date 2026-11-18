@@ -139,6 +139,10 @@ export const publicRepoText = (key: RunnerKey) =>
     ? "public repos never run on self-hosted machines"
     : `${RUNNER_LABELS[key]} doesn't run public repos`;
 
+/** Why a hosted provider's step skipped a personal account's job: it only serves organizations. */
+export const personalAccountText = (key: RunnerKey) =>
+  `${RUNNER_LABELS[key]} only runs organizations' repos`;
+
 /**
  * The stored column's value as an order. A missing or unreadable value reads as the default,
  * so routing never stalls on a bad row.

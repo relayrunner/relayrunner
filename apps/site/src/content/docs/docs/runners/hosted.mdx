@@ -1,6 +1,6 @@
 ---
 title: Hosted providers
-description: Routing jobs to Blacksmith, Depot, Namespace, WarpBuild, Ubicloud, Boat and RunsOn.
+description: Routing jobs to Blacksmith, Depot, Namespace, WarpBuild, Ubicloud, Boat, RunsOn and seven more runner clouds.
 ---
 
 import Provider from "@/components/docs/Provider.astro";
@@ -28,7 +28,7 @@ Each job has its own relay, so each job picks its own size, such as `blacksmith-
 
 A provider's step always takes a job that names one of its labels. There's no way to see a provider's capacity, so steps below it only run for jobs that don't name one. A common order is your machines, then a hosted provider, then GitHub-hosted.
 
-Unlike machines, hosted providers also run public repos' jobs, except Boat, which refuses them unless you allow them in Boat. RelayRunner skips Boat for public repos.
+Unlike machines, hosted providers also run public repos' jobs, except Boat, which refuses them unless you allow them in Boat, and BerryBox, which runs private repos only. RelayRunner skips both for public repos. StarSling, Monk CI, Latchkey and BerryBox only run organizations' repos, so RelayRunner skips them for a personal account's jobs.
 
 ## The providers
 
@@ -41,6 +41,13 @@ Unlike machines, hosted providers also run public repos' jobs, except Boat, whic
 | Ubicloud   | `ubicloud`   |
 | Boat       | `boat`       |
 | RunsOn     | `runs-on`    |
+| StarSling  | `starsling`  |
+| Monk CI    | `monkci`     |
+| Runloft    | `runloft`    |
+| Latchkey   | `latchkey`   |
+| BerryBox   | `berrybox`   |
+| Celesto    | `celesto`    |
+| InstaBox   | `instabox`   |
 
 <Provider id="blacksmith" />
 
@@ -59,6 +66,36 @@ Boat runs Linux x64 only. Its CI needs Boat's $20 plan or higher, and `boat-xlar
 <Provider id="runs-on" />
 
 RunsOn's label carries the run's id, so write it as an expression: `runs-on: runs-on=${{ github.run_id }}/runner=2cpu-linux-x64`.
+
+<Provider id="starsling" />
+
+StarSling's label with no size, `starsling-ubuntu-24.04`, is 4 vCPU. Add `-2` for 2 vCPU.
+
+<Provider id="monkci" />
+
+`monkci-ubuntu-latest` is Monk CI's largest runner, 32 vCPU. Name a size, such as `monkci-ubuntu-24.04-4`, for anything smaller.
+
+<Provider id="runloft" />
+
+Runloft runs 2 vCPU Linux x64 until it turns on bigger sizes, Arm, Windows or macOS for your account, so `auto` always picks `runloft-ubuntu-24.04`.
+
+<Provider id="latchkey" />
+
+Latchkey's $5 plan covers one repo. At its spend limit, Latchkey holds queued jobs.
+
+<Provider id="berrybox" />
+
+Turn on each BerryBox size you name in its team settings, and keep enough credit for a job's maximum runtime: BerryBox holds that much before it starts a job.
+
+<Provider id="celesto" />
+
+Celesto's trial runs `celesto-micro` (1 vCPU) only, so add credit before routing `auto` jobs there: `auto` starts at `celesto-standard` (2 vCPU).
+
+<Provider id="instabox" />
+
+InstaBox's plan decides which sizes run, and the Free plan runs `instabox-medium` (4 vCPU) only. `auto` answers a 2 vCPU job with `instabox-medium` too.
+
+A label the account can't run sits queued on GitHub. After a few jobs on it go unanswered, the Router skips that label until a trial job starts.
 
 ## Good to know
 

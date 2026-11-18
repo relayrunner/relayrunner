@@ -115,14 +115,14 @@ export const PROVIDERS: Record<ProviderId, ProviderInfo> = {
     setup: "Deploy RunsOn into your AWS account and install the GitHub App it creates.",
     docsUrl: "https://runs-on.com/docs/",
   },
-  // Listed runner clouds (LISTED_PROVIDER_IDS): recognised and offered, not routed to yet. Read
-  // from each one's own docs on 2026-11-17.
+  // Runner clouds added 2026-11-17, read from each one's own docs then and on 2026-11-18.
   starsling: {
     name: "StarSling",
     summary: "Hosted Linux runners for GitHub Actions, with GPU runners on request.",
     labels: "starsling-ubuntu-<version>-<vcpus>",
     example: "starsling-ubuntu-24.04-2",
-    setup: "Sign up for StarSling with GitHub and install its GitHub App from its dashboard.",
+    setup:
+      "Sign up for StarSling with GitHub and install its GitHub App on your organization from its dashboard. It doesn't run personal accounts' repos.",
     dashboardUrl: "https://runners.starsling.dev",
     docsUrl: "https://docs.starsling.dev",
   },
@@ -131,7 +131,8 @@ export const PROVIDERS: Record<ProviderId, ProviderInfo> = {
     summary: "Hosted Linux runners for GitHub Actions.",
     labels: "monkci-ubuntu-24.04-<vcpus>",
     example: "monkci-ubuntu-24.04-2",
-    setup: "Sign up for Monk CI and have an organization owner install its GitHub App.",
+    setup:
+      "Sign up for Monk CI and have an organization owner install its GitHub App on the repos that should use it. It doesn't run personal accounts' repos.",
     dashboardUrl: "https://app.monkci.com",
     docsUrl: "https://monkci.com/docs",
   },
@@ -140,7 +141,8 @@ export const PROVIDERS: Record<ProviderId, ProviderInfo> = {
     summary: "Hosted runners for GitHub Actions, billed per second.",
     labels: "runloft-*",
     example: "runloft-ubuntu-24.04",
-    setup: "Sign in to Runloft with GitHub and buy credit or use its free minutes.",
+    setup:
+      "Sign in to Runloft with GitHub and install its GitHub App. Runners bigger than 2 vCPU, and Arm, Windows and macOS, run once Runloft turns them on for your account.",
     dashboardUrl: "https://runloft.dev/app/",
     docsUrl: "https://runloft.dev/docs/",
   },
@@ -149,7 +151,8 @@ export const PROVIDERS: Record<ProviderId, ProviderInfo> = {
     summary: "Hosted Linux runners for GitHub Actions.",
     labels: "latchkey-small, -medium, -large, -xlarge",
     example: "latchkey-small",
-    setup: "Sign up for Latchkey and install its GitHub App on your organization.",
+    setup:
+      "Sign up for Latchkey and install its GitHub App on your organization. Its runners don't take personal accounts' repos, and its $5 plan covers one repo.",
     dashboardUrl: "https://latchkey.dev/sign-in",
     docsUrl: "https://latchkey.dev/documentation",
   },
@@ -159,7 +162,7 @@ export const PROVIDERS: Record<ProviderId, ProviderInfo> = {
     labels: "berrybox-<vcpus>vcpu-ubuntu-2404",
     example: "berrybox-2vcpu-ubuntu-2404",
     setup:
-      "Sign up for BerryBox, install its GitHub App, add credit and turn on the sizes you want in team settings.",
+      "Sign up for BerryBox, install its GitHub App on your organization, add credit and turn on the sizes you want in team settings. It runs organizations' private repos only.",
     dashboardUrl: "https://berrybox.io/login",
     docsUrl: "https://docs.berrybox.io",
   },
@@ -169,7 +172,7 @@ export const PROVIDERS: Record<ProviderId, ProviderInfo> = {
     labels: "celesto, celesto-*",
     example: "celesto-standard",
     setup:
-      "Sign up for Celesto, add credit or start its trial, and install the celesto-ci GitHub App.",
+      "Sign up for Celesto and install the celesto-ci GitHub App, then add credit: the trial runs celesto-micro only.",
     dashboardUrl: "https://celesto.ai/dashboard",
     docsUrl: "https://celesto.ai/docs/ci",
   },
@@ -178,7 +181,8 @@ export const PROVIDERS: Record<ProviderId, ProviderInfo> = {
     summary: "Linux runners for GitHub Actions on InstaBox's sandboxes.",
     labels: "instabox-*",
     example: "instabox-medium",
-    setup: "Sign up for InstaBox and connect GitHub from the CI page of its dashboard.",
+    setup:
+      "Sign up for InstaBox and connect GitHub from the CI page of its dashboard. The Free plan runs instabox-medium only.",
     dashboardUrl: "https://instabox.sh",
     docsUrl: "https://instabox.sh/docs/use-cases/ci",
   },
@@ -222,6 +226,13 @@ export const HOSTED_PROVIDER_IDS = [
   "ubicloud",
   "boat",
   "runs-on",
+  "starsling",
+  "monkci",
+  "runloft",
+  "latchkey",
+  "berrybox",
+  "celesto",
+  "instabox",
 ] as const satisfies readonly ProviderId[];
 
 export type HostedProviderId = (typeof HOSTED_PROVIDER_IDS)[number];
@@ -237,27 +248,6 @@ export const LABEL_PREFIXES: Record<HostedProviderId, string[]> = {
   ubicloud: ["ubicloud-"],
   boat: ["boat-", "boat/"],
   "runs-on": ["runs-on=", "runs-on/"],
-};
-
-/**
- * Runner clouds RelayRunner recognises and lists but doesn't route to yet: a job on one of their
- * labels is counted as theirs, and the Providers page offers them, but they aren't steps in the
- * runner order and the relay has no input for them.
- */
-export const LISTED_PROVIDER_IDS = [
-  "starsling",
-  "monkci",
-  "runloft",
-  "latchkey",
-  "berrybox",
-  "celesto",
-  "instabox",
-] as const satisfies readonly ProviderId[];
-
-export type ListedProviderId = (typeof LISTED_PROVIDER_IDS)[number];
-
-/** How each listed runner cloud's labels start, matched the same way as LABEL_PREFIXES. */
-export const LISTED_LABEL_PREFIXES: Record<ListedProviderId, string[]> = {
   starsling: ["starsling-"],
   monkci: ["monkci-"],
   runloft: ["runloft-"],
@@ -296,13 +286,36 @@ export const APP_SLUG_PATTERNS: Record<HostedProviderId, RegExp> = {
   ubicloud: /ubicloud/,
   boat: /boat/,
   "runs-on": /runs-?on/,
+  starsling: /starsling/,
+  monkci: /monk-?ci/,
+  runloft: /runloft/,
+  latchkey: /latchkey/,
+  berrybox: /berrybox/,
+  celesto: /celesto/,
+  instabox: /instabox/,
 };
 
 /**
- * Hosted providers that refuse public repos' jobs unless the account allows them, so the Router
- * skips them for public repos instead of leaving the job queued. Boat: https://docs.boat.dev/ci
+ * Hosted providers that refuse public repos' jobs, so the Router skips them for public repos
+ * instead of leaving the job queued. Boat until the account allows them
+ * (https://docs.boat.dev/ci); BerryBox runs private repos only
+ * (https://docs.berrybox.io/docs/getting-started/availability).
  */
-export const SKIPS_PUBLIC_REPOS: readonly HostedProviderId[] = ["boat"];
+export const SKIPS_PUBLIC_REPOS: readonly HostedProviderId[] = ["boat", "berrybox"];
+
+/**
+ * Hosted providers whose runners only serve GitHub organizations, so the Router skips them for a
+ * personal account's repos instead of leaving the job queued.
+ * https://docs.starsling.dev, https://monkci.com/docs/quickstart,
+ * https://latchkey.dev/documentation/install-the-github-app,
+ * https://docs.berrybox.io/docs/getting-started/availability
+ */
+export const SKIPS_PERSONAL_ACCOUNTS: readonly HostedProviderId[] = [
+  "starsling",
+  "monkci",
+  "latchkey",
+  "berrybox",
+];
 
 /** The hosted providers whose GitHub App is among these installed app slugs. */
 export function providersOfAppSlugs(slugs: string[]): HostedProviderId[] {

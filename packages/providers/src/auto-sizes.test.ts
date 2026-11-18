@@ -15,6 +15,17 @@ describe("labelForSize", () => {
     ["boat", 8, "boat-large"],
     ["boat", 16, null],
     ["runs-on", 4, "runs-on=7/runner=4cpu-linux-x64"],
+    ["starsling", 2, "starsling-ubuntu-24.04-2"],
+    ["starsling", 4, "starsling-ubuntu-24.04"],
+    ["monkci", 32, "monkci-ubuntu-24.04-32"],
+    ["runloft", 2, "runloft-ubuntu-24.04"],
+    ["runloft", 4, null],
+    ["latchkey", 16, "latchkey-xlarge"],
+    ["berrybox", 8, "berrybox-8vcpu-ubuntu-2404"],
+    ["celesto", 2, "celesto-standard"],
+    ["celesto", 16, null],
+    ["instabox", 2, "instabox-medium"],
+    ["instabox", 32, "instabox-2xlarge"],
     ["github", 2, "ubuntu-latest"],
     ["github", 1, "ubuntu-slim"],
     ["github", 4, null],
@@ -27,12 +38,29 @@ describe("labelForSize", () => {
     expect(labelForSize("ubicloud", 20, 1)).toBe("ubicloud-standard-30");
   });
 
-  test.each(["blacksmith", "depot", "warpbuild", "ubicloud", "namespace"])(
-    "%s labels read back as the size they ask for",
+  test.each([
+    "blacksmith",
+    "depot",
+    "warpbuild",
+    "ubicloud",
+    "namespace",
+    "starsling",
+    "monkci",
+    "latchkey",
+    "berrybox",
+  ])("%s labels read back as the size they ask for", (provider) => {
+    for (const vcpus of [2, 4, 8, 16]) {
+      const label = labelForSize(provider, vcpus, 1)!;
+      expect(runnerSize(provider, label)?.vcpus).toBe(vcpus);
+    }
+  });
+
+  test.each(["runloft", "celesto", "instabox"])(
+    "%s labels read back at least the size they ask for",
     (provider) => {
-      for (const vcpus of [2, 4, 8, 16]) {
-        const label = labelForSize(provider, vcpus, 1)!;
-        expect(runnerSize(provider, label)?.vcpus).toBe(vcpus);
+      for (const vcpus of [2, 4, 8]) {
+        const label = labelForSize(provider, vcpus, 1);
+        if (label) expect(runnerSize(provider, label)!.vcpus).toBeGreaterThanOrEqual(vcpus);
       }
     },
   );

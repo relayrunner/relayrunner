@@ -20,7 +20,7 @@ use yaml_rust2::{Yaml, YamlLoader, yaml::Hash};
 
 /// The relay version `init` writes. Bump it with each relayrunner/actions release, along with the
 /// skills and agent guide that show it (a test checks them).
-pub const RELAY_REF: &str = "v1.0.0-beta.6";
+pub const RELAY_REF: &str = "v1.0.0-beta.7";
 pub const RELAY_WORKFLOW: &str = "relayrunner/actions/.github/workflows/relay.yml";
 
 /// The hosted providers a relay can send a job to, and how their labels start: a copy of
@@ -33,6 +33,13 @@ const HOSTED_PROVIDERS: &[(&str, &[&str])] = &[
     ("ubicloud", &["ubicloud-"]),
     ("boat", &["boat-", "boat/"]),
     ("runs-on", &["runs-on=", "runs-on/"]),
+    ("starsling", &["starsling-"]),
+    ("monkci", &["monkci-"]),
+    ("runloft", &["runloft-"]),
+    ("latchkey", &["latchkey-"]),
+    ("berrybox", &["berrybox-"]),
+    ("celesto", &["celesto-"]),
+    ("instabox", &["instabox-"]),
 ];
 
 fn hosted_provider_of(lower: &str) -> Option<&'static str> {
@@ -851,6 +858,8 @@ mod tests {
         let d = one(&job("    runs-on: depot-macos-latest\n"));
         assert_eq!((d.provider, d.machine), (Some("depot"), Some("macOS")));
         assert_eq!(hosted_provider_of("ubicloud"), Some("ubicloud"));
+        assert_eq!(hosted_provider_of("celesto"), Some("celesto"));
+        assert_eq!(hosted_provider_of("instabox-medium"), Some("instabox"));
         assert_eq!(hosted_provider_of("boathouse"), None);
     }
 

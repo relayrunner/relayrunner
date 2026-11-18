@@ -9,6 +9,7 @@ import {
 import {
   noSizeText,
   notProviderLabelText,
+  personalAccountText,
   publicRepoText,
   RUNNER_LABELS,
   type RunnerKey,
@@ -93,6 +94,8 @@ function shortSkip(walk: RouteWalk, step: SkippedStep): string | null {
     }
     case "public_repo":
       return "public repo";
+    case "personal_account":
+      return "personal account";
     case "too_many_labels":
       return `${key} takes one label`;
     case "not_provider_label":
@@ -143,6 +146,8 @@ function longSkip(walk: RouteWalk, step: SkippedStep): string {
     }
     case "public_repo":
       return publicRepoText(key);
+    case "personal_account":
+      return personalAccountText(key);
     case "too_many_labels":
       return `${key} takes one label, not ${walk[key].join(", ")}`;
     case "not_provider_label":
@@ -173,7 +178,8 @@ export function walkSummary(walk: RouteWalk): { text: string; tone: WalkTone } |
   for (const step of walk.skipped) {
     const text = shortSkip(walk, step);
     if (text) parts.push(text);
-    if (step.reason !== "not_configured" && step.reason !== "public_repo") tone = "fallback";
+    if (!["not_configured", "public_repo", "personal_account"].includes(step.reason))
+      tone = "fallback";
   }
   for (const key of walk.notInOrder) parts.push(`${key} is set but not in your order`);
   return parts.length ? { text: parts.join("; "), tone } : null;

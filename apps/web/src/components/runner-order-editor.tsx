@@ -52,6 +52,7 @@ import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover
 import { hasQuota, type AccountUsage } from "@/lib/actions-usage";
 import { AppError } from "@relayrunner/errors";
 import type { Machine } from "@/lib/machines";
+import { providerInfo } from "@/lib/provider-catalog";
 import { previewRoute, type StepVerdict } from "@/lib/route-preview";
 import { saveRunnerOrder } from "@/lib/runner-order";
 import type { LabelUse } from "@/lib/router-setup";
@@ -204,7 +205,11 @@ export function RunnerOrderEditor({
                   onSelect={() => addStep("github")}
                 />
                 <DropdownMenuSeparator />
-                {HOSTED_PROVIDER_IDS.map((id) => (
+                {/* Only providers operators made Live (Admin › Providers); a Hidden one already
+                    in the order keeps its step. */}
+                {HOSTED_PROVIDER_IDS.filter(
+                  (id) => providerInfo(id).status === "live" || slots.has(id),
+                ).map((id) => (
                   <AddItem
                     key={id}
                     runner={id}
@@ -721,7 +726,7 @@ function SetupPanel({ steps, labels }: { steps: RunnerStep[]; labels: LabelUse[]
   const snippet = [
     "jobs:",
     "  relay:",
-    "    uses: relayrunner/actions/.github/workflows/relay.yml@v1.0.0-beta.6",
+    "    uses: relayrunner/actions/.github/workflows/relay.yml@v1.0.0-beta.7",
     "    with:",
     ...keys.map((key) => `      ${key}: auto`),
     "  test:",

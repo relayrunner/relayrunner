@@ -9,12 +9,18 @@
 // 3. The `queued` webhook for that job claims the route (same repo, same run) and the machine's
 //    MachineLink mints an org JIT runner on the label and sends the machine a `run` message.
 
-import { type HostedProviderId, isProviderLabel, SKIPS_PUBLIC_REPOS } from "@relayrunner/providers";
+import {
+  type HostedProviderId,
+  isProviderLabel,
+  SKIPS_PERSONAL_ACCOUNTS,
+  SKIPS_PUBLIC_REPOS,
+} from "@relayrunner/providers";
 import {
   AUTO,
   byRunnerKey,
   noSizeText,
   notProviderLabelText,
+  personalAccountText,
   publicRepoText,
   RUNNER_KEYS,
   RUNNER_LABELS,
@@ -528,7 +534,8 @@ function actorOf(login: unknown, id: unknown): GithubActor | null {
 export const sameLogin = (a: string, b: string) => a.toLowerCase() === b.toLowerCase();
 
 // Why a step of the order didn't answer: not_configured (the relay left the provider's input
-// empty), public_repo (machines never run a public repo's jobs), no_machine (no online, idle
+// empty), public_repo (machines never run a public repo's jobs), personal_account (a hosted
+// provider that serves only organizations, and a personal account's repo), no_machine (no online, idle
 // machine has every wanted label), too_many_labels (`github` or a hosted provider's input names
 // more than one label; a runs-on from an output holds one), not_provider_label (a hosted provider's
 // input names a label that provider doesn't serve, so the job would sit queued). Shared with the
@@ -592,6 +599,8 @@ export type RouteDecision =
 
 export interface RouteRequest extends RelayInputs {
   private: boolean;
+  // The repo belongs to a personal account, not an organization. Unset reads as an organization.
+  personal?: boolean;
   // An auto relay's size in vCPUs (src/auto-jobs.ts). A provider still set to `auto` has no
   // runner that big.
   size?: number;
@@ -723,6 +732,8 @@ export async function decideRoute(
       if (labels.length === 0) skipped.push({ key, reason: "not_configured" });
       else if (!job.private && SKIPS_PUBLIC_REPOS.includes(key))
         skipped.push({ key, reason: "public_repo" });
+      else if (job.personal && SKIPS_PERSONAL_ACCOUNTS.includes(key))
+        skipped.push({ key, reason: "personal_account" });
       else if (unsized(labels)) skipped.push({ key, reason: "no_size", vcpus: job.size });
       else if (labels.length > 1) skipped.push({ key, reason: "too_many_labels" });
       else if (!isProviderLabel(key, labels[0]))
@@ -768,6 +779,8 @@ export function noRunnerReason(
           return `\`${key}\` isn't set on this relay`;
         case "public_repo":
           return publicRepoText(key);
+        case "personal_account":
+          return personalAccountText(key);
         case "no_machine":
           return job.machine.length === 1 && job.machine[0].toLowerCase() === "self-hosted"
             ? "no self-hosted machine is online and idle"

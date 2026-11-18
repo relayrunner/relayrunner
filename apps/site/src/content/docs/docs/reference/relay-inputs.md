@@ -34,6 +34,13 @@ Any input can say `auto` instead of a label. The Router then picks that provider
 | `warpbuild`  | none    | One WarpBuild label, such as `warp-ubuntu-latest-x64-2x`.                                                                                                                                                    |
 | `ubicloud`   | none    | One Ubicloud label, such as `ubicloud-standard-2`.                                                                                                                                                           |
 | `boat`       | none    | One Boat label, such as `boat` or `boat-large`.                                                                                                                                                              |
+| `starsling`  | none    | One StarSling label, such as `starsling-ubuntu-24.04-2`. Organizations' repos only.                                                                                                                          |
+| `monkci`     | none    | One Monk CI label, such as `monkci-ubuntu-24.04-2`. Organizations' repos only.                                                                                                                               |
+| `runloft`    | none    | One Runloft label, such as `runloft-ubuntu-24.04`.                                                                                                                                                           |
+| `latchkey`   | none    | One Latchkey label, such as `latchkey-small`. Organizations' repos only.                                                                                                                                     |
+| `berrybox`   | none    | One BerryBox label, such as `berrybox-2vcpu-ubuntu-2404`. Organizations' private repos only.                                                                                                                 |
+| `celesto`    | none    | One Celesto label, such as `celesto-standard`.                                                                                                                                                               |
+| `instabox`   | none    | One InstaBox label, such as `instabox-medium`.                                                                                                                                                               |
 | `runs-on`    | none    | One RunsOn label, such as `runs-on=${{ github.run_id }}/runner=2cpu-linux-x64`.                                                                                                                              |
 
 ## Auto sizes

@@ -20,7 +20,7 @@ export const RATES = {
   ubicloud: { standard: "vcpu", premium: "vcpu" },
   // Per runner, by label: boat-xlarge costs more per vCPU than the other sizes.
   boat: { "boat-small": "runner", boat: "runner", "boat-large": "runner", "boat-xlarge": "runner" },
-  // Listed runner clouds (LISTED_PROVIDER_IDS).
+  // Runner clouds added 2026-11-17.
   starsling: { linux: "vcpu" },
   monkci: { linux: "vcpu" },
   runloft: { linux: "vcpu", arm: "vcpu", windows: "vcpu", macos: "runner" },
