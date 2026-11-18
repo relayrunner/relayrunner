@@ -63,6 +63,14 @@ import { requireWorkspace } from "../middleware/workspace.ts";
 import { canControlMachine, requireManager } from "../roles.ts";
 import { AppError, type ErrorCode } from "@relayrunner/errors";
 import { annotate } from "../tracing.ts";
+import { machineJobFailure } from "../job-failures.ts";
+import {
+  MAX_MACHINE_JOBS,
+  machineJob,
+  machineJobs,
+  machineJobSteps,
+  machineWorkspaceFor,
+} from "../machine-jobs.ts";
 
 // Enrolling a machine (`relayrunner connect`) with Better Auth's device authorization plugin:
 //
@@ -81,6 +89,12 @@ import { annotate } from "../tracing.ts";
 //
 // Once enrolled, the CLI stays connected over GET /connect below, a WebSocket to the machine's
 // MachineLink Durable Object speaking @relayrunner/machine-protocol.
+
+const JobId = z.coerce.number().int().positive();
+const JobsQuery = z.object({
+  limit: z.coerce.number().int().min(1).max(MAX_MACHINE_JOBS).optional(),
+  before: z.coerce.number().int().positive().optional(),
+});
 
 const ApproveBody = z.object({
   userCode: z.string().min(1).max(64),
@@ -351,6 +365,44 @@ export const machineRoutes = new Hono<AppEnv>()
         status: await c.env.MACHINE_LINK.getByName(machine.id).status(),
       },
     });
+  })
+  // The jobs this machine ran, for RelayRunner for Mac: `Authorization: Bearer rrm_…`, 401 like
+  // /me. Newest first; `before` (ms, from `next`) continues. A machine sees only its own jobs.
+  .get("/me/jobs", async (c) => {
+    const db = createDb(c.env.DB);
+    const machine = await machineFromToken(db, c.req.header("authorization"));
+    if (!machine) throw new AppError("UNAUTHENTICATED");
+    const query = JobsQuery.safeParse(c.req.query());
+    if (!query.success) throw new AppError("INVALID_REQUEST");
+    return c.json(await machineJobs(db, machine.id, query.data));
+  })
+  // One of them with its steps from GitHub (null when GitHub no longer has the job). 404 when the
+  // job didn't run on this machine.
+  .get("/me/jobs/:jobId", async (c) => {
+    const db = createDb(c.env.DB);
+    const machine = await machineFromToken(db, c.req.header("authorization"));
+    if (!machine) throw new AppError("UNAUTHENTICATED");
+    const jobId = JobId.safeParse(c.req.param("jobId"));
+    if (!jobId.success) throw new AppError("INVALID_REQUEST");
+    const found = await machineJob(db, machine.id, jobId.data);
+    if (!found) throw new AppError("NOT_FOUND");
+    const steps = await machineJobSteps(c.env, found.job, found.installationId);
+    return c.json({ job: found.job, steps });
+  })
+  // Why one of them failed: the failed step, annotations, a log excerpt and, when the workspace has
+  // AI on, the likely cause. 404 when it didn't run here or didn't fail.
+  .get("/me/jobs/:jobId/failure", async (c) => {
+    const db = createDb(c.env.DB);
+    const machine = await machineFromToken(db, c.req.header("authorization"));
+    if (!machine) throw new AppError("UNAUTHENTICATED");
+    const jobId = JobId.safeParse(c.req.param("jobId"));
+    if (!jobId.success) throw new AppError("INVALID_REQUEST");
+    const found = await machineJob(db, machine.id, jobId.data);
+    if (!found) throw new AppError("NOT_FOUND");
+    const workspaceId = await machineWorkspaceFor(db, machine, found.installationId);
+    const failure = await machineJobFailure(db, c.env, machine.id, jobId.data, workspaceId);
+    if (!failure) throw new AppError("NOT_FOUND");
+    return c.json(failure);
   })
   // The machine's workspaces, for `relayrunner workspaces` (#366): `Authorization: Bearer rrm_…`,
   // 401 like /me. `workspaces` are the ones it takes jobs in, `others` its owner's other ones.

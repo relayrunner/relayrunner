@@ -82,7 +82,8 @@ export function logExcerpt(text: string): string[] {
 }
 
 // The workspace's failed jobs that match `where`, with what readFailure needs.
-function failedJobs(db: Db, workspaceId: string, ...where: SQL[]) {
+// `scope` limits the rows to a workspace's (inWorkspace) or a machine's (eq on machineId).
+function failedJobs(db: Db, scope: SQL, ...where: SQL[]) {
   return db
     .select({
       id: timing.id,
@@ -98,9 +99,7 @@ function failedJobs(db: Db, workspaceId: string, ...where: SQL[]) {
       failedStep: timing.failedStep,
     })
     .from(timing)
-    .where(
-      and(...where, inArray(timing.conclusion, ["failure", "timed_out"]), inWorkspace(workspaceId)),
-    );
+    .where(and(...where, inArray(timing.conclusion, ["failure", "timed_out"]), scope));
 }
 type FailedRow = Awaited<ReturnType<typeof failedJobs>>[number];
 
@@ -199,7 +198,7 @@ export async function failureDetails(token: string, repo: string, jobId: number)
 // is asked for after, since ai_cache already keeps answers and AI can be turned off meanwhile.
 async function failureRead(
   env: Env,
-  workspaceId: string,
+  workspaceId: string | null,
   github: Installation,
   row: FailedRow,
 ): Promise<JobFailure> {
@@ -209,7 +208,8 @@ async function failureRead(
     () => readFailure(github, row),
     (read) => read.log !== null,
   );
-  return { ...failure, cause: await failureCauseOf(env, workspaceId, failure) };
+  const cause = workspaceId ? await failureCauseOf(env, workspaceId, failure) : null;
+  return { ...failure, cause };
 }
 
 /** The failed jobs of one of the workspace's run attempts, with what GitHub says about each. */
@@ -222,7 +222,7 @@ export async function runFailures(
 ): Promise<RunFailures> {
   const rows = await failedJobs(
     db,
-    workspaceId,
+    inWorkspace(workspaceId),
     eq(timing.runId, run.runId),
     eq(timing.runAttempt, run.runAttempt),
     eq(timing.repositoryId, run.repositoryId),
@@ -247,9 +247,29 @@ export async function jobFailure(
   userId: string,
   jobId: number,
 ): Promise<JobFailure | null> {
-  const [row] = await failedJobs(db, workspaceId, eq(timing.id, jobId)).limit(1);
+  const [row] = await failedJobs(db, inWorkspace(workspaceId), eq(timing.id, jobId)).limit(1);
   if (!row) return null;
   const github = installation(env, row.installationId);
   await requireRepoAccess(db, userId, row, github);
   return failureRead(env, workspaceId, github, row);
+}
+
+/**
+ * Why a job that ran on `machineId` failed, for RelayRunner for Mac, which asks with the machine's
+ * own token. The machine ran the job, so its logs already passed through it: no repo check here.
+ * The cause is asked for in `workspaceId`, the machine's workspace for the job's installation, or
+ * left out when there's none. Null when the job didn't run there or didn't fail.
+ */
+export async function machineJobFailure(
+  db: Db,
+  env: Env,
+  machineId: string,
+  jobId: number,
+  workspaceId: string | null,
+): Promise<JobFailure | null> {
+  const [row] = await failedJobs(db, eq(timing.machineId, machineId), eq(timing.id, jobId)).limit(
+    1,
+  );
+  if (!row) return null;
+  return failureRead(env, workspaceId, installation(env, row.installationId), row);
 }
