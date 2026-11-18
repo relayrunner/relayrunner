@@ -13,6 +13,8 @@ import {
   SUGGEST_ISSUE_URL,
   type Integration,
 } from "../../lib/integrations";
+import { providerPlans } from "@relayrunner/providers";
+import { includedText } from "../../lib/provider-table";
 import { logoOf, PRICES_AS_OF } from "../../lib/providers";
 
 export const getStaticPaths = () =>
@@ -27,6 +29,20 @@ const { id, name } = p;
 const github = id === "github";
 const logo = logoOf(id)!;
 const others = INTEGRATIONS.filter((other) => other.id !== id);
+
+// Every plan the provider sells for CI, as the dashboard's provider page lists them.
+const plans = providerPlans(id);
+const fees = plans?.plans.some((plan) => plan.feeUsd !== undefined) ?? false;
+const feeText = (fee: number | null | undefined) =>
+  fee === null ? "Contact sales" : fee ? `$${fee.toLocaleString("en-US")}` : "No fee";
+const checkedText = plans
+  ? new Date(`${plans.checked}T00:00:00Z`).toLocaleDateString("en-US", {
+      month: "short",
+      day: "numeric",
+      year: "numeric",
+      timeZone: "UTC",
+    })
+  : "";
 
 // What the page is about: the provider as one step in a runner order, not the provider alone.
 const who = github ? "GitHub-hosted runners" : name;
@@ -246,27 +262,66 @@ const faqData = {
     <p class="kicker">Details</p>
     <h2 id="details-h">{name} at a glance</h2>
     <div class="int-details">
-      <dl class="int-facts">
-        <dt>What it is</dt>
-        <dd>{p.summary}</dd>
-        <dt>Labels</dt>
-        <dd><code>{p.labels}</code></dd>
-        <dt>Example</dt>
-        <dd><code>runs-on: {p.example}</code></dd>
-        <dt>Relay input</dt>
-        <dd><code>{id}</code></dd>
-        {
-          (p.docsUrl || p.dashboardUrl) && (
-            <>
-              <dt>Links</dt>
-              <dd class="int-links">
-                {p.docsUrl && <a href={p.docsUrl}>{name} docs</a>}
-                {p.dashboardUrl && <a href={p.dashboardUrl}>{name} dashboard</a>}
-              </dd>
-            </>
-          )
-        }
-      </dl>
+      <div class="int-main">
+        <dl class="int-facts">
+          <dt>What it is</dt>
+          <dd>{p.summary}</dd>
+          <dt>Labels</dt>
+          <dd><code>{p.labels}</code></dd>
+          <dt>Example</dt>
+          <dd><code>runs-on: {p.example}</code></dd>
+          <dt>Relay input</dt>
+          <dd><code>{id}</code></dd>
+          {
+            (p.docsUrl || p.dashboardUrl) && (
+              <>
+                <dt>Links</dt>
+                <dd class="int-links">
+                  {p.docsUrl && <a href={p.docsUrl}>{name} docs</a>}
+                  {p.dashboardUrl && <a href={p.dashboardUrl}>{name} dashboard</a>}
+                </dd>
+              </>
+            )
+          }
+        </dl>
+      {
+        plans && (
+          <div class="int-plans">
+            <h3>Plans</h3>
+            {plans.note && <p>{plans.note}</p>}
+            <div class="int-plans-table">
+              <table>
+                <thead>
+                  <tr>
+                    <th scope="col">Plan</th>
+                    {fees && (
+                      <th scope="col" class="num">
+                        Monthly
+                      </th>
+                    )}
+                    <th scope="col">Included</th>
+                    {plans.limitsLabel && <th scope="col">{plans.limitsLabel}</th>}
+                  </tr>
+                </thead>
+                <tbody>
+                  {plans.plans.map((plan) => (
+                    <tr>
+                      <th scope="row">{plan.name}</th>
+                      {fees && <td class="num">{feeText(plan.feeUsd)}</td>}
+                      <td>{includedText(plan.included)}</td>
+                      {plans.limitsLabel && <td>{plan.limits ?? "—"}</td>}
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+            <p>
+              From <a href={plans.source}>{name}'s pricing page</a>, checked {checkedText}.
+            </p>
+          </div>
+        )
+      }
+      </div>
       {
         p.prices.length > 0 && (
           <div class="int-prices">

@@ -1,14 +1,23 @@
 ---
-/* The integrations index: a card for each integration page, plus the runners you host yourself. */
+/*
+ * The integrations index: a strip of featured runner clouds, then every hosted runner's plan and
+ * list price in one table (src/lib/provider-table.ts), then the runners you host yourself.
+ */
 import CloseBox from "../../components/CloseBox.astro";
 import LandingPage from "../../layouts/LandingPage.astro";
+import { integrationPath, SUGGEST_EMAIL, SUGGEST_ISSUE_URL } from "../../lib/integrations";
 import {
-  INTEGRATIONS,
-  integrationPath,
-  SUGGEST_EMAIL,
-  SUGGEST_ISSUE_URL,
-} from "../../lib/integrations";
-import { logoOf } from "../../lib/providers";
+  cellKey,
+  FEATURED_TILES,
+  hourText,
+  minuteText,
+  missingLines,
+  TABLE_PLATFORMS,
+  TABLE_ROWS,
+  TABLE_SIZES,
+  UNPRICED_ROWS,
+} from "../../lib/provider-table";
+import { PRICES_AS_OF, PROVIDERS } from "../../lib/providers";
 
 const own = [
   {
@@ -24,38 +33,163 @@ const own = [
     summary: "The runners your organization already has.",
   },
 ];
+
+// The table opens on a 2 vCPU Linux x64 runner; the script below switches it.
+const first = cellKey("linux", 2);
 ---
 
 <LandingPage
   title="Integrations"
-  description="Route GitHub Actions jobs to Blacksmith, Depot, Namespace, WarpBuild, Ubicloud, Boat, RunsOn, GitHub-hosted runners or your own machines, and change the order from the dashboard."
+  description="Route GitHub Actions jobs to Blacksmith, Depot, Namespace, WarpBuild, Ubicloud, Boat, RunsOn, GitHub-hosted runners or your own machines, and compare their plans and list prices."
   path="/integrations"
 >
   <section class="wrap int-hero">
     <p class="eyebrow">Integrations</p>
     <h1>Route GitHub Actions jobs to the runners you already use.</h1>
     <p class="lede">
-      Each provider below works on its own. Put them in one runner order with your own machines, and
-      each job goes to the first runner that's free. You change the order from the dashboard instead
-      of your workflows.
+      Put any of these in one runner order with your own machines, and each job goes to the first
+      runner that's free. You change the order from the dashboard instead of your workflows.
     </p>
   </section>
 
-  <section class="section wrap int-index" aria-labelledby="hosted-h">
-    <h2 id="hosted-h" class="kicker">Hosted runners</h2>
-    <ul class="int-grid">
+  <section class="wrap int-featured" aria-label="Featured runner clouds">
+    <ul class="int-strip">
       {
-        INTEGRATIONS.map((p) => (
+        FEATURED_TILES.map((tile) => (
           <li>
-            <a href={integrationPath(p.id)}>
-              <img src={logoOf(p.id)} alt="" width="40" height="40" />
-              <b>{p.name}</b>
-              <span>{p.summary}</span>
+            <a href={tile.href}>
+              <img src={tile.logo} alt="" width="40" height="40" />
+              <span>
+                <b>{tile.name}</b>
+                <span>{tile.plan}</span>
+                <span>{tile.included} included</span>
+              </span>
             </a>
           </li>
         ))
       }
     </ul>
+  </section>
+
+  <section class="wrap int-index" aria-labelledby="hosted-h">
+    <h2 id="hosted-h" class="kicker">Hosted runners</h2>
+    <div class="int-controls" data-runner-table-controls hidden>
+      <div class="int-seg" role="group" aria-label="Platform">
+        {
+          TABLE_PLATFORMS.map((platform, i) => (
+            <button type="button" data-platform={platform.id} aria-pressed={String(i === 0)}>
+              {platform.label}
+            </button>
+          ))
+        }
+      </div>
+      <div class="int-seg" role="group" aria-label="Size">
+        {
+          TABLE_SIZES.map((size, i) => (
+            <button type="button" data-size={size} aria-pressed={String(i === 0)}>
+              {size} vCPU
+            </button>
+          ))
+        }
+      </div>
+      <div class="int-sort">
+        <span id="sort-label">Sort</span>
+        <div class="int-seg" role="group" aria-labelledby="sort-label">
+          <button type="button" data-sort="name" aria-pressed="true">Name</button>
+          <button type="button" data-sort="price" aria-pressed="false">Price</button>
+        </div>
+      </div>
+    </div>
+
+    <div class="int-table">
+      <table data-runner-table>
+        <thead>
+          <tr>
+            <th scope="col">Provider</th>
+            <th scope="col">Plan</th>
+            <th scope="col">Included</th>
+            <th scope="col" class="num">vCPU</th>
+            <th scope="col" class="num">Per minute</th>
+            <th scope="col" class="num">Per hour</th>
+          </tr>
+        </thead>
+        <tbody>
+          {
+            TABLE_ROWS.map((row) => {
+              const cell = row.cells[first];
+              const cells = Object.fromEntries(
+                Object.entries(row.cells).map(([key, each]) => [
+                  key,
+                  {
+                    label: each.label,
+                    vcpus: each.vcpus,
+                    usd: each.usd,
+                    min: minuteText(each.usd),
+                    hour: hourText(each.usd),
+                  },
+                ]),
+              );
+              const missing = missingLines(row);
+              return (
+                <tr
+                  data-row
+                  data-cells={JSON.stringify(cells)}
+                  data-missing={JSON.stringify(missing)}
+                >
+                  <th scope="row">
+                    <a href={row.href}>
+                      <img src={row.logo} alt="" width="28" height="28" />
+                      <span>
+                        <b>{row.name}</b>
+                        <code data-label hidden={!cell}>
+                          {cell?.label}
+                        </code>
+                      </span>
+                    </a>
+                  </th>
+                  <td>{row.plan}</td>
+                  <td class="int-mute">{row.included}</td>
+                  <td class="num" data-vcpus hidden={!cell}>
+                    {cell?.vcpus}
+                  </td>
+                  <td class="num" data-min hidden={!cell}>
+                    {cell && minuteText(cell.usd)}
+                  </td>
+                  <td class="num int-mute" data-hour hidden={!cell}>
+                    {cell && hourText(cell.usd)}
+                  </td>
+                  <td class="num int-mute" colspan="3" data-missing-line hidden={!!cell}>
+                    {missing[first]}
+                  </td>
+                </tr>
+              );
+            })
+          }
+          {
+            UNPRICED_ROWS.map((row) => (
+              <tr class="int-unpriced">
+                <th scope="row">
+                  <a href={integrationPath(row.id)}>
+                    <img src={`/providers/${row.id}.svg`} alt="" width="28" height="28" />
+                    <span>
+                      <b>{PROVIDERS[row.id].name}</b>
+                    </span>
+                  </a>
+                </th>
+                <td colspan="5" class="num int-mute">
+                  {row.why}
+                </td>
+              </tr>
+            ))
+          }
+        </tbody>
+      </table>
+    </div>
+    <p class="int-note">
+      {PRICES_AS_OF}, list prices and plans from each provider's own pricing page. Plan is
+      the cheapest one you can run real CI on, leaving out trials and one-machine free tiers, and each
+      provider's page lists them all. Per minute is past any included minutes.
+    </p>
 
     <h2 class="kicker">Runners you host</h2>
     <ul class="int-grid">
@@ -86,3 +220,76 @@ const own = [
     ]}
   />
 </LandingPage>
+
+<script>
+  // Switches the runner table between platforms and sizes, and sorts it by name or price. Without
+  // this the table shows 2 vCPU Linux x64 runners, sorted by name.
+  interface Cell {
+    label: string;
+    vcpus: number;
+    usd: number;
+    min: string;
+    hour: string;
+  }
+
+  const controls = document.querySelector<HTMLElement>("[data-runner-table-controls]");
+  const tbody = document.querySelector<HTMLTableElement>("[data-runner-table]")?.tBodies[0];
+  if (controls && tbody) {
+    controls.hidden = false;
+    const rows = [...tbody.querySelectorAll<HTMLTableRowElement>("tr[data-row]")];
+    const unpriced = [...tbody.querySelectorAll<HTMLTableRowElement>("tr.int-unpriced")];
+    const state = { platform: "linux", size: "2", sort: "name" };
+
+    const press = (attr: string, value: string) => {
+      for (const button of controls.querySelectorAll<HTMLButtonElement>(`[${attr}]`)) {
+        button.setAttribute("aria-pressed", String(button.getAttribute(attr) === value));
+      }
+    };
+
+    const render = () => {
+      const mac = state.platform === "macos";
+      const key = mac ? "macos" : `${state.platform}-${state.size}`;
+      press("data-platform", state.platform);
+      press("data-size", mac ? "" : state.size);
+      press("data-sort", state.sort);
+      for (const button of controls.querySelectorAll<HTMLButtonElement>("[data-size]")) {
+        button.disabled = mac;
+      }
+      const shown = rows.map((row) => {
+        const cell = (JSON.parse(row.dataset.cells!) as Record<string, Cell>)[key];
+        const missing = (JSON.parse(row.dataset.missing!) as Record<string, string>)[key];
+        const label = row.querySelector<HTMLElement>("[data-label]")!;
+        const fields = ["[data-vcpus]", "[data-min]", "[data-hour]"].map(
+          (selector) => row.querySelector<HTMLElement>(selector)!,
+        );
+        const line = row.querySelector<HTMLElement>("[data-missing-line]")!;
+        label.hidden = !cell;
+        for (const field of fields) field.hidden = !cell;
+        line.hidden = !!cell;
+        if (cell) {
+          label.textContent = cell.label;
+          fields[0]!.textContent = String(cell.vcpus);
+          fields[1]!.textContent = cell.min;
+          fields[2]!.textContent = cell.hour;
+        } else {
+          line.textContent = missing ?? "";
+        }
+        return { row, usd: cell?.usd ?? null };
+      });
+      const priced = shown.filter((each) => each.usd !== null);
+      if (state.sort === "price") priced.sort((a, b) => a.usd! - b.usd!);
+      const order = [...priced, ...shown.filter((each) => each.usd === null)].map((e) => e.row);
+      tbody.append(...order, ...unpriced);
+    };
+
+    controls.addEventListener("click", (event) => {
+      const button = (event.target as Element).closest<HTMLButtonElement>("button");
+      if (!button || button.disabled) return;
+      if (button.dataset.platform) state.platform = button.dataset.platform;
+      if (button.dataset.size) state.size = button.dataset.size;
+      if (button.dataset.sort) state.sort = button.dataset.sort;
+      render();
+    });
+    render();
+  }
+</script>
