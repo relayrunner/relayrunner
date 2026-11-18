@@ -86,7 +86,7 @@ are public.
 The app starts `relayrunner connect --events` in its own process group and reads one JSON event
 per line from its stdout (see `apps/cli/src/events.rs`). It sends `pause` and `resume` on stdin and
 stops it with SIGINT to the group, as Ctrl-C does in a terminal. What `connect` would print for a
-person goes to `~/.relayrunner/app.log`, which Show Log opens.
+person goes to `~/.relayrunner/app.log`, which Show Log in Settings › About opens.
 
 The robot head is drawn from the same paths as `apps/site/public/assets/runner-head.svg`
 (`Sources/RelayRunnerKit/RobotHead.swift`). `Resources/AppIcon.icns` is that head on a cream tile.

@@ -22,22 +22,15 @@ const steps: { name: string; start: number; width: number; time: string }[] = [
   { name: "Build", start: 36, width: 60, time: "1m 49s" },
   { name: "Complete job", start: 96, width: 4, time: "4s" },
 ];
-/** Menu items, with SVG markup standing in for their SF Symbols. */
-const menuItems: { label: string; key?: string; icon: string }[] = [
-  { label: "Jobs…", key: "⌘J", icon: '<path d="M4 5h16v14H4zM8 9h8M8 13h8" />' },
-  { label: "Open Dashboard", icon: '<circle cx="12" cy="12" r="9" /><path d="m15.5 8.5-2 5-5 2 2-5z" />' },
-  { label: "Show Log", icon: '<path d="M6 3h9l3 3v15H6zM9 10h6M9 14h6" />' },
-  {
-    label: "Settings…",
-    key: "⌘,",
-    icon: '<circle cx="12" cy="12" r="6.5" stroke-width="3.4" stroke-dasharray="2.6 2.5" stroke-linecap="butt" /><circle cx="12" cy="12" r="5" /><circle cx="12" cy="12" r="2" />',
-  },
-  { label: "Check for Updates…", icon: '<circle cx="12" cy="12" r="9" /><path d="M12 8v7m-3-3 3 3 3-3" />' },
+const menuItems: { label: string; key?: string }[] = [
+  { label: "Jobs…", key: "⌘J" },
+  { label: "Open Dashboard" },
+  { label: "Settings…", key: "⌘," },
 ];
 ---
 
 <figure class="mac-preview">
-  <div class="mac-stage" role="img" aria-label="The RelayRunner menu bar menu, running a test job with a second slot free, next to the Jobs window listing the week's jobs and one job's steps.">
+  <div class="mac-stage" role="img" aria-label="The RelayRunner menu bar menu, running a test job, next to the Jobs window listing the week's jobs and one job's steps.">
     <div class="mac-bar" aria-hidden="true">
       <span class="mac-bar-icon">
         <svg viewBox="0 0 36 36">
@@ -121,50 +114,34 @@ const menuItems: { label: string; key?: string; icon: string }[] = [
         </svg>
         <span>
           <b>RelayRunner</b>
-          <small>Running a job</small>
+          <small>Running 1 job, 2 waiting</small>
         </span>
         <span class="mac-switch on"></span>
       </div>
       <div class="mac-menu-body">
-        <p class="mac-line">
-          <svg viewBox="0 0 24 24"><path d="M5 6h14v9H5zM3 18h18" /></svg>
-          <span>ada-mbp</span>
-          <small>This Mac</small>
-        </p>
-        <p class="mac-seg mac-seg-full"><b>Now</b><span>Queue</span><span>History</span></p>
-        <div class="mac-line mac-running">
-          <svg viewBox="0 0 24 24"><path d="m14 4 6 6-3 3-6-6zM11 7l-7 7 3 3 7-7" /></svg>
-          <span>
-            test
-            <small>CI · acme/web · Slot 1</small>
-          </span>
-          <span class="mac-time">
-            3:08
-            <small>about 1:04 left</small>
-          </span>
-          <span class="mac-track mac-usual"><i style="width: 75%"></i></span>
+        <div class="mac-running">
+          <p class="mac-line">
+            <span>
+              test
+              <small>CI · acme/web</small>
+            </span>
+            <span class="mac-time">
+              3:08
+              <small>about 1:04 left</small>
+            </span>
+          </p>
+          <span class="mac-track"><i style="width: 75%"></i></span>
         </div>
-        <p class="mac-line">
-          <svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="7" /></svg>
-          <span>Slot 2</span>
-          <small class="mac-free">Free</small>
-        </p>
-        <div class="mac-line mac-load">
-          <svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="8" /><path d="M12 8v4l3 2" /></svg>
-          <span class="mac-meter"><small>CPU <b>38%</b></small><span class="mac-track"><i style="width: 38%"></i></span></span>
-          <span class="mac-meter"><small>Memory <b>14 of 32 GB</b></small><span class="mac-track"><i style="width: 44%"></i></span></span>
-        </div>
-        <p class="mac-line">
-          <svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="8" /><path d="M10 9v6m4-6v6" /></svg>
-          <span>Pause new jobs</span>
-          <span class="mac-switch mini"></span>
-        </p>
       </div>
+      <hr />
+      <p class="mac-item">
+        <span>Pause New Jobs</span>
+        <small>›</small>
+      </p>
       <hr />
       {
         menuItems.map((item) => (
           <p class="mac-item">
-            <svg viewBox="0 0 24 24" set:html={item.icon} />
             <span>{item.label}</span>
             {item.key && <small>{item.key}</small>}
           </p>
@@ -172,7 +149,6 @@ const menuItems: { label: string; key?: string; icon: string }[] = [
       }
       <hr />
       <p class="mac-item">
-        <svg viewBox="0 0 24 24"><path d="M12 3v8M7 6.5a7 7 0 1 0 10 0" /></svg>
         <span>Quit RelayRunner</span>
         <small>⌘Q</small>
       </p>
@@ -525,86 +501,29 @@ const menuItems: { label: string; key?: string; icon: string }[] = [
     left: auto;
     right: 0.12em;
   }
-  .mac-switch.mini {
-    width: 1.9em;
-    height: 1.1em;
-  }
-  .mac-switch.mini::after {
-    width: 0.9em;
-    height: 0.9em;
-    top: 0.1em;
-    left: 0.1em;
-  }
   .mac-menu-body {
-    display: grid;
-    gap: 0.55em;
     padding: 0 0.6em 0.5em;
   }
   .mac-line {
-    position: relative;
     display: flex;
-    align-items: center;
+    align-items: flex-start;
     gap: 0.55em;
   }
-  .mac-line > svg {
-    width: 1.3em;
-    color: var(--m-ink-2);
-  }
-  .mac-line > :nth-child(2) {
+  .mac-line > :first-child {
     flex: 1;
     min-width: 0;
   }
-  .mac-stage .mac-free {
-    color: var(--m-ink-3);
-    font-size: 1em;
-  }
-  .mac-seg-full {
-    display: flex;
-    font-size: 0.85em;
-  }
-  .mac-seg-full > * {
-    flex: 1;
-    text-align: center;
-  }
   .mac-running {
-    align-items: flex-start;
-    padding-bottom: 0.6em;
+    display: grid;
+    gap: 0.4em;
   }
   .mac-time {
     flex: none;
     font-variant-numeric: tabular-nums;
     text-align: right;
   }
-  .mac-usual {
-    position: absolute;
-    left: 1.85em;
-    right: 0;
-    bottom: 0;
+  .mac-running .mac-track {
     height: 0.25em;
-  }
-  .mac-load {
-    gap: 1em;
-  }
-  .mac-meter {
-    display: grid;
-    flex: 1;
-    gap: 0.25em;
-  }
-  .mac-meter small {
-    white-space: nowrap;
-  }
-  .mac-meter:first-of-type {
-    flex: 0.7;
-  }
-  .mac-meter b {
-    color: var(--m-ink);
-    font-weight: 500;
-  }
-  .mac-meter .mac-track {
-    height: 0.25em;
-  }
-  .mac-meter .mac-track i {
-    background: #0a7cff;
   }
   .mac-menu hr {
     height: 1px;

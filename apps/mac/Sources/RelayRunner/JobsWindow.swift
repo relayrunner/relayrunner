@@ -235,6 +235,7 @@ private struct JobsListView: View {
     VStack(spacing: 0) {
       bar
       Divider()
+      SlotsNote(connection: connection)
       content
     }
     // Refreshes when it opens, soon after a job starts or ends here (once the gateway has heard),
@@ -435,6 +436,86 @@ private struct JobsListView: View {
     let failed = page.jobs.filter { $0.outcome == .failed }.count
     if store.filter.result == nil, failed > 0 { parts.append("\(failed) failed") }
     return parts.joined(separator: " · ")
+  }
+}
+
+/// Above the list when jobs went to hosted runners because every slot here was busy: the offer to
+/// take one more at once, and how that's going once taken.
+private struct SlotsNote: View {
+  let connection: Connection
+
+  var body: some View {
+    Group {
+      if let count = connection.allowingSlots {
+        Note(text: "Taking \(count) jobs at once as soon as the running jobs finish. New jobs go elsewhere until then.")
+      } else {
+        TimelineView(.periodic(from: .now, by: 30)) { context in
+          let spilled = Spillover.lastHour(connection.spilled, now: context.date)
+          if spilled > 0 {
+            Note(
+              text:
+                "In the last hour, \(spilled == 1 ? "1 job" : "\(spilled) jobs") went to hosted runners because every slot here was busy."
+            ) {
+              if let more = Spillover.moreSlots(than: connection.slots, memory: HostMemory.shareInUse()) {
+                Button("Allow \(more) Jobs at Once") { connection.allowJobs(more) }
+                  .help("Pauses new jobs until the running ones finish, then takes up to \(more) at once")
+              } else {
+                Button("Open Settings…") { MenuBar.openSettings() }
+              }
+            }
+          }
+        }
+      }
+    }
+    .controlSize(.small)
+  }
+}
+
+/// An amber note, with an action beside it when there is one.
+private struct Note<Action: View>: View {
+  let text: String
+  @ViewBuilder var action: () -> Action
+
+  var body: some View {
+    HStack(spacing: 12) {
+      Text(text)
+        .font(.subheadline)
+        .fixedSize(horizontal: false, vertical: true)
+      Spacer(minLength: 0)
+      action()
+    }
+    .padding(8)
+    .background(Color.orange.opacity(0.12), in: RoundedRectangle(cornerRadius: 6))
+    .overlay(alignment: .leading) {
+      UnevenRoundedRectangle(topLeadingRadius: 6, bottomLeadingRadius: 6)
+        .fill(.orange)
+        .frame(width: 3)
+    }
+    .padding(.horizontal, 12)
+    .padding(.top, 8)
+  }
+}
+
+extension Note where Action == EmptyView {
+  init(text: String) { self.init(text: text) { EmptyView() } }
+}
+
+/// A job's result as a coloured symbol, in the Jobs window.
+struct OutcomeIcon: View {
+  let outcome: HistoryEntry.Outcome
+
+  var body: some View {
+    let (symbol, color, label): (String, Color, String) =
+      switch outcome {
+      case .succeeded: ("checkmark.circle.fill", .green, "Succeeded")
+      case .failed: ("xmark.circle.fill", .red, "Failed")
+      case .canceled: ("minus.circle.fill", .gray, "Canceled")
+      case .other: ("circle.fill", .gray, "Done")
+      }
+    Image(systemName: symbol)
+      .foregroundStyle(color)
+      .frame(width: 18)
+      .accessibilityLabel(label)
   }
 }
 

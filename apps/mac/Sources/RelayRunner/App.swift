@@ -90,10 +90,25 @@ extension Connection {
     case .reconnecting: return "Reconnecting…"
     case .stopping: return "Going offline…"
     case .online:
-      let running = jobs.count == 1 ? "Running a job" : "Running \(jobs.count) jobs"
-      if jobs.isEmpty { return paused ? "Paused" : "Waiting for jobs" }
+      if jobs.isEmpty { return paused ? pauseStatus : "Waiting for jobs" }
+      let running = jobs.count == 1 ? "Running 1 job" : "Running \(jobs.count) jobs"
       if quitsWhenIdle { return "\(running), then quitting" }
-      return paused ? "\(running), then paused" : running
+      if let count = allowingSlots { return "\(running), then taking \(count) at once" }
+      if paused { return "\(running), then paused" }
+      return waiting > 0 ? "\(running), \(waiting) waiting" : running
     }
+  }
+}
+
+extension Connection {
+  /// "Paused", with when it ends for a timed pause.
+  private var pauseStatus: String {
+    if let count = allowingSlots { return "Switching to \(count) jobs at once" }
+    guard let until = pausedUntil else { return "Paused" }
+    let calendar = Calendar.current
+    let time = until.formatted(date: .omitted, time: .shortened)
+    if calendar.isDateInToday(until) { return "Paused until \(time)" }
+    if calendar.isDateInTomorrow(until) { return "Paused until tomorrow, \(time)" }
+    return "Paused until \(until.formatted(date: .abbreviated, time: .shortened))"
   }
 }

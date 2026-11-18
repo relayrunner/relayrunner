@@ -79,75 +79,6 @@ public struct HistoryEntry: Equatable, Codable, Identifiable {
   public var endedAt: Date { Date(timeIntervalSince1970: (startedAtMs + durationMs) / 1000) }
 }
 
-public enum History {
-  /// The newest `limit` jobs in a history file, newest first. Lines this app can't read are
-  /// skipped, and a missing file is no jobs.
-  public static func read(_ file: URL, limit: Int = 200) -> [HistoryEntry] {
-    guard let data = try? Data(contentsOf: file) else { return [] }
-    let decoder = JSONDecoder()
-    var entries: [HistoryEntry] = []
-    for line in data.split(separator: UInt8(ascii: "\n")) {
-      if let entry = try? decoder.decode(HistoryEntry.self, from: Data(line)) { entries.append(entry) }
-    }
-    return Array(entries.reversed().prefix(limit))
-  }
-
-  /// Puts a job that just ended at the front, in place of an older copy of it.
-  public static func adding(_ entry: HistoryEntry, to entries: [HistoryEntry], limit: Int = 200) -> [HistoryEntry] {
-    Array(([entry] + entries.filter { $0.routeId != entry.routeId }).prefix(limit))
-  }
-
-  /// How many jobs ran, for how long, and how many failed.
-  public struct Summary: Equatable {
-    public var jobs: Int
-    public var busyMs: Double
-    public var failed: Int
-
-    public init(jobs: Int, busyMs: Double, failed: Int) {
-      self.jobs = jobs
-      self.busyMs = busyMs
-      self.failed = failed
-    }
-  }
-
-  /// One hour of the History chart: how many jobs ended in it, and how many of those failed.
-  public struct Hour: Equatable {
-    public var start: Date
-    public var jobs: Int
-    public var failed: Int
-
-    public init(start: Date, jobs: Int, failed: Int) {
-      self.start = start
-      self.jobs = jobs
-      self.failed = failed
-    }
-  }
-
-  /// The last `count` hours up to `now`, oldest first, the last one ending at `now`.
-  public static func hours(_ entries: [HistoryEntry], count: Int = 12, now: Date = Date()) -> [Hour] {
-    let from = now.addingTimeInterval(-Double(count) * 3600)
-    var hours = (0..<count).map { Hour(start: from.addingTimeInterval(Double($0) * 3600), jobs: 0, failed: 0) }
-    for entry in entries {
-      let offset = entry.endedAt.timeIntervalSince(from)
-      guard offset > 0, offset <= Double(count) * 3600 else { continue }
-      let index = min(count - 1, Int(offset / 3600))
-      hours[index].jobs += 1
-      if entry.outcome == .failed { hours[index].failed += 1 }
-    }
-    return hours
-  }
-
-  /// What ran since `date`.
-  public static func since(_ date: Date, _ entries: [HistoryEntry]) -> Summary {
-    let since = entries.filter { $0.endedAt > date }
-    return Summary(
-      jobs: since.count,
-      busyMs: since.reduce(0) { $0 + $1.durationMs },
-      failed: since.filter { $0.outcome == .failed }.count
-    )
-  }
-}
-
 /// Jobs that went to another runner because every slot here was busy.
 public enum Spillover {
   /// How many of `spilled` (ms since the epoch) were in the hour before `now`.
@@ -207,6 +138,14 @@ public enum Durations {
     guard let typicalMs, typicalMs > 0 else { return nil }
     let usual = TimeInterval(typicalMs) / 1000
     return elapsed < usual ? "about \(clock(usual - elapsed)) left" : "usual \(clock(usual))"
+  }
+
+  /// How far a running job is through its usual time: 0 to 1 until then, and `over` once it's past
+  /// it, when the bar fills and turns amber. Nil without a usual time.
+  public static func share(elapsed: TimeInterval, typicalMs: Int?) -> (fraction: Double, over: Bool)? {
+    guard let typicalMs, typicalMs > 0 else { return nil }
+    let fraction = elapsed / (TimeInterval(typicalMs) / 1000)
+    return (min(max(fraction, 0), 1), fraction > 1)
   }
 
   /// just now, 12m ago, 3h ago, 2d ago.
