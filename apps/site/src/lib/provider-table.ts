@@ -213,7 +213,7 @@ export const UNPRICED_ROWS: { id: IntegrationId; why: string }[] = [
 ].map((row) => ({ ...row, id: row.id as IntegrationId }));
 
 /** The runner clouds the strip above the table features. */
-export const FEATURED: IntegrationId[] = ["blacksmith", "depot", "boat", "github"];
+export const FEATURED: IntegrationId[] = ["blacksmith", "depot", "boat", "ubicloud"];
 
 export const FEATURED_TILES = FEATURED.map((id) => {
   const entry = entryPlan(id);
