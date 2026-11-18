@@ -18,6 +18,7 @@ export const PROVIDER_IDS = [
   "berrybox",
   "celesto",
   "instabox",
+  "lizard",
   "github",
   "cloudflare",
   "other",
@@ -186,6 +187,17 @@ export const PROVIDERS: Record<ProviderId, ProviderInfo> = {
     dashboardUrl: "https://instabox.sh",
     docsUrl: "https://instabox.sh/docs/use-cases/ci",
   },
+  lizard: {
+    name: "Lizard",
+    summary: "Linux runners for GitHub Actions on Lizard's Firecracker VMs, billed per second.",
+    labels: "lizard-small, -medium, -large-ubuntu-2404",
+    example: "lizard-medium-ubuntu-2404",
+    setup:
+      "Sign up for Lizard, open GitHub Actions in its dashboard and connect your organization. Its runners don't take personal accounts' repos.",
+    dashboardUrl: "https://lizard.build",
+    docsUrl: "https://lizard.build/ci",
+    hidden: true,
+  },
   github: {
     name: "GitHub",
     summary: "GitHub's own hosted runners, billed per minute in private repos.",
@@ -233,6 +245,7 @@ export const HOSTED_PROVIDER_IDS = [
   "berrybox",
   "celesto",
   "instabox",
+  "lizard",
 ] as const satisfies readonly ProviderId[];
 
 export type HostedProviderId = (typeof HOSTED_PROVIDER_IDS)[number];
@@ -255,6 +268,7 @@ export const LABEL_PREFIXES: Record<HostedProviderId, string[]> = {
   berrybox: ["berrybox-"],
   celesto: ["celesto-"],
   instabox: ["instabox-"],
+  lizard: ["lizard-"],
 };
 
 /** Whether a lowercase label starts with one of `prefixes`, or is the bare name one ends in `-`. */
@@ -293,6 +307,7 @@ export const APP_SLUG_PATTERNS: Record<HostedProviderId, RegExp> = {
   berrybox: /berrybox/,
   celesto: /celesto/,
   instabox: /instabox/,
+  lizard: /lizard/,
 };
 
 /**
@@ -308,13 +323,14 @@ export const SKIPS_PUBLIC_REPOS: readonly HostedProviderId[] = ["boat", "berrybo
  * personal account's repos instead of leaving the job queued.
  * https://docs.starsling.dev, https://monkci.com/docs/quickstart,
  * https://latchkey.dev/documentation/install-the-github-app,
- * https://docs.berrybox.io/docs/getting-started/availability
+ * https://docs.berrybox.io/docs/getting-started/availability, https://lizard.build/ci
  */
 export const SKIPS_PERSONAL_ACCOUNTS: readonly HostedProviderId[] = [
   "starsling",
   "monkci",
   "latchkey",
   "berrybox",
+  "lizard",
 ];
 
 /** The hosted providers whose GitHub App is among these installed app slugs. */

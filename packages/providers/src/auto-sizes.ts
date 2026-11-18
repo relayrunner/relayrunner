@@ -80,6 +80,10 @@ const LABELS: Partial<
       ({ 4: "instabox-medium", 8: "instabox-large", 16: "instabox-xlarge" })[n] ??
       "instabox-2xlarge",
   },
+  lizard: {
+    sizes: [2, 4, 8],
+    label: (n) => `lizard-${{ 2: "small", 4: "medium" }[n] ?? "large"}-ubuntu-2404`,
+  },
   // GitHub's standard runners. Bigger ones are larger runners each org names itself.
   github: {
     sizes: [1, 2],

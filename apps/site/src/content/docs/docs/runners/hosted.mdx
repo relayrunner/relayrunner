@@ -28,7 +28,7 @@ Each job has its own relay, so each job picks its own size, such as `blacksmith-
 
 A provider's step always takes a job that names one of its labels. There's no way to see a provider's capacity, so steps below it only run for jobs that don't name one. A common order is your machines, then a hosted provider, then GitHub-hosted.
 
-Unlike machines, hosted providers also run public repos' jobs, except Boat, which refuses them unless you allow them in Boat, and BerryBox, which runs private repos only. RelayRunner skips both for public repos. StarSling, Monk CI, Latchkey and BerryBox only run organizations' repos, so RelayRunner skips them for a personal account's jobs.
+Unlike machines, hosted providers also run public repos' jobs, except Boat, which refuses them unless you allow them in Boat, and BerryBox, which runs private repos only. RelayRunner skips both for public repos. StarSling, Monk CI, Latchkey, BerryBox and Lizard only run organizations' repos, so RelayRunner skips them for a personal account's jobs.
 
 ## The providers
 
@@ -48,6 +48,7 @@ Unlike machines, hosted providers also run public repos' jobs, except Boat, whic
 | BerryBox   | `berrybox`   |
 | Celesto    | `celesto`    |
 | InstaBox   | `instabox`   |
+| Lizard     | `lizard`     |
 
 <Provider id="blacksmith" />
 
@@ -96,6 +97,10 @@ Celesto's trial runs `celesto-micro` (1 vCPU) only, so add credit before routing
 InstaBox's plan decides which sizes run, and the Free plan runs `instabox-medium` (4 vCPU) only. `auto` answers a 2 vCPU job with `instabox-medium` too.
 
 A label the account can't run sits queued on GitHub. After a few jobs on it go unanswered, the Router skips that label until a trial job starts.
+
+<Provider id="lizard" />
+
+Lizard runs Linux x64 in three sizes: `lizard-small-ubuntu-2404` (2 vCPU), `lizard-medium-ubuntu-2404` (4) and `lizard-large-ubuntu-2404` (8). Its trial runs a set number of jobs of each size and then skips that size until you start Pro. On Pro, usage past the included amount is billed as you go, and jobs past 5 at once (20 on Pro 5x and Pro 20x) wait in Lizard's queue.
 
 ## Good to know
 

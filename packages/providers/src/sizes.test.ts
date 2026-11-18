@@ -36,6 +36,7 @@ describe("runnerSize", () => {
     ["celesto", "celesto", "1 vCPU · 2 GB"],
     ["celesto", "celesto-large", "4 vCPU · 16 GB"],
     ["instabox", "instabox-medium-snapshot-web", "4 vCPU · 8 GB"],
+    ["lizard", "lizard-medium-ubuntu-2404", "4 vCPU · 8 GB"],
   ])("%s %s is %s", (provider, label, text) => {
     expect(sizeText(runnerSize(provider, label))).toBe(text);
   });

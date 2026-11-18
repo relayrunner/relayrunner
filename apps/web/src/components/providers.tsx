@@ -51,6 +51,7 @@ const LOGO_PROVIDERS = [
   "berrybox",
   "celesto",
   "instabox",
+  "lizard",
 ] as const satisfies readonly ProviderId[];
 
 // A runner cloud's logo, served from public/providers, on a plain tile.

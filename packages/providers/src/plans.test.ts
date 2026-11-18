@@ -17,6 +17,7 @@ describe("plans", () => {
       "berrybox",
       "celesto",
       "instabox",
+      "lizard",
     ]);
   });
 
@@ -33,6 +34,7 @@ describe("plans", () => {
     // A one-machine free tier or a trial isn't where real CI starts.
     expect(startsAt(PLANS.instabox!)).toBe("$20/mo");
     expect(startsAt(PLANS.monkci!)).toBe("$20/mo");
+    expect(startsAt(PLANS.lizard!)).toBe("$19/mo");
   });
 
   it("prices a 2 vCPU Linux minute from the price list, or the plan where the list has none", () => {
@@ -46,6 +48,7 @@ describe("plans", () => {
     expect(twoVcpuMinute("celesto")).toBe(0.0005);
     expect(twoVcpuMinute("instabox")).toBeCloseTo(0.000283, 6);
     expect(twoVcpuMinute("monkci")).toBe(0.004);
+    expect(twoVcpuMinute("lizard")).toBeCloseTo(0.00027, 6);
     expect(twoVcpuMinute("other")).toBeNull();
   });
 });

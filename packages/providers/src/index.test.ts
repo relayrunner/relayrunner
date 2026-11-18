@@ -24,6 +24,7 @@ describe("hosted provider labels", () => {
     ["starsling-ubuntu-26.04-gpu/gpus=rtx-5090:1", "starsling"],
     ["celesto", "celesto"],
     ["instabox-medium-snapshot-acme-warm", "instabox"],
+    ["lizard-large-ubuntu-2404", "lizard"],
     ["ubuntu-latest", null],
     ["self-hosted", null],
   ])("%s belongs to %s", (label, id) => {

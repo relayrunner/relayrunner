@@ -53,6 +53,8 @@ const INTROS: Record<IntegrationId, string> = {
   berrybox: "BerryBox runs GitHub Actions jobs on its own machines, under your BerryBox account.",
   celesto: "Celesto runs GitHub Actions jobs on its own machines, under your Celesto account.",
   instabox: "InstaBox runs GitHub Actions jobs on its own machines, under your InstaBox account.",
+  lizard:
+    "Lizard runs each GitHub Actions job in its own Firecracker VM, under your Lizard account.",
   github: "GitHub-hosted runners work in every repository with nothing to set up.",
 };
 
@@ -76,6 +78,15 @@ const QUIRKS: Partial<Record<IntegrationId, Quirks>> = {
   starsling: { faqs: [orgsOnly("StarSling")] },
   monkci: { faqs: [orgsOnly("Monk CI")] },
   latchkey: { faqs: [orgsOnly("Latchkey")] },
+  lizard: {
+    faqs: [
+      orgsOnly("Lizard"),
+      {
+        q: "What happens when Lizard's trial jobs run out?",
+        a: "The trial runs 50 small, 20 medium and 10 large jobs. Once a size's jobs are used, Lizard skips jobs of that size until you start Pro. On Pro, usage past the plan's included amount is billed as you go, and jobs past its 5 at once wait in Lizard's queue.",
+      },
+    ],
+  },
   runloft: {
     faqs: [
       {

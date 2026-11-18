@@ -112,6 +112,10 @@ const RUNNERS: Partial<Record<ProviderId, RunnerOf>> = {
         n
       ],
   ),
+  lizard: linuxOnly((n) => {
+    const size = ({ 2: "small", 4: "medium", 8: "large" } as const)[n as 2 | 4 | 8];
+    return size ? `lizard-${size}-ubuntu-2404` : null;
+  }),
 };
 
 // GitHub's runners are priced by rate, not by label.

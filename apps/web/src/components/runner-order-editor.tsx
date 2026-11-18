@@ -726,7 +726,7 @@ function SetupPanel({ steps, labels }: { steps: RunnerStep[]; labels: LabelUse[]
   const snippet = [
     "jobs:",
     "  relay:",
-    "    uses: relayrunner/actions/.github/workflows/relay.yml@v1.0.0-beta.7",
+    "    uses: relayrunner/actions/.github/workflows/relay.yml@v1.0.0-beta.8",
     "    with:",
     ...keys.map((key) => `      ${key}: auto`),
     "  test:",

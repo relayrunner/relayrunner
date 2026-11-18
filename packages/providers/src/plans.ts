@@ -260,6 +260,27 @@ export const PLANS: Partial<Record<ProviderId, ProviderPlans>> = {
     source: "https://instabox.sh/docs/pricing",
     checked: "2026-11-17",
   },
+  lizard: {
+    plans: [
+      {
+        name: "Trial",
+        feeUsd: 0,
+        included: "50 small, 20 medium, 10 large jobs",
+        limits: "5 jobs, 7 days",
+        trial: true,
+      },
+      { name: "Pro", feeUsd: 19, included: "$19 usage a month", limits: "5 jobs" },
+      { name: "Pro 5x", feeUsd: 99, included: "$99 usage a month", limits: "20 jobs" },
+      { name: "Pro 20x", feeUsd: 499, included: "$499 usage a month", limits: "20 jobs" },
+      { name: "Enterprise", feeUsd: null, included: "Custom", limits: "Custom" },
+    ],
+    limitsLabel: "Jobs at once",
+    note: "Plans cover all of Lizard (apps, databases, Sandboxes), and usage past the plan's is pay as you go, per second. The trial needs a card, and once a size's trial jobs are used, jobs of that size are skipped until Pro. GitHub organizations only.",
+    platforms: ["x64"],
+    connectUrl: "https://lizard.build/ci",
+    source: "https://lizard.build/pricing",
+    checked: "2026-11-18",
+  },
   github: {
     plans: [
       { name: "Free", included: "$12 a month, about 2,000 Linux min" },
@@ -296,6 +317,7 @@ const TWO_VCPU_LABEL: Partial<Record<ProviderId, string>> = {
   berrybox: "berrybox-2vcpu-ubuntu-2404",
   celesto: "celesto-standard",
   instabox: "instabox-small",
+  lizard: "lizard-small-ubuntu-2404",
 };
 
 /** USD for a 2 vCPU Linux minute at list price, or null when unknown. */

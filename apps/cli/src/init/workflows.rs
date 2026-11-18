@@ -20,7 +20,7 @@ use yaml_rust2::{Yaml, YamlLoader, yaml::Hash};
 
 /// The relay version `init` writes. Bump it with each relayrunner/actions release, along with the
 /// skills and agent guide that show it (a test checks them).
-pub const RELAY_REF: &str = "v1.0.0-beta.7";
+pub const RELAY_REF: &str = "v1.0.0-beta.8";
 pub const RELAY_WORKFLOW: &str = "relayrunner/actions/.github/workflows/relay.yml";
 
 /// The hosted providers a relay can send a job to, and how their labels start: a copy of
@@ -40,6 +40,7 @@ const HOSTED_PROVIDERS: &[(&str, &[&str])] = &[
     ("berrybox", &["berrybox-"]),
     ("celesto", &["celesto-"]),
     ("instabox", &["instabox-"]),
+    ("lizard", &["lizard-"]),
 ];
 
 fn hosted_provider_of(lower: &str) -> Option<&'static str> {

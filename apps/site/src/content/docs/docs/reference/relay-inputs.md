@@ -41,6 +41,7 @@ Any input can say `auto` instead of a label. The Router then picks that provider
 | `berrybox`   | none    | One BerryBox label, such as `berrybox-2vcpu-ubuntu-2404`. Organizations' private repos only.                                                                                                                 |
 | `celesto`    | none    | One Celesto label, such as `celesto-standard`.                                                                                                                                                               |
 | `instabox`   | none    | One InstaBox label, such as `instabox-medium`.                                                                                                                                                               |
+| `lizard`     | none    | One Lizard label, such as `lizard-medium-ubuntu-2404`. Organizations' repos only.                                                                                                                            |
 | `runs-on`    | none    | One RunsOn label, such as `runs-on=${{ github.run_id }}/runner=2cpu-linux-x64`.                                                                                                                              |
 
 ## Auto sizes

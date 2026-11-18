@@ -47,6 +47,11 @@ export const RATES = {
     "instabox-xlarge": "runner",
     "instabox-2xlarge": "runner",
   },
+  lizard: {
+    "lizard-small": "runner",
+    "lizard-medium": "runner",
+    "lizard-large": "runner",
+  },
   github: {
     "linux-1-core": "runner",
     "linux-2-core": "runner",
@@ -175,6 +180,11 @@ export const BASE_PRICES: PriceRow[] = [
   { provider: "instabox", rate: "instabox-large", usd: 0.068 / 60, from: "2026-11-17" },
   { provider: "instabox", rate: "instabox-xlarge", usd: 0.136 / 60, from: "2026-11-17" },
   { provider: "instabox", rate: "instabox-2xlarge", usd: 0.272 / 60, from: "2026-11-17" },
+  // Lizard: Sandbox prices, per hour small (2/4) $0.0162, medium (4/8) $0.0324, large (8/16)
+  // $0.0648. https://lizard.build/ci
+  { provider: "lizard", rate: "lizard-small", usd: 0.0162 / 60, from: "2026-11-18" },
+  { provider: "lizard", rate: "lizard-medium", usd: 0.0324 / 60, from: "2026-11-18" },
+  { provider: "lizard", rate: "lizard-large", usd: 0.0648 / 60, from: "2026-11-18" },
   // GitHub, in a private repo; standard runners are free in public ones.
   // https://docs.github.com/en/billing/reference/actions-runner-pricing
   { provider: "github", rate: "linux-1-core", usd: 0.002, from: "2026-11-11" },
@@ -345,6 +355,10 @@ const NAMED_RUNNERS: Partial<Record<string, RunnerSize>> = {
   "instabox-large": { vcpus: 8, memoryGb: 16 },
   "instabox-xlarge": { vcpus: 16, memoryGb: 32 },
   "instabox-2xlarge": { vcpus: 32, memoryGb: 64 },
+  // https://lizard.build/ci (`-ubuntu-2404` follows the size)
+  "lizard-small": { vcpus: 2, memoryGb: 4 },
+  "lizard-medium": { vcpus: 4, memoryGb: 8 },
+  "lizard-large": { vcpus: 8, memoryGb: 16 },
 };
 
 // The size-named runner a label asks for: `celesto` is micro, `instabox-medium-snapshot-x` medium.
@@ -395,7 +409,8 @@ function rateOf(provider: ProviderId, label: string): { rate: string; vcpus: num
       };
     case "latchkey":
     case "celesto":
-    case "instabox": {
+    case "instabox":
+    case "lizard": {
       const rate = namedRunner(label);
       const size = NAMED_RUNNERS[rate];
       return size ? { rate, vcpus: size.vcpus } : null;
@@ -484,6 +499,7 @@ export function runnerSize(provider: string, label: string): RunnerSize | null {
     case "latchkey":
     case "celesto":
     case "instabox":
+    case "lizard":
       return NAMED_RUNNERS[namedRunner(label)] ?? null;
     // The runner= part of its labels, such as 2cpu-linux-x64.
     case "runs-on": {

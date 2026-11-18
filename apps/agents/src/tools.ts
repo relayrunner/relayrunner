@@ -129,7 +129,7 @@ export function registerTools(server: McpServer, request: WorkspaceApi, workspac
     {
       title: "Runner order",
       description:
-        "The workspace's runner order: the providers RelayRunner tries for a job, top to bottom ('machine' for connected machines, 'github' for GitHub-hosted runners, optionally with a monthly minutes limit, and hosted providers by id: 'blacksmith', 'depot', 'namespace', 'warpbuild', 'ubicloud', 'boat', 'runs-on', 'starsling', 'monkci', 'runloft', 'latchkey', 'berrybox', 'celesto', 'instabox', optionally with a monthly spendLimit in dollars). A job goes to the first provider it allows that can take it. A minutes limit counts the job's GitHub account's minutes, or its enterprise's shared minutes for an org in a GitHub enterprise. isDefault is true when nobody has changed it.",
+        "The workspace's runner order: the providers RelayRunner tries for a job, top to bottom ('machine' for connected machines, 'github' for GitHub-hosted runners, optionally with a monthly minutes limit, and hosted providers by id: 'blacksmith', 'depot', 'namespace', 'warpbuild', 'ubicloud', 'boat', 'runs-on', 'starsling', 'monkci', 'runloft', 'latchkey', 'berrybox', 'celesto', 'instabox', 'lizard', optionally with a monthly spendLimit in dollars). A job goes to the first provider it allows that can take it. A minutes limit counts the job's GitHub account's minutes, or its enterprise's shared minutes for an org in a GitHub enterprise. isDefault is true when nobody has changed it.",
       inputSchema: z.object({ workspace: workspaceArg }),
       annotations: READ_ONLY,
     },
