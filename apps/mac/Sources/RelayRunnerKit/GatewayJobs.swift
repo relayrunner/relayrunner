@@ -177,6 +177,11 @@ public enum StepTimeline {
   public struct Bar: Equatable {
     public var start: Double
     public var width: Double
+
+    public init(start: Double, width: Double) {
+      self.start = start
+      self.width = width
+    }
   }
 
   /// One bar per step, nil for a step that never ran. A step too short to see still gets a sliver.
