@@ -25,6 +25,8 @@ final class Connection {
 
   /// The route ids of the jobs running now, and the repo each is from once it's known.
   private(set) var jobs: [String] = []
+  /// How many jobs wait for a slot on this Mac.
+  private(set) var waiting = 0
   private(set) var repos: [String: String] = [:]
   private(set) var running: [String: Running] = [:]
   /// The jobs this Mac ran, newest first, from `connect`'s history file.
@@ -161,6 +163,7 @@ final class Connection {
       }
       paused = state.paused
       jobs = state.jobs
+      waiting = state.waiting
       repos = repos.filter { state.jobs.contains($0.key) }
       running = running.filter { state.jobs.contains($0.key) }
       // Resumed from the dashboard or the CLI: the timed pause is over too.
@@ -195,6 +198,7 @@ final class Connection {
     phase = .off
     paused = false
     jobs = []
+    waiting = 0
     repos = [:]
     running = [:]
     signIn = nil

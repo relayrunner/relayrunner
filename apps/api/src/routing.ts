@@ -355,6 +355,18 @@ export function chooseMachine(
   return best;
 }
 
+/** The online, unpaused machines that fit the job (labels and sharing). */
+export function readyMachines<C extends Candidate>(
+  candidates: C[],
+  wanted: string[] = [],
+  starters: JobStarters = { startedBy: null, triggeredBy: null },
+): C[] {
+  return candidates.filter(
+    (machine) =>
+      machine.online && !machine.paused && fits(machine, wanted) && admits(machine, starters),
+  );
+}
+
 /**
  * When chooseMachine found nothing but some online, unpaused machine fits the job (labels and
  * sharing), and every such machine is full: each one's slots in use, counting held routes (at most
@@ -366,10 +378,7 @@ export function fullMachines(
   wanted: string[] = [],
   starters: JobStarters = { startedBy: null, triggeredBy: null },
 ): FullMachine[] | null {
-  const fitting = candidates.filter(
-    (machine) =>
-      machine.online && !machine.paused && fits(machine, wanted) && admits(machine, starters),
-  );
+  const fitting = readyMachines(candidates, wanted, starters);
   if (fitting.length === 0 || fitting.some((machine) => hasFreeSlot(machine, held))) return null;
   return fitting.map((machine) => {
     const { slots, used } = slotsInUse(machine, held.get(machine.id) ?? 0);
@@ -578,7 +587,8 @@ export type MachinePick =
   | string
   | { paused: string[] }
   | { notShared: NotSharedMachine[] }
-  | { full: FullMachine[] }
+  // `machineIds`: the full machines' ids, for counting the jobs waiting on each (Router.drain).
+  | { full: FullMachine[]; machineIds?: string[] }
   | { rateLimited: true }
   | null;
 

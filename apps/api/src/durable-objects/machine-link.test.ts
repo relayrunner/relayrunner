@@ -126,3 +126,41 @@ describe("MachineLink: jobs that never reach their runner", () => {
     expect(state.alarm()).toBe(checkAt);
   });
 });
+
+describe("MachineLink: jobs waiting for a slot", () => {
+  const socket = (hearsWaiting?: boolean) => ({
+    readyState: WebSocket.OPEN,
+    send: vi.fn(),
+    deserializeAttachment: () => ({
+      machineId: "m1",
+      connectedAt: Date.now(),
+      lastHeardAt: Date.now(),
+      hello: { os: "macos", arch: "arm64", runnerVersion: "2.330.0", slots: 2, hearsWaiting },
+    }),
+  });
+
+  async function linkWith(ws: ReturnType<typeof socket>) {
+    const state = memoryCtx();
+    const ctx = { ...state.ctx, getWebSockets: () => [ws] };
+    return { state, link: new MachineLink(ctx as never, (await createTestEnv()) as never) };
+  }
+
+  test("the CLI hears the total over every workspace, down to 0", async () => {
+    const ws = socket(true);
+    const { state, link } = await linkWith(ws);
+    await link.setWaiting("w1", 2);
+    await link.setWaiting("w2", 1);
+    await link.setWaiting("w1", 0);
+    expect(ws.send.mock.calls.map(([frame]) => JSON.parse(frame as string).jobs)).toEqual([
+      2, 3, 1,
+    ]);
+    expect([...state.data.keys()]).toEqual(["waiting:w2"]);
+  });
+
+  test("a CLI that doesn't read waiting isn't told", async () => {
+    const ws = socket();
+    const { link } = await linkWith(ws);
+    await link.setWaiting("w1", 2);
+    expect(ws.send).not.toHaveBeenCalled();
+  });
+});

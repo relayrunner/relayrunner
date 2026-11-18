@@ -75,6 +75,8 @@ struct Live {
     link: &'static str,
     paused: bool,
     jobs: Vec<String>,
+    /// Jobs waiting for a slot here, as the gateway last said. 0 while not connected.
+    waiting: u32,
 }
 
 struct Conn {
@@ -97,7 +99,11 @@ impl Conn {
         match kind {
             "connecting" if next.link == "online" => next.link = "reconnecting",
             "connected" => next.link = "online",
-            "disconnected" => next.link = "reconnecting",
+            "disconnected" => {
+                next.link = "reconnecting";
+                next.waiting = 0;
+            }
+            "waiting" => next.waiting = fields["jobs"].as_u64().unwrap_or(0) as u32,
             "paused" => next.paused = fields["paused"].as_bool().unwrap_or(next.paused),
             _ => {}
         }
@@ -111,7 +117,12 @@ impl Conn {
         crate::live::update(self.live.link, self.live.paused, self.live.jobs.len());
         say(
             "state",
-            json!({ "link": self.live.link, "paused": self.live.paused, "jobs": self.live.jobs }),
+            json!({
+                "link": self.live.link,
+                "paused": self.live.paused,
+                "jobs": self.live.jobs,
+                "waiting": self.live.waiting,
+            }),
             false,
         );
     }
@@ -325,6 +336,7 @@ pub async fn run(options: Options) -> End {
             link: "connecting",
             paused: false,
             jobs: Vec::new(),
+            waiting: 0,
         },
         jobs_tx,
         gateway_error: String::new(),
@@ -475,6 +487,10 @@ async fn session(
                     Ok(GatewayMessage::Run { route_id, jit_config, isolated, job }) => {
                         let job = JobInfo::read(job);
                         Some(conn.start_job(Run { route_id, jit_config, isolated, job }))
+                    }
+                    Ok(GatewayMessage::Waiting { jobs }) => {
+                        conn.emit("waiting", json!({ "jobs": jobs }));
+                        None
                     }
                     Ok(GatewayMessage::Paused { paused, by }) => {
                         conn.emit("paused", json!({ "paused": paused, "by": by }));

@@ -51,6 +51,8 @@ pub struct Hello {
     pub mac_app_version: Option<String>,
     pub device: Device,
     pub rotates_token: bool,
+    /// Always true: this CLI reads `waiting` messages.
+    pub hears_waiting: bool,
     pub slots: u32,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub isolated: Option<Place>,
@@ -168,6 +170,10 @@ pub enum GatewayMessage {
     Token {
         token: String,
     },
+    /// How many jobs are waiting for a slot on this machine.
+    Waiting {
+        jobs: u32,
+    },
 }
 
 /// A text frame from the gateway, or why it was rejected. Checks the version before the shape,
@@ -234,6 +240,7 @@ mod tests {
                     os_version: Some("macOS 15.1".into()),
                 },
                 rotates_token: true,
+                hears_waiting: true,
                 slots: 2,
                 isolated: Some(Place {
                     os: "linux",

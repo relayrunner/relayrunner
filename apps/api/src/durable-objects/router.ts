@@ -54,6 +54,7 @@ import {
   decideRoute,
   fits as fitsLabels,
   fullMachines,
+  readyMachines,
   retryOrder,
   heldSlots,
   isolatedLabels,
@@ -104,6 +105,12 @@ export interface PickedJob extends JobStarters, RelayInputs {
 const ROUTE_KEY = "route:";
 // Jobs waiting for a machine slot (Router.wait), by the route id their pick answered.
 const WAIT_KEY = "wait:";
+// How many waiting jobs each machine was last told wait on it (tellWaiting).
+const WAITING_TOLD_KEY = "waiting-told";
+interface WaitingTold {
+  workspaceId: string;
+  machines: Record<string, number>;
+}
 // How often the Router looks for a free slot while jobs wait. A machine finishing a job also
 // wakes it (release).
 const WAIT_POLL_MS = 10_000;
@@ -369,7 +376,7 @@ export class Router extends DurableObject<Env> {
   async drain(): Promise<void> {
     const now = Date.now();
     const stored = await this.ctx.storage.list<WaitingJob>({ prefix: WAIT_KEY });
-    if (stored.size === 0) return;
+    if (stored.size === 0) return this.tellWaiting(new Map());
     const line = waitingLine([...stored.values()], now);
     if (line.length < stored.size) {
       const live = new Set(line.map((entry) => WAIT_KEY + entry.id));
@@ -381,6 +388,9 @@ export class Router extends DurableObject<Env> {
     // Per set of machines a job wants that took none: true when none of them is online (the job
     // ends after a while), false when they're only busy (it waits).
     const stuck = new Map<string, boolean>();
+    // Per set of wanted machines that are all busy, their ids, and how many jobs wait on each.
+    const busy = new Map<string, string[]>();
+    const waitingOn = new Map<string, number>();
     let left = 0;
     for (const entry of line) {
       const wants = wantsKey(entry.job);
@@ -393,9 +403,13 @@ export class Router extends DurableObject<Env> {
         }
         none = !(pick && ("full" in pick || "rateLimited" in pick));
         stuck.set(wants, none);
+        if (pick && "full" in pick) busy.set(wants, pick.machineIds ?? []);
       }
-      if (!(await this.noMachine(entry, none, now))) left++;
+      if (await this.noMachine(entry, none, now)) continue;
+      left++;
+      for (const id of busy.get(wants) ?? []) waitingOn.set(id, (waitingOn.get(id) ?? 0) + 1);
     }
+    await this.tellWaiting(waitingOn, line[0]?.job.workspaceId);
     if (left > 0) await this.wakeIn(WAIT_POLL_MS);
   }
 
@@ -531,6 +545,35 @@ export class Router extends DurableObject<Env> {
     await this.wakeIn(WAIT_POLL_MS);
   }
 
+  // Tells each machine how many of this workspace's jobs wait on it, when that changed since it
+  // was last told, including machines no job waits on any more. `workspaceId` is unknown when no
+  // job is left, and then comes from the last time.
+  private async tellWaiting(waitingOn: Map<string, number>, workspaceId?: string) {
+    const told = await this.ctx.storage.get<WaitingTold>(WAITING_TOLD_KEY);
+    const workspace = workspaceId ?? told?.workspaceId;
+    const before = told?.machines ?? {};
+    const ids = new Set([...Object.keys(before), ...waitingOn.keys()]);
+    const changed = [...ids].filter((id) => (waitingOn.get(id) ?? 0) !== (before[id] ?? 0));
+    if (!workspace || changed.length === 0) return;
+    await Promise.all(
+      changed.map(async (id) => {
+        try {
+          await this.env.MACHINE_LINK.getByName(id).setWaiting(workspace, waitingOn.get(id) ?? 0);
+        } catch (error) {
+          console.warn(
+            JSON.stringify({
+              msg: "relayrunner waiting count not sent",
+              machineId: id,
+              error: errorMessage(error),
+            }),
+          );
+        }
+      }),
+    );
+    const next: WaitingTold = { workspaceId: workspace, machines: Object.fromEntries(waitingOn) };
+    await this.ctx.storage.put(WAITING_TOLD_KEY, next);
+  }
+
   async alarm() {
     await this.drain();
   }
@@ -548,7 +591,10 @@ export class Router extends DurableObject<Env> {
    */
   async dropWaiting(routeId: string, job: QueuedJob): Promise<void> {
     const waiting = await this.ctx.storage.get<WaitingJob>(WAIT_KEY + routeId);
-    if (waiting && canClaim(waiting, job)) await this.ctx.storage.delete(WAIT_KEY + routeId);
+    if (!waiting || !canClaim(waiting, job)) return;
+    await this.ctx.storage.delete(WAIT_KEY + routeId);
+    // Drain counts the jobs left, so the machines it waited on hear one fewer.
+    await this.wakeIn(0);
   }
 
   // Null when the runner type may take the job, marking it as the trial when it's due one; else
@@ -822,7 +868,9 @@ export class Router extends DurableObject<Env> {
       );
       if (!machine) {
         const full = fullMachines(candidates, withTaken(refused), job.machine, job);
-        return full ? { full } : null;
+        if (!full) return null;
+        const machineIds = readyMachines(candidates, job.machine, job).map((m) => m.id);
+        return { full, machineIds };
       }
       const routingLabel = routingLabels.get(machine.id);
       const isolated = runsIsolated(machine, job.machine, job.github);

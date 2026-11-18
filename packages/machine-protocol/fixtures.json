@@ -20,6 +20,7 @@
         "osVersion": "macOS 15.1"
       },
       "rotatesToken": true,
+      "hearsWaiting": true,
       "slots": 2,
       "isolated": { "os": "linux", "arch": "arm64" },
       "vm": { "cpus": 4, "memoryGb": 8 }
@@ -83,6 +84,7 @@
     "pausedBy": { "v": 1, "type": "paused", "paused": true, "by": "Sam" },
     "resumedHere": { "v": 1, "type": "paused", "paused": false, "by": null },
     "token": { "v": 1, "type": "token", "token": "rrm_next" },
+    "waiting": { "v": 1, "type": "waiting", "jobs": 3 },
     "error": {
       "v": 1,
       "type": "error",

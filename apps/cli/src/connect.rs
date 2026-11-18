@@ -404,6 +404,7 @@ async fn connect_machine(args: &Args, size: Wanted, slots: u32) -> Result<Option
             .filter(|v| !v.is_empty()),
         device,
         rotates_token: true,
+        hears_waiting: true,
         slots,
         isolated: place,
         vm: vm_size,

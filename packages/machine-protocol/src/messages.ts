@@ -64,6 +64,9 @@ export const HelloMessage = z.object({
   // True when this CLI saves a new machine token from a `token` message. The gateway only rotates
   // the token of a machine that says so, since an older CLI would keep using the old one.
   rotatesToken: z.boolean().optional(),
+  // True when this CLI reads `waiting` messages. The gateway only sends them to a machine that
+  // says so, since an older CLI would report each one as a message it can't read.
+  hearsWaiting: z.boolean().optional(),
   // How many jobs the machine runs at once (`connect --concurrency`). Missing from CLIs older than
   // concurrency, which run one.
   slots: z.number().int().positive().max(1_000).optional(),
@@ -200,11 +203,21 @@ export const TokenMessage = z.object({
   token: z.string().min(1),
 });
 
+// How many jobs are waiting for a slot on this machine: jobs queued in a workspace it takes jobs
+// from, that this machine could run but whose machines are all busy. Sent when the count changes,
+// and after hello when it isn't 0. Only to a CLI whose hello set `hearsWaiting`.
+export const WaitingMessage = z.object({
+  v: version,
+  type: z.literal("waiting"),
+  jobs: z.number().int().nonnegative(),
+});
+
 export const GatewayMessage = z.discriminatedUnion("type", [
   RunMessage,
   ErrorMessage,
   PausedMessage,
   TokenMessage,
+  WaitingMessage,
 ]);
 
 export type DeviceKind = z.infer<typeof DeviceKind>;
@@ -220,6 +233,7 @@ export type RunMessage = z.infer<typeof RunMessage>;
 export type ErrorMessage = z.infer<typeof ErrorMessage>;
 export type PausedMessage = z.infer<typeof PausedMessage>;
 export type TokenMessage = z.infer<typeof TokenMessage>;
+export type WaitingMessage = z.infer<typeof WaitingMessage>;
 export type GatewayMessage = z.infer<typeof GatewayMessage>;
 
 export type ParseResult<T> =

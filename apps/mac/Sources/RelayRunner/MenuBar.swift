@@ -45,7 +45,7 @@ final class MenuBar: NSObject, NSMenuDelegate {
       item.button?.image = connection.menuBarImage
       _ = (
         connection.status, connection.signIn, connection.jobs, connection.repos, connection.running,
-        connection.machineName, connection.problem, connection.pausedUntil
+        connection.machineName, connection.problem, connection.pausedUntil, connection.waiting
       )
     } onChange: { [weak self] in
       Task { @MainActor in
@@ -249,6 +249,13 @@ struct MenuHeader: View {
       }
       ForEach(connection.jobs, id: \.self) { job in
         RunningRow(running: connection.running[job], repo: connection.repos[job], slotted: connection.running.count > 1)
+      }
+      if connection.waiting > 0 {
+        DetailRow(
+          systemImage: "hourglass",
+          title: connection.waiting == 1 ? "1 job waiting" : "\(connection.waiting) jobs waiting",
+          note: "for a free slot"
+        )
       }
       if connection.phase == .online {
         HStack {

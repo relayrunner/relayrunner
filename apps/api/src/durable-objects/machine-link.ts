@@ -72,6 +72,8 @@ interface SentRoute {
 const SENT_KEY = "sent:";
 // One per route holding a slot for its job (MachineHold), whichever workspace made it.
 const HOLD_KEY = "hold:";
+// Jobs waiting for a slot here, per workspace whose Router counted them (setWaiting).
+const WAITING_KEY = "waiting:";
 
 // One per enrolled machine, addressed by machine id. Holds the machine's `relayrunner connect`
 // WebSocket, so a live socket that has said hello means the machine is online. Uses the
@@ -140,6 +142,10 @@ export class MachineLink extends DurableObject<Env> {
       });
       const machine = await saveHello(db, session.machineId, outcome.state.hello);
       if (machine?.pausedAt) ws.send(pausedFrame(true, await pausedByName(db, machine)));
+      if (outcome.state.hello.hearsWaiting) {
+        const jobs = await this.waitingJobs();
+        if (jobs > 0 && ws.readyState === WebSocket.OPEN) ws.send(waitingFrame(jobs));
+      }
       // Rotate the token on every connect, so a copy of the token file taken earlier stops
       // working once the CLI saves the new one (TokenMessage in @relayrunner/machine-protocol).
       // Only for a socket that's still open: a newer connection that replaced it during the
@@ -465,6 +471,22 @@ export class MachineLink extends DurableObject<Env> {
     this.onlineSocket()?.send(pausedFrame(paused, by));
   }
 
+  /**
+   * Notes how many of a workspace's jobs wait for a slot on this machine (Router.drain), and tells
+   * the machine's CLI the total over its workspaces, if it's online and reads `waiting`.
+   */
+  async setWaiting(workspaceId: string, jobs: number): Promise<void> {
+    if (jobs > 0) await this.ctx.storage.put(WAITING_KEY + workspaceId, jobs);
+    else await this.ctx.storage.delete(WAITING_KEY + workspaceId);
+    const ws = this.onlineSocket();
+    if (ws && attachment(ws)?.hello?.hearsWaiting) ws.send(waitingFrame(await this.waitingJobs()));
+  }
+
+  private async waitingJobs(): Promise<number> {
+    const stored = await this.ctx.storage.list<number>({ prefix: WAITING_KEY });
+    return [...stored.values()].reduce((sum, jobs) => sum + jobs, 0);
+  }
+
   /** Closes the machine's socket for good. DELETE /api/machines/:id calls this on revoke. */
   async revoke(): Promise<void> {
     for (const ws of this.ctx.getWebSockets()) {
@@ -573,6 +595,10 @@ export class MachineLink extends DurableObject<Env> {
       .set({ lastSeenAt: new Date() })
       .where(eq(schema.machine.id, machineId));
   }
+}
+
+function waitingFrame(jobs: number): string {
+  return encodeMessage({ v: PROTOCOL_VERSION, type: "waiting", jobs });
 }
 
 function pausedFrame(paused: boolean, by: string | null) {

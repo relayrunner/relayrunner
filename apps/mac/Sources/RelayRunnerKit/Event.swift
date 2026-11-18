@@ -25,11 +25,24 @@ public enum Event: Equatable {
     public var paused: Bool
     /// The route ids of the jobs running now.
     public var jobs: [String]
+    /// How many jobs wait for a slot on this Mac, as the gateway said. 0 from a CLI that doesn't say.
+    public var waiting: Int
 
-    public init(link: Link, paused: Bool, jobs: [String]) {
+    public init(link: Link, paused: Bool, jobs: [String], waiting: Int = 0) {
       self.link = link
       self.paused = paused
       self.jobs = jobs
+      self.waiting = waiting
+    }
+
+    private enum CodingKeys: String, CodingKey { case link, paused, jobs, waiting }
+
+    public init(from decoder: Decoder) throws {
+      let c = try decoder.container(keyedBy: CodingKeys.self)
+      link = try c.decode(Link.self, forKey: .link)
+      paused = try c.decode(Bool.self, forKey: .paused)
+      jobs = try c.decode([String].self, forKey: .jobs)
+      waiting = try c.decodeIfPresent(Int.self, forKey: .waiting) ?? 0
     }
   }
 

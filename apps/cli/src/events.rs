@@ -9,7 +9,8 @@
 //! `job-repo`, `job-result` (the job's name and GitHub's result for it, from the runner),
 //! `job-end` (the line `connect` adds to ~/.relayrunner/history.jsonl, see history.rs), `offline`
 //! and `error`. `run` carries `job` (its name, workflow, repo, page and usual time on this
-//! machine) when the gateway sent it. stdin takes one command per line: `pause` or `resume`.
+//! machine) when the gateway sent it, and `waiting` (also in `state`) is how many jobs wait for a
+//! slot on this machine. stdin takes one command per line: `pause` or `resume`.
 //!
 //! To go offline the way Ctrl-C does, start `connect` in its own process group and send that group
 //! SIGINT (a second one exits on the spot). Closing stdin goes offline too, for when the app quits

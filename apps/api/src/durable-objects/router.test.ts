@@ -70,11 +70,13 @@ describe("Router: jobs wait for a full machine", () => {
   // ci-runner: one slot, in use until a test frees it.
   let running: number;
   const run = vi.fn(async (_work: { route: Record<string, unknown> }) => "sent");
+  const setWaiting = vi.fn(async (_workspaceId: string, _jobs: number) => {});
 
   beforeEach(async () => {
     vi.spyOn(console, "log").mockImplementation(() => {});
     running = 1;
     run.mockClear();
+    setWaiting.mockClear();
     const testEnv = await createTestEnv();
     const now = Date.now();
     for (const sql of [
@@ -98,11 +100,37 @@ describe("Router: jobs wait for a full machine", () => {
           }),
           reserve: async () => running < 1,
           run,
+          setWaiting,
         }),
       },
     } as unknown as Env;
     state = memoryState();
     router = new Router(state.ctx as never, env);
+  });
+
+  test("the busy machine hears how many jobs wait for it, and when none do", async () => {
+    const first = (await router.route(job(1))).runner!.slice(3);
+    await router.route(job(2));
+    await router.alarm();
+    // The second pick drains the line first, with one job in it.
+    expect(setWaiting.mock.calls).toEqual([
+      ["w1", 1],
+      ["w1", 2],
+    ]);
+    // Unchanged: nothing more to say.
+    await router.alarm();
+    expect(setWaiting).toHaveBeenCalledTimes(2);
+    await router.claim(first, queued(1, 41));
+    running = 0;
+    await router.alarm();
+    expect(run).toHaveBeenCalledOnce();
+    expect(setWaiting.mock.calls.at(-1)).toEqual(["w1", 1]);
+    // The last one ends while it waits.
+    const [second] = [...state.data.keys()].filter((key) => key.startsWith("wait:"));
+    running = 1;
+    await router.dropWaiting(second!.slice(5), queued(2, 42));
+    await router.alarm();
+    expect(setWaiting.mock.calls.at(-1)).toEqual(["w1", 0]);
   });
 
   test("a full machine with no fallback answers a route label instead of failing", async () => {

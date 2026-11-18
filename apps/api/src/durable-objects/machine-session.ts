@@ -48,6 +48,7 @@ export interface SessionState {
     | "macAppVersion"
     | "device"
     | "rotatesToken"
+    | "hearsWaiting"
     | "slots"
     | "isolated"
     | "vm"
@@ -113,6 +114,7 @@ export function handleFrame(
       macAppVersion,
       device,
       rotatesToken,
+      hearsWaiting,
       slots,
       isolated,
       vm,
@@ -129,6 +131,7 @@ export function handleFrame(
           macAppVersion,
           device,
           rotatesToken,
+          hearsWaiting,
           slots,
           isolated,
           vm,
