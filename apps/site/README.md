@@ -34,4 +34,4 @@ Workers Builds deploys it on merge to `main`, like the other Workers, with root 
 
 ## Moving to relayrunner.dev
 
-Once the relayrunner.dev zone is in the RelayRunner Cloudflare account, add `relayrunner.dev` to `routes` in `wrangler.jsonc`, change `SITE_URL` in `build:site` to `https://relayrunner.dev`, and decide whether relayrunner.app keeps serving the page or redirects.
+`relayrunner.dev` is attached as a second custom domain in `wrangler.jsonc`, so both domains serve the site. To switch over, change `SITE_URL` in `build:site` to `https://relayrunner.dev`, then redirect relayrunner.app to it.

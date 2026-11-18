@@ -63,8 +63,11 @@
       "ACCESS_AUD": "bc8e87c4c78375b0b1e61b4a2a73354543030492e218d02a28c56bc0f95702f7",
     },
   },
-  // Custom domains. relayrunner.app is the interim domain while relayrunner.dev waits out its
-  // transfer lock; add app.relayrunner.dev here once that zone lives in this account. It is
-  // BETTER_AUTH_URL (apps/api/wrangler.jsonc), so GitHub's sign-in callback lands here.
-  "routes": [{ "pattern": "app.relayrunner.app", "custom_domain": true }],
+  // Custom domains. app.relayrunner.app is BETTER_AUTH_URL (apps/api/wrangler.jsonc), so GitHub's
+  // sign-in callback lands there, and every connected CLI and Mac app keeps it as its server, so it
+  // stays attached after the move. app.relayrunner.dev serves the same Worker ahead of the switch.
+  "routes": [
+    { "pattern": "app.relayrunner.app", "custom_domain": true },
+    { "pattern": "app.relayrunner.dev", "custom_domain": true },
+  ],
 }

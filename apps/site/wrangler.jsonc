@@ -29,9 +29,12 @@
     "enabled": true,
     "logs": { "enabled": true, "invocation_logs": true },
   },
-  // Apex of the interim domain. relayrunner.app's MX/TXT records (Email Routing, and DMARC for
-  // send.relayrunner.app) live alongside the custom domain's records and are not touched by it.
-  // Add relayrunner.dev here (and point VITE_SITE_URL in package.json at it) once that zone
-  // lives in this account; a custom domain on a zone outside the account fails the deploy.
-  "routes": [{ "pattern": "relayrunner.app", "custom_domain": true }],
+  // Apexes of both domains. Each zone's MX/TXT records (Email Routing on relayrunner.app, Google
+  // Workspace on relayrunner.dev) live alongside the custom domain's records and are not touched by
+  // it. relayrunner.dev must have no A/AAAA/CNAME record on the apex before deploying, or the
+  // custom domain fails to attach. SITE_URL in package.json still names relayrunner.app.
+  "routes": [
+    { "pattern": "relayrunner.app", "custom_domain": true },
+    { "pattern": "relayrunner.dev", "custom_domain": true },
+  ],
 }
