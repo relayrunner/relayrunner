@@ -646,7 +646,6 @@ ol.sol-steps h3 {
   opacity: 0.75;
 }
 .int-note {
-  max-width: 820px;
   margin-top: 14px;
   color: var(--mute);
   font-size: 14px;
