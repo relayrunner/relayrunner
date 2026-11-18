@@ -24,8 +24,7 @@ final class EventTests: XCTestCase {
       ),
       .state(
         .init(
-          link: .online, paused: false, jobs: [], waiting: 1,
-          queue: [QueuedJob(repo: "acme/app", since: 1_763_481_600_000, name: "test", workflow: "CI")], spilled: [1_763_481_000_000], slots: 2))
+          link: .online, paused: false, jobs: [], waiting: 1, spilled: [1_763_481_000_000], slots: 2))
     )
     XCTAssertEqual(
       parse(#"{"v":1,"at":"x","type":"sign-in","url":"https://app.relayrunner.dev/device?user_code=AB","code":"AB"}"#),

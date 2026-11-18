@@ -37,7 +37,7 @@ public struct GatewayJob: Equatable, Codable, Identifiable {
     self.completedAt = completedAt
   }
 
-  public var outcome: HistoryEntry.Outcome { JobConclusion.outcome(conclusion) }
+  public var outcome: JobOutcome { JobConclusion.outcome(conclusion) }
 
   /// Running or waiting to start: it hasn't finished.
   public var isActive: Bool { completedAt == nil }
@@ -72,9 +72,12 @@ private func span(_ from: Double?, _ to: Double?) -> Double {
   return max(0, to - from)
 }
 
+/// How a job ended.
+public enum JobOutcome: Equatable { case succeeded, failed, canceled, other }
+
 public enum JobConclusion {
   /// GitHub's conclusion as one of the menu's outcomes.
-  public static func outcome(_ conclusion: String?) -> HistoryEntry.Outcome {
+  public static func outcome(_ conclusion: String?) -> JobOutcome {
     switch conclusion {
     case "success": return .succeeded
     case "failure", "timed_out", "startup_failure": return .failed
@@ -190,7 +193,7 @@ public struct JobStep: Equatable, Codable, Identifiable {
   public var completedAt: Double?
 
   public var id: Int { number }
-  public var outcome: HistoryEntry.Outcome { JobConclusion.outcome(conclusion) }
+  public var outcome: JobOutcome { JobConclusion.outcome(conclusion) }
   public var durationMs: Double? {
     guard let startedAt, let completedAt else { return nil }
     return max(0, completedAt - startedAt)

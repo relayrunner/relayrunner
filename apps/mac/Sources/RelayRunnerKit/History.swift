@@ -20,65 +20,6 @@ public struct RunJob: Equatable, Codable {
   }
 }
 
-/// One job this Mac ran: a line of ~/.relayrunner/history.jsonl, or a `job-end` event
-/// (apps/cli/src/history.rs).
-public struct HistoryEntry: Equatable, Codable, Identifiable {
-  public var routeId: String
-  public var repo: String?
-  public var workflow: String?
-  public var job: String?
-  public var url: URL?
-  public var runAttempt: Int?
-  /// GitHub's result as the runner printed it: Succeeded, Failed, Canceled and so on.
-  public var result: String?
-  /// `finished` when the runner exited cleanly, `failed` when it didn't.
-  public var state: String
-  public var message: String?
-  public var slot: Int?
-  public var startedAtMs: Double
-  public var durationMs: Double
-  public var typicalMs: Int?
-
-  public var id: String { routeId }
-
-  public init(
-    routeId: String, repo: String? = nil, workflow: String? = nil, job: String? = nil, url: URL? = nil,
-    runAttempt: Int? = nil, result: String? = nil, state: String = "finished", message: String? = nil,
-    slot: Int? = nil, startedAtMs: Double, durationMs: Double, typicalMs: Int? = nil
-  ) {
-    self.routeId = routeId
-    self.repo = repo
-    self.workflow = workflow
-    self.job = job
-    self.url = url
-    self.runAttempt = runAttempt
-    self.result = result
-    self.state = state
-    self.message = message
-    self.slot = slot
-    self.startedAtMs = startedAtMs
-    self.durationMs = durationMs
-    self.typicalMs = typicalMs
-  }
-
-  public enum Outcome: Equatable { case succeeded, failed, canceled, other }
-
-  public var outcome: Outcome {
-    switch result {
-    case "Succeeded": return .succeeded
-    case "Failed": return .failed
-    case "Canceled": return .canceled
-    case nil: return state == "failed" ? .failed : .other
-    default: return .other
-    }
-  }
-
-  /// The job's name, else the repo, for a row.
-  public var title: String { job ?? repo ?? "Job \(routeId)" }
-
-  public var endedAt: Date { Date(timeIntervalSince1970: (startedAtMs + durationMs) / 1000) }
-}
-
 /// Jobs that went to another runner because every slot here was busy.
 public enum Spillover {
   /// How many of `spilled` (ms since the epoch) were in the hour before `now`.

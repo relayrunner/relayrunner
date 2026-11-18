@@ -500,9 +500,9 @@ extension Note where Action == EmptyView {
   init(text: String) { self.init(text: text) { EmptyView() } }
 }
 
-/// A job's result as a coloured symbol, in the Jobs window.
-struct OutcomeIcon: View {
-  let outcome: HistoryEntry.Outcome
+/// A job's result as a coloured symbol.
+private struct OutcomeIcon: View {
+  let outcome: JobOutcome
 
   var body: some View {
     let (symbol, color, label): (String, Color, String) =

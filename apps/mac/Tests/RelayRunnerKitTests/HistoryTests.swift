@@ -5,11 +5,7 @@ import XCTest
 final class HistoryTests: XCTestCase {
   private func parse(_ line: String) -> Event? { Event.parse(Data(line.utf8)) }
 
-  // The line apps/cli/src/history.rs writes.
-  private let line =
-    #"{"v":1,"routeId":"r1","repo":"acme/app","workflow":"CI","job":"test","url":"https://github.com/acme/app/actions/runs/42/job/7","runAttempt":1,"result":"Failed","state":"finished","message":null,"slot":2,"startedAt":"2026-11-18T10:00:00.000Z","startedAtMs":1763460000000,"durationMs":250000,"typicalMs":300000,"usage":null}"#
-
-  func testReadsRunAndJobEnd() {
+  func testReadsRun() {
     XCTAssertEqual(
       parse(
         #"{"v":1,"at":"x","type":"run","routeId":"r1","slot":2,"job":{"name":"test","workflow":"CI","repo":"acme/app","url":"https://github.com/acme/app/actions/runs/42/job/7","runAttempt":1,"typicalMs":300000}}"#
@@ -25,14 +21,6 @@ final class HistoryTests: XCTestCase {
     XCTAssertEqual(parse(#"{"v":1,"at":"x","type":"run","routeId":"r1","slot":1}"#), .run(routeId: "r1", slot: 1, job: nil))
     XCTAssertEqual(
       parse(#"{"v":1,"at":"x","type":"run","routeId":"r1","slot":1,"job":{"name":3}}"#), .run(routeId: "r1", slot: 1, job: nil))
-
-    guard case .jobEnd(let entry) = parse(#"{"v":1,"at":"x","type":"job-end","# + line.dropFirst(7)) else {
-      return XCTFail("job-end should parse")
-    }
-    XCTAssertEqual(entry.title, "test")
-    XCTAssertEqual(entry.outcome, .failed)
-    XCTAssertEqual(entry.slot, 2)
-    XCTAssertEqual(entry.typicalMs, 300_000)
   }
 
   func testCountsTheLastHoursSpillover() {

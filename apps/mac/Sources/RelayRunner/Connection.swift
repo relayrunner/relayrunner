@@ -16,9 +16,8 @@ final class Connection {
 
   private(set) var phase = Phase.off
   private(set) var paused = false
-  /// A job running now: its slot, which job it is when the gateway said, and when it started here.
+  /// A job running now: which job it is when the gateway said, and when it started here.
   struct Running: Equatable {
-    var slot: Int
     var job: RunJob?
     var startedAt: Date
   }
@@ -214,8 +213,8 @@ final class Connection {
       quitIfIdle()
       restartIfIdle()
       finishAllowing(state)
-    case .run(let routeId, let slot, let job):
-      running[routeId] = Running(slot: slot, job: job, startedAt: Date())
+    case .run(let routeId, _, let job):
+      running[routeId] = Running(job: job, startedAt: Date())
       if let job { repos[routeId] = job.repo }
     case .jobRepo(let routeId, let repo):
       if running[routeId]?.job == nil { repos[routeId] = repo }
@@ -229,7 +228,7 @@ final class Connection {
       if let message { lastError = message }
     case .error(_, let message, let command):
       if command != nil { problem = message } else { lastError = message }
-    case .jobEnd, .other:
+    case .other:
       break
     }
   }

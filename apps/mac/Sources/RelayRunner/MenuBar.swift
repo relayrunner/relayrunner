@@ -13,8 +13,10 @@ final class MenuBar: NSObject, NSMenuDelegate {
   private let item = NSStatusBar.system.statusItem(withLength: NSStatusItem.squareLength)
   private let menu = NSMenu()
   private var header: NSHostingView<MenuHeader>?
-  /// Pause or resume, rebuilt each time the menu opens.
-  private var pauseItems: [NSMenuItem] = []
+  /// Shown while online: the pause with its choice of how long, or the way back from one.
+  private let pause = NSMenuItem(title: "Pause New Jobs", action: nil, keyEquivalent: "")
+  private lazy var resume = row("Resume New Jobs") { [weak self] in self?.connection.setPaused(false) }
+  private let pauseSeparator = NSMenuItem.separator()
 
   func start() {
     menu.delegate = self
@@ -27,6 +29,14 @@ final class MenuBar: NSObject, NSMenuDelegate {
     top.view = header
     menu.addItem(top)
     menu.addItem(.separator())
+    let lengths = NSMenu()
+    for length in PauseLength.allCases {
+      lengths.addItem(row(length.title) { [weak self] in self?.connection.pause(for: length) })
+    }
+    pause.submenu = lengths
+    menu.addItem(pause)
+    menu.addItem(resume)
+    menu.addItem(pauseSeparator)
     menu.addItem(row("Jobs…", key: "j") { JobsWindow.shared.show() })
     menu.addItem(row("Open Dashboard") { NSWorkspace.shared.open(Connection.shared.server) })
     menu.addItem(row("Settings…", key: ",") { MenuBar.openSettings() })
@@ -44,10 +54,7 @@ final class MenuBar: NSObject, NSMenuDelegate {
       item.button?.image = connection.menuBarImage
       _ = (connection.status, connection.signIn, connection.jobs, connection.repos, connection.running, connection.problem)
     } onChange: { [weak self] in
-      Task { @MainActor in
-        self?.watch()
-        self?.fitHeader()
-      }
+      Task { @MainActor in self?.watch() }
     }
     fitHeader()
   }
@@ -59,30 +66,13 @@ final class MenuBar: NSObject, NSMenuDelegate {
 
   func menuWillOpen(_ menu: NSMenu) { fitHeader() }
 
-  func menuNeedsUpdate(_ menu: NSMenu) { rebuildPauseItems() }
-
-  /// While online: a pause with a choice of how long, or the way back from one. Between the header
-  /// and Jobs.
-  private func rebuildPauseItems() {
-    for item in pauseItems { menu.removeItem(item) }
-    pauseItems = []
-    guard connection.phase == .online else { return }
-    let pause: NSMenuItem
-    if connection.paused {
-      pause = row("Resume New Jobs") { [weak self] in self?.connection.setPaused(false) }
-      // It takes jobs again on its own once the running ones finish.
-      pause.isEnabled = connection.allowingSlots == nil
-    } else {
-      pause = NSMenuItem(title: "Pause New Jobs", action: nil, keyEquivalent: "")
-      let lengths = NSMenu()
-      for length in PauseLength.allCases {
-        lengths.addItem(row(length.title) { [weak self] in self?.connection.pause(for: length) })
-      }
-      pause.submenu = lengths
-    }
-    pauseItems = [pause, .separator()]
-    // Right after the header and its separator.
-    for (offset, item) in pauseItems.enumerated() { menu.insertItem(item, at: 2 + offset) }
+  func menuNeedsUpdate(_ menu: NSMenu) {
+    let online = connection.phase == .online
+    pause.isHidden = !online || connection.paused
+    resume.isHidden = !online || !connection.paused
+    // It takes jobs again on its own once the running ones finish.
+    resume.isEnabled = connection.allowingSlots == nil
+    pauseSeparator.isHidden = !online
   }
 
   func open() { item.button?.performClick(nil) }
@@ -285,23 +275,14 @@ private struct UsualBar: View {
   let over: Bool
 
   var body: some View {
-    Bar(fraction: fraction, tint: over ? .orange : .green)
-      .accessibilityElement()
-      .accessibilityLabel(over ? "Longer than usual" : "\(Int(fraction * 100))% of its usual time")
-  }
-}
-
-private struct Bar: View {
-  let fraction: Double
-  let tint: Color
-
-  var body: some View {
     GeometryReader { geo in
       ZStack(alignment: .leading) {
         Capsule().fill(.quaternary)
-        Capsule().fill(tint).frame(width: max(3, geo.size.width * fraction))
+        Capsule().fill(over ? .orange : .green).frame(width: max(3, geo.size.width * fraction))
       }
     }
     .frame(height: 3)
+    .accessibilityElement()
+    .accessibilityLabel(over ? "Longer than usual" : "\(Int(fraction * 100))% of its usual time")
   }
 }
