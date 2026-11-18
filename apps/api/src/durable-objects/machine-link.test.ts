@@ -145,22 +145,37 @@ describe("MachineLink: jobs waiting for a slot", () => {
     return { state, link: new MachineLink(ctx as never, (await createTestEnv()) as never) };
   }
 
+  const jobs = (...since: number[]) => since.map((at) => ({ repo: "acme/app", since: at }));
+  const frames = (ws: ReturnType<typeof socket>) =>
+    ws.send.mock.calls.map(([frame]) => JSON.parse(frame as string));
+
   test("the CLI hears the total over every workspace, down to 0", async () => {
     const ws = socket(true);
     const { state, link } = await linkWith(ws);
-    await link.setWaiting("w1", 2);
-    await link.setWaiting("w2", 1);
-    await link.setWaiting("w1", 0);
-    expect(ws.send.mock.calls.map(([frame]) => JSON.parse(frame as string).jobs)).toEqual([
-      2, 3, 1,
-    ]);
+    await link.setWaiting("w1", jobs(3, 1));
+    await link.setWaiting("w2", jobs(2));
+    await link.setWaiting("w1", []);
+    expect(frames(ws).map((frame) => frame.jobs)).toEqual([2, 3, 1]);
+    // Longest waiting first, over both workspaces.
+    expect(frames(ws)[1].queue.map((queued: { since: number }) => queued.since)).toEqual([1, 2, 3]);
     expect([...state.data.keys()]).toEqual(["waiting:w2"]);
+  });
+
+  test("the CLI hears jobs that went elsewhere in the last hour", async () => {
+    const ws = socket(true);
+    const { state, link } = await linkWith(ws);
+    const now = Date.now();
+    state.data.set("spilled", [now - 2 * 60 * 60_000, now - 60_000]);
+    await link.spilled(now);
+    expect(frames(ws).at(-1)).toMatchObject({ jobs: 0, queue: [], spilled: [now - 60_000, now] });
+    expect(state.data.get("spilled")).toEqual([now - 60_000, now]);
   });
 
   test("a CLI that doesn't read waiting isn't told", async () => {
     const ws = socket();
     const { link } = await linkWith(ws);
-    await link.setWaiting("w1", 2);
+    await link.setWaiting("w1", jobs(1, 2));
+    await link.spilled(Date.now());
     expect(ws.send).not.toHaveBeenCalled();
   });
 });

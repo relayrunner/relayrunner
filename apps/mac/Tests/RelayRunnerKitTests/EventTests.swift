@@ -19,6 +19,15 @@ final class EventTests: XCTestCase {
       .state(.init(link: .online, paused: false, jobs: [], waiting: 3, slots: 2))
     )
     XCTAssertEqual(
+      parse(
+        #"{"v":1,"at":"x","type":"state","link":"online","paused":false,"jobs":[],"waiting":1,"queue":[{"repo":"acme/app","since":1763481600000}],"spilled":[1763481000000],"slots":2}"#
+      ),
+      .state(
+        .init(
+          link: .online, paused: false, jobs: [], waiting: 1,
+          queue: [QueuedJob(repo: "acme/app", since: 1_763_481_600_000)], spilled: [1_763_481_000_000], slots: 2))
+    )
+    XCTAssertEqual(
       parse(#"{"v":1,"at":"x","type":"sign-in","url":"https://app.relayrunner.app/device?user_code=AB","code":"AB"}"#),
       .signIn(url: URL(string: "https://app.relayrunner.app/device?user_code=AB")!, code: "AB")
     )

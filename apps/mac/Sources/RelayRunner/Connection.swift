@@ -27,6 +27,10 @@ final class Connection {
   private(set) var jobs: [String] = []
   /// How many jobs wait for a slot on this Mac.
   private(set) var waiting = 0
+  /// The longest-waiting of them, longest first.
+  private(set) var queue: [QueuedJob] = []
+  /// When jobs went elsewhere because every slot here was busy, in ms since the epoch.
+  private(set) var spilled: [Double] = []
   /// How many jobs this Mac runs at once, once `connect` says.
   private(set) var slots: Int?
   private(set) var repos: [String: String] = [:]
@@ -166,6 +170,8 @@ final class Connection {
       paused = state.paused
       jobs = state.jobs
       waiting = state.waiting
+      queue = state.queue
+      spilled = state.spilled
       if let count = state.slots { slots = count }
       repos = repos.filter { state.jobs.contains($0.key) }
       running = running.filter { state.jobs.contains($0.key) }
@@ -202,6 +208,8 @@ final class Connection {
     paused = false
     jobs = []
     waiting = 0
+    queue = []
+    spilled = []
     slots = nil
     repos = [:]
     running = [:]

@@ -97,8 +97,8 @@ public enum History {
     Array(([entry] + entries.filter { $0.routeId != entry.routeId }).prefix(limit))
   }
 
-  /// What ran today: how many jobs, for how long, and how many failed.
-  public struct Day: Equatable {
+  /// How many jobs ran, for how long, and how many failed.
+  public struct Summary: Equatable {
     public var jobs: Int
     public var busyMs: Double
     public var failed: Int
@@ -110,13 +110,50 @@ public enum History {
     }
   }
 
-  public static func day(_ entries: [HistoryEntry], of date: Date = Date(), calendar: Calendar = .current) -> Day {
-    let today = entries.filter { calendar.isDate($0.endedAt, inSameDayAs: date) }
-    return Day(
-      jobs: today.count,
-      busyMs: today.reduce(0) { $0 + $1.durationMs },
-      failed: today.filter { $0.outcome == .failed }.count
+  /// One hour of the History chart: how many jobs ended in it, and how many of those failed.
+  public struct Hour: Equatable {
+    public var start: Date
+    public var jobs: Int
+    public var failed: Int
+
+    public init(start: Date, jobs: Int, failed: Int) {
+      self.start = start
+      self.jobs = jobs
+      self.failed = failed
+    }
+  }
+
+  /// The last `count` hours up to `now`, oldest first, the last one ending at `now`.
+  public static func hours(_ entries: [HistoryEntry], count: Int = 12, now: Date = Date()) -> [Hour] {
+    let from = now.addingTimeInterval(-Double(count) * 3600)
+    var hours = (0..<count).map { Hour(start: from.addingTimeInterval(Double($0) * 3600), jobs: 0, failed: 0) }
+    for entry in entries {
+      let offset = entry.endedAt.timeIntervalSince(from)
+      guard offset > 0, offset <= Double(count) * 3600 else { continue }
+      let index = min(count - 1, Int(offset / 3600))
+      hours[index].jobs += 1
+      if entry.outcome == .failed { hours[index].failed += 1 }
+    }
+    return hours
+  }
+
+  /// What ran since `date`.
+  public static func since(_ date: Date, _ entries: [HistoryEntry]) -> Summary {
+    let since = entries.filter { $0.endedAt > date }
+    return Summary(
+      jobs: since.count,
+      busyMs: since.reduce(0) { $0 + $1.durationMs },
+      failed: since.filter { $0.outcome == .failed }.count
     )
+  }
+}
+
+/// Jobs that went to another runner because every slot here was busy.
+public enum Spillover {
+  /// How many of `spilled` (ms since the epoch) were in the hour before `now`.
+  public static func lastHour(_ spilled: [Double], now: Date = Date()) -> Int {
+    let from = (now.timeIntervalSince1970 - 3600) * 1000
+    return spilled.filter { $0 > from }.count
   }
 }
 

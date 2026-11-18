@@ -49,16 +49,29 @@ final class HistoryTests: XCTestCase {
     XCTAssertEqual(History.adding(again, to: entries).map(\.routeId), ["r1", "r2"])
   }
 
-  func testSumsUpTheDay() {
-    let calendar = Calendar(identifier: .gregorian)
+  func testSumsUpTheLastHours() {
     let now = Date(timeIntervalSince1970: 1_763_460_000)
     let ms = now.timeIntervalSince1970 * 1000
     let entries = [
       HistoryEntry(routeId: "a", result: "Succeeded", startedAtMs: ms - 600_000, durationMs: 250_000),
       HistoryEntry(routeId: "b", result: "Failed", startedAtMs: ms - 300_000, durationMs: 100_000),
-      HistoryEntry(routeId: "c", result: "Succeeded", startedAtMs: ms - 3 * 86_400_000, durationMs: 100_000),
+      HistoryEntry(routeId: "c", result: "Failed", startedAtMs: ms - 5 * 3_600_000, durationMs: 100_000),
+      HistoryEntry(routeId: "d", result: "Succeeded", startedAtMs: ms - 3 * 86_400_000, durationMs: 100_000),
     ]
-    XCTAssertEqual(History.day(entries, of: now, calendar: calendar), .init(jobs: 2, busyMs: 350_000, failed: 1))
+    XCTAssertEqual(
+      History.since(now.addingTimeInterval(-12 * 3600), entries), .init(jobs: 3, busyMs: 450_000, failed: 2))
+    let hours = History.hours(entries, now: now)
+    XCTAssertEqual(hours.count, 12)
+    XCTAssertEqual(hours.map(\.jobs), [0, 0, 0, 0, 0, 0, 0, 1, 0, 0, 0, 2])
+    XCTAssertEqual(hours.map(\.failed), [0, 0, 0, 0, 0, 0, 0, 1, 0, 0, 0, 1])
+    XCTAssertEqual(hours.last?.start, now.addingTimeInterval(-3600))
+  }
+
+  func testCountsTheLastHoursSpillover() {
+    let now = Date(timeIntervalSince1970: 1_763_460_000)
+    let ms = now.timeIntervalSince1970 * 1000
+    XCTAssertEqual(Spillover.lastHour([ms - 2 * 3_600_000, ms - 60_000, ms], now: now), 2)
+    XCTAssertEqual(Spillover.lastHour([], now: now), 0)
   }
 
   func testWritesShortTimes() {
