@@ -1,5 +1,12 @@
 # @relayrunner/mac
 
+## 0.3.1
+
+### Patch Changes
+
+- a096718: The menu bar menu is now a real macOS menu, so it has the system's shape and look.
+- 10ba127: The menu bar panel closes when you pick Settings or another item, and Settings stays in front while you use the menu bar.
+
 ## 0.3.0
 
 ### Minor Changes
