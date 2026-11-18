@@ -1,6 +1,5 @@
 import AppKit
 import RelayRunnerKit
-import ServiceManagement
 import SwiftUI
 
 /// The window a first launch opens. A menu bar app has no window of its own, so without it a new
@@ -10,20 +9,17 @@ import SwiftUI
 final class Welcome: NSObject, NSWindowDelegate {
   static let shared = Welcome()
 
-  /// Set before the app relaunches from Applications, so the new copy picks up at signing in.
-  static let movedKey = "welcomeMoved"
-
   private var window: NSWindow?
 
   /// On a first launch only. A Mac that's signed in already (someone updating from an older version)
   /// skips it.
   func showIfNew() {
-    let moved = UserDefaults.standard.bool(forKey: Self.movedKey)
+    let moved = AppSettings.welcomeMoved
+    AppSettings.welcomeMoved = false
     if (AppSettings.welcomed && !moved) || Connection.shared.isEnrolled {
       AppSettings.welcomed = true
       return
     }
-    UserDefaults.standard.removeObject(forKey: Self.movedKey)
     show(step: moved ? .signIn : .hello)
   }
 
@@ -45,6 +41,42 @@ final class Welcome: NSObject, NSWindowDelegate {
   func windowWillClose(_ notification: Notification) {
     AppSettings.welcomed = true
     window = nil
+  }
+
+  // MARK: Moving to Applications
+
+  /// In /Applications or ~/Applications. A build run from Xcode or `swift run` isn't an app bundle, so
+  /// it counts as moved. Moving relaunches the app, so this can't change while it runs.
+  static let inApplications: Bool = {
+    let url = Bundle.main.bundleURL
+    guard url.pathExtension == "app" else { return true }
+    let folders = [URL(fileURLWithPath: "/Applications"), FileManager.default.homeDirectoryForCurrentUser.appendingPathComponent("Applications")]
+    return folders.contains { url.deletingLastPathComponent().standardizedFileURL.path == $0.standardizedFileURL.path }
+  }()
+
+  /// Copies the app to /Applications, replacing an older copy, and opens it from there. Returns what
+  /// went wrong, or nil once the new copy is opening.
+  func moveToApplications() -> String? {
+    let source = Bundle.main.bundleURL
+    let target = URL(fileURLWithPath: "/Applications").appendingPathComponent(source.lastPathComponent)
+    let files = FileManager.default
+    do {
+      if files.fileExists(atPath: target.path) { try files.trashItem(at: target, resultingItemURL: nil) }
+      try files.copyItem(at: source, to: target)
+    } catch {
+      return "Couldn't move it (\(error.localizedDescription)). Drag RelayRunner into Applications yourself, then open it from there."
+    }
+    // From Downloads this tidies up. From the disk image it fails, which is fine.
+    try? files.trashItem(at: source, resultingItemURL: nil)
+    AppSettings.welcomeMoved = true
+    let configuration = NSWorkspace.OpenConfiguration()
+    configuration.createsNewApplicationInstance = true
+    NSWorkspace.shared.openApplication(at: target, configuration: configuration) { _, error in
+      DispatchQueue.main.async {
+        if error == nil { NSApp.terminate(nil) }
+      }
+    }
+    return nil
   }
 }
 
@@ -94,7 +126,7 @@ struct WelcomeView: View {
         "Welcome to RelayRunner",
         "Run GitHub Actions jobs on this Mac, right from the menu bar."
       )
-      if !Self.inApplications {
+      if !Welcome.inApplications {
         note("RelayRunner works best from your Applications folder, where it can update itself.")
       }
       if let problem { note(problem) }
@@ -143,15 +175,15 @@ struct WelcomeView: View {
 
   @ViewBuilder private var footer: some View {
     HStack {
-      if step == .hello && !Self.inApplications {
+      if step == .hello && !Welcome.inApplications {
         Button("Not Now") { step = .signIn }
       }
       Spacer()
       switch step {
+      case .hello where Welcome.inApplications:
+        primary("Get Started") { step = .signIn }
       case .hello:
-        primary(Self.inApplications ? "Get Started" : "Move to Applications") {
-          if Self.inApplications { step = .signIn } else { moveToApplications() }
-        }
+        primary("Move to Applications") { problem = Welcome.shared.moveToApplications() }
       case .signIn:
         if connection.isOn {
           Button("Cancel") { connection.turnOff() }
@@ -160,7 +192,7 @@ struct WelcomeView: View {
         }
       case .done:
         primary("Done") {
-          if opensAtLogin { try? SMAppService.mainApp.register() }
+          if opensAtLogin { AppSettings.opensAtLogin = true }
           close()
         }
       }
@@ -194,41 +226,6 @@ struct WelcomeView: View {
       .frame(maxWidth: 380)
       .fixedSize(horizontal: false, vertical: true)
       .padding(.top, 14)
-  }
-
-  // MARK: Moving to Applications
-
-  /// In /Applications or ~/Applications. A build run from Xcode or `swift run` isn't an app bundle, so
-  /// it counts as moved.
-  static var inApplications: Bool {
-    let url = Bundle.main.bundleURL
-    guard url.pathExtension == "app" else { return true }
-    let folders = [URL(fileURLWithPath: "/Applications"), FileManager.default.homeDirectoryForCurrentUser.appendingPathComponent("Applications")]
-    return folders.contains { url.deletingLastPathComponent().standardizedFileURL.path == $0.standardizedFileURL.path }
-  }
-
-  /// Copies the app to /Applications, replacing an older copy, and opens it from there.
-  private func moveToApplications() {
-    let source = Bundle.main.bundleURL
-    let target = URL(fileURLWithPath: "/Applications").appendingPathComponent(source.lastPathComponent)
-    let files = FileManager.default
-    do {
-      if files.fileExists(atPath: target.path) { try files.trashItem(at: target, resultingItemURL: nil) }
-      try files.copyItem(at: source, to: target)
-    } catch {
-      problem = "Couldn't move it (\(error.localizedDescription)). Drag RelayRunner into Applications yourself, then open it from there."
-      return
-    }
-    // From Downloads this tidies up. From the disk image it fails, which is fine.
-    try? files.trashItem(at: source, resultingItemURL: nil)
-    UserDefaults.standard.set(true, forKey: Welcome.movedKey)
-    let configuration = NSWorkspace.OpenConfiguration()
-    configuration.createsNewApplicationInstance = true
-    NSWorkspace.shared.openApplication(at: target, configuration: configuration) { _, error in
-      DispatchQueue.main.async {
-        if error == nil { NSApp.terminate(nil) }
-      }
-    }
   }
 }
 

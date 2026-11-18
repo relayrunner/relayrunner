@@ -13,12 +13,9 @@ final class Notifications: NSObject, UNUserNotificationCenterDelegate {
     center.delegate = self
   }
 
-  /// Turns them on, asking macOS first. False when macOS says no, or the person turned
-  /// notifications off for the app earlier.
-  func turnOn() async -> Bool {
-    let allowed = (try? await center.requestAuthorization(options: [.alert, .sound])) ?? false
-    UserDefaults.standard.set(allowed, forKey: AppSettings.Key.notifiesOnFailure)
-    return allowed
+  /// Asks macOS. False when it says no, or the person turned notifications off for the app earlier.
+  func requestPermission() async -> Bool {
+    (try? await center.requestAuthorization(options: [.alert, .sound])) ?? false
   }
 
   func jobFailed(job: String, repo: String?, server: URL) {
@@ -76,6 +73,10 @@ struct NotifyToggle: View {
       on = false
       return
     }
-    Task { @MainActor in blocked = !(await Notifications.shared.turnOn()) }
+    Task { @MainActor in
+      let allowed = await Notifications.shared.requestPermission()
+      on = allowed
+      blocked = !allowed
+    }
   }
 }

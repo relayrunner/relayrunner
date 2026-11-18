@@ -1,5 +1,4 @@
 import AppKit
-import ServiceManagement
 import SwiftUI
 
 /// The Settings window: General, Workspaces, Linux VMs and About.
@@ -17,15 +16,15 @@ struct SettingsView: View {
 
 private struct GeneralSettings: View {
   @AppStorage(AppSettings.Key.concurrency) private var concurrency = 0
-  @State private var openAtLogin = SMAppService.mainApp.status == .enabled
+  @State private var openAtLogin = AppSettings.opensAtLogin
   @State private var checksForUpdates = Updates.shared.updater?.automaticallyChecksForUpdates ?? false
 
   var body: some View {
     Form {
       Toggle("Open at login", isOn: $openAtLogin)
         .onChange(of: openAtLogin) { _, on in
-          if on { try? SMAppService.mainApp.register() } else { try? SMAppService.mainApp.unregister() }
-          openAtLogin = SMAppService.mainApp.status == .enabled
+          AppSettings.opensAtLogin = on
+          openAtLogin = AppSettings.opensAtLogin
         }
       if let updater = Updates.shared.updater {
         Toggle("Check for updates automatically", isOn: $checksForUpdates)

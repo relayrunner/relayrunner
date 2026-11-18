@@ -1,5 +1,6 @@
 import Foundation
 import RelayRunnerKit
+import ServiceManagement
 
 /// What the Settings window saves. Each value is 0 or false for the CLI's own default.
 enum AppSettings {
@@ -12,6 +13,7 @@ enum AppSettings {
     static let wantsOnline = "wantsOnline"
     static let notifiesOnFailure = "notifiesOnFailure"
     static let welcomed = "welcomed"
+    static let welcomeMoved = "welcomeMoved"
   }
 
   private static var defaults: UserDefaults { .standard }
@@ -33,11 +35,28 @@ enum AppSettings {
   }
 
   /// Off until someone turns it on in Settings or the welcome window.
-  static var notifiesOnFailure: Bool { defaults.bool(forKey: Key.notifiesOnFailure) }
+  static var notifiesOnFailure: Bool {
+    get { defaults.bool(forKey: Key.notifiesOnFailure) }
+    set { defaults.set(newValue, forKey: Key.notifiesOnFailure) }
+  }
 
   /// Set once the welcome window has been through, or closed, so it shows on a first launch only.
   static var welcomed: Bool {
     get { defaults.bool(forKey: Key.welcomed) }
     set { defaults.set(newValue, forKey: Key.welcomed) }
+  }
+
+  /// Set before the app relaunches from Applications, so the new copy's welcome picks up at signing in.
+  static var welcomeMoved: Bool {
+    get { defaults.bool(forKey: Key.welcomeMoved) }
+    set { defaults.set(newValue, forKey: Key.welcomeMoved) }
+  }
+
+  /// A login item, kept by macOS rather than in defaults. Reads back what macOS settled on.
+  static var opensAtLogin: Bool {
+    get { SMAppService.mainApp.status == .enabled }
+    set {
+      if newValue { try? SMAppService.mainApp.register() } else { try? SMAppService.mainApp.unregister() }
+    }
   }
 }

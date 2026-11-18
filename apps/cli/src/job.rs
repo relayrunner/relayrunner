@@ -124,11 +124,8 @@ pub async fn run(launcher: Launcher, run: Run, prefix: String, report: Report, s
             let out = child
                 .stdout
                 .take()
-                .map(|s| forward(s, prefix.clone(), false, route_id.clone()));
-            let err = child
-                .stderr
-                .take()
-                .map(|s| forward(s, prefix, true, route_id.clone()));
+                .map(|s| forward(s, prefix.clone(), false, Some(route_id.clone())));
+            let err = child.stderr.take().map(|s| forward(s, prefix, true, None));
             let status = child.wait().await;
             for task in [out, err].into_iter().flatten() {
                 let _ = task.await;
@@ -183,18 +180,20 @@ fn signal_name(sig: i32) -> String {
     }
 }
 
-/// The runner's output, line by line with `prefix`, to stderr when stdout carries events. The
-/// runner's line for how the job ended becomes a `job-result` event.
+/// The runner's output, line by line with `prefix`, to stderr when stdout carries events. On
+/// stdout (`route_id` set), the runner's line for how the job ended becomes a `job-result` event.
 fn forward<R: tokio::io::AsyncRead + Unpin + Send + 'static>(
     stream: R,
     prefix: String,
     is_err: bool,
-    route_id: String,
+    route_id: Option<String>,
 ) -> tokio::task::JoinHandle<()> {
     tokio::spawn(async move {
         let mut lines = BufReader::new(stream).lines();
         while let Ok(Some(line)) = lines.next_line().await {
-            if let Some((job, result)) = job_result(&line) {
+            if let (Some(route_id), true) = (&route_id, events::on())
+                && let Some((job, result)) = job_result(&line)
+            {
                 events::emit(
                     "job-result",
                     serde_json::json!({ "routeId": route_id, "job": job, "result": result }),
