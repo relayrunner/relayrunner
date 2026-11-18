@@ -94,6 +94,10 @@ const JobId = z.coerce.number().int().positive();
 const JobsQuery = z.object({
   limit: z.coerce.number().int().min(1).max(MAX_MACHINE_JOBS).optional(),
   before: z.coerce.number().int().positive().optional(),
+  repo: z.string().min(1).max(200).optional(),
+  workflow: z.string().min(1).max(200).optional(),
+  result: z.enum(["succeeded", "failed", "canceled"]).optional(),
+  since: z.coerce.number().int().positive().optional(),
 });
 
 const ApproveBody = z.object({

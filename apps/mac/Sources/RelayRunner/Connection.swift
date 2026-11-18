@@ -328,26 +328,49 @@ extension CLI {
   }
 
   /// Runs one of the CLI's quick commands, such as `workspaces list --json`, and waits for it.
+  /// Its output is read as it comes, so one bigger than a pipe's buffer can't stall it.
   static func run(_ arguments: [String]) async throws -> Output {
     guard let executable else { throw CocoaError(.fileNoSuchFile) }
     return try await withCheckedThrowingContinuation { continuation in
-      let process = Process()
-      process.executableURL = executable
-      process.arguments = arguments
-      process.environment = environment
-      let stdout = Pipe()
-      let stderr = Pipe()
-      process.standardOutput = stdout
-      process.standardError = stderr
-      process.standardInput = FileHandle.nullDevice
-      process.terminationHandler = { process in
+      DispatchQueue.global(qos: .userInitiated).async {
+        let process = Process()
+        process.executableURL = executable
+        process.arguments = arguments
+        process.environment = environment
+        let stdout = Pipe()
+        let stderr = Pipe()
+        process.standardOutput = stdout
+        process.standardError = stderr
+        process.standardInput = FileHandle.nullDevice
+        do { try process.run() } catch {
+          continuation.resume(throwing: error)
+          return
+        }
+        let err = Errors(stderr.fileHandleForReading)
         let out = stdout.fileHandleForReading.readDataToEndOfFile()
-        let err = stderr.fileHandleForReading.readDataToEndOfFile()
+        process.waitUntilExit()
         continuation.resume(
-          returning: Output(status: process.terminationStatus, stdout: out, stderr: String(decoding: err, as: UTF8.self))
+          returning: Output(status: process.terminationStatus, stdout: out, stderr: err.text())
         )
       }
-      do { try process.run() } catch { continuation.resume(throwing: error) }
+    }
+  }
+
+  /// A command's stderr, read on its own thread while stdout is read on the caller's.
+  private final class Errors: @unchecked Sendable {
+    private var data = Data()
+    private let done = DispatchSemaphore(value: 0)
+
+    init(_ handle: FileHandle) {
+      Thread.detachNewThread { [self] in
+        data = handle.readDataToEndOfFile()
+        done.signal()
+      }
+    }
+
+    func text() -> String {
+      done.wait()
+      return String(decoding: data, as: UTF8.self)
     }
   }
 }

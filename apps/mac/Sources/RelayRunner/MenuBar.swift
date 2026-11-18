@@ -206,7 +206,7 @@ struct MenuHeader: View {
       switch tab {
       case .now: now
       case .queue: QueueTab(connection: connection, load: HostLoad.shared, openSettings: openSettings)
-      case .history: HistoryTab(entries: connection.recent, open: openOnGitHub, relayout: relayout)
+      case .history: HistoryTab(entries: connection.recent, open: openJob, relayout: relayout)
       }
       if connection.phase == .online {
         HStack {
@@ -251,9 +251,14 @@ struct MenuHeader: View {
     DispatchQueue.main.async { MenuBar.openSettings() }
   }
 
-  private func openOnGitHub(_ url: URL) {
+  /// A job from History, in the Jobs window, or on GitHub when its link doesn't say which job.
+  private func openJob(_ url: URL) {
     closeMenu()
-    NSWorkspace.shared.open(url)
+    if let id = GatewayJob.id(in: url), connection.isEnrolled {
+      JobsWindow.shared.show(job: id, url: url)
+    } else {
+      NSWorkspace.shared.open(url)
+    }
   }
 
   /// A lane per slot while online (free ones too), else just the running jobs.
@@ -628,7 +633,7 @@ private struct HourChart: View {
   }
 }
 
-/// A job that ran here. Clicking it opens it on GitHub.
+/// A job that ran here. Clicking it opens it in the Jobs window.
 private struct HistoryRow: View {
   let entry: HistoryEntry
   let now: Date
@@ -661,7 +666,7 @@ private struct HistoryRow: View {
     .buttonStyle(.plain)
     .disabled(entry.url == nil)
     .onHover { hovering = $0 }
-    .help(entry.url == nil ? "" : "Open on GitHub")
+    .help(entry.url == nil ? "" : "Show in Jobs")
     .padding(.horizontal, -4)
   }
 

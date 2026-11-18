@@ -3,16 +3,41 @@
 // jobs that ran on it: their name, times and result, the steps GitHub reports and, for a failed
 // one, why (machineJobFailure). It ran those jobs, so nothing here is new to it.
 //
-// Database cost: the list is one range of job_timing_machine_idx; a job is one primary-key read.
-import { and, desc, eq, isNotNull, lt, or, sql } from "drizzle-orm";
+// Database cost: the list, its running jobs and its repos and workflows are each one range of
+// job_timing_machine_idx; a job is one primary-key read.
+import { and, count, desc, eq, gte, inArray, isNotNull, isNull, lt, or, sql } from "drizzle-orm";
 import { type Db, schema } from "./db/index.ts";
 import { appInstallationToken, type JobStep, workflowJobSteps } from "./github-app.ts";
 import type { Env } from "./env.ts";
+import { Recent } from "./recent.ts";
 import { jobUrl } from "./run-job.ts";
 
 const table = schema.jobTiming;
 
 export const MAX_MACHINE_JOBS = 100;
+
+// A job that started (or was sent here) longer ago than this and never said it finished lost its
+// `completed` webhook, so it isn't shown as running.
+const ACTIVE_MS = 24 * 3_600_000;
+const MAX_ACTIVE = 20;
+// Repos and workflows offered as filters, most jobs first.
+const MAX_FACETS = 50;
+
+// GitHub's conclusions for each result a machine can filter by, as the Mac app groups them.
+export const RESULTS = {
+  succeeded: ["success"],
+  failed: ["failure", "timed_out", "startup_failure"],
+  canceled: ["cancelled", "skipped"],
+} as const;
+export type JobResult = keyof typeof RESULTS;
+
+export interface MachineJobFilter {
+  repo?: string;
+  workflow?: string;
+  result?: JobResult;
+  // Finished at or after, in ms.
+  since?: number;
+}
 
 export interface MachineJob {
   id: number;
@@ -70,22 +95,77 @@ function present(row: Row): MachineJob {
 /**
  * The machine's finished jobs, newest first, `limit` at a time. `before` (a completedAt in ms)
  * continues a page. Jobs are kept as long as job_timing keeps them, about a week.
+ *
+ * The first page (no `before`) also has the jobs running or waiting to start on it now, unless
+ * it's filtered by result, and the repos and workflows it ran jobs from, for filters.
  */
 export async function machineJobs(
   db: Db,
   machineId: string,
-  { limit = 50, before }: { limit?: number; before?: number } = {},
-): Promise<{ jobs: MachineJob[]; next: number | null }> {
-  const rows = await selectJobs(db)
+  { limit = 50, before, ...filter }: { limit?: number; before?: number } & MachineJobFilter = {},
+  now = Date.now(),
+): Promise<{
+  jobs: MachineJob[];
+  next: number | null;
+  active?: MachineJob[];
+  repos?: string[];
+  workflows?: string[];
+}> {
+  const mine = eq(table.machineId, machineId);
+  const picked = [
+    filter.repo === undefined ? undefined : eq(table.repositoryFullName, filter.repo),
+    filter.workflow === undefined ? undefined : eq(table.workflowName, filter.workflow),
+  ];
+  const finished = selectJobs(db)
     .where(
       and(
-        eq(table.machineId, machineId),
+        mine,
         isNotNull(table.completedAt),
+        ...picked,
+        filter.result === undefined
+          ? undefined
+          : inArray(table.conclusion, [...RESULTS[filter.result]]),
+        filter.since === undefined ? undefined : gte(table.completedAt, new Date(filter.since)),
         before === undefined ? undefined : lt(table.completedAt, new Date(before)),
       ),
     )
     .orderBy(desc(table.completedAt))
     .limit(limit + 1);
+  if (before !== undefined) return page(await finished, limit);
+  const [rows, active, facets] = await Promise.all([
+    finished,
+    filter.result === undefined
+      ? selectJobs(db)
+          .where(
+            and(
+              mine,
+              isNull(table.completedAt),
+              ...picked,
+              sql`coalesce(${table.startedAt}, ${table.queuedAt}, ${table.createdAt}) >= ${now - ACTIVE_MS}`,
+            ),
+          )
+          .orderBy(desc(table.startedAt), desc(table.queuedAt))
+          .limit(MAX_ACTIVE)
+      : Promise.resolve([]),
+    db
+      .select({ repo: table.repositoryFullName, workflow: table.workflowName, jobs: count() })
+      .from(table)
+      .where(and(mine, isNotNull(table.completedAt)))
+      .groupBy(table.repositoryFullName, table.workflowName)
+      .orderBy(desc(count())),
+  ]);
+  const most = (values: (string | null)[]) =>
+    [...new Set(values.filter((value) => value !== null))].slice(0, MAX_FACETS);
+  return {
+    ...page(rows, limit),
+    // Running first, newest first, then the ones waiting to start.
+    active: active.map(present).sort((a, b) => Number(!a.startedAt) - Number(!b.startedAt)),
+    repos: most(facets.map((row) => row.repo)),
+    workflows: most(facets.map((row) => row.workflow)),
+  };
+}
+
+function page(rows: Row[], limit: number) {
   const jobs = rows.slice(0, limit).map(present);
   return { jobs, next: rows.length > limit ? (jobs.at(-1)?.completedAt ?? null) : null };
 }
@@ -104,7 +184,20 @@ export async function machineJobSteps(
   job: MachineJob,
   installationId: number,
 ): Promise<JobStep[] | null> {
-  return workflowJobSteps(await appInstallationToken(env, installationId), job.repo, job.id);
+  const read = async () =>
+    workflowJobSteps(await appInstallationToken(env, installationId), job.repo, job.id);
+  // A finished job's steps don't change, so the Jobs window going back to one doesn't ask GitHub
+  // again. A running job's do.
+  if (job.completedAt === null) return read();
+  return finishedSteps.get(job.id, STEPS_MS, read, (steps) => steps !== null);
+}
+
+const finishedSteps = new Recent<number, JobStep[] | null>(500);
+const STEPS_MS = 30 * 60_000;
+
+/** Forget the steps kept for finished jobs. For tests. */
+export function forgetFinishedSteps() {
+  finishedSteps.clear();
 }
 
 /**

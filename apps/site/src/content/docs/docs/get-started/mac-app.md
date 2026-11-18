@@ -35,7 +35,11 @@ Jobs waiting for a slot on this Mac, by name and workflow, with how long each ha
 
 ### History
 
-The last 12 hours as a bar per hour, and this Mac's latest jobs with their result and time, all of them or only the failed ones. Each links to the job on GitHub. **Show All History in Dashboard** opens the dashboard's [History](/docs/dashboard/activity).
+The last 12 hours as a bar per hour, and this Mac's latest jobs with their result and time, all of them or only the failed ones. Click one to open it in the Jobs window. **Show All History in Dashboard** opens the dashboard's [History](/docs/dashboard/activity).
+
+### Jobs window
+
+**Jobs…** (⌘J while the menu is open) lists the jobs running or waiting on this Mac, then every job it ran in the last week. Filter by result, repo, workflow and time, or search by name. Pick a job to see its steps on a timeline and, for a failed one, the step that failed, GitHub's annotations, the end of its log and, when the workspace has AI on, the likely cause. Drag the line between the list and the job to resize them.
 
 ### Pause
 

@@ -3,6 +3,7 @@ import { app } from "./app.ts";
 import { createDb, schema } from "./db/index.ts";
 import type { Env } from "./env.ts";
 import { forgetRecentFailures } from "./job-failures.ts";
+import { forgetFinishedSteps } from "./machine-jobs.ts";
 import { sha256Hex } from "./machines.ts";
 import * as testing from "./testing.ts";
 
@@ -14,6 +15,7 @@ vi.mock("./github-app.ts", async (original) => ({
 afterEach(() => {
   vi.unstubAllGlobals();
   forgetRecentFailures();
+  forgetFinishedSteps();
 });
 
 let env: Env;
@@ -126,6 +128,85 @@ describe("a machine's own jobs", () => {
     expect(rest.next).toBeNull();
   });
 
+  test("puts the jobs running or waiting here first, and offers its repos and workflows", async () => {
+    const { token, machineId, installationId } = await machineInWorkspace();
+    const done = job(installationId, { machineId, hoursAgo: 2 });
+    const started = Date.now() - 60_000;
+    const running = job(installationId, {
+      machineId,
+      repositoryFullName: "acme/api",
+      workflowName: "Deploy",
+      conclusion: null,
+      startedAt: new Date(started),
+      completedAt: null,
+    });
+    const waiting = job(installationId, {
+      machineId,
+      conclusion: null,
+      queuedAt: new Date(started + 10_000),
+      startedAt: null,
+      completedAt: null,
+    });
+    // Lost its `completed` webhook two days ago.
+    const stuck = job(installationId, {
+      machineId,
+      conclusion: null,
+      queuedAt: new Date(Date.now() - 49 * HOUR),
+      startedAt: new Date(Date.now() - 48 * HOUR),
+      completedAt: null,
+      createdAt: new Date(Date.now() - 49 * HOUR),
+    });
+    await createDb(env.DB).insert(schema.jobTiming).values([done, running, waiting, stuck]);
+
+    const page = (await (await get("/jobs", token)).json()) as {
+      jobs: { id: number }[];
+      active: { id: number }[];
+      repos: string[];
+      workflows: string[];
+    };
+    expect(page.jobs.map((row) => row.id)).toEqual([done.id]);
+    expect(page.active.map((row) => row.id)).toEqual([running.id, waiting.id]);
+    expect(page.repos).toEqual(["acme/app"]);
+    expect(page.workflows).toEqual(["CI"]);
+
+    const older = (await (await get(`/jobs?before=${Date.now()}`, token)).json()) as object;
+    expect(older).not.toHaveProperty("active");
+    const failed = (await (await get("/jobs?result=failed", token)).json()) as typeof page;
+    expect(failed.active).toEqual([]);
+  });
+
+  test("filters by repo, workflow, result and time", async () => {
+    const { token, machineId, installationId } = await machineInWorkspace();
+    const passed = job(installationId, { machineId, hoursAgo: 1 });
+    const failed = job(installationId, { machineId, hoursAgo: 2, conclusion: "timed_out" });
+    const canceled = job(installationId, { machineId, hoursAgo: 3, conclusion: "cancelled" });
+    const api = job(installationId, {
+      machineId,
+      hoursAgo: 4,
+      repositoryFullName: "acme/api",
+      workflowName: "Deploy",
+    });
+    const old = job(installationId, { machineId, hoursAgo: 30 });
+    await createDb(env.DB).insert(schema.jobTiming).values([passed, failed, canceled, api, old]);
+    const ids = async (query: string) =>
+      ((await (await get(`/jobs?${query}`, token)).json()) as { jobs: { id: number }[] }).jobs.map(
+        (row) => row.id,
+      );
+
+    expect(await ids("result=succeeded")).toEqual([passed.id, api.id, old.id]);
+    expect(await ids("result=failed")).toEqual([failed.id]);
+    expect(await ids("result=canceled")).toEqual([canceled.id]);
+    expect(await ids("repo=acme%2Fapi")).toEqual([api.id]);
+    expect(await ids("workflow=CI&result=succeeded")).toEqual([passed.id, old.id]);
+    expect(await ids(`since=${Date.now() - 24 * HOUR}&result=succeeded`)).toEqual([
+      passed.id,
+      api.id,
+    ]);
+    const facets = (await (await get("/jobs", token)).json()) as { repos: string[] };
+    expect(facets.repos).toEqual(["acme/app", "acme/api"]);
+    expect((await get("/jobs?result=maybe", token)).status).toBe(400);
+  });
+
   test("gives one of them with its steps, and nothing for a job that ran elsewhere", async () => {
     const { token, machineId, installationId } = await machineInWorkspace();
     const other = await machineInWorkspace();
@@ -163,6 +244,9 @@ describe("a machine's own jobs", () => {
       ],
     });
     expect(requested).toEqual([`https://api.github.com/repos/acme/app/actions/jobs/${mine.id}`]);
+    // A finished job's steps are kept.
+    expect((await get(`/jobs/${mine.id}`, token)).status).toBe(200);
+    expect(requested).toHaveLength(1);
 
     expect((await get(`/jobs/${theirs.id}`, token)).status).toBe(404);
     expect((await get(`/jobs/${theirs.id}/failure`, token)).status).toBe(404);
