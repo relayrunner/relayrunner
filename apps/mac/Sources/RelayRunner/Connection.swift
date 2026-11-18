@@ -1,4 +1,4 @@
-import Foundation
+import AppKit
 import Observation
 import RelayRunnerKit
 
@@ -25,6 +25,8 @@ final class Connection {
   private(set) var signIn: SignIn?
   /// Why it went off on its own, or why a command failed.
   private(set) var problem: String?
+  /// Set by "Quit When It's Done": paused, and the app quits once no job is running.
+  private(set) var quitsWhenIdle = false
 
   @ObservationIgnored private var process: CLIProcess?
   @ObservationIgnored private var lastError: String?
@@ -78,7 +80,21 @@ final class Connection {
   }
 
   func setPaused(_ paused: Bool) {
+    // Taking jobs again means staying open.
+    if !paused { quitsWhenIdle = false }
     process?.send(paused ? "pause" : "resume")
+  }
+
+  /// Takes no new jobs, and quits the app once the running ones finish.
+  func quitWhenIdle() {
+    quitsWhenIdle = true
+    process?.send("pause")
+    quitIfIdle()
+  }
+
+  private func quitIfIdle() {
+    guard quitsWhenIdle && jobs.isEmpty else { return }
+    DispatchQueue.main.async { NSApp.terminate(nil) }
   }
 
   /// Back online when the app opens, if it was when it last quit.
@@ -106,6 +122,7 @@ final class Connection {
       paused = state.paused
       jobs = state.jobs
       repos = repos.filter { state.jobs.contains($0.key) }
+      quitIfIdle()
     case .jobRepo(let routeId, let repo):
       repos[routeId] = repo
     case .offline(let reason, let message):
@@ -126,6 +143,7 @@ final class Connection {
     jobs = []
     repos = [:]
     signIn = nil
+    quitIfIdle()
     if stopping { return }
     AppSettings.wantsOnline = false
     switch offlineReason {
