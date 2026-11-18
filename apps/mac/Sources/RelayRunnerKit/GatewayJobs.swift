@@ -124,10 +124,10 @@ public struct GatewayJobPage: Equatable, Codable {
 
 /// What the Jobs window asks the gateway for: a result, repo, workflow and how far back. The
 /// window's search narrows what came back.
-public struct JobsFilter: Equatable, Hashable, Codable {
-  public enum Result: String, CaseIterable, Codable { case succeeded, failed, canceled }
+public struct JobsFilter: Hashable {
+  public enum Result: String, CaseIterable { case succeeded, failed, canceled }
 
-  public enum Range: Int, CaseIterable, Codable {
+  public enum Range: Int, CaseIterable {
     case hour = 1
     case day = 24
     case threeDays = 72
@@ -191,11 +191,6 @@ public struct JobStep: Equatable, Codable, Identifiable {
 
   public var id: Int { number }
   public var outcome: HistoryEntry.Outcome { JobConclusion.outcome(conclusion) }
-
-  /// Running or waiting to start: it hasn't finished.
-  public var isActive: Bool { completedAt == nil }
-  /// Sent to this Mac but not started yet.
-  public var isWaiting: Bool { isActive && startedAt == nil }
   public var durationMs: Double? {
     guard let startedAt, let completedAt else { return nil }
     return max(0, completedAt - startedAt)

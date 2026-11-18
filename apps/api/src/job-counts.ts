@@ -17,10 +17,13 @@ const RESULTS = ["success", "failed", "cancelled"] as const;
 type Result = (typeof RESULTS)[number];
 type Counts = Record<Result, number>;
 
-/** Matches History's split (isFailure in apps/web/src/lib/runs.ts): anything else that ended is cancelled. */
+/** GitHub's conclusions that count as failed, as History's isFailure (apps/web/src/lib/runs.ts). */
+export const FAILED_CONCLUSIONS = ["failure", "timed_out"];
+
+/** Matches History's split: anything else that ended is cancelled. */
 function resultOf(conclusion: string | null): Result {
   if (conclusion === "success") return "success";
-  if (conclusion === "failure" || conclusion === "timed_out") return "failed";
+  if (conclusion && FAILED_CONCLUSIONS.includes(conclusion)) return "failed";
   return "cancelled";
 }
 

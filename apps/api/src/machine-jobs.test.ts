@@ -3,7 +3,7 @@ import { app } from "./app.ts";
 import { createDb, schema } from "./db/index.ts";
 import type { Env } from "./env.ts";
 import { forgetRecentFailures } from "./job-failures.ts";
-import { forgetFinishedSteps } from "./machine-jobs.ts";
+import { forgetMachineJobs } from "./machine-jobs.ts";
 import { sha256Hex } from "./machines.ts";
 import * as testing from "./testing.ts";
 
@@ -15,7 +15,7 @@ vi.mock("./github-app.ts", async (original) => ({
 afterEach(() => {
   vi.unstubAllGlobals();
   forgetRecentFailures();
-  forgetFinishedSteps();
+  forgetMachineJobs();
 });
 
 let env: Env;
@@ -269,6 +269,7 @@ describe("a machine's own jobs", () => {
           resources: { core: { limit: 5000, used: 0, remaining: 5000, reset: 2e9 } },
         });
       if (url.endsWith("/annotations")) return Response.json([{ message: "exit code 1" }]);
+      if (/\/jobs\/\d+$/.test(url)) return Response.json({ steps: [] });
       return new Response("2026-11-18T10:00:00Z ok\n2026-11-18T10:00:01Z ##[error]boom\n");
     });
 
@@ -281,6 +282,12 @@ describe("a machine's own jobs", () => {
       log: ["ok", "##[error]boom"],
     });
     expect((await get(`/jobs/${passed.id}/failure`, token)).status).toBe(404);
+    // The job itself comes with it, and a passed one with none.
+    expect(await (await get(`/jobs/${failed.id}`, token)).json()).toMatchObject({
+      job: { id: failed.id },
+      failure: { failedStep: "3. Run tests", annotations: ["exit code 1"] },
+    });
+    expect(await (await get(`/jobs/${passed.id}`, token)).json()).toMatchObject({ failure: null });
   });
 
   test("needs the machine's own token", async () => {

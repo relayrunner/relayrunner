@@ -1,5 +1,4 @@
 import AppKit
-import Observation
 import RelayRunnerKit
 import SwiftUI
 
@@ -55,6 +54,9 @@ final class JobsWindow: NSObject, NSWindowDelegate {
       split.splitView.setPosition(window.contentLayoutRect.height * 0.55, ofDividerAt: 0)
     }
   }
+
+  /// Whether any of the window is on screen, so it doesn't refresh while hidden.
+  var isVisible: Bool { window?.occlusionState.contains(.visible) ?? false }
 
   func windowWillClose(_ notification: Notification) {
     window = nil
@@ -130,7 +132,7 @@ final class JobsStore {
     let asked = generation
     let filter = self.filter
     load = .loading
-    let result = await Self.fetch(["jobs", "--json"] + filter.arguments(now: .now), as: GatewayJobPage.self)
+    let result = await Self.fetch(["jobs", "--json"] + filter.arguments(now: .now), GatewayJobPage.parse)
     guard asked == generation else { return }
     switch result {
     case .success(let fresh):
@@ -149,7 +151,7 @@ final class JobsStore {
     defer { loadingOlder = false }
     let asked = generation
     let arguments = ["jobs", "--json", "--before", String(Int(next))] + filter.arguments(now: .now)
-    if case .success(let older) = await Self.fetch(arguments, as: GatewayJobPage.self), asked == generation {
+    if case .success(let older) = await Self.fetch(arguments, GatewayJobPage.parse), asked == generation {
       page = page.adding(older)
     }
   }
@@ -158,7 +160,7 @@ final class JobsStore {
   func detail(_ id: Int) async -> Result<GatewayJobDetail, Problem> {
     if let kept = details[id] { return .success(kept) }
     if let running = fetching[id] { return await running.value }
-    let read = Task { await Self.fetch(["jobs", String(id), "--json"], as: GatewayJobDetail.self) }
+    let read = Task { await Self.fetch(["jobs", String(id), "--json"], GatewayJobDetail.parse) }
     fetching[id] = read
     let result = await read.value
     fetching[id] = nil
@@ -166,20 +168,22 @@ final class JobsStore {
     return result
   }
 
-  /// Reads the finished jobs either side of `id` ahead, so moving through the list is quick.
+  /// Reads the finished jobs either side of `id` ahead, together, so moving through the list is
+  /// quick.
   func prefetch(around id: Int) async {
     let shown = self.shown
     guard let index = shown.firstIndex(where: { $0.id == id }) else { return }
-    for neighbour in [index + 1, index - 1] where shown.indices.contains(neighbour) {
-      let job = shown[neighbour]
-      if !job.isActive, details[job.id] == nil { _ = await detail(job.id) }
+    let ahead = [index + 1, index - 1].filter(shown.indices.contains).map { shown[$0] }
+      .filter { !$0.isActive && details[$0.id] == nil }
+    await withTaskGroup(of: Void.self) { group in
+      for job in ahead { group.addTask { _ = await self.detail(job.id) } }
     }
   }
 
-  private static func fetch<Value: Decodable>(_ arguments: [String], as: Value.Type) async -> Result<Value, Problem> {
+  private static func fetch<Value>(_ arguments: [String], _ parse: (Data) -> Value?) async -> Result<Value, Problem> {
     do {
       let output = try await CLI.run(arguments)
-      if output.status == 0, let value = try? JSONDecoder().decode(Value.self, from: output.stdout) {
+      if output.status == 0, let value = parse(output.stdout) {
         return .success(value)
       }
       return .failure(Problem(message: output.status == 0 ? "The CLI sent something this app can't read." : output.problem))
@@ -244,7 +248,7 @@ private struct JobsListView: View {
       let every: Duration = store.page.active?.isEmpty == false ? .seconds(20) : .seconds(90)
       while !Task.isCancelled {
         try? await Task.sleep(for: every)
-        if !Task.isCancelled { await store.reload() }
+        if !Task.isCancelled, JobsWindow.shared.isVisible { await store.reload() }
       }
     }
   }
@@ -531,7 +535,9 @@ private struct JobDetailView: View {
       case .success(let detail): load = .loaded(detail)
       case .failure(let problem): load = .failed(problem.message)
       }
-      await store.prefetch(around: id)
+      // Only once the pick settles, so arrowing through the list doesn't read every job.
+      try? await Task.sleep(for: .milliseconds(400))
+      if !Task.isCancelled { await store.prefetch(around: id) }
     }
   }
 

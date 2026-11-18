@@ -11,6 +11,7 @@ import { MACHINE_CLIENT_ID } from "../auth.ts";
 import { createDb, type Db, schema } from "../db/index.ts";
 import { presentOrigin, requestOrigin } from "../device-origin.ts";
 import { runningJobs } from "../jobs.ts";
+import { FAILED_CONCLUSIONS } from "../job-counts.ts";
 import { claimRunnerJobs } from "../job-timings.ts";
 import {
   MACHINE_ID_HEADER,
@@ -65,6 +66,7 @@ import { AppError, type ErrorCode } from "@relayrunner/errors";
 import { annotate } from "../tracing.ts";
 import { machineJobFailure } from "../job-failures.ts";
 import {
+  JOB_RESULTS,
   MAX_MACHINE_JOBS,
   machineJob,
   machineJobs,
@@ -96,7 +98,7 @@ const JobsQuery = z.object({
   before: z.coerce.number().int().positive().optional(),
   repo: z.string().min(1).max(200).optional(),
   workflow: z.string().min(1).max(200).optional(),
-  result: z.enum(["succeeded", "failed", "canceled"]).optional(),
+  result: z.enum(JOB_RESULTS).optional(),
   since: z.coerce.number().int().positive().optional(),
 });
 
@@ -380,8 +382,9 @@ export const machineRoutes = new Hono<AppEnv>()
     if (!query.success) throw new AppError("INVALID_REQUEST");
     return c.json(await machineJobs(db, machine.id, query.data));
   })
-  // One of them with its steps from GitHub (null when GitHub no longer has the job). 404 when the
-  // job didn't run on this machine.
+  // One of them with its steps from GitHub (null when GitHub no longer has the job) and, for a
+  // failed one, why, as /failure has it (null otherwise), read together. 404 when the job didn't
+  // run on this machine.
   .get("/me/jobs/:jobId", async (c) => {
     const db = createDb(c.env.DB);
     const machine = await machineFromToken(db, c.req.header("authorization"));
@@ -390,8 +393,16 @@ export const machineRoutes = new Hono<AppEnv>()
     if (!jobId.success) throw new AppError("INVALID_REQUEST");
     const found = await machineJob(db, machine.id, jobId.data);
     if (!found) throw new AppError("NOT_FOUND");
-    const steps = await machineJobSteps(c.env, found.job, found.installationId);
-    return c.json({ job: found.job, steps });
+    const failed = FAILED_CONCLUSIONS.includes(found.job.conclusion ?? "");
+    const [steps, failure] = await Promise.all([
+      machineJobSteps(c.env, found.job, found.installationId),
+      failed
+        ? machineWorkspaceFor(db, machine, found.installationId).then((workspaceId) =>
+            machineJobFailure(db, c.env, machine.id, jobId.data, workspaceId),
+          )
+        : null,
+    ]);
+    return c.json({ job: found.job, steps, failure });
   })
   // Why one of them failed: the failed step, annotations, a log excerpt and, when the workspace has
   // AI on, the likely cause. 404 when it didn't run here or didn't fail.

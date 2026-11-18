@@ -32,6 +32,18 @@ fn parse(args: &[String]) -> Result<Args, Error> {
     let invalid = |message: String| Error::new("INVALID_ARGUMENT", message);
     let mut parsed = Args::default();
     let mut rest = args.iter();
+    let ms = |value: Option<&String>, flag: &str| {
+        value
+            .and_then(|n| n.parse().ok())
+            .filter(|n| *n > 0)
+            .ok_or_else(|| invalid(format!("{flag} takes a time in ms.")))
+    };
+    let name = |value: Option<&String>, flag: &str| {
+        value
+            .filter(|value| !value.is_empty())
+            .cloned()
+            .ok_or_else(|| invalid(format!("{flag} takes a name.")))
+    };
     while let Some(arg) = rest.next() {
         match arg.as_str() {
             "--json" => parsed.json = true,
@@ -43,32 +55,10 @@ fn parse(args: &[String]) -> Result<Args, Error> {
                         .ok_or_else(|| invalid("--limit takes a number from 1 to 100.".into()))?,
                 );
             }
-            "--before" => {
-                parsed.before = Some(
-                    rest.next()
-                        .and_then(|n| n.parse().ok())
-                        .filter(|n| *n > 0)
-                        .ok_or_else(|| invalid("--before takes a time in ms.".into()))?,
-                );
-            }
-            "--since" => {
-                parsed.since = Some(
-                    rest.next()
-                        .and_then(|n| n.parse().ok())
-                        .filter(|n| *n > 0)
-                        .ok_or_else(|| invalid("--since takes a time in ms.".into()))?,
-                );
-            }
-            "--repo" | "--workflow" => {
-                let value = rest
-                    .next()
-                    .filter(|value| !value.is_empty())
-                    .ok_or_else(|| invalid(format!("{arg} takes a name.")))?;
-                match arg.as_str() {
-                    "--repo" => parsed.repo = Some(value.clone()),
-                    _ => parsed.workflow = Some(value.clone()),
-                }
-            }
+            "--before" => parsed.before = Some(ms(rest.next(), arg)?),
+            "--since" => parsed.since = Some(ms(rest.next(), arg)?),
+            "--repo" => parsed.repo = Some(name(rest.next(), arg)?),
+            "--workflow" => parsed.workflow = Some(name(rest.next(), arg)?),
             "--result" => {
                 parsed.result = Some(
                     rest.next()
@@ -126,24 +116,17 @@ pub fn command(credentials: &Credentials, args: &[String]) -> Result<(), Error> 
 /// The list's query string, without the `?`.
 fn query(args: &Args) -> String {
     let mut query = url::form_urlencoded::Serializer::new(String::new());
-    let numbers = [
-        ("limit", args.limit.map(u64::from)),
-        ("before", args.before),
-        ("since", args.since),
+    let pairs = [
+        ("limit", args.limit.map(|n| n.to_string())),
+        ("before", args.before.map(|n| n.to_string())),
+        ("since", args.since.map(|n| n.to_string())),
+        ("repo", args.repo.clone()),
+        ("workflow", args.workflow.clone()),
+        ("result", args.result.clone()),
     ];
-    for (key, value) in numbers {
+    for (key, value) in pairs {
         if let Some(value) = value {
-            query.append_pair(key, &value.to_string());
-        }
-    }
-    let names = [
-        ("repo", &args.repo),
-        ("workflow", &args.workflow),
-        ("result", &args.result),
-    ];
-    for (key, value) in names {
-        if let Some(value) = value {
-            query.append_pair(key, value);
+            query.append_pair(key, &value);
         }
     }
     query.finish()
@@ -226,20 +209,19 @@ fn show(credentials: &Credentials, id: u64, json: bool) -> Result<(), Error> {
             ),
         )
     };
-    // Asked for together, since each waits on GitHub: the failure is a 404 for a job that didn't
-    // fail.
-    let (detail, failure) = std::thread::scope(|scope| {
-        let failure =
-            scope.spawn(|| get(credentials, &format!("/api/machines/me/jobs/{id}/failure")));
-        let detail = get(credentials, &format!("/api/machines/me/jobs/{id}"));
-        (detail, failure.join().expect("failure read panicked"))
-    });
-    let Got::Ok(detail) = detail? else {
+    let Got::Ok(detail) = get(credentials, &format!("/api/machines/me/jobs/{id}"))? else {
         return Err(not_here());
     };
-    let failure = match failure {
-        Ok(Got::Ok(failure)) => failure,
-        _ => Value::Null,
+    // The gateway sends a failed job's failure with it. One that doesn't yet has it on its own.
+    let failure = match detail.get("failure") {
+        Some(failure) => failure.clone(),
+        None if detail["job"]["conclusion"] == "failure" => {
+            match get(credentials, &format!("/api/machines/me/jobs/{id}/failure"))? {
+                Got::Ok(failure) => failure,
+                Got::NotFound => Value::Null,
+            }
+        }
+        None => Value::Null,
     };
     if json {
         let out = json!({ "job": detail["job"], "steps": detail["steps"], "failure": failure });

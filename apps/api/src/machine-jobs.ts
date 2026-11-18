@@ -5,10 +5,25 @@
 //
 // Database cost: the list, its running jobs and its repos and workflows are each one range of
 // job_timing_machine_idx; a job is one primary-key read.
-import { and, count, desc, eq, gte, inArray, isNotNull, isNull, lt, or, sql } from "drizzle-orm";
+import {
+  and,
+  count,
+  type SQL,
+  desc,
+  eq,
+  gte,
+  inArray,
+  isNotNull,
+  isNull,
+  lt,
+  notInArray,
+  or,
+  sql,
+} from "drizzle-orm";
 import { type Db, schema } from "./db/index.ts";
 import { appInstallationToken, type JobStep, workflowJobSteps } from "./github-app.ts";
 import type { Env } from "./env.ts";
+import { FAILED_CONCLUSIONS } from "./job-counts.ts";
 import { Recent } from "./recent.ts";
 import { jobUrl } from "./run-job.ts";
 
@@ -17,19 +32,29 @@ const table = schema.jobTiming;
 export const MAX_MACHINE_JOBS = 100;
 
 // A job that started (or was sent here) longer ago than this and never said it finished lost its
-// `completed` webhook, so it isn't shown as running.
+// `completed` webhook, so it isn't shown as running. The purge keeps such rows for a week.
 const ACTIVE_MS = 24 * 3_600_000;
 const MAX_ACTIVE = 20;
-// Repos and workflows offered as filters, most jobs first.
+// Repos and workflows offered as filters, most jobs first, kept a few minutes per machine since
+// each read covers its whole week.
 const MAX_FACETS = 50;
+const FACETS_MS = 5 * 60_000;
 
-// GitHub's conclusions for each result a machine can filter by, as the Mac app groups them.
-export const RESULTS = {
-  succeeded: ["success"],
-  failed: ["failure", "timed_out", "startup_failure"],
-  canceled: ["cancelled", "skipped"],
-} as const;
-export type JobResult = keyof typeof RESULTS;
+// The results a machine can filter by, split as History and Admin › Jobs split them: anything
+// that ended neither succeeded nor failed counts as canceled.
+export const JOB_RESULTS = ["succeeded", "failed", "canceled"] as const;
+export type JobResult = (typeof JOB_RESULTS)[number];
+
+function resultIs(result: JobResult) {
+  switch (result) {
+    case "succeeded":
+      return eq(table.conclusion, "success");
+    case "failed":
+      return inArray(table.conclusion, FAILED_CONCLUSIONS);
+    case "canceled":
+      return notInArray(table.conclusion, ["success", ...FAILED_CONCLUSIONS]);
+  }
+}
 
 export interface MachineJobFilter {
   repo?: string;
@@ -122,9 +147,7 @@ export async function machineJobs(
         mine,
         isNotNull(table.completedAt),
         ...picked,
-        filter.result === undefined
-          ? undefined
-          : inArray(table.conclusion, [...RESULTS[filter.result]]),
+        filter.result === undefined ? undefined : resultIs(filter.result),
         filter.since === undefined ? undefined : gte(table.completedAt, new Date(filter.since)),
         before === undefined ? undefined : lt(table.completedAt, new Date(before)),
       ),
@@ -132,7 +155,7 @@ export async function machineJobs(
     .orderBy(desc(table.completedAt))
     .limit(limit + 1);
   if (before !== undefined) return page(await finished, limit);
-  const [rows, active, facets] = await Promise.all([
+  const [rows, active, choices] = await Promise.all([
     finished,
     filter.result === undefined
       ? selectJobs(db)
@@ -144,24 +167,29 @@ export async function machineJobs(
               sql`coalesce(${table.startedAt}, ${table.queuedAt}, ${table.createdAt}) >= ${now - ACTIVE_MS}`,
             ),
           )
-          .orderBy(desc(table.startedAt), desc(table.queuedAt))
+          // Running first, newest first, then the ones waiting to start.
+          .orderBy(isNull(table.startedAt), desc(table.startedAt), desc(table.queuedAt))
           .limit(MAX_ACTIVE)
       : Promise.resolve([]),
-    db
-      .select({ repo: table.repositoryFullName, workflow: table.workflowName, jobs: count() })
-      .from(table)
-      .where(and(mine, isNotNull(table.completedAt)))
-      .groupBy(table.repositoryFullName, table.workflowName)
-      .orderBy(desc(count())),
+    facets.get(machineId, FACETS_MS, () => machineFacets(db, mine)),
   ]);
+  return { ...page(rows, limit), active: active.map(present), ...choices };
+}
+
+const facets = new Recent<string, { repos: string[]; workflows: string[] }>(500);
+
+async function machineFacets(db: Db, mine: SQL) {
+  const rows = await db
+    .select({ repo: table.repositoryFullName, workflow: table.workflowName })
+    .from(table)
+    .where(and(mine, isNotNull(table.completedAt)))
+    .groupBy(table.repositoryFullName, table.workflowName)
+    .orderBy(desc(count()));
   const most = (values: (string | null)[]) =>
     [...new Set(values.filter((value) => value !== null))].slice(0, MAX_FACETS);
   return {
-    ...page(rows, limit),
-    // Running first, newest first, then the ones waiting to start.
-    active: active.map(present).sort((a, b) => Number(!a.startedAt) - Number(!b.startedAt)),
-    repos: most(facets.map((row) => row.repo)),
-    workflows: most(facets.map((row) => row.workflow)),
+    repos: most(rows.map((row) => row.repo)),
+    workflows: most(rows.map((row) => row.workflow)),
   };
 }
 
@@ -195,9 +223,10 @@ export async function machineJobSteps(
 const finishedSteps = new Recent<number, JobStep[] | null>(500);
 const STEPS_MS = 30 * 60_000;
 
-/** Forget the steps kept for finished jobs. For tests. */
-export function forgetFinishedSteps() {
+/** Forget the steps and filter choices kept for machines. For tests. */
+export function forgetMachineJobs() {
   finishedSteps.clear();
+  facets.clear();
 }
 
 /**
