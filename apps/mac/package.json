@@ -1,6 +1,6 @@
 {
   "name": "@relayrunner/mac",
-  "version": "0.3.1",
+  "version": "0.4.0",
   "private": true,
   "description": "RelayRunner for Mac, the menu bar app. Never published to npm: changesets version it, and scripts/release.sh ships it."
 }

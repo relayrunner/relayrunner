@@ -1,5 +1,20 @@
 # relayrunner
 
+## 0.14.0
+
+### Minor Changes
+
+- 0604547: `connect` keeps a history of the jobs it runs in `~/.relayrunner/history.jsonl`, and `relayrunner history` lists them with each one's result and time. When it starts a job it now names it, and with `--events` the `run` event says which job it is and how long it usually takes on this machine.
+- d711d03: `relayrunner init` recognises StarSling, Monk CI, Runloft, Latchkey, BerryBox, Celesto and InstaBox labels, keeps them as a job's fallback, and writes relays pinned to `relay.yml@v1.0.0-beta.7`, which takes an input for each.
+- 343bf9d: The Mac menu and `connect --events` now say how many jobs are waiting for a slot on this machine.
+
+### Patch Changes
+
+- 0289780: The Mac menu's Queue names each waiting job and its workflow once GitHub has said which job it is. When jobs went to hosted runners because every slot was busy, a button allows one more job at once: the app pauses new jobs, waits for the running ones to finish, and comes back with the extra slot, or goes back to the earlier setting if it can't.
+- c8a45d2: The Mac menu has Now, Queue and History tabs. Queue lists the jobs waiting for this Mac and how long each has waited, and says when jobs went to hosted runners in the last hour because every slot was busy. History shows the last 12 hours as a bar per hour, with the latest jobs, all or only failed. `connect --events` adds `queue` and `spilled` to `waiting` and `state`.
+- 3d61813: The Mac menu shows a row for each job slot, free ones included, with a bar against each job's usual time, and this Mac's CPU and memory while the menu is open. `connect --events` says how many slots the machine has in `state`.
+- 7ac67e0: New installs connect to https://app.relayrunner.dev and link to relayrunner.dev. Machines already connected keep their saved server, https://app.relayrunner.app, which keeps working.
+
 ## 0.13.2
 
 ### Patch Changes
