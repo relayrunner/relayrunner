@@ -45,7 +45,8 @@ final class MenuBar: NSObject, NSMenuDelegate {
       item.button?.image = connection.menuBarImage
       _ = (
         connection.status, connection.signIn, connection.jobs, connection.repos, connection.running,
-        connection.machineName, connection.problem, connection.pausedUntil, connection.waiting
+        connection.machineName, connection.problem, connection.pausedUntil, connection.waiting,
+        connection.slots
       )
     } onChange: { [weak self] in
       Task { @MainActor in
@@ -61,7 +62,12 @@ final class MenuBar: NSObject, NSMenuDelegate {
     header.setFrameSize(NSSize(width: MenuHeader.width, height: header.fittingSize.height))
   }
 
-  func menuWillOpen(_ menu: NSMenu) { fitHeader() }
+  func menuWillOpen(_ menu: NSMenu) {
+    HostLoad.shared.start()
+    fitHeader()
+  }
+
+  func menuDidClose(_ menu: NSMenu) { HostLoad.shared.stop() }
 
   func menuNeedsUpdate(_ menu: NSMenu) { rebuildJobItems() }
 
@@ -247,8 +253,13 @@ struct MenuHeader: View {
       if let name = connection.machineName {
         DetailRow(systemImage: "laptopcomputer", title: name, note: "This Mac")
       }
-      ForEach(connection.jobs, id: \.self) { job in
-        RunningRow(running: connection.running[job], repo: connection.repos[job], slotted: connection.running.count > 1)
+      ForEach(lanes, id: \.self) { lane in
+        switch lane {
+        case .busy(_, let job):
+          RunningRow(running: connection.running[job], repo: connection.repos[job], slotted: lanes.count > 1)
+        case .free(let slot):
+          FreeSlotRow(slot: slot)
+        }
       }
       if connection.waiting > 0 {
         DetailRow(
@@ -256,6 +267,9 @@ struct MenuHeader: View {
           title: connection.waiting == 1 ? "1 job waiting" : "\(connection.waiting) jobs waiting",
           note: "for a free slot"
         )
+      }
+      if connection.phase == .online {
+        LoadRow(load: HostLoad.shared)
       }
       if connection.phase == .online {
         HStack {
@@ -275,6 +289,12 @@ struct MenuHeader: View {
     }
     .padding(.horizontal, 8)
     .padding(.bottom, 6)
+  }
+
+  /// A lane per slot while online (free ones too), else just the running jobs.
+  private var lanes: [Lane] {
+    let running = connection.jobs.map { (routeId: $0, slot: connection.running[$0]?.slot) }
+    return Lane.lanes(slots: connection.phase == .online ? connection.slots : nil, running: running)
   }
 
   private var pauseLabel: String {
@@ -389,11 +409,111 @@ private struct RunningRow: View {
         Text("Running").foregroundStyle(.secondary)
       }
     }
+    .overlay(alignment: .bottom) {
+      if let startedAt = running?.startedAt, let typicalMs = running?.job?.typicalMs {
+        TimelineView(.periodic(from: startedAt, by: 1)) { context in
+          if let share = Durations.share(elapsed: context.date.timeIntervalSince(startedAt), typicalMs: typicalMs) {
+            UsualBar(fraction: share.fraction, over: share.over)
+          }
+        }
+        .padding(.leading, 26)
+        .offset(y: 5)
+      }
+    }
+    .padding(.bottom, running?.job?.typicalMs == nil ? 0 : 6)
   }
 
   private var detail: String? {
     let place = running.flatMap { slotted ? "Slot \($0.slot)" : nil }
     let parts = [running?.job?.workflow, running?.job == nil ? nil : (running?.job?.repo ?? repo), place].compactMap { $0 }
     return parts.isEmpty ? nil : parts.joined(separator: " · ")
+  }
+}
+
+/// A running job's time against its usual time here: fills as it goes, and turns amber once the
+/// job runs longer than usual.
+private struct UsualBar: View {
+  let fraction: Double
+  let over: Bool
+
+  var body: some View {
+    Bar(fraction: fraction, tint: over ? .orange : .green)
+      .accessibilityElement()
+      .accessibilityLabel(over ? "Longer than usual" : "\(Int(fraction * 100))% of its usual time")
+  }
+}
+
+private struct Bar: View {
+  let fraction: Double
+  let tint: Color
+
+  var body: some View {
+    GeometryReader { geo in
+      ZStack(alignment: .leading) {
+        Capsule().fill(.quaternary)
+        Capsule().fill(tint).frame(width: max(3, geo.size.width * fraction))
+      }
+    }
+    .frame(height: 3)
+  }
+}
+
+/// A slot with no job in it.
+private struct FreeSlotRow: View {
+  let slot: Int
+
+  var body: some View {
+    HStack(spacing: 8) {
+      Image(systemName: "circle.dashed")
+        .foregroundStyle(.tertiary)
+        .frame(width: 18)
+      Text("Slot \(slot)").foregroundStyle(.secondary)
+      Spacer(minLength: 8)
+      Text("Free").foregroundStyle(.tertiary)
+    }
+  }
+}
+
+/// This Mac's CPU and memory, while the menu is open.
+private struct LoadRow: View {
+  let load: HostLoad
+
+  var body: some View {
+    HStack(spacing: 8) {
+      Image(systemName: "gauge.with.dots.needle.33percent")
+        .foregroundStyle(.secondary)
+        .frame(width: 18)
+      Meter(title: "CPU", value: load.cpu.map { String(format: "%.0f%%", $0 * 100) }, fraction: load.cpu)
+      Meter(
+        title: "Memory",
+        value: load.memoryUsed.map { "\(gigabytes($0)) of \(gigabytes(load.memoryTotal)) GB" },
+        fraction: load.memoryUsed.map { Double($0) / Double(max(load.memoryTotal, 1)) }
+      )
+    }
+  }
+
+  private func gigabytes(_ bytes: UInt64) -> String {
+    let gb = Double(bytes) / 1_073_741_824
+    return gb < 10 ? String(format: "%.1f", gb) : String(format: "%.0f", gb)
+  }
+}
+
+private struct Meter: View {
+  let title: String
+  let value: String?
+  let fraction: Double?
+
+  var body: some View {
+    VStack(alignment: .leading, spacing: 3) {
+      HStack(spacing: 4) {
+        Text(title).foregroundStyle(.secondary)
+        Text(value ?? "–").monospacedDigit()
+      }
+      .font(.caption)
+      .lineLimit(1)
+      Bar(fraction: min(max(fraction ?? 0, 0), 1), tint: (fraction ?? 0) > 0.9 ? .orange : .accentColor)
+        .accessibilityHidden(true)
+    }
+    .frame(maxWidth: .infinity, alignment: .leading)
   }
 }

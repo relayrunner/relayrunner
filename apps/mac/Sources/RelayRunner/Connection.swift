@@ -27,6 +27,8 @@ final class Connection {
   private(set) var jobs: [String] = []
   /// How many jobs wait for a slot on this Mac.
   private(set) var waiting = 0
+  /// How many jobs this Mac runs at once, once `connect` says.
+  private(set) var slots: Int?
   private(set) var repos: [String: String] = [:]
   private(set) var running: [String: Running] = [:]
   /// The jobs this Mac ran, newest first, from `connect`'s history file.
@@ -164,6 +166,7 @@ final class Connection {
       paused = state.paused
       jobs = state.jobs
       waiting = state.waiting
+      if let count = state.slots { slots = count }
       repos = repos.filter { state.jobs.contains($0.key) }
       running = running.filter { state.jobs.contains($0.key) }
       // Resumed from the dashboard or the CLI: the timed pause is over too.
@@ -199,6 +202,7 @@ final class Connection {
     paused = false
     jobs = []
     waiting = 0
+    slots = nil
     repos = [:]
     running = [:]
     signIn = nil

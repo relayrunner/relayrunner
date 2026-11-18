@@ -27,15 +27,18 @@ public enum Event: Equatable {
     public var jobs: [String]
     /// How many jobs wait for a slot on this Mac, as the gateway said. 0 from a CLI that doesn't say.
     public var waiting: Int
+    /// How many jobs this Mac runs at once. Nil from a CLI that doesn't say.
+    public var slots: Int?
 
-    public init(link: Link, paused: Bool, jobs: [String], waiting: Int = 0) {
+    public init(link: Link, paused: Bool, jobs: [String], waiting: Int = 0, slots: Int? = nil) {
       self.link = link
       self.paused = paused
       self.jobs = jobs
       self.waiting = waiting
+      self.slots = slots
     }
 
-    private enum CodingKeys: String, CodingKey { case link, paused, jobs, waiting }
+    private enum CodingKeys: String, CodingKey { case link, paused, jobs, waiting, slots }
 
     public init(from decoder: Decoder) throws {
       let c = try decoder.container(keyedBy: CodingKeys.self)
@@ -43,6 +46,7 @@ public enum Event: Equatable {
       paused = try c.decode(Bool.self, forKey: .paused)
       jobs = try c.decode([String].self, forKey: .jobs)
       waiting = try c.decodeIfPresent(Int.self, forKey: .waiting) ?? 0
+      slots = try c.decodeIfPresent(Int.self, forKey: .slots)
     }
   }
 

@@ -122,6 +122,7 @@ impl Conn {
                 "paused": self.live.paused,
                 "jobs": self.live.jobs,
                 "waiting": self.live.waiting,
+                "slots": self.options.hello.slots,
             }),
             false,
         );
