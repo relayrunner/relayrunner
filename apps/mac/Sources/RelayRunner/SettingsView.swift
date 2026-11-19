@@ -100,6 +100,13 @@ private struct AboutView: View {
         Link("GitHub", destination: URL(string: "https://github.com/relayrunner/relayrunner")!)
       }
       .padding(.top, 4)
+      HStack(spacing: 10) {
+        if Updates.shared.updater != nil {
+          Button("Check for Updates…") { Updates.shared.checkForUpdates() }
+        }
+        Button("Show Log") { NSWorkspace.shared.open(CLI.log) }
+      }
+      .padding(.top, 8)
     }
     .frame(maxWidth: .infinity)
     .padding(24)

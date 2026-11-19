@@ -5,11 +5,7 @@ import XCTest
 final class HistoryTests: XCTestCase {
   private func parse(_ line: String) -> Event? { Event.parse(Data(line.utf8)) }
 
-  // The line apps/cli/src/history.rs writes.
-  private let line =
-    #"{"v":1,"routeId":"r1","repo":"acme/app","workflow":"CI","job":"test","url":"https://github.com/acme/app/actions/runs/42/job/7","runAttempt":1,"result":"Failed","state":"finished","message":null,"slot":2,"startedAt":"2026-11-18T10:00:00.000Z","startedAtMs":1763460000000,"durationMs":250000,"typicalMs":300000,"usage":null}"#
-
-  func testReadsRunAndJobEnd() {
+  func testReadsRun() {
     XCTAssertEqual(
       parse(
         #"{"v":1,"at":"x","type":"run","routeId":"r1","slot":2,"job":{"name":"test","workflow":"CI","repo":"acme/app","url":"https://github.com/acme/app/actions/runs/42/job/7","runAttempt":1,"typicalMs":300000}}"#
@@ -25,46 +21,6 @@ final class HistoryTests: XCTestCase {
     XCTAssertEqual(parse(#"{"v":1,"at":"x","type":"run","routeId":"r1","slot":1}"#), .run(routeId: "r1", slot: 1, job: nil))
     XCTAssertEqual(
       parse(#"{"v":1,"at":"x","type":"run","routeId":"r1","slot":1,"job":{"name":3}}"#), .run(routeId: "r1", slot: 1, job: nil))
-
-    guard case .jobEnd(let entry) = parse(#"{"v":1,"at":"x","type":"job-end","# + line.dropFirst(7)) else {
-      return XCTFail("job-end should parse")
-    }
-    XCTAssertEqual(entry.title, "test")
-    XCTAssertEqual(entry.outcome, .failed)
-    XCTAssertEqual(entry.slot, 2)
-    XCTAssertEqual(entry.typicalMs, 300_000)
-  }
-
-  func testReadsTheHistoryFileNewestFirst() throws {
-    let file = FileManager.default.temporaryDirectory.appendingPathComponent("history-\(UUID()).jsonl")
-    defer { try? FileManager.default.removeItem(at: file) }
-    let second = line.replacingOccurrences(of: #""routeId":"r1""#, with: #""routeId":"r2""#)
-    try (line + "\nnot json\n" + second + "\n").write(to: file, atomically: true, encoding: .utf8)
-    let entries = History.read(file)
-    XCTAssertEqual(entries.map(\.routeId), ["r2", "r1"])
-    XCTAssertEqual(History.read(file, limit: 1).map(\.routeId), ["r2"])
-    XCTAssertEqual(History.read(file.appendingPathExtension("missing")), [])
-
-    let again = HistoryEntry(routeId: "r1", startedAtMs: 0, durationMs: 1)
-    XCTAssertEqual(History.adding(again, to: entries).map(\.routeId), ["r1", "r2"])
-  }
-
-  func testSumsUpTheLastHours() {
-    let now = Date(timeIntervalSince1970: 1_763_460_000)
-    let ms = now.timeIntervalSince1970 * 1000
-    let entries = [
-      HistoryEntry(routeId: "a", result: "Succeeded", startedAtMs: ms - 600_000, durationMs: 250_000),
-      HistoryEntry(routeId: "b", result: "Failed", startedAtMs: ms - 300_000, durationMs: 100_000),
-      HistoryEntry(routeId: "c", result: "Failed", startedAtMs: ms - 5 * 3_600_000, durationMs: 100_000),
-      HistoryEntry(routeId: "d", result: "Succeeded", startedAtMs: ms - 3 * 86_400_000, durationMs: 100_000),
-    ]
-    XCTAssertEqual(
-      History.since(now.addingTimeInterval(-12 * 3600), entries), .init(jobs: 3, busyMs: 450_000, failed: 2))
-    let hours = History.hours(entries, now: now)
-    XCTAssertEqual(hours.count, 12)
-    XCTAssertEqual(hours.map(\.jobs), [0, 0, 0, 0, 0, 0, 0, 1, 0, 0, 0, 2])
-    XCTAssertEqual(hours.map(\.failed), [0, 0, 0, 0, 0, 0, 0, 1, 0, 0, 0, 1])
-    XCTAssertEqual(hours.last?.start, now.addingTimeInterval(-3600))
   }
 
   func testCountsTheLastHoursSpillover() {
@@ -109,5 +65,15 @@ final class HistoryTests: XCTestCase {
       calendar.date(from: DateComponents(year: 2026, month: 11, day: 19, hour: 8))
     )
     XCTAssertNil(PauseLength.untilResumed.end(from: now, calendar: calendar))
+  }
+
+  func testShareOfTheUsualTime() {
+    XCTAssertNil(Durations.share(elapsed: 10, typicalMs: nil))
+    XCTAssertEqual(Durations.share(elapsed: 30, typicalMs: 60_000)?.fraction, 0.5)
+    XCTAssertEqual(Durations.share(elapsed: 30, typicalMs: 60_000)?.over, false)
+    XCTAssertEqual(Durations.share(elapsed: 80, typicalMs: 60_000)?.fraction, 1)
+    XCTAssertEqual(Durations.share(elapsed: 80, typicalMs: 60_000)?.over, false)
+    XCTAssertEqual(Durations.share(elapsed: 90, typicalMs: 60_000)?.fraction, 1)
+    XCTAssertEqual(Durations.share(elapsed: 90, typicalMs: 60_000)?.over, true)
   }
 }

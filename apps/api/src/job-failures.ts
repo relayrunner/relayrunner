@@ -18,6 +18,7 @@ import {
   rateLimits,
   userCanReadRepo,
 } from "./github-app.ts";
+import { FAILED_CONCLUSIONS } from "./job-counts.ts";
 import { Recent } from "./recent.ts";
 import { userGitHubId } from "./memberships.ts";
 import { environmentFor, inWorkspace, PICK } from "./job-times.ts";
@@ -99,7 +100,7 @@ function failedJobs(db: Db, scope: SQL, ...where: SQL[]) {
       failedStep: timing.failedStep,
     })
     .from(timing)
-    .where(and(...where, inArray(timing.conclusion, ["failure", "timed_out"]), scope));
+    .where(and(...where, inArray(timing.conclusion, FAILED_CONCLUSIONS), scope));
 }
 type FailedRow = Awaited<ReturnType<typeof failedJobs>>[number];
 

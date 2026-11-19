@@ -227,14 +227,18 @@ each one's result and how long it took. They're kept in
 ```sh
 npx relayrunner jobs                 # the jobs this machine ran in the last week
 npx relayrunner jobs --before <ms>   # the page after, from the last page's hint
+npx relayrunner jobs --result failed --repo acme/app   # only some of them
 npx relayrunner jobs 123456789       # one job's steps and, if it failed, why
 npx relayrunner jobs --json
 ```
 
 Unlike `history`, which reads this computer's own file, `jobs` asks the
 gateway, so it shows GitHub's steps for each job and, for a failed one, the
-failed step, its annotations and the end of its log. A machine only sees jobs
-that ran on it. RelayRunner for Mac's Jobs window reads the same.
+failed step, its annotations and the end of its log. Jobs running or waiting
+to start on the machine come first. `--repo`, `--workflow`, `--result`
+(`succeeded`, `failed` or `canceled`) and `--since <ms>` narrow the list. A
+machine only sees jobs that ran on it. RelayRunner for Mac's Jobs window reads
+the same.
 
 ## `relayrunner share`
 

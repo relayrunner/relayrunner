@@ -11,25 +11,39 @@ use crate::share;
 use serde_json::{Value, json};
 use std::time::{SystemTime, UNIX_EPOCH};
 
-const USAGE: &str =
-    "Usage: relayrunner jobs [--json] [--limit N] [--before MS] | relayrunner jobs <id> [--json]";
+const USAGE: &str = "Usage: relayrunner jobs [--json] [--limit N] [--before MS] [--repo OWNER/NAME] \
+[--workflow NAME] [--result succeeded|failed|canceled] [--since MS] | relayrunner jobs <id> [--json]";
 
+const RESULTS: [&str; 3] = ["succeeded", "failed", "canceled"];
+
+#[derive(Default)]
 struct Args {
     json: bool,
     limit: Option<u32>,
     before: Option<u64>,
+    repo: Option<String>,
+    workflow: Option<String>,
+    result: Option<String>,
+    since: Option<u64>,
     id: Option<u64>,
 }
 
 fn parse(args: &[String]) -> Result<Args, Error> {
     let invalid = |message: String| Error::new("INVALID_ARGUMENT", message);
-    let mut parsed = Args {
-        json: false,
-        limit: None,
-        before: None,
-        id: None,
-    };
+    let mut parsed = Args::default();
     let mut rest = args.iter();
+    let ms = |value: Option<&String>, flag: &str| {
+        value
+            .and_then(|n| n.parse().ok())
+            .filter(|n| *n > 0)
+            .ok_or_else(|| invalid(format!("{flag} takes a time in ms.")))
+    };
+    let name = |value: Option<&String>, flag: &str| {
+        value
+            .filter(|value| !value.is_empty())
+            .cloned()
+            .ok_or_else(|| invalid(format!("{flag} takes a name.")))
+    };
     while let Some(arg) = rest.next() {
         match arg.as_str() {
             "--json" => parsed.json = true,
@@ -41,12 +55,18 @@ fn parse(args: &[String]) -> Result<Args, Error> {
                         .ok_or_else(|| invalid("--limit takes a number from 1 to 100.".into()))?,
                 );
             }
-            "--before" => {
-                parsed.before = Some(
+            "--before" => parsed.before = Some(ms(rest.next(), arg)?),
+            "--since" => parsed.since = Some(ms(rest.next(), arg)?),
+            "--repo" => parsed.repo = Some(name(rest.next(), arg)?),
+            "--workflow" => parsed.workflow = Some(name(rest.next(), arg)?),
+            "--result" => {
+                parsed.result = Some(
                     rest.next()
-                        .and_then(|n| n.parse().ok())
-                        .filter(|n| *n > 0)
-                        .ok_or_else(|| invalid("--before takes a time in ms.".into()))?,
+                        .filter(|value| RESULTS.contains(&value.as_str()))
+                        .cloned()
+                        .ok_or_else(|| {
+                            invalid("--result takes succeeded, failed or canceled.".into())
+                        })?,
                 );
             }
             other if parsed.id.is_none() && !other.starts_with('-') => {
@@ -93,17 +113,30 @@ pub fn command(credentials: &Credentials, args: &[String]) -> Result<(), Error> 
     }
 }
 
+/// The list's query string, without the `?`.
+fn query(args: &Args) -> String {
+    let mut query = url::form_urlencoded::Serializer::new(String::new());
+    let pairs = [
+        ("limit", args.limit.map(|n| n.to_string())),
+        ("before", args.before.map(|n| n.to_string())),
+        ("since", args.since.map(|n| n.to_string())),
+        ("repo", args.repo.clone()),
+        ("workflow", args.workflow.clone()),
+        ("result", args.result.clone()),
+    ];
+    for (key, value) in pairs {
+        if let Some(value) = value {
+            query.append_pair(key, &value);
+        }
+    }
+    query.finish()
+}
+
 fn list(credentials: &Credentials, args: &Args) -> Result<(), Error> {
-    let mut query = Vec::new();
-    if let Some(limit) = args.limit {
-        query.push(format!("limit={limit}"));
-    }
-    if let Some(before) = args.before {
-        query.push(format!("before={before}"));
-    }
+    let query = query(args);
     let path = match query.is_empty() {
         true => "/api/machines/me/jobs".to_string(),
-        false => format!("/api/machines/me/jobs?{}", query.join("&")),
+        false => format!("/api/machines/me/jobs?{query}"),
     };
     let page = match get(credentials, &path)? {
         Got::Ok(page) => page,
@@ -116,15 +149,30 @@ fn list(credentials: &Credentials, args: &Args) -> Result<(), Error> {
         );
         return Ok(());
     }
+    let now = now_ms();
+    for job in page["active"].as_array().into_iter().flatten() {
+        let (what, since) = match job["startedAt"].as_u64() {
+            Some(at) => ("running", at),
+            None => ("waiting", job["queuedAt"].as_u64().unwrap_or(now)),
+        };
+        println!(
+            "▸ {:<12}  {:<40}  {:>8}  {:>8}  {}",
+            job["id"],
+            title(job).chars().take(40).collect::<String>(),
+            what,
+            duration(now.saturating_sub(since)),
+            job["repo"].as_str().unwrap_or(""),
+        );
+    }
     let jobs = page["jobs"].as_array().cloned().unwrap_or_default();
     if jobs.is_empty() {
         println!(
-            "The gateway has no finished jobs from {} in the last week.",
-            credentials.machine.name
+            "The gateway has no finished jobs from {} in the last week{}.",
+            credentials.machine.name,
+            if query.is_empty() { "" } else { " that match" }
         );
         return Ok(());
     }
-    let now = now_ms();
     for job in &jobs {
         let ran = span(&job["startedAt"], &job["completedAt"])
             .map(duration)
@@ -164,13 +212,16 @@ fn show(credentials: &Credentials, id: u64, json: bool) -> Result<(), Error> {
     let Got::Ok(detail) = get(credentials, &format!("/api/machines/me/jobs/{id}"))? else {
         return Err(not_here());
     };
-    let failed = detail["job"]["conclusion"] == "failure";
-    let failure = match failed {
-        true => match get(credentials, &format!("/api/machines/me/jobs/{id}/failure"))? {
-            Got::Ok(failure) => failure,
-            Got::NotFound => Value::Null,
-        },
-        false => Value::Null,
+    // The gateway sends a failed job's failure with it. One that doesn't yet has it on its own.
+    let failure = match detail.get("failure") {
+        Some(failure) => failure.clone(),
+        None if detail["job"]["conclusion"] == "failure" => {
+            match get(credentials, &format!("/api/machines/me/jobs/{id}/failure"))? {
+                Got::Ok(failure) => failure,
+                Got::NotFound => Value::Null,
+            }
+        }
+        None => Value::Null,
     };
     if json {
         let out = json!({ "job": detail["job"], "steps": detail["steps"], "failure": failure });
@@ -270,6 +321,28 @@ mod tests {
         assert!(args(&["--limit", "101"]).is_err());
         assert!(args(&["nope"]).is_err());
         assert!(args(&["1", "2"]).is_err());
+    }
+
+    #[test]
+    fn filters_a_page() {
+        let filtered = args(&[
+            "--repo",
+            "acme/app",
+            "--workflow",
+            "CI & deploy",
+            "--result",
+            "failed",
+            "--since",
+            "1700000000000",
+        ])
+        .unwrap();
+        assert_eq!(
+            query(&filtered),
+            "since=1700000000000&repo=acme%2Fapp&workflow=CI+%26+deploy&result=failed"
+        );
+        assert_eq!(query(&args(&[]).unwrap()), "");
+        assert!(args(&["--result", "maybe"]).is_err());
+        assert!(args(&["--repo"]).is_err());
     }
 
     #[test]

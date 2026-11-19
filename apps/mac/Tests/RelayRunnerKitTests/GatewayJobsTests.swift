@@ -33,6 +33,53 @@ final class GatewayJobsTests: XCTestCase {
     XCTAssertNil(both.next)
   }
 
+  func testPutsRunningJobsFirstAndKeepsThemWithOlderPages() throws {
+    let json = """
+      {"jobs":[{"id":7,"name":"test","repo":"acme/app","url":"https://github.com/acme/app/actions/runs/3/job/7",
+      "runId":3,"runAttempt":1,"conclusion":"success","queuedAt":1000,"startedAt":2000,"completedAt":3000}],
+      "next":3000,
+      "active":[{"id":9,"name":"build","repo":"acme/app","url":"https://github.com/acme/app/actions/runs/4/job/9",
+      "runId":4,"runAttempt":1,"conclusion":null,"queuedAt":4000,"startedAt":5000,"completedAt":null},
+      {"id":10,"name":"lint","repo":"acme/app","url":"https://github.com/acme/app/actions/runs/4/job/10",
+      "runId":4,"runAttempt":1,"conclusion":null,"queuedAt":6000,"startedAt":null,"completedAt":null}],
+      "repos":["acme/app"],"workflows":["CI"]}
+      """
+    let page = try XCTUnwrap(GatewayJobPage.parse(Data(json.utf8)))
+    XCTAssertEqual(page.all.map(\.id), [9, 10, 7])
+    let running = page.all[0]
+    XCTAssertTrue(running.isActive)
+    XCTAssertFalse(running.isWaiting)
+    XCTAssertTrue(page.all[1].isWaiting)
+    XCTAssertEqual(running.elapsedMs(now: Date(timeIntervalSince1970: 65)), 60000)
+    XCTAssertEqual(page.repos, ["acme/app"])
+
+    let url = URL(string: "https://github.com")!
+    let older = GatewayJobPage(jobs: [GatewayJob(id: 9, name: "build", repo: "r", url: url), GatewayJob(id: 2, name: "b", repo: "r", url: url)], next: nil)
+    let both = page.adding(older)
+    XCTAssertEqual(both.all.map(\.id), [9, 10, 7, 2])
+    XCTAssertEqual(both.workflows, ["CI"])
+    XCTAssertNil(both.next)
+
+    let saved = try JSONEncoder().encode(page)
+    XCTAssertEqual(GatewayJobPage.parse(saved), page)
+  }
+
+  func testAsksTheGatewayForAFilter() {
+    let now = Date(timeIntervalSince1970: 100_000)
+    XCTAssertEqual(JobsFilter().arguments(now: now), [])
+    XCTAssertTrue(JobsFilter().isEmpty)
+    let filter = JobsFilter(result: .failed, repo: "acme/app", workflow: "CI", range: .hour)
+    XCTAssertFalse(filter.isEmpty)
+    XCTAssertEqual(
+      filter.arguments(now: now),
+      ["--result", "failed", "--repo", "acme/app", "--workflow", "CI", "--since", "96400000"])
+  }
+
+  func testFindsTheJobInAGitHubLink() {
+    XCTAssertEqual(GatewayJob.id(in: URL(string: "https://github.com/acme/app/actions/runs/3/job/7")!), 7)
+    XCTAssertNil(GatewayJob.id(in: URL(string: "https://github.com/acme/app/actions/runs/3")!))
+  }
+
   func testReadsADetailWithItsFailure() throws {
     let json = """
       {"job":{"id":7,"name":"test","workflow":null,"repo":"acme/app",
