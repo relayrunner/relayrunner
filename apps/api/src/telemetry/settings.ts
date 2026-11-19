@@ -9,78 +9,54 @@ import { sealToken, tokenHint } from "../provider-tokens.ts";
 import { sendSpans } from "./export.ts";
 import {
   exportingInstallations,
+  exportRow,
+  type ExportStatusView,
   HEADERS_PURPOSE,
+  NO_STATUS,
   openHeaders,
   recordSend,
+  RESET_STATUS,
   type SendResult,
+  statusView,
 } from "./otlp.ts";
 import { testLogs } from "./logs.ts";
 import { testSpans } from "./spans.ts";
 
 export const DEFAULT_SERVICE_NAME = "github-actions";
 
-export interface TelemetryView {
+// `logs`: which finished jobs' logs go out too.
+export interface TelemetryView extends ExportStatusView {
   configured: boolean;
   endpoint: string;
   headers: { name: string; hint: string }[];
   serviceName: string;
   enabled: boolean;
-  lastSentAt: string | null;
-  error: string | null;
-  failingSince: string | null;
-  // When it turned itself off after failing for days.
-  pausedAt: string | null;
-  // Which finished jobs' logs go out too, and why the latest one that should have didn't.
-  logs: JobLogChoice;
-  logsSkipped: { reason: string; at: string } | null;
 }
 
 type Row = typeof schema.telemetryExport.$inferSelect;
 
-const iso = (date: Date | null) => date?.toISOString() ?? null;
-
 const NOT_CONFIGURED: TelemetryView = {
+  ...NO_STATUS,
   configured: false,
   endpoint: "",
   headers: [],
   serviceName: DEFAULT_SERVICE_NAME,
   enabled: false,
-  lastSentAt: null,
-  error: null,
-  failingSince: null,
-  pausedAt: null,
-  logs: "off",
-  logsSkipped: null,
 };
 
 function present(row: Row | undefined): TelemetryView {
   if (!row) return NOT_CONFIGURED;
   return {
+    ...statusView(row),
     configured: true,
     endpoint: row.endpoint,
     headers: row.headerHints,
     serviceName: row.serviceName,
     enabled: row.enabled,
-    lastSentAt: iso(row.lastSentAt),
-    error: row.error,
-    failingSince: iso(row.failingSince),
-    pausedAt: iso(row.pausedAt),
-    logs: row.logs,
-    logsSkipped:
-      row.logsSkipped && row.logsSkippedAt
-        ? { reason: row.logsSkipped, at: row.logsSkippedAt.toISOString() }
-        : null,
   };
 }
 
-async function load(db: Db, workspaceId: string) {
-  const [row] = await db
-    .select()
-    .from(schema.telemetryExport)
-    .where(eq(schema.telemetryExport.workspaceId, workspaceId))
-    .limit(1);
-  return row;
-}
+const load = exportRow;
 
 export async function telemetryView(db: Db, workspaceId: string) {
   return present(await load(db, workspaceId));
@@ -90,7 +66,7 @@ export async function telemetryView(db: Db, workspaceId: string) {
  * Why an endpoint can't be used, or null when it can: https only, a host name rather than an IP,
  * no credentials in the URL, and not RelayRunner itself.
  */
-export function endpointProblem(endpoint: string): string | null {
+export function endpointProblem(endpoint: string, credentials = "in a header"): string | null {
   let url: URL;
   try {
     url = new URL(endpoint);
@@ -98,7 +74,7 @@ export function endpointProblem(endpoint: string): string | null {
     return "Enter a full URL, like https://api.honeycomb.io";
   }
   if (url.protocol !== "https:") return "The endpoint must use https";
-  if (url.username || url.password) return "Put credentials in a header, not the URL";
+  if (url.username || url.password) return `Put credentials ${credentials}, not the URL`;
   const host = url.hostname.toLowerCase();
   if (/^[\d.]+$/.test(host) || host.startsWith("[")) return "Use a host name, not an IP address";
   if (host === "localhost" || host.endsWith(".local") || !host.includes("."))
@@ -159,12 +135,7 @@ export async function saveTelemetry(
     serviceName: input.serviceName.trim() || DEFAULT_SERVICE_NAME,
     enabled: input.enabled,
     logs: input.logs ?? existing?.logs ?? "off",
-    // Saving starts over: the new settings get a fresh chance.
-    error: null,
-    failingSince: null,
-    pausedAt: null,
-    logsSkipped: null,
-    logsSkippedAt: null,
+    ...RESET_STATUS,
   };
   await db
     .insert(schema.telemetryExport)
@@ -209,6 +180,6 @@ export async function testTelemetry(
   );
   if (sent.ok && row.logs !== "off") sent = await testLogs(row, headers, fetcher);
   // A test that works also brings a paused export's status back; it doesn't turn it on.
-  await recordSend(db, workspaceId, sent);
+  await recordSend(db, workspaceId, sent, schema.telemetryExport);
   return { sent, telemetry: await telemetryView(db, workspaceId) };
 }

@@ -23,6 +23,7 @@
     "@relayrunner/machine-protocol": "workspace:*",
     "@relayrunner/providers": "workspace:*",
     "@relayrunner/runner-order": "workspace:*",
+    "aws4fetch": "^1.0.20",
     "better-auth": "catalog:",
     "drizzle-orm": "^0.45.4",
     "hono": "^4.13.16",

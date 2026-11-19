@@ -123,8 +123,8 @@ const site = Astro.site!.origin;
         repository secrets, and we don't store job logs. When you open a failed job in the dashboard,
         or an agent asks about it, we read the end of its log from GitHub to show you. If a
         workspace owner or admin turns on job log export in Settings → Telemetry, we read each
-        finished job's log from GitHub and send it to the endpoint they chose, without keeping a
-        copy.
+        finished job's log from GitHub and send it to the endpoint or bucket they chose, without
+        keeping a copy.
       </p>
 
       <h3>Connected machines</h3>

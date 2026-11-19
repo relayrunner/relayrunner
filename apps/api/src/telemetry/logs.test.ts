@@ -5,17 +5,9 @@ import { createDb } from "../db/index.ts";
 import type { Env } from "../env.ts";
 import * as testing from "../testing.ts";
 import { exportJob } from "./export.ts";
-import {
-  chunks,
-  forgetRateLimits,
-  handleJobLogBatch,
-  HEAD_BYTES,
-  type JobLogMessage,
-  lineTime,
-  logRecords,
-  redactor,
-  TAIL_BYTES,
-} from "./logs.ts";
+import { isoTime, objectKey, objectUrl } from "./bucket.ts";
+import { chunks, HEAD_BYTES, lineTime, logRecords, redactor, TAIL_BYTES } from "./log-lines.ts";
+import { forgetRateLimits, handleJobLogBatch, type JobLogMessage } from "./logs.ts";
 import { runIds, stepSpanId } from "./spans.ts";
 
 const KEY = btoa(String.fromCharCode(...crypto.getRandomValues(new Uint8Array(32))));
@@ -35,6 +27,13 @@ beforeAll(async () => {
       JOB_LOG_QUEUE: {
         send: async (body: JobLogMessage, options?: { delaySeconds?: number }) => {
           queued.push({ body, delaySeconds: options?.delaySeconds });
+        },
+        sendBatch: async (
+          messages: { body: JobLogMessage }[],
+          options?: { delaySeconds?: number },
+        ) => {
+          for (const { body } of messages)
+            queued.push({ body, delaySeconds: options?.delaySeconds });
         },
       } as unknown as Env["JOB_LOG_QUEUE"],
     },
@@ -351,5 +350,138 @@ describe("log lines", () => {
     expect(bodies[cut]).toContain("https://github.com/job");
     expect(bodies.at(-1)).toMatch(new RegExp(`^${count - 1} `));
     expect(bodies.length).toBeLessThan(count);
+  });
+});
+
+const bucketSettings = {
+  endpoint: "https://0123456789abcdef.r2.cloudflarestorage.com",
+  bucket: "ci-logs",
+  region: "auto",
+  prefix: "/github",
+  accessKeyId: "AKIDEXAMPLE1234",
+  secretAccessKey: "secret-example",
+  logs: "failed",
+};
+
+const saveBucket = (cookie: string, body: unknown) =>
+  testing.call(env, "/log-bucket", cookie, body, "PUT");
+
+type Put = { url: string; method: string; authorization: string; lines: any[] };
+
+/** GitHub and the bucket, with each object written to it, unzipped. */
+function stubBucket(status = 200) {
+  const puts: Put[] = [];
+  vi.stubGlobal("fetch", async (input: RequestInfo | URL, init?: RequestInit) => {
+    const request = new Request(input, init);
+    const { pathname, hostname } = new URL(request.url);
+    if (/\/app\/installations\/\d+\/access_tokens$/.test(pathname))
+      return Response.json({ token: "t" }, { status: 201 });
+    if (pathname === "/rate_limit")
+      return Response.json({
+        resources: { core: { limit: 5000, used: 0, remaining: 5000, reset: 0 } },
+      });
+    if (hostname === "api.github.com") return new Response(LOG);
+    const text = await new Response(
+      request.body!.pipeThrough(new DecompressionStream("gzip")),
+    ).text();
+    puts.push({
+      url: request.url,
+      method: request.method,
+      authorization: request.headers.get("authorization") ?? "",
+      lines: text
+        .trim()
+        .split("\n")
+        .map((line) => JSON.parse(line)),
+    });
+    return new Response(status === 200 ? "" : "<Error/>", { status });
+  });
+  return puts;
+}
+
+describe("bucket", () => {
+  test("uses virtual-hosted URLs for Amazon S3 and path-style ones elsewhere", () => {
+    expect(
+      objectUrl({ endpoint: "https://s3.us-east-1.amazonaws.com", bucket: "b" }, "a/b c"),
+    ).toBe("https://b.s3.us-east-1.amazonaws.com/a/b%20c");
+    expect(objectUrl({ endpoint: "https://storage.googleapis.com/", bucket: "b" }, "a/c")).toBe(
+      "https://storage.googleapis.com/b/a/c",
+    );
+  });
+
+  test("keys a job by repository, the day it finished, run and attempt", () => {
+    const job = { id: 3, runId: 90, runAttempt: 2, completedAt: "2026-11-14T23:59:00Z" };
+    expect(objectKey("github/", { id: 7, fullName: "acme/app" }, job)).toBe(
+      "github/acme/app/2026/11/14/90-2/3.ndjson.gz",
+    );
+    expect(isoTime("1794650410123456700")).toBe("2026-11-14T10:00:10.123456700Z");
+  });
+
+  test("keeps the saved secret, and asks for a new key's", async () => {
+    const { cookie } = await owner();
+    const first = await saveBucket(cookie, bucketSettings);
+    expect(await first.json()).toMatchObject({ prefix: "github/", keyHint: "1234" });
+    const { secretAccessKey, accessKeyId: _keyId, ...rest } = bucketSettings;
+    expect((await saveBucket(cookie, rest)).status).toBe(200);
+    const other = await saveBucket(cookie, { ...rest, accessKeyId: "AKIDOTHER9999" });
+    expect(other.status).toBe(400);
+    expect(await other.json()).toMatchObject({ error: { code: "BUCKET_SECRET_MISSING" } });
+    const view = await (await testing.call(env, "/log-bucket", cookie)).json();
+    expect(JSON.stringify(view)).not.toContain(secretAccessKey);
+  });
+
+  test("writes a failed job's log as one signed NDJSON object", async () => {
+    const { cookie, workspace } = await owner();
+    await saveBucket(cookie, bucketSettings);
+    await exportJob(env, createDb(env.DB), jobMessage(workspace.installationId));
+    expect(queued.map((q) => q.body.to)).toEqual(["bucket"]);
+
+    const puts = stubBucket();
+    const { batch, acked } = batchOf([queued.shift()!.body]);
+    await handleJobLogBatch(batch, env);
+    expect(acked).toEqual([0]);
+    expect(puts).toHaveLength(1);
+    const jobId = batch.messages[0]!.body.job.id;
+    expect(puts[0]).toMatchObject({
+      method: "PUT",
+      url: `https://0123456789abcdef.r2.cloudflarestorage.com/ci-logs/github/acme/app/2026/11/14/90-1/${jobId}.ndjson.gz`,
+    });
+    expect(puts[0]!.authorization).toMatch(/^AWS4-HMAC-SHA256 Credential=AKIDEXAMPLE1234\//);
+    expect(puts[0]!.lines[0]).toMatchObject({ type: "job", job_id: jobId, conclusion: "failure" });
+    expect(puts[0]!.lines.slice(1).map((line) => line.message)).toEqual([
+      "Current runner version: '2.330.0'",
+      "##[group]Run pnpm test",
+      "FAIL token=[redacted]",
+      "##[error]Process completed with exit code 1.",
+    ]);
+    expect(puts[0]!.lines[4]).toMatchObject({ level: "error", step: 2, step_name: "Run tests" });
+
+    const view = await (await testing.call(env, "/log-bucket", cookie)).json();
+    expect(view).toMatchObject({ error: null, lastSentAt: expect.any(String) });
+  });
+
+  test("records a refusal, and the test button writes a test object", async () => {
+    const { cookie } = await owner();
+    await saveBucket(cookie, bucketSettings);
+    const puts = stubBucket(403);
+    const response = await testing.call(env, "/log-bucket/test", cookie, {});
+    expect(await response.json()).toMatchObject({
+      sent: { ok: false, retry: false },
+      bucket: { error: expect.stringContaining("403") },
+    });
+    expect(puts[0]!.url).toBe(
+      "https://0123456789abcdef.r2.cloudflarestorage.com/ci-logs/github/relayrunner-test.ndjson.gz",
+    );
+    expect(puts[0]!.lines[0]).toMatchObject({ type: "test" });
+  });
+
+  test("a change to which logs go to the bucket shows in Activity", async () => {
+    const { cookie } = await owner();
+    await saveBucket(cookie, bucketSettings);
+    await testing.call(env, "/log-bucket", cookie, {}, "DELETE");
+    const response = await testing.call(env, "/activity?filter=settings", cookie);
+    const { items } = (await response.json()) as { items: { type: string; data: any }[] };
+    expect(
+      items.filter((item) => item.type === "settings.log_bucket").map((item) => item.data.logs),
+    ).toEqual(["off", "failed"]);
   });
 });

@@ -20,15 +20,103 @@ const SENT_EVERY_MS = 5 * 60_000;
 const SEND_TIMEOUT_MS = 10_000;
 
 type ExportRow = typeof schema.telemetryExport.$inferSelect;
+type LogChoice = ExportRow["logs"];
 
-/** What a workspace exports: traces, and which jobs' logs. A paused export sends neither. */
+/** Where a workspace's telemetry goes: its OTLP endpoint, or the bucket that archives its logs. */
+export type ExportTable = typeof schema.telemetryExport | typeof schema.logBucket;
+
+// Both tables share the status columns (exportStatus in db/schema.ts), so either can be updated as
+// the other. StatusRow stops compiling if either table loses one of them.
+const statusColumns = (table: ExportTable) => table as typeof schema.telemetryExport;
+type StatusRow = Pick<
+  ExportRow | typeof schema.logBucket.$inferSelect,
+  keyof ReturnType<typeof schema.exportStatus>
+>;
+
+/** An export's health, as Settings shows it. */
+export interface ExportStatusView {
+  logs: LogChoice;
+  lastSentAt: string | null;
+  error: string | null;
+  failingSince: string | null;
+  // When it turned itself off after failing for days.
+  pausedAt: string | null;
+  // Why the latest job's log that should have gone out didn't.
+  logsSkipped: { reason: string; at: string } | null;
+}
+
+export const NO_STATUS: ExportStatusView = {
+  logs: "off",
+  lastSentAt: null,
+  error: null,
+  failingSince: null,
+  pausedAt: null,
+  logsSkipped: null,
+};
+
+/** Saving an export's settings starts over: the new settings get a fresh chance. */
+export const RESET_STATUS = {
+  error: null,
+  failingSince: null,
+  pausedAt: null,
+  logsSkipped: null,
+  logsSkippedAt: null,
+};
+
+const iso = (date: Date | null) => date?.toISOString() ?? null;
+
+export function statusView(row: StatusRow): ExportStatusView {
+  return {
+    logs: row.logs,
+    lastSentAt: iso(row.lastSentAt),
+    error: row.error,
+    failingSince: iso(row.failingSince),
+    pausedAt: iso(row.pausedAt),
+    logsSkipped:
+      row.logsSkipped && row.logsSkippedAt
+        ? { reason: row.logsSkipped, at: row.logsSkippedAt.toISOString() }
+        : null,
+  };
+}
+
+/** The workspace's OTLP export, if it has one. */
+export async function exportRow(db: Db, workspaceId: string) {
+  const [row] = await db
+    .select()
+    .from(schema.telemetryExport)
+    .where(eq(schema.telemetryExport.workspaceId, workspaceId))
+    .limit(1);
+  return row;
+}
+
+/** The workspace's log bucket, if it has one. */
+export async function bucketRow(db: Db, workspaceId: string) {
+  const [row] = await db
+    .select()
+    .from(schema.logBucket)
+    .where(eq(schema.logBucket.workspaceId, workspaceId))
+    .limit(1);
+  return row;
+}
+
+/** Gzip a request or object body. */
+export async function gzip(text: string) {
+  const stream = new Blob([text]).stream().pipeThrough(new CompressionStream("gzip"));
+  return new Uint8Array(await new Response(stream).arrayBuffer());
+}
+
+/**
+ * What a workspace exports: traces and which jobs' logs to its OTLP endpoint, and which jobs' logs
+ * to its bucket. A paused export or bucket sends nothing.
+ */
 export interface Exporting {
   workspaceId: string;
   traces: boolean;
-  logs: ExportRow["logs"];
+  logs: LogChoice;
+  bucket: LogChoice;
 }
 
-// The installations whose workspace exports traces or logs, by installation id, reused per isolate:
+// The installations whose workspace exports traces or logs anywhere, by installation id, reused per isolate:
 // every finished job asks, and almost none export. Saving or removing an export forgets it here;
 // other isolates catch up within a minute, and the queue consumers check the row again before
 // sending.
@@ -36,19 +124,39 @@ export const exportingInstallations = cachedRead(
   "telemetry exports",
   async (db) => {
     const t = schema.telemetryExport;
-    const rows = await db
-      .select({
-        installationId: schema.workspace.installationId,
-        workspaceId: t.workspaceId,
-        traces: t.enabled,
-        logs: t.logs,
-      })
-      .from(t)
-      .innerJoin(schema.workspace, eq(schema.workspace.id, t.workspaceId))
-      .where(and(isNull(t.pausedAt), or(eq(t.enabled, true), ne(t.logs, "off"))));
-    return new Map<number, Exporting>(
-      rows.map(({ installationId, ...row }) => [installationId, row]),
-    );
+    const b = schema.logBucket;
+    const [exports, buckets] = await Promise.all([
+      db
+        .select({
+          installationId: schema.workspace.installationId,
+          workspaceId: t.workspaceId,
+          traces: t.enabled,
+          logs: t.logs,
+        })
+        .from(t)
+        .innerJoin(schema.workspace, eq(schema.workspace.id, t.workspaceId))
+        .where(and(isNull(t.pausedAt), or(eq(t.enabled, true), ne(t.logs, "off")))),
+      db
+        .select({
+          installationId: schema.workspace.installationId,
+          workspaceId: b.workspaceId,
+          bucket: b.logs,
+        })
+        .from(b)
+        .innerJoin(schema.workspace, eq(schema.workspace.id, b.workspaceId))
+        .where(and(isNull(b.pausedAt), ne(b.logs, "off"))),
+    ]);
+    const map = new Map<number, Exporting>();
+    const entry = (installationId: number, workspaceId: string) =>
+      map.get(installationId) ??
+      map
+        .set(installationId, { workspaceId, traces: false, logs: "off", bucket: "off" })
+        .get(installationId)!;
+    for (const { installationId, workspaceId, traces, logs } of exports)
+      Object.assign(entry(installationId, workspaceId), { traces, logs });
+    for (const { installationId, workspaceId, bucket } of buckets)
+      entry(installationId, workspaceId).bucket = bucket;
+    return map;
   },
   () => new Map<number, Exporting>(),
 );
@@ -96,16 +204,24 @@ export async function postOtlp(
       body,
       signal: AbortSignal.timeout(SEND_TIMEOUT_MS),
     });
-    if (response.ok) return { ok: true };
-    const text = (await response.text().catch(() => "")).trim().slice(0, 300);
-    return {
-      ok: false,
-      retry: response.status === 429 || response.status >= 500,
-      error: `${response.status} ${response.statusText}${text ? `: ${text}` : ""}`.trim(),
-    };
+    return await resultOf(response);
   } catch (error) {
     return { ok: false, retry: true, error: errorMessage(error) };
   }
+}
+
+/**
+ * How a send went from its response: 429 and 5xx are worth retrying, other refusals aren't. Keeps
+ * the start of the body, which usually says why.
+ */
+export async function resultOf(response: Response): Promise<SendResult> {
+  if (response.ok) return { ok: true };
+  const text = (await response.text().catch(() => "")).trim().slice(0, 300);
+  return {
+    ok: false,
+    retry: response.status === 429 || response.status >= 500,
+    error: `${response.status} ${response.statusText}${text ? `: ${text}` : ""}`.trim(),
+  };
 }
 
 export function openHeaders(env: Env, row: Pick<ExportRow, "workspaceId" | "headers">) {
@@ -115,14 +231,20 @@ export function openHeaders(env: Env, row: Pick<ExportRow, "workspaceId" | "head
 }
 
 /**
- * Note how a send went: a success clears the error, a failure records it, and an export that has
- * only failed for FAILING_DAYS pauses, which stops traces and logs until the settings are saved
- * again.
+ * Note how a send went, on the OTLP export or the bucket: a success clears the
+ * error, a failure records it, and one that has only failed for FAILING_DAYS pauses, which stops
+ * everything it sends until its settings are saved again.
  */
-export async function recordSend(db: Db, workspaceId: string, sent: SendResult, now = new Date()) {
-  const where = eq(schema.telemetryExport.workspaceId, workspaceId);
+export async function recordSend(
+  db: Db,
+  workspaceId: string,
+  sent: SendResult,
+  table: ExportTable,
+  now = new Date(),
+) {
+  const t = statusColumns(table);
+  const where = eq(t.workspaceId, workspaceId);
   if (sent.ok) {
-    const t = schema.telemetryExport;
     await db
       .update(t)
       .set({ lastSentAt: now, error: null, failingSince: null })
@@ -138,14 +260,29 @@ export async function recordSend(db: Db, workspaceId: string, sent: SendResult, 
       );
     return;
   }
-  const since = sql`coalesce(${schema.telemetryExport.failingSince}, ${now.getTime()})`;
+  const since = sql`coalesce(${t.failingSince}, ${now.getTime()})`;
   const stale = sql`${since} <= ${now.getTime() - FAILING_DAYS * DAY_MS}`;
   await db
-    .update(schema.telemetryExport)
+    .update(t)
     .set({
       error: sent.error,
       failingSince: since,
-      pausedAt: sql`case when ${stale} then ${now.getTime()} else ${schema.telemetryExport.pausedAt} end`,
+      pausedAt: sql`case when ${stale} then ${now.getTime()} else ${t.pausedAt} end`,
     })
     .where(where);
+}
+
+/** Note why a job's log that should have gone out didn't. */
+export async function recordSkip(
+  db: Db,
+  workspaceId: string,
+  reason: string,
+  table: ExportTable,
+  now = new Date(),
+) {
+  const t = statusColumns(table);
+  await db
+    .update(t)
+    .set({ logsSkipped: reason, logsSkippedAt: now })
+    .where(eq(t.workspaceId, workspaceId));
 }

@@ -1,6 +1,8 @@
 import { createFileRoute } from "@tanstack/react-router";
-import { ArrowUpRightIcon, CheckIcon, PlusIcon, XIcon } from "lucide-react";
+import { ArrowUpRightIcon, PlusIcon, XIcon } from "lucide-react";
 import { type FormEvent, useState } from "react";
+import { ExportStatus } from "@/components/export-status";
+import { LogBucketSection } from "@/components/log-bucket";
 import { PageHeader } from "@/components/page-header";
 import { DOCS_URL } from "@/components/site-footer";
 import { Button } from "@/components/ui/button";
@@ -14,15 +16,16 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import { timeAgo } from "@/lib/activity";
 import { errorText } from "@/lib/api";
 import { authDisabled } from "@/lib/auth-client";
 import { canManage } from "@/lib/roles";
 import {
+  getLogBucket,
   getTelemetry,
   type LogChoice,
   PRESETS,
   removeTelemetry,
+  sampleLogBucket,
   sampleTelemetry,
   saveTelemetry,
   type Telemetry,
@@ -30,7 +33,11 @@ import {
 } from "@/lib/telemetry";
 
 export const Route = createFileRoute("/_authed/_workspace/settings/telemetry")({
-  loader: () => (authDisabled ? sampleTelemetry() : getTelemetry()),
+  loader: async () => {
+    if (authDisabled) return { telemetry: sampleTelemetry(), bucket: sampleLogBucket() };
+    const [telemetry, bucket] = await Promise.all([getTelemetry(), getLogBucket()]);
+    return { telemetry, bucket };
+  },
   component: TelemetrySettingsPage,
 });
 
@@ -50,8 +57,9 @@ const presetFor = (telemetry: Telemetry): PresetId =>
 
 function TelemetrySettingsPage() {
   const { current } = Route.useRouteContext();
-  const loaded: Telemetry = Route.useLoaderData();
-  const [telemetry, setTelemetry] = useState(loaded);
+  const loaded = Route.useLoaderData();
+  const [telemetry, setTelemetry] = useState(loaded.telemetry);
+  const [bucket, setBucket] = useState(loaded.bucket);
   const manager = canManage(current.role);
 
   return (
@@ -60,7 +68,7 @@ function TelemetrySettingsPage() {
         Send each workflow run to your observability tool as a trace: the run, its jobs and their
         steps, with where each job ran and how long it waited. You can send job logs too, each line
         under its step. Both use the OpenTelemetry format, so Honeycomb, Grafana, Axiom or your own
-        Collector can read them.{" "}
+        Collector can read them. You can also keep job logs in your own S3-compatible bucket.{" "}
         <a
           href={`${DOCS_URL}/dashboard/telemetry`}
           className="inline-flex items-center gap-0.5 text-go hover:text-go-hover"
@@ -80,6 +88,7 @@ function TelemetrySettingsPage() {
               : "An owner or admin can set up telemetry."}
           </p>
         )}
+        <LogBucketSection bucket={bucket} onChange={setBucket} manager={manager} />
       </div>
     </section>
   );
@@ -87,35 +96,14 @@ function TelemetrySettingsPage() {
 
 function Status({ telemetry }: { telemetry: Telemetry }) {
   if (!telemetry.configured) return null;
-  const { enabled, lastSentAt, error, failingSince, pausedAt, logs, logsSkipped } = telemetry;
-  const sending = enabled || logs !== "off";
   return (
-    <div role="status" className="grid gap-1 text-sm">
-      {pausedAt ? (
-        <p className="text-destructive">
-          Paused {timeAgo(pausedAt)} after three days of errors. Fix the settings and save to start
-          again.
-        </p>
-      ) : !sending ? (
-        <p className="text-muted-foreground">Off. Runs aren't being sent.</p>
-      ) : (
-        <p className="flex items-center gap-1 text-muted-foreground">
-          <CheckIcon aria-hidden className="size-4 text-go" />
-          {lastSentAt ? `On. Last sent ${timeAgo(lastSentAt)}.` : "On. Waiting for the next run."}
-        </p>
-      )}
-      {logs !== "off" && logsSkipped && (
-        <p className="text-muted-foreground">
-          Skipped a job's log {timeAgo(logsSkipped.at)}: {logsSkipped.reason}.
-        </p>
-      )}
-      {error && (
-        <p className="text-destructive">
-          {failingSince ? `Failing since ${timeAgo(failingSince)}: ` : "Last error: "}
-          {error}
-        </p>
-      )}
-    </div>
+    <ExportStatus
+      status={telemetry}
+      on={telemetry.enabled || telemetry.logs !== "off"}
+      off="Off. Runs aren't being sent."
+      sent="Last sent"
+      waiting="Waiting for the next run."
+    />
   );
 }
 

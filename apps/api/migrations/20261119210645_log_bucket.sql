@@ -1,0 +1,21 @@
+CREATE TABLE `log_bucket` (
+	`workspace_id` text PRIMARY KEY NOT NULL,
+	`endpoint` text NOT NULL,
+	`bucket` text NOT NULL,
+	`region` text NOT NULL,
+	`prefix` text NOT NULL,
+	`credentials` text NOT NULL,
+	`key_hint` text NOT NULL,
+	`created_by` text,
+	`last_sent_at` integer,
+	`error` text,
+	`failing_since` integer,
+	`paused_at` integer,
+	`logs` text DEFAULT 'off' NOT NULL,
+	`logs_skipped` text,
+	`logs_skipped_at` integer,
+	`created_at` integer NOT NULL,
+	`updated_at` integer NOT NULL,
+	FOREIGN KEY (`workspace_id`) REFERENCES `workspace`(`id`) ON UPDATE no action ON DELETE cascade,
+	FOREIGN KEY (`created_by`) REFERENCES `user`(`id`) ON UPDATE no action ON DELETE set null
+);

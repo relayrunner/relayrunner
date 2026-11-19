@@ -44,7 +44,7 @@ That install only reads the enterprise's billing. It sees no repos, and your org
 
 ## What it never gets
 
-The App can't read your code, beyond `relayrunner.yml`, and doesn't receive repository secrets. It reads a job's log through Actions read only to show why a failed job failed, or to send it to your own endpoint when you turn on [job logs](/docs/dashboard/telemetry#job-logs), and never stores it. Jobs that run on your machines use GitHub's own runner, which talks to GitHub directly.
+The App can't read your code, beyond `relayrunner.yml`, and doesn't receive repository secrets. It reads a job's log through Actions read only to show why a failed job failed, or to send it to your own endpoint or bucket when you turn on [job logs](/docs/dashboard/telemetry#job-logs) or a [log archive](/docs/dashboard/telemetry#log-archive), and never stores it. Jobs that run on your machines use GitHub's own runner, which talks to GitHub directly.
 
 ## Runner groups
 

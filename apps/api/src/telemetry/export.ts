@@ -191,7 +191,7 @@ export async function handleTelemetryBatch(
           messages.map((msg) => msg.body),
           fetcher,
         );
-        await recordSend(db, workspaceId, sent);
+        await recordSend(db, workspaceId, sent, schema.telemetryExport);
         for (const msg of messages) {
           if (!sent.ok && sent.retry && msg.attempts < MAX_ATTEMPTS)
             msg.retry({ delaySeconds: retryDelaySeconds(msg.attempts) });

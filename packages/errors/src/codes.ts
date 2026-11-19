@@ -121,6 +121,12 @@ export const ERRORS = {
   },
   TELEMETRY_HEADER_MISSING: { status: 400, message: "Enter a value for each header." },
   TELEMETRY_NOT_CONFIGURED: { status: 404, message: "Telemetry isn't set up for this workspace." },
+  BUCKET_INVALID: {
+    status: 400,
+    message: "Check the bucket settings: an https endpoint, the bucket's name and its region.",
+  },
+  BUCKET_SECRET_MISSING: { status: 400, message: "Enter the secret access key." },
+  BUCKET_NOT_CONFIGURED: { status: 404, message: "No bucket is set up for this workspace." },
 
   // GitHub webhooks
   WEBHOOK_SIGNATURE_INVALID: {

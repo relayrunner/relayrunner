@@ -1,6 +1,7 @@
 import { Link, createFileRoute } from "@tanstack/react-router";
 import { RUNNER_LABELS, relayInputs, type RunnerStep } from "@relayrunner/runner-order";
 import {
+  Archive,
   Ban,
   ChevronRight,
   Cpu,
@@ -544,6 +545,10 @@ function settingsSentence(item: ActivityItem) {
       return item.data.logs === "off"
         ? "stopped sending job logs"
         : `started sending ${item.data.logs === "all" ? "every job's log" : "failed jobs' logs"}`;
+    case "settings.log_bucket":
+      return item.data.logs === "off"
+        ? "stopped archiving job logs to a bucket"
+        : `started archiving ${item.data.logs === "all" ? "every job's log" : "failed jobs' logs"} to a bucket`;
     default:
       return "";
   }
@@ -582,6 +587,7 @@ const EVENT_ICONS = {
   "settings.retries": RotateCw,
   "settings.ai": Sparkles,
   "settings.job_logs": ScrollText,
+  "settings.log_bucket": Archive,
 } as const;
 
 const ICON = "size-3.5 shrink-0";

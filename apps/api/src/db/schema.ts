@@ -1568,11 +1568,29 @@ export const providerDailyUsage = sqliteTable(
 // and job as OpenTelemetry spans, POSTed to `endpoint` as OTLP/HTTP JSON. The header values (API
 // keys) are one JSON object, encrypted like provider tokens (src/provider-tokens.ts) and never sent
 // back; the dashboard sees each header's name and last four characters. One per workspace.
+// How a telemetry export or log bucket is doing, and which jobs' logs it takes. Both tables have
+// these, so src/telemetry/otlp.ts records sends the same way for either.
+export const exportStatus = () => ({
+  lastSentAt: integer("last_sent_at", { mode: "timestamp_ms" }),
+  // The latest refusal or network error, and when the current run of failures began. Cleared by
+  // the next successful send. Past FAILING_DAYS of nothing but failures the export pauses and sets
+  // pausedAt, until its settings are saved again.
+  error: text("error"),
+  failingSince: integer("failing_since", { mode: "timestamp_ms" }),
+  pausedAt: integer("paused_at", { mode: "timestamp_ms" }),
+  // Which finished jobs' logs go out (src/telemetry/logs.ts): none, failed ones, or all.
+  logs: text("logs", { enum: JOB_LOG_CHOICES }).notNull().default("off"),
+  // Why the latest job's log wasn't sent, such as GitHub no longer having it, and when.
+  logsSkipped: text("logs_skipped"),
+  logsSkippedAt: integer("logs_skipped_at", { mode: "timestamp_ms" }),
+});
+
 export const telemetryExport = sqliteTable("telemetry_export", {
   workspaceId: text("workspace_id")
     .primaryKey()
     .references(() => workspace.id, { onDelete: "cascade" }),
-  // The OTLP base URL, such as https://api.honeycomb.io. Traces go to `${endpoint}/v1/traces`.
+  // The OTLP base URL, such as https://api.honeycomb.io. Traces go to `${endpoint}/v1/traces`,
+  // logs to `${endpoint}/v1/logs`.
   endpoint: text("endpoint").notNull(),
   // "v<key version>.<iv>.<ciphertext>" of a JSON object of header name to value.
   headers: text("headers").notNull(),
@@ -1581,24 +1599,34 @@ export const telemetryExport = sqliteTable("telemetry_export", {
     .notNull(),
   // The resource's service.name.
   serviceName: text("service_name").notNull(),
+  // Traces. Logs are exportStatus's `logs`; a pause stops both.
   enabled: integer("enabled", { mode: "boolean" }).notNull(),
   createdBy: text("created_by").references(() => user.id, { onDelete: "set null" }),
-  lastSentAt: integer("last_sent_at", { mode: "timestamp_ms" }),
-  // The latest refusal or network error, and when the current run of failures began. Cleared by
-  // the next successful send. Past FAILING_DAYS of nothing but failures the export turns itself
-  // off and sets pausedAt.
-  error: text("error"),
-  failingSince: integer("failing_since", { mode: "timestamp_ms" }),
-  pausedAt: integer("paused_at", { mode: "timestamp_ms" }),
-  // Which finished jobs' logs go to `${endpoint}/v1/logs` (src/telemetry/logs.ts): none, failed
-  // ones, or all. Independent of `enabled`, which is for traces; a pause stops both.
-  logs: text("logs", { enum: JOB_LOG_CHOICES }).notNull().default("off"),
-  // Why the latest job's log wasn't sent, such as GitHub no longer having it, and when.
-  logsSkipped: text("logs_skipped"),
-  logsSkippedAt: integer("logs_skipped_at", { mode: "timestamp_ms" }),
+  ...exportStatus(),
   ...timestamps,
 });
 
+// An S3-compatible bucket a workspace archives job logs to (Settings → Telemetry), one gzipped
+// NDJSON object per job (src/telemetry/bucket.ts).
+export const logBucket = sqliteTable("log_bucket", {
+  workspaceId: text("workspace_id")
+    .primaryKey()
+    .references(() => workspace.id, { onDelete: "cascade" }),
+  // The S3 API URL, such as https://<account>.r2.cloudflarestorage.com.
+  endpoint: text("endpoint").notNull(),
+  bucket: text("bucket").notNull(),
+  // "auto" for R2 and Google Cloud Storage.
+  region: text("region").notNull(),
+  // Where in the bucket objects go, empty or ending in "/".
+  prefix: text("prefix").notNull(),
+  // "v<key version>.<iv>.<ciphertext>" of a JSON { accessKeyId, secretAccessKey }.
+  credentials: text("credentials").notNull(),
+  // The access key id's last four characters.
+  keyHint: text("key_hint").notNull(),
+  createdBy: text("created_by").references(() => user.id, { onDelete: "set null" }),
+  ...exportStatus(),
+  ...timestamps,
+});
 // AI model calls (src/ai): the switch for every workspace at once, and the defaults each workspace
 // starts from. One row, id "global"; with no row, AI is off. Operators change it in Admin › AI.
 export const aiSetting = sqliteTable("ai_setting", {

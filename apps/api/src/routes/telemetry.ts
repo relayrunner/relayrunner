@@ -34,14 +34,19 @@ const SaveBody = z.object({
   logs: z.enum(JOB_LOG_CHOICES).optional(),
 });
 
-// Notes in Activity when a save or removal changed which jobs' logs go out. The settings are already
-// saved, so there's nothing left to write.
-function logsChanged(c: Context<AppEnv>, previous: JobLogChoice, logs: JobLogChoice) {
+// Notes in Activity when a save or removal changed which jobs' logs go to the endpoint or the
+// bucket. The settings are already saved, so there's nothing left to write.
+export function logsChanged(
+  c: Context<AppEnv>,
+  type: "settings.job_logs" | "settings.log_bucket",
+  previous: JobLogChoice,
+  logs: JobLogChoice,
+) {
   return changeSetting(c, c.var.workspace.id, {
     previous,
     next: logs,
     write: async () => {},
-    event: { type: "settings.job_logs", data: { logs } },
+    event: { type, data: { logs } },
   });
 }
 
@@ -61,12 +66,12 @@ export const telemetryRoutes = new Hono<AppEnv>()
     const workspaceId = c.var.workspace.id;
     const result = await saveTelemetry(c.env, c.var.db, workspaceId, c.var.user!.id, parsed.data);
     if (!result.ok) throw new AppError(result.error, { message: result.message });
-    await logsChanged(c, result.previousLogs, result.telemetry.logs);
+    await logsChanged(c, "settings.job_logs", result.previousLogs, result.telemetry.logs);
     return c.json(result.telemetry);
   })
   .delete("/", async (c) => {
     const { telemetry, previousLogs } = await deleteTelemetry(c.var.db, c.var.workspace.id);
-    await logsChanged(c, previousLogs, telemetry.logs);
+    await logsChanged(c, "settings.job_logs", previousLogs, telemetry.logs);
     return c.json(telemetry);
   })
   // Send a small test trace with the saved settings.
