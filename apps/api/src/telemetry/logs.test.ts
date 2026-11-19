@@ -5,7 +5,7 @@ import { createDb } from "../db/index.ts";
 import type { Env } from "../env.ts";
 import * as testing from "../testing.ts";
 import { exportJob } from "./export.ts";
-import { isoTime, objectKey, objectUrl } from "./bucket.ts";
+import { isoTime, objectKey, objectUrl, s3Error } from "./bucket.ts";
 import { chunks, HEAD_BYTES, lineTime, logRecords, redactor, TAIL_BYTES } from "./log-lines.ts";
 import { forgetRateLimits, handleJobLogBatch, type JobLogMessage } from "./logs.ts";
 import { runIds, stepSpanId } from "./spans.ts";
@@ -406,6 +406,33 @@ describe("bucket", () => {
     expect(objectUrl({ endpoint: "https://storage.googleapis.com/", bucket: "b" }, "a/c")).toBe(
       "https://storage.googleapis.com/b/a/c",
     );
+    // S3's certificate doesn't cover a dotted bucket in the host name.
+    expect(objectUrl({ endpoint: "https://s3.us-east-1.amazonaws.com", bucket: "a.b" }, "k")).toBe(
+      "https://s3.us-east-1.amazonaws.com/a.b/k",
+    );
+  });
+
+  test("keeps only an S3 error's code and message", () => {
+    expect(
+      s3Error(
+        "403 Forbidden: <Error><Code>InvalidAccessKeyId</Code><Message>Nope</Message><AWSAccessKeyId>AKIAFULL</AWSAccessKeyId></Error>",
+      ),
+    ).toBe("403 Forbidden: InvalidAccessKeyId (Nope)");
+    expect(s3Error("503 Service Unavailable")).toBe("503 Service Unavailable");
+  });
+
+  test("turns away an endpoint with the bucket in it, and odd folders", async () => {
+    const { cookie } = await owner();
+    for (const body of [
+      { ...bucketSettings, endpoint: `${bucketSettings.endpoint}/ci-logs` },
+      { ...bucketSettings, endpoint: "https://ci-logs.s3.us-east-1.amazonaws.com" },
+      { ...bucketSettings, prefix: "a/../b" },
+      { ...bucketSettings, prefix: "a//b" },
+    ]) {
+      const response = await saveBucket(cookie, body);
+      expect(response.status).toBe(400);
+      expect(await response.json()).toMatchObject({ error: { code: "BUCKET_INVALID" } });
+    }
   });
 
   test("keys a job by repository, the day it finished, run and attempt", () => {

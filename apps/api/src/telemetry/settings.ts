@@ -75,7 +75,8 @@ export function endpointProblem(endpoint: string, credentials = "in a header"): 
   }
   if (url.protocol !== "https:") return "The endpoint must use https";
   if (url.username || url.password) return `Put credentials ${credentials}, not the URL`;
-  const host = url.hostname.toLowerCase();
+  // "localhost." is localhost.
+  const host = url.hostname.toLowerCase().replace(/\.$/, "");
   if (/^[\d.]+$/.test(host) || host.startsWith("[")) return "Use a host name, not an IP address";
   if (host === "localhost" || host.endsWith(".local") || !host.includes("."))
     return "The endpoint must be reachable on the internet";

@@ -313,7 +313,14 @@ export async function handleJobLogBatch(batch: MessageBatch<JobLogMessage>, env:
             error: errorMessage(error),
           }),
         );
-        if (tries >= MAX_TRIES) return msg.ack();
+        if (tries >= MAX_TRIES) {
+          // Say so in Settings, which would otherwise look healthy.
+          const table = body.to === "bucket" ? schema.logBucket : schema.telemetryExport;
+          await recordSkip(db, body.workspaceId, `It failed: ${errorMessage(error)}`, table).catch(
+            () => {},
+          );
+          return msg.ack();
+        }
         // A resend keeps the count; the queue's own retry wouldn't.
         await env.JOB_LOG_QUEUE.send({ ...body, tries }, { delaySeconds: retryDelaySeconds(tries) })
           .then(() => msg.ack())

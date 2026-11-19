@@ -62,14 +62,25 @@ export async function bucketView(db: Db, workspaceId: string) {
 // S3's bucket naming rules, which R2 and Google Cloud Storage also accept.
 const BUCKET_NAME = /^[a-z0-9][a-z0-9.-]{1,61}[a-z0-9]$/;
 const REGION = /^[a-z0-9-]{1,50}$/;
+const SAFE_SEGMENT = /^[\w.!*'()-]+$/;
 
 /** Why the settings can't be used, or null when they can. */
-export function bucketProblem(input: Pick<BucketInput, "endpoint" | "bucket" | "region">) {
+export function bucketProblem(
+  input: Pick<BucketInput, "endpoint" | "bucket" | "region" | "prefix">,
+) {
   const endpoint = endpointProblem(input.endpoint, "in the access key fields");
   if (endpoint) return endpoint;
+  const url = new URL(input.endpoint);
+  // The R2 dashboard shows the endpoint with the bucket on the end, and S3 can show it in the host.
+  if (url.pathname !== "/" || url.hostname.startsWith(`${input.bucket}.`))
+    return "Enter the endpoint without the bucket, like https://<account id>.r2.cloudflarestorage.com";
   if (!BUCKET_NAME.test(input.bucket) || input.bucket.includes(".."))
     return "Bucket names are 3 to 63 lowercase letters, numbers, dots and dashes";
   if (!REGION.test(input.region)) return "Enter the bucket's region, or auto";
+  const segments = normalizePrefix(input.prefix).split("/").slice(0, -1);
+  // S3's safe key characters, and no "." or ".." parts, which a URL would collapse.
+  if (segments.some((s) => !SAFE_SEGMENT.test(s) || s === "." || s === ".."))
+    return "Use a folder like github/ or ci/logs/, with letters, numbers, dashes, dots and underscores";
   return null;
 }
 
@@ -109,7 +120,7 @@ export async function saveBucket(
   const endpoint = input.endpoint.replace(/\/+$/, "");
   const bucket = input.bucket;
   const region = input.region.toLowerCase() || "auto";
-  const problem = bucketProblem({ endpoint, bucket, region });
+  const problem = bucketProblem({ endpoint, bucket, region, prefix: input.prefix });
   if (problem) return { ok: false, error: "BUCKET_INVALID", message: problem };
   const existing = await load(db, workspaceId);
   const saved = existing ? await openCredentials(env, existing) : null;

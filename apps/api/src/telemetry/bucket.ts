@@ -34,13 +34,14 @@ export function openCredentials(env: Env, row: Pick<BucketRow, "workspaceId" | "
 }
 
 /**
- * An object's URL. Amazon S3 wants the bucket in the host name (virtual-hosted style); the other
- * services take it as the path's first part.
+ * An object's URL. Amazon S3 wants the bucket in the host name (virtual-hosted style), unless the
+ * name has a dot, which its certificate doesn't cover; the other services take it as the path's
+ * first part.
  */
 export function objectUrl(row: Pick<BucketRow, "endpoint" | "bucket">, key: string) {
   const path = key.split("/").map(encodeURIComponent).join("/");
   const { hostname } = new URL(row.endpoint);
-  if (/^s3[.-]([a-z0-9-]+\.)?amazonaws\.com$/.test(hostname))
+  if (/^s3[.-]([a-z0-9-]+\.)?amazonaws\.com$/.test(hostname) && !row.bucket.includes("."))
     return `https://${row.bucket}.${hostname}/${path}`;
   return `${row.endpoint.replace(/\/+$/, "")}/${encodeURIComponent(row.bucket)}/${path}`;
 }
@@ -104,7 +105,22 @@ export async function ndjson(repository: Repository, job: Job, chunks: AsyncIter
   return new Uint8Array(await compressed);
 }
 
-/** PUT an object. 429, 5xx and network errors are worth retrying; other refusals aren't. */
+/**
+ * An S3 error's code and message, leaving out the rest of its XML, which can name the full access
+ * key id. Members can read the error in Settings.
+ */
+export function s3Error(error: string) {
+  const code = /<Code>([^<]*)<\/Code>/.exec(error)?.[1];
+  const message = /<Message>([^<]*)<\/Message>/.exec(error)?.[1];
+  const status = error.split(":")[0]!;
+  if (code) return `${status}: ${code}${message ? ` (${message})` : ""}`;
+  return error.includes("<") ? status : error;
+}
+
+/**
+ * PUT an object. 429, 5xx and network errors are worth retrying; other refusals, redirects
+ * included, aren't.
+ */
 export async function putObject(
   row: Pick<BucketRow, "endpoint" | "bucket" | "region">,
   credentials: Credentials,
@@ -117,9 +133,11 @@ export async function putObject(
       method: "PUT",
       headers: { "content-type": "application/gzip" },
       body,
+      redirect: "manual",
       signal: AbortSignal.timeout(PUT_TIMEOUT_MS),
     });
-    return await resultOf(response);
+    const sent = await resultOf(response);
+    return sent.ok ? sent : { ...sent, error: s3Error(sent.error) };
   } catch (error) {
     return { ok: false, retry: true, error: errorMessage(error) };
   }
