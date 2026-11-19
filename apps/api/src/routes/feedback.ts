@@ -2,7 +2,7 @@ import { and, eq, gt, sql } from "drizzle-orm";
 import { Hono } from "hono";
 import { bodyLimit } from "hono/body-limit";
 import { z } from "zod";
-import { AGENT_WORKSPACE_HEADER, agentWorkspaceId } from "../agent-auth.ts";
+import { AGENT_WORKSPACE_HEADER, agentClientName, agentWorkspaceId } from "../agent-auth.ts";
 import type { AppEnv } from "../app.ts";
 import { createDb, schema } from "../db/index.ts";
 import { emailOperators } from "../email.ts";
@@ -128,14 +128,7 @@ export const feedbackRoutes = new Hono<AppEnv>().post(
     // emailOperators never throws; only the client lookup can, and then the email goes without a name.
     const emailFeedback = async () => {
       const { clientId } = entry;
-      const [client] = clientId
-        ? await db
-            .select({ name: schema.oauthClient.name })
-            .from(schema.oauthClient)
-            .where(eq(schema.oauthClient.clientId, clientId))
-            .limit(1)
-            .catch(() => [])
-        : [];
+      const clientName = clientId ? await agentClientName(db, clientId).catch(() => null) : null;
       await emailOperators(c.env, {
         replyTo: user!.email,
         template: "feedback",
@@ -144,7 +137,7 @@ export const feedbackRoutes = new Hono<AppEnv>().post(
           ...entry,
           // A person's message has no category of its own, and wasn't sent by an agent.
           category: entry.source === "agent" ? entry.category : null,
-          agent: clientId ? { name: client?.name ?? null } : null,
+          agent: clientId ? { name: clientName } : null,
           user: { name: user!.name, email: user!.email },
           workspaceName: about?.name ?? null,
           sentAt,

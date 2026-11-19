@@ -360,7 +360,14 @@ export function providerOfEnvironment(
 
 /** The runner label in an environment key: `linux-2-core` for `github:linux-2-core`. */
 export const labelOfEnvironment = (key: string) => key.slice(key.indexOf(":") + 1);
-export { AUTO_SIZES, type AutoSize, DEFAULT_AUTO_SIZE, labelForSize } from "./auto-sizes.ts";
+export {
+  AUTO_SIZE_MESSAGE,
+  AUTO_SIZES,
+  type AutoSize,
+  DEFAULT_AUTO_SIZE,
+  isAutoSize,
+  labelForSize,
+} from "./auto-sizes.ts";
 export {
   ADDED_RATE,
   BASE_BOOK,

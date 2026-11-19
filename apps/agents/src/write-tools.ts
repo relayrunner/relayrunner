@@ -1,6 +1,5 @@
-import { AppError } from "@relayrunner/errors";
 import type { McpServer } from "@modelcontextprotocol/server";
-import { AUTO_SIZES } from "@relayrunner/providers";
+import { AUTO_SIZE_MESSAGE, isAutoSize } from "@relayrunner/providers";
 import {
   RETRY_RUNNERS,
   RUNNER_KEYS,
@@ -8,8 +7,7 @@ import {
   runnerStepSchema,
 } from "@relayrunner/runner-order";
 import { z } from "zod";
-import type { WorkspaceApi } from "./api.ts";
-import { answer, workspaceArg } from "./tools.ts";
+import { answer, findNamed, type ToolContext, workspaceArg } from "./context.ts";
 
 // Tools that change a workspace's routing settings, each through the same API route the dashboard
 // uses, so the API checks the person's role and logs the change in Activity with the agent's name.
@@ -25,28 +23,13 @@ const CHANGES = {
   openWorldHint: false,
 } as const;
 
-const sizeArg = z
-  .number()
-  .int()
-  .refine((size) => (AUTO_SIZES as readonly number[]).includes(size), {
-    message: `Pick ${AUTO_SIZES.join(", ")}.`,
-  });
+const sizeArg = z.number().int().refine(isAutoSize, { message: AUTO_SIZE_MESSAGE });
 
 const ALLOW_CHANGES =
   "Needs Allow changes for this agent in the workspace (see list_workspaces' canWrite) and an owner or admin role.";
 
-interface AutoJobs {
-  size: number;
-  jobs: { id: number; size: number | null; first: string | null }[];
-}
-
-export function registerWriteTools(
-  server: McpServer,
-  request: WorkspaceApi,
-  workspaceId: (workspace: string | undefined) => string,
-) {
-  const route = (workspace: string | undefined, path: string) =>
-    `/workspaces/${encodeURIComponent(workspaceId(workspace))}/${path}`;
+export function registerWriteTools(server: McpServer, context: ToolContext) {
+  const { request, workspaceId, workspacePath: route } = context;
   const put = <T>(workspace: string | undefined, path: string, body: unknown) =>
     request<T>(route(workspace, path), { method: "PUT", body });
 
@@ -62,7 +45,7 @@ export function registerWriteTools(
     ({ workspace }) =>
       answer(async () => {
         const [auto, retries, ai] = await Promise.all([
-          request<AutoJobs>(route(workspace, "auto-jobs")),
+          request<{ size: number; jobs: unknown[] }>(route(workspace, "auto-jobs")),
           request<RetrySettings>(route(workspace, "retry-settings")),
           request<{ offAt: string | null }>(route(workspace, "ai")),
         ]);
@@ -119,27 +102,16 @@ export function registerWriteTools(
       }),
       annotations: CHANGES,
     },
+    // The API keeps what's left out.
     ({ workspace, job, size, first }) =>
-      answer(async () => {
-        const { jobs } = await request<AutoJobs>(route(workspace, "auto-jobs"));
-        const current = jobs.find((row) => row.id === job);
-        if (!current) {
-          throw new AppError("NOT_FOUND", {
-            message: `No auto job ${job} in the last 30 days. See get_router_settings.`,
-          });
-        }
-        return put(workspace, `auto-jobs/${job}`, {
-          size: size === undefined ? current.size : size,
-          first: first === undefined ? current.first : first,
-        });
-      }),
+      answer(() => put(workspace, `auto-jobs/${job}`, { size, first })),
   );
 
   server.registerTool(
     "set_retries",
     {
       title: "Set automatic retries",
-      description: `Turns automatic retries on or off: RelayRunner re-runs a job once its run finishes when its runner failed it, such as a machine going offline mid-job, but not when the job's own steps failed. Leave runner or max out to keep them. ${ALLOW_CHANGES}`,
+      description: `Turns automatic retries on or off: a job is re-run once its run finishes when its runner failed it, such as a machine going offline mid-job, but not when the job's own steps failed. Leave runner or max out to keep them. ${ALLOW_CHANGES}`,
       inputSchema: z.object({
         workspace: workspaceArg,
         enabled: z.boolean(),
@@ -151,15 +123,7 @@ export function registerWriteTools(
       }),
       annotations: CHANGES,
     },
-    ({ workspace, enabled, runner, max }) =>
-      answer(async () => {
-        const current = await request<RetrySettings>(route(workspace, "retry-settings"));
-        return put(workspace, "retry-settings", {
-          enabled,
-          runner: runner ?? current.runner,
-          max: max ?? current.max,
-        });
-      }),
+    ({ workspace, ...settings }) => answer(() => put(workspace, "retry-settings", settings)),
   );
 
   server.registerTool(
@@ -175,46 +139,46 @@ export function registerWriteTools(
 
   // Pausing is global: every workspace stops routing to the machine. Only its owner may pause a
   // connected machine; owners and admins may pause a runner added from GitHub.
-  for (const paused of [true, false]) {
-    const action = paused ? "pause" : "resume";
-    server.registerTool(
-      `${action}_runner`,
-      {
-        title: paused ? "Pause runner" : "Resume runner",
-        description: paused
-          ? `Pauses a runner, by id or name from list_runners: it stays connected, but no job routes to it, in any workspace, until it's resumed. A job it's running carries on. Only its owner can pause a connected machine; owners and admins can pause a runner added from GitHub. ${ALLOW_CHANGES}`
-          : `Resumes a paused runner, by id or name from list_runners, so jobs route to it again. ${ALLOW_CHANGES}`,
-        inputSchema: z.object({
-          workspace: workspaceArg,
-          runner: z.string().describe("The runner's id or name."),
-        }),
-        annotations: CHANGES,
-      },
-      ({ workspace, runner }) =>
-        answer(async () => {
-          const id = workspaceId(workspace);
-          const { machines } = await request<{ machines: { id: string; name: string }[] }>(
-            "/machines",
-            { workspaceId: id },
-          );
-          const named = machines.filter(
-            (machine) =>
-              machine.id === runner || machine.name.toLowerCase() === runner.toLowerCase(),
-          );
-          if (named.length !== 1) {
-            throw new AppError("NOT_FOUND", {
-              message:
-                named.length === 0
-                  ? `No runner "${runner}" in this workspace. See list_runners.`
-                  : `Several runners are named "${runner}". Pass its id from list_runners.`,
-            });
-          }
-          const { machine } = await request<{ machine: Record<string, unknown> }>(
-            `/machines/${encodeURIComponent(named[0].id)}/${action}`,
-            { workspaceId: id, body: {} },
-          );
-          return { runner: { id: machine.id, name: machine.name, paused: machine.paused } };
-        }),
-    );
-  }
+  const runnerArg = z.object({
+    workspace: workspaceArg,
+    runner: z.string().describe("The runner's id or name, from list_runners."),
+  });
+  const setPaused =
+    (action: "pause" | "resume") =>
+    ({ workspace, runner }: z.infer<typeof runnerArg>) =>
+      answer(async () => {
+        const id = workspaceId(workspace);
+        const { machines } = await request<{ machines: { id: string; name: string }[] }>(
+          "/machines",
+          { workspaceId: id },
+        );
+        const named = findNamed(machines, runner, { noun: "runner", listTool: "list_runners" });
+        const { machine } = await request<{ machine: Record<string, unknown> }>(
+          `/machines/${encodeURIComponent(named.id)}/${action}`,
+          { workspaceId: id, body: {} },
+        );
+        return { runner: { id: machine.id, name: machine.name, paused: machine.paused } };
+      });
+
+  server.registerTool(
+    "pause_runner",
+    {
+      title: "Pause runner",
+      description: `Pauses a runner: it stays connected, but no job routes to it, in any workspace, until it's resumed. A job it's running carries on. Only its owner can pause a connected machine; owners and admins can pause a runner added from GitHub. ${ALLOW_CHANGES}`,
+      inputSchema: runnerArg,
+      annotations: CHANGES,
+    },
+    setPaused("pause"),
+  );
+
+  server.registerTool(
+    "resume_runner",
+    {
+      title: "Resume runner",
+      description: `Resumes a paused runner, so jobs route to it again. ${ALLOW_CHANGES}`,
+      inputSchema: runnerArg,
+      annotations: CHANGES,
+    },
+    setPaused("resume"),
+  );
 }

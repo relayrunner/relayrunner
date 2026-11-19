@@ -447,12 +447,10 @@ describe("mcp server", () => {
     expect(invalid.result.isError).toBe(true);
   });
 
-  test("the set tools send the dashboard's own requests, keeping what a call leaves out", async () => {
+  test("the set tools send the dashboard's own requests, with only what a call sets", async () => {
     const { env, asked, posted } = fakeEnv({
       "/api/workspaces/w1/runner-order": { order: { steps: [{ key: "github" }] }, previous: {} },
-      "/api/workspaces/w1/auto-jobs": { size: 2, jobs: [{ id: 7, size: 8, first: "blacksmith" }] },
       "/api/workspaces/w1/auto-jobs/7": { size: 8, first: null },
-      "/api/workspaces/w1/retry-settings": { enabled: false, runner: "same", max: 2 },
       "/api/machines": {
         machines: [
           { id: "m1", name: "Mac" },
@@ -482,20 +480,18 @@ describe("mcp server", () => {
       "PUT /api/workspaces/w1/retry-settings",
       "POST /api/machines/m1/pause @w1",
     ]);
+    // What a call leaves out, the API keeps.
     expect(posted.slice(0, 3)).toEqual([
       { steps: [{ key: "github" }], version: "v1" },
-      { size: 8, first: null },
-      { enabled: true, runner: "same", max: 2 },
+      { first: null },
+      { enabled: true },
     ]);
 
-    // A size the providers don't offer, a job that isn't there and a name two runners share are
-    // tool errors the model can fix.
+    // A size the providers don't offer and a name two runners share are tool errors the model
+    // can fix.
     expect((await call("set_default_size", { size: 3 })).result.isError).toBe(true);
-    expect((await call("set_job_size", { job: 8, size: 4 })).result.content[0].text).toContain(
-      "No auto job 8",
-    );
     expect((await call("resume_runner", { runner: "twin" })).result.content[0].text).toContain(
-      "Several runners",
+      "More than one runner",
     );
   });
 

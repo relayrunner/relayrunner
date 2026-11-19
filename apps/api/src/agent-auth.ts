@@ -76,6 +76,16 @@ export function agentOAuth(env: Env) {
   });
 }
 
+/** An agent's app name as it registered itself, such as "Claude", or null when it gave none. */
+export async function agentClientName(db: Db, clientId: string) {
+  const [client] = await db
+    .select({ name: schema.oauthClient.name })
+    .from(schema.oauthClient)
+    .where(eq(schema.oauthClient.clientId, clientId))
+    .limit(1);
+  return client?.name ?? null;
+}
+
 /** The grant the workspace picker last wrote for this session, while consent may still use it. */
 export async function pendingGrant(db: Db, sessionId: unknown, userId: string) {
   if (typeof sessionId !== "string") return null;
@@ -127,11 +137,23 @@ export interface AgentPrincipal {
 
 /**
  * The workspace an agent request reads: the one AGENT_WORKSPACE_HEADER names if the grant covers
- * it, else the grant's only one. Null when it names another or has several and names none.
+ * it, else the grant's only one. Null when it names another or has several and names none. A
+ * request by `method` other than GET or HEAD changes it (agentMayCall only lets those through to
+ * AGENT_WRITE_ROUTES), so it throws AGENT_CHANGES_OFF where the agent isn't allowed changes.
+ * Feedback, which changes no workspace, leaves `method` out.
  */
-export function agentWorkspaceId(agent: AgentPrincipal, requested: string | undefined) {
+export function agentWorkspaceId(
+  agent: AgentPrincipal,
+  requested: string | undefined,
+  method = "GET",
+) {
   const id = requested ?? (agent.workspaces.length === 1 ? agent.workspaces[0].id : undefined);
-  return agent.workspaces.some((workspace) => workspace.id === id) ? id! : null;
+  const granted = agent.workspaces.find((workspace) => workspace.id === id);
+  if (!granted) return null;
+  if (method !== "GET" && method !== "HEAD" && !granted.canWrite) {
+    throw new AppError("AGENT_CHANGES_OFF");
+  }
+  return granted.id;
 }
 
 // Keeps verified signing keys per isolate (5 minutes, refetched on an unknown key id) instead of
@@ -211,7 +233,7 @@ const AGENT_ROUTES: RegExp[] = [
 ];
 
 // The settings an agent may change, by method, in a workspace that allows it changes
-// (agentMayWrite). Each is a dashboard route that logs the change in Activity and checks the user's
+// (agentWorkspaceId). Each is a dashboard route that logs the change in Activity and checks the user's
 // role itself. None deletes anything or touches members, installs or billing.
 const AGENT_WRITE_ROUTES: Record<string, RegExp[]> = {
   PUT: [/^\/api\/workspaces\/[^/]+\/(runner-order|auto-size|auto-jobs\/\d+|retry-settings|ai)$/],
@@ -227,24 +249,6 @@ export const AGENT_ROUTES_BY_METHOD: Record<string, RegExp[]> = {
   PUT: AGENT_WRITE_ROUTES.PUT,
 };
 
-const matches = (routes: Record<string, RegExp[]>, method: string, pathname: string) =>
-  (routes[method] ?? []).some((route) => route.test(pathname));
-
 export function agentMayCall(method: string, pathname: string) {
-  return matches(AGENT_ROUTES_BY_METHOD, method, pathname);
-}
-
-/**
- * Throws AGENT_CHANGES_OFF when an agent request changes a setting in a workspace that doesn't
- * allow it changes. requireWorkspace and requireMember call it once they know the workspace.
- */
-export function agentMayWrite(
-  agent: AgentPrincipal | undefined,
-  method: string,
-  pathname: string,
-  workspaceId: string,
-) {
-  if (!agent || !matches(AGENT_WRITE_ROUTES, method, pathname)) return;
-  const granted = agent.workspaces.find((workspace) => workspace.id === workspaceId);
-  if (!granted?.canWrite) throw new AppError("AGENT_CHANGES_OFF");
+  return (AGENT_ROUTES_BY_METHOD[method] ?? []).some((route) => route.test(pathname));
 }

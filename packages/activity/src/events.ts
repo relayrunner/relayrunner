@@ -26,7 +26,7 @@ export type MachineSharing = (typeof MACHINE_SHARING)[number];
 export const CHANGE_VIAS = ["dashboard", "cli", "agent"] as const;
 const changeData = {
   via: z.enum(CHANGE_VIAS),
-  agent: z.string().nullable().optional(),
+  agent: z.string().optional(),
 };
 
 export const DISCONNECT_REASONS = ["closed", "timeout", "revoked", "error"] as const;

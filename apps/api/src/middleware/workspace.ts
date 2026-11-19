@@ -1,7 +1,7 @@
 import { and, eq } from "drizzle-orm";
 import { createMiddleware } from "hono/factory";
 import type { AppEnv } from "../app.ts";
-import { AGENT_WORKSPACE_HEADER, agentMayWrite, agentWorkspaceId } from "../agent-auth.ts";
+import { AGENT_WORKSPACE_HEADER, agentWorkspaceId } from "../agent-auth.ts";
 import { createDb, schema, type Db } from "../db/index.ts";
 import { AppError } from "@relayrunner/errors";
 import { annotate } from "../tracing.ts";
@@ -14,13 +14,12 @@ import { annotate } from "../tracing.ts";
 export const requireWorkspace = createMiddleware<AppEnv>(async (c, next) => {
   const { agent } = c.var;
   const workspaceId = agent
-    ? agentWorkspaceId(agent, c.req.header(AGENT_WORKSPACE_HEADER))
+    ? agentWorkspaceId(agent, c.req.header(AGENT_WORKSPACE_HEADER), c.req.method)
     : c.var.session?.activeOrganizationId;
   if (!workspaceId) {
     throw new AppError(agent ? "WORKSPACE_REQUIRED" : "NO_ACTIVE_WORKSPACE");
   }
   annotate({ "relayrunner.workspace_id": workspaceId });
-  agentMayWrite(agent, c.req.method, new URL(c.req.url).pathname, workspaceId);
 
   const userId = c.var.user!.id;
   // A workspace an install made a moment ago may not be on a replica yet, so a miss asks the primary.

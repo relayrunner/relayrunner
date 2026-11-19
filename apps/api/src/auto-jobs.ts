@@ -5,7 +5,12 @@
 //
 // Database cost per auto pick: one upsert on auto_job's identity index (returning the job's
 // setting) and one workspace read by primary key, run together.
-import { type AutoSize, AUTO_SIZES, DEFAULT_AUTO_SIZE, labelForSize } from "@relayrunner/providers";
+import {
+  AUTO_SIZE_MESSAGE,
+  DEFAULT_AUTO_SIZE,
+  isAutoSize,
+  labelForSize,
+} from "@relayrunner/providers";
 import {
   RUNNER_KEYS,
   resolveAutoInputs,
@@ -83,12 +88,7 @@ export async function autoPick(
   };
 }
 
-export const autoSizeSchema = z
-  .number()
-  .int()
-  .refine((size): size is AutoSize => (AUTO_SIZES as readonly number[]).includes(size), {
-    message: `Pick a size of ${AUTO_SIZES.join(", ")} vCPU.`,
-  });
+export const autoSizeSchema = z.number().int().refine(isAutoSize, { message: AUTO_SIZE_MESSAGE });
 
 /** What the Router page can set for a job. Null clears a setting back to the default. */
 export const autoJobSettingSchema = z.object({
@@ -140,18 +140,8 @@ export async function listAutoJobs(db: Db, workspaceId: string, now = Date.now()
   }));
 }
 
-/**
- * Sets a job's size and first provider. Answers the job and the setting it replaced, or null when
- * the workspace has no such job.
- */
-export async function setAutoJob(
-  db: Db,
-  workspaceId: string,
-  id: number,
-  setting: AutoJobSetting,
-  userId: string,
-) {
-  const where = and(eq(table.id, id), eq(table.workspaceId, workspaceId));
+/** One of the workspace's auto jobs, with its size and first provider, or null. */
+export async function getAutoJob(db: Db, workspaceId: string, id: number) {
   const [job] = await db
     .select({
       repository: table.repository,
@@ -161,16 +151,21 @@ export async function setAutoJob(
       first: table.first,
     })
     .from(table)
-    .where(where)
+    .where(and(eq(table.id, id), eq(table.workspaceId, workspaceId)))
     .limit(1);
-  if (!job) return null;
+  return job ? { ...job, first: RUNNER_KEYS.find((key) => key === job.first) ?? null } : null;
+}
+
+/** Sets a job's size and first provider. */
+export async function setAutoJob(
+  db: Db,
+  workspaceId: string,
+  id: number,
+  setting: { size: number | null; first: RunnerKey | null },
+  userId: string,
+) {
   await db
     .update(table)
     .set({ ...setting, updatedBy: userId, updatedAt: new Date() })
-    .where(where);
-  const previous = {
-    size: job.size,
-    first: RUNNER_KEYS.find((key) => key === job.first) ?? null,
-  };
-  return { job, previous };
+    .where(and(eq(table.id, id), eq(table.workspaceId, workspaceId)));
 }

@@ -76,6 +76,20 @@ describe("auto jobs", () => {
       inputs: relayInputs({ blacksmith: ["blacksmith-8vcpu-ubuntu-2404"] }),
     });
 
+    // A setting left out stays as it is, and the answer says what it replaced.
+    const firstOnly = await testing.call(
+      env,
+      `/workspaces/${workspace.id}/auto-jobs/${body.jobs[0].id}`,
+      jar,
+      { first: null },
+      "PUT",
+    );
+    expect(await firstOnly.json()).toEqual({
+      size: 8,
+      first: null,
+      previous: { size: 8, first: "blacksmith" },
+    });
+
     const bad = await testing.call(
       env,
       `/workspaces/${workspace.id}/auto-size`,

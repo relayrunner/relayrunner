@@ -20,6 +20,7 @@ import { apiClient, type Me } from "./api.ts";
 import type { Env } from "./env.ts";
 import { SERVER_CARD_TYPE, SERVER_VERSION, serverCard } from "./server-card.ts";
 import { skillCatalog } from "./skills.ts";
+import { toolContext } from "./context.ts";
 import { registerTools } from "./tools.ts";
 import { registerWriteTools } from "./write-tools.ts";
 
@@ -65,7 +66,9 @@ export default {
         { name: "relayrunner", version: SERVER_VERSION },
         { instructions: INSTRUCTIONS },
       );
-      registerWriteTools(server, api, registerTools(server, api, me.agent.workspaces));
+      const context = toolContext(api, me.agent.workspaces);
+      registerTools(server, context);
+      registerWriteTools(server, context);
       skills.attach(server);
       return server;
     };

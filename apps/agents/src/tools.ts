@@ -1,4 +1,3 @@
-import { AppError, describeError } from "@relayrunner/errors";
 import type { McpServer } from "@modelcontextprotocol/server";
 import {
   ACTIVITY_FILTERS,
@@ -8,67 +7,25 @@ import {
   type ActivityPage,
 } from "@relayrunner/activity";
 import { z } from "zod";
-import type { Api, Workspace, WorkspaceApi } from "./api.ts";
+import type { Api } from "./api.ts";
+import { answer, type ToolContext, workspaceArg } from "./context.ts";
 import { compactActivityPage, compactJobTimes, contains } from "./compact.ts";
 
 // Read-only tools over relayrunner-api's dashboard endpoints, plus send_feedback, which only
-// records a report for the RelayRunner team. The tools that change settings are in write-tools.ts. Each answers JSON. All are D1 reads except
-// get_run_failures, which reads a few failed jobs' logs from GitHub. None takes the Router's lock
-// (apps/api/src/agent-auth.ts keeps it that way).
+// records a report for the RelayRunner team; the tools that change settings are in write-tools.ts.
+// Each answers JSON. All are D1 reads except get_run_failures, which reads a few failed jobs' logs
+// from GitHub. None takes the Router's lock (apps/api/src/agent-auth.ts keeps it that way).
 
 // Avatars and dashboard-only permissions aren't useful to an agent.
 const DASHBOARD_ONLY = new Set(["ownerImage", "canRevoke", "mine"]);
 
 const READ_ONLY = { readOnlyHint: true, destructiveHint: false, openWorldHint: false } as const;
 
-type Result = { content: { type: "text"; text: string }[]; isError?: boolean };
-
-// Unindented: every byte counts against the client's tool-result cap.
-function json(value: unknown): Result {
-  return { content: [{ type: "text", text: JSON.stringify(value) }] };
-}
-
-// API errors, and calls the model can fix itself (such as naming a workspace), come back as tool
-// errors the model can read and act on, not protocol errors: the message, then the code.
-export async function answer(read: () => Promise<unknown>): Promise<Result> {
-  try {
-    return json(await read());
-  } catch (error) {
-    if (!(error instanceof AppError)) throw error;
-    return { content: [{ type: "text", text: describeError(error) }], isError: true };
-  }
-}
-
-export const workspaceArg = z
-  .string()
-  .optional()
-  .describe(
-    "Which workspace, by id or name (see list_workspaces). Needed only when this connection reads more than one.",
-  );
-
 const days = (max: number, fallback: number) =>
   z.number().int().min(1).max(max).default(fallback).describe(`Days to look back (1-${max}).`);
 
-/** Registers the read tools, and answers how a call's `workspace` resolves to an id. */
-export function registerTools(server: McpServer, request: WorkspaceApi, workspaces: Workspace[]) {
-  // The workspace a call names (by id or name), or the connection's only one.
-  function workspaceId(workspace: string | undefined) {
-    if (!workspace) {
-      if (workspaces.length === 1) return workspaces[0].id;
-      throw new AppError("WORKSPACE_REQUIRED", {
-        message: `This connection reads ${workspaces.length} workspaces. Pass workspace (an id or name from list_workspaces).`,
-      });
-    }
-    const named = workspaces.find(
-      ({ id, name }) => id === workspace || name.toLowerCase() === workspace.toLowerCase(),
-    );
-    if (!named) {
-      throw new AppError("NOT_FOUND", {
-        message: `No workspace "${workspace}" on this connection. See list_workspaces.`,
-      });
-    }
-    return named.id;
-  }
+export function registerTools(server: McpServer, context: ToolContext) {
+  const { request, workspaces, workspaceId, workspacePath } = context;
 
   // The API, about the workspace a call names.
   const scoped =
@@ -78,7 +35,7 @@ export function registerTools(server: McpServer, request: WorkspaceApi, workspac
 
   // A /workspaces/:id route, for the workspace a call names.
   const workspaceRoute = <T>(workspace: string | undefined, route: string) =>
-    request<T>(`/workspaces/${encodeURIComponent(workspaceId(workspace))}/${route}`);
+    request<T>(workspacePath(workspace, route));
 
   server.registerTool(
     "list_workspaces",
@@ -412,6 +369,4 @@ export function registerTools(server: McpServer, request: WorkspaceApi, workspac
         };
       }),
   );
-
-  return workspaceId;
 }

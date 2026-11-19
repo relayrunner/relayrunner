@@ -64,6 +64,7 @@ import {
   type FreeCheckSavings,
 } from "@/lib/usage";
 import { failureText, jobNames, walkSummary } from "@/lib/route-walk";
+import { ruleText } from "@/lib/runner-order";
 import { formatDateTime } from "@/lib/time-zone";
 
 // Fast enough that a push shows up within seconds, without a live connection.
@@ -469,12 +470,6 @@ function sentence(item: ActivityItem) {
       return item.data.via === "cli" ? "was paused from its CLI" : "was paused";
     case "machine.resumed":
       return item.data.via === "cli" ? "was resumed from its CLI" : "was resumed";
-    case "settings.runner_order":
-    case "settings.auto_size":
-    case "settings.job_size":
-    case "settings.retries":
-    case "settings.ai":
-      return settingsSentence(item);
     case "machine.sharing_changed":
       return item.data.sharing === "only_me"
         ? "was set to run only its owner's jobs"
@@ -513,14 +508,12 @@ function memberSentence(item: ActivityItem) {
   }
 }
 
-// One runner order step: "GitHub-hosted (up to 80% of included minutes)".
+// One runner order step, with its limit as the Router page words it: "GitHub-hosted (while under
+// 80%)".
 function stepText(step: RunnerStep) {
   const label = RUNNER_LABELS[step.key];
-  if ("limit" in step && step.limit)
-    return `${label} (up to ${step.limit.percent}% of included minutes)`;
-  if ("spendLimit" in step && step.spendLimit)
-    return `${label} (up to ${usd(step.spendLimit.usd)} a month)`;
-  return label;
+  const limited = ("limit" in step && step.limit) || ("spendLimit" in step && step.spendLimit);
+  return limited ? `${label} (${ruleText(step).toLowerCase()})` : label;
 }
 
 // Settings events lead with who: "Ada set the default size for auto jobs to 4 vCPU".
@@ -553,8 +546,8 @@ function settingsSentence(item: ActivityItem) {
 
 // " through Claude" when a person made the change with an agent.
 function throughAgent(item: ActivityItem) {
-  const data = item.data as { via?: string; agent?: string | null };
-  return data.via === "agent" ? ` through ${data.agent ?? "an agent"}` : "";
+  const { agent } = item.data as { agent?: string };
+  return agent ? ` through ${agent}` : "";
 }
 
 function article(role: string) {

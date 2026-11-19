@@ -106,7 +106,7 @@ const change = (
     summary,
     description: `${description} Needs Allow changes for the agent in the workspace (Settings › Agents); otherwise 403 AGENT_CHANGES_OFF. Logged in Activity.`,
     parameters: [workspaceHeader, ...parameters],
-    ...(required.length > 0 && {
+    ...(Object.keys(body).length > 0 && {
       requestBody: {
         required: true,
         content: {
@@ -119,7 +119,6 @@ const change = (
 });
 
 const autoSize = { type: "integer", enum: AUTO_SIZES };
-const runnerKey = { type: "string", enum: RUNNER_KEYS };
 
 export const openApi = {
   openapi: "3.1.0",
@@ -187,13 +186,14 @@ export const openApi = {
     "/workspaces/{workspaceId}/auto-jobs/{jobId}": change(
       "setJobSize",
       "Set a job's size",
-      "One auto job's size in vCPUs and the provider it tries first. Null puts either back on the default.",
+      "One auto job's size in vCPUs and the provider it tries first. Null puts either back on the default; one left out stays as it is.",
       {
-        size: { ...autoSize, type: ["integer", "null"] },
-        first: { ...runnerKey, type: ["string", "null"] },
+        size: { type: ["integer", "null"], enum: [...AUTO_SIZES, null] },
+        first: { type: ["string", "null"], enum: [...RUNNER_KEYS, null] },
       },
       object("The new setting and the one it replaced.", { previous: record }),
       {
+        required: [],
         parameters: [
           workspacePath,
           { name: "jobId", in: "path", required: true, schema: { type: "integer" } },
@@ -225,13 +225,14 @@ export const openApi = {
       ...change(
         "setRetrySettings",
         "Set automatic retries",
-        "Turns automatic retries on or off.",
+        "Turns automatic retries on or off. A setting left out stays as it is.",
         {
           enabled: { type: "boolean" },
           runner: { type: "string", enum: RETRY_RUNNERS },
           max: { type: "integer", minimum: 1, maximum: 2 },
         },
         object("The new settings and the ones they replaced.", { previous: record }),
+        { required: [] },
       ),
     },
     "/workspaces/{workspaceId}/ai": {

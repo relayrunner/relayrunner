@@ -1,3 +1,4 @@
+import type { ChangeActor } from "./changes.ts";
 import { type SQL, and, count, eq, inArray, isNotNull, isNull, or } from "drizzle-orm";
 import { type NewActivityEvent, recordEvent } from "./activity.ts";
 import type { Db } from "./db/index.ts";
@@ -568,9 +569,7 @@ export async function revokeMachines(env: Env, db: Db, where: SQL, actorUserId: 
  * Who paused or resumed a machine: a person from the dashboard or through an agent (`agent` names
  * its app), or the machine's own CLI, with no user.
  */
-export type PauseActor =
-  | { userId: string; via: "dashboard" | "agent"; agent: string | null }
-  | { userId: null; via: "cli" };
+export type PauseActor = ChangeActor | { userId: null; via: "cli" };
 
 /**
  * Pauses or resumes a machine and logs it in Activity. Doing what's already the case changes nothing and logs
@@ -610,7 +609,7 @@ export async function setMachinePaused(
     data: {
       machineName: machine.name,
       via: actor.via,
-      ...(actor.via === "agent" && { agent: actor.agent }),
+      ...("agent" in actor && { agent: actor.agent }),
     },
     machineId: machine.id,
     actorUserId: actor.userId,

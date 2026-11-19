@@ -54,7 +54,7 @@ import { AppError } from "@relayrunner/errors";
 import type { Machine } from "@/lib/machines";
 import { providerInfo } from "@/lib/provider-catalog";
 import { previewRoute, type StepVerdict } from "@/lib/route-preview";
-import { saveRunnerOrder } from "@/lib/runner-order";
+import { ruleText, saveRunnerOrder } from "@/lib/runner-order";
 import type { LabelUse } from "@/lib/router-setup";
 import { cn } from "@/lib/utils";
 import { plural } from "@/lib/job-times";
@@ -469,14 +469,6 @@ function StepCard({
 function appMissing(key: RunnerKey, installed: HostedProviderId[] | null) {
   if (!installed || key === "machine" || key === "github") return false;
   return !installed.includes(key);
-}
-
-function ruleText(step: RunnerStep) {
-  if (step.key === "machine") return "When available";
-  if (step.key === "github" && step.limit) return `While under ${step.limit.percent}%`;
-  if ("spendLimit" in step && step.spendLimit)
-    return `While under $${step.spendLimit.usd.toLocaleString("en-US")}/mo`;
-  return "Always";
 }
 
 type HostedStep = Exclude<RunnerStep, { key: "machine" | "github" }>;

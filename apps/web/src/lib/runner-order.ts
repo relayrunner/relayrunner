@@ -1,4 +1,4 @@
-import type { RunnerOrder } from "@relayrunner/runner-order";
+import type { RunnerOrder, RunnerStep } from "@relayrunner/runner-order";
 import { api } from "@/lib/api";
 
 /** GET/PUT /api/workspaces/:id/runner-order. `isDefault` until the workspace saves one. */
@@ -14,4 +14,13 @@ export function saveRunnerOrder(workspaceId: string, order: RunnerOrder) {
     method: "PUT",
     body: JSON.stringify(order),
   });
+}
+
+/** When a step takes a job: "When available", "While under 80%", "While under $100/mo", "Always". */
+export function ruleText(step: RunnerStep) {
+  if (step.key === "machine") return "When available";
+  if (step.key === "github" && step.limit) return `While under ${step.limit.percent}%`;
+  if ("spendLimit" in step && step.spendLimit)
+    return `While under $${step.spendLimit.usd.toLocaleString("en-US")}/mo`;
+  return "Always";
 }

@@ -13,6 +13,7 @@ import {
 import { CopyCommand } from "@/components/add-runner";
 import { DOCS_URL } from "@/components/site-footer";
 import { disconnectAgent, listAgents, setAgentChanges, type ConnectedAgent } from "@/lib/agents";
+import { errorText } from "@/lib/api";
 import { cn } from "@/lib/utils";
 import { formatDate } from "@/lib/time-zone";
 
@@ -210,9 +211,9 @@ function AllowChanges({ agent, canManage }: { agent: ConnectedAgent; canManage: 
     setError(null);
     try {
       await setAgentChanges(agent.id, next);
-    } catch {
+    } catch (caught) {
       setEnabled(!next);
-      setError("Couldn't save that. Try again.");
+      setError(errorText(caught));
     } finally {
       setPending(false);
     }

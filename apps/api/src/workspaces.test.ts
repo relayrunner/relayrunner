@@ -435,6 +435,9 @@ describe("skipping runners that stop picking up jobs", () => {
     });
     const again = await request(`${workspace.id}/retry-settings`, jar);
     expect(await again.json()).toEqual(settings);
+    // A setting left out stays as it is.
+    const off = await request(`${workspace.id}/retry-settings`, jar, "PUT", { enabled: false });
+    expect(await off.json()).toMatchObject({ enabled: false, runner: "other", max: 2 });
 
     const bad = await request(`${workspace.id}/retry-settings`, jar, "PUT", {
       ...settings,

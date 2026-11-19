@@ -1,6 +1,7 @@
 import type { McpServer } from "@modelcontextprotocol/server";
 import { expect, test } from "vitest";
 import { SKILL_FILES } from "./skills.ts";
+import { toolContext } from "./context.ts";
 import { registerTools } from "./tools.ts";
 import { registerWriteTools } from "./write-tools.ts";
 
@@ -14,8 +15,9 @@ test("the ci-insights skill names every MCP tool, and only those", () => {
   const notCalled = async () => {
     throw new Error("not called");
   };
-  const workspaceId = registerTools(server as unknown as McpServer, notCalled, []);
-  registerWriteTools(server as unknown as McpServer, notCalled, workspaceId);
+  const context = toolContext(notCalled, []);
+  registerTools(server as unknown as McpServer, context);
+  registerWriteTools(server as unknown as McpServer, context);
 
   const table = skill.slice(skill.indexOf("## Tools"), skill.indexOf("## Common questions"));
   const named = [...table.matchAll(/`([a-z]+(?:_[a-z]+)+)`/g)].map((match) => match[1]);
