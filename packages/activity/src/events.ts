@@ -24,6 +24,10 @@ export type MachineSharing = (typeof MACHINE_SHARING)[number];
 // Where a person made a change: the dashboard, a machine's own CLI, or an agent through the MCP
 // server (apps/agents) with their sign-in. `agent` names the agent's app, such as "Claude".
 export const CHANGE_VIAS = ["dashboard", "cli", "agent"] as const;
+
+// Which finished jobs' logs a workspace sends to its telemetry endpoint (Settings → Telemetry).
+export const JOB_LOG_CHOICES = ["off", "failed", "all"] as const;
+export type JobLogChoice = (typeof JOB_LOG_CHOICES)[number];
 const changeData = {
   via: z.enum(CHANGE_VIAS),
   agent: z.string().optional(),
@@ -256,6 +260,11 @@ export const ActivityEvent = z.discriminatedUnion("type", [
   z.object({
     type: z.literal("settings.ai"),
     data: z.object({ ...changeData, enabled: z.boolean() }),
+  }),
+  // Which finished jobs' logs go to the workspace's telemetry endpoint (Settings → Telemetry).
+  z.object({
+    type: z.literal("settings.job_logs"),
+    data: z.object({ ...changeData, logs: z.enum(JOB_LOG_CHOICES) }),
   }),
   // Someone left the workspace (`left`): their GitHub sign-in can no longer see its installation
   // (#317). Actor: them. Older rows may also be an owner or admin removing them (`left: false`).

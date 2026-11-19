@@ -14,6 +14,7 @@ import {
   Plug,
   Plus,
   RotateCw,
+  ScrollText,
   Sparkles,
   Unplug,
   UserCheck,
@@ -539,6 +540,10 @@ function settingsSentence(item: ActivityItem) {
         : "turned off automatic retries";
     case "settings.ai":
       return item.data.enabled ? "turned on AI features" : "turned off AI features";
+    case "settings.job_logs":
+      return item.data.logs === "off"
+        ? "stopped sending job logs"
+        : `started sending ${item.data.logs === "all" ? "every job's log" : "failed jobs' logs"}`;
     default:
       return "";
   }
@@ -576,6 +581,7 @@ const EVENT_ICONS = {
   "settings.job_size": Cpu,
   "settings.retries": RotateCw,
   "settings.ai": Sparkles,
+  "settings.job_logs": ScrollText,
 } as const;
 
 const ICON = "size-3.5 shrink-0";

@@ -1,11 +1,11 @@
 ---
 title: Telemetry
-description: Send every workflow run to your observability tool as an OpenTelemetry trace.
+description: Send every workflow run to your observability tool as an OpenTelemetry trace, and job logs alongside.
 ---
 
 Each workflow run can go to your observability tool as a trace: the run, its jobs and their steps, with where each job ran and how long it waited for a runner. Traces use the [OpenTelemetry](https://opentelemetry.io) format and its [CI/CD conventions](https://opentelemetry.io/docs/specs/semconv/cicd/cicd-spans/), so Honeycomb, Grafana, Axiom or your own OpenTelemetry Collector can read them without setup.
 
-Every job in your connected repos is included, whichever runner took it.
+Every job in your connected repos is included, whichever runner took it. You can also send [job logs](#job-logs) to the same tool.
 
 ## Set up
 
@@ -51,10 +51,25 @@ Each job span:
 
 The resource carries `service.name` (`github-actions` unless you change it), `vcs.repository.name`, `vcs.repository.url.full` and `vcs.owner.name`.
 
+## Job logs
+
+Under **Job logs**, choose **Failed jobs** or **Every job** to send logs too. They go to the same endpoint's `/v1/logs`, with the same headers. Each job's log goes out when the job finishes.
+
+- Each line is a log record with GitHub's timestamp. Lines that start with `##[error]` or `##[warning]` get that severity.
+- Each record carries the trace and span ids of its step, so a tool that shows traces can show a step's lines with it. `relayrunner.step.number` and `relayrunner.step.name` name the step.
+- The resource carries the repository and the job: `cicd.pipeline.name`, `cicd.pipeline.task.name`, `cicd.pipeline.task.run.id`, `cicd.pipeline.task.run.url.full`, `relayrunner.run.attempt` and `relayrunner.job.conclusion`.
+- A log over 20 MB keeps its first 16 MB and last 4 MB, with a line between that says how much was left out and links to the full log on GitHub.
+
+Logs come from GitHub, which replaces your repository's secrets with `***` before it stores them. As a backstop, anything that looks like a credential, such as a GitHub or AWS key, a bearer token or a private key, is replaced with `[redacted]`. A value that was never stored as a secret can still show up, so treat logs in your tool with the same care as on GitHub.
+
+Each log costs one call from your GitHub App installation's hourly API limit, which routing also uses. When fewer than a quarter of those calls are left, logs wait until the limit resets. Failed jobs are the default for this reason.
+
 ## When sending fails
 
-If your endpoint is down or rate limiting, sending retries for about an hour. If it refuses the key, the error shows in **Settings → Telemetry**. After three days of nothing but errors, sending pauses until you save the settings again.
+If your endpoint is down or rate limiting, sending retries for about an hour. If it refuses the key, the error shows in **Settings → Telemetry**. After three days of nothing but errors, sending traces and logs pauses until you save the settings again. When a job's log can't be sent, for example because GitHub no longer has it, the reason shows there too.
 
 ## What gets sent
 
-Repository and workflow names, branches, commit SHAs, pull request titles, GitHub usernames, job and step names, timings and where each job ran. Never logs, secrets or environment variables.
+Traces hold repository and workflow names, branches, commit SHAs, pull request titles, GitHub usernames, job and step names, timings and where each job ran. They never hold logs, secrets or environment variables.
+
+With job logs on, the log lines go out as well. Nothing keeps a copy on the way: each log streams from GitHub to your endpoint.

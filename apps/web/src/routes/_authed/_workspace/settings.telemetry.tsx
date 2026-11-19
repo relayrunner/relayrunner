@@ -20,6 +20,7 @@ import { authDisabled } from "@/lib/auth-client";
 import { canManage } from "@/lib/roles";
 import {
   getTelemetry,
+  type LogChoice,
   PRESETS,
   removeTelemetry,
   sampleTelemetry,
@@ -57,8 +58,9 @@ function TelemetrySettingsPage() {
     <section>
       <PageHeader title="Telemetry">
         Send each workflow run to your observability tool as a trace: the run, its jobs and their
-        steps, with where each job ran and how long it waited. Traces use the OpenTelemetry format,
-        so Honeycomb, Grafana, Axiom or your own Collector can read them.{" "}
+        steps, with where each job ran and how long it waited. You can send job logs too, each line
+        under its step. Both use the OpenTelemetry format, so Honeycomb, Grafana, Axiom or your own
+        Collector can read them.{" "}
         <a
           href={`${DOCS_URL}/dashboard/telemetry`}
           className="inline-flex items-center gap-0.5 text-go hover:text-go-hover"
@@ -74,7 +76,7 @@ function TelemetrySettingsPage() {
         ) : (
           <p className="text-sm text-muted-foreground">
             {telemetry.configured
-              ? `Traces go to ${telemetry.endpoint}. An owner or admin can change this.`
+              ? `Telemetry goes to ${telemetry.endpoint}. An owner or admin can change this.`
               : "An owner or admin can set up telemetry."}
           </p>
         )}
@@ -85,7 +87,8 @@ function TelemetrySettingsPage() {
 
 function Status({ telemetry }: { telemetry: Telemetry }) {
   if (!telemetry.configured) return null;
-  const { enabled, lastSentAt, error, failingSince, pausedAt } = telemetry;
+  const { enabled, lastSentAt, error, failingSince, pausedAt, logs, logsSkipped } = telemetry;
+  const sending = enabled || logs !== "off";
   return (
     <div role="status" className="grid gap-1 text-sm">
       {pausedAt ? (
@@ -93,12 +96,17 @@ function Status({ telemetry }: { telemetry: Telemetry }) {
           Paused {timeAgo(pausedAt)} after three days of errors. Fix the settings and save to start
           again.
         </p>
-      ) : !enabled ? (
+      ) : !sending ? (
         <p className="text-muted-foreground">Off. Runs aren't being sent.</p>
       ) : (
         <p className="flex items-center gap-1 text-muted-foreground">
           <CheckIcon aria-hidden className="size-4 text-go" />
           {lastSentAt ? `On. Last sent ${timeAgo(lastSentAt)}.` : "On. Waiting for the next run."}
+        </p>
+      )}
+      {logs !== "off" && logsSkipped && (
+        <p className="text-muted-foreground">
+          Skipped a job's log {timeAgo(logsSkipped.at)}: {logsSkipped.reason}.
         </p>
       )}
       {error && (
@@ -125,6 +133,7 @@ function ExportForm({
   const [headers, setHeaders] = useState(() => rowsFrom(telemetry));
   const [serviceName, setServiceName] = useState(telemetry.serviceName);
   const [enabled, setEnabled] = useState(telemetry.configured ? telemetry.enabled : true);
+  const [logs, setLogs] = useState<LogChoice>(telemetry.logs);
   const [pending, setPending] = useState(false);
   const [notice, setNotice] = useState<{ ok: boolean; text: string } | null>(null);
   const help = PRESETS.find((p) => p.id === preset)?.help;
@@ -167,6 +176,7 @@ function ExportForm({
           .map((h) => ({ name: h.name.trim(), ...(h.value.trim() && { value: h.value.trim() }) })),
         serviceName,
         enabled,
+        logs,
       });
       onChange(saved);
       setHeaders(rowsFrom(saved));
@@ -180,18 +190,25 @@ function ExportForm({
       onChange(next);
       setNotice(
         sent.ok
-          ? { ok: true, text: "Sent a test trace named “RUN RelayRunner test”." }
+          ? {
+              ok: true,
+              text:
+                next.logs === "off"
+                  ? "Sent a test trace named “RUN RelayRunner test”."
+                  : "Sent a test trace named “RUN RelayRunner test” and a log line “RelayRunner test log”.",
+            }
           : { ok: false, text: `The endpoint refused it: ${sent.error}` },
       );
     });
 
   const remove = () => {
-    if (!window.confirm("Stop sending traces and forget these settings?")) return;
+    if (!window.confirm("Stop sending telemetry and forget these settings?")) return;
     void run(async () => {
       const removed = await removeTelemetry();
       onChange(removed);
       choosePreset(PRESETS[0].id);
       setServiceName(removed.serviceName);
+      setLogs(removed.logs);
     });
   };
 
@@ -298,6 +315,23 @@ function ExportForm({
             />
             Send a trace for every run
           </label>
+
+          <Field
+            label="Job logs"
+            hint="When a job finishes, its log goes from GitHub to your tool, up to 20 MB. No copy is kept."
+            className="max-w-xs"
+          >
+            <Select value={logs} onValueChange={(value) => setLogs(value as LogChoice)}>
+              <SelectTrigger className="w-48">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="off">Don't send</SelectItem>
+                <SelectItem value="failed">Failed jobs</SelectItem>
+                <SelectItem value="all">Every job</SelectItem>
+              </SelectContent>
+            </Select>
+          </Field>
 
           <div className="flex flex-wrap gap-2">
             <Button type="submit" disabled={pending || !endpoint.trim()}>

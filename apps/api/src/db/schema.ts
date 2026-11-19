@@ -2,7 +2,7 @@
 // account, verification), then the organization plugin's, renamed to workspaces (see auth.ts).
 // Gateway tables (installations and their repos, then machines and routes) follow. After changing anything
 // here, run `pnpm db:generate` to write a new migration.
-import type { MachineSharing } from "@relayrunner/activity";
+import { JOB_LOG_CHOICES, type MachineSharing } from "@relayrunner/activity";
 import type { JobUsage } from "@relayrunner/machine-protocol";
 import type { HostedProviderId } from "@relayrunner/providers";
 import type { ProviderStatus } from "@relayrunner/providers/catalog";
@@ -1590,6 +1590,12 @@ export const telemetryExport = sqliteTable("telemetry_export", {
   error: text("error"),
   failingSince: integer("failing_since", { mode: "timestamp_ms" }),
   pausedAt: integer("paused_at", { mode: "timestamp_ms" }),
+  // Which finished jobs' logs go to `${endpoint}/v1/logs` (src/telemetry/logs.ts): none, failed
+  // ones, or all. Independent of `enabled`, which is for traces; a pause stops both.
+  logs: text("logs", { enum: JOB_LOG_CHOICES }).notNull().default("off"),
+  // Why the latest job's log wasn't sent, such as GitHub no longer having it, and when.
+  logsSkipped: text("logs_skipped"),
+  logsSkippedAt: integer("logs_skipped_at", { mode: "timestamp_ms" }),
   ...timestamps,
 });
 

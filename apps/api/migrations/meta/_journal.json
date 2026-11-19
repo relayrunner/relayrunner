@@ -526,6 +526,13 @@
       "when": 1795112534017,
       "tag": "20261119182214_agent_can_write",
       "breakpoints": true
+    },
+    {
+      "idx": 75,
+      "version": "6",
+      "when": 1795120830767,
+      "tag": "20261119204030_job_logs_export",
+      "breakpoints": true
     }
   ]
 }

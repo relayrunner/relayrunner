@@ -1,10 +1,12 @@
-import { Hono } from "hono";
+import { type Context, Hono } from "hono";
 import { z } from "zod";
 import type { AppEnv } from "../app.ts";
 import { requireUser } from "../middleware/session.ts";
 import { requireWorkspace } from "../middleware/workspace.ts";
 import { requireManager } from "../roles.ts";
+import { JOB_LOG_CHOICES, type JobLogChoice } from "@relayrunner/activity";
 import { AppError } from "@relayrunner/errors";
+import { changeSetting } from "../changes.ts";
 import {
   deleteTelemetry,
   saveTelemetry,
@@ -29,10 +31,23 @@ const SaveBody = z.object({
     }),
   serviceName: z.string().trim().max(200),
   enabled: z.boolean(),
+  logs: z.enum(JOB_LOG_CHOICES).optional(),
 });
 
-// Settings → Telemetry: where the workspace sends its CI traces. Any member can look; owners and
-// admins change it. Header values never come back.
+// Notes in Activity when a save or removal changed which jobs' logs go out. The settings are already
+// saved, so there's nothing left to write.
+function logsChanged(c: Context<AppEnv>, previous: JobLogChoice, logs: JobLogChoice) {
+  return changeSetting(c, c.var.workspace.id, {
+    previous,
+    next: logs,
+    write: async () => {},
+    event: { type: "settings.job_logs", data: { logs } },
+  });
+}
+
+// Settings → Telemetry: where the workspace sends its CI traces and job logs. Any member can look;
+// owners and admins change it, and a change to which logs go out shows in Activity. Header values
+// never come back.
 export const telemetryRoutes = new Hono<AppEnv>()
   .use("*", requireUser, requireWorkspace)
   .get("/", async (c) => c.json(await telemetryView(c.var.db, c.var.workspace.id)))
@@ -43,17 +58,17 @@ export const telemetryRoutes = new Hono<AppEnv>()
       throw new AppError("INVALID_REQUEST", {
         message: "Check the header names: letters, numbers and dashes, each used once.",
       });
-    const result = await saveTelemetry(
-      c.env,
-      c.var.db,
-      c.var.workspace.id,
-      c.var.user!.id,
-      parsed.data,
-    );
+    const workspaceId = c.var.workspace.id;
+    const result = await saveTelemetry(c.env, c.var.db, workspaceId, c.var.user!.id, parsed.data);
     if (!result.ok) throw new AppError(result.error, { message: result.message });
+    await logsChanged(c, result.previousLogs, result.telemetry.logs);
     return c.json(result.telemetry);
   })
-  .delete("/", async (c) => c.json(await deleteTelemetry(c.var.db, c.var.workspace.id)))
+  .delete("/", async (c) => {
+    const { telemetry, previousLogs } = await deleteTelemetry(c.var.db, c.var.workspace.id);
+    await logsChanged(c, previousLogs, telemetry.logs);
+    return c.json(telemetry);
+  })
   // Send a small test trace with the saved settings.
   .post("/test", async (c) => {
     const result = await testTelemetry(c.env, c.var.db, c.var.workspace.id);

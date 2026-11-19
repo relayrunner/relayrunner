@@ -269,6 +269,22 @@ export function attemptJobs(token: string, repo: string, runId: number, runAttem
 }
 
 /**
+ * A job's whole log as a stream (Actions read), or null when GitHub doesn't have it: not yet, right
+ * after the job finishes, or no longer. Like jobLogTail, fetch follows GitHub's redirect.
+ */
+export async function jobLog(
+  token: string,
+  repo: string,
+  jobId: number,
+): Promise<ReadableStream<Uint8Array> | null> {
+  const path = `/repos/${repo}/actions/jobs/${jobId}/logs`;
+  const response = await fetch(`${API}${path}`, { headers: headers(token) });
+  if (response.status === 404 || response.status === 410) return null;
+  if (!response.ok || !response.body) throw new Error(`GET ${path} failed with ${response.status}`);
+  return response.body;
+}
+
+/**
  * The end of a job's log (Actions read), at most `maxBytes` of it, or null when GitHub no longer
  * has the log (expired or deleted). GitHub answers with a redirect to the log file, which fetch
  * follows; only the tail is kept while it streams, so a long log never sits in memory whole.

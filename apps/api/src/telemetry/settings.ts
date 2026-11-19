@@ -2,17 +2,19 @@
 // come back out (src/provider-tokens.ts); the dashboard sees each header's name and last four
 // characters, and leaves a value blank to keep the saved one.
 import { eq } from "drizzle-orm";
+import type { JobLogChoice } from "@relayrunner/activity";
 import { type Db, schema } from "../db/index.ts";
 import type { Env } from "../env.ts";
 import { sealToken, tokenHint } from "../provider-tokens.ts";
+import { sendSpans } from "./export.ts";
 import {
   exportingInstallations,
   HEADERS_PURPOSE,
   openHeaders,
   recordSend,
   type SendResult,
-  sendSpans,
-} from "./export.ts";
+} from "./otlp.ts";
+import { testLogs } from "./logs.ts";
 import { testSpans } from "./spans.ts";
 
 export const DEFAULT_SERVICE_NAME = "github-actions";
@@ -28,6 +30,9 @@ export interface TelemetryView {
   failingSince: string | null;
   // When it turned itself off after failing for days.
   pausedAt: string | null;
+  // Which finished jobs' logs go out too, and why the latest one that should have didn't.
+  logs: JobLogChoice;
+  logsSkipped: { reason: string; at: string } | null;
 }
 
 type Row = typeof schema.telemetryExport.$inferSelect;
@@ -44,6 +49,8 @@ const NOT_CONFIGURED: TelemetryView = {
   error: null,
   failingSince: null,
   pausedAt: null,
+  logs: "off",
+  logsSkipped: null,
 };
 
 function present(row: Row | undefined): TelemetryView {
@@ -58,6 +65,11 @@ function present(row: Row | undefined): TelemetryView {
     error: row.error,
     failingSince: iso(row.failingSince),
     pausedAt: iso(row.pausedAt),
+    logs: row.logs,
+    logsSkipped:
+      row.logsSkipped && row.logsSkippedAt
+        ? { reason: row.logsSkipped, at: row.logsSkippedAt.toISOString() }
+        : null,
   };
 }
 
@@ -103,10 +115,13 @@ export interface SaveInput {
   headers: { name: string; value?: string }[];
   serviceName: string;
   enabled: boolean;
+  // Left out, the saved choice stays (off for a new export).
+  logs?: JobLogChoice;
 }
 
 export type SaveResult =
-  | { ok: true; telemetry: TelemetryView }
+  // `previousLogs`: the logs choice before this save, for Activity.
+  | { ok: true; telemetry: TelemetryView; previousLogs: JobLogChoice }
   | {
       ok: false;
       error: "TELEMETRY_ENDPOINT_INVALID" | "TELEMETRY_HEADER_MISSING";
@@ -143,28 +158,40 @@ export async function saveTelemetry(
     headerHints: Object.entries(headers).map(([name, value]) => ({ name, hint: tokenHint(value) })),
     serviceName: input.serviceName.trim() || DEFAULT_SERVICE_NAME,
     enabled: input.enabled,
+    logs: input.logs ?? existing?.logs ?? "off",
     // Saving starts over: the new settings get a fresh chance.
     error: null,
     failingSince: null,
     pausedAt: null,
+    logsSkipped: null,
+    logsSkippedAt: null,
   };
   await db
     .insert(schema.telemetryExport)
     .values({ workspaceId, createdBy: userId, ...values })
     .onConflictDoUpdate({ target: schema.telemetryExport.workspaceId, set: values });
   exportingInstallations.forget();
-  return { ok: true, telemetry: await telemetryView(db, workspaceId) };
+  return {
+    ok: true,
+    telemetry: await telemetryView(db, workspaceId),
+    previousLogs: existing?.logs ?? "off",
+  };
 }
 
+/** Remove the workspace's export. Answers the logs choice it had, for Activity. */
 export async function deleteTelemetry(db: Db, workspaceId: string) {
-  await db
+  const [removed] = await db
     .delete(schema.telemetryExport)
-    .where(eq(schema.telemetryExport.workspaceId, workspaceId));
+    .where(eq(schema.telemetryExport.workspaceId, workspaceId))
+    .returning({ logs: schema.telemetryExport.logs });
   exportingInstallations.forget();
-  return NOT_CONFIGURED;
+  return { telemetry: NOT_CONFIGURED, previousLogs: removed?.logs ?? "off" };
 }
 
-/** Send a small test trace with the saved settings, and record how it went. Null when unset. */
+/**
+ * Send a small test trace with the saved settings, and a test log when logs are on, and record how
+ * it went. Null when unset.
+ */
 export async function testTelemetry(
   env: Env,
   db: Db,
@@ -173,12 +200,14 @@ export async function testTelemetry(
 ): Promise<{ sent: SendResult; telemetry: TelemetryView } | null> {
   const row = await load(db, workspaceId);
   if (!row) return null;
-  const sent = await sendSpans(
+  const headers = await openHeaders(env, row);
+  let sent = await sendSpans(
     row,
-    await openHeaders(env, row),
+    headers,
     [{ resource: { "relayrunner.test": true }, spans: await testSpans() }],
     fetcher,
   );
+  if (sent.ok && row.logs !== "off") sent = await testLogs(row, headers, fetcher);
   // A test that works also brings a paused export's status back; it doesn't turn it on.
   await recordSend(db, workspaceId, sent);
   return { sent, telemetry: await telemetryView(db, workspaceId) };

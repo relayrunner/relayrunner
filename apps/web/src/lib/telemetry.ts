@@ -1,4 +1,7 @@
+import type { JobLogChoice as LogChoice } from "@relayrunner/activity";
 import { api } from "@/lib/api";
+
+export type { LogChoice };
 
 /** Settings → Telemetry (GET /api/telemetry). Header values never come back, only their last four. */
 export type Telemetry = {
@@ -11,6 +14,9 @@ export type Telemetry = {
   error: string | null;
   failingSince: string | null;
   pausedAt: string | null;
+  logs: LogChoice;
+  // Why the latest job's log that should have gone out didn't.
+  logsSkipped: { reason: string; at: string } | null;
 };
 
 export type TelemetryInput = {
@@ -19,6 +25,7 @@ export type TelemetryInput = {
   headers: { name: string; value?: string }[];
   serviceName: string;
   enabled: boolean;
+  logs: LogChoice;
 };
 
 export type SendResult = { ok: true } | { ok: false; retry: boolean; error: string };
@@ -86,5 +93,7 @@ export function sampleTelemetry(): Telemetry {
     error: null,
     failingSince: null,
     pausedAt: null,
+    logs: "failed",
+    logsSkipped: null,
   };
 }

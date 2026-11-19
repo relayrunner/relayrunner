@@ -199,6 +199,9 @@
       // Finished runs and jobs as spans for workspaces that export traces (src/telemetry). Create once:
       //   cf queues create --queue-name relayrunner-telemetry
       { "binding": "TELEMETRY_QUEUE", "queue": "relayrunner-telemetry" },
+      // Finished jobs whose logs workspaces export (src/telemetry/logs.ts). Create once:
+      //   cf queues create --queue-name relayrunner-job-logs
+      { "binding": "JOB_LOG_QUEUE", "queue": "relayrunner-job-logs" },
     ],
     "consumers": [
       {
@@ -222,6 +225,14 @@
         "max_batch_size": 100,
         "max_batch_timeout": 5,
         "max_retries": 8,
+      },
+      // A few jobs at a time, since each streams a log of up to 20 MB. The consumer queues its own
+      // retries with a count (src/telemetry/logs.ts), so the queue retries only a crashed batch.
+      {
+        "queue": "relayrunner-job-logs",
+        "max_batch_size": 4,
+        "max_batch_timeout": 5,
+        "max_retries": 2,
       },
       {
         "queue": "relayrunner-github-webhooks-dlq",

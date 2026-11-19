@@ -61,7 +61,7 @@ export interface RunFailures {
 
 // Colour codes: ESC, then "[...m".
 // oxlint-disable-next-line no-control-regex
-const ANSI = /\u001b\[[0-9;]*m/g;
+export const ANSI = /\u001b\[[0-9;]*m/g;
 const TIMESTAMP = /^\d{4}-\d\d-\d\dT[\d:.]+Z ?/;
 
 /**

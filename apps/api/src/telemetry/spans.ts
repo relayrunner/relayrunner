@@ -8,6 +8,7 @@
 // same spans again rather than a second trace.
 import type { JobStep, WorkflowJob, WorkflowRun } from "@relayrunner/github-webhooks";
 import type { JobUsage } from "@relayrunner/machine-protocol";
+import { jobUrl } from "../run-job.ts";
 
 export type AttributeValue = string | number | boolean | string[];
 export type Attributes = Record<string, AttributeValue | null | undefined>;
@@ -47,6 +48,12 @@ async function hashId(text: string, bytes: number) {
   );
 }
 
+/** A job's span id. */
+export const jobSpanId = (jobId: number) => hashId(`job:${jobId}`, 8);
+
+/** A job step's span id. */
+export const stepSpanId = (jobId: number, step: number) => hashId(`job:${jobId}:step:${step}`, 8);
+
 /** A run attempt's trace id, and its root span's id. */
 export async function runIds(repositoryId: number, runId: number, runAttempt: number) {
   const key = `${repositoryId}:${runId}:${runAttempt}`;
@@ -75,6 +82,23 @@ const time = (iso: string | null | undefined) => {
   const ms = iso ? Date.parse(iso) : Number.NaN;
   return Number.isNaN(ms) ? null : ms;
 };
+
+/**
+ * Who a job is, in the CI/CD conventions' names: on its span, and on the resource of its log
+ * records (src/telemetry/logs.ts), so a tool can match one to the other.
+ */
+export function jobAttributes(
+  repository: Repository,
+  job: Pick<WorkflowJob, "id" | "runId" | "name" | "workflowName">,
+): Attributes {
+  return {
+    "cicd.pipeline.name": job.workflowName,
+    "cicd.pipeline.run.id": String(job.runId),
+    "cicd.pipeline.task.name": job.name,
+    "cicd.pipeline.task.run.id": String(job.id),
+    "cicd.pipeline.task.run.url.full": jobUrl(repository.fullName, job.runId, job.id),
+  };
+}
 
 const runUrl = (repository: Repository, runId: number, attempt: number) =>
   `https://github.com/${repository.fullName}/actions/runs/${runId}/attempts/${attempt}`;
@@ -140,7 +164,7 @@ export async function jobSpans({ repository, job, ranOn, usage }: JobDetails): P
   const end = time(job.completedAt);
   if (queued === null || end === null) return [];
   const { traceId, spanId: runSpanId } = await runIds(repository.id, job.runId, job.runAttempt);
-  const spanId = await hashId(`job:${job.id}`, 8);
+  const spanId = await jobSpanId(job.id);
   const { value, error } = result(job.conclusion);
   const ran = started !== null && started >= queued;
   const spans: Span[] = [
@@ -153,11 +177,7 @@ export async function jobSpans({ repository, job, ranOn, usage }: JobDetails): P
       start: queued,
       end: Math.max(queued, end),
       attributes: {
-        "cicd.pipeline.name": job.workflowName,
-        "cicd.pipeline.run.id": String(job.runId),
-        "cicd.pipeline.task.name": job.name,
-        "cicd.pipeline.task.run.id": String(job.id),
-        "cicd.pipeline.task.run.url.full": `https://github.com/${repository.fullName}/actions/runs/${job.runId}/job/${job.id}`,
+        ...jobAttributes(repository, job),
         "cicd.pipeline.task.run.result": value,
         "cicd.worker.name": job.runnerName,
         "error.type": error,
@@ -208,7 +228,7 @@ async function stepSpan(
   const { value, error } = result(step.conclusion);
   return {
     traceId,
-    spanId: await hashId(`job:${jobId}:step:${step.number}`, 8),
+    spanId: await stepSpanId(jobId, step.number),
     parentSpanId,
     name: step.name,
     kind: "internal",
@@ -265,15 +285,15 @@ function encodeValue(value: AttributeValue): Record<string, unknown> {
   return { stringValue: value };
 }
 
-function encodeAttributes(attributes: Attributes) {
+export function encodeAttributes(attributes: Attributes) {
   return Object.entries(attributes).flatMap(([key, value]) =>
     value === null || value === undefined ? [] : [{ key, value: encodeValue(value) }],
   );
 }
 
-const nanos = (ms: number) => `${Math.round(ms)}000000`;
+export const nanos = (ms: number) => `${Math.round(ms)}000000`;
 
-const SCOPE = { name: "relayrunner" };
+export const SCOPE = { name: "relayrunner" };
 
 /** The OTLP export request for some spans, one entry per resource. */
 export function otlpRequest(groups: { resource: Attributes; spans: Span[] }[]) {

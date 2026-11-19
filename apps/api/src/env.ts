@@ -8,6 +8,7 @@ import type { Router } from "./durable-objects/router.ts";
 import type { StrandedJob } from "./durable-objects/stranded-job.ts";
 import type { InstallationTask } from "./installation-tasks.ts";
 import type { TelemetryMessage } from "./telemetry/export.ts";
+import type { JobLogMessage } from "./telemetry/logs.ts";
 
 // Bindings from wrangler.jsonc, plus Worker secrets (`cf workers secrets update`, or .dev.vars locally).
 export interface Env extends AccessEnv {
@@ -20,6 +21,8 @@ export interface Env extends AccessEnv {
   // Finished runs and jobs as spans, on their way to each workspace's OTLP endpoint
   // (src/telemetry/export.ts).
   TELEMETRY_QUEUE: Queue<TelemetryMessage>;
+  // Finished jobs whose logs go to their workspace's OTLP endpoint (src/telemetry/logs.ts).
+  JOB_LOG_QUEUE: Queue<JobLogMessage>;
   // Alert when more than this many messages are dead-lettered in an hour (src/dead-letter-alert.ts).
   DEAD_LETTER_ALERT_THRESHOLD?: string;
   // Optional: also POST the alert here (a Slack or Discord incoming webhook), a Worker secret.

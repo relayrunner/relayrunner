@@ -4,14 +4,20 @@
 // OTLP/HTTP JSON request each. Spans are telemetry, not records: ones that run out of retries are
 // dropped, and the run is still in History.
 import type { WebhookMessage } from "@relayrunner/github-webhooks";
-import { and, eq, isNotNull, isNull, lt, or, sql } from "drizzle-orm";
+import { and, eq } from "drizzle-orm";
 import { createDb, type Db, schema } from "../db/index.ts";
 import type { Env } from "../env.ts";
 import { environmentFor, environmentProvider, nameMachines } from "../job-times.ts";
-import { openToken } from "../provider-tokens.ts";
 import { errorMessage, retryDelaySeconds } from "../webhook-queue.ts";
-import { cachedRead } from "../d1-cache.ts";
-import { DAY_MS } from "../job-timings.ts";
+import { queueJobLog } from "./logs.ts";
+import {
+  type Exporting,
+  exportingFor,
+  openHeaders,
+  otlpUrl,
+  postOtlp,
+  recordSend,
+} from "./otlp.ts";
 import {
   type Attributes,
   jobSpans,
@@ -31,40 +37,12 @@ export interface TelemetryMessage {
   spans: Span[];
 }
 
-// The associated data the headers are sealed with (src/provider-tokens.ts), so they can't be moved
-// onto a provider connection or another workspace.
-export const HEADERS_PURPOSE = "telemetry";
 // The consumer's max_retries in wrangler.jsonc. With retryDelaySeconds that's about an hour.
 const MAX_ATTEMPTS = 8;
-// An export that has only failed for this long turns itself off, so a revoked key doesn't keep
-// costing a request per batch forever.
-const FAILING_DAYS = 3;
-// A working export notes when it last sent at most this often, not on every batch.
-const SENT_EVERY_MS = 5 * 60_000;
-const SEND_TIMEOUT_MS = 10_000;
 
 type WorkflowJobMessage = Extract<WebhookMessage, { event: "workflow_job" }>;
 type WorkflowRunMessage = Extract<WebhookMessage, { event: "workflow_run" }>;
 type ExportRow = typeof schema.telemetryExport.$inferSelect;
-
-// The installations whose workspace exports traces, by installation id, reused per isolate: every
-// finished job asks, and almost none export. Saving or removing an export forgets it here; other
-// isolates catch up within a minute, and the queue consumer checks `enabled` again before sending.
-export const exportingInstallations = cachedRead(
-  "telemetry exports",
-  async (db) => {
-    const rows = await db
-      .select({
-        installationId: schema.workspace.installationId,
-        workspaceId: schema.telemetryExport.workspaceId,
-      })
-      .from(schema.telemetryExport)
-      .innerJoin(schema.workspace, eq(schema.workspace.id, schema.telemetryExport.workspaceId))
-      .where(eq(schema.telemetryExport.enabled, true));
-    return new Map(rows.map((row) => [row.installationId, row.workspaceId]));
-  },
-  () => new Map<number, string>(),
-);
 
 /**
  * Queue one job's or run's spans, when its installation's workspace exports traces. Never throws:
@@ -72,19 +50,17 @@ export const exportingInstallations = cachedRead(
  */
 async function queueSpans(
   env: Env,
-  db: Db,
-  message: { installationId: number | null; repository: Repository },
+  exporting: Exporting | undefined,
+  repository: Repository,
   spansFor: (workspaceId: string) => Promise<Span[]>,
 ) {
+  if (!exporting?.traces) return;
   try {
-    const workspaceId =
-      message.installationId && (await exportingInstallations.load(db)).get(message.installationId);
-    if (!workspaceId) return;
-    const spans = await spansFor(workspaceId);
+    const spans = await spansFor(exporting.workspaceId);
     if (spans.length)
       await env.TELEMETRY_QUEUE.send({
-        workspaceId,
-        resource: repositoryResource(message.repository),
+        workspaceId: exporting.workspaceId,
+        resource: repositoryResource(repository),
         spans,
       });
   } catch (error) {
@@ -92,11 +68,23 @@ async function queueSpans(
   }
 }
 
-/** Queue a finished job's spans, when its workspace exports traces. */
+/**
+ * Queue a finished job's spans and its log, when its workspace exports them. Never throws: a
+ * retried webhook would redo everything else for it.
+ */
 export async function exportJob(env: Env, db: Db, message: WorkflowJobMessage) {
+  if (message.job.status !== "completed") return;
+  const exporting = await exportingFor(db, message.installationId);
+  if (!exporting) return;
+  await Promise.all([
+    queueJobLog(env, exporting, message),
+    queueJobSpans(env, db, exporting, message),
+  ]);
+}
+
+function queueJobSpans(env: Env, db: Db, exporting: Exporting, message: WorkflowJobMessage) {
   const { job, repository } = message;
-  if (job.status !== "completed") return;
-  await queueSpans(env, db, message, async (workspaceId) => {
+  return queueSpans(env, exporting, repository, async (workspaceId) => {
     const [timing] = await db
       .select({ machineId: schema.jobTiming.machineId, usage: schema.jobTiming.usage })
       .from(schema.jobTiming)
@@ -120,7 +108,8 @@ export async function exportJob(env: Env, db: Db, message: WorkflowJobMessage) {
 export async function exportRun(env: Env, db: Db, message: WorkflowRunMessage) {
   const { run, repository } = message;
   if (run.status !== "completed") return;
-  await queueSpans(env, db, message, async () => {
+  const exporting = await exportingFor(db, message.installationId);
+  await queueSpans(env, exporting, repository, async () => {
     const ofRun = (table: typeof schema.routeDecision | typeof schema.jobRetry, attempt: number) =>
       and(
         eq(table.repositoryId, repository.id),
@@ -157,86 +146,20 @@ export async function exportRun(env: Env, db: Db, message: WorkflowRunMessage) {
   });
 }
 
-/** Where OTLP/HTTP traces go for a configured endpoint. */
-export function tracesUrl(endpoint: string) {
-  const base = endpoint.replace(/\/+$/, "");
-  return base.endsWith("/v1/traces") ? base : `${base}/v1/traces`;
-}
-
-export type SendResult = { ok: true } | { ok: false; retry: boolean; error: string };
-
-/** POST spans to an endpoint. 429, 5xx and network errors are worth retrying; other refusals aren't. */
-export async function sendSpans(
+/** POST spans to an endpoint. */
+export function sendSpans(
   row: Pick<ExportRow, "endpoint" | "serviceName">,
   headers: Record<string, string>,
   groups: { resource: Attributes; spans: Span[] }[],
   fetcher: typeof fetch = fetch,
-): Promise<SendResult> {
+): ReturnType<typeof postOtlp> {
   const body = otlpRequest(
     groups.map(({ resource, spans }) => ({
       resource: { "service.name": row.serviceName, ...resource },
       spans,
     })),
   );
-  try {
-    const response = await fetcher(tracesUrl(row.endpoint), {
-      method: "POST",
-      headers: { ...headers, "content-type": "application/json" },
-      body: JSON.stringify(body),
-      signal: AbortSignal.timeout(SEND_TIMEOUT_MS),
-    });
-    if (response.ok) return { ok: true };
-    const text = (await response.text().catch(() => "")).trim().slice(0, 300);
-    return {
-      ok: false,
-      retry: response.status === 429 || response.status >= 500,
-      error: `${response.status} ${response.statusText}${text ? `: ${text}` : ""}`.trim(),
-    };
-  } catch (error) {
-    return { ok: false, retry: true, error: errorMessage(error) };
-  }
-}
-
-export function openHeaders(env: Env, row: Pick<ExportRow, "workspaceId" | "headers">) {
-  return openToken(env, row.workspaceId, HEADERS_PURPOSE, row.headers).then(
-    (json) => JSON.parse(json) as Record<string, string>,
-  );
-}
-
-/**
- * Note how a send went: a success clears the error, a failure records it, and an export that has
- * only failed for FAILING_DAYS turns itself off.
- */
-export async function recordSend(db: Db, workspaceId: string, sent: SendResult, now = new Date()) {
-  const where = eq(schema.telemetryExport.workspaceId, workspaceId);
-  if (sent.ok) {
-    const t = schema.telemetryExport;
-    await db
-      .update(t)
-      .set({ lastSentAt: now, error: null, failingSince: null })
-      .where(
-        and(
-          where,
-          or(
-            isNotNull(t.error),
-            isNull(t.lastSentAt),
-            lt(t.lastSentAt, new Date(now.getTime() - SENT_EVERY_MS)),
-          ),
-        ),
-      );
-    return;
-  }
-  const since = sql`coalesce(${schema.telemetryExport.failingSince}, ${now.getTime()})`;
-  const stale = sql`${since} <= ${now.getTime() - FAILING_DAYS * DAY_MS}`;
-  await db
-    .update(schema.telemetryExport)
-    .set({
-      error: sent.error,
-      failingSince: since,
-      enabled: sql`case when ${stale} then 0 else ${schema.telemetryExport.enabled} end`,
-      pausedAt: sql`case when ${stale} then ${now.getTime()} else ${schema.telemetryExport.pausedAt} end`,
-    })
-    .where(where);
+  return postOtlp(otlpUrl(row.endpoint, "traces"), headers, JSON.stringify(body), fetcher);
 }
 
 /** Handle one batch from the telemetry queue: one request per workspace in it. Never throws. */
@@ -260,8 +183,8 @@ export async function handleTelemetryBatch(
           .from(schema.telemetryExport)
           .where(eq(schema.telemetryExport.workspaceId, workspaceId))
           .limit(1);
-        // Turned off or removed since these were queued.
-        if (!row?.enabled) return messages.forEach((msg) => msg.ack());
+        // Turned off, paused or removed since these were queued.
+        if (!row?.enabled || row.pausedAt) return messages.forEach((msg) => msg.ack());
         const sent = await sendSpans(
           row,
           await openHeaders(env, row),

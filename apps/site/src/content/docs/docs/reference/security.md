@@ -46,7 +46,7 @@ Removing a machine in the dashboard revokes its token straight away.
 
 ## The GitHub App
 
-The App can't read your code, apart from `relayrunner.yml`, and never receives job logs or secrets. See [GitHub App](/docs/reference/github-app) for every permission and why.
+The App can't read your code, apart from `relayrunner.yml`, and never receives secrets. It reads a job's log only to show you why a failed job failed, or to send it to your own endpoint when you turn on [job logs](/docs/dashboard/telemetry#job-logs), and never stores it. See [GitHub App](/docs/reference/github-app) for every permission and why.
 
 ## Report a vulnerability
 
