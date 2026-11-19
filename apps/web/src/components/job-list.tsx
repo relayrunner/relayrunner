@@ -250,6 +250,7 @@ export const JobList = memo(function JobList({ report: first }: { report: JobsRe
     select: (search): ResultFilter => (search.result === "failed" ? "failed" : "all"),
   });
   const query = history.useSearch({ select: (search) => search.q ?? "" });
+  const chart = history.useSearch({ select: (search) => search.chart });
   const [flat, setFlat] = useState(() => readFlag(FLAT_KEY));
   const [folded, setFolded] = useState<ReadonlySet<string>>(new Set());
   const setSearch = useSetSearch<HistorySearch>();
@@ -372,7 +373,14 @@ export const JobList = memo(function JobList({ report: first }: { report: JobsRe
       ) : (
         <>
           <SectionBoundary>
-            <DurationChart points={chartPoints} days={report.days} noun="job" />
+            <DurationChart
+              points={chartPoints}
+              days={report.days}
+              noun="job"
+              group={chart}
+              onGroup={(next) => setSearch({ chart: next })}
+              groupLabel="Job"
+            />
           </SectionBoundary>
           <SectionBoundary>
             <ListContext value={context}>

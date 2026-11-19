@@ -87,6 +87,8 @@ export type HistorySearch = {
   sort?: RunSort;
   /** The Jobs view's search. */
   q?: string;
+  /** The workflow (or job) the chart shows, left out for the busiest. */
+  chart?: string;
 };
 
 export const Route = createFileRoute("/_authed/_workspace/history")({
@@ -104,6 +106,7 @@ export const Route = createFileRoute("/_authed/_workspace/history")({
       sort: optionParam(search.sort, RUN_SORTS),
       // Not trimmed, so a space typed between words stays.
       q: typeof search.q === "string" && search.q ? search.q : undefined,
+      chart: textParam(search.chart),
     };
   },
   loaderDeps: ({ search }) => ({ view: search.view ?? "workflows" }),
@@ -292,7 +295,14 @@ function WorkflowRuns({ loaded }: { loaded: RunsReport }) {
       ) : (
         <>
           <SectionBoundary>
-            <DurationChart points={chartPoints} days={days} noun="run" />
+            <DurationChart
+              points={chartPoints}
+              days={days}
+              noun="run"
+              group={search.chart}
+              onGroup={(chart) => setSearch({ chart })}
+              groupLabel="Workflow"
+            />
           </SectionBoundary>
           <SectionBoundary>
             <TooltipProvider>
