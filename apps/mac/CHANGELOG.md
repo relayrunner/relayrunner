@@ -1,5 +1,16 @@
 # @relayrunner/mac
 
+## 0.6.0
+
+### Minor Changes
+
+- 4cdfc46: The Mac Jobs window opens with the jobs it last showed and refreshes them in the background, and a job you've already opened shows its steps at once. Jobs running or waiting on the Mac come first. Filter by result, repo, workflow and time, and drag the line between the list and the job to resize them. Clicking a job in the menu's History tab opens it in the Jobs window. `relayrunner jobs` lists running jobs first and gains `--repo`, `--workflow`, `--result` and `--since`.
+- 714033a: A simpler menu. It shows the switch, what this Mac is doing and each running job, then Pause New Jobs, Jobs, Open Dashboard, Settings and Quit, with no icons. The Now, Queue and History tabs, the empty slot rows and the CPU and memory meters are gone: the Jobs window lists running, waiting and finished jobs. There is one pause control, which becomes Resume New Jobs while paused. The offer to take one more job at once moved to the Jobs window. Show Log and Check for Updates moved to Settings › About.
+
+### Patch Changes
+
+- 871649d: The menu no longer shows a running job's usual time once it passes it. The bar turns orange only when the job is clearly slower than usual: at least 30 seconds and a quarter over its usual time.
+
 ## 0.5.0
 
 ### Minor Changes
