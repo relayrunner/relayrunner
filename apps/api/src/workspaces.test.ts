@@ -127,6 +127,7 @@ describe("runner order", () => {
     expect(await response.json()).toEqual({
       order: { steps: [{ key: "machine" }, { key: "github" }] },
       isDefault: true,
+      version: "default",
     });
   });
 
@@ -136,10 +137,16 @@ describe("runner order", () => {
     const order = { steps: [{ key: "github" }, { key: "machine" }] };
     const saved = await put(workspace.id, jar, order);
     expect(saved.status).toBe(200);
-    expect(await saved.json()).toEqual({ order, isDefault: false });
+    const body = (await saved.json()) as { version: string };
+    expect(body).toEqual({
+      order,
+      isDefault: false,
+      version: expect.stringMatching(/^[0-9a-f]{16}$/),
+      previous: { steps: [{ key: "machine" }, { key: "github" }] },
+    });
 
     const read = await call(`/workspaces/${workspace.id}/runner-order`, jar);
-    expect(await read.json()).toEqual({ order, isDefault: false });
+    expect(await read.json()).toEqual({ order, isDefault: false, version: body.version });
     const row = await env.DB.prepare("select runner_order from workspace where id = ?")
       .bind(workspace.id)
       .first<{ runner_order: string }>();
@@ -400,7 +407,7 @@ describe("skipping runners that stop picking up jobs", () => {
     expect(await read.json()).toEqual({ offAt: null });
 
     const off = await request(`${workspace.id}/ai`, jar, "PUT", { enabled: false });
-    expect(await off.json()).toEqual({ enabled: false });
+    expect(await off.json()).toEqual({ enabled: false, previous: true });
     expect(await (await request(`${workspace.id}/ai`, jar)).json()).toMatchObject({
       offAt: expect.any(String),
     });
@@ -422,7 +429,10 @@ describe("skipping runners that stop picking up jobs", () => {
 
     const settings = { enabled: true, runner: "other", max: 2 };
     const saved = await request(`${workspace.id}/retry-settings`, jar, "PUT", settings);
-    expect(await saved.json()).toEqual(settings);
+    expect(await saved.json()).toEqual({
+      ...settings,
+      previous: { enabled: false, runner: "any", max: 1 },
+    });
     const again = await request(`${workspace.id}/retry-settings`, jar);
     expect(await again.json()).toEqual(settings);
 

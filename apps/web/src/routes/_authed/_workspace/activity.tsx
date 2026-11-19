@@ -1,8 +1,10 @@
 import { Link, createFileRoute } from "@tanstack/react-router";
-import { relayInputs } from "@relayrunner/runner-order";
+import { RUNNER_LABELS, relayInputs, type RunnerStep } from "@relayrunner/runner-order";
 import {
   Ban,
   ChevronRight,
+  Cpu,
+  ListOrdered,
   CircleCheck,
   CircleMinus,
   Laptop,
@@ -12,6 +14,7 @@ import {
   Plug,
   Plus,
   RotateCw,
+  Sparkles,
   Unplug,
   UserCheck,
   UserMinus,
@@ -72,6 +75,7 @@ const TYPES: { value: ActivityFilter | undefined; label: string }[] = [
   { value: "check", label: "Checks" },
   { value: "machine", label: "Machines" },
   { value: "member", label: "Members" },
+  { value: "settings", label: "Settings" },
 ];
 const RANGES = [
   { days: 1, label: "Last 24 hours" },
@@ -465,6 +469,12 @@ function sentence(item: ActivityItem) {
       return item.data.via === "cli" ? "was paused from its CLI" : "was paused";
     case "machine.resumed":
       return item.data.via === "cli" ? "was resumed from its CLI" : "was resumed";
+    case "settings.runner_order":
+    case "settings.auto_size":
+    case "settings.job_size":
+    case "settings.retries":
+    case "settings.ai":
+      return settingsSentence(item);
     case "machine.sharing_changed":
       return item.data.sharing === "only_me"
         ? "was set to run only its owner's jobs"
@@ -503,6 +513,50 @@ function memberSentence(item: ActivityItem) {
   }
 }
 
+// One runner order step: "GitHub-hosted (up to 80% of included minutes)".
+function stepText(step: RunnerStep) {
+  const label = RUNNER_LABELS[step.key];
+  if ("limit" in step && step.limit)
+    return `${label} (up to ${step.limit.percent}% of included minutes)`;
+  if ("spendLimit" in step && step.spendLimit)
+    return `${label} (up to ${usd(step.spendLimit.usd)} a month)`;
+  return label;
+}
+
+// Settings events lead with who: "Ada set the default size for auto jobs to 4 vCPU".
+function settingsSentence(item: ActivityItem) {
+  switch (item.type) {
+    case "settings.runner_order":
+      return `set the runner order to ${item.data.steps.map(stepText).join(", then ")}`;
+    case "settings.auto_size":
+      return `set the default size for auto jobs to ${item.data.size} vCPU`;
+    case "settings.job_size": {
+      const { job, workflow, repository, size, first } = item.data;
+      const name = `${repository} › ${workflow ?? job}`;
+      if (size === null && first === null) return `put ${name} back on the defaults`;
+      const parts = [
+        size === null ? "the default size" : `${size} vCPU`,
+        ...(first ? [`trying ${RUNNER_LABELS[first]} first`] : []),
+      ];
+      return `set ${name} to ${parts.join(", ")}`;
+    }
+    case "settings.retries":
+      return item.data.enabled
+        ? `turned on automatic retries, up to ${item.data.max} per run`
+        : "turned off automatic retries";
+    case "settings.ai":
+      return item.data.enabled ? "turned on AI features" : "turned off AI features";
+    default:
+      return "";
+  }
+}
+
+// " through Claude" when a person made the change with an agent.
+function throughAgent(item: ActivityItem) {
+  const data = item.data as { via?: string; agent?: string | null };
+  return data.via === "agent" ? ` through ${data.agent ?? "an agent"}` : "";
+}
+
 function article(role: string) {
   return /^[aeiou]/i.test(role) ? `an ${role}` : `a ${role}`;
 }
@@ -524,6 +578,11 @@ const EVENT_ICONS = {
   "check.completed": CircleCheck,
   "member.joined": UserCheck,
   "minutes.overage": TriangleAlert,
+  "settings.runner_order": ListOrdered,
+  "settings.auto_size": Cpu,
+  "settings.job_size": Cpu,
+  "settings.retries": RotateCw,
+  "settings.ai": Sparkles,
 } as const;
 
 const ICON = "size-3.5 shrink-0";
@@ -732,6 +791,21 @@ function EventRow({ item, now }: { item: ActivityItem; now: number }) {
         </span>
       </Row>
     );
+  if (item.type.startsWith("settings.")) {
+    return (
+      <Row
+        icon={<Icon aria-hidden className={`${ICON} text-muted-foreground`} />}
+        at={item.occurredAt}
+        now={now}
+      >
+        <span className="font-medium">{item.actor?.name ?? "Someone"}</span>{" "}
+        <span className="text-muted-foreground">
+          {settingsSentence(item)}
+          {throughAgent(item)}
+        </span>
+      </Row>
+    );
+  }
   if (item.type.startsWith("member.")) {
     const who =
       item.type === "member.joined"
@@ -770,7 +844,13 @@ function EventRow({ item, now }: { item: ActivityItem; now: number }) {
     >
       <span className="font-medium">{item.machine?.name ?? "A machine"}</span>{" "}
       <span className="text-muted-foreground">{sentence(item)}</span>
-      {item.actor && <span className="text-muted-foreground"> by {item.actor.name}</span>}
+      {item.actor && (
+        <span className="text-muted-foreground">
+          {" "}
+          by {item.actor.name}
+          {throughAgent(item)}
+        </span>
+      )}
     </Row>
   );
 }

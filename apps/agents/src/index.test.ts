@@ -26,7 +26,7 @@ function fakeEnv(
         const url = new URL(String(input));
         const headers = new Headers(init?.headers);
         const workspace = headers.get("x-relayrunner-workspace");
-        const method = init?.method === "POST" ? "POST " : "";
+        const method = init?.method ? `${init.method} ` : "";
         asked.push(method + url.pathname + url.search + (workspace ? ` @${workspace}` : ""));
         if (init?.body) posted.push(JSON.parse(String(init.body)));
         if (headers.get("authorization") !== "Bearer good") {
@@ -170,10 +170,20 @@ describe("mcp server", () => {
         "list_runs",
       ]),
     );
-    // Every tool reads, except send_feedback, which only records a report.
+    // Every tool reads, except send_feedback, which only records a report, and the ones that
+    // change settings, which clients confirm first.
     expect(
       listed.result.tools.filter((tool) => !tool.annotations.readOnlyHint).map((tool) => tool.name),
-    ).toEqual(["send_feedback"]);
+    ).toEqual([
+      "send_feedback",
+      "set_runner_order",
+      "set_default_size",
+      "set_job_size",
+      "set_retries",
+      "set_ai",
+      "pause_runner",
+      "resume_runner",
+    ]);
 
     const called = (await (
       await rpc(env, { method: "tools/call", params: { name: "get_runner_order", arguments: {} } })
@@ -435,6 +445,58 @@ describe("mcp server", () => {
 
     const invalid = await call({ category: "rant", summary: "x" });
     expect(invalid.result.isError).toBe(true);
+  });
+
+  test("the set tools send the dashboard's own requests, keeping what a call leaves out", async () => {
+    const { env, asked, posted } = fakeEnv({
+      "/api/workspaces/w1/runner-order": { order: { steps: [{ key: "github" }] }, previous: {} },
+      "/api/workspaces/w1/auto-jobs": { size: 2, jobs: [{ id: 7, size: 8, first: "blacksmith" }] },
+      "/api/workspaces/w1/auto-jobs/7": { size: 8, first: null },
+      "/api/workspaces/w1/retry-settings": { enabled: false, runner: "same", max: 2 },
+      "/api/machines": {
+        machines: [
+          { id: "m1", name: "Mac" },
+          { id: "m2", name: "twin" },
+          { id: "m3", name: "Twin" },
+        ],
+      },
+      "/api/machines/m1/pause": { machine: { id: "m1", name: "Mac", paused: { by: "Ada" } } },
+    });
+    const call = async (name: string, args: object) =>
+      (await (
+        await rpc(env, { method: "tools/call", params: { name, arguments: args } })
+      ).json()) as {
+        result: { content: { text: string }[]; isError?: boolean };
+      };
+
+    await call("set_runner_order", { version: "v1", steps: [{ key: "github" }] });
+    await call("set_job_size", { job: 7, first: null });
+    await call("set_retries", { enabled: true });
+    const paused = await call("pause_runner", { runner: "mac" });
+    expect(JSON.parse(paused.result.content[0].text)).toEqual({
+      runner: { id: "m1", name: "Mac", paused: { by: "Ada" } },
+    });
+    expect(asked.filter((path) => !path.startsWith("/"))).toEqual([
+      "PUT /api/workspaces/w1/runner-order",
+      "PUT /api/workspaces/w1/auto-jobs/7",
+      "PUT /api/workspaces/w1/retry-settings",
+      "POST /api/machines/m1/pause @w1",
+    ]);
+    expect(posted.slice(0, 3)).toEqual([
+      { steps: [{ key: "github" }], version: "v1" },
+      { size: 8, first: null },
+      { enabled: true, runner: "same", max: 2 },
+    ]);
+
+    // A size the providers don't offer, a job that isn't there and a name two runners share are
+    // tool errors the model can fix.
+    expect((await call("set_default_size", { size: 3 })).result.isError).toBe(true);
+    expect((await call("set_job_size", { job: 8, size: 4 })).result.content[0].text).toContain(
+      "No auto job 8",
+    );
+    expect((await call("resume_runner", { runner: "twin" })).result.content[0].text).toContain(
+      "Several runners",
+    );
   });
 
   test("an API refusal is a tool error, not a crash", async () => {

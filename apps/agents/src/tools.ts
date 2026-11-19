@@ -12,7 +12,7 @@ import type { Api, Workspace, WorkspaceApi } from "./api.ts";
 import { compactActivityPage, compactJobTimes, contains } from "./compact.ts";
 
 // Read-only tools over relayrunner-api's dashboard endpoints, plus send_feedback, which only
-// records a report for the RelayRunner team. Each answers JSON. All are D1 reads except
+// records a report for the RelayRunner team. The tools that change settings are in write-tools.ts. Each answers JSON. All are D1 reads except
 // get_run_failures, which reads a few failed jobs' logs from GitHub. None takes the Router's lock
 // (apps/api/src/agent-auth.ts keeps it that way).
 
@@ -30,7 +30,7 @@ function json(value: unknown): Result {
 
 // API errors, and calls the model can fix itself (such as naming a workspace), come back as tool
 // errors the model can read and act on, not protocol errors: the message, then the code.
-async function answer(read: () => Promise<unknown>): Promise<Result> {
+export async function answer(read: () => Promise<unknown>): Promise<Result> {
   try {
     return json(await read());
   } catch (error) {
@@ -39,7 +39,7 @@ async function answer(read: () => Promise<unknown>): Promise<Result> {
   }
 }
 
-const workspaceArg = z
+export const workspaceArg = z
   .string()
   .optional()
   .describe(
@@ -49,6 +49,7 @@ const workspaceArg = z
 const days = (max: number, fallback: number) =>
   z.number().int().min(1).max(max).default(fallback).describe(`Days to look back (1-${max}).`);
 
+/** Registers the read tools, and answers how a call's `workspace` resolves to an id. */
 export function registerTools(server: McpServer, request: WorkspaceApi, workspaces: Workspace[]) {
   // The workspace a call names (by id or name), or the connection's only one.
   function workspaceId(workspace: string | undefined) {
@@ -84,7 +85,7 @@ export function registerTools(server: McpServer, request: WorkspaceApi, workspac
     {
       title: "Workspaces",
       description:
-        "The RelayRunner workspaces this connection can read, by id and name. Pass one as `workspace` to the other tools; get_workspace has your role and GitHub accounts in each.",
+        "The RelayRunner workspaces this connection can read, by id and name, and whether it may change settings in each (canWrite: an owner or admin turned on Allow changes for it in Settings → Agents). Pass one as `workspace` to the other tools; get_workspace has your role and GitHub accounts in each.",
       annotations: READ_ONLY,
     },
     () => answer(async () => ({ workspaces })),
@@ -411,4 +412,6 @@ export function registerTools(server: McpServer, request: WorkspaceApi, workspac
         };
       }),
   );
+
+  return workspaceId;
 }

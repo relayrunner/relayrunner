@@ -1,8 +1,9 @@
 import { AppError } from "@relayrunner/errors";
 /**
  * RelayRunner's MCP server, at https://agents.relayrunner.app/mcp. Agents sign in with OAuth
- * against the dashboard (apps/api/src/agent-auth.ts) and get a token for the workspaces they pick,
- * read-only apart from send_feedback (tools.ts).
+ * against the dashboard (apps/api/src/agent-auth.ts) and get a token for the workspaces they pick.
+ * They read (tools.ts), and change routing settings where an owner or admin allows it
+ * (write-tools.ts).
  * This Worker holds no state and no secrets: it answers each MCP request with a fresh server whose
  * tools call relayrunner-api with the agent's own token, and the API decides what that token sees.
  * The server also serves the agent skills in skills/ (skills.ts), and speaks both the 2025 protocol
@@ -20,6 +21,7 @@ import type { Env } from "./env.ts";
 import { SERVER_CARD_TYPE, SERVER_VERSION, serverCard } from "./server-card.ts";
 import { skillCatalog } from "./skills.ts";
 import { registerTools } from "./tools.ts";
+import { registerWriteTools } from "./write-tools.ts";
 
 const RESOURCE_METADATA_PATH = "/.well-known/oauth-protected-resource";
 
@@ -63,7 +65,7 @@ export default {
         { name: "relayrunner", version: SERVER_VERSION },
         { instructions: INSTRUCTIONS },
       );
-      registerTools(server, api, me.agent.workspaces);
+      registerWriteTools(server, api, registerTools(server, api, me.agent.workspaces));
       skills.attach(server);
       return server;
     };
@@ -83,7 +85,7 @@ export default {
 
 // For clients that read resources but don't load skills themselves.
 const INSTRUCTIONS =
-  "Read your RelayRunner workspace: runners, workflow runs, routing and CI usage. For which tool answers which question, read skill://relayrunner-ci-insights/SKILL.md.";
+  "Read your RelayRunner workspace: runners, workflow runs, routing and CI usage, and change its routing where you're allowed to. For which tool answers which question, read skill://relayrunner-ci-insights/SKILL.md. Before a change, tell the person what you'll change; each change answers the previous value, so you can undo it.";
 
 // RFC 9728: where MCP clients learn which authorization server to sign in with.
 function resourceMetadata(env: Env) {

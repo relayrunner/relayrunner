@@ -80,6 +80,12 @@ importers:
       '@relayrunner/errors':
         specifier: workspace:*
         version: link:../../packages/errors
+      '@relayrunner/providers':
+        specifier: workspace:*
+        version: link:../../packages/providers
+      '@relayrunner/runner-order':
+        specifier: workspace:*
+        version: link:../../packages/runner-order
       zod:
         specifier: 'catalog:'
         version: 4.6.7
@@ -197,6 +203,9 @@ importers:
       '@relayrunner/providers':
         specifier: workspace:*
         version: link:../../packages/providers
+      '@relayrunner/runner-order':
+        specifier: workspace:*
+        version: link:../../packages/runner-order
       '@resvg/resvg-js':
         specifier: ^2.6.2
         version: 2.6.2

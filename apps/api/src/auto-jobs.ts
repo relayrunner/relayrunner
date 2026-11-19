@@ -140,18 +140,37 @@ export async function listAutoJobs(db: Db, workspaceId: string, now = Date.now()
   }));
 }
 
-/** Sets a job's size and first provider. False when the workspace has no such job. */
+/**
+ * Sets a job's size and first provider. Answers the job and the setting it replaced, or null when
+ * the workspace has no such job.
+ */
 export async function setAutoJob(
   db: Db,
   workspaceId: string,
   id: number,
   setting: AutoJobSetting,
   userId: string,
-): Promise<boolean> {
-  const updated = await db
+) {
+  const where = and(eq(table.id, id), eq(table.workspaceId, workspaceId));
+  const [job] = await db
+    .select({
+      repository: table.repository,
+      workflow: table.workflow,
+      relayJob: table.relayJob,
+      size: table.size,
+      first: table.first,
+    })
+    .from(table)
+    .where(where)
+    .limit(1);
+  if (!job) return null;
+  await db
     .update(table)
     .set({ ...setting, updatedBy: userId, updatedAt: new Date() })
-    .where(and(eq(table.id, id), eq(table.workspaceId, workspaceId)))
-    .returning({ id: table.id });
-  return updated.length > 0;
+    .where(where);
+  const previous = {
+    size: job.size,
+    first: RUNNER_KEYS.find((key) => key === job.first) ?? null,
+  };
+  return { job, previous };
 }

@@ -294,8 +294,8 @@ describe("agent sign-in", () => {
       agent: { workspaces: { id: string; name: string }[] };
     };
     expect(me.agent.workspaces).toEqual([
-      { id: first.id, name: "First" },
-      { id: second.id, name: "Second" },
+      { id: first.id, name: "First", canWrite: false },
+      { id: second.id, name: "Second", canWrite: false },
     ]);
 
     // With two workspaces, a request has to say which.
@@ -617,5 +617,148 @@ describe("agent feedback", () => {
       env,
     );
     expect(response.status).toBe(401);
+  });
+});
+
+describe("agent changes", () => {
+  const json = (body: unknown) => ({
+    method: "PUT",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify(body),
+  });
+
+  async function connected(slug: string) {
+    const { user, cookie } = await testing.signIn(env);
+    const { workspace, cookie: jar } = await testing.createWorkspace(env, cookie, slug, slug);
+    const { access_token } = await signInAgent(jar);
+    const listed = (await (await testing.call(env, "/agents", jar)).json()) as {
+      canManage: boolean;
+      agents: { id: string; canWrite: boolean }[];
+    };
+    return { user, workspace, jar, access_token, listed, agentId: listed.agents[0].id };
+  }
+
+  const allowChanges = (jar: string, agentId: string, enabled: boolean) =>
+    testing.call(env, `/agents/${agentId}/changes`, jar, { enabled }, "PUT");
+
+  async function settingsActivity(jar: string) {
+    const page = (await (await testing.call(env, "/activity?filter=settings", jar)).json()) as {
+      items: { type: string; data: Record<string, unknown>; actor: { id: string } | null }[];
+    };
+    return page.items;
+  }
+
+  test("are off until an owner or admin allows them, then logged with the agent's name", async () => {
+    const { user, workspace, jar, access_token, listed, agentId } = await connected("changes");
+    expect(listed).toMatchObject({ canManage: true, agents: [{ canWrite: false }] });
+    const orderPath = `/workspaces/${workspace.id}/runner-order`;
+
+    const refused = await asAgent(orderPath, access_token, json({ steps: [{ key: "github" }] }));
+    expect(refused.status).toBe(403);
+    expect(await refused.json()).toMatchObject({ error: { code: "AGENT_CHANGES_OFF" } });
+
+    const pause = () =>
+      asAgent("/machines/no-such-machine/pause", access_token, { method: "POST" });
+    expect(await (await pause()).json()).toMatchObject({ error: { code: "AGENT_CHANGES_OFF" } });
+
+    expect((await allowChanges(jar, agentId, true)).status).toBe(200);
+    // Past the switch, pausing is the dashboard's route, with its own checks.
+    expect((await pause()).status).toBe(404);
+    const me = (await (await asAgent("/me", access_token)).json()) as {
+      agent: { workspaces: { canWrite: boolean }[] };
+    };
+    expect(me.agent.workspaces).toEqual([expect.objectContaining({ canWrite: true })]);
+
+    const read = (await (await asAgent(orderPath, access_token)).json()) as { version: string };
+    expect(read.version).toBe("default");
+    const stale = await asAgent(
+      orderPath,
+      access_token,
+      json({ steps: [{ key: "github" }], version: "0123456789abcdef" }),
+    );
+    expect(stale.status).toBe(409);
+    expect(await stale.json()).toMatchObject({ error: { code: "RUNNER_ORDER_CHANGED" } });
+
+    const saved = await asAgent(
+      orderPath,
+      access_token,
+      json({ steps: [{ key: "github" }, { key: "machine" }], version: read.version }),
+    );
+    expect(saved.status, await saved.clone().text()).toBe(200);
+    const body = (await saved.json()) as { version: string; previous: unknown };
+    expect(body.previous).toEqual({ steps: [{ key: "machine" }, { key: "github" }] });
+    expect(body.version).toMatch(/^[0-9a-f]{16}$/);
+    expect(
+      ((await (await asAgent(orderPath, access_token)).json()) as { version: string }).version,
+    ).toBe(body.version);
+
+    for (const [route, change] of [
+      ["auto-size", { size: 8 }],
+      ["retry-settings", { enabled: true, runner: "any", max: 2 }],
+      ["ai", { enabled: false }],
+    ] as const) {
+      const response = await asAgent(
+        `/workspaces/${workspace.id}/${route}`,
+        access_token,
+        json(change),
+      );
+      expect(response.status, route).toBe(200);
+    }
+    // Saving what's already set logs nothing.
+    await asAgent(`/workspaces/${workspace.id}/auto-size`, access_token, json({ size: 8 }));
+
+    const items = await settingsActivity(jar);
+    expect(items.map((item) => item.type)).toEqual([
+      "settings.ai",
+      "settings.retries",
+      "settings.auto_size",
+      "settings.runner_order",
+    ]);
+    for (const item of items) {
+      expect(item.actor?.id).toBe(user.id);
+      expect(item.data).toMatchObject({ via: "agent", agent: "Test agent" });
+    }
+
+    // The dashboard's own changes are logged too, and turning changes off takes effect at once.
+    await testing.call(env, `/workspaces/${workspace.id}/auto-size`, jar, { size: 4 }, "PUT");
+    expect((await settingsActivity(jar))[0]).toMatchObject({
+      type: "settings.auto_size",
+      data: { via: "dashboard", size: 4 },
+    });
+    expect((await allowChanges(jar, agentId, false)).status).toBe(200);
+    const off = await asAgent(
+      `/workspaces/${workspace.id}/auto-size`,
+      access_token,
+      json({ size: 2 }),
+    );
+    expect(off.status).toBe(403);
+  });
+
+  test("members can't allow them, and the role is checked again on every change", async () => {
+    const { workspace, jar, agentId } = await connected("changes-role");
+    const member = await testing.joinWorkspace(env, workspace.id, "member");
+    const { access_token } = await signInAgent(member.cookie, { workspaceIds: [workspace.id] });
+    const listed = (await (await testing.call(env, "/agents", member.cookie)).json()) as {
+      canManage: boolean;
+      agents: { id: string }[];
+    };
+    expect(listed.canManage).toBe(false);
+    const allowed = await allowChanges(member.cookie, listed.agents[0].id, true);
+    expect(allowed.status).toBe(403);
+    // Someone else's agent isn't theirs to change.
+    expect((await allowChanges(member.cookie, agentId, false)).status).toBe(404);
+    expect(jar).toBeTruthy();
+
+    // An admin who allowed changes and was then made a member can't make them any more.
+    await env.DB.prepare("update agent_grant_workspace set can_write = 1 where workspace_id = ?")
+      .bind(workspace.id)
+      .run();
+    const order = await asAgent(
+      `/workspaces/${workspace.id}/runner-order`,
+      access_token,
+      json({ steps: [{ key: "github" }] }),
+    );
+    expect(order.status).toBe(403);
+    expect(await order.json()).toMatchObject({ error: { code: "FORBIDDEN" } });
   });
 });

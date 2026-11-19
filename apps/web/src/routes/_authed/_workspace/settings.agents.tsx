@@ -12,7 +12,7 @@ import {
 } from "@/components/ui/card";
 import { CopyCommand } from "@/components/add-runner";
 import { DOCS_URL } from "@/components/site-footer";
-import { disconnectAgent, listAgents, type ConnectedAgent } from "@/lib/agents";
+import { disconnectAgent, listAgents, setAgentChanges, type ConnectedAgent } from "@/lib/agents";
 import { cn } from "@/lib/utils";
 import { formatDate } from "@/lib/time-zone";
 
@@ -22,12 +22,13 @@ export const Route = createFileRoute("/_authed/_workspace/settings/agents")({
 });
 
 function AgentSettingsPage() {
-  const { mcpUrl, agents } = Route.useLoaderData();
+  const { mcpUrl, canManage, agents } = Route.useLoaderData();
   return (
     <section>
       <PageHeader title="Agents">
         Connect an AI agent to RelayRunner's MCP server to ask about your runners, runs and usage.
-        Agents read the workspaces you pick when you connect them and can't change anything.{" "}
+        Agents read the workspaces you pick when you connect them. They change settings only where
+        an owner or admin allows it.{" "}
         <a
           href={`${DOCS_URL}/reference/mcp`}
           className="text-foreground underline underline-offset-2"
@@ -43,7 +44,7 @@ function AgentSettingsPage() {
             You haven't connected an agent to this workspace.
           </p>
         ) : (
-          agents.map((agent) => <AgentCard key={agent.id} agent={agent} />)
+          agents.map((agent) => <AgentCard key={agent.id} agent={agent} canManage={canManage} />)
         )}
       </div>
     </section>
@@ -157,7 +158,7 @@ function ConnectGuide({ mcpUrl }: { mcpUrl: string }) {
   );
 }
 
-function AgentCard({ agent }: { agent: ConnectedAgent }) {
+function AgentCard({ agent, canManage }: { agent: ConnectedAgent; canManage: boolean }) {
   const router = useRouter();
   const [pending, setPending] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -188,7 +189,53 @@ function AgentCard({ agent }: { agent: ConnectedAgent }) {
           </Button>
         </CardAction>
       </CardHeader>
+      <CardContent className="px-4">
+        <AllowChanges agent={agent} canManage={canManage} />
+      </CardContent>
       {error && <p className="px-4 text-sm text-destructive">{error}</p>}
     </Card>
+  );
+}
+
+// Lets the agent change the runner order, sizes, retries, AI and pausing here, with the person's
+// own role. Owners and admins turn it on; anyone can turn theirs off.
+function AllowChanges({ agent, canManage }: { agent: ConnectedAgent; canManage: boolean }) {
+  const [enabled, setEnabled] = useState(agent.canWrite);
+  const [pending, setPending] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  async function toggle(next: boolean) {
+    setEnabled(next);
+    setPending(true);
+    setError(null);
+    try {
+      await setAgentChanges(agent.id, next);
+    } catch {
+      setEnabled(!next);
+      setError("Couldn't save that. Try again.");
+    } finally {
+      setPending(false);
+    }
+  }
+
+  return (
+    <label className="flex cursor-pointer gap-3 text-sm has-disabled:cursor-default">
+      <input
+        type="checkbox"
+        className="mt-0.5 size-4 accent-[var(--color-go)]"
+        checked={enabled}
+        disabled={pending || (!enabled && !canManage)}
+        onChange={(e) => void toggle(e.target.checked)}
+      />
+      <span className="grid gap-0.5">
+        <span className="font-medium">Allow changes</span>
+        <span className="text-muted-foreground">
+          {canManage || enabled
+            ? "Change the runner order, job sizes, retries and AI, and pause or resume machines. Each change shows in Activity."
+            : "Only owners and admins can let an agent change settings."}
+        </span>
+        {error && <span className="text-destructive">{error}</span>}
+      </span>
+    </label>
   );
 }

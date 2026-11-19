@@ -1,4 +1,10 @@
-import { byRunnerKey, RETRY_RUNNERS, RUNNER_KEYS } from "@relayrunner/runner-order";
+import {
+  byRunnerKey,
+  RETRY_RUNNERS,
+  RUNNER_KEYS,
+  retrySettingsSchema,
+  runnerStepSchema,
+} from "@relayrunner/runner-order";
 import { z } from "zod";
 
 // The workspace's audit log: one append-only row per thing that happened, newest first on the
@@ -14,6 +20,14 @@ const machineData = { machineName: z.string() };
 // (people the owner picks, #245) comes later.
 export const MACHINE_SHARING = ["only_me", "anyone"] as const;
 export type MachineSharing = (typeof MACHINE_SHARING)[number];
+
+// Where a person made a change: the dashboard, a machine's own CLI, or an agent through the MCP
+// server (apps/agents) with their sign-in. `agent` names the agent's app, such as "Claude".
+export const CHANGE_VIAS = ["dashboard", "cli", "agent"] as const;
+const changeData = {
+  via: z.enum(CHANGE_VIAS),
+  agent: z.string().nullable().optional(),
+};
 
 export const DISCONNECT_REASONS = ["closed", "timeout", "revoked", "error"] as const;
 export type DisconnectReason = (typeof DISCONNECT_REASONS)[number];
@@ -187,15 +201,16 @@ export const ActivityEvent = z.discriminatedUnion("type", [
     data: z.object({ ...machineData, reason: z.enum(DISCONNECT_REASONS) }),
   }),
   // Someone paused the machine: it stays connected, but jobs skip it until it's resumed. Actor:
-  // the user who paused it from the dashboard, or none when its own CLI did (`via`).
+  // the user who paused it from the dashboard or through an agent, or none when its own CLI did
+  // (`via`).
   z.object({
     type: z.literal("machine.paused"),
-    data: z.object({ ...machineData, via: z.enum(["dashboard", "cli"]) }),
+    data: z.object({ ...machineData, ...changeData }),
   }),
   // Someone resumed a paused machine, so jobs can route to it again. Actor as for machine.paused.
   z.object({
     type: z.literal("machine.resumed"),
-    data: z.object({ ...machineData, via: z.enum(["dashboard", "cli"]) }),
+    data: z.object({ ...machineData, ...changeData }),
   }),
   // The machine's owner changed whose jobs it takes. Actor: the owner.
   z.object({
@@ -210,6 +225,37 @@ export const ActivityEvent = z.discriminatedUnion("type", [
   z.object({
     type: z.literal("machine.revoked"),
     data: z.object({ ...machineData, source: z.enum(["connect", "github"]).optional() }),
+  }),
+  // Someone changed a routing setting on the Router page or through an agent (`via`). Each holds the
+  // new value. Actor: that person.
+  z.object({
+    type: z.literal("settings.runner_order"),
+    data: z.object({ ...changeData, steps: z.array(runnerStepSchema) }),
+  }),
+  // The size, in vCPUs, of auto jobs with no size of their own.
+  z.object({
+    type: z.literal("settings.auto_size"),
+    data: z.object({ ...changeData, size: z.number() }),
+  }),
+  // One auto job's size and the provider it tries first; null is back to the default.
+  z.object({
+    type: z.literal("settings.job_size"),
+    data: z.object({
+      ...changeData,
+      repository: z.string(),
+      workflow: z.string().nullable(),
+      job: z.string(),
+      size: z.number().nullable(),
+      first: z.enum(RUNNER_KEYS).nullable(),
+    }),
+  }),
+  z.object({
+    type: z.literal("settings.retries"),
+    data: z.object({ ...changeData, ...retrySettingsSchema.shape }),
+  }),
+  z.object({
+    type: z.literal("settings.ai"),
+    data: z.object({ ...changeData, enabled: z.boolean() }),
   }),
   // Someone left the workspace (`left`): their GitHub sign-in can no longer see its installation
   // (#317). Actor: them. Older rows may also be an owner or admin removing them (`left: false`).
@@ -299,7 +345,7 @@ export type ActivityEvent = z.infer<typeof ActivityEvent>;
 export type ActivityEventType = ActivityEvent["type"];
 
 /** The Activity page's filters: the part of the type before the dot. */
-export const ACTIVITY_FILTERS = ["job", "check", "machine", "member"] as const;
+export const ACTIVITY_FILTERS = ["job", "check", "machine", "member", "settings"] as const;
 export type ActivityFilter = (typeof ACTIVITY_FILTERS)[number];
 
 /**

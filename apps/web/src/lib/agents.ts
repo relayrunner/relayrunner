@@ -6,11 +6,22 @@ export type ConnectedAgent = {
   clientName: string | null;
   clientUri: string | null;
   connectedAt: string;
+  // Whether it may change settings in this workspace (Allow changes).
+  canWrite: boolean;
 };
 
 export function listAgents() {
   // mcpUrl: the MCP server agents connect to (apps/agents).
-  return api<{ mcpUrl: string; agents: ConnectedAgent[] }>("/agents");
+  // canManage: whether the signed-in user may allow changes (owners and admins).
+  return api<{ mcpUrl: string; canManage: boolean; agents: ConnectedAgent[] }>("/agents");
+}
+
+/** Allow changes: lets the agent change routing settings in the active workspace, or stops it. */
+export function setAgentChanges(id: string, enabled: boolean) {
+  return api<{ canWrite: boolean }>(`/agents/${encodeURIComponent(id)}/changes`, {
+    method: "PUT",
+    body: JSON.stringify({ enabled }),
+  });
 }
 
 export function disconnectAgent(id: string) {

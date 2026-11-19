@@ -26,6 +26,11 @@ export const ERRORS = {
   INVALID_TOKEN: { status: 401, message: "The token is invalid, expired or revoked." },
   FORBIDDEN: { status: 403, message: "You don't have access to that." },
   AGENT_NOT_ALLOWED: { status: 403, message: "Agent tokens can't call this route." },
+  AGENT_CHANGES_OFF: {
+    status: 403,
+    message:
+      "This agent can't make changes in this workspace. An owner or admin can turn on Allow changes for it in Settings → Agents.",
+  },
   NOT_A_MEMBER: { status: 403, message: "You aren't a member of that workspace." },
   LEGAL_TERMS_OUTDATED: {
     status: 409,
@@ -66,6 +71,10 @@ export const ERRORS = {
 
   // Routing
   RUNNER_ORDER_INVALID: { status: 400, message: "The runner order isn't valid." },
+  RUNNER_ORDER_CHANGED: {
+    status: 409,
+    message: "The runner order changed since you read it. Read it again, then make your change.",
+  },
 
   // Providers and prices
   PROVIDER_UNKNOWN: { status: 400, message: "There's no provider with that id." },

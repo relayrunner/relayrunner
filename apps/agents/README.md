@@ -1,6 +1,6 @@
 # RelayRunner agents
 
-The MCP server at `https://agents.relayrunner.app/mcp`. An AI agent connects to it to ask about a workspace's runners, runs and usage. It's read-only, apart from `send_feedback`, which lets an agent report a problem to the RelayRunner team.
+The MCP server at `https://agents.relayrunner.app/mcp`. An AI agent connects to it to ask about a workspace's runners, runs and usage, and, where an owner or admin allows it, to change the workspace's routing settings. `send_feedback` lets an agent report a problem to the RelayRunner team.
 
 ```
 agent ──▶ relayrunner-agents ──▶ relayrunner-api (service binding)
@@ -17,7 +17,7 @@ The server speaks MCP's OAuth flow, so clients sign in on their own when you add
 2. The client registers itself (dynamic client registration) and opens the dashboard. The person signs in with GitHub if needed, picks the workspaces it may read (`/agents/workspace`, all of them checked to start) and approves the client (`/agents/consent`).
 3. The client gets a 15-minute access token for this server's URL, naming that grant of workspaces, with the `workspace:read` scope, plus a refresh token.
 
-Each tool call forwards that token to the API, with the workspace it's about in `x-relayrunner-workspace`. The API verifies the token and only lets it read that one workspace, if the grant covers it, through a fixed list of GET routes (`apps/api/src/agent-auth.ts`). Every tool takes an optional `workspace` (an id or name from `list_workspaces`), needed only when the connection reads more than one; no answer mixes workspaces. The grant and membership are checked on every call and every refresh, so removing someone from a workspace, or disconnecting the agent from it under Settings → Agents, cuts it off from that workspace at once. Workspaces joined later need a new connection.
+Each tool call forwards that token to the API, with the workspace it's about in `x-relayrunner-workspace`. The API verifies the token and only lets it read that one workspace, if the grant covers it, through a fixed list of routes (`apps/api/src/agent-auth.ts`). Every tool takes an optional `workspace` (an id or name from `list_workspaces`), needed only when the connection reads more than one; no answer mixes workspaces. The grant and membership are checked on every call and every refresh, so removing someone from a workspace, or disconnecting the agent from it under Settings → Agents, cuts it off from that workspace at once. Workspaces joined later need a new connection.
 
 Clients that look before they connect can read the server's [MCP Server Card](https://modelcontextprotocol.io/seps/2127-mcp-server-cards) at `/mcp/server-card` (`src/server-card.ts`), with no sign-in. https://relayrunner.dev/.well-known/ai-catalog.json points there.
 
@@ -25,25 +25,43 @@ This Worker holds no secrets and no state. It doesn't call GitHub or the Router:
 
 ## Tools
 
-| Tool               | What it reads                                                          |
-| ------------------ | ---------------------------------------------------------------------- |
-| `list_workspaces`  | The workspaces this connection reads, by id and name                   |
-| `get_workspace`    | One workspace, your role and its connected GitHub accounts             |
-| `list_runners`     | Runners, their status, labels, pause state and current job             |
-| `get_runner_order` | The providers jobs are tried on, in order                              |
-| `list_runs`        | Recent workflow runs, filterable by repository, status, conclusion     |
-| `list_workflows`   | Recent workflows and which ones are routed                             |
-| `get_run_jobs`     | One run's jobs and where each ran                                      |
-| `get_run_failures` | Why a run's jobs failed, with the end of each log (read from GitHub)   |
-| `list_activity`    | The activity log, including where each job was routed and why          |
-| `get_usage`        | Short jobs and round-up cost, optimized check savings, Actions minutes |
-| `get_job_times`    | Typical job durations per runner environment                           |
-| `get_signals`      | What's making CI slow, costly or busier than it needs to be            |
-| `send_feedback`    | Writes: reports a bug, confusing result or missing tool to the team    |
+| Tool                  | What it reads                                                          |
+| --------------------- | ---------------------------------------------------------------------- |
+| `list_workspaces`     | The workspaces this connection reads, by id and name                   |
+| `get_workspace`       | One workspace, your role and its connected GitHub accounts             |
+| `list_runners`        | Runners, their status, labels, pause state and current job             |
+| `get_runner_order`    | The providers jobs are tried on, in order                              |
+| `list_runs`           | Recent workflow runs, filterable by repository, status, conclusion     |
+| `list_workflows`      | Recent workflows and which ones are routed                             |
+| `get_run_jobs`        | One run's jobs and where each ran                                      |
+| `get_run_failures`    | Why a run's jobs failed, with the end of each log (read from GitHub)   |
+| `list_activity`       | The activity log, including where each job was routed and why          |
+| `get_usage`           | Short jobs and round-up cost, optimized check savings, Actions minutes |
+| `get_job_times`       | Typical job durations per runner environment                           |
+| `get_signals`         | What's making CI slow, costly or busier than it needs to be            |
+| `get_router_settings` | Auto jobs' sizes, the default size, automatic retries and AI           |
+| `send_feedback`       | Writes: reports a bug, confusing result or missing tool to the team    |
+
+## Changing settings
+
+These tools (`src/write-tools.ts`) change a workspace's routing, each through the dashboard's own route:
+
+| Tool                            | Route                                       |
+| ------------------------------- | ------------------------------------------- |
+| `set_runner_order`              | `PUT /api/workspaces/:id/runner-order`      |
+| `set_default_size`              | `PUT /api/workspaces/:id/auto-size`         |
+| `set_job_size`                  | `PUT /api/workspaces/:id/auto-jobs/:jobId`  |
+| `set_retries`                   | `PUT /api/workspaces/:id/retry-settings`    |
+| `set_ai`                        | `PUT /api/workspaces/:id/ai`                |
+| `pause_runner`, `resume_runner` | `POST /api/machines/:id/pause` and `resume` |
+
+They're off for every connection until an owner or admin turns on **Allow changes** for it in Settings → Agents, per workspace (`agent_grant_workspace.can_write`). The API reads that on every request, so turning it off takes effect at once, and answers `AGENT_CHANGES_OFF` where it's off. The routes still check the person's role as they do for the dashboard, so a member's agent can't change what the member can't. There's no separate OAuth scope: clients rarely ask for one, and this way the switch is per workspace and needs no new sign-in.
+
+Every change is logged in the workspace's Activity (`settings.*` events, and `machine.paused`/`resumed`) with the person and `via: "agent"` plus the agent's registered name; dashboard changes are logged the same way with `via: "dashboard"`. Each tool is marked destructive so clients ask before running it, and answers the previous value so the agent can undo it. `set_runner_order` needs the `version` from `get_runner_order` and fails with `RUNNER_ORDER_CHANGED` if someone changed the order since. Agents can't delete anything or touch members, installs or billing.
 
 ## Feedback
 
-`send_feedback` takes a category (`bug`, `confusing`, `feature_request`, `other`), a one-line summary (200 characters), optional details (4,000) and the tool it's about. It POSTs to `/api/feedback`, the only write an agent token may make (`apps/api/src/routes/feedback.ts`). The API strips control, zero-width and bidi characters, trims to those limits, redacts anything that looks like a credential (GitHub, RelayRunner machine and cloud tokens, JWTs, private keys, `key=value` secrets, passwords in URLs), stores it in the `feedback` table (with the dashboard's feedback) and emails it to `FEEDBACK_EMAIL` (feedback@relayrunner.app), with the person's address as Reply-To. Each person can send 10 an hour and 30 a day across all their agents. The answer is only an id and how many values were redacted; it never repeats the text.
+`send_feedback` takes a category (`bug`, `confusing`, `feature_request`, `other`), a one-line summary (200 characters), optional details (4,000) and the tool it's about. It POSTs to `/api/feedback` (`apps/api/src/routes/feedback.ts`). The API strips control, zero-width and bidi characters, trims to those limits, redacts anything that looks like a credential (GitHub, RelayRunner machine and cloud tokens, JWTs, private keys, `key=value` secrets, passwords in URLs), stores it in the `feedback` table (with the dashboard's feedback) and emails it to `FEEDBACK_EMAIL` (feedback@relayrunner.app), with the person's address as Reply-To. Each person can send 10 an hour and 30 a day across all their agents. The answer is only an id and how many values were redacted; it never repeats the text.
 
 ## Run it locally
 

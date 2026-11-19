@@ -2,6 +2,7 @@ import type { McpServer } from "@modelcontextprotocol/server";
 import { expect, test } from "vitest";
 import { SKILL_FILES } from "./skills.ts";
 import { registerTools } from "./tools.ts";
+import { registerWriteTools } from "./write-tools.ts";
 
 const skill = SKILL_FILES["relayrunner-ci-insights/SKILL.md"];
 
@@ -10,13 +11,11 @@ const skill = SKILL_FILES["relayrunner-ci-insights/SKILL.md"];
 test("the ci-insights skill names every MCP tool, and only those", () => {
   const registered: string[] = [];
   const server = { registerTool: (name: string) => registered.push(name) };
-  registerTools(
-    server as unknown as McpServer,
-    async () => {
-      throw new Error("not called");
-    },
-    [],
-  );
+  const notCalled = async () => {
+    throw new Error("not called");
+  };
+  const workspaceId = registerTools(server as unknown as McpServer, notCalled, []);
+  registerWriteTools(server as unknown as McpServer, notCalled, workspaceId);
 
   const table = skill.slice(skill.indexOf("## Tools"), skill.indexOf("## Common questions"));
   const named = [...table.matchAll(/`([a-z]+(?:_[a-z]+)+)`/g)].map((match) => match[1]);

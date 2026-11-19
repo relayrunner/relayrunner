@@ -1330,6 +1330,9 @@ export const agentGrantWorkspace = sqliteTable(
     workspaceId: text("workspace_id")
       .notNull()
       .references(() => workspace.id, { onDelete: "cascade" }),
+    // Whether the agent may change settings in this workspace (agent-auth.ts AGENT_WRITE_ROUTES).
+    // Off until an owner or admin turns it on in Settings → Agents.
+    canWrite: integer("can_write", { mode: "boolean" }).notNull().default(false),
   },
   (table) => [
     primaryKey({ columns: [table.grantId, table.workspaceId] }),

@@ -12,6 +12,8 @@
     "@modelcontextprotocol/server": "^2.4.0",
     "@relayrunner/activity": "workspace:*",
     "@relayrunner/errors": "workspace:*",
+    "@relayrunner/providers": "workspace:*",
+    "@relayrunner/runner-order": "workspace:*",
     "zod": "catalog:"
   },
   "devDependencies": {

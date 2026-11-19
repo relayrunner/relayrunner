@@ -1,7 +1,7 @@
 import { and, eq } from "drizzle-orm";
 import { createMiddleware } from "hono/factory";
 import type { AppEnv } from "../app.ts";
-import { AGENT_WORKSPACE_HEADER, agentWorkspaceId } from "../agent-auth.ts";
+import { AGENT_WORKSPACE_HEADER, agentMayWrite, agentWorkspaceId } from "../agent-auth.ts";
 import { createDb, schema, type Db } from "../db/index.ts";
 import { AppError } from "@relayrunner/errors";
 import { annotate } from "../tracing.ts";
@@ -9,7 +9,8 @@ import { annotate } from "../tracing.ts";
 // Resolves the session's active workspace and the signed-in user's membership in it. Gateway
 // routes that act on a workspace (installations, machines, repos) go behind this. Run it after
 // requireUser.
-// An agent token (agent-auth.ts) reads the granted workspace it asked for instead of an active one.
+// An agent token (agent-auth.ts) reads the granted workspace it asked for instead of an active one,
+// and changes it only where it's allowed changes.
 export const requireWorkspace = createMiddleware<AppEnv>(async (c, next) => {
   const { agent } = c.var;
   const workspaceId = agent
@@ -19,6 +20,7 @@ export const requireWorkspace = createMiddleware<AppEnv>(async (c, next) => {
     throw new AppError(agent ? "WORKSPACE_REQUIRED" : "NO_ACTIVE_WORKSPACE");
   }
   annotate({ "relayrunner.workspace_id": workspaceId });
+  agentMayWrite(agent, c.req.method, new URL(c.req.url).pathname, workspaceId);
 
   const userId = c.var.user!.id;
   // A workspace an install made a moment ago may not be on a replica yet, so a miss asks the primary.

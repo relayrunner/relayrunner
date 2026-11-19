@@ -55,7 +55,7 @@ import {
   sha256Hex,
   userWorkspaces,
   verifyMachineToken,
-  type PauseVia,
+  type PauseActor,
 } from "../machines.ts";
 import type { Env } from "../env.ts";
 import { sendEmail } from "../email.ts";
@@ -63,6 +63,7 @@ import { inBackground, requireUser } from "../middleware/session.ts";
 import { requireWorkspace } from "../middleware/workspace.ts";
 import { canControlMachine, requireManager } from "../roles.ts";
 import { AppError, type ErrorCode } from "@relayrunner/errors";
+import { changeActor } from "../changes.ts";
 import { annotate } from "../tracing.ts";
 import { machineJobFailure } from "../job-failures.ts";
 import {
@@ -480,10 +481,13 @@ export const machineRoutes = new Hono<AppEnv>()
       .limit(1);
     if (!machine) throw new AppError("NOT_FOUND");
     if (!canControlMachine(c.var.role, c.var.user!.id, machine)) throw new AppError("FORBIDDEN");
-    return pauseResponse(c.env, c.var.db, machine.id, c.req.param("action") === "pause", {
-      userId: c.var.user!.id,
-      via: "dashboard",
-    });
+    return pauseResponse(
+      c.env,
+      c.var.db,
+      machine.id,
+      c.req.param("action") === "pause",
+      await changeActor(c),
+    );
   })
   // Whose jobs the machine takes (#242), in every workspace it's in. Only its owner, the person who
   // enrolled it, may change it: it's their computer.
@@ -1105,7 +1109,7 @@ async function pauseResponse(
   db: ReturnType<typeof createDb>,
   machineId: string,
   paused: boolean,
-  actor: { userId: string | null; via: PauseVia },
+  actor: PauseActor,
 ) {
   const result = await setMachinePaused(db, machineId, paused, actor);
   if (!result) throw new AppError("NOT_FOUND");

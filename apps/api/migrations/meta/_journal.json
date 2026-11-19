@@ -519,6 +519,13 @@
       "when": 1794956162279,
       "tag": "20261117225602_mac_app_version",
       "breakpoints": true
+    },
+    {
+      "idx": 74,
+      "version": "6",
+      "when": 1795112534017,
+      "tag": "20261119182214_agent_can_write",
+      "breakpoints": true
     }
   ]
 }
