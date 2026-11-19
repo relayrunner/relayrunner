@@ -4,21 +4,26 @@
   <channel>
     <title>RelayRunner for Mac</title>
     <item>
-      <title>0.5.0</title>
-      <pubDate>Wed, 18 Nov 2026 20:55:43 +0000</pubDate>
-      <sparkle:version>0.5.0</sparkle:version>
-      <sparkle:shortVersionString>0.5.0</sparkle:shortVersionString>
+      <title>0.6.0</title>
+      <pubDate>Thu, 19 Nov 2026 14:12:17 +0000</pubDate>
+      <sparkle:version>0.6.0</sparkle:version>
+      <sparkle:shortVersionString>0.6.0</sparkle:shortVersionString>
       <sparkle:minimumSystemVersion>14.0</sparkle:minimumSystemVersion>
       <description sparkle:format="markdown"><![CDATA[
 
 ### New
 
-- RelayRunner for Mac has a Jobs window (Jobs… in the menu, ⌘J while it's open). It lists every job the Mac ran in the last week, sortable by how long each waited and ran. Pick one to see its steps on a timeline and, for a failed job, the step that failed, GitHub's annotations, the end of its log and, when the workspace has AI on, the likely cause. The CLI gains `relayrunner jobs` and `relayrunner jobs <id>`, which read the same from the gateway with the machine's own token.
+- The Mac Jobs window opens with the jobs it last showed and refreshes them in the background, and a job you've already opened shows its steps at once. Jobs running or waiting on the Mac come first. Filter by result, repo, workflow and time, and drag the line between the list and the job to resize them. Clicking a job in the menu's History tab opens it in the Jobs window. `relayrunner jobs` lists running jobs first and gains `--repo`, `--workflow`, `--result` and `--since`.
+- A simpler menu. It shows the switch, what this Mac is doing and each running job, then Pause New Jobs, Jobs, Open Dashboard, Settings and Quit, with no icons. The Now, Queue and History tabs, the empty slot rows and the CPU and memory meters are gone: the Jobs window lists running, waiting and finished jobs. There is one pause control, which becomes Resume New Jobs while paused. The offer to take one more job at once moved to the Jobs window. Show Log and Check for Updates moved to Settings › About.
 
-Includes the relayrunner CLI 0.15.0.
+### Fixes and improvements
+
+- The menu no longer shows a running job's usual time once it passes it. The bar turns orange only when the job is clearly slower than usual: at least 30 seconds and a quarter over its usual time.
+
+Includes the relayrunner CLI 0.16.0.
 ]]></description>
       <sparkle:fullReleaseNotesLink>https://github.com/relayrunner/relayrunner/blob/main/apps/mac/CHANGELOG.md</sparkle:fullReleaseNotesLink>
-      <enclosure url="https://github.com/relayrunner/relayrunner/releases/download/mac-v0.5.0/RelayRunner-0.5.0.zip" sparkle:edSignature="AbwTDGOYat0gSO/WM842dToWuxxgDiiFYChRx71H2ldCWjzpmlDl2OpCEDKANnM3Yif15XoPqPjYy3hm5gzDDg==" length="3166668" type="application/octet-stream"/>
+      <enclosure url="https://github.com/relayrunner/relayrunner/releases/download/mac-v0.6.0/RelayRunner-0.6.0.zip" sparkle:edSignature="InVAqPv3Srr4thvgvmdpTFOB3CjVyUjzu56LSwI1Kwa2ub4eoJfROAZRfENjo3VgzmyWztar52PyFSpSrXiCAA==" length="3141328" type="application/octet-stream"/>
     </item>
   </channel>
 </rss>
