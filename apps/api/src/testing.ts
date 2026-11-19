@@ -163,7 +163,7 @@ export function withSetCookies(cookie: string, response: Response) {
 // A new user added to an existing workspace with the given role, with that workspace active.
 // A shortcut past syncing their membership from GitHub (memberships.test.ts covers that).
 export async function joinWorkspace(env: Env, workspaceId: string, role: "admin" | "member") {
-  const { user, githubToken, cookie } = await signIn(env);
+  const { user, githubId, githubToken, cookie } = await signIn(env);
   await createAuth(env).api.addMember({
     body: { organizationId: workspaceId, userId: user.id, role },
   });
@@ -171,5 +171,5 @@ export async function joinWorkspace(env: Env, workspaceId: string, role: "admin"
     organizationId: workspaceId,
   });
   expect(active.status).toBe(200);
-  return { user, githubToken, cookie: withSetCookies(cookie, active) };
+  return { user, githubId, githubToken, cookie: withSetCookies(cookie, active) };
 }

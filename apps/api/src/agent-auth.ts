@@ -8,9 +8,9 @@
 // grant's workspaces the user still belongs to.
 //
 // Agents read by default: the only scope is workspace:read. They may also change a few settings
-// (AGENT_WRITE_ROUTES) in a workspace where an owner or admin turned on Allow changes for them in
+// (AGENT_WRITE_ROUTES) in a workspace where the user turned on Allow changes for them in
 // Settings → Agents (agent_grant_workspace.can_write, read live on every request). The routes
-// themselves still check the user's role, as they do for the dashboard. POST /api/feedback
+// themselves still check the user's access, as they do for the dashboard. POST /api/feedback
 // (routes/feedback.ts) changes no workspace state, only records what the agent reports,
 // rate-limited per user.
 

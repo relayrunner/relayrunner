@@ -93,7 +93,7 @@ function PickWorkspaces({
         <CardTitle>Connect an agent</CardTitle>
         <CardDescription>
           Choose the workspaces this agent can see. It can read those only, and change settings only
-          once an owner or admin allows it in Settings. Ones you join later need a new connection.
+          once you allow it in Settings. Ones you join later need a new connection.
         </CardDescription>
       </CardHeader>
       <CardContent>

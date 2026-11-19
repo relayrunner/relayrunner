@@ -23,13 +23,13 @@ export const Route = createFileRoute("/_authed/_workspace/settings/agents")({
 });
 
 function AgentSettingsPage() {
-  const { mcpUrl, canManage, agents } = Route.useLoaderData();
+  const { mcpUrl, agents } = Route.useLoaderData();
   return (
     <section>
       <PageHeader title="Agents">
         Connect an AI agent to RelayRunner's MCP server to ask about your runners, runs and usage.
         Agents read the workspaces you pick when you connect them. They change settings only where
-        an owner or admin allows it.{" "}
+        you allow it.{" "}
         <a
           href={`${DOCS_URL}/reference/mcp`}
           className="text-foreground underline underline-offset-2"
@@ -45,7 +45,7 @@ function AgentSettingsPage() {
             You haven't connected an agent to this workspace.
           </p>
         ) : (
-          agents.map((agent) => <AgentCard key={agent.id} agent={agent} canManage={canManage} />)
+          agents.map((agent) => <AgentCard key={agent.id} agent={agent} />)
         )}
       </div>
     </section>
@@ -159,7 +159,7 @@ function ConnectGuide({ mcpUrl }: { mcpUrl: string }) {
   );
 }
 
-function AgentCard({ agent, canManage }: { agent: ConnectedAgent; canManage: boolean }) {
+function AgentCard({ agent }: { agent: ConnectedAgent }) {
   const router = useRouter();
   const [pending, setPending] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -191,16 +191,16 @@ function AgentCard({ agent, canManage }: { agent: ConnectedAgent; canManage: boo
         </CardAction>
       </CardHeader>
       <CardContent className="px-4">
-        <AllowChanges agent={agent} canManage={canManage} />
+        <AllowChanges agent={agent} />
       </CardContent>
       {error && <p className="px-4 text-sm text-destructive">{error}</p>}
     </Card>
   );
 }
 
-// Lets the agent change the runner order, sizes, retries, AI and pausing here, with the person's
-// own role. Owners and admins turn it on; anyone can turn theirs off.
-function AllowChanges({ agent, canManage }: { agent: ConnectedAgent; canManage: boolean }) {
+// Lets the agent make the changes its person can make here: the runner order, sizes, retries, AI
+// and pausing. The API checks each change as it would for the dashboard.
+function AllowChanges({ agent }: { agent: ConnectedAgent }) {
   const [enabled, setEnabled] = useState(agent.canWrite);
   const [pending, setPending] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -225,15 +225,14 @@ function AllowChanges({ agent, canManage }: { agent: ConnectedAgent; canManage: 
         type="checkbox"
         className="mt-0.5 size-4 accent-[var(--color-go)]"
         checked={enabled}
-        disabled={pending || (!enabled && !canManage)}
+        disabled={pending}
         onChange={(e) => void toggle(e.target.checked)}
       />
       <span className="grid gap-0.5">
         <span className="font-medium">Allow changes</span>
         <span className="text-muted-foreground">
-          {canManage || enabled
-            ? "Change the runner order, job sizes, retries and AI, and pause or resume machines. Each change shows in Activity."
-            : "Only owners and admins can let an agent change settings."}
+          Make the changes you can make here, such as the runner order, job sizes and retries, or
+          pausing machines. Each change shows in Activity.
         </span>
         {error && <span className="text-destructive">{error}</span>}
       </span>

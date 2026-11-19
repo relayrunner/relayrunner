@@ -123,7 +123,6 @@ function RouterPage() {
             jobs={auto.jobs?.jobs ?? []}
             defaultSize={auto.jobs?.size ?? AUTO_SIZES[0]}
             steps={[...new Set(loaded.order.steps.map((step) => step.key))]}
-            editable={editable}
             onChange={auto.setJob}
           />
         </SectionBoundary>

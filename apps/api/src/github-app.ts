@@ -877,21 +877,33 @@ async function getJson<T>(token: string, path: string): Promise<T> {
 }
 
 /**
- * Whether a GitHub user, by account id, can read a repo: any permission but `none`. GitHub answers
- * 404 for a user it doesn't know or who has no access, which reads as no.
+ * A GitHub user's permission on a repo, by account id: "admin", "write", "read" or "none" (GitHub
+ * reports maintain as write and triage as read). GitHub answers 404 for a user it doesn't know or
+ * who has no access, which reads as "none".
  */
-export async function userCanReadRepo(token: string, repo: string, userId: number) {
+async function userRepoPermission(token: string, repo: string, userId: number) {
   try {
     const { login } = await getJson<{ login: string }>(token, `/user/${userId}`);
     const { permission } = await getJson<{ permission?: string }>(
       token,
       `/repos/${repo}/collaborators/${encodeURIComponent(login)}/permission`,
     );
-    return Boolean(permission) && permission !== "none";
+    return permission ?? "none";
   } catch (error) {
-    if (error instanceof GitHubAccessError && error.status === 404) return false;
+    if (error instanceof GitHubAccessError && error.status === 404) return "none";
     throw error;
   }
+}
+
+/** Whether a GitHub user, by account id, can read a repo: any permission but `none`. */
+export async function userCanReadRepo(token: string, repo: string, userId: number) {
+  return (await userRepoPermission(token, repo, userId)) !== "none";
+}
+
+/** Whether a GitHub user, by account id, can push to a repo, and so edit its workflow files. */
+export async function userCanWriteRepo(token: string, repo: string, userId: number) {
+  const permission = await userRepoPermission(token, repo, userId);
+  return permission === "write" || permission === "admin";
 }
 
 /** The org's GitHub plan name ("free", "team", "enterprise", ...), or null if GitHub omits it. */

@@ -42,7 +42,7 @@ export function registerTools(server: McpServer, context: ToolContext) {
     {
       title: "Workspaces",
       description:
-        "The RelayRunner workspaces this connection can read, by id and name, and whether it may change settings in each (canWrite: an owner or admin turned on Allow changes for it in Settings → Agents). Pass one as `workspace` to the other tools; get_workspace has your role and GitHub accounts in each.",
+        "The RelayRunner workspaces this connection can read, by id and name, and whether it may change settings in each (canWrite: the person turned on Allow changes for it in Settings → Agents). Pass one as `workspace` to the other tools; get_workspace has your role and GitHub accounts in each.",
       annotations: READ_ONLY,
     },
     () => answer(async () => ({ workspaces })),

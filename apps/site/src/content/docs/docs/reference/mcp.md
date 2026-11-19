@@ -51,7 +51,7 @@ For better answers, install the `relayrunner-ci-insights` skill with `npx skills
 
 ## Allow changes
 
-An agent can only read until an owner or admin turns on **Allow changes** for it under **Settings → Agents**, in each workspace. Then it can change the runner order, job sizes, automatic retries and AI, and pause or resume runners. It still acts as you: it can't change what your role can't.
+An agent can only read until you turn on **Allow changes** for it under **Settings → Agents**, in each workspace. Then it can change the runner order, job sizes, automatic retries and AI, and pause or resume runners. It still acts as you: it can't change what you can't change in the dashboard.
 
 Every change shows in **Activity** with your name and the agent's, such as "Ada set the default size for auto jobs to 4 vCPU through Claude". Agents ask before they change something, and each change answers the previous value, so you can ask the agent to undo it. Turning Allow changes off takes effect at once. Agents can't delete anything or touch members, installs or billing.
 

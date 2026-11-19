@@ -4,8 +4,9 @@ import { AppError } from "@relayrunner/errors";
 
 // Workspace roles (#134). These are Better Auth's stock organization roles:
 // - owner and admin manage GitHub installations, runner order and members.
-// - member is read-only here. Connected machines belong to their user, not the workspace (#318),
-//   so only that user controls one, whatever their role.
+// - member is read-only here, except for the auto jobs of repos they can push to on GitHub
+//   (repo-access.ts). Connected machines belong to their user, not the workspace (#318), so only
+//   that user controls one, whatever their role.
 // Better Auth keeps at least one owner: it refuses to remove, demote, or let the last owner leave.
 export const ROLES = ["owner", "admin", "member"] as const;
 export type Role = (typeof ROLES)[number];

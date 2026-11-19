@@ -41,7 +41,7 @@ Send the access token as `Authorization: Bearer <token>`. Tokens last 15 minutes
 | `GET /workspaces/{id}/retry-settings`, `/ai`             | Automatic retries, and whether AI is on                                |
 | `POST /feedback`                                         | Reports a bug, confusing result or missing feature to the team         |
 
-These change settings. They work only in workspaces where an owner or admin turned on **Allow changes** for the connection under **Settings → Agents**, and only for owners and admins (pausing follows the dashboard's rules). Elsewhere they answer `403` with `AGENT_CHANGES_OFF` or `FORBIDDEN`. Each change shows in the workspace's Activity, and each answer includes the value it replaced as `previous`.
+These change settings. They work only in workspaces where the person turned on **Allow changes** for the connection under **Settings → Agents**, and only for changes the person could make in the dashboard: owners and admins for workspace settings, anyone who can push to a repo for its jobs' sizes, and pausing by the dashboard's rules. Elsewhere they answer `403` with `AGENT_CHANGES_OFF` or `FORBIDDEN`. Each change shows in the workspace's Activity, and each answer includes the value it replaced as `previous`.
 
 | Route                                    | What it changes                                                       |
 | ---------------------------------------- | --------------------------------------------------------------------- |

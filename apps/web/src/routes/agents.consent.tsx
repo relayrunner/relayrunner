@@ -85,8 +85,8 @@ function Consent({
             <li>Activity, usage and Actions minutes</li>
           </ul>
           <p className="text-muted-foreground">
-            It can't change anything unless an owner or admin allows changes for it in Settings,
-            under Agents. You can disconnect it from each workspace there any time.
+            It can't change anything until you allow changes for it in Settings, under Agents. You
+            can disconnect it from each workspace there any time.
           </p>
         </div>
         <div className="flex flex-col gap-2">

@@ -12,8 +12,7 @@ export type ConnectedAgent = {
 
 export function listAgents() {
   // mcpUrl: the MCP server agents connect to (apps/agents).
-  // canManage: whether the signed-in user may allow changes (owners and admins).
-  return api<{ mcpUrl: string; canManage: boolean; agents: ConnectedAgent[] }>("/agents");
+  return api<{ mcpUrl: string; agents: ConnectedAgent[] }>("/agents");
 }
 
 /** Allow changes: lets the agent change routing settings in the active workspace, or stops it. */

@@ -144,6 +144,7 @@ export async function listAutoJobs(db: Db, workspaceId: string, now = Date.now()
 export async function getAutoJob(db: Db, workspaceId: string, id: number) {
   const [job] = await db
     .select({
+      repositoryId: table.repositoryId,
       repository: table.repository,
       workflow: table.workflow,
       relayJob: table.relayJob,

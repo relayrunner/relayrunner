@@ -15,7 +15,8 @@ import { isWorkspaceMember } from "../installations.ts";
 import { inWorkspace, sha256Hex } from "../machines.ts";
 import { requireUser } from "../middleware/session.ts";
 import { requireWorkspace } from "../middleware/workspace.ts";
-import { requireManager } from "../roles.ts";
+import { canManage, requireManager } from "../roles.ts";
+import { editableRepos, userCanEditRepo } from "../repo-access.ts";
 import { HOSTED_PROVIDER_IDS, providersOfAppSlugs } from "@relayrunner/providers";
 import { appInstallationToken, orgAppSlugs } from "../github-app.ts";
 import { present } from "./github.ts";
@@ -165,10 +166,24 @@ export const workspaceRoutes = new Hono<AppEnv>()
   )
   // Jobs whose relay hands their runner to the Router (`auto`), with the size and first provider
   // set for each, and the workspace's default size (src/auto-jobs.ts).
+  // `canEdit` says whether the signed-in user may change the job: owners and admins may change
+  // any, and anyone who can push to the job's repo on GitHub may change its jobs.
   .get("/:id/auto-jobs", requireUser, requireMember, async (c) => {
     const id = c.req.param("id");
-    const [row, jobs] = await Promise.all([settings(c.var.db, id), listAutoJobs(c.var.db, id)]);
-    return c.json({ size: row.autoSize, jobs });
+    const { db, role, user } = c.var;
+    const [row, jobs] = await Promise.all([settings(db, id), listAutoJobs(db, id)]);
+    const editable = canManage(role)
+      ? null
+      : await editableRepos(
+          c.env,
+          db,
+          user!.id,
+          jobs.map((job) => job.repositoryId),
+        );
+    return c.json({
+      size: row.autoSize,
+      jobs: jobs.map((job) => ({ ...job, canEdit: !editable || editable.has(job.repositoryId) })),
+    });
   })
   // The default size for auto jobs. Owners and admins, like the order.
   .put("/:id/auto-size", requireUser, requireMember, requireManager, async (c) => {
@@ -187,15 +202,24 @@ export const workspaceRoutes = new Hono<AppEnv>()
     return c.json({ size, previous });
   })
   // One auto job's size and the provider it tries first; one left out stays as it is. Owners and
-  // admins, like the order.
-  .put("/:id/auto-jobs/:jobId", requireUser, requireMember, requireManager, async (c) => {
+  // admins, and anyone who can push to the job's repo: they could set its runner in the workflow
+  // file anyway.
+  .put("/:id/auto-jobs/:jobId", requireUser, requireMember, async (c) => {
     const parsed = autoJobSettingSchema.partial().safeParse(await c.req.json().catch(() => null));
     const jobId = Number(c.req.param("jobId"));
     if (!parsed.success || !Number.isSafeInteger(jobId)) throw new AppError("INVALID_REQUEST");
     const id = c.req.param("id");
     const job = await getAutoJob(c.var.db, id, jobId);
     if (!job) throw new AppError("NOT_FOUND");
-    const { size, first, repository, workflow, relayJob } = job;
+    const { size, first, repositoryId, repository, workflow, relayJob } = job;
+    if (
+      !canManage(c.var.role) &&
+      !(await userCanEditRepo(c.env, c.var.db, c.var.user!.id, repositoryId))
+    ) {
+      throw new AppError("FORBIDDEN", {
+        message: `Only owners, admins and people who can push to ${repository} can change its jobs.`,
+      });
+    }
     const previous = { size, first };
     const next = { ...previous, ...parsed.data };
     await changeSetting(c, id, {

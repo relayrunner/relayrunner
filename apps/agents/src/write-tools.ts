@@ -11,7 +11,7 @@ import { answer, findNamed, type ToolContext, workspaceArg } from "./context.ts"
 
 // Tools that change a workspace's routing settings, each through the same API route the dashboard
 // uses, so the API checks the person's role and logs the change in Activity with the agent's name.
-// They work only where an owner or admin turned on Allow changes for this agent in Settings →
+// They work only where the person turned on Allow changes for this agent in Settings →
 // Agents (apps/api/src/agent-auth.ts); elsewhere the API answers AGENT_CHANGES_OFF. Each answers
 // the new value and the one it replaced (`previous`), so a change can be undone.
 
@@ -26,7 +26,7 @@ const CHANGES = {
 const sizeArg = z.number().int().refine(isAutoSize, { message: AUTO_SIZE_MESSAGE });
 
 const ALLOW_CHANGES =
-  "Needs Allow changes for this agent in the workspace (see list_workspaces' canWrite) and an owner or admin role.";
+  "Needs Allow changes for this agent in the workspace (see list_workspaces' canWrite), and works only where the person could make the change in the dashboard.";
 
 export function registerWriteTools(server: McpServer, context: ToolContext) {
   const { request, workspaceId, workspacePath: route } = context;
@@ -38,7 +38,7 @@ export function registerWriteTools(server: McpServer, context: ToolContext) {
     {
       title: "Router settings",
       description:
-        "The workspace's settings beside the runner order: the default size (vCPUs) for auto jobs, each auto job (a relay that lets RelayRunner pick its runner) with its own size and the provider it tries first (null is the default), automatic retries of jobs a runner failed, and whether AI features are on.",
+        "The workspace's settings beside the runner order: the default size (vCPUs) for auto jobs, each auto job (a relay that lets RelayRunner pick its runner) with its own size, the provider it tries first (null is the default) and whether you may change it (canEdit), automatic retries of jobs a runner failed, and whether AI features are on.",
       inputSchema: z.object({ workspace: workspaceArg }),
       annotations: { readOnlyHint: true, destructiveHint: false, openWorldHint: false },
     },
@@ -89,7 +89,7 @@ export function registerWriteTools(server: McpServer, context: ToolContext) {
     "set_job_size",
     {
       title: "Set job size",
-      description: `Sets one auto job's size and the provider it tries first, by its id from get_router_settings. Leave one out to keep it; null puts it back on the default. ${ALLOW_CHANGES}`,
+      description: `Sets one auto job's size and the provider it tries first, by its id from get_router_settings. Leave one out to keep it; null puts it back on the default. Works for owners and admins, and for anyone who can push to the job's repo. ${ALLOW_CHANGES}`,
       inputSchema: z.object({
         workspace: workspaceArg,
         job: z.number().int().describe("The auto job's id."),

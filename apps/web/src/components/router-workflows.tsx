@@ -43,7 +43,6 @@ export function RouterWorkflows({
   jobs,
   defaultSize,
   steps,
-  editable,
   onChange,
 }: {
   setup: RouterSetup | null;
@@ -51,7 +50,6 @@ export function RouterWorkflows({
   defaultSize: number;
   // The providers in the runner order, for "try first".
   steps: RunnerKey[];
-  editable: boolean;
   onChange: (job: AutoJob, setting: Pick<AutoJob, "size" | "first">) => Promise<void>;
 }) {
   const [repo, setRepo] = useState(ALL);
@@ -116,15 +114,14 @@ export function RouterWorkflows({
                 <SheetDescription>{open.repository}</SheetDescription>
               </div>
               <p className="text-[13px] text-muted-foreground">
-                {editable
+                {open.jobs.some((job) => job.canEdit)
                   ? "Pick each job's size and the provider it tries first. Changes apply to the next run."
-                  : "Owners and admins can change these."}
+                  : "Owners, admins and people who can push to this repo can change these."}
               </p>
               <AutoJobRows
                 jobs={open.jobs}
                 defaultSize={defaultSize}
                 steps={steps}
-                editable={editable}
                 onChange={onChange}
               />
             </div>
@@ -271,13 +268,11 @@ function AutoJobRows({
   jobs,
   defaultSize,
   steps,
-  editable,
   onChange,
 }: {
   jobs: AutoJob[];
   defaultSize: number;
   steps: RunnerKey[];
-  editable: boolean;
   onChange: (job: AutoJob, setting: Pick<AutoJob, "size" | "first">) => Promise<void>;
 }) {
   return (
@@ -298,7 +293,7 @@ function AutoJobRows({
             <td className="py-1.5 pr-4">
               <Select
                 value={job.size === null ? DEFAULT : String(job.size)}
-                disabled={!editable}
+                disabled={!job.canEdit}
                 onValueChange={(value) =>
                   void onChange(job, {
                     size: value === DEFAULT ? null : Number(value),
@@ -326,7 +321,7 @@ function AutoJobRows({
             <td className="py-1.5">
               <Select
                 value={job.first ?? ORDER}
-                disabled={!editable}
+                disabled={!job.canEdit}
                 onValueChange={(value) =>
                   void onChange(job, {
                     size: job.size,

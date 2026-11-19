@@ -1,6 +1,6 @@
 # RelayRunner agents
 
-The MCP server at `https://agents.relayrunner.app/mcp`. An AI agent connects to it to ask about a workspace's runners, runs and usage, and, where an owner or admin allows it, to change the workspace's routing settings. `send_feedback` lets an agent report a problem to the RelayRunner team.
+The MCP server at `https://agents.relayrunner.app/mcp`. An AI agent connects to it to ask about a workspace's runners, runs and usage, and, where the person allows it, to change the workspace's routing settings. `send_feedback` lets an agent report a problem to the RelayRunner team.
 
 ```
 agent ──▶ relayrunner-agents ──▶ relayrunner-api (service binding)
@@ -55,7 +55,7 @@ These tools (`src/write-tools.ts`) change a workspace's routing, each through th
 | `set_ai`                        | `PUT /api/workspaces/:id/ai`                |
 | `pause_runner`, `resume_runner` | `POST /api/machines/:id/pause` and `resume` |
 
-They're off for every connection until an owner or admin turns on **Allow changes** for it in Settings → Agents, per workspace (`agent_grant_workspace.can_write`). The API reads that on every request, so turning it off takes effect at once, and answers `AGENT_CHANGES_OFF` where it's off. The routes still check the person's role as they do for the dashboard, so a member's agent can't change what the member can't. There's no separate OAuth scope: clients rarely ask for one, and this way the switch is per workspace and needs no new sign-in.
+They're off for every connection until the person who connected it turns on **Allow changes** for it in Settings → Agents, per workspace (`agent_grant_workspace.can_write`). The API reads that on every request, so turning it off takes effect at once, and answers `AGENT_CHANGES_OFF` where it's off. The routes still check the person's access as they do for the dashboard: workspace-wide settings need an owner or admin, and an auto job's size also works for anyone who can push to its repo on GitHub. So an agent can't change what its person can't. There's no separate OAuth scope: clients rarely ask for one, and this way the switch is per workspace and needs no new sign-in.
 
 Every change is logged in the workspace's Activity (`settings.*` events, and `machine.paused`/`resumed`) with the person and `via: "agent"` plus the agent's registered name; dashboard changes are logged the same way with `via: "dashboard"`. Each tool is marked destructive so clients ask before running it, and answers the previous value so the agent can undo it. `set_runner_order` needs the `version` from `get_runner_order` and fails with `RUNNER_ORDER_CHANGED` if someone changed the order since. Agents can't delete anything or touch members, installs or billing.
 

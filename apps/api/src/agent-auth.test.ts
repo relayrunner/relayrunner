@@ -632,7 +632,6 @@ describe("agent changes", () => {
     const { workspace, cookie: jar } = await testing.createWorkspace(env, cookie, slug, slug);
     const { access_token } = await signInAgent(jar);
     const listed = (await (await testing.call(env, "/agents", jar)).json()) as {
-      canManage: boolean;
       agents: { id: string; canWrite: boolean }[];
     };
     return { user, workspace, jar, access_token, listed, agentId: listed.agents[0].id };
@@ -648,9 +647,9 @@ describe("agent changes", () => {
     return page.items;
   }
 
-  test("are off until an owner or admin allows them, then logged with the agent's name", async () => {
+  test("are off until the person allows them, then logged with the agent's name", async () => {
     const { user, workspace, jar, access_token, listed, agentId } = await connected("changes");
-    expect(listed).toMatchObject({ canManage: true, agents: [{ canWrite: false }] });
+    expect(listed).toMatchObject({ agents: [{ canWrite: false }] });
     const orderPath = `/workspaces/${workspace.id}/runner-order`;
 
     const refused = await asAgent(orderPath, access_token, json({ steps: [{ key: "github" }] }));
@@ -734,25 +733,19 @@ describe("agent changes", () => {
     expect(off.status).toBe(403);
   });
 
-  test("members can't allow them, and the role is checked again on every change", async () => {
-    const { workspace, jar, agentId } = await connected("changes-role");
+  test("members can allow their own agent, which can't do more than they can", async () => {
+    const { workspace, agentId } = await connected("changes-role");
     const member = await testing.joinWorkspace(env, workspace.id, "member");
     const { access_token } = await signInAgent(member.cookie, { workspaceIds: [workspace.id] });
     const listed = (await (await testing.call(env, "/agents", member.cookie)).json()) as {
-      canManage: boolean;
       agents: { id: string }[];
     };
-    expect(listed.canManage).toBe(false);
     const allowed = await allowChanges(member.cookie, listed.agents[0].id, true);
-    expect(allowed.status).toBe(403);
+    expect(allowed.status).toBe(200);
     // Someone else's agent isn't theirs to change.
     expect((await allowChanges(member.cookie, agentId, false)).status).toBe(404);
-    expect(jar).toBeTruthy();
 
-    // An admin who allowed changes and was then made a member can't make them any more.
-    await env.DB.prepare("update agent_grant_workspace set can_write = 1 where workspace_id = ?")
-      .bind(workspace.id)
-      .run();
+    // Past the switch, the route checks the member's role, as it does for the dashboard.
     const order = await asAgent(
       `/workspaces/${workspace.id}/runner-order`,
       access_token,

@@ -114,6 +114,7 @@ export function sampleAutoJobs(): AutoJobs {
     first: null,
     updatedAt: null,
     lastSeenAt: now - 3_600_000,
+    canEdit: true,
     ...fields,
   });
   return {

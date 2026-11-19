@@ -6,7 +6,6 @@ import type { AppEnv } from "../app.ts";
 import { createDb, schema } from "../db/index.ts";
 import { requireUser } from "../middleware/session.ts";
 import { requireWorkspace } from "../middleware/workspace.ts";
-import { canManage } from "../roles.ts";
 import { AppError } from "@relayrunner/errors";
 
 const GrantBody = z.object({ workspaceIds: z.array(z.string().min(1)).min(1).max(100) });
@@ -75,20 +74,15 @@ export const agentRoutes = new Hono<AppEnv>()
       )
       .where(eq(schema.oauthConsent.userId, c.var.user!.id))
       .orderBy(desc(schema.oauthConsent.createdAt));
-    // Only owners and admins may let an agent make changes; anyone may stop theirs.
-    return c.json({ mcpUrl: c.env.AGENTS_MCP_URL, canManage: canManage(c.var.role), agents: rows });
+    return c.json({ mcpUrl: c.env.AGENTS_MCP_URL, agents: rows });
   })
   // Allow changes: whether the agent may change settings in this workspace (agent-auth.ts
-  // AGENT_WRITE_ROUTES). Takes effect on its next request.
+  // AGENT_WRITE_ROUTES). Anyone may allow their own agent: it can only change what they could
+  // change in the dashboard, and the routes check that. Takes effect on its next request.
   .put("/:id/changes", requireUser, requireWorkspace, async (c) => {
     const parsed = ChangesBody.safeParse(await c.req.json().catch(() => null));
     if (!parsed.success) throw new AppError("INVALID_REQUEST");
     const { enabled } = parsed.data;
-    if (enabled && !canManage(c.var.role)) {
-      throw new AppError("FORBIDDEN", {
-        message: "Only owners and admins can let an agent make changes.",
-      });
-    }
     const [consent] = await c.var.db
       .select({ grantId: schema.oauthConsent.referenceId })
       .from(schema.oauthConsent)

@@ -86,8 +86,8 @@ const workspacePath = {
 };
 
 /**
- * A route that changes a setting. It works only where an owner or admin allowed the agent changes,
- * and only for an owner or admin; it's logged in the workspace's Activity.
+ * A route that changes a setting. It works only where the person allowed the agent changes, and
+ * only for a change they could make in the dashboard; it's logged in the workspace's Activity.
  */
 const change = (
   operationId: string,
@@ -127,7 +127,7 @@ export const openApi = {
     version: "1.0.0",
     summary:
       "Read a workspace's runners, workflow runs, routing activity and CI usage, and change its routing.",
-    description: `The API behind the RelayRunner MCP server: a workspace's runners, runs, routing and usage. Sign in with OAuth (the \`workspace:read\` scope): the person picks which workspaces the token may read. The routes that change settings work only in workspaces where an owner or admin turned on Allow changes for the connection in Settings › Agents. To connect an AI agent, use the MCP server at ${MCP_URL} instead: MCP clients sign in on their own and get these routes as tools. Call this API directly only from your own OAuth client. Each connection can make 300 requests a minute; past that the API answers 429.`,
+    description: `The API behind the RelayRunner MCP server: a workspace's runners, runs, routing and usage. Sign in with OAuth (the \`workspace:read\` scope): the person picks which workspaces the token may read. The routes that change settings work only in workspaces where the person turned on Allow changes for the connection in Settings › Agents. To connect an AI agent, use the MCP server at ${MCP_URL} instead: MCP clients sign in on their own and get these routes as tools. Call this API directly only from your own OAuth client. Each connection can make 300 requests a minute; past that the API answers 429.`,
     contact: { url: "https://github.com/relayrunner/relayrunner/issues" },
     license: { name: "Apache-2.0", identifier: "Apache-2.0" },
   },
@@ -179,14 +179,14 @@ export const openApi = {
     "/workspaces/{workspaceId}/auto-jobs": read(
       "listAutoJobs",
       "List auto jobs",
-      "Jobs whose relay lets RelayRunner pick the runner, from the last 30 days, with each one's size and first provider (null is the default), and the default size.",
+      "Jobs whose relay lets RelayRunner pick the runner, from the last 30 days, with each one's size and first provider (null is the default) and whether you may change it (`canEdit`), and the default size.",
       object("The default size and the auto jobs.", { size: { type: "integer" }, jobs: list }),
       [workspacePath],
     ),
     "/workspaces/{workspaceId}/auto-jobs/{jobId}": change(
       "setJobSize",
       "Set a job's size",
-      "One auto job's size in vCPUs and the provider it tries first. Null puts either back on the default; one left out stays as it is.",
+      "One auto job's size in vCPUs and the provider it tries first. Null puts either back on the default; one left out stays as it is. Owners and admins can change any job, and anyone who can push to the job's repo on GitHub can change its jobs.",
       {
         size: { type: ["integer", "null"], enum: [...AUTO_SIZES, null] },
         first: { type: ["string", "null"], enum: [...RUNNER_KEYS, null] },

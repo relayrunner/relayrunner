@@ -29,7 +29,7 @@ export const ERRORS = {
   AGENT_CHANGES_OFF: {
     status: 403,
     message:
-      "This agent can't make changes in this workspace. An owner or admin can turn on Allow changes for it in Settings → Agents.",
+      "This agent can't make changes in this workspace. Its person can turn on Allow changes for it in Settings → Agents.",
   },
   NOT_A_MEMBER: { status: 403, message: "You aren't a member of that workspace." },
   LEGAL_TERMS_OUTDATED: {

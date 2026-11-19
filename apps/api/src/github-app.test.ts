@@ -14,6 +14,7 @@ import {
   runnerBusy,
   runnerScope,
   userCanReadRepo,
+  userCanWriteRepo,
 } from "./github-app.ts";
 
 const { privateKey } = generateKeyPairSync("rsa", { modulusLength: 2048 });
@@ -204,6 +205,19 @@ describe("userCanReadRepo", () => {
     }
     answer("none");
     expect(await userCanReadRepo("ghs_x", "acme/app", 2)).toBe(false);
+  });
+
+  test("write and admin can push; read, none and an unknown user can't", async () => {
+    for (const [permission, push] of [
+      ["admin", true],
+      ["write", true],
+      ["read", false],
+      ["none", false],
+      [404, false],
+    ] as const) {
+      answer(permission);
+      expect(await userCanWriteRepo("ghs_x", "acme/app", 2), String(permission)).toBe(push);
+    }
   });
 
   test("asks by the user's current login, encoded", async () => {
