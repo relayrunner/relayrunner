@@ -99,7 +99,7 @@ export function registerTools(server: McpServer, context: ToolContext) {
     {
       title: "Workflows",
       description:
-        "Every workflow that ran in the workspace's repos in the last 14 days, with its runs and how many went through RelayRunner (routedRuns). Workflows with no routed runs come first: those are what's left to route. Also the hosted provider runner labels jobs ran on, with job counts.",
+        "Every workflow that ran in the workspace's repos in the last 14 days, with its runs and how many went through RelayRunner (routedRuns). Workflows with no routed runs come first: those are what's left to route. Each workflow lists its jobs by the names GitHub shows, with runs and usual minutes. Also the repos the RelayRunner app can see (private or public), and the hosted provider runner labels jobs ran on, with job counts.",
       inputSchema: z.object({
         workspace: workspaceArg,
         repository: z
@@ -111,13 +111,14 @@ export function registerTools(server: McpServer, context: ToolContext) {
     },
     ({ workspace, repository }) =>
       answer(async () => {
-        const setup = await workspaceRoute<{ workflows: { repository: string }[] }>(
-          workspace,
-          "router-setup",
-        );
+        const setup = await workspaceRoute<{
+          workflows: { repository: string }[];
+          repos?: { fullName: string }[];
+        }>(workspace, "router-setup");
         return {
           ...setup,
           workflows: setup.workflows.filter((row) => contains(row.repository, repository)),
+          repos: setup.repos?.filter((row) => contains(row.fullName, repository)),
         };
       }),
   );

@@ -1,12 +1,13 @@
 import { DEFAULT_RUNNER_ORDER, type RunnerOrder } from "@relayrunner/runner-order";
 import { createFileRoute } from "@tanstack/react-router";
 import { RotateCwIcon, Settings2Icon, TriangleAlert } from "lucide-react";
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { SectionBoundary } from "@/components/error-boundary";
 import { PageHeader } from "@/components/page-header";
 import { RetrySettingsCard } from "@/components/retry-settings";
 import { RunnerOrderEditor } from "@/components/runner-order-editor";
 import { RouterWorkflows } from "@/components/router-workflows";
+import { RouteRepoSheet, type RouteStart, SetupCard } from "@/components/route-repo";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Sheet, SheetContent, SheetTitle } from "@/components/ui/sheet";
@@ -25,6 +26,7 @@ import { authDisabled } from "@/lib/auth-client";
 import { listMachines, type Machine } from "@/lib/machines";
 import { useProviderApps } from "@/lib/provider-apps";
 import { getRouterSetup, type RouterSetup } from "@/lib/router-setup";
+import { repoProgress } from "@/lib/route-repo";
 import {
   clearUnhealthyRunner,
   getProviderHealth,
@@ -81,6 +83,9 @@ function RouterPage() {
   const setup = useRouterSetup(current.workspace.id);
   const auto = useAutoJobs(current.workspace.id);
   const [settingsOpen, setSettingsOpen] = useState(false);
+  // The "Route a repo" sheet, open from the setup card or a repo's Set up in Workflows.
+  const [routeStart, setRouteStart] = useState<RouteStart | null>(null);
+  const progress = useMemo(() => repoProgress(setup), [setup]);
 
   return (
     <section>
@@ -114,7 +119,9 @@ function RouterPage() {
             machines={machines}
             accounts={loaded.accounts}
             installedApps={installedApps}
-            labels={setup?.labels ?? null}
+            aside={
+              <SetupCard progress={progress} onRoute={() => setRouteStart({ repoId: null })} />
+            }
           />
         </SectionBoundary>
         <SectionBoundary>
@@ -124,9 +131,17 @@ function RouterPage() {
             defaultSize={auto.jobs?.size ?? AUTO_SIZES[0]}
             steps={[...new Set(loaded.order.steps.map((step) => step.key))]}
             onChange={auto.setJob}
+            toRoute={new Set(progress.left.map((repo) => repo.id))}
+            onSetUp={(repoId) => setRouteStart({ repoId })}
           />
         </SectionBoundary>
       </div>
+      <RouteRepoSheet
+        start={routeStart}
+        onClose={() => setRouteStart(null)}
+        progress={progress}
+        accessUrl={setup?.accessUrl ?? null}
+      />
       <Sheet open={settingsOpen} onOpenChange={setSettingsOpen}>
         <SheetContent aria-describedby={undefined} className="sm:max-w-md">
           <div className="grid gap-4 px-5 py-5 sm:px-6">
@@ -340,8 +355,8 @@ function sampleRouter(): {
   };
 }
 
-// Recent workflows, routed or not, and the hosted labels jobs ran on. Null until it loads, and when
-// it can't be read: the page still works without it.
+// Recent workflows and their jobs, the repos the App sees, and the hosted labels jobs ran on. Null
+// until it loads, and when it can't be read: the page still works without it.
 function useRouterSetup(workspaceId: string) {
   const [setup, setSetup] = useState<RouterSetup | null>(null);
   useEffect(() => {

@@ -570,16 +570,8 @@ export function CopyCommand({ command, prompt = true }: { command: string; promp
   );
 }
 
-/** An icon button that copies `text` and shows a check for a moment. */
-export function CopyButton({
-  text,
-  label,
-  className,
-}: {
-  text: string;
-  label: string;
-  className?: string;
-}) {
+/** Copies `text` on `copy()`; `copied` stays true for a moment after. */
+export function useCopy(text: string) {
   const [copied, setCopied] = useState(false);
   async function copy() {
     try {
@@ -590,6 +582,20 @@ export function CopyButton({
       // Clipboard can be blocked (insecure origin, permissions); the text is still selectable.
     }
   }
+  return { copied, copy };
+}
+
+/** An icon button that copies `text` and shows a check for a moment. */
+export function CopyButton({
+  text,
+  label,
+  className,
+}: {
+  text: string;
+  label: string;
+  className?: string;
+}) {
+  const { copied, copy } = useCopy(text);
   return (
     <Button
       size="icon-sm"

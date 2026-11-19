@@ -81,3 +81,47 @@ test("lists workflows, routed or not, and the hosted labels jobs ran on", async 
     { key: "blacksmith", label: "blacksmith-2vcpu-ubuntu-2404", jobs: 1 },
   ]);
 });
+
+test("lists each workflow's jobs, with matrix legs as one, and the repos the App sees", async () => {
+  const { cookie } = await testing.signIn(env);
+  const { workspace } = await testing.createWorkspace(env, cookie, "Jobs", "setup-jobs");
+  const installationId = 9102;
+  const db = createDb(env.DB);
+  await db.insert(schema.githubInstallation).values({
+    id: installationId,
+    accountId: installationId,
+    accountLogin: "jobs-org",
+    accountType: "Organization",
+  });
+  await testing.useInstallation(env, workspace.id, installationId);
+  const seen = { installationId, githubStateAt: new Date() };
+  await db.insert(schema.githubRepository).values([
+    { ...seen, id: 1, fullName: "acme/app", private: true },
+    { ...seen, id: 2, fullName: "acme/docs", private: false },
+    { ...seen, id: 3, fullName: "acme/old", private: true, removedAt: new Date() },
+  ]);
+  await db.insert(schema.jobTiming).values([
+    job(installationId, 1, { name: "lint" }),
+    job(installationId, 1, { name: "e2e (chrome)" }),
+    job(installationId, 1, {
+      name: "e2e (firefox)",
+      startedAt: new Date(Date.now() - HOUR - 5 * 60_000),
+    }),
+    job(installationId, 2, { name: "lint" }),
+    job(installationId, 2, { name: "e2e (chrome)", conclusion: "failure" }),
+    job(installationId, 2, { name: "deploy", conclusion: "skipped" }),
+  ]);
+
+  const setup = await routerSetup(db, workspace.id);
+  expect(setup.workflows[0].jobs).toEqual([
+    { name: "e2e", legs: 2, label: "ubuntu-latest", runs: 2, minutes: 5 },
+    { name: "lint", legs: 1, label: "ubuntu-latest", runs: 2, minutes: 1 },
+  ]);
+  expect(setup.repos).toEqual([
+    { id: 1, fullName: "acme/app", private: true },
+    { id: 2, fullName: "acme/docs", private: false },
+  ]);
+  expect(setup.accessUrl).toBe(
+    `https://github.com/organizations/jobs-org/settings/installations/${installationId}`,
+  );
+});

@@ -27,10 +27,10 @@ const ALL = "all";
 const DEFAULT = "default";
 const ORDER = "order";
 const HINT_KEY = "rr-auto-hint-dismissed";
-const AUTO_DOCS = `${DOCS_URL}/reference/relay-inputs#auto-sizes`;
+export const AUTO_DOCS = `${DOCS_URL}/reference/relay-inputs#auto-sizes`;
 
 type Workflow = Pick<SetupWorkflow, "repositoryId" | "repository" | "workflow"> &
-  Partial<Pick<SetupWorkflow, "runs" | "routedRuns">> & { jobs: AutoJob[] };
+  Partial<Pick<SetupWorkflow, "runs" | "routedRuns">> & { autoJobs: AutoJob[] };
 
 /**
  * The workspace's workflows by repo, from their runs in the last `days` days, and whether they go
@@ -44,6 +44,8 @@ export function RouterWorkflows({
   defaultSize,
   steps,
   onChange,
+  toRoute,
+  onSetUp,
 }: {
   setup: RouterSetup | null;
   jobs: AutoJob[];
@@ -51,6 +53,10 @@ export function RouterWorkflows({
   // The providers in the runner order, for "try first".
   steps: RunnerKey[];
   onChange: (job: AutoJob, setting: Pick<AutoJob, "size" | "first">) => Promise<void>;
+  /** Repos with workflows left to route, which get a Set up link. */
+  toRoute: Set<number>;
+  /** Opens the "Route a repo" sheet at a repo's jobs. */
+  onSetUp: (repositoryId: number) => void;
 }) {
   const [repo, setRepo] = useState(ALL);
   const [hintDismissed, setHintDismissed] = useState(() => readFlag(HINT_KEY));
@@ -61,7 +67,7 @@ export function RouterWorkflows({
   if (workflows.length === 0) return null;
   const repos = [...new Set(workflows.map((w) => w.repository))].sort();
   const shown = repo === ALL ? repos : repos.filter((r) => r === repo);
-  const routed = workflows.filter((w) => (w.routedRuns ?? 0) > 0 || w.jobs.length > 0).length;
+  const routed = workflows.filter((w) => (w.routedRuns ?? 0) > 0 || w.autoJobs.length > 0).length;
 
   return (
     <section aria-label="Workflows" className="grid gap-3 rounded-xl border px-4 py-3.5">
@@ -103,6 +109,11 @@ export function RouterWorkflows({
           name={name}
           workflows={workflows.filter((w) => w.repository === name)}
           onOpen={(w) => setOpenKey(workflowKey(w))}
+          onSetUp={
+            toRoute.has(workflows.find((w) => w.repository === name)?.repositoryId ?? -1)
+              ? onSetUp
+              : undefined
+          }
         />
       ))}
       <Sheet open={!!open} onOpenChange={(next) => !next && setOpenKey(null)}>
@@ -114,12 +125,12 @@ export function RouterWorkflows({
                 <SheetDescription>{open.repository}</SheetDescription>
               </div>
               <p className="text-[13px] text-muted-foreground">
-                {open.jobs.some((job) => job.canEdit)
+                {open.autoJobs.some((job) => job.canEdit)
                   ? "Pick each job's size and the provider it tries first. Changes apply to the next run."
                   : "Owners, admins and people who can push to this repo can change these."}
               </p>
               <AutoJobRows
-                jobs={open.jobs}
+                jobs={open.autoJobs}
                 defaultSize={defaultSize}
                 steps={steps}
                 onChange={onChange}
@@ -136,21 +147,35 @@ function RepoWorkflows({
   name,
   workflows,
   onOpen,
+  onSetUp,
 }: {
   name: string;
   workflows: Workflow[];
   onOpen: (workflow: Workflow) => void;
+  onSetUp?: (repositoryId: number) => void;
 }) {
   const [all, setAll] = useState(false);
   const shown = all ? workflows : workflows.slice(0, FIRST_ROWS);
+  const [first] = workflows;
   return (
     <div className="grid gap-1.5 border-t pt-3">
-      <h3 className="text-[13px] font-semibold">{name}</h3>
+      <div className="flex items-center justify-between gap-3">
+        <h3 className="min-w-0 truncate text-[13px] font-semibold">{name}</h3>
+        {onSetUp && first && (
+          <button
+            type="button"
+            onClick={() => onSetUp(first.repositoryId)}
+            className="shrink-0 rounded text-xs font-medium text-go outline-none hover:text-go-hover focus-visible:ring-2 focus-visible:ring-ring"
+          >
+            Set up
+          </button>
+        )}
+      </div>
       <ul className="grid gap-1.5 text-sm">
         {shown.map((w) => (
           <li key={w.workflow}>
             <div className="flex min-w-0 items-center gap-2.5">
-              {(w.routedRuns ?? 0) > 0 || w.jobs.length > 0 ? (
+              {(w.routedRuns ?? 0) > 0 || w.autoJobs.length > 0 ? (
                 <CheckIcon aria-label="Routed" className="size-4 shrink-0 text-go" />
               ) : (
                 <MinusIcon
@@ -159,14 +184,14 @@ function RepoWorkflows({
                 />
               )}
               <span className="min-w-0 truncate">{w.workflow}</span>
-              {(w.routedRuns ?? 0) > 0 && w.jobs.length === 0 && <PinnedNote />}
-              {w.jobs.length > 0 && (
+              {(w.routedRuns ?? 0) > 0 && w.autoJobs.length === 0 && <PinnedNote />}
+              {w.autoJobs.length > 0 && (
                 <button
                   type="button"
                   onClick={() => onOpen(w)}
                   className="flex shrink-0 items-center gap-0.5 rounded text-xs text-muted-foreground outline-none hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring"
                 >
-                  {plural(w.jobs.length, "auto job")}
+                  {plural(w.autoJobs.length, "auto job")}
                   <ChevronRightIcon aria-hidden className="size-3.5" />
                 </button>
               )}
@@ -363,7 +388,7 @@ const workflowKey = (w: Workflow) => `${w.repositoryId}:${w.workflow}`;
 function mergeWorkflows(workflows: SetupWorkflow[], jobs: AutoJob[]): Workflow[] {
   const key = (repositoryId: number, workflow: string) => `${repositoryId}:${workflow}`;
   const merged = new Map<string, Workflow>(
-    workflows.map((w) => [key(w.repositoryId, w.workflow), { ...w, jobs: [] }]),
+    workflows.map((w) => [key(w.repositoryId, w.workflow), { ...w, autoJobs: [] }]),
   );
   for (const job of jobs) {
     const workflow = job.workflow ?? job.workflowPath;
@@ -372,9 +397,9 @@ function mergeWorkflows(workflows: SetupWorkflow[], jobs: AutoJob[]): Workflow[]
       repositoryId: job.repositoryId,
       repository: job.repository,
       workflow,
-      jobs: [],
+      autoJobs: [],
     };
-    entry.jobs.push(job);
+    entry.autoJobs.push(job);
     merged.set(id, entry);
   }
   return [...merged.values()];
