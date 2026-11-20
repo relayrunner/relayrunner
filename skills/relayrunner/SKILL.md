@@ -80,6 +80,8 @@ relayrunner workspaces add     # or remove; takes a name, slug or id
 relayrunner history --json     # the jobs this machine ran, newest first
 ```
 
+`relayrunner blacksmith connect` connects the user's Blacksmith organization so the dashboard shows its real usage. It opens their browser to approve an org token as a Blacksmith org admin, so ask before running it, and let the user run it in their own terminal if they're not at the computer. It needs `relayrunner login` first. `--workspace <slug>` picks the workspace when they run more than one.
+
 ## Optimized checks
 
 A `relayrunner.yml` file at `.github/relayrunner.yml` or the repo root turns on a PR title check and linters for every pull request, with no workflow and no runner. It's read from the default branch.

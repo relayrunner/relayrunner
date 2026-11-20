@@ -58,6 +58,13 @@ import {
   type PauseActor,
 } from "../machines.ts";
 import type { Env } from "../env.ts";
+import { isBillingProvider } from "@relayrunner/providers";
+import {
+  chooseWorkspace,
+  connectProvider,
+  managedWorkspaces,
+  parseOptions,
+} from "../provider-connections.ts";
 import { sendEmail } from "../email.ts";
 import { inBackground, requireUser } from "../middleware/session.ts";
 import { requireWorkspace } from "../middleware/workspace.ts";
@@ -128,6 +135,11 @@ const ClaimBody = z.object({
 const DenyBody = z.object({ userCode: z.string().min(1).max(32) });
 
 const SharingBody = z.object({ sharing: z.enum(MACHINE_SHARING) });
+const MachineConnectBody = z.object({
+  token: z.string().trim().min(8).max(4096),
+  options: z.record(z.string(), z.string()).optional(),
+  workspace: z.string().trim().min(1).max(200).optional(),
+});
 
 const AddRunnersBody = z.object({
   installationId: z.number().int().positive(),
@@ -446,6 +458,47 @@ export const machineRoutes = new Hono<AppEnv>()
       });
     else await removeMachineFromWorkspace(db, machine, workspaceId, machine.userId);
     return c.json(await presentWorkspaceChoice(db, machine));
+  })
+  // Connects a provider account for one of the owner's workspaces, for `relayrunner blacksmith
+  // connect`: `Authorization: Bearer rrm_…`, 401 like /me. The owner must own or administer that
+  // workspace, as in Settings → Providers. `workspace` (an id, slug or name) picks one; without it, the
+  // workspace installed on the provider's organization, or the owner's only one.
+  .put("/me/providers/:provider/connection", async (c) => {
+    const db = createDb(c.env.DB);
+    const machine = await machineFromToken(db, c.req.header("authorization"));
+    if (!machine) throw new AppError("UNAUTHENTICATED");
+    if (!machine.userId) throw new AppError("MACHINE_NOT_OWNED");
+    const provider = c.req.param("provider");
+    if (!isBillingProvider(provider)) throw new AppError("NOT_FOUND");
+    const parsed = MachineConnectBody.safeParse(await c.req.json().catch(() => null));
+    if (!parsed.success)
+      throw new AppError("INVALID_REQUEST", { message: "Send the whole token." });
+    const options = parseOptions(provider, parsed.data.options);
+    if (!options) throw new AppError("INVALID_REQUEST", { message: "Check the options." });
+    const managed = await managedWorkspaces(db, machine.userId);
+    if (managed.length === 0)
+      throw new AppError("FORBIDDEN", {
+        message: "Only a workspace's owners and admins can connect a provider.",
+      });
+    const workspace = chooseWorkspace(managed, options.organization, parsed.data.workspace);
+    if (!workspace)
+      throw new AppError(parsed.data.workspace ? "NOT_FOUND" : "PROVIDER_WORKSPACE_UNCLEAR", {
+        details: {
+          workspaces: managed.map(({ id, name, slug }) => ({ id, name, slug })),
+        },
+      });
+    const result = await connectProvider(c.env, db, {
+      workspaceId: workspace.id,
+      provider,
+      token: parsed.data.token,
+      options,
+      userId: machine.userId,
+    });
+    if (!result.ok) throw new AppError(result.error, { details: { reason: result.message } });
+    return c.json({
+      workspace: { id: workspace.id, name: workspace.name, slug: workspace.slug },
+      connection: result.connection,
+    });
   })
   // Pausing from the machine itself, for `relayrunner pause` and `resume`: `Authorization: Bearer
   // rrm_…`, 401 like /me. Registered before /:id so "me" isn't read as a machine id.

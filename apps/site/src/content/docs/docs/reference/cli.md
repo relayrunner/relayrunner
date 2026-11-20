@@ -124,6 +124,19 @@ relayrunner history --json
 
 Lists the jobs `connect` ran on this machine, newest first, with each one's result and how long it took. They're kept in `~/.relayrunner/history.jsonl`, the newest 500 at least, which the Mac app reads too.
 
+## `blacksmith`
+
+```sh
+relayrunner blacksmith connect
+relayrunner blacksmith connect --workspace acme   # when you run more than one workspace
+```
+
+Connects your Blacksmith organization so Settings › Providers shows its real usage: billable minutes and cost per day, and each job's billable minutes. Blacksmith has no usage API, so RelayRunner reads it with Blacksmith's own CLI and an org token.
+
+The command runs `blacksmith org-token create`, which opens your browser for you to approve as an admin of the Blacksmith organization. It sends only the token it prints to RelayRunner, encrypted at rest, and never signs in to Blacksmith or reads Blacksmith's saved credentials. If Blacksmith's CLI isn't installed, it offers to download it into `~/.relayrunner/bin` (`--yes` skips the question), checked against the SHA-256 Blacksmith publishes.
+
+The token goes to the workspace on the same GitHub organization, or the one you name. You must own or administer it. Remove the connection in Settings › Providers, then revoke the token with `blacksmith org-token revoke <id>`. Run `relayrunner login` first if this computer isn't signed in.
+
 ## `firewall`
 
 ```sh

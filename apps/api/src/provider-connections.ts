@@ -7,6 +7,7 @@ import {
   type BillingProviderId,
   defaultBillingOptions,
 } from "@relayrunner/providers";
+import { canManage } from "@relayrunner/api-types";
 import { and, count, eq, gte, sum } from "drizzle-orm";
 import type { SQLiteColumn } from "drizzle-orm/sqlite-core";
 import { type Db, schema } from "./db/index.ts";
@@ -277,4 +278,60 @@ export async function disconnectProvider(db: Db, workspaceId: string, provider: 
       .where(byConnection(schema.providerDailyUsage, workspaceId, provider)),
   ]);
   return present(provider, undefined, { jobs: 0, billableMinutes: 0, costUsd: null });
+}
+
+/** A workspace its user owns or administers, with the GitHub account it's installed on. */
+export interface ManagedWorkspace {
+  id: string;
+  name: string;
+  slug: string;
+  accountLogin: string | null;
+}
+
+/** The workspaces a user may connect providers in. */
+export async function managedWorkspaces(db: Db, userId: string): Promise<ManagedWorkspace[]> {
+  const rows = await db
+    .select({
+      id: schema.workspace.id,
+      name: schema.workspace.name,
+      slug: schema.workspace.slug,
+      accountLogin: schema.githubInstallation.accountLogin,
+      role: schema.workspaceMember.role,
+    })
+    .from(schema.workspaceMember)
+    .innerJoin(schema.workspace, eq(schema.workspace.id, schema.workspaceMember.workspaceId))
+    .leftJoin(
+      schema.githubInstallation,
+      eq(schema.githubInstallation.id, schema.workspace.installationId),
+    )
+    .where(eq(schema.workspaceMember.userId, userId))
+    .orderBy(schema.workspaceMember.createdAt, schema.workspace.id);
+  return rows
+    .filter((row) => canManage(row.role))
+    .map(({ id, name, slug, accountLogin }) => ({ id, name, slug, accountLogin }));
+}
+
+/**
+ * Which workspace a connection from the CLI goes to: the one it names (by id, slug or name), else the
+ * only one installed on the provider account's GitHub organization, else the user's only one.
+ * Null when that's none or more than one, for the CLI to ask.
+ */
+export function chooseWorkspace(
+  workspaces: ManagedWorkspace[],
+  organization: string | undefined,
+  wanted: string | undefined,
+): ManagedWorkspace | null {
+  if (wanted) {
+    const named = wanted.toLowerCase();
+    return (
+      workspaces.find((w) => w.id === wanted) ??
+      workspaces.find((w) => w.slug.toLowerCase() === named) ??
+      workspaces.find((w) => w.name.toLowerCase() === named) ??
+      null
+    );
+  }
+  const org = organization?.toLowerCase();
+  const matching = workspaces.filter((w) => org && w.accountLogin?.toLowerCase() === org);
+  if (matching.length === 1) return matching[0]!;
+  return workspaces.length === 1 ? workspaces[0]! : null;
 }

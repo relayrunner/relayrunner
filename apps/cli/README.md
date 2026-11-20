@@ -242,6 +242,24 @@ to start on the machine come first. `--repo`, `--workflow`, `--result`
 machine only sees jobs that ran on it. RelayRunner for Mac's Jobs window reads
 the same.
 
+## `relayrunner blacksmith`
+
+```sh
+npx relayrunner blacksmith connect
+npx relayrunner blacksmith connect --workspace acme
+```
+
+Connects a Blacksmith organization so Settings › Providers shows its real
+usage. It runs Blacksmith's own `blacksmith org-token create`, which you
+approve in your browser as a Blacksmith org admin, and sends only the token it
+prints (PUT /api/machines/me/providers/blacksmith/connection). It never signs
+in to Blacksmith or reads Blacksmith's saved credentials. Without Blacksmith's
+CLI on PATH it offers to download it into `~/.relayrunner/bin`, checked
+against the SHA-256 Blacksmith publishes (`--yes` skips the question). The
+token goes to the workspace on the same GitHub organization, or the one
+`--workspace` names, which you must own or administer. Exits 1 when not signed
+in.
+
 ## `relayrunner share`
 
 ```sh
