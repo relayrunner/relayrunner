@@ -398,6 +398,15 @@ function stubBucket(status = 200) {
   return puts;
 }
 
+/** The workspace's settings.log_destination entries, newest first, as [target, change, name]. */
+async function destinations(cookie: string) {
+  const response = await testing.call(env, "/activity?filter=settings", cookie);
+  const { items } = (await response.json()) as { items: { type: string; data: any }[] };
+  return items
+    .filter((item) => item.type === "settings.log_destination")
+    .map(({ data }) => [data.target, data.change, data.name]);
+}
+
 describe("bucket", () => {
   test("uses virtual-hosted URLs for Amazon S3 and path-style ones elsewhere", () => {
     expect(
@@ -510,5 +519,34 @@ describe("bucket", () => {
     expect(
       items.filter((item) => item.type === "settings.log_bucket").map((item) => item.data.logs),
     ).toEqual(["off", "failed"]);
+  });
+
+  test("moving the archive or changing its key shows in Activity", async () => {
+    const { cookie } = await owner();
+    await saveBucket(cookie, bucketSettings);
+    await saveBucket(cookie, { ...bucketSettings, bucket: "other-logs" });
+    await saveBucket(cookie, { ...bucketSettings, bucket: "other-logs", secretAccessKey: "new" });
+    const { secretAccessKey: _secret, accessKeyId: _keyId, ...kept } = bucketSettings;
+    await saveBucket(cookie, { ...kept, bucket: "other-logs" });
+    expect(await destinations(cookie)).toEqual([
+      ["bucket", "key", "other-logs"],
+      ["bucket", "place", "other-logs"],
+    ]);
+  });
+
+  test("pointing telemetry elsewhere or changing its headers shows in Activity", async () => {
+    const { cookie } = await owner();
+    await save(cookie, settings);
+    await save(cookie, { ...settings, headers: [{ name: "x-honeycomb-team" }] });
+    await save(cookie, { ...settings, endpoint: "https://api.eu1.honeycomb.io" });
+    await save(cookie, {
+      ...settings,
+      endpoint: "https://api.eu1.honeycomb.io",
+      headers: [{ name: "x-honeycomb-team", value: "other" }],
+    });
+    expect(await destinations(cookie)).toEqual([
+      ["endpoint", "key", "api.eu1.honeycomb.io"],
+      ["endpoint", "place", "api.eu1.honeycomb.io"],
+    ]);
   });
 });

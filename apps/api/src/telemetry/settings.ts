@@ -8,6 +8,8 @@ import type { Env } from "../env.ts";
 import { sealToken, tokenHint } from "../provider-tokens.ts";
 import { sendSpans } from "./export.ts";
 import {
+  type DestinationChange,
+  destinationChanges,
   exportingInstallations,
   exportRow,
   type ExportStatusView,
@@ -97,8 +99,9 @@ export interface SaveInput {
 }
 
 export type SaveResult =
-  // `previousLogs`: the logs choice before this save, for Activity.
-  | { ok: true; telemetry: TelemetryView; previousLogs: JobLogChoice }
+  // `previousLogs` and `changes`: the logs choice before this save, and whether it moved the
+  // endpoint or changed its headers, for Activity.
+  | { ok: true; telemetry: TelemetryView; previousLogs: JobLogChoice; changes: DestinationChange[] }
   | {
       ok: false;
       error: "TELEMETRY_ENDPOINT_INVALID" | "TELEMETRY_HEADER_MISSING";
@@ -129,6 +132,11 @@ export async function saveTelemetry(
       };
     headers[name] = kept;
   }
+  const key = (all: Record<string, string>) => JSON.stringify(Object.entries(all).sort());
+  const changes = destinationChanges(
+    existing ? { place: existing.endpoint, key: key(saved) } : null,
+    { place: endpoint, key: key(headers) },
+  );
   const values = {
     endpoint,
     headers: await sealToken(env, workspaceId, HEADERS_PURPOSE, JSON.stringify(headers)),
@@ -147,6 +155,7 @@ export async function saveTelemetry(
     ok: true,
     telemetry: await telemetryView(db, workspaceId),
     previousLogs: existing?.logs ?? "off",
+    changes,
   };
 }
 

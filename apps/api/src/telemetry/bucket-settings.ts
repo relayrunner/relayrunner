@@ -9,6 +9,8 @@ import { sealToken, tokenHint } from "../provider-tokens.ts";
 import { CREDENTIALS_PURPOSE, openCredentials, testBucket } from "./bucket.ts";
 import {
   bucketRow,
+  type DestinationChange,
+  destinationChanges,
   exportingInstallations,
   type ExportStatusView,
   NO_STATUS,
@@ -102,8 +104,9 @@ export interface BucketInput {
 }
 
 export type BucketSaveResult =
-  // `previousLogs`: the logs choice before this save, for Activity.
-  | { ok: true; bucket: BucketView; previousLogs: JobLogChoice }
+  // `previousLogs` and `changes`: the logs choice before this save, and whether it moved the bucket
+  // or changed its key, for Activity.
+  | { ok: true; bucket: BucketView; previousLogs: JobLogChoice; changes: DestinationChange[] }
   | { ok: false; error: "BUCKET_INVALID" | "BUCKET_SECRET_MISSING"; message: string };
 
 /**
@@ -132,11 +135,21 @@ export async function saveBucket(
     return { ok: false, error: "BUCKET_INVALID", message: "Enter the access key ID." };
   if (!secretAccessKey)
     return { ok: false, error: "BUCKET_SECRET_MISSING", message: "Enter the secret access key." };
+  const prefix = normalizePrefix(input.prefix);
+  const place = (row: Pick<Row, "endpoint" | "bucket" | "region" | "prefix">) =>
+    JSON.stringify([row.endpoint, row.bucket, row.region, row.prefix]);
+  const changes = destinationChanges(
+    existing && saved && { place: place(existing), key: JSON.stringify(saved) },
+    {
+      place: place({ endpoint, bucket, region, prefix }),
+      key: JSON.stringify({ accessKeyId, secretAccessKey }),
+    },
+  );
   const values = {
     endpoint,
     bucket,
     region,
-    prefix: normalizePrefix(input.prefix),
+    prefix,
     credentials: await sealToken(
       env,
       workspaceId,
@@ -156,6 +169,7 @@ export async function saveBucket(
     ok: true,
     bucket: await bucketView(db, workspaceId),
     previousLogs: existing?.logs ?? "off",
+    changes,
   };
 }
 

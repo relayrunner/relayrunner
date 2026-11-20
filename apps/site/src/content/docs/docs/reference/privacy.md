@@ -17,7 +17,7 @@ RelayRunner needs to know about your jobs to route them, but not what's in them.
 ## What it never gets
 
 - **Your code.** The App can only read `relayrunner.yml`. The one exception is lint: it reads a commit with the lint job's own token, or through the separate Checks App if you install it, lints it in a sandbox with no internet access and discards it.
-- **Secrets, and a copy of your logs.** Jobs on your machines use GitHub's runner, which talks to GitHub directly. When you open a failed job, the dashboard reads the end of its log from GitHub to show you, and doesn't keep it.
+- **Secrets, and a copy of your logs.** Jobs on your machines use GitHub's runner, which talks to GitHub directly. When you open a failed job, the dashboard reads the end of its log from GitHub to show you, and doesn't keep it. If an owner or admin turns on [job logs or a log archive](/docs/dashboard/telemetry#job-logs), each finished job's log streams from GitHub to the endpoint or bucket they chose, with no copy kept.
 - **Provider accounts.** A routed job only gets a label. The provider, such as GitHub or Depot, runs it under your agreement with them.
 
 ## AI

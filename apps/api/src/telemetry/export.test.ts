@@ -281,6 +281,18 @@ describe("exporting", () => {
     expect(result.acked).toEqual([0]);
     expect((await row()).enabled).toBe(true);
 
+    // Failures days apart, with nothing tried between, start over rather than add up.
+    await db
+      .update(schema.telemetryExport)
+      .set({
+        failingSince: new Date(Date.now() - 4 * 86_400_000),
+        failedAt: new Date(Date.now() - 2 * 86_400_000),
+      })
+      .where(eq(schema.telemetryExport.workspaceId, workspace.id));
+    await handleTelemetryBatch(batchOf([message]).batch, env);
+    expect(await row()).toMatchObject({ pausedAt: null });
+    expect((await row()).failingSince!.getTime()).toBeGreaterThan(Date.now() - 60_000);
+
     await db
       .update(schema.telemetryExport)
       .set({ failingSince: new Date(Date.now() - 4 * 86_400_000) })

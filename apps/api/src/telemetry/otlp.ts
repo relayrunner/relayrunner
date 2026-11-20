@@ -5,7 +5,7 @@ import { and, eq, isNotNull, isNull, lt, ne, or, sql } from "drizzle-orm";
 import { cachedRead } from "../d1-cache.ts";
 import { type Db, schema } from "../db/index.ts";
 import type { Env } from "../env.ts";
-import { DAY_MS } from "../job-timings.ts";
+import { DAY_MS } from "../time.ts";
 import { openToken } from "../provider-tokens.ts";
 import { errorMessage } from "../webhook-queue.ts";
 
@@ -15,6 +15,8 @@ export const HEADERS_PURPOSE = "telemetry";
 // An export that has only failed for this long pauses, so a revoked key doesn't keep costing a
 // request per batch forever.
 const FAILING_DAYS = 3;
+// A gap this long between failures starts a new run of them.
+const QUIET_MS = DAY_MS;
 // A working export notes when it last sent at most this often, not on every batch.
 const SENT_EVERY_MS = 5 * 60_000;
 const SEND_TIMEOUT_MS = 10_000;
@@ -32,6 +34,24 @@ type StatusRow = Pick<
   ExportRow | typeof schema.logBucket.$inferSelect,
   keyof ReturnType<typeof schema.exportStatus>
 >;
+
+/** What a save changed about where an export sends: the place, its credentials, or both. */
+export type DestinationChange = "place" | "key";
+
+/**
+ * Compare an export's saved place and credentials with the new ones. A new export changed
+ * nothing: turning it on is its own Activity entry.
+ */
+export function destinationChanges(
+  before: { place: string; key: string } | null,
+  after: { place: string; key: string },
+): DestinationChange[] {
+  if (!before) return [];
+  return [
+    ...(before.place !== after.place ? (["place"] as const) : []),
+    ...(before.key !== after.key ? (["key"] as const) : []),
+  ];
+}
 
 /** An export's health, as Settings shows it. */
 export interface ExportStatusView {
@@ -58,6 +78,7 @@ export const NO_STATUS: ExportStatusView = {
 export const RESET_STATUS = {
   error: null,
   failingSince: null,
+  failedAt: null,
   pausedAt: null,
   logsSkipped: null,
   logsSkippedAt: null,
@@ -247,7 +268,7 @@ export async function recordSend(
   if (sent.ok) {
     await db
       .update(t)
-      .set({ lastSentAt: now, error: null, failingSince: null })
+      .set({ lastSentAt: now, error: null, failingSince: null, failedAt: null })
       .where(
         and(
           where,
@@ -260,14 +281,20 @@ export async function recordSend(
       );
     return;
   }
-  const since = sql`coalesce(${t.failingSince}, ${now.getTime()})`;
-  const stale = sql`${since} <= ${now.getTime() - FAILING_DAYS * DAY_MS}`;
+  // A day without tries, as a bucket that only takes failed jobs' logs can have, starts a new run
+  // of failures, so two failures days apart don't add up to a pause.
+  // failedAt and failingSince are set and cleared together.
+  const ms = now.getTime();
+  const quiet = sql`${t.failedAt} is null or ${t.failedAt} < ${ms - QUIET_MS}`;
+  const since = sql`case when ${quiet} then ${ms} else ${t.failingSince} end`;
+  const stale = sql`${since} <= ${ms - FAILING_DAYS * DAY_MS}`;
   await db
     .update(t)
     .set({
       error: sent.error,
       failingSince: since,
-      pausedAt: sql`case when ${stale} then ${now.getTime()} else ${t.pausedAt} end`,
+      failedAt: now,
+      pausedAt: sql`case when ${stale} then ${ms} else ${t.pausedAt} end`,
     })
     .where(where);
 }

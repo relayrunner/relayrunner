@@ -1572,11 +1572,13 @@ export const providerDailyUsage = sqliteTable(
 // these, so src/telemetry/otlp.ts records sends the same way for either.
 export const exportStatus = () => ({
   lastSentAt: integer("last_sent_at", { mode: "timestamp_ms" }),
-  // The latest refusal or network error, and when the current run of failures began. Cleared by
-  // the next successful send. Past FAILING_DAYS of nothing but failures the export pauses and sets
-  // pausedAt, until its settings are saved again.
+  // The latest refusal or network error, when the current run of failures began, and when the
+  // latest one happened. Cleared by the next successful send. A day without tries starts a new
+  // run. Past FAILING_DAYS of nothing but failures the export pauses and sets pausedAt, until its
+  // settings are saved again.
   error: text("error"),
   failingSince: integer("failing_since", { mode: "timestamp_ms" }),
+  failedAt: integer("failed_at", { mode: "timestamp_ms" }),
   pausedAt: integer("paused_at", { mode: "timestamp_ms" }),
   // Which finished jobs' logs go out (src/telemetry/logs.ts): none, failed ones, or all.
   logs: text("logs", { enum: JOB_LOG_CHOICES }).notNull().default("off"),

@@ -46,12 +46,26 @@ export async function changeSetting<T>(
   change: { previous: T; next: T; write: () => Promise<unknown>; event: SettingsChange },
 ) {
   if (JSON.stringify(change.previous) === JSON.stringify(change.next)) return;
-  const [, { userId, ...via }] = await Promise.all([change.write(), changeActor(c)]);
+  const [, actor] = await Promise.all([change.write(), changeActor(c)]);
+  await insertChange(c, workspaceId, change.event, actor);
+}
+
+/** Logs a settings change that's already saved in Activity, with who made it and where. */
+export async function recordChange(c: Context<AppEnv>, workspaceId: string, event: SettingsChange) {
+  await insertChange(c, workspaceId, event, await changeActor(c));
+}
+
+function insertChange(
+  c: Context<AppEnv>,
+  workspaceId: string,
+  event: SettingsChange,
+  { userId, ...via }: ChangeActor,
+) {
   // recordEvent checks the data against the type's schema.
-  await recordEvent(c.var.db, {
+  return recordEvent(c.var.db, {
     workspaceId,
     actorUserId: userId,
-    type: change.event.type,
-    data: { ...change.event.data, ...via },
+    type: event.type,
+    data: { ...event.data, ...via },
   } as NewActivityEvent);
 }

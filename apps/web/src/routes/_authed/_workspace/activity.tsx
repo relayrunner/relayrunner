@@ -549,6 +549,16 @@ function settingsSentence(item: ActivityItem) {
       return item.data.logs === "off"
         ? "stopped archiving job logs to a bucket"
         : `started archiving ${item.data.logs === "all" ? "every job's log" : "failed jobs' logs"} to a bucket`;
+    case "settings.log_destination": {
+      const { target, change, name } = item.data;
+      if (target === "bucket")
+        return change === "place"
+          ? `moved the log archive to the ${name} bucket`
+          : "changed the log archive's access key";
+      return change === "place"
+        ? `pointed telemetry at ${name}`
+        : "changed the telemetry endpoint's headers";
+    }
     default:
       return "";
   }
@@ -588,6 +598,7 @@ const EVENT_ICONS = {
   "settings.ai": Sparkles,
   "settings.job_logs": ScrollText,
   "settings.log_bucket": Archive,
+  "settings.log_destination": Archive,
 } as const;
 
 const ICON = "size-3.5 shrink-0";

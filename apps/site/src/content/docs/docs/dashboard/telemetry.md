@@ -14,7 +14,7 @@ Every job in your connected repos is included, whichever runner took it. You can
 3. Add the headers your tool wants, usually an API key. Values are stored encrypted and never shown again.
 4. Save, then click **Send test trace**. A trace named `RUN RelayRunner test` shows up in your tool.
 
-From then on, each job goes out when it finishes and each run when it completes.
+From then on, each job goes out when it finishes and each run when it completes. Pointing telemetry at another endpoint or changing its headers shows in **Activity**.
 
 ## Spans
 
@@ -53,7 +53,7 @@ The resource carries `service.name` (`github-actions` unless you change it), `vc
 
 ## Job logs
 
-Under **Job logs**, choose **Failed jobs** or **Every job** to send logs too. They go to the same endpoint's `/v1/logs`, with the same headers. Each job's log goes out when the job finishes.
+Under **Job logs**, choose **Failed jobs** or **Every job** to send logs too. They go to the same endpoint's `/v1/logs`, with the same headers. Each job's log goes out when the job finishes. Turning job logs on or off, or changing which jobs send them, shows in **Activity**.
 
 - Each line is a log record with GitHub's timestamp. Lines that start with `##[error]` or `##[warning]` get that severity.
 - Each record carries the trace and span ids of its step, so a tool that shows traces can show a step's lines with it. `relayrunner.step.number` and `relayrunner.step.name` name the step.
@@ -104,11 +104,11 @@ Each line after it is one log line:
 }
 ```
 
-The same size cap, redaction and API limit apply as for [job logs](#job-logs).
+The same size cap, redaction and API limit apply as for [job logs](#job-logs). Turning the archive on or off, moving it to another bucket or folder and changing its access key show in **Activity**.
 
 ## When sending fails
 
-If your endpoint or bucket is down or rate limiting, sending retries for about an hour. If it refuses the key, the error shows in **Settings → Telemetry**. After three days of nothing but errors, sending traces and logs pauses until you save the settings again. When a job's log can't be sent, for example because GitHub no longer has it, the reason shows there too.
+If your endpoint or bucket is down or rate limiting, sending retries for about an hour. If it refuses the key, the error shows in **Settings → Telemetry**. After three days of nothing but errors, sending pauses until you save the settings again. A day with nothing to send starts the count over, so a bucket that only gets the occasional failed job doesn't pause over errors days apart. When a job's log can't be sent, for example because GitHub no longer has it, the reason shows there too.
 
 ## What gets sent
 

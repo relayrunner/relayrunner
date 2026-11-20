@@ -271,6 +271,18 @@ export const ActivityEvent = z.discriminatedUnion("type", [
     type: z.literal("settings.log_bucket"),
     data: z.object({ ...changeData, logs: z.enum(JOB_LOG_CHOICES) }),
   }),
+  // Where the workspace's telemetry endpoint or log bucket sends to changed (`place`: the
+  // endpoint's host or the bucket's name in `name`), or its credentials did (`key`: the endpoint's
+  // headers or the bucket's access key).
+  z.object({
+    type: z.literal("settings.log_destination"),
+    data: z.object({
+      ...changeData,
+      target: z.enum(["endpoint", "bucket"]),
+      change: z.enum(["place", "key"]),
+      name: z.string(),
+    }),
+  }),
   // Someone left the workspace (`left`): their GitHub sign-in can no longer see its installation
   // (#317). Actor: them. Older rows may also be an owner or admin removing them (`left: false`).
   z.object({

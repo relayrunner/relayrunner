@@ -12,7 +12,7 @@ import {
   saveBucket,
   testBucketSettings,
 } from "../telemetry/bucket-settings.ts";
-import { logsChanged } from "./telemetry.ts";
+import { destinationChanged, logsChanged } from "./telemetry.ts";
 
 const SaveBody = z.object({
   endpoint: z.string().trim().min(1).max(2048),
@@ -25,7 +25,8 @@ const SaveBody = z.object({
 });
 
 // Settings → Telemetry → Bucket: where the workspace archives job logs. Any member can look; owners
-// and admins change it. The secret access key never comes back.
+// and admins change it, and a change to which logs go there, the bucket or the key shows in
+// Activity. The secret access key never comes back.
 export const logBucketRoutes = new Hono<AppEnv>()
   .use("*", requireUser, requireWorkspace)
   .get("/", async (c) => c.json(await bucketView(c.var.db, c.var.workspace.id)))
@@ -36,7 +37,11 @@ export const logBucketRoutes = new Hono<AppEnv>()
     const workspaceId = c.var.workspace.id;
     const result = await saveBucket(c.env, c.var.db, workspaceId, c.var.user!.id, parsed.data);
     if (!result.ok) throw new AppError(result.error, { message: result.message });
-    await logsChanged(c, "settings.log_bucket", result.previousLogs, result.bucket.logs);
+    const { bucket } = result;
+    await Promise.all([
+      logsChanged(c, "settings.log_bucket", result.previousLogs, bucket.logs),
+      destinationChanged(c, "bucket", bucket.bucket, result.changes),
+    ]);
     return c.json(result.bucket);
   })
   .delete("/", async (c) => {
