@@ -263,8 +263,10 @@ const quickText = (counts: ProviderCounts) => {
   return share === null ? null : `${Math.floor(share * 100)}% within a minute`;
 };
 
-const waitDetail = (report: ProviderReport) =>
-  quickText(report) ? `Median · ${quickText(report)}` : "Median, queued to started";
+function waitDetail(report: ProviderReport) {
+  const quick = quickText(report);
+  return quick ? `Median · ${quick}` : "Median, queued to started";
+}
 
 // Failed jobs, and how many of them the runner failed before any step ran.
 function failedDetail({ failures, runnerFailures }: ProviderCounts) {

@@ -24,8 +24,8 @@ import { AppError } from "@relayrunner/errors";
 import { annotate } from "../tracing.ts";
 import { routerSetup } from "../router-setup.ts";
 import { routeOutcomes } from "../route-outcomes.ts";
-import { Epoch, requireWindow, windowDays } from "../report-window.ts";
-import { DAY_MS, RAW_RETENTION_DAYS } from "../time.ts";
+import { chartBuckets, requireWindow } from "../report-window.ts";
+import { RAW_RETENTION_DAYS } from "../time.ts";
 import { runnerGroupCheck } from "../runner-group-check.ts";
 import { inWorkspace as installedIn } from "../job-times.ts";
 import { changeActor, changeSetting } from "../changes.ts";
@@ -336,18 +336,8 @@ export const workspaceRoutes = new Hono<AppEnv>()
   .get("/:id/route-outcomes", requireUser, requireMember, async (c) => {
     const query = c.req.query();
     const window = requireWindow(query, { maxDays: RAW_RETENTION_DAYS, defaultDays: 7 });
-    const origin = Epoch.safeParse(query.origin);
-    const bucketMs = windowDays(window) > 31 ? 7 * DAY_MS : DAY_MS;
-    return c.json(
-      await routeOutcomes(c.var.db, c.req.param("id"), window, {
-        bucketMs,
-        // At most a bucket before the window, so a bad origin can't make thousands of buckets.
-        origin:
-          origin.success && origin.data <= window.from && origin.data > window.from - bucketMs
-            ? origin.data
-            : window.from,
-      }),
-    );
+    const buckets = chartBuckets(window, query.origin);
+    return c.json(await routeOutcomes(c.var.db, c.req.param("id"), window, buckets));
   })
   // Turns skipping on or off. Owners and admins, like the order.
   .put("/:id/provider-health", requireUser, requireMember, requireManager, async (c) => {

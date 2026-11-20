@@ -14,8 +14,8 @@ import {
   testConnection,
 } from "../provider-connections.ts";
 import { providerReport, providersOverview } from "../provider-report.ts";
-import { Epoch, requireWindow } from "../report-window.ts";
-import { DAY_MS, RAW_RETENTION_DAYS } from "../time.ts";
+import { chartBuckets, requireWindow } from "../report-window.ts";
+import { RAW_RETENTION_DAYS } from "../time.ts";
 import { DEFAULT_DAYS } from "../job-times.ts";
 import { requireManager } from "../roles.ts";
 import { AppError } from "@relayrunner/errors";
@@ -79,13 +79,9 @@ export const providerRoutes = new Hono<AppEnv>()
   .get("/", requireUser, requireWorkspace, withCatalog, async (c) => {
     const query = c.req.query();
     const window = requireWindow(query, RANGE);
-    // Where the days of the minutes chart start: the reader's midnight, at most a day back.
-    const origin = Epoch.safeParse(query.origin);
-    const start =
-      origin.success && origin.data <= window.from && origin.data > window.from - DAY_MS
-        ? origin.data
-        : window.from;
-    return c.json(await providersOverview(c.var.db, c.var.workspace.id, window, start));
+    // The Providers page's minutes chart sends ?origin=; the Runners page only reads the totals.
+    const buckets = query.origin === undefined ? null : chartBuckets(window, query.origin);
+    return c.json(await providersOverview(c.var.db, c.var.workspace.id, window, buckets));
   })
   .get("/:provider", requireUser, requireWorkspace, withCatalog, async (c) => {
     const provider = c.req.param("provider");

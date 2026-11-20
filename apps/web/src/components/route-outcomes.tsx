@@ -14,14 +14,14 @@ import {
 } from "@/lib/route-outcomes";
 import { count, percent } from "@/lib/utils";
 
-const SERIES: Series[] = [
+type Outcome = keyof OutcomeCounts;
+
+const SERIES: Series<Outcome>[] = [
   { key: "first", label: "First choice", color: "var(--rr-idle)" },
   { key: "movedOn", label: "Moved down the order", color: "var(--rr-go)" },
   { key: "waited", label: "Waited for a machine", color: "var(--rr-run)" },
   { key: "failed", label: "Nowhere to go", color: "var(--rr-del)" },
 ];
-
-type Outcome = keyof OutcomeCounts;
 
 const REASONS: Record<MoveReason, string> = {
   machines: "machines busy or offline",
@@ -50,7 +50,7 @@ export function RouteOutcomesCard({ workspaceId }: { workspaceId: string }) {
   // Nothing routed yet: the setup card says how to start.
   if (!outcomes || outcomes.runs === 0) return null;
   const { runs, reasons } = outcomes;
-  const series = SERIES.filter((s) => s.key === "first" || outcomes[s.key as Outcome] > 0);
+  const series = SERIES.filter((s) => s.key === "first" || outcomes[s.key] > 0);
   // Under the first choice its share, under moved on why, one reason a line.
   const details: Partial<Record<Outcome, string[]>> = {
     first: [`${percent(outcomes.first / runs)} of ${count(runs)} routed runs`],
@@ -68,9 +68,9 @@ export function RouteOutcomesCard({ workspaceId }: { workspaceId: string }) {
               {s.label}
             </dt>
             <dd className="text-xl font-semibold tabular-nums">
-              <Count value={outcomes[s.key as Outcome]} />
+              <Count value={outcomes[s.key]} />
             </dd>
-            {details[s.key as Outcome]?.map((line) => (
+            {details[s.key]?.map((line) => (
               <dd key={line} className="text-xs text-muted-foreground">
                 {line}
               </dd>

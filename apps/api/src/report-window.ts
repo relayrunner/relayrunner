@@ -41,6 +41,30 @@ export const hasTrend = ({ prior }: ReportWindow, now = Date.now()) =>
 
 /** A moment in epoch ms, from the URL. */
 export const Epoch = z.coerce.number().int().min(0);
+
+/** A chart's bars over a window: each `bucketMs` long, the first starting at `origin`. */
+export interface Buckets {
+  bucketMs: number;
+  origin: number;
+}
+
+/**
+ * A chart's bars over `window`: a day each, or a week past a month, from `?origin=` (the reader's
+ * midnight at or before the window's start, so bars are the reader's days) or the window's start.
+ */
+export function chartBuckets(window: Window, origin?: string): Buckets {
+  const bucketMs = windowDays(window) > 31 ? 7 * DAY_MS : DAY_MS;
+  const parsed = Epoch.safeParse(origin);
+  // At most a bar before the window, so an odd origin can't make thousands of bars.
+  const fits = parsed.success && parsed.data <= window.from && parsed.data > window.from - bucketMs;
+  return { bucketMs, origin: fits ? parsed.data : window.from };
+}
+
+/** Each bar's start, from the first to the one `to` falls in. */
+export function bucketStarts({ to }: Window, { bucketMs, origin }: Buckets) {
+  const count = Math.max(1, Math.ceil((to - origin) / bucketMs));
+  return Array.from({ length: count }, (_, i) => origin + i * bucketMs);
+}
 const WindowQuery = z.object({ from: Epoch, to: Epoch, priorFrom: Epoch.optional() });
 
 /**

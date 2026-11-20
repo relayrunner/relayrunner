@@ -11,7 +11,7 @@ import { OptionPicker, TimeRangePicker } from "@/components/range-picker";
 import { Legend, seriesColor, StackedBars } from "@/components/stacked-bars";
 import { DataTable, dataTableColumns, NUM } from "@/components/ui/data-table";
 import { authDisabled } from "@/lib/auth-client";
-import { medianText, p90Text } from "@/lib/job-times";
+import { DAY_MS, medianText, p90Text } from "@/lib/job-times";
 import { useProviderApps } from "@/lib/provider-apps";
 import { providerInfo } from "@/lib/provider-catalog";
 import {
@@ -36,7 +36,7 @@ import { rangeDays, rangePhrase, type TimeRange } from "@/lib/time-range";
 function load(range: TimeRange) {
   return authDisabled
     ? Promise.resolve(sampleProvidersOverview(rangeDays(range)))
-    : getProvidersOverview(range);
+    : getProvidersOverview(range, { chart: true });
 }
 
 const rangeParams = rangeSearch(PROVIDER_RANGES, PROVIDER_DEFAULT_RANGE);
@@ -182,7 +182,7 @@ function MinutesChart({
   );
   // One bar says nothing a table row doesn't.
   if (overview.buckets.length < 2 || series.length === 0) return null;
-  const week = overview.bucketMs > 86_400_000;
+  const week = overview.bucketMs > DAY_MS;
   return (
     <section className="grid gap-3 rounded-xl border bg-card p-4 sm:p-5">
       <div className="flex flex-wrap items-start justify-between gap-3">

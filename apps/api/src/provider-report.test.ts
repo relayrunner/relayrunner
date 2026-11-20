@@ -206,7 +206,7 @@ describe("provider report", () => {
 
     // Sep 7 06:00 to now, against the 3.5 days before, in days from midnight on Sep 7.
     const window = withPrior({ from: origin + 6 * 3_600_000, to: now });
-    const body = await providersOverview(db, workspace.id, window, origin, now);
+    const body = await providersOverview(db, workspace.id, window, { bucketMs: DAY, origin }, now);
     const blacksmith = body.providers.find((p) => p.provider === "blacksmith");
     expect(blacksmith).toMatchObject({
       jobs: 3,

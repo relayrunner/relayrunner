@@ -11,7 +11,7 @@ import {
   runnerSize,
 } from "@relayrunner/providers";
 import { api } from "@/lib/api";
-import { type Environment, type Stat, sampleStat } from "@/lib/job-times";
+import { DAY_MS, type Environment, type Stat, sampleStat } from "@/lib/job-times";
 import {
   type RangeOptions,
   rangeQuery,
@@ -92,11 +92,14 @@ export function getProviderReport(provider: string, range: TimeRange) {
   return api<ProviderReport>(`/providers/${provider}?${rangeQuery(range)}`);
 }
 
-// The chart's days start at the reader's midnight, even for a rolling range.
-export function getProvidersOverview(range: TimeRange) {
-  const query = reportQuery(range, {
-    origin: String(startOfDay(resolveRange(range).from)),
-  });
+/**
+ * Every provider the workspace's jobs ran on. With `chart`, also each one's minutes a day at a
+ * time from the reader's midnight, even for a rolling range, and over the window before.
+ */
+export function getProvidersOverview(range: TimeRange, { chart = false } = {}) {
+  const query = chart
+    ? reportQuery(range, { origin: String(startOfDay(resolveRange(range).from)) })
+    : rangeQuery(range);
   return api<ProvidersOverview>(`/providers?${query}`);
 }
 
@@ -212,7 +215,6 @@ export function sampleProvidersOverview(days: number, now = Date.now()): Provide
       };
     })
     .sort((a, b) => b.jobs - a.jobs);
-  const DAY_MS = 86_400_000;
   const bucketMs = days > 31 ? 7 * DAY_MS : DAY_MS;
   const count = Math.max(1, Math.ceil((days * DAY_MS) / bucketMs));
   const origin = startOfDay(now - (count - 1) * bucketMs);

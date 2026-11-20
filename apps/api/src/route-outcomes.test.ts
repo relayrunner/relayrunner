@@ -3,6 +3,7 @@ import { createDb, schema } from "./db/index.ts";
 import type { Env } from "./env.ts";
 import { moveReason, routeOutcomes } from "./route-outcomes.ts";
 import * as testing from "./testing.ts";
+import { DAY_MS } from "./time.ts";
 
 let env: Env;
 
@@ -10,7 +11,7 @@ beforeAll(async () => {
   env = await testing.createTestEnv();
 });
 
-const DAY = 86_400_000;
+const DAY = DAY_MS;
 let runIds = 70_000;
 
 type Decision = typeof schema.routeDecision.$inferInsert;
@@ -75,14 +76,7 @@ describe("route outcomes", () => {
       decision(id, origin - 3_600_000),
     ]);
 
-    const body = await routeOutcomes(
-      db,
-      id,
-      { from: origin, to: origin + 2.5 * DAY },
-      {
-        bucketMs: DAY,
-      },
-    );
+    const body = await routeOutcomes(db, id, { from: origin, to: origin + 2.5 * DAY });
     expect(body).toMatchObject({ runs: 6, first: 2, movedOn: 2, waited: 1, failed: 1 });
     expect(body.reasons).toEqual([
       { reason: "machines", count: 1 },

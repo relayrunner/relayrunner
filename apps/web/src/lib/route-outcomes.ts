@@ -1,10 +1,11 @@
 // The Router page's routing outcomes (GET /api/workspaces/:id/route-outcomes): how the Router
 // placed the workspace's runs over the last week, a day at a time.
+import type { MoveReason } from "@relayrunner/activity";
 import { api } from "@/lib/api";
+import { DAY_MS } from "@/lib/job-times";
 import { startOfDay } from "@/lib/time-zone";
 
-/** Why a run moved past a step that fits it. */
-export type MoveReason = "machines" | "limit" | "unhealthy";
+export type { MoveReason };
 
 export type OutcomeCounts = {
   /** Runs that took the first step that fits them. */
@@ -41,7 +42,6 @@ export function getRouteOutcomes(workspaceId: string, now = Date.now()) {
 
 /** Dev preview: a made-up week, with a busy day when the machines filled up. */
 export function sampleRouteOutcomes(now = Date.now()): RouteOutcomes {
-  const DAY_MS = 86_400_000;
   const from = startOfDay(now, 1 - OUTCOME_DAYS);
   const days: [number, number, number, number][] = [
     [148, 6, 0, 0],
@@ -59,13 +59,9 @@ export function sampleRouteOutcomes(now = Date.now()): RouteOutcomes {
     waited,
     failed,
   }));
-  const total = (key: keyof OutcomeCounts) => buckets.reduce((n, b) => n + b[key], 0);
-  const counts = {
-    first: total("first"),
-    movedOn: total("movedOn"),
-    waited: total("waited"),
-    failed: total("failed"),
-  };
+  const counts: OutcomeCounts = { first: 0, movedOn: 0, waited: 0, failed: 0 };
+  for (const day of buckets)
+    for (const key of Object.keys(counts) as (keyof OutcomeCounts)[]) counts[key] += day[key];
   return {
     from,
     to: now,

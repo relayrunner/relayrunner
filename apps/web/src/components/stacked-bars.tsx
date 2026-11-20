@@ -6,7 +6,13 @@ import { DAY_MS } from "@/lib/job-times";
 import { shortDate, zoneFormat } from "@/lib/time-zone";
 import { cn, count, percent } from "@/lib/utils";
 
-export type Series = { key: string; label: string; color: string };
+/** A series' fill for bars, and for its swatch when that differs (stripes, say). */
+export type Series<K extends string = string> = {
+  key: K;
+  label: string;
+  color: string;
+  swatch?: string;
+};
 export type StackedBucket = { start: number; values: Record<string, number> };
 
 const PAD = { top: 10, right: 0, bottom: 22, left: 40 };
@@ -49,7 +55,7 @@ export function Legend({ series }: { series: Series[] }) {
     <div className="flex flex-wrap gap-x-4 gap-y-1 text-xs text-muted-foreground">
       {series.map((s) => (
         <span key={s.key} className="inline-flex items-center gap-1.5">
-          <Swatch color={s.color} />
+          <Swatch color={s.swatch ?? s.color} />
           {s.label}
         </span>
       ))}
@@ -70,6 +76,7 @@ export function StackedBars({
   label,
   height = 200,
   footer,
+  defs,
 }: {
   buckets: StackedBucket[];
   bucketMs: number;
@@ -79,6 +86,8 @@ export function StackedBars({
   label: string;
   height?: number;
   footer?: (bucket: StackedBucket, total: number) => ReactNode;
+  /** SVG patterns the series' colours refer to. */
+  defs?: ReactNode;
 }) {
   const [ref, width] = useWidth<HTMLDivElement>();
   // The bar under the pointer, by index.
@@ -179,6 +188,7 @@ export function StackedBars({
               </g>
             );
           })}
+          {defs && <defs>{defs}</defs>}
         </svg>
       )}
       {hover !== null && hovered && (
@@ -194,7 +204,7 @@ export function StackedBars({
             return (
               <TipRow
                 key={s.key}
-                mark={<Swatch color={s.color} className="size-2" />}
+                mark={<Swatch color={s.swatch ?? s.color} className="size-2" />}
                 label={s.label}
                 value={share ? percent(total ? value / total : 0) : format(value)}
               />
