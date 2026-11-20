@@ -35,7 +35,7 @@ export type AdminWorkspace = {
   jobs7d: number;
   /** How many of those ran on a machine. */
   machineJobs7d: number;
-  /** The latest job, from the 31 days of jobs kept. */
+  /** The latest job, from the 62 days of jobs kept. */
   lastJobAt: string | null;
   /** Whether it stuck with the relay (apps/api/src/stickiness.ts), or null when it never relayed. */
   stickiness: Stickiness | null;

@@ -2,6 +2,7 @@ import { CircleDollarSignIcon, GaugeIcon, LayersIcon, type LucideIcon } from "lu
 import { DOCS_URL } from "@/components/site-footer";
 import { api } from "@/lib/api";
 import { sampleActor, sampleSha, triggerText } from "@/lib/runs";
+import { reportQuery, type TimeRange } from "@/lib/time-range";
 
 export type SignalArea = "speed" | "cost" | "complexity";
 export type SignalId =
@@ -138,19 +139,18 @@ export function triggerName(event: string) {
   return text.charAt(0).toUpperCase() + text.slice(1);
 }
 
-function query(days: number, filter: SignalFilter, extra: Record<string, string> = {}) {
-  const params = new URLSearchParams({ days: String(days), ...extra });
-  for (const key of FILTER_KEYS) if (filter[key]) params.set(key, filter[key]);
-  return params.toString();
+function query(range: TimeRange, filter: SignalFilter, extra: Record<string, string> = {}) {
+  const filters = FILTER_KEYS.flatMap((key) => (filter[key] ? [[key, filter[key]]] : []));
+  return reportQuery(range, { ...extra, ...Object.fromEntries(filters) });
 }
 
-export function getSignals(days = 30, filter: SignalFilter = {}) {
-  return api<SignalsReport>(`/signals?${query(days, filter)}`);
+export function getSignals(range: TimeRange, filter: SignalFilter = {}) {
+  return api<SignalsReport>(`/signals?${query(range, filter)}`);
 }
 
-export function getSignalRuns(row: SignalRowRef, days: number, filter: SignalFilter) {
+export function getSignalRuns(row: SignalRowRef, range: TimeRange, filter: SignalFilter) {
   const extra = { signal: row.signal, in: row.repository, subject: row.subject };
-  return api<SignalRunsReport>(`/signals/runs?${query(days, filter, extra)}`);
+  return api<SignalRunsReport>(`/signals/runs?${query(range, filter, extra)}`);
 }
 
 export const AREAS: Record<SignalArea, { title: string; question: string; icon: LucideIcon }> = {

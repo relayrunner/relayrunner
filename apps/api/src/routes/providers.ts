@@ -14,7 +14,7 @@ import {
   testConnection,
 } from "../provider-connections.ts";
 import { providerReport, providersOverview } from "../provider-report.ts";
-import { parseWindow } from "../report-window.ts";
+import { requireWindow } from "../report-window.ts";
 import { RAW_RETENTION_DAYS } from "../time.ts";
 import { DEFAULT_DAYS } from "../job-times.ts";
 import { requireManager } from "../roles.ts";
@@ -77,14 +77,12 @@ export const providerRoutes = new Hono<AppEnv>()
     return c.json(await disconnectProvider(c.var.db, c.var.workspace.id, provider));
   })
   .get("/", requireUser, requireWorkspace, withCatalog, async (c) => {
-    const window = parseWindow(c.req.query(), RANGE);
-    if (!window) throw new AppError("INVALID_REQUEST");
+    const window = requireWindow(c.req.query(), RANGE);
     return c.json(await providersOverview(c.var.db, c.var.workspace.id, window));
   })
   .get("/:provider", requireUser, requireWorkspace, withCatalog, async (c) => {
     const provider = c.req.param("provider");
     if (!isCatalogProvider(provider)) throw new AppError("NOT_FOUND");
-    const window = parseWindow(c.req.query(), RANGE);
-    if (!window) throw new AppError("INVALID_REQUEST");
+    const window = requireWindow(c.req.query(), RANGE);
     return c.json(await providerReport(c.var.db, c.var.workspace.id, provider, window));
   });

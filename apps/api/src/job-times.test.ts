@@ -417,8 +417,8 @@ describe("job times report", () => {
       jobs.find((job) => job.name === name)?.byEnvironment["github:linux-2-core"]?.trend;
     expect(trend("build")).toBe(1);
     expect(trend("lint")).toBeNull();
-    // 30 days back plus 30 before is past what job_timing keeps.
-    const month = await report(cookie, "?days=30");
+    // 45 days back plus 45 before is past what job_timing keeps.
+    const month = await report(cookie, "?days=45");
     expect(month.trend).toBe(false);
     expect(
       month.workflows

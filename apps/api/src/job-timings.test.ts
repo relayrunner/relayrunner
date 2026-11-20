@@ -319,8 +319,8 @@ describe("usage report", () => {
   test("rolls jobs past raw retention up into daily totals the 90-day report still counts", async () => {
     const { cookie, installationId } = await connectedWorkspace();
     const db = createDb(env.DB);
-    // Noon UTC, 40 days ago, so every job lands on the same day.
-    const day = Math.floor((Date.now() - 40 * 86_400_000) / 86_400_000) * 86_400_000;
+    // Noon UTC, 70 days ago (past RAW_RETENTION_DAYS), so every job lands on the same day.
+    const day = Math.floor((Date.now() - 70 * 86_400_000) / 86_400_000) * 86_400_000;
     const at = (message: WebhookMessage, minutes: number) => {
       if (message.event !== "workflow_job") throw new Error("expected a job");
       const completed = day + 12 * 3_600_000 + minutes * 60_000;

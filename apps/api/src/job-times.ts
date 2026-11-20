@@ -7,19 +7,21 @@
 // workspace's installations, completed in the window), never a scan of the table. The detail is
 // a range of job_timing_job_idx. job-times.test.ts checks the rows D1 reads.
 import type { JobUsage } from "@relayrunner/machine-protocol";
-import { and, eq, gte, inArray, isNotNull, isNull, type SQL, sql } from "drizzle-orm";
+import { and, eq, gte, inArray, isNotNull, isNull, lt, type SQL, sql } from "drizzle-orm";
 import type { SQLiteColumn } from "drizzle-orm/sqlite-core";
 import { type RunnerSize, runnerSize } from "@relayrunner/providers";
 import { INSTANCE, usesContainerRunner } from "./container-runner.ts";
 import { type Db, schema } from "./db/index.ts";
 import { type Phase, phaseOf } from "./step-phases.ts";
+import { DAY_MS, GITHUB_HOSTED_GROUP, RUNNER_LABELS, runnerClass } from "./job-timings.ts";
 import {
-  DAY_MS,
-  GITHUB_HOSTED_GROUP,
-  RAW_RETENTION_DAYS,
-  RUNNER_LABELS,
-  runnerClass,
-} from "./job-timings.ts";
+  hasTrend,
+  lastDays,
+  type ReportWindow,
+  type Window,
+  windowDays,
+  withPrior,
+} from "./report-window.ts";
 import { cloudProviderFor, isGitHubHostedLabel } from "./cloud-providers.ts";
 import { inWorkspace as machineInWorkspace } from "./machines.ts";
 import { currentProviders } from "./provider-catalog.ts";
@@ -318,7 +320,7 @@ export interface WorkflowRow {
 
 export interface JobTimesReport {
   days: number;
-  /** Whether times carry a trend against the window before (hasTrend). */
+  /** Whether times carry a trend against the window before (hasTrend in report-window.ts). */
   trend: boolean;
   sampleCap: number;
   /** Runs a job needs on both runners to count toward `versus`. */
@@ -453,12 +455,6 @@ function stats(buckets: Buckets, prior?: Buckets): Record<string, Stat> {
   );
 }
 
-/**
- * Whether a `days` window gets a trend: the window before it must still be in job_timing, whose
- * rows last RAW_RETENTION_DAYS. So 30 days has none.
- */
-export const hasTrend = (days: number) => 2 * days <= RAW_RETENTION_DAYS;
-
 type WorkflowBuckets = {
   repositoryId: number;
   repository: string;
@@ -529,28 +525,26 @@ export function versusBaseline(jobs: Record<string, Stat>[], envKey: string, bas
   return { ratio: Math.round(Math.exp(log) * 100) / 100, sharedJobs: logs.length };
 }
 
-/** The workspace's job times over the last `days` days. */
+/** The workspace's job times in the window, with a trend against its prior window. */
 export async function jobTimesReport(
   db: Db,
   workspaceId: string,
-  days = DEFAULT_DAYS,
+  window: ReportWindow = withPrior(lastDays(DEFAULT_DAYS)),
   now = Date.now(),
 ): Promise<JobTimesReport> {
-  const since = new Date(now - days * DAY_MS);
-  const trend = hasTrend(days);
+  const since = new Date(window.from);
+  const trend = hasTrend(window, now);
   const [rows, missedRows, priorRows] = await Promise.all([
-    db.all<WindowRow>(windowQuery(workspaceId, since)),
+    db.all<WindowRow>(windowQuery(workspaceId, since, window.to)),
     db.all<{
       labels: string;
       runner_group_name: string | null;
       machine_id: string | null;
       missed: number;
-    }>(missedQuery(workspaceId, since)),
+    }>(missedQuery(workspaceId, since, window.to)),
     // The window before, for each time's trend: the same read again, a range just as long.
     trend
-      ? db.all<WindowRow>(
-          windowQuery(workspaceId, new Date(since.getTime() - days * DAY_MS), since.getTime()),
-        )
+      ? db.all<WindowRow>(windowQuery(workspaceId, new Date(window.prior.from), window.prior.to))
       : Promise.resolve([]),
   ]);
 
@@ -632,7 +626,7 @@ export async function jobTimesReport(
       if (env.key !== baseline) env.versus = versusBaseline(leafStats, env.key, baseline);
 
   return {
-    days,
+    days: windowDays(window),
     trend,
     sampleCap: SAMPLE_CAP,
     fewRuns: FEW_RUNS,
@@ -778,11 +772,11 @@ const JOB_LIMIT = 500;
 export async function recentJobs(
   db: Db,
   workspaceId: string,
-  days = DEFAULT_DAYS,
-  now = Date.now(),
+  window: Window = lastDays(DEFAULT_DAYS),
 ): Promise<{ days: number; environments: Environment[]; jobs: HistoryJob[]; truncated: boolean }> {
-  const since = new Date(now - days * DAY_MS);
-  const rows = await jobListQuery(db, windowWhere(workspaceId, since), JOB_LIMIT + 1);
+  const where = windowWhere(workspaceId, new Date(window.from), window.to);
+  const rows = await jobListQuery(db, where, JOB_LIMIT + 1);
+  const days = windowDays(window);
 
   const envs = new Map<string, Environment>();
   const jobs = rows.slice(0, JOB_LIMIT).flatMap((row): HistoryJob[] => {
@@ -804,10 +798,9 @@ export async function jobRuns(
   db: Db,
   workspaceId: string,
   job: { repositoryId: number; workflow: string | null; name: string; matrix: boolean },
-  days = DEFAULT_DAYS,
-  now = Date.now(),
+  window: Window = lastDays(DEFAULT_DAYS),
 ): Promise<{ days: number; runs: JobRun[]; steps: RunStep[] }> {
-  const since = new Date(now - days * DAY_MS);
+  const days = windowDays(window);
   const name = job.matrix
     ? // Every `name (…)`: a range on the index, unlike LIKE.
       and(gte(table.name, `${job.name} (`), sql`${table.name} < ${`${job.name} )`}`)
@@ -816,7 +809,8 @@ export async function jobRuns(
     eq(table.repositoryId, job.repositoryId),
     job.workflow === null ? isNull(table.workflowName) : eq(table.workflowName, job.workflow),
     name,
-    gte(table.completedAt, since),
+    gte(table.completedAt, new Date(window.from)),
+    lt(table.completedAt, new Date(window.to)),
     inWorkspace(workspaceId),
     RAN,
   );

@@ -10,7 +10,7 @@ import { type MouseEvent, type ReactNode, useEffect, useState } from "react";
 import { CommitBy } from "@/components/commit";
 import { Count } from "@/components/count";
 import { PageHeader } from "@/components/page-header";
-import { OptionPicker, RangePicker } from "@/components/range-picker";
+import { OptionPicker, TimeRangePicker } from "@/components/range-picker";
 import { ExternalLink, LINK } from "@/components/run-sheet";
 import { RunnerLink } from "@/components/runner-link";
 import { DOCS_URL } from "@/components/site-footer";
@@ -37,7 +37,6 @@ import {
   type BreakdownRow,
   FILTER_KEYS,
   type FilterKey,
-  FILTERED_MAX_DAYS,
   getSignalRuns,
   getSignals,
   isFiltered,
@@ -58,37 +57,54 @@ import {
   triggerName,
 } from "@/lib/signals";
 import {
-  dayRanges,
   optionParam,
-  rangeParam,
+  rangeSearch,
   textParam,
   unlessDefault,
   useRangeReport,
   useSetSearch,
 } from "@/lib/search-params";
 import { money } from "@/lib/usage";
-import { DAY_MS, plural } from "@/lib/job-times";
+import { plural } from "@/lib/job-times";
+import {
+  dayPreset,
+  type RangeOptions,
+  rangeDays,
+  rangePhrase,
+  resolveRange,
+  type TimeRange,
+  timeRangeParam,
+  trendPhrase,
+} from "@/lib/time-range";
 import { shortDate } from "@/lib/time-zone";
 import { cn, count, elapsed, niceMax } from "@/lib/utils";
 
-const RANGES = dayRanges(7, 90);
-// A filtered page works from single jobs, which don't go back as far as the daily rollup.
-const FILTERED_RANGES = dayRanges(7, FILTERED_MAX_DAYS);
+const RANGES: RangeOptions = {
+  presets: ["7d", "14d", "30d", "90d", "week", "lastweek", "month", "lastmonth"],
+};
+// A filtered page works from single jobs over the last 30 days (FILTERED_MAX_DAYS in lib/signals),
+// not as far back as the daily rollup.
+const FILTERED_RANGES: RangeOptions = {
+  presets: ["7d", "14d", "30d", "week", "lastweek", "month"],
+};
+const DEFAULT_RANGE: TimeRange = "30d";
+const ranges = rangeSearch(RANGES, DEFAULT_RANGE);
 
 // The range and filter a report is for.
-const keyOf = (days: number, filter: SignalFilter) =>
-  JSON.stringify([days, ...FILTER_KEYS.map((key) => filter[key] ?? "")]);
+const keyOf = (range: TimeRange, filter: SignalFilter) =>
+  JSON.stringify([range, ...FILTER_KEYS.map((key) => filter[key] ?? "")]);
 
-function load(days: number, filter: SignalFilter): Promise<SignalsReport> {
-  return authDisabled ? Promise.resolve(sampleSignals(days, filter)) : getSignals(days, filter);
+function load(range: TimeRange, filter: SignalFilter): Promise<SignalsReport> {
+  return authDisabled
+    ? Promise.resolve(sampleSignals(rangeDays(range), filter))
+    : getSignals(range, filter);
 }
 
-const DEFAULT_DAYS = 30;
 const BREAKDOWNS = BREAKDOWN_VIEWS.map((option) => option.value);
 const SIGNAL_IDS = Object.keys(SIGNAL_COPY) as SignalId[];
 // `by` is how the Breakdown splits jobs; the filter's values narrow the page; `signal`, `in` and
 // `subject` name the signal row whose runs are open in the panel.
-type Search = { days?: number; by?: BreakdownBy } & SignalFilter & {
+type Search = { range?: TimeRange; by?: BreakdownBy } & SignalFilter & {
     signal?: SignalId;
     in?: string;
     subject?: string;
@@ -99,7 +115,7 @@ const validateSearch = (search: Record<string, unknown>): Search => {
     : undefined;
   const row = signal && textParam(search.in) && textParam(search.subject);
   return {
-    days: rangeParam(search.days, RANGES, DEFAULT_DAYS),
+    ...ranges.validateSearch(search),
     by: optionParam(search.by, BREAKDOWNS),
     ...Object.fromEntries(FILTER_KEYS.map((key) => [key, textParam(search[key])])),
     signal: row ? signal : undefined,
@@ -109,8 +125,12 @@ const validateSearch = (search: Record<string, unknown>): Search => {
 };
 const filterOf = (search: Search): SignalFilter =>
   Object.fromEntries(FILTER_KEYS.map((key) => [key, search[key]]));
-const daysOf = (search: Search) =>
-  Math.min(search.days ?? DEFAULT_DAYS, isFiltered(search) ? FILTERED_MAX_DAYS : Infinity);
+/** The page's range: a filtered page's is at most 30 days. */
+function rangeOf(search: Search) {
+  const range = ranges.rangeOf(search);
+  if (!isFiltered(search)) return range;
+  return timeRangeParam(range, FILTERED_RANGES, DEFAULT_RANGE) ?? DEFAULT_RANGE;
+}
 // Every filter key, cleared.
 const NO_FILTER = Object.fromEntries(FILTER_KEYS.map((key) => [key, undefined])) as SignalFilter;
 
@@ -123,7 +143,7 @@ export const Route = createFileRoute("/_authed/_workspace/signals")({
   validateSearch,
   loader: ({ location }) => {
     const search = validateSearch(location.search);
-    return load(daysOf(search), filterOf(search));
+    return load(rangeOf(search), filterOf(search));
   },
   // A new range or filter loads in the page, keeping the last one up meanwhile.
   shouldReload: ({ cause }) => cause !== "stay",
@@ -132,15 +152,15 @@ export const Route = createFileRoute("/_authed/_workspace/signals")({
 
 function SignalsPage() {
   const search = Route.useSearch();
-  const days = daysOf(search);
+  const range = rangeOf(search);
   const filter = filterOf(search);
   const filtered = isFiltered(filter);
   const setSearch = useSetSearch<Search>();
-  const key = keyOf(days, filter);
-  const report = useRangeReport(Route.useLoaderData(), key, () => load(days, filter));
+  const key = keyOf(range, filter);
+  const report = useRangeReport(Route.useLoaderData(), key, () => load(range, filter));
 
-  function chooseRange(next: number) {
-    setSearch({ days: unlessDefault(next, DEFAULT_DAYS) });
+  function chooseRange(next: TimeRange) {
+    setSearch(ranges.toSearch(next));
   }
 
   return (
@@ -151,12 +171,12 @@ function SignalsPage() {
       </PageHeader>
       <div className="grid max-w-4xl gap-10">
         <div className="grid gap-4">
-          <RangePicker
-            ranges={filtered ? FILTERED_RANGES : RANGES}
-            days={days}
+          <TimeRangePicker
+            {...(filtered ? FILTERED_RANGES : RANGES)}
+            value={range}
             onChange={chooseRange}
           />
-          {filtered && <FilterBar filter={filter} report={report} />}
+          {filtered && <FilterBar filter={filter} report={report} range={range} />}
         </div>
         {report.totals.jobs === 0 ? (
           <p className="rounded-xl border bg-card px-4 py-6 text-sm text-muted-foreground">
@@ -182,7 +202,7 @@ function SignalsPage() {
           listed={report.signals
             .find((signal) => signal.id === search.signal)
             ?.rows.find((row) => row.repository === search.in && row.subject === search.subject)}
-          days={days}
+          range={range}
           filter={filter}
         />
       )}
@@ -200,7 +220,15 @@ const FILTER_LABELS: Record<FilterKey, string> = {
 };
 
 // What the page is narrowed to, each value with a button to drop it, and the filter's trend.
-function FilterBar({ filter, report }: { filter: SignalFilter; report: SignalsReport }) {
+function FilterBar({
+  filter,
+  report,
+  range,
+}: {
+  filter: SignalFilter;
+  report: SignalsReport;
+  range: TimeRange;
+}) {
   const setSearch = useSetSearch<Search>();
   // A workflow or folder shows with its repo, and goes with it, so the repo shows on its own only
   // without one.
@@ -258,7 +286,7 @@ function FilterBar({ filter, report }: { filter: SignalFilter; report: SignalsRe
           </button>
         )}
       </div>
-      {report.trend && <Trend trend={report.trend} />}
+      {report.trend && <Trend trend={report.trend} range={range} />}
     </div>
   );
 }
@@ -266,19 +294,19 @@ function FilterBar({ filter, report }: { filter: SignalFilter; report: SignalsRe
 const sum = (values: number[]) => values.reduce((total, value) => total + value, 0);
 
 // The filter's minutes per day, with the range before as a dashed line behind them.
-function Trend({ trend }: { trend: SignalTrend }) {
-  const days = trend.minutes.length;
+function Trend({ trend, range }: { trend: SignalTrend; range: TimeRange }) {
+  const prior = trendPhrase(range);
   const now = sum(trend.minutes);
   const before = trend.previous ? sum(trend.previous) : null;
   let change: string;
   if (before === null) change = "Nothing earlier to compare with.";
-  else if (before === 0) change = `None in the ${days} days before.`;
+  else if (before === 0) change = `None in ${prior}.`;
   else {
     const pct = Math.round(((now - before) / before) * 100);
     change =
       Math.abs(pct) < 5
-        ? `About the same as the ${days} days before.`
-        : `${Math.abs(pct)}% ${pct > 0 ? "more" : "less"} than the ${days} days before.`;
+        ? `About the same as ${prior}.`
+        : `${Math.abs(pct)}% ${pct > 0 ? "more" : "less"} than ${prior}.`;
   }
   const width = 100;
   const height = 48;
@@ -291,6 +319,7 @@ function Trend({ trend }: { trend: SignalTrend }) {
       })
       .join(" ");
   const today = Date.now();
+  const { from, to } = resolveRange(range, today);
   return (
     <div className="grid gap-2">
       <p className="text-sm">
@@ -301,7 +330,7 @@ function Trend({ trend }: { trend: SignalTrend }) {
         viewBox={`0 0 ${width} ${height}`}
         preserveAspectRatio="none"
         role="img"
-        aria-label={`Minutes per day over the last ${days} days`}
+        aria-label={`Minutes per day over ${rangePhrase(range)}`}
         className="h-14 w-full overflow-visible"
       >
         {trend.previous && (
@@ -329,7 +358,7 @@ function Trend({ trend }: { trend: SignalTrend }) {
         />
       </svg>
       <div className="flex justify-between text-xs text-muted-foreground">
-        <span>{shortDate(today - (days - 1) * DAY_MS)}</span>
+        <span>{shortDate(from)}</span>
         {trend.previous && (
           <span className="inline-flex items-center gap-1.5">
             <svg aria-hidden viewBox="0 0 16 2" className="h-0.5 w-4 overflow-visible">
@@ -342,10 +371,10 @@ function Trend({ trend }: { trend: SignalTrend }) {
                 className="stroke-muted-foreground"
               />
             </svg>
-            The {days} days before
+            {prior.charAt(0).toUpperCase() + prior.slice(1)}
           </span>
         )}
-        <span>Today</span>
+        <span>{to === today ? "Today" : shortDate(to - 1)}</span>
       </div>
     </div>
   );
@@ -702,13 +731,13 @@ const runTime = (ms: number) => (ms < 60_000 ? elapsed(ms) : `${count(Math.round
 function RunsPanel({
   row,
   listed,
-  days,
+  range,
   filter,
 }: {
   row: SignalRowRef;
   /** The row as the page lists it, when it does. */
   listed: SignalRow | undefined;
-  days: number;
+  range: TimeRange;
   filter: SignalFilter;
 }) {
   const setSearch = useSetSearch<Search>();
@@ -717,8 +746,8 @@ function RunsPanel({
   useEffect(() => {
     let live = true;
     const request = authDisabled
-      ? Promise.resolve(sampleSignalRuns(row, days))
-      : getSignalRuns(row, days, filter);
+      ? Promise.resolve(sampleSignalRuns(row, rangeDays(range)))
+      : getSignalRuns(row, range, filter);
     request.then(
       (next) => live && setFound(next),
       () => live && setFound("failed"),
@@ -730,6 +759,11 @@ function RunsPanel({
   }, []);
 
   const copy = SIGNAL_COPY[row.signal];
+  // Runs come from single jobs, so a longer range lists only its last 30 days.
+  const span =
+    found && found !== "failed" && found.days < rangeDays(range)
+      ? rangePhrase(dayPreset(found.days))
+      : rangePhrase(range);
 
   let body: ReactNode;
   if (found === "failed")
@@ -747,17 +781,13 @@ function RunsPanel({
       </div>
     );
   else if (!found.runs.length)
-    body = (
-      <p className="text-sm text-muted-foreground">
-        No runs behind this row in the last {found.days} days.
-      </p>
-    );
+    body = <p className="text-sm text-muted-foreground">No runs behind this row in {span}.</p>;
   else
     body = (
       <div className="grid gap-2">
         <div className="flex justify-between text-xs text-muted-foreground">
           <span>
-            {plural(found.total, "run")} in the last {found.days} days
+            {plural(found.total, "run")} in {span}
           </span>
           <span>{copy.minutes}</span>
         </div>

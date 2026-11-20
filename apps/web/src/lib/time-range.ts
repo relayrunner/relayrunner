@@ -103,6 +103,75 @@ export function rangeQuery(range: TimeRange, now = Date.now()) {
   return `from=${from}&to=${to}`;
 }
 
+/**
+ * Where a calendar range's trend starts: the same stretch one period back, so this month compares
+ * with the first days of last month and last week with the week before. Undefined for the others,
+ * which compare with the stretch just before.
+ */
+function priorStart(range: TimeRange, now: number) {
+  switch (range) {
+    case "today":
+      return startOfDay(now, -1);
+    case "yesterday":
+      return startOfDay(now, -2);
+    case "week":
+      return startOfDay(startOfWeek(now), -7);
+    case "lastweek":
+      return startOfDay(startOfWeek(now), -14);
+    case "month":
+      return startOfMonth(now, -1);
+    case "lastmonth":
+      return startOfMonth(now, -2);
+  }
+  return undefined;
+}
+
+/**
+ * The range as a report's query with a trend, plus `extra` params: a rolling one as `days=N`, the
+ * last few days as the API counts them, and any other as `from=…&to=…` with `priorFrom=` where its
+ * trend starts.
+ */
+export function reportQuery(
+  range: TimeRange,
+  extra: Record<string, string> = {},
+  now = Date.now(),
+) {
+  const params = new URLSearchParams();
+  if (isRolling(range)) params.set("days", String(presetDays(range)));
+  else {
+    const { from, to } = resolveRange(range, now);
+    const prior = priorStart(range, now);
+    params.set("from", String(from));
+    params.set("to", String(to));
+    if (prior !== undefined) params.set("priorFrom", String(prior));
+  }
+  for (const [key, value] of Object.entries(extra)) params.set(key, value);
+  return params.toString();
+}
+
+/** What a range's trend compares it with: "the 7 days before", "the same days last month". */
+export function trendPhrase(range: TimeRange) {
+  if (isRolling(range)) {
+    const days = presetDays(range);
+    return days === 1 ? "the day before" : `the ${days} days before`;
+  }
+  switch (range) {
+    case "today":
+      return "the same hours yesterday";
+    case "yesterday":
+      return "the day before";
+    case "week":
+      return "the same days last week";
+    case "lastweek":
+      return "the week before";
+    case "month":
+      return "the same days last month";
+    case "lastmonth":
+      return "the month before";
+  }
+  return "as many days before";
+}
+
 /** How many days a range spans, at least one. */
 export function rangeDays(range: TimeRange, now = Date.now()) {
   const { from, to } = resolveRange(range, now);

@@ -6,8 +6,7 @@ import { usageReport } from "../job-timings.ts";
 import { JOB_TIMING_RETENTION_DAYS } from "../time.ts";
 import { requireUser } from "../middleware/session.ts";
 import { requireWorkspace } from "../middleware/workspace.ts";
-import { parseWindow } from "../report-window.ts";
-import { AppError } from "@relayrunner/errors";
+import { requireWindow } from "../report-window.ts";
 
 // The Usage page: how many of the workspace's jobs ran under a minute, and what GitHub's round-up
 // to whole minutes cost, over ?from=&to= or the last ?days=N days (default 30). /checks is what the free checks
@@ -18,13 +17,11 @@ const USAGE_RANGE = { maxDays: JOB_TIMING_RETENTION_DAYS, defaultDays: 30 };
 
 export const usageRoutes = new Hono<AppEnv>()
   .get("/", requireUser, requireWorkspace, async (c) => {
-    const window = parseWindow(c.req.query(), USAGE_RANGE);
-    if (!window) throw new AppError("INVALID_REQUEST");
+    const window = requireWindow(c.req.query(), USAGE_RANGE);
     return c.json(await usageReport(c.var.db, c.var.workspace.id, window));
   })
   .get("/checks", requireUser, requireWorkspace, async (c) => {
-    const window = parseWindow(c.req.query(), USAGE_RANGE);
-    if (!window) throw new AppError("INVALID_REQUEST");
+    const window = requireWindow(c.req.query(), USAGE_RANGE);
     return c.json(await freeCheckSavings(c.var.db, c.var.workspace.id, window));
   })
   .get("/actions", requireUser, requireWorkspace, async (c) => {

@@ -17,18 +17,24 @@ describe("bucketMsFor", () => {
 
 describe("chartStart", () => {
   const now = 100 * DAY_MS;
+  const last = (days: number) => ({ from: now - days * DAY_MS, to: now });
 
   it("starts at the first point, not the start of the range", () => {
-    expect(chartStart(now, 7, now - 2 * DAY_MS)).toBe(now - 2 * DAY_MS);
+    expect(chartStart(last(7), now - 2 * DAY_MS)).toBe(now - 2 * DAY_MS);
   });
 
   it("shows at least six hours", () => {
-    expect(chartStart(now, 7, now - HOUR_MS)).toBe(now - 6 * HOUR_MS);
+    expect(chartStart(last(7), now - HOUR_MS)).toBe(now - 6 * HOUR_MS);
+  });
+
+  it("ends with a range that ended before now, such as last week", () => {
+    const lastWeek = { from: now - 14 * DAY_MS, to: now - 7 * DAY_MS };
+    expect(chartStart(lastWeek, now - 7 * DAY_MS - HOUR_MS)).toBe(now - 7 * DAY_MS - 6 * HOUR_MS);
   });
 
   it("never starts before the range", () => {
-    expect(chartStart(now, 1, now - 3 * DAY_MS)).toBe(now - DAY_MS);
-    expect(chartStart(now, 7, undefined)).toBe(now - 7 * DAY_MS);
+    expect(chartStart(last(1), now - 3 * DAY_MS)).toBe(now - DAY_MS);
+    expect(chartStart(last(7), undefined)).toBe(now - 7 * DAY_MS);
   });
 });
 

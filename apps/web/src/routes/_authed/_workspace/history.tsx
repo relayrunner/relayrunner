@@ -14,7 +14,7 @@ import {
   providerOf,
   runnerName,
 } from "@/components/providers";
-import { RangePicker } from "@/components/range-picker";
+import { TimeRangePicker } from "@/components/range-picker";
 import { type Environments, fetchRunJobs, RunLink, RunSheet } from "@/components/run-sheet";
 import { StatusIcon } from "@/components/status-icon";
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
@@ -28,34 +28,35 @@ import {
 } from "@/components/ui/select";
 import { timeAgo } from "@/lib/activity";
 import { authDisabled } from "@/lib/auth-client";
-import { DAY_MS, type Environment, plural } from "@/lib/job-times";
+import { type Environment, JOB_RANGES, plural } from "@/lib/job-times";
 import { useLiveRefresh } from "@/lib/live-refresh";
 import { dayHeading } from "@/lib/time-zone";
 import { useNow } from "@/lib/use-now";
 import {
-  getJobs,
   getRuns,
+  HISTORY_DEFAULT_RANGE,
   isFailure,
   type JobsReport,
   parseRunParam,
   type Run,
   type RunsReport,
+  loadJobs,
   runParam,
-  sampleJobs,
   sampleRuns,
   triggerText,
 } from "@/lib/runs";
 import {
-  dayRanges,
   optionParam,
-  rangeParam,
+  rangeSearch,
   textParam,
   unlessDefault,
+  useRangeReport,
   useSetSearch,
 } from "@/lib/search-params";
+import { rangePhrase, resolveRange, type TimeRange } from "@/lib/time-range";
 import { cn, elapsed } from "@/lib/utils";
 
-const RANGES = dayRanges(1, 30);
+const ranges = rangeSearch(JOB_RANGES, HISTORY_DEFAULT_RANGE);
 // While a run is going, how often the list is refetched. Paused while the tab is hidden or idle
 // (lib/live-refresh.ts).
 const LIST_REFRESH_MS = 15_000;
@@ -66,8 +67,6 @@ const TABS = [
   { value: "jobs", label: "Jobs" },
 ] as const satisfies Tab<string>[];
 type View = (typeof TABS)[number]["value"];
-// Both views open on the last week.
-const DEFAULT_DAYS = 7;
 const RESULTS = ["all", "failed", "running"] as const;
 const ROUTED = ["all", "routed"] as const;
 const RUN_SORTS = ["newest", "longest", "slowest"] as const;
@@ -80,7 +79,7 @@ export type HistorySearch = {
   view?: View;
   run?: string;
   job?: number;
-  days?: number;
+  range?: TimeRange;
   repo?: string;
   result?: ResultFilter;
   routed?: RoutedFilter;
@@ -99,7 +98,7 @@ export const Route = createFileRoute("/_authed/_workspace/history")({
       view: viewOf(TABS, search.view),
       run,
       job: run && Number.isSafeInteger(job) && job > 0 ? job : undefined,
-      days: rangeParam(search.days, RANGES, DEFAULT_DAYS),
+      ...ranges.validateSearch(search),
       repo: textParam(search.repo),
       result: optionParam(search.result, RESULTS),
       routed: optionParam(search.routed, ROUTED),
@@ -110,19 +109,26 @@ export const Route = createFileRoute("/_authed/_workspace/history")({
     };
   },
   loaderDeps: ({ search }) => ({ view: search.view ?? "workflows" }),
-  // The Jobs view loads its range; the Workflows report holds the whole window.
+  // Each view loads its first range here, and another range in the page.
   loader: async ({ deps: { view }, location }): Promise<Loaded> => {
-    if (view === "jobs") {
-      const days = (location.search as HistorySearch).days ?? DEFAULT_DAYS;
-      return { view, jobs: authDisabled ? sampleJobs(days) : await getJobs(days) };
-    }
-    return { view, runs: authDisabled ? sampleRuns() : await getRuns() };
+    const range = ranges.rangeOf(location.search as HistorySearch);
+    if (view === "jobs") return { view, jobs: await loadJobs(range) };
+    return { view, runs: await loadRuns(range) };
   },
   // A tab shows as it was when it's come back to: the Workflows tab refreshes itself while runs
   // are going, and opening or closing the panel only changes the search.
   shouldReload: ({ cause }) => cause === "enter",
   component: HistoryPage,
 });
+
+function loadRuns(range: TimeRange): Promise<RunsReport> {
+  if (!authDisabled) return getRuns(range);
+  // The sample is the last few days: keep the runs the range holds, as the API would.
+  const { from, to } = resolveRange(range);
+  const sample = sampleRuns();
+  const runs = sample.runs.filter((run) => run.updatedAt >= from && run.updatedAt < to);
+  return Promise.resolve({ ...sample, runs });
+}
 
 /** The report's environments, by key. */
 const byKey = (report: { environments: Environment[] }): Environments =>
@@ -185,17 +191,18 @@ const SORTS: Record<RunSort, ((run: Run) => number) | null> = {
 };
 function WorkflowRuns({ loaded }: { loaded: RunsReport }) {
   const open = Route.useSearch({ select: (search) => search.run });
-  // Refetched while a run on screen is going, so new jobs, runs and results show without a reload.
-  const [report, setReport] = useState(loaded);
-  useEffect(() => setReport(loaded), [loaded]);
   const search = Route.useSearch();
-  const days = search.days ?? DEFAULT_DAYS;
+  const range = ranges.rangeOf(search);
+  const first = useRangeReport(loaded, range, loadRuns);
+  // Refetched while a run on screen is going, so new jobs, runs and results show without a reload.
+  const [report, setReport] = useState(first);
+  useEffect(() => setReport(first), [first]);
   const repository = search.repo ?? "all";
   const result = search.result ?? "all";
   const routed = search.routed ?? "all";
   const sort = search.sort ?? "newest";
   const setSearch = useSetSearch<HistorySearch>();
-  const setDays = (next: number) => setSearch({ days: unlessDefault(next, DEFAULT_DAYS) });
+  const setRange = (next: TimeRange) => setSearch(ranges.toSearch(next));
   const setRepository = (next: string) => setSearch({ repo: unlessDefault(next, "all") });
   const setResult = (next: ResultFilter) => setSearch({ result: unlessDefault(next, "all") });
   const setRouted = (next: RoutedFilter) => setSearch({ routed: unlessDefault(next, "all") });
@@ -205,12 +212,10 @@ function WorkflowRuns({ loaded }: { loaded: RunsReport }) {
     () => [...new Set(report.runs.map((run) => run.repository))].sort(),
     [report],
   );
-  // The report holds the whole window, so the range and the filters are applied here.
+  // The report holds the whole range, so the filters are applied here.
   const runs = useMemo(() => {
-    const since = Date.now() - days * DAY_MS;
     const shown = report.runs.filter(
       (run) =>
-        run.updatedAt >= since &&
         (repository === "all" || run.repository === repository) &&
         (routed === "all" || run.routed) &&
         (result === "all" ||
@@ -218,7 +223,7 @@ function WorkflowRuns({ loaded }: { loaded: RunsReport }) {
     );
     const by = SORTS[sort];
     return by ? shown.sort((a, b) => by(b) - by(a)) : shown;
-  }, [report, days, repository, result, routed, sort]);
+  }, [report, repository, result, routed, sort]);
   const chartPoints = useMemo(() => runPoints(runs), [runs]);
   // Newest first, a heading starts each day: when each run last changed, as the list is ordered.
   const runDays = useMemo(
@@ -227,7 +232,7 @@ function WorkflowRuns({ loaded }: { loaded: RunsReport }) {
   );
   useLiveRefresh(
     () =>
-      getRuns()
+      getRuns(range)
         .then(setReport)
         .catch(() => undefined), // Keep showing the last answer; the next tick retries.
     {
@@ -240,7 +245,7 @@ function WorkflowRuns({ loaded }: { loaded: RunsReport }) {
   return (
     <div className="grid gap-6">
       <div className="flex flex-wrap items-center gap-3">
-        <RangePicker ranges={RANGES} days={days} onChange={setDays} />
+        <TimeRangePicker {...JOB_RANGES} value={range} onChange={setRange} />
         {repositories.length > 1 && (
           <Select value={repository} onValueChange={setRepository}>
             <SelectTrigger size="sm" aria-label="Repo">
@@ -289,15 +294,15 @@ function WorkflowRuns({ loaded }: { loaded: RunsReport }) {
 
       {report.runs.length === 0 ? (
         <p className="rounded-xl border bg-card px-4 py-6 text-sm text-muted-foreground">
-          No runs in the last {plural(report.days, "day")}. Runs show up here once the GitHub App
-          sees them in a connected repo.
+          No runs in {rangePhrase(range)}. Runs show up here once the GitHub App sees them in a
+          connected repo.
         </p>
       ) : (
         <>
           <SectionBoundary>
             <DurationChart
               points={chartPoints}
-              days={days}
+              range={range}
               noun="run"
               group={search.chart}
               onGroup={(chart) => setSearch({ chart })}
@@ -486,8 +491,8 @@ function Legend({ days, truncated }: { days: number; truncated: boolean }) {
       </p>
       <p className="max-w-[62ch]">
         The bar under each time compares the run with its workflow's usual time, the p90 of its
-        successful runs over the last {plural(days, "day")}. The tick is the usual time; a run past
-        it shows in amber.
+        successful runs over {plural(days, "day")}. The tick is the usual time; a run past it shows
+        in amber.
         {truncated && " Only the newest runs are shown."}
       </p>
     </div>

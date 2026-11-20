@@ -5,10 +5,13 @@ import type { Env } from "./env.ts";
 import type { InstallationTask } from "./installation-tasks.ts";
 import {
   enqueueSignalRollups,
+  lastUtcDays,
   rollUpSignals,
   type SignalRunsReport,
   type SignalsReport,
+  utcDaysOf,
 } from "./signals.ts";
+import { withPrior } from "./report-window.ts";
 import * as testing from "./testing.ts";
 
 let env: Env;
@@ -237,6 +240,42 @@ async function report(cookie: string, query = "") {
   expect(res.status).toBe(200);
   return (await res.json()) as SignalsReport;
 }
+
+describe("day ranges", () => {
+  const now = Date.parse("2026-11-20T15:00:00Z");
+  const DAY = 86_400_000;
+
+  test("the last N days include today", () => {
+    expect(lastUtcDays(7, now)).toEqual({
+      start: Date.parse("2026-11-14"),
+      end: Date.parse("2026-11-21"),
+      priorStart: Date.parse("2026-11-07"),
+    });
+  });
+
+  test("a calendar range takes the UTC days nearest its local midnights", () => {
+    // This month in UTC-8: Nov 1 08:00 UTC to now, against Oct 1 07:00 UTC (daylight time).
+    const month = withPrior(
+      { from: Date.parse("2026-11-01T08:00:00Z"), to: now },
+      Date.parse("2026-10-01T07:00:00Z"),
+    );
+    expect(utcDaysOf(month, now)).toEqual({
+      start: Date.parse("2026-11-01"),
+      end: Date.parse("2026-11-21"),
+      priorStart: Date.parse("2026-10-01"),
+    });
+    // Last week in UTC+9 ends on Monday 00:00 local, Sunday 15:00 UTC.
+    const lastWeek = withPrior({
+      from: Date.parse("2026-11-08T15:00:00Z"),
+      to: Date.parse("2026-11-15T15:00:00Z"),
+    });
+    expect(utcDaysOf(lastWeek, now)).toEqual({
+      start: Date.parse("2026-11-09"),
+      end: Date.parse("2026-11-16"),
+      priorStart: Date.parse("2026-11-09") - 7 * DAY,
+    });
+  });
+});
 
 describe("rollUpSignals", () => {
   test("counts the part of a run that kept going after a newer push to its branch", async () => {

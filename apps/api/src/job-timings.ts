@@ -20,7 +20,7 @@ import { findInstallation } from "./installations.ts";
 import { parseDate } from "./jobs.ts";
 import { loadPriceBook } from "./prices.ts";
 import { routeIdFromLabels } from "./routing.ts";
-import { DAY_MS, JOB_TIMING_RETENTION_DAYS, RAW_RETENTION_DAYS } from "./time.ts";
+import { DAY_MS, JOB_TIMING_RETENTION_DAYS, LIVE_DAYS, RAW_RETENTION_DAYS } from "./time.ts";
 
 type WorkflowJobMessage = Extract<WebhookMessage, { event: "workflow_job" }>;
 
@@ -328,13 +328,13 @@ export async function purgeOldJobTimings(db: Db, now = Date.now()): Promise<numb
     purgeBefore(db, signalDay, signalDay.day, retained),
     purgeBefore(db, runnerWaitDay, runnerWaitDay.day, retained),
     purgeBefore(db, aiUsageDay, aiUsageDay.day, retained),
-    // Pull request files only matter while their runs keep raw rows; a pull request still running
-    // past that is read again.
+    // Pull request files are read back for the last LIVE_DAYS; a pull request still running past
+    // that is read again.
     purgeBefore(
       db,
       pullRequestPaths,
       pullRequestPaths.readAt,
-      new Date(now - RAW_RETENTION_DAYS * DAY_MS),
+      new Date(now - (LIVE_DAYS + 1) * DAY_MS),
     ),
     // Spend limits only read the current month; older months go once they start before the range.
     purgeBefore(db, providerSpendMonth, providerSpendMonth.month, retained),

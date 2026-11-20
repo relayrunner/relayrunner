@@ -4,7 +4,7 @@ import { memo, useMemo, useState } from "react";
 import { BranchHeading, toggleKey } from "@/components/branch-heading";
 import { DurationChart, jobPoints } from "@/components/duration-chart";
 import { SectionBoundary } from "@/components/error-boundary";
-import { RangePicker } from "@/components/range-picker";
+import { TimeRangePicker } from "@/components/range-picker";
 import { CommitBy } from "@/components/commit";
 import { RunLink } from "@/components/run-sheet";
 import { RunnerLink, type RunnerRef } from "@/components/runner-link";
@@ -26,27 +26,25 @@ import {
 import { timeAgo } from "@/lib/activity";
 import { dayHeading } from "@/lib/time-zone";
 import { formatMemory } from "@/lib/device";
-import { plural } from "@/lib/job-times";
-import { authDisabled } from "@/lib/auth-client";
 import { type BranchGroup, groupByBranch } from "@/lib/branch-groups";
 import { readFlag, saveFlag } from "@/lib/stored-flag";
 import {
-  getJobs,
+  HISTORY_DEFAULT_RANGE,
   type HistoryJob,
   isFailure,
   type JobsReport,
   isLongWait,
-  sampleJobs,
+  loadJobs,
 } from "@/lib/runs";
-import { dayRanges, unlessDefault, useRangeReport, useSetSearch } from "@/lib/search-params";
+import { JOB_RANGES } from "@/lib/job-times";
+import { rangeSearch, unlessDefault, useRangeReport, useSetSearch } from "@/lib/search-params";
+import { rangePhrase } from "@/lib/time-range";
 import { cn, elapsed, percent } from "@/lib/utils";
 import type { HistorySearch } from "@/routes/_authed/_workspace/history";
 
-const RANGES = dayRanges(1, 30);
-const DEFAULT_DAYS = 7;
+const ranges = rangeSearch(JOB_RANGES, HISTORY_DEFAULT_RANGE);
 // The range and filters live in the History page's URL.
 const history = getRouteApi("/_authed/_workspace/history");
-const load = (days: number) => (authDisabled ? Promise.resolve(sampleJobs(days)) : getJobs(days));
 
 type ResultFilter = "all" | "failed";
 
@@ -257,7 +255,7 @@ function ConclusionText({ conclusion }: { conclusion: string | null }) {
  * job's panel doesn't re-render the table.
  */
 export const JobList = memo(function JobList({ report: first }: { report: JobsReport }) {
-  const days = history.useSearch({ select: (search) => search.days ?? DEFAULT_DAYS });
+  const range = history.useSearch({ select: ranges.rangeOf });
   const repository = history.useSearch({ select: (search) => search.repo ?? "all" });
   const result = history.useSearch({
     select: (search): ResultFilter => (search.result === "failed" ? "failed" : "all"),
@@ -268,7 +266,7 @@ export const JobList = memo(function JobList({ report: first }: { report: JobsRe
   const [folded, setFolded] = useState<ReadonlySet<string>>(new Set());
   const setSearch = useSetSearch<HistorySearch>();
   // Each range is its own load, since the newest jobs alone can fill a busy workspace's list.
-  const report = useRangeReport(first, days, load);
+  const report = useRangeReport(first, range, loadJobs);
 
   const repositories = useMemo(
     () => [...new Set(report.jobs.map((job) => job.repository))].sort(),
@@ -319,10 +317,10 @@ export const JobList = memo(function JobList({ report: first }: { report: JobsRe
   return (
     <div className="grid gap-6">
       <div className="flex flex-wrap items-center gap-3">
-        <RangePicker
-          ranges={RANGES}
-          days={days}
-          onChange={(next) => setSearch({ days: unlessDefault(next, DEFAULT_DAYS) })}
+        <TimeRangePicker
+          {...JOB_RANGES}
+          value={range}
+          onChange={(next) => setSearch(ranges.toSearch(next))}
         />
         {repositories.length > 1 && (
           <Select
@@ -380,15 +378,15 @@ export const JobList = memo(function JobList({ report: first }: { report: JobsRe
       </div>
       {report.jobs.length === 0 ? (
         <p className="rounded-xl border bg-card px-4 py-6 text-sm text-muted-foreground">
-          No finished jobs in the last {plural(report.days, "day")}. Jobs show up here once the
-          GitHub App sees them run in a connected repo.
+          No finished jobs in {rangePhrase(range)}. Jobs show up here once the GitHub App sees them
+          run in a connected repo.
         </p>
       ) : (
         <>
           <SectionBoundary>
             <DurationChart
               points={chartPoints}
-              days={report.days}
+              range={range}
               noun="job"
               group={chart}
               onGroup={(next) => setSearch({ chart: next })}

@@ -24,6 +24,7 @@ import { type HistoryJob, isFailure, type JobUsage, type Run } from "@/lib/runs"
 import { readFlag, saveFlag } from "@/lib/stored-flag";
 import { formatMemory } from "@/lib/device";
 import { startOfDay, startOfHours, zoneFormat } from "@/lib/time-zone";
+import { resolveRange, type TimeRange } from "@/lib/time-range";
 import { cn, count, elapsed, percent } from "@/lib/utils";
 
 type Result = "success" | "failed" | "cancelled";
@@ -108,14 +109,14 @@ const BARS_FLAG = "rr:history-chart-bars";
  */
 export const DurationChart = memo(function DurationChart({
   points: all,
-  days,
+  range,
   noun,
   group,
   onGroup,
   groupLabel,
 }: {
   points: ChartPoint[];
-  days: number;
+  range: TimeRange;
   /** "run" or "job". */
   noun: string;
   /** The group shown, from the URL. Left out, the busiest. */
@@ -142,7 +143,7 @@ export const DurationChart = memo(function DurationChart({
       ),
     [points],
   );
-  const [ref, frame, bucketMs] = useFrame(days, { firstAt });
+  const [ref, frame, bucketMs] = useFrame(range, { firstAt });
   const counts = useMemo(() => {
     const totals: Record<Result, number> = { success: 0, failed: 0, cancelled: 0 };
     for (const point of points) totals[point.result]++;
@@ -269,16 +270,16 @@ export const DurationChart = memo(function DurationChart({
  */
 export const CountChart = memo(function CountChart({
   tallies,
-  days,
+  range,
   noun,
   bucketMs: wanted,
 }: {
   tallies: Tally[];
-  days: number;
+  range: TimeRange;
   noun: string;
   bucketMs?: number;
 }) {
-  const [ref, frame, bucketMs] = useFrame(days, { bucketMs: wanted });
+  const [ref, frame, bucketMs] = useFrame(range, { bucketMs: wanted });
   const counts = useMemo(() => {
     const totals: Record<Result, number> = { success: 0, failed: 0, cancelled: 0 };
     for (const tally of tallies) for (const result of RESULTS) totals[result] += tally[result];
@@ -371,14 +372,15 @@ const perBar = (bucketMs: number) =>
  * With `firstAt`, it starts there instead of at the start of the range, and buckets fit that span.
  */
 function useFrame(
-  days: number,
+  range: TimeRange,
   { firstAt, bucketMs: wanted }: { firstAt?: number; bucketMs?: number },
 ) {
   const [ref, width] = useWidth<HTMLDivElement>();
-  const now = Date.now();
-  const from = chartStart(now, days, firstAt);
-  const bucketMs = wanted ?? bucketMsFor(now - from);
-  const end = floorTo(now, bucketMs) + bucketMs;
+  const span = resolveRange(range);
+  const from = chartStart(span, firstAt);
+  const bucketMs = wanted ?? bucketMsFor(span.to - from);
+  // The bucket holding the range's last moment is the last.
+  const end = floorTo(span.to - 1, bucketMs) + bucketMs;
   const start = floorTo(from, bucketMs);
   const frame = useMemo(() => ({ start, end, width }), [start, end, width]);
   return [ref, frame, bucketMs] as const;

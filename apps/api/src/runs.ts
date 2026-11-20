@@ -20,7 +20,6 @@ import {
   FEW_RUNS,
   inWorkspace,
   type JobTimesReport,
-  hasTrend,
   jobTimesReport,
   nameMachines,
   PICK,
@@ -35,6 +34,7 @@ import {
 } from "./job-times.ts";
 import { purgeBefore, RAW_RETENTION_DAYS } from "./job-timings.ts";
 import { DAY_MS } from "./time.ts";
+import { hasTrend, lastDays, type ReportWindow, type Window, windowDays } from "./report-window.ts";
 import { parseDate } from "./jobs.ts";
 import { jobKey, picksForJobs } from "./route-decisions.ts";
 
@@ -43,7 +43,7 @@ type WorkflowRunMessage = Extract<WebhookMessage, { event: "workflow_run" }>;
 const table = schema.workflowRun;
 const timing = schema.jobTiming;
 
-/** A workflow's usual time is the p90 of its successful runs over this many days. */
+/** The Runs list's default window. A workflow's usual time is the p90 of its successful runs in it. */
 const USUAL_DAYS = 14;
 /** Most runs one list returns. */
 const RUN_LIMIT = 200;
@@ -135,7 +135,7 @@ export interface Run {
 }
 
 export interface RunsReport {
-  /** The window: runs that changed in the last `days` days. */
+  /** Days the usual times come from: the window, or the USUAL_DAYS up to its end if longer. */
   days: number;
   /** Environments the runs used, most used first. */
   environments: Environment[];
@@ -164,7 +164,7 @@ interface JobGroup {
 }
 
 /** The finished jobs of each run in the window, grouped by run: a range of the installation index. */
-function jobGroupsQuery(workspaceId: string, since: number) {
+function jobGroupsQuery(workspaceId: string, { from, to }: Window) {
   return sql`
     select ${timing.repositoryId} as repository_id, min(${timing.repositoryFullName}) as repository,
       ${timing.runId} as run_id, ${timing.runAttempt} as run_attempt,
@@ -182,7 +182,8 @@ function jobGroupsQuery(workspaceId: string, since: number) {
       group_concat(case when not ${PICK} and ${timing.startedAt} is not null
         then ${timing.startedAt} || ':' || ${timing.completedAt} end) as spans
     from ${timing}
-    where ${inWorkspace(workspaceId)} and ${timing.completedAt} >= ${since}
+    where ${inWorkspace(workspaceId)} and ${timing.completedAt} >= ${from}
+      and ${timing.completedAt} < ${to}
     group by ${timing.repositoryId}, ${timing.runId}, ${timing.runAttempt}`;
 }
 
@@ -267,17 +268,18 @@ function runFields(
 export const workflowKey = (repositoryId: number, workflow: string | null) =>
   `${repositoryId}\u001f${workflow ?? ""}`;
 
-/** Every run that changed since `since`: its status, result and wall time, newest first. */
-async function runSummaries(db: Db, workspaceId: string, since: number) {
+/** Every run that changed in the window: its status, result and wall time, newest first. */
+async function runSummaries(db: Db, workspaceId: string, window: Window) {
   const [groups, rows] = await Promise.all([
-    db.all<JobGroup>(jobGroupsQuery(workspaceId, since)),
+    db.all<JobGroup>(jobGroupsQuery(workspaceId, window)),
     db
       .select()
       .from(table)
       .where(
         and(
           inWorkspace(workspaceId, table.installationId),
-          sql`${table.githubUpdatedAt} >= ${since}`,
+          sql`${table.githubUpdatedAt} >= ${window.from}`,
+          sql`${table.githubUpdatedAt} < ${window.to}`,
         ),
       ),
   ]);
@@ -372,15 +374,19 @@ function successfulWalls(summaries: RunSummary[]) {
   return walls;
 }
 
-/**
- * The workspace's runs that changed in the last USUAL_DAYS days, newest first, at most RUN_LIMIT.
- * The usual times need the whole window anyway, so the dashboard narrows the range itself.
- */
-export async function listRuns(db: Db, workspaceId: string, now = Date.now()): Promise<RunsReport> {
-  const summaries = await runSummaries(db, workspaceId, now - USUAL_DAYS * DAY_MS);
-  // Each workflow's usual time, from its successful runs over the whole window.
+/** The workspace's runs that changed in the window, newest first, at most RUN_LIMIT. */
+export async function listRuns(
+  db: Db,
+  workspaceId: string,
+  window: Window = lastDays(USUAL_DAYS),
+): Promise<RunsReport> {
+  // Usual times come from at least USUAL_DAYS, so a short window still has enough runs.
+  const read = { from: Math.min(window.from, window.to - USUAL_DAYS * DAY_MS), to: window.to };
+  const all = await runSummaries(db, workspaceId, read);
+  const summaries = all.filter((summary) => summary.updatedAt >= window.from);
+  // Each workflow's usual time, from its successful runs over everything read.
   const usual = new Map<string, number | null>();
-  for (const [workflow, runs] of successfulWalls(summaries))
+  for (const [workflow, runs] of successfulWalls(all))
     if (runs.length >= FEW_RUNS)
       usual.set(
         workflow,
@@ -432,7 +438,7 @@ export async function listRuns(db: Db, workspaceId: string, now = Date.now()): P
   });
   await nameMachines(db, workspaceId, envs);
   return {
-    days: USUAL_DAYS,
+    days: windowDays(read),
     environments: [...envs.values()].sort(
       (a, b) => (envUse.get(b.key) ?? 0) - (envUse.get(a.key) ?? 0),
     ),
@@ -694,20 +700,21 @@ export async function jobSource(db: Db, workspaceId: string, jobId: number) {
 }
 
 /**
- * Each workflow's whole-run times over the last `days` days, by workflowKey, for the Performance
- * page: like a job's times, from its newest successful runs, but first job queued to last job
- * finished. Its wait is the time no job was running (waitingMs). When hasTrend, it reads the
- * window before too, for the trend.
+ * Each workflow's whole-run times in the window, by workflowKey, for the Performance page: like a
+ * job's times, from its newest successful runs, but first job queued to last job finished. Its
+ * wait is the time no job was running (waitingMs). When hasTrend, it reads the prior window too.
  */
 export async function workflowTimes(
   db: Db,
   workspaceId: string,
-  days: number,
+  window: ReportWindow,
   now = Date.now(),
 ): Promise<Map<string, Stat>> {
-  const since = now - days * DAY_MS;
-  const all = await runSummaries(db, workspaceId, hasTrend(days) ? since - days * DAY_MS : since);
-  const current = all.filter((summary) => summary.updatedAt >= since);
+  const trend = hasTrend(window, now);
+  const [current, prior] = await Promise.all([
+    runSummaries(db, workspaceId, window),
+    trend ? runSummaries(db, workspaceId, window.prior) : [],
+  ]);
   const finished = new Map<string, number>();
   for (const summary of current)
     if (summary.status === "completed" && summary.conclusion !== "cancelled")
@@ -722,14 +729,11 @@ export async function workflowTimes(
     })),
   });
   const walls = successfulWalls(current);
-  const priorWalls = successfulWalls(all.filter((summary) => summary.updatedAt < since));
+  const priorWalls = successfulWalls(prior);
   return new Map(
     [...finished].map(([key, total]) => [
       key,
-      statOf(
-        bucket(walls.get(key), total),
-        hasTrend(days) ? bucket(priorWalls.get(key)) : undefined,
-      ),
+      statOf(bucket(walls.get(key), total), trend ? bucket(priorWalls.get(key)) : undefined),
     ]),
   );
 }
@@ -743,11 +747,11 @@ export type PerformanceReport = Omit<JobTimesReport, "workflows"> & {
 export async function performanceReport(
   db: Db,
   workspaceId: string,
-  days: number,
+  window: ReportWindow,
 ): Promise<PerformanceReport> {
   const [report, walls] = await Promise.all([
-    jobTimesReport(db, workspaceId, days),
-    workflowTimes(db, workspaceId, days),
+    jobTimesReport(db, workspaceId, window),
+    workflowTimes(db, workspaceId, window),
   ]);
   return {
     ...report,

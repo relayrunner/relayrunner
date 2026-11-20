@@ -17,13 +17,15 @@
  * removed only once every adopted workflow is, else trying, else trial_abandoned. Moving one
  * workflow off the relay while others stay on it is fine and says nothing.
  *
- * Reads workflow_run (first attempts, kept RAW_RETENTION_DAYS) and workflow_job's picks over the
- * same window, through their time indexes. A workspace whose last relay has aged out of that
- * window has no state.
+ * Reads workflow_run's first attempts and workflow_job's picks over the last WINDOW_DAYS, through
+ * their time indexes. A workspace whose last relay has aged out of that window has no state.
  */
 import { and, eq, gte } from "drizzle-orm";
 import { type Db, schema } from "./db/index.ts";
-import { DAY_MS, RAW_RETENTION_DAYS } from "./job-timings.ts";
+import { DAY_MS } from "./job-timings.ts";
+
+/** How far back stickiness reads, every 15 minutes: a month is plenty to see a relay drop out. */
+const WINDOW_DAYS = 31;
 
 export const TRIAL_IDLE_MS = 7 * 24 * 60 * 60 * 1000;
 /** Runs on up-to-date code without the relay that mark an adopted workflow as removed. */
@@ -201,7 +203,7 @@ export async function workspaceStickiness(
   db: Db,
   now = Date.now(),
 ): Promise<Map<string, Stickiness>> {
-  const since = new Date(now - RAW_RETENTION_DAYS * DAY_MS);
+  const since = new Date(now - WINDOW_DAYS * DAY_MS);
   const run = schema.workflowRun;
   const job = schema.workflowJob;
   const [runs, picks, workspaces] = await Promise.all([

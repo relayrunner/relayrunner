@@ -1,6 +1,7 @@
 import type { RunnerSize } from "@relayrunner/providers";
 import type { DeviceKind } from "@/lib/device";
 import { api } from "@/lib/api";
+import { type RangeOptions, reportQuery, type TimeRange } from "./time-range.ts";
 import { count } from "@/lib/utils";
 import type { Phase } from "./job-phases.ts";
 
@@ -81,7 +82,7 @@ export type WorkflowRow = {
 
 export type JobTimesReport = {
   days: number;
-  /** Whether times carry a trend against the window before (not on 30 days). */
+  /** Whether times carry a trend against the window before (not past what single jobs cover). */
   trend: boolean;
   sampleCap: number;
   /** Runs a job needs on both runners to count toward `versus`. */
@@ -107,21 +108,28 @@ export type JobRun = {
 /** A step of the job's average successful run, sorted into a phase by its name. */
 export type RunStep = { name: string; phase: Phase; ms: number };
 
-export function getJobTimes(days: number) {
-  return api<JobTimesReport>(`/job-times?days=${days}`);
+/**
+ * The ranges a report from single jobs offers: as far back as the API keeps them (62 days), so
+ * last month fits.
+ */
+export const JOB_RANGES: RangeOptions = {
+  presets: ["24h", "7d", "14d", "30d", "week", "lastweek", "month", "lastmonth"],
+};
+
+export function getJobTimes(range: TimeRange) {
+  return api<JobTimesReport>(`/job-times?${reportQuery(range)}`);
 }
 
 export function getJobRuns(
-  days: number,
+  range: TimeRange,
   job: { repositoryId: number; workflow: string | null; name: string; matrix: boolean },
 ) {
-  const query = new URLSearchParams({
-    days: String(days),
+  const query = reportQuery(range, {
     repositoryId: String(job.repositoryId),
     name: job.name,
     matrix: String(job.matrix),
+    ...(job.workflow && { workflow: job.workflow }),
   });
-  if (job.workflow) query.set("workflow", job.workflow);
   return api<{ days: number; runs: JobRun[]; steps: RunStep[] }>(`/job-times/runs?${query}`);
 }
 
@@ -228,10 +236,10 @@ export function timeLeft(
 }
 
 /**
- * Whether a `days` window can be compared with the one before: the API keeps raw job timings 31
- * days (RAW_RETENTION_DAYS), so 30 days can't. For the sample reports, which have no API.
+ * Whether a `days` window can be compared with the one before: the API keeps raw job timings 62
+ * days (RAW_RETENTION_DAYS). For the sample reports, which have no API.
  */
-export const hasTrend = (days: number) => days * 2 <= 31;
+export const hasTrend = (days: number) => days * 2 <= 62;
 
 /** "7 runs", "1 run". */
 export function plural(value: number, word: string) {

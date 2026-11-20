@@ -5,9 +5,11 @@ import {
   presetDays,
   rangeName,
   rangePhrase,
+  reportQuery,
   resolveRange,
   spanCode,
   timeRangeParam,
+  trendPhrase,
 } from "./time-range.ts";
 
 // Saturday, Nov 14 2026, 7 PM local.
@@ -78,6 +80,35 @@ test("dayPreset and presetDays map the older day counts", () => {
   expect([1, 7, 30].map(dayPreset)).toEqual(["24h", "7d", "30d"]);
   expect(presetDays("24h")).toBe(1);
   expect(presetDays("90d")).toBe(90);
+});
+
+describe("reportQuery", () => {
+  const local = (month: number, day: number) => new Date(2026, month, day).getTime();
+
+  test("sends a rolling range as the last N days", () => {
+    expect(reportQuery("7d", {}, now)).toBe("days=7");
+    expect(reportQuery("24h", {}, now)).toBe("days=1");
+  });
+
+  test("compares a calendar range with the same stretch one period back", () => {
+    expect(reportQuery("month", {}, now)).toBe(
+      `from=${local(10, 1)}&to=${now}&priorFrom=${local(9, 1)}`,
+    );
+    expect(reportQuery("lastmonth", {}, now)).toBe(
+      `from=${local(9, 1)}&to=${local(10, 1)}&priorFrom=${local(8, 1)}`,
+    );
+    expect(reportQuery("week", {}, now)).toBe(
+      `from=${local(10, 9)}&to=${now}&priorFrom=${local(10, 2)}`,
+    );
+    expect(reportQuery("lastweek", {}, now)).toContain(`&priorFrom=${local(9, 26)}`);
+  });
+
+  test("names what the trend compares with", () => {
+    expect(trendPhrase("7d")).toBe("the 7 days before");
+    expect(trendPhrase("24h")).toBe("the day before");
+    expect(trendPhrase("month")).toBe("the same days last month");
+    expect(trendPhrase("lastweek")).toBe("the week before");
+  });
 });
 
 describe("timeRangeParam", () => {

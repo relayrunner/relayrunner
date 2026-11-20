@@ -4,6 +4,7 @@ import type { Env } from "./env.ts";
 import { jobTypeTimes } from "./job-type-times.ts";
 import { jobRuns } from "./job-times.ts";
 import { DAY_MS } from "./job-timings.ts";
+import { lastDays, withPrior } from "./report-window.ts";
 import type { StepTime } from "./step-phases.ts";
 import * as testing from "./testing.ts";
 
@@ -14,6 +15,7 @@ let ids = 0;
 
 // Noon UTC, so days ago and local midnights fall where the tests expect.
 const NOW = Date.UTC(2026, 10, 20, 12);
+const last = (days: number) => withPrior(lastDays(days, NOW));
 
 async function job(
   name: string,
@@ -79,7 +81,7 @@ describe("jobTypeTimes", () => {
     // Before the window: only counts toward the change.
     await job("test (node 22)", NOW - 9 * DAY_MS, 90_000);
 
-    const report = await jobTypeTimes(createDb(env.DB), workspaceId, 7, { now: NOW });
+    const report = await jobTypeTimes(createDb(env.DB), workspaceId, last(7), { now: NOW });
     expect(report.compare).toBe(true);
     expect(report.start).toBe(Date.UTC(2026, 10, 14));
     expect(report.jobs.map((j) => [j.job, j.type, j.runs, j.ms, j.priorMs])).toEqual([
@@ -94,13 +96,33 @@ describe("jobTypeTimes", () => {
   test("cuts days at the reader's midnight and skips the change past raw retention", async () => {
     // 23:00 on Nov 19 in UTC-5 is 04:00 UTC on Nov 20.
     await job("lint", Date.UTC(2026, 10, 20, 4), 30_000);
-    const report = await jobTypeTimes(createDb(env.DB), workspaceId, 30, {
+    const report = await jobTypeTimes(createDb(env.DB), workspaceId, last(45), {
       now: NOW,
       utcOffset: -300,
     });
     expect(report.compare).toBe(false);
     expect(report.jobs[0]!.priorMs).toBeNull();
     expect(report.jobs[0]!.byDay.slice(-2)).toEqual([30_000, 0]);
+  });
+
+  test("compares this month with the same days of last month", async () => {
+    await job("lint", Date.UTC(2026, 10, 1, 9), 30_000);
+    await job("lint", Date.UTC(2026, 9, 15), 20_000);
+    // Past Oct 20, so not in the same stretch of last month.
+    await job("lint", Date.UTC(2026, 9, 25), 50_000);
+    const month = { from: Date.UTC(2026, 10, 1), to: NOW };
+    const report = await jobTypeTimes(
+      createDb(env.DB),
+      workspaceId,
+      withPrior(month, Date.UTC(2026, 9, 1)),
+      { now: NOW },
+    );
+    expect(report.start).toBe(Date.UTC(2026, 10, 1));
+    expect(report.days).toBe(20);
+    expect(report.compare).toBe(true);
+    expect(report.jobs.map((j) => [j.job, j.ms, j.priorMs, j.byDay[0]])).toEqual([
+      ["lint", 30_000, 20_000, 30_000],
+    ]);
   });
 
   test("sorts each job's step time into phases, in the window only", async () => {
@@ -120,7 +142,7 @@ describe("jobTypeTimes", () => {
     // Before the window.
     await job("test (node 22)", NOW - 9 * DAY_MS, 120_000, undefined, steps);
 
-    const [test] = (await jobTypeTimes(createDb(env.DB), workspaceId, 7, { now: NOW })).jobs;
+    const [test] = (await jobTypeTimes(createDb(env.DB), workspaceId, last(7), { now: NOW })).jobs;
     expect(test!.runs).toBe(3);
     expect(test!.stepped).toBe(2);
     expect(test!.phases).toEqual({

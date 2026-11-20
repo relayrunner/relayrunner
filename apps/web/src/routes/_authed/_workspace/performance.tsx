@@ -8,7 +8,7 @@ import { JobTypes } from "@/components/job-type-time";
 import { RunnerLink } from "@/components/runner-link";
 import { sizeText } from "@relayrunner/providers";
 import { byProvider, ProviderMark, providerStyle } from "@/components/providers";
-import { RangePicker } from "@/components/range-picker";
+import { TimeRangePicker } from "@/components/range-picker";
 import { Button } from "@/components/ui/button";
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
 import {
@@ -50,31 +50,34 @@ import {
   type RunStep,
   type Stat,
   EMPTY_STAT,
+  JOB_RANGES,
   sampleJobTimes,
   p90Text,
   versusLabel,
   type WorkflowRow,
 } from "@/lib/job-times";
 import {
-  dayRanges,
-  rangeParam,
+  rangeSearch,
   textParam,
   unlessDefault,
   useRangeReport,
   useSetSearch,
 } from "@/lib/search-params";
 import { readFlag, saveFlag } from "@/lib/stored-flag";
+import { rangeDays, rangeName, rangePhrase, resolveRange, type TimeRange } from "@/lib/time-range";
+import { shortDate } from "@/lib/time-zone";
 import { cn } from "@/lib/utils";
 import { Count } from "@/components/count";
 import { RunSteps } from "@/components/job-phases";
 
-const RANGES = dayRanges(1, 30);
+const DEFAULT_RANGE: TimeRange = "14d";
+const ranges = rangeSearch(JOB_RANGES, DEFAULT_RANGE);
 
 // Whether the Runners tab groups runners by provider, kept per browser.
 const GROUPED_KEY = "relayrunner:performance:by-provider";
 
-function load(days: number) {
-  return authDisabled ? Promise.resolve(sampleJobTimes(days)) : getJobTimes(days);
+function load(range: TimeRange) {
+  return authDisabled ? Promise.resolve(sampleJobTimes(rangeDays(range))) : getJobTimes(range);
 }
 
 const TABS = [
@@ -85,12 +88,11 @@ const TABS = [
 ] as const satisfies Tab<string>[];
 type View = (typeof TABS)[number]["value"];
 
-const DEFAULT_DAYS = 14;
-// `days` and `repos` (a repo's full name) narrow every tab. `repo`, `workflow` and `job` open one
+// `range` and `repos` (a repo's full name) narrow every tab. `repo`, `workflow` and `job` open one
 // job's detail, for links from a job on the History page.
 type Search = {
   view?: View;
-  days?: number;
+  range?: TimeRange;
   repos?: string;
   repo?: number;
   workflow?: string;
@@ -100,7 +102,7 @@ const validateSearch = (search: Record<string, unknown>): Search => {
   const repo = Number(search.repo);
   return {
     view: viewOf(TABS, search.view),
-    days: rangeParam(search.days, RANGES, DEFAULT_DAYS),
+    ...ranges.validateSearch(search),
     repos: textParam(search.repos),
     repo: Number.isSafeInteger(repo) && repo > 0 ? repo : undefined,
     workflow: textParam(search.workflow),
@@ -110,7 +112,7 @@ const validateSearch = (search: Record<string, unknown>): Search => {
 
 export const Route = createFileRoute("/_authed/_workspace/performance")({
   validateSearch,
-  loader: ({ location }) => load(validateSearch(location.search).days ?? DEFAULT_DAYS),
+  loader: ({ location }) => load(ranges.rangeOf(validateSearch(location.search))),
   // Every tab reads the same report, so switching tabs doesn't load it again, and a new range
   // loads in the page, keeping the last one up meanwhile.
   shouldReload: ({ cause }) => cause !== "stay",
@@ -134,10 +136,10 @@ function linkedDetail(workflows: WorkflowRow[], search: Search): Detail | null {
 function PerformancePage() {
   const search = Route.useSearch();
   const view = search.view ?? "workflows";
-  const days = search.days ?? DEFAULT_DAYS;
+  const range = ranges.rangeOf(search);
   const repository = search.repos ?? "all";
   const setSearch = useSetSearch<Search>();
-  const report: JobTimesReport = useRangeReport(Route.useLoaderData(), days, load);
+  const report: JobTimesReport = useRangeReport(Route.useLoaderData(), range, load);
   const [grouped, setGrouped] = useState(() => readFlag(GROUPED_KEY));
   const [opened, setOpened] = useState<Detail | null>(null);
   const linked = useMemo(() => linkedDetail(report.workflows, search), [report, search]);
@@ -165,10 +167,10 @@ function PerformancePage() {
   const filters = useMemo(
     () => (
       <div className="flex flex-wrap items-center gap-3">
-        <RangePicker
-          ranges={RANGES}
-          days={days}
-          onChange={(next) => setSearch({ days: unlessDefault(next, DEFAULT_DAYS) })}
+        <TimeRangePicker
+          {...JOB_RANGES}
+          value={range}
+          onChange={(next) => setSearch(ranges.toSearch(next))}
         />
         {repositories.length > 1 && (
           <Select
@@ -205,7 +207,7 @@ function PerformancePage() {
         )}
       </div>
     ),
-    [days, repositories, repository, view, grouped],
+    [range, repositories, repository, view, grouped],
   );
 
   return (
@@ -221,13 +223,13 @@ function PerformancePage() {
           {(view !== "jobs" || report.environments.length === 0) && filters}
           {report.environments.length === 0 ? (
             <p className="rounded-xl border bg-card px-4 py-6 text-sm text-muted-foreground">
-              No finished jobs in the last {report.days} days. Jobs show up here once the GitHub App
-              sees them run in a connected repo.
+              No finished jobs in {rangePhrase(range)}. Jobs show up here once the GitHub App sees
+              them run in a connected repo.
             </p>
           ) : (
             <SectionBoundary>
               {view === "types" ? (
-                <JobTypes days={days} repository={repository} />
+                <JobTypes range={range} repository={repository} />
               ) : view === "runners" ? (
                 <Environments report={report} grouped={grouped} />
               ) : view === "jobs" ? (
@@ -254,7 +256,7 @@ function PerformancePage() {
           <SectionBoundary>
             <JobDetail
               detail={detail}
-              days={report.days}
+              range={range}
               environments={report.environments}
               onClose={closeDetail}
             />
@@ -663,8 +665,8 @@ const workflowColumns = workflowColumn.columns([
       ...END,
       info: (
         <p>
-          This range against the one just before it, such as the past 7 days against the 7 days
-          before. Red means the workflow got slower.
+          This range against the one before it: the past 7 days against the 7 days before, or this
+          month against the same days last month. Red means the workflow got slower.
         </p>
       ),
     },
@@ -729,7 +731,7 @@ const Workflows = memo(function Workflows({
   workflows: WorkflowRow[];
   showRepository: boolean;
   onOpen: (detail: Detail) => void;
-  /** Whether the range has a trend (30 days doesn't). */
+  /** Whether the range has a trend (last month doesn't). */
   trend: boolean;
 }) {
   const rows = useMemo(
@@ -861,8 +863,8 @@ const jobColumns = jobColumn.columns([
       className: "w-0 py-2 align-top whitespace-nowrap",
       info: (
         <p>
-          This range against the one just before it, on the runner the job ran on most. Red means
-          the job got slower.
+          This range against the one before it, on the runner the job ran on most. Red means the job
+          got slower.
         </p>
       ),
     },
@@ -968,7 +970,7 @@ const Jobs = memo(function Jobs({
   onOpen: (detail: Detail) => void;
   /** The page's filters, sharing a row with Expand all. */
   toolbar: ReactNode;
-  /** Whether the range has a trend (30 days doesn't). */
+  /** Whether the range has a trend (last month doesn't). */
   trend: boolean;
 }) {
   const rows = useMemo(() => jobRows(workflows, environments), [workflows, environments]);
@@ -1123,12 +1125,12 @@ function Trend({ trend }: { trend: number | null }) {
 
 function JobDetail({
   detail,
-  days,
+  range,
   environments,
   onClose,
 }: {
   detail: Detail;
-  days: number;
+  range: TimeRange;
   environments: EnvironmentSummary[];
   onClose: () => void;
 }) {
@@ -1138,11 +1140,11 @@ function JobDetail({
 
   useEffect(() => {
     if (authDisabled) {
-      setResult({ runs: sampleRuns(job, days), steps: sampleSteps(job) });
+      setResult({ runs: sampleRuns(job, rangeDays(range)), steps: sampleSteps(job) });
       return;
     }
     let live = true;
-    getJobRuns(days, {
+    getJobRuns(range, {
       repositoryId: workflow.repositoryId,
       workflow: workflow.workflow,
       name: job.name,
@@ -1153,7 +1155,7 @@ function JobDetail({
     return () => {
       live = false;
     };
-  }, [workflow, job, days]);
+  }, [workflow, job, range]);
 
   const used = environments
     .flatMap((env, index) => {
@@ -1171,7 +1173,7 @@ function JobDetail({
             {workflow.workflow ?? "Unnamed workflow"} › {job.name}
           </DialogTitle>
           <DialogDescription>
-            {workflow.repository} · last {days} days · each dot is one run
+            {workflow.repository} · {rangeName(range)} · each dot is one run
           </DialogDescription>
         </DialogHeader>
         <div className="grid min-w-0 gap-5 md:grid-cols-[minmax(0,1fr)_240px]">
@@ -1185,7 +1187,7 @@ function JobDetail({
                 runs={result.runs}
                 environments={environments}
                 medians={job.byEnvironment}
-                days={days}
+                range={range}
               />
             )}
           </div>
@@ -1231,13 +1233,13 @@ function RunChart({
   runs,
   environments,
   medians,
-  days,
+  range,
 }: {
   runs: JobRun[];
   environments: EnvironmentSummary[];
   /** The job's times, so the lines match the medians shown beside the chart. */
   medians: Record<string, Stat>;
-  days: number;
+  range: TimeRange;
 }) {
   if (runs.length === 0)
     return <p className="text-sm text-muted-foreground">No runs in this window.</p>;
@@ -1248,11 +1250,11 @@ function RunChart({
   const top = 10;
   const bottom = 24;
   const now = Date.now();
-  const start = now - days * DAY_MS;
+  const { from: start, to: end } = resolveRange(range, now);
   const maxMs = Math.max(...runs.map((run) => run.completedAt - run.startedAt), 1000);
   const step = niceStep(maxMs / 4);
   const yMax = Math.ceil(maxMs / step) * step;
-  const x = (t: number) => left + ((t - start) / (now - start)) * (W - left - right);
+  const x = (t: number) => left + ((t - start) / (end - start)) * (W - left - right);
   const y = (ms: number) => top + (1 - ms / yMax) * (H - top - bottom);
   const color = (key: string) =>
     environmentColor(
@@ -1291,10 +1293,10 @@ function RunChart({
         </g>
       ))}
       <text x={left} y={H - 6} className="fill-muted-foreground text-[10px]">
-        {days}d ago
+        {shortDate(start)}
       </text>
       <text x={W - right} y={H - 6} textAnchor="end" className="fill-muted-foreground text-[10px]">
-        now
+        {end === now ? "now" : shortDate(end - 1)}
       </text>
       {runs.map((run) => {
         const ok = run.conclusion === "success";

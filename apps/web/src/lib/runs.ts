@@ -2,6 +2,8 @@ import { relayInputs } from "@relayrunner/runner-order";
 import { api } from "@/lib/api";
 import type { RouteWalk } from "@/lib/route-walk";
 import type { Environment, JobRun, TypicalTime } from "@/lib/job-times";
+import { authDisabled } from "@/lib/auth-client";
+import { rangeDays, reportQuery, type TimeRange } from "@/lib/time-range";
 
 export type RunStatus = "queued" | "in_progress" | "completed";
 
@@ -37,7 +39,7 @@ export type Run = {
 };
 
 export type RunsReport = {
-  /** The window: runs that changed in the last `days` days. */
+  /** Days the usual times come from: the range, or the 14 days up to its end if that's longer. */
   days: number;
   environments: Environment[];
   runs: Run[];
@@ -143,13 +145,20 @@ export const jobUrl = (job: Pick<HistoryJob, "repository" | "runId" | "id">) =>
 export const pullRequestUrl = (repository: string, number: number) =>
   `https://github.com/${repository}/pull/${number}`;
 
-export function getRuns() {
-  return api<RunsReport>("/runs");
+/** Both History views open on the last week. */
+export const HISTORY_DEFAULT_RANGE: TimeRange = "7d";
+
+export function getRuns(range: TimeRange) {
+  return api<RunsReport>(`/runs?${reportQuery(range)}`);
 }
 
-export function getJobs(days: number) {
-  return api<JobsReport>(`/runs/jobs?days=${days}`);
+export function getJobs(range: TimeRange) {
+  return api<JobsReport>(`/runs/jobs?${reportQuery(range)}`);
 }
+
+/** The History page's Jobs view, or its sample without sign-in. */
+export const loadJobs = (range: TimeRange) =>
+  authDisabled ? Promise.resolve(sampleJobs(rangeDays(range))) : getJobs(range);
 
 export function getRunJobs(run: RunIds) {
   return api<RunJobs>(`/runs/${run.repositoryId}/${run.runId}/${run.runAttempt}/jobs`);

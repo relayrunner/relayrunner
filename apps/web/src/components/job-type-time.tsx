@@ -23,10 +23,11 @@ import {
   type TypeTotal,
 } from "@/lib/job-types";
 import { shortDate, zoneFormat } from "@/lib/time-zone";
+import { rangeDays, rangePhrase, type TimeRange, trendPhrase } from "@/lib/time-range";
 import { cn, count, percent } from "@/lib/utils";
 
-const load = (days: number) =>
-  authDisabled ? Promise.resolve(sampleJobTypeTimes(days)) : getJobTypeTimes(days);
+const load = (range: TimeRange) =>
+  authDisabled ? Promise.resolve(sampleJobTypeTimes(rangeDays(range))) : getJobTypeTimes(range);
 
 const share = (ms: number, total: number) => percent(total ? ms / total : 0);
 
@@ -59,19 +60,19 @@ function Swatch({ type, className }: { type: TypeKey; className?: string }) {
   );
 }
 
-export function JobTypes({ days, repository }: { days: number; repository: string }) {
+export function JobTypes({ range, repository }: { range: TimeRange; repository: string }) {
   const [report, setReport] = useState<JobTypeTimes | null>(null);
   const [failed, setFailed] = useState(false);
   useEffect(() => {
     let live = true;
     setFailed(false);
-    load(days)
+    load(range)
       .then((next) => live && setReport(next))
       .catch(() => live && setFailed(true));
     return () => {
       live = false;
     };
-  }, [days]);
+  }, [range]);
   const summary = useMemo(() => report && summarize(report, repository), [report, repository]);
 
   if (failed) return <Empty>Job types didn't load. Try again in a moment.</Empty>;
@@ -79,7 +80,7 @@ export function JobTypes({ days, repository }: { days: number; repository: strin
     return (
       <div aria-busy aria-label="Loading" className="h-64 animate-pulse rounded-xl bg-muted" />
     );
-  if (summary.runs === 0) return <Empty>No finished jobs in the last {report.days} days.</Empty>;
+  if (summary.runs === 0) return <Empty>No finished jobs in {rangePhrase(range)}.</Empty>;
   const sorted = summary.types.some((type) => type.key !== "none");
 
   return (
@@ -94,7 +95,7 @@ export function JobTypes({ days, repository }: { days: number; repository: strin
         </Empty>
       ) : (
         <>
-          <Shares summary={summary} days={report.days} compare={report.compare} />
+          <Shares summary={summary} range={range} compare={report.compare} />
           {report.days > 1 && <Daily summary={summary} />}
           <TypePhases summary={summary} />
           <p className="max-w-[62ch] text-sm text-muted-foreground">
@@ -115,11 +116,11 @@ function Empty({ children }: { children: React.ReactNode }) {
 
 function Shares({
   summary,
-  days,
+  range,
   compare,
 }: {
   summary: TypeSummary;
-  days: number;
+  range: TimeRange;
   compare: boolean;
 }) {
   const [open, setOpen] = useState<TypeKey | null>(null);
@@ -162,7 +163,7 @@ function Shares({
             {compare && (
               <th
                 className="py-1.5 pl-2 text-right font-medium"
-                title={`Vs. the ${days} days before`}
+                title={`Vs. ${trendPhrase(range)}`}
               >
                 Change
               </th>

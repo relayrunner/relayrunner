@@ -1,7 +1,6 @@
 // How a chart's time axis and its trend line are worked out. Kept free of `@/` imports so tests
 // can load it, like time-range.ts.
 const HOUR_MS = 3_600_000;
-const DAY_MS = 24 * HOUR_MS;
 
 /** Bar and trend widths a chart picks from, each a whole number of hours that divides a day. */
 const BUCKET_HOURS = [1, 2, 3, 4, 6, 12, 24];
@@ -20,10 +19,12 @@ export function bucketMsFor(spanMs: number) {
  * Where a chart starts: at its first point rather than the start of the range, so a week with runs
  * on two days isn't mostly empty. It shows at least six hours, and never more than the range.
  */
-export function chartStart(now: number, days: number, firstAt: number | undefined) {
-  const rangeStart = now - days * DAY_MS;
-  if (firstAt === undefined) return rangeStart;
-  return Math.max(rangeStart, Math.min(firstAt, now - MIN_SPAN_MS));
+export function chartStart(
+  { from, to }: { from: number; to: number },
+  firstAt: number | undefined,
+) {
+  if (firstAt === undefined) return from;
+  return Math.max(from, Math.min(firstAt, to - MIN_SPAN_MS));
 }
 
 /** Each group's name once, busiest first, then by name. */

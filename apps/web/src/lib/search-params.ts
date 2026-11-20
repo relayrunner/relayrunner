@@ -4,13 +4,6 @@ import { useNavigate } from "@tanstack/react-router";
 import { useEffect, useState } from "react";
 import { type RangeOptions, rangeOrDaysParam, type TimeRange } from "@/lib/time-range";
 
-/** The day ranges every page's time range menu picks from, so the menu reads the same everywhere. */
-export const DAY_RANGES = [1, 7, 14, 30, 90] as const;
-
-/** The day ranges from `min` to `max` days: a page leaves out the ones its data can't show. */
-export const dayRanges = (min: number, max: number): readonly number[] =>
-  DAY_RANGES.filter((days) => days >= min && days <= max);
-
 /** `?days=` when it's one of the page's ranges other than its default. */
 export function rangeParam(value: unknown, ranges: readonly number[], fallback: number) {
   const days = Number(value);

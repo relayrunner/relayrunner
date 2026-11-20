@@ -11,6 +11,7 @@ import { getJobCounts, type JobCountReport, type JobCounts } from "@/lib/admin";
 import { DAY_MS } from "@/lib/job-times";
 import { rangeParam, unlessDefault, useSetSearch } from "@/lib/search-params";
 import { percent } from "@/lib/utils";
+import { dayPreset } from "@/lib/time-range";
 
 const RANGES = [1, 7, 30, 90] as const;
 const HOUR_MS = 3_600_000;
@@ -107,7 +108,7 @@ function JobsPage() {
 
       <CountChart
         tallies={report.hours}
-        days={report.days}
+        range={dayPreset(report.days)}
         noun="job"
         // The counts are per hour, so a week of hourly bars costs no more than a day's.
         bucketMs={report.days <= 7 ? HOUR_MS : DAY_MS}

@@ -7,6 +7,10 @@ export const DAY_MS = 24 * HOUR_MS;
 // range is 90 days.
 export const JOB_TIMING_RETENTION_DAYS = 90;
 // How long a finished job keeps its own job_timing row before its day is rolled up into
-// job_timing_daily: job times' longest range (MAX_DAYS in src/job-times.ts) and a day to spare.
-// The Runs page and job times read single jobs, so they only look this far back.
-export const RAW_RETENTION_DAYS = 31;
+// job_timing_daily: two months, so last month is still single jobs, and so is this month's trend
+// window (the same days of last month). The Runs page and job times read single jobs, so they only
+// look this far back.
+export const RAW_RETENTION_DAYS = 62;
+// How far back a filtered Signals page, a signal's runs and pull request folders look: shorter than
+// single jobs are kept, since each of those reads (and GitHub calls) grows with it.
+export const LIVE_DAYS = 30;

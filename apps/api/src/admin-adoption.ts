@@ -2,7 +2,7 @@
  * How far each workspace got with RelayRunner, for Admin › Workspaces: when each setup step first
  * happened and its jobs over the past week. Reads tables we already keep, so there is no migration.
  * The first machine and first job on a machine survive the Activity purge (src/retention.ts); job counts come from
- * job_timing, whose rows are kept 31 days, so a workspace quiet for longer shows no last job.
+ * job_timing, whose rows are kept 62 days (RAW_RETENTION_DAYS), so a workspace quiet for longer shows no last job.
  */
 import { and, eq, inArray, isNotNull, sql } from "drizzle-orm";
 import { type Db, schema } from "./db/index.ts";

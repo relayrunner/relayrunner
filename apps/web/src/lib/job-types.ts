@@ -2,6 +2,7 @@ import { api } from "@/lib/api";
 import { addPhases, type PhaseTimes } from "./job-phases.ts";
 import { DAY_MS, hasTrend, JOB_TYPE_LABELS, type JobType } from "./job-times.ts";
 import { startOfDay, zoneOffset } from "./time-zone.ts";
+import { reportQuery, type TimeRange } from "./time-range.ts";
 
 /** One job's run time over the window (GET /api/job-times/types). */
 export type JobTypeTime = {
@@ -33,11 +34,8 @@ export type JobTypeTimes = {
   jobs: JobTypeTime[];
 };
 
-export function getJobTypeTimes(days: number) {
-  const query = new URLSearchParams({
-    days: String(days),
-    utcOffset: String(zoneOffset(Date.now())),
-  });
+export function getJobTypeTimes(range: TimeRange) {
+  const query = reportQuery(range, { utcOffset: String(zoneOffset(Date.now())) });
   return api<JobTypeTimes>(`/job-times/types?${query}`);
 }
 

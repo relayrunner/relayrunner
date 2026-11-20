@@ -8,7 +8,7 @@
  * job_timing and workflow_run, and yesterday too for the first hours after midnight so late
  * webhooks still land, and replaces those days' signal_day rows. The page then sums a few rows per
  * day, whatever the range, instead of reading every run. An installation with no rows yet gets the
- * last 30 days at once, as many whole days as job_timing keeps single jobs.
+ * last 30 days at once (liveDays).
  *
  * The same rows hold the page's Breakdown: every counted job by who started its run, its workflow,
  * branch and trigger, and pull request runs by the folders their pull request changed
@@ -16,7 +16,7 @@
  *
  * A filtered page (one person, repo, workflow, branch or trigger) can't come from those rows, since
  * a signal's rows don't say who or what started their runs. It works the same queries out on the
- * spot instead, narrowed to the filter's runs, over as many days as job_timing keeps single jobs.
+ * spot instead, narrowed to the filter's runs, over at most liveDays().
  * The runs behind one signal row come from the same queries too (signalRuns).
  */
 import { and, eq, exists, gte, inArray, isNull, lt, notLike, sql } from "drizzle-orm";
@@ -30,13 +30,14 @@ import {
   cents,
   DAY_MS,
   DURATION_MS,
-  RAW_RETENTION_DAYS,
   rateFor,
   runnerClass,
   SHORT_JOB_SECONDS,
   utcDay,
 } from "./job-timings.ts";
 import { loadPriceBook } from "./prices.ts";
+import type { ReportWindow } from "./report-window.ts";
+import { LIVE_DAYS } from "./time.ts";
 import { routeIdFromLabels } from "./routing.ts";
 
 export type SignalArea = "speed" | "cost" | "complexity";
@@ -82,10 +83,49 @@ export type BreakdownBy = (typeof BREAKDOWNS)[number] | "repository";
 export type SignalFilter = Partial<Record<BreakdownBy, string>>;
 
 /**
- * The days a filtered page or a signal's runs can cover: whole days of single jobs, and today. A
- * function, so modules that mock job-timings.ts can still import this one.
+ * The days a filtered page or a signal's runs can cover, today included, and the days an
+ * installation's first rollup and its pull request folders go back (LIVE_DAYS).
  */
-export const liveDays = () => RAW_RETENTION_DAYS - 1;
+export const liveDays = () => LIVE_DAYS;
+
+/**
+ * A report's whole UTC days, as signal_day keeps them: `start` up to `end` (UTC midnights), and
+ * where the filter trend's days start.
+ */
+export interface DayRange {
+  start: number;
+  end: number;
+  priorStart: number;
+}
+
+const dayCount = ({ start, end }: DayRange) => Math.round((end - start) / DAY_MS);
+
+/** The last `days` UTC days, today included, against the days just before. */
+export function lastUtcDays(days: number, now = Date.now()): DayRange {
+  const end = utcDay(now) + DAY_MS;
+  const start = end - days * DAY_MS;
+  return { start, end, priorStart: start - days * DAY_MS };
+}
+
+/**
+ * The UTC days nearest a window the dashboard worked out in the reader's time zone, such as this
+ * month: each end to its nearest UTC midnight, and today included while the window runs to now.
+ */
+export function utcDaysOf(window: ReportWindow, now = Date.now()): DayRange {
+  const nearest = (ms: number) => utcDay(ms + DAY_MS / 2);
+  const today = utcDay(now);
+  const end = window.to > today ? today + DAY_MS : nearest(window.to);
+  const start = Math.min(nearest(window.from), end - DAY_MS);
+  return { start, end, priorStart: Math.min(nearest(window.prior.from), start - DAY_MS) };
+}
+
+/** A range cut to the last `days` days, for reads from single jobs, its prior start moved as much. */
+function atMost(range: DayRange, days: number, now: number): DayRange {
+  const first = utcDay(now) - (days - 1) * DAY_MS;
+  if (range.start >= first) return range;
+  const start = Math.min(first, range.end - DAY_MS);
+  return { ...range, start, priorStart: range.priorStart + start - range.start };
+}
 
 // signal_day rows that hold every counted job, for the page's totals and the threshold.
 const TOTAL = "total";
@@ -163,7 +203,7 @@ export async function rollUpSignals(db: Db, installationId: number, now = Date.n
       .then(([row]) => row),
     pricing(db, installationId, now),
   ]);
-  // The first run goes back as far as job_timing keeps single jobs, in whole days.
+  // The first run goes back liveDays(), in whole days.
   const since = seen ? utcDay(now - LATE_MS) : utcDay(now) - (liveDays() - 1) * DAY_MS;
   const rows = new Rows();
   await addAll({ db, book, rows, privacy, installationId, since, filter: {} });
@@ -810,16 +850,19 @@ interface Sink {
 }
 
 // One installation's signal_day rows being summed, by their primary key. `wholeRange` sums each
-// key's days into one row, for a filtered page.
+// key's days into one row, for a filtered page, and leaves out days from `until` on.
 class Rows implements Sink {
   #rows = new Map<string, InsertRow>();
   #wholeRange: boolean;
+  #until: number;
 
-  constructor({ wholeRange = false } = {}) {
+  constructor({ wholeRange = false, until = Infinity } = {}) {
     this.#wholeRange = wholeRange;
+    this.#until = until;
   }
 
   add(key: RowKey, count: number, runMs: number, cost: number) {
+    if (key.day >= this.#until) return;
     const day = this.#wholeRange ? 0 : key.day;
     const id = `${day}:${key.signal}:${key.repositoryId}:${key.subject}`;
     const row = this.#rows.get(id) ?? {
@@ -908,38 +951,43 @@ export interface SignalsReport {
 export interface SignalTrend {
   /** Job minutes per UTC day over the range, oldest first. */
   minutes: number[];
-  /** The same days of the range before, or null when no rollup goes back that far. */
+  /**
+   * As many days of the range before (the same days of last month for this month), or null when no
+   * rollup goes back that far.
+   */
   previous: number[] | null;
 }
 
 /**
- * The workspace's signals over the last `days` whole UTC days and today. A signal shows when it
- * covers at least MIN_MINUTES and MIN_SHARE of every job's minutes. With `breakdown` false, the
- * Breakdown's rows aren't read at all. A `filter` narrows everything to its runs, worked out from
- * single jobs over at most liveDays(), and adds the filter's trend.
+ * The workspace's signals over a range of whole UTC days (the last 30 by default). A signal shows
+ * when it covers at least MIN_MINUTES and MIN_SHARE of every job's minutes. With `breakdown` false,
+ * the Breakdown's rows aren't read at all. A `filter` narrows everything to its runs, worked out
+ * from single jobs over at most the last liveDays(), and adds the filter's trend.
  */
 export async function signalsReport(
   db: Db,
   workspace: { id: string; installationId: number | null },
-  days = 30,
+  range?: DayRange,
   { breakdown = true, filter = {}, now = Date.now() }: ReportOptions = {},
 ): Promise<SignalsReport> {
   const filtered = isFiltered(filter);
-  if (filtered) days = Math.min(days, liveDays());
+  range ??= lastUtcDays(30, now);
+  if (filtered) range = atMost(range, liveDays(), now);
+  const days = dayCount(range);
   const { installationId } = workspace;
   if (installationId === null)
     return { ...summarize([], days, breakdown), ...(filtered && { trend: null }) };
   if (!filtered) {
-    const found = await dayRows(db, installationId, days, breakdown, now);
+    const found = await dayRows(db, installationId, range, breakdown);
     return summarize(found, days, breakdown);
   }
-  const rows = new Rows({ wholeRange: true });
-  const since = utcDay(now) - (days - 1) * DAY_MS;
+  const rows = new Rows({ wholeRange: true, until: range.end });
+  const since = range.start;
   const [, trend] = await Promise.all([
     pricing(db, installationId, now).then((prices) =>
       addAll({ db, ...prices, rows, installationId, since, filter }),
     ),
-    filterTrend(db, installationId, filter, days, now),
+    filterTrend(db, installationId, filter, range),
   ]);
   const found = rows.values().map((row) => ({
     ...row,
@@ -970,11 +1018,9 @@ type FoundRow = {
 function dayRows(
   db: Db,
   installationId: number,
-  days: number,
+  { start, end }: DayRange,
   breakdown: boolean,
-  now: number,
 ): Promise<FoundRow[]> {
-  const since = new Date(utcDay(now) - (days - 1) * DAY_MS);
   return db
     .select({
       signal: day.signal,
@@ -990,7 +1036,8 @@ function dayRows(
     .where(
       and(
         eq(day.installationId, installationId),
-        gte(day.day, since),
+        gte(day.day, new Date(start)),
+        lt(day.day, new Date(end)),
         breakdown ? undefined : notLike(day.signal, "by-%"),
       ),
     )
@@ -1080,25 +1127,31 @@ function trendRows(filter: SignalFilter) {
   return and(eq(day.signal, `by-${by}`), eq(day.subject, value!));
 }
 
-// The filter's minutes per day over the range and the one before, from the hourly rollup so the
-// range before can reach past single jobs. A day that kept the filter's value among the rest
-// (MAX_DAY_VALUES) counts low.
+// The filter's minutes per day over the range and as many days from its prior start, from the
+// hourly rollup so the range before can reach past single jobs. A day that kept the filter's value
+// among the rest (MAX_DAY_VALUES) counts low.
 async function filterTrend(
   db: Db,
   installationId: number,
   filter: SignalFilter,
-  days: number,
-  now: number,
+  range: DayRange,
 ): Promise<SignalTrend | null> {
   const rows = trendRows(filter);
   if (!rows) return null;
-  const start = utcDay(now) - (days - 1) * DAY_MS;
-  const before = start - days * DAY_MS;
+  const { start, end, priorStart: before } = range;
+  const days = dayCount(range);
   const [found, [rolledUpBefore]] = await Promise.all([
     db
       .select({ day: day.day, runMs: sql<number>`sum(${day.runMs})` })
       .from(day)
-      .where(and(eq(day.installationId, installationId), gte(day.day, new Date(before)), rows))
+      .where(
+        and(
+          eq(day.installationId, installationId),
+          gte(day.day, new Date(before)),
+          lt(day.day, new Date(end)),
+          rows,
+        ),
+      )
       .groupBy(day.day),
     // Whether any day before the range was rolled up, so an empty one there means no jobs.
     db
@@ -1164,25 +1217,26 @@ const FINDERS: Record<SignalId, (scope: Scope) => Promise<void>> = {
 };
 
 /**
- * The runs behind one signal row (a repo and subject) over the last `days` days (at most
- * liveDays()), within the page's filter: the same queries the rollup runs, kept to that row.
+ * The runs behind one signal row (a repo and subject) over a range (at most the last liveDays()),
+ * within the page's filter: the same queries the rollup runs, kept to that row.
  */
 export async function signalRuns(
   db: Db,
   installationId: number | null,
   row: SignalRowRef,
-  days: number,
+  range: DayRange,
   { filter = {}, now = Date.now() }: { filter?: SignalFilter; now?: number } = {},
 ): Promise<SignalRunsReport> {
-  days = Math.min(days, liveDays());
+  range = atMost(range, liveDays(), now);
+  const days = dayCount(range);
   if (installationId === null) return { days, runs: [], total: 0 };
-  const hits = new RunHits(row);
+  const hits = new RunHits(row, range.end);
   await FINDERS[row.signal]({
     db,
     ...(await pricing(db, installationId, now)),
     rows: hits,
     installationId,
-    since: utcDay(now) - (days - 1) * DAY_MS,
+    since: range.start,
     // Narrowed to the row's repo: run signals by its runs, job signals by their jobs.
     filter: FINDERS[row.signal] === addJobs ? filter : { ...filter, repository: row.repository },
     perJob: row.repository,
@@ -1229,18 +1283,26 @@ export async function signalRuns(
 
 type RunHit = RunRef & { repositoryId: number; runMs: number; cost: number };
 
-// The run attempts behind one signal row, as the queries add them.
+// The run attempts behind one signal row, as the queries add them, before the day `until`.
 class RunHits implements Sink {
   #runs = new Map<string, RunHit>();
   #row: SignalRowRef;
+  #until: number;
 
-  constructor(row: SignalRowRef) {
+  constructor(row: SignalRowRef, until: number) {
     this.#row = row;
+    this.#until = until;
   }
 
   add(key: RowKey, _count: number, runMs: number, cost: number, ref?: RunRef) {
     const { signal, repository, subject } = this.#row;
-    if (!ref || key.signal !== signal || key.repository !== repository || key.subject !== subject)
+    if (
+      !ref ||
+      key.day >= this.#until ||
+      key.signal !== signal ||
+      key.repository !== repository ||
+      key.subject !== subject
+    )
       return;
     const id = `${ref.runId}:${ref.runAttempt}`;
     const hit = this.#runs.get(id) ?? {

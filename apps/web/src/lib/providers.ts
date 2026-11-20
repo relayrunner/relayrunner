@@ -57,10 +57,10 @@ export type ProvidersOverview = {
 
 /**
  * The ranges the provider pages and the Runners page's cloud table offer: as far back as the API
- * keeps each job (about a month), starting on this month since that's when plans' minutes reset.
+ * keeps each job (two months), starting on this month since that's when plans' minutes reset.
  */
 export const PROVIDER_RANGES: RangeOptions = {
-  presets: ["24h", "7d", "14d", "30d", "week", "lastweek", "month"],
+  presets: ["24h", "7d", "14d", "30d", "week", "lastweek", "month", "lastmonth"],
 };
 export const PROVIDER_DEFAULT_RANGE: TimeRange = "month";
 
