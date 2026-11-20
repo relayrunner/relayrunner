@@ -44,6 +44,8 @@ export interface BillingProviderInfo {
   options?: readonly BillingOption[];
   /** Values the workspace types in. Each is optional: a left-out one gets a default when connecting. */
   fields?: readonly BillingField[];
+  /** A terminal command that makes the token and connects it, offered before pasting one. */
+  command?: string;
 }
 
 export const BILLING_PROVIDERS: Record<BillingProviderId, BillingProviderInfo> = {
@@ -51,7 +53,8 @@ export const BILLING_PROVIDERS: Record<BillingProviderId, BillingProviderInfo> =
     token: "Organization token",
     tokenUrl: "https://docs.blacksmith.sh/blacksmith-cli/overview",
     tokenHelp:
-      "Run `relayrunner blacksmith connect` as an org admin, or run `blacksmith org-token create` and paste the token it prints.",
+      "As a Blacksmith org admin, run `blacksmith org-token create` and paste the token it prints.",
+    command: "npx relayrunner blacksmith connect",
     reads: "Billable minutes and cost per day, and each job's billable minutes.",
     fields: [
       {

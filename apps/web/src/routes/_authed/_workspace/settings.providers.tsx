@@ -1,7 +1,7 @@
 import { ERRORS, isErrorCode } from "@relayrunner/errors";
 import { BILLING_PROVIDERS, type BillingProviderInfo } from "@relayrunner/providers";
 import { createFileRoute } from "@tanstack/react-router";
-import { ArrowUpRightIcon, CheckIcon } from "lucide-react";
+import { ArrowUpRightIcon, CheckIcon, CopyIcon } from "lucide-react";
 import { type FormEvent, useState } from "react";
 import { PageHeader } from "@/components/page-header";
 import { ProviderMark } from "@/components/providers";
@@ -122,6 +122,9 @@ function ProviderCard({ first, manager }: { first: ProviderConnection; manager: 
         ) : (
           <p className="text-muted-foreground">{billing.reads}</p>
         )}
+        {manager && billing.command && !connected && (
+          <ConnectCommand command={billing.command} name={name} />
+        )}
         {manager && (!connected || replacing) && (
           <TokenForm
             billing={billing}
@@ -233,6 +236,17 @@ function TokenForm({
             placeholder={`Paste your ${name} token`}
           />
         </Field>
+        {billing.fields?.map((field) => (
+          <Field key={field.key} label={field.label} className="min-w-0 basis-48">
+            <Input
+              autoComplete="off"
+              spellCheck={false}
+              value={options[field.key] ?? ""}
+              onChange={(e) => setOptions({ ...options, [field.key]: e.target.value })}
+              placeholder="Optional"
+            />
+          </Field>
+        ))}
         {billing.options?.map((option) => (
           <Field key={option.key} label={option.label}>
             <Select
@@ -264,6 +278,9 @@ function TokenForm({
         </div>
       </div>
       <p className="text-xs text-muted-foreground">
+        {billing.fields?.map((field) => (
+          <span key={field.key}>{field.help} </span>
+        ))}
         <Help text={billing.tokenHelp} />{" "}
         <a
           href={billing.tokenUrl}
@@ -276,6 +293,38 @@ function TokenForm({
         </a>
       </p>
     </form>
+  );
+}
+
+/** A command that connects the provider from a terminal, with a copy button. */
+function ConnectCommand({ command, name }: { command: string; name: string }) {
+  const [copied, setCopied] = useState(false);
+  const copy = () =>
+    void navigator.clipboard?.writeText(command).then(() => {
+      setCopied(true);
+      setTimeout(() => setCopied(false), 2000);
+    });
+  return (
+    <div className="grid gap-2">
+      <p>
+        Run this in a terminal as an admin of the {name} organization. It opens your browser to
+        approve an org token and sends only that token here.
+      </p>
+      <div className="flex items-center gap-2 rounded-md border bg-muted/40 px-3 py-2">
+        <code className="min-w-0 flex-1 truncate font-mono text-xs">{command}</code>
+        <Button size="sm" variant="ghost" onClick={copy} aria-label="Copy command">
+          {copied ? (
+            <CheckIcon aria-hidden className="size-4" />
+          ) : (
+            <CopyIcon aria-hidden className="size-4" />
+          )}
+        </Button>
+      </div>
+      <p className="text-xs text-muted-foreground">
+        The computer needs to be signed in with <code>relayrunner login</code>. Or paste a token
+        below.
+      </p>
+    </div>
   );
 }
 
