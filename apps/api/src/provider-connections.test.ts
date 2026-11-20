@@ -327,7 +327,7 @@ describe("Blacksmith", () => {
       kind: "usage",
       token: "1234|good-secret",
       organization: workspace.slug,
-      start: "2026-10-21T19:00:00.000Z",
+      start: "2026-10-21T00:00:00.000Z",
       end: "2026-11-20T19:00:00.000Z",
     });
     const db = createDb(env.DB);

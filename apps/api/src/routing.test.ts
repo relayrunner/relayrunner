@@ -6,6 +6,7 @@ import {
   runnerOrderSchema,
 } from "@relayrunner/runner-order";
 import type { AccountUsage } from "./actions-billing.ts";
+import type { MinutesUsage } from "./minutes-rule.ts";
 import { describe, expect, test, vi } from "vitest";
 import {
   admits,
@@ -1533,5 +1534,82 @@ describe("decideRoute with a spend limit", () => {
       steps: [{ key: "namespace", spendLimit: { usd: 50 } }],
     });
     expect(unpriced.success).toBe(false);
+  });
+});
+
+describe("decideRoute with Blacksmith's free minutes", () => {
+  const job = {
+    ...relayInputs({
+      machine: ["self-hosted"],
+      blacksmith: ["blacksmith-4vcpu-ubuntu-2404"],
+      github: ["ubuntu-latest"],
+    }),
+    private: true,
+  };
+  // Blacksmith while under 80% of its free minutes, then GitHub.
+  const order: RunnerOrder = {
+    steps: [{ key: "blacksmith", limit: { percent: 80 } }, { key: "github" }],
+  };
+  const none = async () => null;
+  const minutes = (usedMinutes: number, fields: Partial<MinutesUsage> = {}) =>
+    vi.fn(async (): Promise<MinutesUsage> => ({
+      status: "ok",
+      accountLogin: "acme",
+      quotaMinutes: 3000,
+      usedMinutes,
+      burnRatePerHour: 20,
+      ...fields,
+    }));
+  const decide = (read: () => Promise<MinutesUsage | null>, steps = order) =>
+    decideRoute(steps, job, none, undefined, undefined, undefined, read);
+
+  test("under the limit, Blacksmith takes the job", async () => {
+    const decision = await decide(minutes(1200));
+    expect(decision).toMatchObject({ runner: "blacksmith-4vcpu-ubuntu-2404", skipped: [] });
+  });
+
+  test("at the limit, the job moves on with the numbers recorded", async () => {
+    const decision = await decide(minutes(2450));
+    expect(decision).toMatchObject({
+      runner: "ubuntu-latest",
+      step: "github",
+      skipped: [
+        {
+          key: "blacksmith",
+          reason: "minutes_limit",
+          minutes: { account: "acme", usedMinutes: 2450, quotaMinutes: 3000, percent: 80 },
+        },
+      ],
+    });
+  });
+
+  test("without a connection the count is unknown, so Blacksmith keeps taking jobs", async () => {
+    const decision = await decide(minutes(2900, { status: "not_available" }));
+    expect(decision).toMatchObject({ step: "blacksmith", skipped: [] });
+  });
+
+  test("Blacksmith twice: free minutes first, then Blacksmith past them", async () => {
+    const twice: RunnerOrder = {
+      steps: [
+        { key: "blacksmith", limit: { percent: 80 } },
+        { key: "machine" },
+        { key: "blacksmith" },
+      ],
+    };
+    const read = minutes(2900);
+    const decision = await decide(read, twice);
+    expect(decision).toMatchObject({ step: "blacksmith" });
+    expect(decision.skipped.map((s) => s.reason)).toEqual(["minutes_limit", "no_machine"]);
+    expect(read).toHaveBeenCalledTimes(1);
+  });
+
+  test("minutes are only read for a step with a limit, and say why when nothing else fits", async () => {
+    const read = minutes(2900);
+    await decide(read, { steps: [{ key: "blacksmith" }] });
+    expect(read).not.toHaveBeenCalled();
+    const failed = await decide(read, { steps: [{ key: "blacksmith", limit: { percent: 80 } }] });
+    expect(failed.runner === null && failed.reason).toContain(
+      "acme has used 2,900 of its 3,000 free Blacksmith minutes (96%), past the 80% limit;",
+    );
   });
 });

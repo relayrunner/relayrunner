@@ -1,5 +1,6 @@
 import { RUNNER_LABELS, type RunnerStep } from "@relayrunner/runner-order";
 import { hasQuota, type AccountUsage } from "./actions-usage.ts";
+import { counted, type BlacksmithMinutes } from "./blacksmith-minutes.ts";
 import { capacity } from "./capacity.ts";
 import type { Machine } from "./machines.ts";
 import { fullText } from "./route-walk.ts";
@@ -69,10 +70,26 @@ function machineVerdict(machines: Machine[]): { takes: boolean; reason: string; 
   return { takes: false, reason: fullText(full, full.length > 3) };
 }
 
+/**
+ * The Router's minutesCheck (apps/api minutes-rule.ts): past the limit, or fewer minutes left than
+ * two hours of recent burn.
+ */
+function minutesVerdict(
+  usage: { usedMinutes: number; quotaMinutes: number; burnRatePerHour: number | null },
+  limit: number,
+) {
+  const { usedMinutes, quotaMinutes, burnRatePerHour } = usage;
+  const percent = Math.floor((usedMinutes / quotaMinutes) * 100);
+  const past = usedMinutes >= (quotaMinutes * limit) / 100;
+  const runwayShort = !!burnRatePerHour && quotaMinutes - usedMinutes < burnRatePerHour * 2;
+  return { percent, past, runwayShort, takes: !past && !runwayShort };
+}
+
 export function previewRoute(
   steps: RunnerStep[],
   machines: Machine[] | null,
   accounts: AccountUsage[],
+  blacksmith: BlacksmithMinutes | null = null,
 ): RoutePreview {
   const worst = mostUsed(accounts);
   const many = accounts.filter(hasQuota).length > 1;
@@ -104,22 +121,35 @@ export function previewRoute(
       if (!worst) reason = "No minutes quota to check against, so GitHub takes it";
       else {
         const who = many ? `${worst.account.accountLogin} has used` : "Used";
-        const { account } = worst;
-        const quota = account.quotaMinutes!;
-        // Same check as the Router's minutesCheck (apps/api minutes-rule.ts): past the limit, or
-        // fewer minutes left than two hours of recent burn.
-        const past = account.usedMinutes >= (quota * step.limit.percent) / 100;
-        const runwayShort =
-          !!account.burnRatePerHour && quota - account.usedMinutes < account.burnRatePerHour * 2;
-        takes = !past && !runwayShort;
-        reason = past
-          ? `${who} ${worst.percent}% of included minutes, past the ${step.limit.percent}% limit`
-          : runwayShort
-            ? `${who} ${worst.percent}% of included minutes, under 2 hours of use left`
-            : `${who} ${worst.percent}% of included minutes, under the ${step.limit.percent}% limit`;
+        const quota = worst.account.quotaMinutes!;
+        const check = minutesVerdict({ ...worst.account, quotaMinutes: quota }, step.limit.percent);
+        takes = check.takes;
+        reason = check.past
+          ? `${who} ${check.percent}% of included minutes, past the ${step.limit.percent}% limit`
+          : check.runwayShort
+            ? `${who} ${check.percent}% of included minutes, under 2 hours of use left`
+            : `${who} ${check.percent}% of included minutes, under the ${step.limit.percent}% limit`;
       }
     } else if (step.key === "github" && worst && worst.percent >= 100) {
       reason = "Past the included minutes, so GitHub bills overage";
+    } else if (step.key === "blacksmith" && step.limit) {
+      if (!counted(blacksmith))
+        reason = "Blacksmith's free minutes aren't counted yet, so Blacksmith takes it";
+      else {
+        const check = minutesVerdict(blacksmith, step.limit.percent);
+        takes = check.takes;
+        reason = check.past
+          ? `Used ${check.percent}% of the free minutes, past the ${step.limit.percent}% limit`
+          : check.runwayShort
+            ? `Used ${check.percent}% of the free minutes, under 2 hours of use left`
+            : `Used ${check.percent}% of the free minutes, under the ${step.limit.percent}% limit`;
+      }
+    } else if (
+      step.key === "blacksmith" &&
+      counted(blacksmith) &&
+      blacksmith.usedMinutes >= blacksmith.quotaMinutes
+    ) {
+      reason = "Past the free minutes, so Blacksmith bills each minute";
     }
     if (takes) {
       next = { title, why: skipped.length ? skipped.join(" · ") : reason };

@@ -37,7 +37,7 @@ import type {
   NotSharedMachine,
 } from "@relayrunner/activity";
 import type { AccountUsage } from "./actions-billing.ts";
-import { minutesCheck, type MinutesSkip } from "./minutes-rule.ts";
+import { minutesCheck, type MinutesSkip, type MinutesUsage } from "./minutes-rule.ts";
 import { context, scalar } from "./pipeline-context.ts";
 
 export const ROUTE_LABEL_PREFIX = "rr-";
@@ -561,7 +561,8 @@ export interface SkippedStep {
   notShared?: NotSharedMachine[];
   // machine_full: the machines that fit, each with its slots in use.
   full?: FullMachine[];
-  // minutes_limit and minutes_runway: the job's GitHub account and its usage at the pick.
+  // minutes_limit and minutes_runway: the job's GitHub account and its usage at the pick, or for
+  // Blacksmith the workspace's Blacksmith organization and its free minutes.
   minutes?: Omit<MinutesSkip, "reason">;
   // spend_limit: the job's GitHub account's spend on the provider this month.
   spend?: SpendUsage;
@@ -691,7 +692,9 @@ export function retryOrder(
  * runner type is skipped for not picking up jobs; when every step that could run the job was
  * skipped that way, the first of them takes it anyway, since a job with nowhere else to go is
  * better off waiting there. `spend` reads the job's account's spend this month on a provider, and
- * is only called when a hosted step with a spend limit is reached.
+ * is only called when a hosted step with a spend limit is reached. `blacksmithUsage` reads the
+ * workspace's Blacksmith free minutes, and is only called when a Blacksmith step with a minutes
+ * limit is reached.
  */
 export async function decideRoute(
   order: RunnerOrder,
@@ -700,9 +703,11 @@ export async function decideRoute(
   githubUsage: () => Promise<AccountUsage | null> = async () => null,
   health: HealthCheck = async () => null,
   spend: SpendCheck = async () => ({ account: "", spentUsd: 0 }),
+  blacksmithUsage: () => Promise<MinutesUsage | null> = async () => null,
 ): Promise<RouteDecision> {
   const skipped: SkippedStep[] = [];
   let usage: Promise<AccountUsage | null> | undefined;
+  let freeMinutes: Promise<MinutesUsage | null> | undefined;
   const inOrder = new Set(order.steps.map((step) => step.key));
   const notInOrder = RUNNER_KEYS.filter((key) => !inOrder.has(key) && job[key].length > 0);
   for (const step of order.steps) {
@@ -749,6 +754,14 @@ export async function decideRoute(
       else if (!isProviderLabel(key, labels[0]))
         skipped.push({ key, reason: "not_provider_label" });
       else {
+        if ("limit" in step && step.limit) {
+          const over = minutesCheck(await (freeMinutes ??= blacksmithUsage()), step.limit.percent);
+          if (over) {
+            const { reason, ...minutes } = over;
+            skipped.push({ key, reason, minutes });
+            continue;
+          }
+        }
         if (step.spendLimit) {
           const { account, spentUsd } = await spend(key);
           const limitUsd = step.spendLimit.usd;
@@ -811,7 +824,7 @@ export function noRunnerReason(
           return `\`${key}\` ${notProviderLabelText(key, job[key])}`;
         case "minutes_limit":
         case "minutes_runway":
-          return minutesText(reason, minutes);
+          return minutesText(reason, minutes, key);
         case "spend_limit":
           return spendText(RUNNER_LABELS[key], spend);
         // Never the reason nothing fit: an unhealthy step takes the job when no other can.
@@ -854,15 +867,21 @@ export function fullText(machines: FullMachine[]): string {
 
 const count = (n: number) => Math.round(n).toLocaleString("en-US");
 
-/** "relayrunner has used 1,640 of its 2,000 included minutes (82%), past the 80% limit". */
+/**
+ * "relayrunner has used 1,640 of its 2,000 included minutes (82%), past the 80% limit", or for
+ * Blacksmith "relayrunner has used 2,450 of its 3,000 free Blacksmith minutes (82%), …".
+ */
 export function minutesText(
   reason: "minutes_limit" | "minutes_runway",
   minutes: SkippedStep["minutes"],
+  key: RunnerKey = "github",
 ): string {
-  if (!minutes) return "GitHub-hosted is past its minutes limit";
+  if (!minutes) return `${RUNNER_LABELS[key]} is past its minutes limit`;
   const { account, usedMinutes, quotaMinutes, percent, burnRatePerHour } = minutes;
-  const used = `${account} has used ${count(usedMinutes)} of its ${count(quotaMinutes)} included minutes (${Math.floor((usedMinutes / quotaMinutes) * 100)}%)`;
+  const blacksmith = key === "blacksmith";
+  const kind = blacksmith ? "free Blacksmith minutes" : "included minutes";
+  const used = `${account || "This workspace"} has used ${count(usedMinutes)} of its ${count(quotaMinutes)} ${kind} (${Math.floor((usedMinutes / quotaMinutes) * 100)}%)`;
   return reason === "minutes_limit"
     ? `${used}, past the ${percent}% limit`
-    : `${used}, and at ${count(burnRatePerHour ?? 0)} minutes an hour it could run out before GitHub's billing catches up`;
+    : `${used}, and at ${count(burnRatePerHour ?? 0)} minutes an hour it could run out before ${blacksmith ? "Blacksmith's usage" : "GitHub's billing"} catches up`;
 }

@@ -100,6 +100,9 @@ export function blacksmithJob(job: BlacksmithJob): JobUsage | null {
   };
 }
 
+const utcMidnight = (at: Date) =>
+  new Date(Date.UTC(at.getUTCFullYear(), at.getUTCMonth(), at.getUTCDate()));
+
 export const blacksmith: BillingAdapter = {
   async verify(ctx) {
     const { usage } = await run(ctx, { kind: "verify" });
@@ -107,9 +110,11 @@ export const blacksmith: BillingAdapter = {
   },
 
   async usage(ctx, window: UsageWindow) {
+    // From the window's UTC midnight: a day is saved whole, so a day read from mid-day would
+    // replace its total with a part of it (and the free-minutes count with it).
     const { usage, jobPages } = await run(ctx, {
       kind: "usage",
-      start: window.start.toISOString(),
+      start: utcMidnight(window.start).toISOString(),
       end: window.end.toISOString(),
     });
     const seen = new Set<string>();

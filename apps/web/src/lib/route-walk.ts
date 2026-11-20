@@ -72,14 +72,18 @@ const usedPercent = (m: MinutesUsage) => Math.floor((m.usedMinutes / m.quotaMinu
 function shortSkip(walk: RouteWalk, step: SkippedStep): string | null {
   const { key, reason, paused, minutes, notShared, full } = step;
   switch (reason) {
-    case "minutes_limit":
+    case "minutes_limit": {
+      const kind = key === "blacksmith" ? "free Blacksmith minutes" : "GitHub minutes";
       return minutes
-        ? `${minutes.account} at ${usedPercent(minutes)}% of GitHub minutes`
-        : "past the GitHub minutes limit";
-    case "minutes_runway":
+        ? `${minutes.account || "this workspace"} at ${usedPercent(minutes)}% of ${kind}`
+        : `past the ${kind} limit`;
+    }
+    case "minutes_runway": {
+      const kind = key === "blacksmith" ? "free Blacksmith minutes" : "GitHub minutes";
       return minutes
-        ? `${minutes.account} near its GitHub minutes limit`
-        : "near the GitHub minutes limit";
+        ? `${minutes.account || "this workspace"} near its ${kind} limit`
+        : `near the ${kind} limit`;
+    }
     case "machine_paused":
       return pausedText(paused);
     case "machine_not_shared":
@@ -120,7 +124,8 @@ function longSkip(walk: RouteWalk, step: SkippedStep): string {
     case "minutes_limit":
     case "minutes_runway": {
       if (!minutes) return "past its minutes limit";
-      const used = `${minutes.account} has used ${count(minutes.usedMinutes)} of ${count(minutes.quotaMinutes)} included minutes (${usedPercent(minutes)}%)`;
+      const kind = key === "blacksmith" ? "free Blacksmith minutes" : "included minutes";
+      const used = `${minutes.account || "This workspace"} has used ${count(minutes.usedMinutes)} of ${count(minutes.quotaMinutes)} ${kind} (${usedPercent(minutes)}%)`;
       return reason === "minutes_limit"
         ? `${used}, past the ${minutes.percent}% limit`
         : `${used}; at ${count(minutes.burnRatePerHour ?? 0)} min/hour it could run out before billing catches up`;

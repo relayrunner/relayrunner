@@ -3,6 +3,7 @@ import type { AccountUsage } from "./actions-usage.ts";
 import { sampleRouterAccounts } from "./router-sample.ts";
 import type { Machine } from "./machines.ts";
 import { previewRoute } from "./route-preview.ts";
+import { sampleBlacksmithMinutes } from "./blacksmith-minutes.ts";
 
 const machine = (
   name: string,
@@ -118,5 +119,23 @@ describe("previewRoute", () => {
     const preview = previewRoute([...steps], null, used(2520));
     expect(preview.steps.map((step) => step.state)).toEqual(["skipped", "unknown", "unknown"]);
     expect(preview.next).toBeNull();
+  });
+
+  test("Blacksmith stops at its free-minutes limit once they're counted", () => {
+    const steps = [
+      { key: "blacksmith" as const, limit: { percent: 70 } },
+      { key: "github" as const },
+    ];
+    const minutes = sampleBlacksmithMinutes(true); // 2,140 of 3,000: 71%.
+    const past = previewRoute(steps, [], [], minutes);
+    expect(past.steps[0]).toEqual({
+      state: "skipped",
+      reason: "Used 71% of the free minutes, past the 70% limit",
+    });
+    const unknown = previewRoute(steps, [], [], sampleBlacksmithMinutes(false));
+    expect(unknown.steps[0]).toEqual({
+      state: "next",
+      reason: "Blacksmith's free minutes aren't counted yet, so Blacksmith takes it",
+    });
   });
 });

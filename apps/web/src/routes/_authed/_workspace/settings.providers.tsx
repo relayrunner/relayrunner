@@ -1,6 +1,7 @@
 import { ERRORS, isErrorCode } from "@relayrunner/errors";
 import { BILLING_PROVIDERS, type BillingProviderInfo } from "@relayrunner/providers";
-import { createFileRoute } from "@tanstack/react-router";
+import { BLACKSMITH_FREE_MINUTES } from "@relayrunner/runner-order";
+import { createFileRoute, Link } from "@tanstack/react-router";
 import { ArrowUpRightIcon, CheckIcon, CopyIcon } from "lucide-react";
 import { type FormEvent, useState } from "react";
 import { PageHeader } from "@/components/page-header";
@@ -19,6 +20,12 @@ import {
 import { timeAgo } from "@/lib/activity";
 import { errorText } from "@/lib/api";
 import { authDisabled } from "@/lib/auth-client";
+import {
+  type BlacksmithMinutes,
+  counted,
+  getBlacksmithMinutes,
+  sampleBlacksmithMinutes,
+} from "@/lib/blacksmith-minutes";
 import { providerInfo } from "@/lib/provider-catalog";
 import {
   connectProvider,
@@ -33,13 +40,21 @@ import { plural } from "@/lib/job-times";
 import { minutes, money } from "@/lib/usage";
 
 export const Route = createFileRoute("/_authed/_workspace/settings/providers")({
-  loader: () => (authDisabled ? sampleConnections() : listConnections()),
+  loader: async () => {
+    if (authDisabled) return { ...sampleConnections(), blacksmith: sampleBlacksmithMinutes(false) };
+    const [{ connections }, blacksmith] = await Promise.all([
+      listConnections(),
+      // Only for the Blacksmith card's free-minutes line, so the page loads without it.
+      getBlacksmithMinutes().catch(() => null),
+    ]);
+    return { connections, blacksmith };
+  },
   component: ProviderSettingsPage,
 });
 
 function ProviderSettingsPage() {
   const { current } = Route.useRouteContext();
-  const { connections } = Route.useLoaderData();
+  const { connections, blacksmith } = Route.useLoaderData();
   const manager = canManage(current.role);
   const organization = current.installations[0]?.accountLogin ?? null;
 
@@ -56,6 +71,7 @@ function ProviderSettingsPage() {
             first={connection}
             manager={manager}
             organization={organization}
+            blacksmith={connection.provider === "blacksmith" ? blacksmith : undefined}
           />
         ))}
       </div>
@@ -67,11 +83,14 @@ function ProviderCard({
   first,
   manager,
   organization,
+  blacksmith,
 }: {
   first: ProviderConnection;
   manager: boolean;
   /** The GitHub organization this workspace is installed on. */
   organization: string | null;
+  /** Blacksmith's card only: this month's free minutes, null when they couldn't be read. */
+  blacksmith?: BlacksmithMinutes | null;
 }) {
   const [connection, setConnection] = useState(first);
   const [replacing, setReplacing] = useState(false);
@@ -136,6 +155,9 @@ function ProviderCard({
           <ConnectionStatus connection={connection} name={name} />
         ) : (
           <p className="text-muted-foreground">{billing.reads}</p>
+        )}
+        {blacksmith !== undefined && (
+          <FreeMinutes connected={connected} minutes={connected ? blacksmith : null} />
         )}
         {manager && billing.command && !connected && (
           <ConnectCommand
@@ -346,6 +368,42 @@ function ConnectCommand({
         below.
       </p>
     </div>
+  );
+}
+
+/**
+ * What connecting Blacksmith unlocks on the Router, and once connected, this month's free minutes.
+ */
+function FreeMinutes({
+  connected,
+  minutes,
+}: {
+  connected: boolean;
+  minutes: BlacksmithMinutes | null;
+}) {
+  const free = BLACKSMITH_FREE_MINUTES.toLocaleString("en-US");
+  const router = (text: string) => (
+    <Link to="/router" className="text-go hover:text-go-hover">
+      {text}
+    </Link>
+  );
+  if (!connected)
+    return (
+      <p className="text-muted-foreground">
+        Connecting also counts Blacksmith's {free} free minutes a month, so the {router("Router")}{" "}
+        can stop sending Blacksmith jobs before they run out.
+      </p>
+    );
+  if (!counted(minutes)) return null;
+  const used = Math.round(minutes.usedMinutes).toLocaleString("en-US");
+  const quota = minutes.quotaMinutes.toLocaleString("en-US");
+  return (
+    <p>
+      {used} of {quota} free minutes used this month.{" "}
+      <span className="text-muted-foreground">
+        Set a limit on the Blacksmith step in the {router("Router")}.
+      </span>
+    </p>
   );
 }
 

@@ -45,9 +45,29 @@ export const DEFAULT_RUNNER_ORDER: RunnerOrder = {
 export const hasSpendLimit = (key: RunnerKey) =>
   (SPEND_LIMIT_PROVIDERS as readonly string[]).includes(key);
 
-/** What makes a step unique in an order: its provider, and for GitHub whether it has a limit. */
+/**
+ * The providers whose free minutes a step can stop at: GitHub's included minutes, and Blacksmith's
+ * free minutes (which need Blacksmith connected in Settings › Providers to count).
+ */
+export const MINUTES_LIMIT_PROVIDERS = ["github", "blacksmith"] as const;
+export type MinutesLimitProvider = (typeof MINUTES_LIMIT_PROVIDERS)[number];
+
+/** Whether a provider's step can take a minutes limit. */
+export const hasMinutesLimit = (key: RunnerKey): key is MinutesLimitProvider =>
+  (MINUTES_LIMIT_PROVIDERS as readonly string[]).includes(key);
+
+/** Blacksmith's free minutes a month, counted in 2-vCPU minutes. */
+export const BLACKSMITH_FREE_MINUTES = 3_000;
+
+/** A step's minutes limit, if it's a provider that takes one and has one. */
+export const minutesLimitOf = (step: RunnerStep) => ("limit" in step ? step.limit : undefined);
+
+/**
+ * What makes a step unique in an order: its provider, and for GitHub and Blacksmith whether it has
+ * a minutes limit ("github:limit").
+ */
 export function stepSlot(step: RunnerStep) {
-  return step.key === "github" && step.limit ? "github:limit" : step.key;
+  return minutesLimitOf(step) ? `${step.key}:limit` : step.key;
 }
 
 /** How the dashboard names each provider. */

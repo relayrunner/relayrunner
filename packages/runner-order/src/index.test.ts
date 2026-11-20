@@ -64,6 +64,35 @@ describe("runnerOrderSchema", () => {
     }
   });
 
+  test("Blacksmith may come twice, at its free minutes and then past them", () => {
+    const steps = [
+      { key: "machine" },
+      { key: "blacksmith", limit: { percent: 95 } },
+      { key: "github" },
+      { key: "blacksmith", spendLimit: { usd: 50 } },
+    ];
+    expect(runnerOrderSchema.parse({ steps })).toEqual({ steps });
+    const twice = runnerOrderSchema.safeParse({
+      steps: [{ key: "blacksmith" }, { key: "blacksmith", spendLimit: { usd: 50 } }],
+    });
+    expect(twice.error?.issues[0]?.message).toBe(
+      "Blacksmith is already in the order without a limit.",
+    );
+  });
+
+  test("a step takes a minutes limit or a spend limit, not both", () => {
+    const steps = [{ key: "blacksmith", limit: { percent: 80 }, spendLimit: { usd: 50 } }];
+    const result = runnerOrderSchema.safeParse({ steps });
+    expect(result.error?.issues[0]?.message).toBe(
+      "Pick a minutes limit or a spend limit, not both.",
+    );
+  });
+
+  test("only GitHub-hosted and Blacksmith take a minutes limit", () => {
+    const parsed = runnerOrderSchema.parse({ steps: [{ key: "depot", limit: { percent: 80 } }] });
+    expect(parsed).toEqual({ steps: [{ key: "depot" }] });
+  });
+
   test("a limit is a whole percent from 1 to 100", () => {
     for (const percent of [0, 101, 80.5]) {
       const steps = [{ key: "github", limit: { percent } }];

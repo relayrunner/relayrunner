@@ -16,6 +16,7 @@ import {
 } from "@dnd-kit/sortable";
 import { CSS } from "@dnd-kit/utilities";
 import {
+  BLACKSMITH_FREE_MINUTES,
   DEFAULT_LIMIT_PERCENT,
   DEFAULT_SPEND_LIMIT_USD,
   hasSpendLimit,
@@ -46,6 +47,7 @@ import {
 } from "@/components/ui/dropdown-menu";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { hasQuota, type AccountUsage } from "@/lib/actions-usage";
+import { counted, type BlacksmithMinutes } from "@/lib/blacksmith-minutes";
 import { AppError } from "@relayrunner/errors";
 import type { Machine } from "@/lib/machines";
 import { providerInfo } from "@/lib/provider-catalog";
@@ -70,6 +72,7 @@ export function RunnerOrderEditor({
   editable,
   machines,
   accounts,
+  blacksmith = null,
   installedApps = null,
   aside = null,
 }: {
@@ -82,6 +85,8 @@ export function RunnerOrderEditor({
   machines: Machine[] | null;
   /** This month's Actions minutes per connected GitHub account (#116). */
   accounts: AccountUsage[];
+  /** This month's free Blacksmith minutes, from its connection; null when they couldn't be read. */
+  blacksmith?: BlacksmithMinutes | null;
   /** The providers whose GitHub App the org has installed, or null when we can't tell. */
   installedApps?: HostedProviderId[] | null;
   /** Beside the order: the page's setup card. */
@@ -92,7 +97,7 @@ export function RunnerOrderEditor({
   const [steps, setSteps] = useState<RunnerStep[]>(order.steps);
   const [status, setStatus] = useState<SaveStatus>({ kind: "idle" });
   const dirty = JSON.stringify(steps) !== JSON.stringify(saved.steps);
-  const preview = previewRoute(steps, machines, accounts);
+  const preview = previewRoute(steps, machines, accounts, blacksmith);
   const limits = limitAvailability(accounts);
 
   function change(next: RunnerStep[]) {
@@ -129,13 +134,19 @@ export function RunnerOrderEditor({
   }
 
   const slots = new Set(steps.map(stepSlot));
-  // GitHub fits twice: once with a limit, once without.
+  // GitHub and Blacksmith fit twice: once with a minutes limit, once without.
   const githubSlotFree = !slots.has("github") || (limits.allowed && !slots.has("github:limit"));
+  const blacksmithConnected = blacksmith?.reason !== "not_connected";
+  const blacksmithSlotFree =
+    !slots.has("blacksmith") || (blacksmithConnected && !slots.has("blacksmith:limit"));
   function addStep(key: RunnerKey) {
+    const limited = { percent: DEFAULT_LIMIT_PERCENT };
     const step: RunnerStep =
       key === "github" && slots.has("github")
-        ? { key: "github", limit: { percent: DEFAULT_LIMIT_PERCENT } }
-        : { key };
+        ? { key: "github", limit: limited }
+        : key === "blacksmith" && slots.has("blacksmith")
+          ? { key: "blacksmith", limit: limited }
+          : { key };
     change([...steps, step]);
   }
 
@@ -156,6 +167,7 @@ export function RunnerOrderEditor({
                     editable={editable}
                     accounts={accounts}
                     limits={limits}
+                    blacksmith={blacksmith}
                     slots={slots}
                     appMissing={appMissing(step.key, installedApps)}
                     onChange={(next) => change(steps.map((s, i) => (i === index ? next : s)))}
@@ -202,22 +214,30 @@ export function RunnerOrderEditor({
                 {/* Only providers operators made Live (Admin › Providers); a Hidden one already
                     in the order keeps its step. */}
                 {HOSTED_PROVIDER_IDS.filter(
-                  (id) => providerInfo(id).status === "live" || slots.has(id),
-                ).map((id) => (
-                  <AddItem
-                    key={id}
-                    runner={id}
-                    note={
-                      slots.has(id)
-                        ? "Already in the order"
-                        : installedApps?.includes(id)
-                          ? "App installed"
-                          : `Needs ${RUNNER_LABELS[id]}'s GitHub app`
-                    }
-                    disabled={slots.has(id)}
-                    onSelect={() => addStep(id)}
-                  />
-                ))}
+                  (id) =>
+                    providerInfo(id).status === "live" || slots.has(id) || slots.has(`${id}:limit`),
+                ).map((id) => {
+                  const taken = id === "blacksmith" ? !blacksmithSlotFree : slots.has(id);
+                  return (
+                    <AddItem
+                      key={id}
+                      runner={id}
+                      note={
+                        taken
+                          ? "Already in the order"
+                          : id === "blacksmith" && slots.has("blacksmith")
+                            ? "Again, while under its free minutes"
+                            : id === "blacksmith" && slots.has("blacksmith:limit")
+                              ? "Again, past its free minutes"
+                              : installedApps?.includes(id)
+                                ? "App installed"
+                                : `Needs ${RUNNER_LABELS[id]}'s GitHub app`
+                      }
+                      disabled={taken}
+                      onSelect={() => addStep(id)}
+                    />
+                  );
+                })}
               </DropdownMenuContent>
             </DropdownMenu>
           )}
@@ -320,6 +340,7 @@ function StepCard({
   editable,
   accounts,
   limits,
+  blacksmith,
   slots,
   appMissing,
   onChange,
@@ -333,6 +354,7 @@ function StepCard({
   editable: boolean;
   accounts: AccountUsage[];
   limits: LimitAvailability;
+  blacksmith: BlacksmithMinutes | null;
   slots: Set<string>;
   /** A hosted provider whose GitHub App the org doesn't have, so its runners never start. */
   appMissing: boolean;
@@ -350,7 +372,8 @@ function StepCard({
     isDragging,
   } = useSortable({ id: stepSlot(step), disabled: !editable });
   const label = RUNNER_LABELS[step.key];
-  const limit = step.key === "github" ? step.limit : undefined;
+  const limit = "limit" in step ? step.limit : undefined;
+  const withQuota = accounts.filter(hasQuota);
 
   return (
     <li
@@ -408,6 +431,14 @@ function StepCard({
             {step.key !== "machine" && step.key !== "github" && (
               <p className="text-xs text-muted-foreground">Sized per job under Workflows</p>
             )}
+            {step.key === "blacksmith" && !limit && blacksmith?.reason === "not_connected" && (
+              <p className="text-xs text-muted-foreground">
+                Stop at its {BLACKSMITH_FREE_MINUTES.toLocaleString("en-US")} free minutes:{" "}
+                <Link to="/settings/providers" className="text-go hover:text-go-hover">
+                  connect Blacksmith
+                </Link>
+              </p>
+            )}
             {appMissing && (
               <p className="flex items-center gap-1.5 text-xs text-muted-foreground">
                 <TriangleAlertIcon aria-hidden className="size-3.5 shrink-0 text-destructive" />
@@ -424,6 +455,14 @@ function StepCard({
                 // Each GitHub rule fits once, so a second GitHub step can't take the other's.
                 canLimit={!!limit || !slots.has("github:limit")}
                 canAlways={!limit || !slots.has("github")}
+                onChange={onChange}
+              />
+            ) : step.key === "blacksmith" && editable ? (
+              <BlacksmithRule
+                step={step}
+                blacksmith={blacksmith}
+                canLimit={!!limit || !slots.has("blacksmith:limit")}
+                canOther={!limit || !slots.has("blacksmith")}
                 onChange={onChange}
               />
             ) : step.key !== "machine" &&
@@ -461,7 +500,15 @@ function StepCard({
             )}
           </div>
         </div>
-        {limit && <UsageBars accounts={accounts} percent={limit.percent} />}
+        {limit && step.key === "github" && (
+          <UsageBars
+            bars={withQuota.map((account) => accountBar(account, withQuota.length > 1))}
+            percent={limit.percent}
+          />
+        )}
+        {limit && step.key === "blacksmith" && (
+          <BlacksmithUsage blacksmith={blacksmith} percent={limit.percent} />
+        )}
       </div>
     </li>
   );
@@ -475,16 +522,19 @@ function appMissing(key: RunnerKey, installed: HostedProviderId[] | null) {
 
 type HostedStep = Exclude<RunnerStep, { key: "machine" | "github" }>;
 
-/** A priced hosted provider's rule: "while under $N a month" or "always". */
-function SpendRule({ step, onChange }: { step: HostedStep; onChange: (step: RunnerStep) => void }) {
-  const [usd, setUsd] = useState(String(step.spendLimit?.usd ?? DEFAULT_SPEND_LIMIT_USD));
+const NUMBER_INPUT =
+  "h-6 rounded border bg-background px-1 text-right tabular-nums [appearance:textfield] focus-visible:border-ring focus-visible:outline-none disabled:opacity-60 [&::-webkit-inner-spin-button]:appearance-none";
 
-  function setLimit(value = usd) {
-    const parsed = Number.parseInt(value, 10);
-    if (Number.isNaN(parsed)) return;
-    onChange({ key: step.key, spendLimit: { usd: Math.min(100_000, Math.max(1, parsed)) } });
-  }
-
+/** A rule's trigger: the rule as it reads now, opening its menu. */
+function RuleMenu({
+  step,
+  label,
+  children,
+}: {
+  step: RunnerStep;
+  label: string;
+  children: ReactNode;
+}) {
   return (
     <Popover>
       <PopoverTrigger asChild>
@@ -493,52 +543,159 @@ function SpendRule({ step, onChange }: { step: HostedStep; onChange: (step: Runn
           <ChevronDownIcon aria-hidden className="size-3.5 text-muted-foreground" />
         </Button>
       </PopoverTrigger>
-      <PopoverContent align="end" className="w-72 p-1 text-[13px]">
-        <div
-          role="radiogroup"
-          aria-label={`When ${RUNNER_LABELS[step.key]} takes jobs`}
-          className="grid"
-        >
-          <div className="flex items-center gap-1 rounded-md pr-2 hover:bg-accent/60">
-            <button
-              type="button"
-              role="radio"
-              aria-checked={!!step.spendLimit}
-              onClick={() => setLimit()}
-              className="flex flex-1 items-center gap-2 px-2 py-1.5 text-left whitespace-nowrap"
-            >
-              <Check on={!!step.spendLimit} />
-              While under
-            </button>
-            <span>$</span>
-            <input
-              type="number"
-              inputMode="numeric"
-              min={1}
-              max={100_000}
-              value={usd}
-              aria-label="Limit, dollars a month"
-              onChange={(event) => {
-                setUsd(event.target.value);
-                if (step.spendLimit) setLimit(event.target.value);
-              }}
-              className="h-6 w-16 rounded border bg-background px-1 text-right tabular-nums [appearance:textfield] focus-visible:border-ring focus-visible:outline-none [&::-webkit-inner-spin-button]:appearance-none"
-            />
-            <span className="ml-auto text-xs text-muted-foreground">a month</span>
-          </div>
-          <button
-            type="button"
-            role="radio"
-            aria-checked={!step.spendLimit}
-            onClick={() => onChange({ key: step.key })}
-            className="flex items-center gap-2 rounded-md px-2 py-1.5 text-left hover:bg-accent/60"
-          >
-            <Check on={!step.spendLimit} />
-            Always
-          </button>
+      <PopoverContent align="end" className="w-80 p-1 text-[13px]">
+        <div role="radiogroup" aria-label={`When ${label} takes jobs`} className="grid">
+          {children}
         </div>
       </PopoverContent>
     </Popover>
+  );
+}
+
+/** "While under [80] %" or "While under $[100] a month": a choice with a number to set. */
+function LimitChoice({
+  on,
+  disabled = false,
+  value,
+  min,
+  max,
+  prefix,
+  suffix,
+  note,
+  inputLabel,
+  onPick,
+}: {
+  on: boolean;
+  disabled?: boolean;
+  value: number;
+  min: number;
+  max: number;
+  prefix?: string;
+  suffix: string;
+  note?: string | null;
+  inputLabel: string;
+  /** Picks this choice at `value`, kept within min and max. */
+  onPick: (value: number) => void;
+}) {
+  const [text, setText] = useState(String(value));
+  const pick = (raw = text) => {
+    const parsed = Number.parseInt(raw, 10);
+    if (!Number.isNaN(parsed)) onPick(Math.min(max, Math.max(min, parsed)));
+  };
+  return (
+    <div className="flex items-center gap-1 rounded-md pr-2 hover:bg-accent/60">
+      <button
+        type="button"
+        role="radio"
+        aria-checked={on}
+        disabled={disabled}
+        onClick={() => pick()}
+        className="flex flex-1 items-center gap-2 px-2 py-1.5 text-left whitespace-nowrap disabled:text-muted-foreground"
+      >
+        <Check on={on} />
+        While under
+      </button>
+      {prefix && <span>{prefix}</span>}
+      <input
+        type="number"
+        inputMode="numeric"
+        min={min}
+        max={max}
+        value={text}
+        disabled={disabled}
+        aria-label={inputLabel}
+        onChange={(event) => {
+          setText(event.target.value);
+          if (on) pick(event.target.value);
+        }}
+        className={cn(NUMBER_INPUT, max > 100 ? "w-16" : "w-10")}
+      />
+      <span>{suffix}</span>
+      {note && <span className="ml-auto pl-1 text-xs text-muted-foreground">{note}</span>}
+    </div>
+  );
+}
+
+/** A limit this step can't use yet, with what's missing and where to set it up. */
+function BlockedChoice({
+  title,
+  blocked,
+  setUp,
+}: {
+  title: string;
+  blocked: string;
+  /** The settings page that fixes it, if one does. */
+  setUp: "/settings/github" | "/settings/providers" | null;
+}) {
+  return (
+    <div role="radio" aria-checked={false} aria-disabled className="grid gap-0.5 px-2 py-1.5">
+      <span className="flex items-center gap-2 text-[var(--rr-idle)]">
+        <Check on={false} />
+        {title}
+      </span>
+      <span className="pl-6 text-xs text-muted-foreground">
+        {blocked}
+        {setUp && (
+          <>
+            {" "}
+            <Link to={setUp} className="text-go hover:text-go-hover">
+              Set up
+            </Link>
+          </>
+        )}
+      </span>
+    </div>
+  );
+}
+
+function AlwaysChoice({
+  on,
+  disabled = false,
+  note,
+  onPick,
+}: {
+  on: boolean;
+  disabled?: boolean;
+  note?: string;
+  onPick: () => void;
+}) {
+  return (
+    <button
+      type="button"
+      role="radio"
+      aria-checked={on}
+      disabled={disabled}
+      onClick={onPick}
+      className="flex items-center gap-2 rounded-md px-2 py-1.5 text-left hover:bg-accent/60 disabled:text-muted-foreground"
+    >
+      <Check on={on} />
+      Always
+      {note && <span className="ml-auto text-xs text-muted-foreground">{note}</span>}
+    </button>
+  );
+}
+
+const spendChoice = (step: HostedStep, onChange: (step: RunnerStep) => void, disabled = false) => (
+  <LimitChoice
+    on={!!step.spendLimit}
+    disabled={disabled}
+    value={step.spendLimit?.usd ?? DEFAULT_SPEND_LIMIT_USD}
+    min={1}
+    max={100_000}
+    prefix="$"
+    suffix="a month"
+    inputLabel="Limit, dollars a month"
+    onPick={(usd) => onChange({ key: step.key, spendLimit: { usd } })}
+  />
+);
+
+/** A priced hosted provider's rule: "while under $N a month" or "always". */
+function SpendRule({ step, onChange }: { step: HostedStep; onChange: (step: RunnerStep) => void }) {
+  return (
+    <RuleMenu step={step} label={RUNNER_LABELS[step.key]}>
+      {spendChoice(step, onChange)}
+      <AlwaysChoice on={!step.spendLimit} onPick={() => onChange({ key: step.key })} />
+    </RuleMenu>
   );
 }
 
@@ -558,96 +715,91 @@ function GitHubRule({
   canAlways: boolean;
   onChange: (step: RunnerStep) => void;
 }) {
-  const [percent, setPercent] = useState(String(step.limit?.percent ?? DEFAULT_LIMIT_PERCENT));
   const withQuota = accounts.filter(hasQuota);
   const only = withQuota.length === 1 ? withQuota[0] : undefined;
-  const quota = only ? `of ${only.quotaMinutes!.toLocaleString("en-US")} min` : null;
-
-  function setLimit(value = percent) {
-    const parsed = Number.parseInt(value, 10);
-    if (Number.isNaN(parsed)) return;
-    onChange({ key: "github", limit: { percent: Math.min(100, Math.max(1, parsed)) } });
-  }
-
   return (
-    <Popover>
-      <PopoverTrigger asChild>
-        <Button variant="outline" size="sm" className="h-8 gap-1.5 px-2.5 text-[13px] font-normal">
-          {ruleText(step)}
-          <ChevronDownIcon aria-hidden className="size-3.5 text-muted-foreground" />
-        </Button>
-      </PopoverTrigger>
-      <PopoverContent align="end" className="w-72 p-1 text-[13px]">
-        <div role="radiogroup" aria-label="When GitHub-hosted takes jobs" className="grid">
-          {limits.allowed ? (
-            <div className="flex items-center gap-1 rounded-md pr-2 hover:bg-accent/60">
-              <button
-                type="button"
-                role="radio"
-                aria-checked={!!step.limit}
-                disabled={!canLimit}
-                onClick={() => setLimit()}
-                className="flex flex-1 items-center gap-2 px-2 py-1.5 text-left whitespace-nowrap disabled:text-muted-foreground"
-              >
-                <Check on={!!step.limit} />
-                While under
-              </button>
-              <input
-                type="number"
-                inputMode="numeric"
-                min={1}
-                max={100}
-                value={percent}
-                disabled={!canLimit}
-                aria-label="Limit, percent of included minutes"
-                onChange={(event) => {
-                  setPercent(event.target.value);
-                  if (step.limit) setLimit(event.target.value);
-                }}
-                className="h-6 w-10 rounded border bg-background px-1 text-right tabular-nums [appearance:textfield] focus-visible:border-ring focus-visible:outline-none [&::-webkit-inner-spin-button]:appearance-none"
-              />
-              <span>%</span>
-              {quota && <span className="ml-auto text-xs text-muted-foreground">{quota}</span>}
-            </div>
-          ) : (
-            <div
-              role="radio"
-              aria-checked={false}
-              aria-disabled
-              className="grid gap-0.5 px-2 py-1.5"
-            >
-              <span className="flex items-center gap-2 text-[var(--rr-idle)]">
-                <Check on={false} />
-                While under a limit
-              </span>
-              <span className="pl-6 text-xs text-muted-foreground">
-                {limits.blocked}
-                {limits.fixable && (
-                  <>
-                    {" "}
-                    <Link to="/settings/github" className="text-go hover:text-go-hover">
-                      Set up
-                    </Link>
-                  </>
-                )}
-              </span>
-            </div>
-          )}
-          <button
-            type="button"
-            role="radio"
-            aria-checked={!step.limit}
-            disabled={!canAlways}
-            onClick={() => onChange({ key: "github" })}
-            className="flex items-center gap-2 rounded-md px-2 py-1.5 text-left hover:bg-accent/60 disabled:text-muted-foreground"
-          >
-            <Check on={!step.limit} />
-            Always
-            <span className="ml-auto text-xs text-muted-foreground">past the limit too</span>
-          </button>
-        </div>
-      </PopoverContent>
-    </Popover>
+    <RuleMenu step={step} label="GitHub-hosted">
+      {limits.allowed ? (
+        <LimitChoice
+          on={!!step.limit}
+          disabled={!canLimit}
+          value={step.limit?.percent ?? DEFAULT_LIMIT_PERCENT}
+          min={1}
+          max={100}
+          suffix="%"
+          note={only && `of ${only.quotaMinutes!.toLocaleString("en-US")} min`}
+          inputLabel="Limit, percent of included minutes"
+          onPick={(percent) => onChange({ key: "github", limit: { percent } })}
+        />
+      ) : (
+        <BlockedChoice
+          title="While under a limit"
+          blocked={limits.blocked}
+          setUp={limits.fixable ? "/settings/github" : null}
+        />
+      )}
+      <AlwaysChoice
+        on={!step.limit}
+        disabled={!canAlways}
+        note="past the limit too"
+        onPick={() => onChange({ key: "github" })}
+      />
+    </RuleMenu>
+  );
+}
+
+/**
+ * The Blacksmith step's rule: "while under N% of its free minutes", which needs Blacksmith
+ * connected in Settings › Providers to count them, "while under $N a month", or "always".
+ */
+function BlacksmithRule({
+  step,
+  blacksmith,
+  canLimit,
+  canOther,
+  onChange,
+}: {
+  step: Extract<RunnerStep, { key: "blacksmith" }>;
+  blacksmith: BlacksmithMinutes | null;
+  /** Each rule fits once: a second Blacksmith step can't take the first's. */
+  canLimit: boolean;
+  canOther: boolean;
+  onChange: (step: RunnerStep) => void;
+}) {
+  const connected = blacksmith && blacksmith.reason !== "not_connected";
+  const free = (blacksmith?.quotaMinutes ?? BLACKSMITH_FREE_MINUTES).toLocaleString("en-US");
+  return (
+    <RuleMenu step={step} label="Blacksmith">
+      {connected || step.limit ? (
+        <LimitChoice
+          on={!!step.limit}
+          disabled={!canLimit}
+          value={step.limit?.percent ?? DEFAULT_LIMIT_PERCENT}
+          min={1}
+          max={100}
+          suffix="%"
+          note={`of ${free} free min`}
+          inputLabel="Limit, percent of Blacksmith's free minutes"
+          onPick={(percent) => onChange({ key: "blacksmith", limit: { percent } })}
+        />
+      ) : (
+        <BlockedChoice
+          title={`While under its ${free} free minutes`}
+          blocked={
+            blacksmith
+              ? "Connect Blacksmith to count its free minutes."
+              : "Blacksmith's free minutes couldn't be read."
+          }
+          setUp={blacksmith ? "/settings/providers" : null}
+        />
+      )}
+      {hasSpendLimit("blacksmith") && spendChoice(step, onChange, !canOther)}
+      <AlwaysChoice
+        on={!step.limit && !step.spendLimit}
+        disabled={!canOther}
+        onPick={() => onChange({ key: "blacksmith" })}
+      />
+    </RuleMenu>
   );
 }
 
@@ -659,22 +811,41 @@ function Check({ on }: { on: boolean }) {
   );
 }
 
-/** Each account's minutes this month against its quota, with a tick at the limit. */
-function UsageBars({ accounts, percent }: { accounts: AccountUsage[]; percent: number }) {
-  const withQuota = accounts.filter(hasQuota);
-  const first = withQuota[0];
-  if (!first) return null;
-  const resets = nextCycle(first.cycleStart);
+/** One bar of minutes used against a quota: an account's, or Blacksmith's free minutes. */
+type UsageBar = {
+  id: string;
+  /** Who the minutes are, when there's more than one bar. */
+  who: string | null;
+  usedMinutes: number;
+  quotaMinutes: number;
+  cycleStart: string;
+  /** What the minutes are, for screen readers, and how the caption counts them. */
+  kind: string;
+  unit: string;
+};
+
+const accountBar = (account: AccountUsage, many: boolean): UsageBar => ({
+  id: String(account.installationId),
+  who: many ? account.accountLogin : null,
+  usedMinutes: account.usedMinutes,
+  quotaMinutes: account.quotaMinutes!,
+  cycleStart: account.cycleStart,
+  kind: "included minutes",
+  unit: "min",
+});
+
+/** Each bar's minutes this month against its quota, with a tick at the limit. */
+function UsageBars({ bars, percent }: { bars: UsageBar[]; percent: number }) {
+  if (bars.length === 0) return null;
   return (
     <div className="grid gap-2.5 pr-4 pb-3 pl-11">
-      {withQuota.map((account) => {
-        const quota = account.quotaMinutes!;
-        const used = Math.floor((account.usedMinutes / quota) * 100);
+      {bars.map((bar) => {
+        const used = Math.floor((bar.usedMinutes / bar.quotaMinutes) * 100);
         return (
-          <div key={account.installationId} className="grid max-w-sm gap-1.5">
+          <div key={bar.id} className="grid max-w-sm gap-1.5">
             <div
               role="img"
-              aria-label={`${used}% of included minutes used, limit ${percent}%`}
+              aria-label={`${used}% of ${bar.kind} used, limit ${percent}%`}
               className="relative h-1.5 rounded-full bg-border"
             >
               <div
@@ -690,15 +861,95 @@ function UsageBars({ accounts, percent }: { accounts: AccountUsage[]; percent: n
               />
             </div>
             <p className="text-xs text-muted-foreground">
-              {withQuota.length > 1 && `${account.accountLogin} · `}
-              {Math.round(account.usedMinutes).toLocaleString("en-US")} of{" "}
-              {quota.toLocaleString("en-US")} min · resets {resets}
+              {bar.who && `${bar.who} · `}
+              {Math.round(bar.usedMinutes).toLocaleString("en-US")} of{" "}
+              {bar.quotaMinutes.toLocaleString("en-US")} {bar.unit} · resets{" "}
+              {nextCycle(bar.cycleStart)}
             </p>
           </div>
         );
       })}
     </div>
   );
+}
+
+/**
+ * The limited Blacksmith step's free minutes: a bar once they're counted, else what's missing,
+ * since until then the step takes every job.
+ */
+function BlacksmithUsage({
+  blacksmith,
+  percent,
+}: {
+  blacksmith: BlacksmithMinutes | null;
+  percent: number;
+}) {
+  const warning = blacksmithWarning(blacksmith);
+  return (
+    <>
+      {counted(blacksmith) && (
+        <UsageBars
+          bars={[
+            {
+              id: "blacksmith",
+              who: null,
+              usedMinutes: blacksmith.usedMinutes,
+              quotaMinutes: blacksmith.quotaMinutes,
+              cycleStart: blacksmith.cycleStart,
+              kind: "free minutes",
+              unit: "free min",
+            },
+          ]}
+          percent={percent}
+        />
+      )}
+      {warning && (
+        <p className="flex items-start gap-1.5 pr-4 pb-3 pl-11 text-xs text-muted-foreground">
+          <TriangleAlertIcon aria-hidden className="mt-px size-3.5 shrink-0 text-destructive" />
+          <span>
+            {warning.text}
+            {warning.setUp && (
+              <>
+                {" "}
+                <Link to="/settings/providers" className="text-go hover:text-go-hover">
+                  {warning.setUp}
+                </Link>
+              </>
+            )}
+          </span>
+        </p>
+      )}
+    </>
+  );
+}
+
+/** Why a limited Blacksmith step can't count its free minutes right now, if it can't. */
+function blacksmithWarning(
+  blacksmith: BlacksmithMinutes | null,
+): { text: string; setUp: string | null } | null {
+  const takesAll = "so Blacksmith takes every job until then.";
+  if (!blacksmith) return { text: `Blacksmith's free minutes couldn't be read.`, setUp: null };
+  switch (blacksmith.reason) {
+    case null:
+      return null;
+    case "not_connected":
+      return {
+        text: "Blacksmith isn't connected, so its free minutes aren't counted and Blacksmith takes every job.",
+        setUp: "Connect Blacksmith",
+      };
+    case "not_synced":
+      return { text: `The first Blacksmith sync runs within the hour, ${takesAll}`, setUp: null };
+    case "token_rejected":
+      return {
+        text: "Blacksmith stopped accepting the token, so its free minutes aren't counted and Blacksmith takes every job.",
+        setUp: "Paste a new one",
+      };
+    case "sync_failed":
+      return {
+        text: "The last Blacksmith sync failed, so these minutes may be behind.",
+        setUp: "See the connection",
+      };
+  }
 }
 
 function nextCycle(cycleStart: string) {

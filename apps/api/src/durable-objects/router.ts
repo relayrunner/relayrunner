@@ -7,6 +7,7 @@ import {
 import { Recent } from "../recent.ts";
 import { accountUsage } from "../actions-billing.ts";
 import { accountSpend } from "../provider-spend.ts";
+import { blacksmithMinutes, type BlacksmithMinutes } from "../blacksmith-minutes.ts";
 import { DurableObject } from "cloudflare:workers";
 import { and, eq, isNotNull, isNull, or } from "drizzle-orm";
 import { createDb, schema } from "../db/index.ts";
@@ -172,6 +173,7 @@ export class Router extends DurableObject<Env> {
   private runnerLists = new Recent<string, RunnerList>();
   private ownerAccess = new Recent<string, boolean>();
   private spend = new Recent<string, { account: string; spentUsd: number }>();
+  private freeMinutes = new Recent<string, BlacksmithMinutes>();
 
   /**
    * An org's (or repo's) self-hosted runners for the dashboard's Runners and Router pages, reused
@@ -343,6 +345,11 @@ export class Router extends DurableObject<Env> {
       (key) =>
         this.spend.get(`${job.installationId}:${key}`, SPEND_TTL_MS, () =>
           accountSpend(db, job.installationId, key),
+        ),
+      // The workspace's Blacksmith connection: it only changes when the hourly sync lands.
+      () =>
+        this.freeMinutes.get(job.workspaceId, SPEND_TTL_MS, () =>
+          blacksmithMinutes(db, job.workspaceId),
         ),
     );
     if (waitsForMachine(decision)) return this.wait(job, decision);

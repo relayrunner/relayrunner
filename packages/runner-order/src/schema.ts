@@ -1,8 +1,9 @@
-import { HOSTED_PROVIDER_IDS } from "@relayrunner/providers";
+import { HOSTED_PROVIDER_IDS, type HostedProviderId } from "@relayrunner/providers";
 import { z } from "zod";
 import {
   DEFAULT_RETRY_SETTINGS,
   DEFAULT_RUNNER_ORDER,
+  hasMinutesLimit,
   hasSpendLimit,
   RETRY_RUNNERS,
   RUNNER_LABELS,
@@ -14,7 +15,9 @@ import {
 
 /**
  * "While under a limit": the GitHub step passes a job on once the job's GitHub account has used
- * `percent` of its included minutes this month (#117). A step without one always takes the job.
+ * `percent` of its included minutes this month (#117), and the Blacksmith step once the workspace
+ * has used `percent` of Blacksmith's free minutes (counted only with Blacksmith connected in
+ * Settings › Providers). A step without one always takes the job.
  */
 export const minutesLimitSchema = z.object({
   percent: z
@@ -39,11 +42,22 @@ export const spendLimitSchema = z.object({
 });
 export type SpendLimit = z.infer<typeof spendLimitSchema>;
 
+type OtherHostedId = Exclude<HostedProviderId, "blacksmith">;
+const OTHER_HOSTED_IDS = HOSTED_PROVIDER_IDS.filter(
+  (id): id is OtherHostedId => id !== "blacksmith",
+) as [OtherHostedId, ...OtherHostedId[]];
+
 export const runnerStepSchema = z.discriminatedUnion("key", [
   z.object({ key: z.literal("machine") }),
   z.object({ key: z.literal("github"), limit: minutesLimitSchema.optional() }),
+  // Blacksmith: a hosted provider whose free minutes RelayRunner can count, once connected.
+  z.object({
+    key: z.literal("blacksmith"),
+    limit: minutesLimitSchema.optional(),
+    spendLimit: spendLimitSchema.optional(),
+  }),
   // A hosted provider: it takes any job whose relay names one of its labels.
-  z.object({ key: z.enum(HOSTED_PROVIDER_IDS), spendLimit: spendLimitSchema.optional() }),
+  z.object({ key: z.enum(OTHER_HOSTED_IDS), spendLimit: spendLimitSchema.optional() }),
 ]);
 export type RunnerStep = z.infer<typeof runnerStepSchema>;
 
@@ -52,8 +66,8 @@ export const runnerOrderSchema = z.object({
     .array(runnerStepSchema)
     .min(1, "Add at least one provider.")
     .superRefine((steps, ctx) => {
-      // Each provider once, except GitHub-hosted, which may come twice: once with a limit and once
-      // without (use the included minutes first, then fall back to GitHub past the limit).
+      // Each provider once, except GitHub-hosted and Blacksmith, which may come twice: once with a
+      // minutes limit and once without (use the free minutes first, then fall back past the limit).
       const seen = new Set<string>();
       steps.forEach((step, index) => {
         const slot = stepSlot(step);
@@ -61,13 +75,18 @@ export const runnerOrderSchema = z.object({
           ctx.addIssue({
             code: "custom",
             path: [index, "key"],
-            message:
-              step.key === "github"
-                ? `GitHub-hosted is already in the order ${step.limit ? "with a limit" : "without a limit"}.`
-                : `${RUNNER_LABELS[step.key]} is already in the order.`,
+            message: hasMinutesLimit(step.key)
+              ? `${RUNNER_LABELS[step.key]} is already in the order ${"limit" in step && step.limit ? "with a limit" : "without a limit"}.`
+              : `${RUNNER_LABELS[step.key]} is already in the order.`,
           });
         }
         seen.add(slot);
+        if ("limit" in step && step.limit && "spendLimit" in step && step.spendLimit)
+          ctx.addIssue({
+            code: "custom",
+            path: [index, "spendLimit"],
+            message: "Pick a minutes limit or a spend limit, not both.",
+          });
         if ("spendLimit" in step && step.spendLimit && !hasSpendLimit(step.key))
           ctx.addIssue({
             code: "custom",

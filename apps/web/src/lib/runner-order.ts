@@ -19,7 +19,7 @@ export function saveRunnerOrder(workspaceId: string, order: RunnerOrder) {
 /** When a step takes a job: "When available", "While under 80%", "While under $100/mo", "Always". */
 export function ruleText(step: RunnerStep) {
   if (step.key === "machine") return "When available";
-  if (step.key === "github" && step.limit) return `While under ${step.limit.percent}%`;
+  if ("limit" in step && step.limit) return `While under ${step.limit.percent}%`;
   if ("spendLimit" in step && step.spendLimit)
     return `While under $${step.spendLimit.usd.toLocaleString("en-US")}/mo`;
   return "Always";

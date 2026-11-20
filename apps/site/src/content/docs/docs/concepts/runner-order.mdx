@@ -42,7 +42,7 @@ A step that can't take the job is skipped with a reason, and the next one is tri
 2. Depot
 3. GitHub-hosted
 
-GitHub can appear twice: once with a minutes limit and once without.
+GitHub and Blacksmith can each appear twice: once with a minutes limit and once without.
 
 ## The minutes limit
 
@@ -51,6 +51,12 @@ A GitHub-hosted step can have a limit, such as "while under 80%". It then takes 
 If GitHub won't share an account's minutes, the limit never blocks its jobs. The Router page shows when that's the case.
 
 An org that shares its enterprise's minutes is judged against the enterprise's, once the App is [installed on the enterprise](/docs/reference/github-app#enterprises).
+
+## Blacksmith's free minutes
+
+A Blacksmith step can stop at a share of Blacksmith's 3,000 free minutes a month, such as "while under 90%". Connect Blacksmith first, under **Settings › Providers** or with `npx relayrunner blacksmith connect`, so its usage is counted. Usage syncs hourly, in the 2-vCPU minutes Blacksmith counts its free minutes in, so a 4-vCPU minute uses two.
+
+Until the first sync, or if Blacksmith stops accepting the token, the limit never blocks and the Router page says so. Put a step after it, such as your machines, GitHub-hosted or Blacksmith again without a limit, for the jobs past it.
 
 ## Spend limits
 

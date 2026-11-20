@@ -2,6 +2,7 @@ import { isBillingProvider } from "@relayrunner/providers";
 import { Hono } from "hono";
 import { z } from "zod";
 import type { AppEnv } from "../app.ts";
+import { blacksmithMinutes } from "../blacksmith-minutes.ts";
 import { createDb } from "../db/index.ts";
 import { requireUser } from "../middleware/session.ts";
 import { requireWorkspace } from "../middleware/workspace.ts";
@@ -39,6 +40,11 @@ export const providerRoutes = new Hono<AppEnv>()
   // can look; only owners and admins change them. Tokens never come back.
   .get("/connections", requireUser, requireWorkspace, async (c) =>
     c.json({ connections: await listConnections(c.var.db, c.var.workspace.id) }),
+  )
+  // The Router's Blacksmith step: the workspace's free Blacksmith minutes this month, counted from
+  // its Blacksmith connection, or why they can't be.
+  .get("/blacksmith/minutes", requireUser, requireWorkspace, async (c) =>
+    c.json(await blacksmithMinutes(c.var.db, c.var.workspace.id)),
   )
   .use("/:provider/connection/*", requireUser, requireWorkspace, requireManager)
   // Save (or replace) a token, after one read proves it works. Then sync right away.

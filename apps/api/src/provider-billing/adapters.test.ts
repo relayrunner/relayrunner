@@ -279,7 +279,8 @@ describe("Blacksmith", () => {
         kind: "usage",
         token: "tok_secret",
         organization: "relayrunner",
-        start: "2026-11-19T12:00:00.000Z",
+        // Whole days, from the window's UTC midnight.
+        start: "2026-11-19T00:00:00.000Z",
         end: "2026-11-20T18:59:41.000Z",
       },
     ]);

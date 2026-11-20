@@ -6,11 +6,23 @@
 // Billing lags GitHub by up to ~90 minutes and the poll adds up to 15 more, so the step also stops
 // once fewer minutes are left than the account burns in RUNWAY_HOURS: jobs started during the lag
 // still fit under the quota.
-import type { AccountUsage } from "./actions-billing.ts";
+//
+// The Blacksmith step's limit works the same way on Blacksmith's free minutes
+// (src/blacksmith-minutes.ts).
+
+/** What a minutes limit reads: a GitHub account's usage (AccountUsage), or Blacksmith's. */
+export interface MinutesUsage {
+  status: "ok" | "not_available";
+  // The GitHub account, or the Blacksmith organization, whose minutes these are.
+  accountLogin: string;
+  quotaMinutes: number | null;
+  usedMinutes: number;
+  burnRatePerHour: number | null;
+}
 
 export const RUNWAY_HOURS = 2;
 
-/** Why a limited GitHub step passed a job on, with the numbers the Activity page shows. */
+/** Why a limited GitHub or Blacksmith step passed a job on, with the numbers the Activity page shows. */
 export interface MinutesSkip {
   // minutes_limit: used is at or past `percent` of the quota.
   // minutes_runway: under the limit, but fewer quota minutes are left than RUNWAY_HOURS of
@@ -27,7 +39,7 @@ export interface MinutesSkip {
  * Null when the step may take the job, or why it can't. An account whose usage isn't available
  * (no quota, not read yet, a read error) never blocks: a missing number shouldn't stall CI.
  */
-export function minutesCheck(usage: AccountUsage | null, percent: number): MinutesSkip | null {
+export function minutesCheck(usage: MinutesUsage | null, percent: number): MinutesSkip | null {
   if (!usage || usage.status !== "ok" || !usage.quotaMinutes) return null;
   const { usedMinutes, quotaMinutes, burnRatePerHour, accountLogin } = usage;
   const skip = { account: accountLogin, usedMinutes, quotaMinutes, percent, burnRatePerHour };

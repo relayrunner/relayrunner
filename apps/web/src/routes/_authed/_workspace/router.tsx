@@ -50,6 +50,11 @@ import { useLiveRefresh } from "@/lib/live-refresh";
 import { canManage } from "@/lib/roles";
 import { cn } from "@/lib/utils";
 import { getRunnerOrder } from "@/lib/runner-order";
+import {
+  type BlacksmithMinutes,
+  getBlacksmithMinutes,
+  sampleBlacksmithMinutes,
+} from "@/lib/blacksmith-minutes";
 import { formatTime } from "@/lib/time-zone";
 
 export const Route = createFileRoute("/_authed/_workspace/router")({
@@ -58,14 +63,16 @@ export const Route = createFileRoute("/_authed/_workspace/router")({
     if (authDisabled) return sampleRouter();
     // Runner status isn't awaited here: a runner added from GitHub reads its status from GitHub,
     // so the page loads first and the Self-hosted step's badge fills in after (RouterPage).
-    const [order, accounts] = await Promise.all([
+    const [order, accounts, blacksmith] = await Promise.all([
       getRunnerOrder(context.current.workspace.id),
       // The minutes only explain the GitHub step's limit, so the page still loads without them.
       getActionsUsage()
         .then((usage) => usage.accounts)
         .catch((): AccountUsage[] => []),
+      // Likewise Blacksmith's free minutes, for its step's limit.
+      getBlacksmithMinutes().catch(() => null),
     ]);
-    return { ...order, machines: null as Machine[] | null, accounts };
+    return { ...order, machines: null as Machine[] | null, accounts, blacksmith };
   },
   component: RouterPage,
 });
@@ -134,6 +141,7 @@ function RouterPage() {
             editable={editable}
             machines={machines}
             accounts={loaded.accounts}
+            blacksmith={loaded.blacksmith}
             installedApps={installedApps}
             aside={
               <SetupCard progress={progress} onRoute={() => setRouteStart({ repoId: null })} />
@@ -342,13 +350,15 @@ async function sampleHealth(): Promise<ProviderHealth> {
 /**
  * Dev-preview data. `?sample=enterprise` shows an org inside a GitHub enterprise, whose minutes
  * can't be checked, `?sample=personal` a personal account whose owner hasn't signed in,
- * and `?sample=default` the order a new workspace starts with.
+ * `?sample=default` the order a new workspace starts with, and `?sample=no-blacksmith` a
+ * workspace that hasn't connected Blacksmith, so its step can't stop at the free minutes yet.
  */
 function sampleRouter(): {
   order: RunnerOrder;
   isDefault: boolean;
   machines: Machine[];
   accounts: AccountUsage[];
+  blacksmith: BlacksmithMinutes | null;
 } {
   const kind = new URLSearchParams(window.location.search).get("sample");
   const machine: Machine = {
@@ -361,27 +371,38 @@ function sampleRouter(): {
     createdAt: "2026-11-01T00:00:00Z",
     status: { online: true, state: "idle", connectedAt: Date.now() },
   };
+  const blacksmith = sampleBlacksmithMinutes(kind !== "no-blacksmith");
   if (kind === "default")
-    return { order: DEFAULT_RUNNER_ORDER, isDefault: true, machines: [machine], accounts: [] };
+    return {
+      order: DEFAULT_RUNNER_ORDER,
+      isDefault: true,
+      machines: [machine],
+      accounts: [],
+      blacksmith,
+    };
   if (kind === "enterprise" || kind === "personal")
     return {
       order: { steps: [{ key: "machine" }, { key: "github" }] },
       isDefault: false,
       machines: [machine],
       accounts: sampleRouterAccounts(kind),
+      blacksmith,
     };
   return {
     order: {
       steps: [
         { key: "github", limit: { percent: 80 } },
         { key: "machine" },
-        { key: "blacksmith" },
+        kind === "no-blacksmith"
+          ? { key: "blacksmith" }
+          : { key: "blacksmith", limit: { percent: 90 } },
         { key: "github" },
       ],
     },
     isDefault: false,
     machines: [machine],
     accounts: sampleRouterAccounts("team"),
+    blacksmith,
   };
 }
 
