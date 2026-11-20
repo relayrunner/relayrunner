@@ -129,6 +129,7 @@ describe("Activity: why a job ran where", () => {
       repositoryId: 55,
       context,
       jobName: "relay",
+      pickJobId: "relay-job",
       decision,
       reason: null,
     });
@@ -138,6 +139,7 @@ describe("Activity: why a job ran where", () => {
       repositoryId: 55,
       context,
       jobName: "relay",
+      pickJobId: "relay-job",
       decision: { ...decision, skipped: [] },
       reason: null,
     });
@@ -174,6 +176,55 @@ describe("Activity: why a job ran where", () => {
     ]);
   });
 
+  test("each job of a run with two relays carries the walk of the relay that routed it", async () => {
+    const { cookie, installationId, workspaceId, runId } = await connectedWorkspace();
+    const db = createDb(env.DB);
+    for (const [pickJobId, steps, github] of [
+      ["relay-linux", [{ key: "github" }], "ubuntu-latest"],
+      ["relay-mac", [{ key: "machine" }, { key: "github" }], "macos-latest"],
+    ] as const) {
+      const context = {
+        ...pickContext(runId),
+        ...relayInputs({ machine: ["macOS"], github: [github] }),
+      };
+      const decision = await decideRoute(
+        { steps: [...steps] },
+        { ...context, private: true },
+        async () => null,
+      );
+      await recordPick(db, {
+        workspaceId,
+        repositoryId: 55,
+        context,
+        jobName: pickJobId,
+        pickJobId,
+        decision,
+        reason: null,
+      });
+    }
+    for (const [id, name] of [
+      [runId + 3, "relay-linux"],
+      [runId + 4, "relay-mac"],
+    ] as const)
+      await processWebhook(
+        env,
+        jobEvent(installationId, { id, runId, name, labels: ["relayrunner"] }),
+      );
+    await processWebhook(
+      env,
+      jobEvent(installationId, { id: runId + 1, runId, name: "linux", labels: ["ubuntu-latest"] }),
+    );
+    await processWebhook(
+      env,
+      jobEvent(installationId, { id: runId + 2, runId, name: "mac", labels: ["macos-latest"] }),
+    );
+    const { jobs } = await activity(cookie);
+    expect(jobs.map((job) => [job.name, job.walk?.step, job.walk?.skipped])).toEqual([
+      ["mac", "github", [{ key: "machine", reason: "no_machine" }]],
+      ["linux", "github", []],
+    ]);
+  });
+
   test("a job from before decisions were kept has no walk", async () => {
     const { cookie, installationId, runId } = await connectedWorkspace();
     await processWebhook(
@@ -201,6 +252,7 @@ describe("Activity: why a job ran where", () => {
       repositoryId: 55,
       context,
       jobName: "relay",
+      pickJobId: "relay-job",
       decision,
       reason: decision.reason,
     });
@@ -210,6 +262,7 @@ describe("Activity: why a job ran where", () => {
       repositoryId: null,
       context: { ...pickContext(runId + 1), repo: "relayrunner/hidden" },
       jobName: "relay",
+      pickJobId: "relay-job",
       decision: null,
       reason: "No runner available: RelayRunner doesn't have access to relayrunner/hidden.",
     });
@@ -262,6 +315,7 @@ describe("Activity: jobs that couldn't run", () => {
       repositoryId: 55,
       context,
       jobName: "relay",
+      pickJobId: "relay-job",
       decision,
       reason: decision.reason,
     });
@@ -711,6 +765,7 @@ describe("Activity: who started a job", () => {
       repositoryId: 55,
       context,
       jobName: "relay",
+      pickJobId: "relay-job",
       decision,
       reason: null,
     });
@@ -808,6 +863,7 @@ describe("Activity: who started a job", () => {
       repositoryId: 55,
       context,
       jobName: "relay",
+      pickJobId: "relay-job",
       decision,
       reason: decision.runner === null ? decision.reason : null,
     });

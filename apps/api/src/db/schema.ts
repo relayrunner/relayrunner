@@ -950,10 +950,11 @@ export const autoJob = sqliteTable(
   ],
 );
 
-// How each pick walked its workspace's runner order (src/routing.ts decideRoute), one row per run
-// attempt, so the Activity page can say why a run's jobs went where they did. Written by the
-// PickRunner when it answers. A re-run of failed jobs reuses an earlier attempt's pick, so a job
-// reads the newest row at or before its own attempt. Rows go with their workspace, or after 90 days
+// How each pick walked its workspace's runner order (src/routing.ts decideRoute), one row per pick
+// (a run attempt can have several relay jobs, each routing its own job), so the Activity page can
+// say why a run's jobs went where they did. Written by the PickRunner when it answers. A re-run of
+// failed jobs reuses an earlier attempt's picks, so a job reads the newest row at or before its own
+// attempt, matched by the label it runs on. Rows go with their workspace, or after 90 days
 // (src/retention.ts).
 export const routeDecision = sqliteTable(
   "route_decision",
@@ -965,6 +966,9 @@ export const routeDecision = sqliteTable(
     repositoryId: integer("repository_id").notNull(),
     runId: integer("run_id").notNull(),
     runAttempt: integer("run_attempt").notNull(),
+    // The relay job the pick answered, by the runner protocol's job id, so a redelivered pick keeps
+    // its first decision and each relay of an attempt keeps its own. Null before #661.
+    pickJobId: text("pick_job_id"),
     // The provider that took the run (a runner order key: 'machine', 'github', 'depot' and so on), or
     // null when nothing fit.
     step: text("step"),
@@ -1000,7 +1004,12 @@ export const routeDecision = sqliteTable(
       .$defaultFn(() => new Date()),
   },
   (table) => [
-    uniqueIndex("route_decision_run_idx").on(table.repositoryId, table.runId, table.runAttempt),
+    uniqueIndex("route_decision_pick_idx").on(
+      table.repositoryId,
+      table.runId,
+      table.runAttempt,
+      table.pickJobId,
+    ),
     // Operator pings (src/operator-pings.ts): the decisions made in a window, and whether a
     // workspace had a run on a machine before. Admin › Workspaces (src/admin-adoption.ts): each
     // workspace's first run on a machine, read from the index alone.
