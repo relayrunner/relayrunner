@@ -144,6 +144,13 @@ describe("templates", () => {
     expect(email.subject).toBe("Depot rejected its API token (<Acme>)");
     expect(email.text).toContain("https://app.example/settings/providers");
     expect(email.html).not.toContain("<Acme>");
+    const reminder = renderIntegrationProblemEmail({
+      kind: "telemetry-paused",
+      workspace: "Acme",
+      dashboardUrl: "https://app.example",
+      reminder: true,
+    });
+    expect(reminder.subject).toBe("Reminder: Your telemetry export paused (Acme)");
   });
 
   it("price check lists changes and unreadable pages", () => {

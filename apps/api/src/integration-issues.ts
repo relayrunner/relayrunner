@@ -3,8 +3,9 @@
  * App suspended on GitHub, GitHub refusing billing reads, a provider rejecting its API token, or a
  * telemetry export or log bucket that paused after days of failed sends. The hourly cron reads them
  * from the rows that already record each failure and keeps one health issue per problem
- * (src/health-issues.ts), so each is told once when it starts: to the workspace's owners and admins
- * by email, and to operators in Slack.
+ * (src/health-issues.ts). The health alert sweep then tells each one on its schedule (first alert,
+ * two reminders over a week, then quiet): to the workspace's owners and admins by email, and to
+ * operators in Slack.
  */
 import { and, eq, inArray, isNotNull, isNull } from "drizzle-orm";
 import type { WorkspaceProblem } from "@relayrunner/email";
@@ -13,7 +14,7 @@ import { type Db, schema } from "./db/index.ts";
 import { sendEmail } from "./email.ts";
 import type { Env } from "./env.ts";
 import { installationSettingsUrl } from "./github.ts";
-import { recordOutcomes } from "./health-issues.ts";
+import { type HealthAlert, recordOutcomes } from "./health-issues.ts";
 import { MANAGER_ROLES } from "./roles.ts";
 
 /** A problem, its health issue key, and what operators read about it. */
@@ -96,10 +97,7 @@ export async function findIntegrationProblems(db: Db): Promise<IntegrationProble
   ];
 }
 
-/**
- * The hourly check: opens an issue for each new problem, emails the workspace's owners and admins
- * about it, and clears issues whose problem is gone.
- */
+/** The hourly check: opens an issue for each new problem and clears issues whose problem is gone. */
 export async function checkIntegrations(env: Env, db: Db, now = new Date()) {
   const [problems, open] = await Promise.all([
     findIntegrationProblems(db),
@@ -122,11 +120,27 @@ export async function checkIntegrations(env: Env, db: Db, now = new Date()) {
     ],
     now,
   );
-  await Promise.all(started.map((problem) => emailWorkspaceAdmins(env, db, problem)));
   return problems.length;
 }
 
-async function emailWorkspaceAdmins(env: Env, db: Db, problem: IntegrationProblem) {
+/**
+ * Emails the owners and admins of each workspace whose integration alert is due (from
+ * sendHealthAlerts), re-reading each problem for what the email links to.
+ */
+export async function emailWorkspaceAdmins(env: Env, db: Db, alerts: HealthAlert[]) {
+  const due = new Map(
+    alerts
+      .filter((alert) => alert.kind === "integration" && alert.state === "failing")
+      .map((alert) => [alert.key, alert.reminder]),
+  );
+  if (!due.size) return;
+  const problems = (await findIntegrationProblems(db)).filter((problem) => due.has(problem.key));
+  await Promise.all(
+    problems.map((problem) => emailProblem(env, db, problem, due.get(problem.key) ?? false)),
+  );
+}
+
+async function emailProblem(env: Env, db: Db, problem: IntegrationProblem, reminder: boolean) {
   const admins = await db
     .select({ userId: schema.user.id, email: schema.user.email, workspace: w.name })
     .from(schema.workspaceMember)
@@ -145,7 +159,7 @@ async function emailWorkspaceAdmins(env: Env, db: Db, problem: IntegrationProble
         to: email,
         userId,
         template: "integration-problem",
-        context: { ...context, workspace },
+        context: { ...context, workspace, reminder },
       }),
     ),
   );

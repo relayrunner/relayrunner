@@ -5,6 +5,7 @@ CREATE TABLE `health_issue` (
 	`failures` integer NOT NULL,
 	`first_failed_at` integer NOT NULL,
 	`cleared_at` integer,
+	`alerts` integer DEFAULT 0 NOT NULL,
 	`alerted_at` integer
 );
 --> statement-breakpoint

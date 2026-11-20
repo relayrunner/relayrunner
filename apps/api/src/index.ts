@@ -14,7 +14,7 @@ import { purgeExpiredAiAnswers, purgeOldActivity } from "./retention.ts";
 import { purgeOldWorkflowRuns } from "./runs.ts";
 import { releasesToken, syncRunnerReleases } from "./runner-releases.ts";
 import { runCronTasks, sendHealthAlerts } from "./health-issues.ts";
-import { checkIntegrations } from "./integration-issues.ts";
+import { checkIntegrations, emailWorkspaceAdmins } from "./integration-issues.ts";
 import { sweepPicks } from "./pick-sweep.ts";
 import { enqueueSignalRollups } from "./signals.ts";
 import { sweepProviderHealth } from "./provider-health.ts";
@@ -81,7 +81,9 @@ export default {
           sendOperatorPings: sendOperatorPings(env, at),
           sendProductEvents: sendProductEvents(env, at),
           sweepProviderHealth: sweepProviderHealth(env, at.getTime()),
-          sendHealthAlerts: sendHealthAlerts(env, at),
+          sendHealthAlerts: sendHealthAlerts(env, at).then((alerts) =>
+            emailWorkspaceAdmins(env, db, alerts),
+          ),
         }
       : controller.cron === PRICE_CRON
         ? { checkPrices: checkPrices(env, at) }

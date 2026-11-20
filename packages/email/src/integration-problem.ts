@@ -10,18 +10,18 @@ export type WorkspaceProblem =
 
 /** To a workspace's owners and admins when one of its integrations stops working. */
 export function renderIntegrationProblemEmail(
-  ctx: WorkspaceProblem & { workspace: string; dashboardUrl: string },
+  ctx: WorkspaceProblem & { workspace: string; dashboardUrl: string; reminder?: boolean },
 ): RenderedEmail {
   const { title, body, url, label } = copy(ctx);
   return renderEmailCard({
-    subject: `${title} (${ctx.workspace})`,
+    subject: `${ctx.reminder ? "Reminder: " : ""}${title} (${ctx.workspace})`,
     preheader: body,
     eyebrow: ctx.workspace,
     title,
     bodyHtml: escapeHtml(body),
     text: [body, "", `${label}: ${url}`].join("\n"),
     cta: { url, label: `${label} →` },
-    footNoteHtml: `You're an owner or admin of ${escapeHtml(ctx.workspace)} on RelayRunner. Turn these emails off in Account settings › Email.`,
+    footNoteHtml: `You're an owner or admin of ${escapeHtml(ctx.workspace)} on RelayRunner. While it stays broken we remind you at most twice. Turn these emails off in Account settings › Email.`,
   });
 }
 

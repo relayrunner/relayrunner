@@ -22,26 +22,31 @@ async function setup(key: string, kind: HealthIssueKind) {
   };
 }
 
-test("a cron task alerts on its third failure in a row, daily while open, and once when it clears", async () => {
+test("a cron task alerts on its third failure, reminds twice over a week, and once when it clears", async () => {
   const { db, fail, pass } = await setup("cron:sync", "cron");
   await fail(0, new Error("Status 403."));
   await fail(1, new Error("Status 403."));
   expect(await takeHealthAlerts(db, at(1))).toEqual([]);
   await fail(2, new Error("Status 403."));
   const [alert] = await takeHealthAlerts(db, at(2));
-  expect(alert).toMatchObject({ key: "cron:sync", state: "failing", failures: 3, since: at(0) });
+  expect(alert).toMatchObject({ key: "cron:sync", state: "failing", reminder: false, failures: 3 });
   expect(alertLine(alert!)).toBe(
     `cron:sync failed 3 times in a row since ${at(0).toISOString()}: Status 403.`,
   );
-  // Told already: quiet until a day has passed.
+  // First reminder 2 days on, the last 4 days after that, then nothing however long it stays broken.
   await fail(3);
-  expect(await takeHealthAlerts(db, at(3))).toEqual([]);
-  await fail(27);
-  expect(await takeHealthAlerts(db, at(27))).toMatchObject([{ failures: 5 }]);
-  await pass(28);
-  expect(await takeHealthAlerts(db, at(28))).toMatchObject([{ state: "cleared" }]);
+  expect(await takeHealthAlerts(db, at(49))).toEqual([]);
+  const [reminder] = await takeHealthAlerts(db, at(50));
+  expect(reminder).toMatchObject({ reminder: true, failures: 4 });
+  expect(alertLine(reminder!)).toMatch(/^Still broken: cron:sync failed 4 times/);
+  expect(await takeHealthAlerts(db, at(50 + 95))).toEqual([]);
+  expect(await takeHealthAlerts(db, at(50 + 96))).toMatchObject([{ reminder: true }]);
+  await fail(200);
+  expect(await takeHealthAlerts(db, at(1000))).toEqual([]);
+  await pass(1001);
+  expect(await takeHealthAlerts(db, at(1001))).toMatchObject([{ state: "cleared" }]);
   // Cleared and told: gone.
-  expect(await takeHealthAlerts(db, at(29))).toEqual([]);
+  expect(await takeHealthAlerts(db, at(1002))).toEqual([]);
 });
 
 test("a failure that clears before its threshold stays quiet and starts over", async () => {
@@ -54,16 +59,17 @@ test("a failure that clears before its threshold stays quiet and starts over", a
   expect(await takeHealthAlerts(db, at(4))).toMatchObject([{ failures: 4, since: at(3) }]);
 });
 
-test("an integration is told once, and again if it breaks after clearing", async () => {
+test("an integration is told at once, and from the start again if it breaks after clearing", async () => {
   const { db, fail, pass } = await setup("integration:app-suspended:w", "integration");
   await fail(0, "the App is suspended on GitHub");
   expect(await takeHealthAlerts(db, at(0))).toMatchObject([{ state: "failing" }]);
-  await fail(30);
-  expect(await takeHealthAlerts(db, at(30))).toEqual([]);
-  // Cleared and broken again before the cron told it cleared: a new run, told again.
-  await pass(31);
-  await fail(31);
-  expect(await takeHealthAlerts(db, at(31))).toMatchObject([{ state: "failing", failures: 1 }]);
+  expect(await takeHealthAlerts(db, at(48))).toMatchObject([{ reminder: true }]);
+  // Cleared and broken again before the cron told it cleared: a new run, told as new.
+  await pass(49);
+  await fail(49);
+  expect(await takeHealthAlerts(db, at(49))).toMatchObject([
+    { state: "failing", reminder: false, failures: 1 },
+  ]);
 });
 
 test("cron tasks each record their own outcome and the first failure still throws", async () => {

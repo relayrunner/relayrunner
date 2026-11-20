@@ -1746,7 +1746,7 @@ export const jobType = sqliteTable(
 // Something that keeps failing and that someone should hear about (src/health-issues.ts): a cron
 // task, an installation's queued task, or a workspace's broken integration. One row per
 // thing, by `key`. It opens on a failure and clears on the next success; alerts go out when it
-// passes its threshold and again when it clears, at most once a day while it stays open.
+// passes its threshold, twice more over the next week while it stays open, and when it clears.
 export const healthIssue = sqliteTable(
   "health_issue",
   {
@@ -1762,7 +1762,9 @@ export const healthIssue = sqliteTable(
     firstFailedAt: integer("first_failed_at", { mode: "timestamp_ms" }).notNull(),
     // Set by the first success after failures; the row is deleted once that's been told.
     clearedAt: integer("cleared_at", { mode: "timestamp_ms" }),
-    // When operators were last told it's failing. Null until it passed its threshold.
+    // How many times this run of failures was told, and when last. Null until it passed its
+    // threshold.
+    alerts: integer("alerts").notNull().default(0),
     alertedAt: integer("alerted_at", { mode: "timestamp_ms" }),
   },
   (table) => [index("health_issue_kind_idx").on(table.kind)],

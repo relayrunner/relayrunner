@@ -54,7 +54,7 @@ export type EmailArgs = (
   | {
       to: string;
       template: "integration-problem";
-      context: WorkspaceProblem & { workspace: string };
+      context: WorkspaceProblem & { workspace: string; reminder: boolean };
     }
   | {
       to: string;
