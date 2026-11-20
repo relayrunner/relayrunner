@@ -1,5 +1,5 @@
 import { describe, expect, test } from "vitest";
-import { hasTrend, parseWindow, withPrior } from "./report-window.ts";
+import { chartBuckets, hasTrend, parseWindow, withPrior } from "./report-window.ts";
 import { DAY_MS } from "./time.ts";
 
 const now = Date.parse("2026-11-20T12:00:00Z");
@@ -71,5 +71,29 @@ describe("withPrior", () => {
     expect(hasTrend(last(30), now)).toBe(true);
     expect(hasTrend(last(31), now)).toBe(true);
     expect(hasTrend(last(32), now)).toBe(false);
+  });
+});
+
+describe("chartBuckets", () => {
+  const from = Date.parse("2026-11-01T00:00:00Z");
+  const window = { from, to: from + 20 * DAY_MS };
+
+  test("bars a day at a time up to a month, from the reader's midnight", () => {
+    expect(chartBuckets(window, String(from - 3_600_000))).toEqual({
+      bucketMs: DAY_MS,
+      origin: from - 3_600_000,
+    });
+  });
+
+  test("bars a week at a time when asked, from the start of the reader's week", () => {
+    const monday = from - 5 * DAY_MS;
+    expect(chartBuckets(window, String(monday), "week")).toEqual({
+      bucketMs: 7 * DAY_MS,
+      origin: monday,
+    });
+  });
+
+  test("ignores an origin more than a bar before the window", () => {
+    expect(chartBuckets(window, String(from - 2 * DAY_MS)).origin).toBe(from);
   });
 });

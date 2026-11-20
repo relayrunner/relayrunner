@@ -2,10 +2,12 @@
 // model's job types (apps/api/src/ai/job-type.ts). A share bar and table for the window, and the
 // minutes on each day stacked by type.
 import { Link } from "@tanstack/react-router";
-import { ArrowDownIcon, ArrowUpIcon, ChevronRightIcon } from "lucide-react";
+import { ChevronRightIcon } from "lucide-react";
 import { Fragment, useEffect, useMemo, useState } from "react";
+import { Change } from "@/components/change";
 import { Count } from "@/components/count";
-import { ChartTip, TipRow, topRounded, useWidth } from "@/components/chart-parts";
+import { TipRow } from "@/components/chart-parts";
+import { Legend, StackedBars, Swatch } from "@/components/stacked-bars";
 import { TypePhases } from "@/components/job-phases";
 import { WorkflowLink } from "@/components/workflow-link";
 import { authDisabled } from "@/lib/auth-client";
@@ -23,9 +25,8 @@ import {
   type TypeSummary,
   type TypeTotal,
 } from "@/lib/job-types";
-import { shortDate, zoneFormat } from "@/lib/time-zone";
 import { rangeDays, rangePhrase, type TimeRange, trendPhrase } from "@/lib/time-range";
-import { cn, count, percent } from "@/lib/utils";
+import { cn, percent } from "@/lib/utils";
 
 const load = (range: TimeRange) =>
   authDisabled ? Promise.resolve(sampleJobTypeTimes(rangeDays(range))) : getJobTypeTimes(range);
@@ -50,16 +51,6 @@ const HATCH = "job-type-hatch";
 const NUMBER = "px-2 text-right tabular-nums";
 const PHONE_HIDDEN = "hidden sm:table-cell";
 const HEAD = "px-2 py-1.5 text-right font-medium";
-
-function Swatch({ type, className }: { type: TypeKey; className?: string }) {
-  return (
-    <span
-      aria-hidden
-      className={cn("inline-block size-2.5 shrink-0 rounded-[3px]", className)}
-      style={{ background: fill(type) }}
-    />
-  );
-}
 
 export function JobTypes({ range, repository }: { range: TimeRange; repository: string }) {
   const [report, setReport] = useState<JobTypeTimes | null>(null);
@@ -191,7 +182,7 @@ function Shares({
                           expanded && "rotate-90",
                         )}
                       />
-                      <Swatch type={type.key} />
+                      <Swatch color={fill(type.key)} />
                       {typeLabel(type.key)}
                     </button>
                   </td>
@@ -203,7 +194,7 @@ function Shares({
                   <td className={cn(cell, PHONE_HIDDEN)}>{perJob(type.ms, type.runs)}</td>
                   {compare && (
                     <td className="py-2 pl-2 text-right whitespace-nowrap text-muted-foreground tabular-nums">
-                      <Change total={type} />
+                      <Change value={change(type)} />
                     </td>
                   )}
                 </tr>
@@ -214,19 +205,6 @@ function Shares({
         </tbody>
       </table>
     </section>
-  );
-}
-
-function Change({ total }: { total: TypeTotal }) {
-  const value = change(total);
-  if (value === null) return "–";
-  if (value === 0) return "0%";
-  const Icon = value > 0 ? ArrowUpIcon : ArrowDownIcon;
-  return (
-    <span className="inline-flex items-center gap-0.5">
-      <Icon aria-label={value > 0 ? "Up" : "Down"} className="size-3.5" />
-      {Math.abs(value)}%
-    </span>
   );
 }
 
@@ -283,161 +261,54 @@ function JobName({ job }: { job: JobTypeTime }) {
   );
 }
 
-const HEIGHT = 200;
-const PAD = { top: 10, right: 0, bottom: 22, left: 40 };
-// Half a date label's width, about.
-const EDGE = 18;
-const TIP_LABEL: Intl.DateTimeFormatOptions = { weekday: "short", month: "short", day: "numeric" };
-
-type Day = TypeSummary["days"][number];
-
-// 1, 2, 5, 10, 20, 50, ... so the axis lands on round numbers with about three steps.
-function roundStep(max: number) {
-  for (let scale = 1; ; scale *= 10)
-    for (const step of [1, 2, 5]) if (step * scale * 3 >= max) return step * scale;
-}
-
 /** Minutes on each day of the window, stacked by type. */
 function Daily({ summary }: { summary: TypeSummary }) {
-  const [ref, width] = useWidth<HTMLDivElement>();
-  // The day under the pointer, by index.
-  const [hover, setHover] = useState<number | null>(null);
-  const hovered = hover === null ? undefined : summary.days[hover];
-  const keys = summary.types.map((type) => type.key);
-  const maxMinutes = Math.max(...summary.days.map((day) => day.total), 60_000) / 60_000;
-  const step = roundStep(maxMinutes);
-  const top = Math.ceil((maxMinutes * 1.05) / step) * step;
-  const plotHeight = HEIGHT - PAD.top - PAD.bottom;
-  const y = (minutes: number) => PAD.top + (1 - minutes / top) * plotHeight;
-  const ticks = Array.from({ length: Math.round(top / step) + 1 }, (_, i) => i * step);
-  const slot = width ? (width - PAD.left - PAD.right) / summary.days.length : 0;
-  const barWidth = Math.max(Math.min(slot - Math.min(4, slot / 4), 28), 1);
-  // About one date label per 70px.
-  const labelEvery = Math.max(1, Math.ceil(70 / Math.max(slot, 1)));
-  // Labels and the tooltip read midday, so a daylight saving change doesn't move the date.
-  const noon = (day: Day) => day.start + DAY_MS / 2;
-
+  const series = useMemo(
+    () =>
+      summary.types.map((type) => ({
+        key: type.key,
+        label: typeLabel(type.key),
+        color: svgFill(type.key),
+        swatch: fill(type.key),
+      })),
+    [summary],
+  );
+  const buckets = useMemo(
+    () =>
+      summary.days.map((day) => ({
+        start: day.start,
+        values: Object.fromEntries(
+          Object.entries(day.ms).map(([key, ms]) => [key, (ms ?? 0) / 60_000]),
+        ),
+      })),
+    [summary],
+  );
   return (
-    <section className="rounded-xl border bg-card p-4 sm:p-5">
-      <h2 className="text-sm font-semibold">Minutes per day</h2>
-      <p className="mb-3 text-sm text-muted-foreground">Stacked by type.</p>
-      <div ref={ref} className="relative">
-        {width > 0 && (
-          <svg
-            width={width}
-            height={HEIGHT}
-            role="img"
-            aria-label="Run minutes on each day, stacked by job type"
-            className="block"
-            onPointerLeave={(event) => event.pointerType !== "touch" && setHover(null)}
+    <section className="grid gap-3 rounded-xl border bg-card p-4 sm:p-5">
+      <div>
+        <h2 className="text-sm font-semibold">Minutes per day</h2>
+        <p className="text-sm text-muted-foreground">Stacked by type.</p>
+      </div>
+      <StackedBars
+        buckets={buckets}
+        bucketMs={DAY_MS}
+        series={series}
+        format={(minutes) => `${minutesText(minutes * 60_000)} min`}
+        label="Run minutes on each day, stacked by job type"
+        footer={(_, total) => <TipRow label="Total" value={`${minutesText(total * 60_000)} min`} />}
+        defs={
+          <pattern
+            id={HATCH}
+            width={5}
+            height={5}
+            patternUnits="userSpaceOnUse"
+            patternTransform="rotate(45)"
           >
-            {ticks.map((tick) => (
-              <g key={tick}>
-                <line
-                  x1={PAD.left}
-                  x2={width - PAD.right}
-                  y1={y(tick)}
-                  y2={y(tick)}
-                  stroke="var(--border)"
-                  strokeWidth={1}
-                />
-                <text
-                  x={PAD.left - 8}
-                  y={y(tick) + 3.5}
-                  textAnchor="end"
-                  className="fill-muted-foreground text-[10px] tabular-nums"
-                >
-                  {count(tick)}
-                </text>
-              </g>
-            ))}
-            {summary.days.map((day, i) => {
-              const x = PAD.left + i * slot;
-              let below = 0;
-              const total = day.total / 60_000;
-              return (
-                <g
-                  key={day.start}
-                  onPointerEnter={() => setHover(i)}
-                  onPointerDown={() => setHover(i)}
-                >
-                  {/* The whole column is the hover target, not just the bar. */}
-                  <rect
-                    x={x}
-                    y={PAD.top}
-                    width={slot}
-                    height={plotHeight}
-                    fill={hover === i ? "var(--foreground)" : "transparent"}
-                    fillOpacity={0.05}
-                  />
-                  {keys.map((key) => {
-                    const minutes = (day.ms[key] ?? 0) / 60_000;
-                    if (!minutes) return null;
-                    // A 2px gap between stacked segments; the top one gets rounded corners.
-                    const gap = below ? 2 : 0;
-                    const base = y(below) - gap;
-                    below += minutes;
-                    const d = topRounded(
-                      x + (slot - barWidth) / 2,
-                      base,
-                      barWidth,
-                      Math.max(base - y(below), 1),
-                      below >= total - 1e-9 ? 2 : 0,
-                    );
-                    return <path key={key} d={d} fill={svgFill(key)} />;
-                  })}
-                  {(summary.days.length - 1 - i) % labelEvery === 0 && (
-                    <text
-                      // A label too close to the edge ends there, so it isn't cut off.
-                      x={Math.min(x + slot / 2, width - PAD.right - EDGE)}
-                      y={HEIGHT - 6}
-                      textAnchor="middle"
-                      className="fill-muted-foreground text-[10px]"
-                    >
-                      {shortDate(noon(day))}
-                    </text>
-                  )}
-                </g>
-              );
-            })}
-            <defs>
-              <pattern
-                id={HATCH}
-                width={5}
-                height={5}
-                patternUnits="userSpaceOnUse"
-                patternTransform="rotate(45)"
-              >
-                <rect width={2} height={5} fill={typeColor("none")} />
-              </pattern>
-            </defs>
-          </svg>
-        )}
-        {hover !== null && hovered && (
-          <ChartTip x={PAD.left + (hover + 0.5) * slot} y={PAD.top} width={width}>
-            <p className="font-medium">{zoneFormat(TIP_LABEL).format(noon(hovered))}</p>
-            {keys.map((key) =>
-              hovered.ms[key] ? (
-                <TipRow
-                  key={key}
-                  mark={<Swatch type={key} className="size-2" />}
-                  label={typeLabel(key)}
-                  value={`${minutesText(hovered.ms[key])} min`}
-                />
-              ) : null,
-            )}
-            <TipRow label="Total" value={`${minutesText(hovered.total)} min`} />
-          </ChartTip>
-        )}
-      </div>
-      <div className="mt-3 flex flex-wrap gap-x-4 gap-y-1 text-xs text-muted-foreground">
-        {keys.map((key) => (
-          <span key={key} className="inline-flex items-center gap-1.5">
-            <Swatch type={key} />
-            {typeLabel(key)}
-          </span>
-        ))}
-      </div>
+            <rect width={2} height={5} fill={typeColor("none")} />
+          </pattern>
+        }
+      />
+      <Legend series={series} />
     </section>
   );
 }

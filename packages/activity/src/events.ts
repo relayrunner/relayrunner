@@ -81,6 +81,30 @@ export const SKIP_REASONS = [
 ] as const;
 export type SkipReason = (typeof SKIP_REASONS)[number];
 
+/**
+ * Why a skip moved a run further down the order than it would usually go, for the Router page's
+ * routing outcomes, or null for a skip that only says how the job is set up (a step it didn't set
+ * up, a public repo), which happens to every run of that job.
+ */
+export type MoveReason = "machines" | "limit" | "unhealthy";
+export const MOVE_REASONS: Record<SkipReason, MoveReason | null> = {
+  not_configured: null,
+  public_repo: null,
+  personal_account: null,
+  no_machine: "machines",
+  machine_paused: "machines",
+  machine_full: "machines",
+  machine_not_shared: null,
+  github_rate_limited: "machines",
+  too_many_labels: null,
+  not_provider_label: null,
+  minutes_limit: "limit",
+  minutes_runway: "limit",
+  provider_unhealthy: "unhealthy",
+  spend_limit: "limit",
+  no_size: null,
+};
+
 // Why RelayRunner retried a job: its runner failed it, not its own steps.
 export const RETRY_KINDS = [
   // The job ended in GitHub's "Set up job": its runner never got its steps going.

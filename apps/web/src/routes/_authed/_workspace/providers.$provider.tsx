@@ -20,6 +20,8 @@ import { isKnownProvider, providerInfo } from "@/lib/provider-catalog";
 import {
   costText,
   getProviderReport,
+  type ProviderCounts,
+  quickShare,
   PROVIDER_DEFAULT_RANGE,
   PROVIDER_RANGES,
   type ProviderReport,
@@ -256,6 +258,32 @@ function costNote({ provider, unpricedJobs }: ProviderReport) {
   return "";
 }
 
+const quickText = (counts: ProviderCounts) => {
+  const share = quickShare(counts);
+  return share === null ? null : `${Math.floor(share * 100)}% within a minute`;
+};
+
+function waitDetail(report: ProviderReport) {
+  const quick = quickText(report);
+  return quick ? `Median · ${quick}` : "Median, queued to started";
+}
+
+// Failed jobs, and how many of them the runner failed before any step ran.
+function failedDetail({ failures, runnerFailures }: ProviderCounts) {
+  const jobs = plural(failures, "job");
+  return runnerFailures > 0 ? `${jobs} · ${runnerFailures} before a step ran` : jobs;
+}
+
+/** A table cell's value with a muted line under it, when there is one. */
+function TwoLines({ value, detail }: { value: string; detail: string | null }) {
+  return (
+    <span className="grid">
+      <span>{value}</span>
+      {detail && <span className="text-xs text-muted-foreground">{detail}</span>}
+    </span>
+  );
+}
+
 function Totals({ report }: { report: ProviderReport }) {
   const { jobs, failures, billedMinutes, stat } = report;
   return (
@@ -272,8 +300,8 @@ function Totals({ report }: { report: ProviderReport }) {
         value={medianText(stat)}
         detail={stat.p90Ms === null ? "Median of successful jobs" : `Median · ${p90Text(stat)}`}
       />
-      <StatTile label="Queue wait" value={clock(stat.waitMs)} detail="Median, queued to started" />
-      <StatTile label="Failed" value={percent(failures, jobs)} detail={plural(failures, "job")} />
+      <StatTile label="Queue wait" value={clock(stat.waitMs)} detail={waitDetail(report)} />
+      <StatTile label="Failed" value={percent(failures, jobs)} detail={failedDetail(report)} />
     </div>
   );
 }
@@ -304,6 +332,15 @@ const runnerColumns = runnerColumn.columns([
       <span title={p90Text(row.original.stat)}>{medianText(row.original.stat)}</span>
     ),
   }),
+  runnerColumn.accessor((runner) => runner.stat.waitMs ?? undefined, {
+    id: "wait",
+    header: "Queue wait",
+    sortFn: "basic",
+    meta: { ...NUM, hideOnPhone: true },
+    cell: ({ row }) => (
+      <TwoLines value={clock(row.original.stat.waitMs)} detail={quickText(row.original)} />
+    ),
+  }),
   runnerColumn.accessor((runner) => runner.perMinute ?? undefined, {
     id: "rate",
     header: "Rate",
@@ -324,7 +361,12 @@ const runnerColumns = runnerColumn.columns([
     sortFn: "basic",
     sortDescFirst: true,
     meta: { ...NUM, hideOnPhone: true },
-    cell: ({ row }) => percent(row.original.failures, row.original.jobs),
+    cell: ({ row: { original: runner } }) => (
+      <TwoLines
+        value={percent(runner.failures, runner.jobs)}
+        detail={runner.runnerFailures > 0 ? `${runner.runnerFailures} before a step ran` : null}
+      />
+    ),
   }),
 ]);
 

@@ -23,6 +23,9 @@ import { present } from "./github.ts";
 import { AppError } from "@relayrunner/errors";
 import { annotate } from "../tracing.ts";
 import { routerSetup } from "../router-setup.ts";
+import { routeOutcomes } from "../route-outcomes.ts";
+import { chartBuckets, requireWindow } from "../report-window.ts";
+import { RAW_RETENTION_DAYS } from "../time.ts";
 import { runnerGroupCheck } from "../runner-group-check.ts";
 import { inWorkspace as installedIn } from "../job-times.ts";
 import { changeActor, changeSetting } from "../changes.ts";
@@ -327,6 +330,14 @@ export const workspaceRoutes = new Hono<AppEnv>()
       c.env.ROUTER.getByName(id).unhealthy(),
     ]);
     return c.json({ enabled: row?.enabled ?? true, unhealthy });
+  })
+  // The Router page's routing outcomes over ?from=&to= (src/route-outcomes.ts), a day at a time
+  // from ?origin= (the reader's midnight), or a week at a time past a month.
+  .get("/:id/route-outcomes", requireUser, requireMember, async (c) => {
+    const query = c.req.query();
+    const window = requireWindow(query, { maxDays: RAW_RETENTION_DAYS, defaultDays: 7 });
+    const buckets = chartBuckets(window, query.origin);
+    return c.json(await routeOutcomes(c.var.db, c.req.param("id"), window, buckets));
   })
   // Turns skipping on or off. Owners and admins, like the order.
   .put("/:id/provider-health", requireUser, requireMember, requireManager, async (c) => {
