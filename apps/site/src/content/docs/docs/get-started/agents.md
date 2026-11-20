@@ -34,7 +34,7 @@ The [setup guide](/setup.md) is plain Markdown written for agents. It tells the 
 1. Check the machine is supported and install the CLI.
 2. Sign the machine in with `relayrunner login`. You approve it in the browser.
 3. Run `relayrunner init --plan --json` and go over which jobs can be routed, and why some are skipped.
-4. Route the jobs you pick with `relayrunner init --apply`, then show you `git diff`. It doesn't commit or push unless you ask.
+4. Route the jobs you pick with `relayrunner init --apply`, show you `git diff`, and offer to open a PR. It doesn't commit or push until you say yes.
 5. Put the machine online with `relayrunner connect`, ideally in your own terminal so it keeps running after the agent's session ends.
 
 Every CLI command the agent uses has a `--json` flag, and every step is safe to retry.

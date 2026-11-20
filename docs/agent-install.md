@@ -22,10 +22,11 @@ changing any file.
    https://raw.githubusercontent.com/relayrunner/relayrunner/main/skills/relayrunner-route-jobs/SKILL.md
    from Plan to Apply. For skipped jobs, it links to
    https://raw.githubusercontent.com/relayrunner/relayrunner/main/skills/relayrunner-route-jobs/references/skipped-jobs.md
-3. **Show the diff.** Run `git diff`, say what each change does, and leave committing and pushing
-   to the user unless they ask.
+3. **Show the diff and open a PR.** Run `git diff`, say what each change does, then follow the
+   Open a PR section of the second skill: offer a PR, and commit and push only when the user says
+   yes.
 4. **Put this computer online.** Follow the Put the machine online section of the first skill.
    Recommend the user runs `relayrunner connect` in their own terminal so it keeps running after
    your session ends.
-5. **Confirm it works.** Follow the Confirm it works section of the second skill once the user
-   has pushed.
+5. **Confirm it works.** Follow the Confirm it works section of the second skill once the change
+   is pushed.
