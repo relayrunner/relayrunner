@@ -40,6 +40,14 @@ export function setOnSessionChange(listener: typeof onChange) {
   onChange = listener;
 }
 
+/**
+ * Whether a route match is a page under the workspace layout. A workspace switch reloads only
+ * these as pending: forcing the layouts pending too would swap the whole app, sidebar and all,
+ * for a page skeleton.
+ */
+export const isWorkspacePage = (match: { routeId: string }) =>
+  match.routeId.startsWith("/_authed/_workspace/");
+
 /** Drops both copies, so the guards read them fresh on the next navigation. */
 export function forgetSession() {
   session = undefined;

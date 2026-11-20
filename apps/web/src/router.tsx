@@ -1,7 +1,7 @@
 import { createRouter } from "@tanstack/react-router";
 import { RouteError } from "./components/error-boundary";
 import { PagePending } from "./components/page-pending";
-import { forgetSession, setOnSessionChange } from "./lib/session";
+import { forgetSession, isWorkspacePage, setOnSessionChange } from "./lib/session";
 import { routeTree } from "./routeTree.gen";
 
 // A `getRouter` factory is the shape TanStack Start expects in src/router.tsx,
@@ -35,7 +35,7 @@ export function getRouter() {
   setOnSessionChange((workspaceChanged) => {
     if (!workspaceChanged) return void invalidate();
     router.clearCache();
-    void invalidate({ forcePending: true });
+    void invalidate({ forcePending: true, filter: isWorkspacePage });
   });
 
   return router;

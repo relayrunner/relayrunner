@@ -11,7 +11,7 @@ import {
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import { authDisabled, organization, useListOrganizations } from "@/lib/auth-client";
-import { forgetSession, signOut } from "@/lib/session";
+import { forgetSession, isWorkspacePage, signOut } from "@/lib/session";
 import { githubInstallHref } from "@/lib/github";
 import { cn } from "@/lib/utils";
 
@@ -61,7 +61,7 @@ export function WorkspaceMenu({
       await router.navigate({ to: "/runners" });
       // Navigating to the page you're on doesn't load it again, so reload it in place. Forced
       // pending, the reload waits for the new data rather than showing the old while it loads.
-      if (onRunners) await router.invalidate({ forcePending: true });
+      if (onRunners) await router.invalidate({ forcePending: true, filter: isWorkspacePage });
     } finally {
       setSwitching(false);
     }
