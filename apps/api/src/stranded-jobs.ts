@@ -23,7 +23,9 @@ export const NO_MACHINE_GIVE_UP_MS = 5 * 60_000;
 // `not_routable`: a re-run job came back on its run's own `rr-<id>` label, but the Router can't
 // route it again (no earlier pick it can use, or no machine whose labels and sharing allow it), so
 // nothing would ever take it (src/webhook-queue.ts dispatchRoute).
-export type StrandedReason = "no_machine" | "runner_failed" | "not_routable";
+// `orphaned`: a job still queued on its run's own `rr-<id>` label that the Router no longer has in
+// hand, so nothing would ever take it (src/orphaned-jobs.ts, the */15 sweep).
+export type StrandedReason = "no_machine" | "runner_failed" | "not_routable" | "orphaned";
 
 // The error the ended job shows on its run. Retries read it back (strandedJob) as a runner failure:
 // a retry re-runs the run's relay, which picks a runner again, so it doesn't hit the same dead end.
@@ -33,6 +35,8 @@ export const STRANDED_MESSAGES: Record<StrandedReason, string> = {
   runner_failed: "This job's runner failed to start on the machines it was sent to.",
   not_routable:
     "RelayRunner couldn't route this job again. Re-run all jobs so the relay picks a runner.",
+  orphaned:
+    "RelayRunner lost track of this job before a runner took it. Re-run all jobs so the relay picks a runner.",
 };
 
 /** Whether GitHub's annotations on a job say it ended here because no runner could take it. */

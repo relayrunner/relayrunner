@@ -5,6 +5,7 @@ import { appInstallationToken, deleteRunner, listRunners, type RunnerScope } fro
 import { enqueueInstallationTasks } from "./installation-tasks.ts";
 import { pickJobIdFromRunnerName } from "./pick-attempts.ts";
 import { errorMessage } from "./errors.ts";
+import { sweepOrphanedJobs } from "./orphaned-jobs.ts";
 
 // A relay queued this long with no taker is rescued; one older than a day GitHub has given up on.
 export const STUCK_AFTER_MS = 5 * 60_000;
@@ -20,12 +21,15 @@ const RESCUE_BATCH = 50;
  * - a relay still queued after STUCK_AFTER_MS gets another runner, in case a deploy cut its runner
  *   off before it could start a replacement;
  * - pick runners still registered on GitHub after their run ended are removed. GitHub shows them
- *   idle and can hand them a job that nothing will ever take.
+ *   idle and can hand them a job that nothing will ever take;
+ * - routed jobs still queued on our `rr-<id>` label that the Router lost track of are ended, so
+ *   they don't sit queued for GitHub's 24 hours (src/orphaned-jobs.ts).
  */
 export async function sweepPicks(env: Env, now = Date.now()) {
   const results = await Promise.allSettled([
     rescueStuckRelays(env, now),
     removeLeftoverRunners(env, now),
+    sweepOrphanedJobs(env, now),
   ]);
   const failed = results.find((result) => result.status === "rejected");
   if (failed) throw failed.reason;

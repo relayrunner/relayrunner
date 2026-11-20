@@ -58,8 +58,9 @@ export default {
     return handleWebhookBatch(batch as MessageBatch<WebhookMessage>, env);
   },
   // Every 15 minutes: queue a read of each org's Actions usage from GitHub billing (#116), rescue
-  // stuck relay jobs, queue a sweep for leftover pick runners (src/pick-sweep.ts), check which
-  // hosted provider runner types stopped picking up jobs (src/provider-health.ts), and post the
+  // stuck relay jobs, queue a sweep for leftover pick runners, end routed jobs the Router lost
+  // track of (src/pick-sweep.ts), check which hosted provider runner types stopped picking up jobs
+  // (src/provider-health.ts), and post the
   // window's operator pings to Slack (src/operator-pings.ts) and its product events to PostHog
   // (src/product-events.ts). Hourly: alert when
   // webhook dead letters pile up, drop job timings, workflow runs and Activity rows past retention, reconcile

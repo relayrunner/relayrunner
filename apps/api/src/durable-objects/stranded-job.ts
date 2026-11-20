@@ -35,11 +35,12 @@ const WAIT_FOR_JOB_MS = 2 * 60_000;
 // as a one-job runner on the route's label: claims the job and fails it with the reason, so the
 // run finishes now instead of sitting queued for 24 hours, and automatic retries can pick again.
 export class StrandedJob extends DurableObject<Env> {
-  // Idempotent: the job is only ended once.
-  async start(work: StrandedWork): Promise<void> {
-    if (await this.ctx.storage.get("started")) return;
+  // Idempotent: the job is only ended once. True when this call started it.
+  async start(work: StrandedWork): Promise<boolean> {
+    if (await this.ctx.storage.get("started")) return false;
     await this.ctx.storage.put({ started: true, work });
     await this.ctx.storage.setAlarm(Date.now());
+    return true;
   }
 
   async alarm() {

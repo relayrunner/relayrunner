@@ -1185,6 +1185,26 @@ export class Router extends DurableObject<Env> {
   }
 
   /**
+   * Whether the Router still has `job` in hand on its `rr-<routeId>` label, for the orphaned job
+   * sweep (src/orphaned-jobs.ts): it waits in line for a machine slot (full machines are not stuck),
+   * or a live route was claimed by it or can still be. Reads storage only.
+   */
+  async holds(routeId: string, job: QueuedJob): Promise<boolean> {
+    const now = Date.now();
+    const [waiting, route] = await Promise.all([
+      this.ctx.storage.get<WaitingJob>(WAIT_KEY + routeId),
+      this.ctx.storage.get<Route>(ROUTE_KEY + routeId),
+    ]);
+    if (waiting && now - waiting.queuedAt <= ROUTE_TTL_MS && canClaim(waiting, job)) return true;
+    return (
+      !!route &&
+      route.state !== "done" &&
+      now - route.createdAt <= ROUTE_TTL_MS &&
+      canClaim(route, job)
+    );
+  }
+
+  /**
    * Stops a route holding its machine. MachineLink calls this when the machine reports in, and
    * gets back the job the route was claimed by.
    */

@@ -303,6 +303,42 @@ describe("Router: jobs wait for a full machine", () => {
     const routeId = (await router.route(job(1))).runner!.slice(3);
     expect(await router.claim(routeId, queued(2, 42))).toBeNull();
   });
+
+  test("holds a job waiting for a full machine, and a live route its job claimed", async () => {
+    vi.useFakeTimers({ toFake: ["Date"] });
+    try {
+      // Waiting for the full machine: still the Router's, before and after its queued webhook.
+      const waiting = (await router.route(job(1))).runner!.slice(3);
+      expect(await router.holds(waiting, queued(1, 42))).toBe(true);
+      await router.claim(waiting, queued(1, 42));
+      expect(await router.holds(waiting, queued(1, 42))).toBe(true);
+      // Not for another job of the run, or another run's.
+      expect(await router.holds(waiting, queued(1, 43))).toBe(false);
+      expect(await router.holds(waiting, queued(2, 42))).toBe(false);
+      await router.dropWaiting(waiting, queued(1, 42));
+      expect(await router.holds(waiting, queued(1, 42))).toBe(false);
+
+      running = 0;
+      const routed = (await router.route(job(3))).runner!.slice(3);
+      await router.claim(routed, queued(3, 44));
+      expect(await router.holds(routed, queued(3, 44))).toBe(true);
+      expect(await router.holds(routed, queued(3, 45))).toBe(false);
+      // Past a day the route is gone.
+      vi.advanceTimersByTime(25 * 60 * 60_000);
+      expect(await router.holds(routed, queued(3, 44))).toBe(false);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  test("doesn't hold a job whose route is done or unknown", async () => {
+    running = 0;
+    const routeId = (await router.route(job(1))).runner!.slice(3);
+    await router.claim(routeId, queued(1, 42));
+    await router.release(routeId);
+    expect(await router.holds(routeId, queued(1, 42))).toBe(false);
+    expect(await router.holds("0123456789ab", queued(1, 42))).toBe(false);
+  });
 });
 
 describe("Router: GitHub's API limit", () => {
