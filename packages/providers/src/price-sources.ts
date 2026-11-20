@@ -2,7 +2,7 @@
 // these once a day (apps/api/src/price-check.ts) and holds any change for an operator to approve.
 // Parsers return what they found and throw when the page no longer looks the way they expect, so
 // a redesign shows up as a failed check instead of a wrong price.
-import type { PricedProvider } from "./prices.ts";
+import { isRate, type PricedProvider } from "./prices.ts";
 
 /** A price read off a provider's page: USD a minute per vCPU or per runner, as RATES says. */
 export interface FoundPrice {
@@ -158,10 +158,22 @@ export const PRICE_SOURCES: PriceSource[] = [
     provider: "github",
     url: "https://docs.github.com/api/article/body?pathname=/en/billing/reference/actions-runner-pricing",
     page: "https://docs.github.com/en/billing/reference/actions-runner-pricing",
-    // The standard runners table, by billing SKU.
+    // The runner tables, by billing SKU. The standard runners must all be there; larger runners
+    // are read when their rows are (linux_8_core_arm is linux-arm-8-core).
     parse(md) {
       const sku = (rate: string, name: string) =>
         found(rate, priceCell(tableRow(md, (cell) => cell === `\`${name}\``)));
+      const larger = [
+        ...md.matchAll(/`((?:linux|windows)_(\d+)_core(_arm|_gpu)?|macos_xl|macos_l)`/g),
+      ]
+        .map(([cell, name, cores, kind]) => {
+          const rate = cores
+            ? `${name!.split("_")[0]}${kind === "_arm" ? "-arm" : ""}-${cores}-core${kind === "_gpu" ? "-gpu" : ""}`
+            : name!.replace("_", "-");
+          return { rate, cells: tableRow(md, (each) => each === cell) };
+        })
+        .filter(({ rate }) => isRate("github", rate) && !rate.endsWith("-2-core"))
+        .map(({ rate, cells }) => found(rate, priceCell(cells)));
       return [
         sku("linux-1-core", "actions_linux_slim"),
         sku("linux-2-core", "actions_linux"),
@@ -169,6 +181,7 @@ export const PRICE_SOURCES: PriceSource[] = [
         sku("windows-2-core", "actions_windows"),
         sku("windows-arm-2-core", "actions_windows_arm"),
         sku("macos", "actions_macos"),
+        ...larger,
       ];
     },
   },

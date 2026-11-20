@@ -91,6 +91,12 @@ const PAGES: Record<string, string> = {
     "| Windows 2-core (x64)   | `actions_windows`     | $0.010 |",
     "| Windows 2-core (arm64) | `actions_windows_arm` | $0.010 |",
     "| macOS 3-core or 4-core | `actions_macos`       | $0.062 |",
+    "| Linux 8-core          | `linux_8_core`          | $0.022 |",
+    "| Linux 2-core          | `linux_2_core_arm`      | $0.005 |",
+    "| Windows 2-core        | `windows_2_core_arm`    | $0.008 |",
+    "| Windows 16-core       | `windows_16_core_arm`   | $0.050 |",
+    "| Linux 4-core          | `linux_4_core_gpu`      | $0.052 |",
+    "| macOS 5-core (M2 Pro) | `macos_xl`              | $0.102 |",
   ].join("\n"),
 };
 
@@ -127,10 +133,20 @@ describe("price sources", () => {
       { rate: "boat-large", usd: 0.072 / 60 },
       { rate: "boat-xlarge", usd: 0.2 / 60 },
     ]);
-    expect(source("github").parse(PAGES.github!)).toContainEqual({
-      rate: "linux-2-core",
-      usd: 0.006,
-    });
+    const github = source("github").parse(PAGES.github!);
+    expect(github).toContainEqual({ rate: "linux-2-core", usd: 0.006 });
+    // Larger runners, by SKU; their 2-core rows don't replace the standard runners' prices.
+    expect(github).toEqual(
+      expect.arrayContaining([
+        { rate: "linux-8-core", usd: 0.022 },
+        { rate: "windows-arm-16-core", usd: 0.05 },
+        { rate: "linux-4-core-gpu", usd: 0.052 },
+        { rate: "macos-xl", usd: 0.102 },
+      ]),
+    );
+    expect(github.filter((p) => p.rate === "windows-arm-2-core")).toEqual([
+      { rate: "windows-arm-2-core", usd: 0.01 },
+    ]);
   });
 
   test("throw when a page no longer looks as expected", () => {

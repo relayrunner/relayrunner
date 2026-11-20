@@ -1,11 +1,13 @@
 import {
   BASE_BOOK,
+  type CatalogRow,
   githubRate,
   listRate,
   PRICES_CHECKED,
   type ProviderId,
   type RatePrices,
   ratePrices,
+  runnerCatalog,
   runnerSize,
 } from "@relayrunner/providers";
 import { api } from "@/lib/api";
@@ -39,6 +41,8 @@ export type ProviderReport = ProviderCounts & {
   workflows: ProviderWorkflow[];
   /** The provider's list prices, each with its history. Empty when it has none. */
   prices: RatePrices[];
+  /** Every runner the provider sells, by system. Missing from an API older than the field. */
+  catalog?: CatalogRow[];
 };
 
 export type ProviderSummary = ProviderCounts & {
@@ -97,7 +101,8 @@ function sampleRunner(
       : listRate(BASE_BOOK, provider, label);
   const size = runnerSize(provider, provider === "github" ? "linux-2-core" : label);
   return {
-    key: `${provider}:${label}`,
+    // The API keys GitHub runners by their rate.
+    key: `${provider}:${provider === "github" ? "linux-2-core" : label}`,
     label,
     detail,
     ...(size && { size }),
@@ -153,6 +158,7 @@ export function sampleProviderReport(provider: string, days: number): ProviderRe
     runners,
     workflows,
     prices: ratePrices(BASE_BOOK, provider),
+    catalog: runnerCatalog(BASE_BOOK, provider),
   };
 }
 

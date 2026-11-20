@@ -157,3 +157,35 @@ export function sampleActionsUsage(): ActionsUsage {
     ],
   };
 }
+
+const minutes = (n: number) => Math.round(n).toLocaleString("en-US");
+
+const DAY_MS = 86_400_000;
+
+/** When a billing cycle that started on `cycleStart` (a UTC day) resets: a month on. */
+function cycleEnd(cycleStart: string) {
+  const start = new Date(`${cycleStart.slice(0, 10)}T00:00:00Z`);
+  return Date.UTC(start.getUTCFullYear(), start.getUTCMonth() + 1, start.getUTCDate());
+}
+
+const dayText = (ms: number) =>
+  new Date(ms).toLocaleDateString("en-US", { month: "short", day: "numeric", timeZone: "UTC" });
+
+/**
+ * Where the month is headed at its pace so far: when the included minutes run out, or roughly what
+ * it will have used by the reset. Null when there's no quota or too little of the month to tell.
+ */
+export function paceText(usage: AccountUsage, now = Date.now()) {
+  const quota = usage.quotaMinutes;
+  if (usage.status !== "ok" || quota === null) return null;
+  const start = Date.parse(`${usage.cycleStart.slice(0, 10)}T00:00:00Z`);
+  const end = cycleEnd(usage.cycleStart);
+  const elapsed = now - start;
+  if (elapsed < DAY_MS || now >= end || usage.usedMinutes >= quota) return null;
+  const perMs = usage.usedMinutes / elapsed;
+  const projected = usage.usedMinutes + perMs * (end - now);
+  if (projected <= quota)
+    return `At this pace, about ${minutes(projected)} of ${minutes(quota)} min by ${dayText(end)}.`;
+  const runsOut = now + (quota - usage.usedMinutes) / perMs;
+  return `At this pace the included minutes run out around ${dayText(runsOut)}, before the ${dayText(end)} reset.`;
+}

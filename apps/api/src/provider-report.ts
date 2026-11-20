@@ -13,8 +13,10 @@ import {
   type PriceBook,
   PRICES_CHECKED,
   providerOfEnvironment,
+  type CatalogRow,
   type RatePrices,
   ratePrices,
+  runnerCatalog,
 } from "@relayrunner/providers";
 import { sql } from "drizzle-orm";
 import { type Db, schema } from "./db/index.ts";
@@ -78,6 +80,8 @@ export interface ProviderReport extends ProviderCounts {
   workflows: ProviderWorkflow[];
   /** The provider's list prices, each with its history. Empty when it has none. */
   prices: RatePrices[];
+  /** Every runner the provider sells, by system, at today's list price. Empty when unknown. */
+  catalog: CatalogRow[];
 }
 
 export interface ProviderSummary extends ProviderCounts {
@@ -302,6 +306,7 @@ export async function providerReport(
     runners: runnersOf(groups),
     workflows,
     prices: ratePrices(book, provider),
+    catalog: runnerCatalog(book, provider),
   };
 }
 

@@ -59,13 +59,47 @@ export const RATES = {
     "windows-2-core": "runner",
     "windows-arm-2-core": "runner",
     macos: "runner",
+    // Larger runners, for Team and Enterprise plans. Each is named by the org that makes it, so
+    // jobs can't be matched to one by label; these price the catalog on provider pages.
+    "linux-4-core": "runner",
+    "linux-8-core": "runner",
+    "linux-16-core": "runner",
+    "linux-32-core": "runner",
+    "linux-64-core": "runner",
+    "linux-96-core": "runner",
+    "linux-arm-4-core": "runner",
+    "linux-arm-8-core": "runner",
+    "linux-arm-16-core": "runner",
+    "linux-arm-32-core": "runner",
+    "linux-arm-64-core": "runner",
+    "windows-4-core": "runner",
+    "windows-8-core": "runner",
+    "windows-16-core": "runner",
+    "windows-32-core": "runner",
+    "windows-64-core": "runner",
+    "windows-96-core": "runner",
+    "windows-arm-4-core": "runner",
+    "windows-arm-8-core": "runner",
+    "windows-arm-16-core": "runner",
+    "windows-arm-32-core": "runner",
+    "windows-arm-64-core": "runner",
+    "linux-4-core-gpu": "runner",
+    "windows-4-core-gpu": "runner",
+    "macos-l": "runner",
+    "macos-xl": "runner",
   },
 } as const satisfies Partial<Record<ProviderId, Record<string, "vcpu" | "runner">>>;
 
 export type PricedProvider = keyof typeof RATES;
 
-/** GitHub's standard hosted runners, the ones it publishes a per-minute price for. */
-export type GitHubRunner = keyof (typeof RATES)["github"];
+/** GitHub's standard hosted runners, the ones jobs name by a fixed label. */
+export type GitHubRunner =
+  | "linux-1-core"
+  | "linux-2-core"
+  | "linux-arm-2-core"
+  | "windows-2-core"
+  | "windows-arm-2-core"
+  | "macos";
 
 /**
  * The `runs-on` label GitHub's docs give each standard runner, the name people know it by. Where
@@ -193,6 +227,33 @@ export const BASE_PRICES: PriceRow[] = [
   { provider: "github", rate: "windows-2-core", usd: 0.01, from: "2026-11-11" },
   { provider: "github", rate: "windows-arm-2-core", usd: 0.01, from: "2026-11-11" },
   { provider: "github", rate: "macos", usd: 0.062, from: "2026-11-11" },
+  // GitHub's larger runners, same page.
+  { provider: "github", rate: "linux-4-core", usd: 0.012, from: "2026-11-20" },
+  { provider: "github", rate: "linux-8-core", usd: 0.022, from: "2026-11-20" },
+  { provider: "github", rate: "linux-16-core", usd: 0.042, from: "2026-11-20" },
+  { provider: "github", rate: "linux-32-core", usd: 0.082, from: "2026-11-20" },
+  { provider: "github", rate: "linux-64-core", usd: 0.162, from: "2026-11-20" },
+  { provider: "github", rate: "linux-96-core", usd: 0.252, from: "2026-11-20" },
+  { provider: "github", rate: "linux-arm-4-core", usd: 0.008, from: "2026-11-20" },
+  { provider: "github", rate: "linux-arm-8-core", usd: 0.014, from: "2026-11-20" },
+  { provider: "github", rate: "linux-arm-16-core", usd: 0.026, from: "2026-11-20" },
+  { provider: "github", rate: "linux-arm-32-core", usd: 0.05, from: "2026-11-20" },
+  { provider: "github", rate: "linux-arm-64-core", usd: 0.098, from: "2026-11-20" },
+  { provider: "github", rate: "windows-4-core", usd: 0.022, from: "2026-11-20" },
+  { provider: "github", rate: "windows-8-core", usd: 0.042, from: "2026-11-20" },
+  { provider: "github", rate: "windows-16-core", usd: 0.082, from: "2026-11-20" },
+  { provider: "github", rate: "windows-32-core", usd: 0.162, from: "2026-11-20" },
+  { provider: "github", rate: "windows-64-core", usd: 0.322, from: "2026-11-20" },
+  { provider: "github", rate: "windows-96-core", usd: 0.552, from: "2026-11-20" },
+  { provider: "github", rate: "windows-arm-4-core", usd: 0.014, from: "2026-11-20" },
+  { provider: "github", rate: "windows-arm-8-core", usd: 0.026, from: "2026-11-20" },
+  { provider: "github", rate: "windows-arm-16-core", usd: 0.05, from: "2026-11-20" },
+  { provider: "github", rate: "windows-arm-32-core", usd: 0.098, from: "2026-11-20" },
+  { provider: "github", rate: "windows-arm-64-core", usd: 0.194, from: "2026-11-20" },
+  { provider: "github", rate: "linux-4-core-gpu", usd: 0.052, from: "2026-11-20" },
+  { provider: "github", rate: "windows-4-core-gpu", usd: 0.102, from: "2026-11-20" },
+  { provider: "github", rate: "macos-l", usd: 0.077, from: "2026-11-20" },
+  { provider: "github", rate: "macos-xl", usd: 0.102, from: "2026-11-20" },
 ];
 
 /** A UTC day (YYYY-MM-DD) as epoch ms at its midnight. */
@@ -255,6 +316,18 @@ const RATE_NAMES: Record<string, string> = {
   premium: "Premium",
   memory: "Memory-heavy",
   ...GITHUB_LABELS,
+  // GitHub's larger runners have no fixed label, so they go by size: "Linux Arm 8-core".
+  ...Object.fromEntries(
+    Object.keys(RATES.github).flatMap((rate) => {
+      const match = /^(linux|windows)(-arm)?-(\d+)-core(-gpu)?$/.exec(rate);
+      if (!match || Number(match[3]) < 4) return [];
+      const [, os, arm, cores, gpu] = match;
+      const system = `${os === "linux" ? "Linux" : "Windows"}${arm ? " Arm" : ""}${gpu ? " GPU" : ""}`;
+      return [[rate, `${system} ${cores}-core`]];
+    }),
+  ),
+  "macos-l": "macOS 12-core Intel",
+  "macos-xl": "macOS M2 Pro",
 };
 
 /** A rate as people say it, such as "Linux Arm" or `ubuntu-slim`. */
@@ -453,14 +526,27 @@ export interface RunnerSize {
   memoryGb?: number;
 }
 
-// GitHub's standard runners in a private repo, by the rate that names them. macOS isn't here: its
-// sizes differ by image (Intel, Apple silicon, large, xlarge).
+// GitHub's runners in a private repo, by the rate that names them. Standard macOS isn't here: its
+// size differs by image (Intel or Apple silicon).
 const GITHUB_SIZES: Partial<Record<string, RunnerSize>> = {
   "linux-1-core": { vcpus: 1, memoryGb: 5 },
   "linux-2-core": { vcpus: 2, memoryGb: 8 },
   "linux-arm-2-core": { vcpus: 2, memoryGb: 8 },
   "windows-2-core": { vcpus: 2, memoryGb: 8 },
   "windows-arm-2-core": { vcpus: 2, memoryGb: 8 },
+  "macos-l": { vcpus: 12, memoryGb: 30 },
+  "macos-xl": { vcpus: 5, memoryGb: 14 },
+  "linux-4-core-gpu": { vcpus: 4, memoryGb: 28 },
+  "windows-4-core-gpu": { vcpus: 4, memoryGb: 28 },
+  // Larger runners: 4 GB a core.
+  ...Object.fromEntries(
+    Object.keys(RATES.github).flatMap((rate) => {
+      const cores = /^(?:linux|windows)(?:-arm)?-(\d+)-core$/.exec(rate)?.[1];
+      return cores && Number(cores) >= 4
+        ? [[rate, { vcpus: Number(cores), memoryGb: Number(cores) * 4 }]]
+        : [];
+    }),
+  ),
 };
 
 // Cloudflare Containers instance types RelayRunner runs jobs on.
