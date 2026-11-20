@@ -1,11 +1,21 @@
 import { beforeAll, describe, expect, test } from "vitest";
 import { app } from "./app.ts";
-import { createDb, schema } from "./db/index.ts";
+import { createDb, schema, type Db } from "./db/index.ts";
 import type { Env } from "./env.ts";
 import { countFinishedJob, jobCountReport } from "./job-counts.ts";
 import { recordJobTiming } from "./job-timings.ts";
+import { findInstallationAndWorkspace } from "./installations.ts";
 import * as testing from "./testing.ts";
 import { accessEnv, accessJwt } from "./testing-access.ts";
+
+/** Records a job's timing after reading its installation, like the webhook queue does. */
+async function recordTiming(db: Db, message: Parameters<typeof recordJobTiming>[1]) {
+  return recordJobTiming(
+    db,
+    message,
+    await findInstallationAndWorkspace(db, message.installationId!),
+  );
+}
 
 const HOUR_MS = 3_600_000;
 const MIGRATION = "20261113221716_job_count.sql";
@@ -35,7 +45,7 @@ async function deliver(installationId: number, job: Job = {}) {
   const id = job.id ?? (jobIds += 1);
   const status = job.status ?? "completed";
   const completedAt = job.completedAt ?? Date.now();
-  await recordJobTiming(createDb(env.DB), {
+  await recordTiming(createDb(env.DB), {
     event: "workflow_job",
     deliveryId: `count-${id}-${status}`,
     action: status,

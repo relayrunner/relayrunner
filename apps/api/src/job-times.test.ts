@@ -1,5 +1,5 @@
 import { beforeAll, describe, expect, test } from "vitest";
-import { createDb, schema } from "./db/index.ts";
+import { createDb, schema, type Db } from "./db/index.ts";
 import type { Env } from "./env.ts";
 import {
   confidence,
@@ -16,8 +16,18 @@ import {
   windowQuery,
 } from "./job-times.ts";
 import { claimRunnerJobs, recordJobTiming } from "./job-timings.ts";
+import { findInstallationAndWorkspace } from "./installations.ts";
 import { setJobMachine } from "./jobs.ts";
 import * as testing from "./testing.ts";
+
+/** Records a job's timing after reading its installation, like the webhook queue does. */
+async function recordTiming(db: Db, message: Parameters<typeof recordJobTiming>[1]) {
+  return recordJobTiming(
+    db,
+    message,
+    await findInstallationAndWorkspace(db, message.installationId!),
+  );
+}
 
 describe("environmentFor details", () => {
   test.each([
@@ -512,7 +522,7 @@ describe("job times report", () => {
     const record = async (runnerName: string, runnerGroupName: string) => {
       jobIds += 1;
       const now = Date.now();
-      await recordJobTiming(db, {
+      await recordTiming(db, {
         event: "workflow_job",
         deliveryId: `added-${jobIds}`,
         action: "completed",
@@ -551,7 +561,7 @@ describe("job times report", () => {
     jobIds += 1;
     const now = Date.now();
     // GitHub's payload for it: an empty runner name and group, and started_at set anyway.
-    await recordJobTiming(db, {
+    await recordTiming(db, {
       event: "workflow_job",
       deliveryId: `empty-${jobIds}`,
       action: "completed",
@@ -636,7 +646,7 @@ describe("job times report", () => {
       githubCreatedAt: new Date(),
     });
     const now = Date.now();
-    await recordJobTiming(db, {
+    await recordTiming(db, {
       event: "workflow_job",
       deliveryId: `rec-${jobId}`,
       action: "completed",

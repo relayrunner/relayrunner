@@ -1,7 +1,8 @@
 import { beforeAll, describe, expect, test } from "vitest";
-import { createDb } from "./db/index.ts";
+import { createDb, type Db } from "./db/index.ts";
 import type { Env } from "./env.ts";
 import { failedStep, recordJobTiming } from "./job-timings.ts";
+import { findInstallationAndWorkspace } from "./installations.ts";
 import { hostedRunner, waitBucket, waitKey } from "./runner-waits.ts";
 
 // runner_wait_day's key for a job's labels, or null when it isn't a hosted runner.
@@ -12,6 +13,15 @@ function waitRunner(labels: string[], runnerGroupName: string | null) {
 import { accountSpend, monthOf } from "./provider-spend.ts";
 import { BASE_BOOK, listRate } from "@relayrunner/providers";
 import * as testing from "./testing.ts";
+
+/** Records a job's timing after reading its installation, like the webhook queue does. */
+async function recordTiming(db: Db, message: Parameters<typeof recordJobTiming>[1]) {
+  return recordJobTiming(
+    db,
+    message,
+    await findInstallationAndWorkspace(db, message.installationId!),
+  );
+}
 
 const DAY_MS = 86_400_000;
 
@@ -43,7 +53,7 @@ async function deliver(installationId: number, job: Job = {}) {
   const id = job.id ?? (jobIds += 1);
   const completedAt = job.completedAt ?? Date.now();
   const startedAt = completedAt - 30_000;
-  await recordJobTiming(createDb(env.DB), {
+  await recordTiming(createDb(env.DB), {
     event: "workflow_job",
     deliveryId: `wait-${id}`,
     action: "completed",

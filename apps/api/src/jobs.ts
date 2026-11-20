@@ -10,7 +10,7 @@ import type { WebhookMessage } from "@relayrunner/github-webhooks";
 import { and, desc, eq, inArray, isNull, type SQL, sql } from "drizzle-orm";
 import { recordEvent } from "./activity.ts";
 import { type Db, schema } from "./db/index.ts";
-import { findInstallationAndWorkspace, type InstallationLookup } from "./installations.ts";
+import type { InstallationLookup } from "./installations.ts";
 import { routeIdFromLabels } from "./routing.ts";
 
 type WorkflowJobMessage = Extract<WebhookMessage, { event: "workflow_job" }>;
@@ -36,13 +36,10 @@ export async function recordWorkflowJob(
   db: Db,
   message: WorkflowJobMessage,
   isPick: boolean,
-  lookup?: InstallationLookup,
+  { installation, workspaceId }: InstallationLookup,
 ): Promise<boolean> {
   const { installationId, job, repository } = message;
-  if (!installationId) return false;
-  const { installation, workspaceId } =
-    lookup ?? (await findInstallationAndWorkspace(db, installationId));
-  if (!installation) return false;
+  if (!installationId || !installation) return false;
   // Matched on run id alone, so a re-run of failed jobs (a new attempt that reuses the earlier
   // attempt's pick output) still counts as routed.
   if (!isPick && !(await runHasPick(db, job.runId))) return false;

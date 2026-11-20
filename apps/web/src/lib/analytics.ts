@@ -33,7 +33,7 @@ let grouped: string | undefined;
 function whenIdle() {
   return new Promise<void>((resolve) => {
     if ("requestIdleCallback" in window) requestIdleCallback(() => resolve(), { timeout: 3000 });
-    else setTimeout(resolve, 1);
+    else setTimeout(resolve, 1000);
   });
 }
 
@@ -81,14 +81,9 @@ export function identifyUser(user: Session["user"]) {
 
 /** Puts the user's events in their active workspace's group, for workspace-level analytics. */
 export function setWorkspace(workspace: { id: string; name: string; slug: string }) {
-  if (!ready || grouped === workspace.id) return;
-  grouped = workspace.id;
   withPostHog((posthog) => {
-    // An opted-out operator isn't grouped, and a later call may try again.
-    if (posthog.has_opted_out_capturing()) {
-      if (grouped === workspace.id) grouped = undefined;
-      return;
-    }
+    if (grouped === workspace.id || posthog.has_opted_out_capturing()) return;
+    grouped = workspace.id;
     posthog.group("workspace", workspace.id, { name: workspace.name, slug: workspace.slug });
   });
 }

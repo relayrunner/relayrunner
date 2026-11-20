@@ -14,5 +14,5 @@ export const GET: APIRoute = async ({ props, site }) => {
   const { id, name } = (props as { integration: Integration }).integration;
   const host = (site ?? new URL("https://relayrunner.dev")).host;
   const png = await renderPng(integrationCard({ id, name, url: `${host}${integrationPath(id)}` }));
-  return new Response(new Uint8Array(png), { headers: { "Content-Type": "image/png" } });
+  return new Response(png, { headers: { "Content-Type": "image/png" } });
 };

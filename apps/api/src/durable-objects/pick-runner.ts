@@ -25,7 +25,7 @@ import { RELAYRUNNER_LABEL } from "../labels.ts";
 import { eq } from "drizzle-orm";
 import { createDb, schema } from "../db/index.ts";
 import { recordPick, type PickRecord } from "../route-decisions.ts";
-import { installationRunnerScope } from "../installations.ts";
+import { findInstallationAndWorkspace, installationRunnerScope } from "../installations.ts";
 import { findRepo } from "../repositories.ts";
 import { retryOf } from "../retries.ts";
 import { startedJobStatus } from "../jobs.ts";
@@ -414,22 +414,11 @@ async function pickRunner(
     };
   const db = createDb(env.DB);
   // The GitHub lookup and the installation read don't depend on each other.
-  let [context, [installation]] = await Promise.all([
+  let [context, { installation, workspaceId }] = await Promise.all([
     resolveTriggeredBy(token, parsed),
-    db
-      .select({
-        workspaceId: schema.workspace.id,
-        suspendedAt: schema.githubInstallation.suspendedAt,
-      })
-      .from(schema.githubInstallation)
-      .innerJoin(
-        schema.workspace,
-        eq(schema.workspace.installationId, schema.githubInstallation.id),
-      )
-      .where(eq(schema.githubInstallation.id, installationId))
-      .limit(1),
+    findInstallationAndWorkspace(db, installationId),
   ]);
-  if (!installation)
+  if (!installation || !workspaceId)
     return {
       runner: null,
       reason: `${NO_RUNNER}: RelayRunner hasn't set up a workspace for this GitHub App installation yet.`,
@@ -442,7 +431,6 @@ async function pickRunner(
       reason: `${NO_RUNNER}: this GitHub App installation is suspended.`,
       repo: context.repo,
     };
-  const workspaceId = installation.workspaceId;
   const repo = await findRepo(db, installationId, context.repo);
   if (!repo) {
     const reason = `${NO_RUNNER}: RelayRunner doesn't have access to ${context.repo}.`;
