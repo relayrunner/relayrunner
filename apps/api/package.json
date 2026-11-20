@@ -17,6 +17,7 @@
     "@relayrunner/access": "workspace:*",
     "@relayrunner/activity": "workspace:*",
     "@relayrunner/api-types": "workspace:*",
+    "@relayrunner/blacksmith-cli": "workspace:*",
     "@relayrunner/email": "workspace:*",
     "@relayrunner/errors": "workspace:*",
     "@relayrunner/github-webhooks": "workspace:*",

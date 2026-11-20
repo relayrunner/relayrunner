@@ -1,0 +1,85 @@
+{
+  "window": {
+    "since": "7d",
+    "days": 7,
+    "start": "2026-11-13T19:00:02Z",
+    "end": "2026-11-20T19:00:02Z"
+  },
+  "installation": {
+    "installation_model_id": 448505,
+    "installation_name": "relayrunner"
+  },
+  "jobs": [
+    {
+      "job_id": "136072852458",
+      "run_id": "44671361640",
+      "repository_name": "relayrunner/relayrunner",
+      "workflow_name": "Apply D1 migrations",
+      "job_name": "Apply migrations to production D1",
+      "runner_label": "blacksmith-4vcpu-ubuntu-2404",
+      "billable_minutes": 4,
+      "duration_seconds": 24,
+      "conclusion": "success",
+      "sender_name": "zachdunn",
+      "job_url": "https://github.com/relayrunner/relayrunner/actions/runs/44671361640/job/136072852458",
+      "created_at": "2026-11-20T03:59:59Z"
+    },
+    {
+      "job_id": "135998631890",
+      "run_id": "44648934217",
+      "repository_name": "relayrunner/relayrunner",
+      "workflow_name": "Apply D1 migrations",
+      "job_name": "Apply migrations to production D1",
+      "runner_label": "blacksmith-4vcpu-ubuntu-2404",
+      "billable_minutes": 4,
+      "duration_seconds": 28,
+      "conclusion": "success",
+      "sender_name": "zachdunn",
+      "job_url": "https://github.com/relayrunner/relayrunner/actions/runs/44648934217/job/135998631890",
+      "created_at": "2026-11-20T00:50:21Z"
+    },
+    {
+      "job_id": "135899805145",
+      "run_id": "44620289228",
+      "repository_name": "relayrunner/relayrunner",
+      "workflow_name": "Apply D1 migrations",
+      "job_name": "Apply migrations to production D1",
+      "runner_label": "blacksmith-4vcpu-ubuntu-2404",
+      "billable_minutes": 4,
+      "duration_seconds": 36,
+      "conclusion": "success",
+      "sender_name": "zachdunn",
+      "job_url": "https://github.com/relayrunner/relayrunner/actions/runs/44620289228/job/135899805145",
+      "created_at": "2026-11-19T21:36:55Z"
+    },
+    {
+      "job_id": "135881999338",
+      "run_id": "44615228738",
+      "repository_name": "relayrunner/relayrunner",
+      "workflow_name": "Apply D1 migrations",
+      "job_name": "Apply migrations to production D1",
+      "runner_label": "blacksmith-4vcpu-ubuntu-2404",
+      "billable_minutes": 4,
+      "duration_seconds": 32,
+      "conclusion": "success",
+      "sender_name": "zachdunn",
+      "job_url": "https://github.com/relayrunner/relayrunner/actions/runs/44615228738/job/135881999338",
+      "created_at": "2026-11-19T21:07:58Z"
+    },
+    {
+      "job_id": "135814444801",
+      "run_id": "44596039001",
+      "repository_name": "relayrunner/relayrunner",
+      "workflow_name": "Apply D1 migrations",
+      "job_name": "Apply migrations to production D1",
+      "runner_label": "blacksmith-4vcpu-ubuntu-2404",
+      "billable_minutes": 4,
+      "duration_seconds": 43,
+      "conclusion": "success",
+      "sender_name": "zachdunn",
+      "job_url": "https://github.com/relayrunner/relayrunner/actions/runs/44596039001/job/135814444801",
+      "created_at": "2026-11-19T19:14:09Z"
+    }
+  ],
+  "next_cursor": "MjAyNi0xMS0xOSAxOToxNDowOS4wMDM0MjR8MTM1ODE0NDQ0ODAx"
+}

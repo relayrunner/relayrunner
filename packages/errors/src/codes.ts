@@ -96,6 +96,15 @@ export const ERRORS = {
     message: "Another provider, or GitHub's own runners, already use labels like that.",
   },
   PROVIDER_NOT_CONNECTED: { status: 404, message: "That provider isn't connected." },
+  PROVIDER_ORGANIZATION_MISMATCH: {
+    status: 400,
+    message:
+      "That token is for another GitHub organization. Make one for the organization this workspace is installed on.",
+  },
+  PROVIDER_WORKSPACE_UNCLEAR: {
+    status: 409,
+    message: "Name the workspace to connect it to.",
+  },
   PROVIDER_TOKEN_REJECTED: {
     status: 400,
     message: "The provider didn't accept that token. Check it and its scope.",

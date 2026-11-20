@@ -153,6 +153,7 @@
       { "name": "CONTAINER_RUNNER", "class_name": "ContainerRunner" },
       { "name": "LINT_RUNNER", "class_name": "LintRunner" },
       { "name": "STRANDED_JOB", "class_name": "StrandedJob" },
+      { "name": "BLACKSMITH_SYNCER", "class_name": "BlacksmithSyncer" },
     ],
   },
   "migrations": [
@@ -160,6 +161,7 @@
     { "tag": "v2", "new_sqlite_classes": ["ContainerRunner"] },
     { "tag": "v3", "new_sqlite_classes": ["LintRunner"] },
     { "tag": "v4", "new_sqlite_classes": ["StrandedJob"] },
+    { "tag": "v5", "new_sqlite_classes": ["BlacksmithSyncer"] },
   ],
   // GitHub's runner image for container runners (src/durable-objects/container-runner.ts), which
   // picks the instance size when it starts one. `pnpm run deploy` (scripts/deploy.ts) tags each
@@ -181,6 +183,14 @@
       "class_name": "LintRunner",
       "scheduling_policy": "durable_object",
       "images": { "lint": { "dockerfile": "../../packages/lint-runner/Dockerfile" } },
+      "observability": { "logs": { "enabled": true } },
+    },
+    // Blacksmith's CLI, to read the usage of workspaces that connected an org token
+    // (src/durable-objects/blacksmith-syncer.ts). It needs internet access to reach Blacksmith.
+    {
+      "class_name": "BlacksmithSyncer",
+      "scheduling_policy": "durable_object",
+      "images": { "blacksmith": { "dockerfile": "../../packages/blacksmith-cli/Dockerfile" } },
       "observability": { "logs": { "enabled": true } },
     },
   ],

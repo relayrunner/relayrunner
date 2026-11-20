@@ -956,6 +956,85 @@ describe("choosing a machine's workspaces (#363)", () => {
     ).toBe(404);
     expect((await send("GET", "/machines/me/workspaces", {})).status).toBe(401);
   });
+
+  test("the CLI connects Blacksmith for the workspace on its org, as an owner or admin", async () => {
+    const { team, own, user } = await ownAndJoined("bs");
+    const { token } = await enrollAs(own.cookie, own.workspace.id, "studio");
+    const runs: { workspaceId: string; organization: string }[] = [];
+    const key = btoa(String.fromCharCode(...crypto.getRandomValues(new Uint8Array(32))));
+    const withBlacksmith = {
+      ...env,
+      PROVIDER_TOKEN_KEY: { get: async () => key },
+      INSTALLATION_TASKS: { sendBatch: async () => {} },
+      BLACKSMITH_SYNCER: {
+        idFromName: (name: string) => name,
+        get: (workspaceId: string) => ({
+          run: async (request: { organization: string }) => {
+            runs.push({ workspaceId, organization: request.organization });
+            return {
+              ok: true,
+              usage: { installation: { installation_name: request.organization } },
+              jobPages: [],
+            };
+          },
+        }),
+      },
+    } as unknown as Env;
+    const put = (body: unknown, bearer = token) =>
+      app.request(
+        "/api/machines/me/providers/blacksmith/connection",
+        {
+          method: "PUT",
+          headers: { authorization: `Bearer ${bearer}`, "content-type": "application/json" },
+          body: JSON.stringify(body),
+        },
+        withBlacksmith,
+      );
+
+    // The org printed with the token picks the workspace installed on it; the user only joined
+    // the team one as a member, so that one isn't theirs to connect.
+    const response = await put({ token: "1234|secret-part", options: { organization: "bs-own" } });
+    expect(response.status).toBe(200);
+    expect(await response.json()).toMatchObject({
+      workspace: { id: own.workspace.id, slug: "bs-own" },
+      connection: { provider: "blacksmith", connected: true, accountName: "bs-own" },
+    });
+    expect(runs).toEqual([{ workspaceId: own.workspace.id, organization: "bs-own" }]);
+    const named = await put({
+      token: "1234|secret-part",
+      options: { organization: "someone-else" },
+      workspace: team.workspace.slug,
+    });
+    expect(named.status).toBe(404);
+
+    // Promoted to admin of the team, an org that matches neither workspace needs one named.
+    await env.DB.prepare(
+      "update workspace_member set role = 'admin' where workspace_id = ? and user_id = ?",
+    )
+      .bind(team.workspace.id, user.user.id)
+      .run();
+    const unclear = await put({ token: "1234|secret-part", options: { organization: "nope" } });
+    expect(unclear.status).toBe(409);
+    expect(await unclear.json()).toMatchObject({
+      error: { code: "PROVIDER_WORKSPACE_UNCLEAR", details: { workspaces: expect.any(Array) } },
+    });
+    // Naming a workspace doesn't get a token for another organization in.
+    const mismatched = await put({
+      token: "1234|secret-part",
+      options: { organization: "nope" },
+      workspace: team.workspace.id,
+    });
+    expect(await mismatched.json()).toMatchObject({
+      error: { code: "PROVIDER_ORGANIZATION_MISMATCH" },
+    });
+    const picked = await put({
+      token: "1234|secret-part",
+      options: { organization: "bs-team" },
+      workspace: team.workspace.slug,
+    });
+    expect(await picked.json()).toMatchObject({ workspace: { id: team.workspace.id } });
+    expect((await put({ token: "1234|secret-part" }, "rrm_nope")).status).toBe(401);
+  });
 });
 
 describe("the machine WebSocket", () => {

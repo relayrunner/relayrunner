@@ -129,6 +129,9 @@ importers:
       '@relayrunner/api-types':
         specifier: workspace:*
         version: link:../../packages/api-types
+      '@relayrunner/blacksmith-cli':
+        specifier: workspace:*
+        version: link:../../packages/blacksmith-cli
       '@relayrunner/email':
         specifier: workspace:*
         version: link:../../packages/email
@@ -407,6 +410,8 @@ importers:
       '@relayrunner/providers':
         specifier: workspace:*
         version: link:../providers
+
+  packages/blacksmith-cli: {}
 
   packages/email: {}
 

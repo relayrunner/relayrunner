@@ -1,7 +1,7 @@
 import { ERRORS, isErrorCode } from "@relayrunner/errors";
 import { BILLING_PROVIDERS, type BillingProviderInfo } from "@relayrunner/providers";
 import { createFileRoute } from "@tanstack/react-router";
-import { ArrowUpRightIcon, CheckIcon } from "lucide-react";
+import { ArrowUpRightIcon, CheckIcon, CopyIcon } from "lucide-react";
 import { type FormEvent, useState } from "react";
 import { PageHeader } from "@/components/page-header";
 import { ProviderMark } from "@/components/providers";
@@ -41,6 +41,7 @@ function ProviderSettingsPage() {
   const { current } = Route.useRouteContext();
   const { connections } = Route.useLoaderData();
   const manager = canManage(current.role);
+  const organization = current.installations[0]?.accountLogin ?? null;
 
   return (
     <section>
@@ -50,14 +51,28 @@ function ProviderSettingsPage() {
       </PageHeader>
       <div className="grid max-w-3xl gap-4">
         {connections.map((connection) => (
-          <ProviderCard key={connection.provider} first={connection} manager={manager} />
+          <ProviderCard
+            key={connection.provider}
+            first={connection}
+            manager={manager}
+            organization={organization}
+          />
         ))}
       </div>
     </section>
   );
 }
 
-function ProviderCard({ first, manager }: { first: ProviderConnection; manager: boolean }) {
+function ProviderCard({
+  first,
+  manager,
+  organization,
+}: {
+  first: ProviderConnection;
+  manager: boolean;
+  /** The GitHub organization this workspace is installed on. */
+  organization: string | null;
+}) {
   const [connection, setConnection] = useState(first);
   const [replacing, setReplacing] = useState(false);
   const [pending, setPending] = useState(false);
@@ -121,6 +136,13 @@ function ProviderCard({ first, manager }: { first: ProviderConnection; manager: 
           <ConnectionStatus connection={connection} name={name} />
         ) : (
           <p className="text-muted-foreground">{billing.reads}</p>
+        )}
+        {manager && billing.command && !connected && (
+          <ConnectCommand
+            command={billing.command}
+            name={name}
+            organization={billing.githubOrganization ? organization : null}
+          />
         )}
         {manager && (!connected || replacing) && (
           <TokenForm
@@ -276,6 +298,54 @@ function TokenForm({
         </a>
       </p>
     </form>
+  );
+}
+
+/** A command that connects the provider from a terminal, with a copy button. */
+function ConnectCommand({
+  command,
+  name,
+  organization,
+}: {
+  command: string;
+  name: string;
+  organization: string | null;
+}) {
+  const [copied, setCopied] = useState(false);
+  const copy = () =>
+    void navigator.clipboard?.writeText(command).then(() => {
+      setCopied(true);
+      setTimeout(() => setCopied(false), 2000);
+    });
+  return (
+    <div className="grid gap-2">
+      <p>
+        Run this in a terminal as a {name} org admin. It opens your browser to approve an org token
+        {organization ? (
+          <>
+            {" "}
+            for <strong>{organization}</strong>, the GitHub organization this workspace is on
+          </>
+        ) : (
+          " for this workspace's GitHub organization"
+        )}
+        , and sends only that token here.
+      </p>
+      <div className="flex items-center gap-2 rounded-md border bg-muted/40 px-3 py-2">
+        <code className="min-w-0 flex-1 truncate font-mono text-xs">{command}</code>
+        <Button size="sm" variant="ghost" onClick={copy} aria-label="Copy command">
+          {copied ? (
+            <CheckIcon aria-hidden className="size-4" />
+          ) : (
+            <CopyIcon aria-hidden className="size-4" />
+          )}
+        </Button>
+      </div>
+      <p className="text-xs text-muted-foreground">
+        The computer needs to be signed in with <code>relayrunner login</code>. Or paste a token
+        below.
+      </p>
+    </div>
   );
 }
 

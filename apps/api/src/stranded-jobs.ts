@@ -20,13 +20,19 @@ export const MAX_REQUEUES = 2;
 // that are only full keep it waiting, like any job for a busy self-hosted runner.
 export const NO_MACHINE_GIVE_UP_MS = 5 * 60_000;
 
-export type StrandedReason = "no_machine" | "runner_failed";
+// `not_routable`: a re-run job came back on its run's own `rr-<id>` label, but the Router can't
+// route it again (no earlier pick it can use, or no machine whose labels and sharing allow it), so
+// nothing would ever take it (src/webhook-queue.ts dispatchRoute).
+export type StrandedReason = "no_machine" | "runner_failed" | "not_routable";
 
-// The error the ended job shows on its run. Retries read it back (strandedJob) as a runner failure.
+// The error the ended job shows on its run. Retries read it back (strandedJob) as a runner failure:
+// a retry re-runs the run's relay, which picks a runner again, so it doesn't hit the same dead end.
 export const STRANDED_MESSAGES: Record<StrandedReason, string> = {
   no_machine:
     "No machine could take this job. The machine it was sent to went offline before the job started.",
   runner_failed: "This job's runner failed to start on the machines it was sent to.",
+  not_routable:
+    "RelayRunner couldn't route this job again. Re-run all jobs so the relay picks a runner.",
 };
 
 /** Whether GitHub's annotations on a job say it ended here because no runner could take it. */
@@ -45,6 +51,15 @@ export async function jobStillQueued(
 ): Promise<boolean> {
   if (await startedJobStatus(db, jobId)) return false;
   return (await workflowJobStatus(await token(), repo, jobId)) === "queued";
+}
+
+/**
+ * The StrandedJob that ends a route's job. By route and job, so a later attempt's re-run on the
+ * same label (a new job id) can be ended too, while a redelivered webhook for the same job can't
+ * end it twice.
+ */
+export function strandedJobName(routeId: string, jobId: number) {
+  return `${routeId}:${jobId}`;
 }
 
 /** The name of the runner that ends a route's stranded job. */

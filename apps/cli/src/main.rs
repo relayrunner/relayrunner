@@ -1,8 +1,9 @@
 //! `relayrunner` in Rust: `connect` (with sign-in, runner install and updates, and VMs), `init`,
-//! `login`, `whoami`, `pause`, `resume`, `share`, `workspaces`, `firewall`, `history` and `jobs`. It shares
-//! ~/.relayrunner with older (TypeScript) versions.
+//! `login`, `whoami`, `pause`, `resume`, `share`, `workspaces`, `firewall`, `history`, `jobs` and
+//! `blacksmith`. It shares ~/.relayrunner with older (TypeScript) versions.
 
 mod api;
+mod blacksmith;
 mod connect;
 mod connection;
 mod credentials;
@@ -196,6 +197,21 @@ const COMMANDS: &[Command] = &[
             ),
         ],
     ),
+    (
+        "blacksmith",
+        "Connect your Blacksmith organization so the dashboard shows its real usage. You approve an org token in your browser as a Blacksmith org admin; only that token is sent.",
+        "relayrunner blacksmith connect [--workspace NAME] [--yes]",
+        &[
+            (
+                "--workspace NAME",
+                "The workspace to connect it to: a name, slug or id (default: the one on the same GitHub organization)",
+            ),
+            (
+                "--yes",
+                "Download Blacksmith's CLI into ~/.relayrunner/bin without asking, if it isn't installed",
+            ),
+        ],
+    ),
 ];
 
 fn usage() -> String {
@@ -300,6 +316,7 @@ async fn main() {
         }
         "workspaces" => plain(move || workspaces::command(&signed_in()?, &rest)).await,
         "jobs" => plain(move || jobs::command(&signed_in()?, &rest)).await,
+        "blacksmith" => plain(move || blacksmith::command(&signed_in()?, &rest)).await,
         "firewall" => match firewall::command(rest.first().map(String::as_str)).await {
             Ok(()) => 0,
             Err(e) => {

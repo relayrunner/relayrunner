@@ -415,6 +415,31 @@ describe("rollUpSignals", () => {
     expect(rows[0]?.workflowPath).toBe(".github/workflows/ci.yml");
   });
 
+  test("counts a flaky job on the day its re-run passed, so a later rollup keeps to its days", async () => {
+    const ctx = await connectedWorkspace();
+    // Minutes since today's UTC midnight: a start past it ran yesterday.
+    const today = Math.floor(NOW / (1440 * MINUTE)) * 1440 * MINUTE;
+    const sinceMidnight = (NOW - today) / MINUTE;
+    // Failed and passed yesterday.
+    await job(ctx, { start: sinceMidnight + 120, minutes: 5, runId: 9105, conclusion: "failure" });
+    await rerun(ctx, 9105, 2, sinceMidnight + 110);
+    await job(ctx, { start: sinceMidnight + 110, minutes: 5, runId: 9105, runAttempt: 2 });
+    // Failed yesterday; its re-run passed after midnight.
+    await job(ctx, { start: sinceMidnight + 60, minutes: 5, runId: 9106, conclusion: "failure" });
+    await rollUpSignals(createDb(env.DB), ctx.installationId, today - 30 * MINUTE);
+    await rerun(ctx, 9106, 2, sinceMidnight - 30);
+    await job(ctx, { start: sinceMidnight - 30, minutes: 5, runId: 9106, runAttempt: 2 });
+    // Four hours in, the rollup replaces only today.
+    await rollUpSignals(createDb(env.DB), ctx.installationId, today + 240 * MINUTE);
+    const rows = await dayRows(ctx.installationId, "flaky-jobs");
+    expect(rows.map((row) => [row.day.getTime(), row.count])).toEqual(
+      expect.arrayContaining([
+        [today - 1440 * MINUTE, 1],
+        [today, 1],
+      ]),
+    );
+  });
+
   test("counts jobs their runner failed before any step as runner failures, not flaky", async () => {
     const ctx = await connectedWorkspace();
     await job(ctx, { start: 60, minutes: 1, runId: 5, conclusion: "failure", ranSteps: false });

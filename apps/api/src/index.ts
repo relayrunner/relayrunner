@@ -12,7 +12,7 @@ import { sendProductEvents } from "./product-events.ts";
 import { checkPrices } from "./price-check.ts";
 import { purgeExpiredAiAnswers, purgeOldActivity } from "./retention.ts";
 import { purgeOldWorkflowRuns } from "./runs.ts";
-import { syncRunnerReleases } from "./runner-releases.ts";
+import { releasesToken, syncRunnerReleases } from "./runner-releases.ts";
 import { sweepPicks } from "./pick-sweep.ts";
 import { enqueueSignalRollups } from "./signals.ts";
 import { sweepProviderHealth } from "./provider-health.ts";
@@ -32,6 +32,7 @@ import { handleWebhookBatch } from "./webhook-queue.ts";
 import { wellKnown } from "./well-known.ts";
 
 export { ContainerRunner } from "./durable-objects/container-runner.ts";
+export { BlacksmithSyncer } from "./durable-objects/blacksmith-syncer.ts";
 export { LintRunner } from "./durable-objects/lint-runner.ts";
 export { MachineLink } from "./durable-objects/machine-link.ts";
 export { PickRunner } from "./durable-objects/pick-runner.ts";
@@ -92,7 +93,9 @@ export default {
               purgeOldProviderUsage(createDb(env.DB), at),
               purgeExpiredAiAnswers(createDb(env.DB), at.getTime()),
               enqueueSignalRollups(env),
-              syncRunnerReleases(createDb(env.DB)),
+              releasesToken(env, createDb(env.DB)).then((token) =>
+                syncRunnerReleases(createDb(env.DB), token),
+              ),
             ];
     const results = await Promise.allSettled(tasks);
     const failed = results.find((result) => result.status === "rejected");

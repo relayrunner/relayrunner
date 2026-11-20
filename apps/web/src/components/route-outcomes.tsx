@@ -53,7 +53,7 @@ export function RouteOutcomesCard({ workspaceId }: { workspaceId: string }) {
   const series = SERIES.filter((s) => s.key === "first" || outcomes[s.key] > 0);
   // Under the first choice its share, under moved on why, one reason a line.
   const details: Partial<Record<Outcome, string[]>> = {
-    first: [`${percent(outcomes.first / runs)} of ${count(runs)} routed runs`],
+    first: [`${percent(outcomes.first / runs)} of ${count(runs)} routed jobs`],
     movedOn: reasons.map((r) => `${r.count.toLocaleString()} ${REASONS[r.reason]}`),
   };
 
@@ -83,7 +83,7 @@ export function RouteOutcomesCard({ workspaceId }: { workspaceId: string }) {
         bucketMs={outcomes.bucketMs}
         series={series}
         format={(n) => n.toLocaleString()}
-        label={`Routed runs on each of the past ${OUTCOME_DAYS} days, by how they were routed`}
+        label={`Routed jobs on each of the past ${OUTCOME_DAYS} days, by how they were routed`}
         height={130}
       />
     </section>

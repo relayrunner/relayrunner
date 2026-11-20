@@ -3,9 +3,11 @@
 // `relayrunner connect` installs the latest runner only when it starts, so a machine left connected
 // for weeks falls behind. The hourly cron refreshes the list; reports read it through d1-cache.
 import { isNewerVersion } from "@relayrunner/machine-protocol";
+import { and, isNull, ne } from "drizzle-orm";
 import { z } from "zod";
 import { cachedRead } from "./d1-cache.ts";
 import { type Db, schema } from "./db/index.ts";
+import { appInstallationToken } from "./github-app.ts";
 import { userAgent } from "./runner-protocol.ts";
 import { DAY_MS } from "./time.ts";
 
@@ -25,10 +27,37 @@ const Releases = z.array(
   }),
 );
 
+/**
+ * A token to read the public releases with. Unauthenticated calls share GitHub's 60-an-hour limit
+ * with everything else on Cloudflare's egress IPs, so they mostly fail with 403. Any active
+ * installation's token can read a public repo, against that installation's own limit.
+ */
+export async function releasesToken(
+  env: Parameters<typeof appInstallationToken>[0],
+  db: Db,
+): Promise<string | undefined> {
+  const [installation] = await db
+    .select({ id: schema.githubInstallation.id })
+    .from(schema.githubInstallation)
+    .where(
+      and(
+        isNull(schema.githubInstallation.suspendedAt),
+        ne(schema.githubInstallation.accountType, "Enterprise"),
+      ),
+    )
+    .orderBy(schema.githubInstallation.id)
+    .limit(1);
+  return installation ? appInstallationToken(env, installation.id) : undefined;
+}
+
 /** Fetches the recent releases from GitHub and saves any that are new. */
-export async function syncRunnerReleases(db: Db, fetcher: typeof fetch = fetch) {
+export async function syncRunnerReleases(db: Db, token?: string, fetcher: typeof fetch = fetch) {
   const response = await fetcher(RELEASES_URL, {
-    headers: { accept: "application/vnd.github+json", "user-agent": userAgent },
+    headers: {
+      accept: "application/vnd.github+json",
+      "user-agent": userAgent,
+      ...(token ? { authorization: `Bearer ${token}` } : {}),
+    },
   });
   if (!response.ok)
     throw new Error(`Could not list actions/runner releases. Status ${response.status}.`);

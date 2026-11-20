@@ -28,7 +28,7 @@ import { alias } from "drizzle-orm/sqlite-core";
 import { type Db, schema } from "./db/index.ts";
 import { presentJob } from "./jobs.ts";
 import { inWorkspace, recordMachineEvents } from "./machines.ts";
-import { jobKey, picksForJobs } from "./route-decisions.ts";
+import { pickKey, picksForJobs } from "./route-decisions.ts";
 import {
   githubIds,
   membersByGithubId,
@@ -212,7 +212,7 @@ export async function listActivity(
   const page = rows.slice(0, ACTIVITY_PAGE_SIZE);
   const jobs = page.flatMap((row) => (row.job ? [row.job] : []));
   const picks = await picksForJobs(db, jobs);
-  const starters = await runStartersForJobs(db, jobs, picks, jobKey);
+  const starters = await runStartersForJobs(db, jobs, picks, pickKey);
   // A relay that couldn't route keeps its starters on its own entry.
   const unroutableStarters = new Map<number, RunStarters>();
   for (const row of page) {
@@ -232,7 +232,7 @@ export async function listActivity(
     githubIds([...starters.values(), ...unroutableStarters.values()]),
   );
   const items = page.flatMap((row) => {
-    const key = row.job ? jobKey(row.job) : null;
+    const key = row.job ? pickKey(row.job) : null;
     const item = presentEvent(
       row,
       key ? (picks.get(key)?.walk ?? null) : null,

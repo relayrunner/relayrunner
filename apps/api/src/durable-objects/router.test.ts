@@ -424,6 +424,7 @@ describe("Router: runners added from a repo", () => {
 });
 
 describe("Router: a machine that goes offline after the pick", () => {
+  let env: Env;
   let state: ReturnType<typeof memoryState>;
   let router: InstanceType<typeof Router>;
   let online: boolean;
@@ -450,7 +451,7 @@ describe("Router: a machine that goes offline after the pick", () => {
       "insert into machine (id, workspace_id, user_id, name, os, arch, token_hash, source, sharing, created_at, updated_at) values ('m1', 'w1', 'u1', 'ci-runner', 'linux', 'x64', 'hash', 'connect', 'only_me', ?1, ?1)",
     ])
       await testEnv.DB.prepare(sql).bind(now).run();
-    const env = {
+    env = {
       ...testEnv,
       MACHINE_LINK: {
         getByName: () => ({
@@ -562,6 +563,74 @@ describe("Router: a machine that goes offline after the pick", () => {
     } finally {
       vi.useRealTimers();
     }
+  });
+
+  // A run whose first attempt had two relays, each routing its own job to its own label.
+  async function twoPicks(secondMachine = "self-hosted") {
+    const now = Date.now();
+    const decision = (pickJobId: string, runner: string, machine: string) =>
+      `insert into route_decision (workspace_id, repository_id, run_id, run_attempt, pick_job_id, step, runner, skipped, not_in_order, machine, github, hosted, started_by_id, started_by_login, triggered_by_id, triggered_by_login, created_at) values ('w1', 1, 5, 1, '${pickJobId}', 'machine', '${runner}', '[]', '[]', '["${machine}"]', '[]', '{}', 500, 'leonel', 500, 'leonel', ?1)`;
+    for (const sql of [
+      "insert into github_repository (id, installation_id, full_name, private, github_state_at, created_at, updated_at) values (1, 7, 'leonel/cabal', 1, ?1, ?1, ?1)",
+      decision("relay-a", "rr-aaaaaaaaaaaa", "self-hosted"),
+      decision("relay-b", "rr-bbbbbbbbbbbb", secondMachine),
+      "insert into workflow_run (id, run_attempt, installation_id, repository_id, repository_full_name, event, started_by_id, started_by_login, triggered_by_id, triggered_by_login, head_sha, status, github_updated_at, created_at, updated_at) values (5, 2, 7, 1, 'leonel/cabal', 'push', 500, 'leonel', 500, 'leonel', 'abc', 'in_progress', ?1, ?1, ?1)",
+    ])
+      await env.DB.prepare(sql).bind(now).run();
+  }
+  const rerun = {
+    ...queued(5, 77),
+    runAttempt: 2,
+    workspaceId: "w1",
+    installationId: 7,
+    repo: "leonel/cabal",
+  };
+
+  test("a re-run of the job the second relay routed goes to a machine again", async () => {
+    await twoPicks();
+    expect(await router.reroute("bbbbbbbbbbbb", rerun)).toMatchObject({
+      id: "bbbbbbbbbbbb",
+      machineId: "m1",
+      jobId: 77,
+      runAttempt: 2,
+      state: "dispatched",
+    });
+  });
+
+  test("a re-run whose machine is offline waits for it, then ends after 5 minutes", async () => {
+    vi.useFakeTimers({ toFake: ["Date"] });
+    try {
+      await twoPicks();
+      online = false;
+      expect(await router.reroute("bbbbbbbbbbbb", rerun)).toBe("waiting");
+      expect(state.data.get("wait:bbbbbbbbbbbb")).toMatchObject({ jobId: 77, runAttempt: 2 });
+      await router.alarm();
+      vi.advanceTimersByTime(5 * 60_000);
+      await router.alarm();
+      expect(endJob).toHaveBeenCalledWith(
+        expect.objectContaining({ routeId: "bbbbbbbbbbbb", jobId: 77, reason: "no_machine" }),
+      );
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  test("a re-run whose machine is back in time takes it", async () => {
+    await twoPicks();
+    online = false;
+    expect(await router.reroute("bbbbbbbbbbbb", rerun)).toBe("waiting");
+    online = true;
+    await router.alarm();
+    expect(run).toHaveBeenCalledOnce();
+    expect(run.mock.calls[0]![0].route).toMatchObject({ id: "bbbbbbbbbbbb", jobId: 77 });
+    expect(endJob).not.toHaveBeenCalled();
+  });
+
+  test("a re-run no machine's labels fit, or on a label no pick of the run answered, is refused", async () => {
+    await twoPicks("gpu");
+    expect(await router.reroute("bbbbbbbbbbbb", rerun)).toBeNull();
+    expect(await router.reroute("cccccccccccc", rerun)).toBeNull();
+    expect([...state.data.keys()].some((key) => key.startsWith("wait:"))).toBe(false);
   });
 
   test("a machine back in time takes the job", async () => {

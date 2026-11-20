@@ -283,6 +283,7 @@ export class PickRunner extends DurableObject<Env> {
             await recordPick(createDb(this.env.DB), {
               ...record,
               jobName: job.message.jobDisplayName || null,
+              pickJobId: job.message.jobId || null,
             }).catch((error) =>
               console.error(
                 JSON.stringify({
@@ -394,7 +395,7 @@ function logCleanupError(step: string, work: PickWork, error: unknown) {
   );
 }
 
-type PickInfo = Omit<PickRecord, "jobName">;
+type PickInfo = Omit<PickRecord, "jobName" | "pickJobId">;
 
 // Where the claimed pick job's run goes. Only a repo of a workspace's installation reaches the
 // workspace's Router, which walks the runner order. Anything we can't place gets no runner and a
@@ -583,6 +584,7 @@ async function reportBlocked(env: Env, token: string, work: PickWork, reason: st
           triggeredBy: null,
         },
         jobName: row.name,
+        pickJobId: null,
         decision: null,
         reason: `${NO_RUNNER}: ${reason}`,
       }).catch((error) => logCleanupError("record blocked pick", work, error)),

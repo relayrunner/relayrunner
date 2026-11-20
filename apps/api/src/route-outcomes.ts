@@ -3,6 +3,9 @@
 // that fits them couldn't take the run then (a busy machine, a spending limit, a runner type that
 // stopped picking up jobs), how many queued for a machine, and how many found nowhere to go.
 //
+// Each route_decision row is one pick, which routes one job, so the counts are routed jobs (a run
+// with several relay jobs counts each).
+//
 // Database cost: one statement, a range of route_decision_workspace_idx (the workspace, created in
 // the window), grouped so repeated walks come back once.
 import { MOVE_REASONS, type MoveReason, type SkipReason } from "@relayrunner/activity";

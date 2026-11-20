@@ -5,6 +5,7 @@
 import type { ProviderId } from "./index.ts";
 
 export const BILLING_PROVIDER_IDS = [
+  "blacksmith",
   "depot",
   "namespace",
   "warpbuild",
@@ -31,9 +32,25 @@ export interface BillingProviderInfo {
   /** What RelayRunner reads with it. */
   reads: string;
   options?: readonly BillingOption[];
+  /**
+   * The provider account is a GitHub organization: a connection is for the workspace's own, and a
+   * token for any other is refused.
+   */
+  githubOrganization?: boolean;
+  /** A terminal command that makes the token and connects it, offered before pasting one. */
+  command?: string;
 }
 
 export const BILLING_PROVIDERS: Record<BillingProviderId, BillingProviderInfo> = {
+  blacksmith: {
+    token: "Organization token",
+    tokenUrl: "https://docs.blacksmith.sh/blacksmith-cli/overview",
+    tokenHelp:
+      "As a Blacksmith org admin, run `blacksmith org-token create`, approve it for this workspace's GitHub organization, and paste the token it prints.",
+    command: "npx relayrunner blacksmith connect",
+    reads: "Billable minutes and cost per day, and each job's billable minutes.",
+    githubOrganization: true,
+  },
   depot: {
     token: "Organization token",
     tokenUrl: "https://depot.dev/orgs/_/settings",

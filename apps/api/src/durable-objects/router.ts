@@ -36,7 +36,12 @@ import {
 } from "../provider-health.ts";
 import { earlierPick, jobKey } from "../route-decisions.ts";
 import type { RetryPick } from "../retries.ts";
-import { MAX_REQUEUES, NO_MACHINE_GIVE_UP_MS, type StrandedReason } from "../stranded-jobs.ts";
+import {
+  MAX_REQUEUES,
+  NO_MACHINE_GIVE_UP_MS,
+  type StrandedReason,
+  strandedJobName,
+} from "../stranded-jobs.ts";
 import { errorMessage } from "../errors.ts";
 import { traced } from "../tracing.ts";
 import {
@@ -572,7 +577,7 @@ export class Router extends DurableObject<Env> {
   // Ends a queued job no machine can take, with the reason, so its run finishes (StrandedJob logs
   // how it went).
   private async end(entry: WaitingJob, reason: StrandedReason) {
-    await this.env.STRANDED_JOB.getByName(entry.id).start({
+    await this.env.STRANDED_JOB.getByName(strandedJobName(entry.id, entry.jobId!)).start({
       routeId: entry.id,
       jobId: entry.jobId!,
       installationId: entry.job.installationId,
@@ -844,10 +849,14 @@ export class Router extends DurableObject<Env> {
     const routingLabels = new Map(fits.map((m) => [m.id, m.routingLabel ?? undefined]));
     // The OS of each machine's two places, for the route to say where its job goes.
     const places = new Map(fits.map((m) => [m.id, { host: m.os, vm: m.isolatedOs }]));
-    return (
-      (await this.reserve(job, candidates, routingLabels, places, rerun, waiting)) ??
-      (rateLimited ? { rateLimited: true } : unavailableMachines(pool, job.machine, job))
-    );
+    const reserved = await this.reserve(job, candidates, routingLabels, places, rerun, waiting);
+    if (reserved) return reserved;
+    if (rateLimited) return { rateLimited: true };
+    // A re-run whose machines are offline or paused could still be taken once one is back, so it
+    // waits in line (Router.reroute) instead of being refused like a re-run nothing fits.
+    if (rerun && pool.some((machine) => fitsLabels(machine, job.machine) && admits(machine, job)))
+      return { offline: true };
+    return unavailableMachines(pool, job.machine, job);
   }
 
   // Chooses among the candidates and stores the route that holds the chosen machine, one pick at a
@@ -1084,9 +1093,10 @@ export class Router extends DurableObject<Env> {
    * done or expired. When that pick was this run's (earlierPick), the route is made again under the
    * same id for this job, with that pick's inputs and this attempt's starters: the machine it ran
    * on if that one is free, else any machine the relay's labels and sharing allow. Returns the
-   * claimed route, "waiting" when every machine that fits is full (it waits in line like a new
-   * pick), or null when the label wasn't this run's pick, no machine can take the job, or another
-   * job of this attempt already did.
+   * claimed route, "waiting" when every machine that fits is full, offline or paused (it waits in
+   * line like a new pick, and drain ends it if none comes back), or null when the label wasn't this
+   * run's pick, no machine's labels and sharing allow the job, or another job of this attempt
+   * already did.
    */
   async reroute(
     routeId: string,
@@ -1130,8 +1140,14 @@ export class Router extends DurableObject<Env> {
       ...starters.get(jobKey(key)),
     };
     const answered = await this.pickMachine(job, rerun);
-    // Every machine that fits is full: the re-run waits in line on its label, like a new pick.
-    if (answered && typeof answered !== "string" && "full" in answered) {
+    // Every machine that fits is full, or offline or paused (one may be back soon: a deploy drops
+    // every machine's socket for a moment): the re-run waits in line on its label, like a new
+    // pick. drain ends it once no machine that fits has been online for NO_MACHINE_GIVE_UP_MS.
+    if (
+      answered &&
+      typeof answered !== "string" &&
+      ("full" in answered || "offline" in answered || "rateLimited" in answered)
+    ) {
       const waiting: WaitingJob = {
         id: routeId,
         queuedAt: Date.now(),
@@ -1141,7 +1157,15 @@ export class Router extends DurableObject<Env> {
         runAttempt,
         job,
       };
-      await this.ctx.storage.put(WAIT_KEY + routeId, waiting);
+      // Checked again under the lock: another job of this attempt may have taken the route since.
+      const queuedNow = await this.ctx.blockConcurrencyWhile(async () => {
+        const now = Date.now();
+        const prior = (await this.routes(now)).find((route) => route.id === routeId);
+        if (!mayReroute(prior, rerun)) return false;
+        await this.ctx.storage.put(WAIT_KEY + routeId, waiting);
+        return true;
+      });
+      if (!queuedNow) return null;
       await this.wakeIn(WAIT_POLL_MS);
       return "waiting";
     }

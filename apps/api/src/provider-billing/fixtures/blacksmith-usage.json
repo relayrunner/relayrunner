@@ -1,0 +1,219 @@
+{
+  "window": {
+    "start": "2026-11-13T18:59:41Z",
+    "end": "2026-11-20T18:59:41Z"
+  },
+  "installation": {
+    "installation_model_id": 448505,
+    "installation_name": "relayrunner"
+  },
+  "summary": {
+    "jobs": 39,
+    "billable_minutes": 150,
+    "billing_minutes": 150,
+    "runtime_minutes": 39,
+    "cost_usd": 0.3,
+    "failed_cost_usd": 0.024,
+    "cancelled_cost_usd": 0,
+    "rerun_cost_usd": 0,
+    "passed_rerun_cost_usd": 0
+  },
+  "daily": [
+    {
+      "date": "2026-11-13",
+      "jobs": 2,
+      "billable_minutes": 8,
+      "billing_minutes": 8,
+      "runtime_minutes": 2,
+      "cost_usd": 0.016,
+      "failed_cost_usd": 0,
+      "cancelled_cost_usd": 0,
+      "rerun_cost_usd": 0,
+      "passed_rerun_cost_usd": 0
+    },
+    {
+      "date": "2026-11-14",
+      "jobs": 5,
+      "billable_minutes": 20,
+      "billing_minutes": 20,
+      "runtime_minutes": 5,
+      "cost_usd": 0.04,
+      "failed_cost_usd": 0,
+      "cancelled_cost_usd": 0,
+      "rerun_cost_usd": 0,
+      "passed_rerun_cost_usd": 0
+    },
+    {
+      "date": "2026-11-15",
+      "jobs": 8,
+      "billable_minutes": 32,
+      "billing_minutes": 32,
+      "runtime_minutes": 8,
+      "cost_usd": 0.064,
+      "failed_cost_usd": 0,
+      "cancelled_cost_usd": 0,
+      "rerun_cost_usd": 0,
+      "passed_rerun_cost_usd": 0
+    },
+    {
+      "date": "2026-11-16",
+      "jobs": 2,
+      "billable_minutes": 8,
+      "billing_minutes": 8,
+      "runtime_minutes": 2,
+      "cost_usd": 0.016,
+      "failed_cost_usd": 0,
+      "cancelled_cost_usd": 0,
+      "rerun_cost_usd": 0,
+      "passed_rerun_cost_usd": 0
+    },
+    {
+      "date": "2026-11-17",
+      "jobs": 14,
+      "billable_minutes": 50,
+      "billing_minutes": 50,
+      "runtime_minutes": 14,
+      "cost_usd": 0.1,
+      "failed_cost_usd": 0.024,
+      "cancelled_cost_usd": 0,
+      "rerun_cost_usd": 0,
+      "passed_rerun_cost_usd": 0
+    },
+    {
+      "date": "2026-11-18",
+      "jobs": 3,
+      "billable_minutes": 12,
+      "billing_minutes": 12,
+      "runtime_minutes": 3,
+      "cost_usd": 0.024,
+      "failed_cost_usd": 0,
+      "cancelled_cost_usd": 0,
+      "rerun_cost_usd": 0,
+      "passed_rerun_cost_usd": 0
+    },
+    {
+      "date": "2026-11-19",
+      "jobs": 3,
+      "billable_minutes": 12,
+      "billing_minutes": 12,
+      "runtime_minutes": 3,
+      "cost_usd": 0.024,
+      "failed_cost_usd": 0,
+      "cancelled_cost_usd": 0,
+      "rerun_cost_usd": 0,
+      "passed_rerun_cost_usd": 0
+    },
+    {
+      "date": "2026-11-20",
+      "jobs": 2,
+      "billable_minutes": 8,
+      "billing_minutes": 8,
+      "runtime_minutes": 2,
+      "cost_usd": 0.016,
+      "failed_cost_usd": 0,
+      "cancelled_cost_usd": 0,
+      "rerun_cost_usd": 0,
+      "passed_rerun_cost_usd": 0
+    }
+  ],
+  "breakdowns": {
+    "day": [
+      {
+        "date": "2026-11-13",
+        "jobs": 2,
+        "billable_minutes": 8,
+        "billing_minutes": 8,
+        "runtime_minutes": 2,
+        "cost_usd": 0.016,
+        "failed_cost_usd": 0,
+        "cancelled_cost_usd": 0,
+        "rerun_cost_usd": 0,
+        "passed_rerun_cost_usd": 0
+      },
+      {
+        "date": "2026-11-14",
+        "jobs": 5,
+        "billable_minutes": 20,
+        "billing_minutes": 20,
+        "runtime_minutes": 5,
+        "cost_usd": 0.04,
+        "failed_cost_usd": 0,
+        "cancelled_cost_usd": 0,
+        "rerun_cost_usd": 0,
+        "passed_rerun_cost_usd": 0
+      },
+      {
+        "date": "2026-11-15",
+        "jobs": 8,
+        "billable_minutes": 32,
+        "billing_minutes": 32,
+        "runtime_minutes": 8,
+        "cost_usd": 0.064,
+        "failed_cost_usd": 0,
+        "cancelled_cost_usd": 0,
+        "rerun_cost_usd": 0,
+        "passed_rerun_cost_usd": 0
+      },
+      {
+        "date": "2026-11-16",
+        "jobs": 2,
+        "billable_minutes": 8,
+        "billing_minutes": 8,
+        "runtime_minutes": 2,
+        "cost_usd": 0.016,
+        "failed_cost_usd": 0,
+        "cancelled_cost_usd": 0,
+        "rerun_cost_usd": 0,
+        "passed_rerun_cost_usd": 0
+      },
+      {
+        "date": "2026-11-17",
+        "jobs": 14,
+        "billable_minutes": 50,
+        "billing_minutes": 50,
+        "runtime_minutes": 14,
+        "cost_usd": 0.1,
+        "failed_cost_usd": 0.024,
+        "cancelled_cost_usd": 0,
+        "rerun_cost_usd": 0,
+        "passed_rerun_cost_usd": 0
+      },
+      {
+        "date": "2026-11-18",
+        "jobs": 3,
+        "billable_minutes": 12,
+        "billing_minutes": 12,
+        "runtime_minutes": 3,
+        "cost_usd": 0.024,
+        "failed_cost_usd": 0,
+        "cancelled_cost_usd": 0,
+        "rerun_cost_usd": 0,
+        "passed_rerun_cost_usd": 0
+      },
+      {
+        "date": "2026-11-19",
+        "jobs": 3,
+        "billable_minutes": 12,
+        "billing_minutes": 12,
+        "runtime_minutes": 3,
+        "cost_usd": 0.024,
+        "failed_cost_usd": 0,
+        "cancelled_cost_usd": 0,
+        "rerun_cost_usd": 0,
+        "passed_rerun_cost_usd": 0
+      },
+      {
+        "date": "2026-11-20",
+        "jobs": 2,
+        "billable_minutes": 8,
+        "billing_minutes": 8,
+        "runtime_minutes": 2,
+        "cost_usd": 0.016,
+        "failed_cost_usd": 0,
+        "cancelled_cost_usd": 0,
+        "rerun_cost_usd": 0,
+        "passed_rerun_cost_usd": 0
+      }
+    ]
+  }
+}
