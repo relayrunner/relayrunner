@@ -16,6 +16,11 @@ const EMAILS: Record<string, { label: string; description: string }> = {
     label: "Machine connected",
     description: "When you connect a new machine with the CLI.",
   },
+  "integration-problem": {
+    label: "Integration problems",
+    description:
+      "When something in a workspace you own or admin stops working, like a suspended GitHub App.",
+  },
   feedback: {
     label: "Feedback",
     description: "When someone sends feedback from the dashboard or an agent.",

@@ -8,12 +8,14 @@ import {
   renderFeedbackEmail,
   renderDeadLetterAlertEmail,
   renderHealthAlertEmail,
+  renderIntegrationProblemEmail,
   renderMachineConnectedEmail,
   renderMachineTakenOverEmail,
   renderPriceCheckEmail,
   renderWelcomeEmail,
   type ConnectionPlace,
   type RenderedEmail,
+  type WorkspaceProblem,
 } from "@relayrunner/email";
 import { providerName, rateText } from "@relayrunner/providers";
 import type { Env } from "./env.ts";
@@ -49,6 +51,11 @@ export type EmailArgs = (
       };
     }
   | { to: string; template: "dead-letter-alert"; context: { count: number; threshold: number } }
+  | {
+      to: string;
+      template: "integration-problem";
+      context: WorkspaceProblem & { workspace: string };
+    }
   | {
       to: string;
       template: "health-alert";
@@ -95,6 +102,12 @@ function render(env: Env, args: EmailArgs): RenderedEmail {
       return renderDeadLetterAlertEmail({
         ...args.context,
         inspectorUrl: `${dashboard}/admin/webhooks`,
+      });
+    case "integration-problem":
+      return renderIntegrationProblemEmail({
+        ...args.context,
+        providerName: "provider" in args.context ? providerName(args.context.provider) : "",
+        dashboardUrl: dashboard,
       });
     case "health-alert":
       return renderHealthAlertEmail(args.context);

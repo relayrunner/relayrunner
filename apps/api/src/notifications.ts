@@ -11,6 +11,8 @@ import { isOperator } from "./roles.ts";
 export const NOTIFICATION_TYPES = {
   // To the person who approved the machine in the CLI.
   "machine-connected": { operator: false, on: true },
+  // To a workspace's owners and admins when one of its integrations stops working.
+  "integration-problem": { operator: false, on: true },
   // Operator alerts always go to the team inbox (FEEDBACK_EMAIL, OPERATOR_ALERT_EMAIL). An
   // operator can also get a copy at their own address; off by default, since the team inbox
   // forwards to operators already.

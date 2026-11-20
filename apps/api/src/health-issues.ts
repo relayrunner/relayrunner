@@ -17,8 +17,11 @@ import { DAY_MS } from "./time.ts";
  * task in two cron runs in a row, so a few minutes of D1 refusing queries stay quiet.
  */
 export const HEALTH_ISSUE_KINDS = {
-  cron: { threshold: 3 },
-  task: { threshold: 4 },
+  cron: { threshold: 3, daily: true },
+  task: { threshold: 4, daily: true },
+  // A workspace's broken integration (src/integration-issues.ts): told once, since its admins are
+  // told too and it can stay broken for weeks.
+  integration: { threshold: 1, daily: false },
 } as const;
 
 export type HealthIssueKind = keyof typeof HEALTH_ISSUE_KINDS;
@@ -123,7 +126,7 @@ export async function takeHealthAlerts(db: Db, now = new Date()): Promise<Health
     if (row.clearedAt) {
       if (row.alertedAt) alerts.push(alertFor(row, "cleared"));
       await db.delete(issue).where(and(eq(issue.key, row.key), isNotNull(issue.clearedAt)));
-    } else if (kind && row.failures >= kind.threshold) {
+    } else if (kind && row.failures >= kind.threshold && (!row.alertedAt || kind.daily)) {
       alerts.push(alertFor(row, "failing"));
       await db.update(issue).set({ alertedAt: now }).where(eq(issue.key, row.key));
     }
@@ -144,6 +147,8 @@ function alertFor(row: typeof issue.$inferSelect, state: HealthAlert["state"]): 
 /** One line per alert, for Slack. */
 export function alertText(alert: HealthAlert) {
   if (alert.state === "cleared") return `:white_check_mark: \`${alert.key}\` is working again.`;
+  if (alert.key.startsWith("integration:"))
+    return `:warning: \`${alert.key}\` stopped working. The workspace's owners and admins were emailed.`;
   const failures = alert.failures === 1 ? "1 time" : `${alert.failures} times in a row`;
   return `:rotating_light: \`${alert.key}\` failed ${failures} since ${alert.since.toISOString()}: ${alert.error.replace(/[<>&]/g, "")}`;
 }

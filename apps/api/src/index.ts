@@ -14,6 +14,7 @@ import { purgeExpiredAiAnswers, purgeOldActivity } from "./retention.ts";
 import { purgeOldWorkflowRuns } from "./runs.ts";
 import { releasesToken, syncRunnerReleases } from "./runner-releases.ts";
 import { runCronTasks, sendHealthAlerts } from "./health-issues.ts";
+import { checkIntegrations } from "./integration-issues.ts";
 import { sweepPicks } from "./pick-sweep.ts";
 import { enqueueSignalRollups } from "./signals.ts";
 import { sweepProviderHealth } from "./provider-health.ts";
@@ -96,6 +97,7 @@ export default {
               purgeOldProviderUsage: () => purgeOldProviderUsage(db, at),
               purgeExpiredAiAnswers: () => purgeExpiredAiAnswers(db, at.getTime()),
               enqueueSignalRollups: () => enqueueSignalRollups(env),
+              checkIntegrations: () => checkIntegrations(env, db, at),
               syncRunnerReleases: () =>
                 releasesToken(env, db).then((token) => syncRunnerReleases(db, token)),
             };

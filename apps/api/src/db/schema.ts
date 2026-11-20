@@ -1744,7 +1744,7 @@ export const jobType = sqliteTable(
 );
 
 // Something that keeps failing and that someone should hear about (src/health-issues.ts): a cron
-// task, an installation's queued task, or later a workspace's broken integration. One row per
+// task, an installation's queued task, or a workspace's broken integration. One row per
 // thing, by `key`. It opens on a failure and clears on the next success; alerts go out when it
 // passes its threshold and again when it clears, at most once a day while it stays open.
 export const healthIssue = sqliteTable(
@@ -1752,7 +1752,7 @@ export const healthIssue = sqliteTable(
   {
     // What failed, e.g. "cron:syncRunnerReleases" or "task:signals:123".
     key: text("key").primaryKey(),
-    // A HEALTH_ISSUE_KINDS id: "cron" or "task".
+    // A HEALTH_ISSUE_KINDS id: "cron", "task" or "integration".
     kind: text("kind").notNull(),
     // The workspace's installation, for issues that belong to one.
     installationId: integer("installation_id"),
