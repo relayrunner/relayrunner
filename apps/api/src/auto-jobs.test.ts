@@ -188,3 +188,76 @@ describe("auto job settings for members", () => {
     expect(size.status).toBe(403);
   });
 });
+
+describe("sizes planned before a repo routes", () => {
+  test("wait unseen for the job's first pick, which then runs at that size", async () => {
+    const { cookie } = await testing.signIn(env);
+    const { workspace, cookie: jar } = await testing.createWorkspace(
+      env,
+      cookie,
+      "Planned",
+      "planned",
+    );
+    const db = createDb(env.DB);
+    const now = new Date();
+    await db.insert(schema.githubRepository).values({
+      id: 201,
+      installationId: workspace.installationId,
+      fullName: "acme/planned",
+      private: true,
+      githubStateAt: now,
+    });
+    await db.insert(schema.workflowRun).values({
+      id: 9001,
+      runAttempt: 1,
+      installationId: workspace.installationId,
+      repositoryId: 201,
+      repositoryFullName: "acme/planned",
+      workflowName: "CI",
+      workflowPath: ".github/workflows/ci.yml",
+      event: "push",
+      headSha: "abc",
+      status: "completed",
+      githubUpdatedAt: now,
+    });
+
+    const plan = (body: unknown) =>
+      testing.call(env, `/workspaces/${workspace.id}/planned-sizes`, jar, body, "PUT");
+    const saved = await plan({
+      repositoryId: 201,
+      jobs: [
+        { workflow: "CI", job: "test", size: 8 },
+        // A `name:` of its own, and a workflow with no recorded file: nothing to key them on.
+        { workflow: "CI", job: "Unit tests", size: 4 },
+        { workflow: "Nightly", job: "build", size: 4 },
+      ],
+    });
+    expect(saved.status).toBe(200);
+    expect(await saved.json()).toEqual({ planned: [{ workflow: "CI", job: "test", size: 8 }] });
+
+    // Not listed until it runs.
+    const listed = async () =>
+      (
+        (await (await testing.call(env, `/workspaces/${workspace.id}/auto-jobs`, jar)).json()) as {
+          jobs: { relayJob: string; size: number | null }[];
+        }
+      ).jobs;
+    expect(await listed()).toEqual([]);
+
+    const picked = await autoPick(db, {
+      workspaceId: workspace.id,
+      repositoryId: 201,
+      relayJob: "relay-test",
+      context: { ...context(), repo: "acme/planned" },
+    });
+    expect(picked.size).toBe(8);
+    expect(await listed()).toMatchObject([{ relayJob: "relay-test", size: 8 }]);
+
+    expect(
+      (await plan({ repositoryId: 999, jobs: [{ workflow: "CI", job: "test", size: 8 }] })).status,
+    ).toBe(404);
+    expect(
+      (await plan({ repositoryId: 201, jobs: [{ workflow: "CI", job: "test", size: 3 }] })).status,
+    ).toBe(400);
+  });
+});

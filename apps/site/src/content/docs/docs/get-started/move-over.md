@@ -19,7 +19,7 @@ It sorts every job into three groups and lets you pick from the first:
 - **Already routed.** The job already runs where a relay sends it.
 - **Skipped, with the reason.** See below.
 
-To see the list without changing anything, run `relayrunner init --plan`. To route jobs without prompts, run `relayrunner init --apply test,lint`, or `--apply all` for every ready job.
+To see the list without changing anything, run `relayrunner init --plan`. To route jobs without prompts, run `relayrunner init --apply test,lint`, or `--apply all` for every ready job. Add `--auto` to set Linux x64 jobs' sizes on the Router page instead of in the file.
 
 ## What it writes
 

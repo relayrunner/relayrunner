@@ -42,3 +42,34 @@ export type RouterSetup = {
 export function getRouterSetup(workspaceId: string) {
   return api<RouterSetup>(`/workspaces/${encodeURIComponent(workspaceId)}/router-setup`);
 }
+
+/** Why the org's Default runner group keeps a repo's relay job from RelayRunner. */
+export type RunnerGroupBlock = "public" | "private_only" | "not_selected";
+
+/** The repos the org's Default runner group leaves out. */
+export type RunnerGroupCheck = {
+  groupName: string;
+  settingsUrl: string;
+  blocked: { repositoryId: number; block: RunnerGroupBlock }[];
+};
+
+/** Null for a personal account, or when GitHub couldn't be read. */
+export async function getRunnerGroupCheck(workspaceId: string) {
+  const { check } = await api<{ check: RunnerGroupCheck | null }>(
+    `/workspaces/${encodeURIComponent(workspaceId)}/runner-group-check`,
+  );
+  return check;
+}
+
+/** Saves sizes for jobs that don't route yet, for their first run. Answers the jobs it saved. */
+export async function planSizes(
+  workspaceId: string,
+  repositoryId: number,
+  jobs: { workflow: string; job: string; size: number }[],
+) {
+  const { planned } = await api<{ planned: typeof jobs }>(
+    `/workspaces/${encodeURIComponent(workspaceId)}/planned-sizes`,
+    { method: "PUT", body: JSON.stringify({ repositoryId, jobs }) },
+  );
+  return planned;
+}

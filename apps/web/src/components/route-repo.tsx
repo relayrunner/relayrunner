@@ -1,12 +1,20 @@
-import { ArrowRightIcon, CircleCheckIcon, CopyIcon, GlobeIcon } from "lucide-react";
+import {
+  ArrowRightIcon,
+  CircleCheckIcon,
+  CopyIcon,
+  GlobeIcon,
+  LoaderCircleIcon,
+  TriangleAlertIcon,
+} from "lucide-react";
 import { type ReactNode, useState } from "react";
 import { useCopy } from "@/components/add-runner";
-import { AUTO_DOCS } from "@/components/router-workflows";
+import { AUTO_DOCS, SizeSelect } from "@/components/router-workflows";
 import { Button } from "@/components/ui/button";
 import { Sheet, SheetContent, SheetDescription, SheetTitle } from "@/components/ui/sheet";
 import { plural } from "@/lib/job-times";
 import {
   defaultPicks,
+  firstRouted,
   jobKey,
   type PickedJob,
   pickedJobs,
@@ -16,13 +24,30 @@ import {
   type RepoToRoute,
   routeAllPrompt,
   routePrompt,
+  sizable,
 } from "@/lib/route-repo";
+import type { RunnerGroupBlock, RunnerGroupCheck } from "@/lib/router-setup";
 import { cn } from "@/lib/utils";
 
 const INIT_COMMAND = "npx relayrunner init";
 
 /** Where the sheet opens: a repo picked from the Workflows list starts at its jobs. */
 export type RouteStart = { repoId: number | null };
+
+/** A size picked for a job before its repo routes. */
+export type PlannedSize = { workflow: string; job: string; size: number };
+
+/** What the sheet needs from the page beyond the repos. */
+export type RouteRepoContext = {
+  accessUrl: string | null;
+  /** The workspace's default size for auto jobs, in vCPUs. */
+  defaultSize: number;
+  groupCheck: RunnerGroupCheck | null;
+  /** Saves sizes for the repo's first routed run, and answers the jobs it saved. */
+  onPlanSizes: (repoId: number, jobs: PlannedSize[]) => Promise<PlannedSize[]>;
+  /** A prompt or command was copied: the page starts watching for the repo's first routed run. */
+  onCopied: () => void;
+};
 
 /** The Router page's setup card: how far the workspace's repos are, and the way in. */
 export function SetupCard({ progress, onRoute }: { progress: RepoProgress; onRoute: () => void }) {
@@ -59,12 +84,12 @@ export function RouteRepoSheet({
   start,
   onClose,
   progress,
-  accessUrl,
+  context,
 }: {
   start: RouteStart | null;
   onClose: () => void;
   progress: RepoProgress;
-  accessUrl: string | null;
+  context: RouteRepoContext;
 }) {
   return (
     <Sheet open={!!start} onOpenChange={(open) => !open && onClose()}>
@@ -75,7 +100,7 @@ export function RouteRepoSheet({
             key={start.repoId ?? "pick"}
             start={start}
             progress={progress}
-            accessUrl={accessUrl}
+            context={context}
             onClose={onClose}
           />
         )}
@@ -87,15 +112,17 @@ export function RouteRepoSheet({
 function RouteRepoSteps({
   start,
   progress,
-  accessUrl,
+  context,
   onClose,
 }: {
   start: RouteStart;
   progress: RepoProgress;
-  accessUrl: string | null;
+  context: RouteRepoContext;
   onClose: () => void;
 }) {
-  const repos = [...progress.left, ...progress.quiet];
+  const { accessUrl, defaultSize, groupCheck } = context;
+  // The repos as the sheet opened: one that routes while it's open stays, to show its first run.
+  const [repos] = useState(() => [...progress.left, ...progress.quiet]);
   const [repoId, setRepoId] = useState(start.repoId ?? repos[0]?.id ?? null);
   const [stage, setStage] = useState<Stage>(start.repoId === null ? "repo" : "jobs");
   // Each repo's checked jobs once it's been opened, by jobKey, so going back keeps them.
@@ -103,6 +130,12 @@ function RouteRepoSteps({
   const [auto, setAuto] = useState(true);
   // Repos taken through to the last step, for "Repo n of m" and Next repo.
   const [done, setDone] = useState(new Set<number>());
+  // Each repo's picked sizes by jobKey; a job left out uses the default size.
+  const [sizes, setSizes] = useState(new Map<number, Map<string, number>>());
+  // Repos whose prompt was copied, with the workflows to watch for a first routed run (null: any).
+  const [watched, setWatched] = useState(new Map<number, string[] | null>());
+  // What happened to each repo's picked sizes, once copied.
+  const [saved, setSaved] = useState(new Map<number, string>());
   const repo = repos.find((r) => r.id === repoId) ?? null;
   if (!repo) return null;
   // A repo with no recent runs has no jobs to pick; init finds them.
@@ -116,10 +149,49 @@ function RouteRepoSteps({
   const others = progress.left.filter((r) => r.id !== repo.id && !done.has(r.id));
   const next = others[0] ?? null;
 
+  const repoSizes = sizes.get(repo.id) ?? new Map<string, number>();
+  const blockOf = new Map(groupCheck?.blocked.map((b) => [b.repositoryId, b.block]));
+  const block = blockOf.get(repo.id);
+  const groupBlock = block && groupCheck ? { block, check: groupCheck } : null;
+  // The sizes the copy saves: picked jobs the Router will size, set to something other than default.
+  const planned: PlannedSize[] = auto
+    ? repo.workflows.flatMap((w) =>
+        w.jobs.flatMap((job) => {
+          const key = jobKey(w.workflow, job.name);
+          const size = repoSizes.get(key);
+          return picked.has(key) && size !== undefined
+            ? [{ workflow: w.workflow, job: job.name, size }]
+            : [];
+        }),
+      )
+    : [];
+
   const toggle = (key: string) => {
     const nextPicks = new Set(picked);
     if (!nextPicks.delete(key)) nextPicks.add(key);
     setPicks(new Map(picks).set(repo.id, nextPicks));
+  };
+  const setSize = (key: string, size: number | null) => {
+    const next = new Map(repoSizes);
+    if (size === null) next.delete(key);
+    else next.set(key, size);
+    setSizes(new Map(sizes).set(repo.id, next));
+  };
+  const copied = async () => {
+    const id = repo.id;
+    setWatched((map) =>
+      new Map(map).set(id, hasJobs ? [...new Set(jobs.map((job) => job.workflow))] : null),
+    );
+    context.onCopied();
+    if (planned.length === 0) return;
+    const message = await context.onPlanSizes(id, planned).then(
+      (kept) =>
+        kept.length === planned.length
+          ? `Saved ${plural(kept.length, "size")} for the first run.`
+          : `Saved ${kept.length} of ${plural(planned.length, "size")}. Set the rest under Workflows once the repo routes.`,
+      () => "Couldn't save the sizes. Set them under Workflows once the repo routes.",
+    );
+    setSaved((map) => new Map(map).set(id, message));
   };
 
   return (
@@ -142,7 +214,13 @@ function RouteRepoSteps({
       >
         <div role="radiogroup" aria-label="Repository" className="grid rounded-md border">
           {progress.left.map((r) => (
-            <RepoOption key={r.id} repo={r} checked={r.id === repo.id} onPick={setRepoId} />
+            <RepoOption
+              key={r.id}
+              repo={r}
+              checked={r.id === repo.id}
+              blocked={blockOf.has(r.id)}
+              onPick={setRepoId}
+            />
           ))}
           {progress.quiet.length > 0 && (
             <QuietRepos repos={progress.quiet} repo={repo} onPick={setRepoId} />
@@ -153,6 +231,7 @@ function RouteRepoSteps({
             Public repo. Your machines won't take its jobs; hosted runners in your order will.
           </Note>
         )}
+        {groupBlock && <GroupNote {...groupBlock} />}
         {!hasJobs && (
           <p className="text-[13px] text-muted-foreground">
             No runs in the last 14 days, so there are no jobs to pick. <code>init</code> finds them.
@@ -197,34 +276,42 @@ function RouteRepoSteps({
                 {w.jobs.map((job) => {
                   const key = jobKey(w.workflow, job.name);
                   return (
-                    <label
-                      key={key}
-                      className="flex cursor-pointer items-start gap-3 border-t py-2 text-[13px]"
-                    >
-                      <input
-                        type="checkbox"
-                        className="mt-0.5 size-4 accent-[var(--color-go)]"
-                        checked={picked.has(key)}
-                        onChange={() => toggle(key)}
-                      />
-                      <span className="grid min-w-0 gap-0.5">
-                        <span className="truncate">
-                          {job.name}
-                          {job.legs > 1 && (
-                            <span className="text-muted-foreground"> · {job.legs} legs</span>
-                          )}
+                    <div key={key} className="flex items-center gap-3 border-t py-2 text-[13px]">
+                      <label className="flex min-w-0 flex-1 cursor-pointer items-start gap-3">
+                        <input
+                          type="checkbox"
+                          className="mt-0.5 size-4 accent-[var(--color-go)]"
+                          checked={picked.has(key)}
+                          onChange={() => toggle(key)}
+                        />
+                        <span className="grid min-w-0 gap-0.5">
+                          <span className="truncate">
+                            {job.name}
+                            {job.legs > 1 && (
+                              <span className="text-muted-foreground"> · {job.legs} legs</span>
+                            )}
+                          </span>
+                          <span className="truncate text-xs text-muted-foreground">
+                            {[
+                              job.label,
+                              plural(job.runs, "run"),
+                              job.minutes !== null && `${job.minutes} min`,
+                            ]
+                              .filter(Boolean)
+                              .join(" · ")}
+                          </span>
                         </span>
-                        <span className="truncate text-xs text-muted-foreground">
-                          {[
-                            job.label,
-                            plural(job.runs, "run"),
-                            job.minutes !== null && `${job.minutes} min`,
-                          ]
-                            .filter(Boolean)
-                            .join(" · ")}
-                        </span>
-                      </span>
-                    </label>
+                      </label>
+                      {auto && sizable(job) && (
+                        <SizeSelect
+                          name={job.name}
+                          value={repoSizes.get(key) ?? null}
+                          defaultSize={defaultSize}
+                          disabled={!picked.has(key)}
+                          onChange={(size) => setSize(key, size)}
+                        />
+                      )}
+                    </div>
                   );
                 })}
               </div>
@@ -270,6 +357,12 @@ function RouteRepoSteps({
           others={done.size > 0 && others.length > 1 ? others : []}
           picks={picks}
           next={next}
+          blocked={groupBlock}
+          firstRun={
+            watched.has(repo.id) ? firstRouted(progress, repo.id, watched.get(repo.id)!) : undefined
+          }
+          saved={saved.get(repo.id) ?? null}
+          onCopied={() => void copied()}
           onBack={() => go(-1)}
           onNext={(target) => {
             setDone(new Set(done).add(repo.id));
@@ -293,6 +386,10 @@ function RouteStep({
   others,
   picks,
   next,
+  blocked,
+  firstRun,
+  saved,
+  onCopied,
   onBack,
   onNext,
   onClose,
@@ -303,6 +400,11 @@ function RouteStep({
   others: RepoToRoute[];
   picks: Map<number, Set<string>>;
   next: RepoToRoute | null;
+  blocked: { block: RunnerGroupBlock; check: RunnerGroupCheck } | null;
+  /** Undefined before a copy, null while waiting, then the workflow that ran through a relay. */
+  firstRun: string | null | undefined;
+  saved: string | null;
+  onCopied: () => void;
   onBack: () => void;
   onNext: (repo: RepoToRoute) => void;
   onClose: () => void;
@@ -315,9 +417,14 @@ function RouteStep({
           ? `Ready to route ${plural(jobs.length, "job")}`
           : "Ready to route every job init finds"}
       </p>
+      {blocked && <GroupNote {...blocked} />}
       <div className="flex flex-wrap gap-2">
-        <CopyText primary label="Copy agent prompt" text={prompt} />
-        <CopyText label="Copy command" text={INIT_COMMAND} />
+        <CopyText primary label="Copy agent prompt" text={prompt} onCopy={onCopied} />
+        <CopyText
+          label="Copy command"
+          text={auto ? `${INIT_COMMAND} --auto` : INIT_COMMAND}
+          onCopy={onCopied}
+        />
       </div>
       <pre className="max-h-48 overflow-y-auto rounded-md border bg-muted/50 px-3 py-2.5 font-mono text-[11.5px] whitespace-pre-wrap text-muted-foreground">
         {prompt}
@@ -325,6 +432,19 @@ function RouteStep({
       <p className="text-[13px] text-muted-foreground">
         Paste the prompt into your coding agent. It opens a PR; merge it and the repo is routed.
       </p>
+      {saved && <p className="text-[13px] text-muted-foreground">{saved}</p>}
+      {firstRun === null && (
+        <p className="flex items-center gap-2 text-[13px] text-muted-foreground">
+          <LoaderCircleIcon aria-hidden className="size-4 shrink-0 animate-spin" />
+          Waiting for the first routed run. It shows here once the PR merges and a job runs.
+        </p>
+      )}
+      {firstRun && (
+        <p className="flex items-center gap-2 text-[13px]">
+          <CircleCheckIcon aria-hidden className="size-4 shrink-0 text-go" />
+          {firstRun} ran through the relay. {repo.name} is routed.
+        </p>
+      )}
       {others.length > 0 && (
         <p className="text-[13px] text-muted-foreground">
           Same choices for the {others.length} repos left?{" "}
@@ -420,10 +540,13 @@ function Step({
 function RepoOption({
   repo,
   checked,
+  blocked = false,
   onPick,
 }: {
   repo: RepoToRoute;
   checked: boolean;
+  /** Left out of the org's Default runner group. */
+  blocked?: boolean;
   onPick: (id: number) => void;
 }) {
   const runs = repoRuns(repo);
@@ -448,6 +571,12 @@ function RepoOption({
       <span className="min-w-0 truncate font-mono text-[12.5px]">{repo.name}</span>
       {repo.private === false && (
         <GlobeIcon aria-label="Public" className="size-3.5 shrink-0 text-muted-foreground" />
+      )}
+      {blocked && (
+        <TriangleAlertIcon
+          aria-label="Not in the runner group"
+          className="size-3.5 shrink-0 text-run"
+        />
       )}
       <span className="ml-auto shrink-0 text-xs text-muted-foreground tabular-nums">
         {runs > 0
@@ -499,13 +628,19 @@ function CopyText({
   label,
   primary,
   link,
+  onCopy,
 }: {
   text: string;
   label: string;
   primary?: boolean;
   link?: boolean;
+  onCopy?: () => void;
 }) {
-  const { copied, copy } = useCopy(text);
+  const { copied, copy: copyText } = useCopy(text);
+  const copy = async () => {
+    await copyText();
+    onCopy?.();
+  };
   if (link)
     return (
       <button
@@ -521,5 +656,27 @@ function CopyText({
       <CopyIcon aria-hidden />
       {copied ? "Copied" : label}
     </Button>
+  );
+}
+
+/** Why the org's Default runner group will keep the repo's relay jobs queued, and where to fix it. */
+function GroupNote({ block, check }: { block: RunnerGroupBlock; check: RunnerGroupCheck }) {
+  const group = `Your org's ${check.groupName} runner group`;
+  return (
+    <Note icon={<TriangleAlertIcon aria-hidden className="size-4 text-run" />}>
+      {block === "not_selected"
+        ? `${group} doesn't include this repo, so its routed jobs would stay queued. Add it under Repository access before you merge; GitHub can take about 20 minutes to apply it.`
+        : block === "public"
+          ? `${group} doesn't allow public repos, so this repo's routed jobs would stay queued. Turn on "Allow public repositories" before you merge.`
+          : `${group} only allows private repos, so this repo's routed jobs would stay queued. Change its Repository access before you merge.`}{" "}
+      <a
+        href={check.settingsUrl}
+        target="_blank"
+        rel="noreferrer"
+        className="text-go hover:text-go-hover"
+      >
+        Open runner group
+      </a>
+    </Note>
   );
 }

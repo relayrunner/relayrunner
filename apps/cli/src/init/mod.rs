@@ -6,6 +6,8 @@
 //!   relayrunner init --plan [--json]   list every job with its verdict; changes nothing
 //!   relayrunner init --apply <jobs>    route those jobs without prompting (`all` = every ready job)
 //!
+//! `--auto` writes `auto` in place of a Linux x64 job's label, so the Router page sets its size.
+//!
 //! `--plan --json` and `--apply` are what an agent setting up RelayRunner drives.
 
 mod diff;
@@ -25,6 +27,8 @@ pub struct Plan {
     files: Vec<WorkflowFile>,
     jobs: Vec<WorkflowJob>,
     errors: Vec<FileError>,
+    /// Write `auto` for the jobs the Router can size (`--auto`).
+    auto: bool,
 }
 
 const PUBLIC_REPO: &str = "This repo is public, and machines never take jobs from public repos. There's nothing for init to set up here.";
@@ -67,6 +71,7 @@ fn local_plan(cwd: &Path, vm: bool) -> Result<Plan, String> {
         files,
         jobs,
         errors,
+        auto: false,
     })
 }
 
@@ -159,7 +164,7 @@ fn changes_for(plan: &Plan, chosen: &[WorkflowJob]) -> Result<Vec<Change>, Strin
         }
     }
     for change in &mut changes {
-        change.after = workflows::route_jobs(&change.before, &change.jobs).map_err(|reason| {
+        change.after = workflows::route_jobs(&change.before, &change.jobs, plan.auto).map_err(|reason| {
             format!(
                 "Couldn't edit {}: {reason}. Route its jobs by hand: https://relayrunner.dev/docs/get-started/github-actions",
                 change.file
@@ -279,6 +284,8 @@ fn apply(plan: &Plan, list: &str, json: bool) -> Result<(), String> {
         struct Routed<'a> {
             file: &'a str,
             job: &'a str,
+            /// Whether the relay says `auto`, so the Router page sets the job's size.
+            auto: bool,
             warnings: &'a [String],
         }
         #[derive(serde::Serialize)]
@@ -291,6 +298,7 @@ fn apply(plan: &Plan, list: &str, json: bool) -> Result<(), String> {
             .map(|j| Routed {
                 file: &j.file,
                 job: &j.job,
+                auto: plan.auto && workflows::auto_sizable(j),
                 warnings: &j.warnings,
             })
             .collect();
@@ -418,12 +426,13 @@ fn choose_and_write(plan: &Plan, finish: fn(&str)) -> Result<(), String> {
 }
 
 pub async fn command(args: &[String]) -> i32 {
-    let (mut plan_only, mut json, mut apply_list) = (false, false, None::<String>);
+    let (mut plan_only, mut json, mut auto, mut apply_list) = (false, false, false, None::<String>);
     let mut rest = args.iter();
     while let Some(arg) = rest.next() {
         match arg.as_str() {
             "--plan" => plan_only = true,
             "--json" => json = true,
+            "--auto" => auto = true,
             "--apply" => apply_list = Some(rest.next().cloned().unwrap_or_default()),
             other => match other.strip_prefix("--apply=") {
                 Some(list) => apply_list = Some(list.to_string()),
@@ -442,7 +451,10 @@ pub async fn command(args: &[String]) -> i32 {
     let vm = in_checkout && crate::isolated::state().await == crate::isolated::State::Ready;
     let run = move || -> Result<(), String> {
         let cwd = std::env::current_dir().map_err(|e| e.to_string())?;
-        let plan = plan(&cwd, vm)?;
+        let plan = Plan {
+            auto,
+            ..plan(&cwd, vm)?
+        };
         if let Some(list) = apply_list {
             return apply(&plan, &list, json);
         }

@@ -316,32 +316,13 @@ function AutoJobRows({
               <span title={`${job.relayJob} in ${job.workflowPath}`}>{autoJobName(job)}</span>
             </td>
             <td className="py-1.5 pr-4">
-              <Select
-                value={job.size === null ? DEFAULT : String(job.size)}
+              <SizeSelect
+                name={autoJobName(job)}
+                value={job.size}
+                defaultSize={defaultSize}
                 disabled={!job.canEdit}
-                onValueChange={(value) =>
-                  void onChange(job, {
-                    size: value === DEFAULT ? null : Number(value),
-                    first: job.first,
-                  })
-                }
-              >
-                <SelectTrigger
-                  size="sm"
-                  aria-label={`${autoJobName(job)} size`}
-                  className="h-7 px-2 text-[13px]"
-                >
-                  <SelectValue />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value={DEFAULT}>Default · {defaultSize} vCPU</SelectItem>
-                  {AUTO_SIZES.map((size) => (
-                    <SelectItem key={size} value={String(size)}>
-                      {size} vCPU
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
+                onChange={(size) => void onChange(job, { size, first: job.first })}
+              />
             </td>
             <td className="py-1.5">
               <Select
@@ -403,4 +384,43 @@ function mergeWorkflows(workflows: SetupWorkflow[], jobs: AutoJob[]): Workflow[]
     merged.set(id, entry);
   }
   return [...merged.values()];
+}
+
+/** A job's size: the workspace default (null), or a vCPU count. */
+export function SizeSelect({
+  name,
+  value,
+  defaultSize,
+  disabled,
+  onChange,
+}: {
+  name: string;
+  value: number | null;
+  defaultSize: number;
+  disabled: boolean;
+  onChange: (size: number | null) => void;
+}) {
+  return (
+    <Select
+      value={value === null ? DEFAULT : String(value)}
+      disabled={disabled}
+      onValueChange={(next) => onChange(next === DEFAULT ? null : Number(next))}
+    >
+      <SelectTrigger
+        size="sm"
+        aria-label={`${name} size`}
+        className="h-7 shrink-0 px-2 text-[13px]"
+      >
+        <SelectValue />
+      </SelectTrigger>
+      <SelectContent>
+        <SelectItem value={DEFAULT}>Default · {defaultSize} vCPU</SelectItem>
+        {AUTO_SIZES.map((size) => (
+          <SelectItem key={size} value={String(size)}>
+            {size} vCPU
+          </SelectItem>
+        ))}
+      </SelectContent>
+    </Select>
+  );
 }

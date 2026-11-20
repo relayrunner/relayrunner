@@ -437,10 +437,17 @@ fn job_warnings(job: &Hash, options: &Options) -> Vec<String> {
     warnings
 }
 
+/// Whether the Router can size this ready job: auto sizes are Linux x64 only.
+pub fn auto_sizable(job: &WorkflowJob) -> bool {
+    let label = job.label.as_deref().unwrap_or_default().to_lowercase();
+    job.machine == Some("self-hosted") && !label.contains("arm") && !label.contains("macos")
+}
+
 /// Routes the given jobs of one workflow file through the relay, and returns the new contents.
-/// Each job must have come back ready from `analyze` for this same source. Fails, with why, on a
-/// layout it can't edit safely, such as jobs written inline.
-pub fn route_jobs(source: &str, jobs: &[WorkflowJob]) -> Result<String, String> {
+/// Each job must have come back ready from `analyze` for this same source. With `auto`, a job the
+/// Router can size gets `auto` in place of its label. Fails, with why, on a layout it can't edit
+/// safely, such as jobs written inline.
+pub fn route_jobs(source: &str, jobs: &[WorkflowJob], auto: bool) -> Result<String, String> {
     let mut text = source.to_string();
     for job in jobs {
         let (Verdict::Ready, Some(provider), Some(label)) = (job.verdict, job.provider, &job.label)
@@ -451,7 +458,11 @@ pub fn route_jobs(source: &str, jobs: &[WorkflowJob]) -> Result<String, String> 
             &text,
             &job.job,
             provider,
-            label,
+            if auto && auto_sizable(job) {
+                "auto"
+            } else {
+                label
+            },
             job.machine.unwrap_or("self-hosted"),
         )?;
     }
@@ -1015,7 +1026,7 @@ jobs:
     #[test]
     fn adds_a_relay_in_front_of_each_job() {
         let jobs = judge(SOURCE, "macos", false);
-        let out = route_jobs(SOURCE, &[jobs[0].clone(), jobs[2].clone()]).unwrap();
+        let out = route_jobs(SOURCE, &[jobs[0].clone(), jobs[2].clone()], false).unwrap();
         let expected = "name: CI
 
 # Runs on every push.
@@ -1057,9 +1068,28 @@ jobs:
 "
         .replace("REF", RELAY_REF);
         assert_eq!(out, expected);
-        let all = route_jobs(SOURCE, &jobs).unwrap();
+        let all = route_jobs(SOURCE, &jobs, false).unwrap();
         assert!(
             judge(&all, "macos", false)
+                .iter()
+                .all(|j| j.verdict == Verdict::Routed)
+        );
+    }
+
+    #[test]
+    fn auto_writes_auto_for_linux_x64_jobs_only() {
+        let source = "on: push\njobs:\n  test:\n    runs-on: ubuntu-latest\n    steps:\n      - run: npm test\n  arm:\n    runs-on: ubuntu-24.04-arm\n    steps:\n      - run: npm test\n  mac:\n    runs-on: macos-15\n    steps:\n      - run: npm test\n";
+        let jobs = judge(source, "macos", false);
+        assert_eq!(
+            jobs.iter().map(auto_sizable).collect::<Vec<_>>(),
+            [true, false, false]
+        );
+        let out = route_jobs(source, &jobs, true).unwrap();
+        assert!(out.contains("      machine: self-hosted\n      github: auto\n"));
+        assert!(out.contains("      github: ubuntu-24.04-arm\n"));
+        assert!(out.contains("      machine: macOS\n      github: macos-15\n"));
+        assert!(
+            judge(&out, "macos", false)
                 .iter()
                 .all(|j| j.verdict == Verdict::Routed)
         );
@@ -1081,7 +1111,7 @@ jobs:
             .into_iter()
             .find(|j| j.job == "test")
             .unwrap();
-        let out = route_jobs(input, &[test]).unwrap();
+        let out = route_jobs(input, &[test], false).unwrap();
         assert!(out.contains("\n\n  relay-test-2:\n"));
         assert!(out.contains("      blacksmith: blacksmith-4vcpu-ubuntu-2404\n"));
         assert!(out.contains("    needs: [build, relay-test-2]\n"));
@@ -1089,7 +1119,7 @@ jobs:
         let block = "on: push\njobs:\n  a:\n    runs-on: ubuntu-latest\n  b:\n    needs:\n      - a\n    runs-on: ubuntu-latest\n";
         let b = judge(block, "linux", false).pop().unwrap();
         assert!(
-            route_jobs(block, &[b])
+            route_jobs(block, &[b], false)
                 .unwrap()
                 .contains("    needs:\n      - a\n      - relay-b\n")
         );
@@ -1100,7 +1130,7 @@ jobs:
         // Four-space indents, CRLF, quotes and no newline at the end.
         let source = "on: [push, pull_request]\r\njobs:\r\n    a:\r\n        runs-on: \"ubuntu-latest\"\r\n        steps:\r\n            - run: echo 'hi'   # say hi";
         let a = judge(source, "linux", false).remove(0);
-        let out = route_jobs(source, &[a]).unwrap();
+        let out = route_jobs(source, &[a], false).unwrap();
         assert_eq!(
             out,
             format!(
@@ -1113,12 +1143,12 @@ jobs:
     fn refuses_what_it_cant_edit() {
         let skipped = one(&job("    runs-on: windows-latest\n"));
         assert!(
-            route_jobs(&job("    runs-on: windows-latest\n"), &[skipped])
+            route_jobs(&job("    runs-on: windows-latest\n"), &[skipped], false)
                 .unwrap_err()
                 .contains("isn't ready")
         );
         let inline = "on: push\njobs: {a: {runs-on: ubuntu-latest}}\n";
         let a = judge(inline, "linux", false).remove(0);
-        assert!(route_jobs(inline, &[a]).is_err());
+        assert!(route_jobs(inline, &[a], false).is_err());
     }
 }

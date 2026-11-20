@@ -48,7 +48,7 @@ Suggest every ready job, minus any whose warnings the user would rather not deal
 relayrunner init --apply test,lint --json
 ```
 
-Name jobs by id (`test`), or `file:id` (`ci.yml:test`) when an id is in more than one workflow. `all` routes every ready job.
+Name jobs by id (`test`), or `file:id` (`ci.yml:test`) when an id is in more than one workflow. `all` routes every ready job. Add `--auto` when the user wants to set sizes on the Router page: Linux x64 jobs get `auto` instead of their label, and each routed job's `auto` field says which did.
 
 Then show `git diff` and explain it. Each routed job looks like this:
 

@@ -13,11 +13,12 @@ import {
 } from "@relayrunner/providers";
 import {
   RUNNER_KEYS,
+  relayJobFor,
   resolveAutoInputs,
   type RelayInputs,
   type RunnerKey,
 } from "@relayrunner/runner-order";
-import { and, desc, eq, gte } from "drizzle-orm";
+import { and, desc, eq, gte, inArray, isNotNull, sql } from "drizzle-orm";
 import { z } from "zod";
 import { type Db, schema } from "./db/index.ts";
 import type { JobContext } from "./routing.ts";
@@ -169,4 +170,71 @@ export async function setAutoJob(
     .update(table)
     .set({ ...setting, updatedBy: userId, updatedAt: new Date() })
     .where(and(eq(table.id, id), eq(table.workspaceId, workspaceId)));
+}
+
+/** A size picked for a job before its repo is routed, by the names GitHub shows. */
+export const plannedSizesSchema = z.object({
+  repositoryId: z.number().int().positive(),
+  jobs: z
+    .array(z.object({ workflow: z.string().min(1), job: z.string().min(1), size: autoSizeSchema }))
+    .min(1)
+    .max(50),
+});
+
+/**
+ * Saves sizes for jobs that don't route yet, as the auto_job rows their first pick will find: the
+ * relay `init` writes for job `test` is `relay-test` (relayJobFor), and the workflow's file comes
+ * from its recent runs. The rows start with last_seen_at 0, which keeps them off the Router page
+ * (listAutoJobs reads the last 30 days) until a pick touches them. Returns the jobs it saved; one with a `name:` of its own, or a workflow with
+ * no recorded file, is left for the Router page once it routes.
+ */
+export async function planAutoJobs(
+  db: Db,
+  workspaceId: string,
+  repo: { id: number; fullName: string },
+  jobs: { workflow: string; job: string; size: number }[],
+  userId: string,
+) {
+  const run = schema.workflowRun;
+  const paths = await db
+    .select({ workflow: run.workflowName, path: sql<string>`max(${run.workflowPath})` })
+    .from(run)
+    .where(
+      and(
+        eq(run.repositoryId, repo.id),
+        inArray(run.workflowName, [...new Set(jobs.map((job) => job.workflow))]),
+        isNotNull(run.workflowPath),
+      ),
+    )
+    .groupBy(run.workflowName);
+  const pathOf = new Map(paths.map((row) => [row.workflow, row.path]));
+  const planned = jobs.flatMap((job) => {
+    const workflowPath = pathOf.get(job.workflow);
+    const relayJob = relayJobFor(job.job);
+    return workflowPath && relayJob ? [{ ...job, workflowPath, relayJob }] : [];
+  });
+  const now = new Date();
+  // One statement per job, sent as one batch: D1 caps a statement's bound values at 100.
+  const [first, ...rest] = planned.map((job) =>
+    db
+      .insert(table)
+      .values({
+        workspaceId,
+        repositoryId: repo.id,
+        repository: repo.fullName,
+        workflowPath: job.workflowPath,
+        workflow: job.workflow,
+        relayJob: job.relayJob,
+        size: job.size,
+        updatedBy: userId,
+        updatedAt: now,
+        lastSeenAt: new Date(0),
+      })
+      .onConflictDoUpdate({
+        target: [table.workspaceId, table.repositoryId, table.workflowPath, table.relayJob],
+        set: { size: job.size, updatedBy: userId, updatedAt: now },
+      }),
+  );
+  if (first) await db.batch([first, ...rest]);
+  return planned;
 }

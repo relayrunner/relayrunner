@@ -99,7 +99,7 @@ const COMMANDS: &[Command] = &[
     (
         "init",
         "Route this repo's GitHub Actions jobs through RelayRunner, so they run on your machine when it's online. Edits workflow files; never commits.",
-        "relayrunner init [--plan] [--apply <jobs>] [--json]",
+        "relayrunner init [--plan] [--apply <jobs>] [--auto] [--json]",
         &[
             (
                 "--plan",
@@ -108,6 +108,10 @@ const COMMANDS: &[Command] = &[
             (
                 "--apply JOBS",
                 "Route these jobs without prompting: comma-separated ids or file:job, or `all` for every ready job",
+            ),
+            (
+                "--auto",
+                "Write `auto` instead of the label for Linux x64 jobs, so their size is set on the Router page",
             ),
             (
                 "--json",

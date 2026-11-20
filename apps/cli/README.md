@@ -195,6 +195,8 @@ checked with an anonymous GitHub API call, so it doesn't matter which account
 - `--apply <jobs>` routes jobs without prompting. Name them by id (`test`),
   `file:id` (`ci.yml:test`) when an id is in several workflows, or `all` for
   every ready job. Add `--json` for a JSON result.
+- `--auto` writes `auto` instead of the label for Linux x64 jobs, so their size
+  is set on the dashboard's Router page. macOS and Arm jobs keep their labels.
 
 ## `relayrunner pause` and `relayrunner resume`
 

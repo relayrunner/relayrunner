@@ -289,7 +289,8 @@ export const githubRate = (book: PriceBook, runner: GitHubRunner, at = Date.now(
   book.usd("github", runner, at);
 
 // A sized service's rate for a label: macOS, Windows, Arm, or Linux on x64.
-const platformOf = (label: string) => {
+/** The platform a lowercase runner label names: macos, windows, arm or (otherwise) linux. */
+export const platformOf = (label: string) => {
   if (label.includes("macos")) return "macos";
   if (label.includes("windows")) return "windows";
   return label.includes("arm") ? "arm" : "linux";

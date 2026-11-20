@@ -389,6 +389,7 @@ export {
   rateName,
   ratePrices,
   rateText,
+  platformOf,
   runnerPlatform,
   type RunnerPlatform,
   type RunnerSize,

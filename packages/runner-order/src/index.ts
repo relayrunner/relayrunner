@@ -186,6 +186,16 @@ export function readRetrySettings(stored: string | null | undefined): RetrySetti
   }
 }
 
+// A job id GitHub accepts under `jobs:`.
+const JOB_ID = /^[A-Za-z_][A-Za-z0-9_-]*$/;
+
+/**
+ * The relay `relayrunner init` puts in front of a job, from the name GitHub shows for it:
+ * `relay-test` for `test`. Null for a name that isn't a job id: that job has a `name:` of its own,
+ * so its id can't be told from the name. (`init` adds `-2` when the name is taken.)
+ */
+export const relayJobFor = (job: string) => (JOB_ID.test(job) ? `relay-${job}` : null);
+
 /** The relay input value that hands a provider's label to the Router: `blacksmith: auto`. */
 export const AUTO = "auto";
 

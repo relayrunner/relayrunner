@@ -1,7 +1,7 @@
 import { DEFAULT_RUNNER_ORDER, type RunnerOrder } from "@relayrunner/runner-order";
 import { createFileRoute } from "@tanstack/react-router";
 import { RotateCwIcon, Settings2Icon, TriangleAlert } from "lucide-react";
-import { useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { SectionBoundary } from "@/components/error-boundary";
 import { PageHeader } from "@/components/page-header";
 import { RetrySettingsCard } from "@/components/retry-settings";
@@ -12,7 +12,12 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Sheet, SheetContent, SheetTitle } from "@/components/ui/sheet";
 import { getActionsUsage, type AccountUsage } from "@/lib/actions-usage";
-import { sampleAutoJobs, sampleRouterAccounts, sampleRouterSetup } from "@/lib/router-sample";
+import {
+  sampleAutoJobs,
+  sampleRouterAccounts,
+  sampleRouterSetup,
+  sampleRunnerGroupCheck,
+} from "@/lib/router-sample";
 import { type AutoJob, type AutoJobs, getAutoJobs, setAutoJob, setAutoSize } from "@/lib/auto-jobs";
 import { AUTO_SIZES } from "@relayrunner/providers";
 import {
@@ -25,7 +30,13 @@ import {
 import { authDisabled } from "@/lib/auth-client";
 import { listMachines, type Machine } from "@/lib/machines";
 import { useProviderApps } from "@/lib/provider-apps";
-import { getRouterSetup, type RouterSetup } from "@/lib/router-setup";
+import {
+  getRouterSetup,
+  getRunnerGroupCheck,
+  planSizes,
+  type RouterSetup,
+  type RunnerGroupCheck,
+} from "@/lib/router-setup";
 import { repoProgress } from "@/lib/route-repo";
 import {
   clearUnhealthyRunner,
@@ -34,6 +45,7 @@ import {
   type ProviderHealth,
   type UnhealthyRunner,
 } from "@/lib/provider-health";
+import { useLiveRefresh } from "@/lib/live-refresh";
 import { canManage } from "@/lib/roles";
 import { cn } from "@/lib/utils";
 import { getRunnerOrder } from "@/lib/runner-order";
@@ -80,11 +92,14 @@ function RouterPage() {
 
   const health = useProviderHealth(current.workspace.id);
   const installedApps = useProviderApps(current.workspace.id);
-  const setup = useRouterSetup(current.workspace.id);
+  // The "Route a repo" sheet, open from the setup card or a repo's Set up in Workflows. Once it
+  // copies a prompt, setup reloads every 20 seconds while it stays open, to catch the first run.
+  const [routeStart, setRouteStart] = useState<RouteStart | null>(null);
+  const [watching, setWatching] = useState(false);
+  const setup = useRouterSetup(current.workspace.id, watching);
+  const groupCheck = useRunnerGroupCheck(current.workspace.id, routeStart !== null);
   const auto = useAutoJobs(current.workspace.id);
   const [settingsOpen, setSettingsOpen] = useState(false);
-  // The "Route a repo" sheet, open from the setup card or a repo's Set up in Workflows.
-  const [routeStart, setRouteStart] = useState<RouteStart | null>(null);
   const progress = useMemo(() => repoProgress(setup), [setup]);
 
   return (
@@ -138,9 +153,19 @@ function RouterPage() {
       </div>
       <RouteRepoSheet
         start={routeStart}
-        onClose={() => setRouteStart(null)}
+        onClose={() => {
+          setRouteStart(null);
+          setWatching(false);
+        }}
         progress={progress}
-        accessUrl={setup?.accessUrl ?? null}
+        context={{
+          accessUrl: setup?.accessUrl ?? null,
+          defaultSize: auto.jobs?.size ?? AUTO_SIZES[0],
+          groupCheck,
+          onPlanSizes: (repoId, jobs) =>
+            authDisabled ? Promise.resolve(jobs) : planSizes(current.workspace.id, repoId, jobs),
+          onCopied: () => setWatching(true),
+        }}
       />
       <Sheet open={settingsOpen} onOpenChange={setSettingsOpen}>
         <SheetContent aria-describedby={undefined} className="sm:max-w-md">
@@ -357,19 +382,38 @@ function sampleRouter(): {
 
 // Recent workflows and their jobs, the repos the App sees, and the hosted labels jobs ran on. Null
 // until it loads, and when it can't be read: the page still works without it.
-function useRouterSetup(workspaceId: string) {
+// With `poll`, it reloads every 20 seconds while the tab is visible and in use.
+function useRouterSetup(workspaceId: string, poll: boolean) {
   const [setup, setSetup] = useState<RouterSetup | null>(null);
+  const load = useCallback(
+    () =>
+      (authDisabled ? Promise.resolve(sampleRouterSetup()) : getRouterSetup(workspaceId)).then(
+        setSetup,
+        () => undefined,
+      ),
+    [workspaceId],
+  );
   useEffect(() => {
-    let live = true;
-    (authDisabled ? Promise.resolve(sampleRouterSetup()) : getRouterSetup(workspaceId)).then(
-      (loaded) => live && setSetup(loaded),
-      () => undefined,
-    );
-    return () => {
-      live = false;
-    };
-  }, [workspaceId]);
+    void load();
+  }, [load]);
+  useLiveRefresh(load, { intervalMs: 20_000, enabled: poll });
   return setup;
+}
+
+// The repos the org's Default runner group leaves out, read from GitHub the first time the "Route
+// a repo" sheet opens. Null until then, for a personal account, and when GitHub can't be read.
+function useRunnerGroupCheck(workspaceId: string, open: boolean) {
+  const [check, setCheck] = useState<RunnerGroupCheck | null>(null);
+  const asked = useRef(false);
+  useEffect(() => {
+    if (!open || asked.current) return;
+    asked.current = true;
+    (authDisabled
+      ? Promise.resolve(sampleRunnerGroupCheck())
+      : getRunnerGroupCheck(workspaceId)
+    ).then(setCheck, () => undefined);
+  }, [workspaceId, open]);
+  return check;
 }
 
 // The workspace's auto jobs (a relay set to `auto`) and their default size. Null until they load,

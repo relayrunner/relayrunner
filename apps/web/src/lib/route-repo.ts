@@ -1,3 +1,5 @@
+import { platformOf } from "@relayrunner/providers";
+import { relayJobFor } from "@relayrunner/runner-order";
 import type { RouterSetup, SetupJob, SetupWorkflow } from "./router-setup.ts";
 
 /** A repo for the "Route a repo" sheet, with the workflows it has left to route. */
@@ -22,6 +24,8 @@ export type RepoProgress = {
   routed: number;
   /** Repos with recent runs. */
   active: number;
+  /** Each repo's workflows with a run through a relay, for spotting a repo's first routed run. */
+  routedIn: Map<number, string[]>;
 };
 
 const ROUTE_SKILL_URL =
@@ -41,8 +45,11 @@ export function repoProgress(setup: RouterSetup | null): RepoProgress {
   }
   const visibility = new Map((setup?.repos ?? []).map((repo) => [repo.id, repo.private]));
   const left: RepoToRoute[] = [];
+  const routedIn = new Map<number, string[]>();
   let routed = 0;
   for (const [id, workflows] of byRepo) {
+    const through = workflows.filter((w) => w.routedRuns > 0).map((w) => w.workflow);
+    if (through.length > 0) routedIn.set(id, through);
     const open = workflows.filter((w) => w.routedRuns === 0).sort((a, b) => b.runs - a.runs);
     const [busiest] = open;
     if (!busiest) {
@@ -69,7 +76,21 @@ export function repoProgress(setup: RouterSetup | null): RepoProgress {
     quiet,
     routed,
     active: byRepo.size,
+    routedIn,
   };
+}
+
+/**
+ * The workflow whose first run through a relay shows the repo is routed, or null while it waits.
+ * `watched` is the workflows routed from the sheet; null (a repo with no recent runs) takes any.
+ */
+export function firstRouted(
+  progress: RepoProgress,
+  repoId: number,
+  watched: string[] | null,
+): string | null {
+  const through = progress.routedIn.get(repoId) ?? [];
+  return through.find((w) => watched === null || watched.includes(w)) ?? null;
 }
 
 /** Its busiest workflow's runs in the window. */
@@ -94,6 +115,22 @@ export function defaultPicks(repo: RepoToRoute): Set<string> {
   );
 }
 
+/**
+ * Whether the sheet can save a size for the job before it routes: auto sizes are Linux x64 only,
+ * init skips matrices and self-hosted jobs, and a job with a `name:` of its own has no relay name
+ * to save it under.
+ */
+export function sizable(job: SetupJob) {
+  const label = job.label?.toLowerCase();
+  return (
+    job.legs === 1 &&
+    relayJobFor(job.name) !== null &&
+    !!label &&
+    label !== "self-hosted" &&
+    platformOf(label) === "linux"
+  );
+}
+
 /** The picked jobs in the order the sheet lists them. */
 export function pickedJobs(repo: RepoToRoute, picks: Set<string>): PickedJob[] {
   return repo.workflows.flatMap((w) =>
@@ -104,20 +141,17 @@ export function pickedJobs(repo: RepoToRoute, picks: Set<string>): PickedJob[] {
 }
 
 // The steps after the agent has a checkout, shared by both prompts. Not `named`: every job init
-// finds, for a repo with no recent runs to name jobs from.
+// finds, for a repo with no recent runs to name jobs from. `auto`: init writes `auto` in place of
+// each Linux x64 job's label, so its size is set on the Router page.
 function routeSteps(named: boolean, auto: boolean): string[] {
+  const flags = auto ? " --auto --json" : " --json";
   return [
     named
-      ? "Run `npx relayrunner init --plan --json`. Match the jobs listed by workflow and job name, and leave every other job alone. If init refuses the repo, say why and skip it."
-      : "Run `npx relayrunner init --plan --json`. If init refuses the repo, say why and skip it.",
+      ? "Run `npx relayrunner@latest init --plan --json`. Match the jobs listed by workflow and job name, and leave every other job alone. If init refuses the repo, say why and skip it."
+      : "Run `npx relayrunner@latest init --plan --json`. If init refuses the repo, say why and skip it.",
     named
-      ? "Run `npx relayrunner init --apply <those job ids> --json`. If init skips one, don't hand-edit it; say why."
-      : "Run `npx relayrunner init --apply all --json`. Don't hand-edit skipped jobs; say why each was skipped.",
-    ...(auto
-      ? [
-          "In each relay job init added, change every input except `machine` to `auto`, so each job's size is picked on the RelayRunner dashboard.",
-        ]
-      : []),
+      ? `Run \`npx relayrunner@latest init --apply <those job ids>${flags}\`. If init skips one, don't hand-edit it; say why.`
+      : `Run \`npx relayrunner@latest init --apply all${flags}\`. Don't hand-edit skipped jobs; say why each was skipped.`,
   ];
 }
 

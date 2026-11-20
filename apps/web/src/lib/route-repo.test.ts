@@ -2,10 +2,12 @@ import { expect, test } from "vitest";
 import { sampleRouterSetup } from "./router-sample.ts";
 import {
   defaultPicks,
+  firstRouted,
   pickedJobs,
   repoProgress,
   routeAllPrompt,
   routePrompt,
+  sizable,
 } from "./route-repo.ts";
 
 test("lists repos left to route, busiest first, and counts the routed ones", () => {
@@ -29,13 +31,12 @@ test("starts with jobs that ship something unchecked", () => {
   ]);
 });
 
-test("names the picked jobs in the prompt, and asks for auto inputs when on", () => {
+test("names the picked jobs in the prompt, and passes --auto when on", () => {
   const jobs = [{ workflow: "CI", job: "test" }];
   const prompt = routePrompt("acme/api", jobs, true);
   expect(prompt).toContain("- CI / test");
-  expect(prompt).toContain("--apply <those job ids>");
-  expect(prompt).toContain("to `auto`");
-  expect(routePrompt("acme/api", jobs, false)).not.toContain("to `auto`");
+  expect(prompt).toContain("--apply <those job ids> --auto --json");
+  expect(routePrompt("acme/api", jobs, false)).not.toContain("--auto");
   expect(routePrompt("acme/worker", null, false)).toContain("--apply all");
 });
 
@@ -49,4 +50,22 @@ test("routes several repos with one PR each, checking the first", () => {
   );
   expect(prompt).toContain("- acme/web: CI / build\n- acme/docs: Build / build");
   expect(prompt).toContain("wait for my OK");
+});
+
+test("sizes only jobs the Router can size and init can name", () => {
+  const job = { name: "test", legs: 1, label: "ubuntu-latest", runs: 3, minutes: 2 };
+  expect(sizable(job)).toBe(true);
+  expect(sizable({ ...job, name: "Unit tests" })).toBe(false);
+  expect(sizable({ ...job, legs: 3 })).toBe(false);
+  expect(sizable({ ...job, label: "macos-15" })).toBe(false);
+  expect(sizable({ ...job, label: "ubuntu-24.04-arm" })).toBe(false);
+  expect(sizable({ ...job, label: null })).toBe(false);
+});
+
+test("spots a repo's first routed run in the workflows it routed", () => {
+  const progress = repoProgress(sampleRouterSetup());
+  // acme/app (1) is routed; acme/api (3) isn't yet.
+  expect(firstRouted(progress, 1, null)).not.toBeNull();
+  expect(firstRouted(progress, 1, ["Nope"])).toBeNull();
+  expect(firstRouted(progress, 3, ["CI"])).toBeNull();
 });

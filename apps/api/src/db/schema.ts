@@ -931,6 +931,8 @@ export const autoJob = sqliteTable(
     first: text("first"),
     updatedBy: text("updated_by").references(() => user.id, { onDelete: "set null" }),
     updatedAt: integer("updated_at", { mode: "timestamp_ms" }),
+    // The job's last pick. 0 for a size saved before the job's repo routed (planAutoJobs), which
+    // keeps it off the Router page until its first pick.
     lastSeenAt: integer("last_seen_at", { mode: "timestamp_ms" }).notNull(),
   },
   (table) => [

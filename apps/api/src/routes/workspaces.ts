@@ -23,7 +23,10 @@ import { present } from "./github.ts";
 import { AppError } from "@relayrunner/errors";
 import { annotate } from "../tracing.ts";
 import { routerSetup } from "../router-setup.ts";
-import { changeSetting } from "../changes.ts";
+import { runnerGroupCheck } from "../runner-group-check.ts";
+import { inWorkspace as installedIn } from "../job-times.ts";
+import { changeActor, changeSetting } from "../changes.ts";
+import { recordEvent } from "../activity.ts";
 import { DEFAULT_AUTO_SIZE } from "@relayrunner/providers";
 import { setWorkspaceAi } from "../ai/settings.ts";
 import {
@@ -31,6 +34,8 @@ import {
   autoSizeSchema,
   getAutoJob,
   listAutoJobs,
+  planAutoJobs,
+  plannedSizesSchema,
   setAutoJob,
 } from "../auto-jobs.ts";
 
@@ -229,6 +234,85 @@ export const workspaceRoutes = new Hono<AppEnv>()
       event: { type: "settings.job_size", data: { repository, workflow, job: relayJob, ...next } },
     });
     return c.json({ ...next, previous });
+  })
+  // Which repos the org's Default runner group leaves out, for the "Route a repo" sheet
+  // (src/runner-group-check.ts). Null for a personal account, and when GitHub can't be read: the
+  // sheet works without it.
+  .get("/:id/runner-group-check", requireUser, requireMember, async (c) => {
+    const installation = schema.githubInstallation;
+    const [row] = await c.var.db
+      .select({
+        id: installation.id,
+        login: installation.accountLogin,
+        type: installation.accountType,
+      })
+      .from(installation)
+      .where(installedIn(c.req.param("id"), installation.id))
+      .limit(1);
+    if (!row) return c.json({ check: null });
+    try {
+      return c.json({ check: await runnerGroupCheck(c.env, c.var.db, row) });
+    } catch (error) {
+      console.error(
+        JSON.stringify({
+          msg: "runner group check failed",
+          installationId: row.id,
+          error: error instanceof Error ? error.message : String(error),
+        }),
+      );
+      return c.json({ check: null });
+    }
+  })
+  // Sizes picked in the Router page's "Route a repo" sheet for jobs that don't route yet, saved for
+  // their first pick (src/auto-jobs.ts). Same people as one job's size: owners, admins, and anyone
+  // who can push to the repo. Answers the jobs it saved.
+  .put("/:id/planned-sizes", requireUser, requireMember, async (c) => {
+    const parsed = plannedSizesSchema.safeParse(await c.req.json().catch(() => null));
+    if (!parsed.success) throw new AppError("INVALID_REQUEST");
+    const id = c.req.param("id");
+    const { db, role, user } = c.var;
+    const repo = schema.githubRepository;
+    const [found] = await db
+      .select({ id: repo.id, fullName: repo.fullName })
+      .from(repo)
+      .where(
+        and(
+          eq(repo.id, parsed.data.repositoryId),
+          isNull(repo.removedAt),
+          installedIn(id, repo.installationId),
+        ),
+      )
+      .limit(1);
+    if (!found) throw new AppError("NOT_FOUND");
+    if (!canManage(role) && !(await userCanEditRepo(c.env, db, user!.id, found.id))) {
+      throw new AppError("FORBIDDEN", {
+        message: `Only owners, admins and people who can push to ${found.fullName} can change its jobs.`,
+      });
+    }
+    const [planned, { userId, ...via }] = await Promise.all([
+      planAutoJobs(db, id, found, parsed.data.jobs, user!.id),
+      changeActor(c),
+    ]);
+    await Promise.all(
+      planned.map((job) =>
+        recordEvent(db, {
+          workspaceId: id,
+          actorUserId: userId,
+          type: "settings.job_size",
+          data: {
+            repository: found.fullName,
+            workflow: job.workflow,
+            job: job.relayJob,
+            size: job.size,
+            first: null,
+            ...via,
+          },
+        }),
+      ),
+    );
+    return c.json({
+      planned: planned.map(({ workflow, job, size }) => ({ workflow, job, size })),
+    });
   })
   // Whether the Router skips hosted provider runner types that stopped picking up jobs, and the
   // ones it skips now (src/provider-health.ts).

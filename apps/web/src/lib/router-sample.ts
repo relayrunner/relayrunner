@@ -1,6 +1,6 @@
 import type { AccountUsage } from "./actions-usage.ts";
 import type { AutoJob, AutoJobs } from "./auto-jobs.ts";
-import type { RouterSetup } from "./router-setup.ts";
+import type { RouterSetup, RunnerGroupCheck } from "./router-setup.ts";
 
 /** Example GitHub accounts for the Router page's `VITE_AUTH_DISABLED=true` dev preview and tests. */
 export function sampleRouterAccounts(
@@ -110,6 +110,15 @@ export function sampleRouterSetup(): RouterSetup {
       { id: 6, fullName: "acme/worker", private: true },
     ],
     accessUrl: "https://github.com/organizations/acme/settings/installations/1",
+  };
+}
+
+/** A Default runner group that leaves acme/web out, for the dev preview's "Route a repo" sheet. */
+export function sampleRunnerGroupCheck(): RunnerGroupCheck {
+  return {
+    groupName: "Default",
+    settingsUrl: "https://github.com/organizations/acme/settings/actions/runner-groups/1",
+    blocked: [{ repositoryId: 4, block: "not_selected" }],
   };
 }
 
