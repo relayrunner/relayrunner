@@ -5,6 +5,7 @@ import { DEFAULT_DAYS, jobRuns, MAX_DAYS, machineJobTimes } from "../job-times.t
 import { requireUser } from "../middleware/session.ts";
 import { requireWorkspace } from "../middleware/workspace.ts";
 import { withCatalog } from "../provider-catalog.ts";
+import { jobTypeTimes } from "../job-type-times.ts";
 import { performanceReport } from "../runs.ts";
 import { MAX_RANGE_MS, runnerReport } from "../runner-report.ts";
 import { AppError } from "@relayrunner/errors";
@@ -24,6 +25,12 @@ const RunsQuery = z.object({
   matrix: z.enum(["true", "false"]).default("false"),
 });
 
+const TypesQuery = z.object({
+  days: Days,
+  // Minutes east of UTC, so days end at the reader's midnight.
+  utcOffset: z.coerce.number().int().min(-840).max(840).default(0),
+});
+
 const Epoch = z.coerce.number().int().min(0);
 
 const RunnerQuery = z
@@ -40,7 +47,8 @@ const RunnerQuery = z
 
 // The Performance page: how long each workflow and job usually takes on each runner environment over
 // the last ?days=N days (default 14). /runs is one job's runs, for its detail chart. /machines is
-// each machine's typical job, for the Runners page. /runner is one runner's detail panel.
+// each machine's typical job, for the Runners page. /runner is one runner's detail panel. /types
+// is each job's run time by day with its type, for the Job types tab.
 export const jobTimesRoutes = new Hono<AppEnv>()
   .get("/", requireUser, requireWorkspace, withCatalog, async (c) => {
     const parsed = DaysQuery.safeParse(c.req.query());
@@ -53,6 +61,12 @@ export const jobTimesRoutes = new Hono<AppEnv>()
     const { days, repositoryId, workflow, name, matrix } = parsed.data;
     const job = { repositoryId, workflow: workflow ?? null, name, matrix: matrix === "true" };
     return c.json(await jobRuns(c.var.db, c.var.workspace.id, job, days));
+  })
+  .get("/types", requireUser, requireWorkspace, async (c) => {
+    const parsed = TypesQuery.safeParse(c.req.query());
+    if (!parsed.success) throw new AppError("INVALID_REQUEST");
+    const { days, utcOffset } = parsed.data;
+    return c.json(await jobTypeTimes(c.var.db, c.var.workspace.id, days, { utcOffset }));
   })
   .get("/machines", requireUser, requireWorkspace, withCatalog, async (c) => {
     const parsed = DaysQuery.safeParse(c.req.query());

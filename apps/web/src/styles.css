@@ -40,6 +40,15 @@
   --rr-del: #cf222e;
   --rr-scrollbar: #c3c9d0;
 
+  /* Job types (lib/job-types.ts), a color-blind-checked order: neighbors in a stack stay apart. */
+  --job-test: #2a78d6;
+  --job-build: #eb6834;
+  --job-lint: #1baf7a;
+  --job-e2e: #eda100;
+  --job-deploy: #e87ba4;
+  --job-other: #6250d6;
+  --job-none: #a3abb5;
+
   /* shadcn semantic variables */
   --radius: 0.625rem; /* 10px: landing panels */
   --background: var(--rr-bg);
@@ -102,6 +111,14 @@
   --rr-del: #f0817a;
 
   --rr-scrollbar: #2f3540;
+
+  --job-test: #3987e5;
+  --job-build: #d95926;
+  --job-lint: #199e70;
+  --job-e2e: #c98500;
+  --job-deploy: #d55181;
+  --job-other: #9085e9;
+  --job-none: #4a515c;
 }
 
 @theme inline {

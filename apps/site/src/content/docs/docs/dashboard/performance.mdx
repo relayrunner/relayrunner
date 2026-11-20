@@ -31,6 +31,12 @@ Each runner's job count, median wait, median and p90 run time, and success rate.
 
 The comparison column lines up the jobs a runner shares with `ubuntu-latest` (or your busiest runner), so a runner that only takes quick jobs doesn't look faster than it is.
 
+## Job types
+
+Where your CI time goes by what each job does: tests, builds, lint, end-to-end tests, deploys and everything else. The [AI model](/docs/dashboard/ai) sorts each job by its name, its workflow and its runner labels, and reads new jobs every hour. You see the run minutes and share for each type, with **Change** against the range before (except for 30 days). Open a type to see the jobs that take most of its time. The chart below shows the minutes on each day, stacked by type.
+
+Jobs the model hasn't read yet, or wasn't sure about, count as **Not sorted**. Time spent waiting for a runner isn't counted. If AI is off for your workspace, the tab asks you to turn it on in Settings.
+
 ## From an agent
 
 Agents can read the same times through the [MCP server](/docs/reference/mcp), such as "which runner is fastest for `test`?".

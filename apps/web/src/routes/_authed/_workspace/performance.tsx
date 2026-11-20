@@ -4,6 +4,7 @@ import { Fragment, memo, type ReactNode, useEffect, useMemo, useState } from "re
 import { SectionBoundary } from "@/components/error-boundary";
 import { PageHeader } from "@/components/page-header";
 import { PageTabs, type Tab, viewOf } from "@/components/page-tabs";
+import { JobTypes } from "@/components/job-type-time";
 import { RunnerLink } from "@/components/runner-link";
 import { sizeText } from "@relayrunner/providers";
 import { byProvider, ProviderMark, providerStyle } from "@/components/providers";
@@ -78,6 +79,7 @@ const TABS = [
   { value: "workflows", label: "Workflows" },
   { value: "jobs", label: "Jobs" },
   { value: "runners", label: "Runners" },
+  { value: "types", label: "Job types" },
 ] as const satisfies Tab<string>[];
 type View = (typeof TABS)[number]["value"];
 
@@ -222,7 +224,9 @@ function PerformancePage() {
             </p>
           ) : (
             <SectionBoundary>
-              {view === "runners" ? (
+              {view === "types" ? (
+                <JobTypes days={days} repository={repository} />
+              ) : view === "runners" ? (
                 <Environments report={report} grouped={grouped} />
               ) : view === "jobs" ? (
                 <Jobs

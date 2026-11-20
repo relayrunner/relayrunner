@@ -724,7 +724,7 @@ function Trend({
 }
 
 /** A tooltip line: a label, with its value on the right. */
-function TipRow({ mark, label, value }: { mark?: ReactNode; label: string; value: string }) {
+export function TipRow({ mark, label, value }: { mark?: ReactNode; label: string; value: string }) {
   return (
     <p className="flex items-center gap-1.5 text-muted-foreground">
       {mark}
@@ -834,7 +834,7 @@ function Bars({ tallies, bucketMs, ...plot }: PlotProps & { tallies: Tally[]; bu
 }
 
 /** A bar segment standing on `bottom`, with its top corners rounded. */
-function topRounded(x: number, bottom: number, width: number, height: number, r: number) {
+export function topRounded(x: number, bottom: number, width: number, height: number, r: number) {
   const radius = Math.min(r, width / 2, height);
   const top = bottom - height;
   return [
@@ -931,7 +931,7 @@ function XAxis({ frame }: { frame: Frame }) {
 }
 
 /** A tooltip over the plot, kept inside it. */
-function ChartTip({
+export function ChartTip({
   x,
   y,
   width,
@@ -957,7 +957,7 @@ function ChartTip({
   );
 }
 
-function useWidth<T extends HTMLElement>() {
+export function useWidth<T extends HTMLElement>() {
   const ref = useRef<T>(null);
   const [width, setWidth] = useState(0);
   useLayoutEffect(() => {
