@@ -70,8 +70,8 @@ describe("summarize", () => {
       ["none", MIN, 0, 1],
     ]);
     expect(summary.days).toEqual([
-      { start: 0, ms: { test: 2 * MIN, build: 3 * MIN } },
-      { start: DAY_MS, ms: { test: 6 * MIN, none: MIN } },
+      { start: 0, ms: { test: 2 * MIN, build: 3 * MIN }, total: 5 * MIN },
+      { start: DAY_MS, ms: { test: 6 * MIN, none: MIN }, total: 7 * MIN },
     ]);
     expect(change(summary.types[0]!)).toBe(0);
     // Too little before to compare.

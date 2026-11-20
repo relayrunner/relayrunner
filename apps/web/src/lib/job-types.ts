@@ -1,6 +1,6 @@
 import { api } from "@/lib/api";
-import { DAY_MS, type JobType } from "./job-times.ts";
-import { zoneOffset } from "./time-zone.ts";
+import { DAY_MS, hasTrend, JOB_TYPE_LABELS, type JobType } from "./job-times.ts";
+import { startOfDay, zoneOffset } from "./time-zone.ts";
 
 /** One job's run time over the window (GET /api/job-times/types). */
 export type JobTypeTime = {
@@ -40,8 +40,20 @@ export function getJobTypeTimes(days: number) {
 /** A type, or "none" for jobs not sorted yet. */
 export type TypeKey = JobType | "none";
 
-/** The order types stack and list in, which their colors were checked for. */
-export const TYPE_ORDER: TypeKey[] = ["test", "build", "lint", "e2e", "deploy", "other", "none"];
+// Every type's label, in the order types stack and list in, which their colors were checked for.
+const TYPE_LABELS = {
+  test: JOB_TYPE_LABELS.test,
+  build: JOB_TYPE_LABELS.build,
+  lint: JOB_TYPE_LABELS.lint,
+  e2e: JOB_TYPE_LABELS.e2e,
+  deploy: JOB_TYPE_LABELS.deploy,
+  other: JOB_TYPE_LABELS.other,
+  none: "Not sorted",
+} satisfies Record<TypeKey, string>;
+
+export const TYPE_ORDER = Object.keys(TYPE_LABELS) as TypeKey[];
+
+export const typeLabel = (key: TypeKey) => TYPE_LABELS[key];
 
 export const typeColor = (key: TypeKey) => `var(--job-${key})`;
 
@@ -60,8 +72,8 @@ export type TypeSummary = {
   runs: number;
   /** Types with time in the window, in TYPE_ORDER. */
   types: TypeTotal[];
-  /** Each day's local midnight and its run time by type. */
-  days: { start: number; ms: Partial<Record<TypeKey, number>> }[];
+  /** Each day's local midnight, its run time by type and in all. */
+  days: { start: number; ms: Partial<Record<TypeKey, number>>; total: number }[];
 };
 
 /** Adds the report's jobs up by type, for one repo or all of them. */
@@ -70,6 +82,7 @@ export function summarize(report: JobTypeTimes, repository = "all"): TypeSummary
   const days = Array.from({ length: report.days }, (_, i) => ({
     start: report.start + i * DAY_MS,
     ms: {} as Partial<Record<TypeKey, number>>,
+    total: 0,
   }));
   for (const job of report.jobs) {
     if (repository !== "all" && job.repository !== repository) continue;
@@ -84,7 +97,10 @@ export function summarize(report: JobTypeTimes, repository = "all"): TypeSummary
     if (total.priorMs !== null) total.priorMs += job.priorMs ?? 0;
     if (job.runs > 0) total.jobs.push(job);
     job.byDay.forEach((ms, i) => {
-      if (ms > 0 && days[i]) days[i].ms[key] = (days[i].ms[key] ?? 0) + ms;
+      const day = days[i];
+      if (!ms || !day) return;
+      day.ms[key] = (day.ms[key] ?? 0) + ms;
+      day.total += ms;
     });
   }
   const types = TYPE_ORDER.flatMap((key) => {
@@ -112,10 +128,8 @@ export function sampleJobTypeTimes(days: number): JobTypeTimes {
     seed = (seed * 9301 + 49297) % 233280;
     return seed / 233280;
   };
-  const offsetMs = zoneOffset(Date.now()) * 60_000;
-  const today = Math.floor((Date.now() + offsetMs) / DAY_MS);
-  const start = (today - days + 1) * DAY_MS - offsetMs;
-  const compare = days * 2 <= 31;
+  const start = startOfDay(Date.now(), 1 - days);
+  const compare = hasTrend(days);
   // [repo, workflow, job, type, runs a day, minutes a run]
   const specs: [string, string, string, JobType | null, number, number][] = [
     ["acme/app", "CI", "test", "test", 24, 6.5],

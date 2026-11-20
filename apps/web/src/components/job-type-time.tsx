@@ -5,9 +5,9 @@ import { Link } from "@tanstack/react-router";
 import { ArrowDownIcon, ArrowUpIcon, ChevronRightIcon } from "lucide-react";
 import { Fragment, useEffect, useMemo, useState } from "react";
 import { Count } from "@/components/count";
-import { ChartTip, TipRow, topRounded, useWidth } from "@/components/duration-chart";
+import { ChartTip, TipRow, topRounded, useWidth } from "@/components/chart-parts";
 import { authDisabled } from "@/lib/auth-client";
-import { DAY_MS, JOB_TYPE_LABELS } from "@/lib/job-times";
+import { DAY_MS, plural } from "@/lib/job-times";
 import {
   change,
   getJobTypeTimes,
@@ -17,16 +17,15 @@ import {
   summarize,
   typeColor,
   type TypeKey,
+  typeLabel,
   type TypeSummary,
   type TypeTotal,
 } from "@/lib/job-types";
-import { zoneFormat } from "@/lib/time-zone";
-import { cn, count } from "@/lib/utils";
+import { shortDate, zoneFormat } from "@/lib/time-zone";
+import { cn, count, percent } from "@/lib/utils";
 
 const load = (days: number) =>
   authDisabled ? Promise.resolve(sampleJobTypeTimes(days)) : getJobTypeTimes(days);
-
-const typeLabel = (key: TypeKey) => (key === "none" ? "Not sorted" : JOB_TYPE_LABELS[key]);
 
 /** Whole minutes in short form; "<1" for less than one. */
 function minutesText(ms: number) {
@@ -34,13 +33,26 @@ function minutesText(ms: number) {
   return minutes > 0 && minutes < 1 ? "<1" : count(Math.round(minutes));
 }
 
-const share = (ms: number, total: number) => (total ? `${Math.round((ms / total) * 100)}%` : "0%");
+const share = (ms: number, total: number) => percent(total ? ms / total : 0);
+
+/** The average job's minutes, such as "3.2 min". */
+const perJob = (ms: number, runs: number) =>
+  runs ? `${(ms / runs / 60_000).toFixed(1)} min` : "–";
 
 /** A type's fill: its color, with stripes for jobs not sorted yet. */
 const fill = (key: TypeKey) =>
   key === "none"
     ? `repeating-linear-gradient(135deg, ${typeColor(key)} 0 2px, transparent 2px 5px)`
     : typeColor(key);
+
+/** The same fill for an SVG mark, the stripes coming from Daily's pattern. */
+const svgFill = (key: TypeKey) => (key === "none" ? `url(#${HATCH})` : typeColor(key));
+const HATCH = "job-type-hatch";
+
+// Table cells, shared by type rows and their job rows.
+const NUMBER = "px-2 text-right tabular-nums";
+const PHONE_HIDDEN = "hidden sm:table-cell";
+const HEAD = "px-2 py-1.5 text-right font-medium";
 
 function Swatch({ type, className }: { type: TypeKey; className?: string }) {
   return (
@@ -115,8 +127,7 @@ function Shares({
   compare: boolean;
 }) {
   const [open, setOpen] = useState<TypeKey | null>(null);
-  const cell = "px-2 py-2 text-right tabular-nums";
-  const phone = "hidden sm:table-cell";
+  const cell = cn(NUMBER, "py-2");
 
   return (
     <section className="rounded-xl border bg-card p-4 sm:p-5">
@@ -148,10 +159,10 @@ function Shares({
         <thead>
           <tr className="border-b text-xs text-muted-foreground">
             <th className="py-1.5 text-left font-medium">Type</th>
-            <th className="px-2 py-1.5 text-right font-medium">Minutes</th>
-            <th className="px-2 py-1.5 text-right font-medium">Share</th>
-            <th className={cn("px-2 py-1.5 text-right font-medium", phone)}>Jobs</th>
-            <th className={cn("px-2 py-1.5 text-right font-medium", phone)}>Per job</th>
+            <th className={HEAD}>Minutes</th>
+            <th className={HEAD}>Share</th>
+            <th className={cn(HEAD, PHONE_HIDDEN)}>Jobs</th>
+            <th className={cn(HEAD, PHONE_HIDDEN)}>Per job</th>
             {compare && (
               <th
                 className="py-1.5 pl-2 text-right font-medium"
@@ -188,12 +199,10 @@ function Shares({
                   </td>
                   <td className={cell}>{minutesText(type.ms)}</td>
                   <td className={cell}>{share(type.ms, summary.ms)}</td>
-                  <td className={cn(cell, phone)}>
+                  <td className={cn(cell, PHONE_HIDDEN)}>
                     <Count value={type.runs} />
                   </td>
-                  <td className={cn(cell, phone)}>
-                    {type.runs ? `${(type.ms / type.runs / 60_000).toFixed(1)} min` : "–"}
-                  </td>
+                  <td className={cn(cell, PHONE_HIDDEN)}>{perJob(type.ms, type.runs)}</td>
                   {compare && (
                     <td className="py-2 pl-2 text-right whitespace-nowrap text-muted-foreground tabular-nums">
                       <Change total={type} />
@@ -236,20 +245,18 @@ function TopJobs({ type, total, compare }: { type: TypeTotal; total: number; com
           <td className="py-1 pl-[22px]">
             <JobName job={job} />
           </td>
-          <td className="px-2 py-1 text-right tabular-nums">{minutesText(job.ms)}</td>
-          <td className="px-2 py-1 text-right tabular-nums">{share(job.ms, total)}</td>
-          <td className="hidden px-2 py-1 text-right tabular-nums sm:table-cell">
+          <td className={cn(NUMBER, "py-1")}>{minutesText(job.ms)}</td>
+          <td className={cn(NUMBER, "py-1")}>{share(job.ms, total)}</td>
+          <td className={cn(NUMBER, "py-1", PHONE_HIDDEN)}>
             <Count value={job.runs} />
           </td>
-          <td className="hidden px-2 py-1 text-right tabular-nums sm:table-cell">
-            {(job.ms / job.runs / 60_000).toFixed(1)} min
-          </td>
+          <td className={cn(NUMBER, "py-1", PHONE_HIDDEN)}>{perJob(job.ms, job.runs)}</td>
           {compare && <td />}
         </tr>
       ))}
       <tr className="border-b last:border-0">
         <td colSpan={6} className="pt-0.5 pb-2 pl-[22px] text-xs text-muted-foreground">
-          {rest > 0 ? `And ${count(rest)} more ${rest === 1 ? "job" : "jobs"}` : ""}
+          {rest > 0 ? `And ${plural(rest, "job")} more` : ""}
         </td>
       </tr>
     </>
@@ -272,7 +279,6 @@ const HEIGHT = 200;
 const PAD = { top: 10, right: 0, bottom: 22, left: 40 };
 // Half a date label's width, about.
 const EDGE = 18;
-const DAY_LABEL: Intl.DateTimeFormatOptions = { month: "short", day: "numeric" };
 const TIP_LABEL: Intl.DateTimeFormatOptions = { weekday: "short", month: "short", day: "numeric" };
 
 type Day = TypeSummary["days"][number];
@@ -286,10 +292,11 @@ function roundStep(max: number) {
 /** Minutes on each day of the window, stacked by type. */
 function Daily({ summary }: { summary: TypeSummary }) {
   const [ref, width] = useWidth<HTMLDivElement>();
-  const [hover, setHover] = useState<Day | null>(null);
+  // The day under the pointer, by index.
+  const [hover, setHover] = useState<number | null>(null);
+  const hovered = hover === null ? undefined : summary.days[hover];
   const keys = summary.types.map((type) => type.key);
-  const totals = summary.days.map((day) => keys.reduce((sum, key) => sum + (day.ms[key] ?? 0), 0));
-  const maxMinutes = Math.max(...totals, 60_000) / 60_000;
+  const maxMinutes = Math.max(...summary.days.map((day) => day.total), 60_000) / 60_000;
   const step = roundStep(maxMinutes);
   const top = Math.ceil((maxMinutes * 1.05) / step) * step;
   const plotHeight = HEIGHT - PAD.top - PAD.bottom;
@@ -301,7 +308,6 @@ function Daily({ summary }: { summary: TypeSummary }) {
   const labelEvery = Math.max(1, Math.ceil(70 / Math.max(slot, 1)));
   // Labels and the tooltip read midday, so a daylight saving change doesn't move the date.
   const noon = (day: Day) => day.start + DAY_MS / 2;
-  const hoverIndex = hover ? summary.days.indexOf(hover) : -1;
 
   return (
     <section className="rounded-xl border bg-card p-4 sm:p-5">
@@ -340,12 +346,12 @@ function Daily({ summary }: { summary: TypeSummary }) {
             {summary.days.map((day, i) => {
               const x = PAD.left + i * slot;
               let below = 0;
-              const total = totals[i]! / 60_000;
+              const total = day.total / 60_000;
               return (
                 <g
                   key={day.start}
-                  onPointerEnter={() => setHover(day)}
-                  onPointerDown={() => setHover(day)}
+                  onPointerEnter={() => setHover(i)}
+                  onPointerDown={() => setHover(i)}
                 >
                   {/* The whole column is the hover target, not just the bar. */}
                   <rect
@@ -353,7 +359,7 @@ function Daily({ summary }: { summary: TypeSummary }) {
                     y={PAD.top}
                     width={slot}
                     height={plotHeight}
-                    fill={hover === day ? "var(--foreground)" : "transparent"}
+                    fill={hover === i ? "var(--foreground)" : "transparent"}
                     fillOpacity={0.05}
                   />
                   {keys.map((key) => {
@@ -370,13 +376,7 @@ function Daily({ summary }: { summary: TypeSummary }) {
                       Math.max(base - y(below), 1),
                       below >= total - 1e-9 ? 2 : 0,
                     );
-                    return (
-                      <path
-                        key={key}
-                        d={d}
-                        fill={key === "none" ? "url(#job-type-hatch)" : typeColor(key)}
-                      />
-                    );
+                    return <path key={key} d={d} fill={svgFill(key)} />;
                   })}
                   {(summary.days.length - 1 - i) % labelEvery === 0 && (
                     <text
@@ -386,7 +386,7 @@ function Daily({ summary }: { summary: TypeSummary }) {
                       textAnchor="middle"
                       className="fill-muted-foreground text-[10px]"
                     >
-                      {zoneFormat(DAY_LABEL).format(noon(day))}
+                      {shortDate(noon(day))}
                     </text>
                   )}
                 </g>
@@ -394,7 +394,7 @@ function Daily({ summary }: { summary: TypeSummary }) {
             })}
             <defs>
               <pattern
-                id="job-type-hatch"
+                id={HATCH}
                 width={5}
                 height={5}
                 patternUnits="userSpaceOnUse"
@@ -405,20 +405,20 @@ function Daily({ summary }: { summary: TypeSummary }) {
             </defs>
           </svg>
         )}
-        {hover && (
-          <ChartTip x={PAD.left + (hoverIndex + 0.5) * slot} y={PAD.top} width={width}>
-            <p className="font-medium">{zoneFormat(TIP_LABEL).format(noon(hover))}</p>
+        {hover !== null && hovered && (
+          <ChartTip x={PAD.left + (hover + 0.5) * slot} y={PAD.top} width={width}>
+            <p className="font-medium">{zoneFormat(TIP_LABEL).format(noon(hovered))}</p>
             {keys.map((key) =>
-              hover.ms[key] ? (
+              hovered.ms[key] ? (
                 <TipRow
                   key={key}
                   mark={<Swatch type={key} className="size-2" />}
                   label={typeLabel(key)}
-                  value={`${minutesText(hover.ms[key])} min`}
+                  value={`${minutesText(hovered.ms[key])} min`}
                 />
               ) : null,
             )}
-            <TipRow label="Total" value={`${minutesText(totals[hoverIndex]!)} min`} />
+            <TipRow label="Total" value={`${minutesText(hovered.total)} min`} />
           </ChartTip>
         )}
       </div>

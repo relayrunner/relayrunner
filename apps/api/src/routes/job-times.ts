@@ -13,6 +13,9 @@ import { AppError } from "@relayrunner/errors";
 /** A report's `?days=N`, shared by the routes that take one. */
 export const Days = z.coerce.number().int().min(1).max(MAX_DAYS).default(DEFAULT_DAYS);
 
+/** Minutes east of UTC, so days end at the reader's midnight. */
+const UtcOffset = z.coerce.number().int().min(-840).max(840).default(0);
+
 const DaysQuery = z.object({ days: Days });
 
 const RunsQuery = z.object({
@@ -27,8 +30,7 @@ const RunsQuery = z.object({
 
 const TypesQuery = z.object({
   days: Days,
-  // Minutes east of UTC, so days end at the reader's midnight.
-  utcOffset: z.coerce.number().int().min(-840).max(840).default(0),
+  utcOffset: UtcOffset,
 });
 
 const Epoch = z.coerce.number().int().min(0);
@@ -40,8 +42,7 @@ const RunnerQuery = z
     to: Epoch.optional(),
     // A Performance environment key, such as `github:linux-2-core` or `machine:<id>`.
     key: z.string().min(1).max(500),
-    // Minutes east of UTC, so days end at the reader's midnight.
-    utcOffset: z.coerce.number().int().min(-840).max(840).default(0),
+    utcOffset: UtcOffset,
   })
   .refine(({ from, to = Date.now() }) => from < to && to - from <= MAX_RANGE_MS);
 

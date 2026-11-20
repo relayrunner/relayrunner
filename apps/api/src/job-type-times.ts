@@ -5,8 +5,8 @@ import { sql } from "drizzle-orm";
 import { type JobTypeKind, jobTypeKey, readJobTypes } from "./ai/job-type.ts";
 import { aiAccess } from "./ai/settings.ts";
 import { type Db, schema } from "./db/index.ts";
-import { DAY_MS, RAW_RETENTION_DAYS } from "./job-timings.ts";
-import { matrixName, windowWhere } from "./job-times.ts";
+import { DAY_MS } from "./job-timings.ts";
+import { hasTrend, matrixName, windowWhere } from "./job-times.ts";
 
 const table = schema.jobTiming;
 
@@ -62,10 +62,12 @@ export async function jobTypeTimes(
   const today = Math.floor((now + offsetMs) / DAY_MS);
   const first = today - days + 1;
   const start = first * DAY_MS - offsetMs;
-  const compare = days * 2 <= RAW_RETENTION_DAYS;
+  const compare = hasTrend(days);
   const since = new Date(compare ? start - days * DAY_MS : start);
-  // Cast, since D1 may bind the numbers as reals.
-  const day = sql`cast((${table.completedAt} + ${offsetMs}) / ${DAY_MS} as integer)`;
+  // The local day, or one bucket for all of the window before (its days aren't shown). Cast, since
+  // D1 may bind the numbers as reals.
+  const day = sql`case when ${table.completedAt} < ${start} then -1
+    else cast((${table.completedAt} + ${offsetMs}) / ${DAY_MS} as integer) end`;
 
   const [rows, types, access] = await Promise.all([
     db.all<Row>(sql`
@@ -96,12 +98,12 @@ export async function jobTypeTimes(
       jobs.set(key, job);
     }
     const ms = Math.max(0, Number(row.run_ms));
-    const index = Number(row.day) - first;
-    if (index < 0) {
+    if (Number(row.day) === -1) {
       job.priorMs = (job.priorMs ?? 0) + ms;
       continue;
     }
-    if (index >= days) continue;
+    const index = Number(row.day) - first;
+    if (index < 0 || index >= days) continue;
     job.runs += Number(row.runs);
     job.ms += ms;
     job.byDay[index]! += ms;

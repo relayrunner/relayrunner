@@ -1,6 +1,7 @@
 import { ChartColumnStackedIcon, ChartLineIcon } from "lucide-react";
 import { Count } from "@/components/count";
-import { memo, type ReactNode, useLayoutEffect, useMemo, useRef, useState } from "react";
+import { memo, type ReactNode, useMemo, useState } from "react";
+import { ChartTip, TipRow, topRounded, useWidth } from "@/components/chart-parts";
 import { Button } from "@/components/ui/button";
 import {
   Select,
@@ -723,17 +724,6 @@ function Trend({
   );
 }
 
-/** A tooltip line: a label, with its value on the right. */
-export function TipRow({ mark, label, value }: { mark?: ReactNode; label: string; value: string }) {
-  return (
-    <p className="flex items-center gap-1.5 text-muted-foreground">
-      {mark}
-      {label}
-      <span className="ml-auto pl-3 font-medium text-foreground tabular-nums">{value}</span>
-    </p>
-  );
-}
-
 /** A bucket's day, or its span of hours. */
 const bucketText = (at: number, bucketMs: number) =>
   bucketMs >= DAY_MS
@@ -833,20 +823,6 @@ function Bars({ tallies, bucketMs, ...plot }: PlotProps & { tallies: Tally[]; bu
   );
 }
 
-/** A bar segment standing on `bottom`, with its top corners rounded. */
-export function topRounded(x: number, bottom: number, width: number, height: number, r: number) {
-  const radius = Math.min(r, width / 2, height);
-  const top = bottom - height;
-  return [
-    `M${x} ${bottom}`,
-    `V${top + radius}`,
-    `Q${x} ${top} ${x + radius} ${top}`,
-    `H${x + width - radius}`,
-    `Q${x + width} ${top} ${x + width} ${top + radius}`,
-    `V${bottom}Z`,
-  ].join("");
-}
-
 function YAxis({
   ticks,
   y,
@@ -928,46 +904,6 @@ function XAxis({ frame }: { frame: Frame }) {
       {(isDay(at) ? day : hour).format(at)}
     </text>
   ));
-}
-
-/** A tooltip over the plot, kept inside it. */
-export function ChartTip({
-  x,
-  y,
-  width,
-  children,
-}: {
-  x: number;
-  y: number;
-  width: number;
-  children: ReactNode;
-}) {
-  const right = x > width / 2;
-  return (
-    <div
-      role="status"
-      className="pointer-events-none absolute z-10 grid gap-0.5 rounded-md border bg-popover px-2.5 py-1.5 text-xs shadow-md"
-      style={{
-        top: Math.max(y - 12, 0),
-        ...(right ? { right: width - x + 12 } : { left: x + 12 }),
-      }}
-    >
-      {children}
-    </div>
-  );
-}
-
-export function useWidth<T extends HTMLElement>() {
-  const ref = useRef<T>(null);
-  const [width, setWidth] = useState(0);
-  useLayoutEffect(() => {
-    const element = ref.current;
-    if (!element) return;
-    const observer = new ResizeObserver(() => setWidth(element.clientWidth));
-    observer.observe(element);
-    return () => observer.disconnect();
-  }, []);
-  return [ref, width] as const;
 }
 
 /** The hour or midnight at or before `at`, on a `stepMs` boundary (1, 6 or 12 hours, or a day). */

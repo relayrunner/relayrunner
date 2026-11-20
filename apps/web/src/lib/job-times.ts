@@ -217,6 +217,12 @@ export function timeLeft(
   return jobs.length ? left : null;
 }
 
+/**
+ * Whether a `days` window can be compared with the one before: the API keeps raw job timings 31
+ * days (RAW_RETENTION_DAYS), so 30 days can't. For the sample reports, which have no API.
+ */
+export const hasTrend = (days: number) => days * 2 <= 31;
+
 /** "7 runs", "1 run". */
 export function plural(value: number, word: string) {
   return `${count(value)} ${value === 1 ? word : `${word}s`}`;
@@ -273,7 +279,7 @@ export function sampleJobTimes(days: number): JobTimesReport {
   const macos = "github:macos";
   return {
     days,
-    trend: days * 2 <= 31,
+    trend: hasTrend(days),
     sampleCap: 50,
     fewRuns: 5,
     minSharedJobs: 3,
