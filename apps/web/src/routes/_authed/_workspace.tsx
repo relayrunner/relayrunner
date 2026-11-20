@@ -241,14 +241,14 @@ function WorkspaceLayout() {
           </TooltipProvider>
         )}
       </aside>
-      {/* On wider screens the footer stays pinned to the bottom of the window, so it doesn't move as
-          pages load or rows expand. Phones keep the room for the page. */}
+      {/* The footer follows the page: at the bottom of the window on short pages, after the content
+          on long ones. */}
       <main className="flex min-w-0 flex-col">
         <div className="flex-1 p-4 sm:p-8">
           <OwnerPending current={current} />
           <Outlet />
         </div>
-        <SiteFooter className="sm:sticky sm:bottom-0 sm:z-10" />
+        <SiteFooter />
       </main>
       {runner && (
         <SectionBoundary>

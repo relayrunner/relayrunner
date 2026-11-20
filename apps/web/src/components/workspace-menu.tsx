@@ -1,13 +1,5 @@
 import { useRouter } from "@tanstack/react-router";
-import {
-  CheckIcon,
-  ChevronsUpDownIcon,
-  LogOutIcon,
-  MonitorIcon,
-  MoonIcon,
-  PlusIcon,
-  SunIcon,
-} from "lucide-react";
+import { CheckIcon, ChevronsUpDownIcon, LogOutIcon, PlusIcon } from "lucide-react";
 import { useState } from "react";
 import {
   DropdownMenu,
@@ -21,15 +13,14 @@ import {
 import { authDisabled, organization, useListOrganizations } from "@/lib/auth-client";
 import { signOut } from "@/lib/session";
 import { githubInstallHref } from "@/lib/github";
-import { setTheme, useTheme, type Theme } from "@/lib/theme";
 import { cn } from "@/lib/utils";
 
 type MenuUser = { name: string; email: string; image?: string | null } | null;
 
 /**
- * Who you're signed in as, which workspace you're in, the theme, and sign out.
+ * Who you're signed in as, which workspace you're in, and sign out.
  * It opens from the workspace name at the top of the sidebar. Settings has its
- * own link in the sidebar.
+ * own link in the sidebar, and the theme lives in Settings › Profile.
  */
 export function WorkspaceMenu({
   workspace,
@@ -102,7 +93,6 @@ export function WorkspaceMenu({
           </>
         )}
         <WorkspaceList workspaces={workspaces} current={workspace.id} onSelect={switchTo} />
-        <ThemePicker />
         {user && (
           <>
             <DropdownMenuSeparator />
@@ -123,45 +113,6 @@ const devWorkspaces = [
   { id: "dev-org", name: "acme-labs", logo: null },
 ];
 
-const themes: { value: Theme; label: string; icon: typeof SunIcon }[] = [
-  { value: "system", label: "System", icon: MonitorIcon },
-  { value: "light", label: "Light", icon: SunIcon },
-  { value: "dark", label: "Dark", icon: MoonIcon },
-];
-
-/** System, light or dark, saved in this browser. Stays open so the change is visible. */
-function ThemePicker() {
-  const theme = useTheme();
-  return (
-    <div className="flex items-center justify-between gap-2 px-2 py-1 text-sm">
-      <span>Theme</span>
-      <div
-        role="radiogroup"
-        aria-label="Theme"
-        className="flex rounded-md border bg-background p-0.5"
-      >
-        {themes.map(({ value, label, icon: Icon }) => (
-          <button
-            key={value}
-            type="button"
-            role="radio"
-            aria-checked={theme === value}
-            aria-label={label}
-            title={label}
-            onClick={() => setTheme(value)}
-            className={cn(
-              "grid size-7 place-items-center rounded-[5px] text-muted-foreground outline-none transition-colors hover:text-foreground focus-visible:ring-[3px] focus-visible:ring-ring/50",
-              theme === value && "bg-accent text-foreground",
-            )}
-          >
-            <Icon aria-hidden className="size-4" />
-          </button>
-        ))}
-      </div>
-    </div>
-  );
-}
-
 /**
  * The user's workspaces, one per GitHub account the App is installed on, plus "Add an
  * organization", which installs the App somewhere new. With one workspace there is nothing to
@@ -177,39 +128,36 @@ function WorkspaceList({
   onSelect: (id: string) => void;
 }) {
   return (
-    <>
-      <DropdownMenuGroup>
-        {workspaces.length > 1 && (
-          <>
-            <DropdownMenuLabel className="text-xs font-normal text-muted-foreground">
-              Workspaces
-            </DropdownMenuLabel>
-            {workspaces.map((workspace) => (
-              <DropdownMenuItem key={workspace.id} onSelect={() => onSelect(workspace.id)}>
-                <WorkspaceMark
-                  name={workspace.name}
-                  logo={workspace.logo}
-                  className="size-5 text-[11px]"
-                />
-                <span className="truncate">{workspace.name}</span>
-                {workspace.id === current && (
-                  <CheckIcon aria-label="Current workspace" className="ml-auto text-go" />
-                )}
-              </DropdownMenuItem>
-            ))}
-          </>
-        )}
-        <DropdownMenuItem asChild>
-          {/* A full page load: this leaves the dashboard for GitHub's install page, and the new
+    <DropdownMenuGroup>
+      {workspaces.length > 1 && (
+        <>
+          <DropdownMenuLabel className="text-xs font-normal text-muted-foreground">
+            Workspaces
+          </DropdownMenuLabel>
+          {workspaces.map((workspace) => (
+            <DropdownMenuItem key={workspace.id} onSelect={() => onSelect(workspace.id)}>
+              <WorkspaceMark
+                name={workspace.name}
+                logo={workspace.logo}
+                className="size-5 text-[11px]"
+              />
+              <span className="truncate">{workspace.name}</span>
+              {workspace.id === current && (
+                <CheckIcon aria-label="Current workspace" className="ml-auto text-go" />
+              )}
+            </DropdownMenuItem>
+          ))}
+        </>
+      )}
+      <DropdownMenuItem asChild>
+        {/* A full page load: this leaves the dashboard for GitHub's install page, and the new
               install comes back as its own workspace. */}
-          <a href={githubInstallHref()}>
-            <PlusIcon />
-            Add an organization
-          </a>
-        </DropdownMenuItem>
-      </DropdownMenuGroup>
-      <DropdownMenuSeparator />
-    </>
+        <a href={githubInstallHref()}>
+          <PlusIcon />
+          Add an organization
+        </a>
+      </DropdownMenuItem>
+    </DropdownMenuGroup>
   );
 }
 
