@@ -32,8 +32,10 @@ import {
   DURATION_MS,
   rateFor,
   runnerClass,
+  RUNNER_FAILED,
   SHORT_JOB_SECONDS,
   utcDay,
+  WAIT_MS,
 } from "./job-timings.ts";
 import { loadPriceBook } from "./prices.ts";
 import type { ReportWindow } from "./report-window.ts";
@@ -313,9 +315,7 @@ function rate(
 async function addJobs(scope: Scope) {
   const { db, rows, installationId, since, perJob } = scope;
   const isShort = sql`(${DURATION_MS} < ${SHORT_JOB_SECONDS * 1000})`;
-  const waitMs = sql`(${timing.startedAt} - ${timing.queuedAt})`;
-  const waited = sql`(${waitMs} >= ${QUEUE_WAIT_MS} and not ${PICK})`;
-  const runnerFailed = sql`(${timing.conclusion} = 'failure' and ${timing.ranSteps} = 0)`;
+  const waited = sql`(${WAIT_MS} >= ${QUEUE_WAIT_MS} and not ${PICK})`;
   // A run counts once, on its first counted job (job_timing_run_idx), even across midnight.
   const first = sql`(${timing.id} = (select min(k.id) from job_timing k
     where k.run_id = ${timing.runId} and k.run_attempt = ${timing.runAttempt}
@@ -351,10 +351,10 @@ async function addJobs(scope: Scope) {
       shortRunMs: sql<number>`sum(case when ${isShort} then ${DURATION_MS} else 0 end)`,
       shortBilled: sql<number>`sum(case when ${isShort} then ${BILLED_MINUTES} else 0 end)`,
       waitedJobs: sql<number>`sum(${waited})`,
-      waitedMs: sql<number>`sum(case when ${waited} then ${waitMs} else 0 end)`,
-      runnerFailedJobs: sql<number>`sum(${runnerFailed})`,
-      runnerFailedMs: sql<number>`sum(case when ${runnerFailed} then ${DURATION_MS} else 0 end)`,
-      runnerFailedBilled: sql<number>`sum(case when ${runnerFailed} then ${BILLED_MINUTES} else 0 end)`,
+      waitedMs: sql<number>`sum(case when ${waited} then ${WAIT_MS} else 0 end)`,
+      runnerFailedJobs: sql<number>`sum(${RUNNER_FAILED})`,
+      runnerFailedMs: sql<number>`sum(case when ${RUNNER_FAILED} then ${DURATION_MS} else 0 end)`,
+      runnerFailedBilled: sql<number>`sum(case when ${RUNNER_FAILED} then ${BILLED_MINUTES} else 0 end)`,
       // The one machine every job ran on, if there was one.
       machineId: sql<string | null>`case when count(${timing.machineId}) = count(*)
         and min(${timing.machineId}) = max(${timing.machineId}) then min(${timing.machineId}) end`,
@@ -381,7 +381,7 @@ async function addJobs(scope: Scope) {
         perJob
           ? and(
               eq(timing.repositoryFullName, perJob),
-              sql`(${isShort} or ${waited} or ${runnerFailed})`,
+              sql`(${isShort} or ${waited} or ${RUNNER_FAILED})`,
             )
           : undefined,
       ),

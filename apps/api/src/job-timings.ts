@@ -559,6 +559,10 @@ export const DURATION_MS = sql`max(0, ${table.completedAt} - ${table.startedAt})
 export const billedMinutes = (ms: number) => Math.max(1, Math.ceil(ms / 60_000));
 /** The minutes GitHub bills a job: its run time rounded up, at least one. */
 export const BILLED_MINUTES = sql`max(1, (${DURATION_MS} + 59999) / 60000)`;
+/** How long a job waited for a runner, queued to started. Null when either is unknown. */
+export const WAIT_MS = sql`(${table.startedAt} - ${table.queuedAt})`;
+/** A failed job whose runner gave up before any of its steps ran. */
+export const RUNNER_FAILED = sql`(${table.conclusion} = 'failure' and ${table.ranSteps} = 0)`;
 
 // The usage report's sums from job_timing, for jobs that finished in the window, with the moment
 // their prices are read at.

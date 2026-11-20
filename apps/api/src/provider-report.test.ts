@@ -1,8 +1,13 @@
 import { beforeAll, describe, expect, test } from "vitest";
 import { createDb, schema } from "./db/index.ts";
 import type { Env } from "./env.ts";
-import { type ProviderReport, type ProvidersOverview, providerReport } from "./provider-report.ts";
-import { lastDays } from "./report-window.ts";
+import {
+  type ProviderReport,
+  type ProvidersOverview,
+  providerReport,
+  providersOverview,
+} from "./provider-report.ts";
+import { lastDays, withPrior } from "./report-window.ts";
 import * as testing from "./testing.ts";
 
 let env: Env;
@@ -158,5 +163,68 @@ describe("provider report", () => {
         { usd: 0.000625, from: "2026-09-01" },
       ],
     });
+  });
+
+  test("counts quick starts and runner failures, and minutes a day with the window before", async () => {
+    const { cookie } = await testing.signIn(env);
+    const { workspace } = await testing.createWorkspace(env, cookie, "Share", "share");
+    const installationId = 8400;
+    const db = createDb(env.DB);
+    await db.insert(schema.githubInstallation).values({
+      id: installationId,
+      accountId: installationId,
+      accountLogin: "share-org",
+      accountType: "Organization",
+    });
+    await testing.useInstallation(env, workspace.id, installationId);
+    const DAY = 86_400_000;
+    const now = Date.parse("2026-09-10T18:00:00Z");
+    const origin = Date.parse("2026-09-07T00:00:00Z");
+    // A job of `minutes` that finished at `completed`, after waiting `waitS` seconds.
+    const at = (completed: number, minutes: number, waitS: number, job: Partial<Timing> = {}) =>
+      timing(installationId, minutes * 60, {
+        queuedAt: new Date(completed - minutes * 60_000 - waitS * 1000),
+        startedAt: new Date(completed - minutes * 60_000),
+        completedAt: new Date(completed),
+        ...job,
+      });
+    const rows = [
+      // In the window: Sep 7 and Sep 9.
+      at(origin + 12 * 3_600_000, 3, 5),
+      at(origin + 2 * DAY + 3_600_000, 2, 120),
+      at(origin + 2 * DAY + 7_200_000, 1, 10, { conclusion: "failure", ranSteps: false }),
+      at(origin + 2 * DAY + 9_000_000, 4, 5, {
+        labels: ["ubuntu-latest"],
+        runnerGroupName: "GitHub Actions",
+      }),
+      // The window before (Sep 3–7), and a job before that, which neither counts.
+      at(origin - 2 * DAY, 10, 5),
+      at(origin - 9 * DAY, 30, 5),
+    ];
+    for (let i = 0; i < rows.length; i += 5)
+      await db.insert(schema.jobTiming).values(rows.slice(i, i + 5));
+
+    // Sep 7 06:00 to now, against the 3.5 days before, in days from midnight on Sep 7.
+    const window = withPrior({ from: origin + 6 * 3_600_000, to: now });
+    const body = await providersOverview(db, workspace.id, window, { bucketMs: DAY, origin }, now);
+    const blacksmith = body.providers.find((p) => p.provider === "blacksmith");
+    expect(blacksmith).toMatchObject({
+      jobs: 3,
+      billedMinutes: 6,
+      waits: 3,
+      quickStarts: 2,
+      runnerFailures: 1,
+      priorBilledMinutes: 10,
+    });
+    expect(body.providers.find((p) => p.provider === "github")?.priorBilledMinutes).toBe(0);
+    expect(body.bucketMs).toBe(DAY);
+    expect(
+      body.buckets.map((b) => [new Date(b.start).toISOString().slice(0, 10), b.minutes]),
+    ).toEqual([
+      ["2026-09-07", { blacksmith: 3 }],
+      ["2026-09-08", {}],
+      ["2026-09-09", { blacksmith: 3, github: 4 }],
+      ["2026-09-10", {}],
+    ]);
   });
 });

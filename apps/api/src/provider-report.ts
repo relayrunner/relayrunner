@@ -16,12 +16,27 @@ import {
   type RatePrices,
   ratePrices,
 } from "@relayrunner/providers";
-import { sql } from "drizzle-orm";
+import { type SQL, sql } from "drizzle-orm";
 import { type Db, schema } from "./db/index.ts";
 import { loadPriceBook } from "./prices.ts";
 import { isCatalogProvider } from "./provider-catalog.ts";
-import { type Window, windowDays } from "./report-window.ts";
-import { BILLED_MINUTES, cents, classRate, pricePeriods, runnerClass } from "./job-timings.ts";
+import {
+  type Buckets,
+  bucketStarts,
+  hasTrend,
+  type ReportWindow,
+  type Window,
+  windowDays,
+} from "./report-window.ts";
+import {
+  BILLED_MINUTES,
+  cents,
+  classRate,
+  pricePeriods,
+  RUNNER_FAILED,
+  runnerClass,
+  WAIT_MS,
+} from "./job-timings.ts";
 import {
   type Bucket,
   bucketOf,
@@ -51,6 +66,12 @@ export interface ProviderCounts {
   cost: number;
   /** Jobs on runner types without a known price, left out of `cost`. */
   unpricedJobs: number;
+  /** Jobs with a known wait between queued and started. */
+  waits: number;
+  /** Of those, the jobs a runner started within QUICK_START_MS. */
+  quickStarts: number;
+  /** Failed jobs the runner gave up on before any step ran, such as a runner that never came up. */
+  runnerFailures: number;
 }
 
 export interface ProviderRunner extends Environment, ProviderCounts {
@@ -85,6 +106,15 @@ export interface ProviderSummary extends ProviderCounts {
   stat: Stat;
   /** Its runner types, busiest first. */
   runners: ProviderRunner[];
+  /** Billed minutes in the window the trend compares with, or null when job_timing doesn't reach it. */
+  priorBilledMinutes: number | null;
+}
+
+/** Billed minutes per provider in one stretch of the window. */
+export interface ShareBucket {
+  /** Epoch ms. */
+  start: number;
+  minutes: Record<string, number>;
 }
 
 export interface ProvidersOverview {
@@ -92,6 +122,10 @@ export interface ProvidersOverview {
   pricesChecked: string;
   /** Providers with jobs in the window, busiest first. */
   providers: ProviderSummary[];
+  /** How long each of `buckets` is: a day, or a week past a month. 0 when not asked for. */
+  bucketMs: number;
+  /** Each provider's billed minutes over the window, oldest first. Empty when not asked for. */
+  buckets: ShareBucket[];
 }
 
 const WORKFLOW_LIMIT = 5;
@@ -107,6 +141,9 @@ interface Row {
   /** Of those, the jobs and minutes in public repos, where GitHub's standard runners are free. */
   public_runs: number;
   public_billed_minutes: number;
+  waits: number;
+  quick_starts: number;
+  runner_failures: number;
   samples: string | null;
 }
 
@@ -116,9 +153,23 @@ interface Sums {
   billedMinutes: number;
   cost: number;
   unpricedJobs: number;
+  waits: number;
+  quickStarts: number;
+  runnerFailures: number;
 }
 
-const zero = (): Sums => ({ failures: 0, billedMinutes: 0, cost: 0, unpricedJobs: 0 });
+const zero = (): Sums => ({
+  failures: 0,
+  billedMinutes: 0,
+  cost: 0,
+  unpricedJobs: 0,
+  waits: 0,
+  quickStarts: 0,
+  runnerFailures: 0,
+});
+
+/** A job a runner started this soon after it queued counts as a quick start. */
+export const QUICK_START_MS = 60_000;
 
 interface Group extends Sums {
   provider: string;
@@ -164,6 +215,9 @@ async function runnerGroups(db: Db, workspaceId: string, window: Window, now: nu
       count(*) as runs, sum(${OK}) as successes, sum(${FAILED}) as failures,
       sum(${BILLED_MINUTES}) as billed_minutes, sum(${PUBLIC}) as public_runs,
       sum(case when ${PUBLIC} then ${BILLED_MINUTES} else 0 end) as public_billed_minutes,
+      sum(${table.queuedAt} is not null) as waits,
+      sum(coalesce(${WAIT_MS} < ${QUICK_START_MS}, 0)) as quick_starts,
+      sum(coalesce(${RUNNER_FAILED}, 0)) as runner_failures,
       ${SAMPLES} as samples
     from ${table} left join ${repo} on ${repo.id} = ${table.repositoryId}
     where ${where(workspaceId, window)}
@@ -192,6 +246,9 @@ async function runnerGroups(db: Db, workspaceId: string, window: Window, now: nu
     };
     group.failures += Number(row.failures);
     group.billedMinutes += billedMinutes;
+    group.waits += Number(row.waits);
+    group.quickStarts += Number(row.quick_starts);
+    group.runnerFailures += Number(row.runner_failures);
     if (perMinute === null) group.unpricedJobs += Number(row.runs);
     else group.cost += charged * perMinute;
     mergeInto(group.bucket, bucketOf(row));
@@ -229,6 +286,9 @@ function countsOf(bucket: Bucket, c: Sums): ProviderCounts & { stat: Stat } {
     billedMinutes: c.billedMinutes,
     cost: cents(c.cost),
     unpricedJobs: c.unpricedJobs,
+    waits: c.waits,
+    quickStarts: c.quickStarts,
+    runnerFailures: c.runnerFailures,
     stat: statOf(bucket),
   };
 }
@@ -255,17 +315,10 @@ async function busiestWorkflows(
     group by ${table.labels}, ${table.runnerGroupName}, ${table.repositoryFullName},
       ${table.workflowName}`);
   // Label sets repeat across workflows, so each is classified once.
-  const ours = new Map<string, boolean>();
+  const providerOf = labelProviders();
   const workflows = new Map<string, ProviderWorkflow>();
   for (const row of rows) {
-    const pair = `${row.labels}\u001f${row.runner_group_name}`;
-    let mine = ours.get(pair);
-    if (mine === undefined) {
-      const env = environmentFor(JSON.parse(row.labels) as string[], row.runner_group_name, null);
-      mine = providerOfEnvironment(env.key, isCatalogProvider) === provider;
-      ours.set(pair, mine);
-    }
-    if (!mine) continue;
+    if (providerOf(row.labels, row.runner_group_name) !== provider) continue;
     const key = `${row.repository}\u001f${row.workflow}`;
     const workflow = workflows.get(key) ?? {
       repository: row.repository,
@@ -305,20 +358,100 @@ export async function providerReport(
   };
 }
 
-/** Every provider the workspace's jobs ran on in the window, busiest first. */
+/** Which provider a job_timing group's labels ran on, parsing each label set once. */
+function labelProviders() {
+  const seen = new Map<string, string>();
+  return (labels: string, runnerGroupName: string | null) => {
+    const pair = `${labels}\u001f${runnerGroupName}`;
+    let provider = seen.get(pair);
+    if (provider === undefined) {
+      const env = environmentFor(JSON.parse(labels) as string[], runnerGroupName, null);
+      provider = providerOfEnvironment(env.key, isCatalogProvider);
+      seen.set(pair, provider);
+    }
+    return provider;
+  };
+}
+
+interface MinuteRow {
+  bucket: number;
+  labels: string;
+  runner_group_name: string | null;
+  minutes: number;
+}
+
+// Billed minutes in `window` by label set, and by bar when `bar` says which one a job is in.
+const minutesQuery = (workspaceId: string, window: Window, bar: SQL) => sql`
+  select ${bar} as bucket, ${table.labels} as labels, ${table.runnerGroupName} as runner_group_name,
+    sum(${BILLED_MINUTES}) as minutes
+  from ${table}
+  where ${where(workspaceId, window)}
+  group by 1, 2, 3`;
+
+/**
+ * Each provider's billed minutes a bar at a time, and in total over the prior window when
+ * job_timing still reaches it: one range of job_timing_installation_idx for each window.
+ */
+async function providerMinutes(
+  db: Db,
+  workspaceId: string,
+  window: ReportWindow,
+  buckets: Buckets,
+  now: number,
+) {
+  const trend = hasTrend(window, now);
+  const bar = sql`cast((${table.completedAt} - ${buckets.origin}) / ${buckets.bucketMs} as integer)`;
+  const [rows, priorRows] = await Promise.all([
+    db.all<MinuteRow>(minutesQuery(workspaceId, window, bar)),
+    trend ? db.all<MinuteRow>(minutesQuery(workspaceId, window.prior, sql`0`)) : [],
+  ]);
+  const bars: ShareBucket[] = bucketStarts(window, buckets).map((start) => ({
+    start,
+    minutes: {},
+  }));
+  const providerOf = labelProviders();
+  for (const row of rows) {
+    const provider = providerOf(row.labels, row.runner_group_name);
+    if (provider === "machine") continue;
+    const { minutes } = bars[Math.min(bars.length - 1, Number(row.bucket))]!;
+    minutes[provider] = (minutes[provider] ?? 0) + Number(row.minutes);
+  }
+  const prior = new Map<string, number>();
+  for (const row of priorRows) {
+    const provider = providerOf(row.labels, row.runner_group_name);
+    prior.set(provider, (prior.get(provider) ?? 0) + Number(row.minutes));
+  }
+  return { bars, prior: trend ? prior : null };
+}
+
+/**
+ * Every provider the workspace's jobs ran on in the window, busiest first, and with `buckets`
+ * each one's billed minutes a bar at a time and over the window before.
+ */
 export async function providersOverview(
   db: Db,
   workspaceId: string,
-  window: Window,
+  window: ReportWindow,
+  buckets: Buckets | null,
   now = Date.now(),
 ): Promise<ProvidersOverview> {
-  const groups = await runnerGroups(db, workspaceId, window, now);
+  const [groups, minutes] = await Promise.all([
+    runnerGroups(db, workspaceId, window, now),
+    buckets && providerMinutes(db, workspaceId, window, buckets, now),
+  ]);
   const byProvider = Map.groupBy(groups, (group) => group.provider);
   const providers = [...byProvider].map(([provider, groups]) => ({
     provider,
     ...totalOf(groups),
     runners: runnersOf(groups),
+    priorBilledMinutes: minutes?.prior ? (minutes.prior.get(provider) ?? 0) : null,
   }));
   providers.sort((a, b) => b.jobs - a.jobs);
-  return { days: windowDays(window), pricesChecked: PRICES_CHECKED, providers };
+  return {
+    days: windowDays(window),
+    pricesChecked: PRICES_CHECKED,
+    providers,
+    bucketMs: buckets?.bucketMs ?? 0,
+    buckets: minutes?.bars ?? [],
+  };
 }

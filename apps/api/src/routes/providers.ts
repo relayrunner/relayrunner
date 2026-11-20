@@ -14,7 +14,7 @@ import {
   testConnection,
 } from "../provider-connections.ts";
 import { providerReport, providersOverview } from "../provider-report.ts";
-import { requireWindow } from "../report-window.ts";
+import { chartBuckets, requireWindow } from "../report-window.ts";
 import { RAW_RETENTION_DAYS } from "../time.ts";
 import { DEFAULT_DAYS } from "../job-times.ts";
 import { requireManager } from "../roles.ts";
@@ -77,8 +77,13 @@ export const providerRoutes = new Hono<AppEnv>()
     return c.json(await disconnectProvider(c.var.db, c.var.workspace.id, provider));
   })
   .get("/", requireUser, requireWorkspace, withCatalog, async (c) => {
-    const window = requireWindow(c.req.query(), RANGE);
-    return c.json(await providersOverview(c.var.db, c.var.workspace.id, window));
+    const query = c.req.query();
+    const window = requireWindow(query, RANGE);
+    // The Providers page's minutes chart sends ?origin= (and ?per=week for weekly bars); the
+    // Runners page only reads the totals.
+    const buckets =
+      query.origin === undefined ? null : chartBuckets(window, query.origin, query.per);
+    return c.json(await providersOverview(c.var.db, c.var.workspace.id, window, buckets));
   })
   .get("/:provider", requireUser, requireWorkspace, withCatalog, async (c) => {
     const provider = c.req.param("provider");
