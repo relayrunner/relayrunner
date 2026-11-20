@@ -386,6 +386,18 @@ describe("retryFailedRun", () => {
     expect((await retries(runId))[0]).toMatchObject({ kind: "runner_start", status: "requested" });
   });
 
+  test("still retries a job ended with an earlier version's message", async () => {
+    const ws = await setup();
+    const runId = await failedRun(ws, { ranSteps: true });
+    stubGithub({
+      annotations: [
+        "No machine could take this job. The machine it was sent to went offline before the job started.",
+      ],
+    });
+    await retryFailedRun(env, completed(ws, runId));
+    expect((await retries(runId))[0]).toMatchObject({ kind: "runner_start", status: "requested" });
+  });
+
   test("does nothing while retries are off, unless the repo turns them on", async () => {
     const ws = await setup(null);
     const off = await failedRun(ws);

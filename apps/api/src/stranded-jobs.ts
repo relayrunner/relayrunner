@@ -29,19 +29,32 @@ export type StrandedReason = "no_machine" | "runner_failed" | "not_routable" | "
 
 // The error the ended job shows on its run. Retries read it back (strandedJob) as a runner failure:
 // a retry re-runs the run's relay, which picks a runner again, so it doesn't hit the same dead end.
+// Every message ends with how to recover: "Re-run failed jobs" reuses the run's old relay pick,
+// while "Re-run all jobs" runs the relay again so it picks a runner that can take the job now.
+const RECOVER =
+  'To recover, use "Re-run all jobs" so the relay picks a runner again. "Re-run failed jobs" can hit the same problem.';
+
 export const STRANDED_MESSAGES: Record<StrandedReason, string> = {
-  no_machine:
-    "No machine could take this job. The machine it was sent to went offline before the job started.",
-  runner_failed: "This job's runner failed to start on the machines it was sent to.",
-  not_routable:
-    "RelayRunner couldn't route this job again. Re-run all jobs so the relay picks a runner.",
-  orphaned:
-    "RelayRunner lost track of this job before a runner took it. Re-run all jobs so the relay picks a runner.",
+  no_machine: `No machine could take this job. The machine it was sent to went offline before the job started. ${RECOVER}`,
+  runner_failed: `This job's runner failed to start on the machines it was sent to. ${RECOVER}`,
+  not_routable: `RelayRunner couldn't route this job again. ${RECOVER}`,
+  orphaned: `RelayRunner lost track of this job before a runner took it. ${RECOVER}`,
 };
+
+// Messages earlier versions wrote, so retries still recognize jobs ended before the wording changed.
+const EARLIER_MESSAGES = [
+  "No machine could take this job. The machine it was sent to went offline before the job started.",
+  "This job's runner failed to start on the machines it was sent to.",
+  "RelayRunner couldn't route this job again. Re-run all jobs so the relay picks a runner.",
+  "RelayRunner lost track of this job before a runner took it. Re-run all jobs so the relay picks a runner.",
+];
 
 /** Whether GitHub's annotations on a job say it ended here because no runner could take it. */
 export const strandedJob = (messages: string[]) =>
-  messages.some((message) => Object.values(STRANDED_MESSAGES).includes(message));
+  messages.some(
+    (message) =>
+      Object.values(STRANDED_MESSAGES).includes(message) || EARLIER_MESSAGES.includes(message),
+  );
 
 /**
  * Whether a job is still waiting for a runner: not started by its webhooks, and queued as GitHub
