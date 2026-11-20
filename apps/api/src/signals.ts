@@ -801,27 +801,29 @@ async function addSlowestJobs(scope: Scope) {
 
 // Jobs that failed (or timed out) in a step and passed on the run's next attempt, whether someone
 // re-ran them or automatic retries did. Jobs their runner failed before any step are
-// runner-failures instead. The time and cost are the failed attempt's. Starts from the window's
-// re-run attempts, so only those runs' jobs are read (job_timing_run_idx).
+// runner-failures instead. The time and cost are the failed attempt's, counted on the day the
+// passing attempt finished, since only then is the job known to be flaky. That day is also what
+// keeps a rollup inside the days it replaces. Starts from the window's re-run attempts, so only
+// those runs' jobs are read (job_timing_run_idx).
 async function addFlakyJobs(scope: Scope) {
   const { db, installationId, since, filter } = scope;
   const found = await db.all<
-    JobRow & { labels: string; runnerGroupName: string | null; completedAt: number; runMs: number }
+    JobRow & { labels: string; runnerGroupName: string | null; passedAt: number; runMs: number }
   >(sql`
     select j.repository_id as repositoryId, j.repository_full_name as repository,
       j.workflow_name as workflow, j.name as job, o.workflow_path as path, j.run_id as runId,
       j.run_attempt as runAttempt, j.id as jobId, j.labels as labels,
-      j.runner_group_name as runnerGroupName, j.completed_at as completedAt,
+      j.runner_group_name as runnerGroupName, p.completed_at as passedAt,
       max(0, j.completed_at - j.started_at) as runMs
     from workflow_run o
     join job_timing p on p.run_id = o.id and p.run_attempt = o.run_attempt
-      and p.conclusion = 'success'
+      and p.conclusion = 'success' and p.completed_at >= ${since}
     join job_timing j on j.run_id = o.id and j.run_attempt = o.run_attempt - 1 and j.name = p.name
       and j.conclusion in ('failure', 'timed_out') and coalesce(j.ran_steps, 1) = 1
     where o.installation_id = ${installationId} and o.github_updated_at >= ${since}
       and o.run_attempt > 1 and ${COUNTED_JOB} and ${matching(filter, "o")}`);
   for (const job of found) {
-    const at = utcDay(job.completedAt);
+    const at = utcDay(job.passedAt);
     const labels = JSON.parse(job.labels) as string[];
     const perMinute = rate(scope, labels, job.runnerGroupName, job.repositoryId, at);
     const billed = Math.max(1, Math.ceil(job.runMs / 60_000));
