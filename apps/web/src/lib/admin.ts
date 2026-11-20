@@ -1,3 +1,4 @@
+import type { Stickiness, StickinessState } from "@relayrunner/api-types";
 import type { CatalogProvider, ProviderStatus } from "@relayrunner/providers/catalog";
 import { api } from "@/lib/api";
 import type { Setup } from "@/lib/admin-setup";
@@ -41,22 +42,7 @@ export type AdminWorkspace = {
   stickiness: Stickiness | null;
 };
 
-export type StickinessState = "trying" | "adopted" | "trial_abandoned" | "removed";
-
-export type Stickiness = {
-  state: StickinessState;
-  /** When the workspace entered this state. */
-  since: string;
-  /** The workflow the state is about: the latest relayed, or the last one removed. */
-  repository: string;
-  workflow: string;
-  /** The branch that added the relay, while trying or after the trial was abandoned. */
-  branch: string | null;
-  lastRelayAt: string;
-  /** Removed: runs on up-to-date code without the relay since the last relay. */
-  runsWithout: number;
-  removedSeenAt: string | null;
-};
+export type { Stickiness, StickinessState };
 
 export function listUsers() {
   return api<{ users: AdminUser[] }>("/admin/users");

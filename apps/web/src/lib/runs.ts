@@ -1,3 +1,4 @@
+import type { FailureCause } from "@relayrunner/api-types";
 import { relayInputs } from "@relayrunner/runner-order";
 import { api } from "@/lib/api";
 import type { RouteWalk } from "@/lib/route-walk";
@@ -182,16 +183,7 @@ export type JobFailure = {
   cause: FailureCause | null;
 };
 
-/** apps/api/src/ai/failure-cause.ts */
-export type FailureCause = {
-  kind: "flaky" | "lint" | "test" | "build" | "infra" | "config";
-  /** How sure the model is of `kind`, from 0 to 1. */
-  confidence: number;
-  /** The chance that running the job again, with no change, passes. */
-  passesOnRerun: number;
-  /** What a re-run will likely do, when the model is sure; else null. */
-  rerun: "passes" | "fails" | null;
-};
+export type { FailureCause };
 
 export function getJobFailure(jobId: number) {
   return api<JobFailure>(`/runs/jobs/${jobId}/failure`);

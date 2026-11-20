@@ -5,6 +5,7 @@ import {
   type ActivityStarter,
   type RouteWalk,
 } from "@relayrunner/activity";
+import type { JobRow, PerformanceReport, Stat } from "@relayrunner/api-types";
 
 // Agent clients cap tool results (Claude Code's is about 25k tokens), and the dashboard's answers
 // carry everything a page might render. These cut them down to what an agent reasons over.
@@ -88,25 +89,6 @@ export function compactActivityPage(page: ActivityPage, limit: number, detail: b
   };
 }
 
-// The parts of GET /api/job-times this Worker touches (apps/api/src/job-times.ts).
-interface Stat {
-  samples: number;
-}
-interface JobRow {
-  name: string;
-  byEnvironment: Record<string, Stat>;
-  legs?: JobRow[];
-}
-interface WorkflowRow {
-  repository: string;
-  workflow: string | null;
-  jobs: JobRow[];
-}
-interface JobTimesReport {
-  environments: { key: string; stat: Stat }[];
-  workflows: WorkflowRow[];
-}
-
 const sampled = (byEnvironment: Record<string, Stat>) =>
   Object.fromEntries(Object.entries(byEnvironment).filter(([, stat]) => stat.samples > 0));
 
@@ -126,8 +108,8 @@ export const contains = (value: string | null, part: string | undefined) =>
  * Job times narrowed to the workflows asked for, without times that have no successful runs behind
  * them, and without the environments nothing left ran on.
  */
-export function compactJobTimes<T extends JobTimesReport>(
-  report: T,
+export function compactJobTimes(
+  report: PerformanceReport,
   { repository, workflow }: { repository?: string; workflow?: string },
 ) {
   const workflows = report.workflows

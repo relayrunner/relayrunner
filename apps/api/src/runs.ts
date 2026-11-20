@@ -10,6 +10,7 @@
 // window, never a scan. The job list is one range of job_timing_installation_idx, newest first and
 // capped. One run's jobs are a range of job_timing_run_idx.
 import type { RouteWalk } from "@relayrunner/activity";
+import type { PerformanceReport } from "@relayrunner/api-types";
 import type { WebhookMessage } from "@relayrunner/github-webhooks";
 import { and, eq, sql } from "drizzle-orm";
 import { type Db, schema } from "./db/index.ts";
@@ -19,7 +20,6 @@ import {
   environmentFor,
   FEW_RUNS,
   inWorkspace,
-  type JobTimesReport,
   jobTimesReport,
   nameMachines,
   PICK,
@@ -30,7 +30,6 @@ import {
   type TypicalTime,
   typicalJobTimes,
   typicalKey,
-  type WorkflowRow,
 } from "./job-times.ts";
 import { purgeBefore, RAW_RETENTION_DAYS } from "./job-timings.ts";
 import { DAY_MS } from "./time.ts";
@@ -738,10 +737,7 @@ export async function workflowTimes(
   );
 }
 
-export type PerformanceReport = Omit<JobTimesReport, "workflows"> & {
-  /** Each workflow with its whole-run times (null with no finished runs) beside its jobs'. */
-  workflows: (WorkflowRow & { wall: Stat | null })[];
-};
+export type { PerformanceReport };
 
 /** The Performance page: job times per runner, plus each workflow's whole-run times. */
 export async function performanceReport(

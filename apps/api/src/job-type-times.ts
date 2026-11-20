@@ -2,7 +2,8 @@
 // reader's midnight, with the job's type from the AI classifier (src/ai/job-type.ts).
 // The dashboard adds them up by type, so its repo filter needs no second read.
 import { sql } from "drizzle-orm";
-import { type JobTypeKind, jobTypeKey, readJobTypes } from "./ai/job-type.ts";
+import type { JobType } from "@relayrunner/api-types";
+import { jobTypeKey, readJobTypes } from "./ai/job-type.ts";
 import { aiAccess } from "./ai/settings.ts";
 import { type Db, schema } from "./db/index.ts";
 import { DAY_MS } from "./job-timings.ts";
@@ -18,7 +19,7 @@ export type JobTypeTime = {
   /** The job's name; a matrix job's legs are added up under their shared name. */
   job: string;
   /** Null until the model has read the job, or when it wasn't sure. */
-  type: JobTypeKind | null;
+  type: JobType | null;
   runs: number;
   /** Run time, from a runner taking the job to it finishing. */
   ms: number;

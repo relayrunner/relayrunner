@@ -3,16 +3,14 @@
 // that, unless the workflow names the step, so rules on names cover most steps. Anything they don't
 // match is the job's own work. Steps are stored as they came (job_timing.steps), so a rule added
 // here also sorts older jobs.
+import type { Phase, PhaseTimes } from "@relayrunner/api-types";
 import type { JobStep } from "@relayrunner/github-webhooks";
 import { parseDate } from "./jobs.ts";
 
 /** A step that ran: its name and how long it took, in whole seconds (GitHub's precision). */
 export type StepTime = [name: string, seconds: number];
 
-export type Phase = "setup" | "checkout" | "dependencies" | "cache" | "work" | "cleanup";
-
-/** Milliseconds per phase; a phase with no time is left out. */
-export type PhaseTimes = Partial<Record<Phase, number>>;
+export type { Phase, PhaseTimes } from "@relayrunner/api-types";
 
 const CHECKOUT = /\bactions\/checkout@|\bcheck ?out\b/i;
 const CACHE = /\bcache\b|\/cache\/|sccache/i;

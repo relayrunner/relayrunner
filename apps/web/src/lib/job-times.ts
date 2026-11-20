@@ -1,26 +1,21 @@
-import type { RunnerSize } from "@relayrunner/providers";
-import type { DeviceKind } from "@/lib/device";
+import type { PerformanceReport, PerformanceWorkflow, Stat, JobType } from "@relayrunner/api-types";
 import { api } from "@/lib/api";
 import { type RangeOptions, reportQuery, type TimeRange } from "./time-range.ts";
 import { count } from "@/lib/utils";
 import type { Phase } from "./job-phases.ts";
 
-/** How sure a time is: none (not run), few (under 5 runs), low (5 to 19), ok (20+). */
-export type Confidence = "none" | "few" | "low" | "ok";
-
-/** One job's (or workflow's) times on one environment (GET /api/job-times). Times are ms. */
-export type Stat = {
-  runs: number;
-  successes: number;
-  /** Successful runs behind the times, at most the report's sampleCap. */
-  samples: number;
-  confidence: Confidence;
-  medianMs: number | null;
-  p90Ms: number | null;
-  waitMs: number | null;
-  /** Against the window just before, same length: 0.18 is 18% slower. */
-  trend: number | null;
-};
+// GET /api/job-times: the Performance page's report. The dashboard calls each workflow row
+// a WorkflowRow and the report a JobTimesReport.
+export type {
+  Confidence,
+  Environment,
+  EnvironmentSummary,
+  JobRow,
+  JobType,
+  Stat,
+} from "@relayrunner/api-types";
+export type JobTimesReport = PerformanceReport;
+export type WorkflowRow = PerformanceWorkflow;
 
 /** A Stat with no runs behind it. */
 export const EMPTY_STAT: Stat = {
@@ -34,34 +29,6 @@ export const EMPTY_STAT: Stat = {
   trend: null,
 };
 
-export type Environment = {
-  key: string;
-  label: string;
-  detail: string;
-  /** Its vCPUs and memory, when the label or the service says. */
-  size?: RunnerSize;
-  /** `machine:<id>` only: how it joined and the device it reported, for its icon. */
-  machine?: { source: "connect" | "github"; kind: DeviceKind | null; model: string | null };
-};
-
-export type EnvironmentSummary = Environment & {
-  stat: Stat;
-  /** Jobs sent here that no runner picked up within 10 minutes. */
-  missed: number;
-  /** This environment's median over the baseline's on shared jobs: 0.5 is twice as fast. */
-  versus: { ratio: number; sharedJobs: number } | null;
-};
-
-export type JobRow = {
-  name: string;
-  byEnvironment: Record<string, Stat>;
-  legs?: JobRow[];
-  /** What the job does, from the AI model, once it has read the job (apps/api/src/ai/job-type.ts). */
-  type?: JobType;
-};
-
-export type JobType = "lint" | "test" | "e2e" | "build" | "deploy" | "other";
-
 export const JOB_TYPE_LABELS: Record<JobType, string> = {
   lint: "Lint",
   test: "Tests",
@@ -69,29 +36,6 @@ export const JOB_TYPE_LABELS: Record<JobType, string> = {
   build: "Build",
   deploy: "Deploy",
   other: "Other",
-};
-
-export type WorkflowRow = {
-  repositoryId: number;
-  repository: string;
-  workflow: string | null;
-  /** Whole-run times: run start to last job done, like the History page. */
-  wall: Stat | null;
-  jobs: JobRow[];
-};
-
-export type JobTimesReport = {
-  days: number;
-  /** Whether times carry a trend against the window before (not past what single jobs cover). */
-  trend: boolean;
-  sampleCap: number;
-  /** Runs a job needs on both runners to count toward `versus`. */
-  fewRuns: number;
-  /** Shared jobs a runner needs before it gets a `versus`. */
-  minSharedJobs: number;
-  baseline: string | null;
-  environments: EnvironmentSummary[];
-  workflows: WorkflowRow[];
 };
 
 export type JobRun = {

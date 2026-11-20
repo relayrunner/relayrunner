@@ -9,7 +9,17 @@
 import type { JobUsage } from "@relayrunner/machine-protocol";
 import { and, eq, gte, inArray, isNotNull, isNull, lt, type SQL, sql } from "drizzle-orm";
 import type { SQLiteColumn } from "drizzle-orm/sqlite-core";
-import { type RunnerSize, runnerSize } from "@relayrunner/providers";
+import { runnerSize } from "@relayrunner/providers";
+import type {
+  Confidence,
+  DeviceKind,
+  Environment,
+  EnvironmentSummary,
+  JobRow,
+  JobTimesReport,
+  Stat,
+  WorkflowRow,
+} from "@relayrunner/api-types";
 import { INSTANCE, usesContainerRunner } from "./container-runner.ts";
 import { type Db, schema } from "./db/index.ts";
 import { type Phase, phaseOf } from "./step-phases.ts";
@@ -26,8 +36,19 @@ import { cloudProviderFor, isGitHubHostedLabel } from "./cloud-providers.ts";
 import { inWorkspace as machineInWorkspace } from "./machines.ts";
 import { currentProviders } from "./provider-catalog.ts";
 import { routeIdFromLabels } from "./routing.ts";
-import { type JobTypeKind, jobTypeKey, readJobTypes } from "./ai/job-type.ts";
+import { jobTypeKey, readJobTypes } from "./ai/job-type.ts";
 import { RELAYRUNNER_LABEL } from "./labels.ts";
+
+// The report's shapes live in @relayrunner/api-types, shared with the dashboard.
+export type {
+  Confidence,
+  Environment,
+  EnvironmentSummary,
+  JobRow,
+  JobTimesReport,
+  Stat,
+  WorkflowRow,
+};
 
 const table = schema.jobTiming;
 
@@ -41,20 +62,6 @@ export const ENOUGH_RUNS = 20;
 export const MIN_SHARED_JOBS = 3;
 export const DEFAULT_DAYS = 14;
 export const MAX_DAYS = 30;
-
-export interface Environment {
-  /** e.g. `github:linux-2-core`, `machine:<id>`, `container`. */
-  key: string;
-  label: string;
-  detail: string;
-  /** Its vCPUs and memory, when the label or the service says. */
-  size?: RunnerSize;
-  /**
-   * `machine:<id>` only: how it joined (a `relayrunner connect` machine or a runner added from
-   * GitHub) and the device it reported, so the dashboard can pick its icon.
-   */
-  machine?: { source: "connect" | "github"; kind: string | null; model: string | null };
-}
 
 // Adds the size runnerSize finds for a provider's label, when it finds one.
 function sized(env: Environment, provider: string, label = env.label): Environment {
@@ -167,7 +174,8 @@ export async function nameMachines(db: Db, workspaceId: string, envs: Map<string
     env.label = machine.name;
     env.machine = {
       source: machine.source === "github" ? "github" : "connect",
-      kind: machine.kind,
+      // Stored only after machine-protocol validated it.
+      kind: machine.kind as DeviceKind | null,
       model: machine.model,
     };
     env.detail = [machine.model, machine.chip].filter(Boolean).join(" · ") || (machine.os ?? "");
@@ -180,8 +188,6 @@ export async function nameMachines(db: Db, workspaceId: string, envs: Map<string
       };
   }
 }
-
-export type Confidence = "none" | "few" | "low" | "ok";
 
 export function confidence(samples: number): Confidence {
   if (samples === 0) return "none";
@@ -203,24 +209,6 @@ interface Sample {
   completedAt: number;
   runMs: number;
   waitMs: number | null;
-}
-
-export interface Stat {
-  /** Runs in the window that a runner finished, successful or not. */
-  runs: number;
-  successes: number;
-  /** Successful runs behind the times, at most SAMPLE_CAP. */
-  samples: number;
-  confidence: Confidence;
-  medianMs: number | null;
-  p90Ms: number | null;
-  /** Median wait from queued to started. Null for rows from before it was stored. */
-  waitMs: number | null;
-  /**
-   * The median against the previous window of the same length, as a fraction (0.18 is 18%
-   * slower). Null when either window has under FEW_RUNS samples, or nothing was compared.
-   */
-  trend: number | null;
 }
 
 export interface Bucket {
@@ -285,51 +273,6 @@ export function statOf(bucket: Bucket, prior?: Bucket): Stat {
     waitMs: quantile(waits, 0.5),
     trend,
   };
-}
-
-export interface EnvironmentSummary extends Environment {
-  stat: Stat;
-  /**
-   * Jobs sent here that no runner picked up (NOT_PICKED_UP). With `stat.runs`, the share it
-   * started, which says how reliable the runner is whatever the jobs' own results.
-   */
-  missed: number;
-  /**
-   * Against the baseline on the jobs both ran FEW_RUNS+ times: the median of this environment's
-   * median over the baseline's (0.5 is twice as fast). Null for the baseline itself or with under
-   * MIN_SHARED_JOBS shared jobs.
-   */
-  versus: { ratio: number; sharedJobs: number } | null;
-}
-
-export interface JobRow {
-  name: string;
-  byEnvironment: Record<string, Stat>;
-  /** Matrix legs (`test (node 24)`), when this row groups them under their shared name. */
-  legs?: JobRow[];
-  /** What the job does, from the AI model (src/ai/job-type.ts), once it has read the job. */
-  type?: JobTypeKind;
-}
-
-export interface WorkflowRow {
-  repositoryId: number;
-  repository: string;
-  workflow: string | null;
-  jobs: JobRow[];
-}
-
-export interface JobTimesReport {
-  days: number;
-  /** Whether times carry a trend against the window before (hasTrend in report-window.ts). */
-  trend: boolean;
-  sampleCap: number;
-  /** Runs a job needs on both runners to count toward `versus`. */
-  fewRuns: number;
-  /** Shared jobs a runner needs before it gets a `versus`. */
-  minSharedJobs: number;
-  baseline: string | null;
-  environments: EnvironmentSummary[];
-  workflows: WorkflowRow[];
 }
 
 interface WindowRow {

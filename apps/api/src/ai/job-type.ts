@@ -1,6 +1,7 @@
 // What a job does, from its name, its workflow's and its runner labels: the first input for
 // runner-size and skip advice. The hourly signals task classifies a few new jobs per workspace
 // while AI is on for it (classifyJobTypes); job-times.ts adds the answer to each job's row.
+import type { JobType } from "@relayrunner/api-types";
 import { and, eq, gte, sql } from "drizzle-orm";
 import { createDb, type Db, schema } from "../db/index.ts";
 import type { Env } from "../env.ts";
@@ -16,8 +17,7 @@ export const JOB_TYPES = {
   build: "Compiling, bundling or building images or packages",
   deploy: "Deploying, publishing or releasing",
   other: "Anything else, such as labeling, notifications or housekeeping",
-} as const;
-export type JobTypeKind = keyof typeof JOB_TYPES;
+} as const satisfies Record<JobType, string>;
 
 type JobInput = { workflow: string; job: string; labels: string[] };
 
@@ -64,7 +64,7 @@ export async function readJobTypes(db: Db, workspaceId: string) {
   return new Map(
     rows.map((row) => [
       jobTypeKey(row.repositoryId, row.workflow, row.job),
-      row.confidence >= SHOWN ? (row.kind as JobTypeKind) : null,
+      row.confidence >= SHOWN ? (row.kind as JobType) : null,
     ]),
   );
 }

@@ -1,5 +1,6 @@
 // Why a job failed, in one word, from what job-failures.ts already read from GitHub: the failed
 // step, the annotations and the end of the log. Advisory only: nothing acts on it yet.
+import type { FailureCause, FailureCauseKind } from "@relayrunner/api-types";
 import type { Env } from "../env.ts";
 import type { JobFailure } from "../job-failures.ts";
 import { classify, defineClassifier } from "./classify.ts";
@@ -12,19 +13,9 @@ export const FAILURE_CAUSES = {
   infra: "The runner or its environment broke: out of disk or memory, lost runner, service down",
   config: "The workflow or its setup is wrong: bad YAML, missing secret, permission or tool",
   unclear: "There isn't enough to tell, or it could be several of these",
-} as const;
+} as const satisfies Record<FailureCauseKind | "unclear", string>;
 // "unclear" is how the model says it isn't sure; it's never given as a cause.
-export type FailureCauseKind = Exclude<keyof typeof FAILURE_CAUSES, "unclear">;
-
-export type FailureCause = {
-  kind: FailureCauseKind;
-  /** How sure the model is of `kind`, from 0 to 1. */
-  confidence: number;
-  /** The chance that running the job again, with no change, passes. */
-  passesOnRerun: number;
-  /** What a re-run will likely do, when the answers are sure enough and agree; else null. */
-  rerun: "passes" | "fails" | null;
-};
+export type { FailureCause, FailureCauseKind };
 
 // Jev, the first model, ran overconfident: it called a failed deep-equal test "flaky" at 74%. These
 // thresholds are kept for Clef-flash until real failures say otherwise. Causes below

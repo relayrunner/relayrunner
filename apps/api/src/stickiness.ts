@@ -23,6 +23,9 @@
 import { and, eq, gte } from "drizzle-orm";
 import { type Db, schema } from "./db/index.ts";
 import { DAY_MS } from "./job-timings.ts";
+import type { Stickiness, StickinessState } from "@relayrunner/api-types";
+
+export type { Stickiness, StickinessState };
 
 /** How far back stickiness reads, every 15 minutes: a month is plenty to see a relay drop out. */
 const WINDOW_DAYS = 31;
@@ -35,24 +38,6 @@ export const REMOVED_AFTER = 3;
  * their job is queued, which is usually within seconds of the run.
  */
 export const SETTLE_MS = 10 * 60 * 1000;
-
-export type StickinessState = "trying" | "adopted" | "trial_abandoned" | "removed";
-
-export interface Stickiness {
-  state: StickinessState;
-  /** When the workspace entered this state. */
-  since: string;
-  /** The workflow the state is about: the latest relayed, or the last one removed. */
-  repository: string;
-  workflow: string;
-  /** The branch that added the relay, while trying or after the trial was abandoned. */
-  branch: string | null;
-  lastRelayAt: string;
-  /** Removed: runs on up-to-date code without the relay since the last relay. */
-  runsWithout: number;
-  /** Removed: when we first saw the run that made it so (for the operator ping). */
-  removedSeenAt: string | null;
-}
 
 export interface StickinessRun {
   installationId: number;

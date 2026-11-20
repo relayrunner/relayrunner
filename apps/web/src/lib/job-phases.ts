@@ -1,10 +1,9 @@
 // Where time goes inside jobs: the API sorts each step GitHub reports into a phase by its name
 // (apps/api/src/step-phases.ts). These are the phases' labels and colors, in the order they stack.
 
-export type Phase = "setup" | "checkout" | "dependencies" | "cache" | "work" | "cleanup";
+import type { Phase, PhaseTimes } from "@relayrunner/api-types";
 
-/** Milliseconds per phase; a phase with no time is left out. */
-export type PhaseTimes = Partial<Record<Phase, number>>;
+export type { Phase, PhaseTimes };
 
 const PHASE_LABELS = {
   setup: "Setup",

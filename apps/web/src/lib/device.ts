@@ -1,7 +1,8 @@
 // A connected machine's device as its CLI reported it (#165), and how the dashboard names it.
+import type { DeviceKind } from "@relayrunner/api-types";
 import { sizeText } from "@relayrunner/providers";
 
-export type DeviceKind = "laptop" | "desktop" | "server" | "vm" | "unknown";
+export type { DeviceKind };
 
 /** Each part is null when the CLI couldn't read it. */
 export type MachineDevice = {

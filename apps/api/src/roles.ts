@@ -1,5 +1,6 @@
 import { createMiddleware } from "hono/factory";
 import type { AppEnv } from "./app.ts";
+import { canManage } from "@relayrunner/api-types";
 import { AppError } from "@relayrunner/errors";
 
 // Workspace roles (#134). These are Better Auth's stock organization roles:
@@ -8,15 +9,7 @@ import { AppError } from "@relayrunner/errors";
 //   (repo-access.ts). Connected machines belong to their user, not the workspace (#318), so only
 //   that user controls one, whatever their role.
 // Better Auth keeps at least one owner: it refuses to remove, demote, or let the last owner leave.
-export const ROLES = ["owner", "admin", "member"] as const;
-export type Role = (typeof ROLES)[number];
-
-const MANAGER_ROLES: ReadonlySet<string> = new Set<Role>(["owner", "admin"]);
-
-// Owner or admin. Better Auth stores roles as text, so this takes any string.
-export function canManage(role: string | null | undefined) {
-  return role != null && MANAGER_ROLES.has(role);
-}
+export { canManage, ROLES, type Role } from "@relayrunner/api-types";
 
 // Who may pause, rename, share or revoke a machine (#318): a connected machine only by its owner,
 // in any workspace it shows up in; a runner adopted from GitHub, which is the org's, by the
