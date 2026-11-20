@@ -2,18 +2,19 @@ import { createFileRoute } from "@tanstack/react-router";
 import type { ReactNode } from "react";
 import { SectionBoundary } from "@/components/error-boundary";
 import { PageHeader } from "@/components/page-header";
-import { RangePicker } from "@/components/range-picker";
+import { TimeRangePicker } from "@/components/range-picker";
 import { StatTile } from "@/components/stat-tile";
 import { Count } from "@/components/count";
 import { PHONE_HIDDEN } from "@/components/ui/table";
 import { authDisabled } from "@/lib/auth-client";
+import { unlessDefault, useRangeReport, useSetSearch } from "@/lib/search-params";
 import {
-  dayRanges,
-  rangeParam,
-  unlessDefault,
-  useRangeReport,
-  useSetSearch,
-} from "@/lib/search-params";
+  type RangeOptions,
+  rangeDays,
+  rangePhrase,
+  reportRangeParam,
+  type TimeRange,
+} from "@/lib/time-range";
 import { cn, count } from "@/lib/utils";
 import {
   type FreeCheckSavings,
@@ -26,43 +27,49 @@ import {
   sampleCheckSavings,
 } from "@/lib/usage";
 
-const RANGES = dayRanges(1, 90);
+// As far back as the API keeps jobs, starting on this month since GitHub's included minutes reset
+// on the first.
+const RANGES: RangeOptions = {
+  presets: ["24h", "7d", "14d", "30d", "90d", "week", "lastweek", "month", "lastmonth"],
+};
+const DEFAULT_RANGE: TimeRange = "month";
 
 type UsageData = { report: UsageReport; checks: FreeCheckSavings };
 
 // The job report and what the free checks saved, over the same range.
-function load(days: number): Promise<UsageData> {
-  if (authDisabled)
+function load(range: TimeRange): Promise<UsageData> {
+  if (authDisabled) {
+    const days = rangeDays(range);
     return Promise.resolve({ report: sampleReport(days), checks: sampleCheckSavings(days) });
-  return Promise.all([getUsage(days), getCheckSavings(days)]).then(([report, checks]) => ({
+  }
+  return Promise.all([getUsage(range), getCheckSavings(range)]).then(([report, checks]) => ({
     report,
     checks,
   }));
 }
 
-const DEFAULT_DAYS = 30;
-type Search = { days?: number };
+type Search = { range?: TimeRange };
 const validateSearch = (search: Record<string, unknown>): Search => ({
-  days: rangeParam(search.days, RANGES, DEFAULT_DAYS),
+  range: reportRangeParam(search, RANGES, DEFAULT_RANGE),
 });
-const daysOf = (search: Search) => search.days ?? DEFAULT_DAYS;
+const rangeOf = (search: Search) => search.range ?? DEFAULT_RANGE;
 
 export const Route = createFileRoute("/_authed/_workspace/usage")({
   validateSearch,
-  loader: ({ location }) => load(daysOf(validateSearch(location.search))),
+  loader: ({ location }) => load(rangeOf(validateSearch(location.search))),
   // A new range loads in the page, keeping the last one up meanwhile.
   shouldReload: ({ cause }) => cause !== "stay",
   component: UsagePage,
 });
 
 function UsagePage() {
-  const days = daysOf(Route.useSearch());
+  const range = rangeOf(Route.useSearch());
   const setSearch = useSetSearch<Search>();
   const first = Route.useLoaderData();
-  const { report, checks } = useRangeReport(first, days, load);
+  const { report, checks } = useRangeReport(first, range, load);
 
-  function chooseRange(next: number) {
-    setSearch({ days: unlessDefault(next, DEFAULT_DAYS) });
+  function chooseRange(next: TimeRange) {
+    setSearch({ range: unlessDefault(next, DEFAULT_RANGE) });
   }
 
   const { totals } = report;
@@ -75,7 +82,7 @@ function UsagePage() {
         minute, rounded up, so a job that finishes in seconds still pays for a whole minute.
       </PageHeader>
       <div className="grid max-w-4xl gap-6">
-        <RangePicker ranges={RANGES} days={days} onChange={chooseRange} />
+        <TimeRangePicker {...RANGES} value={range} onChange={chooseRange} />
 
         {checks.checks > 0 && (
           <SectionBoundary>
@@ -85,8 +92,8 @@ function UsagePage() {
 
         {totals.jobs === 0 ? (
           <p className="rounded-xl border bg-card px-4 py-6 text-sm text-muted-foreground">
-            No finished jobs in the last {report.days} days. Jobs show up here once the GitHub App
-            sees them run in a connected repo.
+            No finished jobs in {rangePhrase(range)}. Jobs show up here once the GitHub App sees
+            them run in a connected repo.
           </p>
         ) : (
           <>

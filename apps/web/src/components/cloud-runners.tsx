@@ -3,6 +3,7 @@ import { ProviderMark, providerStyle, runnerName, type Provider } from "@/compon
 import { RunnerPanelLink } from "@/components/runner-panel-link";
 import { medianText, p90Text, plural, type Stat } from "@/lib/job-times";
 import { costText, type ProviderRunner, type ProviderSummary } from "@/lib/providers";
+import type { TimeRange } from "@/lib/time-range";
 import { cn } from "@/lib/utils";
 
 // Runner | Size | Share of minutes | Jobs | Typical | Est. cost. On a phone only the runner (with its
@@ -16,7 +17,14 @@ const WIDE = "hidden sm:block";
  * then a row per runner type with its share of the provider's minutes, so big and small runners
  * are easy to tell apart. A provider with one runner type is just its own row.
  */
-export function CloudRunnersTable({ providers }: { providers: ProviderSummary[] }) {
+export function CloudRunnersTable({
+  providers,
+  range,
+}: {
+  providers: ProviderSummary[];
+  /** The range when it isn't the default, carried to each provider's page. */
+  range?: TimeRange;
+}) {
   return (
     <div className="overflow-hidden rounded-xl border bg-card">
       <div
@@ -33,13 +41,13 @@ export function CloudRunnersTable({ providers }: { providers: ProviderSummary[] 
         <span className="text-right">Est. cost</span>
       </div>
       {providers.map((summary) => (
-        <ProviderRows key={summary.provider} summary={summary} />
+        <ProviderRows key={summary.provider} summary={summary} range={range} />
       ))}
     </div>
   );
 }
 
-function ProviderRows({ summary }: { summary: ProviderSummary }) {
+function ProviderRows({ summary, range }: { summary: ProviderSummary; range?: TimeRange }) {
   const provider = summary.provider as Provider;
   const only = summary.runners.length === 1 ? summary.runners[0] : null;
   return (
@@ -56,6 +64,7 @@ function ProviderRows({ summary }: { summary: ProviderSummary }) {
             <Link
               to="/providers/$provider"
               params={{ provider: summary.provider }}
+              search={{ range }}
               className="w-fit truncate font-medium hover:underline hover:underline-offset-2"
             >
               {providerStyle(provider).name}

@@ -6,7 +6,7 @@ import { useState } from "react";
 import { CodeBlock } from "@/components/code-block";
 import { ProviderPlans } from "@/components/provider-plans";
 import { providerStyle, runnerName, runnerSpec, TILE } from "@/components/providers";
-import { RangePicker } from "@/components/range-picker";
+import { TimeRangePicker } from "@/components/range-picker";
 import { StatTile } from "@/components/stat-tile";
 import { Button } from "@/components/ui/button";
 import { createCellContext, DataTable, dataTableColumns, NUM } from "@/components/ui/data-table";
@@ -16,6 +16,8 @@ import { isKnownProvider, providerInfo } from "@/lib/provider-catalog";
 import {
   costText,
   getProviderReport,
+  PROVIDER_DEFAULT_RANGE,
+  PROVIDER_RANGES,
   type ProviderReport,
   type ProviderRunner,
   rateName,
@@ -23,35 +25,35 @@ import {
   sampleProviderReport,
 } from "@/lib/providers";
 import { cn } from "@/lib/utils";
-import {
-  dayRanges,
-  rangeParam,
-  unlessDefault,
-  useRangeReport,
-  useSetSearch,
-} from "@/lib/search-params";
+import { unlessDefault, useRangeReport, useSetSearch } from "@/lib/search-params";
+import { rangeDays, rangePhrase, reportRangeParam, type TimeRange } from "@/lib/time-range";
 import { usePageTitle } from "@/lib/page-title";
 
-const RANGES = dayRanges(1, 30);
-
-function load(provider: string, days: number) {
+function load(provider: string, range: TimeRange) {
   return authDisabled
-    ? Promise.resolve(sampleProviderReport(provider, days))
-    : getProviderReport(provider, days);
+    ? Promise.resolve(sampleProviderReport(provider, rangeDays(range)))
+    : getProviderReport(provider, range);
 }
 
-const DEFAULT_DAYS = 14;
-type Search = { days?: number };
+type Search = { range?: TimeRange };
 const validateSearch = (search: Record<string, unknown>): Search => ({
-  days: rangeParam(search.days, RANGES, DEFAULT_DAYS),
+  range: reportRangeParam(search, PROVIDER_RANGES, PROVIDER_DEFAULT_RANGE),
 });
-const daysOf = (search: Search) => search.days ?? DEFAULT_DAYS;
+const rangeOf = (search: Search) => search.range ?? PROVIDER_DEFAULT_RANGE;
+
+// The widest range the page offers, to tell a provider nobody has used from a quiet month.
+const WIDEST: TimeRange = "30d";
 
 export const Route = createFileRoute("/_authed/_workspace/providers/$provider")({
   validateSearch,
-  loader: ({ params, location }) => {
+  loader: async ({ params, location }) => {
     if (!isKnownProvider(params.provider)) throw notFound();
-    return load(params.provider, daysOf(validateSearch(location.search)));
+    const search = validateSearch(location.search);
+    const report = await load(params.provider, rangeOf(search));
+    // Nothing ran here this month: look back further before leading with how to start.
+    const unused =
+      report.jobs === 0 && !search.range && (await load(params.provider, WIDEST)).jobs === 0;
+    return { report, unused };
   },
   // A new range loads in the page, keeping the last one up meanwhile.
   shouldReload: ({ cause }) => cause !== "stay",
@@ -60,24 +62,24 @@ export const Route = createFileRoute("/_authed/_workspace/providers/$provider")(
 
 // Keyed by provider, so moving to another provider's page starts from its own loaded report.
 function ProviderPage() {
-  const first = Route.useLoaderData();
-  return <ProviderView key={first.provider} first={first} />;
+  const { report, unused } = Route.useLoaderData();
+  return <ProviderView key={report.provider} first={report} unused={unused} />;
 }
 
-function ProviderView({ first }: { first: ProviderReport }) {
+function ProviderView({ first, unused }: { first: ProviderReport; unused: boolean }) {
   const { provider } = first;
-  const days = daysOf(Route.useSearch());
+  const range = rangeOf(Route.useSearch());
   const setSearch = useSetSearch<Search>();
-  const report = useRangeReport(first, days, (next) => load(provider, next));
+  const report = useRangeReport(first, range, (next) => load(provider, next));
   const info = providerInfo(provider);
   usePageTitle(info.name);
   // Nothing ran here in the widest range: lead with how to start instead of empty numbers.
-  const [notSetUp] = useState(first.jobs === 0 && first.days === DEFAULT_DAYS && !!info.example);
+  const [notSetUp] = useState(unused && !!info.example);
   const { icon, tile } = providerStyle(provider);
   const connectUrl = providerPlans(provider)?.connectUrl;
 
-  function chooseRange(next: number) {
-    setSearch({ days: unlessDefault(next, DEFAULT_DAYS) });
+  function chooseRange(next: TimeRange) {
+    setSearch({ range: unlessDefault(next, PROVIDER_DEFAULT_RANGE) });
   }
 
   return (
@@ -117,12 +119,12 @@ function ProviderView({ first }: { first: ProviderReport }) {
         <div className="grid gap-3">
           <div className="flex flex-wrap items-center justify-between gap-3">
             <h2 className="font-semibold">Your usage</h2>
-            <RangePicker ranges={RANGES} days={days} onChange={chooseRange} />
+            <TimeRangePicker {...PROVIDER_RANGES} value={range} onChange={chooseRange} />
           </div>
           {report.jobs === 0 ? (
             <p className="rounded-xl border border-dashed bg-card px-4 py-6 text-sm text-muted-foreground">
-              No jobs in this workspace ran on {info.name} in the last {plural(report.days, "day")}.
-              Once one does, its numbers show up here.
+              No jobs in this workspace ran on {info.name} in {rangePhrase(range)}. Once one does,
+              its numbers show up here.
             </p>
           ) : (
             <>

@@ -14,19 +14,21 @@ import {
   testConnection,
 } from "../provider-connections.ts";
 import { providerReport, providersOverview } from "../provider-report.ts";
+import { parseWindow } from "../report-window.ts";
+import { RAW_RETENTION_DAYS } from "../job-timings.ts";
+import { DEFAULT_DAYS } from "../job-times.ts";
 import { requireManager } from "../roles.ts";
-import { Days } from "./job-times.ts";
 import { AppError } from "@relayrunner/errors";
-
-const Query = z.object({ days: Days });
 
 const ConnectBody = z.object({
   token: z.string().trim().min(8).max(4096),
   options: z.record(z.string(), z.string()).optional(),
 });
 
-// The Providers page and each provider's page: the workspace's jobs over the last ?days=N days
-// (default 14).
+// The Providers page and each provider's page: the workspace's jobs over ?from=&to= or the last
+// ?days=N days (default 14), as far back as job_timing keeps each job.
+const RANGE = { maxDays: RAW_RETENTION_DAYS, defaultDays: DEFAULT_DAYS };
+
 export const providerRoutes = new Hono<AppEnv>()
   // Every provider, with the ones operators changed or added in the admin. Signed-in users only;
   // the docs site reads the code list.
@@ -75,14 +77,14 @@ export const providerRoutes = new Hono<AppEnv>()
     return c.json(await disconnectProvider(c.var.db, c.var.workspace.id, provider));
   })
   .get("/", requireUser, requireWorkspace, withCatalog, async (c) => {
-    const parsed = Query.safeParse(c.req.query());
-    if (!parsed.success) throw new AppError("INVALID_REQUEST");
-    return c.json(await providersOverview(c.var.db, c.var.workspace.id, parsed.data.days));
+    const window = parseWindow(c.req.query(), RANGE);
+    if (!window) throw new AppError("INVALID_REQUEST");
+    return c.json(await providersOverview(c.var.db, c.var.workspace.id, window));
   })
   .get("/:provider", requireUser, requireWorkspace, withCatalog, async (c) => {
     const provider = c.req.param("provider");
     if (!isCatalogProvider(provider)) throw new AppError("NOT_FOUND");
-    const parsed = Query.safeParse(c.req.query());
-    if (!parsed.success) throw new AppError("INVALID_REQUEST");
-    return c.json(await providerReport(c.var.db, c.var.workspace.id, provider, parsed.data.days));
+    const window = parseWindow(c.req.query(), RANGE);
+    if (!window) throw new AppError("INVALID_REQUEST");
+    return c.json(await providerReport(c.var.db, c.var.workspace.id, provider, window));
   });

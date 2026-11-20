@@ -1,4 +1,5 @@
 import { api } from "@/lib/api";
+import { rangeQuery, type TimeRange } from "@/lib/time-range";
 
 /** One GitHub rate's jobs in the usage report (GET /api/usage). Money is USD. */
 export type UsageRow = {
@@ -49,14 +50,14 @@ export type UsageReport = {
   }[];
 };
 
-/** The workspace's finished jobs over the last `days` days. */
-export function getUsage(days = 30) {
-  return api<UsageReport>(`/usage?days=${days}`);
+/** The workspace's finished jobs in a range. */
+export function getUsage(range: TimeRange) {
+  return api<UsageReport>(`/usage?${rangeQuery(range)}`);
 }
 
-/** The free checks' savings over the last `days` days. */
-export function getCheckSavings(days = 30) {
-  return api<FreeCheckSavings>(`/usage/checks?days=${days}`);
+/** The free checks' savings in a range. */
+export function getCheckSavings(range: TimeRange) {
+  return api<FreeCheckSavings>(`/usage/checks?${rangeQuery(range)}`);
 }
 
 /** Example savings for `VITE_AUTH_DISABLED=true` dev builds, which have no API. */

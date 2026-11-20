@@ -2,6 +2,7 @@ import { beforeAll, describe, expect, test } from "vitest";
 import { createDb, schema } from "./db/index.ts";
 import type { Env } from "./env.ts";
 import { type ProviderReport, type ProvidersOverview, providerReport } from "./provider-report.ts";
+import { lastDays } from "./report-window.ts";
 import * as testing from "./testing.ts";
 
 let env: Env;
@@ -140,7 +141,13 @@ describe("provider report", () => {
     };
     await db.insert(schema.jobTiming).values([at("2026-08-25", 100), at("2026-09-05", 100)]);
 
-    const body = await providerReport(db, workspace.id, "ubicloud", 30, Date.parse("2026-09-10"));
+    const body = await providerReport(
+      db,
+      workspace.id,
+      "ubicloud",
+      lastDays(30, Date.parse("2026-09-10")),
+      Date.parse("2026-09-10"),
+    );
     expect(body).toMatchObject({ jobs: 2, billedMinutes: 200 });
     expect(body.cost).toBeCloseTo(100 * 0.001 + 100 * 0.00125, 3);
     // One runner type, shown at today's price.

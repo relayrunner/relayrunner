@@ -10,6 +10,7 @@ import {
 } from "@relayrunner/providers";
 import { type Db, schema } from "./db/index.ts";
 import type { Env } from "./env.ts";
+import { type Window, windowDays } from "./report-window.ts";
 import { stepTimes } from "./step-phases.ts";
 import { appInstallationToken, jobAnnotations } from "./github-app.ts";
 import { countsAsJob, jobCountUpserts } from "./job-counts.ts";
@@ -480,19 +481,22 @@ export interface UsageReport {
 }
 
 /**
- * The workspace's finished jobs from the last `days` days: how many ran under a minute, and what
+ * The workspace's finished jobs in the window: how many ran under a minute, and what
  * GitHub's round-up cost. Counts only jobs a runner ran (not skipped, not cancelled while queued).
  * Sums are grouped by the columns runnerClass reads, so classification happens per group, not per
  * job. Jobs past RAW_RETENTION_DAYS come from job_timing_daily, whole days only: the range's
  * first, partial day is left out of those.
  */
-export async function usageReport(db: Db, workspaceId: string, days = 30): Promise<UsageReport> {
+export async function usageReport(
+  db: Db,
+  workspaceId: string,
+  window: Window,
+): Promise<UsageReport> {
   const now = Date.now();
-  const since = new Date(now - days * DAY_MS);
   const book = await loadPriceBook(db, now);
   const [recent, older] = await Promise.all([
-    recentUsage(db, book, workspaceId, since, now),
-    dailyUsage(db, book, workspaceId, since, now),
+    recentUsage(db, book, workspaceId, window),
+    dailyUsage(db, book, workspaceId, window),
   ]);
   const rows = [...recent, ...older];
 
@@ -539,7 +543,7 @@ export async function usageReport(db: Db, workspaceId: string, days = 30): Promi
   }
 
   return {
-    days,
+    days: windowDays(window),
     shortJobSeconds: SHORT_JOB_SECONDS,
     totals: rounded(totals),
     byRunner: [...byRunner.values()]
@@ -559,10 +563,10 @@ export const billedMinutes = (ms: number) => Math.max(1, Math.ceil(ms / 60_000))
 /** The minutes GitHub bills a job: its run time rounded up, at least one. */
 export const BILLED_MINUTES = sql`max(1, (${DURATION_MS} + 59999) / 60000)`;
 
-// The usage report's sums from job_timing, for jobs that finished since `since`, with the moment
+// The usage report's sums from job_timing, for jobs that finished in the window, with the moment
 // their prices are read at.
-async function recentUsage(db: Db, book: PriceBook, workspaceId: string, since: Date, now: number) {
-  const prices = pricePeriods(book, table.completedAt, since.getTime(), now);
+async function recentUsage(db: Db, book: PriceBook, workspaceId: string, { from, to }: Window) {
+  const prices = pricePeriods(book, table.completedAt, from, to);
   const durationMs = DURATION_MS;
   const billed = BILLED_MINUTES;
   const isShort = sql`(${durationMs} < ${SHORT_JOB_SECONDS * 1000})`;
@@ -585,7 +589,8 @@ async function recentUsage(db: Db, book: PriceBook, workspaceId: string, since: 
     .where(
       and(
         eq(schema.workspace.id, workspaceId),
-        gte(table.completedAt, since),
+        gte(table.completedAt, new Date(from)),
+        lt(table.completedAt, new Date(to)),
         isNotNull(table.startedAt),
         isNotNull(table.runnerName),
         ne(sql`coalesce(${table.conclusion}, '')`, "skipped"),
@@ -601,9 +606,9 @@ async function recentUsage(db: Db, book: PriceBook, workspaceId: string, since: 
   return rows.map(({ period, ...row }) => ({ ...row, pricedAt: prices.at(Number(period)) }));
 }
 
-// The same sums from job_timing_daily, for whole days that start at or after `since`.
-async function dailyUsage(db: Db, book: PriceBook, workspaceId: string, since: Date, now: number) {
-  const prices = pricePeriods(book, daily.day, since.getTime(), now);
+// The same sums from job_timing_daily, for whole days that start in the window.
+async function dailyUsage(db: Db, book: PriceBook, workspaceId: string, { from, to }: Window) {
+  const prices = pricePeriods(book, daily.day, from, to);
   const rows = await db
     .select({
       period: prices.period,
@@ -620,7 +625,13 @@ async function dailyUsage(db: Db, book: PriceBook, workspaceId: string, since: D
     .from(daily)
     .innerJoin(schema.workspace, eq(schema.workspace.installationId, daily.installationId))
     .leftJoin(schema.githubRepository, eq(schema.githubRepository.id, daily.repositoryId))
-    .where(and(eq(schema.workspace.id, workspaceId), gte(daily.day, since)))
+    .where(
+      and(
+        eq(schema.workspace.id, workspaceId),
+        gte(daily.day, new Date(from)),
+        lt(daily.day, new Date(to)),
+      ),
+    )
     .groupBy(
       ...prices.groupBy,
       daily.labels,

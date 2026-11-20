@@ -134,6 +134,12 @@ export function startOfWeek(ms: number) {
   return startOfDay(ms, -((zoneParts(ms).weekday + 6) % 7));
 }
 
+/** Midnight on the first of the month `ms` falls in, `addMonths` months on. */
+export function startOfMonth(ms: number, addMonths = 0) {
+  const { year, month } = zoneParts(ms);
+  return zonedTime(year, month + addMonths, 1);
+}
+
 /** `YYYY-MM-DD` for the day `ms` falls in. */
 export function dateText(ms: number) {
   const { year, month, day } = zoneParts(ms);

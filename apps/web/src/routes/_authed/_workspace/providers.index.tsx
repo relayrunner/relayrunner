@@ -5,52 +5,48 @@ import { SectionBoundary } from "@/components/error-boundary";
 import { PageHeader } from "@/components/page-header";
 import { HostedRunnersTable } from "@/components/hosted-runners-table";
 import { ProviderMark } from "@/components/providers";
-import { RangePicker } from "@/components/range-picker";
+import { TimeRangePicker } from "@/components/range-picker";
 import { DataTable, dataTableColumns, NUM } from "@/components/ui/data-table";
 import { authDisabled } from "@/lib/auth-client";
-import { medianText, p90Text, plural } from "@/lib/job-times";
+import { medianText, p90Text } from "@/lib/job-times";
 import { useProviderApps } from "@/lib/provider-apps";
 import { providerInfo } from "@/lib/provider-catalog";
-import {
-  dayRanges,
-  rangeParam,
-  unlessDefault,
-  useRangeReport,
-  useSetSearch,
-} from "@/lib/search-params";
+import { unlessDefault, useRangeReport, useSetSearch } from "@/lib/search-params";
 import {
   costText,
   getProvidersOverview,
+  PROVIDER_DEFAULT_RANGE,
+  PROVIDER_RANGES,
   type ProvidersOverview,
   type ProviderSummary,
   sampleProvidersOverview,
 } from "@/lib/providers";
+import { rangeDays, rangePhrase, reportRangeParam, type TimeRange } from "@/lib/time-range";
 
-const RANGES = dayRanges(1, 30);
-
-function load(days: number) {
-  return authDisabled ? Promise.resolve(sampleProvidersOverview(days)) : getProvidersOverview(days);
+function load(range: TimeRange) {
+  return authDisabled
+    ? Promise.resolve(sampleProvidersOverview(rangeDays(range)))
+    : getProvidersOverview(range);
 }
 
-const DEFAULT_DAYS = 14;
-type Search = { days?: number };
+type Search = { range?: TimeRange };
 const validateSearch = (search: Record<string, unknown>): Search => ({
-  days: rangeParam(search.days, RANGES, DEFAULT_DAYS),
+  range: reportRangeParam(search, PROVIDER_RANGES, PROVIDER_DEFAULT_RANGE),
 });
-const daysOf = (search: Search) => search.days ?? DEFAULT_DAYS;
+const rangeOf = (search: Search) => search.range ?? PROVIDER_DEFAULT_RANGE;
 
 export const Route = createFileRoute("/_authed/_workspace/providers/")({
   validateSearch,
-  loader: ({ location }) => load(daysOf(validateSearch(location.search))),
+  loader: ({ location }) => load(rangeOf(validateSearch(location.search))),
   // A new range loads in the page, keeping the last one up meanwhile.
   shouldReload: ({ cause }) => cause !== "stay",
   component: ProvidersPage,
 });
 
 function ProvidersPage() {
-  const days = daysOf(Route.useSearch());
+  const range = rangeOf(Route.useSearch());
   const setSearch = useSetSearch<Search>();
-  const overview: ProvidersOverview = useRangeReport(Route.useLoaderData(), days, load);
+  const overview: ProvidersOverview = useRangeReport(Route.useLoaderData(), range, load);
   const { current } = Route.useRouteContext();
   const installed = useProviderApps(current.workspace.id);
   // Connected: the org installed the cloud's GitHub App, or a job ran on it in this range (GitHub
@@ -60,8 +56,8 @@ function ProvidersPage() {
     [installed, overview],
   );
 
-  function chooseRange(next: number) {
-    setSearch({ days: unlessDefault(next, DEFAULT_DAYS) });
+  function chooseRange(next: TimeRange) {
+    setSearch({ range: unlessDefault(next, PROVIDER_DEFAULT_RANGE) });
   }
 
   return (
@@ -74,12 +70,11 @@ function ProvidersPage() {
         <div className="grid gap-3">
           <div className="flex flex-wrap items-center justify-between gap-3">
             <h2 className="font-semibold">In use</h2>
-            <RangePicker ranges={RANGES} days={days} onChange={chooseRange} />
+            <TimeRangePicker {...PROVIDER_RANGES} value={range} onChange={chooseRange} />
           </div>
           {overview.providers.length === 0 ? (
             <p className="rounded-xl border border-dashed bg-card px-4 py-6 text-sm text-muted-foreground">
-              No jobs in this workspace ran on a provider in the last {plural(overview.days, "day")}
-              .
+              No jobs in this workspace ran on a provider in {rangePhrase(range)}.
             </p>
           ) : (
             <SectionBoundary>

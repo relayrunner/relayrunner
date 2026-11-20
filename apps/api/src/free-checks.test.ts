@@ -117,6 +117,10 @@ describe("free check savings", () => {
     const { cookie, installationId: mine } = await connectedWorkspace();
     await recordFreeCheck(db, mine, check(mine, "private"));
     expect((await get<FreeCheckSavings>("/usage/checks?days=7", cookie)).checks).toBe(1);
+    // A calendar window that ended before the check ran leaves it out.
+    const now = Date.now();
+    const before = `/usage/checks?from=${now - 7 * 86_400_000}&to=${now - 86_400_000}`;
+    expect((await get<FreeCheckSavings>(before, cookie)).checks).toBe(0);
   });
 
   test("counts lint runs by repo name, split out by check", async () => {

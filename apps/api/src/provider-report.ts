@@ -20,18 +20,11 @@ import { sql } from "drizzle-orm";
 import { type Db, schema } from "./db/index.ts";
 import { loadPriceBook } from "./prices.ts";
 import { isCatalogProvider } from "./provider-catalog.ts";
-import {
-  BILLED_MINUTES,
-  cents,
-  classRate,
-  DAY_MS,
-  pricePeriods,
-  runnerClass,
-} from "./job-timings.ts";
+import { type Window, windowDays } from "./report-window.ts";
+import { BILLED_MINUTES, cents, classRate, pricePeriods, runnerClass } from "./job-timings.ts";
 import {
   type Bucket,
   bucketOf,
-  DEFAULT_DAYS,
   emptyBucket,
   type Environment,
   FAILED,
@@ -137,8 +130,8 @@ interface Group extends Sums {
 const PUBLIC = sql`coalesce(${repo.private} = 0, 0)`;
 
 // Machines are never a provider, so their jobs are left out in SQL.
-const where = (workspaceId: string, days: number, now: number) =>
-  sql`${windowWhere(workspaceId, new Date(now - days * DAY_MS))} and ${table.machineId} is null`;
+const where = (workspaceId: string, { from, to }: Window) =>
+  sql`${windowWhere(workspaceId, new Date(from), to)} and ${table.machineId} is null`;
 
 /**
  * What a minute cost on a runner type at `at`, in a private repo: GitHub's standard runners by the
@@ -163,9 +156,9 @@ function perMinuteOf(
 // Every provider runner type the workspace's jobs used, by environment key. Several label sets
 // can land on one (`ubuntu-latest` and `ubuntu-24.04`), and a price change in the window splits a
 // label set in two, each priced at its own rate.
-async function runnerGroups(db: Db, workspaceId: string, days: number, now: number) {
+async function runnerGroups(db: Db, workspaceId: string, window: Window, now: number) {
   const book = await loadPriceBook(db, now);
-  const prices = pricePeriods(book, table.completedAt, now - days * DAY_MS, now);
+  const prices = pricePeriods(book, table.completedAt, window.from, window.to);
   const rows = await db.all<Row>(sql`
     select ${prices.period} as period, ${table.labels} as labels, ${table.runnerGroupName} as runner_group_name,
       count(*) as runs, sum(${OK}) as successes, sum(${FAILED}) as failures,
@@ -173,7 +166,7 @@ async function runnerGroups(db: Db, workspaceId: string, days: number, now: numb
       sum(case when ${PUBLIC} then ${BILLED_MINUTES} else 0 end) as public_billed_minutes,
       ${SAMPLES} as samples
     from ${table} left join ${repo} on ${repo.id} = ${table.repositoryId}
-    where ${where(workspaceId, days, now)}
+    where ${where(workspaceId, window)}
     group by ${sql.join([...prices.groupBy, table.labels, table.runnerGroupName], sql`, `)}`);
 
   const groups = new Map<string, Group>();
@@ -245,8 +238,7 @@ async function busiestWorkflows(
   db: Db,
   workspaceId: string,
   provider: string,
-  days: number,
-  now: number,
+  window: Window,
 ): Promise<ProviderWorkflow[]> {
   const rows = await db.all<{
     labels: string;
@@ -259,7 +251,7 @@ async function busiestWorkflows(
       ${table.repositoryFullName} as repository, ${table.workflowName} as workflow,
       count(*) as jobs
     from ${table}
-    where ${where(workspaceId, days, now)}
+    where ${where(workspaceId, window)}
     group by ${table.labels}, ${table.runnerGroupName}, ${table.repositoryFullName},
       ${table.workflowName}`);
   // Label sets repeat across workflows, so each is classified once.
@@ -288,23 +280,23 @@ async function busiestWorkflows(
     .slice(0, WORKFLOW_LIMIT);
 }
 
-/** The workspace's jobs on one provider over the last `days` days. */
+/** The workspace's jobs on one provider in the window. */
 export async function providerReport(
   db: Db,
   workspaceId: string,
   provider: string,
-  days = DEFAULT_DAYS,
+  window: Window,
   now = Date.now(),
 ): Promise<ProviderReport> {
   const [all, workflows, book] = await Promise.all([
-    runnerGroups(db, workspaceId, days, now),
-    busiestWorkflows(db, workspaceId, provider, days, now),
+    runnerGroups(db, workspaceId, window, now),
+    busiestWorkflows(db, workspaceId, provider, window),
     loadPriceBook(db, now),
   ]);
   const groups = all.filter((group) => group.provider === provider);
   return {
     provider,
-    days,
+    days: windowDays(window),
     pricesChecked: PRICES_CHECKED,
     ...totalOf(groups),
     runners: runnersOf(groups),
@@ -313,14 +305,14 @@ export async function providerReport(
   };
 }
 
-/** Every provider the workspace's jobs ran on over the last `days` days, busiest first. */
+/** Every provider the workspace's jobs ran on in the window, busiest first. */
 export async function providersOverview(
   db: Db,
   workspaceId: string,
-  days = DEFAULT_DAYS,
+  window: Window,
   now = Date.now(),
 ): Promise<ProvidersOverview> {
-  const groups = await runnerGroups(db, workspaceId, days, now);
+  const groups = await runnerGroups(db, workspaceId, window, now);
   const byProvider = Map.groupBy(groups, (group) => group.provider);
   const providers = [...byProvider].map(([provider, groups]) => ({
     provider,
@@ -328,5 +320,5 @@ export async function providersOverview(
     runners: runnersOf(groups),
   }));
   providers.sort((a, b) => b.jobs - a.jobs);
-  return { days, pricesChecked: PRICES_CHECKED, providers };
+  return { days: windowDays(window), pricesChecked: PRICES_CHECKED, providers };
 }

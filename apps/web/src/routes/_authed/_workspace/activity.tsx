@@ -174,7 +174,7 @@ function ActivityPage() {
       return;
     }
     // The log works without either.
-    getCheckSavings(30)
+    getCheckSavings("30d")
       .then(setSavings)
       .catch(() => undefined);
     getActivityOptions()

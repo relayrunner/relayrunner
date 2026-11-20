@@ -10,6 +10,7 @@ import {
 } from "@relayrunner/providers";
 import { api } from "@/lib/api";
 import { type Environment, type Stat, sampleStat } from "@/lib/job-times";
+import { type RangeOptions, rangeQuery, type TimeRange } from "@/lib/time-range";
 import { money } from "@/lib/usage";
 
 export type ProviderCounts = {
@@ -54,12 +55,21 @@ export type ProvidersOverview = {
   providers: ProviderSummary[];
 };
 
-export function getProviderReport(provider: string, days: number) {
-  return api<ProviderReport>(`/providers/${provider}?days=${days}`);
+/**
+ * The ranges the provider pages and the Runners page's cloud table offer: as far back as the API
+ * keeps each job (about a month), starting on this month since that's when plans' minutes reset.
+ */
+export const PROVIDER_RANGES: RangeOptions = {
+  presets: ["24h", "7d", "14d", "30d", "week", "lastweek", "month"],
+};
+export const PROVIDER_DEFAULT_RANGE: TimeRange = "month";
+
+export function getProviderReport(provider: string, range: TimeRange) {
+  return api<ProviderReport>(`/providers/${provider}?${rangeQuery(range)}`);
 }
 
-export function getProvidersOverview(days: number) {
-  return api<ProvidersOverview>(`/providers?days=${days}`);
+export function getProvidersOverview(range: TimeRange) {
+  return api<ProvidersOverview>(`/providers?${rangeQuery(range)}`);
 }
 
 /** The estimated cost, or "—" when none of the jobs had a price. */

@@ -5,13 +5,14 @@
 // and Activity pages sum them.
 
 import type { ActivityEvent } from "@relayrunner/activity";
-import { and, eq, gte, isNull, sql } from "drizzle-orm";
+import { and, eq, gte, isNull, lt, sql } from "drizzle-orm";
 import { recordEvent } from "./activity.ts";
 import { type Db, schema } from "./db/index.ts";
 import { createCheckRun } from "./github-app.ts";
 import { workspaceIdForInstallation } from "./installations.ts";
 import { loadPriceBook } from "./prices.ts";
-import { cents, classRate, DAY_MS, pricePeriods, RUNNER_LABELS, rateFor } from "./job-timings.ts";
+import { cents, classRate, pricePeriods, RUNNER_LABELS, rateFor } from "./job-timings.ts";
+import { type Window, windowDays } from "./report-window.ts";
 
 const table = schema.activityEvent;
 
@@ -109,16 +110,15 @@ export interface FreeCheckSavings {
   }[];
 }
 
-/** The workspace's free check runs from the last `days` days, and the money they saved. */
+/** The workspace's free check runs in the window, and the money they saved. */
 export async function freeCheckSavings(
   db: Db,
   workspaceId: string,
-  days = 30,
+  window: Window,
 ): Promise<FreeCheckSavings> {
   const now = Date.now();
-  const since = new Date(now - days * DAY_MS);
   const book = await loadPriceBook(db, now);
-  const prices = pricePeriods(book, table.occurredAt, since.getTime(), now);
+  const prices = pricePeriods(book, table.occurredAt, window.from, window.to);
   const repositoryId = sql<number>`json_extract(${table.data}, '$.repositoryId')`;
   const check = sql<string>`json_extract(${table.data}, '$.check')`;
   const rows = await db
@@ -137,7 +137,8 @@ export async function freeCheckSavings(
       and(
         eq(table.workspaceId, workspaceId),
         eq(table.type, "check.completed"),
-        gte(table.occurredAt, since),
+        gte(table.occurredAt, new Date(window.from)),
+        lt(table.occurredAt, new Date(window.to)),
       ),
     )
     .groupBy(...prices.groupBy, check, repositoryId, schema.githubRepository.private);
@@ -177,7 +178,7 @@ export async function freeCheckSavings(
       .sort((a, b) => b.checks - a.checks || b.savedCost - a.savedCost);
   const byRepository = ranked(repos);
   return {
-    days,
+    days: windowDays(window),
     runner: {
       label: RUNNER_LABELS[FREE_CHECK_RUNNER],
       perMinute: classRate(book, FREE_CHECK_RUNNER, now),

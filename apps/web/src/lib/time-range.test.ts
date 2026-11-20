@@ -4,6 +4,7 @@ import {
   dayPreset,
   presetDays,
   rangeName,
+  rangePhrase,
   resolveRange,
   spanCode,
   timeRangeParam,
@@ -32,6 +33,17 @@ describe("resolveRange", () => {
     });
   });
 
+  test("reads months from local midnight on the first", () => {
+    expect(resolveRange("month", now)).toEqual({ from: new Date(2026, 10, 1).getTime(), to: now });
+    expect(resolveRange("lastmonth", now)).toEqual({
+      from: new Date(2026, 9, 1).getTime(),
+      to: new Date(2026, 10, 1).getTime(),
+    });
+    // January's last month is the year before's December.
+    const january = new Date(2027, 0, 10).getTime();
+    expect(resolveRange("lastmonth", january).from).toBe(new Date(2026, 11, 1).getTime());
+  });
+
   test("takes in both days of a custom range, up to now", () => {
     expect(resolveRange("2026-11-01..2026-11-03", now)).toEqual({
       from: new Date(2026, 10, 1).getTime(),
@@ -45,12 +57,21 @@ test("spanCode says how long a range spans", () => {
   expect(spanCode("24h", now)).toBe("24h");
   expect(spanCode("today", now)).toBe("19h");
   expect(spanCode("week", now)).toBe("6d");
+  expect(spanCode("month", now)).toBe("14d");
+  expect(spanCode("lastmonth", now)).toBe("31d");
 });
 
 test("rangeName names presets and custom ranges", () => {
   expect(rangeName("14d")).toBe("Past 14 days");
   expect(rangeName("week")).toBe("This week");
   expect(rangeName(customRange("2026-11-07", "2026-11-01"))).toMatch(/Nov 1 – Nov 7/);
+});
+
+test("rangePhrase ends a sentence", () => {
+  expect(rangePhrase("24h")).toBe("the past 24 hours");
+  expect(rangePhrase("today")).toBe("today");
+  expect(rangePhrase("month")).toBe("this month");
+  expect(rangePhrase("lastweek")).toBe("last week");
 });
 
 test("dayPreset and presetDays map the older day counts", () => {

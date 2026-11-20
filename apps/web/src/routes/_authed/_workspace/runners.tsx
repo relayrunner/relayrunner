@@ -40,6 +40,7 @@ import {
   machineView,
 } from "@/components/runner-card";
 import { CloudRunnersTable } from "@/components/cloud-runners";
+import { TimeRangePicker } from "@/components/range-picker";
 import { RunnerList, type RunnerRow } from "@/components/runner-list";
 import { NeedsAttention } from "@/components/runner-attention";
 import { RunnersNow } from "@/components/runners-now";
@@ -70,6 +71,8 @@ import {
 } from "@/lib/machines";
 import {
   getProvidersOverview,
+  PROVIDER_DEFAULT_RANGE,
+  PROVIDER_RANGES,
   type ProviderSummary,
   sampleProvidersOverview,
 } from "@/lib/providers";
@@ -88,6 +91,8 @@ import {
   validateRunnerSearch,
 } from "@/lib/runner-filters";
 import { getRunnerOrder } from "@/lib/runner-order";
+import { unlessDefault } from "@/lib/search-params";
+import { rangeDays, rangePhrase } from "@/lib/time-range";
 import { readFlag, saveFlag } from "@/lib/stored-flag";
 import { cn } from "@/lib/utils";
 
@@ -258,20 +263,22 @@ function RunnersPage() {
     [matching, search.inactive],
   );
 
-  // Cloud runners jobs used over the same 14 days: GitHub-hosted classes, hosted providers, containers.
-  const [cloud, setCloud] = useState<ProviderSummary[]>(() =>
-    authDisabled ? sampleProvidersOverview(CLOUD_DAYS).providers : [],
+  // Cloud runners jobs used in the range (this month unless picked): GitHub-hosted classes, hosted
+  // providers, containers. Null until the first answer.
+  const cloudRange = search.cloud ?? PROVIDER_DEFAULT_RANGE;
+  const [cloud, setCloud] = useState<ProviderSummary[] | null>(() =>
+    authDisabled ? sampleProvidersOverview(rangeDays(cloudRange)).providers : null,
   );
   useEffect(() => {
     if (authDisabled) return;
     let live = true;
-    getProvidersOverview(CLOUD_DAYS)
+    getProvidersOverview(cloudRange)
       .then((report) => live && setCloud(report.providers))
       .catch(() => undefined);
     return () => {
       live = false;
     };
-  }, []);
+  }, [cloudRange]);
   // The user's own machines that don't take this workspace's jobs (a workspace joined through
   // GitHub starts with none). The banner can be dismissed per workspace; Add runner still has it.
   const othersKey = `relayrunner:runners:others-dismissed:${workspaceId}`;
@@ -508,10 +515,19 @@ function RunnersPage() {
               )}
             </RunnerGroup>
           )}
-          {cloud.length > 0 && (
+          {/* Left out while nothing ever ran in the cloud, but kept once a range is picked. */}
+          {cloud && (cloud.length > 0 || search.cloud) && (
             <RunnerGroup
               title="Cloud-hosted"
-              note={`Used in the last ${CLOUD_DAYS} days`}
+              action={
+                <TimeRangePicker
+                  {...PROVIDER_RANGES}
+                  value={cloudRange}
+                  onChange={(range) =>
+                    setSearch({ cloud: unlessDefault(range, PROVIDER_DEFAULT_RANGE) })
+                  }
+                />
+              }
               bare
               footer={
                 <p className="text-xs text-muted-foreground">
@@ -520,7 +536,13 @@ function RunnersPage() {
                 </p>
               }
             >
-              <CloudRunnersTable providers={cloud} />
+              {cloud.length > 0 ? (
+                <CloudRunnersTable providers={cloud} range={search.cloud} />
+              ) : (
+                <p className="rounded-xl border border-dashed bg-card px-4 py-6 text-sm text-muted-foreground">
+                  No jobs ran in the cloud in {rangePhrase(cloudRange)}.
+                </p>
+              )}
             </RunnerGroup>
           )}
         </div>
@@ -528,9 +550,6 @@ function RunnersPage() {
     </section>
   );
 }
-
-// How far back the cloud runners table looks.
-const CLOUD_DAYS = 14;
 
 function RunnerGroup({
   title,

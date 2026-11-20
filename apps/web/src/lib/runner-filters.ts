@@ -1,6 +1,8 @@
 import { TONE_LABELS, type MachineView } from "@/components/runner-card";
 import { DAY_MS } from "@/lib/job-times";
 import type { Machine, MachineSharing } from "@/lib/machines";
+import { PROVIDER_DEFAULT_RANGE, PROVIDER_RANGES } from "@/lib/providers";
+import { type TimeRange, timeRangeParam } from "@/lib/time-range";
 
 /**
  * A self-hosted runner that's been offline this long, with no jobs, is hidden until asked for.
@@ -23,6 +25,8 @@ export type RunnerSearch = {
   runs?: MachineSharing;
   /** Also show inactive runners. */
   inactive?: true;
+  /** The cloud-hosted table's range, when it isn't this month. */
+  cloud?: TimeRange;
 };
 
 export function validateRunnerSearch(search: Record<string, unknown>): RunnerSearch {
@@ -34,6 +38,7 @@ export function validateRunnerSearch(search: Record<string, unknown>): RunnerSea
     owner: text(search.owner),
     runs,
     inactive: [true, 1, "1", "true"].includes(search.inactive as never) ? true : undefined,
+    cloud: timeRangeParam(search.cloud, PROVIDER_RANGES, PROVIDER_DEFAULT_RANGE),
   };
 }
 
