@@ -10,7 +10,7 @@
 // the cookie lands on whatever root domain serves the app. It only runs in production builds on
 // the live domain, not on localhost or workers.dev previews. Operators opt out, and the opt-out
 // cookie covers the landing site too.
-import posthog from "posthog-js";
+import type { PostHog } from "posthog-js";
 import type { Session } from "@/lib/auth-client";
 
 /** The project's public token. It only lets a client send events, so it's fine in the bundle. */
@@ -23,25 +23,43 @@ export function analyticsEnabled(host: string, prod: boolean): boolean {
   return !host.endsWith(".workers.dev");
 }
 
-let started = false;
+// posthog-js is about a quarter of the dashboard's JavaScript, so it loads once the page is idle
+// instead of before the first render. Calls made before then queue on this promise and run in
+// order once it's ready.
+let ready: Promise<PostHog> | undefined;
 let identified: string | undefined;
 let grouped: string | undefined;
 
-export function startAnalytics() {
-  if (started || !analyticsEnabled(location.hostname, import.meta.env.PROD)) return;
-  started = true;
-  posthog.init(POSTHOG_TOKEN, {
-    api_host: "/ingest",
-    ui_host: "https://us.posthog.com",
-    defaults: "2026-08-30",
-    autocapture: false,
-    cross_subdomain_cookie: true,
-    opt_out_capturing_persistence_type: "cookie",
-    person_profiles: "identified_only",
-    disable_session_recording: true,
-    disable_surveys: true,
+function whenIdle() {
+  return new Promise<void>((resolve) => {
+    if ("requestIdleCallback" in window) requestIdleCallback(() => resolve(), { timeout: 3000 });
+    else setTimeout(resolve, 1);
   });
-  posthog.register({ app: "dashboard" });
+}
+
+function withPostHog(fn: (posthog: PostHog) => void) {
+  void ready?.then(fn);
+}
+
+export function startAnalytics() {
+  if (ready || !analyticsEnabled(location.hostname, import.meta.env.PROD)) return;
+  ready = whenIdle()
+    .then(() => import("posthog-js"))
+    .then(({ default: posthog }) => {
+      posthog.init(POSTHOG_TOKEN, {
+        api_host: "/ingest",
+        ui_host: "https://us.posthog.com",
+        defaults: "2026-08-30",
+        autocapture: false,
+        cross_subdomain_cookie: true,
+        opt_out_capturing_persistence_type: "cookie",
+        person_profiles: "identified_only",
+        disable_session_recording: true,
+        disable_surveys: true,
+      });
+      posthog.register({ app: "dashboard" });
+      return posthog;
+    });
 }
 
 /**
@@ -49,27 +67,36 @@ export function startAnalytics() {
  * navigation). Operators are opted out instead, so our own clicking around stays out of the data.
  */
 export function identifyUser(user: Session["user"]) {
-  if (!started || identified === user.id) return;
+  if (!ready || identified === user.id) return;
   identified = user.id;
-  if (user.role === "operator") {
-    posthog.opt_out_capturing();
-    return;
-  }
-  if (posthog.has_opted_out_capturing()) posthog.opt_in_capturing();
-  posthog.identify(user.id, { name: user.name });
+  withPostHog((posthog) => {
+    if (user.role === "operator") {
+      posthog.opt_out_capturing();
+      return;
+    }
+    if (posthog.has_opted_out_capturing()) posthog.opt_in_capturing();
+    posthog.identify(user.id, { name: user.name });
+  });
 }
 
 /** Puts the user's events in their active workspace's group, for workspace-level analytics. */
 export function setWorkspace(workspace: { id: string; name: string; slug: string }) {
-  if (!started || grouped === workspace.id || posthog.has_opted_out_capturing()) return;
+  if (!ready || grouped === workspace.id) return;
   grouped = workspace.id;
-  posthog.group("workspace", workspace.id, { name: workspace.name, slug: workspace.slug });
+  withPostHog((posthog) => {
+    // An opted-out operator isn't grouped, and a later call may try again.
+    if (posthog.has_opted_out_capturing()) {
+      if (grouped === workspace.id) grouped = undefined;
+      return;
+    }
+    posthog.group("workspace", workspace.id, { name: workspace.name, slug: workspace.slug });
+  });
 }
 
 /** On sign-out: the next person in this browser starts as a new anonymous visitor. */
 export function resetAnalytics() {
-  if (!started) return;
+  if (!ready) return;
   identified = undefined;
   grouped = undefined;
-  posthog.reset();
+  withPostHog((posthog) => posthog.reset());
 }
