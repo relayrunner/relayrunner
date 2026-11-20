@@ -235,7 +235,7 @@ function Filters({
 
   return (
     <div className="grid gap-2">
-      <div role="group" aria-label="Show" className="flex gap-1.5">
+      <div role="group" aria-label="Show" className="flex flex-wrap gap-1.5">
         {TYPES.map(({ value, label }) => (
           <Button
             key={label}

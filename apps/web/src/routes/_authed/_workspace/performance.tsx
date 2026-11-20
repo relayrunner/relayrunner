@@ -1,6 +1,6 @@
 import { createFileRoute } from "@tanstack/react-router";
 import { ChevronRightIcon, LayersIcon } from "lucide-react";
-import { memo, type ReactNode, useEffect, useMemo, useState } from "react";
+import { Fragment, memo, type ReactNode, useEffect, useMemo, useState } from "react";
 import { SectionBoundary } from "@/components/error-boundary";
 import { PageHeader } from "@/components/page-header";
 import { PageTabs, type Tab, viewOf } from "@/components/page-tabs";
@@ -300,7 +300,7 @@ const environmentColumns = environmentColumn.columns([
             </span>
           </span>
         );
-      const detail = [env.detail, sizeText(env.size)].filter(Boolean).join(" · ");
+      const detail = [env.detail, sizeText(env.size)].filter(Boolean);
       return (
         <RunnerLink
           runner={env}
@@ -309,9 +309,15 @@ const environmentColumns = environmentColumn.columns([
         >
           <span>
             <span className="block whitespace-nowrap">{env.label}</span>
-            {detail && (
-              <span className="block text-xs whitespace-nowrap text-muted-foreground">
-                {detail}
+            {detail.length > 0 && (
+              // On a phone the size can wrap under the machine, but neither breaks inside.
+              <span className="block text-xs text-muted-foreground">
+                {detail.map((part, index) => (
+                  <Fragment key={part}>
+                    {index > 0 && " · "}
+                    <span className="whitespace-nowrap">{part}</span>
+                  </Fragment>
+                ))}
               </span>
             )}
           </span>
@@ -324,7 +330,7 @@ const environmentColumns = environmentColumn.columns([
     header: "Jobs",
     sortFn: "basic",
     sortDescFirst: true,
-    meta: END,
+    meta: { ...END, hideOnPhone: true },
     cell: ({ getValue }) => <Count value={getValue()} />,
   }),
   environmentColumn.accessor(
@@ -338,6 +344,7 @@ const environmentColumns = environmentColumn.columns([
       sortFn: "basic",
       meta: {
         ...END,
+        hideOnPhone: true,
         info: (
           <>
             <p>The share of jobs sent to this runner that it picked up.</p>
@@ -366,6 +373,7 @@ const environmentColumns = environmentColumn.columns([
     sortFn: "basic",
     meta: {
       ...END,
+      hideOnPhone: true,
       info: <p>How long jobs waited from queued until this runner picked them up.</p>,
     },
     cell: ({ row }) => clock(row.original.stat.waitMs),
@@ -398,6 +406,7 @@ const environmentColumns = environmentColumn.columns([
     sortFn: "basic",
     meta: {
       ...END,
+      hideOnPhone: true,
       info: <p>9 in 10 successful jobs on this runner finished within this.</p>,
     },
     cell: ({ row }) => <P90 stat={row.original.stat} />,
@@ -409,7 +418,7 @@ const environmentColumns = environmentColumn.columns([
       header: "Success",
       sortFn: "basic",
       sortDescFirst: true,
-      meta: END,
+      meta: { ...END, hideOnPhone: true },
       cell: ({ getValue }) => {
         const share = getValue();
         return share === undefined ? "—" : `${Math.round(share * 100)}%`;
@@ -420,7 +429,12 @@ const environmentColumns = environmentColumn.columns([
     id: "versus",
     header: () => <VersusHead />,
     sortFn: "basic",
-    meta: { className: "whitespace-nowrap", info: <VersusInfo />, label: "Vs. baseline" },
+    meta: {
+      className: "whitespace-nowrap",
+      hideOnPhone: true,
+      info: <VersusInfo />,
+      label: "Vs. baseline",
+    },
     cell: ({ row }) => <VersusCell env={row.original} />,
   }),
 ]);
@@ -562,7 +576,7 @@ const workflowColumns = workflowColumn.columns([
     header: "Runs",
     sortFn: "basic",
     sortDescFirst: true,
-    meta: END,
+    meta: { ...END, hideOnPhone: true },
     cell: ({ getValue }) => {
       const runs = getValue();
       return runs === undefined ? "—" : <Count value={runs} />;
@@ -577,6 +591,7 @@ const workflowColumns = workflowColumn.columns([
       sortDescFirst: true,
       meta: {
         ...END,
+        hideOnPhone: true,
         info: <p>The share of finished runs that succeeded. Cancelled runs are left out.</p>,
       },
       cell: ({ getValue }) => {
@@ -609,6 +624,7 @@ const workflowColumns = workflowColumn.columns([
     sortDescFirst: true,
     meta: {
       ...END,
+      hideOnPhone: true,
       info: (
         <p>
           The part of the median spent with no job running, mostly waiting for a runner. The rest is
@@ -627,6 +643,7 @@ const workflowColumns = workflowColumn.columns([
     sortDescFirst: true,
     meta: {
       ...END,
+      hideOnPhone: true,
       info: <p>9 in 10 successful runs finished within this. Under 20 runs it's a rough guide.</p>,
     },
     cell: ({ row }) => <P90 stat={row.original.wall} />,
@@ -653,6 +670,7 @@ const workflowColumns = workflowColumn.columns([
     sortFn: "basic",
     sortDescFirst: true,
     meta: {
+      hideOnPhone: true,
       className: "whitespace-nowrap",
       info: (
         <p>
@@ -804,7 +822,7 @@ const jobColumns = jobColumn.columns([
     header: "Workflow › job",
     sortFn: "text",
     // Capped so a long job name wraps instead of pushing the runner times across the page.
-    meta: { className: "w-80 min-w-56 align-top" },
+    meta: { className: "w-80 min-w-28 align-top sm:min-w-56" },
     cell: ({ row }) => <NameCell row={row} />,
   }),
   jobColumn.accessor("median", {
@@ -833,6 +851,7 @@ const jobColumns = jobColumn.columns([
     sortDescFirst: true,
     meta: {
       align: "end",
+      hideOnPhone: true,
       className: "w-0 py-2 align-top whitespace-nowrap",
       info: (
         <p>
@@ -1020,7 +1039,7 @@ function TimeLine({ env, stat, best }: { env: EnvironmentSummary; stat: Stat; be
   const few = stat.confidence === "few";
   return (
     <li
-      className="grid grid-cols-[1rem_13rem_3.5rem_6.5rem] items-center gap-x-2"
+      className="grid grid-cols-[1rem_minmax(6rem,1fr)_3.5rem] items-center gap-x-2 sm:grid-cols-[1rem_13rem_3.5rem_6.5rem]"
       title={p90Text(stat)}
     >
       <RunnerLink
@@ -1044,7 +1063,8 @@ function TimeLine({ env, stat, best }: { env: EnvironmentSummary; stat: Stat; be
         )}
         {medianText(stat)}
       </span>
-      <RunCount stat={stat} />
+      {/* Phones skip the run count to keep the times beside the runners. */}
+      <RunCount stat={stat} className="hidden sm:inline" />
     </li>
   );
 }
@@ -1053,16 +1073,23 @@ function TimeLine({ env, stat, best }: { env: EnvironmentSummary; stat: Stat; be
  * How many runs a time comes from. Under 20 it reads "only 7 runs", with a tooltip on what that
  * means for the time.
  */
-function RunCount({ stat }: { stat: Stat }) {
+function RunCount({ stat, className }: { stat: Stat; className?: string }) {
   const count = plural(stat.samples, "run");
   if (stat.confidence !== "low" && stat.confidence !== "few")
-    return <span className="text-xs whitespace-nowrap text-muted-foreground">{count}</span>;
+    return (
+      <span className={cn("text-xs whitespace-nowrap text-muted-foreground", className)}>
+        {count}
+      </span>
+    );
   return (
     <Tooltip>
       <TooltipTrigger asChild>
         <span
           tabIndex={0}
-          className="cursor-help text-xs whitespace-nowrap text-muted-foreground underline decoration-dotted underline-offset-2"
+          className={cn(
+            "cursor-help text-xs whitespace-nowrap text-muted-foreground underline decoration-dotted underline-offset-2",
+            className,
+          )}
         >
           only {count}
         </span>

@@ -18,6 +18,7 @@ import { StatusIcon } from "@/components/status-icon";
 import { InfoTip } from "@/components/ui/info-tip";
 import { Sheet, SheetContent, SheetDescription, SheetTitle } from "@/components/ui/sheet";
 import {
+  PHONE_HIDDEN,
   Table,
   TableBody,
   TableCell,
@@ -473,14 +474,14 @@ function SignalCard({ signal }: { signal: Signal }) {
           )}
         </div>
       </div>
-      {/* Fixed columns, so every signal's numbers line up down the page. Phones scroll it. */}
-      <Table className="min-w-xl table-fixed">
+      {/* Fixed columns, so every signal's numbers line up down the page. Phones leave out spend. */}
+      <Table className="table-fixed">
         <TableHeader>
           <TableRow>
             <TableHead>{copy.subject}</TableHead>
-            <TableHead className="w-36 text-right">{copy.count}</TableHead>
-            <TableHead className="w-36 text-right">{copy.minutes}</TableHead>
-            <TableHead className="w-28 text-right">{spend && "Spend"}</TableHead>
+            <TableHead className={cn(FIGURE_HEAD, "sm:w-36")}>{copy.count}</TableHead>
+            <TableHead className={cn(FIGURE_HEAD, "sm:w-36")}>{copy.minutes}</TableHead>
+            <TableHead className={cn(FIGURE_HEAD, PHONE_HIDDEN)}>{spend && "Spend"}</TableHead>
             <TableHead className="w-9">
               <span className="sr-only">Runs</span>
             </TableHead>
@@ -493,7 +494,7 @@ function SignalCard({ signal }: { signal: Signal }) {
               onClick={(event) => unlessLink(event, () => openRuns(row))}
               className="cursor-pointer"
             >
-              <TableCell className="truncate">
+              <TableCell className="break-words sm:truncate">
                 <SubjectName row={row} />
               </TableCell>
               <TableCell className="text-right tabular-nums">
@@ -502,7 +503,9 @@ function SignalCard({ signal }: { signal: Signal }) {
               <TableCell className="text-right font-medium tabular-nums">
                 <Count value={row.minutes} />
               </TableCell>
-              <TableCell className="text-right tabular-nums">{spend && money(row.cost)}</TableCell>
+              <TableCell className={cn("text-right tabular-nums", PHONE_HIDDEN)}>
+                {spend && money(row.cost)}
+              </TableCell>
               <TableCell className="text-right">
                 <button
                   type="button"
@@ -519,6 +522,9 @@ function SignalCard({ signal }: { signal: Signal }) {
     </div>
   );
 }
+
+/** A figure column's header: narrow on phones, where a long label wraps. */
+const FIGURE_HEAD = "w-24 text-right whitespace-normal sm:whitespace-nowrap";
 
 const workflowUrl = (repository: string, path: string) =>
   `https://github.com/${repository}/blob/HEAD/${path}`;
@@ -537,7 +543,7 @@ function SubjectName({ row }: { row: SignalRow }) {
       className="inline-flex max-w-full items-center gap-2"
       markClassName="size-4"
     >
-      <span className="truncate">
+      <span className="min-w-0 sm:truncate">
         <SubjectText repository={row.repository} name={row.subject} />
       </span>
     </RunnerLink>
@@ -596,14 +602,14 @@ function BreakdownSection({ report }: { report: SignalsReport }) {
         <OptionPicker label="Break down by" options={BREAKDOWN_VIEWS} value={by} onChange={setBy} />
       }
     >
-      <Table className="min-w-xl table-fixed">
+      <Table className="table-fixed">
         <TableHeader>
           <TableRow>
             <TableHead>{view.label}</TableHead>
             <TableHead className="hidden w-44 sm:table-cell">Share of minutes</TableHead>
-            <TableHead className="w-24 text-right">Runs</TableHead>
-            <TableHead className="w-24 text-right">Minutes</TableHead>
-            <TableHead className="w-28 text-right">Spend</TableHead>
+            <TableHead className={cn("w-24 text-right", PHONE_HIDDEN)}>Runs</TableHead>
+            <TableHead className={cn(FIGURE_HEAD, "sm:w-24")}>Minutes</TableHead>
+            <TableHead className={cn(FIGURE_HEAD, "sm:w-28")}>Spend</TableHead>
           </TableRow>
         </TableHeader>
         <TableBody>
@@ -658,7 +664,7 @@ function BreakdownLine({
           name
         )}
       </TableCell>
-      <TableCell className="hidden sm:table-cell">
+      <TableCell className={PHONE_HIDDEN}>
         <div className="flex items-center gap-2">
           <div aria-hidden className="h-1.5 flex-1 overflow-hidden rounded-full bg-raised-2">
             <div className="h-full rounded-full bg-primary" style={{ width: `${share * 100}%` }} />
@@ -668,7 +674,7 @@ function BreakdownLine({
           </span>
         </div>
       </TableCell>
-      <TableCell className="text-right tabular-nums">
+      <TableCell className={cn("text-right tabular-nums", PHONE_HIDDEN)}>
         <Count value={sums.runs} />
       </TableCell>
       <TableCell className="text-right font-medium tabular-nums">

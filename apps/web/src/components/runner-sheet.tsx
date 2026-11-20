@@ -12,6 +12,7 @@ import { withRunner } from "@/components/runner-panel-link";
 import { Facts, LINK, Links } from "@/components/run-sheet";
 import { StatusIcon } from "@/components/status-icon";
 import { Sheet, SheetContent, SheetDescription, SheetTitle } from "@/components/ui/sheet";
+import { PHONE_HIDDEN } from "@/components/ui/table";
 import { timeAgo } from "@/lib/activity";
 import { authDisabled } from "@/lib/auth-client";
 import { clock, DAY_MS, HOUR_MS, p90Text, plural } from "@/lib/job-times";
@@ -413,13 +414,13 @@ function RecentJobs({ report }: { report: RunnerReport }) {
               <th scope="col" className="py-2 pr-4 pl-3 text-left font-normal">
                 Job
               </th>
-              <th scope="col" className="py-2 pr-4 text-right font-normal">
+              <th scope="col" className={cn("py-2 pr-4 text-right font-normal", PHONE_HIDDEN)}>
                 Wait
               </th>
-              <th scope="col" className="py-2 pr-4 text-right font-normal">
+              <th scope="col" className={cn("py-2 pr-4 text-right font-normal", PHONE_HIDDEN)}>
                 Run
               </th>
-              <th scope="col" className="py-2 pr-3 text-right font-normal">
+              <th scope="col" className={cn("py-2 pr-3 text-right font-normal", PHONE_HIDDEN)}>
                 Finished
               </th>
             </tr>
@@ -476,6 +477,8 @@ function RecentJobRow({
   newCommit?: boolean;
 }) {
   const wait = job.queuedAt === null ? null : job.startedAt - job.queuedAt;
+  const run = job.completedAt - job.startedAt;
+  const longWait = isLongWait(wait) && "font-semibold text-run";
   return (
     <tr
       className={cn(
@@ -509,21 +512,29 @@ function RecentJobRow({
               <span>{[job.workflow, job.repository].filter(Boolean).join(" · ")}</span>
               <CommitBy actor={job.actor} sha={job.sha} />
             </span>
+            {/* Phones have no room for the time columns, so the times go under the job. */}
+            <span className="mt-0.5 flex flex-wrap gap-x-2.5 text-xs text-muted-foreground tabular-nums sm:hidden">
+              <span className={cn(longWait)}>Waited {clock(wait)}</span>
+              <span>Ran {clock(run)}</span>
+              <span>{timeAgo(job.completedAt)}</span>
+            </span>
           </span>
         </Link>
       </th>
       <td
-        className={cn(
-          "py-2 pr-4 text-right align-top whitespace-nowrap",
-          isLongWait(wait) && "font-semibold text-run",
-        )}
+        className={cn("py-2 pr-4 text-right align-top whitespace-nowrap", PHONE_HIDDEN, longWait)}
       >
         {clock(wait)}
       </td>
-      <td className="py-2 pr-4 text-right align-top whitespace-nowrap">
-        {clock(job.completedAt - job.startedAt)}
+      <td className={cn("py-2 pr-4 text-right align-top whitespace-nowrap", PHONE_HIDDEN)}>
+        {clock(run)}
       </td>
-      <td className="py-2 pr-3 text-right align-top whitespace-nowrap text-muted-foreground">
+      <td
+        className={cn(
+          "py-2 pr-3 text-right align-top whitespace-nowrap text-muted-foreground",
+          PHONE_HIDDEN,
+        )}
+      >
         {timeAgo(job.completedAt)}
       </td>
     </tr>

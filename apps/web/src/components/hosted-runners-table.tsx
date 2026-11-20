@@ -20,6 +20,7 @@ import { ProviderMark } from "@/components/providers";
 import { OptionPicker } from "@/components/range-picker";
 import { Button } from "@/components/ui/button";
 import {
+  PHONE_HIDDEN,
   Table,
   TableBody,
   TableCell,
@@ -28,6 +29,7 @@ import {
   TableRow,
 } from "@/components/ui/table";
 import { isKnownProvider, providerInfo } from "@/lib/provider-catalog";
+import { cn } from "@/lib/utils";
 
 const PLATFORM_OPTIONS = TABLE_PLATFORMS.map((p) => ({ value: p.id, label: p.label }));
 const SIZE_OPTIONS = TABLE_SIZES.map((n) => ({ value: n, label: `${n} vCPU` }));
@@ -74,24 +76,25 @@ export function HostedRunnersTable({ connected }: { connected: ReadonlySet<strin
           <OptionPicker label="Sort" options={SORT_OPTIONS} value={sort} onChange={setSort} />
         </div>
       </div>
-      {/* Fixed column widths, so switching platform or size doesn't move the columns. */}
-      <Table className="min-w-[960px] table-fixed tabular-nums">
+      {/* Fixed column widths, so switching platform or size doesn't move the columns. Phones show
+          the provider and its per-minute price; its page has the plan and a way to connect. */}
+      <Table className="tabular-nums sm:min-w-[960px] sm:table-fixed">
         <colgroup>
-          <col className="w-[31%]" />
-          <col className="w-[9%]" />
-          <col className="w-[9%]" />
-          <col className="w-[19%]" />
-          <col className="w-[18%]" />
-          <col className="w-[14%]" />
+          <col className="sm:w-[31%]" />
+          <col className="sm:w-[9%]" />
+          <col className="sm:w-[9%]" />
+          <col className="sm:w-[19%]" />
+          <col className="sm:w-[18%]" />
+          <col className="sm:w-[14%]" />
         </colgroup>
         <TableHeader>
           <TableRow>
             <TableHead>Provider</TableHead>
             <TableHead className="text-right">Per minute</TableHead>
-            <TableHead className="text-right">Per hour</TableHead>
-            <TableHead className="pl-10">Plan</TableHead>
-            <TableHead>Included</TableHead>
-            <TableHead>
+            <TableHead className={cn("text-right", PHONE_HIDDEN)}>Per hour</TableHead>
+            <TableHead className={cn("pl-10", PHONE_HIDDEN)}>Plan</TableHead>
+            <TableHead className={PHONE_HIDDEN}>Included</TableHead>
+            <TableHead className={PHONE_HIDDEN}>
               <span className="sr-only">Connect</span>
             </TableHead>
           </TableRow>
@@ -115,12 +118,19 @@ export function HostedRunnersTable({ connected }: { connected: ReadonlySet<strin
               <TableCell className="text-right font-mono text-[13px] whitespace-nowrap">
                 {minuteText(cell.usd)}
               </TableCell>
-              <TableCell className="text-right font-mono text-[13px] whitespace-nowrap text-ink-2">
+              <TableCell
+                className={cn(
+                  "text-right font-mono text-[13px] whitespace-nowrap text-ink-2",
+                  PHONE_HIDDEN,
+                )}
+              >
                 {hourText(cell.usd)}
               </TableCell>
-              <TableCell className="truncate pl-10">{row.plan}</TableCell>
-              <TableCell className="truncate text-ink-2">{row.included}</TableCell>
-              <TableCell className="text-right">
+              <TableCell className={cn("truncate pl-10", PHONE_HIDDEN)}>{row.plan}</TableCell>
+              <TableCell className={cn("truncate text-ink-2", PHONE_HIDDEN)}>
+                {row.included}
+              </TableCell>
+              <TableCell className={cn("text-right", PHONE_HIDDEN)}>
                 <ConnectCell id={row.id} connected={connected.has(row.id)} />
               </TableCell>
             </TableRow>
@@ -133,7 +143,7 @@ export function HostedRunnersTable({ connected }: { connected: ReadonlySet<strin
               <TableCell colSpan={4} className="text-right text-muted-foreground">
                 {row.why}
               </TableCell>
-              <TableCell className="text-right">
+              <TableCell className={cn("text-right", PHONE_HIDDEN)}>
                 <ConnectCell id={row.id} connected={connected.has(row.id)} />
               </TableCell>
             </TableRow>

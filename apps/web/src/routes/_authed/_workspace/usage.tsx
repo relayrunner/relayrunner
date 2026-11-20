@@ -5,6 +5,7 @@ import { PageHeader } from "@/components/page-header";
 import { RangePicker } from "@/components/range-picker";
 import { StatTile } from "@/components/stat-tile";
 import { Count } from "@/components/count";
+import { PHONE_HIDDEN } from "@/components/ui/table";
 import { authDisabled } from "@/lib/auth-client";
 import {
   dayRanges,
@@ -13,7 +14,7 @@ import {
   useRangeReport,
   useSetSearch,
 } from "@/lib/search-params";
-import { count } from "@/lib/utils";
+import { cn, count } from "@/lib/utils";
 import {
   type FreeCheckSavings,
   getCheckSavings,
@@ -110,6 +111,7 @@ function UsagePage() {
             <Table
               caption="By runner"
               head={["Runner", "Jobs", "Under a minute", "Billed min", "Short-job cost", "Total"]}
+              hideOnPhone={[1, 3, 5]}
               rows={report.byRunner.map((row) => [
                 <span key="runner">
                   {row.label}
@@ -128,6 +130,7 @@ function UsagePage() {
             <Table
               caption="Repositories with the most short-job cost"
               head={["Repository", "Jobs", "Under a minute", "Short-job cost"]}
+              hideOnPhone={[1]}
               rows={report.byRepository.map((repo) => [
                 <RepoName key="repo" repository={repo.repository} isPrivate={repo.private} />,
                 <Count key="jobs" value={repo.jobs} />,
@@ -217,18 +220,33 @@ function RepoName({ repository, isPrivate }: { repository: string; isPrivate: bo
   );
 }
 
-function Table({ caption, head, rows }: { caption: string; head: string[]; rows: ReactNode[][] }) {
+/** A captioned table. Columns whose index is in `hideOnPhone` show from the sm breakpoint up. */
+function Table({
+  caption,
+  head,
+  rows,
+  hideOnPhone = [],
+}: {
+  caption: string;
+  head: string[];
+  rows: ReactNode[][];
+  hideOnPhone?: number[];
+}) {
   return (
     <div className="overflow-x-auto rounded-xl border bg-card">
       <table className="w-full text-sm">
-        <caption className="px-4 pt-3 pb-2 text-left font-semibold">{caption}</caption>
+        <caption className="px-3 pt-3 pb-2 text-left font-semibold sm:px-4">{caption}</caption>
         <thead>
           <tr className="border-b text-muted-foreground">
             {head.map((cell, i) => (
               <th
                 key={cell}
                 scope="col"
-                className={`px-4 py-2 font-normal whitespace-nowrap ${i ? "text-right" : "text-left"}`}
+                className={cn(
+                  "px-3 py-2 font-normal sm:px-4 sm:whitespace-nowrap",
+                  i ? "text-right" : "text-left",
+                  hideOnPhone.includes(i) && PHONE_HIDDEN,
+                )}
               >
                 {cell}
               </th>
@@ -241,7 +259,11 @@ function Table({ caption, head, rows }: { caption: string; head: string[]; rows:
               {row.map((cell, i) => (
                 <td
                   key={i}
-                  className={`px-4 py-2 ${i ? "text-right whitespace-nowrap tabular-nums" : ""}`}
+                  className={cn(
+                    "px-3 py-2 sm:px-4",
+                    i && "text-right whitespace-nowrap tabular-nums",
+                    hideOnPhone.includes(i) && PHONE_HIDDEN,
+                  )}
                 >
                   {cell}
                 </td>

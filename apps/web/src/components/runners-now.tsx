@@ -126,7 +126,7 @@ export function RunnersNow({
                       {reason.problem && (
                         <TriangleAlertIcon aria-hidden className="size-3.5 shrink-0" />
                       )}
-                      <span className="truncate">{reason.text}</span>
+                      <span className="sm:truncate">{reason.text}</span>
                     </span>
                     <span aria-hidden>·</span>
                     <span className="truncate">{job.repository}</span>
@@ -273,7 +273,8 @@ function JobRow({ job, from, detail }: { job: LiveJob; from: number | null; deta
           <span className="text-muted-foreground">{job.workflow ?? "Workflow"} / </span>
           {job.name}
         </RunLink>
-        <div className="flex min-w-0 items-center gap-1.5 text-xs text-muted-foreground">
+        {/* Wraps on phones, so the runner and the wait reason read in full. */}
+        <div className="flex min-w-0 flex-wrap items-center gap-x-1.5 text-xs text-muted-foreground sm:flex-nowrap">
           {detail}
         </div>
       </div>

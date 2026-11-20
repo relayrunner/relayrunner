@@ -31,24 +31,26 @@ export function ProviderPlans({ provider }: { provider: string }) {
         <table className="w-full text-sm">
           <thead>
             <tr className="border-b text-left text-xs text-muted-foreground">
-              <th className="px-4 py-2.5 font-medium">Plan</th>
-              {fees && <th className="px-4 py-2.5 text-right font-medium">Monthly</th>}
-              <th className="px-4 py-2.5 font-medium">Included</th>
-              {limitsLabel && <th className="px-4 py-2.5 font-medium">{limitsLabel}</th>}
+              <th className="px-3 py-2.5 sm:px-4 font-medium">Plan</th>
+              {fees && <th className="px-3 py-2.5 sm:px-4 text-right font-medium">Monthly</th>}
+              <th className="px-3 py-2.5 sm:px-4 font-medium">Included</th>
+              {limitsLabel && <th className="px-3 py-2.5 sm:px-4 font-medium">{limitsLabel}</th>}
             </tr>
           </thead>
           <tbody>
             {plans.map((plan) => (
               <tr key={plan.name} className="border-b last:border-0">
-                <td className="px-4 py-2.5 font-medium whitespace-nowrap">{plan.name}</td>
+                <td className="px-3 py-2.5 sm:px-4 font-medium whitespace-nowrap">{plan.name}</td>
                 {fees && (
-                  <td className="px-4 py-2.5 text-right whitespace-nowrap tabular-nums">
+                  <td className="px-3 py-2.5 sm:px-4 text-right whitespace-nowrap tabular-nums">
                     {feeText(plan)}
                   </td>
                 )}
-                <td className="px-4 py-2.5 whitespace-nowrap text-ink-2">{plan.included}</td>
+                <td className="px-3 py-2.5 text-ink-2 sm:px-4 sm:whitespace-nowrap">
+                  {plan.included}
+                </td>
                 {limitsLabel && (
-                  <td className="px-4 py-2.5 whitespace-nowrap text-ink-2 tabular-nums">
+                  <td className="px-3 py-2.5 sm:px-4 whitespace-nowrap text-ink-2 tabular-nums">
                     {plan.limits ?? "—"}
                   </td>
                 )}

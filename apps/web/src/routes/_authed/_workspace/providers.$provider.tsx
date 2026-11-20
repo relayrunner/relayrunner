@@ -262,7 +262,7 @@ const runnerColumns = runnerColumn.columns([
     id: "typical",
     header: "Typical",
     sortFn: "basic",
-    meta: NUM,
+    meta: { ...NUM, hideOnPhone: true },
     cell: ({ row }) => (
       <span title={p90Text(row.original.stat)}>{medianText(row.original.stat)}</span>
     ),
@@ -271,7 +271,7 @@ const runnerColumns = runnerColumn.columns([
     id: "rate",
     header: "Rate",
     sortFn: "basic",
-    meta: NUM,
+    meta: { ...NUM, hideOnPhone: true },
     cell: ({ row }) => rateText(row.original.perMinute),
   }),
   runnerColumn.accessor("cost", {
@@ -286,7 +286,7 @@ const runnerColumns = runnerColumn.columns([
     header: "Failed",
     sortFn: "basic",
     sortDescFirst: true,
-    meta: NUM,
+    meta: { ...NUM, hideOnPhone: true },
     cell: ({ row }) => percent(row.original.failures, row.original.jobs),
   }),
 ]);
@@ -296,7 +296,7 @@ function RunnerCell({ runner }: { runner: ProviderRunner }) {
   const { mono, bar } = providerStyle(provider);
   const spec = runnerSpec(provider, runner);
   return (
-    <div className="grid min-w-48 gap-1.5">
+    <div className="grid min-w-36 gap-1.5 sm:min-w-48">
       <span title={runner.label} className="truncate">
         <span className={cn(mono && "font-mono text-[13px]")}>
           {runnerName(provider, runner.label)}
@@ -376,8 +376,8 @@ function Prices({ prices }: { prices: RatePrices[] }) {
               const today = history.findLast((row, i) => i === 0 || dayMs(row.from) <= now);
               return (
                 <tr key={rate} className="border-b last:border-0">
-                  <td className="px-4 py-2.5">{rateName(rate)}</td>
-                  <td className="px-4 py-2.5 text-right whitespace-nowrap tabular-nums">
+                  <td className="px-3 py-2.5 sm:px-4">{rateName(rate)}</td>
+                  <td className="px-3 py-2.5 text-right whitespace-nowrap tabular-nums sm:px-4">
                     {rateText(today?.usd ?? null)}
                     {per === "vcpu" && " per vCPU"}
                   </td>

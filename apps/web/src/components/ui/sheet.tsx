@@ -30,6 +30,7 @@ function SheetContent({
   ...props
 }: React.ComponentProps<typeof SheetPrimitive.Content> & { widthKey?: string }) {
   const [width, setWidth] = React.useState(() => (widthKey ? readNumber(widthKey) : null));
+  const [scrolled, setScrolled] = React.useState(false);
   const ref = React.useRef<HTMLDivElement>(null);
   const resize = (next: number | null, save = true) => {
     const value = next === null ? null : clampWidth(next);
@@ -52,11 +53,25 @@ function SheetContent({
         style={width === null ? style : { ...style, ["--sheet-width" as string]: `${width}px` }}
         {...props}
       >
-        <div className="min-h-0 flex-1 overflow-y-auto">{children}</div>
-        <SheetPrimitive.Close className="absolute top-4 right-4 rounded-xs p-1 opacity-70 transition-opacity hover:opacity-100 focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-hidden">
-          <XIcon className="size-4" />
-          <span className="sr-only">Close</span>
-        </SheetPrimitive.Close>
+        <div
+          className="min-h-0 flex-1 overflow-y-auto bg-inherit"
+          onScroll={(event) => setScrolled(event.currentTarget.scrollTop > 0)}
+        >
+          {/* The close button's bar floats over the top of the content, and turns solid once the
+              content scrolls under it, so the button never sits on top of text. */}
+          <div
+            className={cn(
+              "sticky top-0 z-10 -mb-14 flex h-14 items-start justify-end px-4 pt-4",
+              scrolled ? "border-b bg-inherit" : "pointer-events-none",
+            )}
+          >
+            <SheetPrimitive.Close className="pointer-events-auto rounded-xs p-1 opacity-70 transition-opacity hover:opacity-100 focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-hidden">
+              <XIcon className="size-4" />
+              <span className="sr-only">Close</span>
+            </SheetPrimitive.Close>
+          </div>
+          {children}
+        </div>
         {/* Last, so opening the panel focuses the content or the close button first. */}
         {widthKey && (
           <div

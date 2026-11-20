@@ -179,6 +179,12 @@
   * {
     @apply border-border outline-ring/50;
   }
+  /* Screen-reader-only text otherwise sits where it would have flowed, so inside a table that
+     scrolls sideways it can land past the right edge and widen the whole page on phones. */
+  .sr-only {
+    top: 0;
+    left: 0;
+  }
   html {
     scrollbar-color: var(--rr-scrollbar) var(--background);
   }

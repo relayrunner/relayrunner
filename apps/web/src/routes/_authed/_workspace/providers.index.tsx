@@ -145,14 +145,14 @@ const inUseColumns = column.columns([
     header: "Billed minutes",
     sortFn: "basic",
     sortDescFirst: true,
-    meta: NUM,
+    meta: { ...NUM, hideOnPhone: true },
     cell: ({ getValue }) => getValue().toLocaleString(),
   }),
   column.accessor((row) => row.stat.medianMs ?? undefined, {
     id: "typical",
     header: "Typical job",
     sortFn: "basic",
-    meta: NUM,
+    meta: { ...NUM, hideOnPhone: true },
     cell: ({ row }) => (
       <span title={p90Text(row.original.stat)}>{medianText(row.original.stat)}</span>
     ),

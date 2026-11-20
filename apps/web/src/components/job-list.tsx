@@ -117,7 +117,8 @@ const columns = column.columns([
   column.accessor("runner", {
     header: "Ran on",
     sortFn: "text",
-    meta: { className: "whitespace-nowrap" },
+    // Phones show the runner under the job's name instead.
+    meta: { className: "whitespace-nowrap", hideOnPhone: true },
     cell: ({ row: { original: job } }) => (
       <RunnerLink runner={job.env} className="inline-flex items-center gap-2" />
     ),
@@ -130,6 +131,7 @@ const columns = column.columns([
     enableGlobalFilter: false,
     meta: {
       align: "end",
+      hideOnPhone: true,
       info: <p>How long the job waited from queued until a runner picked it up.</p>,
     },
     cell: ({ row: { original: job } }) => (
@@ -151,6 +153,7 @@ const columns = column.columns([
     header: "Result",
     sortFn: "text",
     enableGlobalFilter: false,
+    meta: { hideOnPhone: true },
     cell: ({ row }) => <ConclusionText conclusion={row.original.conclusion} />,
   }),
   column.accessor("completedAt", {
@@ -158,7 +161,7 @@ const columns = column.columns([
     sortFn: "basic",
     sortDescFirst: true,
     enableGlobalFilter: false,
-    meta: { align: "end", className: "whitespace-nowrap text-muted-foreground" },
+    meta: { align: "end", hideOnPhone: true, className: "whitespace-nowrap text-muted-foreground" },
     cell: ({ getValue }) => timeAgo(getValue()),
   }),
 ]);
@@ -177,7 +180,7 @@ const usageColumn = (
     sortFn: "basic",
     sortDescFirst: true,
     enableGlobalFilter: false,
-    meta: { align: "end", info: <p>{info}</p> },
+    meta: { align: "end", hideOnPhone: true, info: <p>{info}</p> },
     cell: ({ getValue }) => {
       const value = getValue();
       return value === undefined ? "—" : format(value);
@@ -208,7 +211,7 @@ function JobCell({ job }: { job: Row }) {
       >
         {job.name}
       </RunLink>
-      <span className="flex min-w-0 items-center gap-2.5 text-xs text-muted-foreground">
+      <span className="flex min-w-0 flex-wrap items-center gap-x-2.5 text-xs text-muted-foreground sm:flex-nowrap">
         <span className="truncate">
           <RunLink run={job} className="underline-offset-4 hover:text-foreground hover:underline">
             {job.workflow ?? "Unnamed workflow"}
@@ -216,6 +219,16 @@ function JobCell({ job }: { job: Row }) {
           {showRepository && ` · ${job.repository}`}
         </span>
         <CommitBy actor={job.actor} sha={job.sha} repository={job.repository} />
+      </span>
+      {/* Phones leave out the Ran on and Result columns, so the runner and any result that
+          isn't success go here. */}
+      <span className="mt-0.5 flex flex-wrap items-center gap-x-2.5 text-xs sm:hidden">
+        <RunnerLink
+          runner={job.env}
+          className="inline-flex items-center gap-1.5"
+          markClassName="size-3.5"
+        />
+        {job.conclusion !== "success" && <ConclusionText conclusion={job.conclusion} />}
       </span>
     </>
   );

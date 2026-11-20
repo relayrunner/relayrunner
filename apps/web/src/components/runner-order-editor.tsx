@@ -383,9 +383,11 @@ function StepCard({
             <span className="w-2" />
           )}
           <ProviderMark provider={step.key} />
-          <div className="grid min-w-0 flex-1 gap-0.5">
+          {/* At least 8rem and never narrower than the name, so on a phone the rule wraps under
+              it instead of the name breaking across lines. */}
+          <div className="grid flex-[1_1_8rem] gap-0.5">
             <div className="flex min-w-0 flex-wrap items-center gap-2">
-              <h2 className="text-sm font-semibold">{label}</h2>
+              <h2 className="text-sm font-semibold whitespace-nowrap">{label}</h2>
               {verdict?.state === "next" && (
                 <span className="rounded-full border border-go-edge bg-go-soft px-2 text-[11.5px] font-semibold text-go">
                   Next job
@@ -413,45 +415,51 @@ function StepCard({
               </p>
             )}
           </div>
-          {step.key === "github" && editable ? (
-            <GitHubRule
-              step={step}
-              limits={limits}
-              accounts={accounts}
-              // Each GitHub rule fits once, so a second GitHub step can't take the other's.
-              canLimit={!!limit || !slots.has("github:limit")}
-              canAlways={!limit || !slots.has("github")}
-              onChange={onChange}
-            />
-          ) : step.key !== "machine" &&
-            step.key !== "github" &&
-            hasSpendLimit(step.key) &&
-            editable ? (
-            <SpendRule step={step} onChange={onChange} />
-          ) : (
-            <span className="px-2.5 text-[13px] text-muted-foreground">{ruleText(step)}</span>
-          )}
-          {editable && (
-            <DropdownMenu>
-              <DropdownMenuTrigger asChild>
-                <Button size="icon-sm" variant="ghost" aria-label={`${label} options`}>
-                  <MoreHorizontalIcon aria-hidden />
-                </Button>
-              </DropdownMenuTrigger>
-              <DropdownMenuContent align="end" className="w-44">
-                <DropdownMenuItem disabled={index === 0} onSelect={() => onMove(-1)}>
-                  Move up
-                </DropdownMenuItem>
-                <DropdownMenuItem disabled={index === count - 1} onSelect={() => onMove(1)}>
-                  Move down
-                </DropdownMenuItem>
-                <DropdownMenuSeparator />
-                <DropdownMenuItem variant="destructive" disabled={count === 1} onSelect={onRemove}>
-                  Remove
-                </DropdownMenuItem>
-              </DropdownMenuContent>
-            </DropdownMenu>
-          )}
+          <div className="ml-auto flex items-center gap-2.5">
+            {step.key === "github" && editable ? (
+              <GitHubRule
+                step={step}
+                limits={limits}
+                accounts={accounts}
+                // Each GitHub rule fits once, so a second GitHub step can't take the other's.
+                canLimit={!!limit || !slots.has("github:limit")}
+                canAlways={!limit || !slots.has("github")}
+                onChange={onChange}
+              />
+            ) : step.key !== "machine" &&
+              step.key !== "github" &&
+              hasSpendLimit(step.key) &&
+              editable ? (
+              <SpendRule step={step} onChange={onChange} />
+            ) : (
+              <span className="px-2.5 text-[13px] text-muted-foreground">{ruleText(step)}</span>
+            )}
+            {editable && (
+              <DropdownMenu>
+                <DropdownMenuTrigger asChild>
+                  <Button size="icon-sm" variant="ghost" aria-label={`${label} options`}>
+                    <MoreHorizontalIcon aria-hidden />
+                  </Button>
+                </DropdownMenuTrigger>
+                <DropdownMenuContent align="end" className="w-44">
+                  <DropdownMenuItem disabled={index === 0} onSelect={() => onMove(-1)}>
+                    Move up
+                  </DropdownMenuItem>
+                  <DropdownMenuItem disabled={index === count - 1} onSelect={() => onMove(1)}>
+                    Move down
+                  </DropdownMenuItem>
+                  <DropdownMenuSeparator />
+                  <DropdownMenuItem
+                    variant="destructive"
+                    disabled={count === 1}
+                    onSelect={onRemove}
+                  >
+                    Remove
+                  </DropdownMenuItem>
+                </DropdownMenuContent>
+              </DropdownMenu>
+            )}
+          </div>
         </div>
         {limit && <UsageBars accounts={accounts} percent={limit.percent} />}
       </div>
