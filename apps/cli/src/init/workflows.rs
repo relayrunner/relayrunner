@@ -99,6 +99,22 @@ pub struct Options {
     pub host_os: Option<&'static str>,
     /// The machine runs Linux jobs in a VM, which has Docker and Linux packages.
     pub vm: bool,
+    /// Jobs the user said may run on a machine even though they look like deploy jobs, named by
+    /// id or `file:id` (`--allow-deploy`).
+    pub allow_deploy: Vec<String>,
+}
+
+/// A workflow's path without `.github/workflows/`, such as `ci.yml`.
+pub fn short_file(file: &str) -> &str {
+    file.strip_prefix(".github/workflows/").unwrap_or(file)
+}
+
+/// Whether `name` (an id, or `file:id` with the file's full path or just its name) names this job.
+pub fn names_job(name: &str, file: &str, id: &str) -> bool {
+    match name.rsplit_once(':') {
+        Some((f, i)) => i == id && (f == file || f == short_file(file)),
+        None => name == id,
+    }
 }
 
 fn get<'a>(map: &'a Hash, key: &str) -> Option<&'a Yaml> {
@@ -199,7 +215,8 @@ fn judge(
     let runs_on = match get(job, "runs-on") {
         None => return skip("has no runs-on"),
         Some(Yaml::String(s)) => s,
-        Some(_) => return skip("runs-on is a list of labels or a runner group"),
+        Some(Yaml::Hash(_)) => return skip("runs-on is a runner group"),
+        Some(_) => return skip("runs-on is a list of labels"),
     };
     if runs_on.contains("${{") {
         if relay_of(runs_on).is_some_and(|relay| relays.iter().any(|r| r == relay)) {
@@ -215,8 +232,22 @@ fn judge(
     {
         return skip("uses a matrix, and one relay can't serve every leg");
     }
+    let mut warnings = Vec::new();
     if let Some(deploy) = deploy_signal(job, workflow) {
-        return skip(&format!("looks like a deploy job ({deploy})"));
+        if !options
+            .allow_deploy
+            .iter()
+            .any(|name| names_job(name, file, id))
+        {
+            return skip(&format!("looks like a deploy job ({deploy})"));
+        }
+        warnings.push(format!(
+            "looks like a deploy job ({deploy}), so the machine gets its secrets and cloud access"
+        ));
+    } else if requests_id_token(job, workflow) {
+        warnings.push(
+            "can request OIDC tokens (id-token: write): fine for a remote cache, but check it doesn't sign in to a cloud account".to_string(),
+        );
     }
 
     let label = runs_on.trim();
@@ -254,9 +285,10 @@ fn judge(
         ));
     };
 
+    warnings.extend(job_warnings(job, options));
     WorkflowJob {
         verdict: Verdict::Ready,
-        warnings: job_warnings(job, options),
+        warnings,
         provider: Some(provider),
         label: Some(label.to_string()),
         machine: Some(machine),
@@ -298,21 +330,82 @@ fn only_workflow_call(on: Option<&Yaml>) -> bool {
     }
 }
 
+/// Actions that trade the job's OIDC token for cloud credentials, or publish or sign a release
+/// with it.
+const OIDC_SIGN_INS: &[&str] = &[
+    "aws-actions/configure-aws-credentials",
+    "google-github-actions/auth",
+    "azure/login",
+    "hashicorp/vault-action",
+    "pypa/gh-action-pypi-publish",
+    "rust-lang/crates-io-auth-action",
+    "actions/attest",
+    "actions/attest-build-provenance",
+    "sigstore/",
+];
+
+/// Commands that publish a package, which with `id-token: write` can use trusted publishing.
+const PUBLISH_COMMANDS: &[&str] = &[
+    "npm publish",
+    "pnpm publish",
+    "yarn npm publish",
+    "changeset publish",
+    "cargo publish",
+    "twine upload",
+];
+
+/// The job's own permissions, or the workflow's when it sets none.
+fn permissions<'a>(job: &'a Hash, workflow: &'a Hash) -> Option<&'a Yaml> {
+    match get(job, "permissions") {
+        None | Some(Yaml::Null) => get(workflow, "permissions"),
+        set => set,
+    }
+}
+
+fn requests_id_token(job: &Hash, workflow: &Hash) -> bool {
+    matches!(permissions(job, workflow), Some(Yaml::Hash(p)) if matches!(get(p, "id-token"), Some(Yaml::String(s)) if s == "write"))
+}
+
+/// What the job does with an OIDC token that makes it a deploy: an action that signs in to a
+/// cloud or registry with it, or a publish command. A token alone, such as for a remote cache,
+/// isn't a deploy.
+fn oidc_sign_in(job: &Hash) -> Option<String> {
+    let Some(Yaml::Array(steps)) = get(job, "steps") else {
+        return None;
+    };
+    steps.iter().find_map(|step| {
+        let Yaml::Hash(step) = step else { return None };
+        if let Some(Yaml::String(uses)) = get(step, "uses") {
+            let action = uses.split('@').next().unwrap_or_default();
+            let known = OIDC_SIGN_INS.iter().any(|known| {
+                action.eq_ignore_ascii_case(known)
+                    || (known.ends_with('/') && action.to_lowercase().starts_with(known))
+            });
+            if known {
+                return Some(action.to_string());
+            }
+        }
+        if let Some(Yaml::String(run)) = get(step, "run") {
+            return PUBLISH_COMMANDS
+                .iter()
+                .find(|command| runs_command(run, command))
+                .map(|command| command.to_string());
+        }
+        None
+    })
+}
+
 fn deploy_signal(job: &Hash, workflow: &Hash) -> Option<String> {
     if get(job, "environment").is_some() {
         return Some("environment".into());
     }
-    let permissions = match get(job, "permissions") {
-        None | Some(Yaml::Null) => get(workflow, "permissions"),
-        set => set,
-    };
-    match permissions {
-        Some(Yaml::String(s)) if s == "write-all" => return Some("write-all permissions".into()),
-        Some(Yaml::Hash(p)) if matches!(get(p, "id-token"), Some(Yaml::String(s)) if s == "write") =>
-        {
-            return Some("id-token: write".into());
-        }
-        _ => {}
+    if matches!(permissions(job, workflow), Some(Yaml::String(s)) if s == "write-all") {
+        return Some("write-all permissions".into());
+    }
+    if requests_id_token(job, workflow)
+        && let Some(sign_in) = oidc_sign_in(job)
+    {
+        return Some(format!("id-token: write with {sign_in}"));
     }
     secret_in_map(job).map(|secret| format!("uses {secret}"))
 }
@@ -362,16 +455,29 @@ fn secret_in(text: &str) -> Option<String> {
 }
 
 /// Whether a script installs packages with apt-get, apt, yum, dnf or apk.
-fn installs_linux_packages(script: &str) -> bool {
+/// The offsets in a script where a command could start: its start, or after a space or separator.
+fn command_starts(script: &str) -> impl Iterator<Item = usize> + '_ {
     let bytes = script.as_bytes();
-    let starts_command = |i: usize| {
+    (0..bytes.len()).filter(move |&i| {
         i == 0
             || matches!(
                 bytes[i - 1],
                 b' ' | b'\t' | b'\n' | b'\r' | b';' | b'&' | b'|' | b'('
             )
-    };
-    (0..bytes.len()).filter(|&i| starts_command(i)).any(|i| {
+    })
+}
+
+/// Whether a script runs `command` (such as `npm publish`) as words of their own.
+fn runs_command(script: &str, command: &str) -> bool {
+    command_starts(script).any(|i| {
+        script[i..]
+            .strip_prefix(command)
+            .is_some_and(|tail| tail.bytes().next().is_none_or(|c| !is_word(c)))
+    })
+}
+
+fn installs_linux_packages(script: &str) -> bool {
+    command_starts(script).any(|i| {
         let rest = &script[i..];
         ["apt-get", "apt", "yum", "dnf", "apk"].iter().any(|tool| {
             let Some(after) = rest.strip_prefix(tool) else {
@@ -773,6 +879,7 @@ mod tests {
             &Options {
                 host_os: Some(host_os),
                 vm,
+                ..Options::default()
             },
         );
         assert!(errors.is_empty(), "{}", errors[0].message);
@@ -897,8 +1004,12 @@ mod tests {
                 "deploy job (environment)",
             ),
             (
-                "    runs-on: ubuntu-latest\n    permissions:\n      id-token: write\n",
-                "deploy job (id-token: write)",
+                "    runs-on: ubuntu-latest\n    permissions:\n      id-token: write\n    steps:\n      - uses: aws-actions/configure-aws-credentials@v4\n",
+                "deploy job (id-token: write with aws-actions/configure-aws-credentials)",
+            ),
+            (
+                "    runs-on: ubuntu-latest\n    permissions:\n      id-token: write\n    steps:\n      - run: npm publish --provenance\n",
+                "deploy job (id-token: write with npm publish)",
             ),
             (
                 "    runs-on: ubuntu-latest\n    steps:\n      - run: deploy\n        env:\n          TOKEN: ${{ secrets.DEPLOY_TOKEN }}\n",
@@ -922,11 +1033,74 @@ mod tests {
         ));
         assert_eq!(token.verdict, Verdict::Ready);
         let workflow_level = one(
-            "on: push\npermissions:\n  id-token: write\njobs:\n  test:\n    runs-on: ubuntu-latest\n",
+            "on: push\npermissions:\n  id-token: write\njobs:\n  test:\n    runs-on: ubuntu-latest\n    steps:\n      - uses: google-github-actions/auth@v2\n",
         );
         assert!(workflow_level.reason.unwrap().contains("id-token"));
         let reusable = one("on: workflow_call\njobs:\n  test:\n    runs-on: ubuntu-latest\n");
         assert!(reusable.reason.unwrap().contains("reusable workflow"));
+    }
+
+    /// An OIDC token on its own, such as for a remote cache, is a warning, not a deploy.
+    #[test]
+    fn id_token_alone_is_not_a_deploy() {
+        for source in [
+            job(
+                "    runs-on: ubuntu-latest\n    permissions:\n      contents: read\n      id-token: write\n    steps:\n      - run: pnpm turbo test\n",
+            ),
+            "on: push\npermissions:\n  id-token: write\njobs:\n  test:\n    runs-on: ubuntu-latest\n"
+                .to_string(),
+        ] {
+            let j = one(&source);
+            assert_eq!(j.verdict, Verdict::Ready, "{source}");
+            assert!(j.warnings[0].contains("id-token: write"), "{source}");
+        }
+    }
+
+    #[test]
+    fn routes_a_deploy_job_the_user_allows() {
+        let source = job(
+            "    runs-on: ubuntu-latest\n    environment: production\n    steps:\n      - run: echo hi\n",
+        );
+        let allowed = |names: &[&str]| {
+            analyze(
+                &[WorkflowFile {
+                    file: FILE.into(),
+                    source: source.clone(),
+                }],
+                &Options {
+                    allow_deploy: names.iter().map(|n| n.to_string()).collect(),
+                    ..Options::default()
+                },
+            )
+            .0
+            .remove(0)
+        };
+        for names in [
+            &["test"][..],
+            &["ci.yml:test"],
+            &[".github/workflows/ci.yml:test"],
+        ] {
+            let j = allowed(names);
+            assert_eq!(j.verdict, Verdict::Ready, "{names:?}");
+            assert!(j.warnings[0].contains("deploy job (environment)"));
+        }
+        assert_eq!(allowed(&["other.yml:test"]).verdict, Verdict::Skipped);
+        assert_eq!(allowed(&["lint"]).verdict, Verdict::Skipped);
+        // It only lifts the deploy check.
+        let matrix = analyze(
+            &[WorkflowFile {
+                file: FILE.into(),
+                source: job(
+                    "    strategy:\n      matrix:\n        node: [20, 22]\n    runs-on: ubuntu-latest\n    environment: production\n",
+                ),
+            }],
+            &Options {
+                allow_deploy: vec!["test".into()],
+                ..Options::default()
+            },
+        )
+        .0;
+        assert_eq!(matrix[0].verdict, Verdict::Skipped);
     }
 
     #[test]
@@ -947,6 +1121,9 @@ mod tests {
         assert!(installs_linux_packages("cd x && apk add git"));
         assert!(!installs_linux_packages("echo apt-getter install"));
         assert!(!installs_linux_packages("snap install"));
+        assert!(runs_command("pnpm build && npm publish", "npm publish"));
+        assert!(!runs_command("pnpm publish", "npm publish"));
+        assert!(!runs_command("npm publisher", "npm publish"));
     }
 
     #[test]

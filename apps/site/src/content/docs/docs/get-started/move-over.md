@@ -64,10 +64,11 @@ Push the change. The check keeps its name in GitHub, so required checks and bran
 
 ## Jobs it skips
 
-- **Deploy jobs.** Jobs that use secrets or a deploy environment. Running one on a machine gives that machine those secrets, so it's your call. You can route one by hand with the same change.
+- **Deploy jobs.** Jobs that use secrets, a deploy environment, or an OIDC token to sign in to a cloud or publish a package. Running one on a machine gives that machine those secrets, so it's your call. To route one anyway, add `--allow-deploy <job>`. A job that only requests an OIDC token, such as for a remote cache, isn't skipped.
+- **Jobs pinned to a label list or runner group**, such as `runs-on: [self-hosted, m1, macmini]`. The relay falls back to one label, so to route one by hand, pick what kind of machine may take it (`machine: macOS, ARM64`) and a hosted label for when none is free.
 - **Matrix jobs.** One relay answers one job, so it can't serve every leg of a matrix.
 - **Reusable workflows.** They choose their own runner.
-- **Windows jobs**, and jobs already on a self-hosted runner.
+- **Windows jobs**, and jobs on a single `self-hosted` label.
 
 ## Public repos
 

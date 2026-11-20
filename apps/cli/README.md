@@ -184,8 +184,10 @@ It sorts every job into one of three groups:
   Linux package installs on a Mac.
 - **Already routed**: the job runs where a relay sends it.
 - **Skipped, with the reason**: a matrix, a `runs-on` expression, list or
-  group, a reusable workflow, a deploy job (`environment`, `id-token: write`,
-  or secrets other than `GITHUB_TOKEN`), Windows, or an unknown label.
+  group, a reusable workflow, a deploy job (`environment`, `write-all`
+  permissions, secrets other than `GITHUB_TOKEN`, or `id-token: write` with a
+  cloud sign-in action or a publish command), Windows, or an unknown label.
+  `id-token: write` on its own, such as for a remote cache, is a warning.
 
 A public repo is refused: machines never take public repos' jobs. Visibility is
 checked with an anonymous GitHub API call, so it doesn't matter which account
@@ -197,6 +199,9 @@ checked with an anonymous GitHub API call, so it doesn't matter which account
   every ready job. Add `--json` for a JSON result.
 - `--auto` writes `auto` instead of the label for Linux x64 jobs, so their size
   is set on the dashboard's Router page. macOS and Arm jobs keep their labels.
+- `--allow-deploy <jobs>` treats those jobs as ready even though they look like
+  deploy jobs, with a warning, for when you're fine giving the machine their
+  secrets and cloud access. Name them in `--apply` too.
 
 ## `relayrunner pause` and `relayrunner resume`
 
