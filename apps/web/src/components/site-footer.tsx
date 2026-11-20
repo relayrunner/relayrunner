@@ -6,12 +6,12 @@ import { cn } from "@/lib/utils";
 export const DOCS_URL = "https://relayrunner.dev/docs";
 const X_URL = "https://x.com/relayrunnerCI";
 
-// The same links as the landing site's footer. The agents link comes first.
+// Project and legal links. The agents link comes first.
 const LINKS = [
   { label: "Docs", href: DOCS_URL },
+  { label: "Changelog", href: `${DOCS_URL}/changelog` },
   { label: "GitHub", href: "https://github.com/relayrunner/relayrunner" },
   { label: "GitHub App", href: "https://github.com/apps/relayrunner" },
-  { label: "npm", href: "https://www.npmjs.com/package/relayrunner" },
   { label: "Privacy", href: LEGAL_LINKS.privacy.href },
   { label: "Terms", href: LEGAL_LINKS.terms.href },
 ];
