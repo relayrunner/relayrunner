@@ -37,7 +37,9 @@ import { recordSpendInstallation } from "./spend-app.ts";
 import { recordWorkflowRun } from "./runs.ts";
 import { retryFailedRun } from "./retries.ts";
 import { routingLabelFromLabels } from "./github-runners.ts";
-import { routeIdFromLabels } from "./routing.ts";
+import { routeIdFromLabels, routeLabel } from "./routing.ts";
+import { pickedLabel } from "./route-decisions.ts";
+import { strandedJobName } from "./stranded-jobs.ts";
 import { exportJob, exportRun } from "./telemetry/export.ts";
 import { traced } from "./tracing.ts";
 import { errorMessage } from "./errors.ts";
@@ -382,7 +384,26 @@ async function dispatchRoute(
     return;
   }
   if (!route) {
-    console.warn(JSON.stringify({ ...log, result: "no_route" }));
+    // Nothing will ever take a job on a label our relay made for this very run (a re-run the
+    // Router can't route again, #661): end it with the reason instead of leaving it queued for
+    // GitHub's 24 hours. A label copied by hand or from another run isn't ours to end.
+    const ours = await pickedLabel(db, {
+      repositoryId: message.repository.id,
+      runId: message.job.runId,
+      label: routeLabel(routeId),
+    });
+    if (!ours) {
+      console.warn(JSON.stringify({ ...log, result: "no_route" }));
+      return;
+    }
+    await env.STRANDED_JOB.getByName(strandedJobName(routeId, message.job.id)).start({
+      routeId,
+      jobId: message.job.id,
+      installationId: message.installationId,
+      repo: message.repository.fullName,
+      reason: "not_routable",
+    });
+    console.warn(JSON.stringify({ ...log, result: "ended", reason: "not_routable" }));
     return;
   }
   await setJobMachine(db, message.job.id, route.machineId);

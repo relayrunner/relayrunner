@@ -590,6 +590,9 @@ export type MachinePick =
   // `machineIds`: the full machines' ids, for counting the jobs waiting on each (Router.drain).
   | { full: FullMachine[]; machineIds?: string[] }
   | { rateLimited: true }
+  // Only for a re-run (Router.reroute): no machine took it, but one that fits it and admits it is
+  // offline or paused, so it may yet.
+  | { offline: true }
   | null;
 
 // `notInOrder` lists providers the job configured that the order leaves out, either way, so an

@@ -370,6 +370,14 @@ describe("retryFailedRun", () => {
     expect((await retries(runId))[0]).toMatchObject({ kind: "runner_start", status: "requested" });
   });
 
+  test("retries a re-run that ended because it couldn't be routed again, so the relay picks anew", async () => {
+    const ws = await setup();
+    const runId = await failedRun(ws, { ranSteps: true });
+    stubGithub({ annotations: [STRANDED_MESSAGES.not_routable] });
+    await retryFailedRun(env, completed(ws, runId));
+    expect((await retries(runId))[0]).toMatchObject({ kind: "runner_start", status: "requested" });
+  });
+
   test("does nothing while retries are off, unless the repo turns them on", async () => {
     const ws = await setup(null);
     const off = await failedRun(ws);

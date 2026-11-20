@@ -2,7 +2,7 @@ import { relayInputs } from "@relayrunner/runner-order";
 import { eq } from "drizzle-orm";
 import { beforeAll, expect, test } from "vitest";
 import { createDb, type Db, schema } from "./db/index.ts";
-import { earlierPick, pickKey, picksForJobs, recordPick } from "./route-decisions.ts";
+import { earlierPick, pickedLabel, pickKey, picksForJobs, recordPick } from "./route-decisions.ts";
 import * as testing from "./testing.ts";
 
 let db: Db;
@@ -118,4 +118,13 @@ test("each pick of a run attempt keeps its own decision, and a redelivered pick 
     [{ key: "machine", reason: "machine_full" }],
     [],
   ]);
+});
+
+test("a label is ours when a pick of the same run answered it, in any attempt", async () => {
+  const run = { repositoryId: 1, runId: 9 };
+  expect(await pickedLabel(db, { ...run, label: "rr-0123456789ab" })).toBe(true);
+  expect(await pickedLabel(db, { ...run, label: "rr-ffffffffffff" })).toBe(true);
+  // Another run's label, or one nobody answered.
+  expect(await pickedLabel(db, { ...run, runId: 10, label: "rr-0123456789ab" })).toBe(false);
+  expect(await pickedLabel(db, { ...run, label: "rr-aaaaaaaaaaaa" })).toBe(false);
 });

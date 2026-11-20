@@ -219,3 +219,25 @@ export async function earlierPick(db: Db, job: JobKey & { label: string }) {
     triggeredBy: actor(row.triggeredById, row.triggeredByLogin),
   };
 }
+
+/**
+ * Whether a pick of this repo's run, in any attempt, answered `label`: the label is one our relay
+ * made for this run, not one copied by hand or from another run.
+ */
+export async function pickedLabel(
+  db: Db,
+  job: { repositoryId: number; runId: number; label: string },
+): Promise<boolean> {
+  const [row] = await db
+    .select({ id: table.id })
+    .from(table)
+    .where(
+      and(
+        eq(table.repositoryId, job.repositoryId),
+        eq(table.runId, job.runId),
+        eq(table.runner, job.label),
+      ),
+    )
+    .limit(1);
+  return row !== undefined;
+}

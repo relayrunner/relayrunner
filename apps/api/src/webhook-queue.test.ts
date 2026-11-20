@@ -233,6 +233,8 @@ describe("webhook queue consumer", () => {
     const reroute = vi.fn();
     const dropWaiting = vi.fn();
     const requeue = vi.fn();
+    const endJob = vi.fn();
+    const strandedName = vi.fn((_name: string) => ({ start: endJob }));
     const routeEnv = () =>
       ({
         DB: db,
@@ -248,6 +250,7 @@ describe("webhook queue consumer", () => {
           })),
         },
         MACHINE_LINK: { getByName: vi.fn(() => ({ run })) },
+        STRANDED_JOB: { getByName: strandedName },
       }) as unknown as Env;
 
     beforeAll(async () => {
@@ -271,6 +274,13 @@ describe("webhook queue consumer", () => {
           "insert into machine (id, workspace_id, name, os, source, installation_id, github_runner_id, routing_label, created_at, updated_at) values ('gh1', 'w1', 'atticus-mac-mini', 'macos', 'github', 7, 11, 'rr-runner-0a1b2c3d', ?, ?)",
         )
         .bind(now, now)
+        .run();
+      // Run 9's relay routed its job to rr-abcdefabcdef.
+      await db
+        .prepare(
+          "insert into route_decision (workspace_id, repository_id, run_id, run_attempt, pick_job_id, step, runner, skipped, not_in_order, machine, github, hosted, created_at) values ('w1', 1, 9, 1, 'relay-a', 'machine', 'rr-abcdefabcdef', '[]', '[]', '[\"self-hosted\"]', '[]', '{}', ?)",
+        )
+        .bind(now)
         .run();
     });
 
@@ -398,6 +408,50 @@ describe("webhook queue consumer", () => {
       await consumer.processWebhook(routeEnv(), workflowJob(["rr-0123456789ab"], "queued", 3));
       expect(run).not.toHaveBeenCalled();
       expect(JSON.parse(log.mock.calls.at(-1)![0])).toMatchObject({ result: "waiting" });
+      log.mockRestore();
+    });
+
+    test("a re-run on the run's own label that the Router can't route again is ended", async () => {
+      const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
+      claim.mockReset().mockResolvedValue(null);
+      reroute.mockReset().mockResolvedValue(null);
+      endJob.mockClear();
+      run.mockClear();
+      await consumer.processWebhook(routeEnv(), workflowJob(["rr-abcdefabcdef"], "queued", 2));
+      expect(strandedName).toHaveBeenCalledWith("abcdefabcdef:42");
+      expect(endJob).toHaveBeenCalledWith({
+        routeId: "abcdefabcdef",
+        jobId: 42,
+        installationId: 7,
+        repo: "relayrunner/relayrunner",
+        reason: "not_routable",
+      });
+      expect(run).not.toHaveBeenCalled();
+      expect(JSON.parse(warn.mock.calls.at(-1)![0])).toMatchObject({
+        result: "ended",
+        reason: "not_routable",
+      });
+      warn.mockRestore();
+    });
+
+    test("a job on another run's label, or not queued, is never ended", async () => {
+      const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
+      const log = vi.spyOn(console, "log").mockImplementation(() => {});
+      claim.mockReset().mockResolvedValue(null);
+      reroute.mockReset().mockResolvedValue(null);
+      endJob.mockClear();
+      // A label no pick of run 9 answered.
+      await consumer.processWebhook(routeEnv(), workflowJob(["rr-0123456789ab"], "queued", 2));
+      expect(JSON.parse(warn.mock.calls.at(-1)![0])).toMatchObject({ result: "no_route" });
+      // Run 9's label copied into run 10.
+      const copied = workflowJob(["rr-abcdefabcdef"], "queued", 2);
+      if (copied.event !== "workflow_job") throw new Error("expected a job");
+      await consumer.processWebhook(routeEnv(), { ...copied, job: { ...copied.job, runId: 10 } });
+      expect(JSON.parse(warn.mock.calls.at(-1)![0])).toMatchObject({ result: "no_route" });
+      // Our own label, but the job already left the queue.
+      await consumer.processWebhook(routeEnv(), workflowJob(["rr-abcdefabcdef"], "in_progress", 2));
+      expect(endJob).not.toHaveBeenCalled();
+      warn.mockRestore();
       log.mockRestore();
     });
   });
