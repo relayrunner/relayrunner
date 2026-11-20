@@ -1,7 +1,9 @@
 /**
  * Workspace integrations that stopped working and need someone in the workspace to fix them: the
- * App suspended on GitHub, GitHub refusing billing reads, a provider rejecting its API token, or a
- * telemetry export or log bucket that paused after days of failed sends. The hourly cron reads them
+ * App suspended on GitHub, a provider rejecting its API token, or a telemetry export or log bucket
+ * that paused after days of failed sends. A permission the App lacks, like billing reads, isn't one:
+ * GitHub already asks owners to accept new permissions, and the dashboard shows what's missing.
+ * The hourly cron reads them
  * from the rows that already record each failure and keeps one health issue per problem
  * (src/health-issues.ts). The health alert sweep then tells each one on its schedule (first alert,
  * two reminders over a week, then quiet): to the workspace's owners and admins by email, and to
@@ -28,7 +30,7 @@ const w = schema.workspace;
 
 /** Every problem open now, by its health issue key. */
 export async function findIntegrationProblems(db: Db): Promise<IntegrationProblem[]> {
-  const [suspended, billing, providers, exports, buckets] = await Promise.all([
+  const [suspended, providers, exports, buckets] = await Promise.all([
     db
       .select({
         workspaceId: w.id,
@@ -39,11 +41,6 @@ export async function findIntegrationProblems(db: Db): Promise<IntegrationProble
       .from(schema.githubInstallation)
       .innerJoin(w, eq(w.installationId, schema.githubInstallation.id))
       .where(isNotNull(schema.githubInstallation.suspendedAt)),
-    db
-      .select({ workspaceId: w.id })
-      .from(schema.actionsBilling)
-      .innerJoin(w, eq(w.installationId, schema.actionsBilling.installationId))
-      .where(eq(schema.actionsBilling.failure, "missing_permission")),
     db
       .select({
         workspaceId: schema.providerConnection.workspaceId,
@@ -68,12 +65,6 @@ export async function findIntegrationProblems(db: Db): Promise<IntegrationProble
       account: installation.accountLogin,
       settingsUrl: installationSettingsUrl(installation),
       summary: "the App is suspended on GitHub",
-    })),
-    ...billing.map(({ workspaceId }) => ({
-      key: `integration:billing-refused:${workspaceId}`,
-      workspaceId,
-      kind: "billing-refused" as const,
-      summary: "GitHub refuses billing reads",
     })),
     ...providers.map(({ workspaceId, provider }) => ({
       key: `integration:provider-token:${workspaceId}:${provider}`,

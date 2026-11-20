@@ -3,7 +3,6 @@ import { escapeHtml, renderEmailCard, type RenderedEmail } from "./card.ts";
 /** A workspace integration that stopped working (apps/api/src/integration-issues.ts). */
 export type WorkspaceProblem =
   | { kind: "app-suspended"; account: string; settingsUrl: string }
-  | { kind: "billing-refused" }
   | { kind: "provider-token"; providerName: string }
   | { kind: "telemetry-paused" }
   | { kind: "log-bucket-paused" };
@@ -34,13 +33,6 @@ function copy(ctx: Parameters<typeof renderIntegrationProblemEmail>[0]) {
         body: `Someone suspended the RelayRunner GitHub App on ${ctx.account}. Until it's unsuspended, jobs aren't routed and CI history stops updating.`,
         url: ctx.settingsUrl,
         label: "Open the app on GitHub",
-      };
-    case "billing-refused":
-      return {
-        title: "GitHub refused RelayRunner's billing reads",
-        body: "RelayRunner can't read this account's Actions usage from GitHub, so spend on Usage is an estimate. Grant billing access to see what GitHub actually charged.",
-        url: `${dashboard}/settings/github`,
-        label: "Fix billing access",
       };
     case "provider-token":
       return {
