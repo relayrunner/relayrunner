@@ -80,7 +80,7 @@ The check keeps its name in GitHub, so required checks keep working. The relay t
 A routed job does nothing until its change is pushed, so the diff isn't the end.
 
 - **The user asked for a PR**: open it once they OK the diff.
-- **They didn't**: end the diff message with "Open a PR with this?" and open it when they say yes. Don't commit or push before that.
+- **They didn't**: end the diff message with "Open a PR with this?" and open it when they say yes. Saying yes to the edit isn't a yes to pushing it, so don't commit or push before that.
 - **They said not to commit**, or want to commit themselves: stop at the diff.
 
 Never merge the PR.
@@ -93,7 +93,7 @@ git push -u origin relayrunner/route-jobs
 gh pr create --title "ci: route jobs through RelayRunner" --body-file <body.md>
 ```
 
-Follow the repo's own branch, commit and PR template conventions where it has them. Without `gh`, give the user the compare link that `git push` prints.
+Follow the repo's own branch, commit and PR template conventions where it has them. If `relayrunner/route-jobs` already exists, add `-2`. If the push is refused because the token can't change workflows, have the user run `gh auth refresh -h github.com -s workflow`. Without `gh`, give the user the compare link that `git push` prints.
 
 The PR body lists what changed and what didn't, from the `--apply` and `--plan` output:
 
@@ -112,7 +112,7 @@ Left alone:
 | deploy.yml › deploy | looks like a deploy job (environment) |
 | ci.yml › mac        | runs-on is a list of labels           |
 
-Undo: delete each `relay-<job>` job and put the old label back in `runs-on`.
+Logs and required checks stay in GitHub. To undo, revert this PR.
 ```
 
 ## 5. Confirm it works
