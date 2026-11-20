@@ -56,9 +56,9 @@ describe("dockerfileImages", () => {
     ]);
   });
 
-  it("finds both images in the real wrangler.jsonc", () => {
+  it("finds every image in the real wrangler.jsonc", () => {
     const images = dockerfileImages(readFileSync(join(apiDir, "wrangler.jsonc"), "utf8"), apiDir);
-    expect(images.map((image) => image.imageName)).toEqual(["runner", "lint"]);
+    expect(images.map((image) => image.imageName)).toEqual(["runner", "lint", "blacksmith"]);
   });
 
   it("rejects build_context, which wrangler containers build can't take", () => {

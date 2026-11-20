@@ -12,8 +12,8 @@ import type { SQLiteColumn } from "drizzle-orm/sqlite-core";
 import { type Db, schema } from "./db/index.ts";
 import type { Env } from "./env.ts";
 import { enqueueInstallationTasks } from "./installation-tasks.ts";
-import { ADAPTERS, ProviderAuthError } from "./provider-billing/index.ts";
-import { byConnection, NO_FAILURE, syncTask } from "./provider-sync.ts";
+import { type AdapterContext, ADAPTERS, ProviderAuthError } from "./provider-billing/index.ts";
+import { adapterTools, byConnection, NO_FAILURE, syncTask } from "./provider-sync.ts";
 import { openToken, sealToken, tokenHint } from "./provider-tokens.ts";
 import { errorMessage } from "./errors.ts";
 
@@ -106,18 +106,57 @@ function present(
   };
 }
 
-/** The options a provider takes, with its defaults filled in; null when one isn't a choice it offers. */
+/**
+ * The options and fields a provider takes, with its option defaults filled in; null when an option
+ * isn't a choice it offers or a field doesn't look right. An empty field is left out, for
+ * connectProvider to fill in.
+ */
 export function parseOptions(
   provider: BillingProviderId,
   given: Record<string, string> | undefined,
 ): Record<string, string> | null {
+  const info = BILLING_PROVIDERS[provider];
   const options = defaultBillingOptions(provider);
-  for (const [key, value] of Object.entries(given ?? {})) {
-    const option = BILLING_PROVIDERS[provider].options?.find((o) => o.key === key);
-    if (!option?.choices.some((choice) => choice.value === value)) return null;
-    options[key] = value;
+  for (const [key, raw] of Object.entries(given ?? {})) {
+    const field = info.fields?.find((f) => f.key === key);
+    if (field) {
+      const value = raw.trim();
+      if (!value) continue;
+      if (!field.pattern.test(value)) return null;
+      options[key] = value;
+      continue;
+    }
+    const option = info.options?.find((o) => o.key === key);
+    if (!option?.choices.some((choice) => choice.value === raw)) return null;
+    options[key] = raw;
   }
   return options;
+}
+
+/**
+ * Fills in what a workspace left out: a Blacksmith organization defaults to the GitHub account the
+ * workspace is installed on, which is where Blacksmith is installed too in the usual case.
+ */
+async function withDefaults(
+  db: Db,
+  workspaceId: string,
+  provider: BillingProviderId,
+  options: Record<string, string>,
+): Promise<Record<string, string>> {
+  const wantsOrganization = BILLING_PROVIDERS[provider].fields?.some(
+    (field) => field.key === "organization",
+  );
+  if (!wantsOrganization || options.organization) return options;
+  const [row] = await db
+    .select({ login: schema.githubInstallation.accountLogin })
+    .from(schema.workspace)
+    .innerJoin(
+      schema.githubInstallation,
+      eq(schema.githubInstallation.id, schema.workspace.installationId),
+    )
+    .where(eq(schema.workspace.id, workspaceId))
+    .limit(1);
+  return row ? { ...options, organization: row.login } : options;
 }
 
 export type VerifyResult =
@@ -129,10 +168,10 @@ export async function verifyToken(
   provider: BillingProviderId,
   token: string,
   options: Record<string, string>,
-  fetcher: typeof fetch = fetch,
+  tools: Pick<AdapterContext, "fetch" | "cli"> = { fetch },
 ): Promise<VerifyResult> {
   try {
-    const { accountName } = await ADAPTERS[provider].verify({ token, options, fetch: fetcher });
+    const { accountName } = await ADAPTERS[provider].verify({ token, options, ...tools });
     return { ok: true, accountName };
   } catch (error) {
     const message = errorMessage(error);
@@ -171,7 +210,8 @@ export async function connectProvider(
     userId: string;
   },
 ): Promise<Failed | { ok: true; connection: ProviderConnectionView }> {
-  const verified = await verifyToken(provider, token, options);
+  options = await withDefaults(db, workspaceId, provider, options);
+  const verified = await verifyToken(provider, token, options, adapterTools(env, workspaceId));
   if (!verified.ok) return verified;
   const values = {
     token: await sealToken(env, workspaceId, provider, token),
@@ -213,7 +253,7 @@ export async function testConnection(
   const [row] = await db.select().from(schema.providerConnection).where(where).limit(1);
   if (!row) return null;
   const token = await openToken(env, workspaceId, provider, row.token);
-  const verified = await verifyToken(provider, token, row.options);
+  const verified = await verifyToken(provider, token, row.options, adapterTools(env, workspaceId));
   const update = verified.ok
     ? { accountName: verified.accountName, ...NO_FAILURE }
     : verified.error === "PROVIDER_TOKEN_REJECTED"

@@ -32,6 +32,7 @@ import { handleWebhookBatch } from "./webhook-queue.ts";
 import { wellKnown } from "./well-known.ts";
 
 export { ContainerRunner } from "./durable-objects/container-runner.ts";
+export { BlacksmithCli } from "./durable-objects/blacksmith-cli.ts";
 export { LintRunner } from "./durable-objects/lint-runner.ts";
 export { MachineLink } from "./durable-objects/machine-link.ts";
 export { PickRunner } from "./durable-objects/pick-runner.ts";

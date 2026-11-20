@@ -11,7 +11,9 @@ import { createDb, type Db, schema } from "./db/index.ts";
 import type { Env } from "./env.ts";
 import { enqueueInstallationTasks } from "./installation-tasks.ts";
 import { purgeBefore } from "./job-timings.ts";
+import { blacksmithCli } from "./durable-objects/blacksmith-cli.ts";
 import {
+  type AdapterContext,
   ADAPTERS,
   ProviderAuthError,
   type Usage,
@@ -77,6 +79,15 @@ export function syncWindow(syncedThrough: Date | null, now: Date): UsageWindow {
   return { start: new Date(Math.max(start, now.getTime() - MAX_WINDOW_MS)), end: now };
 }
 
+/** What an adapter runs with for a workspace, besides the token and options. */
+export function adapterTools(
+  env: Env,
+  workspaceId: string,
+  fetcher: typeof fetch = fetch,
+): Pick<AdapterContext, "fetch" | "cli"> {
+  return { fetch: fetcher, cli: blacksmithCli(env, workspaceId) };
+}
+
 /** Sync one connection. Never throws for a provider's answer; records it on the row instead. */
 export async function syncConnection(
   env: Env,
@@ -95,7 +106,7 @@ export async function syncConnection(
     const token = await openToken(env, workspaceId, provider, connection.token);
     const window = syncWindow(connection.syncedThrough, now);
     const usage = await ADAPTERS[provider].usage(
-      { token, options: connection.options, fetch: fetcher },
+      { token, options: connection.options, ...adapterTools(env, workspaceId, fetcher) },
       window,
     );
     // The cursor moves in the same batch as the last rows it covers.

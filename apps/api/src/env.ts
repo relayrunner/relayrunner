@@ -1,5 +1,6 @@
 import type { AccessEnv } from "@relayrunner/access";
 import type { WebhookMessage } from "@relayrunner/github-webhooks";
+import type { BlacksmithCli } from "./durable-objects/blacksmith-cli.ts";
 import type { ContainerRunner } from "./durable-objects/container-runner.ts";
 import type { LintRunner } from "./durable-objects/lint-runner.ts";
 import type { MachineLink } from "./durable-objects/machine-link.ts";
@@ -48,6 +49,9 @@ export interface Env extends AccessEnv {
   // Lint check runs for the Checks App (src/lint-check.ts), one container each. Gated by
   // CONTAINER_RUNNER_ORGS too.
   LINT_RUNNER: DurableObjectNamespace<LintRunner>;
+  // Blacksmith's CLI in a container, to read a workspace's Blacksmith usage
+  // (src/durable-objects/blacksmith-cli.ts). Optional so tests run without it.
+  BLACKSMITH_CLI?: DurableObjectNamespace<BlacksmithCli>;
 
   // Per user and agent grant: caps agent-token requests (middleware/session.ts), from the MCP
   // server or a client calling the API directly. Optional so tests run without it.

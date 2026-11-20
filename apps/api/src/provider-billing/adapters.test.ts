@@ -1,5 +1,7 @@
 import { readFileSync } from "node:fs";
 import { describe, expect, test } from "vitest";
+import type { CliRequest, CliResponse } from "@relayrunner/blacksmith-cli/protocol";
+import { blacksmith } from "./blacksmith.ts";
 import { depot } from "./depot.ts";
 import { connectStream, envelope, namespace } from "./namespace.ts";
 import { type AdapterContext, ProviderApiError, ProviderAuthError } from "./types.ts";
@@ -224,5 +226,102 @@ describe("WarpBuild", () => {
   test("a refused key is a ProviderAuthError", async () => {
     const { fetcher } = fakeFetch([json({ error: "invalid api key" }, 401)]);
     await expect(warpbuild.verify(ctx(fetcher))).rejects.toBeInstanceOf(ProviderAuthError);
+  });
+});
+
+describe("Blacksmith", () => {
+  // Captured from a real organization's `blacksmith usage` and `blacksmith jobs list` output.
+  const usage = fixture("blacksmith-usage.json");
+  const jobs = fixture("blacksmith-jobs.json");
+
+  function fakeCli(answer: CliResponse) {
+    const requests: CliRequest[] = [];
+    const cli = async (request: CliRequest) => {
+      requests.push(request);
+      return answer;
+    };
+    const noFetch = (async () => {
+      throw new Error("Blacksmith reads go through its CLI");
+    }) as unknown as typeof fetch;
+    return {
+      requests,
+      ctx: (options: Record<string, string> = { organization: "relayrunner" }) => ({
+        ...ctx(noFetch, options),
+        cli,
+      }),
+    };
+  }
+
+  test("verify runs the CLI with the org token and organization, and names the installation", async () => {
+    const { ctx: withCli, requests } = fakeCli({ ok: true, usage, jobPages: [] });
+    expect(await blacksmith.verify(withCli())).toEqual({ accountName: "relayrunner" });
+    expect(requests).toEqual([
+      { kind: "verify", token: "tok_secret", organization: "relayrunner" },
+    ]);
+  });
+
+  test("usage keeps billable and runtime minutes per day, and each job in the window", async () => {
+    // A job from before the window, and the same job again on a second page.
+    const old = { job_id: 1, created_at: "2026-11-19T10:00:00Z", billable_minutes: 2 };
+    const page = jobs as { jobs: Record<string, unknown>[] };
+    const { ctx: withCli, requests } = fakeCli({
+      ok: true,
+      usage,
+      jobPages: [jobs, { jobs: [page.jobs[0], old] }],
+    });
+    const window = {
+      start: new Date("2026-11-19T12:00:00Z"),
+      end: new Date("2026-11-20T18:59:41Z"),
+    };
+    const result = await blacksmith.usage(withCli(), window);
+    expect(requests).toEqual([
+      {
+        kind: "usage",
+        token: "tok_secret",
+        organization: "relayrunner",
+        start: "2026-11-19T12:00:00.000Z",
+        end: "2026-11-20T18:59:41.000Z",
+      },
+    ]);
+    expect(result.days.slice(0, 2)).toEqual([
+      {
+        day: new Date("2026-11-13T00:00:00Z"),
+        unit: "billable_minutes",
+        quantity: 8,
+        costUsd: 0.016,
+      },
+      {
+        day: new Date("2026-11-13T00:00:00Z"),
+        unit: "runtime_minutes",
+        quantity: 2,
+        costUsd: null,
+      },
+    ]);
+    expect(result.jobs.map((job) => job.jobId)).toHaveLength(5);
+    expect(result.jobs[0]).toEqual({
+      jobId: "136072852458",
+      runId: "44671361640",
+      repository: "relayrunner/relayrunner",
+      jobName: "Apply migrations to production D1",
+      runnerLabel: "blacksmith-4vcpu-ubuntu-2404",
+      startedAt: new Date("2026-11-20T03:59:59Z"),
+      finishedAt: new Date("2026-11-20T04:00:23Z"),
+      // 24 seconds on 4 vCPU bills 4 minutes.
+      billableSeconds: 240,
+      queueSeconds: null,
+      costUsd: null,
+    });
+  });
+
+  test("a refused token is a ProviderAuthError; other failures and a missing org are ProviderApiError", async () => {
+    const refused = fakeCli({ ok: false, reason: "auth", message: "401 Unauthorized" });
+    await expect(blacksmith.verify(refused.ctx())).rejects.toBeInstanceOf(ProviderAuthError);
+    const broken = fakeCli({ ok: false, reason: "error", message: "timed out" });
+    await expect(blacksmith.verify(broken.ctx())).rejects.toBeInstanceOf(ProviderApiError);
+    const noOrg = fakeCli({ ok: true, usage, jobPages: [] });
+    await expect(blacksmith.verify(noOrg.ctx({}))).rejects.toBeInstanceOf(ProviderApiError);
+    expect(noOrg.requests).toEqual([]);
+    const noCli = { ...ctx(fetch, { organization: "relayrunner" }) };
+    await expect(blacksmith.verify(noCli)).rejects.toBeInstanceOf(ProviderApiError);
   });
 });
