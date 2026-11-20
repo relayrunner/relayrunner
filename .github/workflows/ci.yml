@@ -35,6 +35,8 @@ jobs:
       - uses: useblacksmith/checkout@v1
         with:
           persist-credentials: false
+          # A pull request checks out its merge commit; HEAD^1 is the base, for the CLI check below.
+          fetch-depth: 2
       - uses: pnpm/action-setup@v6
       - uses: actions/setup-node@v6
         with:
@@ -45,15 +47,35 @@ jobs:
       # A changeset naming anything but the CLI or the Mac app would stop the
       # Release workflow after merge, so catch it here.
       - run: pnpm changeset:lint
+      # Pull requests that leave the CLI alone skip its steps. Main always runs them.
+      - name: Check for CLI changes
+        id: cli
+        if: github.event_name == 'pull_request'
+        run: |
+          if git diff --quiet HEAD^1 HEAD -- apps/cli packages/machine-protocol/fixtures.json \
+            packages/providers/src scripts/npm-packages.mjs scripts/smoke-npm-package.sh \
+            scripts/smoke-cli-binary.sh .github/workflows/ci.yml; then
+            echo "changed=false" >> "$GITHUB_OUTPUT"
+          else
+            echo "changed=true" >> "$GITHUB_OUTPUT"
+          fi
+      - uses: Swatinem/rust-cache@v2
+        if: steps.cli.outputs.changed != 'false'
+        with:
+          workspaces: apps/cli
       # The CLI, which npm ships and the Mac menu bar app bundles.
       - name: Test the Rust CLI
+        if: steps.cli.outputs.changed != 'false'
         working-directory: apps/cli
         run: |
           cargo fmt --check
           cargo clippy --locked --all-targets -- -D warnings
           cargo test --locked
-          cargo build --locked --release
       # What npm ships: `relayrunner` and the package with this platform's binary, checked
-      # through the launcher with scripts/smoke-cli-binary.sh.
+      # through the launcher with scripts/smoke-cli-binary.sh. Pull requests pack a debug build,
+      # which reuses what the tests compiled; the size-optimized release build runs on main.
       - name: Verify npm packages
+        if: steps.cli.outputs.changed != 'false'
+        env:
+          CLI_PROFILE: ${{ github.event_name == 'pull_request' && 'debug' || 'release' }}
         run: bash scripts/smoke-npm-package.sh

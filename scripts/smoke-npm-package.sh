@@ -3,6 +3,8 @@
 #
 #   scripts/smoke-npm-package.sh                      build this platform's Rust CLI and pack it
 #   scripts/smoke-npm-package.sh <tarball>...         install these (relayrunner and a platform package)
+#
+# CLI_PROFILE=debug packs a debug build instead of the release one (CI on pull requests).
 set -euo pipefail
 
 root="$(cd "$(dirname "$0")/.." && pwd)"
@@ -16,11 +18,16 @@ for tarball in "$@"; do
 done
 
 if [[ ${#tarballs[@]} -eq 0 ]]; then
-  (cd "$root/apps/cli" && cargo build --locked --release)
+  profile="${CLI_PROFILE:-release}"
+  if [[ "$profile" == debug ]]; then
+    (cd "$root/apps/cli" && cargo build --locked)
+  else
+    (cd "$root/apps/cli" && cargo build --locked --release)
+  fi
   # Spelled as Node and the package names spell it, such as linux-x64.
   platform="$(node -p 'process.platform + "-" + process.arch')"
   mkdir "$smoke_dir/bins"
-  cp "$root/apps/cli/target/release/relayrunner" "$smoke_dir/bins/relayrunner-$platform"
+  cp "$root/apps/cli/target/$profile/relayrunner" "$smoke_dir/bins/relayrunner-$platform"
   mapfile -t tarballs < <(node "$root/scripts/npm-packages.mjs" "$smoke_dir/bins" "$smoke_dir/out" --allow-missing)
 fi
 
