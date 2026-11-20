@@ -6,7 +6,7 @@ import { takeHealthAlerts } from "./health-issues.ts";
 import { checkIntegrations, emailWorkspaceAdmins } from "./integration-issues.ts";
 import * as testing from "./testing.ts";
 
-test("emails a workspace's owners when its App is suspended, reminds on schedule, and clears when it's back", async () => {
+test("emails a workspace's owners when its App is paused, reminds on schedule, and clears when it's back", async () => {
   const base = await testing.createTestEnv();
   const send = vi.fn(async (_message: { to: string; subject: string; text: string }) => ({
     messageId: "m",
@@ -37,21 +37,21 @@ test("emails a workspace's owners when its App is suspended, reminds on schedule
   ]);
   expect(send).toHaveBeenCalledTimes(1);
   const [message] = send.mock.calls[0]!;
-  expect(message.subject).toBe("The RelayRunner app is suspended on GitHub (Acme)");
+  expect(message.subject).toBe("RelayRunner is paused on GitHub (Acme)");
   expect(message.text).toContain(
     `https://github.com/organizations/acme-health/settings/installations/${workspace.installationId}`,
   );
 
-  // Still suspended: quiet the next day, a reminder on day 2, the last on day 6, then nothing.
+  // Still paused: quiet the next day, a reminder on day 2, the last on day 6, then nothing.
   await checkIntegrations(env, db, day(1));
   expect(await sweep(day(1))).toEqual([]);
   await sweep(day(2));
   await sweep(day(6));
   await sweep(day(30));
   expect(send.mock.calls.map(([message]) => message.subject)).toEqual([
-    "The RelayRunner app is suspended on GitHub (Acme)",
-    "Reminder: The RelayRunner app is suspended on GitHub (Acme)",
-    "Reminder: The RelayRunner app is suspended on GitHub (Acme)",
+    "RelayRunner is paused on GitHub (Acme)",
+    "Reminder: RelayRunner is paused on GitHub (Acme)",
+    "Reminder: RelayRunner is paused on GitHub (Acme)",
   ]);
 
   await suspend(null);

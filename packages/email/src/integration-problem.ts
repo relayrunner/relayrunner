@@ -29,10 +29,10 @@ function copy(ctx: Parameters<typeof renderIntegrationProblemEmail>[0]) {
   switch (ctx.kind) {
     case "app-suspended":
       return {
-        title: "The RelayRunner app is suspended on GitHub",
-        body: `Someone suspended the RelayRunner GitHub App on ${ctx.account}. Until it's unsuspended, jobs aren't routed and CI history stops updating.`,
+        title: "RelayRunner is paused on GitHub",
+        body: `Someone with access to ${ctx.account} paused the RelayRunner app in its GitHub settings (GitHub calls this "suspend"). Until it's turned back on, jobs aren't routed and CI history stops updating.`,
         url: ctx.settingsUrl,
-        label: "Open the app on GitHub",
+        label: "Turn it back on in GitHub",
       };
     case "provider-token":
       return {

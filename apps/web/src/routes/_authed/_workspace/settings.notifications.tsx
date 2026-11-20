@@ -19,7 +19,7 @@ const EMAILS: Record<string, { label: string; description: string }> = {
   "integration-problem": {
     label: "Integration problems",
     description:
-      "When something in a workspace you own or admin stops working, like a suspended GitHub App.",
+      "When something in a workspace you own or admin stops working, like the GitHub App being paused.",
   },
   feedback: {
     label: "Feedback",

@@ -1,6 +1,6 @@
 /**
  * Workspace integrations that stopped working and need someone in the workspace to fix them: the
- * App suspended on GitHub, a provider rejecting its API token, or a telemetry export or log bucket
+ * App paused (suspended) on GitHub, a provider rejecting its API token, or a telemetry export or log bucket
  * that paused after days of failed sends. A permission the App lacks, like billing reads, isn't one:
  * GitHub already asks owners to accept new permissions, and the dashboard shows what's missing.
  * The hourly cron reads them
@@ -64,7 +64,7 @@ export async function findIntegrationProblems(db: Db): Promise<IntegrationProble
       kind: "app-suspended" as const,
       account: installation.accountLogin,
       settingsUrl: installationSettingsUrl(installation),
-      summary: "the App is suspended on GitHub",
+      summary: "the App is paused (suspended) on GitHub",
     })),
     ...providers.map(({ workspaceId, provider }) => ({
       key: `integration:provider-token:${workspaceId}:${provider}`,

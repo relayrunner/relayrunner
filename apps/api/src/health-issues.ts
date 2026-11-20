@@ -30,7 +30,7 @@ export const HEALTH_ISSUE_KINDS = {
 /**
  * After the first alert, reminders go out 2 days later and 4 days after that (about a week in all),
  * then nothing more for this run of failures. Something left broken, like an App a workspace
- * suspended for good, doesn't keep emailing anyone.
+ * paused for good, doesn't keep emailing anyone.
  */
 export const REMINDER_GAPS_MS = [2 * DAY_MS, 4 * DAY_MS];
 
