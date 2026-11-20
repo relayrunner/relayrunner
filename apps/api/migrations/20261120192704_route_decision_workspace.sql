@@ -1,0 +1,1 @@
+CREATE INDEX `route_decision_workspace_idx` ON `route_decision` (`workspace_id`,`created_at`);

@@ -1006,6 +1006,8 @@ export const routeDecision = sqliteTable(
     // workspace's first run on a machine, read from the index alone.
     index("route_decision_created_idx").on(table.createdAt),
     index("route_decision_step_workspace_idx").on(table.step, table.workspaceId, table.createdAt),
+    // The Router page's routing outcomes (src/route-outcomes.ts): a workspace's decisions in a window.
+    index("route_decision_workspace_idx").on(table.workspaceId, table.createdAt),
   ],
 );
 

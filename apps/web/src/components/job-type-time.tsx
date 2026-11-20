@@ -2,8 +2,9 @@
 // model's job types (apps/api/src/ai/job-type.ts). A share bar and table for the window, and the
 // minutes on each day stacked by type.
 import { Link } from "@tanstack/react-router";
-import { ArrowDownIcon, ArrowUpIcon, ChevronRightIcon } from "lucide-react";
+import { ChevronRightIcon } from "lucide-react";
 import { Fragment, useEffect, useMemo, useState } from "react";
+import { Change } from "@/components/change";
 import { Count } from "@/components/count";
 import { ChartTip, TipRow, topRounded, useWidth } from "@/components/chart-parts";
 import { TypePhases } from "@/components/job-phases";
@@ -203,7 +204,7 @@ function Shares({
                   <td className={cn(cell, PHONE_HIDDEN)}>{perJob(type.ms, type.runs)}</td>
                   {compare && (
                     <td className="py-2 pl-2 text-right whitespace-nowrap text-muted-foreground tabular-nums">
-                      <Change total={type} />
+                      <Change value={change(type)} />
                     </td>
                   )}
                 </tr>
@@ -214,19 +215,6 @@ function Shares({
         </tbody>
       </table>
     </section>
-  );
-}
-
-function Change({ total }: { total: TypeTotal }) {
-  const value = change(total);
-  if (value === null) return "–";
-  if (value === 0) return "0%";
-  const Icon = value > 0 ? ArrowUpIcon : ArrowDownIcon;
-  return (
-    <span className="inline-flex items-center gap-0.5">
-      <Icon aria-label={value > 0 ? "Up" : "Down"} className="size-3.5" />
-      {Math.abs(value)}%
-    </span>
   );
 }
 

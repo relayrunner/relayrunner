@@ -7,6 +7,7 @@ import { SectionBoundary } from "@/components/error-boundary";
 import { PageHeader } from "@/components/page-header";
 import { RetrySettingsCard } from "@/components/retry-settings";
 import { RunnerOrderEditor } from "@/components/runner-order-editor";
+import { RouteOutcomesCard } from "@/components/route-outcomes";
 import { RouterWorkflows } from "@/components/router-workflows";
 import { RouteRepoSheet, type RouteStart, SetupCard } from "@/components/route-repo";
 import { Badge } from "@/components/ui/badge";
@@ -139,6 +140,9 @@ function RouterPage() {
               <SetupCard progress={progress} onRoute={() => setRouteStart({ repoId: null })} />
             }
           />
+        </SectionBoundary>
+        <SectionBoundary>
+          <RouteOutcomesCard workspaceId={current.workspace.id} />
         </SectionBoundary>
         <SectionBoundary>
           <RouterWorkflows
