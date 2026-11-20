@@ -1,7 +1,7 @@
 import { beforeAll, describe, expect, test } from "vitest";
 import { createDb, schema } from "./db/index.ts";
 import type { Env } from "./env.ts";
-import { installationRunnerScope } from "./installations.ts";
+import { findInstallationAndWorkspace, installationRunnerScope } from "./installations.ts";
 import * as testing from "./testing.ts";
 
 let env: Env;
@@ -31,6 +31,32 @@ describe("installationRunnerScope", () => {
     expect(await installationRunnerScope(createDb(env.DB), 9199, "acme/app")).toEqual({
       kind: "org",
       org: "acme",
+    });
+  });
+});
+
+describe("findInstallationAndWorkspace", () => {
+  test("reads the installation and its workspace together, or neither", async () => {
+    const db = createDb(env.DB);
+    await db.insert(schema.githubInstallation).values([
+      { id: 9201, accountId: 9201, accountLogin: "acme", accountType: "Organization" },
+      { id: 9202, accountId: 9202, accountLogin: "nobody", accountType: "Organization" },
+    ]);
+    await db.insert(schema.workspace).values({
+      id: "w-9201",
+      installationId: 9201,
+      name: "acme",
+      slug: "acme-9201",
+    });
+    const both = await findInstallationAndWorkspace(db, 9201);
+    expect(both.installation?.accountLogin).toBe("acme");
+    expect(both.workspaceId).toBe("w-9201");
+    const noWorkspace = await findInstallationAndWorkspace(db, 9202);
+    expect(noWorkspace.installation?.accountLogin).toBe("nobody");
+    expect(noWorkspace.workspaceId).toBeNull();
+    expect(await findInstallationAndWorkspace(db, 9299)).toEqual({
+      installation: null,
+      workspaceId: null,
     });
   });
 });

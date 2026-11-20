@@ -23,8 +23,8 @@ import type { Env } from "./env.ts";
 import { forgetInstallation } from "./admin-delete.ts";
 import {
   ensureWorkspace,
+  findInstallationAndWorkspace,
   upsertInstallation,
-  workspaceIdForInstallation,
 } from "./installations.ts";
 import { recordJobTiming, withTimeout } from "./job-timings.ts";
 import { lintTarget, startLintChecks } from "./lint-check.ts";
@@ -211,22 +211,26 @@ export async function processWebhook(env: Env, message: WebhookMessage): Promise
       // every other job the App sees is some other runner's, so recordWorkflowJob drops it.
       const isPick = usesRelayRunner(message.job.labels);
       const db = createDb(env.DB);
+      // Read once here instead of by each step below.
+      const lookup = message.installationId
+        ? await findInstallationAndWorkspace(db, message.installationId)
+        : { installation: null, workspaceId: null };
       // A job that hit its timeout-minutes comes as cancelled: stored as timed out, it reads as the
       // failure it is everywhere the job shows.
-      message = await withTimeout(env, db, message);
+      message = await withTimeout(env, db, message, lookup);
       // Every job's timing, ours or not, goes to job_timing too: the Runs page shows it while it
       // runs, and the usage report once it finishes. The writes touch separate tables, so they run
       // together.
       // A finished job's spans go out alongside, for workspaces that export traces (Settings →
       // Telemetry). The export never throws.
       await Promise.all([
-        recordWorkflowJob(db, message, isPick),
-        recordJobTiming(db, message),
+        recordWorkflowJob(db, message, isPick, lookup),
+        recordJobTiming(db, message, lookup),
         exportJob(env, db, message),
       ]);
       // A job on a route's `rr-<id>` label: the run's pick chose a machine for it.
       const routeId = routeIdFromLabels(message.job.labels);
-      if (routeId) return dispatchRoute(env, message, routeId, lagMs);
+      if (routeId) return dispatchRoute(env, message, routeId, lagMs, lookup.workspaceId);
       // A job on an added runner's label: the pick may have chosen that runner for it.
       const routingLabel = routingLabelFromLabels(message.job.labels);
       if (routingLabel) return trackRunnerJob(env, message, routingLabel, lagMs);
@@ -321,6 +325,7 @@ async function dispatchRoute(
   message: Extract<WebhookMessage, { event: "workflow_job" }>,
   routeId: string,
   lagMs: number,
+  workspaceId: string | null,
 ) {
   const log = {
     msg: "relayrunner route job",
@@ -341,7 +346,6 @@ async function dispatchRoute(
     return;
   }
   const db = createDb(env.DB);
-  const workspaceId = await workspaceIdForInstallation(db, message.installationId);
   const job = {
     jobId: message.job.id,
     repositoryId: message.repository.id,

@@ -18,7 +18,11 @@ vi.mock("./job-timings.ts", () => ({
 
 const start = vi.fn();
 const getByName = vi.fn(() => ({ start }));
-const env = { PICK_RUNNER: { getByName }, DB: {} } as unknown as Env;
+const env = { PICK_RUNNER: { getByName } } as unknown as Env;
+// An empty database: the consumer reads the installation before handing the job to storage.
+beforeAll(async () => {
+  env.DB = (await createTestEnv()).DB;
+});
 
 function message(body: WebhookMessage, attempts = 1) {
   return { body, attempts, ack: vi.fn(), retry: vi.fn() };
@@ -141,7 +145,10 @@ describe("webhook queue consumer", () => {
     vi.mocked(recordWorkflowJob).mockClear();
     vi.mocked(recordJobTiming).mockClear();
     await consumer.processWebhook(env, workflowJob(["ubuntu-latest"]));
-    expect(recordWorkflowJob).toHaveBeenCalledWith(expect.anything(), expect.anything(), false);
+    expect(recordWorkflowJob).toHaveBeenCalledWith(expect.anything(), expect.anything(), false, {
+      installation: null,
+      workspaceId: null,
+    });
     // Its timing is kept from the start, for the Runs page while it runs and the usage report once
     // it finishes, even though RelayRunner didn't route it.
     expect(recordJobTiming).toHaveBeenCalledOnce();
