@@ -49,11 +49,12 @@ export interface Buckets {
 }
 
 /**
- * A chart's bars over `window`: a day each, or a week past a month, from `?origin=` (the reader's
- * midnight at or before the window's start, so bars are the reader's days) or the window's start.
+ * A chart's bars over `window`: a day each, or a week with `?per=week` or past a month, from
+ * `?origin=` (the reader's midnight, or the start of their week, at or before the window's start)
+ * or the window's start.
  */
-export function chartBuckets(window: Window, origin?: string): Buckets {
-  const bucketMs = windowDays(window) > 31 ? 7 * DAY_MS : DAY_MS;
+export function chartBuckets(window: Window, origin?: string, per?: string): Buckets {
+  const bucketMs = per === "week" || windowDays(window) > 31 ? 7 * DAY_MS : DAY_MS;
   const parsed = Epoch.safeParse(origin);
   // At most a bar before the window, so an odd origin can't make thousands of bars.
   const fits = parsed.success && parsed.data <= window.from && parsed.data > window.from - bucketMs;

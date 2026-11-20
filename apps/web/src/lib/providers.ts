@@ -19,7 +19,7 @@ import {
   resolveRange,
   type TimeRange,
 } from "@/lib/time-range";
-import { startOfDay } from "@/lib/time-zone";
+import { startOfDay, startOfWeek } from "@/lib/time-zone";
 import { money } from "@/lib/usage";
 
 export type ProviderCounts = {
@@ -73,7 +73,7 @@ export type ProvidersOverview = {
   days: number;
   pricesChecked: string;
   providers: ProviderSummary[];
-  /** A day, or a week past a month. */
+  /** A day, or a week when asked or past a month. */
   bucketMs: number;
   /** Each provider's billed minutes over the window, oldest first. */
   buckets: ShareBucket[];
@@ -92,14 +92,22 @@ export function getProviderReport(provider: string, range: TimeRange) {
   return api<ProviderReport>(`/providers/${provider}?${rangeQuery(range)}`);
 }
 
+/** How long each bar of the Providers page's minutes chart is. */
+export type ChartPer = "day" | "week";
+
 /**
- * Every provider the workspace's jobs ran on. With `chart`, also each one's minutes a day at a
- * time from the reader's midnight, even for a rolling range, and over the window before.
+ * Every provider the workspace's jobs ran on. With `chart`, also each one's minutes a day (or a
+ * week) at a time from the reader's midnight (or the start of their week), even for a rolling
+ * range, and over the window before.
  */
-export function getProvidersOverview(range: TimeRange, { chart = false } = {}) {
-  const query = chart
-    ? reportQuery(range, { origin: String(startOfDay(resolveRange(range).from)) })
-    : rangeQuery(range);
+export function getProvidersOverview(range: TimeRange, { chart }: { chart?: ChartPer } = {}) {
+  if (!chart) return api<ProvidersOverview>(`/providers?${rangeQuery(range)}`);
+  const { from } = resolveRange(range);
+  const origin = chart === "week" ? startOfWeek(from) : startOfDay(from);
+  const query = reportQuery(range, {
+    origin: String(origin),
+    ...(chart === "week" && { per: "week" }),
+  });
   return api<ProvidersOverview>(`/providers?${query}`);
 }
 
@@ -202,7 +210,10 @@ export function sampleProviderReport(provider: string, days: number): ProviderRe
 // How a sample provider's share drifts over the window: Blacksmith takes over from GitHub.
 const SAMPLE_DRIFT: Partial<Record<ProviderId, number>> = { blacksmith: 0.6, github: -0.5 };
 
-export function sampleProvidersOverview(days: number, now = Date.now()): ProvidersOverview {
+export function sampleProvidersOverview(
+  days: number,
+  { now = Date.now(), per = "day" }: { now?: number; per?: ChartPer } = {},
+): ProvidersOverview {
   const providers = Object.entries(SAMPLE_RUNNERS)
     .map(([provider, runners]) => {
       const totals = sampleTotals(runners);
@@ -215,14 +226,16 @@ export function sampleProvidersOverview(days: number, now = Date.now()): Provide
       };
     })
     .sort((a, b) => b.jobs - a.jobs);
-  const bucketMs = days > 31 ? 7 * DAY_MS : DAY_MS;
+  const bucketMs = per === "week" || days > 31 ? 7 * DAY_MS : DAY_MS;
   const count = Math.max(1, Math.ceil((days * DAY_MS) / bucketMs));
-  const origin = startOfDay(now - (count - 1) * bucketMs);
+  const origin = (bucketMs > DAY_MS ? startOfWeek : startOfDay)(now - (count - 1) * bucketMs);
   const buckets = Array.from({ length: count }, (_, i) => {
     const at = count === 1 ? 1 : i / (count - 1);
     // Weekends are quiet.
     const weekday = new Date(origin + i * bucketMs).getDay();
     const quiet = bucketMs === DAY_MS && (weekday === 0 || weekday === 6) ? 0.3 : 1;
+    // Volume grows over the window, so weekly bars show a trend.
+    const growth = 0.8 + 0.4 * at;
     return {
       start: origin + i * bucketMs,
       minutes: Object.fromEntries(
@@ -230,7 +243,7 @@ export function sampleProvidersOverview(days: number, now = Date.now()): Provide
           const drift = SAMPLE_DRIFT[p.provider] ?? 0;
           const wobble = 0.85 + 0.3 * Math.abs(Math.sin((i + 1) * (p.jobs % 7)));
           const share = (1 + drift * (at - 0.5)) * wobble * quiet;
-          return [p.provider, Math.round((p.billedMinutes / count) * share)];
+          return [p.provider, Math.round((p.billedMinutes / count) * share * growth)];
         }),
       ),
     };

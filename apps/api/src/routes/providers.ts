@@ -79,8 +79,10 @@ export const providerRoutes = new Hono<AppEnv>()
   .get("/", requireUser, requireWorkspace, withCatalog, async (c) => {
     const query = c.req.query();
     const window = requireWindow(query, RANGE);
-    // The Providers page's minutes chart sends ?origin=; the Runners page only reads the totals.
-    const buckets = query.origin === undefined ? null : chartBuckets(window, query.origin);
+    // The Providers page's minutes chart sends ?origin= (and ?per=week for weekly bars); the
+    // Runners page only reads the totals.
+    const buckets =
+      query.origin === undefined ? null : chartBuckets(window, query.origin, query.per);
     return c.json(await providersOverview(c.var.db, c.var.workspace.id, window, buckets));
   })
   .get("/:provider", requireUser, requireWorkspace, withCatalog, async (c) => {

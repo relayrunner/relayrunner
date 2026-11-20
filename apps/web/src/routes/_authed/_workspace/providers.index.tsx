@@ -23,6 +23,7 @@ import {
   useSetSearch,
 } from "@/lib/search-params";
 import {
+  type ChartPer,
   costText,
   getProvidersOverview,
   PROVIDER_DEFAULT_RANGE,
@@ -31,37 +32,45 @@ import {
   type ProviderSummary,
   sampleProvidersOverview,
 } from "@/lib/providers";
-import { rangeDays, rangePhrase, type TimeRange } from "@/lib/time-range";
+import { rangeDays, rangePhrase, resolveRange, type TimeRange } from "@/lib/time-range";
+import { startOfDay } from "@/lib/time-zone";
 
-function load(range: TimeRange) {
+function load(range: TimeRange, per: ChartPer) {
   return authDisabled
-    ? Promise.resolve(sampleProvidersOverview(rangeDays(range)))
-    : getProvidersOverview(range, { chart: true });
+    ? Promise.resolve(sampleProvidersOverview(rangeDays(range), { per }))
+    : getProvidersOverview(range, { chart: per });
 }
 
 const rangeParams = rangeSearch(PROVIDER_RANGES, PROVIDER_DEFAULT_RANGE);
 const { rangeOf, toSearch } = rangeParams;
 
-const MINUTE_VIEWS = [
-  { value: "minutes", label: "Minutes" },
-  { value: "share", label: "Share" },
+const PER_OPTIONS = [
+  { value: "day", label: "Daily" },
+  { value: "week", label: "Weekly" },
 ] as const;
-type MinuteView = (typeof MINUTE_VIEWS)[number]["value"];
 
-type ProvidersSearch = RangeSearch & { minutes?: MinuteView };
+type ProvidersSearch = RangeSearch & { per?: ChartPer };
 
-// The range, and `?minutes=share` when the chart shows each provider's share of the day.
+// Weekly bars, so week over week shows, once a range holds two weeks to compare; daily before.
+const offersWeeks = (range: TimeRange) => rangeDays(range) >= 14;
+const perOf = (search: ProvidersSearch): ChartPer =>
+  offersWeeks(rangeOf(search)) ? (search.per ?? "week") : "day";
+
+// The range, and `?per=day` for daily bars over a range that offers weekly ones.
 const validateSearch = (search: Record<string, unknown>): ProvidersSearch => ({
   ...rangeParams.validateSearch(search),
-  minutes: optionParam(
-    search.minutes,
-    MINUTE_VIEWS.map((view) => view.value),
+  per: optionParam(
+    search.per,
+    PER_OPTIONS.map((option) => option.value),
   ),
 });
 
 export const Route = createFileRoute("/_authed/_workspace/providers/")({
   validateSearch,
-  loader: ({ location }) => load(rangeOf(validateSearch(location.search))),
+  loader: ({ location }) => {
+    const search = validateSearch(location.search);
+    return load(rangeOf(search), perOf(search));
+  },
   // A new range loads in the page, keeping the last one up meanwhile.
   shouldReload: ({ cause }) => cause !== "stay",
   component: ProvidersPage,
@@ -70,8 +79,11 @@ export const Route = createFileRoute("/_authed/_workspace/providers/")({
 function ProvidersPage() {
   const search = Route.useSearch();
   const range = rangeOf(search);
+  const per = perOf(search);
   const setSearch = useSetSearch<ProvidersSearch>();
-  const overview: ProvidersOverview = useRangeReport(Route.useLoaderData(), range, load);
+  const overview: ProvidersOverview = useRangeReport(Route.useLoaderData(), `${range} ${per}`, () =>
+    load(range, per),
+  );
   const { current } = Route.useRouteContext();
   const installed = useProviderApps(current.workspace.id);
   // Connected: the org installed the cloud's GitHub App, or a job ran on it in this range (GitHub
@@ -109,8 +121,9 @@ function ProvidersPage() {
               <SectionBoundary>
                 <MinutesChart
                   overview={overview}
-                  view={search.minutes ?? "minutes"}
-                  onView={(view) => setSearch({ minutes: unlessDefault(view, "minutes") })}
+                  from={resolveRange(range).from}
+                  per={offersWeeks(range) ? per : null}
+                  onPer={(next) => setSearch({ per: unlessDefault(next, "week") })}
                 />
               </SectionBoundary>
               <SectionBoundary>
@@ -156,17 +169,20 @@ function minutesChange({ billedMinutes, priorBilledMinutes: prior }: ProviderSum
 }
 
 /**
- * Each provider's billed minutes a day at a time (a week past a month), stacked biggest first, or
- * as its share of the day.
+ * Each provider's billed minutes a day or a week at a time, stacked biggest first, so the bars show
+ * the volume and how it splits. `per` is null when the range is too short for weeks.
  */
 function MinutesChart({
   overview,
-  view,
-  onView,
+  from,
+  per,
+  onPer,
 }: {
   overview: ProvidersOverview;
-  view: MinuteView;
-  onView: (view: MinuteView) => void;
+  /** The range's start: a first week that began before it is only counted from here. */
+  from: number;
+  per: ChartPer | null;
+  onPer: (per: ChartPer) => void;
 }) {
   const series = useMemo(
     () =>
@@ -188,22 +204,17 @@ function MinutesChart({
       <div className="flex flex-wrap items-start justify-between gap-3">
         <div>
           <h3 className="text-sm font-semibold">Billed minutes {week ? "per week" : "per day"}</h3>
-          <p className="text-sm text-muted-foreground">
-            {view === "share" ? "Each provider's share of the day." : "Stacked by provider."}
-          </p>
+          <p className="text-sm text-muted-foreground">Stacked by provider.</p>
         </div>
-        <OptionPicker
-          label="Show minutes as"
-          options={MINUTE_VIEWS}
-          value={view}
-          onChange={onView}
-        />
+        {per && <OptionPicker label="Bars" options={PER_OPTIONS} value={per} onChange={onPer} />}
       </div>
       <StackedBars
-        buckets={overview.buckets.map((b) => ({ start: b.start, values: b.minutes }))}
+        buckets={overview.buckets.map((b) => ({
+          start: Math.max(b.start, startOfDay(from)),
+          values: b.minutes,
+        }))}
         bucketMs={overview.bucketMs}
         series={series}
-        share={view === "share"}
         format={(minutes) => `${minutes.toLocaleString()} min`}
         label={`Billed minutes ${week ? "per week" : "per day"} by provider`}
         footer={(_, total) => <TipRow label="Total" value={`${total.toLocaleString()} min`} />}
