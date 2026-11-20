@@ -522,6 +522,7 @@ function RunnersPage() {
               action={
                 <TimeRangePicker
                   {...PROVIDER_RANGES}
+                  quiet
                   value={cloudRange}
                   onChange={(range) =>
                     setSearch({ cloud: unlessDefault(range, PROVIDER_DEFAULT_RANGE) })

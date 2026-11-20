@@ -63,12 +63,15 @@ export function TimeRangePicker<V extends TimeRange>({
   onChange,
   presets,
   customDays,
+  quiet = false,
   className,
 }: {
   presets: readonly (V & RangePreset)[];
   customDays?: number;
   value: V;
   onChange: (range: V) => void;
+  /** A small borderless trigger with the menu under its end, for a section heading's toolbar. */
+  quiet?: boolean;
   className?: string;
 }) {
   const [open, setOpen] = useState(false);
@@ -102,8 +105,8 @@ export function TimeRangePicker<V extends TimeRange>({
     >
       <PopoverTrigger asChild>
         <Button
-          variant="outline"
-          size="sm"
+          variant={quiet ? "ghost" : "outline"}
+          size={quiet ? "xs" : "sm"}
           // As wide as its label, even in a grid or a column that would stretch it.
           className={cn("w-fit self-start justify-self-start", className)}
         >
@@ -112,7 +115,7 @@ export function TimeRangePicker<V extends TimeRange>({
           <ChevronDownIcon aria-hidden className="text-muted-foreground" />
         </Button>
       </PopoverTrigger>
-      <PopoverContent align="start" className="w-auto min-w-60 p-1">
+      <PopoverContent align={quiet ? "end" : "start"} className="w-auto min-w-60 p-1">
         {custom && customDays ? (
           <CustomForm
             value={value}
