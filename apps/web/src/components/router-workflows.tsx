@@ -1,6 +1,6 @@
 import { AUTO_SIZES } from "@relayrunner/providers";
 import { RUNNER_LABELS, type RunnerKey } from "@relayrunner/runner-order";
-import { CheckIcon, ChevronRightIcon, MinusIcon, PinIcon } from "lucide-react";
+import { ChevronRightIcon, PinIcon } from "lucide-react";
 import { useState } from "react";
 import { ProviderMark } from "@/components/providers";
 import { DOCS_URL } from "@/components/site-footer";
@@ -16,6 +16,7 @@ import {
 } from "@/components/ui/select";
 import { type AutoJob, autoJobName } from "@/lib/auto-jobs";
 import { plural } from "@/lib/job-times";
+import { readFlag, saveFlag } from "@/lib/stored-flag";
 import type { RouterSetup, SetupWorkflow } from "@/lib/router-setup";
 import { cn, count, exact } from "@/lib/utils";
 
@@ -30,12 +31,14 @@ type Workflow = Pick<SetupWorkflow, "repositoryId" | "repository" | "workflow"> 
 
 /**
  * The workspace's workflows by repo, from their runs in the last `days` days, and whether they go
- * through a relay. Each repo is one line that opens to its workflows; repos with routed workflows
- * start open. A workflow with auto jobs (a relay set to `auto`) opens a panel listing them with the
- * size and first provider the Router picks for each. Owners and admins change those there; each
- * change saves.
+ * through a relay. Each repo is one row that opens to its workflows, as a table with a rail down the
+ * left: solid for a routed workflow, dashed for one not set up yet. Repos start closed and each
+ * browser remembers which it opened. A workflow with auto jobs (a relay set to `auto`) opens a
+ * panel listing them with the size and first provider the Router picks for each. Owners and admins
+ * change those there; each change saves.
  */
 export function RouterWorkflows({
+  workspaceId,
   setup,
   jobs,
   defaultSize,
@@ -44,6 +47,7 @@ export function RouterWorkflows({
   toRoute,
   onSetUp,
 }: {
+  workspaceId: string;
   setup: RouterSetup | null;
   jobs: AutoJob[];
   defaultSize: number;
@@ -60,7 +64,8 @@ export function RouterWorkflows({
   const workflows = mergeWorkflows(setup?.workflows ?? [], jobs);
   const open = workflows.find((w) => workflowKey(w) === openKey);
   if (workflows.length === 0) return null;
-  const repos = [...new Set(workflows.map((w) => w.repositoryId))];
+  const repos = new Map<number, Workflow[]>();
+  for (const w of workflows) repos.set(w.repositoryId, [...(repos.get(w.repositoryId) ?? []), w]);
   const routed = workflows.filter(isRouted).length;
   // The hosted provider an `auto` example names: the first one in the runner order.
   const provider = steps.find((key) => key !== "machine" && key !== "github") ?? "github";
@@ -73,17 +78,25 @@ export function RouterWorkflows({
           {routed} of {workflows.length} routed · last {setup?.days ?? 14} days
         </p>
       </div>
-      <div className="grid divide-y border-t">
-        {repos.map((id) => (
+      <table className="w-full text-sm">
+        <thead className="sr-only">
+          <tr>
+            <th scope="col">Workflow</th>
+            <th scope="col">Sizes</th>
+            <th scope="col">Runs</th>
+          </tr>
+        </thead>
+        {[...repos].map(([id, repoWorkflows]) => (
           <RepoWorkflows
             key={id}
-            workflows={workflows.filter((w) => w.repositoryId === id)}
+            workspaceId={workspaceId}
+            workflows={repoWorkflows}
             provider={provider}
             onOpen={(w) => setOpenKey(workflowKey(w))}
             onSetUp={toRoute.has(id) ? () => onSetUp(id) : undefined}
           />
         ))}
-      </div>
+      </table>
       <Sheet open={!!open} onOpenChange={(next) => !next && setOpenKey(null)}>
         <SheetContent className="sm:max-w-lg">
           {open && (
@@ -113,113 +126,131 @@ export function RouterWorkflows({
 
 const isRouted = (w: Workflow) => (w.routedRuns ?? 0) > 0 || w.autoJobs.length > 0;
 
-// One repo: a line with how many of its workflows are routed, which opens to the list.
+// One repo: a header row with how many of its workflows are routed, which opens to its workflows.
+// Repos start closed; each browser remembers the ones it opened.
 function RepoWorkflows({
+  workspaceId,
   workflows,
   provider,
   onOpen,
   onSetUp,
 }: {
+  workspaceId: string;
   workflows: Workflow[];
   provider: RunnerKey;
   onOpen: (workflow: Workflow) => void;
   onSetUp?: () => void;
 }) {
-  const routed = workflows.filter(isRouted).length;
-  const [expanded, setExpanded] = useState(routed > 0);
+  // Every workflow here shares the repo; the first one names it.
+  const { repositoryId, repository } = workflows[0]!;
+  const openKey = `router-repo-open:${workspaceId}:${repositoryId}`;
+  const [expanded, setExpanded] = useState(() => readFlag(openKey));
   const [all, setAll] = useState(false);
+  const routed = workflows.filter(isRouted).length;
+  const more = workflows.length > FIRST_ROWS;
   const shown = all ? workflows : workflows.slice(0, FIRST_ROWS);
-  const name = workflows[0]?.repository ?? "";
+  const toggle = () => {
+    setExpanded(!expanded);
+    saveFlag(openKey, !expanded);
+  };
   return (
-    <div className="grid gap-1.5 py-2">
-      <div className="flex min-w-0 items-center gap-3">
-        <button
-          type="button"
-          aria-expanded={expanded}
-          onClick={() => setExpanded(!expanded)}
-          className="flex min-w-0 flex-1 items-center gap-1.5 rounded text-left outline-none focus-visible:ring-2 focus-visible:ring-ring"
-        >
-          <ChevronRightIcon
-            aria-hidden
-            className={cn(
-              "size-4 shrink-0 text-muted-foreground transition-transform",
-              expanded && "rotate-90",
-            )}
-          />
-          <span className="min-w-0 truncate text-[13px] font-semibold">{name}</span>
-          <span className="shrink-0 text-xs text-muted-foreground">
-            {routed === 0
-              ? `${plural(workflows.length, "workflow")}, none routed`
-              : `${routed} of ${plural(workflows.length, "workflow")} routed`}
-          </span>
-        </button>
-        {onSetUp && (
-          <button
-            type="button"
-            onClick={onSetUp}
-            className="shrink-0 rounded text-xs font-medium text-go outline-none hover:text-go-hover focus-visible:ring-2 focus-visible:ring-ring"
-          >
-            Set up
-          </button>
-        )}
-      </div>
-      {expanded && (
-        <>
-          <ul className="grid gap-1.5 pl-5.5 text-sm">
-            {shown.map((w) => (
-              <li key={w.workflow}>
-                <div className="flex min-w-0 items-center gap-2.5">
-                  {isRouted(w) ? (
-                    <CheckIcon aria-label="Routed" className="size-4 shrink-0 text-go" />
-                  ) : (
-                    <MinusIcon
-                      aria-label="Not routed"
-                      className="size-4 shrink-0 text-muted-foreground"
-                    />
-                  )}
-                  <span className="min-w-0 truncate">{w.workflow}</span>
-                  {(w.routedRuns ?? 0) > 0 && w.autoJobs.length === 0 && (
-                    <PinnedNote provider={provider} />
-                  )}
-                  {w.autoJobs.length > 0 && (
-                    <button
-                      type="button"
-                      onClick={() => onOpen(w)}
-                      className="flex shrink-0 items-center gap-0.5 rounded text-xs text-muted-foreground outline-none hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring"
-                    >
-                      {plural(w.autoJobs.length, "auto job")}
-                      <ChevronRightIcon aria-hidden className="size-3.5" />
-                    </button>
-                  )}
-                  {w.runs !== undefined && (
-                    <span
-                      className="ml-auto shrink-0 text-xs text-muted-foreground tabular-nums"
-                      title={`${exact(w.routedRuns ?? 0)} of ${exact(w.runs)} runs`}
-                    >
-                      {!w.routedRuns
-                        ? "Not routed"
-                        : w.routedRuns === w.runs
-                          ? plural(w.runs, "run")
-                          : `${count(w.routedRuns)} of ${count(w.runs)} runs`}
-                    </span>
-                  )}
-                </div>
-              </li>
-            ))}
-          </ul>
-          {workflows.length > FIRST_ROWS && (
-            <Button
-              variant="ghost"
-              size="sm"
-              className="ml-3 justify-self-start"
-              onClick={() => setAll(!all)}
+    <tbody className="border-t">
+      <tr>
+        <td colSpan={3} className="py-2">
+          <div className="flex min-w-0 items-center gap-3">
+            <button
+              type="button"
+              aria-expanded={expanded}
+              onClick={toggle}
+              className="flex min-w-0 flex-1 items-center gap-1.5 rounded text-left outline-none focus-visible:ring-2 focus-visible:ring-ring"
             >
-              {all ? "Show fewer" : `Show all ${workflows.length}`}
-            </Button>
-          )}
-        </>
+              <ChevronRightIcon
+                aria-hidden
+                className={cn(
+                  "size-4 shrink-0 text-muted-foreground transition-transform",
+                  expanded && "rotate-90",
+                )}
+              />
+              <span className="min-w-0 truncate text-[13px] font-semibold">{repository}</span>
+              <span className="shrink-0 text-xs text-muted-foreground">
+                {routed === 0
+                  ? `${plural(workflows.length, "workflow")}, none routed`
+                  : `${routed} of ${plural(workflows.length, "workflow")} routed`}
+              </span>
+            </button>
+            {onSetUp && (
+              <button
+                type="button"
+                onClick={onSetUp}
+                className="shrink-0 rounded text-xs font-medium text-go outline-none hover:text-go-hover focus-visible:ring-2 focus-visible:ring-ring"
+              >
+                Set up
+              </button>
+            )}
+          </div>
+        </td>
+      </tr>
+      {expanded &&
+        shown.map((w) => {
+          const wired = isRouted(w);
+          return (
+            <tr key={w.workflow}>
+              {/* The rail: solid where a workflow is routed, dashed where it isn't set up yet. */}
+              <td className="w-full max-w-0 py-0 pr-3 pl-[7px]">
+                <span
+                  className={cn(
+                    "block truncate border-l-2 py-1.5 pl-4",
+                    wired
+                      ? "border-go"
+                      : "border-dashed border-muted-foreground/35 text-muted-foreground",
+                  )}
+                >
+                  {w.workflow}
+                  <span className="sr-only">{wired ? ", routed" : ", not routed"}</span>
+                </span>
+              </td>
+              <td className="py-1.5 pr-4 whitespace-nowrap">
+                {w.autoJobs.length > 0 ? (
+                  <button
+                    type="button"
+                    onClick={() => onOpen(w)}
+                    className="flex items-center gap-0.5 rounded text-xs text-muted-foreground outline-none hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring"
+                  >
+                    {plural(w.autoJobs.length, "auto job")}
+                    <ChevronRightIcon aria-hidden className="size-3.5" />
+                  </button>
+                ) : (
+                  wired && <PinnedNote provider={provider} />
+                )}
+              </td>
+              <td
+                className="py-1.5 text-right text-xs whitespace-nowrap text-muted-foreground tabular-nums"
+                title={
+                  w.runs === undefined
+                    ? undefined
+                    : `${exact(w.routedRuns ?? 0)} of ${exact(w.runs)} runs routed`
+                }
+              >
+                {w.runs !== undefined &&
+                  (w.routedRuns && w.routedRuns < w.runs
+                    ? `${count(w.routedRuns)} of ${count(w.runs)} runs`
+                    : plural(w.runs, "run"))}
+              </td>
+            </tr>
+          );
+        })}
+      {expanded && (
+        <tr>
+          <td colSpan={3} className={more ? "pt-1 pb-2" : "h-2"}>
+            {more && (
+              <Button variant="ghost" size="sm" className="-ml-2.5" onClick={() => setAll(!all)}>
+                {all ? "Show fewer" : `Show all ${workflows.length}`}
+              </Button>
+            )}
+          </td>
+        </tr>
       )}
-    </div>
+    </tbody>
   );
 }
 

@@ -141,6 +141,7 @@ function RouterPage() {
         </SectionBoundary>
         <SectionBoundary>
           <RouterWorkflows
+            workspaceId={current.workspace.id}
             setup={setup}
             jobs={auto.jobs?.jobs ?? []}
             defaultSize={auto.jobs?.size ?? AUTO_SIZES[0]}
