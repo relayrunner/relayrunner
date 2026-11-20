@@ -19,6 +19,7 @@ import { syncPullRequestPaths } from "./pull-request-paths.ts";
 import { rollUpSignals } from "./signals.ts";
 import { classifyJobTypes } from "./ai/job-type.ts";
 import { errorMessage } from "./errors.ts";
+import { recordFailure, recordSuccess } from "./health-issues.ts";
 
 export const INSTALLATION_TASK_QUEUE = "relayrunner-installation-tasks";
 
@@ -85,10 +86,19 @@ export async function handleInstallationTaskBatch(
 ): Promise<void> {
   await Promise.all(
     batch.messages.map(async (msg) => {
+      const key = healthKey(msg.body);
       try {
         await runInstallationTask(env, msg.body);
         msg.ack();
+        if (key) await recordSuccess(createDb(env.DB), key).catch(() => {});
       } catch (error) {
+        if (key)
+          await recordFailure(createDb(env.DB), {
+            key,
+            kind: "task",
+            installationId: "installationId" in msg.body ? msg.body.installationId : undefined,
+            error,
+          }).catch(() => {});
         console.warn(
           JSON.stringify({
             msg: "installation task failed; retrying",
@@ -101,4 +111,10 @@ export async function handleInstallationTaskBatch(
       }
     }),
   );
+}
+
+// The health issue a task's failures count toward: one per kind and installation. Usage polls are
+// per billing account and already record their failure for the dashboard, so they're left out.
+function healthKey(task: InstallationTask) {
+  return "installationId" in task ? `task:${task.kind}:${task.installationId}` : null;
 }

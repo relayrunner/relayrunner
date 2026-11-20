@@ -24,6 +24,10 @@ const EMAILS: Record<string, { label: string; description: string }> = {
     label: "Webhook failures",
     description: "When GitHub webhooks keep failing to process.",
   },
+  "health-alert": {
+    label: "Failing tasks",
+    description: "When background work keeps failing, and when it works again.",
+  },
   "price-check": {
     label: "Price changes",
     description: "When the daily price check finds a new price or can't read a page.",

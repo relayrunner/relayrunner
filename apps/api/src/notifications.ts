@@ -16,6 +16,7 @@ export const NOTIFICATION_TYPES = {
   // forwards to operators already.
   feedback: { operator: true, on: false },
   "dead-letter-alert": { operator: true, on: false },
+  "health-alert": { operator: true, on: false },
   "price-check": { operator: true, on: false },
 } as const;
 

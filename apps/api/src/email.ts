@@ -7,6 +7,7 @@
 import {
   renderFeedbackEmail,
   renderDeadLetterAlertEmail,
+  renderHealthAlertEmail,
   renderMachineConnectedEmail,
   renderMachineTakenOverEmail,
   renderPriceCheckEmail,
@@ -50,6 +51,11 @@ export type EmailArgs = (
   | { to: string; template: "dead-letter-alert"; context: { count: number; threshold: number } }
   | {
       to: string;
+      template: "health-alert";
+      context: Parameters<typeof renderHealthAlertEmail>[0];
+    }
+  | {
+      to: string;
       template: "price-check";
       context: {
         changes: { provider: string; rate: string; usd: number; from: string }[];
@@ -90,6 +96,8 @@ function render(env: Env, args: EmailArgs): RenderedEmail {
         ...args.context,
         inspectorUrl: `${dashboard}/admin/webhooks`,
       });
+    case "health-alert":
+      return renderHealthAlertEmail(args.context);
     case "price-check":
       return renderPriceCheckEmail({
         changes: args.context.changes.map(({ provider, rate, usd, from }) => ({
@@ -153,7 +161,7 @@ function message(error: unknown) {
 
 type OperatorEmail = Extract<
   EmailArgs,
-  { template: "feedback" | "dead-letter-alert" | "price-check" }
+  { template: "feedback" | "dead-letter-alert" | "health-alert" | "price-check" }
 >;
 
 /**
