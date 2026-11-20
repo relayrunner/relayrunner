@@ -602,34 +602,46 @@ describe("Router: a machine that goes offline after the pick", () => {
   });
 
   // A run whose first attempt had two relays, each routing its own job to its own label.
-  // `recorded`: whether the re-run attempt's workflow_run (who re-ran it) has come yet.
-  async function twoPicks(secondMachine = "self-hosted", recorded = true) {
+  // `startedBy`: who started the run. `recorded`: whether the re-run attempt's workflow_run (who
+  // re-ran it) has come yet; the run's starter re-ran it.
+  async function twoPicks(secondMachine = "self-hosted", recorded = true, startedBy = owner) {
     const now = Date.now();
     const decision = (pickJobId: string, runner: string, machine: string) =>
-      `insert into route_decision (workspace_id, repository_id, run_id, run_attempt, pick_job_id, step, runner, skipped, not_in_order, machine, github, hosted, started_by_id, started_by_login, triggered_by_id, triggered_by_login, created_at) values ('w1', 1, 5, 1, '${pickJobId}', 'machine', '${runner}', '[]', '[]', '["${machine}"]', '[]', '{}', 500, 'leonel', 500, 'leonel', ?1)`;
-    for (const sql of [
+      `insert into route_decision (workspace_id, repository_id, run_id, run_attempt, pick_job_id, step, runner, skipped, not_in_order, machine, github, hosted, started_by_id, started_by_login, triggered_by_id, triggered_by_login, created_at) values ('w1', 1, 5, 1, '${pickJobId}', 'machine', '${runner}', '[]', '[]', '["${machine}"]', '[]', '{}', ?2, ?3, ?2, ?3, ?1)`;
+    await env.DB.prepare(
       "insert into github_repository (id, installation_id, full_name, private, github_state_at, created_at, updated_at) values (1, 7, 'leonel/cabal', 1, ?1, ?1, ?1)",
+    )
+      .bind(now)
+      .run();
+    for (const sql of [
       decision("relay-a", "rr-aaaaaaaaaaaa", "self-hosted"),
       decision("relay-b", "rr-bbbbbbbbbbbb", secondMachine),
     ])
-      await env.DB.prepare(sql).bind(now).run();
-    if (recorded) await rerunBy(owner);
+      await env.DB.prepare(sql).bind(now, startedBy.id, startedBy.login).run();
+    if (recorded) await rerunBy(startedBy, startedBy);
   }
-  // The re-run attempt's workflow_run: the run's owner started it, `by` re-ran it.
-  async function rerunBy(by: { id: number; login: string }) {
+  // The re-run attempt's workflow_run: `startedBy` started the run, `by` re-ran it.
+  async function rerunBy(by: { id: number; login: string }, startedBy = owner) {
     await env.DB.prepare(
-      "insert into workflow_run (id, run_attempt, installation_id, repository_id, repository_full_name, event, started_by_id, started_by_login, triggered_by_id, triggered_by_login, head_sha, status, github_updated_at, created_at, updated_at) values (5, 2, 7, 1, 'leonel/cabal', 'push', 500, 'leonel', ?2, ?3, 'abc', 'in_progress', ?1, ?1, ?1)",
+      "insert into workflow_run (id, run_attempt, installation_id, repository_id, repository_full_name, event, started_by_id, started_by_login, triggered_by_id, triggered_by_login, head_sha, status, github_updated_at, created_at, updated_at) values (5, 2, 7, 1, 'leonel/cabal', 'push', ?4, ?5, ?2, ?3, 'abc', 'in_progress', ?1, ?1, ?1)",
     )
-      .bind(Date.now(), by.id, by.login)
+      .bind(Date.now(), by.id, by.login, startedBy.id, startedBy.login)
       .run();
   }
-  const someoneElse = { id: 600, login: "sofia" };
+  const teammate = { id: 600, login: "sofia" };
   const rerun = {
     ...queued(5, 77),
     runAttempt: 2,
     workspaceId: "w1",
     installationId: 7,
     repo: "leonel/cabal",
+  };
+  const routedAgain = {
+    id: "bbbbbbbbbbbb",
+    machineId: "m1",
+    jobId: 77,
+    runAttempt: 2,
+    state: "dispatched",
   };
 
   test("a re-run of the job the second relay routed goes to a machine again", async () => {
@@ -672,73 +684,60 @@ describe("Router: a machine that goes offline after the pick", () => {
     expect(endJob).not.toHaveBeenCalled();
   });
 
-  test("a re-run queued before its attempt's workflow_run waits for it, then goes to the owner's machine", async () => {
+  test("a teammate's re-run of the owner's run goes to the owner's only_me machine", async () => {
+    // Before this attempt's workflow_run says who re-ran it: the run's starter is enough.
     await twoPicks("self-hosted", false);
+    expect(await router.reroute("bbbbbbbbbbbb", rerun)).toMatchObject(routedAgain);
+    expect(state.data.has("wait:bbbbbbbbbbbb")).toBe(false);
+  });
+
+  test("so does one whose workflow_run already says the teammate re-ran it", async () => {
+    await twoPicks("self-hosted", false);
+    await rerunBy(teammate);
+    expect(await router.reroute("bbbbbbbbbbbb", rerun)).toMatchObject(routedAgain);
+  });
+
+  test("a teammate's re-run that waited for the owner's offline machine takes it once it's back", async () => {
+    await twoPicks("self-hosted", false);
+    online = false;
     expect(await router.reroute("bbbbbbbbbbbb", rerun)).toBe("waiting");
-    expect(state.data.get("wait:bbbbbbbbbbbb")).toMatchObject({
-      jobId: 77,
-      runAttempt: 2,
-      startersPending: true,
-    });
-    // Still unknown: the only_me machine can't take it yet, and it isn't ended.
-    await router.alarm();
-    expect(run).not.toHaveBeenCalled();
-    expect(endJob).not.toHaveBeenCalled();
-    await rerunBy(owner);
+    online = true;
     await router.alarm();
     expect(run).toHaveBeenCalledOnce();
-    expect(run.mock.calls[0]![0].route).toMatchObject({
-      id: "bbbbbbbbbbbb",
-      machineId: "m1",
-      jobId: 77,
-      runAttempt: 2,
-    });
+    expect(run.mock.calls[0]![0].route).toMatchObject({ id: "bbbbbbbbbbbb", jobId: 77 });
     expect(state.data.has("wait:bbbbbbbbbbbb")).toBe(false);
     expect(endJob).not.toHaveBeenCalled();
   });
 
-  test("a re-run someone else started is refused by an only_me machine", async () => {
-    await twoPicks("self-hosted", false);
-    await rerunBy(someoneElse);
+  test("a re-run of a run a teammate started is refused by an only_me machine", async () => {
+    // Even when the machine's owner re-ran it, before or after its workflow_run comes.
+    await twoPicks("self-hosted", false, teammate);
+    expect(await router.reroute("bbbbbbbbbbbb", rerun)).toBeNull();
+    await rerunBy(owner, teammate);
     expect(await router.reroute("bbbbbbbbbbbb", rerun)).toBeNull();
     expect(state.data.has("wait:bbbbbbbbbbbb")).toBe(false);
-  });
-
-  test("a waiting re-run ends once its workflow_run says someone else started it", async () => {
-    await twoPicks("self-hosted", false);
-    expect(await router.reroute("bbbbbbbbbbbb", rerun)).toBe("waiting");
-    await rerunBy(someoneElse);
-    await router.alarm();
     expect(run).not.toHaveBeenCalled();
-    expect(endJob).toHaveBeenCalledWith(
-      expect.objectContaining({ routeId: "bbbbbbbbbbbb", jobId: 77, reason: "not_routable" }),
-    );
-    expect(state.data.has("wait:bbbbbbbbbbbb")).toBe(false);
-  });
-
-  test("a re-run whose workflow_run never comes ends after 5 minutes", async () => {
-    vi.useFakeTimers({ toFake: ["Date"] });
-    try {
-      await twoPicks("self-hosted", false);
-      expect(await router.reroute("bbbbbbbbbbbb", rerun)).toBe("waiting");
-      await router.alarm();
-      vi.advanceTimersByTime(4 * 60_000);
-      await router.alarm();
-      expect(endJob).not.toHaveBeenCalled();
-      vi.advanceTimersByTime(60_000);
-      await router.alarm();
-      expect(endJob).toHaveBeenCalledWith(
-        expect.objectContaining({ routeId: "bbbbbbbbbbbb", jobId: 77, reason: "no_machine" }),
-      );
-    } finally {
-      vi.useRealTimers();
-    }
   });
 
   test("a re-run no machine's labels fit is refused before its workflow_run comes too", async () => {
     await twoPicks("gpu", false);
     expect(await router.reroute("bbbbbbbbbbbb", rerun)).toBeNull();
     expect(state.data.has("wait:bbbbbbbbbbbb")).toBe(false);
+  });
+
+  test("Re-run all jobs: a teammate's pick at attempt 2 of the owner's run gets the only_me machine", async () => {
+    const decision = await router.route({ ...job(9), triggeredBy: teammate, runAttempt: 2 });
+    expect(decision.runner).toMatch(/^rr-/);
+  });
+
+  test("a teammate's first attempt of the owner's run still isn't the owner's", async () => {
+    for (const runAttempt of [undefined, 1]) {
+      const decision = await router.route({ ...job(9), triggeredBy: teammate, runAttempt });
+      expect(decision.runner).toBeNull();
+      expect(decision.skipped).toContainEqual(
+        expect.objectContaining({ key: "machine", reason: "machine_not_shared" }),
+      );
+    }
   });
 
   test("a re-run no machine's labels fit, or on a label no pick of the run answered, is refused", async () => {

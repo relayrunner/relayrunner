@@ -338,9 +338,9 @@ export const machine = sqliteTable(
     pausedBy: text("paused_by").references(() => user.id, { onDelete: "set null" }),
     // 'connect' or 'github' (above).
     source: text("source").notNull().default("connect"),
-    // Whose jobs it takes (MACHINE_SHARING, #237): 'only_me' (only jobs its owner, userId,
-    // started) or 'anyone'. One setting for every workspace the machine is in. Only the owner
-    // changes it. Connected machines start as 'only_me';
+    // Whose jobs it takes (MACHINE_SHARING, #237): 'only_me' (only jobs of runs its owner,
+    // userId, started, re-runs included) or 'anyone'. One setting for every workspace the machine
+    // is in. Only the owner changes it. Connected machines start as 'only_me';
     // runners added from GitHub are the org's shared runners and start as 'anyone'.
     sharing: text("sharing").$type<MachineSharing>().notNull().default("only_me"),
     // 'github' only: the installation whose org the runner is registered in, GitHub's runner id,

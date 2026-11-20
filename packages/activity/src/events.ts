@@ -15,9 +15,10 @@ import { z } from "zod";
 // The machine's name when the event happened, so the log still reads after a rename or a delete.
 const machineData = { machineName: z.string() };
 
-// Whose jobs a machine takes (#237): `only_me` runs only jobs its owner started (the run and this
-// attempt), `anyone` runs any job from the workspace's private repos, bots included. A third value
-// (people the owner picks, #245) comes later.
+// Whose jobs a machine takes (#237): `only_me` runs only jobs of runs its owner started (their
+// first attempt when its owner started it too, and any re-run), `anyone` runs any job from the
+// workspace's private repos, bots included. A third value (people the owner picks, #245) comes
+// later.
 export const MACHINE_SHARING = ["only_me", "anyone"] as const;
 export type MachineSharing = (typeof MACHINE_SHARING)[number];
 

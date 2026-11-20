@@ -169,16 +169,20 @@ export interface Candidate {
   ownerGithubId?: number | null;
 }
 
-// Who started a job: the run (`github.actor`) and this attempt (`github.triggering_actor`).
+// Who started a job: the run (`github.actor`) and this attempt (`github.triggering_actor`), and
+// which attempt it is (`github.run_attempt`; left out means the run's first).
 export interface JobStarters {
   startedBy: GithubActor | null;
   triggeredBy: GithubActor | null;
+  runAttempt?: number;
 }
 
 /**
  * Whether a machine's sharing lets it take a job. `anyone` takes every job. `only_me` takes a job
- * only when both the run and this attempt were started by its owner, matched by GitHub account id:
- * a bot, a schedule, a non-member, a re-run by someone else or a missing id never matches.
+ * from a run its owner started, matched by GitHub account id: the first attempt only when its owner
+ * started that attempt too, and any re-run of it, whoever re-ran it (a re-run runs the commit and
+ * workflow the owner started, so it can't change the code; an automatic retry is one too). A bot,
+ * a schedule, a non-member, a run someone else started or a missing id never matches.
  */
 export function admits(
   machine: { sharing?: MachineSharing; ownerGithubId?: number | null },
@@ -186,22 +190,8 @@ export function admits(
 ): boolean {
   if ((machine.sharing ?? "anyone") === "anyone") return true;
   const owner = machine.ownerGithubId;
-  if (owner == null) return false;
-  return job.startedBy?.id === owner && job.triggeredBy?.id === owner;
-}
-
-/**
- * Whether a machine could admit a job once its starters are all known: as admits, counting a
- * starter not known yet (a re-run before its attempt's workflow_run) as the machine's owner.
- */
-export function mayAdmit(
-  machine: { sharing?: MachineSharing; ownerGithubId?: number | null },
-  job: JobStarters,
-): boolean {
-  if ((machine.sharing ?? "anyone") === "anyone") return true;
-  const owner = machine.ownerGithubId;
-  if (owner == null) return false;
-  return [job.startedBy, job.triggeredBy].every((who) => who === null || who.id === owner);
+  if (owner == null || job.startedBy?.id !== owner) return false;
+  return (job.runAttempt ?? 1) > 1 || job.triggeredBy?.id === owner;
 }
 
 /**
@@ -209,7 +199,8 @@ export function mayAdmit(
  * machine shared with `anyone` takes other people's jobs, and being in the workspace doesn't mean
  * its owner may read every repo the workspace's installations see: without this, a member could
  * receive a repo's code and secrets by sharing their machine. A job its owner started (run and
- * attempt) needs no check, and neither does `only_me`, which only ever takes those.
+ * attempt) needs no check, and neither does `only_me`, which only takes jobs of runs its owner
+ * started.
  */
 export function needsOwnerAccess(
   machine: { sharing?: MachineSharing; ownerGithubId?: number | null },
@@ -466,8 +457,6 @@ export interface Rerun extends QueuedJob {
   // The re-run's attempt, and the earlier attempt whose pick made the route.
   runAttempt: number;
   pickedAttempt: number;
-  // True until this attempt's workflow_run is recorded: who re-ran it isn't known yet.
-  startersPending?: boolean;
 }
 
 /**

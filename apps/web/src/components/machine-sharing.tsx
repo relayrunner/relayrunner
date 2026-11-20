@@ -28,7 +28,8 @@ const OPTIONS: { value: MachineSharing; title: string; detail: string }[] = [
   {
     value: "only_me",
     title: "Only me",
-    detail: "Runs jobs you start. Teammates' jobs, bots and scheduled runs skip it.",
+    detail:
+      "Runs jobs you start, and re-runs of them by anyone. Teammates' jobs, bots and scheduled runs skip it.",
   },
   {
     value: "anyone",

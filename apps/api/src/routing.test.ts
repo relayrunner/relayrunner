@@ -9,7 +9,6 @@ import type { AccountUsage } from "./actions-billing.ts";
 import { describe, expect, test, vi } from "vitest";
 import {
   admits,
-  mayAdmit,
   canClaim,
   mayReroute,
   chooseAndHold,
@@ -1117,13 +1116,14 @@ describe("machine sharing (#242)", () => {
   const mine = { sharing: "only_me" as const, ownerGithubId: 1 };
   const shared = { sharing: "anyone" as const, ownerGithubId: 2 };
 
-  test("only_me takes a job only when its owner started both the run and the attempt", () => {
+  test("only_me takes a first attempt only when its owner started both the run and the attempt", () => {
     expect(admits(mine, by(atticus))).toBe(true);
     expect(admits(mine, by(zach))).toBe(false);
     expect(admits(mine, by(bot))).toBe(false);
-    // A re-run by someone else, or of someone else's run, isn't the owner's.
+    // Someone else's attempt of the owner's run, or the owner's attempt of someone else's run.
     expect(admits(mine, by(atticus, zach))).toBe(false);
     expect(admits(mine, by(zach, atticus))).toBe(false);
+    expect(admits(mine, { ...by(atticus, zach), runAttempt: 1 })).toBe(false);
     // An id GitHub didn't give, or a run with no actor, matches nobody.
     expect(admits(mine, by({ id: null, login: "atticoos" } as never))).toBe(false);
     expect(admits(mine, by(null))).toBe(false);
@@ -1131,14 +1131,27 @@ describe("machine sharing (#242)", () => {
     expect(admits({ sharing: "only_me", ownerGithubId: null }, by(atticus))).toBe(false);
   });
 
-  test("a re-run whose re-runner isn't known yet may be the owner's", () => {
-    expect(mayAdmit(mine, by(atticus, null))).toBe(true);
-    expect(mayAdmit(mine, by(null))).toBe(true);
-    // A starter already known to be someone else still isn't the owner's.
-    expect(mayAdmit(mine, by(zach, null))).toBe(false);
-    expect(mayAdmit(mine, by(atticus, zach))).toBe(false);
-    expect(mayAdmit({ sharing: "only_me", ownerGithubId: null }, by(atticus, null))).toBe(false);
-    expect(mayAdmit(shared, by(zach))).toBe(true);
+  test("only_me takes any re-run of its owner's run, whoever re-ran it", () => {
+    const rerun = (startedBy: typeof atticus | null, triggeredBy: typeof atticus | null) => ({
+      ...by(startedBy, triggeredBy),
+      runAttempt: 2,
+    });
+    expect(admits(mine, rerun(atticus, atticus))).toBe(true);
+    // A teammate's re-run, an automatic retry credited to the App, or a re-runner not known yet.
+    expect(admits(mine, rerun(atticus, zach))).toBe(true);
+    expect(admits(mine, rerun(atticus, bot))).toBe(true);
+    expect(admits(mine, rerun(atticus, null))).toBe(true);
+    expect(admits(mine, { ...rerun(atticus, zach), runAttempt: 7 })).toBe(true);
+    // A re-run of a run someone else, a bot or a schedule started, even by the owner.
+    expect(admits(mine, rerun(zach, atticus))).toBe(false);
+    expect(admits(mine, rerun(bot, atticus))).toBe(false);
+    expect(admits(mine, rerun(null, atticus))).toBe(false);
+    expect(admits(mine, rerun({ id: null, login: "atticoos" } as never, atticus))).toBe(false);
+    expect(admits({ sharing: "only_me", ownerGithubId: null }, rerun(atticus, atticus))).toBe(
+      false,
+    );
+    // anyone is unchanged.
+    expect(admits(shared, rerun(bot, zach))).toBe(true);
   });
 
   test("anyone takes every job, bots and schedules included, as before sharing", () => {
