@@ -19,7 +19,7 @@ import { syncPullRequestPaths } from "./pull-request-paths.ts";
 import { rollUpSignals } from "./signals.ts";
 import { classifyJobTypes } from "./ai/job-type.ts";
 import { errorMessage } from "./errors.ts";
-import { recordFailure, recordSuccess } from "./health-issues.ts";
+import { type Outcome, recordOutcomes } from "./health-issues.ts";
 
 export const INSTALLATION_TASK_QUEUE = "relayrunner-installation-tasks";
 
@@ -84,21 +84,16 @@ export async function handleInstallationTaskBatch(
   batch: MessageBatch<InstallationTask>,
   env: Env,
 ): Promise<void> {
+  const outcomes: Outcome[] = [];
   await Promise.all(
     batch.messages.map(async (msg) => {
       const key = healthKey(msg.body);
       try {
         await runInstallationTask(env, msg.body);
         msg.ack();
-        if (key) await recordSuccess(createDb(env.DB), key).catch(() => {});
+        if (key) outcomes.push({ key, kind: "task" });
       } catch (error) {
-        if (key)
-          await recordFailure(createDb(env.DB), {
-            key,
-            kind: "task",
-            installationId: "installationId" in msg.body ? msg.body.installationId : undefined,
-            error,
-          }).catch(() => {});
+        if (key) outcomes.push({ key, kind: "task", error });
         console.warn(
           JSON.stringify({
             msg: "installation task failed; retrying",
@@ -111,6 +106,8 @@ export async function handleInstallationTaskBatch(
       }
     }),
   );
+  // One round trip for the whole batch.
+  await recordOutcomes(createDb(env.DB), outcomes);
 }
 
 // The health issue a task's failures count toward: one per kind and installation. Usage polls are

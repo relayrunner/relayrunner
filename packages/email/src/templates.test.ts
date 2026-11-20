@@ -122,22 +122,21 @@ describe("templates", () => {
     expect(email.text).toContain("https://app.example/admin/webhooks");
   });
 
-  it("health alert lists failing and recovered tasks", () => {
+  it("health alert shows the lines it's given", () => {
     const email = renderHealthAlertEmail({
-      alerts: [
-        { key: "cron:syncRunnerReleases", state: "failing", failures: 3, error: "Status 403." },
-        { key: "task:signals:1", state: "cleared", failures: 4, error: "boom" },
+      failing: 1,
+      lines: [
+        "cron:syncRunnerReleases failed 3 times in a row",
+        "task:signals:1 is working again.",
       ],
     });
-    expect(email.subject).toBe("[health] 1 task keeps failing");
-    expect(email.text).toContain("cron:syncRunnerReleases: failed 3 times in a row (Status 403.)");
-    expect(email.text).toContain("task:signals:1: working again");
+    expect(email.subject).toBe("[health] 1 thing keeps failing");
+    expect(email.text).toContain("cron:syncRunnerReleases failed 3 times in a row");
   });
 
   it("integration problem names the provider and links to its fix, escaping the workspace", () => {
     const email = renderIntegrationProblemEmail({
       kind: "provider-token",
-      provider: "depot",
       providerName: "Depot",
       workspace: "<Acme>",
       dashboardUrl: "https://app.example",

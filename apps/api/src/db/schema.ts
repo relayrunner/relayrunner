@@ -1750,18 +1750,16 @@ export const jobType = sqliteTable(
 export const healthIssue = sqliteTable(
   "health_issue",
   {
-    // What failed, e.g. "cron:syncRunnerReleases" or "task:signals:123".
+    // What failed, e.g. "cron:syncRunnerReleases", "task:signals:<installation id>" or
+    // "integration:app-suspended:<workspace id>".
     key: text("key").primaryKey(),
     // A HEALTH_ISSUE_KINDS id: "cron", "task" or "integration".
     kind: text("kind").notNull(),
-    // The workspace's installation, for issues that belong to one.
-    installationId: integer("installation_id"),
-    // The latest error, cut short.
+    // The latest error, cut short, or what's wrong with an integration.
     error: text("error").notNull(),
     // Failures in a row since the last success.
     failures: integer("failures").notNull(),
     firstFailedAt: integer("first_failed_at", { mode: "timestamp_ms" }).notNull(),
-    lastFailedAt: integer("last_failed_at", { mode: "timestamp_ms" }).notNull(),
     // Set by the first success after failures; the row is deleted once that's been told.
     clearedAt: integer("cleared_at", { mode: "timestamp_ms" }),
     // When operators were last told it's failing. Null until it passed its threshold.

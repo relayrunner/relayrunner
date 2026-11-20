@@ -21,7 +21,7 @@ export const PING_WINDOW_MS = 15 * 60 * 1000;
 const MACHINE_ARRIVALS = ["machine.enrolled", "machine.connected"];
 
 /** Escapes text for Slack's mrkdwn, so a name can't add formatting or links. */
-function esc(text: string) {
+export function esc(text: string) {
   return text.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
 }
 

@@ -104,11 +104,7 @@ function render(env: Env, args: EmailArgs): RenderedEmail {
         inspectorUrl: `${dashboard}/admin/webhooks`,
       });
     case "integration-problem":
-      return renderIntegrationProblemEmail({
-        ...args.context,
-        providerName: "provider" in args.context ? providerName(args.context.provider) : "",
-        dashboardUrl: dashboard,
-      });
+      return renderIntegrationProblemEmail({ ...args.context, dashboardUrl: dashboard });
     case "health-alert":
       return renderHealthAlertEmail(args.context);
     case "price-check":

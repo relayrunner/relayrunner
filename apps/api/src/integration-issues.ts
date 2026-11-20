@@ -6,14 +6,22 @@
  * (src/health-issues.ts), so each is told once when it starts: to the workspace's owners and admins
  * by email, and to operators in Slack.
  */
-import { and, eq, inArray, isNotNull, like } from "drizzle-orm";
+import { and, eq, inArray, isNotNull, isNull } from "drizzle-orm";
 import type { WorkspaceProblem } from "@relayrunner/email";
+import { providerName } from "@relayrunner/providers";
 import { type Db, schema } from "./db/index.ts";
 import { sendEmail } from "./email.ts";
 import type { Env } from "./env.ts";
-import { recordFailure, recordSuccess } from "./health-issues.ts";
+import { installationSettingsUrl } from "./github.ts";
+import { recordOutcomes } from "./health-issues.ts";
+import { MANAGER_ROLES } from "./roles.ts";
 
-export type IntegrationProblem = WorkspaceProblem & { key: string; workspaceId: string };
+/** A problem, its health issue key, and what operators read about it. */
+export type IntegrationProblem = WorkspaceProblem & {
+  key: string;
+  workspaceId: string;
+  summary: string;
+};
 
 const w = schema.workspace;
 
@@ -23,8 +31,8 @@ export async function findIntegrationProblems(db: Db): Promise<IntegrationProble
     db
       .select({
         workspaceId: w.id,
-        installationId: schema.githubInstallation.id,
-        account: schema.githubInstallation.accountLogin,
+        id: schema.githubInstallation.id,
+        accountLogin: schema.githubInstallation.accountLogin,
         accountType: schema.githubInstallation.accountType,
       })
       .from(schema.githubInstallation)
@@ -52,36 +60,38 @@ export async function findIntegrationProblems(db: Db): Promise<IntegrationProble
       .where(isNotNull(schema.logBucket.pausedAt)),
   ]);
   return [
-    ...suspended.map(({ workspaceId, installationId, account, accountType }) => ({
+    ...suspended.map(({ workspaceId, ...installation }) => ({
       key: `integration:app-suspended:${workspaceId}`,
       workspaceId,
       kind: "app-suspended" as const,
-      account,
-      settingsUrl:
-        accountType === "User"
-          ? `https://github.com/settings/installations/${installationId}`
-          : `https://github.com/organizations/${account}/settings/installations/${installationId}`,
+      account: installation.accountLogin,
+      settingsUrl: installationSettingsUrl(installation),
+      summary: "the App is suspended on GitHub",
     })),
     ...billing.map(({ workspaceId }) => ({
       key: `integration:billing-refused:${workspaceId}`,
       workspaceId,
       kind: "billing-refused" as const,
+      summary: "GitHub refuses billing reads",
     })),
     ...providers.map(({ workspaceId, provider }) => ({
       key: `integration:provider-token:${workspaceId}:${provider}`,
       workspaceId,
       kind: "provider-token" as const,
-      provider,
+      providerName: providerName(provider),
+      summary: `${providerName(provider)} rejected its API token`,
     })),
     ...exports.map(({ workspaceId }) => ({
       key: `integration:telemetry-paused:${workspaceId}`,
       workspaceId,
       kind: "telemetry-paused" as const,
+      summary: "the telemetry export paused",
     })),
     ...buckets.map(({ workspaceId }) => ({
       key: `integration:log-bucket-paused:${workspaceId}`,
       workspaceId,
       kind: "log-bucket-paused" as const,
+      summary: "the log archive paused",
     })),
   ];
 }
@@ -91,18 +101,28 @@ export async function findIntegrationProblems(db: Db): Promise<IntegrationProble
  * about it, and clears issues whose problem is gone.
  */
 export async function checkIntegrations(env: Env, db: Db, now = new Date()) {
-  const problems = await findIntegrationProblems(db);
-  const open = await db
-    .select({ key: schema.healthIssue.key })
-    .from(schema.healthIssue)
-    .where(like(schema.healthIssue.key, "integration:%"));
+  const [problems, open] = await Promise.all([
+    findIntegrationProblems(db),
+    db
+      .select({ key: schema.healthIssue.key })
+      .from(schema.healthIssue)
+      .where(and(eq(schema.healthIssue.kind, "integration"), isNull(schema.healthIssue.clearedAt))),
+  ]);
   const known = new Set(open.map((row) => row.key));
   const current = new Set(problems.map((problem) => problem.key));
-  for (const problem of problems) {
-    await recordFailure(db, { key: problem.key, kind: "integration", error: problem.kind }, now);
-    if (!known.has(problem.key)) await emailWorkspaceAdmins(env, db, problem);
-  }
-  for (const key of known) if (!current.has(key)) await recordSuccess(db, key, now);
+  const started = problems.filter((problem) => !known.has(problem.key));
+  // Only changes are written: a problem that stays open keeps its row as it is.
+  await recordOutcomes(
+    db,
+    [
+      ...started.map(({ key, summary }) => ({ key, kind: "integration" as const, error: summary })),
+      ...[...known]
+        .filter((key) => !current.has(key))
+        .map((key) => ({ key, kind: "integration" as const })),
+    ],
+    now,
+  );
+  await Promise.all(started.map((problem) => emailWorkspaceAdmins(env, db, problem)));
   return problems.length;
 }
 
@@ -115,10 +135,10 @@ async function emailWorkspaceAdmins(env: Env, db: Db, problem: IntegrationProble
     .where(
       and(
         eq(schema.workspaceMember.workspaceId, problem.workspaceId),
-        inArray(schema.workspaceMember.role, ["owner", "admin"]),
+        inArray(schema.workspaceMember.role, [...MANAGER_ROLES]),
       ),
     );
-  const { key: _key, workspaceId: _workspaceId, ...context } = problem;
+  const { key: _key, workspaceId: _workspaceId, summary: _summary, ...context } = problem;
   await Promise.all(
     admins.map(({ userId, email, workspace }) =>
       sendEmail(env, {

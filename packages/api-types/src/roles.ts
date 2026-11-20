@@ -5,9 +5,11 @@
 export const ROLES = ["owner", "admin", "member"] as const;
 export type Role = (typeof ROLES)[number];
 
-const MANAGER_ROLES: ReadonlySet<string> = new Set<Role>(["owner", "admin"]);
+/** The roles that manage a workspace. */
+export const MANAGER_ROLES = ["owner", "admin"] as const satisfies readonly Role[];
+const managers: ReadonlySet<string> = new Set(MANAGER_ROLES);
 
 /** Owner or admin. Better Auth stores roles as text, so this takes any string. */
 export function canManage(role: string | null | undefined) {
-  return role != null && MANAGER_ROLES.has(role);
+  return role != null && managers.has(role);
 }

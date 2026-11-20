@@ -4,13 +4,13 @@ import { escapeHtml, renderEmailCard, type RenderedEmail } from "./card.ts";
 export type WorkspaceProblem =
   | { kind: "app-suspended"; account: string; settingsUrl: string }
   | { kind: "billing-refused" }
-  | { kind: "provider-token"; provider: string }
+  | { kind: "provider-token"; providerName: string }
   | { kind: "telemetry-paused" }
   | { kind: "log-bucket-paused" };
 
 /** To a workspace's owners and admins when one of its integrations stops working. */
 export function renderIntegrationProblemEmail(
-  ctx: WorkspaceProblem & { workspace: string; providerName: string; dashboardUrl: string },
+  ctx: WorkspaceProblem & { workspace: string; dashboardUrl: string },
 ): RenderedEmail {
   const { title, body, url, label } = copy(ctx);
   return renderEmailCard({

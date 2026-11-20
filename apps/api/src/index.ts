@@ -74,33 +74,33 @@ export default {
   async scheduled(controller, env) {
     const at = new Date(controller.scheduledTime);
     const db = createDb(env.DB);
-    const tasks: Record<string, () => Promise<unknown>> =
-      controller.cron === USAGE_CRON
-        ? {
-            pollActionsUsage: () => pollActionsUsage(env, at),
-            sweepPicks: () => sweepPicks(env),
-            sendOperatorPings: () => sendOperatorPings(env, at),
-            sendProductEvents: () => sendProductEvents(env, at),
-            sweepProviderHealth: () => sweepProviderHealth(env, at.getTime()),
-            sendHealthAlerts: () => sendHealthAlerts(env, at),
-          }
-        : controller.cron === PRICE_CRON
-          ? { checkPrices: () => checkPrices(env, at) }
-          : {
-              checkDeadLetterGrowth: () => checkDeadLetterGrowth(env),
-              purgeOldJobTimings: () => purgeOldJobTimings(db),
-              purgeOldWorkflowRuns: () => purgeOldWorkflowRuns(db),
-              purgeOldActivity: () => purgeOldActivity(db),
-              syncSpendInstallations: () => syncSpendInstallations(env, at),
-              syncEnterpriseInstallations: () => syncEnterpriseInstallations(env, db, at),
-              syncProviderConnections: () => syncProviderConnections(env),
-              purgeOldProviderUsage: () => purgeOldProviderUsage(db, at),
-              purgeExpiredAiAnswers: () => purgeExpiredAiAnswers(db, at.getTime()),
-              enqueueSignalRollups: () => enqueueSignalRollups(env),
-              checkIntegrations: () => checkIntegrations(env, db, at),
-              syncRunnerReleases: () =>
-                releasesToken(env, db).then((token) => syncRunnerReleases(db, token)),
-            };
+    const tasks: Record<string, Promise<unknown>> = controller.cron === USAGE_CRON
+      ? {
+          pollActionsUsage: pollActionsUsage(env, at),
+          sweepPicks: sweepPicks(env),
+          sendOperatorPings: sendOperatorPings(env, at),
+          sendProductEvents: sendProductEvents(env, at),
+          sweepProviderHealth: sweepProviderHealth(env, at.getTime()),
+          sendHealthAlerts: sendHealthAlerts(env, at),
+        }
+      : controller.cron === PRICE_CRON
+        ? { checkPrices: checkPrices(env, at) }
+        : {
+            checkDeadLetterGrowth: checkDeadLetterGrowth(env),
+            purgeOldJobTimings: purgeOldJobTimings(db),
+            purgeOldWorkflowRuns: purgeOldWorkflowRuns(db),
+            purgeOldActivity: purgeOldActivity(db),
+            syncSpendInstallations: syncSpendInstallations(env, at),
+            syncEnterpriseInstallations: syncEnterpriseInstallations(env, db, at),
+            syncProviderConnections: syncProviderConnections(env),
+            purgeOldProviderUsage: purgeOldProviderUsage(db, at),
+            purgeExpiredAiAnswers: purgeExpiredAiAnswers(db, at.getTime()),
+            enqueueSignalRollups: enqueueSignalRollups(env),
+            checkIntegrations: checkIntegrations(env, db, at),
+            syncRunnerReleases: releasesToken(env, db).then((token) =>
+              syncRunnerReleases(db, token),
+            ),
+          };
     // Each runs even if another throws; a failure still fails the invocation, and one that keeps
     // failing reaches operators (src/health-issues.ts).
     await runCronTasks(db, tasks);

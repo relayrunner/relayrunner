@@ -1,96 +1,106 @@
 /**
  * Tells operators when something keeps failing in the background, which logs alone don't: a cron
- * task that fails run after run, or an installation's queued task that fails on every try. Each
- * failure is counted on a health_issue row and the next success clears it. The 15-minute cron
- * posts to OPERATOR_SLACK_WEBHOOK_URL and emails OPERATOR_ALERT_EMAIL when an issue passes its
- * kind's threshold, again each day it stays open, and once when it clears.
+ * task that fails run after run, an installation's queued task that fails on every try, or a
+ * workspace integration that broke (src/integration-issues.ts). Each failure is counted on a
+ * health_issue row and the next success clears it. The 15-minute cron posts to
+ * OPERATOR_SLACK_WEBHOOK_URL and emails OPERATOR_ALERT_EMAIL when an issue passes its kind's
+ * threshold, again each day it stays open where the kind says so, and once when it clears.
  */
-import { and, eq, isNotNull, isNull, lt, or, sql } from "drizzle-orm";
+import { and, inArray, isNotNull, isNull, lt, or, sql } from "drizzle-orm";
 import { type Db, createDb, schema } from "./db/index.ts";
 import { emailOperators } from "./email.ts";
 import type { Env } from "./env.ts";
-import { postToWebhook } from "./operator-pings.ts";
+import { errorMessage } from "./errors.ts";
+import { esc, postToWebhook } from "./operator-pings.ts";
 import { DAY_MS } from "./time.ts";
 
 /**
- * Failures in a row before operators hear: three runs of a cron task, and both tries of a queued
- * task in two cron runs in a row, so a few minutes of D1 refusing queries stay quiet.
+ * Failures in a row before operators hear, and whether they hear again each day it stays open:
+ * three runs of a cron task; both tries of a queued task in two cron runs in a row, so a few
+ * minutes of D1 refusing queries stay quiet; and a workspace integration at once, but only once,
+ * since its admins are emailed too and it can stay broken for weeks.
  */
 export const HEALTH_ISSUE_KINDS = {
   cron: { threshold: 3, daily: true },
   task: { threshold: 4, daily: true },
-  // A workspace's broken integration (src/integration-issues.ts): told once, since its admins are
-  // told too and it can stay broken for weeks.
   integration: { threshold: 1, daily: false },
 } as const;
 
 export type HealthIssueKind = keyof typeof HEALTH_ISSUE_KINDS;
 
+/** One run of something that can fail: `error` is set when it failed. */
+export type Outcome = { key: string; kind: HealthIssueKind; error?: unknown };
+
 const issue = schema.healthIssue;
 const ERROR_LENGTH = 500;
 
-/** Counts a failure of `key`, opening its issue on the first. */
-export async function recordFailure(
-  db: Db,
-  failure: { key: string; kind: HealthIssueKind; installationId?: number; error: unknown },
-  now = new Date(),
-) {
-  const error = errorText(failure.error);
-  await db
+/**
+ * Records several outcomes in one round trip: failures count toward their issue (opening it on the
+ * first), and successes clear theirs. Never throws, since it runs beside the work it records.
+ */
+export async function recordOutcomes(db: Db, outcomes: Outcome[], now = new Date()) {
+  const succeeded = outcomes.filter((outcome) => outcome.error === undefined);
+  const statements = [
+    ...outcomes
+      .filter((outcome) => outcome.error !== undefined)
+      .map((outcome) => failureUpsert(db, outcome, now)),
+    ...(succeeded.length
+      ? [
+          db
+            .update(issue)
+            .set({ clearedAt: now })
+            .where(
+              and(
+                inArray(
+                  issue.key,
+                  succeeded.map((outcome) => outcome.key),
+                ),
+                isNull(issue.clearedAt),
+              ),
+            ),
+        ]
+      : []),
+  ];
+  await inOneBatch(db, statements).catch((error) =>
+    console.error(
+      JSON.stringify({ msg: "health issues not recorded", error: errorMessage(error) }),
+    ),
+  );
+}
+
+// A failure after the issue cleared, before that was told, starts a new run of failures.
+function failureUpsert(db: Db, outcome: Outcome, now: Date) {
+  const error = errorMessage(outcome.error).slice(0, ERROR_LENGTH);
+  const restart = sql`${issue.clearedAt} is not null`;
+  return db
     .insert(issue)
-    .values({
-      key: failure.key,
-      kind: failure.kind,
-      installationId: failure.installationId ?? null,
-      error,
-      failures: 1,
-      firstFailedAt: now,
-      lastFailedAt: now,
-    })
+    .values({ key: outcome.key, kind: outcome.kind, error, failures: 1, firstFailedAt: now })
     .onConflictDoUpdate({
       target: issue.key,
       set: {
         error,
-        lastFailedAt: now,
-        // A failure after it cleared, before that was told, starts a new run of failures.
-        failures: sql`case when ${issue.clearedAt} is null then ${issue.failures} + 1 else 1 end`,
-        firstFailedAt: sql`case when ${issue.clearedAt} is null then ${issue.firstFailedAt} else ${now.getTime()} end`,
+        failures: sql`case when ${restart} then 1 else ${issue.failures} + 1 end`,
+        firstFailedAt: sql`case when ${restart} then ${now.getTime()} else ${issue.firstFailedAt} end`,
+        alertedAt: sql`case when ${restart} then null else ${issue.alertedAt} end`,
         clearedAt: null,
       },
     });
 }
 
 /**
- * Marks `key` as working again. Writes nothing when it has no open issue, so callers can say so on
- * every success.
- */
-export async function recordSuccess(db: Db, key: string, now = new Date()) {
-  await db
-    .update(issue)
-    .set({ clearedAt: now })
-    .where(and(eq(issue.key, key), isNull(issue.clearedAt)));
-}
-
-/**
- * Runs `tasks` side by side like Promise.allSettled, recording each one's outcome under
+ * Waits for the cron's tasks, which run side by side, records each one's outcome under
  * `cron:<name>`, and throws the first failure once all have finished.
  */
-export async function runCronTasks(db: Db, tasks: Record<string, () => Promise<unknown>>) {
+export async function runCronTasks(db: Db, tasks: Record<string, Promise<unknown>>) {
   const names = Object.keys(tasks);
-  const results = await Promise.allSettled(names.map((name) => tasks[name]!()));
-  await Promise.all(
-    results.map((result, index) => {
-      const key = `cron:${names[index]}`;
-      const recorded =
-        result.status === "fulfilled"
-          ? recordSuccess(db, key)
-          : recordFailure(db, { key, kind: "cron", error: result.reason });
-      return recorded.catch((error) =>
-        console.error(
-          JSON.stringify({ msg: "health issue not recorded", key, error: errorText(error) }),
-        ),
-      );
-    }),
+  const results = await Promise.allSettled(Object.values(tasks));
+  await recordOutcomes(
+    db,
+    results.map((result, index) => ({
+      key: `cron:${names[index]}`,
+      kind: "cron",
+      ...(result.status === "rejected" && { error: result.reason ?? "failed" }),
+    })),
   );
   const failed = results.find((result) => result.status === "rejected");
   if (failed) throw failed.reason;
@@ -98,6 +108,7 @@ export async function runCronTasks(db: Db, tasks: Record<string, () => Promise<u
 
 export type HealthAlert = {
   key: string;
+  kind: HealthIssueKind;
   state: "failing" | "cleared";
   failures: number;
   since: Date;
@@ -105,9 +116,9 @@ export type HealthAlert = {
 };
 
 /**
- * The alerts due now, marked as sent: issues past their threshold that weren't told in the last
- * day, and cleared issues that were told (which are then deleted). Cleared issues nobody heard
- * about are deleted quietly.
+ * The alerts due now, marked as sent: issues past their threshold that are due a word, and cleared
+ * issues that were told (which are then deleted). Cleared issues nobody heard about are deleted
+ * quietly.
  */
 export async function takeHealthAlerts(db: Db, now = new Date()): Promise<HealthAlert[]> {
   const rows = await db
@@ -121,36 +132,50 @@ export async function takeHealthAlerts(db: Db, now = new Date()): Promise<Health
       ),
     );
   const alerts: HealthAlert[] = [];
+  const cleared: string[] = [];
+  const told: string[] = [];
   for (const row of rows) {
-    const kind = HEALTH_ISSUE_KINDS[row.kind as HealthIssueKind];
+    const kind = row.kind as HealthIssueKind;
+    const rules = HEALTH_ISSUE_KINDS[kind];
+    const alert = {
+      key: row.key,
+      kind,
+      failures: row.failures,
+      since: row.firstFailedAt,
+      error: row.error,
+    };
     if (row.clearedAt) {
-      if (row.alertedAt) alerts.push(alertFor(row, "cleared"));
-      await db.delete(issue).where(and(eq(issue.key, row.key), isNotNull(issue.clearedAt)));
-    } else if (kind && row.failures >= kind.threshold && (!row.alertedAt || kind.daily)) {
-      alerts.push(alertFor(row, "failing"));
-      await db.update(issue).set({ alertedAt: now }).where(eq(issue.key, row.key));
+      if (row.alertedAt) alerts.push({ ...alert, state: "cleared" });
+      cleared.push(row.key);
+    } else if (rules && row.failures >= rules.threshold && (!row.alertedAt || rules.daily)) {
+      alerts.push({ ...alert, state: "failing" });
+      told.push(row.key);
     }
   }
+  await inOneBatch(db, [
+    ...(cleared.length
+      ? [db.delete(issue).where(and(inArray(issue.key, cleared), isNotNull(issue.clearedAt)))]
+      : []),
+    ...(told.length
+      ? [db.update(issue).set({ alertedAt: now }).where(inArray(issue.key, told))]
+      : []),
+  ]);
   return alerts;
 }
 
-function alertFor(row: typeof issue.$inferSelect, state: HealthAlert["state"]): HealthAlert {
-  return {
-    key: row.key,
-    state,
-    failures: row.failures,
-    since: row.firstFailedAt,
-    error: row.error,
-  };
+// Drizzle's batch takes a non-empty tuple.
+async function inOneBatch(db: Db, statements: Parameters<Db["batch"]>[0][number][]) {
+  const [first, ...rest] = statements;
+  if (first) await db.batch([first, ...rest]);
 }
 
-/** One line per alert, for Slack. */
-export function alertText(alert: HealthAlert) {
-  if (alert.state === "cleared") return `:white_check_mark: \`${alert.key}\` is working again.`;
-  if (alert.key.startsWith("integration:"))
-    return `:warning: \`${alert.key}\` stopped working. The workspace's owners and admins were emailed.`;
+/** One line per alert, for Slack and the operator email alike. */
+export function alertLine(alert: HealthAlert) {
+  if (alert.state === "cleared") return `${alert.key} is working again.`;
+  if (alert.kind === "integration")
+    return `${alert.key}: ${alert.error}. The workspace's owners and admins were emailed.`;
   const failures = alert.failures === 1 ? "1 time" : `${alert.failures} times in a row`;
-  return `:rotating_light: \`${alert.key}\` failed ${failures} since ${alert.since.toISOString()}: ${alert.error.replace(/[<>&]/g, "")}`;
+  return `${alert.key} failed ${failures} since ${alert.since.toISOString()}: ${alert.error}`;
 }
 
 /** The 15-minute cron's entry: sends what's due to Slack and the operator inbox. */
@@ -158,16 +183,14 @@ export async function sendHealthAlerts(env: Env, now = new Date(), fetcher: type
   const alerts = await takeHealthAlerts(createDb(env.DB), now);
   if (!alerts.length) return 0;
   console.error(JSON.stringify({ msg: "health alerts", alerts }));
-  const text = alerts.map(alertText).join("\n");
+  const lines = alerts.map(alertLine);
   if (env.OPERATOR_SLACK_WEBHOOK_URL) {
+    const text = lines.map((line) => esc(line)).join("\n");
     await postToWebhook(env.OPERATOR_SLACK_WEBHOOK_URL, text, fetcher).catch((error) =>
-      console.error(JSON.stringify({ msg: "health alert not posted", error: errorText(error) })),
+      console.error(JSON.stringify({ msg: "health alert not posted", error: errorMessage(error) })),
     );
   }
-  await emailOperators(env, { template: "health-alert", context: { alerts } });
+  const failing = alerts.filter((alert) => alert.state === "failing").length;
+  await emailOperators(env, { template: "health-alert", context: { failing, lines } });
   return alerts.length;
-}
-
-function errorText(error: unknown) {
-  return (error instanceof Error ? error.message : String(error)).slice(0, ERROR_LENGTH);
 }
