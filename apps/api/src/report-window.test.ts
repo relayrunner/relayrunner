@@ -85,6 +85,15 @@ describe("chartBuckets", () => {
     });
   });
 
+  test("bars an hour at a time when asked over two days or less, else a day", () => {
+    const day = { from, to: from + DAY_MS };
+    expect(chartBuckets(day, String(from - 1_800_000), "hour")).toEqual({
+      bucketMs: 3_600_000,
+      origin: from - 1_800_000,
+    });
+    expect(chartBuckets(window, String(from), "hour")).toEqual({ bucketMs: DAY_MS, origin: from });
+  });
+
   test("bars a week at a time when asked, from the start of the reader's week", () => {
     const monday = from - 5 * DAY_MS;
     expect(chartBuckets(window, String(monday), "week")).toEqual({

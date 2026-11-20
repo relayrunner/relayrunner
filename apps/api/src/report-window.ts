@@ -3,7 +3,7 @@
 // the window its trend compares against.
 import { AppError } from "@relayrunner/errors";
 import { z } from "zod";
-import { DAY_MS, RAW_RETENTION_DAYS } from "./time.ts";
+import { DAY_MS, HOUR_MS, RAW_RETENTION_DAYS } from "./time.ts";
 
 /** A report's window, in epoch ms: jobs finished at or after `from` and before `to`. */
 export interface Window {
@@ -48,13 +48,21 @@ export interface Buckets {
   origin: number;
 }
 
+/** The longest window `?per=hour` bars an hour at a time; past it, bars are days. */
+export const HOURLY_MAX_MS = 2 * DAY_MS;
+
 /**
- * A chart's bars over `window`: a day each, or a week with `?per=week` or past a month, from
- * `?origin=` (the reader's midnight, or the start of their week, at or before the window's start)
- * or the window's start.
+ * A chart's bars over `window`: an hour each with `?per=hour` (up to two days), a day each, or a
+ * week with `?per=week` or past a month, from `?origin=` (the reader's hour, midnight, or start of
+ * their week, at or before the window's start) or the window's start.
  */
 export function chartBuckets(window: Window, origin?: string, per?: string): Buckets {
-  const bucketMs = per === "week" || windowDays(window) > 31 ? 7 * DAY_MS : DAY_MS;
+  const bucketMs =
+    per === "hour" && window.to - window.from <= HOURLY_MAX_MS
+      ? HOUR_MS
+      : per === "week" || windowDays(window) > 31
+        ? 7 * DAY_MS
+        : DAY_MS;
   const parsed = Epoch.safeParse(origin);
   // At most a bar before the window, so an odd origin can't make thousands of bars.
   const fits = parsed.success && parsed.data <= window.from && parsed.data > window.from - bucketMs;

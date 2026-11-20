@@ -35,10 +35,15 @@ import {
 import { rangeDays, rangePhrase, resolveRange, type TimeRange } from "@/lib/time-range";
 import { startOfDay } from "@/lib/time-zone";
 
-function load(range: TimeRange, per: ChartPer) {
-  return authDisabled
-    ? Promise.resolve(sampleProvidersOverview(rangeDays(range), { per }))
-    : getProvidersOverview(range, { chart: per });
+/** The overview, with where its range started, so its bars never meet another range's start. */
+type LoadedOverview = ProvidersOverview & { from: number };
+
+async function load(range: TimeRange, per: ChartPer): Promise<LoadedOverview> {
+  const { from } = resolveRange(range);
+  const overview = authDisabled
+    ? sampleProvidersOverview(rangeDays(range), { per })
+    : await getProvidersOverview(range, { chart: per });
+  return { ...overview, from };
 }
 
 const rangeParams = rangeSearch(PROVIDER_RANGES, PROVIDER_DEFAULT_RANGE);
@@ -51,10 +56,18 @@ const PER_OPTIONS = [
 
 type ProvidersSearch = RangeSearch & { per?: ChartPer };
 
-// Weekly bars, so week over week shows, once a range holds two weeks to compare; daily before.
+// Weekly bars, so week over week shows, once a range holds two weeks to compare; hourly bars over
+// a day or two, where a bar a day would say little; daily in between.
 const offersWeeks = (range: TimeRange) => rangeDays(range) >= 14;
-const perOf = (search: ProvidersSearch): ChartPer =>
-  offersWeeks(rangeOf(search)) ? (search.per ?? "week") : "day";
+const hourly = (range: TimeRange) => {
+  const { from, to } = resolveRange(range);
+  return to - from <= 2 * DAY_MS;
+};
+function perOf(search: ProvidersSearch): ChartPer {
+  const range = rangeOf(search);
+  if (offersWeeks(range)) return search.per ?? "week";
+  return hourly(range) ? "hour" : "day";
+}
 
 // The range, and `?per=day` for daily bars over a range that offers weekly ones.
 const validateSearch = (search: Record<string, unknown>): ProvidersSearch => ({
@@ -81,7 +94,7 @@ function ProvidersPage() {
   const range = rangeOf(search);
   const per = perOf(search);
   const setSearch = useSetSearch<ProvidersSearch>();
-  const overview: ProvidersOverview = useRangeReport(Route.useLoaderData(), `${range} ${per}`, () =>
+  const overview: LoadedOverview = useRangeReport(Route.useLoaderData(), `${range} ${per}`, () =>
     load(range, per),
   );
   const { current } = Route.useRouteContext();
@@ -121,7 +134,6 @@ function ProvidersPage() {
               <SectionBoundary>
                 <MinutesChart
                   overview={overview}
-                  from={resolveRange(range).from}
                   per={offersWeeks(range) ? per : null}
                   onPer={(next) => setSearch({ per: unlessDefault(next, "week") })}
                 />
@@ -168,19 +180,21 @@ function minutesChange({ billedMinutes, priorBilledMinutes: prior }: ProviderSum
   return Math.round(((billedMinutes - prior) / prior) * 100);
 }
 
+/** What a bar of `bucketMs` covers, for the chart's title. */
+const perText = (bucketMs: number) =>
+  bucketMs > DAY_MS ? "per week" : bucketMs < DAY_MS ? "per hour" : "per day";
+
 /**
- * Each provider's billed minutes a day or a week at a time, stacked biggest first, so the bars show
- * the volume and how it splits. `per` is null when the range is too short for weeks.
+ * Each provider's billed minutes an hour, a day or a week at a time, stacked biggest first, so the
+ * bars show the volume and how it splits. `per` is null when the range is too short for weeks.
  */
 function MinutesChart({
   overview,
-  from,
   per,
   onPer,
 }: {
-  overview: ProvidersOverview;
-  /** The range's start: a first week that began before it is only counted from here. */
-  from: number;
+  /** Its `from` is the range's start: a first bar that began before it is only counted from there. */
+  overview: LoadedOverview;
   per: ChartPer | null;
   onPer: (per: ChartPer) => void;
 }) {
@@ -198,25 +212,25 @@ function MinutesChart({
   );
   // One bar says nothing a table row doesn't.
   if (overview.buckets.length < 2 || series.length === 0) return null;
-  const week = overview.bucketMs > DAY_MS;
+  const title = `Billed minutes ${perText(overview.bucketMs)}`;
   return (
     <section className="grid gap-3 rounded-xl border bg-card p-4 sm:p-5">
       <div className="flex flex-wrap items-start justify-between gap-3">
         <div>
-          <h3 className="text-sm font-semibold">Billed minutes {week ? "per week" : "per day"}</h3>
+          <h3 className="text-sm font-semibold">{title}</h3>
           <p className="text-sm text-muted-foreground">Stacked by provider.</p>
         </div>
         {per && <OptionPicker label="Bars" options={PER_OPTIONS} value={per} onChange={onPer} />}
       </div>
       <StackedBars
         buckets={overview.buckets.map((b) => ({
-          start: Math.max(b.start, startOfDay(from)),
+          start: Math.max(b.start, startOfDay(overview.from)),
           values: b.minutes,
         }))}
         bucketMs={overview.bucketMs}
         series={series}
         format={(minutes) => `${minutes.toLocaleString()} min`}
-        label={`Billed minutes ${week ? "per week" : "per day"} by provider`}
+        label={`${title} by provider`}
         footer={(_, total) => <TipRow label="Total" value={`${total.toLocaleString()} min`} />}
       />
       <Legend series={series} />

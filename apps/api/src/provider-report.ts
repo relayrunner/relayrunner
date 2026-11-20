@@ -122,7 +122,7 @@ export interface ProvidersOverview {
   pricesChecked: string;
   /** Providers with jobs in the window, busiest first. */
   providers: ProviderSummary[];
-  /** How long each of `buckets` is: a day, or a week past a month. 0 when not asked for. */
+  /** How long each of `buckets` is: an hour, a day, or a week. 0 when not asked for. */
   bucketMs: number;
   /** Each provider's billed minutes over the window, oldest first. Empty when not asked for. */
   buckets: ShareBucket[];

@@ -19,7 +19,7 @@ import {
   resolveRange,
   type TimeRange,
 } from "@/lib/time-range";
-import { startOfDay, startOfWeek } from "@/lib/time-zone";
+import { startOfDay, startOfHours, startOfWeek } from "@/lib/time-zone";
 import { money } from "@/lib/usage";
 
 export type ProviderCounts = {
@@ -65,7 +65,7 @@ export type ProviderSummary = ProviderCounts & {
   priorBilledMinutes: number | null;
 };
 
-/** Billed minutes per provider in one day (or week) of the window. */
+/** Billed minutes per provider in one hour, day or week of the window. */
 export type ShareBucket = { start: number; minutes: Record<string, number> };
 
 /** The Providers page (GET /api/providers): every provider the workspace's jobs ran on. */
@@ -73,7 +73,7 @@ export type ProvidersOverview = {
   days: number;
   pricesChecked: string;
   providers: ProviderSummary[];
-  /** A day, or a week when asked or past a month. */
+  /** An hour when asked over two days or less, a day, or a week when asked or past a month. */
   bucketMs: number;
   /** Each provider's billed minutes over the window, oldest first. */
   buckets: ShareBucket[];
@@ -93,20 +93,25 @@ export function getProviderReport(provider: string, range: TimeRange) {
 }
 
 /** How long each bar of the Providers page's minutes chart is. */
-export type ChartPer = "day" | "week";
+export type ChartPer = "hour" | "day" | "week";
+
+const HOUR_MS = 3_600_000;
+
+/** The start of the bar `ms` falls in: the reader's hour, midnight, or start of their week. */
+const barStart = (per: ChartPer, ms: number) =>
+  per === "hour" ? startOfHours(ms) : per === "week" ? startOfWeek(ms) : startOfDay(ms);
 
 /**
- * Every provider the workspace's jobs ran on. With `chart`, also each one's minutes a day (or a
- * week) at a time from the reader's midnight (or the start of their week), even for a rolling
+ * Every provider the workspace's jobs ran on. With `chart`, also each one's minutes an hour, a day
+ * or a week at a time from the reader's hour, midnight or start of their week, even for a rolling
  * range, and over the window before.
  */
 export function getProvidersOverview(range: TimeRange, { chart }: { chart?: ChartPer } = {}) {
   if (!chart) return api<ProvidersOverview>(`/providers?${rangeQuery(range)}`);
   const { from } = resolveRange(range);
-  const origin = chart === "week" ? startOfWeek(from) : startOfDay(from);
   const query = reportQuery(range, {
-    origin: String(origin),
-    ...(chart === "week" && { per: "week" }),
+    origin: String(barStart(chart, from)),
+    ...(chart !== "day" && { per: chart }),
   });
   return api<ProvidersOverview>(`/providers?${query}`);
 }
@@ -226,14 +231,22 @@ export function sampleProvidersOverview(
       };
     })
     .sort((a, b) => b.jobs - a.jobs);
-  const bucketMs = per === "week" || days > 31 ? 7 * DAY_MS : DAY_MS;
+  const hourly = per === "hour" && days <= 2;
+  const bucketMs = hourly ? HOUR_MS : per === "week" || days > 31 ? 7 * DAY_MS : DAY_MS;
   const count = Math.max(1, Math.ceil((days * DAY_MS) / bucketMs));
-  const origin = (bucketMs > DAY_MS ? startOfWeek : startOfDay)(now - (count - 1) * bucketMs);
+  const origin = barStart(
+    hourly ? "hour" : bucketMs > DAY_MS ? "week" : "day",
+    now - (count - 1) * bucketMs,
+  );
   const buckets = Array.from({ length: count }, (_, i) => {
     const at = count === 1 ? 1 : i / (count - 1);
-    // Weekends are quiet.
-    const weekday = new Date(origin + i * bucketMs).getDay();
-    const quiet = bucketMs === DAY_MS && (weekday === 0 || weekday === 6) ? 0.3 : 1;
+    // Weekends, and nights, are quiet.
+    const when = new Date(origin + i * bucketMs);
+    const weekday = when.getDay();
+    const hour = when.getHours();
+    const night = hourly && (hour < 8 || hour >= 20);
+    const weekend = bucketMs === DAY_MS && (weekday === 0 || weekday === 6);
+    const quiet = night ? 0.2 : weekend ? 0.3 : 1;
     // Volume grows over the window, so weekly bars show a trend.
     const growth = 0.8 + 0.4 * at;
     return {

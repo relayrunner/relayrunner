@@ -1,9 +1,9 @@
-// A bar per day (or week) stacked by series. The Providers page stacks billed minutes by provider,
+// A bar per hour, day or week stacked by series. The Providers page stacks billed minutes by provider,
 // the Router page runs by how they were routed.
-import { type ReactNode, useState } from "react";
+import { type PointerEvent, type ReactNode, useState } from "react";
 import { ChartTip, TipRow, topRounded, useWidth } from "@/components/chart-parts";
 import { DAY_MS } from "@/lib/job-times";
-import { shortDate, zoneFormat } from "@/lib/time-zone";
+import { shortDate, startOfDay, zoneFormat, zoneParts } from "@/lib/time-zone";
 import { cn, count } from "@/lib/utils";
 
 /** A series' fill for bars, and for its swatch when that differs (stripes, say). */
@@ -19,6 +19,13 @@ const PAD = { top: 10, right: 0, bottom: 22, left: 40 };
 // Half a date label's width, about.
 const EDGE = 18;
 const DAY_LABEL: Intl.DateTimeFormatOptions = { weekday: "short", month: "short", day: "numeric" };
+const HOUR_LABEL: Intl.DateTimeFormatOptions = { hour: "numeric" };
+// How many hours apart hourly bars' labels may be.
+const HOUR_STEPS = [1, 2, 3, 6, 12, 24];
+
+/** An hourly bar's axis label: its hour ("3 PM"), or its date at midnight. */
+const hourTick = (start: number) =>
+  startOfDay(start) === start ? shortDate(start) : zoneFormat(HOUR_LABEL).format(start);
 
 /**
  * A palette for series with no colour of their own, such as providers (several share their
@@ -100,11 +107,32 @@ export function StackedBars({
     Math.min(slot - Math.min(4, slot / 4), Math.max(28, slot * 0.4), 72),
     1,
   );
-  // About one date label per 70px.
+  const hourly = bucketMs < DAY_MS;
+  // About one label per 70px: hourly bars' every 1, 2, 3, 6 or 12 hours from midnight, so they
+  // land on round hours; day and week bars' counted back from the last.
   const labelEvery = Math.max(1, Math.ceil(70 / Math.max(slot, 1)));
-  // Labels and the tooltip read midday, so a daylight saving change doesn't move the date.
+  const labelHours = HOUR_STEPS.find((hours) => hours >= labelEvery) ?? 24;
+  const labelled = (bucket: StackedBucket, i: number) =>
+    hourly
+      ? zoneParts(bucket.start).hour % labelHours === 0
+      : (buckets.length - 1 - i) % labelEvery === 0;
+  // Day labels and the tooltip read midday, so a daylight saving change doesn't move the date.
   const noon = (bucket: StackedBucket) => bucket.start + DAY_MS / 2;
+  const tick = (bucket: StackedBucket) =>
+    hourly ? hourTick(bucket.start) : shortDate(noon(bucket));
+  const heading = (bucket: StackedBucket) =>
+    hourly
+      ? `${zoneFormat(DAY_LABEL).format(bucket.start)}, ${zoneFormat(HOUR_LABEL).format(bucket.start)} – ${zoneFormat(HOUR_LABEL).format(bucket.start + bucketMs)}`
+      : `${bucketMs > DAY_MS ? "Week of " : ""}${zoneFormat(DAY_LABEL).format(noon(bucket))}`;
   const hovered = hover === null ? undefined : buckets[hover];
+  // The bar under the pointer, from where it is across the plot, so the highlighted column and the
+  // tooltip always match what's under it.
+  function pointAt(event: PointerEvent<SVGSVGElement>) {
+    if (!slot) return;
+    const left = event.currentTarget.getBoundingClientRect().left;
+    const index = Math.floor((event.clientX - left - PAD.left) / slot);
+    setHover(index >= 0 && index < buckets.length ? index : null);
+  }
 
   return (
     <div ref={ref} className="relative">
@@ -115,6 +143,8 @@ export function StackedBars({
           role="img"
           aria-label={label}
           className="block"
+          onPointerMove={pointAt}
+          onPointerDown={pointAt}
           onPointerLeave={(event) => event.pointerType !== "touch" && setHover(null)}
         >
           {ticks.map((tick) => (
@@ -142,12 +172,9 @@ export function StackedBars({
             const total = totals[i] ?? 0;
             let below = 0;
             return (
-              <g
-                key={bucket.start}
-                onPointerEnter={() => setHover(i)}
-                onPointerDown={() => setHover(i)}
-              >
-                {/* The whole column is the hover target, not just the bar. */}
+              // By position, so a bar never takes another's place when the range changes.
+              <g key={i}>
+                {/* The whole column is highlighted, not just the bar. */}
                 <rect
                   x={x}
                   y={PAD.top}
@@ -172,7 +199,7 @@ export function StackedBars({
                   );
                   return <path key={s.key} d={d} fill={s.color} />;
                 })}
-                {(buckets.length - 1 - i) % labelEvery === 0 && (
+                {labelled(bucket, i) && (
                   <text
                     // A label too close to the edge ends there, so it isn't cut off.
                     x={Math.min(x + slot / 2, width - PAD.right - EDGE)}
@@ -180,7 +207,7 @@ export function StackedBars({
                     textAnchor="middle"
                     className="fill-muted-foreground text-[10px]"
                   >
-                    {shortDate(noon(bucket))}
+                    {tick(bucket)}
                   </text>
                 )}
               </g>
@@ -191,10 +218,7 @@ export function StackedBars({
       )}
       {hover !== null && hovered && (
         <ChartTip x={PAD.left + (hover + 0.5) * slot} y={PAD.top} width={width}>
-          <p className="font-medium">
-            {bucketMs > DAY_MS ? "Week of " : ""}
-            {zoneFormat(DAY_LABEL).format(noon(hovered))}
-          </p>
+          <p className="font-medium">{heading(hovered)}</p>
           {series.toReversed().map((s) => {
             const value = hovered.values[s.key] ?? 0;
             if (!value) return null;
