@@ -191,6 +191,20 @@ export function admits(
 }
 
 /**
+ * Whether a machine could admit a job once its starters are all known: as admits, counting a
+ * starter not known yet (a re-run before its attempt's workflow_run) as the machine's owner.
+ */
+export function mayAdmit(
+  machine: { sharing?: MachineSharing; ownerGithubId?: number | null },
+  job: JobStarters,
+): boolean {
+  if ((machine.sharing ?? "anyone") === "anyone") return true;
+  const owner = machine.ownerGithubId;
+  if (owner == null) return false;
+  return [job.startedBy, job.triggeredBy].every((who) => who === null || who.id === owner);
+}
+
+/**
  * Whether a machine admitted to a job must first show that its owner can read the job's repo. A
  * machine shared with `anyone` takes other people's jobs, and being in the workspace doesn't mean
  * its owner may read every repo the workspace's installations see: without this, a member could
@@ -452,6 +466,8 @@ export interface Rerun extends QueuedJob {
   // The re-run's attempt, and the earlier attempt whose pick made the route.
   runAttempt: number;
   pickedAttempt: number;
+  // True until this attempt's workflow_run is recorded: who re-ran it isn't known yet.
+  startersPending?: boolean;
 }
 
 /**

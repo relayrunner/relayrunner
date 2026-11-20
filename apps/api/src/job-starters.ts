@@ -61,6 +61,41 @@ export async function runStartersForJobs(
   return starters;
 }
 
+/**
+ * One re-run attempt's starters, for routing it again (Router.reroute), and whether they're known.
+ * Only the attempt's workflow_run webhook says who re-ran it, and it can come after the job's
+ * `queued` one: until it's recorded, `known` is false and triggeredBy is null. startedBy falls back
+ * to the earlier pick's.
+ */
+export async function attemptStarters(
+  db: Db,
+  job: JobKey,
+  pickStartedBy: GithubActor | null,
+): Promise<RunStarters & { known: boolean }> {
+  const run = schema.workflowRun;
+  const [row] = await db
+    .select({
+      startedById: run.startedById,
+      startedByLogin: run.startedByLogin,
+      triggeredById: run.triggeredById,
+      triggeredByLogin: run.triggeredByLogin,
+    })
+    .from(run)
+    .where(
+      and(
+        eq(run.id, job.runId),
+        eq(run.runAttempt, job.runAttempt),
+        eq(run.repositoryId, job.repositoryId),
+      ),
+    )
+    .limit(1);
+  return {
+    startedBy: actor(row?.startedById ?? null, row?.startedByLogin ?? null) ?? pickStartedBy,
+    triggeredBy: actor(row?.triggeredById ?? null, row?.triggeredByLogin ?? null),
+    known: row !== undefined,
+  };
+}
+
 /** The workspace's members by GitHub account id, for the ids given. */
 export async function membersByGithubId(
   db: Db,

@@ -22,7 +22,7 @@ import {
 } from "../github-app.ts";
 import { installationRunnerScope } from "../installations.ts";
 import { inWorkspace } from "../machines.ts";
-import { runStartersForJobs } from "../job-starters.ts";
+import { attemptStarters } from "../job-starters.ts";
 import { clearJobMachine, setJobMachine } from "../jobs.ts";
 import { findRepo } from "../repositories.ts";
 import { jobName } from "../run-job.ts";
@@ -34,7 +34,7 @@ import {
   type JobSignal,
   type LabelHealth,
 } from "../provider-health.ts";
-import { earlierPick, jobKey } from "../route-decisions.ts";
+import { earlierPick } from "../route-decisions.ts";
 import type { RetryPick } from "../retries.ts";
 import {
   MAX_REQUEUES,
@@ -55,6 +55,7 @@ import {
 } from "../github-runners.ts";
 import {
   admits,
+  mayAdmit,
   canClaim,
   chooseAndHold,
   chooseMachine,
@@ -131,6 +132,9 @@ interface WaitingJob extends Waiting {
   avoid?: string;
   // Since when no machine that could take it has been online (drain).
   noMachineSince?: number;
+  // A re-run that queued before its attempt's workflow_run said who re-ran it (Router.reroute):
+  // drain reads its starters again until they're known.
+  startersPending?: boolean;
   // The job's name and workflow once its `queued` webhook said which job it is, for the queue its
   // machines show (tellWaiting).
   name?: string;
@@ -435,13 +439,26 @@ export class Router extends DurableObject<Env> {
     const busy = new Map<string, string[]>();
     const waitingOn = new Map<string, QueueEntry[]>();
     let left = 0;
-    for (const entry of line) {
+    for (const waiting of line) {
+      const entry = waiting.startersPending ? await this.withStarters(waiting) : waiting;
       const wants = wantsKey(entry.job);
       let none = stuck.get(wants);
       if (none === undefined) {
         const pick = await this.pickMachine(entry.job, undefined, entry);
         if (typeof pick === "string") {
           if (!(await this.handOff(entry))) left++;
+          continue;
+        }
+        // A re-run whose starters are known that no machine's sharing takes won't be taken later
+        // either: it ends now, as reroute would have ended it.
+        if (
+          pick &&
+          "notShared" in pick &&
+          entry.runAttempt !== undefined &&
+          !entry.startersPending &&
+          (await this.leaveLine(entry))
+        ) {
+          await this.end(entry, "not_routable");
           continue;
         }
         none = !(pick && ("full" in pick || "rateLimited" in pick));
@@ -549,6 +566,39 @@ export class Router extends DurableObject<Env> {
     else await this.drain();
   }
 
+  // A re-run waiting for its attempt's starters (reroute) with them, once its workflow_run is
+  // recorded, kept for the next drain too. Unchanged while they're still unknown: no machine that
+  // takes only its owner's jobs takes it meanwhile, and the no-machine grace bounds the wait.
+  private async withStarters(entry: WaitingJob): Promise<WaitingJob> {
+    if (entry.runAttempt === undefined) return entry;
+    const { known, ...starters } = await attemptStarters(
+      createDb(this.env.DB),
+      { repositoryId: entry.repositoryId, runId: entry.runId, runAttempt: entry.runAttempt },
+      entry.job.startedBy,
+    );
+    if (!known) return entry;
+    // Read again under the lock: a claim or another drain may have changed it since.
+    return this.ctx.blockConcurrencyWhile(async () => {
+      const now = await this.ctx.storage.get<WaitingJob>(WAIT_KEY + entry.id);
+      const base = now ?? entry;
+      const { startersPending: _, ...rest } = base;
+      const updated: WaitingJob = { ...rest, job: { ...base.job, ...starters } };
+      if (now) await this.ctx.storage.put(WAIT_KEY + entry.id, updated);
+      return updated;
+    });
+  }
+
+  // Takes a queued waiting job out of line, under the lock. False when it already left (a machine
+  // took it, or it ended) or its `queued` webhook hasn't come.
+  private async leaveLine(entry: WaitingJob): Promise<boolean> {
+    if (entry.jobId === undefined) return false;
+    return this.ctx.blockConcurrencyWhile(async () => {
+      if (!(await this.ctx.storage.get(WAIT_KEY + entry.id))) return false;
+      await this.ctx.storage.delete(WAIT_KEY + entry.id);
+      return true;
+    });
+  }
+
   // Notes how long a queued waiting job has had no machine online that could take it, and ends it
   // once that's NO_MACHINE_GIVE_UP_MS, so it doesn't sit queued for 24 hours. A job whose machines
   // are only busy keeps waiting. True when the job ended.
@@ -565,11 +615,7 @@ export class Router extends DurableObject<Env> {
     }
     if (now - entry.noMachineSince < NO_MACHINE_GIVE_UP_MS) return false;
     // Read again under the lock: a machine may have taken it meanwhile.
-    const ended = await this.ctx.blockConcurrencyWhile(async () => {
-      if (!(await this.ctx.storage.get(WAIT_KEY + entry.id))) return false;
-      await this.ctx.storage.delete(WAIT_KEY + entry.id);
-      return true;
-    });
+    const ended = await this.leaveLine(entry);
     if (ended) await this.end(entry, "no_machine");
     return ended;
   }
@@ -853,8 +899,10 @@ export class Router extends DurableObject<Env> {
     if (reserved) return reserved;
     if (rateLimited) return { rateLimited: true };
     // A re-run whose machines are offline or paused could still be taken once one is back, so it
-    // waits in line (Router.reroute) instead of being refused like a re-run nothing fits.
-    if (rerun && pool.some((machine) => fitsLabels(machine, job.machine) && admits(machine, job)))
+    // waits in line (Router.reroute) instead of being refused like a re-run nothing fits. So does
+    // one whose re-runner isn't known yet, when a machine that fits would take it if it's the owner.
+    const could = rerun?.startersPending ? mayAdmit : admits;
+    if (rerun && pool.some((machine) => fitsLabels(machine, job.machine) && could(machine, job)))
       return { offline: true };
     return unavailableMachines(pool, job.machine, job);
   }
@@ -1093,8 +1141,9 @@ export class Router extends DurableObject<Env> {
    * done or expired. When that pick was this run's (earlierPick), the route is made again under the
    * same id for this job, with that pick's inputs and this attempt's starters: the machine it ran
    * on if that one is free, else any machine the relay's labels and sharing allow. Returns the
-   * claimed route, "waiting" when every machine that fits is full, offline or paused (it waits in
-   * line like a new pick, and drain ends it if none comes back), or null when the label wasn't this
+   * claimed route, "waiting" when every machine that fits is full, offline or paused, or would take
+   * the job once this attempt's workflow_run says its owner re-ran it (it waits in line like a new
+   * pick, and drain ends it if none comes back), or null when the label wasn't this
    * run's pick, no machine's labels and sharing allow the job, or another job of this attempt
    * already did.
    */
@@ -1116,17 +1165,19 @@ export class Router extends DurableObject<Env> {
       findRepo(db, installationId, fullName),
     ]);
     if (!pick || !repo) return null;
+    // Until this attempt's workflow_run arrives, nobody knows who re-ran it: only machines shared
+    // with anyone take the job then. One that would take it from its owner keeps it in line
+    // (pickMachine) until drain learns who it was, instead of refusing it (#661).
+    const { known, ...starters } = await attemptStarters(db, key, pick.startedBy);
     const rerun: Rerun = {
       routeId,
       jobId: queued.jobId,
       ...key,
       pickedAttempt: pick.runAttempt,
+      ...(!known && { startersPending: true }),
     };
     const stored = await this.ctx.storage.get<Route>(ROUTE_KEY + routeId);
     if (!mayReroute(stored, rerun)) return null;
-    // Until this attempt's workflow_run arrives, nobody started it: only machines shared with
-    // anyone can take the job then.
-    const starters = await runStartersForJobs(db, [key], new Map([[jobKey(key), pick]]), jobKey);
     const job: PickedJob = {
       workspaceId: queued.workspaceId,
       installationId,
@@ -1135,9 +1186,7 @@ export class Router extends DurableObject<Env> {
       runId: queued.runId,
       private: repo.private,
       ...pick.inputs,
-      startedBy: null,
-      triggeredBy: null,
-      ...starters.get(jobKey(key)),
+      ...starters,
     };
     const answered = await this.pickMachine(job, rerun);
     // Every machine that fits is full, or offline or paused (one may be back soon: a deploy drops
@@ -1156,6 +1205,7 @@ export class Router extends DurableObject<Env> {
         jobId: queued.jobId,
         runAttempt,
         job,
+        ...(!known && { startersPending: true }),
       };
       // Checked again under the lock: another job of this attempt may have taken the route since.
       const queuedNow = await this.ctx.blockConcurrencyWhile(async () => {

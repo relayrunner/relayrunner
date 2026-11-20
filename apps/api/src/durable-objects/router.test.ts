@@ -602,7 +602,8 @@ describe("Router: a machine that goes offline after the pick", () => {
   });
 
   // A run whose first attempt had two relays, each routing its own job to its own label.
-  async function twoPicks(secondMachine = "self-hosted") {
+  // `recorded`: whether the re-run attempt's workflow_run (who re-ran it) has come yet.
+  async function twoPicks(secondMachine = "self-hosted", recorded = true) {
     const now = Date.now();
     const decision = (pickJobId: string, runner: string, machine: string) =>
       `insert into route_decision (workspace_id, repository_id, run_id, run_attempt, pick_job_id, step, runner, skipped, not_in_order, machine, github, hosted, started_by_id, started_by_login, triggered_by_id, triggered_by_login, created_at) values ('w1', 1, 5, 1, '${pickJobId}', 'machine', '${runner}', '[]', '[]', '["${machine}"]', '[]', '{}', 500, 'leonel', 500, 'leonel', ?1)`;
@@ -610,10 +611,19 @@ describe("Router: a machine that goes offline after the pick", () => {
       "insert into github_repository (id, installation_id, full_name, private, github_state_at, created_at, updated_at) values (1, 7, 'leonel/cabal', 1, ?1, ?1, ?1)",
       decision("relay-a", "rr-aaaaaaaaaaaa", "self-hosted"),
       decision("relay-b", "rr-bbbbbbbbbbbb", secondMachine),
-      "insert into workflow_run (id, run_attempt, installation_id, repository_id, repository_full_name, event, started_by_id, started_by_login, triggered_by_id, triggered_by_login, head_sha, status, github_updated_at, created_at, updated_at) values (5, 2, 7, 1, 'leonel/cabal', 'push', 500, 'leonel', 500, 'leonel', 'abc', 'in_progress', ?1, ?1, ?1)",
     ])
       await env.DB.prepare(sql).bind(now).run();
+    if (recorded) await rerunBy(owner);
   }
+  // The re-run attempt's workflow_run: the run's owner started it, `by` re-ran it.
+  async function rerunBy(by: { id: number; login: string }) {
+    await env.DB.prepare(
+      "insert into workflow_run (id, run_attempt, installation_id, repository_id, repository_full_name, event, started_by_id, started_by_login, triggered_by_id, triggered_by_login, head_sha, status, github_updated_at, created_at, updated_at) values (5, 2, 7, 1, 'leonel/cabal', 'push', 500, 'leonel', ?2, ?3, 'abc', 'in_progress', ?1, ?1, ?1)",
+    )
+      .bind(Date.now(), by.id, by.login)
+      .run();
+  }
+  const someoneElse = { id: 600, login: "sofia" };
   const rerun = {
     ...queued(5, 77),
     runAttempt: 2,
@@ -660,6 +670,75 @@ describe("Router: a machine that goes offline after the pick", () => {
     expect(run).toHaveBeenCalledOnce();
     expect(run.mock.calls[0]![0].route).toMatchObject({ id: "bbbbbbbbbbbb", jobId: 77 });
     expect(endJob).not.toHaveBeenCalled();
+  });
+
+  test("a re-run queued before its attempt's workflow_run waits for it, then goes to the owner's machine", async () => {
+    await twoPicks("self-hosted", false);
+    expect(await router.reroute("bbbbbbbbbbbb", rerun)).toBe("waiting");
+    expect(state.data.get("wait:bbbbbbbbbbbb")).toMatchObject({
+      jobId: 77,
+      runAttempt: 2,
+      startersPending: true,
+    });
+    // Still unknown: the only_me machine can't take it yet, and it isn't ended.
+    await router.alarm();
+    expect(run).not.toHaveBeenCalled();
+    expect(endJob).not.toHaveBeenCalled();
+    await rerunBy(owner);
+    await router.alarm();
+    expect(run).toHaveBeenCalledOnce();
+    expect(run.mock.calls[0]![0].route).toMatchObject({
+      id: "bbbbbbbbbbbb",
+      machineId: "m1",
+      jobId: 77,
+      runAttempt: 2,
+    });
+    expect(state.data.has("wait:bbbbbbbbbbbb")).toBe(false);
+    expect(endJob).not.toHaveBeenCalled();
+  });
+
+  test("a re-run someone else started is refused by an only_me machine", async () => {
+    await twoPicks("self-hosted", false);
+    await rerunBy(someoneElse);
+    expect(await router.reroute("bbbbbbbbbbbb", rerun)).toBeNull();
+    expect(state.data.has("wait:bbbbbbbbbbbb")).toBe(false);
+  });
+
+  test("a waiting re-run ends once its workflow_run says someone else started it", async () => {
+    await twoPicks("self-hosted", false);
+    expect(await router.reroute("bbbbbbbbbbbb", rerun)).toBe("waiting");
+    await rerunBy(someoneElse);
+    await router.alarm();
+    expect(run).not.toHaveBeenCalled();
+    expect(endJob).toHaveBeenCalledWith(
+      expect.objectContaining({ routeId: "bbbbbbbbbbbb", jobId: 77, reason: "not_routable" }),
+    );
+    expect(state.data.has("wait:bbbbbbbbbbbb")).toBe(false);
+  });
+
+  test("a re-run whose workflow_run never comes ends after 5 minutes", async () => {
+    vi.useFakeTimers({ toFake: ["Date"] });
+    try {
+      await twoPicks("self-hosted", false);
+      expect(await router.reroute("bbbbbbbbbbbb", rerun)).toBe("waiting");
+      await router.alarm();
+      vi.advanceTimersByTime(4 * 60_000);
+      await router.alarm();
+      expect(endJob).not.toHaveBeenCalled();
+      vi.advanceTimersByTime(60_000);
+      await router.alarm();
+      expect(endJob).toHaveBeenCalledWith(
+        expect.objectContaining({ routeId: "bbbbbbbbbbbb", jobId: 77, reason: "no_machine" }),
+      );
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  test("a re-run no machine's labels fit is refused before its workflow_run comes too", async () => {
+    await twoPicks("gpu", false);
+    expect(await router.reroute("bbbbbbbbbbbb", rerun)).toBeNull();
+    expect(state.data.has("wait:bbbbbbbbbbbb")).toBe(false);
   });
 
   test("a re-run no machine's labels fit, or on a label no pick of the run answered, is refused", async () => {

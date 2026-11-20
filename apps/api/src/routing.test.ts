@@ -9,6 +9,7 @@ import type { AccountUsage } from "./actions-billing.ts";
 import { describe, expect, test, vi } from "vitest";
 import {
   admits,
+  mayAdmit,
   canClaim,
   mayReroute,
   chooseAndHold,
@@ -1128,6 +1129,16 @@ describe("machine sharing (#242)", () => {
     expect(admits(mine, by(null))).toBe(false);
     // An owner with no GitHub account matches nobody either.
     expect(admits({ sharing: "only_me", ownerGithubId: null }, by(atticus))).toBe(false);
+  });
+
+  test("a re-run whose re-runner isn't known yet may be the owner's", () => {
+    expect(mayAdmit(mine, by(atticus, null))).toBe(true);
+    expect(mayAdmit(mine, by(null))).toBe(true);
+    // A starter already known to be someone else still isn't the owner's.
+    expect(mayAdmit(mine, by(zach, null))).toBe(false);
+    expect(mayAdmit(mine, by(atticus, zach))).toBe(false);
+    expect(mayAdmit({ sharing: "only_me", ownerGithubId: null }, by(atticus, null))).toBe(false);
+    expect(mayAdmit(shared, by(zach))).toBe(true);
   });
 
   test("anyone takes every job, bots and schedules included, as before sharing", () => {
