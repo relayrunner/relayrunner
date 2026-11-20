@@ -4,7 +4,7 @@ The container that reads a workspace's Blacksmith usage with Blacksmith's own CL
 
 Blacksmith has no public usage API. Its CLI does have `blacksmith usage` and `blacksmith jobs list`, and an organization token (`blacksmith org-token create`, made by an org admin on their own machine) lets it read the whole organization. A workspace connects that token in Settings › Providers or with `relayrunner blacksmith connect`. The API stores it encrypted, like every provider token.
 
-The API's `BlacksmithCli` Durable Object (one per workspace) starts this container (a Cloudflare Container, `lite`, with internet access), POSTs one request to `/run`, and stops the container once it answers. For each request the server:
+The API's `BlacksmithSyncer` Durable Object (one per workspace) starts this container (a Cloudflare Container, `lite`, with internet access), POSTs one request to `/run`, and stops the container once it answers. For each request the server:
 
 1. Makes a fresh home directory.
 2. Logs in with `blacksmith auth login --api-token - --non-interactive --organization <org>`, with the token on stdin.

@@ -221,7 +221,7 @@ describe("connecting a provider", () => {
 });
 
 describe("Blacksmith", () => {
-  /** A BLACKSMITH_CLI binding that answers from the fixtures, and refuses any token but one. */
+  /** A BLACKSMITH_SYNCER binding that answers from the fixtures, and refuses any token but one. */
   function withBlacksmith() {
     const requests: CliRequest[] = [];
     const ran: string[] = [];
@@ -242,7 +242,7 @@ describe("Blacksmith", () => {
       }),
     };
     return {
-      env: { ...env, BLACKSMITH_CLI: namespace as unknown as Env["BLACKSMITH_CLI"] },
+      env: { ...env, BLACKSMITH_SYNCER: namespace as unknown as Env["BLACKSMITH_SYNCER"] },
       requests,
       ran,
     };

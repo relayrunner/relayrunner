@@ -19,7 +19,7 @@ const RUN_TIMEOUT_MS = 10 * 60_000;
 // (packages/blacksmith-cli) for the workspace's Blacksmith connection: a check of the token, or the
 // hourly usage read. Runs go one at a time, so a test of the token never stops the container under
 // an hourly sync. The container stops after each run; the token only travels in the request.
-export class BlacksmithCli extends DurableObject<Env> {
+export class BlacksmithSyncer extends DurableObject<Env> {
   private queue: Promise<unknown> = Promise.resolve();
 
   run(request: CliRequest): Promise<CliResponse> {
@@ -87,8 +87,8 @@ function log(request: CliRequest, startedAt: number, fields: Record<string, unkn
 }
 
 /** Runs the Blacksmith CLI for a workspace; undefined where the binding isn't set up (tests). */
-export function blacksmithCli(env: Env, workspaceId: string) {
-  const namespace = env.BLACKSMITH_CLI;
+export function blacksmithSyncer(env: Env, workspaceId: string) {
+  const namespace = env.BLACKSMITH_SYNCER;
   if (!namespace) return undefined;
   return (request: CliRequest) => namespace.get(namespace.idFromName(workspaceId)).run(request);
 }

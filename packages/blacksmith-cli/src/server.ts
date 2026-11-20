@@ -1,4 +1,4 @@
-// The Blacksmith container's server (Dockerfile). The API's BlacksmithCli Durable Object starts the
+// The Blacksmith container's server (Dockerfile). The API's BlacksmithSyncer Durable Object starts the
 // container, POSTs one request to /run, and stops the container once it answers. Each request logs
 // in to Blacksmith's CLI with the workspace's org token in a fresh home directory, runs the read
 // commands in commands.ts, and deletes that directory, so no credentials outlive the request.

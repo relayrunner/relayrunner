@@ -1,4 +1,4 @@
-// What the API's BlacksmithCli Durable Object and the Blacksmith container (src/server.ts) say to
+// What the API's BlacksmithSyncer Durable Object and the Blacksmith container (src/server.ts) say to
 // each other. The Durable Object POSTs one request to /run and the container answers with
 // Blacksmith's own JSON, unparsed: the API's adapter (apps/api/src/provider-billing/blacksmith.ts)
 // reads it. The container only ever runs the read commands in src/commands.ts, whatever it's sent.

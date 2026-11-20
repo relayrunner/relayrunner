@@ -966,7 +966,7 @@ describe("choosing a machine's workspaces (#363)", () => {
       ...env,
       PROVIDER_TOKEN_KEY: { get: async () => key },
       INSTALLATION_TASKS: { sendBatch: async () => {} },
-      BLACKSMITH_CLI: {
+      BLACKSMITH_SYNCER: {
         idFromName: (name: string) => name,
         get: (workspaceId: string) => ({
           run: async (request: { organization: string }) => {

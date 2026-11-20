@@ -11,7 +11,7 @@ import { createDb, type Db, schema } from "./db/index.ts";
 import type { Env } from "./env.ts";
 import { enqueueInstallationTasks } from "./installation-tasks.ts";
 import { purgeBefore } from "./job-timings.ts";
-import { blacksmithCli } from "./durable-objects/blacksmith-cli.ts";
+import { blacksmithSyncer } from "./durable-objects/blacksmith-syncer.ts";
 import {
   type AdapterContext,
   ADAPTERS,
@@ -85,7 +85,7 @@ export function adapterTools(
   workspaceId: string,
   fetcher: typeof fetch = fetch,
 ): Pick<AdapterContext, "fetch" | "cli"> {
-  return { fetch: fetcher, cli: blacksmithCli(env, workspaceId) };
+  return { fetch: fetcher, cli: blacksmithSyncer(env, workspaceId) };
 }
 
 /** Sync one connection. Never throws for a provider's answer; records it on the row instead. */

@@ -1,4 +1,4 @@
-# The Blacksmith container (src/server.ts). The API's BlacksmithCli Durable Object starts it to read
+# The Blacksmith container (src/server.ts). The API's BlacksmithSyncer Durable Object starts it to read
 # a workspace's Blacksmith usage with the org token the workspace connected. It needs internet
 # access to reach Blacksmith's API.
 #
