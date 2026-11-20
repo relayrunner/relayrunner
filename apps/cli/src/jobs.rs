@@ -6,10 +6,9 @@
 use crate::api::{self, Reply};
 use crate::credentials::Credentials;
 use crate::error::Error;
-use crate::history::{ago, duration};
+use crate::history::{ago, duration, now_ms};
 use crate::share;
 use serde_json::{Value, json};
-use std::time::{SystemTime, UNIX_EPOCH};
 
 const USAGE: &str = "Usage: relayrunner jobs [--json] [--limit N] [--before MS] [--repo OWNER/NAME] \
 [--workflow NAME] [--result succeeded|failed|canceled] [--since MS] | relayrunner jobs <id> [--json]";
@@ -292,12 +291,6 @@ fn mark(conclusion: Option<&str>) -> &'static str {
         Some("cancelled" | "skipped") => "–",
         _ => "•",
     }
-}
-
-fn now_ms() -> u64 {
-    SystemTime::now()
-        .duration_since(UNIX_EPOCH)
-        .map_or(0, |d| d.as_millis() as u64)
 }
 
 #[cfg(test)]

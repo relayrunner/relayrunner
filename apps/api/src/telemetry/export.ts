@@ -8,7 +8,8 @@ import { and, eq } from "drizzle-orm";
 import { createDb, type Db, schema } from "../db/index.ts";
 import type { Env } from "../env.ts";
 import { environmentFor, environmentProvider, nameMachines } from "../job-times.ts";
-import { errorMessage, retryDelaySeconds } from "../webhook-queue.ts";
+import { retryDelaySeconds } from "../webhook-queue.ts";
+import { errorMessage } from "../errors.ts";
 import { queueJobLog } from "./logs.ts";
 import {
   type Exporting,

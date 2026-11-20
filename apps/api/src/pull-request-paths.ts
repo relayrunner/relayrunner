@@ -19,7 +19,7 @@ import {
 } from "./github-app.ts";
 import { DAY_MS } from "./job-timings.ts";
 import { liveDays } from "./signals.ts";
-import { errorMessage } from "./webhook-queue.ts";
+import { errorMessage } from "./errors.ts";
 
 const run = schema.workflowRun;
 const paths = schema.pullRequestPaths;

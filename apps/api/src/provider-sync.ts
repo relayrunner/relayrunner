@@ -18,7 +18,7 @@ import {
   type UsageWindow,
 } from "./provider-billing/index.ts";
 import { openToken } from "./provider-tokens.ts";
-import { errorMessage } from "./webhook-queue.ts";
+import { errorMessage } from "./errors.ts";
 
 const HOUR_MS = 3_600_000;
 const DAY_MS = 24 * HOUR_MS;

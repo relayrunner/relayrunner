@@ -1,5 +1,5 @@
-// Comparing relayrunner CLI versions: the CLI uses it to tell someone at the terminal about a
-// newer release, and the API to mark machines running an outdated CLI.
+// Comparing relayrunner CLI versions: the API uses it to mark machines running an outdated CLI.
+// The Rust CLI has its own comparison for its update notice (apps/cli/src/install.rs).
 
 /** Whether `candidate` is a newer release than `current`. Only plain x.y.z releases count, so a prerelease never reads as newer. */
 export function isNewerVersion(candidate: string, current: string) {

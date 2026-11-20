@@ -2,8 +2,9 @@
 //! most once a day and keeps the answer in <home>/update-check.json, so most runs read a file and
 //! never touch the network. Any failure means no notice.
 
+use crate::history::now_ms;
 use serde::{Deserialize, Serialize};
-use std::time::{Duration, SystemTime, UNIX_EPOCH};
+use std::time::Duration;
 
 pub const CHECK_INTERVAL: Duration = Duration::from_secs(24 * 60 * 60);
 const REGISTRY_URL: &str = "https://registry.npmjs.org/relayrunner/latest";
@@ -13,12 +14,6 @@ const REGISTRY_URL: &str = "https://registry.npmjs.org/relayrunner/latest";
 struct Cache {
     checked_at: u64,
     latest: String,
-}
-
-fn now_ms() -> u64 {
-    SystemTime::now()
-        .duration_since(UNIX_EPOCH)
-        .map_or(0, |d| d.as_millis() as u64)
 }
 
 /// The newer version npm has, or None when this CLI is current or the check couldn't tell.

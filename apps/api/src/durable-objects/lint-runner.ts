@@ -26,7 +26,7 @@ import {
   type LintWork,
 } from "../lint-check.ts";
 import { loadRepoConfig } from "../repo-config.ts";
-import { errorMessage } from "../webhook-queue.ts";
+import { errorMessage } from "../errors.ts";
 
 // ½ vCPU, 4 GiB, like the container runners: the smallest size the durable_object scheduling
 // policy offers that fits Node and the linters.

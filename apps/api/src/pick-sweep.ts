@@ -4,7 +4,7 @@ import type { Env } from "./env.ts";
 import { appInstallationToken, deleteRunner, listRunners, type RunnerScope } from "./github-app.ts";
 import { enqueueInstallationTasks } from "./installation-tasks.ts";
 import { pickJobIdFromRunnerName } from "./pick-attempts.ts";
-import { errorMessage } from "./webhook-queue.ts";
+import { errorMessage } from "./errors.ts";
 
 // A relay queued this long with no taker is rescued; one older than a day GitHub has given up on.
 export const STUCK_AFTER_MS = 5 * 60_000;

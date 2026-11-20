@@ -15,7 +15,7 @@ import { enqueueInstallationTasks } from "./installation-tasks.ts";
 import { ADAPTERS, ProviderAuthError } from "./provider-billing/index.ts";
 import { byConnection, NO_FAILURE, syncTask } from "./provider-sync.ts";
 import { openToken, sealToken, tokenHint } from "./provider-tokens.ts";
-import { errorMessage } from "./webhook-queue.ts";
+import { errorMessage } from "./errors.ts";
 
 const DAY_MS = 86_400_000;
 // The connection list sums this much recent usage.

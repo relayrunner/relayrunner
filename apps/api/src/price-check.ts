@@ -17,7 +17,7 @@ import { createDb, schema } from "./db/index.ts";
 import { emailOperators } from "./email.ts";
 import type { Env } from "./env.ts";
 import { readPriceBook } from "./prices.ts";
-import { errorMessage } from "./webhook-queue.ts";
+import { errorMessage } from "./errors.ts";
 
 const FETCH_TIMEOUT_MS = 15_000;
 

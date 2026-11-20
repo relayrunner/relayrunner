@@ -40,6 +40,7 @@ import { routingLabelFromLabels } from "./github-runners.ts";
 import { routeIdFromLabels } from "./routing.ts";
 import { exportJob, exportRun } from "./telemetry/export.ts";
 import { traced } from "./tracing.ts";
+import { errorMessage } from "./errors.ts";
 
 const BASE_RETRY_DELAY_SECONDS = 30;
 const MAX_RETRY_DELAY_SECONDS = 15 * 60;
@@ -149,15 +150,6 @@ function webhookAttributes(msg: Message<WebhookMessage>) {
     "queue.attempts": msg.attempts,
     "webhook.lag_ms": body.receivedAt ? Date.now() - Date.parse(body.receivedAt) : undefined,
   };
-}
-
-// An error's message, with its cause's when it has one (a GitHubRateLimitError keeps GitHub's
-// answer there).
-export function errorMessage(error: unknown): string {
-  if (!(error instanceof Error)) return String(error);
-  return error.cause instanceof Error
-    ? `${error.message} (${errorMessage(error.cause)})`
-    : error.message;
 }
 
 // GitHub matches runs-on labels case-insensitively, so `RelayRunner` counts too.

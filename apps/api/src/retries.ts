@@ -27,7 +27,7 @@ import { actor } from "./route-decisions.ts";
 import { routeIdFromLabels } from "./routing.ts";
 import { strandedJob } from "./stranded-jobs.ts";
 import { DAY_MS, failedStep } from "./job-timings.ts";
-import { errorMessage } from "./webhook-queue.ts";
+import { errorMessage } from "./errors.ts";
 
 type WorkflowRunMessage = Extract<WebhookMessage, { event: "workflow_run" }>;
 

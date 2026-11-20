@@ -18,7 +18,7 @@ import { createDb } from "./db/index.ts";
 import { syncPullRequestPaths } from "./pull-request-paths.ts";
 import { rollUpSignals } from "./signals.ts";
 import { classifyJobTypes } from "./ai/job-type.ts";
-import { errorMessage } from "./webhook-queue.ts";
+import { errorMessage } from "./errors.ts";
 
 export const INSTALLATION_TASK_QUEUE = "relayrunner-installation-tasks";
 

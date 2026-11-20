@@ -31,7 +31,7 @@ import {
 } from "../machines.ts";
 import { placeNow, ROUTE_TTL_MS, takeHold, type MachineHold, type Route } from "../routing.ts";
 import { jobStillQueued, LOST_GRACE_MS } from "../stranded-jobs.ts";
-import { errorMessage } from "../webhook-queue.ts";
+import { errorMessage } from "../errors.ts";
 import { annotate, traced } from "../tracing.ts";
 import {
   CLOSE,

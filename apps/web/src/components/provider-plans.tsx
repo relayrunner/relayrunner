@@ -8,10 +8,6 @@ const dayText = (day: string) =>
     timeZone: "UTC",
   });
 
-/** "$0.004/min", with as many digits as the price needs; "—" when unknown. */
-export const perMinuteText = (usd: number | null) =>
-  usd === null ? "—" : `$${Number(usd.toPrecision(3))}/min`;
-
 const feeText = ({ feeUsd }: ProviderPlan) =>
   feeUsd === null ? "Contact sales" : feeUsd ? `$${feeUsd.toLocaleString("en-US")}` : "No fee";
 

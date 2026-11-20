@@ -7,7 +7,7 @@ import { type Db, schema } from "../db/index.ts";
 import type { Env } from "../env.ts";
 import { DAY_MS } from "../time.ts";
 import { openToken } from "../provider-tokens.ts";
-import { errorMessage } from "../webhook-queue.ts";
+import { errorMessage } from "../errors.ts";
 
 // The associated data the headers are sealed with (src/provider-tokens.ts), so they can't be moved
 // onto a provider connection or another workspace.

@@ -37,7 +37,7 @@ import {
 import { earlierPick, jobKey } from "../route-decisions.ts";
 import type { RetryPick } from "../retries.ts";
 import { MAX_REQUEUES, NO_MACHINE_GIVE_UP_MS, type StrandedReason } from "../stranded-jobs.ts";
-import { errorMessage } from "../webhook-queue.ts";
+import { errorMessage } from "../errors.ts";
 import { traced } from "../tracing.ts";
 import {
   fetchGroupAccess,

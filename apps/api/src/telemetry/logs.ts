@@ -14,7 +14,8 @@ import { appInstallationToken, jobLog, type RateLimitBucket, rateLimits } from "
 import { FAILED_CONCLUSIONS } from "../job-counts.ts";
 import { Recent } from "../recent.ts";
 import { jobUrl } from "../run-job.ts";
-import { errorMessage, retryDelaySeconds } from "../webhook-queue.ts";
+import { retryDelaySeconds } from "../webhook-queue.ts";
+import { errorMessage } from "../errors.ts";
 import { ndjson, objectKey, openCredentials, putObject } from "./bucket.ts";
 import { chunks, type Job, lines, type LogRecord, logRecords, SEVERITIES } from "./log-lines.ts";
 import {

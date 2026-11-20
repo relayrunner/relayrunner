@@ -15,7 +15,7 @@ import { createDb, schema } from "./db/index.ts";
 import type { Env } from "./env.ts";
 import { MISSED_AFTER_MS } from "./job-times.ts";
 import type { Unhealthy } from "./routing.ts";
-import { errorMessage } from "./webhook-queue.ts";
+import { errorMessage } from "./errors.ts";
 
 // This many jobs in a row not picked up trips a runner type.
 export const TRIP_AFTER = 3;

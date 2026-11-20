@@ -10,7 +10,7 @@ import {
   type RunnerState,
 } from "../container-runner.ts";
 import type { Env } from "../env.ts";
-import { errorMessage } from "../webhook-queue.ts";
+import { errorMessage } from "../errors.ts";
 import type { PickWork } from "./pick-runner.ts";
 import {
   appInstallationToken,

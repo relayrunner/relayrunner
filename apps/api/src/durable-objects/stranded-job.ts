@@ -18,7 +18,7 @@ import {
   type StrandedReason,
 } from "../stranded-jobs.ts";
 import { traced } from "../tracing.ts";
-import { errorMessage } from "../webhook-queue.ts";
+import { errorMessage } from "../errors.ts";
 
 export interface StrandedWork {
   routeId: string;

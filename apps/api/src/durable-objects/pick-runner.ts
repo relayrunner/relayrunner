@@ -131,8 +131,10 @@ export class PickRunner extends DurableObject<Env> {
     let runnerId: number | undefined;
     let client: RunnerClient | undefined;
     try {
-      token = await appInstallationToken(this.env, work.installationId);
-      scope = await installationRunnerScope(createDb(this.env.DB), work.installationId, work.repo);
+      [token, scope] = await Promise.all([
+        appInstallationToken(this.env, work.installationId),
+        installationRunnerScope(createDb(this.env.DB), work.installationId, work.repo),
+      ]);
       // A replacement runner first makes sure its job still needs one.
       if (attempt > 1 && (await this.jobStatus(token, work)) !== "queued") {
         console.log(
@@ -410,17 +412,23 @@ async function pickRunner(
       runner: null,
       reason: `${NO_RUNNER}: RelayRunner couldn't read this job's repository and run.`,
     };
-  let context = await resolveTriggeredBy(token, parsed);
   const db = createDb(env.DB);
-  const [installation] = await db
-    .select({
-      workspaceId: schema.workspace.id,
-      suspendedAt: schema.githubInstallation.suspendedAt,
-    })
-    .from(schema.githubInstallation)
-    .innerJoin(schema.workspace, eq(schema.workspace.installationId, schema.githubInstallation.id))
-    .where(eq(schema.githubInstallation.id, installationId))
-    .limit(1);
+  // The GitHub lookup and the installation read don't depend on each other.
+  let [context, [installation]] = await Promise.all([
+    resolveTriggeredBy(token, parsed),
+    db
+      .select({
+        workspaceId: schema.workspace.id,
+        suspendedAt: schema.githubInstallation.suspendedAt,
+      })
+      .from(schema.githubInstallation)
+      .innerJoin(
+        schema.workspace,
+        eq(schema.workspace.installationId, schema.githubInstallation.id),
+      )
+      .where(eq(schema.githubInstallation.id, installationId))
+      .limit(1),
+  ]);
   if (!installation)
     return {
       runner: null,

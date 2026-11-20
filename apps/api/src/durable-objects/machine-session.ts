@@ -17,9 +17,8 @@ export const MACHINE_ID_HEADER = "x-relayrunner-machine-id";
 // ...and where the connection came from (a RequestOrigin as JSON), which request.cf can't carry.
 export const MACHINE_ORIGIN_HEADER = "x-relayrunner-machine-origin";
 
-// The machine sends `status` at least this often (the CLI's heartbeat is 30 seconds)...
-export const HEARTBEAT_INTERVAL_MS = 30_000;
-// ...and the gateway closes a socket that has been silent for this long.
+// The machine sends `status` at least every 30 seconds (the CLI's heartbeat), and the gateway
+// closes a socket that has been silent for this long.
 export const HEARTBEAT_TIMEOUT_MS = 90_000;
 
 // WebSocket close codes the gateway uses. The CLI reconnects with backoff after any other code.

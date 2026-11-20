@@ -10,7 +10,7 @@ import type { schema } from "../db/index.ts";
 import type { Env } from "../env.ts";
 import { openToken } from "../provider-tokens.ts";
 import { jobUrl } from "../run-job.ts";
-import { errorMessage } from "../webhook-queue.ts";
+import { errorMessage } from "../errors.ts";
 import type { Job, LogRecord } from "./log-lines.ts";
 import { gzip, resultOf, type SendResult } from "./otlp.ts";
 import type { Repository } from "./spans.ts";
