@@ -11,7 +11,8 @@ export function ExportStatus({
   waiting,
 }: {
   status: Status;
-  on: boolean;
+  // What it says while sending ("Sending traces."), or null when nothing is on.
+  on: string | null;
   // What it says when off, after it last sent ("Last sent"), and before it has.
   off: string;
   sent: string;
@@ -30,7 +31,7 @@ export function ExportStatus({
       ) : (
         <p className="flex items-center gap-1 text-muted-foreground">
           <CheckIcon aria-hidden className="size-4 text-go" />
-          {lastSentAt ? `On. ${sent} ${timeAgo(lastSentAt)}.` : `On. ${waiting}`}
+          {on} {lastSentAt ? `${sent} ${timeAgo(lastSentAt)}.` : waiting}
         </p>
       )}
       {logs !== "off" && logsSkipped && (

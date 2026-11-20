@@ -1,5 +1,6 @@
 import { type FormEvent, useState } from "react";
 import { ExportStatus } from "@/components/export-status";
+import { SignalRow } from "@/components/signal-row";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { Field } from "@/components/ui/field";
@@ -16,6 +17,7 @@ import {
   BUCKET_PRESETS,
   type LogBucket,
   type LogChoice,
+  LOGS_OF,
   removeLogBucket,
   saveLogBucket,
   testLogBucket,
@@ -46,7 +48,8 @@ export function LogBucketSection({
     <div className="grid gap-2">
       <h2 className="text-base font-medium">Log archive</h2>
       <p className="text-sm text-muted-foreground">
-        Keep job logs in your own bucket: one gzipped NDJSON file per job, at{" "}
+        Job logs only, kept in your own S3-compatible bucket, with or without the endpoint above.
+        One gzipped NDJSON file per job, at{" "}
         <code className="text-xs">owner/repo/yyyy/mm/dd/run-attempt/job.ndjson.gz</code>.
       </p>
       <BucketStatus bucket={bucket} />
@@ -68,7 +71,7 @@ function BucketStatus({ bucket }: { bucket: LogBucket }) {
   return (
     <ExportStatus
       status={bucket}
-      on={bucket.logs !== "off"}
+      on={bucket.logs === "off" ? null : `Archiving ${LOGS_OF[bucket.logs]}.`}
       off="Off. Logs aren't being archived."
       sent="Last written"
       waiting="Waiting for the next job."
@@ -248,22 +251,23 @@ function BucketForm({
             </p>
           </div>
 
-          <Field
-            label="Archive"
-            hint="When a job finishes, its log goes from GitHub to the bucket, up to 20 MB. No other copy is kept."
-            className="max-w-xs"
-          >
-            <Select value={logs} onValueChange={(value) => setLogs(value as LogChoice)}>
-              <SelectTrigger className="w-48">
-                <SelectValue />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="off">Nothing</SelectItem>
-                <SelectItem value="failed">Failed jobs</SelectItem>
-                <SelectItem value="all">Every job</SelectItem>
-              </SelectContent>
-            </Select>
-          </Field>
+          <div className="border-t pt-4">
+            <SignalRow
+              label="Job logs"
+              description="One file per job, when it finishes. Up to 20 MB a job, and no other copy is kept."
+            >
+              <Select value={logs} onValueChange={(value) => setLogs(value as LogChoice)}>
+                <SelectTrigger aria-label="Job logs" className="w-40">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="off">Don't archive</SelectItem>
+                  <SelectItem value="failed">Failed jobs</SelectItem>
+                  <SelectItem value="all">Every job</SelectItem>
+                </SelectContent>
+              </Select>
+            </SignalRow>
+          </div>
 
           <div className="flex flex-wrap gap-2">
             <Button type="submit" disabled={pending || !endpoint.trim() || !name.trim()}>

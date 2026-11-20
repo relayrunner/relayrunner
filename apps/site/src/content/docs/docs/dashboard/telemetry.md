@@ -10,9 +10,9 @@ Every job in your connected repos is included, whichever runner took it. You can
 ## Set up
 
 1. Open **Settings → Telemetry**. Owners and admins can change it.
-2. Pick where to send traces, or choose **Other** and paste any endpoint that accepts OTLP over HTTP with JSON. Traces go to the endpoint's `/v1/traces`.
+2. Under **OpenTelemetry endpoint**, pick where to send traces, or choose **Other** and paste any endpoint that accepts OTLP over HTTP with JSON. Traces go to the endpoint's `/v1/traces`.
 3. Add the headers your tool wants, usually an API key. Values are stored encrypted and never shown again.
-4. Save, then click **Send test trace**. A trace named `RUN RelayRunner test` shows up in your tool.
+4. Under **What to send**, set **Traces** to **Every run**. Save, then click **Send test trace**. A trace named `RUN RelayRunner test` shows up in your tool.
 
 From then on, each job goes out when it finishes and each run when it completes. Pointing telemetry at another endpoint or changing its headers shows in **Activity**.
 
@@ -53,7 +53,7 @@ The resource carries `service.name` (`github-actions` unless you change it), `vc
 
 ## Job logs
 
-Under **Job logs**, choose **Failed jobs** or **Every job** to send logs too. They go to the same endpoint's `/v1/logs`, with the same headers. Each job's log goes out when the job finishes. Turning job logs on or off, or changing which jobs send them, shows in **Activity**.
+Under **What to send**, set **Job logs** to **Failed jobs** or **Every job** to send logs too. They go to the same endpoint's `/v1/logs`, with the same headers. Each job's log goes out when the job finishes. Turning job logs on or off, or changing which jobs send them, shows in **Activity**.
 
 - Each line is a log record with GitHub's timestamp. Lines that start with `##[error]` or `##[warning]` get that severity.
 - Each record carries the trace and span ids of its step, so a tool that shows traces can show a step's lines with it. `relayrunner.step.number` and `relayrunner.step.name` name the step.
@@ -71,7 +71,7 @@ Under **Log archive**, job logs go to a bucket you own: Amazon S3, Cloudflare R2
 1. Pick the service, then enter its endpoint, the bucket's name and its region (`auto` for R2 and Google Cloud Storage).
 2. Optionally, enter a folder to put the logs under, like `github/`.
 3. Enter an access key that can write objects to the bucket. For Google Cloud Storage, use an HMAC key. The key is stored encrypted and never shown again.
-4. Choose **Failed jobs** or **Every job**, save, then click **Write test file**. A file named `relayrunner-test.ndjson.gz` shows up in the folder.
+4. Set **Job logs** to **Failed jobs** or **Every job**, save, then click **Write test file**. A file named `relayrunner-test.ndjson.gz` shows up in the folder.
 
 Each job's log becomes one gzipped [NDJSON](https://github.com/ndjson/ndjson-spec) file at `{folder}{owner}/{repo}/{yyyy}/{mm}/{dd}/{run id}-{attempt}/{job id}.ndjson.gz`, dated by when the job finished. A job always lands at the same path, so a retry replaces the file instead of adding another.
 

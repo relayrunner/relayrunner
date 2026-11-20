@@ -4,6 +4,7 @@ import { type FormEvent, useState } from "react";
 import { ExportStatus } from "@/components/export-status";
 import { LogBucketSection } from "@/components/log-bucket";
 import { PageHeader } from "@/components/page-header";
+import { SignalRow } from "@/components/signal-row";
 import { DOCS_URL } from "@/components/site-footer";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
@@ -26,6 +27,7 @@ import {
   PRESETS,
   removeTelemetry,
   sampleLogBucket,
+  LOGS_OF,
   sampleTelemetry,
   saveTelemetry,
   type Telemetry,
@@ -65,33 +67,43 @@ function TelemetrySettingsPage() {
   return (
     <section>
       <PageHeader title="Telemetry">
-        Send each workflow run to your observability tool as a trace: the run, its jobs and their
-        steps, with where each job ran and how long it waited. You can send job logs too, each line
-        under its step. Both use the OpenTelemetry format, so Honeycomb, Grafana, Axiom or your own
-        Collector can read them. You can also keep job logs in your own S3-compatible bucket.{" "}
+        Send traces and job logs to an OpenTelemetry endpoint, and keep job logs in your own bucket.{" "}
         <a
           href={`${DOCS_URL}/dashboard/telemetry`}
           className="inline-flex items-center gap-0.5 text-go hover:text-go-hover"
         >
-          What's in a trace
+          What gets sent
           <ArrowUpRightIcon aria-hidden className="size-3" />
         </a>
       </PageHeader>
-      <div className="grid max-w-3xl gap-4">
-        <Status telemetry={telemetry} />
-        {manager ? (
-          <ExportForm telemetry={telemetry} onChange={setTelemetry} />
-        ) : (
+      <div className="grid max-w-3xl gap-8">
+        <div className="grid gap-2">
+          <h2 className="text-base font-medium">OpenTelemetry endpoint</h2>
           <p className="text-sm text-muted-foreground">
-            {telemetry.configured
-              ? `Telemetry goes to ${telemetry.endpoint}. An owner or admin can change this.`
-              : "An owner or admin can set up telemetry."}
+            Honeycomb, Grafana, Axiom or your own Collector. Traces and job logs both go to this
+            endpoint, with the same headers.
           </p>
-        )}
+          <Status telemetry={telemetry} />
+          {manager ? (
+            <ExportForm telemetry={telemetry} onChange={setTelemetry} />
+          ) : (
+            <p className="text-sm text-muted-foreground">
+              {telemetry.configured
+                ? `Telemetry goes to ${telemetry.endpoint}. An owner or admin can change this.`
+                : "An owner or admin can set up telemetry."}
+            </p>
+          )}
+        </div>
         <LogBucketSection bucket={bucket} onChange={setBucket} manager={manager} />
       </div>
     </section>
   );
+}
+
+/** "Sending traces and failed jobs' logs.", or null when neither is on. */
+function sending({ enabled, logs }: Pick<Telemetry, "enabled" | "logs">) {
+  const parts = [enabled && "traces", logs !== "off" && LOGS_OF[logs]].filter(Boolean);
+  return parts.length ? `Sending ${parts.join(" and ")}.` : null;
 }
 
 function Status({ telemetry }: { telemetry: Telemetry }) {
@@ -99,8 +111,8 @@ function Status({ telemetry }: { telemetry: Telemetry }) {
   return (
     <ExportStatus
       status={telemetry}
-      on={telemetry.enabled || telemetry.logs !== "off"}
-      off="Off. Runs aren't being sent."
+      on={sending(telemetry)}
+      off="Off. Nothing is being sent."
       sent="Last sent"
       waiting="Waiting for the next run."
     />
@@ -283,7 +295,7 @@ function ExportForm({
 
           <Field
             label="Service name"
-            hint="How your tool names these traces' service."
+            hint="The service name your tool shows for these traces and logs."
             className="max-w-xs"
           >
             <Input
@@ -294,32 +306,41 @@ function ExportForm({
             />
           </Field>
 
-          <label className="flex cursor-pointer items-center gap-2">
-            <input
-              type="checkbox"
-              className="size-4 accent-[var(--color-go)]"
-              checked={enabled}
-              onChange={(e) => setEnabled(e.target.checked)}
-            />
-            Send a trace for every run
-          </label>
-
-          <Field
-            label="Job logs"
-            hint="When a job finishes, its log goes from GitHub to your tool, up to 20 MB. No copy is kept."
-            className="max-w-xs"
-          >
-            <Select value={logs} onValueChange={(value) => setLogs(value as LogChoice)}>
-              <SelectTrigger className="w-48">
-                <SelectValue />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="off">Don't send</SelectItem>
-                <SelectItem value="failed">Failed jobs</SelectItem>
-                <SelectItem value="all">Every job</SelectItem>
-              </SelectContent>
-            </Select>
-          </Field>
+          <div className="grid gap-4 border-t pt-4">
+            <h3 className="font-medium">What to send</h3>
+            <SignalRow
+              label="Traces"
+              description="Each run, its jobs and their steps, with where each job ran and how long it waited."
+            >
+              <Select
+                value={enabled ? "on" : "off"}
+                onValueChange={(value) => setEnabled(value === "on")}
+              >
+                <SelectTrigger aria-label="Traces" className="w-40">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="off">Don't send</SelectItem>
+                  <SelectItem value="on">Every run</SelectItem>
+                </SelectContent>
+              </Select>
+            </SignalRow>
+            <SignalRow
+              label="Job logs"
+              description="Each line under its step, when the job finishes. Up to 20 MB a job, and no copy is kept."
+            >
+              <Select value={logs} onValueChange={(value) => setLogs(value as LogChoice)}>
+                <SelectTrigger aria-label="Job logs" className="w-40">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="off">Don't send</SelectItem>
+                  <SelectItem value="failed">Failed jobs</SelectItem>
+                  <SelectItem value="all">Every job</SelectItem>
+                </SelectContent>
+              </Select>
+            </SignalRow>
+          </div>
 
           <div className="flex flex-wrap gap-2">
             <Button type="submit" disabled={pending || !endpoint.trim()}>

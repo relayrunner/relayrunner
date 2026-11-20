@@ -3,6 +3,12 @@ import { api } from "@/lib/api";
 
 export type { LogChoice };
 
+/** Whose logs a choice sends, for status lines: "failed jobs' logs". */
+export const LOGS_OF: Record<Exclude<LogChoice, "off">, string> = {
+  failed: "failed jobs' logs",
+  all: "every job's log",
+};
+
 /** An export's health, the same for the telemetry endpoint and the log bucket. */
 export type ExportStatus = {
   logs: LogChoice;
