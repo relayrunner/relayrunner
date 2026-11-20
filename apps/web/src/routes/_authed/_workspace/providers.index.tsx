@@ -72,10 +72,8 @@ function perOf(search: ProvidersSearch): ChartPer {
 // The range, and `?per=day` for daily bars over a range that offers weekly ones.
 const validateSearch = (search: Record<string, unknown>): ProvidersSearch => ({
   ...rangeParams.validateSearch(search),
-  per: optionParam(
-    search.per,
-    PER_OPTIONS.map((option) => option.value),
-  ),
+  // The default first: optionParam drops it, so the URL only ever holds `?per=day`.
+  per: optionParam(search.per, ["week", "day"] as const),
 });
 
 export const Route = createFileRoute("/_authed/_workspace/providers/")({
