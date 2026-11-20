@@ -20,7 +20,7 @@ import { findInstallation } from "./installations.ts";
 import { parseDate } from "./jobs.ts";
 import { loadPriceBook } from "./prices.ts";
 import { routeIdFromLabels } from "./routing.ts";
-import { DAY_MS } from "./time.ts";
+import { DAY_MS, JOB_TIMING_RETENTION_DAYS, RAW_RETENTION_DAYS } from "./time.ts";
 
 type WorkflowJobMessage = Extract<WebhookMessage, { event: "workflow_job" }>;
 
@@ -36,7 +36,7 @@ const {
   runnerWaitDay,
   signalDay,
 } = schema;
-export { DAY_MS };
+export { DAY_MS, JOB_TIMING_RETENTION_DAYS, RAW_RETENTION_DAYS };
 
 // GitHub bills a job by the minute, rounded up. A job that finishes in under this is the free-checks
 // opportunity: it pays for a whole minute however little of it ran.
@@ -296,13 +296,6 @@ export function failedStep(
   return step ? `${step.number}. ${step.name}` : null;
 }
 
-// How long finished jobs are counted for, as job_timing_daily rows by then. The report's longest
-// range is 90 days.
-export const JOB_TIMING_RETENTION_DAYS = 90;
-// How long a finished job keeps its own job_timing row before its day is rolled up into
-// job_timing_daily: job times' longest range (MAX_DAYS in src/job-times.ts) and a day to spare.
-// The Runs page and job times read single jobs, so they only look this far back.
-export const RAW_RETENTION_DAYS = 31;
 // Days rolled up per hourly run, so a backlog clears over a few runs instead of one long one.
 const ROLLUP_DAYS_PER_RUN = 10;
 // A job GitHub never said finished (a lost `completed` webhook) is dropped this long after it was

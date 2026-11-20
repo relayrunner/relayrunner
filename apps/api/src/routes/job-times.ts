@@ -8,6 +8,7 @@ import { withCatalog } from "../provider-catalog.ts";
 import { jobTypeTimes } from "../job-type-times.ts";
 import { performanceReport } from "../runs.ts";
 import { MAX_RANGE_MS, runnerReport } from "../runner-report.ts";
+import { Epoch } from "../report-window.ts";
 import { AppError } from "@relayrunner/errors";
 
 /** A report's `?days=N`, shared by the routes that take one. */
@@ -32,8 +33,6 @@ const TypesQuery = z.object({
   days: Days,
   utcOffset: UtcOffset,
 });
-
-const Epoch = z.coerce.number().int().min(0);
 
 const RunnerQuery = z
   .object({

@@ -7,14 +7,8 @@ import { StatTile } from "@/components/stat-tile";
 import { Count } from "@/components/count";
 import { PHONE_HIDDEN } from "@/components/ui/table";
 import { authDisabled } from "@/lib/auth-client";
-import { unlessDefault, useRangeReport, useSetSearch } from "@/lib/search-params";
-import {
-  type RangeOptions,
-  rangeDays,
-  rangePhrase,
-  reportRangeParam,
-  type TimeRange,
-} from "@/lib/time-range";
+import { type RangeSearch, rangeSearch, useRangeReport, useSetSearch } from "@/lib/search-params";
+import { type RangeOptions, rangeDays, rangePhrase, type TimeRange } from "@/lib/time-range";
 import { cn, count } from "@/lib/utils";
 import {
   type FreeCheckSavings,
@@ -48,11 +42,7 @@ function load(range: TimeRange): Promise<UsageData> {
   }));
 }
 
-type Search = { range?: TimeRange };
-const validateSearch = (search: Record<string, unknown>): Search => ({
-  range: reportRangeParam(search, RANGES, DEFAULT_RANGE),
-});
-const rangeOf = (search: Search) => search.range ?? DEFAULT_RANGE;
+const { validateSearch, rangeOf, toSearch } = rangeSearch(RANGES, DEFAULT_RANGE);
 
 export const Route = createFileRoute("/_authed/_workspace/usage")({
   validateSearch,
@@ -64,12 +54,12 @@ export const Route = createFileRoute("/_authed/_workspace/usage")({
 
 function UsagePage() {
   const range = rangeOf(Route.useSearch());
-  const setSearch = useSetSearch<Search>();
+  const setSearch = useSetSearch<RangeSearch>();
   const first = Route.useLoaderData();
   const { report, checks } = useRangeReport(first, range, load);
 
   function chooseRange(next: TimeRange) {
-    setSearch({ range: unlessDefault(next, DEFAULT_RANGE) });
+    setSearch(toSearch(next));
   }
 
   const { totals } = report;

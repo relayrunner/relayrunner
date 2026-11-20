@@ -25,8 +25,8 @@ import {
   sampleProviderReport,
 } from "@/lib/providers";
 import { cn } from "@/lib/utils";
-import { unlessDefault, useRangeReport, useSetSearch } from "@/lib/search-params";
-import { rangeDays, rangePhrase, reportRangeParam, type TimeRange } from "@/lib/time-range";
+import { type RangeSearch, rangeSearch, useRangeReport, useSetSearch } from "@/lib/search-params";
+import { rangeDays, rangePhrase, type TimeRange } from "@/lib/time-range";
 import { usePageTitle } from "@/lib/page-title";
 
 function load(provider: string, range: TimeRange) {
@@ -35,11 +35,7 @@ function load(provider: string, range: TimeRange) {
     : getProviderReport(provider, range);
 }
 
-type Search = { range?: TimeRange };
-const validateSearch = (search: Record<string, unknown>): Search => ({
-  range: reportRangeParam(search, PROVIDER_RANGES, PROVIDER_DEFAULT_RANGE),
-});
-const rangeOf = (search: Search) => search.range ?? PROVIDER_DEFAULT_RANGE;
+const { validateSearch, rangeOf, toSearch } = rangeSearch(PROVIDER_RANGES, PROVIDER_DEFAULT_RANGE);
 
 // The widest range the page offers, to tell a provider nobody has used from a quiet month.
 const WIDEST: TimeRange = "30d";
@@ -69,7 +65,7 @@ function ProviderPage() {
 function ProviderView({ first, unused }: { first: ProviderReport; unused: boolean }) {
   const { provider } = first;
   const range = rangeOf(Route.useSearch());
-  const setSearch = useSetSearch<Search>();
+  const setSearch = useSetSearch<RangeSearch>();
   const report = useRangeReport(first, range, (next) => load(provider, next));
   const info = providerInfo(provider);
   usePageTitle(info.name);
@@ -79,7 +75,7 @@ function ProviderView({ first, unused }: { first: ProviderReport; unused: boolea
   const connectUrl = providerPlans(provider)?.connectUrl;
 
   function chooseRange(next: TimeRange) {
-    setSearch({ range: unlessDefault(next, PROVIDER_DEFAULT_RANGE) });
+    setSearch(toSearch(next));
   }
 
   return (

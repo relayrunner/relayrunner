@@ -118,6 +118,8 @@ const SHOW_SPECS_KEY = "relayrunner:runners:show-specs";
 
 export const Route = createFileRoute("/_authed/_workspace/runners")({
   validateSearch: validateRunnerSearch,
+  // Filters and the cloud table's range apply in the page, so they don't load the runners again.
+  shouldReload: ({ cause }) => cause !== "stay",
   loader: async ({ context }) => {
     try {
       const [order, { machines, others = [] }, live] = await Promise.all([
@@ -515,8 +517,7 @@ function RunnersPage() {
               )}
             </RunnerGroup>
           )}
-          {/* Left out while nothing ever ran in the cloud, but kept once a range is picked. */}
-          {cloud && (cloud.length > 0 || search.cloud) && (
+          {cloud && (
             <RunnerGroup
               title="Cloud-hosted"
               action={
@@ -554,14 +555,12 @@ function RunnersPage() {
 
 function RunnerGroup({
   title,
-  note,
   action,
   bare = false,
   footer,
   children,
 }: {
   title: string;
-  note?: string;
   /** A control at the end of the heading. */
   action?: ReactNode;
   /** A line under the group, such as what's hidden. */
@@ -576,7 +575,6 @@ function RunnerGroup({
       <div className="flex min-h-6 items-center justify-between gap-2">
         <h2 id={id} className="flex items-baseline gap-2 text-sm font-semibold">
           {title}
-          {note && <span className="text-xs font-normal text-muted-foreground">{note}</span>}
         </h2>
         {action}
       </div>

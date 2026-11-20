@@ -141,13 +141,8 @@ describe("provider report", () => {
     };
     await db.insert(schema.jobTiming).values([at("2026-08-25", 100), at("2026-09-05", 100)]);
 
-    const body = await providerReport(
-      db,
-      workspace.id,
-      "ubicloud",
-      lastDays(30, Date.parse("2026-09-10")),
-      Date.parse("2026-09-10"),
-    );
+    const now = Date.parse("2026-09-10");
+    const body = await providerReport(db, workspace.id, "ubicloud", lastDays(30, now), now);
     expect(body).toMatchObject({ jobs: 2, billedMinutes: 200 });
     expect(body.cost).toBeCloseTo(100 * 0.001 + 100 * 0.00125, 3);
     // One runner type, shown at today's price.

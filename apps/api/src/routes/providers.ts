@@ -15,7 +15,7 @@ import {
 } from "../provider-connections.ts";
 import { providerReport, providersOverview } from "../provider-report.ts";
 import { parseWindow } from "../report-window.ts";
-import { RAW_RETENTION_DAYS } from "../job-timings.ts";
+import { RAW_RETENTION_DAYS } from "../time.ts";
 import { DEFAULT_DAYS } from "../job-times.ts";
 import { requireManager } from "../roles.ts";
 import { AppError } from "@relayrunner/errors";

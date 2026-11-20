@@ -18,11 +18,9 @@ export const lastDays = (days: number, now = Date.now()): Window => ({
 /** How many days a window spans, at least one, for a report's `days`. */
 export const windowDays = ({ from, to }: Window) => Math.max(1, Math.round((to - from) / DAY_MS));
 
-const Epoch = z.coerce.number().int().min(0);
+/** A moment in epoch ms, from the URL. */
+export const Epoch = z.coerce.number().int().min(0);
 const WindowQuery = z.object({ from: Epoch, to: Epoch });
-
-// A day of slack on `from`, so a calendar month that starts at the reader's midnight still fits.
-const SLACK_MS = DAY_MS;
 
 /**
  * A report's window: `?from=&to=` in epoch ms (a calendar range such as this month, worked out in
@@ -43,5 +41,6 @@ export function parseWindow(
   if (!parsed.success) return null;
   const from = parsed.data.from;
   const to = Math.min(parsed.data.to, now);
-  return from < to && from >= now - maxDays * DAY_MS - SLACK_MS ? { from, to } : null;
+  // A day of slack on `from`, so a calendar month that starts at the reader's midnight still fits.
+  return from < to && from >= now - (maxDays + 1) * DAY_MS ? { from, to } : null;
 }

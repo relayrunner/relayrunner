@@ -11,7 +11,7 @@ import { authDisabled } from "@/lib/auth-client";
 import { medianText, p90Text } from "@/lib/job-times";
 import { useProviderApps } from "@/lib/provider-apps";
 import { providerInfo } from "@/lib/provider-catalog";
-import { unlessDefault, useRangeReport, useSetSearch } from "@/lib/search-params";
+import { type RangeSearch, rangeSearch, useRangeReport, useSetSearch } from "@/lib/search-params";
 import {
   costText,
   getProvidersOverview,
@@ -21,7 +21,7 @@ import {
   type ProviderSummary,
   sampleProvidersOverview,
 } from "@/lib/providers";
-import { rangeDays, rangePhrase, reportRangeParam, type TimeRange } from "@/lib/time-range";
+import { rangeDays, rangePhrase, type TimeRange } from "@/lib/time-range";
 
 function load(range: TimeRange) {
   return authDisabled
@@ -29,11 +29,7 @@ function load(range: TimeRange) {
     : getProvidersOverview(range);
 }
 
-type Search = { range?: TimeRange };
-const validateSearch = (search: Record<string, unknown>): Search => ({
-  range: reportRangeParam(search, PROVIDER_RANGES, PROVIDER_DEFAULT_RANGE),
-});
-const rangeOf = (search: Search) => search.range ?? PROVIDER_DEFAULT_RANGE;
+const { validateSearch, rangeOf, toSearch } = rangeSearch(PROVIDER_RANGES, PROVIDER_DEFAULT_RANGE);
 
 export const Route = createFileRoute("/_authed/_workspace/providers/")({
   validateSearch,
@@ -45,7 +41,7 @@ export const Route = createFileRoute("/_authed/_workspace/providers/")({
 
 function ProvidersPage() {
   const range = rangeOf(Route.useSearch());
-  const setSearch = useSetSearch<Search>();
+  const setSearch = useSetSearch<RangeSearch>();
   const overview: ProvidersOverview = useRangeReport(Route.useLoaderData(), range, load);
   const { current } = Route.useRouteContext();
   const installed = useProviderApps(current.workspace.id);
@@ -57,7 +53,7 @@ function ProvidersPage() {
   );
 
   function chooseRange(next: TimeRange) {
-    setSearch({ range: unlessDefault(next, PROVIDER_DEFAULT_RANGE) });
+    setSearch(toSearch(next));
   }
 
   return (

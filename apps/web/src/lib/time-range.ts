@@ -157,14 +157,14 @@ export function timeRangeParam(
 }
 
 /**
- * `?range=` when it's one the page offers other than its default. An older link's `?days=7` reads
- * as `7d`.
+ * A range from the URL when it's one the page offers other than its default. `days` is an older
+ * link's day count, so `?days=7` reads as `7d`.
  */
-export function reportRangeParam(
-  search: Record<string, unknown>,
+export function rangeOrDaysParam(
+  range: unknown,
+  days: unknown,
   options: RangeOptions,
   fallback: TimeRange,
 ) {
-  const value = search.range ?? (search.days ? dayPreset(Number(search.days)) : undefined);
-  return timeRangeParam(value, options, fallback);
+  return timeRangeParam(range ?? (days ? dayPreset(Number(days)) : undefined), options, fallback);
 }
