@@ -29,8 +29,14 @@ export function getRouter() {
     return invalidate(opts);
   };
   // A background check found the session or workspace changed: re-run the guards with the new
-  // copy, which redirect if they need to.
-  setOnSessionChange(() => void invalidate());
+  // copy, which redirect if they need to. When another tab switched workspace, the pages kept
+  // from the old one are dropped, and the open page waits for the new data instead of showing
+  // the old data under the new workspace's name.
+  setOnSessionChange((workspaceChanged) => {
+    if (!workspaceChanged) return void invalidate();
+    router.clearCache();
+    void invalidate({ forcePending: true });
+  });
 
   return router;
 }

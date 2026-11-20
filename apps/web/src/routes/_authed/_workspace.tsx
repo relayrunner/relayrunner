@@ -41,6 +41,7 @@ import {
 import { type ReactNode, useEffect, useState } from "react";
 import { SectionBoundary } from "@/components/error-boundary";
 import { FeedbackPopover } from "@/components/feedback-popover";
+import { PagePending } from "@/components/page-pending";
 import { GithubIcon } from "@/components/provider-logos";
 import { RUNNER_DEFAULT_RANGE, RUNNER_RANGES, RunnerSheet } from "@/components/runner-sheet";
 import { DOCS_URL, SiteFooter } from "@/components/site-footer";
@@ -198,6 +199,7 @@ function WorkspaceLayout() {
   const [collapsedPref, setCollapsedPref] = useState(() => readFlag(COLLAPSED_KEY));
   // Settings has its own short nav and a way back, so it always shows in full.
   const collapsed = collapsedPref && !inSettings;
+  const [switching, setSwitching] = useState(false);
   const toggle = () => {
     const next = !collapsedPref;
     saveFlag(COLLAPSED_KEY, next);
@@ -215,7 +217,7 @@ function WorkspaceLayout() {
       <header className="sticky top-0 z-20 flex items-center gap-2 border-b border-sidebar-border bg-sidebar px-3 py-2 sm:hidden">
         <div className="min-w-0 flex-1">
           <SectionBoundary>
-            <WorkspaceMenu workspace={current.workspace} user={user} />
+            <WorkspaceMenu workspace={current.workspace} user={user} onSwitching={setSwitching} />
           </SectionBoundary>
         </div>
         <MobileMenu>
@@ -238,7 +240,12 @@ function WorkspaceLayout() {
         ) : (
           <TooltipProvider>
             <SectionBoundary>
-              <WorkspaceMenu workspace={current.workspace} user={user} compact={collapsed} />
+              <WorkspaceMenu
+                workspace={current.workspace}
+                user={user}
+                compact={collapsed}
+                onSwitching={setSwitching}
+              />
             </SectionBoundary>
             <PageNav showAdmin={showAdmin} collapsed={collapsed} />
             <SidebarFoot collapsed={collapsed} />
@@ -251,7 +258,9 @@ function WorkspaceLayout() {
       <main className="flex min-w-0 flex-col">
         <div className="flex-1 p-4 sm:p-8">
           <OwnerPending current={current} />
-          <Outlet />
+          {/* From the click on another workspace until its page has loaded, so the old
+              workspace's page never shows under the new one's name. */}
+          {switching ? <PagePending /> : <Outlet />}
         </div>
         <SiteFooter />
       </main>

@@ -11,7 +11,7 @@ import {
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import { authDisabled, organization, useListOrganizations } from "@/lib/auth-client";
-import { signOut } from "@/lib/session";
+import { forgetSession, signOut } from "@/lib/session";
 import { githubInstallHref } from "@/lib/github";
 import { cn } from "@/lib/utils";
 
@@ -26,14 +26,21 @@ export function WorkspaceMenu({
   workspace,
   user,
   compact = false,
+  onSwitching,
 }: {
   workspace: { id: string; name: string; logo?: string | null };
   user: MenuUser;
   /** Just the workspace's mark, for the collapsed sidebar. */
   compact?: boolean;
+  /** Hears when a switch to another workspace starts and once its page has loaded. */
+  onSwitching?: (switching: boolean) => void;
 }) {
   const router = useRouter();
-  const [switching, setSwitching] = useState(false);
+  const [switching, setSwitchingState] = useState(false);
+  const setSwitching = (value: boolean) => {
+    setSwitchingState(value);
+    onSwitching?.(value);
+  };
   // Read when the sidebar renders rather than when the menu opens, so the list is there by the
   // time someone clicks.
   const { data } = useListOrganizations();
@@ -44,9 +51,17 @@ export function WorkspaceMenu({
     setSwitching(true);
     try {
       await organization.setActive({ organizationId: id });
-      // Re-run the workspace guard so route context holds the new workspace.
-      await router.invalidate();
+      // Drop the pages kept from the old workspace (earlier visits, hover preloads), or Runners
+      // and any page after it would show the old workspace's data while reloading.
+      router.clearCache();
+      const onRunners = router.state.location.pathname === "/runners";
+      // The guards read the session and workspace afresh on the way. On Runners, the reload below
+      // reads them, and the navigation only drops the old workspace's filters and runner panel.
+      if (!onRunners) forgetSession();
       await router.navigate({ to: "/runners" });
+      // Navigating to the page you're on doesn't load it again, so reload it in place. Forced
+      // pending, the reload waits for the new data rather than showing the old while it loads.
+      if (onRunners) await router.invalidate({ forcePending: true });
     } finally {
       setSwitching(false);
     }

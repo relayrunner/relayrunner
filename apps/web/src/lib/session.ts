@@ -32,10 +32,11 @@ let sessionLoad: Promise<Session | null> | undefined;
 let workspace: (Cached<CurrentWorkspace> & { id: string }) | undefined;
 let workspaceLoad: { id: string; promise: Promise<CurrentWorkspace> } | undefined;
 
-let onChange: () => void = () => undefined;
+/** `workspaceChanged` when the session's active workspace is now another one, as when another tab switched. */
+let onChange: (workspaceChanged?: boolean) => void = () => undefined;
 
 /** What to do when a background check finds the session or workspace changed: re-run the guards. */
-export function setOnSessionChange(listener: () => void) {
+export function setOnSessionChange(listener: typeof onChange) {
   onChange = listener;
 }
 
@@ -134,10 +135,12 @@ export function revalidateSession(): Promise<void> {
     .then((read) => {
       if (read === undefined || !session) return;
       const changed = sessionKey(read) !== sessionKey(session.value);
+      const workspaceChanged =
+        read?.session.activeOrganizationId !== session.value?.session.activeOrganizationId;
       session = { value: read, at: Date.now() };
       if (changed) {
         workspace = undefined;
-        onChange();
+        onChange(workspaceChanged);
       }
     })
     .finally(() => {
