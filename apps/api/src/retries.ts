@@ -233,7 +233,8 @@ async function routedRun(db: Db, repositoryId: number, runId: number, runAttempt
           lte(schema.routeDecision.runAttempt, runAttempt),
         ),
       )
-      .orderBy(desc(schema.routeDecision.runAttempt))
+      // A run with one relay has one decision per attempt; the id only breaks ties.
+      .orderBy(desc(schema.routeDecision.runAttempt), schema.routeDecision.id)
       .limit(1),
   ]);
   // "Re-run failed jobs" reuses an earlier attempt's relay, so take the newest one at or before it.

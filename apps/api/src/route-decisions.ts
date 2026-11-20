@@ -16,6 +16,9 @@ export interface PickRecord {
   context: JobContext;
   // The relay job's name, e.g. "relay".
   jobName: string | null;
+  // The relay job's id in the runner protocol (the claimed job message's jobId), which keys its
+  // decision: each relay of an attempt keeps its own row. Null when unknown.
+  pickJobId: string | null;
   // The Router's walk down the order, or null when the pick stopped before it.
   decision: RouteDecision | null;
   // Set when the relay failed: the message it failed with.
@@ -24,8 +27,8 @@ export interface PickRecord {
 
 /**
  * Keeps how a pick walked the runner order, so the run's jobs can say why they went where they did,
- * and logs a `job.unroutable` event when the relay failed. A redelivered pick for the same run
- * attempt keeps the first decision.
+ * and logs a `job.unroutable` event when the relay failed. Each relay job of a run attempt keeps its
+ * own decision; a redelivered pick for the same relay job keeps the first.
  */
 export async function recordPick(db: Db, pick: PickRecord) {
   const { context, decision } = pick;
@@ -37,6 +40,7 @@ export async function recordPick(db: Db, pick: PickRecord) {
         repositoryId: pick.repositoryId,
         runId: context.runId,
         runAttempt: context.runAttempt,
+        pickJobId: pick.pickJobId,
         step: decision.runner === null ? null : decision.step,
         runner: decision.runner,
         skipped: decision.skipped,
@@ -89,6 +93,10 @@ function hostedInputs(context: JobContext) {
 
 type JobKey = { repositoryId: number; runId: number; runAttempt: number };
 
+// A job to find the pick for. With `id` and `labels` (a workflow_job row), the pick is the one
+// that answered one of the job's labels; without them (a run), the attempt's first pick.
+type PickJob = JobKey & { id?: number; labels?: string[] };
+
 /** What a job's run kept from its pick: the walk, and who started the run and the pick's attempt. */
 export interface JobPick {
   walk: RouteWalk | null;
@@ -99,12 +107,15 @@ export interface JobPick {
 }
 
 /**
- * The pick behind each job's run: the newest decision for the job's repo and run at or before the
- * job's attempt (a re-run of failed jobs reuses the earlier attempt's pick). Keyed by `key(job)`.
+ * The pick behind each job: the newest decision for the job's repo and run at or before the job's
+ * attempt (a re-run of failed jobs reuses the earlier attempt's pick). A run attempt can have
+ * several picks, each answering its own job, so a job given with its labels takes the one whose
+ * runner is among them, and otherwise (the relay itself, or a run) the attempt's first. Keyed by
+ * `pickKey(job)`.
  */
-export async function picksForJobs(db: Db, jobs: JobKey[]): Promise<Map<string, JobPick>> {
+export async function picksForJobs(db: Db, jobs: PickJob[]): Promise<Map<string, JobPick>> {
   const picks = new Map<string, JobPick>();
-  // Asks by repo and run, so route_decision_run_idx (repository_id, run_id, ...) answers it. Each
+  // Asks by repo and run, so route_decision_pick_idx (repository_id, run_id, ...) answers it. Each
   // query takes up to 50 runs, which keeps it under D1's 100 bound values.
   const runs = [...new Map(jobs.map((job) => [`${job.repositoryId}:${job.runId}`, job])).values()];
   if (runs.length === 0) return picks;
@@ -122,13 +133,26 @@ export async function picksForJobs(db: Db, jobs: JobKey[]): Promise<Map<string, 
         );
     }),
   );
-  const rows = chunks.flat();
+  // Oldest first, so the first row of an attempt is its first pick.
+  const rows = chunks.flat().sort((a, b) => a.id - b.id);
   for (const job of jobs) {
+    const labels = new Set((job.labels ?? []).map((label) => label.toLowerCase()));
     let best: (typeof rows)[number] | undefined;
+    let bestMatches = false;
     for (const row of rows) {
       if (row.repositoryId !== job.repositoryId || row.runId !== job.runId) continue;
       if (row.runAttempt > job.runAttempt) continue;
-      if (!best || row.runAttempt > best.runAttempt) best = row;
+      const matches = row.runner !== null && labels.has(row.runner.toLowerCase());
+      // A pick that answered the job's label wins over any other; then the newest attempt, then
+      // the attempt's first pick.
+      if (
+        !best ||
+        (matches && !bestMatches) ||
+        (matches === bestMatches && row.runAttempt > best.runAttempt)
+      ) {
+        best = row;
+        bestMatches = matches;
+      }
     }
     if (!best) continue;
     const parsed = RouteWalk.safeParse({
@@ -139,7 +163,7 @@ export async function picksForJobs(db: Db, jobs: JobKey[]): Promise<Map<string, 
       github: best.github,
       ...best.hosted,
     });
-    picks.set(jobKey(job), {
+    picks.set(pickKey(job), {
       walk: parsed.success ? parsed.data : null,
       runAttempt: best.runAttempt,
       startedBy: actor(best.startedById, best.startedByLogin),
@@ -154,6 +178,10 @@ export function actor(id: number | null, login: string | null): GithubActor | nu
 }
 
 export const jobKey = (job: JobKey) => `${job.repositoryId}:${job.runId}:${job.runAttempt}`;
+
+/** picksForJobs' key: the job's run attempt, and the job itself when it's given by id. */
+export const pickKey = (job: PickJob) =>
+  job.id === undefined ? jobKey(job) : `${jobKey(job)}:${job.id}`;
 
 /**
  * The pick that answered `label` for a job's repo and run in an earlier attempt, or null when no

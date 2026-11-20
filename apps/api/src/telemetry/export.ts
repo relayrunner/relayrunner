@@ -122,6 +122,8 @@ export async function exportRun(env: Env, db: Db, message: WorkflowRunMessage) {
         .select({ step: schema.routeDecision.step, skipped: schema.routeDecision.skipped })
         .from(schema.routeDecision)
         .where(ofRun(schema.routeDecision, run.runAttempt))
+        // An attempt with several relays has a decision per relay: the run's span takes the first.
+        .orderBy(schema.routeDecision.id)
         .limit(1),
       // A retry is the attempt after the one RelayRunner re-ran.
       db
