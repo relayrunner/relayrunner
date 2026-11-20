@@ -41,6 +41,7 @@ function ProviderSettingsPage() {
   const { current } = Route.useRouteContext();
   const { connections } = Route.useLoaderData();
   const manager = canManage(current.role);
+  const organization = current.installations[0]?.accountLogin ?? null;
 
   return (
     <section>
@@ -50,14 +51,28 @@ function ProviderSettingsPage() {
       </PageHeader>
       <div className="grid max-w-3xl gap-4">
         {connections.map((connection) => (
-          <ProviderCard key={connection.provider} first={connection} manager={manager} />
+          <ProviderCard
+            key={connection.provider}
+            first={connection}
+            manager={manager}
+            organization={organization}
+          />
         ))}
       </div>
     </section>
   );
 }
 
-function ProviderCard({ first, manager }: { first: ProviderConnection; manager: boolean }) {
+function ProviderCard({
+  first,
+  manager,
+  organization,
+}: {
+  first: ProviderConnection;
+  manager: boolean;
+  /** The GitHub organization this workspace is installed on. */
+  organization: string | null;
+}) {
   const [connection, setConnection] = useState(first);
   const [replacing, setReplacing] = useState(false);
   const [pending, setPending] = useState(false);
@@ -123,7 +138,11 @@ function ProviderCard({ first, manager }: { first: ProviderConnection; manager: 
           <p className="text-muted-foreground">{billing.reads}</p>
         )}
         {manager && billing.command && !connected && (
-          <ConnectCommand command={billing.command} name={name} />
+          <ConnectCommand
+            command={billing.command}
+            name={name}
+            organization={billing.githubOrganization ? organization : null}
+          />
         )}
         {manager && (!connected || replacing) && (
           <TokenForm
@@ -236,17 +255,6 @@ function TokenForm({
             placeholder={`Paste your ${name} token`}
           />
         </Field>
-        {billing.fields?.map((field) => (
-          <Field key={field.key} label={field.label} className="min-w-0 basis-48">
-            <Input
-              autoComplete="off"
-              spellCheck={false}
-              value={options[field.key] ?? ""}
-              onChange={(e) => setOptions({ ...options, [field.key]: e.target.value })}
-              placeholder="Optional"
-            />
-          </Field>
-        ))}
         {billing.options?.map((option) => (
           <Field key={option.key} label={option.label}>
             <Select
@@ -278,9 +286,6 @@ function TokenForm({
         </div>
       </div>
       <p className="text-xs text-muted-foreground">
-        {billing.fields?.map((field) => (
-          <span key={field.key}>{field.help} </span>
-        ))}
         <Help text={billing.tokenHelp} />{" "}
         <a
           href={billing.tokenUrl}
@@ -297,7 +302,15 @@ function TokenForm({
 }
 
 /** A command that connects the provider from a terminal, with a copy button. */
-function ConnectCommand({ command, name }: { command: string; name: string }) {
+function ConnectCommand({
+  command,
+  name,
+  organization,
+}: {
+  command: string;
+  name: string;
+  organization: string | null;
+}) {
   const [copied, setCopied] = useState(false);
   const copy = () =>
     void navigator.clipboard?.writeText(command).then(() => {
@@ -307,8 +320,16 @@ function ConnectCommand({ command, name }: { command: string; name: string }) {
   return (
     <div className="grid gap-2">
       <p>
-        Run this in a terminal as an admin of the {name} organization. It opens your browser to
-        approve an org token and sends only that token here.
+        Run this in a terminal as a {name} org admin. It opens your browser to approve an org token
+        {organization ? (
+          <>
+            {" "}
+            for <strong>{organization}</strong>, the GitHub organization this workspace is on
+          </>
+        ) : (
+          " for this workspace's GitHub organization"
+        )}
+        , and sends only that token here.
       </p>
       <div className="flex items-center gap-2 rounded-md border bg-muted/40 px-3 py-2">
         <code className="min-w-0 flex-1 truncate font-mono text-xs">{command}</code>

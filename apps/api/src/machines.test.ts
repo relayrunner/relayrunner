@@ -1018,10 +1018,19 @@ describe("choosing a machine's workspaces (#363)", () => {
     expect(await unclear.json()).toMatchObject({
       error: { code: "PROVIDER_WORKSPACE_UNCLEAR", details: { workspaces: expect.any(Array) } },
     });
-    const picked = await put({
+    // Naming a workspace doesn't get a token for another organization in.
+    const mismatched = await put({
       token: "1234|secret-part",
       options: { organization: "nope" },
       workspace: team.workspace.id,
+    });
+    expect(await mismatched.json()).toMatchObject({
+      error: { code: "PROVIDER_ORGANIZATION_MISMATCH" },
+    });
+    const picked = await put({
+      token: "1234|secret-part",
+      options: { organization: "bs-team" },
+      workspace: team.workspace.slug,
     });
     expect(await picked.json()).toMatchObject({ workspace: { id: team.workspace.id } });
     expect((await put({ token: "1234|secret-part" }, "rrm_nope")).status).toBe(401);

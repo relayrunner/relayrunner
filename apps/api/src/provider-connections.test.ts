@@ -221,8 +221,11 @@ describe("connecting a provider", () => {
 });
 
 describe("Blacksmith", () => {
-  /** A BLACKSMITH_SYNCER binding that answers from the fixtures, and refuses any token but one. */
-  function withBlacksmith() {
+  /**
+   * A BLACKSMITH_SYNCER binding that answers from the fixtures, and refuses any token but one. The
+   * token is for the organization it's logged in with, or `installedOn`.
+   */
+  function withBlacksmith(installedOn?: string) {
     const requests: CliRequest[] = [];
     const ran: string[] = [];
     const namespace = {
@@ -235,7 +238,10 @@ describe("Blacksmith", () => {
             return { ok: false, reason: "auth", message: "401 Unauthorized" };
           return {
             ok: true,
-            usage: JSON.parse(fixture("blacksmith-usage.json")),
+            usage: {
+              ...JSON.parse(fixture("blacksmith-usage.json")),
+              installation: { installation_name: installedOn ?? request.organization },
+            },
             jobPages: request.kind === "usage" ? [JSON.parse(fixture("blacksmith-jobs.json"))] : [],
           };
         },
@@ -258,7 +264,7 @@ describe("Blacksmith", () => {
     expect(await response.json()).toMatchObject({
       provider: "blacksmith",
       connected: true,
-      accountName: "relayrunner",
+      accountName: workspace.slug,
       options: { organization: workspace.slug },
     });
     expect(blacksmith.requests).toEqual([
@@ -266,15 +272,43 @@ describe("Blacksmith", () => {
     ]);
     expect(blacksmith.ran).toEqual([workspace.id]);
 
-    // An organization given in the request wins; a malformed one is refused before any run.
-    await put({ token: "1234|good-secret", options: { organization: "other-org" } });
-    expect(blacksmith.requests.at(-1)).toMatchObject({ organization: "other-org" });
+    // A token made for another GitHub organization is refused before any run, and so is a
+    // malformed one. The workspace's own, in any case, is fine.
+    const other = await put({ token: "1234|good-secret", options: { organization: "other-org" } });
+    expect(await other.json()).toMatchObject({
+      error: { code: "PROVIDER_ORGANIZATION_MISMATCH" },
+    });
     const bad = await put({ token: "1234|good-secret", options: { organization: "no spaces" } });
     expect(await bad.json()).toMatchObject({ error: { code: "INVALID_REQUEST" } });
-    expect(blacksmith.requests).toHaveLength(2);
+    expect(blacksmith.requests).toHaveLength(1);
+    const same = await put({
+      token: "1234|good-secret",
+      options: { organization: workspace.slug.toUpperCase() },
+    });
+    expect(same.status).toBe(200);
 
     const refused = await put({ token: "1234|wrong-secret" });
     expect(await refused.json()).toMatchObject({ error: { code: "PROVIDER_TOKEN_REJECTED" } });
+  });
+
+  test("a token Blacksmith says is for another organization isn't saved", async () => {
+    const blacksmith = withBlacksmith("someone-else");
+    const { workspace, cookie } = await owner();
+    const response = await testing.call(
+      blacksmith.env,
+      "/providers/blacksmith/connection",
+      cookie,
+      { token: "1234|good-secret" },
+      "PUT",
+    );
+    expect(response.status).toBe(400);
+    expect(await response.json()).toMatchObject({
+      error: { code: "PROVIDER_ORGANIZATION_MISMATCH" },
+    });
+    const row = await env.DB.prepare("select 1 from provider_connection where workspace_id = ?")
+      .bind(workspace.id)
+      .first();
+    expect(row).toBeNull();
   });
 
   test("a sync reads usage through the container and stores each job and day", async () => {

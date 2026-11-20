@@ -107,10 +107,13 @@ function present(
   };
 }
 
+// A GitHub organization's login.
+const GITHUB_LOGIN = /^[A-Za-z0-9](?:[A-Za-z0-9-]{0,38})$/;
+
 /**
- * The options and fields a provider takes, with its option defaults filled in; null when an option
- * isn't a choice it offers or a field doesn't look right. An empty field is left out, for
- * connectProvider to fill in.
+ * The options a provider takes, with its defaults filled in; null when one isn't a choice it
+ * offers. A provider on a GitHub organization also takes the `organization` the token was made
+ * for, which connectProvider checks against the workspace's.
  */
 export function parseOptions(
   provider: BillingProviderId,
@@ -119,11 +122,10 @@ export function parseOptions(
   const info = BILLING_PROVIDERS[provider];
   const options = defaultBillingOptions(provider);
   for (const [key, raw] of Object.entries(given ?? {})) {
-    const field = info.fields?.find((f) => f.key === key);
-    if (field) {
+    if (key === "organization" && info.githubOrganization) {
       const value = raw.trim();
       if (!value) continue;
-      if (!field.pattern.test(value)) return null;
+      if (!GITHUB_LOGIN.test(value)) return null;
       options[key] = value;
       continue;
     }
@@ -134,20 +136,8 @@ export function parseOptions(
   return options;
 }
 
-/**
- * Fills in what a workspace left out: a Blacksmith organization defaults to the GitHub account the
- * workspace is installed on, which is where Blacksmith is installed too in the usual case.
- */
-async function withDefaults(
-  db: Db,
-  workspaceId: string,
-  provider: BillingProviderId,
-  options: Record<string, string>,
-): Promise<Record<string, string>> {
-  const wantsOrganization = BILLING_PROVIDERS[provider].fields?.some(
-    (field) => field.key === "organization",
-  );
-  if (!wantsOrganization || options.organization) return options;
+/** The GitHub account a workspace is installed on. */
+async function workspaceLogin(db: Db, workspaceId: string): Promise<string | null> {
   const [row] = await db
     .select({ login: schema.githubInstallation.accountLogin })
     .from(schema.workspace)
@@ -157,12 +147,26 @@ async function withDefaults(
     )
     .where(eq(schema.workspace.id, workspaceId))
     .limit(1);
-  return row ? { ...options, organization: row.login } : options;
+  return row?.login ?? null;
+}
+
+const sameLogin = (a: string, b: string) => a.toLowerCase() === b.toLowerCase();
+
+function organizationMismatch(given: string, login: string) {
+  return {
+    ok: false as const,
+    error: "PROVIDER_ORGANIZATION_MISMATCH" as const,
+    message: `The token is for ${given}, and this workspace is ${login}.`,
+  };
 }
 
 export type VerifyResult =
   | { ok: true; accountName: string | null }
-  | { ok: false; error: "PROVIDER_TOKEN_REJECTED" | "PROVIDER_UNREACHABLE"; message: string };
+  | {
+      ok: false;
+      error: "PROVIDER_TOKEN_REJECTED" | "PROVIDER_UNREACHABLE" | "PROVIDER_ORGANIZATION_MISMATCH";
+      message: string;
+    };
 
 /** One read with the token, to check it before saving it or when asked to test it. */
 export async function verifyToken(
@@ -211,9 +215,20 @@ export async function connectProvider(
     userId: string;
   },
 ): Promise<Failed | { ok: true; connection: ProviderConnectionView }> {
-  options = await withDefaults(db, workspaceId, provider, options);
+  // A provider on a GitHub organization connects for the workspace's own: a token made for
+  // another organization is refused, before and after it's read with.
+  const login = BILLING_PROVIDERS[provider].githubOrganization
+    ? await workspaceLogin(db, workspaceId)
+    : null;
+  if (login) {
+    if (options.organization && !sameLogin(options.organization, login))
+      return organizationMismatch(options.organization, login);
+    options = { ...options, organization: login };
+  }
   const verified = await verifyToken(provider, token, options, adapterTools(env, workspaceId));
   if (!verified.ok) return verified;
+  if (login && verified.accountName && !sameLogin(verified.accountName, login))
+    return organizationMismatch(verified.accountName, login);
   const values = {
     token: await sealToken(env, workspaceId, provider, token),
     tokenHint: tokenHint(token),
@@ -312,9 +327,9 @@ export async function managedWorkspaces(db: Db, userId: string): Promise<Managed
 }
 
 /**
- * Which workspace a connection from the CLI goes to: the one it names (by id, slug or name), else the
- * only one installed on the provider account's GitHub organization, else the user's only one.
- * Null when that's none or more than one, for the CLI to ask.
+ * Which workspace a connection from the CLI goes to: the one it names (by id, slug or name), else
+ * the only one installed on the token's GitHub organization. Without an organization, the user's
+ * only workspace. Null when that's none or more than one, for the CLI to ask.
  */
 export function chooseWorkspace(
   workspaces: ManagedWorkspace[],
@@ -330,8 +345,8 @@ export function chooseWorkspace(
       null
     );
   }
-  const org = organization?.toLowerCase();
-  const matching = workspaces.filter((w) => org && w.accountLogin?.toLowerCase() === org);
-  if (matching.length === 1) return matching[0]!;
-  return workspaces.length === 1 ? workspaces[0]! : null;
+  const candidates = organization
+    ? workspaces.filter((w) => w.accountLogin && sameLogin(w.accountLogin, organization))
+    : workspaces;
+  return candidates.length === 1 ? candidates[0]! : null;
 }

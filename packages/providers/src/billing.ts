@@ -22,16 +22,6 @@ export interface BillingOption {
   choices: readonly { value: string; label: string }[];
 }
 
-/** A value the workspace types in, such as an organization name. */
-export interface BillingField {
-  key: string;
-  label: string;
-  /** What to type, in a sentence. */
-  help: string;
-  /** What a valid value looks like. */
-  pattern: RegExp;
-}
-
 export interface BillingProviderInfo {
   /** What kind of token to paste, in the provider's own words. */
   token: string;
@@ -42,8 +32,11 @@ export interface BillingProviderInfo {
   /** What RelayRunner reads with it. */
   reads: string;
   options?: readonly BillingOption[];
-  /** Values the workspace types in. Each is optional: a left-out one gets a default when connecting. */
-  fields?: readonly BillingField[];
+  /**
+   * The provider account is a GitHub organization: a connection is for the workspace's own, and a
+   * token for any other is refused.
+   */
+  githubOrganization?: boolean;
   /** A terminal command that makes the token and connects it, offered before pasting one. */
   command?: string;
 }
@@ -53,17 +46,10 @@ export const BILLING_PROVIDERS: Record<BillingProviderId, BillingProviderInfo> =
     token: "Organization token",
     tokenUrl: "https://docs.blacksmith.sh/blacksmith-cli/overview",
     tokenHelp:
-      "As a Blacksmith org admin, run `blacksmith org-token create` and paste the token it prints.",
+      "As a Blacksmith org admin, run `blacksmith org-token create`, approve it for this workspace's GitHub organization, and paste the token it prints.",
     command: "npx relayrunner blacksmith connect",
     reads: "Billable minutes and cost per day, and each job's billable minutes.",
-    fields: [
-      {
-        key: "organization",
-        label: "Blacksmith organization",
-        help: "The GitHub organization Blacksmith is installed on. Leave it empty to use this workspace's.",
-        pattern: /^[A-Za-z0-9](?:[A-Za-z0-9-]{0,38})$/,
-      },
-    ],
+    githubOrganization: true,
   },
   depot: {
     token: "Organization token",

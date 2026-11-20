@@ -400,7 +400,6 @@ export { type FoundPrice, PRICE_SOURCES, type PriceSource } from "./price-source
 export {
   BILLING_PROVIDER_IDS,
   BILLING_PROVIDERS,
-  type BillingField,
   type BillingOption,
   type BillingProviderId,
   type BillingProviderInfo,

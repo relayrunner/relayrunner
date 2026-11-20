@@ -80,7 +80,7 @@ relayrunner workspaces add     # or remove; takes a name, slug or id
 relayrunner history --json     # the jobs this machine ran, newest first
 ```
 
-`relayrunner blacksmith connect` connects the user's Blacksmith organization so the dashboard shows its real usage. It opens their browser to approve an org token as a Blacksmith org admin, so ask before running it, and let the user run it in their own terminal if they're not at the computer. It needs `relayrunner login` first. `--workspace <slug>` picks the workspace when they run more than one.
+`relayrunner blacksmith connect` connects the user's Blacksmith organization so the dashboard shows its real usage. It opens their browser to approve an org token as a Blacksmith org admin, so ask before running it, and let the user run it in their own terminal if they're not at the computer. In the browser they approve it for the GitHub organization their workspace is on; a token for another organization is refused. It needs `relayrunner login` first. `--workspace <slug>` picks the workspace when they run more than one.
 
 ## Optimized checks
 

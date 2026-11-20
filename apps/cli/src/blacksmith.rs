@@ -355,7 +355,9 @@ pub fn command(credentials: &Credentials, rest: &[String]) -> Result<(), Error> 
     let args = Args::parse(rest)?;
     ui::intro("Connect Blacksmith");
     let blacksmith = find_or_download(args.yes)?;
-    ui::step("Approve the org token in your browser. Blacksmith asks you to sign in first.");
+    ui::step(
+        "Approve the org token in your browser for the GitHub organization your RelayRunner workspace is on. Blacksmith asks you to sign in first.",
+    );
     let minted = mint(&blacksmith)?;
     // The token is only ever shown once, so a connection that fails leaves it unused.
     let unused = |error: Error| match minted.id() {
