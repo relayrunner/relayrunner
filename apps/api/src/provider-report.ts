@@ -181,7 +181,7 @@ interface Group extends Sums {
 const PUBLIC = sql`coalesce(${repo.private} = 0, 0)`;
 
 // Machines are never a provider, so their jobs are left out in SQL.
-const where = (workspaceId: string, { from, to }: Window) =>
+export const where = (workspaceId: string, { from, to }: Window) =>
   sql`${windowWhere(workspaceId, new Date(from), to)} and ${table.machineId} is null`;
 
 /**
@@ -359,7 +359,7 @@ export async function providerReport(
 }
 
 /** Which provider a job_timing group's labels ran on, parsing each label set once. */
-function labelProviders() {
+export function labelProviders() {
   const seen = new Map<string, string>();
   return (labels: string, runnerGroupName: string | null) => {
     const pair = `${labels}\u001f${runnerGroupName}`;

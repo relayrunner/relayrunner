@@ -7,6 +7,13 @@ import { IncludedMinutes } from "@/components/actions-minutes";
 import { CodeBlock } from "@/components/code-block";
 import { MachinePrices, PRICE_VIEWS, type PriceView } from "@/components/machine-prices";
 import { ProviderPlans } from "@/components/provider-plans";
+import {
+  PERCENTILE_OPTIONS,
+  ProviderTrendsCard,
+  TREND_METRICS,
+  type TrendMetric,
+} from "@/components/provider-trends";
+import type { Percentile } from "@/lib/provider-trends";
 import { providerStyle, runnerName, runnerSpec, TILE } from "@/components/providers";
 import { TimeRangePicker } from "@/components/range-picker";
 import { RunnerLink } from "@/components/runner-link";
@@ -52,15 +59,21 @@ function load(provider: string, range: TimeRange) {
 const rangeParams = rangeSearch(PROVIDER_RANGES, PROVIDER_DEFAULT_RANGE);
 const { rangeOf, toSearch } = rangeParams;
 
-type ProviderSearch = RangeSearch & { prices?: PriceView };
+type ProviderSearch = RangeSearch & { prices?: PriceView; chart?: TrendMetric; p?: Percentile };
 
-// The range, and `?prices=chart` when Machine prices shows its chart.
+// The range, `?prices=chart` when Machine prices shows its chart, and the trend chart's metric and
+// percentile when they aren't queue wait at P50.
 const validateSearch = (search: Record<string, unknown>): ProviderSearch => ({
   ...rangeParams.validateSearch(search),
   prices: optionParam(
     search.prices,
     PRICE_VIEWS.map((view) => view.value),
   ),
+  chart: optionParam(
+    search.chart,
+    TREND_METRICS.map((metric) => metric.value),
+  ),
+  p: PERCENTILE_OPTIONS.slice(1).find((option) => option.value === Number(search.p))?.value,
 });
 
 // The widest range the page offers, to tell a provider nobody has used from a quiet month.
@@ -153,6 +166,15 @@ function ProviderView({ first, unused }: { first: ProviderReport; unused: boolea
           ) : (
             <>
               <Totals report={report} />
+              <ProviderTrendsCard
+                provider={provider}
+                range={range}
+                sampleRunners={report.runners}
+                metric={search.chart ?? "wait"}
+                percentile={search.p ?? 50}
+                onMetric={(chart) => setSearch({ chart: unlessDefault(chart, "wait") })}
+                onPercentile={(p) => setSearch({ p: unlessDefault(p, 50) })}
+              />
               <Runners report={report} />
               <Workflows report={report} />
               <p className="text-xs text-muted-foreground">

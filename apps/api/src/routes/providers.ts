@@ -14,6 +14,7 @@ import {
   testConnection,
 } from "../provider-connections.ts";
 import { providerReport, providersOverview } from "../provider-report.ts";
+import { providerTrends } from "../provider-trends.ts";
 import { chartBuckets, requireWindow } from "../report-window.ts";
 import { RAW_RETENTION_DAYS } from "../time.ts";
 import { DEFAULT_DAYS } from "../job-times.ts";
@@ -84,6 +85,16 @@ export const providerRoutes = new Hono<AppEnv>()
     const buckets =
       query.origin === undefined ? null : chartBuckets(window, query.origin, query.per);
     return c.json(await providersOverview(c.var.db, c.var.workspace.id, window, buckets));
+  })
+  // A provider page's charts (src/provider-trends.ts), a bar a day from ?origin= (the reader's
+  // midnight), or a week past a month.
+  .get("/:provider/trends", requireUser, requireWorkspace, withCatalog, async (c) => {
+    const provider = c.req.param("provider");
+    if (!isCatalogProvider(provider)) throw new AppError("NOT_FOUND");
+    const query = c.req.query();
+    const window = requireWindow(query, RANGE);
+    const buckets = chartBuckets(window, query.origin);
+    return c.json(await providerTrends(c.var.db, c.var.workspace.id, provider, window, buckets));
   })
   .get("/:provider", requireUser, requireWorkspace, withCatalog, async (c) => {
     const provider = c.req.param("provider");

@@ -7,6 +7,7 @@ import {
   providerReport,
   providersOverview,
 } from "./provider-report.ts";
+import { percentilesOf, providerTrends } from "./provider-trends.ts";
 import { lastDays, withPrior } from "./report-window.ts";
 import * as testing from "./testing.ts";
 
@@ -227,4 +228,61 @@ describe("provider report", () => {
       ["2026-09-10", {}],
     ]);
   });
+
+  test("percentiles a day at a time for each runner type", async () => {
+    const { cookie } = await testing.signIn(env);
+    const { workspace } = await testing.createWorkspace(env, cookie, "Trends", "trends");
+    const installationId = 8500;
+    const db = createDb(env.DB);
+    await db.insert(schema.githubInstallation).values({
+      id: installationId,
+      accountId: installationId,
+      accountLogin: "trends-org",
+      accountType: "Organization",
+    });
+    await testing.useInstallation(env, workspace.id, installationId);
+    const DAY = 86_400_000;
+    const origin = Date.parse("2026-09-07T00:00:00Z");
+    const at = (completed: number, minutes: number, waitS: number, job: Partial<Timing> = {}) =>
+      timing(installationId, minutes * 60, {
+        queuedAt: new Date(completed - minutes * 60_000 - waitS * 1000),
+        startedAt: new Date(completed - minutes * 60_000),
+        completedAt: new Date(completed),
+        ...job,
+      });
+    const noon = origin + 12 * 3_600_000;
+    const rows = [
+      at(noon, 1, 10),
+      at(noon + 1000, 2, 20),
+      at(noon + 2000, 3, 30),
+      at(noon + 3000, 1, 40, { conclusion: "failure", ranSteps: false }),
+      // The next day: too few for percentiles.
+      at(noon + DAY, 5, 5),
+      // Another runner type, and another provider, which is left out.
+      at(noon, 2, 5, { labels: ["blacksmith-2vcpu-ubuntu-2404"] }),
+      at(noon, 2, 5, { labels: ["ubuntu-latest"], runnerGroupName: "GitHub Actions" }),
+    ];
+    for (let i = 0; i < rows.length; i += 5)
+      await db.insert(schema.jobTiming).values(rows.slice(i, i + 5));
+
+    const window = { from: origin, to: origin + 2 * DAY };
+    const body = await providerTrends(db, workspace.id, "blacksmith", window, {
+      bucketMs: DAY,
+      origin,
+    });
+    expect(body.runners.map((r) => [r.label, r.jobs])).toEqual([
+      [expect.stringContaining("4"), 5],
+      [expect.stringContaining("2"), 1],
+    ]);
+    const [first, second] = body.runners[0]!.points;
+    expect(first).toMatchObject({ jobs: 4, runnerFailures: 1 });
+    expect(first!.wait).toMatchObject({ p50: 25_000, p99: 39_700 });
+    expect(first!.run).toMatchObject({ p50: 120_000 });
+    expect(second).toMatchObject({ jobs: 1, wait: null, run: null });
+  });
+});
+
+test("percentilesOf needs a few values", () => {
+  expect(percentilesOf([1, 2])).toBeNull();
+  expect(percentilesOf([30, 10, 20])).toEqual({ p50: 20, p75: 25, p90: 28, p95: 29, p99: 30 });
 });
