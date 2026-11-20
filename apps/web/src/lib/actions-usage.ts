@@ -1,4 +1,5 @@
 import { api } from "./api";
+import { exact } from "./utils";
 
 // Each connected GitHub account's Actions minutes this billing cycle, read from GitHub billing
 // (#116, GET /api/usage/actions). Per account, never pooled: each has its own included quota. The
@@ -158,8 +159,6 @@ export function sampleActionsUsage(): ActionsUsage {
   };
 }
 
-const minutes = (n: number) => Math.round(n).toLocaleString("en-US");
-
 const DAY_MS = 86_400_000;
 
 /** When a billing cycle that started on `cycleStart` (a UTC day) resets: a month on. */
@@ -185,7 +184,7 @@ export function paceText(usage: AccountUsage, now = Date.now()) {
   const perMs = usage.usedMinutes / elapsed;
   const projected = usage.usedMinutes + perMs * (end - now);
   if (projected <= quota)
-    return `At this pace, about ${minutes(projected)} of ${minutes(quota)} min by ${dayText(end)}.`;
+    return `At this pace, about ${exact(Math.round(projected))} of ${exact(quota)} min by ${dayText(end)}.`;
   const runsOut = now + (quota - usage.usedMinutes) / perMs;
   return `At this pace the included minutes run out around ${dayText(runsOut)}, before the ${dayText(end)} reset.`;
 }

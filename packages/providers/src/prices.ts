@@ -12,6 +12,100 @@ import type { ProviderId } from "./index.ts";
 /** When the base prices below were last checked against the services' pages. */
 export const PRICES_CHECKED = "2026-11-11";
 
+/** The systems runners come in, for comparing runners across providers. */
+export type RunnerPlatform = "linux" | "arm" | "windows" | "windows-arm" | "macos";
+
+/** A GitHub larger runner: what it's called, its billing SKU, size and list price. */
+export interface GitHubLargerRunner {
+  rate: string;
+  sku: string;
+  name: string;
+  platform: RunnerPlatform | "gpu";
+  size: RunnerSize;
+  usd: number;
+}
+
+// Linux and Windows larger runners: 4 GB a core.
+const coreLadder = (os: "linux" | "windows", arm: boolean, prices: [number, number][]) =>
+  prices.map(([cores, usd]): GitHubLargerRunner => ({
+    rate: `${os}${arm ? "-arm" : ""}-${cores}-core`,
+    sku: `${os}_${cores}_core${arm ? "_arm" : ""}`,
+    name: `${os === "linux" ? "Linux" : "Windows"}${arm ? " Arm" : ""} ${cores}-core`,
+    platform: os === "linux" ? (arm ? "arm" : "linux") : arm ? "windows-arm" : "windows",
+    size: { vcpus: cores, memoryGb: cores * 4 },
+    usd,
+  }));
+
+/**
+ * GitHub's larger runners, for Team and Enterprise plans. Each is named by the org that makes it, so
+ * jobs can't be matched to one by label; they price the catalog on the GitHub provider page.
+ * https://docs.github.com/en/billing/reference/actions-runner-pricing (checked 2026-11-20)
+ */
+export const GITHUB_LARGER: GitHubLargerRunner[] = [
+  ...coreLadder("linux", false, [
+    [4, 0.012],
+    [8, 0.022],
+    [16, 0.042],
+    [32, 0.082],
+    [64, 0.162],
+    [96, 0.252],
+  ]),
+  ...coreLadder("linux", true, [
+    [4, 0.008],
+    [8, 0.014],
+    [16, 0.026],
+    [32, 0.05],
+    [64, 0.098],
+  ]),
+  ...coreLadder("windows", false, [
+    [4, 0.022],
+    [8, 0.042],
+    [16, 0.082],
+    [32, 0.162],
+    [64, 0.322],
+    [96, 0.552],
+  ]),
+  ...coreLadder("windows", true, [
+    [4, 0.014],
+    [8, 0.026],
+    [16, 0.05],
+    [32, 0.098],
+    [64, 0.194],
+  ]),
+  {
+    rate: "macos-xl",
+    sku: "macos_xl",
+    name: "macOS M2 Pro",
+    platform: "macos",
+    size: { vcpus: 5, memoryGb: 14 },
+    usd: 0.102,
+  },
+  {
+    rate: "macos-l",
+    sku: "macos_l",
+    name: "macOS 12-core Intel",
+    platform: "macos",
+    size: { vcpus: 12, memoryGb: 30 },
+    usd: 0.077,
+  },
+  {
+    rate: "linux-4-core-gpu",
+    sku: "linux_4_core_gpu",
+    name: "Linux GPU 4-core",
+    platform: "gpu",
+    size: { vcpus: 4, memoryGb: 28 },
+    usd: 0.052,
+  },
+  {
+    rate: "windows-4-core-gpu",
+    sku: "windows_4_core_gpu",
+    name: "Windows GPU 4-core",
+    platform: "gpu",
+    size: { vcpus: 4, memoryGb: 28 },
+    usd: 0.102,
+  },
+];
+
 /** A provider's rates, and what one minute of each is per. */
 export const RATES = {
   blacksmith: { linux: "vcpu", arm: "vcpu", windows: "vcpu", macos: "vcpu" },
@@ -59,34 +153,7 @@ export const RATES = {
     "windows-2-core": "runner",
     "windows-arm-2-core": "runner",
     macos: "runner",
-    // Larger runners, for Team and Enterprise plans. Each is named by the org that makes it, so
-    // jobs can't be matched to one by label; these price the catalog on provider pages.
-    "linux-4-core": "runner",
-    "linux-8-core": "runner",
-    "linux-16-core": "runner",
-    "linux-32-core": "runner",
-    "linux-64-core": "runner",
-    "linux-96-core": "runner",
-    "linux-arm-4-core": "runner",
-    "linux-arm-8-core": "runner",
-    "linux-arm-16-core": "runner",
-    "linux-arm-32-core": "runner",
-    "linux-arm-64-core": "runner",
-    "windows-4-core": "runner",
-    "windows-8-core": "runner",
-    "windows-16-core": "runner",
-    "windows-32-core": "runner",
-    "windows-64-core": "runner",
-    "windows-96-core": "runner",
-    "windows-arm-4-core": "runner",
-    "windows-arm-8-core": "runner",
-    "windows-arm-16-core": "runner",
-    "windows-arm-32-core": "runner",
-    "windows-arm-64-core": "runner",
-    "linux-4-core-gpu": "runner",
-    "windows-4-core-gpu": "runner",
-    "macos-l": "runner",
-    "macos-xl": "runner",
+    ...Object.fromEntries(GITHUB_LARGER.map(({ rate }) => [rate, "runner" as const])),
   },
 } as const satisfies Partial<Record<ProviderId, Record<string, "vcpu" | "runner">>>;
 
@@ -227,33 +294,7 @@ export const BASE_PRICES: PriceRow[] = [
   { provider: "github", rate: "windows-2-core", usd: 0.01, from: "2026-11-11" },
   { provider: "github", rate: "windows-arm-2-core", usd: 0.01, from: "2026-11-11" },
   { provider: "github", rate: "macos", usd: 0.062, from: "2026-11-11" },
-  // GitHub's larger runners, same page.
-  { provider: "github", rate: "linux-4-core", usd: 0.012, from: "2026-11-20" },
-  { provider: "github", rate: "linux-8-core", usd: 0.022, from: "2026-11-20" },
-  { provider: "github", rate: "linux-16-core", usd: 0.042, from: "2026-11-20" },
-  { provider: "github", rate: "linux-32-core", usd: 0.082, from: "2026-11-20" },
-  { provider: "github", rate: "linux-64-core", usd: 0.162, from: "2026-11-20" },
-  { provider: "github", rate: "linux-96-core", usd: 0.252, from: "2026-11-20" },
-  { provider: "github", rate: "linux-arm-4-core", usd: 0.008, from: "2026-11-20" },
-  { provider: "github", rate: "linux-arm-8-core", usd: 0.014, from: "2026-11-20" },
-  { provider: "github", rate: "linux-arm-16-core", usd: 0.026, from: "2026-11-20" },
-  { provider: "github", rate: "linux-arm-32-core", usd: 0.05, from: "2026-11-20" },
-  { provider: "github", rate: "linux-arm-64-core", usd: 0.098, from: "2026-11-20" },
-  { provider: "github", rate: "windows-4-core", usd: 0.022, from: "2026-11-20" },
-  { provider: "github", rate: "windows-8-core", usd: 0.042, from: "2026-11-20" },
-  { provider: "github", rate: "windows-16-core", usd: 0.082, from: "2026-11-20" },
-  { provider: "github", rate: "windows-32-core", usd: 0.162, from: "2026-11-20" },
-  { provider: "github", rate: "windows-64-core", usd: 0.322, from: "2026-11-20" },
-  { provider: "github", rate: "windows-96-core", usd: 0.552, from: "2026-11-20" },
-  { provider: "github", rate: "windows-arm-4-core", usd: 0.014, from: "2026-11-20" },
-  { provider: "github", rate: "windows-arm-8-core", usd: 0.026, from: "2026-11-20" },
-  { provider: "github", rate: "windows-arm-16-core", usd: 0.05, from: "2026-11-20" },
-  { provider: "github", rate: "windows-arm-32-core", usd: 0.098, from: "2026-11-20" },
-  { provider: "github", rate: "windows-arm-64-core", usd: 0.194, from: "2026-11-20" },
-  { provider: "github", rate: "linux-4-core-gpu", usd: 0.052, from: "2026-11-20" },
-  { provider: "github", rate: "windows-4-core-gpu", usd: 0.102, from: "2026-11-20" },
-  { provider: "github", rate: "macos-l", usd: 0.077, from: "2026-11-20" },
-  { provider: "github", rate: "macos-xl", usd: 0.102, from: "2026-11-20" },
+  ...GITHUB_LARGER.map(({ rate, usd }) => ({ provider: "github", rate, usd, from: "2026-11-20" })),
 ];
 
 /** A UTC day (YYYY-MM-DD) as epoch ms at its midnight. */
@@ -317,17 +358,7 @@ const RATE_NAMES: Record<string, string> = {
   memory: "Memory-heavy",
   ...GITHUB_LABELS,
   // GitHub's larger runners have no fixed label, so they go by size: "Linux Arm 8-core".
-  ...Object.fromEntries(
-    Object.keys(RATES.github).flatMap((rate) => {
-      const match = /^(linux|windows)(-arm)?-(\d+)-core(-gpu)?$/.exec(rate);
-      if (!match || Number(match[3]) < 4) return [];
-      const [, os, arm, cores, gpu] = match;
-      const system = `${os === "linux" ? "Linux" : "Windows"}${arm ? " Arm" : ""}${gpu ? " GPU" : ""}`;
-      return [[rate, `${system} ${cores}-core`]];
-    }),
-  ),
-  "macos-l": "macOS 12-core Intel",
-  "macos-xl": "macOS M2 Pro",
+  ...Object.fromEntries(GITHUB_LARGER.map(({ rate, name }) => [rate, name])),
 };
 
 /** A rate as people say it, such as "Linux Arm" or `ubuntu-slim`. */
@@ -368,9 +399,6 @@ export const platformOf = (label: string) => {
   if (label.includes("windows")) return "windows";
   return label.includes("arm") ? "arm" : "linux";
 };
-
-/** The platforms runners come in, for comparing runners across providers. */
-export type RunnerPlatform = "linux" | "arm" | "windows" | "windows-arm" | "macos";
 
 /**
  * The platform a provider's runner label asks for, or null when the label doesn't say (a
@@ -534,19 +562,7 @@ const GITHUB_SIZES: Partial<Record<string, RunnerSize>> = {
   "linux-arm-2-core": { vcpus: 2, memoryGb: 8 },
   "windows-2-core": { vcpus: 2, memoryGb: 8 },
   "windows-arm-2-core": { vcpus: 2, memoryGb: 8 },
-  "macos-l": { vcpus: 12, memoryGb: 30 },
-  "macos-xl": { vcpus: 5, memoryGb: 14 },
-  "linux-4-core-gpu": { vcpus: 4, memoryGb: 28 },
-  "windows-4-core-gpu": { vcpus: 4, memoryGb: 28 },
-  // Larger runners: 4 GB a core.
-  ...Object.fromEntries(
-    Object.keys(RATES.github).flatMap((rate) => {
-      const cores = /^(?:linux|windows)(?:-arm)?-(\d+)-core$/.exec(rate)?.[1];
-      return cores && Number(cores) >= 4
-        ? [[rate, { vcpus: Number(cores), memoryGb: Number(cores) * 4 }]]
-        : [];
-    }),
-  ),
+  ...Object.fromEntries(GITHUB_LARGER.map(({ rate, size }) => [rate, size])),
 };
 
 // Cloudflare Containers instance types RelayRunner runs jobs on.

@@ -5,6 +5,7 @@ import {
   runnerSize,
   sizeText,
 } from "@relayrunner/providers";
+import { minuteText } from "@relayrunner/providers/runner-table";
 import { useState } from "react";
 import { OptionPicker } from "@/components/range-picker";
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
@@ -32,7 +33,11 @@ const PLATFORM_COLORS: Record<CatalogRow["platform"], string> = {
   gpu: "var(--job-deploy)",
 };
 
-const priceText = (usd: number | null) => (usd === null ? "—" : `$${usd.toFixed(3)}`);
+const priceText = (usd: number | null) => (usd === null ? "—" : minuteText(usd));
+
+/** "4 vCPU · 16 GB · Intel · $0.077 a minute". */
+const runnerDetail = (cell: Cell) =>
+  [sizeText(cell.size), cell.note, `${priceText(cell.usd)} a minute`].filter(Boolean).join(" · ");
 
 // Runners are matched to jobs by system and size: a job's label can name another image of the
 // same runner (blacksmith-4vcpu-ubuntu-2204 is the catalog's -2404 at the same price). GitHub's
@@ -220,7 +225,7 @@ function GridCell({ cell, tint, showSize }: { cell: Cell; tint: number; showSize
           <span className="text-sm font-medium tabular-nums">{priceText(cell.usd)}</span>
           {(cell.jobs > 0 || sub) && (
             <span className="text-xs leading-tight text-muted-foreground">
-              {cell.jobs > 0 ? <>{plural(cell.jobs, "job")}</> : sub}
+              {cell.jobs > 0 ? plural(cell.jobs, "job") : sub}
             </span>
           )}
           {cell.jobs > 0 && (
@@ -244,15 +249,9 @@ function RunnerTip({ cell }: { cell: Cell }) {
       <span className={cn(cell.name && "font-mono")}>
         {cell.name ?? "Larger runner, named by your org"}
       </span>
-      <span className="text-muted-foreground">
-        {[sizeText(cell.size), cell.note, `${priceText(cell.usd)} a minute`]
-          .filter(Boolean)
-          .join(" · ")}
-      </span>
+      <span className="text-muted-foreground">{runnerDetail(cell)}</span>
       {cell.jobs > 0 && (
-        <span className="text-muted-foreground">
-          <>{plural(cell.jobs, "job")}</> in this range
-        </span>
+        <span className="text-muted-foreground">{plural(cell.jobs, "job")} in this range</span>
       )}
     </span>
   );
@@ -266,22 +265,22 @@ const PAD = { left: 52, right: 104, top: 12, bottom: 28 };
 /** Price against vCPUs on doubling scales, a line per system and a dot per runner. */
 function PriceChart({ rows, low, high }: Shown) {
   const [hover, setHover] = useState<Cell | null>(null);
-  const sized = rows.map((row) => ({
-    ...row,
-    points: row.cells
+  const sized = rows.map((row) => {
+    const points = row.cells
       .filter((cell): cell is Cell & { usd: number; size: NonNullable<Cell["size"]> } =>
         Boolean(cell.usd && cell.size),
       )
-      .sort((a, b) => a.size.vcpus - b.size.vcpus),
-  }));
-  // A line joins a row's runners only when they climb in size and price; macOS's machines and
-  // GitHub's two GPU runners stay dots.
-  const isLadder = (points: (typeof sized)[number]["points"]) =>
-    points.length > 1 &&
-    points.every(
-      (p, i) =>
-        i === 0 || (p.size.vcpus > points[i - 1]!.size.vcpus && p.usd >= points[i - 1]!.usd),
-    );
+      .sort((a, b) => a.size.vcpus - b.size.vcpus);
+    // A line joins a row's runners only when they climb in size and price; macOS's machines and
+    // GitHub's two GPU runners stay dots.
+    const ladder =
+      points.length > 1 &&
+      points.every(
+        (p, i) =>
+          i === 0 || (p.size.vcpus > points[i - 1]!.size.vcpus && p.usd >= points[i - 1]!.usd),
+      );
+    return { ...row, points, ladder };
+  });
   const vcpus = sized.flatMap((row) => row.points.map((p) => p.size.vcpus));
   const minX = Math.min(...vcpus);
   const maxX = Math.max(...vcpus, minX * 2);
@@ -294,9 +293,9 @@ function PriceChart({ rows, low, high }: Shown) {
   const yTicks = priceTicks(low, top);
   // Lines are named at their ends; rows that are only dots get a legend under the chart.
   const labelY = spreadLabels(
-    sized.map((row) => (isLadder(row.points) ? y(row.points.at(-1)!.usd) + 4 : -Infinity)),
+    sized.map((row) => (row.ladder ? y(row.points.at(-1)!.usd) + 4 : -Infinity)),
   );
-  const others = sized.filter((row) => row.points.length && !isLadder(row.points));
+  const others = sized.filter((row) => row.points.length && !row.ladder);
   return (
     <div className="grid gap-2 rounded-xl border bg-card p-3 sm:p-4">
       <svg
@@ -342,7 +341,7 @@ function PriceChart({ rows, low, high }: Shown) {
           const last = row.points.at(-1);
           return (
             <g key={row.name}>
-              {isLadder(row.points) && (
+              {row.ladder && (
                 <polyline
                   fill="none"
                   stroke={color}
@@ -377,7 +376,7 @@ function PriceChart({ rows, low, high }: Shown) {
                   )}
                 </g>
               ))}
-              {last && isLadder(row.points) && (
+              {last && row.ladder && (
                 <text
                   x={x(last.size.vcpus) + 10}
                   y={labelY[r]}
@@ -412,9 +411,7 @@ function PriceChart({ rows, low, high }: Shown) {
               {hover.name ?? "Larger runner"}
             </span>
             {" · "}
-            {[sizeText(hover.size), hover.note, `${priceText(hover.usd)} a minute`]
-              .filter(Boolean)
-              .join(" · ")}
+            {runnerDetail(hover)}
           </>
         ) : (
           "Point at a dot for its runner. Hollow dots are larger runners; a ring means your jobs ran there."

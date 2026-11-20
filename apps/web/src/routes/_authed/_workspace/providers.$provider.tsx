@@ -24,6 +24,7 @@ import {
   type ProviderRunner,
   rateName,
   rateText,
+  reportCatalog,
   sampleProviderReport,
 } from "@/lib/providers";
 import { cn } from "@/lib/utils";
@@ -91,6 +92,7 @@ function ProviderView({ first, unused }: { first: ProviderReport; unused: boolea
   const report = useRangeReport(first, range, (next) => load(provider, next));
   const info = providerInfo(provider);
   usePageTitle(info.name);
+  const catalog = reportCatalog(report);
   // Nothing ran here in the widest range: lead with how to start instead of empty numbers.
   const [notSetUp] = useState(unused && !!info.example);
   const { icon, tile } = providerStyle(provider);
@@ -163,15 +165,16 @@ function ProviderView({ first, unused }: { first: ProviderReport; unused: boolea
 
       <ProviderPlans provider={provider} />
 
-      {report.catalog?.length ? (
+      {catalog.length ? (
         <MachinePrices
           provider={provider}
-          catalog={report.catalog}
+          catalog={catalog}
           runners={report.runners}
           view={search.prices ?? "grid"}
           onView={(view) => setSearch({ prices: unlessDefault(view, "grid") })}
         />
       ) : (
+        // Providers operators added have one price and no catalog.
         <Prices prices={report.prices} />
       )}
 

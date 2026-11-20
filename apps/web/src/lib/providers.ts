@@ -1,11 +1,11 @@
 import {
   BASE_BOOK,
-  type CatalogRow,
   githubRate,
   listRate,
   PRICES_CHECKED,
   type ProviderId,
   type RatePrices,
+  priceBook,
   ratePrices,
   runnerCatalog,
   runnerSize,
@@ -41,8 +41,6 @@ export type ProviderReport = ProviderCounts & {
   workflows: ProviderWorkflow[];
   /** The provider's list prices, each with its history. Empty when it has none. */
   prices: RatePrices[];
-  /** Every runner the provider sells, by system. Missing from an API older than the field. */
-  catalog?: CatalogRow[];
 };
 
 export type ProviderSummary = ProviderCounts & {
@@ -158,7 +156,6 @@ export function sampleProviderReport(provider: string, days: number): ProviderRe
     runners,
     workflows,
     prices: ratePrices(BASE_BOOK, provider),
-    catalog: runnerCatalog(BASE_BOOK, provider),
   };
 }
 
@@ -171,4 +168,12 @@ export function sampleProvidersOverview(days: number): ProvidersOverview {
     }))
     .sort((a, b) => b.jobs - a.jobs);
   return { days, pricesChecked: PRICES_CHECKED, providers };
+}
+
+/** Every runner the provider sells, by system, priced from the report's list prices. */
+export function reportCatalog({ provider, prices }: ProviderReport) {
+  const rows = prices.flatMap(({ rate, history }) =>
+    history.map(({ usd, from }) => ({ provider, rate, usd, from })),
+  );
+  return runnerCatalog(priceBook(rows), provider);
 }

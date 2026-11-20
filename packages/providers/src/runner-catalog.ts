@@ -3,20 +3,21 @@
 // memory-heavy), each runner with its label, size and list price. Prices come from the price book,
 // so rows operators record in D1 show here too; sizes come from runnerSize where the label says.
 import type { ProviderId } from "./index.ts";
-import { listRate, type PriceBook, type RunnerSize, runnerSize } from "./prices.ts";
+import {
+  GITHUB_LABELS,
+  GITHUB_LARGER,
+  type GitHubRunner,
+  listRate,
+  type PriceBook,
+  type RunnerPlatform,
+  type RunnerSize,
+  runnerSize,
+} from "./prices.ts";
 
-/** The systems a row can be, in the order rows show. */
-export const CATALOG_PLATFORMS = [
-  "linux",
-  "arm",
-  "windows",
-  "windows-arm",
-  "macos",
-  "gpu",
-] as const;
-export type CatalogPlatform = (typeof CATALOG_PLATFORMS)[number];
+export type CatalogPlatform = RunnerPlatform | "gpu";
 
-export const PLATFORM_NAMES: Record<CatalogPlatform, string> = {
+// Each system's name, in the order rows show.
+const PLATFORM_NAMES: Record<CatalogPlatform, string> = {
   linux: "Linux x64",
   arm: "Linux Arm",
   windows: "Windows",
@@ -51,61 +52,52 @@ const sizes = (list: number[], label: (n: number) => string): Entry[] =>
 const UP_TO_32 = [2, 4, 8, 16, 32];
 const UP_TO_64 = [...UP_TO_32, 64];
 
-const github = (rate: string, extra: Omit<Entry, "label"> = {}): Entry => ({
-  label: rate,
-  ...extra,
-});
-const githubLarger = (prefix: string, cores: number[]) =>
-  cores.map((n) => github(`${prefix}-${n}-core`, { larger: true }));
+// GitHub's standard runners, by the rate jobs are priced at. macOS's size differs by image; this
+// is the Apple silicon one macos-latest runs on.
+const GITHUB_STANDARD: [CatalogPlatform, GitHubRunner, RunnerSize?][] = [
+  ["linux", "linux-1-core"],
+  ["linux", "linux-2-core"],
+  ["arm", "linux-arm-2-core"],
+  ["windows", "windows-2-core"],
+  ["windows-arm", "windows-arm-2-core"],
+  ["macos", "macos", { vcpus: 3, memoryGb: 7 }],
+];
+
+// The larger runners with a fixed label, and what sets apart those that share a row and size.
+const GITHUB_LARGER_LABELS: Partial<Record<string, string>> = {
+  "macos-xl": "macos-latest-xlarge",
+  "macos-l": "macos-latest-large",
+};
+const GITHUB_NOTES: Partial<Record<string, string>> = {
+  "macos-xl": "M2 Pro",
+  "macos-l": "Intel",
+  "linux-4-core-gpu": "Linux",
+  "windows-4-core-gpu": "Windows",
+};
+
+/** GitHub's runners by system: the standard one or two, then the larger ones. */
+const githubRows = (): Row[] =>
+  (Object.keys(PLATFORM_NAMES) as CatalogPlatform[]).map((platform) => ({
+    platform,
+    runners: [
+      ...GITHUB_STANDARD.filter((runner) => runner[0] === platform).map(([, rate, size]) => ({
+        label: rate,
+        name: rate === "macos" ? "macos-latest" : GITHUB_LABELS[rate],
+        size,
+      })),
+      ...GITHUB_LARGER.filter((runner) => runner.platform === platform).map((runner) => ({
+        label: runner.rate,
+        name: GITHUB_LARGER_LABELS[runner.rate],
+        size: runner.size,
+        larger: true as const,
+        note: GITHUB_NOTES[runner.rate],
+      })),
+    ],
+  }));
 
 const CATALOG: Partial<Record<ProviderId, Row[]>> = {
   // https://docs.github.com/en/billing/reference/actions-runner-pricing
-  github: [
-    {
-      platform: "linux",
-      runners: [
-        github("linux-1-core", { name: "ubuntu-slim" }),
-        github("linux-2-core", { name: "ubuntu-latest" }),
-        ...githubLarger("linux", [4, 8, 16, 32, 64, 96]),
-      ],
-    },
-    {
-      platform: "arm",
-      runners: [
-        github("linux-arm-2-core", { name: "ubuntu-24.04-arm" }),
-        ...githubLarger("linux-arm", [4, 8, 16, 32, 64]),
-      ],
-    },
-    {
-      platform: "windows",
-      runners: [
-        github("windows-2-core", { name: "windows-latest" }),
-        ...githubLarger("windows", [4, 8, 16, 32, 64, 96]),
-      ],
-    },
-    {
-      platform: "windows-arm",
-      runners: [
-        github("windows-arm-2-core", { name: "windows-11-arm" }),
-        ...githubLarger("windows-arm", [4, 8, 16, 32, 64]),
-      ],
-    },
-    {
-      platform: "macos",
-      runners: [
-        github("macos", { name: "macos-latest", size: { vcpus: 3, memoryGb: 7 } }),
-        github("macos-xl", { name: "macos-latest-xlarge", larger: true, note: "M2 Pro" }),
-        github("macos-l", { name: "macos-latest-large", larger: true, note: "Intel" }),
-      ],
-    },
-    {
-      platform: "gpu",
-      runners: [
-        github("linux-4-core-gpu", { larger: true, note: "Linux" }),
-        github("windows-4-core-gpu", { larger: true, note: "Windows" }),
-      ],
-    },
-  ],
+  github: githubRows(),
   // https://docs.blacksmith.sh/blacksmith-runners/overview
   blacksmith: [
     { platform: "linux", runners: sizes(UP_TO_32, (n) => `blacksmith-${n}vcpu-ubuntu-2404`) },
