@@ -20,8 +20,9 @@ type Exchange = {
   redirectURI: string;
 };
 
-export function githubBusy(options: { retryDelayMs?: number } = {}) {
-  const retryDelayMs = options.retryDelayMs ?? 2000;
+const RETRY_DELAY_MS = 2000;
+
+export function githubBusy() {
   let busy = false;
 
   return {
@@ -40,7 +41,7 @@ export function githubBusy(options: { retryDelayMs?: number } = {}) {
           fetch(TOKEN_ENDPOINT, { method: "POST", body, headers, redirect: "manual" });
         let response = await post();
         if (response.status === 429) {
-          await new Promise((resolve) => setTimeout(resolve, retryDelayMs));
+          await new Promise((resolve) => setTimeout(resolve, RETRY_DELAY_MS));
           response = await post();
         }
         if (response.status === 429) {

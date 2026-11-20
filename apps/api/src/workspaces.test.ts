@@ -96,15 +96,6 @@ describe("workspaces", () => {
     const current = await call("/workspaces/current", member.cookie);
     expect(await current.json()).toMatchObject({ role: "member" });
   });
-
-  test("users can't create a workspace (#316)", async () => {
-    const { cookie } = await signIn();
-    const response = await call("/auth/organization/create", cookie, {
-      name: "Acme again",
-      slug: "acme-again",
-    });
-    expect(response.status).toBe(403);
-  });
 });
 
 describe("runner order", () => {

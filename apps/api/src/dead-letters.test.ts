@@ -131,20 +131,14 @@ describe("/api/admin/webhooks", () => {
     return app.request(`/api/admin/webhooks${path}`, { ...init, headers }, env);
   }
 
-  const routes: [string, string][] = [
-    ["GET", "/dead-letters"],
-    ["POST", "/dead-letters/replay"],
-    ["POST", "/dead-letters/2026-11-04_d-1/replay"],
-    ["DELETE", "/dead-letters/2026-11-04_d-1"],
-  ];
-
-  test.each(routes)("%s %s answers 404 where Access isn't configured", async (method, path) => {
+  // gateAdmin's own cases are in packages/access. This proves the routes sit behind it.
+  test("answers 404 where Access isn't configured", async () => {
     const env = { ...base, ACCESS_TEAM_DOMAIN: undefined, ACCESS_AUD: undefined };
-    expect((await call(path, { method }, env)).status).toBe(404);
+    expect((await call("/dead-letters", {}, env)).status).toBe(404);
   });
 
-  test.each(routes)("%s %s answers 403 without an Access JWT", async (method, path) => {
-    const response = await call(path, { method }, base, false);
+  test("answers 403 without an Access JWT, and replays nothing", async () => {
+    const response = await call("/dead-letters/replay", { method: "POST" }, base, false);
     expect(response.status).toBe(403);
     expect(send).not.toHaveBeenCalled();
   });

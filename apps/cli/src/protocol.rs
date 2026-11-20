@@ -389,25 +389,6 @@ mod tests {
     }
 
     #[test]
-    fn encodes_with_version() {
-        let text = MachineMessage::TokenSaved.encode();
-        let value: Value = serde_json::from_str(&text).unwrap();
-        assert_eq!(value["type"], "token_saved");
-        assert_eq!(value["v"], 1);
-    }
-
-    #[test]
-    fn status_leaves_out_unchanged_version() {
-        let text = MachineMessage::Status {
-            state: "idle",
-            running: 0,
-            runner_version: None,
-        }
-        .encode();
-        assert!(!text.contains("runnerVersion"));
-    }
-
-    #[test]
     fn reads_run_and_rejects_other_versions() {
         let run =
             parse_gateway(r#"{"v":1,"type":"run","routeId":"r1","jitConfig":"abc"}"#).unwrap();

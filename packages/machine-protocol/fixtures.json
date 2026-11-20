@@ -1,5 +1,5 @@
 {
-  "$comment": "Messages both clients must agree on. messages.test.ts checks each one against the schemas, and apps/cli checks that it sends exactly the machine messages and reads every gateway message.",
+  "$comment": "Messages both clients must agree on. fixtures.test.ts checks each one against the schemas, and apps/cli checks that it sends exactly the machine messages and reads every gateway message.",
   "machine": {
     "hello": {
       "v": 1,
