@@ -21,6 +21,16 @@ It sorts every job into three groups and lets you pick from the first:
 
 To see the list without changing anything, run `relayrunner init --plan`. To route jobs without prompts, run `relayrunner init --apply test,lint`, or `--apply all` for every ready job. Add `--auto` to set Linux x64 jobs' sizes on the Router page instead of in the file.
 
+## Route repos from the dashboard
+
+On the dashboard's Router page, **Route a repo** takes you through one repo at a time:
+
+1. Pick a repo. Repos your org's Default runner group leaves out are marked, with the fix.
+2. Pick its jobs from recent runs, and a size for each if you want one other than the default.
+3. Copy a prompt for your coding agent, which runs `init` and opens a PR, or copy the `init` command.
+
+After you copy, the sheet waits for the repo's first routed run and says when it's routed. **Next repo** moves on, and from the second repo one prompt can cover the rest.
+
 ## What it writes
 
 For a job like this:

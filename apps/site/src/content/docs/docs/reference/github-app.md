@@ -48,7 +48,7 @@ The App can't read your code, beyond `relayrunner.yml`, and doesn't receive repo
 
 ## Runner groups
 
-If your org's runner group settings block RelayRunner's runners, it posts a failed `RelayRunner` check on the commit that says what to change.
+If your org's runner group settings block RelayRunner's runners, it posts a failed `RelayRunner` check on the commit that says what to change. **Route a repo** on the Router page also marks the repos your org's Default runner group leaves out, before you route them.
 
 ## RelayRunner Checks
 
