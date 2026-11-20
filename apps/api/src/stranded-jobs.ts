@@ -32,7 +32,7 @@ export type StrandedReason = "no_machine" | "runner_failed" | "not_routable" | "
 // Every message ends with how to recover: "Re-run failed jobs" reuses the run's old relay pick,
 // while "Re-run all jobs" runs the relay again so it picks a runner that can take the job now.
 const RECOVER =
-  'To recover, use "Re-run all jobs" so the relay picks a runner again. "Re-run failed jobs" can hit the same problem.';
+  'To recover, use "Re-run all jobs" so the relay picks a new runner. "Re-run failed jobs" can hit the same problem.';
 
 export const STRANDED_MESSAGES: Record<StrandedReason, string> = {
   no_machine: `No machine could take this job. The machine it was sent to went offline before the job started. ${RECOVER}`,
