@@ -15,7 +15,7 @@ const Id = z.coerce.number().int().positive();
 const RunParams = z.object({ repositoryId: Id, runId: Id, runAttempt: Id });
 
 // The History page: the workspace's workflow runs in a window (?from=&to=, or the last ?days=N,
-// default 14), newest first.
+// default 14), newest first; ?repo=&workflow= narrows it to one workflow.
 // /live is the jobs still going, running or queued, for the Runners page.
 // /:repositoryId/:runId/:runAttempt/jobs is one run attempt's jobs, for its expanded row. /jobs is
 // every job a runner finished in a window (as above, default 14 days), newest first, for the Jobs view.
@@ -24,9 +24,12 @@ const RunParams = z.object({ repositoryId: Id, runId: Id, runAttempt: Id });
 // /:repositoryId/:runId/:runAttempt/failures is why the attempt's jobs failed, with log excerpts
 // read from GitHub, for agents. Both answer only someone who can read the repo on GitHub.
 export const runRoutes = new Hono<AppEnv>()
-  .get("/", requireUser, requireWorkspace, withCatalog, async (c) =>
-    c.json(await listRuns(c.var.db, c.var.workspace.id, jobWindow(c.req.query()))),
-  )
+  .get("/", requireUser, requireWorkspace, withCatalog, async (c) => {
+    // `repo` and `workflow` together narrow it to one workflow, for its panel.
+    const { repo, workflow } = c.req.query();
+    const only = repo && workflow ? { repository: repo, workflow } : undefined;
+    return c.json(await listRuns(c.var.db, c.var.workspace.id, jobWindow(c.req.query()), only));
+  })
   .get("/live", requireUser, requireWorkspace, withCatalog, async (c) =>
     c.json(await liveJobs(c.var.db, c.var.workspace.id)),
   )

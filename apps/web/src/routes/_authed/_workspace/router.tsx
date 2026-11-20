@@ -2,6 +2,7 @@ import { DEFAULT_RUNNER_ORDER, type RunnerOrder } from "@relayrunner/runner-orde
 import { createFileRoute } from "@tanstack/react-router";
 import { RotateCwIcon, Settings2Icon, TriangleAlert } from "lucide-react";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { RunnerLink } from "@/components/runner-link";
 import { SectionBoundary } from "@/components/error-boundary";
 import { PageHeader } from "@/components/page-header";
 import { RetrySettingsCard } from "@/components/retry-settings";
@@ -250,7 +251,10 @@ function UnhealthyRunners({ health: state, editable }: { health: HealthState; ed
         >
           <TriangleAlert aria-hidden className="size-4 shrink-0 text-destructive" />
           <p className="min-w-0 flex-1">
-            <span className="font-medium">Skipping {runner.label}.</span>{" "}
+            <span className="font-medium">
+              Skipping{" "}
+              <RunnerLink runner={{ key: `${runner.key}:${runner.label}`, label: runner.label }} />.
+            </span>{" "}
             <span className="text-muted-foreground">
               The last {runner.misses} jobs on it weren't picked up.{" "}
               {runner.retryAt > Date.now()

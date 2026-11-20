@@ -11,7 +11,7 @@ import { CommitBy } from "@/components/commit";
 import { Count } from "@/components/count";
 import { PageHeader } from "@/components/page-header";
 import { OptionPicker, TimeRangePicker } from "@/components/range-picker";
-import { ExternalLink, LINK } from "@/components/run-sheet";
+import { ExternalLink, LINK, RunLink } from "@/components/run-sheet";
 import { RunnerLink } from "@/components/runner-link";
 import { DOCS_URL } from "@/components/site-footer";
 import { StatusIcon } from "@/components/status-icon";
@@ -28,7 +28,6 @@ import {
 } from "@/components/ui/table";
 import { timeAgo } from "@/lib/activity";
 import { authDisabled } from "@/lib/auth-client";
-import { runParam } from "@/lib/runs";
 import {
   AREAS,
   BREAKDOWN_VIEWS,
@@ -838,9 +837,9 @@ function RunsPanel({
 function RunItem({ run }: { run: SignalRun }) {
   return (
     <li>
-      <Link
-        to="/history"
-        search={{ run: runParam(run), job: run.jobId ?? undefined }}
+      <RunLink
+        run={run}
+        job={run.jobId ?? undefined}
         className="group flex items-start gap-3 px-3 py-2.5 hover:bg-secondary/30"
       >
         <StatusIcon
@@ -861,7 +860,7 @@ function RunItem({ run }: { run: SignalRun }) {
           </span>
         </span>
         <span className="text-sm font-medium tabular-nums">{runTime(run.runMs)}</span>
-      </Link>
+      </RunLink>
     </li>
   );
 }

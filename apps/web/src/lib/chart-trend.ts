@@ -78,7 +78,7 @@ export function spreads(
 }
 
 /** The q-quantile (0 to 1) of ascending values, interpolated the way the API's job times are. */
-function quantile(sorted: number[], q: number) {
+export function quantile(sorted: number[], q: number) {
   const at = (sorted.length - 1) * q;
   const lo = Math.floor(at);
   const hi = Math.ceil(at);

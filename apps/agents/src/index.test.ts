@@ -218,6 +218,7 @@ describe("mcp server", () => {
       machine: null,
       job: {
         id: index,
+        repositoryId: 1,
         repository: "acme/app",
         private: true,
         runId: 7,

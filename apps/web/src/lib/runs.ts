@@ -4,7 +4,8 @@ import { api } from "@/lib/api";
 import type { RouteWalk } from "@/lib/route-walk";
 import type { Environment, JobRun, TypicalTime } from "@/lib/job-times";
 import { authDisabled } from "@/lib/auth-client";
-import { rangeDays, reportQuery, type TimeRange } from "@/lib/time-range";
+import type { WorkflowRef } from "@/lib/workflow-ref";
+import { rangeDays, reportQuery, resolveRange, type TimeRange } from "@/lib/time-range";
 
 export type RunStatus = "queued" | "in_progress" | "completed";
 
@@ -149,8 +150,29 @@ export const pullRequestUrl = (repository: string, number: number) =>
 /** Both History views open on the last week. */
 export const HISTORY_DEFAULT_RANGE: TimeRange = "7d";
 
-export function getRuns(range: TimeRange) {
-  return api<RunsReport>(`/runs?${reportQuery(range)}`);
+/** The workspace's runs in a range, or with `only`, just one workflow's. */
+export function getRuns(range: TimeRange, only?: WorkflowRef) {
+  const query = reportQuery(range);
+  if (only) {
+    const filter = new URLSearchParams({ repo: only.repository, workflow: only.workflow });
+    return api<RunsReport>(`/runs?${query}&${filter}`);
+  }
+  return api<RunsReport>(`/runs?${query}`);
+}
+
+/** The workspace's runs in a range (or one workflow's), or the sample's without sign-in. */
+export function loadRuns(range: TimeRange, only?: WorkflowRef): Promise<RunsReport> {
+  if (!authDisabled) return getRuns(range, only);
+  // The sample is the last few days: keep the runs the range holds, as the API would.
+  const { from, to } = resolveRange(range);
+  const sample = sampleRuns();
+  const runs = sample.runs.filter(
+    (run) =>
+      run.updatedAt >= from &&
+      run.updatedAt < to &&
+      (!only || (run.repository === only.repository && run.workflow === only.workflow)),
+  );
+  return Promise.resolve({ ...sample, runs });
 }
 
 export function getJobs(range: TimeRange) {

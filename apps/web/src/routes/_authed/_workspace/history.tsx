@@ -41,8 +41,8 @@ import {
   type Run,
   type RunsReport,
   loadJobs,
+  loadRuns,
   runParam,
-  sampleRuns,
   triggerText,
 } from "@/lib/runs";
 import {
@@ -53,7 +53,7 @@ import {
   useRangeReport,
   useSetSearch,
 } from "@/lib/search-params";
-import { rangePhrase, resolveRange, type TimeRange } from "@/lib/time-range";
+import { rangePhrase, type TimeRange } from "@/lib/time-range";
 import { cn, elapsed } from "@/lib/utils";
 
 const ranges = rangeSearch(JOB_RANGES, HISTORY_DEFAULT_RANGE);
@@ -120,15 +120,6 @@ export const Route = createFileRoute("/_authed/_workspace/history")({
   shouldReload: ({ cause }) => cause === "enter",
   component: HistoryPage,
 });
-
-function loadRuns(range: TimeRange): Promise<RunsReport> {
-  if (!authDisabled) return getRuns(range);
-  // The sample is the last few days: keep the runs the range holds, as the API would.
-  const { from, to } = resolveRange(range);
-  const sample = sampleRuns();
-  const runs = sample.runs.filter((run) => run.updatedAt >= from && run.updatedAt < to);
-  return Promise.resolve({ ...sample, runs });
-}
 
 /** The report's environments, by key. */
 const byKey = (report: { environments: Environment[] }): Environments =>

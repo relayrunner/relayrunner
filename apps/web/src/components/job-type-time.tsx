@@ -7,6 +7,7 @@ import { Fragment, useEffect, useMemo, useState } from "react";
 import { Count } from "@/components/count";
 import { ChartTip, TipRow, topRounded, useWidth } from "@/components/chart-parts";
 import { TypePhases } from "@/components/job-phases";
+import { WorkflowLink } from "@/components/workflow-link";
 import { authDisabled } from "@/lib/auth-client";
 import { DAY_MS, minutesText, plural } from "@/lib/job-times";
 import {
@@ -265,7 +266,17 @@ function JobName({ job }: { job: JobTypeTime }) {
     <span className="text-sm">
       <span className="text-muted-foreground">
         {job.repository}
-        {job.workflow ? ` · ${job.workflow}` : ""} ›
+        {job.workflow && (
+          <>
+            {" · "}
+            <WorkflowLink
+              repository={job.repository}
+              workflow={job.workflow}
+              className="hover:text-foreground"
+            />
+          </>
+        )}{" "}
+        ›
       </span>{" "}
       {job.job}
     </span>

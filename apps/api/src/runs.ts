@@ -373,16 +373,26 @@ function successfulWalls(summaries: RunSummary[]) {
   return walls;
 }
 
-/** The workspace's runs that changed in the window, newest first, at most RUN_LIMIT. */
+/**
+ * The workspace's runs that changed in the window, newest first, at most RUN_LIMIT. With `only`,
+ * just that workflow's runs, so a quiet one isn't crowded out of the limit by busier ones.
+ */
 export async function listRuns(
   db: Db,
   workspaceId: string,
   window: Window = lastDays(USUAL_DAYS),
+  only?: { repository: string; workflow: string },
 ): Promise<RunsReport> {
   // Usual times come from at least USUAL_DAYS, so a short window still has enough runs.
   const read = { from: Math.min(window.from, window.to - USUAL_DAYS * DAY_MS), to: window.to };
   const all = await runSummaries(db, workspaceId, read);
-  const summaries = all.filter((summary) => summary.updatedAt >= window.from);
+  const summaries = all.filter(
+    ({ updatedAt, row, group }) =>
+      updatedAt >= window.from &&
+      (!only ||
+        ((row?.repositoryFullName ?? group?.repository) === only.repository &&
+          (row?.workflowName ?? group?.workflow_name) === only.workflow)),
+  );
   // Each workflow's usual time, from its successful runs over everything read.
   const usual = new Map<string, number | null>();
   for (const [workflow, runs] of successfulWalls(all))

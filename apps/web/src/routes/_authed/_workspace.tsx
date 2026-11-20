@@ -38,13 +38,19 @@ import {
   WaypointsIcon,
   WebhookIcon,
 } from "lucide-react";
-import { type ReactNode, useEffect, useState } from "react";
+import { type ReactNode, useEffect, useMemo, useState } from "react";
 import { SectionBoundary } from "@/components/error-boundary";
 import { FeedbackPopover } from "@/components/feedback-popover";
 import { PagePending } from "@/components/page-pending";
 import { GithubIcon } from "@/components/provider-logos";
 import { RUNNER_DEFAULT_RANGE, RUNNER_RANGES, RunnerSheet } from "@/components/runner-sheet";
 import { DOCS_URL, SiteFooter } from "@/components/site-footer";
+import { parseWorkflowParam } from "@/lib/workflow-ref";
+import {
+  WORKFLOW_DEFAULT_RANGE,
+  WORKFLOW_RANGES,
+  WorkflowSheet,
+} from "@/components/workflow-sheet";
 import { Sheet, SheetContent, SheetTitle, SheetTrigger } from "@/components/ui/sheet";
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
 import { WorkspaceMark, WorkspaceMenu } from "@/components/workspace-menu";
@@ -54,7 +60,7 @@ import { isGitHubOutcome } from "@/lib/github";
 import { loadProviderCatalog } from "@/lib/provider-catalog";
 import { isOperator } from "@/lib/roles";
 import { textParam } from "@/lib/search-params";
-import { rangeOrDaysParam, type TimeRange } from "@/lib/time-range";
+import { rangeOrDaysParam, type TimeRange, timeRangeParam } from "@/lib/time-range";
 import { readFlag, saveFlag } from "@/lib/stored-flag";
 import { cn } from "@/lib/utils";
 import {
@@ -82,10 +88,17 @@ const devWorkspace: CurrentWorkspace = {
 export const Route = createFileRoute("/_authed/_workspace")({
   // `runner` opens a runner's panel over any page (components/runner-sheet.tsx), and `runnerRange`
   // is its range when that isn't the default. An older link's `runnerDays=7` reads as `7d`.
+  // `wf` (a workflow's repo and name) and `wfRange` do the same for a workflow's panel.
   validateSearch: (
     search: Record<string, unknown>,
-  ): { runner?: string; runnerRange?: TimeRange } => {
+  ): {
+    runner?: string;
+    runnerRange?: TimeRange;
+    wf?: string;
+    wfRange?: TimeRange;
+  } => {
     const runner = textParam(search.runner);
+    const wf = textParam(search.wf);
     return {
       runner,
       runnerRange: runner
@@ -95,6 +108,10 @@ export const Route = createFileRoute("/_authed/_workspace")({
             RUNNER_RANGES,
             RUNNER_DEFAULT_RANGE,
           )
+        : undefined,
+      wf,
+      wfRange: wf
+        ? timeRangeParam(search.wfRange, WORKFLOW_RANGES, WORKFLOW_DEFAULT_RANGE)
         : undefined,
     };
   },
@@ -193,7 +210,8 @@ const ADMIN_COLLAPSED_KEY = "relayrunner:sidebar:admin-collapsed";
 
 function WorkspaceLayout() {
   const { user, current } = Route.useRouteContext();
-  const { runner, runnerRange } = Route.useSearch();
+  const { runner, runnerRange, wf, wfRange } = Route.useSearch();
+  const workflow = useMemo(() => parseWorkflowParam(wf), [wf]);
   const showAdmin = authDisabled || isOperator(user);
   const inSettings = useMatchRoute()({ to: "/settings", fuzzy: true });
   const [collapsedPref, setCollapsedPref] = useState(() => readFlag(COLLAPSED_KEY));
@@ -271,6 +289,11 @@ function WorkspaceLayout() {
             runnerKey={runner}
             range={runnerRange ?? RUNNER_DEFAULT_RANGE}
           />
+        </SectionBoundary>
+      )}
+      {workflow && (
+        <SectionBoundary>
+          <WorkflowSheet key={wf} workflow={workflow} range={wfRange ?? WORKFLOW_DEFAULT_RANGE} />
         </SectionBoundary>
       )}
     </div>

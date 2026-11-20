@@ -9,7 +9,7 @@ import { providerOf, providerStyle, RunnerMark } from "@/components/providers";
 import { TimeRangePicker } from "@/components/range-picker";
 import { RunnerUpdateNote } from "@/components/runner-card";
 import { withRunner } from "@/components/runner-panel-link";
-import { Facts, LINK, Links } from "@/components/run-sheet";
+import { Facts, LINK, Links, RunLink } from "@/components/run-sheet";
 import { StatusIcon } from "@/components/status-icon";
 import { Sheet, SheetContent, SheetDescription, SheetTitle } from "@/components/ui/sheet";
 import { PHONE_HIDDEN } from "@/components/ui/table";
@@ -25,7 +25,7 @@ import {
   sampleRunnerReport,
 } from "@/lib/runner-report";
 import { groupByBranch } from "@/lib/branch-groups";
-import { isLongWait, runParam } from "@/lib/runs";
+import { isLongWait } from "@/lib/runs";
 import { unlessDefault, useSetSearch } from "@/lib/search-params";
 import { type RangeOptions, rangePhrase, resolveRange, type TimeRange } from "@/lib/time-range";
 import { formatDateTime, formatTime, shortDate, startOfDay } from "@/lib/time-zone";
@@ -496,11 +496,7 @@ function RecentJobRow({
             : "pl-3",
         )}
       >
-        <Link
-          to="/history"
-          search={{ run: runParam(job), job: job.id }}
-          className="group inline-flex min-w-0 items-start gap-2"
-        >
+        <RunLink run={job} job={job.id} className="group inline-flex min-w-0 items-start gap-2">
           <StatusIcon
             status="completed"
             conclusion={job.conclusion ?? "unknown"}
@@ -519,7 +515,7 @@ function RecentJobRow({
               <span>{timeAgo(job.completedAt)}</span>
             </span>
           </span>
-        </Link>
+        </RunLink>
       </th>
       <td
         className={cn("py-2 pr-4 text-right align-top whitespace-nowrap", PHONE_HIDDEN, longWait)}

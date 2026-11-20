@@ -249,6 +249,7 @@ export function presentJob(
 ): ActivityJob {
   return {
     id: job.id,
+    repositoryId: job.repositoryId,
     repository: job.repositoryFullName,
     // null when the repo isn't mirrored (yet).
     private: isPrivate,

@@ -18,6 +18,7 @@ import {
   dataTableColumns,
   type ExpandedState,
 } from "@/components/ui/data-table";
+import { WorkflowLink } from "@/components/workflow-link";
 import {
   Dialog,
   DialogContent,
@@ -697,7 +698,11 @@ function WorkflowCell({ row }: { row: WorkflowsRow }) {
   const { showRepository } = useWorkflowsContext();
   return (
     <>
-      <span className="block font-medium">{row.workflow ?? "Unnamed workflow"}</span>
+      <WorkflowLink
+        repository={row.repository}
+        workflow={row.workflow}
+        className="block w-fit font-medium"
+      />
       <span className="block text-xs text-muted-foreground">
         {showRepository && `${row.repository} · `}
         {plural(row.jobs.length, "job")}

@@ -7,9 +7,11 @@ import { CodeBlock } from "@/components/code-block";
 import { ProviderPlans } from "@/components/provider-plans";
 import { providerStyle, runnerName, runnerSpec, TILE } from "@/components/providers";
 import { TimeRangePicker } from "@/components/range-picker";
+import { RunnerLink } from "@/components/runner-link";
 import { StatTile } from "@/components/stat-tile";
 import { Button } from "@/components/ui/button";
 import { createCellContext, DataTable, dataTableColumns, NUM } from "@/components/ui/data-table";
+import { WorkflowLink } from "@/components/workflow-link";
 import { authDisabled } from "@/lib/auth-client";
 import { clock, medianText, p90Text, plural } from "@/lib/job-times";
 import { isKnownProvider, providerInfo } from "@/lib/provider-catalog";
@@ -296,9 +298,14 @@ function RunnerCell({ runner }: { runner: ProviderRunner }) {
   return (
     <div className="grid min-w-36 gap-1.5 sm:min-w-48">
       <span title={runner.label} className="truncate">
-        <span className={cn(mono && "font-mono text-[13px]")}>
+        <RunnerLink
+          runner={runner}
+          mark={false}
+          specsShown
+          className={cn(mono && "font-mono text-[13px]")}
+        >
           {runnerName(provider, runner.label)}
-        </span>
+        </RunnerLink>
         {spec && <span className="text-xs text-muted-foreground"> · {spec}</span>}
       </span>
       {runners.length > 1 && (
@@ -340,7 +347,8 @@ function Workflows({ report }: { report: ProviderReport }) {
             className="flex items-baseline justify-between gap-4 border-t px-4 py-2.5 text-sm"
           >
             <span className="min-w-0 truncate">
-              {w.workflow} <span className="text-xs text-muted-foreground">{w.repository}</span>
+              <WorkflowLink repository={w.repository} workflow={w.workflow} />{" "}
+              <span className="text-xs text-muted-foreground">{w.repository}</span>
             </span>
             <span className="whitespace-nowrap text-muted-foreground tabular-nums">
               {plural(w.jobs, "job")}

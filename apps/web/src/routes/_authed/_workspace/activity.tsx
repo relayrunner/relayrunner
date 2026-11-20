@@ -28,7 +28,9 @@ import { GithubUser, shortSha } from "@/components/commit";
 import { SectionBoundary } from "@/components/error-boundary";
 import { PageHeader } from "@/components/page-header";
 import { GithubIcon } from "@/components/provider-logos";
+import { RunLink } from "@/components/run-sheet";
 import { RunnerLink } from "@/components/runner-link";
+import { WorkflowLink } from "@/components/workflow-link";
 import { StatusIcon } from "@/components/status-icon";
 import { WalkLines } from "@/components/walk-lines";
 import { Button } from "@/components/ui/button";
@@ -699,6 +701,9 @@ function Row({
   );
 }
 
+// A row's workflow, quieter than the job.
+const QUIET = "text-muted-foreground hover:text-foreground";
+
 // A repo with GitHub's mark, by its name without the owner (the filter and hover show it all), and
 // the branch after it: "relayrunner · main". The name opens the repo on GitHub.
 function RepoCell({
@@ -858,7 +863,15 @@ function EventRow({ item, now }: { item: ActivityItem; now: number }) {
       at={item.occurredAt}
       now={now}
     >
-      <span className="font-medium">{item.machine?.name ?? "A machine"}</span>{" "}
+      {item.machine?.id ? (
+        <RunnerLink
+          runner={{ key: `machine:${item.machine.id}`, label: item.machine.name }}
+          mark={false}
+          className="font-medium"
+        />
+      ) : (
+        <span className="font-medium">{item.machine?.name ?? "A machine"}</span>
+      )}{" "}
       <span className="text-muted-foreground">{sentence(item)}</span>
       {item.actor && (
         <span className="text-muted-foreground">
@@ -886,7 +899,7 @@ const isFailed = (conclusion: string | null) =>
 
 // A row naming the job the way GitHub does ("workflow / job"), then what happened and how long it
 // took: "CI / test passed · 1m 30s", with its runner, repo and who started it in their columns. The
-// job name opens the job on GitHub, the workflow name opens its run.
+// job name opens the job in History's run panel, the workflow name opens the workflow's panel.
 function JobRow({ job, now }: { job: ActivityJob; now: number }) {
   const [open, setOpen] = useState(false);
   const took = duration(job, now);
@@ -923,25 +936,16 @@ function JobRow({ job, now }: { job: ActivityJob; now: number }) {
         who: <StarterCell starters={job.starters} />,
       }}
     >
-      <a
-        href={job.runUrl}
-        target="_blank"
-        rel="noreferrer"
-        className="text-muted-foreground hover:text-foreground hover:underline"
-        title="Open the run on GitHub"
-      >
-        {job.workflow ?? "Workflow"}
-      </a>
+      <WorkflowLink
+        repository={job.repository}
+        workflow={job.workflow}
+        fallback="Workflow"
+        className={QUIET}
+      />
       <span className="text-muted-foreground"> / </span>
-      <a
-        href={job.url}
-        target="_blank"
-        rel="noreferrer"
-        className="font-medium hover:underline"
-        title="Open the job on GitHub"
-      >
+      <RunLink run={job} job={job.id} className="font-medium hover:underline">
         {job.name}
-      </a>{" "}
+      </RunLink>{" "}
       <span className={isFailed(job.conclusion) ? "text-destructive" : "text-muted-foreground"}>
         {jobVerb(job)}
       </span>
@@ -1062,7 +1066,6 @@ function UnroutableRow({
 }) {
   const [open, setOpen] = useState(false);
   const { data } = item;
-  const runUrl = `https://github.com/${data.repository}/actions/runs/${data.runId}`;
   const toggle = data.walk ? { open, onToggle: () => setOpen(!open) } : undefined;
   const names = jobNames(item.jobsNotRun ?? []);
   return (
@@ -1078,15 +1081,12 @@ function UnroutableRow({
         who: item.starters && <StarterCell starters={item.starters} />,
       }}
     >
-      <a
-        href={runUrl}
-        target="_blank"
-        rel="noreferrer"
-        className="text-muted-foreground hover:text-foreground hover:underline"
-        title="Open the run on GitHub"
-      >
-        {data.workflow ?? "Workflow"}
-      </a>
+      <WorkflowLink
+        repository={data.repository}
+        workflow={data.workflow}
+        fallback="Workflow"
+        className={QUIET}
+      />
       {names && (
         <>
           <span className="text-muted-foreground"> / </span>
@@ -1125,15 +1125,12 @@ function RetryRow({
       now={now}
       cells={{ repo: <RepoCell repository={data.repository} /> }}
     >
-      <a
-        href={`https://github.com/${data.repository}/actions/runs/${data.runId}`}
-        target="_blank"
-        rel="noreferrer"
-        className="text-muted-foreground hover:text-foreground hover:underline"
-        title="Open the run on GitHub"
-      >
-        {data.workflow ?? "Workflow"}
-      </a>
+      <WorkflowLink
+        repository={data.repository}
+        workflow={data.workflow}
+        fallback="Workflow"
+        className={QUIET}
+      />
       <span className="text-muted-foreground"> / </span>
       <span className="font-medium">{data.job}</span>{" "}
       <span className="text-muted-foreground">
@@ -1151,6 +1148,7 @@ function samplePage(search: ActivitySearch): ActivityPage {
   const zach = { login: "zach", member: { id: "u2", name: "Zach Ross" } };
   const job = (id: number, minutesAgo: number, rest: Partial<ActivityJob>): ActivityJob => ({
     id,
+    repositoryId: 1,
     repository: "relayrunner/relayrunner-ci-tests",
     private: true,
     runId: id * 10,

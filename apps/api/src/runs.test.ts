@@ -129,8 +129,8 @@ function runMessage(
   };
 }
 
-async function list(cookie: string) {
-  const res = await testing.call(env, "/runs", cookie);
+async function list(cookie: string, query = "") {
+  const res = await testing.call(env, `/runs${query}`, cookie);
   if (res.status !== 200) throw new Error(await res.text());
   return (await res.json()) as RunsReport;
 }
@@ -232,6 +232,10 @@ describe("runs list", () => {
     const week = await list(cookie);
     expect(week.days).toBe(14);
     expect(week.runs.map((run) => run.runId)).toEqual([201, 200, 100, 101, 102, 103, 104]);
+    // One workflow's panel asks for just its runs.
+    const ci = await list(cookie, "?repo=acme/app&workflow=CI");
+    expect(ci.runs.map((run) => run.runId)).toEqual(expect.arrayContaining([201, 200]));
+    expect((await list(cookie, "?repo=acme/app&workflow=Deploy")).runs).toEqual([]);
     const [live, routed] = week.runs;
     expect(live).toMatchObject({ status: "in_progress", conclusion: null, wallMs: null });
     expect(routed).toMatchObject<Partial<Run>>({
