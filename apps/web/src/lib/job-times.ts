@@ -2,6 +2,7 @@ import type { RunnerSize } from "@relayrunner/providers";
 import type { DeviceKind } from "@/lib/device";
 import { api } from "@/lib/api";
 import { count } from "@/lib/utils";
+import type { Phase } from "./job-phases.ts";
 
 /** How sure a time is: none (not run), few (under 5 runs), low (5 to 19), ok (20+). */
 export type Confidence = "none" | "few" | "low" | "ok";
@@ -103,6 +104,9 @@ export type JobRun = {
   completedAt: number;
 };
 
+/** A step of the job's average successful run, sorted into a phase by its name. */
+export type RunStep = { name: string; phase: Phase; ms: number };
+
 export function getJobTimes(days: number) {
   return api<JobTimesReport>(`/job-times?days=${days}`);
 }
@@ -118,7 +122,7 @@ export function getJobRuns(
     matrix: String(job.matrix),
   });
   if (job.workflow) query.set("workflow", job.workflow);
-  return api<{ days: number; runs: JobRun[] }>(`/job-times/runs?${query}`);
+  return api<{ days: number; runs: JobRun[]; steps: RunStep[] }>(`/job-times/runs?${query}`);
 }
 
 export function getMachineJobTimes(days = 14) {
@@ -132,6 +136,12 @@ export const DAY_MS = 24 * HOUR_MS;
 export function niceStep(ms: number) {
   const steps = [10, 15, 30, 60, 120, 300, 600, 900, 1800, 3600].map((s) => s * 1000);
   return steps.find((step) => step >= ms) ?? 3_600_000;
+}
+
+/** Whole minutes in short form; "<1" for less than one. */
+export function minutesText(ms: number) {
+  const minutes = ms / 60_000;
+  return minutes > 0 && minutes < 1 ? "<1" : count(Math.round(minutes));
 }
 
 /** "0:09", "3:10", "1:02:05": a stopwatch, so times line up in tables. */

@@ -7,6 +7,7 @@ import { aiAccess } from "./ai/settings.ts";
 import { type Db, schema } from "./db/index.ts";
 import { DAY_MS } from "./job-timings.ts";
 import { hasTrend, matrixName, windowWhere } from "./job-times.ts";
+import { addStep, type PhaseTimes } from "./step-phases.ts";
 
 const table = schema.jobTiming;
 
@@ -24,6 +25,9 @@ export type JobTypeTime = {
   priorMs: number | null;
   /** Run time on each day of the window, oldest first. */
   byDay: number[];
+  /** Runs in the window that reported their steps, and those steps' time by phase. */
+  stepped: number;
+  phases: PhaseTimes;
 };
 
 export type JobTypeTimes = {
@@ -46,6 +50,15 @@ type Row = {
   day: number;
   runs: number;
   run_ms: number;
+  stepped: number;
+};
+
+type StepRow = {
+  repository_id: number;
+  workflow_name: string | null;
+  name: string;
+  step: string;
+  seconds: number;
 };
 
 /**
@@ -69,13 +82,21 @@ export async function jobTypeTimes(
   const day = sql`case when ${table.completedAt} < ${start} then -1
     else cast((${table.completedAt} + ${offsetMs}) / ${DAY_MS} as integer) end`;
 
-  const [rows, types, access] = await Promise.all([
+  const [rows, steps, types, access] = await Promise.all([
     db.all<Row>(sql`
       select ${table.repositoryId} as repository_id, min(${table.repositoryFullName}) as repository,
         ${table.workflowName} as workflow_name, ${table.name} as name, ${day} as day,
-        count(*) as runs, sum(${table.completedAt} - ${table.startedAt}) as run_ms
+        count(*) as runs, sum(${table.completedAt} - ${table.startedAt}) as run_ms,
+        count(${table.steps}) as stepped
       from ${table} where ${windowWhere(workspaceId, since)}
       group by ${table.repositoryId}, ${table.workflowName}, ${table.name}, ${day}`),
+    // Each job's seconds per step name in the window, sorted into phases below.
+    db.all<StepRow>(sql`
+      select ${table.repositoryId} as repository_id, ${table.workflowName} as workflow_name,
+        ${table.name} as name, step.value ->> 0 as step, sum(step.value ->> 1) as seconds
+      from ${table}, json_each(${table.steps}) as step
+      where ${windowWhere(workspaceId, new Date(start))}
+      group by ${table.repositoryId}, ${table.workflowName}, ${table.name}, step.value ->> 0`),
     readJobTypes(db, workspaceId),
     aiAccess(db, workspaceId, "job_type", now),
   ]);
@@ -94,6 +115,8 @@ export async function jobTypeTimes(
         ms: 0,
         priorMs: compare ? 0 : null,
         byDay: Array.from({ length: days }, () => 0),
+        stepped: 0,
+        phases: {},
       };
       jobs.set(key, job);
     }
@@ -105,8 +128,14 @@ export async function jobTypeTimes(
     const index = Number(row.day) - first;
     if (index < 0 || index >= days) continue;
     job.runs += Number(row.runs);
+    job.stepped += Number(row.stepped);
     job.ms += ms;
     job.byDay[index]! += ms;
+  }
+
+  for (const row of steps) {
+    const job = jobs.get(jobTypeKey(row.repository_id, row.workflow_name, row.name));
+    if (job) addStep(job.phases, row.step, Number(row.seconds));
   }
 
   return {

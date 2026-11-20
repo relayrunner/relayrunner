@@ -1,4 +1,5 @@
 import { api } from "@/lib/api";
+import { addPhases, type PhaseTimes } from "./job-phases.ts";
 import { DAY_MS, hasTrend, JOB_TYPE_LABELS, type JobType } from "./job-times.ts";
 import { startOfDay, zoneOffset } from "./time-zone.ts";
 
@@ -16,6 +17,9 @@ export type JobTypeTime = {
   priorMs: number | null;
   /** Run time on each day of the window, oldest first. */
   byDay: number[];
+  /** Runs that reported their steps, and those steps' time by phase. */
+  stepped: number;
+  phases: PhaseTimes;
 };
 
 export type JobTypeTimes = {
@@ -65,11 +69,15 @@ export type TypeTotal = {
   priorMs: number | null;
   /** Its jobs with runs, the most time first. */
   jobs: JobTypeTime[];
+  stepped: number;
+  phases: PhaseTimes;
 };
 
 export type TypeSummary = {
   ms: number;
   runs: number;
+  stepped: number;
+  phases: PhaseTimes;
   /** Types with time in the window, in TYPE_ORDER. */
   types: TypeTotal[];
   /** Each day's local midnight, its run time by type and in all. */
@@ -89,11 +97,21 @@ export function summarize(report: JobTypeTimes, repository = "all"): TypeSummary
     const key = job.type ?? "none";
     let total = totals.get(key);
     if (!total) {
-      total = { key, ms: 0, runs: 0, priorMs: report.compare ? 0 : null, jobs: [] };
+      total = {
+        key,
+        ms: 0,
+        runs: 0,
+        priorMs: report.compare ? 0 : null,
+        jobs: [],
+        stepped: 0,
+        phases: {},
+      };
       totals.set(key, total);
     }
     total.ms += job.ms;
     total.runs += job.runs;
+    total.stepped += job.stepped;
+    addPhases(total.phases, job.phases);
     if (total.priorMs !== null) total.priorMs += job.priorMs ?? 0;
     if (job.runs > 0) total.jobs.push(job);
     job.byDay.forEach((ms, i) => {
@@ -110,6 +128,8 @@ export function summarize(report: JobTypeTimes, repository = "all"): TypeSummary
   return {
     ms: types.reduce((sum, type) => sum + type.ms, 0),
     runs: types.reduce((sum, type) => sum + type.runs, 0),
+    stepped: types.reduce((sum, type) => sum + type.stepped, 0),
+    phases: types.reduce((sum, type) => addPhases(sum, type.phases), {} as PhaseTimes),
     types,
     days,
   };
@@ -152,17 +172,33 @@ export function sampleJobTypeTimes(days: number): JobTypeTimes {
       return Math.round(perDay * busy * (0.6 + random() * 0.8) * minutes * 60_000);
     });
     const ms = byDay.reduce((sum, each) => sum + each, 0);
+    const runs = Math.round(ms / (minutes * 60_000));
     return {
       repository,
       workflow,
       job,
       type,
-      runs: Math.round(ms / (minutes * 60_000)),
+      runs,
       ms,
       priorMs: compare ? Math.round(ms * (0.75 + random() * 0.5)) : null,
       byDay,
+      stepped: Math.round(runs * 0.8),
+      phases: samplePhases(type, ms * 0.8, random),
     };
   });
   jobs.sort((a, b) => b.ms - a.ms);
   return { days, start, ai: true, compare, jobs };
+}
+
+// Dev preview: a made-up split of `ms` of step time, the shares by type.
+function samplePhases(type: JobType | null, ms: number, random: () => number): PhaseTimes {
+  const work = type === "lint" || type === "other" ? 0.35 : type === "e2e" ? 0.7 : 0.55;
+  const shares = { setup: 0.12, checkout: 0.05, dependencies: 0.15, cache: 0.08, cleanup: 0.02 };
+  const rest = Object.values(shares).reduce((sum, each) => sum + each, 0);
+  const phases: PhaseTimes = { work: Math.round(ms * work) };
+  for (const [phase, share] of Object.entries(shares))
+    phases[phase as keyof typeof shares] = Math.round(
+      ((ms * (1 - work) * share) / rest) * (0.7 + random() * 0.6),
+    );
+  return phases;
 }

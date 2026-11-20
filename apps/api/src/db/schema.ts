@@ -7,6 +7,7 @@ import type { JobUsage } from "@relayrunner/machine-protocol";
 import type { HostedProviderId } from "@relayrunner/providers";
 import type { ProviderStatus } from "@relayrunner/providers/catalog";
 import type { RetryRunner } from "@relayrunner/runner-order";
+import type { StepTime } from "../step-phases.ts";
 import { sql } from "drizzle-orm";
 import {
   type AnySQLiteColumn,
@@ -508,6 +509,10 @@ export const jobTiming = sqliteTable(
     // GitHub sent no steps, or none failed.
     ranSteps: integer("ran_steps", { mode: "boolean" }),
     failedStep: text("failed_step"),
+    // Each step that ran, as [name, seconds], from the `completed` webhook. Read with
+    // src/step-phases.ts to split a job's time into setup, checkout, installs, cache and work. Null
+    // when GitHub sent no steps.
+    steps: text("steps", { mode: "json" }).$type<StepTime[]>(),
     ...timestamps,
   },
   (table) => [

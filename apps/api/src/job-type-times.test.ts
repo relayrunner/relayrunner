@@ -2,7 +2,9 @@ import { beforeEach, describe, expect, test } from "vitest";
 import { createDb, schema } from "./db/index.ts";
 import type { Env } from "./env.ts";
 import { jobTypeTimes } from "./job-type-times.ts";
+import { jobRuns } from "./job-times.ts";
 import { DAY_MS } from "./job-timings.ts";
+import type { StepTime } from "./step-phases.ts";
 import * as testing from "./testing.ts";
 
 let env: Env;
@@ -13,7 +15,13 @@ let ids = 0;
 // Noon UTC, so days ago and local midnights fall where the tests expect.
 const NOW = Date.UTC(2026, 10, 20, 12);
 
-async function job(name: string, completedAt: number, runMs: number, labels = ["ubuntu-latest"]) {
+async function job(
+  name: string,
+  completedAt: number,
+  runMs: number,
+  labels = ["ubuntu-latest"],
+  steps: StepTime[] | null = null,
+) {
   ids += 1;
   await createDb(env.DB)
     .insert(schema.jobTiming)
@@ -32,6 +40,7 @@ async function job(name: string, completedAt: number, runMs: number, labels = ["
       runnerGroupName: "GitHub Actions",
       startedAt: new Date(completedAt - runMs),
       completedAt: new Date(completedAt),
+      steps,
     });
 }
 
@@ -92,5 +101,62 @@ describe("jobTypeTimes", () => {
     expect(report.compare).toBe(false);
     expect(report.jobs[0]!.priorMs).toBeNull();
     expect(report.jobs[0]!.byDay.slice(-2)).toEqual([30_000, 0]);
+  });
+
+  test("sorts each job's step time into phases, in the window only", async () => {
+    const steps: StepTime[] = [
+      ["Set up job", 2],
+      ["Run actions/checkout@v4", 3],
+      ["Run actions/setup-node@v4", 10],
+      ["Run pnpm install", 20],
+      ["Run pnpm test", 60],
+      ["Post Run actions/setup-node@v4", 5],
+      ["Complete job", 1],
+    ];
+    await job("test (node 22)", NOW - 60_000, 120_000, undefined, steps);
+    await job("test (node 24)", NOW - 60_000, 120_000, undefined, steps);
+    // No steps from GitHub.
+    await job("test (node 24)", NOW - 60_000, 120_000);
+    // Before the window.
+    await job("test (node 22)", NOW - 9 * DAY_MS, 120_000, undefined, steps);
+
+    const [test] = (await jobTypeTimes(createDb(env.DB), workspaceId, 7, { now: NOW })).jobs;
+    expect(test!.runs).toBe(3);
+    expect(test!.stepped).toBe(2);
+    expect(test!.phases).toEqual({
+      setup: 24_000,
+      checkout: 6_000,
+      dependencies: 40_000,
+      work: 120_000,
+      cache: 10_000,
+      cleanup: 2_000,
+    });
+  });
+});
+
+describe("jobRuns steps", () => {
+  test("averages each step over successful runs, in the order steps run", async () => {
+    await job("test", Date.now() - 60_000, 70_000, undefined, [
+      ["Run actions/checkout@v4", 4],
+      ["Run pnpm test", 60],
+    ]);
+    await job("test", Date.now() - 120_000, 50_000, undefined, [
+      ["Run actions/checkout@v4", 2],
+      ["Run pnpm test", 40],
+    ]);
+    // No steps from GitHub: left out of the average.
+    await job("test", Date.now() - 180_000, 50_000);
+
+    const { runs, steps } = await jobRuns(createDb(env.DB), workspaceId, {
+      repositoryId: 77,
+      workflow: "CI",
+      name: "test",
+      matrix: false,
+    });
+    expect(runs).toHaveLength(3);
+    expect(steps).toEqual([
+      { name: "Run actions/checkout@v4", phase: "checkout", ms: 3_000 },
+      { name: "Run pnpm test", phase: "work", ms: 50_000 },
+    ]);
   });
 });

@@ -7,11 +7,12 @@
 // workspace's installations, completed in the window), never a scan of the table. The detail is
 // a range of job_timing_job_idx. job-times.test.ts checks the rows D1 reads.
 import type { JobUsage } from "@relayrunner/machine-protocol";
-import { and, eq, gte, inArray, isNull, type SQL, sql } from "drizzle-orm";
+import { and, eq, gte, inArray, isNotNull, isNull, type SQL, sql } from "drizzle-orm";
 import type { SQLiteColumn } from "drizzle-orm/sqlite-core";
 import { type RunnerSize, runnerSize } from "@relayrunner/providers";
 import { INSTANCE, usesContainerRunner } from "./container-runner.ts";
 import { type Db, schema } from "./db/index.ts";
+import { type Phase, phaseOf } from "./step-phases.ts";
 import {
   DAY_MS,
   GITHUB_HOSTED_GROUP,
@@ -805,32 +806,62 @@ export async function jobRuns(
   job: { repositoryId: number; workflow: string | null; name: string; matrix: boolean },
   days = DEFAULT_DAYS,
   now = Date.now(),
-): Promise<{ days: number; runs: JobRun[] }> {
+): Promise<{ days: number; runs: JobRun[]; steps: RunStep[] }> {
   const since = new Date(now - days * DAY_MS);
   const name = job.matrix
     ? // Every `name (…)`: a range on the index, unlike LIKE.
       and(gte(table.name, `${job.name} (`), sql`${table.name} < ${`${job.name} )`}`)
     : eq(table.name, job.name);
-  const rows = await db
-    .select(JOB_RUN_COLUMNS)
-    .from(table)
-    .where(
-      and(
-        eq(table.repositoryId, job.repositoryId),
-        job.workflow === null ? isNull(table.workflowName) : eq(table.workflowName, job.workflow),
-        name,
-        gte(table.completedAt, since),
-        inWorkspace(workspaceId),
-        RAN,
-      ),
-    )
-    .orderBy(sql`${table.completedAt} desc`)
-    .limit(500);
+  const where = and(
+    eq(table.repositoryId, job.repositoryId),
+    job.workflow === null ? isNull(table.workflowName) : eq(table.workflowName, job.workflow),
+    name,
+    gte(table.completedAt, since),
+    inWorkspace(workspaceId),
+    RAN,
+  );
+  const [rows, steps] = await Promise.all([
+    db
+      .select(JOB_RUN_COLUMNS)
+      .from(table)
+      .where(where)
+      .orderBy(sql`${table.completedAt} desc`)
+      .limit(500),
+    averageSteps(db, where),
+  ]);
   const runs = rows.flatMap((row) => {
     const run = jobRunOf(row);
     return run ? [run] : [];
   });
-  return { days, runs };
+  return { days, runs, steps };
+}
+
+/** A step of a job's average successful run. */
+export interface RunStep {
+  name: string;
+  phase: Phase;
+  ms: number;
+}
+
+/**
+ * The average time of each step over the successful runs in `where` that reported steps, in the
+ * order steps run. Failed runs stop early, so like the medians they're left out. A step a run
+ * skipped counts as no time for it.
+ */
+async function averageSteps(db: Db, where: SQL | undefined): Promise<RunStep[]> {
+  const ok = and(where, eq(table.conclusion, "success"), isNotNull(table.steps));
+  const rows = await db.all<{ name: string; seconds: number; runs: number; at: number }>(sql`
+    select step.value ->> 0 as name, sum(step.value ->> 1) as seconds, min(step.key) as at,
+      (select count(*) from ${table} where ${ok}) as runs
+    from ${table}, json_each(${table.steps}) as step
+    where ${ok}
+    group by step.value ->> 0
+    order by at`);
+  return rows.map((row) => ({
+    name: row.name,
+    phase: phaseOf(row.name),
+    ms: Math.round((Number(row.seconds) * 1000) / Number(row.runs)),
+  }));
 }
 
 /**

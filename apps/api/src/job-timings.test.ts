@@ -96,6 +96,17 @@ async function connectedWorkspace() {
 
 let jobIds = 50_000;
 
+function step(name: string, started: string | null, completed: string | null) {
+  const at = (time: string | null) => time && `2026-11-20T${time}Z`;
+  return {
+    name,
+    number: 1,
+    conclusion: "success",
+    startedAt: at(started),
+    completedAt: at(completed),
+  };
+}
+
 // A finished job that ran for `seconds`, ending an hour ago.
 function finished(
   installationId: number,
@@ -183,7 +194,13 @@ describe("usage report", () => {
 
   test("follows a job through its webhooks, counting it once it finishes", async () => {
     const { cookie, installationId } = await connectedWorkspace();
-    const done = finished(installationId, 10);
+    const done = finished(installationId, 10, {
+      steps: [
+        step("Set up job", "10:00:00", "10:00:02"),
+        step("Run pnpm test", "10:00:02", "10:00:10"),
+        { ...step("Deploy", null, null), conclusion: "skipped" },
+      ],
+    });
     if (done.event !== "workflow_job") throw new Error("expected a job");
     const timingOf = async () => {
       const [row] = await createDb(env.DB)
@@ -233,6 +250,10 @@ describe("usage report", () => {
     // A late delivery never rewinds a finished job.
     await processWebhook(env, { ...running, deliveryId: "late" });
     expect((await timingOf())?.completedAt?.toISOString()).toBe(done.job.completedAt);
+    expect((await timingOf())?.steps).toEqual([
+      ["Set up job", 2],
+      ["Run pnpm test", 8],
+    ]);
     expect((await usage(cookie)).totals).toMatchObject({ jobs: 1, shortJobs: 1 });
   });
 

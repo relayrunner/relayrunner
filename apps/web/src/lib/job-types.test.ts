@@ -24,6 +24,8 @@ const report: JobTypeTimes = {
       ms: 8 * MIN,
       priorMs: 4 * MIN,
       byDay: [2 * MIN, 6 * MIN],
+      stepped: 3,
+      phases: { setup: MIN, work: 5 * MIN },
     },
     {
       repository: "acme/api",
@@ -34,6 +36,8 @@ const report: JobTypeTimes = {
       ms: 3 * MIN,
       priorMs: 3 * MIN,
       byDay: [3 * MIN, 0],
+      stepped: 1,
+      phases: { setup: MIN, cache: MIN },
     },
     {
       repository: "acme/app",
@@ -44,6 +48,8 @@ const report: JobTypeTimes = {
       ms: MIN,
       priorMs: 0,
       byDay: [0, MIN],
+      stepped: 0,
+      phases: {},
     },
     // Only in the window before: counts toward its type's change, not its jobs.
     {
@@ -55,11 +61,20 @@ const report: JobTypeTimes = {
       ms: 0,
       priorMs: 4 * MIN,
       byDay: [0, 0],
+      stepped: 0,
+      phases: {},
     },
   ],
 };
 
 describe("summarize", () => {
+  test("adds up step time by phase, per type and in all", () => {
+    const summary = summarize(report);
+    expect(summary.stepped).toBe(4);
+    expect(summary.phases).toEqual({ setup: 2 * MIN, cache: MIN, work: 5 * MIN });
+    expect(summary.types[0]!.phases).toEqual({ setup: MIN, work: 5 * MIN });
+  });
+
   test("adds jobs up by type in stacking order, with each day's split", () => {
     const summary = summarize(report);
     expect(summary.ms).toBe(12 * MIN);

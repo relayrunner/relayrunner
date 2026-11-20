@@ -10,6 +10,7 @@ import {
 } from "@relayrunner/providers";
 import { type Db, schema } from "./db/index.ts";
 import type { Env } from "./env.ts";
+import { stepTimes } from "./step-phases.ts";
 import { appInstallationToken, jobAnnotations } from "./github-app.ts";
 import { countsAsJob, jobCountUpserts } from "./job-counts.ts";
 import { providerSpendUpsert } from "./provider-spend.ts";
@@ -241,6 +242,7 @@ export async function recordJobTiming(db: Db, message: WorkflowJobMessage): Prom
       completedAt,
       ranSteps: finished ? (job.ranSteps ?? null) : null,
       failedStep: finished ? failedStep(job.steps) : null,
+      steps: finished ? stepTimes(job.steps) : null,
     })
     .onConflictDoUpdate({
       target: table.id,
@@ -254,6 +256,7 @@ export async function recordJobTiming(db: Db, message: WorkflowJobMessage): Prom
         completedAt: sql`excluded.completed_at`,
         ranSteps: sql`excluded.ran_steps`,
         failedStep: sql`excluded.failed_step`,
+        steps: sql`excluded.steps`,
         updatedAt: sql`excluded.updated_at`,
       },
       setWhere: sql`${table.completedAt} is null`,

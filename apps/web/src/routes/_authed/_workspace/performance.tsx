@@ -47,6 +47,7 @@ import {
   medianText,
   niceStep,
   plural,
+  type RunStep,
   type Stat,
   EMPTY_STAT,
   sampleJobTimes,
@@ -65,6 +66,7 @@ import {
 import { readFlag, saveFlag } from "@/lib/stored-flag";
 import { cn } from "@/lib/utils";
 import { Count } from "@/components/count";
+import { RunSteps } from "@/components/job-phases";
 
 const RANGES = dayRanges(1, 30);
 
@@ -1131,12 +1133,12 @@ function JobDetail({
   onClose: () => void;
 }) {
   const { workflow, job } = detail;
-  const [runs, setRuns] = useState<JobRun[] | null>(null);
+  const [result, setResult] = useState<{ runs: JobRun[]; steps: RunStep[] } | null>(null);
   const [failed, setFailed] = useState(false);
 
   useEffect(() => {
     if (authDisabled) {
-      setRuns(sampleRuns(job, days));
+      setResult({ runs: sampleRuns(job, days), steps: sampleSteps(job) });
       return;
     }
     let live = true;
@@ -1146,7 +1148,7 @@ function JobDetail({
       name: job.name,
       matrix: Boolean(job.legs),
     })
-      .then((result) => live && setRuns(result.runs))
+      .then((next) => live && setResult(next))
       .catch(() => live && setFailed(true));
     return () => {
       live = false;
@@ -1176,11 +1178,11 @@ function JobDetail({
           <div className="min-w-0">
             {failed ? (
               <p className="text-sm text-destructive">Couldn't load the runs. Try again.</p>
-            ) : runs === null ? (
+            ) : result === null ? (
               <p className="text-sm text-muted-foreground">Loading runs…</p>
             ) : (
               <RunChart
-                runs={runs}
+                runs={result.runs}
                 environments={environments}
                 medians={job.byEnvironment}
                 days={days}
@@ -1217,6 +1219,7 @@ function JobDetail({
             )}
           </div>
         </div>
+        {result && <RunSteps steps={result.steps} />}
       </DialogContent>
     </Dialog>
   );
@@ -1353,4 +1356,22 @@ function sampleRuns(job: JobRow, days: number): JobRun[] {
       };
     }),
   );
+}
+
+// For local development without an API: a typical Node job's steps, scaled to its median.
+function sampleSteps(job: JobRow): RunStep[] {
+  const medianMs = Object.values(job.byEnvironment)[0]?.medianMs ?? 180_000;
+  const steps: [string, RunStep["phase"], number][] = [
+    ["Set up job", "setup", 0.03],
+    ["Run actions/checkout@v4", "checkout", 0.04],
+    ["Run pnpm/action-setup@v4", "setup", 0.02],
+    ["Run actions/setup-node@v4", "setup", 0.09],
+    ["Run pnpm install --frozen-lockfile", "dependencies", 0.18],
+    ["Run pnpm build", "work", 0.22],
+    ["Run pnpm test", "work", 0.34],
+    ["Post Run actions/setup-node@v4", "cache", 0.07],
+    ["Post Run actions/checkout@v4", "cleanup", 0.002],
+    ["Complete job", "cleanup", 0.003],
+  ];
+  return steps.map(([name, phase, share]) => ({ name, phase, ms: Math.round(medianMs * share) }));
 }

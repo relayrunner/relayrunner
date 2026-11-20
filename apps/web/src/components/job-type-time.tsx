@@ -6,8 +6,9 @@ import { ArrowDownIcon, ArrowUpIcon, ChevronRightIcon } from "lucide-react";
 import { Fragment, useEffect, useMemo, useState } from "react";
 import { Count } from "@/components/count";
 import { ChartTip, TipRow, topRounded, useWidth } from "@/components/chart-parts";
+import { TypePhases } from "@/components/job-phases";
 import { authDisabled } from "@/lib/auth-client";
-import { DAY_MS, plural } from "@/lib/job-times";
+import { DAY_MS, minutesText, plural } from "@/lib/job-times";
 import {
   change,
   getJobTypeTimes,
@@ -26,12 +27,6 @@ import { cn, count, percent } from "@/lib/utils";
 
 const load = (days: number) =>
   authDisabled ? Promise.resolve(sampleJobTypeTimes(days)) : getJobTypeTimes(days);
-
-/** Whole minutes in short form; "<1" for less than one. */
-function minutesText(ms: number) {
-  const minutes = ms / 60_000;
-  return minutes > 0 && minutes < 1 ? "<1" : count(Math.round(minutes));
-}
 
 const share = (ms: number, total: number) => percent(total ? ms / total : 0);
 
@@ -101,6 +96,7 @@ export function JobTypes({ days, repository }: { days: number; repository: strin
         <>
           <Shares summary={summary} days={report.days} compare={report.compare} />
           {report.days > 1 && <Daily summary={summary} />}
+          <TypePhases summary={summary} />
           <p className="max-w-[62ch] text-sm text-muted-foreground">
             The AI model sorts each job by its name, its workflow and its runner labels, and reads
             new jobs every hour. Jobs it hasn't read yet, or wasn't sure about, count as Not sorted.

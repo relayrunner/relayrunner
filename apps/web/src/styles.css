@@ -49,6 +49,14 @@
   --job-other: #6250d6;
   --job-none: #a3abb5;
 
+  /* Phases inside a job (lib/job-phases.ts): the same checked order, with Work a quiet gray. */
+  --phase-setup: var(--job-test);
+  --phase-checkout: var(--job-build);
+  --phase-dependencies: var(--job-lint);
+  --phase-cache: var(--job-e2e);
+  --phase-work: #c3c9d0;
+  --phase-cleanup: var(--job-deploy);
+
   /* shadcn semantic variables */
   --radius: 0.625rem; /* 10px: landing panels */
   --background: var(--rr-bg);
@@ -119,6 +127,7 @@
   --job-deploy: #d55181;
   --job-other: #9085e9;
   --job-none: #4a515c;
+  --phase-work: #3d434d;
 }
 
 @theme inline {
