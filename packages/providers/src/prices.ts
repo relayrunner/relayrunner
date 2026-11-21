@@ -146,6 +146,16 @@ export const RATES = {
     "lizard-medium": "runner",
     "lizard-large": "runner",
   },
+  groundbox: {
+    "groundbox-2vcpu": "runner",
+    "groundbox-4vcpu": "runner",
+    "groundbox-8vcpu": "runner",
+    "groundbox-16vcpu": "runner",
+    "groundbox-flex-2vcpu": "runner",
+    "groundbox-flex-4vcpu": "runner",
+    "groundbox-flex-8vcpu": "runner",
+    "groundbox-flex-16vcpu": "runner",
+  },
   github: {
     "linux-1-core": "runner",
     "linux-2-core": "runner",
@@ -286,6 +296,16 @@ export const BASE_PRICES: PriceRow[] = [
   { provider: "lizard", rate: "lizard-small", usd: 0.0162 / 60, from: "2026-11-18" },
   { provider: "lizard", rate: "lizard-medium", usd: 0.0324 / 60, from: "2026-11-18" },
   { provider: "lizard", rate: "lizard-large", usd: 0.0648 / 60, from: "2026-11-18" },
+  // Groundbox: per minute 2vcpu (2/8) $0.003, 4vcpu (4/16) $0.006, 8vcpu (8/32) $0.011, 16vcpu
+  // (16/64) $0.021. Flex runners are the same sizes at half price. https://groundbox.dev/pricing
+  { provider: "groundbox", rate: "groundbox-2vcpu", usd: 0.003, from: "2026-11-21" },
+  { provider: "groundbox", rate: "groundbox-4vcpu", usd: 0.006, from: "2026-11-21" },
+  { provider: "groundbox", rate: "groundbox-8vcpu", usd: 0.011, from: "2026-11-21" },
+  { provider: "groundbox", rate: "groundbox-16vcpu", usd: 0.021, from: "2026-11-21" },
+  { provider: "groundbox", rate: "groundbox-flex-2vcpu", usd: 0.0015, from: "2026-11-21" },
+  { provider: "groundbox", rate: "groundbox-flex-4vcpu", usd: 0.003, from: "2026-11-21" },
+  { provider: "groundbox", rate: "groundbox-flex-8vcpu", usd: 0.0055, from: "2026-11-21" },
+  { provider: "groundbox", rate: "groundbox-flex-16vcpu", usd: 0.0105, from: "2026-11-21" },
   // GitHub, in a private repo; standard runners are free in public ones.
   // https://docs.github.com/en/billing/reference/actions-runner-pricing
   { provider: "github", rate: "linux-1-core", usd: 0.002, from: "2026-11-11" },
@@ -463,6 +483,21 @@ const NAMED_RUNNERS: Partial<Record<string, RunnerSize>> = {
   "lizard-large": { vcpus: 8, memoryGb: 16 },
 };
 
+// Groundbox's sizes, 4 GB a vCPU. https://groundbox.dev/pricing
+const GROUNDBOX_VCPUS = [2, 4, 8, 16];
+
+// The Groundbox rate a label asks for: `groundbox-4vcpu-ubuntu-2404` is groundbox-4vcpu, and a bare
+// `groundbox-flex` is groundbox-flex-4vcpu. Null for the auto size (`groundbox`,
+// `groundbox-auto-<name>`), which picks a size per job, so the label doesn't say.
+function groundboxRate(label: string): { rate: string; vcpus: number } | null {
+  if (label === "groundbox-flex") return { rate: "groundbox-flex-4vcpu", vcpus: 4 };
+  const match = /^groundbox-(flex-)?(\d+)vcpu(?:-ubuntu-2404)?$/.exec(label);
+  const vcpus = Number(match?.[2]);
+  return match && GROUNDBOX_VCPUS.includes(vcpus)
+    ? { rate: `groundbox-${match[1] ?? ""}${vcpus}vcpu`, vcpus }
+    : null;
+}
+
 // The size-named runner a label asks for: `celesto` is micro, `instabox-medium-snapshot-x` medium.
 const namedRunner = (label: string) => {
   if (label === "celesto") return "celesto-micro";
@@ -517,6 +552,9 @@ function rateOf(provider: ProviderId, label: string): { rate: string; vcpus: num
       const size = NAMED_RUNNERS[rate];
       return size ? { rate, vcpus: size.vcpus } : null;
     }
+    // groundbox-4vcpu[-ubuntu-2404], groundbox-flex[-8vcpu]; the auto size isn't priced here.
+    case "groundbox":
+      return groundboxRate(label);
     // ubicloud, ubicloud-standard-4, ubicloud-standard-2-arm, ubicloud-premium-8-ubuntu-2404
     case "ubicloud":
       if (label.includes("gpu")) return null;
@@ -532,8 +570,8 @@ function rateOf(provider: ProviderId, label: string): { rate: string; vcpus: num
 /**
  * What a minute cost on a runner type at `at` (epoch ms, now by default), at list price, by the
  * label that names it (as the Job times environment carries it, lowercase), or null when
- * RelayRunner doesn't know: Namespace profiles and RunsOn don't say their size in the label, and
- * GitHub's runners are priced by githubRate.
+ * RelayRunner doesn't know: Namespace profiles, Groundbox's auto size and RunsOn don't say their
+ * size in the label, and GitHub's runners are priced by githubRate.
  */
 export function listRate(
   book: PriceBook,
@@ -604,6 +642,11 @@ export function runnerSize(provider: string, label: string): RunnerSize | null {
     case "instabox":
     case "lizard":
       return NAMED_RUNNERS[namedRunner(label)] ?? null;
+    // groundbox-8vcpu is 8 vCPU · 32 GB. The auto size doesn't say.
+    case "groundbox": {
+      const vcpus = groundboxRate(label)?.vcpus;
+      return vcpus ? { vcpus, memoryGb: vcpus * 4 } : null;
+    }
     // The runner= part of its labels, such as 2cpu-linux-x64.
     case "runs-on": {
       const vcpus = count(/^(\d+)cpu-/.exec(label));

@@ -25,6 +25,10 @@ describe("hosted provider labels", () => {
     ["celesto", "celesto"],
     ["instabox-medium-snapshot-acme-warm", "instabox"],
     ["lizard-large-ubuntu-2404", "lizard"],
+    ["groundbox", "groundbox"],
+    ["groundbox-4vcpu-ubuntu-2404", "groundbox"],
+    ["groundbox-flex-8vcpu", "groundbox"],
+    ["groundbox-auto-web", "groundbox"],
     ["ubuntu-latest", null],
     ["self-hosted", null],
   ])("%s belongs to %s", (label, id) => {

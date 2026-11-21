@@ -281,6 +281,22 @@ export const PLANS: Partial<Record<ProviderId, ProviderPlans>> = {
     source: "https://lizard.build/pricing",
     checked: "2026-11-18",
   },
+  groundbox: {
+    plans: [
+      {
+        name: "Free",
+        feeUsd: 0,
+        included: "3,000 min and $5 usage a month",
+        limits: "20 jobs at once, up to 1 hour, no card",
+      },
+      { name: "Paid", feeUsd: 20, included: "$20 usage a month", limits: "Jobs up to 6 hours" },
+    ],
+    note: "Minutes count in 2 vCPU minutes, so a 4 vCPU minute uses 2. Usage past the plan's is pay as you go, billed per second, and Paid is also $200 a year. Linux x64 only, in public and private repos, for organizations and personal accounts.",
+    platforms: ["x64"],
+    connectUrl: "https://app.groundbox.dev",
+    source: "https://groundbox.dev/pricing",
+    checked: "2026-11-21",
+  },
   github: {
     plans: [
       { name: "Free", included: "$12 a month, about 2,000 Linux min" },
@@ -318,6 +334,7 @@ const TWO_VCPU_LABEL: Partial<Record<ProviderId, string>> = {
   celesto: "celesto-standard",
   instabox: "instabox-small",
   lizard: "lizard-small-ubuntu-2404",
+  groundbox: "groundbox-2vcpu",
 };
 
 /** USD for a 2 vCPU Linux minute at list price, or null when unknown. */

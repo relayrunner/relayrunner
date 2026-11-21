@@ -195,6 +195,15 @@ const CATALOG: Partial<Record<ProviderId, Row[]>> = {
       })),
     },
   ],
+  // https://groundbox.dev/pricing (flex runners wait for spare room, at half price)
+  groundbox: [
+    { platform: "linux", runners: sizes([2, 4, 8, 16], (n) => `groundbox-${n}vcpu`) },
+    {
+      platform: "linux",
+      variant: "Flex",
+      runners: sizes([2, 4, 8, 16], (n) => `groundbox-flex-${n}vcpu`),
+    },
+  ],
 };
 
 function depotLabel(image: string, n: number) {

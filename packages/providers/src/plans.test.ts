@@ -18,6 +18,7 @@ describe("plans", () => {
       "celesto",
       "instabox",
       "lizard",
+      "groundbox",
     ]);
   });
 
@@ -35,6 +36,7 @@ describe("plans", () => {
     expect(startsAt(PLANS.instabox!)).toBe("$20/mo");
     expect(startsAt(PLANS.monkci!)).toBe("$20/mo");
     expect(startsAt(PLANS.lizard!)).toBe("$19/mo");
+    expect(startsAt(PLANS.groundbox!)).toBe("Pay as you go");
   });
 
   it("prices a 2 vCPU Linux minute from the price list, or the plan where the list has none", () => {
@@ -49,6 +51,7 @@ describe("plans", () => {
     expect(twoVcpuMinute("instabox")).toBeCloseTo(0.000283, 6);
     expect(twoVcpuMinute("monkci")).toBe(0.004);
     expect(twoVcpuMinute("lizard")).toBeCloseTo(0.00027, 6);
+    expect(twoVcpuMinute("groundbox")).toBe(0.003);
     expect(twoVcpuMinute("other")).toBeNull();
   });
 });

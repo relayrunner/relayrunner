@@ -49,6 +49,7 @@ Unlike machines, hosted providers also run public repos' jobs, except Boat, whic
 | Celesto    | `celesto`    |
 | InstaBox   | `instabox`   |
 | Lizard     | `lizard`     |
+| Groundbox  | `groundbox`  |
 
 <Provider id="blacksmith" />
 
@@ -101,6 +102,10 @@ A label the account can't run sits queued on GitHub. After a few jobs on it go u
 <Provider id="lizard" />
 
 Lizard runs Linux x64 in three sizes: `lizard-small-ubuntu-2404` (2 vCPU), `lizard-medium-ubuntu-2404` (4) and `lizard-large-ubuntu-2404` (8). Its trial runs a set number of jobs of each size and then skips that size until you start Pro. On Pro, usage past the included amount is billed as you go, and jobs past 5 at once (20 on Pro 5x and Pro 20x) wait in Lizard's queue.
+
+<Provider id="groundbox" />
+
+Groundbox runs Linux x64 in four sizes: `groundbox-2vcpu`, `groundbox-4vcpu`, `groundbox-8vcpu` and `groundbox-16vcpu`, each of which can end in `-ubuntu-2404`. The bare `groundbox` label lets Groundbox pick a size for each job from its earlier runs, so the dashboard can't tell its size or price. `groundbox-flex` (4 vCPU) and `groundbox-flex-2vcpu` through `-16vcpu` cost half as much but only run in spare room, so jobs on them may wait.
 
 ## Good to know
 

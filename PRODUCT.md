@@ -17,7 +17,7 @@ Coding agents push often, and every push burns GitHub Actions minutes. Private p
 
 - **Self-hosted: connected machines.** `relayrunner connect` signs a machine in to a workspace and keeps it online while it runs. Each job gets a fresh one-job (JIT) runner, so the machine needs no permanent runner setup. A machine must have every label in the relay's `machine` input (`self-hosted` matches any machine). On an Apple silicon Mac, `connect --isolated` (experimental) runs each job in its own Linux VM that sees none of the user's files; the Mac then counts as a Linux machine.
 - **Self-hosted: existing runners.** Owners and admins can add self-hosted runners an organization already has on GitHub, with no change on the runner's machine. They share the Self-hosted step of the runner order with connected machines.
-- **Hosted providers.** Blacksmith, Depot, Namespace, WarpBuild, Ubicloud, Boat, RunsOn, StarSling, Monk CI, Runloft, Latchkey, BerryBox, Celesto, InstaBox and Lizard. RelayRunner hands the job the label from the provider's own relay input, such as `depot`. The provider's own GitHub App runs it.
+- **Hosted providers.** Blacksmith, Depot, Namespace, WarpBuild, Ubicloud, Boat, RunsOn, StarSling, Monk CI, Runloft, Latchkey, BerryBox, Celesto, InstaBox, Lizard and Groundbox. RelayRunner hands the job the label from the provider's own relay input, such as `depot`. The provider's own GitHub App runs it.
 - **GitHub-hosted.** The label from the relay's `github` input, usually the job's old `runs-on`.
 
 ## User experience

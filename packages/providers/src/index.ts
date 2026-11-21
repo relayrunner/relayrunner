@@ -19,6 +19,7 @@ export const PROVIDER_IDS = [
   "celesto",
   "instabox",
   "lizard",
+  "groundbox",
   "github",
   "cloudflare",
   "other",
@@ -198,6 +199,18 @@ export const PROVIDERS: Record<ProviderId, ProviderInfo> = {
     docsUrl: "https://lizard.build/ci",
     hidden: true,
   },
+  groundbox: {
+    name: "Groundbox",
+    summary:
+      "Linux x64 runners for GitHub Actions, each job on a fresh single-use VM, billed per second.",
+    labels: "groundbox, groundbox-2vcpu, -4vcpu, -8vcpu, -16vcpu, groundbox-flex-*",
+    example: "groundbox-4vcpu",
+    setup:
+      "Sign up for Groundbox and install its GitHub App on an organization or a personal account.",
+    dashboardUrl: "https://app.groundbox.dev",
+    docsUrl: "https://groundbox.dev/docs/ci",
+    hidden: true,
+  },
   github: {
     name: "GitHub",
     summary: "GitHub's own hosted runners, billed per minute in private repos.",
@@ -246,6 +259,7 @@ export const HOSTED_PROVIDER_IDS = [
   "celesto",
   "instabox",
   "lizard",
+  "groundbox",
 ] as const satisfies readonly ProviderId[];
 
 export type HostedProviderId = (typeof HOSTED_PROVIDER_IDS)[number];
@@ -269,6 +283,7 @@ export const LABEL_PREFIXES: Record<HostedProviderId, string[]> = {
   celesto: ["celesto-"],
   instabox: ["instabox-"],
   lizard: ["lizard-"],
+  groundbox: ["groundbox-"],
 };
 
 /** Whether a lowercase label starts with one of `prefixes`, or is the bare name one ends in `-`. */
@@ -308,6 +323,7 @@ export const APP_SLUG_PATTERNS: Record<HostedProviderId, RegExp> = {
   celesto: /celesto/,
   instabox: /instabox/,
   lizard: /lizard/,
+  groundbox: /groundbox/,
 };
 
 /**

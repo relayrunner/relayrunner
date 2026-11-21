@@ -63,7 +63,7 @@ Then show `git diff` and explain it. Each routed job looks like this:
 ```yaml
 jobs:
   relay-test:
-    uses: relayrunner/actions/.github/workflows/relay.yml@v1.0.0-beta.8
+    uses: relayrunner/actions/.github/workflows/relay.yml@v1.0.0-beta.9
     with:
       machine: self-hosted
       github: ubuntu-latest

@@ -90,6 +90,10 @@ const LABELS: Partial<
     sizes: [2, 4, 8],
     label: (n) => `lizard-${{ 2: "small", 4: "medium" }[n] ?? "large"}-ubuntu-2404`,
   },
+  groundbox: {
+    sizes: [2, 4, 8, 16],
+    label: (n) => `groundbox-${n}vcpu`,
+  },
   // GitHub's standard runners. Bigger ones are larger runners each org names itself.
   github: {
     sizes: [1, 2],
