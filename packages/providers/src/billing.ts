@@ -33,6 +33,11 @@ export interface BillingProviderInfo {
   tokenHelp: string;
   /** What RelayRunner reads with it. */
   reads: string;
+  /**
+   * The scopes the token needs, each with what it's for, when the provider asks for them as the
+   * token is made. Settings › Providers lists them by the token field.
+   */
+  scopes?: readonly { scope: string; for: string }[];
   options?: readonly BillingOption[];
   /**
    * The provider account is a GitHub organization: a connection is for the workspace's own, and a
@@ -76,7 +81,11 @@ export const BILLING_PROVIDERS: Record<BillingProviderId, BillingProviderInfo> =
     token: "API key",
     tokenUrl: "https://app.groundbox.dev",
     tokenHelp:
-      "Create a Groundbox API key with only the account:read and billing:read scopes, and paste it. It starts with gbx_.",
+      "In Groundbox's dashboard, create an API key with only these two scopes, and paste it. It starts with `gbx_`.",
+    scopes: [
+      { scope: "account:read", for: "free minutes left and whether Groundbox is holding jobs" },
+      { scope: "billing:read", for: "what each job cost, for the hourly sync" },
+    ],
     reads:
       "Free minutes left this month, what each job cost, and whether Groundbox is holding jobs, so the Router can pass jobs on before Groundbox would hold them.",
     costOnly: true,

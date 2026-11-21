@@ -1,4 +1,4 @@
-import { ERRORS, isErrorCode } from "@relayrunner/errors";
+import { AppError, ERRORS, isErrorCode } from "@relayrunner/errors";
 import { BILLING_PROVIDERS, type BillingProviderInfo } from "@relayrunner/providers";
 import { heldText } from "@relayrunner/activity";
 import {
@@ -123,7 +123,15 @@ function ProviderCard({
     try {
       await action();
     } catch (caught) {
-      setNotice({ ok: false, text: errorText(caught) });
+      // A missing scope is the one refusal that says how to fix the token, so name it.
+      const reason =
+        caught instanceof AppError
+          ? scopeError(String((caught.details as { reason?: unknown })?.reason ?? ""))
+          : null;
+      setNotice({
+        ok: false,
+        text: reason ? `${name} refused the ${billing.token}: ${reason}.` : errorText(caught),
+      });
     } finally {
       setPending(false);
     }
@@ -269,7 +277,11 @@ function ConnectionStatus({ connection, name }: { connection: ProviderConnection
         )
       )}
       {failure === "token_rejected" && (
-        <p className="text-destructive">{name} stopped accepting this token. Paste a new one.</p>
+        <p className="text-destructive">
+          {scopeError(error)
+            ? `${name} refused this ${BILLING_PROVIDERS[connection.provider].token}: ${scopeError(error)}. Replace it with one that has that scope.`
+            : `${name} stopped accepting this token. Paste a new one.`}
+        </p>
       )}
       {failure === "error" && <p className="text-destructive">The last sync failed: {error}</p>}
     </div>
@@ -356,6 +368,7 @@ function TokenForm({
           <ArrowUpRightIcon aria-hidden className="size-3" />
         </a>
       </p>
+      {billing.scopes && <Scopes scopes={billing.scopes} />}
     </form>
   );
 }
@@ -465,6 +478,29 @@ function FreeMinutes({
 }
 
 /** Help text with `code` in backticks. */
+/** The scopes a token needs, by the token field, so it's made right the first time. */
+function Scopes({ scopes }: { scopes: NonNullable<BillingProviderInfo["scopes"]> }) {
+  return (
+    <div className="grid gap-1.5 rounded-md border bg-muted/40 px-3 py-2.5 text-xs">
+      <p className="font-medium">Scopes to give it</p>
+      <ul className="grid gap-1">
+        {scopes.map(({ scope, for: purpose }) => (
+          <li key={scope} className="flex flex-wrap items-baseline gap-x-2">
+            <code className="rounded bg-background px-1.5 py-0.5 font-mono">{scope}</code>
+            <span className="text-muted-foreground">{purpose}</span>
+          </li>
+        ))}
+      </ul>
+    </div>
+  );
+}
+
+/** A provider's "missing scope" reason, which says how to fix the token; other refusals don't. */
+function scopeError(error: string | null): string | null {
+  const match = error?.match(/"message":"([^"]*scope[^"]*)"/i);
+  return match ? match[1]!.charAt(0).toLowerCase() + match[1]!.slice(1) : null;
+}
+
 function Help({ text }: { text: string }) {
   return text
     .split("`")
