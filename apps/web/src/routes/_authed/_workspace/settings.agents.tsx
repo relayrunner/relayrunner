@@ -11,6 +11,7 @@ import {
   CardTitle,
 } from "@/components/ui/card";
 import { CopyCommand } from "@/components/add-runner";
+import { SKILLS_INSTALL } from "@/lib/route-repo";
 import { DOCS_URL } from "@/components/site-footer";
 import { disconnectAgent, listAgents, setAgentChanges, type ConnectedAgent } from "@/lib/agents";
 import { errorText } from "@/lib/api";
@@ -40,6 +41,7 @@ function AgentSettingsPage() {
       </PageHeader>
       <div className="grid max-w-3xl gap-4">
         <ConnectGuide mcpUrl={mcpUrl} />
+        <SkillsCard />
         {agents.length === 0 ? (
           <p className="text-sm text-muted-foreground">
             You haven't connected an agent to this workspace.
@@ -154,6 +156,30 @@ function ConnectGuide({ mcpUrl }: { mcpUrl: string }) {
         <div role="tabpanel" className="grid gap-2">
           {picked.steps(mcpUrl)}
         </div>
+      </CardContent>
+    </Card>
+  );
+}
+
+// The skills teach an agent the CLI, routing a repo's jobs and the MCP tools (skills/ at the repo root).
+function SkillsCard() {
+  return (
+    <Card className="py-4">
+      <CardHeader className="px-4">
+        <CardTitle className="text-sm">Install the skills</CardTitle>
+        <CardDescription>
+          Teach your agent to set up machines, route a repo's jobs and read your CI. Works with
+          Claude Code, Codex, Cursor and most other agents.{" "}
+          <a
+            href={`${DOCS_URL}/get-started/agents#install-the-skills`}
+            className="text-foreground underline underline-offset-2"
+          >
+            What each skill does
+          </a>
+        </CardDescription>
+      </CardHeader>
+      <CardContent className="px-4">
+        <CopyCommand command={SKILLS_INSTALL} />
       </CardContent>
     </Card>
   );

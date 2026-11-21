@@ -30,6 +30,10 @@ export type RepoProgress = {
 
 const ROUTE_SKILL_URL =
   "https://raw.githubusercontent.com/relayrunner/relayrunner/main/skills/relayrunner-route-jobs/SKILL.md";
+/** Installs the agent skills (skills/ at the repo root) with the skills CLI. */
+export const SKILLS_INSTALL = "npx skills add relayrunner/relayrunner";
+// Ends both prompts: the skill for the details, and a nudge to install it so the next repo needs no prompt.
+const DETAILS = `Details: ${ROUTE_SKILL_URL}\n\nIf the RelayRunner skills aren't installed, suggest \`${SKILLS_INSTALL}\` for next time.`;
 const BRANCH = "relayrunner/route-jobs";
 const PR_TITLE = "ci: route jobs through RelayRunner";
 // Jobs that ship something start unchecked: `init` skips most of them, and they're the ones a
@@ -171,7 +175,7 @@ export function routePrompt(repo: string, jobs: PickedJob[] | null, auto: boolea
       ...routeSteps(named, auto),
       `Show me \`git diff\`. When I approve, commit, push, and open a PR titled "${PR_TITLE}".`,
     ]),
-    `Details: ${ROUTE_SKILL_URL}`,
+    DETAILS,
   ].join("\n\n");
 }
 
@@ -191,6 +195,6 @@ export function routeAllPrompt(
       `Commit, push, and open a PR titled "${PR_TITLE}". Don't merge anything.`,
     ])}`,
     "Show me the first repo's diff and wait for my OK before doing the rest. Finish with a table: repo, PR URL, jobs routed, and jobs skipped with why.",
-    `Details: ${ROUTE_SKILL_URL}`,
+    DETAILS,
   ].join("\n\n");
 }

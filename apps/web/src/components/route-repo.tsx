@@ -25,6 +25,7 @@ import {
   routeAllPrompt,
   routePrompt,
   sizable,
+  SKILLS_INSTALL,
 } from "@/lib/route-repo";
 import type { RunnerGroupBlock, RunnerGroupCheck } from "@/lib/router-setup";
 import { cn } from "@/lib/utils";
@@ -442,6 +443,10 @@ function RouteStep({
       </pre>
       <p className="text-[13px] text-muted-foreground">
         Paste the prompt into your coding agent. It opens a PR; merge it and the repo is routed.
+      </p>
+      <p className="text-[13px] text-muted-foreground">
+        Give your agent the RelayRunner skills and it can route repos without a prompt.{" "}
+        <CopyText link label="Copy install command" text={SKILLS_INSTALL} />
       </p>
       {saved && <p className="text-[13px] text-muted-foreground">{saved}</p>}
       {firstRun === null && (

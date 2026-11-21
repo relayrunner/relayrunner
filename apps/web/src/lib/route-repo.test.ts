@@ -38,6 +38,7 @@ test("names the picked jobs in the prompt, and passes --auto when on", () => {
   expect(prompt).toContain("--apply <those job ids> --auto --json");
   expect(routePrompt("acme/api", jobs, false)).not.toContain("--auto");
   expect(routePrompt("acme/worker", null, false)).toContain("--apply all");
+  expect(prompt).toContain("suggest `npx skills add relayrunner/relayrunner`");
 });
 
 test("routes several repos with one PR each, checking the first", () => {

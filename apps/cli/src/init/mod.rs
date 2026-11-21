@@ -323,8 +323,13 @@ fn apply(plan: &Plan, list: &str, json: bool) -> Result<(), String> {
         println!("Updated {} ({})", change.file, ids.join(", "));
     }
     println!("Commit and push to start routing.");
+    println!("{SKILLS_TIP}");
     Ok(())
 }
+
+/// Shown after `init` routes jobs (never in `--json`), so people find the agent skills in skills/.
+const SKILLS_TIP: &str =
+    "Using a coding agent? Give it the RelayRunner skills: npx skills add relayrunner/relayrunner";
 
 fn interactive(plan: &Plan) -> Result<(), String> {
     ui::intro("RelayRunner init");
@@ -426,6 +431,7 @@ fn choose_and_write(plan: &Plan, finish: fn(&str)) -> Result<(), String> {
     if !warned.is_empty() {
         ui::note(&warned.join("\n"), "Check before it runs on your machine");
     }
+    ui::info(SKILLS_TIP);
     let files: Vec<&str> = changes.iter().map(|c| c.file.as_str()).collect();
     finish(&format!(
         "Updated {}. Commit and push to start routing.",
