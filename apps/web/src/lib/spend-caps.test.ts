@@ -60,9 +60,7 @@ describe("handoffText", () => {
       expect(warn).toBe(true);
       expect(text).toContain("so the steps below rarely run");
     }
-    expect(handoff({ key: "boat" }).connect).toBe(
-      "Connect Boat to pass jobs on at its start limit",
-    );
+    expect(handoff({ key: "boat" }).connect).toBe("Connect Boat");
     expect(handoff({ key: "github" }).connect).toBeUndefined();
   });
 
