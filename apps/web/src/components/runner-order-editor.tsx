@@ -945,12 +945,30 @@ const accountBar = (account: AccountUsage, many: boolean): UsageBar => ({
 });
 
 /** Each bar's minutes this month against its quota, with a tick at the limit. */
+/** How close a cap's tick may come to either end of its bar, in percent. */
+const TICK_EDGE = 10;
+
+/**
+ * Where a bar's fill ends and its cap tick sits, in percent. The bar measures up to `full`
+ * (a quota, or for a dollar cap a little past the cap), stretched or shrunk so the tick stays
+ * TICK_EDGE from either end.
+ */
+function barMarks(used: number, cap: number, full: number) {
+  const scale = Math.min(Math.max(full, cap / ((100 - TICK_EDGE) / 100)), cap / (TICK_EDGE / 100));
+  return { fill: Math.min((used / scale) * 100, 100), tick: (cap / scale) * 100 };
+}
+
 function UsageBars({ bars, percent }: { bars: UsageBar[]; percent: number }) {
   if (bars.length === 0) return null;
   return (
     <div className="grid gap-2.5 pr-4 pb-3 pl-11">
       {bars.map((bar) => {
         const used = Math.floor((bar.usedMinutes / bar.quotaMinutes) * 100);
+        const marks = barMarks(
+          bar.usedMinutes,
+          (bar.quotaMinutes * percent) / 100,
+          bar.quotaMinutes,
+        );
         return (
           <div key={bar.id} className="grid max-w-sm gap-1.5">
             <div
@@ -963,11 +981,11 @@ function UsageBars({ bars, percent }: { bars: UsageBar[]; percent: number }) {
                   "absolute inset-y-0 left-0 rounded-full",
                   used >= percent ? "bg-[var(--rr-run)]" : "bg-[var(--rr-idle)]",
                 )}
-                style={{ width: `${Math.min(used, 100)}%` }}
+                style={{ width: `${marks.fill}%` }}
               />
               <div
                 className="absolute -inset-y-1 w-0.5 rounded-full bg-foreground"
-                style={{ left: `calc(${percent}% - 1px)` }}
+                style={{ left: `calc(${marks.tick}% - 1px)` }}
               />
             </div>
             <p className="text-xs text-muted-foreground">
@@ -1006,9 +1024,11 @@ function SpendBar({ spentUsd, capUsd }: { spentUsd: number | null; capUsd: numbe
   // A dollar cap has no quota behind it, so the bar runs a little past the cap and the tick sits
   // at the same kind of spot as a minutes cap. Spend past the end of that fills the bar, and the
   // tick moves left to where the cap falls in it: at twice the cap it sits halfway.
-  const scale = Math.max(capUsd / (CAP_TICK_PERCENT / 100), spentUsd);
-  const fill = (spentUsd / scale) * 100;
-  const tick = (capUsd / scale) * 100;
+  const { fill, tick } = barMarks(
+    spentUsd,
+    capUsd,
+    Math.max(capUsd / (CAP_TICK_PERCENT / 100), spentUsd),
+  );
   return (
     <div className="grid gap-2.5 pr-4 pb-3 pl-11">
       <div className="grid max-w-sm gap-1.5">
