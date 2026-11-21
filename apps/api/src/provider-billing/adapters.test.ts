@@ -381,13 +381,37 @@ describe("Groundbox", () => {
     expect(calls[0]!.headers.get("authorization")).toBe("Bearer tok_secret");
   });
 
-  test("verify names the team, and a refused key is a ProviderAuthError", async () => {
-    const { fetcher } = fakeFetch([
-      json(fixture("groundbox-account.json")),
-      json({ error: { code: "missing_scope", message: "needs account:read" } }, 403),
-    ]);
+  test("verify names the team after reading both /account and the ledger", async () => {
+    const urls: string[] = [];
+    const fetcher = (async (input: RequestInfo | URL) => {
+      urls.push(String(input));
+      return String(input).includes("/billing/ledger")
+        ? json({ data: [], next_cursor: null })
+        : json(fixture("groundbox-account.json"));
+    }) as typeof fetch;
     expect(await groundbox.verify(ctx(fetcher))).toEqual({ accountName: "acme" });
-    await expect(groundbox.verify(ctx(fetcher))).rejects.toBeInstanceOf(ProviderAuthError);
+    expect(urls.sort()).toEqual([
+      "https://api.groundbox.dev/v1/account",
+      "https://api.groundbox.dev/v1/billing/ledger?limit=1",
+    ]);
+  });
+
+  test("verify refuses a key without billing:read, with Groundbox's reason", async () => {
+    const fetcher = (async (input: RequestInfo | URL) =>
+      String(input).includes("/billing/ledger")
+        ? json(
+            {
+              error: {
+                code: "missing_scope",
+                message: "This key does not have the billing:read scope",
+              },
+            },
+            403,
+          )
+        : json(fixture("groundbox-account.json"))) as typeof fetch;
+    const refused = groundbox.verify(ctx(fetcher));
+    await expect(refused).rejects.toBeInstanceOf(ProviderAuthError);
+    await expect(refused).rejects.toThrow(/billing:read/);
   });
 
   test("an answer missing fields reads as nothing known, never as a limit", () => {

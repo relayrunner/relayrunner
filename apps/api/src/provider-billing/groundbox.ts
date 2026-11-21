@@ -162,7 +162,12 @@ export function ledgerUsage(
 
 export const groundbox: BillingAdapter = {
   async verify(ctx) {
-    const account = await groundboxAccount(ctx);
+    // Both scopes: /account for the Router's step, the ledger for the hourly sync. A key without
+    // billing:read is refused here, with Groundbox's own reason, rather than at the first sync.
+    const [account] = await Promise.all([
+      groundboxAccount(ctx),
+      requestJson<unknown>(ctx, `${BASE}/billing/ledger?limit=1`),
+    ]);
     if (!account.team && !account.status)
       throw new ProviderApiError("Groundbox's /account answer had no team");
     return { accountName: account.team };
