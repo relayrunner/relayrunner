@@ -1,5 +1,11 @@
 # relayrunner
 
+## 0.19.0
+
+### Minor Changes
+
+- 3dcc656: `relayrunner init` recognises Groundbox labels (`groundbox-4vcpu` and the like), keeps them as a job's fallback, and writes relays pinned to `relay.yml@v1.0.0-beta.9`, which takes a `groundbox` input.
+
 ## 0.18.0
 
 ### Minor Changes
