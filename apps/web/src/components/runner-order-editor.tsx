@@ -24,7 +24,7 @@ import {
   type RunnerKey,
   type RunnerStep,
 } from "@relayrunner/runner-order";
-import { HOSTED_PROVIDER_IDS, providerPlans, type HostedProviderId } from "@relayrunner/providers";
+import { HOSTED_PROVIDER_IDS, type HostedProviderId } from "@relayrunner/providers";
 import { Link, useRouter } from "@tanstack/react-router";
 import {
   CheckIcon,
@@ -46,6 +46,14 @@ import {
 } from "@/components/ui/dropdown-menu";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { hasQuota, type AccountUsage } from "@/lib/actions-usage";
+import {
+  barMarks,
+  capText,
+  type Handoff,
+  handoffText,
+  minutes,
+  unreachableText,
+} from "@/lib/spend-caps";
 import { counted, type BlacksmithMinutes } from "@/lib/blacksmith-minutes";
 import { AppError } from "@relayrunner/errors";
 import type { Machine } from "@/lib/machines";
@@ -166,6 +174,7 @@ export function RunnerOrderEditor({
                     key={id}
                     id={id}
                     step={step}
+                    unreachable={unreachableText(steps, index)}
                     handoff={
                       index > 0 ? handoffText(steps[index - 1]!, accounts, blacksmith) : null
                     }
@@ -335,84 +344,11 @@ function limitAvailability(accounts: AccountUsage[]): LimitAvailability {
   return blocked("Your GitHub plan's minutes aren't known.");
 }
 
-/** The one GitHub account's included minutes, when exactly one connected account has a quota. */
-function githubQuota(accounts: AccountUsage[]) {
-  const withQuota = accounts.filter(hasQuota);
-  return withQuota.length === 1 ? withQuota[0]!.quotaMinutes! : null;
-}
-
-function blacksmithQuota(blacksmith: BlacksmithMinutes | null) {
-  return blacksmith?.quotaMinutes ?? BLACKSMITH_FREE_MINUTES;
-}
-
-const minutes = (n: number) => Math.round(n).toLocaleString("en-US");
-
-/** A step's spend cap as its button reads: "Cap 2,400 min", "Cap $100/mo" or "No cap". */
-function capText(step: RunnerStep, accounts: AccountUsage[], blacksmith: BlacksmithMinutes | null) {
-  if (step.key === "machine") return "When available";
-  if ("limit" in step && step.limit) {
-    const quota = step.key === "github" ? githubQuota(accounts) : blacksmithQuota(blacksmith);
-    if (quota === null) return `Cap ${step.limit.percent}%`;
-    const cap = minutes((quota * step.limit.percent) / 100);
-    return step.key === "blacksmith" ? `Cap ${cap} free min` : `Cap ${cap} min`;
-  }
-  if ("spendLimit" in step && step.spendLimit)
-    return `Cap $${step.spendLimit.usd.toLocaleString("en-US")}/mo`;
-  return "No cap";
-}
-
-/**
- * What sends a job on from `prev` to the next step, said in terms of how `prev` is set up. A
- * provider with no cap takes every job it can start, so the steps below it rarely run: `warn`.
- */
-function handoffText(
-  prev: RunnerStep,
-  accounts: AccountUsage[],
-  blacksmith: BlacksmithMinutes | null,
-): Handoff {
-  if (prev.key === "machine") return { text: "When every machine is busy or offline", warn: false };
-  const label = RUNNER_LABELS[prev.key];
-  if ("limit" in prev && prev.limit) {
-    const quota = prev.key === "github" ? githubQuota(accounts) : blacksmithQuota(blacksmith);
-    if (quota === null)
-      return { text: `Once ${prev.limit.percent}% of included minutes are used`, warn: false };
-    const cap = minutes((quota * prev.limit.percent) / 100);
-    return {
-      text:
-        prev.key === "blacksmith" ? `Once ${cap} free min are used` : `Once ${cap} min are used`,
-      warn: false,
-    };
-  }
-  if ("spendLimit" in prev && prev.spendLimit)
-    return {
-      text: `Once $${prev.spendLimit.usd.toLocaleString("en-US")} is spent this month`,
-      warn: false,
-    };
-  // A provider whose plans limit how many jobs start or run at once hands jobs on whenever it's
-  // full, so the steps below it still see work.
-  const capacity = capacityLimit(prev.key);
-  if (capacity) return { text: `When ${label} ${capacity}`, warn: false };
-  return {
-    text: `${label} takes every job it can start, so the steps below rarely run`,
-    warn: true,
-  };
-}
-
-/** How a provider's plans limit its capacity, as the end of "When Boat …", or null when they don't. */
-function capacityLimit(key: RunnerKey) {
-  const label = providerPlans(key)?.limitsLabel?.toLowerCase();
-  if (!label) return null;
-  if (label.includes("starts")) return "reaches its plan's limit on job starts";
-  if (label.includes("at once")) return "is running as many jobs as its plan allows";
-  return null;
-}
-
-type Handoff = { text: string; warn: boolean };
-
 function StepCard({
   id,
   step,
   handoff,
+  unreachable,
   index,
   count,
   verdict,
@@ -430,6 +366,8 @@ function StepCard({
   step: RunnerStep;
   /** Above the card: what sends a job here from the step before, or null for the first step. */
   handoff: Handoff | null;
+  /** Why no job can reach this step, or null. */
+  unreachable: string | null;
   index: number;
   count: number;
   verdict: StepVerdict | undefined;
@@ -531,6 +469,7 @@ function StepCard({
                 </Link>
               </p>
             )}
+            {unreachable && <p className="text-xs text-muted-foreground">{unreachable}</p>}
             {appMissing && (
               <p className="flex items-center gap-1.5 text-xs text-muted-foreground">
                 <TriangleAlertIcon aria-hidden className="size-3.5 shrink-0 text-destructive" />
@@ -607,6 +546,7 @@ function StepCard({
             // What GitHub billed this month past included minutes, across connected accounts.
             spentUsd={accounts.reduce((sum, account) => sum + account.netAmount, 0)}
             capUsd={step.spendLimit?.usd ?? null}
+            spent="billed by GitHub"
           />
         )}
         {!limit && step.key !== "machine" && step.key !== "github" && hasSpendLimit(step.key) && (
@@ -664,7 +604,7 @@ function RuleMenu({
   );
 }
 
-/** "While under [80] %" or "While under $[100] a month": a choice with a number to set. */
+/** "Included minutes [80] %" or "Monthly spend $[100] a month": a cap with a number to set. */
 function LimitChoice({
   on,
   title,
@@ -804,7 +744,7 @@ const spendChoice = (step: HostedStep, onChange: (step: RunnerStep) => void, dis
   />
 );
 
-/** A priced hosted provider's rule: "while under $N a month" or "always". */
+/** A priced hosted provider's spend cap: a monthly dollar cap, or none. */
 function SpendRule({ step, onChange }: { step: HostedStep; onChange: (step: RunnerStep) => void }) {
   return (
     <RuleMenu trigger={capText(step, [], null)} label={RUNNER_LABELS[step.key]}>
@@ -814,7 +754,7 @@ function SpendRule({ step, onChange }: { step: HostedStep; onChange: (step: Runn
   );
 }
 
-/** The GitHub step's rule: a compact menu of "while under N%" and "always". */
+/** The GitHub step's spend cap: a share of included minutes, a monthly dollar cap, or none. */
 function GitHubRule({
   step,
   limits,
@@ -877,8 +817,8 @@ function GitHubRule({
 }
 
 /**
- * The Blacksmith step's rule: "while under N% of its free minutes", which needs Blacksmith
- * connected in Settings › Providers to count them, "while under $N a month", or "always".
+ * The Blacksmith step's spend cap: a share of its free minutes, which needs Blacksmith connected
+ * in Settings › Providers to count them, a monthly dollar cap, or none.
  */
 function BlacksmithRule({
   step,
@@ -964,19 +904,6 @@ const accountBar = (account: AccountUsage, many: boolean): UsageBar => ({
 });
 
 /** Each bar's minutes this month against its quota, with a tick at the limit. */
-/** How close a cap's tick may come to either end of its bar, in percent. */
-const TICK_EDGE = 10;
-
-/**
- * Where a bar's fill ends and its cap tick sits, in percent. The bar measures up to `full`
- * (a quota, or for a dollar cap a little past the cap), stretched or shrunk so the tick stays
- * TICK_EDGE from either end.
- */
-function barMarks(used: number, cap: number, full: number) {
-  const scale = Math.min(Math.max(full, cap / ((100 - TICK_EDGE) / 100)), cap / (TICK_EDGE / 100));
-  return { fill: Math.min((used / scale) * 100, 100), tick: (cap / scale) * 100 };
-}
-
 function UsageBars({ bars, percent }: { bars: UsageBar[]; percent: number }) {
   if (bars.length === 0) return null;
   return (
@@ -1030,13 +957,22 @@ const usd = (n: number) =>
  * A usage-billed provider's spend this month. With a cap, a bar shows how close the step is to
  * handing jobs on; without one, a line says what it has cost so far.
  */
-function SpendBar({ spentUsd, capUsd }: { spentUsd: number | null; capUsd: number | null }) {
+function SpendBar({
+  spentUsd,
+  capUsd,
+  spent = "spent",
+}: {
+  spentUsd: number | null;
+  capUsd: number | null;
+  /** How the spend was counted: "spent" at list prices, or "billed by GitHub". */
+  spent?: string;
+}) {
   if (spentUsd === null) return null;
   const resets = nextCycle(new Date().toISOString());
   if (capUsd === null)
     return (
       <p className="pr-4 pb-3 pl-11 text-xs text-muted-foreground">
-        {usd(spentUsd)} spent this month · no cap · resets {resets}
+        {usd(spentUsd)} {spent} this month · no cap · resets {resets}
       </p>
     );
   const used = Math.floor((spentUsd / capUsd) * 100);
@@ -1069,7 +1005,7 @@ function SpendBar({ spentUsd, capUsd }: { spentUsd: number | null; capUsd: numbe
           />
         </div>
         <p className="text-xs text-muted-foreground">
-          {usd(spentUsd)} of {usd(capUsd)} spent ·{" "}
+          {usd(spentUsd)} of {usd(capUsd)} {spent} ·{" "}
           {spentUsd > capUsd ? `${usd(spentUsd - capUsd)} over` : `${usd(capUsd - spentUsd)} left`}{" "}
           · resets {resets}
         </p>

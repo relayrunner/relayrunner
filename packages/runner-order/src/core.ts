@@ -62,14 +62,6 @@ export const BLACKSMITH_FREE_MINUTES = 3_000;
 /** A step's minutes limit, if it's a provider that takes one and has one. */
 export const minutesLimitOf = (step: RunnerStep) => ("limit" in step ? step.limit : undefined);
 
-/**
- * What makes a step unique in an order: its provider, and for GitHub and Blacksmith whether it has
- * a minutes limit ("github:limit").
- */
-export function stepSlot(step: RunnerStep) {
-  return minutesLimitOf(step) ? `${step.key}:limit` : step.key;
-}
-
 /** How the dashboard names each provider. */
 export const RUNNER_LABELS = byRunnerKey((key) =>
   key === "machine" ? "Self-hosted" : key === "github" ? "GitHub-hosted" : PROVIDERS[key].name,

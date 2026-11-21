@@ -142,3 +142,18 @@ describe("GET /providers/blacksmith/minutes", () => {
     });
   });
 });
+
+describe("GET /providers/spend", () => {
+  test("a workspace with no priced jobs this month has spent nothing", async () => {
+    const { cookie } = await testing.signIn(env);
+    const { cookie: active } = await testing.createWorkspace(
+      env,
+      cookie,
+      "Acme",
+      `acme-${crypto.randomUUID().slice(0, 8)}`,
+    );
+    const response = await testing.call(env, "/providers/spend", active);
+    expect(response.status).toBe(200);
+    expect(await response.json()).toEqual({ spend: {} });
+  });
+});

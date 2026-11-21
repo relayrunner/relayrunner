@@ -9,7 +9,7 @@ The runner order is your workspace's list of providers, top to bottom. Each job 
 
 <Screenshot
   name="router"
-  alt="The Router page: GitHub-hosted while under 80% of included minutes, then self-hosted, then GitHub-hosted always."
+  alt="The Router page: GitHub-hosted capped at 2,400 included minutes, then self-hosted, Blacksmith capped at 2,700 free minutes and Boat capped at $50 a month, then GitHub-hosted with no cap."
   sizes="(min-width: 50rem) 45rem, 100vw"
 />
 
@@ -18,10 +18,10 @@ The runner order is your workspace's list of providers, top to bottom. Each job 
 | Step                  | Takes the job when                                                                                                                                        |
 | --------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | **Self-hosted**       | A connected machine or added runner is online, idle, has the relay's `machine` labels and is shared with whoever started the job. Never for public repos. |
-| **GitHub-hosted**     | The relay names a `github` label. With a minutes limit, only while the account is under it.                                                               |
-| **A hosted provider** | The relay names one of its labels, such as `depot-*` in the `depot` input. With a spend limit, only while the account is under it.                        |
+| **GitHub-hosted**     | The relay names a `github` label. With a cap, only while the account is under it.                                                                         |
+| **A hosted provider** | The relay names one of its labels, such as `depot-*` in the `depot` input. With a cap, only while the account is under it.                                |
 
-A step that can't take the job is skipped with a reason, and the next one is tried.
+A step that can't take the job is skipped with a reason, and the next one is tried. Between two steps, the Router page says what sends a job on, such as "Once 2,400 min are used". Under a step with no cap it warns you, because that provider takes every job it can start and the steps below it rarely run.
 
 ## Common orders
 
@@ -32,9 +32,9 @@ A step that can't take the job is skipped with a reason, and the next one is tri
 
 **Included minutes first.** Spend the minutes your plan includes, then move to your machines before overage, then fall back to GitHub anyway so nothing stalls. See [Spend controls](/docs/guides/spend-controls).
 
-1. GitHub-hosted, while under 80%
+1. GitHub-hosted, capped at 80% of included minutes
 2. Self-hosted
-3. GitHub-hosted
+3. GitHub-hosted, no cap
 
 **Machines, then a faster provider.** Burst to a [hosted provider](/docs/runners/hosted) such as Depot when your machines are busy, and keep GitHub as the last resort for jobs that don't name one.
 
@@ -42,27 +42,40 @@ A step that can't take the job is skipped with a reason, and the next one is tri
 2. Depot
 3. GitHub-hosted
 
-GitHub and Blacksmith can each appear twice: once with a minutes limit and once without.
+**Spread across providers.** A provider can come back later in the order with a higher cap, so you can use some of each before you lean on any one of them.
+
+1. Blacksmith, capped at 50% of its free minutes
+2. GitHub-hosted, capped at 80% of included minutes
+3. Blacksmith, capped at 90% of its free minutes
+4. GitHub-hosted, no cap
+
+Self-hosted can appear once. If a step repeats a provider with the same kind of cap set no higher than an earlier one, no job reaches it, and the Router page marks it "Never reached".
+
+## Caps
+
+Each hosted step has a cap, set from the button on its card. Once the job's GitHub account reaches the cap, jobs go to the next step until the month resets. The card shows a bar of this month's usage with a tick where the cap falls.
 
 ## The minutes limit
 
-A GitHub-hosted step can have a limit, such as "while under 80%". It then takes a job only while the job's GitHub account has used less than that share of its plan's included minutes this month. Each account is checked on its own.
+A GitHub-hosted step can be capped at a share of included minutes, such as 80%. It then takes a job only while the job's GitHub account has used less than that share of its plan's included minutes this month. Each account is checked on its own.
 
-If GitHub won't share an account's minutes, the limit never blocks its jobs. The Router page shows when that's the case.
+If GitHub won't share an account's minutes, the cap never blocks its jobs. The Router page shows when that's the case.
 
 An org that shares its enterprise's minutes is judged against the enterprise's, once the App is [installed on the enterprise](/docs/reference/github-app#enterprises).
 
 ## Blacksmith's free minutes
 
-A Blacksmith step can stop at a share of Blacksmith's 3,000 free minutes a month, such as "while under 90%". Connect Blacksmith first, under **Settings › Providers** or with `npx relayrunner blacksmith connect`, so its usage is counted. Usage syncs hourly, in the 2-vCPU minutes Blacksmith counts its free minutes in, so a 4-vCPU minute uses two.
+A Blacksmith step can be capped at a share of Blacksmith's 3,000 free minutes a month, such as 90%. Connect Blacksmith first, under **Settings › Providers** or with `npx relayrunner blacksmith connect`, so its usage is counted. Usage syncs hourly, in the 2-vCPU minutes Blacksmith counts its free minutes in, so a 4-vCPU minute uses two.
 
-Until the first sync, or if Blacksmith stops accepting the token, the limit never blocks and the Router page says so. Put a step after it, such as your machines, GitHub-hosted or Blacksmith again without a limit, for the jobs past it.
+Until the first sync, or if Blacksmith stops accepting the token, the cap never blocks and the Router page says so. Put a step after it, such as your machines, GitHub-hosted or Blacksmith again with no cap, for the jobs past it.
 
 ## Spend limits
 
-A hosted provider's step, apart from Namespace and RunsOn, can have a spend limit, such as "while under $200 a month". It then takes a job only while the job's GitHub account has spent less than that on the provider this calendar month (UTC). Spend is worked out from each finished job's minutes and the provider's list price, so it can differ a little from your bill, and jobs still running count once they finish.
+A hosted provider's step, apart from Namespace and RunsOn, can be capped at a monthly spend, such as $200. It then takes a job only while the job's GitHub account has spent less than that on the provider this calendar month (UTC). Spend is worked out from each finished job's minutes and the provider's list price, so it can differ a little from your bill, and jobs still running count once they finish.
 
-Put another step after it, such as GitHub-hosted or your machines, so jobs past the limit still have somewhere to go.
+A GitHub-hosted step can have a monthly spend cap too. It uses what GitHub has billed the account for Actions this month, as GitHub's billing reports it. That covers every repo on the account, including ones you don't route, and GitHub's billing can lag behind by up to a couple of hours. If GitHub won't share the account's billing, the cap never blocks its jobs.
+
+Put another step after a capped one, such as GitHub-hosted or your machines, so jobs past the cap still have somewhere to go.
 
 ## Changes take effect at once
 

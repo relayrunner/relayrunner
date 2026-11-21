@@ -3,11 +3,9 @@ import { z } from "zod";
 import {
   DEFAULT_RETRY_SETTINGS,
   DEFAULT_RUNNER_ORDER,
-  hasMinutesLimit,
   hasSpendLimit,
   RETRY_RUNNERS,
   RUNNER_LABELS,
-  stepSlot,
 } from "./core.ts";
 
 // The Zod schemas for a runner order and retry settings, and the readers for their stored
@@ -29,9 +27,10 @@ export const minutesLimitSchema = z.object({
 export type MinutesLimit = z.infer<typeof minutesLimitSchema>;
 
 /**
- * "While under $X a month": a hosted provider step passes a job on once the job's GitHub account
- * has spent `usd` on that provider this calendar month (UTC), at list prices. Only providers with
- * list prices (SPEND_LIMIT_PROVIDERS) can count spend.
+ * A spend cap: a hosted provider step passes a job on once the job's GitHub account has spent
+ * `usd` on that provider this calendar month (UTC), at list prices. Only providers with list
+ * prices (SPEND_LIMIT_PROVIDERS) can count spend. On GitHub-hosted it's what GitHub billed the
+ * account for Actions this month, as its billing reports it.
  */
 export const spendLimitSchema = z.object({
   usd: z
@@ -71,28 +70,33 @@ export const runnerOrderSchema = z.object({
     .array(runnerStepSchema)
     .min(1, "Add at least one provider.")
     .superRefine((steps, ctx) => {
-      // Each provider once, except GitHub-hosted and Blacksmith, which may come twice: once with a
-      // minutes limit and once without (use the free minutes first, then fall back past the limit).
-      const seen = new Set<string>();
+      // A provider may come back any number of times with any cap (Blacksmith to 50%, GitHub to
+      // 80%, Blacksmith to 90%, then GitHub). Self-hosted comes once: a second step would see the
+      // same machines.
+      let machine = false;
       steps.forEach((step, index) => {
-        const slot = stepSlot(step);
-        if (seen.has(slot)) {
-          ctx.addIssue({
-            code: "custom",
-            path: [index, "key"],
-            message: hasMinutesLimit(step.key)
-              ? `${RUNNER_LABELS[step.key]} is already in the order ${"limit" in step && step.limit ? "with a limit" : "without a limit"}.`
-              : `${RUNNER_LABELS[step.key]} is already in the order.`,
-          });
+        if (step.key === "machine") {
+          if (machine)
+            ctx.addIssue({
+              code: "custom",
+              path: [index, "key"],
+              message: `${RUNNER_LABELS.machine} is already in the order.`,
+            });
+          machine = true;
         }
-        seen.add(slot);
         if ("limit" in step && step.limit && "spendLimit" in step && step.spendLimit)
           ctx.addIssue({
             code: "custom",
             path: [index, "spendLimit"],
             message: "Pick a minutes limit or a spend limit, not both.",
           });
-        if ("spendLimit" in step && step.spendLimit && !hasSpendLimit(step.key))
+        // GitHub's spend comes from its own billing; other providers' from list prices.
+        if (
+          "spendLimit" in step &&
+          step.spendLimit &&
+          step.key !== "github" &&
+          !hasSpendLimit(step.key)
+        )
           ctx.addIssue({
             code: "custom",
             path: [index, "spendLimit"],

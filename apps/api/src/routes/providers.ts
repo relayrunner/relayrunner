@@ -15,6 +15,7 @@ import {
   testConnection,
 } from "../provider-connections.ts";
 import { providerReport, providersOverview } from "../provider-report.ts";
+import { workspaceSpend } from "../provider-spend.ts";
 import { providerTrends } from "../provider-trends.ts";
 import { chartBuckets, requireWindow } from "../report-window.ts";
 import { RAW_RETENTION_DAYS } from "../time.ts";
@@ -46,6 +47,14 @@ export const providerRoutes = new Hono<AppEnv>()
   // its Blacksmith connection, or why they can't be.
   .get("/blacksmith/minutes", requireUser, requireWorkspace, async (c) =>
     c.json(await blacksmithMinutes(c.var.db, c.var.workspace.id)),
+  )
+  // The Router's spend bars: what the workspace's GitHub account has spent on each priced
+  // provider this month, at list prices, in dollars. GitHub-hosted's comes from its own billing
+  // (GET /api/usage/actions netAmount), not from here.
+  .get("/spend", requireUser, requireWorkspace, async (c) =>
+    c.json({
+      spend: await workspaceSpend(c.var.db, c.var.workspace.installationId),
+    }),
   )
   .use("/:provider/connection/*", requireUser, requireWorkspace, requireManager)
   // Save (or replace) a token, after one read proves it works. Then sync right away.

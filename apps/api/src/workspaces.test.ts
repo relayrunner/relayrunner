@@ -157,18 +157,13 @@ describe("runner order", () => {
       },
     });
 
-    const twice = await put(workspace.id, jar, { steps: [{ key: "github" }, { key: "github" }] });
+    const twice = await put(workspace.id, jar, { steps: [{ key: "machine" }, { key: "machine" }] });
     expect(twice.status).toBe(400);
     expect(await twice.json()).toMatchObject({
       error: {
-        message: "GitHub-hosted is already in the order without a limit.",
+        message: "Self-hosted is already in the order.",
         details: {
-          issues: [
-            {
-              path: ["steps", 1, "key"],
-              message: "GitHub-hosted is already in the order without a limit.",
-            },
-          ],
+          issues: [{ path: ["steps", 1, "key"], message: "Self-hosted is already in the order." }],
         },
       },
     });

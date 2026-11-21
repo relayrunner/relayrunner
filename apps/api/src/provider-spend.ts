@@ -71,3 +71,19 @@ export async function accountSpend(
     .limit(1);
   return { account: row?.account ?? "", spentUsd: (row?.usdMicros ?? 0) / MICROS };
 }
+
+/**
+ * Everything a workspace's GitHub account has spent on each priced provider this month, in
+ * dollars, for the Router's spend bars. A provider with no jobs this month is left out.
+ */
+export async function workspaceSpend(
+  db: Db,
+  installationId: number,
+  now = Date.now(),
+): Promise<Partial<Record<HostedProviderId, number>>> {
+  const rows = await db
+    .select({ provider: table.provider, usdMicros: table.usdMicros })
+    .from(table)
+    .where(and(eq(table.installationId, installationId), eq(table.month, monthOf(now))));
+  return Object.fromEntries(rows.map((row) => [row.provider, row.usdMicros / MICROS]));
+}

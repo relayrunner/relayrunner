@@ -512,8 +512,7 @@ function memberSentence(item: ActivityItem) {
   }
 }
 
-// One runner order step, with its limit as the Router page words it: "GitHub-hosted (while under
-// 80%)".
+// One runner order step, with its cap as the Router page words it: "GitHub-hosted (cap 80%)".
 function stepText(step: RunnerStep) {
   const label = RUNNER_LABELS[step.key];
   const limited = ("limit" in step && step.limit) || ("spendLimit" in step && step.spendLimit);

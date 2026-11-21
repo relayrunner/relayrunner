@@ -21,7 +21,7 @@ import {
   sampleRunnerGroupCheck,
 } from "@/lib/router-sample";
 import { type AutoJob, type AutoJobs, getAutoJobs, setAutoJob, setAutoSize } from "@/lib/auto-jobs";
-import { AUTO_SIZES, type HostedProviderId } from "@relayrunner/providers";
+import { AUTO_SIZES } from "@relayrunner/providers";
 import {
   Select,
   SelectContent,
@@ -57,6 +57,7 @@ import {
   sampleBlacksmithMinutes,
 } from "@/lib/blacksmith-minutes";
 import { formatTime } from "@/lib/time-zone";
+import { getProviderSpend, type ProviderSpend } from "@/lib/provider-spend";
 
 export const Route = createFileRoute("/_authed/_workspace/router")({
   loader: async ({ context }) => {
@@ -64,7 +65,7 @@ export const Route = createFileRoute("/_authed/_workspace/router")({
     if (authDisabled) return sampleRouter();
     // Runner status isn't awaited here: a runner added from GitHub reads its status from GitHub,
     // so the page loads first and the Self-hosted step's badge fills in after (RouterPage).
-    const [order, accounts, blacksmith] = await Promise.all([
+    const [order, accounts, blacksmith, spend] = await Promise.all([
       getRunnerOrder(context.current.workspace.id),
       // The minutes only explain the GitHub step's limit, so the page still loads without them.
       getActionsUsage()
@@ -72,8 +73,10 @@ export const Route = createFileRoute("/_authed/_workspace/router")({
         .catch((): AccountUsage[] => []),
       // Likewise Blacksmith's free minutes, for its step's limit.
       getBlacksmithMinutes().catch(() => null),
+      // And this month's spend per provider, for the spend caps' bars.
+      getProviderSpend().catch(() => null),
     ]);
-    return { ...order, machines: null as Machine[] | null, accounts, blacksmith };
+    return { ...order, machines: null as Machine[] | null, accounts, blacksmith, spend };
   },
   component: RouterPage,
 });
@@ -144,8 +147,7 @@ function RouterPage() {
             accounts={loaded.accounts}
             blacksmith={loaded.blacksmith}
             installedApps={installedApps}
-            // Prototype: the API doesn't serve this month's spend per provider yet.
-            spend={"spend" in loaded ? loaded.spend : null}
+            spend={loaded.spend}
             aside={
               <SetupCard progress={progress} onRoute={() => setRouteStart({ repoId: null })} />
             }
@@ -365,7 +367,7 @@ function sampleRouter(): {
   machines: Machine[];
   accounts: AccountUsage[];
   blacksmith: BlacksmithMinutes | null;
-  spend: Partial<Record<HostedProviderId, number>>;
+  spend: ProviderSpend | null;
 } {
   const kind = new URLSearchParams(window.location.search).get("sample");
   const machine: Machine = {
@@ -379,7 +381,7 @@ function sampleRouter(): {
     status: { online: true, state: "idle", connectedAt: Date.now() },
   };
   const blacksmith = sampleBlacksmithMinutes(kind !== "no-blacksmith");
-  const spend = {
+  const spend: ProviderSpend = {
     boat: 41.6,
     depot: 12.4,
     blacksmith: 0,
@@ -422,7 +424,6 @@ function sampleRouter(): {
           ? { key: "blacksmith" }
           : { key: "blacksmith", limit: { percent: 90 } },
         { key: "boat", spendLimit: { usd: 50 } },
-        { key: "depot", spendLimit: { usd: 5 } },
         { key: "github" },
       ],
     },

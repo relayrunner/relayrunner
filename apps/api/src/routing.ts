@@ -744,9 +744,23 @@ export async function decideRoute(
         const over = step.limit
           ? minutesCheck(await (usage ??= githubUsage()), step.limit.percent)
           : null;
-        if (!over) return { runner: job.github[0], step: key, skipped, notInOrder };
-        const { reason, ...minutes } = over;
-        skipped.push({ key, reason, minutes });
+        if (over) {
+          const { reason, ...minutes } = over;
+          skipped.push({ key, reason, minutes });
+          continue;
+        }
+        if (step.spendLimit) {
+          // What GitHub billed the job's account for Actions this month, as its billing reports
+          // it. An account whose billing we can't read takes the job, as with the minutes limit.
+          const account = await (usage ??= githubUsage());
+          const limitUsd = step.spendLimit.usd;
+          if (account?.readAt && account.netAmount >= limitUsd) {
+            const spend = { account: account.accountLogin, spentUsd: account.netAmount, limitUsd };
+            skipped.push({ key, reason: "spend_limit", spend });
+            continue;
+          }
+        }
+        return { runner: job.github[0], step: key, skipped, notInOrder };
       }
     } else {
       // A hosted provider has no API to ask whether it can take a job, so its step takes any job

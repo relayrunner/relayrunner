@@ -1071,6 +1071,47 @@ describe("decideRoute with a minutes limit", () => {
     expect(decision.skipped.map((s) => s.reason)).toEqual(["minutes_limit", "no_machine"]);
   });
 
+  test("a GitHub spend cap passes the job on once GitHub has billed the cap", async () => {
+    const capped: RunnerOrder = {
+      steps: [{ key: "github", spendLimit: { usd: 100 } }, { key: "machine" }],
+    };
+    const under = await decideRoute(capped, job, free, async () => usage({ netAmount: 99 }));
+    expect(under).toMatchObject({ runner: "ubuntu-latest", step: "github", skipped: [] });
+    const over = await decideRoute(capped, job, free, async () => usage({ netAmount: 120 }));
+    expect(over).toMatchObject({
+      runner: "rr-0123456789ab",
+      step: "machine",
+      skipped: [
+        {
+          key: "github",
+          reason: "spend_limit",
+          spend: { account: "acme", spentUsd: 120, limitUsd: 100 },
+        },
+      ],
+    });
+  });
+
+  test("a GitHub spend cap takes the job when billing can't be read", async () => {
+    const capped: RunnerOrder = { steps: [{ key: "github", spendLimit: { usd: 100 } }] };
+    for (const read of [async () => null, async () => usage({ netAmount: 500, readAt: null })]) {
+      const decision = await decideRoute(capped, job, none, read);
+      expect(decision).toMatchObject({ runner: "ubuntu-latest", step: "github" });
+    }
+  });
+
+  test("the same provider can come back with a higher cap", async () => {
+    const twice: RunnerOrder = {
+      steps: [
+        { key: "github", limit: { percent: 50 } },
+        { key: "machine" },
+        { key: "github", limit: { percent: 90 } },
+      ],
+    };
+    const decision = await decideRoute(twice, job, none, async () => usage({ usedMinutes: 1400 }));
+    expect(decision).toMatchObject({ runner: "ubuntu-latest", step: "github" });
+    expect(decision.skipped.map((s) => s.reason)).toEqual(["minutes_limit", "no_machine"]);
+  });
+
   test("under the limit but burning fast, it stops early", async () => {
     // 1,400 of 2,000 used (70%): 600 left, but 400 an hour would use it in 1.5 hours.
     const decision = await decideRoute(order, job, free, async () =>

@@ -10,7 +10,7 @@ function waitRunner(labels: string[], runnerGroupName: string | null) {
   const runner = hostedRunner(labels, runnerGroupName);
   return runner && waitKey(runner);
 }
-import { accountSpend, monthOf } from "./provider-spend.ts";
+import { accountSpend, monthOf, workspaceSpend } from "./provider-spend.ts";
 import { BASE_BOOK, listRate } from "@relayrunner/providers";
 import * as testing from "./testing.ts";
 
@@ -197,6 +197,10 @@ describe("runner waits", () => {
     expect(spend.spentUsd).toBeCloseTo(2 * rate, 6);
     expect(spend.account).not.toBe("");
     expect((await accountSpend(createDb(env.DB), installationId, "depot")).spentUsd).toBe(0);
+    // The Router's spend bars: every provider with spend this month, and none without.
+    const all = await workspaceSpend(createDb(env.DB), installationId);
+    expect(Object.keys(all)).toEqual(["blacksmith"]);
+    expect(all.blacksmith).toBeCloseTo(2 * rate, 6);
     expect(monthOf(Date.UTC(2026, 10, 14, 23)).toISOString()).toBe("2026-11-01T00:00:00.000Z");
   });
 });
