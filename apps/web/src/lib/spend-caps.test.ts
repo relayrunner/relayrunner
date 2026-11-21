@@ -28,12 +28,12 @@ describe("capText", () => {
   test("says each kind of cap the way its button reads", () => {
     const cap = (step: RunnerStep) => capText(step, [account], blacksmith);
     expect(cap({ key: "machine" })).toBe("When available");
-    expect(cap({ key: "github", limit: { percent: 80 } })).toBe("Cap 2,400 min");
-    expect(cap({ key: "blacksmith", limit: { percent: 90 } })).toBe("Cap 2,700 free min");
-    expect(cap({ key: "github", spendLimit: { usd: 1500 } })).toBe("Cap $1,500/mo");
+    expect(cap({ key: "github", limit: { percent: 80 } })).toBe("While under 2,400 min");
+    expect(cap({ key: "blacksmith", limit: { percent: 90 } })).toBe("While under 2,700 free min");
+    expect(cap({ key: "github", spendLimit: { usd: 1500 } })).toBe("While under $1,500/mo");
     expect(cap({ key: "boat" })).toBe("No cap");
     // Without exactly one account's quota, the minutes cap is a share.
-    expect(capText({ key: "github", limit: { percent: 80 } }, [], null)).toBe("Cap 80%");
+    expect(capText({ key: "github", limit: { percent: 80 } }, [], null)).toBe("While under 80%");
   });
 });
 

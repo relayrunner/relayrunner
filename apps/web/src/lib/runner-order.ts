@@ -16,11 +16,11 @@ export function saveRunnerOrder(workspaceId: string, order: RunnerOrder) {
   });
 }
 
-/** A step's cap, without its quota: "When available", "Cap 80%", "Cap $100/mo", "No cap". */
+/** A step's cap, without its quota: "When available", "While under 80%", "While under $100/mo", "No cap". */
 export function ruleText(step: RunnerStep) {
   if (step.key === "machine") return "When available";
-  if ("limit" in step && step.limit) return `Cap ${step.limit.percent}%`;
+  if ("limit" in step && step.limit) return `While under ${step.limit.percent}%`;
   if ("spendLimit" in step && step.spendLimit)
-    return `Cap $${step.spendLimit.usd.toLocaleString("en-US")}/mo`;
+    return `While under $${step.spendLimit.usd.toLocaleString("en-US")}/mo`;
   return "No cap";
 }

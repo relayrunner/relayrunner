@@ -17,7 +17,7 @@ function blacksmithQuota(blacksmith: BlacksmithMinutes | null) {
 
 export const minutes = (n: number) => Math.round(n).toLocaleString("en-US");
 
-/** A step's spend cap as its button reads: "Cap 2,400 min", "Cap $100/mo" or "No cap". */
+/** A step's spend cap as its button reads: "While under 2,400 min", "While under $100/mo" or "No cap". */
 export function capText(
   step: RunnerStep,
   accounts: AccountUsage[],
@@ -26,12 +26,12 @@ export function capText(
   if (step.key === "machine") return "When available";
   if ("limit" in step && step.limit) {
     const quota = step.key === "github" ? githubQuota(accounts) : blacksmithQuota(blacksmith);
-    if (quota === null) return `Cap ${step.limit.percent}%`;
+    if (quota === null) return `While under ${step.limit.percent}%`;
     const cap = minutes((quota * step.limit.percent) / 100);
-    return step.key === "blacksmith" ? `Cap ${cap} free min` : `Cap ${cap} min`;
+    return step.key === "blacksmith" ? `While under ${cap} free min` : `While under ${cap} min`;
   }
   if ("spendLimit" in step && step.spendLimit)
-    return `Cap $${step.spendLimit.usd.toLocaleString("en-US")}/mo`;
+    return `While under $${step.spendLimit.usd.toLocaleString("en-US")}/mo`;
   return "No cap";
 }
 
