@@ -67,7 +67,10 @@ export async function requestJson<T>(
   url: string,
   init: { method?: string; headers?: Record<string, string>; body?: string } = {},
 ): Promise<T> {
-  const response = await ctx.fetch(url, {
+  // Called unbound: as `ctx.fetch(...)` the Workers runtime's fetch throws "Illegal invocation",
+  // since its `this` would be the context object.
+  const send = ctx.fetch;
+  const response = await send(url, {
     method: init.method ?? "GET",
     headers: { authorization: `Bearer ${ctx.token}`, accept: "application/json", ...init.headers },
     body: init.body,

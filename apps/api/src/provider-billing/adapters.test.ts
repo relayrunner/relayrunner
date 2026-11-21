@@ -445,3 +445,22 @@ describe("Groundbox", () => {
     ]);
   });
 });
+
+describe("calling fetch", () => {
+  // The Workers runtime's fetch throws "Illegal invocation" when called with any `this` but the
+  // global scope, as `ctx.fetch(...)` would.
+  function strictFetch(this: unknown) {
+    if (this !== undefined && this !== globalThis) throw new TypeError("Illegal invocation");
+    return Promise.resolve(json(fixture("groundbox-account.json")));
+  }
+
+  test("every adapter calls it unbound, as Workers needs", async () => {
+    const context = ctx(strictFetch as unknown as typeof fetch);
+    expect(await groundbox.verify(context)).toEqual({ accountName: "acme" });
+    // Namespace's streaming calls make their own request; the fixture isn't a stream, so the call
+    // fails, but not on how fetch was called.
+    await expect(connectStream(context, "https://example.test", {})).rejects.not.toThrow(
+      "Illegal invocation",
+    );
+  });
+});
