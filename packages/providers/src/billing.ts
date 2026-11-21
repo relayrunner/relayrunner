@@ -83,11 +83,11 @@ export const BILLING_PROVIDERS: Record<BillingProviderId, BillingProviderInfo> =
     tokenHelp:
       "In Groundbox's dashboard, create an API key with only these two scopes, and paste it. It starts with `gbx_`.",
     scopes: [
-      { scope: "account:read", for: "free minutes left and whether Groundbox is holding jobs" },
-      { scope: "billing:read", for: "what each job cost, for the hourly sync" },
+      { scope: "account:read", for: "your plan, minutes used this month and any holds" },
+      { scope: "billing:read", for: "what each job cost and your spend, synced hourly" },
     ],
     reads:
-      "Free minutes left this month, what each job cost, and whether Groundbox is holding jobs, so the Router can pass jobs on before Groundbox would hold them.",
+      "Your Groundbox usage from Groundbox's own billing: minutes used this month, what each job cost, your spend, and whether Groundbox is holding jobs.",
     costOnly: true,
   },
   namespace: {

@@ -444,8 +444,8 @@ function FreeMinutes({
   if (!connected)
     return (
       <p className="text-muted-foreground">
-        Connecting also counts {label}'s {count(FREE_MINUTES[provider])} free minutes a month, so
-        the {router("Router")} can stop sending {label} jobs before they run out.
+        The {router("Router")} reads these too, so its {label} step works from {label}'s own count
+        of the {count(FREE_MINUTES[provider])} free minutes a month.
       </p>
     );
   const held = minutes?.held ? (
