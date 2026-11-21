@@ -1003,10 +1003,12 @@ function SpendBar({ spentUsd, capUsd }: { spentUsd: number | null; capUsd: numbe
       </p>
     );
   const used = Math.floor((spentUsd / capUsd) * 100);
-  // A dollar cap has no quota behind it, so the bar runs a little past the cap: the tick sits at
-  // the same kind of spot as a minutes cap, with room to show spend that went over it.
-  const scale = capUsd / (CAP_TICK_PERCENT / 100);
-  const fill = Math.min((spentUsd / scale) * 100, 100);
+  // A dollar cap has no quota behind it, so the bar runs a little past the cap and the tick sits
+  // at the same kind of spot as a minutes cap. Spend past the end of that fills the bar, and the
+  // tick moves left to where the cap falls in it: at twice the cap it sits halfway.
+  const scale = Math.max(capUsd / (CAP_TICK_PERCENT / 100), spentUsd);
+  const fill = (spentUsd / scale) * 100;
+  const tick = (capUsd / scale) * 100;
   return (
     <div className="grid gap-2.5 pr-4 pb-3 pl-11">
       <div className="grid max-w-sm gap-1.5">
@@ -1024,12 +1026,13 @@ function SpendBar({ spentUsd, capUsd }: { spentUsd: number | null; capUsd: numbe
           />
           <div
             className="absolute -inset-y-1 w-0.5 rounded-full bg-foreground"
-            style={{ left: `calc(${CAP_TICK_PERCENT}% - 1px)` }}
+            style={{ left: `calc(${tick}% - 1px)` }}
           />
         </div>
         <p className="text-xs text-muted-foreground">
-          {usd(spentUsd)} of {usd(capUsd)} spent · {usd(Math.max(capUsd - spentUsd, 0))} left ·
-          resets {resets}
+          {usd(spentUsd)} of {usd(capUsd)} spent ·{" "}
+          {spentUsd > capUsd ? `${usd(spentUsd - capUsd)} over` : `${usd(capUsd - spentUsd)} left`}{" "}
+          · resets {resets}
         </p>
       </div>
     </div>

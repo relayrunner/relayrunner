@@ -422,6 +422,7 @@ function sampleRouter(): {
           ? { key: "blacksmith" }
           : { key: "blacksmith", limit: { percent: 90 } },
         { key: "boat", spendLimit: { usd: 50 } },
+        { key: "depot", spendLimit: { usd: 5 } },
         { key: "github" },
       ],
     },
