@@ -863,7 +863,7 @@ function FreeMinutesRule({
       {noFreeMinutes(free) ? (
         <BlockedChoice
           title="Free minutes"
-          blocked={`${planName(key, free)} has no free minutes.`}
+          blocked={`${planName(key, free)} has no free minutes to track.`}
           setUp={null}
         />
       ) : connected || step.limit ? (
@@ -1130,10 +1130,10 @@ function freeMinutesWarning(
     case "no_free_minutes": {
       const credit =
         free.balanceUsd != null && free.balanceUsd > 0
-          ? ` Its ${usd(free.balanceUsd)} of credit pays for them.`
-          : "";
+          ? ` bills from its ${usd(free.balanceUsd)} of credit, so there are no free minutes to track.`
+          : " has no free minutes to track.";
       return {
-        text: `${planName(provider, free)} has no free minutes, so ${label} takes every job.${credit} Pick a monthly spend cap to limit it.`,
+        text: `${planName(provider, free)}${credit} Set a monthly spend cap to cap ${label}'s usage here.`,
         setUp: null,
       };
     }

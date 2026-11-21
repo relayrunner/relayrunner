@@ -41,7 +41,7 @@ export function capText(
 ) {
   if (step.key === "machine") return "When available";
   if ("limit" in step && step.limit) {
-    if (limitHasNoMinutes(step, free)) return "No free minutes";
+    if (limitHasNoMinutes(step, free)) return "No minutes to track";
     const quota = quotaOf(step, accounts, free);
     if (quota === null) return `While under ${step.limit.percent}%`;
     const cap = minutes((quota * step.limit.percent) / 100);

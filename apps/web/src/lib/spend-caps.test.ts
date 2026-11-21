@@ -134,7 +134,7 @@ describe("Groundbox", () => {
       },
     };
     const limited = { key: "groundbox" as const, limit: { percent: 80 } };
-    expect(capText(limited, [], sponsored)).toBe("No free minutes");
+    expect(capText(limited, [], sponsored)).toBe("No minutes to track");
     expect(handoffText(limited, [], sponsored)).toEqual({
       text: "When Groundbox would hold the job",
       warn: false,
