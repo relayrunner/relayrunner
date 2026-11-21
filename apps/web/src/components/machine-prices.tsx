@@ -7,11 +7,13 @@ import {
 } from "@relayrunner/providers";
 import { minuteText } from "@relayrunner/providers/runner-table";
 import { useState } from "react";
+import { ChartTip, TipRow, useWidth } from "@/components/chart-parts";
 import { OptionPicker } from "@/components/range-picker";
+import { Swatch } from "@/components/stacked-bars";
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
 import { plural } from "@/lib/job-times";
 import type { ProviderRunner } from "@/lib/providers";
-import { cn } from "@/lib/utils";
+import { cn, count } from "@/lib/utils";
 
 // Every runner a provider sells (the catalog in @relayrunner/providers), as a grid of systems by
 // vCPUs, or as a chart of price against vCPUs, one line per system. Runners the workspace's jobs
@@ -139,14 +141,23 @@ export function MachinePrices({
           <span className="flex items-center gap-1.5">
             <span
               aria-hidden
-              className="size-2.5 rounded-[3px] border border-dashed border-current"
+              className={cn(
+                "size-2.5 shrink-0 border-current",
+                view === "chart" ? "rounded-full border-2" : "rounded-[3px] border border-dashed",
+              )}
             />
             Larger runners, for Team and Enterprise plans. Not free in public repos.
           </span>
         )}
         {used && (
           <span className="flex items-center gap-1.5">
-            <span aria-hidden className="size-1.5 rounded-full bg-foreground" />
+            <span
+              aria-hidden
+              className={cn(
+                "shrink-0 rounded-full",
+                view === "chart" ? "size-2.5 border border-foreground" : "size-1.5 bg-foreground",
+              )}
+            />
             Your jobs ran here
           </span>
         )}
@@ -262,9 +273,13 @@ const W = 720;
 const H = 300;
 const PAD = { left: 52, right: 104, top: 12, bottom: 28 };
 
+// How near the pointer has to come to a dot, in screen pixels, for its tooltip to show.
+const REACH = 32;
+
 /** Price against vCPUs on doubling scales, a line per system and a dot per runner. */
 function PriceChart({ rows, low, high }: Shown) {
-  const [hover, setHover] = useState<Cell | null>(null);
+  const [ref, width] = useWidth<HTMLDivElement>();
+  const [hover, setHover] = useState<string | null>(null);
   const sized = rows.map((row) => {
     const points = row.cells
       .filter((cell): cell is Cell & { usd: number; size: NonNullable<Cell["size"]> } =>
@@ -296,100 +311,145 @@ function PriceChart({ rows, low, high }: Shown) {
     sized.map((row) => (row.ladder ? y(row.points.at(-1)!.usd) + 4 : -Infinity)),
   );
   const others = sized.filter((row) => row.points.length && !row.ladder);
+  const dots = sized.flatMap((row) =>
+    row.points.map((cell) => ({
+      key: `${row.name}|${cell.label}`,
+      cell,
+      system: row.name,
+      color: PLATFORM_COLORS[row.platform],
+      cx: x(cell.size.vcpus),
+      cy: y(cell.usd),
+    })),
+  );
+  const hovered = dots.find((dot) => dot.key === hover);
+  // The SVG scales to the card's width; the tooltip is placed in pixels.
+  const scale = width / W;
   return (
     <div className="grid gap-2 rounded-xl border bg-card p-3 sm:p-4">
-      <svg
-        viewBox={`0 0 ${W} ${H}`}
-        className="w-full"
-        role="img"
-        aria-label="Price a minute against vCPUs, one line per system"
-      >
-        {xTicks.map((n) => (
-          <g key={`x${n}`}>
-            <line x1={x(n)} x2={x(n)} y1={PAD.top} y2={H - PAD.bottom} className="stroke-border" />
-            <text
-              x={x(n)}
-              y={H - 8}
-              textAnchor="middle"
-              className="fill-muted-foreground text-[11px] tabular-nums"
-            >
-              {n}
-            </text>
-          </g>
-        ))}
-        {yTicks.map((usd) => (
-          <g key={`y${usd}`}>
-            <line
-              x1={PAD.left}
-              x2={W - PAD.right}
-              y1={y(usd)}
-              y2={y(usd)}
-              className="stroke-border"
-            />
-            <text
-              x={PAD.left - 8}
-              y={y(usd) + 4}
-              textAnchor="end"
-              className="fill-muted-foreground text-[11px] tabular-nums"
-            >
-              ${usd}
-            </text>
-          </g>
-        ))}
-        {sized.map((row, r) => {
-          const color = PLATFORM_COLORS[row.platform];
-          const last = row.points.at(-1);
-          return (
-            <g key={row.name}>
-              {row.ladder && (
-                <polyline
-                  fill="none"
-                  stroke={color}
-                  strokeWidth={2}
-                  points={row.points.map((p) => `${x(p.size.vcpus)},${y(p.usd)}`).join(" ")}
-                />
-              )}
-              {row.points.map((p) => (
-                <g
-                  key={p.label}
-                  onPointerEnter={() => setHover(p)}
-                  onPointerLeave={() => setHover(null)}
-                >
-                  <circle cx={x(p.size.vcpus)} cy={y(p.usd)} r={12} fill="transparent" />
-                  <circle
-                    cx={x(p.size.vcpus)}
-                    cy={y(p.usd)}
-                    r={p.larger ? 3.5 : 4}
-                    fill={p.larger ? "var(--card)" : color}
+      <div ref={ref} className="relative">
+        <svg
+          viewBox={`0 0 ${W} ${H}`}
+          className="block w-full"
+          role="img"
+          aria-label="Price a minute against vCPUs, one line per system"
+          // The nearest dot answers, so the pointer doesn't have to land on one.
+          onPointerMove={(event) => {
+            const box = event.currentTarget.getBoundingClientRect();
+            const px = ((event.clientX - box.left) / box.width) * W;
+            const py = ((event.clientY - box.top) / box.height) * H;
+            let best: (typeof dots)[number] | undefined;
+            let bestDistance = Infinity;
+            for (const dot of dots) {
+              const distance = Math.hypot(dot.cx - px, dot.cy - py);
+              if (distance < bestDistance) [best, bestDistance] = [dot, distance];
+            }
+            setHover(best && bestDistance * (box.width / W) <= REACH ? best.key : null);
+          }}
+          onPointerLeave={(event) => event.pointerType !== "touch" && setHover(null)}
+        >
+          {xTicks.map((n) => (
+            <g key={`x${n}`}>
+              <line
+                x1={x(n)}
+                x2={x(n)}
+                y1={PAD.top}
+                y2={H - PAD.bottom}
+                className="stroke-border"
+              />
+              <text
+                x={x(n)}
+                y={H - 8}
+                textAnchor="middle"
+                className="fill-muted-foreground text-[11px] tabular-nums"
+              >
+                {n}
+              </text>
+            </g>
+          ))}
+          {yTicks.map((usd) => (
+            <g key={`y${usd}`}>
+              <line
+                x1={PAD.left}
+                x2={W - PAD.right}
+                y1={y(usd)}
+                y2={y(usd)}
+                className="stroke-border"
+              />
+              <text
+                x={PAD.left - 8}
+                y={y(usd) + 4}
+                textAnchor="end"
+                className="fill-muted-foreground text-[11px] tabular-nums"
+              >
+                ${usd}
+              </text>
+            </g>
+          ))}
+          {sized.map((row, r) => {
+            const color = PLATFORM_COLORS[row.platform];
+            const last = row.points.at(-1);
+            return (
+              <g key={row.name}>
+                {row.ladder && (
+                  <polyline
+                    fill="none"
                     stroke={color}
                     strokeWidth={2}
+                    points={row.points.map((p) => `${x(p.size.vcpus)},${y(p.usd)}`).join(" ")}
                   />
-                  {p.jobs > 0 && (
+                )}
+                {row.points.map((p) => (
+                  <g key={p.label}>
                     <circle
                       cx={x(p.size.vcpus)}
                       cy={y(p.usd)}
-                      r={8}
-                      fill="none"
-                      className="stroke-foreground"
-                      strokeWidth={1.5}
+                      r={p.larger ? 3.5 : 4}
+                      fill={p.larger ? "var(--card)" : color}
+                      stroke={color}
+                      strokeWidth={2}
                     />
-                  )}
-                </g>
-              ))}
-              {last && row.ladder && (
-                <text
-                  x={x(last.size.vcpus) + 10}
-                  y={labelY[r]}
-                  fill={color}
-                  className="text-[11px] font-medium"
-                >
-                  {row.name}
-                </text>
-              )}
-            </g>
-          );
-        })}
-      </svg>
+                    {p.jobs > 0 && (
+                      <circle
+                        cx={x(p.size.vcpus)}
+                        cy={y(p.usd)}
+                        r={8}
+                        fill="none"
+                        className="stroke-foreground"
+                        strokeWidth={1.5}
+                      />
+                    )}
+                  </g>
+                ))}
+                {last && row.ladder && (
+                  <text
+                    x={x(last.size.vcpus) + 10}
+                    y={labelY[r]}
+                    fill={color}
+                    className="text-[11px] font-medium"
+                  >
+                    {row.name}
+                  </text>
+                )}
+              </g>
+            );
+          })}
+          {hovered && (
+            <circle
+              cx={hovered.cx}
+              cy={hovered.cy}
+              r={10}
+              fill={hovered.color}
+              fillOpacity={0.25}
+              className="pointer-events-none"
+            />
+          )}
+        </svg>
+        {hovered && width > 0 && (
+          <ChartTip x={hovered.cx * scale} y={hovered.cy * scale} width={width}>
+            <DotTip cell={hovered.cell} system={hovered.system} color={hovered.color} />
+          </ChartTip>
+        )}
+      </div>
       {others.length > 0 && (
         <p className="flex flex-wrap gap-x-4 text-xs text-muted-foreground">
           {others.map((row) => (
@@ -404,20 +464,28 @@ function PriceChart({ rows, low, high }: Shown) {
           ))}
         </p>
       )}
-      <p className="min-h-5 text-xs text-muted-foreground" aria-live="polite">
-        {hover ? (
-          <>
-            <span className={cn("text-foreground", hover.name && "font-mono")}>
-              {hover.name ?? "Larger runner"}
-            </span>
-            {" · "}
-            {runnerDetail(hover)}
-          </>
-        ) : (
-          "Point at a dot for its runner. Hollow dots are larger runners; a ring means your jobs ran there."
-        )}
-      </p>
     </div>
+  );
+}
+
+/** A chart dot's runner: its name, system, size, price and the workspace's jobs on it. */
+function DotTip({ cell, system, color }: { cell: Cell; system: string; color: string }) {
+  return (
+    <>
+      <p className={cn("font-medium", cell.name && "font-mono")}>
+        {cell.name ?? "Larger runner, named by your org"}
+      </p>
+      <p className="flex items-center gap-1.5 text-muted-foreground">
+        <Swatch color={color} className="size-2" />
+        {[system, cell.name && cell.larger && "Larger runner", cell.note]
+          .filter(Boolean)
+          .join(" · ")}
+      </p>
+      <TipRow label="Price a minute" value={priceText(cell.usd)} />
+      {cell.size && <TipRow label="vCPUs" value={String(cell.size.vcpus)} />}
+      {cell.size?.memoryGb && <TipRow label="Memory" value={`${cell.size.memoryGb} GB`} />}
+      {cell.jobs > 0 && <TipRow label="Your jobs" value={count(cell.jobs)} />}
+    </>
   );
 }
 
