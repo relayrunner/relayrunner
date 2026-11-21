@@ -49,7 +49,12 @@ const OTHER_HOSTED_IDS = HOSTED_PROVIDER_IDS.filter(
 
 export const runnerStepSchema = z.discriminatedUnion("key", [
   z.object({ key: z.literal("machine") }),
-  z.object({ key: z.literal("github"), limit: minutesLimitSchema.optional() }),
+  // GitHub: its included minutes, or what it bills past them (read from GitHub billing).
+  z.object({
+    key: z.literal("github"),
+    limit: minutesLimitSchema.optional(),
+    spendLimit: spendLimitSchema.optional(),
+  }),
   // Blacksmith: a hosted provider whose free minutes RelayRunner can count, once connected.
   z.object({
     key: z.literal("blacksmith"),

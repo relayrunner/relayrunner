@@ -602,6 +602,13 @@ function StepCard({
         {limit && step.key === "blacksmith" && (
           <BlacksmithUsage blacksmith={blacksmith} percent={limit.percent} />
         )}
+        {!limit && step.key === "github" && accounts.length > 0 && (
+          <SpendBar
+            // What GitHub billed this month past included minutes, across connected accounts.
+            spentUsd={accounts.reduce((sum, account) => sum + account.netAmount, 0)}
+            capUsd={step.spendLimit?.usd ?? null}
+          />
+        )}
         {!limit && step.key !== "machine" && step.key !== "github" && hasSpendLimit(step.key) && (
           <SpendBar
             spentUsd={spend ? (spend[step.key] ?? 0) : null}
@@ -847,8 +854,20 @@ function GitHubRule({
           setUp={limits.fixable ? "/settings/github" : null}
         />
       )}
+      <LimitChoice
+        on={!!step.spendLimit}
+        title="Monthly spend"
+        disabled={!canAlways}
+        value={step.spendLimit?.usd ?? DEFAULT_SPEND_LIMIT_USD}
+        min={1}
+        max={100_000}
+        prefix="$"
+        suffix="a month"
+        inputLabel="Limit, dollars a month past included minutes"
+        onPick={(usd) => onChange({ key: "github", spendLimit: { usd } })}
+      />
       <AlwaysChoice
-        on={!step.limit}
+        on={!step.limit && !step.spendLimit}
         disabled={!canAlways}
         note="billed past included minutes"
         onPick={() => onChange({ key: "github" })}

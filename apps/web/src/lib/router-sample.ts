@@ -55,6 +55,8 @@ export function sampleRouterAccounts(
       plan: "team",
       quotaMinutes: 3000,
       usedMinutes: 2520,
+      // Larger runners bill from the first minute, so a team under its included minutes still pays.
+      netAmount: 18.4,
     },
   ];
 }
