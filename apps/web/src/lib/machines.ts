@@ -220,8 +220,18 @@ export const SAMPLE_MACHINES: Machine[] = [
   // Running the sample live jobs' job on it (lib/live-jobs.ts).
   {
     ...SAMPLE_MACHINE,
-    status: { ...SAMPLE_MACHINE.status!, state: "busy", running: 1 },
+    status: { ...SAMPLE_MACHINE.status!, state: "busy", slots: 4, running: 2 },
     job: sampleMachineJob(),
+    jobs: [
+      sampleMachineJob(),
+      {
+        repository: "acme/app",
+        workflow: "CI",
+        name: "typecheck",
+        url: "https://github.com/acme/app/actions",
+        startedAt: new Date(Date.now() - 41_000).toISOString(),
+      },
+    ],
   },
   {
     ...SAMPLE_MACHINE,
@@ -243,6 +253,46 @@ export const SAMPLE_MACHINES: Machine[] = [
       updateBy: new Date(Date.now() - 2 * 86_400_000).toISOString(),
     },
     status: { online: false, state: null, connectedAt: null },
+  },
+  // A big Linux box running 16 jobs at once, most of them busy.
+  {
+    ...SAMPLE_MACHINE,
+    id: "sample-linux",
+    name: "ci-box",
+    os: "linux",
+    arch: "x64",
+    device: {
+      ...SAMPLE_MACHINE.device!,
+      kind: "desktop",
+      model: null,
+      modelId: null,
+      chip: "AMD Ryzen 9 7950X",
+      cpuCores: 32,
+      memoryMb: 131_072,
+      osVersion: "Ubuntu 24.04",
+    },
+    macApp: null,
+    runner: { version: "2.331.0", update: null, updateBy: null },
+    status: { ...SAMPLE_MACHINE.status!, state: "busy", slots: 16, running: 11 },
+    jobs: [
+      "lint",
+      "typecheck",
+      "test (1/4)",
+      "test (2/4)",
+      "test (3/4)",
+      "test (4/4)",
+      "build",
+      "e2e (chromium)",
+      "e2e (webkit)",
+      "bench",
+      "docs",
+    ].map((name, i) => ({
+      repository: i < 9 ? "acme/app" : "acme/site",
+      workflow: "CI",
+      name,
+      url: "https://github.com/acme/app/actions",
+      startedAt: new Date(Date.now() - (i + 1) * 47_000).toISOString(),
+    })),
   },
   {
     id: "sample-github",

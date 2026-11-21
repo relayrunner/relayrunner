@@ -5,7 +5,6 @@ import {
   CliVersion,
   RunnerUpdateNote,
   MachineChip,
-  MachineJobLink,
   MachineMenu,
   MachineOwner,
   MachineRuns,
@@ -88,19 +87,13 @@ const columns = column.columns([
       const { view } = row.original;
       return (
         <span className="grid min-w-0 gap-0.5 text-xs">
-          <BandLabel tone={view.tone} slotBars={view.slotBars}>
+          <BandLabel tone={view.tone} name={row.original.machine.name} slots={view.slotSquares}>
             {view.label}
           </BandLabel>
-          {view.busy ? (
-            <span className="flex max-w-60">
-              <MachineJobLink jobs={view.jobs} />
+          {view.detail && (
+            <span className="truncate text-muted-foreground" title={view.detail}>
+              {view.detail}
             </span>
-          ) : (
-            view.detail && (
-              <span className="truncate text-muted-foreground" title={view.detail}>
-                {view.detail}
-              </span>
-            )
           )}
           <RunnerUpdateNote machine={row.original.machine} />
         </span>
