@@ -164,12 +164,18 @@ function RouterPage() {
             spend={loaded.spend}
             boatConnected={loaded.boatConnected ?? false}
             aside={
-              <SetupCard progress={progress} onRoute={() => setRouteStart({ repoId: null })} />
+              <div className="grid min-w-0 flex-[1_1_300px] content-start gap-3">
+                <SectionBoundary>
+                  <RouteOutcomesCard workspaceId={current.workspace.id} />
+                </SectionBoundary>
+                <SetupCard
+                  progress={progress}
+                  onRoute={() => setRouteStart({ repoId: null })}
+                  className="flex-none"
+                />
+              </div>
             }
           />
-        </SectionBoundary>
-        <SectionBoundary>
-          <RouteOutcomesCard workspaceId={current.workspace.id} />
         </SectionBoundary>
         <SectionBoundary>
           <RouterWorkflows

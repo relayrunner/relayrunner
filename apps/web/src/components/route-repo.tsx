@@ -50,12 +50,23 @@ export type RouteRepoContext = {
 };
 
 /** The Router page's setup card: how far the workspace's repos are, and the way in. */
-export function SetupCard({ progress, onRoute }: { progress: RepoProgress; onRoute: () => void }) {
+export function SetupCard({
+  progress,
+  onRoute,
+  className,
+}: {
+  progress: RepoProgress;
+  onRoute: () => void;
+  className?: string;
+}) {
   const { routed, active, left, quiet } = progress;
   return (
     <section
       aria-label="Set up a repo"
-      className="grid min-w-0 flex-[1_1_300px] content-start gap-2 rounded-lg border border-border/60 bg-dormant px-4 py-3.5"
+      className={cn(
+        "grid min-w-0 flex-[1_1_300px] content-start gap-2 rounded-lg border border-border/60 bg-dormant px-4 py-3.5",
+        className,
+      )}
     >
       <h2 className="text-sm font-semibold">Set up a repo</h2>
       <p className="text-[12.5px] text-muted-foreground">
