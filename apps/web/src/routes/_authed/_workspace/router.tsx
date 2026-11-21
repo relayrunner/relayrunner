@@ -381,7 +381,8 @@ async function sampleHealth(): Promise<ProviderHealth> {
  * can't be checked, `?sample=personal` a personal account whose owner hasn't signed in,
  * `?sample=default` the order a new workspace starts with, `?sample=no-blacksmith` a
  * workspace that hasn't connected Blacksmith, so its step can't stop at the free minutes yet,
- * `?sample=no-groundbox` the same for Groundbox, and
+ * `?sample=no-groundbox` the same for Groundbox, `?sample=sponsored-groundbox` a Groundbox team on
+ * a plan without free minutes, and
  * `?sample=boat` (connected) or `?sample=no-boat` an uncapped Boat step.
  */
 function sampleRouter(): {
@@ -406,7 +407,16 @@ function sampleRouter(): {
   };
   const freeMinutes: FreeMinutesByProvider = {
     blacksmith: sampleFreeMinutes("blacksmith", kind !== "no-blacksmith"),
-    groundbox: sampleFreeMinutes("groundbox", kind !== "no-groundbox"),
+    groundbox:
+      kind === "sponsored-groundbox"
+        ? {
+            ...sampleFreeMinutes("groundbox", true),
+            status: "not_available",
+            reason: "no_free_minutes",
+            plan: "sponsored",
+            balanceUsd: 50,
+          }
+        : sampleFreeMinutes("groundbox", kind !== "no-groundbox"),
   };
   const spend: ProviderSpend = {
     boat: 41.6,

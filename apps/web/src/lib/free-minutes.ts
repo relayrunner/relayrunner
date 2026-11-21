@@ -36,7 +36,15 @@ export interface FreeMinutes {
   // Groundbox only: why it would hold jobs now, and its CI spend this month in dollars.
   held?: HeldReason | null;
   ciSpentUsd?: number | null;
+  // Groundbox only: the team's plan (free, monthly, annual, sponsored) and its credit left in
+  // dollars. A plan without free minutes (reason no_free_minutes) is named in the Router.
+  plan?: string | null;
+  balanceUsd?: number | null;
 }
+
+/** Whether the provider says its plan has no free minutes, so a minutes limit has nothing to count. */
+export const noFreeMinutes = (minutes: FreeMinutes | null | undefined) =>
+  minutes?.reason === "no_free_minutes";
 
 /** Each free-minutes provider's count, null where it couldn't be read. */
 export type FreeMinutesByProvider = Partial<Record<FreeMinutesProvider, FreeMinutes | null>>;

@@ -123,4 +123,21 @@ describe("Groundbox", () => {
     const notConnected = { groundbox: sampleFreeMinutes("groundbox", false) };
     expect(handoffText({ key: "groundbox" }, [], notConnected).warn).toBe(true);
   });
+
+  test("a minutes limit on a plan without free minutes shows no made-up cap", () => {
+    const sponsored = {
+      groundbox: {
+        ...sampleFreeMinutes("groundbox", true),
+        status: "not_available" as const,
+        reason: "no_free_minutes" as const,
+        plan: "sponsored",
+      },
+    };
+    const limited = { key: "groundbox" as const, limit: { percent: 80 } };
+    expect(capText(limited, [], sponsored)).toBe("No free minutes");
+    expect(handoffText(limited, [], sponsored)).toEqual({
+      text: "When Groundbox would hold the job",
+      warn: false,
+    });
+  });
 });

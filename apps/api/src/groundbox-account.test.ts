@@ -83,10 +83,13 @@ describe("groundboxMinutesView", () => {
       quotaMinutes: 3000,
       cycleStart: "2026-11-01T00:00:00.000Z",
     });
-    expect(groundboxMinutesView(account({ freeMinutes: null }), now)).toMatchObject({
+    const sponsored = account({ plan: "sponsored", freeMinutes: null, balanceUsd: 50 });
+    expect(groundboxMinutesView(sponsored, now)).toMatchObject({
       status: "not_available",
       reason: "no_free_minutes",
       accountLogin: "acme",
+      plan: "sponsored",
+      balanceUsd: 50,
     });
   });
 
@@ -102,6 +105,8 @@ describe("groundboxMinutesView", () => {
       syncedAt: "2026-11-21T12:00:00.000Z",
       held: "account_held",
       ciSpentUsd: 0,
+      plan: "free",
+      balanceUsd: 5,
     });
   });
 });

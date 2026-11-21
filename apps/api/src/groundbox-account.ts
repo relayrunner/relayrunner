@@ -126,6 +126,10 @@ export interface GroundboxMinutesView {
   syncedAt: string | null;
   held: ProviderHeld["reason"] | null;
   ciSpentUsd: number | null;
+  // The team's Groundbox plan (free, monthly, annual, sponsored) and its credit left in dollars,
+  // so a team without free minutes can be told which plan it's on and what pays for its jobs.
+  plan: string | null;
+  balanceUsd: number | null;
 }
 
 export function groundboxMinutesView(
@@ -141,6 +145,8 @@ export function groundboxMinutesView(
     syncedAt: null,
     held: null,
     ciSpentUsd: null,
+    plan: null,
+    balanceUsd: null,
   };
   if (!reading.ok) return { ...base, status: "not_available", reason: reading.reason };
   const { account } = reading;
@@ -150,6 +156,8 @@ export function groundboxMinutesView(
     syncedAt: new Date(reading.readAt).toISOString(),
     held: groundboxHeld(reading)?.reason ?? null,
     ciSpentUsd: account.ciSpentUsd,
+    plan: account.plan,
+    balanceUsd: account.balanceUsd,
   };
   const free = account.freeMinutes;
   if (!free) return { ...view, status: "not_available", reason: "no_free_minutes" };

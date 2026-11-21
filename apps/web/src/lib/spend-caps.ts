@@ -5,7 +5,7 @@ import {
   type RunnerStep,
 } from "@relayrunner/runner-order";
 import { hasQuota, type AccountUsage } from "./actions-usage";
-import type { FreeMinutesByProvider } from "./free-minutes";
+import { type FreeMinutesByProvider, noFreeMinutes } from "./free-minutes";
 
 // What the Router's steps say about their spend caps: each cap button, the connector text that
 // says what hands a job on to the next step, and where a usage bar's cap tick sits.
@@ -14,6 +14,14 @@ import type { FreeMinutesByProvider } from "./free-minutes";
 export function githubQuota(accounts: AccountUsage[]) {
   const withQuota = accounts.filter(hasQuota);
   return withQuota.length === 1 ? withQuota[0]!.quotaMinutes! : null;
+}
+
+/**
+ * Whether a step's minutes limit has nothing to count: its provider says the plan has no free
+ * minutes (Groundbox's sponsored and paid plans), so the Router never stops at it.
+ */
+function limitHasNoMinutes(step: RunnerStep, free: FreeMinutesByProvider) {
+  return isFreeMinutesProvider(step.key) && noFreeMinutes(free[step.key]);
 }
 
 /** A step's minutes quota: GitHub's included minutes, or a provider's free minutes. */
@@ -33,6 +41,7 @@ export function capText(
 ) {
   if (step.key === "machine") return "When available";
   if ("limit" in step && step.limit) {
+    if (limitHasNoMinutes(step, free)) return "No free minutes";
     const quota = quotaOf(step, accounts, free);
     if (quota === null) return `While under ${step.limit.percent}%`;
     const cap = minutes((quota * step.limit.percent) / 100);
@@ -58,7 +67,8 @@ export function handoffText(
 ): Handoff {
   if (prev.key === "machine") return { text: "When every machine is busy or offline", warn: false };
   const label = RUNNER_LABELS[prev.key];
-  if ("limit" in prev && prev.limit) {
+  // A limit on free minutes the plan doesn't have never stops a job: the step reads as uncapped.
+  if ("limit" in prev && prev.limit && !limitHasNoMinutes(prev, free)) {
     const quota = quotaOf(prev, accounts, free);
     if (quota === null)
       return { text: `Once ${prev.limit.percent}% of included minutes are used`, warn: false };

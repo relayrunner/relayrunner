@@ -57,7 +57,12 @@ import {
   minutes,
   unreachableText,
 } from "@/lib/spend-caps";
-import { counted, type FreeMinutes, type FreeMinutesByProvider } from "@/lib/free-minutes";
+import {
+  counted,
+  type FreeMinutes,
+  type FreeMinutesByProvider,
+  noFreeMinutes,
+} from "@/lib/free-minutes";
 import { AppError } from "@relayrunner/errors";
 import type { Machine } from "@/lib/machines";
 import { providerInfo } from "@/lib/provider-catalog";
@@ -855,7 +860,13 @@ function FreeMinutesRule({
   const quota = (free?.quotaMinutes ?? FREE_MINUTES[key]).toLocaleString("en-US");
   return (
     <RuleMenu trigger={capText(step, [], { [key]: free })} label={label}>
-      {connected || step.limit ? (
+      {noFreeMinutes(free) ? (
+        <BlockedChoice
+          title="Free minutes"
+          blocked={`${planName(key, free)} has no free minutes.`}
+          setUp={null}
+        />
+      ) : connected || step.limit ? (
         <LimitChoice
           on={!!step.limit}
           title="Free minutes"
@@ -1116,12 +1127,23 @@ function freeMinutesWarning(
         text: `${label}'s account couldn't be read just now, so ${label} takes jobs until it can be.`,
         setUp: null,
       };
-    case "no_free_minutes":
+    case "no_free_minutes": {
+      const credit =
+        free.balanceUsd != null && free.balanceUsd > 0
+          ? ` Its ${usd(free.balanceUsd)} of credit pays for them.`
+          : "";
       return {
-        text: `${label}'s plan has no free minutes to stop at, so ${label} takes every job.`,
+        text: `${planName(provider, free)} has no free minutes, so ${label} takes every job.${credit} Pick a monthly spend cap to limit it.`,
         setUp: null,
       };
+    }
   }
+}
+
+/** "Groundbox's sponsored plan", or "Groundbox's plan" when the plan wasn't given. */
+function planName(provider: FreeMinutesProvider, free: FreeMinutes | null) {
+  const plan = free?.plan?.trim();
+  return `${RUNNER_LABELS[provider]}'s ${plan ? `${plan} ` : ""}plan`;
 }
 
 function nextCycle(cycleStart: string) {
