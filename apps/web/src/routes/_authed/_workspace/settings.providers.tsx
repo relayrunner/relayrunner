@@ -226,8 +226,12 @@ function ConnectionStatus({ connection, name }: { connection: ProviderConnection
       <p className="text-muted-foreground">{facts.join(" · ")}</p>
       {lastSyncedAt && (
         <p>
-          {plural(recent.jobs, "job")} and {minutes(recent.billableMinutes)} billable minutes in the
-          last 30 days
+          {plural(recent.jobs, "job")} and {minutes(recent.billableMinutes)}{" "}
+          {connection.provider === "blacksmith"
+            ? // Blacksmith bills minutes times vCPUs: a minute on 4 vCPU is 4 of these.
+              "vCPU minutes"
+            : "billable minutes"}{" "}
+          in the last 30 days
           {recent.costUsd != null && `, ${money(recent.costUsd)} billed`}.
         </p>
       )}
@@ -395,11 +399,16 @@ function FreeMinutes({
       </p>
     );
   if (!counted(minutes)) return null;
-  const used = Math.round(minutes.usedMinutes).toLocaleString("en-US");
-  const quota = minutes.quotaMinutes.toLocaleString("en-US");
+  const used = Math.round(minutes.usedMinutes);
+  const quota = minutes.quotaMinutes;
+  const count = (n: number) => n.toLocaleString("en-US");
+  // Blacksmith counts free minutes as 2-vCPU minutes, so a 4-vCPU minute uses two. Its own page
+  // stops at the quota and shows runner minutes, which don't double: say how the count is made.
   return (
     <p>
-      {used} of {quota} free minutes used this month.{" "}
+      {used >= quota
+        ? `All ${count(quota)} free minutes used this month (${count(used)} 2-vCPU minutes).`
+        : `${count(used)} of ${count(quota)} free minutes used this month, in 2-vCPU minutes.`}{" "}
       <span className="text-muted-foreground">
         Set a limit on the Blacksmith step in the {router("Router")}.
       </span>
