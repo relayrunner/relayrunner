@@ -21,7 +21,7 @@ import {
   sampleRunnerGroupCheck,
 } from "@/lib/router-sample";
 import { type AutoJob, type AutoJobs, getAutoJobs, setAutoJob, setAutoSize } from "@/lib/auto-jobs";
-import { AUTO_SIZES } from "@relayrunner/providers";
+import { AUTO_SIZES, type HostedProviderId } from "@relayrunner/providers";
 import {
   Select,
   SelectContent,
@@ -144,6 +144,8 @@ function RouterPage() {
             accounts={loaded.accounts}
             blacksmith={loaded.blacksmith}
             installedApps={installedApps}
+            // Prototype: the API doesn't serve this month's spend per provider yet.
+            spend={"spend" in loaded ? loaded.spend : null}
             aside={
               <SetupCard progress={progress} onRoute={() => setRouteStart({ repoId: null })} />
             }
@@ -363,6 +365,7 @@ function sampleRouter(): {
   machines: Machine[];
   accounts: AccountUsage[];
   blacksmith: BlacksmithMinutes | null;
+  spend: Partial<Record<HostedProviderId, number>>;
 } {
   const kind = new URLSearchParams(window.location.search).get("sample");
   const machine: Machine = {
@@ -376,6 +379,22 @@ function sampleRouter(): {
     status: { online: true, state: "idle", connectedAt: Date.now() },
   };
   const blacksmith = sampleBlacksmithMinutes(kind !== "no-blacksmith");
+  const spend = {
+    boat: 41.6,
+    depot: 12.4,
+    blacksmith: 0,
+    namespace: 7.25,
+    lizard: 3.1,
+    warpbuild: 18.9,
+    ubicloud: 4.4,
+    starsling: 9.75,
+    monkci: 22.3,
+    runloft: 6.8,
+    berrybox: 15.2,
+    latchkey: 27.5,
+    celesto: 2.05,
+    instabox: 11.6,
+  };
   if (kind === "default")
     return {
       order: DEFAULT_RUNNER_ORDER,
@@ -383,6 +402,7 @@ function sampleRouter(): {
       machines: [machine],
       accounts: [],
       blacksmith,
+      spend,
     };
   if (kind === "enterprise" || kind === "personal")
     return {
@@ -391,6 +411,7 @@ function sampleRouter(): {
       machines: [machine],
       accounts: sampleRouterAccounts(kind),
       blacksmith,
+      spend,
     };
   return {
     order: {
@@ -400,6 +421,7 @@ function sampleRouter(): {
         kind === "no-blacksmith"
           ? { key: "blacksmith" }
           : { key: "blacksmith", limit: { percent: 90 } },
+        { key: "boat", spendLimit: { usd: 50 } },
         { key: "github" },
       ],
     },
@@ -407,6 +429,7 @@ function sampleRouter(): {
     machines: [machine],
     accounts: sampleRouterAccounts("team"),
     blacksmith,
+    spend,
   };
 }
 
