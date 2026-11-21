@@ -2,7 +2,6 @@ import { AppError, ERRORS, isErrorCode } from "@relayrunner/errors";
 import { BILLING_PROVIDERS, type BillingProviderInfo } from "@relayrunner/providers";
 import { heldText } from "@relayrunner/activity";
 import {
-  FREE_MINUTES,
   type FreeMinutesProvider,
   isFreeMinutesProvider,
   RUNNER_LABELS,
@@ -422,8 +421,8 @@ function ConnectCommand({
 }
 
 /**
- * What connecting Blacksmith or Groundbox unlocks on the Router, and once connected, this month's
- * free minutes (and for Groundbox, whether it's holding jobs).
+ * Once Blacksmith or Groundbox is connected, this month's free minutes (and for Groundbox, whether
+ * it's holding jobs).
  */
 function FreeMinutes({
   provider,
@@ -441,13 +440,7 @@ function FreeMinutes({
       {text}
     </Link>
   );
-  if (!connected)
-    return (
-      <p className="text-muted-foreground">
-        The {router("Router")} reads these too, so its {label} step works from {label}'s own count
-        of the {count(FREE_MINUTES[provider])} free minutes a month.
-      </p>
-    );
+  if (!connected) return null;
   const held = minutes?.held ? (
     <p className="text-destructive">
       {heldText(label, { reason: minutes.held })}, so the Router passes its jobs on.
