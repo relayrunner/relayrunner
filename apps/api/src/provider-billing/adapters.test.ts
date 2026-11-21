@@ -2,6 +2,7 @@ import { readFileSync } from "node:fs";
 import { describe, expect, test } from "vitest";
 import type { CliRequest, CliResponse } from "@relayrunner/blacksmith-cli/protocol";
 import { blacksmith } from "./blacksmith.ts";
+import { boat, boatLimits } from "./boat.ts";
 import { depot } from "./depot.ts";
 import { connectStream, envelope, namespace } from "./namespace.ts";
 import { type AdapterContext, ProviderApiError, ProviderAuthError } from "./types.ts";
@@ -324,5 +325,36 @@ describe("Blacksmith", () => {
     expect(noOrg.requests).toEqual([]);
     const noCli = { ...ctx(fetch, { organization: "relayrunner" }) };
     await expect(blacksmith.verify(noCli)).rejects.toBeInstanceOf(ProviderApiError);
+  });
+});
+
+describe("Boat", () => {
+  test("reads each window's starts left from /limits with the key as a bearer", async () => {
+    const { fetcher, calls } = fakeFetch([json(fixture("boat-limits.json"))]);
+    expect(await boatLimits(ctx(fetcher))).toEqual({
+      minute: { remaining: 9, limit: 12 },
+      hour: { remaining: 48, limit: 60 },
+      day: { remaining: 153, limit: 200 },
+    });
+    expect(calls[0]!.url).toBe("https://boat.dev/api/v1/limits");
+    expect(calls[0]!.headers.get("authorization")).toBe("Bearer tok_secret");
+  });
+
+  test("an unlimited account has no windows", async () => {
+    const unlimited = {
+      ok: true,
+      starts: { unlimited: true, minute: null, hour: null, day: null },
+    };
+    const { fetcher } = fakeFetch([json(unlimited), json(unlimited)]);
+    expect(await boatLimits(ctx(fetcher))).toEqual({ minute: null, hour: null, day: null });
+    // Still a working key.
+    expect(await boat.verify(ctx(fetcher))).toEqual({ accountName: null });
+  });
+
+  test("a refused key is a ProviderAuthError, and a sync stores nothing", async () => {
+    const refused = { ok: false, status: 401, code: "unauthorized", message: "Unauthorized" };
+    const { fetcher } = fakeFetch([json(refused, 401)]);
+    await expect(boat.verify(ctx(fetcher))).rejects.toBeInstanceOf(ProviderAuthError);
+    expect(await boat.usage(ctx(fetch), window)).toEqual({ jobs: [], days: [] });
   });
 });

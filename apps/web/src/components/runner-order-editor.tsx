@@ -82,6 +82,7 @@ export function RunnerOrderEditor({
   blacksmith = null,
   installedApps = null,
   spend = null,
+  boatConnected = false,
   aside = null,
 }: {
   workspaceId: string;
@@ -102,6 +103,8 @@ export function RunnerOrderEditor({
    * prices, or null when it couldn't be read (those steps then show no spend).
    */
   spend?: Partial<Record<HostedProviderId, number>> | null;
+  /** Whether the workspace connected Boat, so its step passes jobs on at its start limits. */
+  boatConnected?: boolean;
   /** Beside the order: the page's setup card. */
   aside?: ReactNode;
 }) {
@@ -176,7 +179,9 @@ export function RunnerOrderEditor({
                     step={step}
                     unreachable={unreachableText(steps, index)}
                     handoff={
-                      index > 0 ? handoffText(steps[index - 1]!, accounts, blacksmith) : null
+                      index > 0
+                        ? handoffText(steps[index - 1]!, accounts, blacksmith, boatConnected)
+                        : null
                     }
                     index={index}
                     count={steps.length}
@@ -413,7 +418,17 @@ function StepCard({
             {handoff.warn && (
               <TriangleAlertIcon aria-hidden className="size-3.5 shrink-0 text-[var(--rr-run)]" />
             )}
-            {handoff.text}
+            <span>
+              {handoff.text}
+              {handoff.connect && (
+                <>
+                  {". "}
+                  <Link to="/settings/providers" className="text-go hover:text-go-hover">
+                    {handoff.connect}
+                  </Link>
+                </>
+              )}
+            </span>
           </span>
         </div>
       )}

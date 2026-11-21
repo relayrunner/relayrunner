@@ -93,11 +93,12 @@ describe("connecting a provider", () => {
     const { connections } = (await response.json()) as { connections: { provider: string }[] };
     expect(connections.map((c) => c.provider)).toEqual([
       "blacksmith",
+      "boat",
       "depot",
       "namespace",
       "warpbuild",
     ]);
-    expect(connections[2]).toMatchObject({ connected: false, options: { region: "us" } });
+    expect(connections[3]).toMatchObject({ connected: false, options: { region: "us" } });
   });
 
   test("an owner saves a token that works: encrypted, hinted, never returned, and synced", async () => {

@@ -1678,3 +1678,57 @@ describe("decideRoute with Blacksmith's free minutes", () => {
     );
   });
 });
+
+describe("decideRoute with a provider out of job starts", () => {
+  const job = {
+    ...relayInputs({ boat: ["boat"], github: ["ubuntu-latest"] }),
+    private: true,
+  };
+  const order: RunnerOrder = { steps: [{ key: "boat" }, { key: "github" }] };
+  const none = async () => null;
+
+  test("with starts left, Boat takes the job", async () => {
+    const decision = await decideRoute(order, job, none);
+    expect(decision).toMatchObject({ runner: "boat", step: "boat", skipped: [] });
+  });
+
+  test("out of starts, the job moves on with the window recorded", async () => {
+    const asked: string[] = [];
+    const decision = await decideRoute(
+      order,
+      job,
+      none,
+      undefined,
+      undefined,
+      undefined,
+      undefined,
+      async (key) => {
+        asked.push(key);
+        return { window: "hour", limit: 60 };
+      },
+    );
+    expect(decision).toMatchObject({
+      runner: "ubuntu-latest",
+      step: "github",
+      skipped: [{ key: "boat", reason: "start_limit", starts: { window: "hour", limit: 60 } }],
+    });
+    expect(asked).toEqual(["boat"]);
+  });
+
+  test("with nowhere else to go, the reason says which window ran out", async () => {
+    const decision = await decideRoute(
+      { steps: [{ key: "boat" }] },
+      job,
+      none,
+      undefined,
+      undefined,
+      undefined,
+      undefined,
+      async () => ({ window: "day", limit: 200 }),
+    );
+    expect(decision.runner).toBeNull();
+    expect(decision.runner === null && decision.reason).toContain(
+      "Boat has used all the job starts its plan allows (200 a day)",
+    );
+  });
+});

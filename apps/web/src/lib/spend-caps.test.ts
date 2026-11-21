@@ -54,12 +54,23 @@ describe("handoffText", () => {
     );
   });
 
-  test("warns under a step with no cap, Boat included until its start limits are checked", () => {
+  test("warns under a step with no cap, Boat included until it's connected", () => {
     for (const key of ["github", "boat"] as const) {
       const { text, warn } = handoff({ key });
       expect(warn).toBe(true);
       expect(text).toContain("so the steps below rarely run");
     }
+    expect(handoff({ key: "boat" }).connect).toBe(
+      "Connect Boat to pass jobs on at its start limit",
+    );
+    expect(handoff({ key: "github" }).connect).toBeUndefined();
+  });
+
+  test("says Boat passes jobs on at its start limits once it's connected", () => {
+    expect(handoffText({ key: "boat" }, [account], blacksmith, true)).toEqual({
+      text: "When Boat reaches its plan's limit on job starts",
+      warn: false,
+    });
   });
 });
 

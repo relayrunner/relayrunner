@@ -1,6 +1,8 @@
 import {
   dollars,
   spendText,
+  startLimitText,
+  startsPerWindow,
   type FullMachine,
   type MinutesUsage,
   type NotSharedMachine,
@@ -110,6 +112,10 @@ function shortSkip(walk: RouteWalk, step: SkippedStep): string | null {
       return step.spend
         ? `${step.spend.account} past its ${dollars(step.spend.limitUsd)} ${RUNNER_LABELS[key]} limit`
         : `past the ${RUNNER_LABELS[key]} spend limit`;
+    case "start_limit":
+      return step.starts
+        ? `out of ${RUNNER_LABELS[key]} job starts (${startsPerWindow(step.starts)})`
+        : `out of ${RUNNER_LABELS[key]} job starts`;
     case "no_size":
       return noSizeText(key, step.vcpus);
     case "not_configured":
@@ -163,6 +169,8 @@ function longSkip(walk: RouteWalk, step: SkippedStep): string {
     }
     case "spend_limit":
       return spendText(RUNNER_LABELS[key], step.spend);
+    case "start_limit":
+      return startLimitText(RUNNER_LABELS[key], step.starts);
     case "no_size":
       return noSizeText(key, step.vcpus);
     case "not_configured":

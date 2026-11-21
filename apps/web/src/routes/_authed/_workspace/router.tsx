@@ -58,6 +58,7 @@ import {
 } from "@/lib/blacksmith-minutes";
 import { formatTime } from "@/lib/time-zone";
 import { getProviderSpend, type ProviderSpend } from "@/lib/provider-spend";
+import { listConnections } from "@/lib/provider-connections";
 
 export const Route = createFileRoute("/_authed/_workspace/router")({
   loader: async ({ context }) => {
@@ -65,7 +66,7 @@ export const Route = createFileRoute("/_authed/_workspace/router")({
     if (authDisabled) return sampleRouter();
     // Runner status isn't awaited here: a runner added from GitHub reads its status from GitHub,
     // so the page loads first and the Self-hosted step's badge fills in after (RouterPage).
-    const [order, accounts, blacksmith, spend] = await Promise.all([
+    const [order, accounts, blacksmith, spend, boatConnected] = await Promise.all([
       getRunnerOrder(context.current.workspace.id),
       // The minutes only explain the GitHub step's limit, so the page still loads without them.
       getActionsUsage()
@@ -75,8 +76,21 @@ export const Route = createFileRoute("/_authed/_workspace/router")({
       getBlacksmithMinutes().catch(() => null),
       // And this month's spend per provider, for the spend caps' bars.
       getProviderSpend().catch(() => null),
+      // And whether Boat is connected, so its step passes jobs on at its start limits.
+      listConnections()
+        .then(({ connections }) =>
+          connections.some((c) => c.provider === "boat" && c.connected && !c.failure),
+        )
+        .catch(() => false),
     ]);
-    return { ...order, machines: null as Machine[] | null, accounts, blacksmith, spend };
+    return {
+      ...order,
+      machines: null as Machine[] | null,
+      accounts,
+      blacksmith,
+      spend,
+      boatConnected,
+    };
   },
   component: RouterPage,
 });
@@ -148,6 +162,7 @@ function RouterPage() {
             blacksmith={loaded.blacksmith}
             installedApps={installedApps}
             spend={loaded.spend}
+            boatConnected={loaded.boatConnected ?? false}
             aside={
               <SetupCard progress={progress} onRoute={() => setRouteStart({ repoId: null })} />
             }
@@ -358,8 +373,9 @@ async function sampleHealth(): Promise<ProviderHealth> {
 /**
  * Dev-preview data. `?sample=enterprise` shows an org inside a GitHub enterprise, whose minutes
  * can't be checked, `?sample=personal` a personal account whose owner hasn't signed in,
- * `?sample=default` the order a new workspace starts with, and `?sample=no-blacksmith` a
- * workspace that hasn't connected Blacksmith, so its step can't stop at the free minutes yet.
+ * `?sample=default` the order a new workspace starts with, `?sample=no-blacksmith` a
+ * workspace that hasn't connected Blacksmith, so its step can't stop at the free minutes yet, and
+ * `?sample=boat` (connected) or `?sample=no-boat` an uncapped Boat step.
  */
 function sampleRouter(): {
   order: RunnerOrder;
@@ -368,6 +384,7 @@ function sampleRouter(): {
   accounts: AccountUsage[];
   blacksmith: BlacksmithMinutes | null;
   spend: ProviderSpend | null;
+  boatConnected?: boolean;
 } {
   const kind = new URLSearchParams(window.location.search).get("sample");
   const machine: Machine = {
@@ -405,6 +422,16 @@ function sampleRouter(): {
       accounts: [],
       blacksmith,
       spend,
+    };
+  if (kind === "boat" || kind === "no-boat")
+    return {
+      order: { steps: [{ key: "machine" }, { key: "boat" }, { key: "github" }] },
+      isDefault: false,
+      machines: [machine],
+      accounts: sampleRouterAccounts("team"),
+      blacksmith,
+      spend,
+      boatConnected: kind === "boat",
     };
   if (kind === "enterprise" || kind === "personal")
     return {

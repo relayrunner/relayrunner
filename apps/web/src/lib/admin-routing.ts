@@ -87,6 +87,8 @@ const ROUTING_REASONS: Record<string, string> = {
   minutes_limit: "over the minutes limit",
   minutes_runway: "minutes running out",
   provider_unhealthy: "not picking up jobs",
+  spend_limit: "over the spend limit",
+  start_limit: "out of job starts",
   not_in_order: "not in the runner order",
 };
 

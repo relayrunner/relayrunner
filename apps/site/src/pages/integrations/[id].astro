@@ -348,10 +348,11 @@ const faqData = {
     {
       p.billing && (
         <div class="int-billing">
-          <h3>See what {name} billed</h3>
+          <h3>{p.billing.limitsOnly ? `Pass jobs on at ${name}'s limits` : `See what ${name} billed`}</h3>
           <p>
-            Paste a read-only {p.billing.token.toLowerCase()} in Settings → Providers. The dashboard
-            then shows {p.billing.reads.charAt(0).toLowerCase() + p.billing.reads.slice(1)}
+            Paste a read-only {p.billing.token.toLowerCase()} in Settings → Providers.{" "}
+            {p.billing.limitsOnly ? "The Router then checks" : "The dashboard then shows"}{" "}
+            {p.billing.reads.charAt(0).toLowerCase() + p.billing.reads.slice(1)}
           </p>
         </div>
       )

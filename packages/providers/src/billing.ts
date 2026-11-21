@@ -6,6 +6,7 @@ import type { ProviderId } from "./index.ts";
 
 export const BILLING_PROVIDER_IDS = [
   "blacksmith",
+  "boat",
   "depot",
   "namespace",
   "warpbuild",
@@ -39,6 +40,8 @@ export interface BillingProviderInfo {
   githubOrganization?: boolean;
   /** A terminal command that makes the token and connects it, offered before pasting one. */
   command?: string;
+  /** The connection only reads the plan's limits for the Router, so it syncs no usage. */
+  limitsOnly?: boolean;
 }
 
 export const BILLING_PROVIDERS: Record<BillingProviderId, BillingProviderInfo> = {
@@ -50,6 +53,15 @@ export const BILLING_PROVIDERS: Record<BillingProviderId, BillingProviderInfo> =
     command: "npx relayrunner blacksmith connect",
     reads: "Billable minutes and cost per day, and each job's billable minutes.",
     githubOrganization: true,
+  },
+  boat: {
+    token: "API key",
+    tokenUrl: "https://docs.boat.dev/api-keys",
+    tokenHelp:
+      "Create a Boat API key allowed only the account.read action, and paste it. It starts with boat_.",
+    reads:
+      "How many job starts your plan has left this hour and day, so jobs go to the next step in your runner order when Boat has none left.",
+    limitsOnly: true,
   },
   depot: {
     token: "Organization token",

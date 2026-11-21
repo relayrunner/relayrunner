@@ -77,6 +77,12 @@ A GitHub-hosted step can have a monthly spend cap too. It uses what GitHub has b
 
 Put another step after a capped one, such as GitHub-hosted or your machines, so jobs past the cap still have somewhere to go.
 
+## Boat's job-start limits
+
+Boat's plans limit how many jobs can start in an hour and in a day. When a job goes over the limit, Boat pauses it, and someone has to re-run it by hand. Connect Boat under **Settings › Providers** with a Boat API key allowed only the `account.read` action. The Router then checks how many starts your plan has left before it sends a job to Boat, and sends the job to the next step when Boat has none left.
+
+Without a connection, or if Boat stops accepting the key, a Boat step takes every job it can, and the Router page warns that the steps below it rarely run. Boat waits out its per-minute limit on its own, so that one doesn't move jobs on.
+
 ## Changes take effect at once
 
 The order applies to the next relay. Nothing in your workflows changes.

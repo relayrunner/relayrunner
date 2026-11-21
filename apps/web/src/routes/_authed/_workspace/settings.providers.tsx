@@ -224,16 +224,20 @@ function ConnectionStatus({ connection, name }: { connection: ProviderConnection
   return (
     <div className="grid gap-1">
       <p className="text-muted-foreground">{facts.join(" · ")}</p>
-      {lastSyncedAt && (
-        <p>
-          {plural(recent.jobs, "job")} and {minutes(recent.billableMinutes)}{" "}
-          {connection.provider === "blacksmith"
-            ? // Blacksmith bills minutes times vCPUs: a minute on 4 vCPU is 4 of these.
-              "vCPU minutes"
-            : "billable minutes"}{" "}
-          in the last 30 days
-          {recent.costUsd != null && `, ${money(recent.costUsd)} billed`}.
-        </p>
+      {BILLING_PROVIDERS[connection.provider].limitsOnly ? (
+        <p>{BILLING_PROVIDERS[connection.provider].reads}</p>
+      ) : (
+        lastSyncedAt && (
+          <p>
+            {plural(recent.jobs, "job")} and {minutes(recent.billableMinutes)}{" "}
+            {connection.provider === "blacksmith"
+              ? // Blacksmith bills minutes times vCPUs: a minute on 4 vCPU is 4 of these.
+                "vCPU minutes"
+              : "billable minutes"}{" "}
+            in the last 30 days
+            {recent.costUsd != null && `, ${money(recent.costUsd)} billed`}.
+          </p>
+        )
       )}
       {failure === "token_rejected" && (
         <p className="text-destructive">{name} stopped accepting this token. Paste a new one.</p>

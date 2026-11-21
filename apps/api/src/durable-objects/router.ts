@@ -8,6 +8,7 @@ import { Recent } from "../recent.ts";
 import { accountUsage } from "../actions-billing.ts";
 import { accountSpend } from "../provider-spend.ts";
 import { blacksmithMinutes, type BlacksmithMinutes } from "../blacksmith-minutes.ts";
+import { readBoatStarts, StartBudget } from "../boat-limits.ts";
 import { DurableObject } from "cloudflare:workers";
 import { and, eq, isNotNull, isNull, or } from "drizzle-orm";
 import { createDb, schema } from "../db/index.ts";
@@ -180,6 +181,8 @@ export class Router extends DurableObject<Env> {
   private ownerAccess = new Recent<string, boolean>();
   private spend = new Recent<string, { account: string; spentUsd: number }>();
   private freeMinutes = new Recent<string, BlacksmithMinutes>();
+  // Boat's job starts left, from the workspace's Boat connection (src/boat-limits.ts).
+  private boatStarts = new StartBudget();
 
   /**
    * An org's (or repo's) self-hosted runners for the dashboard's Runners and Router pages, reused
@@ -357,7 +360,13 @@ export class Router extends DurableObject<Env> {
         this.freeMinutes.get(job.workspaceId, SPEND_TTL_MS, () =>
           blacksmithMinutes(db, job.workspaceId),
         ),
+      // Only Boat's plans cap job starts, and only its connection can say how many are left.
+      async (key) =>
+        key === "boat"
+          ? this.boatStarts.check(() => readBoatStarts(this.env, db, job.workspaceId))
+          : null,
     );
+    if (decision.runner !== null && decision.step === "boat") this.boatStarts.took();
     if (waitsForMachine(decision)) return this.wait(job, decision);
     if (
       decision.runner !== null &&

@@ -38,11 +38,14 @@ export function capText(
 /**
  * What sends a job on from `prev` to the next step, said in terms of how `prev` is set up. A
  * provider with no cap takes every job it can start, so the steps below it rarely run: `warn`.
+ * Boat is the exception once it's connected (`boatConnected`), since the Router then passes jobs
+ * on when Boat's plan runs out of job starts; until then, `connect` offers the connection.
  */
 export function handoffText(
   prev: RunnerStep,
   accounts: AccountUsage[],
   blacksmith: BlacksmithMinutes | null,
+  boatConnected = false,
 ): Handoff {
   if (prev.key === "machine") return { text: "When every machine is busy or offline", warn: false };
   const label = RUNNER_LABELS[prev.key];
@@ -62,6 +65,15 @@ export function handoffText(
       text: `Once $${prev.spendLimit.usd.toLocaleString("en-US")} is spent this month`,
       warn: false,
     };
+  if (prev.key === "boat") {
+    if (boatConnected)
+      return { text: "When Boat reaches its plan's limit on job starts", warn: false };
+    return {
+      text: "Boat takes every job it can start, so the steps below rarely run",
+      warn: true,
+      connect: "Connect Boat",
+    };
+  }
   return {
     text: `${label} takes every job it can start, so the steps below rarely run`,
     warn: true,
@@ -94,7 +106,8 @@ function capOf(step: RunnerStep) {
   return null;
 }
 
-export type Handoff = { text: string; warn: boolean };
+/** `connect`: a link to Settings › Providers, for a provider whose connection would stop the warning. */
+export type Handoff = { text: string; warn: boolean; connect?: string };
 
 /** How close a cap's tick may come to either end of its bar, in percent. */
 const TICK_EDGE = 10;

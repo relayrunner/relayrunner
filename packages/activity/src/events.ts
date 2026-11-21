@@ -79,6 +79,9 @@ export const SKIP_REASONS = [
   // The relay set the provider to `auto` and it has no runner as big as the job's size (in the
   // step's `vcpus`), such as GitHub-hosted past 2 vCPU.
   "no_size",
+  // A provider whose plan caps how many jobs start per window (Boat): the workspace's connection
+  // says a window has no starts left (in the step's `starts`), so the job would be paused.
+  "start_limit",
 ] as const;
 export type SkipReason = (typeof SKIP_REASONS)[number];
 
@@ -104,6 +107,7 @@ export const MOVE_REASONS: Record<SkipReason, MoveReason | null> = {
   provider_unhealthy: "unhealthy",
   spend_limit: "limit",
   no_size: null,
+  start_limit: "limit",
 };
 
 // Why RelayRunner retried a job: its runner failed it, not its own steps.
@@ -129,6 +133,15 @@ export const MinutesUsage = z.object({
   burnRatePerHour: z.number().nullable(),
 });
 export type MinutesUsage = z.infer<typeof MinutesUsage>;
+
+// start_limit: the window of the provider's plan that ran out of job starts, and its size.
+export const StartWindow = z.enum(["minute", "hour", "day"]);
+export type StartWindow = z.infer<typeof StartWindow>;
+export const StartLimit = z.object({
+  window: StartWindow,
+  limit: z.number().nullable(),
+});
+export type StartLimit = z.infer<typeof StartLimit>;
 
 // spend_limit: what the job's account spent on the provider this month, and the step's limit.
 export const SpendUsage = z.object({
@@ -188,6 +201,8 @@ export const RouteWalk = z.object({
       minutes: MinutesUsage.optional(),
       // spend_limit: the job's account's spend on the provider this month.
       spend: SpendUsage.optional(),
+      // start_limit: the plan window with no job starts left.
+      starts: StartLimit.optional(),
       // provider_unhealthy: how many jobs in a row weren't picked up, and when the next trial goes.
       unhealthy: z.object({ misses: z.number(), retryAt: z.number() }).optional(),
       // no_size: the job's size, in vCPUs.

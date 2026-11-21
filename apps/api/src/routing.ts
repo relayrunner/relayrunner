@@ -555,7 +555,13 @@ export const sameLogin = (a: string, b: string) => a.toLowerCase() === b.toLower
 // input names a label that provider doesn't serve, so the job would sit queued). Shared with the
 // Activity page, which explains each.
 export type { SkipReason } from "@relayrunner/activity";
-import { spendText, type SkipReason, type SpendUsage } from "@relayrunner/activity";
+import {
+  spendText,
+  startLimitText,
+  type SkipReason,
+  type SpendUsage,
+  type StartLimit,
+} from "@relayrunner/activity";
 
 export interface SkippedStep {
   key: RunnerKey;
@@ -571,6 +577,8 @@ export interface SkippedStep {
   minutes?: Omit<MinutesSkip, "reason">;
   // spend_limit: the job's GitHub account's spend on the provider this month.
   spend?: SpendUsage;
+  // start_limit: the provider plan's window with no job starts left.
+  starts?: StartLimit;
   unhealthy?: Unhealthy;
   // no_size: the job's size, in vCPUs.
   vcpus?: number;
@@ -578,6 +586,10 @@ export interface SkippedStep {
 
 // What the job's GitHub account has spent on a hosted provider this month (src/provider-spend.ts).
 export type SpendCheck = (key: HostedProviderId) => Promise<{ account: string; spentUsd: number }>;
+
+// Whether a hosted provider's plan has job starts left (src/boat-limits.ts): null when it does or
+// can't be read, or the window that ran out. Only providers whose plans cap starts ever say no.
+export type StartCheck = (key: HostedProviderId) => Promise<StartLimit | null>;
 
 // provider_unhealthy: how many jobs in a row weren't picked up, and when the next trial goes.
 export type Unhealthy = NonNullable<RouteWalk["skipped"][number]["unhealthy"]>;
@@ -702,7 +714,8 @@ export function retryOrder(
  * better off waiting there. `spend` reads the job's account's spend this month on a provider, and
  * is only called when a hosted step with a spend limit is reached. `blacksmithUsage` reads the
  * workspace's Blacksmith free minutes, and is only called when a Blacksmith step with a minutes
- * limit is reached.
+ * limit is reached. `starts` asks whether a hosted provider's plan has job starts left (Boat's
+ * do), once its step is about to take the job.
  */
 export async function decideRoute(
   order: RunnerOrder,
@@ -712,6 +725,7 @@ export async function decideRoute(
   health: HealthCheck = async () => null,
   spend: SpendCheck = async () => ({ account: "", spentUsd: 0 }),
   blacksmithUsage: () => Promise<MinutesUsage | null> = async () => null,
+  starts: StartCheck = async () => null,
 ): Promise<RouteDecision> {
   const skipped: SkippedStep[] = [];
   let usage: Promise<AccountUsage | null> | undefined;
@@ -792,6 +806,12 @@ export async function decideRoute(
             continue;
           }
         }
+        // A job Boat can't start sits "Paused by plan limit" until someone re-runs it.
+        const ranOut = await starts(key);
+        if (ranOut) {
+          skipped.push({ key, reason: "start_limit", starts: ranOut });
+          continue;
+        }
         const unhealthy = await health(key, labels[0]);
         if (!unhealthy) return { runner: labels[0], step: key, skipped, notInOrder };
         skipped.push({ key, reason: "provider_unhealthy", unhealthy });
@@ -818,7 +838,7 @@ export function noRunnerReason(
   if (RUNNER_KEYS.every((key) => job[key].length === 0))
     return `${NO_RUNNER}: the relay sets no provider, such as \`machine\` or \`github\`.`;
   const parts = skipped.map(
-    ({ key, reason, paused = [], notShared = [], full = [], minutes, spend, vcpus }) => {
+    ({ key, reason, paused = [], notShared = [], full = [], minutes, spend, starts, vcpus }) => {
       switch (reason) {
         case "not_configured":
           return `\`${key}\` isn't set on this relay`;
@@ -849,6 +869,8 @@ export function noRunnerReason(
           return minutesText(reason, minutes, key);
         case "spend_limit":
           return spendText(RUNNER_LABELS[key], spend);
+        case "start_limit":
+          return startLimitText(RUNNER_LABELS[key], starts);
         // Never the reason nothing fit: an unhealthy step takes the job when no other can.
         case "provider_unhealthy":
           return `${RUNNER_LABELS[key]} isn't picking up jobs`;
