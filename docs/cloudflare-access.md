@@ -4,13 +4,13 @@ Cloudflare Access keeps dashboard preview URLs and the operator admin views priv
 
 ## What is protected
 
-| Hostname                                                                             | Access          | Why                                                                                               |
-| ------------------------------------------------------------------------------------ | --------------- | ------------------------------------------------------------------------------------------------- |
-| `<alias>-relayrunner-app.relayrun.workers.dev` (dashboard previews)                  | Yes, whole host | Previews run unreviewed code against production data.                                             |
-| `relayrunner-app.relayrun.workers.dev` (dashboard)                                   | No              | The old dashboard host, which older CLIs still open. `app.relayrunner.dev` is the live one.       |
-| `app.relayrunner.dev`, `app.relayrunner.app` (dashboard)                             | Only `/admin`   | Same Worker as above. `/admin` and `/api/admin` sit behind the `relayrunner-app admin views` app. |
-| `relayrunner-webhooks.relayrun.workers.dev`, `webhooks.relayrunner.app`              | No              | GitHub posts webhooks here and can't log in. The signature check protects it.                     |
-| `relayrunner-api.relayrun.workers.dev`, `api.relayrunner.dev`, `api.relayrunner.app` | No              | The dashboard reaches it over a service binding. `/api/admin/*` checks the Access JWT itself.     |
+| Hostname                                                                                            | Access          | Why                                                                                               |
+| --------------------------------------------------------------------------------------------------- | --------------- | ------------------------------------------------------------------------------------------------- |
+| `<alias>-relayrunner-app.relayrun.workers.dev` (dashboard previews)                                 | Yes, whole host | Previews run unreviewed code against production data.                                             |
+| `relayrunner-app.relayrun.workers.dev` (dashboard)                                                  | No              | The old dashboard host, which older CLIs still open. `app.relayrunner.dev` is the live one.       |
+| `app.relayrunner.dev`, `app.relayrunner.app` (dashboard)                                            | Only `/admin`   | Same Worker as above. `/admin` and `/api/admin` sit behind the `relayrunner-app admin views` app. |
+| `relayrunner-webhooks.relayrun.workers.dev`, `webhooks.relayrunner.dev`, `webhooks.relayrunner.app` | No              | GitHub posts webhooks here and can't log in. The signature check protects it.                     |
+| `relayrunner-api.relayrun.workers.dev`, `api.relayrunner.dev`, `api.relayrunner.app`                | No              | The dashboard reaches it over a service binding. `/api/admin/*` checks the Access JWT itself.     |
 
 The API and webhooks Workers set `"preview_urls": false`, so they have no preview hostnames to protect.
 

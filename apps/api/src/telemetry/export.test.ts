@@ -137,6 +137,7 @@ describe("telemetry settings", () => {
       "https://10.0.0.1",
       "https://localhost:4318",
       "https://user:pass@example.com",
+      "https://api.relayrunner.dev",
       "https://api.relayrunner.app",
       "https://relayrunner.dev",
     ]) {

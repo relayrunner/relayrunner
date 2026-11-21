@@ -53,7 +53,7 @@ Organization Administration is Read only. It was Read & write, and write was nev
 A second, opt-in App, **RelayRunner Spend** ([github.com/apps/relayrunner-spend](https://github.com/apps/relayrunner-spend), App ID in `GITHUB_SPEND_APP_ID`, key in the Secrets Store as `GITHUB_SPEND_APP_PRIVATE_KEY`), can also read org billing for the minutes rule. The main App reads billing too, so Spend is kept ready for orgs that want it: it spreads billing calls onto a separate rate limit, and lets the main App drop Organization Administration later if that becomes worth an extra install.
 
 - Permissions: Organization Administration: Read, and Metadata. Nothing else.
-- Webhook URL `https://webhooks.relayrunner.app/api/webhooks/github-spend`, secret `GITHUB_SPEND_WEBHOOK_SECRET` in the Secrets Store. It subscribes to no events: GitHub still sends it `installation` events, which keep `spend_installation` (one row per GitHub account) current. The hourly cron reconciles that table with `GET /app/installations`, which also covers installs from before the webhook was on (`apps/api/src/spend-app.ts`).
+- Webhook URL `https://webhooks.relayrunner.dev/api/webhooks/github-spend`, secret `GITHUB_SPEND_WEBHOOK_SECRET` in the Secrets Store. It subscribes to no events: GitHub still sends it `installation` events, which keep `spend_installation` (one row per GitHub account) current. The hourly cron reconciles that table with `GET /app/installations`, which also covers installs from before the webhook was on (`apps/api/src/spend-app.ts`).
 - The 15-minute billing poll reads an org with the Spend App's installation token when the org has a row, and with the main App's token when it doesn't or when GitHub refuses the Spend token.
 - The dashboard links to it only when an org's billing read was refused.
 - Personal accounts don't use it: their billing only opens to the owner's own sign-in token (Plan).
@@ -76,7 +76,7 @@ Better Auth uses the App's OAuth client as its GitHub provider (`GITHUB_APP_CLIE
 
 ## URLs
 
-- Webhook URL: `https://webhooks.relayrunner.app/api/webhooks/github` (the `apps/webhooks` Worker, see its [README](../apps/webhooks/README.md)).
+- Webhook URL: `https://webhooks.relayrunner.dev/api/webhooks/github` (the `apps/webhooks` Worker, see its [README](../apps/webhooks/README.md)).
 - Callback URLs, in this order:
   1. `<BETTER_AUTH_URL>/api/github/setup`. **Request user authorization (OAuth) during installation** is on, so GitHub signs the user in as part of the install and then sends them to the _first_ callback URL (with `code` and `installation_id`, and no `state`). That has to be the setup route, which links the installation, or signs a new user in and hands them back to `/device` (`apps/api/src/routes/github.ts`).
   2. `<BETTER_AUTH_URL>/api/auth/callback/github`, where every sign-in returns. Better Auth names it explicitly, so its place in the list doesn't matter.
