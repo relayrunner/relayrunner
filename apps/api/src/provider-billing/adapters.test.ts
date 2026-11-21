@@ -4,6 +4,7 @@ import type { CliRequest, CliResponse } from "@relayrunner/blacksmith-cli/protoc
 import { blacksmith } from "./blacksmith.ts";
 import { boat, boatLimits } from "./boat.ts";
 import { depot } from "./depot.ts";
+import { groundbox, groundboxAccount, parseAccount } from "./groundbox.ts";
 import { connectStream, envelope, namespace } from "./namespace.ts";
 import { type AdapterContext, ProviderApiError, ProviderAuthError } from "./types.ts";
 import { warpbuild } from "./warpbuild.ts";
@@ -356,5 +357,91 @@ describe("Boat", () => {
     const { fetcher } = fakeFetch([json(refused, 401)]);
     await expect(boat.verify(ctx(fetcher))).rejects.toBeInstanceOf(ProviderAuthError);
     expect(await boat.usage(ctx(fetch), window)).toEqual({ jobs: [], days: [] });
+  });
+});
+
+describe("Groundbox", () => {
+  test("reads the account's free minutes, spend and caps from /account with the key as a bearer", async () => {
+    const { fetcher, calls } = fakeFetch([json(fixture("groundbox-account.json"))]);
+    expect(await groundboxAccount(ctx(fetcher))).toEqual({
+      team: "acme",
+      plan: "free",
+      status: "active",
+      freeMinutes: {
+        included: 3000,
+        used: 1240.5,
+        left: 1759.5,
+        periodStart: "2026-11-01T00:00:00.000Z",
+      },
+      balanceUsd: 5,
+      ciSpentUsd: 0,
+      caps: { dailyUsd: null, spentTodayUsd: 0, monthlyUsd: 20, spentThisMonthUsd: 0 },
+    });
+    expect(calls[0]!.url).toBe("https://api.groundbox.dev/v1/account");
+    expect(calls[0]!.headers.get("authorization")).toBe("Bearer tok_secret");
+  });
+
+  test("verify names the team, and a refused key is a ProviderAuthError", async () => {
+    const { fetcher } = fakeFetch([
+      json(fixture("groundbox-account.json")),
+      json({ error: { code: "missing_scope", message: "needs account:read" } }, 403),
+    ]);
+    expect(await groundbox.verify(ctx(fetcher))).toEqual({ accountName: "acme" });
+    await expect(groundbox.verify(ctx(fetcher))).rejects.toBeInstanceOf(ProviderAuthError);
+  });
+
+  test("an answer missing fields reads as nothing known, never as a limit", () => {
+    expect(parseAccount({ team: { name: "acme" } })).toEqual({
+      team: "acme",
+      plan: null,
+      status: null,
+      freeMinutes: null,
+      balanceUsd: null,
+      ciSpentUsd: null,
+      caps: null,
+    });
+  });
+
+  test("sums the ledger's CI charges into each job's cost and each day's free minutes", async () => {
+    const { fetcher, calls } = fakeFetch([json(fixture("groundbox-ledger.json"))]);
+    const midday = { start: new Date("2026-11-12T06:00:00Z"), end: window.end };
+    const usage = await groundbox.usage(ctx(fetcher), midday);
+    expect(calls[0]!.url).toBe("https://api.groundbox.dev/v1/billing/ledger?limit=200");
+    expect(usage.days).toEqual([
+      // The sandbox charge is left out; the day is read whole despite the mid-day window.
+      {
+        day: new Date("2026-11-12T00:00:00Z"),
+        unit: "free_minutes",
+        quantity: 12.5,
+        costUsd: 0.132,
+      },
+    ]);
+    expect(usage.jobs.map((job) => [job.jobId, job.costUsd, job.billableSeconds])).toEqual([
+      ["job-2", 0.132, null],
+      ["job-1", 0, null],
+    ]);
+  });
+
+  test("pages the ledger until a page ends before the window", async () => {
+    const entry = (at: string) => ({
+      kind: "usage",
+      bucket: "plan",
+      amount_micros: -1_000_000,
+      usage: { kind: "ci", ci_job_id: `job-${at}` },
+      created_at: at,
+    });
+    const { fetcher, calls } = fakeFetch([
+      json({ data: [entry("2026-11-12T20:00:00Z")], next_cursor: "c2" }),
+      json({
+        data: [entry("2026-11-12T01:00:00Z"), entry("2026-11-11T23:00:00Z")],
+        next_cursor: "c3",
+      }),
+    ]);
+    const usage = await groundbox.usage(ctx(fetcher), window);
+    expect(calls).toHaveLength(2);
+    expect(calls[1]!.url).toBe("https://api.groundbox.dev/v1/billing/ledger?limit=200&cursor=c2");
+    expect(usage.days).toEqual([
+      { day: new Date("2026-11-12T00:00:00Z"), unit: "free_minutes", quantity: 0, costUsd: 2 },
+    ]);
   });
 });

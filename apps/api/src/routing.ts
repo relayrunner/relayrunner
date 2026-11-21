@@ -28,6 +28,7 @@ import {
   type RetryRunner,
   type RunnerKey,
   type RunnerOrder,
+  type FreeMinutesProvider,
 } from "@relayrunner/runner-order";
 import type {
   RouteWalk,
@@ -556,6 +557,8 @@ export const sameLogin = (a: string, b: string) => a.toLowerCase() === b.toLower
 // Activity page, which explains each.
 export type { SkipReason } from "@relayrunner/activity";
 import {
+  heldText,
+  type ProviderHeld,
   spendText,
   startLimitText,
   type SkipReason,
@@ -579,6 +582,8 @@ export interface SkippedStep {
   spend?: SpendUsage;
   // start_limit: the provider plan's window with no job starts left.
   starts?: StartLimit;
+  // provider_held: why the provider would hold the job.
+  held?: ProviderHeld;
   unhealthy?: Unhealthy;
   // no_size: the job's size, in vCPUs.
   vcpus?: number;
@@ -590,6 +595,13 @@ export type SpendCheck = (key: HostedProviderId) => Promise<{ account: string; s
 // Whether a hosted provider's plan has job starts left (src/boat-limits.ts): null when it does or
 // can't be read, or the window that ran out. Only providers whose plans cap starts ever say no.
 export type StartCheck = (key: HostedProviderId) => Promise<StartLimit | null>;
+
+// Whether a hosted provider would hold the job rather than run it (src/groundbox-account.ts): null
+// when it would run it or can't be read. Only providers whose connection says so ever say no.
+export type HeldCheck = (key: HostedProviderId) => Promise<ProviderHeld | null>;
+
+// A provider's free minutes this month, from the workspace's connection, for its step's limit.
+export type FreeMinutesCheck = (key: FreeMinutesProvider) => Promise<MinutesUsage | null>;
 
 // provider_unhealthy: how many jobs in a row weren't picked up, and when the next trial goes.
 export type Unhealthy = NonNullable<RouteWalk["skipped"][number]["unhealthy"]>;
@@ -712,10 +724,11 @@ export function retryOrder(
  * runner type is skipped for not picking up jobs; when every step that could run the job was
  * skipped that way, the first of them takes it anyway, since a job with nowhere else to go is
  * better off waiting there. `spend` reads the job's account's spend this month on a provider, and
- * is only called when a hosted step with a spend limit is reached. `blacksmithUsage` reads the
- * workspace's Blacksmith free minutes, and is only called when a Blacksmith step with a minutes
- * limit is reached. `starts` asks whether a hosted provider's plan has job starts left (Boat's
- * do), once its step is about to take the job.
+ * is only called when a hosted step with a spend limit is reached. `providerMinutes` reads the
+ * workspace's free minutes on Blacksmith or Groundbox, and is only called when that provider's
+ * step with a minutes limit is reached. `starts` asks whether a hosted provider's plan has job
+ * starts left (Boat's do), and `held` whether it would hold the job (Groundbox's connection says),
+ * once its step is about to take the job.
  */
 export async function decideRoute(
   order: RunnerOrder,
@@ -724,12 +737,18 @@ export async function decideRoute(
   githubUsage: () => Promise<AccountUsage | null> = async () => null,
   health: HealthCheck = async () => null,
   spend: SpendCheck = async () => ({ account: "", spentUsd: 0 }),
-  blacksmithUsage: () => Promise<MinutesUsage | null> = async () => null,
+  providerMinutes: FreeMinutesCheck = async () => null,
   starts: StartCheck = async () => null,
+  held: HeldCheck = async () => null,
 ): Promise<RouteDecision> {
   const skipped: SkippedStep[] = [];
   let usage: Promise<AccountUsage | null> | undefined;
-  let freeMinutes: Promise<MinutesUsage | null> | undefined;
+  // Read once per provider per pick, however many of its steps have a limit.
+  const freeMinutes = new Map<FreeMinutesProvider, Promise<MinutesUsage | null>>();
+  const minutesOf = (key: FreeMinutesProvider) => {
+    if (!freeMinutes.has(key)) freeMinutes.set(key, providerMinutes(key));
+    return freeMinutes.get(key)!;
+  };
   const inOrder = new Set(order.steps.map((step) => step.key));
   const notInOrder = RUNNER_KEYS.filter((key) => !inOrder.has(key) && job[key].length > 0);
   for (const step of order.steps) {
@@ -791,7 +810,7 @@ export async function decideRoute(
         skipped.push({ key, reason: "not_provider_label" });
       else {
         if ("limit" in step && step.limit) {
-          const over = minutesCheck(await (freeMinutes ??= blacksmithUsage()), step.limit.percent);
+          const over = minutesCheck(await minutesOf(step.key), step.limit.percent);
           if (over) {
             const { reason, ...minutes } = over;
             skipped.push({ key, reason, minutes });
@@ -810,6 +829,12 @@ export async function decideRoute(
         const ranOut = await starts(key);
         if (ranOut) {
           skipped.push({ key, reason: "start_limit", starts: ranOut });
+          continue;
+        }
+        // A job Groundbox holds waits there until the account can pay for it again.
+        const hold = await held(key);
+        if (hold) {
+          skipped.push({ key, reason: "provider_held", held: hold });
           continue;
         }
         const unhealthy = await health(key, labels[0]);
@@ -838,7 +863,18 @@ export function noRunnerReason(
   if (RUNNER_KEYS.every((key) => job[key].length === 0))
     return `${NO_RUNNER}: the relay sets no provider, such as \`machine\` or \`github\`.`;
   const parts = skipped.map(
-    ({ key, reason, paused = [], notShared = [], full = [], minutes, spend, starts, vcpus }) => {
+    ({
+      key,
+      reason,
+      paused = [],
+      notShared = [],
+      full = [],
+      minutes,
+      spend,
+      starts,
+      held,
+      vcpus,
+    }) => {
       switch (reason) {
         case "not_configured":
           return `\`${key}\` isn't set on this relay`;
@@ -871,6 +907,8 @@ export function noRunnerReason(
           return spendText(RUNNER_LABELS[key], spend);
         case "start_limit":
           return startLimitText(RUNNER_LABELS[key], starts);
+        case "provider_held":
+          return heldText(RUNNER_LABELS[key], held);
         // Never the reason nothing fit: an unhealthy step takes the job when no other can.
         case "provider_unhealthy":
           return `${RUNNER_LABELS[key]} isn't picking up jobs`;
@@ -922,10 +960,10 @@ export function minutesText(
 ): string {
   if (!minutes) return `${RUNNER_LABELS[key]} is past its minutes limit`;
   const { account, usedMinutes, quotaMinutes, percent, burnRatePerHour } = minutes;
-  const blacksmith = key === "blacksmith";
-  const kind = blacksmith ? "free Blacksmith minutes" : "included minutes";
+  const free = key !== "github";
+  const kind = free ? `free ${RUNNER_LABELS[key]} minutes` : "included minutes";
   const used = `${account || "This workspace"} has used ${count(usedMinutes)} of its ${count(quotaMinutes)} ${kind} (${Math.floor((usedMinutes / quotaMinutes) * 100)}%)`;
   return reason === "minutes_limit"
     ? `${used}, past the ${percent}% limit`
-    : `${used}, and at ${count(burnRatePerHour ?? 0)} minutes an hour it could run out before ${blacksmith ? "Blacksmith's usage" : "GitHub's billing"} catches up`;
+    : `${used}, and at ${count(burnRatePerHour ?? 0)} minutes an hour it could run out before ${free ? `${RUNNER_LABELS[key]}'s usage` : "GitHub's billing"} catches up`;
 }

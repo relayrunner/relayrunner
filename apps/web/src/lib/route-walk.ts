@@ -1,5 +1,6 @@
 import {
   dollars,
+  heldText,
   spendText,
   startLimitText,
   startsPerWindow,
@@ -75,13 +76,13 @@ function shortSkip(walk: RouteWalk, step: SkippedStep): string | null {
   const { key, reason, paused, minutes, notShared, full } = step;
   switch (reason) {
     case "minutes_limit": {
-      const kind = key === "blacksmith" ? "free Blacksmith minutes" : "GitHub minutes";
+      const kind = key === "github" ? "GitHub minutes" : `free ${RUNNER_LABELS[key]} minutes`;
       return minutes
         ? `${minutes.account || "this workspace"} at ${usedPercent(minutes)}% of ${kind}`
         : `past the ${kind} limit`;
     }
     case "minutes_runway": {
-      const kind = key === "blacksmith" ? "free Blacksmith minutes" : "GitHub minutes";
+      const kind = key === "github" ? "GitHub minutes" : `free ${RUNNER_LABELS[key]} minutes`;
       return minutes
         ? `${minutes.account || "this workspace"} near its ${kind} limit`
         : `near the ${kind} limit`;
@@ -116,6 +117,8 @@ function shortSkip(walk: RouteWalk, step: SkippedStep): string | null {
       return step.starts
         ? `out of ${RUNNER_LABELS[key]} job starts (${startsPerWindow(step.starts)})`
         : `out of ${RUNNER_LABELS[key]} job starts`;
+    case "provider_held":
+      return `${RUNNER_LABELS[key]} would hold it`;
     case "no_size":
       return noSizeText(key, step.vcpus);
     case "not_configured":
@@ -130,7 +133,7 @@ function longSkip(walk: RouteWalk, step: SkippedStep): string {
     case "minutes_limit":
     case "minutes_runway": {
       if (!minutes) return "past its minutes limit";
-      const kind = key === "blacksmith" ? "free Blacksmith minutes" : "included minutes";
+      const kind = key === "github" ? "included minutes" : `free ${RUNNER_LABELS[key]} minutes`;
       const used = `${minutes.account || "This workspace"} has used ${count(minutes.usedMinutes)} of ${count(minutes.quotaMinutes)} ${kind} (${usedPercent(minutes)}%)`;
       return reason === "minutes_limit"
         ? `${used}, past the ${minutes.percent}% limit`
@@ -171,6 +174,8 @@ function longSkip(walk: RouteWalk, step: SkippedStep): string {
       return spendText(RUNNER_LABELS[key], step.spend);
     case "start_limit":
       return startLimitText(RUNNER_LABELS[key], step.starts);
+    case "provider_held":
+      return heldText(RUNNER_LABELS[key], step.held);
     case "no_size":
       return noSizeText(key, step.vcpus);
     case "not_configured":

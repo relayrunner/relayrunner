@@ -4,6 +4,7 @@ import { z } from "zod";
 import type { AppEnv } from "../app.ts";
 import { blacksmithMinutes } from "../blacksmith-minutes.ts";
 import { createDb } from "../db/index.ts";
+import { groundboxMinutesView, readGroundboxAccount } from "../groundbox-account.ts";
 import { requireUser } from "../middleware/session.ts";
 import { requireWorkspace } from "../middleware/workspace.ts";
 import { isCatalogProvider, loadCatalog, withCatalog } from "../provider-catalog.ts";
@@ -47,6 +48,11 @@ export const providerRoutes = new Hono<AppEnv>()
   // its Blacksmith connection, or why they can't be.
   .get("/blacksmith/minutes", requireUser, requireWorkspace, async (c) =>
     c.json(await blacksmithMinutes(c.var.db, c.var.workspace.id)),
+  )
+  // The Router's Groundbox step: its free minutes this month and whether it's holding jobs, read
+  // live from the workspace's Groundbox connection, or why they can't be.
+  .get("/groundbox/minutes", requireUser, requireWorkspace, async (c) =>
+    c.json(groundboxMinutesView(await readGroundboxAccount(c.env, c.var.db, c.var.workspace.id))),
   )
   // The Router's spend bars: what the workspace's GitHub account has spent on each priced
   // provider this month, at list prices, in dollars. GitHub-hosted's comes from its own billing

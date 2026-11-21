@@ -16,10 +16,13 @@ import {
 } from "@dnd-kit/sortable";
 import { CSS } from "@dnd-kit/utilities";
 import {
-  BLACKSMITH_FREE_MINUTES,
   DEFAULT_LIMIT_PERCENT,
   DEFAULT_SPEND_LIMIT_USD,
+  FREE_MINUTES,
+  type FreeMinutesProvider,
+  hasMinutesLimit,
   hasSpendLimit,
+  isFreeMinutesProvider,
   RUNNER_LABELS,
   type RunnerKey,
   type RunnerStep,
@@ -54,7 +57,7 @@ import {
   minutes,
   unreachableText,
 } from "@/lib/spend-caps";
-import { counted, type BlacksmithMinutes } from "@/lib/blacksmith-minutes";
+import { counted, type FreeMinutes, type FreeMinutesByProvider } from "@/lib/free-minutes";
 import { AppError } from "@relayrunner/errors";
 import type { Machine } from "@/lib/machines";
 import { providerInfo } from "@/lib/provider-catalog";
@@ -79,7 +82,7 @@ export function RunnerOrderEditor({
   editable,
   machines,
   accounts,
-  blacksmith = null,
+  freeMinutes = {},
   installedApps = null,
   spend = null,
   boatConnected = false,
@@ -94,8 +97,11 @@ export function RunnerOrderEditor({
   machines: Machine[] | null;
   /** This month's Actions minutes per connected GitHub account (#116). */
   accounts: AccountUsage[];
-  /** This month's free Blacksmith minutes, from its connection; null when they couldn't be read. */
-  blacksmith?: BlacksmithMinutes | null;
+  /**
+   * This month's free minutes on Blacksmith and Groundbox, from their connections; a provider's is
+   * null when it couldn't be read.
+   */
+  freeMinutes?: FreeMinutesByProvider;
   /** The providers whose GitHub App the org has installed, or null when we can't tell. */
   installedApps?: HostedProviderId[] | null;
   /**
@@ -115,7 +121,7 @@ export function RunnerOrderEditor({
   const steps = items.map((item) => item.step);
   const [status, setStatus] = useState<SaveStatus>({ kind: "idle" });
   const dirty = JSON.stringify(steps) !== JSON.stringify(saved.steps);
-  const preview = previewRoute(steps, machines, accounts, blacksmith);
+  const preview = previewRoute(steps, machines, accounts, freeMinutes);
   const limits = limitAvailability(accounts);
 
   function change(next: StepItem[]) {
@@ -156,9 +162,7 @@ export function RunnerOrderEditor({
     // A provider already in the order comes back capped, ready to be the next tier.
     const again = steps.some((step) => step.key === key);
     const step: RunnerStep =
-      again && (key === "github" || key === "blacksmith")
-        ? { key, limit: { percent: DEFAULT_LIMIT_PERCENT } }
-        : { key };
+      again && hasMinutesLimit(key) ? { key, limit: { percent: DEFAULT_LIMIT_PERCENT } } : { key };
     change([...items, ...withIds([step])]);
   }
 
@@ -180,7 +184,7 @@ export function RunnerOrderEditor({
                     unreachable={unreachableText(steps, index)}
                     handoff={
                       index > 0
-                        ? handoffText(steps[index - 1]!, accounts, blacksmith, boatConnected)
+                        ? handoffText(steps[index - 1]!, accounts, freeMinutes, boatConnected)
                         : null
                     }
                     index={index}
@@ -189,7 +193,7 @@ export function RunnerOrderEditor({
                     editable={editable}
                     accounts={accounts}
                     limits={limits}
-                    blacksmith={blacksmith}
+                    freeMinutes={freeMinutes}
                     spend={spend}
                     appMissing={appMissing(step.key, installedApps)}
                     onChange={(next) =>
@@ -360,7 +364,7 @@ function StepCard({
   editable,
   accounts,
   limits,
-  blacksmith,
+  freeMinutes,
   spend,
   appMissing,
   onChange,
@@ -379,7 +383,7 @@ function StepCard({
   editable: boolean;
   accounts: AccountUsage[];
   limits: LimitAvailability;
-  blacksmith: BlacksmithMinutes | null;
+  freeMinutes: FreeMinutesByProvider;
   spend: Partial<Record<HostedProviderId, number>> | null;
   /** A hosted provider whose GitHub App the org doesn't have, so its runners never start. */
   appMissing: boolean;
@@ -399,6 +403,8 @@ function StepCard({
   const label = RUNNER_LABELS[step.key];
   const limit = "limit" in step ? step.limit : undefined;
   const withQuota = accounts.filter(hasQuota);
+  // The free minutes this step's provider counts, if it's one that does.
+  const free = isFreeMinutesProvider(step.key) ? (freeMinutes[step.key] ?? null) : null;
 
   return (
     <li
@@ -476,11 +482,11 @@ function StepCard({
             {step.key !== "machine" && step.key !== "github" && (
               <p className="text-xs text-muted-foreground">Sized per job under Workflows</p>
             )}
-            {step.key === "blacksmith" && !limit && blacksmith?.reason === "not_connected" && (
+            {isFreeMinutesProvider(step.key) && !limit && free?.reason === "not_connected" && (
               <p className="text-xs text-muted-foreground">
-                Stop at its {BLACKSMITH_FREE_MINUTES.toLocaleString("en-US")} free minutes:{" "}
+                Stop at its {FREE_MINUTES[step.key].toLocaleString("en-US")} free minutes:{" "}
                 <Link to="/settings/providers" className="text-go hover:text-go-hover">
-                  connect Blacksmith
+                  connect {label}
                 </Link>
               </p>
             )}
@@ -502,14 +508,8 @@ function StepCard({
                 canAlways
                 onChange={onChange}
               />
-            ) : step.key === "blacksmith" && editable ? (
-              <BlacksmithRule
-                step={step}
-                blacksmith={blacksmith}
-                canLimit
-                canOther
-                onChange={onChange}
-              />
+            ) : (step.key === "blacksmith" || step.key === "groundbox") && editable ? (
+              <FreeMinutesRule step={step} free={free} canLimit canOther onChange={onChange} />
             ) : step.key !== "machine" &&
               step.key !== "github" &&
               hasSpendLimit(step.key) &&
@@ -517,7 +517,7 @@ function StepCard({
               <SpendRule step={step} onChange={onChange} />
             ) : (
               <span className="px-2.5 text-[13px] text-muted-foreground">
-                {capText(step, accounts, blacksmith)}
+                {capText(step, accounts, freeMinutes)}
               </span>
             )}
             {editable && (
@@ -553,8 +553,8 @@ function StepCard({
             percent={limit.percent}
           />
         )}
-        {limit && step.key === "blacksmith" && (
-          <BlacksmithUsage blacksmith={blacksmith} percent={limit.percent} />
+        {limit && isFreeMinutesProvider(step.key) && (
+          <FreeMinutesUsage provider={step.key} free={free} percent={limit.percent} />
         )}
         {!limit && step.key === "github" && accounts.length > 0 && (
           <SpendBar
@@ -762,7 +762,7 @@ const spendChoice = (step: HostedStep, onChange: (step: RunnerStep) => void, dis
 /** A priced hosted provider's spend cap: a monthly dollar cap, or none. */
 function SpendRule({ step, onChange }: { step: HostedStep; onChange: (step: RunnerStep) => void }) {
   return (
-    <RuleMenu trigger={capText(step, [], null)} label={RUNNER_LABELS[step.key]}>
+    <RuleMenu trigger={capText(step, [])} label={RUNNER_LABELS[step.key]}>
       {spendChoice(step, onChange)}
       <AlwaysChoice on={!step.spendLimit} onPick={() => onChange({ key: step.key })} />
     </RuleMenu>
@@ -788,7 +788,7 @@ function GitHubRule({
   const withQuota = accounts.filter(hasQuota);
   const only = withQuota.length === 1 ? withQuota[0] : undefined;
   return (
-    <RuleMenu trigger={capText(step, accounts, null)} label="GitHub">
+    <RuleMenu trigger={capText(step, accounts)} label="GitHub">
       {limits.allowed ? (
         <LimitChoice
           on={!!step.limit}
@@ -832,27 +832,29 @@ function GitHubRule({
 }
 
 /**
- * The Blacksmith step's spend cap: a share of its free minutes, which needs Blacksmith connected
- * in Settings › Providers to count them, a monthly dollar cap, or none.
+ * A Blacksmith or Groundbox step's spend cap: a share of its free minutes, which needs the provider
+ * connected in Settings › Providers to count them, a monthly dollar cap, or none.
  */
-function BlacksmithRule({
+function FreeMinutesRule({
   step,
-  blacksmith,
+  free,
   canLimit,
   canOther,
   onChange,
 }: {
-  step: Extract<RunnerStep, { key: "blacksmith" }>;
-  blacksmith: BlacksmithMinutes | null;
-  /** Each rule fits once: a second Blacksmith step can't take the first's. */
+  step: Extract<RunnerStep, { key: FreeMinutesProvider }>;
+  free: FreeMinutes | null;
+  /** Each rule fits once: a second step for the provider can't take the first's. */
   canLimit: boolean;
   canOther: boolean;
   onChange: (step: RunnerStep) => void;
 }) {
-  const connected = blacksmith && blacksmith.reason !== "not_connected";
-  const free = (blacksmith?.quotaMinutes ?? BLACKSMITH_FREE_MINUTES).toLocaleString("en-US");
+  const { key } = step;
+  const label = RUNNER_LABELS[key];
+  const connected = free && free.reason !== "not_connected";
+  const quota = (free?.quotaMinutes ?? FREE_MINUTES[key]).toLocaleString("en-US");
   return (
-    <RuleMenu trigger={capText(step, [], blacksmith)} label="Blacksmith">
+    <RuleMenu trigger={capText(step, [], { [key]: free })} label={label}>
       {connected || step.limit ? (
         <LimitChoice
           on={!!step.limit}
@@ -862,26 +864,26 @@ function BlacksmithRule({
           min={1}
           max={100}
           suffix="%"
-          note={`of ${free} free min`}
-          inputLabel="Limit, percent of Blacksmith's free minutes"
-          onPick={(percent) => onChange({ key: "blacksmith", limit: { percent } })}
+          note={`of ${quota} free min`}
+          inputLabel={`Limit, percent of ${label}'s free minutes`}
+          onPick={(percent) => onChange({ key, limit: { percent } })}
         />
       ) : (
         <BlockedChoice
-          title={`Free minutes (${free})`}
+          title={`Free minutes (${quota})`}
           blocked={
-            blacksmith
-              ? "Connect Blacksmith to count its free minutes."
-              : "Blacksmith's free minutes couldn't be read."
+            free
+              ? `Connect ${label} to count its free minutes.`
+              : `${label}'s free minutes couldn't be read.`
           }
-          setUp={blacksmith ? "/settings/providers" : null}
+          setUp={free ? "/settings/providers" : null}
         />
       )}
-      {hasSpendLimit("blacksmith") && spendChoice(step, onChange, !canOther)}
+      {hasSpendLimit(key) && spendChoice(step, onChange, !canOther)}
       <AlwaysChoice
         on={!step.limit && !step.spendLimit}
         disabled={!canOther}
-        onPick={() => onChange({ key: "blacksmith" })}
+        onPick={() => onChange({ key })}
       />
     </RuleMenu>
   );
@@ -895,7 +897,7 @@ function Check({ on }: { on: boolean }) {
   );
 }
 
-/** One bar of minutes used against a quota: an account's, or Blacksmith's free minutes. */
+/** One bar of minutes used against a quota: an account's, or a provider's free minutes. */
 type UsageBar = {
   id: string;
   /** Who the minutes are, when there's more than one bar. */
@@ -1030,28 +1032,30 @@ function SpendBar({
 }
 
 /**
- * The limited Blacksmith step's free minutes: a bar once they're counted, else what's missing,
- * since until then the step takes every job.
+ * A limited Blacksmith or Groundbox step's free minutes: a bar once they're counted, else what's
+ * missing, since until then the step takes every job.
  */
-function BlacksmithUsage({
-  blacksmith,
+function FreeMinutesUsage({
+  provider,
+  free,
   percent,
 }: {
-  blacksmith: BlacksmithMinutes | null;
+  provider: FreeMinutesProvider;
+  free: FreeMinutes | null;
   percent: number;
 }) {
-  const warning = blacksmithWarning(blacksmith);
+  const warning = freeMinutesWarning(provider, free);
   return (
     <>
-      {counted(blacksmith) && (
+      {counted(free) && (
         <UsageBars
           bars={[
             {
-              id: "blacksmith",
+              id: provider,
               who: null,
-              usedMinutes: blacksmith.usedMinutes,
-              quotaMinutes: blacksmith.quotaMinutes,
-              cycleStart: blacksmith.cycleStart,
+              usedMinutes: free.usedMinutes,
+              quotaMinutes: free.quotaMinutes,
+              cycleStart: free.cycleStart,
               kind: "free minutes",
               unit: "free min",
             },
@@ -1079,31 +1083,43 @@ function BlacksmithUsage({
   );
 }
 
-/** Why a limited Blacksmith step can't count its free minutes right now, if it can't. */
-function blacksmithWarning(
-  blacksmith: BlacksmithMinutes | null,
+/** Why a limited step can't count its provider's free minutes right now, if it can't. */
+function freeMinutesWarning(
+  provider: FreeMinutesProvider,
+  free: FreeMinutes | null,
 ): { text: string; setUp: string | null } | null {
-  const takesAll = "so Blacksmith takes every job until then.";
-  if (!blacksmith) return { text: `Blacksmith's free minutes couldn't be read.`, setUp: null };
-  switch (blacksmith.reason) {
+  const label = RUNNER_LABELS[provider];
+  const takesAll = `so ${label} takes every job until then.`;
+  if (!free) return { text: `${label}'s free minutes couldn't be read.`, setUp: null };
+  switch (free.reason) {
     case null:
       return null;
     case "not_connected":
       return {
-        text: "Blacksmith isn't connected, so its free minutes aren't counted and Blacksmith takes every job.",
-        setUp: "Connect Blacksmith",
+        text: `${label} isn't connected, so its free minutes aren't counted and ${label} takes every job.`,
+        setUp: `Connect ${label}`,
       };
     case "not_synced":
-      return { text: `The first Blacksmith sync runs within the hour, ${takesAll}`, setUp: null };
+      return { text: `The first ${label} sync runs within the hour, ${takesAll}`, setUp: null };
     case "token_rejected":
       return {
-        text: "Blacksmith stopped accepting the token, so its free minutes aren't counted and Blacksmith takes every job.",
+        text: `${label} stopped accepting the token, so its free minutes aren't counted and ${label} takes every job.`,
         setUp: "Paste a new one",
       };
     case "sync_failed":
       return {
-        text: "The last Blacksmith sync failed, so these minutes may be behind.",
+        text: `The last ${label} sync failed, so these minutes may be behind.`,
         setUp: "See the connection",
+      };
+    case "read_failed":
+      return {
+        text: `${label}'s account couldn't be read just now, so ${label} takes jobs until it can be.`,
+        setUp: null,
+      };
+    case "no_free_minutes":
+      return {
+        text: `${label}'s plan has no free minutes to stop at, so ${label} takes every job.`,
+        setUp: null,
       };
   }
 }

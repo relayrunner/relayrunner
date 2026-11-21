@@ -9,6 +9,13 @@ import { accountUsage } from "../actions-billing.ts";
 import { accountSpend } from "../provider-spend.ts";
 import { blacksmithMinutes, type BlacksmithMinutes } from "../blacksmith-minutes.ts";
 import { readBoatStarts, StartBudget } from "../boat-limits.ts";
+import {
+  ACCOUNT_TTL_MS,
+  groundboxHeld,
+  groundboxMinutes,
+  type GroundboxReading,
+  readGroundboxAccount,
+} from "../groundbox-account.ts";
 import { DurableObject } from "cloudflare:workers";
 import { and, eq, isNotNull, isNull, or } from "drizzle-orm";
 import { createDb, schema } from "../db/index.ts";
@@ -183,6 +190,8 @@ export class Router extends DurableObject<Env> {
   private freeMinutes = new Recent<string, BlacksmithMinutes>();
   // Boat's job starts left, from the workspace's Boat connection (src/boat-limits.ts).
   private boatStarts = new StartBudget();
+  // Groundbox's account (free minutes, holds), from the workspace's connection.
+  private groundbox = new Recent<string, GroundboxReading>(1_000);
 
   /**
    * An org's (or repo's) self-hosted runners for the dashboard's Runners and Router pages, reused
@@ -319,6 +328,14 @@ export class Router extends DurableObject<Env> {
 
   private async decide(job: PickedJob): Promise<RouteDecision> {
     const db = createDb(this.env.DB);
+    // One Groundbox reading per workspace a minute; a failed read is tried again next job.
+    const groundboxAccount = () =>
+      this.groundbox.get(
+        job.workspaceId,
+        ACCOUNT_TTL_MS,
+        () => readGroundboxAccount(this.env, db, job.workspaceId),
+        (reading) => reading.ok || reading.reason !== "read_failed",
+      );
     // The machine step's pick, if the walk got that far.
     let pick: MachinePick | undefined;
     const [[workspace]] = await Promise.all([
@@ -355,16 +372,20 @@ export class Router extends DurableObject<Env> {
         this.spend.get(`${job.installationId}:${key}`, SPEND_TTL_MS, () =>
           accountSpend(db, job.installationId, key),
         ),
-      // The workspace's Blacksmith connection: it only changes when the hourly sync lands.
-      () =>
-        this.freeMinutes.get(job.workspaceId, SPEND_TTL_MS, () =>
-          blacksmithMinutes(db, job.workspaceId),
-        ),
+      // Blacksmith's count only changes when the hourly sync lands; Groundbox's is read live.
+      async (key) =>
+        key === "groundbox"
+          ? groundboxMinutes(await groundboxAccount())
+          : this.freeMinutes.get(job.workspaceId, SPEND_TTL_MS, () =>
+              blacksmithMinutes(db, job.workspaceId),
+            ),
       // Only Boat's plans cap job starts, and only its connection can say how many are left.
       async (key) =>
         key === "boat"
           ? this.boatStarts.check(() => readBoatStarts(this.env, db, job.workspaceId))
           : null,
+      // Only Groundbox's connection says when it would hold a job.
+      async (key) => (key === "groundbox" ? groundboxHeld(await groundboxAccount()) : null),
     );
     if (decision.runner !== null && decision.step === "boat") this.boatStarts.took();
     if (waitsForMachine(decision)) return this.wait(job, decision);

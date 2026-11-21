@@ -1,4 +1,4 @@
-import type { SpendUsage, StartLimit } from "./events.ts";
+import type { ProviderHeld, SpendUsage, StartLimit } from "./events.ts";
 
 /** "$1,250": whole dollars, as spend limits are set. */
 export const dollars = (usd: number) => `$${Math.round(usd).toLocaleString("en-US")}`;
@@ -20,4 +20,16 @@ export const startsPerWindow = ({ window, limit }: StartLimit) =>
 export function startLimitText(provider: string, starts: StartLimit | undefined): string {
   if (!starts) return `${provider} has used all the job starts its plan allows`;
   return `${provider} has used all the job starts its plan allows (${startsPerWindow(starts)})`;
+}
+
+const HELD = {
+  account_held: "is holding this account's jobs",
+  account_suspended: "has suspended this account",
+  spend_cap: "is at the spend cap set in its dashboard",
+  out_of_credit: "is out of free minutes and credit",
+} as const;
+
+/** "Groundbox is at the spend cap set in its dashboard", for a provider_held skip. */
+export function heldText(provider: string, held: ProviderHeld | undefined): string {
+  return held ? `${provider} ${HELD[held.reason]}` : `${provider} would hold the job`;
 }

@@ -8,6 +8,7 @@ export const BILLING_PROVIDER_IDS = [
   "blacksmith",
   "boat",
   "depot",
+  "groundbox",
   "namespace",
   "warpbuild",
 ] as const satisfies readonly ProviderId[];
@@ -42,6 +43,8 @@ export interface BillingProviderInfo {
   command?: string;
   /** The connection only reads the plan's limits for the Router, so it syncs no usage. */
   limitsOnly?: boolean;
+  /** The synced jobs carry what they cost but not how long they ran, so the card names no minutes. */
+  costOnly?: boolean;
 }
 
 export const BILLING_PROVIDERS: Record<BillingProviderId, BillingProviderInfo> = {
@@ -68,6 +71,15 @@ export const BILLING_PROVIDERS: Record<BillingProviderId, BillingProviderInfo> =
     tokenUrl: "https://depot.dev/orgs/_/settings",
     tokenHelp: "Create an organization token in your Depot organization settings.",
     reads: "Billable and queue time for each job.",
+  },
+  groundbox: {
+    token: "API key",
+    tokenUrl: "https://app.groundbox.dev",
+    tokenHelp:
+      "Create a Groundbox API key with only the account:read and billing:read scopes, and paste it. It starts with gbx_.",
+    reads:
+      "Free minutes left this month, what each job cost, and whether Groundbox is holding jobs, so the Router can pass jobs on before Groundbox would hold them.",
+    costOnly: true,
   },
   namespace: {
     token: "Revokable token",

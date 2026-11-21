@@ -1,6 +1,11 @@
-import { BLACKSMITH_FREE_MINUTES, RUNNER_LABELS, type RunnerStep } from "@relayrunner/runner-order";
+import {
+  FREE_MINUTES,
+  isFreeMinutesProvider,
+  RUNNER_LABELS,
+  type RunnerStep,
+} from "@relayrunner/runner-order";
 import { hasQuota, type AccountUsage } from "./actions-usage";
-import type { BlacksmithMinutes } from "./blacksmith-minutes";
+import type { FreeMinutesByProvider } from "./free-minutes";
 
 // What the Router's steps say about their spend caps: each cap button, the connector text that
 // says what hands a job on to the next step, and where a usage bar's cap tick sits.
@@ -11,8 +16,11 @@ export function githubQuota(accounts: AccountUsage[]) {
   return withQuota.length === 1 ? withQuota[0]!.quotaMinutes! : null;
 }
 
-function blacksmithQuota(blacksmith: BlacksmithMinutes | null) {
-  return blacksmith?.quotaMinutes ?? BLACKSMITH_FREE_MINUTES;
+/** A step's minutes quota: GitHub's included minutes, or a provider's free minutes. */
+function quotaOf(step: RunnerStep, accounts: AccountUsage[], free: FreeMinutesByProvider) {
+  if (step.key === "github") return githubQuota(accounts);
+  if (!isFreeMinutesProvider(step.key)) return null;
+  return free[step.key]?.quotaMinutes ?? FREE_MINUTES[step.key];
 }
 
 export const minutes = (n: number) => Math.round(n).toLocaleString("en-US");
@@ -21,14 +29,14 @@ export const minutes = (n: number) => Math.round(n).toLocaleString("en-US");
 export function capText(
   step: RunnerStep,
   accounts: AccountUsage[],
-  blacksmith: BlacksmithMinutes | null,
+  free: FreeMinutesByProvider = {},
 ) {
   if (step.key === "machine") return "When available";
   if ("limit" in step && step.limit) {
-    const quota = step.key === "github" ? githubQuota(accounts) : blacksmithQuota(blacksmith);
+    const quota = quotaOf(step, accounts, free);
     if (quota === null) return `While under ${step.limit.percent}%`;
     const cap = minutes((quota * step.limit.percent) / 100);
-    return step.key === "blacksmith" ? `While under ${cap} free min` : `While under ${cap} min`;
+    return step.key !== "github" ? `While under ${cap} free min` : `While under ${cap} min`;
   }
   if ("spendLimit" in step && step.spendLimit)
     return `While under $${step.spendLimit.usd.toLocaleString("en-US")}/mo`;
@@ -39,24 +47,24 @@ export function capText(
  * What sends a job on from `prev` to the next step, said in terms of how `prev` is set up. A
  * provider with no cap takes every job it can start, so the steps below it rarely run: `warn`.
  * Boat is the exception once it's connected (`boatConnected`), since the Router then passes jobs
- * on when Boat's plan runs out of job starts; until then, `connect` offers the connection.
+ * on when Boat's plan runs out of job starts; until then, `connect` offers the connection. So is a
+ * connected Groundbox, whose step passes on the jobs Groundbox would hold.
  */
 export function handoffText(
   prev: RunnerStep,
   accounts: AccountUsage[],
-  blacksmith: BlacksmithMinutes | null,
+  free: FreeMinutesByProvider,
   boatConnected = false,
 ): Handoff {
   if (prev.key === "machine") return { text: "When every machine is busy or offline", warn: false };
   const label = RUNNER_LABELS[prev.key];
   if ("limit" in prev && prev.limit) {
-    const quota = prev.key === "github" ? githubQuota(accounts) : blacksmithQuota(blacksmith);
+    const quota = quotaOf(prev, accounts, free);
     if (quota === null)
       return { text: `Once ${prev.limit.percent}% of included minutes are used`, warn: false };
     const cap = minutes((quota * prev.limit.percent) / 100);
     return {
-      text:
-        prev.key === "blacksmith" ? `Once ${cap} free min are used` : `Once ${cap} min are used`,
+      text: prev.key !== "github" ? `Once ${cap} free min are used` : `Once ${cap} min are used`,
       warn: false,
     };
   }
@@ -74,6 +82,10 @@ export function handoffText(
       connect: "Connect Boat",
     };
   }
+  // Connected, Groundbox's step passes jobs on that Groundbox would hold (out of credit, at its
+  // own spend cap, or the account held).
+  if (prev.key === "groundbox" && free.groundbox && free.groundbox.reason !== "not_connected")
+    return { text: "When Groundbox would hold the job", warn: false };
   return {
     text: `${label} takes every job it can start, so the steps below rarely run`,
     warn: true,

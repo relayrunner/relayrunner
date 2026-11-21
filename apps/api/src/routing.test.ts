@@ -1732,3 +1732,86 @@ describe("decideRoute with a provider out of job starts", () => {
     );
   });
 });
+
+describe("decideRoute with a Groundbox step", () => {
+  const job = {
+    ...relayInputs({ groundbox: ["groundbox-4vcpu"], github: ["ubuntu-latest"] }),
+    private: true,
+  };
+  const none = async () => null;
+  const freeMinutes = (used: number) => ({
+    status: "ok" as const,
+    accountLogin: "acme",
+    quotaMinutes: 3000,
+    usedMinutes: used,
+    burnRatePerHour: null,
+  });
+
+  test("a minutes limit reads Groundbox's free minutes, not Blacksmith's", async () => {
+    const asked: string[] = [];
+    const decision = await decideRoute(
+      { steps: [{ key: "groundbox", limit: { percent: 90 } }, { key: "github" }] },
+      job,
+      none,
+      undefined,
+      undefined,
+      undefined,
+      async (key) => {
+        asked.push(key);
+        return freeMinutes(2800);
+      },
+    );
+    expect(asked).toEqual(["groundbox"]);
+    expect(decision).toMatchObject({
+      runner: "ubuntu-latest",
+      skipped: [
+        {
+          key: "groundbox",
+          reason: "minutes_limit",
+          minutes: { account: "acme", usedMinutes: 2800, quotaMinutes: 3000, percent: 90 },
+        },
+      ],
+    });
+  });
+
+  test("under the limit, or without a count, Groundbox takes the job", async () => {
+    const order: RunnerOrder = { steps: [{ key: "groundbox", limit: { percent: 90 } }] };
+    for (const read of [async () => freeMinutes(1000), async () => null]) {
+      const decision = await decideRoute(order, job, none, undefined, undefined, undefined, read);
+      expect(decision).toMatchObject({ runner: "groundbox-4vcpu", step: "groundbox" });
+    }
+  });
+
+  test("a job Groundbox would hold moves on, and says why when nothing else fits", async () => {
+    const held = async () => ({ reason: "spend_cap" as const });
+    const args = [none, undefined, undefined, undefined, undefined, undefined, held] as const;
+    const moved = await decideRoute(
+      { steps: [{ key: "groundbox" }, { key: "github" }] },
+      job,
+      ...args,
+    );
+    expect(moved).toMatchObject({
+      runner: "ubuntu-latest",
+      skipped: [{ key: "groundbox", reason: "provider_held", held: { reason: "spend_cap" } }],
+    });
+    const stuck = await decideRoute({ steps: [{ key: "groundbox" }] }, job, ...args);
+    expect(stuck.runner === null && stuck.reason).toContain(
+      "Groundbox is at the spend cap set in its dashboard",
+    );
+  });
+
+  test("the limit's skip names Groundbox's free minutes", async () => {
+    const failed = await decideRoute(
+      { steps: [{ key: "groundbox", limit: { percent: 80 } }] },
+      job,
+      none,
+      undefined,
+      undefined,
+      undefined,
+      async () => freeMinutes(2900),
+    );
+    expect(failed.runner === null && failed.reason).toContain(
+      "acme has used 2,900 of its 3,000 free Groundbox minutes (96%), past the 80% limit",
+    );
+  });
+});

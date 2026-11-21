@@ -1,7 +1,7 @@
 import type { RunnerStep } from "@relayrunner/runner-order";
 import { describe, expect, test } from "vitest";
 import type { AccountUsage } from "./actions-usage";
-import { sampleBlacksmithMinutes } from "./blacksmith-minutes";
+import { sampleFreeMinutes } from "./free-minutes";
 import { barMarks, capText, handoffText, unreachableText } from "./spend-caps";
 
 const account: AccountUsage = {
@@ -22,7 +22,7 @@ const account: AccountUsage = {
   spendApp: true,
   enterprise: null,
 };
-const blacksmith = sampleBlacksmithMinutes(true);
+const blacksmith = { blacksmith: sampleFreeMinutes("blacksmith", true) };
 
 describe("capText", () => {
   test("says each kind of cap the way its button reads", () => {
@@ -33,7 +33,7 @@ describe("capText", () => {
     expect(cap({ key: "github", spendLimit: { usd: 1500 } })).toBe("While under $1,500/mo");
     expect(cap({ key: "boat" })).toBe("No cap");
     // Without exactly one account's quota, the minutes cap is a share.
-    expect(capText({ key: "github", limit: { percent: 80 } }, [], null)).toBe("While under 80%");
+    expect(capText({ key: "github", limit: { percent: 80 } }, [])).toBe("While under 80%");
   });
 });
 
@@ -107,5 +107,20 @@ describe("barMarks", () => {
     const over = barMarks(500, 50, 500);
     expect(over.tick).toBeCloseTo(10);
     expect(over.fill).toBe(100);
+  });
+});
+
+describe("Groundbox", () => {
+  const groundbox = { groundbox: sampleFreeMinutes("groundbox", true) };
+  test("caps and hands off in free minutes, and a connected uncapped step passes held jobs on", () => {
+    expect(capText({ key: "groundbox", limit: { percent: 50 } }, [], groundbox)).toBe(
+      "While under 1,500 free min",
+    );
+    expect(handoffText({ key: "groundbox" }, [], groundbox)).toEqual({
+      text: "When Groundbox would hold the job",
+      warn: false,
+    });
+    const notConnected = { groundbox: sampleFreeMinutes("groundbox", false) };
+    expect(handoffText({ key: "groundbox" }, [], notConnected).warn).toBe(true);
   });
 });

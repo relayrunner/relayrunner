@@ -3,7 +3,10 @@ import { z } from "zod";
 import {
   DEFAULT_RETRY_SETTINGS,
   DEFAULT_RUNNER_ORDER,
+  FREE_MINUTES_PROVIDERS,
+  type FreeMinutesProvider,
   hasSpendLimit,
+  isFreeMinutesProvider,
   RETRY_RUNNERS,
   RUNNER_LABELS,
 } from "./core.ts";
@@ -13,9 +16,9 @@ import {
 
 /**
  * "While under a limit": the GitHub step passes a job on once the job's GitHub account has used
- * `percent` of its included minutes this month (#117), and the Blacksmith step once the workspace
- * has used `percent` of Blacksmith's free minutes (counted only with Blacksmith connected in
- * Settings › Providers). A step without one always takes the job.
+ * `percent` of its included minutes this month (#117), and the Blacksmith and Groundbox steps once
+ * the workspace has used `percent` of that provider's free minutes (counted only with the provider
+ * connected in Settings › Providers). A step without one always takes the job.
  */
 export const minutesLimitSchema = z.object({
   percent: z
@@ -41,9 +44,9 @@ export const spendLimitSchema = z.object({
 });
 export type SpendLimit = z.infer<typeof spendLimitSchema>;
 
-type OtherHostedId = Exclude<HostedProviderId, "blacksmith">;
+type OtherHostedId = Exclude<HostedProviderId, FreeMinutesProvider>;
 const OTHER_HOSTED_IDS = HOSTED_PROVIDER_IDS.filter(
-  (id): id is OtherHostedId => id !== "blacksmith",
+  (id): id is OtherHostedId => !isFreeMinutesProvider(id),
 ) as [OtherHostedId, ...OtherHostedId[]];
 
 export const runnerStepSchema = z.discriminatedUnion("key", [
@@ -54,9 +57,10 @@ export const runnerStepSchema = z.discriminatedUnion("key", [
     limit: minutesLimitSchema.optional(),
     spendLimit: spendLimitSchema.optional(),
   }),
-  // Blacksmith: a hosted provider whose free minutes RelayRunner can count, once connected.
+  // Blacksmith and Groundbox: hosted providers whose free minutes RelayRunner can count, once
+  // connected.
   z.object({
-    key: z.literal("blacksmith"),
+    key: z.enum(FREE_MINUTES_PROVIDERS),
     limit: minutesLimitSchema.optional(),
     spendLimit: spendLimitSchema.optional(),
   }),

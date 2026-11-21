@@ -95,10 +95,11 @@ describe("connecting a provider", () => {
       "blacksmith",
       "boat",
       "depot",
+      "groundbox",
       "namespace",
       "warpbuild",
     ]);
-    expect(connections[3]).toMatchObject({ connected: false, options: { region: "us" } });
+    expect(connections[4]).toMatchObject({ connected: false, options: { region: "us" } });
   });
 
   test("an owner saves a token that works: encrypted, hinted, never returned, and synced", async () => {

@@ -52,10 +52,10 @@ import { canManage } from "@/lib/roles";
 import { cn } from "@/lib/utils";
 import { getRunnerOrder } from "@/lib/runner-order";
 import {
-  type BlacksmithMinutes,
-  getBlacksmithMinutes,
-  sampleBlacksmithMinutes,
-} from "@/lib/blacksmith-minutes";
+  type FreeMinutesByProvider,
+  getAllFreeMinutes,
+  sampleFreeMinutes,
+} from "@/lib/free-minutes";
 import { formatTime } from "@/lib/time-zone";
 import { getProviderSpend, type ProviderSpend } from "@/lib/provider-spend";
 import { listConnections } from "@/lib/provider-connections";
@@ -66,14 +66,14 @@ export const Route = createFileRoute("/_authed/_workspace/router")({
     if (authDisabled) return sampleRouter();
     // Runner status isn't awaited here: a runner added from GitHub reads its status from GitHub,
     // so the page loads first and the Self-hosted step's badge fills in after (RouterPage).
-    const [order, accounts, blacksmith, spend, boatConnected] = await Promise.all([
+    const [order, accounts, freeMinutes, spend, boatConnected] = await Promise.all([
       getRunnerOrder(context.current.workspace.id),
       // The minutes only explain the GitHub step's limit, so the page still loads without them.
       getActionsUsage()
         .then((usage) => usage.accounts)
         .catch((): AccountUsage[] => []),
-      // Likewise Blacksmith's free minutes, for its step's limit.
-      getBlacksmithMinutes().catch(() => null),
+      // Likewise Blacksmith's and Groundbox's free minutes, for their steps' limits.
+      getAllFreeMinutes().catch((): FreeMinutesByProvider => ({})),
       // And this month's spend per provider, for the spend caps' bars.
       getProviderSpend().catch(() => null),
       // And whether Boat is connected, so its step passes jobs on at its start limits.
@@ -87,7 +87,7 @@ export const Route = createFileRoute("/_authed/_workspace/router")({
       ...order,
       machines: null as Machine[] | null,
       accounts,
-      blacksmith,
+      freeMinutes,
       spend,
       boatConnected,
     };
@@ -159,7 +159,7 @@ function RouterPage() {
             editable={editable}
             machines={machines}
             accounts={loaded.accounts}
-            blacksmith={loaded.blacksmith}
+            freeMinutes={loaded.freeMinutes}
             installedApps={installedApps}
             spend={loaded.spend}
             boatConnected={loaded.boatConnected ?? false}
@@ -380,7 +380,8 @@ async function sampleHealth(): Promise<ProviderHealth> {
  * Dev-preview data. `?sample=enterprise` shows an org inside a GitHub enterprise, whose minutes
  * can't be checked, `?sample=personal` a personal account whose owner hasn't signed in,
  * `?sample=default` the order a new workspace starts with, `?sample=no-blacksmith` a
- * workspace that hasn't connected Blacksmith, so its step can't stop at the free minutes yet, and
+ * workspace that hasn't connected Blacksmith, so its step can't stop at the free minutes yet,
+ * `?sample=no-groundbox` the same for Groundbox, and
  * `?sample=boat` (connected) or `?sample=no-boat` an uncapped Boat step.
  */
 function sampleRouter(): {
@@ -388,7 +389,7 @@ function sampleRouter(): {
   isDefault: boolean;
   machines: Machine[];
   accounts: AccountUsage[];
-  blacksmith: BlacksmithMinutes | null;
+  freeMinutes: FreeMinutesByProvider;
   spend: ProviderSpend | null;
   boatConnected?: boolean;
 } {
@@ -403,7 +404,10 @@ function sampleRouter(): {
     createdAt: "2026-11-01T00:00:00Z",
     status: { online: true, state: "idle", connectedAt: Date.now() },
   };
-  const blacksmith = sampleBlacksmithMinutes(kind !== "no-blacksmith");
+  const freeMinutes: FreeMinutesByProvider = {
+    blacksmith: sampleFreeMinutes("blacksmith", kind !== "no-blacksmith"),
+    groundbox: sampleFreeMinutes("groundbox", kind !== "no-groundbox"),
+  };
   const spend: ProviderSpend = {
     boat: 41.6,
     depot: 12.4,
@@ -427,7 +431,7 @@ function sampleRouter(): {
       isDefault: true,
       machines: [machine],
       accounts: [],
-      blacksmith,
+      freeMinutes,
       spend,
     };
   if (kind === "boat" || kind === "no-boat")
@@ -436,7 +440,7 @@ function sampleRouter(): {
       isDefault: false,
       machines: [machine],
       accounts: sampleRouterAccounts("team"),
-      blacksmith,
+      freeMinutes,
       spend,
       boatConnected: kind === "boat",
     };
@@ -446,7 +450,7 @@ function sampleRouter(): {
       isDefault: false,
       machines: [machine],
       accounts: sampleRouterAccounts(kind),
-      blacksmith,
+      freeMinutes,
       spend,
     };
   return {
@@ -458,13 +462,16 @@ function sampleRouter(): {
           ? { key: "blacksmith" }
           : { key: "blacksmith", limit: { percent: 90 } },
         { key: "boat", spendLimit: { usd: 50 } },
+        kind === "no-groundbox"
+          ? { key: "groundbox" }
+          : { key: "groundbox", limit: { percent: 90 } },
         { key: "github" },
       ],
     },
     isDefault: false,
     machines: [machine],
     accounts: sampleRouterAccounts("team"),
-    blacksmith,
+    freeMinutes,
     spend,
   };
 }

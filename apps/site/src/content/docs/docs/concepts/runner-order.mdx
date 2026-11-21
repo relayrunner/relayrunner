@@ -83,6 +83,12 @@ Boat's plans limit how many jobs can start in an hour and in a day. When a job g
 
 Without a connection, or if Boat stops accepting the key, a Boat step takes every job it can, and the Router page warns that the steps below it rarely run. Boat waits out its per-minute limit on its own, so that one doesn't move jobs on.
 
+## Groundbox's free minutes and held jobs
+
+Groundbox's Free plan includes 3,000 free minutes a month and $5 of credit. Once both run out, Groundbox holds new jobs until you pay. Any plan also holds jobs at the spend caps you set in Groundbox's dashboard. Connect Groundbox under **Settings › Providers** with a Groundbox API key that has only the `account:read` and `billing:read` scopes. The Router then reads your Groundbox account before it sends a job there, and sends the job to the next step when Groundbox would hold it.
+
+With Groundbox connected, a Groundbox step can also be capped at a share of its free minutes, such as 90%. The count is Groundbox's own, read live and reused for about a minute. Without a connection, or if Groundbox stops accepting the key or can't be reached, a Groundbox step takes every job it can, and the cap never blocks.
+
 ## Changes take effect at once
 
 The order applies to the next relay. Nothing in your workflows changes.

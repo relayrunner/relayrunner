@@ -46,18 +46,35 @@ export const hasSpendLimit = (key: RunnerKey) =>
   (SPEND_LIMIT_PROVIDERS as readonly string[]).includes(key);
 
 /**
- * The providers whose free minutes a step can stop at: GitHub's included minutes, and Blacksmith's
- * free minutes (which need Blacksmith connected in Settings › Providers to count).
+ * The providers whose free minutes a step can stop at: GitHub's included minutes, and the free
+ * minutes of Blacksmith and Groundbox (which need the provider connected in Settings › Providers
+ * to count).
  */
-export const MINUTES_LIMIT_PROVIDERS = ["github", "blacksmith"] as const;
+export const MINUTES_LIMIT_PROVIDERS = ["github", "blacksmith", "groundbox"] as const;
 export type MinutesLimitProvider = (typeof MINUTES_LIMIT_PROVIDERS)[number];
 
 /** Whether a provider's step can take a minutes limit. */
 export const hasMinutesLimit = (key: RunnerKey): key is MinutesLimitProvider =>
   (MINUTES_LIMIT_PROVIDERS as readonly string[]).includes(key);
 
+/** The hosted providers whose monthly free minutes a connection counts, for their steps' limits. */
+export const FREE_MINUTES_PROVIDERS = ["blacksmith", "groundbox"] as const;
+export type FreeMinutesProvider = (typeof FREE_MINUTES_PROVIDERS)[number];
+
+export const isFreeMinutesProvider = (key: string): key is FreeMinutesProvider =>
+  (FREE_MINUTES_PROVIDERS as readonly string[]).includes(key);
+
 /** Blacksmith's free minutes a month, counted in 2-vCPU minutes. */
 export const BLACKSMITH_FREE_MINUTES = 3_000;
+
+/**
+ * Each provider's free minutes a month on its free plan, shown until its connection says. Groundbox
+ * reports its own count (GET /v1/account), so its number is only the Free plan's.
+ */
+export const FREE_MINUTES: Record<FreeMinutesProvider, number> = {
+  blacksmith: BLACKSMITH_FREE_MINUTES,
+  groundbox: 3_000,
+};
 
 /** A step's minutes limit, if it's a provider that takes one and has one. */
 export const minutesLimitOf = (step: RunnerStep) => ("limit" in step ? step.limit : undefined);

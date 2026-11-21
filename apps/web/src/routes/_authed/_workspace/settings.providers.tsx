@@ -1,6 +1,12 @@
 import { ERRORS, isErrorCode } from "@relayrunner/errors";
 import { BILLING_PROVIDERS, type BillingProviderInfo } from "@relayrunner/providers";
-import { BLACKSMITH_FREE_MINUTES } from "@relayrunner/runner-order";
+import { heldText } from "@relayrunner/activity";
+import {
+  FREE_MINUTES,
+  type FreeMinutesProvider,
+  isFreeMinutesProvider,
+  RUNNER_LABELS,
+} from "@relayrunner/runner-order";
 import { createFileRoute, Link } from "@tanstack/react-router";
 import { ArrowUpRightIcon, CheckIcon, CopyIcon } from "lucide-react";
 import { type FormEvent, useState } from "react";
@@ -21,11 +27,12 @@ import { timeAgo } from "@/lib/activity";
 import { errorText } from "@/lib/api";
 import { authDisabled } from "@/lib/auth-client";
 import {
-  type BlacksmithMinutes,
   counted,
-  getBlacksmithMinutes,
-  sampleBlacksmithMinutes,
-} from "@/lib/blacksmith-minutes";
+  type FreeMinutes as FreeMinutesCount,
+  type FreeMinutesByProvider,
+  getAllFreeMinutes,
+  sampleFreeMinutes,
+} from "@/lib/free-minutes";
 import { providerInfo } from "@/lib/provider-catalog";
 import {
   connectProvider,
@@ -41,20 +48,26 @@ import { minutes, money } from "@/lib/usage";
 
 export const Route = createFileRoute("/_authed/_workspace/settings/providers")({
   loader: async () => {
-    if (authDisabled) return { ...sampleConnections(), blacksmith: sampleBlacksmithMinutes(false) };
-    const [{ connections }, blacksmith] = await Promise.all([
+    if (authDisabled) {
+      const freeMinutes: FreeMinutesByProvider = {
+        blacksmith: sampleFreeMinutes("blacksmith", false),
+        groundbox: sampleFreeMinutes("groundbox", false),
+      };
+      return { ...sampleConnections(), freeMinutes };
+    }
+    const [{ connections }, freeMinutes] = await Promise.all([
       listConnections(),
-      // Only for the Blacksmith card's free-minutes line, so the page loads without it.
-      getBlacksmithMinutes().catch(() => null),
+      // Only for the Blacksmith and Groundbox cards' free-minutes lines, so the page loads without.
+      getAllFreeMinutes().catch((): FreeMinutesByProvider => ({})),
     ]);
-    return { connections, blacksmith };
+    return { connections, freeMinutes };
   },
   component: ProviderSettingsPage,
 });
 
 function ProviderSettingsPage() {
   const { current } = Route.useRouteContext();
-  const { connections, blacksmith } = Route.useLoaderData();
+  const { connections, freeMinutes } = Route.useLoaderData();
   const manager = canManage(current.role);
   const organization = current.installations[0]?.accountLogin ?? null;
 
@@ -71,7 +84,11 @@ function ProviderSettingsPage() {
             first={connection}
             manager={manager}
             organization={organization}
-            blacksmith={connection.provider === "blacksmith" ? blacksmith : undefined}
+            freeMinutes={
+              isFreeMinutesProvider(connection.provider)
+                ? (freeMinutes[connection.provider] ?? null)
+                : undefined
+            }
           />
         ))}
       </div>
@@ -83,14 +100,14 @@ function ProviderCard({
   first,
   manager,
   organization,
-  blacksmith,
+  freeMinutes,
 }: {
   first: ProviderConnection;
   manager: boolean;
   /** The GitHub organization this workspace is installed on. */
   organization: string | null;
-  /** Blacksmith's card only: this month's free minutes, null when they couldn't be read. */
-  blacksmith?: BlacksmithMinutes | null;
+  /** Blacksmith's and Groundbox's cards only: this month's free minutes, null when unread. */
+  freeMinutes?: FreeMinutesCount | null;
 }) {
   const [connection, setConnection] = useState(first);
   const [replacing, setReplacing] = useState(false);
@@ -156,8 +173,12 @@ function ProviderCard({
         ) : (
           <p className="text-muted-foreground">{billing.reads}</p>
         )}
-        {blacksmith !== undefined && (
-          <FreeMinutes connected={connected} minutes={connected ? blacksmith : null} />
+        {freeMinutes !== undefined && isFreeMinutesProvider(provider) && (
+          <FreeMinutes
+            provider={provider}
+            connected={connected}
+            minutes={connected ? freeMinutes : null}
+          />
         )}
         {manager && billing.command && !connected && (
           <ConnectCommand
@@ -226,6 +247,14 @@ function ConnectionStatus({ connection, name }: { connection: ProviderConnection
       <p className="text-muted-foreground">{facts.join(" · ")}</p>
       {BILLING_PROVIDERS[connection.provider].limitsOnly ? (
         <p>{BILLING_PROVIDERS[connection.provider].reads}</p>
+      ) : BILLING_PROVIDERS[connection.provider].costOnly ? (
+        // The provider says what each job cost, not how long it ran.
+        lastSyncedAt && (
+          <p>
+            {plural(recent.jobs, "job")} in the last 30 days
+            {recent.costUsd != null && `, ${money(recent.costUsd)} billed`}.
+          </p>
+        )
       ) : (
         lastSyncedAt && (
           <p>
@@ -380,16 +409,20 @@ function ConnectCommand({
 }
 
 /**
- * What connecting Blacksmith unlocks on the Router, and once connected, this month's free minutes.
+ * What connecting Blacksmith or Groundbox unlocks on the Router, and once connected, this month's
+ * free minutes (and for Groundbox, whether it's holding jobs).
  */
 function FreeMinutes({
+  provider,
   connected,
   minutes,
 }: {
+  provider: FreeMinutesProvider;
   connected: boolean;
-  minutes: BlacksmithMinutes | null;
+  minutes: FreeMinutesCount | null;
 }) {
-  const free = BLACKSMITH_FREE_MINUTES.toLocaleString("en-US");
+  const label = RUNNER_LABELS[provider];
+  const count = (n: number) => n.toLocaleString("en-US");
   const router = (text: string) => (
     <Link to="/router" className="text-go hover:text-go-hover">
       {text}
@@ -398,25 +431,36 @@ function FreeMinutes({
   if (!connected)
     return (
       <p className="text-muted-foreground">
-        Connecting also counts Blacksmith's {free} free minutes a month, so the {router("Router")}{" "}
-        can stop sending Blacksmith jobs before they run out.
+        Connecting also counts {label}'s {count(FREE_MINUTES[provider])} free minutes a month, so
+        the {router("Router")} can stop sending {label} jobs before they run out.
       </p>
     );
-  if (!counted(minutes)) return null;
+  const held = minutes?.held ? (
+    <p className="text-destructive">
+      {heldText(label, { reason: minutes.held })}, so the Router passes its jobs on.
+    </p>
+  ) : null;
+  if (!counted(minutes)) return held;
   const used = Math.round(minutes.usedMinutes);
   const quota = minutes.quotaMinutes;
-  const count = (n: number) => n.toLocaleString("en-US");
   // Blacksmith counts free minutes as 2-vCPU minutes, so a 4-vCPU minute uses two. Its own page
   // stops at the quota and shows runner minutes, which don't double: say how the count is made.
+  // Groundbox reports its own count.
+  const unit = provider === "blacksmith" ? "2-vCPU minutes" : "minutes";
   return (
-    <p>
-      {used >= quota
-        ? `All ${count(quota)} free minutes used this month (${count(used)} 2-vCPU minutes).`
-        : `${count(used)} of ${count(quota)} free minutes used this month, in 2-vCPU minutes.`}{" "}
-      <span className="text-muted-foreground">
-        Set a limit on the Blacksmith step in the {router("Router")}.
-      </span>
-    </p>
+    <>
+      <p>
+        {used >= quota
+          ? `All ${count(quota)} free minutes used this month (${count(used)} ${unit}).`
+          : provider === "blacksmith"
+            ? `${count(used)} of ${count(quota)} free minutes used this month, in 2-vCPU minutes.`
+            : `${count(used)} of ${count(quota)} free minutes used this month.`}{" "}
+        <span className="text-muted-foreground">
+          Set a limit on the {label} step in the {router("Router")}.
+        </span>
+      </p>
+      {held}
+    </>
   );
 }
 

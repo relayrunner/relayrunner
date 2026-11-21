@@ -82,6 +82,10 @@ export const SKIP_REASONS = [
   // A provider whose plan caps how many jobs start per window (Boat): the workspace's connection
   // says a window has no starts left (in the step's `starts`), so the job would be paused.
   "start_limit",
+  // A provider that holds jobs it won't run (Groundbox): the workspace's connection says the
+  // account is held or suspended, at its own spend cap, or out of free minutes and credit (in the
+  // step's `held`), so the job would wait there.
+  "provider_held",
 ] as const;
 export type SkipReason = (typeof SKIP_REASONS)[number];
 
@@ -108,6 +112,7 @@ export const MOVE_REASONS: Record<SkipReason, MoveReason | null> = {
   spend_limit: "limit",
   no_size: null,
   start_limit: "limit",
+  provider_held: "limit",
 };
 
 // Why RelayRunner retried a job: its runner failed it, not its own steps.
@@ -142,6 +147,20 @@ export const StartLimit = z.object({
   limit: z.number().nullable(),
 });
 export type StartLimit = z.infer<typeof StartLimit>;
+
+// provider_held: why the provider would hold the job.
+// - account_held, account_suspended: the provider says the account is held or suspended.
+// - spend_cap: the account reached the daily or monthly spend cap set in the provider itself.
+// - out_of_credit: on a free plan, with no free minutes or credit left.
+export const HeldReason = z.enum([
+  "account_held",
+  "account_suspended",
+  "spend_cap",
+  "out_of_credit",
+]);
+export type HeldReason = z.infer<typeof HeldReason>;
+export const ProviderHeld = z.object({ reason: HeldReason });
+export type ProviderHeld = z.infer<typeof ProviderHeld>;
 
 // spend_limit: what the job's account spent on the provider this month, and the step's limit.
 export const SpendUsage = z.object({
@@ -203,6 +222,8 @@ export const RouteWalk = z.object({
       spend: SpendUsage.optional(),
       // start_limit: the plan window with no job starts left.
       starts: StartLimit.optional(),
+      // provider_held: why the provider would hold the job.
+      held: ProviderHeld.optional(),
       // provider_unhealthy: how many jobs in a row weren't picked up, and when the next trial goes.
       unhealthy: z.object({ misses: z.number(), retryAt: z.number() }).optional(),
       // no_size: the job's size, in vCPUs.

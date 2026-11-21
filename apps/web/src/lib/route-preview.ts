@@ -1,6 +1,7 @@
-import { RUNNER_LABELS, type RunnerStep } from "@relayrunner/runner-order";
+import { heldText } from "@relayrunner/activity";
+import { isFreeMinutesProvider, RUNNER_LABELS, type RunnerStep } from "@relayrunner/runner-order";
 import { hasQuota, type AccountUsage } from "./actions-usage.ts";
-import { counted, type BlacksmithMinutes } from "./blacksmith-minutes.ts";
+import { counted, type FreeMinutesByProvider } from "./free-minutes.ts";
 import { capacity } from "./capacity.ts";
 import type { Machine } from "./machines.ts";
 import { fullText } from "./route-walk.ts";
@@ -89,7 +90,7 @@ export function previewRoute(
   steps: RunnerStep[],
   machines: Machine[] | null,
   accounts: AccountUsage[],
-  blacksmith: BlacksmithMinutes | null = null,
+  free: FreeMinutesByProvider = {},
 ): RoutePreview {
   const worst = mostUsed(accounts);
   const many = accounts.filter(hasQuota).length > 1;
@@ -132,11 +133,13 @@ export function previewRoute(
       }
     } else if (step.key === "github" && worst && worst.percent >= 100) {
       reason = "Past the included minutes, so GitHub bills overage";
-    } else if (step.key === "blacksmith" && step.limit) {
-      if (!counted(blacksmith))
-        reason = "Blacksmith's free minutes aren't counted yet, so Blacksmith takes it";
+    } else if (isFreeMinutesProvider(step.key) && "limit" in step && step.limit) {
+      const count = free[step.key];
+      const label = RUNNER_LABELS[step.key];
+      if (!counted(count))
+        reason = `${label}'s free minutes aren't counted yet, so ${label} takes it`;
       else {
-        const check = minutesVerdict(blacksmith, step.limit.percent);
+        const check = minutesVerdict(count, step.limit.percent);
         takes = check.takes;
         reason = check.past
           ? `Used ${check.percent}% of the free minutes, past the ${step.limit.percent}% limit`
@@ -146,10 +149,15 @@ export function previewRoute(
       }
     } else if (
       step.key === "blacksmith" &&
-      counted(blacksmith) &&
-      blacksmith.usedMinutes >= blacksmith.quotaMinutes
+      counted(free.blacksmith) &&
+      free.blacksmith.usedMinutes >= free.blacksmith.quotaMinutes
     ) {
       reason = "Past the free minutes, so Blacksmith bills each minute";
+    }
+    // Groundbox would hold the job: the Router passes it on (src/groundbox-account.ts).
+    if (takes && step.key === "groundbox" && free.groundbox?.held) {
+      takes = false;
+      reason = heldText("Groundbox", { reason: free.groundbox.held });
     }
     if (takes) {
       next = { title, why: skipped.length ? skipped.join(" · ") : reason };
