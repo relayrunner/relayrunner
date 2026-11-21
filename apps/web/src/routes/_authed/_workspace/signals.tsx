@@ -15,6 +15,7 @@ import { ExternalLink, LINK, RunLink } from "@/components/run-sheet";
 import { RunnerLink } from "@/components/runner-link";
 import { DOCS_URL } from "@/components/site-footer";
 import { StatusIcon } from "@/components/status-icon";
+import { SECTION_HEADING } from "@/components/ui/data-table";
 import { InfoTip } from "@/components/ui/info-tip";
 import { Sheet, SheetContent, SheetDescription, SheetTitle } from "@/components/ui/sheet";
 import {
@@ -157,6 +158,7 @@ function SignalsPage() {
   const setSearch = useSetSearch<Search>();
   const key = keyOf(range, filter);
   const report = useRangeReport(Route.useLoaderData(), key, () => load(range, filter));
+  const manyRepos = spansRepos(report);
 
   function chooseRange(next: TimeRange) {
     setSearch(ranges.toSearch(next));
@@ -188,9 +190,9 @@ function SignalsPage() {
             {/* Every area shows, with the signals that didn't show up named under it, so the page
                 says what it looks for and not only what it found. */}
             {(Object.keys(AREAS) as SignalArea[]).map((area) => (
-              <AreaSection key={area} area={area} report={report} />
+              <AreaSection key={area} area={area} report={report} manyRepos={manyRepos} />
             ))}
-            <BreakdownSection report={report} />
+            <BreakdownSection report={report} manyRepos={manyRepos} />
           </>
         )}
       </div>
@@ -207,6 +209,15 @@ function SignalsPage() {
       )}
     </section>
   );
+}
+
+/** Whether the page covers more than one repo; with one, rows leave the repo out. */
+function spansRepos(report: SignalsReport) {
+  const repos = new Set([
+    ...report.signals.flatMap((signal) => signal.rows.map((row) => row.repository)),
+    ...report.breakdown.repository.rows.map((row) => row.name),
+  ]);
+  return repos.size > 1;
 }
 
 const FILTER_LABELS: Record<FilterKey, string> = {
@@ -408,7 +419,15 @@ function Section({
   );
 }
 
-function AreaSection({ area, report }: { area: SignalArea; report: SignalsReport }) {
+function AreaSection({
+  area,
+  report,
+  manyRepos,
+}: {
+  area: SignalArea;
+  report: SignalsReport;
+  manyRepos: boolean;
+}) {
   const signals = report.signals.filter((signal) => signal.area === area);
   const shown = new Set(signals.map((signal) => signal.id));
   const quiet = (Object.keys(SIGNAL_COPY) as SignalId[]).filter(
@@ -426,7 +445,7 @@ function AreaSection({ area, report }: { area: SignalArea; report: SignalsReport
       }
     >
       {signals.map((signal) => (
-        <SignalCard key={signal.id} signal={signal} />
+        <SignalCard key={signal.id} signal={signal} manyRepos={manyRepos} />
       ))}
       {quiet.length > 0 && (
         <p className="flex flex-wrap items-center gap-x-1.5 gap-y-1 text-sm text-muted-foreground">
@@ -455,9 +474,48 @@ function SignalInfo({ id }: { id: SignalId }) {
   );
 }
 
-function SignalCard({ signal }: { signal: Signal }) {
+// Where to go next for a signal: the fix in RelayRunner first, GitHub's docs second.
+function SignalLinks({ id }: { id: SignalId }) {
+  const { action, docs } = SIGNAL_COPY[id];
+  if (!action && !docs) return null;
+  return (
+    <div className="flex flex-wrap items-center gap-x-4 gap-y-1 text-sm">
+      {action &&
+        (action.href.startsWith("/") ? (
+          <Link to={action.href} className={LINK}>
+            {action.label}
+          </Link>
+        ) : (
+          <a href={action.href} className={LINK}>
+            {action.label}
+          </a>
+        ))}
+      {docs && (
+        <a
+          href={docs}
+          target="_blank"
+          rel="noreferrer"
+          className="inline-flex items-center gap-1 text-muted-foreground hover:text-foreground"
+        >
+          Learn more in the GitHub docs
+          <ArrowUpRightIcon aria-hidden className="size-3.5" />
+        </a>
+      )}
+    </div>
+  );
+}
+
+/** Rows split by repo, in the order each repo first shows up (the most time first). */
+function byRepo(rows: SignalRow[]) {
+  const groups = new Map<string, SignalRow[]>();
+  for (const row of rows) groups.set(row.repository, [...(groups.get(row.repository) ?? []), row]);
+  return [...groups];
+}
+
+function SignalCard({ signal, manyRepos }: { signal: Signal; manyRepos: boolean }) {
   const copy = SIGNAL_COPY[signal.id];
   const navigate = useNavigate();
+  const setSearch = useSetSearch<Search>();
   // A panel, so the back button closes it.
   const openRuns = (row: SignalRow) =>
     void navigate({
@@ -478,28 +536,8 @@ function SignalCard({ signal }: { signal: Signal }) {
           {copy.title}
           <SignalInfo id={signal.id} />
         </h3>
-        <div className="ml-auto flex items-center gap-4 text-sm">
-          {copy.action &&
-            (copy.action.href.startsWith("/") ? (
-              <Link to={copy.action.href} className={LINK}>
-                {copy.action.label}
-              </Link>
-            ) : (
-              <a href={copy.action.href} className={LINK}>
-                {copy.action.label}
-              </a>
-            ))}
-          {copy.docs && (
-            <a
-              href={copy.docs}
-              target="_blank"
-              rel="noreferrer"
-              className="inline-flex items-center gap-1 text-muted-foreground hover:text-foreground"
-            >
-              Learn more in the GitHub docs
-              <ArrowUpRightIcon aria-hidden className="size-3.5" />
-            </a>
-          )}
+        <div className="ml-auto">
+          <SignalLinks id={signal.id} />
         </div>
       </div>
       {/* Fixed columns, so every signal's numbers line up down the page. Phones leave out spend. */}
@@ -515,37 +553,54 @@ function SignalCard({ signal }: { signal: Signal }) {
             </TableHead>
           </TableRow>
         </TableHeader>
-        <TableBody>
-          {signal.rows.map((row) => (
-            <TableRow
-              key={`${row.repository}:${row.subject}`}
-              onClick={(event) => unlessLink(event, () => openRuns(row))}
-              className="cursor-pointer"
-            >
-              <TableCell className="break-words sm:truncate">
-                <SubjectName row={row} />
-              </TableCell>
-              <TableCell className="text-right tabular-nums">
-                <Count value={row.count} />
-              </TableCell>
-              <TableCell className="text-right font-medium tabular-nums">
-                <Count value={row.minutes} />
-              </TableCell>
-              <TableCell className={cn("text-right tabular-nums", PHONE_HIDDEN)}>
-                {spend && money(row.cost)}
-              </TableCell>
-              <TableCell className="text-right">
-                <button
-                  type="button"
-                  aria-label={`Show the runs behind ${row.repository} / ${row.subject}`}
-                  className="text-muted-foreground hover:text-foreground"
-                >
-                  <ChevronRightIcon aria-hidden className="size-4" />
-                </button>
-              </TableCell>
-            </TableRow>
-          ))}
-        </TableBody>
+        {/* With more than one repo on the page, each repo heads its own rows; its name narrows
+            the page to it. */}
+        {byRepo(signal.rows).map(([repository, rows]) => (
+          <TableBody key={repository}>
+            {manyRepos && (
+              <TableRow className="hover:bg-transparent">
+                <TableCell colSpan={5} className={SECTION_HEADING}>
+                  <button
+                    type="button"
+                    onClick={() => setSearch({ repo: repository })}
+                    className="max-w-full truncate text-left hover:text-foreground hover:underline"
+                  >
+                    {repository}
+                  </button>
+                </TableCell>
+              </TableRow>
+            )}
+            {rows.map((row) => (
+              <TableRow
+                key={row.subject}
+                onClick={(event) => unlessLink(event, () => openRuns(row))}
+                className="cursor-pointer"
+              >
+                <TableCell className="break-words sm:truncate">
+                  <SubjectName row={row} />
+                </TableCell>
+                <TableCell className="text-right tabular-nums">
+                  <Count value={row.count} />
+                </TableCell>
+                <TableCell className="text-right font-medium tabular-nums">
+                  <Count value={row.minutes} />
+                </TableCell>
+                <TableCell className={cn("text-right tabular-nums", PHONE_HIDDEN)}>
+                  {spend && money(row.cost)}
+                </TableCell>
+                <TableCell className="text-right">
+                  <button
+                    type="button"
+                    aria-label={`Show the runs behind ${row.repository} / ${row.subject}`}
+                    className="text-muted-foreground hover:text-foreground"
+                  >
+                    <ChevronRightIcon aria-hidden className="size-4" />
+                  </button>
+                </TableCell>
+              </TableRow>
+            ))}
+          </TableBody>
+        ))}
       </Table>
     </div>
   );
@@ -562,18 +617,16 @@ function unlessLink(event: MouseEvent, action: () => void) {
   if (!(event.target as Element).closest("a")) action();
 }
 
-// A runner row's name opens the runner's panel; the row opens its runs.
+// A runner row's name opens the runner's panel; the row opens its runs. The repo heads the rows.
 function SubjectName({ row }: { row: SignalRow }) {
-  if (!row.runnerKey) return <SubjectText repository={row.repository} name={row.subject} />;
+  if (!row.runnerKey) return row.subject;
   return (
     <RunnerLink
       runner={{ key: row.runnerKey, label: row.subject }}
       className="inline-flex max-w-full items-center gap-2"
       markClassName="size-4"
     >
-      <span className="min-w-0 sm:truncate">
-        <SubjectText repository={row.repository} name={row.subject} />
-      </span>
+      <span className="min-w-0 sm:truncate">{row.subject}</span>
     </RunnerLink>
   );
 }
@@ -614,7 +667,7 @@ function WorkflowName({
 
 // Every counted job split one way at a time, with each row's share of all job minutes (left out on
 // phones, where the table scrolls like the signals above).
-function BreakdownSection({ report }: { report: SignalsReport }) {
+function BreakdownSection({ report, manyRepos }: { report: SignalsReport; manyRepos: boolean }) {
   const by = Route.useSearch({ select: (search) => search.by ?? BREAKDOWNS[0]! });
   const setSearch = useSetSearch<Search>();
   const setBy = (next: BreakdownBy) => setSearch({ by: unlessDefault(next, BREAKDOWNS[0]) });
@@ -644,7 +697,7 @@ function BreakdownSection({ report }: { report: SignalsReport }) {
           {rows.map((row) => (
             <BreakdownLine
               key={`${row.repository}:${row.name}`}
-              name={<BreakdownName by={by} row={row} />}
+              name={<BreakdownName by={by} row={row} manyRepos={manyRepos} />}
               sums={row}
               total={total}
               onSelect={() => setSearch(rowFilter(by, row))}
@@ -713,10 +766,23 @@ function BreakdownLine({
   );
 }
 
-function BreakdownName({ by, row }: { by: BreakdownBy; row: BreakdownRow }) {
-  if ((by === "workflow" || by === "path") && row.repository) {
+// Workflows and folders show their repo only when the page covers more than one.
+function BreakdownName({
+  by,
+  row,
+  manyRepos,
+}: {
+  by: BreakdownBy;
+  row: BreakdownRow;
+  manyRepos: boolean;
+}) {
+  if (by === "workflow" || by === "path") {
     const name = by === "path" ? folderName(row.name) : row.name;
-    return <SubjectText repository={row.repository} name={name} />;
+    return manyRepos && row.repository ? (
+      <SubjectText repository={row.repository} name={name} />
+    ) : (
+      name
+    );
   }
   if (by === "trigger") return triggerName(row.name);
   return row.name;
@@ -827,6 +893,11 @@ function RunsPanel({
               )}
             </SheetDescription>
           </header>
+          {/* What the signal means, so the runs below read in context. */}
+          <div className="grid gap-2">
+            <p className="text-sm text-muted-foreground">{copy.about}</p>
+            <SignalLinks id={row.signal} />
+          </div>
           {body}
         </div>
       </SheetContent>
