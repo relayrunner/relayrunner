@@ -11,7 +11,8 @@ import {
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import { authDisabled, organization, useListOrganizations } from "@/lib/auth-client";
-import { forgetSession, isWorkspacePage, signOut } from "@/lib/session";
+import { isWorkspacePage, signOut } from "@/lib/session";
+import { portableSearch } from "@/lib/portable-search";
 import { githubInstallHref } from "@/lib/github";
 import { cn } from "@/lib/utils";
 
@@ -51,17 +52,30 @@ export function WorkspaceMenu({
     setSwitching(true);
     try {
       await organization.setActive({ organizationId: id });
-      // Drop the pages kept from the old workspace (earlier visits, hover preloads), or Runners
-      // and any page after it would show the old workspace's data while reloading.
+      // Drop the pages kept from the old workspace (earlier visits, hover preloads), so none
+      // shows its data while reloading.
       router.clearCache();
-      const onRunners = router.state.location.pathname === "/runners";
-      // The guards read the session and workspace afresh on the way. On Runners, the reload below
-      // reads them, and the navigation only drops the old workspace's filters and runner panel.
-      if (!onRunners) forgetSession();
-      await router.navigate({ to: "/runners" });
-      // Navigating to the page you're on doesn't load it again, so reload it in place. Forced
-      // pending, the reload waits for the new data rather than showing the old while it loads.
-      if (onRunners) await router.invalidate({ forcePending: true, filter: isWorkspacePage });
+      // Stay on the page, keeping the params that still apply: ranges and tabs, not the old
+      // workspace's repos, runs or runners.
+      const { pathname, search } = router.state.location;
+      const kept = portableSearch(pathname, search);
+      if (Object.keys(kept).length !== Object.keys(search).length) {
+        await router.navigate({
+          href: pathname + router.options.stringifySearch(kept),
+          replace: true,
+        });
+      }
+      // Reload it in place for the new workspace, guards included. Forced pending, the reload
+      // waits for the new data rather than showing the old while it loads.
+      await router.invalidate({ forcePending: true, filter: isWorkspacePage });
+      // A page that can't show in the new workspace falls back to Runners.
+      if (
+        router.state.matches.some(
+          (match) => match.status === "error" || match.status === "notFound",
+        )
+      ) {
+        await router.navigate({ to: "/runners", replace: true });
+      }
     } finally {
       setSwitching(false);
     }
