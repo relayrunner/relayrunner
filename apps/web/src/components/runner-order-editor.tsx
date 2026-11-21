@@ -983,6 +983,9 @@ function UsageBars({ bars, percent }: { bars: UsageBar[]; percent: number }) {
   );
 }
 
+/** Where a dollar cap's tick sits along its bar. */
+const CAP_TICK_PERCENT = 80;
+
 const usd = (n: number) =>
   n.toLocaleString("en-US", { style: "currency", currency: "USD", maximumFractionDigits: 2 });
 
@@ -1000,6 +1003,10 @@ function SpendBar({ spentUsd, capUsd }: { spentUsd: number | null; capUsd: numbe
       </p>
     );
   const used = Math.floor((spentUsd / capUsd) * 100);
+  // A dollar cap has no quota behind it, so the bar runs a little past the cap: the tick sits at
+  // the same kind of spot as a minutes cap, with room to show spend that went over it.
+  const scale = capUsd / (CAP_TICK_PERCENT / 100);
+  const fill = Math.min((spentUsd / scale) * 100, 100);
   return (
     <div className="grid gap-2.5 pr-4 pb-3 pl-11">
       <div className="grid max-w-sm gap-1.5">
@@ -1011,13 +1018,13 @@ function SpendBar({ spentUsd, capUsd }: { spentUsd: number | null; capUsd: numbe
           <div
             className={cn(
               "absolute inset-y-0 left-0 rounded-full",
-              used >= 100
-                ? "bg-[var(--rr-run)]"
-                : used >= 80
-                  ? "bg-[var(--rr-run)]/70"
-                  : "bg-[var(--rr-idle)]",
+              used >= 100 ? "bg-[var(--rr-run)]" : "bg-[var(--rr-idle)]",
             )}
-            style={{ width: `${Math.min(used, 100)}%` }}
+            style={{ width: `${fill}%` }}
+          />
+          <div
+            className="absolute -inset-y-1 w-0.5 rounded-full bg-foreground"
+            style={{ left: `calc(${CAP_TICK_PERCENT}% - 1px)` }}
           />
         </div>
         <p className="text-xs text-muted-foreground">
