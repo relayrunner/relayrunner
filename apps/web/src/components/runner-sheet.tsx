@@ -71,7 +71,7 @@ function loadReport(key: string, range: TimeRange) {
  */
 export function RunnerSheet({ runnerKey, range }: { runnerKey: string; range: TimeRange }) {
   const navigate = useNavigate();
-  const close = () => void navigate({ to: ".", search: withRunner() });
+  const close = () => void navigate({ to: ".", search: withRunner(), resetScroll: false });
   const setSearch = useSetSearch<{ runnerRange?: TimeRange }>();
   const setRange = (next: TimeRange) =>
     setSearch({ runnerRange: unlessDefault(next, RUNNER_DEFAULT_RANGE) });

@@ -189,7 +189,12 @@ export function RunSheet({
 }) {
   const navigate = useNavigate();
   const close = () =>
-    void navigate({ from: "/history", to: "/history", search: (prev) => ({ view: prev.view }) });
+    void navigate({
+      from: "/history",
+      to: "/history",
+      search: (prev) => ({ view: prev.view }),
+      resetScroll: false,
+    });
 
   // The run's status from the list when it has it, else from the detail once that loads. The panel
   // is keyed on the run, so `ids` never changes under it.

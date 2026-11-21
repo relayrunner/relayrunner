@@ -53,7 +53,7 @@ function loadReport(workflow: WorkflowRef, range: TimeRange) {
  */
 export function WorkflowSheet({ workflow, range }: { workflow: WorkflowRef; range: TimeRange }) {
   const navigate = useNavigate();
-  const close = () => void navigate({ to: ".", search: withWorkflow() });
+  const close = () => void navigate({ to: ".", search: withWorkflow(), resetScroll: false });
   const setSearch = useSetSearch<{ wfRange?: TimeRange }>();
   const setRange = (next: TimeRange) =>
     setSearch({ wfRange: unlessDefault(next, WORKFLOW_DEFAULT_RANGE) });

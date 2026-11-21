@@ -236,7 +236,7 @@ function RunnersPage() {
   const search = Route.useSearch();
   const navigate = Route.useNavigate();
   function setSearch(next: Partial<RunnerSearch>) {
-    void navigate({ search: (prev) => ({ ...prev, ...next }), replace: true });
+    void navigate({ search: (prev) => ({ ...prev, ...next }), replace: true, resetScroll: false });
   }
   const rows = useMemo<RunnerRow[]>(
     () =>

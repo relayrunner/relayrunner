@@ -185,7 +185,7 @@ function ActivityPage() {
   }, []);
 
   const update = (patch: ActivitySearch) =>
-    void navigate({ search: (prev) => ({ ...prev, ...patch }) });
+    void navigate({ search: (prev) => ({ ...prev, ...patch }), resetScroll: false });
   const narrowed = Boolean(search.days || search.repo || search.result || search.machine);
 
   return (

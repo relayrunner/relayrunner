@@ -18,5 +18,5 @@ export function RunnerPanelLink({
     children?: ReactNode;
     title?: string;
   }) {
-  return <Link to="." search={withRunner(runner)} preload={false} {...props} />;
+  return <Link to="." search={withRunner(runner)} preload={false} resetScroll={false} {...props} />;
 }

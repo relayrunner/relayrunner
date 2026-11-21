@@ -30,6 +30,8 @@ export function useSetSearch<S>() {
       to: ".",
       search: ((prev: S) => ({ ...prev, ...patch })) as never,
       replace: true,
+      // The page stays where it is: only part of it changes.
+      resetScroll: false,
     });
 }
 

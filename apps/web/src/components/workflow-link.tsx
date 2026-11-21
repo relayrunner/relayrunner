@@ -32,6 +32,7 @@ export function WorkflowLink({
       to="."
       search={withWorkflow({ repository, workflow })}
       preload={false}
+      resetScroll={false}
       className={cn("hover:underline hover:underline-offset-2", className)}
       {...props}
     >

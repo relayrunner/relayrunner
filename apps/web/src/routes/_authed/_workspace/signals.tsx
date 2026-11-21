@@ -468,6 +468,7 @@ function SignalCard({ signal }: { signal: Signal }) {
         in: row.repository,
         subject: row.subject,
       })) as never,
+      resetScroll: false,
     });
   // Signals that cost time but no money keep the column, empty, so columns line up down the page.
   const spend = copy.spend !== false;
