@@ -79,48 +79,50 @@ button {
 .mute {
   color: var(--mute);
 }
-.hl {
-  color: var(--go-text);
-}
 
 /* ---------- Hero ---------- */
 
+/* Copy on the left, the mascot on the right with its feet on the top edge of the runner order
+   band below. */
 .hero {
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  padding-top: clamp(32px, 5vw, 56px);
-  text-align: center;
+  padding-top: clamp(40px, 6vw, 88px);
+}
+.hero-split {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: clamp(24px, 4vw, 64px);
+  align-items: end;
+}
+.hero-copy {
+  padding-bottom: clamp(40px, 5vw, 72px);
 }
 .mascot {
-  width: clamp(112px, 12vw, 150px);
+  position: relative;
+  z-index: 1;
+  width: clamp(200px, 24vw, 330px);
   height: auto;
-  margin-bottom: 18px;
-}
-@media (prefers-reduced-motion: no-preference) {
-  .mascot {
-    animation: jog 1.6s ease-in-out infinite;
-  }
-}
-@keyframes jog {
-  50% {
-    transform: translateY(-6px);
-  }
+  margin: 0 clamp(0px, 3vw, 48px) -58px;
 }
 .eyebrow {
-  color: var(--go-text);
-  font-size: 15px;
-  font-weight: 600;
+  color: var(--mute);
+  font: 500 13px var(--mono);
 }
 .hero h1 {
-  margin-top: 18px;
+  max-width: 16ch;
+  margin-top: 20px;
   font-size: clamp(42px, 6vw, 76px);
   line-height: 1.02;
   letter-spacing: -0.04em;
 }
+.hero-split h1 {
+  max-width: 13ch;
+  font-size: clamp(46px, 7.6vw, 108px);
+  line-height: 0.96;
+  letter-spacing: -0.05em;
+}
 .lede {
-  max-width: 780px;
-  margin-top: 20px;
+  max-width: 560px;
+  margin-top: 28px;
   color: var(--ink-2);
   font-size: clamp(17px, 1.6vw, 20px);
   line-height: 1.55;
@@ -130,9 +132,6 @@ button {
   flex-wrap: wrap;
   gap: 14px;
   margin-top: 32px;
-}
-.hero .hero-actions {
-  justify-content: center;
 }
 .cmd {
   display: inline-flex;
@@ -185,21 +184,34 @@ button {
   letter-spacing: 0.06em;
   text-transform: uppercase;
 }
-.stage {
-  display: grid;
-  grid-template-columns: 300px 1fr;
-  gap: clamp(32px, 5vw, 72px);
-  align-items: center;
-  margin-top: 56px;
-  padding: clamp(20px, 3.5vw, 44px) clamp(16px, 4vw, 56px);
-  border: 1px solid var(--line-soft);
-  border-radius: 24px;
-  background: var(--bg-soft);
+/* The runner order as lanes on a full-width forest band. */
+.track {
+  background: var(--forest);
+  color: var(--on-forest);
 }
-.stage-side {
+.track-grid {
+  display: grid;
+  grid-template-columns: 280px 1fr;
+  gap: clamp(32px, 5vw, 80px);
+  align-items: start;
+  padding-block: clamp(32px, 4.5vw, 64px);
+}
+.track .label,
+.track .order-head,
+.track .next-why,
+.track .dim {
+  color: var(--on-forest-mute);
+}
+.track-side {
+  display: grid;
+  gap: 28px;
+}
+.track-feed {
+  font: 500 15px/1.7 var(--mono);
+}
+.track-next {
   display: flex;
   flex-direction: column;
-  gap: 14px;
 }
 .term {
   border: 1px solid var(--line);
@@ -216,14 +228,6 @@ button {
 .term-body {
   padding: 12px 16px 14px;
   font: 500 15px/1.6 var(--mono);
-}
-.next-card {
-  display: flex;
-  flex-direction: column;
-  padding: 14px 16px;
-  border: 1px solid var(--line);
-  border-radius: 10px;
-  background: var(--raised);
 }
 .next-name {
   display: flex;
@@ -248,28 +252,36 @@ button {
   font-size: 13px;
 }
 .lanes {
-  display: flex;
-  flex-direction: column;
-  gap: 10px;
+  counter-reset: lane;
+  border-top: 2px solid var(--lane-line);
 }
+/* Each runner is a numbered lane between white lines, like a track. */
 .lane {
+  counter-increment: lane;
   display: grid;
-  grid-template-columns: 32px 1fr auto 132px 32px;
-  gap: 14px;
+  grid-template-columns: 52px 32px 1fr auto 150px 32px;
+  gap: 16px;
   align-items: center;
-  padding: 12px 12px 12px 16px;
-  border: 1px solid var(--line);
-  border-radius: 12px;
-  background: var(--bg-deep);
-  transition:
-    border-color 0.3s,
-    box-shadow 0.3s,
-    background 0.3s;
+  padding: 20px 14px 20px 0;
+  border-bottom: 2px solid var(--lane-line);
+  transition: background 0.3s;
+}
+.lane::before {
+  content: counter(lane);
+  padding-left: 14px;
+  color: var(--on-forest);
+  font: 800 38px/1 var(--sans);
+  letter-spacing: -0.04em;
 }
 .lane.on {
-  border-color: var(--go-edge);
-  background: var(--raised);
-  box-shadow: var(--shadow-on);
+  background: var(--go);
+  color: var(--go-ink);
+}
+.lane.on::before,
+.lane.on .lane-state,
+.lane.on .lane-name code,
+.lane.on .lane-rule {
+  color: var(--go-ink);
 }
 .lane-name {
   display: flex;
@@ -283,22 +295,18 @@ button {
 .lane-name code,
 .lane-rule {
   overflow: hidden;
-  color: var(--mute);
+  color: var(--on-forest-mute);
   font-size: 12px;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
-.lane-rule {
-  color: var(--ink-2);
-}
 .lane-state {
-  color: var(--mute);
+  color: var(--on-forest-mute);
   font-size: 13px;
   font-weight: 500;
   text-align: right;
 }
 .lane.on .lane-state {
-  color: var(--go-text);
   font-weight: 700;
 }
 .lane-up {
@@ -307,10 +315,20 @@ button {
   width: 32px;
   height: 32px;
   padding: 0;
-  border: 1px solid var(--line);
+  border: 1px solid var(--forest-line);
   border-radius: 8px;
-  background: var(--raised);
+  background: none;
+  color: var(--on-forest);
   cursor: pointer;
+}
+/* The green machines tile needs an edge on the green lane. */
+.lane.on img {
+  border-radius: 24%;
+  box-shadow: 0 0 0 1.5px var(--go-ink);
+}
+.lane.on .lane-up {
+  border-color: currentColor;
+  color: var(--go-ink);
 }
 .lane-up svg {
   width: 16px;
@@ -322,7 +340,8 @@ button {
   stroke-linejoin: round;
 }
 .lane-up:hover:not(:disabled) {
-  border-color: var(--go-edge);
+  border-color: var(--lime);
+  color: var(--lime);
 }
 .lane-up:disabled {
   opacity: 0.35;
@@ -335,9 +354,7 @@ button {
 }
 @keyframes took {
   from {
-    box-shadow:
-      0 0 0 6px var(--go-soft),
-      var(--shadow-on);
+    background: var(--lime);
   }
 }
 
@@ -358,15 +375,15 @@ button {
   color: var(--mute);
   font-weight: 500;
 }
-.section h2 {
-  margin-top: 18px;
+.section h2,
+.band h2 {
   text-wrap: balance;
   font-size: clamp(32px, 3.6vw, 50px);
   line-height: 1.06;
   letter-spacing: -0.035em;
 }
-.section h2 .hl {
-  display: block;
+.kicker + h2 {
+  margin-top: 18px;
 }
 .body {
   margin-top: 18px;
@@ -376,62 +393,90 @@ button {
   display: grid;
   grid-template-columns: 7fr 5fr;
   gap: clamp(32px, 6vw, 88px);
-  align-items: end;
+  align-items: start;
+}
+.split-head .body:first-child {
+  margin-top: 6px;
 }
 .split-head .body {
-  margin: 0;
+  max-width: 52ch;
+}
+.split-head + * {
+  margin-top: clamp(32px, 4vw, 56px);
+}
+
+/* A section on a forest band, for the dashboard screenshot. */
+.band {
+  margin-top: clamp(72px, 9vw, 112px);
+  padding-block: clamp(56px, 7vw, 96px) 0;
+  background: linear-gradient(var(--forest) 0 calc(100% - clamp(80px, 12vw, 200px)), var(--bg) 0);
+  color: var(--on-forest);
+}
+.band .body {
+  color: var(--on-forest-mute);
 }
 
 /* ---------- Providers ---------- */
 
-.provider-grid {
+/* Every runner as a row: logo, name, a runs-on label, list price. Two columns on wide screens. */
+.runner-list {
+  columns: 2;
+  column-gap: clamp(32px, 6vw, 88px);
+  border-top: 1px solid var(--line);
+}
+.runner-list li {
   display: grid;
-  grid-template-columns: repeat(4, minmax(0, 1fr));
-  gap: 16px;
-  margin-top: 40px;
-}
-.provider-card {
-  padding: 24px;
-  border: 1px solid var(--line);
-  border-radius: 16px;
-  background: var(--raised);
-}
-.provider-card h3 {
-  margin-top: 20px;
-  font-size: 20px;
-  line-height: 1.2;
-}
-.provider-card p {
-  margin-top: 8px;
-  color: var(--ink-2);
+  grid-template-columns: 28px minmax(0, auto) minmax(0, 1fr) auto;
+  gap: 14px;
+  align-items: center;
+  break-inside: avoid;
+  padding: 11px 0;
+  border-bottom: 1px solid var(--line);
   font-size: 15px;
-  line-height: 1.5;
 }
-.provider-cmd {
+.runner-list b {
+  white-space: nowrap;
+}
+.runner-list code {
+  overflow: hidden;
+  color: var(--mute);
+  font-size: 12.5px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.runner-list span {
+  color: var(--ink-2);
+  font: 500 13px var(--mono);
+  white-space: nowrap;
+}
+
+/* ---------- Ledger: one feature per ruled row ---------- */
+
+.ledger {
+  border-top: 1px solid var(--ink);
+}
+.ledger-row {
+  display: grid;
+  grid-template-columns: 7fr 8fr 12fr;
+  gap: clamp(24px, 4vw, 64px);
+  align-items: start;
+  padding-block: clamp(28px, 3.5vw, 48px);
+  border-bottom: 1px solid var(--line);
+}
+.ledger-row h3 {
+  text-wrap: balance;
+  font-size: clamp(22px, 2.2vw, 30px);
+  line-height: 1.12;
+  letter-spacing: -0.025em;
+}
+.ledger-row h3 .kicker-note {
   display: block;
-  margin-top: 14px;
-  color: var(--go-text);
-  font-size: 13px;
+  margin: 10px 0 0;
+  font: 500 13px var(--mono);
+  letter-spacing: 0;
 }
-.logo-row {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  justify-content: center;
-  gap: 16px 40px;
-  margin-top: 16px;
-  padding: 20px 24px;
-  border: 1px solid var(--line-soft);
-  border-radius: 16px;
-  background: var(--bg-soft);
-}
-.logo-row li {
-  display: flex;
-  align-items: center;
-  gap: 10px;
+.ledger-row p {
   color: var(--ink-2);
-  font-size: 15px;
-  font-weight: 600;
 }
 
 /* ---------- Features ---------- */
@@ -481,52 +526,6 @@ button {
   border: 1px solid var(--line-soft);
   border-radius: 20px;
   background: var(--bg-soft);
-}
-.panel-note {
-  margin-top: 14px;
-  color: var(--ink-2);
-  font-size: 14px;
-}
-.mini-lanes {
-  display: flex;
-  flex-direction: column;
-  gap: 12px;
-}
-.mini-lane {
-  display: flex;
-  align-items: center;
-  gap: 12px;
-  padding: 12px 16px;
-  border: 1px solid var(--line);
-  border-radius: 12px;
-  background: var(--raised);
-}
-.mini-lane b {
-  white-space: nowrap;
-}
-.mini-lane code {
-  color: var(--mute);
-}
-.mini-lane span {
-  margin-left: auto;
-  color: var(--mute);
-  font-size: 13px;
-  text-align: right;
-}
-.mini-lane .go {
-  color: var(--go-text);
-  font-weight: 600;
-}
-.mini-lane.moving {
-  border: 2px dashed var(--go);
-  box-shadow: var(--shadow-card);
-  transform: rotate(-1deg);
-}
-.mini-lanes + .panel-note {
-  padding: 10px 14px;
-  border: 1px solid var(--line-soft);
-  border-radius: 8px;
-  background: var(--raised);
 }
 .meter-card {
   padding: 18px 20px;
@@ -592,14 +591,6 @@ button {
 .go-text {
   color: var(--go-text);
 }
-.connect-panel {
-  display: flex;
-  flex-direction: column;
-  gap: 14px;
-}
-.connect-panel .term-body {
-  font-size: 14px;
-}
 .dot {
   flex: none;
   width: 8px;
@@ -645,6 +636,7 @@ button {
   display: flex;
   align-items: center;
   gap: 8px;
+  min-width: 0;
 }
 .checks {
   overflow: hidden;
@@ -683,26 +675,30 @@ button {
 
 /* ---------- Safety ---------- */
 
-.safety-grid {
+.safety {
   display: grid;
-  grid-template-columns: repeat(4, minmax(0, 1fr));
-  gap: 16px;
-  margin-top: 40px;
+  grid-template-columns: 5fr 7fr;
+  gap: clamp(32px, 6vw, 88px);
+  align-items: start;
 }
-.safety-grid li {
-  padding: 22px;
-  border: 1px solid var(--line);
-  border-radius: 14px;
+.safety-list {
+  border-top: 1px solid var(--ink);
 }
-.safety-grid h3 {
+.safety-list li {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 24px;
+  padding-block: 20px;
+  border-bottom: 1px solid var(--line);
+}
+.safety-list h3 {
   font-size: 17px;
-  line-height: 1.3;
+  line-height: 1.35;
 }
-.safety-grid p {
-  margin-top: 8px;
+.safety-list p {
   color: var(--ink-2);
-  font-size: 15px;
-  line-height: 1.55;
+  font-size: 16px;
+  line-height: 1.5;
 }
 
 /* ---------- Close ---------- */
@@ -717,9 +713,9 @@ button {
   align-items: center;
   overflow: hidden;
   padding: clamp(28px, 5vw, 64px);
-  border-radius: 28px;
-  background: var(--mascot-green);
-  color: #03200d;
+  border-radius: 6px;
+  background: var(--lime);
+  color: var(--lime-ink);
 }
 .close h2 {
   margin: 0;
@@ -753,9 +749,8 @@ button {
   max-width: 560px;
   margin-top: 28px;
   padding: 12px 12px 12px 18px;
-  border-radius: 14px;
-  background: #ffffff;
-  box-shadow: 0 30px 60px -30px rgba(3, 32, 13, 0.55);
+  border-radius: 10px;
+  background: #fffdf7;
 }
 .instruction code {
   flex: 1;
@@ -856,16 +851,18 @@ button {
 /* ---------- Responsive ---------- */
 
 @media (max-width: 1080px) {
-  .provider-grid,
-  .safety-grid {
-    grid-template-columns: repeat(2, minmax(0, 1fr));
-  }
-  .stage {
+  .track-grid,
+  .safety {
     grid-template-columns: 1fr;
   }
-  .stage-side {
-    display: grid;
+  .track-side {
     grid-template-columns: 1fr 1fr;
+  }
+  .ledger-row {
+    grid-template-columns: 1fr 1fr;
+  }
+  .ledger-row > :last-child {
+    grid-column: 1 / -1;
   }
 }
 @media (max-width: 860px) {
@@ -893,16 +890,45 @@ button {
   .cmd {
     justify-content: center;
   }
-  .stage-side {
+  .hero-split {
     grid-template-columns: 1fr;
+  }
+  .mascot {
+    order: -1;
+    width: 120px;
+    margin: 0;
+  }
+  .hero-copy {
+    padding-bottom: 36px;
+  }
+  .track-side,
+  .ledger-row,
+  .safety-list li {
+    grid-template-columns: 1fr;
+  }
+  .safety-list li {
+    gap: 6px;
+  }
+  .runner-list {
+    columns: 1;
+  }
+  .runner-list code {
+    display: none;
+  }
+  .runner-list li {
+    grid-template-columns: 28px 1fr auto;
   }
   .order-head span {
     display: none;
   }
   .lane {
-    grid-template-columns: 28px 1fr auto 32px;
+    grid-template-columns: 30px 28px 1fr auto 32px;
     gap: 10px;
-    padding: 10px 10px 10px 12px;
+    padding: 14px 10px 14px 0;
+  }
+  .lane::before {
+    padding-left: 8px;
+    font-size: 26px;
   }
   .lane img {
     width: 28px;
@@ -916,33 +942,6 @@ button {
   }
   .lane-state {
     font-size: 12px;
-  }
-  .provider-grid {
-    grid-template-columns: repeat(2, minmax(0, 1fr));
-    gap: 10px;
-  }
-  .provider-card {
-    padding: 16px;
-  }
-  .provider-card img {
-    width: 36px;
-    height: 36px;
-  }
-  .provider-card h3 {
-    margin-top: 12px;
-    font-size: 16px;
-  }
-  .provider-card p,
-  .provider-cmd {
-    display: none;
-  }
-  .logo-row {
-    justify-content: flex-start;
-    gap: 12px 20px;
-    padding: 16px;
-  }
-  .safety-grid {
-    grid-template-columns: 1fr;
   }
   .times-row {
     grid-template-columns: 1.6fr repeat(3, minmax(0, 1fr));
@@ -959,8 +958,7 @@ button {
   .times-row code {
     font-size: 13px;
   }
-  .checks span,
-  .mini-lane span:not(.go) {
+  .checks span {
     display: none;
   }
   .times-row b {

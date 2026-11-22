@@ -1,6 +1,7 @@
 /*
- * RelayRunner theme for Starlight. Colors are the dashboard's tokens (apps/web/src/styles.css),
- * which come from the landing page's DESIGN.md: green "go" accent, cool grays. Starlight's dark
+ * RelayRunner theme for Starlight. Text and accent colors are the dashboard's tokens
+ * (apps/web/src/styles.css); page and panel backgrounds are the landing pages' paper and forest
+ * (tokens.css), so the docs sit under the shared header without a seam. Starlight's dark
  * theme is the :root default and light is [data-theme="light"]. Its gray scale runs from
  * --sl-color-white (text) to --sl-color-black (page background) in both themes.
  */
@@ -17,13 +18,13 @@
   --sl-color-gray-2: #b4bcc6;
   --sl-color-gray-3: #8b949e;
   --sl-color-gray-4: #4a515c;
-  --sl-color-gray-5: #272c35;
-  --sl-color-gray-6: #161a20;
-  --sl-color-gray-7: #101317;
-  --sl-color-black: #0b0d10;
+  --sl-color-gray-5: #24392c;
+  --sl-color-gray-6: #11231a;
+  --sl-color-gray-7: #0d1c13;
+  --sl-color-black: #08130d;
 
   /* Notes (:::note) are neutral, like the dashboard's info panels. */
-  --sl-color-blue-low: #161a20;
+  --sl-color-blue-low: #11231a;
   --sl-color-blue: #8b949e;
   --sl-color-blue-high: #e6edf3;
 }
@@ -38,12 +39,12 @@
   --sl-color-gray-2: #3d454e;
   --sl-color-gray-3: #5e6772;
   --sl-color-gray-4: #a3abb5;
-  --sl-color-gray-5: #d9dee4;
-  --sl-color-gray-6: #eef1f4;
-  --sl-color-gray-7: #f6f7f9;
-  --sl-color-black: #ffffff;
+  --sl-color-gray-5: #d9d2bd;
+  --sl-color-gray-6: #eee9da;
+  --sl-color-gray-7: #f1ecdf;
+  --sl-color-black: #f6f2e7;
 
-  --sl-color-blue-low: #eef1f4;
+  --sl-color-blue-low: #eee9da;
   --sl-color-blue: #5e6772;
   --sl-color-blue-high: #1b1f24;
 }

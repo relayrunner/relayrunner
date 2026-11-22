@@ -42,12 +42,13 @@
     background 0.15s,
     border-color 0.15s;
 }
-.btn-go {
-  background: var(--go);
-  color: var(--go-ink);
+.btn-go,
+.site-header .btn-go {
+  background: var(--btn-bg);
+  color: var(--btn-ink);
 }
 .btn-go:hover {
-  background: var(--go-hover);
+  background: var(--btn-hover);
 }
 .btn-ghost {
   border: 1px solid var(--line);
