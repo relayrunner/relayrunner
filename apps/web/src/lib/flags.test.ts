@@ -1,4 +1,5 @@
 import { beforeEach, describe, expect, test, vi } from "vitest";
+import { FLAG_KEYS } from "@relayrunner/api-types";
 
 const api = vi.fn();
 vi.mock("@/lib/api", () => ({ api: (path: string) => api(path) }));
@@ -40,7 +41,7 @@ describe("loadFlags", () => {
 
   test("a failed read turns every flag off rather than blocking the page", async () => {
     api.mockRejectedValueOnce(new Error("offline"));
-    expect(await loadFlags("w1")).toEqual({});
+    expect(await loadFlags("w1")).toEqual(Object.fromEntries(FLAG_KEYS.map((key) => [key, false])));
     // Not kept: the next navigation asks again.
     api.mockResolvedValueOnce({ beta: true });
     expect(await loadFlags("w1")).toEqual({ beta: true });

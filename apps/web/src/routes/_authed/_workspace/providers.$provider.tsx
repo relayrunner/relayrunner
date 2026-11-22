@@ -22,6 +22,7 @@ import { Button } from "@/components/ui/button";
 import { createCellContext, DataTable, dataTableColumns, NUM } from "@/components/ui/data-table";
 import { WorkflowLink } from "@/components/workflow-link";
 import { authDisabled } from "@/lib/auth-client";
+import { useFlag } from "@/lib/flags";
 import { clock, medianText, p90Text, plural } from "@/lib/job-times";
 import { isKnownProvider, providerInfo } from "@/lib/provider-catalog";
 import {
@@ -116,7 +117,8 @@ function ProviderView({ first, unused }: { first: ProviderReport; unused: boolea
   const { icon, tile } = providerStyle(provider);
   const connectUrl = providerPlans(provider)?.connectUrl;
   // Hosted providers with a label per size can run a workflow as an evaluation.
-  const evaluable = provider !== "github" && evaluationSizes(provider).length > 0;
+  const flagged = useFlag("provider-evaluations");
+  const evaluable = flagged && provider !== "github" && evaluationSizes(provider).length > 0;
 
   function chooseRange(next: TimeRange) {
     setSearch(toSearch(next));

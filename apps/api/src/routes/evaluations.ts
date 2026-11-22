@@ -9,6 +9,7 @@ import {
   retryEvaluation,
   startEvaluation,
 } from "../evaluations.ts";
+import { requireFlag } from "../flags.ts";
 import { requireUser } from "../middleware/session.ts";
 import { requireWorkspace } from "../middleware/workspace.ts";
 import { requireManager } from "../roles.ts";
@@ -23,8 +24,9 @@ const StartBody = z.object({
 
 // Provider evaluations (src/evaluations.ts): run a workflow on a provider five times and compare it
 // with its recent runs. Any member can look; owners and admins start and stop them, since the runs
-// cost money on the provider.
+// cost money on the provider. Behind the provider-evaluations flag until release.
 export const evaluationRoutes = new Hono<AppEnv>()
+  .use("*", requireUser, requireWorkspace, requireFlag("provider-evaluations"))
   .get("/workflows", requireUser, requireWorkspace, async (c) =>
     c.json({ workflows: await evaluationWorkflows(c.var.db, c.var.workspace.id) }),
   )

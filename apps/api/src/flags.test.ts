@@ -1,6 +1,6 @@
 import { Hono } from "hono";
 import { beforeAll, describe, expect, test, vi } from "vitest";
-import type { FlagKey } from "@relayrunner/api-types";
+import { FLAG_KEYS, type FlagKey } from "@relayrunner/api-types";
 import type { AppEnv } from "./app.ts";
 import type { Env } from "./env.ts";
 import { respondError } from "./errors.ts";
@@ -107,7 +107,7 @@ describe("GET /api/flags", () => {
   test("answers every flag in FLAG_KEYS for the signed-in user", async () => {
     const res = await testing.call({ ...env, FLAGS: stubFlags() }, "/flags", cookie);
     expect(res.status).toBe(200);
-    expect(await res.json()).toEqual({});
+    expect(await res.json()).toEqual(Object.fromEntries(FLAG_KEYS.map((key) => [key, false])));
   });
 
   test("needs a signed-in user", async () => {
