@@ -45,6 +45,7 @@ export async function recordPick(db: Db, pick: PickRecord) {
         runner: decision.runner,
         skipped: decision.skipped,
         notInOrder: decision.notInOrder,
+        ownOrder: Boolean(decision.ownOrder),
         machine: context.machine,
         github: context.github,
         hosted: hostedInputs(context),
@@ -80,6 +81,7 @@ function walkOf(decision: RouteDecision, context: JobContext): RouteWalk {
     step: decision.runner === null ? null : decision.step,
     skipped: decision.skipped,
     notInOrder: decision.notInOrder,
+    ...(decision.ownOrder && { ownOrder: true }),
     ...relayInputs(context),
   };
 }
@@ -159,6 +161,7 @@ export async function picksForJobs(db: Db, jobs: PickJob[]): Promise<Map<string,
       step: best.step,
       skipped: best.skipped,
       notInOrder: best.notInOrder,
+      ...(best.ownOrder && { ownOrder: true }),
       machine: best.machine,
       github: best.github,
       ...best.hosted,

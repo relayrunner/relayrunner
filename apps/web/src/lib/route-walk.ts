@@ -206,7 +206,7 @@ export function walkSummary(walk: RouteWalk): { text: string; tone: WalkTone } |
     if (!["not_configured", "public_repo", "personal_account"].includes(step.reason))
       tone = "fallback";
   }
-  for (const key of walk.notInOrder) parts.push(`${key} is set but not in your order`);
+  for (const key of walk.notInOrder) parts.push(`${key} is set but not in ${orderName(walk)}`);
   return parts.length ? { text: parts.join("; "), tone } : null;
 }
 
@@ -237,8 +237,19 @@ export function walkLines(walk: RouteWalk, runner: string | null): WalkLine[] {
       text: runner ? `on ${runner}` : "",
     });
   for (const key of walk.notInOrder)
-    lines.push({ position: null, key, state: "not_tried", text: "not in your runner order" });
+    lines.push({
+      position: null,
+      key,
+      state: "not_tried",
+      text: `not in ${orderName(walk, false)}`,
+    });
   return lines;
+}
+
+/** The order the pick walked: the repo's own (#709), or the workspace's. */
+export function orderName(walk: RouteWalk, short = true) {
+  if (walk.ownOrder) return short ? "this repo's order" : "this repo's own runner order";
+  return short ? "your order" : "your runner order";
 }
 
 export const NO_RUNNER_PREFIX = "No runner available: ";

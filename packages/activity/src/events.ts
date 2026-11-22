@@ -253,6 +253,8 @@ export const RouteWalk = z.object({
     }),
   ),
   notInOrder: z.array(z.enum(RUNNER_KEYS)),
+  // The walk was the repo's own runner order, not the workspace's (#709).
+  ownOrder: z.literal(true).optional(),
   ...relayInputsShape(),
 });
 export type RouteWalk = z.infer<typeof RouteWalk>;

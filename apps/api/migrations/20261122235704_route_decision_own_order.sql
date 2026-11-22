@@ -1,0 +1,1 @@
+ALTER TABLE `route_decision` ADD `own_order` integer DEFAULT false NOT NULL;

@@ -816,10 +816,13 @@ describe("Router: hosted providers that can't see the repo", () => {
     )
       .bind(Date.now())
       .run();
-    expect((await router.route(groundboxJob)).runner).toBe("groundbox-2vcpu");
+    const workspaceOrder = await router.route(groundboxJob);
+    expect(workspaceOrder.runner).toBe("groundbox-2vcpu");
+    expect(workspaceOrder.ownOrder).toBeUndefined();
     expect(await router.route({ ...groundboxJob, repositoryId: 2 })).toMatchObject({
       runner: "ubuntu-latest",
       skipped: [],
+      ownOrder: true,
     });
   });
 

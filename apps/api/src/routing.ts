@@ -634,19 +634,22 @@ export type MachinePick =
   | null;
 
 // `notInOrder` lists providers the job configured that the order leaves out, either way, so an
-// ignored input is never silent.
+// ignored input is never silent. `ownOrder` when the walk was the repo's own order rather than the
+// workspace's (src/runner-orders.ts).
 export type RouteDecision =
   // `step` answered with `runner`, after skipping `skipped` (in order). `waited` when the job
   // queued for a full machine's slot (waitingDecision) rather than getting a runner right away.
-  | {
-      runner: string;
-      step: RunnerKey;
-      skipped: SkippedStep[];
-      notInOrder: RunnerKey[];
-      waited?: true;
-    }
-  // Nothing fits: fail the relay with `reason`.
-  | { runner: null; reason: string; skipped: SkippedStep[]; notInOrder: RunnerKey[] };
+  (
+    | {
+        runner: string;
+        step: RunnerKey;
+        skipped: SkippedStep[];
+        notInOrder: RunnerKey[];
+        waited?: true;
+      }
+    // Nothing fits: fail the relay with `reason`.
+    | { runner: null; reason: string; skipped: SkippedStep[]; notInOrder: RunnerKey[] }
+  ) & { ownOrder?: true };
 
 export interface RouteRequest extends RelayInputs {
   private: boolean;
@@ -685,6 +688,7 @@ export function waitingDecision(
     skipped: decision.skipped.slice(0, at),
     notInOrder: decision.notInOrder,
     waited: true,
+    ...(decision.ownOrder && { ownOrder: true }),
   };
 }
 

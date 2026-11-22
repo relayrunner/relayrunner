@@ -168,6 +168,9 @@ describe("walkSummary", () => {
       text: "github is set but not in your order",
       tone: "info",
     });
+    expect(
+      walkSummary(walk({ step: "machine", notInOrder: ["github"], ownOrder: true }))?.text,
+    ).toBe("github is set but not in this repo's order");
   });
 });
 
@@ -205,6 +208,12 @@ test("walkLines walks the order, then the providers outside it", () => {
     },
     { position: null, key: "github", state: "not_tried", text: "not in your runner order" },
   ]);
+  expect(
+    walkLines(
+      walk({ step: "github", notInOrder: ["machine"], ownOrder: true }),
+      "ubuntu-latest",
+    )[1],
+  ).toMatchObject({ text: "not in this repo's own runner order" });
 });
 
 test("failureText drops the prefix GitHub shows", () => {
