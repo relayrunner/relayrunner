@@ -4,7 +4,7 @@ import {
   runnerOrderSchema,
 } from "@relayrunner/runner-order";
 import { and, asc, count, eq, isNotNull, isNull } from "drizzle-orm";
-import { Hono } from "hono";
+import { type Context, Hono } from "hono";
 import { z } from "zod";
 import { createMiddleware } from "hono/factory";
 import { agentWorkspaceId } from "../agent-auth.ts";
@@ -15,8 +15,15 @@ import { inWorkspace } from "../machines.ts";
 import { requireUser } from "../middleware/session.ts";
 import { requireWorkspace } from "../middleware/workspace.ts";
 import { canManage, requireManager } from "../roles.ts";
-import { editableRepos, userCanEditRepo } from "../repo-access.ts";
-import { presentRunnerOrder, resolveRunnerOrder } from "../runner-orders.ts";
+import { assertCanEditRepo, editableRepos } from "../repo-access.ts";
+import { findRepo } from "../repositories.ts";
+import {
+  listRepoRunnerOrders,
+  presentRunnerOrder,
+  removeRepoRunnerOrder,
+  resolveRunnerOrder,
+  saveRepoRunnerOrder,
+} from "../runner-orders.ts";
 import { HOSTED_PROVIDER_IDS, providersOfAppSlugs } from "@relayrunner/providers";
 import { appInstallationToken, orgAppSlugs } from "../github-app.ts";
 import { present } from "./github.ts";
@@ -104,15 +111,31 @@ export const workspaceRoutes = new Hono<AppEnv>()
     for (const row of rows) if (row.userId) counts[row.userId] = row.machines;
     return c.json({ counts });
   })
-  // The workspace's runner order (#110). Routing reads it from #113 on.
+  // The workspace's runner order (#110), or with `?repo=owner/name` the order that repo's jobs walk:
+  // its own (#709), or the workspace's when it has none (`scope` says which). The workspace's also
+  // lists the repos with their own order (`ownOrders`).
   // `version` changes whenever the order does: pass it back to the PUT to refuse saving over a change
   // made since.
-  .get("/:id/runner-order", requireUser, requireMember, async (c) =>
-    c.json(await presentRunnerOrder(await resolveRunnerOrder(c.var.db, c.req.param("id")))),
-  )
-  // Owners and admins only; members can read it. Answers the new order and the one it replaced.
-  .put("/:id/runner-order", requireUser, requireMember, requireManager, async (c) => {
+  .get("/:id/runner-order", requireUser, requireMember, async (c) => {
     const id = c.req.param("id");
+    const repo = await orderRepo(c.var.db, id, c.req.query("repo"));
+    if (repo) {
+      const order = await presentRunnerOrder(await resolveRunnerOrder(c.var.db, id, repo.id));
+      return c.json({ ...order, repository: repo.fullName });
+    }
+    const [order, ownOrders] = await Promise.all([
+      resolveRunnerOrder(c.var.db, id).then(presentRunnerOrder),
+      listRepoRunnerOrders(c.var.db, id),
+    ]);
+    return c.json({ ...order, ownOrders });
+  })
+  // Saves the workspace's order, which repos with their own keep theirs through, or with `?repo=` gives
+  // that repo its own. The workspace's: owners and admins; a repo's: they too, and anyone who can push
+  // to the repo. Members can read either. Answers the new order and the one it replaced.
+  .put("/:id/runner-order", requireUser, requireMember, async (c) => {
+    const id = c.req.param("id");
+    const repo = await orderRepo(c.var.db, id, c.req.query("repo"));
+    await assertCanChangeOrder(c, repo);
     const parsed = runnerOrderBody.safeParse(await c.req.json().catch(() => null));
     if (!parsed.success) {
       const issues = parsed.error.issues.map(({ path, message }) => ({ path, message }));
@@ -122,19 +145,49 @@ export const workspaceRoutes = new Hono<AppEnv>()
       });
     }
     const { version, ...order } = parsed.data;
-    const previous = await presentRunnerOrder(await resolveRunnerOrder(c.var.db, id));
+    const previous = await presentRunnerOrder(await resolveRunnerOrder(c.var.db, id, repo?.id));
     if (version !== undefined && version !== previous.version) {
       throw new AppError("RUNNER_ORDER_CHANGED");
     }
     const stored = JSON.stringify(order);
+    const scope = repo ? "repository" : "workspace";
     await changeSetting(c, id, {
-      previous: previous.order,
-      next: order,
-      write: () => setWorkspace(c.var.db, id, { runnerOrder: stored }),
-      event: { type: "settings.runner_order", data: { steps: order.steps } },
+      // A repo taking the workspace's steps as its own is still a change.
+      previous: { scope: previous.scope, order: previous.order },
+      next: { scope, order },
+      write: () =>
+        repo
+          ? saveRepoRunnerOrder(c.var.db, id, repo, stored, c.var.user!.id)
+          : setWorkspace(c.var.db, id, { runnerOrder: stored }),
+      event: {
+        type: "settings.runner_order",
+        data: { steps: order.steps, ...(repo && { repository: repo.fullName }) },
+      },
     });
     return c.json({
-      ...(await presentRunnerOrder({ order, scope: "workspace", stored })),
+      ...(await presentRunnerOrder({ order, scope, stored })),
+      ...(repo && { repository: repo.fullName }),
+      previous: previous.order,
+    });
+  })
+  // Puts `?repo=` back on the workspace's order. The same people as saving the repo's order. Answers
+  // the order the repo walks now and the one it had.
+  .delete("/:id/runner-order", requireUser, requireMember, async (c) => {
+    const id = c.req.param("id");
+    const repo = await orderRepo(c.var.db, id, c.req.query("repo"));
+    if (!repo) throw new AppError("INVALID_REQUEST", { message: "Say which repo with ?repo=." });
+    await assertCanChangeOrder(c, repo);
+    const previous = await resolveRunnerOrder(c.var.db, id, repo.id);
+    await changeSetting(c, id, {
+      previous: previous.scope,
+      next: "workspace",
+      write: () => removeRepoRunnerOrder(c.var.db, id, repo.id),
+      event: { type: "settings.runner_order_removed", data: { repository: repo.fullName } },
+    });
+    const now = previous.scope === "workspace" ? previous : await resolveRunnerOrder(c.var.db, id);
+    return c.json({
+      ...(await presentRunnerOrder(now)),
+      repository: repo.fullName,
       previous: previous.order,
     });
   })
@@ -223,14 +276,7 @@ export const workspaceRoutes = new Hono<AppEnv>()
     const job = await getAutoJob(c.var.db, id, jobId);
     if (!job) throw new AppError("NOT_FOUND");
     const { size, first, repositoryId, repository, workflow, relayJob } = job;
-    if (
-      !canManage(c.var.role) &&
-      !(await userCanEditRepo(c.env, c.var.db, c.var.user!.id, repositoryId))
-    ) {
-      throw new AppError("FORBIDDEN", {
-        message: `Only owners, admins and people who can push to ${repository} can change its jobs.`,
-      });
-    }
+    await assertCanEditRepo(c, { id: repositoryId, fullName: repository }, "its jobs");
     const previous = { size, first };
     const next = { ...previous, ...parsed.data };
     await changeSetting(c, id, {
@@ -276,7 +322,7 @@ export const workspaceRoutes = new Hono<AppEnv>()
     const parsed = plannedSizesSchema.safeParse(await c.req.json().catch(() => null));
     if (!parsed.success) throw new AppError("INVALID_REQUEST");
     const id = c.req.param("id");
-    const { db, role, user } = c.var;
+    const { db, user } = c.var;
     const repo = schema.githubRepository;
     const [found] = await db
       .select({ id: repo.id, fullName: repo.fullName })
@@ -290,11 +336,7 @@ export const workspaceRoutes = new Hono<AppEnv>()
       )
       .limit(1);
     if (!found) throw new AppError("NOT_FOUND");
-    if (!canManage(role) && !(await userCanEditRepo(c.env, db, user!.id, found.id))) {
-      throw new AppError("FORBIDDEN", {
-        message: `Only owners, admins and people who can push to ${found.fullName} can change its jobs.`,
-      });
-    }
+    await assertCanEditRepo(c, found, "its jobs");
     const [planned, { userId, ...via }] = await Promise.all([
       planAutoJobs(db, id, found, parsed.data.jobs, user!.id),
       changeActor(c),
@@ -431,6 +473,24 @@ function setWorkspace(
   values: Partial<typeof schema.workspace.$inferInsert>,
 ) {
   return db.update(schema.workspace).set(values).where(eq(schema.workspace.id, workspaceId));
+}
+
+// The repo a runner order request names with `?repo=owner/name` (any case), among the workspace's,
+// or undefined when it names none.
+async function orderRepo(db: Db, workspaceId: string, name: string | undefined) {
+  if (!name) return undefined;
+  const found = await findRepo(db, { workspaceId }, name);
+  if (!found) throw new AppError("NOT_FOUND", { message: `No repo ${name} in this workspace.` });
+  return found;
+}
+
+// The workspace's order is owners' and admins'. A repo's is theirs too, and anyone's who can push to
+// the repo, like its jobs' sizes: they could set its runners in the workflow files anyway.
+function assertCanChangeOrder(c: Context<AppEnv>, repo?: { id: number; fullName: string }) {
+  if (repo) return assertCanEditRepo(c, repo, "its runner order");
+  if (!canManage(c.var.role)) {
+    throw new AppError("FORBIDDEN", { message: "Only owners and admins can do that." });
+  }
 }
 
 // The PUT's body: the order, and optionally the version it was read at.

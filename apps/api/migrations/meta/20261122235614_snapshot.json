@@ -1,8 +1,8 @@
 {
   "version": "6",
   "dialect": "sqlite",
-  "id": "cbe7bec0-ae8a-4035-b9b2-8c6986b698cb",
-  "prevId": "872e009c-314d-48f4-bb2b-2d28bffce5cd",
+  "id": "fe87ba58-a479-4319-a2bc-fb2a528ce443",
+  "prevId": "06aae151-0c76-416c-884b-fcbd35ca95d3",
   "tables": {
     "account": {
       "name": "account",
@@ -5292,6 +5292,93 @@
             "pull_request_number"
           ],
           "name": "pull_request_paths_repository_id_pull_request_number_pk"
+        }
+      },
+      "uniqueConstraints": {},
+      "checkConstraints": {}
+    },
+    "repo_runner_order": {
+      "name": "repo_runner_order",
+      "columns": {
+        "workspace_id": {
+          "name": "workspace_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "repository_id": {
+          "name": "repository_id",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "repository": {
+          "name": "repository",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "runner_order": {
+          "name": "runner_order",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "updated_by": {
+          "name": "updated_by",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
+        "updated_at": {
+          "name": "updated_at",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        }
+      },
+      "indexes": {},
+      "foreignKeys": {
+        "repo_runner_order_workspace_id_workspace_id_fk": {
+          "name": "repo_runner_order_workspace_id_workspace_id_fk",
+          "tableFrom": "repo_runner_order",
+          "tableTo": "workspace",
+          "columnsFrom": [
+            "workspace_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "cascade",
+          "onUpdate": "no action"
+        },
+        "repo_runner_order_updated_by_user_id_fk": {
+          "name": "repo_runner_order_updated_by_user_id_fk",
+          "tableFrom": "repo_runner_order",
+          "tableTo": "user",
+          "columnsFrom": [
+            "updated_by"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "set null",
+          "onUpdate": "no action"
+        }
+      },
+      "compositePrimaryKeys": {
+        "repo_runner_order_workspace_id_repository_id_pk": {
+          "columns": [
+            "workspace_id",
+            "repository_id"
+          ],
+          "name": "repo_runner_order_workspace_id_repository_id_pk"
         }
       },
       "uniqueConstraints": {},

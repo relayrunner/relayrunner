@@ -177,6 +177,7 @@ describe("mcp server", () => {
     ).toEqual([
       "send_feedback",
       "set_runner_order",
+      "use_workspace_order",
       "set_default_size",
       "set_job_size",
       "set_retries",
@@ -469,6 +470,12 @@ describe("mcp server", () => {
       };
 
     await call("set_runner_order", { version: "v1", steps: [{ key: "github" }] });
+    await call("set_runner_order", {
+      repository: "acme/api",
+      version: "v2",
+      steps: [{ key: "machine" }],
+    });
+    await call("use_workspace_order", { repository: "acme/api" });
     await call("set_job_size", { job: 7, first: null });
     await call("set_retries", { enabled: true });
     const paused = await call("pause_runner", { runner: "mac" });
@@ -477,13 +484,16 @@ describe("mcp server", () => {
     });
     expect(asked.filter((path) => !path.startsWith("/"))).toEqual([
       "PUT /api/workspaces/w1/runner-order",
+      "PUT /api/workspaces/w1/runner-order?repo=acme%2Fapi",
+      "DELETE /api/workspaces/w1/runner-order?repo=acme%2Fapi",
       "PUT /api/workspaces/w1/auto-jobs/7",
       "PUT /api/workspaces/w1/retry-settings",
       "POST /api/machines/m1/pause @w1",
     ]);
     // What a call leaves out, the API keeps.
-    expect(posted.slice(0, 3)).toEqual([
+    expect(posted.slice(0, 4)).toEqual([
       { steps: [{ key: "github" }], version: "v1" },
+      { steps: [{ key: "machine" }], version: "v2" },
       { first: null },
       { enabled: true },
     ]);

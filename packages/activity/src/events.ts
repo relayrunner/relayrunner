@@ -321,9 +321,19 @@ export const ActivityEvent = z.discriminatedUnion("type", [
   }),
   // Someone changed a routing setting on the Router page or through an agent (`via`). Each holds the
   // new value. Actor: that person.
+  // The workspace's runner order, or one repo's own (`repository`, #709).
   z.object({
     type: z.literal("settings.runner_order"),
-    data: z.object({ ...changeData, steps: z.array(runnerStepSchema) }),
+    data: z.object({
+      ...changeData,
+      steps: z.array(runnerStepSchema),
+      repository: z.string().optional(),
+    }),
+  }),
+  // A repo went back to the workspace's runner order.
+  z.object({
+    type: z.literal("settings.runner_order_removed"),
+    data: z.object({ ...changeData, repository: z.string() }),
   }),
   // The size, in vCPUs, of auto jobs with no size of their own.
   z.object({

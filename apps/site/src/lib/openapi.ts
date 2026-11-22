@@ -85,6 +85,14 @@ const workspacePath = {
   schema: { type: "string" },
 };
 
+const repoQuery = {
+  name: "repo",
+  in: "query",
+  required: false,
+  description: "A repository in the workspace, as owner/name, for its own runner order.",
+  schema: { type: "string" },
+};
+
 /**
  * A route that changes a setting. It works only where the person allowed the agent changes, and
  * only for a change they could make in the dashboard; it's logged in the workspace's Activity.
@@ -155,25 +163,37 @@ export const openApi = {
       ...read(
         "getRunnerOrder",
         "Get the runner order",
-        "The providers jobs are tried on, top to bottom. `version` changes whenever the order does.",
+        "The providers jobs are tried on, top to bottom. With `repo`, the order that repo's jobs walk: its own (`scope` is `repository`) or the workspace's. Without it, `ownOrders` lists the repos with their own. `version` changes whenever the order does.",
         object("The runner order.", {
           order: record,
+          scope: { type: "string", enum: ["workspace", "repository"] },
           isDefault: { type: "boolean" },
           version: { type: "string" },
         }),
-        [workspacePath],
+        [workspacePath, repoQuery],
       ),
       ...change(
         "setRunnerOrder",
         "Set the runner order",
-        "Replaces the runner order. With `version`, it fails with 409 RUNNER_ORDER_CHANGED if the order changed since that version was read.",
+        "Replaces the workspace's runner order, or with `repo` gives that repo its own, which it keeps when the workspace's changes. With `version`, it fails with 409 RUNNER_ORDER_CHANGED if the order changed since that version was read. The workspace's order needs an owner or admin; a repo's, also anyone who can push to it on GitHub.",
         { steps: list, version: { type: "string" } },
         object("The new order and the one it replaced.", {
           order: record,
           version: { type: "string" },
           previous: record,
         }),
-        { required: ["steps"] },
+        { required: ["steps"], parameters: [workspacePath, repoQuery] },
+      ),
+      ...change(
+        "useWorkspaceOrder",
+        "Use the workspace's runner order",
+        "Puts `repo` back on the workspace's runner order. The same people as setting the repo's order.",
+        {},
+        object("The order the repo walks now and the one it had.", {
+          order: record,
+          previous: record,
+        }),
+        { method: "delete", parameters: [workspacePath, { ...repoQuery, required: true }] },
       ),
     },
     "/workspaces/{workspaceId}/auto-jobs": read(

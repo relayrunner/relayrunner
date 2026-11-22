@@ -27,7 +27,7 @@ Send the access token as `Authorization: Bearer <token>`. Tokens last 15 minutes
 | -------------------------------------------------------- | ---------------------------------------------------------------------- |
 | `GET /me`                                                | You and the workspaces the token may read                              |
 | `GET /workspaces/current`                                | One workspace, your role and its GitHub accounts                       |
-| `GET /workspaces/{id}/runner-order`                      | The providers jobs are tried on, in order                              |
+| `GET /workspaces/{id}/runner-order`                      | The providers jobs are tried on, in order (`?repo=` for one repo's)    |
 | `GET /workspaces/{id}/router-setup`                      | Recent workflows and how many of their runs were routed                |
 | `GET /machines`                                          | Runners, their status, labels, pause state and current job             |
 | `GET /runs`                                              | Workflow runs from the last 14 days                                    |
@@ -41,16 +41,17 @@ Send the access token as `Authorization: Bearer <token>`. Tokens last 15 minutes
 | `GET /workspaces/{id}/retry-settings`, `/ai`             | Automatic retries, and whether AI is on                                |
 | `POST /feedback`                                         | Reports a bug, confusing result or missing feature to the team         |
 
-These change settings. They work only in workspaces where the person turned on **Allow changes** for the connection under **Settings → Agents**, and only for changes the person could make in the dashboard: owners and admins for workspace settings, anyone who can push to a repo for its jobs' sizes, and pausing by the dashboard's rules. Elsewhere they answer `403` with `AGENT_CHANGES_OFF` or `FORBIDDEN`. Each change shows in the workspace's Activity, and each answer includes the value it replaced as `previous`.
+These change settings. They work only in workspaces where the person turned on **Allow changes** for the connection under **Settings → Agents**, and only for changes the person could make in the dashboard: owners and admins for workspace settings, anyone who can push to a repo for its jobs' sizes and its own runner order (`?repo=owner/name` on the runner order routes), and pausing by the dashboard's rules. Elsewhere they answer `403` with `AGENT_CHANGES_OFF` or `FORBIDDEN`. Each change shows in the workspace's Activity, and each answer includes the value it replaced as `previous`.
 
-| Route                                    | What it changes                                                       |
-| ---------------------------------------- | --------------------------------------------------------------------- |
-| `PUT /workspaces/{id}/runner-order`      | The runner order. Pass `version` from the GET to refuse a stale write |
-| `PUT /workspaces/{id}/auto-size`         | The default size for auto jobs                                        |
-| `PUT /workspaces/{id}/auto-jobs/{jobId}` | One auto job's size and first provider                                |
-| `PUT /workspaces/{id}/retry-settings`    | Automatic retries                                                     |
-| `PUT /workspaces/{id}/ai`                | AI features, on or off                                                |
-| `POST /machines/{id}/pause`, `/resume`   | Whether jobs route to a runner                                        |
+| Route                                        | What it changes                                                       |
+| -------------------------------------------- | --------------------------------------------------------------------- |
+| `PUT /workspaces/{id}/runner-order`          | The runner order. Pass `version` from the GET to refuse a stale write |
+| `DELETE /workspaces/{id}/runner-order?repo=` | Puts a repo with its own order back on the workspace's                |
+| `PUT /workspaces/{id}/auto-size`             | The default size for auto jobs                                        |
+| `PUT /workspaces/{id}/auto-jobs/{jobId}`     | One auto job's size and first provider                                |
+| `PUT /workspaces/{id}/retry-settings`        | Automatic retries                                                     |
+| `PUT /workspaces/{id}/ai`                    | AI features, on or off                                                |
+| `POST /machines/{id}/pause`, `/resume`       | Whether jobs route to a runner                                        |
 
 A failed request answers with a code and a message, such as `{"error": {"code": "INVALID_REQUEST", "message": "The request isn't valid."}}`. [Errors](/docs/reference/errors) lists every code.
 

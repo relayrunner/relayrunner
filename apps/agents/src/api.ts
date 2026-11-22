@@ -8,7 +8,7 @@ export type Api = <T>(
 
 /**
  * Api for one workspace: which of the token's workspaces the request reads. A body is sent as JSON,
- * by POST unless `method` says PUT.
+ * by POST unless `method` says PUT. A DELETE has no body.
  */
 export type WorkspaceApi = <T>(
   path: string,
@@ -16,7 +16,7 @@ export type WorkspaceApi = <T>(
     query?: Record<string, string | number | undefined>;
     workspaceId?: string;
     body?: unknown;
-    method?: "POST" | "PUT";
+    method?: "POST" | "PUT" | "DELETE";
   },
 ) => Promise<T>;
 
@@ -25,27 +25,27 @@ const WORKSPACE_HEADER = "x-relayrunner-workspace";
 
 /**
  * Calls relayrunner-api over the service binding as the agent, with its own access token, about
- * `workspaceId` when given: a GET, or a POST (or `method`) when there's a body. The host is a placeholder: the
+ * `workspaceId` when given: a GET, or a POST when there's a body, unless `method` says otherwise. The host is a placeholder: the
  * binding ignores it.
  */
 export function apiClient(env: Env, token: string): WorkspaceApi {
-  return async (path, { query = {}, workspaceId, body, method = "POST" } = {}) => {
+  return async (path, { query = {}, workspaceId, body, method } = {}) => {
     const url = new URL(`/api${path}`, "https://relayrunner-api");
     for (const [key, value] of Object.entries(query)) {
       if (value !== undefined) url.searchParams.set(key, String(value));
     }
     const headers: Record<string, string> = { authorization: `Bearer ${token}` };
     if (workspaceId) headers[WORKSPACE_HEADER] = workspaceId;
-    const response = await env.API.fetch(
-      url,
-      body === undefined
+    const verb = method ?? (body === undefined ? undefined : "POST");
+    const response = await env.API.fetch(url, {
+      ...(verb && { method: verb }),
+      ...(body === undefined
         ? { headers }
         : {
-            method,
             headers: { ...headers, "content-type": "application/json" },
             body: JSON.stringify(body),
-          },
-    );
+          }),
+    });
     if (!response.ok) {
       throw parseError(await response.json().catch(() => null), response.status);
     }

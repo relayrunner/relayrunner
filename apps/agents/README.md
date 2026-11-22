@@ -25,39 +25,40 @@ This Worker holds no secrets and no state. It doesn't call GitHub or the Router:
 
 ## Tools
 
-| Tool                  | What it reads                                                          |
-| --------------------- | ---------------------------------------------------------------------- |
-| `list_workspaces`     | The workspaces this connection reads, by id and name                   |
-| `get_workspace`       | One workspace, your role and its connected GitHub accounts             |
-| `list_runners`        | Runners, their status, labels, pause state and current job             |
-| `get_runner_order`    | The providers jobs are tried on, in order                              |
-| `list_runs`           | Recent workflow runs, filterable by repository, status, conclusion     |
-| `list_workflows`      | Recent workflows and which ones are routed                             |
-| `get_run_jobs`        | One run's jobs and where each ran                                      |
-| `get_run_failures`    | Why a run's jobs failed, with the end of each log (read from GitHub)   |
-| `list_activity`       | The activity log, including where each job was routed and why          |
-| `get_usage`           | Short jobs and round-up cost, optimized check savings, Actions minutes |
-| `get_job_times`       | Typical job durations per runner environment                           |
-| `get_signals`         | What's making CI slow, costly or busier than it needs to be            |
-| `get_router_settings` | Auto jobs' sizes, the default size, automatic retries and AI           |
-| `send_feedback`       | Writes: reports a bug, confusing result or missing tool to the team    |
+| Tool                  | What it reads                                                              |
+| --------------------- | -------------------------------------------------------------------------- |
+| `list_workspaces`     | The workspaces this connection reads, by id and name                       |
+| `get_workspace`       | One workspace, your role and its connected GitHub accounts                 |
+| `list_runners`        | Runners, their status, labels, pause state and current job                 |
+| `get_runner_order`    | The providers jobs are tried on, in order (a repo's own with `repository`) |
+| `list_runs`           | Recent workflow runs, filterable by repository, status, conclusion         |
+| `list_workflows`      | Recent workflows and which ones are routed                                 |
+| `get_run_jobs`        | One run's jobs and where each ran                                          |
+| `get_run_failures`    | Why a run's jobs failed, with the end of each log (read from GitHub)       |
+| `list_activity`       | The activity log, including where each job was routed and why              |
+| `get_usage`           | Short jobs and round-up cost, optimized check savings, Actions minutes     |
+| `get_job_times`       | Typical job durations per runner environment                               |
+| `get_signals`         | What's making CI slow, costly or busier than it needs to be                |
+| `get_router_settings` | Auto jobs' sizes, the default size, automatic retries and AI               |
+| `send_feedback`       | Writes: reports a bug, confusing result or missing tool to the team        |
 
 ## Changing settings
 
 These tools (`src/write-tools.ts`) change a workspace's routing, each through the dashboard's own route:
 
-| Tool                            | Route                                       |
-| ------------------------------- | ------------------------------------------- |
-| `set_runner_order`              | `PUT /api/workspaces/:id/runner-order`      |
-| `set_default_size`              | `PUT /api/workspaces/:id/auto-size`         |
-| `set_job_size`                  | `PUT /api/workspaces/:id/auto-jobs/:jobId`  |
-| `set_retries`                   | `PUT /api/workspaces/:id/retry-settings`    |
-| `set_ai`                        | `PUT /api/workspaces/:id/ai`                |
-| `pause_runner`, `resume_runner` | `POST /api/machines/:id/pause` and `resume` |
+| Tool                            | Route                                           |
+| ------------------------------- | ----------------------------------------------- |
+| `set_runner_order`              | `PUT /api/workspaces/:id/runner-order`          |
+| `use_workspace_order`           | `DELETE /api/workspaces/:id/runner-order?repo=` |
+| `set_default_size`              | `PUT /api/workspaces/:id/auto-size`             |
+| `set_job_size`                  | `PUT /api/workspaces/:id/auto-jobs/:jobId`      |
+| `set_retries`                   | `PUT /api/workspaces/:id/retry-settings`        |
+| `set_ai`                        | `PUT /api/workspaces/:id/ai`                    |
+| `pause_runner`, `resume_runner` | `POST /api/machines/:id/pause` and `resume`     |
 
-They're off for every connection until the person who connected it turns on **Allow changes** for it in Settings → Agents, per workspace (`agent_grant_workspace.can_write`). The API reads that on every request, so turning it off takes effect at once, and answers `AGENT_CHANGES_OFF` where it's off. The routes still check the person's access as they do for the dashboard: workspace-wide settings need an owner or admin, and an auto job's size also works for anyone who can push to its repo on GitHub. So an agent can't change what its person can't. There's no separate OAuth scope: clients rarely ask for one, and this way the switch is per workspace and needs no new sign-in.
+They're off for every connection until the person who connected it turns on **Allow changes** for it in Settings → Agents, per workspace (`agent_grant_workspace.can_write`). The API reads that on every request, so turning it off takes effect at once, and answers `AGENT_CHANGES_OFF` where it's off. The routes still check the person's access as they do for the dashboard: workspace-wide settings need an owner or admin, and an auto job's size or a repo's own runner order also works for anyone who can push to that repo on GitHub. So an agent can't change what its person can't. There's no separate OAuth scope: clients rarely ask for one, and this way the switch is per workspace and needs no new sign-in.
 
-Every change is logged in the workspace's Activity (`settings.*` events, and `machine.paused`/`resumed`) with the person and `via: "agent"` plus the agent's registered name; dashboard changes are logged the same way with `via: "dashboard"`. Each tool is marked destructive so clients ask before running it, and answers the previous value so the agent can undo it. `set_runner_order` needs the `version` from `get_runner_order` and fails with `RUNNER_ORDER_CHANGED` if someone changed the order since. Agents can't delete anything or touch members, installs or billing.
+Every change is logged in the workspace's Activity (`settings.*` events, and `machine.paused`/`resumed`) with the person and `via: "agent"` plus the agent's registered name; dashboard changes are logged the same way with `via: "dashboard"`. Each tool is marked destructive so clients ask before running it, and answers the previous value so the agent can undo it. `set_runner_order` needs the `version` from `get_runner_order` and fails with `RUNNER_ORDER_CHANGED` if someone changed the order since. Agents can't delete data or touch members, installs or billing; `use_workspace_order` only removes a repo's own order.
 
 ## Feedback
 

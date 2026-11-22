@@ -952,6 +952,28 @@ export const autoJob = sqliteTable(
   ],
 );
 
+// A repository's own runner order (#709), which its jobs walk instead of the workspace's
+// (workspace.runner_order). A full copy, not changes to the workspace's: editing the workspace's
+// order leaves it as it is. Caps still count the GitHub account's minutes and spend, shared with the
+// workspace's other repositories (src/runner-orders.ts). Removing the row puts the repository back
+// on the workspace's order.
+export const repoRunnerOrder = sqliteTable(
+  "repo_runner_order",
+  {
+    workspaceId: text("workspace_id")
+      .notNull()
+      .references(() => workspace.id, { onDelete: "cascade" }),
+    // GitHub's repository id, stable across renames, and its owner/name when the order was saved.
+    repositoryId: integer("repository_id").notNull(),
+    repository: text("repository").notNull(),
+    // JSON RunnerOrder (@relayrunner/runner-order).
+    runnerOrder: text("runner_order").notNull(),
+    updatedBy: text("updated_by").references(() => user.id, { onDelete: "set null" }),
+    updatedAt: integer("updated_at", { mode: "timestamp_ms" }).notNull(),
+  },
+  (table) => [primaryKey({ columns: [table.workspaceId, table.repositoryId] })],
+);
+
 // How each pick walked its workspace's runner order (src/routing.ts decideRoute), one row per pick
 // (a run attempt can have several relay jobs, each routing its own job), so the Activity page can
 // say why a run's jobs went where they did. Written by the PickRunner when it answers. A re-run of

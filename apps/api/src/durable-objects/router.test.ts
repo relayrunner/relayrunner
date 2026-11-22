@@ -778,9 +778,11 @@ describe("Router: hosted providers that can't see the repo", () => {
     ...relayInputs({ groundbox: ["groundbox-2vcpu"], github: ["ubuntu-latest"] }),
   };
 
+  let env: Awaited<ReturnType<typeof createTestEnv>>;
+
   beforeEach(async () => {
     vi.spyOn(console, "log").mockImplementation(() => {});
-    const env = await createTestEnv();
+    env = await createTestEnv();
     const now = Date.now();
     for (const sql of [
       "insert into github_installation (id, account_id, account_login, account_type, created_at, updated_at) values (7, 10, 'acme', 'Organization', ?1, ?1)",
@@ -806,6 +808,19 @@ describe("Router: hosted providers that can't see the repo", () => {
     vi.spyOn(console, "warn").mockImplementation(() => {});
     github.orgAppSlugs.mockRejectedValue(new Error("GET /orgs/acme/installations failed with 403"));
     expect((await router.route(groundboxJob)).runner).toBe("groundbox-2vcpu");
+  });
+
+  test("a repo with its own order walks it; the rest walk the workspace's", async () => {
+    await env.DB.prepare(
+      `insert into repo_runner_order (workspace_id, repository_id, repository, runner_order, updated_at) values ('w1', 2, 'acme/two', '{"steps":[{"key":"github"}]}', ?1)`,
+    )
+      .bind(Date.now())
+      .run();
+    expect((await router.route(groundboxJob)).runner).toBe("groundbox-2vcpu");
+    expect(await router.route({ ...groundboxJob, repositoryId: 2 })).toMatchObject({
+      runner: "ubuntu-latest",
+      skipped: [],
+    });
   });
 
   test("a miss skips the provider for that repo until a runner picks one of its jobs up", async () => {

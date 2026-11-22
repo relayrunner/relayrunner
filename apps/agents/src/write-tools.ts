@@ -7,7 +7,7 @@ import {
   runnerStepSchema,
 } from "@relayrunner/runner-order";
 import { z } from "zod";
-import { answer, findNamed, type ToolContext, workspaceArg } from "./context.ts";
+import { answer, findNamed, repositoryArg, type ToolContext, workspaceArg } from "./context.ts";
 
 // Tools that change a workspace's routing settings, each through the same API route the dashboard
 // uses, so the API checks the person's role and logs the change in Activity with the agent's name.
@@ -30,8 +30,12 @@ const ALLOW_CHANGES =
 
 export function registerWriteTools(server: McpServer, context: ToolContext) {
   const { request, workspaceId, workspacePath: route } = context;
-  const put = <T>(workspace: string | undefined, path: string, body: unknown) =>
-    request<T>(route(workspace, path), { method: "PUT", body });
+  const put = <T>(
+    workspace: string | undefined,
+    path: string,
+    body: unknown,
+    query?: Record<string, string | undefined>,
+  ) => request<T>(route(workspace, path), { method: "PUT", body, query });
 
   server.registerTool(
     "get_router_settings",
@@ -57,9 +61,10 @@ export function registerWriteTools(server: McpServer, context: ToolContext) {
     "set_runner_order",
     {
       title: "Set runner order",
-      description: `Replaces the workspace's runner order with \`steps\`, top to bottom. Read it first with get_runner_order and pass its \`version\`: if someone changed it since, this fails and you read it again. A provider left out never gets jobs. Answers the new order, its version and the previous order. ${ALLOW_CHANGES}`,
+      description: `Replaces the workspace's runner order with \`steps\`, top to bottom, or with \`repository\` gives that repository its own order (repositories with their own keep it when the workspace's changes). Read it first with get_runner_order (with the same \`repository\`) and pass its \`version\`: if someone changed it since, this fails and you read it again. A provider left out never gets jobs. Answers the new order, its version and the previous order. The workspace's order needs an owner or admin; a repository's, also anyone who can push to it. ${ALLOW_CHANGES}`,
       inputSchema: z.object({
         workspace: workspaceArg,
+        repository: repositoryArg,
         version: z.string().describe("The version get_runner_order answered."),
         steps: z
           .array(runnerStepSchema)
@@ -70,8 +75,28 @@ export function registerWriteTools(server: McpServer, context: ToolContext) {
       }),
       annotations: CHANGES,
     },
-    ({ workspace, version, steps }) =>
-      answer(() => put(workspace, "runner-order", { steps, version })),
+    ({ workspace, repository, version, steps }) =>
+      answer(() => put(workspace, "runner-order", { steps, version }, { repo: repository })),
+  );
+
+  server.registerTool(
+    "use_workspace_order",
+    {
+      title: "Use the workspace order",
+      description: `Puts a repository with its own runner order back on the workspace's: its jobs walk the workspace's order again. Answers the order it walks now and the one it had. Who may: as set_runner_order for that repository. ${ALLOW_CHANGES}`,
+      inputSchema: z.object({
+        workspace: workspaceArg,
+        repository: z.string().describe("The repository, as owner/name."),
+      }),
+      annotations: CHANGES,
+    },
+    ({ workspace, repository }) =>
+      answer(() =>
+        request(route(workspace, "runner-order"), {
+          method: "DELETE",
+          query: { repo: repository },
+        }),
+      ),
   );
 
   server.registerTool(

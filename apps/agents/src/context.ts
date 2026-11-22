@@ -26,6 +26,11 @@ export const workspaceArg = z
     "Which workspace, by id or name (see list_workspaces). Needed only when this connection reads more than one.",
   );
 
+export const repositoryArg = z
+  .string()
+  .optional()
+  .describe("A repository in the workspace, as owner/name, for its own runner order.");
+
 /** The item `query` names, by id or name (any case). NOT_FOUND names `listTool` to look in. */
 export function findNamed<T extends { id: string; name: string }>(
   items: T[],

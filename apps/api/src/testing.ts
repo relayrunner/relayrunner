@@ -89,13 +89,14 @@ export async function signInOperator(env: Env) {
 }
 
 export function call(env: Env, path: string, cookie: string, body?: unknown, method = "POST") {
+  // No body and no method is a GET; a DELETE needs no body.
   const init: RequestInit =
-    body === undefined
+    body === undefined && method !== "DELETE"
       ? { headers: { cookie } }
       : {
           method,
           headers: { cookie, "content-type": "application/json", origin: env.BETTER_AUTH_URL },
-          body: JSON.stringify(body),
+          ...(body !== undefined && { body: JSON.stringify(body) }),
         };
   return app.request(`/api${path}`, init, env);
 }

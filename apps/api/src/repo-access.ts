@@ -1,12 +1,16 @@
 // Whether a person can push to a repo on GitHub. Settings that belong to one repo's jobs, such as
 // an auto job's size, follow it: anyone who could edit the repo's workflow files can change them,
 // as well as the workspace's owners and admins.
+import { AppError } from "@relayrunner/errors";
 import { and, eq, isNull } from "drizzle-orm";
+import type { Context } from "hono";
+import type { AppEnv } from "./app.ts";
 import { type Db, schema } from "./db/index.ts";
 import type { Env } from "./env.ts";
 import { appInstallationToken, userCanWriteRepo } from "./github-app.ts";
 import { userGitHubId } from "./memberships.ts";
 import { Recent } from "./recent.ts";
+import { canManage } from "./roles.ts";
 
 // Long enough that the Router page and a run of agent changes ask GitHub once, short enough that
 // losing access on GitHub soon stops working here.
@@ -49,4 +53,20 @@ export async function editableRepos(env: Env, db: Db, userId: string, repository
     ids.map((id) => userCanEditRepo(env, db, userId, id).catch(() => false)),
   );
   return new Set(ids.filter((_, i) => allowed[i]));
+}
+
+/**
+ * Lets owners and admins through, and anyone who can push to the repo; anyone else gets
+ * FORBIDDEN, naming what (`its jobs`, `its runner order`) they can't change.
+ */
+export async function assertCanEditRepo(
+  c: Context<AppEnv>,
+  repo: { id: number; fullName: string },
+  what: string,
+) {
+  const { db, role, user } = c.var;
+  if (canManage(role) || (await userCanEditRepo(c.env, db, user!.id, repo.id))) return;
+  throw new AppError("FORBIDDEN", {
+    message: `Only owners, admins and people who can push to ${repo.fullName} can change ${what}.`,
+  });
 }

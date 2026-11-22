@@ -1,18 +1,17 @@
 // Which runner order a job walks. Every reader goes through resolveRunnerOrder, the router's pick
-// (src/durable-objects/router.ts) and the order routes (src/routes/workspaces.ts) alike, so a
-// repository's own order (#709) only needs adding here.
+// (src/durable-objects/router.ts) and the order routes (src/routes/workspaces.ts) alike.
 //
-// Today each workspace has one order, workspace.runner_order, and every repository uses it.
-// Caps don't depend on the order: GitHub minutes and provider spend are counted per GitHub
-// account, and free minutes per workspace, so a repository with its own order would still share
-// them with the rest of the workspace.
+// Each workspace has an order, workspace.runner_order, and a repository can have its own
+// (repo_runner_order, #709): a full copy its jobs walk instead. Caps don't depend on the order:
+// GitHub minutes and provider spend are counted per GitHub account, and free minutes per
+// workspace, so a repository with its own order shares them with the rest of the workspace.
 import { readRunnerOrder, type RunnerOrder } from "@relayrunner/runner-order";
-import { eq } from "drizzle-orm";
+import { and, asc, eq, sql } from "drizzle-orm";
 import { type Db, schema } from "./db/index.ts";
 import { sha256Hex } from "./machines.ts";
 
-/** Where an order came from. Only the workspace's for now; a repository's own order joins it. */
-export type RunnerOrderScope = "workspace";
+/** Where an order came from: the workspace's, or the repository's own. */
+export type RunnerOrderScope = "workspace" | "repository";
 
 export interface ResolvedRunnerOrder {
   order: RunnerOrder;
@@ -21,32 +20,102 @@ export interface ResolvedRunnerOrder {
   stored: string | null;
 }
 
+const own = schema.repoRunnerOrder;
+
 /**
- * The order a repository's jobs walk, or the workspace's when no repository is given. Every
- * repository uses the workspace's order for now.
+ * The order a repository's jobs walk: its own if it has one, else the workspace's. The
+ * workspace's when no repository is given.
  */
 export async function resolveRunnerOrder(
   db: Db,
   workspaceId: string,
-  _repositoryId?: number,
+  repositoryId?: number,
 ): Promise<ResolvedRunnerOrder> {
-  const [row] = await db
-    .select({ runnerOrder: schema.workspace.runnerOrder })
-    .from(schema.workspace)
-    .where(eq(schema.workspace.id, workspaceId))
-    .limit(1);
-  const stored = row?.runnerOrder ?? null;
+  const [row] = await readOrders(db, workspaceId, repositoryId).catch((error: unknown) => {
+    // The API can deploy a minute before the GitHub workflow adds repo_runner_order: until then,
+    // every repository walks the workspace's order. Safe to remove once it's in production.
+    // Drizzle wraps the database's error as the cause of its own.
+    const cause = error instanceof Error ? error.cause : undefined;
+    if (!`${error} ${cause}`.includes("no such table")) throw error;
+    return readOrders(db, workspaceId);
+  });
+  if (row?.repository) {
+    return { order: readRunnerOrder(row.repository), scope: "repository", stored: row.repository };
+  }
+  const stored = row?.workspace ?? null;
   return { order: readRunnerOrder(stored), scope: "workspace", stored };
 }
 
+// The workspace's order, and the repository's own when a repository is given.
+function readOrders(db: Db, workspaceId: string, repositoryId?: number) {
+  const workspace = { workspace: schema.workspace.runnerOrder };
+  const where = eq(schema.workspace.id, workspaceId);
+  if (repositoryId === undefined) {
+    return db
+      .select({ ...workspace, repository: sql<string | null>`null` })
+      .from(schema.workspace)
+      .where(where)
+      .limit(1);
+  }
+  return db
+    .select({ ...workspace, repository: own.runnerOrder })
+    .from(schema.workspace)
+    .leftJoin(
+      own,
+      and(eq(own.workspaceId, schema.workspace.id), eq(own.repositoryId, repositoryId)),
+    )
+    .where(where)
+    .limit(1);
+}
+
 /**
- * An order for the API: whether it's the default, and its version, a short hash that changes
- * whenever the order does ("default" until someone saves one).
+ * An order for the API: where it came from, whether it's the default, and its version, a short
+ * hash that changes whenever the order does ("default" until someone saves one). A repository's
+ * own order hashes differently from the same steps inherited, so giving a repository its own order
+ * changes its version.
  */
-export async function presentRunnerOrder({ order, stored }: ResolvedRunnerOrder) {
+export async function presentRunnerOrder({ order, scope, stored }: ResolvedRunnerOrder) {
+  const hashed = scope === "repository" ? `repository:${stored}` : stored;
   return {
     order,
+    scope,
     isDefault: !stored,
-    version: stored ? (await sha256Hex(stored)).slice(0, 16) : "default",
+    version: hashed ? (await sha256Hex(hashed)).slice(0, 16) : "default",
   };
+}
+
+/** The repositories with their own order, by name. */
+export function listRepoRunnerOrders(db: Db, workspaceId: string) {
+  return db
+    .select({ repositoryId: own.repositoryId, repository: own.repository })
+    .from(own)
+    .where(eq(own.workspaceId, workspaceId))
+    .orderBy(asc(own.repository));
+}
+
+/** Gives a repository its own order, or replaces the one it has. */
+export function saveRepoRunnerOrder(
+  db: Db,
+  workspaceId: string,
+  repo: { id: number; fullName: string },
+  stored: string,
+  userId: string,
+) {
+  const values = {
+    repository: repo.fullName,
+    runnerOrder: stored,
+    updatedBy: userId,
+    updatedAt: new Date(),
+  };
+  return db
+    .insert(own)
+    .values({ workspaceId, repositoryId: repo.id, ...values })
+    .onConflictDoUpdate({ target: [own.workspaceId, own.repositoryId], set: values });
+}
+
+/** Puts a repository back on the workspace's order. */
+export function removeRepoRunnerOrder(db: Db, workspaceId: string, repositoryId: number) {
+  return db
+    .delete(own)
+    .where(and(eq(own.workspaceId, workspaceId), eq(own.repositoryId, repositoryId)));
 }
