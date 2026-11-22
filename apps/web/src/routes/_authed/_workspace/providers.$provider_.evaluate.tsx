@@ -1099,11 +1099,7 @@ function RunsChart({ report }: { report: EvaluationReport }) {
           />
         )}
         {report.attempts.map((a) => (
-          <div
-            key={a.attempt}
-            className="flex h-full flex-1 flex-col items-center justify-end gap-1"
-          >
-            <span className="text-xs tabular-nums">{a.ms !== null ? clock(a.ms) : "—"}</span>
+          <div key={a.attempt} className="flex h-full flex-1 flex-col items-center justify-end">
             <span
               className={cn("w-full max-w-14 rounded-t-md", bar, a.attempt === 1 && "opacity-50")}
               style={{ height: `${((a.ms ?? 0) / max) * 100}%` }}
@@ -1114,6 +1110,10 @@ function RunsChart({ report }: { report: EvaluationReport }) {
       <div className="mt-2 flex gap-4 pl-1 text-center text-xs text-muted-foreground sm:gap-8">
         {report.attempts.map((a) => (
           <span key={a.attempt} className="flex-1">
+            {/* Under the axis, so a bar near the median line never hides its time. */}
+            <span className="block text-sm font-medium text-foreground tabular-nums">
+              {a.ms !== null ? clock(a.ms) : "—"}
+            </span>
             Run {a.attempt}
             <br />
             {a.attempt === 1 ? "Cold cache" : "Warm"}
