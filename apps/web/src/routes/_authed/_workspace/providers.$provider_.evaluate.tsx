@@ -906,11 +906,33 @@ function change(from: number | null, to: number | null) {
   return { pct, text: pct === 0 ? "Same" : pct < 0 ? `${-pct}% faster` : `${pct}% slower` };
 }
 
+/** Dollars to the cent, or a tenth of a cent under a dime, so small runs don't all read $0.01. */
+function usd(value: number | null) {
+  if (value === null) return "—";
+  return `$${value.toFixed(value > 0 && value < 0.1 ? 3 : 2)}`;
+}
+
+/** "16% more than", "Same as" or "16% less than" today, or null when either cost is unknown. */
+function costChange(from: number | null, to: number | null) {
+  if (from === null || to === null) return null;
+  if (from === 0) return to === 0 ? "Same as" : null;
+  const pct = Math.round(((to - from) / from) * 100);
+  return pct === 0 ? "Same as" : pct < 0 ? `${-pct}% less than` : `${pct}% more than`;
+}
+
+function costDetail(name: string, runUsd: number | null, todayUsd: number | null) {
+  if (runUsd === null) return `No list price for ${name}`;
+  if (todayUsd === null) return "Today's runners have no list price";
+  const vs = costChange(todayUsd, runUsd);
+  return vs ? `${vs} ${usd(todayUsd)} today` : `Today ${usd(todayUsd)}`;
+}
+
 function Results({ report }: { report: EvaluationReport }) {
   const { name } = providerInfo(report.provider);
   const { bar } = providerStyle(report.provider);
   const warm = change(report.baseline.medianMs, report.warm.ms);
   const cold = change(report.baseline.medianMs, report.cold.ms);
+  const runUsd = report.warm.usd ?? report.cold.usd;
   const maxJob = Math.max(
     1,
     ...report.jobs.flatMap((j) => [j.baseline, j.cold, j.warm].flatMap((s) => (s ? total(s) : []))),
@@ -951,14 +973,14 @@ function Results({ report }: { report: EvaluationReport }) {
           detail={cold ? `${cold.text} · run 1, empty cache` : "Run 1, empty cache"}
         />
         <StatTile
+          label="Cost per run"
+          value={usd(runUsd)}
+          detail={costDetail(name, runUsd, report.baseline.usd)}
+        />
+        <StatTile
           label="Waiting for a runner"
           value={clock(report.warm.waitMs ?? report.cold.waitMs)}
           detail={`Median per job · today ${clock(report.baseline.waitMs)}`}
-        />
-        <StatTile
-          label="Compared with"
-          value={plural(report.baseline.runs, "run")}
-          detail={`Passing on ${report.ref}, last 14 days`}
         />
       </div>
 
@@ -1035,7 +1057,9 @@ function Results({ report }: { report: EvaluationReport }) {
         Today is the median of the workflow's last {plural(report.baseline.runs, "passing run")} on{" "}
         {report.ref} over 14 days, on whatever runners they used and at whatever commit each ran.{" "}
         {name}'s runs ran back to back on one commit, so caches were warmer than on a typical day.
-        Warm is the median of runs 2 to {report.runs}.
+        Warm is the median of runs 2 to {report.runs}. Costs are list prices: each job's minutes,
+        rounded up, at its runner's price per minute, with your own machines free. Free minutes,
+        plan fees and discounts aren't counted.
       </p>
     </div>
   );
@@ -1114,6 +1138,9 @@ function RunsChart({ report }: { report: EvaluationReport }) {
             <span className="block text-sm font-medium text-foreground tabular-nums">
               {a.ms !== null ? clock(a.ms) : "—"}
             </span>
+            {a.usd !== null && (
+              <span className="block text-foreground tabular-nums">{usd(a.usd)}</span>
+            )}
             Run {a.attempt}
             <br />
             {a.attempt === 1 ? "Cold cache" : "Warm"}

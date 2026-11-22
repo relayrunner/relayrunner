@@ -20,7 +20,15 @@
 // workflow_dispatch waits, and the next push that runs the workflow dispatches it again
 // (resumeWaitingEvaluations).
 
-import { HOSTED_PROVIDER_IDS, labelForSize, type HostedProviderId } from "@relayrunner/providers";
+import {
+  HOSTED_PROVIDER_IDS,
+  labelForSize,
+  listRate,
+  type HostedProviderId,
+  type PriceBook,
+  providerPlans,
+  runnerSize,
+} from "@relayrunner/providers";
 import { AppError } from "@relayrunner/errors";
 import type { WebhookMessage } from "@relayrunner/github-webhooks";
 import { and, desc, eq, gte, inArray, isNull, lt, notInArray, sql } from "drizzle-orm";
@@ -35,6 +43,9 @@ import {
   rerunRun,
 } from "./github-app.ts";
 import { inWorkspace, PICK } from "./job-times.ts";
+import { billedMinutes, rateFor, runnerClass } from "./job-timings.ts";
+import { loadPriceBook } from "./prices.ts";
+import { hostedRunner } from "./runner-waits.ts";
 const DAY_MS = 24 * 60 * 60 * 1000;
 import type { JobContext } from "./routing.ts";
 
@@ -430,6 +441,8 @@ export interface Attempt {
   conclusion: string | null;
   /** First job queued to last job finished, once done. */
   ms: number | null;
+  /** What the run cost at list prices once done (see runUsd), or null when a job has no price. */
+  usd: number | null;
   jobs: AttemptJob[];
 }
 
@@ -458,21 +471,30 @@ export interface EvaluationReport {
   createdAt: number;
   finishedAt: number | null;
   attempts: Attempt[];
-  baseline: { runs: number; medianMs: number | null; waitMs: number | null };
+  /** Medians of the baseline's runs; `usd` counts only runs whose every job has a price. */
+  baseline: { runs: number; medianMs: number | null; waitMs: number | null; usd: number | null };
   /** The evaluation's medians: run 1, and runs 2 on. */
-  cold: { ms: number | null; waitMs: number | null };
-  warm: { ms: number | null; waitMs: number | null };
+  cold: { ms: number | null; waitMs: number | null; usd: number | null };
+  warm: { ms: number | null; waitMs: number | null; usd: number | null };
   jobs: JobComparison[];
 }
 
 type JobRow = Pick<
   typeof jobs.$inferSelect,
-  "name" | "labels" | "conclusion" | "queuedAt" | "startedAt" | "completedAt" | "runAttempt"
+  | "name"
+  | "labels"
+  | "runnerGroupName"
+  | "conclusion"
+  | "queuedAt"
+  | "startedAt"
+  | "completedAt"
+  | "runAttempt"
 >;
 
 const jobColumns = {
   name: jobs.name,
   labels: jobs.labels,
+  runnerGroupName: jobs.runnerGroupName,
   conclusion: jobs.conclusion,
   queuedAt: jobs.queuedAt,
   startedAt: jobs.startedAt,
@@ -517,7 +539,7 @@ export async function evaluationReport(
     .get();
   if (!row) throw new AppError("NOT_FOUND");
 
-  const [ownJobs, baseline] = await Promise.all([
+  const [ownJobs, baseline, book, repository] = await Promise.all([
     row.runId
       ? db
           .select(jobColumns)
@@ -525,7 +547,14 @@ export async function evaluationReport(
           .where(and(eq(jobs.repositoryId, row.repositoryId), eq(jobs.runId, row.runId)))
       : Promise.resolve([] as JobRow[]),
     baselineSpans(db, workspaceId, row.repositoryId, row.workflowPath, row.createdAt.getTime()),
+    loadPriceBook(db),
+    db
+      .select({ private: schema.githubRepository.private })
+      .from(schema.githubRepository)
+      .where(eq(schema.githubRepository.id, row.repositoryId))
+      .get(),
   ]);
+  const usdOf = (rows: JobRow[]) => runUsd(book, rows, repository?.private);
   const real = (rows: JobRow[]) => rows.filter((job) => !isPick(job));
   const byAttempt = Map.groupBy(real(ownJobs), (job) => job.runAttempt);
   const providerJob = (job: JobRow) => job.labels.includes(row.label);
@@ -542,6 +571,7 @@ export async function evaluationReport(
       status: done ? "done" : attemptJobs.length > 0 ? "running" : "waiting",
       conclusion: done ? runConclusion(attemptJobs) : null,
       ms: done ? spanMs(attemptJobs) : null,
+      usd: done ? usdOf(attemptJobs) : null,
       jobs: attemptJobs
         .map((job) => ({
           name: job.name,
@@ -598,6 +628,7 @@ export async function evaluationReport(
       waitMs: median(
         baseline.flatMap((span) => span.jobs.flatMap((job) => splitOf(job)?.waitMs ?? [])),
       ),
+      usd: medianUsd(baseline.map((span) => usdOf(span.jobs))),
     },
     cold: summary(cold),
     warm: summary(warm),
@@ -619,7 +650,55 @@ function summary(attempts: Attempt[]) {
     waitMs: median(
       attempts.flatMap((attempt) => attempt.jobs.flatMap((job) => job.split?.waitMs ?? [])),
     ),
+    usd: medianUsd(attempts.map((attempt) => attempt.usd)),
   };
+}
+
+// ---- Cost ----------------------------------------------------------------------------------------
+
+/**
+ * What a run's jobs cost at list prices, in USD: each job's billed minutes (run time rounded up,
+ * as GitHub bills) times its runner's per-minute price on the day it ran. GitHub's runners follow
+ * the job-times rules (free in public repos, self-hosted runners and machines free); a hosted
+ * provider's runner takes its list price, or its plan's 2 vCPU minute scaled by size when the price
+ * list has none. Null when any job ran somewhere without a price. Free minutes, plan fees and
+ * discounts aren't counted, so this is what a minute lists at, not what the bill says.
+ */
+export function runUsd(
+  book: PriceBook,
+  rows: JobRow[],
+  isPrivate: boolean | null | undefined,
+): number | null {
+  let usd = 0;
+  for (const job of rows) {
+    if (!job.startedAt || !job.completedAt) continue;
+    const at = job.completedAt.getTime();
+    const minutes = billedMinutes(at - job.startedAt.getTime());
+    const hosted = hostedRunner(job.labels, job.runnerGroupName);
+    const rate =
+      hosted && hosted.provider !== "github"
+        ? providerRate(book, hosted.provider, hosted.label.toLowerCase(), at)
+        : rateFor(book, runnerClass(job.labels, job.runnerGroupName), isPrivate, at);
+    if (rate === null) return null;
+    usd += minutes * rate;
+  }
+  return usd;
+}
+
+function providerRate(book: PriceBook, provider: string, label: string, at: number) {
+  const listed = listRate(book, provider as HostedProviderId, label, at);
+  if (listed !== null) return listed;
+  const perMinute = providerPlans(provider)?.perMinute;
+  const vcpus = runnerSize(provider, label)?.vcpus;
+  return perMinute && vcpus ? (perMinute / 2) * vcpus : null;
+}
+
+function medianUsd(values: (number | null)[]): number | null {
+  const known = values.filter((usd): usd is number => usd !== null);
+  if (known.length === 0) return null;
+  const sorted = known.sort((a, b) => a - b);
+  const mid = Math.floor(sorted.length / 2);
+  return sorted.length % 2 ? sorted[mid]! : (sorted[mid - 1]! + sorted[mid]!) / 2;
 }
 
 interface Span {
