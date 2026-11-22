@@ -5,6 +5,7 @@ import LandingRelay from "../components/LandingRelay.astro";
 import RoutingFlow from "../components/RoutingFlow.astro";
 import PageMeta from "../components/PageMeta.astro";
 import SiteFooter from "../components/SiteFooter.astro";
+import MacAppPreview from "../components/MacAppPreview.astro";
 import Screenshot from "../components/Screenshot.astro";
 import SiteHeader from "../components/SiteHeader.astro";
 import ProviderLogo from "../components/docs/ProviderLogo.astro";
@@ -121,7 +122,7 @@ const structuredData = {
                   alt=""
                   width="28"
                   height="28"
-                /><span data-next-name>Zach's MacBook Pro</span></span
+                /><span data-next-name>Ada's MacBook Pro</span></span
               >
               <span class="next-why" data-next-why
                 >The first free runner in your order. Uses no GitHub minutes.</span
@@ -137,7 +138,7 @@ const structuredData = {
               <li
                 class="lane"
                 data-lane="machine"
-                data-next="Zach's MacBook Pro"
+                data-next="Ada's MacBook Pro"
                 data-why="The first free runner in your order. Uses no GitHub minutes."
               >
                 <img src="/providers/machines.svg" alt="" width="32" height="32" />
@@ -204,35 +205,17 @@ const structuredData = {
             Download for Mac
           </a>
         </div>
-        <div class="panel connect-panel" aria-hidden="true">
-          <div class="term">
+        <div class="connect-panel">
+          <div class="term" aria-hidden="true">
             <div class="term-bar">~/acme-api</div>
             <div class="term-body">
               <div><span class="mute">$</span> npx relayrunner connect</div>
-              <div class="go-text">✓ Zach's MacBook Pro is online</div>
+              <div class="go-text">✓ Ada's MacBook Pro is online</div>
               <div class="mute">→ ci / test · running here</div>
               <div class="mute">→ ci / typecheck · done in 48s</div>
             </div>
           </div>
-          <div class="machines">
-            <div class="machine">
-              <b
-                ><img src="/providers/machines.svg" alt="" width="24" height="24" />Zach's MacBook
-                Pro</b
-              >
-              <code>macOS · ARM64 · 12 cores · 36 GB</code>
-              <div class="machine-foot">
-                <span>Zach · shared with team</span><span><i class="dot go-dot"></i>online</span>
-              </div>
-            </div>
-            <div class="machine">
-              <b><img src="/providers/machines.svg" alt="" width="24" height="24" />build-mini</b>
-              <code>macOS · ARM64 · 10 cores · 32 GB</code>
-              <div class="machine-foot">
-                <span>Atticus · private</span><span><i class="dot run-dot"></i>paused</span>
-              </div>
-            </div>
-          </div>
+          <MacAppPreview menuOnly />
         </div>
       </section>
 

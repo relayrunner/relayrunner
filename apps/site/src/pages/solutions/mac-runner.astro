@@ -1,5 +1,6 @@
 ---
 import SolutionPage from "../../layouts/SolutionPage.astro";
+import MacAppPreview from "../../components/MacAppPreview.astro";
 import Screenshot from "../../components/Screenshot.astro";
 ---
 
@@ -25,7 +26,7 @@ import Screenshot from "../../components/Screenshot.astro";
   </Fragment>
 
   <div class="term" slot="visual">
-    <div class="term-bar">Zach's MacBook Pro</div>
+    <div class="term-bar">Ada's MacBook Pro</div>
     <div class="term-body">
       <div><span class="mute">$</span> npx relayrunner connect</div>
       <div class="go-text">✓ Each job runs in a fresh Linux VM</div>
@@ -104,7 +105,7 @@ import Screenshot from "../../components/Screenshot.astro";
       <div class="sol-card-body">
         <div class="sol-lane on">
           <img src="/providers/machines.svg" alt="" width="30" height="30" />
-          <span><b>Zach's MacBook Pro</b><small>Linux VMs · macOS</small></span>
+          <span><b>Ada's MacBook Pro</b><small>Linux VMs · macOS</small></span>
           <em>Next job</em>
         </div>
         <div class="sol-lane">
@@ -124,6 +125,17 @@ import Screenshot from "../../components/Screenshot.astro";
       </p>
       <a class="sol-link" href="/docs/guides/mac-builds">Read the macOS builds guide →</a>
     </div>
+  </section>
+
+  <section class="section wrap" aria-labelledby="app-h">
+    <p class="kicker">Mac app</p>
+    <h2 id="app-h">Or turn it on from the menu bar.</h2>
+    <p class="body">
+      The Mac app takes jobs with one switch. See what's running, how long it has left and what ran
+      this week, without a terminal.
+    </p>
+    <MacAppPreview />
+    <a class="sol-link" href="/download">Download for Mac →</a>
   </section>
 
   <section class="section wrap" aria-labelledby="speed-h">
