@@ -75,6 +75,27 @@ describe("requireFlag", () => {
     });
   });
 
+  test("tells Flagship when the user is an operator", async () => {
+    const operator = await testing.signInOperator(env);
+    const { cookie: operatorCookie } = await testing.createWorkspace(
+      env,
+      operator.cookie,
+      "Ops",
+      "ops",
+    );
+    const flags = stubFlags(["beta"]);
+    await flagged.request(
+      "/api/beta",
+      { headers: { cookie: operatorCookie } },
+      { ...env, FLAGS: flags },
+    );
+    expect(flags.getBooleanValue).toHaveBeenCalledWith(
+      "beta",
+      false,
+      expect.objectContaining({ userId: operator.user.id, role: "operator" }),
+    );
+  });
+
   test("reads as off without a binding, or when evaluation fails", async () => {
     vi.spyOn(console, "warn").mockImplementation(() => undefined);
     expect((await get("/api/beta")).status).toBe(404);

@@ -3,6 +3,7 @@ import { createMiddleware } from "hono/factory";
 import { FLAG_KEYS, type FlagKey, type Flags } from "@relayrunner/api-types";
 import { AppError } from "@relayrunner/errors";
 import type { AppEnv } from "./app.ts";
+import { isOperator } from "./roles.ts";
 
 // Feature flags from Cloudflare Flagship, through the FLAGS binding (wrangler.jsonc). The keys
 // live in @relayrunner/api-types (FLAG_KEYS), and docs/feature-flags.md covers adding and retiring
@@ -14,9 +15,11 @@ import type { AppEnv } from "./app.ts";
 
 /**
  * Who's asking, for Flagship's targeting rules. `targetingKey` is the user's id, so a percentage
- * rollout puts each person in the same bucket every time. The workspace attributes let a rule
- * turn a flag on for one workspace, by id or by its GitHub account's login (the slug). Nothing
- * sensitive goes here: no email or names.
+ * rollout puts each person in the same bucket every time. `role` is "operator" for operators
+ * (user.role, the people who see Admin), so a rule `role equals "operator"` turns a flag on for
+ * them alone, and is left out for everyone else. The workspace attributes let a rule turn a flag on
+ * for one workspace, by id or by its GitHub account's login (the slug). Nothing sensitive goes
+ * here: no email or names.
  */
 export function flagContext(c: Context<AppEnv>) {
   const context: Record<string, string> = {};
@@ -24,6 +27,7 @@ export function flagContext(c: Context<AppEnv>) {
   if (user) {
     context.targetingKey = user.id;
     context.userId = user.id;
+    if (isOperator(user)) context.role = "operator";
   }
   const workspace = c.var.workspace;
   if (workspace) {

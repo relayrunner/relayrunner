@@ -66,14 +66,17 @@ without sign-in (`VITE_AUTH_DISABLED=true`), every flag is on.
 
 Every evaluation sends this context, which Flagship's targeting rules can match on:
 
-| Attribute       | Value                                                 |
-| --------------- | ----------------------------------------------------- |
-| `targetingKey`  | The user's id. Percentage rollouts bucket on it.      |
-| `userId`        | The user's id.                                        |
-| `workspaceId`   | The active workspace's id.                            |
-| `workspaceSlug` | The workspace's GitHub account login, such as `acme`. |
+| Attribute       | Value                                                     |
+| --------------- | --------------------------------------------------------- |
+| `targetingKey`  | The user's id. Percentage rollouts bucket on it.          |
+| `userId`        | The user's id.                                            |
+| `role`          | `operator` for operators, and left out for everyone else. |
+| `workspaceId`   | The active workspace's id.                                |
+| `workspaceSlug` | The workspace's GitHub account login, such as `acme`.     |
 
-To try a feature yourself, add a rule such as `userId equals "<your user id>"` that serves `on`.
+To turn a flag on for operators only (the people who see Admin, `user.role` in D1), add a rule
+`role equals "operator"` that serves `on`, and keep the default variant off. To try a feature
+yourself alone, use `userId equals "<your user id>"` instead.
 Don't add personal data such as emails to the context.
 
 ## Local development
