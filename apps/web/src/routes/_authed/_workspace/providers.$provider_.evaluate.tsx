@@ -859,21 +859,12 @@ function RunRow({
         )}
       </div>
       {status === "starting" && (
-        <div className="ml-[30px] grid gap-2 rounded-lg bg-raised px-3 py-2.5 text-[13px]">
+        <div className="ml-[30px] rounded-lg bg-raised px-3 py-2.5 text-[13px]">
           <p className="text-muted-foreground">
             {report.runId
               ? `Waiting for GitHub to start run ${attempt.attempt}. Jobs show up here once runners pick them up.`
               : "Asking GitHub to start the workflow."}
           </p>
-          <div aria-hidden className="grid gap-1.5">
-            {[72, 56, 64].map((width) => (
-              <span
-                key={width}
-                className="h-3 animate-pulse rounded bg-raised-2"
-                style={{ width: `${width}%` }}
-              />
-            ))}
-          </div>
         </div>
       )}
       {status === "running" && attempt.jobs.length > 0 && (
