@@ -247,13 +247,22 @@ function AutoJobRows({
               <span title={`${job.relayJob} in ${job.workflowPath}`}>{autoJobName(job)}</span>
             </td>
             <td className="py-1.5 pr-4">
-              <SizeSelect
-                name={autoJobName(job)}
-                value={job.size}
-                defaultSize={defaultSize}
-                disabled={!job.canEdit}
-                onChange={(size) => void onChange(job, { size, first: job.first })}
-              />
+              {job.cpus !== null ? (
+                <span
+                  className="text-muted-foreground"
+                  title={`The relay's cpus input sets this size in ${job.workflowPath}`}
+                >
+                  {job.cpus} vCPU · in the workflow
+                </span>
+              ) : (
+                <SizeSelect
+                  name={autoJobName(job)}
+                  value={job.size}
+                  defaultSize={defaultSize}
+                  disabled={!job.canEdit}
+                  onChange={(size) => void onChange(job, { size, first: job.first })}
+                />
+              )}
             </td>
             <td className="py-1.5">
               <Select

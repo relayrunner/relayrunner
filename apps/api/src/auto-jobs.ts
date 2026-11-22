@@ -1,7 +1,8 @@
-// Jobs whose relay hands its runner to the Router: `blacksmith: auto`, or a relay with no inputs.
-// Each pick of one looks up what the Router page set for the job (its size, a provider to try
-// first) and the workspace's default size, turns each `auto` into that provider's label for the
-// size, and keeps the job's row fresh so the Router page lists it.
+// Jobs whose relay hands its runner to the Router: `blacksmith: auto`, a relay with no inputs, or
+// one with a shape (`os`, `arch`, `cpus`). Each pick of one looks up what the Router page set for
+// the job (its size, a provider to try first) and the workspace's default size, turns each `auto`
+// into that provider's label for the job's platform and size (the relay's `cpus` wins over the
+// Router page's size), and keeps the job's row fresh so the Router page lists it.
 //
 // Database cost per auto pick: one upsert on auto_job's identity index (returning the job's
 // setting) and one workspace read by primary key, run together.
@@ -9,9 +10,12 @@ import {
   AUTO_SIZE_MESSAGE,
   DEFAULT_AUTO_SIZE,
   isAutoSize,
-  labelForSize,
+  labelForShape,
+  type ShapePlatform,
+  shapePlatform,
 } from "@relayrunner/providers";
 import {
+  hasShape,
   RUNNER_KEYS,
   relayJobFor,
   resolveAutoInputs,
@@ -35,6 +39,8 @@ export interface AutoPick {
   inputs: RelayInputs;
   size: number;
   first: RunnerKey | null;
+  // The platform a shaped relay asked for; left out for one without a shape (Linux x64).
+  platform?: ShapePlatform;
 }
 
 /**
@@ -49,10 +55,14 @@ export async function autoPick(
     repositoryId: number;
     context: JobContext;
     relayJob: string;
+    // GitHub gives public repos bigger standard runners.
+    private: boolean;
   },
   now = Date.now(),
 ): Promise<AutoPick> {
   const { context } = job;
+  const shape = hasShape(context.shape) ? context.shape : null;
+  const cpus = shape?.cpus ?? null;
   const [[setting], [workspace]] = await Promise.all([
     db
       .insert(table)
@@ -63,6 +73,7 @@ export async function autoPick(
         workflowPath: context.workflowPath ?? context.workflow ?? "",
         workflow: context.workflow,
         relayJob: job.relayJob,
+        cpus,
         lastSeenAt: new Date(now),
       })
       .onConflictDoUpdate({
@@ -70,6 +81,7 @@ export async function autoPick(
         set: {
           repository: context.repo,
           workflow: context.workflow,
+          cpus,
           lastSeenAt: new Date(now),
         },
       })
@@ -80,12 +92,16 @@ export async function autoPick(
       .where(eq(schema.workspace.id, job.workspaceId))
       .limit(1),
   ]);
-  const size = setting?.size ?? workspace?.autoSize ?? DEFAULT_AUTO_SIZE;
+  const size = cpus ?? setting?.size ?? workspace?.autoSize ?? DEFAULT_AUTO_SIZE;
   const first = RUNNER_KEYS.find((key) => key === setting?.first) ?? null;
+  const platform = shapePlatform(shape?.os, shape?.arch);
+  const label = (key: string) =>
+    labelForShape(key, platform, size, { runId: context.runId, publicRepo: !job.private });
   return {
-    inputs: resolveAutoInputs(context, (key) => labelForSize(key, size, context.runId)),
+    inputs: resolveAutoInputs(context, label, shape),
     size,
     first,
+    ...(shape && { platform }),
   };
 }
 
@@ -107,6 +123,9 @@ export interface AutoJob {
   workflow: string | null;
   relayJob: string;
   size: number | null;
+  // The relay's `cpus` input on its last pick. When set, it's the job's size and the Router page
+  // can't change it.
+  cpus: number | null;
   first: RunnerKey | null;
   updatedAt: number | null;
   lastSeenAt: number;
@@ -135,6 +154,7 @@ export async function listAutoJobs(db: Db, workspaceId: string, now = Date.now()
     workflow: row.workflow,
     relayJob: row.relayJob,
     size: row.size,
+    cpus: row.cpus,
     first: RUNNER_KEYS.find((key) => key === row.first) ?? null,
     updatedAt: row.updatedAt?.getTime() ?? null,
     lastSeenAt: row.lastSeenAt.getTime(),

@@ -454,12 +454,13 @@ async function pickRunner(
   const retry = await retryOf(db, repo.id, context.runId, context.runAttempt);
   if (retry) context = { ...context, triggeredBy: retry.triggeredBy };
   // An auto relay's `auto` inputs become labels of the job's size, so the walk shows what it got.
-  const auto = isAutoRelay(context)
+  const auto = isAutoRelay(context, context.shape)
     ? await autoPick(db, {
         workspaceId,
         repositoryId: repo.id,
         context,
         relayJob: relayJobOf(jobDisplayName),
+        private: repo.private,
       })
     : null;
   if (auto) context = { ...context, ...auto.inputs };
@@ -477,6 +478,8 @@ async function pickRunner(
     retry,
     size: auto?.size,
     first: auto?.first,
+    platform: auto?.platform,
+    cpus: context.shape?.cpus,
   });
   return {
     ...decision,

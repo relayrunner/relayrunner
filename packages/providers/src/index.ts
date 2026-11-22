@@ -383,7 +383,16 @@ export {
   type AutoSize,
   DEFAULT_AUTO_SIZE,
   isAutoSize,
+  labelForShape,
   labelForSize,
+  SHAPE_ARCHES,
+  SHAPE_OSES,
+  SHAPE_PLATFORM_NAMES,
+  type ShapeArch,
+  type ShapeOs,
+  type ShapePlatform,
+  sellsPlatform,
+  shapePlatform,
 } from "./auto-sizes.ts";
 export {
   ADDED_RATE,

@@ -1,5 +1,6 @@
 import { relayInputs } from "@relayrunner/runner-order";
 import { beforeAll, describe, expect, test, vi } from "vitest";
+import { eq } from "drizzle-orm";
 import { autoPick, relayJobOf } from "./auto-jobs.ts";
 import { createDb, schema } from "./db/index.ts";
 import type { Env } from "./env.ts";
@@ -42,7 +43,12 @@ describe("auto jobs", () => {
     const { cookie } = await testing.signIn(env);
     const { workspace, cookie: jar } = await testing.createWorkspace(env, cookie, "Auto", "auto");
     const db = createDb(env.DB);
-    const job = { workspaceId: workspace.id, repositoryId: 1, relayJob: "relay-test" };
+    const job = {
+      workspaceId: workspace.id,
+      repositoryId: 1,
+      relayJob: "relay-test",
+      private: true,
+    };
 
     // No size set anywhere: 2 vCPU, every provider when the relay names none.
     const first = await autoPick(db, { ...job, context: context() });
@@ -144,6 +150,7 @@ describe("auto job settings for members", () => {
         workspaceId: workspace.id,
         repositoryId,
         relayJob: "relay-test",
+        private: true,
         context: { ...context(), repo: `acme/repo-${repositoryId}` },
       });
     }
@@ -248,6 +255,7 @@ describe("sizes planned before a repo routes", () => {
       workspaceId: workspace.id,
       repositoryId: 201,
       relayJob: "relay-test",
+      private: true,
       context: { ...context(), repo: "acme/planned" },
     });
     expect(picked.size).toBe(8);
@@ -259,5 +267,61 @@ describe("sizes planned before a repo routes", () => {
     expect(
       (await plan({ repositoryId: 201, jobs: [{ workflow: "CI", job: "test", size: 3 }] })).status,
     ).toBe(400);
+  });
+});
+
+describe("shaped relays", () => {
+  test("a shape sizes every provider, and cpus wins over the Router page's size", async () => {
+    const { cookie } = await testing.signIn(env);
+    const { workspace } = await testing.createWorkspace(env, cookie, "Shape", "shape");
+    const db = createDb(env.DB);
+    const job = { workspaceId: workspace.id, repositoryId: 1, relayJob: "relay", private: true };
+
+    const linux = await autoPick(db, {
+      ...job,
+      context: { ...context({ github: ["my-org-linux-16core"] }), shape: { cpus: 8 } },
+    });
+    expect(linux.size).toBe(8);
+    expect(linux.platform).toBe("linux");
+    expect(linux.inputs.blacksmith).toEqual(["blacksmith-8vcpu-ubuntu-2404"]);
+    expect(linux.inputs.github).toEqual(["my-org-linux-16core"]);
+    expect(linux.inputs.machine).toEqual(["self-hosted", "Linux"]);
+    // Ubicloud has no macOS runners, and Blacksmith's are 6 vCPU.
+    const mac = await autoPick(db, {
+      ...job,
+      context: { ...context(), shape: { os: "macos" } },
+    });
+    expect(mac.platform).toBe("macos");
+    expect(mac.inputs.blacksmith).toEqual(["blacksmith-6vcpu-macos-latest"]);
+    expect(mac.inputs.github).toEqual(["macos-latest"]);
+    expect(mac.inputs.ubicloud).toEqual(["auto"]);
+    expect(mac.inputs.machine).toEqual(["self-hosted", "macOS"]);
+
+    // The Router page lists the file's size.
+    const [row] = await db
+      .select()
+      .from(schema.autoJob)
+      .where(eq(schema.autoJob.relayJob, "relay"));
+    expect(row?.cpus).toBeNull();
+    await autoPick(db, { ...job, context: { ...context(), shape: { cpus: 4 } } });
+    const [after] = await db
+      .select()
+      .from(schema.autoJob)
+      .where(eq(schema.autoJob.relayJob, "relay"));
+    expect(after?.cpus).toBe(4);
+  });
+
+  test("a public repo counts GitHub's 4 vCPU standard runners", async () => {
+    const { cookie } = await testing.signIn(env);
+    const { workspace } = await testing.createWorkspace(env, cookie, "Public", "public");
+    const db = createDb(env.DB);
+    const picked = await autoPick(db, {
+      workspaceId: workspace.id,
+      repositoryId: 1,
+      relayJob: "relay",
+      private: false,
+      context: { ...context(), shape: { cpus: 4 } },
+    });
+    expect(picked.inputs.github).toEqual(["ubuntu-latest"]);
   });
 });

@@ -1,4 +1,12 @@
-import { HOSTED_PROVIDER_IDS, hasListPrices, PROVIDERS } from "@relayrunner/providers";
+import {
+  HOSTED_PROVIDER_IDS,
+  hasListPrices,
+  PROVIDERS,
+  SHAPE_PLATFORM_NAMES,
+  type ShapeArch,
+  type ShapeOs,
+  type ShapePlatform,
+} from "@relayrunner/providers";
 import type { RetrySettings, RunnerOrder, RunnerStep } from "./schema.ts";
 
 // Everything here is plain data and functions, so the dashboard can import it without Zod. The
@@ -135,27 +143,70 @@ export const AUTO = "auto";
 const isAutoInput = (labels: string[]) => labels.length === 1 && labels[0]?.toLowerCase() === AUTO;
 const noInputs = (inputs: RelayInputs) => RUNNER_KEYS.every((key) => inputs[key].length === 0);
 
-/**
- * Whether the Router picks the job's labels: the relay sets some provider to `auto`, or sets no
- * provider at all. A relay that names its own labels everywhere runs as written.
- */
-export const isAutoRelay = (inputs: RelayInputs) =>
-  noInputs(inputs) || RUNNER_KEYS.some((key) => isAutoInput(inputs[key]));
+/** What a relay's `os`, `arch` and `cpus` inputs ask for. Each is left out when the relay is. */
+export interface RelayShape {
+  os?: ShapeOs;
+  arch?: ShapeArch;
+  cpus?: number;
+}
+
+/** Whether a relay sets any of `os`, `arch` and `cpus`. */
+export const hasShape = (shape: RelayShape | null | undefined): shape is RelayShape =>
+  shape?.os !== undefined || shape?.arch !== undefined || shape?.cpus !== undefined;
 
 /**
- * A relay's inputs with each `auto` (every provider, when it sets none) turned into a label:
- * `machine` takes any machine, and the rest get `label(key)`, the provider's label for the job's
- * size. A provider with no label that big keeps `auto`, which the Router skips as `no_size`.
- * Labels the relay names itself stay as they are.
+ * Whether the Router picks the job's labels: the relay sets `os`, `arch` or `cpus`, sets some
+ * provider to `auto`, or sets no provider at all. A relay that names its own labels everywhere,
+ * with no shape, runs as written.
+ */
+export const isAutoRelay = (inputs: RelayInputs, shape?: RelayShape | null) =>
+  hasShape(shape) || noInputs(inputs) || RUNNER_KEYS.some((key) => isAutoInput(inputs[key]));
+
+// GitHub's default self-hosted runner labels for each OS and arch.
+const OS_LABELS: Record<ShapeOs, string> = { linux: "Linux", macos: "macOS", windows: "Windows" };
+const ARCH_LABELS: Record<ShapeArch, string> = { x64: "X64", arm64: "ARM64" };
+
+/**
+ * The machine labels a shape asks for: its OS (Linux when it says none and `defaultOs` is set) and
+ * its arch when it says one. Any arch fits a shape without one.
+ */
+export function shapeMachineLabels(shape: RelayShape, defaultOs: boolean): string[] {
+  const os = shape.os ?? (defaultOs ? "linux" : undefined);
+  return [...(os ? [OS_LABELS[os]] : []), ...(shape.arch ? [ARCH_LABELS[shape.arch]] : [])];
+}
+
+// Labels with `more` added, leaving out any already there (GitHub ignores case).
+function withLabels(labels: string[], more: string[]) {
+  const have = new Set(labels.map((label) => label.toLowerCase()));
+  return [...labels, ...more.filter((label) => !have.has(label.toLowerCase()))];
+}
+
+/**
+ * A relay's inputs with each `auto` turned into a label. A relay with a shape (`os`, `arch` or
+ * `cpus`) treats every provider it doesn't name as `auto`, and so does one with no inputs at all.
+ * `machine` takes any machine (one of the shape's OS and arch, with a shape), and the rest get
+ * `label(key)`, the provider's label for the job's platform and size. A provider with no such label
+ * keeps `auto`, which the Router skips as `no_size`. Labels the relay names itself stay as they
+ * are; with a shape, a named `machine` must also have the OS and arch the shape says.
  */
 export function resolveAutoInputs(
   inputs: RelayInputs,
   label: (key: Exclude<RunnerKey, "machine">) => string | null,
+  shape?: RelayShape | null,
 ): RelayInputs {
-  const all = noInputs(inputs);
+  const shaped = hasShape(shape);
+  const all = shaped || noInputs(inputs);
   return byRunnerKey((key) => {
-    if (!all && !isAutoInput(inputs[key])) return inputs[key];
-    return key === "machine" ? ["self-hosted"] : [label(key) ?? AUTO];
+    const given = inputs[key];
+    const auto = isAutoInput(given) || (all && given.length === 0);
+    if (key === "machine") {
+      if (!auto)
+        return shaped && given.length > 0
+          ? withLabels(given, shapeMachineLabels(shape, false))
+          : given;
+      return ["self-hosted", ...(shaped ? shapeMachineLabels(shape, true) : [])];
+    }
+    return auto ? [label(key) ?? AUTO] : given;
   });
 }
 
@@ -172,7 +223,8 @@ export function preferFirst(order: RunnerOrder, first: RunnerKey | null | undefi
 }
 
 /** Why an `auto` provider skipped a job: "GitHub-hosted has no runner with 8 vCPU or more". */
-export const noSizeText = (key: RunnerKey, vcpus: number | undefined) =>
-  vcpus
-    ? `${RUNNER_LABELS[key]} has no runner with ${vcpus} vCPU or more`
-    : `${RUNNER_LABELS[key]} has no runner that size`;
+export function noSizeText(key: RunnerKey, vcpus: number | undefined, platform?: ShapePlatform) {
+  const runner = platform ? `${SHAPE_PLATFORM_NAMES[platform]} runner` : "runner";
+  if (vcpus) return `${RUNNER_LABELS[key]} has no ${runner} with ${vcpus} vCPU or more`;
+  return `${RUNNER_LABELS[key]} has no ${runner}${platform ? "" : " that size"}`;
+}

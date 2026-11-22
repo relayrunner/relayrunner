@@ -120,7 +120,7 @@ function shortSkip(walk: RouteWalk, step: SkippedStep): string | null {
     case "provider_held":
       return `${RUNNER_LABELS[key]} would hold it`;
     case "no_size":
-      return noSizeText(key, step.vcpus);
+      return noSizeText(key, step.vcpus, step.platform);
     case "not_configured":
       // Leaving a provider out of the relay is a choice, not news.
       return null;
@@ -177,7 +177,7 @@ function longSkip(walk: RouteWalk, step: SkippedStep): string {
     case "provider_held":
       return heldText(RUNNER_LABELS[key], step.held);
     case "no_size":
-      return noSizeText(key, step.vcpus);
+      return noSizeText(key, step.vcpus, step.platform);
     case "not_configured":
       return `the relay doesn't set ${key}`;
   }

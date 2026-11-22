@@ -932,6 +932,8 @@ export const autoJob = sqliteTable(
     relayJob: text("relay_job").notNull(),
     // The job's size in vCPUs, or null for the workspace's (workspace.auto_size).
     size: integer("size"),
+    // The relay's `cpus` input on the job's last pick, or null when it set none. It wins over size.
+    cpus: integer("cpus"),
     // A runner order key to try before the rest of the order, or null for the order as it is.
     first: text("first"),
     updatedBy: text("updated_by").references(() => user.id, { onDelete: "set null" }),

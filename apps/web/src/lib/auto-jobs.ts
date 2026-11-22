@@ -11,6 +11,8 @@ export type AutoJob = {
   relayJob: string;
   // vCPUs, or null for the workspace's default size.
   size: number | null;
+  // The relay's `cpus` input, which sets the job's size in the workflow file, or null.
+  cpus: number | null;
   // The provider tried before the rest of the runner order, or null for the order as it is.
   first: RunnerKey | null;
   updatedAt: number | null;

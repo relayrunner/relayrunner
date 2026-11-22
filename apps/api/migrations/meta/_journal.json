@@ -575,6 +575,13 @@
       "when": 1795208044068,
       "tag": "20261120205404_health_issue",
       "breakpoints": true
+    },
+    {
+      "idx": 82,
+      "version": "6",
+      "when": 1795369978888,
+      "tag": "20261122175258_auto_job_cpus",
+      "breakpoints": true
     }
   ]
 }

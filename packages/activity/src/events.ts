@@ -5,6 +5,7 @@ import {
   retrySettingsSchema,
   runnerStepSchema,
 } from "@relayrunner/runner-order";
+import { SHAPE_PLATFORM_NAMES, type ShapePlatform } from "@relayrunner/providers";
 import { z } from "zod";
 
 // The workspace's audit log: one append-only row per thing that happened, newest first on the
@@ -76,8 +77,9 @@ export const SKIP_REASONS = [
   // A hosted provider step with a spend limit: the job's account has spent the limit on that
   // provider this month, at list prices.
   "spend_limit",
-  // The relay set the provider to `auto` and it has no runner as big as the job's size (in the
-  // step's `vcpus`), such as GitHub-hosted past 2 vCPU.
+  // The relay set the provider to `auto` (or set a shape) and it has no runner as big as the job's
+  // size (in the step's `vcpus`) on the job's platform (`platform`), such as GitHub-hosted past
+  // 2 vCPU, or no runner on that platform at all.
   "no_size",
   // A provider whose plan caps how many jobs start per window (Boat): the workspace's connection
   // says a window has no starts left (in the step's `starts`), so the job would be paused.
@@ -226,8 +228,12 @@ export const RouteWalk = z.object({
       held: ProviderHeld.optional(),
       // provider_unhealthy: how many jobs in a row weren't picked up, and when the next trial goes.
       unhealthy: z.object({ misses: z.number(), retryAt: z.number() }).optional(),
-      // no_size: the job's size, in vCPUs.
+      // no_size: the job's size, in vCPUs, and the platform its relay's `os` and `arch` asked
+      // for. Left out of a relay with no shape, which is Linux x64.
       vcpus: z.number().optional(),
+      platform: z
+        .enum(Object.keys(SHAPE_PLATFORM_NAMES) as [ShapePlatform, ...ShapePlatform[]])
+        .optional(),
     }),
   ),
   notInOrder: z.array(z.enum(RUNNER_KEYS)),
