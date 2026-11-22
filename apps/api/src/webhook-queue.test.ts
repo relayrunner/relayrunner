@@ -235,6 +235,8 @@ describe("webhook queue consumer", () => {
     const requeue = vi.fn();
     const endJob = vi.fn();
     const strandedName = vi.fn((_name: string) => ({ start: endJob }));
+    const watch = vi.fn();
+    const takeoverName = vi.fn((_name: string) => ({ start: watch }));
     const routeEnv = () =>
       ({
         DB: db,
@@ -251,6 +253,7 @@ describe("webhook queue consumer", () => {
         },
         MACHINE_LINK: { getByName: vi.fn(() => ({ run })) },
         STRANDED_JOB: { getByName: strandedName },
+        PROVIDER_TAKEOVER: { getByName: takeoverName },
       }) as unknown as Env;
 
     beforeAll(async () => {
@@ -282,6 +285,36 @@ describe("webhook queue consumer", () => {
         )
         .bind(now)
         .run();
+      // And its second relay sent another job to Groundbox.
+      await db
+        .prepare(
+          "insert into route_decision (workspace_id, repository_id, run_id, run_attempt, pick_job_id, step, runner, skipped, not_in_order, machine, github, hosted, created_at) values ('w1', 1, 9, 1, 'relay-b', 'groundbox', 'groundbox-2vcpu', '[]', '[]', '[]', '[]', '{}', ?)",
+        )
+        .bind(now)
+        .run();
+    });
+
+    test("a queued job the pick sent to a hosted provider is watched for a takeover", async () => {
+      watch.mockClear();
+      const queued = workflowJob(["groundbox-2vcpu"]);
+      await consumer.processWebhook(routeEnv(), queued);
+      expect(takeoverName).toHaveBeenLastCalledWith("takeover:42");
+      expect(watch).toHaveBeenCalledWith(
+        expect.objectContaining({
+          jobId: 42,
+          workspaceId: "w1",
+          repositoryId: 1,
+          runId: 9,
+          runAttempt: 1,
+          key: "groundbox",
+          label: "groundbox-2vcpu",
+        }),
+      );
+      // Not once it started, nor a provider label the pick didn't answer, nor GitHub's own.
+      await consumer.processWebhook(routeEnv(), workflowJob(["groundbox-2vcpu"], "in_progress"));
+      await consumer.processWebhook(routeEnv(), workflowJob(["depot-ubuntu-24.04"]));
+      await consumer.processWebhook(routeEnv(), workflowJob(["ubuntu-latest"]));
+      expect(watch).toHaveBeenCalledOnce();
     });
 
     test("a job on an added runner's label claims the route without minting a runner", async () => {

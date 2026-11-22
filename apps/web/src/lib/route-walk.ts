@@ -1,5 +1,6 @@
 import {
   dollars,
+  accessText,
   heldText,
   spendText,
   startLimitText,
@@ -119,6 +120,10 @@ function shortSkip(walk: RouteWalk, step: SkippedStep): string | null {
         : `out of ${RUNNER_LABELS[key]} job starts`;
     case "provider_held":
       return `${RUNNER_LABELS[key]} would hold it`;
+    case "provider_no_access":
+      return step.access?.cause === "not_installed"
+        ? `${RUNNER_LABELS[key]}'s app isn't installed`
+        : `${RUNNER_LABELS[key]} can't see this repo`;
     case "no_size":
       return noSizeText(key, step.vcpus);
     case "not_configured":
@@ -176,6 +181,8 @@ function longSkip(walk: RouteWalk, step: SkippedStep): string {
       return startLimitText(RUNNER_LABELS[key], step.starts);
     case "provider_held":
       return heldText(RUNNER_LABELS[key], step.held);
+    case "provider_no_access":
+      return accessText(RUNNER_LABELS[key], step.access);
     case "no_size":
       return noSizeText(key, step.vcpus);
     case "not_configured":

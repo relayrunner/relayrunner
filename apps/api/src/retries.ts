@@ -210,7 +210,7 @@ export async function retryFailedRun(env: Env, message: WorkflowRunMessage): Pro
  * The relay job to re-run and where its pick sent the run's jobs. Null when there's nothing to
  * retry: no pick, or more than one (each would need its own retry).
  */
-async function routedRun(db: Db, repositoryId: number, runId: number, runAttempt: number) {
+export async function routedRun(db: Db, repositoryId: number, runId: number, runAttempt: number) {
   const [relays, [decision]] = await Promise.all([
     db
       .select({ id: schema.workflowJob.id, runAttempt: schema.workflowJob.runAttempt })

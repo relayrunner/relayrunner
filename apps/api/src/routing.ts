@@ -557,7 +557,9 @@ export const sameLogin = (a: string, b: string) => a.toLowerCase() === b.toLower
 // Activity page, which explains each.
 export type { SkipReason } from "@relayrunner/activity";
 import {
+  accessText,
   heldText,
+  type ProviderAccess,
   type ProviderHeld,
   spendText,
   startLimitText,
@@ -584,6 +586,8 @@ export interface SkippedStep {
   starts?: StartLimit;
   // provider_held: why the provider would hold the job.
   held?: ProviderHeld;
+  // provider_no_access: why the provider can't run the job's repo.
+  access?: ProviderAccess;
   unhealthy?: Unhealthy;
   // no_size: the job's size, in vCPUs.
   vcpus?: number;
@@ -599,6 +603,10 @@ export type StartCheck = (key: HostedProviderId) => Promise<StartLimit | null>;
 // Whether a hosted provider would hold the job rather than run it (src/groundbox-account.ts): null
 // when it would run it or can't be read. Only providers whose connection says so ever say no.
 export type HeldCheck = (key: HostedProviderId) => Promise<ProviderHeld | null>;
+
+// Whether a hosted provider can run the job's repo (src/provider-takeover.ts): null when it can or
+// that can't be told, or why it can't. Asking may let the job through as the repo's trial.
+export type AccessCheck = (key: HostedProviderId) => Promise<ProviderAccess | null>;
 
 // A provider's free minutes this month, from the workspace's connection, for its step's limit.
 export type FreeMinutesCheck = (key: FreeMinutesProvider) => Promise<MinutesUsage | null>;
@@ -740,6 +748,7 @@ export async function decideRoute(
   providerMinutes: FreeMinutesCheck = async () => null,
   starts: StartCheck = async () => null,
   held: HeldCheck = async () => null,
+  access: AccessCheck = async () => null,
 ): Promise<RouteDecision> {
   const skipped: SkippedStep[] = [];
   let usage: Promise<AccountUsage | null> | undefined;
@@ -809,6 +818,12 @@ export async function decideRoute(
       else if (!isProviderLabel(key, labels[0]))
         skipped.push({ key, reason: "not_provider_label" });
       else {
+        // A provider that can't see the repo would leave the job queued until RelayRunner moves it.
+        const cannot = await access(key);
+        if (cannot) {
+          skipped.push({ key, reason: "provider_no_access", access: cannot });
+          continue;
+        }
         if ("limit" in step && step.limit) {
           const over = minutesCheck(await minutesOf(step.key), step.limit.percent);
           if (over) {
@@ -873,6 +888,7 @@ export function noRunnerReason(
       spend,
       starts,
       held,
+      access: cannot,
       vcpus,
     }) => {
       switch (reason) {
@@ -909,6 +925,8 @@ export function noRunnerReason(
           return startLimitText(RUNNER_LABELS[key], starts);
         case "provider_held":
           return heldText(RUNNER_LABELS[key], held);
+        case "provider_no_access":
+          return accessText(RUNNER_LABELS[key], cannot);
         // Never the reason nothing fit: an unhealthy step takes the job when no other can.
         case "provider_unhealthy":
           return `${RUNNER_LABELS[key]} isn't picking up jobs`;

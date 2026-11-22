@@ -157,6 +157,7 @@
       { "name": "CONTAINER_RUNNER", "class_name": "ContainerRunner" },
       { "name": "LINT_RUNNER", "class_name": "LintRunner" },
       { "name": "STRANDED_JOB", "class_name": "StrandedJob" },
+      { "name": "PROVIDER_TAKEOVER", "class_name": "ProviderTakeover" },
       { "name": "BLACKSMITH_SYNCER", "class_name": "BlacksmithSyncer" },
     ],
   },
@@ -166,6 +167,7 @@
     { "tag": "v3", "new_sqlite_classes": ["LintRunner"] },
     { "tag": "v4", "new_sqlite_classes": ["StrandedJob"] },
     { "tag": "v5", "new_sqlite_classes": ["BlacksmithSyncer"] },
+    { "tag": "v6", "new_sqlite_classes": ["ProviderTakeover"] },
   ],
   // GitHub's runner image for container runners (src/durable-objects/container-runner.ts), which
   // picks the instance size when it starts one. `pnpm run deploy` (scripts/deploy.ts) tags each

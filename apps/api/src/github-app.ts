@@ -167,6 +167,28 @@ async function workflowJob<T>(token: string, repo: string, jobId: number): Promi
   return (await response.json()) as T;
 }
 
+/**
+ * A workflow job's status and the runner GitHub gave it (empty until one did), or null when it's
+ * gone.
+ */
+export async function workflowJobRunner(token: string, repo: string, jobId: number) {
+  const job = await workflowJob<{ status: string; runner_name: string | null }>(token, repo, jobId);
+  return job ? { status: job.status, runnerName: job.runner_name || null } : null;
+}
+
+/** An attempt of a run's status ("queued", "in_progress", "completed", ...). */
+export async function runAttemptStatus(
+  token: string,
+  repo: string,
+  runId: number,
+  runAttempt: number,
+): Promise<string> {
+  const path = `/repos/${repo}/actions/runs/${runId}/attempts/${runAttempt}`;
+  const response = await fetch(`${API}${path}`, { headers: headers(token) });
+  if (!response.ok) throw new Error(`GET ${path} failed with ${response.status}`);
+  return ((await response.json()) as { status: string }).status;
+}
+
 /** A workflow job's status ("queued", "in_progress", "completed", ...), or null when it's gone. */
 export async function workflowJobStatus(token: string, repo: string, jobId: number) {
   return (await workflowJob<{ status: string }>(token, repo, jobId))?.status ?? null;

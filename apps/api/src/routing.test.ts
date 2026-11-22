@@ -1800,6 +1800,35 @@ describe("decideRoute with a Groundbox step", () => {
     );
   });
 
+  test("a provider that can't see the repo moves on, and says why when nothing else fits", async () => {
+    const asked: string[] = [];
+    const access = async (key: string) => {
+      asked.push(key);
+      return { cause: "missed" as const, retryAt: 1 };
+    };
+    const args = [none, undefined, undefined, undefined, undefined, undefined, undefined] as const;
+    const moved = await decideRoute(
+      { steps: [{ key: "groundbox" }, { key: "github" }] },
+      job,
+      ...args,
+      access,
+    );
+    expect(moved).toMatchObject({
+      runner: "ubuntu-latest",
+      skipped: [
+        { key: "groundbox", reason: "provider_no_access", access: { cause: "missed", retryAt: 1 } },
+      ],
+    });
+    // Only hosted providers are asked.
+    expect(asked).toEqual(["groundbox"]);
+    const stuck = await decideRoute({ steps: [{ key: "groundbox" }] }, job, ...args, async () => ({
+      cause: "not_installed" as const,
+    }));
+    expect(stuck.runner === null && stuck.reason).toContain(
+      "Groundbox's GitHub App isn't installed on this account",
+    );
+  });
+
   test("the limit's skip names Groundbox's free minutes", async () => {
     const failed = await decideRoute(
       { steps: [{ key: "groundbox", limit: { percent: 80 } }] },

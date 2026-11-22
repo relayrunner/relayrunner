@@ -90,6 +90,7 @@ const ROUTING_REASONS: Record<string, string> = {
   spend_limit: "over the spend limit",
   start_limit: "out of job starts",
   provider_held: "provider would hold it",
+  provider_no_access: "provider can't see the repo",
   not_in_order: "not in the runner order",
 };
 
