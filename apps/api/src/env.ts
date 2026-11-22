@@ -66,6 +66,10 @@ export interface Env extends AccessEnv {
   // Per workspace: caps model calls a minute (src/ai/classify.ts), on top of the daily budgets.
   AI_LIMITER?: RateLimit;
 
+  // Cloudflare Flagship, for feature flags (src/flags.ts). Optional so tests run without it; with
+  // no binding every flag is off.
+  FLAGS?: Flagship;
+
   // Cloudflare Email Sending (src/email.ts). Optional so local dev and tests run without it.
   EMAIL?: SendEmail;
   // Sender address on send.relayrunner.app; must be in the binding's allowed_sender_addresses.

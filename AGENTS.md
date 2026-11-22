@@ -32,6 +32,10 @@ Format with oxfmt (`pnpm format`) and lint with Oxlint (`pnpm lint`). Run `pnpm 
 
 The API answers every failure with a code from `@relayrunner/errors`: `throw new AppError("CODE")` in a route, and add new codes to `packages/errors/src/codes.ts` rather than returning a string. See [packages/errors/README.md](packages/errors/README.md).
 
+## Feature flags
+
+Ship unreleased user-facing work behind a Cloudflare Flagship flag, so it can merge and deploy before anyone sees it. Add the key to `FLAG_KEYS` in `packages/api-types/src/flags.ts`, guard the API with `requireFlag` or `isFlagOn` (`apps/api/src/flags.ts`) and the dashboard with `useFlag`, `<Flag>` or `requireFlagRoute` (`apps/web/src/lib/flags.tsx`). Don't create or change flags in Flagship unless a maintainer asks. See [docs/feature-flags.md](docs/feature-flags.md).
+
 ## Releasing the CLI
 
 The `relayrunner` npm package (the Rust CLI in `apps/cli`, shipped as a launcher plus one binary package per platform) is released with [changesets](https://github.com/changesets/changesets). A PR that changes what the CLI does for people who install it adds a `.changeset/*.md` file (`pnpm changeset`) naming `"relayrunner"`. A PR that changes the Mac app (`apps/mac`) names `"@relayrunner/mac"`, which has its own version; those are the only two names a changeset may use. Merging it makes the Release workflow open a `chore: version packages` PR, and merging that one publishes the CLI to npm (the Mac app ships with `pnpm release:mac` (`apps/mac/scripts/release.sh` in a clean worktree of main), run on a Mac that holds the signing certificate; it publishes a GitHub release, the Homebrew cask and an appcast PR, so run it only on a maintainer's explicit go). Don't bump either `package.json` version by hand. See [.changeset/README.md](.changeset/README.md).

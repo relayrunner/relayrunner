@@ -6,6 +6,7 @@ import type { AgentPrincipal } from "./agent-auth.ts";
 import type { Auth, Session } from "./auth.ts";
 import type { Db, schema } from "./db/index.ts";
 import type { Env } from "./env.ts";
+import type { Flags } from "@relayrunner/api-types";
 import { respondError } from "./errors.ts";
 import { requireAccess } from "./middleware/admin.ts";
 import { d1Session } from "./middleware/d1-session.ts";
@@ -16,6 +17,7 @@ import { adminWebhookRoutes } from "./routes/admin-webhooks.ts";
 import { adminRoutes } from "./routes/admin.ts";
 import { authRoutes } from "./routes/auth.ts";
 import { feedbackRoutes } from "./routes/feedback.ts";
+import { flagRoutes } from "./routes/flags.ts";
 import { telemetryRoutes } from "./routes/telemetry.ts";
 import { logBucketRoutes } from "./routes/log-bucket.ts";
 import { githubRoutes } from "./routes/github.ts";
@@ -44,6 +46,8 @@ export interface AppEnv {
     accessIdentity: AccessIdentity;
     // Set by attachSession when the request carries an agent access token (agent-auth.ts).
     agent?: AgentPrincipal;
+    // Flag values already evaluated for this request (src/flags.ts).
+    flags?: Partial<Flags>;
   };
 }
 
@@ -68,6 +72,7 @@ app.route("/admin/webhooks", adminWebhookRoutes);
 app.use("*", attachSession, d1Session);
 app.route("/auth", authRoutes);
 app.route("/me", meRoutes);
+app.route("/flags", flagRoutes);
 app.route("/workspaces", workspaceRoutes);
 app.route("/activity", activityRoutes);
 app.route("/usage", usageRoutes);
