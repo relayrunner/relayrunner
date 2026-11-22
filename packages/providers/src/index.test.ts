@@ -30,6 +30,8 @@ describe("hosted provider labels", () => {
     ["groundbox-flex-8vcpu", "groundbox"],
     ["groundbox-auto-web", "groundbox"],
     ["groundbox-macos", "groundbox"],
+    ["groundbox-windows", "groundbox"],
+    ["groundbox-windows-8vcpu", "groundbox"],
     ["ubuntu-latest", null],
     ["self-hosted", null],
   ])("%s belongs to %s", (label, id) => {

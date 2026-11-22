@@ -210,7 +210,8 @@ test("compares runs with the workflow's recent passing runs", async () => {
   await job(100, 2, "test", at + 200_000, 2_000, 40_000, ns);
 
   const report = await evaluationReport(db, "w1", "e1");
-  expect(report.baseline).toEqual({ runs: 2, medianMs: 125_000, waitMs: 15_000 });
+  // Two minutes each on ubuntu-latest in a private repo; the relay pick is free.
+  expect(report.baseline).toEqual({ runs: 2, medianMs: 125_000, waitMs: 15_000, usd: 0.012 });
   expect(report.attempts.map((a) => a.status)).toEqual([
     "done",
     "running",
@@ -218,7 +219,9 @@ test("compares runs with the workflow's recent passing runs", async () => {
     "waiting",
     "waiting",
   ]);
-  expect(report.cold).toEqual({ ms: 85_000, waitMs: 5_000 });
+  // Namespace has no list price: its plan's 2 vCPU minute ($0.006) scaled to 4 vCPU, two minutes.
+  expect(report.cold).toEqual({ ms: 85_000, waitMs: 5_000, usd: 0.024 });
+  expect(report.attempts.map((a) => a.usd)).toEqual([0.024, null, null, null, null]);
   expect(report.jobs).toEqual([
     {
       name: "test",

@@ -202,9 +202,9 @@ export const PROVIDERS: Record<ProviderId, ProviderInfo> = {
   groundbox: {
     name: "Groundbox",
     summary:
-      "Linux x64 and macOS runners for GitHub Actions, each job on a fresh single-use VM, billed per second.",
+      "Linux x64, Windows and macOS runners for GitHub Actions, each job on a fresh single-use VM, billed per second.",
     labels:
-      "groundbox, groundbox-2vcpu, -4vcpu, -8vcpu, -16vcpu, groundbox-flex-*, groundbox-macos",
+      "groundbox, groundbox-2vcpu, -4vcpu, -8vcpu, -16vcpu, groundbox-flex-*, groundbox-windows-*, groundbox-macos",
     example: "groundbox-4vcpu",
     setup:
       "Sign up for Groundbox and install its GitHub App on an organization or a personal account.",

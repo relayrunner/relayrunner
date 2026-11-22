@@ -42,6 +42,9 @@ describe("runnerSize", () => {
     ["groundbox", "groundbox-flex", "4 vCPU · 16 GB"],
     ["groundbox", "groundbox-flex-8vcpu", "8 vCPU · 32 GB"],
     ["groundbox", "groundbox-macos", "12 vCPU · 12 GB"],
+    ["groundbox", "groundbox-windows", "4 vCPU · 16 GB"],
+    ["groundbox", "groundbox-windows-2vcpu", "2 vCPU · 8 GB"],
+    ["groundbox", "groundbox-windows-16vcpu", "16 vCPU · 64 GB"],
   ])("%s %s is %s", (provider, label, text) => {
     expect(sizeText(runnerSize(provider, label))).toBe(text);
   });

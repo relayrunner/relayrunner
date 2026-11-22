@@ -156,6 +156,10 @@ export const RATES = {
     "groundbox-flex-8vcpu": "runner",
     "groundbox-flex-16vcpu": "runner",
     macos: "runner",
+    "groundbox-windows-2vcpu": "runner",
+    "groundbox-windows-4vcpu": "runner",
+    "groundbox-windows-8vcpu": "runner",
+    "groundbox-windows-16vcpu": "runner",
   },
   github: {
     "linux-1-core": "runner",
@@ -309,6 +313,12 @@ export const BASE_PRICES: PriceRow[] = [
   { provider: "groundbox", rate: "groundbox-flex-16vcpu", usd: 0.0105, from: "2026-11-21" },
   // Groundbox macOS: $0.05 a minute, one size (12 vCPU M6, 12 GB). https://groundbox.dev/macos-ci
   { provider: "groundbox", rate: "macos", usd: 0.05, from: "2026-11-22" },
+  // Groundbox Windows Server 2025: per minute 2vcpu (2/8) $0.006, 4vcpu (4/16) $0.012, 8vcpu (8/32)
+  // $0.022, 16vcpu (16/64) $0.042. https://groundbox.dev/windows-ci
+  { provider: "groundbox", rate: "groundbox-windows-2vcpu", usd: 0.006, from: "2026-11-22" },
+  { provider: "groundbox", rate: "groundbox-windows-4vcpu", usd: 0.012, from: "2026-11-22" },
+  { provider: "groundbox", rate: "groundbox-windows-8vcpu", usd: 0.022, from: "2026-11-22" },
+  { provider: "groundbox", rate: "groundbox-windows-16vcpu", usd: 0.042, from: "2026-11-22" },
   // GitHub, in a private repo; standard runners are free in public ones.
   // https://docs.github.com/en/billing/reference/actions-runner-pricing
   { provider: "github", rate: "linux-1-core", usd: 0.002, from: "2026-11-11" },
@@ -486,18 +496,28 @@ const NAMED_RUNNERS: Partial<Record<string, RunnerSize>> = {
   "lizard-large": { vcpus: 8, memoryGb: 16 },
 };
 
-// Groundbox's sizes, 4 GB a vCPU. https://groundbox.dev/pricing
+// Groundbox's sizes, 4 GB a vCPU, on Linux and Windows. https://groundbox.dev/pricing and
+// https://groundbox.dev/windows-ci
 const GROUNDBOX_VCPUS = [2, 4, 8, 16];
 
 // Groundbox's one macOS size, a 12 vCPU M6 with 12 GB. https://groundbox.dev/macos-ci
 const GROUNDBOX_MACOS: RunnerSize = { vcpus: 12, memoryGb: 12 };
 
 // The Groundbox rate a label asks for: `groundbox-4vcpu-ubuntu-2404` is groundbox-4vcpu, a bare
-// `groundbox-flex` is groundbox-flex-4vcpu, and `groundbox-macos` is macos. Null for the auto size
-// (`groundbox`, `groundbox-auto-<name>`), which picks a size per job, so the label doesn't say.
+// `groundbox-flex` is groundbox-flex-4vcpu, a bare `groundbox-windows` is groundbox-windows-4vcpu,
+// and `groundbox-macos` is macos. Null for the auto size (`groundbox`, `groundbox-auto-<name>`),
+// which picks a size per job, so the label doesn't say.
 function groundboxRate(label: string): { rate: string; vcpus: number } | null {
   if (label === "groundbox-macos") return { rate: "macos", vcpus: GROUNDBOX_MACOS.vcpus };
   if (label === "groundbox-flex") return { rate: "groundbox-flex-4vcpu", vcpus: 4 };
+  if (label === "groundbox-windows") return { rate: "groundbox-windows-4vcpu", vcpus: 4 };
+  const windows = /^groundbox-windows-(\d+)vcpu$/.exec(label);
+  if (windows) {
+    const vcpus = Number(windows[1]);
+    return GROUNDBOX_VCPUS.includes(vcpus)
+      ? { rate: `groundbox-windows-${vcpus}vcpu`, vcpus }
+      : null;
+  }
   const match = /^groundbox-(flex-)?(\d+)vcpu(?:-ubuntu-2404)?$/.exec(label);
   const vcpus = Number(match?.[2]);
   return match && GROUNDBOX_VCPUS.includes(vcpus)
@@ -559,8 +579,8 @@ function rateOf(provider: ProviderId, label: string): { rate: string; vcpus: num
       const size = NAMED_RUNNERS[rate];
       return size ? { rate, vcpus: size.vcpus } : null;
     }
-    // groundbox-4vcpu[-ubuntu-2404], groundbox-flex[-8vcpu], groundbox-macos; the auto size isn't
-    // priced here.
+    // groundbox-4vcpu[-ubuntu-2404], groundbox-flex[-8vcpu], groundbox-windows[-8vcpu],
+    // groundbox-macos; the auto size isn't priced here.
     case "groundbox":
       return groundboxRate(label);
     // ubicloud, ubicloud-standard-4, ubicloud-standard-2-arm, ubicloud-premium-8-ubuntu-2404
@@ -650,7 +670,8 @@ export function runnerSize(provider: string, label: string): RunnerSize | null {
     case "instabox":
     case "lizard":
       return NAMED_RUNNERS[namedRunner(label)] ?? null;
-    // groundbox-8vcpu is 8 vCPU · 32 GB, groundbox-macos 12 vCPU · 12 GB. The auto size doesn't say.
+    // groundbox-8vcpu and groundbox-windows-8vcpu are 8 vCPU · 32 GB, groundbox-macos 12 vCPU · 12 GB.
+    // The auto size doesn't say.
     case "groundbox": {
       if (label === "groundbox-macos") return GROUNDBOX_MACOS;
       const vcpus = groundboxRate(label)?.vcpus;

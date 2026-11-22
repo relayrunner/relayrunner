@@ -575,6 +575,13 @@ function EvaluationView({
     if (!authDisabled) return getEvaluation(id);
     if (sample === "eval-waiting") return Promise.resolve(sampleEvaluation(provider, 0, "waiting"));
     if (sample === "eval-done") return Promise.resolve(sampleEvaluation(provider, EVALUATION_RUNS));
+    if (sample === "eval-starting") {
+      const report = sampleEvaluation(provider, 0);
+      return Promise.resolve({
+        ...report,
+        attempts: report.attempts.map((a) => ({ ...a, status: "waiting" as const, jobs: [] })),
+      });
+    }
     return Promise.resolve(sampleEvaluation(provider, 2));
   };
   const [polling, setPolling] = useState(true);
@@ -719,6 +726,9 @@ function Running({
   const { name } = providerInfo(report.provider);
   const max = Math.max(report.baseline.medianMs ?? 0, ...report.attempts.map((a) => a.ms ?? 0), 1);
   const stopped = report.state === "failed" || report.state === "cancelled";
+  // The run GitHub is about to start: no jobs have shown up for it yet.
+  const next = stopped ? undefined : report.attempts.find((a) => a.status !== "done");
+  const starting = next?.status === "waiting" ? next.attempt : null;
   return (
     <div className="grid gap-6">
       <RunMeta report={report} />
@@ -736,7 +746,13 @@ function Running({
       <div className="grid gap-3 lg:grid-cols-[1fr_18rem]">
         <ol className="rounded-xl border bg-card">
           {report.attempts.map((attempt) => (
-            <RunRow key={attempt.attempt} attempt={attempt} max={max} report={report} />
+            <RunRow
+              key={attempt.attempt}
+              attempt={attempt}
+              max={max}
+              report={report}
+              starting={attempt.attempt === starting}
+            />
           ))}
         </ol>
         <div className="grid content-start gap-3">
@@ -784,12 +800,15 @@ function RunRow({
   attempt,
   max,
   report,
+  starting,
 }: {
   attempt: Attempt;
   max: number;
   report: EvaluationReport;
+  /** The next run, which GitHub hasn't started yet. */
+  starting: boolean;
 }) {
-  const { status } = attempt;
+  const status = starting ? "starting" : attempt.status;
   const failed = attempt.conclusion !== null && attempt.conclusion !== "success";
   const url = status !== "waiting" ? runUrl(report, attempt.attempt) : null;
   return (
@@ -801,6 +820,9 @@ function RunRow({
           ) : (
             <CheckIcon aria-label="Done" className="size-[18px] text-muted-foreground" />
           ))}
+        {status === "starting" && (
+          <LoaderCircleIcon aria-label="Starting" className="size-[18px] animate-spin text-run" />
+        )}
         {status === "running" && (
           <LoaderCircleIcon aria-label="Running" className="size-[18px] animate-spin text-run" />
         )}
@@ -819,6 +841,11 @@ function RunRow({
         <span className="flex-1 text-muted-foreground">
           {attempt.attempt === 1 ? "Cold cache" : "Warm"}
         </span>
+        {status === "starting" && (
+          <span className="animate-pulse text-muted-foreground">
+            {report.runId ? "Starting…" : "Dispatching…"}
+          </span>
+        )}
         {attempt.ms !== null && (
           <span className="flex items-center gap-3">
             <span className="hidden h-1.5 w-40 overflow-hidden rounded-full bg-raised-2 sm:block">
@@ -831,6 +858,15 @@ function RunRow({
           </span>
         )}
       </div>
+      {status === "starting" && (
+        <div className="ml-[30px] rounded-lg bg-raised px-3 py-2.5 text-[13px]">
+          <p className="text-muted-foreground">
+            {report.runId
+              ? `Waiting for GitHub to start run ${attempt.attempt}. Jobs show up here once runners pick them up.`
+              : "Asking GitHub to start the workflow."}
+          </p>
+        </div>
+      )}
       {status === "running" && attempt.jobs.length > 0 && (
         <ul className="ml-[30px] grid gap-1.5 rounded-lg bg-raised px-3 py-2.5 text-[13px]">
           {attempt.jobs.map((job) => (
@@ -870,11 +906,33 @@ function change(from: number | null, to: number | null) {
   return { pct, text: pct === 0 ? "Same" : pct < 0 ? `${-pct}% faster` : `${pct}% slower` };
 }
 
+/** Dollars to the cent, or a tenth of a cent under a dime, so small runs don't all read $0.01. */
+function usd(value: number | null) {
+  if (value === null) return "—";
+  return `$${value.toFixed(value > 0 && value < 0.1 ? 3 : 2)}`;
+}
+
+/** "16% more than", "Same as" or "16% less than" today, or null when either cost is unknown. */
+function costChange(from: number | null, to: number | null) {
+  if (from === null || to === null) return null;
+  if (from === 0) return to === 0 ? "Same as" : null;
+  const pct = Math.round(((to - from) / from) * 100);
+  return pct === 0 ? "Same as" : pct < 0 ? `${-pct}% less than` : `${pct}% more than`;
+}
+
+function costDetail(name: string, runUsd: number | null, todayUsd: number | null) {
+  if (runUsd === null) return `No list price for ${name}`;
+  if (todayUsd === null) return "Today's runners have no list price";
+  const vs = costChange(todayUsd, runUsd);
+  return vs ? `${vs} ${usd(todayUsd)} today` : `Today ${usd(todayUsd)}`;
+}
+
 function Results({ report }: { report: EvaluationReport }) {
   const { name } = providerInfo(report.provider);
   const { bar } = providerStyle(report.provider);
   const warm = change(report.baseline.medianMs, report.warm.ms);
   const cold = change(report.baseline.medianMs, report.cold.ms);
+  const runUsd = report.warm.usd ?? report.cold.usd;
   const maxJob = Math.max(
     1,
     ...report.jobs.flatMap((j) => [j.baseline, j.cold, j.warm].flatMap((s) => (s ? total(s) : []))),
@@ -915,14 +973,14 @@ function Results({ report }: { report: EvaluationReport }) {
           detail={cold ? `${cold.text} · run 1, empty cache` : "Run 1, empty cache"}
         />
         <StatTile
+          label="Cost per run"
+          value={usd(runUsd)}
+          detail={costDetail(name, runUsd, report.baseline.usd)}
+        />
+        <StatTile
           label="Waiting for a runner"
           value={clock(report.warm.waitMs ?? report.cold.waitMs)}
           detail={`Median per job · today ${clock(report.baseline.waitMs)}`}
-        />
-        <StatTile
-          label="Compared with"
-          value={plural(report.baseline.runs, "run")}
-          detail={`Passing on ${report.ref}, last 14 days`}
         />
       </div>
 
@@ -999,7 +1057,9 @@ function Results({ report }: { report: EvaluationReport }) {
         Today is the median of the workflow's last {plural(report.baseline.runs, "passing run")} on{" "}
         {report.ref} over 14 days, on whatever runners they used and at whatever commit each ran.{" "}
         {name}'s runs ran back to back on one commit, so caches were warmer than on a typical day.
-        Warm is the median of runs 2 to {report.runs}.
+        Warm is the median of runs 2 to {report.runs}. Costs are list prices: each job's minutes,
+        rounded up, at its runner's price per minute, with your own machines free. Free minutes,
+        plan fees and discounts aren't counted.
       </p>
     </div>
   );
@@ -1063,11 +1123,7 @@ function RunsChart({ report }: { report: EvaluationReport }) {
           />
         )}
         {report.attempts.map((a) => (
-          <div
-            key={a.attempt}
-            className="flex h-full flex-1 flex-col items-center justify-end gap-1"
-          >
-            <span className="text-xs tabular-nums">{a.ms !== null ? clock(a.ms) : "—"}</span>
+          <div key={a.attempt} className="flex h-full flex-1 flex-col items-center justify-end">
             <span
               className={cn("w-full max-w-14 rounded-t-md", bar, a.attempt === 1 && "opacity-50")}
               style={{ height: `${((a.ms ?? 0) / max) * 100}%` }}
@@ -1078,6 +1134,13 @@ function RunsChart({ report }: { report: EvaluationReport }) {
       <div className="mt-2 flex gap-4 pl-1 text-center text-xs text-muted-foreground sm:gap-8">
         {report.attempts.map((a) => (
           <span key={a.attempt} className="flex-1">
+            {/* Under the axis, so a bar near the median line never hides its time. */}
+            <span className="block text-sm font-medium text-foreground tabular-nums">
+              {a.ms !== null ? clock(a.ms) : "—"}
+            </span>
+            {a.usd !== null && (
+              <span className="block text-foreground tabular-nums">{usd(a.usd)}</span>
+            )}
             Run {a.attempt}
             <br />
             {a.attempt === 1 ? "Cold cache" : "Warm"}

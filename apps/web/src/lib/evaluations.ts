@@ -43,6 +43,8 @@ export interface Attempt {
   status: "waiting" | "running" | "done";
   conclusion: string | null;
   ms: number | null;
+  /** The run's cost at list prices, once done; null when a job ran without a price. */
+  usd: number | null;
   jobs: AttemptJob[];
 }
 
@@ -71,9 +73,9 @@ export interface EvaluationReport {
   createdAt: number;
   finishedAt: number | null;
   attempts: Attempt[];
-  baseline: { runs: number; medianMs: number | null; waitMs: number | null };
-  cold: { ms: number | null; waitMs: number | null };
-  warm: { ms: number | null; waitMs: number | null };
+  baseline: { runs: number; medianMs: number | null; waitMs: number | null; usd: number | null };
+  cold: { ms: number | null; waitMs: number | null; usd: number | null };
+  warm: { ms: number | null; waitMs: number | null; usd: number | null };
   jobs: JobComparison[];
 }
 
@@ -180,6 +182,8 @@ const SAMPLE_JOBS: [string, Split, Split, Split][] = [
   ["e2e smoke", split(41, 251), split(9, 262), split(6, 171)],
 ];
 const SAMPLE_RUN_MS = [475, 310, 298, 304, 301].map(s);
+// List-price cost of each run: 18 billed minutes cold, 11 warm, at 4 vCPU.
+const SAMPLE_RUN_USD = [0.216, 0.132, 0.132, 0.132, 0.132];
 
 /** A made-up evaluation: `done` attempts finished, the next one running. */
 export function sampleEvaluation(provider: string, done: number, state?: EvaluationState) {
@@ -192,6 +196,7 @@ export function sampleEvaluation(provider: string, done: number, state?: Evaluat
       status,
       conclusion: status === "done" ? "success" : null,
       ms: status === "done" ? ms : null,
+      usd: status === "done" ? SAMPLE_RUN_USD[i]! : null,
       jobs:
         status === "waiting"
           ? []
@@ -223,11 +228,24 @@ export function sampleEvaluation(provider: string, done: number, state?: Evaluat
     finishedAt: finished ? Date.now() - 4 * 60_000 : null,
     attempts:
       state === "waiting"
-        ? attempts.map((a) => ({ ...a, status: "waiting", jobs: [], ms: null, conclusion: null }))
+        ? attempts.map((a) => ({
+            ...a,
+            status: "waiting",
+            jobs: [],
+            ms: null,
+            usd: null,
+            conclusion: null,
+          }))
         : attempts,
-    baseline: { runs: 20, medianMs: 520_000, waitMs: 12_000 },
-    cold: done >= 1 ? { ms: SAMPLE_RUN_MS[0]!, waitMs: 7_000 } : { ms: null, waitMs: null },
-    warm: done >= 2 ? { ms: 302_000, waitMs: 5_000 } : { ms: null, waitMs: null },
+    baseline: { runs: 20, medianMs: 520_000, waitMs: 12_000, usd: 0.114 },
+    cold:
+      done >= 1
+        ? { ms: SAMPLE_RUN_MS[0]!, waitMs: 7_000, usd: SAMPLE_RUN_USD[0]! }
+        : { ms: null, waitMs: null, usd: null },
+    warm:
+      done >= 2
+        ? { ms: 302_000, waitMs: 5_000, usd: 0.132 }
+        : { ms: null, waitMs: null, usd: null },
     jobs: SAMPLE_JOBS.map(([name, baseline, cold, warm]) => ({
       name,
       baseline,

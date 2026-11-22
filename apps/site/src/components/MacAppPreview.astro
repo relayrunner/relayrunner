@@ -3,8 +3,12 @@
  * The Mac app's menu and Jobs window, drawn in HTML with made-up jobs, for /download. Drawn rather
  * than captured so it shows no real machine or repo, stays sharp at any size and follows the site's
  * light or dark theme. Keep the labels in step with apps/mac (MenuBar.swift, JobsWindow.swift).
- * Narrow screens show only the menu.
+ * Narrow screens show only the menu, and so does `menuOnly`, for a half-width column.
  */
+interface Props {
+  menuOnly?: boolean;
+}
+const { menuOnly = false } = Astro.props;
 
 type Outcome = "ok" | "failed";
 const jobs: { name: string; workflow: string; repo: string; waited: string; ran: string; finished: string; outcome: Outcome }[] = [
@@ -29,8 +33,14 @@ const menuItems: { label: string; key?: string }[] = [
 ];
 ---
 
-<figure class="mac-preview">
-  <div class="mac-stage" role="img" aria-label="The RelayRunner menu bar menu, running a test job, next to the Jobs window listing the week's jobs and one job's steps.">
+<figure class:list={["mac-preview", { "mac-menu-only": menuOnly }]}>
+  <div
+    class="mac-stage"
+    role="img"
+    aria-label={menuOnly
+      ? "The RelayRunner menu bar menu: taking jobs, with a test job running and about a minute left."
+      : "The RelayRunner menu bar menu, running a test job, next to the Jobs window listing the week's jobs and one job's steps."}
+  >
     <div class="mac-bar" aria-hidden="true">
       <span class="mac-bar-icon">
         <svg viewBox="0 0 36 36">
@@ -542,6 +552,18 @@ const menuItems: { label: string; key?: string }[] = [
   }
   .mac-item small {
     font-size: 1em;
+  }
+
+  /* The menu stays under its icon at the right, as on a real Mac. */
+  .mac-menu-only .mac-stage {
+    grid-template-columns: minmax(0, 1fr);
+  }
+  .mac-menu-only .mac-window {
+    display: none;
+  }
+  .mac-menu-only .mac-menu {
+    grid-column: 1;
+    max-width: 100%;
   }
 
   @media (max-width: 760px) {

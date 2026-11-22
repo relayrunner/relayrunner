@@ -65,6 +65,21 @@ describe("runnerCatalog", () => {
     expect(row?.cells.macos).toMatchObject({ label: "groundbox-macos", vcpus: 12, usd: 0.05 });
   });
 
+  test("lists Groundbox's Windows runners, priced per runner", () => {
+    const windows = runnerCatalog(BASE_BOOK, "groundbox").find((row) => row.platform === "windows");
+    expect(windows?.runners.map((runner) => [runner.label, runner.size, runner.usd])).toEqual([
+      ["groundbox-windows-2vcpu", { vcpus: 2, memoryGb: 8 }, 0.006],
+      ["groundbox-windows-4vcpu", { vcpus: 4, memoryGb: 16 }, 0.012],
+      ["groundbox-windows-8vcpu", { vcpus: 8, memoryGb: 32 }, 0.022],
+      ["groundbox-windows-16vcpu", { vcpus: 16, memoryGb: 64 }, 0.042],
+    ]);
+    const row = RUNNER_TABLE_ROWS.find((row) => row.id === "groundbox");
+    expect(row?.cells["windows-16"]).toMatchObject({
+      label: "groundbox-windows-16vcpu",
+      usd: 0.042,
+    });
+  });
+
   test("lists nothing for a provider without list prices", () => {
     expect(runnerCatalog(BASE_BOOK, "namespace")).toEqual([]);
   });

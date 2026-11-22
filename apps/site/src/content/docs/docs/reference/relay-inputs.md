@@ -63,7 +63,7 @@ Any input can say `auto` instead of a label. The Router then picks that provider
 | `celesto`    | none    | One Celesto label, such as `celesto-standard`.                                                                                                                                                               |
 | `instabox`   | none    | One InstaBox label, such as `instabox-medium`.                                                                                                                                                               |
 | `lizard`     | none    | One Lizard label, such as `lizard-medium-ubuntu-2404`. Organizations' repos only.                                                                                                                            |
-| `groundbox`  | none    | One Groundbox label, such as `groundbox-4vcpu` or `groundbox-macos`.                                                                                                                                         |
+| `groundbox`  | none    | One Groundbox label, such as `groundbox-4vcpu`, `groundbox-windows-4vcpu` or `groundbox-macos`.                                                                                                              |
 | `runs-on`    | none    | One RunsOn label, such as `runs-on=${{ github.run_id }}/runner=2cpu-linux-x64`.                                                                                                                              |
 
 ## Auto sizes

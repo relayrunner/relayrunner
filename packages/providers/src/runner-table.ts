@@ -120,7 +120,7 @@ const RUNNERS: Partial<Record<ProviderId, RunnerOf>> = {
     ({
       linux: sized(`groundbox-${n}vcpu`, n),
       arm: null,
-      windows: null,
+      windows: sized(`groundbox-windows-${n}vcpu`, n),
       macos: sized("groundbox-macos", 12),
     })[platform],
 };

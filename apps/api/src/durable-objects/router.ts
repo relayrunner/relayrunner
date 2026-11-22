@@ -1,13 +1,9 @@
 import type { ShapePlatform } from "@relayrunner/providers";
-import {
-  preferFirst,
-  type RelayInputs,
-  readRunnerOrder,
-  type RunnerKey,
-} from "@relayrunner/runner-order";
+import { preferFirst, type RelayInputs, type RunnerKey } from "@relayrunner/runner-order";
 import { Recent } from "../recent.ts";
 import { accountUsage } from "../actions-billing.ts";
 import { accountSpend } from "../provider-spend.ts";
+import { resolveRunnerOrder } from "../runner-orders.ts";
 import { blacksmithMinutes, type BlacksmithMinutes } from "../blacksmith-minutes.ts";
 import { readBoatStarts, StartBudget } from "../boat-limits.ts";
 import {
@@ -317,7 +313,7 @@ export class Router extends DurableObject<Env> {
   }
 
   /**
-   * Where the run's next job goes, walking the workspace's runner order: a machine route's
+   * Where the run's next job goes, walking the repository's runner order (src/runner-orders.ts): a machine route's
    * `rr-<id>`, the job's own `github` label, or no runner and the reason. A GitHub step with a
    * minutes limit passes the job on once the job's account nears its included quota.
    */
@@ -360,10 +356,9 @@ export class Router extends DurableObject<Env> {
       );
     // The machine step's pick, if the walk got that far.
     let pick: MachinePick | undefined;
-    const [[workspace]] = await Promise.all([
+    const [[workspace], { order }] = await Promise.all([
       db
         .select({
-          runnerOrder: schema.workspace.runnerOrder,
           skipUnhealthy: schema.workspace.skipUnhealthyRunners,
           accountType: schema.githubInstallation.accountType,
           accountLogin: schema.githubInstallation.accountLogin,
@@ -375,11 +370,12 @@ export class Router extends DurableObject<Env> {
         )
         .where(eq(schema.workspace.id, job.workspaceId))
         .limit(1),
+      resolveRunnerOrder(db, job.workspaceId, job.repositoryId),
       // Jobs already waiting get a free slot before this one can.
       this.drain(),
     ]);
     const decision = await decideRoute(
-      retryOrder(preferFirst(readRunnerOrder(workspace?.runnerOrder), job.first), job.retry),
+      retryOrder(preferFirst(order, job.first), job.retry),
       // Some hosted providers only serve organizations (SKIPS_PERSONAL_ACCOUNTS).
       { ...job, personal: workspace?.accountType === "User" },
       async () => (pick = await this.pickMachine(job)),

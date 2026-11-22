@@ -195,8 +195,8 @@ const CATALOG: Partial<Record<ProviderId, Row[]>> = {
       })),
     },
   ],
-  // https://groundbox.dev/pricing (flex runners wait for spare room, at half price) and
-  // https://groundbox.dev/macos-ci
+  // https://groundbox.dev/pricing (flex runners wait for spare room, at half price),
+  // https://groundbox.dev/windows-ci and https://groundbox.dev/macos-ci
   groundbox: [
     { platform: "linux", runners: sizes([2, 4, 8, 16], (n) => `groundbox-${n}vcpu`) },
     {
@@ -204,6 +204,7 @@ const CATALOG: Partial<Record<ProviderId, Row[]>> = {
       variant: "Flex",
       runners: sizes([2, 4, 8, 16], (n) => `groundbox-flex-${n}vcpu`),
     },
+    { platform: "windows", runners: sizes([2, 4, 8, 16], (n) => `groundbox-windows-${n}vcpu`) },
     { platform: "macos", runners: [{ label: "groundbox-macos", note: "M6" }] },
   ],
 };

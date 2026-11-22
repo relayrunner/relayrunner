@@ -287,7 +287,7 @@ function AutoJobRows({
                   {(job.first && !steps.includes(job.first) ? [...steps, job.first] : steps).map(
                     (key) => (
                       <SelectItem key={key} value={key}>
-                        <ProviderMark provider={key} className="size-4 [&_svg]:size-3" />
+                        <ProviderMark provider={key} />
                         {RUNNER_LABELS[key]}
                       </SelectItem>
                     ),
