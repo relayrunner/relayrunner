@@ -78,6 +78,19 @@ export const ERRORS = {
 
   // Providers and prices
   PROVIDER_UNKNOWN: { status: 400, message: "There's no provider with that id." },
+  EVALUATION_ACTIVE: {
+    status: 409,
+    message: "This workflow is already being evaluated. Wait for it to finish or stop it first.",
+  },
+  WORKFLOW_NOT_DISPATCHABLE: {
+    status: 409,
+    message:
+      "The workflow can't be started on demand. Add `workflow_dispatch` to its `on:` triggers on the default branch, then try again.",
+  },
+  EVALUATION_NOT_STARTED: {
+    status: 502,
+    message: "GitHub didn't start the workflow. Try again in a minute.",
+  },
   PROVIDER_INVALID: {
     status: 400,
     message: "Fill in a name, summary and labels, and use https:// links.",

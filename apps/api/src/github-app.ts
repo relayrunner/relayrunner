@@ -1058,3 +1058,89 @@ async function budgets(token: string, path: string): Promise<BillingBudget[]> {
     preventFurtherUsage: budget.prevent_further_usage,
   }));
 }
+
+/** What GitHub said to a workflow_dispatch: the run it started, or why it refused. */
+export type DispatchResult =
+  | { ok: true; runId: number | null }
+  | { ok: false; status: number; message: string };
+
+/**
+ * Starts a workflow on `ref` (Actions write). Asks for the run's details, which GitHub returns
+ * since February 2026; `runId` is null when the answer doesn't carry one.
+ */
+export async function dispatchWorkflow(
+  token: string,
+  repo: string,
+  workflowPath: string,
+  ref: string,
+): Promise<DispatchResult> {
+  const file = encodeURIComponent(workflowPath.split("/").pop() ?? workflowPath);
+  const response = await fetch(`${API}/repos/${repo}/actions/workflows/${file}/dispatches`, {
+    method: "POST",
+    headers: headers(token),
+    body: JSON.stringify({ ref, return_run_details: true }),
+  });
+  const body = (await response.json().catch(() => null)) as Record<string, unknown> | null;
+  if (!response.ok)
+    return {
+      ok: false,
+      status: response.status,
+      message: typeof body?.message === "string" ? body.message : `HTTP ${response.status}`,
+    };
+  const runId = Number(body?.workflow_run_id ?? body?.id);
+  return { ok: true, runId: Number.isSafeInteger(runId) && runId > 0 ? runId : null };
+}
+
+/**
+ * The newest workflow_dispatch run of a workflow on `branch` created at or after `since`, started
+ * by an App (our dispatch), for when the dispatch answer had no run id. Null when none is listed.
+ */
+export async function findDispatchedRun(
+  token: string,
+  repo: string,
+  workflowPath: string,
+  branch: string,
+  since: number,
+): Promise<number | null> {
+  const file = encodeURIComponent(workflowPath.split("/").pop() ?? workflowPath);
+  const body = (await getJson(
+    token,
+    `/repos/${repo}/actions/workflows/${file}/runs?event=workflow_dispatch&branch=${encodeURIComponent(branch)}&per_page=10`,
+  )) as {
+    workflow_runs?: { id: number; created_at: string; actor?: { type?: string } | null }[];
+  };
+  const run = (body.workflow_runs ?? [])
+    .filter((each) => Date.parse(each.created_at) >= since - 5_000 && each.actor?.type === "Bot")
+    .sort((a, b) => Date.parse(b.created_at) - Date.parse(a.created_at))[0];
+  return run?.id ?? null;
+}
+
+/** The repo's default branch (Metadata read). */
+export async function repoDefaultBranch(token: string, repo: string): Promise<string> {
+  const body = (await getJson(token, `/repos/${repo}`)) as { default_branch?: string };
+  if (!body.default_branch) throw new Error(`GET /repos/${repo} had no default_branch`);
+  return body.default_branch;
+}
+
+/** Re-runs every job of a finished run as a new attempt (Actions write). Null on success. */
+export async function rerunRun(token: string, repo: string, runId: number): Promise<string | null> {
+  const path = `/repos/${repo}/actions/runs/${runId}/rerun`;
+  const response = await fetch(`${API}${path}`, { method: "POST", headers: headers(token) });
+  if (response.ok) return null;
+  const body = (await response.json().catch(() => null)) as { message?: unknown } | null;
+  return typeof body?.message === "string"
+    ? `${response.status}: ${body.message}`
+    : `POST ${path} failed with ${response.status}`;
+}
+
+/** Cancels a run's current attempt (Actions write). Null on success or when it already ended. */
+export async function cancelRun(
+  token: string,
+  repo: string,
+  runId: number,
+): Promise<string | null> {
+  const path = `/repos/${repo}/actions/runs/${runId}/cancel`;
+  const response = await fetch(`${API}${path}`, { method: "POST", headers: headers(token) });
+  if (response.ok || response.status === 409) return null;
+  return `POST ${path} failed with ${response.status}`;
+}

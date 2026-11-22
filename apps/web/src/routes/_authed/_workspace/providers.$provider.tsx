@@ -1,7 +1,7 @@
 import { dayMs, providerPlans, type RatePrices } from "@relayrunner/providers";
 import { Count } from "@/components/count";
 import { createFileRoute, Link, notFound } from "@tanstack/react-router";
-import { ArrowLeftIcon, ArrowUpRightIcon } from "lucide-react";
+import { ArrowLeftIcon, ArrowUpRightIcon, FlaskConicalIcon } from "lucide-react";
 import { useState } from "react";
 import { IncludedMinutes } from "@/components/actions-minutes";
 import { CodeBlock } from "@/components/code-block";
@@ -38,6 +38,7 @@ import {
   reportCatalog,
   sampleProviderReport,
 } from "@/lib/providers";
+import { evaluationSizes } from "@/lib/evaluations";
 import { cn } from "@/lib/utils";
 import {
   optionParam,
@@ -114,6 +115,8 @@ function ProviderView({ first, unused }: { first: ProviderReport; unused: boolea
   const [notSetUp] = useState(unused && !!info.example);
   const { icon, tile } = providerStyle(provider);
   const connectUrl = providerPlans(provider)?.connectUrl;
+  // Hosted providers with a label per size can run a workflow as an evaluation.
+  const evaluable = provider !== "github" && evaluationSizes(provider).length > 0;
 
   function chooseRange(next: TimeRange) {
     setSearch(toSearch(next));
@@ -138,6 +141,14 @@ function ProviderView({ first, unused }: { first: ProviderReport; unused: boolea
           </div>
         </div>
         <div className="flex flex-wrap gap-2">
+          {evaluable && (
+            <Button asChild>
+              <Link to="/providers/$provider/evaluate" params={{ provider }}>
+                <FlaskConicalIcon />
+                Evaluate
+              </Link>
+            </Button>
+          )}
           {/* Before its first job here, the way in is connecting it; after, its dashboard. */}
           {notSetUp && connectUrl ? (
             <ExternalLink href={connectUrl}>Connect</ExternalLink>

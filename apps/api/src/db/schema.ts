@@ -1780,3 +1780,50 @@ export const healthIssue = sqliteTable(
   },
   (table) => [index("health_issue_kind_idx").on(table.kind)],
 );
+
+// A provider evaluation (src/evaluations.ts): one workflow dispatched on its repo's default branch
+// and re-run until it has `runs` attempts, every relay job in it answered with `label` instead of
+// the workspace's runner order. Keyed for the pick by (repository_id, run_id); run_id is null
+// between inserting the row and GitHub's dispatch answer. Gone with the workspace.
+export const evaluation = sqliteTable(
+  "evaluation",
+  {
+    id: text("id").primaryKey(),
+    workspaceId: text("workspace_id")
+      .notNull()
+      .references(() => workspace.id, { onDelete: "cascade" }),
+    installationId: integer("installation_id").notNull(),
+    repositoryId: integer("repository_id").notNull(),
+    repositoryFullName: text("repository_full_name").notNull(),
+    // The workflow's file, such as .github/workflows/ci.yml, and its name when it last ran.
+    workflowPath: text("workflow_path").notNull(),
+    workflowName: text("workflow_name"),
+    // The hosted provider being evaluated, the size asked for in vCPUs, and the label that gets it.
+    provider: text("provider").notNull(),
+    vcpus: integer("vcpus").notNull(),
+    label: text("label").notNull(),
+    // The branch the workflow was dispatched on.
+    ref: text("ref").notNull(),
+    // How many attempts to run, one after another.
+    runs: integer("runs").notNull(),
+    runId: integer("run_id"),
+    // The attempt running now: 1 once dispatched, raised before each re-run, so a redelivered
+    // `completed` for an earlier attempt can't start a second re-run.
+    attempt: integer("attempt").notNull().default(1),
+    // dispatching: row written, waiting on GitHub's answer. waiting: the workflow has no
+    // workflow_dispatch trigger yet (`error` no_dispatch); the next push to `ref` that runs it
+    // dispatches again. running: attempts going. done: every attempt finished. failed: an attempt
+    // failed or GitHub refused (see `error`). cancelled: stopped from the dashboard.
+    state: text("state", {
+      enum: ["dispatching", "waiting", "running", "done", "failed", "cancelled"],
+    }).notNull(),
+    error: text("error"),
+    startedById: text("started_by_id").references(() => user.id, { onDelete: "set null" }),
+    finishedAt: integer("finished_at", { mode: "timestamp_ms" }),
+    ...timestamps,
+  },
+  (table) => [
+    uniqueIndex("evaluation_run_idx").on(table.repositoryId, table.runId),
+    index("evaluation_workspace_idx").on(table.workspaceId, table.createdAt),
+  ],
+);

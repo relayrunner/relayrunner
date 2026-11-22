@@ -43,6 +43,7 @@ import { strandedJobName } from "./stranded-jobs.ts";
 import { exportJob, exportRun } from "./telemetry/export.ts";
 import { traced } from "./tracing.ts";
 import { errorMessage } from "./errors.ts";
+import { advanceEvaluation, resumeWaitingEvaluations } from "./evaluations.ts";
 
 const BASE_RETRY_DELAY_SECONDS = 30;
 const MAX_RETRY_DELAY_SECONDS = 15 * 60;
@@ -274,6 +275,12 @@ export async function processWebhook(env: Env, message: WebhookMessage): Promise
       await Promise.all([recordWorkflowRun(db, message), exportRun(env, db, message)]);
       // A failed run whose runner failed one of its routed jobs gets one more go.
       await retryFailedRun(env, message);
+      // An evaluation's attempt finished: start the next one, or finish it. A push that ran a
+      // waiting evaluation's workflow may have added workflow_dispatch: try it again.
+      await Promise.all([
+        advanceEvaluation(env, db, message),
+        resumeWaitingEvaluations(env, db, message),
+      ]);
       return;
     case "installation":
     case "installation_repositories":
