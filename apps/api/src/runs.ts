@@ -36,6 +36,7 @@ import { DAY_MS } from "./time.ts";
 import { hasTrend, lastDays, type ReportWindow, type Window, windowDays } from "./report-window.ts";
 import { parseDate } from "./jobs.ts";
 import { jobKey, picksForJobs } from "./route-decisions.ts";
+import { workflowCosts } from "./workflow-compare.ts";
 
 type WorkflowRunMessage = Extract<WebhookMessage, { event: "workflow_run" }>;
 
@@ -749,21 +750,31 @@ export async function workflowTimes(
 
 export type { PerformanceReport };
 
-/** The Performance page: job times per runner, plus each workflow's whole-run times. */
+const NO_COST = { usd: null, environments: [], fastest: null, runMs: 0, spentUsd: 0 };
+
+/**
+ * The Performance page: job times per runner, plus each workflow's whole-run times, cost per run
+ * and fastest runner (src/workflow-compare.ts).
+ */
 export async function performanceReport(
   db: Db,
   workspaceId: string,
   window: ReportWindow,
 ): Promise<PerformanceReport> {
-  const [report, walls] = await Promise.all([
+  const [report, walls, costs] = await Promise.all([
     jobTimesReport(db, workspaceId, window),
     workflowTimes(db, workspaceId, window),
+    workflowCosts(db, workspaceId, window),
   ]);
   return {
     ...report,
-    workflows: report.workflows.map((row) => ({
-      ...row,
-      wall: walls.get(workflowKey(row.repositoryId, row.workflow)) ?? null,
-    })),
+    workflows: report.workflows.map((row) => {
+      const key = workflowKey(row.repositoryId, row.workflow);
+      return {
+        ...row,
+        wall: walls.get(key) ?? null,
+        ...(costs.get(key) ?? NO_COST),
+      };
+    }),
   };
 }

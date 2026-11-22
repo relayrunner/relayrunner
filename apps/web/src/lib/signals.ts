@@ -235,7 +235,7 @@ export const SIGNAL_COPY: Record<
     count: "Finished last",
     minutes: "Minutes alone",
     spend: false,
-    action: { label: "Compare runners", href: "/performance?view=jobs" },
+    action: { label: "Compare runners", href: "/performance" },
   },
   "flaky-jobs": {
     area: "speed",

@@ -298,7 +298,7 @@ export const RAN_ON_RUNNER = sql`${table.startedAt} is not null and ${table.runn
 
 // A job a runner ran, picks left out: they would split every routed run across two environments,
 // like on the Usage page; only successes give times.
-const RAN = sql`${RAN_ON_RUNNER} and not ${PICK}`;
+export const RAN = sql`${RAN_ON_RUNNER} and not ${PICK}`;
 
 export const OK = sql`coalesce(${table.conclusion} = 'success', 0)`;
 /** A job that failed or timed out. Cancelled jobs are neither this nor OK. */

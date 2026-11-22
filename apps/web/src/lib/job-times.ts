@@ -1,4 +1,10 @@
-import type { PerformanceReport, PerformanceWorkflow, Stat, JobType } from "@relayrunner/api-types";
+import type {
+  PerformanceReport,
+  PerformanceWorkflow,
+  Stat,
+  JobType,
+  WorkflowReport,
+} from "@relayrunner/api-types";
 import { api } from "@/lib/api";
 import { type RangeOptions, reportQuery, type TimeRange } from "./time-range.ts";
 import { count } from "@/lib/utils";
@@ -13,6 +19,9 @@ export type {
   JobRow,
   JobType,
   Stat,
+  WorkflowReport,
+  WorkflowRunner,
+  WorkflowRunPoint,
 } from "@relayrunner/api-types";
 export type JobTimesReport = PerformanceReport;
 export type WorkflowRow = PerformanceWorkflow;
@@ -75,6 +84,34 @@ export function getJobRuns(
     ...(job.workflow && { workflow: job.workflow }),
   });
   return api<{ days: number; runs: JobRun[]; steps: RunStep[] }>(`/job-times/runs?${query}`);
+}
+
+/** One workflow on every runner it ran on (GET /api/job-times/workflow). */
+export function getWorkflowReport(
+  range: TimeRange,
+  workflow: { repositoryId: number; workflow: string | null },
+) {
+  const query = reportQuery(range, {
+    repositoryId: String(workflow.repositoryId),
+    ...(workflow.workflow && { workflow: workflow.workflow }),
+  });
+  return api<WorkflowReport>(`/job-times/workflow?${query}`);
+}
+
+/** A run's cost at list prices: "Free", "$0.024" under a dime, "$1.20" above, "—" unknown. */
+export function runCost(usd: number | null | undefined) {
+  if (usd === null || usd === undefined) return "—";
+  if (usd === 0) return "Free";
+  return `$${usd.toFixed(usd < 0.1 ? 3 : 2)}`;
+}
+
+/**
+ * The change from `base` to `value` as a whole percent, negative for less (faster or cheaper).
+ * Null when either is unknown or the base is zero.
+ */
+export function percentChange(value: number | null | undefined, base: number | null | undefined) {
+  if (value == null || base == null || base === 0) return null;
+  return Math.round(((value - base) / base) * 100);
 }
 
 export function getMachineJobTimes(days = 14) {
@@ -239,6 +276,7 @@ export function sampleJobTimes(days: number): JobTimesReport {
   const mac = "machine:sample";
   const container = "container";
   const macos = "github:macos";
+  const blacksmith = "blacksmith:blacksmith-4vcpu-ubuntu-2404";
   return {
     days,
     trend: hasTrend(days),
@@ -301,6 +339,15 @@ export function sampleJobTimes(days: number): JobTimesReport {
         versus: { ratio: 1.03, sharedJobs: 3 },
       },
       {
+        key: blacksmith,
+        label: "blacksmith-4vcpu-ubuntu-2404",
+        detail: "Blacksmith",
+        size: { vcpus: 4, memoryGb: 16 },
+        stat: stat(56, 31, 33),
+        missed: 0,
+        versus: { ratio: 0.55, sharedJobs: 4 },
+      },
+      {
         key: macos,
         label: "macOS",
         detail: "GitHub-hosted",
@@ -315,6 +362,11 @@ export function sampleJobTimes(days: number): JobTimesReport {
         repository: "acme/app",
         workflow: "CI",
         wall: stat(214, 50, 162, 0.12),
+        usd: 0.034,
+        environments: [linux, mac, container, blacksmith],
+        fastest: { environment: mac, ratio: 0.42 },
+        runMs: 162 * 448_000,
+        spentUsd: 4.86,
         jobs: [
           {
             name: "test",
@@ -354,6 +406,11 @@ export function sampleJobTimes(days: number): JobTimesReport {
         repository: "acme/app",
         workflow: "Release",
         wall: stat(262, 9, 10),
+        usd: 0.4,
+        environments: [macos, mac],
+        fastest: null,
+        runMs: 10 * 400_000,
+        spentUsd: 4.0,
         jobs: [
           { name: "build-macos", byEnvironment: { [mac]: stat(235, 12), [macos]: stat(400, 9) } },
         ],

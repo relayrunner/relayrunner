@@ -674,15 +674,24 @@ export function runUsd(
     if (!job.startedAt || !job.completedAt) continue;
     const at = job.completedAt.getTime();
     const minutes = billedMinutes(at - job.startedAt.getTime());
-    const hosted = hostedRunner(job.labels, job.runnerGroupName);
-    const rate =
-      hosted && hosted.provider !== "github"
-        ? providerRate(book, hosted.provider, hosted.label.toLowerCase(), at)
-        : rateFor(book, runnerClass(job.labels, job.runnerGroupName), isPrivate, at);
+    const rate = jobRate(book, job, isPrivate, at);
     if (rate === null) return null;
     usd += minutes * rate;
   }
   return usd;
+}
+
+/** A job's runner's list price per minute on the day `at`, as runUsd prices it, or null. */
+export function jobRate(
+  book: PriceBook,
+  job: Pick<JobRow, "labels" | "runnerGroupName">,
+  isPrivate: boolean | null | undefined,
+  at: number,
+): number | null {
+  const hosted = hostedRunner(job.labels, job.runnerGroupName);
+  return hosted && hosted.provider !== "github"
+    ? providerRate(book, hosted.provider, hosted.label.toLowerCase(), at)
+    : rateFor(book, runnerClass(job.labels, job.runnerGroupName), isPrivate, at);
 }
 
 function providerRate(book: PriceBook, provider: string, label: string, at: number) {

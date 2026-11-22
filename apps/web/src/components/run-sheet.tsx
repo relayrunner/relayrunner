@@ -515,7 +515,6 @@ function JobView({
   const logUrl = jobUrl({ ...header, runId: ids.runId, id: job.id });
   const workflow = header.workflow ?? "Unnamed workflow";
   const performance = {
-    view: "jobs" as const,
     repo: ids.repositoryId,
     workflow: header.workflow ?? undefined,
     job: job.name,

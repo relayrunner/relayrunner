@@ -7,6 +7,7 @@ import { requireWorkspace } from "../middleware/workspace.ts";
 import { withCatalog } from "../provider-catalog.ts";
 import { jobTypeTimes } from "../job-type-times.ts";
 import { performanceReport } from "../runs.ts";
+import { workflowReport } from "../workflow-compare.ts";
 import { MAX_RANGE_MS, runnerReport } from "../runner-report.ts";
 import { Epoch, requireWindow } from "../report-window.ts";
 import { RAW_RETENTION_DAYS } from "../time.ts";
@@ -33,6 +34,12 @@ const RunsQuery = z.object({
   matrix: z.enum(["true", "false"]).default("false"),
 });
 
+const WorkflowQuery = z.object({
+  repositoryId: z.coerce.number().int().positive(),
+  // Left out for a workflow with no name.
+  workflow: z.string().min(1).optional(),
+});
+
 const TypesQuery = z.object({ utcOffset: UtcOffset });
 
 const RunnerQuery = z
@@ -47,7 +54,7 @@ const RunnerQuery = z
   .refine(({ from, to = Date.now() }) => from < to && to - from <= MAX_RANGE_MS);
 
 // The Performance page: how long each workflow and job usually takes on each runner environment in
-// a window: ?from=&to= (with ?priorFrom= for the trend), or the last ?days=N (default 14). /runs is one job's runs, for its detail chart. /machines is
+// a window: ?from=&to= (with ?priorFrom= for the trend), or the last ?days=N (default 14). /runs is one job's runs, for its detail chart. /workflow is one workflow on every runner it ran on. /machines is
 // each machine's typical job, for the Runners page. /runner is one runner's detail panel. /types
 // is each job's run time by day with its type, for the Job types tab.
 export const jobTimesRoutes = new Hono<AppEnv>()
@@ -62,6 +69,20 @@ export const jobTimesRoutes = new Hono<AppEnv>()
     const { repositoryId, workflow, name, matrix } = parsed.data;
     const job = { repositoryId, workflow: workflow ?? null, name, matrix: matrix === "true" };
     return c.json(await jobRuns(c.var.db, c.var.workspace.id, job, window));
+  })
+  .get("/workflow", requireUser, requireWorkspace, withCatalog, async (c) => {
+    const parsed = WorkflowQuery.safeParse(c.req.query());
+    if (!parsed.success) throw new AppError("INVALID_REQUEST");
+    const window = jobWindow(c.req.query());
+    const { repositoryId, workflow = null } = parsed.data;
+    const report = await workflowReport(
+      c.var.db,
+      c.var.workspace.id,
+      { repositoryId, workflow },
+      window,
+    );
+    if (!report) throw new AppError("NOT_FOUND");
+    return c.json(report);
   })
   .get("/types", requireUser, requireWorkspace, async (c) => {
     const parsed = TypesQuery.safeParse(c.req.query());
