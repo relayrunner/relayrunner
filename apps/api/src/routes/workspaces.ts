@@ -1,6 +1,5 @@
 import {
   readRetrySettings,
-  readRunnerOrder,
   retrySettingsSchema,
   runnerOrderSchema,
 } from "@relayrunner/runner-order";
@@ -12,11 +11,12 @@ import { agentWorkspaceId } from "../agent-auth.ts";
 import type { AppEnv } from "../app.ts";
 import { createDb, schema, type Db } from "../db/index.ts";
 import { isWorkspaceMember } from "../installations.ts";
-import { inWorkspace, sha256Hex } from "../machines.ts";
+import { inWorkspace } from "../machines.ts";
 import { requireUser } from "../middleware/session.ts";
 import { requireWorkspace } from "../middleware/workspace.ts";
 import { canManage, requireManager } from "../roles.ts";
 import { editableRepos, userCanEditRepo } from "../repo-access.ts";
+import { presentRunnerOrder, resolveRunnerOrder } from "../runner-orders.ts";
 import { HOSTED_PROVIDER_IDS, providersOfAppSlugs } from "@relayrunner/providers";
 import { appInstallationToken, orgAppSlugs } from "../github-app.ts";
 import { present } from "./github.ts";
@@ -108,7 +108,7 @@ export const workspaceRoutes = new Hono<AppEnv>()
   // `version` changes whenever the order does: pass it back to the PUT to refuse saving over a change
   // made since.
   .get("/:id/runner-order", requireUser, requireMember, async (c) =>
-    c.json(await presentOrder((await settings(c.var.db, c.req.param("id"))).runnerOrder)),
+    c.json(await presentRunnerOrder(await resolveRunnerOrder(c.var.db, c.req.param("id")))),
   )
   // Owners and admins only; members can read it. Answers the new order and the one it replaced.
   .put("/:id/runner-order", requireUser, requireMember, requireManager, async (c) => {
@@ -122,7 +122,7 @@ export const workspaceRoutes = new Hono<AppEnv>()
       });
     }
     const { version, ...order } = parsed.data;
-    const previous = await presentOrder((await settings(c.var.db, id)).runnerOrder);
+    const previous = await presentRunnerOrder(await resolveRunnerOrder(c.var.db, id));
     if (version !== undefined && version !== previous.version) {
       throw new AppError("RUNNER_ORDER_CHANGED");
     }
@@ -133,7 +133,10 @@ export const workspaceRoutes = new Hono<AppEnv>()
       write: () => setWorkspace(c.var.db, id, { runnerOrder: stored }),
       event: { type: "settings.runner_order", data: { steps: order.steps } },
     });
-    return c.json({ ...(await presentOrder(stored)), previous: previous.order });
+    return c.json({
+      ...(await presentRunnerOrder({ order, scope: "workspace", stored })),
+      previous: previous.order,
+    });
   })
   // Which hosted providers' GitHub Apps the workspace's org has installed, for the Router's Add
   // step menu. Null when we can't tell: a personal account (GitHub only lists an org's apps), or
@@ -408,7 +411,6 @@ export const workspaceRoutes = new Hono<AppEnv>()
 async function settings(db: Db, workspaceId: string) {
   const [row] = await db
     .select({
-      runnerOrder: schema.workspace.runnerOrder,
       autoSize: schema.workspace.autoSize,
       retrySettings: schema.workspace.retrySettings,
       aiOffAt: schema.workspace.aiOffAt,
@@ -417,7 +419,6 @@ async function settings(db: Db, workspaceId: string) {
     .where(eq(schema.workspace.id, workspaceId))
     .limit(1);
   return {
-    runnerOrder: row?.runnerOrder ?? null,
     autoSize: row?.autoSize ?? DEFAULT_AUTO_SIZE,
     retrySettings: readRetrySettings(row?.retrySettings),
     aiOffAt: row?.aiOffAt ?? null,
@@ -430,16 +431,6 @@ function setWorkspace(
   values: Partial<typeof schema.workspace.$inferInsert>,
 ) {
   return db.update(schema.workspace).set(values).where(eq(schema.workspace.id, workspaceId));
-}
-
-// The runner order as stored, whether it's the default, and its version: a short hash that changes
-// whenever the order does ("default" until someone saves one).
-async function presentOrder(stored: string | null) {
-  return {
-    order: readRunnerOrder(stored),
-    isDefault: !stored,
-    version: stored ? (await sha256Hex(stored)).slice(0, 16) : "default",
-  };
 }
 
 // The PUT's body: the order, and optionally the version it was read at.
