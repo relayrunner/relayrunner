@@ -11,6 +11,7 @@
 import { resetAnalytics } from "@/lib/analytics";
 import { AppError } from "@relayrunner/errors";
 import { api, onApiError } from "@/lib/api";
+import { forgetFlags } from "@/lib/flags";
 import {
   authClient,
   authDisabled,
@@ -54,6 +55,7 @@ export function forgetSession() {
   sessionLoad = undefined;
   workspace = undefined;
   workspaceLoad = undefined;
+  forgetFlags();
 }
 
 /**

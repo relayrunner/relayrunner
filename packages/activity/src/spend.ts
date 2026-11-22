@@ -1,4 +1,4 @@
-import type { ProviderHeld, SpendUsage, StartLimit } from "./events.ts";
+import type { ProviderAccess, ProviderHeld, SpendUsage, StartLimit } from "./events.ts";
 
 /** "$1,250": whole dollars, as spend limits are set. */
 export const dollars = (usd: number) => `$${Math.round(usd).toLocaleString("en-US")}`;
@@ -32,4 +32,14 @@ const HELD = {
 /** "Groundbox is at the spend cap set in its dashboard", for a provider_held skip. */
 export function heldText(provider: string, held: ProviderHeld | undefined): string {
   return held ? `${provider} ${HELD[held.reason]}` : `${provider} would hold the job`;
+}
+
+/**
+ * "Groundbox's GitHub App isn't installed on this account", or "Groundbox didn't pick up this
+ * repo's last job, so its GitHub App may not have access to the repo", for a provider_no_access skip.
+ */
+export function accessText(provider: string, access: ProviderAccess | undefined): string {
+  if (access?.cause === "not_installed")
+    return `${provider}'s GitHub App isn't installed on this account`;
+  return `${provider} didn't pick up this repo's last job, so its GitHub App may not have access to the repo`;
 }

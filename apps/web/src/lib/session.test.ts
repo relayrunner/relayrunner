@@ -23,6 +23,7 @@ vi.mock("@/lib/auth-client", () => ({
 }));
 vi.mock("@/lib/workspace", () => ({ getCurrentWorkspace: () => getCurrentWorkspace() }));
 vi.mock("@/lib/analytics", () => ({ resetAnalytics: vi.fn() }));
+vi.mock("@/lib/flags", () => ({ forgetFlags: vi.fn() }));
 
 const session = await import("./session.ts");
 

@@ -17,13 +17,11 @@ permissions:
   contents: read
 
 jobs:
-  # Asks RelayRunner where to run `check`. The repo is public, so it never gets a machine: the
-  # workspace's runner order picks Blacksmith or GitHub-hosted.
+  # Asks RelayRunner where to run `check`. With no inputs, every provider in the workspace's
+  # Router may take it, at the job's size from the Router page (Linux x64). The repo is public, so
+  # it never gets a machine.
   relay:
-    uses: relayrunner/actions/.github/workflows/relay.yml@v1.0.0-beta.5
-    with:
-      blacksmith: blacksmith-2vcpu-ubuntu-2404
-      github: ubuntu-latest
+    uses: relayrunner/actions/.github/workflows/relay.yml@v1.0.0-beta.9
 
   check:
     name: Lint, type-check, and test

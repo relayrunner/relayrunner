@@ -61,6 +61,16 @@ After 10 minutes, the Router sends one job back to try it. If a runner picks it 
 
 The Router page shows each runner type it's skipping, with a **Try again now** button for owners and admins. When no other step can take a job, the Router still sends it to the skipped runner type rather than failing the relay.
 
+### When a provider can't see the repo
+
+A hosted provider only runs jobs from repos its GitHub App can access. If its app is installed on **Selected repositories** without this repo, a job sent there would wait with nothing to pick it up.
+
+If a job the Router sent to a hosted provider isn't picked up within a minute, the Router ends it with a message that names the provider, then re-runs the relay once the run finishes, so the job goes to the next step in your runner order. That provider is skipped for that repo until a later job tries it again, on the same schedule as above, and it's back in use as soon as a runner picks one up. The Activity page shows each of these retries.
+
+The Router also skips Blacksmith and Groundbox for an organization that hasn't installed their GitHub App.
+
+To fix it, give the provider's GitHub App access to the repo in your GitHub settings.
+
 This is on by default. To keep sending jobs to a provider however long they wait, turn off **Skip runners that stop picking up jobs** under **Settings** on the Router page.
 
 ## When every machine is busy

@@ -48,6 +48,7 @@ import { Route as AuthedWorkspaceSettingsMembersRouteImport } from './routes/_au
 import { Route as AuthedWorkspaceSettingsNotificationsRouteImport } from './routes/_authed/_workspace/settings.notifications'
 import { Route as AuthedWorkspaceSettingsProvidersRouteImport } from './routes/_authed/_workspace/settings.providers'
 import { Route as AuthedWorkspaceSettingsTelemetryRouteImport } from './routes/_authed/_workspace/settings.telemetry'
+import { Route as AuthedWorkspaceProvidersProviderEvaluateRouteImport } from './routes/_authed/_workspace/providers.$provider_.evaluate'
 
 const IndexRoute = IndexRouteImport.update({
   id: '/',
@@ -263,6 +264,12 @@ const AuthedWorkspaceSettingsTelemetryRoute =
     path: '/settings/telemetry',
     getParentRoute: () => AuthedWorkspaceRoute,
   } as any)
+const AuthedWorkspaceProvidersProviderEvaluateRoute =
+  AuthedWorkspaceProvidersProviderEvaluateRouteImport.update({
+    id: '/providers/$provider_/evaluate',
+    path: '/providers/$provider/evaluate',
+    getParentRoute: () => AuthedWorkspaceRoute,
+  } as any)
 
 export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
@@ -302,6 +309,7 @@ export interface FileRoutesByFullPath {
   '/admin/': typeof AuthedWorkspaceAdminIndexRoute
   '/providers/': typeof AuthedWorkspaceProvidersIndexRoute
   '/settings/': typeof AuthedWorkspaceSettingsIndexRoute
+  '/providers/$provider/evaluate': typeof AuthedWorkspaceProvidersProviderEvaluateRoute
 }
 export interface FileRoutesByTo {
   '/': typeof IndexRoute
@@ -341,6 +349,7 @@ export interface FileRoutesByTo {
   '/admin': typeof AuthedWorkspaceAdminIndexRoute
   '/providers': typeof AuthedWorkspaceProvidersIndexRoute
   '/settings': typeof AuthedWorkspaceSettingsIndexRoute
+  '/providers/$provider/evaluate': typeof AuthedWorkspaceProvidersProviderEvaluateRoute
 }
 export interface FileRoutesById {
   __root__: typeof rootRouteImport
@@ -383,6 +392,7 @@ export interface FileRoutesById {
   '/_authed/_workspace/admin/': typeof AuthedWorkspaceAdminIndexRoute
   '/_authed/_workspace/providers/': typeof AuthedWorkspaceProvidersIndexRoute
   '/_authed/_workspace/settings/': typeof AuthedWorkspaceSettingsIndexRoute
+  '/_authed/_workspace/providers/$provider_/evaluate': typeof AuthedWorkspaceProvidersProviderEvaluateRoute
 }
 export interface FileRouteTypes {
   fileRoutesByFullPath: FileRoutesByFullPath
@@ -424,6 +434,7 @@ export interface FileRouteTypes {
     | '/admin/'
     | '/providers/'
     | '/settings/'
+    | '/providers/$provider/evaluate'
   fileRoutesByTo: FileRoutesByTo
   to:
     | '/'
@@ -463,6 +474,7 @@ export interface FileRouteTypes {
     | '/admin'
     | '/providers'
     | '/settings'
+    | '/providers/$provider/evaluate'
   id:
     | '__root__'
     | '/'
@@ -504,6 +516,7 @@ export interface FileRouteTypes {
     | '/_authed/_workspace/admin/'
     | '/_authed/_workspace/providers/'
     | '/_authed/_workspace/settings/'
+    | '/_authed/_workspace/providers/$provider_/evaluate'
   fileRoutesById: FileRoutesById
 }
 export interface RootRouteChildren {
@@ -791,6 +804,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AuthedWorkspaceSettingsTelemetryRouteImport
       parentRoute: typeof AuthedWorkspaceRoute
     }
+    '/_authed/_workspace/providers/$provider_/evaluate': {
+      id: '/_authed/_workspace/providers/$provider_/evaluate'
+      path: '/providers/$provider/evaluate'
+      fullPath: '/providers/$provider/evaluate'
+      preLoaderRoute: typeof AuthedWorkspaceProvidersProviderEvaluateRouteImport
+      parentRoute: typeof AuthedWorkspaceRoute
+    }
   }
 }
 
@@ -825,6 +845,7 @@ interface AuthedWorkspaceRouteChildren {
   AuthedWorkspaceAdminIndexRoute: typeof AuthedWorkspaceAdminIndexRoute
   AuthedWorkspaceProvidersIndexRoute: typeof AuthedWorkspaceProvidersIndexRoute
   AuthedWorkspaceSettingsIndexRoute: typeof AuthedWorkspaceSettingsIndexRoute
+  AuthedWorkspaceProvidersProviderEvaluateRoute: typeof AuthedWorkspaceProvidersProviderEvaluateRoute
 }
 
 const AuthedWorkspaceRouteChildren: AuthedWorkspaceRouteChildren = {
@@ -859,6 +880,8 @@ const AuthedWorkspaceRouteChildren: AuthedWorkspaceRouteChildren = {
   AuthedWorkspaceAdminIndexRoute: AuthedWorkspaceAdminIndexRoute,
   AuthedWorkspaceProvidersIndexRoute: AuthedWorkspaceProvidersIndexRoute,
   AuthedWorkspaceSettingsIndexRoute: AuthedWorkspaceSettingsIndexRoute,
+  AuthedWorkspaceProvidersProviderEvaluateRoute:
+    AuthedWorkspaceProvidersProviderEvaluateRoute,
 }
 
 const AuthedWorkspaceRouteWithChildren = AuthedWorkspaceRoute._addFileChildren(

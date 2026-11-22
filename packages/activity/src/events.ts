@@ -88,6 +88,11 @@ export const SKIP_REASONS = [
   // account is held or suspended, at its own spend cap, or out of free minutes and credit (in the
   // step's `held`), so the job would wait there.
   "provider_held",
+  // A hosted provider that can't run the job's repo: its GitHub App isn't installed on the job's
+  // account, or a job of this repo it was sent waited a minute with no runner, so the Router moved
+  // it (src/provider-takeover.ts) and skips the provider for the repo until a trial (in the step's
+  // `access`).
+  "provider_no_access",
 ] as const;
 export type SkipReason = (typeof SKIP_REASONS)[number];
 
@@ -115,6 +120,7 @@ export const MOVE_REASONS: Record<SkipReason, MoveReason | null> = {
   no_size: null,
   start_limit: "limit",
   provider_held: "limit",
+  provider_no_access: "unhealthy",
 };
 
 // Why RelayRunner retried a job: its runner failed it, not its own steps.
@@ -127,6 +133,10 @@ export const RETRY_KINDS = [
   "runner_lost",
   // The AI model was sure a re-run would pass (the retry_decision feature).
   "flaky",
+  // A hosted provider didn't pick the job up within a minute, so RelayRunner ended it and re-ran
+  // the relay, which picks another provider (src/provider-takeover.ts). Retried whatever the
+  // retry settings say.
+  "provider_missed",
 ] as const;
 export type RetryKind = (typeof RETRY_KINDS)[number];
 
@@ -163,6 +173,16 @@ export const HeldReason = z.enum([
 export type HeldReason = z.infer<typeof HeldReason>;
 export const ProviderHeld = z.object({ reason: HeldReason });
 export type ProviderHeld = z.infer<typeof ProviderHeld>;
+
+// provider_no_access: why the provider can't run the job's repo.
+// - not_installed: the provider's GitHub App isn't installed on the job's account.
+// - missed: a job of this repo waited a minute there with no runner; `retryAt` is when the next
+//   job may try it again.
+export const ProviderAccess = z.object({
+  cause: z.enum(["not_installed", "missed"]),
+  retryAt: z.number().optional(),
+});
+export type ProviderAccess = z.infer<typeof ProviderAccess>;
 
 // spend_limit: what the job's account spent on the provider this month, and the step's limit.
 export const SpendUsage = z.object({
@@ -226,6 +246,8 @@ export const RouteWalk = z.object({
       starts: StartLimit.optional(),
       // provider_held: why the provider would hold the job.
       held: ProviderHeld.optional(),
+      // provider_no_access: why the provider can't run the job's repo.
+      access: ProviderAccess.optional(),
       // provider_unhealthy: how many jobs in a row weren't picked up, and when the next trial goes.
       unhealthy: z.object({ misses: z.number(), retryAt: z.number() }).optional(),
       // no_size: the job's size, in vCPUs, and the platform its relay's `os` and `arch` asked

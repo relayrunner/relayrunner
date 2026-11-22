@@ -40,9 +40,12 @@ import { routingLabelFromLabels } from "./github-runners.ts";
 import { routeIdFromLabels, routeLabel } from "./routing.ts";
 import { pickedLabel } from "./route-decisions.ts";
 import { strandedJobName } from "./stranded-jobs.ts";
+import { hostedProviderOf } from "@relayrunner/providers";
+import { takeoverName } from "./provider-takeover.ts";
 import { exportJob, exportRun } from "./telemetry/export.ts";
 import { traced } from "./tracing.ts";
 import { errorMessage } from "./errors.ts";
+import { advanceEvaluation, resumeWaitingEvaluations } from "./evaluations.ts";
 
 const BASE_RETRY_DELAY_SECONDS = 30;
 const MAX_RETRY_DELAY_SECONDS = 15 * 60;
@@ -238,7 +241,7 @@ export async function processWebhook(env: Env, message: WebhookMessage): Promise
       if (routingLabel) return trackRunnerJob(env, message, routingLabel, lagMs);
       // A job that runs in a container: boot one for it on `queued`.
       if (usesContainerRunner(message.job.labels)) return startContainerRunner(env, message);
-      if (!isPick) return;
+      if (!isPick) return watchProviderJob(env, message, lookup.workspaceId);
       // On `queued`, wake a PickRunner for the job, which answers it with the Router's route. Other
       // actions are only logged.
       console.log(
@@ -274,6 +277,12 @@ export async function processWebhook(env: Env, message: WebhookMessage): Promise
       await Promise.all([recordWorkflowRun(db, message), exportRun(env, db, message)]);
       // A failed run whose runner failed one of its routed jobs gets one more go.
       await retryFailedRun(env, message);
+      // An evaluation's attempt finished: start the next one, or finish it. A push that ran a
+      // waiting evaluation's workflow may have added workflow_dispatch: try it again.
+      await Promise.all([
+        advanceEvaluation(env, db, message),
+        resumeWaitingEvaluations(env, db, message),
+      ]);
       return;
     case "installation":
     case "installation_repositories":
@@ -316,6 +325,39 @@ export async function processWebhook(env: Env, message: WebhookMessage): Promise
       await checkPullRequestTitle(env, message);
       return;
   }
+}
+
+// A job the run's pick sent to a hosted provider's label: on `queued`, a ProviderTakeover checks a
+// minute later that the provider picked it up, and moves it if not (src/provider-takeover.ts).
+// Jobs that name a provider's label themselves, with no relay, are left alone.
+async function watchProviderJob(
+  env: Env,
+  message: Extract<WebhookMessage, { event: "workflow_job" }>,
+  workspaceId: string | null,
+) {
+  const { job, repository, installationId } = message;
+  if (message.action !== "queued" || !installationId || !workspaceId || job.labels.length !== 1)
+    return;
+  const [label] = job.labels;
+  const key = hostedProviderOf(label);
+  if (!key) return;
+  const db = createDb(env.DB);
+  if (!(await pickedLabel(db, { repositoryId: repository.id, runId: job.runId, label }))) return;
+  const queuedAt = Date.parse(job.createdAt);
+  await env.PROVIDER_TAKEOVER.getByName(takeoverName(job.id)).start({
+    jobId: job.id,
+    jobName: job.name,
+    workflow: job.workflowName,
+    installationId,
+    workspaceId,
+    repo: repository.fullName,
+    repositoryId: repository.id,
+    runId: job.runId,
+    runAttempt: job.runAttempt,
+    key,
+    label,
+    queuedAt: Number.isFinite(queuedAt) ? queuedAt : Date.parse(message.receivedAt),
+  });
 }
 
 // Hands a queued route job to the route's machine. The Router only gives the route to a job from

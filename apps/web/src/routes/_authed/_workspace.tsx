@@ -56,6 +56,7 @@ import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/comp
 import { WorkspaceMark, WorkspaceMenu } from "@/components/workspace-menu";
 import { setWorkspace } from "@/lib/analytics";
 import { authDisabled } from "@/lib/auth-client";
+import { loadFlags } from "@/lib/flags";
 import { isGitHubOutcome } from "@/lib/github";
 import { loadProviderCatalog } from "@/lib/provider-catalog";
 import { isOperator } from "@/lib/roles";
@@ -116,7 +117,9 @@ export const Route = createFileRoute("/_authed/_workspace")({
     };
   },
   beforeLoad: async ({ context, location }) => {
-    if (authDisabled || !context.session) return { current: devWorkspace };
+    if (authDisabled || !context.session) {
+      return { current: devWorkspace, flags: await loadFlags(devWorkspace.workspace.id) };
+    }
     const workspaceId = await ensureActiveWorkspace(context.session);
     if (!workspaceId) {
       // Keep GitHub's word on the way, such as an install request waiting on an org owner.
@@ -126,9 +129,14 @@ export const Route = createFileRoute("/_authed/_workspace")({
     try {
       // Pages name providers synchronously from the catalog, so it's loaded before any renders.
       // Both are read once and kept (lib/session.ts), so later navigations don't wait on them.
-      const [current] = await Promise.all([cachedWorkspace(workspaceId), loadProviderCatalog()]);
+      // Feature flags too (lib/flags.ts), so pages and their guards check them synchronously.
+      const [current, , flags] = await Promise.all([
+        cachedWorkspace(workspaceId),
+        loadProviderCatalog(),
+        loadFlags(workspaceId),
+      ]);
       setWorkspace(current.workspace);
-      return { current };
+      return { current, flags };
     } catch {
       // The active workspace is gone or no longer ours.
       throw redirect({ to: "/welcome" });

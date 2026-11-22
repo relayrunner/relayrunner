@@ -26,6 +26,7 @@ import {
   appInstallationToken,
   GitHubRateLimitError,
   listRunners,
+  orgAppSlugs,
   userCanReadRepo,
   type GitHubRunner,
   type RunnerScope,
@@ -54,6 +55,16 @@ import {
 } from "../stranded-jobs.ts";
 import { errorMessage } from "../errors.ts";
 import { traced } from "../tracing.ts";
+import { providersOfAppSlugs, type HostedProviderId } from "@relayrunner/providers";
+import type { ProviderAccess } from "@relayrunner/activity";
+import {
+  APP_CHECKED,
+  APPS_TTL_MS,
+  missed,
+  missGate,
+  missId,
+  type RepoMiss,
+} from "../provider-takeover.ts";
 import {
   fetchGroupAccess,
   matchLabels,
@@ -160,6 +171,8 @@ interface StoredRoute extends Route {
 }
 // Each hosted provider runner type's health (src/provider-health.ts), by healthId.
 const HEALTH_KEY = "health:";
+// Each hosted provider that missed a job of a repo (src/provider-takeover.ts), by missId.
+const MISS_KEY = "miss:";
 
 // How long a GitHub org's runner group access is reused before it's read again. Groups change
 // rarely and take a few calls to read.
@@ -198,6 +211,9 @@ export class Router extends DurableObject<Env> {
   private boatStarts = new StartBudget();
   // Groundbox's account (free minutes, holds), from the workspace's connection.
   private groundbox = new Recent<string, GroundboxReading>(1_000);
+  // The hosted providers whose GitHub App is installed on an org, by installation id; null when
+  // GitHub couldn't say.
+  private providerApps = new Recent<number, HostedProviderId[] | null>(1_000);
 
   /**
    * An org's (or repo's) self-hosted runners for the dashboard's Runners and Router pages, reused
@@ -350,6 +366,7 @@ export class Router extends DurableObject<Env> {
           runnerOrder: schema.workspace.runnerOrder,
           skipUnhealthy: schema.workspace.skipUnhealthyRunners,
           accountType: schema.githubInstallation.accountType,
+          accountLogin: schema.githubInstallation.accountLogin,
         })
         .from(schema.workspace)
         .leftJoin(
@@ -392,6 +409,8 @@ export class Router extends DurableObject<Env> {
           : null,
       // Only Groundbox's connection says when it would hold a job.
       async (key) => (key === "groundbox" ? groundboxHeld(await groundboxAccount()) : null),
+      (key) =>
+        this.checkAccess(key, job, workspace?.accountType ?? null, workspace?.accountLogin ?? null),
     );
     if (decision.runner !== null && decision.step === "boat") this.boatStarts.took();
     if (waitsForMachine(decision)) return this.wait(job, decision);
@@ -706,6 +725,67 @@ export class Router extends DurableObject<Env> {
       return null;
     }
     return gate;
+  }
+
+  // Null when a hosted provider may take the repo's job, marking it as the repo's trial when it's
+  // due one; else why it can't. The installed-apps check only covers orgs (GitHub lists an org's
+  // installed Apps, not a personal account's) and the providers in APP_CHECKED. Unknown never
+  // skips.
+  private async checkAccess(
+    key: HostedProviderId,
+    job: PickedJob,
+    accountType: string | null,
+    accountLogin: string | null,
+  ): Promise<ProviderAccess | null> {
+    if (accountType === "Organization" && accountLogin && APP_CHECKED.includes(key)) {
+      const installed = await this.providerApps.get(
+        job.installationId,
+        APPS_TTL_MS,
+        async () => {
+          try {
+            const token = await appInstallationToken(this.env, job.installationId);
+            return providersOfAppSlugs(await orgAppSlugs(token, accountLogin));
+          } catch (error) {
+            console.warn(
+              JSON.stringify({
+                msg: "provider apps unavailable",
+                installationId: job.installationId,
+                error: errorMessage(error),
+              }),
+            );
+            return null;
+          }
+        },
+        (apps) => apps !== null,
+      );
+      if (installed && !installed.includes(key)) return { cause: "not_installed" };
+    }
+    const id = MISS_KEY + missId(key, job.repositoryId);
+    const state = await this.ctx.storage.get<RepoMiss>(id);
+    const now = Date.now();
+    const gate = missGate(state, now);
+    if (gate === "ok") return null;
+    if (gate === "trial") {
+      await this.ctx.storage.put(id, { ...state, trialAt: now });
+      console.log(JSON.stringify({ msg: "provider repo trial", id }));
+      return null;
+    }
+    return gate;
+  }
+
+  /** A job of the repo waited on the provider with no runner and was taken over. */
+  async providerMissed(key: HostedProviderId, repositoryId: number): Promise<void> {
+    const id = MISS_KEY + missId(key, repositoryId);
+    const state = missed(await this.ctx.storage.get<RepoMiss>(id), Date.now());
+    await this.ctx.storage.put(id, state);
+    console.log(JSON.stringify({ msg: "provider missed repo", id, retryAt: state.retryAt }));
+  }
+
+  /** A runner picked up a job of the repo on the provider: it can see the repo again. */
+  async providerPicked(key: HostedProviderId, repositoryId: number): Promise<void> {
+    const id = MISS_KEY + missId(key, repositoryId);
+    if (await this.ctx.storage.delete(id))
+      console.log(JSON.stringify({ msg: "provider recovered for repo", id }));
   }
 
   /** The 15-minute sweep's recent jobs on hosted provider labels (sweepProviderHealth). */

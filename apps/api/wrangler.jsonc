@@ -95,6 +95,10 @@
   // Workers AI, for the decision models in src/ai. Calls are off until an operator turns them on
   // in Admin › AI, and go through the AI_GATEWAY_ID gateway. The binding needs no API token.
   "ai": { "binding": "AI" },
+  // Feature flags (src/flags.ts, docs/feature-flags.md), from the "relayrunner" Flagship app.
+  // `wrangler dev` uses a local flag store that starts empty, so every flag is off until you copy
+  // the real ones down with `pnpm --filter @relayrunner/api flags:pull`.
+  "flagship": [{ "binding": "FLAGS", "app_id": "95c8465d-fccc-4ab0-aca0-228994c84e52" }],
   // Webhook dead letters (src/dead-letters.ts), kept out of D1 on purpose: D1 failing is the
   // likeliest reason a delivery dead-letters. Create once, with the 30-day retention:
   //   cf r2 buckets create --name relayrunner-webhook-dead-letters
@@ -153,6 +157,7 @@
       { "name": "CONTAINER_RUNNER", "class_name": "ContainerRunner" },
       { "name": "LINT_RUNNER", "class_name": "LintRunner" },
       { "name": "STRANDED_JOB", "class_name": "StrandedJob" },
+      { "name": "PROVIDER_TAKEOVER", "class_name": "ProviderTakeover" },
       { "name": "BLACKSMITH_SYNCER", "class_name": "BlacksmithSyncer" },
     ],
   },
@@ -162,6 +167,7 @@
     { "tag": "v3", "new_sqlite_classes": ["LintRunner"] },
     { "tag": "v4", "new_sqlite_classes": ["StrandedJob"] },
     { "tag": "v5", "new_sqlite_classes": ["BlacksmithSyncer"] },
+    { "tag": "v6", "new_sqlite_classes": ["ProviderTakeover"] },
   ],
   // GitHub's runner image for container runners (src/durable-objects/container-runner.ts), which
   // picks the instance size when it starts one. `pnpm run deploy` (scripts/deploy.ts) tags each

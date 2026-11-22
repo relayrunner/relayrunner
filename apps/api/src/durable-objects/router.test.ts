@@ -4,12 +4,17 @@ import type { Env } from "../env.ts";
 import { createTestEnv } from "../testing.ts";
 
 // GitHub reads the Router makes itself: tests that need them set the answers.
-const github = vi.hoisted(() => ({ userCanReadRepo: vi.fn(), listRunners: vi.fn() }));
+const github = vi.hoisted(() => ({
+  userCanReadRepo: vi.fn(),
+  listRunners: vi.fn(),
+  orgAppSlugs: vi.fn(),
+}));
 vi.mock("../github-app.ts", async (importOriginal) => ({
   ...(await importOriginal<typeof import("../github-app.ts")>()),
   appInstallationToken: async () => "ghs_test",
   userCanReadRepo: github.userCanReadRepo,
   listRunners: github.listRunners,
+  orgAppSlugs: github.orgAppSlugs,
 }));
 
 const { Router } = await import("./router.ts");
@@ -763,5 +768,59 @@ describe("Router: a machine that goes offline after the pick", () => {
     } finally {
       vi.useRealTimers();
     }
+  });
+});
+
+describe("Router: hosted providers that can't see the repo", () => {
+  let router: InstanceType<typeof Router>;
+  const groundboxJob = {
+    ...job(1),
+    ...relayInputs({ groundbox: ["groundbox-2vcpu"], github: ["ubuntu-latest"] }),
+  };
+
+  beforeEach(async () => {
+    vi.spyOn(console, "log").mockImplementation(() => {});
+    const env = await createTestEnv();
+    const now = Date.now();
+    for (const sql of [
+      "insert into github_installation (id, account_id, account_login, account_type, created_at, updated_at) values (7, 10, 'acme', 'Organization', ?1, ?1)",
+      `insert into workspace (id, installation_id, name, slug, runner_order, created_at) values ('w1', 7, 'W', 'w', '{"steps":[{"key":"groundbox"},{"key":"github"}]}', ?1)`,
+    ])
+      await env.DB.prepare(sql).bind(now).run();
+    github.orgAppSlugs.mockReset().mockResolvedValue(["groundbox-dev"]);
+    router = new Router(memoryState().ctx as never, env as unknown as Env);
+  });
+
+  test("a provider whose App isn't installed on the org is skipped", async () => {
+    github.orgAppSlugs.mockResolvedValue(["blacksmith-sh"]);
+    const decision = await router.route(groundboxJob);
+    expect(decision).toMatchObject({
+      runner: "ubuntu-latest",
+      skipped: [
+        { key: "groundbox", reason: "provider_no_access", access: { cause: "not_installed" } },
+      ],
+    });
+  });
+
+  test("GitHub not saying which Apps are installed never skips one", async () => {
+    vi.spyOn(console, "warn").mockImplementation(() => {});
+    github.orgAppSlugs.mockRejectedValue(new Error("GET /orgs/acme/installations failed with 403"));
+    expect((await router.route(groundboxJob)).runner).toBe("groundbox-2vcpu");
+  });
+
+  test("a miss skips the provider for that repo until a runner picks one of its jobs up", async () => {
+    expect((await router.route(groundboxJob)).runner).toBe("groundbox-2vcpu");
+    await router.providerMissed("groundbox", 1);
+    const skipped = await router.route(groundboxJob);
+    expect(skipped).toMatchObject({
+      runner: "ubuntu-latest",
+      skipped: [{ key: "groundbox", reason: "provider_no_access", access: { cause: "missed" } }],
+    });
+    // Another repo still goes there.
+    expect((await router.route({ ...groundboxJob, repositoryId: 2 })).runner).toBe(
+      "groundbox-2vcpu",
+    );
+    await router.providerPicked("groundbox", 1);
+    expect((await router.route(groundboxJob)).runner).toBe("groundbox-2vcpu");
   });
 });

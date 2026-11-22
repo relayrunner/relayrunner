@@ -40,6 +40,7 @@ export { MachineLink } from "./durable-objects/machine-link.ts";
 export { PickRunner } from "./durable-objects/pick-runner.ts";
 export { Router } from "./durable-objects/router.ts";
 export { StrandedJob } from "./durable-objects/stranded-job.ts";
+export { ProviderTakeover } from "./durable-objects/provider-takeover.ts";
 
 // Match the second and third entries of triggers.crons in wrangler.jsonc.
 const USAGE_CRON = "*/15 * * * *";

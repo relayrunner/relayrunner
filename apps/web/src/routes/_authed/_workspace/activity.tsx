@@ -1103,6 +1103,7 @@ const RETRY_REASONS = {
   machine_lost: (on: string | null) => `${on ?? "its machine"} went offline`,
   runner_lost: () => "GitHub lost touch with its runner",
   flaky: () => "it looked flaky",
+  provider_missed: (on: string | null) => `${on ?? "its runner"} didn't pick it up`,
 } as const;
 
 const RETRY_RUNNERS = { any: "", same: " on the same runner", other: " on a different runner" };

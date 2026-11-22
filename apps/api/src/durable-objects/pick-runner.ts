@@ -25,6 +25,7 @@ import { RELAYRUNNER_LABEL } from "../labels.ts";
 import { eq } from "drizzle-orm";
 import { createDb, schema } from "../db/index.ts";
 import { recordPick, type PickRecord } from "../route-decisions.ts";
+import { evaluationRunner } from "../evaluations.ts";
 import { findInstallationAndWorkspace, installationRunnerScope } from "../installations.ts";
 import { findRepo } from "../repositories.ts";
 import { retryOf } from "../retries.ts";
@@ -446,6 +447,32 @@ async function pickRunner(
         decision: null,
         reason,
       } satisfies PickInfo,
+    };
+  }
+  // An evaluation's run (src/evaluations.ts) goes to the evaluated provider, whatever the runner
+  // order says. It keeps no route decision, so it stays out of the Router's numbers and retries.
+  const evaluation = await evaluationRunner(db, repo.id, context);
+  if (evaluation) {
+    console.log(
+      JSON.stringify({
+        msg: "relayrunner evaluation pick",
+        evaluationId: evaluation.evaluationId,
+        repo: context.repo,
+        runId: context.runId,
+        runAttempt: context.runAttempt,
+        label: evaluation.label,
+      }),
+    );
+    return {
+      runner: evaluation.label,
+      step: evaluation.provider,
+      skipped: [],
+      notInOrder: [],
+      repo: context.repo,
+      runId: context.runId,
+      runAttempt: context.runAttempt,
+      private: repo.private,
+      ...relayInputs(context),
     };
   }
   // An automatic retry's attempt is credited to the App, so it keeps the starter of the attempt it
