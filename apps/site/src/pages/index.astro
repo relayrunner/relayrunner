@@ -1,5 +1,4 @@
 ---
-// Moved from index.html; the header is now the shared SiteHeader. Astro bundles the imported CSS into the page's <head>.
 import CloseBox from "../components/CloseBox.astro";
 import LandingRelay from "../components/LandingRelay.astro";
 import MacAppPreview from "../components/MacAppPreview.astro";
@@ -110,11 +109,11 @@ const structuredData = {
 
       <!-- Runner order: the routing demo -->
       <section class="track" aria-label="Routing demo">
-        <div class="wrap track-grid">
+        <div class="wrap track-grid" data-relay-content>
           <div class="track-side">
             <div class="track-feed">
-              <div><span class="dim">$</span> git push</div>
-              <div class="dim">→ ci / test · PR #<span data-pr>482</span></div>
+              <div><span class="mute">$</span> git push</div>
+              <div class="mute">→ ci / test · PR #<span data-pr>482</span></div>
             </div>
             <div class="track-next" aria-live="polite">
               <b class="label">Next job goes to</b>

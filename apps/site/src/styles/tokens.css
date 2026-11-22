@@ -27,16 +27,11 @@
   --run: #c98a12;
   --run-text: #9a6608;
   --forest: #0b2e1a;
-  --forest-raised: #123a23;
   --forest-line: #23503a;
   --on-forest: #f3efdf;
   --on-forest-mute: #a5b7a4;
   --lime: #c5e05f;
-  --lane-line: rgba(243, 239, 223, 0.85);
-  --lime-ink: #0b2114;
-  --btn-bg: var(--go);
-  --btn-hover: var(--go-hover);
-  --btn-ink: var(--go-ink);
+  --lane-line: color-mix(in srgb, var(--on-forest) 85%, transparent);
   --shadow-card: 0 24px 48px -32px rgba(11, 33, 20, 0.35);
   --shadow-on: 0 20px 50px -28px rgba(11, 33, 20, 0.45);
   --sans: "Hanken Grotesk Variable", "Hanken Grotesk", system-ui, sans-serif;
@@ -65,7 +60,6 @@
   --run: #d29922;
   --run-text: #d29922;
   --forest: #0f2a1b;
-  --forest-raised: #153624;
   --forest-line: #26513a;
   --shadow-card: 0 24px 48px -28px rgba(0, 0, 0, 0.8);
   --shadow-on: 0 20px 50px -28px rgba(0, 0, 0, 0.7);

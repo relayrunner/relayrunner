@@ -13,7 +13,7 @@
   padding: 0;
   list-style: none;
 }
-.site-header a {
+.site-header a:not(.btn-go) {
   color: inherit;
 }
 .site-header img {
@@ -42,13 +42,12 @@
     background 0.15s,
     border-color 0.15s;
 }
-.btn-go,
-.site-header .btn-go {
-  background: var(--btn-bg);
-  color: var(--btn-ink);
+.btn-go {
+  background: var(--go);
+  color: var(--go-ink);
 }
 .btn-go:hover {
-  background: var(--btn-hover);
+  background: var(--go-hover);
 }
 .btn-ghost {
   border: 1px solid var(--line);

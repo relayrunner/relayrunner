@@ -186,6 +186,7 @@ button {
 }
 /* The runner order as lanes on a full-width forest band. */
 .track {
+  --mute: var(--on-forest-mute);
   background: var(--forest);
   color: var(--on-forest);
 }
@@ -195,12 +196,6 @@ button {
   gap: clamp(32px, 5vw, 80px);
   align-items: start;
   padding-block: clamp(32px, 4.5vw, 64px);
-}
-.track .label,
-.track .order-head,
-.track .next-why,
-.track .dim {
-  color: var(--on-forest-mute);
 }
 .track-side {
   display: grid;
@@ -280,7 +275,8 @@ button {
 .lane.on::before,
 .lane.on .lane-state,
 .lane.on .lane-name code,
-.lane.on .lane-rule {
+.lane.on .lane-rule,
+.lane.on .lane-up {
   color: var(--go-ink);
 }
 .lane-name {
@@ -328,7 +324,6 @@ button {
 }
 .lane.on .lane-up {
   border-color: currentColor;
-  color: var(--go-ink);
 }
 .lane-up svg {
   width: 16px;
@@ -369,11 +364,6 @@ button {
   font-weight: 700;
   letter-spacing: 0.08em;
   text-transform: uppercase;
-}
-.kicker-note {
-  margin-left: 8px;
-  color: var(--mute);
-  font-weight: 500;
 }
 .section h2,
 .band h2 {
@@ -469,9 +459,10 @@ button {
   line-height: 1.12;
   letter-spacing: -0.025em;
 }
-.ledger-row h3 .kicker-note {
+.kicker-note {
   display: block;
-  margin: 10px 0 0;
+  margin-top: 10px;
+  color: var(--mute);
   font: 500 13px var(--mono);
   letter-spacing: 0;
 }
@@ -715,7 +706,7 @@ button {
   padding: clamp(28px, 5vw, 64px);
   border-radius: 6px;
   background: var(--lime);
-  color: var(--lime-ink);
+  color: var(--go-ink);
 }
 .close h2 {
   margin: 0;

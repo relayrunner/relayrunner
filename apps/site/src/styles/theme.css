@@ -18,13 +18,13 @@
   --sl-color-gray-2: #b4bcc6;
   --sl-color-gray-3: #8b949e;
   --sl-color-gray-4: #4a515c;
-  --sl-color-gray-5: #24392c;
-  --sl-color-gray-6: #11231a;
-  --sl-color-gray-7: #0d1c13;
-  --sl-color-black: #08130d;
+  --sl-color-gray-5: var(--line);
+  --sl-color-gray-6: var(--raised);
+  --sl-color-gray-7: var(--bg-deep);
+  --sl-color-black: var(--bg);
 
   /* Notes (:::note) are neutral, like the dashboard's info panels. */
-  --sl-color-blue-low: #11231a;
+  --sl-color-blue-low: var(--raised);
   --sl-color-blue: #8b949e;
   --sl-color-blue-high: #e6edf3;
 }
@@ -39,12 +39,12 @@
   --sl-color-gray-2: #3d454e;
   --sl-color-gray-3: #5e6772;
   --sl-color-gray-4: #a3abb5;
-  --sl-color-gray-5: #d9d2bd;
-  --sl-color-gray-6: #eee9da;
+  --sl-color-gray-5: var(--line);
+  --sl-color-gray-6: var(--bg-soft);
   --sl-color-gray-7: #f1ecdf;
-  --sl-color-black: #f6f2e7;
+  --sl-color-black: var(--bg);
 
-  --sl-color-blue-low: #eee9da;
+  --sl-color-blue-low: var(--bg-soft);
   --sl-color-blue: #5e6772;
   --sl-color-blue-high: #1b1f24;
 }

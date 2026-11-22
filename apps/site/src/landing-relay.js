@@ -164,7 +164,7 @@
       entrySign = -1;
     }
     const remaining = max - y,
-      contentLeft = document.querySelector(".track-grid").getBoundingClientRect().left,
+      contentLeft = document.querySelector("[data-relay-content]").getBoundingClientRect().left,
       edge = Math.min(45, contentLeft / 2),
       inset = document.getElementById("relay-finish").offsetHeight / 2;
     if (started === null && y > 0) started = now;
