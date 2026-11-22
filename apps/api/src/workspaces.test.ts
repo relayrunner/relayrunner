@@ -117,8 +117,10 @@ describe("runner order", () => {
     expect(response.status).toBe(200);
     expect(await response.json()).toEqual({
       order: { steps: [{ key: "machine" }, { key: "github" }] },
+      scope: "workspace",
       isDefault: true,
       version: "default",
+      ownOrders: [],
     });
   });
 
@@ -131,13 +133,20 @@ describe("runner order", () => {
     const body = (await saved.json()) as { version: string };
     expect(body).toEqual({
       order,
+      scope: "workspace",
       isDefault: false,
       version: expect.stringMatching(/^[0-9a-f]{16}$/),
       previous: { steps: [{ key: "machine" }, { key: "github" }] },
     });
 
     const read = await call(`/workspaces/${workspace.id}/runner-order`, jar);
-    expect(await read.json()).toEqual({ order, isDefault: false, version: body.version });
+    expect(await read.json()).toEqual({
+      order,
+      scope: "workspace",
+      isDefault: false,
+      version: body.version,
+      ownOrders: [],
+    });
     const row = await env.DB.prepare("select runner_order from workspace where id = ?")
       .bind(workspace.id)
       .first<{ runner_order: string }>();

@@ -522,8 +522,13 @@ function stepText(step: RunnerStep) {
 // Settings events lead with who: "Ada set the default size for auto jobs to 4 vCPU".
 function settingsSentence(item: ActivityItem) {
   switch (item.type) {
-    case "settings.runner_order":
-      return `set the runner order to ${item.data.steps.map(stepText).join(", then ")}`;
+    case "settings.runner_order": {
+      const { repository, steps } = item.data;
+      const order = repository ? `${repository}'s runner order` : "the runner order";
+      return `set ${order} to ${steps.map(stepText).join(", then ")}`;
+    }
+    case "settings.runner_order_removed":
+      return `put ${item.data.repository} back on the workspace's runner order`;
     case "settings.auto_size":
       return `set the default size for auto jobs to ${item.data.size} vCPU`;
     case "settings.job_size": {
@@ -593,6 +598,7 @@ const EVENT_ICONS = {
   "member.joined": UserCheck,
   "minutes.overage": TriangleAlert,
   "settings.runner_order": ListOrdered,
+  "settings.runner_order_removed": ListOrdered,
   "settings.auto_size": Cpu,
   "settings.job_size": Cpu,
   "settings.retries": RotateCw,

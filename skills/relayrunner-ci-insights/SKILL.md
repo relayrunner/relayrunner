@@ -30,6 +30,7 @@ If no RelayRunner MCP tools are available, help the user add the remote server `
 | What's making CI slow, costly or busier than it needs to be       | `get_signals`                                             |
 | Auto jobs' sizes, the default size, retries and AI                | `get_router_settings`                                     |
 | Reorder providers or change their limits                          | `set_runner_order` (`version` from `get_runner_order`)    |
+| Put a repo with its own order back on the workspace's             | `use_workspace_order`                                     |
 | The size auto jobs get unless they have their own                 | `set_default_size`                                        |
 | One auto job's size or the provider it tries first                | `set_job_size` (`job` id from `get_router_settings`)      |
 | Turn automatic retries on or off                                  | `set_retries`                                             |
@@ -59,7 +60,7 @@ Every tool takes an optional `workspace` (id or name), needed only when the conn
 
 **"A job failed on my machine. Should I re-run it?"** Use `get_run_jobs` to see where the job ran, and `list_activity` with `machine` to check whether the machine went offline during the run. In GitHub, **Re-run failed jobs** sends the job back to the same machine if it's free, and **Re-run all jobs** routes it again from the top of the runner order, so use that one to move it to another provider. Details: https://relayrunner.dev/docs/concepts/routing.md#re-running-a-job
 
-**"Make this job faster" / "Send these jobs to another provider."** For an auto job (one whose relay lets RelayRunner pick the runner), `get_router_settings`, then `set_job_size` with a bigger size or a `first` provider. For every job, `get_runner_order`, then `set_runner_order` with its `version`. Say what you'll change before you do it, and give the previous value from the answer so the person can ask you to undo it.
+**"Make this job faster" / "Send these jobs to another provider."** For an auto job (one whose relay lets RelayRunner pick the runner), `get_router_settings`, then `set_job_size` with a bigger size or a `first` provider. For every job, `get_runner_order`, then `set_runner_order` with its `version`. For one repo's jobs only, pass `repository` to both: the repo gets its own order, and `use_workspace_order` undoes that. Say what you'll change before you do it, and give the previous value from the answer so the person can ask you to undo it.
 
 ## Good practice
 

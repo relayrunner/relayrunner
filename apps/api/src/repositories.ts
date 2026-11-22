@@ -127,18 +127,28 @@ export function privateRepos(
     .limit(MAX_RUNNER_REPOS + 1);
 }
 
-/** A repo the installation can still see, by owner/name in any case, or undefined. */
-export async function findRepo(db: Db, installationId: number, fullName: string) {
-  const [repo] = await db
-    .select({ id: schema.githubRepository.id, private: schema.githubRepository.private })
-    .from(schema.githubRepository)
+/**
+ * A repo the installation can still see, by owner/name in any case, or undefined. Given a
+ * workspace instead, its installation.
+ */
+export async function findRepo(
+  db: Db,
+  installation: number | { workspaceId: string },
+  fullName: string,
+) {
+  const repo = schema.githubRepository;
+  const [found] = await db
+    .select({ id: repo.id, fullName: repo.fullName, private: repo.private })
+    .from(repo)
     .where(
       and(
-        eq(schema.githubRepository.installationId, installationId),
-        sql`lower(${schema.githubRepository.fullName}) = ${fullName.toLowerCase()}`,
-        isNull(schema.githubRepository.removedAt),
+        typeof installation === "number"
+          ? eq(repo.installationId, installation)
+          : sql`${repo.installationId} = (select ${schema.workspace.installationId} from ${schema.workspace} where ${schema.workspace.id} = ${installation.workspaceId})`,
+        sql`lower(${repo.fullName}) = ${fullName.toLowerCase()}`,
+        isNull(repo.removedAt),
       ),
     )
     .limit(1);
-  return repo;
+  return found;
 }

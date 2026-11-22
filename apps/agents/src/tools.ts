@@ -8,7 +8,7 @@ import {
 } from "@relayrunner/activity";
 import { z } from "zod";
 import type { Api } from "./api.ts";
-import { answer, type ToolContext, workspaceArg } from "./context.ts";
+import { answer, repositoryArg, type ToolContext, workspaceArg } from "./context.ts";
 import { compactActivityPage, compactJobTimes, contains } from "./compact.ts";
 
 // Read-only tools over relayrunner-api's dashboard endpoints, plus send_feedback, which only
@@ -34,8 +34,11 @@ export function registerTools(server: McpServer, context: ToolContext) {
       request(path, { query, workspaceId: workspaceId(workspace) });
 
   // A /workspaces/:id route, for the workspace a call names.
-  const workspaceRoute = <T>(workspace: string | undefined, route: string) =>
-    request<T>(workspacePath(workspace, route));
+  const workspaceRoute = <T>(
+    workspace: string | undefined,
+    route: string,
+    query?: Record<string, string | undefined>,
+  ) => request<T>(workspacePath(workspace, route), { query });
 
   server.registerTool(
     "list_workspaces",
@@ -87,11 +90,12 @@ export function registerTools(server: McpServer, context: ToolContext) {
     {
       title: "Runner order",
       description:
-        "The workspace's runner order: the providers RelayRunner tries for a job, top to bottom ('machine' for connected machines, 'github' for GitHub-hosted runners, optionally with a monthly minutes limit, and hosted providers by id: 'blacksmith', 'depot', 'namespace', 'warpbuild', 'ubicloud', 'boat', 'runs-on', 'starsling', 'monkci', 'runloft', 'latchkey', 'berrybox', 'celesto', 'instabox', 'lizard', 'groundbox', optionally with a monthly spendLimit in dollars). A job goes to the first provider it allows that can take it. A minutes limit counts the job's GitHub account's minutes, or its enterprise's shared minutes for an org in a GitHub enterprise. isDefault is true when nobody has changed it.",
-      inputSchema: z.object({ workspace: workspaceArg }),
+        "The workspace's runner order: the providers RelayRunner tries for a job, top to bottom ('machine' for connected machines, 'github' for GitHub-hosted runners, optionally with a monthly minutes limit, and hosted providers by id: 'blacksmith', 'depot', 'namespace', 'warpbuild', 'ubicloud', 'boat', 'runs-on', 'starsling', 'monkci', 'runloft', 'latchkey', 'berrybox', 'celesto', 'instabox', 'lizard', 'groundbox', optionally with a monthly spendLimit in dollars). A job goes to the first provider it allows that can take it. A minutes limit counts the job's GitHub account's minutes, or its enterprise's shared minutes for an org in a GitHub enterprise. isDefault is true when nobody has changed it. A repository can have its own order, which its jobs walk instead: pass `repository` for the order its jobs walk (scope 'repository' for its own, 'workspace' when it uses the workspace's). Without it, ownOrders lists the repositories with their own. Caps count the GitHub account's minutes and spend whichever order a job walks.",
+      inputSchema: z.object({ workspace: workspaceArg, repository: repositoryArg }),
       annotations: READ_ONLY,
     },
-    ({ workspace }) => answer(() => workspaceRoute(workspace, "runner-order")),
+    ({ workspace, repository }) =>
+      answer(() => workspaceRoute(workspace, "runner-order", { repo: repository })),
   );
 
   server.registerTool(

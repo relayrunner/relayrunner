@@ -234,10 +234,12 @@ const AGENT_ROUTES: RegExp[] = [
 
 // The settings an agent may change, by method, in a workspace that allows it changes
 // (agentWorkspaceId). Each is a dashboard route that logs the change in Activity and checks the user's
-// role itself. None deletes anything or touches members, installs or billing.
+// role itself. None deletes data or touches members, installs or billing: the one DELETE puts a repo
+// back on the workspace's runner order.
 const AGENT_WRITE_ROUTES: Record<string, RegExp[]> = {
   PUT: [/^\/api\/workspaces\/[^/]+\/(runner-order|auto-size|auto-jobs\/\d+|retry-settings|ai)$/],
   POST: [/^\/api\/machines\/[^/]+\/(pause|resume)$/],
+  DELETE: [/^\/api\/workspaces\/[^/]+\/runner-order$/],
 };
 
 // Routes an agent may call by method: the reads, agent feedback (which only adds a row for its own
@@ -247,6 +249,7 @@ export const AGENT_ROUTES_BY_METHOD: Record<string, RegExp[]> = {
   HEAD: AGENT_ROUTES,
   POST: [/^\/api\/feedback$/, ...AGENT_WRITE_ROUTES.POST],
   PUT: AGENT_WRITE_ROUTES.PUT,
+  DELETE: AGENT_WRITE_ROUTES.DELETE,
 };
 
 export function agentMayCall(method: string, pathname: string) {
