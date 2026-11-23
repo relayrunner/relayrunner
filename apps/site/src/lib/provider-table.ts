@@ -41,7 +41,14 @@ export const UNPRICED_ROWS = UNPRICED_TABLE_ROWS.map((row) => ({
 }));
 
 /** The runner clouds the featured cards above the table show. */
-export const FEATURED: IntegrationId[] = ["blacksmith", "depot", "boat", "ubicloud"];
+export const FEATURED: IntegrationId[] = [
+  "github",
+  "blacksmith",
+  "depot",
+  "namespace",
+  "ubicloud",
+  "boat",
+];
 
 /** Each featured card: logo, name, entry plan and the list price of a 2 vCPU Linux x64 minute. */
 export const FEATURED_TILES = FEATURED.map((id) => {
