@@ -50,10 +50,25 @@ const RUN_LIMIT = 200;
  * updated later; a redelivery is a no-op. Skipped when the installation has no row yet.
  */
 export async function recordWorkflowRun(db: Db, message: WorkflowRunMessage): Promise<boolean> {
-  const { installationId, run, repository } = message;
+  const { installationId, run } = message;
   if (!installationId || !(await findInstallation(db, installationId))) return false;
-  const values = {
-    installationId,
+  const values = workflowRunValues(message);
+  await db
+    .insert(table)
+    .values({ id: run.id, runAttempt: run.runAttempt, ...values })
+    .onConflictDoUpdate({
+      target: [table.id, table.runAttempt],
+      set: { ...values, updatedAt: new Date() },
+      setWhere: sql`excluded.github_updated_at >= ${table.githubUpdatedAt}`,
+    });
+  return true;
+}
+
+/** A workflow_run delivery's row, but its id and attempt. Also how imported runs are written. */
+export function workflowRunValues(message: WorkflowRunMessage) {
+  const { installationId, run, repository } = message;
+  return {
+    installationId: installationId!,
     repositoryId: repository.id,
     repositoryFullName: repository.fullName,
     workflowName: run.workflowName,
@@ -76,15 +91,6 @@ export async function recordWorkflowRun(db: Db, message: WorkflowRunMessage): Pr
     runStartedAt: parseDate(run.runStartedAt),
     githubUpdatedAt: parseDate(run.updatedAt) ?? new Date(message.receivedAt),
   };
-  await db
-    .insert(table)
-    .values({ id: run.id, runAttempt: run.runAttempt, ...values })
-    .onConflictDoUpdate({
-      target: [table.id, table.runAttempt],
-      set: { ...values, updatedAt: new Date() },
-      setWhere: sql`excluded.github_updated_at >= ${table.githubUpdatedAt}`,
-    });
-  return true;
 }
 
 /**

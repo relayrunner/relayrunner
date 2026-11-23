@@ -141,39 +141,14 @@ export async function recordJobTiming(
 ): Promise<boolean> {
   const { installationId, repository } = message;
   if (!installationId || !lookup.installation) return false;
-  // An ingress that predates the parser's fix passes GitHub's "" for "no runner" through.
-  const job = {
-    ...message.job,
-    runnerName: message.job.runnerName || null,
-    runnerGroupName: message.job.runnerGroupName || null,
-  };
-  const finished = job.status === "completed";
-  const completedAt = finished ? parseDate(job.completedAt) : null;
-  const queuedAt = parseDate(job.createdAt);
-  const startedAt = parseDate(job.startedAt);
+  const { job, completedAt, queuedAt, startedAt, values } = jobTimingValues(
+    installationId,
+    repository,
+    message.job,
+  );
   const [written] = await db
     .insert(table)
-    .values({
-      id: job.id,
-      installationId,
-      repositoryId: repository.id,
-      repositoryFullName: repository.fullName,
-      runId: job.runId,
-      runAttempt: job.runAttempt,
-      workflowName: job.workflowName,
-      name: job.name,
-      labels: job.labels,
-      conclusion: finished ? job.conclusion : null,
-      runnerName: job.runnerName,
-      runnerGroupName: job.runnerGroupName ?? null,
-      machineId: addedRunner(installationId, repository.id, job.runnerName, job.runnerGroupName),
-      queuedAt,
-      startedAt,
-      completedAt,
-      ranSteps: finished ? (job.ranSteps ?? null) : null,
-      failedStep: finished ? failedStep(job.steps) : null,
-      steps: finished ? stepTimes(job.steps) : null,
-    })
+    .values(values)
     .onConflictDoUpdate({
       target: table.id,
       set: {
@@ -222,6 +197,52 @@ export async function recordJobTiming(
     }
   }
   return true;
+}
+
+/** A job's job_timing row from its workflow_job payload. Also how imported jobs are written. */
+export function jobTimingValues(
+  installationId: number,
+  repository: WorkflowJobMessage["repository"],
+  delivered: WorkflowJobMessage["job"],
+) {
+  // An ingress that predates the parser's fix passes GitHub's "" for "no runner" through.
+  const job = {
+    ...delivered,
+    runnerName: delivered.runnerName || null,
+    runnerGroupName: delivered.runnerGroupName || null,
+  };
+  const finished = job.status === "completed";
+  const completedAt = finished ? parseDate(job.completedAt) : null;
+  const queuedAt = parseDate(job.createdAt);
+  const startedAt = parseDate(job.startedAt);
+  return {
+    job,
+    finished,
+    completedAt,
+    queuedAt,
+    startedAt,
+    values: {
+      id: job.id,
+      installationId,
+      repositoryId: repository.id,
+      repositoryFullName: repository.fullName,
+      runId: job.runId,
+      runAttempt: job.runAttempt,
+      workflowName: job.workflowName,
+      name: job.name,
+      labels: job.labels,
+      conclusion: finished ? job.conclusion : null,
+      runnerName: job.runnerName,
+      runnerGroupName: job.runnerGroupName ?? null,
+      machineId: addedRunner(installationId, repository.id, job.runnerName, job.runnerGroupName),
+      queuedAt,
+      startedAt,
+      completedAt,
+      ranSteps: finished ? (job.ranSteps ?? null) : null,
+      failedStep: finished ? failedStep(job.steps) : null,
+      steps: finished ? stepTimes(job.steps) : null,
+    },
+  };
 }
 
 /** The first step of a finished job that failed, as "3. Run tests", or null when none did. */

@@ -8,6 +8,7 @@ import { CodeBlock } from "@/components/code-block";
 import { MachinePrices } from "@/components/machine-prices";
 import { ProviderPlans } from "@/components/provider-plans";
 import { ProviderTrendsCard } from "@/components/provider-trends";
+import { loadPage, pageQuery, usePageReport } from "@/lib/query";
 import {
   type Percentile,
   PERCENTILE_OPTIONS,
@@ -46,7 +47,6 @@ import {
   type RangeSearch,
   unlessDefault,
   rangeSearch,
-  useRangeReport,
   useSetSearch,
 } from "@/lib/search-params";
 import { rangePhrase, type TimeRange } from "@/lib/time-range";
@@ -75,17 +75,20 @@ const validateSearch = (search: Record<string, unknown>): ProviderSearch => ({
 // The widest range the page offers, to tell a provider nobody has used from a quiet month.
 const WIDEST: TimeRange = "30d";
 
+const providerQuery = (provider: string, range: TimeRange) =>
+  pageQuery(["provider", provider, range], () => getProviderReport(provider, range));
+
 export const Route = createFileRoute("/_authed/_workspace/providers/$provider")({
   validateSearch,
   loader: async ({ params, location }) => {
     if (!isKnownProvider(params.provider)) throw notFound();
     const search = validateSearch(location.search);
-    const report = await getProviderReport(params.provider, rangeOf(search));
+    const report = await loadPage(providerQuery(params.provider, rangeOf(search)));
     // Nothing ran here this month: look back further before leading with how to start.
     const unused =
       report.jobs === 0 &&
       !search.range &&
-      (await getProviderReport(params.provider, WIDEST)).jobs === 0;
+      (await loadPage(providerQuery(params.provider, WIDEST))).jobs === 0;
     return { report, unused };
   },
   // A new range loads in the page, keeping the last one up meanwhile.
@@ -104,7 +107,7 @@ function ProviderView({ first, unused }: { first: ProviderReport; unused: boolea
   const search = Route.useSearch();
   const range = rangeOf(search);
   const setSearch = useSetSearch<ProviderSearch>();
-  const report = useRangeReport(first, range, (next) => getProviderReport(provider, next));
+  const { report } = usePageReport(providerQuery(provider, range), first);
   const info = providerInfo(provider);
   usePageTitle(info.name);
   const catalog = reportCatalog(report);

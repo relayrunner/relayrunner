@@ -27,6 +27,7 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
+import { loadPage, pageQuery, usePageReport } from "@/lib/query";
 import { timeAgo } from "@/lib/activity";
 import {
   AREAS,
@@ -58,7 +59,6 @@ import {
   rangeSearch,
   textParam,
   unlessDefault,
-  useRangeReport,
   useSetSearch,
 } from "@/lib/search-params";
 import { money } from "@/lib/usage";
@@ -86,10 +86,6 @@ const FILTERED_RANGES: RangeOptions = {
 };
 const DEFAULT_RANGE: TimeRange = "30d";
 const ranges = rangeSearch(RANGES, DEFAULT_RANGE);
-
-// The range and filter a report is for.
-const keyOf = (range: TimeRange, filter: SignalFilter) =>
-  JSON.stringify([range, ...FILTER_KEYS.map((key) => filter[key] ?? "")]);
 
 const BREAKDOWNS = BREAKDOWN_VIEWS.map((option) => option.value);
 const SIGNAL_IDS = Object.keys(SIGNAL_COPY) as SignalId[];
@@ -130,11 +126,18 @@ const SIGNALS_DOCS = `${DOCS_URL}/dashboard/signals`;
 const docsAnchor = (title: string) =>
   `${SIGNALS_DOCS}#${title.toLowerCase().replace(/[^a-z0-9]+/g, "-")}`;
 
+// The range and filter a report is for.
+const keyOf = (range: TimeRange, filter: SignalFilter) =>
+  JSON.stringify([range, ...FILTER_KEYS.map((key) => filter[key] ?? "")]);
+
+const signalsQuery = (range: TimeRange, filter: SignalFilter) =>
+  pageQuery(["signals", range, filter], () => getSignals(range, filter));
+
 export const Route = createFileRoute("/_authed/_workspace/signals")({
   validateSearch,
   loader: ({ location }) => {
     const search = validateSearch(location.search);
-    return getSignals(rangeOf(search), filterOf(search));
+    return loadPage(signalsQuery(rangeOf(search), filterOf(search)));
   },
   // A new range or filter loads in the page, keeping the last one up meanwhile.
   shouldReload: ({ cause }) => cause !== "stay",
@@ -148,7 +151,7 @@ function SignalsPage() {
   const filtered = isFiltered(filter);
   const setSearch = useSetSearch<Search>();
   const key = keyOf(range, filter);
-  const report = useRangeReport(Route.useLoaderData(), key, () => getSignals(range, filter));
+  const { report } = usePageReport(signalsQuery(range, filter), Route.useLoaderData());
   const manyRepos = spansRepos(report);
 
   function chooseRange(next: TimeRange) {

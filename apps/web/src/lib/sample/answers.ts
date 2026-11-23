@@ -2,7 +2,12 @@
 // gateway. lib/api.ts imports this only in that mode, so none of it ships in the real dashboard.
 import type { ActivityFilter, ActivityResult } from "@/lib/activity";
 import { sampleRoutingHealth, type RoutingRange } from "@/lib/admin-routing";
-import { EVALUATION_RUNS, SAMPLE_WORKFLOWS, sampleEvaluation } from "@/lib/evaluations";
+import {
+  EVALUATION_RUNS,
+  SAMPLE_HISTORY_WORKFLOWS,
+  SAMPLE_WORKFLOWS,
+  sampleEvaluation,
+} from "@/lib/evaluations";
 import { BASE_CATALOG } from "@relayrunner/providers/catalog";
 import { DEFAULT_RETRY_SETTINGS, type FreeMinutesProvider } from "@relayrunner/runner-order";
 import { allFlags } from "@/lib/flags";
@@ -79,7 +84,17 @@ const ANSWERS: [RegExp, Answer][] = [
   [/^\/activity\/options$/, () => sampleActivityOptions()],
   [/^\/usage\/actions$/, () => sampleRouterActionsUsage()],
   [/^\/admin\/routing$/, (_, q) => sampleRoutingHealth(q.get("range") as RoutingRange)],
-  [/^\/evaluations\/workflows$/, () => ({ workflows: SAMPLE_WORKFLOWS })],
+  // `?sample=history`: a new installation whose run history is still being read.
+  [
+    /^\/evaluations\/workflows$/,
+    () => ({
+      workflows: sampleParam() === "history" ? SAMPLE_HISTORY_WORKFLOWS : SAMPLE_WORKFLOWS,
+    }),
+  ],
+  [
+    /^\/evaluations\/history$/,
+    () => ({ history: sampleParam() === "history" ? { state: "running", runs: 142 } : null }),
+  ],
   [/^\/evaluations$/, () => ({ evaluations: [] })],
   [/^\/evaluations\/([^/]+)$/, ([, id]) => sampleEvaluationById(decodeURIComponent(id!))],
   [/^\/providers\/catalog$/, () => ({ providers: BASE_CATALOG })],
@@ -198,12 +213,15 @@ const CHANGES: [RegExp, (body: Record<string, unknown>) => unknown][] = [
   [/^\/evaluations$/, (body) => ({ id: `sample:${body.provider}` })],
 ];
 
-// An Evaluate page's `?id=sample:<provider>` runs 2 of 5; `sample:<provider>:waiting`, `:starting`
-// and `:done` show the other states.
+// An Evaluate page's `?id=sample:<provider>` runs 2 of 5; `sample:<provider>:waiting`, `:starting`,
+// `:first` (run 1 going), `:done` and `:stopped-<n>` (stopped after n runs) show the other states.
 function sampleEvaluationById(id: string) {
   const [, provider = "blacksmith", state] = id.split(":");
   if (state === "waiting") return sampleEvaluation(provider, 0, "waiting");
   if (state === "done") return sampleEvaluation(provider, EVALUATION_RUNS);
+  if (state === "first") return sampleEvaluation(provider, 0);
+  if (state?.startsWith("stopped-"))
+    return sampleEvaluation(provider, Number(state.slice(8)) || 0, undefined, true);
   if (state === "starting") {
     const report = sampleEvaluation(provider, 0);
     return {

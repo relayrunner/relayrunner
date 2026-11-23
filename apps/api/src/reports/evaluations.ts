@@ -84,7 +84,8 @@ export interface EvaluationWorkflow {
   /** The median passing default-branch run, start to finish, or null with none. */
   medianMs: number | null;
   /** Whether any of its runs had a relay job, so an evaluation can steer its jobs. */
-  relayed: boolean;
+  /** Whether its jobs go through a relay; null while the run history is still importing. */
+  relayed: boolean | null;
   /** Whether it was ever started with workflow_dispatch lately: then it surely can be. */
   dispatched: boolean;
 }
@@ -150,6 +151,8 @@ export interface StartRequest {
   workflowPath: string;
   provider: string;
   vcpus: number;
+  /** The workflow's name, when the dashboard knows it from GitHub rather than from runs. */
+  workflowName?: string | null;
 }
 
 /**
@@ -204,7 +207,7 @@ export async function startEvaluation(env: Env, db: Db, request: StartRequest) {
     repositoryId: request.repositoryId,
     repositoryFullName: repo.fullName,
     workflowPath: request.workflowPath,
-    workflowName: latestName?.name ?? null,
+    workflowName: latestName?.name ?? request.workflowName ?? null,
     provider: request.provider,
     vcpus: request.vcpus,
     label,
@@ -296,7 +299,10 @@ export async function resumeWaitingEvaluations(env: Env, db: Db, message: Workfl
   }
 }
 
-/** Stops an evaluation: no more attempts, and the one running is cancelled. */
+/**
+ * Stops an evaluation: no more attempts, and the one running is cancelled. The attempts that
+ * finished stay in its comparison (evaluationReport), so stopping early still has results.
+ */
 export async function cancelEvaluation(env: Env, db: Db, workspaceId: string, id: string) {
   const row = await db
     .select()
@@ -556,7 +562,13 @@ export async function evaluationReport(
 
   const attempts: Attempt[] = Array.from({ length: row.runs }, (_, i) => {
     const attempt = i + 1;
-    const attemptJobs = byAttempt.get(attempt) ?? [];
+    // Stopping cancels the attempt going then: it never finished, so it counts as not run, and
+    // the comparison keeps only the attempts before it.
+    const stoppedMidway =
+      row.state === "cancelled" &&
+      attempt === row.attempt &&
+      runConclusion(byAttempt.get(attempt) ?? []) !== "success";
+    const attemptJobs = stoppedMidway ? [] : (byAttempt.get(attempt) ?? []);
     const done =
       attemptJobs.length > 0 &&
       attemptJobs.every((job) => job.completedAt) &&

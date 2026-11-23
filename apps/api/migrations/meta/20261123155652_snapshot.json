@@ -1,7 +1,7 @@
 {
   "version": "6",
   "dialect": "sqlite",
-  "id": "4c7d62c9-d66f-499e-ae85-eeb9dfb0b6a2",
+  "id": "2bb46ccf-90da-4889-9f00-a987a4a03de5",
   "prevId": "19a35f5c-1c4b-4d5a-a620-28f952c8d479",
   "tables": {
     "account": {
@@ -1038,13 +1038,6 @@
         },
         "size": {
           "name": "size",
-          "type": "integer",
-          "primaryKey": false,
-          "notNull": false,
-          "autoincrement": false
-        },
-        "cpus": {
-          "name": "cpus",
           "type": "integer",
           "primaryKey": false,
           "notNull": false,
@@ -5580,6 +5573,80 @@
           "tableTo": "workspace",
           "columnsFrom": [
             "workspace_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "cascade",
+          "onUpdate": "no action"
+        }
+      },
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {},
+      "checkConstraints": {}
+    },
+    "run_history_import": {
+      "name": "run_history_import",
+      "columns": {
+        "installation_id": {
+          "name": "installation_id",
+          "type": "integer",
+          "primaryKey": true,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "state": {
+          "name": "state",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "runs": {
+          "name": "runs",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false,
+          "default": 0
+        },
+        "error": {
+          "name": "error",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
+        "finished_at": {
+          "name": "finished_at",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
+        "created_at": {
+          "name": "created_at",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "updated_at": {
+          "name": "updated_at",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        }
+      },
+      "indexes": {},
+      "foreignKeys": {
+        "run_history_import_installation_id_github_installation_id_fk": {
+          "name": "run_history_import_installation_id_github_installation_id_fk",
+          "tableFrom": "run_history_import",
+          "tableTo": "github_installation",
+          "columnsFrom": [
+            "installation_id"
           ],
           "columnsTo": [
             "id"

@@ -10,6 +10,7 @@ import { TipRow } from "@/components/chart-parts";
 import { OptionPicker, TimeRangePicker } from "@/components/range-picker";
 import { Legend, seriesColor, StackedBars } from "@/components/stacked-bars";
 import { DataTable, dataTableColumns, NUM } from "@/components/ui/data-table";
+import { loadPage, pageQuery, usePageReport } from "@/lib/query";
 import { DAY_MS, medianText, p90Text } from "@/lib/job-times";
 import { useProviderApps } from "@/lib/provider-apps";
 import { providerInfo } from "@/lib/provider-catalog";
@@ -18,7 +19,6 @@ import {
   type RangeSearch,
   rangeSearch,
   unlessDefault,
-  useRangeReport,
   useSetSearch,
 } from "@/lib/search-params";
 import {
@@ -41,6 +41,9 @@ async function load(range: TimeRange, per: ChartPer): Promise<LoadedOverview> {
   const overview = await getProvidersOverview(range, { chart: per });
   return { ...overview, from };
 }
+
+const overviewQuery = (range: TimeRange, per: ChartPer) =>
+  pageQuery(["providers", range, per], () => load(range, per));
 
 const rangeParams = rangeSearch(PROVIDER_RANGES, PROVIDER_DEFAULT_RANGE);
 const { rangeOf, toSearch } = rangeParams;
@@ -76,7 +79,7 @@ export const Route = createFileRoute("/_authed/_workspace/providers/")({
   validateSearch,
   loader: ({ location }) => {
     const search = validateSearch(location.search);
-    return load(rangeOf(search), perOf(search));
+    return loadPage(overviewQuery(rangeOf(search), perOf(search)));
   },
   // A new range loads in the page, keeping the last one up meanwhile.
   shouldReload: ({ cause }) => cause !== "stay",
@@ -88,9 +91,7 @@ function ProvidersPage() {
   const range = rangeOf(search);
   const per = perOf(search);
   const setSearch = useSetSearch<ProvidersSearch>();
-  const overview: LoadedOverview = useRangeReport(Route.useLoaderData(), `${range} ${per}`, () =>
-    load(range, per),
-  );
+  const { report: overview } = usePageReport(overviewQuery(range, per), Route.useLoaderData());
   const { current } = Route.useRouteContext();
   const installed = useProviderApps(current.workspace.id);
   // Connected: the org installed the cloud's GitHub App, or a job ran on it in this range (GitHub

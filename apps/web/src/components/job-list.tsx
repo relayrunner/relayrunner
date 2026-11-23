@@ -23,6 +23,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
+import { usePageReport } from "@/lib/query";
 import { timeAgo } from "@/lib/activity";
 import { dayHeading } from "@/lib/time-zone";
 import { formatMemory } from "@/lib/device";
@@ -34,10 +35,10 @@ import {
   isFailure,
   type JobsReport,
   isLongWait,
-  getJobs,
+  jobsQuery,
 } from "@/lib/runs";
 import { JOB_RANGES } from "@/lib/job-times";
-import { rangeSearch, unlessDefault, useRangeReport, useSetSearch } from "@/lib/search-params";
+import { rangeSearch, unlessDefault, useSetSearch } from "@/lib/search-params";
 import { rangePhrase } from "@/lib/time-range";
 import { cn, elapsed, percent } from "@/lib/utils";
 import type { HistorySearch } from "@/routes/_authed/_workspace/history";
@@ -265,8 +266,7 @@ export const JobList = memo(function JobList({ report: first }: { report: JobsRe
   const [flat, setFlat] = useState(() => readFlag(FLAT_KEY));
   const [folded, setFolded] = useState<ReadonlySet<string>>(new Set());
   const setSearch = useSetSearch<HistorySearch>();
-  // Each range is its own load, since the newest jobs alone can fill a busy workspace's list.
-  const report = useRangeReport(first, range, getJobs);
+  const { report } = usePageReport(jobsQuery(range), first);
 
   const repositories = useMemo(
     () => [...new Set(report.jobs.map((job) => job.repository))].sort(),

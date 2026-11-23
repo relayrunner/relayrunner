@@ -21,7 +21,8 @@ export interface EvaluationWorkflow {
   runs: number;
   baselineRuns: number;
   medianMs: number | null;
-  relayed: boolean;
+  /** null while the run history is still being read: GitHub listed the workflow, no run named it yet. */
+  relayed: boolean | null;
   dispatched: boolean;
 }
 
@@ -73,7 +74,12 @@ export interface EvaluationReport {
   createdAt: number;
   finishedAt: number | null;
   attempts: Attempt[];
-  baseline: { runs: number; medianMs: number | null; waitMs: number | null; usd: number | null };
+  baseline: {
+    runs: number;
+    medianMs: number | null;
+    waitMs: number | null;
+    usd: number | null;
+  };
   cold: { ms: number | null; waitMs: number | null; usd: number | null };
   warm: { ms: number | null; waitMs: number | null; usd: number | null };
   jobs: JobComparison[];
@@ -104,6 +110,12 @@ export function evaluationSizes(provider: string) {
 export const getEvaluationWorkflows = () =>
   api<{ workflows: EvaluationWorkflow[] }>("/evaluations/workflows").then((r) => r.workflows);
 
+/** The new installation's run history import (apps/api/src/run-history.ts); null when it had none. */
+export type RunHistory = { state: "queued" | "running" | "done" | "failed"; runs: number } | null;
+
+export const getRunHistory = () =>
+  api<{ history: RunHistory }>("/evaluations/history").then((r) => r.history);
+
 export const listEvaluations = (provider: string) =>
   api<{ evaluations: EvaluationSummary[] }>(
     `/evaluations?provider=${encodeURIComponent(provider)}`,
@@ -115,15 +127,25 @@ export const getEvaluation = (id: string) =>
 export const startEvaluation = (body: {
   repositoryId: number;
   workflowPath: string;
+  /** Its name, for a workflow no run named yet. */
+  workflowName?: string;
   provider: string;
   vcpus: number;
-}) => api<{ id: string }>("/evaluations", { method: "POST", body: JSON.stringify(body) });
+}) =>
+  api<{ id: string }>("/evaluations", {
+    method: "POST",
+    body: JSON.stringify(body),
+  });
 
 export const retryEvaluation = (id: string) =>
-  api<{ ok: true }>(`/evaluations/${encodeURIComponent(id)}/retry`, { method: "POST" });
+  api<{ ok: true }>(`/evaluations/${encodeURIComponent(id)}/retry`, {
+    method: "POST",
+  });
 
 export const cancelEvaluation = (id: string) =>
-  api<{ ok: true }>(`/evaluations/${encodeURIComponent(id)}/cancel`, { method: "POST" });
+  api<{ ok: true }>(`/evaluations/${encodeURIComponent(id)}/cancel`, {
+    method: "POST",
+  });
 
 /** Where to edit a workflow file on GitHub. */
 export const editUrl = (repository: string, ref: string, path: string) =>
@@ -172,8 +194,18 @@ export const SAMPLE_WORKFLOWS: EvaluationWorkflow[] = [
   },
 ];
 
+/** The same workflows while a new installation's history is read: GitHub lists them, no runs yet. */
+export const SAMPLE_HISTORY_WORKFLOWS: EvaluationWorkflow[] = SAMPLE_WORKFLOWS.map((w, i) =>
+  i === 0
+    ? { ...w, runs: 38, baselineRuns: 12, medianMs: 534_000 }
+    : { ...w, runs: 0, baselineRuns: 0, medianMs: null, relayed: null },
+);
+
 const s = (seconds: number) => seconds * 1000;
-const split = (wait: number, run: number): Split => ({ waitMs: s(wait), runMs: s(run) });
+const split = (wait: number, run: number): Split => ({
+  waitMs: s(wait),
+  runMs: s(run),
+});
 const SAMPLE_JOBS: [string, Split, Split, Split][] = [
   ["lint", split(9, 62), split(6, 58), split(4, 31)],
   ["typecheck", split(11, 94), split(7, 88), split(4, 52)],
@@ -186,11 +218,17 @@ const SAMPLE_RUN_MS = [475, 310, 298, 304, 301].map(s);
 const SAMPLE_RUN_USD = [0.216, 0.132, 0.132, 0.132, 0.132];
 
 /** A made-up evaluation: `done` attempts finished, the next one running. */
-export function sampleEvaluation(provider: string, done: number, state?: EvaluationState) {
+export function sampleEvaluation(
+  provider: string,
+  done: number,
+  state?: EvaluationState,
+  stopped = false,
+) {
   const vcpus = 4;
   const attempts: Attempt[] = SAMPLE_RUN_MS.map((ms, i) => {
     const attempt = i + 1;
-    const status = attempt <= done ? "done" : attempt === done + 1 ? "running" : "waiting";
+    const status =
+      attempt <= done ? "done" : attempt === done + 1 && !stopped ? "running" : "waiting";
     return {
       attempt,
       status,
@@ -209,10 +247,10 @@ export function sampleEvaluation(provider: string, done: number, state?: Evaluat
             })),
     };
   });
-  const finished = done >= EVALUATION_RUNS;
+  const finished = done >= EVALUATION_RUNS || stopped;
   return {
     id: "sample",
-    state: state ?? (finished ? "done" : "running"),
+    state: state ?? (stopped ? "cancelled" : finished ? "done" : "running"),
     error: state === "waiting" ? "no_dispatch" : null,
     provider,
     vcpus,
@@ -237,7 +275,8 @@ export function sampleEvaluation(provider: string, done: number, state?: Evaluat
             conclusion: null,
           }))
         : attempts,
-    baseline: { runs: 20, medianMs: 520_000, waitMs: 12_000, usd: 0.114 },
+    // Today on 4 vCPU GitHub-hosted runners: 14 billed minutes at $0.016, so the sample reads as a saving.
+    baseline: { runs: 20, medianMs: 520_000, waitMs: 12_000, usd: 0.224 },
     cold:
       done >= 1
         ? { ms: SAMPLE_RUN_MS[0]!, waitMs: 7_000, usd: SAMPLE_RUN_USD[0]! }

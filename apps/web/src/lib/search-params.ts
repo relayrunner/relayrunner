@@ -1,7 +1,6 @@
 // A page's range and filters live in its URL, so a view can be linked to. Each is left out of the
 // URL while it's at its default, so a plain link shows the page as it always has.
 import { useNavigate } from "@tanstack/react-router";
-import { useEffect, useState } from "react";
 import { type RangeOptions, rangeOrDaysParam, type TimeRange } from "@/lib/time-range";
 
 /** `?days=` when it's one of the page's ranges other than its default. */
@@ -50,31 +49,4 @@ export function rangeSearch(options: RangeOptions, fallback: TimeRange) {
     rangeOf: (search: RangeSearch) => search.range ?? fallback,
     toSearch: (range: TimeRange): RangeSearch => ({ range: unlessDefault(range, fallback) }),
   };
-}
-
-/**
- * A report for the range in the URL. The route's loader reads the first one; another range loads
- * here, with the last report shown until it's back. A page with filters passes a key for the range
- * and filters together.
- */
-export function useRangeReport<T, K extends string | number = number>(
-  first: T,
-  key: K,
-  load: (key: K) => Promise<T>,
-) {
-  // The report, and the key it was loaded for.
-  const [[loaded, report], setLoaded] = useState<[K, T]>([key, first]);
-  useEffect(() => setLoaded([key, first]), [first]);
-  useEffect(() => {
-    if (loaded === key) return;
-    let live = true;
-    load(key)
-      .then((next) => live && setLoaded([key, next]))
-      .catch(() => undefined);
-    return () => {
-      live = false;
-    };
-    // eslint-disable-next-line react-hooks/exhaustive-deps -- only a new range loads
-  }, [key]);
-  return report;
 }
