@@ -7,6 +7,7 @@ import {
   type EvaluationReport,
   type EvaluationState,
   type EvaluationWorkflow,
+  type RecentEvaluation,
   type Split,
 } from "../evaluations.ts";
 
@@ -118,6 +119,7 @@ export function sampleEvaluation(
     runs: EVALUATION_RUNS,
     runId: state === "waiting" ? null : 4421,
     createdAt: Date.now() - 40 * 60_000,
+    routedRuns: 0,
     finishedAt: finished ? Date.now() - 4 * 60_000 : null,
     attempts:
       state === "waiting"
@@ -148,4 +150,66 @@ export function sampleEvaluation(
       onProvider: true,
     })),
   } satisfies EvaluationReport;
+}
+
+const DAY = 86_400_000;
+
+/** Sample evaluations for the dev preview: one running, one done, and one stopped and since adopted. */
+export function sampleEvaluations(provider: string): RecentEvaluation[] {
+  const now = Date.now();
+  const base = {
+    provider,
+    repository: "acme/web",
+    repositoryId: 1,
+    workflowPath: ".github/workflows/ci.yml",
+    workflow: "CI",
+    vcpus: 4,
+    runs: EVALUATION_RUNS,
+    baselineMs: 520_000,
+    baselineUsd: 0.224,
+    routedRuns: 0,
+  };
+  return [
+    {
+      ...base,
+      id: `sample:${provider}`,
+      state: "running",
+      attempt: 3,
+      finished: 2,
+      ms: 318_000,
+      usd: 0.131,
+      createdAt: now - 25 * 60_000,
+    },
+    {
+      ...base,
+      id: `sample:${provider}:done`,
+      state: "done",
+      attempt: 5,
+      finished: 5,
+      workflow: "E2E",
+      workflowPath: ".github/workflows/e2e.yml",
+      baselineMs: 845_000,
+      baselineUsd: 0.41,
+      ms: 702_000,
+      usd: 0.468,
+      createdAt: now - 3 * DAY,
+    },
+    {
+      ...base,
+      id: `sample:${provider}:stopped-3`,
+      state: "cancelled",
+      attempt: 4,
+      finished: 3,
+      repository: "acme/api",
+      repositoryId: 2,
+      workflow: "Test",
+      workflowPath: ".github/workflows/test.yml",
+      baselineMs: 390_000,
+      baselineUsd: 0.17,
+      ms: 236_000,
+      usd: 0.098,
+      routedRuns: 46,
+      createdAt: now - 12 * DAY,
+    },
+  ];
 }

@@ -6,6 +6,7 @@ import {
   evaluationReport,
   evaluationWorkflows,
   listEvaluations,
+  recentEvaluations,
   retryEvaluation,
   startEvaluation,
 } from "../reports/evaluations.ts";
@@ -48,6 +49,14 @@ export const evaluationRoutes = new Hono<AppEnv>()
     const { installationId } = c.var.workspace;
     return c.json({
       history: installationId ? await runHistoryState(c.var.db, installationId) : null,
+    });
+  })
+  // A provider's evaluations from the last 30 days, with their headline numbers, for its page.
+  .get("/recent", async (c) => {
+    const provider = c.req.query("provider");
+    if (!provider) throw new AppError("INVALID_REQUEST");
+    return c.json({
+      evaluations: await recentEvaluations(c.var.db, c.var.workspace.id, provider),
     });
   })
   .get("/", async (c) =>

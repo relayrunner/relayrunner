@@ -82,6 +82,8 @@ export interface EvaluationReport {
   cold: { ms: number | null; waitMs: number | null; usd: number | null };
   warm: { ms: number | null; waitMs: number | null; usd: number | null };
   jobs: JobComparison[];
+  /** Runs of this workflow on the provider since the evaluation, evaluations left out. */
+  routedRuns: number;
 }
 
 export interface EvaluationSummary {
@@ -96,6 +98,32 @@ export interface EvaluationSummary {
   createdAt: number;
 }
 
+/** A provider's evaluation from the last RECENT_DAYS days, with its headline numbers. */
+export interface RecentEvaluation {
+  id: string;
+  state: EvaluationState;
+  provider: string;
+  repositoryId: number;
+  repository: string;
+  workflow: string | null;
+  workflowPath: string;
+  vcpus: number;
+  attempt: number;
+  runs: number;
+  createdAt: number;
+  /** Runs that finished, and their median time and cost (warm runs, else the cold one). */
+  finished: number;
+  ms: number | null;
+  usd: number | null;
+  /** The workflow's recent runs the evaluation compares against. */
+  baselineMs: number | null;
+  baselineUsd: number | null;
+  /** Runs of this workflow on the provider since, evaluations left out. */
+  routedRuns: number;
+}
+
+/** How long an evaluation stays listed: after this, Performance tells the story. */
+export const RECENT_DAYS = 30;
 export const ACTIVE_STATES: EvaluationState[] = ["dispatching", "waiting", "running"];
 
 /** The sizes a provider offers for an evaluation, with the label each gets. */
@@ -118,6 +146,11 @@ export const getRunHistory = () =>
 export const listEvaluations = (provider: string) =>
   api<{ evaluations: EvaluationSummary[] }>(
     `/evaluations?provider=${encodeURIComponent(provider)}`,
+  ).then((r) => r.evaluations);
+
+export const getRecentEvaluations = (provider: string) =>
+  api<{ evaluations: RecentEvaluation[] }>(
+    `/evaluations/recent?provider=${encodeURIComponent(provider)}`,
   ).then((r) => r.evaluations);
 
 export const getEvaluation = (id: string) =>

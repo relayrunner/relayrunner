@@ -13,7 +13,12 @@ import type { RunJob } from "@/lib/runs";
 import { FILTER_KEYS, type SignalFilter, type SignalId } from "@/lib/signals";
 import { sampleActionsUsage } from "./actions-usage";
 import { sampleRoutingHealth } from "./admin-routing";
-import { SAMPLE_HISTORY_WORKFLOWS, SAMPLE_WORKFLOWS, sampleEvaluation } from "./evaluations";
+import {
+  SAMPLE_HISTORY_WORKFLOWS,
+  SAMPLE_WORKFLOWS,
+  sampleEvaluation,
+  sampleEvaluations,
+} from "./evaluations";
 import { sampleJobTimes } from "./job-times";
 import { sampleJobTypeTimes } from "./job-types";
 import { sampleLiveJobs } from "./live-jobs";
@@ -84,6 +89,14 @@ const ANSWERS: [RegExp, Answer][] = [
     () => ({ history: sampleParam() === "history" ? { state: "running", runs: 142 } : null }),
   ],
   [/^\/evaluations$/, () => ({ evaluations: [] })],
+  // `?sample=none` on a provider page: no recent evaluations.
+  [
+    /^\/evaluations\/recent$/,
+    (_, q) => ({
+      evaluations:
+        sampleParam() === "none" ? [] : sampleEvaluations(q.get("provider") ?? "blacksmith"),
+    }),
+  ],
   [/^\/evaluations\/([^/]+)$/, ([, id]) => sampleEvaluationById(decodeURIComponent(id!))],
   [/^\/providers\/catalog$/, () => ({ providers: BASE_CATALOG })],
   [/^\/providers\/connections$/, () => sampleRouterConnections()],
@@ -207,6 +220,12 @@ function sampleEvaluationById(id: string) {
   const [, provider = "blacksmith", state] = id.split(":");
   if (state === "waiting") return sampleEvaluation(provider, 0, "waiting");
   if (state === "done") return sampleEvaluation(provider, EVALUATION_RUNS);
+  if (state === "old")
+    return {
+      ...sampleEvaluation(provider, EVALUATION_RUNS),
+      createdAt: Date.now() - 41 * 86_400_000,
+      routedRuns: sampleParam() === "unused" ? 0 : 128,
+    };
   if (state === "first") return sampleEvaluation(provider, 0);
   if (state?.startsWith("stopped-"))
     return sampleEvaluation(provider, Number(state.slice(8)) || 0, undefined, true);

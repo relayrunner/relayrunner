@@ -1,4 +1,5 @@
 import { RUNNER_LABELS, type RunnerKey, type RunnerStep } from "@relayrunner/runner-order";
+import { keepPreviousData, useQuery } from "@tanstack/react-query";
 import { createFileRoute, Link, useRouter } from "@tanstack/react-router";
 import {
   CheckIcon,
@@ -53,23 +54,20 @@ import {
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
 import { attentionItems } from "@/lib/attention";
 import { authDisabled } from "@/lib/auth-client";
-import { getMachineJobTimes, plural, type Stat } from "@/lib/job-times";
-import { getLiveJobs, NO_LIVE_JOBS } from "@/lib/live-jobs";
+import { plural, type Stat } from "@/lib/job-times";
+import { NO_LIVE_JOBS } from "@/lib/live-jobs";
 import { useLiveRefresh } from "@/lib/live-refresh";
 import {
   addableRunners,
   addGithubRunners,
   listGithubRunners,
-  listMachines,
+  machinesQuery,
   type AddableRunner,
   type GitHubRunners,
+  type Machine,
+  type OtherMachine,
 } from "@/lib/machines";
-import {
-  getProvidersOverview,
-  PROVIDER_DEFAULT_RANGE,
-  PROVIDER_RANGES,
-  type ProviderSummary,
-} from "@/lib/providers";
+import { PROVIDER_DEFAULT_RANGE, PROVIDER_RANGES, type ProviderSummary } from "@/lib/providers";
 import { canManage } from "@/lib/roles";
 import {
   CLEARED_FILTERS,
@@ -84,7 +82,14 @@ import {
   STATUSES,
   validateRunnerSearch,
 } from "@/lib/runner-filters";
-import { getRunnerOrder } from "@/lib/runner-order";
+import { queryClient } from "@/lib/query";
+import {
+  cloudRunnersQuery,
+  liveJobsQuery,
+  machineJobTimesQuery,
+  prefetchRunnersPage,
+  runnerOrderQuery,
+} from "@/lib/runners-page";
 import { unlessDefault } from "@/lib/search-params";
 import { rangePhrase } from "@/lib/time-range";
 import { readFlag, saveFlag } from "@/lib/stored-flag";
@@ -99,6 +104,10 @@ const dismissedFound = new Set<string>();
 // How often the page refetches machines while someone is looking, so a machine connecting, going
 // quiet or picking up a job shows up. Paused while the tab is hidden or idle (lib/live-refresh.ts).
 const REFRESH_MS = 15_000;
+
+// Stand in for lists that haven't loaded, so they don't get a new array each render.
+const NO_MACHINES: Machine[] = [];
+const NO_OTHERS: OtherMachine[] = [];
 
 // Stands in for job counts that haven't loaded, so the list doesn't get a new object each render.
 const NO_JOB_TIMES: Record<string, Stat> = {};
@@ -116,14 +125,15 @@ export const Route = createFileRoute("/_authed/_workspace/runners")({
   validateSearch: validateRunnerSearch,
   // Filters and the cloud table's range apply in the page, so they don't load the runners again.
   shouldReload: ({ cause }) => cause !== "stay",
-  loader: async ({ context }) => {
-    const [order, { machines, others = [] }, live] = await Promise.all([
-      getRunnerOrder(context.current.workspace.id),
-      listMachines(),
-      // The page still loads without them; the next refresh tries again.
-      getLiveJobs().catch(() => NO_LIVE_JOBS),
-    ]);
-    return { ...order, machines, others, live };
+  // Starts every read and shows the page at once: each section fills in when its own comes back
+  // (lib/runners-page.ts), instead of the whole page waiting on the slowest.
+  loader: ({ context, location }) => {
+    const { cloud } = validateRunnerSearch(location.search as Record<string, unknown>);
+    prefetchRunnersPage(
+      context.current.workspace.id,
+      cloud ?? PROVIDER_DEFAULT_RANGE,
+      INACTIVE_DAYS,
+    );
   },
   component: RunnersPage,
 });
@@ -131,32 +141,24 @@ export const Route = createFileRoute("/_authed/_workspace/runners")({
 // The runners the workspace supplies, grouped as Self-hosted. Where jobs go is the Router's job;
 // the line at the top says what it means right now.
 function RunnersPage() {
-  const loaded = Route.useLoaderData();
   const { current } = Route.useRouteContext();
   const router = useRouter();
-  // Only the machines list is refetched: invalidating the route would also re-run the session,
-  // workspace and runner order loads on every tick.
-  const [allMachines, setAllMachines] = useState(loaded.machines);
-  const [others, setOthers] = useState(loaded.others);
-  useEffect(() => setAllMachines(loaded.machines), [loaded.machines]);
-  useEffect(() => setOthers(loaded.others), [loaded.others]);
+  // Each read is its own query, so the page draws before any comes back and keeps showing the
+  // last answer when a refresh fails; the next tick retries.
+  const machinesRead = useQuery(machinesQuery);
+  // Null until the first answer, so the page shows skeletons rather than "no runners yet".
+  const machinesLoaded = machinesRead.data ?? null;
+  const allMachines = machinesLoaded?.machines ?? NO_MACHINES;
+  const others = machinesLoaded?.others ?? NO_OTHERS;
   // The jobs running and queued right now, for the top of the page.
-  const [live, setLive] = useState(loaded.live);
-  useEffect(() => setLive(loaded.live), [loaded.live]);
-  // When the machines last came back, for the freshness line and greying out stale numbers.
+  const live = useQuery(liveJobsQuery).data ?? NO_LIVE_JOBS;
+  const order = useQuery(runnerOrderQuery(current.workspace.id)).data;
 
-  // Each keeps showing its last answer when a refresh fails; the next tick retries.
-  const refreshMachines = () =>
-    listMachines()
-      .then((result) => {
-        setAllMachines(result.machines);
-        setOthers(result.others ?? []);
-      })
-      .catch(() => undefined);
+  // Only the machines list and live jobs are refetched: invalidating the route would also re-run
+  // the session and workspace guards on every tick.
+  const refreshMachines = () => machinesRead.refetch().then(() => undefined);
   const refreshLive = () =>
-    getLiveJobs()
-      .then(setLive)
-      .catch(() => undefined);
+    queryClient.refetchQueries({ queryKey: liveJobsQuery.queryKey, exact: true });
   useLiveRefresh(
     // The live jobs only show once the workspace has a runner.
     () => Promise.all([refreshMachines(), allMachines.length ? refreshLive() : null]),
@@ -164,8 +166,7 @@ function RunnersPage() {
   );
 
   // When the machines last came back, for the freshness line and greying out stale numbers.
-  const [updatedAt, setUpdatedAt] = useState(Date.now);
-  useEffect(() => setUpdatedAt(Date.now()), [allMachines]);
+  const updatedAt = machinesRead.dataUpdatedAt || Date.now();
   const attention = useMemo(() => attentionItems(allMachines, live), [allMachines, live]);
 
   const editable = canManage(current.role);
@@ -204,16 +205,8 @@ function RunnersPage() {
   }, [workspaceId, editable]);
   // Each machine's jobs over the last INACTIVE_DAYS, loaded after the cards so they never wait on
   // it. Null until it answers, so runners added from GitHub aren't hidden as inactive meanwhile.
-  const [jobTimes, setJobTimes] = useState<Record<string, Stat> | null>(null);
-  useEffect(() => {
-    let live = true;
-    getMachineJobTimes(INACTIVE_DAYS)
-      .then((result) => live && setJobTimes(result.machines))
-      .catch(() => undefined);
-    return () => {
-      live = false;
-    };
-  }, []);
+  const jobTimes: Record<string, Stat> | null =
+    useQuery(machineJobTimesQuery(INACTIVE_DAYS)).data ?? null;
   // Self-hosted runners narrowed by the filter menu, kept in the URL. Runners that have been
   // offline with no jobs for INACTIVE_DAYS are hidden unless asked for.
   const search = Route.useSearch();
@@ -251,16 +244,12 @@ function RunnersPage() {
   // Cloud runners jobs used in the range (this month unless picked): GitHub-hosted classes, hosted
   // providers, containers. Null until the first answer.
   const cloudRange = search.cloud ?? PROVIDER_DEFAULT_RANGE;
-  const [cloud, setCloud] = useState<ProviderSummary[] | null>(null);
-  useEffect(() => {
-    let live = true;
-    getProvidersOverview(cloudRange)
-      .then((report) => live && setCloud(report.providers))
-      .catch(() => undefined);
-    return () => {
-      live = false;
-    };
-  }, [cloudRange]);
+  // Another range keeps the last one's cards up until it's back.
+  const cloudRead = useQuery({
+    ...cloudRunnersQuery(cloudRange),
+    placeholderData: keepPreviousData,
+  });
+  const cloud: ProviderSummary[] | null = cloudRead.data ?? null;
   // The user's own machines that don't take this workspace's jobs (a workspace joined through
   // GitHub starts with none). The banner can be dismissed per workspace; Add runner still has it.
   const othersKey = `relayrunner:runners:others-dismissed:${workspaceId}`;
@@ -321,7 +310,7 @@ function RunnersPage() {
     />
   );
 
-  const empty = rows.length === 0;
+  const empty = machinesLoaded !== null && rows.length === 0;
   const showFound = addable.length > 0 && !dismissed;
   // The user hasn't connected a computer with the CLI anywhere yet: the page shows the command.
   const [connectDismissed, setConnectDismissed] = useState(() => readFlag(CONNECT_DISMISSED_KEY));
@@ -340,7 +329,7 @@ function RunnersPage() {
       <PageHeader
         title="Runners"
         action={
-          empty && others.length === 0 ? undefined : (
+          !machinesLoaded || (empty && others.length === 0) ? undefined : (
             <AddRunner
               onAddExisting={() => setGithubOpen(true)}
               onAddMine={others.length > 0 ? () => setOthersOpen(true) : undefined}
@@ -356,7 +345,7 @@ function RunnersPage() {
       </PageHeader>
       <TooltipProvider>
         <div className="grid max-w-5xl gap-8">
-          {!othersDismissed && (
+          {!othersDismissed && machinesLoaded && (
             <OtherMachinesBanner
               workspace={current.workspace.name}
               others={others}
@@ -364,7 +353,7 @@ function RunnersPage() {
               onDismiss={dismissOthers}
             />
           )}
-          {!empty && (
+          {machinesLoaded && !empty && (
             <RunnersNow
               machines={allMachines}
               live={live}
@@ -378,10 +367,22 @@ function RunnersPage() {
               }
             />
           )}
-          {empty ? (
+          {/* Where the counts of running, idle, offline and queued go once the machines are back. */}
+          {!machinesLoaded && (
+            <div
+              aria-busy
+              aria-label="Loading"
+              className="h-[108px] animate-pulse rounded-xl bg-muted"
+            />
+          )}
+          {!machinesLoaded ? (
+            <RunnerGroup title="Self-hosted">
+              <CardSkeletons count={3} />
+            </RunnerGroup>
+          ) : empty ? (
             <RunnerGroup title="Self-hosted" bare>
               <ConnectLanding
-                fallback={fallbackAfterMachine(loaded.order.steps)}
+                fallback={order ? fallbackAfterMachine(order.order.steps) : null}
                 found={editable ? addable : []}
                 onAddFound={addFound}
                 onAddExisting={editable ? () => setGithubOpen(true) : undefined}
@@ -497,6 +498,11 @@ function RunnersPage() {
               )}
             </RunnerGroup>
           )}
+          {!cloud && (
+            <RunnerGroup title="Cloud-hosted">
+              <CardSkeletons count={2} />
+            </RunnerGroup>
+          )}
           {cloud && (
             <RunnerGroup
               title="Cloud-hosted"
@@ -546,6 +552,15 @@ function RunnersPage() {
       </TooltipProvider>
     </section>
   );
+}
+
+// Card-shaped placeholders while a section's first answer is on its way.
+function CardSkeletons({ count }: { count: number }) {
+  return Array.from({ length: count }, (_, i) => (
+    <li key={i} className="grid min-w-0" aria-hidden>
+      <div className="h-44 animate-pulse rounded-xl bg-muted" />
+    </li>
+  ));
 }
 
 function RunnerGroup({
