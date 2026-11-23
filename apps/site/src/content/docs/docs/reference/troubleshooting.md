@@ -24,7 +24,7 @@ The message starts with the reason you can act on, such as a limit that was reac
 - **"is paused"**: resume the machine.
 - **"only runs … jobs"**: the machine is shared with **only me**, and someone else started the run. See [sharing](/docs/runners/self-hosted#who-can-run-jobs-on-it).
 - **"public repos never run on self-hosted machines"**: give the relay a `github` label.
-- **"isn't in your runner order"**: add the provider on the Router page. Past two providers, the message gives a count instead of their names.
+- **"no step in your runner order can run this job"**: add a provider the relay sets to the runner order on the Router page.
 - **A minutes limit**: the account is over its limit. Add a step after it.
 - **"GitHub's API limit … was reached"**: your org used up its GitHub API calls for the hour, so the Router couldn't check your machines. Routing goes back to normal when GitHub resets the limit. Add a `github` fallback so jobs still run in the meantime.
 

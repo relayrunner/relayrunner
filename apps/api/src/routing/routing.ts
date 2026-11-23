@@ -882,7 +882,7 @@ export async function decideRoute(
     const { key } = skipped[fallback];
     return { runner: job[key][0], step: key, skipped: skipped.slice(0, fallback), notInOrder };
   }
-  return { runner: null, reason: noRunnerReason(job, skipped, notInOrder), skipped, notInOrder };
+  return { runner: null, reason: noRunnerReason(job, skipped), skipped, notInOrder };
 }
 
 // An `auto` input that no label of the job's size replaced (resolveAutoInputs).
@@ -892,13 +892,9 @@ const unsized = (labels: string[]) => labels.length === 1 && labels[0] === AUTO;
  * The message a relay fails with when nothing fits, naming why each provider couldn't take it. The
  * reason someone can act on comes first: a cap or limit that was reached, then busy or unreachable
  * machines and providers, then how the job is set up. Providers that aren't in the runner order
- * come last, folded into one count.
+ * are left out: they aren't set up, so they don't explain anything.
  */
-export function noRunnerReason(
-  job: RouteRequest,
-  skipped: SkippedStep[],
-  notInOrder: RunnerKey[],
-): string {
+export function noRunnerReason(job: RouteRequest, skipped: SkippedStep[]): string {
   if (RUNNER_KEYS.every((key) => job[key].length === 0))
     return `${NO_RUNNER}: the relay sets no provider, such as \`machine\` or \`github\`.`;
   const ranked = skipped.toSorted(bySkipRank);
@@ -961,8 +957,9 @@ export function noRunnerReason(
     },
   );
   // Two steps for one provider (GitHub-hosted with a cap, then without) can skip for one reason.
+  // Providers left out of the order aren't set up, so they only say so when nothing else does.
   const unique = [...new Set(parts)];
-  if (notInOrder.length) unique.push(notInOrderText(notInOrder, unique.length > 0));
+  if (unique.length === 0) unique.push("no step in your runner order can run this job");
   return `${NO_RUNNER}: ${unique.join("; ")}.`;
 }
 
@@ -974,14 +971,6 @@ const RANK: Record<MoveReason | "setup", number> = {
 };
 const bySkipRank = (a: SkippedStep, b: SkippedStep) =>
   RANK[MOVE_REASONS[a.reason] ?? "setup"] - RANK[MOVE_REASONS[b.reason] ?? "setup"];
-
-/** "Depot isn't in your runner order", "Depot and Boat aren't…", or "14 more providers aren't…". */
-function notInOrderText(keys: RunnerKey[], others: boolean) {
-  const names = keys.map((key) => RUNNER_LABELS[key]);
-  if (names.length === 1) return `${names[0]} isn't in your runner order`;
-  if (names.length === 2) return `${names.join(" and ")} aren't in your runner order`;
-  return `${names.length} ${others ? "more " : ""}providers aren't in your runner order`;
-}
 
 /**
  * The dashboard page that fixes a failed pick: Usage for a cap or limit, Runners for machines, and
