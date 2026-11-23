@@ -75,7 +75,6 @@ import {
   PROVIDER_DEFAULT_RANGE,
   PROVIDER_RANGES,
   type ProviderSummary,
-  sampleProvidersOverview,
 } from "@/lib/providers";
 import { canManage } from "@/lib/roles";
 import {
@@ -93,7 +92,7 @@ import {
 } from "@/lib/runner-filters";
 import { getRunnerOrder } from "@/lib/runner-order";
 import { unlessDefault } from "@/lib/search-params";
-import { rangeDays, rangePhrase } from "@/lib/time-range";
+import { rangePhrase } from "@/lib/time-range";
 import { readFlag, saveFlag } from "@/lib/stored-flag";
 import { cn } from "@/lib/utils";
 
@@ -272,11 +271,8 @@ function RunnersPage() {
   // Cloud runners jobs used in the range (this month unless picked): GitHub-hosted classes, hosted
   // providers, containers. Null until the first answer.
   const cloudRange = search.cloud ?? PROVIDER_DEFAULT_RANGE;
-  const [cloud, setCloud] = useState<ProviderSummary[] | null>(() =>
-    authDisabled ? sampleProvidersOverview(rangeDays(cloudRange)).providers : null,
-  );
+  const [cloud, setCloud] = useState<ProviderSummary[] | null>(null);
   useEffect(() => {
-    if (authDisabled) return;
     let live = true;
     getProvidersOverview(cloudRange)
       .then((report) => live && setCloud(report.providers))

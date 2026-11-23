@@ -10,7 +10,6 @@ import { TipRow } from "@/components/chart-parts";
 import { OptionPicker, TimeRangePicker } from "@/components/range-picker";
 import { Legend, seriesColor, StackedBars } from "@/components/stacked-bars";
 import { DataTable, dataTableColumns, NUM } from "@/components/ui/data-table";
-import { authDisabled } from "@/lib/auth-client";
 import { DAY_MS, medianText, p90Text } from "@/lib/job-times";
 import { useProviderApps } from "@/lib/provider-apps";
 import { providerInfo } from "@/lib/provider-catalog";
@@ -30,7 +29,6 @@ import {
   PROVIDER_RANGES,
   type ProvidersOverview,
   type ProviderSummary,
-  sampleProvidersOverview,
 } from "@/lib/providers";
 import { rangeDays, rangePhrase, resolveRange, type TimeRange } from "@/lib/time-range";
 import { startOfDay } from "@/lib/time-zone";
@@ -40,9 +38,7 @@ type LoadedOverview = ProvidersOverview & { from: number };
 
 async function load(range: TimeRange, per: ChartPer): Promise<LoadedOverview> {
   const { from } = resolveRange(range);
-  const overview = authDisabled
-    ? sampleProvidersOverview(rangeDays(range), { per })
-    : await getProvidersOverview(range, { chart: per });
+  const overview = await getProvidersOverview(range, { chart: per });
   return { ...overview, from };
 }
 

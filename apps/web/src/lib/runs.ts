@@ -3,9 +3,8 @@ import { relayInputs } from "@relayrunner/runner-order";
 import { api } from "@/lib/api";
 import type { RouteWalk } from "@/lib/route-walk";
 import type { Environment, JobRun, TypicalTime } from "@/lib/job-times";
-import { authDisabled } from "@/lib/auth-client";
 import type { WorkflowRef } from "@/lib/workflow-ref";
-import { rangeDays, reportQuery, resolveRange, type TimeRange } from "@/lib/time-range";
+import { reportQuery, type TimeRange } from "@/lib/time-range";
 
 export type RunStatus = "queued" | "in_progress" | "completed";
 
@@ -161,27 +160,14 @@ export function getRuns(range: TimeRange, only?: WorkflowRef) {
 }
 
 /** The workspace's runs in a range (or one workflow's), or the sample's without sign-in. */
-export function loadRuns(range: TimeRange, only?: WorkflowRef): Promise<RunsReport> {
-  if (!authDisabled) return getRuns(range, only);
-  // The sample is the last few days: keep the runs the range holds, as the API would.
-  const { from, to } = resolveRange(range);
-  const sample = sampleRuns();
-  const runs = sample.runs.filter(
-    (run) =>
-      run.updatedAt >= from &&
-      run.updatedAt < to &&
-      (!only || (run.repository === only.repository && run.workflow === only.workflow)),
-  );
-  return Promise.resolve({ ...sample, runs });
-}
+export const loadRuns = getRuns;
 
 export function getJobs(range: TimeRange) {
   return api<JobsReport>(`/runs/jobs?${reportQuery(range)}`);
 }
 
 /** The History page's Jobs view, or its sample without sign-in. */
-export const loadJobs = (range: TimeRange) =>
-  authDisabled ? Promise.resolve(sampleJobs(rangeDays(range))) : getJobs(range);
+export const loadJobs = getJobs;
 
 export function getRunJobs(run: RunIds) {
   return api<RunJobs>(`/runs/${run.repositoryId}/${run.runId}/${run.runAttempt}/jobs`);

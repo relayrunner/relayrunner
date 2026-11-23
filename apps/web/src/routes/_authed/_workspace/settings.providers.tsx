@@ -24,13 +24,11 @@ import {
 } from "@/components/ui/select";
 import { timeAgo } from "@/lib/activity";
 import { errorText } from "@/lib/api";
-import { authDisabled } from "@/lib/auth-client";
 import {
   counted,
   type FreeMinutes as FreeMinutesCount,
   type FreeMinutesByProvider,
   getAllFreeMinutes,
-  sampleFreeMinutes,
 } from "@/lib/free-minutes";
 import { providerInfo } from "@/lib/provider-catalog";
 import {
@@ -38,7 +36,6 @@ import {
   listConnections,
   type ProviderConnection,
   removeConnection,
-  sampleConnections,
   testConnection,
 } from "@/lib/provider-connections";
 import { canManage } from "@/lib/roles";
@@ -47,13 +44,6 @@ import { minutes, money } from "@/lib/usage";
 
 export const Route = createFileRoute("/_authed/_workspace/settings/providers")({
   loader: async () => {
-    if (authDisabled) {
-      const freeMinutes: FreeMinutesByProvider = {
-        blacksmith: sampleFreeMinutes("blacksmith", false),
-        groundbox: sampleFreeMinutes("groundbox", false),
-      };
-      return { ...sampleConnections(), freeMinutes };
-    }
     const [{ connections }, freeMinutes] = await Promise.all([
       listConnections(),
       // Only for the Blacksmith and Groundbox cards' free-minutes lines, so the page loads without.

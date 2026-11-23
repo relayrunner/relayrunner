@@ -45,7 +45,6 @@ import {
   type Stat,
   EMPTY_STAT,
   JOB_RANGES,
-  sampleJobTimes,
   p90Text,
   versusLabel,
   type WorkflowRow,
@@ -71,7 +70,7 @@ const ranges = rangeSearch(JOB_RANGES, DEFAULT_RANGE);
 const GROUPED_KEY = "relayrunner:performance:by-provider";
 
 function load(range: TimeRange) {
-  return authDisabled ? Promise.resolve(sampleJobTimes(rangeDays(range))) : getJobTimes(range);
+  return getJobTimes(range);
 }
 
 // An old link's `?view=jobs` lands on Workflows, whose rows open each workflow's jobs.

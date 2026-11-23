@@ -28,7 +28,6 @@ import {
   TableRow,
 } from "@/components/ui/table";
 import { timeAgo } from "@/lib/activity";
-import { authDisabled } from "@/lib/auth-client";
 import {
   AREAS,
   BREAKDOWN_VIEWS,
@@ -52,8 +51,6 @@ import {
   type SignalTrend,
   SIGNAL_COPY,
   type SignalsReport,
-  sampleSignalRuns,
-  sampleSignals,
   triggerName,
 } from "@/lib/signals";
 import {
@@ -95,9 +92,7 @@ const keyOf = (range: TimeRange, filter: SignalFilter) =>
   JSON.stringify([range, ...FILTER_KEYS.map((key) => filter[key] ?? "")]);
 
 function load(range: TimeRange, filter: SignalFilter): Promise<SignalsReport> {
-  return authDisabled
-    ? Promise.resolve(sampleSignals(rangeDays(range), filter))
-    : getSignals(range, filter);
+  return getSignals(range, filter);
 }
 
 const BREAKDOWNS = BREAKDOWN_VIEWS.map((option) => option.value);
@@ -811,9 +806,7 @@ function RunsPanel({
   const [found, setFound] = useState<SignalRunsReport | "failed" | null>(null);
   useEffect(() => {
     let live = true;
-    const request = authDisabled
-      ? Promise.resolve(sampleSignalRuns(row, rangeDays(range)))
-      : getSignalRuns(row, range, filter);
+    const request = getSignalRuns(row, range, filter);
     request.then(
       (next) => live && setFound(next),
       () => live && setFound("failed"),

@@ -14,16 +14,10 @@ import { StatusIcon } from "@/components/status-icon";
 import { Sheet, SheetContent, SheetDescription, SheetTitle } from "@/components/ui/sheet";
 import { PHONE_HIDDEN } from "@/components/ui/table";
 import { timeAgo } from "@/lib/activity";
-import { authDisabled } from "@/lib/auth-client";
 import { clock, DAY_MS, HOUR_MS, p90Text, plural } from "@/lib/job-times";
 import { cachedMachine, type Machine, workspaceMachine } from "@/lib/machines";
 import { onlineSpans, type RunnerBucket } from "@/lib/runner-days";
-import {
-  getRunnerReport,
-  type RunnerJob,
-  type RunnerReport,
-  sampleRunnerReport,
-} from "@/lib/runner-report";
+import { getRunnerReport, type RunnerJob, type RunnerReport } from "@/lib/runner-report";
 import { groupByBranch } from "@/lib/branch-groups";
 import { isLongWait } from "@/lib/runs";
 import { unlessDefault, useSetSearch } from "@/lib/search-params";
@@ -46,9 +40,7 @@ function loadReport(key: string, range: TimeRange) {
   let request = reports.get(id);
   if (!request) {
     const window = resolveRange(range);
-    request = authDisabled
-      ? Promise.resolve(sampleRunnerReport(key, window))
-      : getRunnerReport(key, window);
+    request = getRunnerReport(key, window);
     request.catch(() => reports.delete(id));
     reports.set(id, request);
     // A window that runs to now is kept for a minute, since a runner's numbers move as it takes

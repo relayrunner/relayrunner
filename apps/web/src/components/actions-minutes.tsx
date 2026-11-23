@@ -8,7 +8,6 @@ import {
   getActionsUsage,
   refreshActionsUsage,
   paceText,
-  sampleActionsUsage,
   needsSpendApp,
   SPEND_APP_INSTALL_URL,
   unavailableText,
@@ -28,7 +27,6 @@ export function useActionsUsage() {
   const [usage, setUsage] = useState<ActionsUsage | null>(null);
   const [refreshing, setRefreshing] = useState(false);
   useEffect(() => {
-    if (authDisabled) return setUsage(sampleActionsUsage());
     let live = true;
     getActionsUsage().then(
       (read) => live && setUsage(read),

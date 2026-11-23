@@ -3,14 +3,12 @@
 import { useEffect, useState } from "react";
 import { ChartTip, TipRow, useWidth } from "@/components/chart-parts";
 import { Swatch } from "@/components/stacked-bars";
-import { authDisabled } from "@/lib/auth-client";
 import {
   getRouteOutcomes,
   type OutcomeBucket,
   type OutcomeCounts,
   OUTCOME_DAYS,
   type RouteOutcomes,
-  sampleRouteOutcomes,
 } from "@/lib/route-outcomes";
 import { zoneFormat } from "@/lib/time-zone";
 import { DAY_MS } from "@/lib/job-times";
@@ -33,10 +31,6 @@ const STRIP = 48;
 function useOutcomes(workspaceId: string) {
   const [outcomes, setOutcomes] = useState<RouteOutcomes | null>(null);
   useEffect(() => {
-    if (authDisabled) {
-      setOutcomes(sampleRouteOutcomes());
-      return;
-    }
     let live = true;
     getRouteOutcomes(workspaceId).then(
       (result) => live && setOutcomes(result),

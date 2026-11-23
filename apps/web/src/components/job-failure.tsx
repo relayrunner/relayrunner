@@ -3,8 +3,7 @@ import { CatchBoundary } from "@tanstack/react-router";
 import { ExternalLinkIcon, TriangleAlert } from "lucide-react";
 import { useEffect, useState } from "react";
 import { Button } from "@/components/ui/button";
-import { authDisabled } from "@/lib/auth-client";
-import { type FailureCause, getJobFailure, type JobFailure, sampleJobFailure } from "@/lib/runs";
+import { type FailureCause, getJobFailure, type JobFailure } from "@/lib/runs";
 import { cn } from "@/lib/utils";
 
 // A failed job's failure doesn't change, so the last ones read are kept.
@@ -12,7 +11,7 @@ const cache = new Map<number, JobFailure>();
 const CACHE_SIZE = 50;
 
 function fetchFailure(jobId: number) {
-  const request = authDisabled ? Promise.resolve(sampleJobFailure()) : getJobFailure(jobId);
+  const request = getJobFailure(jobId);
   return request.then((failure) => {
     cache.set(jobId, failure);
     if (cache.size > CACHE_SIZE) cache.delete(cache.keys().next().value!);

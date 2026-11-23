@@ -38,7 +38,6 @@ import {
   cancelEvaluation,
   editUrl,
   type EvaluationReport,
-  type EvaluationSummary,
   type EvaluationWorkflow,
   evaluationSizes,
   EVALUATION_RUNS,
@@ -48,7 +47,6 @@ import {
   retryEvaluation,
   runUrl,
   sampleEvaluation,
-  SAMPLE_WORKFLOWS,
   type Split,
   startEvaluation,
 } from "@/lib/evaluations";
@@ -281,16 +279,10 @@ function Choose({ provider, editable }: { provider: string; editable: boolean })
   const { name } = providerInfo(provider);
   const navigate = useNavigate();
   const sizes = evaluationSizes(provider);
-  const workflows = usePolled(
-    () => (authDisabled ? Promise.resolve(SAMPLE_WORKFLOWS) : getEvaluationWorkflows()),
-    true,
-    [],
+  const workflows = usePolled(getEvaluationWorkflows, true, []);
+  const active = usePolled(() => listEvaluations(provider), false, [provider]).value?.filter((e) =>
+    ACTIVE_STATES.includes(e.state),
   );
-  const active = usePolled(
-    () => (authDisabled ? Promise.resolve([] as EvaluationSummary[]) : listEvaluations(provider)),
-    false,
-    [provider],
-  ).value?.filter((e) => ACTIVE_STATES.includes(e.state));
   const list = workflows.value ?? [];
   const repos = [...new Map(list.map((w) => [w.repositoryId, w.repository])).entries()];
   const [repoId, setRepoId] = useState<number | null>(null);

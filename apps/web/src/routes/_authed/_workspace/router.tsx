@@ -14,12 +14,7 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Sheet, SheetContent, SheetTitle } from "@/components/ui/sheet";
 import { getActionsUsage, type AccountUsage } from "@/lib/actions-usage";
-import {
-  sampleAutoJobs,
-  sampleRouterAccounts,
-  sampleRouterSetup,
-  sampleRunnerGroupCheck,
-} from "@/lib/router-sample";
+import { sampleRouterAccounts } from "@/lib/router-sample";
 import { type AutoJob, type AutoJobs, getAutoJobs, setAutoJob, setAutoSize } from "@/lib/auto-jobs";
 import { AUTO_SIZES } from "@relayrunner/providers";
 import {
@@ -492,11 +487,7 @@ function sampleRouter(): {
 function useRouterSetup(workspaceId: string, poll: boolean) {
   const [setup, setSetup] = useState<RouterSetup | null>(null);
   const load = useCallback(
-    () =>
-      (authDisabled ? Promise.resolve(sampleRouterSetup()) : getRouterSetup(workspaceId)).then(
-        setSetup,
-        () => undefined,
-      ),
+    () => getRouterSetup(workspaceId).then(setSetup, () => undefined),
     [workspaceId],
   );
   useEffect(() => {
@@ -514,10 +505,7 @@ function useRunnerGroupCheck(workspaceId: string, open: boolean) {
   useEffect(() => {
     if (!open || asked.current) return;
     asked.current = true;
-    (authDisabled
-      ? Promise.resolve(sampleRunnerGroupCheck())
-      : getRunnerGroupCheck(workspaceId)
-    ).then(setCheck, () => undefined);
+    getRunnerGroupCheck(workspaceId).then(setCheck, () => undefined);
   }, [workspaceId, open]);
   return check;
 }
@@ -528,7 +516,7 @@ function useAutoJobs(workspaceId: string) {
   const [jobs, setJobs] = useState<AutoJobs | null>(null);
   useEffect(() => {
     let live = true;
-    (authDisabled ? Promise.resolve(sampleAutoJobs()) : getAutoJobs(workspaceId)).then(
+    getAutoJobs(workspaceId).then(
       (loaded) => live && setJobs(loaded),
       () => undefined,
     );

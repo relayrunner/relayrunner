@@ -15,14 +15,11 @@ import {
   type RoutingBucket,
   type RoutingHealth,
   type RoutingRange,
-  sampleRoutingHealth,
 } from "@/lib/admin-routing";
-import { authDisabled } from "@/lib/auth-client";
 import { cn, elapsed, exact } from "@/lib/utils";
 import { formatTime } from "@/lib/time-zone";
 
 function load(range: RoutingRange): Promise<RoutingHealth> {
-  if (authDisabled) return Promise.resolve(sampleRoutingHealth(range));
   return getRoutingHealth(range);
 }
 

@@ -34,8 +34,6 @@ import {
   type RunJobs,
   runParam,
   type RunStatus,
-  sampleJobSteps,
-  sampleRunJobs,
   triggerText,
 } from "@/lib/runs";
 import type { RouteWalk } from "@/lib/route-walk";
@@ -98,7 +96,7 @@ export function fetchRunJobs(run: RunIds, status: RunStatus, fresh = false) {
   const current =
     cached?.status === status && (status === "completed" || Date.now() - cached.at < REFRESH_MS);
   if (cached && current && !fresh) return cached.request;
-  const request = authDisabled ? Promise.resolve(sampleRunJobs(run)) : getRunJobs(run);
+  const request = getRunJobs(run);
   const entry: JobsEntry = { status, at: Date.now(), request };
   request.then(
     (jobs) => (entry.jobs = jobs),
@@ -119,7 +117,7 @@ function cachedJobs(run: RunIds, status: RunStatus) {
 const stepsCache = new Map<number, JobStep[] | null>();
 
 function fetchJobSteps(job: RunJob) {
-  const request = authDisabled ? Promise.resolve(sampleJobSteps(job)) : getJobSteps(job.id);
+  const request = getJobSteps(job.id);
   return request.then((steps) => {
     if (job.status === "completed") {
       stepsCache.set(job.id, steps);
