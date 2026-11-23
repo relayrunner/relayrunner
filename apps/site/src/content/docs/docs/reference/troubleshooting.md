@@ -18,7 +18,7 @@ A relay nobody answers stays queued until GitHub cancels it after 24 hours. Canc
 
 ## The relay failed with "No runner available"
 
-The message starts with the reason you can act on, such as a limit that was reached, then names why each other provider couldn't take the job. The job's log and the run's summary page show the same message, with a link to the dashboard page that fixes it. The usual causes:
+The message starts with the reason you can act on, such as a limit that was reached, then names why each other provider couldn't take the job. The job's log and the run's summary page show the same message, with a link to the dashboard page that fixes it. On a pull request, a failed **RelayRunner: couldn't route** check names the reason in its title, and it turns green once a re-run routes. The usual causes:
 
 - **"no self-hosted machine is online and idle"**: start `relayrunner connect`, or add a `github` fallback to the relay.
 - **"is paused"**: resume the machine.

@@ -984,6 +984,13 @@ export function noRunnerPage(skipped: SkippedStep[]): "usage" | "runners" | "rou
 
 export const NO_RUNNER = "No runner available";
 
+/** A failed pick's first and most actionable clause, as plain text: what noRunnerReason leads with. */
+export function noRunnerLead(reason: string) {
+  const prefix = `${NO_RUNNER}: `;
+  const text = reason.startsWith(prefix) ? reason.slice(prefix.length) : reason;
+  return text.split("; ")[0].replace(/`/g, "").replace(/\.$/, "");
+}
+
 /** "atticus-mbp only runs Atticus's jobs", or for several, "a and b only run their owners' jobs". */
 export function notSharedText(machines: NotSharedMachine[]): string {
   if (machines.length === 1) {
