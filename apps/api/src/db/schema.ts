@@ -225,6 +225,22 @@ export const githubInstallation = sqliteTable("github_installation", {
   ...timestamps,
 });
 
+// The last 14 days of an installation's workflow runs, read from GitHub once when the App is
+// installed (src/run-history.ts), so a new workspace can evaluate a provider against the runs it
+// had before RelayRunner saw any webhooks. One row per installation; goes away with it.
+export const runHistoryImport = sqliteTable("run_history_import", {
+  installationId: integer("installation_id")
+    .primaryKey({ autoIncrement: false })
+    .references(() => githubInstallation.id, { onDelete: "cascade" }),
+  // 'queued', 'running', 'done' or 'failed'.
+  state: text("state").notNull(),
+  // Runs written so far.
+  runs: integer("runs").notNull().default(0),
+  error: text("error"),
+  finishedAt: integer("finished_at", { mode: "timestamp_ms" }),
+  ...timestamps,
+});
+
 // Which enterprise an org belongs to, learned from the enterprise's billing usage report (each row
 // names its org), so an org that shares its enterprise's minutes is judged against them. Kept
 // across months: an org with no usage this month is still in its enterprise.

@@ -14,6 +14,7 @@ import {
   type Integration,
 } from "../../lib/integrations";
 import { providerPlans } from "@relayrunner/providers";
+import { evaluable, evaluateHref } from "../../lib/evaluate";
 import { includedText } from "../../lib/provider-table";
 import { logoOf, PRICES_AS_OF } from "../../lib/providers";
 
@@ -155,12 +156,30 @@ const faqData = {
       <h1>{heading}</h1>
       <p class="lede">{p.intro} {lede}</p>
       <div class="hero-actions">
-        <a class="btn-go btn-lg" href="https://app.relayrunner.dev">Get started with GitHub</a>
+        {
+          evaluable(id) ? (
+            <a class="btn-go btn-lg" href={evaluateHref(id)}>
+              Try {name} with GitHub
+            </a>
+          ) : (
+            <a class="btn-go btn-lg" href="https://app.relayrunner.dev">
+              Get started with GitHub
+            </a>
+          )
+        }
         <button class="cmd" type="button" data-copy-inline="npx relayrunner init">
           <span aria-hidden="true">$</span> <code>npx relayrunner init</code>
           <span class="visually-hidden">Copy command</span>
         </button>
       </div>
+      {
+        evaluable(id) && (
+          <p class="int-note">
+            Run one of your workflows on {name} five times and see how its time and cost compare
+            with today.
+          </p>
+        )
+      }
     </div>
     <div class="sol-hero-visual" aria-hidden="true">
       <div class="sol-card">

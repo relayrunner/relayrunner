@@ -45,6 +45,7 @@ import {
   EVALUATION_RUNS,
   getEvaluation,
   getEvaluationWorkflows,
+  getRunHistory,
   listEvaluations,
   retryEvaluation,
   runUrl,
@@ -59,6 +60,7 @@ import { canManage } from "@/lib/roles";
 import { routePrompt } from "@/lib/route-repo";
 import { useCopy } from "@/components/add-runner";
 import { cn } from "@/lib/utils";
+import { EVALUATE_STEP, EvaluateStepper } from "@/components/evaluate-stepper";
 
 type EvaluateSearch = { id?: string };
 
@@ -119,40 +121,6 @@ function EvaluatePage() {
   );
 }
 
-const STEPS = ["Connect", "Choose a workflow", "Run and compare"];
-
-function Stepper({ at, provider }: { at: number; provider: string }) {
-  const steps = STEPS.map((label, i) =>
-    i === 0 ? `${label} ${providerInfo(provider).name}` : label,
-  );
-  return (
-    <ol className="flex flex-wrap items-center gap-x-3 gap-y-2 text-sm">
-      {steps.map((label, i) => (
-        <li key={label} className="flex items-center gap-3">
-          <span
-            className={cn(
-              "flex items-center gap-2",
-              i > at ? "text-muted-foreground" : "font-medium",
-            )}
-          >
-            <span
-              className={cn(
-                "flex size-5 items-center justify-center rounded-full border text-xs tabular-nums",
-                i < at && "border-go-edge bg-go-soft text-go",
-                i === at && "border-foreground bg-foreground text-background",
-              )}
-            >
-              {i < at ? <CheckIcon aria-label="Done" className="size-3" /> : i + 1}
-            </span>
-            {label}
-          </span>
-          {i < steps.length - 1 && <span aria-hidden className="h-px w-8 bg-border" />}
-        </li>
-      ))}
-    </ol>
-  );
-}
-
 /** Calls `load` now and every POLL_MS while `polling`, keeping the last answer. */
 function usePolled<T>(load: () => Promise<T>, polling: boolean, deps: unknown[]) {
   // Undefined until the first answer, since null can be an answer.
@@ -191,10 +159,13 @@ function Setup({
   const apps = usePolled(() => getProviderApps(workspaceId), true, [workspaceId]);
   const loaded = apps.value !== undefined || apps.error !== null;
   const connected = !apps.value || apps.value.includes(provider as never);
-  if (!loaded) return <Stepper at={0} provider={provider} />;
+  if (!loaded) return <EvaluateStepper at={EVALUATE_STEP.provider} provider={provider} />;
   return (
     <>
-      <Stepper at={connected ? 1 : 0} provider={provider} />
+      <EvaluateStepper
+        at={connected ? EVALUATE_STEP.choose : EVALUATE_STEP.provider}
+        provider={provider}
+      />
       {connected ? (
         <Choose provider={provider} editable={editable} />
       ) : (
@@ -264,6 +235,15 @@ function Choose({ provider, editable }: { provider: string; editable: boolean })
   const { name } = providerInfo(provider);
   const navigate = useNavigate();
   const sizes = evaluationSizes(provider);
+  // A new workspace's runs are still coming in from GitHub (apps/api run-history). Its workflows
+  // come from GitHub's own list meanwhile, so nothing here waits: rows fill in their stats as the
+  // runs land, and the comparison reads them when it's shown.
+  const [historyPolling, setHistoryPolling] = useState(true);
+  const history = usePolled(getRunHistory, historyPolling, []);
+  const importing = history.value?.state === "queued" || history.value?.state === "running";
+  useEffect(() => {
+    if (history.value !== undefined || history.error) setHistoryPolling(importing);
+  }, [history.value, history.error, importing]);
   const workflows = usePolled(getEvaluationWorkflows, true, []);
   const active = usePolled(() => listEvaluations(provider), false, [provider]).value?.filter((e) =>
     ACTIVE_STATES.includes(e.state),
@@ -289,6 +269,7 @@ function Choose({ provider, editable }: { provider: string; editable: boolean })
       const { id } = await startEvaluation({
         repositoryId: workflow.repositoryId,
         workflowPath: workflow.path,
+        workflowName: workflow.workflow ?? undefined,
         provider,
         vcpus,
       });
@@ -309,7 +290,7 @@ function Choose({ provider, editable }: { provider: string; editable: boolean })
     ) : (
       <p className="text-sm text-muted-foreground">Loading your workflows…</p>
     );
-  if (list.length === 0)
+  if (list.length === 0 && !importing)
     return (
       <p className="max-w-3xl rounded-xl border border-dashed bg-card px-4 py-6 text-sm text-muted-foreground">
         No workflows ran in this workspace's repos in the last 14 days. Once one runs, you can
@@ -319,6 +300,12 @@ function Choose({ provider, editable }: { provider: string; editable: boolean })
 
   return (
     <div className="grid max-w-3xl gap-6">
+      {history.value?.state === "failed" && (
+        <p className="text-sm text-muted-foreground">
+          GitHub didn't send all of your recent runs, so some workflows may be missing until they
+          run again.
+        </p>
+      )}
       {active && active.length > 0 && (
         <div className="flex flex-wrap items-center gap-3 rounded-xl border bg-card px-4 py-3 text-sm">
           <LoaderCircleIcon aria-hidden className="size-4 animate-spin text-run" />
@@ -376,10 +363,7 @@ function Choose({ provider, editable }: { provider: string; editable: boolean })
         </Field>
       </div>
 
-      <Field
-        label="Workflow"
-        hint="The whole workflow runs, every job in it. Jobs keep their steps; only where they run changes."
-      >
+      <Field label="Workflow" hint="Every job in it runs, with its steps unchanged.">
         <div role="radiogroup" className="overflow-hidden rounded-xl border bg-card">
           {inRepo.map((w) => {
             const on = workflow && workflowKey(w) === workflowKey(workflow);
@@ -410,11 +394,13 @@ function Choose({ provider, editable }: { provider: string; editable: boolean })
                     {workflowFile(w.path)}
                   </span>
                 </span>
-                <span className="hidden text-muted-foreground tabular-nums sm:inline">
-                  {plural(w.runs, "run")} in 14 days
-                  {w.medianMs !== null && ` · typically ${clock(w.medianMs)}`}
-                </span>
-                {!w.relayed && (
+                {!(w.runs === 0 && importing) && (
+                  <span className="hidden text-muted-foreground tabular-nums sm:inline">
+                    {plural(w.runs, "run")} in 14 days
+                    {w.medianMs !== null && ` · typically ${clock(w.medianMs)}`}
+                  </span>
+                )}
+                {w.relayed === false && (
                   <span title="Its jobs don't go through a relay yet">
                     <TriangleAlertIcon aria-label="Not routed" className="size-4 text-run" />
                   </span>
@@ -426,15 +412,18 @@ function Choose({ provider, editable }: { provider: string; editable: boolean })
       </Field>
 
       {workflow &&
-        (workflow.relayed ? (
-          <Plan provider={provider} workflow={workflow} vcpus={vcpus} />
+        (workflow.relayed !== false ? (
+          <Plan provider={provider} workflow={workflow} />
         ) : (
           <RouteFirst workflow={workflow} />
         ))}
 
       {error && <p className="text-sm text-destructive">{error}</p>}
       <div className="flex flex-wrap items-center gap-3">
-        <Button disabled={!workflow?.relayed || !editable || starting} onClick={() => void start()}>
+        <Button
+          disabled={!workflow || workflow.relayed === false || !editable || starting}
+          onClick={() => void start()}
+        >
           {starting ? <LoaderCircleIcon className="animate-spin" /> : <PlayIcon />}
           Start {EVALUATION_RUNS} runs
         </Button>
@@ -458,17 +447,8 @@ function Field({ label, children, hint }: { label: string; children: ReactNode; 
   );
 }
 
-function Plan({
-  provider,
-  workflow,
-  vcpus,
-}: {
-  provider: string;
-  workflow: EvaluationWorkflow;
-  vcpus: number;
-}) {
+function Plan({ provider, workflow }: { provider: string; workflow: EvaluationWorkflow }) {
   const { name } = providerInfo(provider);
-  const title = workflow.workflow ?? workflowFile(workflow.path);
   return (
     <div className="grid gap-3 rounded-xl border bg-card p-4 text-sm">
       {workflow.medianMs !== null && (
@@ -479,8 +459,9 @@ function Plan({
               Takes about {about(workflow.medianMs * EVALUATION_RUNS)}
             </span>
             <span className="text-muted-foreground">
-              : {EVALUATION_RUNS} runs one after another, about {about(workflow.medianMs)} each. You
-              can leave and come back, and stop whenever you've seen enough.
+              {" "}
+              · {EVALUATION_RUNS} runs of about {about(workflow.medianMs)}. You can leave and come
+              back.
             </span>
           </span>
         </div>
@@ -488,29 +469,22 @@ function Plan({
       <ul className="grid gap-2 text-muted-foreground">
         <li className="flex gap-2">
           <GitBranchIcon aria-hidden className="mt-0.5 size-4 shrink-0" />
-          <span>
-            RelayRunner starts {title} on the default branch. Its relay jobs send every job to{" "}
-            {name} ({vcpus} vCPU Linux) for this evaluation only; nothing in the repo changes.
-          </span>
+          <span>Runs on {name} from the default branch. Nothing in the repo changes.</span>
         </li>
         <li className="flex gap-2">
           <RotateCcwIcon aria-hidden className="mt-0.5 size-4 shrink-0" />
-          <span>
-            {EVALUATION_RUNS} runs, one after another, on the same commit. The first shows a cold
-            cache, the others a warm one.
-          </span>
+          <span>Same commit each time: cold cache first, then warm.</span>
         </li>
         <li className="flex gap-2">
           <WorkflowIcon aria-hidden className="mt-0.5 size-4 shrink-0" />
           <span>
-            Compared with {title}'s last {Math.min(workflow.baselineRuns, 20) || 20} passing runs on
-            the default branch, wherever they ran.
+            Compared with its last {Math.min(workflow.baselineRuns, 20) || 20} passing runs.
           </span>
         </li>
       </ul>
       {!workflow.dispatched && (
         <p className="border-t pt-3 text-muted-foreground">
-          If {title} can't be started on demand yet, the next step shows the one line to add.
+          If it can't be started on demand yet, the next step shows the line to add.
         </p>
       )}
     </div>
@@ -571,10 +545,12 @@ function EvaluationView({
       <p className="text-sm text-muted-foreground">Loading…</p>
     );
   const again = () => setRefresh((n) => n + 1);
-  const finished = report.state === "done";
   return (
     <>
-      <Stepper at={report.state === "waiting" ? 1 : finished ? 3 : 2} provider={provider} />
+      <EvaluateStepper
+        at={report.state === "waiting" ? EVALUATE_STEP.choose : EVALUATE_STEP.run}
+        provider={provider}
+      />
       {report.state === "waiting" ? (
         <NoDispatch report={report} editable={editable} onChange={again} />
       ) : (
@@ -733,14 +709,17 @@ function costDetail(name: string, runUsd: number | null, todayUsd: number | null
  * One evaluation, from its first run to the comparison: the numbers fill in as runs finish, the
  * run going now shows its jobs, and the rest wait in line. Stopping keeps the runs that finished.
  */
-function Results({
+export function Results({
   report,
   editable,
   onChange,
+  preview,
 }: {
   report: EvaluationReport;
   editable: boolean;
   onChange: () => void;
+  /** A sample shown before sign-in (routes/evaluate.$provider.tsx): no actions or fine print. */
+  preview?: boolean;
 }) {
   const { name } = providerInfo(report.provider);
   const active = ACTIVE_STATES.includes(report.state);
@@ -768,7 +747,7 @@ function Results({
     <div className="grid gap-6">
       <div className="flex flex-wrap items-center justify-between gap-3">
         <RunMeta report={report} />
-        {!active && (
+        {!active && !preview && (
           <div className="flex gap-2">
             <Button variant="outline" asChild>
               <Link to="/providers/$provider/evaluate" params={{ provider: report.provider }}>
@@ -950,7 +929,7 @@ function Results({
         </div>
       )}
 
-      {finished > 0 && (
+      {finished > 0 && !preview && (
         <p className="max-w-3xl text-xs text-muted-foreground">
           Today is the median of the workflow's last {plural(report.baseline.runs, "passing run")}{" "}
           on {report.ref} over 14 days, on whatever runners they used and at whatever commit each

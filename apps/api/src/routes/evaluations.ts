@@ -11,6 +11,7 @@ import {
   startEvaluation,
 } from "../reports/evaluations.ts";
 import { requireFlag } from "../flags.ts";
+import { importing, runHistoryState, withGitHubWorkflows } from "../ingest/run-history.ts";
 import { requireUser } from "../middleware/session.ts";
 import { requireWorkspace } from "../middleware/workspace.ts";
 import { requireManager } from "../auth/roles.ts";
@@ -21,6 +22,7 @@ const StartBody = z.object({
   workflowPath: z.string().trim().min(1).max(512),
   provider: z.string().trim().min(1).max(64),
   vcpus: z.number().int().min(1).max(64),
+  workflowName: z.string().trim().max(256).nullish(),
 });
 
 // Provider evaluations (src/reports/evaluations.ts): run a workflow on a provider five times and compare it
@@ -28,9 +30,27 @@ const StartBody = z.object({
 // cost money on the provider. Behind the provider-evaluations flag until release.
 export const evaluationRoutes = new Hono<AppEnv>()
   .use("*", requireUser, requireWorkspace, requireFlag("provider-evaluations"))
-  .get("/workflows", async (c) =>
-    c.json({ workflows: await evaluationWorkflows(c.var.db, c.var.workspace.id) }),
-  )
+  .get("/workflows", async (c) => {
+    const { workspace } = c.var;
+    const workflows = await evaluationWorkflows(c.var.db, workspace.id);
+    const history = workspace.installationId
+      ? await runHistoryState(c.var.db, workspace.installationId)
+      : null;
+    // Still importing: add what GitHub lists, so a workflow can be picked before its runs are in.
+    if (workspace.installationId && importing(history))
+      return c.json({
+        workflows: await withGitHubWorkflows(c.env, c.var.db, workspace.installationId, workflows),
+      });
+    return c.json({ workflows });
+  })
+  // The new installation's run history import (src/ingest/run-history.ts), which the dashboard polls.
+  // Null when the workspace never had one.
+  .get("/history", async (c) => {
+    const { installationId } = c.var.workspace;
+    return c.json({
+      history: installationId ? await runHistoryState(c.var.db, installationId) : null,
+    });
+  })
   // A provider's evaluations from the last 30 days, with their headline numbers, for its page.
   .get("/recent", async (c) => {
     const provider = c.req.query("provider");

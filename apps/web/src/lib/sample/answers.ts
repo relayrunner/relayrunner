@@ -4,6 +4,7 @@ import type { ActivityFilter, ActivityResult } from "@/lib/activity";
 import { sampleRoutingHealth, type RoutingRange } from "@/lib/admin-routing";
 import {
   EVALUATION_RUNS,
+  SAMPLE_HISTORY_WORKFLOWS,
   SAMPLE_WORKFLOWS,
   sampleEvaluation,
   sampleEvaluations,
@@ -84,7 +85,17 @@ const ANSWERS: [RegExp, Answer][] = [
   [/^\/activity\/options$/, () => sampleActivityOptions()],
   [/^\/usage\/actions$/, () => sampleRouterActionsUsage()],
   [/^\/admin\/routing$/, (_, q) => sampleRoutingHealth(q.get("range") as RoutingRange)],
-  [/^\/evaluations\/workflows$/, () => ({ workflows: SAMPLE_WORKFLOWS })],
+  // `?sample=history`: a new installation whose run history is still being read.
+  [
+    /^\/evaluations\/workflows$/,
+    () => ({
+      workflows: sampleParam() === "history" ? SAMPLE_HISTORY_WORKFLOWS : SAMPLE_WORKFLOWS,
+    }),
+  ],
+  [
+    /^\/evaluations\/history$/,
+    () => ({ history: sampleParam() === "history" ? { state: "running", runs: 142 } : null }),
+  ],
   [/^\/evaluations$/, () => ({ evaluations: [] })],
   // `?sample=none` on a provider page: no recent evaluations.
   [
