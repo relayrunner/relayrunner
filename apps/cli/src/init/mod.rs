@@ -19,7 +19,7 @@ use crate::ui;
 use repo::Visibility;
 use serde_json::json;
 use std::path::{Path, PathBuf};
-use workflows::{FileError, RELAY_REF, Verdict, WorkflowFile, WorkflowJob, short_file};
+use workflows::{FileError, Verdict, WorkflowFile, WorkflowJob, short_file};
 
 pub struct Plan {
     root: PathBuf,
@@ -237,7 +237,7 @@ fn print_plan(plan: &Plan, json: bool) {
         let out = Out {
             repo: &plan.repo,
             visibility: plan.visibility.as_str(),
-            relay: RELAY_REF,
+            relay: workflows::relay_ref(),
             set_up: workflows::is_set_up(&plan.jobs),
             refused: (plan.visibility == Visibility::Public).then_some("public_repo"),
             jobs: &plan.jobs,
@@ -312,7 +312,7 @@ fn apply(plan: &Plan, list: &str, json: bool) -> Result<(), String> {
             })
             .collect();
         let out = Out {
-            relay: RELAY_REF,
+            relay: workflows::relay_ref(),
             routed,
         };
         println!("{}", serde_json::to_string_pretty(&out).unwrap_or_default());

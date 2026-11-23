@@ -202,7 +202,10 @@ const COMMANDS: &[Command] = &[
             ("--since", "Show jobs that finished after this time, in ms"),
             ("--repo", "Show only this repo's jobs"),
             ("--workflow", "Show only this workflow's jobs"),
-            ("--result", "Show only jobs that succeeded, failed or were canceled"),
+            (
+                "--result",
+                "Show only jobs that succeeded, failed or were canceled",
+            ),
         ],
     ),
     (

@@ -50,7 +50,7 @@ Keep Wrangler for what reads `wrangler.jsonc`: `wrangler dev`, `wrangler deploy`
 
 The `security-audit` skill from [cloudflare/security-audit-skill](https://github.com/cloudflare/security-audit-skill) is a project default, listed under `skills` in `package.json` and pinned in `skills-lock.json`. Load it for a security audit, a vulnerability review, or a pen test. The canonical copy lives in `.agents/skills`, which Codex, Cursor, and Grok read directly; Claude Code reads it through the `.claude/skills/security-audit` symlink. Don't edit the vendored files by hand, since oxfmt and Oxlint skip them to keep them byte-identical to the lock. Update with `npx skills update`.
 
-The skills in `skills/` are for people who use RelayRunner, not for working on this repo; they install with `npx skills add relayrunner/relayrunner`. When you change a CLI command or flag, the relay version, or the MCP tools, update the matching skill in the same PR. `skills_show_the_relay_version_init_writes` in `apps/cli/src/init/workflows.rs` (relay version) and `apps/agents/src/skill.test.ts` (MCP tools) catch the most likely drift.
+The skills in `skills/` are for people who use RelayRunner, not for working on this repo; they install with `npx skills add relayrunner/relayrunner`. When you change a CLI command or flag, the relay version, or the MCP tools, update the matching skill in the same PR. `packages/providers/src/relay.test.ts` (relay version, kept in `relay.json`, which the CLI reads too) and `apps/agents/src/skill.test.ts` (MCP tools) catch the most likely drift.
 
 ## Preview URLs and admin views
 
