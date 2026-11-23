@@ -521,11 +521,8 @@ function RunnerRow({
             >
               {runner.medianMs === null ? "—" : `${few ? "~" : ""}${clock(runner.medianMs)}`}
             </span>
-            {runner.medianMs === null ? (
-              <span className="flex-1 text-xs text-muted-foreground">
-                Some jobs only. Expand for each job.
-              </span>
-            ) : (
+            {/* A runner that only ran some jobs has no whole-run time, so the dash stands alone. */}
+            {runner.medianMs !== null && (
               <RangeBar
                 range={spread.whole}
                 max={maxMs}
