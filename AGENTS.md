@@ -26,7 +26,7 @@ Never commit screenshots or other PR images to the repository. Upload them with 
 
 ## Formatting and checks
 
-Format with oxfmt (`pnpm format`) and lint with Oxlint (`pnpm lint`). `pnpm knip` fails on exports and files nothing imports: delete them, or tag an export that is a deliberate API with `@public`. Run `pnpm check` before you push; CI runs the same command. The pre-commit hook formats and lints staged files, so don't skip it with `--no-verify`.
+Format with oxfmt (`pnpm format`) and lint with Oxlint (`pnpm lint`). `pnpm lint` also fails on import cycles: move what both modules need into a module of its own. `pnpm knip` fails on exports and files nothing imports: delete them, or tag an export that is a deliberate API with `@public`. Run `pnpm check` before you push; CI runs the same command. The pre-commit hook formats and lints staged files, so don't skip it with `--no-verify`.
 
 ## API errors
 
