@@ -93,6 +93,8 @@ final class CrashReportTests: XCTestCase {
     try ips().write(to: folder.appendingPathComponent("Safari-2026-11-23-140212.ips"))
     try FileManager.default.setAttributes(
       [.modificationDate: Date(timeIntervalSinceNow: -7200)], ofItemAtPath: old.path)
-    XCTAssertEqual(CrashReport.find(in: folder, since: Date(timeIntervalSinceNow: -3600)).count, 1)
+    let found = try XCTUnwrap(CrashReport.latest(in: folder, since: Date(timeIntervalSinceNow: -3600)))
+    XCTAssertEqual(found.count, 1)
+    XCTAssertNil(CrashReport.latest(in: folder, since: Date()))
   }
 }

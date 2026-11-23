@@ -7,8 +7,6 @@ use crate::credentials::Credentials;
 use crate::error::Error;
 use serde_json::json;
 
-const CATEGORIES: &[&str] = &["bug", "confusing", "feature_request", "other"];
-
 struct Args {
     message: String,
     category: String,
@@ -31,15 +29,8 @@ fn parse(args: &[String]) -> Result<Args, Error> {
                 .ok_or_else(|| usage(format!("{name} needs a value.")))
         };
         match flag {
-            "--category" => {
-                category = value("--category")?;
-                if !CATEGORIES.contains(&category.as_str()) {
-                    return Err(usage(format!(
-                        "--category is one of {}.",
-                        CATEGORIES.join(", ")
-                    )));
-                }
-            }
+            // The gateway checks it, so a category added there works without a new CLI.
+            "--category" => category = value("--category")?,
             "--file" => {
                 let path = value("--file")?;
                 let text = std::fs::read_to_string(&path)
@@ -113,14 +104,7 @@ mod tests {
 
     #[test]
     fn refuses_bad_input() {
-        for bad in [
-            &[][..],
-            &["  "],
-            &["--category", "angry", "hi"],
-            &["--bogus"],
-            &["one", "two"],
-            &["--file"],
-        ] {
+        for bad in [&[][..], &["  "], &["--bogus"], &["one", "two"], &["--file"]] {
             assert_eq!(
                 parse(&args(bad)).err().map(|e| e.code),
                 Some("USAGE"),

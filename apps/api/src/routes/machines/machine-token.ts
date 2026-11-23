@@ -1,7 +1,7 @@
 import { eq } from "drizzle-orm";
 import { Hono } from "hono";
 import { z } from "zod";
-import { createDb, schema } from "../../db/index.ts";
+import { createDb, type Db, schema } from "../../db/index.ts";
 import { requestOrigin } from "../../machines/device-origin.ts";
 import { FAILED_CONCLUSIONS } from "../../ingest/job-counts.ts";
 import { MACHINE_ID_HEADER, MACHINE_ORIGIN_HEADER } from "../../durable-objects/machine-session.ts";
@@ -55,6 +55,16 @@ const MachineConnectBody = z.object({
   workspace: z.string().trim().min(1).max(200).optional(),
 });
 
+/** The person who enrolled the machine, as a list of one, or none for a machine without an owner. */
+function machineOwner(db: Db, machine: { userId: string | null }) {
+  if (!machine.userId) return Promise.resolve([]);
+  return db
+    .select({ id: schema.user.id, name: schema.user.name, email: schema.user.email })
+    .from(schema.user)
+    .where(eq(schema.user.id, machine.userId))
+    .limit(1);
+}
+
 export const machineTokenRoutes = new Hono<MachineEnv>()
   // Paths of their own, so the token check can't reach the dashboard's routes.
   .use("/connect", requireMachine)
@@ -82,13 +92,7 @@ export const machineTokenRoutes = new Hono<MachineEnv>()
 
     const [{ workspace, workspaces }, [enrolledBy], status] = await Promise.all([
       presentMachineWorkspaces(db, machine),
-      machine.userId
-        ? db
-            .select({ id: schema.user.id, name: schema.user.name, email: schema.user.email })
-            .from(schema.user)
-            .where(eq(schema.user.id, machine.userId))
-            .limit(1)
-        : Promise.resolve([]),
+      machineOwner(db, machine),
       c.env.MACHINE_LINK.getByName(machine.id).status(),
     ]);
     return c.json({
@@ -106,17 +110,10 @@ export const machineTokenRoutes = new Hono<MachineEnv>()
     const { machine, machineDb: db } = c.var;
     const parsed = MachineFeedbackBody.safeParse(await c.req.json().catch(() => null));
     if (!parsed.success) throw invalid(parsed.error);
-    const [owner] = machine.userId
-      ? await db
-          .select({ id: schema.user.id, name: schema.user.name, email: schema.user.email })
-          .from(schema.user)
-          .where(eq(schema.user.id, machine.userId))
-          .limit(1)
-      : [];
-    if (!owner) throw new AppError("FORBIDDEN");
-    const { page: _, ...message } = sanitizeMessage(parsed.data.message);
+    const [owner] = await machineOwner(db, machine);
+    if (!owner) throw new AppError("MACHINE_NOT_OWNED");
     const entry = {
-      ...message,
+      ...sanitizeMessage(parsed.data.message),
       source: "machine" as const,
       category: parsed.data.category,
       machine: { name: machine.name, macAppVersion: machine.macAppVersion },

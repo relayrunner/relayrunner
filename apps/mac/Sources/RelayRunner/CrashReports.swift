@@ -17,9 +17,8 @@ final class CrashReports {
     guard !AppSettings.crashReportsOff else { return }
     let folder = folder
     Task.detached(priority: .utility) {
-      let reports = CrashReport.find(in: folder, since: since)
-      guard let latest = reports.first else { return }
-      await MainActor.run { CrashReports.shared.offer(latest, of: reports.count) }
+      guard let found = CrashReport.latest(in: folder, since: since) else { return }
+      await MainActor.run { CrashReports.shared.offer(found.report, of: found.count) }
     }
   }
 
@@ -30,7 +29,9 @@ final class CrashReports {
     let times = count > 1 ? " It crashed \(count) times since it last opened; this is the latest." : ""
     alert.informativeText =
       "Send this report to help us fix it? It goes with your RelayRunner account and holds only what's below: no names, repos or logs.\(times)"
-    alert.accessoryView = Self.preview(report.text)
+    // Built once, so what's sent is exactly what was shown.
+    let text = report.text
+    alert.accessoryView = Self.preview(text)
     alert.addButton(withTitle: "Send Report")
     alert.addButton(withTitle: "Don't Send")
     alert.showsSuppressionButton = true
@@ -38,16 +39,16 @@ final class CrashReports {
     NSApp.activate(ignoringOtherApps: true)
     let send = alert.runModal() == .alertFirstButtonReturn
     if alert.suppressionButton?.state == .on { AppSettings.crashReportsOff = true }
-    if send { Task { await self.send(report) } }
+    if send { Task { await self.send(text) } }
   }
 
-  private func send(_ report: CrashReport) async {
+  private func send(_ text: String) async {
     let file = FileManager.default.temporaryDirectory
       .appendingPathComponent("relayrunner-crash-\(UUID().uuidString).txt")
     defer { try? FileManager.default.removeItem(at: file) }
     var problem: String?
     do {
-      try Data(report.text.utf8).write(to: file, options: .atomic)
+      try Data(text.utf8).write(to: file, options: .atomic)
       let output = try await CLI.run(["feedback", "--category", "bug", "--file", file.path])
       if output.status != 0 { problem = output.problem }
     } catch {

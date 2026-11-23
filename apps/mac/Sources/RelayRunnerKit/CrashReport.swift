@@ -136,9 +136,11 @@ public struct CrashReport: Equatable, Sendable {
   }
 
   /// A path under someone's home folder names them, so it becomes `~`. Control characters go too.
+  private static let homePath = try! NSRegularExpression(pattern: #"/(?:Users|home)/[^/\s:]+"#)
+
   static func clean(_ text: String) -> String {
-    let home = text.replacingOccurrences(
-      of: #"/(?:Users|home)/[^/\s:]+"#, with: "~", options: .regularExpression)
+    let home = homePath.stringByReplacingMatches(
+      in: text, range: NSRange(text.startIndex..., in: text), withTemplate: "~")
     let visible = home.unicodeScalars.filter { $0 == "\n" || !CharacterSet.controlCharacters.contains($0) }
     let line = String(String.UnicodeScalarView(visible))
       .replacingOccurrences(of: "\n", with: " ")
@@ -150,6 +152,7 @@ public struct CrashReport: Equatable, Sendable {
   private static func parseDate(_ value: String) -> Date? {
     let formatter = DateFormatter()
     formatter.locale = Locale(identifier: "en_US_POSIX")
+    // One report per launch at most, so a formatter each time is fine.
     for format in ["yyyy-MM-dd HH:mm:ss.SSSS Z", "yyyy-MM-dd HH:mm:ss.SS Z", "yyyy-MM-dd HH:mm:ss Z"] {
       formatter.dateFormat = format
       if let date = formatter.date(from: value) { return date }
@@ -168,11 +171,12 @@ public struct CrashReport: Equatable, Sendable {
 }
 
 extension CrashReport {
-  /// Reports of RelayRunner for Mac's crashes in `folder` written after `since`, newest first.
-  public static func find(in folder: URL, since: Date) -> [CrashReport] {
+  /// The newest report of RelayRunner for Mac's crashes in `folder` written after `since`, and how
+  /// many report files there are since then. Only the newest that reads is parsed.
+  public static func latest(in folder: URL, since: Date) -> (report: CrashReport, count: Int)? {
     let keys: [URLResourceKey] = [.contentModificationDateKey]
     let files = (try? FileManager.default.contentsOfDirectory(at: folder, includingPropertiesForKeys: keys)) ?? []
-    return files
+    let recent = files
       .filter { url in
         let name = url.lastPathComponent
         return url.pathExtension == "ips" && (name.hasPrefix("RelayRunner-") || name.hasPrefix("relayrunner-"))
@@ -184,7 +188,11 @@ extension CrashReport {
         return (modified, url)
       }
       .sorted { $0.0 > $1.0 }
-      .compactMap { try? Data(contentsOf: $0.1) }
-      .compactMap(CrashReport.init(ips:))
+    for (_, url) in recent {
+      if let data = try? Data(contentsOf: url), let report = CrashReport(ips: data) {
+        return (report, recent.count)
+      }
+    }
+    return nil
   }
 }

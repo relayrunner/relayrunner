@@ -58,7 +58,6 @@ export function renderFeedbackEmail(ctx: {
 
 function sentFrom(ctx: { agent: unknown; machine?: { macAppVersion: string | null } | null }) {
   if (ctx.agent) return "by an agent through the RelayRunner MCP server";
-  if (ctx.machine?.macAppVersion) return "from RelayRunner for Mac";
   if (ctx.machine) return "with relayrunner feedback";
   return "from the RelayRunner dashboard";
 }
