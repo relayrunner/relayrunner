@@ -12,12 +12,9 @@ import { DAY_MS, LIVE_DAYS } from "../time.ts";
 import { and, desc, eq, gte, isNotNull, sql } from "drizzle-orm";
 import { type Db, schema } from "../db/index.ts";
 import type { Env } from "../env.ts";
-import {
-  appInstallationToken,
-  GitHubAccessError,
-  GitHubRateLimitError,
-  pullRequestFiles,
-} from "../github/github-app.ts";
+import { GitHubAccessError, GitHubRateLimitError } from "../github/github-api.ts";
+import { appInstallationToken } from "../github/github-app.ts";
+import { pullRequestFiles } from "../github/repos-api.ts";
 import { errorMessage } from "../errors.ts";
 
 const run = schema.workflowRun;

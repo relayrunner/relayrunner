@@ -12,9 +12,8 @@ import {
   appJwt,
   importAppPrivateKey,
   repoInstallationId,
-  type CheckRunOutput,
-  type PullRequestFile,
 } from "../github/github-app.ts";
+import { type CheckRunOutput, type PullRequestFile } from "../github/repos-api.ts";
 import type { CheckResult } from "./native-checks.ts";
 import type { JobAnnotation } from "../routing/runner-protocol.ts";
 

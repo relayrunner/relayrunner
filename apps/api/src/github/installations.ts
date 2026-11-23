@@ -2,7 +2,7 @@ import { and, eq, isNull, lte, or } from "drizzle-orm";
 import type { Auth } from "../auth/auth.ts";
 import { type Db, schema } from "../db/index.ts";
 import type { GitHubInstallation } from "./github.ts";
-import { runnerScope } from "./github-app.ts";
+import { runnerScope } from "./runners-api.ts";
 
 // Records what GitHub says about an installation: the account it's on, which repos it sees, and
 // whether it's suspended. `observedAt` orders updates: a retried `suspend` that lands after a newer

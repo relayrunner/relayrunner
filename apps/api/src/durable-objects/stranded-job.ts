@@ -1,7 +1,8 @@
 import { DurableObject } from "cloudflare:workers";
 import { createDb } from "../db/index.ts";
 import type { Env } from "../env.ts";
-import { appInstallationToken, deleteRunner } from "../github/github-app.ts";
+import { appInstallationToken } from "../github/github-app.ts";
+import { deleteRunner } from "../github/runners-api.ts";
 import { installationRunnerScope } from "../github/installations.ts";
 import { mintRepoFirst } from "../routing/repo-runner.ts";
 import { routeLabel } from "../routing/routing.ts";

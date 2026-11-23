@@ -8,7 +8,7 @@ import { createDb, type Db, schema } from "../../db/index.ts";
 import { runningJobs } from "../../ingest/jobs.ts";
 import { claimRunnerJobs } from "../../ingest/job-timings.ts";
 import { OFFLINE } from "../../durable-objects/machine-session.ts";
-import { addRunnerLabels, type GitHubRunner, type RunnerScope } from "../../github/github-app.ts";
+import { addRunnerLabels, type GitHubRunner, type RunnerScope } from "../../github/runners-api.ts";
 import {
   addedRunnerScope,
   cannotAdd,

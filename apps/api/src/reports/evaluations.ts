@@ -36,14 +36,9 @@ import type { WebhookMessage } from "@relayrunner/github-webhooks";
 import { and, desc, eq, gte, inArray, isNull, lt, notInArray, sql } from "drizzle-orm";
 import { type Db, schema } from "../db/index.ts";
 import type { Env } from "../env.ts";
-import {
-  appInstallationToken,
-  cancelRun,
-  dispatchWorkflow,
-  findDispatchedRun,
-  repoDefaultBranch,
-  rerunRun,
-} from "../github/github-app.ts";
+import { cancelRun, dispatchWorkflow, findDispatchedRun, rerunRun } from "../github/actions-api.ts";
+import { appInstallationToken } from "../github/github-app.ts";
+import { repoDefaultBranch } from "../github/repos-api.ts";
 import { loadPriceBook } from "../providers/prices.ts";
 import { hostedRunner } from "../ingest/runner-waits.ts";
 const DAY_MS = 24 * 60 * 60 * 1000;

@@ -1,12 +1,8 @@
 import { and, desc, eq, gt, isNull, lt } from "drizzle-orm";
 import { createDb, type Db, schema } from "../db/index.ts";
 import type { Env } from "../env.ts";
-import {
-  appInstallationToken,
-  deleteRunner,
-  listRunners,
-  type RunnerScope,
-} from "../github/github-app.ts";
+import { appInstallationToken } from "../github/github-app.ts";
+import { deleteRunner, listRunners, type RunnerScope } from "../github/runners-api.ts";
 import { enqueueInstallationTasks } from "../github/installation-queue.ts";
 import { pickJobIdFromRunnerName } from "./pick-attempts.ts";
 import { errorMessage } from "../errors.ts";

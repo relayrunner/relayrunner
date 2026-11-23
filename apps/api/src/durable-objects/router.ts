@@ -17,15 +17,10 @@ import { and, eq, isNotNull, isNull, or } from "drizzle-orm";
 import { createDb, schema } from "../db/index.ts";
 import type { Env } from "../env.ts";
 import type { QueueEntry } from "@relayrunner/machine-protocol";
-import {
-  appInstallationToken,
-  GitHubRateLimitError,
-  listRunners,
-  orgAppSlugs,
-  userCanReadRepo,
-  type GitHubRunner,
-  type RunnerScope,
-} from "../github/github-app.ts";
+import { GitHubRateLimitError } from "../github/github-api.ts";
+import { appInstallationToken, orgAppSlugs } from "../github/github-app.ts";
+import { userCanReadRepo } from "../github/repos-api.ts";
+import { listRunners, type GitHubRunner, type RunnerScope } from "../github/runners-api.ts";
 import { installationRunnerScope } from "../github/installations.ts";
 import { inWorkspace } from "../machines/machines.ts";
 import { runStartersForJobs } from "../ingest/job-starters.ts";

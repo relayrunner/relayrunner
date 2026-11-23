@@ -11,8 +11,17 @@ const github = vi.hoisted(() => ({
 vi.mock("../github/github-app.ts", async (importOriginal) => ({
   ...(await importOriginal<typeof import("../github/github-app.ts")>()),
   appInstallationToken: async () => "ghs_test",
+}));
+vi.mock("../github/actions-api.ts", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("../github/actions-api.ts")>()),
   runAttemptTriggeringActor: async () => ({ id: 1, login: "atticoos" }),
-  ...github,
+  workflowJobRunner: github.workflowJobRunner,
+  runAttemptStatus: github.runAttemptStatus,
+  rerunJob: github.rerunJob,
+}));
+vi.mock("../github/runners-api.ts", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("../github/runners-api.ts")>()),
+  deleteRunner: github.deleteRunner,
 }));
 const runner = vi.hoisted(() => ({ request: {} as unknown, complete: vi.fn() }));
 vi.mock("../routing/repo-runner.ts", () => ({

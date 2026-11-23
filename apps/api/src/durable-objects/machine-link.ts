@@ -10,12 +10,8 @@ import {
   type JobMessage,
   type QueueEntry,
 } from "@relayrunner/machine-protocol";
-import {
-  appInstallationToken,
-  deleteRunner,
-  runnerOnline,
-  type RunnerScope,
-} from "../github/github-app.ts";
+import { appInstallationToken } from "../github/github-app.ts";
+import { deleteRunner, runnerOnline, type RunnerScope } from "../github/runners-api.ts";
 import { installationRunnerScope } from "../github/installations.ts";
 import { setJobUsage } from "../ingest/jobs.ts";
 import { runJob } from "../reports/run-job.ts";

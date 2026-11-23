@@ -19,7 +19,8 @@ import {
 import type { Env } from "../env.ts";
 import { type Window, windowDays } from "../reports/report-window.ts";
 import { stepTimes } from "../reports/step-phases.ts";
-import { appInstallationToken, jobAnnotations } from "../github/github-app.ts";
+import { jobAnnotations } from "../github/actions-api.ts";
+import { appInstallationToken } from "../github/github-app.ts";
 import { countsAsJob, jobCountUpserts } from "./job-counts.ts";
 import { providerSpendUpsert } from "../providers/provider-spend.ts";
 import { hostedRunner, runnerWaitUpsert } from "./runner-waits.ts";

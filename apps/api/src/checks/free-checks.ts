@@ -9,7 +9,7 @@ import { cents, classRate, pricePeriods, RUNNER_LABELS, rateFor } from "../repor
 import type { ActivityEvent } from "@relayrunner/activity";
 import { and, eq, gte, isNull, lt, sql } from "drizzle-orm";
 import { type Db, schema } from "../db/index.ts";
-import { createCheckRun } from "../github/github-app.ts";
+import { createCheckRun } from "../github/repos-api.ts";
 import { workspaceIdForInstallation } from "../github/installations.ts";
 import { loadPriceBook } from "../providers/prices.ts";
 import { type Window, windowDays } from "../reports/report-window.ts";

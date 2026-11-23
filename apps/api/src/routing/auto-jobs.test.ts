@@ -11,6 +11,9 @@ const pushers = new Map<string, Set<number>>();
 vi.mock("../github/github-app.ts", async (importOriginal) => ({
   ...(await importOriginal<typeof import("../github/github-app.ts")>()),
   appInstallationToken: async () => "ghs_test",
+}));
+vi.mock("../github/repos-api.ts", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("../github/repos-api.ts")>()),
   userCanWriteRepo: async (_token: string, repo: string, userId: number) =>
     pushers.get(repo)?.has(userId) ?? false,
 }));

@@ -7,7 +7,7 @@
 // Administration, or when the org only allows org-level runners. The caller then falls back to the
 // installation's own scope (the org), logging it so the gap stays visible.
 
-import { generateJitConfig, type RunnerScope } from "../github/github-app.ts";
+import { generateJitConfig, type RunnerScope } from "../github/runners-api.ts";
 
 type Runner = Parameters<typeof generateJitConfig>[2];
 type Jit = Awaited<ReturnType<typeof generateJitConfig>>;

@@ -14,7 +14,7 @@ import { parse } from "yaml";
 import { z } from "zod";
 import { LINT_TOOLS, type LintTool } from "@relayrunner/lint-runner/protocol";
 import { retrySettingsSchema, type RetrySettings } from "@relayrunner/runner-order";
-import { repoFile } from "../github/github-app.ts";
+import { repoFile } from "../github/repos-api.ts";
 
 // The first one found wins.
 export const CONFIG_PATHS = [".github/relayrunner.yml", "relayrunner.yml"] as const;

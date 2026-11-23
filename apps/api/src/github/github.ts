@@ -1,7 +1,7 @@
 // Talking to GitHub on behalf of a signed-in user, and the signed `state` that carries a
 // workspace through the GitHub App install page.
 
-const API = "https://api.github.com";
+import { githubFetch } from "./github-api.ts";
 
 // The slice of a GitHub App installation the gateway stores. Both GET /user/installations and
 // installation webhooks send this shape.
@@ -18,13 +18,9 @@ export interface GitHubInstallation {
 export async function listUserInstallations(token: string): Promise<GitHubInstallation[]> {
   const installations: GitHubInstallation[] = [];
   for (let page = 1; ; page += 1) {
-    const response = await fetch(`${API}/user/installations?per_page=100&page=${page}`, {
-      headers: {
-        accept: "application/vnd.github+json",
-        authorization: `Bearer ${token}`,
-        "user-agent": "relayrunner-gateway",
-        "x-github-api-version": "2022-11-28",
-      },
+    // Callers read the status off GitHubError, so nothing is thrown before that.
+    const response = await githubFetch(token, `/user/installations?per_page=100&page=${page}`, {
+      allow: "any",
     });
     if (!response.ok)
       throw new GitHubError(
