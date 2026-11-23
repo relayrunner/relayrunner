@@ -22,7 +22,6 @@ import {
 } from "@/components/ui/select";
 import { type ChartSeries, WorkflowRunsChart } from "@/components/workflow-runs-chart";
 import { loadPage, pageQuery, usePageReport } from "@/lib/query";
-import { useFlag } from "@/lib/flags";
 import {
   clock,
   environmentColor,
@@ -311,7 +310,6 @@ function Runners({
   charted: Set<string>;
   onToggle: (key: string) => void;
 }) {
-  const evaluate = useFlag("provider-evaluations");
   const [open, setOpen] = useState<string | null>(null);
   const [allUntried, setAllUntried] = useState(false);
   const rows = report.runners.toSorted(
@@ -412,14 +410,12 @@ function Runners({
                   <td className="px-4 py-3 text-right">—</td>
                   <td className="px-4 py-3 text-right">—</td>
                   <td className="px-4 py-2 text-right">
-                    {evaluate && (
-                      <Button variant="outline" size="sm" className="h-7 gap-1.5 text-xs" asChild>
-                        <Link to="/providers/$provider/evaluate" params={{ provider: provider.id }}>
-                          <FlaskConicalIcon aria-hidden className="size-3.5" />
-                          Evaluate
-                        </Link>
-                      </Button>
-                    )}
+                    <Button variant="outline" size="sm" className="h-7 gap-1.5 text-xs" asChild>
+                      <Link to="/providers/$provider/evaluate" params={{ provider: provider.id }}>
+                        <FlaskConicalIcon aria-hidden className="size-3.5" />
+                        Evaluate
+                      </Link>
+                    </Button>
                   </td>
                 </tr>
               ))}

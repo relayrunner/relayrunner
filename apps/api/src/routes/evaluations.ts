@@ -10,7 +10,6 @@ import {
   retryEvaluation,
   startEvaluation,
 } from "../reports/evaluations.ts";
-import { requireFlag } from "../flags.ts";
 import { importing, runHistoryState, withGitHubWorkflows } from "../ingest/run-history.ts";
 import { requireUser } from "../middleware/session.ts";
 import { requireWorkspace } from "../middleware/workspace.ts";
@@ -27,9 +26,9 @@ const StartBody = z.object({
 
 // Provider evaluations (src/reports/evaluations.ts): run a workflow on a provider five times and compare it
 // with its recent runs. Any member can look; owners and admins start and stop them, since the runs
-// cost money on the provider. Behind the provider-evaluations flag until release.
+// cost money on the provider.
 export const evaluationRoutes = new Hono<AppEnv>()
-  .use("*", requireUser, requireWorkspace, requireFlag("provider-evaluations"))
+  .use("*", requireUser, requireWorkspace)
   .get("/workflows", async (c) => {
     const { workspace } = c.var;
     const workflows = await evaluationWorkflows(c.var.db, workspace.id);
