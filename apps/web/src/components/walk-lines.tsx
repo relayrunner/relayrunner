@@ -1,4 +1,4 @@
-import { type RouteWalk, walkLines } from "@/lib/route-walk";
+import { orderName, type RouteWalk, walkLines } from "@/lib/route-walk";
 
 const LINE_STATES = {
   skipped: "skipped",
@@ -10,11 +10,14 @@ const LINE_STATES = {
 // machine with macOS was online and idle".
 export function WalkLines({ walk, runner }: { walk: RouteWalk; runner: string | null }) {
   const lines = walkLines(walk, runner);
+  const order = orderName(walk, false);
   return (
     <ul
-      aria-label="How RelayRunner walked your runner order"
+      aria-label={`How RelayRunner walked ${order}`}
       className="mt-1 grid gap-0.5 font-mono text-xs text-muted-foreground"
     >
+      {/* The workspace's order needs no saying; a repo's own does. */}
+      {walk.ownOrder && <li>{order}</li>}
       {lines.map((line, index) => (
         <li
           key={`${line.key}-${line.state}`}

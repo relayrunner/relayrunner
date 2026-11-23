@@ -75,21 +75,6 @@ describe("resolveRunnerOrder", () => {
     expect(await resolveRunnerOrder(db, id)).toMatchObject({ scope: "workspace", stored: saved });
   });
 
-  test("before the repo order table exists, every repository walks the workspace's", async () => {
-    const fresh = await testing.createTestEnv();
-    const db = createDb(fresh.DB);
-    await fresh.DB.prepare(
-      "insert into workspace (id, name, slug, runner_order, created_at) values ('w1', 'W', 'w', ?1, 0)",
-    )
-      .bind(saved)
-      .run();
-    await fresh.DB.prepare("drop table repo_runner_order").run();
-    expect(await resolveRunnerOrder(db, "w1", 42)).toMatchObject({
-      scope: "workspace",
-      stored: saved,
-    });
-  });
-
   test("an unreadable saved order falls back to the default", async () => {
     const resolved = await resolveRunnerOrder(createDb(env.DB), await workspace("{not json"));
     expect(resolved.order).toEqual(DEFAULT_RUNNER_ORDER);

@@ -6,7 +6,7 @@
 // GitHub minutes and provider spend are counted per GitHub account, and free minutes per
 // workspace, so a repository with its own order shares them with the rest of the workspace.
 import { readRunnerOrder, type RunnerOrder } from "@relayrunner/runner-order";
-import { and, asc, eq, sql } from "drizzle-orm";
+import { and, asc, eq } from "drizzle-orm";
 import { type Db, schema } from "./db/index.ts";
 import { sha256Hex } from "./machines.ts";
 
@@ -31,41 +31,24 @@ export async function resolveRunnerOrder(
   workspaceId: string,
   repositoryId?: number,
 ): Promise<ResolvedRunnerOrder> {
-  const [row] = await readOrders(db, workspaceId, repositoryId).catch((error: unknown) => {
-    // The API can deploy a minute before the GitHub workflow adds repo_runner_order: until then,
-    // every repository walks the workspace's order. Safe to remove once it's in production.
-    // Drizzle wraps the database's error as the cause of its own.
-    const cause = error instanceof Error ? error.cause : undefined;
-    if (!`${error} ${cause}`.includes("no such table")) throw error;
-    return readOrders(db, workspaceId);
-  });
+  const [row] = await db
+    .select({ workspace: schema.workspace.runnerOrder, repository: own.runnerOrder })
+    .from(schema.workspace)
+    .leftJoin(
+      own,
+      and(
+        eq(own.workspaceId, schema.workspace.id),
+        // No repository matches no row: ids are GitHub's, never negative.
+        eq(own.repositoryId, repositoryId ?? -1),
+      ),
+    )
+    .where(eq(schema.workspace.id, workspaceId))
+    .limit(1);
   if (row?.repository) {
     return { order: readRunnerOrder(row.repository), scope: "repository", stored: row.repository };
   }
   const stored = row?.workspace ?? null;
   return { order: readRunnerOrder(stored), scope: "workspace", stored };
-}
-
-// The workspace's order, and the repository's own when a repository is given.
-function readOrders(db: Db, workspaceId: string, repositoryId?: number) {
-  const workspace = { workspace: schema.workspace.runnerOrder };
-  const where = eq(schema.workspace.id, workspaceId);
-  if (repositoryId === undefined) {
-    return db
-      .select({ ...workspace, repository: sql<string | null>`null` })
-      .from(schema.workspace)
-      .where(where)
-      .limit(1);
-  }
-  return db
-    .select({ ...workspace, repository: own.runnerOrder })
-    .from(schema.workspace)
-    .leftJoin(
-      own,
-      and(eq(own.workspaceId, schema.workspace.id), eq(own.repositoryId, repositoryId)),
-    )
-    .where(where)
-    .limit(1);
 }
 
 /**

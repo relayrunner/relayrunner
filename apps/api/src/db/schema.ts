@@ -1005,6 +1005,9 @@ export const routeDecision = sqliteTable(
       .notNull(),
     // Providers the relay set that the order leaves out.
     notInOrder: text("not_in_order", { mode: "json" }).$type<string[]>().notNull(),
+    // Whether the walk was the repo's own runner order (repo_runner_order) instead of the
+    // workspace's. False before #709.
+    ownOrder: integer("own_order", { mode: "boolean" }).notNull().default(false),
     // The relay's `machine` and `github` inputs, and each hosted provider's input it set, by id.
     machine: text("machine", { mode: "json" }).$type<string[]>().notNull(),
     github: text("github", { mode: "json" }).$type<string[]>().notNull(),

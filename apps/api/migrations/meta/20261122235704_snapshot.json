@@ -1,7 +1,7 @@
 {
   "version": "6",
   "dialect": "sqlite",
-  "id": "fe87ba58-a479-4319-a2bc-fb2a528ce443",
+  "id": "19a35f5c-1c4b-4d5a-a620-28f952c8d479",
   "prevId": "06aae151-0c76-416c-884b-fcbd35ca95d3",
   "tables": {
     "account": {
@@ -1038,13 +1038,6 @@
         },
         "size": {
           "name": "size",
-          "type": "integer",
-          "primaryKey": false,
-          "notNull": false,
-          "autoincrement": false
-        },
-        "cpus": {
-          "name": "cpus",
           "type": "integer",
           "primaryKey": false,
           "notNull": false,
@@ -5456,6 +5449,14 @@
           "primaryKey": false,
           "notNull": true,
           "autoincrement": false
+        },
+        "own_order": {
+          "name": "own_order",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false,
+          "default": false
         },
         "machine": {
           "name": "machine",

@@ -176,6 +176,37 @@ describe("Activity: why a job ran where", () => {
     ]);
   });
 
+  test("a job routed by its repo's own order says so", async () => {
+    const { cookie, installationId, workspaceId, runId } = await connectedWorkspace();
+    const context = pickContext(runId);
+    const decision = await decideRoute(
+      { steps: [{ key: "github" }] },
+      { ...context, private: true },
+      async () => null,
+    );
+    await recordPick(createDb(env.DB), {
+      workspaceId,
+      repositoryId: 55,
+      context,
+      jobName: "relay",
+      pickJobId: "relay-job",
+      decision: { ...decision, ownOrder: true },
+      reason: null,
+    });
+    await processWebhook(
+      env,
+      jobEvent(installationId, { id: runId + 1, runId, name: "pick", labels: ["relayrunner"] }),
+    );
+    await processWebhook(
+      env,
+      jobEvent(installationId, { id: runId + 2, runId, name: "test", labels: ["ubuntu-latest"] }),
+    );
+    const { jobs } = await activity(cookie);
+    expect(jobs.map((job) => job.walk)).toEqual([
+      expect.objectContaining({ step: "github", ownOrder: true }),
+    ]);
+  });
+
   test("each job of a run with two relays carries the walk of the relay that routed it", async () => {
     const { cookie, installationId, workspaceId, runId } = await connectedWorkspace();
     const db = createDb(env.DB);

@@ -331,6 +331,7 @@ export class Router extends DurableObject<Env> {
         const decision = await this.decide(job);
         span.setAttributes({
           "relayrunner.skipped": decision.skipped.length,
+          "relayrunner.own_order": Boolean(decision.ownOrder),
           ...(decision.runner === null
             ? { "relayrunner.reason": decision.reason }
             : {
@@ -356,7 +357,7 @@ export class Router extends DurableObject<Env> {
       );
     // The machine step's pick, if the walk got that far.
     let pick: MachinePick | undefined;
-    const [[workspace], { order }] = await Promise.all([
+    const [[workspace], { order, scope }] = await Promise.all([
       db
         .select({
           skipUnhealthy: schema.workspace.skipUnhealthyRunners,
@@ -374,7 +375,7 @@ export class Router extends DurableObject<Env> {
       // Jobs already waiting get a free slot before this one can.
       this.drain(),
     ]);
-    const decision = await decideRoute(
+    const walked = await decideRoute(
       retryOrder(preferFirst(order, job.first), job.retry),
       // Some hosted providers only serve organizations (SKIPS_PERSONAL_ACCOUNTS).
       { ...job, personal: workspace?.accountType === "User" },
@@ -408,6 +409,7 @@ export class Router extends DurableObject<Env> {
       (key) =>
         this.checkAccess(key, job, workspace?.accountType ?? null, workspace?.accountLogin ?? null),
     );
+    const decision: RouteDecision = scope === "repository" ? { ...walked, ownOrder: true } : walked;
     if (decision.runner !== null && decision.step === "boat") this.boatStarts.took();
     if (waitsForMachine(decision)) return this.wait(job, decision);
     if (
