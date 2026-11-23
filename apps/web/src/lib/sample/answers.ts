@@ -3,12 +3,14 @@
 import { sampleActionsUsage } from "@/lib/actions-usage";
 import { sampleRoutingHealth, type RoutingRange } from "@/lib/admin-routing";
 import { SAMPLE_WORKFLOWS } from "@/lib/evaluations";
-import type { FreeMinutesProvider } from "@relayrunner/runner-order";
+import { FLAG_KEYS } from "@relayrunner/api-types";
+import { DEFAULT_RETRY_SETTINGS, type FreeMinutesProvider } from "@relayrunner/runner-order";
 import { sampleFreeMinutes } from "@/lib/free-minutes";
 import { sampleJobTimes } from "@/lib/job-times";
 import { sampleJobTypeTimes } from "@/lib/job-types";
 import { SAMPLE_MACHINES } from "@/lib/machines";
 import { sampleConnections } from "@/lib/provider-connections";
+import type { ProviderHealth } from "@/lib/provider-health";
 import { sampleProviderTrends } from "@/lib/provider-trends";
 import { type ChartPer, sampleProviderReport, sampleProvidersOverview } from "@/lib/providers";
 import { sampleRouteOutcomes } from "@/lib/route-outcomes";
@@ -131,7 +133,24 @@ const ANSWERS: [RegExp, Answer][] = [
   [/^\/workspaces\/[^/]+\/router-setup$/, () => sampleRouterSetup()],
   [/^\/workspaces\/[^/]+\/runner-group-check$/, () => ({ check: sampleRunnerGroupCheck() })],
   [/^\/workspaces\/[^/]+\/auto-jobs$/, () => sampleAutoJobs()],
+  [/^\/workspaces\/[^/]+\/retry-settings$/, () => DEFAULT_RETRY_SETTINGS],
+  [/^\/workspaces\/[^/]+\/ai$/, () => ({ offAt: null })],
+  [/^\/workspaces\/[^/]+\/provider-health$/, () => sampleHealth()],
+  // Every flag on, to show what's behind them.
+  [/^\/flags$/, () => Object.fromEntries(FLAG_KEYS.map((key) => [key, true]))],
 ];
+
+// `?sample=unhealthy` on the page shows one runner type the Router skips.
+function sampleHealth(): ProviderHealth {
+  if (new URLSearchParams(window.location.search).get("sample") !== "unhealthy")
+    return { enabled: true, unhealthy: [] };
+  return {
+    enabled: true,
+    unhealthy: [
+      { key: "depot", label: "depot-ubuntu-24.04", misses: 3, retryAt: Date.now() + 8 * 60_000 },
+    ],
+  };
+}
 
 function filterOf(query: URLSearchParams): SignalFilter {
   return Object.fromEntries(

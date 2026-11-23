@@ -234,9 +234,8 @@ function useProviderHealth(workspaceId: string) {
   const [health, setHealth] = useState<ProviderHealth | null>(null);
   useEffect(() => {
     let live = true;
-    // The dev preview has no API behind it: `?sample=unhealthy` shows one skipped runner type.
-    const read = authDisabled ? sampleHealth() : getProviderHealth(workspaceId);
-    read.then(
+    // In the dev preview, `?sample=unhealthy` shows one skipped runner type (lib/sample).
+    getProviderHealth(workspaceId).then(
       (loaded) => live && setHealth(loaded),
       () => undefined,
     );
@@ -358,17 +357,6 @@ function SkipUnhealthyToggle({
       </span>
     </label>
   );
-}
-
-async function sampleHealth(): Promise<ProviderHealth> {
-  if (new URLSearchParams(window.location.search).get("sample") !== "unhealthy")
-    return { enabled: true, unhealthy: [] };
-  return {
-    enabled: true,
-    unhealthy: [
-      { key: "depot", label: "depot-ubuntu-24.04", misses: 3, retryAt: Date.now() + 8 * 60_000 },
-    ],
-  };
 }
 
 /**
