@@ -30,7 +30,7 @@ import {
   windowWhere,
 } from "./job-sql.ts";
 import { environmentFor, MACHINE, nameMachines } from "./environments.ts";
-import { type Phase, phaseOf } from "./step-phases.ts";
+import { type Part, type SetupItem, sortSteps } from "./step-phases.ts";
 import {
   hasTrend,
   lastDays,
@@ -587,7 +587,7 @@ export async function jobRuns(
       .where(where)
       .orderBy(sql`${table.completedAt} desc`)
       .limit(500),
-    averageSteps(db, where),
+    averageSteps(db, where, workspaceId, job),
   ]);
   const runs = rows.flatMap((row) => {
     const run = jobRunOf(row);
@@ -599,8 +599,10 @@ export async function jobRuns(
 /** A step of a job's average successful run. */
 export interface RunStep {
   name: string;
-  phase: Phase;
+  part: Part;
   ms: number;
+  /** A setup step the job has a cache step for (see sortSteps). */
+  cache?: true;
 }
 
 /**
@@ -608,20 +610,37 @@ export interface RunStep {
  * order steps run. Failed runs stop early, so like the medians they're left out. A step a run
  * skipped counts as no time for it.
  */
-async function averageSteps(db: Db, where: SQL | undefined): Promise<RunStep[]> {
+async function averageSteps(
+  db: Db,
+  where: SQL | undefined,
+  workspaceId: string,
+  job: { repositoryId: number; workflow: string | null; name: string },
+): Promise<RunStep[]> {
   const ok = and(where, eq(table.conclusion, "success"), isNotNull(table.steps));
-  const rows = await db.all<{ name: string; seconds: number; runs: number; at: number }>(sql`
+  const [rows, types] = await Promise.all([
+    db.all<{ name: string; seconds: number; runs: number; at: number }>(sql`
     select step.value ->> 0 as name, sum(step.value ->> 1) as seconds, min(step.key) as at,
       (select count(*) from ${table} where ${ok}) as runs
     from ${table}, json_each(${table.steps}) as step
     where ${ok}
     group by step.value ->> 0
-    order by at`);
-  return rows.map((row) => ({
-    name: row.name,
-    phase: phaseOf(row.name),
-    ms: Math.round((Number(row.seconds) * 1000) / Number(row.runs)),
-  }));
+    order by at`),
+    readJobTypes(db, workspaceId),
+  ]);
+  const type = types.get(jobTypeKey(job.repositoryId, job.workflow, job.name)) ?? null;
+  const { parts, cached } = sortSteps(
+    rows.map((row) => row.name),
+    type,
+  );
+  return rows.map((row) => {
+    const part = parts.get(row.name)!;
+    return {
+      name: row.name,
+      part,
+      ms: Math.round((Number(row.seconds) * 1000) / Number(row.runs)),
+      ...(cached.has(part as SetupItem) && { cache: true as const }),
+    };
+  });
 }
 
 /**

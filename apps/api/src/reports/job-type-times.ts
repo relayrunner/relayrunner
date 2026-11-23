@@ -9,7 +9,7 @@ import { jobTypeKey, readJobTypes } from "../ai/job-type.ts";
 import { aiAccess } from "../ai/settings.ts";
 import { type Db, schema } from "../db/index.ts";
 import { hasTrend, type ReportWindow } from "./report-window.ts";
-import { addStep, type PhaseTimes } from "./step-phases.ts";
+import { type PartTimes, type SetupItem, sortSteps } from "./step-phases.ts";
 
 const table = schema.jobTiming;
 
@@ -27,9 +27,11 @@ export type JobTypeTime = {
   priorMs: number | null;
   /** Run time on each day of the window, oldest first. */
   byDay: number[];
-  /** Runs in the window that reported their steps, and those steps' time by phase. */
+  /** Runs in the window that reported their steps, and those steps' time by part. */
   stepped: number;
-  phases: PhaseTimes;
+  parts: PartTimes;
+  /** The setup the job has a cache step for (see sortSteps). */
+  cached: SetupItem[];
 };
 
 export type JobTypeTimes = {
@@ -99,7 +101,7 @@ export async function jobTypeTimes(
         count(${table.steps}) as stepped
       from ${table} where ${windowWhere(workspaceId, since, window.to)}${gap}
       group by ${table.repositoryId}, ${table.workflowName}, ${table.name}, ${day}`),
-    // Each job's seconds per step name in the window, sorted into phases below.
+    // Each job's seconds per step name in the window, sorted into parts below.
     db.all<StepRow>(sql`
       select ${table.repositoryId} as repository_id, ${table.workflowName} as workflow_name,
         ${table.name} as name, step.value ->> 0 as step, sum(step.value ->> 1) as seconds
@@ -125,7 +127,8 @@ export async function jobTypeTimes(
         priorMs: compare ? 0 : null,
         byDay: Array.from({ length: days }, () => 0),
         stepped: 0,
-        phases: {},
+        parts: {},
+        cached: [],
       };
       jobs.set(key, job);
     }
@@ -142,9 +145,22 @@ export async function jobTypeTimes(
     job.byDay[index]! += ms;
   }
 
-  for (const row of steps) {
-    const job = jobs.get(jobTypeKey(row.repository_id, row.workflow_name, row.name));
-    if (job) addStep(job.phases, row.step, Number(row.seconds));
+  // A job's cache steps cover its setup in every run, so each job's steps are sorted together.
+  const stepsByJob = Map.groupBy(steps, (row) =>
+    jobTypeKey(row.repository_id, row.workflow_name, row.name),
+  );
+  for (const [key, rows] of stepsByJob) {
+    const job = jobs.get(key);
+    if (!job) continue;
+    const { parts, cached } = sortSteps(
+      rows.map((row) => row.step),
+      job.type,
+    );
+    for (const row of rows) {
+      const part = parts.get(row.step)!;
+      job.parts[part] = (job.parts[part] ?? 0) + Number(row.seconds) * 1000;
+    }
+    job.cached = [...cached];
   }
 
   return {

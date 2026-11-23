@@ -25,7 +25,8 @@ const report: JobTypeTimes = {
       priorMs: 4 * MIN,
       byDay: [2 * MIN, 6 * MIN],
       stepped: 3,
-      phases: { setup: MIN, work: 5 * MIN },
+      parts: { packages: MIN, test: 5 * MIN },
+      cached: ["packages"],
     },
     {
       repository: "acme/api",
@@ -37,7 +38,8 @@ const report: JobTypeTimes = {
       priorMs: 3 * MIN,
       byDay: [3 * MIN, 0],
       stepped: 1,
-      phases: { setup: MIN, cache: MIN },
+      parts: { images: MIN, cache: MIN, build: MIN },
+      cached: [],
     },
     {
       repository: "acme/app",
@@ -49,7 +51,8 @@ const report: JobTypeTimes = {
       priorMs: 0,
       byDay: [0, MIN],
       stepped: 0,
-      phases: {},
+      parts: {},
+      cached: [],
     },
     // Only in the window before: counts toward its type's change, not its jobs.
     {
@@ -62,17 +65,22 @@ const report: JobTypeTimes = {
       priorMs: 4 * MIN,
       byDay: [0, 0],
       stepped: 0,
-      phases: {},
+      parts: {},
+      cached: [],
     },
   ],
 };
 
 describe("summarize", () => {
-  test("adds up step time by phase, per type and in all", () => {
+  test("adds up step time by part, per type and in all", () => {
     const summary = summarize(report);
     expect(summary.stepped).toBe(4);
-    expect(summary.phases).toEqual({ setup: 2 * MIN, cache: MIN, work: 5 * MIN });
-    expect(summary.types[0]!.phases).toEqual({ setup: MIN, work: 5 * MIN });
+    expect(summary.inside).toEqual({
+      setup: { packages: MIN, images: MIN, cache: MIN },
+      cache: { packages: MIN },
+      work: { test: 5 * MIN, build: MIN },
+    });
+    expect(summary.types[0]!.inside.work).toEqual({ test: 5 * MIN });
   });
 
   test("adds jobs up by type in stacking order, with each day's split", () => {

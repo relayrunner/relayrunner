@@ -526,7 +526,7 @@ export const jobTiming = sqliteTable(
     ranSteps: integer("ran_steps", { mode: "boolean" }),
     failedStep: text("failed_step"),
     // Each step that ran, as [name, seconds], from the `completed` webhook. Read with
-    // src/reports/step-phases.ts to split a job's time into setup, checkout, installs, cache and work. Null
+    // src/reports/step-phases.ts to split a job's time into setup items and work. Null
     // when GitHub sent no steps.
     steps: text("steps", { mode: "json" }).$type<StepTime[]>(),
     ...timestamps,

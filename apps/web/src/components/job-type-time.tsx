@@ -8,7 +8,7 @@ import { Change } from "@/components/change";
 import { Count } from "@/components/count";
 import { TipRow } from "@/components/chart-parts";
 import { Legend, StackedBars, Swatch } from "@/components/stacked-bars";
-import { TypePhases } from "@/components/job-phases";
+import { TypeInside } from "@/components/job-phases";
 import { WorkflowLink } from "@/components/workflow-link";
 import { DAY_MS, minutesText, plural } from "@/lib/job-times";
 import {
@@ -85,7 +85,7 @@ export function JobTypes({ range, repository }: { range: TimeRange; repository: 
         <>
           <Shares summary={summary} range={range} compare={report.compare} />
           {report.days > 1 && <Daily summary={summary} />}
-          <TypePhases summary={summary} />
+          <TypeInside summary={summary} />
           <p className="max-w-[62ch] text-sm text-muted-foreground">
             The AI model sorts each job by its name, its workflow and its runner labels, and reads
             new jobs every hour. Jobs it hasn't read yet, or wasn't sure about, count as Not sorted.

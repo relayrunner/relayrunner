@@ -42,17 +42,24 @@ function sampleRuns(job: JobRow, days: number): JobRun[] {
 // A typical Node job's steps, scaled to its median.
 function sampleSteps(job: JobRow): RunStep[] {
   const medianMs = Object.values(job.byEnvironment)[0]?.medianMs ?? 180_000;
-  const steps: [string, RunStep["phase"], number][] = [
-    ["Set up job", "setup", 0.03],
+  const steps: [string, RunStep["part"], number][] = [
+    ["Set up job", "runner", 0.03],
     ["Run actions/checkout@v4", "checkout", 0.04],
-    ["Run pnpm/action-setup@v4", "setup", 0.02],
-    ["Run actions/setup-node@v4", "setup", 0.09],
-    ["Run pnpm install --frozen-lockfile", "dependencies", 0.18],
-    ["Run pnpm build", "work", 0.22],
-    ["Run pnpm test", "work", 0.34],
+    ["Run pnpm/action-setup@v4", "tools", 0.02],
+    ["Run actions/setup-node@v4", "tools", 0.05],
+    ["Run pnpm install --frozen-lockfile", "packages", 0.14],
+    ["Run npx playwright install --with-deps", "browsers", 0.16],
+    ["Run pnpm build", "build", 0.18],
+    ["Run pnpm test", "test", 0.3],
     ["Post Run actions/setup-node@v4", "cache", 0.07],
-    ["Post Run actions/checkout@v4", "cleanup", 0.002],
-    ["Complete job", "cleanup", 0.003],
+    ["Post Run actions/checkout@v4", "runner", 0.002],
+    ["Complete job", "runner", 0.003],
   ];
-  return steps.map(([name, phase, share]) => ({ name, phase, ms: Math.round(medianMs * share) }));
+  // setup-node saves its cache after the job, so the installs sit under a cache step.
+  return steps.map(([name, part, share]) => ({
+    name,
+    part,
+    ms: Math.round(medianMs * share),
+    ...(part === "packages" && { cache: true as const }),
+  }));
 }
