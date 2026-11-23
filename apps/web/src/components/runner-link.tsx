@@ -10,7 +10,7 @@ import {
   runnerSize,
   sizeText,
 } from "@relayrunner/providers";
-import { type ReactNode, useEffect, useState } from "react";
+import { type ReactNode, useState } from "react";
 import { providerOf, RunnerMark } from "@/components/providers";
 import { RunnerPanelLink } from "@/components/runner-panel-link";
 import {
@@ -23,7 +23,7 @@ import {
 import { HoverCard, HoverCardContent, HoverCardTrigger } from "@/components/ui/hover-card";
 import { deviceName } from "@/lib/device";
 import type { Environment } from "@/lib/job-times";
-import { cachedMachine, type Machine, workspaceMachine } from "@/lib/machines";
+import { useWorkspaceMachine } from "@/lib/machines";
 import { providerInfo } from "@/lib/provider-catalog";
 import { cn } from "@/lib/utils";
 
@@ -119,16 +119,7 @@ function Footer({ children }: { children: ReactNode }) {
 // A connected machine or a runner added from GitHub: read from the workspace's machines on open.
 function MachineCardBody({ id, specsShown }: { id: string; specsShown: boolean }) {
   // Straight from the cache when another card already read it, so it opens without a skeleton.
-  const [machine, setMachine] = useState<Machine | null | undefined>(() => cachedMachine(id));
-  useEffect(() => {
-    let live = true;
-    workspaceMachine(id)
-      .then((found) => live && setMachine(found))
-      .catch(() => live && setMachine(null));
-    return () => {
-      live = false;
-    };
-  }, [id]);
+  const machine = useWorkspaceMachine(id);
   if (machine === undefined)
     return (
       <div aria-label="Loading" className="grid gap-2">
