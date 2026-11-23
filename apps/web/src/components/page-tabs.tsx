@@ -3,6 +3,20 @@ import { cn } from "@/lib/utils";
 
 export type Tab<V extends string> = { value: V; label: string };
 
+// The pages with tabs. The sidebar lists these under each page's name, so keep them here and not in
+// the route files, which load on their own.
+export const HISTORY_TABS = [
+  { value: "workflows", label: "Workflows" },
+  { value: "jobs", label: "Jobs" },
+] as const satisfies Tab<string>[];
+
+// An old link's `?view=jobs` lands on Workflows, whose rows open each workflow's jobs.
+export const PERFORMANCE_TABS = [
+  { value: "workflows", label: "Workflows" },
+  { value: "runners", label: "Runners" },
+  { value: "types", label: "Job types" },
+] as const satisfies Tab<string>[];
+
 /** `?view=` from the URL when it names one of the page's tabs. The first tab is the default. */
 export function viewOf<V extends string>(tabs: readonly Tab<V>[], value: unknown): V | undefined {
   return tabs.slice(1).find((tab) => tab.value === value)?.value;

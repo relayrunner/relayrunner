@@ -15,6 +15,8 @@ import {
   chooseAndHold,
   chooseMachine,
   decideRoute,
+  noRunnerPage,
+  noRunnerReason,
   retryOrder,
   holdsMachine,
   jobContext,
@@ -694,8 +696,45 @@ describe("decideRoute", () => {
     expect(pick).not.toHaveBeenCalled();
     expect(decision).toMatchObject({ runner: null, notInOrder: ["machine"] });
     expect(decision.runner === null && decision.reason).toBe(
-      "No runner available: `github` isn't set on this relay; Self-hosted isn't in your runner order.",
+      "No runner available: `github` isn't set on this relay.",
     );
+  });
+
+  test("nothing fits: the reached limit leads and repeats drop", () => {
+    const reason = noRunnerReason(
+      { ...both, github: ["auto"], blacksmith: ["blacksmith-4vcpu-ubuntu-2404"] },
+      [
+        { key: "machine", reason: "public_repo" },
+        {
+          key: "blacksmith",
+          reason: "minutes_limit",
+          minutes: {
+            account: "acme",
+            usedMinutes: 3153,
+            quotaMinutes: 3000,
+            percent: 90,
+            burnRatePerHour: null,
+          },
+        },
+        { key: "github", reason: "no_size", vcpus: 4 },
+        { key: "github", reason: "no_size", vcpus: 4 },
+      ],
+    );
+    expect(reason).toBe(
+      "No runner available: acme has used 3,153 of its 3,000 free Blacksmith minutes (105%), past the 90% limit; " +
+        "public repos never run on self-hosted machines; GitHub-hosted has no runner with 4 vCPU or more.",
+    );
+  });
+
+  test("noRunnerPage points at the page that fixes the leading reason", () => {
+    expect(
+      noRunnerPage([
+        { key: "github", reason: "no_size", vcpus: 4 },
+        { key: "blacksmith", reason: "minutes_limit" },
+      ]),
+    ).toBe("usage");
+    expect(noRunnerPage([{ key: "machine", reason: "machine_full" }])).toBe("runners");
+    expect(noRunnerPage([{ key: "github", reason: "no_size", vcpus: 4 }])).toBe("router");
   });
 
   test("a provider the order leaves out is reported even when another step answers", async () => {
@@ -719,7 +758,7 @@ describe("decideRoute", () => {
       notInOrder: ["github"],
     });
     expect(decision.runner === null && decision.reason).toBe(
-      "No runner available: no self-hosted machine with macOS, ARM64 is online and idle; GitHub-hosted isn't in your runner order.",
+      "No runner available: no self-hosted machine with macOS, ARM64 is online and idle.",
     );
   });
 
@@ -1754,7 +1793,7 @@ describe("decideRoute with Blacksmith's free minutes", () => {
     expect(read).not.toHaveBeenCalled();
     const failed = await decide(read, { steps: [{ key: "blacksmith", limit: { percent: 80 } }] });
     expect(failed.runner === null && failed.reason).toContain(
-      "acme has used 2,900 of its 3,000 free Blacksmith minutes (96%), past the 80% limit;",
+      "acme has used 2,900 of its 3,000 free Blacksmith minutes (96%), past the 80% limit.",
     );
   });
 });

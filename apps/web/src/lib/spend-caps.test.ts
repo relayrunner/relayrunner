@@ -1,7 +1,7 @@
 import type { RunnerStep } from "@relayrunner/runner-order";
 import { describe, expect, test } from "vitest";
 import type { AccountUsage } from "./actions-usage";
-import { sampleFreeMinutes } from "./free-minutes";
+import { sampleFreeMinutes } from "./sample/free-minutes.ts";
 import { barMarks, capText, handoffText, unreachableText } from "./spend-caps";
 
 const account: AccountUsage = {

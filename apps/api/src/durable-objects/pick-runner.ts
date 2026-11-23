@@ -29,13 +29,16 @@ import {
   type JobContext,
   jobContext,
   NO_RUNNER,
+  noRunnerPage,
   type RouteDecision,
   sameLogin,
+  type SkippedStep,
 } from "../routing/routing.ts";
-import { jobStepLogs, type StepLog, uploadJobLogs } from "../reports/job-logs.ts";
+import { jobStepLogs, noRunnerLogs, type StepLog, uploadJobLogs } from "../reports/job-logs.ts";
 import { jobSteps, nativeFreeCheck, nativeVerdict } from "../checks/native-checks.ts";
 import { recordRepoCheck } from "../checks/free-checks.ts";
 import { annotate, traced } from "../tracing.ts";
+import { dashboardUrl } from "../email.ts";
 import {
   afterAttempt,
   MAX_ATTEMPTS,
@@ -266,13 +269,26 @@ export class PickRunner extends DurableObject<Env> {
             job.message.contextData,
             job.message.jobDisplayName,
           );
-          // Fail fast without a runner: the job that needs the relay doesn't start.
+          // Fail fast without a runner: the job that needs the relay doesn't start. Its log and the
+          // run's summary say why, since no step of its own ran to print anything.
+          const logs =
+            pick.runner === null
+              ? await sendJobLogs(
+                  job,
+                  noRunnerLogs(
+                    jobSteps(job.message.steps),
+                    pick.reason,
+                    fixPage(this.env, "skipped" in pick ? pick.skipped : []),
+                  ),
+                  startedAt,
+                )
+              : undefined;
           await client.complete(
             job,
             pick.runner ? "succeeded" : "failed",
             pick.runner ? { outputs: { runner: pick.runner } } : { error: pick.reason },
           );
-          outcome = { result: pick.runner ? "routed" : "no_runner", ...pick };
+          outcome = { result: pick.runner ? "routed" : "no_runner", ...pick, logs };
           // For the Activity page. The relay is already answered, so a failure here only loses the
           // explanation.
           if (record)
@@ -620,6 +636,15 @@ async function reportBlocked(env: Env, token: string, work: PickWork, reason: st
     ),
   ]);
 }
+
+/** The dashboard page that fixes a pick with no runner, or none when the walk didn't run. */
+function fixPage(env: Env, skipped: SkippedStep[]) {
+  if (!skipped.length) return undefined;
+  const page = noRunnerPage(skipped);
+  return { name: PAGE_NAMES[page], url: `${dashboardUrl(env)}/${page}` };
+}
+
+const PAGE_NAMES = { usage: "Usage", runners: "Runners", router: "Router" } as const;
 
 // How long a job waits on its logs before it completes without them.
 const JOB_LOGS_TIMEOUT_MS = 5_000;

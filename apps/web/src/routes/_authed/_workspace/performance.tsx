@@ -3,7 +3,7 @@ import { LayersIcon } from "lucide-react";
 import { Fragment, useEffect, useMemo, useState } from "react";
 import { SectionBoundary } from "@/components/error-boundary";
 import { PageHeader } from "@/components/page-header";
-import { PageTabs, type Tab, viewOf } from "@/components/page-tabs";
+import { PageTabs, PERFORMANCE_TABS as TABS, viewOf } from "@/components/page-tabs";
 import { JobTypes } from "@/components/job-type-time";
 import { PerformanceWorkflows } from "@/components/performance-workflows";
 import { RunnerLink } from "@/components/runner-link";
@@ -62,12 +62,6 @@ const ranges = rangeSearch(JOB_RANGES, DEFAULT_RANGE);
 // Whether the Runners tab groups runners by provider, kept per browser.
 const GROUPED_KEY = "relayrunner:performance:by-provider";
 
-// An old link's `?view=jobs` lands on Workflows, whose rows open each workflow's jobs.
-const TABS = [
-  { value: "workflows", label: "Workflows" },
-  { value: "runners", label: "Runners" },
-  { value: "types", label: "Job types" },
-] as const satisfies Tab<string>[];
 type View = (typeof TABS)[number]["value"];
 
 // `range` and `repos` (a repo's full name) narrow every tab. `repo`, `workflow` and `job` open one

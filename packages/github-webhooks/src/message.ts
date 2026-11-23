@@ -209,11 +209,13 @@ export function toWebhookMessage(
           headBranch: stringOrNull(job.head_branch),
           headSha: String(job.head_sha ?? ""),
           // GitHub sends "" for both when a job ended before any runner took it (cancelled while
-          // queued), with started_at set anyway: no runner, not one named "".
+          // queued): no runner, not one named "".
           runnerName: stringOrNull(job.runner_name) || null,
           runnerGroupName: stringOrNull(job.runner_group_name) || null,
           createdAt: String(job.created_at ?? ""),
-          startedAt: stringOrNull(job.started_at),
+          // GitHub sets started_at before any runner takes the job, so a job still waiting for a
+          // busy runner would read as running. It has started once a runner has it.
+          startedAt: job.runner_name ? stringOrNull(job.started_at) : null,
           completedAt: stringOrNull(job.completed_at),
           ranSteps: ranSteps(job.steps),
           ...(job.status === "completed" && { steps: jobSteps(job.steps) }),

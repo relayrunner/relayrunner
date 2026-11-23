@@ -1,47 +1,40 @@
 // The dev preview's API (VITE_AUTH_DISABLED): what each GET answers with sample data instead of the
 // gateway. lib/api.ts imports this only in that mode, so none of it ships in the real dashboard.
 import type { ActivityFilter, ActivityResult } from "@/lib/activity";
-import { sampleRoutingHealth, type RoutingRange } from "@/lib/admin-routing";
-import {
-  EVALUATION_RUNS,
-  SAMPLE_HISTORY_WORKFLOWS,
-  SAMPLE_WORKFLOWS,
-  sampleEvaluation,
-} from "@/lib/evaluations";
+import type { RoutingRange } from "@/lib/admin-routing";
+import { EVALUATION_RUNS } from "@/lib/evaluations";
 import { BASE_CATALOG } from "@relayrunner/providers/catalog";
 import { DEFAULT_RETRY_SETTINGS, type FreeMinutesProvider } from "@relayrunner/runner-order";
 import { allFlags } from "@/lib/flags";
-import { DAY_MS, sampleJobTimes } from "@/lib/job-times";
-import { sampleJobTypeTimes } from "@/lib/job-types";
-import { sampleLiveJobs } from "@/lib/live-jobs";
-import { SAMPLE_MACHINES } from "@/lib/machines";
+import { DAY_MS } from "@/lib/job-times";
 import type { ProviderHealth } from "@/lib/provider-health";
-import { sampleProviderTrends } from "@/lib/provider-trends";
-import { type ChartPer, sampleProviderReport, sampleProvidersOverview } from "@/lib/providers";
-import { sampleRouteOutcomes } from "@/lib/route-outcomes";
-import { sampleRunnerReport } from "@/lib/runner-report";
+import type { ChartPer } from "@/lib/providers";
+import type { RunJob } from "@/lib/runs";
+import { FILTER_KEYS, type SignalFilter, type SignalId } from "@/lib/signals";
+import { sampleActionsUsage } from "./actions-usage";
+import { sampleRoutingHealth } from "./admin-routing";
 import {
-  type RunJob,
-  sampleJobFailure,
-  sampleJobs,
-  sampleJobSteps,
-  sampleRunJobs,
-  sampleRuns,
-} from "@/lib/runs";
-import {
-  FILTER_KEYS,
-  type SignalFilter,
-  type SignalId,
-  sampleSignalRuns,
-  sampleSignals,
-} from "@/lib/signals";
-import { sampleLogBucket, sampleTelemetry } from "@/lib/telemetry";
+  SAMPLE_HISTORY_WORKFLOWS,
+  SAMPLE_WORKFLOWS,
+  sampleEvaluation,
+  sampleEvaluations,
+} from "./evaluations";
+import { sampleJobTimes } from "./job-times";
+import { sampleJobTypeTimes } from "./job-types";
+import { sampleLiveJobs } from "./live-jobs";
+import { SAMPLE_MACHINES } from "./machines";
+import { sampleProviderTrends } from "./provider-trends";
+import { sampleProviderReport, sampleProvidersOverview } from "./providers";
+import { sampleRouteOutcomes } from "./route-outcomes";
+import { sampleRunnerReport } from "./runner-report";
+import { sampleJobFailure, sampleJobs, sampleJobSteps, sampleRunJobs, sampleRuns } from "./runs";
+import { sampleSignalRuns, sampleSignals } from "./signals";
+import { sampleLogBucket, sampleTelemetry } from "./telemetry";
 import { sampleActivityOptions, sampleActivityPage } from "./activity";
 import { sampleJobRuns } from "./job-runs";
 import { sampleCheckSavings, sampleUsageReport } from "./usage";
 import {
   sampleProviderSpend,
-  sampleRouterActionsUsage,
   sampleRouterConnections,
   sampleRouterFreeMinutes,
   sampleRunnerOrder,
@@ -82,7 +75,7 @@ const ANSWERS: [RegExp, Answer][] = [
       }),
   ],
   [/^\/activity\/options$/, () => sampleActivityOptions()],
-  [/^\/usage\/actions$/, () => sampleRouterActionsUsage()],
+  [/^\/usage\/actions$/, () => sampleActionsUsage()],
   [/^\/admin\/routing$/, (_, q) => sampleRoutingHealth(q.get("range") as RoutingRange)],
   // `?sample=history`: a new installation whose run history is still being read.
   [
@@ -96,6 +89,14 @@ const ANSWERS: [RegExp, Answer][] = [
     () => ({ history: sampleParam() === "history" ? { state: "running", runs: 142 } : null }),
   ],
   [/^\/evaluations$/, () => ({ evaluations: [] })],
+  // `?sample=none` on a provider page: no recent evaluations.
+  [
+    /^\/evaluations\/recent$/,
+    (_, q) => ({
+      evaluations:
+        sampleParam() === "none" ? [] : sampleEvaluations(q.get("provider") ?? "blacksmith"),
+    }),
+  ],
   [/^\/evaluations\/([^/]+)$/, ([, id]) => sampleEvaluationById(decodeURIComponent(id!))],
   [/^\/providers\/catalog$/, () => ({ providers: BASE_CATALOG })],
   [/^\/providers\/connections$/, () => sampleRouterConnections()],
@@ -219,6 +220,12 @@ function sampleEvaluationById(id: string) {
   const [, provider = "blacksmith", state] = id.split(":");
   if (state === "waiting") return sampleEvaluation(provider, 0, "waiting");
   if (state === "done") return sampleEvaluation(provider, EVALUATION_RUNS);
+  if (state === "old")
+    return {
+      ...sampleEvaluation(provider, EVALUATION_RUNS),
+      createdAt: Date.now() - 41 * 86_400_000,
+      routedRuns: sampleParam() === "unused" ? 0 : 128,
+    };
   if (state === "first") return sampleEvaluation(provider, 0);
   if (state?.startsWith("stopped-"))
     return sampleEvaluation(provider, Number(state.slice(8)) || 0, undefined, true);

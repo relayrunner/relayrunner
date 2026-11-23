@@ -325,3 +325,29 @@ describe("job runner", () => {
     });
   });
 });
+
+describe("job start", () => {
+  const payload = (status: string, runner_name: string | null) => ({
+    action: status,
+    repository: { id: 1, full_name: "a/b" },
+    workflow_job: {
+      id: 9,
+      run_id: 3,
+      status,
+      head_sha: "abc",
+      created_at: "2026-11-14T10:00:00Z",
+      started_at: "2026-11-14T10:00:01Z",
+      runner_name,
+    },
+  });
+  const startedAt = (status: string, runner: string | null) => {
+    const message = toWebhookMessage("workflow_job", "d", payload(status, runner));
+    return message?.event === "workflow_job" ? message.job.startedAt : undefined;
+  };
+
+  test("waits for a runner: GitHub's started_at on a job no runner has is left out", () => {
+    expect(startedAt("queued", null)).toBeNull();
+    expect(startedAt("completed", "")).toBeNull();
+    expect(startedAt("in_progress", "mighty-m1")).toBe("2026-11-14T10:00:01Z");
+  });
+});
