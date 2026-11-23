@@ -198,12 +198,15 @@ const CHANGES: [RegExp, (body: Record<string, unknown>) => unknown][] = [
   [/^\/evaluations$/, (body) => ({ id: `sample:${body.provider}` })],
 ];
 
-// An Evaluate page's `?id=sample:<provider>` runs 2 of 5; `sample:<provider>:waiting`, `:starting`
-// and `:done` show the other states.
+// An Evaluate page's `?id=sample:<provider>` runs 2 of 5; `sample:<provider>:waiting`, `:starting`,
+// `:first` (run 1 going), `:done` and `:stopped-<n>` (stopped after n runs) show the other states.
 function sampleEvaluationById(id: string) {
   const [, provider = "blacksmith", state] = id.split(":");
   if (state === "waiting") return sampleEvaluation(provider, 0, "waiting");
   if (state === "done") return sampleEvaluation(provider, EVALUATION_RUNS);
+  if (state === "first") return sampleEvaluation(provider, 0);
+  if (state?.startsWith("stopped-"))
+    return sampleEvaluation(provider, Number(state.slice(8)) || 0, undefined, true);
   if (state === "starting") {
     const report = sampleEvaluation(provider, 0);
     return {

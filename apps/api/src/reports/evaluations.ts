@@ -296,7 +296,10 @@ export async function resumeWaitingEvaluations(env: Env, db: Db, message: Workfl
   }
 }
 
-/** Stops an evaluation: no more attempts, and the one running is cancelled. */
+/**
+ * Stops an evaluation: no more attempts, and the one running is cancelled. The attempts that
+ * finished stay in its comparison (evaluationReport), so stopping early still has results.
+ */
 export async function cancelEvaluation(env: Env, db: Db, workspaceId: string, id: string) {
   const row = await db
     .select()
@@ -556,7 +559,13 @@ export async function evaluationReport(
 
   const attempts: Attempt[] = Array.from({ length: row.runs }, (_, i) => {
     const attempt = i + 1;
-    const attemptJobs = byAttempt.get(attempt) ?? [];
+    // Stopping cancels the attempt going then: it never finished, so it counts as not run, and
+    // the comparison keeps only the attempts before it.
+    const stoppedMidway =
+      row.state === "cancelled" &&
+      attempt === row.attempt &&
+      runConclusion(byAttempt.get(attempt) ?? []) !== "success";
+    const attemptJobs = stoppedMidway ? [] : (byAttempt.get(attempt) ?? []);
     const done =
       attemptJobs.length > 0 &&
       attemptJobs.every((job) => job.completedAt) &&

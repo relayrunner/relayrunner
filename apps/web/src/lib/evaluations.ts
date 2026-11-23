@@ -73,7 +73,12 @@ export interface EvaluationReport {
   createdAt: number;
   finishedAt: number | null;
   attempts: Attempt[];
-  baseline: { runs: number; medianMs: number | null; waitMs: number | null; usd: number | null };
+  baseline: {
+    runs: number;
+    medianMs: number | null;
+    waitMs: number | null;
+    usd: number | null;
+  };
   cold: { ms: number | null; waitMs: number | null; usd: number | null };
   warm: { ms: number | null; waitMs: number | null; usd: number | null };
   jobs: JobComparison[];
@@ -117,13 +122,21 @@ export const startEvaluation = (body: {
   workflowPath: string;
   provider: string;
   vcpus: number;
-}) => api<{ id: string }>("/evaluations", { method: "POST", body: JSON.stringify(body) });
+}) =>
+  api<{ id: string }>("/evaluations", {
+    method: "POST",
+    body: JSON.stringify(body),
+  });
 
 export const retryEvaluation = (id: string) =>
-  api<{ ok: true }>(`/evaluations/${encodeURIComponent(id)}/retry`, { method: "POST" });
+  api<{ ok: true }>(`/evaluations/${encodeURIComponent(id)}/retry`, {
+    method: "POST",
+  });
 
 export const cancelEvaluation = (id: string) =>
-  api<{ ok: true }>(`/evaluations/${encodeURIComponent(id)}/cancel`, { method: "POST" });
+  api<{ ok: true }>(`/evaluations/${encodeURIComponent(id)}/cancel`, {
+    method: "POST",
+  });
 
 /** Where to edit a workflow file on GitHub. */
 export const editUrl = (repository: string, ref: string, path: string) =>
@@ -173,7 +186,10 @@ export const SAMPLE_WORKFLOWS: EvaluationWorkflow[] = [
 ];
 
 const s = (seconds: number) => seconds * 1000;
-const split = (wait: number, run: number): Split => ({ waitMs: s(wait), runMs: s(run) });
+const split = (wait: number, run: number): Split => ({
+  waitMs: s(wait),
+  runMs: s(run),
+});
 const SAMPLE_JOBS: [string, Split, Split, Split][] = [
   ["lint", split(9, 62), split(6, 58), split(4, 31)],
   ["typecheck", split(11, 94), split(7, 88), split(4, 52)],
@@ -186,11 +202,17 @@ const SAMPLE_RUN_MS = [475, 310, 298, 304, 301].map(s);
 const SAMPLE_RUN_USD = [0.216, 0.132, 0.132, 0.132, 0.132];
 
 /** A made-up evaluation: `done` attempts finished, the next one running. */
-export function sampleEvaluation(provider: string, done: number, state?: EvaluationState) {
+export function sampleEvaluation(
+  provider: string,
+  done: number,
+  state?: EvaluationState,
+  stopped = false,
+) {
   const vcpus = 4;
   const attempts: Attempt[] = SAMPLE_RUN_MS.map((ms, i) => {
     const attempt = i + 1;
-    const status = attempt <= done ? "done" : attempt === done + 1 ? "running" : "waiting";
+    const status =
+      attempt <= done ? "done" : attempt === done + 1 && !stopped ? "running" : "waiting";
     return {
       attempt,
       status,
@@ -209,10 +231,10 @@ export function sampleEvaluation(provider: string, done: number, state?: Evaluat
             })),
     };
   });
-  const finished = done >= EVALUATION_RUNS;
+  const finished = done >= EVALUATION_RUNS || stopped;
   return {
     id: "sample",
-    state: state ?? (finished ? "done" : "running"),
+    state: state ?? (stopped ? "cancelled" : finished ? "done" : "running"),
     error: state === "waiting" ? "no_dispatch" : null,
     provider,
     vcpus,
