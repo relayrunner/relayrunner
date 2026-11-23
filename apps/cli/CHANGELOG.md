@@ -1,5 +1,12 @@
 # relayrunner
 
+## 0.19.1
+
+### Patch Changes
+
+- 91d2368: `init` now points to the agent skills after it routes jobs.
+- 4b71127: `relayrunner jobs --help` lists the `--since`, `--repo`, `--workflow` and `--result` filters.
+
 ## 0.19.0
 
 ### Minor Changes
