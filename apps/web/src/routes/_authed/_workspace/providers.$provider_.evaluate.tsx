@@ -686,7 +686,7 @@ function NoDispatch({
   );
 }
 
-/** "about 25 min", "about 1 h 5 min", or "under a minute", for a run's or an evaluation's length. */
+/** "25 min", "1 h 5 min" or "under a minute": a run's or an evaluation's length, for "about …". */
 function about(ms: number) {
   const minutes = Math.round(ms / 60_000);
   if (minutes < 1) return "under a minute";
