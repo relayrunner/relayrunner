@@ -6,7 +6,7 @@ import { DurationChart, runPoints } from "@/components/duration-chart";
 import { SectionBoundary } from "@/components/error-boundary";
 import { JobList } from "@/components/job-list";
 import { PageHeader } from "@/components/page-header";
-import { PageTabs, type Tab, viewOf } from "@/components/page-tabs";
+import { HISTORY_TABS as TABS, PageTabs, viewOf } from "@/components/page-tabs";
 import {
   providerStyle,
   type Provider,
@@ -61,10 +61,6 @@ const ranges = rangeSearch(JOB_RANGES, HISTORY_DEFAULT_RANGE);
 const LIST_REFRESH_MS = 15_000;
 const HOVER_INTENT_MS = 120;
 
-const TABS = [
-  { value: "workflows", label: "Workflows" },
-  { value: "jobs", label: "Jobs" },
-] as const satisfies Tab<string>[];
 type View = (typeof TABS)[number]["value"];
 const RESULTS = ["all", "failed", "running"] as const;
 const ROUTED = ["all", "routed"] as const;

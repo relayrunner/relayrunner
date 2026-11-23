@@ -42,6 +42,7 @@ import { lazy, type ReactNode, Suspense, useEffect, useMemo, useState } from "re
 import { SectionBoundary } from "@/components/error-boundary";
 import { FeedbackPopover } from "@/components/feedback-popover";
 import { PagePending } from "@/components/page-pending";
+import { HISTORY_TABS, PERFORMANCE_TABS, type Tab } from "@/components/page-tabs";
 import { GithubIcon } from "@/components/provider-logos";
 import { DOCS_URL, SiteFooter } from "@/components/site-footer";
 import { parseWorkflowParam } from "@/lib/workflow-ref";
@@ -156,19 +157,25 @@ export const Route = createFileRoute("/_authed/_workspace")({
   component: WorkspaceLayout,
 });
 
-type NavItem = { to: string; label: string; icon: LucideIcon | typeof GithubIcon };
+type NavItem = {
+  to: string;
+  label: string;
+  icon: LucideIcon | typeof GithubIcon;
+  /** The page's tabs, listed under its name so they're easy to find. */
+  tabs?: readonly Tab<string>[];
+};
 
 const nav = [
   { to: "/runners", label: "Runners", icon: ServerIcon },
   { to: "/router", label: "Router", icon: RouteIcon },
   { to: "/providers", label: "Providers", icon: CloudIcon },
-  { to: "/history", label: "History", icon: HistoryIcon },
+  { to: "/history", label: "History", icon: HistoryIcon, tabs: HISTORY_TABS },
   { to: "/activity", label: "Activity", icon: ActivityIcon },
 ] as const satisfies NavItem[];
 
 const analyticsNav = [
   { to: "/signals", label: "Signals", icon: RadarIcon },
-  { to: "/performance", label: "Performance", icon: GaugeIcon },
+  { to: "/performance", label: "Performance", icon: GaugeIcon, tabs: PERFORMANCE_TABS },
   { to: "/usage", label: "Usage", icon: ChartColumnIcon },
 ] as const satisfies NavItem[];
 
@@ -214,6 +221,11 @@ const settingsNav = [
 const navLink =
   "rounded-md px-2.5 py-1.5 text-[15px] text-sidebar-foreground transition-colors hover:text-sidebar-accent-foreground";
 const navActive = { className: "bg-sidebar-accent text-sidebar-accent-foreground" };
+// A page with tabs leaves the highlight to its open tab, except when collapsed hides the tabs.
+const navActiveParent = {
+  className:
+    "font-medium text-sidebar-accent-foreground group-data-[collapsed]/sidebar:bg-sidebar-accent",
+};
 // The sidebar's collapse toggle and the phone's menu button.
 const iconButton =
   "flex items-center justify-center rounded-md text-sidebar-foreground outline-none transition-colors hover:bg-sidebar-accent hover:text-sidebar-accent-foreground focus-visible:ring-[3px] focus-visible:ring-ring/50";
@@ -445,16 +457,45 @@ function SettingsNav({ workspace }: { workspace: { name: string; logo: string | 
 const navItem =
   "flex items-center gap-2.5 group-data-[collapsed]/sidebar:justify-center group-data-[collapsed]/sidebar:px-0";
 
-/** A page in the sidebar: icon and name, or just the icon with the name on hover when collapsed. */
+/**
+ * A page in the sidebar: icon and name, or just the icon with the name on hover when collapsed. A
+ * page with tabs lists them underneath, except when collapsed.
+ */
 function NavLink({ item, collapsed }: { item: NavItem; collapsed: boolean }) {
-  const { to, label, icon: Icon } = item;
-  return (
+  const { to, label, icon: Icon, tabs } = item;
+  const link = (
     <CollapsedTooltip label={label} collapsed={collapsed}>
-      <Link to={to} className={cn(navLink, navItem)} activeProps={navActive}>
+      <Link
+        to={to}
+        className={cn(navLink, navItem)}
+        activeProps={tabs ? navActiveParent : navActive}
+      >
         <Icon aria-hidden className="size-4 shrink-0" />
         <span className="group-data-[collapsed]/sidebar:sr-only">{label}</span>
       </Link>
     </CollapsedTooltip>
+  );
+  if (!tabs || collapsed) return link;
+  return (
+    <>
+      {link}
+      {/* Each tab links like the page's own tabs (`view` left out for the first), and is the open one
+          when `view` matches exactly, so the first isn't open on every tab. */}
+      <div className="ml-[17px] flex flex-col gap-0.5 border-l border-sidebar-border pl-2">
+        {tabs.map((tab, index) => (
+          <Link
+            key={tab.value}
+            to={to}
+            search={{ view: index === 0 ? undefined : tab.value } as never}
+            activeOptions={{ explicitUndefined: true }}
+            className={cn(navLink, "py-1 text-sm")}
+            activeProps={navActive}
+          >
+            {tab.label}
+          </Link>
+        ))}
+      </div>
+    </>
   );
 }
 
