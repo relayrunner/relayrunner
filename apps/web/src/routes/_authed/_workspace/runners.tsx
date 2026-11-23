@@ -39,7 +39,7 @@ import {
   MachineCard,
   machineView,
 } from "@/components/runner-card";
-import { CloudRunnersTable } from "@/components/cloud-runners";
+import { CloudProviderCard } from "@/components/cloud-runners";
 import { TimeRangePicker } from "@/components/range-picker";
 import { RunnerList, type RunnerRow } from "@/components/runner-list";
 import { NeedsAttention } from "@/components/runner-attention";
@@ -530,7 +530,7 @@ function RunnersPage() {
                   }
                 />
               }
-              bare
+              bare={cloud.length === 0}
               footer={
                 <p className="text-xs text-muted-foreground">
                   Est. cost is at list prices, before any included minutes. Each provider's page has
@@ -539,7 +539,11 @@ function RunnersPage() {
               }
             >
               {cloud.length > 0 ? (
-                <CloudRunnersTable providers={cloud} range={search.cloud} />
+                cloud.map((summary) => (
+                  <li key={summary.provider} className="grid min-w-0 self-start">
+                    <CloudProviderCard summary={summary} range={search.cloud} />
+                  </li>
+                ))
               ) : (
                 <p className="rounded-xl border border-dashed bg-card px-4 py-6 text-sm text-muted-foreground">
                   No jobs ran in the cloud in {rangePhrase(cloudRange)}.
