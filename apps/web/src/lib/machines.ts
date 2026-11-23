@@ -1,5 +1,5 @@
 import { AppError } from "@relayrunner/errors";
-import { useQuery } from "@tanstack/react-query";
+import { queryOptions, useQuery } from "@tanstack/react-query";
 import { api } from "@/lib/api";
 import type { MachineDevice } from "./device.ts";
 import { sampleMachineJob } from "./live-jobs.ts";
@@ -143,23 +143,25 @@ export function listMachines() {
   return api<{ machines: Machine[]; others?: OtherMachine[] }>("/machines");
 }
 
-// The workspace's machines, shared by every runner hover card and panel and kept for a short
-// while, so hovering down a table reads the list once.
+// The workspace's machines, shared by the Runners page and every runner hover card and panel, and
+// kept for a short while, so hovering down a table reads the list once.
 const FRESH_MS = 30_000;
+
+/** The workspace's machines, plus the user's own that don't take its jobs (`others`). */
+export const machinesQuery = queryOptions({
+  queryKey: ["machines"],
+  queryFn: listMachines,
+  staleTime: FRESH_MS,
+});
 
 /**
  * One machine of the workspace's: undefined while the list loads, null when it isn't one of them
  * or the list couldn't be read. No id reads nothing.
  */
 export function useWorkspaceMachine(id: string | null): Machine | null | undefined {
-  const query = useQuery({
-    queryKey: ["machines"],
-    queryFn: async () => (await listMachines()).machines,
-    staleTime: FRESH_MS,
-    enabled: id !== null,
-  });
+  const query = useQuery({ ...machinesQuery, enabled: id !== null });
   if (id === null || query.isError) return null;
-  return query.data && (query.data.find((machine) => machine.id === id) ?? null);
+  return query.data && (query.data.machines.find((machine) => machine.id === id) ?? null);
 }
 
 // The dev preview's machines, matching the sample reports' `machine:` keys.
