@@ -278,9 +278,9 @@ export async function collectOperatorPings(
     });
   }
 
-  // A workspace that adopted the relay and took it out. Its state only counts runs SETTLE_MS old,
-  // so the run that tipped it lands in the window that ends SETTLE_MS before this one.
-  // Only worth reading every run when one changed lately (through workflow_run_updated_idx).
+  // A workspace that adopted the relay and took it out, pinged in the window its state flipped.
+  // That is SETTLE_MS after the run that tipped it finished, so only worth reading every run when
+  // one changed lately (through workflow_run_updated_idx).
   const [arrived] = await db
     .select({ id: schema.workflowRun.id })
     .from(schema.workflowRun)
@@ -290,9 +290,9 @@ export async function collectOperatorPings(
     ? await workspaceStickiness(db, until.getTime())
     : new Map<string, never>();
   const removed = [...stickiness].filter(([workspaceId, state]) => {
-    if (ours.has(workspaceId) || state.state !== "removed" || !state.removedSeenAt) return false;
-    const seen = Date.parse(state.removedSeenAt) + SETTLE_MS;
-    return seen >= since.getTime() && seen < until.getTime();
+    if (ours.has(workspaceId) || state.state !== "removed") return false;
+    const flipped = Date.parse(state.since);
+    return flipped >= since.getTime() && flipped < until.getTime();
   });
   if (removed.length) {
     const names = await db

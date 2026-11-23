@@ -33,6 +33,7 @@ function run(
     workflowPath: ".github/workflows/ci.yml",
     workflowName: "CI",
     branch,
+    event: branch === "main" ? "push" : "pull_request",
     defaultBranch: "main",
     startedAt: at,
     seenAt: at,
@@ -96,8 +97,20 @@ describe("stickinessOf", () => {
     const third = run(8, "main", false);
     const state = stateOf([...runs, third]);
     expect(state).toMatchObject({ state: "removed", runsWithout: 3 });
-    expect(state?.since).toBe(new Date(third.startedAt).toISOString());
-    expect(state?.removedSeenAt).toBe(new Date(third.seenAt).toISOString());
+    expect(state?.since).toBe(new Date(third.seenAt + SETTLE_MS).toISOString());
+  });
+
+  test("events the relay never ran on don't count against it", () => {
+    // Routes its pull requests; pushes to main run the same workflow without a pick.
+    const relayed = [run(30, "relayrunner", true), run(20, "feature", true)];
+    const pushes = [run(10, "main", false), run(9, "main", false), run(8, "main", false)];
+    expect(stateOf([...relayed, ...pushes])?.state).toBe("adopted");
+    // Pull requests without it still count.
+    const prs = [run(7, "fresh-1", false), run(6, "fresh-2", false), run(5, "fresh-3", false)];
+    expect(stateOf([...relayed, ...pushes, ...prs])).toMatchObject({
+      state: "removed",
+      runsWithout: 3,
+    });
   });
 
   test("runs still going, skipped or cancelled don't count against it", () => {
@@ -121,7 +134,21 @@ describe("stickinessOf", () => {
       third,
     ]);
     expect(state).toMatchObject({ state: "removed", runsWithout: 3 });
-    expect(state?.removedSeenAt).toBe(new Date(NOW - 2 * HOUR).toISOString());
+    expect(state?.since).toBe(new Date(NOW - 2 * HOUR + SETTLE_MS).toISOString());
+  });
+
+  test("a slow run finishing after a later one has tipped it doesn't move when it flipped", () => {
+    const runs = [
+      run(20, "main", true),
+      run(10, "main", false),
+      run(9, "main", false),
+      run(8, "main", false, { finishedAt: null }),
+      run(7, "main", false),
+    ];
+    const flipped = stateOf(runs)?.since;
+    expect(flipped).toBe(new Date(NOW - 7 * HOUR + SETTLE_MS).toISOString());
+    runs[3] = { ...runs[3]!, finishedAt: NOW - HOUR };
+    expect(stateOf(runs)).toMatchObject({ state: "removed", since: flipped, runsWithout: 4 });
   });
 
   test("branches cut before the merge don't count against it", () => {
@@ -274,11 +301,13 @@ describe("workspaceStickiness", () => {
         githubCreatedAt: at(r.hoursAgo),
       });
     }
-    // Runs on main without a pick that never got to a job: none of them counts.
+    // Runs on main without a pick whose jobs never ran: none of them counts.
     const unrun = [
       { id: 503, status: "completed", conclusion: "skipped", hoursAgo: 5 },
       { id: 504, status: "completed", conclusion: "cancelled", hoursAgo: 4 },
       { id: 505, status: "in_progress", conclusion: null, hoursAgo: 3 },
+      { id: 506, status: "completed", conclusion: "startup_failure", hoursAgo: 2 },
+      { id: 507, status: "completed", conclusion: "action_required", hoursAgo: 1 },
     ];
     for (const r of unrun) {
       await db.insert(schema.workflowRun).values({

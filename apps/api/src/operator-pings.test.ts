@@ -114,6 +114,7 @@ async function ciRun(installationId: number, seenAt: Date, relayed: boolean) {
     headBranch: "main",
     headSha: "abc",
     status: "completed",
+    conclusion: "success",
     runStartedAt: seenAt,
     githubUpdatedAt: seenAt,
     createdAt: seenAt,

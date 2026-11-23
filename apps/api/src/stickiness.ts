@@ -8,10 +8,11 @@
  *   branches carry it, which covers workflows that only run on pull requests).
  * - trial_abandoned: never adopted, and no relayed run for TRIAL_IDLE_MS.
  * - removed: adopted, then REMOVED_AFTER runs on up-to-date code (the default branch, or a branch
- *   first seen after adoption) that finished with no relay at all. Branches cut before the merge
- *   never had it, so they don't count. Nor do runs still going, or runs GitHub skipped or
- *   cancelled, which may never have reached a job. It goes back to adopted when the workflow
- *   relays again.
+ *   first seen after adoption) that finished with no relay at all, for events the relay ran on.
+ *   Branches cut before the merge never had it, so they don't count. Nor do events the relay
+ *   never ran on (a workflow that only routes its pull requests), runs still going, or runs that
+ *   ended before their jobs ran (skipped, cancelled, broken YAML). Since is when the last of those
+ *   runs settled and finished. It goes back to adopted when the workflow relays again.
  *
  * A run is relayed when it had a pick job, wherever the pick sent it (a machine, GitHub, a hosted
  * provider, or nowhere), so a job routed to GitHub never looks like a drop. Only first attempts
@@ -40,8 +41,12 @@ export const REMOVED_AFTER = 3;
  * their job is queued, which is usually within seconds of the run.
  */
 export const SETTLE_MS = 10 * 60 * 1000;
-/** Conclusions of a run that may have ended before any job, the pick included, was queued. */
-const NOT_RUN = new Set(["skipped", "cancelled"]);
+/**
+ * Conclusions of a run whose jobs ran, so a missing pick means the relay wasn't there. Others
+ * (skipped, cancelled, startup_failure from broken YAML, action_required on a fork) may have ended
+ * before any job was queued.
+ */
+const RAN = new Set(["success", "failure", "timed_out"]);
 
 export interface StickinessRun {
   installationId: number;
@@ -51,6 +56,8 @@ export interface StickinessRun {
   workflowPath: string | null;
   workflowName: string;
   branch: string | null;
+  /** What triggered it: push, pull_request, schedule, ... */
+  event: string;
   /** The repo's default branch as the run saw it. Null for runs stored before it was. */
   defaultBranch: string | null;
   /** When the run started on GitHub, else when we first saw it. */
@@ -58,9 +65,9 @@ export interface StickinessRun {
   /** When we first stored the run. */
   seenAt: number;
   /**
-   * When GitHub last updated a run that completed with jobs that could have run (not skipped or
-   * cancelled). Null while it's going, or when it ended without running: such a run says nothing
-   * about whether the relay is still there.
+   * When GitHub last updated a run that completed after its jobs ran (succeeded, failed or timed
+   * out). Null while it's going, or when it ended without running: such a run says nothing about
+   * whether the relay is still there.
    */
   finishedAt: number | null;
   relayed: boolean;
@@ -74,7 +81,6 @@ interface WorkflowState {
   branch: string | null;
   lastRelayAt: number;
   runsWithout: number;
-  removedSeenAt: number | null;
 }
 
 function workflowState(
@@ -92,7 +98,6 @@ function workflowState(
     workflow: first.workflowName,
     lastRelayAt: last.startedAt,
     runsWithout: 0,
-    removedSeenAt: null,
   };
   const adoption = relayed.find((run) => isDefault(run.branch) || run.branch !== first.branch);
   if (!adoption) {
@@ -101,49 +106,47 @@ function workflowState(
       ? { ...base, state: "trial_abandoned", since: idleSince, branch: first.branch }
       : { ...base, state: "trying", since: first.startedAt, branch: first.branch };
   }
-  const without = runs.filter(
-    (run) =>
-      !run.relayed &&
-      run.finishedAt !== null &&
-      run.startedAt > last.startedAt &&
-      (isDefault(run.branch) || (branchFirstSeen.get(run.branch) ?? 0) >= adoption.startedAt),
-  );
-  const tipping = without[REMOVED_AFTER - 1];
-  if (tipping) {
+  // Only events the relay ran on count: a workflow may route its pull requests and not its pushes.
+  const events = new Set(relayed.map((run) => run.event));
+  // When each run without the relay could first count: settled and finished. Later reads never
+  // move this earlier, so the operator ping goes out once.
+  const countedAt = runs
+    .filter(
+      (run) =>
+        !run.relayed &&
+        run.finishedAt !== null &&
+        events.has(run.event) &&
+        run.startedAt > last.startedAt &&
+        (isDefault(run.branch) || (branchFirstSeen.get(run.branch) ?? 0) >= adoption.startedAt),
+    )
+    .map((run) => Math.max(run.seenAt, run.finishedAt ?? 0) + SETTLE_MS)
+    .sort((a, b) => a - b);
+  const tipped = countedAt[REMOVED_AFTER - 1];
+  if (tipped !== undefined) {
     return {
       ...base,
       state: "removed",
-      since: tipping.startedAt,
+      since: tipped,
       branch: null,
-      runsWithout: without.length,
-      // A run that finished long after we stored it only tips the state once it finishes.
-      removedSeenAt: Math.max(tipping.seenAt, tipping.finishedAt ?? 0),
+      runsWithout: countedAt.length,
     };
   }
   return { ...base, state: "adopted", since: adoption.startedAt, branch: null };
 }
 
-const latest = (states: WorkflowState[], key: "since" | "lastRelayAt") =>
-  states.reduce((a, b) => (b[key] > a[key] ? b : a));
+/** Which workflow speaks for the workspace: the first state any workflow is in, in this order. */
+const PRECEDENCE: StickinessState[] = ["adopted", "removed", "trying", "trial_abandoned"];
 
 /** One workspace's state from its workflows' states, or null when it never relayed. */
 function rollUp(states: WorkflowState[]): WorkflowState | null {
-  const of = (state: StickinessState) => states.filter((s) => s.state === state);
-  const adopted = of("adopted");
-  if (adopted.length) {
-    const since = Math.min(...adopted.map((s) => s.since));
-    return { ...latest(adopted, "lastRelayAt"), since };
+  for (const state of PRECEDENCE) {
+    const group = states.filter((s) => s.state === state);
+    if (!group.length) continue;
+    // Removed: every adopted workflow is, so the workspace flipped when the last one did.
+    const key = state === "removed" ? "since" : "lastRelayAt";
+    return group.reduce((a, b) => (b[key] > a[key] ? b : a));
   }
-  const removed = of("removed");
-  // Every adopted workflow is removed: the workspace flipped when the last one did.
-  if (removed.length) return latest(removed, "since");
-  const trying = of("trying");
-  if (trying.length) {
-    const since = Math.min(...trying.map((s) => s.since));
-    return { ...latest(trying, "lastRelayAt"), since };
-  }
-  const abandoned = of("trial_abandoned");
-  return abandoned.length ? latest(abandoned, "since") : null;
+  return null;
 }
 
 /** Each installation's stickiness from its first-attempt runs, oldest first or not. */
@@ -155,7 +158,8 @@ export function stickinessOf(runs: StickinessRun[], now: number): Map<number, St
   for (const [installationId, installRuns] of Map.groupBy(settled, (run) => run.installationId)) {
     const states: WorkflowState[] = [];
     for (const repoRuns of Map.groupBy(installRuns, (run) => run.repositoryId).values()) {
-      // The repo's newest known default branch; before that was stored, main or master.
+      // The repo's newest known default branch; before that was stored, main or master. Runs from
+      // before 2026-11-14 lack it and their path: drop both fallbacks once they age out (2026-12-15).
       const known = repoRuns.findLast((run) => run.defaultBranch)?.defaultBranch ?? null;
       const isDefault = (branch: string | null) =>
         branch !== null && (known ? branch === known : branch === "main" || branch === "master");
@@ -184,8 +188,6 @@ export function stickinessOf(runs: StickinessRun[], now: number): Map<number, St
       branch: state.branch,
       lastRelayAt: new Date(state.lastRelayAt).toISOString(),
       runsWithout: state.runsWithout,
-      removedSeenAt:
-        state.removedSeenAt === null ? null : new Date(state.removedSeenAt).toISOString(),
     });
   }
   return result;
@@ -213,6 +215,7 @@ export async function workspaceStickiness(
         workflowPath: run.workflowPath,
         workflowName: run.workflowName,
         branch: run.headBranch,
+        event: run.event,
         defaultBranch: run.defaultBranch,
         runStartedAt: run.runStartedAt,
         createdAt: run.createdAt,
@@ -239,11 +242,12 @@ export async function workspaceStickiness(
       workflowPath: row.workflowPath,
       workflowName: row.workflowName ?? row.workflowPath ?? "",
       branch: row.branch,
+      event: row.event,
       defaultBranch: row.defaultBranch,
       startedAt: (row.runStartedAt ?? row.createdAt).getTime(),
       seenAt: row.createdAt.getTime(),
       finishedAt:
-        row.status === "completed" && !NOT_RUN.has(row.conclusion ?? "")
+        row.status === "completed" && RAN.has(row.conclusion ?? "")
           ? row.githubUpdatedAt.getTime()
           : null,
       relayed: relayed.has(row.id),
