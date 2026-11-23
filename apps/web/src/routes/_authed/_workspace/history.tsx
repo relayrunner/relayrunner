@@ -1,10 +1,10 @@
 import { createFileRoute } from "@tanstack/react-router";
 import { ChevronRightIcon, RouteIcon } from "lucide-react";
-import { Fragment, memo, useEffect, useMemo, useRef, useState } from "react";
+import { Fragment, memo, useMemo, useRef } from "react";
 import { CommitBy } from "@/components/commit";
 import { DurationChart, runPoints } from "@/components/duration-chart";
 import { SectionBoundary } from "@/components/error-boundary";
-import { JobList } from "@/components/job-list";
+import { JobList, jobsQuery } from "@/components/job-list";
 import { PageHeader } from "@/components/page-header";
 import { PageTabs, type Tab, viewOf } from "@/components/page-tabs";
 import {
@@ -30,7 +30,7 @@ import { timeAgo } from "@/lib/activity";
 import { authDisabled } from "@/lib/auth-client";
 import { type Environment, JOB_RANGES, plural } from "@/lib/job-times";
 import { useLiveRefresh } from "@/lib/live-refresh";
-import { queryClient } from "@/lib/query";
+import { loadPage, pageQuery, queryClient, usePageReport } from "@/lib/query";
 import { dayHeading } from "@/lib/time-zone";
 import { useNow } from "@/lib/use-now";
 import {
@@ -41,7 +41,6 @@ import {
   parseRunParam,
   type Run,
   type RunsReport,
-  getJobs,
   runParam,
   triggerText,
 } from "@/lib/runs";
@@ -50,7 +49,6 @@ import {
   rangeSearch,
   textParam,
   unlessDefault,
-  useRangeReport,
   useSetSearch,
 } from "@/lib/search-params";
 import { rangePhrase, type TimeRange } from "@/lib/time-range";
@@ -90,6 +88,8 @@ export type HistorySearch = {
   chart?: string;
 };
 
+const runsQuery = (range: TimeRange) => pageQuery(["runs", range], () => getRuns(range));
+
 export const Route = createFileRoute("/_authed/_workspace/history")({
   validateSearch: (search: Record<string, unknown>): HistorySearch => {
     const run = parseRunParam(search.run) ? (search.run as string) : undefined;
@@ -112,8 +112,8 @@ export const Route = createFileRoute("/_authed/_workspace/history")({
   // Each view loads its first range here, and another range in the page.
   loader: async ({ deps: { view }, location }): Promise<Loaded> => {
     const range = ranges.rangeOf(location.search as HistorySearch);
-    if (view === "jobs") return { view, jobs: await getJobs(range) };
-    return { view, runs: await getRuns(range) };
+    if (view === "jobs") return { view, jobs: await loadPage(jobsQuery(range)) };
+    return { view, runs: await loadPage(runsQuery(range)) };
   },
   // A tab shows as it was when it's come back to: the Workflows tab refreshes itself while runs
   // are going, and opening or closing the panel only changes the search.
@@ -184,10 +184,7 @@ function WorkflowRuns({ loaded }: { loaded: RunsReport }) {
   const open = Route.useSearch({ select: (search) => search.run });
   const search = Route.useSearch();
   const range = ranges.rangeOf(search);
-  const first = useRangeReport(loaded, range, getRuns);
-  // Refetched while a run on screen is going, so new jobs, runs and results show without a reload.
-  const [report, setReport] = useState(first);
-  useEffect(() => setReport(first), [first]);
+  const { report, refetch } = usePageReport(runsQuery(range), loaded);
   const repository = search.repo ?? "all";
   const result = search.result ?? "all";
   const routed = search.routed ?? "all";
@@ -221,16 +218,12 @@ function WorkflowRuns({ loaded }: { loaded: RunsReport }) {
     () => (sort === "newest" ? runs.map((run) => dayHeading(run.updatedAt)) : null),
     [runs, sort],
   );
-  useLiveRefresh(
-    () =>
-      getRuns(range)
-        .then(setReport)
-        .catch(() => undefined), // Keep showing the last answer; the next tick retries.
-    {
-      intervalMs: LIST_REFRESH_MS,
-      enabled: !authDisabled && runs.some((run) => run.status !== "completed"),
-    },
-  );
+  // Refetched while a run on screen is going, so new jobs, runs and results show without a reload.
+  // A failed refetch keeps the last answer up; the next tick retries.
+  useLiveRefresh(() => refetch(), {
+    intervalMs: LIST_REFRESH_MS,
+    enabled: !authDisabled && runs.some((run) => run.status !== "completed"),
+  });
   const environments = useMemo(() => byKey(report), [report]);
 
   return (

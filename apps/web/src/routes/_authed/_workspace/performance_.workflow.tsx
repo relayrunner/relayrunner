@@ -21,6 +21,7 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { type ChartSeries, WorkflowRunsChart } from "@/components/workflow-runs-chart";
+import { loadPage, pageQuery, usePageReport } from "@/lib/query";
 import { useFlag } from "@/lib/flags";
 import {
   clock,
@@ -33,7 +34,7 @@ import {
   type WorkflowRunner,
 } from "@/lib/job-times";
 import { providerInfo } from "@/lib/provider-catalog";
-import { rangeSearch, textParam, useRangeReport, useSetSearch } from "@/lib/search-params";
+import { rangeSearch, textParam, useSetSearch } from "@/lib/search-params";
 import { rangePhrase, resolveRange, type TimeRange } from "@/lib/time-range";
 import { cn } from "@/lib/utils";
 
@@ -77,12 +78,15 @@ function load(search: Search, range: TimeRange): Promise<WorkflowReport | null> 
   });
 }
 
+const workflowQuery = (search: Search, range: TimeRange) =>
+  pageQuery(["workflow-report", search.repo, search.workflow, range], () => load(search, range));
+
 export const Route = createFileRoute("/_authed/_workspace/performance_/workflow")({
   validateSearch,
   loaderDeps: ({ search: { repo, workflow } }) => ({ repo, workflow }),
   loader: ({ location }) => {
     const search = validateSearch(location.search);
-    return load(search, ranges.rangeOf(search));
+    return loadPage(workflowQuery(search, ranges.rangeOf(search)));
   },
   // A new range loads in the page, and the toggles change only the chart.
   shouldReload: ({ cause }) => cause !== "stay",
@@ -96,11 +100,7 @@ function WorkflowPage() {
   const search = Route.useSearch();
   const range = ranges.rangeOf(search);
   const setSearch = useSetSearch<Search>();
-  const report = useRangeReport<WorkflowReport | null, TimeRange>(
-    Route.useLoaderData(),
-    range,
-    (next) => load(search, next),
-  );
+  const { report } = usePageReport(workflowQuery(search, range), Route.useLoaderData());
   const title = search.workflow ?? report?.workflow ?? "Unnamed workflow";
 
   return (

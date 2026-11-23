@@ -6,7 +6,8 @@ import { TimeRangePicker } from "@/components/range-picker";
 import { StatTile } from "@/components/stat-tile";
 import { Count } from "@/components/count";
 import { PHONE_HIDDEN } from "@/components/ui/table";
-import { type RangeSearch, rangeSearch, useRangeReport, useSetSearch } from "@/lib/search-params";
+import { loadPage, pageQuery, usePageReport } from "@/lib/query";
+import { type RangeSearch, rangeSearch, useSetSearch } from "@/lib/search-params";
 import { type RangeOptions, rangePhrase, type TimeRange } from "@/lib/time-range";
 import { cn, count } from "@/lib/utils";
 import {
@@ -37,9 +38,11 @@ function load(range: TimeRange): Promise<UsageData> {
 
 const { validateSearch, rangeOf, toSearch } = rangeSearch(RANGES, DEFAULT_RANGE);
 
+const usageQuery = (range: TimeRange) => pageQuery(["usage", range], () => load(range));
+
 export const Route = createFileRoute("/_authed/_workspace/usage")({
   validateSearch,
-  loader: ({ location }) => load(rangeOf(validateSearch(location.search))),
+  loader: ({ location }) => loadPage(usageQuery(rangeOf(validateSearch(location.search)))),
   // A new range loads in the page, keeping the last one up meanwhile.
   shouldReload: ({ cause }) => cause !== "stay",
   component: UsagePage,
@@ -48,8 +51,9 @@ export const Route = createFileRoute("/_authed/_workspace/usage")({
 function UsagePage() {
   const range = rangeOf(Route.useSearch());
   const setSearch = useSetSearch<RangeSearch>();
-  const first = Route.useLoaderData();
-  const { report, checks } = useRangeReport(first, range, load);
+  const {
+    report: { report, checks },
+  } = usePageReport(usageQuery(range), Route.useLoaderData());
 
   function chooseRange(next: TimeRange) {
     setSearch(toSearch(next));

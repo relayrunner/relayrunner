@@ -27,6 +27,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
+import { loadPage, pageQuery, usePageReport } from "@/lib/query";
 import {
   clock,
   environmentColor,
@@ -47,13 +48,7 @@ import {
   versusLabel,
   type WorkflowRow,
 } from "@/lib/job-times";
-import {
-  rangeSearch,
-  textParam,
-  unlessDefault,
-  useRangeReport,
-  useSetSearch,
-} from "@/lib/search-params";
+import { rangeSearch, textParam, unlessDefault, useSetSearch } from "@/lib/search-params";
 import { readFlag, saveFlag } from "@/lib/stored-flag";
 import { rangeName, rangePhrase, resolveRange, type TimeRange } from "@/lib/time-range";
 import { shortDate } from "@/lib/time-zone";
@@ -97,9 +92,13 @@ const validateSearch = (search: Record<string, unknown>): Search => {
   };
 };
 
+const jobTimesQuery = (range: TimeRange) =>
+  pageQuery(["job-times", range], () => getJobTimes(range));
+
 export const Route = createFileRoute("/_authed/_workspace/performance")({
   validateSearch,
-  loader: ({ location }) => getJobTimes(ranges.rangeOf(validateSearch(location.search))),
+  loader: ({ location }) =>
+    loadPage(jobTimesQuery(ranges.rangeOf(validateSearch(location.search)))),
   // Every tab reads the same report, so switching tabs doesn't load it again, and a new range
   // loads in the page, keeping the last one up meanwhile.
   shouldReload: ({ cause }) => cause !== "stay",
@@ -126,7 +125,7 @@ function PerformancePage() {
   const range = ranges.rangeOf(search);
   const repository = search.repos ?? "all";
   const setSearch = useSetSearch<Search>();
-  const report: JobTimesReport = useRangeReport(Route.useLoaderData(), range, getJobTimes);
+  const { report } = usePageReport(jobTimesQuery(range), Route.useLoaderData());
   const [grouped, setGrouped] = useState(() => readFlag(GROUPED_KEY));
   const detail = useMemo(() => linkedDetail(report.workflows, search), [report, search]);
   function closeDetail() {
