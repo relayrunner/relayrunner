@@ -18,7 +18,7 @@
   "scripts": {
     "relayrunner": "cargo run --quiet --manifest-path apps/cli/Cargo.toml --",
     "setup:worktree": "pnpm install --frozen-lockfile",
-    "typecheck": "tsc --noEmit && pnpm --filter @relayrunner/api typecheck && pnpm --filter @relayrunner/webhooks typecheck && pnpm --filter @relayrunner/agents typecheck && pnpm --filter @relayrunner/web typecheck && pnpm --filter @relayrunner/site typecheck",
+    "typecheck": "tsc --noEmit && pnpm --recursive --parallel --filter \"./apps/*\" typecheck",
     "lint": "oxlint --deny-warnings apps packages tests",
     "format": "oxfmt",
     "format:check": "oxfmt --check",
