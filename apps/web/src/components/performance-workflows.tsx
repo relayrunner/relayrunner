@@ -235,11 +235,12 @@ function WorkflowCell({ row }: { row: Row }) {
       <Link
         to="/performance/workflow"
         search={{ repo: row.repositoryId, workflow: row.workflow ?? undefined, range }}
-        className="block w-fit font-medium whitespace-nowrap outline-none after:absolute after:inset-0 hover:underline hover:underline-offset-2 focus-visible:after:ring-2 focus-visible:after:ring-ring"
+        title={row.workflow ?? undefined}
+        className="block w-fit max-w-56 truncate font-medium outline-none after:absolute after:inset-0 hover:underline hover:underline-offset-2 focus-visible:after:ring-2 focus-visible:after:ring-ring"
       >
         {row.workflow ?? "Unnamed workflow"}
       </Link>
-      <span className="block text-xs whitespace-nowrap text-muted-foreground">
+      <span className="block max-w-56 truncate text-xs text-muted-foreground">
         {showRepository && `${row.repository} · `}
         {plural(row.jobs.length, "job")}
       </span>
