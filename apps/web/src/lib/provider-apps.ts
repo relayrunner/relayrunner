@@ -1,7 +1,6 @@
 import type { HostedProviderId } from "@relayrunner/providers";
 import { useEffect, useState } from "react";
 import { api } from "@/lib/api";
-import { authDisabled } from "@/lib/auth-client";
 
 /**
  * The hosted providers whose GitHub App the workspace's org has installed, or null when that
@@ -21,7 +20,6 @@ export async function getProviderApps(workspaceId: string) {
 export function useProviderApps(workspaceId: string) {
   const [installed, setInstalled] = useState<HostedProviderId[] | null>(null);
   useEffect(() => {
-    if (authDisabled) return;
     let live = true;
     getProviderApps(workspaceId).then(
       (apps) => live && setInstalled(apps),

@@ -171,7 +171,6 @@ type UsageState = { kind: "loading" } | { kind: "error" } | { kind: "ready"; lim
 function ApiUsage({ installationId }: { installationId: number }) {
   const [state, setState] = useState<UsageState>({ kind: "loading" });
   useEffect(() => {
-    if (authDisabled) return setState({ kind: "error" });
     let live = true;
     getRateLimits(installationId).then(
       (limits) => live && setState({ kind: "ready", limits }),

@@ -1,4 +1,3 @@
-import { DEFAULT_RUNNER_ORDER, type RunnerOrder } from "@relayrunner/runner-order";
 import { createFileRoute } from "@tanstack/react-router";
 import { RotateCwIcon, Settings2Icon, TriangleAlert } from "lucide-react";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
@@ -14,7 +13,6 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Sheet, SheetContent, SheetTitle } from "@/components/ui/sheet";
 import { getActionsUsage, type AccountUsage } from "@/lib/actions-usage";
-import { sampleRouterAccounts } from "@/lib/router-sample";
 import { type AutoJob, type AutoJobs, getAutoJobs, setAutoJob, setAutoSize } from "@/lib/auto-jobs";
 import { AUTO_SIZES } from "@relayrunner/providers";
 import {
@@ -24,7 +22,6 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import { authDisabled } from "@/lib/auth-client";
 import { listMachines, type Machine } from "@/lib/machines";
 import { useProviderApps } from "@/lib/provider-apps";
 import {
@@ -46,19 +43,13 @@ import { useLiveRefresh } from "@/lib/live-refresh";
 import { canManage } from "@/lib/roles";
 import { cn } from "@/lib/utils";
 import { getRunnerOrder } from "@/lib/runner-order";
-import {
-  type FreeMinutesByProvider,
-  getAllFreeMinutes,
-  sampleFreeMinutes,
-} from "@/lib/free-minutes";
+import { type FreeMinutesByProvider, getAllFreeMinutes } from "@/lib/free-minutes";
 import { formatTime } from "@/lib/time-zone";
-import { getProviderSpend, type ProviderSpend } from "@/lib/provider-spend";
+import { getProviderSpend } from "@/lib/provider-spend";
 import { listConnections } from "@/lib/provider-connections";
 
 export const Route = createFileRoute("/_authed/_workspace/router")({
   loader: async ({ context }) => {
-    // The dev preview has no API behind it: show a sample workspace instead.
-    if (authDisabled) return sampleRouter();
     // Runner status isn't awaited here: a runner added from GitHub reads its status from GitHub,
     // so the page loads first and the Self-hosted step's badge fills in after (RouterPage).
     const [order, accounts, freeMinutes, spend, boatConnected] = await Promise.all([
@@ -196,8 +187,7 @@ function RouterPage() {
           accessUrl: setup?.accessUrl ?? null,
           defaultSize: auto.jobs?.size ?? AUTO_SIZES[0],
           groupCheck,
-          onPlanSizes: (repoId, jobs) =>
-            authDisabled ? Promise.resolve(jobs) : planSizes(current.workspace.id, repoId, jobs),
+          onPlanSizes: (repoId, jobs) => planSizes(current.workspace.id, repoId, jobs),
           onCopied: () => setWatching(true),
         }}
       />
@@ -357,116 +347,6 @@ function SkipUnhealthyToggle({
       </span>
     </label>
   );
-}
-
-/**
- * Dev-preview data. `?sample=enterprise` shows an org inside a GitHub enterprise, whose minutes
- * can't be checked, `?sample=personal` a personal account whose owner hasn't signed in,
- * `?sample=default` the order a new workspace starts with, `?sample=no-blacksmith` a
- * workspace that hasn't connected Blacksmith, so its step can't stop at the free minutes yet,
- * `?sample=no-groundbox` the same for Groundbox, `?sample=sponsored-groundbox` a Groundbox team on
- * a plan without free minutes, and
- * `?sample=boat` (connected) or `?sample=no-boat` an uncapped Boat step.
- */
-function sampleRouter(): {
-  order: RunnerOrder;
-  isDefault: boolean;
-  machines: Machine[];
-  accounts: AccountUsage[];
-  freeMinutes: FreeMinutesByProvider;
-  spend: ProviderSpend | null;
-  boatConnected?: boolean;
-} {
-  const kind = new URLSearchParams(window.location.search).get("sample");
-  const machine: Machine = {
-    id: "m1",
-    name: "mac-mini-2",
-    os: "macos",
-    arch: "arm64",
-    lastSeenAt: new Date().toISOString(),
-    revokedAt: null,
-    createdAt: "2026-11-01T00:00:00Z",
-    status: { online: true, state: "idle", connectedAt: Date.now() },
-  };
-  const freeMinutes: FreeMinutesByProvider = {
-    blacksmith: sampleFreeMinutes("blacksmith", kind !== "no-blacksmith"),
-    groundbox:
-      kind === "sponsored-groundbox"
-        ? {
-            ...sampleFreeMinutes("groundbox", true),
-            status: "not_available",
-            reason: "no_free_minutes",
-            plan: "sponsored",
-            balanceUsd: 50,
-          }
-        : sampleFreeMinutes("groundbox", kind !== "no-groundbox"),
-  };
-  const spend: ProviderSpend = {
-    boat: 41.6,
-    depot: 12.4,
-    blacksmith: 0,
-    namespace: 7.25,
-    lizard: 3.1,
-    warpbuild: 18.9,
-    ubicloud: 4.4,
-    starsling: 9.75,
-    monkci: 22.3,
-    runloft: 6.8,
-    berrybox: 15.2,
-    latchkey: 27.5,
-    celesto: 2.05,
-    instabox: 11.6,
-    groundbox: 5.4,
-  };
-  if (kind === "default")
-    return {
-      order: DEFAULT_RUNNER_ORDER,
-      isDefault: true,
-      machines: [machine],
-      accounts: [],
-      freeMinutes,
-      spend,
-    };
-  if (kind === "boat" || kind === "no-boat")
-    return {
-      order: { steps: [{ key: "machine" }, { key: "boat" }, { key: "github" }] },
-      isDefault: false,
-      machines: [machine],
-      accounts: sampleRouterAccounts("team"),
-      freeMinutes,
-      spend,
-      boatConnected: kind === "boat",
-    };
-  if (kind === "enterprise" || kind === "personal")
-    return {
-      order: { steps: [{ key: "machine" }, { key: "github" }] },
-      isDefault: false,
-      machines: [machine],
-      accounts: sampleRouterAccounts(kind),
-      freeMinutes,
-      spend,
-    };
-  return {
-    order: {
-      steps: [
-        { key: "github", limit: { percent: 80 } },
-        { key: "machine" },
-        kind === "no-blacksmith"
-          ? { key: "blacksmith" }
-          : { key: "blacksmith", limit: { percent: 90 } },
-        { key: "boat", spendLimit: { usd: 50 } },
-        kind === "no-groundbox"
-          ? { key: "groundbox" }
-          : { key: "groundbox", limit: { percent: 90 } },
-        { key: "github" },
-      ],
-    },
-    isDefault: false,
-    machines: [machine],
-    accounts: sampleRouterAccounts("team"),
-    freeMinutes,
-    spend,
-  };
 }
 
 // Recent workflows and their jobs, the repos the App sees, and the hosted labels jobs ran on. Null

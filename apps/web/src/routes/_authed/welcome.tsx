@@ -32,8 +32,7 @@ export const Route = createFileRoute("/_authed/welcome")({
     const { data } = await organization.list();
     if (data?.length) throw redirect({ to: "/runners" });
   },
-  loader: async (): Promise<Machine[]> =>
-    authDisabled ? sampleMachines : (await listMyMachines()).machines,
+  loader: async (): Promise<Machine[]> => (await listMyMachines()).machines,
   component: WelcomePage,
 });
 
@@ -180,17 +179,3 @@ function Lane({
     </li>
   );
 }
-
-// For the `VITE_AUTH_DISABLED=true` dev preview.
-const sampleMachines: Machine[] = [
-  {
-    id: "sample-mbp",
-    name: "studio-mbp",
-    os: "macos",
-    arch: "arm64",
-    lastSeenAt: null,
-    revokedAt: null,
-    createdAt: new Date(0).toISOString(),
-    status: { online: true, state: "idle", connectedAt: null },
-  },
-];

@@ -27,10 +27,8 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import { authDisabled } from "@/lib/auth-client";
 import {
   clock,
-  DAY_MS,
   environmentColor,
   type EnvironmentSummary,
   getJobRuns,
@@ -57,7 +55,7 @@ import {
   useSetSearch,
 } from "@/lib/search-params";
 import { readFlag, saveFlag } from "@/lib/stored-flag";
-import { rangeDays, rangeName, rangePhrase, resolveRange, type TimeRange } from "@/lib/time-range";
+import { rangeName, rangePhrase, resolveRange, type TimeRange } from "@/lib/time-range";
 import { shortDate } from "@/lib/time-zone";
 import { cn } from "@/lib/utils";
 import { Count } from "@/components/count";
@@ -577,10 +575,6 @@ function JobDetail({
   const [failed, setFailed] = useState(false);
 
   useEffect(() => {
-    if (authDisabled) {
-      setResult({ runs: sampleRuns(job, rangeDays(range)), steps: sampleSteps(job) });
-      return;
-    }
     let live = true;
     getJobRuns(range, {
       repositoryId: workflow.repositoryId,
@@ -768,50 +762,4 @@ function RunChart({
       )}
     </svg>
   );
-}
-
-// For local development without an API (auth disabled).
-function sampleRuns(job: JobRow, days: number): JobRun[] {
-  const now = Date.now();
-  let id = 0;
-  let seed = 7;
-  const random = () => {
-    seed = (seed * 9301 + 49297) % 233280;
-    return seed / 233280;
-  };
-  return Object.entries(job.byEnvironment).flatMap(([environment, stat]) =>
-    Array.from({ length: stat.samples }, () => {
-      id += 1;
-      const completedAt = now - random() * days * DAY_MS;
-      const runMs = (stat.medianMs ?? 0) * (0.8 + random() * 0.4);
-      return {
-        id,
-        runId: id,
-        runAttempt: 1,
-        environment,
-        conclusion: random() > 0.95 ? "failure" : "success",
-        queuedAt: null,
-        startedAt: completedAt - runMs,
-        completedAt,
-      };
-    }),
-  );
-}
-
-// For local development without an API: a typical Node job's steps, scaled to its median.
-function sampleSteps(job: JobRow): RunStep[] {
-  const medianMs = Object.values(job.byEnvironment)[0]?.medianMs ?? 180_000;
-  const steps: [string, RunStep["phase"], number][] = [
-    ["Set up job", "setup", 0.03],
-    ["Run actions/checkout@v4", "checkout", 0.04],
-    ["Run pnpm/action-setup@v4", "setup", 0.02],
-    ["Run actions/setup-node@v4", "setup", 0.09],
-    ["Run pnpm install --frozen-lockfile", "dependencies", 0.18],
-    ["Run pnpm build", "work", 0.22],
-    ["Run pnpm test", "work", 0.34],
-    ["Post Run actions/setup-node@v4", "cache", 0.07],
-    ["Post Run actions/checkout@v4", "cleanup", 0.002],
-    ["Complete job", "cleanup", 0.003],
-  ];
-  return steps.map(([name, phase, share]) => ({ name, phase, ms: Math.round(medianMs * share) }));
 }
