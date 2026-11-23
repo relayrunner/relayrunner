@@ -118,7 +118,7 @@ function EvaluatePage() {
   );
 }
 
-const STEPS = ["Connect", "Choose a workflow", `Run ${EVALUATION_RUNS} times and compare`];
+const STEPS = ["Connect", "Choose a workflow", "Run and compare"];
 
 function Stepper({ at, provider }: { at: number; provider: string }) {
   const steps = STEPS.map((label, i) =>
