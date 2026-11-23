@@ -45,9 +45,9 @@ export const FEATURED: IntegrationId[] = [
   "github",
   "blacksmith",
   "depot",
-  "namespace",
-  "ubicloud",
   "boat",
+  "ubicloud",
+  "namespace",
 ];
 
 /** Each featured card: logo, name, entry plan and the list price of a 2 vCPU Linux x64 minute. */
@@ -61,5 +61,7 @@ export const FEATURED_TILES = FEATURED.map((id) => {
     logo: `/providers/${id}.svg`,
     plan: id === "github" ? "Free with GitHub" : (entry?.plan ?? "—"),
     price: cell ? `${minuteText(cell.usd)}/min` : undefined,
+    // A provider without one per-minute price says why instead, so every card has the same lines.
+    priceNote: UNPRICED_TABLE_ROWS.find((row) => row.id === id)?.why,
   };
 });
