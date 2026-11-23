@@ -572,6 +572,8 @@ export type { SkipReason } from "@relayrunner/activity";
 import {
   accessText,
   heldText,
+  MOVE_REASONS,
+  type MoveReason,
   type ProviderAccess,
   type ProviderHeld,
   spendText,
@@ -886,7 +888,12 @@ export async function decideRoute(
 // An `auto` input that no label of the job's size replaced (resolveAutoInputs).
 const unsized = (labels: string[]) => labels.length === 1 && labels[0] === AUTO;
 
-/** The message a relay fails with when nothing fits, naming why each provider couldn't take it. */
+/**
+ * The message a relay fails with when nothing fits, naming why each provider couldn't take it. The
+ * reason someone can act on comes first: a cap or limit that was reached, then busy or unreachable
+ * machines and providers, then how the job is set up. Providers that aren't in the runner order
+ * come last, folded into one count.
+ */
 export function noRunnerReason(
   job: RouteRequest,
   skipped: SkippedStep[],
@@ -894,7 +901,8 @@ export function noRunnerReason(
 ): string {
   if (RUNNER_KEYS.every((key) => job[key].length === 0))
     return `${NO_RUNNER}: the relay sets no provider, such as \`machine\` or \`github\`.`;
-  const parts = skipped.map(
+  const ranked = skipped.toSorted(bySkipRank);
+  const parts = ranked.map(
     ({
       key,
       reason,
@@ -952,8 +960,37 @@ export function noRunnerReason(
       }
     },
   );
-  for (const key of notInOrder) parts.push(`${RUNNER_LABELS[key]} isn't in your runner order`);
-  return `${NO_RUNNER}: ${parts.join("; ")}.`;
+  // Two steps for one provider (GitHub-hosted with a cap, then without) can skip for one reason.
+  const unique = [...new Set(parts)];
+  if (notInOrder.length) unique.push(notInOrderText(notInOrder, unique.length > 0));
+  return `${NO_RUNNER}: ${unique.join("; ")}.`;
+}
+
+const RANK: Record<MoveReason | "setup", number> = {
+  limit: 0,
+  machines: 1,
+  unhealthy: 1,
+  setup: 2,
+};
+const bySkipRank = (a: SkippedStep, b: SkippedStep) =>
+  RANK[MOVE_REASONS[a.reason] ?? "setup"] - RANK[MOVE_REASONS[b.reason] ?? "setup"];
+
+/** "Depot isn't in your runner order", "Depot and Boat aren't…", or "14 more providers aren't…". */
+function notInOrderText(keys: RunnerKey[], others: boolean) {
+  const names = keys.map((key) => RUNNER_LABELS[key]);
+  if (names.length === 1) return `${names[0]} isn't in your runner order`;
+  if (names.length === 2) return `${names.join(" and ")} aren't in your runner order`;
+  return `${names.length} ${others ? "more " : ""}providers aren't in your runner order`;
+}
+
+/**
+ * The dashboard page that fixes a failed pick: Usage for a cap or limit, Runners for machines, and
+ * the Router for everything else (sizes, the runner order, provider access).
+ */
+export function noRunnerPage(skipped: SkippedStep[]): "usage" | "runners" | "router" {
+  const [first] = skipped.toSorted(bySkipRank);
+  const move = first && MOVE_REASONS[first.reason];
+  return move === "limit" ? "usage" : move === "machines" ? "runners" : "router";
 }
 
 export const NO_RUNNER = "No runner available";
