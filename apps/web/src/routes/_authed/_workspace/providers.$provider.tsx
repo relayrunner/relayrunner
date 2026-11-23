@@ -5,15 +5,16 @@ import { ArrowLeftIcon, ArrowUpRightIcon, FlaskConicalIcon } from "lucide-react"
 import { useState } from "react";
 import { IncludedMinutes } from "@/components/actions-minutes";
 import { CodeBlock } from "@/components/code-block";
-import { MachinePrices, PRICE_VIEWS, type PriceView } from "@/components/machine-prices";
+import { MachinePrices } from "@/components/machine-prices";
 import { ProviderPlans } from "@/components/provider-plans";
+import { ProviderTrendsCard } from "@/components/provider-trends";
+import { PRICE_VIEWS, type PriceView } from "@/lib/providers";
 import {
+  type Percentile,
   PERCENTILE_OPTIONS,
-  ProviderTrendsCard,
   TREND_METRICS,
   type TrendMetric,
-} from "@/components/provider-trends";
-import type { Percentile } from "@/lib/provider-trends";
+} from "@/lib/provider-trends";
 import { providerStyle, runnerName, runnerSpec, TILE } from "@/components/providers";
 import { TimeRangePicker } from "@/components/range-picker";
 import { RunnerLink } from "@/components/runner-link";

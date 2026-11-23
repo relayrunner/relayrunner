@@ -28,20 +28,12 @@ import { groupByBranch } from "@/lib/branch-groups";
 import { isLongWait } from "@/lib/runs";
 import { unlessDefault, useSetSearch } from "@/lib/search-params";
 import { clearOnWorkspaceChange } from "@/lib/workspace-cache";
-import { type RangeOptions, rangePhrase, resolveRange, type TimeRange } from "@/lib/time-range";
+import { RUNNER_DEFAULT_RANGE, RUNNER_RANGES } from "@/lib/panels";
+import { rangePhrase, resolveRange, type TimeRange } from "@/lib/time-range";
 import { formatDateTime, formatTime, shortDate, startOfDay } from "@/lib/time-zone";
 import { minutes } from "@/lib/usage";
 import { cn, count, niceMax, percent } from "@/lib/utils";
 
-/**
- * The panel's ranges, down to the past hour, with bars per 15 minutes, per hour or per day. They
- * reach back 30 days, as far as Performance does.
- */
-export const RUNNER_RANGES: RangeOptions = {
-  presets: ["1h", "3h", "24h", "2d", "7d", "14d", "30d", "today", "yesterday", "week", "lastweek"],
-  customDays: 30,
-};
-export const RUNNER_DEFAULT_RANGE: TimeRange = "14d";
 const MACHINE = "machine:";
 
 // The last reports read, by runner and range, so reopening a runner shows it at once.
