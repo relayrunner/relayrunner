@@ -217,10 +217,10 @@ function MedianCell({ row }: { row: Row }) {
   if (!row.wall) return <>—</>;
   const trend = row.wall.trend;
   return (
-    <span className="inline-flex items-baseline gap-2">
+    <span className="inline-flex items-center gap-2">
       {medianText(row.wall)}
       {/* A fixed width, so the changes line up down the column. */}
-      <span className="inline-block w-12 text-left">
+      <span className="inline-flex w-12 items-center">
         {trend !== null && <Change pct={Math.round(trend * 100)} className="text-xs font-normal" />}
       </span>
     </span>

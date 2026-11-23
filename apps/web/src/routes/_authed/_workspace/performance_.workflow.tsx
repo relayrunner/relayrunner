@@ -336,7 +336,7 @@ function Runners({
       <div className="flex flex-wrap items-baseline justify-between gap-2 px-4 pt-3 pb-2">
         <h2 className="font-semibold">Runners</h2>
         <span className="text-xs text-muted-foreground">
-          {plural(rows.length, "runner")} ran this workflow
+          {plural(rows.length, "runner")} ran this workflow · ▲▼ against {BASELINE_NAME}
           {untried.length > 0 && ` · ${untried.length} not tried yet`}
         </span>
       </div>
@@ -348,9 +348,10 @@ function Runners({
             </th>
             <th className="px-2 py-2 font-medium">Runner</th>
             <th className="w-[32%] min-w-48 px-4 py-2 font-medium">Median run</th>
-            <th className="px-4 py-2 font-medium">vs {BASELINE_NAME}</th>
-            <th className="px-4 py-2 text-right font-medium">Cost per run</th>
-            <th className="px-4 py-2 font-medium">vs {BASELINE_NAME}</th>
+            <th className="px-4 py-2 text-right font-medium">
+              Cost per run
+              <span className="inline-block w-14" />
+            </th>
             <th className="px-4 py-2 text-right font-medium">Runs</th>
           </tr>
         </thead>
@@ -373,7 +374,7 @@ function Runners({
             <>
               <tr className="border-b bg-raised-2/30 text-xs text-muted-foreground">
                 <td />
-                <td colSpan={6} className="px-2 py-2 font-medium">
+                <td colSpan={4} className="px-2 py-2 font-medium">
                   Not tried on this workflow
                 </td>
               </tr>
@@ -390,9 +391,9 @@ function Runners({
                     </span>
                   </td>
                   <td className="px-4 py-3 text-xs whitespace-nowrap">No runs yet</td>
-                  <td className="px-4 py-3">—</td>
-                  <td className="px-4 py-3 text-right">—</td>
-                  <td className="px-4 py-3">—</td>
+                  <td className="px-4 py-3 text-right">
+                    —<span className="inline-block w-14" />
+                  </td>
                   <td className="px-4 py-2 text-right">
                     {evaluate && (
                       <Button variant="outline" size="sm" className="h-7 gap-1.5 text-xs" asChild>
@@ -408,7 +409,7 @@ function Runners({
               {untried.length > UNTRIED_SHOWN && (
                 <tr>
                   <td />
-                  <td colSpan={6} className="px-2 py-2">
+                  <td colSpan={4} className="px-2 py-2">
                     <Button
                       variant="ghost"
                       size="sm"
@@ -496,12 +497,20 @@ function RunnerRow({
         </td>
         <td className="px-4 py-3">
           <div className="grid gap-1.5">
-            <span className={cn("font-medium whitespace-nowrap", charted && "text-foreground")}>
-              {runner.medianMs === null ? (
-                <span className="text-xs font-normal text-muted-foreground">Some jobs only</span>
-              ) : (
-                `${few ? "~" : ""}${clock(runner.medianMs)}`
-              )}
+            <span className="flex items-center gap-3">
+              <span
+                className={cn(
+                  "min-w-10 font-medium whitespace-nowrap",
+                  charted && "text-foreground",
+                )}
+              >
+                {runner.medianMs === null ? (
+                  <span className="text-xs font-normal text-muted-foreground">Some jobs only</span>
+                ) : (
+                  `${few ? "~" : ""}${clock(runner.medianMs)}`
+                )}
+              </span>
+              <Delta pct={isBase ? null : percentChange(runner.medianMs, base?.medianMs)} />
             </span>
             <span className="flex h-2 w-full overflow-hidden rounded-full bg-raised-2">
               <span
@@ -526,27 +535,13 @@ function RunnerRow({
             </span>
           </div>
         </td>
-        <td className="px-4 py-3 whitespace-nowrap">
-          {isBase ? (
-            <span className="text-muted-foreground">—</span>
-          ) : (
-            <Change pct={percentChange(runner.medianMs, base?.medianMs)} />
-          )}
-        </td>
-        <td
-          className={cn(
-            "px-4 py-3 text-right font-medium whitespace-nowrap",
-            charted && "text-foreground",
-          )}
-        >
-          {runCost(runner.usd)}
-        </td>
-        <td className="px-4 py-3 whitespace-nowrap">
-          {isBase ? (
-            <span className="text-muted-foreground">—</span>
-          ) : (
-            <Change pct={percentChange(runner.usd, base?.usd)} />
-          )}
+        <td className="px-4 py-3 align-top">
+          <span className="flex items-center justify-end gap-2">
+            <span className={cn("font-medium whitespace-nowrap", charted && "text-foreground")}>
+              {runCost(runner.usd)}
+            </span>
+            <Delta pct={isBase ? null : percentChange(runner.usd, base?.usd)} />
+          </span>
         </td>
         <td className="px-4 py-3 text-right text-xs whitespace-nowrap text-muted-foreground">
           <RunsText runner={runner} />
@@ -568,6 +563,10 @@ function RunnerRow({
                 ) : (
                   <span className="flex items-center gap-3">
                     <span className="w-10 whitespace-nowrap">{clock(stat.medianMs)}</span>
+                    <Delta
+                      pct={isBase ? null : percentChange(stat.medianMs, baseJob?.medianMs)}
+                      small
+                    />
                     <span className="flex h-1.5 flex-1 overflow-hidden rounded-full bg-raised-2">
                       <span
                         className="h-full"
@@ -577,22 +576,16 @@ function RunnerRow({
                   </span>
                 )}
               </td>
-              <td className="px-4 py-1.5 whitespace-nowrap">
-                {isBase || !stat ? (
-                  <span className="text-muted-foreground">—</span>
-                ) : (
-                  <Change pct={percentChange(stat.medianMs, baseJob?.medianMs)} />
-                )}
-              </td>
-              <td className="px-4 py-1.5 text-right whitespace-nowrap text-muted-foreground">
-                {runCost(stat?.usd)}
-              </td>
-              <td className="px-4 py-1.5 whitespace-nowrap">
-                {isBase || !stat ? (
-                  <span className="text-muted-foreground">—</span>
-                ) : (
-                  <Change pct={percentChange(stat.usd, baseJob?.usd)} />
-                )}
+              <td className="px-4 py-1.5">
+                <span className="flex items-center justify-end gap-2">
+                  <span className="whitespace-nowrap text-muted-foreground">
+                    {runCost(stat?.usd)}
+                  </span>
+                  <Delta
+                    pct={isBase || !stat ? null : percentChange(stat.usd, baseJob?.usd)}
+                    small
+                  />
+                </span>
               </td>
               <td className="px-4 py-1.5 text-right text-xs whitespace-nowrap text-muted-foreground">
                 {stat && plural(stat.runs, "run")}
@@ -601,6 +594,17 @@ function RunnerRow({
           );
         })}
     </Fragment>
+  );
+}
+
+/** The change against the baseline in a fixed-width slot after a value, so changes line up. */
+function Delta({ pct, small = false }: { pct: number | null; small?: boolean }) {
+  return (
+    <span className="inline-flex w-12 shrink-0 items-center">
+      {pct !== null && (
+        <Change pct={pct} className={cn("font-normal", small ? "text-[11px]" : "text-xs")} />
+      )}
+    </span>
   );
 }
 
