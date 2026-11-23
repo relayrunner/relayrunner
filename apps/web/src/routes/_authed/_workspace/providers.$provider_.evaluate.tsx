@@ -1174,7 +1174,7 @@ function RunsChart({ report, current }: { report: EvaluationReport; current: num
           {baseline !== null && (
             <span className="flex items-center gap-1.5">
               <span className="inline-block h-0 w-4 border-t-2 border-dashed border-ink-2" />
-              Today's median, {clock(baseline)}
+              Today's median
             </span>
           )}
         </span>
@@ -1182,10 +1182,14 @@ function RunsChart({ report, current }: { report: EvaluationReport; current: num
       <div className="relative flex h-44 items-end gap-4 border-b pl-1 sm:gap-8">
         {baseline !== null && (
           <span
-            aria-hidden
             className="absolute inset-x-0 border-t-2 border-dashed border-ink-2"
             style={{ bottom: `${(baseline / max) * 100}%` }}
-          />
+          >
+            {/* The median's value on the line itself, at the right end, clear of the bars. */}
+            <span className="absolute right-0 bottom-1 rounded bg-card px-1.5 text-xs font-medium text-muted-foreground tabular-nums">
+              Today {clock(baseline)}
+            </span>
+          </span>
         )}
         {report.attempts.map((a) => (
           <div key={a.attempt} className="flex h-full flex-1 flex-col items-center justify-end">
