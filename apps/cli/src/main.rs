@@ -301,10 +301,7 @@ async fn main() {
             Err(e) => {
                 if rest.iter().any(|a| a == "--events") {
                     events::start();
-                    events::emit(
-                        "error",
-                        serde_json::json!({ "code": e.code, "message": e.message }),
-                    );
+                    events::emit(&events::Event::error(e.code, e.message.clone()));
                 }
                 eprintln!("{e}");
                 1
