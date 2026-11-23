@@ -1,6 +1,6 @@
-import type { AccountUsage } from "./actions-usage.ts";
-import type { AutoJob, AutoJobs } from "./auto-jobs.ts";
-import type { RouterSetup, RunnerGroupCheck } from "./router-setup.ts";
+import type { AccountUsage } from "../actions-usage.ts";
+import type { AutoJob, AutoJobs } from "../auto-jobs.ts";
+import type { RouterSetup, RunnerGroupCheck } from "../router-setup.ts";
 
 /** Example GitHub accounts for the Router page's `VITE_AUTH_DISABLED=true` dev preview and tests. */
 export function sampleRouterAccounts(

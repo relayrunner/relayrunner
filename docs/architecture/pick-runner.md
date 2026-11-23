@@ -1,6 +1,6 @@
 # Pick runner
 
-**Covers:** `apps/api/src/durable-objects/pick-runner.ts`, `apps/api/src/routing/repo-runner.ts` (`mintRepoFirst`), `apps/api/src/github/github-app.ts` (`runnerScope`, `generateJitConfig`, `deleteRunner`, `DEFAULT_RUNNER_GROUP_ID`, runner groups), `apps/api/src/github/installations.ts` (`installationRunnerScope`), `apps/api/src/routing/runner-protocol.ts`, and the `queued` path in `apps/api/src/ingest/webhook-queue.ts`.
+**Covers:** `apps/api/src/durable-objects/pick-runner.ts`, `apps/api/src/routing/repo-runner.ts` (`mintRepoFirst`), `apps/api/src/github/runners-api.ts` (`runnerScope`, `generateJitConfig`, `deleteRunner`, `DEFAULT_RUNNER_GROUP_ID`, runner groups), `apps/api/src/github/installations.ts` (`installationRunnerScope`), `apps/api/src/routing/runner-protocol.ts`, and the `queued` path in `apps/api/src/ingest/webhook-queue.ts`.
 
 ## What it does
 
@@ -101,7 +101,7 @@ flowchart LR
 
 This is where the runner comes into existence. It's created on the job's repo, outside any runner group, so it can only be offered that repo's jobs. The response's `encoded_jit_config` holds the runner's identity and an RSA key. Whoever holds it can act as that runner, for one job.
 
-If GitHub refuses the repo endpoint, the call goes to `/orgs/{org}/actions/runners/generate-jitconfig` with `runner_group_id: 1` instead, and the runner is created **inside** the Default group (`DEFAULT_RUNNER_GROUP_ID` in `apps/api/src/github/github-app.ts`). See [Where it registers](#where-it-registers).
+If GitHub refuses the repo endpoint, the call goes to `/orgs/{org}/actions/runners/generate-jitconfig` with `runner_group_id: 1` instead, and the runner is created **inside** the Default group (`DEFAULT_RUNNER_GROUP_ID` in `apps/api/src/github/runners-api.ts`). See [Where it registers](#where-it-registers).
 
 ### 4. The PickRunner connects as that runner
 
@@ -204,7 +204,7 @@ What a repo runner changes:
 
 - `apps/api/src/ingest/webhook-queue.ts`: `queued` webhooks with the `relayrunner` label start a PickRunner.
 - `apps/api/src/durable-objects/pick-runner.ts`: registration, waiting, claiming, answering, cleanup, the `relayrunner pick finished` log.
-- `apps/api/src/github/github-app.ts`: `runnerScope`, `generateJitConfig`, `deleteRunner`, `runnerBusy`, `DEFAULT_RUNNER_GROUP_ID`, `listOrgRunnerGroups`, `getOrgRunnerGroup`.
+- `apps/api/src/github/runners-api.ts`: `runnerScope`, `generateJitConfig`, `deleteRunner`, `runnerBusy`, `DEFAULT_RUNNER_GROUP_ID`, `listOrgRunnerGroups`, `getOrgRunnerGroup`.
 - `apps/api/src/github/installations.ts`: `installationRunnerScope`, the org or repo scope for an installation.
 - `apps/api/src/github/github-runners.ts`: `groupBlocksRepo`, the one rule for whether a runner group takes a repo's jobs, shared by the pick runner and routing to added runners.
 - `apps/api/src/routing/pick-access.ts`: the blocked reason and the check run that explains it.

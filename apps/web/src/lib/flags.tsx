@@ -13,12 +13,12 @@ import type { FlagKey, Flags } from "@relayrunner/api-types";
 import { FLAG_KEYS } from "@relayrunner/api-types";
 import type { ReactNode } from "react";
 import { api } from "@/lib/api";
-import { authDisabled } from "@/lib/auth-client";
 
 /** How old a copy can get before the next navigation reads it again, in the background. */
 const REVALIDATE_MS = 60_000;
 
-const allFlags = (value: boolean) =>
+/** Every flag set to `value`. */
+export const allFlags = (value: boolean) =>
   Object.fromEntries(FLAG_KEYS.map((key: FlagKey) => [key, value])) as Flags;
 
 // Keyed by the workspace they were read for, so switching workspace never shows the old ones.
@@ -29,10 +29,9 @@ let loading: { workspaceId: string; promise: Promise<Flags> } | undefined;
  * The flags for the workspace layout's guard: the copy for `workspaceId` when there is one (read
  * again in the background once it's old), else read from the API. A failed read never blocks a
  * page: every flag reads as off, and the next navigation asks again. The dev preview without
- * sign-in (VITE_AUTH_DISABLED) has no API, so every flag is on there, to show what's behind them.
+ * sign-in (VITE_AUTH_DISABLED) turns every flag on, to show what's behind them (lib/sample).
  */
 export function loadFlags(workspaceId: string): Promise<Flags> {
-  if (authDisabled) return Promise.resolve(allFlags(true));
   if (cached?.workspaceId === workspaceId) {
     if (Date.now() - cached.at >= REVALIDATE_MS) void read(workspaceId);
     return Promise.resolve(cached.flags);

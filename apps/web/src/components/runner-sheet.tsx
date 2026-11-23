@@ -1,7 +1,8 @@
 import { sizeText } from "@relayrunner/providers";
+import { keepPreviousData, useQuery } from "@tanstack/react-query";
 import { Link, useNavigate } from "@tanstack/react-router";
 import { ChevronRightIcon } from "lucide-react";
-import { type ReactNode, useEffect, useState } from "react";
+import { type ReactNode, useState } from "react";
 import { BranchHeading, toggleKey } from "@/components/branch-heading";
 import { CommitBy } from "@/components/commit";
 import { CopyButton } from "@/components/add-runner";
@@ -14,20 +15,13 @@ import { StatusIcon } from "@/components/status-icon";
 import { Sheet, SheetContent, SheetDescription, SheetTitle } from "@/components/ui/sheet";
 import { PHONE_HIDDEN } from "@/components/ui/table";
 import { timeAgo } from "@/lib/activity";
-import { authDisabled } from "@/lib/auth-client";
 import { clock, DAY_MS, HOUR_MS, p90Text, plural } from "@/lib/job-times";
-import { cachedMachine, type Machine, workspaceMachine } from "@/lib/machines";
+import { type Machine, useWorkspaceMachine } from "@/lib/machines";
 import { onlineSpans, type RunnerBucket } from "@/lib/runner-days";
-import {
-  getRunnerReport,
-  type RunnerJob,
-  type RunnerReport,
-  sampleRunnerReport,
-} from "@/lib/runner-report";
+import { getRunnerReport, type RunnerJob, type RunnerReport } from "@/lib/runner-report";
 import { groupByBranch } from "@/lib/branch-groups";
 import { isLongWait } from "@/lib/runs";
 import { unlessDefault, useSetSearch } from "@/lib/search-params";
-import { clearOnWorkspaceChange } from "@/lib/workspace-cache";
 import { RUNNER_DEFAULT_RANGE, RUNNER_RANGES } from "@/lib/panels";
 import { rangePhrase, resolveRange, type TimeRange } from "@/lib/time-range";
 import { formatDateTime, formatTime, shortDate, startOfDay } from "@/lib/time-zone";
@@ -36,27 +30,21 @@ import { cn, count, niceMax, percent } from "@/lib/utils";
 
 const MACHINE = "machine:";
 
-// The last reports read, by runner and range, so reopening a runner shows it at once.
-const reports = new Map<string, Promise<RunnerReport>>();
-// A runner key such as `github:ubuntu-latest` is the same in every workspace.
-clearOnWorkspaceChange(() => reports.clear());
-
-function loadReport(key: string, range: TimeRange) {
-  const id = `${key}\u001f${range}`;
-  let request = reports.get(id);
-  if (!request) {
-    const window = resolveRange(range);
-    request = authDisabled
-      ? Promise.resolve(sampleRunnerReport(key, window))
-      : getRunnerReport(key, window);
-    request.catch(() => reports.delete(id));
-    reports.set(id, request);
-    // A window that runs to now is kept for a minute, since a runner's numbers move as it takes
-    // jobs. One that's over, such as yesterday, stays put.
-    if (window.to > Date.now() - 60_000)
-      setTimeout(() => reports.get(id) === request && reports.delete(id), 60_000);
-  }
-  return request;
+// A runner's report over a range, kept so reopening a runner shows it at once. A window that runs to
+// now is read again after a minute, since a runner's numbers move as it takes jobs; one that's
+// over, such as yesterday, stays put.
+function useRunnerReport(key: string, range: TimeRange) {
+  return useQuery({
+    queryKey: ["runner-report", key, range],
+    queryFn: async () => {
+      const window = resolveRange(range);
+      const report = await getRunnerReport(key, window);
+      return { range, report, ended: window.to <= Date.now() - 60_000 };
+    },
+    staleTime: (query) => (query.state.data?.ended ? Infinity : 60_000),
+    // The last report stays up while another range loads.
+    placeholderData: keepPreviousData,
+  });
 }
 
 /**
@@ -70,19 +58,7 @@ export function RunnerSheet({ runnerKey, range }: { runnerKey: string; range: Ti
   const setSearch = useSetSearch<{ runnerRange?: TimeRange }>();
   const setRange = (next: TimeRange) =>
     setSearch({ runnerRange: unlessDefault(next, RUNNER_DEFAULT_RANGE) });
-  // The report shown, with the range it's for: the last one stays up while another loads.
-  const [shown, setShown] = useState<{ range: TimeRange; report: RunnerReport } | null>(null);
-  const [failed, setFailed] = useState(false);
-  useEffect(() => {
-    let live = true;
-    setFailed(false);
-    loadReport(runnerKey, range)
-      .then((report) => live && setShown({ range, report }))
-      .catch(() => live && setFailed(true));
-    return () => {
-      live = false;
-    };
-  }, [runnerKey, range]);
+  const { data: shown, isError: failed } = useRunnerReport(runnerKey, range);
   const machine = useMachine(runnerKey);
 
   return (
@@ -115,19 +91,7 @@ export function RunnerSheet({ runnerKey, range }: { runnerKey: string; range: Ti
 
 // A machine's live state from the workspace's machines, for whether it's online now.
 function useMachine(key: string) {
-  const id = key.startsWith(MACHINE) ? key.slice(MACHINE.length) : null;
-  const [machine, setMachine] = useState<Machine | null>(() => (id && cachedMachine(id)) || null);
-  useEffect(() => {
-    if (!id) return;
-    let live = true;
-    workspaceMachine(id)
-      .then((found) => live && setMachine(found))
-      .catch(() => undefined);
-    return () => {
-      live = false;
-    };
-  }, [id]);
-  return machine;
+  return useWorkspaceMachine(key.startsWith(MACHINE) ? key.slice(MACHINE.length) : null) ?? null;
 }
 
 function RunnerView({

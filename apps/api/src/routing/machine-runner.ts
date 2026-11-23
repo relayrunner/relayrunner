@@ -1,4 +1,4 @@
-import { generateJitConfig, type RunnerScope } from "../github/github-app.ts";
+import { generateJitConfig, type RunnerScope } from "../github/runners-api.ts";
 import { mintRepoFirst } from "./repo-runner.ts";
 import { machineRunnerName } from "@relayrunner/machine-protocol";
 import { routeLabel, type Route } from "./routing.ts";

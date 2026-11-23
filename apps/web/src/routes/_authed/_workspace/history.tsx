@@ -15,7 +15,7 @@ import {
   runnerName,
 } from "@/components/providers";
 import { TimeRangePicker } from "@/components/range-picker";
-import { type Environments, fetchRunJobs, RunLink, RunSheet } from "@/components/run-sheet";
+import { type Environments, RunLink, RunSheet, runJobsQuery } from "@/components/run-sheet";
 import { StatusIcon } from "@/components/status-icon";
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
 import { SECTION_HEADING } from "@/components/ui/data-table";
@@ -30,6 +30,7 @@ import { timeAgo } from "@/lib/activity";
 import { authDisabled } from "@/lib/auth-client";
 import { type Environment, JOB_RANGES, plural } from "@/lib/job-times";
 import { useLiveRefresh } from "@/lib/live-refresh";
+import { queryClient } from "@/lib/query";
 import { dayHeading } from "@/lib/time-zone";
 import { useNow } from "@/lib/use-now";
 import {
@@ -40,8 +41,7 @@ import {
   parseRunParam,
   type Run,
   type RunsReport,
-  loadJobs,
-  loadRuns,
+  getJobs,
   runParam,
   triggerText,
 } from "@/lib/runs";
@@ -112,8 +112,8 @@ export const Route = createFileRoute("/_authed/_workspace/history")({
   // Each view loads its first range here, and another range in the page.
   loader: async ({ deps: { view }, location }): Promise<Loaded> => {
     const range = ranges.rangeOf(location.search as HistorySearch);
-    if (view === "jobs") return { view, jobs: await loadJobs(range) };
-    return { view, runs: await loadRuns(range) };
+    if (view === "jobs") return { view, jobs: await getJobs(range) };
+    return { view, runs: await getRuns(range) };
   },
   // A tab shows as it was when it's come back to: the Workflows tab refreshes itself while runs
   // are going, and opening or closing the panel only changes the search.
@@ -184,7 +184,7 @@ function WorkflowRuns({ loaded }: { loaded: RunsReport }) {
   const open = Route.useSearch({ select: (search) => search.run });
   const search = Route.useSearch();
   const range = ranges.rangeOf(search);
-  const first = useRangeReport(loaded, range, loadRuns);
+  const first = useRangeReport(loaded, range, getRuns);
   // Refetched while a run on screen is going, so new jobs, runs and results show without a reload.
   const [report, setReport] = useState(first);
   useEffect(() => setReport(first), [first]);
@@ -362,7 +362,7 @@ const RunRow = memo(function RunRow({
   // the panel opens with them in place. A hover only counts once it rests, so sweeping the pointer
   // down the list doesn't fetch every run.
   const hover = useRef<ReturnType<typeof setTimeout>>(undefined);
-  const prefetch = () => void fetchRunJobs(run, run.status).catch(() => undefined);
+  const prefetch = () => void queryClient.prefetchQuery(runJobsQuery(run, run.status));
 
   return (
     <li>

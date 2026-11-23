@@ -28,7 +28,6 @@ import {
   TableRow,
 } from "@/components/ui/table";
 import { timeAgo } from "@/lib/activity";
-import { authDisabled } from "@/lib/auth-client";
 import {
   AREAS,
   BREAKDOWN_VIEWS,
@@ -52,8 +51,6 @@ import {
   type SignalTrend,
   SIGNAL_COPY,
   type SignalsReport,
-  sampleSignalRuns,
-  sampleSignals,
   triggerName,
 } from "@/lib/signals";
 import {
@@ -93,12 +90,6 @@ const ranges = rangeSearch(RANGES, DEFAULT_RANGE);
 // The range and filter a report is for.
 const keyOf = (range: TimeRange, filter: SignalFilter) =>
   JSON.stringify([range, ...FILTER_KEYS.map((key) => filter[key] ?? "")]);
-
-function load(range: TimeRange, filter: SignalFilter): Promise<SignalsReport> {
-  return authDisabled
-    ? Promise.resolve(sampleSignals(rangeDays(range), filter))
-    : getSignals(range, filter);
-}
 
 const BREAKDOWNS = BREAKDOWN_VIEWS.map((option) => option.value);
 const SIGNAL_IDS = Object.keys(SIGNAL_COPY) as SignalId[];
@@ -143,7 +134,7 @@ export const Route = createFileRoute("/_authed/_workspace/signals")({
   validateSearch,
   loader: ({ location }) => {
     const search = validateSearch(location.search);
-    return load(rangeOf(search), filterOf(search));
+    return getSignals(rangeOf(search), filterOf(search));
   },
   // A new range or filter loads in the page, keeping the last one up meanwhile.
   shouldReload: ({ cause }) => cause !== "stay",
@@ -157,7 +148,7 @@ function SignalsPage() {
   const filtered = isFiltered(filter);
   const setSearch = useSetSearch<Search>();
   const key = keyOf(range, filter);
-  const report = useRangeReport(Route.useLoaderData(), key, () => load(range, filter));
+  const report = useRangeReport(Route.useLoaderData(), key, () => getSignals(range, filter));
   const manyRepos = spansRepos(report);
 
   function chooseRange(next: TimeRange) {
@@ -811,9 +802,7 @@ function RunsPanel({
   const [found, setFound] = useState<SignalRunsReport | "failed" | null>(null);
   useEffect(() => {
     let live = true;
-    const request = authDisabled
-      ? Promise.resolve(sampleSignalRuns(row, rangeDays(range)))
-      : getSignalRuns(row, range, filter);
+    const request = getSignalRuns(row, range, filter);
     request.then(
       (next) => live && setFound(next),
       () => live && setFound("failed"),

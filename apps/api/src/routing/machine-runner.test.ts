@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, test, vi } from "vitest";
-import type { generateJitConfig, RunnerScope } from "../github/github-app.ts";
+import type { generateJitConfig, RunnerScope } from "../github/runners-api.ts";
 import { mintMachineRunner } from "./machine-runner.ts";
 
 const route = {

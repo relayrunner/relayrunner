@@ -1,21 +1,20 @@
 import { generateKeyPairSync, createPublicKey, verify } from "node:crypto";
 import { afterEach, beforeEach, describe, expect, test, vi } from "vitest";
+import { clearListedPages, GitHubAccessError, GitHubRateLimitError } from "./github-api.ts";
 import {
   appInstallationToken,
   appJwt,
   clearInstallationTokens,
-  clearListedPages,
+  importAppPrivateKey,
+} from "./github-app.ts";
+import { userCanReadRepo, userCanWriteRepo } from "./repos-api.ts";
+import {
   deleteRunner,
   generateJitConfig,
-  GitHubAccessError,
-  GitHubRateLimitError,
-  importAppPrivateKey,
   listRunners,
   runnerBusy,
   runnerScope,
-  userCanReadRepo,
-  userCanWriteRepo,
-} from "./github-app.ts";
+} from "./runners-api.ts";
 
 const { privateKey } = generateKeyPairSync("rsa", { modulusLength: 2048 });
 const pkcs1 = privateKey.export({ type: "pkcs1", format: "pem" }).toString();

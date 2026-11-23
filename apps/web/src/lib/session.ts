@@ -12,6 +12,7 @@ import { resetAnalytics } from "@/lib/analytics";
 import { AppError } from "@relayrunner/errors";
 import { api, onApiError } from "@/lib/api";
 import { forgetFlags } from "@/lib/flags";
+import { clearWorkspaceCaches } from "./workspace-cache.ts";
 import {
   authClient,
   authDisabled,
@@ -75,6 +76,8 @@ export async function signOut() {
   forgetSession();
   const result = await authClient.signOut();
   forgetSession();
+  // Nothing read as this user stays around for whoever signs in next.
+  clearWorkspaceCaches();
   resetAnalytics();
   return result;
 }

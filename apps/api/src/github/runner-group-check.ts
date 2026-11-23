@@ -7,7 +7,8 @@
 // github_repository read by installation.
 import { and, eq, isNull } from "drizzle-orm";
 import { type Db, schema } from "../db/index.ts";
-import { appInstallationToken, DEFAULT_RUNNER_GROUP_ID } from "./github-app.ts";
+import { appInstallationToken } from "./github-app.ts";
+import { DEFAULT_RUNNER_GROUP_ID } from "./runners-api.ts";
 import { fetchOneGroupAccess, groupBlocksRepo } from "./github-runners.ts";
 
 type Block = NonNullable<ReturnType<typeof groupBlocksRepo>>;

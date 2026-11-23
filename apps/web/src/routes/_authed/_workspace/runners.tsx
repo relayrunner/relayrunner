@@ -1,9 +1,4 @@
-import {
-  DEFAULT_RUNNER_ORDER,
-  RUNNER_LABELS,
-  type RunnerKey,
-  type RunnerStep,
-} from "@relayrunner/runner-order";
+import { RUNNER_LABELS, type RunnerKey, type RunnerStep } from "@relayrunner/runner-order";
 import { createFileRoute, Link, useRouter } from "@tanstack/react-router";
 import {
   CheckIcon,
@@ -59,14 +54,13 @@ import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/comp
 import { attentionItems } from "@/lib/attention";
 import { authDisabled } from "@/lib/auth-client";
 import { getMachineJobTimes, plural, type Stat } from "@/lib/job-times";
-import { getLiveJobs, NO_LIVE_JOBS, sampleLiveJobs } from "@/lib/live-jobs";
+import { getLiveJobs, NO_LIVE_JOBS } from "@/lib/live-jobs";
 import { useLiveRefresh } from "@/lib/live-refresh";
 import {
   addableRunners,
   addGithubRunners,
   listGithubRunners,
   listMachines,
-  SAMPLE_MACHINES,
   type AddableRunner,
   type GitHubRunners,
 } from "@/lib/machines";
@@ -75,7 +69,6 @@ import {
   PROVIDER_DEFAULT_RANGE,
   PROVIDER_RANGES,
   type ProviderSummary,
-  sampleProvidersOverview,
 } from "@/lib/providers";
 import { canManage } from "@/lib/roles";
 import {
@@ -93,7 +86,7 @@ import {
 } from "@/lib/runner-filters";
 import { getRunnerOrder } from "@/lib/runner-order";
 import { unlessDefault } from "@/lib/search-params";
-import { rangeDays, rangePhrase } from "@/lib/time-range";
+import { rangePhrase } from "@/lib/time-range";
 import { readFlag, saveFlag } from "@/lib/stored-flag";
 import { cn } from "@/lib/utils";
 
@@ -124,26 +117,13 @@ export const Route = createFileRoute("/_authed/_workspace/runners")({
   // Filters and the cloud table's range apply in the page, so they don't load the runners again.
   shouldReload: ({ cause }) => cause !== "stay",
   loader: async ({ context }) => {
-    try {
-      const [order, { machines, others = [] }, live] = await Promise.all([
-        getRunnerOrder(context.current.workspace.id),
-        listMachines(),
-        // The page still loads without them; the next refresh tries again.
-        getLiveJobs().catch(() => NO_LIVE_JOBS),
-      ]);
-      return { ...order, machines, others, live };
-    } catch (error) {
-      // The dev preview has no API behind it.
-      if (authDisabled)
-        return {
-          order: DEFAULT_RUNNER_ORDER,
-          isDefault: true,
-          machines: SAMPLE_MACHINES,
-          others: [],
-          live: sampleLiveJobs(),
-        };
-      throw error;
-    }
+    const [order, { machines, others = [] }, live] = await Promise.all([
+      getRunnerOrder(context.current.workspace.id),
+      listMachines(),
+      // The page still loads without them; the next refresh tries again.
+      getLiveJobs().catch(() => NO_LIVE_JOBS),
+    ]);
+    return { ...order, machines, others, live };
   },
   component: RunnersPage,
 });
@@ -224,9 +204,8 @@ function RunnersPage() {
   }, [workspaceId, editable]);
   // Each machine's jobs over the last INACTIVE_DAYS, loaded after the cards so they never wait on
   // it. Null until it answers, so runners added from GitHub aren't hidden as inactive meanwhile.
-  const [jobTimes, setJobTimes] = useState<Record<string, Stat> | null>(authDisabled ? {} : null);
+  const [jobTimes, setJobTimes] = useState<Record<string, Stat> | null>(null);
   useEffect(() => {
-    if (authDisabled) return;
     let live = true;
     getMachineJobTimes(INACTIVE_DAYS)
       .then((result) => live && setJobTimes(result.machines))
@@ -272,11 +251,8 @@ function RunnersPage() {
   // Cloud runners jobs used in the range (this month unless picked): GitHub-hosted classes, hosted
   // providers, containers. Null until the first answer.
   const cloudRange = search.cloud ?? PROVIDER_DEFAULT_RANGE;
-  const [cloud, setCloud] = useState<ProviderSummary[] | null>(() =>
-    authDisabled ? sampleProvidersOverview(rangeDays(cloudRange)).providers : null,
-  );
+  const [cloud, setCloud] = useState<ProviderSummary[] | null>(null);
   useEffect(() => {
-    if (authDisabled) return;
     let live = true;
     getProvidersOverview(cloudRange)
       .then((report) => live && setCloud(report.providers))

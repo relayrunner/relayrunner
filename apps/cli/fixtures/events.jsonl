@@ -1,0 +1,19 @@
+{"at":"2026-11-23T14:00:00.000Z","code":"ABCD-EFGH","type":"sign-in","url":"https://app.relayrunner.dev/device?user_code=ABCD-EFGH","v":1}
+{"at":"2026-11-23T14:00:00.000Z","id":"m1","name":"ada-mbp","server":"https://app.relayrunner.dev/","type":"machine","v":1}
+{"at":"2026-11-23T14:00:00.000Z","attempt":1,"type":"connecting","v":1}
+{"at":"2026-11-23T14:00:00.000Z","type":"connected","v":1}
+{"at":"2026-11-23T14:00:00.000Z","jobs":[],"link":"online","paused":false,"queue":[],"slots":2,"spilled":[],"type":"state","v":1,"waiting":0}
+{"at":"2026-11-23T14:00:00.000Z","jobs":1,"queue":[{"name":"test","repo":"acme/app","since":1763481600000,"workflow":"CI"}],"spilled":[1763481000000],"type":"waiting","v":1}
+{"at":"2026-11-23T14:00:00.000Z","jobs":["r1"],"link":"online","paused":true,"queue":[{"name":"test","repo":"acme/app","since":1763481600000,"workflow":"CI"}],"slots":2,"spilled":[1763481000000],"type":"state","v":1,"waiting":1}
+{"at":"2026-11-23T14:00:00.000Z","by":"octocat","paused":true,"type":"paused","v":1}
+{"at":"2026-11-23T14:00:00.000Z","job":{"name":"test","repo":"acme/app","runAttempt":1,"typicalMs":150000,"url":"https://github.com/acme/app/actions/runs/1/job/2","workflow":"CI"},"routeId":"r1","slot":1,"type":"run","v":1}
+{"at":"2026-11-23T14:00:00.000Z","routeId":"r2","slot":2,"type":"run","v":1}
+{"at":"2026-11-23T14:00:00.000Z","repo":"acme/app","routeId":"r1","type":"job-repo","v":1}
+{"at":"2026-11-23T14:00:00.000Z","slot":1,"type":"job","update":{"routeId":"r1","state":"started"},"v":1}
+{"at":"2026-11-23T14:00:00.000Z","job":"test","result":"Failed","routeId":"r1","type":"job-result","v":1}
+{"at":"2026-11-23T14:00:00.000Z","durationMs":152000,"job":"test","message":null,"repo":"acme/app","result":"Failed","routeId":"r1","runAttempt":1,"slot":1,"startedAt":"2026-11-23T14:00:00.000Z","startedAtMs":1763906400000,"state":"finished","type":"job-end","typicalMs":150000,"url":"https://github.com/acme/app/actions/runs/1/job/2","usage":{"cpuP95":0.82,"cpuPeak":0.97,"cpus":4,"memoryMb":8192,"memoryP95Mb":1800,"memoryPeakMb":2048,"samples":30},"v":1,"workflow":"CI"}
+{"at":"2026-11-23T14:00:00.000Z","code":1006,"reason":"","retryInMs":1200,"type":"disconnected","v":1}
+{"at":"2026-11-23T14:00:00.000Z","reason":"stopped","type":"offline","v":1}
+{"at":"2026-11-23T14:00:00.000Z","message":"This machine was removed from the workspace.","reason":"rejected","type":"offline","v":1}
+{"at":"2026-11-23T14:00:00.000Z","code":"NOT_SIGNED_IN","message":"Sign in first.","type":"error","v":1}
+{"at":"2026-11-23T14:00:00.000Z","code":"UNKNOWN_COMMAND","command":"bogus","message":"Commands are `pause` and `resume`.","type":"error","v":1}

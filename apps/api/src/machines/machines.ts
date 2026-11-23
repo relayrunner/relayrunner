@@ -4,7 +4,8 @@ import { type SQL, and, count, eq, inArray, isNotNull, isNull, or } from "drizzl
 import type { Db } from "../db/index.ts";
 import { schema } from "../db/index.ts";
 import type { Env } from "../env.ts";
-import { appInstallationToken, removeRunnerLabel, type RunnerScope } from "../github/github-app.ts";
+import { appInstallationToken } from "../github/github-app.ts";
+import { removeRunnerLabel, type RunnerScope } from "../github/runners-api.ts";
 import { addedRunnerScope, matchLabels, parseStoredLabels } from "../github/github-runners.ts";
 import { type Device, isNewerVersion } from "@relayrunner/machine-protocol";
 // The CLI on main is the one npm has: the Release workflow publishes it when its version lands.

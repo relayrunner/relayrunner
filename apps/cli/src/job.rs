@@ -60,10 +60,10 @@ pub async fn run(
         }
         Ok(Some(name)) => {
             events::log(&format!("Job {route_id}{slot_note} is from {name}"));
-            events::emit(
-                "job-repo",
-                serde_json::json!({ "routeId": route_id, "repo": name }),
-            );
+            events::emit(&events::Event::JobRepo {
+                route_id: route_id.to_string(),
+                repo: name.to_string(),
+            });
             repo = Some(name.to_string());
         }
         Ok(None) => {}
@@ -202,7 +202,7 @@ pub async fn run(
             usage: result.usage.clone(),
         });
         history::append(&history::path(), &entry);
-        events::emit("job-end", serde_json::json!(entry));
+        events::emit(&events::Event::JobEnd(entry));
     }
     report(result);
 }
@@ -233,10 +233,11 @@ fn forward<R: tokio::io::AsyncRead + Unpin + Send + 'static>(
                 && let Some((job, result)) = job_result(&line)
             {
                 *kept.lock().unwrap() = Some((job.to_string(), result.to_string()));
-                events::emit(
-                    "job-result",
-                    serde_json::json!({ "routeId": route_id, "job": job, "result": result }),
-                );
+                events::emit(&events::Event::JobResult {
+                    route_id: route_id.to_string(),
+                    job: job.to_string(),
+                    result: result.to_string(),
+                });
             }
             if is_err || events::on() {
                 eprintln!("{prefix}{line}");

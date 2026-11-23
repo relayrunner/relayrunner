@@ -11,12 +11,8 @@ import { retryDelaySeconds } from "../queue-retry.ts";
 import type { WebhookMessage, WorkflowJob } from "@relayrunner/github-webhooks";
 import { createDb, type Db, schema } from "../db/index.ts";
 import type { Env } from "../env.ts";
-import {
-  appInstallationToken,
-  jobLog,
-  type RateLimitBucket,
-  rateLimits,
-} from "../github/github-app.ts";
+import { jobLog } from "../github/actions-api.ts";
+import { appInstallationToken, type RateLimitBucket, rateLimits } from "../github/github-app.ts";
 import { FAILED_CONCLUSIONS } from "../ingest/job-counts.ts";
 import { Recent } from "../recent.ts";
 import { jobUrl } from "../reports/run-job.ts";

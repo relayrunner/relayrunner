@@ -21,12 +21,8 @@ import { createDb, type Db, schema } from "../db/index.ts";
 import type { Env } from "../env.ts";
 import { failureCauseOf } from "../ai/failure-cause.ts";
 import { aiAccess } from "../ai/settings.ts";
-import {
-  appInstallationToken,
-  attemptJobs,
-  jobAnnotations,
-  rerunJob,
-} from "../github/github-app.ts";
+import { attemptJobs, jobAnnotations, rerunJob } from "../github/actions-api.ts";
+import { appInstallationToken } from "../github/github-app.ts";
 import { failureDetails } from "../reports/job-failures.ts";
 import { loadRepoConfig } from "../checks/repo-config.ts";
 import { actor } from "./route-decisions.ts";

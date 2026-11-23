@@ -81,3 +81,30 @@ jobs:
         env:
           CLI_PROFILE: ${{ github.event_name == 'pull_request' && 'debug' || 'release' }}
         run: bash scripts/smoke-npm-package.sh
+
+  # The Mac app's RelayRunnerKit (what it reads from `relayrunner connect --events` and the CLI's
+  # other JSON) builds on Linux, so its tests run here on every change to it or to the CLI. They
+  # read apps/cli/fixtures/events.jsonl, which the CLI's own tests check it still writes.
+  mac-kit:
+    name: Test the Mac app's CLI contract
+    runs-on: ubuntu-latest
+    container: swift:6.1-noble
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          persist-credentials: false
+          fetch-depth: 2
+      - name: Check for CLI or Mac app changes
+        id: changed
+        if: github.event_name == 'pull_request'
+        run: |
+          git config --global --add safe.directory "$GITHUB_WORKSPACE"
+          if git diff --quiet HEAD^1 HEAD -- apps/cli apps/mac .github/workflows/ci.yml; then
+            echo "changed=false" >> "$GITHUB_OUTPUT"
+          else
+            echo "changed=true" >> "$GITHUB_OUTPUT"
+          fi
+      - name: swift test
+        if: steps.changed.outputs.changed != 'false'
+        working-directory: apps/mac
+        run: swift test

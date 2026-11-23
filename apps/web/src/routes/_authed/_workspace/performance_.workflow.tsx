@@ -21,7 +21,6 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { type ChartSeries, WorkflowRunsChart } from "@/components/workflow-runs-chart";
-import { authDisabled } from "@/lib/auth-client";
 import { useFlag } from "@/lib/flags";
 import {
   clock,
@@ -35,9 +34,8 @@ import {
 } from "@/lib/job-times";
 import { providerInfo } from "@/lib/provider-catalog";
 import { rangeSearch, textParam, useRangeReport, useSetSearch } from "@/lib/search-params";
-import { rangeDays, rangePhrase, resolveRange, type TimeRange } from "@/lib/time-range";
+import { rangePhrase, resolveRange, type TimeRange } from "@/lib/time-range";
 import { cn } from "@/lib/utils";
-import { sampleWorkflowReport } from "@/lib/workflow-sample";
 
 const DEFAULT_RANGE: TimeRange = "14d";
 const ranges = rangeSearch(JOB_RANGES, DEFAULT_RANGE);
@@ -71,8 +69,6 @@ const validateSearch = (search: Record<string, unknown>): Search => {
 
 function load(search: Search, range: TimeRange): Promise<WorkflowReport | null> {
   const ref = { repositoryId: search.repo, workflow: search.workflow ?? null };
-  if (authDisabled)
-    return Promise.resolve(sampleWorkflowReport(rangeDays(range), ref.repositoryId, ref.workflow));
   if (!ref.repositoryId) return Promise.resolve(null);
   // Not found: no runs of it in the range.
   return getWorkflowReport(range, ref).catch((error: { status?: number }) => {

@@ -31,14 +31,12 @@ import {
 } from "@/components/ui/select";
 import { requireFlagRoute } from "@/lib/flags";
 import { errorText } from "@/lib/api";
-import { authDisabled } from "@/lib/auth-client";
 import {
   ACTIVE_STATES,
   type Attempt,
   cancelEvaluation,
   editUrl,
   type EvaluationReport,
-  type EvaluationSummary,
   type EvaluationWorkflow,
   evaluationSizes,
   EVALUATION_RUNS,
@@ -47,8 +45,6 @@ import {
   listEvaluations,
   retryEvaluation,
   runUrl,
-  sampleEvaluation,
-  SAMPLE_WORKFLOWS,
   type Split,
   startEvaluation,
 } from "@/lib/evaluations";
@@ -61,12 +57,11 @@ import { routePrompt } from "@/lib/route-repo";
 import { useCopy } from "@/components/add-runner";
 import { cn } from "@/lib/utils";
 
-type EvaluateSearch = { id?: string; sample?: string };
+type EvaluateSearch = { id?: string };
 
 export const Route = createFileRoute("/_authed/_workspace/providers/$provider_/evaluate")({
   validateSearch: (search: Record<string, unknown>): EvaluateSearch => ({
     id: typeof search.id === "string" && search.id ? search.id : undefined,
-    sample: typeof search.sample === "string" ? search.sample : undefined,
   }),
   beforeLoad: ({ params, context }) => {
     requireFlagRoute("provider-evaluations")({ context });
@@ -81,7 +76,7 @@ const POLL_MS = 10_000;
 
 function EvaluatePage() {
   const { provider } = Route.useParams();
-  const { id, sample } = Route.useSearch();
+  const { id } = Route.useSearch();
   const { current } = Route.useRouteContext();
   const info = providerInfo(provider);
   usePageTitle(`Evaluate ${info.name}`);
@@ -108,20 +103,13 @@ function EvaluatePage() {
           </p>
         </div>
       </header>
-      {id || sample?.startsWith("eval") ? (
-        <EvaluationView
-          key={id ?? sample}
-          id={id ?? ""}
-          sample={sample}
-          provider={provider}
-          editable={canManage(current.role)}
-        />
+      {id ? (
+        <EvaluationView key={id} id={id} provider={provider} editable={canManage(current.role)} />
       ) : (
         <Setup
           provider={provider}
           workspaceId={current.workspace.id}
           editable={canManage(current.role)}
-          sample={sample}
         />
       )}
     </section>
@@ -164,7 +152,8 @@ function Stepper({ at, provider }: { at: number; provider: string }) {
 
 /** Calls `load` now and every POLL_MS while `polling`, keeping the last answer. */
 function usePolled<T>(load: () => Promise<T>, polling: boolean, deps: unknown[]) {
-  const [value, setValue] = useState<T | null>(null);
+  // Undefined until the first answer, since null can be an answer.
+  const [value, setValue] = useState<T | undefined>(undefined);
   const [error, setError] = useState<string | null>(null);
   useEffect(() => {
     let live = true;
@@ -190,24 +179,15 @@ function Setup({
   provider,
   workspaceId,
   editable,
-  sample,
 }: {
   provider: string;
   workspaceId: string;
   editable: boolean;
-  sample?: string;
 }) {
   // Null: GitHub can't tell (a personal account), so it isn't asked.
-  const apps = usePolled(
-    () =>
-      authDisabled
-        ? Promise.resolve(sample === "connect" ? [] : null)
-        : getProviderApps(workspaceId),
-    true,
-    [workspaceId],
-  );
-  const loaded = apps.value !== null || apps.error !== null || authDisabled;
-  const connected = apps.value === null || apps.value.includes(provider as never);
+  const apps = usePolled(() => getProviderApps(workspaceId), true, [workspaceId]);
+  const loaded = apps.value !== undefined || apps.error !== null;
+  const connected = !apps.value || apps.value.includes(provider as never);
   if (!loaded) return <Stepper at={0} provider={provider} />;
   return (
     <>
@@ -281,16 +261,10 @@ function Choose({ provider, editable }: { provider: string; editable: boolean })
   const { name } = providerInfo(provider);
   const navigate = useNavigate();
   const sizes = evaluationSizes(provider);
-  const workflows = usePolled(
-    () => (authDisabled ? Promise.resolve(SAMPLE_WORKFLOWS) : getEvaluationWorkflows()),
-    true,
-    [],
+  const workflows = usePolled(getEvaluationWorkflows, true, []);
+  const active = usePolled(() => listEvaluations(provider), false, [provider]).value?.filter((e) =>
+    ACTIVE_STATES.includes(e.state),
   );
-  const active = usePolled(
-    () => (authDisabled ? Promise.resolve([] as EvaluationSummary[]) : listEvaluations(provider)),
-    false,
-    [provider],
-  ).value?.filter((e) => ACTIVE_STATES.includes(e.state));
   const list = workflows.value ?? [];
   const repos = [...new Map(list.map((w) => [w.repositoryId, w.repository])).entries()];
   const [repoId, setRepoId] = useState<number | null>(null);
@@ -309,18 +283,16 @@ function Choose({ provider, editable }: { provider: string; editable: boolean })
     setStarting(true);
     setError(null);
     try {
-      const { id } = authDisabled
-        ? { id: "" }
-        : await startEvaluation({
-            repositoryId: workflow.repositoryId,
-            workflowPath: workflow.path,
-            provider,
-            vcpus,
-          });
+      const { id } = await startEvaluation({
+        repositoryId: workflow.repositoryId,
+        workflowPath: workflow.path,
+        provider,
+        vcpus,
+      });
       await navigate({
         to: "/providers/$provider/evaluate",
         params: { provider },
-        search: authDisabled ? { sample: "eval-running" } : { id },
+        search: { id },
       });
     } catch (caught) {
       setError(errorText(caught));
@@ -328,7 +300,7 @@ function Choose({ provider, editable }: { provider: string; editable: boolean })
     }
   }
 
-  if (workflows.value === null)
+  if (workflows.value === undefined)
     return workflows.error ? (
       <p className="text-sm text-destructive">{workflows.error}</p>
     ) : (
@@ -561,29 +533,15 @@ function RouteFirst({ workflow }: { workflow: EvaluationWorkflow }) {
 
 function EvaluationView({
   id,
-  sample,
   provider,
   editable,
 }: {
   id: string;
-  sample?: string;
   provider: string;
   editable: boolean;
 }) {
   const [refresh, setRefresh] = useState(0);
-  const load = () => {
-    if (!authDisabled) return getEvaluation(id);
-    if (sample === "eval-waiting") return Promise.resolve(sampleEvaluation(provider, 0, "waiting"));
-    if (sample === "eval-done") return Promise.resolve(sampleEvaluation(provider, EVALUATION_RUNS));
-    if (sample === "eval-starting") {
-      const report = sampleEvaluation(provider, 0);
-      return Promise.resolve({
-        ...report,
-        attempts: report.attempts.map((a) => ({ ...a, status: "waiting" as const, jobs: [] })),
-      });
-    }
-    return Promise.resolve(sampleEvaluation(provider, 2));
-  };
+  const load = () => getEvaluation(id);
   const [polling, setPolling] = useState(true);
   const { value: report, error } = usePolled(load, polling, [id, refresh]);
   useEffect(() => {

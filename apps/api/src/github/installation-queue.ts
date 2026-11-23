@@ -2,7 +2,7 @@
 // of its own, so the modules that queue work don't import the one that runs it.
 import type { UsageAccount } from "../providers/actions-billing.ts";
 import type { Env } from "../env.ts";
-import type { RunnerScope } from "./github-app.ts";
+import type { RunnerScope } from "./runners-api.ts";
 import type { ProviderSyncTask } from "../providers/provider-sync.ts";
 
 export const INSTALLATION_TASK_QUEUE = "relayrunner-installation-tasks";

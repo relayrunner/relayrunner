@@ -10,14 +10,12 @@ import { TipRow } from "@/components/chart-parts";
 import { Legend, StackedBars, Swatch } from "@/components/stacked-bars";
 import { TypePhases } from "@/components/job-phases";
 import { WorkflowLink } from "@/components/workflow-link";
-import { authDisabled } from "@/lib/auth-client";
 import { DAY_MS, minutesText, plural } from "@/lib/job-times";
 import {
   change,
   getJobTypeTimes,
   type JobTypeTime,
   type JobTypeTimes,
-  sampleJobTypeTimes,
   summarize,
   typeColor,
   type TypeKey,
@@ -25,11 +23,8 @@ import {
   type TypeSummary,
   type TypeTotal,
 } from "@/lib/job-types";
-import { rangeDays, rangePhrase, type TimeRange, trendPhrase } from "@/lib/time-range";
+import { rangePhrase, type TimeRange, trendPhrase } from "@/lib/time-range";
 import { cn, percent } from "@/lib/utils";
-
-const load = (range: TimeRange) =>
-  authDisabled ? Promise.resolve(sampleJobTypeTimes(rangeDays(range))) : getJobTypeTimes(range);
 
 const share = (ms: number, total: number) => percent(total ? ms / total : 0);
 
@@ -58,7 +53,7 @@ export function JobTypes({ range, repository }: { range: TimeRange; repository: 
   useEffect(() => {
     let live = true;
     setFailed(false);
-    load(range)
+    getJobTypeTimes(range)
       .then((next) => live && setReport(next))
       .catch(() => live && setFailed(true));
     return () => {

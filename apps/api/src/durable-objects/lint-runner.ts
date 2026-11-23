@@ -4,14 +4,14 @@ import { containerRunnerAllowed } from "../routing/container-runner.ts";
 import { createDb } from "../db/index.ts";
 import type { Env } from "../env.ts";
 import { recordRepoCheck } from "../checks/free-checks.ts";
+import { GitHubAccessError } from "../github/github-api.ts";
 import {
   completeCheckRun,
-  GitHubAccessError,
   pullRequestFiles,
   repoTarball,
   startCheckRun,
   type CheckRunOutput,
-} from "../github/github-app.ts";
+} from "../github/repos-api.ts";
 import type { CheckResult } from "../checks/native-checks.ts";
 import {
   changedLines,

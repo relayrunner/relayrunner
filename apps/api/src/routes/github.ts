@@ -7,9 +7,9 @@ import type { AppEnv } from "../app.ts";
 import { createDb, schema } from "../db/index.ts";
 import { recordEnterpriseInstallation } from "../github/enterprise.ts";
 import { appInstallationToken, rateLimits } from "../github/github-app.ts";
+import { GitHubError } from "../github/github-api.ts";
 import {
   dashboardPath,
-  GitHubError,
   appInstallUrl,
   installUrl,
   installationSettingsUrl,

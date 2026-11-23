@@ -1,5 +1,5 @@
 import { expect, test } from "vitest";
-import { sampleRouterSetup } from "./router-sample.ts";
+import { sampleRouterSetup } from "./sample/router-setup.ts";
 import {
   defaultPicks,
   firstRouted,

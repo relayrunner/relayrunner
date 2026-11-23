@@ -1,7 +1,7 @@
-// Made-up workflow reports for `VITE_AUTH_DISABLED=true` dev builds, which have no API: CI in
-// acme/app on GitHub, a laptop, Blacksmith (from an evaluation and routed runs) and a container.
+// Made-up workflow reports for the dev preview (lib/sample/answers.ts): CI in acme/app on GitHub,
+// a laptop, Blacksmith (from an evaluation and routed runs) and a container.
 import type { WorkflowReport, WorkflowRunner, WorkflowRunPoint } from "@relayrunner/api-types";
-import { DAY_MS } from "./job-times.ts";
+import { DAY_MS } from "@/lib/job-times";
 
 const LINUX = "github:linux-2-core";
 const MAC = "machine:sample";

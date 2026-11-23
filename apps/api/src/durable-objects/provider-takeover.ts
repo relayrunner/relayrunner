@@ -6,13 +6,13 @@ import { createDb, schema } from "../db/index.ts";
 import type { Env } from "../env.ts";
 import { errorMessage } from "../errors.ts";
 import {
-  appInstallationToken,
-  deleteRunner,
   rerunJob,
   runAttemptStatus,
   runAttemptTriggeringActor,
   workflowJobRunner,
-} from "../github/github-app.ts";
+} from "../github/actions-api.ts";
+import { appInstallationToken } from "../github/github-app.ts";
+import { deleteRunner } from "../github/runners-api.ts";
 import { installationRunnerScope } from "../github/installations.ts";
 import {
   MAX_TAKEOVER_ATTEMPT,

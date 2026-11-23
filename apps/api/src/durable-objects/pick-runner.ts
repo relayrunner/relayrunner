@@ -2,15 +2,10 @@ import { DurableObject } from "cloudflare:workers";
 import { isAutoRelay, relayInputs } from "@relayrunner/runner-order";
 import { autoPick, relayJobOf } from "../routing/auto-jobs.ts";
 import type { Env } from "../env.ts";
-import {
-  appInstallationToken,
-  createCheckRun,
-  DEFAULT_RUNNER_GROUP_ID,
-  deleteRunner,
-  type RunnerScope,
-  runAttemptTriggeringActor,
-  workflowJobStatus,
-} from "../github/github-app.ts";
+import { runAttemptTriggeringActor, workflowJobStatus } from "../github/actions-api.ts";
+import { appInstallationToken } from "../github/github-app.ts";
+import { createCheckRun } from "../github/repos-api.ts";
+import { DEFAULT_RUNNER_GROUP_ID, deleteRunner, type RunnerScope } from "../github/runners-api.ts";
 import { fetchOneGroupAccess, groupBlocksRepo } from "../github/github-runners.ts";
 import { blockedReason, pickAccessCheckRun } from "../routing/pick-access.ts";
 import { mintRepoFirst } from "../routing/repo-runner.ts";

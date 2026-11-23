@@ -11,7 +11,13 @@ const github = vi.hoisted(() => ({
 vi.mock("../github/github-app.ts", async (importOriginal) => ({
   ...(await importOriginal<typeof import("../github/github-app.ts")>()),
   appInstallationToken: async () => "ghs_test",
+}));
+vi.mock("../github/actions-api.ts", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("../github/actions-api.ts")>()),
   workflowJobStatus: github.jobStatus,
+}));
+vi.mock("../github/runners-api.ts", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("../github/runners-api.ts")>()),
   runnerOnline: github.runnerOnline,
   deleteRunner: github.deleteRunner,
 }));

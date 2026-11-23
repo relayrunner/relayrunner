@@ -12,8 +12,8 @@ import {
 import type { Env } from "../env.ts";
 import { errorMessage } from "../errors.ts";
 import type { PickWork } from "./pick-runner.ts";
+import { appInstallationToken } from "../github/github-app.ts";
 import {
-  appInstallationToken,
   DEFAULT_RUNNER_GROUP_ID,
   deleteRunner,
   generateJitConfig,
@@ -21,7 +21,7 @@ import {
   runnerBusy,
   runnerScope,
   type RunnerScope,
-} from "../github/github-app.ts";
+} from "../github/runners-api.ts";
 import { createDb } from "../db/index.ts";
 import { installationRunnerScope } from "../github/installations.ts";
 

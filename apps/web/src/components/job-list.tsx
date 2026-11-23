@@ -34,7 +34,7 @@ import {
   isFailure,
   type JobsReport,
   isLongWait,
-  loadJobs,
+  getJobs,
 } from "@/lib/runs";
 import { JOB_RANGES } from "@/lib/job-times";
 import { rangeSearch, unlessDefault, useRangeReport, useSetSearch } from "@/lib/search-params";
@@ -266,7 +266,7 @@ export const JobList = memo(function JobList({ report: first }: { report: JobsRe
   const [folded, setFolded] = useState<ReadonlySet<string>>(new Set());
   const setSearch = useSetSearch<HistorySearch>();
   // Each range is its own load, since the newest jobs alone can fill a busy workspace's list.
-  const report = useRangeReport(first, range, loadJobs);
+  const report = useRangeReport(first, range, getJobs);
 
   const repositories = useMemo(
     () => [...new Set(report.jobs.map((job) => job.repository))].sort(),

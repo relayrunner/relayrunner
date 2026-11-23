@@ -39,10 +39,8 @@ import { linkEnterpriseOrganizations } from "../github/enterprise.ts";
 import { userGitHubToken } from "../github/installations.ts";
 import { spendAppToken, spendInstallationId } from "../github/spend-app.ts";
 import {
-  appInstallationToken,
   enterpriseBillingUsage,
   enterpriseBudgets,
-  GitHubAccessError,
   orgBillingUsage,
   orgBudgets,
   orgPlan,
@@ -50,7 +48,9 @@ import {
   userPlan,
   type BillingBudget,
   type BillingUsageItem,
-} from "../github/github-app.ts";
+} from "../github/billing-api.ts";
+import { GitHubAccessError } from "../github/github-api.ts";
+import { appInstallationToken } from "../github/github-app.ts";
 
 /**
  * Included Actions minutes per plan. GitHub counts them in Linux 2-core minutes; other runners use

@@ -2,7 +2,8 @@ import { recordEvent } from "../ingest/activity-log.ts";
 import { and, eq, inArray } from "drizzle-orm";
 import type { Auth } from "../auth/auth.ts";
 import { type Db, schema } from "../db/index.ts";
-import { GitHubError, type GitHubInstallation, listUserInstallations } from "./github.ts";
+import { GitHubError } from "./github-api.ts";
+import { type GitHubInstallation, listUserInstallations } from "./github.ts";
 import {
   ensureWorkspace,
   upsertInstallation,

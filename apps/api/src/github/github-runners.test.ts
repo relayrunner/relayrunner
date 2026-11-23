@@ -2,7 +2,7 @@ import { afterEach, beforeAll, beforeEach, describe, expect, test, vi } from "vi
 import { app } from "../app.ts";
 import { createDb, schema } from "../db/index.ts";
 import type { Env } from "../env.ts";
-import { listRunners, type RunnerScope } from "./github-app.ts";
+import { listRunners, type RunnerScope } from "./runners-api.ts";
 import {
   describeAccess,
   groupAllows,

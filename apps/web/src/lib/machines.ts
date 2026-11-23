@@ -1,7 +1,6 @@
 import { AppError } from "@relayrunner/errors";
+import { useQuery } from "@tanstack/react-query";
 import { api } from "@/lib/api";
-import { authDisabled } from "@/lib/auth-client";
-import { clearOnWorkspaceChange } from "@/lib/workspace-cache";
 import type { MachineDevice } from "./device.ts";
 import { sampleMachineJob } from "./live-jobs.ts";
 
@@ -144,36 +143,23 @@ export function listMachines() {
   return api<{ machines: Machine[]; others?: OtherMachine[] }>("/machines");
 }
 
-// The workspace's machines, shared by every runner hover card and kept for a short while, so
-// hovering down a table reads the list once.
+// The workspace's machines, shared by every runner hover card and panel and kept for a short
+// while, so hovering down a table reads the list once.
 const FRESH_MS = 30_000;
-let machines: { at: number; list: Promise<Machine[]>; read?: Machine[] } | null = null;
-clearOnWorkspaceChange(() => (machines = null));
 
-/** A machine from the last read, or undefined when there's no fresh one to go by. */
-export function cachedMachine(id: string) {
-  if (!machines?.read || Date.now() - machines.at > FRESH_MS) return undefined;
-  return machines.read.find((machine) => machine.id === id) ?? null;
-}
-
-/** One machine of the workspace's, or null when it isn't one of them. */
-export async function workspaceMachine(id: string) {
-  if (!machines || Date.now() - machines.at > FRESH_MS) {
-    const list = authDisabled
-      ? Promise.resolve(SAMPLE_MACHINES)
-      : listMachines().then((result) => result.machines);
-    // A failed read isn't kept, so the next hover asks again.
-    list.catch(() => {
-      if (machines?.list === list) machines = null;
-    });
-    const entry: NonNullable<typeof machines> = { at: Date.now(), list };
-    void list.then(
-      (read) => (entry.read = read),
-      () => undefined,
-    );
-    machines = entry;
-  }
-  return (await machines.list).find((machine) => machine.id === id) ?? null;
+/**
+ * One machine of the workspace's: undefined while the list loads, null when it isn't one of them
+ * or the list couldn't be read. No id reads nothing.
+ */
+export function useWorkspaceMachine(id: string | null): Machine | null | undefined {
+  const query = useQuery({
+    queryKey: ["machines"],
+    queryFn: async () => (await listMachines()).machines,
+    staleTime: FRESH_MS,
+    enabled: id !== null,
+  });
+  if (id === null || query.isError) return null;
+  return query.data && (query.data.find((machine) => machine.id === id) ?? null);
 }
 
 // The dev preview's machines, matching the sample reports' `machine:` keys.

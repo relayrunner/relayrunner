@@ -1,24 +1,10 @@
 import { AppError } from "@relayrunner/errors";
+import { useQuery } from "@tanstack/react-query";
 import { CatchBoundary } from "@tanstack/react-router";
 import { ExternalLinkIcon, TriangleAlert } from "lucide-react";
-import { useEffect, useState } from "react";
 import { Button } from "@/components/ui/button";
-import { authDisabled } from "@/lib/auth-client";
-import { type FailureCause, getJobFailure, type JobFailure, sampleJobFailure } from "@/lib/runs";
+import { type FailureCause, getJobFailure, type JobFailure } from "@/lib/runs";
 import { cn } from "@/lib/utils";
-
-// A failed job's failure doesn't change, so the last ones read are kept.
-const cache = new Map<number, JobFailure>();
-const CACHE_SIZE = 50;
-
-function fetchFailure(jobId: number) {
-  const request = authDisabled ? Promise.resolve(sampleJobFailure()) : getJobFailure(jobId);
-  return request.then((failure) => {
-    cache.set(jobId, failure);
-    if (cache.size > CACHE_SIZE) cache.delete(cache.keys().next().value!);
-    return failure;
-  });
-}
 
 type Problem = { text: string; retry: boolean };
 
@@ -72,25 +58,17 @@ function Heading({ failure }: { failure: JobFailure | undefined }) {
 }
 
 function FailureDetail({ jobId, logUrl }: { jobId: number; logUrl: string }) {
+  // A failed job's failure doesn't change, so it's read once.
+  const query = useQuery({
+    queryKey: ["job-failure", jobId],
+    queryFn: () => getJobFailure(jobId),
+    staleTime: Infinity,
+  });
   // Undefined while loading.
-  const [failure, setFailure] = useState<JobFailure | undefined>(() => cache.get(jobId));
-  const [problem, setProblem] = useState<Problem | null>(null);
-  const [attempt, setAttempt] = useState(0);
-  useEffect(() => {
-    if (cache.has(jobId)) return;
-    let live = true;
-    fetchFailure(jobId)
-      .then((value) => live && setFailure(value))
-      .catch((caught: unknown) => live && setProblem(problemOf(caught)));
-    return () => {
-      live = false;
-    };
-  }, [jobId, attempt]);
-
-  const retry = () => {
-    setProblem(null);
-    setAttempt((value) => value + 1);
-  };
+  const failure = query.data;
+  // A retry shows the skeleton again until it answers.
+  const problem = query.isError && !query.isFetching ? problemOf(query.error) : null;
+  const retry = () => void query.refetch();
 
   return (
     <>
