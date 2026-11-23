@@ -36,6 +36,8 @@ final class CrashReports {
     alert.addButton(withTitle: "Don't Send")
     alert.showsSuppressionButton = true
     alert.suppressionButton?.title = "Don't ask again"
+    alert.layout()
+    (alert.accessoryView as? NSScrollView)?.documentView?.scroll(.zero)
     NSApp.activate(ignoringOtherApps: true)
     let send = alert.runModal() == .alertFirstButtonReturn
     if alert.suppressionButton?.state == .on { AppSettings.crashReportsOff = true }
@@ -80,9 +82,9 @@ final class CrashReports {
     view.maxSize = NSSize(width: CGFloat.greatestFiniteMagnitude, height: .greatestFiniteMagnitude)
     view.autoresizingMask = [.height]
     scroll.documentView = view
-    // It opens at the top left, with the summary in view.
-    view.sizeToFit()
-    view.scroll(.zero)
+    // A text view keeps its insertion point at the end of what it was given, and scrolls there
+    // when the alert shows it; at the start, the summary is what's in view.
+    view.setSelectedRange(NSRange(location: 0, length: 0))
     return scroll
   }
 }
