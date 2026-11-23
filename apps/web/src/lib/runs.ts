@@ -159,15 +159,9 @@ export function getRuns(range: TimeRange, only?: WorkflowRef) {
   return api<RunsReport>(`/runs?${query}`);
 }
 
-/** The workspace's runs in a range (or one workflow's), or the sample's without sign-in. */
-export const loadRuns = getRuns;
-
 export function getJobs(range: TimeRange) {
   return api<JobsReport>(`/runs/jobs?${reportQuery(range)}`);
 }
-
-/** The History page's Jobs view, or its sample without sign-in. */
-export const loadJobs = getJobs;
 
 export function getRunJobs(run: RunIds) {
   return api<RunJobs>(`/runs/${run.repositoryId}/${run.runId}/${run.runAttempt}/jobs`);

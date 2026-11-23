@@ -3,10 +3,11 @@
 import { sampleActionsUsage } from "@/lib/actions-usage";
 import { sampleRoutingHealth, type RoutingRange } from "@/lib/admin-routing";
 import { SAMPLE_WORKFLOWS } from "@/lib/evaluations";
-import { FLAG_KEYS } from "@relayrunner/api-types";
+import { BASE_CATALOG } from "@relayrunner/providers/catalog";
 import { DEFAULT_RETRY_SETTINGS, type FreeMinutesProvider } from "@relayrunner/runner-order";
+import { allFlags } from "@/lib/flags";
 import { sampleFreeMinutes } from "@/lib/free-minutes";
-import { sampleJobTimes } from "@/lib/job-times";
+import { DAY_MS, sampleJobTimes } from "@/lib/job-times";
 import { sampleJobTypeTimes } from "@/lib/job-types";
 import { SAMPLE_MACHINES } from "@/lib/machines";
 import { sampleConnections } from "@/lib/provider-connections";
@@ -33,8 +34,6 @@ import {
 } from "@/lib/signals";
 import { sampleLogBucket, sampleTelemetry } from "@/lib/telemetry";
 
-const DAY_MS = 86_400_000;
-
 type Answer = (match: RegExpMatchArray, query: URLSearchParams) => unknown;
 
 // The window a report query asks for: `days` back from now, or `from` to `to`.
@@ -49,7 +48,7 @@ const daysOf = (query: URLSearchParams) => {
   return Math.max(1, Math.round((to - from) / DAY_MS));
 };
 
-// Jobs the sample runs listed, so a job's steps can follow its times.
+// The jobs of the last run the sample listed, so a job's steps can follow its times.
 const listedJobs = new Map<number, RunJob>();
 
 const ANSWERS: [RegExp, Answer][] = [
@@ -57,7 +56,7 @@ const ANSWERS: [RegExp, Answer][] = [
   [/^\/admin\/routing$/, (_, q) => sampleRoutingHealth(q.get("range") as RoutingRange)],
   [/^\/evaluations\/workflows$/, () => ({ workflows: SAMPLE_WORKFLOWS })],
   [/^\/evaluations$/, () => ({ evaluations: [] })],
-  [/^\/providers\/catalog$/, () => ({ providers: [] })],
+  [/^\/providers\/catalog$/, () => ({ providers: BASE_CATALOG })],
   [/^\/providers\/connections$/, () => sampleConnections()],
   [
     /^\/providers\/(blacksmith|groundbox)\/minutes$/,
@@ -110,6 +109,7 @@ const ANSWERS: [RegExp, Answer][] = [
     /^\/runs\/\d+\/(\d+)\/\d+\/jobs$/,
     ([, runId]) => {
       const answer = sampleRunJobs({ runId: Number(runId) });
+      listedJobs.clear();
       for (const job of answer.jobs) listedJobs.set(job.id, job);
       return answer;
     },
@@ -137,7 +137,7 @@ const ANSWERS: [RegExp, Answer][] = [
   [/^\/workspaces\/[^/]+\/ai$/, () => ({ offAt: null })],
   [/^\/workspaces\/[^/]+\/provider-health$/, () => sampleHealth()],
   // Every flag on, to show what's behind them.
-  [/^\/flags$/, () => Object.fromEntries(FLAG_KEYS.map((key) => [key, true]))],
+  [/^\/flags$/, () => allFlags(true)],
 ];
 
 // `?sample=unhealthy` on the page shows one runner type the Router skips.

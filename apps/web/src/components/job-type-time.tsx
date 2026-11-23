@@ -26,8 +26,6 @@ import {
 import { rangePhrase, type TimeRange, trendPhrase } from "@/lib/time-range";
 import { cn, percent } from "@/lib/utils";
 
-const load = getJobTypeTimes;
-
 const share = (ms: number, total: number) => percent(total ? ms / total : 0);
 
 /** The average job's minutes, such as "3.2 min". */
@@ -55,7 +53,7 @@ export function JobTypes({ range, repository }: { range: TimeRange; repository: 
   useEffect(() => {
     let live = true;
     setFailed(false);
-    load(range)
+    getJobTypeTimes(range)
       .then((next) => live && setReport(next))
       .catch(() => live && setFailed(true));
     return () => {

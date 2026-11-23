@@ -69,10 +69,6 @@ const ranges = rangeSearch(JOB_RANGES, DEFAULT_RANGE);
 // Whether the Runners tab groups runners by provider, kept per browser.
 const GROUPED_KEY = "relayrunner:performance:by-provider";
 
-function load(range: TimeRange) {
-  return getJobTimes(range);
-}
-
 // An old link's `?view=jobs` lands on Workflows, whose rows open each workflow's jobs.
 const TABS = [
   { value: "workflows", label: "Workflows" },
@@ -105,7 +101,7 @@ const validateSearch = (search: Record<string, unknown>): Search => {
 
 export const Route = createFileRoute("/_authed/_workspace/performance")({
   validateSearch,
-  loader: ({ location }) => load(ranges.rangeOf(validateSearch(location.search))),
+  loader: ({ location }) => getJobTimes(ranges.rangeOf(validateSearch(location.search))),
   // Every tab reads the same report, so switching tabs doesn't load it again, and a new range
   // loads in the page, keeping the last one up meanwhile.
   shouldReload: ({ cause }) => cause !== "stay",
@@ -132,7 +128,7 @@ function PerformancePage() {
   const range = ranges.rangeOf(search);
   const repository = search.repos ?? "all";
   const setSearch = useSetSearch<Search>();
-  const report: JobTimesReport = useRangeReport(Route.useLoaderData(), range, load);
+  const report: JobTimesReport = useRangeReport(Route.useLoaderData(), range, getJobTimes);
   const [grouped, setGrouped] = useState(() => readFlag(GROUPED_KEY));
   const detail = useMemo(() => linkedDetail(report.workflows, search), [report, search]);
   function closeDetail() {

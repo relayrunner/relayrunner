@@ -245,12 +245,12 @@ function useProviderHealth(workspaceId: string) {
   }, [workspaceId]);
 
   async function tryAgain(runner: UnhealthyRunner) {
-    if (!authDisabled) await clearUnhealthyRunner(workspaceId, runner);
+    await clearUnhealthyRunner(workspaceId, runner);
     setHealth((h) => h && { ...h, unhealthy: h.unhealthy.filter((r) => r !== runner) });
   }
 
   async function setEnabled(enabled: boolean) {
-    if (!authDisabled) await setSkipUnhealthy(workspaceId, enabled);
+    await setSkipUnhealthy(workspaceId, enabled);
     setHealth((h) => h && { ...h, enabled });
   }
 
@@ -524,14 +524,14 @@ function useAutoJobs(workspaceId: string) {
       );
     update(setting);
     try {
-      if (!authDisabled) await setAutoJob(workspaceId, job.id, setting);
+      await setAutoJob(workspaceId, job.id, setting);
     } catch {
       update(job);
     }
   }
 
   async function setSize(size: number) {
-    if (!authDisabled) await setAutoSize(workspaceId, size);
+    await setAutoSize(workspaceId, size);
     setJobs((j) => j && { ...j, size });
   }
 

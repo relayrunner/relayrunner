@@ -40,8 +40,7 @@ import {
   parseRunParam,
   type Run,
   type RunsReport,
-  loadJobs,
-  loadRuns,
+  getJobs,
   runParam,
   triggerText,
 } from "@/lib/runs";
@@ -112,8 +111,8 @@ export const Route = createFileRoute("/_authed/_workspace/history")({
   // Each view loads its first range here, and another range in the page.
   loader: async ({ deps: { view }, location }): Promise<Loaded> => {
     const range = ranges.rangeOf(location.search as HistorySearch);
-    if (view === "jobs") return { view, jobs: await loadJobs(range) };
-    return { view, runs: await loadRuns(range) };
+    if (view === "jobs") return { view, jobs: await getJobs(range) };
+    return { view, runs: await getRuns(range) };
   },
   // A tab shows as it was when it's come back to: the Workflows tab refreshes itself while runs
   // are going, and opening or closing the panel only changes the search.
@@ -184,7 +183,7 @@ function WorkflowRuns({ loaded }: { loaded: RunsReport }) {
   const open = Route.useSearch({ select: (search) => search.run });
   const search = Route.useSearch();
   const range = ranges.rangeOf(search);
-  const first = useRangeReport(loaded, range, loadRuns);
+  const first = useRangeReport(loaded, range, getRuns);
   // Refetched while a run on screen is going, so new jobs, runs and results show without a reload.
   const [report, setReport] = useState(first);
   useEffect(() => setReport(first), [first]);

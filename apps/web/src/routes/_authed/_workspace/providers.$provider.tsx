@@ -52,10 +52,6 @@ import {
 import { rangePhrase, type TimeRange } from "@/lib/time-range";
 import { usePageTitle } from "@/lib/page-title";
 
-function load(provider: string, range: TimeRange) {
-  return getProviderReport(provider, range);
-}
-
 const rangeParams = rangeSearch(PROVIDER_RANGES, PROVIDER_DEFAULT_RANGE);
 const { rangeOf, toSearch } = rangeParams;
 
@@ -84,10 +80,12 @@ export const Route = createFileRoute("/_authed/_workspace/providers/$provider")(
   loader: async ({ params, location }) => {
     if (!isKnownProvider(params.provider)) throw notFound();
     const search = validateSearch(location.search);
-    const report = await load(params.provider, rangeOf(search));
+    const report = await getProviderReport(params.provider, rangeOf(search));
     // Nothing ran here this month: look back further before leading with how to start.
     const unused =
-      report.jobs === 0 && !search.range && (await load(params.provider, WIDEST)).jobs === 0;
+      report.jobs === 0 &&
+      !search.range &&
+      (await getProviderReport(params.provider, WIDEST)).jobs === 0;
     return { report, unused };
   },
   // A new range loads in the page, keeping the last one up meanwhile.
@@ -106,7 +104,7 @@ function ProviderView({ first, unused }: { first: ProviderReport; unused: boolea
   const search = Route.useSearch();
   const range = rangeOf(search);
   const setSearch = useSetSearch<ProviderSearch>();
-  const report = useRangeReport(first, range, (next) => load(provider, next));
+  const report = useRangeReport(first, range, (next) => getProviderReport(provider, next));
   const info = providerInfo(provider);
   usePageTitle(info.name);
   const catalog = reportCatalog(report);

@@ -15,7 +15,7 @@ import { WORKFLOW_DEFAULT_RANGE, WORKFLOW_RANGES } from "@/lib/panels";
 import {
   HISTORY_DEFAULT_RANGE,
   isFailure,
-  loadRuns,
+  getRuns,
   type Run,
   type RunsReport,
   runParam,
@@ -38,7 +38,7 @@ function loadReport(workflow: WorkflowRef, range: TimeRange) {
   const id = `${workflowParam(workflow)}\u001f${range}`;
   let request = reports.get(id);
   if (!request) {
-    request = loadRuns(range, workflow);
+    request = getRuns(range, workflow);
     request.catch(() => reports.delete(id));
     reports.set(id, request);
     setTimeout(() => reports.get(id) === request && reports.delete(id), 60_000);

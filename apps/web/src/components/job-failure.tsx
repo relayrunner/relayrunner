@@ -11,8 +11,7 @@ const cache = new Map<number, JobFailure>();
 const CACHE_SIZE = 50;
 
 function fetchFailure(jobId: number) {
-  const request = getJobFailure(jobId);
-  return request.then((failure) => {
+  return getJobFailure(jobId).then((failure) => {
     cache.set(jobId, failure);
     if (cache.size > CACHE_SIZE) cache.delete(cache.keys().next().value!);
     return failure;

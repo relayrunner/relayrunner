@@ -91,10 +91,6 @@ const ranges = rangeSearch(RANGES, DEFAULT_RANGE);
 const keyOf = (range: TimeRange, filter: SignalFilter) =>
   JSON.stringify([range, ...FILTER_KEYS.map((key) => filter[key] ?? "")]);
 
-function load(range: TimeRange, filter: SignalFilter): Promise<SignalsReport> {
-  return getSignals(range, filter);
-}
-
 const BREAKDOWNS = BREAKDOWN_VIEWS.map((option) => option.value);
 const SIGNAL_IDS = Object.keys(SIGNAL_COPY) as SignalId[];
 // `by` is how the Breakdown splits jobs; the filter's values narrow the page; `signal`, `in` and
@@ -138,7 +134,7 @@ export const Route = createFileRoute("/_authed/_workspace/signals")({
   validateSearch,
   loader: ({ location }) => {
     const search = validateSearch(location.search);
-    return load(rangeOf(search), filterOf(search));
+    return getSignals(rangeOf(search), filterOf(search));
   },
   // A new range or filter loads in the page, keeping the last one up meanwhile.
   shouldReload: ({ cause }) => cause !== "stay",
@@ -152,7 +148,7 @@ function SignalsPage() {
   const filtered = isFiltered(filter);
   const setSearch = useSetSearch<Search>();
   const key = keyOf(range, filter);
-  const report = useRangeReport(Route.useLoaderData(), key, () => load(range, filter));
+  const report = useRangeReport(Route.useLoaderData(), key, () => getSignals(range, filter));
   const manyRepos = spansRepos(report);
 
   function chooseRange(next: TimeRange) {

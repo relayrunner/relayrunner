@@ -1,5 +1,4 @@
 import { api } from "@/lib/api";
-import { authDisabled } from "@/lib/auth-client";
 
 const path = (workspaceId: string) => `/workspaces/${encodeURIComponent(workspaceId)}/ai`;
 
@@ -10,6 +9,5 @@ export async function getAiOffAt(workspaceId: string): Promise<string | null> {
 
 /** Turns AI on or off for the workspace. Owners and admins only. */
 export async function setWorkspaceAi(workspaceId: string, enabled: boolean) {
-  if (authDisabled) return;
   await api(path(workspaceId), { method: "PUT", body: JSON.stringify({ enabled }) });
 }

@@ -17,7 +17,8 @@ import { api } from "@/lib/api";
 /** How old a copy can get before the next navigation reads it again, in the background. */
 const REVALIDATE_MS = 60_000;
 
-const allFlags = (value: boolean) =>
+/** Every flag set to `value`. */
+export const allFlags = (value: boolean) =>
   Object.fromEntries(FLAG_KEYS.map((key: FlagKey) => [key, value])) as Flags;
 
 // Keyed by the workspace they were read for, so switching workspace never shows the old ones.

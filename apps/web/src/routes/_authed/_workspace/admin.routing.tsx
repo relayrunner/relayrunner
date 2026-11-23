@@ -19,13 +19,9 @@ import {
 import { cn, elapsed, exact } from "@/lib/utils";
 import { formatTime } from "@/lib/time-zone";
 
-function load(range: RoutingRange): Promise<RoutingHealth> {
-  return getRoutingHealth(range);
-}
-
 // Operator admin, behind Cloudflare Access and an operator session (apps/api/src/routes/admin.ts).
 export const Route = createFileRoute("/_authed/_workspace/admin/routing")({
-  loader: () => load("24h"),
+  loader: () => getRoutingHealth("24h"),
   component: RoutingPage,
 });
 
@@ -45,7 +41,7 @@ function RoutingPage() {
 
   function chooseRange(next: RoutingRange) {
     setRange(next);
-    load(next)
+    getRoutingHealth(next)
       .then(setHealth)
       .catch(() => undefined);
   }

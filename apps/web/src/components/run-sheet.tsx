@@ -117,8 +117,7 @@ function cachedJobs(run: RunIds, status: RunStatus) {
 const stepsCache = new Map<number, JobStep[] | null>();
 
 function fetchJobSteps(job: RunJob) {
-  const request = getJobSteps(job.id);
-  return request.then((steps) => {
+  return getJobSteps(job.id).then((steps) => {
     if (job.status === "completed") {
       stepsCache.set(job.id, steps);
       if (stepsCache.size > CACHE_SIZE) stepsCache.delete(stepsCache.keys().next().value!);
