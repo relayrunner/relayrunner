@@ -14,7 +14,9 @@ export type InstallationTask =
   // One connected provider account's usage (src/providers/provider-sync.ts), hourly and after connecting.
   | ProviderSyncTask
   // One installation's last days of signals (src/reports/signals.ts), hourly.
-  | { kind: "signals"; installationId: number };
+  | { kind: "signals"; installationId: number }
+  // A new installation's recent runs, read from GitHub once (src/ingest/run-history.ts).
+  | { kind: "run-history"; installationId: number };
 
 // sendBatch takes at most 100 messages.
 const SEND_BATCH = 100;

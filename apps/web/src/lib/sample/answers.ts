@@ -13,7 +13,7 @@ import type { RunJob } from "@/lib/runs";
 import { FILTER_KEYS, type SignalFilter, type SignalId } from "@/lib/signals";
 import { sampleActionsUsage } from "./actions-usage";
 import { sampleRoutingHealth } from "./admin-routing";
-import { SAMPLE_WORKFLOWS, sampleEvaluation } from "./evaluations";
+import { SAMPLE_HISTORY_WORKFLOWS, SAMPLE_WORKFLOWS, sampleEvaluation } from "./evaluations";
 import { sampleJobTimes } from "./job-times";
 import { sampleJobTypeTimes } from "./job-types";
 import { sampleLiveJobs } from "./live-jobs";
@@ -72,7 +72,17 @@ const ANSWERS: [RegExp, Answer][] = [
   [/^\/activity\/options$/, () => sampleActivityOptions()],
   [/^\/usage\/actions$/, () => sampleActionsUsage()],
   [/^\/admin\/routing$/, (_, q) => sampleRoutingHealth(q.get("range") as RoutingRange)],
-  [/^\/evaluations\/workflows$/, () => ({ workflows: SAMPLE_WORKFLOWS })],
+  // `?sample=history`: a new installation whose run history is still being read.
+  [
+    /^\/evaluations\/workflows$/,
+    () => ({
+      workflows: sampleParam() === "history" ? SAMPLE_HISTORY_WORKFLOWS : SAMPLE_WORKFLOWS,
+    }),
+  ],
+  [
+    /^\/evaluations\/history$/,
+    () => ({ history: sampleParam() === "history" ? { state: "running", runs: 142 } : null }),
+  ],
   [/^\/evaluations$/, () => ({ evaluations: [] })],
   [/^\/evaluations\/([^/]+)$/, ([, id]) => sampleEvaluationById(decodeURIComponent(id!))],
   [/^\/providers\/catalog$/, () => ({ providers: BASE_CATALOG })],

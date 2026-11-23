@@ -1,4 +1,5 @@
-// Evaluations for the dev preview (lib/sample/answers.ts), like GET /api/evaluations/:id.
+// Evaluations for the dev preview (lib/sample/answers.ts), like GET /api/evaluations/:id. The
+// signed-out Evaluate page (routes/evaluate.$provider.tsx) shows sampleEvaluation as its example.
 import { labelForSize } from "@relayrunner/providers";
 import {
   type Attempt,
@@ -50,6 +51,13 @@ export const SAMPLE_WORKFLOWS: EvaluationWorkflow[] = [
     dispatched: false,
   },
 ];
+
+/** The same workflows while a new installation's history is read: GitHub lists them, no runs yet. */
+export const SAMPLE_HISTORY_WORKFLOWS: EvaluationWorkflow[] = SAMPLE_WORKFLOWS.map((w, i) =>
+  i === 0
+    ? { ...w, runs: 38, baselineRuns: 12, medianMs: 534_000 }
+    : { ...w, runs: 0, baselineRuns: 0, medianMs: null, relayed: null },
+);
 
 const SAMPLE_JOBS: [string, Split, Split, Split][] = [
   ["lint", split(9, 62), split(6, 58), split(4, 31)],
@@ -122,7 +130,8 @@ export function sampleEvaluation(
             conclusion: null,
           }))
         : attempts,
-    baseline: { runs: 20, medianMs: 520_000, waitMs: 12_000, usd: 0.114 },
+    // Today on 4 vCPU GitHub-hosted runners: 14 billed minutes at $0.016, so the sample reads as a saving.
+    baseline: { runs: 20, medianMs: 520_000, waitMs: 12_000, usd: 0.224 },
     cold:
       done >= 1
         ? { ms: SAMPLE_RUN_MS[0]!, waitMs: 7_000, usd: SAMPLE_RUN_USD[0]! }

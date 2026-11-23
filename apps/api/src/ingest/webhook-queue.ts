@@ -22,6 +22,7 @@ import { archiveDeadLetter, recordLastError } from "./dead-letters.ts";
 import { createDb, schema } from "../db/index.ts";
 import type { Env } from "../env.ts";
 import { forgetInstallation } from "../operator/admin-delete.ts";
+import { queueRunHistory } from "./run-history.ts";
 import {
   ensureWorkspace,
   findInstallationAndWorkspace,
@@ -537,6 +538,8 @@ async function recordInstallation(
   // `created` lists every repo the installation can see; other actions carry none.
   if (message.event === "installation") {
     await upsertRepositories(db, installation.id, message.repositories, observedAt);
+    // A new workspace's recent runs, so it has history to evaluate providers against.
+    if (message.action === "created") await queueRunHistory(env, db, installation.id);
     return;
   }
   await upsertRepositories(db, installation.id, message.added, observedAt);

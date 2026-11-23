@@ -18,6 +18,7 @@ import { Route as AuthedWorkspaceRouteImport } from './routes/_authed/_workspace
 import { Route as AuthedWelcomeRouteImport } from './routes/_authed/welcome'
 import { Route as AgentsConsentRouteImport } from './routes/agents.consent'
 import { Route as AgentsWorkspaceRouteImport } from './routes/agents.workspace'
+import { Route as EvaluateProviderRouteImport } from './routes/evaluate.$provider'
 import { Route as AuthedWorkspaceActivityRouteImport } from './routes/_authed/_workspace/activity'
 import { Route as AuthedWorkspaceHistoryRouteImport } from './routes/_authed/_workspace/history'
 import { Route as AuthedWorkspaceJobTimesRouteImport } from './routes/_authed/_workspace/job-times'
@@ -92,6 +93,11 @@ const AgentsConsentRoute = AgentsConsentRouteImport.update({
 const AgentsWorkspaceRoute = AgentsWorkspaceRouteImport.update({
   id: '/agents/workspace',
   path: '/agents/workspace',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const EvaluateProviderRoute = EvaluateProviderRouteImport.update({
+  id: '/evaluate/$provider',
+  path: '/evaluate/$provider',
   getParentRoute: () => rootRouteImport,
 } as any)
 const AuthedWorkspaceActivityRoute = AuthedWorkspaceActivityRouteImport.update({
@@ -286,6 +292,7 @@ export interface FileRoutesByFullPath {
   '/welcome': typeof AuthedWelcomeRoute
   '/agents/consent': typeof AgentsConsentRoute
   '/agents/workspace': typeof AgentsWorkspaceRoute
+  '/evaluate/$provider': typeof EvaluateProviderRoute
   '/activity': typeof AuthedWorkspaceActivityRoute
   '/history': typeof AuthedWorkspaceHistoryRoute
   '/job-times': typeof AuthedWorkspaceJobTimesRoute
@@ -327,6 +334,7 @@ export interface FileRoutesByTo {
   '/welcome': typeof AuthedWelcomeRoute
   '/agents/consent': typeof AgentsConsentRoute
   '/agents/workspace': typeof AgentsWorkspaceRoute
+  '/evaluate/$provider': typeof EvaluateProviderRoute
   '/activity': typeof AuthedWorkspaceActivityRoute
   '/history': typeof AuthedWorkspaceHistoryRoute
   '/job-times': typeof AuthedWorkspaceJobTimesRoute
@@ -371,6 +379,7 @@ export interface FileRoutesById {
   '/_authed/welcome': typeof AuthedWelcomeRoute
   '/agents/consent': typeof AgentsConsentRoute
   '/agents/workspace': typeof AgentsWorkspaceRoute
+  '/evaluate/$provider': typeof EvaluateProviderRoute
   '/_authed/_workspace/activity': typeof AuthedWorkspaceActivityRoute
   '/_authed/_workspace/history': typeof AuthedWorkspaceHistoryRoute
   '/_authed/_workspace/job-times': typeof AuthedWorkspaceJobTimesRoute
@@ -414,6 +423,7 @@ export interface FileRouteTypes {
     | '/welcome'
     | '/agents/consent'
     | '/agents/workspace'
+    | '/evaluate/$provider'
     | '/activity'
     | '/history'
     | '/job-times'
@@ -455,6 +465,7 @@ export interface FileRouteTypes {
     | '/welcome'
     | '/agents/consent'
     | '/agents/workspace'
+    | '/evaluate/$provider'
     | '/activity'
     | '/history'
     | '/job-times'
@@ -498,6 +509,7 @@ export interface FileRouteTypes {
     | '/_authed/welcome'
     | '/agents/consent'
     | '/agents/workspace'
+    | '/evaluate/$provider'
     | '/_authed/_workspace/activity'
     | '/_authed/_workspace/history'
     | '/_authed/_workspace/job-times'
@@ -540,6 +552,7 @@ export interface RootRouteChildren {
   LoginRoute: typeof LoginRoute
   AgentsConsentRoute: typeof AgentsConsentRoute
   AgentsWorkspaceRoute: typeof AgentsWorkspaceRoute
+  EvaluateProviderRoute: typeof EvaluateProviderRoute
 }
 
 declare module '@tanstack/react-router' {
@@ -605,6 +618,13 @@ declare module '@tanstack/react-router' {
       path: '/agents/workspace'
       fullPath: '/agents/workspace'
       preLoaderRoute: typeof AgentsWorkspaceRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/evaluate/$provider': {
+      id: '/evaluate/$provider'
+      path: '/evaluate/$provider'
+      fullPath: '/evaluate/$provider'
+      preLoaderRoute: typeof EvaluateProviderRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/_authed/_workspace/activity': {
@@ -932,6 +952,7 @@ const rootRouteChildren: RootRouteChildren = {
   LoginRoute: LoginRoute,
   AgentsConsentRoute: AgentsConsentRoute,
   AgentsWorkspaceRoute: AgentsWorkspaceRoute,
+  EvaluateProviderRoute: EvaluateProviderRoute,
 }
 export const routeTree = rootRouteImport
   ._addFileChildren(rootRouteChildren)

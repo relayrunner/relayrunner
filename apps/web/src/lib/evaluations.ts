@@ -20,7 +20,8 @@ export interface EvaluationWorkflow {
   runs: number;
   baselineRuns: number;
   medianMs: number | null;
-  relayed: boolean;
+  /** null while the run history is still being read: GitHub listed the workflow, no run named it yet. */
+  relayed: boolean | null;
   dispatched: boolean;
 }
 
@@ -108,6 +109,12 @@ export function evaluationSizes(provider: string) {
 export const getEvaluationWorkflows = () =>
   api<{ workflows: EvaluationWorkflow[] }>("/evaluations/workflows").then((r) => r.workflows);
 
+/** The new installation's run history import (apps/api/src/run-history.ts); null when it had none. */
+export type RunHistory = { state: "queued" | "running" | "done" | "failed"; runs: number } | null;
+
+export const getRunHistory = () =>
+  api<{ history: RunHistory }>("/evaluations/history").then((r) => r.history);
+
 export const listEvaluations = (provider: string) =>
   api<{ evaluations: EvaluationSummary[] }>(
     `/evaluations?provider=${encodeURIComponent(provider)}`,
@@ -119,6 +126,8 @@ export const getEvaluation = (id: string) =>
 export const startEvaluation = (body: {
   repositoryId: number;
   workflowPath: string;
+  /** Its name, for a workflow no run named yet. */
+  workflowName?: string;
   provider: string;
   vcpus: number;
 }) =>
