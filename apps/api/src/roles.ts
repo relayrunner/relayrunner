@@ -9,7 +9,7 @@ import { AppError } from "@relayrunner/errors";
 //   (repo-access.ts). Connected machines belong to their user, not the workspace (#318), so only
 //   that user controls one, whatever their role.
 // Better Auth keeps at least one owner: it refuses to remove, demote, or let the last owner leave.
-export { canManage, MANAGER_ROLES, ROLES, type Role } from "@relayrunner/api-types";
+export { canManage, MANAGER_ROLES, type Role } from "@relayrunner/api-types";
 
 // Who may pause, rename, share or revoke a machine (#318): a connected machine only by its owner,
 // in any workspace it shows up in; a runner adopted from GitHub, which is the org's, by the

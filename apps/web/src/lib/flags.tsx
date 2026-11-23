@@ -71,7 +71,10 @@ export function useFlag(key: FlagKey): boolean {
   });
 }
 
-/** Renders `children` only while flag `name` is on, else `fallback` (nothing by default). */
+/**
+ * Renders `children` only while flag `name` is on, else `fallback` (nothing by default).
+ * @public
+ */
 export function Flag({
   name,
   children,

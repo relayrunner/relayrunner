@@ -105,15 +105,6 @@ export function runCost(usd: number | null | undefined) {
   return `$${usd.toFixed(usd < 0.1 ? 3 : 2)}`;
 }
 
-/**
- * The change from `base` to `value` as a whole percent, negative for less (faster or cheaper).
- * Null when either is unknown or the base is zero.
- */
-export function percentChange(value: number | null | undefined, base: number | null | undefined) {
-  if (value == null || base == null || base === 0) return null;
-  return Math.round(((value - base) / base) * 100);
-}
-
 export function getMachineJobTimes(days = 14) {
   return api<{ days: number; machines: Record<string, Stat> }>(`/job-times/machines?days=${days}`);
 }
