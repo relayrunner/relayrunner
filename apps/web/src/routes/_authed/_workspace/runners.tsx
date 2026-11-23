@@ -540,7 +540,7 @@ function RunnersPage() {
             >
               {cloud.length > 0 ? (
                 cloud.map((summary) => (
-                  <li key={summary.provider} className="grid min-w-0 self-start">
+                  <li key={summary.provider} className="grid min-w-0">
                     <CloudProviderCard summary={summary} range={search.cloud} />
                   </li>
                 ))

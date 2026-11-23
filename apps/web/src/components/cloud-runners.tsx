@@ -1,6 +1,5 @@
 import { Link } from "@tanstack/react-router";
-import { ChevronDownIcon, TimerIcon } from "lucide-react";
-import { useState } from "react";
+import { TimerIcon } from "lucide-react";
 import { providerStyle, runnerName, runnerSpec, TILE, type Provider } from "@/components/providers";
 import { RunnerPanelLink } from "@/components/runner-panel-link";
 import { medianText, p90Text, plural } from "@/lib/job-times";
@@ -8,7 +7,7 @@ import { costText, type ProviderRunner, type ProviderSummary } from "@/lib/provi
 import type { TimeRange } from "@/lib/time-range";
 import { cn } from "@/lib/utils";
 
-// Runner types a card shows before "N more".
+// Runner types a card shows; the footer links the rest.
 const SHOWN = 2;
 
 /** One card per runner cloud the workspace's jobs used, with a row for each runner type. */
@@ -25,14 +24,14 @@ export function CloudProviderCard({
   const total = summary.runners.reduce((sum, runner) => sum + runner.jobs, 0);
   // A share bar only says something when there's more than one runner type to compare.
   const showShare = summary.runners.length > 1;
-  // Busy clouds keep their top runner types, so a card with many isn't much taller than the rest.
-  const [open, setOpen] = useState(false);
-  const hidden = summary.runners.length - SHOWN;
-  const runners = open || hidden <= 1 ? summary.runners : summary.runners.slice(0, SHOWN);
+  // Cards in a row stretch to the tallest, so a busy cloud keeps its top runner types and the
+  // footer, pinned to the bottom, links the rest.
+  const runners = summary.runners.slice(0, SHOWN);
+  const count = summary.runners.length;
   return (
     <article
       aria-label={name}
-      className="flex min-w-0 flex-col overflow-hidden rounded-xl border bg-card"
+      className="flex h-full min-w-0 flex-col overflow-hidden rounded-xl border bg-card"
     >
       <div className={cn("flex items-center gap-2.5 border-b border-line-soft px-4 py-3", tint)}>
         {url ? (
@@ -65,7 +64,6 @@ export function CloudProviderCard({
         </h3>
         <span className="text-xs text-muted-foreground tabular-nums">
           {plural(summary.jobs, "job")}
-          <span title="Est. cost at list prices"> · {costText(summary)}</span>
         </span>
       </div>
       {/* One grid for every row, so share bars and numbers line up down the card. */}
@@ -79,20 +77,22 @@ export function CloudProviderCard({
             bar={bar}
           />
         ))}
-        {hidden > 1 && (
-          <li className="col-span-3">
-            <button
-              type="button"
-              aria-expanded={open}
-              onClick={() => setOpen(!open)}
-              className="flex w-full items-center gap-1 px-4 py-2 text-left text-xs text-muted-foreground outline-none hover:text-foreground focus-visible:ring-[3px] focus-visible:ring-ring/50"
-            >
-              {open ? "Show fewer" : `${hidden} more runner types`}
-              <ChevronDownIcon aria-hidden className={cn("size-3.5", open && "rotate-180")} />
-            </button>
-          </li>
-        )}
       </ul>
+      <div className="mt-auto flex min-h-10 min-w-0 items-center justify-between gap-3 bg-raised-2 px-4 py-2 text-xs text-muted-foreground tabular-nums">
+        {count > SHOWN ? (
+          <Link
+            to="/providers/$provider"
+            params={{ provider: summary.provider }}
+            search={{ range }}
+            className="rounded-sm outline-none hover:text-foreground hover:underline hover:underline-offset-2 focus-visible:ring-[3px] focus-visible:ring-ring/50"
+          >
+            All {count} runner types
+          </Link>
+        ) : (
+          <span>{plural(count, "runner type")}</span>
+        )}
+        <span title="Est. cost at list prices">Est. {costText(summary)}</span>
+      </div>
     </article>
   );
 }
