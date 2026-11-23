@@ -280,14 +280,21 @@ export async function recordJobTiming(
       ranSteps: job.ranSteps ?? null,
       conclusion: job.conclusion,
     };
-    const spend = await providerSpendUpsert(db, finishedJob);
-    const wait = runnerWaitUpsert(db, finishedJob);
-    // One round trip for every rollup the job counts toward.
-    await db.batch([
-      ...jobCountUpserts(db, installationId, job.conclusion, completedAt),
-      ...(wait ? [wait] : []),
-      ...(spend ? [spend.upsert] : []),
-    ] as [BatchItem<"sqlite">, ...BatchItem<"sqlite">[]]);
+    try {
+      const spend = await providerSpendUpsert(db, finishedJob);
+      const wait = runnerWaitUpsert(db, finishedJob);
+      // One round trip for every rollup the job counts toward.
+      await db.batch([
+        ...jobCountUpserts(db, installationId, job.conclusion, completedAt),
+        ...(wait ? [wait] : []),
+        ...(spend ? [spend.upsert] : []),
+      ] as [BatchItem<"sqlite">, ...BatchItem<"sqlite">[]]);
+    } catch (error) {
+      // The row says the job is finished, so the queue's retry would skip the rollups and the job
+      // would never be counted. Reopen it so the retry writes it, and counts it, again.
+      await db.update(table).set({ completedAt: null }).where(eq(table.id, job.id));
+      throw error;
+    }
   }
   return true;
 }

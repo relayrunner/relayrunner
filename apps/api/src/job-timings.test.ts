@@ -192,6 +192,25 @@ describe("usage report", () => {
     });
   });
 
+  test("counts a job on the retry when its rollups fail to write", async () => {
+    const { installationId } = await connectedWorkspace();
+    const done = finished(installationId, 30);
+    await env.DB.exec("alter table job_count rename to job_count_off");
+    try {
+      await expect(processWebhook(env, done)).rejects.toThrow();
+    } finally {
+      await env.DB.exec("alter table job_count_off rename to job_count");
+    }
+    // The queue redelivers the same message.
+    await processWebhook(env, done);
+    const counted = await env.DB.prepare(
+      "select sum(success) as n from job_count where installation_id = ?",
+    )
+      .bind(installationId)
+      .first<{ n: number }>();
+    expect(counted?.n).toBe(1);
+  });
+
   test("follows a job through its webhooks, counting it once it finishes", async () => {
     const { cookie, installationId } = await connectedWorkspace();
     const done = finished(installationId, 10, {
