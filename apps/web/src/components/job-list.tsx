@@ -23,7 +23,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import { pageQuery, usePageReport } from "@/lib/query";
+import { usePageReport } from "@/lib/query";
 import { timeAgo } from "@/lib/activity";
 import { dayHeading } from "@/lib/time-zone";
 import { formatMemory } from "@/lib/device";
@@ -35,11 +35,11 @@ import {
   isFailure,
   type JobsReport,
   isLongWait,
-  getJobs,
+  jobsQuery,
 } from "@/lib/runs";
 import { JOB_RANGES } from "@/lib/job-times";
 import { rangeSearch, unlessDefault, useSetSearch } from "@/lib/search-params";
-import { rangePhrase, type TimeRange } from "@/lib/time-range";
+import { rangePhrase } from "@/lib/time-range";
 import { cn, elapsed, percent } from "@/lib/utils";
 import type { HistorySearch } from "@/routes/_authed/_workspace/history";
 
@@ -64,9 +64,6 @@ type Row = HistoryJob & {
 
 // Set when someone turns grouping off, so the list groups by default.
 const FLAT_KEY = "relayrunner:history:jobs-flat";
-
-// Each range is its own load, since the newest jobs alone can fill a busy workspace's list.
-export const jobsQuery = (range: TimeRange) => pageQuery(["jobs", range], () => getJobs(range));
 
 /** Jobs under a heading row per pull request or branch; jobs with no known branch stand alone. */
 function groupRows(rows: Row[]): Row[] {

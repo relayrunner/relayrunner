@@ -4,7 +4,7 @@ import { Fragment, memo, useMemo, useRef } from "react";
 import { CommitBy } from "@/components/commit";
 import { DurationChart, runPoints } from "@/components/duration-chart";
 import { SectionBoundary } from "@/components/error-boundary";
-import { JobList, jobsQuery } from "@/components/job-list";
+import { JobList } from "@/components/job-list";
 import { PageHeader } from "@/components/page-header";
 import { PageTabs, type Tab, viewOf } from "@/components/page-tabs";
 import {
@@ -30,11 +30,10 @@ import { timeAgo } from "@/lib/activity";
 import { authDisabled } from "@/lib/auth-client";
 import { type Environment, JOB_RANGES, plural } from "@/lib/job-times";
 import { useLiveRefresh } from "@/lib/live-refresh";
-import { loadPage, pageQuery, queryClient, usePageReport } from "@/lib/query";
+import { loadPage, queryClient, usePageReport } from "@/lib/query";
 import { dayHeading } from "@/lib/time-zone";
 import { useNow } from "@/lib/use-now";
 import {
-  getRuns,
   HISTORY_DEFAULT_RANGE,
   isFailure,
   type JobsReport,
@@ -43,6 +42,8 @@ import {
   type RunsReport,
   runParam,
   triggerText,
+  jobsQuery,
+  runsQuery,
 } from "@/lib/runs";
 import {
   optionParam,
@@ -87,8 +88,6 @@ export type HistorySearch = {
   /** The workflow (or job) the chart shows, left out for the busiest. */
   chart?: string;
 };
-
-const runsQuery = (range: TimeRange) => pageQuery(["runs", range], () => getRuns(range));
 
 export const Route = createFileRoute("/_authed/_workspace/history")({
   validateSearch: (search: Record<string, unknown>): HistorySearch => {

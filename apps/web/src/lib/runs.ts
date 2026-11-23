@@ -1,6 +1,7 @@
 import type { FailureCause } from "@relayrunner/api-types";
 import { relayInputs } from "@relayrunner/runner-order";
 import { api } from "@/lib/api";
+import { pageQuery } from "@/lib/query";
 import type { RouteWalk } from "@/lib/route-walk";
 import type { Environment, JobRun, TypicalTime } from "@/lib/job-times";
 import type { WorkflowRef } from "@/lib/workflow-ref";
@@ -162,6 +163,11 @@ export function getRuns(range: TimeRange, only?: WorkflowRef) {
 export function getJobs(range: TimeRange) {
   return api<JobsReport>(`/runs/jobs?${reportQuery(range)}`);
 }
+
+// History's reports, a load per range.
+export const runsQuery = (range: TimeRange) => pageQuery(["runs", range], () => getRuns(range));
+// Each range is its own load, since the newest jobs alone can fill a busy workspace's list.
+export const jobsQuery = (range: TimeRange) => pageQuery(["jobs", range], () => getJobs(range));
 
 export function getRunJobs(run: RunIds) {
   return api<RunJobs>(`/runs/${run.repositoryId}/${run.runId}/${run.runAttempt}/jobs`);
