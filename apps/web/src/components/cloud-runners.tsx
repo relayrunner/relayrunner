@@ -1,11 +1,15 @@
 import { Link } from "@tanstack/react-router";
-import { TimerIcon } from "lucide-react";
+import { ChevronDownIcon, TimerIcon } from "lucide-react";
+import { useState } from "react";
 import { providerStyle, runnerName, runnerSpec, TILE, type Provider } from "@/components/providers";
 import { RunnerPanelLink } from "@/components/runner-panel-link";
 import { medianText, p90Text, plural } from "@/lib/job-times";
 import { costText, type ProviderRunner, type ProviderSummary } from "@/lib/providers";
 import type { TimeRange } from "@/lib/time-range";
 import { cn } from "@/lib/utils";
+
+// Runner types a card shows before "N more".
+const SHOWN = 2;
 
 /** One card per runner cloud the workspace's jobs used, with a row for each runner type. */
 export function CloudProviderCard({
@@ -21,6 +25,10 @@ export function CloudProviderCard({
   const total = summary.runners.reduce((sum, runner) => sum + runner.jobs, 0);
   // A share bar only says something when there's more than one runner type to compare.
   const showShare = summary.runners.length > 1;
+  // Busy clouds keep their top runner types, so a card with many isn't much taller than the rest.
+  const [open, setOpen] = useState(false);
+  const hidden = summary.runners.length - SHOWN;
+  const runners = open || hidden <= 1 ? summary.runners : summary.runners.slice(0, SHOWN);
   return (
     <article
       aria-label={name}
@@ -62,7 +70,7 @@ export function CloudProviderCard({
       </div>
       {/* One grid for every row, so share bars and numbers line up down the card. */}
       <ul className="grid grid-cols-[minmax(0,1fr)_auto_auto] divide-y divide-line-soft py-1">
-        {summary.runners.map((runner) => (
+        {runners.map((runner) => (
           <CloudRow
             key={runner.key}
             runner={runner}
@@ -71,6 +79,19 @@ export function CloudProviderCard({
             bar={bar}
           />
         ))}
+        {hidden > 1 && (
+          <li className="col-span-3">
+            <button
+              type="button"
+              aria-expanded={open}
+              onClick={() => setOpen(!open)}
+              className="flex w-full items-center gap-1 px-4 py-2 text-left text-xs text-muted-foreground outline-none hover:text-foreground focus-visible:ring-[3px] focus-visible:ring-ring/50"
+            >
+              {open ? "Show fewer" : `${hidden} more runner types`}
+              <ChevronDownIcon aria-hidden className={cn("size-3.5", open && "rotate-180")} />
+            </button>
+          </li>
+        )}
       </ul>
     </article>
   );
