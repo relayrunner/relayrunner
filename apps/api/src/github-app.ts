@@ -82,9 +82,7 @@ async function mintInstallationToken(jwt: string, installationId: number) {
     headers: headers(jwt),
   });
   if (!response.ok)
-    throw new Error(
-      `POST /app/installations/${installationId}/access_tokens failed with ${response.status}: ${(await response.text()).slice(0, 300)}`,
-    );
+    throw await githubError("POST", `/app/installations/${installationId}/access_tokens`, response);
   const body = (await response.json()) as { token: string; expires_at?: string };
   // GitHub's tokens last an hour; assume that if it doesn't say.
   const expiresAt = body.expires_at ? Date.parse(body.expires_at) : Date.now() + 60 * 60_000;
@@ -154,8 +152,7 @@ export async function deleteRunner(token: string, scope: RunnerScope, runnerId: 
     method: "DELETE",
     headers: headers(token),
   });
-  if (!response.ok && response.status !== 404)
-    throw new Error(`DELETE ${path} failed with ${response.status}`);
+  if (!response.ok && response.status !== 404) throw await githubError("DELETE", path, response);
 }
 
 /** A workflow job as GitHub has it now, or null when it's gone. */
@@ -163,7 +160,7 @@ async function workflowJob<T>(token: string, repo: string, jobId: number): Promi
   const path = `/repos/${repo}/actions/jobs/${jobId}`;
   const response = await fetch(`${API}${path}`, { headers: headers(token) });
   if (response.status === 404) return null;
-  if (!response.ok) throw new Error(`GET ${path} failed with ${response.status}`);
+  if (!response.ok) throw await githubError("GET", path, response);
   return (await response.json()) as T;
 }
 
@@ -185,7 +182,7 @@ export async function runAttemptStatus(
 ): Promise<string> {
   const path = `/repos/${repo}/actions/runs/${runId}/attempts/${runAttempt}`;
   const response = await fetch(`${API}${path}`, { headers: headers(token) });
-  if (!response.ok) throw new Error(`GET ${path} failed with ${response.status}`);
+  if (!response.ok) throw await githubError("GET", path, response);
   return ((await response.json()) as { status: string }).status;
 }
 
@@ -245,7 +242,7 @@ export async function runAttemptTriggeringActor(
 ): Promise<{ id: number; login: string } | null> {
   const path = `/repos/${repo}/actions/runs/${runId}/attempts/${runAttempt}`;
   const response = await fetch(`${API}${path}`, { headers: headers(token) });
-  if (!response.ok) throw new Error(`GET ${path} failed with ${response.status}`);
+  if (!response.ok) throw await githubError("GET", path, response);
   const actor = (
     (await response.json()) as { triggering_actor?: { id?: unknown; login?: unknown } }
   ).triggering_actor;
@@ -302,7 +299,7 @@ export async function jobLog(
   const path = `/repos/${repo}/actions/jobs/${jobId}/logs`;
   const response = await fetch(`${API}${path}`, { headers: headers(token) });
   if (response.status === 404 || response.status === 410) return null;
-  if (!response.ok || !response.body) throw new Error(`GET ${path} failed with ${response.status}`);
+  if (!response.ok || !response.body) throw await githubError("GET", path, response);
   return response.body;
 }
 
@@ -320,7 +317,7 @@ export async function jobLogTail(
   const path = `/repos/${repo}/actions/jobs/${jobId}/logs`;
   const response = await fetch(`${API}${path}`, { headers: headers(token) });
   if (response.status === 404 || response.status === 410) return null;
-  if (!response.ok || !response.body) throw new Error(`GET ${path} failed with ${response.status}`);
+  if (!response.ok || !response.body) throw await githubError("GET", path, response);
   // Keep the last chunks that cover maxBytes, dropping older ones as newer arrive.
   const chunks: Uint8Array[] = [];
   let size = 0;
@@ -357,7 +354,7 @@ async function runner(token: string, scope: RunnerScope, runnerId: number) {
   const path = `${runnersPath(scope)}/${runnerId}`;
   const response = await fetch(`${API}${path}`, { headers: headers(token) });
   if (response.status === 404) return null;
-  if (!response.ok) throw new Error(`GET ${path} failed with ${response.status}`);
+  if (!response.ok) throw await githubError("GET", path, response);
   return (await response.json()) as { busy: boolean; status: string };
 }
 
@@ -375,8 +372,7 @@ export async function runnerOnline(token: string, scope: RunnerScope, runnerId: 
 export async function repoInstallationId(jwt: string, repo: string): Promise<number | null> {
   const response = await fetch(`${API}/repos/${repo}/installation`, { headers: headers(jwt) });
   if (response.status === 404) return null;
-  if (!response.ok)
-    throw new Error(`GET /repos/${repo}/installation failed with ${response.status}`);
+  if (!response.ok) throw await githubError("GET", `/repos/${repo}/installation`, response);
   return ((await response.json()) as { id: number }).id;
 }
 
@@ -389,7 +385,7 @@ export async function orgAppSlugs(token: string, org: string) {
   for (let page = 1; ; page++) {
     const path = `/orgs/${encodeURIComponent(org)}/installations?per_page=100&page=${page}`;
     const response = await fetch(`${API}${path}`, { headers: headers(token) });
-    if (!response.ok) throw new Error(`GET ${path} failed with ${response.status}`);
+    if (!response.ok) throw await githubError("GET", path, response);
     const { installations } = (await response.json()) as { installations: { app_slug: string }[] };
     slugs.push(...installations.map((installation) => installation.app_slug));
     if (installations.length < 100) return slugs;
@@ -413,7 +409,7 @@ export async function listAppInstallations(jwt: string) {
     const response = await fetch(`${API}/app/installations?per_page=100&page=${page}`, {
       headers: headers(jwt),
     });
-    if (!response.ok) throw new Error(`GET /app/installations failed with ${response.status}`);
+    if (!response.ok) throw await githubError("GET", `/app/installations`, response);
     const batch = (await response.json()) as typeof installations;
     installations.push(...batch);
     if (batch.length < 100) return installations;
@@ -427,7 +423,7 @@ export async function getAppInstallation(jwt: string, installationId: number) {
   });
   if (response.status === 404) return null;
   if (!response.ok)
-    throw new Error(`GET /app/installations/${installationId} failed with ${response.status}`);
+    throw await githubError("GET", `/app/installations/${installationId}`, response);
   return (await response.json()) as AppInstallation;
 }
 
@@ -480,7 +476,7 @@ export async function deleteInstallation(env: AppCredentials, installationId: nu
     headers: headers(await mainAppJwt(env)),
   });
   if (!response.ok && response.status !== 404)
-    throw new Error(`DELETE /app/installations/${installationId} failed with ${response.status}`);
+    throw await githubError("DELETE", `/app/installations/${installationId}`, response);
 }
 
 // listAll's cap: 10 pages of 100.
@@ -531,9 +527,7 @@ async function getPage(token: string, path: string): Promise<unknown> {
   });
   if (response.status === 304 && cached) return cached.body;
   if (!response.ok) {
-    const message = `GET ${path} failed with ${response.status}: ${(await response.text()).slice(0, 300)}`;
-    if (isRateLimited(response)) throw new GitHubRateLimitError(message, response);
-    throw new Error(message);
+    throw await githubError("GET", path, response);
   }
   const body: unknown = await response.json();
   const etag = response.headers.get("etag");
@@ -599,8 +593,7 @@ export async function removeRunnerLabel(
 ) {
   const path = `${runnersPath(scope)}/${runnerId}/labels/${encodeURIComponent(label)}`;
   const response = await fetch(`${API}${path}`, { method: "DELETE", headers: headers(token) });
-  if (!response.ok && response.status !== 404)
-    throw new Error(`DELETE ${path} failed with ${response.status}`);
+  if (!response.ok && response.status !== 404) throw await githubError("DELETE", path, response);
 }
 
 /** An org's runner group: which repos (and workflows) may use the runners in it. */
@@ -776,12 +769,8 @@ export async function pullRequestFiles(
  */
 export async function repoTarball(token: string, repo: string, sha: string) {
   const response = await fetch(`${API}/repos/${repo}/tarball/${sha}`, { headers: headers(token) });
-  if (!response.ok || !response.body) {
-    const message = `GET /repos/${repo}/tarball/${sha} failed with ${response.status}`;
-    throw response.status === 403 || response.status === 404
-      ? new GitHubAccessError(message, response.status)
-      : new Error(message);
-  }
+  if (!response.ok || !response.body)
+    throw await githubError("GET", `/repos/${repo}/tarball/${sha}`, response);
   return response.body;
 }
 
@@ -791,10 +780,7 @@ async function sendJson<T>(token: string, method: string, path: string, body: un
     headers: { ...headers(token), "content-type": "application/json" },
     body: JSON.stringify(body),
   });
-  if (!response.ok)
-    throw new Error(
-      `${method} ${path} failed with ${response.status}: ${(await response.text()).slice(0, 300)}`,
-    );
+  if (!response.ok) throw await githubError(method, path, response);
   return (await response.json()) as T;
 }
 
@@ -804,10 +790,7 @@ export async function repoFile(token: string, repo: string, path: string): Promi
     headers: { ...headers(token), accept: "application/vnd.github.raw+json" },
   });
   if (response.status === 404) return null;
-  if (!response.ok)
-    throw new Error(
-      `GET /repos/${repo}/contents/${path} failed with ${response.status}: ${(await response.text()).slice(0, 300)}`,
-    );
+  if (!response.ok) throw await githubError("GET", `/repos/${repo}/contents/${path}`, response);
   return response.text();
 }
 
@@ -835,9 +818,7 @@ type RawBucket = { limit: number; used: number; remaining: number; reset: number
 export async function rateLimits(token: string): Promise<RateLimits> {
   const response = await fetch(`${API}/rate_limit`, { headers: headers(token) });
   if (!response.ok) {
-    const message = `GET /rate_limit failed with ${response.status}: ${(await response.text()).slice(0, 300)}`;
-    if (isRateLimited(response)) throw new GitHubRateLimitError(message, response);
-    throw new Error(message);
+    throw await githubError("GET", "/rate_limit", response);
   }
   const { resources = {} } = (await response.json()) as {
     resources?: Record<string, RawBucket | undefined>;
@@ -894,6 +875,15 @@ function retryAfterSeconds(response: Response): number | undefined {
 
 // GitHub answers a spent limit with 429, or with 403 and either no calls remaining or a
 // `retry-after` (a secondary limit). A 403 without either is a missing permission.
+/** The error for a failed GitHub call: rate limited, refused (403 or 404), or any other. */
+async function githubError(method: string, path: string, response: Response) {
+  const message = `${method} ${path} failed with ${response.status}: ${(await response.text()).slice(0, 300)}`;
+  if (isRateLimited(response)) return new GitHubRateLimitError(message, response);
+  if (response.status === 403 || response.status === 404)
+    return new GitHubAccessError(message, response.status);
+  return new Error(message);
+}
+
 function isRateLimited(response: Response) {
   if (response.status === 429) return true;
   return (
@@ -904,13 +894,7 @@ function isRateLimited(response: Response) {
 
 async function getJson<T>(token: string, path: string): Promise<T> {
   const response = await fetch(`${API}${path}`, { headers: headers(token) });
-  if (!response.ok) {
-    const message = `GET ${path} failed with ${response.status}: ${(await response.text()).slice(0, 300)}`;
-    if (isRateLimited(response)) throw new GitHubRateLimitError(message, response);
-    if (response.status === 403 || response.status === 404)
-      throw new GitHubAccessError(message, response.status);
-    throw new Error(message);
-  }
+  if (!response.ok) throw await githubError("GET", path, response);
   return (await response.json()) as T;
 }
 
