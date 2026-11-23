@@ -27,10 +27,10 @@ const StartBody = z.object({
 // cost money on the provider. Behind the provider-evaluations flag until release.
 export const evaluationRoutes = new Hono<AppEnv>()
   .use("*", requireUser, requireWorkspace, requireFlag("provider-evaluations"))
-  .get("/workflows", requireUser, requireWorkspace, async (c) =>
+  .get("/workflows", async (c) =>
     c.json({ workflows: await evaluationWorkflows(c.var.db, c.var.workspace.id) }),
   )
-  .get("/", requireUser, requireWorkspace, async (c) =>
+  .get("/", async (c) =>
     c.json({
       evaluations: await listEvaluations(
         c.var.db,
@@ -39,12 +39,10 @@ export const evaluationRoutes = new Hono<AppEnv>()
       ),
     }),
   )
-  .post("/", requireUser, requireWorkspace, requireManager, async (c) => {
+  .post("/", requireManager, async (c) => {
     const body = StartBody.safeParse(await c.req.json().catch(() => null));
     if (!body.success) throw new AppError("INVALID_REQUEST");
     const { workspace } = c.var;
-    if (!workspace.installationId)
-      throw new AppError("INVALID_REQUEST", { message: "Connect GitHub to this workspace first." });
     const id = await startEvaluation(c.env, c.var.db, {
       ...body.data,
       workspaceId: workspace.id,
@@ -53,14 +51,14 @@ export const evaluationRoutes = new Hono<AppEnv>()
     });
     return c.json({ id }, 201);
   })
-  .get("/:id", requireUser, requireWorkspace, async (c) =>
+  .get("/:id", async (c) =>
     c.json(await evaluationReport(c.var.db, c.var.workspace.id, c.req.param("id"))),
   )
-  .post("/:id/retry", requireUser, requireWorkspace, requireManager, async (c) => {
+  .post("/:id/retry", requireManager, async (c) => {
     await retryEvaluation(c.env, c.var.db, c.var.workspace.id, c.req.param("id"));
     return c.json({ ok: true });
   })
-  .post("/:id/cancel", requireUser, requireWorkspace, requireManager, async (c) => {
+  .post("/:id/cancel", requireManager, async (c) => {
     await cancelEvaluation(c.env, c.var.db, c.var.workspace.id, c.req.param("id"));
     return c.json({ ok: true });
   });
