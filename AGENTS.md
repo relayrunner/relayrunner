@@ -26,15 +26,19 @@ Never commit screenshots or other PR images to the repository. Upload them with 
 
 ## Formatting and checks
 
-Format with oxfmt (`pnpm format`) and lint with Oxlint (`pnpm lint`). Run `pnpm check` before you push; CI runs the same command. The pre-commit hook formats and lints staged files, so don't skip it with `--no-verify`.
+Format with oxfmt (`pnpm format`) and lint with Oxlint (`pnpm lint`). `pnpm lint` also fails on import cycles: move what both modules need into a module of its own. `pnpm knip` fails on exports and files nothing imports: delete them, or tag an export that is a deliberate API with `@public`. Run `pnpm check` before you push; CI runs the same command. The pre-commit hook formats and lints staged files, so don't skip it with `--no-verify`.
 
 ## API errors
 
 The API answers every failure with a code from `@relayrunner/errors`: `throw new AppError("CODE")` in a route, and add new codes to `packages/errors/src/codes.ts` rather than returning a string. See [packages/errors/README.md](packages/errors/README.md).
 
+## Feature flags
+
+Ship unreleased user-facing work behind a Cloudflare Flagship flag, so it can merge and deploy before anyone sees it. Add the key to `FLAG_KEYS` in `packages/api-types/src/flags.ts`, guard the API with `requireFlag` or `isFlagOn` (`apps/api/src/flags.ts`) and the dashboard with `useFlag`, `<Flag>` or `requireFlagRoute` (`apps/web/src/lib/flags.tsx`). Don't create or change flags in Flagship unless a maintainer asks. See [docs/feature-flags.md](docs/feature-flags.md).
+
 ## Releasing the CLI
 
-The `relayrunner` npm package (the Rust CLI in `apps/cli`, shipped as a launcher plus one binary package per platform) is released with [changesets](https://github.com/changesets/changesets). A PR that changes what the CLI does for people who install it adds a `.changeset/*.md` file (`pnpm changeset`) naming `"relayrunner"`. A PR that changes the Mac app (`apps/mac`) names `"@relayrunner/mac"`, which has its own version; those are the only two names a changeset may use. Merging it makes the Release workflow open a `chore: version packages` PR, and merging that one publishes the CLI to npm (the Mac app ships with `apps/mac/scripts/release.sh`, run on a Mac that holds the signing certificate; it publishes a GitHub release, the Homebrew cask and an appcast PR, so run it only on a maintainer's explicit go). Don't bump either `package.json` version by hand. See [.changeset/README.md](.changeset/README.md).
+The `relayrunner` npm package (the Rust CLI in `apps/cli`, shipped as a launcher plus one binary package per platform) is released with [changesets](https://github.com/changesets/changesets). A PR that changes what the CLI does for people who install it adds a `.changeset/*.md` file (`pnpm changeset`) naming `"relayrunner"`. A PR that changes the Mac app (`apps/mac`) names `"@relayrunner/mac"`, which has its own version; those are the only two names a changeset may use. Merging it makes the Release workflow open a `chore: version packages` PR, and merging that one publishes the CLI to npm (the Mac app ships with `pnpm release:mac` (`apps/mac/scripts/release.sh` in a clean worktree of main), run on a Mac that holds the signing certificate; it publishes a GitHub release, the Homebrew cask and an appcast PR, so run it only on a maintainer's explicit go). Don't bump either `package.json` version by hand. See [.changeset/README.md](.changeset/README.md).
 
 ## Cloudflare CLI
 
@@ -46,7 +50,7 @@ Keep Wrangler for what reads `wrangler.jsonc`: `wrangler dev`, `wrangler deploy`
 
 The `security-audit` skill from [cloudflare/security-audit-skill](https://github.com/cloudflare/security-audit-skill) is a project default, listed under `skills` in `package.json` and pinned in `skills-lock.json`. Load it for a security audit, a vulnerability review, or a pen test. The canonical copy lives in `.agents/skills`, which Codex, Cursor, and Grok read directly; Claude Code reads it through the `.claude/skills/security-audit` symlink. Don't edit the vendored files by hand, since oxfmt and Oxlint skip them to keep them byte-identical to the lock. Update with `npx skills update`.
 
-The skills in `skills/` are for people who use RelayRunner, not for working on this repo; they install with `npx skills add relayrunner/relayrunner`. When you change a CLI command or flag, the relay version, or the MCP tools, update the matching skill in the same PR. `skills_show_the_relay_version_init_writes` in `apps/cli/src/init/workflows.rs` (relay version) and `apps/agents/src/skill.test.ts` (MCP tools) catch the most likely drift.
+The skills in `skills/` are for people who use RelayRunner, not for working on this repo; they install with `npx skills add relayrunner/relayrunner`. When you change a CLI command or flag, the relay version, or the MCP tools, update the matching skill in the same PR. `packages/providers/src/relay.test.ts` (relay version, kept in `relay.json`, which the CLI reads too) and `apps/agents/src/skill.test.ts` (MCP tools) catch the most likely drift.
 
 ## Preview URLs and admin views
 

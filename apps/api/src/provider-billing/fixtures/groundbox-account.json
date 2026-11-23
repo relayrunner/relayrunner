@@ -1,0 +1,59 @@
+{
+  "team": {
+    "id": "6f1c2b8e-2d1f-4c3e-9a51-0b7f2e4d8a10",
+    "name": "acme",
+    "plan": "free",
+    "status": "active",
+    "status_reason": null,
+    "internal": false
+  },
+  "allows": {
+    "sandboxes": true,
+    "schedules": true,
+    "storage": true,
+    "public_repos": true,
+    "max_ci_vcpus": 16,
+    "max_concurrent_ci_jobs": 20
+  },
+  "trial": null,
+  "free_minutes": {
+    "included": 3000,
+    "used": 1240.5,
+    "left": 1759.5,
+    "period_start": "2026-11-01T00:00:00.000Z",
+    "resets_at": "2026-12-01T00:00:00.000Z"
+  },
+  "balance": {
+    "total_micros": 5000000,
+    "plan_micros": 5000000,
+    "plan_expires_at": null,
+    "wallet_micros": 0
+  },
+  "usage": {
+    "period_start": "2026-11-01T00:00:00.000Z",
+    "this_month_micros": 0,
+    "ci_micros": 0,
+    "sandbox_micros": 0
+  },
+  "limits": {
+    "max_concurrent_ci_jobs": 20,
+    "max_concurrent_sandboxes": 5,
+    "max_paused_sandboxes": 5,
+    "sandbox_max_timeout_minutes": 60,
+    "ci_max_job_seconds": 3600
+  },
+  "spend_caps": {
+    "daily_spend_cap_micros": null,
+    "monthly_spend_cap_micros": 20000000,
+    "spent_today_micros": 0,
+    "spent_this_month_micros": 0
+  },
+  "key": {
+    "id": "0c9d3e7a-5b42-4f8e-8d16-3a2b1c0e9f77",
+    "name": "relayrunner",
+    "mode": "live",
+    "scopes": ["account:read", "billing:read"],
+    "monthly_spend_cap_micros": null,
+    "spent_this_month_micros": 0
+  }
+}

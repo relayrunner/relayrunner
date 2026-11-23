@@ -472,7 +472,8 @@ button {
 .section > .body {
   max-width: 62ch;
 }
-.section .shot {
+.section .shot,
+.section > .mac-preview {
   margin-top: clamp(28px, 4vw, 48px);
 }
 .panel {
@@ -598,44 +599,6 @@ button {
 }
 .connect-panel .term-body {
   font-size: 14px;
-}
-.machines {
-  display: grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
-  gap: 14px;
-}
-.machine {
-  padding: 16px;
-  border: 1px solid var(--line);
-  border-radius: 12px;
-  background: var(--raised);
-}
-.machine b {
-  display: flex;
-  align-items: center;
-  gap: 10px;
-  font-size: 16px;
-}
-.machine code {
-  display: block;
-  margin-top: 6px;
-  color: var(--mute);
-  font-size: 12px;
-}
-.machine-foot {
-  display: flex;
-  justify-content: space-between;
-  gap: 8px;
-  margin-top: 14px;
-  padding-top: 10px;
-  border-top: 1px solid var(--line-soft);
-  color: var(--ink-2);
-  font-size: 13px;
-}
-.machine-foot span:last-child {
-  display: flex;
-  align-items: center;
-  gap: 6px;
 }
 .dot {
   flex: none;
@@ -978,7 +941,6 @@ button {
     gap: 12px 20px;
     padding: 16px;
   }
-  .machines,
   .safety-grid {
     grid-template-columns: 1fr;
   }

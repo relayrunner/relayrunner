@@ -71,6 +71,11 @@ const LOOKS: Record<ProviderId | "machine", ProviderLook> = {
     (typeof LOGO_PROVIDERS)[number],
     ProviderLook
   >),
+  groundbox: {
+    ...logoLook("groundbox"),
+    tint: "bg-groundbox/8",
+    bar: "bg-groundbox",
+  },
   blacksmith: {
     icon: <BlacksmithIcon className="w-4" />,
     tile: "bg-blacksmith text-blacksmith-ink",

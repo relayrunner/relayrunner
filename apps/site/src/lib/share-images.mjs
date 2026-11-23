@@ -340,5 +340,9 @@ export function readmeHero(theme) {
 export async function renderPng(element, scale = 1) {
   const { width, height } = element.props.style;
   const markup = await satori(element, { width, height, fonts });
-  return new Resvg(markup, { fitTo: { mode: "width", value: width * scale } }).render().asPng();
+  const png = new Resvg(markup, { fitTo: { mode: "width", value: width * scale } })
+    .render()
+    .asPng();
+  // A plain Uint8Array rather than a Node Buffer, so a Response takes it as a body.
+  return new Uint8Array(png);
 }

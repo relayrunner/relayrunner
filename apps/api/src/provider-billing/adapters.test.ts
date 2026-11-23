@@ -1,6 +1,10 @@
 import { readFileSync } from "node:fs";
 import { describe, expect, test } from "vitest";
+import type { CliRequest, CliResponse } from "@relayrunner/blacksmith-cli/protocol";
+import { blacksmith } from "./blacksmith.ts";
+import { boat, boatLimits } from "./boat.ts";
 import { depot } from "./depot.ts";
+import { groundbox, groundboxAccount, parseAccount } from "./groundbox.ts";
 import { connectStream, envelope, namespace } from "./namespace.ts";
 import { type AdapterContext, ProviderApiError, ProviderAuthError } from "./types.ts";
 import { warpbuild } from "./warpbuild.ts";
@@ -224,5 +228,263 @@ describe("WarpBuild", () => {
   test("a refused key is a ProviderAuthError", async () => {
     const { fetcher } = fakeFetch([json({ error: "invalid api key" }, 401)]);
     await expect(warpbuild.verify(ctx(fetcher))).rejects.toBeInstanceOf(ProviderAuthError);
+  });
+});
+
+describe("Blacksmith", () => {
+  // Captured from a real organization's `blacksmith usage` and `blacksmith jobs list` output.
+  const usage = fixture("blacksmith-usage.json");
+  const jobs = fixture("blacksmith-jobs.json");
+
+  function fakeCli(answer: CliResponse) {
+    const requests: CliRequest[] = [];
+    const cli = async (request: CliRequest) => {
+      requests.push(request);
+      return answer;
+    };
+    const noFetch = (async () => {
+      throw new Error("Blacksmith reads go through its CLI");
+    }) as unknown as typeof fetch;
+    return {
+      requests,
+      ctx: (options: Record<string, string> = { organization: "relayrunner" }) => ({
+        ...ctx(noFetch, options),
+        cli,
+      }),
+    };
+  }
+
+  test("verify runs the CLI with the org token and organization, and names the installation", async () => {
+    const { ctx: withCli, requests } = fakeCli({ ok: true, usage, jobPages: [] });
+    expect(await blacksmith.verify(withCli())).toEqual({ accountName: "relayrunner" });
+    expect(requests).toEqual([
+      { kind: "verify", token: "tok_secret", organization: "relayrunner" },
+    ]);
+  });
+
+  test("usage keeps billable and runtime minutes per day, and each job in the window", async () => {
+    // A job from before the window, and the same job again on a second page.
+    const old = { job_id: 1, created_at: "2026-11-19T10:00:00Z", billable_minutes: 2 };
+    const page = jobs as { jobs: Record<string, unknown>[] };
+    const { ctx: withCli, requests } = fakeCli({
+      ok: true,
+      usage,
+      jobPages: [jobs, { jobs: [page.jobs[0], old] }],
+    });
+    const window = {
+      start: new Date("2026-11-19T12:00:00Z"),
+      end: new Date("2026-11-20T18:59:41Z"),
+    };
+    const result = await blacksmith.usage(withCli(), window);
+    expect(requests).toEqual([
+      {
+        kind: "usage",
+        token: "tok_secret",
+        organization: "relayrunner",
+        // Whole days, from the window's UTC midnight.
+        start: "2026-11-19T00:00:00.000Z",
+        end: "2026-11-20T18:59:41.000Z",
+      },
+    ]);
+    expect(result.days.slice(0, 2)).toEqual([
+      {
+        day: new Date("2026-11-13T00:00:00Z"),
+        unit: "billable_minutes",
+        quantity: 8,
+        costUsd: 0.016,
+      },
+      {
+        day: new Date("2026-11-13T00:00:00Z"),
+        unit: "runtime_minutes",
+        quantity: 2,
+        costUsd: null,
+      },
+    ]);
+    expect(result.jobs.map((job) => job.jobId)).toHaveLength(5);
+    expect(result.jobs[0]).toEqual({
+      jobId: "136072852458",
+      runId: "44671361640",
+      repository: "relayrunner/relayrunner",
+      jobName: "Apply migrations to production D1",
+      runnerLabel: "blacksmith-4vcpu-ubuntu-2404",
+      startedAt: new Date("2026-11-20T03:59:59Z"),
+      finishedAt: new Date("2026-11-20T04:00:23Z"),
+      // 24 seconds on 4 vCPU bills 4 minutes.
+      billableSeconds: 240,
+      queueSeconds: null,
+      costUsd: null,
+    });
+  });
+
+  test("a refused token is a ProviderAuthError; other failures and a missing org are ProviderApiError", async () => {
+    const refused = fakeCli({ ok: false, reason: "auth", message: "401 Unauthorized" });
+    await expect(blacksmith.verify(refused.ctx())).rejects.toBeInstanceOf(ProviderAuthError);
+    const broken = fakeCli({ ok: false, reason: "error", message: "timed out" });
+    await expect(blacksmith.verify(broken.ctx())).rejects.toBeInstanceOf(ProviderApiError);
+    const noOrg = fakeCli({ ok: true, usage, jobPages: [] });
+    await expect(blacksmith.verify(noOrg.ctx({}))).rejects.toBeInstanceOf(ProviderApiError);
+    expect(noOrg.requests).toEqual([]);
+    const noCli = { ...ctx(fetch, { organization: "relayrunner" }) };
+    await expect(blacksmith.verify(noCli)).rejects.toBeInstanceOf(ProviderApiError);
+  });
+});
+
+describe("Boat", () => {
+  test("reads each window's starts left from /limits with the key as a bearer", async () => {
+    const { fetcher, calls } = fakeFetch([json(fixture("boat-limits.json"))]);
+    expect(await boatLimits(ctx(fetcher))).toEqual({
+      minute: { remaining: 9, limit: 12 },
+      hour: { remaining: 48, limit: 60 },
+      day: { remaining: 153, limit: 200 },
+    });
+    expect(calls[0]!.url).toBe("https://boat.dev/api/v1/limits");
+    expect(calls[0]!.headers.get("authorization")).toBe("Bearer tok_secret");
+  });
+
+  test("an unlimited account has no windows", async () => {
+    const unlimited = {
+      ok: true,
+      starts: { unlimited: true, minute: null, hour: null, day: null },
+    };
+    const { fetcher } = fakeFetch([json(unlimited), json(unlimited)]);
+    expect(await boatLimits(ctx(fetcher))).toEqual({ minute: null, hour: null, day: null });
+    // Still a working key.
+    expect(await boat.verify(ctx(fetcher))).toEqual({ accountName: null });
+  });
+
+  test("a refused key is a ProviderAuthError, and a sync stores nothing", async () => {
+    const refused = { ok: false, status: 401, code: "unauthorized", message: "Unauthorized" };
+    const { fetcher } = fakeFetch([json(refused, 401)]);
+    await expect(boat.verify(ctx(fetcher))).rejects.toBeInstanceOf(ProviderAuthError);
+    expect(await boat.usage(ctx(fetch), window)).toEqual({ jobs: [], days: [] });
+  });
+});
+
+describe("Groundbox", () => {
+  test("reads the account's free minutes, spend and caps from /account with the key as a bearer", async () => {
+    const { fetcher, calls } = fakeFetch([json(fixture("groundbox-account.json"))]);
+    expect(await groundboxAccount(ctx(fetcher))).toEqual({
+      team: "acme",
+      plan: "free",
+      status: "active",
+      freeMinutes: {
+        included: 3000,
+        used: 1240.5,
+        left: 1759.5,
+        periodStart: "2026-11-01T00:00:00.000Z",
+      },
+      balanceUsd: 5,
+      ciSpentUsd: 0,
+      caps: { dailyUsd: null, spentTodayUsd: 0, monthlyUsd: 20, spentThisMonthUsd: 0 },
+    });
+    expect(calls[0]!.url).toBe("https://api.groundbox.dev/v1/account");
+    expect(calls[0]!.headers.get("authorization")).toBe("Bearer tok_secret");
+  });
+
+  test("verify names the team after reading both /account and the ledger", async () => {
+    const urls: string[] = [];
+    const fetcher = (async (input: RequestInfo | URL) => {
+      urls.push(String(input));
+      return String(input).includes("/billing/ledger")
+        ? json({ data: [], next_cursor: null })
+        : json(fixture("groundbox-account.json"));
+    }) as typeof fetch;
+    expect(await groundbox.verify(ctx(fetcher))).toEqual({ accountName: "acme" });
+    expect(urls.sort()).toEqual([
+      "https://api.groundbox.dev/v1/account",
+      "https://api.groundbox.dev/v1/billing/ledger?limit=1",
+    ]);
+  });
+
+  test("verify refuses a key without billing:read, with Groundbox's reason", async () => {
+    const fetcher = (async (input: RequestInfo | URL) =>
+      String(input).includes("/billing/ledger")
+        ? json(
+            {
+              error: {
+                code: "missing_scope",
+                message: "This key does not have the billing:read scope",
+              },
+            },
+            403,
+          )
+        : json(fixture("groundbox-account.json"))) as typeof fetch;
+    const refused = groundbox.verify(ctx(fetcher));
+    await expect(refused).rejects.toBeInstanceOf(ProviderAuthError);
+    await expect(refused).rejects.toThrow(/billing:read/);
+  });
+
+  test("an answer missing fields reads as nothing known, never as a limit", () => {
+    expect(parseAccount({ team: { name: "acme" } })).toEqual({
+      team: "acme",
+      plan: null,
+      status: null,
+      freeMinutes: null,
+      balanceUsd: null,
+      ciSpentUsd: null,
+      caps: null,
+    });
+  });
+
+  test("sums the ledger's CI charges into each job's cost and each day's free minutes", async () => {
+    const { fetcher, calls } = fakeFetch([json(fixture("groundbox-ledger.json"))]);
+    const midday = { start: new Date("2026-11-12T06:00:00Z"), end: window.end };
+    const usage = await groundbox.usage(ctx(fetcher), midday);
+    expect(calls[0]!.url).toBe("https://api.groundbox.dev/v1/billing/ledger?limit=200");
+    expect(usage.days).toEqual([
+      // The sandbox charge is left out; the day is read whole despite the mid-day window.
+      {
+        day: new Date("2026-11-12T00:00:00Z"),
+        unit: "free_minutes",
+        quantity: 12.5,
+        costUsd: 0.132,
+      },
+    ]);
+    expect(usage.jobs.map((job) => [job.jobId, job.costUsd, job.billableSeconds])).toEqual([
+      ["job-2", 0.132, null],
+      ["job-1", 0, null],
+    ]);
+  });
+
+  test("pages the ledger until a page ends before the window", async () => {
+    const entry = (at: string) => ({
+      kind: "usage",
+      bucket: "plan",
+      amount_micros: -1_000_000,
+      usage: { kind: "ci", ci_job_id: `job-${at}` },
+      created_at: at,
+    });
+    const { fetcher, calls } = fakeFetch([
+      json({ data: [entry("2026-11-12T20:00:00Z")], next_cursor: "c2" }),
+      json({
+        data: [entry("2026-11-12T01:00:00Z"), entry("2026-11-11T23:00:00Z")],
+        next_cursor: "c3",
+      }),
+    ]);
+    const usage = await groundbox.usage(ctx(fetcher), window);
+    expect(calls).toHaveLength(2);
+    expect(calls[1]!.url).toBe("https://api.groundbox.dev/v1/billing/ledger?limit=200&cursor=c2");
+    expect(usage.days).toEqual([
+      { day: new Date("2026-11-12T00:00:00Z"), unit: "free_minutes", quantity: 0, costUsd: 2 },
+    ]);
+  });
+});
+
+describe("calling fetch", () => {
+  // The Workers runtime's fetch throws "Illegal invocation" when called with any `this` but the
+  // global scope, as `ctx.fetch(...)` would.
+  function strictFetch(this: unknown) {
+    if (this !== undefined && this !== globalThis) throw new TypeError("Illegal invocation");
+    return Promise.resolve(json(fixture("groundbox-account.json")));
+  }
+
+  test("every adapter calls it unbound, as Workers needs", async () => {
+    const context = ctx(strictFetch as unknown as typeof fetch);
+    expect(await groundbox.verify(context)).toEqual({ accountName: "acme" });
+    // Namespace's streaming calls make their own request; the fixture isn't a stream, so the call
+    // fails, but not on how fetch was called.
+    await expect(connectStream(context, "https://example.test", {})).rejects.not.toThrow(
+      "Illegal invocation",
+    );
   });
 });

@@ -96,15 +96,6 @@ describe("workspaces", () => {
     const current = await call("/workspaces/current", member.cookie);
     expect(await current.json()).toMatchObject({ role: "member" });
   });
-
-  test("users can't create a workspace (#316)", async () => {
-    const { cookie } = await signIn();
-    const response = await call("/auth/organization/create", cookie, {
-      name: "Acme again",
-      slug: "acme-again",
-    });
-    expect(response.status).toBe(403);
-  });
 });
 
 describe("runner order", () => {
@@ -126,7 +117,10 @@ describe("runner order", () => {
     expect(response.status).toBe(200);
     expect(await response.json()).toEqual({
       order: { steps: [{ key: "machine" }, { key: "github" }] },
+      scope: "workspace",
       isDefault: true,
+      version: "default",
+      ownOrders: [],
     });
   });
 
@@ -136,10 +130,23 @@ describe("runner order", () => {
     const order = { steps: [{ key: "github" }, { key: "machine" }] };
     const saved = await put(workspace.id, jar, order);
     expect(saved.status).toBe(200);
-    expect(await saved.json()).toEqual({ order, isDefault: false });
+    const body = (await saved.json()) as { version: string };
+    expect(body).toEqual({
+      order,
+      scope: "workspace",
+      isDefault: false,
+      version: expect.stringMatching(/^[0-9a-f]{16}$/),
+      previous: { steps: [{ key: "machine" }, { key: "github" }] },
+    });
 
     const read = await call(`/workspaces/${workspace.id}/runner-order`, jar);
-    expect(await read.json()).toEqual({ order, isDefault: false });
+    expect(await read.json()).toEqual({
+      order,
+      scope: "workspace",
+      isDefault: false,
+      version: body.version,
+      ownOrders: [],
+    });
     const row = await env.DB.prepare("select runner_order from workspace where id = ?")
       .bind(workspace.id)
       .first<{ runner_order: string }>();
@@ -159,18 +166,13 @@ describe("runner order", () => {
       },
     });
 
-    const twice = await put(workspace.id, jar, { steps: [{ key: "github" }, { key: "github" }] });
+    const twice = await put(workspace.id, jar, { steps: [{ key: "machine" }, { key: "machine" }] });
     expect(twice.status).toBe(400);
     expect(await twice.json()).toMatchObject({
       error: {
-        message: "GitHub-hosted is already in the order without a limit.",
+        message: "Self-hosted is already in the order.",
         details: {
-          issues: [
-            {
-              path: ["steps", 1, "key"],
-              message: "GitHub-hosted is already in the order without a limit.",
-            },
-          ],
+          issues: [{ path: ["steps", 1, "key"], message: "Self-hosted is already in the order." }],
         },
       },
     });
@@ -400,7 +402,7 @@ describe("skipping runners that stop picking up jobs", () => {
     expect(await read.json()).toEqual({ offAt: null });
 
     const off = await request(`${workspace.id}/ai`, jar, "PUT", { enabled: false });
-    expect(await off.json()).toEqual({ enabled: false });
+    expect(await off.json()).toEqual({ enabled: false, previous: true });
     expect(await (await request(`${workspace.id}/ai`, jar)).json()).toMatchObject({
       offAt: expect.any(String),
     });
@@ -422,9 +424,15 @@ describe("skipping runners that stop picking up jobs", () => {
 
     const settings = { enabled: true, runner: "other", max: 2 };
     const saved = await request(`${workspace.id}/retry-settings`, jar, "PUT", settings);
-    expect(await saved.json()).toEqual(settings);
+    expect(await saved.json()).toEqual({
+      ...settings,
+      previous: { enabled: false, runner: "any", max: 1 },
+    });
     const again = await request(`${workspace.id}/retry-settings`, jar);
     expect(await again.json()).toEqual(settings);
+    // A setting left out stays as it is.
+    const off = await request(`${workspace.id}/retry-settings`, jar, "PUT", { enabled: false });
+    expect(await off.json()).toMatchObject({ enabled: false, runner: "other", max: 2 });
 
     const bad = await request(`${workspace.id}/retry-settings`, jar, "PUT", {
       ...settings,

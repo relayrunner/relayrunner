@@ -1,24 +1,30 @@
-import type { RunnerSize } from "@relayrunner/providers";
-import type { DeviceKind } from "@/lib/device";
+import type {
+  PerformanceReport,
+  PerformanceWorkflow,
+  Stat,
+  JobType,
+  WorkflowReport,
+} from "@relayrunner/api-types";
 import { api } from "@/lib/api";
+import { type RangeOptions, reportQuery, type TimeRange } from "./time-range.ts";
 import { count } from "@/lib/utils";
+import type { Phase } from "./job-phases.ts";
 
-/** How sure a time is: none (not run), few (under 5 runs), low (5 to 19), ok (20+). */
-export type Confidence = "none" | "few" | "low" | "ok";
-
-/** One job's (or workflow's) times on one environment (GET /api/job-times). Times are ms. */
-export type Stat = {
-  runs: number;
-  successes: number;
-  /** Successful runs behind the times, at most the report's sampleCap. */
-  samples: number;
-  confidence: Confidence;
-  medianMs: number | null;
-  p90Ms: number | null;
-  waitMs: number | null;
-  /** Against the window just before, same length: 0.18 is 18% slower. */
-  trend: number | null;
-};
+// GET /api/job-times: the Performance page's report. The dashboard calls each workflow row
+// a WorkflowRow and the report a JobTimesReport.
+export type {
+  Confidence,
+  Environment,
+  EnvironmentSummary,
+  JobRow,
+  JobType,
+  Stat,
+  WorkflowReport,
+  WorkflowRunner,
+  WorkflowRunPoint,
+} from "@relayrunner/api-types";
+export type JobTimesReport = PerformanceReport;
+export type WorkflowRow = PerformanceWorkflow;
 
 /** A Stat with no runs behind it. */
 export const EMPTY_STAT: Stat = {
@@ -32,34 +38,6 @@ export const EMPTY_STAT: Stat = {
   trend: null,
 };
 
-export type Environment = {
-  key: string;
-  label: string;
-  detail: string;
-  /** Its vCPUs and memory, when the label or the service says. */
-  size?: RunnerSize;
-  /** `machine:<id>` only: how it joined and the device it reported, for its icon. */
-  machine?: { source: "connect" | "github"; kind: DeviceKind | null; model: string | null };
-};
-
-export type EnvironmentSummary = Environment & {
-  stat: Stat;
-  /** Jobs sent here that no runner picked up within 10 minutes. */
-  missed: number;
-  /** This environment's median over the baseline's on shared jobs: 0.5 is twice as fast. */
-  versus: { ratio: number; sharedJobs: number } | null;
-};
-
-export type JobRow = {
-  name: string;
-  byEnvironment: Record<string, Stat>;
-  legs?: JobRow[];
-  /** What the job does, from the AI model, once it has read the job (apps/api/src/ai/job-type.ts). */
-  type?: JobType;
-};
-
-export type JobType = "lint" | "test" | "e2e" | "build" | "deploy" | "other";
-
 export const JOB_TYPE_LABELS: Record<JobType, string> = {
   lint: "Lint",
   test: "Tests",
@@ -67,29 +45,6 @@ export const JOB_TYPE_LABELS: Record<JobType, string> = {
   build: "Build",
   deploy: "Deploy",
   other: "Other",
-};
-
-export type WorkflowRow = {
-  repositoryId: number;
-  repository: string;
-  workflow: string | null;
-  /** Whole-run times: run start to last job done, like the History page. */
-  wall: Stat | null;
-  jobs: JobRow[];
-};
-
-export type JobTimesReport = {
-  days: number;
-  /** Whether times carry a trend against the window before (not on 30 days). */
-  trend: boolean;
-  sampleCap: number;
-  /** Runs a job needs on both runners to count toward `versus`. */
-  fewRuns: number;
-  /** Shared jobs a runner needs before it gets a `versus`. */
-  minSharedJobs: number;
-  baseline: string | null;
-  environments: EnvironmentSummary[];
-  workflows: WorkflowRow[];
 };
 
 export type JobRun = {
@@ -103,22 +58,51 @@ export type JobRun = {
   completedAt: number;
 };
 
-export function getJobTimes(days: number) {
-  return api<JobTimesReport>(`/job-times?days=${days}`);
+/** A step of the job's average successful run, sorted into a phase by its name. */
+export type RunStep = { name: string; phase: Phase; ms: number };
+
+/**
+ * The ranges a report from single jobs offers: as far back as the API keeps them (62 days), so
+ * last month fits.
+ */
+export const JOB_RANGES: RangeOptions = {
+  presets: ["24h", "7d", "14d", "30d", "week", "lastweek", "month", "lastmonth"],
+};
+
+export function getJobTimes(range: TimeRange) {
+  return api<JobTimesReport>(`/job-times?${reportQuery(range)}`);
 }
 
 export function getJobRuns(
-  days: number,
+  range: TimeRange,
   job: { repositoryId: number; workflow: string | null; name: string; matrix: boolean },
 ) {
-  const query = new URLSearchParams({
-    days: String(days),
+  const query = reportQuery(range, {
     repositoryId: String(job.repositoryId),
     name: job.name,
     matrix: String(job.matrix),
+    ...(job.workflow && { workflow: job.workflow }),
   });
-  if (job.workflow) query.set("workflow", job.workflow);
-  return api<{ days: number; runs: JobRun[] }>(`/job-times/runs?${query}`);
+  return api<{ days: number; runs: JobRun[]; steps: RunStep[] }>(`/job-times/runs?${query}`);
+}
+
+/** One workflow on every runner it ran on (GET /api/job-times/workflow). */
+export function getWorkflowReport(
+  range: TimeRange,
+  workflow: { repositoryId: number; workflow: string | null },
+) {
+  const query = reportQuery(range, {
+    repositoryId: String(workflow.repositoryId),
+    ...(workflow.workflow && { workflow: workflow.workflow }),
+  });
+  return api<WorkflowReport>(`/job-times/workflow?${query}`);
+}
+
+/** A run's cost at list prices: "Free", "$0.024" under a dime, "$1.20" above, "—" unknown. */
+export function runCost(usd: number | null | undefined) {
+  if (usd === null || usd === undefined) return "—";
+  if (usd === 0) return "Free";
+  return `$${usd.toFixed(usd < 0.1 ? 3 : 2)}`;
 }
 
 export function getMachineJobTimes(days = 14) {
@@ -132,6 +116,12 @@ export const DAY_MS = 24 * HOUR_MS;
 export function niceStep(ms: number) {
   const steps = [10, 15, 30, 60, 120, 300, 600, 900, 1800, 3600].map((s) => s * 1000);
   return steps.find((step) => step >= ms) ?? 3_600_000;
+}
+
+/** Whole minutes in short form; "<1" for less than one. */
+export function minutesText(ms: number) {
+  const minutes = ms / 60_000;
+  return minutes > 0 && minutes < 1 ? "<1" : count(Math.round(minutes));
 }
 
 /** "0:09", "3:10", "1:02:05": a stopwatch, so times line up in tables. */
@@ -151,12 +141,27 @@ export function clock(ms: number | null) {
 export type TypicalTime = { medianMs: number; p90Ms: number; samples: number };
 
 /**
- * A running job against its usual time: time left before its median, past the median but within
- * what's normal for it, or slower than 9 in 10 of its runs.
+ * How far past its median a job has to run before it counts as slow: at least this long and this
+ * share of the median, and past its p90 too. Keeps ordinary run-to-run variance (1:31 against a
+ * usual 1:22) from reading as a problem.
+ */
+const SLOW_MIN_MS = 30_000;
+const SLOW_MIN_SHARE = 0.25;
+
+/** Whether a job that has run `ranMs` is meaningfully slower than it usually is on its runner. */
+export function isSlow(typical: TypicalTime | null | undefined, ranMs: number) {
+  if (!typical) return false;
+  const over = ranMs - typical.medianMs;
+  return ranMs > typical.p90Ms && over >= Math.max(SLOW_MIN_MS, typical.medianMs * SLOW_MIN_SHARE);
+}
+
+/**
+ * A running job against its usual time: time left before its median, past the median but still
+ * within what's normal for it, or meaningfully slower than usual (see `isSlow`).
  */
 export type Progress =
   | { state: "left"; leftMs: number; typical: TypicalTime }
-  | { state: "late"; typical: TypicalTime }
+  | { state: "normal"; typical: TypicalTime }
   | { state: "slow"; typical: TypicalTime };
 
 export function progressOf(
@@ -165,17 +170,23 @@ export function progressOf(
 ): Progress | null {
   if (!typical) return null;
   if (ranMs < typical.medianMs) return { state: "left", leftMs: typical.medianMs - ranMs, typical };
-  return { state: ranMs > typical.p90Ms ? "slow" : "late", typical };
+  return { state: isSlow(typical, ranMs) ? "slow" : "normal", typical };
 }
 
 /**
- * "about 1:20 left", "usual 2:10", "slower than usual (2:10)": what a running job's timer says
- * under it, with `format` for the times.
+ * "about 1:20 left" or "slower than usual (2:10)": what a running job's timer says under it, with
+ * `format` for the times. Null once it's past its usual time but still normal, since saying so
+ * only adds noise.
  */
 export function progressText(progress: Progress, format: (ms: number) => string = clock) {
   if (progress.state === "left") return `about ${format(progress.leftMs)} left`;
-  if (progress.state === "late") return `usual ${format(progress.typical.medianMs)}`;
-  return `slower than usual (${format(progress.typical.medianMs)})`;
+  if (progress.state === "normal") return null;
+  return slowText(progress.typical, format);
+}
+
+/** "slower than usual (2:10)". */
+export function slowText(typical: TypicalTime, format: (ms: number) => string = clock) {
+  return `slower than usual (${format(typical.medianMs)})`;
 }
 
 /**
@@ -195,6 +206,12 @@ export function timeLeft(
   }
   return jobs.length ? left : null;
 }
+
+/**
+ * Whether a `days` window can be compared with the one before: the API keeps raw job timings 62
+ * days (RAW_RETENTION_DAYS). For the sample reports, which have no API.
+ */
+export const hasTrend = (days: number) => days * 2 <= 62;
 
 /** "7 runs", "1 run". */
 export function plural(value: number, word: string) {
@@ -250,9 +267,10 @@ export function sampleJobTimes(days: number): JobTimesReport {
   const mac = "machine:sample";
   const container = "container";
   const macos = "github:macos";
+  const blacksmith = "blacksmith:blacksmith-4vcpu-ubuntu-2404";
   return {
     days,
-    trend: days * 2 <= 31,
+    trend: hasTrend(days),
     sampleCap: 50,
     fewRuns: 5,
     minSharedJobs: 3,
@@ -312,6 +330,15 @@ export function sampleJobTimes(days: number): JobTimesReport {
         versus: { ratio: 1.03, sharedJobs: 3 },
       },
       {
+        key: blacksmith,
+        label: "blacksmith-4vcpu-ubuntu-2404",
+        detail: "Blacksmith",
+        size: { vcpus: 4, memoryGb: 16 },
+        stat: stat(56, 31, 33),
+        missed: 0,
+        versus: { ratio: 0.55, sharedJobs: 4 },
+      },
+      {
         key: macos,
         label: "macOS",
         detail: "GitHub-hosted",
@@ -326,6 +353,11 @@ export function sampleJobTimes(days: number): JobTimesReport {
         repository: "acme/app",
         workflow: "CI",
         wall: stat(214, 50, 162, 0.12),
+        usd: 0.034,
+        environments: [linux, mac, container, blacksmith],
+        fastest: { environment: mac, ratio: 0.42 },
+        runMs: 162 * 448_000,
+        spentUsd: 4.86,
         jobs: [
           {
             name: "test",
@@ -365,6 +397,11 @@ export function sampleJobTimes(days: number): JobTimesReport {
         repository: "acme/app",
         workflow: "Release",
         wall: stat(262, 9, 10),
+        usd: 0.4,
+        environments: [macos, mac],
+        fastest: null,
+        runMs: 10 * 400_000,
+        spentUsd: 4.0,
         jobs: [
           { name: "build-macos", byEnvironment: { [mac]: stat(235, 12), [macos]: stat(400, 9) } },
         ],

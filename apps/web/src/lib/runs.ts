@@ -1,7 +1,11 @@
+import type { FailureCause } from "@relayrunner/api-types";
 import { relayInputs } from "@relayrunner/runner-order";
 import { api } from "@/lib/api";
 import type { RouteWalk } from "@/lib/route-walk";
 import type { Environment, JobRun, TypicalTime } from "@/lib/job-times";
+import { authDisabled } from "@/lib/auth-client";
+import type { WorkflowRef } from "@/lib/workflow-ref";
+import { rangeDays, reportQuery, resolveRange, type TimeRange } from "@/lib/time-range";
 
 export type RunStatus = "queued" | "in_progress" | "completed";
 
@@ -37,7 +41,7 @@ export type Run = {
 };
 
 export type RunsReport = {
-  /** The window: runs that changed in the last `days` days. */
+  /** Days the usual times come from: the range, or the 14 days up to its end if that's longer. */
   days: number;
   environments: Environment[];
   runs: Run[];
@@ -143,13 +147,41 @@ export const jobUrl = (job: Pick<HistoryJob, "repository" | "runId" | "id">) =>
 export const pullRequestUrl = (repository: string, number: number) =>
   `https://github.com/${repository}/pull/${number}`;
 
-export function getRuns() {
-  return api<RunsReport>("/runs");
+/** Both History views open on the last week. */
+export const HISTORY_DEFAULT_RANGE: TimeRange = "7d";
+
+/** The workspace's runs in a range, or with `only`, just one workflow's. */
+export function getRuns(range: TimeRange, only?: WorkflowRef) {
+  const query = reportQuery(range);
+  if (only) {
+    const filter = new URLSearchParams({ repo: only.repository, workflow: only.workflow });
+    return api<RunsReport>(`/runs?${query}&${filter}`);
+  }
+  return api<RunsReport>(`/runs?${query}`);
 }
 
-export function getJobs(days: number) {
-  return api<JobsReport>(`/runs/jobs?days=${days}`);
+/** The workspace's runs in a range (or one workflow's), or the sample's without sign-in. */
+export function loadRuns(range: TimeRange, only?: WorkflowRef): Promise<RunsReport> {
+  if (!authDisabled) return getRuns(range, only);
+  // The sample is the last few days: keep the runs the range holds, as the API would.
+  const { from, to } = resolveRange(range);
+  const sample = sampleRuns();
+  const runs = sample.runs.filter(
+    (run) =>
+      run.updatedAt >= from &&
+      run.updatedAt < to &&
+      (!only || (run.repository === only.repository && run.workflow === only.workflow)),
+  );
+  return Promise.resolve({ ...sample, runs });
 }
+
+export function getJobs(range: TimeRange) {
+  return api<JobsReport>(`/runs/jobs?${reportQuery(range)}`);
+}
+
+/** The History page's Jobs view, or its sample without sign-in. */
+export const loadJobs = (range: TimeRange) =>
+  authDisabled ? Promise.resolve(sampleJobs(rangeDays(range))) : getJobs(range);
 
 export function getRunJobs(run: RunIds) {
   return api<RunJobs>(`/runs/${run.repositoryId}/${run.runId}/${run.runAttempt}/jobs`);
@@ -173,16 +205,7 @@ export type JobFailure = {
   cause: FailureCause | null;
 };
 
-/** apps/api/src/ai/failure-cause.ts */
-export type FailureCause = {
-  kind: "flaky" | "lint" | "test" | "build" | "infra" | "config";
-  /** How sure the model is of `kind`, from 0 to 1. */
-  confidence: number;
-  /** The chance that running the job again, with no change, passes. */
-  passesOnRerun: number;
-  /** What a re-run will likely do, when the model is sure; else null. */
-  rerun: "passes" | "fails" | null;
-};
+export type { FailureCause };
 
 export function getJobFailure(jobId: number) {
   return api<JobFailure>(`/runs/jobs/${jobId}/failure`);

@@ -24,7 +24,7 @@ Where a job runs depends on the machine:
 - **On a Mac with Apple silicon**, each job runs in its own Linux VM, away from your files. See [Isolated jobs on a Mac](#isolated-jobs-on-a-mac).
 - **On Linux or an Intel Mac**, jobs run on the machine itself, as the user who started `connect`.
 
-The dashboard's **Runners** page shows each connected machine, the jobs running on it and anything that needs you, like a machine that went offline with jobs waiting. Each running job shows about how long it has left, from how long it usually takes on that runner. Past its usual time it shows that time instead, and it turns orange once it's slower than 9 in 10 of its runs.
+The dashboard's **Runners** page shows each connected machine, the jobs running on it and anything that needs you, like a machine that went offline with jobs waiting. Each running job shows about how long it has left, from how long it usually takes on that runner. Past its usual time the note goes away, and comes back in orange once the job is clearly slower than usual: past 9 in 10 of its runs, and at least 30 seconds and a quarter over its usual time.
 
 <Screenshot
   name="runners"
@@ -45,7 +45,7 @@ Every machine has the label `self-hosted`, plus the OS and architecture its jobs
 
 ## Who can run jobs on it
 
-A new machine only runs jobs you started (**only me**). To let teammates' and bots' jobs run on it too, share it with **anyone** in the workspace:
+A new machine only runs jobs you started (**only me**), including a teammate's re-run of your run. To let teammates' and bots' jobs run on it too, share it with **anyone** in the workspace:
 
 ```sh
 relayrunner share anyone    # or only-me

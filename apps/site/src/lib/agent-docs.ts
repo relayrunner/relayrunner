@@ -4,6 +4,8 @@ import { MCP_URL } from "./mcp";
 import { isProviderId, providerMarkdown, providerTableMarkdown } from "./providers";
 import { INTEGRATIONS, integrationPath } from "./integrations";
 import { SOLUTIONS, solutionPath } from "./solutions";
+import { CHANGELOG_ID } from "./changelog";
+import { SIDEBAR } from "./sidebar.mjs";
 
 /*
  * Plain-text versions of every docs page, for agents and crawlers. Each page at /docs/<slug> also
@@ -15,10 +17,24 @@ type DocsEntry = CollectionEntry<"docs">;
 
 export const pagePath = (entry: DocsEntry) => `/${entry.id}`;
 export const markdownPath = (entry: DocsEntry) => `/${entry.id}.md`;
-export const textPath = (entry: DocsEntry) => `/${entry.id}.txt`;
 
+const isChangelog = (entry: DocsEntry) =>
+  entry.id === CHANGELOG_ID || entry.id.startsWith(`${CHANGELOG_ID}/`);
+
+/** Sidebar position of each page, so agents read the docs in the order people do. */
+const SIDEBAR_ORDER = new Map(
+  SIDEBAR.flatMap((group) => group.items.filter((item) => typeof item === "string")).map(
+    (id, i) => [id, i],
+  ),
+);
+
+/** Every docs page in sidebar order, then pages missing from it, then the changelog pages. */
 export async function docsEntries() {
-  return (await getCollection("docs")).filter((entry) => entry.id.startsWith("docs/"));
+  const rank = (entry: DocsEntry) =>
+    isChangelog(entry) ? Infinity : (SIDEBAR_ORDER.get(entry.id) ?? SIDEBAR_ORDER.size);
+  return (await getCollection("docs"))
+    .filter((entry) => entry.id.startsWith("docs/"))
+    .sort((a, b) => rank(a) - rank(b));
 }
 
 /** Starlight asides (`:::note[Title]` ... `:::`) become Markdown blockquotes. */
@@ -86,10 +102,20 @@ export function toText(entry: DocsEntry, all: DocsEntry[], site: URL) {
 
 export function llmsIndex(all: DocsEntry[], site: URL) {
   const abs = (path: string) => new URL(path, site).href;
-  const lines = all.map(
-    (e) =>
-      `- [${e.data.title}](${abs(markdownPath(e))})${e.data.description ? `: ${e.data.description}` : ""}`,
-  );
+  const link = (e: DocsEntry) =>
+    `- [${e.data.title}](${abs(markdownPath(e))})${e.data.description ? `: ${e.data.description}` : ""}`;
+  const section = (label: string, entries: DocsEntry[]) =>
+    entries.length ? [`## ${label}`, "", ...entries.map(link), ""] : [];
+  // One section per sidebar group, in sidebar order. The changelog gets its own, last.
+  const docs = all.filter((e) => !isChangelog(e));
+  const inGroup = (group: (typeof SIDEBAR)[number]) => (e: DocsEntry) => group.items.includes(e.id);
+  const docSections = [
+    ...SIDEBAR.flatMap((group) => section(group.label, docs.filter(inGroup(group)))),
+    ...section(
+      "Other pages",
+      docs.filter((e) => !SIDEBAR_ORDER.has(e.id)),
+    ),
+  ];
   return [
     "# RelayRunner",
     "",
@@ -125,6 +151,7 @@ export function llmsIndex(all: DocsEntry[], site: URL) {
     `- [Mac app](${abs("/docs/get-started/mac-app.md")}): a menu bar app that runs \`connect\` for you, ${abs("/mac/download")}`,
     "- [Source code](https://github.com/relayrunner/relayrunner): the GitHub repository",
     "",
+    ...docSections,
     "## Solutions",
     "",
     ...SOLUTIONS.map((s) => `- [${s.name}](${abs(solutionPath(s))}): ${s.blurb}`),
@@ -133,12 +160,29 @@ export function llmsIndex(all: DocsEntry[], site: URL) {
     "",
     ...INTEGRATIONS.map((p) => `- [${p.name}](${abs(integrationPath(p.id))}): ${p.intro}`),
     "",
-    "## Pages",
-    "",
-    ...lines,
-    "",
+    ...section("Changelog", all.filter(isChangelog)),
   ].join("\n");
 }
 
-/** Every page's Markdown in one file, for agents that want the whole docs at once. */
-export const llmsFull = (all: DocsEntry[]) => all.map(toMarkdown).join("\n---\n\n");
+/** Changelog entries kept in llms-full.txt; the full list stays at /docs/changelog.md. */
+const RECENT_CHANGES = 15;
+
+/** The combined changelog cut to its newest entries, with a link to the rest. */
+function recentChangelog(entry: DocsEntry, site: URL) {
+  const markdown = toMarkdown(entry);
+  const [head, ...sections] = markdown.split(/^(?=## )/m);
+  if (sections.length <= RECENT_CHANGES) return markdown;
+  const more = `Older entries: ${new URL(markdownPath(entry), site).href}\n`;
+  return [head, ...sections.slice(0, RECENT_CHANGES), more].join("");
+}
+
+/**
+ * Every page's Markdown in one file, for agents that want the whole docs at once: the docs in
+ * sidebar order, then the newest changelog entries. The per-product changelog views and the pages
+ * for single updates repeat the combined changelog, so they're left out.
+ */
+export function llmsFull(all: DocsEntry[], site: URL) {
+  const docs = all.filter((entry) => !isChangelog(entry)).map(toMarkdown);
+  const changelog = all.find((entry) => entry.id === CHANGELOG_ID);
+  return [...docs, ...(changelog ? [recentChangelog(changelog, site)] : [])].join("\n---\n\n");
+}

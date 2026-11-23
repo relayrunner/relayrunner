@@ -2,7 +2,7 @@ import { beforeAll, describe, expect, test } from "vitest";
 import { app } from "./app.ts";
 import { createDb } from "./db/index.ts";
 import type { Env } from "./env.ts";
-import { loadPriceBook } from "./prices.ts";
+import { loadPriceBook } from "./providers/prices.ts";
 import type { AdminRate, PendingPrice } from "./routes/admin-prices.ts";
 import * as testing from "./testing.ts";
 import { accessEnv, accessJwt } from "./testing-access.ts";

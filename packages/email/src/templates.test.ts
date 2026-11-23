@@ -2,6 +2,8 @@ import { describe, expect, it } from "vitest";
 import {
   renderDeadLetterAlertEmail,
   renderFeedbackEmail,
+  renderHealthAlertEmail,
+  renderIntegrationProblemEmail,
   renderPriceCheckEmail,
   renderMachineConnectedEmail,
   renderMachineTakenOverEmail,
@@ -118,6 +120,37 @@ describe("templates", () => {
     });
     expect(email.subject).toBe("[webhooks] 12 deliveries dead-lettered in the past hour");
     expect(email.text).toContain("https://app.example/admin/webhooks");
+  });
+
+  it("health alert shows the lines it's given", () => {
+    const email = renderHealthAlertEmail({
+      failing: 1,
+      lines: [
+        "cron:syncRunnerReleases failed 3 times in a row",
+        "task:signals:1 is working again.",
+      ],
+    });
+    expect(email.subject).toBe("[health] 1 thing keeps failing");
+    expect(email.text).toContain("cron:syncRunnerReleases failed 3 times in a row");
+  });
+
+  it("integration problem names the provider and links to its fix, escaping the workspace", () => {
+    const email = renderIntegrationProblemEmail({
+      kind: "provider-token",
+      providerName: "Depot",
+      workspace: "<Acme>",
+      dashboardUrl: "https://app.example",
+    });
+    expect(email.subject).toBe("Depot rejected its API token (<Acme>)");
+    expect(email.text).toContain("https://app.example/settings/providers");
+    expect(email.html).not.toContain("<Acme>");
+    const reminder = renderIntegrationProblemEmail({
+      kind: "telemetry-paused",
+      workspace: "Acme",
+      dashboardUrl: "https://app.example",
+      reminder: true,
+    });
+    expect(reminder.subject).toBe("Reminder: Your telemetry export paused (Acme)");
   });
 
   it("price check lists changes and unreadable pages", () => {

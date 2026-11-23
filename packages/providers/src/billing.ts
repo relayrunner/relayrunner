@@ -5,7 +5,10 @@
 import type { ProviderId } from "./index.ts";
 
 export const BILLING_PROVIDER_IDS = [
+  "blacksmith",
+  "boat",
   "depot",
+  "groundbox",
   "namespace",
   "warpbuild",
 ] as const satisfies readonly ProviderId[];
@@ -30,15 +33,62 @@ export interface BillingProviderInfo {
   tokenHelp: string;
   /** What RelayRunner reads with it. */
   reads: string;
+  /**
+   * The scopes the token needs, each with what it's for, when the provider asks for them as the
+   * token is made. Settings › Providers lists them by the token field.
+   */
+  scopes?: readonly { scope: string; for: string }[];
   options?: readonly BillingOption[];
+  /**
+   * The provider account is a GitHub organization: a connection is for the workspace's own, and a
+   * token for any other is refused.
+   */
+  githubOrganization?: boolean;
+  /** A terminal command that makes the token and connects it, offered before pasting one. */
+  command?: string;
+  /** The connection only reads the plan's limits for the Router, so it syncs no usage. */
+  limitsOnly?: boolean;
+  /** The synced jobs carry what they cost but not how long they ran, so the card names no minutes. */
+  costOnly?: boolean;
 }
 
 export const BILLING_PROVIDERS: Record<BillingProviderId, BillingProviderInfo> = {
+  blacksmith: {
+    token: "Organization token",
+    tokenUrl: "https://docs.blacksmith.sh/blacksmith-cli/overview",
+    tokenHelp:
+      "As a Blacksmith org admin, run `blacksmith org-token create`, approve it for this workspace's GitHub organization, and paste the token it prints.",
+    command: "npx relayrunner blacksmith connect",
+    reads: "Billable minutes and cost per day, and each job's billable minutes.",
+    githubOrganization: true,
+  },
+  boat: {
+    token: "API key",
+    tokenUrl: "https://docs.boat.dev/api-keys",
+    tokenHelp:
+      "Create a Boat API key allowed only the account.read action, and paste it. It starts with boat_.",
+    reads:
+      "How many job starts your plan has left this hour and day, so jobs go to the next step in your runner order when Boat has none left.",
+    limitsOnly: true,
+  },
   depot: {
     token: "Organization token",
     tokenUrl: "https://depot.dev/orgs/_/settings",
     tokenHelp: "Create an organization token in your Depot organization settings.",
     reads: "Billable and queue time for each job.",
+  },
+  groundbox: {
+    token: "API key",
+    tokenUrl: "https://app.groundbox.dev",
+    tokenHelp:
+      "In Groundbox's dashboard, create an API key with only these two scopes, and paste it. It starts with `gbx_`.",
+    scopes: [
+      { scope: "account:read", for: "your plan, minutes used this month and any holds" },
+      { scope: "billing:read", for: "what each job cost and your spend, synced hourly" },
+    ],
+    reads:
+      "Your Groundbox usage from Groundbox's own billing: minutes used this month, what each job cost, your spend, and whether Groundbox is holding jobs.",
+    costOnly: true,
   },
   namespace: {
     token: "Revokable token",

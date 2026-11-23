@@ -7,6 +7,12 @@ import type { ProviderId } from "./index.ts";
 export const AUTO_SIZES = [2, 4, 8, 16, 32] as const;
 export type AutoSize = (typeof AUTO_SIZES)[number];
 
+export const isAutoSize = (size: number): size is AutoSize =>
+  (AUTO_SIZES as readonly number[]).includes(size);
+
+/** What a schema says when a size isn't one of AUTO_SIZES. */
+export const AUTO_SIZE_MESSAGE = `Pick a size of ${AUTO_SIZES.join(", ")} vCPU.`;
+
 /** What a job gets when nobody set a size for it or its workspace. */
 export const DEFAULT_AUTO_SIZE: AutoSize = 2;
 
@@ -83,6 +89,10 @@ const LABELS: Partial<
   lizard: {
     sizes: [2, 4, 8],
     label: (n) => `lizard-${{ 2: "small", 4: "medium" }[n] ?? "large"}-ubuntu-2404`,
+  },
+  groundbox: {
+    sizes: [2, 4, 8, 16],
+    label: (n) => `groundbox-${n}vcpu`,
   },
   // GitHub's standard runners. Bigger ones are larger runners each org names itself.
   github: {

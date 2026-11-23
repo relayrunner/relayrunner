@@ -1,7 +1,7 @@
 import { beforeEach, describe, expect, test, vi } from "vitest";
 import { createDb, schema } from "../db/index.ts";
 import type { Env } from "../env.ts";
-import { jobTimesReport } from "../job-times.ts";
+import { jobTimesReport } from "../reports/job-times.ts";
 import * as testing from "../testing.ts";
 import { classifyJobTypes } from "./job-type.ts";
 import { AI_DEFAULTS, saveAiSettings, setWorkspaceAi } from "./settings.ts";
@@ -95,7 +95,7 @@ describe("classifyJobTypes", () => {
     expect(await classifyJobTypes(env, installationId)).toBe(0);
     expect(run).toHaveBeenCalledTimes(4);
 
-    const report = await jobTimesReport(createDb(env.DB), workspaceId, 7);
+    const report = await jobTimesReport(createDb(env.DB), workspaceId);
     const ci = report.workflows.find((w) => w.workflow === "CI")!;
     expect(ci.jobs.find((j) => j.name === "lint")?.type).toBe("lint");
     // Too unsure to show.
@@ -107,7 +107,7 @@ describe("classifyJobTypes", () => {
 
     // Turning AI off deletes the saved types.
     await setWorkspaceAi(createDb(env.DB), workspaceId, false, null);
-    const after = await jobTimesReport(createDb(env.DB), workspaceId, 7);
+    const after = await jobTimesReport(createDb(env.DB), workspaceId);
     expect(after.workflows.flatMap((w) => w.jobs).some((j) => j.type)).toBe(false);
   });
 });

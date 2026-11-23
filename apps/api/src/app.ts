@@ -2,13 +2,15 @@ import { Hono } from "hono";
 import { routePath } from "hono/route";
 import { AppError } from "@relayrunner/errors";
 import type { AccessIdentity } from "@relayrunner/access";
-import type { AgentPrincipal } from "./agent-auth.ts";
-import type { Auth, Session } from "./auth.ts";
+import type { AgentPrincipal } from "./auth/agent-auth.ts";
+import type { Auth, Session } from "./auth/auth.ts";
 import type { Db, schema } from "./db/index.ts";
 import type { Env } from "./env.ts";
+import type { Flags } from "@relayrunner/api-types";
 import { respondError } from "./errors.ts";
 import { requireAccess } from "./middleware/admin.ts";
 import { d1Session } from "./middleware/d1-session.ts";
+import { withCatalog } from "./providers/provider-catalog.ts";
 import { attachSession } from "./middleware/session.ts";
 import { activityRoutes } from "./routes/activity.ts";
 import { agentRoutes } from "./routes/agents.ts";
@@ -16,14 +18,17 @@ import { adminWebhookRoutes } from "./routes/admin-webhooks.ts";
 import { adminRoutes } from "./routes/admin.ts";
 import { authRoutes } from "./routes/auth.ts";
 import { feedbackRoutes } from "./routes/feedback.ts";
+import { flagRoutes } from "./routes/flags.ts";
 import { telemetryRoutes } from "./routes/telemetry.ts";
+import { logBucketRoutes } from "./routes/log-bucket.ts";
 import { githubRoutes } from "./routes/github.ts";
 import { healthRoutes } from "./routes/health.ts";
-import { machineRoutes } from "./routes/machines.ts";
+import { machineRoutes } from "./routes/machines/index.ts";
 import { meRoutes } from "./routes/me.ts";
 import { jobTimesRoutes } from "./routes/job-times.ts";
 import { signalRoutes } from "./routes/signals.ts";
 import { providerRoutes } from "./routes/providers.ts";
+import { evaluationRoutes } from "./routes/evaluations.ts";
 import { runRoutes } from "./routes/runs.ts";
 import { usageRoutes } from "./routes/usage.ts";
 import { workspaceRoutes } from "./routes/workspaces.ts";
@@ -43,6 +48,8 @@ export interface AppEnv {
     accessIdentity: AccessIdentity;
     // Set by attachSession when the request carries an agent access token (agent-auth.ts).
     agent?: AgentPrincipal;
+    // Flag values already evaluated for this request (src/flags.ts).
+    flags?: Partial<Flags>;
   };
 }
 
@@ -63,10 +70,12 @@ app.route("/health", healthRoutes);
 app.use("/admin/*", requireAccess);
 app.route("/admin/webhooks", adminWebhookRoutes);
 
-// Everything below sees c.var.auth, c.var.user and c.var.session.
-app.use("*", attachSession, d1Session);
+// Everything below sees c.var.auth, c.var.user and c.var.session, and the provider list
+// (withCatalog).
+app.use("*", attachSession, d1Session, withCatalog);
 app.route("/auth", authRoutes);
 app.route("/me", meRoutes);
+app.route("/flags", flagRoutes);
 app.route("/workspaces", workspaceRoutes);
 app.route("/activity", activityRoutes);
 app.route("/usage", usageRoutes);
@@ -74,11 +83,13 @@ app.route("/signals", signalRoutes);
 app.route("/job-times", jobTimesRoutes);
 app.route("/runs", runRoutes);
 app.route("/providers", providerRoutes);
+app.route("/evaluations", evaluationRoutes);
 app.route("/github", githubRoutes);
 app.route("/machines", machineRoutes);
 app.route("/agents", agentRoutes);
 app.route("/feedback", feedbackRoutes);
 app.route("/telemetry", telemetryRoutes);
+app.route("/log-bucket", logBucketRoutes);
 // Operator admin over D1 (users, workspaces, runner prices): Access (above) and an operator
 // session.
 app.route("/admin", adminRoutes);

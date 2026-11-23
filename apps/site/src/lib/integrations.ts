@@ -55,6 +55,8 @@ const INTROS: Record<IntegrationId, string> = {
   instabox: "InstaBox runs GitHub Actions jobs on its own machines, under your InstaBox account.",
   lizard:
     "Lizard runs each GitHub Actions job in its own Firecracker VM, under your Lizard account.",
+  groundbox:
+    "Groundbox runs each GitHub Actions job in a fresh single-use VM, under your Groundbox account.",
   github: "GitHub-hosted runners work in every repository with nothing to set up.",
 };
 
@@ -84,6 +86,26 @@ const QUIRKS: Partial<Record<IntegrationId, Quirks>> = {
       {
         q: "What happens when Lizard's trial jobs run out?",
         a: "The trial runs 50 small, 20 medium and 10 large jobs. Once a size's jobs are used, Lizard skips jobs of that size until you start Pro. On Pro, usage past the plan's included amount is billed as you go, and jobs past its 5 at once wait in Lizard's queue.",
+      },
+    ],
+  },
+  groundbox: {
+    faqs: [
+      {
+        q: "What size does the groundbox label get?",
+        a: "A job on the bare groundbox label gets a size Groundbox picks from the job's earlier runs, from 2 to 16 vCPU. A job with no history starts at 4 vCPU, and the default most is 8. It's billed at the size it ran at, so the dashboard can't price it from the label. To pin a size, use a label such as groundbox-4vcpu.",
+      },
+      {
+        q: "What are Groundbox's flex runners?",
+        a: "groundbox-flex and groundbox-flex-2vcpu through -16vcpu are the same sizes at half price. They only run in Groundbox's spare room, so a job on one may wait before it starts.",
+      },
+      {
+        q: "Does Groundbox run Windows jobs?",
+        a: "Yes: runs-on groundbox-windows-2vcpu, -4vcpu, -8vcpu or -16vcpu (bare groundbox-windows is 4 vCPU) gets a fresh Windows Server 2025 Datacenter VM per job, with 4 GB of memory a vCPU. It's $0.006, $0.012, $0.022 and $0.042 a minute, billed per second, and boot time isn't billed. On the free plan a Windows minute uses free minutes at 2x its size.",
+      },
+      {
+        q: "Does Groundbox run macOS jobs?",
+        a: "Yes: runs-on groundbox-macos gets a fresh macOS VM per job, 12 vCPU on Apple silicon M6 with 12 GB of memory, macOS 26 Tahoe and Xcode 27.2. It's $0.05 a minute, billed per second. On the free plan a macOS minute uses 15 free minutes.",
       },
     ],
   },

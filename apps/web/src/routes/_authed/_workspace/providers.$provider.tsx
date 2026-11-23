@@ -1,57 +1,98 @@
 import { dayMs, providerPlans, type RatePrices } from "@relayrunner/providers";
 import { Count } from "@/components/count";
 import { createFileRoute, Link, notFound } from "@tanstack/react-router";
-import { ArrowLeftIcon, ArrowUpRightIcon } from "lucide-react";
+import { ArrowLeftIcon, ArrowUpRightIcon, FlaskConicalIcon } from "lucide-react";
 import { useState } from "react";
+import { IncludedMinutes } from "@/components/actions-minutes";
 import { CodeBlock } from "@/components/code-block";
+import { MachinePrices } from "@/components/machine-prices";
 import { ProviderPlans } from "@/components/provider-plans";
+import { ProviderTrendsCard } from "@/components/provider-trends";
+import {
+  type Percentile,
+  PERCENTILE_OPTIONS,
+  TREND_METRICS,
+  type TrendMetric,
+} from "@/lib/provider-trends";
 import { providerStyle, runnerName, runnerSpec, TILE } from "@/components/providers";
-import { RangePicker } from "@/components/range-picker";
+import { TimeRangePicker } from "@/components/range-picker";
+import { RunnerLink } from "@/components/runner-link";
 import { StatTile } from "@/components/stat-tile";
 import { Button } from "@/components/ui/button";
 import { createCellContext, DataTable, dataTableColumns, NUM } from "@/components/ui/data-table";
+import { WorkflowLink } from "@/components/workflow-link";
 import { authDisabled } from "@/lib/auth-client";
+import { useFlag } from "@/lib/flags";
 import { clock, medianText, p90Text, plural } from "@/lib/job-times";
 import { isKnownProvider, providerInfo } from "@/lib/provider-catalog";
 import {
   costText,
   getProviderReport,
+  PRICE_VIEWS,
+  type PriceView,
+  type ProviderCounts,
+  quickShare,
+  PROVIDER_DEFAULT_RANGE,
+  PROVIDER_RANGES,
   type ProviderReport,
   type ProviderRunner,
   rateName,
   rateText,
+  reportCatalog,
   sampleProviderReport,
 } from "@/lib/providers";
+import { evaluationSizes } from "@/lib/evaluations";
 import { cn } from "@/lib/utils";
 import {
-  dayRanges,
-  rangeParam,
+  optionParam,
+  type RangeSearch,
   unlessDefault,
+  rangeSearch,
   useRangeReport,
   useSetSearch,
 } from "@/lib/search-params";
+import { rangeDays, rangePhrase, type TimeRange } from "@/lib/time-range";
 import { usePageTitle } from "@/lib/page-title";
 
-const RANGES = dayRanges(1, 30);
-
-function load(provider: string, days: number) {
+function load(provider: string, range: TimeRange) {
   return authDisabled
-    ? Promise.resolve(sampleProviderReport(provider, days))
-    : getProviderReport(provider, days);
+    ? Promise.resolve(sampleProviderReport(provider, rangeDays(range)))
+    : getProviderReport(provider, range);
 }
 
-const DEFAULT_DAYS = 14;
-type Search = { days?: number };
-const validateSearch = (search: Record<string, unknown>): Search => ({
-  days: rangeParam(search.days, RANGES, DEFAULT_DAYS),
+const rangeParams = rangeSearch(PROVIDER_RANGES, PROVIDER_DEFAULT_RANGE);
+const { rangeOf, toSearch } = rangeParams;
+
+type ProviderSearch = RangeSearch & { prices?: PriceView; chart?: TrendMetric; p?: Percentile };
+
+// The range, `?prices=chart` when Machine prices shows its chart, and the trend chart's metric and
+// percentile when they aren't queue wait at P50.
+const validateSearch = (search: Record<string, unknown>): ProviderSearch => ({
+  ...rangeParams.validateSearch(search),
+  prices: optionParam(
+    search.prices,
+    PRICE_VIEWS.map((view) => view.value),
+  ),
+  chart: optionParam(
+    search.chart,
+    TREND_METRICS.map((metric) => metric.value),
+  ),
+  p: PERCENTILE_OPTIONS.slice(1).find((option) => option.value === Number(search.p))?.value,
 });
-const daysOf = (search: Search) => search.days ?? DEFAULT_DAYS;
+
+// The widest range the page offers, to tell a provider nobody has used from a quiet month.
+const WIDEST: TimeRange = "30d";
 
 export const Route = createFileRoute("/_authed/_workspace/providers/$provider")({
   validateSearch,
-  loader: ({ params, location }) => {
+  loader: async ({ params, location }) => {
     if (!isKnownProvider(params.provider)) throw notFound();
-    return load(params.provider, daysOf(validateSearch(location.search)));
+    const search = validateSearch(location.search);
+    const report = await load(params.provider, rangeOf(search));
+    // Nothing ran here this month: look back further before leading with how to start.
+    const unused =
+      report.jobs === 0 && !search.range && (await load(params.provider, WIDEST)).jobs === 0;
+    return { report, unused };
   },
   // A new range loads in the page, keeping the last one up meanwhile.
   shouldReload: ({ cause }) => cause !== "stay",
@@ -60,24 +101,29 @@ export const Route = createFileRoute("/_authed/_workspace/providers/$provider")(
 
 // Keyed by provider, so moving to another provider's page starts from its own loaded report.
 function ProviderPage() {
-  const first = Route.useLoaderData();
-  return <ProviderView key={first.provider} first={first} />;
+  const { report, unused } = Route.useLoaderData();
+  return <ProviderView key={report.provider} first={report} unused={unused} />;
 }
 
-function ProviderView({ first }: { first: ProviderReport }) {
+function ProviderView({ first, unused }: { first: ProviderReport; unused: boolean }) {
   const { provider } = first;
-  const days = daysOf(Route.useSearch());
-  const setSearch = useSetSearch<Search>();
-  const report = useRangeReport(first, days, (next) => load(provider, next));
+  const search = Route.useSearch();
+  const range = rangeOf(search);
+  const setSearch = useSetSearch<ProviderSearch>();
+  const report = useRangeReport(first, range, (next) => load(provider, next));
   const info = providerInfo(provider);
   usePageTitle(info.name);
+  const catalog = reportCatalog(report);
   // Nothing ran here in the widest range: lead with how to start instead of empty numbers.
-  const [notSetUp] = useState(first.jobs === 0 && first.days === DEFAULT_DAYS && !!info.example);
+  const [notSetUp] = useState(unused && !!info.example);
   const { icon, tile } = providerStyle(provider);
   const connectUrl = providerPlans(provider)?.connectUrl;
+  // Hosted providers with a label per size can run a workflow as an evaluation.
+  const flagged = useFlag("provider-evaluations");
+  const evaluable = flagged && provider !== "github" && evaluationSizes(provider).length > 0;
 
-  function chooseRange(next: number) {
-    setSearch({ days: unlessDefault(next, DEFAULT_DAYS) });
+  function chooseRange(next: TimeRange) {
+    setSearch(toSearch(next));
   }
 
   return (
@@ -99,6 +145,14 @@ function ProviderView({ first }: { first: ProviderReport }) {
           </div>
         </div>
         <div className="flex flex-wrap gap-2">
+          {evaluable && (
+            <Button asChild>
+              <Link to="/providers/$provider/evaluate" params={{ provider }}>
+                <FlaskConicalIcon />
+                Evaluate
+              </Link>
+            </Button>
+          )}
           {/* Before its first job here, the way in is connecting it; after, its dashboard. */}
           {notSetUp && connectUrl ? (
             <ExternalLink href={connectUrl}>Connect</ExternalLink>
@@ -117,16 +171,25 @@ function ProviderView({ first }: { first: ProviderReport }) {
         <div className="grid gap-3">
           <div className="flex flex-wrap items-center justify-between gap-3">
             <h2 className="font-semibold">Your usage</h2>
-            <RangePicker ranges={RANGES} days={days} onChange={chooseRange} />
+            <TimeRangePicker {...PROVIDER_RANGES} value={range} onChange={chooseRange} />
           </div>
           {report.jobs === 0 ? (
             <p className="rounded-xl border border-dashed bg-card px-4 py-6 text-sm text-muted-foreground">
-              No jobs in this workspace ran on {info.name} in the last {plural(report.days, "day")}.
-              Once one does, its numbers show up here.
+              No jobs in this workspace ran on {info.name} in {rangePhrase(range)}. Once one does,
+              its numbers show up here.
             </p>
           ) : (
             <>
               <Totals report={report} />
+              <ProviderTrendsCard
+                provider={provider}
+                range={range}
+                sampleRunners={report.runners}
+                metric={search.chart ?? "wait"}
+                percentile={search.p ?? 50}
+                onMetric={(chart) => setSearch({ chart: unlessDefault(chart, "wait") })}
+                onPercentile={(p) => setSearch({ p: unlessDefault(p, 50) })}
+              />
               <Runners report={report} />
               <Workflows report={report} />
               <p className="text-xs text-muted-foreground">
@@ -139,9 +202,22 @@ function ProviderView({ first }: { first: ProviderReport }) {
         </div>
       )}
 
+      {provider === "github" && <IncludedMinutes />}
+
       <ProviderPlans provider={provider} />
 
-      <Prices prices={report.prices} />
+      {catalog.length ? (
+        <MachinePrices
+          provider={provider}
+          catalog={catalog}
+          runners={report.runners}
+          view={search.prices ?? "grid"}
+          onView={(view) => setSearch({ prices: unlessDefault(view, "grid") })}
+        />
+      ) : (
+        // Providers operators added have one price and no catalog.
+        <Prices prices={report.prices} />
+      )}
 
       {!notSetUp && info.example && (
         <div className="grid max-w-3xl gap-3">
@@ -219,6 +295,32 @@ function costNote({ provider, unpricedJobs }: ProviderReport) {
   return "";
 }
 
+const quickText = (counts: ProviderCounts) => {
+  const share = quickShare(counts);
+  return share === null ? null : `${Math.floor(share * 100)}% within a minute`;
+};
+
+function waitDetail(report: ProviderReport) {
+  const quick = quickText(report);
+  return quick ? `Median · ${quick}` : "Median, queued to started";
+}
+
+// Failed jobs, and how many of them the runner failed before any step ran.
+function failedDetail({ failures, runnerFailures }: ProviderCounts) {
+  const jobs = plural(failures, "job");
+  return runnerFailures > 0 ? `${jobs} · ${runnerFailures} before a step ran` : jobs;
+}
+
+/** A table cell's value with a muted line under it, when there is one. */
+function TwoLines({ value, detail }: { value: string; detail: string | null }) {
+  return (
+    <span className="grid">
+      <span>{value}</span>
+      {detail && <span className="text-xs text-muted-foreground">{detail}</span>}
+    </span>
+  );
+}
+
 function Totals({ report }: { report: ProviderReport }) {
   const { jobs, failures, billedMinutes, stat } = report;
   return (
@@ -235,8 +337,8 @@ function Totals({ report }: { report: ProviderReport }) {
         value={medianText(stat)}
         detail={stat.p90Ms === null ? "Median of successful jobs" : `Median · ${p90Text(stat)}`}
       />
-      <StatTile label="Queue wait" value={clock(stat.waitMs)} detail="Median, queued to started" />
-      <StatTile label="Failed" value={percent(failures, jobs)} detail={plural(failures, "job")} />
+      <StatTile label="Queue wait" value={clock(stat.waitMs)} detail={waitDetail(report)} />
+      <StatTile label="Failed" value={percent(failures, jobs)} detail={failedDetail(report)} />
     </div>
   );
 }
@@ -262,16 +364,25 @@ const runnerColumns = runnerColumn.columns([
     id: "typical",
     header: "Typical",
     sortFn: "basic",
-    meta: NUM,
+    meta: { ...NUM, hideOnPhone: true },
     cell: ({ row }) => (
       <span title={p90Text(row.original.stat)}>{medianText(row.original.stat)}</span>
+    ),
+  }),
+  runnerColumn.accessor((runner) => runner.stat.waitMs ?? undefined, {
+    id: "wait",
+    header: "Queue wait",
+    sortFn: "basic",
+    meta: { ...NUM, hideOnPhone: true },
+    cell: ({ row }) => (
+      <TwoLines value={clock(row.original.stat.waitMs)} detail={quickText(row.original)} />
     ),
   }),
   runnerColumn.accessor((runner) => runner.perMinute ?? undefined, {
     id: "rate",
     header: "Rate",
     sortFn: "basic",
-    meta: NUM,
+    meta: { ...NUM, hideOnPhone: true },
     cell: ({ row }) => rateText(row.original.perMinute),
   }),
   runnerColumn.accessor("cost", {
@@ -286,8 +397,13 @@ const runnerColumns = runnerColumn.columns([
     header: "Failed",
     sortFn: "basic",
     sortDescFirst: true,
-    meta: NUM,
-    cell: ({ row }) => percent(row.original.failures, row.original.jobs),
+    meta: { ...NUM, hideOnPhone: true },
+    cell: ({ row: { original: runner } }) => (
+      <TwoLines
+        value={percent(runner.failures, runner.jobs)}
+        detail={runner.runnerFailures > 0 ? `${runner.runnerFailures} before a step ran` : null}
+      />
+    ),
   }),
 ]);
 
@@ -296,11 +412,16 @@ function RunnerCell({ runner }: { runner: ProviderRunner }) {
   const { mono, bar } = providerStyle(provider);
   const spec = runnerSpec(provider, runner);
   return (
-    <div className="grid min-w-48 gap-1.5">
+    <div className="grid min-w-36 gap-1.5 sm:min-w-48">
       <span title={runner.label} className="truncate">
-        <span className={cn(mono && "font-mono text-[13px]")}>
+        <RunnerLink
+          runner={runner}
+          mark={false}
+          specsShown
+          className={cn(mono && "font-mono text-[13px]")}
+        >
           {runnerName(provider, runner.label)}
-        </span>
+        </RunnerLink>
         {spec && <span className="text-xs text-muted-foreground"> · {spec}</span>}
       </span>
       {runners.length > 1 && (
@@ -342,7 +463,8 @@ function Workflows({ report }: { report: ProviderReport }) {
             className="flex items-baseline justify-between gap-4 border-t px-4 py-2.5 text-sm"
           >
             <span className="min-w-0 truncate">
-              {w.workflow} <span className="text-xs text-muted-foreground">{w.repository}</span>
+              <WorkflowLink repository={w.repository} workflow={w.workflow} />{" "}
+              <span className="text-xs text-muted-foreground">{w.repository}</span>
             </span>
             <span className="whitespace-nowrap text-muted-foreground tabular-nums">
               {plural(w.jobs, "job")}
@@ -376,8 +498,8 @@ function Prices({ prices }: { prices: RatePrices[] }) {
               const today = history.findLast((row, i) => i === 0 || dayMs(row.from) <= now);
               return (
                 <tr key={rate} className="border-b last:border-0">
-                  <td className="px-4 py-2.5">{rateName(rate)}</td>
-                  <td className="px-4 py-2.5 text-right whitespace-nowrap tabular-nums">
+                  <td className="px-3 py-2.5 sm:px-4">{rateName(rate)}</td>
+                  <td className="px-3 py-2.5 text-right whitespace-nowrap tabular-nums sm:px-4">
                     {rateText(today?.usd ?? null)}
                     {per === "vcpu" && " per vCPU"}
                   </td>

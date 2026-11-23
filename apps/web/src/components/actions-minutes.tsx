@@ -1,7 +1,14 @@
 import { RefreshCwIcon, TriangleAlert } from "lucide-react";
+import { useEffect, useState } from "react";
+import { authDisabled } from "@/lib/auth-client";
 import { githubInstallHref } from "@/lib/github";
 import {
   type AccountUsage,
+  type ActionsUsage,
+  getActionsUsage,
+  refreshActionsUsage,
+  paceText,
+  sampleActionsUsage,
   needsSpendApp,
   SPEND_APP_INSTALL_URL,
   unavailableText,
@@ -10,11 +17,35 @@ import { timeAgo } from "@/lib/machines";
 import { cn } from "@/lib/utils";
 
 // One GitHub account's Actions minutes this month (#116, #117), and the alarm when GitHub has
-// billed overage. Used on Settings > GitHub.
+// billed overage. Used on Settings > GitHub and the GitHub provider page.
 
 const count = (n: number) => Math.round(n).toLocaleString("en-US");
 const usd = (amount: number) =>
   amount.toLocaleString("en-US", { style: "currency", currency: "USD" });
+
+/** Each account's Actions minutes this month, loaded after the page. Null until read, or on error. */
+export function useActionsUsage() {
+  const [usage, setUsage] = useState<ActionsUsage | null>(null);
+  const [refreshing, setRefreshing] = useState(false);
+  useEffect(() => {
+    if (authDisabled) return setUsage(sampleActionsUsage());
+    let live = true;
+    getActionsUsage().then(
+      (read) => live && setUsage(read),
+      () => undefined,
+    );
+    return () => {
+      live = false;
+    };
+  }, []);
+  const refresh = () => {
+    setRefreshing(true);
+    refreshActionsUsage()
+      .then(setUsage, () => undefined)
+      .finally(() => setRefreshing(false));
+  };
+  return { usage, refresh, refreshing };
+}
 
 /** Red banner naming every account GitHub billed overage for this month. Null when none. */
 export function OverageBanner({ accounts }: { accounts: AccountUsage[] }) {
@@ -155,3 +186,35 @@ function fixLink(usage: AccountUsage) {
 }
 
 const planName = (plan: string) => plan.charAt(0).toUpperCase() + plan.slice(1).replace(/_/g, " ");
+
+/**
+ * Each connected account's included Actions minutes, for the GitHub provider page. Loads after the
+ * page; nothing shows until GitHub billing has been read.
+ */
+export function IncludedMinutes() {
+  const { usage, refresh, refreshing } = useActionsUsage();
+  if (!usage || usage.accounts.length === 0) return null;
+  const several = usage.accounts.length > 1;
+  return (
+    <div className="grid max-w-3xl gap-3">
+      <h2 className="font-semibold">Included minutes</h2>
+      <OverageBanner accounts={usage.accounts} />
+      <ul className="grid gap-3">
+        {usage.accounts.map((account) => {
+          const pace = paceText(account);
+          return (
+            <li key={account.installationId} className="grid gap-1.5">
+              {several && <span className="text-sm font-medium">{account.accountLogin}</span>}
+              <ActionsMinutes
+                usage={account}
+                onRefresh={authDisabled ? undefined : refresh}
+                refreshing={refreshing}
+              />
+              {pace && <p className="text-xs text-muted-foreground">{pace}</p>}
+            </li>
+          );
+        })}
+      </ul>
+    </div>
+  );
+}

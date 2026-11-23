@@ -2,13 +2,7 @@
 // URL while it's at its default, so a plain link shows the page as it always has.
 import { useNavigate } from "@tanstack/react-router";
 import { useEffect, useState } from "react";
-
-/** The day ranges every page's time range menu picks from, so the menu reads the same everywhere. */
-export const DAY_RANGES = [1, 7, 14, 30, 90] as const;
-
-/** The day ranges from `min` to `max` days: a page leaves out the ones its data can't show. */
-export const dayRanges = (min: number, max: number): readonly number[] =>
-  DAY_RANGES.filter((days) => days >= min && days <= max);
+import { type RangeOptions, rangeOrDaysParam, type TimeRange } from "@/lib/time-range";
 
 /** `?days=` when it's one of the page's ranges other than its default. */
 export function rangeParam(value: unknown, ranges: readonly number[], fallback: number) {
@@ -36,11 +30,27 @@ export function useSetSearch<S>() {
       to: ".",
       search: ((prev: S) => ({ ...prev, ...patch })) as never,
       replace: true,
+      // The page stays where it is: only part of it changes.
+      resetScroll: false,
     });
 }
 
 /** The value to put in the URL: nothing for the default. */
 export const unlessDefault = <V>(value: V, fallback: V) => (value === fallback ? undefined : value);
+
+/** A report page's `?range=` (an older link's `?days=` still works), left out at its default. */
+export type RangeSearch = { range?: TimeRange };
+
+/** How a report page reads and writes its `?range=`: `options` it offers, `fallback` its default. */
+export function rangeSearch(options: RangeOptions, fallback: TimeRange) {
+  return {
+    validateSearch: (search: Record<string, unknown>): RangeSearch => ({
+      range: rangeOrDaysParam(search.range, search.days, options, fallback),
+    }),
+    rangeOf: (search: RangeSearch) => search.range ?? fallback,
+    toSearch: (range: TimeRange): RangeSearch => ({ range: unlessDefault(range, fallback) }),
+  };
+}
 
 /**
  * A report for the range in the URL. The route's loader reads the first one; another range loads

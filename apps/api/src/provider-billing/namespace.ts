@@ -106,7 +106,10 @@ export async function connectStream<T>(
   url: string,
   request: unknown,
 ): Promise<T[]> {
-  const response = await ctx.fetch(url, {
+  // Called unbound: as `ctx.fetch(...)` the Workers runtime's fetch throws "Illegal invocation",
+  // since its `this` would be the context object.
+  const send = ctx.fetch;
+  const response = await send(url, {
     method: "POST",
     headers: {
       authorization: `Bearer ${ctx.token}`,

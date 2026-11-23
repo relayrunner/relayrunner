@@ -11,6 +11,7 @@
 import { resetAnalytics } from "@/lib/analytics";
 import { AppError } from "@relayrunner/errors";
 import { api, onApiError } from "@/lib/api";
+import { forgetFlags } from "@/lib/flags";
 import {
   authClient,
   authDisabled,
@@ -32,12 +33,21 @@ let sessionLoad: Promise<Session | null> | undefined;
 let workspace: (Cached<CurrentWorkspace> & { id: string }) | undefined;
 let workspaceLoad: { id: string; promise: Promise<CurrentWorkspace> } | undefined;
 
-let onChange: () => void = () => undefined;
+/** `workspaceChanged` when the session's active workspace is now another one, as when another tab switched. */
+let onChange: (workspaceChanged?: boolean) => void = () => undefined;
 
 /** What to do when a background check finds the session or workspace changed: re-run the guards. */
-export function setOnSessionChange(listener: () => void) {
+export function setOnSessionChange(listener: typeof onChange) {
   onChange = listener;
 }
+
+/**
+ * Whether a route match is a page under the workspace layout. A workspace switch reloads only
+ * these as pending: forcing the layouts pending too would swap the whole app, sidebar and all,
+ * for a page skeleton.
+ */
+export const isWorkspacePage = (match: { routeId: string }) =>
+  match.routeId.startsWith("/_authed/_workspace/");
 
 /** Drops both copies, so the guards read them fresh on the next navigation. */
 export function forgetSession() {
@@ -45,6 +55,7 @@ export function forgetSession() {
   sessionLoad = undefined;
   workspace = undefined;
   workspaceLoad = undefined;
+  forgetFlags();
 }
 
 /**
@@ -134,10 +145,12 @@ export function revalidateSession(): Promise<void> {
     .then((read) => {
       if (read === undefined || !session) return;
       const changed = sessionKey(read) !== sessionKey(session.value);
+      const workspaceChanged =
+        read?.session.activeOrganizationId !== session.value?.session.activeOrganizationId;
       session = { value: read, at: Date.now() };
       if (changed) {
         workspace = undefined;
-        onChange();
+        onChange(workspaceChanged);
       }
     })
     .finally(() => {

@@ -1,8 +1,9 @@
 //! `relayrunner` in Rust: `connect` (with sign-in, runner install and updates, and VMs), `init`,
-//! `login`, `whoami`, `pause`, `resume`, `share`, `workspaces`, `firewall`, `history` and `jobs`. It shares
-//! ~/.relayrunner with older (TypeScript) versions.
+//! `login`, `whoami`, `pause`, `resume`, `share`, `workspaces`, `firewall`, `history`, `jobs` and
+//! `blacksmith`. It shares ~/.relayrunner with older (TypeScript) versions.
 
 mod api;
+mod blacksmith;
 mod connect;
 mod connection;
 mod credentials;
@@ -99,7 +100,7 @@ const COMMANDS: &[Command] = &[
     (
         "init",
         "Route this repo's GitHub Actions jobs through RelayRunner, so they run on your machine when it's online. Edits workflow files; never commits.",
-        "relayrunner init [--plan] [--apply <jobs>] [--json]",
+        "relayrunner init [--plan] [--apply <jobs>] [--auto] [--allow-deploy <jobs>] [--json]",
         &[
             (
                 "--plan",
@@ -108,6 +109,14 @@ const COMMANDS: &[Command] = &[
             (
                 "--apply JOBS",
                 "Route these jobs without prompting: comma-separated ids or file:job, or `all` for every ready job",
+            ),
+            (
+                "--auto",
+                "Write `auto` instead of the label for Linux x64 jobs, so their size is set on the Router page",
+            ),
+            (
+                "--allow-deploy JOBS",
+                "Let these jobs be routed even though they look like deploy jobs. The machine gets their secrets and cloud access",
             ),
             (
                 "--json",
@@ -182,13 +191,35 @@ const COMMANDS: &[Command] = &[
     (
         "jobs",
         "Show the jobs this machine ran in the last week as the gateway has them, or one job's steps and why it failed.",
-        "relayrunner jobs [--json] [--limit N] [--before MS] | relayrunner jobs <id> [--json]",
+        "relayrunner jobs [--json] [--limit N] [--before MS] [--since MS] [--repo OWNER/NAME] [--workflow NAME] [--result succeeded|failed|canceled] | relayrunner jobs <id> [--json]",
         &[
             ("--json", "Print the result as JSON"),
             ("--limit", "How many jobs to show (default 50, at most 100)"),
             (
                 "--before",
                 "Show jobs that finished before this time, in ms (the `next` of a page)",
+            ),
+            ("--since", "Show jobs that finished after this time, in ms"),
+            ("--repo", "Show only this repo's jobs"),
+            ("--workflow", "Show only this workflow's jobs"),
+            (
+                "--result",
+                "Show only jobs that succeeded, failed or were canceled",
+            ),
+        ],
+    ),
+    (
+        "blacksmith",
+        "Connect your Blacksmith organization so the dashboard shows its real usage. You approve an org token in your browser as a Blacksmith org admin; only that token is sent.",
+        "relayrunner blacksmith connect [--workspace NAME] [--yes]",
+        &[
+            (
+                "--workspace NAME",
+                "The workspace to connect it to: a name, slug or id (default: the one on the same GitHub organization)",
+            ),
+            (
+                "--yes",
+                "Download Blacksmith's CLI into ~/.relayrunner/bin without asking, if it isn't installed",
             ),
         ],
     ),
@@ -296,6 +327,7 @@ async fn main() {
         }
         "workspaces" => plain(move || workspaces::command(&signed_in()?, &rest)).await,
         "jobs" => plain(move || jobs::command(&signed_in()?, &rest)).await,
+        "blacksmith" => plain(move || blacksmith::command(&signed_in()?, &rest)).await,
         "firewall" => match firewall::command(rest.first().map(String::as_str)).await {
             Ok(()) => 0,
             Err(e) => {

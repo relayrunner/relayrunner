@@ -1,5 +1,5 @@
 import { createFileRoute, useRouter } from "@tanstack/react-router";
-import { LogOutIcon } from "lucide-react";
+import { LogOutIcon, MonitorIcon, MoonIcon, SunIcon } from "lucide-react";
 import { type ReactNode, useMemo, useState } from "react";
 import { PageHeader } from "@/components/page-header";
 import { UserAvatar } from "@/components/workspace-menu";
@@ -22,6 +22,8 @@ import {
 import { errorText } from "@/lib/api";
 import { authDisabled } from "@/lib/auth-client";
 import { saveTimeZone, signOut } from "@/lib/session";
+import { setTheme, useTheme, type Theme } from "@/lib/theme";
+import { cn } from "@/lib/utils";
 import {
   browserTimeZone,
   chosenTimeZone,
@@ -75,6 +77,8 @@ function AccountSettingsPage() {
         </Card>
 
         {(user || authDisabled) && <TimeZoneCard />}
+
+        <ThemeCard />
 
         {user && (
           <Card className="py-4">
@@ -153,6 +157,50 @@ function TimeZoneCard() {
         </Select>
         {error && <p className="text-sm text-destructive">{error}</p>}
       </CardContent>
+    </Card>
+  );
+}
+
+const THEMES: { value: Theme; label: string; icon: typeof SunIcon }[] = [
+  { value: "system", label: "System", icon: MonitorIcon },
+  { value: "light", label: "Light", icon: SunIcon },
+  { value: "dark", label: "Dark", icon: MoonIcon },
+];
+
+/** System, light or dark, saved in this browser. */
+function ThemeCard() {
+  const theme = useTheme();
+  return (
+    <Card className="py-4">
+      <CardHeader className="px-4">
+        <CardTitle className="text-sm">Theme</CardTitle>
+        <CardDescription>Saved in this browser. System follows your computer.</CardDescription>
+        <CardAction>
+          <div
+            role="radiogroup"
+            aria-label="Theme"
+            className="flex rounded-md border bg-background p-0.5"
+          >
+            {THEMES.map(({ value, label, icon: Icon }) => (
+              <button
+                key={value}
+                type="button"
+                role="radio"
+                aria-checked={theme === value}
+                title={label}
+                onClick={() => setTheme(value)}
+                className={cn(
+                  "flex h-7 items-center gap-1.5 rounded-[5px] px-2.5 text-sm text-muted-foreground outline-none transition-colors hover:text-foreground focus-visible:ring-[3px] focus-visible:ring-ring/50",
+                  theme === value && "bg-accent text-foreground",
+                )}
+              >
+                <Icon aria-hidden className="size-4" />
+                <span className="max-sm:sr-only">{label}</span>
+              </button>
+            ))}
+          </div>
+        </CardAction>
+      </CardHeader>
     </Card>
   );
 }

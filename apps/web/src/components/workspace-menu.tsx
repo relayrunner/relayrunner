@@ -1,13 +1,5 @@
 import { useRouter } from "@tanstack/react-router";
-import {
-  CheckIcon,
-  ChevronsUpDownIcon,
-  LogOutIcon,
-  MonitorIcon,
-  MoonIcon,
-  PlusIcon,
-  SunIcon,
-} from "lucide-react";
+import { CheckIcon, ChevronsUpDownIcon, LogOutIcon, PlusIcon } from "lucide-react";
 import { useState } from "react";
 import {
   DropdownMenu,
@@ -19,30 +11,38 @@ import {
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import { authDisabled, organization, useListOrganizations } from "@/lib/auth-client";
-import { signOut } from "@/lib/session";
+import { isWorkspacePage, signOut } from "@/lib/session";
+import { portableSearch } from "@/lib/portable-search";
 import { githubInstallHref } from "@/lib/github";
-import { setTheme, useTheme, type Theme } from "@/lib/theme";
 import { cn } from "@/lib/utils";
+import { clearWorkspaceCaches } from "@/lib/workspace-cache";
 
 type MenuUser = { name: string; email: string; image?: string | null } | null;
 
 /**
- * Who you're signed in as, which workspace you're in, the theme, and sign out.
+ * Who you're signed in as, which workspace you're in, and sign out.
  * It opens from the workspace name at the top of the sidebar. Settings has its
- * own link in the sidebar.
+ * own link in the sidebar, and the theme lives in Settings › Profile.
  */
 export function WorkspaceMenu({
   workspace,
   user,
   compact = false,
+  onSwitching,
 }: {
   workspace: { id: string; name: string; logo?: string | null };
   user: MenuUser;
   /** Just the workspace's mark, for the collapsed sidebar. */
   compact?: boolean;
+  /** Hears when a switch to another workspace starts and once its page has loaded. */
+  onSwitching?: (switching: boolean) => void;
 }) {
   const router = useRouter();
-  const [switching, setSwitching] = useState(false);
+  const [switching, setSwitchingState] = useState(false);
+  const setSwitching = (value: boolean) => {
+    setSwitchingState(value);
+    onSwitching?.(value);
+  };
   // Read when the sidebar renders rather than when the menu opens, so the list is there by the
   // time someone clicks.
   const { data } = useListOrganizations();
@@ -53,9 +53,31 @@ export function WorkspaceMenu({
     setSwitching(true);
     try {
       await organization.setActive({ organizationId: id });
-      // Re-run the workspace guard so route context holds the new workspace.
-      await router.invalidate();
-      await router.navigate({ to: "/runners" });
+      // Drop the pages kept from the old workspace (earlier visits, hover preloads), so none
+      // shows its data while reloading.
+      router.clearCache();
+      clearWorkspaceCaches();
+      // Stay on the page, keeping the params that still apply: ranges and tabs, not the old
+      // workspace's repos, runs or runners.
+      const { pathname, search } = router.state.location;
+      const kept = portableSearch(pathname, search);
+      if (Object.keys(kept).length !== Object.keys(search).length) {
+        await router.navigate({
+          href: pathname + router.options.stringifySearch(kept),
+          replace: true,
+        });
+      }
+      // Reload it in place for the new workspace, guards included. Forced pending, the reload
+      // waits for the new data rather than showing the old while it loads.
+      await router.invalidate({ forcePending: true, filter: isWorkspacePage });
+      // A page that can't show in the new workspace falls back to Runners.
+      if (
+        router.state.matches.some(
+          (match) => match.status === "error" || match.status === "notFound",
+        )
+      ) {
+        await router.navigate({ to: "/runners", replace: true });
+      }
     } finally {
       setSwitching(false);
     }
@@ -102,7 +124,6 @@ export function WorkspaceMenu({
           </>
         )}
         <WorkspaceList workspaces={workspaces} current={workspace.id} onSelect={switchTo} />
-        <ThemePicker />
         {user && (
           <>
             <DropdownMenuSeparator />
@@ -123,45 +144,6 @@ const devWorkspaces = [
   { id: "dev-org", name: "acme-labs", logo: null },
 ];
 
-const themes: { value: Theme; label: string; icon: typeof SunIcon }[] = [
-  { value: "system", label: "System", icon: MonitorIcon },
-  { value: "light", label: "Light", icon: SunIcon },
-  { value: "dark", label: "Dark", icon: MoonIcon },
-];
-
-/** System, light or dark, saved in this browser. Stays open so the change is visible. */
-function ThemePicker() {
-  const theme = useTheme();
-  return (
-    <div className="flex items-center justify-between gap-2 px-2 py-1 text-sm">
-      <span>Theme</span>
-      <div
-        role="radiogroup"
-        aria-label="Theme"
-        className="flex rounded-md border bg-background p-0.5"
-      >
-        {themes.map(({ value, label, icon: Icon }) => (
-          <button
-            key={value}
-            type="button"
-            role="radio"
-            aria-checked={theme === value}
-            aria-label={label}
-            title={label}
-            onClick={() => setTheme(value)}
-            className={cn(
-              "grid size-7 place-items-center rounded-[5px] text-muted-foreground outline-none transition-colors hover:text-foreground focus-visible:ring-[3px] focus-visible:ring-ring/50",
-              theme === value && "bg-accent text-foreground",
-            )}
-          >
-            <Icon aria-hidden className="size-4" />
-          </button>
-        ))}
-      </div>
-    </div>
-  );
-}
-
 /**
  * The user's workspaces, one per GitHub account the App is installed on, plus "Add an
  * organization", which installs the App somewhere new. With one workspace there is nothing to
@@ -177,39 +159,36 @@ function WorkspaceList({
   onSelect: (id: string) => void;
 }) {
   return (
-    <>
-      <DropdownMenuGroup>
-        {workspaces.length > 1 && (
-          <>
-            <DropdownMenuLabel className="text-xs font-normal text-muted-foreground">
-              Workspaces
-            </DropdownMenuLabel>
-            {workspaces.map((workspace) => (
-              <DropdownMenuItem key={workspace.id} onSelect={() => onSelect(workspace.id)}>
-                <WorkspaceMark
-                  name={workspace.name}
-                  logo={workspace.logo}
-                  className="size-5 text-[11px]"
-                />
-                <span className="truncate">{workspace.name}</span>
-                {workspace.id === current && (
-                  <CheckIcon aria-label="Current workspace" className="ml-auto text-go" />
-                )}
-              </DropdownMenuItem>
-            ))}
-          </>
-        )}
-        <DropdownMenuItem asChild>
-          {/* A full page load: this leaves the dashboard for GitHub's install page, and the new
+    <DropdownMenuGroup>
+      {workspaces.length > 1 && (
+        <>
+          <DropdownMenuLabel className="text-xs font-normal text-muted-foreground">
+            Workspaces
+          </DropdownMenuLabel>
+          {workspaces.map((workspace) => (
+            <DropdownMenuItem key={workspace.id} onSelect={() => onSelect(workspace.id)}>
+              <WorkspaceMark
+                name={workspace.name}
+                logo={workspace.logo}
+                className="size-5 text-[11px]"
+              />
+              <span className="truncate">{workspace.name}</span>
+              {workspace.id === current && (
+                <CheckIcon aria-label="Current workspace" className="ml-auto text-go" />
+              )}
+            </DropdownMenuItem>
+          ))}
+        </>
+      )}
+      <DropdownMenuItem asChild>
+        {/* A full page load: this leaves the dashboard for GitHub's install page, and the new
               install comes back as its own workspace. */}
-          <a href={githubInstallHref()}>
-            <PlusIcon />
-            Add an organization
-          </a>
-        </DropdownMenuItem>
-      </DropdownMenuGroup>
-      <DropdownMenuSeparator />
-    </>
+        <a href={githubInstallHref()}>
+          <PlusIcon />
+          Add an organization
+        </a>
+      </DropdownMenuItem>
+    </DropdownMenuGroup>
   );
 }
 

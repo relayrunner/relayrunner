@@ -1,7 +1,7 @@
 import { and, count, desc, eq, inArray, isNull } from "drizzle-orm";
 import { Hono } from "hono";
 import { z } from "zod";
-import { pendingGrant } from "../agent-auth.ts";
+import { pendingGrant } from "../auth/agent-auth.ts";
 import type { AppEnv } from "../app.ts";
 import { createDb, schema } from "../db/index.ts";
 import { requireUser } from "../middleware/session.ts";
@@ -9,10 +9,11 @@ import { requireWorkspace } from "../middleware/workspace.ts";
 import { AppError } from "@relayrunner/errors";
 
 const GrantBody = z.object({ workspaceIds: z.array(z.string().min(1)).min(1).max(100) });
+const ChangesBody = z.object({ enabled: z.boolean() });
 
 // The signed-in user's connected agents (MCP clients, agent-auth.ts). POST /grants is the
-// workspace picker's step in agent sign-in, and GET /grants/pending what the consent page names. The list and disconnect are Settings → Agents in the
-// active workspace: disconnecting takes this workspace out of the agent's grant, at once. When that
+// workspace picker's step in agent sign-in, and GET /grants/pending what the consent page names. The list, Allow changes and disconnect are Settings →
+// Agents in the active workspace: disconnecting takes this workspace out of the agent's grant, at once. When that
 // was its last workspace, it also deletes the consent and revokes the client's refresh tokens.
 export const agentRoutes = new Hono<AppEnv>()
   .post("/grants", requireUser, async (c) => {
@@ -60,6 +61,7 @@ export const agentRoutes = new Hono<AppEnv>()
         clientName: schema.oauthClient.name,
         clientUri: schema.oauthClient.uri,
         connectedAt: schema.oauthConsent.createdAt,
+        canWrite: schema.agentGrantWorkspace.canWrite,
       })
       .from(schema.oauthConsent)
       .innerJoin(schema.oauthClient, eq(schema.oauthClient.clientId, schema.oauthConsent.clientId))
@@ -73,6 +75,37 @@ export const agentRoutes = new Hono<AppEnv>()
       .where(eq(schema.oauthConsent.userId, c.var.user!.id))
       .orderBy(desc(schema.oauthConsent.createdAt));
     return c.json({ mcpUrl: c.env.AGENTS_MCP_URL, agents: rows });
+  })
+  // Allow changes: whether the agent may change settings in this workspace (agent-auth.ts
+  // AGENT_WRITE_ROUTES). Anyone may allow their own agent: it can only change what they could
+  // change in the dashboard, and the routes check that. Takes effect on its next request.
+  .put("/:id/changes", requireUser, requireWorkspace, async (c) => {
+    const parsed = ChangesBody.safeParse(await c.req.json().catch(() => null));
+    if (!parsed.success) throw new AppError("INVALID_REQUEST");
+    const { enabled } = parsed.data;
+    const [consent] = await c.var.db
+      .select({ grantId: schema.oauthConsent.referenceId })
+      .from(schema.oauthConsent)
+      .where(
+        and(
+          eq(schema.oauthConsent.id, c.req.param("id")),
+          eq(schema.oauthConsent.userId, c.var.user!.id),
+        ),
+      )
+      .limit(1);
+    if (!consent?.grantId) throw new AppError("NOT_FOUND");
+    const updated = await c.var.db
+      .update(schema.agentGrantWorkspace)
+      .set({ canWrite: enabled })
+      .where(
+        and(
+          eq(schema.agentGrantWorkspace.grantId, consent.grantId),
+          eq(schema.agentGrantWorkspace.workspaceId, c.var.workspace.id),
+        ),
+      )
+      .returning({ canWrite: schema.agentGrantWorkspace.canWrite });
+    if (updated.length === 0) throw new AppError("NOT_FOUND");
+    return c.json({ canWrite: enabled });
   })
   .delete("/:id", requireUser, requireWorkspace, async (c) => {
     const { db, workspace } = c.var;

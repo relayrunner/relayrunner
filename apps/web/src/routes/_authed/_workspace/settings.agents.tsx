@@ -11,8 +11,10 @@ import {
   CardTitle,
 } from "@/components/ui/card";
 import { CopyCommand } from "@/components/add-runner";
+import { SKILLS_INSTALL } from "@/lib/route-repo";
 import { DOCS_URL } from "@/components/site-footer";
-import { disconnectAgent, listAgents, type ConnectedAgent } from "@/lib/agents";
+import { disconnectAgent, listAgents, setAgentChanges, type ConnectedAgent } from "@/lib/agents";
+import { errorText } from "@/lib/api";
 import { cn } from "@/lib/utils";
 import { formatDate } from "@/lib/time-zone";
 
@@ -27,7 +29,8 @@ function AgentSettingsPage() {
     <section>
       <PageHeader title="Agents">
         Connect an AI agent to RelayRunner's MCP server to ask about your runners, runs and usage.
-        Agents read the workspaces you pick when you connect them and can't change anything.{" "}
+        Agents read the workspaces you pick when you connect them. They change settings only where
+        you allow it.{" "}
         <a
           href={`${DOCS_URL}/reference/mcp`}
           className="text-foreground underline underline-offset-2"
@@ -38,6 +41,7 @@ function AgentSettingsPage() {
       </PageHeader>
       <div className="grid max-w-3xl gap-4">
         <ConnectGuide mcpUrl={mcpUrl} />
+        <SkillsCard />
         {agents.length === 0 ? (
           <p className="text-sm text-muted-foreground">
             You haven't connected an agent to this workspace.
@@ -157,6 +161,30 @@ function ConnectGuide({ mcpUrl }: { mcpUrl: string }) {
   );
 }
 
+// The skills teach an agent the CLI, routing a repo's jobs and the MCP tools (skills/ at the repo root).
+function SkillsCard() {
+  return (
+    <Card className="py-4">
+      <CardHeader className="px-4">
+        <CardTitle className="text-sm">Install the skills</CardTitle>
+        <CardDescription>
+          Teach your agent to set up machines, route a repo's jobs and read your CI. Works with
+          Claude Code, Codex, Cursor and most other agents.{" "}
+          <a
+            href={`${DOCS_URL}/get-started/agents#install-the-skills`}
+            className="text-foreground underline underline-offset-2"
+          >
+            What each skill does
+          </a>
+        </CardDescription>
+      </CardHeader>
+      <CardContent className="px-4">
+        <CopyCommand command={SKILLS_INSTALL} />
+      </CardContent>
+    </Card>
+  );
+}
+
 function AgentCard({ agent }: { agent: ConnectedAgent }) {
   const router = useRouter();
   const [pending, setPending] = useState(false);
@@ -188,7 +216,52 @@ function AgentCard({ agent }: { agent: ConnectedAgent }) {
           </Button>
         </CardAction>
       </CardHeader>
+      <CardContent className="px-4">
+        <AllowChanges agent={agent} />
+      </CardContent>
       {error && <p className="px-4 text-sm text-destructive">{error}</p>}
     </Card>
+  );
+}
+
+// Lets the agent make the changes its person can make here: the runner order, sizes, retries, AI
+// and pausing. The API checks each change as it would for the dashboard.
+function AllowChanges({ agent }: { agent: ConnectedAgent }) {
+  const [enabled, setEnabled] = useState(agent.canWrite);
+  const [pending, setPending] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  async function toggle(next: boolean) {
+    setEnabled(next);
+    setPending(true);
+    setError(null);
+    try {
+      await setAgentChanges(agent.id, next);
+    } catch (caught) {
+      setEnabled(!next);
+      setError(errorText(caught));
+    } finally {
+      setPending(false);
+    }
+  }
+
+  return (
+    <label className="flex cursor-pointer gap-3 text-sm has-disabled:cursor-default">
+      <input
+        type="checkbox"
+        className="mt-0.5 size-4 accent-[var(--color-go)]"
+        checked={enabled}
+        disabled={pending}
+        onChange={(e) => void toggle(e.target.checked)}
+      />
+      <span className="grid gap-0.5">
+        <span className="font-medium">Allow changes</span>
+        <span className="text-muted-foreground">
+          Make the changes you can make here, such as the runner order, job sizes and retries, or
+          pausing machines. Each change shows in Activity.
+        </span>
+        {error && <span className="text-destructive">{error}</span>}
+      </span>
+    </label>
   );
 }

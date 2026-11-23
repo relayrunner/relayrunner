@@ -1,6 +1,10 @@
 import {
   dollars,
+  accessText,
+  heldText,
   spendText,
+  startLimitText,
+  startsPerWindow,
   type FullMachine,
   type MinutesUsage,
   type NotSharedMachine,
@@ -72,14 +76,18 @@ const usedPercent = (m: MinutesUsage) => Math.floor((m.usedMinutes / m.quotaMinu
 function shortSkip(walk: RouteWalk, step: SkippedStep): string | null {
   const { key, reason, paused, minutes, notShared, full } = step;
   switch (reason) {
-    case "minutes_limit":
+    case "minutes_limit": {
+      const kind = key === "github" ? "GitHub minutes" : `free ${RUNNER_LABELS[key]} minutes`;
       return minutes
-        ? `${minutes.account} at ${usedPercent(minutes)}% of GitHub minutes`
-        : "past the GitHub minutes limit";
-    case "minutes_runway":
+        ? `${minutes.account || "this workspace"} at ${usedPercent(minutes)}% of ${kind}`
+        : `past the ${kind} limit`;
+    }
+    case "minutes_runway": {
+      const kind = key === "github" ? "GitHub minutes" : `free ${RUNNER_LABELS[key]} minutes`;
       return minutes
-        ? `${minutes.account} near its GitHub minutes limit`
-        : "near the GitHub minutes limit";
+        ? `${minutes.account || "this workspace"} near its ${kind} limit`
+        : `near the ${kind} limit`;
+    }
     case "machine_paused":
       return pausedText(paused);
     case "machine_not_shared":
@@ -106,6 +114,16 @@ function shortSkip(walk: RouteWalk, step: SkippedStep): string | null {
       return step.spend
         ? `${step.spend.account} past its ${dollars(step.spend.limitUsd)} ${RUNNER_LABELS[key]} limit`
         : `past the ${RUNNER_LABELS[key]} spend limit`;
+    case "start_limit":
+      return step.starts
+        ? `out of ${RUNNER_LABELS[key]} job starts (${startsPerWindow(step.starts)})`
+        : `out of ${RUNNER_LABELS[key]} job starts`;
+    case "provider_held":
+      return `${RUNNER_LABELS[key]} would hold it`;
+    case "provider_no_access":
+      return step.access?.cause === "not_installed"
+        ? `${RUNNER_LABELS[key]}'s app isn't installed`
+        : `${RUNNER_LABELS[key]} can't see this repo`;
     case "no_size":
       return noSizeText(key, step.vcpus);
     case "not_configured":
@@ -120,7 +138,8 @@ function longSkip(walk: RouteWalk, step: SkippedStep): string {
     case "minutes_limit":
     case "minutes_runway": {
       if (!minutes) return "past its minutes limit";
-      const used = `${minutes.account} has used ${count(minutes.usedMinutes)} of ${count(minutes.quotaMinutes)} included minutes (${usedPercent(minutes)}%)`;
+      const kind = key === "github" ? "included minutes" : `free ${RUNNER_LABELS[key]} minutes`;
+      const used = `${minutes.account || "This workspace"} has used ${count(minutes.usedMinutes)} of ${count(minutes.quotaMinutes)} ${kind} (${usedPercent(minutes)}%)`;
       return reason === "minutes_limit"
         ? `${used}, past the ${minutes.percent}% limit`
         : `${used}; at ${count(minutes.burnRatePerHour ?? 0)} min/hour it could run out before billing catches up`;
@@ -158,6 +177,12 @@ function longSkip(walk: RouteWalk, step: SkippedStep): string {
     }
     case "spend_limit":
       return spendText(RUNNER_LABELS[key], step.spend);
+    case "start_limit":
+      return startLimitText(RUNNER_LABELS[key], step.starts);
+    case "provider_held":
+      return heldText(RUNNER_LABELS[key], step.held);
+    case "provider_no_access":
+      return accessText(RUNNER_LABELS[key], step.access);
     case "no_size":
       return noSizeText(key, step.vcpus);
     case "not_configured":
@@ -181,7 +206,7 @@ export function walkSummary(walk: RouteWalk): { text: string; tone: WalkTone } |
     if (!["not_configured", "public_repo", "personal_account"].includes(step.reason))
       tone = "fallback";
   }
-  for (const key of walk.notInOrder) parts.push(`${key} is set but not in your order`);
+  for (const key of walk.notInOrder) parts.push(`${key} is set but not in ${orderName(walk)}`);
   return parts.length ? { text: parts.join("; "), tone } : null;
 }
 
@@ -212,8 +237,19 @@ export function walkLines(walk: RouteWalk, runner: string | null): WalkLine[] {
       text: runner ? `on ${runner}` : "",
     });
   for (const key of walk.notInOrder)
-    lines.push({ position: null, key, state: "not_tried", text: "not in your runner order" });
+    lines.push({
+      position: null,
+      key,
+      state: "not_tried",
+      text: `not in ${orderName(walk, false)}`,
+    });
   return lines;
+}
+
+/** The order the pick walked: the repo's own (#709), or the workspace's. */
+export function orderName(walk: RouteWalk, short = true) {
+  if (walk.ownOrder) return short ? "this repo's order" : "this repo's own runner order";
+  return short ? "your order" : "your runner order";
 }
 
 export const NO_RUNNER_PREFIX = "No runner available: ";

@@ -1,7 +1,9 @@
 // The places a job can run that RelayRunner recognises by its runs-on labels: hosted runner
 // services, GitHub's own runners, and RelayRunner's Cloudflare Container. These are the facts every
 // workspace shares, so they live here in code and change by pull request. The API's label matching
-// (apps/api/src/cloud-providers.ts) and the dashboard's logos and colours build on this list.
+// (apps/api/src/providers/cloud-providers.ts) and the dashboard's logos and colours build on this list.
+
+import relay from "./relay.json" with { type: "json" };
 
 export const PROVIDER_IDS = [
   "blacksmith",
@@ -19,6 +21,7 @@ export const PROVIDER_IDS = [
   "celesto",
   "instabox",
   "lizard",
+  "groundbox",
   "github",
   "cloudflare",
   "other",
@@ -198,6 +201,19 @@ export const PROVIDERS: Record<ProviderId, ProviderInfo> = {
     docsUrl: "https://lizard.build/ci",
     hidden: true,
   },
+  groundbox: {
+    name: "Groundbox",
+    summary:
+      "Linux x64, Windows and macOS runners for GitHub Actions, each job on a fresh single-use VM, billed per second.",
+    labels:
+      "groundbox, groundbox-2vcpu, -4vcpu, -8vcpu, -16vcpu, groundbox-flex-*, groundbox-windows-*, groundbox-macos",
+    example: "groundbox-4vcpu",
+    setup:
+      "Sign up for Groundbox and install its GitHub App on an organization or a personal account.",
+    dashboardUrl: "https://app.groundbox.dev",
+    docsUrl: "https://groundbox.dev/docs/ci",
+    hidden: true,
+  },
   github: {
     name: "GitHub",
     summary: "GitHub's own hosted runners, billed per minute in private repos.",
@@ -246,30 +262,19 @@ export const HOSTED_PROVIDER_IDS = [
   "celesto",
   "instabox",
   "lizard",
+  "groundbox",
 ] as const satisfies readonly ProviderId[];
 
 export type HostedProviderId = (typeof HOSTED_PROVIDER_IDS)[number];
 
 // How each service's labels start, e.g. `depot-ubuntu-24.04-8`. A prefix ending in `-` also
 // matches the bare name (`ubicloud`). RunsOn's carry the run id, `runs-on=<run id>/runner=...`.
-// Boat's take options after a `/`, as in `boat-large/debug`.
-export const LABEL_PREFIXES: Record<HostedProviderId, string[]> = {
-  blacksmith: ["blacksmith-"],
-  depot: ["depot-"],
-  namespace: ["namespace-profile-", "nscloud-"],
-  warpbuild: ["warp-"],
-  ubicloud: ["ubicloud-"],
-  boat: ["boat-", "boat/"],
-  "runs-on": ["runs-on=", "runs-on/"],
-  starsling: ["starsling-"],
-  monkci: ["monkci-"],
-  runloft: ["runloft-"],
-  latchkey: ["latchkey-"],
-  berrybox: ["berrybox-"],
-  celesto: ["celesto-"],
-  instabox: ["instabox-"],
-  lizard: ["lizard-"],
-};
+// Boat's take options after a `/`, as in `boat-large/debug`. The list lives in relay.json, which
+// the CLI reads too.
+export const LABEL_PREFIXES: Record<HostedProviderId, string[]> = relay.labelPrefixes;
+
+/** The relay version `relayrunner init` writes and the skills and agent guide show. */
+export const RELAY_REF = relay.relayRef;
 
 /** Whether a lowercase label starts with one of `prefixes`, or is the bare name one ends in `-`. */
 export const matchesPrefix = (prefixes: readonly string[], lower: string) =>
@@ -308,6 +313,7 @@ export const APP_SLUG_PATTERNS: Record<HostedProviderId, RegExp> = {
   celesto: /celesto/,
   instabox: /instabox/,
   lizard: /lizard/,
+  groundbox: /groundbox/,
 };
 
 /**
@@ -360,7 +366,14 @@ export function providerOfEnvironment(
 
 /** The runner label in an environment key: `linux-2-core` for `github:linux-2-core`. */
 export const labelOfEnvironment = (key: string) => key.slice(key.indexOf(":") + 1);
-export { AUTO_SIZES, type AutoSize, DEFAULT_AUTO_SIZE, labelForSize } from "./auto-sizes.ts";
+export {
+  AUTO_SIZE_MESSAGE,
+  AUTO_SIZES,
+  type AutoSize,
+  DEFAULT_AUTO_SIZE,
+  isAutoSize,
+  labelForSize,
+} from "./auto-sizes.ts";
 export {
   ADDED_RATE,
   BASE_BOOK,
@@ -382,12 +395,14 @@ export {
   rateName,
   ratePrices,
   rateText,
+  platformOf,
   runnerPlatform,
   type RunnerPlatform,
   type RunnerSize,
   runnerSize,
   sizeText,
 } from "./prices.ts";
+export { type CatalogRow, type CatalogRunner, runnerCatalog } from "./runner-catalog.ts";
 export { type FoundPrice, PRICE_SOURCES, type PriceSource } from "./price-sources.ts";
 export {
   BILLING_PROVIDER_IDS,

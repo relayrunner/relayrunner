@@ -4,13 +4,16 @@ import type { AppEnv } from "../app.ts";
 import { requireUser } from "../middleware/session.ts";
 import { requireWorkspace } from "../middleware/workspace.ts";
 import {
+  lastUtcDays,
   type SignalFilter,
   type SignalId,
   SIGNALS,
   signalRuns,
   signalsReport,
-} from "../signals.ts";
-import { parseDays } from "./days.ts";
+  utcDaysOf,
+} from "../reports/signals.ts";
+import { requireWindow, windowDays } from "../reports/report-window.ts";
+import { JOB_TIMING_RETENTION_DAYS } from "../time.ts";
 import { AppError } from "@relayrunner/errors";
 
 const value = z.string().trim().min(1).max(300).optional();
@@ -33,10 +36,12 @@ function parseFilter(query: Record<string, string>): SignalFilter {
   return { ...rest, repository: repo };
 }
 
+// The page's UTC days: the last ?days=N (default 30), today included, or the days nearest a
+// ?from=&to= calendar range (with ?priorFrom= for the filter's trend).
 function days(query: Record<string, string>) {
-  const parsed = parseDays(query);
-  if (parsed === null) throw new AppError("INVALID_REQUEST");
-  return parsed;
+  const options = { maxDays: JOB_TIMING_RETENTION_DAYS, defaultDays: 30 };
+  const window = requireWindow(query, options);
+  return query.from === undefined ? lastUtcDays(windowDays(window)) : utcDaysOf(window);
 }
 
 // One signal row: ?signal=, with the row's ?in= repo and ?subject=.
@@ -47,7 +52,7 @@ const RowQuery = z.object({
 });
 
 // The Signals page: what is making the workspace's CI slow, costly or busier than it needs to be,
-// over the last ?days=N days (default 30), from the hourly rollup (src/signals.ts). ?breakdown=0
+// over a range of days (see days() above), from the hourly rollup (src/reports/signals.ts). ?breakdown=0
 // leaves out the Breakdown, for agents that only want the signals. A filter narrows the page to
 // its runs over at most the last 30 days, and adds its trend.
 export const signalRoutes = new Hono<AppEnv>()

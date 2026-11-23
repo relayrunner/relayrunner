@@ -49,6 +49,7 @@ Unlike machines, hosted providers also run public repos' jobs, except Boat, whic
 | Celesto    | `celesto`    |
 | InstaBox   | `instabox`   |
 | Lizard     | `lizard`     |
+| Groundbox  | `groundbox`  |
 
 <Provider id="blacksmith" />
 
@@ -101,6 +102,14 @@ A label the account can't run sits queued on GitHub. After a few jobs on it go u
 <Provider id="lizard" />
 
 Lizard runs Linux x64 in three sizes: `lizard-small-ubuntu-2404` (2 vCPU), `lizard-medium-ubuntu-2404` (4) and `lizard-large-ubuntu-2404` (8). Its trial runs a set number of jobs of each size and then skips that size until you start Pro. On Pro, usage past the included amount is billed as you go, and jobs past 5 at once (20 on Pro 5x and Pro 20x) wait in Lizard's queue.
+
+<Provider id="groundbox" />
+
+Groundbox runs Linux x64 in four sizes: `groundbox-2vcpu`, `groundbox-4vcpu`, `groundbox-8vcpu` and `groundbox-16vcpu`, each of which can end in `-ubuntu-2404`. The bare `groundbox` label lets Groundbox pick a size for each job from its earlier runs, so the dashboard can't tell its size or price. `groundbox-flex` (4 vCPU) and `groundbox-flex-2vcpu` through `-16vcpu` cost half as much but only run in spare room, so jobs on them may wait.
+
+Groundbox runs Windows Server 2025 Datacenter, x64, in four sizes: `groundbox-windows-2vcpu`, `groundbox-windows-4vcpu`, `groundbox-windows-8vcpu` and `groundbox-windows-16vcpu`, with 4 GB of memory a vCPU; the bare `groundbox-windows` is 4 vCPU. Each job gets a fresh VM, deleted when it ends, and starts about 30 seconds after it's picked up. It's $0.006, $0.012, $0.022 and $0.042 a minute, billed per second, and boot time isn't billed. On the Free plan a Windows minute uses free minutes at 2x its size, so a 4 vCPU minute uses 4.
+
+`groundbox-macos` runs each job in a fresh macOS VM, in one size: 12 vCPU on Apple silicon M6, with 12 GB of memory, macOS 26 Tahoe and Xcode 27.2. It's $0.05 a minute, billed per second. On the Free plan a macOS minute uses 15 free minutes, so the 3,000 a month are 200 macOS minutes.
 
 ## Good to know
 

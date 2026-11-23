@@ -35,6 +35,7 @@ import {
 } from "react";
 import { InfoTip } from "@/components/ui/info-tip";
 import {
+  PHONE_HIDDEN,
   Table,
   TableBody,
   TableCaption,
@@ -54,6 +55,8 @@ type ColumnMeta = {
   info?: ReactNode;
   /** The ⓘ's name for a header that isn't plain text. */
   label?: string;
+  /** Leave the column out on phones, for a figure the row's other columns or page already give. */
+  hideOnPhone?: boolean;
 };
 
 const features = tableFeatures({
@@ -179,13 +182,13 @@ export function DataTable<TData extends RowData>({
         <TableRow>
           {headers.map((header) => {
             const sorted = header.column.getIsSorted();
-            const { align, info, label } = header.column.columnDef.meta ?? {};
+            const { align, info, label, hideOnPhone } = header.column.columnDef.meta ?? {};
             const title = header.column.columnDef.header;
             return (
               <TableHead
                 key={header.id}
                 aria-sort={sorted ? ARIA_SORT[sorted] : undefined}
-                className={cn(align === "end" && "text-right")}
+                className={cn(align === "end" && "text-right", hideOnPhone && PHONE_HIDDEN)}
               >
                 <span className="inline-flex items-center gap-1.5">
                   {header.column.getCanSort() ? (
@@ -262,7 +265,7 @@ type Item<TData extends RowData> =
 
 /** A section heading's look, shared with lists that aren't tables (History's Workflows). */
 export const SECTION_HEADING =
-  "bg-secondary/30 px-4 py-1.5 text-xs font-medium text-muted-foreground";
+  "bg-secondary/30 px-3 py-1.5 text-xs sm:px-4 font-medium text-muted-foreground";
 
 /** The rows with a heading above each top-level row that starts a new section. */
 function withSections<TData extends RowData>(
@@ -332,6 +335,7 @@ const DataRow = memo(function DataRow<TData extends RowData>({
             key={cell.id}
             className={cn(
               cell.column.columnDef.meta?.align === "end" && "text-right",
+              cell.column.columnDef.meta?.hideOnPhone && PHONE_HIDDEN,
               cell.column.columnDef.meta?.className,
             )}
           >

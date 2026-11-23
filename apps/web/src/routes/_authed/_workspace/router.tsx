@@ -1,17 +1,25 @@
 import { DEFAULT_RUNNER_ORDER, type RunnerOrder } from "@relayrunner/runner-order";
 import { createFileRoute } from "@tanstack/react-router";
 import { RotateCwIcon, Settings2Icon, TriangleAlert } from "lucide-react";
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { RunnerLink } from "@/components/runner-link";
 import { SectionBoundary } from "@/components/error-boundary";
 import { PageHeader } from "@/components/page-header";
 import { RetrySettingsCard } from "@/components/retry-settings";
 import { RunnerOrderEditor } from "@/components/runner-order-editor";
+import { RouteOutcomesCard } from "@/components/route-outcomes";
 import { RouterWorkflows } from "@/components/router-workflows";
+import { RouteRepoSheet, type RouteStart, SetupCard } from "@/components/route-repo";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Sheet, SheetContent, SheetTitle } from "@/components/ui/sheet";
 import { getActionsUsage, type AccountUsage } from "@/lib/actions-usage";
-import { sampleAutoJobs, sampleRouterAccounts, sampleRouterSetup } from "@/lib/router-sample";
+import {
+  sampleAutoJobs,
+  sampleRouterAccounts,
+  sampleRouterSetup,
+  sampleRunnerGroupCheck,
+} from "@/lib/router-sample";
 import { type AutoJob, type AutoJobs, getAutoJobs, setAutoJob, setAutoSize } from "@/lib/auto-jobs";
 import { AUTO_SIZES } from "@relayrunner/providers";
 import {
@@ -24,7 +32,14 @@ import {
 import { authDisabled } from "@/lib/auth-client";
 import { listMachines, type Machine } from "@/lib/machines";
 import { useProviderApps } from "@/lib/provider-apps";
-import { getRouterSetup, type RouterSetup } from "@/lib/router-setup";
+import {
+  getRouterSetup,
+  getRunnerGroupCheck,
+  planSizes,
+  type RouterSetup,
+  type RunnerGroupCheck,
+} from "@/lib/router-setup";
+import { repoProgress } from "@/lib/route-repo";
 import {
   clearUnhealthyRunner,
   getProviderHealth,
@@ -32,10 +47,18 @@ import {
   type ProviderHealth,
   type UnhealthyRunner,
 } from "@/lib/provider-health";
+import { useLiveRefresh } from "@/lib/live-refresh";
 import { canManage } from "@/lib/roles";
 import { cn } from "@/lib/utils";
 import { getRunnerOrder } from "@/lib/runner-order";
+import {
+  type FreeMinutesByProvider,
+  getAllFreeMinutes,
+  sampleFreeMinutes,
+} from "@/lib/free-minutes";
 import { formatTime } from "@/lib/time-zone";
+import { getProviderSpend, type ProviderSpend } from "@/lib/provider-spend";
+import { listConnections } from "@/lib/provider-connections";
 
 export const Route = createFileRoute("/_authed/_workspace/router")({
   loader: async ({ context }) => {
@@ -43,14 +66,31 @@ export const Route = createFileRoute("/_authed/_workspace/router")({
     if (authDisabled) return sampleRouter();
     // Runner status isn't awaited here: a runner added from GitHub reads its status from GitHub,
     // so the page loads first and the Self-hosted step's badge fills in after (RouterPage).
-    const [order, accounts] = await Promise.all([
+    const [order, accounts, freeMinutes, spend, boatConnected] = await Promise.all([
       getRunnerOrder(context.current.workspace.id),
       // The minutes only explain the GitHub step's limit, so the page still loads without them.
       getActionsUsage()
         .then((usage) => usage.accounts)
         .catch((): AccountUsage[] => []),
+      // Likewise Blacksmith's and Groundbox's free minutes, for their steps' limits.
+      getAllFreeMinutes().catch((): FreeMinutesByProvider => ({})),
+      // And this month's spend per provider, for the spend caps' bars.
+      getProviderSpend().catch(() => null),
+      // And whether Boat is connected, so its step passes jobs on at its start limits.
+      listConnections()
+        .then(({ connections }) =>
+          connections.some((c) => c.provider === "boat" && c.connected && !c.failure),
+        )
+        .catch(() => false),
     ]);
-    return { ...order, machines: null as Machine[] | null, accounts };
+    return {
+      ...order,
+      machines: null as Machine[] | null,
+      accounts,
+      freeMinutes,
+      spend,
+      boatConnected,
+    };
   },
   component: RouterPage,
 });
@@ -78,9 +118,15 @@ function RouterPage() {
 
   const health = useProviderHealth(current.workspace.id);
   const installedApps = useProviderApps(current.workspace.id);
-  const setup = useRouterSetup(current.workspace.id);
+  // The "Route a repo" sheet, open from the setup card or a repo's Set up in Workflows. Once it
+  // copies a prompt, setup reloads every 20 seconds while it stays open, to catch the first run.
+  const [routeStart, setRouteStart] = useState<RouteStart | null>(null);
+  const [watching, setWatching] = useState(false);
+  const setup = useRouterSetup(current.workspace.id, watching);
+  const groupCheck = useRunnerGroupCheck(current.workspace.id, routeStart !== null);
   const auto = useAutoJobs(current.workspace.id);
   const [settingsOpen, setSettingsOpen] = useState(false);
+  const progress = useMemo(() => repoProgress(setup), [setup]);
 
   return (
     <section>
@@ -113,21 +159,53 @@ function RouterPage() {
             editable={editable}
             machines={machines}
             accounts={loaded.accounts}
+            freeMinutes={loaded.freeMinutes}
             installedApps={installedApps}
-            labels={setup?.labels ?? null}
+            spend={loaded.spend}
+            boatConnected={loaded.boatConnected ?? false}
+            aside={
+              <div className="grid min-w-0 flex-[1_1_300px] content-start gap-3">
+                <SectionBoundary>
+                  <RouteOutcomesCard workspaceId={current.workspace.id} />
+                </SectionBoundary>
+                <SetupCard
+                  progress={progress}
+                  onRoute={() => setRouteStart({ repoId: null })}
+                  className="flex-none"
+                />
+              </div>
+            }
           />
         </SectionBoundary>
         <SectionBoundary>
           <RouterWorkflows
+            workspaceId={current.workspace.id}
             setup={setup}
             jobs={auto.jobs?.jobs ?? []}
             defaultSize={auto.jobs?.size ?? AUTO_SIZES[0]}
             steps={[...new Set(loaded.order.steps.map((step) => step.key))]}
-            editable={editable}
             onChange={auto.setJob}
+            toRoute={new Set(progress.left.map((repo) => repo.id))}
+            onSetUp={(repoId) => setRouteStart({ repoId })}
           />
         </SectionBoundary>
       </div>
+      <RouteRepoSheet
+        start={routeStart}
+        onClose={() => {
+          setRouteStart(null);
+          setWatching(false);
+        }}
+        progress={progress}
+        context={{
+          accessUrl: setup?.accessUrl ?? null,
+          defaultSize: auto.jobs?.size ?? AUTO_SIZES[0],
+          groupCheck,
+          onPlanSizes: (repoId, jobs) =>
+            authDisabled ? Promise.resolve(jobs) : planSizes(current.workspace.id, repoId, jobs),
+          onCopied: () => setWatching(true),
+        }}
+      />
       <Sheet open={settingsOpen} onOpenChange={setSettingsOpen}>
         <SheetContent aria-describedby={undefined} className="sm:max-w-md">
           <div className="grid gap-4 px-5 py-5 sm:px-6">
@@ -210,7 +288,10 @@ function UnhealthyRunners({ health: state, editable }: { health: HealthState; ed
         >
           <TriangleAlert aria-hidden className="size-4 shrink-0 text-destructive" />
           <p className="min-w-0 flex-1">
-            <span className="font-medium">Skipping {runner.label}.</span>{" "}
+            <span className="font-medium">
+              Skipping{" "}
+              <RunnerLink runner={{ key: `${runner.key}:${runner.label}`, label: runner.label }} />.
+            </span>{" "}
             <span className="text-muted-foreground">
               The last {runner.misses} jobs on it weren't picked up.{" "}
               {runner.retryAt > Date.now()
@@ -298,13 +379,20 @@ async function sampleHealth(): Promise<ProviderHealth> {
 /**
  * Dev-preview data. `?sample=enterprise` shows an org inside a GitHub enterprise, whose minutes
  * can't be checked, `?sample=personal` a personal account whose owner hasn't signed in,
- * and `?sample=default` the order a new workspace starts with.
+ * `?sample=default` the order a new workspace starts with, `?sample=no-blacksmith` a
+ * workspace that hasn't connected Blacksmith, so its step can't stop at the free minutes yet,
+ * `?sample=no-groundbox` the same for Groundbox, `?sample=sponsored-groundbox` a Groundbox team on
+ * a plan without free minutes, and
+ * `?sample=boat` (connected) or `?sample=no-boat` an uncapped Boat step.
  */
 function sampleRouter(): {
   order: RunnerOrder;
   isDefault: boolean;
   machines: Machine[];
   accounts: AccountUsage[];
+  freeMinutes: FreeMinutesByProvider;
+  spend: ProviderSpend | null;
+  boatConnected?: boolean;
 } {
   const kind = new URLSearchParams(window.location.search).get("sample");
   const machine: Machine = {
@@ -317,45 +405,121 @@ function sampleRouter(): {
     createdAt: "2026-11-01T00:00:00Z",
     status: { online: true, state: "idle", connectedAt: Date.now() },
   };
+  const freeMinutes: FreeMinutesByProvider = {
+    blacksmith: sampleFreeMinutes("blacksmith", kind !== "no-blacksmith"),
+    groundbox:
+      kind === "sponsored-groundbox"
+        ? {
+            ...sampleFreeMinutes("groundbox", true),
+            status: "not_available",
+            reason: "no_free_minutes",
+            plan: "sponsored",
+            balanceUsd: 50,
+          }
+        : sampleFreeMinutes("groundbox", kind !== "no-groundbox"),
+  };
+  const spend: ProviderSpend = {
+    boat: 41.6,
+    depot: 12.4,
+    blacksmith: 0,
+    namespace: 7.25,
+    lizard: 3.1,
+    warpbuild: 18.9,
+    ubicloud: 4.4,
+    starsling: 9.75,
+    monkci: 22.3,
+    runloft: 6.8,
+    berrybox: 15.2,
+    latchkey: 27.5,
+    celesto: 2.05,
+    instabox: 11.6,
+    groundbox: 5.4,
+  };
   if (kind === "default")
-    return { order: DEFAULT_RUNNER_ORDER, isDefault: true, machines: [machine], accounts: [] };
+    return {
+      order: DEFAULT_RUNNER_ORDER,
+      isDefault: true,
+      machines: [machine],
+      accounts: [],
+      freeMinutes,
+      spend,
+    };
+  if (kind === "boat" || kind === "no-boat")
+    return {
+      order: { steps: [{ key: "machine" }, { key: "boat" }, { key: "github" }] },
+      isDefault: false,
+      machines: [machine],
+      accounts: sampleRouterAccounts("team"),
+      freeMinutes,
+      spend,
+      boatConnected: kind === "boat",
+    };
   if (kind === "enterprise" || kind === "personal")
     return {
       order: { steps: [{ key: "machine" }, { key: "github" }] },
       isDefault: false,
       machines: [machine],
       accounts: sampleRouterAccounts(kind),
+      freeMinutes,
+      spend,
     };
   return {
     order: {
       steps: [
         { key: "github", limit: { percent: 80 } },
         { key: "machine" },
-        { key: "blacksmith" },
+        kind === "no-blacksmith"
+          ? { key: "blacksmith" }
+          : { key: "blacksmith", limit: { percent: 90 } },
+        { key: "boat", spendLimit: { usd: 50 } },
+        kind === "no-groundbox"
+          ? { key: "groundbox" }
+          : { key: "groundbox", limit: { percent: 90 } },
         { key: "github" },
       ],
     },
     isDefault: false,
     machines: [machine],
     accounts: sampleRouterAccounts("team"),
+    freeMinutes,
+    spend,
   };
 }
 
-// Recent workflows, routed or not, and the hosted labels jobs ran on. Null until it loads, and when
-// it can't be read: the page still works without it.
-function useRouterSetup(workspaceId: string) {
+// Recent workflows and their jobs, the repos the App sees, and the hosted labels jobs ran on. Null
+// until it loads, and when it can't be read: the page still works without it.
+// With `poll`, it reloads every 20 seconds while the tab is visible and in use.
+function useRouterSetup(workspaceId: string, poll: boolean) {
   const [setup, setSetup] = useState<RouterSetup | null>(null);
+  const load = useCallback(
+    () =>
+      (authDisabled ? Promise.resolve(sampleRouterSetup()) : getRouterSetup(workspaceId)).then(
+        setSetup,
+        () => undefined,
+      ),
+    [workspaceId],
+  );
   useEffect(() => {
-    let live = true;
-    (authDisabled ? Promise.resolve(sampleRouterSetup()) : getRouterSetup(workspaceId)).then(
-      (loaded) => live && setSetup(loaded),
-      () => undefined,
-    );
-    return () => {
-      live = false;
-    };
-  }, [workspaceId]);
+    void load();
+  }, [load]);
+  useLiveRefresh(load, { intervalMs: 20_000, enabled: poll });
   return setup;
+}
+
+// The repos the org's Default runner group leaves out, read from GitHub the first time the "Route
+// a repo" sheet opens. Null until then, for a personal account, and when GitHub can't be read.
+function useRunnerGroupCheck(workspaceId: string, open: boolean) {
+  const [check, setCheck] = useState<RunnerGroupCheck | null>(null);
+  const asked = useRef(false);
+  useEffect(() => {
+    if (!open || asked.current) return;
+    asked.current = true;
+    (authDisabled
+      ? Promise.resolve(sampleRunnerGroupCheck())
+      : getRunnerGroupCheck(workspaceId)
+    ).then(setCheck, () => undefined);
+  }, [workspaceId, open]);
+  return check;
 }
 
 // The workspace's auto jobs (a relay set to `auto`) and their default size. Null until they load,

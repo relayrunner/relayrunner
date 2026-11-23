@@ -35,9 +35,15 @@ from main on any Mac with access to that certificate and the rest of the signing
 [Before you publish](#before-you-publish)):
 
 ```sh
-apps/mac/scripts/release.sh --dry-run   # build, sign and notarize into apps/mac/dist
-apps/mac/scripts/release.sh             # and publish
+pnpm release:mac:dry-run   # build, sign and notarize
+pnpm release:mac           # and publish
 ```
+
+Both run from a clean worktree of the latest `origin/main` at `../relayrunner-release` (set
+`RELAYRUNNER_RELEASE_WORKTREE` to use another folder), so your own checkout stays as it is. The
+first run creates the worktree; later runs move it to the latest `origin/main` and install
+dependencies before calling `apps/mac/scripts/release.sh`, which you can also run directly from
+any clean checkout of main. A dry run leaves the DMG and zip in the worktree's `apps/mac/dist`.
 
 It signs every part with the Developer ID certificate in the keychain, notarizes and staples the
 app and a DMG, and signs a zip for Sparkle. It bundles the CLI from the same commit, whose version
@@ -55,21 +61,15 @@ keep a copy (`generate_keys -x <file>` exports it).
 
 ### Before you publish
 
-- Install the tools from [Build](#build), then run `pnpm install` at the root of the repo. The
-  script commits the appcast, and the pre-commit hook runs the typecheck, which needs the
-  dependencies.
+- Install the tools from [Build](#build). The script commits the appcast, and the pre-commit hook
+  runs the typecheck, which needs the repo's dependencies. The pnpm tasks install them; if you run
+  `release.sh` directly, run `pnpm install` first.
 - Sign in to `gh` as someone who can push to this repo and to
   [relayrunner/homebrew-tap](https://github.com/relayrunner/homebrew-tap). The script pushes the cask
   straight to the tap's default branch.
-- Start from a clean checkout of a commit on main. The script stops if either isn't true. It leaves
-  the checkout on a new `release/mac-v<version>` branch, so a separate worktree keeps your usual one
-  as it was:
-
-  ```sh
-  git worktree add --detach ../relayrunner-release origin/main
-  cd ../relayrunner-release && pnpm install --frozen-lockfile
-  apps/mac/scripts/release.sh
-  ```
+- Release from a clean checkout of a commit on main. The script stops if either isn't true. It
+  leaves the checkout on a new `release/mac-v<version>` branch, which is why the pnpm tasks use a
+  separate worktree.
 
 A release takes a few minutes. Most of that is the build and the two notarizations, which Apple
 usually finishes in under a minute each. The first time `codesign` or Sparkle's `sign_update` reads
@@ -86,7 +86,7 @@ are public.
 The app starts `relayrunner connect --events` in its own process group and reads one JSON event
 per line from its stdout (see `apps/cli/src/events.rs`). It sends `pause` and `resume` on stdin and
 stops it with SIGINT to the group, as Ctrl-C does in a terminal. What `connect` would print for a
-person goes to `~/.relayrunner/app.log`, which Show Log opens.
+person goes to `~/.relayrunner/app.log`, which Show Log in Settings › About opens.
 
 The robot head is drawn from the same paths as `apps/site/public/assets/runner-head.svg`
 (`Sources/RelayRunnerKit/RobotHead.swift`). `Resources/AppIcon.icns` is that head on a cream tile.

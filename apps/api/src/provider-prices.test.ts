@@ -30,6 +30,11 @@ describe("list prices", () => {
     ["boat", "boat", 0.0006],
     ["boat", "boat-large/debug", 0.0012],
     ["boat", "boat-xlarge", 0.2 / 60],
+    ["groundbox", "groundbox-macos", 0.05],
+    ["groundbox", "groundbox-windows", 0.012],
+    ["groundbox", "groundbox-windows-2vcpu", 0.006],
+    ["groundbox", "groundbox-windows-8vcpu", 0.022],
+    ["groundbox", "groundbox-windows-16vcpu", 0.042],
   ] as const)("%s %s costs $%d a minute", (provider, label, usd) => {
     expect(rate(provider, label)).toBeCloseTo(usd, 6);
   });

@@ -30,7 +30,7 @@ describe("runnerOrderSchema", () => {
     expect(result.error?.issues[0]?.message).toBe("Add at least one provider.");
   });
 
-  test("rejects a provider listed twice", () => {
+  test("rejects Self-hosted listed twice", () => {
     const result = runnerOrderSchema.safeParse({
       steps: [{ key: "machine" }, { key: "github" }, { key: "machine" }],
     });
@@ -41,27 +41,36 @@ describe("runnerOrderSchema", () => {
     });
   });
 
-  test("GitHub-hosted may come twice, once with a limit and once without", () => {
+  test("a hosted provider may come back any number of times, with any cap", () => {
     const steps = [
+      { key: "blacksmith", limit: { percent: 50 } },
       { key: "github", limit: { percent: 80 } },
-      { key: "machine" },
+      { key: "blacksmith", limit: { percent: 90 } },
+      { key: "github", spendLimit: { usd: 100 } },
+      { key: "depot", spendLimit: { usd: 20 } },
+      { key: "depot", spendLimit: { usd: 50 } },
+      { key: "github" },
       { key: "github" },
     ];
     expect(runnerOrderSchema.parse({ steps })).toEqual({ steps });
   });
 
-  test("rejects GitHub-hosted twice with the same rule", () => {
-    for (const steps of [
-      [{ key: "github" }, { key: "github" }],
-      [
-        { key: "github", limit: { percent: 80 } },
-        { key: "github", limit: { percent: 90 } },
-      ],
-    ]) {
-      const result = runnerOrderSchema.safeParse({ steps });
-      expect(result.success).toBe(false);
-      expect(result.error?.issues[0]?.path).toEqual(["steps", 1, "key"]);
-    }
+  test("GitHub-hosted takes a spend cap, from its own billing", () => {
+    const steps = [{ key: "github", spendLimit: { usd: 100 } }];
+    expect(runnerOrderSchema.parse({ steps })).toEqual({ steps });
+  });
+
+  test("a step takes a minutes limit or a spend limit, not both", () => {
+    const steps = [{ key: "blacksmith", limit: { percent: 80 }, spendLimit: { usd: 50 } }];
+    const result = runnerOrderSchema.safeParse({ steps });
+    expect(result.error?.issues[0]?.message).toBe(
+      "Pick a minutes limit or a spend limit, not both.",
+    );
+  });
+
+  test("only GitHub-hosted and Blacksmith take a minutes limit", () => {
+    const parsed = runnerOrderSchema.parse({ steps: [{ key: "depot", limit: { percent: 80 } }] });
+    expect(parsed).toEqual({ steps: [{ key: "depot" }] });
   });
 
   test("a limit is a whole percent from 1 to 100", () => {

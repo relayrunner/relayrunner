@@ -16,9 +16,8 @@ final class Connection {
 
   private(set) var phase = Phase.off
   private(set) var paused = false
-  /// A job running now: its slot, which job it is when the gateway said, and when it started here.
+  /// A job running now: which job it is when the gateway said, and when it started here.
   struct Running: Equatable {
-    var slot: Int
     var job: RunJob?
     var startedAt: Date
   }
@@ -27,16 +26,12 @@ final class Connection {
   private(set) var jobs: [String] = []
   /// How many jobs wait for a slot on this Mac.
   private(set) var waiting = 0
-  /// The longest-waiting of them, longest first.
-  private(set) var queue: [QueuedJob] = []
   /// When jobs went elsewhere because every slot here was busy, in ms since the epoch.
   private(set) var spilled: [Double] = []
   /// How many jobs this Mac runs at once, once `connect` says.
   private(set) var slots: Int?
   private(set) var repos: [String: String] = [:]
   private(set) var running: [String: Running] = [:]
-  /// The jobs this Mac ran, newest first, from `connect`'s history file.
-  private(set) var recent: [HistoryEntry] = History.read(CLI.history)
   /// When a timed pause ends. Nil when it isn't paused for a while.
   private(set) var pausedUntil: Date? = AppSettings.pausedUntil
   private(set) var machineName: String?
@@ -208,7 +203,6 @@ final class Connection {
       paused = state.paused
       jobs = state.jobs
       waiting = state.waiting
-      queue = state.queue
       spilled = state.spilled
       if let count = state.slots { slots = count }
       repos = repos.filter { state.jobs.contains($0.key) }
@@ -219,11 +213,9 @@ final class Connection {
       quitIfIdle()
       restartIfIdle()
       finishAllowing(state)
-    case .run(let routeId, let slot, let job):
-      running[routeId] = Running(slot: slot, job: job, startedAt: Date())
+    case .run(let routeId, _, let job):
+      running[routeId] = Running(job: job, startedAt: Date())
       if let job { repos[routeId] = job.repo }
-    case .jobEnd(let entry):
-      recent = History.adding(entry, to: recent)
     case .jobRepo(let routeId, let repo):
       if running[routeId]?.job == nil { repos[routeId] = repo }
     case .jobResult(let routeId, let job, let result):
@@ -248,7 +240,6 @@ final class Connection {
     paused = false
     jobs = []
     waiting = 0
-    queue = []
     spilled = []
     slots = nil
     repos = [:]
@@ -281,7 +272,7 @@ final class Connection {
     case "rejected":
       problem = "This version is too old for RelayRunner. Update the app."
     default:
-      problem = lastError ?? "It stopped unexpectedly (exit code \(code)). Show Log has the details."
+      problem = lastError ?? "It stopped unexpectedly (exit code \(code)). The log has the details: Settings, About, Show Log."
     }
   }
 }
@@ -291,8 +282,6 @@ enum CLI {
   static let home = FileManager.default.homeDirectoryForCurrentUser.appendingPathComponent(".relayrunner")
   /// What `connect` prints for a person, from its last run.
   static let log = home.appendingPathComponent("app.log")
-  /// The jobs `connect` ran here, which `relayrunner history` prints too.
-  static let history = home.appendingPathComponent("history.jsonl")
 
   /// RELAYRUNNER_CLI overrides the bundled one, for development.
   static var executable: URL? {
@@ -328,26 +317,49 @@ extension CLI {
   }
 
   /// Runs one of the CLI's quick commands, such as `workspaces list --json`, and waits for it.
+  /// Its output is read as it comes, so one bigger than a pipe's buffer can't stall it.
   static func run(_ arguments: [String]) async throws -> Output {
     guard let executable else { throw CocoaError(.fileNoSuchFile) }
     return try await withCheckedThrowingContinuation { continuation in
-      let process = Process()
-      process.executableURL = executable
-      process.arguments = arguments
-      process.environment = environment
-      let stdout = Pipe()
-      let stderr = Pipe()
-      process.standardOutput = stdout
-      process.standardError = stderr
-      process.standardInput = FileHandle.nullDevice
-      process.terminationHandler = { process in
+      DispatchQueue.global(qos: .userInitiated).async {
+        let process = Process()
+        process.executableURL = executable
+        process.arguments = arguments
+        process.environment = environment
+        let stdout = Pipe()
+        let stderr = Pipe()
+        process.standardOutput = stdout
+        process.standardError = stderr
+        process.standardInput = FileHandle.nullDevice
+        do { try process.run() } catch {
+          continuation.resume(throwing: error)
+          return
+        }
+        let err = Errors(stderr.fileHandleForReading)
         let out = stdout.fileHandleForReading.readDataToEndOfFile()
-        let err = stderr.fileHandleForReading.readDataToEndOfFile()
+        process.waitUntilExit()
         continuation.resume(
-          returning: Output(status: process.terminationStatus, stdout: out, stderr: String(decoding: err, as: UTF8.self))
+          returning: Output(status: process.terminationStatus, stdout: out, stderr: err.text())
         )
       }
-      do { try process.run() } catch { continuation.resume(throwing: error) }
+    }
+  }
+
+  /// A command's stderr, read on its own thread while stdout is read on the caller's.
+  private final class Errors: @unchecked Sendable {
+    private var data = Data()
+    private let done = DispatchSemaphore(value: 0)
+
+    init(_ handle: FileHandle) {
+      Thread.detachNewThread { [self] in
+        data = handle.readDataToEndOfFile()
+        done.signal()
+      }
+    }
+
+    func text() -> String {
+      done.wait()
+      return String(decoding: data, as: UTF8.self)
     }
   }
 }

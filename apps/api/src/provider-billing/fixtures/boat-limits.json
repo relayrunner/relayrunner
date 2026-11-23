@@ -1,0 +1,24 @@
+{
+  "ok": true,
+  "type": "limits.info",
+  "canStart": true,
+  "activeSandboxes": 1,
+  "sandboxPlanKey": "box_20",
+  "sandboxPlanDollars": 20,
+  "maxActiveSandboxes": 100,
+  "startLimits": { "perMinute": 12, "perHour": 60, "perDay": 200 },
+  "starts": {
+    "unlimited": false,
+    "minute": { "limit": 12, "used": 3, "remaining": 9 },
+    "hour": { "limit": 60, "used": 12, "remaining": 48 },
+    "day": { "limit": 200, "used": 47, "remaining": 153 }
+  },
+  "billingStatus": "active",
+  "wallet": { "balanceDollars": 52.4 },
+  "planIncluded": {
+    "vmHours": 555.56,
+    "vmHoursRemaining": 312.7,
+    "periodEnd": "2026-12-01T00:00:00.000Z"
+  },
+  "startLimitsWithWallet": null
+}

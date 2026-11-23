@@ -8,7 +8,7 @@ AI tells you why a job failed and what each job does. It's on for every workspac
 ## What it does
 
 - **Failure causes**: History says why a failed job failed, such as a flaky test, a lint error or a broken runner.
-- **Job types**: Performance sorts jobs by what they do: lint, tests, end-to-end tests, builds or deploys.
+- **Job types**: Performance sorts jobs by what they do (lint, tests, end-to-end tests, builds or deploys) and shows where your CI time goes in its Job types tab.
 - **Smarter retries**: with [automatic retries](/docs/concepts/routing#automatic-retries) on, a job that failed on something flaky, like a timeout, gets retried too. A job that's sure to fail again isn't.
 
 ## What it reads

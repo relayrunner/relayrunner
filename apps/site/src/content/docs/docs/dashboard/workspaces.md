@@ -22,9 +22,12 @@ Organizations and personal accounts both work. A few things only work for organi
 | See activity, runs and usage                | ✓      | ✓     | ✓     |
 | Remove any machine                          |        | ✓     | ✓     |
 | Change the runner order                     |        | ✓     | ✓     |
+| Change an auto job's size or first provider | ✓¹     | ✓     | ✓     |
 | Add existing runners                        |        | ✓     | ✓     |
 | Make someone an admin                       |        | ✓     | ✓     |
 | Make someone an owner                       |        |       | ✓     |
+
+¹ For jobs in repos they can push to on GitHub, since they could already change those jobs' runners in the workflow file.
 
 ## Members
 

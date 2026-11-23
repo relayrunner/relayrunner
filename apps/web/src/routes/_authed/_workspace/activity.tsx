@@ -1,8 +1,11 @@
 import { Link, createFileRoute } from "@tanstack/react-router";
-import { relayInputs } from "@relayrunner/runner-order";
+import { RUNNER_LABELS, relayInputs, type RunnerStep } from "@relayrunner/runner-order";
 import {
+  Archive,
   Ban,
   ChevronRight,
+  Cpu,
+  ListOrdered,
   CircleCheck,
   CircleMinus,
   Laptop,
@@ -12,6 +15,8 @@ import {
   Plug,
   Plus,
   RotateCw,
+  ScrollText,
+  Sparkles,
   Unplug,
   UserCheck,
   UserMinus,
@@ -23,7 +28,9 @@ import { GithubUser, shortSha } from "@/components/commit";
 import { SectionBoundary } from "@/components/error-boundary";
 import { PageHeader } from "@/components/page-header";
 import { GithubIcon } from "@/components/provider-logos";
+import { RunLink } from "@/components/run-sheet";
 import { RunnerLink } from "@/components/runner-link";
+import { WorkflowLink } from "@/components/workflow-link";
 import { StatusIcon } from "@/components/status-icon";
 import { WalkLines } from "@/components/walk-lines";
 import { Button } from "@/components/ui/button";
@@ -61,6 +68,7 @@ import {
   type FreeCheckSavings,
 } from "@/lib/usage";
 import { failureText, jobNames, walkSummary } from "@/lib/route-walk";
+import { ruleText } from "@/lib/runner-order";
 import { formatDateTime } from "@/lib/time-zone";
 
 // Fast enough that a push shows up within seconds, without a live connection.
@@ -72,6 +80,7 @@ const TYPES: { value: ActivityFilter | undefined; label: string }[] = [
   { value: "check", label: "Checks" },
   { value: "machine", label: "Machines" },
   { value: "member", label: "Members" },
+  { value: "settings", label: "Settings" },
 ];
 const RANGES = [
   { days: 1, label: "Last 24 hours" },
@@ -151,10 +160,10 @@ export const Route = createFileRoute("/_authed/_workspace/activity")({
   loaderDeps: ({ search }) => search,
   loader: ({ deps }): Promise<ActivityPage> =>
     authDisabled ? Promise.resolve(samplePage(deps)) : getActivity(toQuery(deps)),
-  component: ActivityPage,
+  component: ActivityRoute,
 });
 
-function ActivityPage() {
+function ActivityRoute() {
   const search = Route.useSearch();
   const navigate = Route.useNavigate();
   const [savings, setSavings] = useState<FreeCheckSavings | null>(null);
@@ -167,7 +176,7 @@ function ActivityPage() {
       return;
     }
     // The log works without either.
-    getCheckSavings(30)
+    getCheckSavings("30d")
       .then(setSavings)
       .catch(() => undefined);
     getActivityOptions()
@@ -176,7 +185,7 @@ function ActivityPage() {
   }, []);
 
   const update = (patch: ActivitySearch) =>
-    void navigate({ search: (prev) => ({ ...prev, ...patch }) });
+    void navigate({ search: (prev) => ({ ...prev, ...patch }), resetScroll: false });
   const narrowed = Boolean(search.days || search.repo || search.result || search.machine);
 
   return (
@@ -228,7 +237,7 @@ function Filters({
 
   return (
     <div className="grid gap-2">
-      <div role="group" aria-label="Show" className="flex gap-1.5">
+      <div role="group" aria-label="Show" className="flex flex-wrap gap-1.5">
         {TYPES.map(({ value, label }) => (
           <Button
             key={label}
@@ -503,6 +512,70 @@ function memberSentence(item: ActivityItem) {
   }
 }
 
+// One runner order step, with its cap as the Router page words it: "GitHub-hosted (while under 80%)".
+function stepText(step: RunnerStep) {
+  const label = RUNNER_LABELS[step.key];
+  const limited = ("limit" in step && step.limit) || ("spendLimit" in step && step.spendLimit);
+  return limited ? `${label} (${ruleText(step).toLowerCase()})` : label;
+}
+
+// Settings events lead with who: "Ada set the default size for auto jobs to 4 vCPU".
+function settingsSentence(item: ActivityItem) {
+  switch (item.type) {
+    case "settings.runner_order": {
+      const { repository, steps } = item.data;
+      const order = repository ? `${repository}'s runner order` : "the runner order";
+      return `set ${order} to ${steps.map(stepText).join(", then ")}`;
+    }
+    case "settings.runner_order_removed":
+      return `put ${item.data.repository} back on the workspace's runner order`;
+    case "settings.auto_size":
+      return `set the default size for auto jobs to ${item.data.size} vCPU`;
+    case "settings.job_size": {
+      const { job, workflow, repository, size, first } = item.data;
+      const name = `${repository} › ${workflow ?? job}`;
+      if (size === null && first === null) return `put ${name} back on the defaults`;
+      const parts = [
+        size === null ? "the default size" : `${size} vCPU`,
+        ...(first ? [`trying ${RUNNER_LABELS[first]} first`] : []),
+      ];
+      return `set ${name} to ${parts.join(", ")}`;
+    }
+    case "settings.retries":
+      return item.data.enabled
+        ? `turned on automatic retries, up to ${item.data.max} per run`
+        : "turned off automatic retries";
+    case "settings.ai":
+      return item.data.enabled ? "turned on AI features" : "turned off AI features";
+    case "settings.job_logs":
+      return item.data.logs === "off"
+        ? "stopped sending job logs"
+        : `started sending ${item.data.logs === "all" ? "every job's log" : "failed jobs' logs"}`;
+    case "settings.log_bucket":
+      return item.data.logs === "off"
+        ? "stopped archiving job logs to a bucket"
+        : `started archiving ${item.data.logs === "all" ? "every job's log" : "failed jobs' logs"} to a bucket`;
+    case "settings.log_destination": {
+      const { target, change, name } = item.data;
+      if (target === "bucket")
+        return change === "place"
+          ? `moved the log archive to the ${name} bucket`
+          : "changed the log archive's access key";
+      return change === "place"
+        ? `pointed telemetry at ${name}`
+        : "changed the telemetry endpoint's headers";
+    }
+    default:
+      return "";
+  }
+}
+
+// " through Claude" when a person made the change with an agent.
+function throughAgent(item: ActivityItem) {
+  const { agent } = item.data as { agent?: string };
+  return agent ? ` through ${agent}` : "";
+}
+
 function article(role: string) {
   return /^[aeiou]/i.test(role) ? `an ${role}` : `a ${role}`;
 }
@@ -524,6 +597,15 @@ const EVENT_ICONS = {
   "check.completed": CircleCheck,
   "member.joined": UserCheck,
   "minutes.overage": TriangleAlert,
+  "settings.runner_order": ListOrdered,
+  "settings.runner_order_removed": ListOrdered,
+  "settings.auto_size": Cpu,
+  "settings.job_size": Cpu,
+  "settings.retries": RotateCw,
+  "settings.ai": Sparkles,
+  "settings.job_logs": ScrollText,
+  "settings.log_bucket": Archive,
+  "settings.log_destination": Archive,
 } as const;
 
 const ICON = "size-3.5 shrink-0";
@@ -623,6 +705,9 @@ function Row({
     </li>
   );
 }
+
+// A row's workflow, quieter than the job.
+const QUIET = "text-muted-foreground hover:text-foreground";
 
 // A repo with GitHub's mark, by its name without the owner (the filter and hover show it all), and
 // the branch after it: "relayrunner · main". The name opens the repo on GitHub.
@@ -732,6 +817,21 @@ function EventRow({ item, now }: { item: ActivityItem; now: number }) {
         </span>
       </Row>
     );
+  if (item.type.startsWith("settings.")) {
+    return (
+      <Row
+        icon={<Icon aria-hidden className={`${ICON} text-muted-foreground`} />}
+        at={item.occurredAt}
+        now={now}
+      >
+        <span className="font-medium">{item.actor?.name ?? "Someone"}</span>{" "}
+        <span className="text-muted-foreground">
+          {settingsSentence(item)}
+          {throughAgent(item)}
+        </span>
+      </Row>
+    );
+  }
   if (item.type.startsWith("member.")) {
     const who =
       item.type === "member.joined"
@@ -768,9 +868,23 @@ function EventRow({ item, now }: { item: ActivityItem; now: number }) {
       at={item.occurredAt}
       now={now}
     >
-      <span className="font-medium">{item.machine?.name ?? "A machine"}</span>{" "}
+      {item.machine?.id ? (
+        <RunnerLink
+          runner={{ key: `machine:${item.machine.id}`, label: item.machine.name }}
+          mark={false}
+          className="font-medium"
+        />
+      ) : (
+        <span className="font-medium">{item.machine?.name ?? "A machine"}</span>
+      )}{" "}
       <span className="text-muted-foreground">{sentence(item)}</span>
-      {item.actor && <span className="text-muted-foreground"> by {item.actor.name}</span>}
+      {item.actor && (
+        <span className="text-muted-foreground">
+          {" "}
+          by {item.actor.name}
+          {throughAgent(item)}
+        </span>
+      )}
     </Row>
   );
 }
@@ -790,7 +904,7 @@ const isFailed = (conclusion: string | null) =>
 
 // A row naming the job the way GitHub does ("workflow / job"), then what happened and how long it
 // took: "CI / test passed · 1m 30s", with its runner, repo and who started it in their columns. The
-// job name opens the job on GitHub, the workflow name opens its run.
+// job name opens the job in History's run panel, the workflow name opens the workflow's panel.
 function JobRow({ job, now }: { job: ActivityJob; now: number }) {
   const [open, setOpen] = useState(false);
   const took = duration(job, now);
@@ -827,25 +941,16 @@ function JobRow({ job, now }: { job: ActivityJob; now: number }) {
         who: <StarterCell starters={job.starters} />,
       }}
     >
-      <a
-        href={job.runUrl}
-        target="_blank"
-        rel="noreferrer"
-        className="text-muted-foreground hover:text-foreground hover:underline"
-        title="Open the run on GitHub"
-      >
-        {job.workflow ?? "Workflow"}
-      </a>
+      <WorkflowLink
+        repository={job.repository}
+        workflow={job.workflow}
+        fallback="Workflow"
+        className={QUIET}
+      />
       <span className="text-muted-foreground"> / </span>
-      <a
-        href={job.url}
-        target="_blank"
-        rel="noreferrer"
-        className="font-medium hover:underline"
-        title="Open the job on GitHub"
-      >
+      <RunLink run={job} job={job.id} className="font-medium hover:underline">
         {job.name}
-      </a>{" "}
+      </RunLink>{" "}
       <span className={isFailed(job.conclusion) ? "text-destructive" : "text-muted-foreground"}>
         {jobVerb(job)}
       </span>
@@ -966,7 +1071,6 @@ function UnroutableRow({
 }) {
   const [open, setOpen] = useState(false);
   const { data } = item;
-  const runUrl = `https://github.com/${data.repository}/actions/runs/${data.runId}`;
   const toggle = data.walk ? { open, onToggle: () => setOpen(!open) } : undefined;
   const names = jobNames(item.jobsNotRun ?? []);
   return (
@@ -982,15 +1086,12 @@ function UnroutableRow({
         who: item.starters && <StarterCell starters={item.starters} />,
       }}
     >
-      <a
-        href={runUrl}
-        target="_blank"
-        rel="noreferrer"
-        className="text-muted-foreground hover:text-foreground hover:underline"
-        title="Open the run on GitHub"
-      >
-        {data.workflow ?? "Workflow"}
-      </a>
+      <WorkflowLink
+        repository={data.repository}
+        workflow={data.workflow}
+        fallback="Workflow"
+        className={QUIET}
+      />
       {names && (
         <>
           <span className="text-muted-foreground"> / </span>
@@ -1008,6 +1109,7 @@ const RETRY_REASONS = {
   machine_lost: (on: string | null) => `${on ?? "its machine"} went offline`,
   runner_lost: () => "GitHub lost touch with its runner",
   flaky: () => "it looked flaky",
+  provider_missed: (on: string | null) => `${on ?? "its runner"} didn't pick it up`,
 } as const;
 
 const RETRY_RUNNERS = { any: "", same: " on the same runner", other: " on a different runner" };
@@ -1029,15 +1131,12 @@ function RetryRow({
       now={now}
       cells={{ repo: <RepoCell repository={data.repository} /> }}
     >
-      <a
-        href={`https://github.com/${data.repository}/actions/runs/${data.runId}`}
-        target="_blank"
-        rel="noreferrer"
-        className="text-muted-foreground hover:text-foreground hover:underline"
-        title="Open the run on GitHub"
-      >
-        {data.workflow ?? "Workflow"}
-      </a>
+      <WorkflowLink
+        repository={data.repository}
+        workflow={data.workflow}
+        fallback="Workflow"
+        className={QUIET}
+      />
       <span className="text-muted-foreground"> / </span>
       <span className="font-medium">{data.job}</span>{" "}
       <span className="text-muted-foreground">
@@ -1055,6 +1154,7 @@ function samplePage(search: ActivitySearch): ActivityPage {
   const zach = { login: "zach", member: { id: "u2", name: "Zach Ross" } };
   const job = (id: number, minutesAgo: number, rest: Partial<ActivityJob>): ActivityJob => ({
     id,
+    repositoryId: 1,
     repository: "relayrunner/relayrunner-ci-tests",
     private: true,
     runId: id * 10,
@@ -1191,6 +1291,45 @@ function samplePage(search: ActivitySearch): ActivityPage {
       occurredAt: at(0.15),
       actor: { id: "u1", name: "Atticus White" },
       machine: mac,
+      job: null,
+    },
+    {
+      id: 103,
+      type: "settings.job_size",
+      data: {
+        repository: "relayrunner/relayrunner-ci-tests",
+        workflow: "RelayRunner dev",
+        job: "test",
+        size: 8,
+        first: "machine",
+        via: "agent",
+        agent: "Claude",
+      },
+      occurredAt: at(4),
+      actor: { id: "u1", name: "Atticus White" },
+      machine: null,
+      job: null,
+    },
+    {
+      id: 102,
+      type: "settings.runner_order",
+      data: {
+        steps: [{ key: "machine" }, { key: "github", limit: { percent: 80 } }, { key: "github" }],
+        via: "agent",
+        agent: "Claude",
+      },
+      occurredAt: at(6),
+      actor: { id: "u1", name: "Atticus White" },
+      machine: null,
+      job: null,
+    },
+    {
+      id: 101,
+      type: "settings.retries",
+      data: { enabled: true, runner: "other", max: 1, via: "dashboard" },
+      occurredAt: at(12),
+      actor: { id: "u2", name: "Zach Ross" },
+      machine: null,
       job: null,
     },
     {

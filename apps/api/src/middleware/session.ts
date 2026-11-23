@@ -1,7 +1,7 @@
 import type { Context } from "hono";
 import { createMiddleware } from "hono/factory";
-import { agentBearer, agentMayCall, agentSession } from "../agent-auth.ts";
-import { createAuth } from "../auth.ts";
+import { agentBearer, agentMayCall, agentSession } from "../auth/agent-auth.ts";
+import { createAuth } from "../auth/auth.ts";
 import type { AppEnv } from "../app.ts";
 import { AppError } from "@relayrunner/errors";
 import { annotate } from "../tracing.ts";

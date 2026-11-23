@@ -37,6 +37,7 @@ import { Route as AuthedWorkspaceAdminRoutingRouteImport } from './routes/_authe
 import { Route as AuthedWorkspaceAdminUsersRouteImport } from './routes/_authed/_workspace/admin.users'
 import { Route as AuthedWorkspaceAdminWebhooksRouteImport } from './routes/_authed/_workspace/admin.webhooks'
 import { Route as AuthedWorkspaceAdminWorkspacesRouteImport } from './routes/_authed/_workspace/admin.workspaces'
+import { Route as AuthedWorkspacePerformanceWorkflowRouteImport } from './routes/_authed/_workspace/performance_.workflow'
 import { Route as AuthedWorkspaceProvidersIndexRouteImport } from './routes/_authed/_workspace/providers.index'
 import { Route as AuthedWorkspaceProvidersProviderRouteImport } from './routes/_authed/_workspace/providers.$provider'
 import { Route as AuthedWorkspaceSettingsIndexRouteImport } from './routes/_authed/_workspace/settings.index'
@@ -48,6 +49,7 @@ import { Route as AuthedWorkspaceSettingsMembersRouteImport } from './routes/_au
 import { Route as AuthedWorkspaceSettingsNotificationsRouteImport } from './routes/_authed/_workspace/settings.notifications'
 import { Route as AuthedWorkspaceSettingsProvidersRouteImport } from './routes/_authed/_workspace/settings.providers'
 import { Route as AuthedWorkspaceSettingsTelemetryRouteImport } from './routes/_authed/_workspace/settings.telemetry'
+import { Route as AuthedWorkspaceProvidersProviderEvaluateRouteImport } from './routes/_authed/_workspace/providers.$provider_.evaluate'
 
 const IndexRoute = IndexRouteImport.update({
   id: '/',
@@ -197,6 +199,12 @@ const AuthedWorkspaceAdminWorkspacesRoute =
     path: '/admin/workspaces',
     getParentRoute: () => AuthedWorkspaceRoute,
   } as any)
+const AuthedWorkspacePerformanceWorkflowRoute =
+  AuthedWorkspacePerformanceWorkflowRouteImport.update({
+    id: '/performance_/workflow',
+    path: '/performance/workflow',
+    getParentRoute: () => AuthedWorkspaceRoute,
+  } as any)
 const AuthedWorkspaceProvidersIndexRoute =
   AuthedWorkspaceProvidersIndexRouteImport.update({
     id: '/providers/',
@@ -263,6 +271,12 @@ const AuthedWorkspaceSettingsTelemetryRoute =
     path: '/settings/telemetry',
     getParentRoute: () => AuthedWorkspaceRoute,
   } as any)
+const AuthedWorkspaceProvidersProviderEvaluateRoute =
+  AuthedWorkspaceProvidersProviderEvaluateRouteImport.update({
+    id: '/providers/$provider_/evaluate',
+    path: '/providers/$provider/evaluate',
+    getParentRoute: () => AuthedWorkspaceRoute,
+  } as any)
 
 export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
@@ -290,6 +304,7 @@ export interface FileRoutesByFullPath {
   '/admin/users': typeof AuthedWorkspaceAdminUsersRoute
   '/admin/webhooks': typeof AuthedWorkspaceAdminWebhooksRoute
   '/admin/workspaces': typeof AuthedWorkspaceAdminWorkspacesRoute
+  '/performance/workflow': typeof AuthedWorkspacePerformanceWorkflowRoute
   '/providers/$provider': typeof AuthedWorkspaceProvidersProviderRoute
   '/settings/account': typeof AuthedWorkspaceSettingsAccountRoute
   '/settings/agents': typeof AuthedWorkspaceSettingsAgentsRoute
@@ -302,6 +317,7 @@ export interface FileRoutesByFullPath {
   '/admin/': typeof AuthedWorkspaceAdminIndexRoute
   '/providers/': typeof AuthedWorkspaceProvidersIndexRoute
   '/settings/': typeof AuthedWorkspaceSettingsIndexRoute
+  '/providers/$provider/evaluate': typeof AuthedWorkspaceProvidersProviderEvaluateRoute
 }
 export interface FileRoutesByTo {
   '/': typeof IndexRoute
@@ -329,6 +345,7 @@ export interface FileRoutesByTo {
   '/admin/users': typeof AuthedWorkspaceAdminUsersRoute
   '/admin/webhooks': typeof AuthedWorkspaceAdminWebhooksRoute
   '/admin/workspaces': typeof AuthedWorkspaceAdminWorkspacesRoute
+  '/performance/workflow': typeof AuthedWorkspacePerformanceWorkflowRoute
   '/providers/$provider': typeof AuthedWorkspaceProvidersProviderRoute
   '/settings/account': typeof AuthedWorkspaceSettingsAccountRoute
   '/settings/agents': typeof AuthedWorkspaceSettingsAgentsRoute
@@ -341,6 +358,7 @@ export interface FileRoutesByTo {
   '/admin': typeof AuthedWorkspaceAdminIndexRoute
   '/providers': typeof AuthedWorkspaceProvidersIndexRoute
   '/settings': typeof AuthedWorkspaceSettingsIndexRoute
+  '/providers/$provider/evaluate': typeof AuthedWorkspaceProvidersProviderEvaluateRoute
 }
 export interface FileRoutesById {
   __root__: typeof rootRouteImport
@@ -371,6 +389,7 @@ export interface FileRoutesById {
   '/_authed/_workspace/admin/users': typeof AuthedWorkspaceAdminUsersRoute
   '/_authed/_workspace/admin/webhooks': typeof AuthedWorkspaceAdminWebhooksRoute
   '/_authed/_workspace/admin/workspaces': typeof AuthedWorkspaceAdminWorkspacesRoute
+  '/_authed/_workspace/performance_/workflow': typeof AuthedWorkspacePerformanceWorkflowRoute
   '/_authed/_workspace/providers/$provider': typeof AuthedWorkspaceProvidersProviderRoute
   '/_authed/_workspace/settings/account': typeof AuthedWorkspaceSettingsAccountRoute
   '/_authed/_workspace/settings/agents': typeof AuthedWorkspaceSettingsAgentsRoute
@@ -383,6 +402,7 @@ export interface FileRoutesById {
   '/_authed/_workspace/admin/': typeof AuthedWorkspaceAdminIndexRoute
   '/_authed/_workspace/providers/': typeof AuthedWorkspaceProvidersIndexRoute
   '/_authed/_workspace/settings/': typeof AuthedWorkspaceSettingsIndexRoute
+  '/_authed/_workspace/providers/$provider_/evaluate': typeof AuthedWorkspaceProvidersProviderEvaluateRoute
 }
 export interface FileRouteTypes {
   fileRoutesByFullPath: FileRoutesByFullPath
@@ -412,6 +432,7 @@ export interface FileRouteTypes {
     | '/admin/users'
     | '/admin/webhooks'
     | '/admin/workspaces'
+    | '/performance/workflow'
     | '/providers/$provider'
     | '/settings/account'
     | '/settings/agents'
@@ -424,6 +445,7 @@ export interface FileRouteTypes {
     | '/admin/'
     | '/providers/'
     | '/settings/'
+    | '/providers/$provider/evaluate'
   fileRoutesByTo: FileRoutesByTo
   to:
     | '/'
@@ -451,6 +473,7 @@ export interface FileRouteTypes {
     | '/admin/users'
     | '/admin/webhooks'
     | '/admin/workspaces'
+    | '/performance/workflow'
     | '/providers/$provider'
     | '/settings/account'
     | '/settings/agents'
@@ -463,6 +486,7 @@ export interface FileRouteTypes {
     | '/admin'
     | '/providers'
     | '/settings'
+    | '/providers/$provider/evaluate'
   id:
     | '__root__'
     | '/'
@@ -492,6 +516,7 @@ export interface FileRouteTypes {
     | '/_authed/_workspace/admin/users'
     | '/_authed/_workspace/admin/webhooks'
     | '/_authed/_workspace/admin/workspaces'
+    | '/_authed/_workspace/performance_/workflow'
     | '/_authed/_workspace/providers/$provider'
     | '/_authed/_workspace/settings/account'
     | '/_authed/_workspace/settings/agents'
@@ -504,6 +529,7 @@ export interface FileRouteTypes {
     | '/_authed/_workspace/admin/'
     | '/_authed/_workspace/providers/'
     | '/_authed/_workspace/settings/'
+    | '/_authed/_workspace/providers/$provider_/evaluate'
   fileRoutesById: FileRoutesById
 }
 export interface RootRouteChildren {
@@ -714,6 +740,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AuthedWorkspaceAdminWorkspacesRouteImport
       parentRoute: typeof AuthedWorkspaceRoute
     }
+    '/_authed/_workspace/performance_/workflow': {
+      id: '/_authed/_workspace/performance_/workflow'
+      path: '/performance/workflow'
+      fullPath: '/performance/workflow'
+      preLoaderRoute: typeof AuthedWorkspacePerformanceWorkflowRouteImport
+      parentRoute: typeof AuthedWorkspaceRoute
+    }
     '/_authed/_workspace/providers/': {
       id: '/_authed/_workspace/providers/'
       path: '/providers'
@@ -791,6 +824,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AuthedWorkspaceSettingsTelemetryRouteImport
       parentRoute: typeof AuthedWorkspaceRoute
     }
+    '/_authed/_workspace/providers/$provider_/evaluate': {
+      id: '/_authed/_workspace/providers/$provider_/evaluate'
+      path: '/providers/$provider/evaluate'
+      fullPath: '/providers/$provider/evaluate'
+      preLoaderRoute: typeof AuthedWorkspaceProvidersProviderEvaluateRouteImport
+      parentRoute: typeof AuthedWorkspaceRoute
+    }
   }
 }
 
@@ -813,6 +853,7 @@ interface AuthedWorkspaceRouteChildren {
   AuthedWorkspaceAdminUsersRoute: typeof AuthedWorkspaceAdminUsersRoute
   AuthedWorkspaceAdminWebhooksRoute: typeof AuthedWorkspaceAdminWebhooksRoute
   AuthedWorkspaceAdminWorkspacesRoute: typeof AuthedWorkspaceAdminWorkspacesRoute
+  AuthedWorkspacePerformanceWorkflowRoute: typeof AuthedWorkspacePerformanceWorkflowRoute
   AuthedWorkspaceProvidersProviderRoute: typeof AuthedWorkspaceProvidersProviderRoute
   AuthedWorkspaceSettingsAccountRoute: typeof AuthedWorkspaceSettingsAccountRoute
   AuthedWorkspaceSettingsAgentsRoute: typeof AuthedWorkspaceSettingsAgentsRoute
@@ -825,6 +866,7 @@ interface AuthedWorkspaceRouteChildren {
   AuthedWorkspaceAdminIndexRoute: typeof AuthedWorkspaceAdminIndexRoute
   AuthedWorkspaceProvidersIndexRoute: typeof AuthedWorkspaceProvidersIndexRoute
   AuthedWorkspaceSettingsIndexRoute: typeof AuthedWorkspaceSettingsIndexRoute
+  AuthedWorkspaceProvidersProviderEvaluateRoute: typeof AuthedWorkspaceProvidersProviderEvaluateRoute
 }
 
 const AuthedWorkspaceRouteChildren: AuthedWorkspaceRouteChildren = {
@@ -846,6 +888,8 @@ const AuthedWorkspaceRouteChildren: AuthedWorkspaceRouteChildren = {
   AuthedWorkspaceAdminUsersRoute: AuthedWorkspaceAdminUsersRoute,
   AuthedWorkspaceAdminWebhooksRoute: AuthedWorkspaceAdminWebhooksRoute,
   AuthedWorkspaceAdminWorkspacesRoute: AuthedWorkspaceAdminWorkspacesRoute,
+  AuthedWorkspacePerformanceWorkflowRoute:
+    AuthedWorkspacePerformanceWorkflowRoute,
   AuthedWorkspaceProvidersProviderRoute: AuthedWorkspaceProvidersProviderRoute,
   AuthedWorkspaceSettingsAccountRoute: AuthedWorkspaceSettingsAccountRoute,
   AuthedWorkspaceSettingsAgentsRoute: AuthedWorkspaceSettingsAgentsRoute,
@@ -859,6 +903,8 @@ const AuthedWorkspaceRouteChildren: AuthedWorkspaceRouteChildren = {
   AuthedWorkspaceAdminIndexRoute: AuthedWorkspaceAdminIndexRoute,
   AuthedWorkspaceProvidersIndexRoute: AuthedWorkspaceProvidersIndexRoute,
   AuthedWorkspaceSettingsIndexRoute: AuthedWorkspaceSettingsIndexRoute,
+  AuthedWorkspaceProvidersProviderEvaluateRoute:
+    AuthedWorkspaceProvidersProviderEvaluateRoute,
 }
 
 const AuthedWorkspaceRouteWithChildren = AuthedWorkspaceRoute._addFileChildren(

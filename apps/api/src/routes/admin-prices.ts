@@ -19,9 +19,9 @@ import { z } from "zod";
 import type { AppEnv } from "../app.ts";
 import { createDb, schema } from "../db/index.ts";
 import { who } from "../middleware/admin.ts";
-import { checkPrices } from "../price-check.ts";
-import { forgetPriceBook, readPriceBook } from "../prices.ts";
-import { readCatalog } from "../provider-catalog.ts";
+import { checkPrices } from "../providers/price-check.ts";
+import { forgetPriceBook, readPriceBook } from "../providers/prices.ts";
+import { readCatalog } from "../providers/provider-catalog.ts";
 import { AppError } from "@relayrunner/errors";
 
 const PriceBody = z.object({

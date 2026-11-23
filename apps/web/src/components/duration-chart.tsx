@@ -1,14 +1,31 @@
-import { ChartColumnStackedIcon, ChartScatterIcon } from "lucide-react";
+import { ChartColumnStackedIcon, ChartLineIcon } from "lucide-react";
 import { Count } from "@/components/count";
-import { memo, type ReactNode, useLayoutEffect, useMemo, useRef, useState } from "react";
+import { memo, type ReactNode, useMemo, useState } from "react";
+import { ChartTip, TipRow, topRounded, useWidth } from "@/components/chart-parts";
 import { Button } from "@/components/ui/button";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
 import { timeAgo } from "@/lib/activity";
-import { DAY_MS, niceStep, plural } from "@/lib/job-times";
+import {
+  bucketIndex,
+  bucketMsFor,
+  chartStart,
+  groupsByCount,
+  type Spread,
+  spreads,
+} from "@/lib/chart-trend";
+import { DAY_MS, HOUR_MS, niceStep, plural } from "@/lib/job-times";
 import { type HistoryJob, isFailure, type JobUsage, type Run } from "@/lib/runs";
 import { readFlag, saveFlag } from "@/lib/stored-flag";
 import { formatMemory } from "@/lib/device";
-import { startOfHours, zoneFormat } from "@/lib/time-zone";
-import { count, elapsed, percent } from "@/lib/utils";
+import { startOfDay, startOfHours, zoneFormat } from "@/lib/time-zone";
+import { resolveRange, type TimeRange } from "@/lib/time-range";
+import { cn, count, elapsed, percent } from "@/lib/utils";
 
 type Result = "success" | "failed" | "cancelled";
 /** How many runs or jobs ended each way from `at`, in one bar or less. */
@@ -22,6 +39,8 @@ export type ChartPoint = {
   ms: number;
   result: Result;
   name: string;
+  /** The workflow or job it's charted with: one group shows at a time. */
+  group: string;
   usage?: JobUsage;
 };
 
@@ -45,6 +64,7 @@ const METRIC: Record<
     value: (point: ChartPoint) => number;
     scale: (max: number) => ReturnType<typeof yScale>;
     tickText: (value: number) => string;
+    valueText: (value: number) => string;
     tipText: (point: ChartPoint) => string;
   }
 > = {
@@ -53,6 +73,7 @@ const METRIC: Record<
     value: (point) => point.ms,
     scale: (max) => yScale(Math.max(max, 1000), niceStep(Math.max(max, 1000) / 3)),
     tickText: axisTime,
+    valueText: elapsed,
     tipText: (point) => elapsed(point.ms),
   },
   cpu: {
@@ -61,6 +82,7 @@ const METRIC: Record<
     value: (point) => point.usage?.cpuP95 ?? 0,
     scale: () => yScale(1, 0.25, true),
     tickText: percent,
+    valueText: percent,
     tipText: ({ usage }) => `${percent(usage!.cpuP95)} of ${plural(usage!.cpus, "vCPU")}`,
   },
   memory: {
@@ -68,38 +90,60 @@ const METRIC: Record<
     value: (point) => point.usage?.memoryP95Mb ?? 0,
     scale: (max) => yScale(Math.max(max, 256), memoryStep(Math.max(max, 256))),
     tickText: (mb) => (mb ? formatMemory(mb) : "0"),
+    valueText: formatMemory,
     tipText: ({ usage }) =>
       `${formatMemory(usage!.memoryP95Mb)} of ${formatMemory(usage!.memoryMb)}`,
   },
 };
 const METRICS: Metric[] = ["duration", "cpu", "memory"];
 
-const HOUR_MS = 3_600_000;
 const HEIGHT = 168;
 const PAD = { top: 8, right: 8, bottom: 22, left: 40 };
 const PLOT_HEIGHT = HEIGHT - PAD.top - PAD.bottom;
 const BARS_FLAG = "rr:history-chart-bars";
 
 /**
- * How long each finished run or job took over the page's range, one dot each, or how many
- * finished per hour (or 6 or 12 hours), with each result counted underneath.
+ * How long one workflow's (or job's) runs took over the page's range: the median of each bucket
+ * as a line, the middle 80% shaded around it, and each failure marked on top. Cancelled runs are
+ * hidden until their legend entry is pressed. Or how many finished per bucket, by result.
  */
 export const DurationChart = memo(function DurationChart({
-  points,
-  days,
+  points: all,
+  range,
   noun,
+  group,
+  onGroup,
+  groupLabel,
 }: {
   points: ChartPoint[];
-  days: number;
+  range: TimeRange;
   /** "run" or "job". */
   noun: string;
+  /** The group shown, from the URL. Left out, the busiest. */
+  group: string | undefined;
+  /** Gets undefined when the busiest is picked, so the URL leaves it out. */
+  onGroup: (group: string | undefined) => void;
+  /** What a group is, such as "Workflow". */
+  groupLabel: string;
 }) {
   const [bars, setBars] = useState(() => readFlag(BARS_FLAG));
   const [picked, setMetric] = useState<Metric>("duration");
+  const [showCancelled, setShowCancelled] = useState(false);
+  const groups = useMemo(() => groupsByCount(all.map((point) => point.group)), [all]);
+  const shown = group !== undefined && groups.includes(group) ? group : groups[0];
+  const points = useMemo(() => all.filter((point) => point.group === shown), [all, shown]);
   const sampled = useMemo(() => points.filter((point) => point.usage), [points]);
   // CPU and memory only when some of what's shown reported them.
   const metric = sampled.length > 0 ? picked : "duration";
-  const [ref, frame, bucketMs] = useFrame(days);
+  const firstAt = useMemo(
+    () =>
+      points.reduce<number | undefined>(
+        (min, { at }) => (min === undefined || at < min ? at : min),
+        undefined,
+      ),
+    [points],
+  );
+  const [ref, frame, bucketMs] = useFrame(range, { firstAt });
   const counts = useMemo(() => {
     const totals: Record<Result, number> = { success: 0, failed: 0, cancelled: 0 };
     for (const point of points) totals[point.result]++;
@@ -125,10 +169,11 @@ export const DurationChart = memo(function DurationChart({
     saveFlag(BARS_FLAG, next);
   }
   const per = perBar(bucketMs);
+  const name = groups.length > 1 ? `${shown} ${noun}s` : `${noun}s`;
 
   return (
     <div className="grid gap-3 rounded-xl border bg-card px-4 pt-3 pb-4">
-      <div className="flex items-center justify-between gap-3">
+      <div className="flex flex-wrap items-center justify-between gap-3">
         {!bars && sampled.length > 0 ? (
           <div role="group" aria-label="Measure" className="flex gap-1">
             {METRICS.map((value) => (
@@ -145,16 +190,35 @@ export const DurationChart = memo(function DurationChart({
           </div>
         ) : (
           <h2 className="text-sm font-medium first-letter:uppercase">
-            {bars ? `${noun}s per ${per}` : `How long each ${noun} took`}
+            {bars ? `${noun}s per ${per}` : `How long ${noun}s took`}
           </h2>
         )}
-        <div role="group" aria-label="Chart" className="flex gap-1">
-          <ChartToggle label="Duration" pressed={!bars} onClick={() => choose(false)}>
-            <ChartScatterIcon />
-          </ChartToggle>
-          <ChartToggle label="Count" pressed={bars} onClick={() => choose(true)}>
-            <ChartColumnStackedIcon />
-          </ChartToggle>
+        <div className="flex min-w-0 items-center gap-2">
+          {groups.length > 1 && (
+            <Select
+              value={shown}
+              onValueChange={(next) => onGroup(next === groups[0] ? undefined : next)}
+            >
+              <SelectTrigger size="sm" aria-label={groupLabel} className="h-7 min-w-0 max-w-64">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent align="end">
+                {groups.map((each) => (
+                  <SelectItem key={each} value={each}>
+                    {each}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          )}
+          <div role="group" aria-label="Chart" className="flex gap-1">
+            <ChartToggle label="Duration" pressed={!bars} onClick={() => choose(false)}>
+              <ChartLineIcon />
+            </ChartToggle>
+            <ChartToggle label="Count" pressed={bars} onClick={() => choose(true)}>
+              <ChartColumnStackedIcon />
+            </ChartToggle>
+          </div>
         </div>
       </div>
       <div ref={ref} className="relative" style={{ height: HEIGHT }}>
@@ -166,27 +230,35 @@ export const DurationChart = memo(function DurationChart({
           <Bars
             tallies={tallies}
             frame={frame}
-            days={days}
             bucketMs={bucketMs}
             label={`${plural(points.length, noun)} per ${per}, by result`}
           />
         ) : (
-          <Dots
+          <Trend
             points={metric === "duration" ? points : sampled}
             metric={metric}
+            showCancelled={showCancelled}
             frame={frame}
-            days={days}
-            label={`${METRIC[metric].label} of each of ${plural(points.length, noun)} over the last ${plural(days, "day")}`}
+            bucketMs={bucketMs}
+            label={`${METRIC[metric].label} of ${name} per ${per}: the median, the middle 80%, and each failure`}
           />
         )}
       </div>
       <div className="flex flex-wrap items-center justify-between gap-x-5 gap-y-1 text-xs text-muted-foreground">
-        <ResultLegend counts={counts} />
-        {!bars && metric !== "duration" && (
-          <p>
-            {count(sampled.length)} of {plural(points.length, noun)}, from connected machines
-          </p>
-        )}
+        <ResultLegend
+          counts={counts}
+          trend={!bars}
+          showCancelled={showCancelled}
+          onCancelled={() => setShowCancelled(!showCancelled)}
+        />
+        {!bars &&
+          (metric === "duration" ? (
+            <p>Median per {per}, with the middle 80% shaded</p>
+          ) : (
+            <p>
+              {count(sampled.length)} of {plural(points.length, noun)}, from connected machines
+            </p>
+          ))}
       </div>
     </div>
   );
@@ -198,16 +270,16 @@ export const DurationChart = memo(function DurationChart({
  */
 export const CountChart = memo(function CountChart({
   tallies,
-  days,
+  range,
   noun,
   bucketMs: wanted,
 }: {
   tallies: Tally[];
-  days: number;
+  range: TimeRange;
   noun: string;
   bucketMs?: number;
 }) {
-  const [ref, frame, bucketMs] = useFrame(days, wanted);
+  const [ref, frame, bucketMs] = useFrame(range, { bucketMs: wanted });
   const counts = useMemo(() => {
     const totals: Record<Result, number> = { success: 0, failed: 0, cancelled: 0 };
     for (const tally of tallies) for (const result of RESULTS) totals[result] += tally[result];
@@ -228,7 +300,6 @@ export const CountChart = memo(function CountChart({
           <Bars
             tallies={tallies}
             frame={frame}
-            days={days}
             bucketMs={bucketMs}
             label={`${plural(total, noun)} per ${per}, by result`}
           />
@@ -241,36 +312,76 @@ export const CountChart = memo(function CountChart({
   );
 });
 
-/** Each result's mark, name and count. */
-function ResultLegend({ counts }: { counts: Record<Result, number> }) {
+/**
+ * Each result's mark, name and count. Under a trend, succeeded shows as the line and its band, and
+ * cancelled is a switch that shows or hides those runs.
+ */
+function ResultLegend({
+  counts,
+  trend,
+  showCancelled,
+  onCancelled,
+}: {
+  counts: Record<Result, number>;
+  trend?: boolean;
+  showCancelled?: boolean;
+  onCancelled?: () => void;
+}) {
   return (
     <ul className="flex flex-wrap gap-x-5 gap-y-1">
-      {RESULTS.map((result) => (
-        <li key={result} className="inline-flex items-center gap-1.5">
-          <ResultMark result={result} />
-          {RESULT[result].label}
-          <span className="font-medium text-foreground tabular-nums">
-            <Count value={counts[result]} />
-          </span>
-        </li>
-      ))}
+      {RESULTS.map((result) => {
+        const entry = (
+          <>
+            {trend && result === "success" ? <TrendMark /> : <ResultMark result={result} />}
+            {RESULT[result].label}
+            <span className="font-medium text-foreground tabular-nums">
+              <Count value={counts[result]} />
+            </span>
+          </>
+        );
+        return (
+          <li key={result} className="inline-flex items-center gap-1.5">
+            {trend && result === "cancelled" ? (
+              <button
+                type="button"
+                aria-pressed={showCancelled}
+                title={showCancelled ? "Hide cancelled" : "Show cancelled"}
+                onClick={onCancelled}
+                className={cn(
+                  "-mx-1 inline-flex items-center gap-1.5 rounded px-1 hover:text-foreground",
+                  !showCancelled && "opacity-60 [&_span]:text-muted-foreground",
+                )}
+              >
+                {entry}
+              </button>
+            ) : (
+              entry
+            )}
+          </li>
+        );
+      })}
     </ul>
   );
 }
 
-/** The bar width for a range: an hour for a day, 6 hours for a week, else 12. */
-const bucketMsFor = (days: number) =>
-  days <= 1 ? HOUR_MS : days <= 7 ? 6 * HOUR_MS : 12 * HOUR_MS;
-
 const perBar = (bucketMs: number) =>
   bucketMs === HOUR_MS ? "hour" : bucketMs === DAY_MS ? "day" : `${bucketMs / HOUR_MS} hours`;
 
-/** The plot's measured width and time range, in whole bars so the first and last are full width. */
-function useFrame(days: number, bucketMs = bucketMsFor(days)) {
+/**
+ * The plot's measured width and time range, in whole buckets so the first and last are full width.
+ * With `firstAt`, it starts there instead of at the start of the range, and buckets fit that span.
+ */
+function useFrame(
+  range: TimeRange,
+  { firstAt, bucketMs: wanted }: { firstAt?: number; bucketMs?: number },
+) {
   const [ref, width] = useWidth<HTMLDivElement>();
-  const now = Date.now();
-  const end = floorTo(now, bucketMs) + bucketMs;
-  const start = floorTo(now - days * DAY_MS, bucketMs);
+  const span = resolveRange(range);
+  const from = chartStart(span, firstAt);
+  const bucketMs = wanted ?? bucketMsFor(span.to - from);
+  // The bucket holding the range's last moment is the last.
+  const end = floorTo(span.to - 1, bucketMs) + bucketMs;
+  const start = floorTo(from, bucketMs);
   const frame = useMemo(() => ({ start, end, width }), [start, end, width]);
   return [ref, frame, bucketMs] as const;
 }
@@ -326,6 +437,8 @@ function Mark({ result, x, y, big }: { result: Result; x: number; y: number; big
 type Frame = { start: number; end: number; width: number };
 const plotX = ({ start, end, width }: Frame, t: number) =>
   PAD.left + ((t - start) / (end - start)) * (width - PAD.left - PAD.right);
+const bucketMiddle = (frame: Frame, at: number, bucketMs: number) =>
+  plotX(frame, at + bucketMs / 2);
 
 /** A y scale from 0 to a round number at or over `max`, with a tick every `step`. */
 // The axis ends at the next whole step above the tallest mark with some headroom, so the tallest
@@ -338,12 +451,11 @@ function yScale(max: number, step: number, exact = false) {
   };
 }
 
-type PlotProps = { frame: Frame; days: number; label: string };
+type PlotProps = { frame: Frame; label: string };
 
 /** The plot's axes and hover tooltip around its marks. */
 function Plot({
   frame,
-  days,
   label,
   ticks,
   y,
@@ -376,7 +488,7 @@ function Plot({
         className="block"
       >
         <YAxis ticks={ticks} y={y} width={frame.width} tickText={tickText} />
-        <XAxis frame={frame} days={days} />
+        <XAxis frame={frame} />
         {children}
       </svg>
       {tip}
@@ -384,45 +496,219 @@ function Plot({
   );
 }
 
-function Dots({ points, metric, ...plot }: PlotProps & { points: ChartPoint[]; metric: Metric }) {
+const BAND = { fill: "var(--rr-go)", fillOpacity: 0.2 };
+const LINE = {
+  stroke: "var(--rr-go)",
+  strokeWidth: 1.75,
+  fill: "none",
+  strokeLinejoin: "round",
+} as const;
+
+/**
+ * The median of what succeeded in each bucket as a line, with the 10th to 90th percentile shaded
+ * around it, and each failure (and cancelled run, when shown) marked where it ended.
+ */
+function Trend({
+  points,
+  metric,
+  showCancelled,
+  bucketMs,
+  ...plot
+}: PlotProps & {
+  points: ChartPoint[];
+  metric: Metric;
+  showCancelled: boolean;
+  bucketMs: number;
+}) {
   const { frame } = plot;
-  const { value, scale, tickText, tipText } = METRIC[metric];
-  const [hover, setHover] = useState<ChartPoint | null>(null);
-  const { y, ticks } = useMemo(
-    () => scale(Math.max(0, ...points.map((point) => value(point)))),
-    [points, scale, value],
-  );
-  // Drawn once per data or size change, not on every hover.
-  const marks = useMemo(
+  const { value, scale, tickText, valueText, tipText } = METRIC[metric];
+  // A failure (or cancelled run) under the pointer, or the bucket nearest it. Held as is, so moving
+  // within the same one doesn't re-render.
+  const [hover, setHover] = useState<ChartPoint | Spread | null>(null);
+  const stats = useMemo(
     () =>
-      [...points]
-        .sort((a, b) => RESULT[a.result].z - RESULT[b.result].z)
-        .map((point) => (
+      spreads(
+        points.flatMap((point) =>
+          point.result === "success" ? [{ at: point.at, value: value(point) }] : [],
+        ),
+        frame.start,
+        frame.end,
+        bucketMs,
+      ),
+    [points, value, frame.start, frame.end, bucketMs],
+  );
+  const marked = useMemo(
+    () =>
+      points
+        .filter(
+          (point) => point.result === "failed" || (showCancelled && point.result === "cancelled"),
+        )
+        .sort((a, b) => RESULT[a.result].z - RESULT[b.result].z),
+    [points, showCancelled],
+  );
+  // How many failed in each bucket, for its tooltip.
+  const failures = useMemo(() => {
+    const counts = new Map<number, number>();
+    for (const point of points) {
+      if (point.result !== "failed") continue;
+      const at = frame.start + bucketIndex(point.at, frame.start, frame.end, bucketMs) * bucketMs;
+      counts.set(at, (counts.get(at) ?? 0) + 1);
+    }
+    return counts;
+  }, [points, frame.start, frame.end, bucketMs]);
+  // The top fits the bands and the marks; a lone slow success no longer squashes the rest.
+  const { y, ticks } = useMemo(() => {
+    let max = 0;
+    for (const spread of stats) max = Math.max(max, spread.p90);
+    for (const point of marked) max = Math.max(max, value(point));
+    return scale(max);
+  }, [stats, marked, scale, value]);
+  const slot = plotX(frame, frame.start + bucketMs) - plotX(frame, frame.start);
+
+  // Drawn once per data or size change, not on every hover.
+  const drawn = useMemo(() => {
+    // Back-to-back buckets share one band and line; an empty bucket breaks them.
+    const stretches: Spread[][] = [];
+    for (const spread of stats) {
+      const last = stretches.at(-1);
+      if (last && spread.at - last.at(-1)!.at === bucketMs) last.push(spread);
+      else stretches.push([spread]);
+    }
+    const x = (spread: Spread) => bucketMiddle(frame, spread.at, bucketMs);
+    return (
+      <>
+        {stretches.map((stretch) => {
+          const first = stretch[0]!;
+          if (stretch.length === 1) {
+            // A lone bucket: a short bar for its spread, its median across it.
+            const half = Math.min(Math.max(slot / 4, 2), 6);
+            const top = y(first.p90);
+            return (
+              <g key={first.at}>
+                <rect
+                  x={x(first) - half}
+                  y={top}
+                  width={half * 2}
+                  height={Math.max(y(first.p10) - top, 1)}
+                  rx={1.5}
+                  {...BAND}
+                />
+                <line
+                  x1={x(first) - half - 1}
+                  x2={x(first) + half + 1}
+                  y1={y(first.median)}
+                  y2={y(first.median)}
+                  {...LINE}
+                />
+              </g>
+            );
+          }
+          const upper = stretch.map((spread) => `${x(spread)} ${y(spread.p90)}`);
+          const lower = stretch.map((spread) => `${x(spread)} ${y(spread.p10)}`).reverse();
+          return (
+            <g key={first.at}>
+              <path d={`M${[...upper, ...lower].join("L")}Z`} {...BAND} />
+              <path
+                d={`M${stretch.map((spread) => `${x(spread)} ${y(spread.median)}`).join("L")}`}
+                {...LINE}
+              />
+            </g>
+          );
+        })}
+        {marked.map((point) => (
           <Mark
             key={point.key}
             result={point.result}
             x={plotX(frame, point.at)}
             y={y(value(point))}
           />
-        )),
-    [points, frame, y, value],
-  );
+        ))}
+      </>
+    );
+  }, [stats, marked, frame, bucketMs, slot, y, value]);
 
-  // The nearest dot to the pointer, within reach.
+  // A mark under the pointer, else the nearest bucket with something in it.
   function onPointerMove(event: React.PointerEvent<SVGSVGElement>) {
     const box = event.currentTarget.getBoundingClientRect();
     const px = event.clientX - box.left;
     const py = event.clientY - box.top;
-    let best: ChartPoint | null = null;
-    let bestDistance = 16 ** 2;
-    for (const point of points) {
-      const distance = (plotX(frame, point.at) - px) ** 2 + (y(value(point)) - py) ** 2;
-      if (distance < bestDistance) [best, bestDistance] = [point, distance];
+    let point: ChartPoint | null = null;
+    let pointDistance = 10 ** 2;
+    for (const each of marked) {
+      const distance = (plotX(frame, each.at) - px) ** 2 + (y(value(each)) - py) ** 2;
+      if (distance < pointDistance) [point, pointDistance] = [each, distance];
     }
-    setHover(best);
+    if (point) return setHover(point);
+    let spread: Spread | null = null;
+    let spreadDistance = Math.max(slot, 16);
+    for (const each of stats) {
+      const distance = Math.abs(bucketMiddle(frame, each.at, bucketMs) - px);
+      if (distance < spreadDistance) [spread, spreadDistance] = [each, distance];
+    }
+    setHover(spread);
   }
-  const hx = hover ? plotX(frame, hover.at) : 0;
-  const hy = hover ? y(value(hover)) : 0;
+
+  let tip: ReactNode = null;
+  let highlight: ReactNode = null;
+  if (hover && "key" in hover) {
+    const hx = plotX(frame, hover.at);
+    const hy = y(value(hover));
+    tip = (
+      <ChartTip x={hx} y={hy} width={frame.width}>
+        <p className="max-w-56 truncate font-medium">{hover.name}</p>
+        <p className="text-muted-foreground">
+          <span className="font-medium text-foreground tabular-nums">{tipText(hover)}</span>
+          {` · ${RESULT[hover.result].label} · ${timeAgo(hover.at)}`}
+        </p>
+      </ChartTip>
+    );
+    highlight = (
+      <>
+        <circle
+          cx={hx}
+          cy={hy}
+          r={7}
+          fill="var(--card)"
+          stroke="var(--foreground)"
+          strokeOpacity={0.4}
+        />
+        <Mark result={hover.result} x={hx} y={hy} big />
+      </>
+    );
+  } else if (hover) {
+    const { at, count: succeeded, median, p90 } = hover;
+    const failed = failures.get(at) ?? 0;
+    const hx = bucketMiddle(frame, at, bucketMs);
+    tip = (
+      <ChartTip x={hx} y={y(p90)} width={frame.width}>
+        <p className="font-medium">{bucketText(at, bucketMs)}</p>
+        <TipRow label="Median" value={valueText(median)} />
+        <TipRow label="90th percentile" value={valueText(p90)} />
+        <TipRow label="Succeeded" value={String(succeeded)} />
+        {failed > 0 && <TipRow label="Failed" value={String(failed)} />}
+      </ChartTip>
+    );
+    highlight = (
+      <>
+        <rect
+          x={plotX(frame, at)}
+          y={PAD.top}
+          width={slot}
+          height={PLOT_HEIGHT}
+          fill="var(--foreground)"
+          fillOpacity={0.05}
+        />
+        <circle
+          cx={hx}
+          cy={y(median)}
+          r={4}
+          fill="var(--rr-go)"
+          stroke="var(--card)"
+          strokeWidth={1.5}
+        />
+      </>
+    );
+  }
 
   return (
     <Plot
@@ -432,33 +718,27 @@ function Dots({ points, metric, ...plot }: PlotProps & { points: ChartPoint[]; m
       tickText={tickText}
       onPointerMove={onPointerMove}
       onLeave={() => setHover(null)}
-      tip={
-        hover && (
-          <ChartTip x={hx} y={hy} width={frame.width}>
-            <p className="max-w-56 truncate font-medium">{hover.name}</p>
-            <p className="text-muted-foreground">
-              <span className="font-medium text-foreground tabular-nums">{tipText(hover)}</span>
-              {` · ${RESULT[hover.result].label} · ${timeAgo(hover.at)}`}
-            </p>
-          </ChartTip>
-        )
-      }
+      tip={tip}
     >
-      {marks}
-      {hover && (
-        <>
-          <circle
-            cx={hx}
-            cy={hy}
-            r={7}
-            fill="var(--card)"
-            stroke="var(--foreground)"
-            strokeOpacity={0.4}
-          />
-          <Mark result={hover.result} x={hx} y={hy} big />
-        </>
-      )}
+      {highlight}
+      {drawn}
     </Plot>
+  );
+}
+
+/** A bucket's day, or its span of hours. */
+const bucketText = (at: number, bucketMs: number) =>
+  bucketMs >= DAY_MS
+    ? zoneFormat(DAY_FORMAT).format(at)
+    : zoneFormat(BUCKET_FORMAT).formatRange(at, at + bucketMs);
+
+/** The legend's mark for a trend: a line through its band. */
+function TrendMark() {
+  return (
+    <svg aria-hidden viewBox="0 0 14 10" className="h-2.5 w-3.5">
+      <rect x={0} y={1} width={14} height={8} rx={1.5} {...BAND} />
+      <line x1={0} x2={14} y1={5} y2={5} {...LINE} />
+    </svg>
   );
 }
 
@@ -472,8 +752,7 @@ function Bars({ tallies, bucketMs, ...plot }: PlotProps & { tallies: Tally[]; bu
     for (let at = frame.start; at < frame.end; at += bucketMs)
       list.push({ at, total: 0, success: 0, failed: 0, cancelled: 0 });
     for (const tally of tallies) {
-      const index = Math.floor((tally.at - frame.start) / bucketMs);
-      const bucket = list[Math.min(Math.max(index, 0), list.length - 1)]!;
+      const bucket = list[bucketIndex(tally.at, frame.start, frame.end, bucketMs)]!;
       for (const result of RESULTS) {
         bucket[result] += tally[result];
         bucket.total += tally[result];
@@ -497,19 +776,14 @@ function Bars({ tallies, bucketMs, ...plot }: PlotProps & { tallies: Tally[]; bu
       tip={
         hover && (
           <ChartTip x={plotX(frame, hover.at) + slot / 2} y={PAD.top} width={frame.width}>
-            <p className="font-medium">
-              {bucketMs >= DAY_MS
-                ? zoneFormat(DAY_FORMAT).format(hover.at)
-                : zoneFormat(BUCKET_FORMAT).formatRange(hover.at, hover.at + bucketMs)}
-            </p>
+            <p className="font-medium">{bucketText(hover.at, bucketMs)}</p>
             {RESULTS.map((result) => (
-              <p key={result} className="flex items-center gap-1.5 text-muted-foreground">
-                <ResultMark result={result} />
-                {RESULT[result].label}
-                <span className="ml-auto pl-3 font-medium text-foreground tabular-nums">
-                  {hover[result]}
-                </span>
-              </p>
+              <TipRow
+                key={result}
+                mark={<ResultMark result={result} />}
+                label={RESULT[result].label}
+                value={String(hover[result])}
+              />
             ))}
           </ChartTip>
         )
@@ -549,20 +823,6 @@ function Bars({ tallies, bucketMs, ...plot }: PlotProps & { tallies: Tally[]; bu
       })}
     </Plot>
   );
-}
-
-/** A bar segment standing on `bottom`, with its top corners rounded. */
-function topRounded(x: number, bottom: number, width: number, height: number, r: number) {
-  const radius = Math.min(r, width / 2, height);
-  const top = bottom - height;
-  return [
-    `M${x} ${bottom}`,
-    `V${top + radius}`,
-    `Q${x} ${top} ${x + radius} ${top}`,
-    `H${x + width - radius}`,
-    `Q${x + width} ${top} ${x + width} ${top + radius}`,
-    `V${bottom}Z`,
-  ].join("");
 }
 
 function YAxis({
@@ -605,73 +865,47 @@ const BUCKET_FORMAT: Intl.DateTimeFormatOptions = {
   hour: "numeric",
 };
 
-/** Time labels along the bottom: every 6 hours for a day, else every day or two. */
-function XAxis({ frame, days }: { frame: Frame; days: number }) {
-  const stepMs = days <= 1 ? 6 * HOUR_MS : days <= 7 ? DAY_MS : 2 * DAY_MS;
-  const format = zoneFormat(stepMs < DAY_MS ? HOUR_FORMAT : DAY_FORMAT);
+/** Up to each span, the gap between time labels; past the last, two days. */
+const TICK_STEPS = [
+  [12 * HOUR_MS, 3 * HOUR_MS],
+  [2.5 * DAY_MS, 6 * HOUR_MS],
+  [9 * DAY_MS, DAY_MS],
+] as const;
+
+/**
+ * Time labels along the bottom, spaced for the span shown: every 3 or 6 hours, with the date at
+ * each midnight, or every day or two.
+ */
+function XAxis({ frame }: { frame: Frame }) {
+  const span = frame.end - frame.start;
+  const stepMs = TICK_STEPS.find(([upTo]) => span <= upTo)?.[1] ?? 2 * DAY_MS;
+  const hour = zoneFormat(HOUR_FORMAT);
+  const day = zoneFormat(DAY_FORMAT);
   const ticks: number[] = [];
   for (let at = floorTo(frame.start, stepMs) + stepMs; at < frame.end; at += stepMs) {
     // Daylight saving can shift a step off the hour; snap back to it.
     ticks.push(floorTo(at, Math.min(stepMs, DAY_MS)));
   }
-  // Labels too close to the edges or each other are dropped.
-  let last = -Infinity;
-  return ticks.map((at) => {
-    const x = plotX(frame, at);
-    if (x - last < 56 || x > frame.width - PAD.right - 16) return null;
-    last = x;
-    return (
-      <text
-        key={at}
-        x={x}
-        y={HEIGHT - 6}
-        textAnchor="middle"
-        className="fill-muted-foreground text-[10px] tabular-nums"
-      >
-        {format.format(at)}
-      </text>
-    );
-  });
-}
-
-/** A tooltip over the plot, kept inside it. */
-function ChartTip({
-  x,
-  y,
-  width,
-  children,
-}: {
-  x: number;
-  y: number;
-  width: number;
-  children: ReactNode;
-}) {
-  const right = x > width / 2;
-  return (
-    <div
-      role="status"
-      className="pointer-events-none absolute z-10 grid gap-0.5 rounded-md border bg-popover px-2.5 py-1.5 text-xs shadow-md"
-      style={{
-        top: Math.max(y - 12, 0),
-        ...(right ? { right: width - x + 12 } : { left: x + 12 }),
-      }}
+  const isDay = (at: number) => stepMs >= DAY_MS || startOfDay(at) === at;
+  // Labels too close to the edges or each other are dropped, dates last.
+  const kept: number[] = [];
+  for (const dates of [true, false])
+    for (const at of ticks) {
+      const x = plotX(frame, at);
+      if (isDay(at) !== dates || x > frame.width - PAD.right - 16) continue;
+      if (kept.every((other) => Math.abs(plotX(frame, other) - x) >= 56)) kept.push(at);
+    }
+  return kept.map((at) => (
+    <text
+      key={at}
+      x={plotX(frame, at)}
+      y={HEIGHT - 6}
+      textAnchor="middle"
+      className="fill-muted-foreground text-[10px] tabular-nums"
     >
-      {children}
-    </div>
-  );
-}
-
-function useWidth<T extends HTMLElement>() {
-  const ref = useRef<T>(null);
-  const [width, setWidth] = useState(0);
-  useLayoutEffect(() => {
-    const element = ref.current;
-    if (!element) return;
-    const observer = new ResizeObserver(() => setWidth(element.clientWidth));
-    observer.observe(element);
-    return () => observer.disconnect();
-  }, []);
-  return [ref, width] as const;
+      {(isDay(at) ? day : hour).format(at)}
+    </text>
+  ));
 }
 
 /** The hour or midnight at or before `at`, on a `stepMs` boundary (1, 6 or 12 hours, or a day). */
@@ -684,13 +918,11 @@ function countStep(max: number) {
     for (const step of [1, 2, 5]) if (step * scale * 3 >= max) return step * scale;
 }
 
-/** "30s", "5m", "1h 30m": the axis needs no seconds once it counts minutes. */
+/** "30s", "5m", "90m": the axis needs no seconds once it counts minutes, and never counts hours. */
 function axisTime(ms: number) {
   if (ms === 0) return "0";
   if (ms < 60_000) return `${ms / 1000}s`;
-  if (ms < HOUR_MS) return ms % 60_000 ? elapsed(ms) : `${ms / 60_000}m`;
-  const minutes = (ms % HOUR_MS) / 60_000;
-  return minutes ? `${Math.floor(ms / HOUR_MS)}h ${minutes}m` : `${ms / HOUR_MS}h`;
+  return ms % 60_000 ? elapsed(ms) : `${ms / 60_000}m`;
 }
 
 // 256 MB, 512 MB, 1 GB, 2 GB, 4 GB, ... with about three steps to the top.
@@ -700,7 +932,9 @@ function memoryStep(max: number) {
   return step;
 }
 
-/** Runs that finished, as chart points. */
+const UNNAMED = "Unnamed workflow";
+
+/** Runs that finished, as chart points, one group per workflow. */
 export const runPoints = (runs: Run[]): ChartPoint[] =>
   runs.flatMap((run) =>
     run.status === "completed" && run.wallMs !== null
@@ -710,13 +944,14 @@ export const runPoints = (runs: Run[]): ChartPoint[] =>
             at: run.updatedAt,
             ms: run.wallMs,
             result: resultOf(run.conclusion),
-            name: run.title ?? run.workflow ?? "Unnamed workflow",
+            name: run.title ?? run.workflow ?? UNNAMED,
+            group: run.workflow ?? UNNAMED,
           },
         ]
       : [],
   );
 
-/** Finished jobs, as chart points. */
+/** Finished jobs, as chart points, one group per job name. */
 export const jobPoints = (jobs: HistoryJob[]): ChartPoint[] =>
   jobs.map((job) => ({
     key: String(job.id),
@@ -724,5 +959,6 @@ export const jobPoints = (jobs: HistoryJob[]): ChartPoint[] =>
     ms: job.completedAt - job.startedAt,
     result: resultOf(job.conclusion),
     name: job.name,
+    group: job.name,
     usage: job.usage,
   }));

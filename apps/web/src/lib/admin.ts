@@ -1,3 +1,4 @@
+import type { Stickiness, StickinessState } from "@relayrunner/api-types";
 import type { CatalogProvider, ProviderStatus } from "@relayrunner/providers/catalog";
 import { api } from "@/lib/api";
 import type { Setup } from "@/lib/admin-setup";
@@ -35,28 +36,13 @@ export type AdminWorkspace = {
   jobs7d: number;
   /** How many of those ran on a machine. */
   machineJobs7d: number;
-  /** The latest job, from the 31 days of jobs kept. */
+  /** The latest job, from the 62 days of jobs kept. */
   lastJobAt: string | null;
-  /** Whether it stuck with the relay (apps/api/src/stickiness.ts), or null when it never relayed. */
+  /** Whether it stuck with the relay (apps/api/src/routing/stickiness.ts), or null when it never relayed. */
   stickiness: Stickiness | null;
 };
 
-export type StickinessState = "trying" | "adopted" | "trial_abandoned" | "removed";
-
-export type Stickiness = {
-  state: StickinessState;
-  /** When the workspace entered this state. */
-  since: string;
-  /** The workflow the state is about: the latest relayed, or the last one removed. */
-  repository: string;
-  workflow: string;
-  /** The branch that added the relay, while trying or after the trial was abandoned. */
-  branch: string | null;
-  lastRelayAt: string;
-  /** Removed: runs on up-to-date code without the relay since the last relay. */
-  runsWithout: number;
-  removedSeenAt: string | null;
-};
+export type { Stickiness, StickinessState };
 
 export function listUsers() {
   return api<{ users: AdminUser[] }>("/admin/users");
@@ -73,7 +59,7 @@ export function listWorkspaces() {
   return api<{ workspaces: AdminWorkspace[] }>("/admin/workspaces");
 }
 
-/** What an operator delete removed (apps/api/src/admin-delete.ts). */
+/** What an operator delete removed (apps/api/src/operator/admin-delete.ts). */
 export type DeletedWorkspace = {
   id: string;
   name: string;
@@ -235,7 +221,7 @@ export function removeProvider(id: string) {
 /** Jobs that finished, by result. */
 export type JobCounts = { success: number; failed: number; cancelled: number };
 
-/** Admin › Jobs (apps/api/src/job-counts.ts): finished jobs across every workspace. */
+/** Admin › Jobs (apps/api/src/ingest/job-counts.ts): finished jobs across every workspace. */
 export type JobCountReport = {
   days: number;
   totals: JobCounts;

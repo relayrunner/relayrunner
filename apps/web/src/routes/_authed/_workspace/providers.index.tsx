@@ -5,52 +5,96 @@ import { SectionBoundary } from "@/components/error-boundary";
 import { PageHeader } from "@/components/page-header";
 import { HostedRunnersTable } from "@/components/hosted-runners-table";
 import { ProviderMark } from "@/components/providers";
-import { RangePicker } from "@/components/range-picker";
+import { Change } from "@/components/change";
+import { TipRow } from "@/components/chart-parts";
+import { OptionPicker, TimeRangePicker } from "@/components/range-picker";
+import { Legend, seriesColor, StackedBars } from "@/components/stacked-bars";
 import { DataTable, dataTableColumns, NUM } from "@/components/ui/data-table";
 import { authDisabled } from "@/lib/auth-client";
-import { medianText, p90Text, plural } from "@/lib/job-times";
+import { DAY_MS, medianText, p90Text } from "@/lib/job-times";
 import { useProviderApps } from "@/lib/provider-apps";
 import { providerInfo } from "@/lib/provider-catalog";
 import {
-  dayRanges,
-  rangeParam,
+  optionParam,
+  type RangeSearch,
+  rangeSearch,
   unlessDefault,
   useRangeReport,
   useSetSearch,
 } from "@/lib/search-params";
 import {
+  type ChartPer,
   costText,
   getProvidersOverview,
+  PROVIDER_DEFAULT_RANGE,
+  PROVIDER_RANGES,
   type ProvidersOverview,
   type ProviderSummary,
   sampleProvidersOverview,
 } from "@/lib/providers";
+import { rangeDays, rangePhrase, resolveRange, type TimeRange } from "@/lib/time-range";
+import { startOfDay } from "@/lib/time-zone";
 
-const RANGES = dayRanges(1, 30);
+/** The overview, with where its range started, so its bars never meet another range's start. */
+type LoadedOverview = ProvidersOverview & { from: number };
 
-function load(days: number) {
-  return authDisabled ? Promise.resolve(sampleProvidersOverview(days)) : getProvidersOverview(days);
+async function load(range: TimeRange, per: ChartPer): Promise<LoadedOverview> {
+  const { from } = resolveRange(range);
+  const overview = authDisabled
+    ? sampleProvidersOverview(rangeDays(range), { per })
+    : await getProvidersOverview(range, { chart: per });
+  return { ...overview, from };
 }
 
-const DEFAULT_DAYS = 14;
-type Search = { days?: number };
-const validateSearch = (search: Record<string, unknown>): Search => ({
-  days: rangeParam(search.days, RANGES, DEFAULT_DAYS),
+const rangeParams = rangeSearch(PROVIDER_RANGES, PROVIDER_DEFAULT_RANGE);
+const { rangeOf, toSearch } = rangeParams;
+
+const PER_OPTIONS = [
+  { value: "day", label: "Daily" },
+  { value: "week", label: "Weekly" },
+] as const;
+
+type ProvidersSearch = RangeSearch & { per?: ChartPer };
+
+// Weekly bars, so week over week shows, once a range holds two weeks to compare; hourly bars over
+// a day or two, where a bar a day would say little; daily in between.
+const offersWeeks = (range: TimeRange) => rangeDays(range) >= 14;
+const hourly = (range: TimeRange) => {
+  const { from, to } = resolveRange(range);
+  return to - from <= 2 * DAY_MS;
+};
+function perOf(search: ProvidersSearch): ChartPer {
+  const range = rangeOf(search);
+  if (offersWeeks(range)) return search.per ?? "week";
+  return hourly(range) ? "hour" : "day";
+}
+
+// The range, and `?per=day` for daily bars over a range that offers weekly ones.
+const validateSearch = (search: Record<string, unknown>): ProvidersSearch => ({
+  ...rangeParams.validateSearch(search),
+  // The default first: optionParam drops it, so the URL only ever holds `?per=day`.
+  per: optionParam(search.per, ["week", "day"] as const),
 });
-const daysOf = (search: Search) => search.days ?? DEFAULT_DAYS;
 
 export const Route = createFileRoute("/_authed/_workspace/providers/")({
   validateSearch,
-  loader: ({ location }) => load(daysOf(validateSearch(location.search))),
+  loader: ({ location }) => {
+    const search = validateSearch(location.search);
+    return load(rangeOf(search), perOf(search));
+  },
   // A new range loads in the page, keeping the last one up meanwhile.
   shouldReload: ({ cause }) => cause !== "stay",
   component: ProvidersPage,
 });
 
 function ProvidersPage() {
-  const days = daysOf(Route.useSearch());
-  const setSearch = useSetSearch<Search>();
-  const overview: ProvidersOverview = useRangeReport(Route.useLoaderData(), days, load);
+  const search = Route.useSearch();
+  const range = rangeOf(search);
+  const per = perOf(search);
+  const setSearch = useSetSearch<ProvidersSearch>();
+  const overview: LoadedOverview = useRangeReport(Route.useLoaderData(), `${range} ${per}`, () =>
+    load(range, per),
+  );
   const { current } = Route.useRouteContext();
   const installed = useProviderApps(current.workspace.id);
   // Connected: the org installed the cloud's GitHub App, or a job ran on it in this range (GitHub
@@ -60,8 +104,11 @@ function ProvidersPage() {
     [installed, overview],
   );
 
-  function chooseRange(next: number) {
-    setSearch({ days: unlessDefault(next, DEFAULT_DAYS) });
+  // Last month reaches past what the API keeps for its trend.
+  const hasChange = overview.providers.some((p) => p.priorBilledMinutes !== null);
+
+  function chooseRange(next: TimeRange) {
+    setSearch(toSearch(next));
   }
 
   return (
@@ -74,23 +121,31 @@ function ProvidersPage() {
         <div className="grid gap-3">
           <div className="flex flex-wrap items-center justify-between gap-3">
             <h2 className="font-semibold">In use</h2>
-            <RangePicker ranges={RANGES} days={days} onChange={chooseRange} />
+            <TimeRangePicker {...PROVIDER_RANGES} value={range} onChange={chooseRange} />
           </div>
           {overview.providers.length === 0 ? (
             <p className="rounded-xl border border-dashed bg-card px-4 py-6 text-sm text-muted-foreground">
-              No jobs in this workspace ran on a provider in the last {plural(overview.days, "day")}
-              .
+              No jobs in this workspace ran on a provider in {rangePhrase(range)}.
             </p>
           ) : (
-            <SectionBoundary>
-              <DataTable
-                columns={inUseColumns}
-                data={overview.providers}
-                getRowId={(row) => row.provider}
-                initialSorting={[{ id: "jobs", desc: true }]}
-                rowHeight={53}
-              />
-            </SectionBoundary>
+            <>
+              <SectionBoundary>
+                <MinutesChart
+                  overview={overview}
+                  per={offersWeeks(range) ? per : null}
+                  onPer={(next) => setSearch({ per: unlessDefault(next, "week") })}
+                />
+              </SectionBoundary>
+              <SectionBoundary>
+                <DataTable
+                  columns={hasChange ? inUseColumns : withoutChange}
+                  data={overview.providers}
+                  getRowId={(row) => row.provider}
+                  initialSorting={[{ id: "jobs", desc: true }]}
+                  rowHeight={53}
+                />
+              </SectionBoundary>
+            </>
           )}
         </div>
 
@@ -113,6 +168,70 @@ function ProvidersPage() {
           .
         </p>
       </div>
+    </section>
+  );
+}
+
+/** Billed minutes against the window before, in whole percent, or null when unknown or tiny. */
+function minutesChange({ billedMinutes, priorBilledMinutes: prior }: ProviderSummary) {
+  if (prior === null || prior < 1) return null;
+  return Math.round(((billedMinutes - prior) / prior) * 100);
+}
+
+/** What a bar of `bucketMs` covers, for the chart's title. */
+const perText = (bucketMs: number) =>
+  bucketMs > DAY_MS ? "per week" : bucketMs < DAY_MS ? "per hour" : "per day";
+
+/**
+ * Each provider's billed minutes an hour, a day or a week at a time, stacked biggest first, so the
+ * bars show the volume and how it splits. `per` is null when the range is too short for weeks.
+ */
+function MinutesChart({
+  overview,
+  per,
+  onPer,
+}: {
+  /** Its `from` is the range's start: a first bar that began before it is only counted from there. */
+  overview: LoadedOverview;
+  per: ChartPer | null;
+  onPer: (per: ChartPer) => void;
+}) {
+  const series = useMemo(
+    () =>
+      overview.providers
+        .filter((p) => p.billedMinutes > 0)
+        .toSorted((a, b) => b.billedMinutes - a.billedMinutes)
+        .map((p, i) => ({
+          key: p.provider,
+          label: providerInfo(p.provider).name,
+          color: seriesColor(i),
+        })),
+    [overview],
+  );
+  // One bar says nothing a table row doesn't.
+  if (overview.buckets.length < 2 || series.length === 0) return null;
+  const title = `Billed minutes ${perText(overview.bucketMs)}`;
+  return (
+    <section className="grid gap-3 rounded-xl border bg-card p-4 sm:p-5">
+      <div className="flex flex-wrap items-start justify-between gap-3">
+        <div>
+          <h3 className="text-sm font-semibold">{title}</h3>
+          <p className="text-sm text-muted-foreground">Stacked by provider.</p>
+        </div>
+        {per && <OptionPicker label="Bars" options={PER_OPTIONS} value={per} onChange={onPer} />}
+      </div>
+      <StackedBars
+        buckets={overview.buckets.map((b) => ({
+          start: Math.max(b.start, startOfDay(overview.from)),
+          values: b.minutes,
+        }))}
+        bucketMs={overview.bucketMs}
+        series={series}
+        format={(minutes) => `${minutes.toLocaleString()} min`}
+        label={`${title} by provider`}
+        footer={(_, total) => <TipRow label="Total" value={`${total.toLocaleString()} min`} />}
+      />
+      <Legend series={series} />
     </section>
   );
 }
@@ -145,14 +264,31 @@ const inUseColumns = column.columns([
     header: "Billed minutes",
     sortFn: "basic",
     sortDescFirst: true,
-    meta: NUM,
+    meta: { ...NUM, hideOnPhone: true },
     cell: ({ getValue }) => getValue().toLocaleString(),
+  }),
+  column.accessor((row) => minutesChange(row) ?? undefined, {
+    id: "change",
+    header: "Change",
+    sortFn: "basic",
+    sortDescFirst: true,
+    meta: {
+      ...NUM,
+      hideOnPhone: true,
+      info: "Billed minutes against as long a stretch just before, or the same days last week or month.",
+    },
+    cell: ({ row }) =>
+      row.original.priorBilledMinutes === 0 && row.original.billedMinutes > 0 ? (
+        "New"
+      ) : (
+        <Change value={minutesChange(row.original)} />
+      ),
   }),
   column.accessor((row) => row.stat.medianMs ?? undefined, {
     id: "typical",
     header: "Typical job",
     sortFn: "basic",
-    meta: NUM,
+    meta: { ...NUM, hideOnPhone: true },
     cell: ({ row }) => (
       <span title={p90Text(row.original.stat)}>{medianText(row.original.stat)}</span>
     ),
@@ -165,3 +301,6 @@ const inUseColumns = column.columns([
     cell: ({ row }) => costText(row.original),
   }),
 ]);
+
+// Last month has no trend: the month before it is past what the API keeps.
+const withoutChange = inUseColumns.filter((c) => c.id !== "change");

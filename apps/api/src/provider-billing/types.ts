@@ -1,6 +1,7 @@
 // What every provider adapter returns, and the HTTP plumbing they share. Each adapter talks to one
 // provider's public API with the workspace's read-only token and turns its answer into these rows;
-// src/provider-sync.ts stores them.
+// src/providers/provider-sync.ts stores them.
+import type { CliRequest, CliResponse } from "@relayrunner/blacksmith-cli/protocol";
 
 /** One job the provider ran, keyed by GitHub's job id. */
 export interface JobUsage {
@@ -45,6 +46,11 @@ export interface AdapterContext {
   token: string;
   options: Record<string, string>;
   fetch: typeof fetch;
+  /**
+   * Runs a provider's own CLI in a container, for providers without a usable API (Blacksmith).
+   * Missing where no container is bound, such as in tests that don't stub one.
+   */
+  cli?: (request: CliRequest) => Promise<CliResponse>;
 }
 
 /** The provider refused the token: it's wrong, revoked or lacks the scope. */
@@ -61,7 +67,10 @@ export async function requestJson<T>(
   url: string,
   init: { method?: string; headers?: Record<string, string>; body?: string } = {},
 ): Promise<T> {
-  const response = await ctx.fetch(url, {
+  // Called unbound: as `ctx.fetch(...)` the Workers runtime's fetch throws "Illegal invocation",
+  // since its `this` would be the context object.
+  const send = ctx.fetch;
+  const response = await send(url, {
     method: init.method ?? "GET",
     headers: { authorization: `Bearer ${ctx.token}`, accept: "application/json", ...init.headers },
     body: init.body,

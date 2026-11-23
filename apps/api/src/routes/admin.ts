@@ -2,26 +2,26 @@
  * Operator admin over D1: every user and workspace, and who is an operator. Needs Cloudflare Access
  * (app.ts) and an operator session. Grant the first operator with SQL
  * (docs/cloudflare-access.md); after that, operators grant each other here. The deletes are for
- * repeating new-user signup and onboarding tests (src/admin-delete.ts).
+ * repeating new-user signup and onboarding tests (src/operator/admin-delete.ts).
  */
 import { count, desc, eq } from "drizzle-orm";
 import { Hono } from "hono";
 import { z } from "zod";
-import { machineMilestones, workspaceJobs } from "../admin-adoption.ts";
-import { ROUTING_RANGES, type RoutingRange, routingHealth } from "../admin-routing.ts";
-import { deleteUser, deleteWorkspaces } from "../admin-delete.ts";
+import { machineMilestones, workspaceJobs } from "../operator/admin-adoption.ts";
+import { ROUTING_RANGES, type RoutingRange, routingHealth } from "../operator/admin-routing.ts";
+import { deleteUser, deleteWorkspaces } from "../operator/admin-delete.ts";
 import type { AppEnv } from "../app.ts";
 import { createDb, schema } from "../db/index.ts";
-import { internalWorkspaceIds } from "../internal-workspaces.ts";
-import { workspaceStickiness } from "../stickiness.ts";
-import { JOB_COUNT_RANGES, jobCountReport } from "../job-counts.ts";
-import { parseGithubIds } from "../operator-pings.ts";
+import { internalWorkspaceIds } from "../operator/internal-workspaces.ts";
+import { workspaceStickiness } from "../routing/stickiness.ts";
+import { JOB_COUNT_RANGES, jobCountReport } from "../ingest/job-counts.ts";
+import { parseGithubIds } from "../operator/operator-pings.ts";
 import { requireOperator, who } from "../middleware/admin.ts";
 import { requireUser } from "../middleware/session.ts";
 import { adminAiRoutes } from "./admin-ai.ts";
 import { adminPriceRoutes } from "./admin-prices.ts";
 import { adminProviderRoutes } from "./admin-providers.ts";
-import { USER_ROLES } from "../roles.ts";
+import { USER_ROLES } from "../auth/roles.ts";
 import { AppError } from "@relayrunner/errors";
 
 const RoleBody = z.object({ role: z.enum(USER_ROLES).nullable() });
@@ -47,7 +47,7 @@ export const adminRoutes = new Hono<AppEnv>()
   .route("/ai", adminAiRoutes)
   .route("/prices", adminPriceRoutes)
   .route("/providers", adminProviderRoutes)
-  // Routing health across workspaces (src/admin-routing.ts), over the last 24 hours or 7 days.
+  // Routing health across workspaces (src/operator/admin-routing.ts), over the last 24 hours or 7 days.
   .get("/routing", async (c) => {
     const range = (c.req.query("range") ?? "24h") as RoutingRange;
     if (!Object.hasOwn(ROUTING_RANGES, range)) throw new AppError("INVALID_REQUEST");

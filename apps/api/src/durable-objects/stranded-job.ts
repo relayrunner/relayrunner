@@ -1,24 +1,24 @@
 import { DurableObject } from "cloudflare:workers";
 import { createDb } from "../db/index.ts";
 import type { Env } from "../env.ts";
-import { appInstallationToken, deleteRunner } from "../github-app.ts";
-import { installationRunnerScope } from "../installations.ts";
-import { mintRepoFirst } from "../repo-runner.ts";
-import { routeLabel } from "../routing.ts";
+import { appInstallationToken, deleteRunner } from "../github/github-app.ts";
+import { installationRunnerScope } from "../github/installations.ts";
+import { mintRepoFirst } from "../routing/repo-runner.ts";
+import { routeLabel } from "../routing/routing.ts";
 import {
   decodeJitConfig,
   latestRunnerVersion,
   RunnerClient,
   waitForJob,
-} from "../runner-protocol.ts";
+} from "../routing/runner-protocol.ts";
 import {
   jobStillQueued,
   STRANDED_MESSAGES,
   strandedRunnerName,
   type StrandedReason,
-} from "../stranded-jobs.ts";
+} from "../routing/stranded-jobs.ts";
 import { traced } from "../tracing.ts";
-import { errorMessage } from "../webhook-queue.ts";
+import { errorMessage } from "../errors.ts";
 
 export interface StrandedWork {
   routeId: string;
@@ -31,15 +31,16 @@ export interface StrandedWork {
 // How long the runner waits for GitHub to offer it the job.
 const WAIT_FOR_JOB_MS = 2 * 60_000;
 
-// One per route whose job no machine can take (src/stranded-jobs.ts), addressed by route id. Acts
+// One per route whose job no machine can take (src/routing/stranded-jobs.ts), addressed by route id. Acts
 // as a one-job runner on the route's label: claims the job and fails it with the reason, so the
 // run finishes now instead of sitting queued for 24 hours, and automatic retries can pick again.
 export class StrandedJob extends DurableObject<Env> {
-  // Idempotent: the job is only ended once.
-  async start(work: StrandedWork): Promise<void> {
-    if (await this.ctx.storage.get("started")) return;
+  // Idempotent: the job is only ended once. True when this call started it.
+  async start(work: StrandedWork): Promise<boolean> {
+    if (await this.ctx.storage.get("started")) return false;
     await this.ctx.storage.put({ started: true, work });
     await this.ctx.storage.setAlarm(Date.now());
+    return true;
   }
 
   async alarm() {

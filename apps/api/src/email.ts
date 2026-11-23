@@ -7,17 +7,20 @@
 import {
   renderFeedbackEmail,
   renderDeadLetterAlertEmail,
+  renderHealthAlertEmail,
+  renderIntegrationProblemEmail,
   renderMachineConnectedEmail,
   renderMachineTakenOverEmail,
   renderPriceCheckEmail,
   renderWelcomeEmail,
   type ConnectionPlace,
   type RenderedEmail,
+  type WorkspaceProblem,
 } from "@relayrunner/email";
 import { providerName, rateText } from "@relayrunner/providers";
 import type { Env } from "./env.ts";
 import { createDb } from "./db/index.ts";
-import type { DistributiveOmit } from "./machines.ts";
+import type { DistributiveOmit } from "./machines/machines.ts";
 import { isNotificationType, operatorRecipients, wantsEmail } from "./notifications.ts";
 
 // send.relayrunner.app is the domain onboarded for Email Sending. Keep EMAIL_FROM inside the
@@ -48,6 +51,16 @@ export type EmailArgs = (
       };
     }
   | { to: string; template: "dead-letter-alert"; context: { count: number; threshold: number } }
+  | {
+      to: string;
+      template: "integration-problem";
+      context: WorkspaceProblem & { workspace: string; reminder: boolean };
+    }
+  | {
+      to: string;
+      template: "health-alert";
+      context: Parameters<typeof renderHealthAlertEmail>[0];
+    }
   | {
       to: string;
       template: "price-check";
@@ -90,6 +103,10 @@ function render(env: Env, args: EmailArgs): RenderedEmail {
         ...args.context,
         inspectorUrl: `${dashboard}/admin/webhooks`,
       });
+    case "integration-problem":
+      return renderIntegrationProblemEmail({ ...args.context, dashboardUrl: dashboard });
+    case "health-alert":
+      return renderHealthAlertEmail(args.context);
     case "price-check":
       return renderPriceCheckEmail({
         changes: args.context.changes.map(({ provider, rate, usd, from }) => ({
@@ -153,7 +170,7 @@ function message(error: unknown) {
 
 type OperatorEmail = Extract<
   EmailArgs,
-  { template: "feedback" | "dead-letter-alert" | "price-check" }
+  { template: "feedback" | "dead-letter-alert" | "health-alert" | "price-check" }
 >;
 
 /**

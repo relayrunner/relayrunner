@@ -2,11 +2,12 @@
 // account, verification), then the organization plugin's, renamed to workspaces (see auth.ts).
 // Gateway tables (installations and their repos, then machines and routes) follow. After changing anything
 // here, run `pnpm db:generate` to write a new migration.
-import type { MachineSharing } from "@relayrunner/activity";
+import { JOB_LOG_CHOICES, type MachineSharing } from "@relayrunner/activity";
 import type { JobUsage } from "@relayrunner/machine-protocol";
 import type { HostedProviderId } from "@relayrunner/providers";
 import type { ProviderStatus } from "@relayrunner/providers/catalog";
 import type { RetryRunner } from "@relayrunner/runner-order";
+import type { StepTime } from "../reports/step-phases.ts";
 import { sql } from "drizzle-orm";
 import {
   type AnySQLiteColumn,
@@ -38,7 +39,7 @@ export const user = sqliteTable("user", {
   // Global role, separate from per-workspace member roles. "operator" sees the dashboard's Admin
   // section. Null for everyone else. Granted by SQL for now (docs/cloudflare-access.md).
   role: text("role"),
-  // When their workspace memberships were last read from GitHub (src/memberships.ts), so the
+  // When their workspace memberships were last read from GitHub (src/github/memberships.ts), so the
   // dashboard's workspace list only asks GitHub every few minutes.
   installationsSyncedAt: integer("installations_synced_at", { mode: "timestamp_ms" }),
   // The Terms of Service and Privacy Policy versions they last agreed to, and when
@@ -111,7 +112,7 @@ export const verification = sqliteTable(
 // mirrored from GitHub: it connects many GitHub App installations and owns the machine fleet.
 // A workspace is one GitHub App installation (#315): installing the App on an account or org makes
 // its workspace, and uninstalling deletes it with everything under it. Name, slug and logo follow
-// the account's login and avatar (src/installations.ts ensureWorkspace). Users can't create one.
+// the account's login and avatar (src/github/installations.ts ensureWorkspace). Users can't create one.
 export const workspace = sqliteTable(
   "workspace",
   {
@@ -127,10 +128,10 @@ export const workspace = sqliteTable(
     // JSON RunnerOrder (@relayrunner/runner-order). Null means the default order.
     runnerOrder: text("runner_order"),
     // JSON RetrySettings (@relayrunner/runner-order): automatic retries of jobs whose runner failed
-    // (src/retries.ts). Null means off.
+    // (src/routing/retries.ts). Null means off.
     retrySettings: text("retry_settings"),
     // Whether the Router skips a hosted runner type that stopped picking up jobs
-    // (src/provider-health.ts). On unless someone turns it off on the Router page.
+    // (src/routing/provider-health.ts). On unless someone turns it off on the Router page.
     skipUnhealthyRunners: integer("skip_unhealthy_runners", { mode: "boolean" })
       .notNull()
       .default(true),
@@ -201,14 +202,14 @@ export const workspaceInvitation = sqliteTable(
 
 // A GitHub App installation (an org or a personal account). The installation id is the primary
 // key, and its workspace points back here (workspace.installation_id), one each. Rows are written
-// by the Setup URL callback and by installation webhooks (src/installations.ts); deleting one
+// by the Setup URL callback and by installation webhooks (src/github/installations.ts); deleting one
 // deletes its workspace.
 export const githubInstallation = sqliteTable("github_installation", {
   id: integer("id").primaryKey({ autoIncrement: false }),
   accountId: integer("account_id").notNull(),
   accountLogin: text("account_login").notNull(),
   // 'Organization', 'User' or 'Enterprise', as GitHub reports it. An Enterprise install only
-  // reads its enterprise's billing (src/enterprise.ts): it has no workspace, repos or webhooks, and
+  // reads its enterprise's billing (src/github/enterprise.ts): it has no workspace, repos or webhooks, and
   // its account_login is the enterprise's slug.
   accountType: text("account_type").notNull(),
   // 'all' or 'selected': whether the App sees every repo in the account or a chosen list.
@@ -219,7 +220,7 @@ export const githubInstallation = sqliteTable("github_installation", {
   // never overwrites a newer one.
   githubStateAt: integer("github_state_at", { mode: "timestamp_ms" }),
   // The GitHub user id of whoever installed the App (the `installation.created` webhook's sender).
-  // They're the workspace's owner (src/memberships.ts). Null for installs from before #317.
+  // They're the workspace's owner (src/github/memberships.ts). Null for installs from before #317.
   installerGithubId: integer("installer_github_id"),
   ...timestamps,
 });
@@ -240,7 +241,7 @@ export const githubEnterpriseOrganization = sqliteTable("github_enterprise_organ
 // A repository an installation can see, mirrored from GitHub so activity can name its repo and
 // tell public from private. RelayRunner doesn't manage repos and there is no opt-in: a job that
 // asks for `runs-on: relayrunner` from a connected installation is the opt-in. Rows are written by
-// webhooks (src/repositories.ts) and go away with their installation.
+// webhooks (src/github/repositories.ts) and go away with their installation.
 export const githubRepository = sqliteTable(
   "github_repository",
   {
@@ -279,7 +280,7 @@ export const deviceCode = sqliteTable("device_code", {
   pollingInterval: integer("polling_interval"),
   clientId: text("client_id"),
   scope: text("scope"),
-  // Where the CLI asked for the code from (src/device-origin.ts), so the approval page can show it
+  // Where the CLI asked for the code from (src/machines/device-origin.ts), so the approval page can show it
   // and warn when it's far from whoever approves. Null when the request didn't say.
   requestIp: text("request_ip"),
   requestCountry: text("request_country"),
@@ -299,7 +300,7 @@ export const deviceCode = sqliteTable("device_code", {
 //   enrollment_hash stay null. It is the org's, so it belongs to its installation's one workspace
 //   (workspace_id) and goes with it; user_id is null.
 //
-// For 'connect' machines: Enrollment runs in two steps (src/machines.ts):
+// For 'connect' machines: Enrollment runs in two steps (src/machines/machines.ts):
 // approving the device code in the dashboard creates the row with enrollment_hash set, and the
 // CLI's claim fills in os/arch and token_hash and clears enrollment_hash. Revoking keeps the row
 // so past routes can still name the machine. Pausing (paused_at) keeps it out of routing only.
@@ -337,9 +338,9 @@ export const machine = sqliteTable(
     pausedBy: text("paused_by").references(() => user.id, { onDelete: "set null" }),
     // 'connect' or 'github' (above).
     source: text("source").notNull().default("connect"),
-    // Whose jobs it takes (MACHINE_SHARING, #237): 'only_me' (only jobs its owner, userId,
-    // started) or 'anyone'. One setting for every workspace the machine is in. Only the owner
-    // changes it. Connected machines start as 'only_me';
+    // Whose jobs it takes (MACHINE_SHARING, #237): 'only_me' (only jobs of runs its owner,
+    // userId, started, re-runs included) or 'anyone'. One setting for every workspace the machine
+    // is in. Only the owner changes it. Connected machines start as 'only_me';
     // runners added from GitHub are the org's shared runners and start as 'anyone'.
     sharing: text("sharing").$type<MachineSharing>().notNull().default("only_me"),
     // 'github' only: the installation whose org the runner is registered in, GitHub's runner id,
@@ -387,7 +388,7 @@ export const machine = sqliteTable(
 
 // Which workspaces a connected machine takes jobs in (#363). Its owner picks them on /device, from
 // the Runners page and with `relayrunner workspaces`. A row only counts while the owner is still a
-// member there (src/machines.ts inWorkspace), and membership sync deletes the rows for a workspace
+// member there (src/machines/machines.ts inWorkspace), and membership sync deletes the rows for a workspace
 // the owner leaves. Adopted GitHub runners don't use this: they have machine.workspace_id.
 export const machineWorkspace = sqliteTable(
   "machine_workspace",
@@ -412,8 +413,8 @@ export const machineWorkspace = sqliteTable(
 // is ours once its `runs-on: relayrunner` pick job arrives (kind 'pick'). Every other job in that
 // run is stored too (kind 'job'): those are the real work, and GitHub has already resolved their
 // `runs-on` to the pick's answer, so `labels` is the runner RelayRunner selected. Jobs from runs
-// with no pick are never stored. Rows are written by workflow_job webhooks (src/jobs.ts) and go
-// away with their installation, or after 90 days (src/retention.ts).
+// with no pick are never stored. Rows are written by workflow_job webhooks (src/ingest/jobs.ts) and go
+// away with their installation, or after 90 days (src/ingest/retention.ts).
 export const workflowJob = sqliteTable(
   "workflow_job",
   {
@@ -456,7 +457,7 @@ export const workflowJob = sqliteTable(
   (table) => [
     index("workflow_job_installation_idx").on(table.installationId, table.id),
     index("workflow_job_run_idx").on(table.runId, table.kind),
-    // The pick sweep's recent picks (src/pick-sweep.ts).
+    // The pick sweep's recent picks (src/routing/pick-sweep.ts).
     index("workflow_job_kind_created_idx").on(table.kind, table.githubCreatedAt),
     // The jobs each machine is running, and clearing machine_id when a machine is deleted.
     index("workflow_job_machine_idx")
@@ -465,7 +466,7 @@ export const workflowJob = sqliteTable(
   ],
 );
 
-// Every job in a connected repo, whatever runner took it (src/job-timings.ts). While a job is
+// Every job in a connected repo, whatever runner took it (src/ingest/job-timings.ts). While a job is
 // queued or running (completed_at null) the Runs page shows it live; once it finishes the usage
 // report counts it: how many jobs finished in under a minute and what GitHub's round-up to whole
 // minutes cost. Unlike workflow_job, this keeps jobs RelayRunner never saw a pick for. Written by
@@ -492,9 +493,9 @@ export const jobTiming = sqliteTable(
     runnerName: text("runner_name"),
     // With labels, decides the job's GitHub rate when the report is read (runnerClass).
     runnerGroupName: text("runner_group_name"),
-    // The machine a route sent the job to, set with workflow_job's by setJobMachine (src/jobs.ts),
+    // The machine a route sent the job to, set with workflow_job's by setJobMachine (src/ingest/jobs.ts),
     // since the job's `rr-<route id>` label stops naming a machine once the route goes. Job times
-    // (src/job-times.ts) report it as its own environment.
+    // (src/reports/environments.ts) report it as its own environment.
     machineId: text("machine_id"),
     // When GitHub queued the job, for the wait before a runner took it.
     queuedAt: integer("queued_at", { mode: "timestamp_ms" }),
@@ -508,6 +509,10 @@ export const jobTiming = sqliteTable(
     // GitHub sent no steps, or none failed.
     ranSteps: integer("ran_steps", { mode: "boolean" }),
     failedStep: text("failed_step"),
+    // Each step that ran, as [name, seconds], from the `completed` webhook. Read with
+    // src/reports/step-phases.ts to split a job's time into setup, checkout, installs, cache and work. Null
+    // when GitHub sent no steps.
+    steps: text("steps", { mode: "json" }).$type<StepTime[]>(),
     ...timestamps,
   },
   (table) => [
@@ -537,7 +542,7 @@ export const jobTiming = sqliteTable(
 );
 
 // Finished jobs past job_timing's raw retention, summed per UTC day and per the columns the usage
-// report groups by (src/job-timings.ts), so its 90-day range costs a row per day and runner kind
+// report groups by (src/ingest/job-timings.ts), so its 90-day range costs a row per day and runner kind
 // rather than a row per job. The hourly cron moves each day out of job_timing in one transaction,
 // so a job is counted in one table or the other, never both. Purged once past the report's range.
 export const jobTimingDaily = sqliteTable(
@@ -574,7 +579,7 @@ export const jobTimingDaily = sqliteTable(
   ],
 );
 
-// How many jobs finished, by result, for Admin › Jobs (src/job-counts.ts). Each job is counted
+// How many jobs finished, by result, for Admin › Jobs (src/ingest/job-counts.ts). Each job is counted
 // once, when job_timing first sees it finish, into three rollups so no read grows with jobs, and
 // the chart's doesn't grow with installations either: every installation per hour, each
 // installation per hour, and each installation per day. Kept as long as job_timing_daily.
@@ -622,7 +627,7 @@ export const jobCountDay = sqliteTable(
 );
 
 // How long jobs waited for a hosted runner to take them, per UTC day, runner and installation,
-// counted once when job_timing first records a job finished (src/runner-waits.ts). Kept past
+// counted once when job_timing first records a job finished (src/ingest/runner-waits.ts). Kept past
 // job_timing's raw retention so a public comparison of runners (#492) can later report medians
 // and the share started within a minute over any range, and only show a runner once enough
 // installations used it. Holds no repo, workflow or label text: a runner is its provider, platform
@@ -678,7 +683,7 @@ export const runnerWaitDay = sqliteTable(
 );
 
 // What each GitHub account spent on each priced hosted provider per UTC calendar month, at list
-// prices, counted once when job_timing first records a job finished (src/provider-spend.ts). A
+// prices, counted once when job_timing first records a job finished (src/providers/provider-spend.ts). A
 // hosted step with a spend limit reads its row when it's reached, so the check is one key lookup.
 // Months that start before JOB_TIMING_RETENTION_DAYS are purged hourly.
 export const providerSpendMonth = sqliteTable(
@@ -702,7 +707,7 @@ export const providerSpendMonth = sqliteTable(
 );
 
 // One attempt of a GitHub Actions workflow run in a connected repo, from workflow_run webhooks
-// (src/runs.ts), for the Runs page: what started it and how it ended. Its jobs' times come from
+// (src/reports/runs.ts), for the Runs page: what started it and how it ended. Its jobs' times come from
 // job_timing. Purged with job_timing, and goes away with its installation.
 export const workflowRun = sqliteTable(
   "workflow_run",
@@ -750,13 +755,13 @@ export const workflowRun = sqliteTable(
     index("workflow_run_installation_idx").on(table.installationId, table.githubUpdatedAt),
     // The retention purge, across all installations.
     index("workflow_run_updated_idx").on(table.githubUpdatedAt),
-    // Signals (src/signals.ts): newer runs on the same branch, and the same commit's other runs.
+    // Signals (src/reports/signals.ts): newer runs on the same branch, and the same commit's other runs.
     index("workflow_run_branch_idx").on(table.repositoryId, table.headBranch, table.runStartedAt),
     index("workflow_run_sha_idx").on(table.repositoryId, table.headSha),
   ],
 );
 
-// What the Signals page reports (src/signals.ts), summed per UTC day, repo and subject (a workflow,
+// What the Signals page reports (src/reports/signals.ts), summed per UTC day, repo and subject (a workflow,
 // or a workflow's job), so its 90-day range reads a few rows per day instead of every run. The
 // hourly cron recomputes each active installation's current day from job_timing and
 // workflow_run, so a late webhook still lands. Purged with job_timing_daily, and gone with the
@@ -796,7 +801,7 @@ export const signalDay = sqliteTable(
   ],
 );
 
-// The parts of the repo a pull request changes (src/pull-request-paths.ts), for the Signals page:
+// The parts of the repo a pull request changes (src/checks/pull-request-paths.ts), for the Signals page:
 // its files' top folders, and whether every file is docs. One row per pull request, read again
 // when a newer run's head commit differs from the one read. Purged with signal_day, and gone with
 // the installation.
@@ -824,7 +829,7 @@ export const pullRequestPaths = sqliteTable(
   ],
 );
 
-// An automatic retry (src/retries.ts): RelayRunner re-ran the relay of a run attempt whose routed
+// An automatic retry (src/routing/retries.ts): RelayRunner re-ran the relay of a run attempt whose routed
 // job its runner failed, so the next attempt picks again. One row per retried attempt, written
 // before the re-run is asked for, so a redelivered webhook can never retry twice. The next
 // attempt's pick reads it to place the retry and keep the original attempt's starter.
@@ -868,9 +873,9 @@ export const jobRetry = sqliteTable(
 );
 
 // The workspace's audit log for the Activity page: one append-only row per event, typed by
-// @relayrunner/activity (src/activity.ts writes and reads it). `data` holds the type's own fields
+// @relayrunner/activity (src/reports/activity.ts writes and reads it). `data` holds the type's own fields
 // as JSON. The id increases with time, so it orders the log and pages it. Rows go with their
-// workspace or after 90 days (src/retention.ts), and a job's event goes with its workflow_job row.
+// workspace or after 90 days (src/ingest/retention.ts), and a job's event goes with its workflow_job row.
 export const activityEvent = sqliteTable(
   "activity_event",
   {
@@ -897,7 +902,7 @@ export const activityEvent = sqliteTable(
     uniqueIndex("activity_event_job_idx").on(table.jobId, table.type),
     // One type over a time range, such as the free checks the Usage page sums.
     index("activity_event_type_idx").on(table.workspaceId, table.type, table.occurredAt),
-    // One type over a time range across every workspace, for operator pings (src/operator-pings.ts).
+    // One type over a time range across every workspace, for operator pings (src/operator/operator-pings.ts).
     index("activity_event_type_time_idx").on(table.type, table.occurredAt),
     // Clearing machine_id when a machine is deleted.
     index("activity_event_machine_idx")
@@ -908,7 +913,7 @@ export const activityEvent = sqliteTable(
 
 // Each job whose relay hands its runner to the Router (`blacksmith: auto`, or no inputs), by its
 // repo, workflow file and relay job, with what the Router page set for it. A pick of such a job adds
-// or touches its row (src/auto-jobs.ts), so the Router page lists the jobs it can size. Rows go with
+// or touches its row (src/routing/auto-jobs.ts), so the Router page lists the jobs it can size. Rows go with
 // their workspace.
 export const autoJob = sqliteTable(
   "auto_job",
@@ -931,6 +936,8 @@ export const autoJob = sqliteTable(
     first: text("first"),
     updatedBy: text("updated_by").references(() => user.id, { onDelete: "set null" }),
     updatedAt: integer("updated_at", { mode: "timestamp_ms" }),
+    // The job's last pick. 0 for a size saved before the job's repo routed (planAutoJobs), which
+    // keeps it off the Router page until its first pick.
     lastSeenAt: integer("last_seen_at", { mode: "timestamp_ms" }).notNull(),
   },
   (table) => [
@@ -943,11 +950,34 @@ export const autoJob = sqliteTable(
   ],
 );
 
-// How each pick walked its workspace's runner order (src/routing.ts decideRoute), one row per run
-// attempt, so the Activity page can say why a run's jobs went where they did. Written by the
-// PickRunner when it answers. A re-run of failed jobs reuses an earlier attempt's pick, so a job
-// reads the newest row at or before its own attempt. Rows go with their workspace, or after 90 days
-// (src/retention.ts).
+// A repository's own runner order (#709), which its jobs walk instead of the workspace's
+// (workspace.runner_order). A full copy, not changes to the workspace's: editing the workspace's
+// order leaves it as it is. Caps still count the GitHub account's minutes and spend, shared with the
+// workspace's other repositories (src/routing/runner-orders.ts). Removing the row puts the repository back
+// on the workspace's order.
+export const repoRunnerOrder = sqliteTable(
+  "repo_runner_order",
+  {
+    workspaceId: text("workspace_id")
+      .notNull()
+      .references(() => workspace.id, { onDelete: "cascade" }),
+    // GitHub's repository id, stable across renames, and its owner/name when the order was saved.
+    repositoryId: integer("repository_id").notNull(),
+    repository: text("repository").notNull(),
+    // JSON RunnerOrder (@relayrunner/runner-order).
+    runnerOrder: text("runner_order").notNull(),
+    updatedBy: text("updated_by").references(() => user.id, { onDelete: "set null" }),
+    updatedAt: integer("updated_at", { mode: "timestamp_ms" }).notNull(),
+  },
+  (table) => [primaryKey({ columns: [table.workspaceId, table.repositoryId] })],
+);
+
+// How each pick walked its workspace's runner order (src/routing/routing.ts decideRoute), one row per pick
+// (a run attempt can have several relay jobs, each routing its own job), so the Activity page can
+// say why a run's jobs went where they did. Written by the PickRunner when it answers. A re-run of
+// failed jobs reuses an earlier attempt's picks, so a job reads the newest row at or before its own
+// attempt, matched by the label it runs on. Rows go with their workspace, or after 90 days
+// (src/ingest/retention.ts).
 export const routeDecision = sqliteTable(
   "route_decision",
   {
@@ -958,6 +988,9 @@ export const routeDecision = sqliteTable(
     repositoryId: integer("repository_id").notNull(),
     runId: integer("run_id").notNull(),
     runAttempt: integer("run_attempt").notNull(),
+    // The relay job the pick answered, by the runner protocol's job id, so a redelivered pick keeps
+    // its first decision and each relay of an attempt keeps its own. Null before #661.
+    pickJobId: text("pick_job_id"),
     // The provider that took the run (a runner order key: 'machine', 'github', 'depot' and so on), or
     // null when nothing fit.
     step: text("step"),
@@ -970,6 +1003,9 @@ export const routeDecision = sqliteTable(
       .notNull(),
     // Providers the relay set that the order leaves out.
     notInOrder: text("not_in_order", { mode: "json" }).$type<string[]>().notNull(),
+    // Whether the walk was the repo's own runner order (repo_runner_order) instead of the
+    // workspace's. False before #709.
+    ownOrder: integer("own_order", { mode: "boolean" }).notNull().default(false),
     // The relay's `machine` and `github` inputs, and each hosted provider's input it set, by id.
     machine: text("machine", { mode: "json" }).$type<string[]>().notNull(),
     github: text("github", { mode: "json" }).$type<string[]>().notNull(),
@@ -993,17 +1029,24 @@ export const routeDecision = sqliteTable(
       .$defaultFn(() => new Date()),
   },
   (table) => [
-    uniqueIndex("route_decision_run_idx").on(table.repositoryId, table.runId, table.runAttempt),
-    // Operator pings (src/operator-pings.ts): the decisions made in a window, and whether a
-    // workspace had a run on a machine before. Admin › Workspaces (src/admin-adoption.ts): each
+    uniqueIndex("route_decision_pick_idx").on(
+      table.repositoryId,
+      table.runId,
+      table.runAttempt,
+      table.pickJobId,
+    ),
+    // Operator pings (src/operator/operator-pings.ts): the decisions made in a window, and whether a
+    // workspace had a run on a machine before. Admin › Workspaces (src/operator/admin-adoption.ts): each
     // workspace's first run on a machine, read from the index alone.
     index("route_decision_created_idx").on(table.createdAt),
     index("route_decision_step_workspace_idx").on(table.step, table.workspaceId, table.createdAt),
+    // The Router page's routing outcomes (src/reports/route-outcomes.ts): a workspace's decisions in a window.
+    index("route_decision_workspace_idx").on(table.workspaceId, table.createdAt),
   ],
 );
 
 // GitHub Actions usage this billing cycle from each org's billing usage report (#116,
-// src/actions-billing.ts): one row per installation, cycle, repo and SKU, summed over the cycle's
+// src/providers/actions-billing.ts): one row per installation, cycle, repo and SKU, summed over the cycle's
 // days and replaced on every poll. Keyed by installation, never workspace, because each GitHub
 // account has its own included quota.
 export const actionsUsage = sqliteTable(
@@ -1038,7 +1081,7 @@ export const actionsUsage = sqliteTable(
 );
 
 // Which GitHub accounts installed the opt-in RelayRunner Spend App, which reads org billing
-// (src/spend-app.ts). Keyed by GitHub account, since it's installed apart from the main App and
+// (src/github/spend-app.ts). Keyed by GitHub account, since it's installed apart from the main App and
 // can come before it. Written by the Spend App's installation webhooks and reconciled hourly.
 export const spendInstallation = sqliteTable("spend_installation", {
   accountId: integer("account_id").primaryKey({ autoIncrement: false }),
@@ -1330,6 +1373,9 @@ export const agentGrantWorkspace = sqliteTable(
     workspaceId: text("workspace_id")
       .notNull()
       .references(() => workspace.id, { onDelete: "cascade" }),
+    // Whether the agent may change settings in this workspace (agent-auth.ts AGENT_WRITE_ROUTES).
+    // Off until an owner or admin turns it on in Settings → Agents.
+    canWrite: integer("can_write", { mode: "boolean" }).notNull().default(false),
   },
   (table) => [
     primaryKey({ columns: [table.grantId, table.workspaceId] }),
@@ -1391,7 +1437,7 @@ export const providerPrice = sqliteTable(
   ],
 );
 
-/** The daily price check's last run per provider's price page (apps/api/src/price-check.ts). */
+/** The daily price check's last run per provider's price page (apps/api/src/providers/price-check.ts). */
 export const priceCheck = sqliteTable("price_check", {
   provider: text("provider").primaryKey(),
   checkedAt: integer("checked_at", { mode: "timestamp_ms" }).notNull(),
@@ -1416,7 +1462,7 @@ export const priceFinding = sqliteTable("price_finding", {
 });
 
 /**
- * GitHub's actions/runner releases, refreshed hourly (src/runner-releases.ts), so the dashboard can
+ * GitHub's actions/runner releases, refreshed hourly (src/machines/runner-releases.ts), so the dashboard can
  * say when a machine's runner is behind and how long until GitHub stops sending it jobs.
  */
 export const runnerRelease = sqliteTable("runner_release", {
@@ -1473,8 +1519,8 @@ export const notificationSetting = sqliteTable(
 
 // A third-party runner provider account a workspace connected for real usage and billing
 // (src/provider-billing): the read-only API token its owner or an admin pasted, encrypted with
-// PROVIDER_TOKEN_KEY (src/provider-tokens.ts). The token is never sent back; the dashboard sees
-// only its last four characters. The hourly cron syncs each connection (src/provider-sync.ts).
+// PROVIDER_TOKEN_KEY (src/providers/provider-tokens.ts). The token is never sent back; the dashboard sees
+// only its last four characters. The hourly cron syncs each connection (src/providers/provider-sync.ts).
 export const providerConnection = sqliteTable(
   "provider_connection",
   {
@@ -1563,13 +1609,33 @@ export const providerDailyUsage = sqliteTable(
 
 // Where a workspace sends its CI traces (Settings → Telemetry, src/telemetry): each finished run
 // and job as OpenTelemetry spans, POSTed to `endpoint` as OTLP/HTTP JSON. The header values (API
-// keys) are one JSON object, encrypted like provider tokens (src/provider-tokens.ts) and never sent
+// keys) are one JSON object, encrypted like provider tokens (src/providers/provider-tokens.ts) and never sent
 // back; the dashboard sees each header's name and last four characters. One per workspace.
+// How a telemetry export or log bucket is doing, and which jobs' logs it takes. Both tables have
+// these, so src/telemetry/otlp.ts records sends the same way for either.
+export const exportStatus = () => ({
+  lastSentAt: integer("last_sent_at", { mode: "timestamp_ms" }),
+  // The latest refusal or network error, when the current run of failures began, and when the
+  // latest one happened. Cleared by the next successful send. A day without tries starts a new
+  // run. Past FAILING_DAYS of nothing but failures the export pauses and sets pausedAt, until its
+  // settings are saved again.
+  error: text("error"),
+  failingSince: integer("failing_since", { mode: "timestamp_ms" }),
+  failedAt: integer("failed_at", { mode: "timestamp_ms" }),
+  pausedAt: integer("paused_at", { mode: "timestamp_ms" }),
+  // Which finished jobs' logs go out (src/telemetry/logs.ts): none, failed ones, or all.
+  logs: text("logs", { enum: JOB_LOG_CHOICES }).notNull().default("off"),
+  // Why the latest job's log wasn't sent, such as GitHub no longer having it, and when.
+  logsSkipped: text("logs_skipped"),
+  logsSkippedAt: integer("logs_skipped_at", { mode: "timestamp_ms" }),
+});
+
 export const telemetryExport = sqliteTable("telemetry_export", {
   workspaceId: text("workspace_id")
     .primaryKey()
     .references(() => workspace.id, { onDelete: "cascade" }),
-  // The OTLP base URL, such as https://api.honeycomb.io. Traces go to `${endpoint}/v1/traces`.
+  // The OTLP base URL, such as https://api.honeycomb.io. Traces go to `${endpoint}/v1/traces`,
+  // logs to `${endpoint}/v1/logs`.
   endpoint: text("endpoint").notNull(),
   // "v<key version>.<iv>.<ciphertext>" of a JSON object of header name to value.
   headers: text("headers").notNull(),
@@ -1578,18 +1644,34 @@ export const telemetryExport = sqliteTable("telemetry_export", {
     .notNull(),
   // The resource's service.name.
   serviceName: text("service_name").notNull(),
+  // Traces. Logs are exportStatus's `logs`; a pause stops both.
   enabled: integer("enabled", { mode: "boolean" }).notNull(),
   createdBy: text("created_by").references(() => user.id, { onDelete: "set null" }),
-  lastSentAt: integer("last_sent_at", { mode: "timestamp_ms" }),
-  // The latest refusal or network error, and when the current run of failures began. Cleared by
-  // the next successful send. Past FAILING_DAYS of nothing but failures the export turns itself
-  // off and sets pausedAt.
-  error: text("error"),
-  failingSince: integer("failing_since", { mode: "timestamp_ms" }),
-  pausedAt: integer("paused_at", { mode: "timestamp_ms" }),
+  ...exportStatus(),
   ...timestamps,
 });
 
+// An S3-compatible bucket a workspace archives job logs to (Settings → Telemetry), one gzipped
+// NDJSON object per job (src/telemetry/bucket.ts).
+export const logBucket = sqliteTable("log_bucket", {
+  workspaceId: text("workspace_id")
+    .primaryKey()
+    .references(() => workspace.id, { onDelete: "cascade" }),
+  // The S3 API URL, such as https://<account>.r2.cloudflarestorage.com.
+  endpoint: text("endpoint").notNull(),
+  bucket: text("bucket").notNull(),
+  // "auto" for R2 and Google Cloud Storage.
+  region: text("region").notNull(),
+  // Where in the bucket objects go, empty or ending in "/".
+  prefix: text("prefix").notNull(),
+  // "v<key version>.<iv>.<ciphertext>" of a JSON { accessKeyId, secretAccessKey }.
+  credentials: text("credentials").notNull(),
+  // The access key id's last four characters.
+  keyHint: text("key_hint").notNull(),
+  createdBy: text("created_by").references(() => user.id, { onDelete: "set null" }),
+  ...exportStatus(),
+  ...timestamps,
+});
 // AI model calls (src/ai): the switch for every workspace at once, and the defaults each workspace
 // starts from. One row, id "global"; with no row, AI is off. Operators change it in Admin › AI.
 export const aiSetting = sqliteTable("ai_setting", {
@@ -1694,5 +1776,79 @@ export const jobType = sqliteTable(
   },
   (table) => [
     primaryKey({ columns: [table.workspaceId, table.repositoryId, table.workflow, table.job] }),
+  ],
+);
+
+// Something that keeps failing and that someone should hear about (src/operator/health-issues.ts): a cron
+// task, an installation's queued task, or a workspace's broken integration. One row per
+// thing, by `key`. It opens on a failure and clears on the next success; alerts go out when it
+// passes its threshold, twice more over the next week while it stays open, and when it clears.
+export const healthIssue = sqliteTable(
+  "health_issue",
+  {
+    // What failed, e.g. "cron:syncRunnerReleases", "task:signals:<installation id>" or
+    // "integration:app-suspended:<workspace id>".
+    key: text("key").primaryKey(),
+    // A HEALTH_ISSUE_KINDS id: "cron", "task" or "integration".
+    kind: text("kind").notNull(),
+    // The latest error, cut short, or what's wrong with an integration.
+    error: text("error").notNull(),
+    // Failures in a row since the last success.
+    failures: integer("failures").notNull(),
+    firstFailedAt: integer("first_failed_at", { mode: "timestamp_ms" }).notNull(),
+    // Set by the first success after failures; the row is deleted once that's been told.
+    clearedAt: integer("cleared_at", { mode: "timestamp_ms" }),
+    // How many times this run of failures was told, and when last. Null until it passed its
+    // threshold.
+    alerts: integer("alerts").notNull().default(0),
+    alertedAt: integer("alerted_at", { mode: "timestamp_ms" }),
+  },
+  (table) => [index("health_issue_kind_idx").on(table.kind)],
+);
+
+// A provider evaluation (src/reports/evaluations.ts): one workflow dispatched on its repo's default branch
+// and re-run until it has `runs` attempts, every relay job in it answered with `label` instead of
+// the workspace's runner order. Keyed for the pick by (repository_id, run_id); run_id is null
+// between inserting the row and GitHub's dispatch answer. Gone with the workspace.
+export const evaluation = sqliteTable(
+  "evaluation",
+  {
+    id: text("id").primaryKey(),
+    workspaceId: text("workspace_id")
+      .notNull()
+      .references(() => workspace.id, { onDelete: "cascade" }),
+    installationId: integer("installation_id").notNull(),
+    repositoryId: integer("repository_id").notNull(),
+    repositoryFullName: text("repository_full_name").notNull(),
+    // The workflow's file, such as .github/workflows/ci.yml, and its name when it last ran.
+    workflowPath: text("workflow_path").notNull(),
+    workflowName: text("workflow_name"),
+    // The hosted provider being evaluated, the size asked for in vCPUs, and the label that gets it.
+    provider: text("provider").notNull(),
+    vcpus: integer("vcpus").notNull(),
+    label: text("label").notNull(),
+    // The branch the workflow was dispatched on.
+    ref: text("ref").notNull(),
+    // How many attempts to run, one after another.
+    runs: integer("runs").notNull(),
+    runId: integer("run_id"),
+    // The attempt running now: 1 once dispatched, raised before each re-run, so a redelivered
+    // `completed` for an earlier attempt can't start a second re-run.
+    attempt: integer("attempt").notNull().default(1),
+    // dispatching: row written, waiting on GitHub's answer. waiting: the workflow has no
+    // workflow_dispatch trigger yet (`error` no_dispatch); the next push to `ref` that runs it
+    // dispatches again. running: attempts going. done: every attempt finished. failed: an attempt
+    // failed or GitHub refused (see `error`). cancelled: stopped from the dashboard.
+    state: text("state", {
+      enum: ["dispatching", "waiting", "running", "done", "failed", "cancelled"],
+    }).notNull(),
+    error: text("error"),
+    startedById: text("started_by_id").references(() => user.id, { onDelete: "set null" }),
+    finishedAt: integer("finished_at", { mode: "timestamp_ms" }),
+    ...timestamps,
+  },
+  (table) => [
+    uniqueIndex("evaluation_run_idx").on(table.repositoryId, table.runId),
+    index("evaluation_workspace_idx").on(table.workspaceId, table.createdAt),
   ],
 );

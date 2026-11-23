@@ -3,7 +3,7 @@ import { makeSignature } from "better-auth/crypto";
 import { expect } from "vitest";
 import { parseJsonc } from "../scripts/container-images.ts";
 import { app } from "./app.ts";
-import { createAuth } from "./auth.ts";
+import { createAuth } from "./auth/auth.ts";
 import type { Env } from "./env.ts";
 import { createTestD1 } from "./testing-d1.ts";
 import { createTestR2 } from "./testing-r2.ts";
@@ -89,13 +89,14 @@ export async function signInOperator(env: Env) {
 }
 
 export function call(env: Env, path: string, cookie: string, body?: unknown, method = "POST") {
+  // No body and no method is a GET; a DELETE needs no body.
   const init: RequestInit =
-    body === undefined
+    body === undefined && method !== "DELETE"
       ? { headers: { cookie } }
       : {
           method,
           headers: { cookie, "content-type": "application/json", origin: env.BETTER_AUTH_URL },
-          body: JSON.stringify(body),
+          ...(body !== undefined && { body: JSON.stringify(body) }),
         };
   return app.request(`/api${path}`, init, env);
 }
@@ -163,7 +164,7 @@ export function withSetCookies(cookie: string, response: Response) {
 // A new user added to an existing workspace with the given role, with that workspace active.
 // A shortcut past syncing their membership from GitHub (memberships.test.ts covers that).
 export async function joinWorkspace(env: Env, workspaceId: string, role: "admin" | "member") {
-  const { user, githubToken, cookie } = await signIn(env);
+  const { user, githubId, githubToken, cookie } = await signIn(env);
   await createAuth(env).api.addMember({
     body: { organizationId: workspaceId, userId: user.id, role },
   });
@@ -171,5 +172,5 @@ export async function joinWorkspace(env: Env, workspaceId: string, role: "admin"
     organizationId: workspaceId,
   });
   expect(active.status).toBe(200);
-  return { user, githubToken, cookie: withSetCookies(cookie, active) };
+  return { user, githubId, githubToken, cookie: withSetCookies(cookie, active) };
 }

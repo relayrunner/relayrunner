@@ -15,6 +15,8 @@ export type AutoJob = {
   first: RunnerKey | null;
   updatedAt: number | null;
   lastSeenAt: number;
+  // Whether the signed-in user may change it: owners and admins, and anyone who can push to its repo.
+  canEdit: boolean;
 };
 
 /** The workspace's default size for auto jobs, in vCPUs, and its auto jobs. */
@@ -31,7 +33,7 @@ export async function setAutoSize(workspaceId: string, size: number) {
   await api(`${path(workspaceId)}/auto-size`, { method: "PUT", body: JSON.stringify({ size }) });
 }
 
-/** Sets one auto job's size and first provider. Owners and admins only. */
+/** Sets one auto job's size and first provider. Owners, admins and people who can push to its repo. */
 export async function setAutoJob(
   workspaceId: string,
   id: number,

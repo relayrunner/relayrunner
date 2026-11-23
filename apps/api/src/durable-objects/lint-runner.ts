@@ -1,9 +1,9 @@
 import { DurableObject } from "cloudflare:workers";
 import { LINT_PORT, type LintResult, type LintTool } from "@relayrunner/lint-runner/protocol";
-import { containerRunnerAllowed } from "../container-runner.ts";
+import { containerRunnerAllowed } from "../routing/container-runner.ts";
 import { createDb } from "../db/index.ts";
 import type { Env } from "../env.ts";
-import { recordRepoCheck } from "../free-checks.ts";
+import { recordRepoCheck } from "../checks/free-checks.ts";
 import {
   completeCheckRun,
   GitHubAccessError,
@@ -11,8 +11,8 @@ import {
   repoTarball,
   startCheckRun,
   type CheckRunOutput,
-} from "../github-app.ts";
-import type { CheckResult } from "../native-checks.ts";
+} from "../github/github-app.ts";
+import type { CheckResult } from "../checks/native-checks.ts";
 import {
   changedLines,
   checksAppInstallationId,
@@ -24,9 +24,9 @@ import {
   lintUnavailableOutput,
   type ChangedLines,
   type LintWork,
-} from "../lint-check.ts";
-import { loadRepoConfig } from "../repo-config.ts";
-import { errorMessage } from "../webhook-queue.ts";
+} from "../checks/lint-check.ts";
+import { loadRepoConfig } from "../checks/repo-config.ts";
+import { errorMessage } from "../errors.ts";
 
 // ½ vCPU, 4 GiB, like the container runners: the smallest size the durable_object scheduling
 // policy offers that fits Node and the linters.
@@ -82,7 +82,7 @@ export class LintRunner extends DurableObject<Env> {
   }
 
   /**
-   * For a native `checks/lint` workflow job (src/native-checks.ts): lints a commit now with the
+   * For a native `checks/lint` workflow job (src/checks/native-checks.ts): lints a commit now with the
    * job's own tools, whatever relayrunner.yml says, and returns the job's verdict.
    *
    * The commit is read with `jobToken`, the job's own GITHUB_TOKEN, so the repo needs no App that

@@ -26,7 +26,7 @@ A relay that failed shows the same message the job failed with on GitHub. Filter
 - **Workflows** lists every workflow run, newest first. Routed runs are marked, and each run's time is compared with its workflow's usual time.
 - **Jobs** lists every job a runner finished, newest first, with where it ran, how long it waited and ran, and how it ended. Search by job or workflow name.
 
-Click a run to open it in a side panel: each job, where it ran, and how long it waited for a runner. Each job's time is compared with its usual time on that runner, and a run that's still going shows about how long it has left. Click a job to see its steps and how long each took, then step back up to its run. Each panel links to GitHub and to the job's usual times in Performance, and its address can be shared.
+Click a run to open it in a side panel: each job, where it ran, and how long it waited for a runner. A job that ran clearly slower than its usual time on that runner is flagged, and a run that's still going shows about how long it has left. Click a job to see its steps and how long each took, then step back up to its run. Each panel links to GitHub and to the job's usual times in Performance, and its address can be shared.
 
 GitHub shows a job that hit its `timeout-minutes` as cancelled. History shows it as timed out, marked with a red timer, and counts it as a failure. A run cancelled because a newer run started on the same branch, such as by a concurrency group with `cancel-in-progress`, says it was superseded and links to the newer run.
 

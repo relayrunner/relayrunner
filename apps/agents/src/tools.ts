@@ -1,4 +1,3 @@
-import { AppError, describeError } from "@relayrunner/errors";
 import type { McpServer } from "@modelcontextprotocol/server";
 import {
   ACTIVITY_FILTERS,
@@ -8,66 +7,25 @@ import {
   type ActivityPage,
 } from "@relayrunner/activity";
 import { z } from "zod";
-import type { Api, Workspace, WorkspaceApi } from "./api.ts";
+import type { Api } from "./api.ts";
+import { answer, repositoryArg, type ToolContext, workspaceArg } from "./context.ts";
 import { compactActivityPage, compactJobTimes, contains } from "./compact.ts";
 
 // Read-only tools over relayrunner-api's dashboard endpoints, plus send_feedback, which only
-// records a report for the RelayRunner team. Each answers JSON. All are D1 reads except
-// get_run_failures, which reads a few failed jobs' logs from GitHub. None takes the Router's lock
-// (apps/api/src/agent-auth.ts keeps it that way).
+// records a report for the RelayRunner team; the tools that change settings are in write-tools.ts.
+// Each answers JSON. All are D1 reads except get_run_failures, which reads a few failed jobs' logs
+// from GitHub. None takes the Router's lock (apps/api/src/auth/agent-auth.ts keeps it that way).
 
 // Avatars and dashboard-only permissions aren't useful to an agent.
 const DASHBOARD_ONLY = new Set(["ownerImage", "canRevoke", "mine"]);
 
 const READ_ONLY = { readOnlyHint: true, destructiveHint: false, openWorldHint: false } as const;
 
-type Result = { content: { type: "text"; text: string }[]; isError?: boolean };
-
-// Unindented: every byte counts against the client's tool-result cap.
-function json(value: unknown): Result {
-  return { content: [{ type: "text", text: JSON.stringify(value) }] };
-}
-
-// API errors, and calls the model can fix itself (such as naming a workspace), come back as tool
-// errors the model can read and act on, not protocol errors: the message, then the code.
-async function answer(read: () => Promise<unknown>): Promise<Result> {
-  try {
-    return json(await read());
-  } catch (error) {
-    if (!(error instanceof AppError)) throw error;
-    return { content: [{ type: "text", text: describeError(error) }], isError: true };
-  }
-}
-
-const workspaceArg = z
-  .string()
-  .optional()
-  .describe(
-    "Which workspace, by id or name (see list_workspaces). Needed only when this connection reads more than one.",
-  );
-
 const days = (max: number, fallback: number) =>
   z.number().int().min(1).max(max).default(fallback).describe(`Days to look back (1-${max}).`);
 
-export function registerTools(server: McpServer, request: WorkspaceApi, workspaces: Workspace[]) {
-  // The workspace a call names (by id or name), or the connection's only one.
-  function workspaceId(workspace: string | undefined) {
-    if (!workspace) {
-      if (workspaces.length === 1) return workspaces[0].id;
-      throw new AppError("WORKSPACE_REQUIRED", {
-        message: `This connection reads ${workspaces.length} workspaces. Pass workspace (an id or name from list_workspaces).`,
-      });
-    }
-    const named = workspaces.find(
-      ({ id, name }) => id === workspace || name.toLowerCase() === workspace.toLowerCase(),
-    );
-    if (!named) {
-      throw new AppError("NOT_FOUND", {
-        message: `No workspace "${workspace}" on this connection. See list_workspaces.`,
-      });
-    }
-    return named.id;
-  }
+export function registerTools(server: McpServer, context: ToolContext) {
+  const { request, workspaces, workspaceId, workspacePath } = context;
 
   // The API, about the workspace a call names.
   const scoped =
@@ -76,15 +34,18 @@ export function registerTools(server: McpServer, request: WorkspaceApi, workspac
       request(path, { query, workspaceId: workspaceId(workspace) });
 
   // A /workspaces/:id route, for the workspace a call names.
-  const workspaceRoute = <T>(workspace: string | undefined, route: string) =>
-    request<T>(`/workspaces/${encodeURIComponent(workspaceId(workspace))}/${route}`);
+  const workspaceRoute = <T>(
+    workspace: string | undefined,
+    route: string,
+    query?: Record<string, string | undefined>,
+  ) => request<T>(workspacePath(workspace, route), { query });
 
   server.registerTool(
     "list_workspaces",
     {
       title: "Workspaces",
       description:
-        "The RelayRunner workspaces this connection can read, by id and name. Pass one as `workspace` to the other tools; get_workspace has your role and GitHub accounts in each.",
+        "The RelayRunner workspaces this connection can read, by id and name, and whether it may change settings in each (canWrite: the person turned on Allow changes for it in Settings → Agents). Pass one as `workspace` to the other tools; get_workspace has your role and GitHub accounts in each.",
       annotations: READ_ONLY,
     },
     () => answer(async () => ({ workspaces })),
@@ -129,11 +90,12 @@ export function registerTools(server: McpServer, request: WorkspaceApi, workspac
     {
       title: "Runner order",
       description:
-        "The workspace's runner order: the providers RelayRunner tries for a job, top to bottom ('machine' for connected machines, 'github' for GitHub-hosted runners, optionally with a monthly minutes limit, and hosted providers by id: 'blacksmith', 'depot', 'namespace', 'warpbuild', 'ubicloud', 'boat', 'runs-on', 'starsling', 'monkci', 'runloft', 'latchkey', 'berrybox', 'celesto', 'instabox', 'lizard', optionally with a monthly spendLimit in dollars). A job goes to the first provider it allows that can take it. A minutes limit counts the job's GitHub account's minutes, or its enterprise's shared minutes for an org in a GitHub enterprise. isDefault is true when nobody has changed it.",
-      inputSchema: z.object({ workspace: workspaceArg }),
+        "The workspace's runner order: the providers RelayRunner tries for a job, top to bottom ('machine' for connected machines, 'github' for GitHub-hosted runners, optionally with a monthly minutes limit, and hosted providers by id: 'blacksmith', 'depot', 'namespace', 'warpbuild', 'ubicloud', 'boat', 'runs-on', 'starsling', 'monkci', 'runloft', 'latchkey', 'berrybox', 'celesto', 'instabox', 'lizard', 'groundbox', optionally with a monthly spendLimit in dollars). A job goes to the first provider it allows that can take it. A minutes limit counts the job's GitHub account's minutes, or its enterprise's shared minutes for an org in a GitHub enterprise. isDefault is true when nobody has changed it. A repository can have its own order, which its jobs walk instead: pass `repository` for the order its jobs walk (scope 'repository' for its own, 'workspace' when it uses the workspace's). Without it, ownOrders lists the repositories with their own. Caps count the GitHub account's minutes and spend whichever order a job walks.",
+      inputSchema: z.object({ workspace: workspaceArg, repository: repositoryArg }),
       annotations: READ_ONLY,
     },
-    ({ workspace }) => answer(() => workspaceRoute(workspace, "runner-order")),
+    ({ workspace, repository }) =>
+      answer(() => workspaceRoute(workspace, "runner-order", { repo: repository })),
   );
 
   server.registerTool(
@@ -141,7 +103,7 @@ export function registerTools(server: McpServer, request: WorkspaceApi, workspac
     {
       title: "Workflows",
       description:
-        "Every workflow that ran in the workspace's repos in the last 14 days, with its runs and how many went through RelayRunner (routedRuns). Workflows with no routed runs come first: those are what's left to route. Also the hosted provider runner labels jobs ran on, with job counts.",
+        "Every workflow that ran in the workspace's repos in the last 14 days, with its runs and how many went through RelayRunner (routedRuns). Workflows with no routed runs come first: those are what's left to route. Each workflow lists its jobs by the names GitHub shows, with runs and usual minutes. Also the repos the RelayRunner app can see (private or public), and the hosted provider runner labels jobs ran on, with job counts.",
       inputSchema: z.object({
         workspace: workspaceArg,
         repository: z
@@ -153,13 +115,14 @@ export function registerTools(server: McpServer, request: WorkspaceApi, workspac
     },
     ({ workspace, repository }) =>
       answer(async () => {
-        const setup = await workspaceRoute<{ workflows: { repository: string }[] }>(
-          workspace,
-          "router-setup",
-        );
+        const setup = await workspaceRoute<{
+          workflows: { repository: string }[];
+          repos?: { fullName: string }[];
+        }>(workspace, "router-setup");
         return {
           ...setup,
           workflows: setup.workflows.filter((row) => contains(row.repository, repository)),
+          repos: setup.repos?.filter((row) => contains(row.fullName, repository)),
         };
       }),
   );

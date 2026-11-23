@@ -25,9 +25,6 @@ export function setProviderCatalog(providers: CatalogProvider[]) {
   byId = new Map(providers.map((p) => [p.id, p]));
 }
 
-/** Every provider, in the order the admin lists them. */
-export const providerCatalog = () => catalog;
-
 /** Whether `id` is a provider, including ones operators added. */
 export const isKnownProvider = (id: string) => byId.has(id);
 

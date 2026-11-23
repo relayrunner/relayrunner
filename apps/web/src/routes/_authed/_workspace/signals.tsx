@@ -10,14 +10,16 @@ import { type MouseEvent, type ReactNode, useEffect, useState } from "react";
 import { CommitBy } from "@/components/commit";
 import { Count } from "@/components/count";
 import { PageHeader } from "@/components/page-header";
-import { OptionPicker, RangePicker } from "@/components/range-picker";
-import { ExternalLink, LINK } from "@/components/run-sheet";
+import { OptionPicker, TimeRangePicker } from "@/components/range-picker";
+import { ExternalLink, LINK, RunLink } from "@/components/run-sheet";
 import { RunnerLink } from "@/components/runner-link";
 import { DOCS_URL } from "@/components/site-footer";
 import { StatusIcon } from "@/components/status-icon";
+import { SECTION_HEADING } from "@/components/ui/data-table";
 import { InfoTip } from "@/components/ui/info-tip";
 import { Sheet, SheetContent, SheetDescription, SheetTitle } from "@/components/ui/sheet";
 import {
+  PHONE_HIDDEN,
   Table,
   TableBody,
   TableCell,
@@ -27,7 +29,6 @@ import {
 } from "@/components/ui/table";
 import { timeAgo } from "@/lib/activity";
 import { authDisabled } from "@/lib/auth-client";
-import { runParam } from "@/lib/runs";
 import {
   AREAS,
   BREAKDOWN_VIEWS,
@@ -36,7 +37,6 @@ import {
   type BreakdownRow,
   FILTER_KEYS,
   type FilterKey,
-  FILTERED_MAX_DAYS,
   getSignalRuns,
   getSignals,
   isFiltered,
@@ -57,37 +57,54 @@ import {
   triggerName,
 } from "@/lib/signals";
 import {
-  dayRanges,
   optionParam,
-  rangeParam,
+  rangeSearch,
   textParam,
   unlessDefault,
   useRangeReport,
   useSetSearch,
 } from "@/lib/search-params";
 import { money } from "@/lib/usage";
-import { DAY_MS, plural } from "@/lib/job-times";
+import { plural } from "@/lib/job-times";
+import {
+  dayPreset,
+  type RangeOptions,
+  rangeDays,
+  rangePhrase,
+  resolveRange,
+  type TimeRange,
+  timeRangeParam,
+  trendPhrase,
+} from "@/lib/time-range";
 import { shortDate } from "@/lib/time-zone";
 import { cn, count, elapsed, niceMax } from "@/lib/utils";
 
-const RANGES = dayRanges(7, 90);
-// A filtered page works from single jobs, which don't go back as far as the daily rollup.
-const FILTERED_RANGES = dayRanges(7, FILTERED_MAX_DAYS);
+const RANGES: RangeOptions = {
+  presets: ["7d", "14d", "30d", "90d", "week", "lastweek", "month", "lastmonth"],
+};
+// A filtered page works from single jobs over the last 30 days (FILTERED_MAX_DAYS in lib/signals),
+// not as far back as the daily rollup.
+const FILTERED_RANGES: RangeOptions = {
+  presets: ["7d", "14d", "30d", "week", "lastweek", "month"],
+};
+const DEFAULT_RANGE: TimeRange = "30d";
+const ranges = rangeSearch(RANGES, DEFAULT_RANGE);
 
 // The range and filter a report is for.
-const keyOf = (days: number, filter: SignalFilter) =>
-  JSON.stringify([days, ...FILTER_KEYS.map((key) => filter[key] ?? "")]);
+const keyOf = (range: TimeRange, filter: SignalFilter) =>
+  JSON.stringify([range, ...FILTER_KEYS.map((key) => filter[key] ?? "")]);
 
-function load(days: number, filter: SignalFilter): Promise<SignalsReport> {
-  return authDisabled ? Promise.resolve(sampleSignals(days, filter)) : getSignals(days, filter);
+function load(range: TimeRange, filter: SignalFilter): Promise<SignalsReport> {
+  return authDisabled
+    ? Promise.resolve(sampleSignals(rangeDays(range), filter))
+    : getSignals(range, filter);
 }
 
-const DEFAULT_DAYS = 30;
 const BREAKDOWNS = BREAKDOWN_VIEWS.map((option) => option.value);
 const SIGNAL_IDS = Object.keys(SIGNAL_COPY) as SignalId[];
 // `by` is how the Breakdown splits jobs; the filter's values narrow the page; `signal`, `in` and
 // `subject` name the signal row whose runs are open in the panel.
-type Search = { days?: number; by?: BreakdownBy } & SignalFilter & {
+type Search = { range?: TimeRange; by?: BreakdownBy } & SignalFilter & {
     signal?: SignalId;
     in?: string;
     subject?: string;
@@ -98,7 +115,7 @@ const validateSearch = (search: Record<string, unknown>): Search => {
     : undefined;
   const row = signal && textParam(search.in) && textParam(search.subject);
   return {
-    days: rangeParam(search.days, RANGES, DEFAULT_DAYS),
+    ...ranges.validateSearch(search),
     by: optionParam(search.by, BREAKDOWNS),
     ...Object.fromEntries(FILTER_KEYS.map((key) => [key, textParam(search[key])])),
     signal: row ? signal : undefined,
@@ -108,8 +125,12 @@ const validateSearch = (search: Record<string, unknown>): Search => {
 };
 const filterOf = (search: Search): SignalFilter =>
   Object.fromEntries(FILTER_KEYS.map((key) => [key, search[key]]));
-const daysOf = (search: Search) =>
-  Math.min(search.days ?? DEFAULT_DAYS, isFiltered(search) ? FILTERED_MAX_DAYS : Infinity);
+/** The page's range: a filtered page's is at most 30 days. */
+function rangeOf(search: Search) {
+  const range = ranges.rangeOf(search);
+  if (!isFiltered(search)) return range;
+  return timeRangeParam(range, FILTERED_RANGES, DEFAULT_RANGE) ?? DEFAULT_RANGE;
+}
 // Every filter key, cleared.
 const NO_FILTER = Object.fromEntries(FILTER_KEYS.map((key) => [key, undefined])) as SignalFilter;
 
@@ -122,7 +143,7 @@ export const Route = createFileRoute("/_authed/_workspace/signals")({
   validateSearch,
   loader: ({ location }) => {
     const search = validateSearch(location.search);
-    return load(daysOf(search), filterOf(search));
+    return load(rangeOf(search), filterOf(search));
   },
   // A new range or filter loads in the page, keeping the last one up meanwhile.
   shouldReload: ({ cause }) => cause !== "stay",
@@ -131,15 +152,16 @@ export const Route = createFileRoute("/_authed/_workspace/signals")({
 
 function SignalsPage() {
   const search = Route.useSearch();
-  const days = daysOf(search);
+  const range = rangeOf(search);
   const filter = filterOf(search);
   const filtered = isFiltered(filter);
   const setSearch = useSetSearch<Search>();
-  const key = keyOf(days, filter);
-  const report = useRangeReport(Route.useLoaderData(), key, () => load(days, filter));
+  const key = keyOf(range, filter);
+  const report = useRangeReport(Route.useLoaderData(), key, () => load(range, filter));
+  const manyRepos = spansRepos(report);
 
-  function chooseRange(next: number) {
-    setSearch({ days: unlessDefault(next, DEFAULT_DAYS) });
+  function chooseRange(next: TimeRange) {
+    setSearch(ranges.toSearch(next));
   }
 
   return (
@@ -150,12 +172,12 @@ function SignalsPage() {
       </PageHeader>
       <div className="grid max-w-4xl gap-10">
         <div className="grid gap-4">
-          <RangePicker
-            ranges={filtered ? FILTERED_RANGES : RANGES}
-            days={days}
+          <TimeRangePicker
+            {...(filtered ? FILTERED_RANGES : RANGES)}
+            value={range}
             onChange={chooseRange}
           />
-          {filtered && <FilterBar filter={filter} report={report} />}
+          {filtered && <FilterBar filter={filter} report={report} range={range} />}
         </div>
         {report.totals.jobs === 0 ? (
           <p className="rounded-xl border bg-card px-4 py-6 text-sm text-muted-foreground">
@@ -168,9 +190,9 @@ function SignalsPage() {
             {/* Every area shows, with the signals that didn't show up named under it, so the page
                 says what it looks for and not only what it found. */}
             {(Object.keys(AREAS) as SignalArea[]).map((area) => (
-              <AreaSection key={area} area={area} report={report} />
+              <AreaSection key={area} area={area} report={report} manyRepos={manyRepos} />
             ))}
-            <BreakdownSection report={report} />
+            <BreakdownSection report={report} manyRepos={manyRepos} />
           </>
         )}
       </div>
@@ -181,12 +203,21 @@ function SignalsPage() {
           listed={report.signals
             .find((signal) => signal.id === search.signal)
             ?.rows.find((row) => row.repository === search.in && row.subject === search.subject)}
-          days={days}
+          range={range}
           filter={filter}
         />
       )}
     </section>
   );
+}
+
+/** Whether the page covers more than one repo; with one, rows leave the repo out. */
+function spansRepos(report: SignalsReport) {
+  const repos = new Set([
+    ...report.signals.flatMap((signal) => signal.rows.map((row) => row.repository)),
+    ...report.breakdown.repository.rows.map((row) => row.name),
+  ]);
+  return repos.size > 1;
 }
 
 const FILTER_LABELS: Record<FilterKey, string> = {
@@ -199,7 +230,15 @@ const FILTER_LABELS: Record<FilterKey, string> = {
 };
 
 // What the page is narrowed to, each value with a button to drop it, and the filter's trend.
-function FilterBar({ filter, report }: { filter: SignalFilter; report: SignalsReport }) {
+function FilterBar({
+  filter,
+  report,
+  range,
+}: {
+  filter: SignalFilter;
+  report: SignalsReport;
+  range: TimeRange;
+}) {
   const setSearch = useSetSearch<Search>();
   // A workflow or folder shows with its repo, and goes with it, so the repo shows on its own only
   // without one.
@@ -257,7 +296,7 @@ function FilterBar({ filter, report }: { filter: SignalFilter; report: SignalsRe
           </button>
         )}
       </div>
-      {report.trend && <Trend trend={report.trend} />}
+      {report.trend && <Trend trend={report.trend} range={range} />}
     </div>
   );
 }
@@ -265,19 +304,19 @@ function FilterBar({ filter, report }: { filter: SignalFilter; report: SignalsRe
 const sum = (values: number[]) => values.reduce((total, value) => total + value, 0);
 
 // The filter's minutes per day, with the range before as a dashed line behind them.
-function Trend({ trend }: { trend: SignalTrend }) {
-  const days = trend.minutes.length;
+function Trend({ trend, range }: { trend: SignalTrend; range: TimeRange }) {
+  const prior = trendPhrase(range);
   const now = sum(trend.minutes);
   const before = trend.previous ? sum(trend.previous) : null;
   let change: string;
   if (before === null) change = "Nothing earlier to compare with.";
-  else if (before === 0) change = `None in the ${days} days before.`;
+  else if (before === 0) change = `None in ${prior}.`;
   else {
     const pct = Math.round(((now - before) / before) * 100);
     change =
       Math.abs(pct) < 5
-        ? `About the same as the ${days} days before.`
-        : `${Math.abs(pct)}% ${pct > 0 ? "more" : "less"} than the ${days} days before.`;
+        ? `About the same as ${prior}.`
+        : `${Math.abs(pct)}% ${pct > 0 ? "more" : "less"} than ${prior}.`;
   }
   const width = 100;
   const height = 48;
@@ -290,6 +329,7 @@ function Trend({ trend }: { trend: SignalTrend }) {
       })
       .join(" ");
   const today = Date.now();
+  const { from, to } = resolveRange(range, today);
   return (
     <div className="grid gap-2">
       <p className="text-sm">
@@ -300,7 +340,7 @@ function Trend({ trend }: { trend: SignalTrend }) {
         viewBox={`0 0 ${width} ${height}`}
         preserveAspectRatio="none"
         role="img"
-        aria-label={`Minutes per day over the last ${days} days`}
+        aria-label={`Minutes per day over ${rangePhrase(range)}`}
         className="h-14 w-full overflow-visible"
       >
         {trend.previous && (
@@ -328,7 +368,7 @@ function Trend({ trend }: { trend: SignalTrend }) {
         />
       </svg>
       <div className="flex justify-between text-xs text-muted-foreground">
-        <span>{shortDate(today - (days - 1) * DAY_MS)}</span>
+        <span>{shortDate(from)}</span>
         {trend.previous && (
           <span className="inline-flex items-center gap-1.5">
             <svg aria-hidden viewBox="0 0 16 2" className="h-0.5 w-4 overflow-visible">
@@ -341,10 +381,10 @@ function Trend({ trend }: { trend: SignalTrend }) {
                 className="stroke-muted-foreground"
               />
             </svg>
-            The {days} days before
+            {prior.charAt(0).toUpperCase() + prior.slice(1)}
           </span>
         )}
-        <span>Today</span>
+        <span>{to === today ? "Today" : shortDate(to - 1)}</span>
       </div>
     </div>
   );
@@ -379,7 +419,15 @@ function Section({
   );
 }
 
-function AreaSection({ area, report }: { area: SignalArea; report: SignalsReport }) {
+function AreaSection({
+  area,
+  report,
+  manyRepos,
+}: {
+  area: SignalArea;
+  report: SignalsReport;
+  manyRepos: boolean;
+}) {
   const signals = report.signals.filter((signal) => signal.area === area);
   const shown = new Set(signals.map((signal) => signal.id));
   const quiet = (Object.keys(SIGNAL_COPY) as SignalId[]).filter(
@@ -397,7 +445,7 @@ function AreaSection({ area, report }: { area: SignalArea; report: SignalsReport
       }
     >
       {signals.map((signal) => (
-        <SignalCard key={signal.id} signal={signal} />
+        <SignalCard key={signal.id} signal={signal} manyRepos={manyRepos} />
       ))}
       {quiet.length > 0 && (
         <p className="flex flex-wrap items-center gap-x-1.5 gap-y-1 text-sm text-muted-foreground">
@@ -426,9 +474,48 @@ function SignalInfo({ id }: { id: SignalId }) {
   );
 }
 
-function SignalCard({ signal }: { signal: Signal }) {
+// Where to go next for a signal: the fix in RelayRunner first, GitHub's docs second.
+function SignalLinks({ id }: { id: SignalId }) {
+  const { action, docs } = SIGNAL_COPY[id];
+  if (!action && !docs) return null;
+  return (
+    <div className="flex flex-wrap items-center gap-x-4 gap-y-1 text-sm">
+      {action &&
+        (action.href.startsWith("/") ? (
+          <Link to={action.href} className={LINK}>
+            {action.label}
+          </Link>
+        ) : (
+          <a href={action.href} className={LINK}>
+            {action.label}
+          </a>
+        ))}
+      {docs && (
+        <a
+          href={docs}
+          target="_blank"
+          rel="noreferrer"
+          className="inline-flex items-center gap-1 text-muted-foreground hover:text-foreground"
+        >
+          Learn more in the GitHub docs
+          <ArrowUpRightIcon aria-hidden className="size-3.5" />
+        </a>
+      )}
+    </div>
+  );
+}
+
+/** Rows split by repo, in the order each repo first shows up (the most time first). */
+function byRepo(rows: SignalRow[]) {
+  const groups = new Map<string, SignalRow[]>();
+  for (const row of rows) groups.set(row.repository, [...(groups.get(row.repository) ?? []), row]);
+  return [...groups];
+}
+
+function SignalCard({ signal, manyRepos }: { signal: Signal; manyRepos: boolean }) {
   const copy = SIGNAL_COPY[signal.id];
   const navigate = useNavigate();
+  const setSearch = useSetSearch<Search>();
   // A panel, so the back button closes it.
   const openRuns = (row: SignalRow) =>
     void navigate({
@@ -439,6 +526,7 @@ function SignalCard({ signal }: { signal: Signal }) {
         in: row.repository,
         subject: row.subject,
       })) as never,
+      resetScroll: false,
     });
   // Signals that cost time but no money keep the column, empty, so columns line up down the page.
   const spend = copy.spend !== false;
@@ -449,76 +537,78 @@ function SignalCard({ signal }: { signal: Signal }) {
           {copy.title}
           <SignalInfo id={signal.id} />
         </h3>
-        <div className="ml-auto flex items-center gap-4 text-sm">
-          {copy.action &&
-            (copy.action.href.startsWith("/") ? (
-              <Link to={copy.action.href} className={LINK}>
-                {copy.action.label}
-              </Link>
-            ) : (
-              <a href={copy.action.href} className={LINK}>
-                {copy.action.label}
-              </a>
-            ))}
-          {copy.docs && (
-            <a
-              href={copy.docs}
-              target="_blank"
-              rel="noreferrer"
-              className="inline-flex items-center gap-1 text-muted-foreground hover:text-foreground"
-            >
-              Learn more in the GitHub docs
-              <ArrowUpRightIcon aria-hidden className="size-3.5" />
-            </a>
-          )}
+        <div className="ml-auto">
+          <SignalLinks id={signal.id} />
         </div>
       </div>
-      {/* Fixed columns, so every signal's numbers line up down the page. Phones scroll it. */}
-      <Table className="min-w-xl table-fixed">
+      {/* Fixed columns, so every signal's numbers line up down the page. Phones leave out spend. */}
+      <Table className="table-fixed">
         <TableHeader>
           <TableRow>
             <TableHead>{copy.subject}</TableHead>
-            <TableHead className="w-36 text-right">{copy.count}</TableHead>
-            <TableHead className="w-36 text-right">{copy.minutes}</TableHead>
-            <TableHead className="w-28 text-right">{spend && "Spend"}</TableHead>
+            <TableHead className={cn(FIGURE_HEAD, "sm:w-36")}>{copy.count}</TableHead>
+            <TableHead className={cn(FIGURE_HEAD, "sm:w-36")}>{copy.minutes}</TableHead>
+            <TableHead className={cn(FIGURE_HEAD, PHONE_HIDDEN)}>{spend && "Spend"}</TableHead>
             <TableHead className="w-9">
               <span className="sr-only">Runs</span>
             </TableHead>
           </TableRow>
         </TableHeader>
-        <TableBody>
-          {signal.rows.map((row) => (
-            <TableRow
-              key={`${row.repository}:${row.subject}`}
-              onClick={(event) => unlessLink(event, () => openRuns(row))}
-              className="cursor-pointer"
-            >
-              <TableCell className="truncate">
-                <SubjectName row={row} />
-              </TableCell>
-              <TableCell className="text-right tabular-nums">
-                <Count value={row.count} />
-              </TableCell>
-              <TableCell className="text-right font-medium tabular-nums">
-                <Count value={row.minutes} />
-              </TableCell>
-              <TableCell className="text-right tabular-nums">{spend && money(row.cost)}</TableCell>
-              <TableCell className="text-right">
-                <button
-                  type="button"
-                  aria-label={`Show the runs behind ${row.repository} / ${row.subject}`}
-                  className="text-muted-foreground hover:text-foreground"
-                >
-                  <ChevronRightIcon aria-hidden className="size-4" />
-                </button>
-              </TableCell>
-            </TableRow>
-          ))}
-        </TableBody>
+        {/* With more than one repo on the page, each repo heads its own rows; its name narrows
+            the page to it. */}
+        {byRepo(signal.rows).map(([repository, rows]) => (
+          <TableBody key={repository}>
+            {manyRepos && (
+              <TableRow className="hover:bg-transparent">
+                <TableCell colSpan={5} className={SECTION_HEADING}>
+                  <button
+                    type="button"
+                    onClick={() => setSearch({ repo: repository })}
+                    className="max-w-full truncate text-left hover:text-foreground hover:underline"
+                  >
+                    {repository}
+                  </button>
+                </TableCell>
+              </TableRow>
+            )}
+            {rows.map((row) => (
+              <TableRow
+                key={row.subject}
+                onClick={(event) => unlessLink(event, () => openRuns(row))}
+                className="cursor-pointer"
+              >
+                <TableCell className="break-words sm:truncate">
+                  <SubjectName row={row} />
+                </TableCell>
+                <TableCell className="text-right tabular-nums">
+                  <Count value={row.count} />
+                </TableCell>
+                <TableCell className="text-right font-medium tabular-nums">
+                  <Count value={row.minutes} />
+                </TableCell>
+                <TableCell className={cn("text-right tabular-nums", PHONE_HIDDEN)}>
+                  {spend && money(row.cost)}
+                </TableCell>
+                <TableCell className="text-right">
+                  <button
+                    type="button"
+                    aria-label={`Show the runs behind ${row.repository} / ${row.subject}`}
+                    className="text-muted-foreground hover:text-foreground"
+                  >
+                    <ChevronRightIcon aria-hidden className="size-4" />
+                  </button>
+                </TableCell>
+              </TableRow>
+            ))}
+          </TableBody>
+        ))}
       </Table>
     </div>
   );
 }
+
+/** A figure column's header: narrow on phones, where a long label wraps. */
+const FIGURE_HEAD = "w-24 text-right whitespace-normal sm:whitespace-nowrap";
 
 const workflowUrl = (repository: string, path: string) =>
   `https://github.com/${repository}/blob/HEAD/${path}`;
@@ -528,18 +618,16 @@ function unlessLink(event: MouseEvent, action: () => void) {
   if (!(event.target as Element).closest("a")) action();
 }
 
-// A runner row's name opens the runner's panel; the row opens its runs.
+// A runner row's name opens the runner's panel; the row opens its runs. The repo heads the rows.
 function SubjectName({ row }: { row: SignalRow }) {
-  if (!row.runnerKey) return <SubjectText repository={row.repository} name={row.subject} />;
+  if (!row.runnerKey) return row.subject;
   return (
     <RunnerLink
       runner={{ key: row.runnerKey, label: row.subject }}
       className="inline-flex max-w-full items-center gap-2"
       markClassName="size-4"
     >
-      <span className="truncate">
-        <SubjectText repository={row.repository} name={row.subject} />
-      </span>
+      <span className="min-w-0 sm:truncate">{row.subject}</span>
     </RunnerLink>
   );
 }
@@ -580,7 +668,7 @@ function WorkflowName({
 
 // Every counted job split one way at a time, with each row's share of all job minutes (left out on
 // phones, where the table scrolls like the signals above).
-function BreakdownSection({ report }: { report: SignalsReport }) {
+function BreakdownSection({ report, manyRepos }: { report: SignalsReport; manyRepos: boolean }) {
   const by = Route.useSearch({ select: (search) => search.by ?? BREAKDOWNS[0]! });
   const setSearch = useSetSearch<Search>();
   const setBy = (next: BreakdownBy) => setSearch({ by: unlessDefault(next, BREAKDOWNS[0]) });
@@ -596,21 +684,21 @@ function BreakdownSection({ report }: { report: SignalsReport }) {
         <OptionPicker label="Break down by" options={BREAKDOWN_VIEWS} value={by} onChange={setBy} />
       }
     >
-      <Table className="min-w-xl table-fixed">
+      <Table className="table-fixed">
         <TableHeader>
           <TableRow>
             <TableHead>{view.label}</TableHead>
             <TableHead className="hidden w-44 sm:table-cell">Share of minutes</TableHead>
-            <TableHead className="w-24 text-right">Runs</TableHead>
-            <TableHead className="w-24 text-right">Minutes</TableHead>
-            <TableHead className="w-28 text-right">Spend</TableHead>
+            <TableHead className={cn("w-24 text-right", PHONE_HIDDEN)}>Runs</TableHead>
+            <TableHead className={cn(FIGURE_HEAD, "sm:w-24")}>Minutes</TableHead>
+            <TableHead className={cn(FIGURE_HEAD, "sm:w-28")}>Spend</TableHead>
           </TableRow>
         </TableHeader>
         <TableBody>
           {rows.map((row) => (
             <BreakdownLine
               key={`${row.repository}:${row.name}`}
-              name={<BreakdownName by={by} row={row} />}
+              name={<BreakdownName by={by} row={row} manyRepos={manyRepos} />}
               sums={row}
               total={total}
               onSelect={() => setSearch(rowFilter(by, row))}
@@ -658,7 +746,7 @@ function BreakdownLine({
           name
         )}
       </TableCell>
-      <TableCell className="hidden sm:table-cell">
+      <TableCell className={PHONE_HIDDEN}>
         <div className="flex items-center gap-2">
           <div aria-hidden className="h-1.5 flex-1 overflow-hidden rounded-full bg-raised-2">
             <div className="h-full rounded-full bg-primary" style={{ width: `${share * 100}%` }} />
@@ -668,7 +756,7 @@ function BreakdownLine({
           </span>
         </div>
       </TableCell>
-      <TableCell className="text-right tabular-nums">
+      <TableCell className={cn("text-right tabular-nums", PHONE_HIDDEN)}>
         <Count value={sums.runs} />
       </TableCell>
       <TableCell className="text-right font-medium tabular-nums">
@@ -679,10 +767,23 @@ function BreakdownLine({
   );
 }
 
-function BreakdownName({ by, row }: { by: BreakdownBy; row: BreakdownRow }) {
-  if ((by === "workflow" || by === "path") && row.repository) {
+// Workflows and folders show their repo only when the page covers more than one.
+function BreakdownName({
+  by,
+  row,
+  manyRepos,
+}: {
+  by: BreakdownBy;
+  row: BreakdownRow;
+  manyRepos: boolean;
+}) {
+  if (by === "workflow" || by === "path") {
     const name = by === "path" ? folderName(row.name) : row.name;
-    return <SubjectText repository={row.repository} name={name} />;
+    return manyRepos && row.repository ? (
+      <SubjectText repository={row.repository} name={name} />
+    ) : (
+      name
+    );
   }
   if (by === "trigger") return triggerName(row.name);
   return row.name;
@@ -696,13 +797,13 @@ const runTime = (ms: number) => (ms < 60_000 ? elapsed(ms) : `${count(Math.round
 function RunsPanel({
   row,
   listed,
-  days,
+  range,
   filter,
 }: {
   row: SignalRowRef;
   /** The row as the page lists it, when it does. */
   listed: SignalRow | undefined;
-  days: number;
+  range: TimeRange;
   filter: SignalFilter;
 }) {
   const setSearch = useSetSearch<Search>();
@@ -711,8 +812,8 @@ function RunsPanel({
   useEffect(() => {
     let live = true;
     const request = authDisabled
-      ? Promise.resolve(sampleSignalRuns(row, days))
-      : getSignalRuns(row, days, filter);
+      ? Promise.resolve(sampleSignalRuns(row, rangeDays(range)))
+      : getSignalRuns(row, range, filter);
     request.then(
       (next) => live && setFound(next),
       () => live && setFound("failed"),
@@ -724,6 +825,11 @@ function RunsPanel({
   }, []);
 
   const copy = SIGNAL_COPY[row.signal];
+  // Runs come from single jobs, so a longer range lists only its last 30 days.
+  const span =
+    found && found !== "failed" && found.days < rangeDays(range)
+      ? rangePhrase(dayPreset(found.days))
+      : rangePhrase(range);
 
   let body: ReactNode;
   if (found === "failed")
@@ -741,17 +847,13 @@ function RunsPanel({
       </div>
     );
   else if (!found.runs.length)
-    body = (
-      <p className="text-sm text-muted-foreground">
-        No runs behind this row in the last {found.days} days.
-      </p>
-    );
+    body = <p className="text-sm text-muted-foreground">No runs behind this row in {span}.</p>;
   else
     body = (
       <div className="grid gap-2">
         <div className="flex justify-between text-xs text-muted-foreground">
           <span>
-            {plural(found.total, "run")} in the last {found.days} days
+            {plural(found.total, "run")} in {span}
           </span>
           <span>{copy.minutes}</span>
         </div>
@@ -792,6 +894,11 @@ function RunsPanel({
               )}
             </SheetDescription>
           </header>
+          {/* What the signal means, so the runs below read in context. */}
+          <div className="grid gap-2">
+            <p className="text-sm text-muted-foreground">{copy.about}</p>
+            <SignalLinks id={row.signal} />
+          </div>
           {body}
         </div>
       </SheetContent>
@@ -802,9 +909,9 @@ function RunsPanel({
 function RunItem({ run }: { run: SignalRun }) {
   return (
     <li>
-      <Link
-        to="/history"
-        search={{ run: runParam(run), job: run.jobId ?? undefined }}
+      <RunLink
+        run={run}
+        job={run.jobId ?? undefined}
         className="group flex items-start gap-3 px-3 py-2.5 hover:bg-secondary/30"
       >
         <StatusIcon
@@ -825,7 +932,7 @@ function RunItem({ run }: { run: SignalRun }) {
           </span>
         </span>
         <span className="text-sm font-medium tabular-nums">{runTime(run.runMs)}</span>
-      </Link>
+      </RunLink>
     </li>
   );
 }

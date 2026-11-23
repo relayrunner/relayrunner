@@ -4,16 +4,21 @@ import type { Env } from "../env.ts";
 import { createTestEnv } from "../testing.ts";
 
 // GitHub reads the Router makes itself: tests that need them set the answers.
-const github = vi.hoisted(() => ({ userCanReadRepo: vi.fn(), listRunners: vi.fn() }));
-vi.mock("../github-app.ts", async (importOriginal) => ({
-  ...(await importOriginal<typeof import("../github-app.ts")>()),
+const github = vi.hoisted(() => ({
+  userCanReadRepo: vi.fn(),
+  listRunners: vi.fn(),
+  orgAppSlugs: vi.fn(),
+}));
+vi.mock("../github/github-app.ts", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("../github/github-app.ts")>()),
   appInstallationToken: async () => "ghs_test",
   userCanReadRepo: github.userCanReadRepo,
   listRunners: github.listRunners,
+  orgAppSlugs: github.orgAppSlugs,
 }));
 
 const { Router } = await import("./router.ts");
-const { GitHubRateLimitError } = await import("../github-app.ts");
+const { GitHubRateLimitError } = await import("../github/github-app.ts");
 
 function memoryState() {
   const data = new Map<string, unknown>();
@@ -303,6 +308,42 @@ describe("Router: jobs wait for a full machine", () => {
     const routeId = (await router.route(job(1))).runner!.slice(3);
     expect(await router.claim(routeId, queued(2, 42))).toBeNull();
   });
+
+  test("holds a job waiting for a full machine, and a live route its job claimed", async () => {
+    vi.useFakeTimers({ toFake: ["Date"] });
+    try {
+      // Waiting for the full machine: still the Router's, before and after its queued webhook.
+      const waiting = (await router.route(job(1))).runner!.slice(3);
+      expect(await router.holds(waiting, queued(1, 42))).toBe(true);
+      await router.claim(waiting, queued(1, 42));
+      expect(await router.holds(waiting, queued(1, 42))).toBe(true);
+      // Not for another job of the run, or another run's.
+      expect(await router.holds(waiting, queued(1, 43))).toBe(false);
+      expect(await router.holds(waiting, queued(2, 42))).toBe(false);
+      await router.dropWaiting(waiting, queued(1, 42));
+      expect(await router.holds(waiting, queued(1, 42))).toBe(false);
+
+      running = 0;
+      const routed = (await router.route(job(3))).runner!.slice(3);
+      await router.claim(routed, queued(3, 44));
+      expect(await router.holds(routed, queued(3, 44))).toBe(true);
+      expect(await router.holds(routed, queued(3, 45))).toBe(false);
+      // Past a day the route is gone.
+      vi.advanceTimersByTime(25 * 60 * 60_000);
+      expect(await router.holds(routed, queued(3, 44))).toBe(false);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  test("doesn't hold a job whose route is done or unknown", async () => {
+    running = 0;
+    const routeId = (await router.route(job(1))).runner!.slice(3);
+    await router.claim(routeId, queued(1, 42));
+    await router.release(routeId);
+    expect(await router.holds(routeId, queued(1, 42))).toBe(false);
+    expect(await router.holds("0123456789ab", queued(1, 42))).toBe(false);
+  });
 });
 
 describe("Router: GitHub's API limit", () => {
@@ -424,6 +465,7 @@ describe("Router: runners added from a repo", () => {
 });
 
 describe("Router: a machine that goes offline after the pick", () => {
+  let env: Env;
   let state: ReturnType<typeof memoryState>;
   let router: InstanceType<typeof Router>;
   let online: boolean;
@@ -450,7 +492,7 @@ describe("Router: a machine that goes offline after the pick", () => {
       "insert into machine (id, workspace_id, user_id, name, os, arch, token_hash, source, sharing, created_at, updated_at) values ('m1', 'w1', 'u1', 'ci-runner', 'linux', 'x64', 'hash', 'connect', 'only_me', ?1, ?1)",
     ])
       await testEnv.DB.prepare(sql).bind(now).run();
-    const env = {
+    env = {
       ...testEnv,
       MACHINE_LINK: {
         getByName: () => ({
@@ -564,6 +606,152 @@ describe("Router: a machine that goes offline after the pick", () => {
     }
   });
 
+  // A run whose first attempt had two relays, each routing its own job to its own label.
+  // `startedBy`: who started the run. `recorded`: whether the re-run attempt's workflow_run (who
+  // re-ran it) has come yet; the run's starter re-ran it.
+  async function twoPicks(secondMachine = "self-hosted", recorded = true, startedBy = owner) {
+    const now = Date.now();
+    const decision = (pickJobId: string, runner: string, machine: string) =>
+      `insert into route_decision (workspace_id, repository_id, run_id, run_attempt, pick_job_id, step, runner, skipped, not_in_order, machine, github, hosted, started_by_id, started_by_login, triggered_by_id, triggered_by_login, created_at) values ('w1', 1, 5, 1, '${pickJobId}', 'machine', '${runner}', '[]', '[]', '["${machine}"]', '[]', '{}', ?2, ?3, ?2, ?3, ?1)`;
+    await env.DB.prepare(
+      "insert into github_repository (id, installation_id, full_name, private, github_state_at, created_at, updated_at) values (1, 7, 'leonel/cabal', 1, ?1, ?1, ?1)",
+    )
+      .bind(now)
+      .run();
+    for (const sql of [
+      decision("relay-a", "rr-aaaaaaaaaaaa", "self-hosted"),
+      decision("relay-b", "rr-bbbbbbbbbbbb", secondMachine),
+    ])
+      await env.DB.prepare(sql).bind(now, startedBy.id, startedBy.login).run();
+    if (recorded) await rerunBy(startedBy, startedBy);
+  }
+  // The re-run attempt's workflow_run: `startedBy` started the run, `by` re-ran it.
+  async function rerunBy(by: { id: number; login: string }, startedBy = owner) {
+    await env.DB.prepare(
+      "insert into workflow_run (id, run_attempt, installation_id, repository_id, repository_full_name, event, started_by_id, started_by_login, triggered_by_id, triggered_by_login, head_sha, status, github_updated_at, created_at, updated_at) values (5, 2, 7, 1, 'leonel/cabal', 'push', ?4, ?5, ?2, ?3, 'abc', 'in_progress', ?1, ?1, ?1)",
+    )
+      .bind(Date.now(), by.id, by.login, startedBy.id, startedBy.login)
+      .run();
+  }
+  const teammate = { id: 600, login: "sofia" };
+  const rerun = {
+    ...queued(5, 77),
+    runAttempt: 2,
+    workspaceId: "w1",
+    installationId: 7,
+    repo: "leonel/cabal",
+  };
+  const routedAgain = {
+    id: "bbbbbbbbbbbb",
+    machineId: "m1",
+    jobId: 77,
+    runAttempt: 2,
+    state: "dispatched",
+  };
+
+  test("a re-run of the job the second relay routed goes to a machine again", async () => {
+    await twoPicks();
+    expect(await router.reroute("bbbbbbbbbbbb", rerun)).toMatchObject({
+      id: "bbbbbbbbbbbb",
+      machineId: "m1",
+      jobId: 77,
+      runAttempt: 2,
+      state: "dispatched",
+    });
+  });
+
+  test("a re-run whose machine is offline waits for it, then ends after 5 minutes", async () => {
+    vi.useFakeTimers({ toFake: ["Date"] });
+    try {
+      await twoPicks();
+      online = false;
+      expect(await router.reroute("bbbbbbbbbbbb", rerun)).toBe("waiting");
+      expect(state.data.get("wait:bbbbbbbbbbbb")).toMatchObject({ jobId: 77, runAttempt: 2 });
+      await router.alarm();
+      vi.advanceTimersByTime(5 * 60_000);
+      await router.alarm();
+      expect(endJob).toHaveBeenCalledWith(
+        expect.objectContaining({ routeId: "bbbbbbbbbbbb", jobId: 77, reason: "no_machine" }),
+      );
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  test("a re-run whose machine is back in time takes it", async () => {
+    await twoPicks();
+    online = false;
+    expect(await router.reroute("bbbbbbbbbbbb", rerun)).toBe("waiting");
+    online = true;
+    await router.alarm();
+    expect(run).toHaveBeenCalledOnce();
+    expect(run.mock.calls[0]![0].route).toMatchObject({ id: "bbbbbbbbbbbb", jobId: 77 });
+    expect(endJob).not.toHaveBeenCalled();
+  });
+
+  test("a teammate's re-run of the owner's run goes to the owner's only_me machine", async () => {
+    // Before this attempt's workflow_run says who re-ran it: the run's starter is enough.
+    await twoPicks("self-hosted", false);
+    expect(await router.reroute("bbbbbbbbbbbb", rerun)).toMatchObject(routedAgain);
+    expect(state.data.has("wait:bbbbbbbbbbbb")).toBe(false);
+  });
+
+  test("so does one whose workflow_run already says the teammate re-ran it", async () => {
+    await twoPicks("self-hosted", false);
+    await rerunBy(teammate);
+    expect(await router.reroute("bbbbbbbbbbbb", rerun)).toMatchObject(routedAgain);
+  });
+
+  test("a teammate's re-run that waited for the owner's offline machine takes it once it's back", async () => {
+    await twoPicks("self-hosted", false);
+    online = false;
+    expect(await router.reroute("bbbbbbbbbbbb", rerun)).toBe("waiting");
+    online = true;
+    await router.alarm();
+    expect(run).toHaveBeenCalledOnce();
+    expect(run.mock.calls[0]![0].route).toMatchObject({ id: "bbbbbbbbbbbb", jobId: 77 });
+    expect(state.data.has("wait:bbbbbbbbbbbb")).toBe(false);
+    expect(endJob).not.toHaveBeenCalled();
+  });
+
+  test("a re-run of a run a teammate started is refused by an only_me machine", async () => {
+    // Even when the machine's owner re-ran it, before or after its workflow_run comes.
+    await twoPicks("self-hosted", false, teammate);
+    expect(await router.reroute("bbbbbbbbbbbb", rerun)).toBeNull();
+    await rerunBy(owner, teammate);
+    expect(await router.reroute("bbbbbbbbbbbb", rerun)).toBeNull();
+    expect(state.data.has("wait:bbbbbbbbbbbb")).toBe(false);
+    expect(run).not.toHaveBeenCalled();
+  });
+
+  test("a re-run no machine's labels fit is refused before its workflow_run comes too", async () => {
+    await twoPicks("gpu", false);
+    expect(await router.reroute("bbbbbbbbbbbb", rerun)).toBeNull();
+    expect(state.data.has("wait:bbbbbbbbbbbb")).toBe(false);
+  });
+
+  test("Re-run all jobs: a teammate's pick at attempt 2 of the owner's run gets the only_me machine", async () => {
+    const decision = await router.route({ ...job(9), triggeredBy: teammate, runAttempt: 2 });
+    expect(decision.runner).toMatch(/^rr-/);
+  });
+
+  test("a teammate's first attempt of the owner's run still isn't the owner's", async () => {
+    for (const runAttempt of [undefined, 1]) {
+      const decision = await router.route({ ...job(9), triggeredBy: teammate, runAttempt });
+      expect(decision.runner).toBeNull();
+      expect(decision.skipped).toContainEqual(
+        expect.objectContaining({ key: "machine", reason: "machine_not_shared" }),
+      );
+    }
+  });
+
+  test("a re-run no machine's labels fit, or on a label no pick of the run answered, is refused", async () => {
+    await twoPicks("gpu");
+    expect(await router.reroute("bbbbbbbbbbbb", rerun)).toBeNull();
+    expect(await router.reroute("cccccccccccc", rerun)).toBeNull();
+    expect([...state.data.keys()].some((key) => key.startsWith("wait:"))).toBe(false);
+  });
+
   test("a machine back in time takes the job", async () => {
     vi.useFakeTimers({ toFake: ["Date"] });
     try {
@@ -580,5 +768,77 @@ describe("Router: a machine that goes offline after the pick", () => {
     } finally {
       vi.useRealTimers();
     }
+  });
+});
+
+describe("Router: hosted providers that can't see the repo", () => {
+  let router: InstanceType<typeof Router>;
+  const groundboxJob = {
+    ...job(1),
+    ...relayInputs({ groundbox: ["groundbox-2vcpu"], github: ["ubuntu-latest"] }),
+  };
+
+  let env: Awaited<ReturnType<typeof createTestEnv>>;
+
+  beforeEach(async () => {
+    vi.spyOn(console, "log").mockImplementation(() => {});
+    env = await createTestEnv();
+    const now = Date.now();
+    for (const sql of [
+      "insert into github_installation (id, account_id, account_login, account_type, created_at, updated_at) values (7, 10, 'acme', 'Organization', ?1, ?1)",
+      `insert into workspace (id, installation_id, name, slug, runner_order, created_at) values ('w1', 7, 'W', 'w', '{"steps":[{"key":"groundbox"},{"key":"github"}]}', ?1)`,
+    ])
+      await env.DB.prepare(sql).bind(now).run();
+    github.orgAppSlugs.mockReset().mockResolvedValue(["groundbox-dev"]);
+    router = new Router(memoryState().ctx as never, env as unknown as Env);
+  });
+
+  test("a provider whose App isn't installed on the org is skipped", async () => {
+    github.orgAppSlugs.mockResolvedValue(["blacksmith-sh"]);
+    const decision = await router.route(groundboxJob);
+    expect(decision).toMatchObject({
+      runner: "ubuntu-latest",
+      skipped: [
+        { key: "groundbox", reason: "provider_no_access", access: { cause: "not_installed" } },
+      ],
+    });
+  });
+
+  test("GitHub not saying which Apps are installed never skips one", async () => {
+    vi.spyOn(console, "warn").mockImplementation(() => {});
+    github.orgAppSlugs.mockRejectedValue(new Error("GET /orgs/acme/installations failed with 403"));
+    expect((await router.route(groundboxJob)).runner).toBe("groundbox-2vcpu");
+  });
+
+  test("a repo with its own order walks it; the rest walk the workspace's", async () => {
+    await env.DB.prepare(
+      `insert into repo_runner_order (workspace_id, repository_id, repository, runner_order, updated_at) values ('w1', 2, 'acme/two', '{"steps":[{"key":"github"}]}', ?1)`,
+    )
+      .bind(Date.now())
+      .run();
+    const workspaceOrder = await router.route(groundboxJob);
+    expect(workspaceOrder.runner).toBe("groundbox-2vcpu");
+    expect(workspaceOrder.ownOrder).toBeUndefined();
+    expect(await router.route({ ...groundboxJob, repositoryId: 2 })).toMatchObject({
+      runner: "ubuntu-latest",
+      skipped: [],
+      ownOrder: true,
+    });
+  });
+
+  test("a miss skips the provider for that repo until a runner picks one of its jobs up", async () => {
+    expect((await router.route(groundboxJob)).runner).toBe("groundbox-2vcpu");
+    await router.providerMissed("groundbox", 1);
+    const skipped = await router.route(groundboxJob);
+    expect(skipped).toMatchObject({
+      runner: "ubuntu-latest",
+      skipped: [{ key: "groundbox", reason: "provider_no_access", access: { cause: "missed" } }],
+    });
+    // Another repo still goes there.
+    expect((await router.route({ ...groundboxJob, repositoryId: 2 })).runner).toBe(
+      "groundbox-2vcpu",
+    );
+    await router.providerPicked("groundbox", 1);
+    expect((await router.route(groundboxJob)).runner).toBe("groundbox-2vcpu");
   });
 });

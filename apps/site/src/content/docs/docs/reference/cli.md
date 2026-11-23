@@ -73,16 +73,18 @@ Shows the machine, the workspaces it's in, who enrolled it, its sharing setting 
 ## `init`
 
 ```sh
-relayrunner init [--plan] [--apply <jobs>] [--json]
+relayrunner init [--plan] [--apply <jobs>] [--auto] [--allow-deploy <jobs>] [--json]
 ```
 
 Routes a repo's jobs through RelayRunner. Run it inside a checkout. See [Move your workflows over](/docs/get-started/move-over).
 
-| Flag             | What it does                                                                           |
-| ---------------- | -------------------------------------------------------------------------------------- |
-| `--plan`         | List the jobs and what would happen. Changes nothing.                                  |
-| `--apply <jobs>` | Route these jobs without prompting: ids (`test`), `file:id` (`ci.yml:test`), or `all`. |
-| `--json`         | Print the result as JSON.                                                              |
+| Flag                    | What it does                                                                                                                               |
+| ----------------------- | ------------------------------------------------------------------------------------------------------------------------------------------ |
+| `--plan`                | List the jobs and what would happen. Changes nothing.                                                                                      |
+| `--apply <jobs>`        | Route these jobs without prompting: ids (`test`), `file:id` (`ci.yml:test`), or `all`.                                                     |
+| `--auto`                | Write `auto` instead of the label for Linux x64 jobs, so you set their [size](/docs/reference/relay-inputs#auto-sizes) on the Router page. |
+| `--allow-deploy <jobs>` | Route these jobs even though they look like deploy jobs. The machine gets their secrets and cloud access.                                  |
+| `--json`                | Print the result as JSON.                                                                                                                  |
 
 ## `pause` and `resume`
 
@@ -122,6 +124,19 @@ relayrunner history --json
 ```
 
 Lists the jobs `connect` ran on this machine, newest first, with each one's result and how long it took. They're kept in `~/.relayrunner/history.jsonl`, the newest 500 at least, which the Mac app reads too.
+
+## `blacksmith`
+
+```sh
+relayrunner blacksmith connect
+relayrunner blacksmith connect --workspace acme   # when you run more than one workspace
+```
+
+Connects your Blacksmith organization so Settings › Providers shows its real usage: billable minutes and cost per day, and each job's billable minutes. Blacksmith has no usage API, so RelayRunner reads it with Blacksmith's own CLI and an org token.
+
+The command runs `blacksmith org-token create`, which opens your browser for you to approve as an admin of the Blacksmith organization. It sends only the token it prints to RelayRunner, encrypted at rest, and never signs in to Blacksmith or reads Blacksmith's saved credentials. If Blacksmith's CLI isn't installed, it offers to download it into `~/.relayrunner/bin` (`--yes` skips the question), checked against the SHA-256 Blacksmith publishes.
+
+In the browser, approve it for the GitHub organization your workspace is on. A token for any other organization is refused. The token goes to the workspace on that organization, or the one you name when you have more than one. You must own or administer it. Remove the connection in Settings › Providers, then revoke the token with `blacksmith org-token revoke <id>`. Run `relayrunner login` first if this computer isn't signed in.
 
 ## `firewall`
 

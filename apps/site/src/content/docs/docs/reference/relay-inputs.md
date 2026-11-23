@@ -42,6 +42,7 @@ Any input can say `auto` instead of a label. The Router then picks that provider
 | `celesto`    | none    | One Celesto label, such as `celesto-standard`.                                                                                                                                                               |
 | `instabox`   | none    | One InstaBox label, such as `instabox-medium`.                                                                                                                                                               |
 | `lizard`     | none    | One Lizard label, such as `lizard-medium-ubuntu-2404`. Organizations' repos only.                                                                                                                            |
+| `groundbox`  | none    | One Groundbox label, such as `groundbox-4vcpu`, `groundbox-windows-4vcpu` or `groundbox-macos`.                                                                                                              |
 | `runs-on`    | none    | One RunsOn label, such as `runs-on=${{ github.run_id }}/runner=2cpu-linux-x64`.                                                                                                                              |
 
 ## Auto sizes
@@ -65,7 +66,7 @@ jobs:
 | `machine: auto`                            | Any of your machines, at its own size                  |
 | No inputs at all                           | Every provider in your runner order, at the job's size |
 
-- **The size** is the one you picked for the job on the Router page, or the workspace's **Default size** under **Settings** there. It starts at 2 vCPU. To pick one, find the workflow under **Workflows** and click its auto jobs.
+- **The size** is the one you picked for the job on the Router page, or the workspace's **Default size** under **Settings** there. It starts at 2 vCPU. To pick one, find the workflow under **Workflows** and click its auto jobs. For a repo that isn't routed yet, pick sizes in **Route a repo** on the same page; they apply from the first run.
 - **A provider without that size** uses its next size up. If it has nothing that big, the job skips it, and the Activity page says why. GitHub-hosted has standard runners up to 2 vCPU.
 - **Try first**, next to the size, sends one job to a provider before the rest of your runner order.
 - A workflow whose relays all name their labels shows as **Pinned** under Workflows. Its sizes stay in the file.

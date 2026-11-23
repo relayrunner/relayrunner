@@ -1,13 +1,10 @@
 import { AUTO_SIZES } from "@relayrunner/providers";
 import { RUNNER_LABELS, type RunnerKey } from "@relayrunner/runner-order";
-import { CheckIcon, ChevronRightIcon, MinusIcon, PinIcon, XIcon } from "lucide-react";
+import { ChevronRightIcon, SlidersVerticalIcon } from "lucide-react";
 import { useState } from "react";
-import { CopyCommand } from "@/components/add-runner";
 import { ProviderMark } from "@/components/providers";
 import { DOCS_URL } from "@/components/site-footer";
-import { Button } from "@/components/ui/button";
 import { Sheet, SheetContent, SheetDescription, SheetTitle } from "@/components/ui/sheet";
-import { HoverCard, HoverCardContent, HoverCardTrigger } from "@/components/ui/hover-card";
 import {
   Select,
   SelectContent,
@@ -19,94 +16,69 @@ import { type AutoJob, autoJobName } from "@/lib/auto-jobs";
 import { plural } from "@/lib/job-times";
 import { readFlag, saveFlag } from "@/lib/stored-flag";
 import type { RouterSetup, SetupWorkflow } from "@/lib/router-setup";
-import { count, exact } from "@/lib/utils";
+import { cn, count, exact } from "@/lib/utils";
 
-/** Workflows shown per repo before "Show all". */
-const FIRST_ROWS = 6;
-const ALL = "all";
 const DEFAULT = "default";
 const ORDER = "order";
-const HINT_KEY = "rr-auto-hint-dismissed";
-const AUTO_DOCS = `${DOCS_URL}/reference/relay-inputs#auto-sizes`;
+export const AUTO_DOCS = `${DOCS_URL}/reference/relay-inputs#auto-sizes`;
 
 type Workflow = Pick<SetupWorkflow, "repositoryId" | "repository" | "workflow"> &
-  Partial<Pick<SetupWorkflow, "runs" | "routedRuns">> & { jobs: AutoJob[] };
+  Partial<Pick<SetupWorkflow, "runs" | "routedRuns">> & { autoJobs: AutoJob[] };
 
 /**
  * The workspace's workflows by repo, from their runs in the last `days` days, and whether they go
- * through a relay. A workflow with auto jobs (a relay set to `auto`) opens a panel listing them with
- * the size and first provider the Router picks for each. Owners and admins change those there; each
- * change saves.
+ * through a relay. Each repo is one row that opens to its routed workflows and a line naming the
+ * rest. Repos start closed and each browser remembers which it opened. A workflow with auto jobs (a relay set to `auto`) opens a
+ * panel listing them with the size and first provider the Router picks for each. Owners and admins
+ * change those there; each change saves.
  */
 export function RouterWorkflows({
+  workspaceId,
   setup,
   jobs,
   defaultSize,
   steps,
-  editable,
   onChange,
+  toRoute,
+  onSetUp,
 }: {
+  workspaceId: string;
   setup: RouterSetup | null;
   jobs: AutoJob[];
   defaultSize: number;
   // The providers in the runner order, for "try first".
   steps: RunnerKey[];
-  editable: boolean;
   onChange: (job: AutoJob, setting: Pick<AutoJob, "size" | "first">) => Promise<void>;
+  /** Repos with workflows left to route, which get a Set up link. */
+  toRoute: Set<number>;
+  /** Opens the "Route a repo" sheet at a repo's jobs. */
+  onSetUp: (repositoryId: number) => void;
 }) {
-  const [repo, setRepo] = useState(ALL);
-  const [hintDismissed, setHintDismissed] = useState(() => readFlag(HINT_KEY));
   // The workflow whose auto jobs the panel shows, by workflowKey.
   const [openKey, setOpenKey] = useState<string | null>(null);
   const workflows = mergeWorkflows(setup?.workflows ?? [], jobs);
   const open = workflows.find((w) => workflowKey(w) === openKey);
   if (workflows.length === 0) return null;
-  const repos = [...new Set(workflows.map((w) => w.repository))].sort();
-  const shown = repo === ALL ? repos : repos.filter((r) => r === repo);
-  const routed = workflows.filter((w) => (w.routedRuns ?? 0) > 0 || w.jobs.length > 0).length;
+  const repos = new Map<number, Workflow[]>();
+  for (const w of workflows) repos.set(w.repositoryId, [...(repos.get(w.repositoryId) ?? []), w]);
 
   return (
-    <section aria-label="Workflows" className="grid gap-3 rounded-xl border px-4 py-3.5">
-      <div className="flex flex-wrap items-center justify-between gap-x-4 gap-y-2">
+    <section aria-label="Workflows" className="grid gap-2 rounded-xl border px-4 py-3.5">
+      <div className="flex flex-wrap items-center justify-between gap-x-4 gap-y-1">
         <h2 className="text-sm font-semibold">Workflows</h2>
-        <div className="flex items-center gap-3">
-          <p className="text-xs text-muted-foreground">
-            {routed} of {workflows.length} routed · last {setup?.days ?? 14} days
-          </p>
-          {repos.length > 1 && (
-            <Select value={repo} onValueChange={setRepo}>
-              <SelectTrigger size="sm" aria-label="Repo" className="h-7 px-2 text-[13px]">
-                <SelectValue />
-              </SelectTrigger>
-              <SelectContent align="end">
-                <SelectItem value={ALL}>All repos</SelectItem>
-                {repos.map((name) => (
-                  <SelectItem key={name} value={name}>
-                    {name}
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
-          )}
-        </div>
+        <p className="text-xs text-muted-foreground">last {setup?.days ?? 14} days</p>
       </div>
-      {jobs.length === 0 && !hintDismissed && (
-        <AutoHint
-          provider={steps.find((key) => key !== "machine" && key !== "github") ?? "github"}
-          onDismiss={() => {
-            saveFlag(HINT_KEY, true);
-            setHintDismissed(true);
-          }}
-        />
-      )}
-      {shown.map((name) => (
-        <RepoWorkflows
-          key={name}
-          name={name}
-          workflows={workflows.filter((w) => w.repository === name)}
-          onOpen={(w) => setOpenKey(workflowKey(w))}
-        />
-      ))}
+      <div className="grid divide-y border-t">
+        {[...repos].map(([id, repoWorkflows]) => (
+          <RepoWorkflows
+            key={id}
+            workspaceId={workspaceId}
+            workflows={repoWorkflows}
+            onOpen={(w) => setOpenKey(workflowKey(w))}
+            onSetUp={toRoute.has(id) ? () => onSetUp(id) : undefined}
+          />
+        ))}
+      </div>
       <Sheet open={!!open} onOpenChange={(next) => !next && setOpenKey(null)}>
         <SheetContent className="sm:max-w-lg">
           {open && (
@@ -116,15 +88,14 @@ export function RouterWorkflows({
                 <SheetDescription>{open.repository}</SheetDescription>
               </div>
               <p className="text-[13px] text-muted-foreground">
-                {editable
+                {open.autoJobs.some((job) => job.canEdit)
                   ? "Pick each job's size and the provider it tries first. Changes apply to the next run."
-                  : "Owners and admins can change these."}
+                  : "Owners, admins and people who can push to this repo can change these."}
               </p>
               <AutoJobRows
-                jobs={open.jobs}
+                jobs={open.autoJobs}
                 defaultSize={defaultSize}
                 steps={steps}
-                editable={editable}
                 onChange={onChange}
               />
             </div>
@@ -135,149 +106,129 @@ export function RouterWorkflows({
   );
 }
 
+const isRouted = (w: Workflow) => (w.routedRuns ?? 0) > 0 || w.autoJobs.length > 0;
+
+// One repo: a row with how many of its workflows are routed, which opens to the routed ones and a
+// line naming the rest. Repos start closed; each browser remembers the ones it opened.
 function RepoWorkflows({
-  name,
+  workspaceId,
   workflows,
   onOpen,
+  onSetUp,
 }: {
-  name: string;
+  workspaceId: string;
   workflows: Workflow[];
   onOpen: (workflow: Workflow) => void;
+  onSetUp?: () => void;
 }) {
-  const [all, setAll] = useState(false);
-  const shown = all ? workflows : workflows.slice(0, FIRST_ROWS);
+  // Every workflow here shares the repo; the first one names it.
+  const { repositoryId, repository } = workflows[0]!;
+  const openKey = `router-repo-open:${workspaceId}:${repositoryId}`;
+  const [expanded, setExpanded] = useState(() => readFlag(openKey));
+  const routed = workflows.filter(isRouted);
+  const left = workflows.filter((w) => !isRouted(w)).map((w) => w.workflow);
+  const toggle = () => {
+    setExpanded(!expanded);
+    saveFlag(openKey, !expanded);
+  };
+  const setUpLink = onSetUp && (
+    <button
+      type="button"
+      onClick={onSetUp}
+      className="shrink-0 rounded text-xs font-medium text-go outline-none hover:text-go-hover focus-visible:ring-2 focus-visible:ring-ring"
+    >
+      Set up
+    </button>
+  );
   return (
-    <div className="grid gap-1.5 border-t pt-3">
-      <h3 className="text-[13px] font-semibold">{name}</h3>
-      <ul className="grid gap-1.5 text-sm">
-        {shown.map((w) => (
-          <li key={w.workflow}>
-            <div className="flex min-w-0 items-center gap-2.5">
-              {(w.routedRuns ?? 0) > 0 || w.jobs.length > 0 ? (
-                <CheckIcon aria-label="Routed" className="size-4 shrink-0 text-go" />
-              ) : (
-                <MinusIcon
-                  aria-label="Not routed"
-                  className="size-4 shrink-0 text-muted-foreground"
-                />
-              )}
-              <span className="min-w-0 truncate">{w.workflow}</span>
-              {(w.routedRuns ?? 0) > 0 && w.jobs.length === 0 && <PinnedNote />}
-              {w.jobs.length > 0 && (
-                <button
-                  type="button"
-                  onClick={() => onOpen(w)}
-                  className="flex shrink-0 items-center gap-0.5 rounded text-xs text-muted-foreground outline-none hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring"
-                >
-                  {plural(w.jobs.length, "auto job")}
-                  <ChevronRightIcon aria-hidden className="size-3.5" />
-                </button>
-              )}
-              {w.runs !== undefined && (
-                <span
-                  className="ml-auto shrink-0 text-xs text-muted-foreground tabular-nums"
-                  title={`${exact(w.routedRuns ?? 0)} of ${exact(w.runs)} runs`}
-                >
-                  {!w.routedRuns
-                    ? "Not routed"
-                    : w.routedRuns === w.runs
-                      ? plural(w.runs, "run")
-                      : `${count(w.routedRuns)} of ${count(w.runs)} runs`}
-                </span>
-              )}
-            </div>
-          </li>
-        ))}
-      </ul>
-      {workflows.length > FIRST_ROWS && (
-        <Button
-          variant="ghost"
-          size="sm"
-          className="justify-self-start"
-          onClick={() => setAll(!all)}
+    <div className="grid gap-1 py-2">
+      <div className="flex min-w-0 items-center gap-3">
+        <button
+          type="button"
+          aria-expanded={expanded}
+          onClick={toggle}
+          className="flex min-w-0 flex-1 items-center gap-1.5 rounded text-left outline-none focus-visible:ring-2 focus-visible:ring-ring"
         >
-          {all ? "Show fewer" : `Show all ${workflows.length}`}
-        </Button>
+          <ChevronRightIcon
+            aria-hidden
+            className={cn(
+              "size-4 shrink-0 text-muted-foreground transition-transform",
+              expanded && "rotate-90",
+            )}
+          />
+          <span className="min-w-0 truncate text-[13px] font-semibold">{repository}</span>
+          {routed.length > 0 && (
+            <span className="ml-auto shrink-0 text-xs text-muted-foreground tabular-nums">
+              {routed.length} of {workflows.length}
+            </span>
+          )}
+        </button>
+        {routed.length === 0 && setUpLink}
+      </div>
+      {expanded && (
+        <div className="grid pl-5.5 text-sm">
+          {routed.map((w) => {
+            const runs = w.runs !== undefined && (
+              <span
+                className="ml-auto shrink-0 text-xs text-muted-foreground tabular-nums"
+                title={`${exact(w.routedRuns ?? 0)} of ${exact(w.runs)} runs routed`}
+              >
+                {w.routedRuns && w.routedRuns < w.runs
+                  ? `${count(w.routedRuns)} of ${count(w.runs)} runs`
+                  : plural(w.runs, "run")}
+              </span>
+            );
+            return w.autoJobs.length > 0 ? (
+              <button
+                key={w.workflow}
+                type="button"
+                onClick={() => onOpen(w)}
+                className="-mx-2 flex min-w-0 items-center gap-1.5 rounded-md px-2 py-1 text-left outline-none hover:bg-accent/50 focus-visible:ring-2 focus-visible:ring-ring"
+              >
+                <span className="min-w-0 truncate">{w.workflow}</span>
+                <SlidersVerticalIcon
+                  aria-label={`Sizes set here for ${plural(w.autoJobs.length, "job")}`}
+                  className="size-3.5 shrink-0 text-muted-foreground"
+                />
+                {runs}
+              </button>
+            ) : (
+              <div key={w.workflow} className="flex min-w-0 items-center gap-1.5 py-1">
+                <span className="min-w-0 truncate">{w.workflow}</span>
+                {runs}
+              </div>
+            );
+          })}
+          {left.length > 0 && (
+            <p className={cn("text-[13px] text-muted-foreground", routed.length > 0 && "pt-1")}>
+              {listNames(left)} {left.length === 1 ? "isn't" : "aren't"} routed.{" "}
+              {/* A repo with nothing routed has its Set up link on its own row. */}
+              {routed.length > 0 && setUpLink}
+            </p>
+          )}
+        </div>
       )}
     </div>
   );
 }
 
-// Shown once, until dismissed, while no job uses `auto`: what it does and the line to write.
-function AutoHint({ provider, onDismiss }: { provider: RunnerKey; onDismiss: () => void }) {
-  return (
-    <div className="flex items-start gap-3 rounded-lg bg-muted/50 px-3 py-2.5">
-      <div className="grid min-w-0 flex-1 gap-2">
-        <p className="text-[13px]">
-          Pick each job's runner size here, with no commit. In a relay, write{" "}
-          <code className="font-mono">auto</code> in place of a label.{" "}
-          <a
-            href={AUTO_DOCS}
-            target="_blank"
-            rel="noreferrer"
-            className="text-go hover:text-go-hover"
-          >
-            How it works
-          </a>
-        </p>
-        <div className="max-w-60">
-          <CopyCommand command={`${provider}: auto`} prompt={false} />
-        </div>
-      </div>
-      <Button size="icon-sm" variant="ghost" aria-label="Dismiss" onClick={onDismiss}>
-        <XIcon aria-hidden />
-      </Button>
-    </div>
-  );
-}
-
-// A routed workflow with no auto jobs: its relays name their labels, so sizes live in the file.
-function PinnedNote() {
-  return (
-    <HoverCard openDelay={150}>
-      <HoverCardTrigger asChild>
-        <button
-          type="button"
-          className="flex shrink-0 items-center gap-1 rounded text-xs text-muted-foreground outline-none hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring"
-        >
-          <PinIcon aria-hidden className="size-3" />
-          Pinned
-        </button>
-      </HoverCardTrigger>
-      <HoverCardContent className="grid w-72 gap-2 text-[13px] text-muted-foreground">
-        <p>
-          <span className="font-medium text-foreground">Labels pinned in the workflow file.</span>{" "}
-          Its jobs run on the labels their relays name, at the size those labels set.
-        </p>
-        <p>
-          Write <code className="font-mono text-foreground">auto</code> in place of a label, such as{" "}
-          <code className="font-mono text-foreground">blacksmith: auto</code>, to pick the size here
-          instead.{" "}
-          <a
-            href={AUTO_DOCS}
-            target="_blank"
-            rel="noreferrer"
-            className="text-go hover:text-go-hover"
-          >
-            Auto sizes
-          </a>
-        </p>
-      </HoverCardContent>
-    </HoverCard>
-  );
+/** Names a few workflows in a sentence: "A, B and 3 more". */
+function listNames(names: string[], shown = 3) {
+  if (names.length <= shown + 1) {
+    return new Intl.ListFormat("en", { type: "conjunction" }).format(names);
+  }
+  return `${names.slice(0, shown).join(", ")} and ${names.length - shown} more`;
 }
 
 function AutoJobRows({
   jobs,
   defaultSize,
   steps,
-  editable,
   onChange,
 }: {
   jobs: AutoJob[];
   defaultSize: number;
   steps: RunnerKey[];
-  editable: boolean;
   onChange: (job: AutoJob, setting: Pick<AutoJob, "size" | "first">) => Promise<void>;
 }) {
   return (
@@ -296,37 +247,18 @@ function AutoJobRows({
               <span title={`${job.relayJob} in ${job.workflowPath}`}>{autoJobName(job)}</span>
             </td>
             <td className="py-1.5 pr-4">
-              <Select
-                value={job.size === null ? DEFAULT : String(job.size)}
-                disabled={!editable}
-                onValueChange={(value) =>
-                  void onChange(job, {
-                    size: value === DEFAULT ? null : Number(value),
-                    first: job.first,
-                  })
-                }
-              >
-                <SelectTrigger
-                  size="sm"
-                  aria-label={`${autoJobName(job)} size`}
-                  className="h-7 px-2 text-[13px]"
-                >
-                  <SelectValue />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value={DEFAULT}>Default · {defaultSize} vCPU</SelectItem>
-                  {AUTO_SIZES.map((size) => (
-                    <SelectItem key={size} value={String(size)}>
-                      {size} vCPU
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
+              <SizeSelect
+                name={autoJobName(job)}
+                value={job.size}
+                defaultSize={defaultSize}
+                disabled={!job.canEdit}
+                onChange={(size) => void onChange(job, { size, first: job.first })}
+              />
             </td>
             <td className="py-1.5">
               <Select
                 value={job.first ?? ORDER}
-                disabled={!editable}
+                disabled={!job.canEdit}
                 onValueChange={(value) =>
                   void onChange(job, {
                     size: job.size,
@@ -346,7 +278,7 @@ function AutoJobRows({
                   {(job.first && !steps.includes(job.first) ? [...steps, job.first] : steps).map(
                     (key) => (
                       <SelectItem key={key} value={key}>
-                        <ProviderMark provider={key} className="size-4 [&_svg]:size-3" />
+                        <ProviderMark provider={key} />
                         {RUNNER_LABELS[key]}
                       </SelectItem>
                     ),
@@ -368,7 +300,7 @@ const workflowKey = (w: Workflow) => `${w.repositoryId}:${w.workflow}`;
 function mergeWorkflows(workflows: SetupWorkflow[], jobs: AutoJob[]): Workflow[] {
   const key = (repositoryId: number, workflow: string) => `${repositoryId}:${workflow}`;
   const merged = new Map<string, Workflow>(
-    workflows.map((w) => [key(w.repositoryId, w.workflow), { ...w, jobs: [] }]),
+    workflows.map((w) => [key(w.repositoryId, w.workflow), { ...w, autoJobs: [] }]),
   );
   for (const job of jobs) {
     const workflow = job.workflow ?? job.workflowPath;
@@ -377,10 +309,49 @@ function mergeWorkflows(workflows: SetupWorkflow[], jobs: AutoJob[]): Workflow[]
       repositoryId: job.repositoryId,
       repository: job.repository,
       workflow,
-      jobs: [],
+      autoJobs: [],
     };
-    entry.jobs.push(job);
+    entry.autoJobs.push(job);
     merged.set(id, entry);
   }
   return [...merged.values()];
+}
+
+/** A job's size: the workspace default (null), or a vCPU count. */
+export function SizeSelect({
+  name,
+  value,
+  defaultSize,
+  disabled,
+  onChange,
+}: {
+  name: string;
+  value: number | null;
+  defaultSize: number;
+  disabled: boolean;
+  onChange: (size: number | null) => void;
+}) {
+  return (
+    <Select
+      value={value === null ? DEFAULT : String(value)}
+      disabled={disabled}
+      onValueChange={(next) => onChange(next === DEFAULT ? null : Number(next))}
+    >
+      <SelectTrigger
+        size="sm"
+        aria-label={`${name} size`}
+        className="h-7 shrink-0 px-2 text-[13px]"
+      >
+        <SelectValue />
+      </SelectTrigger>
+      <SelectContent>
+        <SelectItem value={DEFAULT}>Default · {defaultSize} vCPU</SelectItem>
+        {AUTO_SIZES.map((size) => (
+          <SelectItem key={size} value={String(size)}>
+            {size} vCPU
+          </SelectItem>
+        ))}
+      </SelectContent>
+    </Select>
+  );
 }

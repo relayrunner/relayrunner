@@ -53,7 +53,7 @@ const site = Astro.site!.origin;
     <main id="main" class="wrap legal">
       <h1>Privacy Policy</h1>
       {/* For a change people should agree to again, also bump LEGAL_VERSIONS.privacy (packages/activity/src/legal.ts). */}
-      <p class="updated">Last updated November 17, 2026</p>
+      <p class="updated">Last updated November 19, 2026</p>
 
       <p class="intro">
         RelayRunner is an open source project. This policy covers the hosted service its maintainers
@@ -121,7 +121,10 @@ const site = Astro.site!.origin;
         triggered the run, runner labels, status, result and timings, along with where we routed
         each job and why. We use the timings to report minutes used and saved. We don't receive your
         repository secrets, and we don't store job logs. When you open a failed job in the dashboard,
-        or an agent asks about it, we read the end of its log from GitHub to show you.
+        or an agent asks about it, we read the end of its log from GitHub to show you. If a
+        workspace owner or admin turns on job log export in Settings → Telemetry, we read each
+        finished job's log from GitHub and send it to the endpoint or bucket they chose, without
+        keeping a copy.
       </p>
 
       <h3>Connected machines</h3>

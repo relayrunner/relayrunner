@@ -1,0 +1,588 @@
+---
+/*
+ * The Mac app's menu and Jobs window, drawn in HTML with made-up jobs, for /download. Drawn rather
+ * than captured so it shows no real machine or repo, stays sharp at any size and follows the site's
+ * light or dark theme. Keep the labels in step with apps/mac (MenuBar.swift, JobsWindow.swift).
+ * Narrow screens show only the menu, and so does `menuOnly`, for a half-width column.
+ */
+interface Props {
+  menuOnly?: boolean;
+}
+const { menuOnly = false } = Astro.props;
+
+type Outcome = "ok" | "failed";
+const jobs: { name: string; workflow: string; repo: string; waited: string; ran: string; finished: string; outcome: Outcome }[] = [
+  { name: "test", workflow: "CI", repo: "acme/web", waited: "2s", ran: "4m 12s", finished: "2:41 PM", outcome: "ok" },
+  { name: "build", workflow: "CI", repo: "acme/web", waited: "1s", ran: "2m 48s", finished: "2:37 PM", outcome: "ok" },
+  { name: "lint", workflow: "CI", repo: "acme/api", waited: "3s", ran: "38s", finished: "2:30 PM", outcome: "ok" },
+  { name: "e2e", workflow: "Nightly", repo: "acme/web", waited: "0s", ran: "9m 05s", finished: "2:22 PM", outcome: "failed" },
+  { name: "test", workflow: "CI", repo: "acme/api", waited: "4s", ran: "3m 51s", finished: "2:14 PM", outcome: "ok" },
+  { name: "deploy", workflow: "Release", repo: "acme/api", waited: "1s", ran: "1m 20s", finished: "1:58 PM", outcome: "ok" },
+];
+const selected = 1;
+const steps: { name: string; start: number; width: number; time: string }[] = [
+  { name: "Set up job", start: 0, width: 6, time: "3s" },
+  { name: "Install dependencies", start: 6, width: 30, time: "52s" },
+  { name: "Build", start: 36, width: 60, time: "1m 49s" },
+  { name: "Complete job", start: 96, width: 4, time: "4s" },
+];
+const menuItems: { label: string; key?: string }[] = [
+  { label: "Jobs…", key: "⌘J" },
+  { label: "Open Dashboard" },
+  { label: "Settings…", key: "⌘," },
+];
+---
+
+<figure class:list={["mac-preview", { "mac-menu-only": menuOnly }]}>
+  <div
+    class="mac-stage"
+    role="img"
+    aria-label={menuOnly
+      ? "The RelayRunner menu bar menu: taking jobs, with a test job running and about a minute left."
+      : "The RelayRunner menu bar menu, running a test job, next to the Jobs window listing the week's jobs and one job's steps."}
+  >
+    <div class="mac-bar" aria-hidden="true">
+      <span class="mac-bar-icon">
+        <svg viewBox="0 0 36 36">
+          <mask id="mac-bar-head">
+            <path fill="#fff" d="M3 18q0-2.2 2-3.3l5.2-2.8q1.5-.8 3.4-1l11.3-1.3q1.6-.2 3.1.6l4.4 2.3q2.1 1.1 2.1 3.8v11.4q0 2.9-3 3.4l-17.4 2.7q-1.6.2-3-.5l-6.4-3.1Q3 29.4 3 27.6zM12 8l2.3-.8 2.3 6-2.3.8zM7.5 3.5l4.6-2.3 4.6 2.1v4.8l-4.6 2.4-4.6-2.3z" />
+            <path fill="#000" d="M13.1 20.4q0-2.8 2.8-3.3l13.6-2.2q2.7-.4 2.7 2.4v8.8q0 2.5-2.5 3l-13.8 2.2q-2.8.4-2.8-2.4z" />
+            <path stroke="#fff" stroke-width="2.6" stroke-linecap="round" d="M20.3 21.7v4.1m7-5.2v4.1" />
+          </mask>
+          <rect width="36" height="36" mask="url(#mac-bar-head)" />
+        </svg>
+        <i></i>
+      </span>
+      <span>Wed 2:44 PM</span>
+    </div>
+
+    <div class="mac-window" aria-hidden="true">
+      <div class="mac-titlebar">
+        <span class="mac-lights"><i></i><i></i><i></i></span>
+        <span>Jobs – ada-mbp</span>
+      </div>
+      <div class="mac-toolbar">
+        <span class="mac-seg"><b>All</b><span>Failed</span></span>
+        <span class="mac-search">Search jobs, workflows and repos</span>
+      </div>
+      <div class="mac-table">
+        <div class="mac-row mac-head">
+          <span></span><span>Job</span><span>Repo</span><span>Waited</span><span>Ran</span><span>Finished</span>
+        </div>
+        {
+          jobs.map((job, i) => (
+            <div class:list={["mac-row", { "mac-selected": i === selected }]}>
+              <span class:list={["mac-outcome", job.outcome]} />
+              <span>
+                {job.name}
+                <small>{job.workflow}</small>
+              </span>
+              <span>{job.repo}</span>
+              <span>{job.waited}</span>
+              <span>{job.ran}</span>
+              <span>Today at {job.finished}</span>
+            </div>
+          ))
+        }
+      </div>
+      <div class="mac-detail">
+        <p class="mac-detail-title">
+          <span class="mac-outcome ok"></span>
+          <span>
+            CI › build
+            <small>acme/web · waited 1s · ran 2m 48s · finished 7m ago</small>
+          </span>
+          <span class="mac-button">Open on GitHub</span>
+        </p>
+        <p class="mac-steps-title">Steps</p>
+        {
+          steps.map((step) => (
+            <div class="mac-step">
+              <span>{step.name}</span>
+              <span class="mac-track">
+                <i style={`left: ${step.start}%; width: ${step.width}%`} />
+              </span>
+              <span>{step.time}</span>
+            </div>
+          ))
+        }
+      </div>
+    </div>
+
+    <div class="mac-menu" aria-hidden="true">
+      <div class="mac-menu-head">
+        <svg class="mac-head-icon" viewBox="0 0 36 36">
+          <g stroke="#174c33" stroke-linejoin="round">
+            <path fill="#174c33" d="m12 8 2.3-.8 2.3 6-2.3.8z" />
+            <path fill="#fff5dc" d="m7.5 3.5 4.6-2.3 4.6 2.1v4.8l-4.6 2.4-4.6-2.3z" />
+            <path fill="#b5d888" stroke="none" d="m8 4 4.1 2 .1 3.8L8 7.9z" />
+            <path fill="#fff5dc" d="M3 18q0-2.2 2-3.3l5.2-2.8q1.5-.8 3.4-1l11.3-1.3q1.6-.2 3.1.6l4.4 2.3q2.1 1.1 2.1 3.8v11.4q0 2.9-3 3.4l-17.4 2.7q-1.6.2-3-.5l-6.4-3.1Q3 29.4 3 27.6z" />
+            <path fill="#b5d888" stroke="none" d="m3.6 17.2 7.8 3.3v10.2q0 1.2.4 2l-7-3.4q-1.2-.6-1.2-1.9z" />
+          </g>
+          <path fill="#06472b" d="M13.1 20.4q0-2.8 2.8-3.3l13.6-2.2q2.7-.4 2.7 2.4v8.8q0 2.5-2.5 3l-13.8 2.2q-2.8.4-2.8-2.4z" />
+          <path stroke="#fff5dc" stroke-width="2.6" stroke-linecap="round" d="M20.3 21.7v4.1m7-5.2v4.1" />
+        </svg>
+        <span>
+          <b>RelayRunner</b>
+          <small>Running 1 job, 2 waiting</small>
+        </span>
+        <span class="mac-switch on"></span>
+      </div>
+      <div class="mac-menu-body">
+        <div class="mac-running">
+          <p class="mac-line">
+            <span>
+              test
+              <small>CI · acme/web</small>
+            </span>
+            <span class="mac-time">
+              3:08
+              <small>about 1:04 left</small>
+            </span>
+          </p>
+          <span class="mac-track"><i style="width: 75%"></i></span>
+        </div>
+      </div>
+      <hr />
+      <p class="mac-item">
+        <span>Pause New Jobs</span>
+        <small>›</small>
+      </p>
+      <hr />
+      {
+        menuItems.map((item) => (
+          <p class="mac-item">
+            <span>{item.label}</span>
+            {item.key && <small>{item.key}</small>}
+          </p>
+        ))
+      }
+      <hr />
+      <p class="mac-item">
+        <span>Quit RelayRunner</span>
+        <small>⌘Q</small>
+      </p>
+    </div>
+  </div>
+</figure>
+
+<style>
+  /* macOS colors, light and dark, picked by the site theme rather than the visitor's system. */
+  .mac-preview {
+    --m-wall: linear-gradient(150deg, #cfeec4 0%, #8fd38a 38%, #3fae5b 72%, #1c7f49 100%);
+    --m-bg: rgba(246, 246, 246, 0.94);
+    --m-window: #ffffff;
+    --m-chrome: #ececec;
+    --m-ink: #1d1d1f;
+    --m-ink-2: rgba(0, 0, 0, 0.5);
+    --m-ink-3: rgba(0, 0, 0, 0.28);
+    --m-line: rgba(0, 0, 0, 0.1);
+    --m-fill: rgba(0, 0, 0, 0.07);
+    --m-stripe: #f4f5f5;
+    --m-seg: #ffffff;
+    --m-select: #0a63d6;
+    --m-green: #34c759;
+    --m-red: #ff3b30;
+    --m-shadow: 0 24px 60px -20px rgba(0, 0, 0, 0.45), 0 0 0 0.5px rgba(0, 0, 0, 0.18);
+    margin: 0;
+  }
+  :root[data-theme="dark"] .mac-preview {
+    --m-wall: linear-gradient(150deg, #1d3b2a 0%, #14532f 40%, #0d3b26 75%, #08231a 100%);
+    --m-bg: rgba(40, 40, 42, 0.94);
+    --m-window: #1e1e1e;
+    --m-chrome: #2b2b2d;
+    --m-ink: #f5f5f7;
+    --m-ink-2: rgba(255, 255, 255, 0.55);
+    --m-ink-3: rgba(255, 255, 255, 0.3);
+    --m-line: rgba(255, 255, 255, 0.1);
+    --m-fill: rgba(255, 255, 255, 0.1);
+    --m-stripe: #262627;
+    --m-seg: #636366;
+    --m-green: #30d158;
+    --m-red: #ff453a;
+    --m-shadow: 0 24px 60px -20px rgba(0, 0, 0, 0.8), 0 0 0 0.5px rgba(255, 255, 255, 0.16);
+  }
+
+  .mac-stage {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) 19.5em;
+    grid-template-rows: auto auto;
+    align-items: start;
+    padding: 0 2em 2.6em;
+    overflow: hidden;
+    border: 1px solid var(--line);
+    border-radius: 20px;
+    background: var(--m-wall);
+    box-shadow: var(--shadow-card);
+    color: var(--m-ink);
+    font: 13px/1.3 -apple-system, BlinkMacSystemFont, "SF Pro Text", "Helvetica Neue", system-ui, sans-serif;
+    letter-spacing: -0.003em;
+    user-select: none;
+  }
+  .mac-stage small {
+    display: block;
+    color: var(--m-ink-2);
+    font-size: 0.85em;
+  }
+  .mac-stage svg {
+    flex: none;
+    width: 1.15em;
+    height: 1.15em;
+    fill: none;
+    stroke: currentColor;
+    stroke-width: 1.7;
+    stroke-linecap: round;
+    stroke-linejoin: round;
+  }
+
+  /* The menu bar along the top of the screen. */
+  .mac-bar {
+    grid-column: 1 / -1;
+    display: flex;
+    justify-content: flex-end;
+    align-items: center;
+    gap: 1.2em;
+    margin: 0 -2em 0.6em;
+    padding: 0.25em 1.4em;
+    background: rgba(255, 255, 255, 0.35);
+    backdrop-filter: blur(12px);
+    color: #102016;
+    font-weight: 500;
+  }
+  :root[data-theme="dark"] .mac-bar {
+    background: rgba(0, 0, 0, 0.35);
+    color: #f5f5f7;
+  }
+  .mac-bar-icon {
+    position: relative;
+    display: grid;
+    place-items: center;
+    width: 2.2em;
+    height: 1.6em;
+    border-radius: 5px;
+    background: rgba(255, 255, 255, 0.4);
+  }
+  :root[data-theme="dark"] .mac-bar-icon {
+    background: rgba(255, 255, 255, 0.2);
+  }
+  .mac-bar-icon svg {
+    width: 1.3em;
+    height: 1.3em;
+    fill: currentColor;
+    stroke: none;
+  }
+  .mac-bar-icon i {
+    position: absolute;
+    right: 0.35em;
+    bottom: 0.3em;
+    width: 0.4em;
+    height: 0.4em;
+    border-radius: 50%;
+    background: currentColor;
+  }
+
+  /* The Jobs window. */
+  .mac-window {
+    grid-column: 1;
+    grid-row: 2;
+    margin-top: 2.4em;
+    margin-right: 1.5em;
+    overflow: hidden;
+    border-radius: 12px;
+    background: var(--m-window);
+    box-shadow: var(--m-shadow);
+  }
+  .mac-titlebar,
+  .mac-toolbar {
+    display: flex;
+    align-items: center;
+    gap: 1em;
+    padding: 0.6em 0.9em;
+    background: var(--m-chrome);
+  }
+  .mac-titlebar {
+    position: relative;
+    justify-content: center;
+    padding-bottom: 0.2em;
+    font-weight: 600;
+  }
+  .mac-lights {
+    position: absolute;
+    left: 0.9em;
+    display: flex;
+    gap: 0.5em;
+  }
+  .mac-lights i {
+    width: 0.95em;
+    height: 0.95em;
+    border-radius: 50%;
+    background: #ff5f57;
+  }
+  .mac-lights i:nth-child(2) {
+    background: #febc2e;
+  }
+  .mac-lights i:nth-child(3) {
+    background: #28c840;
+  }
+  .mac-toolbar {
+    justify-content: space-between;
+    border-bottom: 1px solid var(--m-line);
+  }
+  .mac-seg {
+    display: inline-flex;
+    padding: 2px;
+    border-radius: 7px;
+    background: var(--m-fill);
+    font-size: 0.92em;
+  }
+  .mac-seg > * {
+    padding: 0.15em 1.2em;
+    font-weight: 400;
+  }
+  .mac-seg b {
+    border-radius: 5px;
+    background: var(--m-seg);
+    box-shadow: 0 1px 2px rgba(0, 0, 0, 0.15);
+  }
+  .mac-search {
+    min-width: 15em;
+    padding: 0.2em 0.7em;
+    border-radius: 6px;
+    background: var(--m-fill);
+    color: var(--m-ink-3);
+    font-size: 0.92em;
+  }
+  .mac-row {
+    display: grid;
+    grid-template-columns: 2.4em 1.3fr 1.2fr 0.7fr 0.8fr 1.5fr;
+    align-items: center;
+    padding: 0.3em 0.4em;
+    white-space: nowrap;
+  }
+  .mac-row > * {
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+  .mac-row:nth-child(odd):not(.mac-head) {
+    background: var(--m-stripe);
+  }
+  .mac-head {
+    border-bottom: 1px solid var(--m-line);
+    color: var(--m-ink-2);
+    font-size: 0.85em;
+    font-weight: 600;
+  }
+  .mac-row.mac-selected:nth-child(n) {
+    margin: 0 0.4em;
+    padding-inline: 0;
+    border-radius: 6px;
+    background: var(--m-select);
+    color: #fff;
+  }
+  .mac-selected small {
+    color: rgba(255, 255, 255, 0.75);
+  }
+  .mac-outcome {
+    justify-self: center;
+    width: 1.05em;
+    height: 1.05em;
+    border-radius: 50%;
+    background: var(--m-green)
+      url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'%3E%3Cpath d='m4.5 8.2 2.3 2.3 4.7-4.8' fill='none' stroke='white' stroke-width='1.8' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E")
+      center / 100%;
+  }
+  .mac-outcome.failed {
+    background-color: var(--m-red);
+    background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'%3E%3Cpath d='m5.5 5.5 5 5m0-5-5 5' fill='none' stroke='white' stroke-width='1.8' stroke-linecap='round'/%3E%3C/svg%3E");
+  }
+  .mac-detail {
+    padding: 0.9em 1.2em 1.1em;
+    border-top: 1px solid var(--m-line);
+  }
+  .mac-detail-title {
+    display: flex;
+    align-items: flex-start;
+    gap: 0.6em;
+    font-size: 1.1em;
+    font-weight: 600;
+  }
+  .mac-detail-title .mac-outcome {
+    margin-top: 0.15em;
+  }
+  .mac-detail-title small {
+    font-weight: 400;
+  }
+  .mac-button {
+    margin-left: auto;
+    padding: 0.15em 0.8em;
+    border-radius: 6px;
+    background: var(--m-fill);
+    font-size: 0.82em;
+    font-weight: 400;
+    white-space: nowrap;
+  }
+  .mac-steps-title {
+    margin: 0.9em 0 0.4em;
+    font-weight: 600;
+  }
+  .mac-step {
+    display: grid;
+    grid-template-columns: 11em minmax(0, 1fr) 4em;
+    align-items: center;
+    gap: 1em;
+    padding: 0.2em 0;
+  }
+  .mac-step > :last-child {
+    color: var(--m-ink-2);
+    text-align: right;
+  }
+  .mac-track {
+    position: relative;
+    display: block;
+    height: 0.35em;
+    border-radius: 9px;
+    background: var(--m-fill);
+  }
+  .mac-track i {
+    position: absolute;
+    inset-block: 0;
+    left: 0;
+    min-width: 3px;
+    border-radius: inherit;
+    background: var(--m-green);
+  }
+  .mac-step .mac-track {
+    background: none;
+  }
+
+  /* The menu bar menu. */
+  .mac-menu {
+    position: relative;
+    grid-column: 2;
+    grid-row: 2;
+    justify-self: end;
+    width: 19.5em;
+    padding: 0.4em 0.35em;
+    border-radius: 11px;
+    background: var(--m-bg);
+    backdrop-filter: blur(24px);
+    box-shadow: var(--m-shadow);
+  }
+  .mac-menu-head {
+    display: flex;
+    align-items: center;
+    gap: 0.75em;
+    padding: 0.5em 0.6em;
+  }
+  .mac-stage .mac-head-icon {
+    width: 2.6em;
+    height: 2.6em;
+  }
+  .mac-menu-head b {
+    display: block;
+    font-weight: 700;
+  }
+  .mac-menu-head > span:nth-child(2) {
+    flex: 1;
+  }
+  .mac-switch {
+    position: relative;
+    flex: none;
+    width: 2.6em;
+    height: 1.5em;
+    border-radius: 1em;
+    background: var(--m-fill);
+  }
+  .mac-switch::after {
+    content: "";
+    position: absolute;
+    top: 0.12em;
+    left: 0.12em;
+    width: 1.26em;
+    height: 1.26em;
+    border-radius: 50%;
+    background: #fff;
+    box-shadow: 0 1px 2px rgba(0, 0, 0, 0.3);
+  }
+  .mac-switch.on {
+    background: #0a7cff;
+  }
+  .mac-switch.on::after {
+    left: auto;
+    right: 0.12em;
+  }
+  .mac-menu-body {
+    padding: 0 0.6em 0.5em;
+  }
+  .mac-line {
+    display: flex;
+    align-items: flex-start;
+    gap: 0.55em;
+  }
+  .mac-line > :first-child {
+    flex: 1;
+    min-width: 0;
+  }
+  .mac-running {
+    display: grid;
+    gap: 0.4em;
+  }
+  .mac-time {
+    flex: none;
+    font-variant-numeric: tabular-nums;
+    text-align: right;
+  }
+  .mac-running .mac-track {
+    height: 0.25em;
+  }
+  .mac-menu hr {
+    height: 1px;
+    margin: 0.35em 0.6em;
+    border: 0;
+    background: var(--m-line);
+  }
+  .mac-item {
+    display: flex;
+    align-items: center;
+    gap: 0.55em;
+    padding: 0.2em 0.6em;
+  }
+  .mac-item span {
+    flex: 1;
+  }
+  .mac-item small {
+    font-size: 1em;
+  }
+
+  /* The menu stays under its icon at the right, as on a real Mac. */
+  .mac-menu-only .mac-stage {
+    grid-template-columns: minmax(0, 1fr);
+  }
+  .mac-menu-only .mac-window {
+    display: none;
+  }
+  .mac-menu-only .mac-menu {
+    grid-column: 1;
+    max-width: 100%;
+  }
+
+  @media (max-width: 760px) {
+    .mac-stage {
+      grid-template-columns: minmax(0, 1fr);
+      justify-items: center;
+      padding-inline: 16px;
+    }
+    .mac-bar {
+      justify-self: stretch;
+      margin-inline: -16px;
+    }
+    .mac-window {
+      display: none;
+    }
+    .mac-menu {
+      grid-column: 1;
+      justify-self: center;
+      max-width: 100%;
+    }
+  }
+</style>

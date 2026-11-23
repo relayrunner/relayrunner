@@ -8,8 +8,8 @@ const github = vi.hoisted(() => ({
   runnerOnline: vi.fn(),
   deleteRunner: vi.fn(),
 }));
-vi.mock("../github-app.ts", async (importOriginal) => ({
-  ...(await importOriginal<typeof import("../github-app.ts")>()),
+vi.mock("../github/github-app.ts", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("../github/github-app.ts")>()),
   appInstallationToken: async () => "ghs_test",
   workflowJobStatus: github.jobStatus,
   runnerOnline: github.runnerOnline,

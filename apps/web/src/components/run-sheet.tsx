@@ -1,15 +1,24 @@
-import { Link, type LinkProps, useNavigate } from "@tanstack/react-router";
+import { Link, type LinkProps, useLocation, useNavigate } from "@tanstack/react-router";
 import { ChevronRightIcon, CircleSlashIcon, ExternalLinkIcon, TimerOffIcon } from "lucide-react";
 import { type ReactNode, useEffect, useMemo, useState } from "react";
 import { CommitBy } from "@/components/commit";
 import { JobFailureSection } from "@/components/job-failure";
 import { RunnerLink, type RunnerRef } from "@/components/runner-link";
 import { StatusIcon } from "@/components/status-icon";
+import { WorkflowLink } from "@/components/workflow-link";
+import { CLOSED_PANELS } from "@/lib/panels";
 import { WalkLines } from "@/components/walk-lines";
 import { Sheet, SheetContent, SheetDescription, SheetTitle } from "@/components/ui/sheet";
 import { timeAgo } from "@/lib/activity";
 import { authDisabled } from "@/lib/auth-client";
-import { type Environment, progressOf, progressText, timeLeft } from "@/lib/job-times";
+import {
+  type Environment,
+  isSlow,
+  progressOf,
+  progressText,
+  slowText,
+  timeLeft,
+} from "@/lib/job-times";
 import { useLiveRefresh } from "@/lib/live-refresh";
 import {
   getJobSteps,
@@ -41,8 +50,9 @@ const REFRESH_MS = 5_000;
 export type Environments = Map<string, Environment>;
 
 /**
- * A link that opens a run, or one of its jobs, in History's panel. The panel is a search change on
- * the page already loaded, so there's nothing to preload.
+ * A link that opens a run, or one of its jobs, in History's panel. On History it's a search change
+ * on the page already loaded, keeping its filters, so there's nothing to preload. From another page
+ * it opens History on that run, and a runner's or workflow's panel closes.
  */
 export function RunLink({
   run,
@@ -55,11 +65,17 @@ export function RunLink({
     onFocus?: () => void;
     "aria-current"?: "true";
   }) {
+  const onHistory = useLocation({ select: (location) => location.pathname === "/history" });
   return (
     <Link
       from="/history"
       to="/history"
-      search={(prev) => ({ ...prev, run: runParam(run), job })}
+      search={(prev) => ({
+        ...(onHistory ? prev : {}),
+        ...CLOSED_PANELS,
+        run: runParam(run),
+        job,
+      })}
       preload={false}
       {...props}
     />
@@ -123,18 +139,18 @@ const ranOf = (job: RunJob, now: number) =>
   job.startedAt === null ? null : (job.completedAt ?? now) - job.startedAt;
 
 // A job's run time, and under it how that compares with its usual time on the runner: time left
-// while it runs, or its usual time once it's done.
+// while it runs, and a warning when it ran or is running meaningfully slower than usual. Nothing
+// when it's within its normal range.
 function RanCell({ job, now }: { job: RunJob; now: number }) {
   const ran = ranOf(job, now);
   const progress =
     ran !== null && job.status === "in_progress" ? progressOf(job.typical, ran) : null;
-  const slow =
-    progress?.state === "slow" ||
-    (job.status === "completed" && ran !== null && !!job.typical && ran > job.typical.p90Ms);
+  const slowDone = job.status === "completed" && ran !== null && isSlow(job.typical, ran);
+  const slow = progress?.state === "slow" || slowDone;
   const under = progress
     ? progressText(progress, elapsed)
-    : job.status === "completed" && job.typical
-      ? `usual ${elapsed(job.typical.medianMs)}`
+    : slowDone && job.typical
+      ? slowText(job.typical, elapsed)
       : null;
   return (
     <>
@@ -173,7 +189,12 @@ export function RunSheet({
 }) {
   const navigate = useNavigate();
   const close = () =>
-    void navigate({ from: "/history", to: "/history", search: (prev) => ({ view: prev.view }) });
+    void navigate({
+      from: "/history",
+      to: "/history",
+      search: (prev) => ({ view: prev.view }),
+      resetScroll: false,
+    });
 
   // The run's status from the list when it has it, else from the detail once that loads. The panel
   // is keyed on the run, so `ids` never changes under it.
@@ -314,18 +335,19 @@ function RunView({
     note = `${job.name} ${verb} ${elapsed(wait)} for ${runner}.`;
   } else if (running) note = "Jobs that need others show up once GitHub queues them.";
 
+  const workflowLink = <WorkflowLink repository={header.repository} workflow={header.workflow} />;
+
   return (
     <>
       <header className="grid gap-1 pr-8">
         <SheetTitle className="flex items-start gap-2">
           <StatusIcon status={header.status} conclusion={header.conclusion} className="mt-0.5" />
-          <span className="min-w-0 break-words">
-            {header.title ?? header.workflow ?? "Unnamed workflow"}
-          </span>
+          <span className="min-w-0 break-words">{header.title ?? workflowLink}</span>
         </SheetTitle>
         <SheetDescription className="flex flex-wrap items-center gap-x-2.5 pl-[26px]">
           <span>
-            {[header.title ? header.workflow : null, header.repository].filter(Boolean).join(" · ")}
+            {header.title && header.workflow && <>{workflowLink} · </>}
+            {header.repository}
           </span>
           <CommitBy actor={header.actor} sha={header.sha} repository={header.repository} />
         </SheetDescription>
@@ -493,7 +515,6 @@ function JobView({
   const logUrl = jobUrl({ ...header, runId: ids.runId, id: job.id });
   const workflow = header.workflow ?? "Unnamed workflow";
   const performance = {
-    view: "jobs" as const,
     repo: ids.repositoryId,
     workflow: header.workflow ?? undefined,
     job: job.name,

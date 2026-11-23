@@ -40,6 +40,23 @@
   --rr-del: #cf222e;
   --rr-scrollbar: #c3c9d0;
 
+  /* Job types (lib/job-types.ts), a color-blind-checked order: neighbors in a stack stay apart. */
+  --job-test: #2a78d6;
+  --job-build: #eb6834;
+  --job-lint: #1baf7a;
+  --job-e2e: #eda100;
+  --job-deploy: #e87ba4;
+  --job-other: #6250d6;
+  --job-none: #a3abb5;
+
+  /* Phases inside a job (lib/job-phases.ts): the same checked order, with Work a quiet gray. */
+  --phase-setup: var(--job-test);
+  --phase-checkout: var(--job-build);
+  --phase-dependencies: var(--job-lint);
+  --phase-cache: var(--job-e2e);
+  --phase-work: #c3c9d0;
+  --phase-cleanup: var(--job-deploy);
+
   /* shadcn semantic variables */
   --radius: 0.625rem; /* 10px: landing panels */
   --background: var(--rr-bg);
@@ -102,6 +119,15 @@
   --rr-del: #f0817a;
 
   --rr-scrollbar: #2f3540;
+
+  --job-test: #3987e5;
+  --job-build: #d95926;
+  --job-lint: #199e70;
+  --job-e2e: #c98500;
+  --job-deploy: #d55181;
+  --job-other: #9085e9;
+  --job-none: #4a515c;
+  --phase-work: #3d434d;
 }
 
 @theme inline {
@@ -173,11 +199,18 @@
   --color-ubicloud: #ff5c12;
   --color-boat: #263fa9;
   --color-runson: #f0c868;
+  --color-groundbox: #e27d4e;
 }
 
 @layer base {
   * {
     @apply border-border outline-ring/50;
+  }
+  /* Screen-reader-only text otherwise sits where it would have flowed, so inside a table that
+     scrolls sideways it can land past the right edge and widen the whole page on phones. */
+  .sr-only {
+    top: 0;
+    left: 0;
   }
   html {
     scrollbar-color: var(--rr-scrollbar) var(--background);

@@ -1,12 +1,17 @@
-import {
-  preferFirst,
-  type RelayInputs,
-  readRunnerOrder,
-  type RunnerKey,
-} from "@relayrunner/runner-order";
+import { preferFirst, type RelayInputs, type RunnerKey } from "@relayrunner/runner-order";
 import { Recent } from "../recent.ts";
-import { accountUsage } from "../actions-billing.ts";
-import { accountSpend } from "../provider-spend.ts";
+import { accountUsage } from "../providers/actions-billing.ts";
+import { accountSpend } from "../providers/provider-spend.ts";
+import { resolveRunnerOrder } from "../routing/runner-orders.ts";
+import { blacksmithMinutes, type BlacksmithMinutes } from "../providers/blacksmith-minutes.ts";
+import { readBoatStarts, StartBudget } from "../providers/boat-limits.ts";
+import {
+  ACCOUNT_TTL_MS,
+  groundboxHeld,
+  groundboxMinutes,
+  type GroundboxReading,
+  readGroundboxAccount,
+} from "../providers/groundbox-account.ts";
 import { DurableObject } from "cloudflare:workers";
 import { and, eq, isNotNull, isNull, or } from "drizzle-orm";
 import { createDb, schema } from "../db/index.ts";
@@ -16,16 +21,17 @@ import {
   appInstallationToken,
   GitHubRateLimitError,
   listRunners,
+  orgAppSlugs,
   userCanReadRepo,
   type GitHubRunner,
   type RunnerScope,
-} from "../github-app.ts";
-import { installationRunnerScope } from "../installations.ts";
-import { inWorkspace } from "../machines.ts";
-import { runStartersForJobs } from "../job-starters.ts";
-import { clearJobMachine, setJobMachine } from "../jobs.ts";
-import { findRepo } from "../repositories.ts";
-import { jobName } from "../run-job.ts";
+} from "../github/github-app.ts";
+import { installationRunnerScope } from "../github/installations.ts";
+import { inWorkspace } from "../machines/machines.ts";
+import { runStartersForJobs } from "../ingest/job-starters.ts";
+import { clearJobMachine, setJobMachine } from "../ingest/jobs.ts";
+import { findRepo } from "../github/repositories.ts";
+import { jobName } from "../reports/run-job.ts";
 import {
   cleared,
   healthGate,
@@ -33,12 +39,27 @@ import {
   updateHealth,
   type JobSignal,
   type LabelHealth,
-} from "../provider-health.ts";
-import { earlierPick, jobKey } from "../route-decisions.ts";
-import type { RetryPick } from "../retries.ts";
-import { MAX_REQUEUES, NO_MACHINE_GIVE_UP_MS, type StrandedReason } from "../stranded-jobs.ts";
-import { errorMessage } from "../webhook-queue.ts";
+} from "../routing/provider-health.ts";
+import { earlierPick, jobKey } from "../routing/route-decisions.ts";
+import type { RetryPick } from "../routing/retries.ts";
+import {
+  MAX_REQUEUES,
+  NO_MACHINE_GIVE_UP_MS,
+  type StrandedReason,
+  strandedJobName,
+} from "../routing/stranded-jobs.ts";
+import { errorMessage } from "../errors.ts";
 import { traced } from "../tracing.ts";
+import { providersOfAppSlugs, type HostedProviderId } from "@relayrunner/providers";
+import type { ProviderAccess } from "@relayrunner/activity";
+import {
+  APP_CHECKED,
+  APPS_TTL_MS,
+  missed,
+  missGate,
+  missId,
+  type RepoMiss,
+} from "../routing/provider-takeover.ts";
 import {
   fetchGroupAccess,
   matchLabels,
@@ -47,7 +68,7 @@ import {
   runnerListKey,
   scopeKey,
   type GroupAccess,
-} from "../github-runners.ts";
+} from "../github/github-runners.ts";
 import {
   admits,
   canClaim,
@@ -81,7 +102,7 @@ import {
   type Route,
   type RouteDecision,
   type Waiting,
-} from "../routing.ts";
+} from "../routing/routing.ts";
 
 // The relay's inputs (RelayInputs): labels a machine must all have (`machine`), the GitHub-hosted
 // label (`github`), and each hosted provider's label. Empty: don't use that provider.
@@ -93,13 +114,14 @@ export interface PickedJob extends JobStarters, RelayInputs {
   runId: number;
   // Public repos never go to a machine: anyone could run code on it with a pull request.
   private: boolean;
-  // startedBy and triggeredBy (JobStarters): who started the run and this attempt. A machine
-  // that's `only_me` takes the job only when both are its owner.
-  // Set when this attempt is an automatic retry (src/retries.ts): where the job failed and where
+  // startedBy, triggeredBy and runAttempt (JobStarters): who started the run and this attempt, and
+  // which attempt it is. A machine that's `only_me` takes the job when its owner started the run:
+  // on the first attempt, only when its owner started that attempt too (admits).
+  // Set when this attempt is an automatic retry (src/routing/retries.ts): where the job failed and where
   // the retry should go.
   retry?: RetryPick | null;
   // An auto relay's size in vCPUs and the provider the Router page put first for the job
-  // (src/auto-jobs.ts).
+  // (src/routing/auto-jobs.ts).
   size?: number;
   first?: RunnerKey | null;
 }
@@ -137,8 +159,10 @@ interface StoredRoute extends Route {
   job?: PickedJob;
   requeues?: number;
 }
-// Each hosted provider runner type's health (src/provider-health.ts), by healthId.
+// Each hosted provider runner type's health (src/routing/provider-health.ts), by healthId.
 const HEALTH_KEY = "health:";
+// Each hosted provider that missed a job of a repo (src/routing/provider-takeover.ts), by missId.
+const MISS_KEY = "miss:";
 
 // How long a GitHub org's runner group access is reused before it's read again. Groups change
 // rarely and take a few calls to read.
@@ -160,7 +184,7 @@ const FOUND_LIST_TTL_MS = 10 * 60_000;
 export type RunnerList = { runners: GitHubRunner[]; checkedAt: number };
 
 // One per workspace, addressed by workspace id. Decides where each picked job's run goes and
-// keeps the routes it hands out (src/routing.ts), so the job queued on a route's label can find
+// keeps the routes it hands out (src/routing/routing.ts), so the job queued on a route's label can find
 // its machine.
 export class Router extends DurableObject<Env> {
   // What GitHub said, kept in memory while the object is awake: runner group access by
@@ -172,6 +196,14 @@ export class Router extends DurableObject<Env> {
   private runnerLists = new Recent<string, RunnerList>();
   private ownerAccess = new Recent<string, boolean>();
   private spend = new Recent<string, { account: string; spentUsd: number }>();
+  private freeMinutes = new Recent<string, BlacksmithMinutes>();
+  // Boat's job starts left, from the workspace's Boat connection (src/providers/boat-limits.ts).
+  private boatStarts = new StartBudget();
+  // Groundbox's account (free minutes, holds), from the workspace's connection.
+  private groundbox = new Recent<string, GroundboxReading>(1_000);
+  // The hosted providers whose GitHub App is installed on an org, by installation id; null when
+  // GitHub couldn't say.
+  private providerApps = new Recent<number, HostedProviderId[] | null>(1_000);
 
   /**
    * An org's (or repo's) self-hosted runners for the dashboard's Runners and Router pages, reused
@@ -275,7 +307,7 @@ export class Router extends DurableObject<Env> {
   }
 
   /**
-   * Where the run's next job goes, walking the workspace's runner order: a machine route's
+   * Where the run's next job goes, walking the repository's runner order (src/routing/runner-orders.ts): a machine route's
    * `rr-<id>`, the job's own `github` label, or no runner and the reason. A GitHub step with a
    * minutes limit passes the job on once the job's account nears its included quota.
    */
@@ -293,6 +325,7 @@ export class Router extends DurableObject<Env> {
         const decision = await this.decide(job);
         span.setAttributes({
           "relayrunner.skipped": decision.skipped.length,
+          "relayrunner.own_order": Boolean(decision.ownOrder),
           ...(decision.runner === null
             ? { "relayrunner.reason": decision.reason }
             : {
@@ -308,14 +341,22 @@ export class Router extends DurableObject<Env> {
 
   private async decide(job: PickedJob): Promise<RouteDecision> {
     const db = createDb(this.env.DB);
+    // One Groundbox reading per workspace a minute; a failed read is tried again next job.
+    const groundboxAccount = () =>
+      this.groundbox.get(
+        job.workspaceId,
+        ACCOUNT_TTL_MS,
+        () => readGroundboxAccount(this.env, db, job.workspaceId),
+        (reading) => reading.ok || reading.reason !== "read_failed",
+      );
     // The machine step's pick, if the walk got that far.
     let pick: MachinePick | undefined;
-    const [[workspace]] = await Promise.all([
+    const [[workspace], { order, scope }] = await Promise.all([
       db
         .select({
-          runnerOrder: schema.workspace.runnerOrder,
           skipUnhealthy: schema.workspace.skipUnhealthyRunners,
           accountType: schema.githubInstallation.accountType,
+          accountLogin: schema.githubInstallation.accountLogin,
         })
         .from(schema.workspace)
         .leftJoin(
@@ -324,11 +365,12 @@ export class Router extends DurableObject<Env> {
         )
         .where(eq(schema.workspace.id, job.workspaceId))
         .limit(1),
+      resolveRunnerOrder(db, job.workspaceId, job.repositoryId),
       // Jobs already waiting get a free slot before this one can.
       this.drain(),
     ]);
-    const decision = await decideRoute(
-      retryOrder(preferFirst(readRunnerOrder(workspace?.runnerOrder), job.first), job.retry),
+    const walked = await decideRoute(
+      retryOrder(preferFirst(order, job.first), job.retry),
       // Some hosted providers only serve organizations (SKIPS_PERSONAL_ACCOUNTS).
       { ...job, personal: workspace?.accountType === "User" },
       async () => (pick = await this.pickMachine(job)),
@@ -344,7 +386,25 @@ export class Router extends DurableObject<Env> {
         this.spend.get(`${job.installationId}:${key}`, SPEND_TTL_MS, () =>
           accountSpend(db, job.installationId, key),
         ),
+      // Blacksmith's count only changes when the hourly sync lands; Groundbox's is read live.
+      async (key) =>
+        key === "groundbox"
+          ? groundboxMinutes(await groundboxAccount())
+          : this.freeMinutes.get(job.workspaceId, SPEND_TTL_MS, () =>
+              blacksmithMinutes(db, job.workspaceId),
+            ),
+      // Only Boat's plans cap job starts, and only its connection can say how many are left.
+      async (key) =>
+        key === "boat"
+          ? this.boatStarts.check(() => readBoatStarts(this.env, db, job.workspaceId))
+          : null,
+      // Only Groundbox's connection says when it would hold a job.
+      async (key) => (key === "groundbox" ? groundboxHeld(await groundboxAccount()) : null),
+      (key) =>
+        this.checkAccess(key, job, workspace?.accountType ?? null, workspace?.accountLogin ?? null),
     );
+    const decision: RouteDecision = scope === "repository" ? { ...walked, ownOrder: true } : walked;
+    if (decision.runner !== null && decision.step === "boat") this.boatStarts.took();
     if (waitsForMachine(decision)) return this.wait(job, decision);
     if (
       decision.runner !== null &&
@@ -572,7 +632,7 @@ export class Router extends DurableObject<Env> {
   // Ends a queued job no machine can take, with the reason, so its run finishes (StrandedJob logs
   // how it went).
   private async end(entry: WaitingJob, reason: StrandedReason) {
-    await this.env.STRANDED_JOB.getByName(entry.id).start({
+    await this.env.STRANDED_JOB.getByName(strandedJobName(entry.id, entry.jobId!)).start({
       routeId: entry.id,
       jobId: entry.jobId!,
       installationId: entry.job.installationId,
@@ -657,6 +717,67 @@ export class Router extends DurableObject<Env> {
       return null;
     }
     return gate;
+  }
+
+  // Null when a hosted provider may take the repo's job, marking it as the repo's trial when it's
+  // due one; else why it can't. The installed-apps check only covers orgs (GitHub lists an org's
+  // installed Apps, not a personal account's) and the providers in APP_CHECKED. Unknown never
+  // skips.
+  private async checkAccess(
+    key: HostedProviderId,
+    job: PickedJob,
+    accountType: string | null,
+    accountLogin: string | null,
+  ): Promise<ProviderAccess | null> {
+    if (accountType === "Organization" && accountLogin && APP_CHECKED.includes(key)) {
+      const installed = await this.providerApps.get(
+        job.installationId,
+        APPS_TTL_MS,
+        async () => {
+          try {
+            const token = await appInstallationToken(this.env, job.installationId);
+            return providersOfAppSlugs(await orgAppSlugs(token, accountLogin));
+          } catch (error) {
+            console.warn(
+              JSON.stringify({
+                msg: "provider apps unavailable",
+                installationId: job.installationId,
+                error: errorMessage(error),
+              }),
+            );
+            return null;
+          }
+        },
+        (apps) => apps !== null,
+      );
+      if (installed && !installed.includes(key)) return { cause: "not_installed" };
+    }
+    const id = MISS_KEY + missId(key, job.repositoryId);
+    const state = await this.ctx.storage.get<RepoMiss>(id);
+    const now = Date.now();
+    const gate = missGate(state, now);
+    if (gate === "ok") return null;
+    if (gate === "trial") {
+      await this.ctx.storage.put(id, { ...state, trialAt: now });
+      console.log(JSON.stringify({ msg: "provider repo trial", id }));
+      return null;
+    }
+    return gate;
+  }
+
+  /** A job of the repo waited on the provider with no runner and was taken over. */
+  async providerMissed(key: HostedProviderId, repositoryId: number): Promise<void> {
+    const id = MISS_KEY + missId(key, repositoryId);
+    const state = missed(await this.ctx.storage.get<RepoMiss>(id), Date.now());
+    await this.ctx.storage.put(id, state);
+    console.log(JSON.stringify({ msg: "provider missed repo", id, retryAt: state.retryAt }));
+  }
+
+  /** A runner picked up a job of the repo on the provider: it can see the repo again. */
+  async providerPicked(key: HostedProviderId, repositoryId: number): Promise<void> {
+    const id = MISS_KEY + missId(key, repositoryId);
+    if (await this.ctx.storage.delete(id))
+      console.log(JSON.stringify({ msg: "provider recovered for repo", id }));
   }
 
   /** The 15-minute sweep's recent jobs on hosted provider labels (sweepProviderHealth). */
@@ -844,10 +965,14 @@ export class Router extends DurableObject<Env> {
     const routingLabels = new Map(fits.map((m) => [m.id, m.routingLabel ?? undefined]));
     // The OS of each machine's two places, for the route to say where its job goes.
     const places = new Map(fits.map((m) => [m.id, { host: m.os, vm: m.isolatedOs }]));
-    return (
-      (await this.reserve(job, candidates, routingLabels, places, rerun, waiting)) ??
-      (rateLimited ? { rateLimited: true } : unavailableMachines(pool, job.machine, job))
-    );
+    const reserved = await this.reserve(job, candidates, routingLabels, places, rerun, waiting);
+    if (reserved) return reserved;
+    if (rateLimited) return { rateLimited: true };
+    // A re-run whose machines are offline or paused could still be taken once one is back, so it
+    // waits in line (Router.reroute) instead of being refused like a re-run nothing fits.
+    if (rerun && pool.some((machine) => fitsLabels(machine, job.machine) && admits(machine, job)))
+      return { offline: true };
+    return unavailableMachines(pool, job.machine, job);
   }
 
   // Chooses among the candidates and stores the route that holds the chosen machine, one pick at a
@@ -1084,9 +1209,10 @@ export class Router extends DurableObject<Env> {
    * done or expired. When that pick was this run's (earlierPick), the route is made again under the
    * same id for this job, with that pick's inputs and this attempt's starters: the machine it ran
    * on if that one is free, else any machine the relay's labels and sharing allow. Returns the
-   * claimed route, "waiting" when every machine that fits is full (it waits in line like a new
-   * pick), or null when the label wasn't this run's pick, no machine can take the job, or another
-   * job of this attempt already did.
+   * claimed route, "waiting" when every machine that fits is full, offline or paused (it waits in
+   * line like a new pick, and drain ends it if none comes back), or null when the label wasn't this
+   * run's pick, no machine's labels and sharing allow the job, or another job of this attempt
+   * already did.
    */
   async reroute(
     routeId: string,
@@ -1114,8 +1240,9 @@ export class Router extends DurableObject<Env> {
     };
     const stored = await this.ctx.storage.get<Route>(ROUTE_KEY + routeId);
     if (!mayReroute(stored, rerun)) return null;
-    // Until this attempt's workflow_run arrives, nobody started it: only machines shared with
-    // anyone can take the job then.
+    // Sharing only needs who started the run, which the pick knows: `only_me` takes any re-run of
+    // its owner's run, whoever re-ran it (admits). Who re-ran it is known only once this attempt's
+    // workflow_run arrives, which can come after the `queued` webhook; until then it's null.
     const starters = await runStartersForJobs(db, [key], new Map([[jobKey(key), pick]]), jobKey);
     const job: PickedJob = {
       workspaceId: queued.workspaceId,
@@ -1125,13 +1252,19 @@ export class Router extends DurableObject<Env> {
       runId: queued.runId,
       private: repo.private,
       ...pick.inputs,
-      startedBy: null,
-      triggeredBy: null,
-      ...starters.get(jobKey(key)),
+      startedBy: pick.startedBy,
+      triggeredBy: starters.get(jobKey(key))?.triggeredBy ?? null,
+      runAttempt,
     };
     const answered = await this.pickMachine(job, rerun);
-    // Every machine that fits is full: the re-run waits in line on its label, like a new pick.
-    if (answered && typeof answered !== "string" && "full" in answered) {
+    // Every machine that fits is full, or offline or paused (one may be back soon: a deploy drops
+    // every machine's socket for a moment): the re-run waits in line on its label, like a new
+    // pick. drain ends it once no machine that fits has been online for NO_MACHINE_GIVE_UP_MS.
+    if (
+      answered &&
+      typeof answered !== "string" &&
+      ("full" in answered || "offline" in answered || "rateLimited" in answered)
+    ) {
       const waiting: WaitingJob = {
         id: routeId,
         queuedAt: Date.now(),
@@ -1141,7 +1274,15 @@ export class Router extends DurableObject<Env> {
         runAttempt,
         job,
       };
-      await this.ctx.storage.put(WAIT_KEY + routeId, waiting);
+      // Checked again under the lock: another job of this attempt may have taken the route since.
+      const queuedNow = await this.ctx.blockConcurrencyWhile(async () => {
+        const now = Date.now();
+        const prior = (await this.routes(now)).find((route) => route.id === routeId);
+        if (!mayReroute(prior, rerun)) return false;
+        await this.ctx.storage.put(WAIT_KEY + routeId, waiting);
+        return true;
+      });
+      if (!queuedNow) return null;
       await this.wakeIn(WAIT_POLL_MS);
       return "waiting";
     }
@@ -1161,6 +1302,26 @@ export class Router extends DurableObject<Env> {
   }
 
   /**
+   * Whether the Router still has `job` in hand on its `rr-<routeId>` label, for the orphaned job
+   * sweep (src/routing/orphaned-jobs.ts): it waits in line for a machine slot (full machines are not stuck),
+   * or a live route was claimed by it or can still be. Reads storage only.
+   */
+  async holds(routeId: string, job: QueuedJob): Promise<boolean> {
+    const now = Date.now();
+    const [waiting, route] = await Promise.all([
+      this.ctx.storage.get<WaitingJob>(WAIT_KEY + routeId),
+      this.ctx.storage.get<Route>(ROUTE_KEY + routeId),
+    ]);
+    if (waiting && now - waiting.queuedAt <= ROUTE_TTL_MS && canClaim(waiting, job)) return true;
+    return (
+      !!route &&
+      route.state !== "done" &&
+      now - route.createdAt <= ROUTE_TTL_MS &&
+      canClaim(route, job)
+    );
+  }
+
+  /**
    * Stops a route holding its machine. MachineLink calls this when the machine reports in, and
    * gets back the job the route was claimed by.
    */
@@ -1175,7 +1336,7 @@ export class Router extends DurableObject<Env> {
   }
 
   /**
-   * Wipes every route kept for the workspace. Operator deletes call this (src/admin-delete.ts):
+   * Wipes every route kept for the workspace. Operator deletes call this (src/operator/admin-delete.ts):
    * expired routes are only dropped when the Router is called again, which a deleted workspace's
    * never is.
    */

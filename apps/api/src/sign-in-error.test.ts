@@ -15,7 +15,20 @@ beforeAll(async () => {
 
 afterEach(() => {
   vi.unstubAllGlobals();
+  vi.useRealTimers();
 });
+
+// Skips the two-second pause before github-busy.ts retries the exchange.
+async function pastRetryPause(start: () => Response | Promise<Response>) {
+  vi.useFakeTimers({ toFake: ["setTimeout"] });
+  let done = false;
+  const response = Promise.resolve(start()).finally(() => (done = true));
+  while (!done) {
+    await new Promise((resolve) => setImmediate(resolve));
+    vi.advanceTimersByTime(2000);
+  }
+  return response;
+}
 
 // GitHub refuses the code, as it does for one that was already used or has expired.
 function stubRefusedCode() {
@@ -95,8 +108,7 @@ describe("sign-in errors", () => {
       }
       return realFetch(input, init);
     });
-    // Waits out the real two-second pause before the retry.
-    const response = await callback(state, cookie);
+    const response = await pastRetryPause(() => callback(state, cookie));
     expect(calls).toBe(2);
     expect(response.headers.get("location")).toBe("/login?error=github_busy");
   });
@@ -129,8 +141,7 @@ describe("sign-in errors", () => {
       }
       return realFetch(input, init);
     });
-    // Waits out the real two-second pause before the retry.
-    const response = await callback(state, cookie);
+    const response = await pastRetryPause(() => callback(state, cookie));
     expect(calls).toBe(2);
     expect(response.headers.get("location")).toBe("/runners");
   });

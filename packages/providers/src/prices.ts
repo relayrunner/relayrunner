@@ -12,6 +12,100 @@ import type { ProviderId } from "./index.ts";
 /** When the base prices below were last checked against the services' pages. */
 export const PRICES_CHECKED = "2026-11-11";
 
+/** The systems runners come in, for comparing runners across providers. */
+export type RunnerPlatform = "linux" | "arm" | "windows" | "windows-arm" | "macos";
+
+/** A GitHub larger runner: what it's called, its billing SKU, size and list price. */
+export interface GitHubLargerRunner {
+  rate: string;
+  sku: string;
+  name: string;
+  platform: RunnerPlatform | "gpu";
+  size: RunnerSize;
+  usd: number;
+}
+
+// Linux and Windows larger runners: 4 GB a core.
+const coreLadder = (os: "linux" | "windows", arm: boolean, prices: [number, number][]) =>
+  prices.map(([cores, usd]): GitHubLargerRunner => ({
+    rate: `${os}${arm ? "-arm" : ""}-${cores}-core`,
+    sku: `${os}_${cores}_core${arm ? "_arm" : ""}`,
+    name: `${os === "linux" ? "Linux" : "Windows"}${arm ? " Arm" : ""} ${cores}-core`,
+    platform: os === "linux" ? (arm ? "arm" : "linux") : arm ? "windows-arm" : "windows",
+    size: { vcpus: cores, memoryGb: cores * 4 },
+    usd,
+  }));
+
+/**
+ * GitHub's larger runners, for Team and Enterprise plans. Each is named by the org that makes it, so
+ * jobs can't be matched to one by label; they price the catalog on the GitHub provider page.
+ * https://docs.github.com/en/billing/reference/actions-runner-pricing (checked 2026-11-20)
+ */
+export const GITHUB_LARGER: GitHubLargerRunner[] = [
+  ...coreLadder("linux", false, [
+    [4, 0.012],
+    [8, 0.022],
+    [16, 0.042],
+    [32, 0.082],
+    [64, 0.162],
+    [96, 0.252],
+  ]),
+  ...coreLadder("linux", true, [
+    [4, 0.008],
+    [8, 0.014],
+    [16, 0.026],
+    [32, 0.05],
+    [64, 0.098],
+  ]),
+  ...coreLadder("windows", false, [
+    [4, 0.022],
+    [8, 0.042],
+    [16, 0.082],
+    [32, 0.162],
+    [64, 0.322],
+    [96, 0.552],
+  ]),
+  ...coreLadder("windows", true, [
+    [4, 0.014],
+    [8, 0.026],
+    [16, 0.05],
+    [32, 0.098],
+    [64, 0.194],
+  ]),
+  {
+    rate: "macos-xl",
+    sku: "macos_xl",
+    name: "macOS M2 Pro",
+    platform: "macos",
+    size: { vcpus: 5, memoryGb: 14 },
+    usd: 0.102,
+  },
+  {
+    rate: "macos-l",
+    sku: "macos_l",
+    name: "macOS 12-core Intel",
+    platform: "macos",
+    size: { vcpus: 12, memoryGb: 30 },
+    usd: 0.077,
+  },
+  {
+    rate: "linux-4-core-gpu",
+    sku: "linux_4_core_gpu",
+    name: "Linux GPU 4-core",
+    platform: "gpu",
+    size: { vcpus: 4, memoryGb: 28 },
+    usd: 0.052,
+  },
+  {
+    rate: "windows-4-core-gpu",
+    sku: "windows_4_core_gpu",
+    name: "Windows GPU 4-core",
+    platform: "gpu",
+    size: { vcpus: 4, memoryGb: 28 },
+    usd: 0.102,
+  },
+];
+
 /** A provider's rates, and what one minute of each is per. */
 export const RATES = {
   blacksmith: { linux: "vcpu", arm: "vcpu", windows: "vcpu", macos: "vcpu" },
@@ -52,6 +146,21 @@ export const RATES = {
     "lizard-medium": "runner",
     "lizard-large": "runner",
   },
+  groundbox: {
+    "groundbox-2vcpu": "runner",
+    "groundbox-4vcpu": "runner",
+    "groundbox-8vcpu": "runner",
+    "groundbox-16vcpu": "runner",
+    "groundbox-flex-2vcpu": "runner",
+    "groundbox-flex-4vcpu": "runner",
+    "groundbox-flex-8vcpu": "runner",
+    "groundbox-flex-16vcpu": "runner",
+    macos: "runner",
+    "groundbox-windows-2vcpu": "runner",
+    "groundbox-windows-4vcpu": "runner",
+    "groundbox-windows-8vcpu": "runner",
+    "groundbox-windows-16vcpu": "runner",
+  },
   github: {
     "linux-1-core": "runner",
     "linux-2-core": "runner",
@@ -59,13 +168,20 @@ export const RATES = {
     "windows-2-core": "runner",
     "windows-arm-2-core": "runner",
     macos: "runner",
+    ...Object.fromEntries(GITHUB_LARGER.map(({ rate }) => [rate, "runner" as const])),
   },
 } as const satisfies Partial<Record<ProviderId, Record<string, "vcpu" | "runner">>>;
 
 export type PricedProvider = keyof typeof RATES;
 
-/** GitHub's standard hosted runners, the ones it publishes a per-minute price for. */
-export type GitHubRunner = keyof (typeof RATES)["github"];
+/** GitHub's standard hosted runners, the ones jobs name by a fixed label. */
+export type GitHubRunner =
+  | "linux-1-core"
+  | "linux-2-core"
+  | "linux-arm-2-core"
+  | "windows-2-core"
+  | "windows-arm-2-core"
+  | "macos";
 
 /**
  * The `runs-on` label GitHub's docs give each standard runner, the name people know it by. Where
@@ -185,6 +301,24 @@ export const BASE_PRICES: PriceRow[] = [
   { provider: "lizard", rate: "lizard-small", usd: 0.0162 / 60, from: "2026-11-18" },
   { provider: "lizard", rate: "lizard-medium", usd: 0.0324 / 60, from: "2026-11-18" },
   { provider: "lizard", rate: "lizard-large", usd: 0.0648 / 60, from: "2026-11-18" },
+  // Groundbox: per minute 2vcpu (2/8) $0.003, 4vcpu (4/16) $0.006, 8vcpu (8/32) $0.011, 16vcpu
+  // (16/64) $0.021. Flex runners are the same sizes at half price. https://groundbox.dev/pricing
+  { provider: "groundbox", rate: "groundbox-2vcpu", usd: 0.003, from: "2026-11-21" },
+  { provider: "groundbox", rate: "groundbox-4vcpu", usd: 0.006, from: "2026-11-21" },
+  { provider: "groundbox", rate: "groundbox-8vcpu", usd: 0.011, from: "2026-11-21" },
+  { provider: "groundbox", rate: "groundbox-16vcpu", usd: 0.021, from: "2026-11-21" },
+  { provider: "groundbox", rate: "groundbox-flex-2vcpu", usd: 0.0015, from: "2026-11-21" },
+  { provider: "groundbox", rate: "groundbox-flex-4vcpu", usd: 0.003, from: "2026-11-21" },
+  { provider: "groundbox", rate: "groundbox-flex-8vcpu", usd: 0.0055, from: "2026-11-21" },
+  { provider: "groundbox", rate: "groundbox-flex-16vcpu", usd: 0.0105, from: "2026-11-21" },
+  // Groundbox macOS: $0.05 a minute, one size (12 vCPU M6, 12 GB). https://groundbox.dev/macos-ci
+  { provider: "groundbox", rate: "macos", usd: 0.05, from: "2026-11-22" },
+  // Groundbox Windows Server 2025: per minute 2vcpu (2/8) $0.006, 4vcpu (4/16) $0.012, 8vcpu (8/32)
+  // $0.022, 16vcpu (16/64) $0.042. https://groundbox.dev/windows-ci
+  { provider: "groundbox", rate: "groundbox-windows-2vcpu", usd: 0.006, from: "2026-11-22" },
+  { provider: "groundbox", rate: "groundbox-windows-4vcpu", usd: 0.012, from: "2026-11-22" },
+  { provider: "groundbox", rate: "groundbox-windows-8vcpu", usd: 0.022, from: "2026-11-22" },
+  { provider: "groundbox", rate: "groundbox-windows-16vcpu", usd: 0.042, from: "2026-11-22" },
   // GitHub, in a private repo; standard runners are free in public ones.
   // https://docs.github.com/en/billing/reference/actions-runner-pricing
   { provider: "github", rate: "linux-1-core", usd: 0.002, from: "2026-11-11" },
@@ -193,6 +327,7 @@ export const BASE_PRICES: PriceRow[] = [
   { provider: "github", rate: "windows-2-core", usd: 0.01, from: "2026-11-11" },
   { provider: "github", rate: "windows-arm-2-core", usd: 0.01, from: "2026-11-11" },
   { provider: "github", rate: "macos", usd: 0.062, from: "2026-11-11" },
+  ...GITHUB_LARGER.map(({ rate, usd }) => ({ provider: "github", rate, usd, from: "2026-11-20" })),
 ];
 
 /** A UTC day (YYYY-MM-DD) as epoch ms at its midnight. */
@@ -255,6 +390,8 @@ const RATE_NAMES: Record<string, string> = {
   premium: "Premium",
   memory: "Memory-heavy",
   ...GITHUB_LABELS,
+  // GitHub's larger runners have no fixed label, so they go by size: "Linux Arm 8-core".
+  ...Object.fromEntries(GITHUB_LARGER.map(({ rate, name }) => [rate, name])),
 };
 
 /** A rate as people say it, such as "Linux Arm" or `ubuntu-slim`. */
@@ -289,14 +426,12 @@ export const githubRate = (book: PriceBook, runner: GitHubRunner, at = Date.now(
   book.usd("github", runner, at);
 
 // A sized service's rate for a label: macOS, Windows, Arm, or Linux on x64.
-const platformOf = (label: string) => {
+/** The platform a lowercase runner label names: macos, windows, arm or (otherwise) linux. */
+export const platformOf = (label: string) => {
   if (label.includes("macos")) return "macos";
   if (label.includes("windows")) return "windows";
   return label.includes("arm") ? "arm" : "linux";
 };
-
-/** The platforms runners come in, for comparing runners across providers. */
-export type RunnerPlatform = "linux" | "arm" | "windows" | "windows-arm" | "macos";
 
 /**
  * The platform a provider's runner label asks for, or null when the label doesn't say (a
@@ -361,6 +496,35 @@ const NAMED_RUNNERS: Partial<Record<string, RunnerSize>> = {
   "lizard-large": { vcpus: 8, memoryGb: 16 },
 };
 
+// Groundbox's sizes, 4 GB a vCPU, on Linux and Windows. https://groundbox.dev/pricing and
+// https://groundbox.dev/windows-ci
+const GROUNDBOX_VCPUS = [2, 4, 8, 16];
+
+// Groundbox's one macOS size, a 12 vCPU M6 with 12 GB. https://groundbox.dev/macos-ci
+const GROUNDBOX_MACOS: RunnerSize = { vcpus: 12, memoryGb: 12 };
+
+// The Groundbox rate a label asks for: `groundbox-4vcpu-ubuntu-2404` is groundbox-4vcpu, a bare
+// `groundbox-flex` is groundbox-flex-4vcpu, a bare `groundbox-windows` is groundbox-windows-4vcpu,
+// and `groundbox-macos` is macos. Null for the auto size (`groundbox`, `groundbox-auto-<name>`),
+// which picks a size per job, so the label doesn't say.
+function groundboxRate(label: string): { rate: string; vcpus: number } | null {
+  if (label === "groundbox-macos") return { rate: "macos", vcpus: GROUNDBOX_MACOS.vcpus };
+  if (label === "groundbox-flex") return { rate: "groundbox-flex-4vcpu", vcpus: 4 };
+  if (label === "groundbox-windows") return { rate: "groundbox-windows-4vcpu", vcpus: 4 };
+  const windows = /^groundbox-windows-(\d+)vcpu$/.exec(label);
+  if (windows) {
+    const vcpus = Number(windows[1]);
+    return GROUNDBOX_VCPUS.includes(vcpus)
+      ? { rate: `groundbox-windows-${vcpus}vcpu`, vcpus }
+      : null;
+  }
+  const match = /^groundbox-(flex-)?(\d+)vcpu(?:-ubuntu-2404)?$/.exec(label);
+  const vcpus = Number(match?.[2]);
+  return match && GROUNDBOX_VCPUS.includes(vcpus)
+    ? { rate: `groundbox-${match[1] ?? ""}${vcpus}vcpu`, vcpus }
+    : null;
+}
+
 // The size-named runner a label asks for: `celesto` is micro, `instabox-medium-snapshot-x` medium.
 const namedRunner = (label: string) => {
   if (label === "celesto") return "celesto-micro";
@@ -415,6 +579,10 @@ function rateOf(provider: ProviderId, label: string): { rate: string; vcpus: num
       const size = NAMED_RUNNERS[rate];
       return size ? { rate, vcpus: size.vcpus } : null;
     }
+    // groundbox-4vcpu[-ubuntu-2404], groundbox-flex[-8vcpu], groundbox-windows[-8vcpu],
+    // groundbox-macos; the auto size isn't priced here.
+    case "groundbox":
+      return groundboxRate(label);
     // ubicloud, ubicloud-standard-4, ubicloud-standard-2-arm, ubicloud-premium-8-ubuntu-2404
     case "ubicloud":
       if (label.includes("gpu")) return null;
@@ -430,8 +598,8 @@ function rateOf(provider: ProviderId, label: string): { rate: string; vcpus: num
 /**
  * What a minute cost on a runner type at `at` (epoch ms, now by default), at list price, by the
  * label that names it (as the Job times environment carries it, lowercase), or null when
- * RelayRunner doesn't know: Namespace profiles and RunsOn don't say their size in the label, and
- * GitHub's runners are priced by githubRate.
+ * RelayRunner doesn't know: Namespace profiles, Groundbox's auto size and RunsOn don't say their
+ * size in the label, and GitHub's runners are priced by githubRate.
  */
 export function listRate(
   book: PriceBook,
@@ -452,14 +620,15 @@ export interface RunnerSize {
   memoryGb?: number;
 }
 
-// GitHub's standard runners in a private repo, by the rate that names them. macOS isn't here: its
-// sizes differ by image (Intel, Apple silicon, large, xlarge).
+// GitHub's runners in a private repo, by the rate that names them. Standard macOS isn't here: its
+// size differs by image (Intel or Apple silicon).
 const GITHUB_SIZES: Partial<Record<string, RunnerSize>> = {
   "linux-1-core": { vcpus: 1, memoryGb: 5 },
   "linux-2-core": { vcpus: 2, memoryGb: 8 },
   "linux-arm-2-core": { vcpus: 2, memoryGb: 8 },
   "windows-2-core": { vcpus: 2, memoryGb: 8 },
   "windows-arm-2-core": { vcpus: 2, memoryGb: 8 },
+  ...Object.fromEntries(GITHUB_LARGER.map(({ rate, size }) => [rate, size])),
 };
 
 // Cloudflare Containers instance types RelayRunner runs jobs on.
@@ -501,6 +670,13 @@ export function runnerSize(provider: string, label: string): RunnerSize | null {
     case "instabox":
     case "lizard":
       return NAMED_RUNNERS[namedRunner(label)] ?? null;
+    // groundbox-8vcpu and groundbox-windows-8vcpu are 8 vCPU · 32 GB, groundbox-macos 12 vCPU · 12 GB.
+    // The auto size doesn't say.
+    case "groundbox": {
+      if (label === "groundbox-macos") return GROUNDBOX_MACOS;
+      const vcpus = groundboxRate(label)?.vcpus;
+      return vcpus ? { vcpus, memoryGb: vcpus * 4 } : null;
+    }
     // The runner= part of its labels, such as 2cpu-linux-x64.
     case "runs-on": {
       const vcpus = count(/^(\d+)cpu-/.exec(label));

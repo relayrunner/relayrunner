@@ -1,18 +1,12 @@
 import { createFileRoute } from "@tanstack/react-router";
 import { ExternalLink } from "lucide-react";
 import { useEffect, useState, type ReactNode } from "react";
-import { ActionsMinutes, OverageBanner } from "@/components/actions-minutes";
+import { ActionsMinutes, OverageBanner, useActionsUsage } from "@/components/actions-minutes";
 import { PageHeader } from "@/components/page-header";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
-import {
-  type AccountUsage,
-  type ActionsUsage,
-  getActionsUsage,
-  refreshActionsUsage,
-  sampleActionsUsage,
-} from "@/lib/actions-usage";
+import { type AccountUsage, type ActionsUsage } from "@/lib/actions-usage";
 import { authDisabled, signIn } from "@/lib/auth-client";
 import { cn } from "@/lib/utils";
 import { githubOutcomes as outcomes, isGitHubOutcome, type GitHubOutcome } from "@/lib/github";
@@ -100,30 +94,6 @@ function GitHubNotice({ outcome }: { outcome: GitHubOutcome }) {
       {outcome === "reauth" && <SignInAgain />}
     </div>
   );
-}
-
-/** Each account's Actions minutes this month, loaded after the page. Null until read, or on error. */
-function useActionsUsage() {
-  const [usage, setUsage] = useState<ActionsUsage | null>(null);
-  const [refreshing, setRefreshing] = useState(false);
-  useEffect(() => {
-    if (authDisabled) return setUsage(sampleActionsUsage());
-    let live = true;
-    getActionsUsage().then(
-      (read) => live && setUsage(read),
-      () => undefined,
-    );
-    return () => {
-      live = false;
-    };
-  }, []);
-  const refresh = () => {
-    setRefreshing(true);
-    refreshActionsUsage()
-      .then(setUsage, () => undefined)
-      .finally(() => setRefreshing(false));
-  };
-  return { usage, refresh, refreshing };
 }
 
 function sampleInstallations(usage: ActionsUsage | null): Installation[] {

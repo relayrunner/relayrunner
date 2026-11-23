@@ -1,6 +1,6 @@
-// The name the gateway gives the one-job runner it mints for a machine, and the CLI's check that
-// a `run` message's runner is the one minted for that route. Both sides use this one module, so a
-// change to the naming can't make every machine start refusing jobs.
+// The name the gateway gives the one-job runner it mints for a machine. The Rust CLI checks that a
+// `run` message's runner ends in its route id (apps/cli/src/jit_config.rs), so keep the route id
+// last or every machine starts refusing jobs.
 
 // GitHub runner names allow letters, digits, `.`, `-` and `_`. The machine's name comes first so
 // the job's "Runner name" says which machine ran it; the route id keeps it unique in the org. A
@@ -13,9 +13,4 @@ export function machineRunnerName(machineName: string, routeId: string, runAttem
       .replace(/^-+|-+$/g, "")
       .slice(0, 40) || "machine";
   return `${base}${runAttempt && runAttempt > 1 ? `-${runAttempt}` : ""}-${routeId}`;
-}
-
-/** Whether `runnerName` is a machineRunnerName() for `routeId`, whatever the machine is called. */
-export function isRunnerForRoute(runnerName: string, routeId: string) {
-  return runnerName.endsWith(`-${routeId}`);
 }

@@ -13,4 +13,6 @@ Used by [`apps/api`](../../apps/api), [`apps/web`](../../apps/web) (the Runners 
 - **`readRunnerOrder`**: reads the stored column. A missing or unreadable value reads as the default, so routing never stalls on a bad row.
 - **`RUNNER_LABELS`**: how the dashboard names each provider.
 
+The Zod schemas and the readers live in `src/schema.ts`, and everything else in `src/core.ts`. The package is marked `sideEffects: false`, so the dashboard, which only uses the constants, ships without Zod. Keep new schemas in `schema.ts` for the same reason.
+
 Steps carry only a key today, since labels come from each job's relay. Rules per step, such as "while included minutes remain", will be added to the step objects.

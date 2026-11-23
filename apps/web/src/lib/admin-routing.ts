@@ -1,7 +1,7 @@
 import { api } from "@/lib/api";
 import { zoneParts } from "@/lib/time-zone";
 
-/** Routing health across workspaces, for Admin › Routing (apps/api/src/admin-routing.ts). */
+/** Routing health across workspaces, for Admin › Routing (apps/api/src/operator/admin-routing.ts). */
 export type RoutingRange = "24h" | "7d";
 
 export const ROUTING_RANGES: RoutingRange[] = ["24h", "7d"];
@@ -87,6 +87,10 @@ const ROUTING_REASONS: Record<string, string> = {
   minutes_limit: "over the minutes limit",
   minutes_runway: "minutes running out",
   provider_unhealthy: "not picking up jobs",
+  spend_limit: "over the spend limit",
+  start_limit: "out of job starts",
+  provider_held: "provider would hold it",
+  provider_no_access: "provider can't see the repo",
   not_in_order: "not in the runner order",
 };
 

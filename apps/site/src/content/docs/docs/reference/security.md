@@ -35,7 +35,7 @@ Machines never take a public repo's jobs. Anyone can open a pull request to a pu
 
 ## Who can send jobs to a machine
 
-- **Only me** (the default): only jobs you started.
+- **Only me** (the default): only jobs you started. A teammate's re-run of your run counts too: it runs the same commit and workflow you started.
 - **Anyone**: any job in the workspace, from a repo the machine's owner can open on GitHub. Sharing never gives a machine code its owner couldn't already see.
 
 ## Machine tokens
@@ -46,7 +46,7 @@ Removing a machine in the dashboard revokes its token straight away.
 
 ## The GitHub App
 
-The App can't read your code, apart from `relayrunner.yml`, and never receives job logs or secrets. See [GitHub App](/docs/reference/github-app) for every permission and why.
+The App can't read your code, apart from `relayrunner.yml`, and never receives secrets. It reads a job's log only to show you why a failed job failed, or to send it to your own endpoint or bucket when you turn on [job logs](/docs/dashboard/telemetry#job-logs) or a [log archive](/docs/dashboard/telemetry#log-archive), and never stores it. See [GitHub App](/docs/reference/github-app) for every permission and why.
 
 ## Report a vulnerability
 

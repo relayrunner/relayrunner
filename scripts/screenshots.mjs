@@ -25,8 +25,19 @@ const SWAPS = [
   ["Dev (auth disabled)", "acme-labs"],
 ];
 
-/** Steps after loading the page, for shots that open something. */
+/** Hides the closest `selector` around the given text, so a marketing shot isn't a wall of warnings. */
+const hideAround = (page, text, selector) =>
+  page
+    .getByText(text)
+    .first()
+    .evaluate((el, sel) => el.closest(sel)?.style.setProperty("display", "none"), selector);
+
+/** Steps after loading the page, for shots that open or trim something. */
 const STEPS = {
+  // One Needs attention row (the offline machine) tells the story; a second for the same machine is noise.
+  runners: (page) => hideAround(page, "studio-mini needs a runner update", "div"),
+  // The setup nudge is for new workspaces, not the runner order.
+  router: (page) => hideAround(page, "Set up a repo", "section"),
   history: async (page) => {
     await page.getByText("fix(api): start a new pick runner").first().click();
     await page.getByRole("dialog").getByText("Test", { exact: true }).first().click();
@@ -53,6 +64,8 @@ function prepare(swaps) {
   }
   // Operator pages show in dev builds but not to anyone using the dashboard.
   document.querySelector('nav[aria-label="Admin"]')?.style.setProperty("display", "none");
+  // The dashboard's own footer links are noise in a screenshot.
+  document.querySelector("footer")?.style.setProperty("display", "none");
 }
 
 const server = spawn(

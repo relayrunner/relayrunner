@@ -16,6 +16,11 @@ const EMAILS: Record<string, { label: string; description: string }> = {
     label: "Machine connected",
     description: "When you connect a new machine with the CLI.",
   },
+  "integration-problem": {
+    label: "Integration problems",
+    description:
+      "When something in a workspace you own or admin stops working, like the GitHub App being paused.",
+  },
   feedback: {
     label: "Feedback",
     description: "When someone sends feedback from the dashboard or an agent.",
@@ -23,6 +28,10 @@ const EMAILS: Record<string, { label: string; description: string }> = {
   "dead-letter-alert": {
     label: "Webhook failures",
     description: "When GitHub webhooks keep failing to process.",
+  },
+  "health-alert": {
+    label: "Failing tasks",
+    description: "When background work keeps failing, and when it works again.",
   },
   "price-check": {
     label: "Price changes",

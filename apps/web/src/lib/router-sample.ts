@@ -1,6 +1,6 @@
 import type { AccountUsage } from "./actions-usage.ts";
 import type { AutoJob, AutoJobs } from "./auto-jobs.ts";
-import type { RouterSetup } from "./router-setup.ts";
+import type { RouterSetup, RunnerGroupCheck } from "./router-setup.ts";
 
 /** Example GitHub accounts for the Router page's `VITE_AUTH_DISABLED=true` dev preview and tests. */
 export function sampleRouterAccounts(
@@ -55,48 +55,72 @@ export function sampleRouterAccounts(
       plan: "team",
       quotaMinutes: 3000,
       usedMinutes: 2520,
+      // Larger runners bill from the first minute, so a team under its included minutes still pays.
+      netAmount: 18.4,
     },
   ];
 }
 
-/** Example workflows for the Router page's `VITE_AUTH_DISABLED=true` dev preview. */
+/** Example repos and workflows for the Router page's `VITE_AUTH_DISABLED=true` dev preview. */
 export function sampleRouterSetup(): RouterSetup {
+  const job = (name: string, runs: number, minutes: number, legs = 1) => ({
+    name,
+    legs,
+    label: "ubuntu-latest",
+    runs,
+    minutes,
+  });
+  const workflow = (
+    repositoryId: number,
+    repository: string,
+    name: string,
+    jobs: ReturnType<typeof job>[],
+    routedRuns = 0,
+  ) => ({
+    repositoryId,
+    repository,
+    workflow: name,
+    runs: Math.max(...jobs.map((j) => j.runs)),
+    routedRuns,
+    jobs,
+  });
   return {
     days: 14,
     workflows: [
-      {
-        repositoryId: 2,
-        repository: "acme/site",
-        workflow: "Deploy",
-        runs: 9,
-        routedRuns: 0,
-      },
-      {
-        repositoryId: 1,
-        repository: "acme/app",
-        workflow: "CI",
-        runs: 212,
-        routedRuns: 208,
-      },
-      {
-        repositoryId: 1,
-        repository: "acme/app",
-        workflow: "E2E",
-        runs: 41,
-        routedRuns: 41,
-      },
-      {
-        repositoryId: 2,
-        repository: "acme/site",
-        workflow: "Preview",
-        runs: 63,
-        routedRuns: 63,
-      },
+      workflow(3, "acme/api", "CI", [
+        job("test", 420, 6),
+        job("lint", 420, 1),
+        job("e2e", 410, 9, 3),
+      ]),
+      workflow(3, "acme/api", "Release", [job("publish", 12, 3)]),
+      workflow(4, "acme/web", "CI", [job("build", 310, 4), job("test", 310, 3)]),
+      workflow(4, "acme/web", "Preview", [job("deploy-preview", 290, 2)]),
+      workflow(5, "acme/docs", "Build", [job("build", 60, 2)]),
+      workflow(1, "acme/app", "CI", [job("lint", 212, 1), job("test", 212, 7)], 208),
+      workflow(2, "acme/site", "Preview", [job("build", 63, 3)], 63),
     ],
     labels: [
       { key: "blacksmith", label: "blacksmith-2vcpu-ubuntu-2404", jobs: 1_180 },
       { key: "blacksmith", label: "blacksmith-4vcpu-ubuntu-2404", jobs: 640 },
     ],
+    repos: [
+      { id: 3, fullName: "acme/api", private: true },
+      { id: 1, fullName: "acme/app", private: true },
+      { id: 5, fullName: "acme/docs", private: false },
+      { id: 2, fullName: "acme/site", private: true },
+      { id: 4, fullName: "acme/web", private: true },
+      { id: 6, fullName: "acme/worker", private: true },
+    ],
+    accessUrl: "https://github.com/organizations/acme/settings/installations/1",
+  };
+}
+
+/** A Default runner group that leaves acme/web out, for the dev preview's "Route a repo" sheet. */
+export function sampleRunnerGroupCheck(): RunnerGroupCheck {
+  return {
+    groupName: "Default",
+    settingsUrl: "https://github.com/organizations/acme/settings/actions/runner-groups/1",
+    blocked: [{ repositoryId: 4, block: "not_selected" }],
   };
 }
 
@@ -114,6 +138,7 @@ export function sampleAutoJobs(): AutoJobs {
     first: null,
     updatedAt: null,
     lastSeenAt: now - 3_600_000,
+    canEdit: true,
     ...fields,
   });
   return {

@@ -11,18 +11,20 @@ const CACHE_MS = 60_000;
  * a report still works, and the next call tries D1 again.
  */
 export function cachedRead<T>(name: string, read: (db: Db) => Promise<T>, fallback: () => T) {
-  let cached: { value: Promise<T>; until: number } | undefined;
+  // Only a value already read is shared. A read still in flight belongs to the request that
+  // started it: if that request ends first, another request awaiting it would fail.
+  let cached: { value: T; until: number } | undefined;
   return {
-    load(db: Db, now = Date.now()): Promise<T> {
-      if (!cached || now >= cached.until) {
-        const value = read(db).catch((error: unknown) => {
-          console.error(JSON.stringify({ msg: `${name} unreadable`, error: String(error) }));
-          cached = undefined;
-          return fallback();
-        });
+    async load(db: Db, now = Date.now()): Promise<T> {
+      if (cached && now < cached.until) return cached.value;
+      try {
+        const value = await read(db);
         cached = { value, until: now + CACHE_MS };
+        return value;
+      } catch (error) {
+        console.error(JSON.stringify({ msg: `${name} unreadable`, error: String(error) }));
+        return fallback();
       }
-      return cached.value;
     },
     /** Drops this isolate's cached value, after an operator changes the rows. */
     forget() {

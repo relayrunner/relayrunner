@@ -1,5 +1,30 @@
 # relayrunner
 
+## 0.19.0
+
+### Minor Changes
+
+- 3dcc656: `relayrunner init` recognises Groundbox labels (`groundbox-4vcpu` and the like), keeps them as a job's fallback, and writes relays pinned to `relay.yml@v1.0.0-beta.9`, which takes a `groundbox` input.
+
+## 0.18.0
+
+### Minor Changes
+
+- 5fc4652: `relayrunner blacksmith connect` connects your Blacksmith organization so Settings › Providers shows its real usage. You approve an org token in your browser as a Blacksmith org admin, and only that token is sent to RelayRunner. If Blacksmith's CLI isn't installed, it offers to download it into `~/.relayrunner/bin`.
+- 1f04e85: `relayrunner init` no longer skips a job just because it can request OIDC tokens (`id-token: write`), such as for a Turbo or Vercel remote cache. It's still a deploy job when it uses the token to sign in to a cloud or publish a package; otherwise it's ready, with a warning. `--allow-deploy <jobs>` routes jobs that look like deploy jobs, once you're fine giving the machine their secrets.
+
+## 0.17.0
+
+### Minor Changes
+
+- 506809e: `relayrunner init --auto` writes `auto` in place of a Linux x64 job's runner label, so you set the job's size on the dashboard's Router page instead of in the workflow file. macOS and Arm jobs keep their labels.
+
+## 0.16.0
+
+### Minor Changes
+
+- 4cdfc46: The Mac Jobs window opens with the jobs it last showed and refreshes them in the background, and a job you've already opened shows its steps at once. Jobs running or waiting on the Mac come first. Filter by result, repo, workflow and time, and drag the line between the list and the job to resize them. Clicking a job in the menu's History tab opens it in the Jobs window. `relayrunner jobs` lists running jobs first and gains `--repo`, `--workflow`, `--result` and `--since`.
+
 ## 0.15.0
 
 ### Minor Changes

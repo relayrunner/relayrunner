@@ -1,16 +1,25 @@
 import type { BillingProviderId } from "@relayrunner/providers";
+import { blacksmith } from "./blacksmith.ts";
+import { boat } from "./boat.ts";
 import { depot } from "./depot.ts";
+import { groundbox } from "./groundbox.ts";
 import { namespace } from "./namespace.ts";
 import type { BillingAdapter } from "./types.ts";
 import { warpbuild } from "./warpbuild.ts";
 
-export const ADAPTERS: Record<BillingProviderId, BillingAdapter> = { depot, namespace, warpbuild };
+export const ADAPTERS: Record<BillingProviderId, BillingAdapter> = {
+  blacksmith,
+  boat,
+  depot,
+  groundbox,
+  namespace,
+  warpbuild,
+};
 
 export {
   type AdapterContext,
   type DailyUsage,
   type JobUsage,
-  ProviderApiError,
   ProviderAuthError,
   type Usage,
   type UsageWindow,

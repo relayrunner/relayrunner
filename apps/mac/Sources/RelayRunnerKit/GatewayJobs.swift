@@ -2,7 +2,7 @@ import Foundation
 
 /// A job this Mac ran, as the gateway has it: what `relayrunner jobs --json` prints
 /// (GET /api/machines/me/jobs). Times are ms since the epoch.
-public struct GatewayJob: Equatable, Decodable, Identifiable {
+public struct GatewayJob: Equatable, Codable, Identifiable {
   public var id: Int
   public var name: String
   public var workflow: String?
@@ -37,11 +37,21 @@ public struct GatewayJob: Equatable, Decodable, Identifiable {
     self.completedAt = completedAt
   }
 
-  public var outcome: HistoryEntry.Outcome { JobConclusion.outcome(conclusion) }
+  public var outcome: JobOutcome { JobConclusion.outcome(conclusion) }
+
+  /// Running or waiting to start: it hasn't finished.
+  public var isActive: Bool { completedAt == nil }
+  /// Sent to this Mac but not started yet.
+  public var isWaiting: Bool { isActive && startedAt == nil }
 
   /// How long it waited for a runner. Zero when GitHub didn't say, so the table can sort on it.
   public var waitedMs: Double { span(queuedAt, startedAt) }
   public var ranMs: Double { span(startedAt, completedAt) }
+
+  /// How long it has waited or run so far, for a job that hasn't finished.
+  public func elapsedMs(now: Date) -> Double {
+    span(startedAt ?? queuedAt, now.timeIntervalSince1970 * 1000)
+  }
   /// When it finished, for sorting; zero while unknown.
   public var finishedMs: Double { completedAt ?? 0 }
   public var finished: Date? { completedAt.map { Date(timeIntervalSince1970: $0 / 1000) } }
@@ -62,9 +72,12 @@ private func span(_ from: Double?, _ to: Double?) -> Double {
   return max(0, to - from)
 }
 
+/// How a job ended.
+public enum JobOutcome: Equatable { case succeeded, failed, canceled, other }
+
 public enum JobConclusion {
   /// GitHub's conclusion as one of the menu's outcomes.
-  public static func outcome(_ conclusion: String?) -> HistoryEntry.Outcome {
+  public static func outcome(_ conclusion: String?) -> JobOutcome {
     switch conclusion {
     case "success": return .succeeded
     case "failure", "timed_out", "startup_failure": return .failed
@@ -74,29 +87,104 @@ public enum JobConclusion {
   }
 }
 
-/// A page of `relayrunner jobs --json`. `next` is the `--before` for the page after it.
-public struct GatewayJobPage: Equatable, Decodable {
+/// A page of `relayrunner jobs --json`. `next` is the `--before` for the page after it. The first
+/// page also has `active`, the jobs running or waiting here now, and the repos and workflows the
+/// Mac ran jobs from, for filters (nil from a gateway that doesn't send them yet).
+public struct GatewayJobPage: Equatable, Codable {
   public var jobs: [GatewayJob]
   public var next: Double?
+  public var active: [GatewayJob]?
+  public var repos: [String]?
+  public var workflows: [String]?
 
   public static func parse(_ data: Data) -> GatewayJobPage? {
     try? JSONDecoder().decode(GatewayJobPage.self, from: data)
   }
 
+  /// Running and waiting jobs first, then the finished ones.
+  public var all: [GatewayJob] { (active ?? []) + jobs }
+
   /// `older` after this page's jobs, leaving out any it already has.
   public func adding(_ older: GatewayJobPage) -> GatewayJobPage {
-    let have = Set(jobs.map(\.id))
-    return GatewayJobPage(jobs: jobs + older.jobs.filter { !have.contains($0.id) }, next: older.next)
+    let have = Set(all.map(\.id))
+    var both = self
+    both.jobs += older.jobs.filter { !have.contains($0.id) }
+    both.next = older.next
+    return both
   }
 
-  public init(jobs: [GatewayJob], next: Double?) {
+  public init(
+    jobs: [GatewayJob], next: Double?, active: [GatewayJob]? = nil, repos: [String]? = nil,
+    workflows: [String]? = nil
+  ) {
     self.jobs = jobs
     self.next = next
+    self.active = active
+    self.repos = repos
+    self.workflows = workflows
+  }
+}
+
+/// What the Jobs window asks the gateway for: a result, repo, workflow and how far back. The
+/// window's search narrows what came back.
+public struct JobsFilter: Hashable {
+  public enum Result: String, CaseIterable { case succeeded, failed, canceled }
+
+  public enum Range: Int, CaseIterable {
+    case hour = 1
+    case day = 24
+    case threeDays = 72
+    case week = 168
+
+    public var title: String {
+      switch self {
+      case .hour: "Last Hour"
+      case .day: "Last 24 Hours"
+      case .threeDays: "Last 3 Days"
+      case .week: "Last Week"
+      }
+    }
+  }
+
+  public var result: Result?
+  public var repo: String?
+  public var workflow: String?
+  public var range = Range.week
+
+  public init(result: Result? = nil, repo: String? = nil, workflow: String? = nil, range: Range = .week) {
+    self.result = result
+    self.repo = repo
+    self.workflow = workflow
+    self.range = range
+  }
+
+  public var isEmpty: Bool { self == JobsFilter() }
+
+  /// `relayrunner jobs` arguments for it. A week is all the gateway keeps, so it needs no `--since`.
+  public func arguments(now: Date) -> [String] {
+    var arguments: [String] = []
+    if let result { arguments += ["--result", result.rawValue] }
+    if let repo { arguments += ["--repo", repo] }
+    if let workflow { arguments += ["--workflow", workflow] }
+    if range != .week {
+      let since = now.addingTimeInterval(-Double(range.rawValue) * 3600)
+      arguments += ["--since", String(Int(since.timeIntervalSince1970 * 1000))]
+    }
+    return arguments
+  }
+}
+
+extension GatewayJob {
+  /// The GitHub job id in a job's link (…/actions/runs/3/job/7), such as a History entry's.
+  public static func id(in url: URL) -> Int? {
+    let parts = url.pathComponents
+    guard parts.count >= 2, parts[parts.count - 2] == "job" else { return nil }
+    return Int(parts[parts.count - 1])
   }
 }
 
 /// A step of a job, as GitHub reports it.
-public struct JobStep: Equatable, Decodable, Identifiable {
+public struct JobStep: Equatable, Codable, Identifiable {
   public var number: Int
   public var name: String
   public var status: String
@@ -105,7 +193,7 @@ public struct JobStep: Equatable, Decodable, Identifiable {
   public var completedAt: Double?
 
   public var id: Int { number }
-  public var outcome: HistoryEntry.Outcome { JobConclusion.outcome(conclusion) }
+  public var outcome: JobOutcome { JobConclusion.outcome(conclusion) }
   public var durationMs: Double? {
     guard let startedAt, let completedAt else { return nil }
     return max(0, completedAt - startedAt)
@@ -125,7 +213,7 @@ public struct JobStep: Equatable, Decodable, Identifiable {
 }
 
 /// Why a job failed: the gateway's read of its failed step, annotations and log.
-public struct JobFailure: Equatable, Decodable {
+public struct JobFailure: Equatable, Codable {
   public var failedStep: String?
   public var runnerFailed: Bool
   public var annotations: [String]
@@ -134,7 +222,7 @@ public struct JobFailure: Equatable, Decodable {
   public var cause: Cause?
 
   /// What the AI model thinks caused it, when the workspace has AI on and it could tell.
-  public struct Cause: Equatable, Decodable {
+  public struct Cause: Equatable, Codable {
     public var kind: String
     public var confidence: Double
     /// "passes" or "fails" when a re-run will likely do that.
@@ -162,7 +250,7 @@ public struct JobFailure: Equatable, Decodable {
 
 /// `relayrunner jobs <id> --json`: one job, its steps (nil when GitHub no longer has them) and,
 /// for a failed one, why.
-public struct GatewayJobDetail: Equatable, Decodable {
+public struct GatewayJobDetail: Equatable, Codable {
   public var job: GatewayJob
   public var steps: [JobStep]?
   public var failure: JobFailure?

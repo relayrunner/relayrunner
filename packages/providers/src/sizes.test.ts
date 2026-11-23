@@ -37,6 +37,14 @@ describe("runnerSize", () => {
     ["celesto", "celesto-large", "4 vCPU · 16 GB"],
     ["instabox", "instabox-medium-snapshot-web", "4 vCPU · 8 GB"],
     ["lizard", "lizard-medium-ubuntu-2404", "4 vCPU · 8 GB"],
+    ["groundbox", "groundbox-4vcpu", "4 vCPU · 16 GB"],
+    ["groundbox", "groundbox-16vcpu-ubuntu-2404", "16 vCPU · 64 GB"],
+    ["groundbox", "groundbox-flex", "4 vCPU · 16 GB"],
+    ["groundbox", "groundbox-flex-8vcpu", "8 vCPU · 32 GB"],
+    ["groundbox", "groundbox-macos", "12 vCPU · 12 GB"],
+    ["groundbox", "groundbox-windows", "4 vCPU · 16 GB"],
+    ["groundbox", "groundbox-windows-2vcpu", "2 vCPU · 8 GB"],
+    ["groundbox", "groundbox-windows-16vcpu", "16 vCPU · 64 GB"],
   ])("%s %s is %s", (provider, label, text) => {
     expect(sizeText(runnerSize(provider, label))).toBe(text);
   });
@@ -50,6 +58,8 @@ describe("runnerSize", () => {
     ["boat", "boat-huge"],
     ["other", "my-runner"],
     ["other", "ubuntu-2404"],
+    ["groundbox", "groundbox"],
+    ["groundbox", "groundbox-auto-web"],
   ])("%s %s has no known size", (provider, label) => {
     expect(runnerSize(provider, label)).toBeNull();
   });

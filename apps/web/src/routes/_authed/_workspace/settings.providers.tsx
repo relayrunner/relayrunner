@@ -1,7 +1,13 @@
-import { ERRORS, isErrorCode } from "@relayrunner/errors";
+import { AppError, ERRORS, isErrorCode } from "@relayrunner/errors";
 import { BILLING_PROVIDERS, type BillingProviderInfo } from "@relayrunner/providers";
-import { createFileRoute } from "@tanstack/react-router";
-import { ArrowUpRightIcon, CheckIcon } from "lucide-react";
+import { heldText } from "@relayrunner/activity";
+import {
+  type FreeMinutesProvider,
+  isFreeMinutesProvider,
+  RUNNER_LABELS,
+} from "@relayrunner/runner-order";
+import { createFileRoute, Link } from "@tanstack/react-router";
+import { ArrowUpRightIcon, CheckIcon, CopyIcon } from "lucide-react";
 import { type FormEvent, useState } from "react";
 import { PageHeader } from "@/components/page-header";
 import { ProviderMark } from "@/components/providers";
@@ -19,6 +25,13 @@ import {
 import { timeAgo } from "@/lib/activity";
 import { errorText } from "@/lib/api";
 import { authDisabled } from "@/lib/auth-client";
+import {
+  counted,
+  type FreeMinutes as FreeMinutesCount,
+  type FreeMinutesByProvider,
+  getAllFreeMinutes,
+  sampleFreeMinutes,
+} from "@/lib/free-minutes";
 import { providerInfo } from "@/lib/provider-catalog";
 import {
   connectProvider,
@@ -33,14 +46,29 @@ import { plural } from "@/lib/job-times";
 import { minutes, money } from "@/lib/usage";
 
 export const Route = createFileRoute("/_authed/_workspace/settings/providers")({
-  loader: () => (authDisabled ? sampleConnections() : listConnections()),
+  loader: async () => {
+    if (authDisabled) {
+      const freeMinutes: FreeMinutesByProvider = {
+        blacksmith: sampleFreeMinutes("blacksmith", false),
+        groundbox: sampleFreeMinutes("groundbox", false),
+      };
+      return { ...sampleConnections(), freeMinutes };
+    }
+    const [{ connections }, freeMinutes] = await Promise.all([
+      listConnections(),
+      // Only for the Blacksmith and Groundbox cards' free-minutes lines, so the page loads without.
+      getAllFreeMinutes().catch((): FreeMinutesByProvider => ({})),
+    ]);
+    return { connections, freeMinutes };
+  },
   component: ProviderSettingsPage,
 });
 
 function ProviderSettingsPage() {
   const { current } = Route.useRouteContext();
-  const { connections } = Route.useLoaderData();
+  const { connections, freeMinutes } = Route.useLoaderData();
   const manager = canManage(current.role);
+  const organization = current.installations[0]?.accountLogin ?? null;
 
   return (
     <section>
@@ -50,14 +78,36 @@ function ProviderSettingsPage() {
       </PageHeader>
       <div className="grid max-w-3xl gap-4">
         {connections.map((connection) => (
-          <ProviderCard key={connection.provider} first={connection} manager={manager} />
+          <ProviderCard
+            key={connection.provider}
+            first={connection}
+            manager={manager}
+            organization={organization}
+            freeMinutes={
+              isFreeMinutesProvider(connection.provider)
+                ? (freeMinutes[connection.provider] ?? null)
+                : undefined
+            }
+          />
         ))}
       </div>
     </section>
   );
 }
 
-function ProviderCard({ first, manager }: { first: ProviderConnection; manager: boolean }) {
+function ProviderCard({
+  first,
+  manager,
+  organization,
+  freeMinutes,
+}: {
+  first: ProviderConnection;
+  manager: boolean;
+  /** The GitHub organization this workspace is installed on. */
+  organization: string | null;
+  /** Blacksmith's and Groundbox's cards only: this month's free minutes, null when unread. */
+  freeMinutes?: FreeMinutesCount | null;
+}) {
   const [connection, setConnection] = useState(first);
   const [replacing, setReplacing] = useState(false);
   const [pending, setPending] = useState(false);
@@ -72,7 +122,15 @@ function ProviderCard({ first, manager }: { first: ProviderConnection; manager: 
     try {
       await action();
     } catch (caught) {
-      setNotice({ ok: false, text: errorText(caught) });
+      // A missing scope is the one refusal that says how to fix the token, so name it.
+      const reason =
+        caught instanceof AppError
+          ? scopeError(String((caught.details as { reason?: unknown })?.reason ?? ""))
+          : null;
+      setNotice({
+        ok: false,
+        text: reason ? `${name} refused the ${billing.token}: ${reason}.` : errorText(caught),
+      });
     } finally {
       setPending(false);
     }
@@ -121,6 +179,20 @@ function ProviderCard({ first, manager }: { first: ProviderConnection; manager: 
           <ConnectionStatus connection={connection} name={name} />
         ) : (
           <p className="text-muted-foreground">{billing.reads}</p>
+        )}
+        {freeMinutes !== undefined && isFreeMinutesProvider(provider) && (
+          <FreeMinutes
+            provider={provider}
+            connected={connected}
+            minutes={connected ? freeMinutes : null}
+          />
+        )}
+        {manager && billing.command && !connected && (
+          <ConnectCommand
+            command={billing.command}
+            name={name}
+            organization={billing.githubOrganization ? organization : null}
+          />
         )}
         {manager && (!connected || replacing) && (
           <TokenForm
@@ -180,15 +252,35 @@ function ConnectionStatus({ connection, name }: { connection: ProviderConnection
   return (
     <div className="grid gap-1">
       <p className="text-muted-foreground">{facts.join(" · ")}</p>
-      {lastSyncedAt && (
-        <p>
-          {plural(recent.jobs, "job")} and {minutes(recent.billableMinutes)} billable minutes in the
-          last 30 days
-          {recent.costUsd != null && `, ${money(recent.costUsd)} billed`}.
-        </p>
+      {BILLING_PROVIDERS[connection.provider].limitsOnly ? (
+        <p>{BILLING_PROVIDERS[connection.provider].reads}</p>
+      ) : BILLING_PROVIDERS[connection.provider].costOnly ? (
+        // The provider says what each job cost, not how long it ran.
+        lastSyncedAt && (
+          <p>
+            {plural(recent.jobs, "job")} in the last 30 days
+            {recent.costUsd != null && `, ${money(recent.costUsd)} billed`}.
+          </p>
+        )
+      ) : (
+        lastSyncedAt && (
+          <p>
+            {plural(recent.jobs, "job")} and {minutes(recent.billableMinutes)}{" "}
+            {connection.provider === "blacksmith"
+              ? // Blacksmith bills minutes times vCPUs: a minute on 4 vCPU is 4 of these.
+                "vCPU minutes"
+              : "billable minutes"}{" "}
+            in the last 30 days
+            {recent.costUsd != null && `, ${money(recent.costUsd)} billed`}.
+          </p>
+        )
       )}
       {failure === "token_rejected" && (
-        <p className="text-destructive">{name} stopped accepting this token. Paste a new one.</p>
+        <p className="text-destructive">
+          {scopeError(error)
+            ? `${name} refused this ${BILLING_PROVIDERS[connection.provider].token}: ${scopeError(error)}. Replace it with one that has that scope.`
+            : `${name} stopped accepting this token. Paste a new one.`}
+        </p>
       )}
       {failure === "error" && <p className="text-destructive">The last sync failed: {error}</p>}
     </div>
@@ -275,11 +367,133 @@ function TokenForm({
           <ArrowUpRightIcon aria-hidden className="size-3" />
         </a>
       </p>
+      {billing.scopes && <Scopes scopes={billing.scopes} />}
     </form>
   );
 }
 
+/** A command that connects the provider from a terminal, with a copy button. */
+function ConnectCommand({
+  command,
+  name,
+  organization,
+}: {
+  command: string;
+  name: string;
+  organization: string | null;
+}) {
+  const [copied, setCopied] = useState(false);
+  const copy = () =>
+    void navigator.clipboard?.writeText(command).then(() => {
+      setCopied(true);
+      setTimeout(() => setCopied(false), 2000);
+    });
+  return (
+    <div className="grid gap-2">
+      <p>
+        Run this in a terminal as a {name} org admin. It opens your browser to approve an org token
+        {organization ? (
+          <>
+            {" "}
+            for <strong>{organization}</strong>, the GitHub organization this workspace is on
+          </>
+        ) : (
+          " for this workspace's GitHub organization"
+        )}
+        , and sends only that token here.
+      </p>
+      <div className="flex items-center gap-2 rounded-md border bg-muted/40 px-3 py-2">
+        <code className="min-w-0 flex-1 truncate font-mono text-xs">{command}</code>
+        <Button size="sm" variant="ghost" onClick={copy} aria-label="Copy command">
+          {copied ? (
+            <CheckIcon aria-hidden className="size-4" />
+          ) : (
+            <CopyIcon aria-hidden className="size-4" />
+          )}
+        </Button>
+      </div>
+      <p className="text-xs text-muted-foreground">
+        The computer needs to be signed in with <code>relayrunner login</code>. Or paste a token
+        below.
+      </p>
+    </div>
+  );
+}
+
+/**
+ * Once Blacksmith or Groundbox is connected, this month's free minutes (and for Groundbox, whether
+ * it's holding jobs).
+ */
+function FreeMinutes({
+  provider,
+  connected,
+  minutes,
+}: {
+  provider: FreeMinutesProvider;
+  connected: boolean;
+  minutes: FreeMinutesCount | null;
+}) {
+  const label = RUNNER_LABELS[provider];
+  const count = (n: number) => n.toLocaleString("en-US");
+  const router = (text: string) => (
+    <Link to="/router" className="text-go hover:text-go-hover">
+      {text}
+    </Link>
+  );
+  if (!connected) return null;
+  const held = minutes?.held ? (
+    <p className="text-destructive">
+      {heldText(label, { reason: minutes.held })}, so the Router passes its jobs on.
+    </p>
+  ) : null;
+  if (!counted(minutes)) return held;
+  const used = Math.round(minutes.usedMinutes);
+  const quota = minutes.quotaMinutes;
+  // Blacksmith counts free minutes as 2-vCPU minutes, so a 4-vCPU minute uses two. Its own page
+  // stops at the quota and shows runner minutes, which don't double: say how the count is made.
+  // Groundbox reports its own count.
+  const unit = provider === "blacksmith" ? "2-vCPU minutes" : "minutes";
+  return (
+    <>
+      <p>
+        {used >= quota
+          ? `All ${count(quota)} free minutes used this month (${count(used)} ${unit}).`
+          : provider === "blacksmith"
+            ? `${count(used)} of ${count(quota)} free minutes used this month, in 2-vCPU minutes.`
+            : `${count(used)} of ${count(quota)} free minutes used this month.`}{" "}
+        <span className="text-muted-foreground">
+          Set a limit on the {label} step in the {router("Router")}.
+        </span>
+      </p>
+      {held}
+    </>
+  );
+}
+
 /** Help text with `code` in backticks. */
+/** The scopes a token needs, by the token field, so it's made right the first time. */
+function Scopes({ scopes }: { scopes: NonNullable<BillingProviderInfo["scopes"]> }) {
+  return (
+    <div className="grid gap-1.5 rounded-md border bg-muted/40 px-3 py-2.5 text-xs">
+      <p className="font-medium">Scopes to give it</p>
+      <ul className="grid gap-1">
+        {scopes.map(({ scope, for: purpose }) => (
+          <li key={scope} className="flex flex-wrap items-baseline gap-x-2">
+            <code className="rounded bg-background px-1.5 py-0.5 font-mono">{scope}</code>
+            <span className="text-muted-foreground">{purpose}</span>
+          </li>
+        ))}
+      </ul>
+    </div>
+  );
+}
+
+/** A provider's "missing scope" reason, which says how to fix the token; other refusals don't. */
+function scopeError(error: string | null): string | null {
+  const match = error?.match(/"message":"([^"]*scope[^"]*)"/i);
+  return match ? match[1]!.charAt(0).toLowerCase() + match[1]!.slice(1) : null;
+}
+
 function Help({ text }: { text: string }) {
   return text
     .split("`")

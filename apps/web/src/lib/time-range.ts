@@ -1,16 +1,16 @@
 // A report's time range, as one string that goes in the URL as it is: a rolling preset such as
-// `24h` or `14d`, a calendar one such as `today` or `week`, or a custom range of local dates,
+// `24h` or `14d`, a calendar one such as `today`, `week` or `month`, or a custom range of local dates,
 // `2026-11-01..2026-11-07` (both days included).
 
 // Days are the dashboard's time zone's (time-zone.ts). Kept free of `@/` imports so tests can load
 // it, like runner-days.ts.
-import { parseDateText, shortDate, startOfDay, startOfWeek } from "./time-zone.ts";
+import { parseDateText, shortDate, startOfDay, startOfMonth, startOfWeek } from "./time-zone.ts";
 
 const HOUR_MS = 3_600_000;
 const DAY_MS = 24 * HOUR_MS;
 
 const ROLLING = ["1h", "3h", "24h", "2d", "7d", "14d", "30d", "90d"] as const;
-export const CALENDAR = ["today", "yesterday", "week", "lastweek"] as const;
+export const CALENDAR = ["today", "yesterday", "week", "lastweek", "month", "lastmonth"] as const;
 
 export type RollingRange = (typeof ROLLING)[number];
 export type CalendarRange = (typeof CALENDAR)[number];
@@ -31,6 +31,8 @@ const NAMES: Record<RangePreset, string> = {
   yesterday: "Yesterday",
   week: "This week",
   lastweek: "Last week",
+  month: "This month",
+  lastmonth: "Last month",
 };
 
 /** A rolling preset's length. */
@@ -85,10 +87,95 @@ export function resolveRange(range: TimeRange, now = Date.now()): { from: number
       const week = startOfWeek(now);
       return { from: startOfDay(week, -7), to: week };
     }
+    case "month":
+      return { from: startOfMonth(now), to: now };
+    case "lastmonth":
+      return { from: startOfMonth(now, -1), to: startOfMonth(now) };
   }
   const { start, end } = parseCustom(range) ?? { start: Number.NaN, end: Number.NaN };
   // A custom range ends at the end of its last day, or now if that's today.
   return { from: start, to: Math.min(now, startOfDay(end, 1)) };
+}
+
+/** The range as a report's query, `from=…&to=…` in epoch ms, so the API reads the same days. */
+export function rangeQuery(range: TimeRange, now = Date.now()) {
+  const { from, to } = resolveRange(range, now);
+  return `from=${from}&to=${to}`;
+}
+
+/**
+ * Where a calendar range's trend starts: the same stretch one period back, so this month compares
+ * with the first days of last month and last week with the week before. Undefined for the others,
+ * which compare with the stretch just before.
+ */
+function priorStart(range: TimeRange, now: number) {
+  switch (range) {
+    case "today":
+      return startOfDay(now, -1);
+    case "yesterday":
+      return startOfDay(now, -2);
+    case "week":
+      return startOfDay(startOfWeek(now), -7);
+    case "lastweek":
+      return startOfDay(startOfWeek(now), -14);
+    case "month":
+      return startOfMonth(now, -1);
+    case "lastmonth":
+      return startOfMonth(now, -2);
+  }
+  return undefined;
+}
+
+/**
+ * The range as a report's query with a trend, plus `extra` params: a rolling one as `days=N`, the
+ * last few days as the API counts them, and any other as `from=…&to=…` with `priorFrom=` where its
+ * trend starts.
+ */
+export function reportQuery(
+  range: TimeRange,
+  extra: Record<string, string> = {},
+  now = Date.now(),
+) {
+  const params = new URLSearchParams();
+  if (isRolling(range)) params.set("days", String(presetDays(range)));
+  else {
+    const { from, to } = resolveRange(range, now);
+    const prior = priorStart(range, now);
+    params.set("from", String(from));
+    params.set("to", String(to));
+    if (prior !== undefined) params.set("priorFrom", String(prior));
+  }
+  for (const [key, value] of Object.entries(extra)) params.set(key, value);
+  return params.toString();
+}
+
+/** What a range's trend compares it with: "the 7 days before", "the same days last month". */
+export function trendPhrase(range: TimeRange) {
+  if (isRolling(range)) {
+    const days = presetDays(range);
+    return days === 1 ? "the day before" : `the ${days} days before`;
+  }
+  switch (range) {
+    case "today":
+      return "the same hours yesterday";
+    case "yesterday":
+      return "the day before";
+    case "week":
+      return "the same days last week";
+    case "lastweek":
+      return "the week before";
+    case "month":
+      return "the same days last month";
+    case "lastmonth":
+      return "the month before";
+  }
+  return "as many days before";
+}
+
+/** How many days a range spans, at least one. */
+export function rangeDays(range: TimeRange, now = Date.now()) {
+  const { from, to } = resolveRange(range, now);
+  return Math.max(1, Math.round((to - from) / DAY_MS));
 }
 
 /** A short code for how long a range spans, such as `3h`, `19h` or `6d`. */
@@ -110,9 +197,9 @@ export function rangeName(range: TimeRange) {
 
 /** The range as the end of a sentence: "the past 24 hours", "this week", "Nov 1 – Nov 7". */
 export function rangePhrase(range: TimeRange) {
-  if (range === "today" || range === "yesterday") return range;
-  if (!isCustom(range)) return `the ${NAMES[range].toLowerCase()}`;
-  return rangeName(range);
+  if (isCustom(range)) return rangeName(range);
+  const name = NAMES[range].toLowerCase();
+  return isRolling(range) ? `the ${name}` : name;
 }
 
 export type RangeOptions = {
@@ -136,4 +223,17 @@ export function timeRangeParam(
   return custom && custom.start >= customRangeStart(customDays, now) && custom.end <= now
     ? (value as CustomRange)
     : undefined;
+}
+
+/**
+ * A range from the URL when it's one the page offers other than its default. `days` is an older
+ * link's day count, so `?days=7` reads as `7d`.
+ */
+export function rangeOrDaysParam(
+  range: unknown,
+  days: unknown,
+  options: RangeOptions,
+  fallback: TimeRange,
+) {
+  return timeRangeParam(range ?? (days ? dayPreset(Number(days)) : undefined), options, fallback);
 }

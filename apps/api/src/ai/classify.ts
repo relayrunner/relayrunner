@@ -12,11 +12,11 @@
 //
 // Every call checks the switches and budgets (settings.ts), reuses a cached answer when it can,
 // and records usage. It never throws: callers keep their behavior without AI when it says no.
+import { DAY_MS, utcDay } from "../time.ts";
 import { and, eq, gt, sql } from "drizzle-orm";
 import { createDb, type Db, schema } from "../db/index.ts";
 import type { Env } from "../env.ts";
-import { DAY_MS, utcDay } from "../job-timings.ts";
-import { sha256Hex } from "../machines.ts";
+import { sha256Hex } from "../machines/machines.ts";
 import { type AiFeature, aiAccess, withinBudget } from "./settings.ts";
 
 /**

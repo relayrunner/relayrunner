@@ -43,9 +43,12 @@ export function RunnerLink({
   className,
   markClassName,
   specsShown = false,
+  mark = true,
   children,
 }: {
   runner: RunnerRef;
+  /** Left out where the page is already about one provider, so every row would show its mark. */
+  mark?: boolean;
   /** The row already shows the runner's detail and size, so the card leaves them out. */
   specsShown?: boolean;
   className?: string;
@@ -56,7 +59,7 @@ export function RunnerLink({
   const provider = providerOf(runner);
   const content = (
     <>
-      <RunnerMark runner={runner} className={markClassName} />
+      {mark && <RunnerMark runner={runner} className={markClassName} />}
       {children ?? runner.label}
     </>
   );

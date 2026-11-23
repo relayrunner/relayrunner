@@ -7,8 +7,8 @@ import { StatusIcon } from "@/components/status-icon";
 import { Card } from "@/components/ui/card";
 import { clock, progressOf, progressText } from "@/lib/job-times";
 import { type LiveJob, type LiveJobs, runnerCounts, waitReason } from "@/lib/live-jobs";
-import { timeAgo } from "@/lib/activity";
 import type { Machine } from "@/lib/machines";
+import { formatTime } from "@/lib/time-zone";
 import { useNow } from "@/lib/use-now";
 import { cn } from "@/lib/utils";
 
@@ -126,7 +126,7 @@ export function RunnersNow({
                       {reason.problem && (
                         <TriangleAlertIcon aria-hidden className="size-3.5 shrink-0" />
                       )}
-                      <span className="truncate">{reason.text}</span>
+                      <span className="sm:truncate">{reason.text}</span>
                     </span>
                     <span aria-hidden>·</span>
                     <span className="truncate">{job.repository}</span>
@@ -168,7 +168,14 @@ function useStale(updatedAt: number) {
   return stale;
 }
 
-// "Updated 8s ago · GitHub checked 20s ago", ticking each second on its own.
+const CLOCK: Intl.DateTimeFormatOptions = { hour: "numeric", minute: "2-digit" };
+const CLOCK_SECONDS: Intl.DateTimeFormatOptions = { ...CLOCK, second: "2-digit" };
+
+/**
+ * One quiet word while the page is current: "Live", with the exact times on hover. It only says
+ * more when something needs a look: the time it last heard back once it's stale, or that GitHub
+ * couldn't be reached. Nothing ticks.
+ */
 function Freshness({
   updatedAt,
   githubAt,
@@ -180,20 +187,26 @@ function Freshness({
   githubDown: boolean;
   stale: boolean;
 }) {
-  const now = useNow(true);
+  const detail = [
+    `Updated ${formatTime(updatedAt, CLOCK_SECONDS)}`,
+    githubAt !== null && !githubDown && `GitHub checked ${formatTime(githubAt, CLOCK_SECONDS)}`,
+  ]
+    .filter(Boolean)
+    .join(" · ");
   return (
     <p
-      className={cn(
-        "flex flex-wrap justify-end gap-x-1.5 text-xs text-muted-foreground tabular-nums",
-        stale && "text-run",
-      )}
+      title={detail}
+      className="flex flex-wrap items-center justify-end gap-x-1.5 text-xs text-muted-foreground"
     >
-      <span>Updated {timeAgo(updatedAt, now)}</span>
-      {githubDown ? (
-        <span>· Couldn't reach GitHub</span>
+      {stale ? (
+        <span>Last updated {formatTime(updatedAt, CLOCK)}</span>
       ) : (
-        githubAt !== null && <span>· GitHub checked {timeAgo(githubAt, now)}</span>
+        <span className="inline-flex items-center gap-1.5">
+          <span aria-hidden className="size-1.5 rounded-full bg-go" />
+          Live
+        </span>
       )}
+      {githubDown && <span>· Couldn't reach GitHub</span>}
     </p>
   );
 }
@@ -260,7 +273,8 @@ function JobRow({ job, from, detail }: { job: LiveJob; from: number | null; deta
           <span className="text-muted-foreground">{job.workflow ?? "Workflow"} / </span>
           {job.name}
         </RunLink>
-        <div className="flex min-w-0 items-center gap-1.5 text-xs text-muted-foreground">
+        {/* Wraps on phones, so the runner and the wait reason read in full. */}
+        <div className="flex min-w-0 flex-wrap items-center gap-x-1.5 text-xs text-muted-foreground sm:flex-nowrap">
           {detail}
         </div>
       </div>
@@ -277,20 +291,23 @@ function JobRow({ job, from, detail }: { job: LiveJob; from: number | null; deta
 }
 
 // A running job's timer with how it's doing against its usual time on that runner: the time left,
-// its usual time once it's past it, or a warning once it's slower than 9 in 10 of its runs.
+// nothing once it's past that but still normal, or a warning once it's meaningfully slower.
 function Running({ job, startedAt }: { job: LiveJob; startedAt: number }) {
   const ran = useNow(true) - startedAt;
   const progress = progressOf(job.typical, ran)!;
   const slow = progress.state === "slow";
+  const text = progressText(progress);
   return (
     <span className="grid shrink-0 justify-items-end gap-0.5 tabular-nums">
       <span className={cn("text-sm text-muted-foreground", slow && "text-run")}>{clock(ran)}</span>
-      <span
-        className={cn("text-xs text-muted-foreground", slow && "text-run")}
-        title={`Usually takes ${clock(progress.typical.medianMs)} on this runner, from its last ${progress.typical.samples} successful runs`}
-      >
-        {progressText(progress)}
-      </span>
+      {text && (
+        <span
+          className={cn("text-xs text-muted-foreground", slow && "text-run")}
+          title={`Usually takes ${clock(progress.typical.medianMs)} on this runner, from its last ${progress.typical.samples} successful runs`}
+        >
+          {text}
+        </span>
+      )}
     </span>
   );
 }

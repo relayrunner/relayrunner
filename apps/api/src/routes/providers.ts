@@ -2,31 +2,37 @@ import { isBillingProvider } from "@relayrunner/providers";
 import { Hono } from "hono";
 import { z } from "zod";
 import type { AppEnv } from "../app.ts";
+import { blacksmithMinutes } from "../providers/blacksmith-minutes.ts";
 import { createDb } from "../db/index.ts";
+import { groundboxMinutesView, readGroundboxAccount } from "../providers/groundbox-account.ts";
 import { requireUser } from "../middleware/session.ts";
 import { requireWorkspace } from "../middleware/workspace.ts";
-import { isCatalogProvider, loadCatalog, withCatalog } from "../provider-catalog.ts";
+import { isCatalogProvider, loadCatalog } from "../providers/provider-catalog.ts";
 import {
   connectProvider,
   disconnectProvider,
   listConnections,
   parseOptions,
   testConnection,
-} from "../provider-connections.ts";
-import { providerReport, providersOverview } from "../provider-report.ts";
-import { requireManager } from "../roles.ts";
-import { Days } from "./job-times.ts";
+} from "../providers/provider-connections.ts";
+import { providerReport, providersOverview } from "../reports/provider-report.ts";
+import { workspaceSpend } from "../providers/provider-spend.ts";
+import { providerTrends } from "../reports/provider-trends.ts";
+import { chartBuckets, requireWindow } from "../reports/report-window.ts";
+import { RAW_RETENTION_DAYS } from "../time.ts";
+import { DEFAULT_DAYS } from "../reports/job-times.ts";
+import { requireManager } from "../auth/roles.ts";
 import { AppError } from "@relayrunner/errors";
-
-const Query = z.object({ days: Days });
 
 const ConnectBody = z.object({
   token: z.string().trim().min(8).max(4096),
   options: z.record(z.string(), z.string()).optional(),
 });
 
-// The Providers page and each provider's page: the workspace's jobs over the last ?days=N days
-// (default 14).
+// The Providers page and each provider's page: the workspace's jobs over ?from=&to= or the last
+// ?days=N days (default 14), as far back as job_timing keeps each job.
+const RANGE = { maxDays: RAW_RETENTION_DAYS, defaultDays: DEFAULT_DAYS };
+
 export const providerRoutes = new Hono<AppEnv>()
   // Every provider, with the ones operators changed or added in the admin. Signed-in users only;
   // the docs site reads the code list.
@@ -37,6 +43,24 @@ export const providerRoutes = new Hono<AppEnv>()
   // can look; only owners and admins change them. Tokens never come back.
   .get("/connections", requireUser, requireWorkspace, async (c) =>
     c.json({ connections: await listConnections(c.var.db, c.var.workspace.id) }),
+  )
+  // The Router's Blacksmith step: the workspace's free Blacksmith minutes this month, counted from
+  // its Blacksmith connection, or why they can't be.
+  .get("/blacksmith/minutes", requireUser, requireWorkspace, async (c) =>
+    c.json(await blacksmithMinutes(c.var.db, c.var.workspace.id)),
+  )
+  // The Router's Groundbox step: its free minutes this month and whether it's holding jobs, read
+  // live from the workspace's Groundbox connection, or why they can't be.
+  .get("/groundbox/minutes", requireUser, requireWorkspace, async (c) =>
+    c.json(groundboxMinutesView(await readGroundboxAccount(c.env, c.var.db, c.var.workspace.id))),
+  )
+  // The Router's spend bars: what the workspace's GitHub account has spent on each priced
+  // provider this month, at list prices, in dollars. GitHub-hosted's comes from its own billing
+  // (GET /api/usage/actions netAmount), not from here.
+  .get("/spend", requireUser, requireWorkspace, async (c) =>
+    c.json({
+      spend: await workspaceSpend(c.var.db, c.var.workspace.installationId),
+    }),
   )
   .use("/:provider/connection/*", requireUser, requireWorkspace, requireManager)
   // Save (or replace) a token, after one read proves it works. Then sync right away.
@@ -74,15 +98,28 @@ export const providerRoutes = new Hono<AppEnv>()
     if (!isBillingProvider(provider)) throw new AppError("NOT_FOUND");
     return c.json(await disconnectProvider(c.var.db, c.var.workspace.id, provider));
   })
-  .get("/", requireUser, requireWorkspace, withCatalog, async (c) => {
-    const parsed = Query.safeParse(c.req.query());
-    if (!parsed.success) throw new AppError("INVALID_REQUEST");
-    return c.json(await providersOverview(c.var.db, c.var.workspace.id, parsed.data.days));
+  .get("/", requireUser, requireWorkspace, async (c) => {
+    const query = c.req.query();
+    const window = requireWindow(query, RANGE);
+    // The Providers page's minutes chart sends ?origin= (and ?per=hour or ?per=week for hourly or weekly bars); the
+    // Runners page only reads the totals.
+    const buckets =
+      query.origin === undefined ? null : chartBuckets(window, query.origin, query.per);
+    return c.json(await providersOverview(c.var.db, c.var.workspace.id, window, buckets));
   })
-  .get("/:provider", requireUser, requireWorkspace, withCatalog, async (c) => {
+  // A provider page's charts (src/reports/provider-trends.ts), a bar a day from ?origin= (the reader's
+  // midnight), or a week past a month.
+  .get("/:provider/trends", requireUser, requireWorkspace, async (c) => {
     const provider = c.req.param("provider");
     if (!isCatalogProvider(provider)) throw new AppError("NOT_FOUND");
-    const parsed = Query.safeParse(c.req.query());
-    if (!parsed.success) throw new AppError("INVALID_REQUEST");
-    return c.json(await providerReport(c.var.db, c.var.workspace.id, provider, parsed.data.days));
+    const query = c.req.query();
+    const window = requireWindow(query, RANGE);
+    const buckets = chartBuckets(window, query.origin);
+    return c.json(await providerTrends(c.var.db, c.var.workspace.id, provider, window, buckets));
+  })
+  .get("/:provider", requireUser, requireWorkspace, async (c) => {
+    const provider = c.req.param("provider");
+    if (!isCatalogProvider(provider)) throw new AppError("NOT_FOUND");
+    const window = requireWindow(c.req.query(), RANGE);
+    return c.json(await providerReport(c.var.db, c.var.workspace.id, provider, window));
   });

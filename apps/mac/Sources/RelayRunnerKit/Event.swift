@@ -1,23 +1,5 @@
 import Foundation
 
-/// A job waiting for a slot on this Mac: its repo, since when in ms since the epoch, and its name
-/// and workflow once the gateway knows which job it is.
-public struct QueuedJob: Equatable, Decodable, Hashable {
-  public var repo: String
-  public var since: Double
-  public var name: String?
-  public var workflow: String?
-
-  public init(repo: String, since: Double, name: String? = nil, workflow: String? = nil) {
-    self.repo = repo
-    self.since = since
-    self.name = name
-    self.workflow = workflow
-  }
-
-  public var waitingSince: Date { Date(timeIntervalSince1970: since / 1000) }
-}
-
 /// One line of `relayrunner connect --events` (apps/cli/src/events.rs).
 public enum Event: Equatable {
   /// The page to approve this Mac on, and the code it shows.
@@ -29,8 +11,6 @@ public enum Event: Equatable {
   case jobRepo(routeId: String, repo: String)
   /// How a job ended, in GitHub's words: Succeeded, Failed, Canceled and so on.
   case jobResult(routeId: String, job: String, result: String)
-  /// A job's runner exited: the line `connect` added to the history file.
-  case jobEnd(HistoryEntry)
   case offline(reason: String, message: String?)
   /// `command` is set when a command failed; without it, `connect` is stopping.
   case error(code: String, message: String, command: String?)
@@ -45,8 +25,6 @@ public enum Event: Equatable {
     public var jobs: [String]
     /// How many jobs wait for a slot on this Mac, as the gateway said. 0 from a CLI that doesn't say.
     public var waiting: Int
-    /// The longest-waiting of those jobs, longest first.
-    public var queue: [QueuedJob]
     /// When jobs went to another runner because every slot here was busy, in ms since the epoch:
     /// the last hour's, as the gateway last said.
     public var spilled: [Double]
@@ -54,19 +32,18 @@ public enum Event: Equatable {
     public var slots: Int?
 
     public init(
-      link: Link, paused: Bool, jobs: [String], waiting: Int = 0, queue: [QueuedJob] = [],
-      spilled: [Double] = [], slots: Int? = nil
+      link: Link, paused: Bool, jobs: [String], waiting: Int = 0, spilled: [Double] = [],
+      slots: Int? = nil
     ) {
       self.link = link
       self.paused = paused
       self.jobs = jobs
       self.waiting = waiting
-      self.queue = queue
       self.spilled = spilled
       self.slots = slots
     }
 
-    private enum CodingKeys: String, CodingKey { case link, paused, jobs, waiting, queue, spilled, slots }
+    private enum CodingKeys: String, CodingKey { case link, paused, jobs, waiting, spilled, slots }
 
     public init(from decoder: Decoder) throws {
       let c = try decoder.container(keyedBy: CodingKeys.self)
@@ -75,7 +52,6 @@ public enum Event: Equatable {
       jobs = try c.decode([String].self, forKey: .jobs)
       waiting = try c.decodeIfPresent(Int.self, forKey: .waiting) ?? 0
       // What an older CLI doesn't say, or says in a way this app can't read, is nothing.
-      queue = (try? c.decodeIfPresent([QueuedJob].self, forKey: .queue)) ?? []
       spilled = (try? c.decodeIfPresent([Double].self, forKey: .spilled)) ?? []
       slots = try c.decodeIfPresent(Int.self, forKey: .slots)
     }
@@ -97,8 +73,6 @@ public enum Event: Equatable {
     case "run":
       guard let e = body(Run.self) else { return nil }
       return .run(routeId: e.routeId, slot: e.slot ?? 1, job: e.job)
-    case "job-end":
-      return body(HistoryEntry.self).map(Event.jobEnd)
     case "job-repo":
       return body(JobRepo.self).map { .jobRepo(routeId: $0.routeId, repo: $0.repo) }
     case "job-result":

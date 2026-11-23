@@ -38,22 +38,30 @@ import {
   WaypointsIcon,
   WebhookIcon,
 } from "lucide-react";
-import { type ReactNode, useEffect, useState } from "react";
+import { lazy, type ReactNode, Suspense, useEffect, useMemo, useState } from "react";
 import { SectionBoundary } from "@/components/error-boundary";
 import { FeedbackPopover } from "@/components/feedback-popover";
+import { PagePending } from "@/components/page-pending";
 import { GithubIcon } from "@/components/provider-logos";
-import { RUNNER_DEFAULT_RANGE, RUNNER_RANGES, RunnerSheet } from "@/components/runner-sheet";
 import { DOCS_URL, SiteFooter } from "@/components/site-footer";
+import { parseWorkflowParam } from "@/lib/workflow-ref";
+import {
+  RUNNER_DEFAULT_RANGE,
+  RUNNER_RANGES,
+  WORKFLOW_DEFAULT_RANGE,
+  WORKFLOW_RANGES,
+} from "@/lib/panels";
 import { Sheet, SheetContent, SheetTitle, SheetTrigger } from "@/components/ui/sheet";
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
 import { WorkspaceMark, WorkspaceMenu } from "@/components/workspace-menu";
 import { setWorkspace } from "@/lib/analytics";
 import { authDisabled } from "@/lib/auth-client";
+import { loadFlags } from "@/lib/flags";
 import { isGitHubOutcome } from "@/lib/github";
 import { loadProviderCatalog } from "@/lib/provider-catalog";
 import { isOperator } from "@/lib/roles";
 import { textParam } from "@/lib/search-params";
-import { dayPreset, type TimeRange, timeRangeParam } from "@/lib/time-range";
+import { rangeOrDaysParam, type TimeRange, timeRangeParam } from "@/lib/time-range";
 import { readFlag, saveFlag } from "@/lib/stored-flag";
 import { cn } from "@/lib/utils";
 import {
@@ -63,6 +71,14 @@ import {
   watchForOwner,
 } from "@/lib/session";
 import type { CurrentWorkspace } from "@/lib/workspace";
+
+// The panels load when one first opens, so they stay out of every page's first load.
+const RunnerSheet = lazy(() =>
+  import("@/components/runner-sheet").then((m) => ({ default: m.RunnerSheet })),
+);
+const WorkflowSheet = lazy(() =>
+  import("@/components/workflow-sheet").then((m) => ({ default: m.WorkflowSheet })),
+);
 
 const devWorkspace: CurrentWorkspace = {
   workspace: {
@@ -81,19 +97,37 @@ const devWorkspace: CurrentWorkspace = {
 export const Route = createFileRoute("/_authed/_workspace")({
   // `runner` opens a runner's panel over any page (components/runner-sheet.tsx), and `runnerRange`
   // is its range when that isn't the default. An older link's `runnerDays=7` reads as `7d`.
+  // `wf` (a workflow's repo and name) and `wfRange` do the same for a workflow's panel.
   validateSearch: (
     search: Record<string, unknown>,
-  ): { runner?: string; runnerRange?: TimeRange } => {
+  ): {
+    runner?: string;
+    runnerRange?: TimeRange;
+    wf?: string;
+    wfRange?: TimeRange;
+  } => {
     const runner = textParam(search.runner);
-    const range =
-      search.runnerRange ?? (search.runnerDays ? dayPreset(Number(search.runnerDays)) : undefined);
+    const wf = textParam(search.wf);
     return {
       runner,
-      runnerRange: runner ? timeRangeParam(range, RUNNER_RANGES, RUNNER_DEFAULT_RANGE) : undefined,
+      runnerRange: runner
+        ? rangeOrDaysParam(
+            search.runnerRange,
+            search.runnerDays,
+            RUNNER_RANGES,
+            RUNNER_DEFAULT_RANGE,
+          )
+        : undefined,
+      wf,
+      wfRange: wf
+        ? timeRangeParam(search.wfRange, WORKFLOW_RANGES, WORKFLOW_DEFAULT_RANGE)
+        : undefined,
     };
   },
   beforeLoad: async ({ context, location }) => {
-    if (authDisabled || !context.session) return { current: devWorkspace };
+    if (authDisabled || !context.session) {
+      return { current: devWorkspace, flags: await loadFlags(devWorkspace.workspace.id) };
+    }
     const workspaceId = await ensureActiveWorkspace(context.session);
     if (!workspaceId) {
       // Keep GitHub's word on the way, such as an install request waiting on an org owner.
@@ -103,9 +137,14 @@ export const Route = createFileRoute("/_authed/_workspace")({
     try {
       // Pages name providers synchronously from the catalog, so it's loaded before any renders.
       // Both are read once and kept (lib/session.ts), so later navigations don't wait on them.
-      const [current] = await Promise.all([cachedWorkspace(workspaceId), loadProviderCatalog()]);
+      // Feature flags too (lib/flags.ts), so pages and their guards check them synchronously.
+      const [current, , flags] = await Promise.all([
+        cachedWorkspace(workspaceId),
+        loadProviderCatalog(),
+        loadFlags(workspaceId),
+      ]);
       setWorkspace(current.workspace);
-      return { current };
+      return { current, flags };
     } catch {
       // The active workspace is gone or no longer ours.
       throw redirect({ to: "/welcome" });
@@ -187,12 +226,14 @@ const ADMIN_COLLAPSED_KEY = "relayrunner:sidebar:admin-collapsed";
 
 function WorkspaceLayout() {
   const { user, current } = Route.useRouteContext();
-  const { runner, runnerRange } = Route.useSearch();
+  const { runner, runnerRange, wf, wfRange } = Route.useSearch();
+  const workflow = useMemo(() => parseWorkflowParam(wf), [wf]);
   const showAdmin = authDisabled || isOperator(user);
   const inSettings = useMatchRoute()({ to: "/settings", fuzzy: true });
   const [collapsedPref, setCollapsedPref] = useState(() => readFlag(COLLAPSED_KEY));
   // Settings has its own short nav and a way back, so it always shows in full.
   const collapsed = collapsedPref && !inSettings;
+  const [switching, setSwitching] = useState(false);
   const toggle = () => {
     const next = !collapsedPref;
     saveFlag(COLLAPSED_KEY, next);
@@ -210,7 +251,7 @@ function WorkspaceLayout() {
       <header className="sticky top-0 z-20 flex items-center gap-2 border-b border-sidebar-border bg-sidebar px-3 py-2 sm:hidden">
         <div className="min-w-0 flex-1">
           <SectionBoundary>
-            <WorkspaceMenu workspace={current.workspace} user={user} />
+            <WorkspaceMenu workspace={current.workspace} user={user} onSwitching={setSwitching} />
           </SectionBoundary>
         </div>
         <MobileMenu>
@@ -233,7 +274,12 @@ function WorkspaceLayout() {
         ) : (
           <TooltipProvider>
             <SectionBoundary>
-              <WorkspaceMenu workspace={current.workspace} user={user} compact={collapsed} />
+              <WorkspaceMenu
+                workspace={current.workspace}
+                user={user}
+                compact={collapsed}
+                onSwitching={setSwitching}
+              />
             </SectionBoundary>
             <PageNav showAdmin={showAdmin} collapsed={collapsed} />
             <SidebarFoot collapsed={collapsed} />
@@ -241,22 +287,33 @@ function WorkspaceLayout() {
           </TooltipProvider>
         )}
       </aside>
-      {/* On wider screens the footer stays pinned to the bottom of the window, so it doesn't move as
-          pages load or rows expand. Phones keep the room for the page. */}
+      {/* The footer follows the page: at the bottom of the window on short pages, after the content
+          on long ones. */}
       <main className="flex min-w-0 flex-col">
         <div className="flex-1 p-4 sm:p-8">
           <OwnerPending current={current} />
-          <Outlet />
+          {/* From the click on another workspace until its page has loaded, so the old
+              workspace's page never shows under the new one's name. */}
+          {switching ? <PagePending /> : <Outlet />}
         </div>
-        <SiteFooter className="sm:sticky sm:bottom-0 sm:z-10" />
+        <SiteFooter />
       </main>
       {runner && (
         <SectionBoundary>
-          <RunnerSheet
-            key={runner}
-            runnerKey={runner}
-            range={runnerRange ?? RUNNER_DEFAULT_RANGE}
-          />
+          <Suspense>
+            <RunnerSheet
+              key={runner}
+              runnerKey={runner}
+              range={runnerRange ?? RUNNER_DEFAULT_RANGE}
+            />
+          </Suspense>
+        </SectionBoundary>
+      )}
+      {workflow && (
+        <SectionBoundary>
+          <Suspense>
+            <WorkflowSheet key={wf} workflow={workflow} range={wfRange ?? WORKFLOW_DEFAULT_RANGE} />
+          </Suspense>
         </SectionBoundary>
       )}
     </div>

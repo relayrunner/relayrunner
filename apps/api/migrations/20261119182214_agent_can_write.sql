@@ -1,0 +1,1 @@
+ALTER TABLE `agent_grant_workspace` ADD `can_write` integer DEFAULT false NOT NULL;

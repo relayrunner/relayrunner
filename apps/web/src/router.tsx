@@ -1,7 +1,8 @@
 import { createRouter } from "@tanstack/react-router";
 import { RouteError } from "./components/error-boundary";
 import { PagePending } from "./components/page-pending";
-import { forgetSession, setOnSessionChange } from "./lib/session";
+import { forgetSession, isWorkspacePage, setOnSessionChange } from "./lib/session";
+import { clearWorkspaceCaches } from "./lib/workspace-cache";
 import { routeTree } from "./routeTree.gen";
 
 // A `getRouter` factory is the shape TanStack Start expects in src/router.tsx,
@@ -29,8 +30,15 @@ export function getRouter() {
     return invalidate(opts);
   };
   // A background check found the session or workspace changed: re-run the guards with the new
-  // copy, which redirect if they need to.
-  setOnSessionChange(() => void invalidate());
+  // copy, which redirect if they need to. When another tab switched workspace, the pages kept
+  // from the old one are dropped, and the open page waits for the new data instead of showing
+  // the old data under the new workspace's name.
+  setOnSessionChange((workspaceChanged) => {
+    if (!workspaceChanged) return void invalidate();
+    router.clearCache();
+    clearWorkspaceCaches();
+    void invalidate({ forcePending: true, filter: isWorkspacePage });
+  });
 
   return router;
 }

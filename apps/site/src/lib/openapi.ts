@@ -1,7 +1,7 @@
 /*
  * The OpenAPI description of the agent API, served at /openapi.json. These are the routes an
- * agent's OAuth token may call on https://api.relayrunner.dev (AGENT_ROUTES in
- * apps/api/src/agent-auth.ts); the MCP server's tools call the same routes. A test in
+ * agent's OAuth token may call on https://api.relayrunner.dev (AGENT_ROUTES_BY_METHOD in
+ * apps/api/src/auth/agent-auth.ts); the MCP server's tools call the same routes. A test in
  * apps/api/src/agent-openapi.test.ts keeps the two lists in step.
  *
  * Response bodies are described at the top level only: the fields inside them are the dashboard's
@@ -14,6 +14,8 @@ import {
   FEEDBACK_LIMITS,
 } from "@relayrunner/activity";
 import { ERRORS } from "@relayrunner/errors";
+import { AUTO_SIZES } from "@relayrunner/providers";
+import { RETRY_RUNNERS, RUNNER_KEYS } from "@relayrunner/runner-order";
 import { MCP_URL } from "./mcp";
 
 const AUTH = "https://app.relayrunner.dev/api/auth";
@@ -76,13 +78,64 @@ const read = (
   },
 });
 
+const workspacePath = {
+  name: "workspaceId",
+  in: "path",
+  required: true,
+  schema: { type: "string" },
+};
+
+const repoQuery = {
+  name: "repo",
+  in: "query",
+  required: false,
+  description: "A repository in the workspace, as owner/name, for its own runner order.",
+  schema: { type: "string" },
+};
+
+/**
+ * A route that changes a setting. It works only where the person allowed the agent changes, and
+ * only for a change they could make in the dashboard; it's logged in the workspace's Activity.
+ */
+const change = (
+  operationId: string,
+  summary: string,
+  description: string,
+  body: Record<string, object>,
+  ok: object,
+  {
+    parameters = [workspacePath],
+    method = "put",
+    required = Object.keys(body),
+  }: { parameters?: object[]; method?: string; required?: string[] } = {},
+): object => ({
+  [method]: {
+    operationId,
+    summary,
+    description: `${description} Needs Allow changes for the agent in the workspace (Settings › Agents); otherwise 403 AGENT_CHANGES_OFF. Logged in Activity.`,
+    parameters: [workspaceHeader, ...parameters],
+    ...(Object.keys(body).length > 0 && {
+      requestBody: {
+        required: true,
+        content: {
+          "application/json": { schema: { type: "object", properties: body, required } },
+        },
+      },
+    }),
+    responses: { "200": ok, ...errors, "409": { $ref: "#/components/responses/Error" } },
+  },
+});
+
+const autoSize = { type: "integer", enum: AUTO_SIZES };
+
 export const openApi = {
   openapi: "3.1.0",
   info: {
     title: "RelayRunner API",
     version: "1.0.0",
-    summary: "Read a workspace's runners, workflow runs, routing activity and CI usage.",
-    description: `The read-only API behind the RelayRunner MCP server: a workspace's runners, runs, routing and usage. Sign in with OAuth (the \`workspace:read\` scope): the person picks which workspaces the token may read. To connect an AI agent, use the MCP server at ${MCP_URL} instead: MCP clients sign in on their own and get these routes as tools. Call this API directly only from your own OAuth client. Each connection can make 300 requests a minute; past that the API answers 429.`,
+    summary:
+      "Read a workspace's runners, workflow runs, routing activity and CI usage, and change its routing.",
+    description: `The API behind the RelayRunner MCP server: a workspace's runners, runs, routing and usage. Sign in with OAuth (the \`workspace:read\` scope): the person picks which workspaces the token may read. The routes that change settings work only in workspaces where the person turned on Allow changes for the connection in Settings › Agents. To connect an AI agent, use the MCP server at ${MCP_URL} instead: MCP clients sign in on their own and get these routes as tools. Call this API directly only from your own OAuth client. Each connection can make 300 requests a minute; past that the API answers 429.`,
     contact: { url: "https://github.com/relayrunner/relayrunner/issues" },
     license: { name: "Apache-2.0", identifier: "Apache-2.0" },
   },
@@ -106,13 +159,121 @@ export const openApi = {
         installations: list,
       }),
     ),
-    "/workspaces/{workspaceId}/runner-order": read(
-      "getRunnerOrder",
-      "Get the runner order",
-      "The providers jobs are tried on, top to bottom.",
-      object("The runner order.", { order: list, isDefault: { type: "boolean" } }),
-      [{ name: "workspaceId", in: "path", required: true, schema: { type: "string" } }],
+    "/workspaces/{workspaceId}/runner-order": {
+      ...read(
+        "getRunnerOrder",
+        "Get the runner order",
+        "The providers jobs are tried on, top to bottom. With `repo`, the order that repo's jobs walk: its own (`scope` is `repository`) or the workspace's. Without it, `ownOrders` lists the repos with their own. `version` changes whenever the order does.",
+        object("The runner order.", {
+          order: record,
+          scope: { type: "string", enum: ["workspace", "repository"] },
+          isDefault: { type: "boolean" },
+          version: { type: "string" },
+        }),
+        [workspacePath, repoQuery],
+      ),
+      ...change(
+        "setRunnerOrder",
+        "Set the runner order",
+        "Replaces the workspace's runner order, or with `repo` gives that repo its own, which it keeps when the workspace's changes. With `version`, it fails with 409 RUNNER_ORDER_CHANGED if the order changed since that version was read. The workspace's order needs an owner or admin; a repo's, also anyone who can push to it on GitHub.",
+        { steps: list, version: { type: "string" } },
+        object("The new order and the one it replaced.", {
+          order: record,
+          version: { type: "string" },
+          previous: record,
+        }),
+        { required: ["steps"], parameters: [workspacePath, repoQuery] },
+      ),
+      ...change(
+        "useWorkspaceOrder",
+        "Use the workspace's runner order",
+        "Puts `repo` back on the workspace's runner order. The same people as setting the repo's order.",
+        {},
+        object("The order the repo walks now and the one it had.", {
+          order: record,
+          previous: record,
+        }),
+        { method: "delete", parameters: [workspacePath, { ...repoQuery, required: true }] },
+      ),
+    },
+    "/workspaces/{workspaceId}/auto-jobs": read(
+      "listAutoJobs",
+      "List auto jobs",
+      "Jobs whose relay lets RelayRunner pick the runner, from the last 30 days, with each one's size and first provider (null is the default) and whether you may change it (`canEdit`), and the default size.",
+      object("The default size and the auto jobs.", { size: { type: "integer" }, jobs: list }),
+      [workspacePath],
     ),
+    "/workspaces/{workspaceId}/auto-jobs/{jobId}": change(
+      "setJobSize",
+      "Set a job's size",
+      "One auto job's size in vCPUs and the provider it tries first. Null puts either back on the default; one left out stays as it is. Owners and admins can change any job, and anyone who can push to the job's repo on GitHub can change its jobs.",
+      {
+        size: { type: ["integer", "null"], enum: [...AUTO_SIZES, null] },
+        first: { type: ["string", "null"], enum: [...RUNNER_KEYS, null] },
+      },
+      object("The new setting and the one it replaced.", { previous: record }),
+      {
+        required: [],
+        parameters: [
+          workspacePath,
+          { name: "jobId", in: "path", required: true, schema: { type: "integer" } },
+        ],
+      },
+    ),
+    "/workspaces/{workspaceId}/auto-size": change(
+      "setDefaultSize",
+      "Set the default size",
+      "The size, in vCPUs, of auto jobs without their own.",
+      { size: autoSize },
+      object("The new size and the one it replaced.", {
+        size: { type: "integer" },
+        previous: { type: "integer" },
+      }),
+    ),
+    "/workspaces/{workspaceId}/retry-settings": {
+      ...read(
+        "getRetrySettings",
+        "Get automatic retries",
+        "Whether jobs a runner failed are re-run, where, and how many times per run.",
+        object("The retry settings.", {
+          enabled: { type: "boolean" },
+          runner: { type: "string" },
+          max: { type: "integer" },
+        }),
+        [workspacePath],
+      ),
+      ...change(
+        "setRetrySettings",
+        "Set automatic retries",
+        "Turns automatic retries on or off. A setting left out stays as it is.",
+        {
+          enabled: { type: "boolean" },
+          runner: { type: "string", enum: RETRY_RUNNERS },
+          max: { type: "integer", minimum: 1, maximum: 2 },
+        },
+        object("The new settings and the ones they replaced.", { previous: record }),
+        { required: [] },
+      ),
+    },
+    "/workspaces/{workspaceId}/ai": {
+      ...read(
+        "getAi",
+        "Get AI",
+        "When the workspace turned off AI features, or null while they're on.",
+        object("Whether AI is off.", { offAt: { type: ["string", "null"] } }),
+        [workspacePath],
+      ),
+      ...change(
+        "setAi",
+        "Turn AI on or off",
+        "Turning AI off also deletes the AI answers saved so far.",
+        { enabled: { type: "boolean" } },
+        object("Whether AI is on now, and before.", {
+          enabled: { type: "boolean" },
+          previous: { type: "boolean" },
+        }),
+      ),
+    },
     "/workspaces/{workspaceId}/router-setup": read(
       "listWorkflows",
       "List workflows",
@@ -129,6 +290,28 @@ export const openApi = {
       "List runners",
       "Every runner: connected machines and self-hosted runners from GitHub.",
       object("The workspace's runners.", { machines: list }),
+    ),
+    "/machines/{machineId}/pause": change(
+      "pauseRunner",
+      "Pause a runner",
+      "Stops routing jobs to a runner, in every workspace, until it's resumed. Only a connected machine's owner, or an owner or admin for a runner added from GitHub.",
+      {},
+      object("The runner.", { machine: record }),
+      {
+        method: "post",
+        parameters: [{ name: "machineId", in: "path", required: true, schema: { type: "string" } }],
+      },
+    ),
+    "/machines/{machineId}/resume": change(
+      "resumeRunner",
+      "Resume a runner",
+      "Routes jobs to a paused runner again. Same rules as pausing.",
+      {},
+      object("The runner.", { machine: record }),
+      {
+        method: "post",
+        parameters: [{ name: "machineId", in: "path", required: true, schema: { type: "string" } }],
+      },
     ),
     "/runs": read(
       "listRuns",

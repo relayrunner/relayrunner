@@ -1,0 +1,71 @@
+{
+  "data": [
+    {
+      "id": "a1",
+      "type": "usage",
+      "kind": "usage",
+      "bucket": "plan",
+      "amount_micros": -132000,
+      "list_micros": 132000,
+      "expires_at": null,
+      "description": "CI job on groundbox-4vcpu",
+      "usage": {
+        "id": "u1",
+        "kind": "ci",
+        "flex": false,
+        "ci_job_id": "job-2",
+        "sandbox_id": null
+      },
+      "created_at": "2026-11-12T18:20:00.000Z"
+    },
+    {
+      "id": "a2",
+      "type": "free_usage",
+      "kind": "free_usage",
+      "bucket": "free",
+      "amount_micros": 0,
+      "free_minutes": 12.5,
+      "list_micros": 37500,
+      "expires_at": null,
+      "description": "CI job on groundbox-2vcpu",
+      "usage": {
+        "id": "u2",
+        "kind": "ci",
+        "flex": false,
+        "ci_job_id": "job-1",
+        "sandbox_id": null
+      },
+      "created_at": "2026-11-12T09:05:00.000Z"
+    },
+    {
+      "id": "a3",
+      "type": "usage",
+      "kind": "usage",
+      "bucket": "wallet",
+      "amount_micros": -40000,
+      "list_micros": 40000,
+      "expires_at": null,
+      "description": "Sandbox time",
+      "usage": {
+        "id": "u3",
+        "kind": "sandbox",
+        "flex": false,
+        "ci_job_id": null,
+        "sandbox_id": "sbx_1"
+      },
+      "created_at": "2026-11-12T08:00:00.000Z"
+    },
+    {
+      "id": "a4",
+      "type": "bonus",
+      "kind": "bonus",
+      "bucket": "plan",
+      "amount_micros": 5000000,
+      "expires_at": null,
+      "description": "Welcome credit",
+      "usage": null,
+      "created_at": "2026-11-01T00:00:00.000Z"
+    }
+  ],
+  "next_cursor": null
+}

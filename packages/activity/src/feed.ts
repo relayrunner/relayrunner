@@ -35,6 +35,8 @@ export interface ActivityStarters {
 /** A routed job's current state. */
 export interface ActivityJob {
   id: number;
+  /** GitHub's repo id, which with the run's id and attempt opens the run in History. */
+  repositoryId: number;
   repository: string;
   /** null when the gateway hasn't mirrored the repo yet. */
   private: boolean | null;

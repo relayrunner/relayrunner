@@ -27,13 +27,16 @@ describe("/api/me/notifications", () => {
     const person = await testing.signIn(env);
     expect(await list(person.cookie)).toEqual([
       { type: "machine-connected", operator: false, enabled: true },
+      { type: "integration-problem", operator: false, enabled: true },
     ]);
 
     const op = await operator();
     expect(await list(op.cookie)).toEqual([
       { type: "machine-connected", operator: false, enabled: true },
+      { type: "integration-problem", operator: false, enabled: true },
       { type: "feedback", operator: true, enabled: false },
       { type: "dead-letter-alert", operator: true, enabled: false },
+      { type: "health-alert", operator: true, enabled: false },
       { type: "price-check", operator: true, enabled: false },
     ]);
   });

@@ -4,29 +4,26 @@
   <channel>
     <title>RelayRunner for Mac</title>
     <item>
-      <title>0.4.0</title>
-      <pubDate>Wed, 18 Nov 2026 17:32:47 +0000</pubDate>
-      <sparkle:version>0.4.0</sparkle:version>
-      <sparkle:shortVersionString>0.4.0</sparkle:shortVersionString>
+      <title>0.6.0</title>
+      <pubDate>Thu, 19 Nov 2026 14:12:17 +0000</pubDate>
+      <sparkle:version>0.6.0</sparkle:version>
+      <sparkle:shortVersionString>0.6.0</sparkle:shortVersionString>
       <sparkle:minimumSystemVersion>14.0</sparkle:minimumSystemVersion>
       <description sparkle:format="markdown"><![CDATA[
 
 ### New
 
-- The Mac menu's Queue names each waiting job and its workflow once GitHub has said which job it is. When jobs went to hosted runners because every slot was busy, a button allows one more job at once: the app pauses new jobs, waits for the running ones to finish, and comes back with the extra slot, or goes back to the earlier setting if it can't.
-- The Mac menu has Now, Queue and History tabs. Queue lists the jobs waiting for this Mac and how long each has waited, and says when jobs went to hosted runners in the last hour because every slot was busy. History shows the last 12 hours as a bar per hour, with the latest jobs, all or only failed. `connect --events` adds `queue` and `spilled` to `waiting` and `state`.
-- The menu shows how long each running job has taken and about how long it has left, based on its usual time on this Mac. It also lists the last five jobs this Mac ran, with a link to each on GitHub and a total for the day, and lets you pause new jobs for an hour, four hours or until tomorrow morning.
-- The Mac menu shows a row for each job slot, free ones included, with a bar against each job's usual time, and this Mac's CPU and memory while the menu is open. `connect --events` says how many slots the machine has in `state`.
-- The Mac menu and `connect --events` now say how many jobs are waiting for a slot on this machine.
+- The Mac Jobs window opens with the jobs it last showed and refreshes them in the background, and a job you've already opened shows its steps at once. Jobs running or waiting on the Mac come first. Filter by result, repo, workflow and time, and drag the line between the list and the job to resize them. Clicking a job in the menu's History tab opens it in the Jobs window. `relayrunner jobs` lists running jobs first and gains `--repo`, `--workflow`, `--result` and `--since`.
+- A simpler menu. It shows the switch, what this Mac is doing and each running job, then Pause New Jobs, Jobs, Open Dashboard, Settings and Quit, with no icons. The Now, Queue and History tabs, the empty slot rows and the CPU and memory meters are gone: the Jobs window lists running, waiting and finished jobs. There is one pause control, which becomes Resume New Jobs while paused. The offer to take one more job at once moved to the Jobs window. Show Log and Check for Updates moved to Settings › About.
 
 ### Fixes and improvements
 
-- New installs connect to https://app.relayrunner.dev and link to relayrunner.dev. Machines already connected keep their saved server, https://app.relayrunner.app, which keeps working.
+- The menu no longer shows a running job's usual time once it passes it. The bar turns orange only when the job is clearly slower than usual: at least 30 seconds and a quarter over its usual time.
 
-Includes the relayrunner CLI 0.14.0.
+Includes the relayrunner CLI 0.16.0.
 ]]></description>
       <sparkle:fullReleaseNotesLink>https://github.com/relayrunner/relayrunner/blob/main/apps/mac/CHANGELOG.md</sparkle:fullReleaseNotesLink>
-      <enclosure url="https://github.com/relayrunner/relayrunner/releases/download/mac-v0.4.0/RelayRunner-0.4.0.zip" sparkle:edSignature="giPARiMKCXob69GTQN88uAyigaOCukInFdBwDmH4FRf5utJwxjmAD0kspKJlZlFi2Zpugb+zPsI9r/JJ8rTgBw==" length="3044793" type="application/octet-stream"/>
+      <enclosure url="https://github.com/relayrunner/relayrunner/releases/download/mac-v0.6.0/RelayRunner-0.6.0.zip" sparkle:edSignature="InVAqPv3Srr4thvgvmdpTFOB3CjVyUjzu56LSwI1Kwa2ub4eoJfROAZRfENjo3VgzmyWztar52PyFSpSrXiCAA==" length="3141328" type="application/octet-stream"/>
     </item>
   </channel>
 </rss>

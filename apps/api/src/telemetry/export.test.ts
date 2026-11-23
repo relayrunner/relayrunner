@@ -4,13 +4,8 @@ import { afterEach, beforeAll, describe, expect, test, vi } from "vitest";
 import { createDb, schema } from "../db/index.ts";
 import type { Env } from "../env.ts";
 import * as testing from "../testing.ts";
-import {
-  exportJob,
-  exportRun,
-  handleTelemetryBatch,
-  type TelemetryMessage,
-  tracesUrl,
-} from "./export.ts";
+import { exportJob, exportRun, handleTelemetryBatch, type TelemetryMessage } from "./export.ts";
+import { otlpUrl } from "./otlp.ts";
 
 const KEY = btoa(String.fromCharCode(...crypto.getRandomValues(new Uint8Array(32))));
 const queued: TelemetryMessage[] = [];
@@ -287,12 +282,24 @@ describe("exporting", () => {
     expect(result.acked).toEqual([0]);
     expect((await row()).enabled).toBe(true);
 
+    // Failures days apart, with nothing tried between, start over rather than add up.
+    await db
+      .update(schema.telemetryExport)
+      .set({
+        failingSince: new Date(Date.now() - 4 * 86_400_000),
+        failedAt: new Date(Date.now() - 2 * 86_400_000),
+      })
+      .where(eq(schema.telemetryExport.workspaceId, workspace.id));
+    await handleTelemetryBatch(batchOf([message]).batch, env);
+    expect(await row()).toMatchObject({ pausedAt: null });
+    expect((await row()).failingSince!.getTime()).toBeGreaterThan(Date.now() - 60_000);
+
     await db
       .update(schema.telemetryExport)
       .set({ failingSince: new Date(Date.now() - 4 * 86_400_000) })
       .where(eq(schema.telemetryExport.workspaceId, workspace.id));
     await handleTelemetryBatch(batchOf([message]).batch, env);
-    expect(await row()).toMatchObject({ enabled: false, pausedAt: expect.any(Date) });
+    expect(await row()).toMatchObject({ enabled: true, pausedAt: expect.any(Date) });
 
     // Once paused, queued spans are dropped without a request.
     const sent = stubEndpoint();
@@ -302,9 +309,16 @@ describe("exporting", () => {
     expect(result.acked).toEqual([0]);
   });
 
-  test("traces go to /v1/traces once", () => {
-    expect(tracesUrl("https://api.honeycomb.io")).toBe("https://api.honeycomb.io/v1/traces");
-    expect(tracesUrl("https://x.grafana.net/otlp/")).toBe("https://x.grafana.net/otlp/v1/traces");
-    expect(tracesUrl("https://api.axiom.co/v1/traces")).toBe("https://api.axiom.co/v1/traces");
+  test("each signal goes to its own /v1 path once", () => {
+    expect(otlpUrl("https://api.honeycomb.io", "traces")).toBe(
+      "https://api.honeycomb.io/v1/traces",
+    );
+    expect(otlpUrl("https://x.grafana.net/otlp/", "logs")).toBe(
+      "https://x.grafana.net/otlp/v1/logs",
+    );
+    expect(otlpUrl("https://api.axiom.co/v1/traces", "traces")).toBe(
+      "https://api.axiom.co/v1/traces",
+    );
+    expect(otlpUrl("https://api.axiom.co/v1/traces", "logs")).toBe("https://api.axiom.co/v1/logs");
   });
 });

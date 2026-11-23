@@ -184,8 +184,10 @@ It sorts every job into one of three groups:
   Linux package installs on a Mac.
 - **Already routed**: the job runs where a relay sends it.
 - **Skipped, with the reason**: a matrix, a `runs-on` expression, list or
-  group, a reusable workflow, a deploy job (`environment`, `id-token: write`,
-  or secrets other than `GITHUB_TOKEN`), Windows, or an unknown label.
+  group, a reusable workflow, a deploy job (`environment`, `write-all`
+  permissions, secrets other than `GITHUB_TOKEN`, or `id-token: write` with a
+  cloud sign-in action or a publish command), Windows, or an unknown label.
+  `id-token: write` on its own, such as for a remote cache, is a warning.
 
 A public repo is refused: machines never take public repos' jobs. Visibility is
 checked with an anonymous GitHub API call, so it doesn't matter which account
@@ -195,6 +197,11 @@ checked with an anonymous GitHub API call, so it doesn't matter which account
 - `--apply <jobs>` routes jobs without prompting. Name them by id (`test`),
   `file:id` (`ci.yml:test`) when an id is in several workflows, or `all` for
   every ready job. Add `--json` for a JSON result.
+- `--auto` writes `auto` instead of the label for Linux x64 jobs, so their size
+  is set on the dashboard's Router page. macOS and Arm jobs keep their labels.
+- `--allow-deploy <jobs>` treats those jobs as ready even though they look like
+  deploy jobs, with a warning, for when you're fine giving the machine their
+  secrets and cloud access. Name them in `--apply` too.
 
 ## `relayrunner pause` and `relayrunner resume`
 
@@ -227,14 +234,37 @@ each one's result and how long it took. They're kept in
 ```sh
 npx relayrunner jobs                 # the jobs this machine ran in the last week
 npx relayrunner jobs --before <ms>   # the page after, from the last page's hint
+npx relayrunner jobs --result failed --repo acme/app   # only some of them
 npx relayrunner jobs 123456789       # one job's steps and, if it failed, why
 npx relayrunner jobs --json
 ```
 
 Unlike `history`, which reads this computer's own file, `jobs` asks the
 gateway, so it shows GitHub's steps for each job and, for a failed one, the
-failed step, its annotations and the end of its log. A machine only sees jobs
-that ran on it. RelayRunner for Mac's Jobs window reads the same.
+failed step, its annotations and the end of its log. Jobs running or waiting
+to start on the machine come first. `--repo`, `--workflow`, `--result`
+(`succeeded`, `failed` or `canceled`) and `--since <ms>` narrow the list. A
+machine only sees jobs that ran on it. RelayRunner for Mac's Jobs window reads
+the same.
+
+## `relayrunner blacksmith`
+
+```sh
+npx relayrunner blacksmith connect
+npx relayrunner blacksmith connect --workspace acme
+```
+
+Connects a Blacksmith organization so Settings › Providers shows its real
+usage. It runs Blacksmith's own `blacksmith org-token create`, which you
+approve in your browser as a Blacksmith org admin, and sends only the token it
+prints (PUT /api/machines/me/providers/blacksmith/connection). It never signs
+in to Blacksmith or reads Blacksmith's saved credentials. Without Blacksmith's
+CLI on PATH it offers to download it into `~/.relayrunner/bin`, checked
+against the SHA-256 Blacksmith publishes (`--yes` skips the question). The
+token must be for the GitHub organization a workspace is on, and goes to that
+workspace, or the one `--workspace` names, which you must own or administer.
+A token for any other organization is refused. Exits 1 when not signed
+in.
 
 ## `relayrunner share`
 

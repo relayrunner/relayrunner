@@ -7,7 +7,7 @@
 //! and runs wherever the relay answers:
 //!
 //!   relay-test:
-//!     uses: relayrunner/actions/.github/workflows/relay.yml@<RELAY_REF>
+//!     uses: relayrunner/actions/.github/workflows/relay.yml@<relay version>
 //!     with:
 //!       machine: self-hosted
 //!       github: ubuntu-latest
@@ -15,40 +15,46 @@
 //!     needs: relay-test
 //!     runs-on: ${{ needs.relay-test.outputs.runner }}
 
-use serde::Serialize;
+use serde::{Deserialize, Serialize};
+use std::collections::BTreeMap;
+use std::sync::LazyLock;
 use yaml_rust2::{Yaml, YamlLoader, yaml::Hash};
 
-/// The relay version `init` writes. Bump it with each relayrunner/actions release, along with the
-/// skills and agent guide that show it (a test checks them).
-pub const RELAY_REF: &str = "v1.0.0-beta.8";
-pub const RELAY_WORKFLOW: &str = "relayrunner/actions/.github/workflows/relay.yml";
+/// What the CLI shares with @relayrunner/providers: the relay version `init` writes, the relay
+/// workflow, and how each hosted provider's labels start. Bump the version with each
+/// relayrunner/actions release, along with the skills and agent guide that show it (a test in
+/// packages/providers checks them).
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct Relay {
+    relay_ref: String,
+    relay_workflow: String,
+    label_prefixes: BTreeMap<String, Vec<String>>,
+}
 
-/// The hosted providers a relay can send a job to, and how their labels start: a copy of
-/// LABEL_PREFIXES in @relayrunner/providers. A prefix ending in `-` also matches the bare name.
-const HOSTED_PROVIDERS: &[(&str, &[&str])] = &[
-    ("blacksmith", &["blacksmith-"]),
-    ("depot", &["depot-"]),
-    ("namespace", &["namespace-profile-", "nscloud-"]),
-    ("warpbuild", &["warp-"]),
-    ("ubicloud", &["ubicloud-"]),
-    ("boat", &["boat-", "boat/"]),
-    ("runs-on", &["runs-on=", "runs-on/"]),
-    ("starsling", &["starsling-"]),
-    ("monkci", &["monkci-"]),
-    ("runloft", &["runloft-"]),
-    ("latchkey", &["latchkey-"]),
-    ("berrybox", &["berrybox-"]),
-    ("celesto", &["celesto-"]),
-    ("instabox", &["instabox-"]),
-    ("lizard", &["lizard-"]),
-];
+static RELAY: LazyLock<Relay> = LazyLock::new(|| {
+    serde_json::from_str(include_str!(
+        "../../../../packages/providers/src/relay.json"
+    ))
+    .expect("relay.json parses")
+});
 
+pub fn relay_ref() -> &'static str {
+    &RELAY.relay_ref
+}
+
+fn relay_workflow() -> &'static str {
+    &RELAY.relay_workflow
+}
+
+/// The hosted provider a lowercase label asks for. A prefix ending in `-` also matches the bare
+/// name.
 fn hosted_provider_of(lower: &str) -> Option<&'static str> {
-    HOSTED_PROVIDERS.iter().find_map(|(id, prefixes)| {
+    RELAY.label_prefixes.iter().find_map(|(id, prefixes)| {
         prefixes
             .iter()
-            .any(|p| lower.starts_with(p) || p.strip_suffix('-') == Some(lower))
-            .then_some(*id)
+            .any(|p| lower.starts_with(p.as_str()) || p.strip_suffix('-') == Some(lower))
+            .then_some(id.as_str())
     })
 }
 
@@ -99,6 +105,22 @@ pub struct Options {
     pub host_os: Option<&'static str>,
     /// The machine runs Linux jobs in a VM, which has Docker and Linux packages.
     pub vm: bool,
+    /// Jobs the user said may run on a machine even though they look like deploy jobs, named by
+    /// id or `file:id` (`--allow-deploy`).
+    pub allow_deploy: Vec<String>,
+}
+
+/// A workflow's path without `.github/workflows/`, such as `ci.yml`.
+pub fn short_file(file: &str) -> &str {
+    file.strip_prefix(".github/workflows/").unwrap_or(file)
+}
+
+/// Whether `name` (an id, or `file:id` with the file's full path or just its name) names this job.
+pub fn names_job(name: &str, file: &str, id: &str) -> bool {
+    match name.rsplit_once(':') {
+        Some((f, i)) => i == id && (f == file || f == short_file(file)),
+        None => name == id,
+    }
 }
 
 fn get<'a>(map: &'a Hash, key: &str) -> Option<&'a Yaml> {
@@ -199,7 +221,8 @@ fn judge(
     let runs_on = match get(job, "runs-on") {
         None => return skip("has no runs-on"),
         Some(Yaml::String(s)) => s,
-        Some(_) => return skip("runs-on is a list of labels or a runner group"),
+        Some(Yaml::Hash(_)) => return skip("runs-on is a runner group"),
+        Some(_) => return skip("runs-on is a list of labels"),
     };
     if runs_on.contains("${{") {
         if relay_of(runs_on).is_some_and(|relay| relays.iter().any(|r| r == relay)) {
@@ -215,8 +238,22 @@ fn judge(
     {
         return skip("uses a matrix, and one relay can't serve every leg");
     }
+    let mut warnings = Vec::new();
     if let Some(deploy) = deploy_signal(job, workflow) {
-        return skip(&format!("looks like a deploy job ({deploy})"));
+        if !options
+            .allow_deploy
+            .iter()
+            .any(|name| names_job(name, file, id))
+        {
+            return skip(&format!("looks like a deploy job ({deploy})"));
+        }
+        warnings.push(format!(
+            "looks like a deploy job ({deploy}), so the machine gets its secrets and cloud access"
+        ));
+    } else if requests_id_token(job, workflow) {
+        warnings.push(
+            "can request OIDC tokens (id-token: write): fine for a remote cache, but check it doesn't sign in to a cloud account".to_string(),
+        );
     }
 
     let label = runs_on.trim();
@@ -254,9 +291,10 @@ fn judge(
         ));
     };
 
+    warnings.extend(job_warnings(job, options));
     WorkflowJob {
         verdict: Verdict::Ready,
-        warnings: job_warnings(job, options),
+        warnings,
         provider: Some(provider),
         label: Some(label.to_string()),
         machine: Some(machine),
@@ -285,7 +323,7 @@ fn is_relay_job(job: &Yaml) -> bool {
     let Yaml::Hash(job) = job else {
         return false;
     };
-    matches!(get(job, "uses"), Some(Yaml::String(uses)) if uses.split('@').next() == Some(RELAY_WORKFLOW))
+    matches!(get(job, "uses"), Some(Yaml::String(uses)) if uses.split('@').next() == Some(relay_workflow()))
 }
 
 fn only_workflow_call(on: Option<&Yaml>) -> bool {
@@ -298,21 +336,82 @@ fn only_workflow_call(on: Option<&Yaml>) -> bool {
     }
 }
 
+/// Actions that trade the job's OIDC token for cloud credentials, or publish or sign a release
+/// with it.
+const OIDC_SIGN_INS: &[&str] = &[
+    "aws-actions/configure-aws-credentials",
+    "google-github-actions/auth",
+    "azure/login",
+    "hashicorp/vault-action",
+    "pypa/gh-action-pypi-publish",
+    "rust-lang/crates-io-auth-action",
+    "actions/attest",
+    "actions/attest-build-provenance",
+    "sigstore/",
+];
+
+/// Commands that publish a package, which with `id-token: write` can use trusted publishing.
+const PUBLISH_COMMANDS: &[&str] = &[
+    "npm publish",
+    "pnpm publish",
+    "yarn npm publish",
+    "changeset publish",
+    "cargo publish",
+    "twine upload",
+];
+
+/// The job's own permissions, or the workflow's when it sets none.
+fn permissions<'a>(job: &'a Hash, workflow: &'a Hash) -> Option<&'a Yaml> {
+    match get(job, "permissions") {
+        None | Some(Yaml::Null) => get(workflow, "permissions"),
+        set => set,
+    }
+}
+
+fn requests_id_token(job: &Hash, workflow: &Hash) -> bool {
+    matches!(permissions(job, workflow), Some(Yaml::Hash(p)) if matches!(get(p, "id-token"), Some(Yaml::String(s)) if s == "write"))
+}
+
+/// What the job does with an OIDC token that makes it a deploy: an action that signs in to a
+/// cloud or registry with it, or a publish command. A token alone, such as for a remote cache,
+/// isn't a deploy.
+fn oidc_sign_in(job: &Hash) -> Option<String> {
+    let Some(Yaml::Array(steps)) = get(job, "steps") else {
+        return None;
+    };
+    steps.iter().find_map(|step| {
+        let Yaml::Hash(step) = step else { return None };
+        if let Some(Yaml::String(uses)) = get(step, "uses") {
+            let action = uses.split('@').next().unwrap_or_default();
+            let known = OIDC_SIGN_INS.iter().any(|known| {
+                action.eq_ignore_ascii_case(known)
+                    || (known.ends_with('/') && action.to_lowercase().starts_with(known))
+            });
+            if known {
+                return Some(action.to_string());
+            }
+        }
+        if let Some(Yaml::String(run)) = get(step, "run") {
+            return PUBLISH_COMMANDS
+                .iter()
+                .find(|command| runs_command(run, command))
+                .map(|command| command.to_string());
+        }
+        None
+    })
+}
+
 fn deploy_signal(job: &Hash, workflow: &Hash) -> Option<String> {
     if get(job, "environment").is_some() {
         return Some("environment".into());
     }
-    let permissions = match get(job, "permissions") {
-        None | Some(Yaml::Null) => get(workflow, "permissions"),
-        set => set,
-    };
-    match permissions {
-        Some(Yaml::String(s)) if s == "write-all" => return Some("write-all permissions".into()),
-        Some(Yaml::Hash(p)) if matches!(get(p, "id-token"), Some(Yaml::String(s)) if s == "write") =>
-        {
-            return Some("id-token: write".into());
-        }
-        _ => {}
+    if matches!(permissions(job, workflow), Some(Yaml::String(s)) if s == "write-all") {
+        return Some("write-all permissions".into());
+    }
+    if requests_id_token(job, workflow)
+        && let Some(sign_in) = oidc_sign_in(job)
+    {
+        return Some(format!("id-token: write with {sign_in}"));
     }
     secret_in_map(job).map(|secret| format!("uses {secret}"))
 }
@@ -362,16 +461,29 @@ fn secret_in(text: &str) -> Option<String> {
 }
 
 /// Whether a script installs packages with apt-get, apt, yum, dnf or apk.
-fn installs_linux_packages(script: &str) -> bool {
+/// The offsets in a script where a command could start: its start, or after a space or separator.
+fn command_starts(script: &str) -> impl Iterator<Item = usize> + '_ {
     let bytes = script.as_bytes();
-    let starts_command = |i: usize| {
+    (0..bytes.len()).filter(move |&i| {
         i == 0
             || matches!(
                 bytes[i - 1],
                 b' ' | b'\t' | b'\n' | b'\r' | b';' | b'&' | b'|' | b'('
             )
-    };
-    (0..bytes.len()).filter(|&i| starts_command(i)).any(|i| {
+    })
+}
+
+/// Whether a script runs `command` (such as `npm publish`) as words of their own.
+fn runs_command(script: &str, command: &str) -> bool {
+    command_starts(script).any(|i| {
+        script[i..]
+            .strip_prefix(command)
+            .is_some_and(|tail| tail.bytes().next().is_none_or(|c| !is_word(c)))
+    })
+}
+
+fn installs_linux_packages(script: &str) -> bool {
+    command_starts(script).any(|i| {
         let rest = &script[i..];
         ["apt-get", "apt", "yum", "dnf", "apk"].iter().any(|tool| {
             let Some(after) = rest.strip_prefix(tool) else {
@@ -437,10 +549,17 @@ fn job_warnings(job: &Hash, options: &Options) -> Vec<String> {
     warnings
 }
 
+/// Whether the Router can size this ready job: auto sizes are Linux x64 only.
+pub fn auto_sizable(job: &WorkflowJob) -> bool {
+    let label = job.label.as_deref().unwrap_or_default().to_lowercase();
+    job.machine == Some("self-hosted") && !label.contains("arm") && !label.contains("macos")
+}
+
 /// Routes the given jobs of one workflow file through the relay, and returns the new contents.
-/// Each job must have come back ready from `analyze` for this same source. Fails, with why, on a
-/// layout it can't edit safely, such as jobs written inline.
-pub fn route_jobs(source: &str, jobs: &[WorkflowJob]) -> Result<String, String> {
+/// Each job must have come back ready from `analyze` for this same source. With `auto`, a job the
+/// Router can size gets `auto` in place of its label. Fails, with why, on a layout it can't edit
+/// safely, such as jobs written inline.
+pub fn route_jobs(source: &str, jobs: &[WorkflowJob], auto: bool) -> Result<String, String> {
     let mut text = source.to_string();
     for job in jobs {
         let (Verdict::Ready, Some(provider), Some(label)) = (job.verdict, job.provider, &job.label)
@@ -451,7 +570,11 @@ pub fn route_jobs(source: &str, jobs: &[WorkflowJob]) -> Result<String, String> 
             &text,
             &job.job,
             provider,
-            label,
+            if auto && auto_sizable(job) {
+                "auto"
+            } else {
+                label
+            },
             job.machine.unwrap_or("self-hosted"),
         )?;
     }
@@ -717,7 +840,12 @@ fn route_job(
     let pad = |n: usize| " ".repeat(n);
     let block = [
         format!("{}{relay}:{eol}", pad(ji)),
-        format!("{}uses: {RELAY_WORKFLOW}@{RELAY_REF}{eol}", pad(ji + step)),
+        format!(
+            "{}uses: {}@{}{eol}",
+            pad(ji + step),
+            relay_workflow(),
+            relay_ref()
+        ),
         format!("{}with:{eol}", pad(ji + step)),
         format!(
             "{}machine: {}{eol}",
@@ -762,6 +890,7 @@ mod tests {
             &Options {
                 host_os: Some(host_os),
                 vm,
+                ..Options::default()
             },
         );
         assert!(errors.is_empty(), "{}", errors[0].message);
@@ -776,64 +905,6 @@ mod tests {
 
     fn job(body: &str) -> String {
         format!("on: push\njobs:\n  test:\n{body}")
-    }
-
-    /// The agent skills (skills/, installed with `npx skills add relayrunner/relayrunner`) and the
-    /// agent guide show the relay version for hand-routed jobs. Keep it the one init writes.
-    #[test]
-    fn skills_show_the_relay_version_init_writes() {
-        fn markdown(dir: &std::path::Path, files: &mut Vec<std::path::PathBuf>) {
-            for entry in std::fs::read_dir(dir).unwrap() {
-                let path = entry.unwrap().path();
-                if path.is_dir() {
-                    markdown(&path, files);
-                } else if path.extension().is_some_and(|ext| ext == "md") {
-                    files.push(path);
-                }
-            }
-        }
-        let repo = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../..");
-        let mut files = vec![repo.join("docs/agent-install.md")];
-        markdown(&repo.join("skills"), &mut files);
-        for path in files {
-            let text = std::fs::read_to_string(&path).unwrap();
-            for marker in ["relay.yml@", "\"relay\": \""] {
-                for (at, _) in text.match_indices(marker) {
-                    let rest = &text[at + marker.len()..];
-                    let end = rest
-                        .find(|c: char| !(c.is_alphanumeric() || "._-".contains(c)))
-                        .unwrap_or(rest.len());
-                    let version = &rest[..end];
-                    if version.starts_with('v') {
-                        assert_eq!(version, RELAY_REF, "{}", path.display());
-                    }
-                }
-            }
-        }
-    }
-
-    /// The hosted providers match @relayrunner/providers.
-    #[test]
-    fn knows_the_same_providers_as_the_providers_package() {
-        let providers = include_str!("../../../../packages/providers/src/index.ts");
-        let table = providers
-            .split_once("LABEL_PREFIXES")
-            .and_then(|(_, rest)| rest.split_once("};"))
-            .map(|(table, _)| table)
-            .unwrap();
-        assert_eq!(
-            table.lines().filter(|l| l.contains(": [")).count(),
-            HOSTED_PROVIDERS.len()
-        );
-        for (id, prefixes) in HOSTED_PROVIDERS {
-            let quoted: Vec<String> = prefixes.iter().map(|p| format!("\"{p}\"")).collect();
-            let line = format!("{id}: [{}],", quoted.join(", "));
-            let quoted_id = format!("\"{id}\": [{}],", quoted.join(", "));
-            assert!(
-                providers.contains(&line) || providers.contains(&quoted_id),
-                "{id}"
-            );
-        }
     }
 
     #[test]
@@ -861,6 +932,7 @@ mod tests {
         assert_eq!(hosted_provider_of("ubicloud"), Some("ubicloud"));
         assert_eq!(hosted_provider_of("celesto"), Some("celesto"));
         assert_eq!(hosted_provider_of("instabox-medium"), Some("instabox"));
+        assert_eq!(hosted_provider_of("groundbox"), Some("groundbox"));
         assert_eq!(hosted_provider_of("boathouse"), None);
     }
 
@@ -886,8 +958,12 @@ mod tests {
                 "deploy job (environment)",
             ),
             (
-                "    runs-on: ubuntu-latest\n    permissions:\n      id-token: write\n",
-                "deploy job (id-token: write)",
+                "    runs-on: ubuntu-latest\n    permissions:\n      id-token: write\n    steps:\n      - uses: aws-actions/configure-aws-credentials@v4\n",
+                "deploy job (id-token: write with aws-actions/configure-aws-credentials)",
+            ),
+            (
+                "    runs-on: ubuntu-latest\n    permissions:\n      id-token: write\n    steps:\n      - run: npm publish --provenance\n",
+                "deploy job (id-token: write with npm publish)",
             ),
             (
                 "    runs-on: ubuntu-latest\n    steps:\n      - run: deploy\n        env:\n          TOKEN: ${{ secrets.DEPLOY_TOKEN }}\n",
@@ -911,11 +987,74 @@ mod tests {
         ));
         assert_eq!(token.verdict, Verdict::Ready);
         let workflow_level = one(
-            "on: push\npermissions:\n  id-token: write\njobs:\n  test:\n    runs-on: ubuntu-latest\n",
+            "on: push\npermissions:\n  id-token: write\njobs:\n  test:\n    runs-on: ubuntu-latest\n    steps:\n      - uses: google-github-actions/auth@v2\n",
         );
         assert!(workflow_level.reason.unwrap().contains("id-token"));
         let reusable = one("on: workflow_call\njobs:\n  test:\n    runs-on: ubuntu-latest\n");
         assert!(reusable.reason.unwrap().contains("reusable workflow"));
+    }
+
+    /// An OIDC token on its own, such as for a remote cache, is a warning, not a deploy.
+    #[test]
+    fn id_token_alone_is_not_a_deploy() {
+        for source in [
+            job(
+                "    runs-on: ubuntu-latest\n    permissions:\n      contents: read\n      id-token: write\n    steps:\n      - run: pnpm turbo test\n",
+            ),
+            "on: push\npermissions:\n  id-token: write\njobs:\n  test:\n    runs-on: ubuntu-latest\n"
+                .to_string(),
+        ] {
+            let j = one(&source);
+            assert_eq!(j.verdict, Verdict::Ready, "{source}");
+            assert!(j.warnings[0].contains("id-token: write"), "{source}");
+        }
+    }
+
+    #[test]
+    fn routes_a_deploy_job_the_user_allows() {
+        let source = job(
+            "    runs-on: ubuntu-latest\n    environment: production\n    steps:\n      - run: echo hi\n",
+        );
+        let allowed = |names: &[&str]| {
+            analyze(
+                &[WorkflowFile {
+                    file: FILE.into(),
+                    source: source.clone(),
+                }],
+                &Options {
+                    allow_deploy: names.iter().map(|n| n.to_string()).collect(),
+                    ..Options::default()
+                },
+            )
+            .0
+            .remove(0)
+        };
+        for names in [
+            &["test"][..],
+            &["ci.yml:test"],
+            &[".github/workflows/ci.yml:test"],
+        ] {
+            let j = allowed(names);
+            assert_eq!(j.verdict, Verdict::Ready, "{names:?}");
+            assert!(j.warnings[0].contains("deploy job (environment)"));
+        }
+        assert_eq!(allowed(&["other.yml:test"]).verdict, Verdict::Skipped);
+        assert_eq!(allowed(&["lint"]).verdict, Verdict::Skipped);
+        // It only lifts the deploy check.
+        let matrix = analyze(
+            &[WorkflowFile {
+                file: FILE.into(),
+                source: job(
+                    "    strategy:\n      matrix:\n        node: [20, 22]\n    runs-on: ubuntu-latest\n    environment: production\n",
+                ),
+            }],
+            &Options {
+                allow_deploy: vec!["test".into()],
+                ..Options::default()
+            },
+        )
+        .0;
+        assert_eq!(matrix[0].verdict, Verdict::Skipped);
     }
 
     #[test]
@@ -936,6 +1075,9 @@ mod tests {
         assert!(installs_linux_packages("cd x && apk add git"));
         assert!(!installs_linux_packages("echo apt-getter install"));
         assert!(!installs_linux_packages("snap install"));
+        assert!(runs_command("pnpm build && npm publish", "npm publish"));
+        assert!(!runs_command("pnpm publish", "npm publish"));
+        assert!(!runs_command("npm publisher", "npm publish"));
     }
 
     #[test]
@@ -1015,7 +1157,7 @@ jobs:
     #[test]
     fn adds_a_relay_in_front_of_each_job() {
         let jobs = judge(SOURCE, "macos", false);
-        let out = route_jobs(SOURCE, &[jobs[0].clone(), jobs[2].clone()]).unwrap();
+        let out = route_jobs(SOURCE, &[jobs[0].clone(), jobs[2].clone()], false).unwrap();
         let expected = "name: CI
 
 # Runs on every push.
@@ -1055,11 +1197,30 @@ jobs:
     steps:
       - run: npm run build
 "
-        .replace("REF", RELAY_REF);
+        .replace("REF", relay_ref());
         assert_eq!(out, expected);
-        let all = route_jobs(SOURCE, &jobs).unwrap();
+        let all = route_jobs(SOURCE, &jobs, false).unwrap();
         assert!(
             judge(&all, "macos", false)
+                .iter()
+                .all(|j| j.verdict == Verdict::Routed)
+        );
+    }
+
+    #[test]
+    fn auto_writes_auto_for_linux_x64_jobs_only() {
+        let source = "on: push\njobs:\n  test:\n    runs-on: ubuntu-latest\n    steps:\n      - run: npm test\n  arm:\n    runs-on: ubuntu-24.04-arm\n    steps:\n      - run: npm test\n  mac:\n    runs-on: macos-15\n    steps:\n      - run: npm test\n";
+        let jobs = judge(source, "macos", false);
+        assert_eq!(
+            jobs.iter().map(auto_sizable).collect::<Vec<_>>(),
+            [true, false, false]
+        );
+        let out = route_jobs(source, &jobs, true).unwrap();
+        assert!(out.contains("      machine: self-hosted\n      github: auto\n"));
+        assert!(out.contains("      github: ubuntu-24.04-arm\n"));
+        assert!(out.contains("      machine: macOS\n      github: macos-15\n"));
+        assert!(
+            judge(&out, "macos", false)
                 .iter()
                 .all(|j| j.verdict == Verdict::Routed)
         );
@@ -1081,7 +1242,7 @@ jobs:
             .into_iter()
             .find(|j| j.job == "test")
             .unwrap();
-        let out = route_jobs(input, &[test]).unwrap();
+        let out = route_jobs(input, &[test], false).unwrap();
         assert!(out.contains("\n\n  relay-test-2:\n"));
         assert!(out.contains("      blacksmith: blacksmith-4vcpu-ubuntu-2404\n"));
         assert!(out.contains("    needs: [build, relay-test-2]\n"));
@@ -1089,7 +1250,7 @@ jobs:
         let block = "on: push\njobs:\n  a:\n    runs-on: ubuntu-latest\n  b:\n    needs:\n      - a\n    runs-on: ubuntu-latest\n";
         let b = judge(block, "linux", false).pop().unwrap();
         assert!(
-            route_jobs(block, &[b])
+            route_jobs(block, &[b], false)
                 .unwrap()
                 .contains("    needs:\n      - a\n      - relay-b\n")
         );
@@ -1100,11 +1261,13 @@ jobs:
         // Four-space indents, CRLF, quotes and no newline at the end.
         let source = "on: [push, pull_request]\r\njobs:\r\n    a:\r\n        runs-on: \"ubuntu-latest\"\r\n        steps:\r\n            - run: echo 'hi'   # say hi";
         let a = judge(source, "linux", false).remove(0);
-        let out = route_jobs(source, &[a]).unwrap();
+        let out = route_jobs(source, &[a], false).unwrap();
         assert_eq!(
             out,
             format!(
-                "on: [push, pull_request]\r\njobs:\r\n    relay-a:\r\n        uses: {RELAY_WORKFLOW}@{RELAY_REF}\r\n        with:\r\n            machine: self-hosted\r\n            github: ubuntu-latest\r\n\r\n    a:\r\n        needs: relay-a\r\n        runs-on: ${{{{ needs.relay-a.outputs.runner }}}}\r\n        steps:\r\n            - run: echo 'hi'   # say hi"
+                "on: [push, pull_request]\r\njobs:\r\n    relay-a:\r\n        uses: {}@{}\r\n        with:\r\n            machine: self-hosted\r\n            github: ubuntu-latest\r\n\r\n    a:\r\n        needs: relay-a\r\n        runs-on: ${{{{ needs.relay-a.outputs.runner }}}}\r\n        steps:\r\n            - run: echo 'hi'   # say hi",
+                relay_workflow(),
+                relay_ref()
             )
         );
     }
@@ -1113,12 +1276,12 @@ jobs:
     fn refuses_what_it_cant_edit() {
         let skipped = one(&job("    runs-on: windows-latest\n"));
         assert!(
-            route_jobs(&job("    runs-on: windows-latest\n"), &[skipped])
+            route_jobs(&job("    runs-on: windows-latest\n"), &[skipped], false)
                 .unwrap_err()
                 .contains("isn't ready")
         );
         let inline = "on: push\njobs: {a: {runs-on: ubuntu-latest}}\n";
         let a = judge(inline, "linux", false).remove(0);
-        assert!(route_jobs(inline, &[a]).is_err());
+        assert!(route_jobs(inline, &[a], false).is_err());
     }
 }

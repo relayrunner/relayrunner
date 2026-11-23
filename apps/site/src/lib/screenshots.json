@@ -1,6 +1,6 @@
 {
-  "runners": { "path": "/runners", "height": 1100 },
-  "router": { "path": "/router", "height": 820 },
+  "runners": { "path": "/runners", "height": 985 },
+  "router": { "path": "/router", "height": 852 },
   "history": { "path": "/history", "height": 900 },
   "performance": { "path": "/performance?view=runners", "height": 820 },
   "signals": { "path": "/signals", "height": 900 },

@@ -44,11 +44,11 @@ That install only reads the enterprise's billing. It sees no repos, and your org
 
 ## What it never gets
 
-The App can't read your code, beyond `relayrunner.yml`. It doesn't receive job logs or repository secrets. Jobs that run on your machines use GitHub's own runner, which talks to GitHub directly.
+The App can't read your code, beyond `relayrunner.yml`, and doesn't receive repository secrets. It reads a job's log through Actions read only to show why a failed job failed, or to send it to your own endpoint or bucket when you turn on [job logs](/docs/dashboard/telemetry#job-logs) or a [log archive](/docs/dashboard/telemetry#log-archive), and never stores it. Jobs that run on your machines use GitHub's own runner, which talks to GitHub directly.
 
 ## Runner groups
 
-If your org's runner group settings block RelayRunner's runners, it posts a failed `RelayRunner` check on the commit that says what to change.
+If your org's runner group settings block RelayRunner's runners, it posts a failed `RelayRunner` check on the commit that says what to change. **Route a repo** on the Router page also marks the repos your org's Default runner group leaves out, before you route them.
 
 ## RelayRunner Checks
 

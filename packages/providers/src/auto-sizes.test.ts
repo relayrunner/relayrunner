@@ -29,6 +29,9 @@ describe("labelForSize", () => {
     ["lizard", 2, "lizard-small-ubuntu-2404"],
     ["lizard", 8, "lizard-large-ubuntu-2404"],
     ["lizard", 16, null],
+    ["groundbox", 2, "groundbox-2vcpu"],
+    ["groundbox", 16, "groundbox-16vcpu"],
+    ["groundbox", 32, null],
     ["github", 2, "ubuntu-latest"],
     ["github", 1, "ubuntu-slim"],
     ["github", 4, null],
@@ -51,6 +54,7 @@ describe("labelForSize", () => {
     "monkci",
     "latchkey",
     "berrybox",
+    "groundbox",
   ])("%s labels read back as the size they ask for", (provider) => {
     for (const vcpus of [2, 4, 8, 16]) {
       const label = labelForSize(provider, vcpus, 1)!;

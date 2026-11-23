@@ -9,9 +9,10 @@ import { providerOf, providerStyle, RunnerMark } from "@/components/providers";
 import { TimeRangePicker } from "@/components/range-picker";
 import { RunnerUpdateNote } from "@/components/runner-card";
 import { withRunner } from "@/components/runner-panel-link";
-import { Facts, LINK, Links } from "@/components/run-sheet";
+import { Facts, LINK, Links, RunLink } from "@/components/run-sheet";
 import { StatusIcon } from "@/components/status-icon";
 import { Sheet, SheetContent, SheetDescription, SheetTitle } from "@/components/ui/sheet";
+import { PHONE_HIDDEN } from "@/components/ui/table";
 import { timeAgo } from "@/lib/activity";
 import { authDisabled } from "@/lib/auth-client";
 import { clock, DAY_MS, HOUR_MS, p90Text, plural } from "@/lib/job-times";
@@ -24,26 +25,21 @@ import {
   sampleRunnerReport,
 } from "@/lib/runner-report";
 import { groupByBranch } from "@/lib/branch-groups";
-import { isLongWait, runParam } from "@/lib/runs";
+import { isLongWait } from "@/lib/runs";
 import { unlessDefault, useSetSearch } from "@/lib/search-params";
-import { type RangeOptions, rangePhrase, resolveRange, type TimeRange } from "@/lib/time-range";
+import { clearOnWorkspaceChange } from "@/lib/workspace-cache";
+import { RUNNER_DEFAULT_RANGE, RUNNER_RANGES } from "@/lib/panels";
+import { rangePhrase, resolveRange, type TimeRange } from "@/lib/time-range";
 import { formatDateTime, formatTime, shortDate, startOfDay } from "@/lib/time-zone";
 import { minutes } from "@/lib/usage";
 import { cn, count, niceMax, percent } from "@/lib/utils";
 
-/**
- * The panel's ranges, down to the past hour, with bars per 15 minutes, per hour or per day. They
- * reach back 30 days, as far as Performance does.
- */
-export const RUNNER_RANGES: RangeOptions = {
-  presets: ["1h", "3h", "24h", "2d", "7d", "14d", "30d", "today", "yesterday", "week", "lastweek"],
-  customDays: 30,
-};
-export const RUNNER_DEFAULT_RANGE: TimeRange = "14d";
 const MACHINE = "machine:";
 
 // The last reports read, by runner and range, so reopening a runner shows it at once.
 const reports = new Map<string, Promise<RunnerReport>>();
+// A runner key such as `github:ubuntu-latest` is the same in every workspace.
+clearOnWorkspaceChange(() => reports.clear());
 
 function loadReport(key: string, range: TimeRange) {
   const id = `${key}\u001f${range}`;
@@ -70,7 +66,7 @@ function loadReport(key: string, range: TimeRange) {
  */
 export function RunnerSheet({ runnerKey, range }: { runnerKey: string; range: TimeRange }) {
   const navigate = useNavigate();
-  const close = () => void navigate({ to: ".", search: withRunner() });
+  const close = () => void navigate({ to: ".", search: withRunner(), resetScroll: false });
   const setSearch = useSetSearch<{ runnerRange?: TimeRange }>();
   const setRange = (next: TimeRange) =>
     setSearch({ runnerRange: unlessDefault(next, RUNNER_DEFAULT_RANGE) });
@@ -413,13 +409,13 @@ function RecentJobs({ report }: { report: RunnerReport }) {
               <th scope="col" className="py-2 pr-4 pl-3 text-left font-normal">
                 Job
               </th>
-              <th scope="col" className="py-2 pr-4 text-right font-normal">
+              <th scope="col" className={cn("py-2 pr-4 text-right font-normal", PHONE_HIDDEN)}>
                 Wait
               </th>
-              <th scope="col" className="py-2 pr-4 text-right font-normal">
+              <th scope="col" className={cn("py-2 pr-4 text-right font-normal", PHONE_HIDDEN)}>
                 Run
               </th>
-              <th scope="col" className="py-2 pr-3 text-right font-normal">
+              <th scope="col" className={cn("py-2 pr-3 text-right font-normal", PHONE_HIDDEN)}>
                 Finished
               </th>
             </tr>
@@ -476,6 +472,8 @@ function RecentJobRow({
   newCommit?: boolean;
 }) {
   const wait = job.queuedAt === null ? null : job.startedAt - job.queuedAt;
+  const run = job.completedAt - job.startedAt;
+  const longWait = isLongWait(wait) && "font-semibold text-run";
   return (
     <tr
       className={cn(
@@ -493,11 +491,7 @@ function RecentJobRow({
             : "pl-3",
         )}
       >
-        <Link
-          to="/history"
-          search={{ run: runParam(job), job: job.id }}
-          className="group inline-flex min-w-0 items-start gap-2"
-        >
+        <RunLink run={job} job={job.id} className="group inline-flex min-w-0 items-start gap-2">
           <StatusIcon
             status="completed"
             conclusion={job.conclusion ?? "unknown"}
@@ -509,21 +503,29 @@ function RecentJobRow({
               <span>{[job.workflow, job.repository].filter(Boolean).join(" · ")}</span>
               <CommitBy actor={job.actor} sha={job.sha} />
             </span>
+            {/* Phones have no room for the time columns, so the times go under the job. */}
+            <span className="mt-0.5 flex flex-wrap gap-x-2.5 text-xs text-muted-foreground tabular-nums sm:hidden">
+              <span className={cn(longWait)}>Waited {clock(wait)}</span>
+              <span>Ran {clock(run)}</span>
+              <span>{timeAgo(job.completedAt)}</span>
+            </span>
           </span>
-        </Link>
+        </RunLink>
       </th>
       <td
-        className={cn(
-          "py-2 pr-4 text-right align-top whitespace-nowrap",
-          isLongWait(wait) && "font-semibold text-run",
-        )}
+        className={cn("py-2 pr-4 text-right align-top whitespace-nowrap", PHONE_HIDDEN, longWait)}
       >
         {clock(wait)}
       </td>
-      <td className="py-2 pr-4 text-right align-top whitespace-nowrap">
-        {clock(job.completedAt - job.startedAt)}
+      <td className={cn("py-2 pr-4 text-right align-top whitespace-nowrap", PHONE_HIDDEN)}>
+        {clock(run)}
       </td>
-      <td className="py-2 pr-3 text-right align-top whitespace-nowrap text-muted-foreground">
+      <td
+        className={cn(
+          "py-2 pr-3 text-right align-top whitespace-nowrap text-muted-foreground",
+          PHONE_HIDDEN,
+        )}
+      >
         {timeAgo(job.completedAt)}
       </td>
     </tr>

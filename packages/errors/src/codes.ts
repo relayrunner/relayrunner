@@ -26,6 +26,11 @@ export const ERRORS = {
   INVALID_TOKEN: { status: 401, message: "The token is invalid, expired or revoked." },
   FORBIDDEN: { status: 403, message: "You don't have access to that." },
   AGENT_NOT_ALLOWED: { status: 403, message: "Agent tokens can't call this route." },
+  AGENT_CHANGES_OFF: {
+    status: 403,
+    message:
+      "This agent can't make changes in this workspace. Its person can turn on Allow changes for it in Settings → Agents.",
+  },
   NOT_A_MEMBER: { status: 403, message: "You aren't a member of that workspace." },
   LEGAL_TERMS_OUTDATED: {
     status: 409,
@@ -66,9 +71,26 @@ export const ERRORS = {
 
   // Routing
   RUNNER_ORDER_INVALID: { status: 400, message: "The runner order isn't valid." },
+  RUNNER_ORDER_CHANGED: {
+    status: 409,
+    message: "The runner order changed since you read it. Read it again, then make your change.",
+  },
 
   // Providers and prices
   PROVIDER_UNKNOWN: { status: 400, message: "There's no provider with that id." },
+  EVALUATION_ACTIVE: {
+    status: 409,
+    message: "This workflow is already being evaluated. Wait for it to finish or stop it first.",
+  },
+  WORKFLOW_NOT_DISPATCHABLE: {
+    status: 409,
+    message:
+      "The workflow can't be started on demand. Add `workflow_dispatch` to its `on:` triggers on the default branch, then try again.",
+  },
+  EVALUATION_NOT_STARTED: {
+    status: 502,
+    message: "GitHub didn't start the workflow. Try again in a minute.",
+  },
   PROVIDER_INVALID: {
     status: 400,
     message: "Fill in a name, summary and labels, and use https:// links.",
@@ -87,6 +109,15 @@ export const ERRORS = {
     message: "Another provider, or GitHub's own runners, already use labels like that.",
   },
   PROVIDER_NOT_CONNECTED: { status: 404, message: "That provider isn't connected." },
+  PROVIDER_ORGANIZATION_MISMATCH: {
+    status: 400,
+    message:
+      "That token is for another GitHub organization. Make one for the organization this workspace is installed on.",
+  },
+  PROVIDER_WORKSPACE_UNCLEAR: {
+    status: 409,
+    message: "Name the workspace to connect it to.",
+  },
   PROVIDER_TOKEN_REJECTED: {
     status: 400,
     message: "The provider didn't accept that token. Check it and its scope.",
@@ -112,6 +143,12 @@ export const ERRORS = {
   },
   TELEMETRY_HEADER_MISSING: { status: 400, message: "Enter a value for each header." },
   TELEMETRY_NOT_CONFIGURED: { status: 404, message: "Telemetry isn't set up for this workspace." },
+  BUCKET_INVALID: {
+    status: 400,
+    message: "Check the bucket settings: an https endpoint, the bucket's name and its region.",
+  },
+  BUCKET_SECRET_MISSING: { status: 400, message: "Enter the secret access key." },
+  BUCKET_NOT_CONFIGURED: { status: 404, message: "No bucket is set up for this workspace." },
 
   // GitHub webhooks
   WEBHOOK_SIGNATURE_INVALID: {

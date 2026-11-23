@@ -24,3 +24,12 @@ export function respondError(c: Context, error: unknown) {
   if (appError.retryAfter !== undefined) c.header("retry-after", String(appError.retryAfter));
   return c.json(appError.toJSON(), appError.status as ContentfulStatusCode);
 }
+
+// An error's message, with its cause's when it has one (a GitHubRateLimitError keeps GitHub's
+// answer there).
+export function errorMessage(error: unknown): string {
+  if (!(error instanceof Error)) return String(error);
+  return error.cause instanceof Error
+    ? `${error.message} (${errorMessage(error.cause)})`
+    : error.message;
+}

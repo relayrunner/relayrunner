@@ -1,17 +1,14 @@
-// The dashboard's copy of apps/api/src/roles.ts (#134). The API enforces these; the dashboard
-// uses them only to hide controls someone can't use.
-export type Role = "owner" | "admin" | "member";
+// Workspace roles (#134), shared with the API. The API enforces them; the dashboard uses them
+// only to hide controls someone can't use.
+import { canManage, type Role } from "@relayrunner/api-types";
+
+export { canManage, type Role };
 
 export const ROLE_LABELS: Record<Role, string> = {
   owner: "Owner",
   admin: "Admin",
   member: "Member",
 };
-
-/** Owner or admin: manages GitHub accounts, runner order and members. */
-export function canManage(role: string | null | undefined) {
-  return role === "owner" || role === "admin";
-}
 
 /**
  * Whether `actor` may change `target`'s role or remove them. Mirrors Better Auth: only owners

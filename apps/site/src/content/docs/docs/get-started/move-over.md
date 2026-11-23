@@ -19,7 +19,17 @@ It sorts every job into three groups and lets you pick from the first:
 - **Already routed.** The job already runs where a relay sends it.
 - **Skipped, with the reason.** See below.
 
-To see the list without changing anything, run `relayrunner init --plan`. To route jobs without prompts, run `relayrunner init --apply test,lint`, or `--apply all` for every ready job.
+To see the list without changing anything, run `relayrunner init --plan`. To route jobs without prompts, run `relayrunner init --apply test,lint`, or `--apply all` for every ready job. Add `--auto` to set Linux x64 jobs' sizes on the Router page instead of in the file.
+
+## Route repos from the dashboard
+
+On the dashboard's Router page, **Route a repo** takes you through one repo at a time:
+
+1. Pick a repo. Repos your org's Default runner group leaves out are marked, with the fix.
+2. Pick its jobs from recent runs, and a size for each if you want one other than the default.
+3. Copy a prompt for your coding agent, which runs `init` and opens a PR, or copy the `init` command.
+
+After you copy, the sheet waits for the repo's first routed run and says when it's routed. **Next repo** moves on, and from the second repo one prompt can cover the rest.
 
 ## What it writes
 
@@ -54,10 +64,11 @@ Push the change. The check keeps its name in GitHub, so required checks and bran
 
 ## Jobs it skips
 
-- **Deploy jobs.** Jobs that use secrets or a deploy environment. Running one on a machine gives that machine those secrets, so it's your call. You can route one by hand with the same change.
+- **Deploy jobs.** Jobs that use secrets, a deploy environment, or an OIDC token to sign in to a cloud or publish a package. Running one on a machine gives that machine those secrets, so it's your call. To route one anyway, add `--allow-deploy <job>`. A job that only requests an OIDC token, such as for a remote cache, isn't skipped.
+- **Jobs pinned to a label list or runner group**, such as `runs-on: [self-hosted, m1, macmini]`. The relay falls back to one label, so to route one by hand, pick what kind of machine may take it (`machine: macOS, ARM64`) and a hosted label for when none is free.
 - **Matrix jobs.** One relay answers one job, so it can't serve every leg of a matrix.
 - **Reusable workflows.** They choose their own runner.
-- **Windows jobs**, and jobs already on a self-hosted runner.
+- **Windows jobs**, and jobs on a single `self-hosted` label.
 
 ## Public repos
 

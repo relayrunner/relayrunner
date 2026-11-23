@@ -6,6 +6,9 @@
 //!   relayrunner init --plan [--json]   list every job with its verdict; changes nothing
 //!   relayrunner init --apply <jobs>    route those jobs without prompting (`all` = every ready job)
 //!
+//! `--auto` writes `auto` in place of a Linux x64 job's label, so the Router page sets its size.
+//! `--allow-deploy <jobs>` lets jobs that look like deploy jobs be routed, once the user says so.
+//!
 //! `--plan --json` and `--apply` are what an agent setting up RelayRunner drives.
 
 mod diff;
@@ -16,7 +19,7 @@ use crate::ui;
 use repo::Visibility;
 use serde_json::json;
 use std::path::{Path, PathBuf};
-use workflows::{FileError, RELAY_REF, Verdict, WorkflowFile, WorkflowJob};
+use workflows::{FileError, Verdict, WorkflowFile, WorkflowJob, short_file};
 
 pub struct Plan {
     root: PathBuf,
@@ -25,6 +28,8 @@ pub struct Plan {
     files: Vec<WorkflowFile>,
     jobs: Vec<WorkflowJob>,
     errors: Vec<FileError>,
+    /// Write `auto` for the jobs the Router can size (`--auto`).
+    auto: bool,
 }
 
 const PUBLIC_REPO: &str = "This repo is public, and machines never take jobs from public repos. There's nothing for init to set up here.";
@@ -41,14 +46,19 @@ fn host_os() -> Option<&'static str> {
 }
 
 /// `vm`: this machine runs Linux jobs in VMs, which have Docker and Linux packages.
-fn plan(cwd: &Path, vm: bool) -> Result<Plan, String> {
-    let mut plan = local_plan(cwd, vm)?;
+/// `allow_deploy`: jobs to treat as ready even though they look like deploy jobs. Each must name
+/// exactly one job.
+fn plan(cwd: &Path, vm: bool, allow_deploy: &[String]) -> Result<Plan, String> {
+    let mut plan = local_plan(cwd, vm, allow_deploy)?;
+    for name in allow_deploy {
+        find_job(&plan.jobs, name)?;
+    }
     plan.check_visibility();
     Ok(plan)
 }
 
 /// Everything but whether the repo is public, which takes asking GitHub.
-fn local_plan(cwd: &Path, vm: bool) -> Result<Plan, String> {
+fn local_plan(cwd: &Path, vm: bool, allow_deploy: &[String]) -> Result<Plan, String> {
     let root = repo::find_root(cwd).ok_or(NOT_A_CHECKOUT)?;
     let repo = repo::origin_repo(&root);
     let visibility = Visibility::Unknown;
@@ -58,6 +68,7 @@ fn local_plan(cwd: &Path, vm: bool) -> Result<Plan, String> {
         &workflows::Options {
             host_os: host_os(),
             vm,
+            allow_deploy: allow_deploy.to_vec(),
         },
     );
     Ok(Plan {
@@ -67,6 +78,7 @@ fn local_plan(cwd: &Path, vm: bool) -> Result<Plan, String> {
         files,
         jobs,
         errors,
+        auto: false,
     })
 }
 
@@ -78,40 +90,46 @@ impl Plan {
     }
 }
 
-fn short_file(file: &str) -> &str {
-    file.strip_prefix(".github/workflows/").unwrap_or(file)
+/// The one job `name` (`job` or `file:job`) names. Fails when it's unknown or ambiguous.
+fn find_job<'a>(jobs: &'a [WorkflowJob], name: &str) -> Result<&'a WorkflowJob, String> {
+    let matches: Vec<&WorkflowJob> = jobs
+        .iter()
+        .filter(|j| workflows::names_job(name, &j.file, &j.job))
+        .collect();
+    match matches.as_slice() {
+        [] => Err(format!("No job named {name}.")),
+        [job] => Ok(job),
+        _ => {
+            let names: Vec<String> = matches
+                .iter()
+                .map(|j| format!("{}:{}", j.file, j.job))
+                .collect();
+            Err(format!(
+                "{name} is in more than one workflow. Name it as {}.",
+                names.join(" or ")
+            ))
+        }
+    }
 }
 
 /// Picks jobs by `job`, `file:job` or `all`. Fails when a name is unknown, ambiguous or not ready.
-fn select_jobs(jobs: &[WorkflowJob], names: &[&str]) -> Result<Vec<WorkflowJob>, String> {
-    let ready = || jobs.iter().filter(|j| j.verdict == Verdict::Ready).cloned();
-    if names == ["all"] {
-        return Ok(ready().collect());
+fn select_jobs(
+    jobs: &[WorkflowJob],
+    names: &[impl AsRef<str>],
+) -> Result<Vec<WorkflowJob>, String> {
+    if let [all] = names
+        && all.as_ref() == "all"
+    {
+        return Ok(jobs
+            .iter()
+            .filter(|j| j.verdict == Verdict::Ready)
+            .cloned()
+            .collect());
     }
     let mut picked: Vec<WorkflowJob> = Vec::new();
-    for &name in names {
-        let (file, id) = match name.rsplit_once(':') {
-            Some((file, id)) => (Some(file), id),
-            None => (None, name),
-        };
-        let matches: Vec<&WorkflowJob> = jobs
-            .iter()
-            .filter(|j| j.job == id && file.is_none_or(|f| j.file == f || short_file(&j.file) == f))
-            .collect();
-        let job = match matches.as_slice() {
-            [] => return Err(format!("No job named {name}.")),
-            [job] => *job,
-            _ => {
-                let names: Vec<String> = matches
-                    .iter()
-                    .map(|j| format!("{}:{}", j.file, j.job))
-                    .collect();
-                return Err(format!(
-                    "{name} is in more than one workflow. Name it as {}.",
-                    names.join(" or ")
-                ));
-            }
-        };
+    for name in names {
+        let name = name.as_ref();
+        let job = find_job(jobs, name)?;
         match job.verdict {
             Verdict::Routed => return Err(format!("{name} is already routed.")),
             Verdict::Skipped => {
@@ -159,7 +177,7 @@ fn changes_for(plan: &Plan, chosen: &[WorkflowJob]) -> Result<Vec<Change>, Strin
         }
     }
     for change in &mut changes {
-        change.after = workflows::route_jobs(&change.before, &change.jobs).map_err(|reason| {
+        change.after = workflows::route_jobs(&change.before, &change.jobs, plan.auto).map_err(|reason| {
             format!(
                 "Couldn't edit {}: {reason}. Route its jobs by hand: https://relayrunner.dev/docs/get-started/github-actions",
                 change.file
@@ -219,7 +237,7 @@ fn print_plan(plan: &Plan, json: bool) {
         let out = Out {
             repo: &plan.repo,
             visibility: plan.visibility.as_str(),
-            relay: RELAY_REF,
+            relay: workflows::relay_ref(),
             set_up: workflows::is_set_up(&plan.jobs),
             refused: (plan.visibility == Visibility::Public).then_some("public_repo"),
             jobs: &plan.jobs,
@@ -260,11 +278,7 @@ fn apply(plan: &Plan, list: &str, json: bool) -> Result<(), String> {
     if plan.visibility == Visibility::Public {
         return Err(PUBLIC_REPO.into());
     }
-    let names: Vec<&str> = list
-        .split(',')
-        .map(str::trim)
-        .filter(|n| !n.is_empty())
-        .collect();
+    let names = job_names(list);
     if names.is_empty() {
         return Err("Name the jobs to route, or `all`.".into());
     }
@@ -279,6 +293,8 @@ fn apply(plan: &Plan, list: &str, json: bool) -> Result<(), String> {
         struct Routed<'a> {
             file: &'a str,
             job: &'a str,
+            /// Whether the relay says `auto`, so the Router page sets the job's size.
+            auto: bool,
             warnings: &'a [String],
         }
         #[derive(serde::Serialize)]
@@ -291,11 +307,12 @@ fn apply(plan: &Plan, list: &str, json: bool) -> Result<(), String> {
             .map(|j| Routed {
                 file: &j.file,
                 job: &j.job,
+                auto: plan.auto && workflows::auto_sizable(j),
                 warnings: &j.warnings,
             })
             .collect();
         let out = Out {
-            relay: RELAY_REF,
+            relay: workflows::relay_ref(),
             routed,
         };
         println!("{}", serde_json::to_string_pretty(&out).unwrap_or_default());
@@ -306,8 +323,13 @@ fn apply(plan: &Plan, list: &str, json: bool) -> Result<(), String> {
         println!("Updated {} ({})", change.file, ids.join(", "));
     }
     println!("Commit and push to start routing.");
+    println!("{SKILLS_TIP}");
     Ok(())
 }
+
+/// Shown after `init` routes jobs (never in `--json`), so people find the agent skills in skills/.
+const SKILLS_TIP: &str =
+    "Using a coding agent? Give it the RelayRunner skills: npx skills add relayrunner/relayrunner";
 
 fn interactive(plan: &Plan) -> Result<(), String> {
     ui::intro("RelayRunner init");
@@ -409,6 +431,7 @@ fn choose_and_write(plan: &Plan, finish: fn(&str)) -> Result<(), String> {
     if !warned.is_empty() {
         ui::note(&warned.join("\n"), "Check before it runs on your machine");
     }
+    ui::info(SKILLS_TIP);
     let files: Vec<&str> = changes.iter().map(|c| c.file.as_str()).collect();
     finish(&format!(
         "Updated {}. Commit and push to start routing.",
@@ -418,20 +441,28 @@ fn choose_and_write(plan: &Plan, finish: fn(&str)) -> Result<(), String> {
 }
 
 pub async fn command(args: &[String]) -> i32 {
-    let (mut plan_only, mut json, mut apply_list) = (false, false, None::<String>);
+    let (mut plan_only, mut json, mut auto, mut apply_list) = (false, false, false, None::<String>);
+    let mut allow_deploy: Vec<String> = Vec::new();
     let mut rest = args.iter();
     while let Some(arg) = rest.next() {
         match arg.as_str() {
             "--plan" => plan_only = true,
             "--json" => json = true,
+            "--auto" => auto = true,
             "--apply" => apply_list = Some(rest.next().cloned().unwrap_or_default()),
-            other => match other.strip_prefix("--apply=") {
-                Some(list) => apply_list = Some(list.to_string()),
-                None => {
+            "--allow-deploy" => {
+                allow_deploy.extend(job_names(rest.next().map_or("", String::as_str)));
+            }
+            other => {
+                if let Some(list) = other.strip_prefix("--apply=") {
+                    apply_list = Some(list.to_string());
+                } else if let Some(list) = other.strip_prefix("--allow-deploy=") {
+                    allow_deploy.extend(job_names(list));
+                } else {
                     eprintln!("Unknown option {other:?}. Run `relayrunner init --help`.");
                     return 2;
                 }
-            },
+            }
         }
     }
     // Whether jobs here would run in VMs only matters inside a checkout.
@@ -442,7 +473,10 @@ pub async fn command(args: &[String]) -> i32 {
     let vm = in_checkout && crate::isolated::state().await == crate::isolated::State::Ready;
     let run = move || -> Result<(), String> {
         let cwd = std::env::current_dir().map_err(|e| e.to_string())?;
-        let plan = plan(&cwd, vm)?;
+        let plan = Plan {
+            auto,
+            ..plan(&cwd, vm, &allow_deploy)?
+        };
         if let Some(list) = apply_list {
             return apply(&plan, &list, json);
         }
@@ -475,6 +509,15 @@ pub async fn command(args: &[String]) -> i32 {
             1
         }
     }
+}
+
+/// A comma-separated list of job names.
+fn job_names(list: &str) -> Vec<String> {
+    list.split(',')
+        .map(str::trim)
+        .filter(|n| !n.is_empty())
+        .map(str::to_string)
+        .collect()
 }
 
 /// Whether `connect` should offer to set up this checkout: it's not public, nothing in it is
@@ -533,7 +576,7 @@ pub fn offer_setup(vm: bool) {
     };
     // Outside a checkout there's nothing to offer. GitHub is only asked once the local checks
     // say there would be an offer, since `connect` waits on this before going online.
-    let Ok(mut plan) = local_plan(&cwd, vm) else {
+    let Ok(mut plan) = local_plan(&cwd, vm, &[]) else {
         return;
     };
     if !should_offer_setup(&plan) {
@@ -602,7 +645,7 @@ mod tests {
     #[test]
     fn selects_by_id_by_file_and_all() {
         let root = checkout(&[("ci.yml", CI), ("deploy.yml", DEPLOY)]);
-        let plan = plan(&root, false).unwrap();
+        let plan = plan(&root, false, &[]).unwrap();
         let ids = |names: &[&str]| -> Result<Vec<String>, String> {
             Ok(select_jobs(&plan.jobs, names)?
                 .into_iter()
@@ -630,7 +673,7 @@ mod tests {
     fn writes_the_chosen_jobs_and_nothing_else() {
         let root = checkout(&[("ci.yml", CI)]);
         std::fs::create_dir_all(root.join("src")).unwrap();
-        let first = plan(&root.join("src"), false).unwrap();
+        let first = plan(&root.join("src"), false, &[]).unwrap();
         assert_eq!(first.root, root);
         assert_eq!(first.repo, None);
         let changes = changes_for(&first, &select_jobs(&first.jobs, &["lint"]).unwrap()).unwrap();
@@ -638,23 +681,46 @@ mod tests {
         let written = std::fs::read_to_string(root.join(".github/workflows/ci.yml")).unwrap();
         assert!(written.contains("relay-lint:"));
         assert!(!written.contains("relay-test:"));
-        let again = plan(&root, false).unwrap();
+        let again = plan(&root, false, &[]).unwrap();
         assert_eq!(verdicts(&again), ["test:Ready", "lint:Routed"]);
         assert!(!should_offer_setup(&again));
         std::fs::remove_dir_all(&root).unwrap();
     }
 
     #[test]
+    fn allow_deploy_names_one_job() {
+        let root = checkout(&[("ci.yml", CI), ("deploy.yml", DEPLOY)]);
+        let allowed = plan(&root, false, &job_names("deploy.yml:test")).unwrap();
+        assert_eq!(
+            select_jobs(&allowed.jobs, &["deploy.yml:test"]).unwrap()[0].job,
+            "test"
+        );
+        assert!(
+            plan(&root, false, &job_names("test"))
+                .err()
+                .unwrap()
+                .contains("more than one workflow")
+        );
+        assert!(
+            plan(&root, false, &job_names("nope"))
+                .err()
+                .unwrap()
+                .contains("No job named nope")
+        );
+        std::fs::remove_dir_all(&root).unwrap();
+    }
+
+    #[test]
     fn offers_setup_only_when_it_helps() {
         let root = checkout(&[("ci.yml", CI)]);
-        let mut open = plan(&root, false).unwrap();
+        let mut open = plan(&root, false, &[]).unwrap();
         assert!(should_offer_setup(&open));
         open.visibility = Visibility::Public;
         assert!(!should_offer_setup(&open));
         let deploy = checkout(&[("deploy.yml", DEPLOY)]);
-        assert!(!should_offer_setup(&plan(&deploy, false).unwrap()));
+        assert!(!should_offer_setup(&plan(&deploy, false, &[]).unwrap()));
         assert!(
-            plan(&std::env::temp_dir(), false)
+            plan(&std::env::temp_dir(), false, &[])
                 .err()
                 .is_some_and(|e| e == NOT_A_CHECKOUT)
                 || repo::find_root(&std::env::temp_dir()).is_some()

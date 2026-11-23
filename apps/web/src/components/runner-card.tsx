@@ -30,6 +30,7 @@ import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip
 import { describeJobPlace, deviceName, formatMemory } from "@/lib/device";
 import { deviceIcon, SelfHostedIcon } from "@/components/device-icon";
 import { medianText, p90Text, plural, type Stat } from "@/lib/job-times";
+import { TONE_LABELS } from "@/lib/runner-filters";
 import {
   machineAccess,
   pauseMachine,
@@ -45,7 +46,7 @@ import { capacity } from "@/lib/capacity";
 import { runnerUpdate } from "@/lib/runner-update";
 import { shortDate } from "@/lib/time-zone";
 import { RunnerPanelLink } from "@/components/runner-panel-link";
-import { cn } from "@/lib/utils";
+import { cn, elapsed } from "@/lib/utils";
 
 const OS_NAMES = { linux: "Linux", macos: "macOS", windows: "Windows" } as const;
 const ARCH_NAMES = { x64: "x64", arm64: "ARM64", arm: "ARM" } as const;
@@ -62,16 +63,7 @@ const BANDS = {
     dot: "border-2 border-idle bg-transparent",
   },
   missing: { band: "bg-destructive/10", label: "text-destructive", dot: "bg-destructive" },
-} as const;
-
-/** What each status is called, in the order the filter menu lists them. */
-export const TONE_LABELS = {
-  running: "Running",
-  idle: "Waiting for jobs",
-  paused: "Paused",
-  offline: "Offline",
-  missing: "Not on GitHub",
-} as const satisfies Record<keyof typeof BANDS, string>;
+} as const satisfies Record<keyof typeof TONE_LABELS, unknown>;
 
 // Connection status, as a dot on the icon.
 const CONNECTION = {
@@ -190,33 +182,102 @@ function Band({ tone, children }: { tone: keyof typeof BANDS; children: ReactNod
   );
 }
 
+/** One job slot on a machine: running a job, free for one, or unknown while it's offline. */
+export type Slot = { state: "running" | "free" | "offline"; job: MachineJob | null };
+
+const SLOT_COLORS: Record<Slot["state"], string> = {
+  running: "bg-run",
+  free: "bg-go",
+  offline: "bg-idle/70",
+};
+
+// "acme/app › CI / test (macos) · 4m 59s": what a busy slot is running, for its hover.
+function slotJobText(job: MachineJob) {
+  const name = job.workflow ? `${job.workflow} / ${job.name}` : job.name;
+  const took = job.startedAt ? ` · ${elapsed(Date.now() - Date.parse(job.startedAt))}` : "";
+  return `${job.repository} › ${name}${took}`;
+}
+
 /**
- * A status's label, after its dot, or after one small bar per runner slot while the machine is
- * online: filled for a slot running a job, green for one waiting.
+ * A machine's job slots as small squares, one each: amber running a job, green free, grey offline.
+ * No label beside them; hovering a square names the machine, the slot and its job.
+ */
+export function SlotSquares({ name, slots }: { name: string; slots: Slot[] }) {
+  // The squares shrink as slots grow, so a big machine's still fit on one line.
+  const size =
+    slots.length <= 6
+      ? "size-3 rounded-[3px]"
+      : slots.length <= 12
+        ? "size-2 rounded-[2px]"
+        : "size-1.5 rounded-[1px]";
+  return (
+    <span className="flex items-center gap-0.5">
+      {slots.map((slot, i) => {
+        const where = slots.length > 1 ? `${name} · slot ${i + 1}` : name;
+        const what =
+          slot.state === "offline"
+            ? "Offline"
+            : slot.state === "free"
+              ? "Free"
+              : slot.job
+                ? slotJobText(slot.job)
+                : "Running a job";
+        const square = cn(
+          "block shrink-0 outline-none focus-visible:ring-2 focus-visible:ring-ring",
+          size,
+          SLOT_COLORS[slot.state],
+        );
+        return (
+          <Tooltip key={i}>
+            <TooltipTrigger asChild>
+              {slot.job ? (
+                <a
+                  href={slot.job.url}
+                  target="_blank"
+                  rel="noreferrer"
+                  aria-label={`${where}: ${what}`}
+                  className={square}
+                />
+              ) : (
+                <button type="button" aria-label={`${where}: ${what}`} className={square} />
+              )}
+            </TooltipTrigger>
+            <TooltipContent className="grid max-w-80 gap-0.5 py-1.5">
+              <span className="font-medium">{where}</span>
+              <span className="truncate opacity-80">{what}</span>
+            </TooltipContent>
+          </Tooltip>
+        );
+      })}
+    </span>
+  );
+}
+
+/**
+ * A status's label after its dot. While the machine reports its slots, the slot squares stand in
+ * for both, with the label kept for screen readers.
  */
 export function BandLabel({
   tone,
-  slotBars,
+  name,
+  slots,
   children,
 }: {
   tone: keyof typeof BANDS;
-  slotBars?: MachineView["slotBars"];
+  name?: string;
+  slots?: Slot[] | null;
   children: ReactNode;
 }) {
+  if (slots && name)
+    return (
+      <span className="flex shrink-0 items-center">
+        <SlotSquares name={name} slots={slots} />
+        <span className="sr-only">{children}</span>
+      </span>
+    );
   return (
     <span className={cn("flex shrink-0 items-center gap-2 font-semibold", BANDS[tone].label)}>
-      {slotBars ? (
-        <span aria-hidden className="flex items-center gap-0.5">
-          {Array.from({ length: slotBars.total }, (_, i) => (
-            <span
-              key={i}
-              className={cn("h-3 w-1 rounded-full", i < slotBars.running ? "bg-run" : "bg-go")}
-            />
-          ))}
-        </span>
-      ) : (
-        <span aria-hidden className={cn("size-2 shrink-0 rounded-full", BANDS[tone].dot)} />
-      )}
+      <span aria-hidden className={cn("size-2 shrink-0 rounded-full", BANDS[tone].dot)} />
       {children}
     </span>
   );
@@ -243,39 +304,6 @@ function Value({ children }: { children: ReactNode }) {
   return <span className="truncate">{children}</span>;
 }
 
-// The other jobs a busy machine is running, behind a +N chip next to the newest.
-function MoreJobs({ jobs }: { jobs: MachineJob[] }) {
-  return (
-    <Tooltip>
-      <TooltipTrigger asChild>
-        <button
-          type="button"
-          className="shrink-0 rounded-full border border-current/25 px-1.5 text-[11px] leading-4 font-medium tabular-nums text-ink-2 hover:bg-current/10"
-          aria-label={`${plural(jobs.length, "more job")} running`}
-        >
-          +{jobs.length}
-        </button>
-      </TooltipTrigger>
-      <TooltipContent align="end" className="grid max-w-80 gap-1.5 py-2">
-        {jobs.map((job) => (
-          <a
-            key={job.url}
-            href={job.url}
-            target="_blank"
-            rel="noreferrer"
-            className="flex min-w-0 items-baseline gap-2 hover:underline"
-          >
-            <span className="min-w-0 truncate">
-              {job.repository} · {job.name}
-            </span>
-            {job.startedAt && <span className="shrink-0 opacity-70">{timeAgo(job.startedAt)}</span>}
-          </a>
-        ))}
-      </TooltipContent>
-    </Tooltip>
-  );
-}
-
 // A spec the machine didn't report, such as a runner added from GitHub's CPU and memory.
 export function NotReported() {
   return (
@@ -286,8 +314,8 @@ export function NotReported() {
   );
 }
 
-// Past this many slots the bars would crowd the band, so it keeps the plain label.
-const MAX_SLOT_BARS = 16;
+// Past this many slots even the smallest squares would crowd the band, so it keeps the plain label.
+const MAX_SLOT_SQUARES = 32;
 
 /** What a machine is doing and what it is, worked out once for its card and its list row. */
 export function machineView(machine: Machine) {
@@ -354,12 +382,20 @@ export function machineView(machine: Machine) {
   // one. The gateway forgets the count once a machine disconnects (#346), so offline reads as not
   // reported.
   const runners = isGithub ? 1 : status.online ? slots : null;
-  // Its slots, busy first, for the bars by its status. Only while it takes jobs: offline, the
-  // count isn't known.
-  const slotBars =
-    (tone === "running" || tone === "idle") && slots <= MAX_SLOT_BARS
-      ? { total: slots, running: Math.min(running, slots) }
-      : null;
+  // Its slots, busy first with the newest job first, for the squares in its band. Offline, the
+  // gateway has forgotten the count (#346), so it shows one grey square. Paused and missing keep
+  // their label: they need a word, not a color.
+  const busySlots = Math.min(running, slots);
+  const slotSquares: Slot[] | null =
+    tone === "offline"
+      ? [{ state: "offline", job: null }]
+      : (tone === "running" || tone === "idle") && slots <= MAX_SLOT_SQUARES
+        ? Array.from({ length: slots }, (_, i) =>
+            i < busySlots
+              ? { state: "running", job: jobs[i] ?? null }
+              : { state: "free", job: null },
+          )
+        : null;
 
   // Whose machine it is and whose jobs it takes (#243). Only the owner of a connect machine
   // changes it; a runner added from GitHub belongs to its org and takes any job.
@@ -375,22 +411,20 @@ export function machineView(machine: Machine) {
     ? "Removed or re-registered on GitHub"
     : paused
       ? `${paused.by ? `Paused by ${paused.by}` : "Paused from its CLI"} ${timeAgo(paused.at)}`
-      : busy
-        ? null
-        : status.online
-          ? // A connect machine's session: how long its terminal has been connected.
-            !isGithub && status.connectedAt
-            ? `Connected ${timeAgo(status.connectedAt)}`
-            : null
-          : isGithub
-            ? github?.unreachable
-              ? "Couldn't reach GitHub"
-              : place
-                ? `In ${place}`
-                : "Not reported by GitHub"
-            : machine.lastSeenAt
-              ? `Session ended ${timeAgo(machine.lastSeenAt)}`
-              : "Never connected";
+      : status.online
+        ? // A connect machine's session: how long its terminal has been connected.
+          !isGithub && status.connectedAt
+          ? `Connected ${timeAgo(status.connectedAt)}`
+          : null
+        : isGithub
+          ? github?.unreachable
+            ? "Couldn't reach GitHub"
+            : place
+              ? `In ${place}`
+              : "Not reported by GitHub"
+          : machine.lastSeenAt
+            ? `Session ended ${timeAgo(machine.lastSeenAt)}`
+            : "Never connected";
 
   return {
     isGithub,
@@ -408,7 +442,7 @@ export function machineView(machine: Machine) {
     hardware,
     jobPlace,
     runners,
-    slotBars,
+    slotSquares,
     sharing,
     mine,
     canShare,
@@ -515,31 +549,6 @@ export function MachineRuns({ view, onChange }: { view: MachineView; onChange: (
     <span className="flex min-w-0 items-center gap-1">
       <SharingIcon aria-hidden className="size-3.5 shrink-0 text-idle" />
       <span className="truncate">{sharingLabel(view.sharing, view.mine)}</span>
-    </span>
-  );
-}
-
-/** The newest job a busy machine is running, linked, with the others behind a +N. */
-export function MachineJobLink({ jobs }: { jobs: MachineJob[] }) {
-  const job = jobs[0];
-  if (!job) return <span className="min-w-0 truncate text-ink-2">Running a job</span>;
-  return (
-    <span className="flex min-w-0 items-center gap-2">
-      <a
-        href={job.url}
-        target="_blank"
-        rel="noreferrer"
-        title={`${job.repository} · ${job.name}`}
-        className="flex min-w-0 items-baseline gap-2 text-ink-2 hover:underline"
-      >
-        <span className="min-w-0 truncate">
-          {job.repository} · {job.name}
-        </span>
-        {job.startedAt && (
-          <span className="shrink-0 text-muted-foreground">{timeAgo(job.startedAt)}</span>
-        )}
-      </a>
-      {jobs.length > 1 && <MoreJobs jobs={jobs.slice(1)} />}
     </span>
   );
 }
@@ -833,19 +842,7 @@ export function MachineCard({
   onRemovedFromWorkspace?: () => void;
 }) {
   const actions = useMachineActions(machine, onRemovedFromWorkspace);
-  const {
-    tone,
-    label,
-    detail,
-    jobs,
-    busy,
-    isGithub,
-    missing,
-    platform,
-    hardware,
-    jobPlace,
-    runners,
-  } = view;
+  const { tone, label, detail, isGithub, missing, platform, hardware, jobPlace, runners } = view;
   const { pending, error } = actions;
   const owner = <MachineOwner machine={machine} view={view} />;
   const runs = <MachineRuns view={view} onChange={() => actions.setSharingOpen(true)} />;
@@ -959,17 +956,14 @@ export function MachineCard({
               {pending === "resume" ? "Unpausing…" : "Unpause"}
             </Button>
           ) : (
-            <BandLabel tone={tone} slotBars={view.slotBars}>
+            <BandLabel tone={tone} name={machine.name} slots={view.slotSquares}>
               {label}
             </BandLabel>
           )}
-          {busy ? (
-            <MachineJobLink jobs={jobs} />
-          ) : (
-            <span className="min-w-0 truncate text-muted-foreground" title={detail ?? undefined}>
-              {detail}
-            </span>
-          )}
+          {/* Its jobs are in the squares' hovers; the band keeps how long it's been connected. */}
+          <span className="min-w-0 truncate text-muted-foreground" title={detail ?? undefined}>
+            {detail}
+          </span>
         </Band>
       )}
     </Card>

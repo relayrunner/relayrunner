@@ -1,36 +1,61 @@
+import { recordEvent } from "../ingest/activity-log.ts";
+import { inWorkspace as installedIn } from "../reports/job-sql.ts";
 import {
   readRetrySettings,
-  readRunnerOrder,
   retrySettingsSchema,
   runnerOrderSchema,
 } from "@relayrunner/runner-order";
 import { and, asc, count, eq, isNotNull, isNull } from "drizzle-orm";
-import { Hono } from "hono";
+import { type Context, Hono } from "hono";
+import { z } from "zod";
 import { createMiddleware } from "hono/factory";
-import { agentWorkspaceId } from "../agent-auth.ts";
+import { agentWorkspaceId } from "../auth/agent-auth.ts";
 import type { AppEnv } from "../app.ts";
-import { createDb, schema } from "../db/index.ts";
-import { isWorkspaceMember } from "../installations.ts";
-import { inWorkspace } from "../machines.ts";
+import { createDb, schema, type Db } from "../db/index.ts";
+import { isWorkspaceMember } from "../github/installations.ts";
+import { inWorkspace } from "../machines/machines.ts";
 import { requireUser } from "../middleware/session.ts";
 import { requireWorkspace } from "../middleware/workspace.ts";
-import { requireManager } from "../roles.ts";
+import { canManage, requireManager } from "../auth/roles.ts";
+import { assertCanEditRepo, editableRepos } from "../github/repo-access.ts";
+import { findRepo } from "../github/repositories.ts";
+import {
+  listRepoRunnerOrders,
+  presentRunnerOrder,
+  removeRepoRunnerOrder,
+  resolveRunnerOrder,
+  saveRepoRunnerOrder,
+} from "../routing/runner-orders.ts";
 import { HOSTED_PROVIDER_IDS, providersOfAppSlugs } from "@relayrunner/providers";
-import { appInstallationToken, orgAppSlugs } from "../github-app.ts";
+import { appInstallationToken, orgAppSlugs } from "../github/github-app.ts";
 import { present } from "./github.ts";
 import { AppError } from "@relayrunner/errors";
 import { annotate } from "../tracing.ts";
-import { routerSetup } from "../router-setup.ts";
+import { routerSetup } from "../reports/router-setup.ts";
+import { routeOutcomes } from "../reports/route-outcomes.ts";
+import { chartBuckets, requireWindow } from "../reports/report-window.ts";
+import { RAW_RETENTION_DAYS } from "../time.ts";
+import { runnerGroupCheck } from "../github/runner-group-check.ts";
+import { changeActor, changeSetting } from "../auth/changes.ts";
 import { DEFAULT_AUTO_SIZE } from "@relayrunner/providers";
 import { setWorkspaceAi } from "../ai/settings.ts";
-import { autoJobSettingSchema, autoSizeSchema, listAutoJobs, setAutoJob } from "../auto-jobs.ts";
+import {
+  autoJobSettingSchema,
+  autoSizeSchema,
+  getAutoJob,
+  listAutoJobs,
+  planAutoJobs,
+  plannedSizesSchema,
+  setAutoJob,
+} from "../routing/auto-jobs.ts";
 
 // Any member of the workspace in the path. Someone outside it gets a 404, so ids don't leak.
-// An agent token (agent-auth.ts) only reaches the workspaces it was granted.
+// An agent token (agent-auth.ts) only reaches the workspaces it was granted, and changes one only
+// where it's allowed changes.
 const requireMember = createMiddleware<AppEnv>(async (c, next) => {
   const workspaceId = c.req.param("id") ?? "";
   annotate({ "relayrunner.workspace_id": workspaceId });
-  if (c.var.agent && agentWorkspaceId(c.var.agent, workspaceId) === null) {
+  if (c.var.agent && agentWorkspaceId(c.var.agent, workspaceId, c.req.method) === null) {
     throw new AppError("NOT_FOUND");
   }
   const userId = c.var.user!.id;
@@ -86,18 +111,32 @@ export const workspaceRoutes = new Hono<AppEnv>()
     for (const row of rows) if (row.userId) counts[row.userId] = row.machines;
     return c.json({ counts });
   })
-  // The workspace's runner order (#110). Routing reads it from #113 on.
+  // The workspace's runner order (#110), or with `?repo=owner/name` the order that repo's jobs walk:
+  // its own (#709), or the workspace's when it has none (`scope` says which). The workspace's also
+  // lists the repos with their own order (`ownOrders`).
+  // `version` changes whenever the order does: pass it back to the PUT to refuse saving over a change
+  // made since.
   .get("/:id/runner-order", requireUser, requireMember, async (c) => {
-    const [row] = await c.var.db
-      .select({ runnerOrder: schema.workspace.runnerOrder })
-      .from(schema.workspace)
-      .where(eq(schema.workspace.id, c.req.param("id")))
-      .limit(1);
-    return c.json({ order: readRunnerOrder(row?.runnerOrder), isDefault: !row?.runnerOrder });
+    const id = c.req.param("id");
+    const repo = await orderRepo(c.var.db, id, c.req.query("repo"));
+    if (repo) {
+      const order = await presentRunnerOrder(await resolveRunnerOrder(c.var.db, id, repo.id));
+      return c.json({ ...order, repository: repo.fullName });
+    }
+    const [order, ownOrders] = await Promise.all([
+      resolveRunnerOrder(c.var.db, id).then(presentRunnerOrder),
+      listRepoRunnerOrders(c.var.db, id),
+    ]);
+    return c.json({ ...order, ownOrders });
   })
-  // Owners and admins only; members can read it.
-  .put("/:id/runner-order", requireUser, requireMember, requireManager, async (c) => {
-    const parsed = runnerOrderSchema.safeParse(await c.req.json().catch(() => null));
+  // Saves the workspace's order, which repos with their own keep theirs through, or with `?repo=` gives
+  // that repo its own. The workspace's: owners and admins; a repo's: they too, and anyone who can push
+  // to the repo. Members can read either. Answers the new order and the one it replaced.
+  .put("/:id/runner-order", requireUser, requireMember, async (c) => {
+    const id = c.req.param("id");
+    const repo = await orderRepo(c.var.db, id, c.req.query("repo"));
+    await assertCanChangeOrder(c, repo);
+    const parsed = runnerOrderBody.safeParse(await c.req.json().catch(() => null));
     if (!parsed.success) {
       const issues = parsed.error.issues.map(({ path, message }) => ({ path, message }));
       throw new AppError("RUNNER_ORDER_INVALID", {
@@ -105,11 +144,52 @@ export const workspaceRoutes = new Hono<AppEnv>()
         details: { issues },
       });
     }
-    await c.var.db
-      .update(schema.workspace)
-      .set({ runnerOrder: JSON.stringify(parsed.data) })
-      .where(eq(schema.workspace.id, c.req.param("id")));
-    return c.json({ order: parsed.data, isDefault: false });
+    const { version, ...order } = parsed.data;
+    const previous = await presentRunnerOrder(await resolveRunnerOrder(c.var.db, id, repo?.id));
+    if (version !== undefined && version !== previous.version) {
+      throw new AppError("RUNNER_ORDER_CHANGED");
+    }
+    const stored = JSON.stringify(order);
+    const scope = repo ? "repository" : "workspace";
+    await changeSetting(c, id, {
+      // A repo taking the workspace's steps as its own is still a change.
+      previous: { scope: previous.scope, order: previous.order },
+      next: { scope, order },
+      write: () =>
+        repo
+          ? saveRepoRunnerOrder(c.var.db, id, repo, stored, c.var.user!.id)
+          : setWorkspace(c.var.db, id, { runnerOrder: stored }),
+      event: {
+        type: "settings.runner_order",
+        data: { steps: order.steps, ...(repo && { repository: repo.fullName }) },
+      },
+    });
+    return c.json({
+      ...(await presentRunnerOrder({ order, scope, stored })),
+      ...(repo && { repository: repo.fullName }),
+      previous: previous.order,
+    });
+  })
+  // Puts `?repo=` back on the workspace's order. The same people as saving the repo's order. Answers
+  // the order the repo walks now and the one it had.
+  .delete("/:id/runner-order", requireUser, requireMember, async (c) => {
+    const id = c.req.param("id");
+    const repo = await orderRepo(c.var.db, id, c.req.query("repo"));
+    if (!repo) throw new AppError("INVALID_REQUEST", { message: "Say which repo with ?repo=." });
+    await assertCanChangeOrder(c, repo);
+    const previous = await resolveRunnerOrder(c.var.db, id, repo.id);
+    await changeSetting(c, id, {
+      previous: previous.scope,
+      next: "workspace",
+      write: () => removeRepoRunnerOrder(c.var.db, id, repo.id),
+      event: { type: "settings.runner_order_removed", data: { repository: repo.fullName } },
+    });
+    const now = previous.scope === "workspace" ? previous : await resolveRunnerOrder(c.var.db, id);
+    return c.json({
+      ...(await presentRunnerOrder(now)),
+      repository: repo.fullName,
+      previous: previous.order,
+    });
   })
   // Which hosted providers' GitHub Apps the workspace's org has installed, for the Router's Add
   // step menu. Null when we can't tell: a personal account (GitHub only lists an org's apps), or
@@ -144,46 +224,146 @@ export const workspaceRoutes = new Hono<AppEnv>()
     }
   })
   // The Router page's setup panel: recent workflows, routed or not, and the hosted labels jobs
-  // ran on (src/router-setup.ts).
+  // ran on (src/reports/router-setup.ts).
   .get("/:id/router-setup", requireUser, requireMember, async (c) =>
     c.json(await routerSetup(c.var.db, c.req.param("id"))),
   )
   // Jobs whose relay hands their runner to the Router (`auto`), with the size and first provider
-  // set for each, and the workspace's default size (src/auto-jobs.ts).
+  // set for each, and the workspace's default size (src/routing/auto-jobs.ts).
+  // `canEdit` says whether the signed-in user may change the job: owners and admins may change
+  // any, and anyone who can push to the job's repo on GitHub may change its jobs.
   .get("/:id/auto-jobs", requireUser, requireMember, async (c) => {
     const id = c.req.param("id");
-    const [[row], jobs] = await Promise.all([
-      c.var.db
-        .select({ size: schema.workspace.autoSize })
-        .from(schema.workspace)
-        .where(eq(schema.workspace.id, id))
-        .limit(1),
-      listAutoJobs(c.var.db, id),
-    ]);
-    return c.json({ size: row?.size ?? DEFAULT_AUTO_SIZE, jobs });
+    const { db, role, user } = c.var;
+    const [row, jobs] = await Promise.all([settings(db, id), listAutoJobs(db, id)]);
+    const editable = canManage(role)
+      ? null
+      : await editableRepos(
+          c.env,
+          db,
+          user!.id,
+          jobs.map((job) => job.repositoryId),
+        );
+    return c.json({
+      size: row.autoSize,
+      jobs: jobs.map((job) => ({ ...job, canEdit: !editable || editable.has(job.repositoryId) })),
+    });
   })
   // The default size for auto jobs. Owners and admins, like the order.
   .put("/:id/auto-size", requireUser, requireMember, requireManager, async (c) => {
+    const id = c.req.param("id");
     const body = (await c.req.json().catch(() => null)) as { size?: unknown } | null;
     const parsed = autoSizeSchema.safeParse(body?.size);
     if (!parsed.success) throw new AppError("INVALID_REQUEST");
-    await c.var.db
-      .update(schema.workspace)
-      .set({ autoSize: parsed.data })
-      .where(eq(schema.workspace.id, c.req.param("id")));
-    return c.json({ size: parsed.data });
+    const size = parsed.data;
+    const previous = (await settings(c.var.db, id)).autoSize;
+    await changeSetting(c, id, {
+      previous,
+      next: size,
+      write: () => setWorkspace(c.var.db, id, { autoSize: size }),
+      event: { type: "settings.auto_size", data: { size } },
+    });
+    return c.json({ size, previous });
   })
-  // One auto job's size and the provider it tries first. Owners and admins, like the order.
-  .put("/:id/auto-jobs/:jobId", requireUser, requireMember, requireManager, async (c) => {
-    const parsed = autoJobSettingSchema.safeParse(await c.req.json().catch(() => null));
+  // One auto job's size and the provider it tries first; one left out stays as it is. Owners and
+  // admins, and anyone who can push to the job's repo: they could set its runner in the workflow
+  // file anyway.
+  .put("/:id/auto-jobs/:jobId", requireUser, requireMember, async (c) => {
+    const parsed = autoJobSettingSchema.partial().safeParse(await c.req.json().catch(() => null));
     const jobId = Number(c.req.param("jobId"));
     if (!parsed.success || !Number.isSafeInteger(jobId)) throw new AppError("INVALID_REQUEST");
-    const found = await setAutoJob(c.var.db, c.req.param("id"), jobId, parsed.data, c.var.user!.id);
+    const id = c.req.param("id");
+    const job = await getAutoJob(c.var.db, id, jobId);
+    if (!job) throw new AppError("NOT_FOUND");
+    const { size, first, repositoryId, repository, workflow, relayJob } = job;
+    await assertCanEditRepo(c, { id: repositoryId, fullName: repository }, "its jobs");
+    const previous = { size, first };
+    const next = { ...previous, ...parsed.data };
+    await changeSetting(c, id, {
+      previous,
+      next,
+      write: () => setAutoJob(c.var.db, id, jobId, next, c.var.user!.id),
+      event: { type: "settings.job_size", data: { repository, workflow, job: relayJob, ...next } },
+    });
+    return c.json({ ...next, previous });
+  })
+  // Which repos the org's Default runner group leaves out, for the "Route a repo" sheet
+  // (src/github/runner-group-check.ts). Null for a personal account, and when GitHub can't be read: the
+  // sheet works without it.
+  .get("/:id/runner-group-check", requireUser, requireMember, async (c) => {
+    const installation = schema.githubInstallation;
+    const [row] = await c.var.db
+      .select({
+        id: installation.id,
+        login: installation.accountLogin,
+        type: installation.accountType,
+      })
+      .from(installation)
+      .where(installedIn(c.req.param("id"), installation.id))
+      .limit(1);
+    if (!row) return c.json({ check: null });
+    try {
+      return c.json({ check: await runnerGroupCheck(c.env, c.var.db, row) });
+    } catch (error) {
+      console.error(
+        JSON.stringify({
+          msg: "runner group check failed",
+          installationId: row.id,
+          error: error instanceof Error ? error.message : String(error),
+        }),
+      );
+      return c.json({ check: null });
+    }
+  })
+  // Sizes picked in the Router page's "Route a repo" sheet for jobs that don't route yet, saved for
+  // their first pick (src/routing/auto-jobs.ts). Same people as one job's size: owners, admins, and anyone
+  // who can push to the repo. Answers the jobs it saved.
+  .put("/:id/planned-sizes", requireUser, requireMember, async (c) => {
+    const parsed = plannedSizesSchema.safeParse(await c.req.json().catch(() => null));
+    if (!parsed.success) throw new AppError("INVALID_REQUEST");
+    const id = c.req.param("id");
+    const { db, user } = c.var;
+    const repo = schema.githubRepository;
+    const [found] = await db
+      .select({ id: repo.id, fullName: repo.fullName })
+      .from(repo)
+      .where(
+        and(
+          eq(repo.id, parsed.data.repositoryId),
+          isNull(repo.removedAt),
+          installedIn(id, repo.installationId),
+        ),
+      )
+      .limit(1);
     if (!found) throw new AppError("NOT_FOUND");
-    return c.json(parsed.data);
+    await assertCanEditRepo(c, found, "its jobs");
+    const [planned, { userId, ...via }] = await Promise.all([
+      planAutoJobs(db, id, found, parsed.data.jobs, user!.id),
+      changeActor(c),
+    ]);
+    await Promise.all(
+      planned.map((job) =>
+        recordEvent(db, {
+          workspaceId: id,
+          actorUserId: userId,
+          type: "settings.job_size",
+          data: {
+            repository: found.fullName,
+            workflow: job.workflow,
+            job: job.relayJob,
+            size: job.size,
+            first: null,
+            ...via,
+          },
+        }),
+      ),
+    );
+    return c.json({
+      planned: planned.map(({ workflow, job, size }) => ({ workflow, job, size })),
+    });
   })
   // Whether the Router skips hosted provider runner types that stopped picking up jobs, and the
-  // ones it skips now (src/provider-health.ts).
+  // ones it skips now (src/routing/provider-health.ts).
   .get("/:id/provider-health", requireUser, requireMember, async (c) => {
     const id = c.req.param("id");
     const [[row], unhealthy] = await Promise.all([
@@ -196,6 +376,14 @@ export const workspaceRoutes = new Hono<AppEnv>()
     ]);
     return c.json({ enabled: row?.enabled ?? true, unhealthy });
   })
+  // The Router page's routing outcomes over ?from=&to= (src/reports/route-outcomes.ts), a day at a time
+  // from ?origin= (the reader's midnight), or a week at a time past a month.
+  .get("/:id/route-outcomes", requireUser, requireMember, async (c) => {
+    const query = c.req.query();
+    const window = requireWindow(query, { maxDays: RAW_RETENTION_DAYS, defaultDays: 7 });
+    const buckets = chartBuckets(window, query.origin);
+    return c.json(await routeOutcomes(c.var.db, c.req.param("id"), window, buckets));
+  })
   // Turns skipping on or off. Owners and admins, like the order.
   .put("/:id/provider-health", requireUser, requireMember, requireManager, async (c) => {
     const body = (await c.req.json().catch(() => null)) as { enabled?: unknown } | null;
@@ -207,39 +395,44 @@ export const workspaceRoutes = new Hono<AppEnv>()
     return c.json({ enabled: body.enabled });
   })
   // When the workspace turned off AI features (src/ai), or null while they're on (the default).
-  .get("/:id/ai", requireUser, requireMember, async (c) => {
-    const [row] = await c.var.db
-      .select({ offAt: schema.workspace.aiOffAt })
-      .from(schema.workspace)
-      .where(eq(schema.workspace.id, c.req.param("id")))
-      .limit(1);
-    return c.json({ offAt: row?.offAt ?? null });
-  })
+  .get("/:id/ai", requireUser, requireMember, async (c) =>
+    c.json({ offAt: (await settings(c.var.db, c.req.param("id"))).aiOffAt }),
+  )
   // Turns AI on or off. Owners and admins, like the order.
   .put("/:id/ai", requireUser, requireMember, requireManager, async (c) => {
     const body = (await c.req.json().catch(() => null)) as { enabled?: unknown } | null;
     if (typeof body?.enabled !== "boolean") throw new AppError("INVALID_REQUEST");
-    await setWorkspaceAi(c.var.db, c.req.param("id"), body.enabled, c.var.user!.id);
-    return c.json({ enabled: body.enabled });
+    const { enabled } = body;
+    const id = c.req.param("id");
+    const previous = !(await settings(c.var.db, id)).aiOffAt;
+    // Turning it off again would purge again and move its off time, so a repeat changes nothing.
+    await changeSetting(c, id, {
+      previous,
+      next: enabled,
+      write: () => setWorkspaceAi(c.var.db, id, enabled, c.var.user!.id),
+      event: { type: "settings.ai", data: { enabled } },
+    });
+    return c.json({ enabled, previous });
   })
-  // Automatic retries of jobs whose runner failed them (src/retries.ts). Off until turned on.
-  .get("/:id/retry-settings", requireUser, requireMember, async (c) => {
-    const [row] = await c.var.db
-      .select({ settings: schema.workspace.retrySettings })
-      .from(schema.workspace)
-      .where(eq(schema.workspace.id, c.req.param("id")))
-      .limit(1);
-    return c.json(readRetrySettings(row?.settings));
-  })
-  // Owners and admins, like the order.
+  // Automatic retries of jobs whose runner failed them (src/routing/retries.ts). Off until turned on.
+  .get("/:id/retry-settings", requireUser, requireMember, async (c) =>
+    c.json((await settings(c.var.db, c.req.param("id"))).retrySettings),
+  )
+  // Owners and admins, like the order. A setting left out stays as it is.
   .put("/:id/retry-settings", requireUser, requireMember, requireManager, async (c) => {
-    const parsed = retrySettingsSchema.safeParse(await c.req.json().catch(() => null));
+    const id = c.req.param("id");
+    const previous = (await settings(c.var.db, id)).retrySettings;
+    const body = (await c.req.json().catch(() => null)) as object | null;
+    const parsed = retrySettingsSchema.safeParse(body && { ...previous, ...body });
     if (!parsed.success) throw new AppError("INVALID_REQUEST");
-    await c.var.db
-      .update(schema.workspace)
-      .set({ retrySettings: JSON.stringify(parsed.data) })
-      .where(eq(schema.workspace.id, c.req.param("id")));
-    return c.json(parsed.data);
+    const next = parsed.data;
+    await changeSetting(c, id, {
+      previous,
+      next,
+      write: () => setWorkspace(c.var.db, id, { retrySettings: JSON.stringify(next) }),
+      event: { type: "settings.retries", data: next },
+    });
+    return c.json({ ...next, previous });
   })
   // "Try again now": jobs go to the runner type again. Owners and admins, like the order.
   .delete(
@@ -255,3 +448,50 @@ export const workspaceRoutes = new Hono<AppEnv>()
       return c.json({ cleared: true });
     },
   );
+
+// The workspace's routing settings, with defaults for the ones nobody set.
+async function settings(db: Db, workspaceId: string) {
+  const [row] = await db
+    .select({
+      autoSize: schema.workspace.autoSize,
+      retrySettings: schema.workspace.retrySettings,
+      aiOffAt: schema.workspace.aiOffAt,
+    })
+    .from(schema.workspace)
+    .where(eq(schema.workspace.id, workspaceId))
+    .limit(1);
+  return {
+    autoSize: row?.autoSize ?? DEFAULT_AUTO_SIZE,
+    retrySettings: readRetrySettings(row?.retrySettings),
+    aiOffAt: row?.aiOffAt ?? null,
+  };
+}
+
+function setWorkspace(
+  db: Db,
+  workspaceId: string,
+  values: Partial<typeof schema.workspace.$inferInsert>,
+) {
+  return db.update(schema.workspace).set(values).where(eq(schema.workspace.id, workspaceId));
+}
+
+// The repo a runner order request names with `?repo=owner/name` (any case), among the workspace's,
+// or undefined when it names none.
+async function orderRepo(db: Db, workspaceId: string, name: string | undefined) {
+  if (!name) return undefined;
+  const found = await findRepo(db, { workspaceId }, name);
+  if (!found) throw new AppError("NOT_FOUND", { message: `No repo ${name} in this workspace.` });
+  return found;
+}
+
+// The workspace's order is owners' and admins'. A repo's is theirs too, and anyone's who can push to
+// the repo, like its jobs' sizes: they could set its runners in the workflow files anyway.
+function assertCanChangeOrder(c: Context<AppEnv>, repo?: { id: number; fullName: string }) {
+  if (repo) return assertCanEditRepo(c, repo, "its runner order");
+  if (!canManage(c.var.role)) {
+    throw new AppError("FORBIDDEN", { message: "Only owners and admins can do that." });
+  }
+}
+
+// The PUT's body: the order, and optionally the version it was read at.
+const runnerOrderBody = runnerOrderSchema.extend({ version: z.string().optional() });

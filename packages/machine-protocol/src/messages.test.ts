@@ -11,6 +11,7 @@ import {
 const v = PROTOCOL_VERSION;
 
 describe("parseMachineMessage", () => {
+  // fixtures.test.ts round-trips every field. These are the bare messages an older CLI sends.
   const messages: MachineMessage[] = [
     {
       v,
@@ -20,63 +21,8 @@ describe("parseMachineMessage", () => {
       arch: "arm64",
       runnerVersion: "2.329.0",
     },
-    {
-      v,
-      type: "hello",
-      machineId: "mch_1",
-      os: "macos",
-      arch: "arm64",
-      runnerVersion: "2.329.0",
-      device: {
-        kind: "laptop",
-        model: "MacBook Pro",
-        modelId: "Mac15,9",
-        chip: "Apple M3 Pro",
-        cpuCores: 12,
-        memoryMb: 36864,
-        osVersion: "macOS 15.1",
-      },
-    },
     { v, type: "status", state: "idle" },
     { v, type: "status", state: "busy" },
-    { v, type: "status", state: "busy", running: 2 },
-    { v, type: "status", state: "idle", running: 0, runnerVersion: "2.330.0" },
-    {
-      v,
-      type: "hello",
-      machineId: "mch_1",
-      os: "linux",
-      arch: "x64",
-      runnerVersion: "2.329.0",
-      cliVersion: "0.7.0",
-      slots: 4,
-    },
-    {
-      v,
-      type: "hello",
-      machineId: "mch_1",
-      os: "linux",
-      arch: "arm64",
-      runnerVersion: "2.329.0",
-      vm: { cpus: 4, memoryGb: 8 },
-    },
-    { v, type: "job", routeId: "7f3k", state: "started" },
-    { v, type: "job", routeId: "7f3k", state: "failed", message: "run.sh exited with 1" },
-    {
-      v,
-      type: "job",
-      routeId: "7f3k",
-      state: "finished",
-      usage: {
-        cpuP95: 0.62,
-        cpuPeak: 0.9,
-        memoryP95Mb: 2100,
-        memoryPeakMb: 2400,
-        cpus: 4,
-        memoryMb: 8192,
-        samples: 30,
-      },
-    },
   ];
 
   it.each(messages)("round-trips $type", (message) => {
@@ -165,17 +111,6 @@ describe("parseMachineMessage", () => {
 });
 
 describe("parseGatewayMessage", () => {
-  const messages: GatewayMessage[] = [
-    { v, type: "run", routeId: "7f3k", jitConfig: "eyJydW5uZXIiOiIuLi4ifQ==" },
-    { v, type: "error", code: "version_mismatch", message: "update relayrunner" },
-    { v, type: "paused", paused: true, by: "Atticus" },
-    { v, type: "paused", paused: false, by: null },
-  ];
-
-  it.each(messages)("round-trips $type", (message) => {
-    expect(parseGatewayMessage(encodeMessage(message))).toEqual({ ok: true, message });
-  });
-
   it("rejects a run without a JIT config", () => {
     expect(
       parseGatewayMessage(JSON.stringify({ v, type: "run", routeId: "7f3k", jitConfig: "" })),

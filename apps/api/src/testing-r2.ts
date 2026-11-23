@@ -1,4 +1,4 @@
-// An in-memory R2 bucket for tests: the calls src/dead-letters.ts makes (put, get, head, list
+// An in-memory R2 bucket for tests: the calls src/ingest/dead-letters.ts makes (put, get, head, list
 // with prefix and cursor, delete), with text bodies and custom metadata.
 export function createTestR2(): R2Bucket {
   const objects = new Map<

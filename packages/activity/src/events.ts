@@ -1,4 +1,10 @@
-import { byRunnerKey, RETRY_RUNNERS, RUNNER_KEYS } from "@relayrunner/runner-order";
+import {
+  byRunnerKey,
+  RETRY_RUNNERS,
+  RUNNER_KEYS,
+  retrySettingsSchema,
+  runnerStepSchema,
+} from "@relayrunner/runner-order";
 import { z } from "zod";
 
 // The workspace's audit log: one append-only row per thing that happened, newest first on the
@@ -9,11 +15,24 @@ import { z } from "zod";
 // The machine's name when the event happened, so the log still reads after a rename or a delete.
 const machineData = { machineName: z.string() };
 
-// Whose jobs a machine takes (#237): `only_me` runs only jobs its owner started (the run and this
-// attempt), `anyone` runs any job from the workspace's private repos, bots included. A third value
-// (people the owner picks, #245) comes later.
+// Whose jobs a machine takes (#237): `only_me` runs only jobs of runs its owner started (their
+// first attempt when its owner started it too, and any re-run), `anyone` runs any job from the
+// workspace's private repos, bots included. A third value (people the owner picks, #245) comes
+// later.
 export const MACHINE_SHARING = ["only_me", "anyone"] as const;
 export type MachineSharing = (typeof MACHINE_SHARING)[number];
+
+// Where a person made a change: the dashboard, a machine's own CLI, or an agent through the MCP
+// server (apps/agents) with their sign-in. `agent` names the agent's app, such as "Claude".
+export const CHANGE_VIAS = ["dashboard", "cli", "agent"] as const;
+
+// Which finished jobs' logs a workspace sends to its telemetry endpoint (Settings → Telemetry).
+export const JOB_LOG_CHOICES = ["off", "failed", "all"] as const;
+export type JobLogChoice = (typeof JOB_LOG_CHOICES)[number];
+const changeData = {
+  via: z.enum(CHANGE_VIAS),
+  agent: z.string().optional(),
+};
 
 export const DISCONNECT_REASONS = ["closed", "timeout", "revoked", "error"] as const;
 export type DisconnectReason = (typeof DISCONNECT_REASONS)[number];
@@ -52,7 +71,7 @@ export const SKIP_REASONS = [
   // about two hours of the account's recent burn, which billing's lag could use up (#117).
   "minutes_runway",
   // A hosted provider's runner type that stopped picking up jobs: its last few jobs waited with no
-  // runner, so the Router skips it until a trial job starts (src/provider-health.ts).
+  // runner, so the Router skips it until a trial job starts (apps/api/src/routing/provider-health.ts).
   "provider_unhealthy",
   // A hosted provider step with a spend limit: the job's account has spent the limit on that
   // provider this month, at list prices.
@@ -60,8 +79,47 @@ export const SKIP_REASONS = [
   // The relay set the provider to `auto` and it has no runner as big as the job's size (in the
   // step's `vcpus`), such as GitHub-hosted past 2 vCPU.
   "no_size",
+  // A provider whose plan caps how many jobs start per window (Boat): the workspace's connection
+  // says a window has no starts left (in the step's `starts`), so the job would be paused.
+  "start_limit",
+  // A provider that holds jobs it won't run (Groundbox): the workspace's connection says the
+  // account is held or suspended, at its own spend cap, or out of free minutes and credit (in the
+  // step's `held`), so the job would wait there.
+  "provider_held",
+  // A hosted provider that can't run the job's repo: its GitHub App isn't installed on the job's
+  // account, or a job of this repo it was sent waited a minute with no runner, so the Router moved
+  // it (apps/api/src/routing/provider-takeover.ts) and skips the provider for the repo until a trial (in the step's
+  // `access`).
+  "provider_no_access",
 ] as const;
 export type SkipReason = (typeof SKIP_REASONS)[number];
+
+/**
+ * Why a skip moved a run further down the order than it would usually go, for the Router page's
+ * routing outcomes, or null for a skip that only says how the job is set up (a step it didn't set
+ * up, a public repo), which happens to every run of that job.
+ */
+export type MoveReason = "machines" | "limit" | "unhealthy";
+export const MOVE_REASONS: Record<SkipReason, MoveReason | null> = {
+  not_configured: null,
+  public_repo: null,
+  personal_account: null,
+  no_machine: "machines",
+  machine_paused: "machines",
+  machine_full: "machines",
+  machine_not_shared: null,
+  github_rate_limited: "machines",
+  too_many_labels: null,
+  not_provider_label: null,
+  minutes_limit: "limit",
+  minutes_runway: "limit",
+  provider_unhealthy: "unhealthy",
+  spend_limit: "limit",
+  no_size: null,
+  start_limit: "limit",
+  provider_held: "limit",
+  provider_no_access: "unhealthy",
+};
 
 // Why RelayRunner retried a job: its runner failed it, not its own steps.
 export const RETRY_KINDS = [
@@ -73,6 +131,10 @@ export const RETRY_KINDS = [
   "runner_lost",
   // The AI model was sure a re-run would pass (the retry_decision feature).
   "flaky",
+  // A hosted provider didn't pick the job up within a minute, so RelayRunner ended it and re-ran
+  // the relay, which picks another provider (apps/api/src/routing/provider-takeover.ts). Retried whatever the
+  // retry settings say.
+  "provider_missed",
 ] as const;
 export type RetryKind = (typeof RETRY_KINDS)[number];
 
@@ -86,6 +148,39 @@ export const MinutesUsage = z.object({
   burnRatePerHour: z.number().nullable(),
 });
 export type MinutesUsage = z.infer<typeof MinutesUsage>;
+
+// start_limit: the window of the provider's plan that ran out of job starts, and its size.
+export const StartWindow = z.enum(["minute", "hour", "day"]);
+export type StartWindow = z.infer<typeof StartWindow>;
+export const StartLimit = z.object({
+  window: StartWindow,
+  limit: z.number().nullable(),
+});
+export type StartLimit = z.infer<typeof StartLimit>;
+
+// provider_held: why the provider would hold the job.
+// - account_held, account_suspended: the provider says the account is held or suspended.
+// - spend_cap: the account reached the daily or monthly spend cap set in the provider itself.
+// - out_of_credit: on a free plan, with no free minutes or credit left.
+export const HeldReason = z.enum([
+  "account_held",
+  "account_suspended",
+  "spend_cap",
+  "out_of_credit",
+]);
+export type HeldReason = z.infer<typeof HeldReason>;
+export const ProviderHeld = z.object({ reason: HeldReason });
+export type ProviderHeld = z.infer<typeof ProviderHeld>;
+
+// provider_no_access: why the provider can't run the job's repo.
+// - not_installed: the provider's GitHub App isn't installed on the job's account.
+// - missed: a job of this repo waited a minute there with no runner; `retryAt` is when the next
+//   job may try it again.
+export const ProviderAccess = z.object({
+  cause: z.enum(["not_installed", "missed"]),
+  retryAt: z.number().optional(),
+});
+export type ProviderAccess = z.infer<typeof ProviderAccess>;
 
 // spend_limit: what the job's account spent on the provider this month, and the step's limit.
 export const SpendUsage = z.object({
@@ -145,6 +240,12 @@ export const RouteWalk = z.object({
       minutes: MinutesUsage.optional(),
       // spend_limit: the job's account's spend on the provider this month.
       spend: SpendUsage.optional(),
+      // start_limit: the plan window with no job starts left.
+      starts: StartLimit.optional(),
+      // provider_held: why the provider would hold the job.
+      held: ProviderHeld.optional(),
+      // provider_no_access: why the provider can't run the job's repo.
+      access: ProviderAccess.optional(),
       // provider_unhealthy: how many jobs in a row weren't picked up, and when the next trial goes.
       unhealthy: z.object({ misses: z.number(), retryAt: z.number() }).optional(),
       // no_size: the job's size, in vCPUs.
@@ -152,6 +253,8 @@ export const RouteWalk = z.object({
     }),
   ),
   notInOrder: z.array(z.enum(RUNNER_KEYS)),
+  // The walk was the repo's own runner order, not the workspace's (#709).
+  ownOrder: z.literal(true).optional(),
   ...relayInputsShape(),
 });
 export type RouteWalk = z.infer<typeof RouteWalk>;
@@ -187,15 +290,16 @@ export const ActivityEvent = z.discriminatedUnion("type", [
     data: z.object({ ...machineData, reason: z.enum(DISCONNECT_REASONS) }),
   }),
   // Someone paused the machine: it stays connected, but jobs skip it until it's resumed. Actor:
-  // the user who paused it from the dashboard, or none when its own CLI did (`via`).
+  // the user who paused it from the dashboard or through an agent, or none when its own CLI did
+  // (`via`).
   z.object({
     type: z.literal("machine.paused"),
-    data: z.object({ ...machineData, via: z.enum(["dashboard", "cli"]) }),
+    data: z.object({ ...machineData, ...changeData }),
   }),
   // Someone resumed a paused machine, so jobs can route to it again. Actor as for machine.paused.
   z.object({
     type: z.literal("machine.resumed"),
-    data: z.object({ ...machineData, via: z.enum(["dashboard", "cli"]) }),
+    data: z.object({ ...machineData, ...changeData }),
   }),
   // The machine's owner changed whose jobs it takes. Actor: the owner.
   z.object({
@@ -210,6 +314,69 @@ export const ActivityEvent = z.discriminatedUnion("type", [
   z.object({
     type: z.literal("machine.revoked"),
     data: z.object({ ...machineData, source: z.enum(["connect", "github"]).optional() }),
+  }),
+  // Someone changed a routing setting on the Router page or through an agent (`via`). Each holds the
+  // new value. Actor: that person.
+  // The workspace's runner order, or one repo's own (`repository`, #709).
+  z.object({
+    type: z.literal("settings.runner_order"),
+    data: z.object({
+      ...changeData,
+      steps: z.array(runnerStepSchema),
+      repository: z.string().optional(),
+    }),
+  }),
+  // A repo went back to the workspace's runner order.
+  z.object({
+    type: z.literal("settings.runner_order_removed"),
+    data: z.object({ ...changeData, repository: z.string() }),
+  }),
+  // The size, in vCPUs, of auto jobs with no size of their own.
+  z.object({
+    type: z.literal("settings.auto_size"),
+    data: z.object({ ...changeData, size: z.number() }),
+  }),
+  // One auto job's size and the provider it tries first; null is back to the default.
+  z.object({
+    type: z.literal("settings.job_size"),
+    data: z.object({
+      ...changeData,
+      repository: z.string(),
+      workflow: z.string().nullable(),
+      job: z.string(),
+      size: z.number().nullable(),
+      first: z.enum(RUNNER_KEYS).nullable(),
+    }),
+  }),
+  z.object({
+    type: z.literal("settings.retries"),
+    data: z.object({ ...changeData, ...retrySettingsSchema.shape }),
+  }),
+  z.object({
+    type: z.literal("settings.ai"),
+    data: z.object({ ...changeData, enabled: z.boolean() }),
+  }),
+  // Which finished jobs' logs go to the workspace's telemetry endpoint (Settings → Telemetry).
+  z.object({
+    type: z.literal("settings.job_logs"),
+    data: z.object({ ...changeData, logs: z.enum(JOB_LOG_CHOICES) }),
+  }),
+  // Which finished jobs' logs go to the workspace's bucket (Settings → Telemetry).
+  z.object({
+    type: z.literal("settings.log_bucket"),
+    data: z.object({ ...changeData, logs: z.enum(JOB_LOG_CHOICES) }),
+  }),
+  // Where the workspace's telemetry endpoint or log bucket sends to changed (`place`: the
+  // endpoint's host or the bucket's name in `name`), or its credentials did (`key`: the endpoint's
+  // headers or the bucket's access key).
+  z.object({
+    type: z.literal("settings.log_destination"),
+    data: z.object({
+      ...changeData,
+      target: z.enum(["endpoint", "bucket"]),
+      change: z.enum(["place", "key"]),
+      name: z.string(),
+    }),
   }),
   // Someone left the workspace (`left`): their GitHub sign-in can no longer see its installation
   // (#317). Actor: them. Older rows may also be an owner or admin removing them (`left: false`).
@@ -246,7 +413,7 @@ export const ActivityEvent = z.discriminatedUnion("type", [
       triggeredBy: GithubActor.nullable().optional(),
     }),
   }),
-  // RelayRunner re-ran a job whose runner failed it (src/retries.ts): the job's relay was re-run
+  // RelayRunner re-ran a job whose runner failed it (apps/api/src/routing/retries.ts): the job's relay was re-run
   // once the run finished, so the relay picked again and the job ran in the next attempt. Logged on
   // the failed job. `kind` is what went wrong, `runner` where the retry was set to go, and
   // `failedOn` the runner label or machine the job failed on.
@@ -276,7 +443,7 @@ export const ActivityEvent = z.discriminatedUnion("type", [
     }),
   }),
   // A free check ran with no Actions runner, so it stands in for an Actions job that would have
-  // billed a minute: the GitHub App's PR title check run (src/pr-title-check.ts), or one lint run
+  // billed a minute: the GitHub App's PR title check run (apps/api/src/checks/pr-title-check.ts), or one lint run
   // in the Checks App's container (src/durable-objects/lint-runner.ts), from a pull request push
   // or a native `checks/lint` job. `check` is "PR title" or "Lint"; `url` the check run's page on
   // GitHub, null for lint, which posts a run per tool. `pullRequest` is null for a lint run with no
@@ -299,7 +466,7 @@ export type ActivityEvent = z.infer<typeof ActivityEvent>;
 export type ActivityEventType = ActivityEvent["type"];
 
 /** The Activity page's filters: the part of the type before the dot. */
-export const ACTIVITY_FILTERS = ["job", "check", "machine", "member"] as const;
+export const ACTIVITY_FILTERS = ["job", "check", "machine", "member", "settings"] as const;
 export type ActivityFilter = (typeof ACTIVITY_FILTERS)[number];
 
 /**

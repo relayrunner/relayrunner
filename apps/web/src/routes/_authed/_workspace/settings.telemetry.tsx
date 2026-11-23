@@ -1,7 +1,10 @@
 import { createFileRoute } from "@tanstack/react-router";
-import { ArrowUpRightIcon, CheckIcon, PlusIcon, XIcon } from "lucide-react";
+import { ArrowUpRightIcon, PlusIcon, XIcon } from "lucide-react";
 import { type FormEvent, useState } from "react";
+import { ExportStatus } from "@/components/export-status";
+import { LogBucketSection } from "@/components/log-bucket";
 import { PageHeader } from "@/components/page-header";
+import { SignalRow } from "@/components/signal-row";
 import { DOCS_URL } from "@/components/site-footer";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
@@ -14,14 +17,17 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import { timeAgo } from "@/lib/activity";
 import { errorText } from "@/lib/api";
 import { authDisabled } from "@/lib/auth-client";
 import { canManage } from "@/lib/roles";
 import {
+  getLogBucket,
   getTelemetry,
+  type LogChoice,
   PRESETS,
   removeTelemetry,
+  sampleLogBucket,
+  LOGS_OF,
   sampleTelemetry,
   saveTelemetry,
   type Telemetry,
@@ -29,7 +35,11 @@ import {
 } from "@/lib/telemetry";
 
 export const Route = createFileRoute("/_authed/_workspace/settings/telemetry")({
-  loader: () => (authDisabled ? sampleTelemetry() : getTelemetry()),
+  loader: async () => {
+    if (authDisabled) return { telemetry: sampleTelemetry(), bucket: sampleLogBucket() };
+    const [telemetry, bucket] = await Promise.all([getTelemetry(), getLogBucket()]);
+    return { telemetry, bucket };
+  },
   component: TelemetrySettingsPage,
 });
 
@@ -49,65 +59,63 @@ const presetFor = (telemetry: Telemetry): PresetId =>
 
 function TelemetrySettingsPage() {
   const { current } = Route.useRouteContext();
-  const loaded: Telemetry = Route.useLoaderData();
-  const [telemetry, setTelemetry] = useState(loaded);
+  const loaded = Route.useLoaderData();
+  const [telemetry, setTelemetry] = useState(loaded.telemetry);
+  const [bucket, setBucket] = useState(loaded.bucket);
   const manager = canManage(current.role);
 
   return (
     <section>
       <PageHeader title="Telemetry">
-        Send each workflow run to your observability tool as a trace: the run, its jobs and their
-        steps, with where each job ran and how long it waited. Traces use the OpenTelemetry format,
-        so Honeycomb, Grafana, Axiom or your own Collector can read them.{" "}
+        Send traces and job logs to an OpenTelemetry endpoint, and keep job logs in your own bucket.{" "}
         <a
           href={`${DOCS_URL}/dashboard/telemetry`}
           className="inline-flex items-center gap-0.5 text-go hover:text-go-hover"
         >
-          What's in a trace
+          What gets sent
           <ArrowUpRightIcon aria-hidden className="size-3" />
         </a>
       </PageHeader>
-      <div className="grid max-w-3xl gap-4">
-        <Status telemetry={telemetry} />
-        {manager ? (
-          <ExportForm telemetry={telemetry} onChange={setTelemetry} />
-        ) : (
+      <div className="grid max-w-3xl gap-8">
+        <div className="grid gap-2">
+          <h2 className="text-base font-medium">OpenTelemetry endpoint</h2>
           <p className="text-sm text-muted-foreground">
-            {telemetry.configured
-              ? `Traces go to ${telemetry.endpoint}. An owner or admin can change this.`
-              : "An owner or admin can set up telemetry."}
+            Honeycomb, Grafana, Axiom or your own Collector. Traces and job logs both go to this
+            endpoint, with the same headers.
           </p>
-        )}
+          <Status telemetry={telemetry} />
+          {manager ? (
+            <ExportForm telemetry={telemetry} onChange={setTelemetry} />
+          ) : (
+            <p className="text-sm text-muted-foreground">
+              {telemetry.configured
+                ? `Telemetry goes to ${telemetry.endpoint}. An owner or admin can change this.`
+                : "An owner or admin can set up telemetry."}
+            </p>
+          )}
+        </div>
+        <LogBucketSection bucket={bucket} onChange={setBucket} manager={manager} />
       </div>
     </section>
   );
 }
 
+/** "Sending traces and failed jobs' logs.", or null when neither is on. */
+function sending({ enabled, logs }: Pick<Telemetry, "enabled" | "logs">) {
+  const parts = [enabled && "traces", logs !== "off" && LOGS_OF[logs]].filter(Boolean);
+  return parts.length ? `Sending ${parts.join(" and ")}.` : null;
+}
+
 function Status({ telemetry }: { telemetry: Telemetry }) {
   if (!telemetry.configured) return null;
-  const { enabled, lastSentAt, error, failingSince, pausedAt } = telemetry;
   return (
-    <div role="status" className="grid gap-1 text-sm">
-      {pausedAt ? (
-        <p className="text-destructive">
-          Paused {timeAgo(pausedAt)} after three days of errors. Fix the settings and save to start
-          again.
-        </p>
-      ) : !enabled ? (
-        <p className="text-muted-foreground">Off. Runs aren't being sent.</p>
-      ) : (
-        <p className="flex items-center gap-1 text-muted-foreground">
-          <CheckIcon aria-hidden className="size-4 text-go" />
-          {lastSentAt ? `On. Last sent ${timeAgo(lastSentAt)}.` : "On. Waiting for the next run."}
-        </p>
-      )}
-      {error && (
-        <p className="text-destructive">
-          {failingSince ? `Failing since ${timeAgo(failingSince)}: ` : "Last error: "}
-          {error}
-        </p>
-      )}
-    </div>
+    <ExportStatus
+      status={telemetry}
+      on={sending(telemetry)}
+      off="Off. Nothing is being sent."
+      sent="Last sent"
+      waiting="Waiting for the next run."
+    />
   );
 }
 
@@ -125,6 +133,7 @@ function ExportForm({
   const [headers, setHeaders] = useState(() => rowsFrom(telemetry));
   const [serviceName, setServiceName] = useState(telemetry.serviceName);
   const [enabled, setEnabled] = useState(telemetry.configured ? telemetry.enabled : true);
+  const [logs, setLogs] = useState<LogChoice>(telemetry.logs);
   const [pending, setPending] = useState(false);
   const [notice, setNotice] = useState<{ ok: boolean; text: string } | null>(null);
   const help = PRESETS.find((p) => p.id === preset)?.help;
@@ -167,6 +176,7 @@ function ExportForm({
           .map((h) => ({ name: h.name.trim(), ...(h.value.trim() && { value: h.value.trim() }) })),
         serviceName,
         enabled,
+        logs,
       });
       onChange(saved);
       setHeaders(rowsFrom(saved));
@@ -180,18 +190,25 @@ function ExportForm({
       onChange(next);
       setNotice(
         sent.ok
-          ? { ok: true, text: "Sent a test trace named “RUN RelayRunner test”." }
+          ? {
+              ok: true,
+              text:
+                next.logs === "off"
+                  ? "Sent a test trace named “RUN RelayRunner test”."
+                  : "Sent a test trace named “RUN RelayRunner test” and a log line “RelayRunner test log”.",
+            }
           : { ok: false, text: `The endpoint refused it: ${sent.error}` },
       );
     });
 
   const remove = () => {
-    if (!window.confirm("Stop sending traces and forget these settings?")) return;
+    if (!window.confirm("Stop sending telemetry and forget these settings?")) return;
     void run(async () => {
       const removed = await removeTelemetry();
       onChange(removed);
       choosePreset(PRESETS[0].id);
       setServiceName(removed.serviceName);
+      setLogs(removed.logs);
     });
   };
 
@@ -278,7 +295,7 @@ function ExportForm({
 
           <Field
             label="Service name"
-            hint="How your tool names these traces' service."
+            hint="The service name your tool shows for these traces and logs."
             className="max-w-xs"
           >
             <Input
@@ -289,15 +306,41 @@ function ExportForm({
             />
           </Field>
 
-          <label className="flex cursor-pointer items-center gap-2">
-            <input
-              type="checkbox"
-              className="size-4 accent-[var(--color-go)]"
-              checked={enabled}
-              onChange={(e) => setEnabled(e.target.checked)}
-            />
-            Send a trace for every run
-          </label>
+          <div className="grid gap-4 border-t pt-4">
+            <h3 className="font-medium">What to send</h3>
+            <SignalRow
+              label="Traces"
+              description="Each run, its jobs and their steps, with where each job ran and how long it waited."
+            >
+              <Select
+                value={enabled ? "on" : "off"}
+                onValueChange={(value) => setEnabled(value === "on")}
+              >
+                <SelectTrigger aria-label="Traces" className="w-40">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="off">Don't send</SelectItem>
+                  <SelectItem value="on">Every run</SelectItem>
+                </SelectContent>
+              </Select>
+            </SignalRow>
+            <SignalRow
+              label="Job logs"
+              description="Each line under its step, when the job finishes. Up to 20 MB a job, and no copy is kept."
+            >
+              <Select value={logs} onValueChange={(value) => setLogs(value as LogChoice)}>
+                <SelectTrigger aria-label="Job logs" className="w-40">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="off">Don't send</SelectItem>
+                  <SelectItem value="failed">Failed jobs</SelectItem>
+                  <SelectItem value="all">Every job</SelectItem>
+                </SelectContent>
+              </Select>
+            </SignalRow>
+          </div>
 
           <div className="flex flex-wrap gap-2">
             <Button type="submit" disabled={pending || !endpoint.trim()}>
