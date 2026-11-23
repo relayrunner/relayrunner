@@ -1,14 +1,7 @@
 // Self-hosted runners on GitHub: one-job (JIT) runner configs, runner state and labels, and an org's
 // runner groups.
 
-import {
-  deleteIfPresent,
-  getJson,
-  getJsonOrNull,
-  githubFetch,
-  listAll,
-  sendJson,
-} from "./github-api.ts";
+import { deleteIfPresent, getJson, getJsonOrNull, listAll, sendJson } from "./github-api.ts";
 
 // The org's "Default" runner group. GitHub always gives it id 1.
 export const DEFAULT_RUNNER_GROUP_ID = 1;
@@ -40,28 +33,16 @@ export async function generateJitConfig(
   runner: { name: string; labels: string[]; runnerGroupId?: number },
 ) {
   const path = `${runnersPath(scope)}/generate-jitconfig`;
-  // Refusals keep GitHub's status for repo-runner.ts to fall back on, so nothing is `allow`ed out.
-  const response = await githubFetch(token, path, {
-    method: "POST",
-    allow: "any",
-    body: {
-      name: runner.name,
-      labels: runner.labels,
-      runner_group_id: (scope.kind === "org" && runner.runnerGroupId) || DEFAULT_RUNNER_GROUP_ID,
-      work_folder: "_work",
-    },
-  });
-  if (!response.ok)
-    throw Object.assign(
-      new Error(
-        `POST ${path} failed with ${response.status}: ${(await response.text()).slice(0, 300)}`,
-      ),
-      { status: response.status },
-    );
-  const body = (await response.json()) as {
+  // A refusal's status (GitHubError) is what repo-runner.ts falls back on.
+  const body = await sendJson<{
     runner: { id: number; labels?: { name: string }[] };
     encoded_jit_config: string;
-  };
+  }>(token, "POST", path, {
+    name: runner.name,
+    labels: runner.labels,
+    runner_group_id: (scope.kind === "org" && runner.runnerGroupId) || DEFAULT_RUNNER_GROUP_ID,
+    work_folder: "_work",
+  });
   return {
     runnerId: body.runner.id,
     // The labels GitHub gave the runner, which may include defaults beyond the ones we asked for.

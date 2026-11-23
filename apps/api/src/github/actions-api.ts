@@ -1,7 +1,7 @@
 // Workflow jobs and runs on GitHub: their state, steps, logs and annotations, and re-running,
 // cancelling and dispatching them.
 
-import { getJson, getJsonOrNull, githubFetch, listAll } from "./github-api.ts";
+import { getJson, getJsonOrNull, githubFetch, listAll, refusalMessage } from "./github-api.ts";
 
 /** A workflow job as GitHub has it now, or null when it's gone. */
 async function workflowJob<T>(token: string, repo: string, jobId: number): Promise<T | null> {
@@ -95,10 +95,7 @@ export async function runAttemptTriggeringActor(
 async function postForMessage(token: string, path: string) {
   const response = await githubFetch(token, path, { method: "POST", allow: "any" });
   if (response.ok) return null;
-  const body = (await response.json().catch(() => null)) as { message?: unknown } | null;
-  return typeof body?.message === "string"
-    ? `${response.status}: ${body.message}`
-    : `POST ${path} failed with ${response.status}`;
+  return `${response.status}: ${await refusalMessage(response, `POST ${path} failed`)}`;
 }
 
 /**
@@ -158,14 +155,12 @@ export async function jobLogTail(
   jobId: number,
   maxBytes: number,
 ): Promise<string | null> {
-  const path = `/repos/${repo}/actions/jobs/${jobId}/logs`;
-  const response = await githubFetch(token, path, { allow: [404, 410] });
-  if (response.status === 404 || response.status === 410) return null;
-  if (!response.body) throw new Error(`GET ${path} had no body`);
+  const log = await jobLog(token, repo, jobId);
+  if (!log) return null;
   // Keep the last chunks that cover maxBytes, dropping older ones as newer arrive.
   const chunks: Uint8Array[] = [];
   let size = 0;
-  const reader = response.body.getReader();
+  const reader = log.getReader();
   for (;;) {
     const { done, value } = await reader.read();
     if (done) break;
@@ -214,13 +209,13 @@ export async function dispatchWorkflow(
     body: { ref, return_run_details: true },
     allow: "any",
   });
-  const body = (await response.json().catch(() => null)) as Record<string, unknown> | null;
   if (!response.ok)
     return {
       ok: false,
       status: response.status,
-      message: typeof body?.message === "string" ? body.message : `HTTP ${response.status}`,
+      message: await refusalMessage(response, `HTTP ${response.status}`),
     };
+  const body = (await response.json().catch(() => null)) as Record<string, unknown> | null;
   const runId = Number(body?.workflow_run_id ?? body?.id);
   return { ok: true, runId: Number.isSafeInteger(runId) && runId > 0 ? runId : null };
 }
@@ -237,12 +232,12 @@ export async function findDispatchedRun(
   since: number,
 ): Promise<number | null> {
   const file = encodeURIComponent(workflowPath.split("/").pop() ?? workflowPath);
-  const body = (await getJson(
+  const body = await getJson<{
+    workflow_runs?: { id: number; created_at: string; actor?: { type?: string } | null }[];
+  }>(
     token,
     `/repos/${repo}/actions/workflows/${file}/runs?event=workflow_dispatch&branch=${encodeURIComponent(branch)}&per_page=10`,
-  )) as {
-    workflow_runs?: { id: number; created_at: string; actor?: { type?: string } | null }[];
-  };
+  );
   const run = (body.workflow_runs ?? [])
     .filter((each) => Date.parse(each.created_at) >= since - 5_000 && each.actor?.type === "Bot")
     .sort((a, b) => Date.parse(b.created_at) - Date.parse(a.created_at))[0];

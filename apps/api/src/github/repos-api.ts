@@ -132,7 +132,7 @@ export async function repoFile(token: string, repo: string, path: string): Promi
 
 /** The repo's default branch (Metadata read). */
 export async function repoDefaultBranch(token: string, repo: string): Promise<string> {
-  const body = (await getJson(token, `/repos/${repo}`)) as { default_branch?: string };
+  const body = await getJson<{ default_branch?: string }>(token, `/repos/${repo}`);
   if (!body.default_branch) throw new Error(`GET /repos/${repo} had no default_branch`);
   return body.default_branch;
 }

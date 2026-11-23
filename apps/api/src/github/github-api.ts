@@ -12,7 +12,10 @@ interface GitHubRequest {
   body?: unknown;
   accept?: string;
   etag?: string;
-  /** Statuses answered rather than thrown, such as 404 for "gone". `"any"` throws for none. */
+  /**
+   * Statuses answered rather than thrown, such as 404 for "gone". `"any"` throws for none, for a
+   * call whose refusal is a result (refusalMessage) rather than an error.
+   */
   allow?: number[] | "any";
 }
 
@@ -43,14 +46,20 @@ export async function getJson<T>(token: string, path: string): Promise<T> {
   return (await (await githubFetch(token, path)).json()) as T;
 }
 
-/** A GET's body, or null when GitHub answers 404 (or another status in `gone`). */
-export async function getJsonOrNull<T>(token: string, path: string, gone = [404]) {
-  const response = await githubFetch(token, path, { allow: gone });
-  return gone.includes(response.status) ? null : ((await response.json()) as T);
+/** A GET's body, or null when GitHub answers 404. */
+export async function getJsonOrNull<T>(token: string, path: string) {
+  const response = await githubFetch(token, path, { allow: [404] });
+  return response.status === 404 ? null : ((await response.json()) as T);
 }
 
-export async function sendJson<T>(token: string, method: string, path: string, body: unknown) {
+export async function sendJson<T>(token: string, method: string, path: string, body?: unknown) {
   return (await (await githubFetch(token, path, { method, body })).json()) as T;
+}
+
+/** GitHub's own words for a refused call, else `fallback`. */
+export async function refusalMessage(response: Response, fallback: string) {
+  const body = (await response.json().catch(() => null)) as { message?: unknown } | null;
+  return typeof body?.message === "string" ? body.message : fallback;
 }
 
 /** A DELETE where already gone (404) counts as done. */
@@ -65,14 +74,15 @@ export const MAX_LISTED = 1000;
 // without one. Capped at MAX_LISTED, far more runners or groups than an org that adds runners by
 // hand has.
 // `cache` false skips the ETag cache, for pages read once that would push out ones polled often.
+// `max` lifts the cap for lists that must be whole, such as every installation of the App.
 export async function listAll<T>(
   token: string,
   path: string,
   key?: string,
-  { cache = true } = {},
+  { cache = true, max = MAX_LISTED } = {},
 ): Promise<T[]> {
   const items: T[] = [];
-  for (let page = 1; page <= MAX_LISTED / 100; page++) {
+  for (let page = 1; page <= max / 100; page++) {
     const separator = path.includes("?") ? "&" : "?";
     const pagePath = `${path}${separator}per_page=100&page=${page}`;
     const body = (await (cache ? getPage(token, pagePath) : getJson(token, pagePath))) as Record<
@@ -116,13 +126,20 @@ async function getPage(token: string, path: string): Promise<unknown> {
   return body;
 }
 
-/** Thrown when GitHub refuses a call for the token's permissions (403) or can't see it (404). */
-export class GitHubAccessError extends Error {
+/** A failed GitHub call, with GitHub's status. A rate limit is GitHubRateLimitError instead. */
+export class GitHubError extends Error {
   constructor(
-    message: string,
     readonly status: number,
+    message: string,
   ) {
     super(message);
+  }
+}
+
+/** Thrown when GitHub refuses a call for the token's permissions (403) or can't see it (404). */
+export class GitHubAccessError extends GitHubError {
+  constructor(message: string, status: number) {
+    super(status, message);
   }
 }
 
@@ -151,12 +168,12 @@ function retryAfterSeconds(response: Response): number | undefined {
 }
 
 /** The error for a failed GitHub call: rate limited, refused (403 or 404), or any other. */
-export async function githubError(method: string, path: string, response: Response) {
+async function githubError(method: string, path: string, response: Response) {
   const message = `${method} ${path} failed with ${response.status}: ${(await response.text()).slice(0, 300)}`;
   if (isRateLimited(response)) return new GitHubRateLimitError(message, response);
   if (response.status === 403 || response.status === 404)
     return new GitHubAccessError(message, response.status);
-  return new Error(message);
+  return new GitHubError(response.status, message);
 }
 
 // GitHub answers a spent limit with 429, or with 403 and either no calls remaining or a

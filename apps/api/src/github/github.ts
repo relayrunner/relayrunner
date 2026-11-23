@@ -1,7 +1,7 @@
 // Talking to GitHub on behalf of a signed-in user, and the signed `state` that carries a
 // workspace through the GitHub App install page.
 
-import { githubFetch } from "./github-api.ts";
+import { listAll } from "./github-api.ts";
 
 // The slice of a GitHub App installation the gateway stores. Both GET /user/installations and
 // installation webhooks send this shape.
@@ -15,35 +15,11 @@ export interface GitHubInstallation {
 // Installations of this GitHub App that the user's token can see: accounts the user owns or
 // administers, or where they can reach a repo the App was given. Following the user's token is
 // what proves an installation_id from a query string really is theirs.
-export async function listUserInstallations(token: string): Promise<GitHubInstallation[]> {
-  const installations: GitHubInstallation[] = [];
-  for (let page = 1; ; page += 1) {
-    // Callers read the status off GitHubError, so nothing is thrown before that.
-    const response = await githubFetch(token, `/user/installations?per_page=100&page=${page}`, {
-      allow: "any",
-    });
-    if (!response.ok)
-      throw new GitHubError(
-        response.status,
-        `GET /user/installations failed with ${response.status}`,
-      );
-    const body = (await response.json()) as {
-      total_count: number;
-      installations: GitHubInstallation[];
-    };
-    installations.push(...body.installations);
-    if (body.installations.length < 100 || installations.length >= body.total_count)
-      return installations;
-  }
-}
-
-export class GitHubError extends Error {
-  constructor(
-    readonly status: number,
-    message: string,
-  ) {
-    super(message);
-  }
+export function listUserInstallations(token: string) {
+  return listAll<GitHubInstallation>(token, "/user/installations", "installations", {
+    cache: false,
+    max: Infinity,
+  });
 }
 
 // The App's install page with no state: a signup, where there's no workspace or user to name yet.

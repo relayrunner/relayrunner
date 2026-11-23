@@ -2,7 +2,7 @@
 // and the token's rate limits. Signed-in-user calls live in github.ts; the request core in
 // github-api.ts.
 
-import { deleteIfPresent, getJson, getJsonOrNull, sendJson } from "./github-api.ts";
+import { deleteIfPresent, getJson, getJsonOrNull, listAll, sendJson } from "./github-api.ts";
 
 /**
  * Import the App's private key for RS256. Accepts PKCS#8 (`BEGIN PRIVATE KEY`) or GitHub's own
@@ -71,7 +71,6 @@ async function mintInstallationToken(jwt: string, installationId: number) {
     jwt,
     "POST",
     `/app/installations/${installationId}/access_tokens`,
-    undefined,
   );
   // GitHub's tokens last an hour; assume that if it doesn't say.
   const expiresAt = body.expires_at ? Date.parse(body.expires_at) : Date.now() + 60 * 60_000;
@@ -132,13 +131,12 @@ export async function repoInstallationId(jwt: string, repo: string): Promise<num
  * read permission, which the App asks for (#335).
  */
 export async function orgAppSlugs(token: string, org: string) {
-  const slugs: string[] = [];
-  for (let page = 1; ; page++) {
-    const path = `/orgs/${encodeURIComponent(org)}/installations?per_page=100&page=${page}`;
-    const { installations } = await getJson<{ installations: { app_slug: string }[] }>(token, path);
-    slugs.push(...installations.map((installation) => installation.app_slug));
-    if (installations.length < 100) return slugs;
-  }
+  const installations = await listAll<{ app_slug: string }>(
+    token,
+    `/orgs/${encodeURIComponent(org)}/installations`,
+    "installations",
+  );
+  return installations.map((installation) => installation.app_slug);
 }
 
 /** An installation as GET /app/installations lists it. */
@@ -153,15 +151,10 @@ export interface AppInstallation {
 
 /** Every installation of the App, from its JWT. */
 export async function listAppInstallations(jwt: string) {
-  const installations: AppInstallation[] = [];
-  for (let page = 1; ; page++) {
-    const batch = await getJson<AppInstallation[]>(
-      jwt,
-      `/app/installations?per_page=100&page=${page}`,
-    );
-    installations.push(...batch);
-    if (batch.length < 100) return installations;
-  }
+  return listAll<AppInstallation>(jwt, "/app/installations", undefined, {
+    cache: false,
+    max: Infinity,
+  });
 }
 
 /** One installation of the App, from its JWT. Null when GitHub has no such installation. */
