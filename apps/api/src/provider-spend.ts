@@ -6,11 +6,11 @@
  * the GitHub minutes limit (src/minutes-rule.ts). Jobs still running aren't counted until they
  * finish, so a busy month can go a little past the limit.
  */
+import { billedMinutes } from "./runner-rates.ts";
 import { hasListPrices, type HostedProviderId, listRate } from "@relayrunner/providers";
 import { and, eq, sql } from "drizzle-orm";
 import { cycleStart } from "./actions-billing.ts";
 import { type Db, schema } from "./db/index.ts";
-import { billedMinutes } from "./job-timings.ts";
 import { loadPriceBook } from "./prices.ts";
 import type { FinishedJob } from "./runner-waits.ts";
 

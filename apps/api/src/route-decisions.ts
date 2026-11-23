@@ -1,8 +1,8 @@
+import { recordEvent } from "./activity-log.ts";
 import { type GithubActor, RouteWalk } from "@relayrunner/activity";
 import { HOSTED_PROVIDER_IDS } from "@relayrunner/providers";
 import { relayInputs } from "@relayrunner/runner-order";
 import { and, desc, eq, inArray, lt } from "drizzle-orm";
-import { recordEvent } from "./activity.ts";
 import { type Db, schema } from "./db/index.ts";
 import type { JobContext, RouteDecision } from "./routing.ts";
 

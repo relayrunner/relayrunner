@@ -1,7 +1,7 @@
+import { DAY_MS } from "./time.ts";
 import { beforeAll, expect, test } from "vitest";
 import { createDb, schema } from "./db/index.ts";
 import type { Env } from "./env.ts";
-import { DAY_MS } from "./job-timings.ts";
 import { purgeOldActivity } from "./retention.ts";
 import * as testing from "./testing.ts";
 

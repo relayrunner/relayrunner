@@ -1,7 +1,8 @@
+import { recordEvent } from "./activity-log.ts";
 import type { ActivityPage } from "@relayrunner/activity";
 import { eq } from "drizzle-orm";
 import { beforeAll, describe, expect, test } from "vitest";
-import { recordEvent, recordMachineEvent } from "./activity.ts";
+import { recordMachineEvent } from "./activity.ts";
 import { createDb, schema } from "./db/index.ts";
 import type { Env } from "./env.ts";
 import { BOOKMARK_COOKIE } from "./middleware/d1-session.ts";

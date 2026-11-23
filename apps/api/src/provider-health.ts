@@ -9,11 +9,11 @@
 // The 15-minute sweep (sweepProviderHealth) reads each workspace's recent jobs on hosted provider
 // labels and hands them to the workspace's Router, which keeps the state (updateHealth).
 
+import { MISSED_AFTER_MS } from "./job-sql.ts";
 import { hostedProviderOf, type HostedProviderId } from "@relayrunner/providers";
 import { and, eq, gte, isNull, or, sql } from "drizzle-orm";
 import { createDb, schema } from "./db/index.ts";
 import type { Env } from "./env.ts";
-import { MISSED_AFTER_MS } from "./job-times.ts";
 import type { Unhealthy } from "./routing.ts";
 import { errorMessage } from "./errors.ts";
 

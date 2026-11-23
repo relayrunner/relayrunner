@@ -34,7 +34,7 @@ import { recordOverage } from "./activity.ts";
 import { createAuth } from "./auth.ts";
 import { createDb, type Db, prepare, schema } from "./db/index.ts";
 import type { Env } from "./env.ts";
-import { enqueueInstallationTasks } from "./installation-tasks.ts";
+import { enqueueInstallationTasks } from "./installation-queue.ts";
 import { linkEnterpriseOrganizations } from "./enterprise.ts";
 import { userGitHubToken } from "./installations.ts";
 import { spendAppToken, spendInstallationId } from "./spend-app.ts";

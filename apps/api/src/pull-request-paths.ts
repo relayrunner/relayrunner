@@ -8,6 +8,7 @@
  * days of pull requests catches up over a few hours instead of spending the installation's rate
  * limit at once. Only names are kept, folded into areas: never a file's contents.
  */
+import { DAY_MS, LIVE_DAYS } from "./time.ts";
 import { and, desc, eq, gte, isNotNull, sql } from "drizzle-orm";
 import { type Db, schema } from "./db/index.ts";
 import type { Env } from "./env.ts";
@@ -17,8 +18,6 @@ import {
   GitHubRateLimitError,
   pullRequestFiles,
 } from "./github-app.ts";
-import { DAY_MS } from "./job-timings.ts";
-import { liveDays } from "./signals.ts";
 import { errorMessage } from "./errors.ts";
 
 const run = schema.workflowRun;
@@ -89,7 +88,7 @@ export async function syncPullRequestPaths(
   now = Date.now(),
 ) {
   // The days the rollup counts single jobs over.
-  const since = new Date(now - liveDays() * DAY_MS);
+  const since = new Date(now - LIVE_DAYS * DAY_MS);
   // Each pull request's newest run: SQLite takes the bare columns from the max() row.
   const newest = db
     .select({

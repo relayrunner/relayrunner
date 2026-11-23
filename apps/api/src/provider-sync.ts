@@ -4,13 +4,13 @@
 // one ended, with an overlap for jobs that were still running, and replaces the rows it sees. A
 // failure is recorded on the connection for the dashboard rather than thrown: the next hour tries
 // again.
+import { purgeBefore } from "./purge.ts";
 import { isBillingProvider, type BillingProviderId } from "@relayrunner/providers";
 import { and, eq, isNull, ne, or, type SQL } from "drizzle-orm";
 import type { SQLiteColumn } from "drizzle-orm/sqlite-core";
 import { createDb, type Db, schema } from "./db/index.ts";
 import type { Env } from "./env.ts";
-import { enqueueInstallationTasks } from "./installation-tasks.ts";
-import { purgeBefore } from "./job-timings.ts";
+import { enqueueInstallationTasks } from "./installation-queue.ts";
 import { blacksmithSyncer } from "./durable-objects/blacksmith-syncer.ts";
 import {
   type AdapterContext,

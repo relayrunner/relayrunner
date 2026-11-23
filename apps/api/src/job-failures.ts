@@ -7,6 +7,8 @@
  * and reads stop while the installation is low on API calls. GitHub masks secrets in logs before
  * it stores them.
  */
+import { environmentFor } from "./environments.ts";
+import { inWorkspace, PICK } from "./job-sql.ts";
 import { and, eq, inArray, type SQL, sql } from "drizzle-orm";
 import { type Db, schema } from "./db/index.ts";
 import type { Env } from "./env.ts";
@@ -21,7 +23,6 @@ import {
 import { FAILED_CONCLUSIONS } from "./job-counts.ts";
 import { Recent } from "./recent.ts";
 import { userGitHubId } from "./memberships.ts";
-import { environmentFor, inWorkspace, PICK } from "./job-times.ts";
 import { type FailureCause, failureCauseOf } from "./ai/failure-cause.ts";
 
 const timing = schema.jobTiming;

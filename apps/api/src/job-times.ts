@@ -6,13 +6,11 @@
 // Database cost: the summary is one statement, a range of job_timing_installation_idx (the
 // workspace's installations, completed in the window), never a scan of the table. The detail is
 // a range of job_timing_job_idx. job-times.test.ts checks the rows D1 reads.
+import { DAY_MS } from "./time.ts";
 import type { JobUsage } from "@relayrunner/machine-protocol";
-import { and, eq, gte, inArray, isNotNull, isNull, lt, type SQL, sql } from "drizzle-orm";
-import type { SQLiteColumn } from "drizzle-orm/sqlite-core";
-import { runnerSize } from "@relayrunner/providers";
+import { and, eq, gte, isNotNull, isNull, lt, type SQL, sql } from "drizzle-orm";
 import type {
   Confidence,
-  DeviceKind,
   Environment,
   EnvironmentSummary,
   JobRow,
@@ -20,10 +18,19 @@ import type {
   Stat,
   WorkflowRow,
 } from "@relayrunner/api-types";
-import { INSTANCE, usesContainerRunner } from "./container-runner.ts";
 import { type Db, schema } from "./db/index.ts";
+import {
+  before,
+  inWorkspace,
+  matrixName,
+  NOT_PICKED_UP,
+  OK,
+  RAN,
+  SAMPLES,
+  windowWhere,
+} from "./job-sql.ts";
+import { environmentFor, MACHINE, nameMachines } from "./environments.ts";
 import { type Phase, phaseOf } from "./step-phases.ts";
-import { DAY_MS, GITHUB_HOSTED_GROUP, RUNNER_LABELS, runnerClass } from "./job-timings.ts";
 import {
   hasTrend,
   lastDays,
@@ -32,12 +39,8 @@ import {
   windowDays,
   withPrior,
 } from "./report-window.ts";
-import { cloudProviderFor, isGitHubHostedLabel } from "./cloud-providers.ts";
 import { inWorkspace as machineInWorkspace } from "./machines.ts";
-import { currentProviders } from "./provider-catalog.ts";
-import { routeIdFromLabels } from "./routing.ts";
 import { jobTypeKey, readJobTypes } from "./ai/job-type.ts";
-import { RELAYRUNNER_LABEL } from "./labels.ts";
 
 // The report's shapes live in @relayrunner/api-types, shared with the dashboard.
 export type {
@@ -62,132 +65,6 @@ export const ENOUGH_RUNS = 20;
 export const MIN_SHARED_JOBS = 3;
 export const DEFAULT_DAYS = 14;
 export const MAX_DAYS = 30;
-
-// Adds the size runnerSize finds for a provider's label, when it finds one.
-function sized(env: Environment, provider: string, label = env.label): Environment {
-  const size = runnerSize(provider, label);
-  return size ? { ...env, size } : env;
-}
-
-const MACHINE = "machine:";
-
-// A runner group as GitHub shows it under a runner, or nothing for Default: repo-level runners have
-// no group, and GitHub reports them as Default.
-const groupDetail = (group: string) =>
-  group.toLowerCase() === "default" ? "" : `Runner group: ${group}`;
-
-/**
- * The runner environment a job ran on. Derived when read, like runnerClass, so changing the rules
- * needs no backfill: the window is only a few weeks long.
- */
-export function environmentFor(
-  labels: string[],
-  runnerGroupName: string | null,
-  machineId: string | null,
-): Environment {
-  if (machineId) return { key: `${MACHINE}${machineId}`, label: "Machine", detail: "" };
-  if (usesContainerRunner(labels))
-    return sized(
-      { key: "container", label: "Cloudflare Container", detail: INSTANCE },
-      "cloudflare",
-      INSTANCE,
-    );
-  const lower = labels.map((label) => label.toLowerCase());
-  // Including the ones operators added in the admin (loaded per request and per queue batch, provider-catalog.ts).
-  const provider = cloudProviderFor(lower, currentProviders());
-  if (provider)
-    return sized(
-      { key: `${provider.id}:${provider.label}`, label: provider.label, detail: provider.name },
-      provider.id,
-    );
-  const group = runnerGroupName || "Default";
-  // Asked for by name: a `self-hosted` label, a pick, or a route to a machine. GitHub matches group
-  // names without case, so `default` and `Default` are one row.
-  if (
-    lower.includes("self-hosted") ||
-    lower.includes(RELAYRUNNER_LABEL) ||
-    routeIdFromLabels(labels)
-  )
-    return {
-      key: `self-hosted:${group.toLowerCase()}`,
-      label: "Self-hosted",
-      detail: groupDetail(group),
-    };
-  if (lower.some(isGitHubHostedLabel) || runnerGroupName === GITHUB_HOSTED_GROUP) {
-    const cls = runnerClass(labels, runnerGroupName);
-    if (cls !== "other" && cls !== "self-hosted")
-      return sized(
-        { key: `github:${cls}`, label: RUNNER_LABELS[cls], detail: "GitHub-hosted" },
-        "github",
-        cls,
-      );
-    // A larger runner or an image without a standard price: named by its label.
-    const label = lower[0] ?? "unknown";
-    return sized({ key: `github:${label}`, label, detail: "GitHub-hosted" }, "github");
-  }
-  // A label nothing above recognises: another service, or a self-hosted runner asked for only by
-  // its custom labels.
-  const label = lower[0] ?? "unknown";
-  return sized(
-    {
-      key: `other:${label}`,
-      label,
-      // A runner in an org group is self-hosted, even when nothing knows its labels.
-      detail: runnerGroupName
-        ? groupDetail(runnerGroupName) || "Self-hosted"
-        : "Unrecognized label",
-    },
-    "other",
-  );
-}
-
-/** Who runs an environment: `machine`, `github`, `self-hosted`, `container`, a provider's id... */
-export const environmentProvider = (env: Environment) => env.key.split(":")[0]!;
-
-/**
- * Names each `machine:<id>` environment from its machine row. A deleted machine keeps its generic
- * name.
- */
-export async function nameMachines(db: Db, workspaceId: string, envs: Map<string, Environment>) {
-  const machineIds = [...envs.keys()].flatMap((key) =>
-    key.startsWith(MACHINE) ? [key.slice(MACHINE.length)] : [],
-  );
-  if (!machineIds.length) return;
-  const machines = await db
-    .select({
-      id: schema.machine.id,
-      name: schema.machine.name,
-      source: schema.machine.source,
-      kind: schema.machine.deviceKind,
-      model: schema.machine.deviceModel,
-      chip: schema.machine.chip,
-      os: schema.machine.os,
-      vmCpus: schema.machine.vmCpus,
-      vmMemoryGb: schema.machine.vmMemoryGb,
-      isolatedOs: schema.machine.isolatedOs,
-    })
-    .from(schema.machine)
-    .where(and(machineInWorkspace(db, workspaceId), inArray(schema.machine.id, machineIds)));
-  for (const machine of machines) {
-    const env = envs.get(`${MACHINE}${machine.id}`);
-    if (!env) continue;
-    env.label = machine.name;
-    env.machine = {
-      source: machine.source === "github" ? "github" : "connect",
-      // Stored only after machine-protocol validated it.
-      kind: machine.kind as DeviceKind | null,
-      model: machine.model,
-    };
-    env.detail = [machine.model, machine.chip].filter(Boolean).join(" · ") || (machine.os ?? "");
-    // Every job runs in a VM of this size, as of its last connect. With --macos some run on the
-    // Mac itself, so the size wouldn't say which.
-    if (machine.vmCpus && !machine.isolatedOs)
-      env.size = {
-        vcpus: machine.vmCpus,
-        ...(machine.vmMemoryGb && { memoryGb: machine.vmMemoryGb }),
-      };
-  }
-}
 
 export function confidence(samples: number): Confidence {
   if (samples === 0) return "none";
@@ -289,54 +166,6 @@ interface WindowRow {
   samples: string | null;
 }
 
-/** A pick (`runs-on: relayrunner`): it only routes its run. */
-export const PICK = sql`lower(${table.labels}) like ${`%"${RELAYRUNNER_LABEL}"%`}`;
-
-/** A job a runner ran: started and not skipped. Cancelled jobs that started count. */
-export const RAN_ON_RUNNER = sql`${table.startedAt} is not null and ${table.runnerName} is not null
-  and coalesce(${table.conclusion}, '') <> 'skipped'`;
-
-// A job a runner ran, picks left out: they would split every routed run across two environments,
-// like on the Usage page; only successes give times.
-export const RAN = sql`${RAN_ON_RUNNER} and not ${PICK}`;
-
-export const OK = sql`coalesce(${table.conclusion} = 'success', 0)`;
-/** A job that failed or timed out. Cancelled jobs are neither this nor OK. */
-export const FAILED = sql`coalesce(${table.conclusion} in ('failure', 'timed_out'), 0)`;
-
-// How long a job waits with no runner before it counts as missed. Shorter waits are left out, since
-// a concurrency group or a person cancels those.
-export const MISSED_AFTER_MS = 10 * 60_000;
-
-/** A job no runner took: it finished (GitHub gave up, or it was cancelled) after a long wait. */
-export const NOT_PICKED_UP = sql`(${table.startedAt} is null or ${table.runnerName} is null)
-  and coalesce(${table.conclusion}, '') <> 'skipped' and not ${PICK}
-  and ${table.completedAt} - ${table.queuedAt} >= ${MISSED_AFTER_MS}`;
-
-// `completedAt:runMs:waitMs` per successful run, comma separated, as parseSamples reads it.
-export const SAMPLES = sql`group_concat(case when ${OK} then ${table.completedAt} || ':'
-  || (${table.completedAt} - ${table.startedAt}) || ':'
-  || coalesce(${table.startedAt} - ${table.queuedAt}, '') end)`;
-
-/** The row's installation (job_timing's unless another column is given) is the workspace's. */
-export function inWorkspace(
-  workspaceId: string,
-  installationId: SQLiteColumn = table.installationId,
-): SQL {
-  return sql`${installationId} in (
-    select ${schema.workspace.installationId} from ${schema.workspace}
-    where ${schema.workspace.id} = ${workspaceId})`;
-}
-
-/** The jobs a report counts: the workspace's, finished since `since`, run by a runner, not picks. */
-/** Before `until` (epoch ms), when the window ends before now. */
-const before = (until?: number) =>
-  until === undefined ? sql`` : sql` and ${table.completedAt} < ${until}`;
-
-export const windowWhere = (workspaceId: string, since: Date, until?: number) =>
-  sql`${inWorkspace(workspaceId)} and ${table.completedAt} >= ${since.getTime()}${before(until)}
-    and ${RAN}`;
-
 /**
  * The window's aggregate, a single range read of job_timing_installation_idx: the workspace's
  * installations, completed since `since`. Measured on D1, it reads about 2 rows per row in the
@@ -376,12 +205,6 @@ export function parseSamples(text: string | null): Sample[] {
       waitMs: waitMs ? Math.max(0, Number(waitMs)) : null,
     };
   });
-}
-
-// `test (node 24)` is a leg of matrix job `test`.
-export function matrixName(name: string) {
-  const at = name.indexOf(" (");
-  return at > 0 && name.endsWith(")") ? name.slice(0, at) : null;
 }
 
 type Buckets = Map<string, Bucket>;

@@ -1,12 +1,12 @@
 // What a job does, from its name, its workflow's and its runner labels: the first input for
 // runner-size and skip advice. The hourly signals task classifies a few new jobs per workspace
 // while AI is on for it (classifyJobTypes); job-times.ts adds the answer to each job's row.
+import { matrixName, PICK } from "../job-sql.ts";
+import { DAY_MS } from "../time.ts";
 import type { JobType } from "@relayrunner/api-types";
 import { and, eq, gte, sql } from "drizzle-orm";
 import { createDb, type Db, schema } from "../db/index.ts";
 import type { Env } from "../env.ts";
-import { DAY_MS } from "../job-timings.ts";
-import { matrixName, PICK } from "../job-times.ts";
 import { classify, defineClassifier } from "./classify.ts";
 import { aiAccess } from "./settings.ts";
 

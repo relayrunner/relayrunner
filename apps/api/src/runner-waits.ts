@@ -8,12 +8,12 @@
  * vCPUs, never its label, since labels can carry names people chose (Namespace profiles, larger
  * runners) or run ids (RunsOn). Self-hosted runners and machines aren't counted.
  */
+import { environmentFor, environmentProvider } from "./environments.ts";
+import { utcDay } from "./time.ts";
 import { labelOfEnvironment, runnerPlatform, type RunnerSize } from "@relayrunner/providers";
 import { sql } from "drizzle-orm";
 import { type Db, schema } from "./db/index.ts";
 import { WAIT_BUCKETS } from "./db/schema.ts";
-import { environmentFor, environmentProvider } from "./job-times.ts";
-import { utcDay } from "./job-timings.ts";
 
 const table = schema.runnerWaitDay;
 

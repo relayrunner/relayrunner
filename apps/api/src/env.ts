@@ -8,7 +8,7 @@ import type { PickRunner } from "./durable-objects/pick-runner.ts";
 import type { Router } from "./durable-objects/router.ts";
 import type { StrandedJob } from "./durable-objects/stranded-job.ts";
 import type { ProviderTakeover } from "./durable-objects/provider-takeover.ts";
-import type { InstallationTask } from "./installation-tasks.ts";
+import type { InstallationTask } from "./installation-queue.ts";
 import type { TelemetryMessage } from "./telemetry/export.ts";
 import type { JobLogMessage } from "./telemetry/logs.ts";
 

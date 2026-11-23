@@ -1,6 +1,6 @@
+import { type NewActivityEvent, recordEvent } from "./activity-log.ts";
 import type { ChangeActor } from "./changes.ts";
 import { type SQL, and, count, eq, inArray, isNotNull, isNull, or } from "drizzle-orm";
-import { type NewActivityEvent, recordEvent } from "./activity.ts";
 import type { Db } from "./db/index.ts";
 import { schema } from "./db/index.ts";
 import type { Env } from "./env.ts";

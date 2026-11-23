@@ -13,7 +13,8 @@ import {
 import { createDb, schema } from "./db/index.ts";
 import { syncEnterpriseInstallations } from "./enterprise.ts";
 import type { Env } from "./env.ts";
-import { type InstallationTask, runInstallationTask } from "./installation-tasks.ts";
+import type { InstallationTask } from "./installation-queue.ts";
+import { runInstallationTask } from "./installation-tasks.ts";
 import { recordSpendInstallation } from "./spend-app.ts";
 import * as testing from "./testing.ts";
 

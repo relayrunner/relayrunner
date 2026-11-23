@@ -6,6 +6,17 @@
 // Database cost: one or two statements, each a range of job_timing_installation_idx (the
 // workspace's installations, completed in the window), grouped by the columns environmentFor reads.
 // The provider is worked out from each group's labels afterwards, since it's derived and not stored.
+import { environmentFor } from "./environments.ts";
+import { cents, classRate, pricePeriods, runnerClass } from "./runner-rates.ts";
+import {
+  FAILED,
+  OK,
+  SAMPLES,
+  windowWhere,
+  BILLED_MINUTES,
+  RUNNER_FAILED,
+  WAIT_MS,
+} from "./job-sql.ts";
 import {
   ADDED_RATE,
   isProviderId,
@@ -29,27 +40,13 @@ import {
   windowDays,
 } from "./report-window.ts";
 import {
-  BILLED_MINUTES,
-  cents,
-  classRate,
-  pricePeriods,
-  RUNNER_FAILED,
-  runnerClass,
-  WAIT_MS,
-} from "./job-timings.ts";
-import {
   type Bucket,
   bucketOf,
   emptyBucket,
   type Environment,
-  FAILED,
-  environmentFor,
   mergeInto,
-  OK,
-  SAMPLES,
   type Stat,
   statOf,
-  windowWhere,
 } from "./job-times.ts";
 
 const table = schema.jobTiming;

@@ -5,12 +5,13 @@
 //
 // Database cost: four statements, run together. Three are ranges of job_timing_installation_idx
 // over the window, one a lookup of github_repository_installation_idx; none is a scan.
+import { inWorkspace, matrixName, PICK } from "./job-sql.ts";
+import { DAY_MS } from "./time.ts";
 import { hostedProviderOf, type HostedProviderId } from "@relayrunner/providers";
 import { sql } from "drizzle-orm";
 import { type Db, schema } from "./db/index.ts";
 import { installationSettingsUrl } from "./github.ts";
-import { DEFAULT_DAYS, inWorkspace, matrixName, PICK } from "./job-times.ts";
-import { DAY_MS } from "./job-timings.ts";
+import { DEFAULT_DAYS } from "./job-times.ts";
 
 const table = schema.jobTiming;
 const repo = schema.githubRepository;

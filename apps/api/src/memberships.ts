@@ -1,5 +1,5 @@
+import { recordEvent } from "./activity-log.ts";
 import { and, eq, inArray } from "drizzle-orm";
-import { recordEvent } from "./activity.ts";
 import type { Auth } from "./auth.ts";
 import { type Db, schema } from "./db/index.ts";
 import { GitHubError, type GitHubInstallation, listUserInstallations } from "./github.ts";

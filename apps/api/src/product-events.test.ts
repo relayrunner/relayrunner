@@ -1,6 +1,6 @@
+import { recordEvent } from "./activity-log.ts";
 import { eq } from "drizzle-orm";
 import { beforeAll, describe, expect, test } from "vitest";
-import { recordEvent } from "./activity.ts";
 import { createDb, schema } from "./db/index.ts";
 import type { Env } from "./env.ts";
 import { PING_WINDOW_MS } from "./operator-pings.ts";

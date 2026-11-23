@@ -1,9 +1,9 @@
+import { DAY_MS } from "./time.ts";
 import { beforeEach, describe, expect, test } from "vitest";
 import { createDb, schema } from "./db/index.ts";
 import type { Env } from "./env.ts";
 import { jobTypeTimes } from "./job-type-times.ts";
 import { jobRuns } from "./job-times.ts";
-import { DAY_MS } from "./job-timings.ts";
 import { lastDays, withPrior } from "./report-window.ts";
 import type { StepTime } from "./step-phases.ts";
 import * as testing from "./testing.ts";

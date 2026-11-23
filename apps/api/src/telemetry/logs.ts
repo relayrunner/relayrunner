@@ -7,6 +7,7 @@
 // To an OTLP endpoint, each line is a log record in gzipped requests of a few hundred KB of log
 // each, carrying the trace and span ids of its step's span (src/telemetry/spans.ts), so a tool that
 // also gets the traces shows a step's lines with it.
+import { retryDelaySeconds } from "../time.ts";
 import type { WebhookMessage, WorkflowJob } from "@relayrunner/github-webhooks";
 import { createDb, type Db, schema } from "../db/index.ts";
 import type { Env } from "../env.ts";
@@ -14,7 +15,6 @@ import { appInstallationToken, jobLog, type RateLimitBucket, rateLimits } from "
 import { FAILED_CONCLUSIONS } from "../job-counts.ts";
 import { Recent } from "../recent.ts";
 import { jobUrl } from "../run-job.ts";
-import { retryDelaySeconds } from "../webhook-queue.ts";
 import { errorMessage } from "../errors.ts";
 import { ndjson, objectKey, openCredentials, putObject } from "./bucket.ts";
 import { chunks, type Job, lines, type LogRecord, logRecords, SEVERITIES } from "./log-lines.ts";

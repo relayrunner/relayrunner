@@ -4,10 +4,10 @@
  * (src/db/schema.ts). The report reads at most a row per hour for the chart and a row per
  * installation and day for the breakdown, so it never reads single jobs.
  */
+import { usesRelayRunner } from "./labels.ts";
 import { and, gte, inArray, sql } from "drizzle-orm";
 import type { SQLiteColumn } from "drizzle-orm/sqlite-core";
 import { type Db, schema } from "./db/index.ts";
-import { usesRelayRunner } from "./webhook-queue.ts";
 
 const { jobCount, jobCountDay, jobCountHour } = schema;
 const HOUR_MS = 3_600_000;

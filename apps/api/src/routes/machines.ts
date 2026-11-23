@@ -1,4 +1,4 @@
-import { recordEvent } from "../activity.ts";
+import { recordEvent } from "../activity-log.ts";
 import { and, asc, eq, gt, inArray, isNotNull, isNull, max } from "drizzle-orm";
 import { alias } from "drizzle-orm/sqlite-core";
 import { Hono } from "hono";

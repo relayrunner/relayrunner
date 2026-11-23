@@ -1,6 +1,6 @@
+import { type NewActivityEvent, recordEvent } from "./activity-log.ts";
 import type { ActivityEvent } from "@relayrunner/activity";
 import type { Context } from "hono";
-import { type NewActivityEvent, recordEvent } from "./activity.ts";
 import { agentClientName } from "./agent-auth.ts";
 import type { AppEnv } from "./app.ts";
 

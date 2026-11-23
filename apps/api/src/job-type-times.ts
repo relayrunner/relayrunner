@@ -1,13 +1,13 @@
 // Where CI time goes, by what each job does: run minutes for every job in a window, cut at the
 // reader's midnight, with the job's type from the AI classifier (src/ai/job-type.ts).
 // The dashboard adds them up by type, so its repo filter needs no second read.
+import { matrixName, windowWhere } from "./job-sql.ts";
+import { DAY_MS } from "./time.ts";
 import { sql } from "drizzle-orm";
 import type { JobType } from "@relayrunner/api-types";
 import { jobTypeKey, readJobTypes } from "./ai/job-type.ts";
 import { aiAccess } from "./ai/settings.ts";
 import { type Db, schema } from "./db/index.ts";
-import { DAY_MS } from "./job-timings.ts";
-import { matrixName, windowWhere } from "./job-times.ts";
 import { hasTrend, type ReportWindow } from "./report-window.ts";
 import { addStep, type PhaseTimes } from "./step-phases.ts";
 

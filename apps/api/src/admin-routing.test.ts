@@ -1,5 +1,5 @@
+import { recordEvent } from "./activity-log.ts";
 import { beforeAll, describe, expect, test } from "vitest";
-import { recordEvent } from "./activity.ts";
 import {
   p95,
   peakWaiting,

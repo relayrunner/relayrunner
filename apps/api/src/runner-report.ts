@@ -7,27 +7,22 @@
 // environmentFor reads, like the Performance summary, since the environment is derived and not
 // stored; its recent jobs are a second, newest-first read of that range that stops at RECENT_LIMIT.
 // A machine's connections are a range of activity_event_type_idx.
+import { environmentFor, nameMachines } from "./environments.ts";
+import { FAILED, NOT_PICKED_UP, OK, SAMPLES, windowWhere } from "./job-sql.ts";
 import { and, asc, eq, gte, inArray, lt, type SQL, sql } from "drizzle-orm";
 import { type Db, schema } from "./db/index.ts";
 import {
   bucketOf,
   emptyBucket,
   type Environment,
-  environmentFor,
-  FAILED,
   type HistoryJob,
   historyJobOf,
   jobListQuery,
   machineWindowWhere,
   mergeInto,
   missedQuery,
-  nameMachines,
-  NOT_PICKED_UP,
-  OK,
-  SAMPLES,
   type Stat,
   statOf,
-  windowWhere,
 } from "./job-times.ts";
 import { inWorkspace as machineInWorkspace } from "./machines.ts";
 

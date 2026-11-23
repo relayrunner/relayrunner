@@ -20,6 +20,8 @@
 // workflow_dispatch waits, and the next push that runs the workflow dispatches it again
 // (resumeWaitingEvaluations).
 
+import { billedMinutes, rateFor, runnerClass } from "./runner-rates.ts";
+import { inWorkspace, PICK } from "./job-sql.ts";
 import {
   HOSTED_PROVIDER_IDS,
   labelForSize,
@@ -42,8 +44,6 @@ import {
   repoDefaultBranch,
   rerunRun,
 } from "./github-app.ts";
-import { inWorkspace, PICK } from "./job-times.ts";
-import { billedMinutes, rateFor, runnerClass } from "./job-timings.ts";
 import { loadPriceBook } from "./prices.ts";
 import { hostedRunner } from "./runner-waits.ts";
 const DAY_MS = 24 * 60 * 60 * 1000;

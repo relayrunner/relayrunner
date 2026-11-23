@@ -20,11 +20,8 @@ import { sweepPicks } from "./pick-sweep.ts";
 import { enqueueSignalRollups } from "./signals.ts";
 import { sweepProviderHealth } from "./provider-health.ts";
 import { purgeOldProviderUsage, syncProviderConnections } from "./provider-sync.ts";
-import {
-  handleInstallationTaskBatch,
-  INSTALLATION_TASK_QUEUE,
-  type InstallationTask,
-} from "./installation-tasks.ts";
+import { handleInstallationTaskBatch } from "./installation-tasks.ts";
+import { INSTALLATION_TASK_QUEUE, type InstallationTask } from "./installation-queue.ts";
 import {
   handleTelemetryBatch,
   TELEMETRY_QUEUE,

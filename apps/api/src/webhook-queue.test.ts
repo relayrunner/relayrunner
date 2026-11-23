@@ -4,6 +4,7 @@ import type { Env } from "./env.ts";
 import { recordJobTiming } from "./job-timings.ts";
 import { recordWorkflowJob, setJobMachine } from "./jobs.ts";
 import { createTestEnv } from "./testing.ts";
+import { retryDelaySeconds } from "./time.ts";
 import * as consumer from "./webhook-queue.ts";
 
 // Storage is covered against a real D1 in jobs.test.ts and job-timings.test.ts.
@@ -490,6 +491,6 @@ describe("webhook queue consumer", () => {
   });
 
   test("backs off from 30 seconds up to 15 minutes", () => {
-    expect([1, 2, 3, 6, 10].map(consumer.retryDelaySeconds)).toEqual([30, 60, 120, 900, 900]);
+    expect([1, 2, 3, 6, 10].map(retryDelaySeconds)).toEqual([30, 60, 120, 900, 900]);
   });
 });

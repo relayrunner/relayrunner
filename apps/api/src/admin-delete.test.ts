@@ -1,5 +1,5 @@
+import { recordEvent } from "./activity-log.ts";
 import { beforeAll, describe, expect, test, vi } from "vitest";
-import { recordEvent } from "./activity.ts";
 import { app } from "./app.ts";
 import { createDb, schema } from "./db/index.ts";
 import type { Env } from "./env.ts";

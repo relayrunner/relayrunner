@@ -12,6 +12,9 @@
 // Database cost: workflowCosts is one range of job_timing_installation_idx over the window, grouped
 // by run and runner, so a row per run and runner rather than per job. workflowReport is a range of
 // job_timing_job_idx (repository, workflow) over the window, capped at JOB_LIMIT rows.
+import { environmentFor, environmentProvider, nameMachines } from "./environments.ts";
+import { billedMinutes } from "./runner-rates.ts";
+import { inWorkspace, matrixName, RAN, BILLED_MINUTES } from "./job-sql.ts";
 import { HOSTED_PROVIDER_IDS } from "@relayrunner/providers";
 import type {
   FastestRunner,
@@ -24,17 +27,7 @@ import type {
 import { and, eq, inArray, sql } from "drizzle-orm";
 import { type Db, schema } from "./db/index.ts";
 import { EVALUABLE_PROVIDERS, jobRate, median } from "./evaluations.ts";
-import {
-  type Environment,
-  environmentFor,
-  environmentProvider,
-  FEW_RUNS,
-  inWorkspace,
-  matrixName,
-  nameMachines,
-  RAN,
-} from "./job-times.ts";
-import { billedMinutes, BILLED_MINUTES } from "./job-timings.ts";
+import { type Environment, FEW_RUNS } from "./job-times.ts";
 import { loadPriceBook } from "./prices.ts";
 import { type Window, windowDays } from "./report-window.ts";
 

@@ -9,38 +9,17 @@
  * Both tasks record or log their own failures and the next cron run repeats them, so a message
  * that still throws is retried once and then dropped (max_retries in wrangler.jsonc), with no DLQ.
  */
-import { pollAccount, type UsageAccount } from "./actions-billing.ts";
+import { pollAccount } from "./actions-billing.ts";
 import type { Env } from "./env.ts";
-import type { RunnerScope } from "./github-app.ts";
 import { removeLeftoverRunnersIn } from "./pick-sweep.ts";
-import { syncConnection, type ProviderSyncTask } from "./provider-sync.ts";
+import { syncConnection } from "./provider-sync.ts";
+import type { InstallationTask } from "./installation-queue.ts";
 import { createDb } from "./db/index.ts";
 import { syncPullRequestPaths } from "./pull-request-paths.ts";
 import { rollUpSignals } from "./signals.ts";
 import { classifyJobTypes } from "./ai/job-type.ts";
 import { errorMessage } from "./errors.ts";
 import { type Outcome, recordOutcomes } from "./health-issues.ts";
-
-export const INSTALLATION_TASK_QUEUE = "relayrunner-installation-tasks";
-
-export type InstallationTask =
-  | { kind: "actions-usage"; account: UsageAccount; at: string }
-  // Every org or repo of one installation, so they share its token.
-  | { kind: "pick-sweep"; installationId: number; scopes: RunnerScope[] }
-  // One connected provider account's usage (src/provider-sync.ts), hourly and after connecting.
-  | ProviderSyncTask
-  // One installation's last days of signals (src/signals.ts), hourly.
-  | { kind: "signals"; installationId: number };
-
-// sendBatch takes at most 100 messages.
-const SEND_BATCH = 100;
-
-export async function enqueueInstallationTasks(env: Env, tasks: InstallationTask[]) {
-  for (let i = 0; i < tasks.length; i += SEND_BATCH)
-    await env.INSTALLATION_TASKS.sendBatch(
-      tasks.slice(i, i + SEND_BATCH).map((body) => ({ body })),
-    );
-}
 
 export function runInstallationTask(env: Env, task: InstallationTask): Promise<void> {
   switch (task.kind) {

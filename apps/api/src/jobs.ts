@@ -1,3 +1,4 @@
+import { recordEvent } from "./activity-log.ts";
 import type { JobUsage } from "@relayrunner/machine-protocol";
 import { hostedProviderOf } from "@relayrunner/providers";
 import type {
@@ -8,7 +9,6 @@ import type {
 } from "@relayrunner/activity";
 import type { WebhookMessage } from "@relayrunner/github-webhooks";
 import { and, desc, eq, inArray, isNull, type SQL, sql } from "drizzle-orm";
-import { recordEvent } from "./activity.ts";
 import { type Db, schema } from "./db/index.ts";
 import type { InstallationLookup } from "./installations.ts";
 import { routeIdFromLabels } from "./routing.ts";

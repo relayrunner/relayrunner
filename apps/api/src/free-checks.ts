@@ -4,14 +4,14 @@
 // at least a whole minute. Each one is logged as a `check.completed` Activity event, and the Usage
 // and Activity pages sum them.
 
+import { recordEvent } from "./activity-log.ts";
+import { cents, classRate, pricePeriods, RUNNER_LABELS, rateFor } from "./runner-rates.ts";
 import type { ActivityEvent } from "@relayrunner/activity";
 import { and, eq, gte, isNull, lt, sql } from "drizzle-orm";
-import { recordEvent } from "./activity.ts";
 import { type Db, schema } from "./db/index.ts";
 import { createCheckRun } from "./github-app.ts";
 import { workspaceIdForInstallation } from "./installations.ts";
 import { loadPriceBook } from "./prices.ts";
-import { cents, classRate, pricePeriods, RUNNER_LABELS, rateFor } from "./job-timings.ts";
 import { type Window, windowDays } from "./report-window.ts";
 
 const table = schema.activityEvent;

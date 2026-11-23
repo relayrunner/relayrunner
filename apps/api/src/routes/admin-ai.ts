@@ -3,6 +3,7 @@
  * workspaces turned it off, a block or override per workspace, recent usage, and a test call. Needs Cloudflare Access (app.ts) and an
  * operator session (admin.ts). Changes apply at once in this isolate and within a minute in others.
  */
+import { DAY_MS, utcDay } from "../time.ts";
 import { AppError } from "@relayrunner/errors";
 import { eq, gte, sql } from "drizzle-orm";
 import { Hono } from "hono";
@@ -17,7 +18,6 @@ import {
 } from "../ai/settings.ts";
 import type { AppEnv } from "../app.ts";
 import { createDb, schema } from "../db/index.ts";
-import { DAY_MS, utcDay } from "../job-timings.ts";
 import { audit } from "../middleware/admin.ts";
 
 const USAGE_DAYS = 7;

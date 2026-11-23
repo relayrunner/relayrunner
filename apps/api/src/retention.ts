@@ -2,9 +2,10 @@
 // activity_event and route_decision keep JOB_TIMING_RETENTION_DAYS, as far back as the Usage page
 // reads (it sums free checks from activity_event). Each workspace's first machine event and first
 // run routed to a machine stay, because Admin › Workspaces shows when those first happened.
+import { purgeBefore } from "./purge.ts";
+import { DAY_MS, JOB_TIMING_RETENTION_DAYS } from "./time.ts";
 import { eq, inArray, sql } from "drizzle-orm";
 import { type Db, schema } from "./db/index.ts";
-import { DAY_MS, JOB_TIMING_RETENTION_DAYS, purgeBefore } from "./job-timings.ts";
 
 const { activityEvent, routeDecision, workflowJob } = schema;
 

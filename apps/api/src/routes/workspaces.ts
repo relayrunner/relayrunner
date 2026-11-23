@@ -1,3 +1,5 @@
+import { recordEvent } from "../activity-log.ts";
+import { inWorkspace as installedIn } from "../job-sql.ts";
 import {
   readRetrySettings,
   retrySettingsSchema,
@@ -34,9 +36,7 @@ import { routeOutcomes } from "../route-outcomes.ts";
 import { chartBuckets, requireWindow } from "../report-window.ts";
 import { RAW_RETENTION_DAYS } from "../time.ts";
 import { runnerGroupCheck } from "../runner-group-check.ts";
-import { inWorkspace as installedIn } from "../job-times.ts";
 import { changeActor, changeSetting } from "../changes.ts";
-import { recordEvent } from "../activity.ts";
 import { DEFAULT_AUTO_SIZE } from "@relayrunner/providers";
 import { setWorkspaceAi } from "../ai/settings.ts";
 import {

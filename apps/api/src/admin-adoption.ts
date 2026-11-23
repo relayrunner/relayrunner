@@ -4,9 +4,9 @@
  * The first machine and first job on a machine survive the Activity purge (src/retention.ts); job counts come from
  * job_timing, whose rows are kept 62 days (RAW_RETENTION_DAYS), so a workspace quiet for longer shows no last job.
  */
+import { PICK, RAN_ON_RUNNER } from "./job-sql.ts";
 import { and, eq, inArray, isNotNull, sql } from "drizzle-orm";
 import { type Db, schema } from "./db/index.ts";
-import { PICK, RAN_ON_RUNNER } from "./job-times.ts";
 
 export const ADOPTION_WINDOW_MS = 7 * 24 * 60 * 60 * 1000;
 

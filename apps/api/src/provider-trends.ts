@@ -5,10 +5,11 @@
 // Database cost: one statement, a range of job_timing_installation_idx like the rest of the page,
 // grouped by bar and the columns environmentFor reads, with each group's waits and run times
 // concatenated so the percentiles are exact.
+import { environmentFor } from "./environments.ts";
+import { OK, RUNNER_FAILED, WAIT_MS } from "./job-sql.ts";
 import { sql } from "drizzle-orm";
 import { type Db, schema } from "./db/index.ts";
-import { type Environment, environmentFor, OK, quantile } from "./job-times.ts";
-import { RUNNER_FAILED, WAIT_MS } from "./job-timings.ts";
+import { type Environment, quantile } from "./job-times.ts";
 import { labelProviders, where } from "./provider-report.ts";
 import { type Buckets, bucketStarts, type Window } from "./report-window.ts";
 

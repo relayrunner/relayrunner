@@ -1,15 +1,11 @@
+import { runnerClass } from "./runner-rates.ts";
+import { JOB_TIMING_RETENTION_DAYS, RAW_RETENTION_DAYS } from "./time.ts";
 import type { WebhookMessage, WorkflowJob } from "@relayrunner/github-webhooks";
 import { eq } from "drizzle-orm";
 import { afterEach, beforeAll, describe, expect, test, vi } from "vitest";
 import { createDb, schema } from "./db/index.ts";
 import type { Env } from "./env.ts";
-import {
-  JOB_TIMING_RETENTION_DAYS,
-  purgeOldJobTimings,
-  RAW_RETENTION_DAYS,
-  runnerClass,
-  type UsageReport,
-} from "./job-timings.ts";
+import { purgeOldJobTimings, type UsageReport } from "./job-timings.ts";
 import * as testing from "./testing.ts";
 import { processWebhook } from "./webhook-queue.ts";
 

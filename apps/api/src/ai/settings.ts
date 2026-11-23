@@ -2,10 +2,10 @@
 // operators set in Admin › AI, each workspace's own switch (Settings › General), and operator
 // overrides per workspace. Workspaces start on: nothing runs until an operator turns on the global
 // switch and a feature, and an owner or admin can turn it off for their workspace.
+import { utcDay } from "../time.ts";
 import { eq, isNotNull, sql } from "drizzle-orm";
 import { cachedRead } from "../d1-cache.ts";
 import { type Db, schema } from "../db/index.ts";
-import { utcDay } from "../job-timings.ts";
 import { purgeAiAnswers } from "../retention.ts";
 
 /** What a model call is for. Each can be turned off globally or, by operators, per workspace. */

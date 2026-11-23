@@ -23,9 +23,9 @@
  * Reads workflow_run's first attempts and workflow_job's picks over the last WINDOW_DAYS, through
  * their time indexes. A workspace whose last relay has aged out of that window has no state.
  */
+import { DAY_MS } from "./time.ts";
 import { and, eq, gte } from "drizzle-orm";
 import { type Db, schema } from "./db/index.ts";
-import { DAY_MS } from "./job-timings.ts";
 import type { Stickiness, StickinessState } from "@relayrunner/api-types";
 
 export type { Stickiness, StickinessState };

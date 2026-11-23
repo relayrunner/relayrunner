@@ -8,7 +8,7 @@
  * job_timing and workflow_run, and yesterday too for the first hours after midnight so late
  * webhooks still land, and replaces those days' signal_day rows. The page then sums a few rows per
  * day, whatever the range, instead of reading every run. An installation with no rows yet gets the
- * last 30 days at once (liveDays).
+ * last 30 days at once (LIVE_DAYS).
  *
  * The same rows hold the page's Breakdown: every counted job by who started its run, its workflow,
  * branch and trigger, and pull request runs by the folders their pull request changed
@@ -16,30 +16,27 @@
  *
  * A filtered page (one person, repo, workflow, branch or trigger) can't come from those rows, since
  * a signal's rows don't say who or what started their runs. It works the same queries out on the
- * spot instead, narrowed to the filter's runs, over at most liveDays().
+ * spot instead, narrowed to the filter's runs, over at most LIVE_DAYS.
  * The runs behind one signal row come from the same queries too (signalRuns).
  */
+import { environmentFor } from "./environments.ts";
+import { cents, rateFor, runnerClass, SHORT_JOB_SECONDS } from "./runner-rates.ts";
+import {
+  PICK,
+  RAN_ON_RUNNER,
+  BILLED_MINUTES,
+  DURATION_MS,
+  RUNNER_FAILED,
+  WAIT_MS,
+} from "./job-sql.ts";
 import { and, eq, exists, gte, inArray, isNull, lt, notLike, sql } from "drizzle-orm";
 import type { PriceBook } from "@relayrunner/providers";
 import { type Db, createDb, prepare, schema } from "./db/index.ts";
 import type { Env } from "./env.ts";
-import { enqueueInstallationTasks } from "./installation-tasks.ts";
-import { environmentFor, PICK, RAN_ON_RUNNER } from "./job-times.ts";
-import {
-  BILLED_MINUTES,
-  cents,
-  DAY_MS,
-  DURATION_MS,
-  rateFor,
-  runnerClass,
-  RUNNER_FAILED,
-  SHORT_JOB_SECONDS,
-  utcDay,
-  WAIT_MS,
-} from "./job-timings.ts";
+import { enqueueInstallationTasks } from "./installation-queue.ts";
 import { loadPriceBook } from "./prices.ts";
 import type { ReportWindow } from "./report-window.ts";
-import { LIVE_DAYS } from "./time.ts";
+import { LIVE_DAYS, DAY_MS, utcDay } from "./time.ts";
 import { routeIdFromLabels } from "./routing.ts";
 
 export type SignalArea = "speed" | "cost" | "complexity";
@@ -83,12 +80,6 @@ export type BreakdownBy = (typeof BREAKDOWNS)[number] | "repository";
  * one repo, so both come with their repo.
  */
 export type SignalFilter = Partial<Record<BreakdownBy, string>>;
-
-/**
- * The days a filtered page or a signal's runs can cover, today included, and the days an
- * installation's first rollup and its pull request folders go back (LIVE_DAYS).
- */
-export const liveDays = () => LIVE_DAYS;
 
 /**
  * A report's whole UTC days, as signal_day keeps them: `start` up to `end` (UTC midnights), and
@@ -205,8 +196,8 @@ export async function rollUpSignals(db: Db, installationId: number, now = Date.n
       .then(([row]) => row),
     pricing(db, installationId, now),
   ]);
-  // The first run goes back liveDays(), in whole days.
-  const since = seen ? utcDay(now - LATE_MS) : utcDay(now) - (liveDays() - 1) * DAY_MS;
+  // The first run goes back LIVE_DAYS, in whole days.
+  const since = seen ? utcDay(now - LATE_MS) : utcDay(now) - (LIVE_DAYS - 1) * DAY_MS;
   const rows = new Rows();
   await addAll({ db, book, rows, privacy, installationId, since, filter: {} });
 
@@ -964,7 +955,7 @@ export interface SignalTrend {
  * The workspace's signals over a range of whole UTC days (the last 30 by default). A signal shows
  * when it covers at least MIN_MINUTES and MIN_SHARE of every job's minutes. With `breakdown` false,
  * the Breakdown's rows aren't read at all. A `filter` narrows everything to its runs, worked out
- * from single jobs over at most the last liveDays(), and adds the filter's trend.
+ * from single jobs over at most the last LIVE_DAYS, and adds the filter's trend.
  */
 export async function signalsReport(
   db: Db,
@@ -974,7 +965,7 @@ export async function signalsReport(
 ): Promise<SignalsReport> {
   const filtered = isFiltered(filter);
   range ??= lastUtcDays(30, now);
-  if (filtered) range = atMost(range, liveDays(), now);
+  if (filtered) range = atMost(range, LIVE_DAYS, now);
   const days = dayCount(range);
   const { installationId } = workspace;
   if (installationId === null)
@@ -1219,7 +1210,7 @@ const FINDERS: Record<SignalId, (scope: Scope) => Promise<void>> = {
 };
 
 /**
- * The runs behind one signal row (a repo and subject) over a range (at most the last liveDays()),
+ * The runs behind one signal row (a repo and subject) over a range (at most the last LIVE_DAYS),
  * within the page's filter: the same queries the rollup runs, kept to that row.
  */
 export async function signalRuns(
@@ -1229,7 +1220,7 @@ export async function signalRuns(
   range: DayRange,
   { filter = {}, now = Date.now() }: { filter?: SignalFilter; now?: number } = {},
 ): Promise<SignalRunsReport> {
-  range = atMost(range, liveDays(), now);
+  range = atMost(range, LIVE_DAYS, now);
   const days = dayCount(range);
   if (installationId === null) return { days, runs: [], total: 0 };
   const hits = new RunHits(row, range.end);

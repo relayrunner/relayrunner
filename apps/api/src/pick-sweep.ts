@@ -2,7 +2,7 @@ import { and, desc, eq, gt, isNull, lt } from "drizzle-orm";
 import { createDb, type Db, schema } from "./db/index.ts";
 import type { Env } from "./env.ts";
 import { appInstallationToken, deleteRunner, listRunners, type RunnerScope } from "./github-app.ts";
-import { enqueueInstallationTasks } from "./installation-tasks.ts";
+import { enqueueInstallationTasks } from "./installation-queue.ts";
 import { pickJobIdFromRunnerName } from "./pick-attempts.ts";
 import { errorMessage } from "./errors.ts";
 import { sweepOrphanedJobs } from "./orphaned-jobs.ts";

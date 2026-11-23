@@ -3,7 +3,7 @@
  * sends a compact WebhookMessage to `relayrunner-github-webhooks`; this Worker processes it.
  *
  * Each message in a batch runs at the same time and is acked or retried on its own, so one
- * failing delivery never re-runs its batchmates. Retries back off exponentially (see retryDelaySeconds), so the retry budget spans
+ * failing delivery never re-runs its batchmates. Retries back off exponentially (see retryDelaySeconds in time.ts), so the retry budget spans
  * about half an hour: long enough to roll back a bad API deploy before anything is dead-lettered.
  *
  * After max_retries a message moves to `relayrunner-github-webhooks-dlq`. The DLQ consumer archives
@@ -14,7 +14,8 @@
  * `workflow_job` `queued` can arrive after `in_progress`, so processing must be idempotent and
  * keyed on the job's state, not on arrival order.
  */
-import { RELAYRUNNER_LABEL } from "./labels.ts";
+import { usesRelayRunner } from "./labels.ts";
+import { retryDelaySeconds } from "./time.ts";
 import { WEBHOOK_DLQ, type WebhookMessage } from "@relayrunner/github-webhooks";
 import { and, eq, isNull } from "drizzle-orm";
 import { archiveDeadLetter, recordLastError } from "./dead-letters.ts";
@@ -47,8 +48,6 @@ import { traced } from "./tracing.ts";
 import { errorMessage } from "./errors.ts";
 import { advanceEvaluation, resumeWaitingEvaluations } from "./evaluations.ts";
 
-const BASE_RETRY_DELAY_SECONDS = 30;
-const MAX_RETRY_DELAY_SECONDS = 15 * 60;
 // The main consumer's max_retries in wrangler.jsonc. From this attempt on, a failure records its
 // error so the dead letter can say why it failed.
 export const MAX_RETRIES = 6;
@@ -155,19 +154,6 @@ function webhookAttributes(msg: Message<WebhookMessage>) {
     "queue.attempts": msg.attempts,
     "webhook.lag_ms": body.receivedAt ? Date.now() - Date.parse(body.receivedAt) : undefined,
   };
-}
-
-// GitHub matches runs-on labels case-insensitively, so `RelayRunner` counts too.
-export function usesRelayRunner(labels: string[]) {
-  return labels.some((label) => label.toLowerCase() === RELAYRUNNER_LABEL);
-}
-
-// 30s, 60s, 120s, ... capped at 15 minutes. `attempts` starts at 1.
-export function retryDelaySeconds(attempts: number) {
-  return Math.min(
-    BASE_RETRY_DELAY_SECONDS * 2 ** Math.max(0, attempts - 1),
-    MAX_RETRY_DELAY_SECONDS,
-  );
 }
 
 /** Do the work for one delivery. Throw to retry. */

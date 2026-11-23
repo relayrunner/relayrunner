@@ -1,7 +1,7 @@
+import { recordEvent } from "../activity-log.ts";
 import { DurableObject } from "cloudflare:workers";
 import { eq } from "drizzle-orm";
 import type { HostedProviderId } from "@relayrunner/providers";
-import { recordEvent } from "../activity.ts";
 import { createDb, schema } from "../db/index.ts";
 import type { Env } from "../env.ts";
 import { errorMessage } from "../errors.ts";

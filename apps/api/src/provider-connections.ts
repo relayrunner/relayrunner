@@ -12,7 +12,7 @@ import { and, count, eq, gte, sum } from "drizzle-orm";
 import type { SQLiteColumn } from "drizzle-orm/sqlite-core";
 import { type Db, schema } from "./db/index.ts";
 import type { Env } from "./env.ts";
-import { enqueueInstallationTasks } from "./installation-tasks.ts";
+import { enqueueInstallationTasks } from "./installation-queue.ts";
 import { type AdapterContext, ADAPTERS, ProviderAuthError } from "./provider-billing/index.ts";
 import { adapterTools, byConnection, NO_FAILURE, syncTask } from "./provider-sync.ts";
 import { openToken, sealToken, tokenHint } from "./provider-tokens.ts";

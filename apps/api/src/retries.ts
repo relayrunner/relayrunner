@@ -11,11 +11,12 @@
 // GitHub refuses any re-run while a job of the run is still going, which is why this waits for
 // the `workflow_run` `completed` event rather than the job's own.
 
+import { recordEvent } from "./activity-log.ts";
+import { DAY_MS } from "./time.ts";
 import { type GithubActor, type RetryKind } from "@relayrunner/activity";
 import { readRetrySettings, type RetryRunner, type RetrySettings } from "@relayrunner/runner-order";
 import { ranSteps, type WebhookMessage } from "@relayrunner/github-webhooks";
 import { and, count, desc, eq, gte, inArray, lte } from "drizzle-orm";
-import { recordEvent } from "./activity.ts";
 import { createDb, type Db, schema } from "./db/index.ts";
 import type { Env } from "./env.ts";
 import { failureCauseOf } from "./ai/failure-cause.ts";
@@ -26,7 +27,7 @@ import { loadRepoConfig } from "./repo-config.ts";
 import { actor } from "./route-decisions.ts";
 import { routeIdFromLabels } from "./routing.ts";
 import { strandedJob } from "./stranded-jobs.ts";
-import { DAY_MS, failedStep } from "./job-timings.ts";
+import { failedStep } from "./job-timings.ts";
 import { errorMessage } from "./errors.ts";
 
 type WorkflowRunMessage = Extract<WebhookMessage, { event: "workflow_run" }>;

@@ -2,10 +2,10 @@ import { describe, expect, test, vi } from "vitest";
 import type { Env } from "./env.ts";
 import {
   enqueueInstallationTasks,
-  handleInstallationTaskBatch,
   INSTALLATION_TASK_QUEUE,
   type InstallationTask,
-} from "./installation-tasks.ts";
+} from "./installation-queue.ts";
+import { handleInstallationTaskBatch } from "./installation-tasks.ts";
 
 const sweep = (installationId: number): InstallationTask => ({
   kind: "pick-sweep",

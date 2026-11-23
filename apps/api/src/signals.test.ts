@@ -2,7 +2,7 @@ import { beforeAll, describe, expect, test } from "vitest";
 import { eq } from "drizzle-orm";
 import { createDb, schema } from "./db/index.ts";
 import type { Env } from "./env.ts";
-import type { InstallationTask } from "./installation-tasks.ts";
+import type { InstallationTask } from "./installation-queue.ts";
 import {
   enqueueSignalRollups,
   lastUtcDays,
