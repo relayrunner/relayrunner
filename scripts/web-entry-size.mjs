@@ -25,6 +25,12 @@ while (queue.length) {
     queue.push(join(dirname(file), m[1]));
 }
 
+// Fewer files than this means the import pattern above stopped matching the build's output.
+if (files.size < 10) {
+  console.error(`Found only ${files.size} files; check the import pattern against the build.`);
+  process.exit(1);
+}
+
 const kb =
   [...files].reduce((sum, file) => sum + gzipSync(readFileSync(join(dist, file))).length, 0) / 1024;
 console.log(

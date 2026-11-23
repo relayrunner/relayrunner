@@ -63,7 +63,7 @@ const BANDS = {
     dot: "border-2 border-idle bg-transparent",
   },
   missing: { band: "bg-destructive/10", label: "text-destructive", dot: "bg-destructive" },
-} as const;
+} as const satisfies Record<keyof typeof TONE_LABELS, unknown>;
 
 // Connection status, as a dot on the icon.
 const CONNECTION = {

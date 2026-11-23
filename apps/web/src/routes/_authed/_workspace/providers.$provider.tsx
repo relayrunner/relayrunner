@@ -8,7 +8,6 @@ import { CodeBlock } from "@/components/code-block";
 import { MachinePrices } from "@/components/machine-prices";
 import { ProviderPlans } from "@/components/provider-plans";
 import { ProviderTrendsCard } from "@/components/provider-trends";
-import { PRICE_VIEWS, type PriceView } from "@/lib/providers";
 import {
   type Percentile,
   PERCENTILE_OPTIONS,
@@ -29,6 +28,8 @@ import { isKnownProvider, providerInfo } from "@/lib/provider-catalog";
 import {
   costText,
   getProviderReport,
+  PRICE_VIEWS,
+  type PriceView,
   type ProviderCounts,
   quickShare,
   PROVIDER_DEFAULT_RANGE,

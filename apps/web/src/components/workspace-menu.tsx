@@ -15,6 +15,7 @@ import { isWorkspacePage, signOut } from "@/lib/session";
 import { portableSearch } from "@/lib/portable-search";
 import { githubInstallHref } from "@/lib/github";
 import { cn } from "@/lib/utils";
+import { clearWorkspaceCaches } from "@/lib/workspace-cache";
 
 type MenuUser = { name: string; email: string; image?: string | null } | null;
 
@@ -55,6 +56,7 @@ export function WorkspaceMenu({
       // Drop the pages kept from the old workspace (earlier visits, hover preloads), so none
       // shows its data while reloading.
       router.clearCache();
+      clearWorkspaceCaches();
       // Stay on the page, keeping the params that still apply: ranges and tabs, not the old
       // workspace's repos, runs or runners.
       const { pathname, search } = router.state.location;

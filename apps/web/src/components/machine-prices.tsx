@@ -12,8 +12,7 @@ import { OptionPicker } from "@/components/range-picker";
 import { Swatch } from "@/components/stacked-bars";
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
 import { plural } from "@/lib/job-times";
-import { PRICE_VIEWS, type PriceView } from "@/lib/providers";
-import type { ProviderRunner } from "@/lib/providers";
+import { PRICE_VIEWS, type PriceView, type ProviderRunner } from "@/lib/providers";
 import { cn, count } from "@/lib/utils";
 
 // Every runner a provider sells (the catalog in @relayrunner/providers), as a grid of systems by

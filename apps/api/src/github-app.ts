@@ -409,7 +409,7 @@ export async function listAppInstallations(jwt: string) {
     const response = await fetch(`${API}/app/installations?per_page=100&page=${page}`, {
       headers: headers(jwt),
     });
-    if (!response.ok) throw await githubError("GET", `/app/installations`, response);
+    if (!response.ok) throw await githubError("GET", "/app/installations", response);
     const batch = (await response.json()) as typeof installations;
     installations.push(...batch);
     if (batch.length < 100) return installations;
@@ -526,9 +526,7 @@ async function getPage(token: string, path: string): Promise<unknown> {
     headers: cached ? { ...headers(token), "if-none-match": cached.etag } : headers(token),
   });
   if (response.status === 304 && cached) return cached.body;
-  if (!response.ok) {
-    throw await githubError("GET", path, response);
-  }
+  if (!response.ok) throw await githubError("GET", path, response);
   const body: unknown = await response.json();
   const etag = response.headers.get("etag");
   listedPages.delete(path);
@@ -817,9 +815,7 @@ type RawBucket = { limit: number; used: number; remaining: number; reset: number
  */
 export async function rateLimits(token: string): Promise<RateLimits> {
   const response = await fetch(`${API}/rate_limit`, { headers: headers(token) });
-  if (!response.ok) {
-    throw await githubError("GET", "/rate_limit", response);
-  }
+  if (!response.ok) throw await githubError("GET", "/rate_limit", response);
   const { resources = {} } = (await response.json()) as {
     resources?: Record<string, RawBucket | undefined>;
   };
@@ -873,8 +869,6 @@ function retryAfterSeconds(response: Response): number | undefined {
   return Math.max(1, Math.ceil(reset - Date.now() / 1000));
 }
 
-// GitHub answers a spent limit with 429, or with 403 and either no calls remaining or a
-// `retry-after` (a secondary limit). A 403 without either is a missing permission.
 /** The error for a failed GitHub call: rate limited, refused (403 or 404), or any other. */
 async function githubError(method: string, path: string, response: Response) {
   const message = `${method} ${path} failed with ${response.status}: ${(await response.text()).slice(0, 300)}`;
@@ -884,6 +878,8 @@ async function githubError(method: string, path: string, response: Response) {
   return new Error(message);
 }
 
+// GitHub answers a spent limit with 429, or with 403 and either no calls remaining or a
+// `retry-after` (a secondary limit). A 403 without either is a missing permission.
 function isRateLimited(response: Response) {
   if (response.status === 429) return true;
   return (
