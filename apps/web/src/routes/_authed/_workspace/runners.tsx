@@ -39,7 +39,8 @@ import {
   MachineCard,
   machineView,
 } from "@/components/runner-card";
-import { CloudRunnersTable } from "@/components/cloud-runners";
+import { CloudProviderCard } from "@/components/cloud-runners";
+import { CloudRunnersTable } from "@/components/cloud-runners-table";
 import { TimeRangePicker } from "@/components/range-picker";
 import { RunnerList, type RunnerRow } from "@/components/runner-list";
 import { NeedsAttention } from "@/components/runner-attention";
@@ -111,6 +112,8 @@ const NO_JOB_TIMES: Record<string, Stat> = {};
 
 // Whether self-hosted runners show as a list instead of cards, kept per browser.
 const LIST_KEY = "relayrunner:runners:list";
+// Cloud-hosted as one table rather than a card per provider.
+const CLOUD_LIST_KEY = "relayrunner:runners:cloud-list";
 // Whether the user closed the card that shows how to connect their own computer, kept per browser.
 const CONNECT_DISMISSED_KEY = "relayrunner:runners:connect-dismissed";
 // Whether self-hosted cards show their hardware and typical job, kept per browser.
@@ -188,6 +191,7 @@ function RunnersPage() {
   const editable = canManage(current.role);
   const [showSpecs, setShowSpecs] = useState(() => readFlag(SHOW_SPECS_KEY));
   const [list, setList] = useState(() => readFlag(LIST_KEY));
+  const [cloudList, setCloudList] = useState(() => readFlag(CLOUD_LIST_KEY));
 
   // Runners in connected orgs that aren't added yet, for the found card. Owners and admins only,
   // since only they can add them. It asks GitHub, so it's read once per visit, not on every
@@ -521,16 +525,25 @@ function RunnersPage() {
             <RunnerGroup
               title="Cloud-hosted"
               action={
-                <TimeRangePicker
-                  {...PROVIDER_RANGES}
-                  quiet
-                  value={cloudRange}
-                  onChange={(range) =>
-                    setSearch({ cloud: unlessDefault(range, PROVIDER_DEFAULT_RANGE) })
-                  }
-                />
+                <div className="flex items-center gap-1">
+                  <TimeRangePicker
+                    {...PROVIDER_RANGES}
+                    quiet
+                    value={cloudRange}
+                    onChange={(range) =>
+                      setSearch({ cloud: unlessDefault(range, PROVIDER_DEFAULT_RANGE) })
+                    }
+                  />
+                  <ViewToggle
+                    list={cloudList}
+                    onChange={(next) => {
+                      saveFlag(CLOUD_LIST_KEY, next);
+                      setCloudList(next);
+                    }}
+                  />
+                </div>
               }
-              bare
+              bare={cloudList || cloud.length === 0}
               footer={
                 <p className="text-xs text-muted-foreground">
                   Est. cost is at list prices, before any included minutes. Each provider's page has
@@ -538,8 +551,14 @@ function RunnersPage() {
                 </p>
               }
             >
-              {cloud.length > 0 ? (
+              {cloud.length > 0 && cloudList ? (
                 <CloudRunnersTable providers={cloud} range={search.cloud} />
+              ) : cloud.length > 0 ? (
+                cloud.map((summary) => (
+                  <li key={summary.provider} className="grid min-w-0">
+                    <CloudProviderCard summary={summary} range={search.cloud} />
+                  </li>
+                ))
               ) : (
                 <p className="rounded-xl border border-dashed bg-card px-4 py-6 text-sm text-muted-foreground">
                   No jobs ran in the cloud in {rangePhrase(cloudRange)}.

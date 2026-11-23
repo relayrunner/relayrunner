@@ -147,7 +147,14 @@ export type WorkflowRunPoint = {
   environment: string | null;
   /** A provider evaluation's run. */
   evaluation: boolean;
-  jobs: { name: string; environment: string; ms: number; usd: number | null }[];
+  /** Each job: its run time, its wait for a runner (null when GitHub sent no queue time), cost. */
+  jobs: {
+    name: string;
+    environment: string;
+    ms: number;
+    waitMs: number | null;
+    usd: number | null;
+  }[];
 };
 
 /** GET /api/job-times/workflow: one workflow on every runner it ran on. */

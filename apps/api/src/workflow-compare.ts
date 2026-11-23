@@ -297,6 +297,7 @@ export async function workflowReport(
       group: matrixName(job.name) ?? job.name,
       environment: env.key,
       ms,
+      waitMs: job.queuedAt ? Math.max(0, job.startedAt!.getTime() - job.queuedAt.getTime()) : null,
       usd: rate === null ? null : billedMinutes(ms) * rate,
     };
   });
@@ -332,6 +333,10 @@ export async function workflowReport(
         name: legs[0]!.group,
         environment: legs[0]!.environment,
         ms: Math.max(...legs.map((job) => job.ms)),
+        // The longest-waiting leg, like the longest-running one.
+        waitMs: legs.some((job) => job.waitMs !== null)
+          ? Math.max(...legs.map((job) => job.waitMs ?? 0))
+          : null,
         usd: sumUsd(legs),
       })),
     });
