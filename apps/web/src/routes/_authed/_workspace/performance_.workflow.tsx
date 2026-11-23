@@ -290,18 +290,16 @@ function firstCharted(report: WorkflowReport) {
   return first;
 }
 
-/** "44 runs", "22 runs · 5 eval". */
+/**
+ * "44 runs", or "5 eval" for a runner that has only been evaluated, so nobody takes trial runs for
+ * routed CI. Once a runner takes real runs, its evaluations stop being worth calling out.
+ */
 function RunsText({ runner }: { runner: WorkflowRunner }) {
+  if (runner.runs > 0) return <span>{plural(runner.runs, "run")}</span>;
   return (
     <span className="inline-flex items-center gap-1.5">
-      {runner.runs > 0 && <span>{plural(runner.runs, "run")}</span>}
-      {runner.runs > 0 && runner.evaluations > 0 && <span aria-hidden>·</span>}
-      {runner.evaluations > 0 && (
-        <span className="inline-flex items-center gap-1.5">
-          <FlaskConicalIcon aria-hidden className="size-3" />
-          {runner.evaluations} eval
-        </span>
-      )}
+      <FlaskConicalIcon aria-hidden className="size-3" />
+      {runner.evaluations} eval
     </span>
   );
 }
