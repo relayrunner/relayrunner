@@ -7,11 +7,12 @@ import { ArrowLeftIcon, ChevronRightIcon, FlaskConicalIcon } from "lucide-react"
 import { Fragment, useMemo, useState } from "react";
 import { SectionBoundary } from "@/components/error-boundary";
 import { PageHeader } from "@/components/page-header";
-import { Change, runnerTitle } from "@/components/performance-workflows";
+import { runnerTitle } from "@/components/performance-workflows";
 import { ProviderMark, providerOf, RunnerMark } from "@/components/providers";
 import { TimeRangePicker } from "@/components/range-picker";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
+import { InfoTip } from "@/components/ui/info-tip";
 import {
   Select,
   SelectContent,
@@ -27,7 +28,6 @@ import {
   environmentColor,
   getWorkflowReport,
   JOB_RANGES,
-  percentChange,
   plural,
   runCost,
   type WorkflowReport,
@@ -48,12 +48,13 @@ const CHARTED = 4;
 const UNTRIED_SHOWN = 3;
 
 // `repo` and `workflow` name it (no `workflow` for one GitHub didn't name). `metric=cost` charts
-// cost per run instead of time; `job` charts one job instead of the whole run.
+// cost per run instead of time, `metric=wait` the wait for a runner; `job` charts one job instead
+// of the whole run.
 type Search = {
   repo: number;
   workflow?: string;
   range?: TimeRange;
-  metric?: "cost";
+  metric?: "cost" | "wait";
   job?: string;
 };
 
@@ -63,7 +64,7 @@ const validateSearch = (search: Record<string, unknown>): Search => {
     repo: Number.isSafeInteger(repo) && repo > 0 ? repo : 0,
     workflow: textParam(search.workflow),
     ...ranges.validateSearch(search),
-    metric: search.metric === "cost" ? "cost" : undefined,
+    metric: search.metric === "cost" || search.metric === "wait" ? search.metric : undefined,
     job: textParam(search.job),
   };
 };
@@ -91,8 +92,6 @@ export const Route = createFileRoute("/_authed/_workspace/performance_/workflow"
   shouldReload: ({ cause }) => cause !== "stay",
   component: WorkflowPage,
 });
-
-const BASELINE_NAME = "GitHub";
 
 // The job picker's value for the whole run, which no job is named.
 const WHOLE = "\u0000whole";
@@ -149,7 +148,7 @@ function Comparison({ report, range }: { report: WorkflowReport; range: TimeRang
   const search = Route.useSearch();
   const setSearch = useSetSearch<Search>();
   const job = search.job && report.jobs.includes(search.job) ? search.job : null;
-  const cost = search.metric === "cost";
+  const metric = search.metric ?? "time";
   const colors = useMemo(
     () => new Map(report.runners.map((runner, index) => [runner.key, environmentColor(index)!])),
     [report],
@@ -183,9 +182,13 @@ function Comparison({ report, range }: { report: WorkflowReport; range: TimeRang
               {job ?? report.workflow ?? "Unnamed workflow"} over {rangePhrase(range)}
             </h2>
             <p className="text-sm text-muted-foreground">
-              {cost
+              {metric === "cost"
                 ? "Each dot is one passing run's cost at list prices. Lines join each runner's daily median."
-                : "Each dot is one passing run. Lines join each runner's daily median, and break where it took no runs."}
+                : metric === "wait"
+                  ? job
+                    ? "Each dot is how long this job waited for a runner. Lines join each runner's daily median."
+                    : "Each dot is the longest any job of one passing run waited for a runner. Lines join each runner's daily median."
+                  : "Each dot is one passing run. Lines join each runner's daily median, and break where it took no runs."}
             </p>
           </div>
           <div className="flex flex-wrap items-center gap-2">
@@ -213,6 +216,7 @@ function Comparison({ report, range }: { report: WorkflowReport; range: TimeRang
               {(
                 [
                   ["Time", undefined],
+                  ["Waiting", "wait"],
                   ["Cost per run", "cost"],
                 ] as const
               ).map(([label, value]) => (
@@ -260,7 +264,7 @@ function Comparison({ report, range }: { report: WorkflowReport; range: TimeRang
           runs={report.runs}
           series={series}
           job={job}
-          cost={cost}
+          metric={metric}
           from={from}
           to={to}
         />
@@ -293,7 +297,7 @@ function RunsText({ runner }: { runner: WorkflowRunner }) {
       {runner.runs > 0 && <span>{plural(runner.runs, "run")}</span>}
       {runner.runs > 0 && runner.evaluations > 0 && <span aria-hidden>·</span>}
       {runner.evaluations > 0 && (
-        <span className="inline-flex items-center gap-1">
+        <span className="inline-flex items-center gap-1.5">
           <FlaskConicalIcon aria-hidden className="size-3" />
           {runner.evaluations} eval
         </span>
@@ -316,14 +320,19 @@ function Runners({
   const evaluate = useFlag("provider-evaluations");
   const [open, setOpen] = useState<string | null>(null);
   const [allUntried, setAllUntried] = useState(false);
-  const base = report.runners.find((runner) => runner.key === report.baseline) ?? null;
   const rows = report.runners.toSorted(
     (a, b) => (a.medianMs ?? Infinity) - (b.medianMs ?? Infinity),
   );
-  // A runner that only ran some jobs is drawn as its jobs' medians end to end.
-  const jobsMs = (runner: WorkflowRunner) =>
-    Object.values(runner.jobs).reduce((total, job) => total + (job.medianMs ?? 0), 0);
-  const maxMs = Math.max(...rows.map((runner) => runner.medianMs ?? jobsMs(runner)), 1);
+  const spreads = useMemo(() => runnerSpreads(report), [report]);
+  // One scale for every row, so the ranges line up against each other.
+  const maxMs =
+    Math.max(
+      ...[...spreads.values()].flatMap((each) => [
+        each.whole?.hi ?? 0,
+        ...[...each.jobs.values()].map((job) => job.hi),
+      ]),
+      1,
+    ) * 1.05;
   // Live providers only, the ones people know first.
   const untried = report.untried
     .map((id) => providerInfo(id))
@@ -336,7 +345,7 @@ function Runners({
       <div className="flex flex-wrap items-baseline justify-between gap-2 px-4 pt-3 pb-2">
         <h2 className="font-semibold">Runners</h2>
         <span className="text-xs text-muted-foreground">
-          {plural(rows.length, "runner")} ran this workflow · ▲▼ against {BASELINE_NAME}
+          {plural(rows.length, "runner")} ran this workflow
           {untried.length > 0 && ` · ${untried.length} not tried yet`}
         </span>
       </div>
@@ -347,11 +356,26 @@ function Runners({
               <span className="sr-only">Chart</span>
             </th>
             <th className="px-2 py-2 font-medium">Runner</th>
-            <th className="w-[32%] min-w-48 px-4 py-2 font-medium">Median run</th>
-            <th className="px-4 py-2 text-right font-medium">
-              Cost per run
-              <span className="inline-block w-14" />
+            <th className="w-[36%] min-w-56 px-4 py-2 font-medium">
+              <span className="inline-flex items-center gap-1.5">
+                Run time
+                <InfoTip label="Run time">
+                  <p>
+                    The number is the median run. The bar shows where most runs fall, and the tick
+                    marks the median.
+                  </p>
+                </InfoTip>
+              </span>
             </th>
+            <th className="px-4 py-2 text-right font-medium">
+              <span className="inline-flex items-center gap-1.5">
+                Waiting
+                <InfoTip label="Waiting">
+                  <p>The median time a job waited for this runner to pick it up.</p>
+                </InfoTip>
+              </span>
+            </th>
+            <th className="px-4 py-2 text-right font-medium">Cost per run</th>
             <th className="px-4 py-2 text-right font-medium">Runs</th>
           </tr>
         </thead>
@@ -361,20 +385,20 @@ function Runners({
               key={runner.key}
               runner={runner}
               report={report}
-              base={base}
               color={colors.get(runner.key)!}
               charted={charted.has(runner.key)}
               onToggle={() => onToggle(runner.key)}
               open={open === runner.key}
               onOpen={() => setOpen(open === runner.key ? null : runner.key)}
               maxMs={maxMs}
+              spread={spreads.get(runner.key)!}
             />
           ))}
           {untried.length > 0 && (
             <>
               <tr className="border-b bg-raised-2/30 text-xs text-muted-foreground">
                 <td />
-                <td colSpan={4} className="px-2 py-2 font-medium">
+                <td colSpan={5} className="px-2 py-2 font-medium">
                   Not tried on this workflow
                 </td>
               </tr>
@@ -391,9 +415,8 @@ function Runners({
                     </span>
                   </td>
                   <td className="px-4 py-3 text-xs whitespace-nowrap">No runs yet</td>
-                  <td className="px-4 py-3 text-right">
-                    —<span className="inline-block w-14" />
-                  </td>
+                  <td className="px-4 py-3 text-right">—</td>
+                  <td className="px-4 py-3 text-right">—</td>
                   <td className="px-4 py-2 text-right">
                     {evaluate && (
                       <Button variant="outline" size="sm" className="h-7 gap-1.5 text-xs" asChild>
@@ -409,7 +432,7 @@ function Runners({
               {untried.length > UNTRIED_SHOWN && (
                 <tr>
                   <td />
-                  <td colSpan={4} className="px-2 py-2">
+                  <td colSpan={5} className="px-2 py-2">
                     <Button
                       variant="ghost"
                       size="sm"
@@ -432,29 +455,26 @@ function Runners({
 function RunnerRow({
   runner,
   report,
-  base,
   color,
   charted,
   onToggle,
   open,
   onOpen,
   maxMs,
+  spread,
 }: {
   runner: WorkflowRunner;
   report: WorkflowReport;
-  base: WorkflowRunner | null;
   color: string;
   charted: boolean;
   onToggle: () => void;
   open: boolean;
   onOpen: () => void;
   maxMs: number;
+  spread: RunnerSpread;
 }) {
-  const isBase = runner.key === base?.key;
   const few = runner.wholeRuns > 0 && runner.wholeRuns < report.fewRuns;
   const jobs = report.jobs.map((name) => ({ name, stat: runner.jobs[name] ?? null }));
-  const sum = jobs.reduce((total, job) => total + (job.stat?.medianMs ?? 0), 0);
-  const scale = (runner.medianMs ?? sum) / maxMs;
   const spec = runnerSpecText(runner);
   return (
     <Fragment>
@@ -488,60 +508,44 @@ function RunnerRow({
               {runnerTitle(runner)}
             </span>
             {spec && <span className="text-xs text-muted-foreground">{spec}</span>}
-            {isBase && (
-              <span className="rounded bg-raised-2 px-1.5 py-0.5 text-[11px] text-muted-foreground">
-                baseline
-              </span>
-            )}
           </button>
         </td>
         <td className="px-4 py-3">
-          <div className="grid gap-1.5">
-            <span className="flex items-center gap-3">
-              <span
-                className={cn(
-                  "min-w-10 font-medium whitespace-nowrap",
-                  charted && "text-foreground",
-                )}
-              >
-                {runner.medianMs === null ? (
-                  <span className="text-xs font-normal text-muted-foreground">Some jobs only</span>
-                ) : (
-                  `${few ? "~" : ""}${clock(runner.medianMs)}`
-                )}
+          {/* Laid out like the job rows, so every track shares one scale and one left edge. */}
+          <span className="flex items-center gap-4">
+            <span
+              className={cn(
+                "w-12 shrink-0 font-medium whitespace-nowrap",
+                charted && "text-foreground",
+              )}
+            >
+              {runner.medianMs === null ? "—" : `${few ? "~" : ""}${clock(runner.medianMs)}`}
+            </span>
+            {runner.medianMs === null ? (
+              <span className="flex-1 text-xs text-muted-foreground">
+                Some jobs only. Expand for each job.
               </span>
-              <Delta pct={isBase ? null : percentChange(runner.medianMs, base?.medianMs)} />
-            </span>
-            <span className="flex h-2 w-full overflow-hidden rounded-full bg-raised-2">
-              <span
-                className="flex h-full gap-[2px]"
-                style={{ width: `${Math.min(scale, 1) * 100}%` }}
-              >
-                {jobs.map(({ name, stat }) =>
-                  stat?.medianMs ? (
-                    <span
-                      key={name}
-                      title={`${name} ${clock(stat.medianMs)}`}
-                      className="h-full"
-                      style={{
-                        width: `${(stat.medianMs / sum) * 100}%`,
-                        background: color,
-                        opacity: charted ? 1 : 0.45,
-                      }}
-                    />
-                  ) : null,
-                )}
-              </span>
-            </span>
-          </div>
-        </td>
-        <td className="px-4 py-3 align-top">
-          <span className="flex items-center justify-end gap-2">
-            <span className={cn("font-medium whitespace-nowrap", charted && "text-foreground")}>
-              {runCost(runner.usd)}
-            </span>
-            <Delta pct={isBase ? null : percentChange(runner.usd, base?.usd)} />
+            ) : (
+              <RangeBar
+                range={spread.whole}
+                max={maxMs}
+                color={color}
+                faded={!charted}
+                className="flex-1"
+              />
+            )}
           </span>
+        </td>
+        <td className="px-4 py-3 text-right whitespace-nowrap text-muted-foreground">
+          {spread.waitMs === null ? "—" : clock(spread.waitMs)}
+        </td>
+        <td
+          className={cn(
+            "px-4 py-3 text-right font-medium whitespace-nowrap",
+            charted && "text-foreground",
+          )}
+        >
+          {runCost(runner.usd)}
         </td>
         <td className="px-4 py-3 text-right text-xs whitespace-nowrap text-muted-foreground">
           <RunsText runner={runner} />
@@ -549,7 +553,7 @@ function RunnerRow({
       </tr>
       {open &&
         jobs.map(({ name, stat }, index) => {
-          const baseJob = base?.jobs[name] ?? null;
+          const waitMs = spread.jobWaits.get(name) ?? null;
           return (
             <tr
               key={name}
@@ -561,31 +565,25 @@ function RunnerRow({
                 {stat?.medianMs == null ? (
                   <span className="text-muted-foreground">Not run here</span>
                 ) : (
-                  <span className="flex items-center gap-3">
-                    <span className="w-10 whitespace-nowrap">{clock(stat.medianMs)}</span>
-                    <Delta
-                      pct={isBase ? null : percentChange(stat.medianMs, baseJob?.medianMs)}
+                  <span className="flex items-center gap-4">
+                    <span className="w-12 shrink-0 whitespace-nowrap">{clock(stat.medianMs)}</span>
+                    <RangeBar
+                      range={spread.jobs.get(name) ?? null}
+                      max={maxMs}
+                      // Gray, so the runner rows keep the only color.
+                      color="var(--muted-foreground)"
+                      faded={!charted}
                       small
+                      className="flex-1"
                     />
-                    <span className="flex h-1.5 flex-1 overflow-hidden rounded-full bg-raised-2">
-                      <span
-                        className="h-full"
-                        style={{ width: `${(stat.medianMs / maxMs) * 100}%`, background: color }}
-                      />
-                    </span>
                   </span>
                 )}
               </td>
-              <td className="px-4 py-1.5">
-                <span className="flex items-center justify-end gap-2">
-                  <span className="whitespace-nowrap text-muted-foreground">
-                    {runCost(stat?.usd)}
-                  </span>
-                  <Delta
-                    pct={isBase || !stat ? null : percentChange(stat.usd, baseJob?.usd)}
-                    small
-                  />
-                </span>
+              <td className="px-4 py-1.5 text-right whitespace-nowrap text-muted-foreground">
+                {waitMs === null ? "—" : clock(waitMs)}
+              </td>
+              <td className="px-4 py-1.5 text-right whitespace-nowrap text-muted-foreground">
+                {runCost(stat?.usd)}
               </td>
               <td className="px-4 py-1.5 text-right text-xs whitespace-nowrap text-muted-foreground">
                 {stat && plural(stat.runs, "run")}
@@ -597,12 +595,111 @@ function RunnerRow({
   );
 }
 
-/** The change against the baseline in a fixed-width slot after a value, so changes line up. */
-function Delta({ pct, small = false }: { pct: number | null; small?: boolean }) {
+/** Most of a runner's runs (10th to 90th percentile) and their median, in ms. */
+type Range = { lo: number; mid: number; hi: number };
+/** A runner's run time spreads, and the median wait of its jobs (all, and by job name). */
+type RunnerSpread = {
+  whole: Range | null;
+  jobs: Map<string, Range>;
+  waitMs: number | null;
+  jobWaits: Map<string, number>;
+};
+
+function quantile(sorted: number[], q: number) {
+  const at = (sorted.length - 1) * q;
+  const below = Math.floor(at);
+  return sorted[below]! + (sorted[Math.ceil(at)]! - sorted[below]!) * (at - below);
+}
+
+function rangeOf(values: number[]): Range | null {
+  if (values.length === 0) return null;
+  const sorted = values.toSorted((a, b) => a - b);
+  return { lo: quantile(sorted, 0.1), mid: quantile(sorted, 0.5), hi: quantile(sorted, 0.9) };
+}
+
+/**
+ * Each runner's spread of successful runs that ran every job there, and each job's spread.
+ */
+function runnerSpreads(report: WorkflowReport) {
+  const spreads = new Map<string, RunnerSpread>();
+  for (const runner of report.runners) {
+    const whole = report.runs.filter((run) => run.environment === runner.key).map((run) => run.ms);
+    const jobs = new Map<string, Range>();
+    for (const name of report.jobs) {
+      const range = rangeOf(
+        report.runs.flatMap((run) =>
+          run.jobs
+            .filter((job) => job.name === name && job.environment === runner.key)
+            .map((job) => job.ms),
+        ),
+      );
+      if (range) jobs.set(name, range);
+    }
+    const waits = (name?: string) =>
+      rangeOf(
+        report.runs.flatMap((run) =>
+          run.jobs.flatMap((job) =>
+            job.environment === runner.key &&
+            (name === undefined || job.name === name) &&
+            job.waitMs !== null
+              ? [job.waitMs]
+              : [],
+          ),
+        ),
+      )?.mid ?? null;
+    const jobWaits = new Map<string, number>();
+    for (const name of report.jobs) {
+      const wait = waits(name);
+      if (wait !== null) jobWaits.set(name, wait);
+    }
+    spreads.set(runner.key, { whole: rangeOf(whole), jobs, waitMs: waits(), jobWaits });
+  }
+  return spreads;
+}
+
+/** A track on the table's shared scale: a soft bar over most runs, a tick at the median. */
+function RangeBar({
+  range,
+  max,
+  color,
+  faded,
+  small = false,
+  className,
+}: {
+  range: Range | null;
+  max: number;
+  color: string;
+  faded: boolean;
+  small?: boolean;
+  className?: string;
+}) {
+  const at = (ms: number) => `${Math.min(ms / max, 1) * 100}%`;
   return (
-    <span className="inline-flex w-12 shrink-0 items-center">
-      {pct !== null && (
-        <Change pct={pct} className={cn("font-normal", small ? "text-[11px]" : "text-xs")} />
+    <span
+      className={cn("relative flex items-center", small ? "h-3" : "h-4", className)}
+      title={
+        range
+          ? `Most runs ${clock(range.lo)}–${clock(range.hi)} · median ${clock(range.mid)}`
+          : undefined
+      }
+    >
+      <span className={cn("w-full rounded-full bg-raised-2", small ? "h-1.5" : "h-2")} />
+      {range && (
+        <>
+          <span
+            className={cn("absolute rounded-full", small ? "h-1.5" : "h-2")}
+            style={{
+              left: at(range.lo),
+              width: `max(6px, calc(${at(range.hi)} - ${at(range.lo)}))`,
+              background: color,
+              opacity: faded ? 0.2 : 0.4,
+            }}
+          />
+          <span
+            className={cn("absolute w-[3px] -translate-x-1/2 rounded-full", small ? "h-3" : "h-4")}
+            style={{ left: at(range.mid), background: color, opacity: faded ? 0.5 : 1 }}
+          />
+        </>
       )}
     </span>
   );

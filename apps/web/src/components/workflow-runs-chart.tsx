@@ -1,11 +1,12 @@
 // Every successful run of one workflow over the window, for its page: a faint dot per run, a line
 // through each runner's daily median that breaks where it took no runs for over two days, and
-// evaluation runs as rings. Shows the whole workflow or one job, as time or cost per run.
+// evaluation runs as rings. Shows the whole workflow or one job, as time, cost per run or wait.
 import { useWidth } from "@/components/chart-parts";
 import { clock, DAY_MS, niceStep, type WorkflowRunPoint } from "@/lib/job-times";
 import { shortDate } from "@/lib/time-zone";
 
 export type ChartSeries = { key: string; name: string; color: string };
+export type ChartMetric = "time" | "cost" | "wait";
 
 /** A day with more than this many empty days before it starts a new line. */
 const GAP_DAYS = 2;
@@ -21,25 +22,31 @@ function median(values: number[]) {
   return sorted.length % 2 ? sorted[mid]! : (sorted[mid - 1]! + sorted[mid]!) / 2;
 }
 
-/** A point's value for the series: the run, or its one job on that runner. */
+/**
+ * A point's value for the series: the run, or its one job on that runner. A whole run's wait is
+ * its longest-waiting job's.
+ */
 export function pointsOf(
   runs: WorkflowRunPoint[],
   key: string,
   job: string | null,
-  cost: boolean,
+  metric: ChartMetric,
 ): { at: number; value: number; evaluation: boolean; runId: number }[] {
   return runs.flatMap((run) => {
     let ms: number;
     let usd: number | null;
+    let waitMs: number | null;
     if (job === null) {
       if (run.environment !== key) return [];
       ({ ms, usd } = run);
+      const waits = run.jobs.flatMap((each) => (each.waitMs === null ? [] : [each.waitMs]));
+      waitMs = waits.length ? Math.max(...waits) : null;
     } else {
       const found = run.jobs.find((each) => each.name === job && each.environment === key);
       if (!found) return [];
-      ({ ms, usd } = found);
+      ({ ms, usd, waitMs } = found);
     }
-    const value = cost ? usd : ms;
+    const value = metric === "cost" ? usd : metric === "wait" ? waitMs : ms;
     return value === null
       ? []
       : [{ at: run.at, value, evaluation: run.evaluation, runId: run.runId }];
@@ -57,7 +64,7 @@ export function WorkflowRunsChart({
   runs,
   series,
   job,
-  cost,
+  metric,
   from,
   to,
 }: {
@@ -65,14 +72,15 @@ export function WorkflowRunsChart({
   series: ChartSeries[];
   /** One job's name, or null for the whole workflow. */
   job: string | null;
-  cost: boolean;
+  metric: ChartMetric;
   from: number;
   to: number;
 }) {
   const [ref, width] = useWidth<HTMLDivElement>();
-  const lines = series.map((each) => ({ ...each, points: pointsOf(runs, each.key, job, cost) }));
+  const cost = metric === "cost";
+  const lines = series.map((each) => ({ ...each, points: pointsOf(runs, each.key, job, metric) }));
   const values = lines.flatMap((line) => line.points.map((point) => point.value));
-  const max = Math.max(...values, cost ? 0.01 : 60_000) * 1.08;
+  const max = Math.max(...values, cost ? 0.01 : metric === "wait" ? 10_000 : 60_000) * 1.08;
   const step = cost ? costStep(max) : niceStep(max / 4);
   const yMax = Math.ceil(max / step) * step;
   const ticks = Array.from({ length: Math.round(yMax / step) + 1 }, (_, i) => i * step);
@@ -93,7 +101,7 @@ export function WorkflowRunsChart({
           width={width}
           height={HEIGHT}
           role="img"
-          aria-label={`${cost ? "Cost" : "Time"} of each successful run over the range, by runner`}
+          aria-label={`${cost ? "Cost" : metric === "wait" ? "Wait" : "Time"} of each successful run over the range, by runner`}
         >
           {ticks.map((tick) => (
             <g key={tick}>

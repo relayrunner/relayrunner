@@ -8,17 +8,18 @@ const MAC = "machine:sample";
 const BLACKSMITH = "blacksmith:blacksmith-4vcpu-ubuntu-2404";
 const CONTAINER = "container";
 
-// Each runner's usual seconds per job, its price per minute, and how often it took a run.
+// Each runner's usual seconds per job, its price per minute, how often it took a run, and its
+// usual seconds waiting for a runner.
 const JOBS = ["test", "typecheck", "lint", "build"] as const;
 const PLAN: Record<
   string,
-  { seconds: number[]; rate: number; share: number; skip?: (typeof JOBS)[number] }
+  { seconds: number[]; rate: number; share: number; wait: number; skip?: (typeof JOBS)[number] }
 > = {
-  [LINUX]: { seconds: [190, 92, 41, 125], rate: 0.006, share: 1.6 },
-  [MAC]: { seconds: [81, 38, 12, 52], rate: 0, share: 1.1 },
-  [BLACKSMITH]: { seconds: [104, 55, 22, 70], rate: 0.008, share: 0.5 },
+  [LINUX]: { seconds: [190, 92, 41, 125], rate: 0.006, share: 1.6, wait: 9 },
+  [MAC]: { seconds: [81, 38, 12, 52], rate: 0, share: 1.1, wait: 2 },
+  [BLACKSMITH]: { seconds: [104, 55, 22, 70], rate: 0.008, share: 0.5, wait: 4 },
   // Containers aren't sent the build.
-  [CONTAINER]: { seconds: [168, 84, 24, 0], rate: 0.0028, share: 0.8, skip: "build" },
+  [CONTAINER]: { seconds: [168, 84, 24, 0], rate: 0.0028, share: 0.8, wait: 14, skip: "build" },
 };
 
 const ENVIRONMENTS: Record<
@@ -82,12 +83,14 @@ export function sampleWorkflowReport(
     const jobs = JOBS.filter((name) => name !== plan.skip).map((name) => {
       const noise = 1 + (next() - 0.5) * 0.2 + (next() < 0.05 ? 0.4 : 0);
       const ms = Math.round(plan.seconds[JOBS.indexOf(name)]! * 1000 * noise * (cold ? 1.5 : 1));
-      return { name, environment: env, ms, usd: billed(ms) * plan.rate };
+      const waitMs = Math.round(plan.wait * 1000 * (0.5 + next()));
+      return { name, environment: env, ms, waitMs, usd: billed(ms) * plan.rate };
     });
     // A container run sends its build to GitHub, so the run is mixed.
     if (plan.skip) {
       const ms = Math.round(125_000 * (1 + (next() - 0.5) * 0.2));
-      jobs.push({ name: plan.skip, environment: LINUX, ms, usd: billed(ms) * 0.006 });
+      const waitMs = Math.round(9000 * (0.5 + next()));
+      jobs.push({ name: plan.skip, environment: LINUX, ms, waitMs, usd: billed(ms) * 0.006 });
     }
     const ms = Math.max(...jobs.map((job) => job.ms)) + 6000 + Math.round(next() * 8000);
     runs.push({
