@@ -3,7 +3,7 @@ import type { AccountUsage } from "./actions-usage.ts";
 import { sampleRouterAccounts } from "./sample/router-setup.ts";
 import type { Machine } from "./machines.ts";
 import { previewRoute } from "./route-preview.ts";
-import { sampleFreeMinutes } from "./free-minutes.ts";
+import { sampleFreeMinutes } from "./sample/free-minutes.ts";
 
 const machine = (
   name: string,

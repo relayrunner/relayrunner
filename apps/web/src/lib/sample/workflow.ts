@@ -2,6 +2,7 @@
 // a laptop, Blacksmith (from an evaluation and routed runs) and a container.
 import type { WorkflowReport, WorkflowRunner, WorkflowRunPoint } from "@relayrunner/api-types";
 import { DAY_MS } from "@/lib/job-times";
+import { seededRandom } from "./shared.ts";
 
 const LINUX = "github:linux-2-core";
 const MAC = "machine:sample";
@@ -52,14 +53,6 @@ const ENVIRONMENTS: Record<
   },
 };
 
-function random(seed: number) {
-  let x = seed;
-  return () => {
-    x = (x * 1664525 + 1013904223) % 4294967296;
-    return x / 4294967296;
-  };
-}
-
 function median(values: number[]) {
   if (values.length === 0) return null;
   const sorted = values.toSorted((a, b) => a - b);
@@ -75,7 +68,7 @@ export function sampleWorkflowReport(
   workflow: string | null,
   now = Date.now(),
 ): WorkflowReport {
-  const next = random(7);
+  const next = seededRandom(7);
   const runs: WorkflowRunPoint[] = [];
   let runId = 9000;
   const run = (env: string, at: number, { evaluation = false, cold = false } = {}) => {

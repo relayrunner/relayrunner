@@ -6,13 +6,12 @@
 // `sponsored-groundbox` a Groundbox team on a plan without free minutes, and `boat` (connected) or
 // `no-boat` an uncapped Boat step.
 import { DEFAULT_RUNNER_ORDER, type FreeMinutesProvider } from "@relayrunner/runner-order";
-import { type ActionsUsage, sampleActionsUsage } from "../actions-usage.ts";
-import { type FreeMinutes, sampleFreeMinutes } from "../free-minutes.ts";
-import { sampleConnections } from "../provider-connections.ts";
+import type { FreeMinutes } from "../free-minutes.ts";
+import { sampleFreeMinutes } from "./free-minutes.ts";
+import { sampleConnections } from "./provider-connections.ts";
 import type { ProviderSpend } from "../provider-spend.ts";
 import type { RunnerOrderResponse } from "../runner-order.ts";
 import { sampleParam } from "./param.ts";
-import { sampleRouterAccounts } from "./router-setup.ts";
 
 export function sampleRunnerOrder(): RunnerOrderResponse {
   const sample = sampleParam();
@@ -40,23 +39,6 @@ export function sampleRunnerOrder(): RunnerOrderResponse {
       ],
     },
     isDefault: false,
-  };
-}
-
-/**
- * The GitHub accounts' minutes. The Router shows one team account (or the `?sample=` one) against
- * its GitHub step; Usage shows several accounts in different states.
- */
-export function sampleRouterActionsUsage(): ActionsUsage {
-  const usage = sampleActionsUsage();
-  if (!window.location.pathname.endsWith("/router")) return usage;
-  const sample = sampleParam();
-  if (sample === "default") return { ...usage, accounts: [] };
-  return {
-    ...usage,
-    accounts: sampleRouterAccounts(
-      sample === "enterprise" || sample === "personal" ? sample : "team",
-    ),
   };
 }
 

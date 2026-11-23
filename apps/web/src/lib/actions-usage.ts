@@ -4,7 +4,6 @@ import { exact } from "./utils";
 // Each connected GitHub account's Actions minutes this billing cycle, read from GitHub billing
 // (#116, GET /api/usage/actions). Per account, never pooled: each has its own included quota. The
 // shape mirrors AccountUsage in apps/api/src/providers/actions-billing.ts.
-
 export type AccountUsageReason =
   | "enterprise"
   | "enterprise_permission"
@@ -84,79 +83,6 @@ export function unavailableText(account: AccountUsage): string | null {
     case "error":
       return "Couldn't read billing from GitHub. RelayRunner tries again every 15 minutes.";
   }
-}
-
-/** Sample accounts for previews without a signed-in API. */
-export function sampleActionsUsage(): ActionsUsage {
-  const now = new Date();
-  const cycleStart = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), 1)).toISOString();
-  const readAt = new Date(now.getTime() - 6 * 60_000).toISOString();
-  const base = {
-    accountType: "Organization",
-    grossAmount: 0,
-    budget: { amountUsd: 0, preventFurtherUsage: true },
-    cycleStart,
-    readAt,
-    spendApp: true,
-    enterprise: null,
-  };
-  return {
-    accounts: [
-      {
-        ...base,
-        installationId: 1,
-        accountLogin: "relayrunner",
-        status: "ok",
-        reason: null,
-        plan: "free",
-        quotaMinutes: 2000,
-        usedMinutes: 1640,
-        netAmount: 0,
-        burnRatePerHour: 38,
-      },
-      {
-        ...base,
-        installationId: 2,
-        accountLogin: "acme-labs",
-        status: "ok",
-        reason: null,
-        plan: "team",
-        quotaMinutes: 3000,
-        usedMinutes: 3112,
-        netAmount: 0.67,
-        burnRatePerHour: 54,
-        budget: null,
-      },
-      {
-        ...base,
-        installationId: 3,
-        accountLogin: "bigco",
-        status: "not_available",
-        reason: "enterprise",
-        plan: "enterprise",
-        quotaMinutes: null,
-        usedMinutes: 18200,
-        netAmount: 0,
-        burnRatePerHour: 210,
-        budget: null,
-      },
-      {
-        ...base,
-        accountType: "User",
-        spendApp: null,
-        installationId: 4,
-        accountLogin: "octocat",
-        status: "ok",
-        reason: null,
-        plan: "free",
-        quotaMinutes: 2000,
-        usedMinutes: 420,
-        netAmount: 0,
-        burnRatePerHour: 6,
-        budget: null,
-      },
-    ],
-  };
 }
 
 const DAY_MS = 86_400_000;

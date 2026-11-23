@@ -1,9 +1,8 @@
 import { api } from "@/lib/api";
-import { DAY_MS, type Environment, HOUR_MS, sampleJobTimes, type Stat } from "@/lib/job-times";
+import type { Environment, Stat } from "@/lib/job-times";
 import type { RunnerBucket } from "./runner-days.ts";
-import { type HistoryJob, sampleRunInfo } from "./runs.ts";
-import { zoneOffset, zoneParts } from "@/lib/time-zone";
-
+import type { HistoryJob } from "./runs.ts";
+import { zoneOffset } from "@/lib/time-zone";
 export type RunnerJob = Omit<HistoryJob, "usage">;
 
 /** One runner over a window (GET /api/job-times/runner), for its detail panel. */
@@ -26,7 +25,7 @@ export type RunnerReport = {
 };
 
 /** The reader's minutes east of UTC, in their chosen zone, which bars are cut at. */
-const utcOffset = () => zoneOffset(Date.now());
+export const utcOffset = () => zoneOffset(Date.now());
 
 export function getRunnerReport(key: string, { from, to }: { from: number; to: number }) {
   const query = new URLSearchParams({
@@ -36,92 +35,4 @@ export function getRunnerReport(key: string, { from, to }: { from: number; to: n
     utcOffset: String(utcOffset()),
   });
   return api<RunnerReport>(`/job-times/runner?${query}`);
-}
-
-/** Dev preview: a made-up report for any of the sample reports' runners. */
-export function sampleRunnerReport(
-  key: string,
-  { from, to }: { from: number; to: number },
-): RunnerReport {
-  const days = Math.max(1, Math.round((to - from) / DAY_MS));
-  const sample = sampleJobTimes(days);
-  const env = sample.environments.find((each) => each.key === key);
-  const {
-    missed = 0,
-    stat,
-    ...environment
-  } = env ?? {
-    key,
-    label: key.slice(key.indexOf(":") + 1),
-    detail: "",
-    stat: sample.environments[0]!.stat,
-  };
-  let seed = key.length * 7 + 3;
-  const random = () => {
-    seed = (seed * 9301 + 49297) % 233280;
-    return seed / 233280;
-  };
-  const median = stat.medianMs ?? 60_000;
-  const span = to - from;
-  // As the API's bucketFor cuts them.
-  const bucketMs = span <= 6 * HOUR_MS ? 900_000 : span <= 2 * DAY_MS + HOUR_MS ? HOUR_MS : DAY_MS;
-  const offsetMs = utcOffset() * 60_000;
-  const buckets: RunnerBucket[] = [];
-  for (
-    let start = Math.floor((from + offsetMs) / bucketMs) * bucketMs - offsetMs;
-    start < to;
-    start += bucketMs
-  ) {
-    // Busy in working hours on weekdays, quiet at night and at weekends.
-    const { hour, weekday } = zoneParts(start);
-    const busy =
-      (weekday % 6 === 0 ? 0.5 : 1) *
-      (bucketMs === DAY_MS ? 14 : hour >= 9 && hour < 19 ? (bucketMs === HOUR_MS ? 6 : 2) : 0.4);
-    const jobs = Math.round(random() * busy);
-    const failures = jobs && random() > 0.8 ? 1 : 0;
-    buckets.push({ start, jobs, failures, busyMs: jobs * median });
-  }
-  const names = ["lint", "test (node 24)", "build", "typecheck", "e2e"];
-  const recent = Array.from({ length: 12 }, (_, index) => {
-    const completedAt = to - (index * span) / 14 - random() * (span / 14);
-    const runMs = median * (0.7 + random() * 0.6);
-    const startedAt = completedAt - runMs;
-    // A few jobs to a run, as a workflow's jobs share one.
-    const runId = 500 + Math.floor(index / 3);
-    return {
-      id: 1000 + index,
-      runId,
-      runAttempt: 1,
-      ...sampleRunInfo(runId),
-      environment: key,
-      conclusion: random() > 0.9 ? "failure" : "success",
-      queuedAt: startedAt - random() * 20_000,
-      startedAt,
-      completedAt,
-      repositoryId: 1,
-      repository: "acme/app",
-      workflow: "CI",
-      name: names[index % names.length]!,
-    };
-  });
-  const connections = key.startsWith("machine:sample")
-    ? [
-        { at: from + span * 0.1, online: true },
-        { at: from + span * 0.35, online: false },
-        { at: from + span * 0.42, online: true },
-        { at: from + span * 0.7, online: false },
-        { at: from + span * 0.78, online: true },
-      ]
-    : null;
-  return {
-    from,
-    to,
-    bucketMs,
-    environment,
-    stat,
-    missed,
-    buckets,
-    recent,
-    connections,
-  };
 }

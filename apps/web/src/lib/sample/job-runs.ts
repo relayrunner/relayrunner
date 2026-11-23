@@ -1,5 +1,7 @@
 // A job's runs and steps for the dev preview (lib/sample/answers.ts), like GET /api/job-times/runs.
-import { DAY_MS, type JobRow, type JobRun, type RunStep, sampleJobTimes } from "@/lib/job-times";
+import { DAY_MS, type JobRow, type JobRun, type RunStep } from "@/lib/job-times";
+import { sampleJobTimes } from "./job-times";
+import { seededRandom } from "./shared.ts";
 
 /** The runs of the sample job named, over `days`. */
 export function sampleJobRuns(
@@ -17,11 +19,7 @@ export function sampleJobRuns(
 function sampleRuns(job: JobRow, days: number): JobRun[] {
   const now = Date.now();
   let id = 0;
-  let seed = 7;
-  const random = () => {
-    seed = (seed * 9301 + 49297) % 233280;
-    return seed / 233280;
-  };
+  const random = seededRandom(7);
   return Object.entries(job.byEnvironment).flatMap(([environment, stat]) =>
     Array.from({ length: stat.samples }, () => {
       id += 1;

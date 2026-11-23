@@ -1,42 +1,35 @@
 // The dev preview's API (VITE_AUTH_DISABLED): what each GET answers with sample data instead of the
 // gateway. lib/api.ts imports this only in that mode, so none of it ships in the real dashboard.
 import type { ActivityFilter, ActivityResult } from "@/lib/activity";
-import { sampleRoutingHealth, type RoutingRange } from "@/lib/admin-routing";
-import { EVALUATION_RUNS, SAMPLE_WORKFLOWS, sampleEvaluation } from "@/lib/evaluations";
+import type { RoutingRange } from "@/lib/admin-routing";
+import { EVALUATION_RUNS } from "@/lib/evaluations";
 import { BASE_CATALOG } from "@relayrunner/providers/catalog";
 import { DEFAULT_RETRY_SETTINGS, type FreeMinutesProvider } from "@relayrunner/runner-order";
 import { allFlags } from "@/lib/flags";
-import { DAY_MS, sampleJobTimes } from "@/lib/job-times";
-import { sampleJobTypeTimes } from "@/lib/job-types";
-import { sampleLiveJobs } from "@/lib/live-jobs";
-import { SAMPLE_MACHINES } from "@/lib/machines";
+import { DAY_MS } from "@/lib/job-times";
 import type { ProviderHealth } from "@/lib/provider-health";
-import { sampleProviderTrends } from "@/lib/provider-trends";
-import { type ChartPer, sampleProviderReport, sampleProvidersOverview } from "@/lib/providers";
-import { sampleRouteOutcomes } from "@/lib/route-outcomes";
-import { sampleRunnerReport } from "@/lib/runner-report";
-import {
-  type RunJob,
-  sampleJobFailure,
-  sampleJobs,
-  sampleJobSteps,
-  sampleRunJobs,
-  sampleRuns,
-} from "@/lib/runs";
-import {
-  FILTER_KEYS,
-  type SignalFilter,
-  type SignalId,
-  sampleSignalRuns,
-  sampleSignals,
-} from "@/lib/signals";
-import { sampleLogBucket, sampleTelemetry } from "@/lib/telemetry";
+import type { ChartPer } from "@/lib/providers";
+import type { RunJob } from "@/lib/runs";
+import { FILTER_KEYS, type SignalFilter, type SignalId } from "@/lib/signals";
+import { sampleActionsUsage } from "./actions-usage";
+import { sampleRoutingHealth } from "./admin-routing";
+import { SAMPLE_WORKFLOWS, sampleEvaluation } from "./evaluations";
+import { sampleJobTimes } from "./job-times";
+import { sampleJobTypeTimes } from "./job-types";
+import { sampleLiveJobs } from "./live-jobs";
+import { SAMPLE_MACHINES } from "./machines";
+import { sampleProviderTrends } from "./provider-trends";
+import { sampleProviderReport, sampleProvidersOverview } from "./providers";
+import { sampleRouteOutcomes } from "./route-outcomes";
+import { sampleRunnerReport } from "./runner-report";
+import { sampleJobFailure, sampleJobs, sampleJobSteps, sampleRunJobs, sampleRuns } from "./runs";
+import { sampleSignalRuns, sampleSignals } from "./signals";
+import { sampleLogBucket, sampleTelemetry } from "./telemetry";
 import { sampleActivityOptions, sampleActivityPage } from "./activity";
 import { sampleJobRuns } from "./job-runs";
 import { sampleCheckSavings, sampleUsageReport } from "./usage";
 import {
   sampleProviderSpend,
-  sampleRouterActionsUsage,
   sampleRouterConnections,
   sampleRouterFreeMinutes,
   sampleRunnerOrder,
@@ -77,7 +70,7 @@ const ANSWERS: [RegExp, Answer][] = [
       }),
   ],
   [/^\/activity\/options$/, () => sampleActivityOptions()],
-  [/^\/usage\/actions$/, () => sampleRouterActionsUsage()],
+  [/^\/usage\/actions$/, () => sampleActionsUsage()],
   [/^\/admin\/routing$/, (_, q) => sampleRoutingHealth(q.get("range") as RoutingRange)],
   [/^\/evaluations\/workflows$/, () => ({ workflows: SAMPLE_WORKFLOWS })],
   [/^\/evaluations$/, () => ({ evaluations: [] })],
