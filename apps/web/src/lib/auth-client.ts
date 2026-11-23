@@ -6,10 +6,10 @@ import { createAuthClient } from "better-auth/react";
 // origin as the dashboard, so session cookies need no CORS setup.
 export const authClient = createAuthClient({
   basePath: "/api/auth",
-  // Workspaces are Better Auth organizations (see apps/api/src/auth.ts).
+  // Workspaces are Better Auth organizations (see apps/api/src/auth/auth.ts).
   plugins: [
     organizationClient(),
-    // user.role (apps/api/src/auth.ts): "operator" sees the Admin section. termsVersion and
+    // user.role (apps/api/src/auth/auth.ts): "operator" sees the Admin section. termsVersion and
     // privacyVersion: what they last agreed to (lib/legal.ts). timeZone: the zone they picked for
     // the dashboard's times, or null for the browser's (lib/time-zone.ts).
     inferAdditionalFields({
@@ -20,14 +20,14 @@ export const authClient = createAuthClient({
         timeZone: { type: "string", required: false, input: false },
       },
     }),
-    // Agent sign-in (apps/api/src/agent-auth.ts): on the pages Better Auth sends an MCP client's
+    // Agent sign-in (apps/api/src/auth/agent-auth.ts): on the pages Better Auth sends an MCP client's
     // sign-in through (/login, /agents/*), it adds the page's signed authorization request to
     // each call, so signing in or approving carries on to the next step.
     oauthProviderClient(),
   ],
 });
 
-export const { useSession, signIn, organization, useListOrganizations } = authClient;
+export const { signIn, organization, useListOrganizations } = authClient;
 
 export type Session = typeof authClient.$Infer.Session;
 

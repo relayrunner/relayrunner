@@ -38,19 +38,19 @@ import {
   WaypointsIcon,
   WebhookIcon,
 } from "lucide-react";
-import { type ReactNode, useEffect, useMemo, useState } from "react";
+import { lazy, type ReactNode, Suspense, useEffect, useMemo, useState } from "react";
 import { SectionBoundary } from "@/components/error-boundary";
 import { FeedbackPopover } from "@/components/feedback-popover";
 import { PagePending } from "@/components/page-pending";
 import { GithubIcon } from "@/components/provider-logos";
-import { RUNNER_DEFAULT_RANGE, RUNNER_RANGES, RunnerSheet } from "@/components/runner-sheet";
 import { DOCS_URL, SiteFooter } from "@/components/site-footer";
 import { parseWorkflowParam } from "@/lib/workflow-ref";
 import {
+  RUNNER_DEFAULT_RANGE,
+  RUNNER_RANGES,
   WORKFLOW_DEFAULT_RANGE,
   WORKFLOW_RANGES,
-  WorkflowSheet,
-} from "@/components/workflow-sheet";
+} from "@/lib/panels";
 import { Sheet, SheetContent, SheetTitle, SheetTrigger } from "@/components/ui/sheet";
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
 import { WorkspaceMark, WorkspaceMenu } from "@/components/workspace-menu";
@@ -71,6 +71,14 @@ import {
   watchForOwner,
 } from "@/lib/session";
 import type { CurrentWorkspace } from "@/lib/workspace";
+
+// The panels load when one first opens, so they stay out of every page's first load.
+const RunnerSheet = lazy(() =>
+  import("@/components/runner-sheet").then((m) => ({ default: m.RunnerSheet })),
+);
+const WorkflowSheet = lazy(() =>
+  import("@/components/workflow-sheet").then((m) => ({ default: m.WorkflowSheet })),
+);
 
 const devWorkspace: CurrentWorkspace = {
   workspace: {
@@ -292,16 +300,20 @@ function WorkspaceLayout() {
       </main>
       {runner && (
         <SectionBoundary>
-          <RunnerSheet
-            key={runner}
-            runnerKey={runner}
-            range={runnerRange ?? RUNNER_DEFAULT_RANGE}
-          />
+          <Suspense>
+            <RunnerSheet
+              key={runner}
+              runnerKey={runner}
+              range={runnerRange ?? RUNNER_DEFAULT_RANGE}
+            />
+          </Suspense>
         </SectionBoundary>
       )}
       {workflow && (
         <SectionBoundary>
-          <WorkflowSheet key={wf} workflow={workflow} range={wfRange ?? WORKFLOW_DEFAULT_RANGE} />
+          <Suspense>
+            <WorkflowSheet key={wf} workflow={workflow} range={wfRange ?? WORKFLOW_DEFAULT_RANGE} />
+          </Suspense>
         </SectionBoundary>
       )}
     </div>

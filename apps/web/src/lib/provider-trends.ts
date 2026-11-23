@@ -8,6 +8,14 @@ import { startOfDay } from "@/lib/time-zone";
 
 export const PERCENTILES = [50, 75, 90, 95, 99] as const;
 export type Percentile = (typeof PERCENTILES)[number];
+export const PERCENTILE_OPTIONS = PERCENTILES.map((p) => ({ value: p, label: `P${p}` }));
+
+export const TREND_METRICS = [
+  { value: "wait", label: "Queue wait" },
+  { value: "run", label: "Job time" },
+  { value: "failures", label: "Runner failures" },
+] as const;
+export type TrendMetric = (typeof TREND_METRICS)[number]["value"];
 /** Milliseconds at each percentile, or null when the bar had too few jobs. */
 export type Percentiles = Record<`p${Percentile}`, number> | null;
 

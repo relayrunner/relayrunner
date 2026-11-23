@@ -1,4 +1,4 @@
-/** A workspace's setup steps for Admin › Workspaces (apps/api/src/admin-adoption.ts). */
+/** A workspace's setup steps for Admin › Workspaces (apps/api/src/operator/admin-adoption.ts). */
 export type Setup = {
   signedUpAt: string | null;
   installedAt: string | null;

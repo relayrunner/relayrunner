@@ -11,8 +11,8 @@ import {
   signalRuns,
   signalsReport,
   utcDaysOf,
-} from "../signals.ts";
-import { requireWindow, windowDays } from "../report-window.ts";
+} from "../reports/signals.ts";
+import { requireWindow, windowDays } from "../reports/report-window.ts";
 import { JOB_TIMING_RETENTION_DAYS } from "../time.ts";
 import { AppError } from "@relayrunner/errors";
 
@@ -52,7 +52,7 @@ const RowQuery = z.object({
 });
 
 // The Signals page: what is making the workspace's CI slow, costly or busier than it needs to be,
-// over a range of days (see days() above), from the hourly rollup (src/signals.ts). ?breakdown=0
+// over a range of days (see days() above), from the hourly rollup (src/reports/signals.ts). ?breakdown=0
 // leaves out the Breakdown, for agents that only want the signals. A filter narrows the page to
 // its runs over at most the last 30 days, and adds its trend.
 export const signalRoutes = new Hono<AppEnv>()

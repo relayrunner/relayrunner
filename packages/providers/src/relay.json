@@ -1,0 +1,22 @@
+{
+  "relayRef": "v1.0.0-beta.9",
+  "relayWorkflow": "relayrunner/actions/.github/workflows/relay.yml",
+  "labelPrefixes": {
+    "blacksmith": ["blacksmith-"],
+    "depot": ["depot-"],
+    "namespace": ["namespace-profile-", "nscloud-"],
+    "warpbuild": ["warp-"],
+    "ubicloud": ["ubicloud-"],
+    "boat": ["boat-", "boat/"],
+    "runs-on": ["runs-on=", "runs-on/"],
+    "starsling": ["starsling-"],
+    "monkci": ["monkci-"],
+    "runloft": ["runloft-"],
+    "latchkey": ["latchkey-"],
+    "berrybox": ["berrybox-"],
+    "celesto": ["celesto-"],
+    "instabox": ["instabox-"],
+    "lizard": ["lizard-"],
+    "groundbox": ["groundbox-"]
+  }
+}

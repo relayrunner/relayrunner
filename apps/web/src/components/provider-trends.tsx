@@ -10,20 +10,13 @@ import { clock, type Environment } from "@/lib/job-times";
 import {
   getProviderTrends,
   type Percentile,
-  PERCENTILES,
+  PERCENTILE_OPTIONS,
   type ProviderTrends,
   sampleProviderTrends,
+  TREND_METRICS,
+  type TrendMetric,
 } from "@/lib/provider-trends";
 import { rangeDays, type TimeRange } from "@/lib/time-range";
-
-export const TREND_METRICS = [
-  { value: "wait", label: "Queue wait" },
-  { value: "run", label: "Job time" },
-  { value: "failures", label: "Runner failures" },
-] as const;
-export type TrendMetric = (typeof TREND_METRICS)[number]["value"];
-
-export const PERCENTILE_OPTIONS = PERCENTILES.map((p) => ({ value: p, label: `P${p}` }));
 
 const NOTES: Record<TrendMetric, string> = {
   wait: "From queued until a runner started the job.",

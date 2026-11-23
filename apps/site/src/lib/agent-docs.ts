@@ -17,7 +17,6 @@ type DocsEntry = CollectionEntry<"docs">;
 
 export const pagePath = (entry: DocsEntry) => `/${entry.id}`;
 export const markdownPath = (entry: DocsEntry) => `/${entry.id}.md`;
-export const textPath = (entry: DocsEntry) => `/${entry.id}.txt`;
 
 const isChangelog = (entry: DocsEntry) =>
   entry.id === CHANGELOG_ID || entry.id.startsWith(`${CHANGELOG_ID}/`);

@@ -1,7 +1,7 @@
+import { recordEvent } from "../ingest/activity-log.ts";
 import { DurableObject } from "cloudflare:workers";
 import { eq } from "drizzle-orm";
 import type { HostedProviderId } from "@relayrunner/providers";
-import { recordEvent } from "../activity.ts";
 import { createDb, schema } from "../db/index.ts";
 import type { Env } from "../env.ts";
 import { errorMessage } from "../errors.ts";
@@ -12,8 +12,8 @@ import {
   runAttemptStatus,
   runAttemptTriggeringActor,
   workflowJobRunner,
-} from "../github-app.ts";
-import { installationRunnerScope } from "../installations.ts";
+} from "../github/github-app.ts";
+import { installationRunnerScope } from "../github/installations.ts";
 import {
   MAX_TAKEOVER_ATTEMPT,
   RERUN_GIVE_UP_MS,
@@ -22,15 +22,15 @@ import {
   TAKEOVER_WAIT_MS,
   takeoverMessage,
   takeoverRunnerName,
-} from "../provider-takeover.ts";
-import { mintRepoFirst } from "../repo-runner.ts";
-import { routedRun } from "../retries.ts";
+} from "../routing/provider-takeover.ts";
+import { mintRepoFirst } from "../routing/repo-runner.ts";
+import { routedRun } from "../routing/retries.ts";
 import {
   decodeJitConfig,
   latestRunnerVersion,
   RunnerClient,
   waitForJob,
-} from "../runner-protocol.ts";
+} from "../routing/runner-protocol.ts";
 import { traced } from "../tracing.ts";
 
 export interface TakeoverWork {
@@ -51,7 +51,7 @@ export interface TakeoverWork {
 
 type Phase = "takeover" | "rerun";
 
-// One per routed job on a hosted provider's label (src/provider-takeover.ts), addressed by
+// One per routed job on a hosted provider's label (src/routing/provider-takeover.ts), addressed by
 // takeoverName. A minute after the job queued it asks GitHub whether a runner took it. If one did,
 // the provider can see the repo. If not, it acts as a one-job runner on the job's label, claims the
 // job and fails it with the reason, tells the Router the provider missed the repo, and once the

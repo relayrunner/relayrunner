@@ -1,7 +1,7 @@
 import { beforeEach, describe, expect, test, vi } from "vitest";
 import { createDb, schema } from "../db/index.ts";
 import type { Env } from "../env.ts";
-import { jobTimesReport } from "../job-times.ts";
+import { jobTimesReport } from "../reports/job-times.ts";
 import * as testing from "../testing.ts";
 import { classifyJobTypes } from "./job-type.ts";
 import { AI_DEFAULTS, saveAiSettings, setWorkspaceAi } from "./settings.ts";

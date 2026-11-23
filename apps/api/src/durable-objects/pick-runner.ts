@@ -1,6 +1,6 @@
 import { DurableObject } from "cloudflare:workers";
 import { isAutoRelay, relayInputs } from "@relayrunner/runner-order";
-import { autoPick, relayJobOf } from "../auto-jobs.ts";
+import { autoPick, relayJobOf } from "../routing/auto-jobs.ts";
 import type { Env } from "../env.ts";
 import {
   appInstallationToken,
@@ -10,36 +10,36 @@ import {
   type RunnerScope,
   runAttemptTriggeringActor,
   workflowJobStatus,
-} from "../github-app.ts";
-import { fetchOneGroupAccess, groupBlocksRepo } from "../github-runners.ts";
-import { blockedReason, pickAccessCheckRun } from "../pick-access.ts";
-import { mintRepoFirst } from "../repo-runner.ts";
+} from "../github/github-app.ts";
+import { fetchOneGroupAccess, groupBlocksRepo } from "../github/github-runners.ts";
+import { blockedReason, pickAccessCheckRun } from "../routing/pick-access.ts";
+import { mintRepoFirst } from "../routing/repo-runner.ts";
 import {
   type ClaimedJob,
   latestRunnerVersion,
   RunnerClient,
   decodeJitConfig,
   waitForJob,
-} from "../runner-protocol.ts";
-import { RELAYRUNNER_LABEL } from "../labels.ts";
+} from "../routing/runner-protocol.ts";
+import { RELAYRUNNER_LABEL } from "../routing/labels.ts";
 import { eq } from "drizzle-orm";
 import { createDb, schema } from "../db/index.ts";
-import { recordPick, type PickRecord } from "../route-decisions.ts";
-import { evaluationRunner } from "../evaluations.ts";
-import { findInstallationAndWorkspace, installationRunnerScope } from "../installations.ts";
-import { findRepo } from "../repositories.ts";
-import { retryOf } from "../retries.ts";
-import { startedJobStatus } from "../jobs.ts";
+import { recordPick, type PickRecord } from "../routing/route-decisions.ts";
+import { evaluationRunner } from "../reports/evaluations.ts";
+import { findInstallationAndWorkspace, installationRunnerScope } from "../github/installations.ts";
+import { findRepo } from "../github/repositories.ts";
+import { retryOf } from "../routing/retries.ts";
+import { startedJobStatus } from "../ingest/jobs.ts";
 import {
   type JobContext,
   jobContext,
   NO_RUNNER,
   type RouteDecision,
   sameLogin,
-} from "../routing.ts";
-import { jobStepLogs, type StepLog, uploadJobLogs } from "../job-logs.ts";
-import { jobSteps, nativeFreeCheck, nativeVerdict } from "../native-checks.ts";
-import { recordRepoCheck } from "../free-checks.ts";
+} from "../routing/routing.ts";
+import { jobStepLogs, type StepLog, uploadJobLogs } from "../reports/job-logs.ts";
+import { jobSteps, nativeFreeCheck, nativeVerdict } from "../checks/native-checks.ts";
+import { recordRepoCheck } from "../checks/free-checks.ts";
 import { annotate, traced } from "../tracing.ts";
 import {
   afterAttempt,
@@ -48,7 +48,7 @@ import {
   pickRunnerName,
   RUN_STALE_MS,
   WAIT_FOR_JOB_MS,
-} from "../pick-attempts.ts";
+} from "../routing/pick-attempts.ts";
 
 export interface PickWork {
   jobId: number;
@@ -64,14 +64,14 @@ export interface PickWork {
 // may be another repo's in the same org. A personal account has no org runners, so its runner
 // registers on the job's own repo and can only claim that repo's jobs. The route is for the
 // claimed job's own repo and run.
-// A claimed job whose steps are RelayRunner checks (src/native-checks.ts) is answered here instead:
+// A claimed job whose steps are RelayRunner checks (src/checks/native-checks.ts) is answered here instead:
 // the check runs in this object and the job completes as passed or failed, with no route.
 //
 // Because the runner can take another job, or time out, the job it was made for could be left with
 // no runner at all. So when a runner is done, it asks GitHub whether its own job is still queued and,
 // if so, starts a replacement (afterAttempt). A job GitHub will never offer it, because the Default
-// runner group leaves the repo out (src/pick-access.ts), gets no runner at all: the reason goes to
-// Activity and to a failed check run on the commit, and the object stops trying. The 15-minute sweep (src/pick-sweep.ts) catches runs a
+// runner group leaves the repo out (src/routing/pick-access.ts), gets no runner at all: the reason goes to
+// Activity and to a failed check run on the commit, and the object stops trying. The 15-minute sweep (src/routing/pick-sweep.ts) catches runs a
 // deploy cut off, and removes pick runners left registered on GitHub.
 export class PickRunner extends DurableObject<Env> {
   // Idempotent: a redelivered or retried `queued` webhook for the same job does nothing.
@@ -449,7 +449,7 @@ async function pickRunner(
       } satisfies PickInfo,
     };
   }
-  // An evaluation's run (src/evaluations.ts) goes to the evaluated provider, whatever the runner
+  // An evaluation's run (src/reports/evaluations.ts) goes to the evaluated provider, whatever the runner
   // order says. It keeps no route decision, so it stays out of the Router's numbers and retries.
   const evaluation = await evaluationRunner(db, repo.id, context);
   if (evaluation) {

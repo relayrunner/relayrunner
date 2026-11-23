@@ -35,11 +35,11 @@
     "BETTER_AUTH_URL": "https://app.relayrunner.dev",
     // Where links in emails point (src/email.ts): the dashboard people use, not the OAuth host.
     "DASHBOARD_URL": "https://app.relayrunner.dev",
-    // The MCP server (apps/agents). Agent access tokens are issued for this URL only (src/agent-auth.ts).
+    // The MCP server (apps/agents). Agent access tokens are issued for this URL only (src/auth/agent-auth.ts).
     "AGENTS_MCP_URL": "https://agents.relayrunner.app/mcp",
     // Sender for transactional email; must stay in send_email's allowed_sender_addresses below.
     "EMAIL_FROM": "noreply@send.relayrunner.app",
-    // Agent feedback from the MCP server's send_feedback tool (src/feedback.ts) is emailed here.
+    // Agent feedback from the MCP server's send_feedback tool (src/operator/feedback.ts) is emailed here.
     // An Email Routing rule on relayrunner.app forwards it to the team.
     "FEEDBACK_EMAIL": "feedback@relayrunner.app",
     // Dashboard origins other than BETTER_AUTH_URL that may sign in through the oAuthProxy plugin:
@@ -65,17 +65,17 @@
     "ACCESS_TEAM_DOMAIN": "relayrunner.cloudflareaccess.com",
     "ACCESS_AUD": "bc8e87c4c78375b0b1e61b4a2a73354543030492e218d02a28c56bc0f95702f7, 45a666d9534b30a03ef5e04e9ce04da805afa430d00b6bffddeb245aef130460",
     // Alert when at least this many webhook deliveries are dead-lettered in an hour
-    // (src/dead-letter-alert.ts). Set DEAD_LETTER_ALERT_WEBHOOK_URL with `cf workers secrets update` to
+    // (src/ingest/dead-letter-alert.ts). Set DEAD_LETTER_ALERT_WEBHOOK_URL with `cf workers secrets update` to
     // also post the alert to a Slack or Discord incoming webhook.
     "DEAD_LETTER_ALERT_THRESHOLD": "10",
     // Orgs whose `runs-on: relayrunner-container` jobs get a container runner, comma-separated
-    // (src/container-runner.ts). Each container is billed to this account, so it's an allowlist.
+    // (src/routing/container-runner.ts). Each container is billed to this account, so it's an allowlist.
     "CONTAINER_RUNNER_ORGS": "relayrunner",
-    // Test accounts left out of the Slack operator pings (src/operator-pings.ts), by GitHub user id,
+    // Test accounts left out of the Slack operator pings (src/operator/operator-pings.ts), by GitHub user id,
     // comma-separated. Operators are always left out. 8841125 = ajwhitetest (onboarding tests).
     "OPERATOR_PINGS_IGNORE_GITHUB_IDS": "8841125",
     // PostHog (US) project token for the product events the 15-minute cron sends
-    // (src/product-events.ts). The same public token the site and dashboard use.
+    // (src/operator/product-events.ts). The same public token the site and dashboard use.
     // The AI Gateway that model calls from src/ai go through (env.AI.run's gateway option).
     "AI_GATEWAY_ID": "relayrunner-ai-gateway",
     "POSTHOG_TOKEN": "phc_rKhrH8DbYLh3TKrdXtZjP5agS5a8xmj8tsEn6EJhQpCE",
@@ -99,13 +99,13 @@
   // `wrangler dev` uses a local flag store that starts empty, so every flag is off until you copy
   // the real ones down with `pnpm --filter @relayrunner/api flags:pull`.
   "flagship": [{ "binding": "FLAGS", "app_id": "95c8465d-fccc-4ab0-aca0-228994c84e52" }],
-  // Webhook dead letters (src/dead-letters.ts), kept out of D1 on purpose: D1 failing is the
+  // Webhook dead letters (src/ingest/dead-letters.ts), kept out of D1 on purpose: D1 failing is the
   // likeliest reason a delivery dead-letters. Create once, with the 30-day retention:
   //   cf r2 buckets create --name relayrunner-webhook-dead-letters
   //   cf r2 buckets lifecycle update relayrunner-webhook-dead-letters --rules '[{"id":"expire-30d","enabled":true,"conditions":{"prefix":""},"deleteObjectsTransition":{"condition":{"type":"Age","maxAge":2592000}}}]'
   "r2_buckets": [{ "binding": "DEAD_LETTERS", "bucket_name": "relayrunner-webhook-dead-letters" }],
-  // Hourly dead-letter growth check (src/dead-letter-alert.ts), and the 15-minute Actions usage
-  // poll (src/actions-billing.ts) plus the relay sweep (src/pick-sweep.ts). src/index.ts tells them apart by the cron string.
+  // Hourly dead-letter growth check (src/ingest/dead-letter-alert.ts), and the 15-minute Actions usage
+  // poll (src/providers/actions-billing.ts) plus the relay sweep (src/routing/pick-sweep.ts). src/index.ts tells them apart by the cron string.
   "triggers": { "crons": ["0 * * * *", "*/15 * * * *", "30 6 * * *"] },
   // From the account's Secrets Store (default_secrets_store), not a Worker secret.
   // GITHUB_APP_PRIVATE_KEY is the App's private key converted to PKCS#8 PEM, which is what
@@ -131,7 +131,7 @@
       "store_id": "eac3493b9fef4234a832f5f3fdcc8a41",
       "secret_name": "GITHUB_SPEND_APP_PRIVATE_KEY",
     },
-    // Encrypts the read-only provider tokens workspaces paste (src/provider-tokens.ts): 32 random
+    // Encrypts the read-only provider tokens workspaces paste (src/providers/provider-tokens.ts): 32 random
     // bytes, base64. Create it once with
     //   cf secrets-store secrets create eac3493b9fef4234a832f5f3fdcc8a41 \
     //     --body "$(jq -n --arg v "$(openssl rand -base64 32)" '[{name: "PROVIDER_TOKEN_KEY", value: $v, scopes: ["workers"]}]')"
@@ -201,7 +201,7 @@
     },
   ],
   // GitHub webhooks: apps/webhooks verifies each delivery and enqueues it; this Worker's `queue()`
-  // export (src/webhook-queue.ts) processes it. Messages that fail max_retries times (with backoff,
+  // export (src/ingest/webhook-queue.ts) processes it. Messages that fail max_retries times (with backoff,
   // about half an hour) move to the DLQ, whose consumer archives them to R2 and only then acks.
   // The producer is for replays from /api/admin/webhooks. Create both queues once:
   //   cf queues create --queue-name relayrunner-github-webhooks
@@ -209,7 +209,7 @@
   "queues": {
     "producers": [
       { "binding": "WEBHOOK_QUEUE", "queue": "relayrunner-github-webhooks" },
-      // The 15-minute cron's per-installation work (src/installation-tasks.ts). Create once:
+      // The 15-minute cron's per-installation work (src/github/installation-tasks.ts). Create once:
       //   cf queues create --queue-name relayrunner-installation-tasks
       { "binding": "INSTALLATION_TASKS", "queue": "relayrunner-installation-tasks" },
       // Finished runs and jobs as spans for workspaces that export traces (src/telemetry). Create once:

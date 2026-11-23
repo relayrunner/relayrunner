@@ -1,11 +1,11 @@
 // Settings → Telemetry: where a workspace sends its traces. Header values go in encrypted and never
-// come back out (src/provider-tokens.ts); the dashboard sees each header's name and last four
+// come back out (src/providers/provider-tokens.ts); the dashboard sees each header's name and last four
 // characters, and leaves a value blank to keep the saved one.
 import { eq } from "drizzle-orm";
 import type { JobLogChoice } from "@relayrunner/activity";
 import { type Db, schema } from "../db/index.ts";
 import type { Env } from "../env.ts";
-import { sealToken, tokenHint } from "../provider-tokens.ts";
+import { sealToken, tokenHint } from "../providers/provider-tokens.ts";
 import { sendSpans } from "./export.ts";
 import {
   type DestinationChange,

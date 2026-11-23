@@ -72,7 +72,7 @@ export const SKIP_REASONS = [
   // about two hours of the account's recent burn, which billing's lag could use up (#117).
   "minutes_runway",
   // A hosted provider's runner type that stopped picking up jobs: its last few jobs waited with no
-  // runner, so the Router skips it until a trial job starts (src/provider-health.ts).
+  // runner, so the Router skips it until a trial job starts (apps/api/src/routing/provider-health.ts).
   "provider_unhealthy",
   // A hosted provider step with a spend limit: the job's account has spent the limit on that
   // provider this month, at list prices.
@@ -90,7 +90,7 @@ export const SKIP_REASONS = [
   "provider_held",
   // A hosted provider that can't run the job's repo: its GitHub App isn't installed on the job's
   // account, or a job of this repo it was sent waited a minute with no runner, so the Router moved
-  // it (src/provider-takeover.ts) and skips the provider for the repo until a trial (in the step's
+  // it (apps/api/src/routing/provider-takeover.ts) and skips the provider for the repo until a trial (in the step's
   // `access`).
   "provider_no_access",
 ] as const;
@@ -134,7 +134,7 @@ export const RETRY_KINDS = [
   // The AI model was sure a re-run would pass (the retry_decision feature).
   "flaky",
   // A hosted provider didn't pick the job up within a minute, so RelayRunner ended it and re-ran
-  // the relay, which picks another provider (src/provider-takeover.ts). Retried whatever the
+  // the relay, which picks another provider (apps/api/src/routing/provider-takeover.ts). Retried whatever the
   // retry settings say.
   "provider_missed",
 ] as const;
@@ -419,7 +419,7 @@ export const ActivityEvent = z.discriminatedUnion("type", [
       triggeredBy: GithubActor.nullable().optional(),
     }),
   }),
-  // RelayRunner re-ran a job whose runner failed it (src/retries.ts): the job's relay was re-run
+  // RelayRunner re-ran a job whose runner failed it (apps/api/src/routing/retries.ts): the job's relay was re-run
   // once the run finished, so the relay picked again and the job ran in the next attempt. Logged on
   // the failed job. `kind` is what went wrong, `runner` where the retry was set to go, and
   // `failedOn` the runner label or machine the job failed on.
@@ -449,7 +449,7 @@ export const ActivityEvent = z.discriminatedUnion("type", [
     }),
   }),
   // A free check ran with no Actions runner, so it stands in for an Actions job that would have
-  // billed a minute: the GitHub App's PR title check run (src/pr-title-check.ts), or one lint run
+  // billed a minute: the GitHub App's PR title check run (apps/api/src/checks/pr-title-check.ts), or one lint run
   // in the Checks App's container (src/durable-objects/lint-runner.ts), from a pull request push
   // or a native `checks/lint` job. `check` is "PR title" or "Lint"; `url` the check run's page on
   // GitHub, null for lint, which posts a run per tool. `pullRequest` is null for a lint run with no

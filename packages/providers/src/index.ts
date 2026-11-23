@@ -1,7 +1,9 @@
 // The places a job can run that RelayRunner recognises by its runs-on labels: hosted runner
 // services, GitHub's own runners, and RelayRunner's Cloudflare Container. These are the facts every
 // workspace shares, so they live here in code and change by pull request. The API's label matching
-// (apps/api/src/cloud-providers.ts) and the dashboard's logos and colours build on this list.
+// (apps/api/src/providers/cloud-providers.ts) and the dashboard's logos and colours build on this list.
+
+import relay from "./relay.json" with { type: "json" };
 
 export const PROVIDER_IDS = [
   "blacksmith",
@@ -267,25 +269,12 @@ export type HostedProviderId = (typeof HOSTED_PROVIDER_IDS)[number];
 
 // How each service's labels start, e.g. `depot-ubuntu-24.04-8`. A prefix ending in `-` also
 // matches the bare name (`ubicloud`). RunsOn's carry the run id, `runs-on=<run id>/runner=...`.
-// Boat's take options after a `/`, as in `boat-large/debug`.
-export const LABEL_PREFIXES: Record<HostedProviderId, string[]> = {
-  blacksmith: ["blacksmith-"],
-  depot: ["depot-"],
-  namespace: ["namespace-profile-", "nscloud-"],
-  warpbuild: ["warp-"],
-  ubicloud: ["ubicloud-"],
-  boat: ["boat-", "boat/"],
-  "runs-on": ["runs-on=", "runs-on/"],
-  starsling: ["starsling-"],
-  monkci: ["monkci-"],
-  runloft: ["runloft-"],
-  latchkey: ["latchkey-"],
-  berrybox: ["berrybox-"],
-  celesto: ["celesto-"],
-  instabox: ["instabox-"],
-  lizard: ["lizard-"],
-  groundbox: ["groundbox-"],
-};
+// Boat's take options after a `/`, as in `boat-large/debug`. The list lives in relay.json, which
+// the CLI reads too.
+export const LABEL_PREFIXES: Record<HostedProviderId, string[]> = relay.labelPrefixes;
+
+/** The relay version `relayrunner init` writes and the skills and agent guide show. */
+export const RELAY_REF = relay.relayRef;
 
 /** Whether a lowercase label starts with one of `prefixes`, or is the bare name one ends in `-`. */
 export const matchesPrefix = (prefixes: readonly string[], lower: string) =>

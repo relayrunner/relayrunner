@@ -2,26 +2,26 @@ import { isBillingProvider } from "@relayrunner/providers";
 import { Hono } from "hono";
 import { z } from "zod";
 import type { AppEnv } from "../app.ts";
-import { blacksmithMinutes } from "../blacksmith-minutes.ts";
+import { blacksmithMinutes } from "../providers/blacksmith-minutes.ts";
 import { createDb } from "../db/index.ts";
-import { groundboxMinutesView, readGroundboxAccount } from "../groundbox-account.ts";
+import { groundboxMinutesView, readGroundboxAccount } from "../providers/groundbox-account.ts";
 import { requireUser } from "../middleware/session.ts";
 import { requireWorkspace } from "../middleware/workspace.ts";
-import { isCatalogProvider, loadCatalog, withCatalog } from "../provider-catalog.ts";
+import { isCatalogProvider, loadCatalog } from "../providers/provider-catalog.ts";
 import {
   connectProvider,
   disconnectProvider,
   listConnections,
   parseOptions,
   testConnection,
-} from "../provider-connections.ts";
-import { providerReport, providersOverview } from "../provider-report.ts";
-import { workspaceSpend } from "../provider-spend.ts";
-import { providerTrends } from "../provider-trends.ts";
-import { chartBuckets, requireWindow } from "../report-window.ts";
+} from "../providers/provider-connections.ts";
+import { providerReport, providersOverview } from "../reports/provider-report.ts";
+import { workspaceSpend } from "../providers/provider-spend.ts";
+import { providerTrends } from "../reports/provider-trends.ts";
+import { chartBuckets, requireWindow } from "../reports/report-window.ts";
 import { RAW_RETENTION_DAYS } from "../time.ts";
-import { DEFAULT_DAYS } from "../job-times.ts";
-import { requireManager } from "../roles.ts";
+import { DEFAULT_DAYS } from "../reports/job-times.ts";
+import { requireManager } from "../auth/roles.ts";
 import { AppError } from "@relayrunner/errors";
 
 const ConnectBody = z.object({
@@ -98,7 +98,7 @@ export const providerRoutes = new Hono<AppEnv>()
     if (!isBillingProvider(provider)) throw new AppError("NOT_FOUND");
     return c.json(await disconnectProvider(c.var.db, c.var.workspace.id, provider));
   })
-  .get("/", requireUser, requireWorkspace, withCatalog, async (c) => {
+  .get("/", requireUser, requireWorkspace, async (c) => {
     const query = c.req.query();
     const window = requireWindow(query, RANGE);
     // The Providers page's minutes chart sends ?origin= (and ?per=hour or ?per=week for hourly or weekly bars); the
@@ -107,9 +107,9 @@ export const providerRoutes = new Hono<AppEnv>()
       query.origin === undefined ? null : chartBuckets(window, query.origin, query.per);
     return c.json(await providersOverview(c.var.db, c.var.workspace.id, window, buckets));
   })
-  // A provider page's charts (src/provider-trends.ts), a bar a day from ?origin= (the reader's
+  // A provider page's charts (src/reports/provider-trends.ts), a bar a day from ?origin= (the reader's
   // midnight), or a week past a month.
-  .get("/:provider/trends", requireUser, requireWorkspace, withCatalog, async (c) => {
+  .get("/:provider/trends", requireUser, requireWorkspace, async (c) => {
     const provider = c.req.param("provider");
     if (!isCatalogProvider(provider)) throw new AppError("NOT_FOUND");
     const query = c.req.query();
@@ -117,7 +117,7 @@ export const providerRoutes = new Hono<AppEnv>()
     const buckets = chartBuckets(window, query.origin);
     return c.json(await providerTrends(c.var.db, c.var.workspace.id, provider, window, buckets));
   })
-  .get("/:provider", requireUser, requireWorkspace, withCatalog, async (c) => {
+  .get("/:provider", requireUser, requireWorkspace, async (c) => {
     const provider = c.req.param("provider");
     if (!isCatalogProvider(provider)) throw new AppError("NOT_FOUND");
     const window = requireWindow(c.req.query(), RANGE);

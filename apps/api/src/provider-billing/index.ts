@@ -20,7 +20,6 @@ export {
   type AdapterContext,
   type DailyUsage,
   type JobUsage,
-  ProviderApiError,
   ProviderAuthError,
   type Usage,
   type UsageWindow,

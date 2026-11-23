@@ -2,11 +2,11 @@ import { and, eq } from "drizzle-orm";
 import { Hono } from "hono";
 import type { Context } from "hono";
 import { deleteCookie, getCookie, setCookie } from "hono/cookie";
-import { pollAccount } from "../actions-billing.ts";
+import { pollAccount } from "../providers/actions-billing.ts";
 import type { AppEnv } from "../app.ts";
 import { createDb, schema } from "../db/index.ts";
-import { recordEnterpriseInstallation } from "../enterprise.ts";
-import { appInstallationToken, rateLimits } from "../github-app.ts";
+import { recordEnterpriseInstallation } from "../github/enterprise.ts";
+import { appInstallationToken, rateLimits } from "../github/github-app.ts";
 import {
   dashboardPath,
   GitHubError,
@@ -16,9 +16,9 @@ import {
   listUserInstallations,
   signInstallState,
   verifyInstallState,
-} from "../github.ts";
-import { ensureWorkspace, upsertInstallation, userGitHubToken } from "../installations.ts";
-import { syncMemberships } from "../memberships.ts";
+} from "../github/github.ts";
+import { ensureWorkspace, upsertInstallation, userGitHubToken } from "../github/installations.ts";
+import { syncMemberships } from "../github/memberships.ts";
 import { requireUser } from "../middleware/session.ts";
 import { requireWorkspace } from "../middleware/workspace.ts";
 import { AppError } from "@relayrunner/errors";
@@ -37,7 +37,7 @@ import { AppError } from "@relayrunner/errors";
 //    comes from a query string, so it only counts if the user's own GitHub token can see it in
 //    GET /user/installations. Then /setup records the installation, makes its workspace (unless
 //    the installation webhook got there first), syncs the user's memberships from that same list
-//    (src/memberships.ts), and makes the workspace active.
+//    (src/github/memberships.ts), and makes the workspace active.
 // 3. A brand-new user from `relayrunner connect` has no account yet. /device sends them to
 //    GET /signup, which goes straight to the install and leaves the page to come back to in a
 //    cookie. /setup then finds them signed out and signs them in with the code GitHub sent
@@ -45,7 +45,7 @@ import { AppError } from "@relayrunner/errors";
 //    to /setup to finish step 2 as them.
 // 4. Installs made straight on GitHub arrive by webhook, which makes the workspace and records
 //    the installer as its owner. Everyone who can see the install joins on their next sign-in or
-//    workspace list (src/memberships.ts).
+//    workspace list (src/github/memberships.ts).
 
 // Where /setup sends the browser, with ?github=<outcome> for the dashboard to explain.
 type SetupOutcome =
@@ -149,7 +149,7 @@ export const githubRoutes = new Hono<AppEnv>()
     if (visible === "reauth") return done("reauth");
     const verified = visible.find((installation) => installation.id === installationId);
     // An install on an enterprise isn't one a user's token lists. It only reads the enterprise's
-    // billing for the orgs in it, so record it and go back to the workspace (src/enterprise.ts).
+    // billing for the orgs in it, so record it and go back to the workspace (src/github/enterprise.ts).
     if (!verified) {
       const enterprise = await recordEnterpriseInstallation(c.env, db, installationId);
       if (!enterprise?.account) return done("not_found");

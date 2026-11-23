@@ -1,7 +1,7 @@
 import { ACTIVITY_FILTERS, ACTIVITY_RESULTS } from "@relayrunner/activity";
 import { Hono } from "hono";
 import { z } from "zod";
-import { activityOptions, listActivity } from "../activity.ts";
+import { activityOptions, listActivity } from "../reports/activity.ts";
 import type { AppEnv } from "../app.ts";
 import { requireUser } from "../middleware/session.ts";
 import { requireWorkspace } from "../middleware/workspace.ts";

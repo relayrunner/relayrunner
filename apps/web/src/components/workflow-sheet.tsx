@@ -10,7 +10,8 @@ import { StatusIcon } from "@/components/status-icon";
 import { Sheet, SheetContent, SheetDescription, SheetTitle } from "@/components/ui/sheet";
 import { withWorkflow } from "@/components/workflow-link";
 import { timeAgo } from "@/lib/activity";
-import { clock, JOB_RANGES } from "@/lib/job-times";
+import { clock } from "@/lib/job-times";
+import { WORKFLOW_DEFAULT_RANGE, WORKFLOW_RANGES } from "@/lib/panels";
 import {
   HISTORY_DEFAULT_RANGE,
   isFailure,
@@ -21,18 +22,17 @@ import {
   triggerText,
 } from "@/lib/runs";
 import { unlessDefault, useSetSearch } from "@/lib/search-params";
+import { clearOnWorkspaceChange } from "@/lib/workspace-cache";
 import { rangePhrase, type TimeRange } from "@/lib/time-range";
 import { cn, elapsed, percent } from "@/lib/utils";
 import { type WorkflowRef, workflowParam } from "@/lib/workflow-ref";
 
-/** The panel's ranges are History's, opening on the same week. */
-export const WORKFLOW_RANGES = JOB_RANGES;
-export const WORKFLOW_DEFAULT_RANGE: TimeRange = HISTORY_DEFAULT_RANGE;
 const RECENT = 20;
 
 // The last reports read, by workflow and range, so reopening one shows it at once. Each is kept for
 // a minute, since new runs keep arriving.
 const reports = new Map<string, Promise<RunsReport>>();
+clearOnWorkspaceChange(() => reports.clear());
 
 function loadReport(workflow: WorkflowRef, range: TimeRange) {
   const id = `${workflowParam(workflow)}\u001f${range}`;

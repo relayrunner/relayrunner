@@ -30,7 +30,7 @@ export const Route = createFileRoute("/login")({
   component: LoginPage,
 });
 
-// Agent sign-in (apps/api/src/agent-auth.ts) sends the browser here with the MCP client's signed
+// Agent sign-in (apps/api/src/auth/agent-auth.ts) sends the browser here with the MCP client's signed
 // authorization request in the query. Signing in carries it on (auth-client.ts).
 function connectingAgent() {
   return new URLSearchParams(window.location.search).has("sig");

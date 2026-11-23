@@ -2,7 +2,7 @@
 // account:read and billing:read scopes.
 // - `GET /v1/account` (account:read) gives the team's plan and status, this month's free minutes
 //   (`free_minutes.{included,used,left,resets_at}`), balance, spend this month and the spend caps
-//   set in Groundbox. The Router reads it before a Groundbox step takes a job (src/groundbox-account.ts).
+//   set in Groundbox. The Router reads it before a Groundbox step takes a job (src/providers/groundbox-account.ts).
 // - `GET /v1/billing/ledger` (billing:read) lists every charge, newest first, each with its
 //   amount, the free minutes it used and the Groundbox CI job it was for. The hourly sync sums it
 //   into each job's cost and each day's free minutes. Its jobs are Groundbox's own ids, not

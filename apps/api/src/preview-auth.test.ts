@@ -1,6 +1,6 @@
 import { afterEach, beforeAll, describe, expect, test, vi } from "vitest";
 import { app } from "./app.ts";
-import { sharedCookieDomain } from "./auth.ts";
+import { sharedCookieDomain } from "./auth/auth.ts";
 import type { Env } from "./env.ts";
 import { createTestEnv } from "./testing.ts";
 

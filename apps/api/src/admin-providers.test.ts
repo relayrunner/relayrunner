@@ -1,10 +1,10 @@
+import { environmentFor } from "./reports/environments.ts";
 import { BASE_CATALOG, type CatalogProvider } from "@relayrunner/providers/catalog";
 import { beforeAll, describe, expect, test } from "vitest";
 import { app } from "./app.ts";
 import { createDb } from "./db/index.ts";
 import type { Env } from "./env.ts";
-import { environmentFor } from "./job-times.ts";
-import { loadCatalog } from "./provider-catalog.ts";
+import { loadCatalog } from "./providers/provider-catalog.ts";
 import * as testing from "./testing.ts";
 import { accessEnv, accessJwt } from "./testing-access.ts";
 

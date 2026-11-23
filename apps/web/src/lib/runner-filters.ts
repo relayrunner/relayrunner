@@ -1,4 +1,4 @@
-import { TONE_LABELS, type MachineView } from "@/components/runner-card";
+import type { MachineView } from "@/components/runner-card";
 import { DAY_MS } from "@/lib/job-times";
 import type { Machine, MachineSharing } from "@/lib/machines";
 import { PROVIDER_DEFAULT_RANGE, PROVIDER_RANGES } from "@/lib/providers";
@@ -9,6 +9,15 @@ import { type TimeRange, timeRangeParam } from "@/lib/time-range";
  * The Runners page reads job counts over the same window to tell whether it ran any.
  */
 export const INACTIVE_DAYS = 14;
+
+/** What each status is called, in the order the filter menu lists them. */
+export const TONE_LABELS = {
+  running: "Running",
+  idle: "Waiting for jobs",
+  paused: "Paused",
+  offline: "Offline",
+  missing: "Not on GitHub",
+} as const;
 
 export const STATUSES = Object.entries(TONE_LABELS).map(([value, label]) => ({
   value: value as MachineView["tone"],

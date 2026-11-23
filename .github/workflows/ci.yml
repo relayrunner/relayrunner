@@ -43,6 +43,9 @@ jobs:
           cache: pnpm
       - run: pnpm install --frozen-lockfile
       - run: pnpm check
+      # Keeps page code out of the dashboard's first load (scripts/web-entry-size.mjs).
+      - name: Check the dashboard's first load
+        run: pnpm --filter @relayrunner/web build && node scripts/web-entry-size.mjs
       # A changeset naming anything but the CLI or the Mac app would stop the
       # Release workflow after merge, so catch it here.
       - run: pnpm changeset:lint

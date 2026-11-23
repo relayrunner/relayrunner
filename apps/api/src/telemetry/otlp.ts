@@ -6,10 +6,10 @@ import { cachedRead } from "../d1-cache.ts";
 import { type Db, schema } from "../db/index.ts";
 import type { Env } from "../env.ts";
 import { DAY_MS } from "../time.ts";
-import { openToken } from "../provider-tokens.ts";
+import { openToken } from "../providers/provider-tokens.ts";
 import { errorMessage } from "../errors.ts";
 
-// The associated data the headers are sealed with (src/provider-tokens.ts), so they can't be moved
+// The associated data the headers are sealed with (src/providers/provider-tokens.ts), so they can't be moved
 // onto a provider connection or another workspace.
 export const HEADERS_PURPOSE = "telemetry";
 // An export that has only failed for this long pauses, so a revoked key doesn't keep costing a

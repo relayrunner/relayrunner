@@ -19,7 +19,7 @@ import { z } from "zod";
 import type { AppEnv } from "../app.ts";
 import { createDb, schema } from "../db/index.ts";
 import { audit } from "../middleware/admin.ts";
-import { forgetCatalog, readCatalog } from "../provider-catalog.ts";
+import { forgetCatalog, readCatalog } from "../providers/provider-catalog.ts";
 import { AppError } from "@relayrunner/errors";
 
 const text = (max: number) => z.string().trim().min(1).max(max);

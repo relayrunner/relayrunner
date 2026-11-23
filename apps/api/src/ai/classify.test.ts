@@ -2,7 +2,7 @@ import { beforeEach, describe, expect, test, vi } from "vitest";
 import type { Env } from "../env.ts";
 import * as testing from "../testing.ts";
 import { aiCacheKey, classify, defineClassifier } from "./classify.ts";
-import { purgeExpiredAiAnswers } from "../retention.ts";
+import { purgeExpiredAiAnswers } from "../ingest/retention.ts";
 import { AI_DEFAULTS, forgetAiSettings, saveAiSettings, setWorkspaceAi } from "./settings.ts";
 import { createDb } from "../db/index.ts";
 

@@ -20,7 +20,7 @@ import {
 import { providerName, rateText } from "@relayrunner/providers";
 import type { Env } from "./env.ts";
 import { createDb } from "./db/index.ts";
-import type { DistributiveOmit } from "./machines.ts";
+import type { DistributiveOmit } from "./machines/machines.ts";
 import { isNotificationType, operatorRecipients, wantsEmail } from "./notifications.ts";
 
 // send.relayrunner.app is the domain onboarded for Email Sending. Keep EMAIL_FROM inside the

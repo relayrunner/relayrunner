@@ -38,7 +38,7 @@ export type AdminWorkspace = {
   machineJobs7d: number;
   /** The latest job, from the 62 days of jobs kept. */
   lastJobAt: string | null;
-  /** Whether it stuck with the relay (apps/api/src/stickiness.ts), or null when it never relayed. */
+  /** Whether it stuck with the relay (apps/api/src/routing/stickiness.ts), or null when it never relayed. */
   stickiness: Stickiness | null;
 };
 
@@ -59,7 +59,7 @@ export function listWorkspaces() {
   return api<{ workspaces: AdminWorkspace[] }>("/admin/workspaces");
 }
 
-/** What an operator delete removed (apps/api/src/admin-delete.ts). */
+/** What an operator delete removed (apps/api/src/operator/admin-delete.ts). */
 export type DeletedWorkspace = {
   id: string;
   name: string;
@@ -221,7 +221,7 @@ export function removeProvider(id: string) {
 /** Jobs that finished, by result. */
 export type JobCounts = { success: number; failed: number; cancelled: number };
 
-/** Admin › Jobs (apps/api/src/job-counts.ts): finished jobs across every workspace. */
+/** Admin › Jobs (apps/api/src/ingest/job-counts.ts): finished jobs across every workspace. */
 export type JobCountReport = {
   days: number;
   totals: JobCounts;

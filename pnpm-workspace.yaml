@@ -42,3 +42,4 @@ minimumReleaseAgeExclude:
   - "@astrojs/runtime@0.1.0"
   - "@astrojs/vite-plugin-astro@0.1.1"
   - astro@7.4.10
+  - knip@6.48.0

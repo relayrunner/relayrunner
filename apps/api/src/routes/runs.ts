@@ -3,11 +3,10 @@ import { z } from "zod";
 import type { AppEnv } from "../app.ts";
 import { requireUser } from "../middleware/session.ts";
 import { requireWorkspace } from "../middleware/workspace.ts";
-import { withCatalog } from "../provider-catalog.ts";
-import { recentJobs } from "../job-times.ts";
-import { appInstallationToken, workflowJobSteps } from "../github-app.ts";
-import { jobSource, listRuns, liveJobs, runJobs } from "../runs.ts";
-import { jobFailure, runFailures } from "../job-failures.ts";
+import { recentJobs } from "../reports/job-times.ts";
+import { appInstallationToken, workflowJobSteps } from "../github/github-app.ts";
+import { jobSource, listRuns, liveJobs, runJobs } from "../reports/runs.ts";
+import { jobFailure, runFailures } from "../reports/job-failures.ts";
 import { jobWindow } from "./job-times.ts";
 import { AppError } from "@relayrunner/errors";
 
@@ -24,16 +23,16 @@ const RunParams = z.object({ repositoryId: Id, runId: Id, runAttempt: Id });
 // /:repositoryId/:runId/:runAttempt/failures is why the attempt's jobs failed, with log excerpts
 // read from GitHub, for agents. Both answer only someone who can read the repo on GitHub.
 export const runRoutes = new Hono<AppEnv>()
-  .get("/", requireUser, requireWorkspace, withCatalog, async (c) => {
+  .get("/", requireUser, requireWorkspace, async (c) => {
     // `repo` and `workflow` together narrow it to one workflow, for its panel.
     const { repo, workflow } = c.req.query();
     const only = repo && workflow ? { repository: repo, workflow } : undefined;
     return c.json(await listRuns(c.var.db, c.var.workspace.id, jobWindow(c.req.query()), only));
   })
-  .get("/live", requireUser, requireWorkspace, withCatalog, async (c) =>
+  .get("/live", requireUser, requireWorkspace, async (c) =>
     c.json(await liveJobs(c.var.db, c.var.workspace.id)),
   )
-  .get("/jobs", requireUser, requireWorkspace, withCatalog, async (c) => {
+  .get("/jobs", requireUser, requireWorkspace, async (c) => {
     return c.json(await recentJobs(c.var.db, c.var.workspace.id, jobWindow(c.req.query())));
   })
   .get("/jobs/:jobId/steps", requireUser, requireWorkspace, async (c) => {
@@ -57,27 +56,15 @@ export const runRoutes = new Hono<AppEnv>()
     if (!failure) throw new AppError("NOT_FOUND");
     return c.json(failure);
   })
-  .get(
-    "/:repositoryId/:runId/:runAttempt/jobs",
-    requireUser,
-    requireWorkspace,
-    withCatalog,
-    async (c) => {
-      const parsed = RunParams.safeParse(c.req.param());
-      if (!parsed.success) throw new AppError("INVALID_REQUEST");
-      return c.json(await runJobs(c.var.db, c.var.workspace.id, parsed.data));
-    },
-  )
-  .get(
-    "/:repositoryId/:runId/:runAttempt/failures",
-    requireUser,
-    requireWorkspace,
-    withCatalog,
-    async (c) => {
-      const parsed = RunParams.safeParse(c.req.param());
-      if (!parsed.success) throw new AppError("INVALID_REQUEST");
-      return c.json(
-        await runFailures(c.var.db, c.env, c.var.workspace.id, c.var.user!.id, parsed.data),
-      );
-    },
-  );
+  .get("/:repositoryId/:runId/:runAttempt/jobs", requireUser, requireWorkspace, async (c) => {
+    const parsed = RunParams.safeParse(c.req.param());
+    if (!parsed.success) throw new AppError("INVALID_REQUEST");
+    return c.json(await runJobs(c.var.db, c.var.workspace.id, parsed.data));
+  })
+  .get("/:repositoryId/:runId/:runAttempt/failures", requireUser, requireWorkspace, async (c) => {
+    const parsed = RunParams.safeParse(c.req.param());
+    if (!parsed.success) throw new AppError("INVALID_REQUEST");
+    return c.json(
+      await runFailures(c.var.db, c.env, c.var.workspace.id, c.var.user!.id, parsed.data),
+    );
+  });

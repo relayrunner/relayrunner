@@ -8,7 +8,7 @@
 // same spans again rather than a second trace.
 import type { JobStep, WorkflowJob, WorkflowRun } from "@relayrunner/github-webhooks";
 import type { JobUsage } from "@relayrunner/machine-protocol";
-import { jobUrl } from "../run-job.ts";
+import { jobUrl } from "../reports/run-job.ts";
 
 export type AttributeValue = string | number | boolean | string[];
 export type Attributes = Record<string, AttributeValue | null | undefined>;
@@ -108,7 +108,7 @@ export interface RunDetails {
   run: WorkflowRun;
   // The run's pick, when it had one: the provider it chose and the ones it passed over, with why.
   route: { provider: string | null; skipped: string[] } | null;
-  // RelayRunner started this attempt because the last one's runner failed (src/retries.ts).
+  // RelayRunner started this attempt because the last one's runner failed (src/routing/retries.ts).
   retry: boolean;
 }
 

@@ -10,7 +10,7 @@ import { agreedSession } from "@/lib/legal";
 import { githubInstallHref } from "@/lib/github";
 import { usePageTitle } from "@/lib/page-title";
 
-// Agent sign-in, step 1 (apps/api/src/agent-auth.ts): after sign-in, Better Auth sends the browser
+// Agent sign-in, step 1 (apps/api/src/auth/agent-auth.ts): after sign-in, Better Auth sends the browser
 // here with the MCP client's signed authorization request in the query. The person picks which
 // workspaces the agent may read (all of them to start), then we hand back to Better Auth, which
 // asks for consent next.

@@ -1,4 +1,4 @@
-# RelayRunner settings for this repo (see apps/api/src/repo-config.ts).
+# RelayRunner settings for this repo (see apps/api/src/checks/repo-config.ts).
 checks:
   # The GitHub App posts a "PR title" check run that passes Conventional Commit titles.
   pr-title: true

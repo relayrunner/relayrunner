@@ -8,7 +8,7 @@ import { authClient } from "@/lib/auth-client";
 import { agreedSession } from "@/lib/legal";
 import { usePageTitle } from "@/lib/page-title";
 
-// Agent sign-in, step 2 (apps/api/src/agent-auth.ts): Better Auth sends the browser here, with the
+// Agent sign-in, step 2 (apps/api/src/auth/agent-auth.ts): Better Auth sends the browser here, with the
 // signed authorization request in the query, once the person has picked the workspaces (step 1). Allowing returns the browser to the client with a code; denying returns an error.
 export const Route = createFileRoute("/agents/consent")({
   loader: async ({ location }) => {

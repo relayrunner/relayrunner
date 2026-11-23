@@ -1,7 +1,7 @@
 /*
  * The OpenAPI description of the agent API, served at /openapi.json. These are the routes an
  * agent's OAuth token may call on https://api.relayrunner.dev (AGENT_ROUTES_BY_METHOD in
- * apps/api/src/agent-auth.ts); the MCP server's tools call the same routes. A test in
+ * apps/api/src/auth/agent-auth.ts); the MCP server's tools call the same routes. A test in
  * apps/api/src/agent-openapi.test.ts keeps the two lists in step.
  *
  * Response bodies are described at the top level only: the fields inside them are the dashboard's

@@ -1,7 +1,7 @@
 import { DurableObject } from "cloudflare:workers";
 import { eq } from "drizzle-orm";
 import type { DisconnectReason } from "@relayrunner/activity";
-import { recordMachineEvent } from "../activity.ts";
+import { recordMachineEvent } from "../reports/activity.ts";
 import { createDb, schema } from "../db/index.ts";
 import type { Env } from "../env.ts";
 import {
@@ -15,12 +15,12 @@ import {
   deleteRunner,
   runnerOnline,
   type RunnerScope,
-} from "../github-app.ts";
-import { installationRunnerScope } from "../installations.ts";
-import { setJobUsage } from "../jobs.ts";
-import { runJob } from "../run-job.ts";
-import { mintMachineRunner } from "../machine-runner.ts";
-import { originFromJson, type RequestOrigin } from "../device-origin.ts";
+} from "../github/github-app.ts";
+import { installationRunnerScope } from "../github/installations.ts";
+import { setJobUsage } from "../ingest/jobs.ts";
+import { runJob } from "../reports/run-job.ts";
+import { mintMachineRunner } from "../routing/machine-runner.ts";
+import { originFromJson, type RequestOrigin } from "../machines/device-origin.ts";
 import { sendEmail } from "../email.ts";
 import {
   helloChanged,
@@ -28,9 +28,15 @@ import {
   issuePendingToken,
   pausedByName,
   promotePendingToken,
-} from "../machines.ts";
-import { placeNow, ROUTE_TTL_MS, takeHold, type MachineHold, type Route } from "../routing.ts";
-import { jobStillQueued, LOST_GRACE_MS } from "../stranded-jobs.ts";
+} from "../machines/machines.ts";
+import {
+  placeNow,
+  ROUTE_TTL_MS,
+  takeHold,
+  type MachineHold,
+  type Route,
+} from "../routing/routing.ts";
+import { jobStillQueued, LOST_GRACE_MS } from "../routing/stranded-jobs.ts";
 import { errorMessage } from "../errors.ts";
 import { annotate, traced } from "../tracing.ts";
 import {
@@ -60,7 +66,7 @@ interface SentRoute {
   // Unset while the JIT config is being minted.
   sentAt?: number;
   // The job's runner and where it's registered, so a job that never reached it can go elsewhere
-  // (src/stranded-jobs.ts). Missing from routes sent before this was kept.
+  // (src/routing/stranded-jobs.ts). Missing from routes sent before this was kept.
   runner?: {
     machineId: string;
     installationId: number;
@@ -363,7 +369,7 @@ export class MachineLink extends DurableObject<Env> {
 
   /**
    * Hands a claimed route's job to the machine: mints a one-job runner on the route's label, on
-   * the job's own repo (src/machine-runner.ts), named after the machine, and sends it in a `run`
+   * the job's own repo (src/routing/machine-runner.ts), named after the machine, and sends it in a `run`
    * message. Safe to call again for the same route and job (a redelivered webhook): only the
    * first call mints. A re-run routed again on the route is a new job, and is sent again.
    * "offline" means the machine has no live socket: the Router puts the job back in line
@@ -537,7 +543,7 @@ export class MachineLink extends DurableObject<Env> {
 
   /**
    * Closes the socket and wipes this object's storage and alarm. Operator deletes call this
-   * (src/admin-delete.ts) before the machine row goes, since nothing would ever call it again.
+   * (src/operator/admin-delete.ts) before the machine row goes, since nothing would ever call it again.
    */
   async purge(): Promise<void> {
     for (const ws of this.ctx.getWebSockets()) close(ws, CLOSE.revoked, "revoked");

@@ -1,0 +1,16 @@
+{
+  "$schema": "https://unpkg.com/knip@6/schema.json",
+  "ignoreExportsUsedInFile": true,
+  "ignore": [".agents/**", "apps/web/src/components/ui/**"],
+  "workspaces": {
+    ".": {
+      "entry": ["scripts/*.mjs", "tests/*.ts"]
+    },
+    "packages/blacksmith-cli": {
+      "entry": ["src/server.ts"]
+    },
+    "packages/lint-runner": {
+      "entry": ["src/server.ts"]
+    }
+  }
+}

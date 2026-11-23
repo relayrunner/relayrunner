@@ -1,6 +1,6 @@
 # Pick runner
 
-**Covers:** `apps/api/src/durable-objects/pick-runner.ts`, `apps/api/src/repo-runner.ts` (`mintRepoFirst`), `apps/api/src/github-app.ts` (`runnerScope`, `generateJitConfig`, `deleteRunner`, `DEFAULT_RUNNER_GROUP_ID`, runner groups), `apps/api/src/installations.ts` (`installationRunnerScope`), `apps/api/src/runner-protocol.ts`, and the `queued` path in `apps/api/src/webhook-queue.ts`.
+**Covers:** `apps/api/src/durable-objects/pick-runner.ts`, `apps/api/src/routing/repo-runner.ts` (`mintRepoFirst`), `apps/api/src/github/github-app.ts` (`runnerScope`, `generateJitConfig`, `deleteRunner`, `DEFAULT_RUNNER_GROUP_ID`, runner groups), `apps/api/src/github/installations.ts` (`installationRunnerScope`), `apps/api/src/routing/runner-protocol.ts`, and the `queued` path in `apps/api/src/ingest/webhook-queue.ts`.
 
 ## What it does
 
@@ -84,7 +84,7 @@ flowchart LR
   C -- "no" --> O["Other paths<br/>(machine routes, Activity)"]
 ```
 
-The App gets a `workflow_job` webhook with `action: queued` and the job's labels. The Webhooks Worker puts it on a Cloudflare Queue. The consumer in `apps/api/src/webhook-queue.ts` starts a `PickRunner` Durable Object named after the job id. `start()` is idempotent, so a redelivered webhook does nothing.
+The App gets a `workflow_job` webhook with `action: queued` and the job's labels. The Webhooks Worker puts it on a Cloudflare Queue. The consumer in `apps/api/src/ingest/webhook-queue.ts` starts a `PickRunner` Durable Object named after the job id. `start()` is idempotent, so a redelivered webhook does nothing.
 
 ### 3. The gateway creates a runner on the job's repo
 
@@ -101,7 +101,7 @@ flowchart LR
 
 This is where the runner comes into existence. It's created on the job's repo, outside any runner group, so it can only be offered that repo's jobs. The response's `encoded_jit_config` holds the runner's identity and an RSA key. Whoever holds it can act as that runner, for one job.
 
-If GitHub refuses the repo endpoint, the call goes to `/orgs/{org}/actions/runners/generate-jitconfig` with `runner_group_id: 1` instead, and the runner is created **inside** the Default group (`DEFAULT_RUNNER_GROUP_ID` in `apps/api/src/github-app.ts`). See [Where it registers](#where-it-registers).
+If GitHub refuses the repo endpoint, the call goes to `/orgs/{org}/actions/runners/generate-jitconfig` with `runner_group_id: 1` instead, and the runner is created **inside** the Default group (`DEFAULT_RUNNER_GROUP_ID` in `apps/api/src/github/github-app.ts`). See [Where it registers](#where-it-registers).
 
 ### 4. The PickRunner connects as that runner
 
@@ -119,7 +119,7 @@ sequenceDiagram
   end
 ```
 
-No VM or runner binary is involved. The Durable Object does what GitHub's runner program does on a machine (`RunnerClient` in `apps/api/src/runner-protocol.ts`). It signs a JWT with the RSA key to get an access token, opens a session, and long-polls for work. It reports a recent official runner version, because GitHub won't send jobs to an old one.
+No VM or runner binary is involved. The Durable Object does what GitHub's runner program does on a machine (`RunnerClient` in `apps/api/src/routing/runner-protocol.ts`). It signs a JWT with the RSA key to get an access token, opens a session, and long-polls for work. It reports a recent official runner version, because GitHub won't send jobs to an old one.
 
 ### 5. GitHub decides whether to offer the job
 
@@ -148,7 +148,7 @@ flowchart LR
   D --> X
 ```
 
-The PickRunner claims the job and completes it without running any steps. A job made only of `relayrunner/actions/checks/*` steps is answered as a check (`apps/api/src/native-checks.ts`). Otherwise the workspace's Router picks a runner (see routing), and the relay completes with a `runner` output or fails with a reason. The decision is recorded for the Activity page. A JIT runner gets one job, so GitHub removes it afterwards. The PickRunner logs `relayrunner pick finished` with a `result`: `routed`, `no_runner`, `check_passed`, `check_failed`, `no-job` or `error`.
+The PickRunner claims the job and completes it without running any steps. A job made only of `relayrunner/actions/checks/*` steps is answered as a check (`apps/api/src/checks/native-checks.ts`). Otherwise the workspace's Router picks a runner (see routing), and the relay completes with a `runner` output or fails with a reason. The decision is recorded for the Activity page. A JIT runner gets one job, so GitHub removes it afterwards. The PickRunner logs `relayrunner pick finished` with a `result`: `routed`, `no_runner`, `check_passed`, `check_failed`, `no-job` or `error`.
 
 ## Who gets the job: labels and runner groups
 
@@ -170,7 +170,7 @@ Both rules only apply to runners registered in the org. A runner registered on a
 
 ## Where it registers
 
-Every pick runner first registers on the job's own repo (`POST /repos/{owner}/{repo}/actions/runners/generate-jitconfig`, `mintRepoFirst` in `src/repo-runner.ts`), in orgs and personal accounts alike. That needs the App's repository permission **Administration: Read & write**. Machine runners do the same (`src/machine-runner.ts`). The org's runner groups never come into it, so a public org repo's relay is answered without anyone changing a group, and Default can stay private-only for the long-lived runners an org adds (a fork PR can't target those).
+Every pick runner first registers on the job's own repo (`POST /repos/{owner}/{repo}/actions/runners/generate-jitconfig`, `mintRepoFirst` in `apps/api/src/routing/repo-runner.ts`), in orgs and personal accounts alike. That needs the App's repository permission **Administration: Read & write**. Machine runners do the same (`apps/api/src/routing/machine-runner.ts`). The org's runner groups never come into it, so a public org repo's relay is answered without anyone changing a group, and Default can stay private-only for the long-lived runners an org adds (a fork PR can't target those).
 
 GitHub refuses the repo endpoint (a 4xx) when an org installation hasn't accepted Administration, or when the org's Actions policy only allows org-level runners. Then the pick falls back to the installation's own scope (`installationRunnerScope`: the org for an org installation), logs `relayrunner pick runner registered on the org`, and, on the first runner for the job, checks the Default group first (see failure modes). A personal account has no org to fall back to, so a refusal there is an error. The App has to be public for a personal account to install it at all. See [docs/github-app.md](../github-app.md) for that and the permissions.
 
@@ -179,7 +179,7 @@ What a repo runner changes:
 - **Only the label matters.** A repo runner isn't in any runner group, so there's no group check before registering and no blocked-relay check run. GitHub still asks for a `runner_group_id`, and only accepts Default (1).
 - **Public repos get their relay answered.** No group stands in the way. Machines still never take a public repo's jobs, so the relay needs a `github` or `blacksmith` label to route to.
 - **A pick runner only sees its own repo's jobs.** It can still claim a different relay job than the one it was made for, but only one from the same repo.
-- **The sweep goes repo by repo.** Listing every repo would cost a call each, so the 15-minute sweep checks only repos that had a relay job in the last day, plus each org for runners that fell back (`sweepTargets` in `src/pick-sweep.ts`).
+- **The sweep goes repo by repo.** Listing every repo would cost a call each, so the 15-minute sweep checks only repos that had a relay job in the last day, plus each org for runners that fell back (`sweepTargets` in `apps/api/src/routing/pick-sweep.ts`).
 - **Existing repo runners take only their repo's jobs.** A runner someone registered on a repo can be added like an org runner (#162), in an org or a personal account. Routing only considers it for jobs from that repo, and reads its status from the repo's runner list.
 
 ## Decisions and why
@@ -191,10 +191,10 @@ What a repo runner changes:
 
 ## Failure modes
 
-- **The org refuses repo-level runners, and Default leaves the repo out (public repos not allowed, private only, or a selected list without it).** GitHub would never offer the relay to an org runner. Before falling back, the PickRunner reads the Default group (`src/pick-access.ts`) and, when it leaves the repo out, registers no runner: it logs `relayrunner pick blocked`, adds a `job.unroutable` entry to Activity with the reason and the fix, posts a failed `RelayRunner` check run on the commit, and doesn't retry (the sweep skips it too). The relay job itself still stays queued on GitHub until someone cancels it or GitHub's 24-hour queue limit ends it, because only a runner GitHub hands the job to can fail it. Before this check the PickRunner logged `no-job` after 4 minutes with no explanation anywhere (relayrunner/relayrunner and relayrunner/actions on 2026-11-06, relayrunner-ci-tests on 2026-11-08). If the group can't be read, the pick goes ahead as before.
+- **The org refuses repo-level runners, and Default leaves the repo out (public repos not allowed, private only, or a selected list without it).** GitHub would never offer the relay to an org runner. Before falling back, the PickRunner reads the Default group (`apps/api/src/routing/pick-access.ts`) and, when it leaves the repo out, registers no runner: it logs `relayrunner pick blocked`, adds a `job.unroutable` entry to Activity with the reason and the fix, posts a failed `RelayRunner` check run on the commit, and doesn't retry (the sweep skips it too). The relay job itself still stays queued on GitHub until someone cancels it or GitHub's 24-hour queue limit ends it, because only a runner GitHub hands the job to can fail it. Before this check the PickRunner logged `no-job` after 4 minutes with no explanation anywhere (relayrunner/relayrunner and relayrunner/actions on 2026-11-06, relayrunner-ci-tests on 2026-11-08). If the group can't be read, the pick goes ahead as before.
 - **Org fallback, Default limited to selected workflows.** This isn't checked yet, so a workflow outside the list still fails silently with `no-job`.
-- **A pick runner takes a different relay job.** GitHub matches on the label, not the job, so a runner made for one relay can be handed another one from the same repo (or, for an org fallback runner, any repo) that's waiting (often an older one). That job is answered correctly, but the runner's own job is left with nobody. When a runner finishes, it asks GitHub whether its own job is still queued and, if so, starts a replacement, up to 4 runners per job (`src/pick-attempts.ts`). Before this, one lost job stole the next job's runner, and so on, until the queue emptied (2026-11-06 to 2026-11-09).
-- **A pick runner is left registered.** If closing its session or deleting it fails, GitHub keeps showing it idle and can hand it a job nobody will ever take. Failures are logged (`relayrunner pick cleanup failed`), the delete is tried twice, and the 15-minute sweep removes `relayrunner-pick-*` runners whose run has ended (`src/pick-sweep.ts`).
+- **A pick runner takes a different relay job.** GitHub matches on the label, not the job, so a runner made for one relay can be handed another one from the same repo (or, for an org fallback runner, any repo) that's waiting (often an older one). That job is answered correctly, but the runner's own job is left with nobody. When a runner finishes, it asks GitHub whether its own job is still queued and, if so, starts a replacement, up to 4 runners per job (`apps/api/src/routing/pick-attempts.ts`). Before this, one lost job stole the next job's runner, and so on, until the queue emptied (2026-11-06 to 2026-11-09).
+- **A pick runner is left registered.** If closing its session or deleting it fails, GitHub keeps showing it idle and can hand it a job nobody will ever take. Failures are logged (`relayrunner pick cleanup failed`), the delete is tried twice, and the 15-minute sweep removes `relayrunner-pick-*` runners whose run has ended (`apps/api/src/routing/pick-sweep.ts`).
 - **The `queued` webhook is lost, or a deploy cuts a runner off mid-wait.** The 15-minute sweep starts another runner for any relay recorded as queued for more than 5 minutes, within the same 4-runner limit. A relay whose `queued` webhook never arrived has no row, so the sweep can't see it.
 - **Another runner in the org has the `relayrunner` label.** It could take relay jobs instead of the gateway. GitHub picks among matching runners, and RelayRunner doesn't prevent it.
 - **GitHub sends a message the client doesn't handle.** The poll ignores anything but a job request and logs its type (`runner poll message dropped`).
@@ -202,13 +202,13 @@ What a repo runner changes:
 
 ## Code
 
-- `apps/api/src/webhook-queue.ts`: `queued` webhooks with the `relayrunner` label start a PickRunner.
+- `apps/api/src/ingest/webhook-queue.ts`: `queued` webhooks with the `relayrunner` label start a PickRunner.
 - `apps/api/src/durable-objects/pick-runner.ts`: registration, waiting, claiming, answering, cleanup, the `relayrunner pick finished` log.
-- `apps/api/src/github-app.ts`: `runnerScope`, `generateJitConfig`, `deleteRunner`, `runnerBusy`, `DEFAULT_RUNNER_GROUP_ID`, `listOrgRunnerGroups`, `getOrgRunnerGroup`.
-- `apps/api/src/installations.ts`: `installationRunnerScope`, the org or repo scope for an installation.
-- `apps/api/src/github-runners.ts`: `groupBlocksRepo`, the one rule for whether a runner group takes a repo's jobs, shared by the pick runner and routing to added runners.
-- `apps/api/src/pick-access.ts`: the blocked reason and the check run that explains it.
-- `apps/api/src/pick-attempts.ts`: when a runner is replaced and how pick runners are named.
-- `apps/api/src/pick-sweep.ts`: the 15-minute rescue for stuck relays and removal of leftover pick runners.
-- `apps/api/src/runner-protocol.ts`: `RunnerClient` (session, poll, claim, complete) and `decodeJitConfig`.
-- `apps/api/src/native-checks.ts`: jobs answered as checks instead of routed.
+- `apps/api/src/github/github-app.ts`: `runnerScope`, `generateJitConfig`, `deleteRunner`, `runnerBusy`, `DEFAULT_RUNNER_GROUP_ID`, `listOrgRunnerGroups`, `getOrgRunnerGroup`.
+- `apps/api/src/github/installations.ts`: `installationRunnerScope`, the org or repo scope for an installation.
+- `apps/api/src/github/github-runners.ts`: `groupBlocksRepo`, the one rule for whether a runner group takes a repo's jobs, shared by the pick runner and routing to added runners.
+- `apps/api/src/routing/pick-access.ts`: the blocked reason and the check run that explains it.
+- `apps/api/src/routing/pick-attempts.ts`: when a runner is replaced and how pick runners are named.
+- `apps/api/src/routing/pick-sweep.ts`: the 15-minute rescue for stuck relays and removal of leftover pick runners.
+- `apps/api/src/routing/runner-protocol.ts`: `RunnerClient` (session, poll, claim, complete) and `decodeJitConfig`.
+- `apps/api/src/checks/native-checks.ts`: jobs answered as checks instead of routed.

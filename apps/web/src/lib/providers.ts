@@ -22,6 +22,13 @@ import {
 import { startOfDay, startOfHours, startOfWeek } from "@/lib/time-zone";
 import { money } from "@/lib/usage";
 
+/** How a provider page shows its machine prices (components/machine-prices.tsx). */
+export const PRICE_VIEWS = [
+  { value: "grid", label: "Grid" },
+  { value: "chart", label: "Chart" },
+] as const;
+export type PriceView = (typeof PRICE_VIEWS)[number]["value"];
+
 export type ProviderCounts = {
   jobs: number;
   failures: number;

@@ -1,5 +1,5 @@
 // Where each provider publishes its prices, and how to read them off that page. The API checks
-// these once a day (apps/api/src/price-check.ts) and holds any change for an operator to approve.
+// these once a day (apps/api/src/providers/price-check.ts) and holds any change for an operator to approve.
 // Parsers return what they found and throw when the page no longer looks the way they expect, so
 // a redesign shows up as a failed check instead of a wrong price.
 import { GITHUB_LARGER, type PricedProvider } from "./prices.ts";

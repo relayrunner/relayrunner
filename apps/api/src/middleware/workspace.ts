@@ -1,7 +1,7 @@
 import { and, eq } from "drizzle-orm";
 import { createMiddleware } from "hono/factory";
 import type { AppEnv } from "../app.ts";
-import { AGENT_WORKSPACE_HEADER, agentWorkspaceId } from "../agent-auth.ts";
+import { AGENT_WORKSPACE_HEADER, agentWorkspaceId } from "../auth/agent-auth.ts";
 import { createDb, schema, type Db } from "../db/index.ts";
 import { AppError } from "@relayrunner/errors";
 import { annotate } from "../tracing.ts";

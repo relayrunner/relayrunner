@@ -1,7 +1,7 @@
 import { and, count, desc, eq, inArray, isNull } from "drizzle-orm";
 import { Hono } from "hono";
 import { z } from "zod";
-import { pendingGrant } from "../agent-auth.ts";
+import { pendingGrant } from "../auth/agent-auth.ts";
 import type { AppEnv } from "../app.ts";
 import { createDb, schema } from "../db/index.ts";
 import { requireUser } from "../middleware/session.ts";

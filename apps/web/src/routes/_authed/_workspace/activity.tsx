@@ -160,10 +160,10 @@ export const Route = createFileRoute("/_authed/_workspace/activity")({
   loaderDeps: ({ search }) => search,
   loader: ({ deps }): Promise<ActivityPage> =>
     authDisabled ? Promise.resolve(samplePage(deps)) : getActivity(toQuery(deps)),
-  component: ActivityPage,
+  component: ActivityRoute,
 });
 
-function ActivityPage() {
+function ActivityRoute() {
   const search = Route.useSearch();
   const navigate = Route.useNavigate();
   const [savings, setSavings] = useState<FreeCheckSavings | null>(null);

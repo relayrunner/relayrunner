@@ -37,7 +37,7 @@ export default {
       // Who Access let in: lets an agent check its service token before it drives an admin view.
       if (pathname === "/admin/access") return Response.json({ identity: gate.identity });
     }
-    // OAuth discovery for agent sign-in (apps/api/src/well-known.ts).
+    // OAuth discovery for agent sign-in (apps/api/src/auth/well-known.ts).
     if (
       pathname === "/api" ||
       pathname.startsWith("/api/") ||

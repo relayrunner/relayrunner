@@ -1,4 +1,4 @@
-// A GitHub sign-in that fails on the way back lands on /login?error=<code> (apps/api/src/auth.ts
+// A GitHub sign-in that fails on the way back lands on /login?error=<code> (apps/api/src/auth/auth.ts
 // onAPIError). These helpers turn that code into words and keep the page's own query (redirect,
 // an agent's signed request) so trying again picks up where the first try left off.
 
@@ -17,7 +17,7 @@ export function describeSignInError(code: string | undefined): string | null {
   if (!code) return null;
   switch (code) {
     case "github_busy":
-      // GitHub rate-limited the sign-in (apps/api/src/github-busy.ts), even after a retry.
+      // GitHub rate-limited the sign-in (apps/api/src/github/github-busy.ts), even after a retry.
       return "GitHub is busy right now. Wait a minute and try again.";
     case "access_denied":
       return "Sign-in was cancelled on GitHub.";

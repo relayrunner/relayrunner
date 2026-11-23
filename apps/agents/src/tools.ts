@@ -14,7 +14,7 @@ import { compactActivityPage, compactJobTimes, contains } from "./compact.ts";
 // Read-only tools over relayrunner-api's dashboard endpoints, plus send_feedback, which only
 // records a report for the RelayRunner team; the tools that change settings are in write-tools.ts.
 // Each answers JSON. All are D1 reads except get_run_failures, which reads a few failed jobs' logs
-// from GitHub. None takes the Router's lock (apps/api/src/agent-auth.ts keeps it that way).
+// from GitHub. None takes the Router's lock (apps/api/src/auth/agent-auth.ts keeps it that way).
 
 // Avatars and dashboard-only permissions aren't useful to an agent.
 const DASHBOARD_ONLY = new Set(["ownerImage", "canRevoke", "mine"]);

@@ -154,7 +154,7 @@ export function previewRoute(
     ) {
       reason = "Past the free minutes, so Blacksmith bills each minute";
     }
-    // Groundbox would hold the job: the Router passes it on (src/groundbox-account.ts).
+    // Groundbox would hold the job: the Router passes it on (apps/api/src/providers/groundbox-account.ts).
     if (takes && step.key === "groundbox" && free.groundbox?.held) {
       takes = false;
       reason = heldText("Groundbox", { reason: free.groundbox.held });

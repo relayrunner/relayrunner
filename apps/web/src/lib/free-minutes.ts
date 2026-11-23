@@ -9,8 +9,8 @@ import { api } from "./api";
 // A hosted provider's free minutes this month (GET /api/providers/<provider>/minutes), counted
 // from the workspace's connection in Settings › Providers: Blacksmith's from its hourly usage
 // sync, Groundbox's read live from its account. The Router's step for that provider can stop at a
-// share of them. The shape mirrors BlacksmithMinutes (apps/api/src/blacksmith-minutes.ts) and
-// GroundboxMinutesView (apps/api/src/groundbox-account.ts).
+// share of them. The shape mirrors BlacksmithMinutes (apps/api/src/providers/blacksmith-minutes.ts) and
+// GroundboxMinutesView (apps/api/src/providers/groundbox-account.ts).
 
 export type FreeMinutesReason =
   | "not_connected"

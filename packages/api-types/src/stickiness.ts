@@ -1,9 +1,9 @@
-// Whether a workspace stuck with the relay (apps/api/src/stickiness.ts), for the operator views.
+// Whether a workspace stuck with the relay (apps/api/src/routing/stickiness.ts), for the operator views.
 export type StickinessState = "trying" | "adopted" | "trial_abandoned" | "removed";
 
 export type Stickiness = {
   state: StickinessState;
-  /** When the workspace entered this state. */
+  /** When the workflow below entered this state. Removed: when we could first tell. */
   since: string;
   /** The workflow the state is about: the latest relayed, or the last one removed. */
   repository: string;
@@ -13,6 +13,4 @@ export type Stickiness = {
   lastRelayAt: string;
   /** Removed: runs on up-to-date code without the relay since the last relay. */
   runsWithout: number;
-  /** Removed: when we first saw the run that made it so (for the operator ping). */
-  removedSeenAt: string | null;
 };

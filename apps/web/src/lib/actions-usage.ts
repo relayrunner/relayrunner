@@ -3,7 +3,7 @@ import { exact } from "./utils";
 
 // Each connected GitHub account's Actions minutes this billing cycle, read from GitHub billing
 // (#116, GET /api/usage/actions). Per account, never pooled: each has its own included quota. The
-// shape mirrors AccountUsage in apps/api/src/actions-billing.ts.
+// shape mirrors AccountUsage in apps/api/src/providers/actions-billing.ts.
 
 export type AccountUsageReason =
   | "enterprise"

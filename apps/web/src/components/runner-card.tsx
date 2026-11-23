@@ -30,6 +30,7 @@ import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip
 import { describeJobPlace, deviceName, formatMemory } from "@/lib/device";
 import { deviceIcon, SelfHostedIcon } from "@/components/device-icon";
 import { medianText, p90Text, plural, type Stat } from "@/lib/job-times";
+import { TONE_LABELS } from "@/lib/runner-filters";
 import {
   machineAccess,
   pauseMachine,
@@ -62,16 +63,7 @@ const BANDS = {
     dot: "border-2 border-idle bg-transparent",
   },
   missing: { band: "bg-destructive/10", label: "text-destructive", dot: "bg-destructive" },
-} as const;
-
-/** What each status is called, in the order the filter menu lists them. */
-export const TONE_LABELS = {
-  running: "Running",
-  idle: "Waiting for jobs",
-  paused: "Paused",
-  offline: "Offline",
-  missing: "Not on GitHub",
-} as const satisfies Record<keyof typeof BANDS, string>;
+} as const satisfies Record<keyof typeof TONE_LABELS, unknown>;
 
 // Connection status, as a dot on the icon.
 const CONNECTION = {

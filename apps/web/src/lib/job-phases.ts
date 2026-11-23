@@ -1,5 +1,5 @@
 // Where time goes inside jobs: the API sorts each step GitHub reports into a phase by its name
-// (apps/api/src/step-phases.ts). These are the phases' labels and colors, in the order they stack.
+// (apps/api/src/reports/step-phases.ts). These are the phases' labels and colors, in the order they stack.
 
 import type { Phase, PhaseTimes } from "@relayrunner/api-types";
 

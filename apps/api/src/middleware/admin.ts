@@ -2,7 +2,7 @@ import { gateAdmin, type AccessIdentity } from "@relayrunner/access";
 import type { Context } from "hono";
 import { createMiddleware } from "hono/factory";
 import type { AppEnv } from "../app.ts";
-import { isOperator } from "../roles.ts";
+import { isOperator } from "../auth/roles.ts";
 import { AppError } from "@relayrunner/errors";
 
 // Every /api/admin/* route sits behind Cloudflare Access (docs/cloudflare-access.md); app.ts mounts

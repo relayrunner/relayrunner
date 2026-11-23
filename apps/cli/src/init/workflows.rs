@@ -7,7 +7,7 @@
 //! and runs wherever the relay answers:
 //!
 //!   relay-test:
-//!     uses: relayrunner/actions/.github/workflows/relay.yml@<RELAY_REF>
+//!     uses: relayrunner/actions/.github/workflows/relay.yml@<relay version>
 //!     with:
 //!       machine: self-hosted
 //!       github: ubuntu-latest
@@ -15,41 +15,46 @@
 //!     needs: relay-test
 //!     runs-on: ${{ needs.relay-test.outputs.runner }}
 
-use serde::Serialize;
+use serde::{Deserialize, Serialize};
+use std::collections::BTreeMap;
+use std::sync::LazyLock;
 use yaml_rust2::{Yaml, YamlLoader, yaml::Hash};
 
-/// The relay version `init` writes. Bump it with each relayrunner/actions release, along with the
-/// skills and agent guide that show it (a test checks them).
-pub const RELAY_REF: &str = "v1.0.0-beta.9";
-pub const RELAY_WORKFLOW: &str = "relayrunner/actions/.github/workflows/relay.yml";
+/// What the CLI shares with @relayrunner/providers: the relay version `init` writes, the relay
+/// workflow, and how each hosted provider's labels start. Bump the version with each
+/// relayrunner/actions release, along with the skills and agent guide that show it (a test in
+/// packages/providers checks them).
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct Relay {
+    relay_ref: String,
+    relay_workflow: String,
+    label_prefixes: BTreeMap<String, Vec<String>>,
+}
 
-/// The hosted providers a relay can send a job to, and how their labels start: a copy of
-/// LABEL_PREFIXES in @relayrunner/providers. A prefix ending in `-` also matches the bare name.
-const HOSTED_PROVIDERS: &[(&str, &[&str])] = &[
-    ("blacksmith", &["blacksmith-"]),
-    ("depot", &["depot-"]),
-    ("namespace", &["namespace-profile-", "nscloud-"]),
-    ("warpbuild", &["warp-"]),
-    ("ubicloud", &["ubicloud-"]),
-    ("boat", &["boat-", "boat/"]),
-    ("runs-on", &["runs-on=", "runs-on/"]),
-    ("starsling", &["starsling-"]),
-    ("monkci", &["monkci-"]),
-    ("runloft", &["runloft-"]),
-    ("latchkey", &["latchkey-"]),
-    ("berrybox", &["berrybox-"]),
-    ("celesto", &["celesto-"]),
-    ("instabox", &["instabox-"]),
-    ("lizard", &["lizard-"]),
-    ("groundbox", &["groundbox-"]),
-];
+static RELAY: LazyLock<Relay> = LazyLock::new(|| {
+    serde_json::from_str(include_str!(
+        "../../../../packages/providers/src/relay.json"
+    ))
+    .expect("relay.json parses")
+});
 
+pub fn relay_ref() -> &'static str {
+    &RELAY.relay_ref
+}
+
+fn relay_workflow() -> &'static str {
+    &RELAY.relay_workflow
+}
+
+/// The hosted provider a lowercase label asks for. A prefix ending in `-` also matches the bare
+/// name.
 fn hosted_provider_of(lower: &str) -> Option<&'static str> {
-    HOSTED_PROVIDERS.iter().find_map(|(id, prefixes)| {
+    RELAY.label_prefixes.iter().find_map(|(id, prefixes)| {
         prefixes
             .iter()
-            .any(|p| lower.starts_with(p) || p.strip_suffix('-') == Some(lower))
-            .then_some(*id)
+            .any(|p| lower.starts_with(p.as_str()) || p.strip_suffix('-') == Some(lower))
+            .then_some(id.as_str())
     })
 }
 
@@ -318,7 +323,7 @@ fn is_relay_job(job: &Yaml) -> bool {
     let Yaml::Hash(job) = job else {
         return false;
     };
-    matches!(get(job, "uses"), Some(Yaml::String(uses)) if uses.split('@').next() == Some(RELAY_WORKFLOW))
+    matches!(get(job, "uses"), Some(Yaml::String(uses)) if uses.split('@').next() == Some(relay_workflow()))
 }
 
 fn only_workflow_call(on: Option<&Yaml>) -> bool {
@@ -835,7 +840,12 @@ fn route_job(
     let pad = |n: usize| " ".repeat(n);
     let block = [
         format!("{}{relay}:{eol}", pad(ji)),
-        format!("{}uses: {RELAY_WORKFLOW}@{RELAY_REF}{eol}", pad(ji + step)),
+        format!(
+            "{}uses: {}@{}{eol}",
+            pad(ji + step),
+            relay_workflow(),
+            relay_ref()
+        ),
         format!("{}with:{eol}", pad(ji + step)),
         format!(
             "{}machine: {}{eol}",
@@ -895,64 +905,6 @@ mod tests {
 
     fn job(body: &str) -> String {
         format!("on: push\njobs:\n  test:\n{body}")
-    }
-
-    /// The agent skills (skills/, installed with `npx skills add relayrunner/relayrunner`) and the
-    /// agent guide show the relay version for hand-routed jobs. Keep it the one init writes.
-    #[test]
-    fn skills_show_the_relay_version_init_writes() {
-        fn markdown(dir: &std::path::Path, files: &mut Vec<std::path::PathBuf>) {
-            for entry in std::fs::read_dir(dir).unwrap() {
-                let path = entry.unwrap().path();
-                if path.is_dir() {
-                    markdown(&path, files);
-                } else if path.extension().is_some_and(|ext| ext == "md") {
-                    files.push(path);
-                }
-            }
-        }
-        let repo = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../..");
-        let mut files = vec![repo.join("docs/agent-install.md")];
-        markdown(&repo.join("skills"), &mut files);
-        for path in files {
-            let text = std::fs::read_to_string(&path).unwrap();
-            for marker in ["relay.yml@", "\"relay\": \""] {
-                for (at, _) in text.match_indices(marker) {
-                    let rest = &text[at + marker.len()..];
-                    let end = rest
-                        .find(|c: char| !(c.is_alphanumeric() || "._-".contains(c)))
-                        .unwrap_or(rest.len());
-                    let version = &rest[..end];
-                    if version.starts_with('v') {
-                        assert_eq!(version, RELAY_REF, "{}", path.display());
-                    }
-                }
-            }
-        }
-    }
-
-    /// The hosted providers match @relayrunner/providers.
-    #[test]
-    fn knows_the_same_providers_as_the_providers_package() {
-        let providers = include_str!("../../../../packages/providers/src/index.ts");
-        let table = providers
-            .split_once("LABEL_PREFIXES")
-            .and_then(|(_, rest)| rest.split_once("};"))
-            .map(|(table, _)| table)
-            .unwrap();
-        assert_eq!(
-            table.lines().filter(|l| l.contains(": [")).count(),
-            HOSTED_PROVIDERS.len()
-        );
-        for (id, prefixes) in HOSTED_PROVIDERS {
-            let quoted: Vec<String> = prefixes.iter().map(|p| format!("\"{p}\"")).collect();
-            let line = format!("{id}: [{}],", quoted.join(", "));
-            let quoted_id = format!("\"{id}\": [{}],", quoted.join(", "));
-            assert!(
-                providers.contains(&line) || providers.contains(&quoted_id),
-                "{id}"
-            );
-        }
     }
 
     #[test]
@@ -1245,7 +1197,7 @@ jobs:
     steps:
       - run: npm run build
 "
-        .replace("REF", RELAY_REF);
+        .replace("REF", relay_ref());
         assert_eq!(out, expected);
         let all = route_jobs(SOURCE, &jobs, false).unwrap();
         assert!(
@@ -1313,7 +1265,9 @@ jobs:
         assert_eq!(
             out,
             format!(
-                "on: [push, pull_request]\r\njobs:\r\n    relay-a:\r\n        uses: {RELAY_WORKFLOW}@{RELAY_REF}\r\n        with:\r\n            machine: self-hosted\r\n            github: ubuntu-latest\r\n\r\n    a:\r\n        needs: relay-a\r\n        runs-on: ${{{{ needs.relay-a.outputs.runner }}}}\r\n        steps:\r\n            - run: echo 'hi'   # say hi"
+                "on: [push, pull_request]\r\njobs:\r\n    relay-a:\r\n        uses: {}@{}\r\n        with:\r\n            machine: self-hosted\r\n            github: ubuntu-latest\r\n\r\n    a:\r\n        needs: relay-a\r\n        runs-on: ${{{{ needs.relay-a.outputs.runner }}}}\r\n        steps:\r\n            - run: echo 'hi'   # say hi",
+                relay_workflow(),
+                relay_ref()
             )
         );
     }

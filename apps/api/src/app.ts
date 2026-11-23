@@ -2,14 +2,15 @@ import { Hono } from "hono";
 import { routePath } from "hono/route";
 import { AppError } from "@relayrunner/errors";
 import type { AccessIdentity } from "@relayrunner/access";
-import type { AgentPrincipal } from "./agent-auth.ts";
-import type { Auth, Session } from "./auth.ts";
+import type { AgentPrincipal } from "./auth/agent-auth.ts";
+import type { Auth, Session } from "./auth/auth.ts";
 import type { Db, schema } from "./db/index.ts";
 import type { Env } from "./env.ts";
 import type { Flags } from "@relayrunner/api-types";
 import { respondError } from "./errors.ts";
 import { requireAccess } from "./middleware/admin.ts";
 import { d1Session } from "./middleware/d1-session.ts";
+import { withCatalog } from "./providers/provider-catalog.ts";
 import { attachSession } from "./middleware/session.ts";
 import { activityRoutes } from "./routes/activity.ts";
 import { agentRoutes } from "./routes/agents.ts";
@@ -22,7 +23,7 @@ import { telemetryRoutes } from "./routes/telemetry.ts";
 import { logBucketRoutes } from "./routes/log-bucket.ts";
 import { githubRoutes } from "./routes/github.ts";
 import { healthRoutes } from "./routes/health.ts";
-import { machineRoutes } from "./routes/machines.ts";
+import { machineRoutes } from "./routes/machines/index.ts";
 import { meRoutes } from "./routes/me.ts";
 import { jobTimesRoutes } from "./routes/job-times.ts";
 import { signalRoutes } from "./routes/signals.ts";
@@ -69,8 +70,9 @@ app.route("/health", healthRoutes);
 app.use("/admin/*", requireAccess);
 app.route("/admin/webhooks", adminWebhookRoutes);
 
-// Everything below sees c.var.auth, c.var.user and c.var.session.
-app.use("*", attachSession, d1Session);
+// Everything below sees c.var.auth, c.var.user and c.var.session, and the provider list
+// (withCatalog).
+app.use("*", attachSession, d1Session, withCatalog);
 app.route("/auth", authRoutes);
 app.route("/me", meRoutes);
 app.route("/flags", flagRoutes);

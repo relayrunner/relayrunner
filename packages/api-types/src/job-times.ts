@@ -1,5 +1,5 @@
-// How long jobs take on each runner (GET /api/job-times, apps/api/src/job-times.ts) and each
-// workflow's whole-run times beside them (the Performance page, apps/api/src/runs.ts). Times are ms.
+// How long jobs take on each runner (GET /api/job-times, apps/api/src/reports/job-times.ts) and each
+// workflow's whole-run times beside them (the Performance page, apps/api/src/reports/runs.ts). Times are ms.
 import type { RunnerSize } from "@relayrunner/providers";
 import type { DeviceKind } from "./device.ts";
 
@@ -87,12 +87,92 @@ export type JobTimesReport = {
 };
 
 /** A workflow on the Performance page: its jobs' times and its whole-run times. */
-export type PerformanceWorkflow = WorkflowRow & {
-  /** Run start to last job done, like the History page. Null with no finished runs. */
-  wall: Stat | null;
-};
+export type PerformanceWorkflow = WorkflowRow &
+  WorkflowCost & {
+    /** Run start to last job done, like the History page. Null with no finished runs. */
+    wall: Stat | null;
+  };
 
 /** The Performance page: job times per runner, plus each workflow's whole-run times. */
 export type PerformanceReport = Omit<JobTimesReport, "workflows"> & {
   workflows: PerformanceWorkflow[];
+};
+
+/**
+ * Which runner ran a workflow fastest against GitHub's: its whole runs that ran every job on one
+ * runner, FEW_RUNS+ on both. `ratio` is its median over GitHub's (0.6 is 40% less time).
+ */
+export type FastestRunner = { environment: string; ratio: number };
+
+/** A workflow's cost and runners in the window (apps/api/src/reports/workflow-compare.ts). */
+export type WorkflowCost = {
+  /** Median list-price cost of its successful runs, in USD. Null when none had a price. */
+  usd: number | null;
+  /** Environment keys its jobs ran on, most runs first. */
+  environments: string[];
+  fastest: FastestRunner | null;
+  /** Time its jobs ran on a runner in the window, summed, for the page's CI time. */
+  runMs: number;
+  /** What they cost at list prices, in USD, leaving out jobs with no price. */
+  spentUsd: number;
+};
+
+/** One job of a workflow on one runner: its successful runs' median time and cost. */
+export type WorkflowJobStat = { runs: number; medianMs: number | null; usd: number | null };
+
+/** A runner that ran a workflow in the window, for the workflow page's Runners table. */
+export type WorkflowRunner = Environment & {
+  /** Runs it ran a job of, evaluations counted apart. */
+  runs: number;
+  evaluations: number;
+  /** Successful runs that ran every job here. */
+  wholeRuns: number;
+  /** Their median time and cost. Null with none. */
+  medianMs: number | null;
+  usd: number | null;
+  /** By job name (matrix legs together), from successful jobs. */
+  jobs: Record<string, WorkflowJobStat>;
+};
+
+/** One successful run, for the workflow page's chart. */
+export type WorkflowRunPoint = {
+  runId: number;
+  runAttempt: number;
+  /** When its last job finished, epoch ms. */
+  at: number;
+  /** First job queued to last finished. */
+  ms: number;
+  usd: number | null;
+  /** The runner of every job, or null when its jobs ran in more than one place. */
+  environment: string | null;
+  /** A provider evaluation's run. */
+  evaluation: boolean;
+  /** Each job: its run time, its wait for a runner (null when GitHub sent no queue time), cost. */
+  jobs: {
+    name: string;
+    environment: string;
+    ms: number;
+    waitMs: number | null;
+    usd: number | null;
+  }[];
+};
+
+/** GET /api/job-times/workflow: one workflow on every runner it ran on. */
+export type WorkflowReport = {
+  repositoryId: number;
+  repository: string;
+  workflow: string | null;
+  days: number;
+  fewRuns: number;
+  /** The runner the others are compared with, when it ran the workflow. */
+  baseline: string | null;
+  /** Job names (matrix legs together), most run first. */
+  jobs: string[];
+  runners: WorkflowRunner[];
+  /** Successful runs, oldest first. */
+  runs: WorkflowRunPoint[];
+  /** Providers that could be evaluated on it and haven't run it in the window. */
+  untried: string[];
+  /** More jobs fell in the window than the report reads. */
+  truncated: boolean;
 };

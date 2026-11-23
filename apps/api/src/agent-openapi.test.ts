@@ -1,7 +1,7 @@
 import { describe, expect, test } from "vitest";
 // The site publishes this at https://relayrunner.dev/openapi.json.
 import { openApi } from "../../site/src/lib/openapi.ts";
-import { AGENT_ROUTES_BY_METHOD, agentMayCall } from "./agent-auth.ts";
+import { AGENT_ROUTES_BY_METHOD, agentMayCall } from "./auth/agent-auth.ts";
 
 // Each documented path with its {params} filled in, by method: "GET /api/runs/1/2/3/jobs".
 const documented = Object.entries(openApi.paths).flatMap(([path, item]) =>
