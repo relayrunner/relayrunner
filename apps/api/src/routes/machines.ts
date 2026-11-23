@@ -1,4 +1,4 @@
-import { recordEvent } from "../activity-log.ts";
+import { recordEvent } from "../ingest/activity-log.ts";
 import { and, asc, eq, gt, inArray, isNotNull, isNull, max } from "drizzle-orm";
 import { alias } from "drizzle-orm/sqlite-core";
 import { Hono } from "hono";
@@ -7,18 +7,18 @@ import { HelloMessage } from "@relayrunner/machine-protocol";
 import { MACHINE_SHARING } from "@relayrunner/activity";
 import { z } from "zod";
 import type { AppEnv } from "../app.ts";
-import { MACHINE_CLIENT_ID } from "../auth.ts";
+import { MACHINE_CLIENT_ID } from "../auth/auth.ts";
 import { createDb, type Db, schema } from "../db/index.ts";
-import { presentOrigin, requestOrigin } from "../device-origin.ts";
-import { runningJobs } from "../jobs.ts";
-import { FAILED_CONCLUSIONS } from "../job-counts.ts";
-import { claimRunnerJobs } from "../job-timings.ts";
+import { presentOrigin, requestOrigin } from "../machines/device-origin.ts";
+import { runningJobs } from "../ingest/jobs.ts";
+import { FAILED_CONCLUSIONS } from "../ingest/job-counts.ts";
+import { claimRunnerJobs } from "../ingest/job-timings.ts";
 import {
   MACHINE_ID_HEADER,
   MACHINE_ORIGIN_HEADER,
   OFFLINE,
 } from "../durable-objects/machine-session.ts";
-import { addRunnerLabels, type GitHubRunner, type RunnerScope } from "../github-app.ts";
+import { addRunnerLabels, type GitHubRunner, type RunnerScope } from "../github/github-app.ts";
 import {
   addedRunnerScope,
   cannotAdd,
@@ -32,9 +32,9 @@ import {
   runnerArch,
   runnerOs,
   type GroupAccess,
-} from "../github-runners.ts";
-import { MAX_RUNNER_REPOS, privateRepos } from "../repositories.ts";
-import { loadRunnerReleases } from "../runner-releases.ts";
+} from "../github/github-runners.ts";
+import { MAX_RUNNER_REPOS, privateRepos } from "../github/repositories.ts";
+import { loadRunnerReleases } from "../machines/runner-releases.ts";
 import {
   addedMachineScope,
   addMachinesToWorkspace,
@@ -56,7 +56,7 @@ import {
   userWorkspaces,
   verifyMachineToken,
   type PauseActor,
-} from "../machines.ts";
+} from "../machines/machines.ts";
 import type { Env } from "../env.ts";
 import { isBillingProvider } from "@relayrunner/providers";
 import {
@@ -64,15 +64,15 @@ import {
   connectProvider,
   managedWorkspaces,
   parseOptions,
-} from "../provider-connections.ts";
+} from "../providers/provider-connections.ts";
 import { sendEmail } from "../email.ts";
 import { inBackground, requireUser } from "../middleware/session.ts";
 import { requireWorkspace } from "../middleware/workspace.ts";
-import { canControlMachine, requireManager } from "../roles.ts";
+import { canControlMachine, requireManager } from "../auth/roles.ts";
 import { AppError, type ErrorCode } from "@relayrunner/errors";
-import { changeActor } from "../changes.ts";
+import { changeActor } from "../auth/changes.ts";
 import { annotate } from "../tracing.ts";
-import { machineJobFailure } from "../job-failures.ts";
+import { machineJobFailure } from "../reports/job-failures.ts";
 import {
   JOB_RESULTS,
   MAX_MACHINE_JOBS,
@@ -80,7 +80,7 @@ import {
   machineJobs,
   machineJobSteps,
   machineWorkspaceFor,
-} from "../machine-jobs.ts";
+} from "../machines/machine-jobs.ts";
 
 // Enrolling a machine (`relayrunner connect`) with Better Auth's device authorization plugin:
 //

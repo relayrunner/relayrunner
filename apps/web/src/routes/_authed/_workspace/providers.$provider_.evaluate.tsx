@@ -1,5 +1,5 @@
 // Evaluate a provider: run one workflow on it five times and compare with how it runs today
-// (apps/api/src/evaluations.ts). Without `?id` it walks through connecting the provider and
+// (apps/api/src/reports/evaluations.ts). Without `?id` it walks through connecting the provider and
 // picking a workflow; with one it shows that evaluation's runs, then the comparison.
 import { providerPlans } from "@relayrunner/providers";
 import { createFileRoute, Link, notFound, useNavigate } from "@tanstack/react-router";

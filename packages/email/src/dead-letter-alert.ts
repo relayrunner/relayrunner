@@ -1,6 +1,6 @@
 import { escapeHtml, renderEmailCard, type RenderedEmail } from "./card.ts";
 
-/** Operator alert when GitHub webhook dead letters pile up (apps/api/src/dead-letter-alert.ts). */
+/** Operator alert when GitHub webhook dead letters pile up (apps/api/src/ingest/dead-letter-alert.ts). */
 export function renderDeadLetterAlertEmail(ctx: {
   count: number;
   threshold: number;

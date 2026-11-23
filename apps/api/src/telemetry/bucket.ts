@@ -8,8 +8,8 @@
 import { AwsClient } from "aws4fetch";
 import type { schema } from "../db/index.ts";
 import type { Env } from "../env.ts";
-import { openToken } from "../provider-tokens.ts";
-import { jobUrl } from "../run-job.ts";
+import { openToken } from "../providers/provider-tokens.ts";
+import { jobUrl } from "../reports/run-job.ts";
 import { errorMessage } from "../errors.ts";
 import type { Job, LogRecord } from "./log-lines.ts";
 import { gzip, resultOf, type SendResult } from "./otlp.ts";
@@ -17,7 +17,7 @@ import type { Repository } from "./spans.ts";
 
 type BucketRow = typeof schema.logBucket.$inferSelect;
 
-// The associated data the credentials are sealed with (src/provider-tokens.ts), so they can't be
+// The associated data the credentials are sealed with (src/providers/provider-tokens.ts), so they can't be
 // moved onto the telemetry headers or another workspace.
 export const CREDENTIALS_PURPOSE = "log-bucket";
 const PUT_TIMEOUT_MS = 30_000;

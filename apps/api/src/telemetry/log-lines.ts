@@ -3,8 +3,8 @@
 // (src/telemetry/logs.ts) sends them to an OTLP endpoint and src/telemetry/bucket.ts writes them to
 // a bucket.
 import type { WorkflowJob } from "@relayrunner/github-webhooks";
-import { redactSecrets } from "../feedback.ts";
-import { ANSI } from "../job-failures.ts";
+import { redactSecrets } from "../operator/feedback.ts";
+import { ANSI } from "../reports/job-failures.ts";
 import { stepSpanId } from "./spans.ts";
 
 export type Job = Pick<

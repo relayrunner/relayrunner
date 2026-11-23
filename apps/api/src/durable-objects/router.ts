@@ -1,17 +1,17 @@
 import { preferFirst, type RelayInputs, type RunnerKey } from "@relayrunner/runner-order";
 import { Recent } from "../recent.ts";
-import { accountUsage } from "../actions-billing.ts";
-import { accountSpend } from "../provider-spend.ts";
-import { resolveRunnerOrder } from "../runner-orders.ts";
-import { blacksmithMinutes, type BlacksmithMinutes } from "../blacksmith-minutes.ts";
-import { readBoatStarts, StartBudget } from "../boat-limits.ts";
+import { accountUsage } from "../providers/actions-billing.ts";
+import { accountSpend } from "../providers/provider-spend.ts";
+import { resolveRunnerOrder } from "../routing/runner-orders.ts";
+import { blacksmithMinutes, type BlacksmithMinutes } from "../providers/blacksmith-minutes.ts";
+import { readBoatStarts, StartBudget } from "../providers/boat-limits.ts";
 import {
   ACCOUNT_TTL_MS,
   groundboxHeld,
   groundboxMinutes,
   type GroundboxReading,
   readGroundboxAccount,
-} from "../groundbox-account.ts";
+} from "../providers/groundbox-account.ts";
 import { DurableObject } from "cloudflare:workers";
 import { and, eq, isNotNull, isNull, or } from "drizzle-orm";
 import { createDb, schema } from "../db/index.ts";
@@ -25,13 +25,13 @@ import {
   userCanReadRepo,
   type GitHubRunner,
   type RunnerScope,
-} from "../github-app.ts";
-import { installationRunnerScope } from "../installations.ts";
-import { inWorkspace } from "../machines.ts";
-import { runStartersForJobs } from "../job-starters.ts";
-import { clearJobMachine, setJobMachine } from "../jobs.ts";
-import { findRepo } from "../repositories.ts";
-import { jobName } from "../run-job.ts";
+} from "../github/github-app.ts";
+import { installationRunnerScope } from "../github/installations.ts";
+import { inWorkspace } from "../machines/machines.ts";
+import { runStartersForJobs } from "../ingest/job-starters.ts";
+import { clearJobMachine, setJobMachine } from "../ingest/jobs.ts";
+import { findRepo } from "../github/repositories.ts";
+import { jobName } from "../reports/run-job.ts";
 import {
   cleared,
   healthGate,
@@ -39,15 +39,15 @@ import {
   updateHealth,
   type JobSignal,
   type LabelHealth,
-} from "../provider-health.ts";
-import { earlierPick, jobKey } from "../route-decisions.ts";
-import type { RetryPick } from "../retries.ts";
+} from "../routing/provider-health.ts";
+import { earlierPick, jobKey } from "../routing/route-decisions.ts";
+import type { RetryPick } from "../routing/retries.ts";
 import {
   MAX_REQUEUES,
   NO_MACHINE_GIVE_UP_MS,
   type StrandedReason,
   strandedJobName,
-} from "../stranded-jobs.ts";
+} from "../routing/stranded-jobs.ts";
 import { errorMessage } from "../errors.ts";
 import { traced } from "../tracing.ts";
 import { providersOfAppSlugs, type HostedProviderId } from "@relayrunner/providers";
@@ -59,7 +59,7 @@ import {
   missGate,
   missId,
   type RepoMiss,
-} from "../provider-takeover.ts";
+} from "../routing/provider-takeover.ts";
 import {
   fetchGroupAccess,
   matchLabels,
@@ -68,7 +68,7 @@ import {
   runnerListKey,
   scopeKey,
   type GroupAccess,
-} from "../github-runners.ts";
+} from "../github/github-runners.ts";
 import {
   admits,
   canClaim,
@@ -102,7 +102,7 @@ import {
   type Route,
   type RouteDecision,
   type Waiting,
-} from "../routing.ts";
+} from "../routing/routing.ts";
 
 // The relay's inputs (RelayInputs): labels a machine must all have (`machine`), the GitHub-hosted
 // label (`github`), and each hosted provider's label. Empty: don't use that provider.
@@ -117,11 +117,11 @@ export interface PickedJob extends JobStarters, RelayInputs {
   // startedBy, triggeredBy and runAttempt (JobStarters): who started the run and this attempt, and
   // which attempt it is. A machine that's `only_me` takes the job when its owner started the run:
   // on the first attempt, only when its owner started that attempt too (admits).
-  // Set when this attempt is an automatic retry (src/retries.ts): where the job failed and where
+  // Set when this attempt is an automatic retry (src/routing/retries.ts): where the job failed and where
   // the retry should go.
   retry?: RetryPick | null;
   // An auto relay's size in vCPUs and the provider the Router page put first for the job
-  // (src/auto-jobs.ts).
+  // (src/routing/auto-jobs.ts).
   size?: number;
   first?: RunnerKey | null;
 }
@@ -159,9 +159,9 @@ interface StoredRoute extends Route {
   job?: PickedJob;
   requeues?: number;
 }
-// Each hosted provider runner type's health (src/provider-health.ts), by healthId.
+// Each hosted provider runner type's health (src/routing/provider-health.ts), by healthId.
 const HEALTH_KEY = "health:";
-// Each hosted provider that missed a job of a repo (src/provider-takeover.ts), by missId.
+// Each hosted provider that missed a job of a repo (src/routing/provider-takeover.ts), by missId.
 const MISS_KEY = "miss:";
 
 // How long a GitHub org's runner group access is reused before it's read again. Groups change
@@ -184,7 +184,7 @@ const FOUND_LIST_TTL_MS = 10 * 60_000;
 export type RunnerList = { runners: GitHubRunner[]; checkedAt: number };
 
 // One per workspace, addressed by workspace id. Decides where each picked job's run goes and
-// keeps the routes it hands out (src/routing.ts), so the job queued on a route's label can find
+// keeps the routes it hands out (src/routing/routing.ts), so the job queued on a route's label can find
 // its machine.
 export class Router extends DurableObject<Env> {
   // What GitHub said, kept in memory while the object is awake: runner group access by
@@ -197,7 +197,7 @@ export class Router extends DurableObject<Env> {
   private ownerAccess = new Recent<string, boolean>();
   private spend = new Recent<string, { account: string; spentUsd: number }>();
   private freeMinutes = new Recent<string, BlacksmithMinutes>();
-  // Boat's job starts left, from the workspace's Boat connection (src/boat-limits.ts).
+  // Boat's job starts left, from the workspace's Boat connection (src/providers/boat-limits.ts).
   private boatStarts = new StartBudget();
   // Groundbox's account (free minutes, holds), from the workspace's connection.
   private groundbox = new Recent<string, GroundboxReading>(1_000);
@@ -307,7 +307,7 @@ export class Router extends DurableObject<Env> {
   }
 
   /**
-   * Where the run's next job goes, walking the repository's runner order (src/runner-orders.ts): a machine route's
+   * Where the run's next job goes, walking the repository's runner order (src/routing/runner-orders.ts): a machine route's
    * `rr-<id>`, the job's own `github` label, or no runner and the reason. A GitHub step with a
    * minutes limit passes the job on once the job's account nears its included quota.
    */
@@ -1303,7 +1303,7 @@ export class Router extends DurableObject<Env> {
 
   /**
    * Whether the Router still has `job` in hand on its `rr-<routeId>` label, for the orphaned job
-   * sweep (src/orphaned-jobs.ts): it waits in line for a machine slot (full machines are not stuck),
+   * sweep (src/routing/orphaned-jobs.ts): it waits in line for a machine slot (full machines are not stuck),
    * or a live route was claimed by it or can still be. Reads storage only.
    */
   async holds(routeId: string, job: QueuedJob): Promise<boolean> {
@@ -1336,7 +1336,7 @@ export class Router extends DurableObject<Env> {
   }
 
   /**
-   * Wipes every route kept for the workspace. Operator deletes call this (src/admin-delete.ts):
+   * Wipes every route kept for the workspace. Operator deletes call this (src/operator/admin-delete.ts):
    * expired routes are only dropped when the Router is called again, which a deleted workspace's
    * never is.
    */

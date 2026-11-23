@@ -48,7 +48,7 @@ import { usePageTitle } from "@/lib/page-title";
 //    start unticked (#364), so an org that adds them never gets their machine unless they pick it.
 //    The CLI picks up its machine token on its next poll.
 //
-// The device code lives 15 minutes (apps/api/src/auth.ts): enough for all of that, short enough
+// The device code lives 15 minutes (apps/api/src/auth/auth.ts): enough for all of that, short enough
 // that an approval link someone else started goes stale quickly.
 type DeviceSearch = {
   user_code?: string;

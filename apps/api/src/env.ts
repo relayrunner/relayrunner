@@ -8,47 +8,47 @@ import type { PickRunner } from "./durable-objects/pick-runner.ts";
 import type { Router } from "./durable-objects/router.ts";
 import type { StrandedJob } from "./durable-objects/stranded-job.ts";
 import type { ProviderTakeover } from "./durable-objects/provider-takeover.ts";
-import type { InstallationTask } from "./installation-queue.ts";
+import type { InstallationTask } from "./github/installation-queue.ts";
 import type { TelemetryMessage } from "./telemetry/export.ts";
 import type { JobLogMessage } from "./telemetry/logs.ts";
 
 // Bindings from wrangler.jsonc, plus Worker secrets (`cf workers secrets update`, or .dev.vars locally).
 export interface Env extends AccessEnv {
   DB: D1Database;
-  // Webhook dead letters (src/dead-letters.ts), and the queue a replay sends them back to.
+  // Webhook dead letters (src/ingest/dead-letters.ts), and the queue a replay sends them back to.
   DEAD_LETTERS: R2Bucket;
   WEBHOOK_QUEUE: Queue<WebhookMessage>;
-  // Per-installation work the 15-minute cron hands out (src/installation-tasks.ts).
+  // Per-installation work the 15-minute cron hands out (src/github/installation-tasks.ts).
   INSTALLATION_TASKS: Queue<InstallationTask>;
   // Finished runs and jobs as spans, on their way to each workspace's OTLP endpoint
   // (src/telemetry/export.ts).
   TELEMETRY_QUEUE: Queue<TelemetryMessage>;
   // Finished jobs whose logs go to their workspace's OTLP endpoint (src/telemetry/logs.ts).
   JOB_LOG_QUEUE: Queue<JobLogMessage>;
-  // Alert when more than this many messages are dead-lettered in an hour (src/dead-letter-alert.ts).
+  // Alert when more than this many messages are dead-lettered in an hour (src/ingest/dead-letter-alert.ts).
   DEAD_LETTER_ALERT_THRESHOLD?: string;
   // Optional: also POST the alert here (a Slack or Discord incoming webhook), a Worker secret.
   DEAD_LETTER_ALERT_WEBHOOK_URL?: string;
-  // Optional: a Slack incoming webhook for operator pings (src/operator-pings.ts): signups, installs,
+  // Optional: a Slack incoming webhook for operator pings (src/operator/operator-pings.ts): signups, installs,
   // first machines, first machine runs and unroutable runs. A Worker secret.
   OPERATOR_SLACK_WEBHOOK_URL?: string;
   // Test accounts that aren't operators, left out of operator pings: GitHub user ids,
   // comma-separated (wrangler.jsonc vars).
   OPERATOR_PINGS_IGNORE_GITHUB_IDS?: string;
-  // PostHog project token for the server-side product events (src/product-events.ts). Public, so
+  // PostHog project token for the server-side product events (src/operator/product-events.ts). Public, so
   // it's a wrangler.jsonc var; unset, no events are sent.
   POSTHOG_TOKEN?: string;
   PICK_RUNNER: DurableObjectNamespace<PickRunner>;
   ROUTER: DurableObjectNamespace<Router>;
   MACHINE_LINK: DurableObjectNamespace<MachineLink>;
-  // Ends a routed job no machine can take (src/stranded-jobs.ts).
+  // Ends a routed job no machine can take (src/routing/stranded-jobs.ts).
   STRANDED_JOB: DurableObjectNamespace<StrandedJob>;
   PROVIDER_TAKEOVER: DurableObjectNamespace<ProviderTakeover>;
-  // Container runners (src/container-runner.ts) and the orgs allowed to start them,
+  // Container runners (src/routing/container-runner.ts) and the orgs allowed to start them,
   // comma-separated (unset allows none).
   CONTAINER_RUNNER: DurableObjectNamespace<ContainerRunner>;
   CONTAINER_RUNNER_ORGS?: string;
-  // Lint check runs for the Checks App (src/lint-check.ts), one container each. Gated by
+  // Lint check runs for the Checks App (src/checks/lint-check.ts), one container each. Gated by
   // CONTAINER_RUNNER_ORGS too.
   LINT_RUNNER: DurableObjectNamespace<LintRunner>;
   // Blacksmith's CLI in a container, to read a workspace's Blacksmith usage
@@ -110,7 +110,7 @@ export interface Env extends AccessEnv {
   GITHUB_SPEND_APP_ID: string;
   GITHUB_SPEND_APP_PRIVATE_KEY: SecretsStoreSecret;
   // AES-256 key (32 bytes, base64) that encrypts the provider tokens workspaces paste
-  // (src/provider-tokens.ts), from the Secrets Store. Optional so tests and local dev run without
+  // (src/providers/provider-tokens.ts), from the Secrets Store. Optional so tests and local dev run without
   // it; connecting a provider fails until it's set.
   PROVIDER_TOKEN_KEY?: SecretsStoreSecret;
 }

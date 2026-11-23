@@ -1,14 +1,14 @@
 import { Hono } from "hono";
 import { z } from "zod";
 import type { AppEnv } from "../app.ts";
-import { DEFAULT_DAYS, jobRuns, MAX_DAYS, machineJobTimes } from "../job-times.ts";
+import { DEFAULT_DAYS, jobRuns, MAX_DAYS, machineJobTimes } from "../reports/job-times.ts";
 import { requireUser } from "../middleware/session.ts";
 import { requireWorkspace } from "../middleware/workspace.ts";
-import { jobTypeTimes } from "../job-type-times.ts";
-import { performanceReport } from "../runs.ts";
-import { workflowReport } from "../workflow-compare.ts";
-import { MAX_RANGE_MS, runnerReport } from "../runner-report.ts";
-import { Epoch, requireWindow } from "../report-window.ts";
+import { jobTypeTimes } from "../reports/job-type-times.ts";
+import { performanceReport } from "../reports/runs.ts";
+import { workflowReport } from "../reports/workflow-compare.ts";
+import { MAX_RANGE_MS, runnerReport } from "../reports/runner-report.ts";
+import { Epoch, requireWindow } from "../reports/report-window.ts";
 import { RAW_RETENTION_DAYS } from "../time.ts";
 import { AppError } from "@relayrunner/errors";
 

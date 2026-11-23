@@ -1,6 +1,6 @@
 import { escapeHtml, renderEmailCard, type RenderedEmail } from "./card.ts";
 
-/** A workspace integration that stopped working (apps/api/src/integration-issues.ts). */
+/** A workspace integration that stopped working (apps/api/src/operator/integration-issues.ts). */
 export type WorkspaceProblem =
   | { kind: "app-suspended"; account: string; settingsUrl: string }
   | { kind: "provider-token"; providerName: string }

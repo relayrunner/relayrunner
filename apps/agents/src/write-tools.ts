@@ -12,7 +12,7 @@ import { answer, findNamed, repositoryArg, type ToolContext, workspaceArg } from
 // Tools that change a workspace's routing settings, each through the same API route the dashboard
 // uses, so the API checks the person's role and logs the change in Activity with the agent's name.
 // They work only where the person turned on Allow changes for this agent in Settings →
-// Agents (apps/api/src/agent-auth.ts); elsewhere the API answers AGENT_CHANGES_OFF. Each answers
+// Agents (apps/api/src/auth/agent-auth.ts); elsewhere the API answers AGENT_CHANGES_OFF. Each answers
 // the new value and the one it replaced (`previous`), so a change can be undone.
 
 // Clients ask before running a tool that isn't read-only or is destructive.

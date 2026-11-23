@@ -13,7 +13,7 @@ import {
   replayDeadLetter,
   type DeadLetter,
   type DeadLetterFilter,
-} from "../dead-letters.ts";
+} from "../ingest/dead-letters.ts";
 import { who } from "../middleware/admin.ts";
 import { AppError } from "@relayrunner/errors";
 

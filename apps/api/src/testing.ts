@@ -3,7 +3,7 @@ import { makeSignature } from "better-auth/crypto";
 import { expect } from "vitest";
 import { parseJsonc } from "../scripts/container-images.ts";
 import { app } from "./app.ts";
-import { createAuth } from "./auth.ts";
+import { createAuth } from "./auth/auth.ts";
 import type { Env } from "./env.ts";
 import { createTestD1 } from "./testing-d1.ts";
 import { createTestR2 } from "./testing-r2.ts";

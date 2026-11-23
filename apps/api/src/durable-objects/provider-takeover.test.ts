@@ -8,20 +8,20 @@ const github = vi.hoisted(() => ({
   rerunJob: vi.fn(),
   deleteRunner: vi.fn(),
 }));
-vi.mock("../github-app.ts", async (importOriginal) => ({
-  ...(await importOriginal<typeof import("../github-app.ts")>()),
+vi.mock("../github/github-app.ts", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("../github/github-app.ts")>()),
   appInstallationToken: async () => "ghs_test",
   runAttemptTriggeringActor: async () => ({ id: 1, login: "atticoos" }),
   ...github,
 }));
 const runner = vi.hoisted(() => ({ request: {} as unknown, complete: vi.fn() }));
-vi.mock("../repo-runner.ts", () => ({
+vi.mock("../routing/repo-runner.ts", () => ({
   mintRepoFirst: vi.fn(async () => ({
     jit: { encodedJitConfig: "jit", runnerId: 5 },
     scope: { kind: "repo", repo: "acme/app" },
   })),
 }));
-vi.mock("../runner-protocol.ts", () => ({
+vi.mock("../routing/runner-protocol.ts", () => ({
   decodeJitConfig: () => ({}),
   latestRunnerVersion: async () => "2.338.2",
   waitForJob: async () => runner.request,

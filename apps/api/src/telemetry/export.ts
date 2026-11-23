@@ -4,7 +4,7 @@
 // OTLP/HTTP JSON request each. Spans are telemetry, not records: ones that run out of retries are
 // dropped, and the run is still in History.
 import { retryDelaySeconds } from "../time.ts";
-import { environmentFor, environmentProvider, nameMachines } from "../environments.ts";
+import { environmentFor, environmentProvider, nameMachines } from "../reports/environments.ts";
 import type { WebhookMessage } from "@relayrunner/github-webhooks";
 import { and, eq } from "drizzle-orm";
 import { createDb, type Db, schema } from "../db/index.ts";

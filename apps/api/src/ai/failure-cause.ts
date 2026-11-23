@@ -2,7 +2,7 @@
 // step, the annotations and the end of the log. Advisory only: nothing acts on it yet.
 import type { FailureCause, FailureCauseKind } from "@relayrunner/api-types";
 import type { Env } from "../env.ts";
-import type { JobFailure } from "../job-failures.ts";
+import type { JobFailure } from "../reports/job-failures.ts";
 import { classify, defineClassifier } from "./classify.ts";
 
 export const FAILURE_CAUSES = {

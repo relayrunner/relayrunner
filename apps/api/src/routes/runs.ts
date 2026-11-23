@@ -3,10 +3,10 @@ import { z } from "zod";
 import type { AppEnv } from "../app.ts";
 import { requireUser } from "../middleware/session.ts";
 import { requireWorkspace } from "../middleware/workspace.ts";
-import { recentJobs } from "../job-times.ts";
-import { appInstallationToken, workflowJobSteps } from "../github-app.ts";
-import { jobSource, listRuns, liveJobs, runJobs } from "../runs.ts";
-import { jobFailure, runFailures } from "../job-failures.ts";
+import { recentJobs } from "../reports/job-times.ts";
+import { appInstallationToken, workflowJobSteps } from "../github/github-app.ts";
+import { jobSource, listRuns, liveJobs, runJobs } from "../reports/runs.ts";
+import { jobFailure, runFailures } from "../reports/job-failures.ts";
 import { jobWindow } from "./job-times.ts";
 import { AppError } from "@relayrunner/errors";
 

@@ -1,4 +1,4 @@
-// Provider evaluations (apps/api/src/evaluations.ts): a workflow run five times on a provider,
+// Provider evaluations (apps/api/src/reports/evaluations.ts): a workflow run five times on a provider,
 // compared with its recent runs. These mirror the API's shapes.
 import { AUTO_SIZES, labelForSize } from "@relayrunner/providers";
 import { api } from "@/lib/api";

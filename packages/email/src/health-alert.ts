@@ -1,7 +1,7 @@
 import { escapeHtml, renderEmailCard, type RenderedEmail } from "./card.ts";
 
 /**
- * Operator alert from apps/api/src/health-issues.ts: background work that keeps failing, and work
+ * Operator alert from apps/api/src/operator/health-issues.ts: background work that keeps failing, and work
  * that started working again. `lines` are the same ones Slack gets.
  */
 export function renderHealthAlertEmail(ctx: { failing: number; lines: string[] }): RenderedEmail {

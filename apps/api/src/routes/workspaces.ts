@@ -1,5 +1,5 @@
-import { recordEvent } from "../activity-log.ts";
-import { inWorkspace as installedIn } from "../job-sql.ts";
+import { recordEvent } from "../ingest/activity-log.ts";
+import { inWorkspace as installedIn } from "../reports/job-sql.ts";
 import {
   readRetrySettings,
   retrySettingsSchema,
@@ -9,34 +9,34 @@ import { and, asc, count, eq, isNotNull, isNull } from "drizzle-orm";
 import { type Context, Hono } from "hono";
 import { z } from "zod";
 import { createMiddleware } from "hono/factory";
-import { agentWorkspaceId } from "../agent-auth.ts";
+import { agentWorkspaceId } from "../auth/agent-auth.ts";
 import type { AppEnv } from "../app.ts";
 import { createDb, schema, type Db } from "../db/index.ts";
-import { isWorkspaceMember } from "../installations.ts";
-import { inWorkspace } from "../machines.ts";
+import { isWorkspaceMember } from "../github/installations.ts";
+import { inWorkspace } from "../machines/machines.ts";
 import { requireUser } from "../middleware/session.ts";
 import { requireWorkspace } from "../middleware/workspace.ts";
-import { canManage, requireManager } from "../roles.ts";
-import { assertCanEditRepo, editableRepos } from "../repo-access.ts";
-import { findRepo } from "../repositories.ts";
+import { canManage, requireManager } from "../auth/roles.ts";
+import { assertCanEditRepo, editableRepos } from "../github/repo-access.ts";
+import { findRepo } from "../github/repositories.ts";
 import {
   listRepoRunnerOrders,
   presentRunnerOrder,
   removeRepoRunnerOrder,
   resolveRunnerOrder,
   saveRepoRunnerOrder,
-} from "../runner-orders.ts";
+} from "../routing/runner-orders.ts";
 import { HOSTED_PROVIDER_IDS, providersOfAppSlugs } from "@relayrunner/providers";
-import { appInstallationToken, orgAppSlugs } from "../github-app.ts";
+import { appInstallationToken, orgAppSlugs } from "../github/github-app.ts";
 import { present } from "./github.ts";
 import { AppError } from "@relayrunner/errors";
 import { annotate } from "../tracing.ts";
-import { routerSetup } from "../router-setup.ts";
-import { routeOutcomes } from "../route-outcomes.ts";
-import { chartBuckets, requireWindow } from "../report-window.ts";
+import { routerSetup } from "../reports/router-setup.ts";
+import { routeOutcomes } from "../reports/route-outcomes.ts";
+import { chartBuckets, requireWindow } from "../reports/report-window.ts";
 import { RAW_RETENTION_DAYS } from "../time.ts";
-import { runnerGroupCheck } from "../runner-group-check.ts";
-import { changeActor, changeSetting } from "../changes.ts";
+import { runnerGroupCheck } from "../github/runner-group-check.ts";
+import { changeActor, changeSetting } from "../auth/changes.ts";
 import { DEFAULT_AUTO_SIZE } from "@relayrunner/providers";
 import { setWorkspaceAi } from "../ai/settings.ts";
 import {
@@ -47,7 +47,7 @@ import {
   planAutoJobs,
   plannedSizesSchema,
   setAutoJob,
-} from "../auto-jobs.ts";
+} from "../routing/auto-jobs.ts";
 
 // Any member of the workspace in the path. Someone outside it gets a 404, so ids don't leak.
 // An agent token (agent-auth.ts) only reaches the workspaces it was granted, and changes one only
@@ -224,12 +224,12 @@ export const workspaceRoutes = new Hono<AppEnv>()
     }
   })
   // The Router page's setup panel: recent workflows, routed or not, and the hosted labels jobs
-  // ran on (src/router-setup.ts).
+  // ran on (src/reports/router-setup.ts).
   .get("/:id/router-setup", requireUser, requireMember, async (c) =>
     c.json(await routerSetup(c.var.db, c.req.param("id"))),
   )
   // Jobs whose relay hands their runner to the Router (`auto`), with the size and first provider
-  // set for each, and the workspace's default size (src/auto-jobs.ts).
+  // set for each, and the workspace's default size (src/routing/auto-jobs.ts).
   // `canEdit` says whether the signed-in user may change the job: owners and admins may change
   // any, and anyone who can push to the job's repo on GitHub may change its jobs.
   .get("/:id/auto-jobs", requireUser, requireMember, async (c) => {
@@ -288,7 +288,7 @@ export const workspaceRoutes = new Hono<AppEnv>()
     return c.json({ ...next, previous });
   })
   // Which repos the org's Default runner group leaves out, for the "Route a repo" sheet
-  // (src/runner-group-check.ts). Null for a personal account, and when GitHub can't be read: the
+  // (src/github/runner-group-check.ts). Null for a personal account, and when GitHub can't be read: the
   // sheet works without it.
   .get("/:id/runner-group-check", requireUser, requireMember, async (c) => {
     const installation = schema.githubInstallation;
@@ -316,7 +316,7 @@ export const workspaceRoutes = new Hono<AppEnv>()
     }
   })
   // Sizes picked in the Router page's "Route a repo" sheet for jobs that don't route yet, saved for
-  // their first pick (src/auto-jobs.ts). Same people as one job's size: owners, admins, and anyone
+  // their first pick (src/routing/auto-jobs.ts). Same people as one job's size: owners, admins, and anyone
   // who can push to the repo. Answers the jobs it saved.
   .put("/:id/planned-sizes", requireUser, requireMember, async (c) => {
     const parsed = plannedSizesSchema.safeParse(await c.req.json().catch(() => null));
@@ -363,7 +363,7 @@ export const workspaceRoutes = new Hono<AppEnv>()
     });
   })
   // Whether the Router skips hosted provider runner types that stopped picking up jobs, and the
-  // ones it skips now (src/provider-health.ts).
+  // ones it skips now (src/routing/provider-health.ts).
   .get("/:id/provider-health", requireUser, requireMember, async (c) => {
     const id = c.req.param("id");
     const [[row], unhealthy] = await Promise.all([
@@ -376,7 +376,7 @@ export const workspaceRoutes = new Hono<AppEnv>()
     ]);
     return c.json({ enabled: row?.enabled ?? true, unhealthy });
   })
-  // The Router page's routing outcomes over ?from=&to= (src/route-outcomes.ts), a day at a time
+  // The Router page's routing outcomes over ?from=&to= (src/reports/route-outcomes.ts), a day at a time
   // from ?origin= (the reader's midnight), or a week at a time past a month.
   .get("/:id/route-outcomes", requireUser, requireMember, async (c) => {
     const query = c.req.query();
@@ -414,7 +414,7 @@ export const workspaceRoutes = new Hono<AppEnv>()
     });
     return c.json({ enabled, previous });
   })
-  // Automatic retries of jobs whose runner failed them (src/retries.ts). Off until turned on.
+  // Automatic retries of jobs whose runner failed them (src/routing/retries.ts). Off until turned on.
   .get("/:id/retry-settings", requireUser, requireMember, async (c) =>
     c.json((await settings(c.var.db, c.req.param("id"))).retrySettings),
   )

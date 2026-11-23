@@ -1,5 +1,5 @@
-// How long jobs take on each runner (GET /api/job-times, apps/api/src/job-times.ts) and each
-// workflow's whole-run times beside them (the Performance page, apps/api/src/runs.ts). Times are ms.
+// How long jobs take on each runner (GET /api/job-times, apps/api/src/reports/job-times.ts) and each
+// workflow's whole-run times beside them (the Performance page, apps/api/src/reports/runs.ts). Times are ms.
 import type { RunnerSize } from "@relayrunner/providers";
 import type { DeviceKind } from "./device.ts";
 
@@ -104,7 +104,7 @@ export type PerformanceReport = Omit<JobTimesReport, "workflows"> & {
  */
 export type FastestRunner = { environment: string; ratio: number };
 
-/** A workflow's cost and runners in the window (apps/api/src/workflow-compare.ts). */
+/** A workflow's cost and runners in the window (apps/api/src/reports/workflow-compare.ts). */
 export type WorkflowCost = {
   /** Median list-price cost of its successful runs, in USD. Null when none had a price. */
   usd: number | null;

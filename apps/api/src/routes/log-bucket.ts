@@ -5,7 +5,7 @@ import { z } from "zod";
 import type { AppEnv } from "../app.ts";
 import { requireUser } from "../middleware/session.ts";
 import { requireWorkspace } from "../middleware/workspace.ts";
-import { requireManager } from "../roles.ts";
+import { requireManager } from "../auth/roles.ts";
 import {
   bucketView,
   deleteBucket,

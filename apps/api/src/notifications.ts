@@ -6,7 +6,7 @@
  */
 import { and, eq, isNull, or } from "drizzle-orm";
 import { schema, type Db } from "./db/index.ts";
-import { isOperator } from "./roles.ts";
+import { isOperator } from "./auth/roles.ts";
 
 export const NOTIFICATION_TYPES = {
   // To the person who approved the machine in the CLI.

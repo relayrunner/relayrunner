@@ -1,11 +1,11 @@
 // Settings → Telemetry → Bucket: where a workspace archives its job logs. The access key goes in
-// encrypted with the secret (src/provider-tokens.ts) and never comes back out; the dashboard sees the
+// encrypted with the secret (src/providers/provider-tokens.ts) and never comes back out; the dashboard sees the
 // access key id's last four characters, and leaves the secret blank to keep the saved one.
 import type { JobLogChoice } from "@relayrunner/activity";
 import { eq } from "drizzle-orm";
 import { type Db, schema } from "../db/index.ts";
 import type { Env } from "../env.ts";
-import { sealToken, tokenHint } from "../provider-tokens.ts";
+import { sealToken, tokenHint } from "../providers/provider-tokens.ts";
 import { CREDENTIALS_PURPOSE, openCredentials, testBucket } from "./bucket.ts";
 import {
   bucketRow,

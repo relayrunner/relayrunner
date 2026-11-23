@@ -9,7 +9,7 @@ import {
   type HelloMessage,
   type JobMessage,
 } from "@relayrunner/machine-protocol";
-import type { RequestOrigin } from "../device-origin.ts";
+import type { RequestOrigin } from "../machines/device-origin.ts";
 
 // The header GET /api/machines/connect uses to tell MachineLink which machine authenticated.
 // MachineLink isn't reachable from outside the API Worker, so only that route can set it.

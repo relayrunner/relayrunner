@@ -3,7 +3,7 @@ import { createMiddleware } from "hono/factory";
 import { FLAG_KEYS, type FlagKey, type Flags } from "@relayrunner/api-types";
 import { AppError } from "@relayrunner/errors";
 import type { AppEnv } from "./app.ts";
-import { isOperator } from "./roles.ts";
+import { isOperator } from "./auth/roles.ts";
 
 // Feature flags from Cloudflare Flagship, through the FLAGS binding (wrangler.jsonc). The keys
 // live in @relayrunner/api-types (FLAG_KEYS), and docs/feature-flags.md covers adding and retiring

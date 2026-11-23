@@ -1,7 +1,7 @@
 import { api } from "@/lib/api";
 import { zoneParts } from "@/lib/time-zone";
 
-/** Routing health across workspaces, for Admin › Routing (apps/api/src/admin-routing.ts). */
+/** Routing health across workspaces, for Admin › Routing (apps/api/src/operator/admin-routing.ts). */
 export type RoutingRange = "24h" | "7d";
 
 export const ROUTING_RANGES: RoutingRange[] = ["24h", "7d"];

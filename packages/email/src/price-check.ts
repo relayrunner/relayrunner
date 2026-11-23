@@ -1,7 +1,7 @@
 import { escapeHtml, renderEmailCard, type RenderedEmail } from "./card.ts";
 
 /**
- * Operator alert from the daily price check (apps/api/src/price-check.ts): prices that changed on a
+ * Operator alert from the daily price check (apps/api/src/providers/price-check.ts): prices that changed on a
  * provider's page, waiting for approval, and pages that stopped reading.
  */
 export function renderPriceCheckEmail(ctx: {

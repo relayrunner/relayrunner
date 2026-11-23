@@ -1,7 +1,7 @@
 // The places a job can run that RelayRunner recognises by its runs-on labels: hosted runner
 // services, GitHub's own runners, and RelayRunner's Cloudflare Container. These are the facts every
 // workspace shares, so they live here in code and change by pull request. The API's label matching
-// (apps/api/src/cloud-providers.ts) and the dashboard's logos and colours build on this list.
+// (apps/api/src/providers/cloud-providers.ts) and the dashboard's logos and colours build on this list.
 
 import relay from "./relay.json" with { type: "json" };
 

@@ -9,8 +9,8 @@ const github = vi.hoisted(() => ({
   listRunners: vi.fn(),
   orgAppSlugs: vi.fn(),
 }));
-vi.mock("../github-app.ts", async (importOriginal) => ({
-  ...(await importOriginal<typeof import("../github-app.ts")>()),
+vi.mock("../github/github-app.ts", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("../github/github-app.ts")>()),
   appInstallationToken: async () => "ghs_test",
   userCanReadRepo: github.userCanReadRepo,
   listRunners: github.listRunners,
@@ -18,7 +18,7 @@ vi.mock("../github-app.ts", async (importOriginal) => ({
 }));
 
 const { Router } = await import("./router.ts");
-const { GitHubRateLimitError } = await import("../github-app.ts");
+const { GitHubRateLimitError } = await import("../github/github-app.ts");
 
 function memoryState() {
   const data = new Map<string, unknown>();

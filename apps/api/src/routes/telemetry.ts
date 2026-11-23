@@ -3,10 +3,10 @@ import { z } from "zod";
 import type { AppEnv } from "../app.ts";
 import { requireUser } from "../middleware/session.ts";
 import { requireWorkspace } from "../middleware/workspace.ts";
-import { requireManager } from "../roles.ts";
+import { requireManager } from "../auth/roles.ts";
 import { JOB_LOG_CHOICES, type JobLogChoice } from "@relayrunner/activity";
 import { AppError } from "@relayrunner/errors";
-import { changeSetting, recordChange } from "../changes.ts";
+import { changeSetting, recordChange } from "../auth/changes.ts";
 import {
   deleteTelemetry,
   saveTelemetry,

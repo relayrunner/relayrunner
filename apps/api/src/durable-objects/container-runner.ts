@@ -8,7 +8,7 @@ import {
   WATCH_INTERVAL_MS,
   watchStep,
   type RunnerState,
-} from "../container-runner.ts";
+} from "../routing/container-runner.ts";
 import type { Env } from "../env.ts";
 import { errorMessage } from "../errors.ts";
 import type { PickWork } from "./pick-runner.ts";
@@ -21,9 +21,9 @@ import {
   runnerBusy,
   runnerScope,
   type RunnerScope,
-} from "../github-app.ts";
+} from "../github/github-app.ts";
 import { createDb } from "../db/index.ts";
-import { installationRunnerScope } from "../installations.ts";
+import { installationRunnerScope } from "../github/installations.ts";
 
 // The same work a pick gets: the job id, its installation, and owner/repo (the org the runner
 // registers in, or the repo itself for a personal account).

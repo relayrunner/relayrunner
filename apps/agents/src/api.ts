@@ -20,7 +20,7 @@ export type WorkspaceApi = <T>(
   },
 ) => Promise<T>;
 
-// apps/api/src/agent-auth.ts: AGENT_WORKSPACE_HEADER.
+// apps/api/src/auth/agent-auth.ts: AGENT_WORKSPACE_HEADER.
 const WORKSPACE_HEADER = "x-relayrunner-workspace";
 
 /**

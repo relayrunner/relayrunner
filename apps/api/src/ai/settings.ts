@@ -6,7 +6,7 @@ import { utcDay } from "../time.ts";
 import { eq, isNotNull, sql } from "drizzle-orm";
 import { cachedRead } from "../d1-cache.ts";
 import { type Db, schema } from "../db/index.ts";
-import { purgeAiAnswers } from "../retention.ts";
+import { purgeAiAnswers } from "../ingest/retention.ts";
 
 /** What a model call is for. Each can be turned off globally or, by operators, per workspace. */
 export const AI_FEATURES = {

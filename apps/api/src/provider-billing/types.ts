@@ -1,6 +1,6 @@
 // What every provider adapter returns, and the HTTP plumbing they share. Each adapter talks to one
 // provider's public API with the workspace's read-only token and turns its answer into these rows;
-// src/provider-sync.ts stores them.
+// src/providers/provider-sync.ts stores them.
 import type { CliRequest, CliResponse } from "@relayrunner/blacksmith-cli/protocol";
 
 /** One job the provider ran, keyed by GitHub's job id. */

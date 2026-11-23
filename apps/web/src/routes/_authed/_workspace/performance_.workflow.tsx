@@ -1,7 +1,7 @@
 // One workflow on every runner it has run on, from the runs it already had (routed runs, GitHub's
 // own and provider evaluations): every successful run over the range, then a row per runner with
 // its median run split into jobs, its cost per run, and each against GitHub's. Opened from a row of
-// Performance's Workflows tab (GET /api/job-times/workflow, apps/api/src/workflow-compare.ts).
+// Performance's Workflows tab (GET /api/job-times/workflow, apps/api/src/reports/workflow-compare.ts).
 import { createFileRoute, Link } from "@tanstack/react-router";
 import { ArrowLeftIcon, ChevronRightIcon, FlaskConicalIcon } from "lucide-react";
 import { Fragment, useMemo, useState } from "react";

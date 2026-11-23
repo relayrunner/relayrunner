@@ -1,4 +1,4 @@
-// Whether a workspace stuck with the relay (apps/api/src/stickiness.ts), for the operator views.
+// Whether a workspace stuck with the relay (apps/api/src/routing/stickiness.ts), for the operator views.
 export type StickinessState = "trying" | "adopted" | "trial_abandoned" | "removed";
 
 export type Stickiness = {

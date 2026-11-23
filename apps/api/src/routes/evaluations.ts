@@ -8,11 +8,11 @@ import {
   listEvaluations,
   retryEvaluation,
   startEvaluation,
-} from "../evaluations.ts";
+} from "../reports/evaluations.ts";
 import { requireFlag } from "../flags.ts";
 import { requireUser } from "../middleware/session.ts";
 import { requireWorkspace } from "../middleware/workspace.ts";
-import { requireManager } from "../roles.ts";
+import { requireManager } from "../auth/roles.ts";
 import { AppError } from "@relayrunner/errors";
 
 const StartBody = z.object({
@@ -22,7 +22,7 @@ const StartBody = z.object({
   vcpus: z.number().int().min(1).max(64),
 });
 
-// Provider evaluations (src/evaluations.ts): run a workflow on a provider five times and compare it
+// Provider evaluations (src/reports/evaluations.ts): run a workflow on a provider five times and compare it
 // with its recent runs. Any member can look; owners and admins start and stop them, since the runs
 // cost money on the provider. Behind the provider-evaluations flag until release.
 export const evaluationRoutes = new Hono<AppEnv>()

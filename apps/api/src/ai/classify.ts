@@ -16,7 +16,7 @@ import { DAY_MS, utcDay } from "../time.ts";
 import { and, eq, gt, sql } from "drizzle-orm";
 import { createDb, type Db, schema } from "../db/index.ts";
 import type { Env } from "../env.ts";
-import { sha256Hex } from "../machines.ts";
+import { sha256Hex } from "../machines/machines.ts";
 import { type AiFeature, aiAccess, withinBudget } from "./settings.ts";
 
 /**

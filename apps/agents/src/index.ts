@@ -1,7 +1,7 @@
 import { AppError } from "@relayrunner/errors";
 /**
  * RelayRunner's MCP server, at https://agents.relayrunner.app/mcp. Agents sign in with OAuth
- * against the dashboard (apps/api/src/agent-auth.ts) and get a token for the workspaces they pick.
+ * against the dashboard (apps/api/src/auth/agent-auth.ts) and get a token for the workspaces they pick.
  * They read (tools.ts), and change routing settings where the person allows it
  * (write-tools.ts).
  * This Worker holds no state and no secrets: it answers each MCP request with a fresh server whose
