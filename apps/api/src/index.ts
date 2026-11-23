@@ -7,6 +7,7 @@ import { checkDeadLetterGrowth } from "./dead-letter-alert.ts";
 import { createDb } from "./db/index.ts";
 import type { Env } from "./env.ts";
 import { purgeOldJobTimings } from "./job-timings.ts";
+import { loadCatalog } from "./provider-catalog.ts";
 import { sendOperatorPings } from "./operator-pings.ts";
 import { sendProductEvents } from "./product-events.ts";
 import { checkPrices } from "./price-check.ts";
@@ -52,6 +53,9 @@ export default {
   // cron's per-installation work, the spans for workspaces' trace exports and the jobs whose logs
   // they export have queues of their own.
   async queue(batch, env) {
+    // Webhooks, signal rollups and trace exports work out jobs' providers (environmentFor), so
+    // operator-added providers have to be loaded here too, not only for dashboard routes.
+    await loadCatalog(createDb(env.DB));
     if (batch.queue === INSTALLATION_TASK_QUEUE)
       return handleInstallationTaskBatch(batch as MessageBatch<InstallationTask>, env);
     if (batch.queue === TELEMETRY_QUEUE)
@@ -76,6 +80,7 @@ export default {
   async scheduled(controller, env) {
     const at = new Date(controller.scheduledTime);
     const db = createDb(env.DB);
+    await loadCatalog(db);
     const tasks: Record<string, Promise<unknown>> = controller.cron === USAGE_CRON
       ? {
           pollActionsUsage: pollActionsUsage(env, at),

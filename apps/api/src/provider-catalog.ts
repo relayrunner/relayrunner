@@ -39,8 +39,9 @@ const catalogCache = cachedRead("provider rows", readCatalog, () => remember(BAS
 export const loadCatalog = catalogCache.load;
 
 /**
- * Loads the list before a route that works out jobs' providers (environmentFor reads it
- * synchronously): Job times, Runs and the provider pages.
+ * Loads the list before every API route, since environmentFor reads it synchronously. It's cached
+ * per isolate, so this reads D1 at most once a minute. The queue and cron handlers load it too
+ * (index.ts).
  */
 export const withCatalog = createMiddleware<AppEnv>(async (c, next) => {
   await loadCatalog(createDb(c.env.DB));

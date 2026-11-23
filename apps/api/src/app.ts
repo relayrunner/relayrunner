@@ -10,6 +10,7 @@ import type { Flags } from "@relayrunner/api-types";
 import { respondError } from "./errors.ts";
 import { requireAccess } from "./middleware/admin.ts";
 import { d1Session } from "./middleware/d1-session.ts";
+import { withCatalog } from "./provider-catalog.ts";
 import { attachSession } from "./middleware/session.ts";
 import { activityRoutes } from "./routes/activity.ts";
 import { agentRoutes } from "./routes/agents.ts";
@@ -69,8 +70,9 @@ app.route("/health", healthRoutes);
 app.use("/admin/*", requireAccess);
 app.route("/admin/webhooks", adminWebhookRoutes);
 
-// Everything below sees c.var.auth, c.var.user and c.var.session.
-app.use("*", attachSession, d1Session);
+// Everything below sees c.var.auth, c.var.user and c.var.session, and the provider list
+// (withCatalog).
+app.use("*", attachSession, d1Session, withCatalog);
 app.route("/auth", authRoutes);
 app.route("/me", meRoutes);
 app.route("/flags", flagRoutes);

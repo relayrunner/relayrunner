@@ -93,7 +93,7 @@ export function environmentFor(
       INSTANCE,
     );
   const lower = labels.map((label) => label.toLowerCase());
-  // Including the ones operators added in the admin (routes load them with withCatalog).
+  // Including the ones operators added in the admin (loaded per request and per queue batch, provider-catalog.ts).
   const provider = cloudProviderFor(lower, currentProviders());
   if (provider)
     return sized(
