@@ -362,10 +362,7 @@ function Choose({ provider, editable }: { provider: string; editable: boolean })
         </Field>
       </div>
 
-      <Field
-        label="Workflow"
-        hint="The whole workflow runs, every job in it. Jobs keep their steps; only where they run changes."
-      >
+      <Field label="Workflow" hint="Every job in it runs, with its steps unchanged.">
         <div role="radiogroup" className="overflow-hidden rounded-xl border bg-card">
           {inRepo.map((w) => {
             const on = workflow && workflowKey(w) === workflowKey(workflow);
@@ -415,7 +412,7 @@ function Choose({ provider, editable }: { provider: string; editable: boolean })
 
       {workflow &&
         (workflow.relayed !== false ? (
-          <Plan provider={provider} workflow={workflow} vcpus={vcpus} />
+          <Plan provider={provider} workflow={workflow} />
         ) : (
           <RouteFirst workflow={workflow} />
         ))}
@@ -449,17 +446,8 @@ function Field({ label, children, hint }: { label: string; children: ReactNode; 
   );
 }
 
-function Plan({
-  provider,
-  workflow,
-  vcpus,
-}: {
-  provider: string;
-  workflow: EvaluationWorkflow;
-  vcpus: number;
-}) {
+function Plan({ provider, workflow }: { provider: string; workflow: EvaluationWorkflow }) {
   const { name } = providerInfo(provider);
-  const title = workflow.workflow ?? workflowFile(workflow.path);
   return (
     <div className="grid gap-3 rounded-xl border bg-card p-4 text-sm">
       {workflow.medianMs !== null && (
@@ -470,8 +458,9 @@ function Plan({
               Takes about {about(workflow.medianMs * EVALUATION_RUNS)}
             </span>
             <span className="text-muted-foreground">
-              : {EVALUATION_RUNS} runs one after another, about {about(workflow.medianMs)} each. You
-              can leave and come back, and stop whenever you've seen enough.
+              {" "}
+              · {EVALUATION_RUNS} runs of about {about(workflow.medianMs)}. You can leave and come
+              back.
             </span>
           </span>
         </div>
@@ -479,29 +468,22 @@ function Plan({
       <ul className="grid gap-2 text-muted-foreground">
         <li className="flex gap-2">
           <GitBranchIcon aria-hidden className="mt-0.5 size-4 shrink-0" />
-          <span>
-            RelayRunner starts {title} on the default branch. Its relay jobs send every job to{" "}
-            {name} ({vcpus} vCPU Linux) for this evaluation only; nothing in the repo changes.
-          </span>
+          <span>Runs on {name} from the default branch. Nothing in the repo changes.</span>
         </li>
         <li className="flex gap-2">
           <RotateCcwIcon aria-hidden className="mt-0.5 size-4 shrink-0" />
-          <span>
-            {EVALUATION_RUNS} runs, one after another, on the same commit. The first shows a cold
-            cache, the others a warm one.
-          </span>
+          <span>Same commit each time: cold cache first, then warm.</span>
         </li>
         <li className="flex gap-2">
           <WorkflowIcon aria-hidden className="mt-0.5 size-4 shrink-0" />
           <span>
-            Compared with {title}'s last {Math.min(workflow.baselineRuns, 20) || 20} passing runs on
-            the default branch, wherever they ran.
+            Compared with its last {Math.min(workflow.baselineRuns, 20) || 20} passing runs.
           </span>
         </li>
       </ul>
       {!workflow.dispatched && (
         <p className="border-t pt-3 text-muted-foreground">
-          If {title} can't be started on demand yet, the next step shows the one line to add.
+          If it can't be started on demand yet, the next step shows the line to add.
         </p>
       )}
     </div>

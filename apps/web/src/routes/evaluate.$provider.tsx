@@ -222,11 +222,6 @@ function GitHubStep({
           </p>
         )}
         {!signedIn && (
-          <p className="text-xs text-muted-foreground">
-            The runs bill to your {name} account, which you connect after this.
-          </p>
-        )}
-        {!signedIn && (
           <div className="[&>p]:text-left">
             <LegalNotice action="continuing" />
           </div>
@@ -244,24 +239,17 @@ function WhatHappens({ provider }: { provider: string }) {
       <ul className="grid gap-2 text-sm text-muted-foreground">
         <li className="flex gap-2">
           <WorkflowIcon aria-hidden className="mt-0.5 size-4 shrink-0" />
-          <span>
-            You pick a workflow that already runs in your repo. Every job in it runs on {name}, with
-            its steps unchanged.
-          </span>
+          <span>Pick a workflow you already run. Its steps stay the same.</span>
         </li>
         <li className="flex gap-2">
           <RotateCcwIcon aria-hidden className="mt-0.5 size-4 shrink-0" />
           <span>
-            It runs {EVALUATION_RUNS} times, one after another, on the same commit, so you see a
-            cold cache and a warm one.
+            It runs {EVALUATION_RUNS} times on {name}, cold cache then warm.
           </span>
         </li>
         <li className="flex gap-2">
           <GitBranchIcon aria-hidden className="mt-0.5 size-4 shrink-0" />
-          <span>
-            You get a comparison with its recent runs on the default branch: time, waiting and cost,
-            for the workflow and each job.
-          </span>
+          <span>See its time and cost next to how it runs today.</span>
         </li>
       </ul>
     </div>
