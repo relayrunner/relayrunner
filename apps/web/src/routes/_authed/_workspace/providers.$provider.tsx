@@ -19,6 +19,7 @@ import { providerStyle, runnerName, runnerSpec, TILE } from "@/components/provid
 import { TimeRangePicker } from "@/components/range-picker";
 import { RunnerLink } from "@/components/runner-link";
 import { StatTile } from "@/components/stat-tile";
+import { RecentEvaluations, useRecentEvaluations } from "@/components/recent-evaluations";
 import { Button } from "@/components/ui/button";
 import { createCellContext, DataTable, dataTableColumns, NUM } from "@/components/ui/data-table";
 import { WorkflowLink } from "@/components/workflow-link";
@@ -161,6 +162,8 @@ function ProviderView({ first, unused }: { first: ProviderReport; unused: boolea
           {info.docsUrl && <ExternalLink href={info.docsUrl}>Docs</ExternalLink>}
         </div>
       </header>
+
+      {evaluable && <ProviderEvaluations provider={provider} />}
 
       {notSetUp ? (
         <SetUp provider={provider} />
@@ -447,6 +450,11 @@ function Runners({ report }: { report: ProviderReport }) {
 }
 
 /** The workflows that sent the most jobs here. */
+function ProviderEvaluations({ provider }: { provider: string }) {
+  const recent = useRecentEvaluations(provider);
+  return recent ? <RecentEvaluations provider={provider} evaluations={recent} /> : null;
+}
+
 function Workflows({ report }: { report: ProviderReport }) {
   if (report.workflows.length === 0) return null;
   return (

@@ -2,7 +2,12 @@
 // gateway. lib/api.ts imports this only in that mode, so none of it ships in the real dashboard.
 import type { ActivityFilter, ActivityResult } from "@/lib/activity";
 import { sampleRoutingHealth, type RoutingRange } from "@/lib/admin-routing";
-import { EVALUATION_RUNS, SAMPLE_WORKFLOWS, sampleEvaluation } from "@/lib/evaluations";
+import {
+  EVALUATION_RUNS,
+  SAMPLE_WORKFLOWS,
+  sampleEvaluation,
+  sampleEvaluations,
+} from "@/lib/evaluations";
 import { BASE_CATALOG } from "@relayrunner/providers/catalog";
 import { DEFAULT_RETRY_SETTINGS, type FreeMinutesProvider } from "@relayrunner/runner-order";
 import { allFlags } from "@/lib/flags";
@@ -81,6 +86,14 @@ const ANSWERS: [RegExp, Answer][] = [
   [/^\/admin\/routing$/, (_, q) => sampleRoutingHealth(q.get("range") as RoutingRange)],
   [/^\/evaluations\/workflows$/, () => ({ workflows: SAMPLE_WORKFLOWS })],
   [/^\/evaluations$/, () => ({ evaluations: [] })],
+  // `?sample=none` on a provider page: no recent evaluations.
+  [
+    /^\/evaluations\/recent$/,
+    (_, q) => ({
+      evaluations:
+        sampleParam() === "none" ? [] : sampleEvaluations(q.get("provider") ?? "blacksmith"),
+    }),
+  ],
   [/^\/evaluations\/([^/]+)$/, ([, id]) => sampleEvaluationById(decodeURIComponent(id!))],
   [/^\/providers\/catalog$/, () => ({ providers: BASE_CATALOG })],
   [/^\/providers\/connections$/, () => sampleRouterConnections()],
@@ -204,6 +217,12 @@ function sampleEvaluationById(id: string) {
   const [, provider = "blacksmith", state] = id.split(":");
   if (state === "waiting") return sampleEvaluation(provider, 0, "waiting");
   if (state === "done") return sampleEvaluation(provider, EVALUATION_RUNS);
+  if (state === "old")
+    return {
+      ...sampleEvaluation(provider, EVALUATION_RUNS),
+      createdAt: Date.now() - 41 * 86_400_000,
+      routedRuns: sampleParam() === "unused" ? 0 : 128,
+    };
   if (state === "first") return sampleEvaluation(provider, 0);
   if (state?.startsWith("stopped-"))
     return sampleEvaluation(provider, Number(state.slice(8)) || 0, undefined, true);

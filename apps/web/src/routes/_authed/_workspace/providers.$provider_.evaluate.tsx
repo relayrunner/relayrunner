@@ -35,6 +35,7 @@ import { requireFlagRoute } from "@/lib/flags";
 import { errorText } from "@/lib/api";
 import {
   ACTIVE_STATES,
+  RECENT_DAYS,
   type Attempt,
   cancelEvaluation,
   editUrl,
@@ -787,6 +788,7 @@ function Results({
         )}
       </div>
 
+      {!active && <Dated report={report} />}
       {active && (
         <Progress report={report} finished={finished} editable={editable} onChange={onChange} />
       )}
@@ -957,6 +959,46 @@ function Results({
           minutes, rounded up, at its runner's price per minute, with your own machines free. Free
           minutes, plan fees and discounts aren't counted.
         </p>
+      )}
+    </div>
+  );
+}
+
+/**
+ * An evaluation past RECENT_DAYS: still readable from its link, but the provider's real runs are the
+ * better guide by now, so point there.
+ */
+function Dated({ report }: { report: EvaluationReport }) {
+  const age = Date.now() - report.createdAt;
+  if (age < RECENT_DAYS * 86_400_000) return null;
+  const { name } = providerInfo(report.provider);
+  const weeks = Math.floor(age / (7 * 86_400_000));
+  const routed = report.routedRuns ?? 0;
+  return (
+    <div className="flex flex-wrap items-center gap-3 rounded-xl border bg-card px-4 py-3 text-sm">
+      <ClockIcon aria-hidden className="size-4 shrink-0 text-muted-foreground" />
+      <span className="min-w-0 flex-1">
+        {routed > 0
+          ? `From ${weeks} weeks ago. ${name} has run this workflow ${plural(routed, "time")} since.`
+          : `From ${weeks} weeks ago. These numbers may be out of date.`}
+      </span>
+      {routed > 0 ? (
+        <Button variant="outline" size="sm" asChild>
+          <Link
+            to="/performance/workflow"
+            search={{ repo: report.repositoryId, workflow: report.workflow ?? undefined }}
+          >
+            See it on Performance
+            <ArrowRightIcon />
+          </Link>
+        </Button>
+      ) : (
+        <Button variant="outline" size="sm" asChild>
+          <Link to="/providers/$provider/evaluate" params={{ provider: report.provider }}>
+            <RotateCcwIcon />
+            Evaluate again
+          </Link>
+        </Button>
       )}
     </div>
   );

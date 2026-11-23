@@ -82,6 +82,8 @@ export interface EvaluationReport {
   cold: { ms: number | null; waitMs: number | null; usd: number | null };
   warm: { ms: number | null; waitMs: number | null; usd: number | null };
   jobs: JobComparison[];
+  /** Runs of this workflow on the provider since the evaluation, evaluations left out. */
+  routedRuns: number;
 }
 
 export interface EvaluationSummary {
@@ -94,6 +96,94 @@ export interface EvaluationSummary {
   attempt: number;
   runs: number;
   createdAt: number;
+}
+
+/** A provider's evaluation from the last RECENT_DAYS days, with its headline numbers. */
+export interface RecentEvaluation {
+  id: string;
+  state: EvaluationState;
+  provider: string;
+  repositoryId: number;
+  repository: string;
+  workflow: string | null;
+  workflowPath: string;
+  vcpus: number;
+  attempt: number;
+  runs: number;
+  createdAt: number;
+  /** Runs that finished, and their median time and cost (warm runs, else the cold one). */
+  finished: number;
+  ms: number | null;
+  usd: number | null;
+  /** The workflow's recent runs the evaluation compares against. */
+  baselineMs: number | null;
+  baselineUsd: number | null;
+  /** Runs of this workflow on the provider since, evaluations left out. */
+  routedRuns: number;
+}
+
+/** How long an evaluation stays listed: after this, Performance tells the story. */
+export const RECENT_DAYS = 30;
+const DAY = 86_400_000;
+
+/** Sample evaluations for the dev preview: one running, one done, and one stopped and since adopted. */
+export function sampleEvaluations(provider: string): RecentEvaluation[] {
+  const now = Date.now();
+  const base = {
+    provider,
+    repository: "acme/web",
+    repositoryId: 1,
+    workflowPath: ".github/workflows/ci.yml",
+    workflow: "CI",
+    vcpus: 4,
+    runs: EVALUATION_RUNS,
+    baselineMs: 520_000,
+    baselineUsd: 0.224,
+    routedRuns: 0,
+  };
+  return [
+    {
+      ...base,
+      id: `sample:${provider}`,
+      state: "running",
+      attempt: 3,
+      finished: 2,
+      ms: 318_000,
+      usd: 0.131,
+      createdAt: now - 25 * 60_000,
+    },
+    {
+      ...base,
+      id: `sample:${provider}:done`,
+      state: "done",
+      attempt: 5,
+      finished: 5,
+      workflow: "E2E",
+      workflowPath: ".github/workflows/e2e.yml",
+      baselineMs: 845_000,
+      baselineUsd: 0.41,
+      ms: 702_000,
+      usd: 0.468,
+      createdAt: now - 3 * DAY,
+    },
+    {
+      ...base,
+      id: `sample:${provider}:stopped-3`,
+      state: "cancelled",
+      attempt: 4,
+      finished: 3,
+      repository: "acme/api",
+      repositoryId: 2,
+      workflow: "Test",
+      workflowPath: ".github/workflows/test.yml",
+      baselineMs: 390_000,
+      baselineUsd: 0.17,
+      ms: 236_000,
+      usd: 0.098,
+      routedRuns: 46,
+      createdAt: now - 12 * DAY,
+    },
+  ];
 }
 
 export const ACTIVE_STATES: EvaluationState[] = ["dispatching", "waiting", "running"];
@@ -112,6 +202,11 @@ export const getEvaluationWorkflows = () =>
 export const listEvaluations = (provider: string) =>
   api<{ evaluations: EvaluationSummary[] }>(
     `/evaluations?provider=${encodeURIComponent(provider)}`,
+  ).then((r) => r.evaluations);
+
+export const getRecentEvaluations = (provider: string) =>
+  api<{ evaluations: RecentEvaluation[] }>(
+    `/evaluations/recent?provider=${encodeURIComponent(provider)}`,
   ).then((r) => r.evaluations);
 
 export const getEvaluation = (id: string) =>
@@ -247,6 +342,7 @@ export function sampleEvaluation(
     runs: EVALUATION_RUNS,
     runId: state === "waiting" ? null : 4421,
     createdAt: Date.now() - 40 * 60_000,
+    routedRuns: 0,
     finishedAt: finished ? Date.now() - 4 * 60_000 : null,
     attempts:
       state === "waiting"
