@@ -18,7 +18,7 @@ import { requireUser } from "../middleware/session.ts";
 import { requireWorkspace } from "../middleware/workspace.ts";
 import { canManage, requireManager } from "../auth/roles.ts";
 import { assertCanEditRepo, editableRepos } from "../github/repo-access.ts";
-import { findRepo } from "../github/repositories.ts";
+import { findRepo, publicRepos } from "../github/repositories.ts";
 import {
   listRepoRunnerOrders,
   presentRunnerOrder,
@@ -362,6 +362,11 @@ export const workspaceRoutes = new Hono<AppEnv>()
       planned: planned.map(({ workflow, job, size }) => ({ workflow, job, size })),
     });
   })
+  // The workspace's public repos, so the dashboard can mark them wherever it names a repo. Machines
+  // never take a public repo's jobs, so it's the visibility that changes where jobs run.
+  .get("/:id/public-repos", requireUser, requireMember, async (c) =>
+    c.json({ repositories: await publicRepos(c.var.db, c.req.param("id")) }),
+  )
   // Whether the Router skips hosted provider runner types that stopped picking up jobs, and the
   // ones it skips now (src/routing/provider-health.ts).
   .get("/:id/provider-health", requireUser, requireMember, async (c) => {

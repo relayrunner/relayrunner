@@ -25,6 +25,7 @@ import {
 } from "@/lib/job-types";
 import { rangePhrase, type TimeRange, trendPhrase } from "@/lib/time-range";
 import { cn, percent } from "@/lib/utils";
+import { PublicRepoMark } from "@/components/public-repo";
 
 const share = (ms: number, total: number) => percent(total ? ms / total : 0);
 
@@ -239,6 +240,7 @@ function JobName({ job }: { job: JobTypeTime }) {
     <span className="text-sm">
       <span className="text-muted-foreground">
         {job.repository}
+        <PublicRepoMark repository={job.repository} />
         {job.workflow && (
           <>
             {" · "}

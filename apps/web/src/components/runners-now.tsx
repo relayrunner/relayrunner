@@ -11,6 +11,7 @@ import type { Machine } from "@/lib/machines";
 import { formatTime } from "@/lib/time-zone";
 import { useNow } from "@/lib/use-now";
 import { cn } from "@/lib/utils";
+import { PublicRepoMark } from "@/components/public-repo";
 
 // Rows each list shows before "and N more".
 const SHOWN = 5;
@@ -94,7 +95,10 @@ export function RunnersNow({
               from={job.startedAt!}
               detail={
                 <>
-                  <span className="truncate">{job.repository}</span>
+                  <span className="truncate">
+                    {job.repository}
+                    <PublicRepoMark repository={job.repository} />
+                  </span>
                   <span aria-hidden>·</span>
                   <RunnerLink
                     runner={envs.get(job.environment)!}
@@ -129,7 +133,10 @@ export function RunnersNow({
                       <span className="sm:truncate">{reason.text}</span>
                     </span>
                     <span aria-hidden>·</span>
-                    <span className="truncate">{job.repository}</span>
+                    <span className="truncate">
+                      {job.repository}
+                      <PublicRepoMark repository={job.repository} />
+                    </span>
                   </>
                 }
               />

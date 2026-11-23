@@ -27,6 +27,7 @@ import { type ReactNode, useEffect, useRef, useState } from "react";
 import { GithubUser, shortSha } from "@/components/commit";
 import { SectionBoundary } from "@/components/error-boundary";
 import { PageHeader } from "@/components/page-header";
+import { PublicRepoMark } from "@/components/public-repo";
 import { GithubIcon } from "@/components/provider-logos";
 import { RunLink } from "@/components/run-sheet";
 import { RunnerLink } from "@/components/runner-link";
@@ -699,15 +700,7 @@ const QUIET = "text-muted-foreground hover:text-foreground";
 
 // A repo with GitHub's mark, by its name without the owner (the filter and hover show it all), and
 // the branch after it: "relayrunner · main". The name opens the repo on GitHub.
-function RepoCell({
-  repository,
-  branch,
-  isPrivate,
-}: {
-  repository: string;
-  branch?: string | null;
-  isPrivate?: boolean | null;
-}) {
+function RepoCell({ repository, branch }: { repository: string; branch?: string | null }) {
   const name = repository.slice(repository.indexOf("/") + 1);
   return (
     <span
@@ -723,7 +716,7 @@ function RepoCell({
       >
         {name}
       </a>
-      {isPrivate && <Lock aria-label="Private repo" className="size-3 shrink-0" />}
+      <PublicRepoMark repository={repository} className="ml-0" />
       {branch && <span className="truncate">· {branch}</span>}
     </span>
   );
@@ -925,7 +918,7 @@ function JobRow({ job, now }: { job: ActivityJob; now: number }) {
             />
           </span>
         ),
-        repo: <RepoCell repository={job.repository} branch={job.branch} isPrivate={job.private} />,
+        repo: <RepoCell repository={job.repository} branch={job.branch} />,
         who: <StarterCell starters={job.starters} />,
       }}
     >

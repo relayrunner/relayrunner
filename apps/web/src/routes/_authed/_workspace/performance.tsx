@@ -3,6 +3,7 @@ import { LayersIcon } from "lucide-react";
 import { Fragment, useEffect, useMemo, useState } from "react";
 import { SectionBoundary } from "@/components/error-boundary";
 import { PageHeader } from "@/components/page-header";
+import { PublicRepoMark } from "@/components/public-repo";
 import { PageTabs, PERFORMANCE_TABS as TABS, viewOf } from "@/components/page-tabs";
 import { JobTypes } from "@/components/job-type-time";
 import { PerformanceWorkflows } from "@/components/performance-workflows";
@@ -598,7 +599,9 @@ function JobDetail({
             {workflow.workflow ?? "Unnamed workflow"} › {job.name}
           </DialogTitle>
           <DialogDescription>
-            {workflow.repository} · {rangeName(range)} · each dot is one run
+            {workflow.repository}
+            <PublicRepoMark repository={workflow.repository} /> · {rangeName(range)} · each dot is
+            one run
           </DialogDescription>
         </DialogHeader>
         <div className="grid min-w-0 gap-5 md:grid-cols-[minmax(0,1fr)_240px]">

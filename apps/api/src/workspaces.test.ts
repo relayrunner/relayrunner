@@ -199,6 +199,32 @@ describe("runner order", () => {
   });
 });
 
+describe("public repos", () => {
+  test("a member reads the public repos the workspace's installation still sees", async () => {
+    const { cookie } = await signIn();
+    const { workspace, cookie: jar } = await createWorkspace(cookie, "Repos", "repos-public");
+    const repo = (id: number, name: string, isPrivate: number, removedAt: number | null = null) =>
+      env.DB.prepare(
+        "insert into github_repository (id, installation_id, full_name, private, removed_at, github_state_at, created_at, updated_at) values (?, ?, ?, ?, ?, 0, 0, 0)",
+      ).bind(id, workspace.installationId, name, isPrivate, removedAt);
+    await env.DB.batch([
+      repo(7101, "repos-public/site", 0),
+      repo(7102, "repos-public/app", 1),
+      repo(7103, "repos-public/docs", 0),
+      repo(7104, "repos-public/gone", 0, 1),
+    ]);
+
+    const response = await call(`/workspaces/${workspace.id}/public-repos`, jar);
+    expect(response.status).toBe(200);
+    expect(await response.json()).toEqual({
+      repositories: ["repos-public/docs", "repos-public/site"],
+    });
+
+    const { cookie: outsider } = await signIn();
+    expect((await call(`/workspaces/${workspace.id}/public-repos`, outsider)).status).toBe(404);
+  });
+});
+
 describe("roles (#134)", () => {
   const put = (id: string, cookie: string, body: unknown) =>
     app.request(

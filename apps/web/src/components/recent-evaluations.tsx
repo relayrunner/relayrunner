@@ -20,6 +20,7 @@ import {
 import { plural } from "@/lib/job-times";
 import { providerInfo } from "@/lib/provider-catalog";
 import { cn } from "@/lib/utils";
+import { PublicRepoMark } from "@/components/public-repo";
 
 /** "25m ago", "yesterday", "12 days ago". */
 const ago = (at: number) => {
@@ -115,7 +116,10 @@ export function RecentEvaluations({
                     >
                       {title}
                     </Link>
-                    <span className="truncate text-xs text-muted-foreground">{e.repository}</span>
+                    <span className="truncate text-xs text-muted-foreground">
+                      {e.repository}
+                      <PublicRepoMark repository={e.repository} />
+                    </span>
                   </div>
                   <p className="text-muted-foreground sm:truncate">{outcome(e)}</p>
                 </div>
