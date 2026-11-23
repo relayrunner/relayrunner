@@ -191,7 +191,7 @@ const COMMANDS: &[Command] = &[
     (
         "jobs",
         "Show the jobs this machine ran in the last week as the gateway has them, or one job's steps and why it failed.",
-        "relayrunner jobs [--json] [--limit N] [--before MS] | relayrunner jobs <id> [--json]",
+        "relayrunner jobs [--json] [--limit N] [--before MS] [--since MS] [--repo OWNER/NAME] [--workflow NAME] [--result succeeded|failed|canceled] | relayrunner jobs <id> [--json]",
         &[
             ("--json", "Print the result as JSON"),
             ("--limit", "How many jobs to show (default 50, at most 100)"),
@@ -199,6 +199,10 @@ const COMMANDS: &[Command] = &[
                 "--before",
                 "Show jobs that finished before this time, in ms (the `next` of a page)",
             ),
+            ("--since", "Show jobs that finished after this time, in ms"),
+            ("--repo", "Show only this repo's jobs"),
+            ("--workflow", "Show only this workflow's jobs"),
+            ("--result", "Show only jobs that succeeded, failed or were canceled"),
         ],
     ),
     (
