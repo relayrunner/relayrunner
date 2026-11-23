@@ -25,6 +25,11 @@ export async function createTestEnv({
     GITHUB_APP_CLIENT_ID: "id",
     GITHUB_APP_CLIENT_SECRET: "secret",
     GITHUB_APP_SLUG: "relayrunner-test",
+    // Messages sent to it go nowhere; a test that reads them passes its own.
+    INSTALLATION_TASKS: {
+      send: async () => {},
+      sendBatch: async () => {},
+    } as unknown as Env["INSTALLATION_TASKS"],
     ...overrides,
   };
   for (const file of readdirSync(migrations)

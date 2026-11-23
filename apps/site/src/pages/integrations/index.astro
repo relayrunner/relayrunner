@@ -17,6 +17,7 @@ import {
   UNPRICED_ROWS,
 } from "../../lib/provider-table";
 import { PRICES_AS_OF, PROVIDERS } from "../../lib/providers";
+import { evaluable, evaluateHref } from "../../lib/evaluate";
 
 const own = [
   {
@@ -107,6 +108,7 @@ const first = cellKey("linux", 2);
           <col class="int-col-price" />
           <col class="int-col-plan" />
           <col class="int-col-included" />
+          <col class="int-col-try" />
         </colgroup>
         <thead>
           <tr>
@@ -115,6 +117,7 @@ const first = cellKey("linux", 2);
             <th scope="col" class="num">Per hour</th>
             <th scope="col" class="int-after-price">Plan</th>
             <th scope="col">Included</th>
+            <th scope="col" class="int-try"><span class="visually-hidden">Evaluate</span></th>
           </tr>
         </thead>
         <tbody>
@@ -158,6 +161,13 @@ const first = cellKey("linux", 2);
                   </td>
                   <td class="int-after-price">{row.plan}</td>
                   <td class="int-mute">{row.included}</td>
+                  <td class="int-try">
+                    {evaluable(row.id) && (
+                      <a class="btn-ghost btn-sm" href={evaluateHref(row.id)}>
+                        Evaluate<span class="visually-hidden"> {row.name}</span>
+                      </a>
+                    )}
+                  </td>
                 </tr>
               );
             })
@@ -175,6 +185,13 @@ const first = cellKey("linux", 2);
                 </th>
                 <td colspan="4" class="num int-mute">
                   {row.why}
+                </td>
+                <td class="int-try">
+                  {evaluable(row.id) && (
+                    <a class="btn-ghost btn-sm" href={evaluateHref(row.id)}>
+                      Evaluate<span class="visually-hidden"> {PROVIDERS[row.id].name}</span>
+                    </a>
+                  )}
                 </td>
               </tr>
             ))

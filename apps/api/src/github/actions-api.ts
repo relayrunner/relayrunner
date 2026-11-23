@@ -128,6 +128,24 @@ export function attemptJobs(token: string, repo: string, runId: number, runAttem
   );
 }
 
+/** One page of a repo's finished workflow runs created on or after `sinceDay` (Actions read). */
+export async function recentRuns(token: string, repo: string, sinceDay: string, page: number) {
+  const body = await getJson<{ total_count?: number; workflow_runs?: unknown[] }>(
+    token,
+    `/repos/${repo}/actions/runs?status=completed&exclude_pull_requests=true&created=%3E%3D${sinceDay}&per_page=100&page=${page}`,
+  );
+  return body.workflow_runs ?? [];
+}
+
+/** A repo's workflows, as GitHub lists them (Actions read). */
+export function repoWorkflows(token: string, repo: string) {
+  return listAll<{ id: number; name: string; path: string; state: string }>(
+    token,
+    `/repos/${repo}/actions/workflows`,
+    "workflows",
+  );
+}
+
 /**
  * A job's whole log as a stream (Actions read), or null when GitHub doesn't have it: not yet, right
  * after the job finishes, or no longer. Like jobLogTail, fetch follows GitHub's redirect.

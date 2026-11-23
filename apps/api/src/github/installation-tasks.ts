@@ -20,6 +20,7 @@ import { rollUpSignals } from "../reports/signals.ts";
 import { classifyJobTypes } from "../ai/job-type.ts";
 import { errorMessage } from "../errors.ts";
 import { type Outcome, recordOutcomes } from "../operator/health-issues.ts";
+import { importRunHistory } from "../ingest/run-history.ts";
 
 export function runInstallationTask(env: Env, task: InstallationTask): Promise<void> {
   switch (task.kind) {
@@ -31,6 +32,8 @@ export function runInstallationTask(env: Env, task: InstallationTask): Promise<v
       return syncConnection(env, task.workspaceId, task.provider);
     case "signals":
       return signals(env, task.installationId);
+    case "run-history":
+      return importRunHistory(env, task.installationId);
   }
 }
 
