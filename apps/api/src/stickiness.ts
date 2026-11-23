@@ -8,8 +8,10 @@
  *   branches carry it, which covers workflows that only run on pull requests).
  * - trial_abandoned: never adopted, and no relayed run for TRIAL_IDLE_MS.
  * - removed: adopted, then REMOVED_AFTER runs on up-to-date code (the default branch, or a branch
- *   first seen after adoption) with no relay at all. Branches cut before the merge never had it,
- *   so they don't count. It goes back to adopted when the workflow relays again.
+ *   first seen after adoption) that finished with no relay at all. Branches cut before the merge
+ *   never had it, so they don't count. Nor do runs still going, or runs GitHub skipped or
+ *   cancelled, which may never have reached a job. It goes back to adopted when the workflow
+ *   relays again.
  *
  * A run is relayed when it had a pick job, wherever the pick sent it (a machine, GitHub, a hosted
  * provider, or nowhere), so a job routed to GitHub never looks like a drop. Only first attempts
@@ -38,6 +40,8 @@ export const REMOVED_AFTER = 3;
  * their job is queued, which is usually within seconds of the run.
  */
 export const SETTLE_MS = 10 * 60 * 1000;
+/** Conclusions of a run that may have ended before any job, the pick included, was queued. */
+const NOT_RUN = new Set(["skipped", "cancelled"]);
 
 export interface StickinessRun {
   installationId: number;
@@ -53,6 +57,12 @@ export interface StickinessRun {
   startedAt: number;
   /** When we first stored the run. */
   seenAt: number;
+  /**
+   * When GitHub last updated a run that completed with jobs that could have run (not skipped or
+   * cancelled). Null while it's going, or when it ended without running: such a run says nothing
+   * about whether the relay is still there.
+   */
+  finishedAt: number | null;
   relayed: boolean;
 }
 
@@ -94,6 +104,7 @@ function workflowState(
   const without = runs.filter(
     (run) =>
       !run.relayed &&
+      run.finishedAt !== null &&
       run.startedAt > last.startedAt &&
       (isDefault(run.branch) || (branchFirstSeen.get(run.branch) ?? 0) >= adoption.startedAt),
   );
@@ -105,7 +116,8 @@ function workflowState(
       since: tipping.startedAt,
       branch: null,
       runsWithout: without.length,
-      removedSeenAt: tipping.seenAt,
+      // A run that finished long after we stored it only tips the state once it finishes.
+      removedSeenAt: Math.max(tipping.seenAt, tipping.finishedAt ?? 0),
     };
   }
   return { ...base, state: "adopted", since: adoption.startedAt, branch: null };
@@ -204,6 +216,9 @@ export async function workspaceStickiness(
         defaultBranch: run.defaultBranch,
         runStartedAt: run.runStartedAt,
         createdAt: run.createdAt,
+        status: run.status,
+        conclusion: run.conclusion,
+        githubUpdatedAt: run.githubUpdatedAt,
       })
       .from(run)
       .where(and(gte(run.githubUpdatedAt, since), eq(run.runAttempt, 1))),
@@ -227,6 +242,10 @@ export async function workspaceStickiness(
       defaultBranch: row.defaultBranch,
       startedAt: (row.runStartedAt ?? row.createdAt).getTime(),
       seenAt: row.createdAt.getTime(),
+      finishedAt:
+        row.status === "completed" && !NOT_RUN.has(row.conclusion ?? "")
+          ? row.githubUpdatedAt.getTime()
+          : null,
       relayed: relayed.has(row.id),
     })),
     now,

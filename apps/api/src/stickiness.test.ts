@@ -36,6 +36,7 @@ function run(
     defaultBranch: "main",
     startedAt: at,
     seenAt: at,
+    finishedAt: at,
     relayed,
     ...extra,
   } satisfies StickinessRun;
@@ -97,6 +98,30 @@ describe("stickinessOf", () => {
     expect(state).toMatchObject({ state: "removed", runsWithout: 3 });
     expect(state?.since).toBe(new Date(third.startedAt).toISOString());
     expect(state?.removedSeenAt).toBe(new Date(third.seenAt).toISOString());
+  });
+
+  test("runs still going, skipped or cancelled don't count against it", () => {
+    const state = stateOf([
+      run(20, "main", true),
+      run(10, "main", false, { finishedAt: null }),
+      run(9, "main", false, { finishedAt: null }),
+      run(8, "main", false, { finishedAt: null }),
+      run(7, "main", false),
+      run(6, "main", false),
+    ]);
+    expect(state).toMatchObject({ state: "adopted" });
+  });
+
+  test("a run that finishes long after we stored it tips the state when it finishes", () => {
+    const third = run(8, "main", false, { finishedAt: NOW - 2 * HOUR });
+    const state = stateOf([
+      run(20, "main", true),
+      run(10, "main", false),
+      run(9, "main", false),
+      third,
+    ]);
+    expect(state).toMatchObject({ state: "removed", runsWithout: 3 });
+    expect(state?.removedSeenAt).toBe(new Date(NOW - 2 * HOUR).toISOString());
   });
 
   test("branches cut before the merge don't count against it", () => {
@@ -247,6 +272,32 @@ describe("workspaceStickiness", () => {
         headSha: "abc",
         status: "completed",
         githubCreatedAt: at(r.hoursAgo),
+      });
+    }
+    // Runs on main without a pick that never got to a job: none of them counts.
+    const unrun = [
+      { id: 503, status: "completed", conclusion: "skipped", hoursAgo: 5 },
+      { id: 504, status: "completed", conclusion: "cancelled", hoursAgo: 4 },
+      { id: 505, status: "in_progress", conclusion: null, hoursAgo: 3 },
+    ];
+    for (const r of unrun) {
+      await db.insert(schema.workflowRun).values({
+        id: r.id,
+        runAttempt: 1,
+        installationId,
+        repositoryId: 77,
+        repositoryFullName: "acme/sticky",
+        workflowName: "CI",
+        workflowPath: ".github/workflows/ci.yml",
+        defaultBranch: "main",
+        event: "push",
+        headBranch: "main",
+        headSha: "abc",
+        status: r.status,
+        conclusion: r.conclusion,
+        runStartedAt: at(r.hoursAgo),
+        githubUpdatedAt: at(r.hoursAgo),
+        createdAt: at(r.hoursAgo),
       });
     }
     const states = await workspaceStickiness(db, now);
