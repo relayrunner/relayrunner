@@ -1,6 +1,6 @@
 ---
 /*
- * The integrations index: a strip of featured runner clouds, then every hosted runner's plan and
+ * The integrations index: cards for the featured runner clouds, then every hosted runner's plan and
  * list price in one table (src/lib/provider-table.ts), then the runners you host yourself.
  */
 import CloseBox from "../../components/CloseBox.astro";
@@ -51,18 +51,17 @@ const first = cellKey("linux", 2);
     </p>
   </section>
 
-  <section class="wrap int-featured" aria-label="Featured runner clouds">
-    <ul class="int-strip">
+  <section class="wrap int-featured" aria-labelledby="featured-h">
+    <h2 id="featured-h" class="kicker">Featured runners</h2>
+    <ul class="int-cards">
       {
         FEATURED_TILES.map((tile) => (
           <li>
             <a href={tile.href}>
               <img src={tile.logo} alt="" width="40" height="40" />
-              <span>
-                <b>{tile.name}</b>
-                <span>{tile.plan}</span>
-                <span>{tile.included} included</span>
-              </span>
+              <b>{tile.name}</b>
+              <span>{tile.plan}</span>
+              {tile.price && <code>{tile.price}</code>}
             </a>
           </li>
         ))
