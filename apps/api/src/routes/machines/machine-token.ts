@@ -32,6 +32,8 @@ import {
   machineWorkspaceFor,
 } from "../../machines/machine-jobs.ts";
 import { pauseResponse, SharingBody } from "./shared.ts";
+import { sanitizeMessage } from "../../operator/feedback.ts";
+import { feedbackBodyLimit, invalid, MachineFeedbackBody, saveFeedback } from "../feedback.ts";
 import { type MachineEnv, requireMachine } from "../../middleware/machine.ts";
 
 // Routes a machine calls as itself, with its token: `Authorization: Bearer rrm_…`. A missing,
@@ -96,6 +98,31 @@ export const machineTokenRoutes = new Hono<MachineEnv>()
       workspaces,
       enrolledBy: enrolledBy ?? null,
     });
+  })
+  // `relayrunner feedback`, which RelayRunner for Mac uses to send a crash report the person saw and
+  // chose to send. Stored and emailed as the machine owner's feedback, like the dashboard's, with
+  // the machine named in the email.
+  .post("/me/feedback", feedbackBodyLimit, async (c) => {
+    const { machine, machineDb: db } = c.var;
+    const parsed = MachineFeedbackBody.safeParse(await c.req.json().catch(() => null));
+    if (!parsed.success) throw invalid(parsed.error);
+    const [owner] = machine.userId
+      ? await db
+          .select({ id: schema.user.id, name: schema.user.name, email: schema.user.email })
+          .from(schema.user)
+          .where(eq(schema.user.id, machine.userId))
+          .limit(1)
+      : [];
+    if (!owner) throw new AppError("FORBIDDEN");
+    const { page: _, ...message } = sanitizeMessage(parsed.data.message);
+    const entry = {
+      ...message,
+      source: "machine" as const,
+      category: parsed.data.category,
+      machine: { name: machine.name, macAppVersion: machine.macAppVersion },
+    };
+    const id = await saveFeedback(c, db, owner, entry, null);
+    return c.json({ id, redacted: entry.redacted }, 201);
   })
   // Sharing from the machine itself, for `relayrunner share` and `connect --share` (#244). Only an
   // owner may change sharing, and the token lives on the owner's computer, so the change is logged

@@ -1,6 +1,6 @@
 //! `relayrunner` in Rust: `connect` (with sign-in, runner install and updates, and VMs), `init`,
-//! `login`, `whoami`, `pause`, `resume`, `share`, `workspaces`, `firewall`, `history`, `jobs` and
-//! `blacksmith`. It shares ~/.relayrunner with older (TypeScript) versions.
+//! `login`, `whoami`, `pause`, `resume`, `share`, `workspaces`, `firewall`, `history`, `jobs`,
+//! `blacksmith` and `feedback`. It shares ~/.relayrunner with older (TypeScript) versions.
 
 mod api;
 mod blacksmith;
@@ -10,6 +10,7 @@ mod credentials;
 mod device;
 mod error;
 mod events;
+mod feedback;
 mod firewall;
 mod history;
 mod init;
@@ -223,6 +224,18 @@ const COMMANDS: &[Command] = &[
             ),
         ],
     ),
+    (
+        "feedback",
+        "Send a message to the RelayRunner team. It goes with this machine's account, so we can reply.",
+        "relayrunner feedback \"MESSAGE\" [--category bug|confusing|feature_request|other] | relayrunner feedback --file PATH",
+        &[
+            ("--file PATH", "Send what's in this file instead"),
+            (
+                "--category NAME",
+                "bug, confusing, feature_request or other (default: other)",
+            ),
+        ],
+    ),
 ];
 
 fn usage() -> String {
@@ -325,6 +338,7 @@ async fn main() {
         "workspaces" => plain(move || workspaces::command(&signed_in()?, &rest)).await,
         "jobs" => plain(move || jobs::command(&signed_in()?, &rest)).await,
         "blacksmith" => plain(move || blacksmith::command(&signed_in()?, &rest)).await,
+        "feedback" => plain(move || feedback::command(&signed_in()?, &rest)).await,
         "firewall" => match firewall::command(rest.first().map(String::as_str)).await {
             Ok(()) => 0,
             Err(e) => {

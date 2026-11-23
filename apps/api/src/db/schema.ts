@@ -1421,7 +1421,7 @@ export const feedback = sqliteTable(
     createdAt: integer("created_at", { mode: "timestamp_ms" })
       .notNull()
       .$defaultFn(() => new Date()),
-    source: text("source", { enum: ["agent", "dashboard"] })
+    source: text("source", { enum: ["agent", "dashboard", "machine"] })
       .notNull()
       .default("agent"),
     page: text("page"),

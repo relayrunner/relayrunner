@@ -138,6 +138,15 @@ The command runs `blacksmith org-token create`, which opens your browser for you
 
 In the browser, approve it for the GitHub organization your workspace is on. A token for any other organization is refused. The token goes to the workspace on that organization, or the one you name when you have more than one. You must own or administer it. Remove the connection in Settings › Providers, then revoke the token with `blacksmith org-token revoke <id>`. Run `relayrunner login` first if this computer isn't signed in.
 
+## `feedback`
+
+```sh
+relayrunner feedback "The Jobs window doesn't show yesterday's jobs"
+relayrunner feedback --category bug --file report.txt
+```
+
+Sends a message to the RelayRunner team from this machine's account, so we can reply by email. `--category` is `bug`, `confusing`, `feature_request` or `other` (the default). Anything that looks like a token or password is replaced before it's stored. The Mac app sends crash reports this way, after you've seen what's in them.
+
 ## `firewall`
 
 ```sh
