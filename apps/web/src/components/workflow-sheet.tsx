@@ -21,6 +21,7 @@ import {
   triggerText,
 } from "@/lib/runs";
 import { unlessDefault, useSetSearch } from "@/lib/search-params";
+import { clearOnWorkspaceChange } from "@/lib/workspace-cache";
 import { rangePhrase, type TimeRange } from "@/lib/time-range";
 import { cn, elapsed, percent } from "@/lib/utils";
 import { type WorkflowRef, workflowParam } from "@/lib/workflow-ref";
@@ -33,6 +34,7 @@ const RECENT = 20;
 // The last reports read, by workflow and range, so reopening one shows it at once. Each is kept for
 // a minute, since new runs keep arriving.
 const reports = new Map<string, Promise<RunsReport>>();
+clearOnWorkspaceChange(() => reports.clear());
 
 function loadReport(workflow: WorkflowRef, range: TimeRange) {
   const id = `${workflowParam(workflow)}\u001f${range}`;

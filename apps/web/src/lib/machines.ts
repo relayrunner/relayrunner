@@ -1,6 +1,7 @@
 import { AppError } from "@relayrunner/errors";
 import { api } from "@/lib/api";
 import { authDisabled } from "@/lib/auth-client";
+import { clearOnWorkspaceChange } from "@/lib/workspace-cache";
 import type { MachineDevice } from "./device.ts";
 import { sampleMachineJob } from "./live-jobs.ts";
 
@@ -147,6 +148,7 @@ export function listMachines() {
 // hovering down a table reads the list once.
 const FRESH_MS = 30_000;
 let machines: { at: number; list: Promise<Machine[]>; read?: Machine[] } | null = null;
+clearOnWorkspaceChange(() => (machines = null));
 
 /** A machine from the last read, or undefined when there's no fresh one to go by. */
 export function cachedMachine(id: string) {

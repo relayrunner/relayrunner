@@ -27,6 +27,7 @@ import {
 import { groupByBranch } from "@/lib/branch-groups";
 import { isLongWait } from "@/lib/runs";
 import { unlessDefault, useSetSearch } from "@/lib/search-params";
+import { clearOnWorkspaceChange } from "@/lib/workspace-cache";
 import { type RangeOptions, rangePhrase, resolveRange, type TimeRange } from "@/lib/time-range";
 import { formatDateTime, formatTime, shortDate, startOfDay } from "@/lib/time-zone";
 import { minutes } from "@/lib/usage";
@@ -45,6 +46,8 @@ const MACHINE = "machine:";
 
 // The last reports read, by runner and range, so reopening a runner shows it at once.
 const reports = new Map<string, Promise<RunnerReport>>();
+// A runner key such as `github:ubuntu-latest` is the same in every workspace.
+clearOnWorkspaceChange(() => reports.clear());
 
 function loadReport(key: string, range: TimeRange) {
   const id = `${key}\u001f${range}`;
