@@ -23,6 +23,7 @@
     "@relayrunner/errors": "workspace:*",
     "@relayrunner/github-webhooks": "workspace:*",
     "@relayrunner/lint-runner": "workspace:*",
+    "@relayrunner/log": "workspace:*",
     "@relayrunner/machine-protocol": "workspace:*",
     "@relayrunner/providers": "workspace:*",
     "@relayrunner/runner-order": "workspace:*",

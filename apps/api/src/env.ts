@@ -113,4 +113,11 @@ export interface Env extends AccessEnv {
   // (src/providers/provider-tokens.ts), from the Secrets Store. Optional so tests and local dev run without
   // it; connecting a provider fails until it's set.
   PROVIDER_TOKEN_KEY?: SecretsStoreSecret;
+  // Logging (src/log.ts). The version every line carries, and optional overrides: LOG_LEVEL
+  // (debug, info, warn or error; info by default), LOG_FORMAT (json, or pretty for a terminal) and
+  // LOG_ENV (production by default).
+  CF_VERSION_METADATA?: WorkerVersionMetadata;
+  LOG_LEVEL?: string;
+  LOG_FORMAT?: string;
+  LOG_ENV?: string;
 }

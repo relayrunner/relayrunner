@@ -972,6 +972,11 @@ const RANK: Record<MoveReason | "setup", number> = {
 const bySkipRank = (a: SkippedStep, b: SkippedStep) =>
   RANK[MOVE_REASONS[a.reason] ?? "setup"] - RANK[MOVE_REASONS[b.reason] ?? "setup"];
 
+/** The skip that matters most for a pick: the one the no-runner reason and its fix lead with. */
+export function topSkipReason(skipped: SkippedStep[]): SkipReason | undefined {
+  return skipped.toSorted(bySkipRank)[0]?.reason;
+}
+
 /**
  * The dashboard page that fixes a failed pick: Usage for a cap or limit, Runners for machines, and
  * the Router for everything else (sizes, the runner order, provider access).

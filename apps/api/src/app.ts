@@ -33,6 +33,7 @@ import { runRoutes } from "./routes/runs.ts";
 import { usageRoutes } from "./routes/usage.ts";
 import { workspaceRoutes } from "./routes/workspaces.ts";
 import { renameSpan } from "./tracing.ts";
+import { withLogContext } from "./log.ts";
 
 export interface AppEnv {
   Bindings: Env;
@@ -56,12 +57,15 @@ export interface AppEnv {
 // Everything lives under /api so the dashboard can call it same-origin.
 export const app = new Hono<AppEnv>().basePath("/api");
 
-// Name each request's trace after the route it matched (`GET /api/machines/:id`), so traces group
-// by endpoint rather than by URL.
-app.use("*", async (c, next) => {
-  await next();
-  renameSpan(`${c.req.method} ${routePath(c, -1)}`);
-});
+// Every log line during a request carries its request id (Cloudflare's Ray ID), and the ids later
+// middleware learns, such as the user (annotate). Name each request's trace after the route it
+// matched (`GET /api/machines/:id`), so traces group by endpoint rather than by URL.
+app.use("*", (c, next) =>
+  withLogContext({ requestId: c.req.header("cf-ray") ?? crypto.randomUUID() }, async () => {
+    await next();
+    renameSpan(`${c.req.method} ${routePath(c, -1)}`);
+  }),
+);
 
 // Public routes. These never touch auth or D1.
 app.route("/health", healthRoutes);

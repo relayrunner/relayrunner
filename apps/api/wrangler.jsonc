@@ -28,6 +28,8 @@
     "issues": { "enabled": true },
   },
   "upload_source_maps": true,
+  // The deployed version's id, which every log line carries as `version` (src/log.ts).
+  "version_metadata": { "binding": "CF_VERSION_METADATA" },
   "vars": {
     // The dashboard origin (apps/web forwards /api/* here over a service binding): GitHub's OAuth
     // callback and the link `relayrunner connect` opens. Switch to https://app.relayrunner.dev once

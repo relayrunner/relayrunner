@@ -43,7 +43,7 @@ import {
   type StrandedReason,
   strandedJobName,
 } from "../routing/stranded-jobs.ts";
-import { errorMessage } from "../errors.ts";
+import { log as baseLog, logDispatch, withLogContext } from "../log.ts";
 import { traced } from "../tracing.ts";
 import { providersOfAppSlugs, type HostedProviderId } from "@relayrunner/providers";
 import type { ProviderAccess } from "@relayrunner/activity";
@@ -82,7 +82,9 @@ import {
   lastPicked,
   needsOwnerAccess,
   newRouteId,
+  routeIdFromLabels,
   routeLabel,
+  topSkipReason,
   unavailableMachines,
   waitingDecision,
   waitingLine,
@@ -182,6 +184,11 @@ export type RunnerList = { runners: GitHubRunner[]; checkedAt: number };
 // keeps the routes it hands out (src/routing/routing.ts), so the job queued on a route's label can find
 // its machine.
 export class Router extends DurableObject<Env> {
+  // Every line says which workspace's Router wrote it: the object is named by the workspace id.
+  private get log() {
+    return baseLog.with({ workspaceId: this.ctx.id?.name });
+  }
+
   // What GitHub said, kept in memory while the object is awake: runner group access by
   // installation id, each org's or repo's runner list by `<installation>:<scope key>`, and whether
   // a machine owner can read a repo by `<installation>:<repo id>:<owner GitHub id>`. Also each
@@ -213,14 +220,11 @@ export class Router extends DurableObject<Env> {
     try {
       return await this.checkedRunnerList(maxAge, installationId, scope);
     } catch (error) {
-      console.warn(
-        JSON.stringify({
-          msg: "github runners unavailable",
-          installationId,
-          scope: scopeKey(scope),
-          error: errorMessage(error),
-        }),
-      );
+      this.log.warn("github.runners_unavailable", "github runners unavailable", {
+        installationId,
+        scope: scopeKey(scope),
+        error,
+      });
       return null;
     }
   }
@@ -278,26 +282,20 @@ export class Router extends DurableObject<Env> {
           ),
         );
       } catch (error) {
-        console.warn(
-          JSON.stringify({
-            msg: "machine owner access unknown",
-            machineId,
-            repo: job.repo,
-            rateLimited: error instanceof GitHubRateLimitError,
-            error: errorMessage(error),
-          }),
-        );
+        this.log.warn("router.owner_access_unknown", "machine owner's repo access unknown", {
+          machineId,
+          repo: job.repo,
+          rateLimited: error instanceof GitHubRateLimitError,
+          error,
+        });
         if (error instanceof GitHubRateLimitError) return "rate_limited";
       }
     }
     if (!allowed)
-      console.log(
-        JSON.stringify({
-          msg: "machine skipped: owner can't read repo",
-          machineId,
-          repo: job.repo,
-        }),
-      );
+      this.log.info("router.machine_skipped", "machine skipped: owner can't read repo", {
+        machineId,
+        repo: job.repo,
+      });
     return allowed;
   }
 
@@ -307,30 +305,40 @@ export class Router extends DurableObject<Env> {
    * minutes limit passes the job on once the job's account nears its included quota.
    */
   async route(job: PickedJob): Promise<RouteDecision> {
-    return traced(
-      "router.route",
-      {
-        "relayrunner.workspace_id": job.workspaceId,
-        "github.installation_id": job.installationId,
-        "github.repository": job.repo,
-        "github.run_id": job.runId,
-        "relayrunner.retry": Boolean(job.retry),
-      },
-      async (span) => {
-        const decision = await this.decide(job);
-        span.setAttributes({
-          "relayrunner.skipped": decision.skipped.length,
-          "relayrunner.own_order": Boolean(decision.ownOrder),
-          ...(decision.runner === null
-            ? { "relayrunner.reason": decision.reason }
-            : {
-                "relayrunner.runner": decision.runner,
-                "relayrunner.step": decision.step,
-                "relayrunner.waited": Boolean(decision.waited),
-              }),
-        });
-        return decision;
-      },
+    const ids = {
+      workspaceId: job.workspaceId,
+      installationId: job.installationId,
+      repo: job.repo,
+      runId: job.runId,
+    };
+    return withLogContext(ids, () =>
+      traced(
+        "router.route",
+        {
+          "relayrunner.workspace_id": job.workspaceId,
+          "github.installation_id": job.installationId,
+          "github.repository": job.repo,
+          "github.run_id": job.runId,
+          "relayrunner.retry": Boolean(job.retry),
+        },
+        async (span) => {
+          const startedAt = Date.now();
+          const decision = await this.decide(job);
+          logDecision(job, decision, Date.now() - startedAt);
+          span.setAttributes({
+            "relayrunner.skipped": decision.skipped.length,
+            "relayrunner.own_order": Boolean(decision.ownOrder),
+            ...(decision.runner === null
+              ? { "relayrunner.reason": decision.reason }
+              : {
+                  "relayrunner.runner": decision.runner,
+                  "relayrunner.step": decision.step,
+                  "relayrunner.waited": Boolean(decision.waited),
+                }),
+          });
+          return decision;
+        },
+      ),
     );
   }
 
@@ -420,13 +428,10 @@ export class Router extends DurableObject<Env> {
         try {
           await this.env.MACHINE_LINK.getByName(id).spilled(at);
         } catch (error) {
-          console.warn(
-            JSON.stringify({
-              msg: "relayrunner spillover not sent",
-              machineId: id,
-              error: errorMessage(error),
-            }),
-          );
+          this.log.warn("router.spillover_not_sent", "spillover not sent to machine", {
+            machineId: id,
+            error,
+          });
         }
       }),
     );
@@ -449,15 +454,7 @@ export class Router extends DurableObject<Env> {
     };
     await this.ctx.storage.put(WAIT_KEY + waiting.id, waiting);
     await this.wakeIn(WAIT_POLL_MS);
-    console.log(
-      JSON.stringify({
-        msg: "relayrunner job waiting for a machine",
-        routeId: waiting.id,
-        repo: job.repo,
-        runId: job.runId,
-        reason: decision.reason,
-      }),
-    );
+    // Its routing.decision line (result "waiting") says why, and which route it waits on.
     return waitingDecision(decision, routeLabel(waiting.id));
   }
 
@@ -519,32 +516,29 @@ export class Router extends DurableObject<Env> {
   private async handOff(entry: WaitingJob): Promise<boolean> {
     const route = await this.ctx.storage.get<StoredRoute>(ROUTE_KEY + entry.id);
     if (route?.jobId === undefined) return true;
+    const dispatch = {
+      source: "waiting_line" as const,
+      routeId: route.id,
+      machineId: route.machineId,
+      workspaceId: entry.job.workspaceId,
+      jobId: route.jobId,
+    };
+    const startedAt = Date.now();
     try {
       await setJobMachine(createDb(this.env.DB), route.jobId, route.machineId);
       const result = await this.env.MACHINE_LINK.getByName(route.machineId).run({
         route,
         workspaceId: entry.job.workspaceId,
       });
-      console.log(
-        JSON.stringify({
-          msg: "relayrunner waiting job sent",
-          routeId: route.id,
-          machineId: route.machineId,
-          jobId: route.jobId,
-          waitedMs: Date.now() - entry.queuedAt,
-          result,
-        }),
-      );
+      logDispatch({
+        ...dispatch,
+        result,
+        sendMs: Date.now() - startedAt,
+        waitMs: Date.now() - entry.queuedAt,
+      });
       if (result !== "offline") return true;
     } catch (error) {
-      console.error(
-        JSON.stringify({
-          msg: "relayrunner waiting job not sent",
-          routeId: route.id,
-          machineId: route.machineId,
-          error: errorMessage(error),
-        }),
-      );
+      logDispatch({ ...dispatch, result: "error", error, waitMs: Date.now() - entry.queuedAt });
     }
     await this.backInLine(route, entry);
     return false;
@@ -564,7 +558,10 @@ export class Router extends DurableObject<Env> {
       return true;
     });
     if (!queued) return;
-    console.log(JSON.stringify({ msg: "relayrunner job back in line", routeId }));
+    this.log.info("router.requeued", "job back in line: machine went offline", {
+      routeId,
+      reason: "machine_offline",
+    });
     await this.drain();
   }
 
@@ -587,14 +584,13 @@ export class Router extends DurableObject<Env> {
     });
     if (!moved) return;
     await clearJobMachine(createDb(this.env.DB), jobId, machineId);
-    console.log(
-      JSON.stringify({
-        msg: "relayrunner unstarted job back in line",
-        routeId,
-        machineId,
-        requeues: moved.requeues,
-      }),
-    );
+    this.log.info("router.requeued", "job back in line: it never started on its machine", {
+      routeId,
+      machineId,
+      jobId,
+      reason: "not_started",
+      requeues: moved.requeues,
+    });
     if (moved.requeues > MAX_REQUEUES) await this.end(moved.entry, "runner_failed");
     else await this.drain();
   }
@@ -662,13 +658,10 @@ export class Router extends DurableObject<Env> {
         try {
           await this.env.MACHINE_LINK.getByName(id).setWaiting(workspace, waitingOn.get(id) ?? []);
         } catch (error) {
-          console.warn(
-            JSON.stringify({
-              msg: "relayrunner waiting count not sent",
-              machineId: id,
-              error: errorMessage(error),
-            }),
-          );
+          this.log.warn("router.waiting_count_not_sent", "waiting count not sent to machine", {
+            machineId: id,
+            error,
+          });
         }
       }),
     );
@@ -708,7 +701,9 @@ export class Router extends DurableObject<Env> {
     if (gate === "ok") return null;
     if (gate === "trial") {
       await this.ctx.storage.put(HEALTH_KEY + id, { ...state, trialAt: now });
-      console.log(JSON.stringify({ msg: "provider health trial", id }));
+      this.log.info("provider.health_trial", "trial job for an unhealthy runner type", {
+        runnerType: id,
+      });
       return null;
     }
     return gate;
@@ -733,13 +728,10 @@ export class Router extends DurableObject<Env> {
             const token = await appInstallationToken(this.env, job.installationId);
             return providersOfAppSlugs(await orgAppSlugs(token, accountLogin));
           } catch (error) {
-            console.warn(
-              JSON.stringify({
-                msg: "provider apps unavailable",
-                installationId: job.installationId,
-                error: errorMessage(error),
-              }),
-            );
+            this.log.warn("github.apps_unavailable", "org's installed apps unavailable", {
+              installationId: job.installationId,
+              error,
+            });
             return null;
           }
         },
@@ -754,7 +746,10 @@ export class Router extends DurableObject<Env> {
     if (gate === "ok") return null;
     if (gate === "trial") {
       await this.ctx.storage.put(id, { ...state, trialAt: now });
-      console.log(JSON.stringify({ msg: "provider repo trial", id }));
+      this.log.info("provider.repo_trial", "trial job for a provider that missed the repo", {
+        provider: key,
+        repositoryId: job.repositoryId,
+      });
       return null;
     }
     return gate;
@@ -765,14 +760,21 @@ export class Router extends DurableObject<Env> {
     const id = MISS_KEY + missId(key, repositoryId);
     const state = missed(await this.ctx.storage.get<RepoMiss>(id), Date.now());
     await this.ctx.storage.put(id, state);
-    console.log(JSON.stringify({ msg: "provider missed repo", id, retryAt: state.retryAt }));
+    this.log.info("provider.repo_missed", "provider missed a job of the repo", {
+      provider: key,
+      repositoryId,
+      retryAt: state.retryAt,
+    });
   }
 
   /** A runner picked up a job of the repo on the provider: it can see the repo again. */
   async providerPicked(key: HostedProviderId, repositoryId: number): Promise<void> {
     const id = MISS_KEY + missId(key, repositoryId);
     if (await this.ctx.storage.delete(id))
-      console.log(JSON.stringify({ msg: "provider recovered for repo", id }));
+      this.log.info("provider.repo_recovered", "provider picked up a job of the repo again", {
+        provider: key,
+        repositoryId,
+      });
   }
 
   /** The 15-minute sweep's recent jobs on hosted provider labels (sweepProviderHealth). */
@@ -790,12 +792,10 @@ export class Router extends DurableObject<Env> {
       }
       puts[HEALTH_KEY + id] = state;
       if ((state.trippedAt === null) !== (states.get(id)?.trippedAt == null))
-        console.log(
-          JSON.stringify({
-            msg: state.trippedAt === null ? "provider recovered" : "provider unhealthy",
-            id,
-            misses: state.misses,
-          }),
+        this.log.info(
+          "provider.health_changed",
+          state.trippedAt === null ? "runner type recovered" : "runner type unhealthy",
+          { runnerType: id, healthy: state.trippedAt === null, misses: state.misses },
         );
     }
     // put() and delete() take at most 128 keys at a time; a workspace has far fewer runner types.
@@ -1351,15 +1351,13 @@ export class Router extends DurableObject<Env> {
 
 // Logs a failed runner list read for a pick: `rate_limited` when GitHub refused for the API limit.
 function runnersUnavailable(job: PickedJob, error: unknown) {
-  console.warn(
-    JSON.stringify({
-      msg: "github runners unavailable",
-      installationId: job.installationId,
-      repo: job.repo,
-      rateLimited: error instanceof GitHubRateLimitError,
-      error: errorMessage(error),
-    }),
-  );
+  baseLog.warn("github.runners_unavailable", "github runners unavailable", {
+    workspaceId: job.workspaceId,
+    installationId: job.installationId,
+    repo: job.repo,
+    rateLimited: error instanceof GitHubRateLimitError,
+    error,
+  });
   return error instanceof GitHubRateLimitError ? ("rate_limited" as const) : null;
 }
 
@@ -1388,4 +1386,44 @@ function waitingFrom(route: StoredRoute, job: PickedJob): WaitingJob {
     job,
     ...(route.requeues && { requeues: route.requeues }),
   };
+}
+
+/**
+ * The `routing.decision` line: one per routing decision, the wide event routing dashboards count.
+ * `result` is `routed`, `waiting` (every machine that fits is full, so the job waits for a slot)
+ * or `no_runner`; `reason` is the skip that mattered most when it didn't route; `step` is the
+ * runner order's step that took it.
+ */
+function logDecision(job: PickedJob, decision: RouteDecision, decideMs: number) {
+  const routed = decision.runner !== null;
+  const result = !routed ? "no_runner" : decision.waited ? "waiting" : "routed";
+  const step = routed ? decision.step : undefined;
+  const fields = {
+    result,
+    step,
+    runnerKind:
+      step === undefined ? undefined : step === "machine" || step === "github" ? step : "provider",
+    // A machine route's label is per route; other runners' labels are worth grouping by.
+    runner: routed && step !== "machine" ? decision.runner : undefined,
+    routeId:
+      routed && step === "machine"
+        ? (routeIdFromLabels([decision.runner]) ?? undefined)
+        : undefined,
+    // A waiting job's machines are full; waitingDecision drops that skip from the list.
+    reason:
+      result === "waiting"
+        ? "machine_full"
+        : result === "no_runner"
+          ? (topSkipReason(decision.skipped) ?? "not_configured")
+          : undefined,
+    skipped: decision.skipped.map(({ key, reason }) => `${key}:${reason}`),
+    ownOrder: Boolean(decision.ownOrder),
+    retry: Boolean(job.retry),
+    private: job.private,
+    size: job.size,
+    runAttempt: job.runAttempt,
+    decideMs,
+  };
+  if (result === "no_runner") baseLog.warn("routing.decision", "no runner for the job", fields);
+  else baseLog.info("routing.decision", `job ${result}`, fields);
 }
